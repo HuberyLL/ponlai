@@ -13,12 +13,14 @@ import {
 	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld, positionPrevious,
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
 	float, int, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
-	abs, fwidth, reflect, refract, select, step, dFdx, dFdy,
+	abs, fwidth, reflect, refract, select, step, dFdx, dFdy, perspectiveDepthToViewZ, cameraNear, cameraFar,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
 import { FFT_SIZE, type OceanFFT } from './OceanFFT.ts';
 import type { ShoreWaves } from './ShoreWaves.ts';
 import type { StormSea } from './StormSea.ts';
+import type { SeaDetail } from './SeaDetail.ts';
+import { REFRACTION_GUARD } from './Refraction.ts';
 import type { Shared } from '../shared.ts';
 import type { SolarShadowTaps } from '../lighting/SolarShadow.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
@@ -33,6 +35,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 // branch; the camera never goes under the sea):
 //   - the normal from the cascades' slopes over their horizontal stretch (WaterSurface), with
 //     near-field capillary ripples, the rocky shore's reflected wave and the rain's rings
+//   - the sea's large-scale detail in world space (SeaDetail): gusts roughen the short waves the
+//     pixel cannot resolve and the near ripples, slicks smooth them, gusts and windrows add whitecaps
 //   - the sun reaching the surface (`sunLight`): the key light through the sun shadow's maps and
 //     the clouds; the glint, the water body and the foam all take this one light
 //   - exact dielectric Fresnel; the sky reflected along a direction the unresolved slopes lift
@@ -41,14 +45,19 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     (rays near the horizon, reflectance over 0.05)
 //   - the sun's specular: GGX of the base roughness and the slopes the pixel cannot resolve (Cox-
 //     Munk's mean square slope for the wind, the share finer than the pixel)
-//   - refraction: the refracted view ray followed to the floor's height field, its end projected to
-//     the screen; the opaque image there where it lies behind the surface, else straight behind
+//   - refraction: the refracted view ray followed to the floor's height field, its end projected
+//     into the refraction pass's image of the world under the sea (Refraction.ts, through its wider
+//     view: the floor behind the cliffs above the waterline, and below the screen's bottom edge)
+//     where it lies behind the surface, else straight behind in that image; where the image holds
+//     nothing there (the shallows above its clip height, the sky), the opaque image, as before; a
+//     thin sheet of water takes the opaque image of the rock under it
 //   - the water body: Beer-Lambert absorption along that path, analytic single scattering of the sun
 //     and the sky (Henyey-Greenstein) and a multiple-scattering backscatter boost; the sun through the
 //     thin crests; whitecaps where the surface is compressed (tidewater's fresh foam, not its
 //     persistent foam, which integrates in time), lit as a bright diffuse scatterer
 // Drawn after the opaque pass into the same multisampled target, depth-tested per sample against
-// the opaque surfaces, reading a copy of that pass's resolved colour and its linear depth.
+// the opaque surfaces, reading a copy of that pass's resolved colour and its linear depth, and the
+// refraction pass's colour and depth.
 //
 // Kept of our own: the grid and its skirt, the waves' damping by the shore (the vertex stage), the
 // rocky shore's reflected wave (ShoreWaves), the reflection march with its box and the cliff foot's
@@ -58,9 +67,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 // plane and the sky-depth thresholds (-9e4; the resolved sky is -1e5) stay beyond it.
 //
 // Limits to keep in mind:
-// - WebGPU guarantees 16 sampled textures per stage (a texture past them fails pipeline creation):
-//   the FFT's fields are array textures, a layer per cascade, the sun's two shadow steps share one
-//   array texture, and the storm foam is a storage buffer.
+// - WebGPU guarantees 16 sampled textures per stage (a texture past them fails pipeline creation),
+//   and the fragment stage samples 14: the FFT's fields are array textures, a layer per cascade,
+//   the sun's two shadow steps share one array texture, and the storm foam is a storage buffer.
 // - The reflection only finds what lies inside `reflectionBounds` (see below): anything opaque
 //   placed off the island or above 3 m (REFLECTOR_HEIGHT; a palm, a boat, a hut, a mast) must grow
 //   that box, or the sea will not reflect it (the game's props do: main.ts `holdOpaque`).
@@ -152,6 +161,9 @@ const FOAM_SCALE = 0.09;
 // The sky panorama's level the horizon's colour is read at (a band some 20 degrees high).
 const HORIZON_MIP = 5;
 
+// The reflection's march stops this far along the ray (m); its hits fade out from 120 m (tidewater's).
+const SSR_FARTHEST = 260;
+
 // A refracted sample serves when it lies this far behind the water's surface (view depth, m).
 const WATER_BEHIND = 0.05;
 
@@ -181,8 +193,10 @@ export interface WaterInputs {
 	shoreWaves: ShoreWaves;
 	sunShadow: SunShadow;
 	storm: StormSea;
+	detail: SeaDetail; // gusts, slicks and windrows
 	sceneColor: THREE.Texture; // the opaque pass's resolved colour
 	linearDepth: THREE.Texture; // its view-space z: sample 0 (x) and the farthest sample (y)
+	refraction: { color: THREE.Texture; depth: THREE.Texture }; // the refraction pass's image (Refraction.ts)
 	size?: number;
 	res?: number;
 	quality?: Partial<WaterQuality>; // compile-time: read once, a change needs a new Water (a reload)
@@ -195,9 +209,10 @@ export interface WaterInputs {
 // tiers trade a little of it for time:
 //   ssrRays: rays per pixel for the screen-space reflection, either side of the centre (2) or
 //     through it (1, a little stair-stepping on the reflected island's edge);
-//   ssrSteps, ssrGrowth: its geometric steps, each this much longer than the last. The march
-//     reaches 0.15 + 0.25 (growth^steps - 1) / (growth - 1) metres: 158 m on high, 100 m for
-//     14 steps at x1.45 (14 at about x1.51 would keep the 158 m);
+//   ssrSteps, ssrGrowth: its geometric steps, each this much longer than the last. Within 60 m
+//     of the camera the march reaches 0.15 + 0.25 (growth^steps - 1) / (growth - 1) metres: 158 m
+//     on high, 100 m for 14 steps at x1.45 (14 at about x1.51 would keep the 158 m); farther away
+//     every step grows with the distance, up to SSR_FARTHEST;
 //   ssrMinFresnel: the reflectance under which a pixel marches no reflection and keeps the sky
 //     (tidewater's gate). 0.05 on every tier: it skips most of the sea the island camera looks
 //     down on, for about a seventh of the island views' water pass, and with it the faint (2-5 %
@@ -244,15 +259,17 @@ const REFLECTOR_REACH = 1.5 + 1;
 const REFLECTOR_HEIGHT = 3;
 const REFLECTION_FLOOR = 0.35;
 
-// How the reflection's march uses that box. cull: a ray that never meets it within the march's
-// reach keeps the sky without marching (most of the sea away from the island). clip: a ray stops
-// at its first step past the box, where nothing is left to reflect. The steps before the box still
-// read the depth buffer: the march accepts a hit up to 1.4 steps behind it, so one of them can end
-// a ray on a far false hit (or on a hit that weighs nothing) where a ray started at the box would
-// march on and find another, and the image would change.
-interface SSRVariant { cull: boolean; clip: boolean }
-const SSR_BOXED: SSRVariant = { cull: true, clip: true };
-const variantKey = ( v: SSRVariant ) => ( v.cull ? 1 : 0 ) + ( v.clip ? 2 : 0 );
+// The ways of building the sea's shading, each its own material (a debug flag picks one, for A/B
+// timing in one page). How the reflection's march uses that box: cull, a ray that never meets it
+// within the march's reach keeps the sky without marching (most of the sea away from the island);
+// clip, a ray stops at its first step past the box, where nothing is left to reflect. The steps
+// before the box still read the depth buffer: the march accepts a hit up to 1.4 steps behind it,
+// so one of them can end a ray on a far false hit (or on a hit that weighs nothing) where a ray
+// started at the box would march on and find another, and the image would change. refraction: the
+// refraction pass's image is the refraction source (else the opaque copy alone).
+interface WaterVariant { cull: boolean; clip: boolean; refraction: boolean }
+const SHIPPED: WaterVariant = { cull: true, clip: true, refraction: true };
+const variantKey = ( v: WaterVariant ) => ( v.cull ? 1 : 0 ) + ( v.clip ? 2 : 0 ) + ( v.refraction ? 4 : 0 );
 
 // The distances along a ray (origin, unit direction) at which it enters and leaves a box (slab
 // method); enter > leave when it misses.
@@ -376,18 +393,18 @@ export class Water {
 		this.quality = { ...DEFAULT_WATER_QUALITY, ...quality };
 		this.reflectionBounds = new THREE.Box3();
 		this.setLand( inputs.land );
-		this.material = this.buildMaterial( SSR_BOXED );
-		this.materials.set( variantKey( SSR_BOXED ), this.material );
+		this.material = this.buildMaterial( SHIPPED );
+		this.materials.set( variantKey( SHIPPED ), this.material );
 		this.mesh = new THREE.Mesh( geo, this.material );
 		this.mesh.frustumCulled = false;
 		this.mesh.name = 'water';
 
 	}
 
-	// The sea's shading for one way of marching the screen-space reflection (see SSRVariant).
-	private buildMaterial( variant: SSRVariant ): THREE.NodeMaterial {
+	// The sea's shading for one variant (see WaterVariant).
+	private buildMaterial( variant: WaterVariant ): THREE.NodeMaterial {
 
-		const { fft, sky, shared, shore, seabedHeight, shoreWaves, sunShadow, shadowTaps, storm, sceneColor, linearDepth } = this.inputs;
+		const { fft, sky, shared, shore, seabedHeight, shoreWaves, sunShadow, shadowTaps, storm, detail, sceneColor, linearDepth, refraction } = this.inputs;
 		const quality = this.quality;
 		const u = this.uniforms;
 		// A cascade's layer of an FFT field at an undisplaced xz.
@@ -471,9 +488,25 @@ export class Water {
 		// the pixel, the sea's samples hold what is behind them, not the figure of sample 0.
 		const behindViewZ = textureLoad( tDepth, pixel( screenUV ) ).y;
 		const sceneAt = ( q: V2 ) => texture( sceneColor, q ).level( float( 0 ) ).rgb;
+		// The refraction pass's image at a screen uv, through its wider view (Refraction.ts): its
+		// colour, filtered (premultiplied by its coverage, alpha), and the view z of its nearest texel.
+		const G = REFRACTION_GUARD;
+		const refractionColor = texture( refraction.color ), refractionDepth = texture( refraction.depth );
+		const refractionSize = vec2( textureSize( refractionDepth ) as unknown as THREE.Node<'ivec2'> );
+		const refractionUV = ( q: V2 ) => vec2( q.x.sub( 0.5 ).div( G.sx ).add( 0.5 - G.cx / ( 2 * G.sx ) ), q.y.sub( 0.5 ).div( G.sy ).add( 0.5 + G.cy / ( 2 * G.sy ) ) );
+		const refractedAt = ( q: V2 ) => {
 
-		// screen-space reflection of the opaque scene (cliffs, stacks): geometric steps, then bisection
-		// The distance the march reaches: its last step.
+			const r = refractionUV( q ).toVar();
+			const depth = textureLoad( refractionDepth, ivec2( clamp( r.mul( refractionSize ), vec2( 0 ), refractionSize.sub( 1 ) ) ), int( 0 ) ) as unknown as F;
+			return { color: texture( refractionColor, r ).level( float( 0 ) ).toVar(), depth: depth.toVar() };
+
+		};
+		const viewZOf = ( depth: F ) => perspectiveDepthToViewZ( depth, cameraNear, cameraFar );
+
+		// screen-space reflection of the opaque scene (cliffs, stacks): geometric steps, then bisection.
+		// The steps grow with the distance (tidewater's stepScale: far away the first ones would all
+		// land in the same pixel), and a ray stops at SSR_FARTHEST, where its hits weigh nothing.
+		// The distance the march reaches near the camera: its last step.
 		const ssrReach = 0.15 + 0.25 * ( Math.pow( quality.ssrGrowth, quality.ssrSteps ) - 1 ) / ( quality.ssrGrowth - 1 );
 		const traceSSR = Fn( ( [ posV, Rv ]: [ V3, V3 ] ) => {
 
@@ -482,14 +515,15 @@ export class Water {
 			// below rather than marching those rays through the depth buffer.
 			const directionWeight = smoothstep( 0.5, 0.1, Rv.z ).toVar();
 			let marches = Rv.z.lessThanEqual( 0.6 ).and( directionWeight.greaterThan( 0 ) );
+			const stepScale = max( posV.z.negate().div( 60 ), 1 ).toVar();
 			// Where the ray is inside the box of what it can reflect (in world space: the view is rigid,
 			// so distances along the ray are the same).
 			const span = variant.cull || variant.clip ? rayBoxSpan( cameraWorldMatrix.mul( vec4( posV, 1 ) ).xyz,
 				cameraWorldMatrix.mul( vec4( Rv, 0 ) ).xyz, this.reflectorMin, this.reflectorMax ).toVar() : vec2( 0, 1e9 );
-			if ( variant.cull ) marches = marches.and( span.y.greaterThanEqual( max( span.x, 0 ) ) ).and( span.x.lessThanEqual( ssrReach ) );
+			if ( variant.cull ) marches = marches.and( span.y.greaterThanEqual( max( span.x, 0 ) ) ).and( span.x.lessThanEqual( min( stepScale.mul( ssrReach ), SSR_FARTHEST ) ) );
 			If( marches, () => {
 
-				const t = float( 0.15 ).toVar(), dt = float( 0.25 ).toVar(), prevT = float( 0 ).toVar();
+				const t = stepScale.mul( 0.15 ).toVar(), dt = stepScale.mul( 0.25 ).toVar(), prevT = float( 0 ).toVar();
 				const hit = float( 0 ).toVar();
 				const step = () => {
 
@@ -512,6 +546,11 @@ export class Water {
 				Loop( quality.ssrSteps, () => {
 
 					prevT.assign( t );
+					If( prevT.greaterThanEqual( SSR_FARTHEST ), () => {
+
+						Break();
+
+					} );
 					t.addAssign( dt );
 					dt.mulAssign( quality.ssrGrowth );
 					step();
@@ -542,10 +581,13 @@ export class Water {
 					} );
 					const hv = posV.add( Rv.mul( b ) ).toVar();
 					const q = projectView( hv, cameraProjectionMatrix ).toVar();
-					const touch = float( 1 ).sub( smoothstep( 0.15, 0.6, abs( sceneViewZ( q ).sub( hv.z ) ) ) );
+					// the ray must really touch the surface there, within a gap that grows with the
+					// distance as the steps do (tidewater's)
+					const touch = smoothstep( max( b.mul( 0.04 ), 0.6 ), max( b.mul( 0.02 ), 0.15 ), abs( sceneViewZ( q ).sub( hv.z ) ) );
 					const hw = cameraWorldMatrix.mul( vec4( hv, 1 ) ).xyz.toVar();
 					const edge = smoothstep( 0, 0.06, q.x ).mul( smoothstep( 1, 0.94, q.x ) ).mul( smoothstep( 0, 0.06, q.y ) ).mul( smoothstep( 1, 0.94, q.y ) );
-					res.assign( vec4( sceneAt( q ), edge.mul( touch ).mul( directionWeight ) ) );
+					const farFade = smoothstep( SSR_FARTHEST, 120, b );
+					res.assign( vec4( sceneAt( q ), edge.mul( touch ).mul( directionWeight ).mul( farFade ) ) );
 					// Where the ray meets the cliff below the sea's reach, it could only have got there
 					// through the water it meets first. Falling back to the sky there (tidewater fades
 					// the lowest 0.4 m, sized for cliffs ten times taller) drew a bright band along every
@@ -601,14 +643,18 @@ export class Water {
 			const fuv = vLag.mul( FOAM_SCALE ).toVar();
 			const p1 = texture( storm.pattern, fuv ).toVar();
 			const p2 = texture( storm.pattern, rotate( fuv, 0.6435 ).mul( 2.37 ).add( vec2( 0.31, 0.77 ) ) ).toVar();
+			// the sea's large-scale detail: ( rough, gust, slick, streak )
+			const sea = detail.sample( vLag ).toVar();
+			const rough = sea.x;
 
 			// ---- the normal: the cascades' slopes over their horizontal stretch (tidewater's
 			// WaterSurface), the rock's reflected wave and the rain's rings in world xz
 			const slopes = vec2( d.x.div( max( d.z.add( 1 ), 0.2 ) ), d.y.div( max( d.w.add( 1 ), 0.2 ) ) ).add( shoreWave.yz ).add( rainGradient ).toVar();
 			// Near-field capillary ripples: within a few metres a pixel covers less than the finest
 			// cascade's texel (about 3 cm) and the surface looks glassy; the finest cascade read again
-			// at about 1 and 2.3 m tiles, turned so that they never line up with it.
-			const near = smoothstep( 0.04, 0.01, footprint ).toVar();
+			// at about 1 and 2.3 m tiles, turned so that they never line up with it; damped in slicks
+			// with the short waves.
+			const near = smoothstep( 0.04, 0.01, footprint ).mul( rough ).toVar();
 			If( near.greaterThan( 0.002 ), () => {
 
 				const ripple = ( k: number, angle: number ) => {
@@ -648,21 +694,22 @@ export class Water {
 			const ray0 = viewRay( screenUV, cameraProjectionMatrixInverse ).toVar();
 			const sv0 = ray0.mul( z0.div( ray0.z ) ).toVar();
 			const thick = select( skyBehind, float( 1e4 ), posV.z.sub( sv0.z ) ).toVar(); // view distance from the surface to whatever is behind it
-			const opaqueCol = sceneAt( screenUV ).toVar();
 
-			// ---- whitecaps: where the surface is compressed right now (tidewater's fresh foam), a
-			// threshold on the foam pattern so that they grow and tear into lace; far away, the
-			// coverage itself
-			const coverage = sat( fft.foamBias.sub( 0.15 ).sub( jac ).mul( 2 ).mul( u.foamCoverage ) );
+			// ---- whitecaps: where the surface is compressed right now (tidewater's fresh foam), more
+			// of them inside gusts, and the windrows' trace of foam; a threshold on the foam pattern so
+			// that they grow and tear into lace; far away, the coverage itself
+			const fresh = sat( fft.foamBias.sub( 0.15 ).sub( jac ).mul( 2 ) );
+			const coverage = sat( fresh.mul( mix( float( 0.5 ), float( 1.5 ), sea.y ) ).add( sea.w.mul( 0.5 ) ).mul( u.foamCoverage ) );
 			const threshold = float( 1.05 ).sub( coverage.mul( 1.1 ) );
 			const soft = footprint.mul( 0.1 ).add( 0.06 );
 			const mat = smoothstep( threshold.sub( soft ), threshold.add( soft ), p1.x.mul( 0.62 ).add( p2.x.mul( 0.38 ) ) ).mul( p1.y.mul( 0.25 ).add( 0.8 ) );
 			const foam = mix( mat, coverage.mul( 0.85 ), smoothstep( 0.15, 1.2, footprint ) ).toVar();
 
 			// ---- roughness: the slopes no pixel resolves at this distance (Cox-Munk's mean square
-			// slope 0.003 + 0.00512 U, the share finer than the pixel's wavenumber) over the base
+			// slope 0.003 + 0.00512 U, the share finer than the pixel's wavenumber, scaled by the
+			// gusts and slicks) over the base
 			const mss = windSpeed.mul( 0.00512 ).add( 0.003 );
-			const unresolved = sat( log2( footprint.mul( 110 / PI ) ).div( 9 ) );
+			const unresolved = sat( log2( footprint.mul( 110 / PI ) ).div( 9 ) ).mul( rough.mul( rough ) ).toVar();
 			const alpha2 = u.roughness.mul( u.roughness ).add( mss.mul( 2 ).mul( unresolved ) ).add( foam.mul( 0.2 ) ).toVar();
 			const sigmaUnresolved = sqrt( mss.mul( unresolved ) ).toVar();
 
@@ -742,8 +789,12 @@ export class Water {
 
 			// ---- refraction: the refracted view ray (Snell; kept heading down where a coarse crest
 			// would turn it up) followed to the floor, two refinements on the floor's height, its end
-			// projected to the screen. The opaque image there serves where it lies behind the surface;
-			// otherwise (off screen, or something in front of the end) what lies straight behind.
+			// projected to the screen. The refraction image there serves where it lies behind the
+			// surface (it holds nothing above the water to stand in front); where the end lies on
+			// something in front of the surface (a stone nearer the eye), what lies straight behind
+			// in that image; where the image holds nothing there (the shallows above its clip height,
+			// the sky), the opaque image at the end where it lies behind the surface, else straight
+			// behind.
 			const Tr = refract( V.negate(), N, 1 / IOR );
 			const Tv = normalize( vec3( Tr.x, min( Tr.y, - 0.08 ), Tr.z ) ).toVar();
 			const tDown = max( Tv.y.negate(), 0.04 ).toVar();
@@ -758,11 +809,61 @@ export class Water {
 			const Lter = clamp( Lt, 0, 400 ).toVar();
 			const uvR = projectView( cameraViewMatrix.mul( vec4( wp.add( Tv.mul( min( Lter, 80 ) ) ), 1 ) ).xyz, cameraProjectionMatrix ).toVar();
 			const onScreen = uvR.x.greaterThan( 0 ).and( uvR.x.lessThan( 1 ) ).and( uvR.y.greaterThan( 0 ) ).and( uvR.y.lessThan( 1 ) );
-			const zR = sceneViewZ( uvR ).toVar();
-			const found = onScreen.and( zR.lessThan( posV.z.sub( WATER_BEHIND ) ) ).toVar();
-			const uvF = select( found, uvR, screenUV ).toVar();
-			const zF = select( found, zR, z0 ).toVar();
-			const sceneCol = sceneAt( uvF ).toVar();
+			const behind = ( z: F ) => z.lessThan( posV.z.sub( WATER_BEHIND ) );
+			const sceneCol = vec3( 0 ).toVar();
+			const uvF = vec2( screenUV ).toVar();
+			const zF = z0.toVar();
+			const found = float( 0 ).toVar();
+			if ( variant.refraction ) {
+
+				const end = refractedAt( uvR );
+				const covered = end.color.a.greaterThan( 0.5 ).and( end.depth.lessThan( 1 ) ).toVar();
+				const zEnd = viewZOf( end.depth ).toVar();
+				If( covered.and( behind( zEnd ) ), () => {
+
+					sceneCol.assign( end.color.rgb.div( end.color.a ) );
+					uvF.assign( uvR );
+					zF.assign( zEnd );
+					found.assign( 1 );
+
+				} ).ElseIf( covered, () => {
+
+					const straight = refractedAt( screenUV );
+					const zStraight = viewZOf( straight.depth ).toVar();
+					If( straight.color.a.greaterThan( 0.5 ).and( straight.depth.lessThan( 1 ) ).and( behind( zStraight ) ), () => {
+
+						sceneCol.assign( straight.color.rgb.div( straight.color.a ) );
+						zF.assign( zStraight );
+						found.assign( 1 );
+
+					} );
+
+				} );
+
+			}
+			If( found.lessThan( 0.5 ), () => {
+
+				const zR = sceneViewZ( uvR ).toVar();
+				const valid = onScreen.and( behind( zR ) ).toVar();
+				uvF.assign( select( valid, uvR, screenUV ) );
+				zF.assign( select( valid, zR, z0 ) );
+				sceneCol.assign( sceneAt( uvF ) );
+
+			} ).Else( () => {
+
+				// A thin sheet of water over rock: the refraction offset is a few pixels at most and
+				// nothing stands between the sheet and the rock, so the opaque pass's own image of
+				// the rock serves (the refraction image leaves out everything above its clip height,
+				// and switching between the two drew a line across the rock along that height).
+				const film = float( 1 ).sub( smoothstep( 0.04, 0.3, thickness ) ).toVar();
+				If( film.greaterThan( 0 ), () => {
+
+					const uvO = select( onScreen.and( behind( sceneViewZ( uvR ) ) ), uvR, screenUV );
+					sceneCol.assign( mix( sceneCol, sceneAt( uvO ), film ) );
+
+				} );
+
+			} );
 			// what stands in front of the floor (stones, the cliff's foot) shortens the path
 			const rayF = viewRay( uvF, cameraProjectionMatrixInverse ).toVar();
 			const pathLen = clamp( min( Lter, length( rayF.mul( zF.div( rayF.z ) ).sub( posV ) ) ), 0, 400 ).toVar();
@@ -878,8 +979,12 @@ export class Water {
 			} );
 
 			// soften the line where the surface cuts the rock (no hard seam); behind rock: the rock
-			const edge = select( skyBehind, float( 1 ), smoothstep( 0, 0.06, thick ) );
-			col.assign( mix( opaqueCol, col, edge ) );
+			const edge = select( skyBehind, float( 1 ), smoothstep( 0, 0.06, thick ) ).toVar();
+			If( edge.lessThan( 1 ), () => {
+
+				col.assign( mix( sceneAt( screenUV ), col, edge ) );
+
+			} );
 			return vec4( min( col, vec3( 16000 ) ), reactive ?? 1 );
 
 		} )();
@@ -916,9 +1021,11 @@ export class Water {
 		}
 		this.reflectorMin.value.copy( this.reflectionBounds.min );
 		this.reflectorMax.value.copy( this.reflectionBounds.max );
-		// debugFlags.ssrCull / ssrClip = false bring back the march without the box, for A/B timing
-		// in one page (each variant is its own material and pipeline, built on first use).
-		const variant = { cull: debugFlags.ssrCull !== false, clip: debugFlags.ssrClip !== false };
+		// debugFlags.ssrCull / ssrClip = false bring back the march without the box, and refraction =
+		// false the opaque copy as the only refraction source (with the refraction pass skipped:
+		// Pipeline.ts), for A/B timing in one page (each variant is its own material and pipeline,
+		// built on first use).
+		const variant = { cull: debugFlags.ssrCull !== false, clip: debugFlags.ssrClip !== false, refraction: debugFlags.refraction !== false };
 		const key = variantKey( variant );
 		let material = this.materials.get( key );
 		if ( ! material ) this.materials.set( key, material = this.buildMaterial( variant ) );

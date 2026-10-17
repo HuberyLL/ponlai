@@ -23,6 +23,8 @@ import { OceanFFT } from './ocean/OceanFFT.ts';
 import { seaState } from './ocean/OceanSpectrum.ts';
 import { ShoreWaves } from './ocean/ShoreWaves.ts';
 import { Caustics } from './ocean/Caustics.ts';
+import { SeaDetail } from './ocean/SeaDetail.ts';
+import { showUnderwater } from './ocean/Refraction.ts';
 import { Water } from './ocean/Water.ts';
 import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
@@ -300,6 +302,8 @@ const lighting = { skyFill: 1 };
 
 const sun = new THREE.DirectionalLight( 0xffffff, 1 );
 sun.castShadow = true;
+// (the water's refraction source draws the world under the sea lit by it: ocean/Refraction.ts)
+showUnderwater( sun );
 sun.shadow.mapSize.set( 2048, 2048 );
 // The map is fitted to the island's casters once the world exists, and redrawn in small steps of
 // the key light with a cross-fade (SunShadow). Its bias, 1 cm along the light ray, follows each
@@ -741,8 +745,9 @@ const stormSea = new StormSea( renderer, fft, shared, fields.shore, shoreWaves, 
 } );
 water = new Water( {
 	fft, sky, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves,
-	land: landBox, sunShadow, storm: stormSea,
+	land: landBox, sunShadow, storm: stormSea, detail: new SeaDetail( shared ),
 	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, quality: quality.water,
+	refraction: { color: pipeline.textures.refraction, depth: pipeline.textures.refractionDepth },
 	shadowTaps: quality.shadow.water,
 } );
 applySkyFill();

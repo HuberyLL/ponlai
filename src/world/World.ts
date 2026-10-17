@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { makeTerrainMaterial } from '../materials/TerrainMaterial.ts';
 import type { DetailTextures } from '../materials/ProceduralTextures.ts';
 import type { Caustics } from '../ocean/Caustics.ts';
+import { refractedGroup, showUnderwater } from '../ocean/Refraction.ts';
 import type { Shared } from '../shared.ts';
 import { ISLAND_TOP } from './WorldShapes.ts';
 import type { CasterColumns, GroundGrid, SubmergedSubset } from './ChunkDerived.ts';
@@ -20,6 +21,10 @@ import type { WorldFields } from './WorldFields.ts';
 //   ( cj, ci ), and `derive` collects what they carry again.
 // - The stones and the sea floor stay one mesh each (ChunkMerge.ts), as every small kind does; a
 //   grown island gives them new geometry of the same layout (`stonesGeometry`, `seabedGeometry`).
+// - The group 'world' is the water's refraction source's (ocean/Refraction.ts): a ClippingGroup in
+//   the refraction's layer alone, every mesh in it shown to that layer too (a land chunk's mesh by
+//   `islandMesh`), so that the refraction pass draws them clipped at the sea and every other pass
+//   draws them whole.
 // - What the chunks' jobs derived from the meshes comes back with them, keyed for its consumers:
 //   the island parts' caster columns (SunShadow.setCasters), the triangle subsets of the island
 //   parts, the stones and the floor (RefractedSun.setCasters) and the ground grids
@@ -49,7 +54,7 @@ export interface WorldMeshes {
 
 export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: Shared, caustics: Caustics, fields: WorldFields ): WorldMeshes {
 
-	const group = new THREE.Group();
+	const group = refractedGroup( shared.waterLevel.value );
 	group.name = 'world';
 	const cliffMat = makeTerrainMaterial( 'cliff', tex, shared, caustics, fields.shore, { topY: ISLAND_TOP, rimGround: fields.rim, rimGroundXform: fields.rimXform } );
 	const rockMat = makeTerrainMaterial( 'cliff', tex, shared, caustics, fields.shore, { vegetation: false } );
@@ -64,6 +69,7 @@ export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: 
 	const rocks = new THREE.Mesh( stonesGeometry( data ), rockMat );
 	rocks.name = 'rocks';
 	rocks.receiveShadow = true;
+	showUnderwater( rocks );
 	group.add( rocks );
 
 	// the sea floor: its near tiles and the far floor, one mesh (their normals come with them:
@@ -71,6 +77,7 @@ export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: 
 	const seabed = new THREE.Mesh( seabedGeometry( data ), makeTerrainMaterial( 'seabed', tex, shared, caustics, fields.shore ) );
 	seabed.name = 'seabed';
 	seabed.receiveShadow = true;
+	showUnderwater( seabed );
 	group.add( seabed );
 
 	const world: WorldMeshes = { group, island, rocks, seabed, cliff: cliffMat, triangles: 0, columns: new Map(), subsets: new Map(), grounds: [] };
@@ -88,6 +95,7 @@ export function islandMesh( part: IslandChunk, material: THREE.Material ): THREE
 	mesh.castShadow = true;
 	mesh.receiveShadow = true;
 	mesh.userData.part = part;
+	showUnderwater( mesh );
 	return mesh;
 
 }

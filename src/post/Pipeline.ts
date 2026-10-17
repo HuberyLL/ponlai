@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, texture, textureLoad, uniform, uv, screenCoordinate, ivec2, int, vec2, vec3, vec4, float, mix,
 	smoothstep, clamp, max, min, dot, length, abs, sqrt, cos, sin, log2, exp2, floor, luminance, neutralToneMapping, agxToneMapping,
-	sRGBTransferOETF, fract, select, exp, nodeObject, atan, mod, pow, mrt, outputStruct, mat4,
+	sRGBTransferOETF, fract, select, exp, nodeObject, atan, mod, pow, mrt, outputStruct, mat4, output,
 } from 'three/tsl';
 import BloomNode from 'three/addons/tsl/display/BloomNode.js';
 import { fsr1 } from 'three/addons/tsl/display/FSR1Node.js';
@@ -23,11 +23,16 @@ import { FrameGraph, type ResourceHandle, type SizeClass } from './graph/FrameGr
 import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
 import type { Sky } from '../sky/Sky.ts';
 import type { Rain } from '../weather/Rain.ts';
+import { RefractionView, REFRACTION_SIZE } from '../ocean/Refraction.ts';
+import { debugFlags } from '../debug/DebugFlags.ts';
 
 // Frame graph:
 //   opaque scene ── sceneRT (MSAA, SCENE_SAMPLES, half float, multisampled depth)
 //   depth resolve ── depthRT (view-space z of the opaque pass: sample 0, and the farthest sample)
-//   opaque copy ── opaqueRT (the resolved opaque colour: what the water refracts and reflects)
+//   opaque copy ── opaqueRT (the resolved opaque colour: what the water refracts where the
+//     refraction image holds nothing, and reflects)
+//   refraction ── refraction and refractionDepth: the world under the sea through a wider view, at
+//     half the render's pixel density (ocean/Refraction.ts; the water's refraction source)
 //   water ── back into sceneRT, depth-tested per sample against the opaque samples
 //   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included) and
 //     viewDistance (its distance, for the depth of field and the grade's sky test)
@@ -53,6 +58,7 @@ import type { Rain } from '../weather/Rain.ts';
 //   opaque scene ── sceneColor and velocity (an MRT: Motion.ts's sceneMRT), sceneDepth
 //   depth resolve ── depthRT (sample 0 twice: one sample)
 //   opaque copy ── opaqueRT, a copy of the texture (copyTextureToTexture)
+//   refraction ── as above, jittered with the scene
 //   water ── sceneColor and velocity (sceneMRT), depth-tested against the opaque depth
 //   surface resolve ── surfaceRT, copied at the frame's end into surfaceDepthPrev (the next
 //     frame's history of the nearest surface)
@@ -221,6 +227,8 @@ const HALF: SizeClass = { of: 'render', scale: 0.5, min: 1 };
 const CANVAS: SizeClass = { of: 'canvas' };
 // what the water pass draws in a frame without water: nothing
 const NO_WATER = new THREE.Scene();
+// The refraction pass's only attachment, cleared to zero coverage (alpha 0: nothing drawn there).
+const REFRACTION_MRT: THREE.MRTNode = mrt( { refraction: output } ).setClearColor( 'refraction', new THREE.Color( 0, 0, 0 ), 0 );
 
 /** What a frame draws (`Pipeline.render`'s argument). `rainScene`: the rain, while it shows (under the
  * temporal modes with the storm's spray in it, but for what draws after the resolve: see `overlay`).
@@ -582,10 +590,17 @@ export class Pipeline {
 	/** The frame graph: it owns the targets below and sizes them. */
 	readonly graph: FrameGraph<PipelineFrame>;
 	/** The graph's textures that materials outside the pipeline read: the resolved opaque colour
-	 * and linear depth (the water, the spray, the rain) and the nearest surface's depth. */
-	readonly textures: { readonly opaqueColor: THREE.Texture; readonly linearDepth: THREE.Texture; readonly surfaceDepth: THREE.Texture };
+	 * and linear depth (the water, the spray, the rain), the nearest surface's depth and the
+	 * refraction pass's colour and depth (the water). */
+	readonly textures: {
+		readonly opaqueColor: THREE.Texture; readonly linearDepth: THREE.Texture; readonly surfaceDepth: THREE.Texture;
+		readonly refraction: THREE.Texture; readonly refractionDepth: THREE.Texture;
+	};
+	/** The refraction pass's camera (ocean/Refraction.ts). */
+	readonly refraction = new RefractionView();
 	private readonly resources: {
 		sceneColor: ResourceHandle; sceneDepth: ResourceHandle; linearDepth: ResourceHandle; opaqueColor: ResourceHandle;
+		refraction: ResourceHandle; refractionDepth: ResourceHandle;
 		surfaceDepth: ResourceHandle; velocity: ResourceHandle | null; surfaceDepthPrev: ResourceHandle | null; veilReactive: ResourceHandle | null;
 		rainAir: ResourceHandle | null; rainOverlay: ResourceHandle | null; rainLayer: ResourceHandle | null; rainInput: ResourceHandle | null; rainBehind: ResourceHandle | null; rainGrade: ResourceHandle | null;
 		hdr: ResourceHandle | null; sharp: ResourceHandle; blur: ResourceHandle; display: ResourceHandle;
@@ -671,6 +686,9 @@ export class Pipeline {
 		const linearDepth = g.color( 'linearDepth', { size: RENDER, format: THREE.RGFormat, type: THREE.FloatType } );
 		const opaqueColor = g.color( 'opaqueColor', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
 		const surfaceDepth = g.color( 'surfaceDepth', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType } );
+		// the water's refraction source: the world under the sea, lit, and its depth (single-sampled)
+		const refraction = g.color( 'refraction', { size: REFRACTION_SIZE, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
+		const refractionDepth = g.depth( 'refractionDepth', { size: REFRACTION_SIZE, type: THREE.FloatType } );
 		// The temporal modes' motion vectors (rg: the NDC motion since the previous frame, b: the
 		// surface's class, a: its reactive weight; Motion.ts), and the nearest surface's depth of the
 		// frame before, for the resolve's disocclusion test (a copy at the frame's end).
@@ -709,14 +727,18 @@ export class Pipeline {
 		// the upscale's EASU image (the canvas's size) and the canvas (the resolve has its own)
 		const easu = O.fsrPort && ! RESOLVE && ! FSR3 ? g.color( 'FSR.easu', { size: { of: 'canvas' }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		const canvas = g.import( 'canvas', null, { of: 'canvas' } );
-		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, velocity, surfaceDepthPrev, veilReactive, rainAir, rainOverlay, rainLayer, rainInput, rainBehind, rainGrade, hdr, sharp, blur, display, viewDistance, easu, canvas };
+		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, refraction, refractionDepth, surfaceDepth, velocity, surfaceDepthPrev, veilReactive, rainAir, rainOverlay, rainLayer, rainInput, rainBehind, rainGrade, hdr, sharp, blur, display, viewDistance, easu, canvas };
 		// the targets the frame draws into, made now (the probes, the warm-ups and the water's
 		// textures need them before the first frame)
 		g.renderTarget( velocity ? [ sceneColor, velocity ] : [ sceneColor ], sceneDepth );
 		for ( const h of [ linearDepth, opaqueColor, display ] ) g.renderTarget( [ h ] );
+		g.renderTarget( [ refraction ], refractionDepth );
 		// (the view distance beside the nearest surface: the surface resolve writes both)
 		g.renderTarget( viewDistance ? [ surfaceDepth, viewDistance ] : [ surfaceDepth ] );
-		this.textures = { opaqueColor: g.texture( opaqueColor ), linearDepth: g.texture( linearDepth ), surfaceDepth: g.texture( surfaceDepth ) };
+		this.textures = {
+			opaqueColor: g.texture( opaqueColor ), linearDepth: g.texture( linearDepth ), surfaceDepth: g.texture( surfaceDepth ),
+			refraction: g.texture( refraction ), refractionDepth: g.texture( refractionDepth ),
+		};
 		// the sizes the passes read, the graph's shared extent uniforms (set with the targets' own
 		// sizes): the render's, its texel, the half-resolution blur's and the canvas's
 		const renderSize = g.extent( RENDER ), renderTexel = g.texel( RENDER ), halfSize = g.extent( HALF ), canvasSize = g.extent( CANVAS );
@@ -1603,6 +1625,7 @@ export class Pipeline {
 				return { label: 'opaque scene', scene: ( f ) => f.scene, camera: ( f ) => f.camera };
 
 			} );
+			const [ refraction, refractionDepth ] = this.declareRefraction();
 			// linear depth, and a copy of the opaque colour for the water to refract and reflect (a pass
 			// cannot sample the target it draws into)
 			g.addPass( 'depthResolve', 'quad', ( b ) => {
@@ -1624,6 +1647,8 @@ export class Pipeline {
 
 				b.read( opaqueColor );
 				b.read( linearDepth );
+				b.readOptional( refraction );
+				b.readOptional( refractionDepth );
 				sceneColor = b.write( sceneColor );
 				sceneDepth = b.depth( sceneDepth, { write: true } );
 				return {
@@ -1915,6 +1940,7 @@ export class Pipeline {
 			return { label: 'opaque scene', mrt: sceneMRT, jittered: true, scene: ( f ) => f.scene, camera: ( f ) => f.camera };
 
 		} );
+		const [ refraction, refractionDepth ] = this.declareRefraction();
 		// (one sample: the farthest of the samples is sample 0)
 		g.addPass( 'depthResolve', 'quad', ( b ) => {
 
@@ -1936,6 +1962,8 @@ export class Pipeline {
 
 			b.read( opaqueColor );
 			b.read( linearDepth );
+			b.readOptional( refraction );
+			b.readOptional( refractionDepth );
 			sceneColor = b.write( sceneColor );
 			velocity = b.write( velocity );
 			sceneDepth = b.depth( sceneDepth, { write: true } );
@@ -1973,6 +2001,27 @@ export class Pipeline {
 		// the nearest surface's depth, kept for the next frame (the resolve's; FSR keeps its own)
 		if ( this.resources.surfaceDepthPrev ) g.copyToPersistent( surfaceDepth, this.resources.surfaceDepthPrev );
 		return [ sceneColor, surfaceDepth, velocity, viewDistance, opaqueColor ];
+
+	}
+
+	// The water's refraction source (ocean/Refraction.ts): the world under the sea through the wider
+	// view, right after the opaque pass, with the scene's jitter under the temporal modes. Off with
+	// `flags.refraction = false` (the water then refracts the opaque copy alone: Water.ts). Returns
+	// the colour's and the depth's versions.
+	private declareRefraction(): [ ResourceHandle, ResourceHandle ] {
+
+		let { refraction, refractionDepth } = this.resources;
+		this.graph.addPass( 'refraction', 'scene', ( b ) => {
+
+			refraction = b.write( refraction, { clear: true } );
+			refractionDepth = b.depth( refractionDepth, { write: true, clear: true } );
+			return {
+				label: 'refraction', mrt: REFRACTION_MRT, jittered: TEMPORAL, when: () => debugFlags.refraction !== false, whenLabel: 'refraction',
+				before: ( f ) => this.refraction.update( f.camera ), scene: ( f ) => f.scene, camera: () => this.refraction.camera,
+			};
+
+		} );
+		return [ refraction, refractionDepth ];
 
 	}
 
@@ -2025,7 +2074,8 @@ export class Pipeline {
 
 	}
 
-	/** The resolved opaque colour (what the water refracts and reflects). */
+	/** The resolved opaque colour (what the water reflects, and refracts where the refraction image
+	 * holds nothing). */
 	get opaqueRT(): THREE.RenderTarget {
 
 		return this.graph.target( this.resources.opaqueColor );

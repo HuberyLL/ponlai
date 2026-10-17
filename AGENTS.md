@@ -72,7 +72,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   parameters from `KEY_RIM`, never a rim of its own).
 - `src/materials/`: procedural textures (the gravel bake: `ProceduralTextures.ts`), the terrain
   (`TerrainMaterial.ts`), wet surfaces, the meadow's habitat and soil-depth fields (`Meadow.ts`).
-- `src/ocean/`: FFT ocean, shore waves, caustics, water shading (`Water.ts`), the storm sea.
+- `src/ocean/`: FFT ocean, shore waves, caustics, water shading (`Water.ts`), the sea's large-scale
+  detail (`SeaDetail.ts`: gusts, slicks, windrows), the water's refraction source (`Refraction.ts`),
+  the storm sea.
 - `src/sky/`: atmosphere, environment bakes (`Sky.ts`), volumetric clouds, cirrus, the day cycle
   (`DayCycle.ts`), the night sky and its data (`NightSky.ts`, `StarCatalog.ts`), the weather: its sky presets, its wind's levels and heading and the auto chain (`Weather.ts`).
 - `src/weather/`: wind (`Wind.ts`: the weather's one wind, which every part reads from it, and the
@@ -262,11 +264,13 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   sampler type per depth texture per material (`SolarShadow.ts`).
 - Shadow passes keep `alphaTest` and `alphaMap` but not `map`; vegetation draws before the terrain
   (`renderOrder = -1`). See `vegetation/LeafTexture.ts` and `vegetation/Material.ts`.
-- The water samples neither the target it draws into nor more textures (it is at WebGPU's 16, its
-  varyings near the limit: `Water.ts`), so it takes no history or reactive input: what the resolve
-  needs from it goes out through its velocity. It reflects only what lies inside
-  `Water.reflectionBounds`: anything opaque placed off the island or above 3 m must grow that box
-  (the game's props do: main.ts `holdOpaque`).
+- The water samples neither the target it draws into nor many more textures (14 of WebGPU's 16
+  in its fragment stage: `Water.ts`), so it takes no history or reactive input: what the resolve
+  needs from it goes out through its velocity. It refracts the refraction pass's image of what lies
+  under the sea: a new mesh that can reach under the water joins it (`Refraction.ts`
+  `showUnderwater`), or the water shows what lies straight behind it in the opaque copy there. It
+  reflects only what lies inside `Water.reflectionBounds`: anything opaque placed off the island or
+  above 3 m must grow that box (the game's props do: main.ts `holdOpaque`).
 - New frame work is a pass on the frame graph, its targets declared with a size class and every
   texture it binds declared as a read (the attachment ops discard what nothing declares), never an
   rtt() inside another pass's material or a call around the graph (`Pipeline.ts`).

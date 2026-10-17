@@ -42,6 +42,13 @@ packages, into `dist/licenses/`.
     ripples and whitecap compositing of `WaterSurface.js` (fresh foam on the Jacobian, a foam
     pattern thresholded by the coverage, at a distance the coverage itself), ported from WGSL to
     TSL.
+    Its reflection march takes the steps that grow with the distance and the 260 m stop of
+    `WaterMaterial.js`'s `_waterSSR`, and its refraction the lookups into the refraction image.
+  - `src/ocean/SeaDetail.ts`: the gusts, slicks and windrows of `SeaDetail.js` (its noise texture
+    and sampling, ported from WGSL to TSL), driven by this project's wind.
+  - `src/ocean/Refraction.ts`: the refraction source of `RefractionPass.js` (the scene below the
+    water only, clipped above the sea level, half resolution, through a guard band wider than the
+    screen), as a frame graph pass drawing a clipping group.
   - `src/ocean/ShoreWaves.ts`, `src/ocean/ShoreWaveField.ts`: began as an adaptation of
     `ShoreWaves.js`; now mostly rewritten for this island's rocky boundary.
   - `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`: the atmosphere and solar disk from `Atmosphere.js` and
