@@ -130,7 +130,7 @@ Sky and weather:
 - `wind` (light, gentle, fresh, strong: the wind's level, a mean wind 10 m up of 1.5, 3.8, 7 and
   11 m/s) and `windDir` (its heading in degrees: where the wind comes from, in the sea spectrum's
   convention, atan2( z, x ) in the world's x-z plane; 40 is the prevailing wind, which the
-  landscape and the sea's spectrum keep), each over the sky's own wind (the gentle one from 40 for
+  landscape and the sea's swell keep; the wind sea turns with it), each over the sky's own wind (the gentle one from 40 for
   every kept sky, so `weather=fair` alone is the page it always was). Naming either holds the
   weather, as `weather` does; both are scene options. On a page, the GUI's Weather folder (`wind`,
   `wind heading`, over its transition seconds) or `__PONLAI__.setWind( { level, heading },

@@ -22,11 +22,12 @@ import { PREVAILING_HEADING, type WeatherState } from '../sky/Weather.ts';
 //   (`gustScroll`); and two clocks that do not follow the wind: `swayScroll`, which sets each
 //   kind's natural sway frequency, and `clock`, the leaves' flutter. A stronger wind bends a plant
 //   further, not faster (real plants swing near their own frequency in any wind).
-// - the sea: the FFT's spectrum follows `speed` (OceanFFT.setWind: tidewater's sea state at that
-//   wind), at the prevailing heading (`spectrumWind`), so the sea is the same function of the
-//   weather however the page reached it; the swell keeps its own offset from the heading (OceanFFT
-//   `swell.directionOffset`), the shore waves follow the swell. The waves do not turn with the
-//   weather's wind. `gale`, the wind beyond 1.5 U_ref, heaves the sea at the rock (Water.ts).
+// - the sea: the FFT's spectrum follows `speed` and `heading` (OceanFFT.setWind: tidewater's sea
+//   state at that wind), so the sea is the same function of the weather however the page reached
+//   it: the wind sea turns with the weather's wind, while the swell keeps the prevailing heading
+//   (`spectrumWind`) and its own offset from it (OceanFFT `swellHeading`,
+//   `swell.directionOffset`), and the shore waves follow the swell. `gale`, the wind beyond
+//   1.5 U_ref, heaves the sea at the rock (Water.ts).
 //   Around the island the sea's gusts (its cat's paws) are the meadow's: `gustAt`, the gust map
 //   below, read by SeaDetail.ts, so a gust crosses from the water onto the meadow and off again
 //   as one patch; farther out tidewater's octaves drift with `displacement`.
@@ -483,12 +484,13 @@ export class Wind {
 	get gustiness(): number { return this.currentGustiness; }
 	get time(): number { return this.elapsed; }
 
-	/** The wind the sea's spectrum starts from (OceanFFT's `windSpeed` and `windDirection`): the
-	 * prevailing heading, which it keeps, and REFERENCE_SPEED, which the weather's own speed replaces
-	 * (OceanFFT.setWind), so a page that changed its weather draws the sea a page loaded in it draws. */
-	get spectrumWind(): { windSpeed: number; windDirection: number } {
+	/** The wind the sea's spectrum starts from (OceanFFT's `windSpeed`, `windDirection` and
+	 * `swellHeading`): REFERENCE_SPEED and the prevailing heading, which the weather's own speed and
+	 * heading replace (OceanFFT.setWind), so a page that changed its weather draws the sea a page
+	 * loaded in it draws; the swell keeps the prevailing heading. */
+	get spectrumWind(): { windSpeed: number; windDirection: number; swellHeading: number } {
 
-		return { windSpeed: REFERENCE_SPEED, windDirection: PREVAILING_HEADING };
+		return { windSpeed: REFERENCE_SPEED, windDirection: PREVAILING_HEADING, swellHeading: PREVAILING_HEADING };
 
 	}
 

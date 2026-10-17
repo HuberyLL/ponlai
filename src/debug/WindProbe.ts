@@ -46,7 +46,8 @@ import type { Bounds } from '../world/WorldShapes.ts';
 // whether its material has a wind displacement.
 // `w5` (scene jumps and seeks, so last): for each kept weather and a few presets where every part
 // travels, as angles and speeds: the vegetation's wind, the weather's heading, the sea and its
-// swell (the FFT's headings), the open sea's gusts (SeaDetail.ts: the air's displacement times
+// swell (the FFT's headings: the wind sea's turns with the weather, the swell's stays on the
+// prevailing heading plus its offset), the open sea's gusts (SeaDetail.ts: the air's displacement times
 // OPEN_DRIFT; around the island they are the meadow's, `gust.sea`), the sea fog (the air's
 // displacement), the cumulus (their weather map
 // and shape noise drift together; `evolve` moves the shape vertically, in place) and the cirrus,
@@ -65,7 +66,7 @@ export interface WindProbeContext {
 	wind: Wind;
 	weather: { state: { windSpeed: number; windDirection: number; gustiness: number } };
 	sky: { clouds: { frontAxis?: { value: THREE.Vector2 }; cirrusAxis?: { value: THREE.Vector2 }; layerOffsets?: () => { cumulus: THREE.Vector2; cirrus: THREE.Vector2 } } };
-	fft: { params: { windDirection: number }; swell: { directionOffset: number } };
+	fft: { params: { windDirection: number }; swellDirection: number };
 	establishScene: ( scene: never ) => Promise<unknown>; // main.ts's, with { weather, preset }
 	setTime: ( t: number ) => Promise<unknown>; // main.ts's seek of the scene clock
 	data: () => WorldData;
@@ -532,7 +533,7 @@ async function directions( ctx: WindProbeContext, o: Options ) {
 		const fog = b.displacement.clone().sub( a.displacement ).divideScalar( dt );
 		const seaGusts = fog.clone().multiplyScalar( OPEN_DRIFT );
 		// the FFT's heading is the spectrum's; the positive inverse FFT travels opposite it
-		const h = ctx.fft.params.windDirection * Math.PI / 180, hs = ( ctx.fft.params.windDirection + ctx.fft.swell.directionOffset ) * Math.PI / 180;
+		const h = ctx.fft.params.windDirection * Math.PI / 180, hs = ctx.fft.swellDirection * Math.PI / 180;
 		const sea = deg( { x: - Math.cos( h ), y: - Math.sin( h ) } ), swell = deg( { x: - Math.cos( hs ), y: - Math.sin( hs ) } );
 		const heading = ctx.weather.state.windDirection;
 		const weatherTravel = deg( { x: - Math.cos( heading * Math.PI / 180 ), y: - Math.sin( heading * Math.PI / 180 ) } );
@@ -540,7 +541,7 @@ async function directions( ctx: WindProbeContext, o: Options ) {
 		const travel = { vegetation, weather: weatherTravel, sea, swell, seaGusts: deg( seaGusts ), fog: deg( fog ), cumulus: deg( cumulus ), cirrus: deg( cirrusDrift ),
 			cloudFrontAxis: front ? deg( front ) : null, cirrusAxis: cirrus ? deg( cirrus ) : null };
 		rows.push( {
-			weather, preset, weatherHeading: heading, fftHeading: ctx.fft.params.windDirection,
+			weather, preset, weatherHeading: heading, fftHeading: ctx.fft.params.windDirection, swellHeading: ctx.fft.swellDirection,
 			windSpeed: ctx.weather.state.windSpeed, gustiness: ctx.weather.state.gustiness,
 			travel, speed: { seaGusts: r3( seaGusts.length() ), fog: r3( fog.length() ), cumulus: r3( cumulus.length() ), cirrus: r3( cirrusDrift.length() ) },
 			gapToVegetation: Object.fromEntries( Object.entries( travel ).filter( ( [ k, v ] ) => k !== 'vegetation' && v !== null ).map( ( [ k, v ] ) => [ k, gap( v as number, vegetation ) ] ) ),

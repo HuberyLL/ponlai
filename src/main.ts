@@ -447,7 +447,8 @@ shared.islandIrradianceSource = sky.islandIrradianceNode.mul( shared.skyFill );
 const textures = await bakeProceduralTextures( renderer );
 // tidewater's two wave systems at the prevailing heading (Wind.ts `spectrumWind`) and tidewater's
 // sea state for the wind (OceanSpectrum.ts `seaState`: its fetch, choppiness and swell), rebuilt
-// whenever the weather's wind speed changes (`setWind`, below in the frame loop).
+// whenever the weather's wind speed or heading changes (`setWind`, below in the frame loop: the
+// wind sea turns with the heading, the swell keeps the prevailing one).
 const sea = seaState( wind.spectrumWind.windSpeed );
 const fft = new OceanFFT( renderer, {
 	...wind.spectrumWind, fetch: sea.fetch, choppiness: sea.choppiness, distantSwell: { scale: sea.swell },
@@ -1580,7 +1581,7 @@ function tick( time: number ): void {
 	shared.skyIrradiance.value.set( sky.skyIrradiance.r, sky.skyIrradiance.g, sky.skyIrradiance.b ).multiplyScalar( strikeFill );
 	// the page's own wetness, in the game too (soaking and drying on the day clock)
 	shared.wetness.value = weatherEffects.wetness ? weather.state.wetness : 0;
-	fft.setWind( wind.speed );
+	fft.setWind( wind.speed, wind.heading );
 	rain!.uniforms.rain.value = shared.rain.value;
 	rain!.uniforms.wind.value.copy( shared.wind.velocity.value );
 	rain!.uniforms.waterLevel.value = shared.waterLevel.value;
