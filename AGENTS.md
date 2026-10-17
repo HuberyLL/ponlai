@@ -252,6 +252,11 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - TSL may compile a `select()` of large operands into branches: a node first built inside one is
   declared in that branch only, and the shader silently draws nothing. Select between values
   built before it (`.toVar()`), or blend with 0/1 weights (`Water.ts`).
+- An inline `Fn( ... )()` (no layout) is set up again in every stage that asks its type: one a
+  varying's value reaches runs its statements in the fragment stage too, and what it reads there
+  becomes more varyings (the meadow went past WebGPU's sixteen under the temporal modes). A branch
+  whose result reaches a varying is a `Fn( ... ).setLayout( ... )` taking its uniforms as arguments
+  (`Grass.ts` `flowerHead`).
 - A `DepthTexture` without a `RenderTarget` takes the renderer's sample count, so it is declared
   multisampled and cannot be sampled with a comparison; give it a render target. three picks one
   sampler type per depth texture per material (`SolarShadow.ts`).
