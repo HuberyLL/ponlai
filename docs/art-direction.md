@@ -107,14 +107,17 @@ art decision changes; reference images stay out of the repository.
   over the blades, which reads as plastic): the gaps between blades a deep, cooler green (never
   near black) under tips that stand out lighter and yellow-green where the sun shines through
   them; looking toward the sun the whole lawn glows, away from it it is plainer and greener; no
-  tall islands or patches scattered by noise (fields of tone, dryness or bare earth broke
-  the lawn into what read from the overview as camouflage and dark blotches), and no pattern of
-  dots on the blades. The island top is one sward, about 0.5 m, with no zones across it: tiers
-  of height and tint by the soil (a short yellow-green band along the windward coast, a taller,
-  deeper grass on deep soil, gravel patches inland) read from above as a map laid over the
-  meadow. Its layering comes from the grass itself: each tussock from about 0.6 to 1.4 times the
-  sward's height, its own colour and value, and now and then a low patch of one to a few short
-  tussocks (never a field of metres), where the low wildflowers grow. The sward runs to the edge on
+  fields of tone, dryness or bare earth (they broke the lawn into what read from the overview as
+  camouflage and dark blotches), and no pattern of dots on the blades. The island top is one
+  sward, about 0.5 m, with no zones across it: tiers of height and tint by the soil (a short
+  yellow-green band along the windward coast, a taller, deeper grass on deep soil, gravel patches
+  inland) read from above as a map laid over the meadow. Its layering comes from the grass itself:
+  each tussock from about 0.6 to 1.4 times the sward's height, its own colour and value, and now and
+  then a low patch of one to a few short tussocks, where the low wildflowers grow. As in a real
+  meadow its soil sets the odds: the sward rises a little where the soil is deep and damp and sinks
+  a little where it is thin, over some 14 m, and pockets of shallow soil a few metres across, a
+  tenth of the meadow, hold a short open turf with tussocks standing in it, its floor showing
+  between them: from above a soft mottling, tussock by tussock, never a zone, a line or a path. The sward runs to the edge on
   every coast, windward and lee alike: a windward lip shown short, yellow, thin over gravel and
   bared to the cliff's stone read from above as one more zone. Inside the grass
   there are no hard shadows, only a darkening toward the ground (a deep green, never black); the

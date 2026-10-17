@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { noise3, smoothstep } from '../world/noise.ts';
 import { GROWTH } from '../world/IslandGrowth.ts';
+import { cellStream } from '../world/Anchors.ts';
 export { MEADOW_MIN_UP, MEADOW_MAX_DROP, supportsMeadow } from '../world/MeadowSurface.ts';
 
 // The lawn is one grass colour (docs/art-direction.md): every tuft takes it and the turf under
@@ -10,12 +11,12 @@ export { MEADOW_MIN_UP, MEADOW_MAX_DROP, supportsMeadow } from '../world/MeadowS
 // root-to-tip colour (Grass.ts) carries the rest. Separate fields of tone, dryness and hue, and a
 // field of bare earth, once broke it into patches that from the overview read as camouflage and
 // dark blotches.
-// The growth field is the island top's structure for the root bed at the rim (Soil.ts). The sward
-// is one level over the whole island top (SWARD_HEIGHT): its layering comes from the tussocks
-// themselves (Grass.ts: each its own height, colour and value, and now and then a low patch of one
-// to a few of them), never from zones of the soil. Height tiers by the soil (short exposed turf, a
-// deep soil's taller grass) and their tints read from above as zoning across the island top, a map
-// laid over the meadow, and were taken off the screen. The soil's fields stay in code
+// The growth field is the island top's structure for the root bed at the rim (Soil.ts). The sward's
+// layering comes from the tussocks themselves (Grass.ts: each its own height, colour and value, and
+// now and then a low patch of one to a few of them), on odds and a level its soil sets
+// (`meadowVigour`, `meadowShallow`, below): never from zones of the soil. Height tiers by the soil
+// (short exposed turf, a deep soil's taller grass) and their tints read from above as zoning across
+// the island top, a map laid over the meadow, and were taken off the screen. The soil's fields stay in code
 // (`meadowSoil`, `meadowTurf`, `soilShort`, `soilDeep`): the habitat fields (`meadowMoisture`,
 // `meadowTurf`) site the wildflowers' patches, and the plants to come will be placed by them. The
 // sward runs to the edge on every coast: a windward lip shown short, yellow, thin over gravel and
@@ -172,6 +173,72 @@ function meadowTongueWith( P: typeof SOIL, x: number, z: number ): number {
 	const [ f0, f1 ] = P.tongueRate, [ m0, m1 ] = P.tongueMix;
 	const n = noise3( along * f0 - 17.2, 9.1, across * f0 + 6.4 ) * m0 + noise3( along * f1 + 3.3, 12.7, across * f1 - 9.8 ) * m1;
 	return Math.min( Math.max( n * 0.5 + 0.5, 0 ), 1 );
+
+}
+
+// The sward's soil: how tall and close the turf grows, from the depth and water of its soil. In a
+// real meadow the grass is taller and lusher where the soil is deep and damp, and over shallow soil
+// (the rock near the surface, in pockets a few metres across) it is a short, open turf; they run
+// into each other over metres, tussock by tussock, never along a line. Two fields of fixed seeds:
+// - `meadowVigour`, the soil's depth and water over some 14 m (SWARD_SOIL.broad cycles per metre)
+//   and the moisture field's 25 m (SWARD_SOIL.wet of it): its median about 0.5, its 5th and 95th
+//   percentiles about 0.25 and 0.75 on a grown island. It sets the tall sward's level, gently.
+// - `meadowShallow`, the pockets of shallow soil: on a world-anchored lattice of POCKET.cell (m),
+//   a cell holds one for POCKET.share of them, times POCKET.vigour's factor (from its first where
+//   the vigour at its centre is 0 to its second at 1), its centre clear of the cell's sides by its
+//   largest radius (so a point looks at its own cell and the eight round it), its radius
+//   POCKET.radius (m), frayed by POCKET.fray of it by a noise of POCKET.frayRate cycles per metre;
+//   full over its inner POCKET.core of the radius and easing out to its edge. Grass.ts grows a
+//   pocket as a short open turf with tussocks standing in it, fewer toward its middle: a pocket of
+//   3 - 6 m every few cells, their weight 11 % of the first island's meadow, 8 % at the twelfth
+//   growth step.
+// Neither is the wind's exposure: from the coast's side a band of short turf across the windward
+// half of a small island read from above as a zone laid over the meadow. Nor the low end of a
+// noise: its 14 m drifts made a third of the first island short, and its 5 m valleys ran into
+// curving strips that read as footpaths.
+const SWARD_SOIL = { broad: 0.07, wet: 0.4 };
+const POCKET = { cell: 6, share: 0.45, vigour: [ 1.4, 0.6 ], radius: [ 1.2, 3 ], fray: 0.3, frayRate: 0.7, core: 0.35 };
+
+/** The sward's vigour at ( x, z ), 0 thin and dry to 1 deep and damp (see SWARD_SOIL). */
+export function meadowVigour( x: number, z: number ): number {
+
+	const n = noise3( x * SWARD_SOIL.broad + 3.7, 14.2, z * SWARD_SOIL.broad - 9.1 );
+	return Math.min( Math.max( 0.5 + 0.5 * ( n * ( 1 - SWARD_SOIL.wet ) + ( 2 * meadowMoisture( x, z ) - 1 ) * SWARD_SOIL.wet ), 0 ), 1 );
+
+}
+
+// each lattice cell's pocket ( x, z, radius ), or null, worked out once (a function of the cell
+// alone; the lattice over the land's extent holds about a thousand cells)
+const pockets = new Map<number, [ number, number, number ] | null>();
+function pocket( i: number, j: number ): [ number, number, number ] | null {
+
+	const key = i * 65536 + j;
+	let p = pockets.get( key );
+	if ( p !== undefined ) return p;
+	const m = POCKET.radius[ 1 ] * ( 1 + POCKET.fray ), span = POCKET.cell - 2 * m;
+	const r = cellStream( i, j, 523 );
+	const take = r(), px = i * POCKET.cell + m + r() * span, pz = j * POCKET.cell + m + r() * span;
+	const radius = POCKET.radius[ 0 ] + r() * ( POCKET.radius[ 1 ] - POCKET.radius[ 0 ] );
+	const v = POCKET.vigour[ 0 ] + ( POCKET.vigour[ 1 ] - POCKET.vigour[ 0 ] ) * meadowVigour( px, pz );
+	p = take < POCKET.share * v ? [ px, pz, radius ] : null;
+	pockets.set( key, p );
+	return p;
+
+}
+
+/** How far ( x, z ) lies in a pocket of shallow soil, 0 none to 1 its core (see POCKET). */
+export function meadowShallow( x: number, z: number ): number {
+
+	const ci = Math.floor( x / POCKET.cell ), cj = Math.floor( z / POCKET.cell );
+	const fray = 1 + POCKET.fray * noise3( x * POCKET.frayRate + 1.9, 7.3, z * POCKET.frayRate - 2.6 );
+	let shallow = 0;
+	for ( let j = cj - 1; j <= cj + 1; j ++ ) for ( let i = ci - 1; i <= ci + 1; i ++ ) {
+
+		const p = pocket( i, j );
+		if ( p ) shallow = Math.max( shallow, 1 - smoothstep( POCKET.core, 1, Math.hypot( x - p[ 0 ], z - p[ 1 ] ) / ( p[ 2 ] * fray ) ) );
+
+	}
+	return shallow;
 
 }
 
