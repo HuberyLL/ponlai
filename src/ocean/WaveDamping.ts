@@ -21,7 +21,7 @@ type V2 = THREE.Node<'vec2'>;
 // What the island's lee leaves of each band of waves at its deepest (the shelter field's R at 0).
 // The sea's waves are one field over the whole sea that knows nothing of the island: whatever the
 // lee leaves of them runs on behind it in their own direction, as if through the rock, and the
-// rock's white water follows them. An island casts a wave shadow: the short wind waves (1 to 5 m)
+// rock's foam follows them. An island casts a wave shadow: the short wind waves (1 to 5 m)
 // and the ripples are cut off, as waves much shorter than the island are, and a cove or the water
 // behind the island lies nearly smooth, with only a low swell bending in. So the lee leaves the
 // short waves a tenth, the ripples under a third (the water shades smoother there too, Water.ts)
