@@ -9,116 +9,93 @@ import { GraphDecl, GraphError, compileGraph, resolveSize } from '../../src/post
 
 const RENDER = { of: 'render' };
 const CANVAS = { of: 'canvas' };
-// half the render, at least a texel: the blooms' results, the blur and the light shafts
+// half the render, at least a texel: the light shafts
 const HALF = { of: 'render', scale: 0.5, min: 1 };
+// the water's refraction source (src/ocean/Refraction.ts REFRACTION_SIZE: half the render, times
+// the guard band's 1.3; that module imports three, so the scale is restated here)
+export const REFRACTION = { of: 'render', scale: 0.5 * 1.3, min: 1 };
 
 
-// ---- the blooms (src/post/BloomChains.ts): the chains drawn together, a high pass and each mip's
-// two blurs into every chain's target at once (an MRT with two chains), then a composite per chain
-// into its first horizontal target
+// ---- tidewater's physical bloom (src/post/PhysicalBloom.ts): five downsamples from the bloom's
+// input to 1/2 ... 1/32 of the render, then four upsamples, each adding the level above it, back
+// to 1/2; the reader takes the last upsample
 
-const MIPS = 5;
-const mipSize = ( i ) => ( { of: 'render', scale: 0.5 / 2 ** i, min: 1 } );
-const mipKey = ( i ) => `render:${ 0.5 / 2 ** i }:0:1`;
-const bloomNames = ( n ) => [ 'bloom', 'glow' ].slice( 0, n );
-export const bloomLabel = ( n ) => n === 2 ? 'bloom & wide glow' : 'bloom';
+const LEVELS = 5;
+const levelSize = ( i ) => ( { of: 'render', scale: 0.5 / 2 ** i, min: 1 } );
+const levelKey = ( i ) => `render:${ 0.5 / 2 ** i }:0:1`;
+const BLOOM_LABEL = 'bloom';
 
-/** The chains' targets, in BloomChains' order of declaration. */
-export function declareBloomTargets( g, n ) {
+/** The bloom's targets, in PhysicalBloom's order of declaration. */
+export function declareBloomTargets( g ) {
 
-	const names = bloomNames( n );
 	const color = ( name, size ) => g.color( name, { size, format: 'RGBA', type: 'HalfFloat' } );
-	const bright = names.map( ( name ) => color( `${ name }.bright`, mipSize( 0 ) ) );
-	const horizontal = names.map( ( name ) => Array.from( { length: MIPS }, ( _, i ) => color( `${ name }.h${ i }`, mipSize( i ) ) ) );
-	const vertical = names.map( ( name ) => Array.from( { length: MIPS }, ( _, i ) => color( `${ name }.v${ i }`, mipSize( i ) ) ) );
-	return { bright, horizontal, vertical };
+	const down = Array.from( { length: LEVELS }, ( _, i ) => color( `bloom.down${ i }`, levelSize( i ) ) );
+	const up = Array.from( { length: LEVELS - 1 }, ( _, i ) => color( `bloom.up${ i }`, levelSize( i ) ) );
+	return { down, up };
 
 }
 
-/** BloomChains.passes: returns each chain's result. */
+/** PhysicalBloom.passes: the first downsample's reads of the input declared by `reads`; returns
+ * the result's version (the last upsample's). */
 export function declareBloomPasses( g, t, reads ) {
 
-	const n = t.bright.length, label = bloomLabel( n ), mrt = n > 1 ? {} : null;
-	const names = bloomNames( n );
-	const bright = [ ...t.bright ], horizontal = t.horizontal.map( ( m ) => [ ...m ] ), vertical = t.vertical.map( ( m ) => [ ...m ] );
-	g.addPass( 'bloomHigh', 'quad', ( b ) => {
+	const down = [ ...t.down ], up = [ ...t.up ];
+	for ( let i = 0; i < LEVELS; i ++ ) g.addPass( `bloomDown${ i }`, 'quad', ( b ) => {
 
-		reads( b );
-		for ( let c = 0; c < n; c ++ ) bright[ c ] = b.write( bright[ c ] );
-		return { label, mrt };
+		if ( i === 0 ) reads( b );
+		else b.read( down[ i - 1 ] );
+		down[ i ] = b.write( down[ i ] );
+		return { label: BLOOM_LABEL };
 
 	} );
-	for ( let i = 0; i < MIPS; i ++ ) {
+	for ( let i = LEVELS - 2; i >= 0; i -- ) g.addPass( `bloomUp${ i }`, 'quad', ( b ) => {
 
-		g.addPass( `bloomBlurH${ i }`, 'quad', ( b ) => {
+		b.read( i === LEVELS - 2 ? down[ LEVELS - 1 ] : up[ i + 1 ] );
+		b.read( down[ i ] );
+		up[ i ] = b.write( up[ i ] );
+		return { label: BLOOM_LABEL };
 
-			for ( let c = 0; c < n; c ++ ) b.read( i === 0 ? bright[ c ] : vertical[ c ][ i - 1 ] );
-			for ( let c = 0; c < n; c ++ ) horizontal[ c ][ i ] = b.write( horizontal[ c ][ i ] );
-			return { label, mrt };
-
-		} );
-		g.addPass( `bloomBlurV${ i }`, 'quad', ( b ) => {
-
-			for ( let c = 0; c < n; c ++ ) b.read( horizontal[ c ][ i ] );
-			for ( let c = 0; c < n; c ++ ) vertical[ c ][ i ] = b.write( vertical[ c ][ i ] );
-			return { label, mrt };
-
-		} );
-
-	}
-	names.forEach( ( name, c ) => g.addPass( `bloomComposite.${ name }`, 'quad', ( b ) => {
-
-		for ( let k = 0; k < MIPS; k ++ ) b.read( vertical[ c ][ k ] );
-		horizontal[ c ][ 0 ] = b.write( horizontal[ c ][ 0 ] );
-		return { label };
-
-	} ) );
-	return horizontal.map( ( m ) => m[ 0 ] );
+	} );
+	return up[ 0 ];
 
 }
 
-/** The blooms' passes, in order. */
-export const bloomPasses = ( n ) => [ 'bloomHigh', ...Array.from( { length: MIPS }, ( _, i ) => [ `bloomBlurH${ i }`, `bloomBlurV${ i }` ] ).flat(), ...bloomNames( n ).map( ( name ) => `bloomComposite.${ name }` ) ];
+/** The bloom's passes, in order. */
+export const BLOOM_PASSES = [ ...Array.from( { length: LEVELS }, ( _, i ) => `bloomDown${ i }` ), ...Array.from( { length: LEVELS - 1 }, ( _, i ) => `bloomUp${ LEVELS - 2 - i }` ) ];
 
-const halfW = ( name, size ) => ( { name, size, format: 'RGBA', type: 'HalfFloat', samples: 1 } );
-const joined = ( list ) => `${ list.join( '+' ) }|-`;
-/** The blooms' rows of the expected table (`hdr`: the high pass's reads, as `resource@version:mode`). */
-export function bloomTable( n, hdrReads ) {
+/** The bloom's rows of the expected table (`inputReads`: the first downsample's reads, as
+ * `resource@version:mode`), what each pass reads, and the result as its reader reads it. */
+export function bloomTable( inputReads ) {
 
-	const names = bloomNames( n ), label = bloomLabel( n );
 	const rows = [], reads = {};
-	const pass = ( name, size, targets, read ) => {
+	const pass = ( name, i, target, read ) => {
 
-		rows.push( { name, kind: 'quad', label, when: null, size, writes: targets.map( ( x ) => halfW( x, size ) ), depth: null, target: joined( targets ) } );
+		const size = levelKey( i );
+		rows.push( { name, kind: 'quad', label: BLOOM_LABEL, when: null, size, writes: [ { name: target, size, format: 'RGBA', type: 'HalfFloat', samples: 1 } ], depth: null, target: `${ target }|-` } );
 		reads[ name ] = read;
 
 	};
-	pass( 'bloomHigh', mipKey( 0 ), names.map( ( x ) => `${ x }.bright` ), hdrReads );
-	for ( let i = 0; i < MIPS; i ++ ) {
-
-		pass( `bloomBlurH${ i }`, mipKey( i ), names.map( ( x ) => `${ x }.h${ i }` ), names.map( ( x ) => i === 0 ? `${ x }.bright@1:sample` : `${ x }.v${ i - 1 }@1:sample` ) );
-		pass( `bloomBlurV${ i }`, mipKey( i ), names.map( ( x ) => `${ x }.v${ i }` ), names.map( ( x ) => `${ x }.h${ i }@1:sample` ) );
-
-	}
-	for ( const x of names ) pass( `bloomComposite.${ x }`, mipKey( 0 ), [ `${ x }.h0` ], Array.from( { length: MIPS }, ( _, k ) => `${ x }.v${ k }@1:sample` ) );
-	return { rows, reads, results: names.map( ( x ) => `${ x }.h0@2:sample` ) };
+	for ( let i = 0; i < LEVELS; i ++ ) pass( `bloomDown${ i }`, i, `bloom.down${ i }`, i === 0 ? inputReads : [ `bloom.down${ i - 1 }@1:sample` ] );
+	for ( let i = LEVELS - 2; i >= 0; i -- ) pass( `bloomUp${ i }`, i, `bloom.up${ i }`, [ i === LEVELS - 2 ? `bloom.down${ LEVELS - 1 }@1:sample` : `bloom.up${ i + 1 }@1:sample`, `bloom.down${ i }@1:sample` ] );
+	return { rows, reads, result: 'bloom.up0@1:sample' };
 
 }
 
-/** Today's msaa4 graph with a pass for every draw (Pipeline, AerialPerspective.passes, FSR), as
- * the expected table: the graph Pipeline declares (declarePipeline below) compiles to it. For the
- * post options of a variant:
- * `fogScale` (1: the full-resolution fog of post=full-fog), `bankSize` (0: no-bank),
- * `dofDistance` (false: inline-coc), `fsrPort` (false: three-fsr), `compositeOnce` (false:
- * inline-composite), `bloomChains` (1: the low tier's one bloom), `samples` (the scene's). */
+/** Today's msaa4 graph with a pass for every draw (Pipeline, the refraction, AerialPerspective and
+ * LightShafts.passes, PhysicalBloom, FSR), as the expected table: the graph Pipeline declares
+ * (declarePipeline below) compiles to it. For the `post=` switches of a variant: `fogScale` (1: the
+ * full-resolution fog of full-fog), `bankSize` (0: no-bank), `fsrPort` (false: three-fsr),
+ * `compositeOnce` (false: inline-composite); store-scene changes the ops only (`legacyDiscard`). */
 export function declareToday( options = {} ) {
 
-	const o = { fogScale: 0.5, bankSize: 2048, dofDistance: true, fsrPort: true, compositeOnce: true, bloomChains: 2, ...options };
+	const o = { fogScale: 0.5, bankSize: 2048, fsrPort: true, compositeOnce: true, ...options };
 	const g = new GraphDecl();
 	const k = Math.round( 1 / o.fogScale );
 	const h = {};
 	h.sceneColor = g.color( 'sceneColor', { size: RENDER, format: 'RGBA', type: 'HalfFloat', samples: 'scene' } );
 	h.sceneDepth = g.depth( 'sceneDepth', { size: RENDER, type: 'Float', samples: 'scene' } );
+	h.refraction = g.color( 'refraction', { size: REFRACTION, format: 'RGBA', type: 'HalfFloat' } );
+	h.refractionDepth = g.depth( 'refractionDepth', { size: REFRACTION, type: 'Float' } );
 	h.linearDepth = g.color( 'linearDepth', { size: RENDER, format: 'RG', type: 'Float' } );
 	h.opaqueColor = g.color( 'opaqueColor', { size: RENDER, format: 'RGBA', type: 'HalfFloat' } );
 	h.surfaceDepth = g.color( 'surfaceDepth', { size: RENDER, format: 'Red', type: 'Float' } );
@@ -129,25 +106,29 @@ export function declareToday( options = {} ) {
 		h.fogMarch = g.color( 'fogMarch', { size: { of: 'render', divisor: k }, format: 'RGBA', type: 'HalfFloat' } );
 
 	}
-	if ( o.dofDistance ) h.viewDistance = g.color( 'viewDistance', { size: RENDER, format: 'Red', type: 'Float' } );
-	if ( o.compositeOnce ) h.hdr = g.color( 'hdr', { size: RENDER, format: 'RGBA', type: 'HalfFloat' } );
-	h.sharp = g.color( 'sharp', { size: RENDER, format: 'RGBA', type: 'HalfFloat' } );
-	h.blur = g.color( 'blur', { size: HALF, format: 'RGBA', type: 'HalfFloat' } );
 	h.shaftsSource = g.color( 'shafts.source', { size: HALF, format: 'RGBA', type: 'HalfFloat' } );
 	h.shaftsRays = g.color( 'shafts.rays', { size: HALF, format: 'RGBA', type: 'HalfFloat' } );
-	// the bloom chains' results and the look glow's (three's targets, imported)
-	h.blooms = declareBloomTargets( g, o.bloomChains );
-	h.diffusion = g.import( 'diffusion', { size: HALF, format: 'RGBA', type: 'HalfFloat' } );
+	h.constants = g.color( 'postConstants', { size: { of: 'fixed', width: 1, height: 1 }, format: 'RGBA', type: 'Float' } );
+	if ( o.compositeOnce ) h.hdr = g.color( 'hdr', { size: RENDER, format: 'RGBA', type: 'HalfFloat' } );
+	h.bloom = declareBloomTargets( g );
+	h.sharp = g.color( 'sharp', { size: RENDER, format: 'RGBA', type: 'HalfFloat' } );
 	h.display = g.color( 'display', { size: RENDER, format: 'RGBA', type: 'Float' } );
 	if ( o.fsrPort ) h.easu = g.color( 'FSR.easu', { size: CANVAS, format: 'RGBA', type: 'HalfFloat' } );
 	h.canvas = g.import( 'canvas', { size: CANVAS }, true );
-	h.constants = g.color( 'postConstants', { size: { of: 'fixed', width: 1, height: 1 }, format: 'RGBA', type: 'Float' } );
 
 	g.addPass( 'opaque', 'scene', ( b ) => {
 
 		h.sceneColor = b.write( h.sceneColor, { clear: true } );
 		h.sceneDepth = b.depth( h.sceneDepth, { write: true, clear: true } );
 		return { label: 'opaque scene' };
+
+	} );
+	// the world under the sea through the refraction's wider view (its own single-sampled target)
+	g.addPass( 'refraction', 'scene', ( b ) => {
+
+		h.refraction = b.write( h.refraction, { clear: true } );
+		h.refractionDepth = b.depth( h.refractionDepth, { write: true, clear: true } );
+		return { label: 'refraction', mrt: {}, when: () => true, whenLabel: 'refraction' };
 
 	} );
 	g.addPass( 'depthResolve', 'quad', ( b ) => {
@@ -168,18 +149,18 @@ export function declareToday( options = {} ) {
 
 		b.read( h.opaqueColor );
 		b.read( h.linearDepth );
+		b.readOptional( h.refraction );
+		b.readOptional( h.refractionDepth );
 		h.sceneColor = b.write( h.sceneColor );
 		h.sceneDepth = b.depth( h.sceneDepth, { write: true } );
 		return { label: 'water' };
 
 	} );
-	// (and the depth of field's view distance beside it)
 	g.addPass( 'surfaceResolve', 'quad', ( b ) => {
 
 		b.read( h.sceneDepth, 'samples' );
 		h.surfaceDepth = b.write( h.surfaceDepth );
-		if ( h.viewDistance ) h.viewDistance = b.write( h.viewDistance );
-		return { label: 'depth & copy resolves', mrt: h.viewDistance ? {} : null };
+		return { label: 'depth & copy resolves' };
 
 	} );
 	g.addPass( 'rain', 'scene', ( b ) => {
@@ -265,54 +246,29 @@ export function declareToday( options = {} ) {
 		return { label: 'composite (air, fog, veil)' };
 
 	} );
-	// the blooms: the tight bloom and the wide glow drawn together (BloomChains)
-	h.blooms = declareBloomPasses( g, h.blooms, ( b ) => {
+	// the bloom, from hdr (from the scene's colour without the composite pass)
+	h.bloom = declareBloomPasses( g, h.bloom, ( b ) => {
 
-		if ( h.hdr ) {
-
-			b.read( h.hdr );
-			b.read( h.surfaceDepth );
-
-		} else compositeReads( b );
+		if ( h.hdr ) b.read( h.hdr );
+		else b.readOptional( h.sceneColor );
 
 	} );
-	// the sharp image (the composite and the blooms; the composite inline, inline-composite)
+	// the sharp image: the composite (inline without its pass) and the bloom
 	g.addPass( 'sharp', 'quad', ( b ) => {
 
 		if ( h.hdr ) b.read( h.hdr );
 		else compositeReads( b );
-		for ( const x of h.blooms ) b.read( x );
+		b.read( h.bloom );
 		h.sharp = b.write( h.sharp );
 		return { label: h.hdr ? 'sharp (composite + blooms)' : 'composite (air, fog, veil)' };
 
 	} );
-	// the depth of field's half-resolution gather
-	g.addPass( 'blur', 'quad', ( b ) => {
-
-		b.read( h.sharp );
-		b.read( h.viewDistance ?? h.surfaceDepth );
-		h.blur = b.write( h.blur );
-		return { label: 'tilt-shift blur', when: () => true, whenLabel: 'dof > 0' };
-
-	} );
-	// the look's glow, a bloom chain over the sharp image, while it shows
-	g.addPass( 'diffusion', 'chain', ( b ) => {
-
-		b.read( h.sharp );
-		b.read( h.surfaceDepth );
-		h.diffusion = b.write( h.diffusion );
-		return { label: 'look glow', when: () => true, whenLabel: 'look glow' };
-
-	} );
-	// the depth of field's mix, the glow, grade and look
+	// the grade
 	g.addPass( 'display', 'quad', ( b ) => {
 
 		b.read( h.sharp );
-		b.readOptional( h.blur );
-		b.readOptional( h.diffusion );
-		b.read( h.viewDistance ?? h.surfaceDepth );
 		h.display = b.write( h.display );
-		return { label: 'grade & look' };
+		return { label: 'grade' };
 
 	} );
 	g.addPass( 'output', 'chain', ( b ) => {
@@ -358,12 +314,13 @@ export function declareToday( options = {} ) {
 export const compileToday = ( options = {}, samples = 4, legacyDiscard ) =>
 	compileGraph( declareToday( options ).g, { sceneSamples: samples, ...( legacyDiscard ? { legacyDiscard } : {} ) } );
 
-/** The graph Pipeline declares (Pipeline's constructor and declarePasses, AerialPerspective.apply
- * and passes), in its order of declaration, for the post options of a variant as in declareToday:
- * every draw of the frame is a pass of its own. Compiled, it is today's graph (declareToday). */
+/** The graph Pipeline declares (Pipeline's constructor, declarePasses and declareRefraction,
+ * AerialPerspective.apply and passes, LightShafts.build and passes, PhysicalBloom), in its order of
+ * declaration, for the post options of a variant as in declareToday: every draw of the frame is a
+ * pass of its own. Compiled, it is today's graph (declareToday). */
 export function declarePipeline( options = {} ) {
 
-	const o = { fogScale: 0.5, bankSize: 2048, dofDistance: true, fsrPort: true, compositeOnce: true, bloomChains: 2, ...options };
+	const o = { fogScale: 0.5, bankSize: 2048, fsrPort: true, compositeOnce: true, ...options };
 	const g = new GraphDecl();
 	const k = Math.round( 1 / o.fogScale );
 	const h = {};
@@ -373,11 +330,11 @@ export function declarePipeline( options = {} ) {
 	h.linearDepth = g.color( 'linearDepth', { size: RENDER, format: 'RG', type: 'Float' } );
 	h.opaqueColor = g.color( 'opaqueColor', { size: RENDER, format: 'RGBA', type: 'HalfFloat' } );
 	h.surfaceDepth = g.color( 'surfaceDepth', { size: RENDER, format: 'Red', type: 'Float' } );
+	h.refraction = g.color( 'refraction', { size: REFRACTION, format: 'RGBA', type: 'HalfFloat' } );
+	h.refractionDepth = g.depth( 'refractionDepth', { size: REFRACTION, type: 'Float' } );
 	if ( o.compositeOnce ) h.hdr = g.color( 'hdr', { size: RENDER, format: 'RGBA', type: 'HalfFloat' } );
 	h.sharp = g.color( 'sharp', { size: RENDER, format: 'RGBA', type: 'HalfFloat' } );
-	h.blur = g.color( 'blur', { size: HALF, format: 'RGBA', type: 'HalfFloat' } );
 	h.display = g.color( 'display', { size: RENDER, format: 'RGBA', type: 'Float' } );
-	if ( o.dofDistance ) h.viewDistance = g.color( 'viewDistance', { size: RENDER, format: 'Red', type: 'Float' } );
 	if ( o.fsrPort ) h.easu = g.color( 'FSR.easu', { size: CANVAS, format: 'RGBA', type: 'HalfFloat' } );
 	h.canvas = g.import( 'canvas', { size: CANVAS }, true );
 	h.constants = g.color( 'postConstants', { size: { of: 'fixed', width: 1, height: 1 }, format: 'RGBA', type: 'Float' } );
@@ -392,12 +349,10 @@ export function declarePipeline( options = {} ) {
 	// LightShafts.build
 	h.shaftsSource = g.color( 'shafts.source', { size: HALF, format: 'RGBA', type: 'HalfFloat' } );
 	h.shaftsRays = g.color( 'shafts.rays', { size: HALF, format: 'RGBA', type: 'HalfFloat' } );
-	// Pipeline's constructor, after the composite: the bloom chains' results and the look glow's
-	// (three's targets)
-	h.blooms = declareBloomTargets( g, o.bloomChains );
-	h.diffusion = g.import( 'diffusion', { size: HALF, format: 'RGBA', type: 'HalfFloat' } );
+	// Pipeline's constructor, after the composite: PhysicalBloom
+	h.bloom = declareBloomTargets( g );
 
-	// declarePasses: the scene half
+	// declarePasses: the scene half (declareRefraction after the opaque scene)
 	g.addPass( 'opaque', 'scene', ( b ) => {
 
 		h.sceneColor = b.write( h.sceneColor, { clear: true } );
@@ -405,38 +360,27 @@ export function declarePipeline( options = {} ) {
 		return { label: 'opaque scene' };
 
 	} );
-	g.addPass( 'depthResolve', 'quad', ( b ) => {
+	g.addPass( 'refraction', 'scene', ( b ) => {
 
-		b.read( h.sceneDepth, 'samples' );
-		h.linearDepth = b.write( h.linearDepth );
-		return { label: 'depth & copy resolves' };
-
-	} );
-	g.addPass( 'opaqueCopy', 'quad', ( b ) => {
-
-		b.read( h.sceneColor );
-		h.opaqueColor = b.write( h.opaqueColor );
-		return { label: 'depth & copy resolves' };
+		h.refraction = b.write( h.refraction, { clear: true } );
+		h.refractionDepth = b.depth( h.refractionDepth, { write: true, clear: true } );
+		return { label: 'refraction', mrt: {}, when: () => true, whenLabel: 'refraction' };
 
 	} );
+	g.addPass( 'depthResolve', 'quad', ( b ) => ( b.read( h.sceneDepth, 'samples' ), h.linearDepth = b.write( h.linearDepth ), { label: 'depth & copy resolves' } ) );
+	g.addPass( 'opaqueCopy', 'quad', ( b ) => ( b.read( h.sceneColor ), h.opaqueColor = b.write( h.opaqueColor ), { label: 'depth & copy resolves' } ) );
 	g.addPass( 'water', 'scene', ( b ) => {
 
 		b.read( h.opaqueColor );
 		b.read( h.linearDepth );
+		b.readOptional( h.refraction );
+		b.readOptional( h.refractionDepth );
 		h.sceneColor = b.write( h.sceneColor );
 		h.sceneDepth = b.depth( h.sceneDepth, { write: true } );
 		return { label: 'water' };
 
 	} );
-	// (and the depth of field's view distance beside it)
-	g.addPass( 'surfaceResolve', 'quad', ( b ) => {
-
-		b.read( h.sceneDepth, 'samples' );
-		h.surfaceDepth = b.write( h.surfaceDepth );
-		if ( h.viewDistance ) h.viewDistance = b.write( h.viewDistance );
-		return { label: 'depth & copy resolves', mrt: h.viewDistance ? {} : null };
-
-	} );
+	g.addPass( 'surfaceResolve', 'quad', ( b ) => ( b.read( h.sceneDepth, 'samples' ), h.surfaceDepth = b.write( h.surfaceDepth ), { label: 'depth & copy resolves' } ) );
 	g.addPass( 'rain', 'scene', ( b ) => {
 
 		b.read( h.linearDepth );
@@ -463,12 +407,11 @@ export function declarePipeline( options = {} ) {
 
 	}
 	const fogReads = [ h.fogMarch, h.fogNearestDepth, h.fogBanks ].filter( Boolean );
-	// declarePasses: the post passes
-	// LightShafts.passes
+	// declarePasses: the post passes (LightShafts.passes first)
 	const shaftReads = [];
 	g.addPass( 'shaftsSource', 'quad', ( b ) => ( b.read( h.surfaceDepth ), shaftReads[ 0 ] = b.write( h.shaftsSource ), { label: 'light shafts', when: () => true, whenLabel: 'facing > 0' } ) );
 	g.addPass( 'shaftsRays', 'quad', ( b ) => ( b.readOptional( shaftReads[ 0 ] ), shaftReads[ 1 ] = b.write( h.shaftsRays ), { label: 'light shafts', when: () => true, whenLabel: 'facing > 0' } ) );
-	g.addPass( 'postConstants', 'quad', ( b ) => ( b.readOptional( shaftReads[ 0 ] ), h.constants = b.write( h.constants ), { label: 'composite (air, fog, veil)' } ) );
+	g.addPass( 'postConstants', 'quad', ( b ) => ( b.readOptional( shaftReads[ 0 ] ), h.constants = b.write( h.constants ), { label: FOG } ) );
 	const compositeReads = ( b ) => {
 
 		b.readOptional( h.sceneColor );
@@ -478,46 +421,23 @@ export function declarePipeline( options = {} ) {
 		b.read( h.constants );
 
 	};
-	if ( h.hdr ) g.addPass( 'composite', 'quad', ( b ) => ( compositeReads( b ), h.hdr = b.write( h.hdr ), { label: 'composite (air, fog, veil)' } ) );
-	const hdrReads = ( b ) => {
+	if ( h.hdr ) g.addPass( 'composite', 'quad', ( b ) => ( compositeReads( b ), h.hdr = b.write( h.hdr ), { label: FOG } ) );
+	const bloom = declareBloomPasses( g, h.bloom, ( b ) => {
 
-		if ( h.hdr ) {
+		if ( h.hdr ) b.read( h.hdr );
+		else b.readOptional( h.sceneColor );
 
-			b.read( h.hdr );
-			b.read( h.surfaceDepth );
-
-		} else compositeReads( b );
-
-	};
-	h.blooms = declareBloomPasses( g, h.blooms, hdrReads );
+	} );
 	g.addPass( 'sharp', 'quad', ( b ) => {
 
 		if ( h.hdr ) b.read( h.hdr );
 		else compositeReads( b );
-		for ( const x of h.blooms ) b.read( x );
+		b.read( bloom );
 		h.sharp = b.write( h.sharp );
-		return { label: h.hdr ? 'sharp (composite + blooms)' : 'composite (air, fog, veil)' };
+		return { label: h.hdr ? 'sharp (composite + blooms)' : FOG };
 
 	} );
-	g.addPass( 'blur', 'quad', ( b ) => {
-
-		b.read( h.sharp );
-		b.read( h.viewDistance ?? h.surfaceDepth );
-		h.blur = b.write( h.blur );
-		return { label: 'tilt-shift blur', when: () => true, whenLabel: 'dof > 0' };
-
-	} );
-	g.addPass( 'diffusion', 'chain', ( b ) => ( b.read( h.sharp ), b.read( h.surfaceDepth ), h.diffusion = b.write( h.diffusion ), { label: 'look glow', when: () => true, whenLabel: 'look glow' } ) );
-	g.addPass( 'display', 'quad', ( b ) => {
-
-		b.read( h.sharp );
-		b.readOptional( h.blur );
-		b.readOptional( h.diffusion );
-		b.read( h.viewDistance ?? h.surfaceDepth );
-		h.display = b.write( h.display );
-		return { label: 'grade & look' };
-
-	} );
+	g.addPass( 'display', 'quad', ( b ) => ( b.read( h.sharp ), h.display = b.write( h.display ), { label: 'grade' } ) );
 	g.addPass( 'output', 'chain', ( b ) => ( b.read( h.display ), h.canvas = b.write( h.canvas ), { label: 'output', when: () => true, whenLabel: '!upscaling' } ) );
 	if ( h.easu ) {
 
@@ -538,15 +458,16 @@ export const compilePipeline = ( options = {}, samples = 4, legacyDiscard ) =>
 
 // ---- the expected table of today's msaa4 graph
 
-const R = 'render:1:0:0', C = 'canvas:1', H = 'render:0.5:0:1';
+const R = 'render:1:0:0', C = 'canvas:1', H = 'render:0.5:0:1', RF = 'render:0.65:0:1';
 const w = ( name, size, format, type, samples = 1 ) => ( { name, size, format, type, samples } );
-const BLOOM = bloomTable( 2, [ 'hdr@1:sample', 'surfaceDepth@1:sample' ] );
+const BLOOM = bloomTable( [ 'hdr@1:sample' ] );
 export const TODAY = [
 	{ name: 'opaque', kind: 'scene', label: 'opaque scene', when: null, size: R, writes: [ w( 'sceneColor', R, 'RGBA', 'HalfFloat', 4 ) ], depth: { ...w( 'sceneDepth', R, null, 'Float', 4 ), write: true }, target: 'sceneColor|sceneDepth' },
+	{ name: 'refraction', kind: 'scene', label: 'refraction', when: 'refraction', size: RF, writes: [ w( 'refraction', RF, 'RGBA', 'HalfFloat' ) ], depth: { ...w( 'refractionDepth', RF, null, 'Float' ), write: true }, target: 'refraction|refractionDepth' },
 	{ name: 'depthResolve', kind: 'quad', label: 'depth & copy resolves', when: null, size: R, writes: [ w( 'linearDepth', R, 'RG', 'Float' ) ], depth: null, target: 'linearDepth|-' },
 	{ name: 'opaqueCopy', kind: 'quad', label: 'depth & copy resolves', when: null, size: R, writes: [ w( 'opaqueColor', R, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'opaqueColor|-' },
 	{ name: 'water', kind: 'scene', label: 'water', when: null, size: R, writes: [ w( 'sceneColor', R, 'RGBA', 'HalfFloat', 4 ) ], depth: { ...w( 'sceneDepth', R, null, 'Float', 4 ), write: true }, target: 'sceneColor|sceneDepth' },
-	{ name: 'surfaceResolve', kind: 'quad', label: 'depth & copy resolves', when: null, size: R, writes: [ w( 'surfaceDepth', R, 'Red', 'Float' ), w( 'viewDistance', R, 'Red', 'Float' ) ], depth: null, target: 'surfaceDepth+viewDistance|-' },
+	{ name: 'surfaceResolve', kind: 'quad', label: 'depth & copy resolves', when: null, size: R, writes: [ w( 'surfaceDepth', R, 'Red', 'Float' ) ], depth: null, target: 'surfaceDepth|-' },
 	{ name: 'rain', kind: 'scene', label: 'rain draw', when: 'rainVisible', size: R, writes: [ w( 'sceneColor', R, 'RGBA', 'HalfFloat', 4 ) ], depth: { ...w( 'sceneDepth', R, null, 'Float', 4 ), write: false }, target: 'sceneColor|sceneDepth' },
 	{ name: 'fogBank', kind: 'quad', label: 'composite (air, fog, veil)', when: 'fog && bankDue', size: 'fixed:2048x2048', writes: [ w( 'fogBanks', 'fixed:2048x2048', 'Red', 'HalfFloat' ) ], depth: null, target: 'fogBanks|-' },
 	{ name: 'fogDepth', kind: 'quad', label: 'composite (air, fog, veil)', when: 'fog', size: 'render:1:2:0', writes: [ w( 'fogNearestDepth', 'render:1:2:0', 'Red', 'Float' ) ], depth: null, target: 'fogNearestDepth|-' },
@@ -557,9 +478,7 @@ export const TODAY = [
 	{ name: 'composite', kind: 'quad', label: 'composite (air, fog, veil)', when: null, size: R, writes: [ w( 'hdr', R, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'hdr|-' },
 	...BLOOM.rows,
 	{ name: 'sharp', kind: 'quad', label: 'sharp (composite + blooms)', when: null, size: R, writes: [ w( 'sharp', R, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'sharp|-' },
-	{ name: 'blur', kind: 'quad', label: 'tilt-shift blur', when: 'dof > 0', size: H, writes: [ w( 'blur', H, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'blur|-' },
-	{ name: 'diffusion', kind: 'chain', label: 'look glow', when: 'look glow', size: H, writes: [ w( 'diffusion', H, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'diffusion|-' },
-	{ name: 'display', kind: 'quad', label: 'grade & look', when: null, size: R, writes: [ w( 'display', R, 'RGBA', 'Float' ) ], depth: null, target: 'display|-' },
+	{ name: 'display', kind: 'quad', label: 'grade', when: null, size: R, writes: [ w( 'display', R, 'RGBA', 'Float' ) ], depth: null, target: 'display|-' },
 	{ name: 'output', kind: 'chain', label: 'output', when: '!upscaling', size: C, writes: [ w( 'canvas', C, null, null ) ], depth: null, target: 'canvas|-' },
 	{ name: 'easu', kind: 'quad', label: 'output & FSR', when: 'upscaling', size: C, writes: [ w( 'FSR.easu', C, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'FSR.easu|-' },
 	{ name: 'upscaledOutput', kind: 'chain', label: 'output & FSR', when: 'upscaling', size: C, writes: [ w( 'canvas', C, null, null ) ], depth: null, target: 'canvas|-' },
@@ -567,28 +486,21 @@ export const TODAY = [
 
 // what each pass of today's graph reads (`resource@version:mode`, `?` optional)
 export const TODAY_READS = {
-	opaque: [], depthResolve: [ 'sceneDepth@1:samples' ], opaqueCopy: [ 'sceneColor@1:sample' ],
-	water: [ 'opaqueColor@1:sample', 'linearDepth@1:sample' ], surfaceResolve: [ 'sceneDepth@2:samples' ],
+	opaque: [], refraction: [], depthResolve: [ 'sceneDepth@1:samples' ], opaqueCopy: [ 'sceneColor@1:sample' ],
+	water: [ 'opaqueColor@1:sample', 'linearDepth@1:sample', 'refraction@1:sample?', 'refractionDepth@1:sample?' ], surfaceResolve: [ 'sceneDepth@2:samples' ],
 	rain: [ 'linearDepth@1:sample', 'surfaceDepth@1:sample' ], fogBank: [], fogDepth: [ 'surfaceDepth@1:sample' ],
 	fogMarch: [ 'fogNearestDepth@1:sample?', 'fogBanks@1:sample?' ],
 	shaftsSource: [ 'surfaceDepth@1:sample' ], shaftsRays: [ 'shafts.source@1:sample?' ], postConstants: [ 'shafts.source@1:sample?' ],
 	composite: [ 'sceneColor@3:sample?', 'surfaceDepth@1:sample', 'fogMarch@1:sample?', 'fogNearestDepth@1:sample?', 'fogBanks@1:sample?', 'shafts.source@1:sample?', 'shafts.rays@1:sample?', 'postConstants@1:sample' ],
 	...BLOOM.reads,
-	sharp: [ 'hdr@1:sample', ...BLOOM.results ], blur: [ 'sharp@1:sample', 'viewDistance@1:sample' ],
-	diffusion: [ 'sharp@1:sample', 'surfaceDepth@1:sample' ],
-	display: [ 'sharp@1:sample', 'blur@1:sample?', 'diffusion@1:sample?', 'viewDistance@1:sample' ],
+	sharp: [ 'hdr@1:sample', BLOOM.result ], display: [ 'sharp@1:sample' ],
 	output: [ 'display@1:sample' ], easu: [ 'display@1:sample' ], upscaledOutput: [ 'FSR.easu@1:sample?' ],
 };
 
 const ALL = TODAY.map( ( p ) => p.name );
-// a list of passes with the two chains' bloom passes swapped for one chain's
-const oneChain = ( list ) => {
-
-	const at = list.indexOf( 'bloomHigh' );
-	return [ ...list.slice( 0, at ), ...bloomPasses( 1 ), ...list.slice( at + bloomPasses( 2 ).length ) ];
-
-};
 const without = ( ...names ) => ALL.filter( ( n ) => ! names.includes( n ) );
+// the passes the bloom and the sharp image run after, a frame's tail
+const TAIL = [ 'postConstants', 'composite', ...BLOOM_PASSES, 'sharp', 'display' ];
 
 function compareTable( summary, expected ) {
 
@@ -612,7 +524,7 @@ export const checks = [
 			summary: x.summary(),
 			ops: Array.from( { length: x.fullMask + 1 }, ( _, m ) => [ x.ops( 'legacy', m ), x.ops( 'derived', m ) ] ),
 		} );
-		const variants = [ {}, { fogScale: 1 }, { fogScale: 0.25 }, { bankSize: 0 }, { dofDistance: false }, { fsrPort: false }, { compositeOnce: false }, { bloomChains: 1 }, { fogScale: 1, bankSize: 0, dofDistance: false, fsrPort: false, compositeOnce: false, bloomChains: 1 } ];
+		const variants = [ {}, { fogScale: 1 }, { fogScale: 0.25 }, { bankSize: 0 }, { fsrPort: false }, { compositeOnce: false }, { fogScale: 1, bankSize: 0, fsrPort: false, compositeOnce: false } ];
 		for ( const options of variants ) for ( const [ samples, discard ] of [ [ 4, undefined ], [ 1, undefined ], [ 4, [] ] ] ) {
 
 			const what = `${ JSON.stringify( options ) } samples ${ samples }${ discard ? ' store-scene' : '' }`;
@@ -628,13 +540,14 @@ export const checks = [
 
 		const c = compilePipeline();
 		const rows = ( t ) => t.passes.map( ( p ) => [ p.pass, p.colors.map( ( x ) => `${ x.resource }:${ x.load }/${ x.store }${ x.resolve === null ? '' : x.resolve ? '/resolve' : '/no-resolve' }` ), p.depth && `${ p.depth.resource }:${ p.depth.load }/${ p.depth.store }`, p.rewrite ] );
-		const rainOn = c.ops( 'legacy', c.maskOf( [ 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'blur', 'diffusion', 'output' ] ) );
+		const rainOn = c.ops( 'legacy', c.maskOf( [ 'refraction', 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'output' ] ) );
 		assert.deepEqual( rows( rainOn ), [
 			[ 'opaque', [ 'sceneColor:clear/store/resolve' ], 'sceneDepth:clear/store', false ],
+			[ 'refraction', [ 'refraction:clear/store' ], 'refractionDepth:clear/store', false ],
 			[ 'depthResolve', [ 'linearDepth:clear/store' ], null, false ],
 			[ 'opaqueCopy', [ 'opaqueColor:clear/store' ], null, false ],
 			[ 'water', [ 'sceneColor:load/store/resolve' ], 'sceneDepth:load/store', false ],
-			[ 'surfaceResolve', [ 'surfaceDepth:clear/store', 'viewDistance:clear/store' ], null, false ],
+			[ 'surfaceResolve', [ 'surfaceDepth:clear/store' ], null, false ],
 			[ 'rain', [ 'sceneColor:load/discard/resolve' ], 'sceneDepth:load/discard', true ],
 			[ 'fogBank', [ 'fogBanks:clear/store' ], null, false ],
 			[ 'fogDepth', [ 'fogNearestDepth:clear/store' ], null, false ],
@@ -645,16 +558,14 @@ export const checks = [
 			[ 'composite', [ 'hdr:clear/store' ], null, false ],
 			...BLOOM.rows.map( ( r ) => [ r.name, r.writes.map( ( x ) => `${ x.name }:clear/store` ), null, false ] ),
 			[ 'sharp', [ 'sharp:clear/store' ], null, false ],
-			[ 'blur', [ 'blur:clear/store' ], null, false ],
-			[ 'diffusion', [ 'diffusion:clear/store' ], null, false ],
 			[ 'display', [ 'display:clear/store' ], null, false ],
 			[ 'output', [ 'canvas:clear/store' ], null, false ],
 		] );
 		assert.equal( rainOn.rewrites, 1 );
-		const upscaled = c.ops( 'legacy', c.maskOf( [ 'rain', 'shaftsSource', 'shaftsRays', 'blur', 'easu', 'upscaledOutput' ] ) );
-		assert.deepEqual( upscaled.running.slice( - 9 - bloomPasses( 2 ).length ), [ 'shaftsSource', 'shaftsRays', 'postConstants', 'composite', ...bloomPasses( 2 ), 'sharp', 'blur', 'display', 'easu', 'upscaledOutput' ] );
+		const upscaled = c.ops( 'legacy', c.maskOf( [ 'rain', 'shaftsSource', 'shaftsRays', 'easu', 'upscaledOutput' ] ) );
+		assert.deepEqual( upscaled.running.slice( - 5 - TAIL.length ), [ 'rain', 'shaftsSource', 'shaftsRays', ...TAIL, 'easu', 'upscaledOutput' ] );
 		assert.equal( upscaled.rewrites, 1, 'the upscale rewrites nothing' );
-		assert.equal( c.ops( 'legacy', c.maskOf( [ 'output' ] ) ).rewrites, 0, 'without the rain nothing is discarded (the water\'s stores stay)' );
+		assert.equal( c.ops( 'legacy', c.maskOf( [ 'refraction', 'output' ] ) ).rewrites, 0, 'without the rain nothing is discarded (the water\'s stores stay)' );
 		const single = compilePipeline( {}, 1 );
 		assert.equal( single.ops( 'legacy', single.fullMask ).rewrites, 0, 'msaa=1: no samples to discard' );
 		const stored = compilePipeline( {}, 4, [] );
@@ -667,13 +578,15 @@ export const checks = [
 		const c = compileToday();
 		compareTable( c.summary(), TODAY );
 		assert.deepEqual( c.passNames, ALL );
-		assert.deepEqual( c.conditional.map( ( i ) => c.decl.passes[ i ].name ), [ 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'blur', 'diffusion', 'output', 'easu', 'upscaledOutput' ] );
+		assert.deepEqual( c.conditional.map( ( i ) => c.decl.passes[ i ].name ), [ 'refraction', 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'output', 'easu', 'upscaledOutput' ] );
 		assert.deepEqual( c.summary().targets.map( ( t ) => [ t.key, t.size, t.samples ] ), [
-			[ 'sceneColor|sceneDepth', R, 4 ], [ 'linearDepth|-', R, 1 ], [ 'opaqueColor|-', R, 1 ], [ 'surfaceDepth+viewDistance|-', R, 1 ],
+			[ 'sceneColor|sceneDepth', R, 4 ], [ 'refraction|refractionDepth', RF, 1 ], [ 'linearDepth|-', R, 1 ], [ 'opaqueColor|-', R, 1 ], [ 'surfaceDepth|-', R, 1 ],
 			[ 'fogBanks|-', 'fixed:2048x2048', 1 ], [ 'fogNearestDepth|-', 'render:1:2:0', 1 ], [ 'fogMarch|-', 'render:1:2:0', 1 ],
-			[ 'shafts.source|-', H, 1 ], [ 'shafts.rays|-', H, 1 ], [ 'postConstants|-', 'fixed:1x1', 1 ], [ 'hdr|-', R, 1 ], ...BLOOM.rows.map( ( r ) => [ r.target, r.size, 1 ] ), [ 'sharp|-', R, 1 ], [ 'blur|-', H, 1 ],
-			[ 'diffusion|-', H, 1 ], [ 'display|-', R, 1 ], [ 'canvas|-', C, 1 ], [ 'FSR.easu|-', C, 1 ],
+			[ 'shafts.source|-', H, 1 ], [ 'shafts.rays|-', H, 1 ], [ 'postConstants|-', 'fixed:1x1', 1 ], [ 'hdr|-', R, 1 ], ...BLOOM.rows.map( ( r ) => [ r.target, r.size, 1 ] ), [ 'sharp|-', R, 1 ],
+			[ 'display|-', R, 1 ], [ 'canvas|-', C, 1 ], [ 'FSR.easu|-', C, 1 ],
 		] );
+		// the refraction's view is wider than the screen: 1.3 times both ways at half the render
+		assert.deepEqual( resolveSize( REFRACTION, { render: { width: 2560, height: 1440 }, canvas: { width: 3840, height: 2160 } } ), { width: 1664, height: 936 } );
 		assert.equal( c.jitterSpan, null );
 
 	} ],
@@ -704,17 +617,16 @@ export const checks = [
 
 	} ],
 
-	[ 'variants: post=legacy parts change the graph as Pipeline builds it', () => {
+
+	[ 'variants: the post= switches change the graph as Pipeline builds it', () => {
 
 		const cases = [
 			[ 'full-fog', { fogScale: 1 }, without( 'fogDepth', 'fogMarch' ) ],
 			[ 'no-bank', { bankSize: 0 }, without( 'fogBank' ) ],
-			[ 'inline-coc', { dofDistance: false }, ALL ],
 			[ 'three-fsr', { fsrPort: false }, [ ...without( 'easu', 'upscaledOutput' ), 'upscaledOutputThree' ] ],
 			// (store-scene changes the ops only)
 			[ 'inline-composite', { compositeOnce: false }, without( 'composite' ) ],
-			[ 'one bloom chain (low)', { bloomChains: 1 }, oneChain( ALL ) ],
-			[ 'legacy (all)', { fogScale: 1, bankSize: 0, dofDistance: false, fsrPort: false, compositeOnce: false }, [ ...without( 'fogBank', 'fogDepth', 'fogMarch', 'composite', 'easu', 'upscaledOutput' ), 'upscaledOutputThree' ] ],
+			[ 'legacy (all)', { fogScale: 1, bankSize: 0, fsrPort: false, compositeOnce: false }, [ ...without( 'fogBank', 'fogDepth', 'fogMarch', 'composite', 'easu', 'upscaledOutput' ), 'upscaledOutputThree' ] ],
 		];
 		for ( const [ name, options, passes ] of cases ) {
 
@@ -723,22 +635,26 @@ export const checks = [
 			assert.deepEqual( c.culled, [], name );
 
 		}
+		// inline-composite: the bloom takes the scene's colour after the rain (which may be skipped),
+		// the sharp image evaluates the composite itself
+		const reads = Object.fromEntries( compileToday( { compositeOnce: false } ).summary().passes.map( ( p ) => [ p.name, p.reads ] ) );
+		assert.deepEqual( reads.bloomDown0, [ 'sceneColor@3:sample?' ] );
+		assert.deepEqual( reads.sharp, [ ...TODAY_READS.composite, BLOOM.result ] );
 
 	} ],
 
-	[ 'variants: rain off, fog off, dof 0 and upscaling select the passes that run', () => {
+	[ 'variants: refraction, rain, fog, the shafts and upscaling select the passes that run', () => {
 
 		const c = compileToday();
 		const run = ( ...enabled ) => c.running( c.maskOf( enabled ) ).map( ( i ) => c.decl.passes[ i ].name );
-		const base = [ 'opaque', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve' ];
+		const scene = ( ...extra ) => [ 'opaque', ...extra, 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve' ];
 		const shafts = [ 'shaftsSource', 'shaftsRays' ];
-		assert.deepEqual( run( 'rain', 'fogBank', 'fogDepth', 'fogMarch', ...shafts, 'blur', 'output' ), [ ...base, 'rain', 'fogBank', 'fogDepth', 'fogMarch', ...shafts, 'postConstants', 'composite', ...bloomPasses( 2 ), 'sharp', 'blur', 'display', 'output' ] );
-		assert.deepEqual( run( 'fogDepth', 'fogMarch', 'blur', 'output' ), [ ...base, 'fogDepth', 'fogMarch', 'postConstants', 'composite', ...bloomPasses( 2 ), 'sharp', 'blur', 'display', 'output' ], 'rain off, the sun away' );
-		assert.deepEqual( run( 'rain', ...shafts, 'blur', 'output' ), [ ...base, 'rain', ...shafts, 'postConstants', 'composite', ...bloomPasses( 2 ), 'sharp', 'blur', 'display', 'output' ], 'fog off' );
-		assert.deepEqual( run( 'rain', 'output' ), [ ...base, 'rain', 'postConstants', 'composite', ...bloomPasses( 2 ), 'sharp', 'display', 'output' ], 'fog off, dof 0, the sun away' );
-		assert.deepEqual( run( 'blur', 'easu', 'upscaledOutput' ), [ ...base, 'postConstants', 'composite', ...bloomPasses( 2 ), 'sharp', 'blur', 'display', 'easu', 'upscaledOutput' ], 'upscaling' );
-		assert.deepEqual( run( 'rain', 'blur', 'diffusion', 'output' ), [ ...base, 'rain', 'postConstants', 'composite', ...bloomPasses( 2 ), 'sharp', 'blur', 'diffusion', 'display', 'output' ], 'the look glow' );
-		assert.equal( c.fullMask, 2047 );
+		assert.deepEqual( run( 'refraction', 'rain', 'fogBank', 'fogDepth', 'fogMarch', ...shafts, 'output' ), [ ...scene( 'refraction' ), 'rain', 'fogBank', 'fogDepth', 'fogMarch', ...shafts, ...TAIL, 'output' ] );
+		assert.deepEqual( run( 'refraction', 'fogDepth', 'fogMarch', 'output' ), [ ...scene( 'refraction' ), 'fogDepth', 'fogMarch', ...TAIL, 'output' ], 'rain off, the sun away' );
+		assert.deepEqual( run( 'refraction', 'rain', ...shafts, 'output' ), [ ...scene( 'refraction' ), 'rain', ...shafts, ...TAIL, 'output' ], 'fog off' );
+		assert.deepEqual( run( 'rain', 'output' ), [ ...scene(), 'rain', ...TAIL, 'output' ], 'refraction off (the water refracts the opaque copy alone), fog off, the sun away' );
+		assert.deepEqual( run( 'refraction', 'easu', 'upscaledOutput' ), [ ...scene( 'refraction' ), ...TAIL, 'easu', 'upscaledOutput' ], 'upscaling' );
+		assert.equal( c.fullMask, 1023 );
 
 	} ],
 
