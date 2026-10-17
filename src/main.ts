@@ -1590,6 +1590,9 @@ function tick( time: number ): void {
 	if ( ! manualSun && environmentLook.exposure ) {
 
 		S.exposure = sky.grade.exposure;
+		// the night's grade (Pipeline NIGHT): none through the afterglow, all of it once the
+		// daylight has gone
+		S.night = 1 - THREE.MathUtils.smoothstep( sky.grade.daylight, 0.2, 0.45 );
 
 	}
 	skyElapsed += environmentDt;
