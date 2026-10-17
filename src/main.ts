@@ -20,8 +20,11 @@ import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.
 import { Wind, weatherWind } from './weather/Wind.ts';
 import { Rain, setRainShading } from './weather/Rain.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
+import { seaState } from './ocean/OceanSpectrum.ts';
 import { ShoreWaves } from './ocean/ShoreWaves.ts';
 import { Caustics } from './ocean/Caustics.ts';
+import { SeaDetail } from './ocean/SeaDetail.ts';
+import { showUnderwater } from './ocean/Refraction.ts';
 import { Water } from './ocean/Water.ts';
 import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
@@ -37,8 +40,7 @@ import { WIND_VIEW } from './debug/WindView.ts';
 import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';
 import { buildGrass, grassKind, plantGrass, setGrassQuality } from './world/Grass.ts';
 import { meadowCanopy } from './lighting/MeadowCanopy.ts';
-import { trackKeyRim } from './lighting/KeyRim.ts';
-import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName, type LookSettings } from './post/Pipeline.ts';
+import { Pipeline, postOptionsFromURL } from './post/Pipeline.ts';
 import { renderPixelRatio, dynamicMaxRatio, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
@@ -49,6 +51,7 @@ import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
+import { GroundBounce, installGroundBounce } from './lighting/GroundBounce.ts';
 import { islandSurfaceHeight, landBounds } from './world/WorldShapes.ts';
 import { LandLattice } from './world/IslandGrowth.ts';
 import { walkLoopDistance, walkPoints } from './world/WalkPath.ts';
@@ -299,6 +302,8 @@ const lighting = { skyFill: 1 };
 
 const sun = new THREE.DirectionalLight( 0xffffff, 1 );
 sun.castShadow = true;
+// (the water's refraction source draws the world under the sea lit by it: ocean/Refraction.ts)
+showUnderwater( sun );
 sun.shadow.mapSize.set( 2048, 2048 );
 // The map is fitted to the island's casters once the world exists, and redrawn in small steps of
 // the key light with a cross-fade (SunShadow). Its bias, 1 cm along the light ray, follows each
@@ -350,8 +355,6 @@ function publishLighting(): void {
 	sun.position.copy( sky.keyDir ).multiplyScalar( 120 ).add( sun.target.position );
 	shared.sunDir.value.copy( sky.keyDir );
 	shared.sunColor.value.set( sky.keyColor.r, sky.keyColor.g, sky.keyColor.b );
-	shared.glintScale.value = sky.glintScale;
-	trackKeyRim( sky.sunColor, sky.keyColor );
 	const cosI = Math.max( sky.keyDir.y, 0 );
 	shared.sunIntoWater.value = sky.keyDir.y > 0 ? 1 - fresnel( cosI, 1.333 ) : 0;
 	const eta = 1 / 1.333;
@@ -437,15 +440,17 @@ shared.skyIrradianceSource = sky.irradianceNode.mul( shared.skyFill );
 shared.islandIrradianceSource = sky.islandIrradianceNode.mul( shared.skyFill );
 
 const textures = await bakeProceduralTextures( renderer );
-// Recover mid-scale wave volume through wind/fetch, while the spectrum still filters fine crests.
-// Keep the swell broad and modest so it supports the body without becoming a dominant wave train.
-// The spectrum's wind is the weather's (Wind.ts `spectrumWind`); a weather change scales its
-// amplitudes (`oceanGain`, below in the frame loop) and never rebuilds it.
+// tidewater's two wave systems at the prevailing heading (Wind.ts `spectrumWind`) and tidewater's
+// sea state for the wind (OceanSpectrum.ts `seaState`: its fetch, choppiness and swell), rebuilt
+// whenever the weather's wind speed changes (`setWind`, below in the frame loop).
+const sea = seaState( wind.spectrumWind.windSpeed );
 const fft = new OceanFFT( renderer, {
-	...wind.spectrumWind, fetch: 3500, amplitude: 0.76, choppiness: 0.55, spread: 0.52,
-	swell: { height: 0.18 }, anisotropy: quality.water.fftAnisotropy,
+	...wind.spectrumWind, fetch: sea.fetch, choppiness: sea.choppiness, distantSwell: { scale: sea.swell },
+	anisotropy: quality.water.fftAnisotropy,
 } );
 const caustics = new Caustics( renderer, fft );
+// the sea's gusts, slicks and windrows (the water's roughness, and the caustics' through the wave maps)
+const seaDetail = new SeaDetail( shared );
 // the veil's shells and the sea's ripple layers are built into the rain's and the water's materials
 setRainShading( quality.rainShading );
 rain = new Rain( { count: runtimeQuality.rainDrops } );
@@ -490,10 +495,6 @@ if ( profiler ) {
 	};
 
 }
-const requestedTone = params.get( 'tone' ) as ToneCurve | null;
-if ( requestedTone && TONE_CURVES.includes( requestedTone ) ) pipeline.setToneMapping( requestedTone );
-const requestedLook = params.get( 'look' ) as LookName | null;
-pipeline.setLook( requestedLook && LOOKS.includes( requestedLook ) ? requestedLook : DEFAULT_LOOK );
 rain.bindOpaqueDepth( pipeline.depthRT.texture, pipeline.surfaceRT.texture );
 rainScene.add( rain.group );
 if ( rain.afterGroup ) afterScene.add( rain.afterGroup );
@@ -576,7 +577,11 @@ setLand( land, landOptions.step );
 // (its transform is the shared shoreXform), the floor's height and beds over the same bounds, the
 // rim ground over its own.
 const fields = new WorldFields( data, shared.shoreXform.value );
-const shoreWaves = new ShoreWaves( renderer, data, shared, fields.shore, fft );
+// the sunlight the ground bounces up (lighting/GroundBounce.ts), which every lit material adds: so
+// installed before any of them builds; its map shares the caustics' target
+const groundBounce = new GroundBounce( { renderer, shared, sunShadow, fields, target: caustics.target, layer: caustics.bounceLayer, cloud: ( position ) => sky.cloudVisibility( position ) } );
+installGroundBounce( groundBounce );
+const shoreWaves = new ShoreWaves( renderer, data, shared, fields.shore, fft, fields.floor );
 // The meadow's flowers keep clear of the islander's walking loop, 5 m in from the coast.
 const walk = walkPoints( data.walk );
 const walkDistance = walkLoopDistance( walk );
@@ -613,7 +618,7 @@ runtime.refractedSun = refractedSun;
 refractedSun.angleGate = THREE.MathUtils.degToRad( runtimeQuality.refractedSun.angleGate );
 // the stones', floor's and island parts' triangles under the water come with the chunks (World.ts)
 refractedSun.setCasters( world.group, world.subsets );
-refractedSun.bindTerrain( world.group );
+refractedSun.bindTerrain( world.group, caustics );
 await refractedSun.prepare();
 setGrassQuality( quality.grass );
 const grass = buildGrass( plantGrass( data.vegetation, data.rimGround, walkDistance, data.shore, data.rimLip ), shared, sunShadow );
@@ -741,11 +746,12 @@ const stormSea = new StormSea( renderer, fft, shared, fields.shore, shoreWaves, 
 } );
 water = new Water( {
 	fft, sky, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves,
-	seabedLook: { beds: fields.beds, variation: textures.normalsB },
-	land: landBox, refractedSun, sunShadow, storm: stormSea,
+	land: landBox, sunShadow, storm: stormSea, detail: seaDetail,
 	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, quality: quality.water,
-	shadowTaps: quality.shadow.water,
+	refraction: { color: pipeline.textures.refraction, depth: pipeline.textures.refractionDepth },
 } );
+// the light under the water follows the long waves the sea's surface shows (Caustics.ts, the wave maps)
+caustics.attachWaves( { fft, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves, detail: seaDetail } );
 applySkyFill();
 waterScene.add( water.mesh );
 ( AFTER_RESOLVE ? afterScene : TEMPORAL ? rainScene : waterScene ).add( stormSea.spray.mesh );
@@ -769,6 +775,7 @@ const growth = new Growth( {
 		water!.setLand( landBox );
 		for ( const box of heldOpaque ) water!.reflectionBounds.union( box );
 		setSunCasters();
+		groundBounce.invalidate();
 		// (asked before the pose changes: whether the camera holds the island view)
 		const follow = holdsFraming();
 		controls.setIsland( world.grounds, outline );
@@ -821,7 +828,6 @@ const reviewView = { camera: 'island' as CameraView };
 const fovWidening = { on: params.get( 'nearFov' ) !== 'off' };
 controls.nearFov = numberParam( 'nearFov', controls.nearFov );
 controls.widenFrom = numberParam( 'nearFovFrom', controls.widenFrom );
-let orbitDof = S.dof;
 const viewDirection = new THREE.Vector3();
 
 // The island view on this land at the `polar` and `az` options (degrees): the camera that just
@@ -962,7 +968,6 @@ function setCameraMode( mode: string ): void {
 
 	framingGlide.stop();
 	if ( controls.enabled ) settleOrbit();
-	if ( mode === 'free' && ! freeControls.enabled ) orbitDof = S.dof;
 	if ( mode === 'free' ) unwidenFov();
 	if ( mode === 'orbit' && freeControls.enabled ) {
 
@@ -974,8 +979,6 @@ function setCameraMode( mode: string ): void {
 	sceneEvent( 'camera mode' );
 	controls.enabled = mode === 'orbit';
 	freeControls.enabled = mode === 'free';
-	// Sharp sky details are essential when inspecting stars and the lunar disk.
-	S.dof = freeControls.enabled ? 0 : orbitDof;
 	applyOrbitLimit();
 	if ( controls.enabled ) controls.settle();
 	renderer.domElement.style.cursor = freeControls.enabled ? 'grab' : '';
@@ -1109,7 +1112,7 @@ antialiasingF.add( { mode: AA_MODE }, 'mode', aaChoices ).name( 'mode (reloads)'
 if ( pipeline.fsr3 ) antialiasingF.add( pipeline.fsr3.settings.fsr3, 'sharpness', 0, 1, 0.01 ).name( 'FSR sharpness' );
 if ( pipeline.temporal ) {
 
-	const T = pipeline.temporal.settings, K = pipeline.temporal.knobs;
+	const T = pipeline.temporal.settings;
 	antialiasingF.add( T, 'framesStill', 1, 32, 1 ).name( 'history frames, still' );
 	antialiasingF.add( T, 'framesMoving', 1, 32, 1 ).name( 'history frames, moving' );
 	antialiasingF.add( T, 'speedFull', 1, 64, 1 ).name( 'moving from (px/frame)' );
@@ -1121,7 +1124,6 @@ if ( pipeline.temporal ) {
 	antialiasingF.add( T.sharpness.taau, '0', 0, 2, 0.05 ).name( 'taau softness at 1:1' );
 	antialiasingF.add( T.sharpness.taau, '1', 0, 2, 0.05 ).name( 'taau softness at 2:1' );
 	antialiasingF.add( T, 'skyPassThrough' ).name( 'sky without history' );
-	antialiasingF.add( K.dofCut, 'value', 0, 1, 0.05 ).name( 'history cut in DoF blur' );
 	antialiasingF.add( T, 'restSettle', 0, 32, 1 ).name( 'rest: settle frames' );
 	antialiasingF.add( T, 'restSequence', 0, 64, 1 ).name( 'rest: jitter frames' );
 
@@ -1180,6 +1182,7 @@ sunF.add( sky, 'azimuth', - 180, 180, 1 ).onFinishChange( applySun );
 sunF.add( sky, 'sunIlluminance', 2, 20, 0.1 ).name( 'illuminance' ).onFinishChange( applySun );
 sunF.add( sky.atmosphere.mieScale, 'value', 0.1, 5, 0.01 ).name( 'aerosol scattering' ).onFinishChange( applySun );
 sunF.add( lighting, 'skyFill', 0, 3, 0.01 ).name( 'sky fill' ).onChange( applySkyFill );
+sunF.add( groundBounce.strength, 'value', 0, 2, 0.01 ).name( 'ground bounce' );
 const waterF = gui.addFolder( 'Water' );
 const optics = { clarity: 1.0, turbidity: 1.0 };
 const baseA = shared.sigA.value.clone(), baseS = shared.sigS.value.clone();
@@ -1194,9 +1197,8 @@ waterF.add( optics, 'clarity', 0.3, 3, 0.01 ).onChange( setOptics );
 waterF.add( optics, 'turbidity', 0.1, 4, 0.01 ).onChange( setOptics );
 waterF.add( W.backscatter, 'value', 0, 0.2, 0.001 ).name( 'backscatter' );
 waterF.add( W.roughness, 'value', 0.005, 0.2, 0.001 ).name( 'roughness' );
-waterF.add( W.glitter, 'value', 0, 20, 0.1 ).name( 'glitter' );
-waterF.add( W.skyCap, 'value', 0, 10, 0.1 ).name( 'sky glare cap (0 = off)' );
-waterF.add( W.sheen, 'value', 0, 1, 0.005 ).name( 'sun sheen' );
+waterF.add( W.sss, 'value', 0, 3, 0.01 ).name( 'crest translucency' );
+waterF.add( W.foamIntensity, 'value', 0, 2, 0.01 ).name( 'foam' );
 waterF.add( W.ssr, 'value', 0, 1, 1 ).name( 'SSR' );
 const waveF = gui.addFolder( 'Waves' );
 const rebuild = () => fft.rebuildSpectrum();
@@ -1214,70 +1216,20 @@ if ( game ) await game.addDebugFolder( gui );
 islanderF.add( characterLook.albedo, 'value', 0.05, 1, 0.01 ).name( 'palette exposure' );
 islanderF.add( characterLook.sunGain, 'value', 0, 2, 0.01 ).name( 'sun' );
 islanderF.add( characterLook.fillGain, 'value', 0, 10, 0.05 ).name( 'shade fill' );
-islanderF.add( characterLook.bounceGain, 'value', 0, 3, 0.01 ).name( 'turf bounce' );
 islanderF.add( characterLook.formFloor, 'value', 0, 1, 0.01 ).name( 'lit form floor' );
 islanderF.add( characterLook.softCloth, 'value', 0.005, 0.4, 0.005 ).name( 'cloth edge' );
 islanderF.add( characterLook.softSkin, 'value', 0.005, 0.4, 0.005 ).name( 'skin edge' );
-islanderF.add( characterLook.rimGain, 'value', 0, 4, 0.01 ).name( 'sun rim' );
 islanderF.add( characterLook.skyRimGain, 'value', 0, 4, 0.01 ).name( 'sky rim' );
 islanderF.add( characterLook.shadowSaturation, 'value', 0.5, 2, 0.01 ).name( 'shade saturation' );
+// tidewater's grade (Pipeline.ts TIDEWATER_GRADE), its exposure from the clock and the weather
 const postF = gui.addFolder( 'Post' );
-postF.add( S, 'toneMapping', TONE_CURVES ).name( 'tone curve' ).onChange( ( curve: ToneCurve ) => pipeline.setToneMapping( curve ) );
-postF.add( S, 'exposure', 0.1, 5, 0.01 );
-postF.add( S, 'saturation', 0, 2, 0.01 ).listen();
-postF.add( S, 'vibrance', 0, 1, 0.01 ).listen();
-postF.add( S, 'contrast', - 0.5, 1, 0.01 ).listen();
-postF.add( S, 'split', 0, 1, 0.01 ).name( 'split tone' );
-postF.addColor( S, 'lift' );
-postF.add( S, 'bloomStrength', 0, 1.5, 0.01 );
-postF.add( S, 'bloomThreshold', 0, 5, 0.01 );
-postF.add( S, 'bloomMaxLum', 0.5, 50, 0.1 ).name( 'bloom clamp (sky)' );
-postF.add( S, 'bloomSurfaceMaxLum', 0.5, 50, 0.1 ).name( 'bloom clamp (surfaces)' );
-postF.add( S, 'glowStrength', 0, 1, 0.01 ).name( 'glow' );
-postF.add( S, 'glowThreshold', 0, 3, 0.01 ).name( 'glow threshold' );
-postF.add( S, 'dof', 0, 1, 0.01 ).name( 'tilt-shift' ).listen();
-postF.add( S, 'dofRange', 0, 20, 0.1 );
-postF.add( S, 'dofMaxRadius', 0, 20, 0.1 );
+postF.add( S, 'exposure', 0.1, 5, 0.01 ).listen();
+postF.add( S, 'bloom', 0, 0.3, 0.005 );
+postF.add( S, 'warmth', - 0.1, 0.1, 0.005 );
+postF.add( S, 'saturation', 0, 2, 0.01 );
+postF.add( S, 'contrast', 0.8, 1.3, 0.01 );
 postF.add( S, 'vignette', 0, 1, 0.01 );
 postF.add( S, 'grain', 0, 0.05, 0.001 );
-// the look's controls, for the day's look and the night's
-function addLookControls( f: GUI, L: LookSettings ): void {
-
-	f.add( L, 'glow', 0, 1.5, 0.01 ).name( 'soft glow' ).listen();
-	f.add( L, 'glowThreshold', 0.05, 2, 0.01 ).name( 'glow from' ).listen();
-	f.add( L, 'glowRadius', 0, 1, 0.01 ).name( 'glow spread' ).listen();
-	f.add( L, 'glowWarmth', - 1, 1, 0.01 ).name( 'glow warmth' ).listen();
-	f.add( L, 'glowHalo', 0, 1, 0.01 ).name( 'glow into shade' ).listen();
-	f.add( L, 'greenSaturation', - 0.5, 1, 0.01 ).name( 'green saturation' ).listen();
-	f.add( L, 'greenBrightness', - 0.3, 0.5, 0.01 ).name( 'green brightness' ).listen();
-	f.add( L, 'greenHue', - 0.4, 0.4, 0.01 ).name( 'green hue' ).listen();
-	f.add( L, 'tealSaturation', - 0.5, 1, 0.01 ).name( 'water saturation' ).listen();
-	f.add( L, 'tealBrightness', - 0.3, 0.5, 0.01 ).name( 'water brightness' ).listen();
-	f.add( L, 'tealHue', - 0.4, 0.4, 0.01 ).name( 'water hue' ).listen();
-	f.addColor( L, 'shadowTint' ).name( 'shadow colour' ).listen();
-	f.add( L, 'shadowTone', 0, 1, 0.01 ).name( 'shadow tint' ).listen();
-	f.addColor( L, 'highlightTint' ).name( 'highlight colour' ).listen();
-	f.add( L, 'highlightTone', 0, 1, 0.01 ).name( 'highlight tint' ).listen();
-	f.add( L, 'pivot', 0.02, 0.8, 0.01 ).name( 'split pivot' ).listen();
-	f.add( L, 'shadowLift', 0, 0.2, 0.001 ).name( 'shadow lift' ).listen();
-	f.add( L, 'contrast', - 0.3, 0.5, 0.01 ).name( 'depth (contrast)' ).listen();
-	f.add( L, 'vignette', 0, 0.6, 0.01 ).listen();
-	f.add( L, 'sky', 0, 1, 0.01 ).name( 'on the sky' ).listen();
-	f.add( L, 'overcast', 0, 1, 0.01 ).name( 'kept in bad weather' ).listen();
-
-}
-const lookF = gui.addFolder( 'Look' );
-const L = pipeline.look;
-lookF.add( S, 'look', LOOKS ).name( 'preset' ).onChange( ( name: LookName ) => pipeline.setLook( name ) );
-addLookControls( lookF, L );
-// the night's look and bloom chains, which the day's cross into after sunset (Pipeline `nightLook`)
-const nightLookF = lookF.addFolder( 'Night' );
-nightLookF.add( S.night, 'bloomStrength', 0, 1.5, 0.01 ).name( 'bloom' );
-nightLookF.add( S.night, 'bloomThreshold', 0, 5, 0.01 ).name( 'bloom threshold' );
-nightLookF.add( S.night, 'glowStrength', 0, 1, 0.01 ).name( 'wide glow' );
-nightLookF.add( S.night, 'glowThreshold', 0, 3, 0.005 ).name( 'wide glow threshold' );
-nightLookF.add( S.night, 'glowMaxLum', 0.5, 10, 0.1 ).name( 'wide glow clamp' );
-addLookControls( nightLookF, pipeline.lookNight );
 if ( DEBUG ) {
 
 	// The frame graph's debug view (fgview): its choices from the graph's description. The graph
@@ -1622,32 +1574,16 @@ function tick( time: number ): void {
 	shared.skyIrradiance.value.set( sky.skyIrradiance.r, sky.skyIrradiance.g, sky.skyIrradiance.b ).multiplyScalar( strikeFill );
 	// the page's own wetness, in the game too (soaking and drying on the day clock)
 	shared.wetness.value = weatherEffects.wetness ? weather.state.wetness : 0;
-	fft.weatherGain.value.copy( shared.wind.oceanGain.value );
+	fft.setWind( wind.speed );
 	rain!.uniforms.rain.value = shared.rain.value;
 	rain!.uniforms.wind.value.copy( shared.wind.velocity.value );
 	rain!.uniforms.waterLevel.value = shared.waterLevel.value;
 	rain!.update( renderer, camera, simTime, shared.wind.displacement.value, pipeline.height, AFTER_RESOLVE ? pipeline.outputHeight : pipeline.height );
 	if ( ! manualSun && environmentLook.exposure ) {
 
-		const state = sky.grade;
-		S.exposure = state.exposure;
-		S.lift.setRGB( state.blackLift, state.blackLift, state.blackLift * 0.97 );
-		S.split = 0.16 + state.daylight * 0.29;
-		// The night returns to PBR Neutral's look as the sun sets: none while the sun is up (a low
-		// sun's bright sky needs AgX's shoulder), fully from about -3 degrees. AgX's grade darkens a
-		// dim frame, so a crossfade held back to -2 .. -6 degrees left the frame up to a fifth darker
-		// than PBR Neutral's just after sunset, and darker than the night.
-		S.nightCurve = 1 - THREE.MathUtils.smoothstep( state.daylight, 0.2, 0.45 );
-		// The look and the bloom chains cross into the night's over the same span: where the look
-		// used to fade out, the night's comes in.
-		S.nightLook = S.nightCurve;
-		// The night's cooler meadow (Pipeline `nightGreenTurn`): none through the afterglow, all of
-		// it once the sky is navy (the sun from -6 to -19 degrees).
-		S.nightGreen = 1 - THREE.MathUtils.smoothstep( sky.elevation, - 19, - 6 );
+		S.exposure = sky.grade.exposure;
 
 	}
-	// the look's sunlit layers follow the weather's sunlight, as the key light does
-	S.lookSunlight = weather.state.directVisibility;
 	skyElapsed += environmentDt;
 	const skyInterval = runtimeQuality.skyUpdateInterval;
 	const ws = weather.state;
@@ -1675,13 +1611,10 @@ function tick( time: number ): void {
 	stormSea.update( simTime, weather.state.storm, camera );
 	shoreWaves.update( fft, simTime );
 	// Whitewater is disabled in this scene; leave its history idle.
-	caustics.update( sky.keyDir );
+	caustics.update( sky.keyDir, camera );
+	groundBounce.update( sky.seaRadiance );
 	characters?.update( renderer, scene, sun, simTime, paused ? 0 : dt );
 	game?.render( renderer, sun, paused ? 0 : rawDt );
-	S.focusDistance = camera.position.distanceTo( controls.target );
-	// (the drops blur by the depth of field in the pixels they are drawn at: the canvas's after the
-	// resolve)
-	rain!.setFocus( S.focusDistance, S.dofRange, S.dofMaxRadius * ( AFTER_RESOLVE ? pipeline.outputHeight : pipeline.height ) / 900, S.dof );
 
 	// (the ground truth draws the storm's spray with the rain, in the overlay pass; taa and taau draw
 	// it with the streaks after the resolve)
@@ -1849,7 +1782,7 @@ if ( DEBUG && TEMPORAL ) console.info( 'motion check', motionCheck( motionPasses
 if ( profiler ) {
 
 	const { labelPonlaiPasses } = await import( './debug/FrameProfiler.ts' );
-	labelPonlaiPasses( profiler, { scene, waterScene, rainScene, pipeline, sky, rain, sunShadow, refractedSun, fft, stormSea, shoreWaves, caustics, characters } );
+	labelPonlaiPasses( profiler, { scene, waterScene, rainScene, pipeline, sky, rain, sunShadow, refractedSun, fft, stormSea, shoreWaves, caustics, groundBounce, characters } );
 
 }
 // the nodes r186 makes inside the first lit build, made by a throwaway one, so the frame's receivers
@@ -1927,7 +1860,7 @@ const setTime = ( t: number ) => {
 //   clock (hour or preset, moon phase, day length, paused), the scene clock (`t`, `paused`) and the
 //   wind integrated to it, the cloud override.
 // - The camera: the orbit's island view at the query's dist / polar / az (`placeOrbit`, as the load
-//   places it), the controls' limits and depth of field restored, in the query's camera mode.
+//   places it) and the controls' limits restored, in the query's camera mode.
 // - What the scenes before left behind is cleared: the sky bakes as the page's first bake (Sky.reset:
 //   both endpoints and atlases, the clouds as before the first frame), the lightning forgets its
 //   strikes, the storm sea its foam window, the islander its clips, the refracted sun its map
@@ -1996,6 +1929,7 @@ const establishScene = async ( scene: string | URLSearchParams | { weather?: Wea
 	stormSea.reset();
 	characters?.reset();
 	pipeline.air.invalidate();
+	groundBounce.invalidate();
 	shadowElapsed = 0;
 	// a fresh load starts at the held frame rate, not at a fallback the last scene fell to
 	pacer.reset();
@@ -2227,7 +2161,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 };
 
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, groundBounce, grass, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
 	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, weather, sky, fft, establishScene, setTime, data: () => shownData, vegetation }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes

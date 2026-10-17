@@ -145,7 +145,7 @@ function placeCamera( s, view ) {
 	// orbit's farthest zoom, which orbit() raises, bounds the ground's ray casts. Every view starts
 	// from the page's load state (recorded by the page's first view, which is always a fresh load),
 	// so its image does not depend on the view before it. The jump itself restores the camera mode,
-	// the island view (its fov), the pose and the depth of field.
+	// the island view (its fov) and the pose.
 	s.captureGrowth ??= { maxDistance: s.controls.maxDistance };
 	s.controls.maxDistance = s.captureGrowth.maxDistance;
 

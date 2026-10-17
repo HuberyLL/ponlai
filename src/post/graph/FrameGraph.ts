@@ -24,7 +24,7 @@ import { compileBound, compileChain, compileLatent, compileNodes, compileQuad, s
 // makes the target of a tuple ahead of the passes (code that still binds its targets by hand,
 // probes and warm-ups); the passes that later draw into the same tuple use that target. Every
 // target the graph makes follows its size class through `setExtents`, and targets the graph does
-// not own (three's bloom chains, which make their own) follow it through `onResize`.
+// not own (three's display nodes in a chain, which make their own) follow it through `onResize`.
 //
 // A texture may sit in several of those render targets (a resource written alone by one pass and
 // with a velocity attachment by another). In three r186 `RenderTarget.setSize` disposes the target,

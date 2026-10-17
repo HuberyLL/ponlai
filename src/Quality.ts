@@ -36,8 +36,7 @@
 // - runtime: setters the page applies through `applySkyQuality` (main.ts) at load; a debug page can
 //   override them there (`s.applyQuality( { ... } )`) to time one at a time.
 // Load knobs reach their modules as `water` (Water.ts; its `fftAnisotropy` goes to OceanFFT's
-// output targets), `grass` (`setGrassQuality`), `shadow` (`SunShadow.setFilter`; its `water` to
-// Water.ts's surface shadow), `rainShading` (`setRainShading`), `post` (`PostOptions` for
+// output targets), `grass` (`setGrassQuality`), `shadow` (`SunShadow.setFilter`), `rainShading` (`setRainShading`), `post` (`PostOptions` for
 // `new Pipeline`), `environmentSource` (`Sky.setEnvironmentSource`, before the first bake),
 // `frameRate` (FramePacer), `aa` (the anti-aliasing mode, post/Antialiasing.ts, which also chooses
 // the tier, since the vegetation's modules read the mode as they load), `taa` (the temporal
@@ -53,9 +52,8 @@
 // with the canopy light per vertex, fewer sea-fog steps and depth-of-field taps, a cheaper cloud
 // march and panorama refresh, slower sky bakes with the environment's PMREM on every second one
 // from a 256-wide source, a coarser refracted-sun gate and fewer rain drops; low also marches the sea fog at a quarter resolution and draws fewer veil
-// shells and ripple layers. Low keeps both bloom chains and the full storm foam: one merged chain
-// veiled a golden-hour island in glow, and the merged foam turned the crests' streaks into
-// scattered lace.
+// shells and ripple layers. Low keeps the full storm foam: the merged foam turned the crests'
+// streaks into scattered lace.
 //
 // This module imports types only, so the CPU-only tools can read the table under plain node.
 import type { WaterQuality } from './ocean/Water.ts';
@@ -170,13 +168,13 @@ export interface QualityProfile {
 	taa: TemporalSettings;
 	render: RenderScaleRule;
 	water: WaterQuality;
-	// the frame graph's structural options (sea fog, depth of field, bloom); the rest keep their
+	// the frame graph's structural options (sea fog, bloom); the rest keep their
 	// defaults
-	post: Pick<PostOptions, 'fogScale' | 'fogSteps' | 'bankSize' | 'dofTaps' | 'bloomChains'>;
+	post: Pick<PostOptions, 'fogScale' | 'fogSteps' | 'bankSize'>;
 	// the sun shadow's filter, for most receivers, for vegetation and for the sea's surface (both
 	// stepped maps alike). On the sea it shades only the glints and the subsurface glow, so a lighter
 	// filter there shows little at noon.
-	shadow: { surface: SolarShadowTaps; vegetation: SolarShadowTaps; water: SolarShadowTaps };
+	shadow: { surface: SolarShadowTaps; vegetation: SolarShadowTaps };
 	grass: GrassQuality;
 	// the rain veil's shells and the sea's ripple layers
 	rainShading: { veilShells: number; rippleLayers: number };
@@ -223,8 +221,8 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		taa: { ...TAA },
 		render: { dynamic: { max: 2, baselineShare: 2 / 3, floorShare: 0.5, step: 0.05 } },
 		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
-		post: { fogScale: 0.5, fogSteps: 12, bankSize: 2048, dofTaps: 16, bloomChains: 2 },
-		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH, water: PCSS_LIGHT },
+		post: { fogScale: 0.5, fogSteps: 12, bankSize: 2048 },
+		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH },
 		// 24 of each tuft's 48 blades, the kept ones twice as wide (they widen to keep the cover),
 		// at least 1.5 pixels wide under MSAA (Grass.ts `grassUniforms`): at the island view's 45 m
 		// a blade draws about two thirds as wide as 16 blades did, with the same flicker relative to
@@ -249,8 +247,8 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		taa: { ...TAA, sharpness: { taa: TAA.sharpness.taa, taau: [ 2.0, 1.5 ] } },
 		render: { budget: 1600 * 900 },
 		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
-		post: { fogScale: 0.5, fogSteps: 8, bankSize: 2048, dofTaps: 16, bloomChains: 2 },
-		shadow: { surface: PCSS_LIGHT, vegetation: BILINEAR, water: PCSS_LIGHT },
+		post: { fogScale: 0.5, fogSteps: 8, bankSize: 2048 },
+		shadow: { surface: PCSS_LIGHT, vegetation: BILINEAR },
 		grass: { lawnBlades: [ 12, 8, 4 ], bladeBands: [ 25, 45, 70 ], thinTufts: false, canopyPerVertex: true, minWidth: 2 },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 256,
@@ -268,11 +266,10 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		aa: 'msaa',
 		taa: { ...TAA, lite: true, framesStill: 12 },
 		render: { budget: 1280 * 720 },
-		// (one bloom chain veiled a golden-hour island in glow, and the merged storm foam turned
-		// the crests' streaks into scattered lace: both kept as on high)
+		// (the merged storm foam turned the crests' streaks into scattered lace: kept as on high)
 		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
-		post: { fogScale: 0.25, fogSteps: 8, bankSize: 1024, dofTaps: 16, bloomChains: 2 },
-		shadow: { surface: BILINEAR, vegetation: BILINEAR, water: BILINEAR },
+		post: { fogScale: 0.25, fogSteps: 8, bankSize: 1024 },
+		shadow: { surface: BILINEAR, vegetation: BILINEAR },
 		grass: { lawnBlades: [ 8, 8, 4 ], bladeBands: [ 25, 45, 70 ], thinTufts: false, canopyPerVertex: true, minWidth: 2 },
 		rainShading: { veilShells: 2, rippleLayers: 1 },
 		environmentSource: 256,
@@ -299,7 +296,7 @@ export function isQualityTier( value: unknown ): value is QualityTier {
 
 /** The tier's profile with `?tier.<knob path>=<value>` options over it, for A/B captures of one
  * knob (`tier.post.fogScale=0.5`, `tier.water.ssrRays=2`, `tier.grass.lawnBlades=16,8,4`,
- * `tier.shadow.water.soft=false`). A path
+ * `tier.shadow.surface.soft=false`). A path
  * must name an existing knob; numbers, booleans and comma lists are parsed. */
 export function qualityProfile( tier: QualityTier, search = location.search ): QualityProfile {
 

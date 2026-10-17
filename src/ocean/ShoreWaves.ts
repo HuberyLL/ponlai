@@ -5,7 +5,7 @@
  */
 
 import * as THREE from 'three/webgpu';
-import { Fn, If, texture, uniform, uv, float, vec2, vec4, dot, length, max, min, mix, smoothstep, exp, select } from 'three/tsl';
+import { Fn, If, texture, uniform, uv, float, int, vec2, vec4, dot, length, max, min, mix, smoothstep, exp, select } from 'three/tsl';
 import type { OceanFFT } from './OceanFFT.ts';
 import type { Shared } from '../shared.ts';
 import type { WorldData } from '../world/types.ts';
@@ -80,9 +80,11 @@ export class ShoreWaves {
 	private quad: THREE.QuadMesh;
 	private lastTime: number | undefined;
 	private lastReflection = - 1;
-	private readonly lastWeatherGain = new THREE.Vector3( - 1, - 1, - 1 );
 
-	constructor( renderer: THREE.WebGPURenderer, data: WorldData, shared: Shared, shore: THREE.Texture | THREE.TextureNode, fft: OceanFFT ) {
+	// `floor`: the seabed's height over the shore field's bounds (WorldFields.floor), for the waves'
+	// shallow-water damping (as the water's, OceanFFT.attenuation)
+	constructor( renderer: THREE.WebGPURenderer, data: WorldData, shared: Shared, shore: THREE.Texture | THREE.TextureNode, fft: OceanFFT,
+		floor: THREE.Texture | THREE.TextureNode ) {
 
 		this.renderer = renderer;
 		this.data = data;
@@ -113,14 +115,16 @@ export class ShoreWaves {
 			const exposure = this.shelter.sample( q ).level( float( 0 ) ).r;
 			const large = mix( float( 0.12 ), float( 1 ), exposure );
 			const medium = mix( float( 0.8 ), float( 1 ), exposure );
+			const depth = shared.waterLevel.sub( texture( floor, q ).level( float( 0 ) ).r );
 			const surface = vec4( 0 ).toVar();
 			// Low-pass contact energy: small capillary detail must not spawn separate white dots.
-			for ( let i = 0; i < 3; i ++ ) {
+			// (The two long cascades, waves over 5.5 m, take the long waves' damping, as in Water.ts.)
+			for ( let i = 0; i < fft.cascades; i ++ ) {
 
 				const at = p.div( fft.sizes[ i ] );
-				const damping = ( i === 0 ? large : i === 1 ? medium.mul( 0.7 ) : float( 0.12 ) ).mul( coastDamp( sd ) );
-				const height = texture( fft.displacementTextures[ i ], at ).level( float( 0 ) ).y;
-				const velocity = texture( fft.velocityTextures[ i ], at ).level( float( 0 ) ).xyz;
+				const damping = ( i <= 1 ? large : i === 2 ? medium.mul( 0.7 ) : float( 0.12 ) ).mul( coastDamp( sd ) ).mul( fft.attenuation( i, depth ) );
+				const height = texture( fft.displacement, at ).depth( int( i ) ).level( float( 0 ) ).y;
+				const velocity = texture( fft.velocity, at ).depth( int( i ) ).level( float( 0 ) ).xyz;
 				surface.addAssign( vec4( height, velocity ).mul( damping ) );
 
 			}
@@ -142,10 +146,11 @@ export class ShoreWaves {
 				const waterSD = max( sd, 0 );
 				const mirror = waterP.sub( normal.mul( waterSD.mul( 2 ) ) ), mq = toUV( mirror );
 				const exposure = this.shelter.sample( mq ).level( float( 0 ) ).r;
-				const reflected = texture( fft.displacementTextures[ 0 ], mirror.div( fft.sizes[ 0 ] ) ).level( float( 0 ) ).y
-					.mul( mix( float( 0.12 ), float( 1 ), exposure ) )
-					.add( texture( fft.displacementTextures[ 1 ], mirror.div( fft.sizes[ 1 ] ) ).level( float( 0 ) ).y
-						.mul( mix( float( 0.8 ), float( 1 ), exposure ) ).mul( 0.7 ) );
+				const mirrorDepth = shared.waterLevel.sub( texture( floor, mq ).level( float( 0 ) ).r );
+				const heightAt = ( c: number ) => texture( fft.displacement, mirror.div( fft.sizes[ c ] ) ).depth( int( c ) ).level( float( 0 ) ).y
+					.mul( fft.attenuation( c, mirrorDepth ) );
+				const reflected = heightAt( 0 ).add( heightAt( 1 ) ).mul( mix( float( 0.12 ), float( 1 ), exposure ) )
+					.add( heightAt( 2 ).mul( mix( float( 0.8 ), float( 1 ), exposure ) ).mul( 0.7 ) );
 				// Extend height into solid rock for filtering/derivatives only, with no land flow or foam.
 				// A ghost sample mirrored across a locally planar wall shares the incoming phase.
 				// It is a weak boundary approximation, not a reflection/diffraction fluid solver.
@@ -226,10 +231,8 @@ export class ShoreWaves {
 			this.lastTime = undefined;
 
 		}
-		// A paused preset can change the FFT's amplitude without changing its clock or base
-		// spectrum. Refresh those reflected fields too, without rebuilding shoreline geometry.
-		if ( time === undefined || ( time === this.lastTime && this.lastReflection === this.reflection.value &&
-			this.lastWeatherGain.equals( fft.weatherGain.value ) ) ) return;
+		// (a paused page whose wind changes rebuilds the FFT's spectrum, above, and bakes again)
+		if ( time === undefined || ( time === this.lastTime && this.lastReflection === this.reflection.value ) ) return;
 		const previousTarget = this.renderer.getRenderTarget();
 		// (temporal modes: the surface is baked into the target that held the field before last)
 		if ( this.surfaces.length > 1 ) {
@@ -244,7 +247,6 @@ export class ShoreWaves {
 		this.renderer.setRenderTarget( previousTarget );
 		this.lastTime = time;
 		this.lastReflection = this.reflection.value;
-		this.lastWeatherGain.copy( fft.weatherGain.value );
 
 	}
 

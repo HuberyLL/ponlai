@@ -33,7 +33,7 @@ const coarse = run( 0.05 ), fine = run( 0.01 );
 assert.ok( coarse.uniforms.displacement.value.distanceTo( fine.uniforms.displacement.value ) < 1e-6 );
 // the sea stays within its calm design in the light and gentle winds; the fresh and strong ones
 // build it beyond (Wind.ts `publish`)
-for ( const level of [ 'light', 'gentle' ] ) assert.ok( new Wind( createWindUniforms(), { speed: WIND_LEVELS[ level ].windSpeed } ).uniforms.oceanGain.value.toArray().every( ( gain ) => gain > 0 && gain < 1.4 ), level );
+for ( const level of [ 'light', 'gentle' ] ) assert.equal( new Wind( createWindUniforms(), { speed: WIND_LEVELS[ level ].windSpeed } ).uniforms.gale.value, 0, level );
 wind.reset( { time: 12 } );
 assert.ok( wind.uniforms.displacement.value.equals( start ), 'Explicit fixed-time reset must reproduce startup' );
 for ( const invalid of [ NaN, Infinity, - 1 ] ) assert.throws( () => wind.update( invalid ), RangeError );

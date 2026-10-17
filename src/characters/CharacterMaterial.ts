@@ -5,7 +5,7 @@ import {
 	diffuseColor, vertexColor,
 } from 'three/tsl';
 import { TEMPORAL } from '../post/Antialiasing.ts';
-import { KEY_RIM, keyRimLight } from '../lighting/KeyRim.ts';
+import { groundBounceLight } from '../lighting/GroundBounce.ts';
 import { motionNode, motionState, velocityOutput } from '../post/Motion.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import type { Shared } from '../shared.ts';
@@ -16,7 +16,7 @@ type V4 = THREE.Node<'vec4'>;
 type Reflected = { directDiffuse: V3; directSpecular: V3; indirectDiffuse: V3; indirectSpecular: V3 };
 
 // Characters are drawn rather than rendered: sunlight steps from light to shade over a narrow
-// band, the shade is filled by the same sky and the sunlit meadow that light the island, and a
+// band, the shade is filled by the same sky and sunlit ground that light the island, and a
 // thin rim catches the sun along the silhouette. The light's colour, the sky's irradiance and
 // the shadow maps are the scene's own, so a figure sits in the island's light while its forms
 // stay simple and graphic. Flat colours and simple faces in the island's palette, soft cel steps,
@@ -37,10 +37,8 @@ export const characterLook = {
 	// light-side tone step: forms turning away from the sun keep this fraction before the edge
 	formFloor: uniform( 0.72 ),
 	// The open sky is about a tenth of the sun here. Painted shade sits nearer half the lit
-	// tone, so the figure's fill (sky and sunlit turf) is lifted well above the island's.
+	// tone, so the figure's fill (sky and the ground's bounce) is lifted well above the island's.
 	fillGain: uniform( 2 ),
-	bounceGain: uniform( 0.8 ),
-	rimGain: uniform( 1 ),
 	skyRimGain: uniform( 1 ),
 	shadowSaturation: uniform( 1.3 ),
 };
@@ -96,12 +94,6 @@ class CharacterLighting extends THREE.LightingModel {
 		const edge = band.mul( band.oneMinus() ).mul( 4 ).mul( cast ).mul( skin );
 		reflectedLight.directDiffuse.addAssign( sun.mul( albedo ).mul( vec3( 0.85, 0.22, 0.1 ) ).mul( edge.mul( 0.3 / Math.PI ) ) );
 
-		// The key light's rim (lighting/KeyRim.ts) as one more cel step: a narrow band along the
-		// silhouette on the side toward the light, strongest when the figure stands against it (in
-		// plan too: seen from above, a low sun ahead of the camera still backlights a figure), its
-		// light the cast shadow's step, so it follows the cel shading; brighter under the moon.
-		reflectedLight.directSpecular.addAssign( keyRimLight( sun.mul( cast ).mul( look.rimGain ), L, albedo, KEY_RIM.character ) );
-
 		// a crisp highlight on brass and the sheen of worn leather; hair shows a soft sheen band
 		const H = normalize( L.add( V ) );
 		const ndh = clamp( dot( N, H ), 0, 1 );
@@ -121,10 +113,9 @@ class CharacterLighting extends THREE.LightingModel {
 		const dome = sky.mul( mix( float( 0.55 ), float( 1 ), up.mul( 0.5 ).add( 0.5 ) ) );
 		const env = ( ctx.iblIrradiance ).mul( 1 / Math.PI );
 		const skyFill = mix( dome, env, 0.3 );
-		// sunlit turf below throws green-gold light up into the shade
-		const turf = vec3( 0.075, 0.11, 0.032 );
-		const sunOnTurf = this.shared.sunColor.mul( max( this.shared.sunDir.y, 0 ) ).mul( 1 / Math.PI );
-		const bounce = turf.mul( sunOnTurf.add( sky ) ).mul( clamp( up.negate().mul( 0.5 ).add( 0.5 ), 0, 1 ) ).mul( look.bounceGain );
+		// the sunlit ground below throws its light up into the shade (lighting/GroundBounce.ts), E / pi
+		// as the sky's
+		const bounce = groundBounceLight().mul( 1 / Math.PI );
 		const ao = this.shade.y;
 		const albedo = diffuseColor.rgb;
 		// painted shade keeps (and slightly deepens) the colour instead of greying it

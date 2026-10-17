@@ -1,7 +1,7 @@
 // Pure CPU checks; Node 22.18+ strips the imported TypeScript without a build or browser.
 // Run: node tools/verify-day-cycle.mjs
 import assert from 'node:assert/strict';
-import { DayCycle, DAY_PRESETS, DAY_BLACK_LIFT, DAY_EXPOSURE, DAY_EXPOSURE_TRIM, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE } from '../src/sky/DayCycle.ts';
+import { DayCycle, DAY_PRESETS, DAY_EXPOSURE, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE, exposureAt } from '../src/sky/DayCycle.ts';
 
 const near = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
 const cycle = new DayCycle();
@@ -50,8 +50,8 @@ for ( let minute = 0; minute <= 1440; minute ++ ) {
 	near( s.moonDir.length(), 1 );
 	near( s.keyDir.length(), 1 );
 	for ( const key of [ 'daylight', 'nightVisibility', 'nightAmbient', 'moonVisibility', 'moonIllumination', 'moonKeyGain' ] ) assert.ok( Number.isFinite( s[ key ] ) && s[ key ] >= 0 && s[ key ] <= 1, key );
-	assert.ok( s.exposure >= DAY_EXPOSURE * ( 1 - DAY_EXPOSURE_TRIM ) - 1e-12 && s.exposure <= NIGHT_EXPOSURE + 1e-12 );
-	assert.ok( s.blackLift >= 0.002 - 1e-12 && s.blackLift <= DAY_BLACK_LIFT + 1e-12 );
+	assert.ok( s.exposure >= DAY_EXPOSURE - 1e-12 && s.exposure <= NIGHT_EXPOSURE + 1e-12 );
+	assert.equal( s.exposure, exposureAt( s.elevation ) );
 	// The night's ambient arrives before the stars, across the band where the sun's sky fades.
 	assert.ok( s.nightAmbient >= s.nightVisibility );
 	if ( s.elevation <= - 5 ) assert.equal( s.nightAmbient, 1 );
@@ -60,12 +60,12 @@ for ( let minute = 0; minute <= 1440; minute ++ ) {
 	if ( s.elevation <= - 7 ) assert.equal( s.exposure, NIGHT_EXPOSURE );
 	// A closed deck at night keeps the exposure it was tuned with; above -1 degree its
 	// adaptation is unchanged.
-	if ( s.elevation <= - 7 ) near( s.exposure * ( 1 + s.overcastAdaptation ), NIGHT_SKY_EXPOSURE * 6, 1e-9 );
+	if ( s.elevation <= - 7 ) near( s.exposure * ( 1 + s.overcastAdaptation ), NIGHT_EXPOSURE * 3, 1e-9 );
 	if ( s.elevation >= - 1 ) near( s.overcastAdaptation, 5 * ( 1 - s.daylight ), 1e-12 );
 	// The night sky's own light keeps its tuned brightness (times the night's gain): it scales back
 	// as the exposure rises.
 	assert.ok( s.nightSkyLevel > 0 && s.nightSkyLevel <= 1 );
-	if ( s.elevation >= - 5 ) assert.equal( s.nightSkyLevel, 1 );
+	if ( s.elevation >= 8 ) assert.equal( s.nightSkyLevel, 1 );
 	if ( s.elevation <= - 14 ) near( s.exposure * s.nightSkyLevel, NIGHT_SKY_EXPOSURE * NIGHT_EXPOSURE_GAIN, 1e-9 );
 
 }
@@ -88,7 +88,7 @@ for ( const hour of [ 0, 6, 12, 18, 24 ] ) {
 	assert.ok( before.sunDir.distanceTo( after.sunDir ) < 1e-6 );
 	assert.ok( before.moonDir.distanceTo( after.moonDir ) < 1e-6 );
 	assert.ok( before.keyDir.distanceTo( after.keyDir ) < 1e-6 );
-	for ( const key of [ 'daylight', 'nightVisibility', 'nightAmbient', 'blackLift' ] ) near( before[ key ], after[ key ], 1e-5 );
+	for ( const key of [ 'daylight', 'nightVisibility', 'nightAmbient' ] ) near( before[ key ], after[ key ], 1e-5 );
 	// (the exposure and the deck's adaptation are several units and steep at the horizon: the
 	// same relative step)
 	near( before.exposure, after.exposure, 1e-4 );
@@ -193,14 +193,9 @@ assert.equal( day.daylight, 1 );
 assert.equal( day.nightVisibility, 0 );
 assert.equal( night.daylight, 0 );
 assert.equal( night.nightVisibility, 1 );
-// About one and a half stops of adaptation (the midday trim adds a tenth of a stop), and the
-// night's own gain: the island reads at night while the night sky, whose own light scales back by
-// the adaptation's ratio, stays as dark as it was tuned but for that gain. By day the default curve
-// ('neutral-hue', Pipeline.ts `looks`) adds 8 % that DAY_EXPOSURE takes back, and the night's
-// curve none, so the ratio is of the day's exposure with that 8 %.
-assert.ok( night.exposure / ( day.exposure * 1.08 ) < 3 * NIGHT_EXPOSURE_GAIN );
-// The night keeps only a trace of the day's black lift, so its blacks do not turn milky.
-assert.ok( night.blackLift < day.blackLift / 5 );
+// The day and the night hold the table's ends.
+assert.equal( day.exposure, DAY_EXPOSURE );
+assert.equal( night.exposure, NIGHT_EXPOSURE );
 night.sunDir.set( 0, 0, 0 );
 near( cycle.snapshot().sunDir.length(), 1 );
 

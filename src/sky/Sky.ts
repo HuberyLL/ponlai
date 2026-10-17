@@ -21,7 +21,7 @@ import { compileInto } from '../post/graph/Compile.ts';
 import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, motionNode, velocityOutput } from '../post/Motion.ts';
-import { DAY_BLACK_LIFT, type DayCycleSnapshot } from './DayCycle.ts';
+import { DAY_EXPOSURE, type DayCycleSnapshot } from './DayCycle.ts';
 import type { WeatherFront, WeatherState } from './Weather.ts';
 
 type F = THREE.Node<'float'>;
@@ -250,8 +250,6 @@ export class Sky {
 	keyColor = new THREE.Color();
 	// The key light's colour before cloud and weather attenuation: what lights the cloud tops.
 	keyColorAboveClouds = new THREE.Color();
-	// Fraction of the key light that mirror-like glints reflect (see Shared.glintScale).
-	glintScale = 1;
 	// The viewer the cloud map is computed for; clouds are far, so only small moves matter.
 	viewer = new THREE.Vector3( 0, 15, 0 );
 	private viewCamera: THREE.PerspectiveCamera | null = null;
@@ -259,7 +257,7 @@ export class Sky {
 	private viewHeight = 1;
 	private cloudTime = 0;
 	solarIlluminance = new THREE.Color();
-	readonly grade = { exposure: 2.35, blackLift: DAY_BLACK_LIFT, daylight: 1 };
+	readonly grade = { exposure: DAY_EXPOSURE, daylight: 1 };
 	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
 	skyIrradiance = new THREE.Color(); // E / PI over the upper hemisphere
 	seaColor = new THREE.Color( 0.0045, 0.0125, 0.0140 );
@@ -516,6 +514,8 @@ export class Sky {
 
 	get transitioning(): boolean { return this.transitionDuration > 0 && this.transitionElapsed < this.transitionDuration; }
 	get moonDir(): THREE.Vector3 { return this.night.moonDir.value; }
+	/** The distant sea's radiance, the environment's lower half, as the latest bake set it. */
+	get seaRadiance(): THREE.Color { return this.sea.value; }
 
 	get environmentNode(): V3 {
 
@@ -712,7 +712,6 @@ export class Sky {
 			this.night.starVisibility.value = celestial.nightVisibility * ( 1 - 0.22 * celestial.moonVisibility * celestial.moonIllumination );
 			this.displayNightAmbient.value.setRGB( 0.001, 0.001625, 0.003125 ).multiplyScalar( illuminance * celestial.nightAmbient );
 			this.grade.exposure = celestial.exposure;
-			this.grade.blackLift = celestial.blackLift;
 			this.grade.daylight = celestial.daylight;
 			this.islandGain.value = islandSky( celestial.elevation, this.islandTint.value );
 
@@ -722,26 +721,22 @@ export class Sky {
 			moonColor.setRGB( 0, 0, 0 );
 			this.night.starVisibility.value = 0;
 			this.displayNightAmbient.value.setRGB( 0, 0, 0 );
-			this.grade.exposure = 2.35;
-			this.grade.blackLift = DAY_BLACK_LIFT;
+			this.grade.exposure = DAY_EXPOSURE;
 			this.grade.daylight = 1;
 			this.islandTint.value.set( 1, 1, 1, 0 );
 			this.islandGain.value = 1;
 
 		}
 		this.keyColorAboveClouds.copy( this.keyColor );
-		const sunLuma = this.sunColor.r * 0.2126 + this.sunColor.g * 0.7152 + this.sunColor.b * 0.0722;
-		const keyLuma = this.keyColor.r * 0.2126 + this.keyColor.g * 0.7152 + this.keyColor.b * 0.0722;
-		this.glintScale = keyLuma > 0 ? ( sunLuma + ( keyLuma - sunLuma ) * 0.06 ) / keyLuma : 1;
 		const coverage = coverageOverride ?? weather?.coverage ?? 0;
 		const overcast = weather ? THREE.MathUtils.smoothstep( coverage, 0.65, 0.98 ) : 0;
 		const ambientGain = weather?.ambientGain ?? 1;
 		const directVisibility = weather?.directVisibility ?? 1;
-		// The day's black lift is low enough to keep contrast under a closed deck's flat light, so
-		// overcast and rain share it rather than lowering it further.
-		// Like a camera, adapt a little to the dimmer diffuse daylight under a closed deck, less
-		// so in rain, which should read as heavy.
-		this.grade.exposure *= 1 + 0.5 * overcast * this.grade.daylight * ( 1 - 0.7 * ( weather?.rain ?? 0 ) );
+		// Adapt to the dimmer diffuse daylight under a closed deck, as tidewater's auto exposure
+		// would: it lifts a frame darker than its target only partly (by the ratio's 0.8th power), so
+		// an overcast island view meters about three quarters of a clear one's (4.7 times the
+		// exposure); less so in rain, which should read as heavy.
+		this.grade.exposure *= 1 + 3.7 * overcast * this.grade.daylight * ( 1 - 0.7 * ( weather?.rain ?? 0 ) );
 		// After dark a closed deck hides the moon and stars; the eye adapts further so a rainy
 		// dusk or night stays readable, still darker than a clear moonlit night.
 		this.grade.exposure *= 1 + overcast * ( celestial?.overcastAdaptation ?? 0 );

@@ -1,9 +1,10 @@
 # Ponlai
 
-A small stylised island in an open sea, rendered in the browser: a visual sample for a game, and
-the game growing behind `?game`. The look is stylised fantasy-realistic: a physically based scene
-graded toward a painted game's colour (warm golden light, rich greens, deep teal water, chunky
-stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The game's design:
+A small island in an open sea, rendered in the browser: a visual sample for a game, and the game
+growing behind `?game`. The look is fantasy-realistic and photographic: a physically based scene
+lit and graded as tidewater's (deep clear water, chunky stone, a lush meadow with wildflowers),
+the fantasy in the world rather than in the light. The look and what to avoid:
+`docs/art-direction.md`. The game's design:
 `docs/game-design.md` (read it before gameplay work).
 
 ## Where things are written
@@ -66,19 +67,23 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the registry of kinds).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the refracted sun under water, the light every submerged material shares (`Underwater.ts`: a new
-  underwater material lights with it, as the terrain does), the air/water interface, sky occlusion, the meadow's canopy light,
-  the key light's rim and backlight every lit material shares (`KeyRim.ts`: a new lit material,
-  an animal's or a building's, adds `keyRimLight` in its lighting model with its surface type's
-  parameters from `KEY_RIM`, never a rim of its own).
+  underwater material lights with it, as the terrain does), the air/water interface, sky occlusion,
+  the meadow's canopy light, the sunlight the ground bounces up (`GroundBounce.ts`: a new lit
+  material adds it in its lighting model, `addGroundBounce` or `groundBounceLight`, never a bounce
+  of its own).
 - `src/materials/`: procedural textures (the gravel bake: `ProceduralTextures.ts`), the terrain
   (`TerrainMaterial.ts`), wet surfaces, the meadow's habitat and soil-depth fields (`Meadow.ts`).
-- `src/ocean/`: FFT ocean, shore waves, caustics, water shading (`Water.ts`), the storm sea.
+- `src/ocean/`: FFT ocean, shore waves, the share of each wave cascade a point of the sea keeps
+  (`WaveDamping.ts`), caustics and the wave maps the light under the water reads (`Caustics.ts`),
+  water shading (`Water.ts`), the sea's large-scale detail (`SeaDetail.ts`: gusts, slicks,
+  windrows), the water's refraction source (`Refraction.ts`), the storm sea.
 - `src/sky/`: atmosphere, environment bakes (`Sky.ts`), volumetric clouds, cirrus, the day cycle
   (`DayCycle.ts`), the night sky and its data (`NightSky.ts`, `StarCatalog.ts`), the weather: its sky presets, its wind's levels and heading and the auto chain (`Weather.ts`).
 - `src/weather/`: wind (`Wind.ts`: the weather's one wind, which every part reads from it, and the
   one wind field all vegetation moves in), lightning, rain,
   puddles, distant air and sea fog (`AerialPerspective.ts`).
-- `src/post/`: the frame's passes, tone curve and look (`Pipeline.ts`), light shafts
+- `src/post/`: the frame's passes and tidewater's display chain (`Pipeline.ts`, its bloom in
+  `PhysicalBloom.ts`), light shafts
   (`LightShafts.ts`), FSR 1, render scale and dynamic resolution (`RenderScale.ts`,
   `DynamicResolution.ts`), the frame pacer, the submit batching, the signal that a paused frame is
   final (`Settled.ts`), the anti-aliasing mode and the scene's sample count (`Antialiasing.ts`); under the
@@ -262,11 +267,13 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   sampler type per depth texture per material (`SolarShadow.ts`).
 - Shadow passes keep `alphaTest` and `alphaMap` but not `map`; vegetation draws before the terrain
   (`renderOrder = -1`). See `vegetation/LeafTexture.ts` and `vegetation/Material.ts`.
-- The water samples neither the target it draws into nor more textures (it is at WebGPU's 16, its
-  varyings near the limit: `Water.ts`), so it takes no history or reactive input: what the resolve
-  needs from it goes out through its velocity. It reflects only what lies inside
-  `Water.reflectionBounds`: anything opaque placed off the island or above 3 m must grow that box
-  (the game's props do: main.ts `holdOpaque`).
+- The water samples neither the target it draws into nor many more textures (14 of WebGPU's 16
+  in its fragment stage: `Water.ts`), so it takes no history or reactive input: what the resolve
+  needs from it goes out through its velocity. It refracts the refraction pass's image of what lies
+  under the sea: a new mesh that can reach under the water joins it (`Refraction.ts`
+  `showUnderwater`), or the water shows what lies straight behind it in the opaque copy there. It
+  reflects only what lies inside `Water.reflectionBounds`: anything opaque placed off the island or
+  above 3 m must grow that box (the game's props do: main.ts `holdOpaque`).
 - New frame work is a pass on the frame graph, its targets declared with a size class and every
   texture it binds declared as a read (the attachment ops discard what nothing declares), never an
   rtt() inside another pass's material or a call around the graph (`Pipeline.ts`).

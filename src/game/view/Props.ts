@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { float, mix, mx_noise_float, positionGeometry, vertexColor } from 'three/tsl';
+import { GroundBounceLightingModel } from '../../lighting/GroundBounce.ts';
 
 // What the game's stand-in props (the palm, the chest) are built from: faceted pieces in
 // linear albedo, baked into vertex colours and merged into one geometry per prop, under one rough
@@ -121,6 +122,7 @@ export function propMaterial( name: string, side: THREE.Side = THREE.FrontSide )
 	const grain = mx_noise_float( positionGeometry.mul( 7 ) ).mul( 0.5 ).add( 0.5 );
 	material.colorNode = vertexColor().rgb.mul( mix( float( 0.84 ), float( 1.12 ), grain ) );
 	material.name = name;
+	( material as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new GroundBounceLightingModel();
 	return material;
 
 }

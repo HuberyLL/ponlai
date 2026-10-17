@@ -1,7 +1,6 @@
 import * as THREE from 'three/webgpu';
 import {
-	abs, cameraProjectionMatrix, clamp, floor, float, int, ivec2, length, max, min, mix, mrt, output, positionView,
-	screenCoordinate, screenSize, smoothstep, texture, textureLoad, textureSize, uniform, varying, vec2, vec4,
+	clamp, floor, float, int, ivec2, max, mrt, output, screenCoordinate, screenSize, texture, textureLoad, textureSize, vec2,
 } from 'three/tsl';
 import { jitter } from './Jitter.ts';
 
@@ -29,13 +28,6 @@ import { jitter } from './Jitter.ts';
 //   bilinearly (`afterResolveCover`). An edge then covers a streak by a fraction over about a render
 //   pixel, as the resolve antialiased the edge itself, rather than in the render's steps; a streak
 //   in front of both sides is untouched.
-// - Depth of field: the display pass mixes the tilt-shift blur over the sharp image by the circle of
-//   confusion of what lies at the pixel, so a streak drawn before it kept only (1 - that weight) of
-//   its sharp self over a blurred background and spread the rest into a faint haze along it. The
-//   same weight fades it here, taken over the blur's footprint at each vertex (`afterSharpness`), so
-//   it fades evenly along a streak as the blur spread it (the haze itself is left out). Per
-//   fragment, at its own texels and four more, the pass cost twice as much. The drops' own widening
-//   by their distance stays (RainDrops.ts).
 // - Air, fog and shafts: the composite is affine in the scene colour at each pixel,
 //   hdr = A scene + B (A the air's transmittance; B the light the air, fog and shafts add). Under
 //   AFTER_RESOLVE the composite writes A (`rainAir`, R16F at the render's size, in place of
@@ -53,19 +45,17 @@ import { jitter } from './Jitter.ts';
 // - Grade: while it rains or the overlay holds something, the canvas pass adds the change the rain
 //   makes to the graded colour after RCAS and before the grain (TemporalAA.ts `layer`). At the
 //   render texel nearest the point the pixel shows, the display pass's grade input (the sharp image,
-//   its depth of field and the look's glow, taken once a texel by a pass at the render's size,
-//   `rainInput`: per canvas pixel they took a fifth of the layer's time) has the veil, then the
-//   overlay, laid over it in scene radiance, as they were before the grade, and that goes through
-//   the display pass's grade (exposure, curve, grade, look, in linear light); the change is its
-//   difference from what the display pass graded at the texel. The change is added to the resolved
-//   image decoded to linear light (the S-curve and the sRGB transfer undone, on changed pixels
-//   only), which is encoded again; the vignette applies to it as to the image. It is taken at the
+//   taken once a texel by a pass at the render's size, `rainInput`: per canvas pixel it took a fifth
+//   of the layer's time) has the veil, then the overlay, laid over it in scene radiance, as they were
+//   before the grade, and that goes through the display pass's grade (exposure, grade, curve, in
+//   linear light); the change is its difference from what the display pass graded at the texel. The
+//   change is added to the resolved image decoded to linear light (the sRGB transfer undone, on
+//   changed pixels only), which is encoded again; the vignette applies to it as to the image. It is taken at the
 //   rain's coverage of a single sample (Pipeline.ts AFTER_COVERAGE) and spread over the pixel, as a
 //   supersampled image grades each sample before it averages them. Laid over the graded image
 //   instead, faint rain over the dark sea and meadow, in the curve's toe, came out brighter and
 //   harder (the rings on the sea most); laid over it before the grade at its full coverage, thin
-//   streaks came out fainter than the ground truth's. The depth of field's blur, bloom and the
-//   look's glow of the rain are left out.
+//   streaks came out fainter than the ground truth's. The rain's bloom is left out.
 // - Where: a running frame's canvas pass draws the change itself, in a build of its own used only
 //   while the layer shows (built into the one canvas pass for every frame, the rain's registers
 //   slowed it in fair weather too; drawn by a pass of its own, it cost a canvas-size target written
@@ -93,11 +83,6 @@ type IV2 = THREE.Node<'ivec2'>;
 /** The overlay's resource name (the MRT finds its output by it). */
 export const RAIN_OVERLAY = 'rainOverlay';
 
-/** The display pass's depth of field, as the after pass's materials fade by it (Pipeline sets them
- * every frame): the focus distance and sharp range (m), the blur's strength, and its widest radius
- * (render pixels). */
-export const afterFocus = { focus: uniform( 50 ), range: uniform( 8 ), dof: uniform( 0.65 ), radius: uniform( 6 ) };
-
 /** The after pass's MRT: the overlay, cleared to zero, blended as each material says. */
 export const afterMRT: THREE.MRTNode = mrt( { [ RAIN_OVERLAY ]: output } )
 	.setBlendMode( RAIN_OVERLAY, new THREE.BlendMode( THREE.MaterialBlending ) )
@@ -121,46 +106,14 @@ export function afterTexels( renderSize: THREE.Node<'vec2'>, outputSize: THREE.N
 
 /** In a material of the after pass: how much of the fragment shows, from the scene's nearest
  * surface (`surfaceDepth`, linear view z at the render's size). `visible` tests one render texel
- * (its coordinate and its nearest surface's view z); the four tests are weighted bilinearly and
- * faded by `afterSharpness`. */
+ * (its coordinate and its nearest surface's view z); the four tests are weighted bilinearly. */
 export function afterResolveCover( surfaceDepth: THREE.Texture, visible: ( texel: IV2, surfaceZ: F ) => F ): F {
 
 	const depth = texture( surfaceDepth );
 	const size = vec2( textureSize( depth, int( 0 ) ) as unknown as IV2 );
 	let cover: F = float( 0 );
 	for ( const { texel, weight } of afterTexels( size ) ) cover = cover.add( visible( texel, textureLoad( depth, texel ) as unknown as F ).mul( weight ) ) as F;
-	return max( cover, 0 ).mul( afterSharpness( surfaceDepth ) );
+	return max( cover, 0 );
 
 }
 
-/** What of a fragment of the after pass the depth of field leaves sharp: one less the display
- * pass's blur weight (`afterFocus`) over the blur's footprint around the point, the mean of the
- * weight there and at four points half the widest blur away, diagonally. Taken per vertex (a
- * varying): a fragment's own texels made a near streak in front of leaves against the blurred sea
- * fade leaf by leaf into dashes, where the blur the display pass gave it spread it evenly along its
- * length; and at the vertices it costs a fraction of what it cost per fragment. */
-export function afterSharpness( surfaceDepth: THREE.Texture ): F {
-
-	const depth = texture( surfaceDepth );
-	const size = vec2( textureSize( depth, int( 0 ) ) as unknown as IV2 );
-	// (in the vertex stage: the point's unjittered screen position, less this frame's jitter, in render
-	// pixels; and the distance to a surface at view z `z` along its ray)
-	const clip = cameraProjectionMatrix.mul( vec4( positionView, 1 ) );
-	const ndc = clip.xy.div( max( clip.w, 1e-4 ) );
-	const at = vec2( ndc.x.mul( 0.5 ).add( 0.5 ), float( 0.5 ).sub( ndc.y.mul( 0.5 ) ) ).mul( size ).sub( jitter.uniforms.px );
-	const ray = length( positionView ).div( min( positionView.z, - 1e-4 ) );
-	const reach = afterFocus.radius.mul( 0.5 );
-	let blur: F = float( 0 );
-	for ( const [ x, y ] of [ [ 0, 0 ], [ 1, 1 ], [ - 1, 1 ], [ 1, - 1 ], [ - 1, - 1 ] ] ) {
-
-		const texel = ivec2( clamp( at.add( vec2( x, y ).mul( reach ) ), vec2( 0 ), size.sub( 1 ) ) );
-		const distance = ( textureLoad( depth, texel ) as unknown as F ).mul( ray );
-		// the display pass's circle of confusion and its blur's weight (Pipeline.ts cocAt, dofMix)
-		const far = mix( float( 1 ), float( 0.15 ), smoothstep( 1500, 15000, distance ) );
-		const coc = clamp( abs( distance.sub( afterFocus.focus ) ).sub( afterFocus.range ).div( afterFocus.focus.mul( 0.55 ) ), 0, 1 ).mul( far );
-		blur = blur.add( smoothstep( 0, 0.35, coc ).mul( afterFocus.dof ) ) as F;
-
-	}
-	return varying( float( 1 ).sub( blur.div( 5 ) ) );
-
-}

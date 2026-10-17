@@ -20,7 +20,7 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
-// Distant air and sea fog, composited once for the sharp image and both blooms (Pipeline.ts).
+// Distant air and sea fog, composited once for the sharp image and the bloom (Pipeline.ts).
 // Rules: distant air fades in across a protected foreground (from 40 m, in full by 200 m, sooner in
 // thick air), so the island does not fog up as the view pulls back, and it scatters only the
 // sunlight the cloud shadows let through. Sea fog is a low height-fog layer that may surround the

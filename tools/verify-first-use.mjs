@@ -2,8 +2,8 @@
 // step a player or the GUI may take should create no render or compute pipeline, since a frame that
 // creates one stalls on it. The steps: the first pause and the temporal rest it settles into, scene
 // events (a time preset and a jump to overcast, paused and running), the wind's levels and headings
-// (`wind`: each level jumped to with a turned heading, then changes over seconds), idle frames, the GUI's tone
-// curves and looks, the depth of field and grain switched off and on, the camera's modes and views,
+// (`wind`: each level jumped to with a turned heading, then changes over seconds), idle frames, the GUI's
+// grain switched off and on, the camera's modes and views,
 // a sweep of the render scale (upscaled and not), a resized window, the time presets and a pause
 // and the rest after it. The rest and the events come first, so the first use of what they draw is
 // counted there. Before them, the load itself is judged as the step `load`: the first frame may
@@ -338,18 +338,13 @@ async function apply( page, step, notes ) {
 			break;
 		case 'gui': {
 
-			// the tone curves, the looks (fantasy ones run the look's glow chain), the depth of field
-			// and the grain off and on: each as the GUI sets it
+			// the grain off and on, as the GUI sets it
 			const done = await page.evaluate( async () => {
 
 				const s = window.__PONLAI__, p = s.pipeline, S = p.settings;
 				const wait = ( n ) => new Promise( ( resolve ) => { const end = s.renderer.info.frame + n; const tick = () => s.renderer.info.frame >= end ? resolve() : requestAnimationFrame( tick ); tick(); } );
-				const curve = S.toneMapping, look = S.look, dof = S.dof, grain = S.grain;
-				for ( const c of [ 'neutral-hue', 'agx-hue', 'agx', 'neutral' ] ) { p.setToneMapping( c ); await wait( 3 ); }
-				for ( const l of [ 'realistic', 'soft-fantasy', 'rich-fantasy' ] ) { p.setLook( l ); await wait( 3 ); }
-				S.dof = 0; await wait( 3 ); S.dof = dof;
+				const grain = S.grain;
 				S.grain = 0; await wait( 3 ); S.grain = grain;
-				p.setToneMapping( curve ); p.setLook( look );
 				return true;
 
 			} );

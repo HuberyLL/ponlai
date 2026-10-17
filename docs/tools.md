@@ -145,8 +145,6 @@ Quality and look:
   only active tier: medium and low are parked, see Parked quality tiers), `tier.<knob>=<value>`
   overrides one knob for an A/B (e.g. `tier.post.fogScale=0.5`). The GPU timing that once chose
   the tier (`src/QualityDetect.ts`, `autoQuality`) is parked with them.
-- `tone` (neutral-hue, the default, agx-hue, agx, neutral), `look` (soft-fantasy, the default,
-  rich-fantasy, realistic).
 
 Rendering and A/B options, read at load (runtime switches for one-page A/Bs live in
 `src/debug/DebugFlags.ts`):
@@ -164,8 +162,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   a set of the parked medium's default passes `--aa taau`.
 - `aa=fsr3`: AMD's FSR 3.1 upscaler (the TSL port in `src/post/fsr3/`, integrated by
   `Fsr3Upscaler.ts`) at AMD's placement: one sample, jittered with FSR's own sequence, with motion
-  vectors; FSR takes the composite's HDR image at the render's size, and the blooms, the depth of
-  field, the look's glow and the grade run on its output at the canvas's size. A paused page shows
+  vectors; FSR takes the composite's HDR image at the render's size, and the bloom and the grade
+  run on its output at the canvas's size. A paused page shows
   FSR's rest image (`tier.taa.fsr3.restSequence` frames from a reset, then held) through the same
   `__PONLAI__.taa` handles and diagnostics `taa` block as the temporal modes (with an `fsr3` block:
   the live constants, frame index, phase count, jobs and clears); `__PONLAI__.fsr3` is the upscaler.
@@ -196,8 +194,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 - `terrainHex=0` (the cliff's plain triplanar tiling and smooth layer masks; for an A/B inside one
   page each cliff material swaps to its other variant through `material.userData.terrainVariant`,
   as `TerrainMaterial.ts` shows: the flag itself is read only when the material is built).
-- `post=legacy` (or a comma list of `inline-composite`, `full-fog`, `no-bank`, `inline-coc`,
-  `three-fsr`, `store-scene`: the frame graph without the first performance round's changes).
+- `post=legacy` (or a comma list of `inline-composite`, `full-fog`, `no-bank`, `three-fsr`,
+  `store-scene`: the frame graph without the first performance round's changes).
 - `shadowFilter=legacy|sl1|sl1,sl3` (the sun shadow's filter path).
 - `gpuTimer=off` (high's dynamic resolution without its timestamp queries: it then steers by the
   frame intervals).
@@ -479,8 +477,8 @@ checks. Every default set is the normal weathers' (views.mjs's `parity`, `taa` a
 clips.mjs's `all`, baseline.mjs's plan without `--views` / `--clips`, verify-scene-jump's views,
 profile-frame's scene matrix and `--accept`, verify-first-use's steps); `special` or a name
 reaches a parked view, clip or scene, and verify-first-use runs its `weather` and `bolt` steps only
-when `--steps` names them. `verify-weather-effects.mjs`, `verify-ocean-weather.mjs` and the rain
-parts of `verify-weather.mjs` are parked with them: not part of any default check.
+when `--steps` names them. `verify-weather-effects.mjs` and the rain parts of `verify-weather.mjs`
+are parked with them: not part of any default check.
 
 Parked quality tiers: medium and low (`src/Quality.ts` `PARKED_QUALITY`) are out of the default
 choice and checks; high at 4K output (1920x1080 CSS pixels at DPR 2, profile-frame's default
@@ -970,7 +968,7 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   rate, so both sides of an A/B run at one pace); `--frame-fallback` keeps the automatic fallback
   (72 -> 48 fps on a 144 Hz display) on.
 - `--eval` runs in the page with `s` = `window.__PONLAI__` (an ablation, e.g.
-  `--eval "s.pipeline.settings.dof = 0"`); `--report profile.json` re-renders a summary (`--report <dir>`
+  `--eval "s.pipeline.settings.bloom = 0"`); `--report profile.json` re-renders a summary (`--report <dir>`
   rebuilds an unfinished run's, see above).
 
 ### Measuring frame time
@@ -1051,11 +1049,11 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
 
 ## Other tools
 
-- `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water and wave
-  optics (each file names the server it expects); they take the GPU lock (shared).
-  `verify-optical-interface`, `verify-frame-graph-gpu`, `verify-water-energy`, `verify-refracted-sun`,
-  `verify-solar-shadows`, `verify-wave-optics` and `verify-water-volume` import `/src/` modules and
-  need the dev server: on any other server they exit 1 at once (`tools/dev-server.mjs`).
+- `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows and water (each
+  file names the server it expects); they take the GPU lock (shared).
+  `verify-optical-interface`, `verify-frame-graph-gpu`, `verify-refracted-sun` and
+  `verify-solar-shadows` import `/src/` modules and need the dev server: on any other server they
+  exit 1 at once (`tools/dev-server.mjs`).
   `tools/verify-scene.mjs` checks a production preview. `tools/verify-scene-jump.mjs` captures the
   parity views reached by scene jumps in one page and as fresh loads, for `diff-set.py`, each shot
   ready by capture.mjs's stability rule (`tools/parity/README.md`, One page, many views);

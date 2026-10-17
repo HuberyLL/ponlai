@@ -384,10 +384,10 @@ type Bloom = BloomNode & {
 	_renderTargetBright: THREE.RenderTarget; _renderTargetsHorizontal: THREE.RenderTarget[]; _renderTargetsVertical: THREE.RenderTarget[]; _nMips: number;
 };
 
-// The walker: compiles the passes three's bloom chains render (`updateBefore`: the high pass, the
-// blurs and the composite) as they draw them, at the call depth they draw at, and the passes those
-// draws render in turn (depth first, in each material's order, as the frame renders them: a pass
-// renders inside the first material that names it, one level deeper). The frame graph runs every
+// The walker: compiles the passes three's display nodes render in a chain (`updateBefore`: a
+// BloomNode's high pass, blurs and composite) as they draw them, at the call depth they draw at,
+// and the passes those draws render in turn (depth first, in each material's order, as the frame
+// renders them: a pass renders inside the first material that names it, one level deeper). The frame graph runs every
 // other pass of the frame itself (an rtt() pass is a quad pass of the graph's), so any other node
 // that renders inside a pass is listed in `unreached`, for the graph to prime.
 class Walker {

@@ -265,7 +265,7 @@ const CRESCENT_LIFT = 0.7;
 // near-neutral silver grey, so only this share of the map's colour is kept.
 const MOON_SATURATION = 0.4;
 // Near full, the disk alone is drawn this much dimmer than the light it sends (the key light and
-// the glow keep their level): at full brightness the night grade clipped the highlands to white
+// the glow keep their level): at full brightness the curve clipped the highlands to white
 // and the maria lost their contrast. Quarters and crescents keep their brightness.
 const FULL_MOON_EXPOSURE = 0.65;
 // Earthshine, after a-starry-sky: the faint, bluish light of the sunlit Earth on the lunar

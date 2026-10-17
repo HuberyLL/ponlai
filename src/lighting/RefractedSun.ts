@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, Discard, uniform, textureLoad, float, vec2, vec3, vec4, ivec2, uv, positionWorld, normalWorldGeometry,
-	max, sqrt, normalize, select, clamp,
+	max, sqrt, normalize, select, clamp, refract,
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
 import { solarShadowVisibility, solarVolumeVisibility } from './SolarShadow.ts';
@@ -23,6 +23,9 @@ type M4 = THREE.Node<'mat4'>;
 // page fits and draws that light before its first frame. Its proxies draw only the casters'
 // triangles that reach below the water: cut here from the vertices, or for the chunks' meshes in
 // the world's workers (`setCasters`, ChunkDerived.ts).
+// A submerged receiver reads the air's map (the island's shadow) where its light entered the water:
+// up the sun ray refracted through the long waves' slope to their surface (`waveEntryNode`, from the
+// wave maps: Caustics.ts), as tidewater's hookShadowPosition finds it (`bindTerrain`).
 
 const WATER_IOR = 1.333;
 // Turn of the key light below which a running clock keeps the drawn map (see RefractedSun.update).
@@ -335,7 +338,32 @@ export class RefractedSun {
 
 	}
 
-	bindTerrain( root: THREE.Object3D ): void {
+	/** The air map's lookup point for a submerged receiver, as tidewater's hookShadowPosition finds
+	 * it: back up the sun ray refracted through the long waves' slope above (`waves`, the wave maps'
+	 * A: height over the sea level, slope x and z) to their surface, where the light entered the
+	 * water. The shadows of the cliffs then land where refraction puts them and sway with the swell.
+	 * (tidewater also jitters the point over a disk that grows with the depth, for the light's
+	 * forward scattering, and lets its temporal resolve average it; the sun shadow's filter here
+	 * takes the receiver plane from the point's derivatives, which a jitter would break, so the
+	 * point is left unjittered.) The point itself where it lies above the long waves. */
+	waveEntryNode( point: V3, waves: THREE.Node<'vec4'> ): V3 {
+
+		return Fn( () => {
+
+			const w = waves.toVar();
+			const depth = this.shared.waterLevel.add( w.x ).sub( point.y ).toVar();
+			const up = refract( this.shared.sunDir.negate(), normalize( vec3( w.y.negate(), 1, w.z.negate() ) ), 1 / WATER_IOR ).negate().toVar();
+			const entry = point.add( up.mul( depth.div( max( up.y, 0.15 ) ) ) ).toVar();
+			return select( depth.greaterThan( 0 ), entry, point );
+
+		} )();
+
+	}
+
+	/** Gives every refracted-sun receiver under `root` its submerged shadows: the air map read where
+	 * the light entered the water (the long waves' surface from `waves`, the wave maps: Caustics.ts;
+	 * the mean level without), times this map. */
+	bindTerrain( root: THREE.Object3D, waves?: { wavesAt( point: V3 ): THREE.Node<'vec4'> } ): void {
 
 		const seen = new Set<THREE.NodeMaterial>();
 		root.traverse( ( object ) => {
@@ -350,7 +378,8 @@ export class RefractedSun {
 				if ( this.receivers.some( ( entry ) => entry.material === receiver ) ) continue;
 				this.receivers.push( { material: receiver, position: receiver.receivedShadowPositionNode, shadow: receiver.receivedShadowNode } );
 				const underwater = positionWorld.y.lessThan( this.shared.waterLevel );
-				receiver.receivedShadowPositionNode = select( underwater, this.surfaceEntryNode( positionWorld ), positionWorld );
+				receiver.receivedShadowPositionNode = waves ? this.waveEntryNode( positionWorld, waves.wavesAt( positionWorld ) )
+					: select( underwater, this.surfaceEntryNode( positionWorld ), positionWorld );
 				// The runtime passes the existing shadow node; @types/three omits that argument.
 				// The filter takes derivatives, so it runs for every pixel (in uniform control flow, not
 				// inside the underwater branch, where a quad straddling the waterline would read

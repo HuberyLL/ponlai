@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { Fn, uniform, uniformArray, texture, vec3, vec4, int, float, clamp, floor, dot, select, mix, positionLocal, modelWorldMatrixInverse } from 'three/tsl';
 import { compileByRendering, compileLatentInto } from '../post/graph/Compile.ts';
-import { solarSteppedShadowVisibility, solarVolumeVisibility, SOLAR_SHADOW_TAPS, SHADOW_FILTER_PATH, type SolarShadowTaps } from './SolarShadow.ts';
+import { solarSteppedShadowVisibility, solarVolumeVisibility, solarPCFVisibility, SOLAR_SHADOW_TAPS, SHADOW_FILTER_PATH, type SolarShadowTaps } from './SolarShadow.ts';
 import type { CasterColumns } from '../world/ChunkDerived.ts';
 
 type F = THREE.Node<'float'>;
@@ -251,6 +251,24 @@ export class SunShadow {
 			solarVolumeVisibility( this.depth, this.previousCoordinateNode( coordinate ), this.mapSize, this.weight.lessThan( 1 ), PREVIOUS ),
 			solarVolumeVisibility( this.depth, coordinate, this.mapSize, this.ready.greaterThan( 0 ), CURRENT ),
 			this.weight );
+
+	}
+
+	/** The water's visibility (tidewater's: three's five-tap PCF, solarPCFVisibility) from its
+	 * coordinate in the current map, both stepped maps cross-faded. */
+	pcfVisibility( coordinate: V3 ): F {
+
+		return mix(
+			solarPCFVisibility( this.depth, this.previousCoordinateNode( coordinate ), this.mapSize, this.weight.lessThan( 1 ), PREVIOUS ),
+			solarPCFVisibility( this.depth, coordinate, this.mapSize, this.ready.greaterThan( 0 ), CURRENT ),
+			this.weight );
+
+	}
+
+	/** The same from the current map alone, for a bake drawn at the map's steps (GroundBounce.ts). */
+	currentPCFVisibility( coordinate: V3 ): F {
+
+		return solarPCFVisibility( this.depth, coordinate, this.mapSize, this.ready.greaterThan( 0 ), CURRENT );
 
 	}
 

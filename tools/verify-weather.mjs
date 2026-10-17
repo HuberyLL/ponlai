@@ -152,11 +152,11 @@ try {
 			const wind = s.shared.wind;
 			state.coupling = {
 				wind: wind ? { direction: wind.direction.value.toArray(), velocity: wind.velocity.value.toArray(),
-					breeze: wind.breeze.value, travel: wind.displacement.value.length(), oceanGain: wind.oceanGain.value.toArray() } : null,
+					breeze: wind.breeze.value, travel: wind.displacement.value.length(), speed: s.wind.speed } : null,
 				rain: s.rain ? { amount: s.rain.uniforms.rain.value, wind: s.rain.uniforms.wind.value.toArray(),
 					visible: s.rain.mesh.visible, count: s.rain.mesh.count } : null,
 				wetness: scalar( s.shared.wetness ?? s.shared.rainWetness ),
-				fftGain: s.fft.weatherGain?.value.toArray(), spectrumRevision: s.fft.spectrumRevision,
+				seaWind: s.fft.params.windSpeed, spectrumRevision: s.fft.spectrumRevision,
 			};
 		}
 		return state;
@@ -180,11 +180,11 @@ try {
 		assert.ok( Number.isFinite( state.muSun ) && state.muSun > 0 && state.muSun <= 1, `${ label }: refracted light elevation` );
 		if ( coupling ) {
 			const linked = state.coupling;
-			assert.ok( linked.wind && linked.rain && linked.fftGain, '--coupling requires shared.wind, debug rain and fft.weatherGain' );
+			assert.ok( linked.wind && linked.rain && Number.isFinite( linked.seaWind ), '--coupling requires shared.wind, debug rain and the FFT' );
 			near( linked.rain.amount, state.weather.rain, 1e-6, `${ label }: rainfall binding` );
 			near( linked.wetness, state.weather.wetness, 1e-6, `${ label }: material wetness binding` );
 			same( linked.rain.wind, linked.wind.velocity, `${ label }: rain wind` );
-			same( linked.fftGain, linked.wind.oceanGain, `${ label }: ocean wind response` );
+			near( linked.seaWind, linked.wind.speed, 1e-9, `${ label }: ocean wind response` );
 			assert.ok( linked.rain.count >= 0 && linked.rain.count <= 49152, `${ label }: bounded rain draw` );
 			assert.equal( linked.rain.visible, linked.rain.amount > 0.0001 && linked.rain.count > 0, `${ label }: skip idle rain` );
 		}

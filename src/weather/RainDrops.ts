@@ -31,8 +31,7 @@ type V4 = THREE.Node<'vec4'>;
 // Under taa and taau (post/Antialiasing.ts AFTER_RESOLVE) the streaks, splashes and rings draw after
 // the temporal resolve, at the canvas's resolution and unjittered (`afterGroup`,
 // post/AfterResolve.ts): no depth buffer there, so they test the render texels around their pixel
-// (the same tests as below, per texel) and fade by the depth of field's weight there, and their
-// widths follow the canvas's pixel. (A splash is a glint of a few frames: kept before the resolve
+// (the same tests as below, per texel), and their widths follow the canvas's pixel. (A splash is a glint of a few frames: kept before the resolve
 // with its reactive weight, it still lost most of itself to the history.)
 
 export const RAIN_MAX_DROPS = 49152;
@@ -47,9 +46,6 @@ export const DRIFT = 0.8;
 // The eye's exposure: a drop is seen as the streak it travels meanwhile.
 const EXPOSURE = 0.032;
 const DIAMETER = 0.003; // m, a little larger than real drops, for a stylised read
-// Out of focus, a streak is drawn at most this many pixels wide: wider, a near drop would read
-// as a glowing band rather than a line of water. The energy it loses fades the drop instead.
-const SOFT_PIXELS = 3;
 // Drops closer than this fade out (m): at arm's length a streak would cross much of the screen.
 const NEAR_FADE = [ 0.8, 2 ];
 // Lifetimes (s) of a splash on land, of the jet a drop throws up from the sea, and of its ring.
@@ -154,8 +150,6 @@ export class RainDrops {
 	readonly splashes: THREE.StorageBufferNode<'vec4'>;
 	private readonly cascades: CascadeUniforms[];
 	private readonly eye = uniform( new THREE.Vector3() );
-	// The composite's tilt-shift focus: distance (m), sharp range (m), widest blur (px), strength.
-	readonly focus = { distance: uniform( 50 ), range: uniform( 8 ), radius: uniform( 6 ), strength: uniform( 0.65 ) };
 	private readonly displacement = new THREE.Vector2();
 	private readonly materials: THREE.MeshBasicNodeMaterial[] = [];
 	private readonly opacities: F[] = [];
@@ -295,16 +289,9 @@ export class RainDrops {
 			const toEye = cameraPosition.sub( head );
 			const distance = length( toEye );
 			const side = normalize( cross( axis, toEye ).add( vec3( 1e-6, 0, 0 ) ) );
-			// Thinner than a pixel, a drop is drawn a pixel wide (`sharp`); out of focus it would spread
-			// over the tilt-shift blur the composite gives the scene at its distance (`blurred`, the same
-			// circle of confusion as Pipeline's). Only a little of that softness is drawn, so near drops
-			// stay fine lines of water instead of bands.
-			const f = this.focus;
-			const blur = clamp( abs( distance.sub( f.distance ) ).sub( f.range ).div( f.distance.mul( 0.55 ) ), 0, 1 ).mul( f.radius ).mul( f.strength );
+			// Thinner than a pixel, a drop is drawn a pixel wide.
 			const pixel = distance.mul( pixelAngle );
-			const sharp = max( float( DIAMETER ), pixel.mul( 1.3 ) );
-			const blurred = max( sharp, pixel.mul( blur.mul( 2 ).add( 1.3 ) ) );
-			const width = min( blurred, max( sharp, pixel.mul( SOFT_PIXELS ) ) );
+			const width = max( float( DIAMETER ), pixel.mul( 1.3 ) );
 			// After the resolve a streak is drawn with one sample a pixel and nothing averages it: drawn
 			// as it is, a line a pixel or so wide steps and breaks along its length where the multisampled
 			// and supersampled images show it whole. It is prefiltered instead: widened to the width of
@@ -320,12 +307,8 @@ export class RainDrops {
 			// Some drops catch the light, most are faint.
 			const glint = random( instanceIndex, 6 ).pow( 2 ).mul( 1.3 ).add( 0.35 );
 			// Each drawn drop stands for many unseen ones, so sub-pixel coverage is lifted (power < 1).
-			// Defocus only spreads that energy: over the drawn width it is conserved, and the share
-			// that would fall beyond the drawn width fades the drop, so a strongly blurred near drop
-			// grows fainter, never brighter or wider.
-			const lift = pow( float( DIAMETER ).div( sharp ), 0.6 );
-			const kept = sharp.div( width ).mul( sqrt( width.div( blurred ) ) );
-			const spread = AFTER_RESOLVE ? kept.mul( width.div( drawn ) ) : kept;
+			const lift = pow( float( DIAMETER ).div( width ), 0.6 );
+			const spread = AFTER_RESOLVE ? width.div( drawn ) : float( 1 );
 			const strength = varying( data.w.mul( lift ).mul( spread ).mul( glint ) as F, 'vRainStreak' );
 			const q = uv();
 			const across = abs( q.x.sub( 0.5 ) ).mul( 2 );
@@ -489,8 +472,7 @@ export class RainDrops {
 	 * the splashes behind it outright, as the depth test did (`surfaceDepth`: the nearest
 	 * surface's view z, the sea's included); streaks keep the depth test. After the resolve there is
 	 * no depth to test: the streaks test the nearest surface (the sea's included) and the splashes
-	 * as here, at the four render texels around their pixel, faded by the depth of field's weight
-	 * around each vertex (AfterResolve.ts). */
+	 * as here, at the four render texels around their pixel (AfterResolve.ts). */
 	bindOpaqueDepth( linearDepth: THREE.Texture, surfaceDepth: THREE.Texture ): void {
 
 		const depth = texture( linearDepth ), surface = texture( surfaceDepth );

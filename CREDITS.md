@@ -13,13 +13,14 @@ packages, into `dist/licenses/`.
 - Copyright: (c) 2026 DRG Software Solutions LLC
 - Licence: MIT, see [`src/ocean/tidewater.LICENSE.txt`](src/ocean/tidewater.LICENSE.txt),
   [`src/sky/tidewater.LICENSE.txt`](src/sky/tidewater.LICENSE.txt),
-  [`src/materials/tidewater.LICENSE.txt`](src/materials/tidewater.LICENSE.txt) and
+  [`src/materials/tidewater.LICENSE.txt`](src/materials/tidewater.LICENSE.txt),
+  [`src/lighting/tidewater.LICENSE.txt`](src/lighting/tidewater.LICENSE.txt),
+  [`src/post/tidewater.LICENSE.txt`](src/post/tidewater.LICENSE.txt) and
   [`src/weather/tidewater.LICENSE.txt`](src/weather/tidewater.LICENSE.txt) (the same text)
 - From the three.js (TSL) edition, commit
   [`fd6cae6`](https://github.com/dgreenheck/tidewater/tree/fd6cae6fa57343d344e5c008e1abda974c824b86):
-  - `src/ocean/OceanFFT.ts`: the multi-cascade FFT ocean.
+  - `src/ocean/OceanFFT.ts`: the multi-cascade FFT ocean (its time evolution and inverse FFT).
   - `src/ocean/Water.ts`: the water shading (`WaterMaterial.js`).
-  - `src/ocean/Caustics.ts`: the rasterised caustics.
   - `src/ocean/FoamPattern.ts`: the procedural foam pattern from `FoamTexture.js` (rafts, holes,
     bubbles, mottling and streaks, generated on the GPU; no image asset).
   - `src/ocean/Spray.ts`: the GPU spray from `src/fx/Spray.js` (drops, ligaments, dense spray and
@@ -28,19 +29,48 @@ packages, into `dist/licenses/`.
 - From the native WebGPU edition, commit
   [`4811ba4`](https://github.com/dgreenheck/tidewater/tree/4811ba48d795197de5621985f404e765c0b7c0ef):
   - `src/ocean/OceanSpectrum.ts`: the JONSWAP / TMA spectrum, directional spreading and dispersion
-    helpers from `OceanFFT.js`, ported to TypeScript; `OceanFFT.ts` combines the wind sea and swell
-    spectra they describe.
+    helpers from `OceanFFT.js`, ported to TypeScript, and the sea states of `src/ui/AppUI.js`;
+    `OceanFFT.ts` sums its two wave systems (`local` and `swell`) into four cascades of its sizes
+    and bands, and takes the shallow-water attenuation of each cascade from `WaterSurface.js`.
+  - `src/ocean/Caustics.ts`: the rasterised caustics of `Caustics.js`, two layers of two focal
+    planes with their lookup (dispersion, depth blur and fade, footprint filtering, the gust and
+    slick factor), ported from WGSL to TSL; and the wave maps of `UnderwaterLighting.js` (the long
+    waves, the mean level and that factor baked once a frame into two maps centred on the camera,
+    with their lookup).
+  - `src/lighting/Underwater.ts`: the key light and ambient under the water of
+    `UnderwaterLighting.js`'s direct and ambient hooks (the depth under the long waves, the
+    caustics through their slope, the ambient's attenuation and blue); `src/lighting/RefractedSun.ts`
+    reads the air's shadow map at the entry point of its shadow position hook.
+  - `src/lighting/GroundBounce.ts`: the ground bounce of `GroundBounce.js` (the map of the light
+    the ground reflects, its land cover and sea seen through the water column, the environment's
+    own ground taken off, the binomial blur, and its lookup: the lower hemisphere's view factor,
+    the fade with height and the self-shading of faces turned from a low sun), ported from WGSL to
+    TSL, on this project's world fields and shadow map.
   - `src/ocean/StormSea.ts`: the persistent whitecap foam of `OceanFFT.js` (build-up where the
-    Jacobian folds, exponential decay), here on one world-space grid of the summed cascades; and
-    in `src/ocean/Water.ts` the whitecap compositing of `WaterSurface.js` (a foam pattern
-    thresholded by the coverage, at a distance the coverage itself).
-  - `src/ocean/Water.ts`: from `WaterMaterial.js`, the water column's sun shadowed by the surface
-    point's shadow alone, and the reflectance under which no reflection ray marches
-    (`ssrMinFresnel`).
+    Jacobian folds, exponential decay), here on one world-space grid of the summed cascades.
+  - `src/ocean/Water.ts`: the above-water shading of `WaterMaterial.js` (Fresnel, the sky
+    reflection lifted by the unresolved slopes and darkened below the horizon, the reflection's
+    gate, the GGX glint with Cox-Munk roughness, the refracted ray traced to the floor, the
+    analytic water body, the crests' translucency and the lit foam), the normal, near-field
+    ripples and whitecap compositing of `WaterSurface.js` (fresh foam on the Jacobian, a foam
+    pattern thresholded by the coverage, at a distance the coverage itself), ported from WGSL to
+    TSL.
+    Its reflection march takes the steps that grow with the distance and the 260 m stop of
+    `WaterMaterial.js`'s `_waterSSR`, and its refraction the lookups into the refraction image.
+  - `src/ocean/SeaDetail.ts`: the gusts, slicks and windrows of `SeaDetail.js` (its noise texture
+    and sampling, ported from WGSL to TSL), driven by this project's wind.
+  - `src/ocean/Refraction.ts`: the refraction source of `RefractionPass.js` (the scene below the
+    water only, clipped above the sea level, half resolution, through a guard band wider than the
+    screen), as a frame graph pass drawing a clipping group.
   - `src/ocean/ShoreWaves.ts`, `src/ocean/ShoreWaveField.ts`: began as an adaptation of
     `ShoreWaves.js`; now mostly rewritten for this island's rocky boundary.
   - `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`: the atmosphere and solar disk from `Atmosphere.js` and
     `Sky.js`, ported from WGSL to TSL.
+  - `src/post/PhysicalBloom.ts`: the physically motivated bloom of `PostFX.js` (after Jimenez,
+    SIGGRAPH 2014: 13-tap downsamples, the first through the Karis average, and 3x3 tent
+    upsamples); `src/post/Pipeline.ts`: its grade (the white balance nudge, saturation and contrast
+    round mid grey, the vignette, the luminance-weighted grain) before three's ACES at its
+    exposure, ported from WGSL to TSL.
   - `src/post/TemporalLocks.ts`: the motion cap, the temporal reactive and the clamp-drop of
     `TemporalUpscale.js`'s accumulation, which is AMD's FSR 2 (see "FSR 2" below; licence
     [`src/post/tidewater-fsr2.LICENSE.txt`](src/post/tidewater-fsr2.LICENSE.txt), both notices).
@@ -224,17 +254,6 @@ packages, into `dist/licenses/`.
   droplets on land, rings on the sea) are procedural. Nothing from the project's `public/`
   folder or its CC BY-NC-SA derived shaders (`rainRipples.js`, `surfaceRain.js`, `rainGlass.js`)
   is used.
-
-### Bloom chains (three.js's BloomNode)
-
-- Upstream: three.js `examples/jsm/tsl/display/BloomNode.js` (r186), after UnrealBloomPass
-- Copyright: 2010-2026 three.js authors
-- Licence: MIT, see [`src/post/three-bloom.LICENSE.txt`](src/post/three-bloom.LICENSE.txt)
-- File: `src/post/BloomChains.ts`: the high pass, the five mips' separable Gaussian blurs and the
-  composite of the tight bloom and the wide glow.
-- Changes: the chains are drawn together (the high pass and each blur write every chain's target
-  in one MRT pass, the composite stays a pass per chain), as passes of the frame graph into
-  targets it declares and sizes; the high pass is the pipeline's own (clamped, soft-knee).
 
 ### FSR 1 (AMD FidelityFX, through three.js's FSR1Node)
 

@@ -30,8 +30,8 @@ type V3 = THREE.Node<'vec3'>;
 // a probability that grows with the fresh breaking there (Poisson in time).
 //
 // Rendering (camera-facing sprites, premultiplied alpha, in the water target after the sea; under
-// taa and taau after the resolve, at the canvas's resolution and unjittered, its occlusion and
-// depth of field from the nearest surface's texels around the pixel: post/AfterResolve.ts; under
+// taa and taau after the resolve, at the canvas's resolution and unjittered, its occlusion from the
+// nearest surface's texels around the pixel: post/AfterResolve.ts; under
 // the ground truth in the overlay pass over the finished scene, Pipeline.ts, its coverage the
 // reactive weight: Motion.ts):
 //  * drops and ligaments are clear water: a sub-pixel drop is drawn as a motion streak whose
