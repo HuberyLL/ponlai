@@ -309,7 +309,7 @@ export const checks = [
 
 		const r = mockRenderer();
 		const g = new FrameGraph( r, { sceneSamples: 1 } );
-		// a bloom set up without a material holding it, as Pipeline sets up its blooms
+		// a bloom set up without a material holding it, as a chain pass sets up three's display nodes
 		const bloom = new BloomNode( texture( new THREE.Texture() ) );
 		bloom.setup( { getSharedContext: () => ( {} ) } );
 		const output = g.import( 'bloom', bloom._renderTargetsHorizontal[ 0 ], { of: 'render', scale: 0.5, min: 1 } );
