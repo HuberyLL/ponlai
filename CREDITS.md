@@ -17,9 +17,8 @@ packages, into `dist/licenses/`.
   [`src/weather/tidewater.LICENSE.txt`](src/weather/tidewater.LICENSE.txt) (the same text)
 - From the three.js (TSL) edition, commit
   [`fd6cae6`](https://github.com/dgreenheck/tidewater/tree/fd6cae6fa57343d344e5c008e1abda974c824b86):
-  - `src/ocean/OceanFFT.ts`: the multi-cascade FFT ocean.
+  - `src/ocean/OceanFFT.ts`: the multi-cascade FFT ocean (its time evolution and inverse FFT).
   - `src/ocean/Water.ts`: the water shading (`WaterMaterial.js`).
-  - `src/ocean/Caustics.ts`: the rasterised caustics.
   - `src/ocean/FoamPattern.ts`: the procedural foam pattern from `FoamTexture.js` (rafts, holes,
     bubbles, mottling and streaks, generated on the GPU; no image asset).
   - `src/ocean/Spray.ts`: the GPU spray from `src/fx/Spray.js` (drops, ligaments, dense spray and
@@ -28,8 +27,12 @@ packages, into `dist/licenses/`.
 - From the native WebGPU edition, commit
   [`4811ba4`](https://github.com/dgreenheck/tidewater/tree/4811ba48d795197de5621985f404e765c0b7c0ef):
   - `src/ocean/OceanSpectrum.ts`: the JONSWAP / TMA spectrum, directional spreading and dispersion
-    helpers from `OceanFFT.js`, ported to TypeScript; `OceanFFT.ts` combines the wind sea and swell
-    spectra they describe.
+    helpers from `OceanFFT.js`, ported to TypeScript, and the sea states of `src/ui/AppUI.js`;
+    `OceanFFT.ts` sums its two wave systems (`local` and `swell`) into four cascades of its sizes
+    and bands, and takes the shallow-water attenuation of each cascade from `WaterSurface.js`.
+  - `src/ocean/Caustics.ts`: the rasterised caustics of `Caustics.js`, two layers of two focal
+    planes with their lookup (dispersion, depth blur and fade, footprint filtering), ported from
+    WGSL to TSL.
   - `src/ocean/StormSea.ts`: the persistent whitecap foam of `OceanFFT.js` (build-up where the
     Jacobian folds, exponential decay), here on one world-space grid of the summed cascades; and
     in `src/ocean/Water.ts` the whitecap compositing of `WaterSurface.js` (a foam pattern

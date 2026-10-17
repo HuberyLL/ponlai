@@ -6,18 +6,23 @@
 
 import * as THREE from 'three/webgpu';
 import {
-	Fn, uniform, storage, instanceIndex, float, vec2, vec4, uint, sqrt, tanh, min, cos, sin, length, select,
+	Fn, uniform, storage, instanceIndex, float, vec2, vec4, uint, sqrt, tanh, min, cos, sin, length, select, mix, smoothstep,
 	screenCoordinate, ivec2, workgroupArray, workgroupBarrier, workgroupId, localId,
 } from 'three/tsl';
 import { mulberry32 } from '../world/noise.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { createWaveSpectrum, type SwellParams } from './OceanSpectrum.ts';
+import { createWaveSpectrum, DEFAULT_SWELL, type SwellParams } from './OceanSpectrum.ts';
 
-// Multi-cascade FFT ocean (Tessendorf) on WebGPU compute, after tidewater's OceanFFT: a JONSWAP
-// local wind-sea and swell spectra are summed once per cascade in JS; every frame one kernel evolves
-// all cascades in time, then a Stockham radix-2 inverse FFT runs as one row and one column dispatch
-// over all cascades at once, and a small fragment pass per cascade writes the mipmapped textures the
-// water samples.
+// Multi-cascade FFT ocean (Tessendorf) on WebGPU compute, after tidewater's OceanFFT (4811ba4): four
+// cascades of non-integer size ratios, so the sum never shows a repeat, each holding the waves of
+// its own band of wavenumbers (from 6 fundamentals of the next larger tile to 6 of its own next). Two
+// wave systems are summed into one spectrum, as tidewater's `local` and `swell`: the local wind sea
+// (JONSWAP, the weather's wind and a sea state's fetch) and a distant swell of its own wind and
+// fetch (OceanSpectrum.ts). The spectrum is summed once per cascade in JS; every frame one kernel
+// evolves all cascades in time, then a Stockham radix-2 inverse FFT runs as one row and one column
+// dispatch over all cascades at once, and a small fragment pass per cascade and field writes its
+// layer of the array textures the water samples (one texture per field, a layer per cascade: the
+// water's fragment stage binds three textures for the FFT, not one per cascade and field).
 //
 // Each FFT dispatch runs one workgroup per row (or column) through its 8 stages in workgroup
 // memory, with the index maths, twiddles and butterfly order of one dispatch per stage, so the
@@ -31,7 +36,8 @@ import { createWaveSpectrum, type SwellParams } from './OceanSpectrum.ts';
 //   c2 = dDy/dx + i dDy/dz  c3 = dDx/dx + i dDz/dz
 //   c4 = Ux + i Uz          c5 = Vy + i 0
 //
-// Per cascade outputs (half float, repeat; velocity needs no mip chain):
+// Outputs, one 2D array texture each, a layer per cascade (half float, repeat; velocity needs no
+// mip chain):
 //   displacement  (Dx, Dy, Dz, jacobian)       derivatives  (dDy/dx, dDy/dz, dDx/dx, dDz/dz)
 //   slope moments (dDy/dx squared, dDy/dz squared, their product, signed dDx/dz)
 //   orbital velocity (Ux, Uz, Vy, unused), without artistic choppiness
@@ -40,12 +46,17 @@ import { createWaveSpectrum, type SwellParams } from './OceanSpectrum.ts';
 // displacement's rate, which differs only for waves far longer than those that carry the sea's
 // energy): the temporal modes' motion vectors move the water's vertices back along it (Water.ts).
 // Derivatives and slope moments use the same filtering kernel; their mip chains retain
-// unresolved slope variance.
-// Sample a cascade at its undisplaced world xz / size.
+// unresolved slope variance. The mip chain of a layer is made once its layer is written: three
+// rebuilds every layer's chain at the end of each render into an array target, so only the last
+// cascade's pass of a field asks for them.
+// Sample a cascade at its undisplaced world xz / size, in its layer (`texture( t, uv ).depth( c )`).
 //
 // The spectrum's wind (`windSpeed`, `windDirection`) is the weather's, as weather/Wind.ts derives it
-// (`spectrumWind`: the heading and the reference speed). Weather only scales the cascades'
-// amplitude (`weatherGain`, Wind.ts `oceanGain`); it never rebuilds the wave spectrum.
+// (`spectrumWind`: the heading and the reference speed), and its sea state (fetch, choppiness, the
+// swell's scale) tidewater's at that wind (OceanSpectrum.ts `seaState`). Weather only scales the
+// cascades' amplitude (`weatherGain`, Wind.ts `oceanGain`); it never rebuilds the wave spectrum.
+// The spectrum's depth is tidewater's open ocean (500 m), not the shelf sea's: the island's shallows
+// damp the waves in the water's vertex stage instead (Water.ts).
 // A kernel that uses `workgroupBarrier()` is dispatched by size (`computeKernel( [ n ] )` with
 // `dispatchSize` set), not by a thread count, which makes three insert an early-return bounds
 // check ahead of the barriers. A multiple-render-target pass writing the four fields measured
@@ -55,9 +66,12 @@ const FFT_N = 256;
 const LOG2N = 8;
 const G = 9.81;
 
-// tile sizes (m). The caustics need cascade 2 to tile inside cascade 1 (16 = 4 x 4).
-const CASCADE_SIZES = [ 71.3, 16.0, 4.0 ];
+// tile sizes (m): tidewater's, in non-integer ratios so that the cascades never line up
+export const CASCADE_SIZES = [ 733, 157, 33.3, 7.1 ];
+// a cascade's band starts this many fundamentals of its own tile above the next larger one's
+const BAND_FUNDAMENTALS = 6;
 
+// The local wind sea's system and the shared settings (tidewater's `local` WaveSystem).
 export interface OceanParams {
 	windSpeed: number; // m/s
 	windDirection: number; // Fourier heading in degrees; the positive IFFT travels oppositely
@@ -66,6 +80,9 @@ export interface OceanParams {
 	choppiness: number;
 	depth: number;
 	spread: number;
+	swell: number; // the local sea's extra directional concentration
+	peakEnhancement: number;
+	shortWavesFade: number;
 	seed: number;
 }
 
@@ -77,13 +94,15 @@ export class OceanFFT {
 	params: OceanParams;
 	readonly swell: SwellParams;
 	spectrumRevision = 0;
-	displacementTextures: THREE.Texture[];
-	derivativeTextures: THREE.Texture[];
-	slopeMomentTextures: THREE.Texture[];
-	velocityTextures: THREE.Texture[];
+	readonly cascades: number;
+	// the fields, one array texture each with a layer per cascade (see the note at the top)
+	readonly displacement: THREE.Texture;
+	readonly derivatives: THREE.Texture;
+	readonly slopeMoments: THREE.Texture;
+	readonly velocity: THREE.Texture;
 	// A slow weather envelope changes the existing wave field without regenerating its
 	// random phases or directional spectrum. Each cascade keeps one coherent amplitude.
-	readonly weatherGain = uniform( new THREE.Vector3( 1, 1, 1 ) );
+	readonly weatherGain = uniform( new THREE.Vector4( 1, 1, 1, 1 ) );
 
 	private time = uniform( 0 );
 	/** The horizontal displacement's scale (artistic choppiness), which the velocity leaves out. */
@@ -92,26 +111,33 @@ export class OceanFFT {
 	private h0Attr: THREE.StorageBufferAttribute;
 	private kernels: THREE.ComputeNode[] = [];
 	private sharedKernels: THREE.ComputeNode[] = [];
-	private outputs: { rt: THREE.RenderTarget; quad: THREE.QuadMesh }[] = [];
+	private outputs: { rt: THREE.RenderTarget; layer: number; mipmapped: boolean; quad: THREE.QuadMesh }[] = [];
+	private allocated = false;
 
+	// Defaults: tidewater's `local` and `swell` wave systems (its Breezy sea state; main.ts passes the
+	// weather's wind and its sea state).
 	constructor( renderer: THREE.WebGPURenderer, {
 		sizes = CASCADE_SIZES,
 		windSpeed,
 		windDirection,
-		fetch = 4000,
+		fetch = 120e3,
 		amplitude = 1.0,
-		choppiness = 0.85,
-		depth = 8,
-		spread = 0.82,
+		choppiness = 0.9,
+		depth = 500,
+		spread = 0.85,
+		swell = 0.05,
+		peakEnhancement = 3.3,
+		shortWavesFade = 0.01,
 		seed = 1234,
-		swell = {},
+		distantSwell = {},
 		anisotropy = 4,
-	}: Pick<OceanParams, 'windSpeed' | 'windDirection'> & Partial<OceanParams> & { sizes?: number[]; swell?: Partial<SwellParams>; anisotropy?: number } ) {
+	}: Pick<OceanParams, 'windSpeed' | 'windDirection'> & Partial<OceanParams> & { sizes?: number[]; distantSwell?: Partial<SwellParams>; anisotropy?: number } ) {
 
 		this.renderer = renderer;
 		this.sizes = sizes;
-		this.params = { windSpeed, windDirection, fetch, amplitude, choppiness, depth, spread, seed };
-		this.swell = { height: 0.16, period: 3.4, directionOffset: 20, spread: 0.85, peakEnhancement: 1.8, ...swell };
+		this.cascades = sizes.length;
+		this.params = { windSpeed, windDirection, fetch, amplitude, choppiness, depth, spread, swell, peakEnhancement, shortWavesFade, seed };
+		this.swell = { ...DEFAULT_SWELL, ...distantSwell };
 
 		const N = FFT_N, NN = N * N, C = sizes.length, count = NN * C;
 		this.h0Attr = new THREE.StorageBufferAttribute( new Float32Array( count * 4 ), 4 );
@@ -123,7 +149,8 @@ export class OceanFFT {
 			attrC: new THREE.StorageBufferAttribute( new Float32Array( count * 4 ), 4 ),
 		} ) );
 		const rw = ( i: number ) => ( { A: storage( buf[ i ].attrA, 'vec4', count ), B: storage( buf[ i ].attrB, 'vec4', count ), C: storage( buf[ i ].attrC, 'vec4', count ) } );
-		const sizeAt = ( c: THREE.Node<'uint'> ) => select( c.equal( uint( 0 ) ), float( sizes[ 0 ] ), select( c.equal( uint( 1 ) ), float( sizes[ 1 ] ?? 1 ), float( sizes[ 2 ] ?? 1 ) ) );
+		const sizeAt = ( c: THREE.Node<'uint'> ) => sizes.slice( 0, - 1 ).reduceRight<THREE.Node<'float'>>(
+			( rest, size, i ) => select( c.equal( uint( i ) ), float( size ), rest ), float( sizes[ C - 1 ] ) );
 		const cmul = ( a: THREE.Node<'vec2'>, b: THREE.Node<'vec2'> ) => vec2( a.x.mul( b.x ).sub( a.y.mul( b.y ) ), a.x.mul( b.y ).add( a.y.mul( b.x ) ) );
 		const ci = ( a: THREE.Node<'vec2'> ) => vec2( a.y.negate(), a.x ); // i * a
 
@@ -262,26 +289,28 @@ export class OceanFFT {
 
 		}
 
-		// 3. Observe the final IFFT and write all four per-cascade fields.
+		// 3. Observe the final IFFT and write each cascade's layer of the four fields.
 		const fin = { A: storage( buf[ src ].attrA, 'vec4', count ).toReadOnly(), B: storage( buf[ src ].attrB, 'vec4', count ).toReadOnly(), C: storage( buf[ src ].attrC, 'vec4', count ).toReadOnly() };
-		this.displacementTextures = [];
-		this.derivativeTextures = [];
-		this.slopeMomentTextures = [];
-		this.velocityTextures = [];
-		for ( let c = 0; c < C; c ++ ) {
+		const fields = [ 0, 1, 2, 3 ].map( ( which ) => {
 
-			for ( const which of [ 0, 1, 2, 3 ] ) {
+			const rt = new THREE.RenderTarget( N, N, {
+				depth: C, type: THREE.HalfFloatType, generateMipmaps: which !== 3,
+				minFilter: which === 3 ? THREE.LinearFilter : THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
+				wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, depthBuffer: false, anisotropy,
+			} );
+			rt.texture.name = [ 'oceanDisplacement', 'oceanDerivatives', 'oceanSlopeMoments', 'oceanVelocity' ][ which ];
+			return rt;
 
-				const rt = new THREE.RenderTarget( N, N, {
-					type: THREE.HalfFloatType, generateMipmaps: which !== 3,
-					minFilter: which === 3 ? THREE.LinearFilter : THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
-					wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, depthBuffer: false, anisotropy,
-				} );
-				rt.texture.name = [ 'oceanDisp', 'oceanDeriv', 'oceanSlopeMoments', 'oceanVelocity' ][ which ] + c;
+		} );
+		const gains = [ this.weatherGain.x, this.weatherGain.y, this.weatherGain.z, this.weatherGain.w ];
+		for ( const which of [ 0, 1, 2, 3 ] ) {
+
+			for ( let c = 0; c < C; c ++ ) {
+
 				const mat = new THREE.NodeMaterial();
 				const px = ivec2( screenCoordinate.xy );
 				const idx = uint( px.y.mul( N ).add( px.x ).add( c * NN ) );
-				const gain = c === 0 ? this.weatherGain.x : c === 1 ? this.weatherGain.y : this.weatherGain.z;
+				const gain = gains[ c ];
 				const a = fin.A.element( idx ).mul( gain ), b = fin.B.element( idx ).mul( gain ); // ( Dx, Dz, Dy, dDx/dz ), ( dDy/dx, dDy/dz, dDx/dx, dDz/dz )
 				const J = float( 1 ).add( b.z ).mul( float( 1 ).add( b.w ) ).sub( a.w.mul( a.w ) );
 				const velocity = fin.C.element( idx ).mul( gain );
@@ -291,43 +320,49 @@ export class OceanFFT {
 				// moments gain amplitude squared; the signed cross derivative stays linear.
 				mat.fragmentNode = which === 0 ? vec4( a.x, a.z, a.y, J ) : which === 1 ? b : which === 2 ?
 					vec4( b.x.mul( b.x ), b.y.mul( b.y ), b.x.mul( b.y ), a.w ) : vec4( velocity.xyz, 0 );
-				this.outputs.push( { rt, quad: new THREE.QuadMesh( mat ) } );
-				[ this.displacementTextures, this.derivativeTextures, this.slopeMomentTextures, this.velocityTextures ][ which ].push( rt.texture );
+				this.outputs.push( { rt: fields[ which ], layer: c, mipmapped: which !== 3, quad: new THREE.QuadMesh( mat ) } );
 
 			}
 
 		}
+		[ this.displacement, this.derivatives, this.slopeMoments, this.velocity ] = fields.map( ( rt ) => rt.texture );
 
 		this.rebuildSpectrum();
 
 	}
 
-	// k-band of each cascade: from 4 fundamentals of the next-larger tile up to 4 of its own next
+	/** tidewater's shallow-water attenuation of cascade `c` (WaterSurface.js
+	 * `waterSurfaceCascadeAttenuation`) at a floor `depth` (m): long waves feel the floor first and
+	 * fade toward it over 8 % of their tile (at most 40 m of depth), while short ones keep a share
+	 * until the last 0.6 m. */
+	attenuation( c: number, depth: THREE.Node<'float'> ): THREE.Node<'float'> {
+
+		const d0 = Math.min( 40, this.sizes[ c ] * 0.08 ), floor = [ 0, 0.05, 0.25, 0.5 ][ c ] ?? 0.5;
+		return mix( smoothstep( 0, 0.6, depth ).mul( floor ), float( 1 ), smoothstep( 0, d0, depth ) );
+
+	}
+
+	// k-band of each cascade: from BAND_FUNDAMENTALS fundamentals of its own tile up to as many of
+	// the next smaller one's
 	private cuts( i: number ): [ number, number ] {
 
 		const s = this.sizes;
-		const lo = i === 0 ? 0 : 2 * Math.PI / s[ i ] * 4;
-		const hi = i === s.length - 1 ? Infinity : 2 * Math.PI / s[ i + 1 ] * 4;
+		const lo = i === 0 ? 0 : 2 * Math.PI / s[ i ] * BAND_FUNDAMENTALS;
+		const hi = i === s.length - 1 ? Infinity : 2 * Math.PI / s[ i + 1 ] * BAND_FUNDAMENTALS;
 		return [ lo, hi ];
 
 	}
 
 	rebuildSpectrum(): void {
 
-		const { windSpeed: U, windDirection, fetch: F, amplitude, spread, seed } = this.params;
+		const { windSpeed, windDirection, fetch, amplitude, spread, swell, peakEnhancement, shortWavesFade, seed, depth } = this.params;
 		const N = FFT_N, NN = N * N;
-		const depth = this.params.depth;
-		const local = createWaveSpectrum( { windSpeed: U, windDirection, fetch: F, spread,
-			swell: 0.05, peakEnhancement: 3.3, shortWavesFade: 0.04 }, depth );
-		const swellOmega = 2 * Math.PI / this.swell.period;
-		// The swell is a second directional frequency spectrum, not an additional regular
-		// wave train. Derive its fetch from the authored period, then normalise its energy.
-		const swellFetch = G * G / Math.max( U, 0.1 ) * ( 22 / swellOmega ) ** 3;
-		const swell = createWaveSpectrum( { windSpeed: U, windDirection: windDirection + this.swell.directionOffset,
-			fetch: swellFetch, spread: this.swell.spread, swell: 0.9, peakEnhancement: this.swell.peakEnhancement,
-			shortWavesFade: 0.1, peakPeriod: this.swell.period }, depth );
-		const localEnergy = new Float64Array( NN * this.sizes.length ), swellEnergy = new Float64Array( localEnergy.length );
-		let swellVariance = 0;
+		// tidewater's two wave systems: the local wind sea and the distant swell, summed
+		const local = createWaveSpectrum( { windSpeed, windDirection, fetch, spread, swell, peakEnhancement, shortWavesFade }, depth );
+		const S = this.swell;
+		const distant = createWaveSpectrum( { scale: S.scale, windSpeed: S.windSpeed, windDirection: windDirection + S.directionOffset,
+			fetch: S.fetch, spread: S.spread, swell: S.swell, peakEnhancement: S.peakEnhancement, shortWavesFade: S.shortWavesFade }, depth );
+		const energy = new Float64Array( NN * this.sizes.length );
 		for ( let c = 0; c < this.sizes.length; c ++ ) {
 
 			const dk = 2 * Math.PI / this.sizes[ c ], [ lo, hi ] = this.cuts( c );
@@ -337,17 +372,11 @@ export class OceanFFT {
 				const kx = ( i < N / 2 ? i : i - N ) * dk, kz = ( j < N / 2 ? j : j - N ) * dk;
 				const k = Math.hypot( kx, kz );
 				if ( k < lo || k >= hi ) continue;
-				const at = c * NN + j * N + i;
-				localEnergy[ at ] = local( kx, kz ) * dk * dk;
-				swellEnergy[ at ] = swell( kx, kz ) * dk * dk;
-				swellVariance += swellEnergy[ at ];
+				energy[ c * NN + j * N + i ] = ( local( kx, kz ) + distant( kx, kz ) ) * dk * dk;
 
 			}
 
 		}
-		// Hs = 4 sigma for the Gaussian sea. Normalise over the modes we actually render,
-		// so tile sizes and finite-depth filtering do not silently change the height dial.
-		const swellScale = swellVariance > 0 ? ( Math.max( 0, this.swell.height ) / 4 ) ** 2 / swellVariance : 0;
 		const rng = mulberry32( seed );
 		const gauss = () => {
 
@@ -362,9 +391,8 @@ export class OceanFFT {
 
 			for ( let j = 0; j < N; j ++ ) for ( let i = 0; i < N; i ++ ) {
 
-				const a = gauss(), b = gauss(), at = ci * NN + j * N + i;
-				const energy = localEnergy[ at ] + swellEnergy[ at ] * swellScale;
-				const amp = Math.sqrt( energy / 2 ) * amplitude;
+				const a = gauss(), b = gauss();
+				const amp = Math.sqrt( energy[ ci * NN + j * N + i ] / 2 ) * amplitude;
 				re[ j * N + i ] = a * amp / Math.SQRT2;
 				im[ j * N + i ] = b * amp / Math.SQRT2;
 
@@ -386,7 +414,7 @@ export class OceanFFT {
 
 		this.h0Attr.needsUpdate = true;
 		this.chop.value = this.params.choppiness;
-		this.depthU.value = this.params.depth;
+		this.depthU.value = depth;
 		this.spectrumRevision ++;
 
 	}
@@ -400,10 +428,15 @@ export class OceanFFT {
 		const prev = r.getRenderTarget();
 		for ( const o of this.outputs ) {
 
-			r.setRenderTarget( o.rt );
+			// One mip chain per field, after its last layer (see the note at the top). The first frame
+			// asks at every layer: a target's texture takes its mip levels from the flag at its first
+			// render.
+			o.rt.texture.generateMipmaps = o.mipmapped && ( o.layer === this.cascades - 1 || ! this.allocated );
+			r.setRenderTarget( o.rt, o.layer );
 			o.quad.render( r );
 
 		}
+		this.allocated = true;
 
 		r.setRenderTarget( prev );
 

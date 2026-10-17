@@ -20,6 +20,7 @@ import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.
 import { Wind, weatherWind } from './weather/Wind.ts';
 import { Rain, setRainShading } from './weather/Rain.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
+import { seaState } from './ocean/OceanSpectrum.ts';
 import { ShoreWaves } from './ocean/ShoreWaves.ts';
 import { Caustics } from './ocean/Caustics.ts';
 import { Water } from './ocean/Water.ts';
@@ -437,13 +438,13 @@ shared.skyIrradianceSource = sky.irradianceNode.mul( shared.skyFill );
 shared.islandIrradianceSource = sky.islandIrradianceNode.mul( shared.skyFill );
 
 const textures = await bakeProceduralTextures( renderer );
-// Recover mid-scale wave volume through wind/fetch, while the spectrum still filters fine crests.
-// Keep the swell broad and modest so it supports the body without becoming a dominant wave train.
-// The spectrum's wind is the weather's (Wind.ts `spectrumWind`); a weather change scales its
-// amplitudes (`oceanGain`, below in the frame loop) and never rebuilds it.
+// tidewater's two wave systems at the weather's wind (Wind.ts `spectrumWind`) and tidewater's sea
+// state for that wind (OceanSpectrum.ts `seaState`: its fetch, choppiness and swell); a weather
+// change scales the amplitudes (`oceanGain`, below in the frame loop) and never rebuilds it.
+const sea = seaState( wind.spectrumWind.windSpeed );
 const fft = new OceanFFT( renderer, {
-	...wind.spectrumWind, fetch: 3500, amplitude: 0.76, choppiness: 0.55, spread: 0.52,
-	swell: { height: 0.18 }, anisotropy: quality.water.fftAnisotropy,
+	...wind.spectrumWind, fetch: sea.fetch, choppiness: sea.choppiness, distantSwell: { scale: sea.swell },
+	anisotropy: quality.water.fftAnisotropy,
 } );
 const caustics = new Caustics( renderer, fft );
 // the veil's shells and the sea's ripple layers are built into the rain's and the water's materials
@@ -576,7 +577,7 @@ setLand( land, landOptions.step );
 // (its transform is the shared shoreXform), the floor's height and beds over the same bounds, the
 // rim ground over its own.
 const fields = new WorldFields( data, shared.shoreXform.value );
-const shoreWaves = new ShoreWaves( renderer, data, shared, fields.shore, fft );
+const shoreWaves = new ShoreWaves( renderer, data, shared, fields.shore, fft, fields.floor );
 // The meadow's flowers keep clear of the islander's walking loop, 5 m in from the coast.
 const walk = walkPoints( data.walk );
 const walkDistance = walkLoopDistance( walk );

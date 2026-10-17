@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, float, vec2, vec3, vec4, texture, screenCoordinate, sin, cos, max, abs, clamp, sqrt, exp, dot, length, normalize, cross, select,
+	Fn, float, int, vec2, vec3, vec4, texture, screenCoordinate, sin, cos, max, abs, clamp, sqrt, exp, dot, length, normalize, cross, select,
 } from 'three/tsl';
 import { SUN_ANGULAR_RADIUS } from '../lighting/Radiometry.ts';
 
@@ -207,8 +207,7 @@ export const waveSolarSlopeCovariance = Fn( ( [ light, view ]: [ V3, V3 ] ) => {
 // Dev-only isolated GPU verification. Import dynamically from the verification runner;
 // the application does not import this function, so production can tree-shake the probe.
 export async function verifyWaveOptics( renderer: THREE.WebGPURenderer, fft: {
-	displacementTextures: THREE.Texture[]; derivativeTextures: THREE.Texture[];
-	slopeMomentTextures: THREE.Texture[];
+	cascades: number; displacement: THREE.Texture; derivatives: THREE.Texture; slopeMoments: THREE.Texture;
 } ) {
 
 	const size = 256;
@@ -235,15 +234,16 @@ export async function verifyWaveOptics( renderer: THREE.WebGPURenderer, fft: {
 	try {
 
 		renderer.setScissorTest( false );
-		for ( let c = 0; c < fft.derivativeTextures.length; c ++ ) {
+		const layer = ( field: THREE.Texture, c: number, q: THREE.Node<'vec2'> ) => texture( field, q ).depth( int( c ) );
+		for ( let c = 0; c < fft.cascades; c ++ ) {
 
 			for ( const mip of [ 0, 2, 4, 8 ] ) {
 
 				const pixels = await render( Fn( () => {
 
 					const q = screenCoordinate.xy.div( size );
-					const mean = texture( fft.derivativeTextures[ c ], q ).level( float( mip ) ).xy.toVar();
-					const moments = texture( fft.slopeMomentTextures[ c ], q ).level( float( mip ) ).xyz.toVar();
+					const mean = layer( fft.derivatives, c, q ).level( float( mip ) ).xy.toVar();
+					const moments = layer( fft.slopeMoments, c, q ).level( float( mip ) ).xyz.toVar();
 					const covariance = waveSlopeCovariance( mean, moments ).toVar();
 					return vec4( covariance.x, covariance.y, covariance.z, dot( mean, mean ) );
 
@@ -269,12 +269,12 @@ export async function verifyWaveOptics( renderer: THREE.WebGPURenderer, fft: {
 			const normals = await render( Fn( () => {
 
 				const q = screenCoordinate.xy.div( size );
-				const d = texture( fft.derivativeTextures[ c ], q ).level( float( 0 ) ).toVar();
-				const crossDerivative = texture( fft.slopeMomentTextures[ c ], q ).level( float( 0 ) ).w.toVar();
+				const d = layer( fft.derivatives, c, q ).level( float( 0 ) ).toVar();
+				const crossDerivative = layer( fft.slopeMoments, c, q ).level( float( 0 ) ).w.toVar();
 				const j = vec4( d.z.add( 1 ), crossDerivative, crossDerivative, d.w.add( 1 ) ).toVar();
 				const normal = waveSurfaceNormal( d.xy, j ).toVar();
 				const jacobian = j.x.mul( j.w ).sub( j.y.mul( j.z ) );
-				const stored = texture( fft.displacementTextures[ c ], q ).level( float( 0 ) ).w;
+				const stored = layer( fft.displacement, c, q ).level( float( 0 ) ).w;
 				return vec4( dot( normal, vec3( j.x, d.x, j.z ) ), dot( normal, vec3( j.y, d.y, j.w ) ),
 					jacobian.sub( stored ), crossDerivative );
 
@@ -367,7 +367,7 @@ export async function verifyWaveOptics( renderer: THREE.WebGPURenderer, fft: {
 		const corrections = await verifyWaveCovarianceCorrections( renderer );
 		return { corrections, reports, maximumNormalResidual, maximumJacobianError, crossMinimum, crossMaximum,
 			beckmann: { mass, measured, covariance, maximumFixtureError, maskingMinimum, maskingMaximum }, furnace,
-			additionalTargets: fft.slopeMomentTextures.length, momentBytesIncludingMips: fft.slopeMomentTextures.length * size * size * 8 * 4 / 3 };
+			additionalTargets: 1, momentBytesIncludingMips: fft.cascades * size * size * 8 * 4 / 3 };
 
 	} finally {
 

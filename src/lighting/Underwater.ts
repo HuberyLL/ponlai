@@ -1,10 +1,10 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, float, vec3, vec4, positionWorld, normalViewGeometry, cameraViewMatrix,
-	normalize, exp, dot, select, smoothstep,
+	normalize, exp, dot, select, smoothstep, dFdx, dFdy,
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
-import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
+import { causticsColorAt, type Caustics } from '../ocean/Caustics.ts';
 import { refractedSunDirectionNode, refractedSunBeamScaleNode } from './RefractedSun.ts';
 
 type F = THREE.Node<'float'>;
@@ -69,15 +69,16 @@ export function underwaterLight( shared: Shared, caustics: Caustics, { aboveSun,
 	const waterSunView = normalize( cameraViewMatrix.mul( vec4( waterSun, 0 ) ).xyz );
 	// The caustics are read only where they are seen: below the water for the sun's path (and in
 	// a material's own band above it). Most of the island's rock lies above both, and a select()
-	// would read them everywhere. They sample with an explicit level, so the reads may sit inside
-	// these branches.
+	// would read them everywhere. They sample with explicit gradients (the pixel's footprint,
+	// taken before the branch) or an explicit level, so the reads may sit inside these branches.
 	const sun = Fn( () => {
 
 		const att = ( aboveSun ?? vec3( float( 1 ) ) ).toVar();
+		const footprint = { dx: dFdx( p.xz ).toVar(), dy: dFdy( p.xz ).toVar() };
 		If( under, () => {
 
 			att.assign( exp( sigT.negate().mul( dW ).div( waterSun.y ) )
-				.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) ).mul( causticsAt( caustics, p, dW.max( 0 ) ) ) );
+				.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) ).mul( causticsColorAt( caustics, p, dW.max( 0 ), { footprint } ) ) );
 
 		} );
 		return att;

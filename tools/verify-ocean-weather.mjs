@@ -119,7 +119,7 @@ try {
 		await renderer.setAnimationLoop( null );
 		try {
 			// Prime the frozen cache with a different gain, so both measured presets must draw.
-			fft.weatherGain.value.set( 1, 1, 1 );
+			fft.weatherGain.value.set( 1, 1, 1, 1 );
 			fft.update( 0, 12 );
 			shore.update( fft, 12 );
 			const clear = await take( 'clear' ), rain = await take( 'rain' );

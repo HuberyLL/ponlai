@@ -12,7 +12,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld, positionPrevious,
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
-	float, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
+	float, int, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
 	sin, abs, floor, fract, fwidth, reflect, select, step, dFdx, dFdy,
 } from 'three/tsl';
 import { airToWaterDirectionNode, radianceAcrossInterfaceNode } from '../lighting/OpticalInterface.ts';
@@ -59,9 +59,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 // plane and the sky-depth thresholds (-9e4; the resolved sky is -1e5) stay beyond it.
 //
 // Limits to keep in mind:
-// - The fragment stage already binds 16 sampled textures, the most WebGPU guarantees: a new texture
-//   fails pipeline creation unless another one goes (the sun's two shadow steps share one array
-//   texture for this reason, and the storm foam is a storage buffer). Data that changes over metres
+// - The fragment stage binds 12 sampled textures of the 16 WebGPU guarantees (a texture past them
+//   fails pipeline creation): the FFT's fields are array textures, a layer per cascade, the sun's
+//   two shadow steps share one array texture, and the storm foam is a storage buffer. Data that changes over metres
 //   can be read in the vertex stage and passed on as a varying (the estimated sea floor's beds and
 //   sand), but the water uses 14 of the 16 inter-stage variables WebGPU guarantees, 15 under the
 //   temporal modes (Motion.ts's previous clip position). The sea's own motion must reach that
@@ -485,28 +485,35 @@ export class Water {
 		const { fft, sky, shared, shore, seabedHeight, seabedLook, shoreWaves, refractedSun, sunShadow, shadowTaps, storm, sceneColor, linearDepth } = this.inputs;
 		const quality = this.quality;
 		const u = this.uniforms;
-		const sizes = uniform( new THREE.Vector3( ...fft.sizes ) );
-		const disp = fft.displacementTextures, der = fft.derivativeTextures, moments = fft.slopeMomentTextures;
+		// A cascade's layer of an FFT field at an undisplaced xz.
+		const cascade = ( field: THREE.Texture, c: number, at: V2 ) => texture( field, at.div( fft.sizes[ c ] ) ).depth( int( c ) );
 
-		// ---- vertex: displace the grid by the three cascades (the finest fades out far away). The
+		// ---- vertex: displace the grid by the four cascades (the finest fades out far away). Each is
+		// damped by the floor's depth under the point (tidewater's shallow-water attenuation,
+		// OceanFFT.attenuation: the shelf sea leaves the swell a sixth of its open-ocean height), by
+		// the island's lee (the shelter field: the long waves most) and within 7 m of the rock. The
 		// undisplaced grid point comes from the geometry: once positionNode is set, positionLocal
 		// reads the displaced position.
 		const xz = positionGeometry.xz;
-		const sd = texture( shore, xz.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw ) ).level( float( 0 ) ).r;
+		const fieldUV = ( p: V2 ) => p.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
+		const sd = texture( shore, fieldUV( xz ) ).level( float( 0 ) ).r;
 		// Shelter changes the physical wave amplitude; the finest wind detail stays alive.
-		const shelter = shoreWaves.shelter.sample( xz.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw ) ).level( float( 0 ) );
+		const shelter = shoreWaves.shelter.sample( fieldUV( xz ) ).level( float( 0 ) );
 		const coastDamp = mix( float( 0.45 ), float( 1 ), smoothstep( 0, 7, sd ) );
 		const windDamp = mix( float( 0.12 ), float( 1 ), shelter.r );
 		const mediumDamp = mix( float( 0.8 ), float( 1 ), shelter.r );
+		const seaDepth = shared.waterLevel.sub( texture( seabedHeight, fieldUV( xz ) ).level( float( 0 ) ).r );
+		const damping = [ windDamp, windDamp, mediumDamp, float( 1 ) ].map( ( lee, c ) => fft.attenuation( c, seaDepth ).mul( lee ).mul( coastDamp ) );
+		// ( the fine cascade's level of detail apart, w: its physical damping alone )
+		const weights = vec4( damping[ 0 ], damping[ 1 ], damping[ 2 ], damping[ 3 ] ).toVar();
 		const far = length( xz.sub( cameraPosition.xz ) );
 		const fineWeight = float( 1 ).sub( smoothstep( 60, 140, far ) );
-		const weights = vec3( windDamp, mediumDamp, fineWeight ).mul( coastDamp );
-		const largeDisp = texture( disp[ 0 ], xz.div( sizes.x ) ).level( float( 0 ) ).xyz;
-		const mediumDisp = texture( disp[ 1 ], xz.div( sizes.y ) ).level( float( 0 ) ).xyz;
-		const fineDisp = texture( disp[ 2 ], xz.div( sizes.z ) ).level( float( 0 ) ).xyz;
+		const disps = [ 0, 1, 2, 3 ].map( ( c ) => cascade( fft.displacement, c, xz ).level( float( 0 ) ).xyz );
+		const weighted = ( parts: V3[], w: THREE.Node<'vec4'>, fine: F ) => parts[ 0 ].mul( w.x ).add( parts[ 1 ].mul( w.y ) )
+			.add( parts[ 2 ].mul( w.z ) ).add( parts[ 3 ].mul( w.w.mul( fine ) ) );
 		// The skirt's sparse rows cannot carry waves; there the shading's slopes alone describe them.
 		const geometric = float( 1 ).sub( smoothstep( 600, 1500, far ) );
-		const d = largeDisp.mul( weights.x ).add( mediumDisp.mul( weights.y ) ).add( fineDisp.mul( weights.z ) ).mul( geometric );
+		const d = weighted( disps, weights, fineWeight ).mul( geometric );
 		const material = new THREE.NodeMaterial();
 		const displaced = vec3( xz.x.add( d.x ), shared.waterLevel.add( d.y )
 			.add( shoreWaves.surfaceAt( xz.add( d.xz ), shared.time ).x ), xz.y.add( d.z ) ).toVar();
@@ -516,16 +523,15 @@ export class Water {
 			// (motion vectors: the note at the top) the vertex a step of the clock ago, seen from the
 			// previous camera's level of detail
 			const previousFar = length( xz.sub( motionUniforms.previousCameraPosition.xz ) );
-			const previousWeights = vec3( windDamp, mediumDamp, float( 1 ).sub( smoothstep( 60, 140, previousFar ) ) ).mul( coastDamp );
+			const previousFine = float( 1 ).sub( smoothstep( 60, 140, previousFar ) );
 			const previousGeometric = float( 1 ).sub( smoothstep( 600, 1500, previousFar ) );
-			const back = ( c: number, now: V3 ) => {
+			const back = disps.map( ( now, c ) => {
 
-				const v = texture( fft.velocityTextures[ c ], xz.div( c === 0 ? sizes.x : c === 1 ? sizes.y : sizes.z ) ).level( float( 0 ) ).xyz; // Ux, Uz, Vy
+				const v = cascade( fft.velocity, c, xz ).level( float( 0 ) ).xyz; // Ux, Uz, Vy
 				return now.sub( vec3( v.x.mul( fft.chop ), v.z, v.y.mul( fft.chop ) ).mul( this.step ) );
 
-			};
-			const dp = back( 0, largeDisp ).mul( previousWeights.x ).add( back( 1, mediumDisp ).mul( previousWeights.y ) )
-				.add( back( 2, fineDisp ).mul( previousWeights.z ) ).mul( previousGeometric ).toVar();
+			} );
+			const dp = weighted( back, weights, previousFine ).mul( previousGeometric ).toVar();
 			const shoreAt = xz.add( dp.xz );
 			// (paused or across a cut the field baked before is not the previous frame's)
 			const shorePrevious = mix( shoreWaves.surfaceAt( shoreAt, shared.time ).x, shoreWaves.previousSurfaceAt( shoreAt ).x, this.shoreHistory );
@@ -541,7 +547,7 @@ export class Water {
 			material.userData.previousPosition = true;
 
 		}
-		const vLag = varying( xz ), vDamp = varying( coastDamp ), vFineWeight = varying( fineWeight );
+		const vLag = varying( xz ), vFineWeight = varying( fineWeight );
 		// The shoreline distance and the floor's height for the refraction's world-space estimate of
 		// the floor, sampled down this vertex's refracted ray as a level sea bends it, at fixed drops
 		// below the surface. Interpolated across the triangles, the distances stay continuous where
@@ -553,7 +559,6 @@ export class Water {
 		// point. Past the field's edge the distance keeps growing with the distance from that edge,
 		// and the floor keeps the edge's height.
 		const fieldEnd = shared.shoreXform.xy.add( vec2( 1 ).div( shared.shoreXform.zw ) );
-		const fieldUV = ( p: V2 ) => p.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
 		const shoreDistance = ( p: V2 ) => texture( shore, fieldUV( p ) ).level( float( 0 ) ).r
 			.add( length( p.sub( clamp( p, shared.shoreXform.xy, fieldEnd ) ) ) );
 		const floorHeight = ( p: V2 ) => texture( seabedHeight, fieldUV( p ) ).level( float( 0 ) ).r;
@@ -583,7 +588,7 @@ export class Water {
 		const vLandingLook = varying( vec3( beds,
 			texture( seabedLook.variation, landedXZ.mul( 0.013 ).add( 0.2 ) ).level( float( 3 ) ).a ) ); // grass, pale, broad
 		const vWeights = varying( weights );
-		const vLargeDisp = varying( largeDisp ), vMediumDisp = varying( mediumDisp ), vFineDisp = varying( fineDisp );
+		const vDisps = disps.map( ( disp ) => varying( disp ) );
 
 		// ---- fragment
 		const tDepth = texture( linearDepth );
@@ -712,17 +717,13 @@ export class Water {
 
 			// ---- everything that needs screen-space derivatives, while control flow is still uniform
 			// Mean slopes and second moments must use the same texture filtering kernel.
-			const d0 = texture( der[ 0 ], vLag.div( sizes.x ) ).toVar();
-			const d1 = texture( der[ 1 ], vLag.div( sizes.y ) ).toVar();
-			const d2 = texture( der[ 2 ], vLag.div( sizes.z ) ).toVar();
-			const m0 = texture( moments[ 0 ], vLag.div( sizes.x ) ).toVar();
-			const m1 = texture( moments[ 1 ], vLag.div( sizes.y ) ).toVar();
-			const m2 = texture( moments[ 2 ], vLag.div( sizes.z ) ).toVar();
+			const ds = [ 0, 1, 2, 3 ].map( ( c ) => cascade( fft.derivatives, c, vLag ).toVar() );
+			const ms = [ 0, 1, 2, 3 ].map( ( c ) => cascade( fft.slopeMoments, c, vLag ).toVar() );
 			const lagDx = dFdx( vLag ).toVar(), lagDy = dFdy( vLag ).toVar();
 			// Product gradients affect both height and the full horizontal Jacobian.
-			const weight0Gradient = waveParameterGradient( lagDx, lagDy, dFdx( vWeights.x ), dFdy( vWeights.x ) ).toVar();
-			const weight1Gradient = waveParameterGradient( lagDx, lagDy, dFdx( vWeights.y ), dFdy( vWeights.y ) ).toVar();
-			const weight2Gradient = waveParameterGradient( lagDx, lagDy, dFdx( vWeights.z ), dFdy( vWeights.z ) ).toVar();
+			const ws = [ vWeights.x, vWeights.y, vWeights.z, vWeights.w.mul( vFineWeight ) ];
+			const weightGradients = ws.map( ( w ) => waveParameterGradient( lagDx, lagDy, dFdx( w ), dFdy( w ) ).toVar() );
+			const sum = <T extends F | V2 | V3 | V4>( terms: T[] ) => terms.reduce( ( a, b ) => ( a as V4 ).add( b ) as unknown as T );
 			const shoreWave = shoreWaves.surfaceAt( wp.xz, time ).toVar();
 			const footprint = max( length( fwidth( vLag ) ), 1e-4 ).toVar();
 			// The foam's texture level: the pixel's area, not its longest side. At grazing angles the
@@ -730,14 +731,11 @@ export class Water {
 			const foamFootprint = max( abs( lagDx.x.mul( lagDy.y ).sub( lagDx.y.mul( lagDy.x ) ) ).sqrt(), 1e-4 ).toVar();
 
 			// ---- surface normal from the cascades' slopes (sampled at the undisplaced position)
-			const dd = d0.mul( vWeights.x ).add( d1.mul( vWeights.y ) ).add( d2.mul( vWeights.z ) ).toVar();
-			const horizontalCross = m0.w.mul( vWeights.x ).add( m1.w.mul( vWeights.y ) ).add( m2.w.mul( vWeights.z ) );
-			const heightGradient = dd.xy.add( weight0Gradient.mul( vLargeDisp.y ) )
-				.add( weight1Gradient.mul( vMediumDisp.y ) ).add( weight2Gradient.mul( vFineDisp.y ) ).toVar();
-			const xWeight = weight0Gradient.mul( vLargeDisp.x ).add( weight1Gradient.mul( vMediumDisp.x ) )
-				.add( weight2Gradient.mul( vFineDisp.x ) ).toVar();
-			const zWeight = weight0Gradient.mul( vLargeDisp.z ).add( weight1Gradient.mul( vMediumDisp.z ) )
-				.add( weight2Gradient.mul( vFineDisp.z ) ).toVar();
+			const dd = sum( ds.map( ( d, c ) => d.mul( ws[ c ] ) ) ).toVar();
+			const horizontalCross = sum( ms.map( ( m, c ) => m.w.mul( ws[ c ] ) ) );
+			const heightGradient = dd.xy.add( sum( weightGradients.map( ( g, c ) => g.mul( vDisps[ c ].y ) ) ) ).toVar();
+			const xWeight = sum( weightGradients.map( ( g, c ) => g.mul( vDisps[ c ].x ) ) ).toVar();
+			const zWeight = sum( weightGradients.map( ( g, c ) => g.mul( vDisps[ c ].z ) ) ).toVar();
 			const horizontal = vec4( dd.z.add( 1 ).add( xWeight.x ), horizontalCross.add( xWeight.y ),
 				horizontalCross.add( zWeight.x ), dd.w.add( 1 ).add( zWeight.y ) ).toVar();
 			// Rock reflection is sampled in displaced world coordinates: transform its slope
@@ -757,9 +755,13 @@ export class Water {
 			N.assign( normalize( N.add( toEye.mul( max( float( 0.02 ).sub( facing ), 0 ) ) ) ) );
 			// Energy shelter scales variance by amplitude squared. Fine LOD only attenuates
 			// the resolved mean; its missing variance remains in the physical glint distribution.
-			const rawCovariance = waveSlopeCovariance( d0.xy, m0.xyz ).mul( vWeights.x.mul( vWeights.x ) )
-				.add( waveSlopeCovariance( d1.xy, m1.xyz ).mul( vWeights.y.mul( vWeights.y ) ) )
-				.add( waveLodCovariance( d2.xy, m2.xyz, vFineWeight ).mul( vDamp.mul( vDamp ) ) ).toVar();
+			// Where a cascade is magnified (a pixel smaller than its texel) its slopes are resolved, and
+			// the bilinear filter's own variance between texels (largest mid-texel, a grid of squares in
+			// the glint on the long cascades' 0.6 m and 2.9 m texels) is not the surface's: only a
+			// minified cascade's moments count.
+			const minified = ( c: number ) => clamp( log2( footprint.div( fft.sizes[ c ] / 256 ) ), 0, 1 );
+			const rawCovariance = sum( [ 0, 1, 2 ].map( ( c ) => waveSlopeCovariance( ds[ c ].xy, ms[ c ].xyz ).mul( ws[ c ].mul( ws[ c ] ) ).mul( minified( c ) ) ) )
+				.add( waveLodCovariance( ds[ 3 ].xy, ms[ 3 ].xyz, vFineWeight ).mul( vWeights.w.mul( vWeights.w ) ).mul( minified( 3 ) ) ).toVar();
 			const unresolvedCovariance = waveCovarianceToTangent( rawCovariance, heightGradient, horizontal ).toVar();
 
 			const toCam = cameraPosition.sub( wp ).toVar();

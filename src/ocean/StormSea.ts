@@ -6,7 +6,7 @@
 
 import * as THREE from 'three/webgpu';
 import {
-	Fn, uniform, float, int, ivec2, vec2, vec3, uint, instanceIndex, instancedArray, storage, texture,
+	Fn, uniform, float, int, ivec2, vec2, vec3, vec4, uint, instanceIndex, instancedArray, storage, texture,
 	clamp, max, mix, exp, smoothstep, select, floor, fract, abs, dot, mx_noise_float,
 } from 'three/tsl';
 import type { OceanFFT } from './OceanFFT.ts';
@@ -115,18 +115,20 @@ export class StormSea {
 		this.stateRead = storage( this.state.value, 'vec2', RES * RES ).toReadOnly().setName( 'stormFoamRead' );
 
 		const sizes = fft.sizes;
-		const der = fft.derivativeTextures, moments = fft.slopeMomentTextures, disp = fft.displacementTextures, vel = fft.velocityTextures;
-		// The water's own shore shelter of each cascade (Water.ts vertex stage), with the fine
-		// cascade at full weight: breaking is physical, not a level of detail.
-		const cascadeWeights = ( xz: V2 ): V3 => {
+		const cascade = ( field: THREE.Texture, c: number, at: V2 ) => texture( field, at.div( sizes[ c ] ) ).depth( int( c ) );
+		// The water's own shore shelter of each cascade (Water.ts vertex stage: the two long ones
+		// alike), with the fine cascade at full weight: breaking is physical, not a level of detail.
+		const cascadeWeights = ( xz: V2 ): THREE.Node<'vec4'> => {
 
 			const q = xz.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
 			const sd = texture( shore, q ).level( float( 0 ) ).r;
 			const shelter = shoreWaves.shelter.sample( q ).level( float( 0 ) ).r;
 			const coastDamp = mix( float( 0.45 ), float( 1 ), smoothstep( 0, 7, sd ) );
-			return vec3( mix( float( 0.12 ), float( 1 ), shelter ), mix( float( 0.8 ), float( 1 ), shelter ), 1 ).mul( coastDamp );
+			const long = mix( float( 0.12 ), float( 1 ), shelter );
+			return vec4( long, long, mix( float( 0.8 ), float( 1 ), shelter ), 1 ).mul( coastDamp );
 
 		};
+		const weightOf = ( w: THREE.Node<'vec4'>, c: number ) => [ w.x, w.y, w.z, w.w ][ c ];
 		// A cell spans many texels of the shorter cascades: read them through their mip chains,
 		// filtered to the cell, instead of aliasing their fine chop into false folds.
 		const lod = ( c: number ) => Math.max( 0, Math.log2( CELL / ( sizes[ c ] / 256 ) ) );
@@ -156,10 +158,9 @@ export class StormSea {
 			const jxx = float( 1 ).toVar(), jzz = float( 1 ).toVar(), jxz = float( 0 ).toVar();
 			for ( let c = 0; c < sizes.length; c ++ ) {
 
-				const q = xz.div( sizes[ c ] );
-				const d = texture( der[ c ], q ).level( float( lod( c ) ) );
-				const cross = texture( moments[ c ], q ).level( float( lod( c ) ) ).w;
-				const weight = c === 0 ? w.x : c === 1 ? w.y : w.z;
+				const d = cascade( fft.derivatives, c, xz ).level( float( lod( c ) ) );
+				const cross = cascade( fft.slopeMoments, c, xz ).level( float( lod( c ) ) ).w;
+				const weight = weightOf( w, c );
 				jxx.addAssign( d.z.mul( weight ) );
 				jzz.addAssign( d.w.mul( weight ) );
 				jxz.addAssign( cross.mul( weight ) );
@@ -193,8 +194,7 @@ export class StormSea {
 			let offset: V3 = vec3( 0 );
 			for ( let c = 0; c < sizes.length; c ++ ) {
 
-				const weight = c === 0 ? w.x : c === 1 ? w.y : w.z;
-				offset = offset.add( texture( disp[ c ], xz.div( sizes[ c ] ) ).level( float( 0 ) ).xyz.mul( weight ) );
+				offset = offset.add( cascade( fft.displacement, c, xz ).level( float( 0 ) ).xyz.mul( weightOf( w, c ) ) );
 
 			}
 			return offset;
@@ -206,9 +206,8 @@ export class StormSea {
 			let velocity: V3 = vec3( 0 );
 			for ( let c = 0; c < sizes.length; c ++ ) {
 
-				const weight = c === 0 ? w.x : c === 1 ? w.y : w.z;
-				const v = texture( vel[ c ], xz.div( sizes[ c ] ) ).level( float( 0 ) ); // ( Ux, Uz, Vy )
-				velocity = velocity.add( vec3( v.x, v.z, v.y ).mul( weight ) );
+				const v = cascade( fft.velocity, c, xz ).level( float( 0 ) ); // ( Ux, Uz, Vy )
+				velocity = velocity.add( vec3( v.x, v.z, v.y ).mul( weightOf( w, c ) ) );
 
 			}
 			return velocity;
@@ -297,7 +296,7 @@ export class StormSea {
 		this.center.value.set( ( lo.x + RES / 2 ) * CELL, ( lo.y + RES / 2 ) * CELL );
 
 		const gain = this.fft.weatherGain.value;
-		const signature = `${ storm.toFixed( 4 ) },${ gain.x.toFixed( 4 ) },${ gain.y.toFixed( 4 ) },${ gain.z.toFixed( 4 ) },${ lo.x },${ lo.y }`;
+		const signature = `${ storm.toFixed( 4 ) },${ gain.toArray().map( ( g ) => g.toFixed( 4 ) ).join( ',' ) },${ lo.x },${ lo.y }`;
 		const delta = this.time === undefined ? Infinity : time - this.time;
 		const onset = ! this.active;
 		// A jump in time, or anything new while the clock stands still, replays the history. A
