@@ -55,22 +55,20 @@ everyday commands; this file has the details. Each tool's own file says the rest
   bump the epoch, `__PONLAI__.taa.epoch.bump()`, and wait again).
 - Keys: H toggles the GUI, Space pauses, R or 1/2/3 jump to the island, horizon and sky views, F
   toggles a corner readout of the frame cadence.
-- The island camera holds the island view's framing (`src/camera/IslandFraming.ts`): the whole
-  land and the ring of shallows round it, the land's centre in the middle of the frame, from the
-  `polar` / `az` heading and tilt, refitted when the window's shape changes and glided to (about
-  1.6 s, on the scene clock) when the land grows; a paused page takes the new framing at once. Its
-  one input is a turn about the land's centre: Q / E held (60 degrees a second) or a right or
-  middle drag across the canvas (a window's width a half turn), keeping the distance; the wheel
-  (or a pinch) zooms between the distance that frames the land and its shallows from every heading,
-  the farthest and the default, and the one that frames the land alone from every heading, the
-  nearest; R returns to the `az` heading and the farthest zoom. A left drag and the other keys do
-  not move it.
-  With `cameraInput` (or the GUI's Camera › move by hand) the hand moves it again
-  (`src/camera/IslandCameraControls.ts`): a left drag grabs the ground, a right or middle drag (or
-  Option / Ctrl with the left) turns and tilts, the wheel zooms toward the pointer; on a trackpad a
-  two-finger swipe pans, a pinch zooms and Option with a swipe turns and tilts; W A S D or the
-  arrows pan, Q / E turn, T / G tilt, + / - zoom, Shift speeds them up. Switching it off returns
-  the view to its framing.
+- The island camera starts at the island view's pose: the land's centre in the middle of the
+  frame, at most 45 m out, looking 50 degrees down (`polar` 40) from the `az` heading (a smaller
+  land, framed nearer with its ring of shallows, keeps that framing: `src/camera/IslandFraming.ts`).
+  While the camera still holds that pose it follows it when the window's shape changes, and glides
+  to it (about 1.6 s, on the scene clock) when the land grows; a paused page takes it at once. The
+  hand moves it (`src/camera/IslandCameraControls.ts`): a left drag grabs the ground, a right or
+  middle drag (or Option / Ctrl with the left) turns and tilts, the wheel zooms toward the pointer
+  between 22 and 70 m; on a trackpad a two-finger swipe pans, a pinch zooms and Option with a swipe
+  turns and tilts; W A S D or the arrows pan, Q / E turn, T / G tilt (straight down to 8 degrees
+  over the horizon), + / - zoom, Shift speeds them up. The pivot stays over the land and its ring of
+  shallows (its convex hull grown by 14 m); pulled past that, it goes on against a growing
+  resistance (at most 10 m farther) and springs back once let go. R returns to the island view's pose. `cameraInput=off` (or the GUI's Camera ›
+  move by hand) holds the view at its pose: Q / E or a right or middle drag then turn it about the
+  land's centre, and the wheel zooms from the start distance in to 22 m.
 - The GUI's Performance folder (`src/debug/FrameStats.ts`, from the rendered frames' rAF
   timestamps) shows the frame rate over the last second, the interval's p95 and maximum over the
   last 5 s, the frames late by a refresh against the paced interval and the intervals over 25 ms
@@ -82,9 +80,9 @@ everyday commands; this file has the details. Each tool's own file says the rest
 View and capture:
 
 - `paused`, `t` (scene time), `dpr` (render pixel ratio, pinned), `polar`, `az` (the island
-  view's tilt and heading, 50 and 180 degrees by default), `dist` (m; without it the island view
-  frames the land and its shallows, IslandFraming.ts, brought in to 35 m from the default pivot
-  when that framing stands farther; with it the camera stands that far from the default pivot), `cameraInput` (the hand moves the island camera freely), `gui`, `camera` (`orbit`, the
+  view's tilt and heading, 40 and 180 degrees by default), `dist` (m; without it the island view
+  frames the land and its shallows, IslandFraming.ts, brought in to 45 m from the default pivot
+  when that framing stands farther; with it the camera stands that far from the default pivot), `cameraInput=off` (the hand does not move the island camera: on by default), `gui`, `camera` (`orbit`, the
   default: the island camera; or `free`: fly with the mouse, WASD, Q/E and Shift).
   The island view's fov widens as it closes in: `nearFov` (degrees at the closest zoom, 42 by
   default; `off` keeps 27 at every distance) and `nearFovFrom` (the distance in m it widens from,
@@ -111,7 +109,7 @@ The island:
   chunkHashes()` the shown chunks' hashes (equal on a grown page and one loaded with `grow` at the
   same step), `growth.fieldBytes()` the world fields' GPU bytes. The island view (key R,
   `setCameraView( 'island' )`) frames the land shown; a camera that holds it glides to the new
-  framing (at once while paused), one placed elsewhere (by a tool, or by hand with `cameraInput`)
+  framing (at once while paused), one moved elsewhere (by a tool or by hand)
   stays where it is.
 - `approach` (0 .. 1, 0 by default): the progress toward the next piece, the shoal under it
   (src/world/SeabedRise.ts) put on it at once; above 0 the page generates the next piece and keeps
