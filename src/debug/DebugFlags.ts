@@ -29,6 +29,10 @@
 //
 // `windFreeze = true` holds the vegetation's wind while the scene clock runs (Wind.ts): the plants
 // stand in one pose with no motion, for clips where only the shadows or the jitter should move.
+//
+// `trample = false` leaves the islanders' trail through the meadow (world/vegetation/Trample.ts) out
+// of the meadow's shader when set at load (`flags=trample:false`), and empties its walkers when set
+// at run time (--toggle "s.flags.trample = !on" times the trail's loop).
 export interface MotionSourceFlags { camera?: boolean; object?: boolean; skin?: boolean; wind?: boolean; sea?: boolean; foam?: boolean }
 export const debugFlags: Record<string, boolean | number | string | MotionSourceFlags | undefined> & { mv: MotionSourceFlags } = { mv: {} };
 

@@ -53,6 +53,9 @@ export interface GameViewOptions {
 	loadLook( look: number ): Promise<Figure>;
 	/** the page's vegetation registry, which holds the palms while they are drawn (GameContext) */
 	vegetation: Vegetation;
+	/** game ticks per second of the scene's clock at the game's normal pace (the day's length):
+	 * the meadow's trail recovers by it (world/vegetation/Trample.ts) */
+	ticksPerSecond(): number;
 }
 
 // Figures kept from the last GameView for the next one: a loaded game has the same islanders, and
@@ -125,6 +128,13 @@ export class GameView {
 
 	}
 
+	/** The islanders drawn, which part the meadow (world/vegetation/Trample.ts). */
+	walkers(): VillagerView[] {
+
+		return this.villagers.filter( ( v ) => v.drawn );
+
+	}
+
 	/** True once the view has drawn a frame and every islander shows something (its figure or a stand-in). */
 	get ready(): boolean {
 
@@ -164,6 +174,7 @@ export class GameView {
 			view.stamp = stamp;
 			if ( ! view.drawn && ! view.loading ) this.load( view );
 			view.update( v, grid, sim.alpha, realDt, factor, pace );
+			view.record( state.tick + sim.alpha, this.options.ticksPerSecond() );
 
 		}
 		// the figures this view did not take over from the last one

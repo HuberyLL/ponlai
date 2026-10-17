@@ -1,12 +1,15 @@
 import * as THREE from 'three/webgpu';
 import { uniform, vec3 } from 'three/tsl';
 import { createWindUniforms } from './weather/Wind.ts';
+import { createTrampleUniforms } from './world/vegetation/Trample.ts';
 
 // Uniforms shared by the water, the terrain and the vegetation (one node each, read by every
 // material that uses it).
 export const shared = {
 	time: uniform( 0 ),
 	wind: createWindUniforms(),
+	// the islanders' trail through the meadow (world/vegetation/Trample.ts)
+	trample: createTrampleUniforms(),
 	rain: uniform( 0 ),
 	wetness: uniform( 0 ),
 	waterLevel: uniform( 0 ),

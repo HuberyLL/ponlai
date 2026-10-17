@@ -2,6 +2,7 @@ import type * as THREE from 'three/webgpu';
 import { vec3, vec4, float, fract, mix, dot, max, normalize, length, smoothstep, inverseSqrt, cameraViewMatrix, cameraProjectionMatrix, screenSize } from 'three/tsl';
 import { LEAN_REF, gustWave, leanLoad, pressedLean, pressedStiffening, pressing, swayJitter, swingOf, wave, windField, type WindState } from '../../weather/Wind.ts';
 import { puddleCover } from '../../weather/Puddles.ts';
+import { tramplePale } from './Trample.ts';
 
 // How the vegetation moves: the plants' main bend (`mainBend`: today only the game's palm), the
 // meadow's blades and flower heads (`bendBlade`, each on its own phase, `bladePhase`), a hanging
@@ -119,10 +120,12 @@ export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F,
  * the normals turn by, and `pale`, the colour's factor (exactly 1 up to fair's wind). The normals
  * keep the eased lean in every wind: turned by the pressed one, the blades' soft upward normals
  * fell away from a high sun and a strong wind's gusts swept the meadow as dark bands, where a
- * field's pressed grass shows light ones. The islanders' trail through the
- * grass (a later field) would join the lean here, so the blade arcs over and sinks as under the
- * wind. */
-export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t2: F, phase: F, fade?: F, rigidity?: F, flower?: F ): { position: V3; lean: V3; tilt: V3; pale: F } {
+ * field's pressed grass shows light ones. The islanders' trail through the grass (`trample`, the
+ * lean Trample.ts `trampleLean` gives the blade's root: world x, z) joins the wind's lean, so a
+ * blade a walker presses arcs over and sinks as under the wind, and shows its paler side by the
+ * same measure (Trample.ts `tramplePale`); the returned `lean` and `tilt` stay the wind's alone.
+ */
+export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t2: F, phase: F, fade?: F, rigidity?: F, flower?: F, trample?: V2 ): { position: V3; lean: V3; tilt: V3; pale: F } {
 
 	const field = windField( wind, origin.xz ).toVar();
 	const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
@@ -141,17 +144,21 @@ export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t
 	const press = always ? float( 1 ) : pressing( wind );
 	const held = along.mul( pressed ).add( across.mul( shiver.mul( scale ).mul( pressedStiffening( load ) ) ) );
 	const lean = eased.add( held.sub( eased ).mul( press ) ).toVar();
-	const pale = float( 1 ).add( float( 1 ).sub( inverseSqrt( pressed.mul( pressed ).mul( t2 ).add( 1 ) ) ).mul( press.mul( underside ) ) );
+	const windPale = float( 1 ).add( float( 1 ).sub( inverseSqrt( pressed.mul( pressed ).mul( t2 ).add( 1 ) ) ).mul( press.mul( underside ) ) );
+	const pale = trample ? windPale.mul( tramplePale( trample, t2 ) ) : windPale;
+	const total = trample ? lean.add( vec3( trample.x, 0, trample.y ) ) : lean;
 	const rel = rooted.sub( origin ).toVar();
 	const reach = length( rel );
-	let offset: V3 = lean.mul( height.mul( t2 ) ), tilt: V3 = eased;
+	const pressedBy = trample ? vec3( trample.x, 0, trample.y ) : null;
+	let offset: V3 = total.mul( height.mul( t2 ) ), tilt: V3 = eased;
 	if ( flower ) {
 
 		// a flower's head and stem (`flower` 1): the gust field's lean and the sway, unscaled by the
-		// tuft's height (GRASS_WIND.head); a blend, exact for the blades (`flower` 0)
+		// tuft's height (GRASS_WIND.head), and a walker's press as a blade's; a blend, exact for the
+		// blades (`flower` 0)
 		const { sway } = GRASS_WIND.head;
 		const nod = along.mul( field.z.add( swing.mul( sway ) ) ).add( across.mul( shiver.mul( sway ) ) ).toVar();
-		offset = mix( offset, nod.mul( height.mul( t2 ) ), flower );
+		offset = mix( offset, ( pressedBy ? nod.add( pressedBy ) : nod ).mul( height.mul( t2 ) ), flower );
 		tilt = mix( eased, nod, flower );
 
 	}

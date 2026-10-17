@@ -15,6 +15,7 @@ import type { Brain, ToolRegistry, ToolResult } from './sim/agent.ts';
 import { StandInBrain } from './sim/standin.ts';
 import { GameView, propSamples } from './view/GameView.ts';
 import { SECONDS_PER_GAME_DAY } from './sim/types.ts';
+import type { TrampleWalker } from '../world/vegetation/Trample.ts';
 import type { EntityId, IslandInput, Speed } from './sim/types.ts';
 
 // The island as a game (?game): the simulation (src/game/sim) runs the islanders' bodies, their
@@ -190,7 +191,8 @@ export class Game {
 		sim.brain = this.brain;
 		if ( this.coming ) sim.setComing( this.coming );
 		this.view?.dispose();
-		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, holdOpaque: c.holdOpaque, loadLook: c.loadLook, vegetation: c.vegetation } );
+		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, holdOpaque: c.holdOpaque, loadLook: c.loadLook, vegetation: c.vegetation,
+			ticksPerSecond: () => SECONDS_PER_GAME_DAY / c.dayCycle.dayLength } );
 		this.sim = sim;
 		c.sceneEvent( 'game begin' );
 		this.debug?.reset();
@@ -233,6 +235,13 @@ export class Game {
 			if ( this.sim.state.pieces > before ) this.growing = false;
 
 		} );
+
+	}
+
+	/** The islanders drawn, which part the meadow (world/vegetation/Trample.ts). */
+	walkers(): readonly TrampleWalker[] {
+
+		return this.view?.walkers() ?? [];
 
 	}
 

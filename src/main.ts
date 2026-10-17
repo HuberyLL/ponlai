@@ -57,6 +57,7 @@ import { LandLattice } from './world/IslandGrowth.ts';
 import { walkLoopDistance, walkPoints } from './world/WalkPath.ts';
 import { setIslandClearing } from './weather/AerialPerspective.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
+import { Trample } from './world/vegetation/Trample.ts';
 import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters/Proportions.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook } from './characters/CharacterMaterial.ts';
@@ -260,6 +261,10 @@ const wind = new Wind( shared.wind, { ...weatherWind( weather.state ), time: sim
 // Across a cut of the temporal modes' history (Motion.ts) the vegetation's wind has no motion either:
 // its previous state becomes the current one.
 if ( TEMPORAL ) onTaaCut( () => wind.cut() );
+// The islanders' trail through the meadow (world/vegetation/Trample.ts), written after they move
+// each frame; across a cut its previous state becomes the current one too.
+const trample = new Trample( shared.trample );
+if ( TEMPORAL ) onTaaCut( () => trample.cut() );
 let rain: Rain | undefined;
 let skyElapsed = 0;
 let lastSkyTime = simTime;
@@ -1615,6 +1620,7 @@ function tick( time: number ): void {
 	groundBounce.update( sky.seaRadiance );
 	characters?.update( renderer, scene, sun, simTime, paused ? 0 : dt );
 	game?.render( renderer, sun, paused ? 0 : rawDt );
+	trample.update( game ? game.walkers() : characters ? [ characters ] : [], camera.position );
 
 	// (the ground truth draws the storm's spray with the rain, in the overlay pass; taa and taau draw
 	// it with the streaks after the resolve)
