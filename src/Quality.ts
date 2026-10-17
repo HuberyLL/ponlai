@@ -221,7 +221,11 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { fogScale: 0.5, fogSteps: 12, bankSize: 2048, dofTaps: 16, bloomChains: 2 },
 		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH, water: PCSS_LIGHT },
-		grass: { lawnBlades: [ 48, 48, 48 ], bladeBands: [ 1000, 1001, 1002 ], thinTufts: true, canopyPerVertex: false, minWidth: 0 },
+		// 16 of each tuft's 48 blades, the kept ones three times as wide (they widen to keep the
+		// cover): from the island view's 30 - 40 m a blade stays a few pixels wide, so a frame
+		// without anti-aliasing at the canvas's size comes close to the many-sample reference, where
+		// 48 thin blades grain and flicker about twice as much
+		grass: { lawnBlades: [ 16, 16, 16 ], bladeBands: [ 1000, 1001, 1002 ], thinTufts: true, canopyPerVertex: false, minWidth: 0 },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 512,
 		frameRate: 60,
