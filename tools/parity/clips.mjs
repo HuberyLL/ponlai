@@ -169,8 +169,8 @@ const PATH = {
 
 /** Page code that installs `window.__PONLAI_CLIP__` = { camera( i ), frames, lead, clock, dt, scale } for
  * the clip, from the camera's current pose (run it after the view's eval); `scale` holds absolute
- * render ratios, one per frame. */
-export function clipEval( name, { frames, dt = 1 / 60 } = {} ) {
+ * render ratios, one per frame. `setup` is page code of the caller's, run after the clip's own. */
+export function clipEval( name, { frames, dt = 1 / 60, setup = '' } = {} ) {
 
 	const clip = CLIPS[ name ];
 	if ( ! clip ) throw new Error( `unknown clip ${ name }` );
@@ -178,6 +178,7 @@ export function clipEval( name, { frames, dt = 1 / 60 } = {} ) {
 	return `(async () => { const s = window.__PONLAI__; const dt = ${ dt };
 window.__PONLAI_CLIP_NOTES__ = [];
 ${ clip.setup ?? '' }
+${ setup }
 ${ PATHS }
 const path = PATH[ ${ JSON.stringify( kind ) } ]( ...${ JSON.stringify( args ) } );
 window.__PONLAI_CLIP__ = { name: ${ JSON.stringify( name ) }, frames: ${ frames ?? clip.frames }, lead: ${ clip.lead ?? 0 }, clock: ${ JSON.stringify( clip.clock ) }, dt,

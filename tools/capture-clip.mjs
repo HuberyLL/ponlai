@@ -4,7 +4,7 @@
 // dynamic scale bypassed), with crops of named subjects captured as they move.
 //
 //   node tools/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|fsr3|gt|gt-hi]
-//       [--view v] [--frames n] [--every k] [--dense a-b,c-d] [--crops a,b] [--full 0,30] [--q "extra&query"]
+//       [--view v] [--frames n] [--every k] [--dense a-b,c-d] [--crops a,b] [--full 0,30] [--q "extra&query"] [--setup js]
 //       [--quality high] [--size 1728x1117@2] [--dt s] [--gt-jitters n] [--out dir] [--timeout ms] [--runs file.csv]
 //       [--task name] [--anchors-from clip.json] [--stable-* (capture.mjs)] [--ready-frames n] [--wait ms] [--settle ms] [--verbose]
 //       [--test-fault]
@@ -91,6 +91,10 @@
 // add noise to F, TI and S, and the GT's 2x2 downsample would halve it); clip.json records it
 // (`grain`). The per-pixel dither of a level stays: it is fixed per pixel.
 //
+// --setup js runs page code (`s` = `window.__PONLAI__`, `dt` the step) after the clip's own setup,
+// before frame 0: a change the clip should watch unfold, such as `s.setWind( { heading: 220 }, 20 )`
+// (a turn of the wind over 20 s of the stepped clock). clip.json records it.
+//
 // --dt s steps the clip's frames s seconds apart instead of 1 / 60 (the clock's step, so the
 // scene's own motion per frame, not the camera path's): a motion vector test whose sub-pixel motion
 // a reprojection's resampling would hide makes the motion a few pixels a frame with it.
@@ -122,7 +126,7 @@ for ( let i = 0; i < args.length; i ++ ) {
 	} else positional.push( args[ i ] );
 
 }
-const KNOWN = [ 'url', 'aa', 'clip', 'view', 'frames', 'dt', 'every', 'dense', 'crops', 'full', 'q', 'quality', 'size', 'out', 'timeout', 'runs', 'task', 'verbose', 'anchors-from', 'gt-jitters', 'ready-frames', 'wait', 'settle',
+const KNOWN = [ 'url', 'aa', 'clip', 'view', 'frames', 'dt', 'setup', 'every', 'dense', 'crops', 'full', 'q', 'quality', 'size', 'out', 'timeout', 'runs', 'task', 'verbose', 'anchors-from', 'gt-jitters', 'ready-frames', 'wait', 'settle',
 	'stable-min', 'stable-every', 'stable-repeats', 'stable-tolerance', 'stable-patience', 'stable-cap', 'stable-trace', 'test-fault' ];
 const unknown = Object.keys( options ).filter( ( k ) => ! KNOWN.includes( k ) );
 const clip = CLIPS[ options.clip ];
@@ -262,7 +266,7 @@ try {
 
 	}
 
-	await page.evaluate( clipEval( options.clip, { frames, ...( options.dt ? { dt: Number( options.dt ) } : {} ) } ) );
+	await page.evaluate( clipEval( options.clip, { frames, ...( options.dt ? { dt: Number( options.dt ) } : {} ), ...( options.setup ? { setup: options.setup } : {} ) } ) );
 	// no film grain in a metric capture; the GT keeps its own fixed ratio (no scale schedule)
 	const grain = await page.evaluate( ( gt ) => {
 
@@ -438,7 +442,7 @@ try {
 	await shooter.close();
 	const diagAfter = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
 	await writeFile( path.join( outDir, 'clip.json' ), JSON.stringify( {
-		name, url, clip: options.clip, clipDef: { ...clip, at: undefined, setup: undefined }, view: viewName, aa, quality, ...( gtRest ? { gtJitters } : {} ),
+		name, url, clip: options.clip, clipDef: { ...clip, at: undefined, setup: undefined }, ...( options.setup ? { setup: options.setup } : {} ), view: viewName, aa, quality, ...( gtRest ? { gtJitters } : {} ),
 		viewport: { width: W * cssScale, height: H * cssScale, deviceScaleFactor: ratio }, gtFallback, downsample: gt ? 2 : 1,
 		cropPx: gt ? BOX * cssScale * ratio / 2 : BOX * ratio, grain: { was: grain, captured: 0 }, scaleSchedule, frames, every, dense, full: [ ...full ],
 		browser: session.version, slot: session.slot, ready, ...( recheckRecord ? { recheck: recheckRecord } : {} ), anchors, boxes, stepped, diagBefore, diagAfter, errors,
