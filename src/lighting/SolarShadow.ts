@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, uniform, texture, textureLoad, reference, float, int, vec2, vec3, vec4, ivec2, uv,
 	min, max, abs, clamp, cos, sin, pow, tan, dot, select, dFdx, dFdy, floor, fract, mix, smoothstep, step, positionWorld,
+	interleavedGradientNoise, vogelDiskSample, screenCoordinate,
 } from 'three/tsl';
 import { SUN_ANGULAR_RADIUS } from './Radiometry.ts';
 
@@ -172,6 +173,31 @@ export function solarVolumeVisibility( depth: THREE.Texture | THREE.TextureNode,
 
 		} );
 		return visibility;
+
+	} )();
+
+}
+
+// three's PCFShadowFilter, which tidewater's water takes (the waves break up any penumbra detail a
+// contact-hardening filter would add): five bilinear comparisons on a Vogel disk of one texel's
+// radius, the disk turned per pixel by interleaved gradient noise (fixed per pixel, so a paused
+// frame repeats). Each comparison gathers its footprint and compares by hand (solarVolumeVisibility),
+// so the map keeps the one sampler type the other filters read it by.
+export function solarPCFVisibility( depth: THREE.Texture | THREE.TextureNode, coordinate: V3, mapSize: V2, active?: B, layer?: number ): F {
+
+	return Fn( () => {
+
+		const sc = coordinate.toVar();
+		const phi = interleavedGradientNoise( screenCoordinate.xy ).mul( 2 * Math.PI ).toVar();
+		const texel = vec2( 1 ).div( max( mapSize, vec2( 1 ) ) ).toVar();
+		let sum: F = float( 0 );
+		for ( let i = 0; i < 5; i ++ ) {
+
+			const at = vec3( sc.xy.add( ( vogelDiskSample( int( i ), int( 5 ), phi ) as unknown as V2 ).mul( texel ) ), sc.z );
+			sum = sum.add( solarVolumeVisibility( depth, at, mapSize, active, layer ) );
+
+		}
+		return sum.div( 5 );
 
 	} )();
 

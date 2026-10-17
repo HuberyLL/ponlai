@@ -22,7 +22,6 @@ import type { StormSea } from './StormSea.ts';
 import type { SeaDetail } from './SeaDetail.ts';
 import { REFRACTION_GUARD } from './Refraction.ts';
 import type { Shared } from '../shared.ts';
-import type { SolarShadowTaps } from '../lighting/SolarShadow.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
 import { rainRippleGradient } from '../weather/Rain.ts';
 import { ISLAND_TOP, type Bounds } from '../world/WorldShapes.ts';
@@ -37,8 +36,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     near-field capillary ripples, the rocky shore's reflected wave and the rain's rings
 //   - the sea's large-scale detail in world space (SeaDetail): gusts roughen the short waves the
 //     pixel cannot resolve and the near ripples, slicks smooth them, gusts and windrows add whitecaps
-//   - the sun reaching the surface (`sunLight`): the key light through the sun shadow's maps and
-//     the clouds; the glint, the water body and the foam all take this one light
+//   - the sun reaching the surface (`sunLight`): the key light through the sun shadow's maps (as
+//     tidewater's water reads its own: three's five-tap PCF at the surface point, the normal bias
+//     straight up) and the clouds; the glint, the water body and the foam all take this one light
 //   - exact dielectric Fresnel; the sky reflected along a direction the unresolved slopes lift
 //     toward the higher, darker sky, reflections below the horizon darkened toward the horizon's
 //     colour; the screen-space reflection of the cliffs and the islanders behind tidewater's gate
@@ -200,8 +200,6 @@ export interface WaterInputs {
 	size?: number;
 	res?: number;
 	quality?: Partial<WaterQuality>; // compile-time: read once, a change needs a new Water (a reload)
-	// the surface's sun-shadow filter (compile-time; the sun shadow's own receivers' filter without it)
-	shadowTaps?: Readonly<SolarShadowTaps>;
 }
 
 // The water's quality knobs. They are compiled into the shader (a uniform-gated branch keeps its
@@ -404,7 +402,7 @@ export class Water {
 	// The sea's shading for one variant (see WaterVariant).
 	private buildMaterial( variant: WaterVariant ): THREE.NodeMaterial {
 
-		const { fft, sky, shared, shore, seabedHeight, shoreWaves, sunShadow, shadowTaps, storm, detail, sceneColor, linearDepth, refraction } = this.inputs;
+		const { fft, sky, shared, shore, seabedHeight, shoreWaves, sunShadow, storm, detail, sceneColor, linearDepth, refraction } = this.inputs;
 		const quality = this.quality;
 		const u = this.uniforms;
 		// A cascade's layer of an FFT field at an undisplaced xz.
@@ -677,13 +675,14 @@ export class Water {
 			const L = shared.sunDir;
 			const posV = cameraViewMatrix.mul( vec4( wp, 1 ) ).xyz.toVar();
 
-			// ---- the sun reaching the surface: the sun shadow's maps (with the standard materials'
-			// solar size, receiver-plane correction and bias, and the fade from the previous map: see
-			// SunShadow; comparison sampling outside pixel-dependent branches) and the clouds
-			const sc = u.shadowMatrix.mul( vec4( wp.add( N.mul( this.shadowNormalBias ) ), 1 ) ).toVar();
+			// ---- the sun reaching the surface: the sun shadow's maps, read as tidewater's water reads
+			// its own (sunShadowPCF: three's five-tap PCF, the surface taken as level for the normal
+			// bias; the waves break up any penumbra detail a contact-hardening filter would add), with
+			// the fade from the previous map (SunShadow), and the clouds
+			const sc = u.shadowMatrix.mul( vec4( wp.add( vec3( 0, this.shadowNormalBias, 0 ) ), 1 ) ).toVar();
 			const s3 = sc.xyz.div( max( sc.w, 1e-6 ) ).toVar();
 			const shadowCoord = vec3( s3.x, float( 1 ).sub( s3.y ), s3.z.add( this.shadowBias ) ).toVar();
-			const visibility = sunShadow.surfaceVisibility( shadowCoord, shadowTaps );
+			const visibility = sunShadow.pcfVisibility( shadowCoord );
 			const shadow = mix( float( 1 ), visibility, this.shadowIntensity.mul( u.shadowOn ) ).toVar();
 			const cloudTransmission = sky.cloudVisibility( wp ).toVar();
 			const sunLight = shared.sunColor.mul( shadow ).mul( cloudTransmission ).toVar();

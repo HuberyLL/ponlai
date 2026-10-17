@@ -748,7 +748,6 @@ water = new Water( {
 	land: landBox, sunShadow, storm: stormSea, detail: new SeaDetail( shared ),
 	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, quality: quality.water,
 	refraction: { color: pipeline.textures.refraction, depth: pipeline.textures.refractionDepth },
-	shadowTaps: quality.shadow.water,
 } );
 applySkyFill();
 waterScene.add( water.mesh );
