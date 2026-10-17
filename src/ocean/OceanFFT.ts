@@ -40,14 +40,12 @@ import { DEFAULT_SWELL, seaState, waveSystemTerms, type SwellParams } from './Oc
 // Outputs, one 2D array texture each, a layer per cascade (half float, repeat; velocity needs no
 // mip chain):
 //   displacement  (Dx, Dy, Dz, jacobian)       derivatives  (dDy/dx, dDy/dz, dDx/dx, dDz/dz)
-//   slope moments (dDy/dx squared, dDy/dz squared, their product, signed dDx/dz)
 //   orbital velocity (Ux, Uz, Vy, unused), without artistic choppiness
 // The displacement's rate of change is that velocity with its horizontal part scaled by `chop`
 // (Vy is dDy/dt exactly; horizontally the orbital speed is 1 / tanh( k depth ) times the
 // displacement's rate, which differs only for waves far longer than those that carry the sea's
 // energy): the temporal modes' motion vectors move the water's vertices back along it (Water.ts).
-// Derivatives and slope moments use the same filtering kernel; their mip chains retain
-// unresolved slope variance. The mip chain of a layer is made once its layer is written: three
+// The mip chain of a layer is made once its layer is written: three
 // rebuilds every layer's chain at the end of each render into an array target, so only the last
 // cascade's pass of a field asks for them.
 // Sample a cascade at its undisplaced world xz / size, in its layer (`texture( t, uv ).depth( c )`).
@@ -66,6 +64,7 @@ import { DEFAULT_SWELL, seaState, waveSystemTerms, type SwellParams } from './Oc
 // slower than four single-target passes (sky-bake frames blocked in JS), so they stay separate.
 
 const FFT_N = 256;
+export const FFT_SIZE = FFT_N;
 const LOG2N = 8;
 const G = 9.81;
 
@@ -153,12 +152,13 @@ export class OceanFFT {
 	// the fields, one array texture each with a layer per cascade (see the note at the top)
 	readonly displacement: THREE.Texture;
 	readonly derivatives: THREE.Texture;
-	readonly slopeMoments: THREE.Texture;
 	readonly velocity: THREE.Texture;
 
 	private time = uniform( 0 );
 	/** The horizontal displacement's scale (artistic choppiness), which the velocity leaves out. */
 	readonly chop = uniform( 0.85 );
+	/** The whitecaps' threshold on the surface's compression (tidewater's foamBias), the sea state's. */
+	readonly foamBias = uniform( 0.5 );
 	private depthU = uniform( 8 );
 	private amplitudeU = uniform( 1 );
 	// the two wave systems' terms (OceanSpectrum.ts waveSystemTerms): ( alpha, peak omega, heading,
@@ -387,20 +387,22 @@ export class OceanFFT {
 
 		}
 
-		// 3. Observe the final IFFT and write each cascade's layer of the four fields.
+		// 3. Observe the final IFFT and write each cascade's layer of the three fields.
 		const fin = { A: storage( buf[ src ].attrA, 'vec4', count ).toReadOnly(), B: storage( buf[ src ].attrB, 'vec4', count ).toReadOnly(), C: storage( buf[ src ].attrC, 'vec4', count ).toReadOnly() };
-		const fields = [ 0, 1, 2, 3 ].map( ( which ) => {
+		const kinds = [ 'oceanDisplacement', 'oceanDerivatives', 'oceanVelocity' ];
+		const fields = kinds.map( ( name, which ) => {
 
+			const mipmapped = which < 2;
 			const rt = new THREE.RenderTarget( N, N, {
-				depth: C, type: THREE.HalfFloatType, generateMipmaps: which !== 3,
-				minFilter: which === 3 ? THREE.LinearFilter : THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
+				depth: C, type: THREE.HalfFloatType, generateMipmaps: mipmapped,
+				minFilter: mipmapped ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter, magFilter: THREE.LinearFilter,
 				wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, depthBuffer: false, anisotropy,
 			} );
-			rt.texture.name = [ 'oceanDisplacement', 'oceanDerivatives', 'oceanSlopeMoments', 'oceanVelocity' ][ which ];
+			rt.texture.name = name;
 			return rt;
 
 		} );
-		for ( const which of [ 0, 1, 2, 3 ] ) {
+		for ( const which of [ 0, 1, 2 ] ) {
 
 			for ( let c = 0; c < C; c ++ ) {
 
@@ -409,18 +411,15 @@ export class OceanFFT {
 				const idx = uint( px.y.mul( N ).add( px.x ).add( c * NN ) );
 				const a = fin.A.element( idx ), b = fin.B.element( idx ); // ( Dx, Dz, Dy, dDx/dz ), ( dDy/dx, dDy/dz, dDx/dx, dDz/dz )
 				const J = float( 1 ).add( b.z ).mul( float( 1 ).add( b.w ) ).sub( a.w.mul( a.w ) );
-				const velocity = fin.C.element( idx );
-				// LEAN filtering (Olano and Baker, 2010): squared slopes retain unresolved
-				// variance in the mip chain. The existing derivatives store their means.
-				mat.fragmentNode = which === 0 ? vec4( a.x, a.z, a.y, J ) : which === 1 ? b : which === 2 ?
-					vec4( b.x.mul( b.x ), b.y.mul( b.y ), b.x.mul( b.y ), a.w ) : vec4( velocity.xyz, 0 );
-				this.outputs.push( { rt: fields[ which ], layer: c, mipmapped: which !== 3, quad: new THREE.QuadMesh( mat ) } );
+				mat.fragmentNode = which === 0 ? vec4( a.x, a.z, a.y, J ) : which === 1 ? b : vec4( fin.C.element( idx ).xyz, 0 );
+				this.outputs.push( { rt: fields[ which ], layer: c, mipmapped: which < 2, quad: new THREE.QuadMesh( mat ) } );
 
 			}
 
 		}
-		[ this.displacement, this.derivatives, this.slopeMoments, this.velocity ] = fields.map( ( rt ) => rt.texture );
+		[ this.displacement, this.derivatives, this.velocity ] = fields.map( ( rt ) => rt.texture );
 
+		this.foamBias.value = seaState( windSpeed ).foamBias;
 		this.rebuildSpectrum();
 
 	}
@@ -444,6 +443,7 @@ export class OceanFFT {
 		const sea = seaState( windSpeed );
 		Object.assign( this.params, { windSpeed, fetch: sea.fetch, choppiness: sea.choppiness } );
 		this.swell.scale = sea.swell;
+		this.foamBias.value = sea.foamBias;
 		this.rebuildSpectrum();
 
 	}
@@ -501,7 +501,6 @@ export class OceanFFT {
 
 	}
 
-	// Moments and velocity targets have the same lifetime as the existing FFT outputs.
 	dispose(): void {
 
 		for ( const output of this.outputs ) {

@@ -250,8 +250,6 @@ export class Sky {
 	keyColor = new THREE.Color();
 	// The key light's colour before cloud and weather attenuation: what lights the cloud tops.
 	keyColorAboveClouds = new THREE.Color();
-	// Fraction of the key light that mirror-like glints reflect (see Shared.glintScale).
-	glintScale = 1;
 	// The viewer the cloud map is computed for; clouds are far, so only small moves matter.
 	viewer = new THREE.Vector3( 0, 15, 0 );
 	private viewCamera: THREE.PerspectiveCamera | null = null;
@@ -730,9 +728,6 @@ export class Sky {
 
 		}
 		this.keyColorAboveClouds.copy( this.keyColor );
-		const sunLuma = this.sunColor.r * 0.2126 + this.sunColor.g * 0.7152 + this.sunColor.b * 0.0722;
-		const keyLuma = this.keyColor.r * 0.2126 + this.keyColor.g * 0.7152 + this.keyColor.b * 0.0722;
-		this.glintScale = keyLuma > 0 ? ( sunLuma + ( keyLuma - sunLuma ) * 0.06 ) / keyLuma : 1;
 		const coverage = coverageOverride ?? weather?.coverage ?? 0;
 		const overcast = weather ? THREE.MathUtils.smoothstep( coverage, 0.65, 0.98 ) : 0;
 		const ambientGain = weather?.ambientGain ?? 1;

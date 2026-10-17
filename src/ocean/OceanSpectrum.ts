@@ -38,24 +38,27 @@ export const DEFAULT_SWELL: Readonly<SwellParams> = {
 };
 
 // tidewater's sea states (AppUI.js `SEA`), keyed by the wind 10 m up: the local sea's fetch, the
-// choppiness and the swell's scale. The wind levels of weather/Wind.ts fall on them: gentle (3.8 m/s)
+// choppiness, the swell's scale and the whitecaps (0..1). The wind levels of weather/Wind.ts fall on them: gentle (3.8 m/s)
 // next to Calm, fresh (7) on Breezy, tidewater's default, strong (11) next to Choppy.
 const SEA_STATES = [
-	{ wind: 3.5, fetch: 40e3, choppiness: 0.75, swell: 0.28 }, // Calm
-	{ wind: 7, fetch: 120e3, choppiness: 0.9, swell: 0.48 }, // Breezy
-	{ wind: 12, fetch: 300e3, choppiness: 1.05, swell: 0.68 }, // Choppy
-	{ wind: 20, fetch: 900e3, choppiness: 1.2, swell: 1.0 }, // Storm
+	{ wind: 3.5, fetch: 40e3, choppiness: 0.75, swell: 0.28, whitecaps: 0.2 }, // Calm
+	{ wind: 7, fetch: 120e3, choppiness: 0.9, swell: 0.48, whitecaps: 0.5 }, // Breezy
+	{ wind: 12, fetch: 300e3, choppiness: 1.05, swell: 0.68, whitecaps: 0.75 }, // Choppy
+	{ wind: 20, fetch: 900e3, choppiness: 1.2, swell: 1.0, whitecaps: 1 }, // Storm
 ];
 
-/** The sea state at a wind speed, interpolated between tidewater's (held at the first and last). */
-export function seaState( windSpeed: number ): { fetch: number; choppiness: number; swell: number } {
+/** The sea state at a wind speed, interpolated between tidewater's (held at the first and last),
+ * with its whitecaps' threshold on the surface's compression (AppUI.js `whitecaps()`). */
+export function seaState( windSpeed: number ): { fetch: number; choppiness: number; swell: number; foamBias: number } {
 
 	const s = SEA_STATES;
 	let i = 0;
 	while ( i < s.length - 2 && windSpeed > s[ i + 1 ].wind ) i ++;
 	const t = Math.min( Math.max( ( windSpeed - s[ i ].wind ) / ( s[ i + 1 ].wind - s[ i ].wind ), 0 ), 1 );
 	const mix = ( a: number, b: number ) => a + ( b - a ) * t;
-	return { fetch: mix( s[ i ].fetch, s[ i + 1 ].fetch ), choppiness: mix( s[ i ].choppiness, s[ i + 1 ].choppiness ), swell: mix( s[ i ].swell, s[ i + 1 ].swell ) };
+	const whitecaps = mix( s[ i ].whitecaps, s[ i + 1 ].whitecaps );
+	return { fetch: mix( s[ i ].fetch, s[ i + 1 ].fetch ), choppiness: mix( s[ i ].choppiness, s[ i + 1 ].choppiness ), swell: mix( s[ i ].swell, s[ i + 1 ].swell ),
+		foamBias: 0.5 + 0.16 * whitecaps + 0.01 * Math.min( Math.max( windSpeed - 7, - 5 ), 12 ) };
 
 }
 

@@ -1051,11 +1051,11 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
 
 ## Other tools
 
-- `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water and wave
-  optics (each file names the server it expects); they take the GPU lock (shared).
-  `verify-optical-interface`, `verify-frame-graph-gpu`, `verify-water-energy`, `verify-refracted-sun`,
-  `verify-solar-shadows`, `verify-wave-optics` and `verify-water-volume` import `/src/` modules and
-  need the dev server: on any other server they exit 1 at once (`tools/dev-server.mjs`).
+- `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows and water (each
+  file names the server it expects); they take the GPU lock (shared).
+  `verify-optical-interface`, `verify-frame-graph-gpu`, `verify-refracted-sun` and
+  `verify-solar-shadows` import `/src/` modules and need the dev server: on any other server they
+  exit 1 at once (`tools/dev-server.mjs`).
   `tools/verify-scene.mjs` checks a production preview. `tools/verify-scene-jump.mjs` captures the
   parity views reached by scene jumps in one page and as fresh loads, for `diff-set.py`, each shot
   ready by capture.mjs's stability rule (`tools/parity/README.md`, One page, many views);

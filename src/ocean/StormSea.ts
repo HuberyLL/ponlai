@@ -155,18 +155,17 @@ export class StormSea {
 			const moved = abs( n.sub( cellOf( texel, this.previousLo ) ) ).dot( vec2( 1 ) ).greaterThan( 0.5 );
 			const xz = n.add( 0.5 ).mul( CELL ).toVar();
 			const w = cascadeWeights( xz ).toVar();
-			const jxx = float( 1 ).toVar(), jzz = float( 1 ).toVar(), jxz = float( 0 ).toVar();
+			// (the horizontal Jacobian without its cross term, as tidewater's water surface takes it)
+			const jxx = float( 1 ).toVar(), jzz = float( 1 ).toVar();
 			for ( let c = 0; c < sizes.length; c ++ ) {
 
 				const d = cascade( fft.derivatives, c, xz ).level( float( lod( c ) ) );
-				const cross = cascade( fft.slopeMoments, c, xz ).level( float( lod( c ) ) ).w;
 				const weight = weightOf( w, c );
 				jxx.addAssign( d.z.mul( weight ) );
 				jzz.addAssign( d.w.mul( weight ) );
-				jxz.addAssign( cross.mul( weight ) );
 
 			}
-			const J = jxx.mul( jzz ).sub( jxz.mul( jxz ) ).toVar();
+			const J = jxx.mul( jzz ).toVar();
 			// Waves break in groups, not on every crest of a tile: a soft noise of group size,
 			// travelling downwind at about a group velocity, switches breaking on in some groups and
 			// off in others, and nudges the threshold a little within them. It also hides the shorter

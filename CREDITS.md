@@ -34,12 +34,14 @@ packages, into `dist/licenses/`.
     planes with their lookup (dispersion, depth blur and fade, footprint filtering), ported from
     WGSL to TSL.
   - `src/ocean/StormSea.ts`: the persistent whitecap foam of `OceanFFT.js` (build-up where the
-    Jacobian folds, exponential decay), here on one world-space grid of the summed cascades; and
-    in `src/ocean/Water.ts` the whitecap compositing of `WaterSurface.js` (a foam pattern
-    thresholded by the coverage, at a distance the coverage itself).
-  - `src/ocean/Water.ts`: from `WaterMaterial.js`, the water column's sun shadowed by the surface
-    point's shadow alone, and the reflectance under which no reflection ray marches
-    (`ssrMinFresnel`).
+    Jacobian folds, exponential decay), here on one world-space grid of the summed cascades.
+  - `src/ocean/Water.ts`: the above-water shading of `WaterMaterial.js` (Fresnel, the sky
+    reflection lifted by the unresolved slopes and darkened below the horizon, the reflection's
+    gate, the GGX glint with Cox-Munk roughness, the refracted ray traced to the floor, the
+    analytic water body, the crests' translucency and the lit foam), the normal, near-field
+    ripples and whitecap compositing of `WaterSurface.js` (fresh foam on the Jacobian, a foam
+    pattern thresholded by the coverage, at a distance the coverage itself), ported from WGSL to
+    TSL.
   - `src/ocean/ShoreWaves.ts`, `src/ocean/ShoreWaveField.ts`: began as an adaptation of
     `ShoreWaves.js`; now mostly rewritten for this island's rocky boundary.
   - `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`: the atmosphere and solar disk from `Atmosphere.js` and
