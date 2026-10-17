@@ -635,9 +635,10 @@ export class Water {
 			const fuv = vLag.mul( FOAM_SCALE ).toVar();
 			const p1 = texture( storm.pattern, fuv ).toVar();
 			const p2 = texture( storm.pattern, rotate( fuv, 0.6435 ).mul( 2.37 ).add( vec2( 0.31, 0.77 ) ) ).toVar();
-			// the sea's large-scale detail: ( rough, gust, slick, streak )
+			// the sea's large-scale detail: ( rough, gust, slick, streak ); the island's wave shadow
+			// smooths the slopes no pixel resolves as it damps the finest cascade (WaveDamping.ts LEE)
 			const sea = detail.sample( vLag, vIslandGust ).toVar();
-			const rough = sea.x;
+			const rough = sea.x.mul( vWeights.w );
 
 			// ---- the normal: the cascades' slopes over their horizontal stretch (tidewater's
 			// WaterSurface), the rock's reflected wave and the rain's rings in world xz
