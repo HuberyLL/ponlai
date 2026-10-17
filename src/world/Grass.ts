@@ -20,12 +20,13 @@ import { PUDDLE_WET, puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { GRASS_BLADE, gravityNumber, type StrandMaterial } from './vegetation/Physics.ts';
 import { runSteps } from './Steps.ts';
+import { setSwardField, swardSteps } from './SwardField.ts';
 import { ALPHA_TO_COVERAGE } from './vegetation/Coverage.ts';
 import { backlight, forwardLight, vegetationMaterial, type VegetationOptions } from './vegetation/Material.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { VegetationCull, poolBuffers, poolSteps, type CullBatchInput, type CullBuffers, type CullPayload, type CullPool, type CullRange } from './vegetation/VegetationCull.ts';
-import { AttributeType, uploadSteps } from './Upload.ts';
+import { AttributeType, textureSteps, uploadSteps } from './Upload.ts';
 import { screenShare, screenShareNode } from './vegetation/Lod.ts';
 import type { VegetationKind } from './vegetation/Registry.ts';
 import type { Shared } from '../shared.ts';
@@ -977,24 +978,35 @@ const ROOT_KEY = 0.45, ROOT_SKY = 0.55;
 // The light through the blades from any side (`TRANSLUCENT_FLOOR`), small: at 0.6 the blades turned
 // from the sun glowed as brightly through as the ones against it and the gaps between them never
 // darkened; the light through them now comes mostly from the half of the view toward the sun.
+// A tussock's depth (`dense`: its height scale over DENSE times its share of blades) is the share
+// of the full darkening its roots take; the tall sward's mean depth over its tussocks' heights
+// (TUSSOCK.spread about the level) and blades is TALL_DENSE. The shade over a root, its canopy's
+// depth and the key's and the sky's loss there (ROOT_KEY, ROOT_SKY), is full from TALL_DENSE up and
+// falls to OPEN of it as the depth falls to none: the short turf's leaves stand nearly upright
+// and let the light down to their roots and the ground (SwardField.ts), where the full shade drew
+// the short patches about the low flowers as dark holes in the lawn.
+const TALL_DENSE = ( () => {
+
+	let d = 0;
+	const n = 64;
+	for ( let k = 0; k < n; k ++ ) d += smoothstep( DENSE[ 0 ], DENSE[ 1 ], LEVEL.ordinary * ( 1 + TUSSOCK.spread * ( 2 * ( k + 0.5 ) / n - 1 ) ) );
+	return d / n * ( TUSSOCK.blades[ 0 ] + TUSSOCK.blades[ 1 ] ) / 2 / LAWN.blades;
+
+} )();
+const OPEN = 0.35;
+// (the sward's depth where no anchor holds turf: the mean over the sward, SHORT_STAY of it short)
+const SWARD_FALLBACK = TALL_DENSE * ( 1 - SHORT_STAY );
 /** The blades' roots as the ground between them takes them (TerrainMaterial.ts's root layer): the
  * palette's mean at the root against the lawn (`colour`), the key's and the sky's light left at the
- * root (`key`, `sky`), the sward's mean darkening at the root (`darkening`, the short turf's none)
- * and the blade-count curve's distances (`bands`, a uniform: the layer fades out where the tufts
- * thin). */
+ * root under the full shade (`key`, `sky`), the share of the root's colour the deepest sward
+ * darkens (`darkening`: times the sward's depth there, the field of SwardField.ts), the tall
+ * sward's mean depth (`tall`: the full shade from it up), the shade left under the shortest turf
+ * (`open`) and the blade-count curve's distances (`bands`, a uniform: the layer fades out where the
+ * tufts thin). */
 export const GRASS_ROOTS = {
 	colour: [ ROOT.x * PALETTE_GAIN[ 0 ], ROOT.y * PALETTE_GAIN[ 0 ], ROOT.z * PALETTE_GAIN[ 0 ] ],
 	key: ROOT_KEY, sky: ROOT_SKY, bands: lodUniforms.bands,
-	// the sward's darkening at the root over the tussocks' heights (TUSSOCK.spread about the level),
-	// SHORT_STAY of them short (one minus the share of the colour the root keeps)
-	darkening: ( () => {
-
-		let d = 0;
-		const n = 64;
-		for ( let k = 0; k < n; k ++ ) d += smoothstep( DENSE[ 0 ], DENSE[ 1 ], LEVEL.ordinary * ( 1 + TUSSOCK.spread * ( 2 * ( k + 0.5 ) / n - 1 ) ) );
-		return d / n * ( 1 - SHORT_STAY ) * ( TUSSOCK.blades[ 0 ] + TUSSOCK.blades[ 1 ] ) / 2 / LAWN.blades * ( 1 - ROOT_DARK );
-
-	} )(),
+	darkening: 1 - ROOT_DARK, tall: TALL_DENSE, open: OPEN,
 };
 const TRANSLUCENT_FLOOR = 0.3, TRANSLUCENT_FORWARD = 1, FORWARD_POWER = 3;
 const TRANSLUCENT_TINT = new THREE.Vector3( 1.2, 1.2, 0.8 );
@@ -1425,9 +1437,10 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const axisView = varying( cameraViewMatrix.mul( vec4( normalize( ground1.xyz.mul( pose.axis.x ).add( ground2.xyz.mul( pose.axis.y ) ) ), 0 ) ).xyz, 'vGrassAxis' );
 	const edge = smoothstepN( EDGE_FROM, 1, abs( side ) ).mul( EDGE ).add( 1 );
 	// A blade's depth in the canopy is its share of the way down its own tuft times the turf's one
-	// canopy depth (MeadowCanopy.ts TURF_CANOPY_DEPTH), not its metres below the tuft's top: tall
-	// and short tufts then shade alike, so the growth field does not show as drifts of darker
-	// sward, and every root meets the turf's own shade.
+	// canopy depth (MeadowCanopy.ts TURF_CANOPY_DEPTH), not its metres below the tuft's top, and
+	// that depth and the key's and the sky's loss at its root (ROOT_KEY, ROOT_SKY) take its
+	// tussock's shade (`rootShade`: full in the tall sward, OPEN in the short turf), the shade the
+	// ground about it takes from the sward's field (SwardField.ts), so its roots meet the ground.
 	// The head's fragments: its petals' colour and shape (`headShape`), lit as a petal.
 	const onHead = step( 1.5, bladeVarying.w );
 	// (only a head's fragments work out its shape and colour: a blade's take zeros, which the blends
@@ -1446,7 +1459,8 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	} )();
 	const headFragment = { colour: headLook.xyz, mask: headLook.w };
 	const bladeOnly = float( 1 ).sub( onHead );
-	const canopyDepth = ( at: THREE.Node<'vec3'> ) => max( float( 1 ).sub( at.y.sub( origin.y ).div( tuft.w ) ), 0 ).mul( TURF_CANOPY_DEPTH );
+	const rootShade = mix( float( OPEN ), float( 1 ), clamp( smoothstepN( DENSE[ 0 ], DENSE[ 1 ], tuft.w.div( CANOPY_TOP ) ).div( TALL_DENSE ), 0, 1 ) );
+	const canopyDepth = ( at: THREE.Node<'vec3'> ) => max( float( 1 ).sub( at.y.sub( origin.y ).div( tuft.w ) ), 0 ).mul( rootShade.mul( TURF_CANOPY_DEPTH ) );
 	const mat = vegetationMaterial( shared, withHeadLight( onHead, {
 		family: 'blade', roughness: 0.86,
 		wet: { tint: 0.92, roughness: 0.76 },
@@ -1487,7 +1501,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 		// The static visibility affects indirect illumination only; sunlight keeps its own shadows.
 		// Both the sky's light (here) and the key light (`VegetationLighting` below) fall off toward
 		// the root.
-		ao: mix( float( ROOT_SKY ), float( 1 ), smoothstepN( 0.08, 0.85, t ) ).mul( skyVisibility ),
+		ao: mix( mix( float( 1 ), float( ROOT_SKY ), rootShade ), float( 1 ), smoothstepN( 0.08, 0.85, t ) ).mul( skyVisibility ),
 		// Light through the blades: strongest when the grass stands against the sun. Blades do not
 		// cast into the sun's shadow map; see MeadowCanopy. Per vertex (lower tiers) it takes the
 		// rest pose before the widening, as the shadows do; the mesh is untransformed, so `rooted`
@@ -1507,7 +1521,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 			// sun; at half its first strength, as with the specular it paled the lawn toward a coated
 			// look. Both follow the key light alone, so by night they stay as faint as the moon.
 			return {
-				scale: () => mix( float( ROOT_KEY ), float( 1 ), t ).mul( canopy ),
+				scale: () => mix( mix( float( 1 ), float( ROOT_KEY ), rootShade ), float( 1 ), t ).mul( canopy ),
 				extra: ( L, V ) => forwardLight( L, V, FORWARD_POWER ).mul( TRANSLUCENT_FORWARD ).add( TRANSLUCENT_FLOOR ).mul( t2 ).mul( vec3( TRANSLUCENT_TINT ) ),
 				sheen: ( L, V, N ) => {
 
@@ -1772,8 +1786,10 @@ function batchOf( source: THREE.BufferGeometry, shape: TuftShape, floor: number,
 }
 
 /** The meadow's tufts of each kind, one record per instance: the lawn, its thin extra tufts and its
- * flowering tufts. */
-export interface GrassTufts { lawn: Tuft[]; lawnThin: Tuft[]; lawnFlower: Tuft[] }
+ * flowering tufts; and the sward's depth at every anchor that holds turf ( x, z, depth each: the
+ * ground's field, SwardField.ts). */
+export interface GrassTufts { lawn: Tuft[]; lawnThin: Tuft[]; lawnFlower: Tuft[]; sward: number[] }
+type TuftKind = 'lawn' | 'lawnThin' | 'lawnFlower';
 
 /** The tufts grown on the anchors `veg` (any of them: each anchor's tufts depend on that anchor
  * alone); `walkDistance` (m from a point to the islander's loop) keeps the flowers off the path;
@@ -1783,7 +1799,7 @@ export interface GrassTufts { lawn: Tuft[]; lawnThin: Tuft[]; lawnFlower: Tuft[]
 export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number, shore?: ShoreField, rimLip?: RimLipData ): GrassTufts {
 
 	const n = veg.length / STRIDE;
-	const lawn: Tuft[] = [], lawnThin: Tuft[] = [], lawnFlower: Tuft[] = [];
+	const lawn: Tuft[] = [], lawnThin: Tuft[] = [], lawnFlower: Tuft[] = [], sward: number[] = [];
 	// The soil (Meadow.ts `meadowSoil`) from the shore field as the ground samples it; without it, from
 	// each anchor's own rim distance alone (no side of the wind: tools that plant without the field).
 	let ownRim = 0;
@@ -1885,7 +1901,12 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		const low = lowSpecies ? 1 : lowPatch( x, z );
 		const tall = flower > 0 ? ! lowFlower
 			: ! onStack && own[ 0 ] < 1 - SHORT_STAY && ! ( low > 0 && anchorStream( x, z, 241 )() < low );
-		if ( tall && flower === 0 && own[ 7 ] < GAP ) continue;
+		if ( tall && flower === 0 && own[ 7 ] < GAP ) {
+
+			sward.push( x, z, 0 );
+			continue;
+
+		}
 		const level = tall ? LEVEL.ordinary : LEVEL.short;
 		const spread = tall ? TUSSOCK.spread : TUSSOCK.shortSpread;
 		const height = level * ( 1 + spread * ( 2 * own[ 1 ] - 1 ) );
@@ -1903,6 +1924,7 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		// Each tussock keeps its own share of the blades (TUSSOCK.blades).
 		const blades = tall ? ( TUSSOCK.blades[ 0 ] + ( TUSSOCK.blades[ 1 ] - TUSSOCK.blades[ 0 ] ) * own[ 5 ] ) / LAWN.blades : 1;
 		density = blades;
+		sward.push( x, z, smoothstep( DENSE[ 0 ], DENSE[ 1 ], scl.y ) * density );
 		// Its colour: the lawn's everywhere (each blade then its own, `restBlade`).
 		plant( flower > 0 ? lawnFlower : lawn, pos, q, scl, col, k, cover, rimEdge, 0, flower );
 
@@ -1923,7 +1945,7 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 
 	}
 	if ( rimLip ) runSteps( edgeTuftSteps( [ lawn, lawnThin, lawnFlower ], rimLip ) );
-	return { lawn, lawnThin, lawnFlower };
+	return { lawn, lawnThin, lawnFlower, sward };
 
 }
 
@@ -1972,7 +1994,9 @@ export function* edgeTuftSteps( lists: Tuft[][], lip: RimLipData, per = Infinity
 
 /** The meadow: its lawn meshes in one group, drawing the tufts `plantGrass` grew; `sunShadow`
  * gives the blades the larger casters' soft shade. */
-export function buildGrass( { lawn, lawnThin, lawnFlower }: GrassTufts, shared: Shared, sunShadow: SunShadow ): THREE.Group {
+export function buildGrass( { lawn, lawnThin, lawnFlower, sward }: GrassTufts, shared: Shared, sunShadow: SunShadow ): THREE.Group {
+
+	setSwardField( runSteps( swardSteps( sward, SWARD_FALLBACK ) ) );
 
 	// (the tier's least blade width applies under the temporal modes only: 4x and one sample keep
 	// theirs, see `grassUniforms`)
@@ -1991,7 +2015,7 @@ export function buildGrass( { lawn, lawnThin, lawnFlower }: GrassTufts, shared: 
 	// fold (the cull drops it past thinFar).
 	const minShare = LEAST_BLADES / LAWN.blades;
 	const thinShare = bladeShare( grassUniforms.thinFar.value + 0.01, 0 );
-	const kinds: { geometry: THREE.BufferGeometry; shape: TuftShape; floor: number; tufts: Tuft[]; name: string; key: keyof GrassTufts; thin: boolean; minShare: number }[] = [
+	const kinds: { geometry: THREE.BufferGeometry; shape: TuftShape; floor: number; tufts: Tuft[]; name: string; key: TuftKind; thin: boolean; minShare: number }[] = [
 		{ geometry: lawnGeometry, shape: LAWN, floor: 0, tufts: lawn, name: 'grass-lawn', key: 'lawn', thin: false, minShare },
 	];
 	// (the thin batch exists whenever the tier grows thin tufts, even with none yet, and the
@@ -2055,15 +2079,15 @@ export function buildGrass( { lawn, lawnThin, lawnFlower }: GrassTufts, shared: 
 }
 
 /** A meadow grown on another land, ready for `setGrass`: the pool of its tufts in the meadow's
- * batches, the buffers made for it (to be uploaded before the swap), and each batch's planting box
- * and count. */
-export interface GrassPrepared { pool: CullPool; buffers: CullBuffers; boxes: THREE.Box3[]; counts: number[] }
+ * batches, the buffers made for it (to be uploaded before the swap), each batch's planting box
+ * and count, and the sward's field over its ground (SwardField.ts, uploaded). */
+export interface GrassPrepared { pool: CullPool; buffers: CullBuffers; boxes: THREE.Box3[]; counts: number[]; sward: THREE.DataTexture }
 
 /** The pool of `tufts` for the meadow `group` (buildGrass), in steps (VegetationCull's `poolSteps`): the
  * growth (Growth.ts) takes them in idle time. */
-function* grassSteps( group: THREE.Group, tufts: GrassTufts, per = 4000 ): Generator<void, GrassPrepared> {
+function* grassSteps( group: THREE.Group, tufts: GrassTufts, per = 4000 ): Generator<void, Omit<GrassPrepared, 'sward'>> {
 
-	const kinds = group.userData.kinds as { geometry: THREE.BufferGeometry; key: keyof GrassTufts }[];
+	const kinds = group.userData.kinds as { geometry: THREE.BufferGeometry; key: TuftKind }[];
 	const inputs: CullBatchInput<Tuft>[] = kinds.map( ( k ) => ( { records: tufts[ k.key ], geometry: k.geometry } ) );
 	const pool = yield* poolSteps( GRASS_PAYLOAD, inputs, per );
 	const boxes: THREE.Box3[] = [];
@@ -2109,8 +2133,9 @@ function setGrass( group: THREE.Group, prepared: GrassPrepared ): CullBuffers {
 // The meadow as a vegetation kind (vegetation/Registry.ts): a grown island's meadow is planted a
 // slice of anchors at a step and its cull pool filled and uploaded ahead; the swap points the
 // pool's storage nodes at the new buffers (`setGrass`, no pipeline), and the old buffers leave the
-// renderer's attributes once nothing draws them. It stays out of the sun's caster box, as it
-// always has.
+// renderer's attributes once nothing draws them; the sward's field over its ground (SwardField.ts)
+// is baked from the new tufts and uploaded ahead too, and set on its base node in the swap. It
+// stays out of the sun's caster box, as it always has.
 export function grassKind( group: THREE.Group, renderer: THREE.WebGPURenderer ): VegetationKind<GrassPrepared> {
 
 	return {
@@ -2119,13 +2144,14 @@ export function grassKind( group: THREE.Group, renderer: THREE.WebGPURenderer ):
 			*prepare( input ) {
 
 				const veg = input.data.vegetation, anchors = veg.length / STRIDE;
-				const tufts: GrassTufts = { lawn: [], lawnThin: [], lawnFlower: [] };
+				const tufts: GrassTufts = { lawn: [], lawnThin: [], lawnFlower: [], sward: [] };
 				for ( let a = 0; a < anchors; a += 16 ) {
 
 					const part = plantGrass( veg.subarray( a * STRIDE, Math.min( anchors, a + 16 ) * STRIDE ), input.data.rimGround, ( x, z ) => input.walkDistance( x, z ), input.data.shore );
 					tufts.lawn.push( ...part.lawn );
 					tufts.lawnThin.push( ...part.lawnThin );
 					tufts.lawnFlower.push( ...part.lawnFlower );
+					tufts.sward.push( ...part.sward );
 					yield;
 
 				}
@@ -2133,16 +2159,19 @@ export function grassKind( group: THREE.Group, renderer: THREE.WebGPURenderer ):
 				const grass = yield* grassSteps( group, tufts, 256 );
 				yield;
 				for ( const buffer of Object.values( grass.buffers ) ) yield* uploadSteps( input.renderer, buffer, AttributeType.STORAGE );
-				return grass;
+				const sward = yield* swardSteps( tufts.sward, SWARD_FALLBACK );
+				yield* textureSteps( input.renderer, sward );
+				return { ...grass, sward };
 
 			},
 			swap( prepared ) {
 
-				const old = setGrass( group, prepared );
+				const old = setGrass( group, prepared ), oldSward = setSwardField( prepared.sward );
 				return () => {
 
 					const attributes = ( renderer as unknown as { _attributes?: { delete( attribute: unknown ): void } } )._attributes;
 					for ( const buffer of Object.values( old ) ) attributes?.delete( buffer );
+					oldSward.dispose();
 
 				};
 

@@ -10,6 +10,7 @@ import { MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_MAX_DROP } from './Meadow.ts';
 import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, SOIL_PALETTE, soilUniforms } from './Soil.ts';
 import { RIM_FRINGE_FADE, RIM_INNER_LIMIT, RIM_MAX_DROP } from '../world/RimGround.ts';
 import { GRASS_ROOTS } from '../world/Grass.ts';
+import { swardField } from '../world/SwardField.ts';
 import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
 import { underwaterLight, UnderwaterLightingModel } from '../lighting/Underwater.ts';
 import { TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
@@ -41,8 +42,12 @@ import { fsr3MipBiasScale } from '../post/fsr3/MipBias.ts';
 // Grass.ts) lying old leaves and a few dry ones over it (LITTER_*, the gravel map's stones read
 // stretched), so the gaps read as deeper grass, not a floor. A lighter turf beyond the near
 // distances showed between the far tufts' few widened blades as a flat olive floor;
-// the blades shade it through one canopy depth (MeadowCanopy.ts). The island top is one sward to
-// the edge on every coast: the ground takes no zones of the soil (Meadow.ts).
+// the blades shade it through one canopy depth (MeadowCanopy.ts). How deep the sward over a point
+// is comes from its tussocks (the sward's field, SwardField.ts): the roots' darkening, the canopy's
+// depth and the key's and the sky's loss follow it, deep under the tall sward and opening under the
+// short turf and in the gaps, where one shade everywhere drew the low flowers' patches as dark
+// holes. The island top is one sward to the edge on every coast: the ground takes no zones of the
+// soil (Meadow.ts).
 // `?terrainHex=0` builds the plain triplanar variant; `userData.terrainVariant` swaps them.
 // Under fsr3 the triplanar sampling gradients are scaled by FSR's mip bias (post/fsr3/MipBias.ts),
 // built into the shader under that mode only.
@@ -75,14 +80,23 @@ const LITTER_TILES = [ 0.62, 0.71, 0.55 ], LITTER_STRETCH = [ 3.2, 2.7, 3.6 ], L
 const LITTER_GAP = 0.72, LITTER_LAYERS = [ 0.95, 1.1, 1.25 ], LITTER_FOLD = 0.2, LITTER_DRY = [ 0.075, 0.06, 0.025 ];
 // The layer's mean value from the stones' mean cover (about 0.18 a layer: 55 % of the cells hold a
 // stone, a third of its cell in area), so the litter keeps the roots' mean colour.
+const LITTER_COVER = 0.18;
 const LITTER_MEAN = ( () => {
 
-	const c = 0.18;
 	let v = LITTER_GAP;
-	for ( const l of LITTER_LAYERS ) v = v * ( 1 - c ) + l * c;
+	for ( const l of LITTER_LAYERS ) v = v * ( 1 - LITTER_COVER ) + l * LITTER_COVER;
 	return v;
 
 } )();
+// The open sward's floor: where the sward is short or broken (its depth below FLOOR_OPEN of the
+// tall sward's mean, all open at the first; the sward's field, SwardField.ts), the ground between
+// the blades is the turf's floor, FLOOR of it, rather than the bases of its leaves: dead thatch (the
+// litter's dry straw, LITTER_DRY) and between it damp topsoil (the soil's root colour darkened by
+// FLOOR_SOIL, as the lip's root soil is) with moss and seedlings over FLOOR_GREEN of it (the roots'
+// colour), the soil in the litter's gaps near, their mean share (FLOOR_BARE) far. In a real meadow
+// the short turf shows its floor between upright leaves; green roots there read as a felt laid
+// under the flowers, and bare soil alone as a patch of mud.
+const FLOOR_OPEN = [ 0.3, 0.9 ], FLOOR = 0.6, FLOOR_SOIL = RIM_SOIL_TONE, FLOOR_GREEN = 0.35, FLOOR_BARE = ( 1 - LITTER_COVER ) ** LITTER_LAYERS.length;
 
 // canopy: direct light left under the meadow's blades (1 where nothing grows)
 // water: share under a water film or standing water (water's specular reflectance)
@@ -474,7 +488,8 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 
 				const q1 = p.xz.mul( 0.23 ), q2 = mat2( 0.8, - 0.6, 0.6, 0.8 ).mul( p.xz ).mul( 0.61 ).add( 0.37 );
 				const c1 = texture( tex.heights, q1 ).level( float( 0 ) ).g, c2 = texture( tex.heights, q2 ).level( float( 0 ) ).g;
-				const meadow = texture( tex.meadow, p.xz.div( MEADOW_EXTENT ).add( 0.5 ) ).level( float( 0 ) );
+				// (the meadow map: RGB the lawn's colour, A the sward's depth, SwardField.ts)
+				const meadow = texture( swardField, p.xz.div( MEADOW_EXTENT ).add( 0.5 ) ).level( float( 0 ) ).toVar();
 				// The lawn's colour as the blades show it on average. Fine relief stays subdued so
 				// the bed reads as close turf under the blades, never as a second, patchier layer.
 				const fibres = smoothstep( 0.2, 0.65, c1.mul( 0.55 ).add( c2.mul( 0.45 ) ) );
@@ -482,20 +497,27 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 				const rot = ( v: V2, a: number ) => vec2( v.x.mul( Math.cos( a ) ).sub( v.y.mul( Math.sin( a ) ) ), v.x.mul( Math.sin( a ) ).add( v.y.mul( Math.cos( a ) ) ) );
 				// The root layer: where the blades are drawn, the ground seen between them is the
 				// sward's bottom, so it takes the colour of the blades' roots (the palette's mean at the
-				// root, darkened by the sward's depth as its tussocks are on average: one tint, as the
-				// sward is one level), with lying old leaves and a few dry ones, and their light
-				// (`rootLight`, the roots' key and sky); the litter fades out as the tufts thin (the
-				// blade curve's first two distances, Grass.ts: past the first the blades are under a
-				// pixel wide and widen), the roots' colour and light stay.
+				// root, darkened by the sward's depth there, the meadow map's A), with lying old leaves
+				// and a few dry ones, and their light (`rootLight`, the roots' key and sky); where the
+				// sward is short or broken, its floor (FLOOR_*). The litter fades out as the tufts thin
+				// (the blade curve's first two distances, Grass.ts: past the first the blades are under
+				// a pixel wide and widen), the colours' means and their light stay.
 				const R = GRASS_ROOTS;
 				const near = float( 1 ).sub( smoothstep( R.bands.x, R.bands.y, length( cameraPosition.sub( p ) ) ) ).toVar();
-				// the sward's darkening at the root (Grass.ts)
-				const rootDark = float( 1 - R.darkening );
+				// the sward's depth here (SwardField.ts), its darkening at the root (Grass.ts) and its
+				// shade: full from the tall sward's mean depth up, `open` of it under the shortest turf
+				const sward = meadow.a;
+				const rootDark = float( 1 ).sub( sward.mul( R.darkening ) ).toVar();
+				const shade = mix( float( R.open ), float( 1 ), clamp( sward.div( R.tall ), 0, 1 ) ).toVar();
 				const roots = grassC.mul( vec3( ...R.colour ).div( TURF_TONE ) ).mul( rootDark ).toVar();
+				// the open sward's floor (FLOOR_*): its share here, its thatch and soil
+				const open = float( 1 ).sub( smoothstep( FLOOR_OPEN[ 0 ], FLOOR_OPEN[ 1 ], sward.div( R.tall ) ) ).mul( FLOOR ).toVar();
+				const thatch = vec3( ...LITTER_DRY ), soil = mix( vec3( ...SOIL_PALETTE.root ).mul( FLOOR_SOIL ), roots, FLOOR_GREEN );
+				const ground = mix( roots, mix( thatch, soil, FLOOR_BARE ), open ).toVar();
 				If( near.greaterThan( 0 ), () => {
 
-					// the litter, layer by layer from the lowest (LITTER_*)
-					const v = float( LITTER_GAP ).toVar(), dry = float( 0 ).toVar();
+					// the litter, layer by layer from the lowest (LITTER_*), and the share its leaves cover
+					const v = float( LITTER_GAP ).toVar(), dry = float( 0 ).toVar(), covered = float( 0 ).toVar();
 					LITTER_TILES.forEach( ( tile, k ) => {
 
 						const a = LITTER_TURNS[ k ], s = vec2( 1 / tile, 1 / ( tile * LITTER_STRETCH[ k ] ) );
@@ -504,19 +526,20 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 						v.assign( mix( v, g.b.sub( 0.5 ).mul( 2 * LITTER_FOLD ).add( 1 ).mul( LITTER_LAYERS[ k ] ), g.r.add( g.g ) ) );
 						if ( k === 0 ) dry.assign( g.r );
 						else dry.mulAssign( float( 1 ).sub( g.r.add( g.g ) ) );
+						covered.assign( covered.add( float( 1 ).sub( covered ).mul( min( g.r.add( g.g ), 1 ) ) ) );
 
 					} );
 					const litter = mix( roots.mul( v.div( LITTER_MEAN ) ), vec3( ...LITTER_DRY ).mul( rootDark ), dry );
-					roots.assign( mix( roots, litter, near ) );
+					const floor = mix( soil, thatch, covered ).mul( v.div( LITTER_MEAN ) );
+					ground.assign( mix( ground, mix( litter, floor, open ), near ) );
 
 				} );
-				grassC.assign( roots );
-				rootLight.assign( turfCover );
+				grassC.assign( ground );
+				rootLight.assign( turfCover.mul( shade ) );
 				mossC.assign( mix( mossC, grassC, turfCover ) );
 				rimGrassC.assign( grassC );
-				// The blades above shade the turf, through one canopy depth everywhere
-				// (MeadowCanopy.ts).
-				canopy.assign( meadowCanopyLight( turfCover.mul( TURF_CANOPY_DEPTH ), shared.sunDir ).mul( mix( float( 1 ), float( GRASS_ROOTS.key ), rootLight ) ) );
+				// The blades above shade the turf, through the canopy's depth there (MeadowCanopy.ts).
+				canopy.assign( meadowCanopyLight( turfCover.mul( shade ).mul( TURF_CANOPY_DEPTH ), shared.sunDir ).mul( mix( float( 1 ), float( GRASS_ROOTS.key ), rootLight ) ) );
 				Hg.assign( mix( Hg, c1.mul( 0.5 ).add( c2.mul( 0.5 ) ), legacyTurf ) );
 
 			} );
