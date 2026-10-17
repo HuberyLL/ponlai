@@ -7,7 +7,8 @@
 // with any level, as a day's wind follows the pressure pattern rather than the cloud. A real day's
 // wind comes from any side with the weather, and swings right round as a front passes; the
 // landscape remembers only the prevailing wind (PREVAILING_HEADING: the meadow's exposure, the rim
-// grass's combing), so those stay on it while the weather's wind turns. Over most coasts the wind
+// grass's combing, and at sea the swell), so those stay on it while the weather's wind and the wind
+// sea turn. Over most coasts the wind
 // is force 2 - 4 most of the time, force 5 at times and force 6 or more rarely; a cold front
 // often leaves a clear, windy day behind it.
 // - Levels (U10, the mean wind 10 m up): light 1.5 m/s, gentle 3.8 (fair's wind, at which the
@@ -86,7 +87,7 @@ export const WIND_LEVELS: Readonly<Record<WindLevel, Readonly<Pick<WeatherState,
 	strong: { windSpeed: 11, gustiness: 1.3 },
 };
 /** The prevailing wind's heading (degrees, WeatherState `windDirection`'s convention): the
- * weather's wind turns about it, the landscape and the sea's spectrum keep it. */
+ * weather's wind turns about it, the landscape and the sea's swell keep it. */
 export const PREVAILING_HEADING = 40;
 /** A wind to set: its level, its heading, or both (what is left out stays). */
 export interface WindChoice { level?: WindLevel; heading?: number }

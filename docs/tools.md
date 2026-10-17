@@ -130,7 +130,7 @@ Sky and weather:
 - `wind` (light, gentle, fresh, strong: the wind's level, a mean wind 10 m up of 1.5, 3.8, 7 and
   11 m/s) and `windDir` (its heading in degrees: where the wind comes from, in the sea spectrum's
   convention, atan2( z, x ) in the world's x-z plane; 40 is the prevailing wind, which the
-  landscape and the sea's spectrum keep), each over the sky's own wind (the gentle one from 40 for
+  landscape and the sea's swell keep; the wind sea turns with it), each over the sky's own wind (the gentle one from 40 for
   every kept sky, so `weather=fair` alone is the page it always was). Naming either holds the
   weather, as `weather` does; both are scene options. On a page, the GUI's Weather folder (`wind`,
   `wind heading`, over its transition seconds) or `__PONLAI__.setWind( { level, heading },
@@ -251,9 +251,10 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   the brightness |s| / 0.15. `windView=arrows` or `windView=plants` shows one half. The numbers
   behind it: `__PONLAI__.windProbe( options )` (`src/debug/WindProbe.ts`: the shaders' own wind
   functions in a compute kernel built on the first call; angle histograms, lean and swing,
-  neighbours' correlation, the gust field's size and travel, the plants' wiring, their natural sway
+  neighbours' correlation, the gust field's size and travel, the sea's gusts against it around the
+  island (`gust.sea`), the plants' wiring, their natural sway
   frequencies, and per weather where every part travels and how fast: the plants, the sea and its
-  swell, the sea fog, the cumulus and the cirrus), through the probe as
+  swell, the open sea's gusts, the sea fog, the cumulus and the cirrus), through the probe as
   `--eval "return JSON.stringify( await P.windProbe() )"`.
 - `islander` picks the islanders' proportions (`medium`, the default, or `stock` (the kit's own),
   `subtle` and `strong` builds of `Proportions.ts`); also in the GUI's Islander folder, which

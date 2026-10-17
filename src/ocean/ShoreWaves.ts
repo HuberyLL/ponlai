@@ -297,7 +297,7 @@ export class ShoreWaves {
 
 	private setDirection( fft: OceanFFT ): void {
 
-		const angle = ( fft.params.windDirection + fft.swell.directionOffset ) * Math.PI / 180;
+		const angle = fft.swellDirection * Math.PI / 180;
 		this.direction.value.set( - Math.cos( angle ), - Math.sin( angle ) );
 
 	}

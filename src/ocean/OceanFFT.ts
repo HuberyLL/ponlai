@@ -51,11 +51,15 @@ import { DEFAULT_SWELL, seaState, waveSystemTerms, type SwellParams } from './Oc
 // Sample a cascade at its undisplaced world xz / size, in its layer (`texture( t, uv ).depth( c )`).
 //
 // The spectrum follows the weather's wind as tidewater's sea states follow its wind (`setWind`: the
-// fetch, choppiness and the swell's scale of OceanSpectrum.ts `seaState` at that speed), rebuilt on
-// the GPU in the frame the speed changes, so a stronger wind makes longer waves, not only taller
-// ones; a function of the current wind alone, whatever the path to it. The heading stays the
-// prevailing wind's (Wind.ts `spectrumWind`): the waves do not turn with the weather's wind, and the
-// shore's shelter field (ShoreWaves) follows the swell's heading only.
+// fetch, choppiness and the swell's scale of OceanSpectrum.ts `seaState` at that speed, and its
+// heading), rebuilt on the GPU in the frame the wind changes, so a stronger wind makes longer waves,
+// not only taller ones; a function of the current wind alone, whatever the path to it. The wind sea
+// (the first system) takes the weather's heading and turns with it, as a sea's young waves follow
+// the day's wind; the swell, the memory of distant weather, keeps the prevailing heading
+// (`swellHeading`, Wind.ts `spectrumWind`) plus its own offset, and so does the shore's shelter
+// field (ShoreWaves `swellDirection`). A turn is uniform writes and the spectrum kernel's run, as a
+// change of speed is: no pipeline. The random phases stay, so the waves of the new heading grow
+// out of the same sea as the old ones fade.
 // The spectrum's depth is tidewater's open ocean (500 m), not the shelf sea's: the island's shallows
 // damp the waves in the water's vertex stage instead (Water.ts).
 // A kernel that uses `workgroupBarrier()` is dispatched by size (`computeKernel( [ n ] )` with
@@ -147,6 +151,8 @@ export class OceanFFT {
 	sizes: number[];
 	params: OceanParams;
 	readonly swell: SwellParams;
+	/** The heading the swell's offset turns from (the prevailing wind's), degrees. */
+	readonly swellHeading: number;
 	spectrumRevision = 0;
 	readonly cascades: number;
 	// the fields, one array texture each with a layer per cascade (see the note at the top)
@@ -179,6 +185,7 @@ export class OceanFFT {
 		sizes = CASCADE_SIZES,
 		windSpeed,
 		windDirection,
+		swellHeading = windDirection,
 		fetch = 120e3,
 		amplitude = 1.0,
 		choppiness = 0.9,
@@ -190,13 +197,14 @@ export class OceanFFT {
 		seed = 1234,
 		distantSwell = {},
 		anisotropy = 4,
-	}: Pick<OceanParams, 'windSpeed' | 'windDirection'> & Partial<OceanParams> & { sizes?: number[]; distantSwell?: Partial<SwellParams>; anisotropy?: number } ) {
+	}: Pick<OceanParams, 'windSpeed' | 'windDirection'> & Partial<OceanParams> & { swellHeading?: number; sizes?: number[]; distantSwell?: Partial<SwellParams>; anisotropy?: number } ) {
 
 		this.renderer = renderer;
 		this.sizes = sizes;
 		this.cascades = sizes.length;
 		this.params = { windSpeed, windDirection, fetch, amplitude, choppiness, depth, spread, swell, peakEnhancement, shortWavesFade, seed };
 		this.swell = { ...DEFAULT_SWELL, ...distantSwell };
+		this.swellHeading = swellHeading;
 
 		const N = FFT_N, NN = N * N, C = sizes.length, count = NN * C;
 		this.h0Attr = new THREE.StorageBufferAttribute( new Float32Array( count * 4 ), 4 );
@@ -435,16 +443,30 @@ export class OceanFFT {
 
 	}
 
-	/** Takes tidewater's sea state at a wind speed (m/s), rebuilt in the next update when it
-	 * changes. */
-	setWind( windSpeed: number ): void {
+	/** Takes tidewater's sea state at a wind speed (m/s) and the wind sea's heading (degrees,
+	 * wrapped to 0..360 so a heading is one value however it was reached), rebuilt in the next
+	 * update when either changes. */
+	setWind( windSpeed: number, heading = this.params.windDirection ): void {
 
-		if ( windSpeed === this.params.windSpeed ) return;
-		const sea = seaState( windSpeed );
-		Object.assign( this.params, { windSpeed, fetch: sea.fetch, choppiness: sea.choppiness } );
-		this.swell.scale = sea.swell;
-		this.foamBias.value = sea.foamBias;
+		const windDirection = ( ( heading % 360 ) + 360 ) % 360;
+		if ( windSpeed === this.params.windSpeed && windDirection === this.params.windDirection ) return;
+		if ( windSpeed !== this.params.windSpeed ) {
+
+			const sea = seaState( windSpeed );
+			Object.assign( this.params, { windSpeed, fetch: sea.fetch, choppiness: sea.choppiness } );
+			this.swell.scale = sea.swell;
+			this.foamBias.value = sea.foamBias;
+
+		}
+		this.params.windDirection = windDirection;
 		this.rebuildSpectrum();
+
+	}
+
+	/** The swell's heading (degrees, the spectrum's convention): the prevailing one plus its offset. */
+	get swellDirection(): number {
+
+		return this.swellHeading + this.swell.directionOffset;
 
 	}
 
@@ -455,7 +477,7 @@ export class OceanFFT {
 		const S = this.swell;
 		const terms = [
 			waveSystemTerms( { windSpeed, windDirection, fetch, spread, swell, peakEnhancement, shortWavesFade } ),
-			waveSystemTerms( { scale: S.scale, windSpeed: S.windSpeed, windDirection: windDirection + S.directionOffset,
+			waveSystemTerms( { scale: S.scale, windSpeed: S.windSpeed, windDirection: this.swellDirection,
 				fetch: S.fetch, spread: S.spread, swell: S.swell, peakEnhancement: S.peakEnhancement, shortWavesFade: S.shortWavesFade } ),
 		];
 		terms.forEach( ( t, n ) => {

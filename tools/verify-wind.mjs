@@ -53,10 +53,10 @@ const gusts = ( g ) => new Wind( createWindUniforms(), { gustiness: g } ).unifor
 assert.equal( gusts( REFERENCE_GUSTINESS ), 0.13, 'fair\'s gusts lean the plants as before' );
 assert.equal( gusts( 1 ), 0 );
 near( gusts( 1.5 ) / gusts( REFERENCE_GUSTINESS ), ( 1.5 ** 2 - 1 ) / ( REFERENCE_GUSTINESS ** 2 - 1 ), 1e-12 );
-// The sea's spectrum is built from the prevailing heading and the reference speed, whatever the
-// weather's wind: a weather change only scales its amplitudes, and a page loaded in a turned wind
-// builds the sea a page that turned its wind draws.
-assert.deepEqual( new Wind( createWindUniforms(), { speed: 11, heading: 25 } ).spectrumWind, { windSpeed: REFERENCE_SPEED, windDirection: PREVAILING_HEADING } );
+// The sea's spectrum starts from the reference speed and the prevailing heading, whatever the
+// weather's wind (OceanFFT.setWind then takes the weather's speed and heading for the wind sea),
+// and its swell keeps the prevailing heading.
+assert.deepEqual( new Wind( createWindUniforms(), { speed: 11, heading: 25 } ).spectrumWind, { windSpeed: REFERENCE_SPEED, windDirection: PREVAILING_HEADING, swellHeading: PREVAILING_HEADING } );
 // The plants' sway keeps its natural frequency in any wind: its scroll and the leaves' clock are
 // the same at any speed, while the gusts travel with the wind. In a fair wind the sway's scroll is
 // the gusts' own, bit for bit, as the sway took it before the two were parted (fair's paused frames
@@ -144,8 +144,8 @@ assert.notDeepEqual( current( frames ), held );
 // The wrapped clocks may differ by a wrap between previous and current: every shader reads them
 // only through functions periodic in their wraps. Sources: every read of a wind state's `clock`
 // is the time of `wave` (sin of fract( time x rate ), at rates with whole cycles per
-// CLOCK_PERIOD), the gust scroll is read only in Wind.ts by windField (the gust map repeats over
-// GUST_ALONG and EDDY_TILE, where the scroll wraps), and the sway scroll only in Wind.ts by
+// CLOCK_PERIOD), the gust scroll is read only in Wind.ts by the gust map's reads (windField and
+// gustAt, the sea's gusts: the map repeats over GUST_ALONG and EDDY_TILE, where the scroll wraps), and the sway scroll only in Wind.ts by
 // gustWave, the plants' sway, which takes whole swings per GUST_ALONG and refuses any other rate.
 const root = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '../src' );
 const sources = [];

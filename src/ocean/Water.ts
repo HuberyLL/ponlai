@@ -36,7 +36,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //   - the normal from the cascades' slopes over their horizontal stretch (WaterSurface), with
 //     near-field capillary ripples, the rocky shore's reflected wave and the rain's rings
 //   - the sea's large-scale detail in world space (SeaDetail): gusts roughen the short waves the
-//     pixel cannot resolve and the near ripples, slicks smooth them, gusts and windrows add whitecaps
+//     pixel cannot resolve and the near ripples, slicks smooth them, gusts and windrows add whitecaps;
+//     around the island the gusts are the meadow's, read in the vertex stage
 //   - the sun reaching the surface (`sunLight`): the key light through the sun shadow's maps (as
 //     tidewater's water reads its own: three's five-tap PCF at the surface point, the normal bias
 //     straight up) and the clouds; the glint, the water body and the foam all take this one light
@@ -459,6 +460,8 @@ export class Water {
 
 		}
 		const vLag = varying( xz ), vWeights = varying( weights );
+		// the meadow's gust at the grid point (SeaDetail.ts: its map read here, in the vertex stage)
+		const vIslandGust = varying( detail.islandGust( xz ) );
 		// the surface's height over the mean sea (the waves and the rock's reflected wave): the crests
 		const vWaveH = varying( displaced.y.sub( shared.waterLevel ) );
 		const floorHeight = ( p: V2 ) => texture( seabedHeight, fieldUV( p ) ).level( float( 0 ) ).r;
@@ -633,7 +636,7 @@ export class Water {
 			const p1 = texture( storm.pattern, fuv ).toVar();
 			const p2 = texture( storm.pattern, rotate( fuv, 0.6435 ).mul( 2.37 ).add( vec2( 0.31, 0.77 ) ) ).toVar();
 			// the sea's large-scale detail: ( rough, gust, slick, streak )
-			const sea = detail.sample( vLag ).toVar();
+			const sea = detail.sample( vLag, vIslandGust ).toVar();
 			const rough = sea.x;
 
 			// ---- the normal: the cascades' slopes over their horizontal stretch (tidewater's
@@ -1049,6 +1052,7 @@ export class Water {
 	 * vertex); a page loaded on the grown land measures that land. */
 	setLand( b: Bounds ): void {
 
+		this.inputs.detail.setLand( b );
 		this.reflectionBounds.set(
 			new THREE.Vector3( b.x0 - REFLECTOR_REACH, this.inputs.shared.waterLevel.value - REFLECTION_FLOOR, b.z0 - REFLECTOR_REACH ),
 			new THREE.Vector3( b.x1 + REFLECTOR_REACH, ISLAND_TOP + REFLECTOR_HEIGHT, b.z1 + REFLECTOR_REACH ) );

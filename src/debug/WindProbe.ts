@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
-import { Fn, If, float, instanceIndex, instancedArray, uint, vec3, vec4 } from 'three/tsl';
-import { WIND_STATE_VEC4S, Wind, createWindUniforms, packWindState, rootHash, swayFrequency, windField, windStateOf, type WindState } from '../weather/Wind.ts';
+import { Fn, If, float, instanceIndex, instancedArray, uint, vec2, vec3, vec4 } from 'three/tsl';
+import { WIND_STATE_VEC4S, Wind, createWindUniforms, gustAt, packWindState, rootHash, swayFrequency, windField, windStateOf, type WindState } from '../weather/Wind.ts';
 import { plantGrass } from '../world/Grass.ts';
 import { GRASS_WIND, PALM_WIND, bendBlade, bladePhase, mainBend } from '../world/vegetation/Deform.ts';
 import { windDisplacement } from '../weather/Wind.ts';
@@ -8,6 +8,8 @@ import { debugFlags } from './DebugFlags.ts';
 import type { WorldData } from '../world/types.ts';
 import type { Vegetation } from '../world/vegetation/Registry.ts';
 import type { Shared } from '../shared.ts';
+import { OPEN_DRIFT, type SeaDetail } from '../ocean/SeaDetail.ts';
+import type { Bounds } from '../world/WorldShapes.ts';
 
 // `__PONLAI__.windProbe( options )`: the numbers behind the wind view (WindView.ts), as JSON for
 // tools/probe.mjs. Every sway comes from the shaders' own TSL functions (Wind.ts `windField`,
@@ -34,12 +36,20 @@ import type { Shared } from '../shared.ts';
 // autocorrelation of `field.w` falls under 1/e), its travel velocity (the peak of the
 // cross-correlation between slow steps, against the wind's), and the share of the land in a gust
 // (w > 0.5), over the land's box along and across the wind (`gustSpan`: a square of that side
-// about its centre instead, for lengths the land is too small to show). `natural`: each kind's
+// about its centre instead, for lengths the land is too small to show). `gust.sea`: the sea's gusts
+// (SeaDetail.ts `gustOf`, the water's own function, with the island's gust and the air's
+// displacement of each step) on a grid over the land's box grown by `seaMargin` metres (`seaGrid`
+// apart), with the meadow's gust on the same grid: each one's travel and correlation lengths, and
+// their Pearson correlation by distance from the land's box (1 where the sea's gusts are the
+// meadow's, falling to tidewater's own pattern far out). `natural`: each kind's
 // natural sway frequency (Hz, the same in every wind). `w4`: every vegetation mesh and palm,
 // whether its material has a wind displacement.
 // `w5` (scene jumps and seeks, so last): for each kept weather and a few presets where every part
 // travels, as angles and speeds: the vegetation's wind, the weather's heading, the sea and its
-// swell (the FFT's headings), the sea fog (the air's displacement), the cumulus (their weather map
+// swell (the FFT's headings: the wind sea's turns with the weather, the swell's stays on the
+// prevailing heading plus its offset), the open sea's gusts (SeaDetail.ts: the air's displacement times
+// OPEN_DRIFT; around the island they are the meadow's, `gust.sea`), the sea fog (the air's
+// displacement), the cumulus (their weather map
 // and shape noise drift together; `evolve` moves the shape vertically, in place) and the cirrus,
 // each by minus the change of its sampling offset (Clouds.ts `layerOffsets`). The drifts are
 // read off the page across a seek of 1 s (`setTime`), so they are the page's own, and every gap is
@@ -56,11 +66,13 @@ export interface WindProbeContext {
 	wind: Wind;
 	weather: { state: { windSpeed: number; windDirection: number; gustiness: number } };
 	sky: { clouds: { frontAxis?: { value: THREE.Vector2 }; cirrusAxis?: { value: THREE.Vector2 }; layerOffsets?: () => { cumulus: THREE.Vector2; cirrus: THREE.Vector2 } } };
-	fft: { params: { windDirection: number }; swell: { directionOffset: number } };
+	fft: { params: { windDirection: number }; swellDirection: number };
 	establishScene: ( scene: never ) => Promise<unknown>; // main.ts's, with { weather, preset }
 	setTime: ( t: number ) => Promise<unknown>; // main.ts's seek of the scene clock
 	data: () => WorldData;
 	vegetation: Vegetation;
+	seaDetail: SeaDetail;
+	land: () => Bounds; // the land's box (WorldShapes.landBounds)
 
 }
 
@@ -68,13 +80,16 @@ interface Series { steps: number; dt: number }
 interface Options {
 	tufts: number; fast: Series; slow: Series; anchors: number; grid: number;
 	w5: boolean; kinds: string[]; seed: number; weathers: string[]; presets: string[]; gustSpan: number;
+	seaMargin: number; seaGrid: number;
 }
 const DEFAULTS: Options = {
 	tufts: 20000, fast: { steps: 64, dt: 0.05 }, slow: { steps: 40, dt: 0.5 }, anchors: 1500, grid: 0.5,
 	w5: true, kinds: [ 'grass', 'palm' ], seed: 1,
 	weathers: [ 'clear', 'fair', 'cloudy', 'overcast' ], presets: [ 'sunrise', 'noon', 'golden-hour', 'midnight' ], gustSpan: 0,
+	seaMargin: 160, seaGrid: 3,
 };
-const STATE = WIND_STATE_VEC4S; // vec4s per wind step
+// vec4s per wind step: the vegetation's wind state, then the air's ( displacement, scene time, 0 )
+const STATE = WIND_STATE_VEC4S + 1;
 const BINS = [ 0, 0.5, 1, 2, 4, 8, 16 ];
 const r3 = ( v: number ) => Math.round( v * 1000 ) / 1000;
 
@@ -104,7 +119,7 @@ function windStates( ctx: WindProbeContext, { steps, dt }: Series ): { states: F
 	for ( let k = 0; k < steps; k ++ ) {
 
 		if ( k > 0 ) copy.update( dt, speed, heading, gustiness );
-		states.set( packWindState( u ), k * STATE * 4 );
+		states.set( [ ...packWindState( u ), u.displacement.value.x, u.displacement.value.y, copy.time, 0 ], k * STATE * 4 );
 
 	}
 	debugFlags.windFreeze = freeze;
@@ -112,8 +127,9 @@ function windStates( ctx: WindProbeContext, { steps, dt }: Series ): { states: F
 
 }
 
-// d: the local wind's direction times the lean `windField` gives there
-type Body = ( wind: WindState, input: V4 ) => { s: V2; d: V2 };
+// d: the local wind's direction times the lean `windField` gives there; `air` the step's
+// ( displacement, scene time, 0 )
+type Body = ( wind: WindState, input: V4, air: V4 ) => { s: V2; d: V2 };
 
 // One dispatch of `body` for every input and step: out[ plant * steps + k ] = ( s, d ).
 async function evaluate( renderer: THREE.WebGPURenderer, inputs: Float32Array, states: Float32Array, steps: number, body: Body ): Promise<Float32Array> {
@@ -128,7 +144,7 @@ async function evaluate( renderer: THREE.WebGPURenderer, inputs: Float32Array, s
 			const plant = i.div( uint( steps ) ), k = i.mod( uint( steps ) ).mul( uint( STATE ) );
 			const s0 = state.element( k ).toVar(), s1 = state.element( k.add( 1 ) ).toVar(), s2 = state.element( k.add( 2 ) ).toVar();
 			const wind = windStateOf( s0, s1, s2 );
-			const r = body( wind, input.element( plant ).toVar() );
+			const r = body( wind, input.element( plant ).toVar(), state.element( k.add( 3 ) ).toVar() );
 			out.element( i ).assign( vec4( r.s, r.d ) );
 
 		} );
@@ -309,7 +325,8 @@ function correlations( root: Float32Array, along: Float32Array, steps: number, D
 
 }
 
-// The gust field on a grid over the land (axes along and across the mean wind).
+// The gust field on a grid over the land (axes along and across the mean wind), and the sea's gusts
+// around it (`gust.sea`).
 async function gustField( ctx: WindProbeContext, o: Options, slow: ReturnType<typeof windStates>, roots: Float32Array ) {
 
 	const D = slow.direction, C = new THREE.Vector2( - D.y, D.x );
@@ -326,7 +343,54 @@ async function gustField( ctx: WindProbeContext, o: Options, slow: ReturnType<ty
 		a0 = am - o.gustSpan / 2; a1 = am + o.gustSpan / 2; c0 = cm - o.gustSpan / 2; c1 = cm + o.gustSpan / 2;
 
 	}
-	const h = o.grid, na = Math.floor( ( a1 - a0 ) / h ) + 1, nc = Math.floor( ( c1 - c0 ) / h ) + 1, steps = o.slow.steps;
+	const meadow = await gustGrid( ctx, o, slow, { a0, a1, c0, c1 }, o.grid, ( wind, p ) => windField( wind, p ).w );
+	// the sea's gusts and the meadow's over the land's box grown by seaMargin, in the same frame
+	const box = ctx.land(), m = o.seaMargin;
+	const corners = [ [ box.x0, box.z0 ], [ box.x1, box.z0 ], [ box.x0, box.z1 ], [ box.x1, box.z1 ] ];
+	const along = corners.map( ( [ x, z ] ) => x * D.x + z * D.y ), across = corners.map( ( [ x, z ] ) => x * C.x + z * C.y );
+	const seaBox = { a0: Math.min( ...along ) - m, a1: Math.max( ...along ) + m, c0: Math.min( ...across ) - m, c1: Math.max( ...across ) + m };
+	const detail = ctx.seaDetail;
+	const sea = await gustGrid( ctx, o, slow, seaBox, o.seaGrid, ( wind, p, air ) => detail.gustOf( p, gustAt( wind, p ), air.xy, air.z ) );
+	const land = await gustGrid( ctx, o, slow, seaBox, o.seaGrid, ( wind, p ) => gustAt( wind, p ) );
+	// Pearson correlation of the two by distance outside the land's box (0: over it)
+	const bands = [ 0, 1e-6, 60, 140, 220, Infinity ];
+	const acc = bands.slice( 1 ).map( () => ( { n: 0, x: 0, y: 0, xx: 0, yy: 0, xy: 0 } ) );
+	for ( let j = 0; j < sea.nc; j ++ ) for ( let i = 0; i < sea.na; i ++ ) {
+
+		const a = seaBox.a0 + i * sea.h, c = seaBox.c0 + j * sea.h;
+		const x = a * D.x + c * C.x, z = a * D.y + c * C.y;
+		const out = Math.hypot( Math.max( box.x0 - x, 0, x - box.x1 ), Math.max( box.z0 - z, 0, z - box.z1 ) );
+		const b = bands.findIndex( ( edge, k ) => k > 0 && out < edge ) - 1;
+		const e = acc[ b < 0 ? 0 : b ];
+		for ( let k = 0; k < sea.steps; k ++ ) {
+
+			const u = sea.w( i, j, k ), v = land.w( i, j, k );
+			e.n ++; e.x += u; e.y += v; e.xx += u * u; e.yy += v * v; e.xy += u * v;
+
+		}
+
+	}
+	const withMeadow = acc.map( ( e, b ) => {
+
+		const cov = e.xy / e.n - e.x / e.n * ( e.y / e.n ), vx = e.xx / e.n - ( e.x / e.n ) ** 2, vy = e.yy / e.n - ( e.y / e.n ) ** 2;
+		return { band: b === 0 ? 'over the land' : `${ bands[ b ] < 1 ? 0 : bands[ b ] }-${ bands[ b + 1 ] } m`, samples: e.n, correlation: e.n ? r3( cov / Math.sqrt( vx * vy ) ) : null };
+
+	} );
+	return {
+		...meadow.stats,
+		sea: { margin: m, gust: sea.stats, meadowOnSameGrid: land.stats, withMeadow },
+	};
+
+}
+
+// One gust field `sample` on a grid of cell h over a box along ( a ) and across ( c ) the mean wind,
+// over the slow steps: its values ( `w( i, j, k )` ) and statistics.
+async function gustGrid( ctx: WindProbeContext, o: Options, slow: ReturnType<typeof windStates>, box: { a0: number; a1: number; c0: number; c1: number },
+	h: number, sample: ( wind: WindState, p: V2, air: V4 ) => THREE.Node<'float'> ) {
+
+	const D = slow.direction, C = new THREE.Vector2( - D.y, D.x );
+	const { a0, a1, c0, c1 } = box;
+	const na = Math.floor( ( a1 - a0 ) / h ) + 1, nc = Math.floor( ( c1 - c0 ) / h ) + 1, steps = o.slow.steps;
 	const inputs = new Float32Array( na * nc * 4 );
 	for ( let j = 0; j < nc; j ++ ) for ( let i = 0; i < na; i ++ ) {
 
@@ -334,12 +398,7 @@ async function gustField( ctx: WindProbeContext, o: Options, slow: ReturnType<ty
 		inputs.set( [ a * D.x + c * C.x, a * D.y + c * C.y, 0, 0 ], ( j * na + i ) * 4 );
 
 	}
-	const out = await evaluate( ctx.renderer, inputs, slow.states, steps, ( wind, p ) => {
-
-		const field = windField( wind, p.xy );
-		return { s: field.zw, d: field.xy };
-
-	} );
+	const out = await evaluate( ctx.renderer, inputs, slow.states, steps, ( wind, p, air ) => ( { s: vec2( 0, sample( wind, p.xy, air ) ), d: vec2( 0 ) } ) );
 	const w = ( i: number, j: number, k: number ) => out[ ( ( j * na + i ) * steps + k ) * 4 + 1 ];
 	let mean = 0, gusty = 0;
 	for ( let j = 0; j < nc; j ++ ) for ( let i = 0; i < na; i ++ ) for ( let k = 0; k < steps; k ++ ) { const v = w( i, j, k ); mean += v; if ( v > 0.5 ) gusty ++; }
@@ -402,13 +461,13 @@ async function gustField( ctx: WindProbeContext, o: Options, slow: ReturnType<ty
 		return { stepGap: m, seconds: t, along: r3( va ), across: r3( vc ), speed: r3( Math.hypot( va, vc ) ), angleFromWind: r3( Math.atan2( vc, va ) * 180 / Math.PI ), peakCorrelation: r3( best ) };
 
 	};
-	return {
+	return { w, na, nc, h, steps, stats: {
 		grid: { along: na, across: nc, cell: h, metres: [ r3( a1 - a0 ), r3( c1 - c0 ) ] },
 		meanGust: r3( mean ), gustShare: r3( gusty / N ),
 		correlationLength: { along: length( true ), across: length( false ) },
 		travel: [ 1, 2, 4 ].map( travel ),
 		windSpeed: slow.speed,
-	};
+	} };
 
 }
 
@@ -469,20 +528,22 @@ async function directions( ctx: WindProbeContext, o: Options ) {
 		// each cloud layer is sampled at p + its offset: it drifts by minus the offset's change
 		const cumulus = a.cumulus.clone().sub( b.cumulus ).divideScalar( dt );
 		const cirrusDrift = a.cirrus.clone().sub( b.cirrus ).divideScalar( dt );
-		// the fog is sampled at p - displacement: it drifts by d( displacement )
+		// the fog is sampled at p - displacement: it drifts by d( displacement ); the open sea's
+		// gusts at p - OPEN_DRIFT displacement
 		const fog = b.displacement.clone().sub( a.displacement ).divideScalar( dt );
+		const seaGusts = fog.clone().multiplyScalar( OPEN_DRIFT );
 		// the FFT's heading is the spectrum's; the positive inverse FFT travels opposite it
-		const h = ctx.fft.params.windDirection * Math.PI / 180, hs = ( ctx.fft.params.windDirection + ctx.fft.swell.directionOffset ) * Math.PI / 180;
+		const h = ctx.fft.params.windDirection * Math.PI / 180, hs = ctx.fft.swellDirection * Math.PI / 180;
 		const sea = deg( { x: - Math.cos( h ), y: - Math.sin( h ) } ), swell = deg( { x: - Math.cos( hs ), y: - Math.sin( hs ) } );
 		const heading = ctx.weather.state.windDirection;
 		const weatherTravel = deg( { x: - Math.cos( heading * Math.PI / 180 ), y: - Math.sin( heading * Math.PI / 180 ) } );
 		const front = clouds.frontAxis?.value, cirrus = clouds.cirrusAxis?.value;
-		const travel = { vegetation, weather: weatherTravel, sea, swell, fog: deg( fog ), cumulus: deg( cumulus ), cirrus: deg( cirrusDrift ),
+		const travel = { vegetation, weather: weatherTravel, sea, swell, seaGusts: deg( seaGusts ), fog: deg( fog ), cumulus: deg( cumulus ), cirrus: deg( cirrusDrift ),
 			cloudFrontAxis: front ? deg( front ) : null, cirrusAxis: cirrus ? deg( cirrus ) : null };
 		rows.push( {
-			weather, preset, weatherHeading: heading, fftHeading: ctx.fft.params.windDirection,
+			weather, preset, weatherHeading: heading, fftHeading: ctx.fft.params.windDirection, swellHeading: ctx.fft.swellDirection,
 			windSpeed: ctx.weather.state.windSpeed, gustiness: ctx.weather.state.gustiness,
-			travel, speed: { fog: r3( fog.length() ), cumulus: r3( cumulus.length() ), cirrus: r3( cirrusDrift.length() ) },
+			travel, speed: { seaGusts: r3( seaGusts.length() ), fog: r3( fog.length() ), cumulus: r3( cumulus.length() ), cirrus: r3( cirrusDrift.length() ) },
 			gapToVegetation: Object.fromEntries( Object.entries( travel ).filter( ( [ k, v ] ) => k !== 'vegetation' && v !== null ).map( ( [ k, v ] ) => [ k, gap( v as number, vegetation ) ] ) ),
 		} );
 
