@@ -10,7 +10,7 @@ import type { RimGroundField, RimLipData, ShoreField } from './types.ts';
 import { shoreDistance } from './ShoreSample.ts';
 import { mulberry32, noise3, smoothstep } from './noise.ts';
 import { anchorStream, cellStream } from './Anchors.ts';
-import { SHORE_RIM, SWARD_HEIGHT, meadowColor, meadowMoisture, meadowSoil, meadowShallow, meadowTurf, meadowVigour, supportsMeadow, type ShoreAt } from '../materials/Meadow.ts';
+import { LAWN_COLOUR, SHORE_RIM, SWARD_HEIGHT, meadowColor, meadowMoisture, meadowSoil, meadowShallow, meadowTurf, meadowVigour, supportsMeadow, type ShoreAt } from '../materials/Meadow.ts';
 import { soilUniforms } from '../materials/Soil.ts';
 import { rootHash } from '../weather/Wind.ts';
 import { bendBlade, bladePhase, drown, swayFade } from './vegetation/Deform.ts';
@@ -46,7 +46,10 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 // darkening toward its roots by its density, with a faint gloss along the blades and little of a
 // dielectric's specular; soft upward normals join the blades to the turf rather than lighting every
 // tuft as a cushion, and each blade is folded along its midrib, one half turned to the light and the
-// other from it, with a thin lighter edge.
+// other from it, with a thin lighter edge. The sward has a real meadow's layers from the ground up
+// (CULM_*, DRY_*): dead leaves drooped low and the old leaves' straw sheaths at the bottom, the green
+// leaves, and over them a few of each tall tussock's blades grown as flowering stems whose
+// spike-like panicles, purple brown to straw, stand above the leaves.
 // Anchors come from
 // the world worker (x, y, z, normal, rim distance, kind and local sky visibility); every choice
 // below is a seeded hash of the anchor, so the meadow grows with the island's footprint and needs
@@ -921,6 +924,9 @@ function restBlade( blade: THREE.Node<'vec4'>, pick: F, scaleY: F, aspect: F, cl
 	// (a flower's head and stem take one id, so they take one phase in the wind)
 	const id = min( abs( blade.w ).sub( 1 ), 2 );
 	const tall = select( bladeHash( id, pick, 1 ).lessThan( TALL_SHARE ), float( TALL ), float( 1 ) );
+	// a culm or a dead leaf (`bladeKind`; a flower's stem is neither)
+	const kind = bladeKind( bladeHash( id, pick, 6 ), scaleY );
+	const culm = kind.culm.mul( float( 1 ).sub( isStem ) ).toVar(), dead = kind.dry.mul( float( 1 ).sub( isStem ) ).toVar();
 	const turn = bladeHash( id, pick, 3 ).sub( 0.5 ).mul( FACING );
 	const facing = positionLocal.y.add( turn );
 	const out = vec2( cos( facing ), sin( facing ) ).toVar();
@@ -928,17 +934,19 @@ function restBlade( blade: THREE.Node<'vec4'>, pick: F, scaleY: F, aspect: F, cl
 	// its grass (GRASSES): broad by a draw against its tussock's share; a stem keeps its own width
 	const broad = step( bladeHash( id, pick, 8 ), clump.coarse ).toVar();
 	const grass = ( k: 'width' | 'stiffness' ) => mix( float( GRASSES.fine[ k ] ), float( GRASSES.broad[ k ] ), broad );
-	const length = bladeHash( id, pick, 0 ).mul( 0.5 ).add( 0.75 ).mul( tall ).div( 1 + TALL_SHARE * ( TALL - 1 ) )
-		.mul( clump.lean.mul( dot( out, clump.dir ) ).mul( SHEAR ).add( 1 ) ).toVar();
+	const leaf = bladeHash( id, pick, 0 ).mul( 0.5 ).add( 0.75 ).mul( tall ).div( 1 + TALL_SHARE * ( TALL - 1 ) )
+		.mul( clump.lean.mul( dot( out, clump.dir ) ).mul( SHEAR ).add( 1 ) ).mul( mix( float( 1 ), float( DRY_LENGTH ), dead ) );
+	const length = mix( leaf, bladeHash( id, pick, 0 ).mul( CULM_LENGTH[ 1 ] - CULM_LENGTH[ 0 ] ).add( CULM_LENGTH[ 0 ] ), culm ).toVar();
 	const metres = length.mul( scaleY ).toVar();
-	const stiffness = pow( float( STIFFNESS[ 1 ] / STIFFNESS[ 0 ] ), bladeHash( id, pick, 2 ) ).mul( STIFFNESS[ 0 ] ).mul( clump.stiffness ).mul( grass( 'stiffness' ) );
+	const stiffness = pow( float( STIFFNESS[ 1 ] / STIFFNESS[ 0 ] ), bladeHash( id, pick, 2 ) ).mul( STIFFNESS[ 0 ] ).mul( clump.stiffness ).mul( grass( 'stiffness' ) ).mul( mix( float( 1 ), float( DRY_STIFF ), dead ) );
 	const gravity = min( metres.mul( metres ).mul( metres ).mul( G_UNIT ).div( stiffness ), G_MAX );
 	const angle = bladeHash( id, pick, 4 ).sqrt().mul( ROOT_ANGLE[ 1 ] - ROOT_ANGLE[ 0 ] ).add( ROOT_ANGLE[ 0 ] );
-	const half = blade.z.mul( side ).mul( mix( grass( 'width' ), float( 1 ), isStem ) );
+	const culmWidth = mix( float( CULM_STEM ), float( CULM_WIDTH ), smoothstepN( CULM_HEAD[ 0 ], CULM_HEAD[ 1 ], t ) );
+	const half = blade.z.mul( side ).mul( mix( mix( grass( 'width' ), culmWidth, culm ), float( 1 ), isStem ) );
 	const offset0 = vec2( cos( blade.y ), sin( blade.y ) ).mul( half );
 	const axis = mix( vec2( cos( blade.y.add( turn ) ), sin( blade.y.add( turn ) ) ), vec2( stem.dir.y.negate(), stem.dir.x ), isStem ).toVar();
 	const offset = axis.mul( half );
-	const curve = bladeCurve( mix( gravity, STEM_G, isStem ), mix( angle, STEM_ANGLE, isStem ), t ).toVar();
+	const curve = bladeCurve( mix( mix( gravity, CULM_G, culm ), STEM_G, isStem ), mix( mix( angle, CULM_ANGLE, culm ), STEM_ANGLE, isStem ), t ).toVar();
 	const along = mix( dir, stem.dir, isStem ), reach = mix( length, stem.length, isStem ).toVar();
 	const base = positionLocal.xz.sub( offset0 ).mul( clump.gather );
 	const centre = base.add( along.mul( curve.x.mul( reach ).mul( aspect ) ) );
@@ -965,7 +973,37 @@ const ROOT = new THREE.Vector3( 0.42, 0.7, 0.56 ), TIP = new THREE.Vector3( 1.2,
 // leaf, and its value times VALUE ( 0.65 to 1.35, the mean 1 ). The palette is divided by its mean,
 // so the lawn's average colour stays ROOT to TIP of the lawn's. With blades only +-4 % apart in
 // value and one tint the long sward read as plastic; real grass varies by a third from leaf to leaf.
-const DRY_SHARE = 0.07, VALUE = [ 0.65, 1.35 ];
+const DRY_SHARE = 0.12, VALUE = [ 0.65, 1.35 ];
+// The sward's layers, as a real meadow's from the ground up: the dead leaves and the old leaves'
+// straw sheaths at the bottom, the green leaves, and the flowering stems over them.
+// - Of a tall tussock's blades CULM_SHARE are flowering stems, culms (fading in over the height
+//   scales CULM_TALL, m: the short turf's flower too low to show). A culm is CULM_LENGTH times its
+//   tussock's height scale long and stands nearly upright, bent a little by its head (gravity
+//   number CULM_G, root angle CULM_ANGLE rad): a thin stem, CULM_STEM of a leaf's width, swelling
+//   into a spike-like panicle over its upper part (from CULM_HEAD[ 0 ] to CULM_HEAD[ 1 ] of its
+//   length, CULM_WIDTH of a leaf's width, running to the leaf's point), its stem a straw green and
+//   its panicle between a purple brown and a straw tan (PANICLE, linear albedo), as the meadow
+//   grasses flower in summer: Yorkshire fog's pink, cocksfoot's purple, bent's purple haze ripening
+//   to straw. From the game's camera the panicles over the leaves are the sward's top layer.
+// - The dead leaves (DRY_SHARE of the others) lie low: DRY_LENGTH of a leaf's length and DRY_STIFF
+//   of its stiffness, so they droop into the sward's bottom, and the green leaves' bases take up to
+//   SHEATH of the dead leaves' straw at the root (their old sheaths), each by a hash of its own. A
+//   dead leaf of full length stood among the green ones as a yellow streak at every height.
+// A blade's kind is a function of its tint hash and its tussock's height scale (`bladeKind`), so the
+// vertex stage (its shape) and the fragment stage (its colour) agree without another varying.
+const CULM_SHARE = 0.04, CULM_TALL = [ 0.3, 0.42 ], CULM_LENGTH = [ 1.25, 1.5 ], CULM_G = 1.6, CULM_ANGLE = 1.38;
+const CULM_STEM = 0.3, CULM_WIDTH = 1.25, CULM_HEAD = [ 0.62, 0.72 ];
+const PANICLE = [ [ 0.115, 0.07, 0.065 ], [ 0.18, 0.14, 0.075 ] ];
+const DRY_LENGTH = 0.5, DRY_STIFF = 0.4, SHEATH = 0.5;
+
+/** A blade's kind by its tint hash `tint` (the same at every vertex of the blade) and its tussock's
+ * height scale `scaleY` (m): a culm (1 or 0) or a dead leaf (1 or 0, never a culm). */
+function bladeKind( tint: F, scaleY: F ): { culm: F; dry: F } {
+
+	const culm = step( fract( tint.mul( 31.7 ) ), smoothstepN( CULM_TALL[ 0 ], CULM_TALL[ 1 ], scaleY ).mul( CULM_SHARE ) );
+	return { culm, dry: step( 1 - DRY_SHARE, fract( tint.mul( 13.7 ) ) ).mul( float( 1 ).sub( culm ) ) };
+
+}
 // The palette's mean against ROOT and TIP: lighter, as the sward's depth (ROOT_DARK) and the faint
 // translucent floor took about 18 % of the long sward's brightness in the game's view.
 const PALETTE_GAIN = [ 0.85, 0.75 ];
@@ -1436,7 +1474,10 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// The blades are far finer than any patch, so they tell apart close up without mottling the lawn.
 	const jitter = strip.jitter, tint = strip.tint;
 	const run = ( k: number ) => mix( mix( vec3( PALETTE.fresh[ k ] ), vec3( PALETTE.yellow[ k ] ), clamp( tint.mul( 2 ), 0, 1 ) ), vec3( PALETTE.olive[ k ] ), clamp( tint.mul( 2 ).sub( 1 ), 0, 1 ) );
-	const dry = step( 1 - DRY_SHARE, fract( tint.mul( 13.7 ) ) );
+	// (the blade's kind by its own tint, not a far strip's: its shape is the blade's, `bladeKind`)
+	const culm = bladeKind( bladeVarying.w, tuft.w.div( CANOPY_TOP ) ).culm;
+	const dry = step( 1 - DRY_SHARE, fract( tint.mul( 13.7 ) ) ).mul( float( 1 ).sub( culm ) );
+	const sheath = fract( tint.mul( 5.31 ) ).mul( SHEATH );
 	const value = jitter.mul( VALUE[ 1 ] - VALUE[ 0 ] ).add( VALUE[ 0 ] );
 	// A deeper, cooler green at the root to a light, fresh green at the tip (the instance colour
 	// multiplies in), so the gaps between blades read as a deeper green, never near black (that
@@ -1444,7 +1485,12 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// through the tips (below) adds the yellow. At the rim's soil pockets the roots take the soil's
 	// colour.
 	const tipColour = mix( run( 1 ), vec3( PALETTE.dry[ 1 ] ), dry );
-	const root = mix( mix( run( 0 ), vec3( PALETTE.dry[ 0 ] ), dry ), vec3( 0.55, 0.38, 0.23 ), float( 1 ).sub( cover ).mul( 0.55 ).mul( soilUniforms.strength ) );
+	const root = mix( mix( mix( run( 0 ), vec3( PALETTE.dry[ 0 ] ), sheath ), vec3( PALETTE.dry[ 0 ] ), dry ), vec3( 0.55, 0.38, 0.23 ), float( 1 ).sub( cover ).mul( 0.55 ).mul( soilUniforms.strength ) );
+	// a culm's colour: its straw green stem, its panicle (PANICLE, against the lawn's colour, which
+	// the instance colour multiplies in) from where it swells
+	const lawn = vec3( ...LAWN_COLOUR );
+	const panicle = mix( vec3( ...PANICLE[ 0 ] ), vec3( ...PANICLE[ 1 ] ), fract( bladeVarying.w.mul( 3.7 ) ) ).div( lawn );
+	const culmColour = mix( mix( run( 1 ), vec3( PALETTE.dry[ 1 ] ), 0.5 ), panicle, smoothstepN( CULM_HEAD[ 0 ], CULM_HEAD[ 1 ], t ) );
 	// The blade's side and width axis, for the edge here and the fold below. The edge is a lighter
 	// rim along the blade's margins, only seen where a blade is several pixels wide.
 	const side = strip.side;
@@ -1478,7 +1524,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const mat = vegetationMaterial( shared, withHeadLight( onHead, {
 		family: 'blade', roughness: 0.86,
 		wet: { tint: 0.92, roughness: 0.76 },
-		color: ( wet ) => mix( mix( root, tipColour, smoothstepN( 0.12, 1, t ) ).mul( value ).mul( edge ), headFragment.colour, onHead ).mul( wet ),
+		color: ( wet ) => mix( mix( mix( root, tipColour, smoothstepN( 0.12, 1, t ) ), culmColour, culm ).mul( value ).mul( edge ), headFragment.colour, onHead ).mul( wet ),
 		rest: rooted,
 		// Short growth needs a smaller world-space sway to keep its tips above the soil.
 		// The widening and the narrowing by distance (`pixelWideBlade`, `tuftLod`) follow the current
