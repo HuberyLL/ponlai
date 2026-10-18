@@ -77,11 +77,12 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   rooted within EDGE_REACH of the edge carries the nearest sample of the worker's lip
 //   (RimGround.ts `buildRimLip`) in the cull's `edge` buffer (`edgeTuftSteps`: the coast's offset
 //   along its outward direction, the roof's height, the outward direction and LIP_WALLS offsets of
-//   the stone every LIP_DEPTH down), and the vertex stage lays the part of each bent blade past the
-//   edge round a curl and down over it (`drape`) and holds every point outside the stone
-//   (`holdOff`), so a blade that reaches the stone lies along it, downward, and none passes into
-//   it; its previous position takes the same drape and hold. Both are 0 for the tufts without a
-//   record, which draw as the rest of the meadow.
+//   the stone every LIP_DEPTH down), and the vertex stage lays the part of a third of the bent
+//   blades past the edge round a curl and down over it (`drape`, DRAPE_SHARE), the rest arching out
+//   over it, and holds every point past the coast outside the stone (`holdOff`), so a blade that
+//   reaches the stone lies along it, downward, and none passes into it, while the blades over the
+//   turf's shoulder inland of the coast keep their shape; its previous position takes the same
+//   drape and hold. Both are 0 for the tufts without a record, which draw as the rest of the meadow.
 // - Blades do not cast into the sun's shadow map (narrower than a texel, they flicker as the sun
 //   moves): the meadow shades itself and its turf through MeadowCanopy. What the larger casters
 //   (rock, the islanders, the game's props) throw onto the blades is soft and light: a few bilinear lookups
@@ -367,18 +368,25 @@ const SHOULDER = 1.2, SHOULDER_LEAN = [ 0.3, 1.0 ], SHOULDER_TURN = 0.6, SHOULDE
 
 // The wall an edge tuft's blades lie on: its outward offset from the coast (m, `holdOff`) at every
 // LIP_DEPTH (m) under the roof, LIP_WALLS of them, from the roof down: the first at the coast
-// itself, the rest the worker's (RimGround.ts LIP_WALL, 10 cm apart), each LIE farther out. A point
-// is held out by a smooth maximum over HOLD_SOFT (m), so a blade meeting the stone bends onto it
-// rather than kinking, and the hold eases in over HOLD_ROOT (m) from the root, which sits on the
-// ground the profile only approximates.
-const LIP_DEPTH = 0.1, LIP_WALLS = 16, LIE = 0.012, HOLD_SOFT = 0.03, HOLD_ROOT = [ 0.01, 0.05 ];
+// itself, the rest the worker's (RimGround.ts LIP_WALL, 10 cm apart), each LIE farther out, and
+// each blade up to LIE_SPREAD (m) farther again by a hash of its own, so the blades lying on the stone
+// do not lie in one sheet. A point is held out by a smooth maximum over HOLD_SOFT (m), so a blade
+// meeting the stone bends onto it rather than kinking, and the hold eases in over HOLD_ROOT (m) from
+// the root, which sits on the ground the profile only approximates, and over HOLD_INLAND (m) inland of
+// the coast to none (the turf's shoulder, not the stone, lies there).
+const LIP_DEPTH = 0.1, LIP_WALLS = 16, LIE = 0.012, LIE_SPREAD = 0.04, HOLD_SOFT = 0.03, HOLD_ROOT = [ 0.01, 0.05 ], HOLD_INLAND = 0.04;
 // The meadow at the edge: its tufts rooted within EDGE_REACH (m) of the cliff's edge carry the
-// edge (`edgeTuftSteps`), and the part of a blade past it, held up by no ground, bends down over it
-// (`drape`) round a curl of DRAPE_RADIUS (m, the least and the most, by the blade, times the square
-// root of its tussock's stiffness) and then hangs: the sward itself rolls over the edge, the more of
-// a tuft the nearer it roots (a separate fringe of tufts along the edge read as a row of eyelashes
-// and broke into clumps). EDGE_PAD (m) widens such a tuft's cull sphere for the drape's reach.
-const EDGE_REACH = 1, DRAPE_RADIUS = [ 0.08, 0.2 ], EDGE_PAD = 0.05;
+// edge (`edgeTuftSteps`), and DRAPE_SHARE of their blades, by a hash of their own, flop over it: the
+// part past it bends down over it (`drape`) round a curl of DRAPE_RADIUS (m, the least and the
+// most, by the blade, times the square root of its tussock's stiffness) and then hangs; the others
+// keep their own shape out over the edge, as a free blade does, held off the stone where they meet
+// it. So the sward rolls over the edge, the more of a tuft the nearer it roots (a separate fringe of
+// tufts along the edge read as a row of eyelashes and broke into clumps), with blades arching out
+// over it among the hanging ones. Every blade draped round a curl of 8 to 20 cm drew every part of it
+// past the edge as a vertical line just outside it, lying on the stone at one offset: from the game's
+// view a comb of parallel bright strands along the whole lip. EDGE_PAD (m) widens such a tuft's
+// cull sphere for the drape's reach.
+const EDGE_REACH = 1, DRAPE_SHARE = 0.35, DRAPE_RADIUS = [ 0.12, 0.4 ], EDGE_PAD = 0.05;
 
 // The meadow's wildflowers are heads on some of its lawn tufts (`flowerTuftGeometry`), grown as
 // wildflowers grow: each species in drifts of its own where its habitat is (DRIFT), dense in their
@@ -1697,14 +1705,16 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const floor = origin.sub( vec3( 0, pool.mul( sink ), 0 ) ).toVar();
 	const grounded = ( q: V3 ) => q.add( tuftUp.mul( max( dot( floor.sub( q ), tuftUp ), 0 ) ) );
 	// A meadow tuft at the edge (`edgeTuftSteps`: its record's outward direction set) drapes the part
-	// of a blade past the edge over it: its distance past the edge, along the outward direction,
-	// is laid round a quarter curl of the blade's own radius (DRAPE_RADIUS), then straight down.
+	// of DRAPE_SHARE of its blades past the edge over it: its distance past the edge, along the
+	// outward direction, is laid round a quarter curl of the blade's own radius (DRAPE_RADIUS), then
+	// straight down.
 	const edgeOn = step( 1e-6, dot( edgeRecord.zw, edgeRecord.zw ) ).toVar();
 	const drape = ( q: V3 ) => {
 
 		const drapeRadius = mix( float( DRAPE_RADIUS[ 0 ] ), float( DRAPE_RADIUS[ 1 ] ), bladeHash( pose.id, pick, 8 ) ).mul( clump.stiffness.sqrt() ).toVar();
 		const out = edgeRecord.zw;
-		const past = max( dot( q.xz, out ).sub( edgeRecord.x ), 0 ).mul( edgeOn ).toVar();
+		const flops = step( bladeHash( pose.id, pick, 9 ), DRAPE_SHARE );
+		const past = max( dot( q.xz, out ).sub( edgeRecord.x ), 0 ).mul( edgeOn ).mul( flops ).toVar();
 		const angle = min( past.div( drapeRadius ), Math.PI / 2 );
 		const along = drapeRadius.mul( sin( angle ) ), drop = drapeRadius.mul( float( 1 ).sub( cos( angle ) ) ).add( max( past.sub( drapeRadius.mul( Math.PI / 2 ) ), 0 ) );
 		return q.sub( vec3( out.x, 0, out.y ).mul( past.sub( along ) ) ).sub( vec3( float( 0 ), drop, float( 0 ) ) );
@@ -1714,8 +1724,12 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// along the outward direction, every LIP_DEPTH under the roof, linear between them and held
 	// below the last): a point the wall would pass is moved out to it by a smooth maximum
 	// (HOLD_SOFT), so a blade that reaches the stone lies along it, downward; above the roof nothing
-	// bounds it, the wall falling away over 2 cm. The hold eases in from the root (HOLD_ROOT). 0 away
-	// from the edge (`edgeOn`).
+	// bounds it, the wall falling away over 2 cm, and inland of the coast nothing either (from
+	// HOLD_INLAND m in): there the ground is the turf's, which rounds down over the lip's shoulder below
+	// the roof, and the blades over it are in the air (held out to the wall line, every blade of the
+	// shoulder's tufts below the roof's height stood in one vertical sheet along the coast, a comb of
+	// bright strands from the game's view). The hold eases in from the root (HOLD_ROOT). 0 away from
+	// the edge (`edgeOn`).
 	const holdOff = ( q: V3 ) => {
 
 		const outward = mix( ground1.xz.div( max( length( ground1.xz ), 1e-6 ) ), edgeRecord.zw, edgeOn ).toVar();
@@ -1728,10 +1742,10 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 			wall = wall.add( dot( w, max( float( 1 ).sub( abs( vec4( u ).sub( vec4( 4 * j, 4 * j + 1, 4 * j + 2, 4 * j + 3 ) ) ) ), 0 ) ) );
 
 		} );
-		const stone = wall.sub( float( 1 ).sub( smoothstepN( - 0.02, 0, depth ) ) ).toVar();
+		const stone = wall.sub( float( 1 ).sub( smoothstepN( - 0.02, 0, depth ) ) ).add( bladeHash( pose.id, pick, 10 ).mul( LIE_SPREAD ) ).toVar();
 		const soft = max( float( HOLD_SOFT ).sub( abs( o.sub( stone ) ) ), 0 ).div( HOLD_SOFT );
 		const held = max( o, stone ).add( soft.mul( soft ).mul( HOLD_SOFT * 0.25 ) );
-		const ease = smoothstepN( HOLD_ROOT[ 0 ], HOLD_ROOT[ 1 ], length( q.sub( origin ) ) );
+		const ease = smoothstepN( HOLD_ROOT[ 0 ], HOLD_ROOT[ 1 ], length( q.sub( origin ) ) ).mul( smoothstepN( - HOLD_INLAND, 0, o ) );
 		return q.add( vec3( outward.x, 0, outward.y ).mul( held.sub( o ).mul( ease ).mul( edgeOn ) ) );
 
 	};
