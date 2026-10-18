@@ -14,7 +14,7 @@ import { LAWN_COLOUR, SHORE_RIM, SWARD_HEIGHT, meadowColor, meadowMoisture, mead
 import { soilUniforms } from '../materials/Soil.ts';
 import { rootHash } from '../weather/Wind.ts';
 import { bendBlade, bladePhase, drown, swayFade, type TrampleBlade } from './vegetation/Deform.ts';
-import { trampleShare, type TrampleState } from './vegetation/Trample.ts';
+import { TRAMPLE_RECORD, trampleKernel, trampleShare } from './vegetation/Trample.ts';
 import { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { PUDDLE_WET, puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
@@ -117,7 +117,8 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   normals turn with the bend, so a gust shows as a sheen (vegetation/Deform.ts `bendBlade`, its
 //   numbers GRASS_WIND, which the wind probe reads too).
 // - The islanders part the meadow as they walk through it (vegetation/Trample.ts): each blade reads
-//   the walkers' recent tracks at its own root (a flower's head at its tuft's origin) as a load,
+//   its tuft's record of the walkers' recent tracks (the cull pool's `trail`, written by the trail's
+//   kernel) at its own root (a flower's head at its tuft's origin) as a load,
 //   their legs' push away from their way and their feet's weight, which the elastica takes with
 //   the wind's (`bendBlade`); a pushed blade rises back as a released spring, so a walker leaves a
 //   short wake that closes a couple of seconds behind it. The herbs take none. A parted blade
@@ -1777,9 +1778,11 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const trampled = debugFlags.trample !== false;
 	const bladeRoot = () => mix( input.matrix.mul( vec4( pose.base.x, 0, pose.base.y, 1 ) ).xz, origin.xz, isHead );
 	const unherbed = float( 1 ).sub( herb );
-	// the blade's share of the trail, and its root and own facing (world) where that is not 0
-	const trampleOf = ( state: TrampleState ): TrampleBlade => ( {
-		share: trampleShare( state, origin.xz, bladeRoot ).mul( unherbed ),
+	// the blade's share of the trail by its tuft's record (`frame` 0, or 1 for the previous frame's),
+	// and its root and own facing (world) where that is not 0
+	const trail = trampled ? cull.node( 'trail', 'vec4', true ) : null;
+	const trampleOf = ( frame: number ): TrampleBlade => ( {
+		share: trampleShare( ( k ) => trail!.element( tuftSlot.mul( TRAMPLE_RECORD ).add( frame * 2 + k ) ), bladeRoot ).mul( unherbed ),
 		root: () => {
 
 			const r = bladeRoot().toVar();
@@ -1788,9 +1791,9 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 		},
 		facing: () => normalize( ground1.xz.mul( pose.facing.x ).add( ground2.xz.mul( pose.facing.y ) ) ),
 	} );
-	const trample = trampled ? trampleOf( shared.trample ) : undefined;
+	const trample = trampled ? trampleOf( 0 ) : undefined;
 	if ( trample ) trample.share = trample.share.toVar( 'grassTrample' );
-	const trampleBefore = trampled && TEMPORAL ? trampleOf( shared.trample.previous ) : undefined;
+	const trampleBefore = trampled && TEMPORAL ? trampleOf( 1 ) : undefined;
 	const bend = bendBlade( shared.wind, rooted, origin, bendHeight, sway2, phase, fade, clump.stiffness, flowerPart, trample );
 	const bent = settle( bend.position ).toVar( 'grassBent' );
 	// A blade of a tuft past 70 m stands for as many of the blades it drew there as its gain over
@@ -2026,6 +2029,8 @@ const GRASS_PAYLOAD: CullPayload<Tuft> = {
 		{ name: 'edge', floats: 20, itemSize: 4 } ],
 	origin: 'origins',
 	matrices: 'matrices',
+	// each tuft's record of the islanders' trail (Trample.ts `trampleKernel`)
+	scratch: debugFlags.trample !== false ? [ { name: 'trail', floats: TRAMPLE_RECORD * 4 } ] : [],
 	write( t, i, { matrices, colors, ground, origins, edge } ) {
 
 		t.m.toArray( matrices, i * 16 );
@@ -2466,6 +2471,8 @@ export function buildGrass( { lawn, lawnThin, lawnFlower, lawnHerb, sward }: Gra
 		caps: bandCaps( k.shape.blades, k.floor, k.minShare ), bladeIndices: k.shape.segs * 6, baseIndices: k.geometry.userData.baseIndices ?? 0,
 	} ) ) );
 	const material = grassMaterial( shared, cull, sunShadow );
+	// the tufts' records of the islanders' trail, written by Trample whenever the trail changes
+	if ( debugFlags.trample !== false ) shared.trample.kernels.push( group.userData.trail = trampleKernel( shared.trample, cull.node( 'origins', 'vec4', true ), cull.node( 'trail', 'vec4' ), cull.workgroups ) );
 	const batches = kinds.map( ( k, i ) => batchOf( k.geometry, k.shape, k.floor, material, cull, cull.ranges[ i ], k.tufts, k.name, k.thin ) );
 	for ( const b of batches ) {
 
@@ -2604,6 +2611,8 @@ export function grassKind( group: THREE.Group, renderer: THREE.WebGPURenderer ):
 			swap( prepared ) {
 
 				const old = setGrass( group, prepared ), oldSward = setSwardField( prepared.sward );
+				// (the new pool's records of the islanders' trail are zeros until written: Trample.ts)
+				if ( group.userData.trail ) renderer.compute( group.userData.trail );
 				return () => {
 
 					const attributes = ( renderer as unknown as { _attributes?: { delete( attribute: unknown ): void } } )._attributes;

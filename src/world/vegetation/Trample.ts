@@ -1,5 +1,7 @@
 import * as THREE from 'three/webgpu';
-import { Fn, If, Loop, int, float, vec2, vec3, uniform, uniformArray, dot, max, clamp, mix, length, exp, smoothstep, atan, tan } from 'three/tsl';
+import { Fn, If, Loop, int, float, vec2, vec3, vec4, uniform, uniformArray, dot, min, max, clamp, mix, length, exp, smoothstep, step, select, atan, tan, workgroupId, localId } from 'three/tsl';
+import { TEMPORAL } from '../../post/Antialiasing.ts';
+import { CULL_GROUP } from './VegetationCull.ts';
 import { pressedLean, pressedLoadRatio } from '../../weather/Wind.ts';
 import { debugFlags } from '../../debug/DebugFlags.ts';
 
@@ -24,14 +26,19 @@ import { debugFlags } from '../../debug/DebugFlags.ts';
 //   positions their views have shown since they appeared, by the game's clock
 //   (game/view/VillagerView.ts): a paused game holds its trails, and a new view (a game started or
 //   loaded) starts with none.
-// - A blade reads each stretch of track (a capsule between two samples, its age interpolated along
-//   it) at its own root: the legs push it straight away from the walker's way, full within
-//   TRAMPLE.legs[ 0 ], none beyond legs[ 1 ], the push turning in over the feet's reach from the
-//   middle of the way, where it has no side; the feet press it down within TRAMPLE.feet. Pushed
-//   from several stretches, it goes the way of the strongest ones, weighted by the square of their
-//   push: the push is never set to a full lean along a normalised direction, so where the pushes
-//   from two sides cancel the blade is pushed less, not swung over. A standing walker's samples all
-//   lie at its feet, the newest of age 0, so it pushes the grass about it for as long as it stands.
+// - Each tuft of the meadow keeps a record of the trail (`trampleKernel`, a compute pass over the
+//   cull's pool that Trample dispatches after it writes the uniforms): of every stretch of track
+//   (a capsule between two samples, its age interpolated along it) the one that presses the tuft
+//   hardest, as its point nearest the tuft's anchor, the way's direction there, the age there and
+//   its change along the way, and how far on the walker's feet are now. A blade reads it at its own
+//   root (`trampleShare`), the stretch standing for the way across the tuft, straight, ending at the
+//   feet: the legs push it straight away from the way, full within TRAMPLE.legs[ 0 ], none beyond
+//   legs[ 1 ], the push turning in over the feet's reach from the middle of the way, where it has no
+//   side; the feet press it down within TRAMPLE.feet. The push is never set to a full lean along a
+//   normalised direction, so the middle of the way is pushed less, not swung over. A standing
+//   walker's samples all lie at its feet, the newest of age 0, so it pushes the grass about it for
+//   as long as it stands. The direction comes from the next older stretch where the stretch itself
+//   is shorter than STRETCH (the newest, just after a step of the clock).
 // - What a blade keeps of a push is its deflection, the angle the push laid it over by, which
 //   returns as a released spring critically damped (`recovery`, time constant TRAMPLE.settle, eased
 //   out to 0 by the trail's end), the same for long and short blades: a blade is pushed at once and
@@ -50,18 +57,26 @@ import { debugFlags } from '../../debug/DebugFlags.ts';
 //   its tussock's rigidity: tall blades are laid flat and parted widely, the short turf leans.
 //   The meadow's herbs take none (Grass.ts): pushed sideways, a plantain's leaf lying flat on the
 //   ground swung up through the upright.
-// - Cost: per vertex a loop over the walkers (`count`, the TRAMPLE.walkers nearest the camera) with
-//   a test of its track's bounding circle at the tuft's origin (grown by TRAMPLE.spread); only the
-//   vertices of the tufts inside one work out their blade's root and read the track's capsules.
-//   `debugFlags.trample = false` leaves the trail out of the meadow's shader when set at load (the
-//   shader of a page without it), and at run time empties the walkers (profile-frame's --toggle).
+// - Cost: the record's kernel loops over the walkers (`count`, the TRAMPLE.walkers nearest the
+//   camera) per tuft, testing its track's bounding circle at the tuft's anchor (grown by
+//   TRAMPLE.legs[ 1 ] and TRAMPLE.spread), and runs only while a walker is drawn or was in the frame
+//   before (and once more to empty the records). A vertex reads its tuft's record and tests it; only
+//   the vertices of the tufts the trail reaches work out their blade's root and the push. Read by
+//   every vertex, the loops over the walkers and the track's stretches cost the island view about a
+//   millisecond whether or not a walker was near: the shader that carried them was slower
+//   throughout. `debugFlags.trample = false` leaves the trail out of the meadow's shader when set at
+//   load (the shader of a page without it, and no records), and at run time empties the walkers
+//   (profile-frame's --toggle).
 // - Under the temporal modes the blade's previous position takes the previous rendered frame's
-//   trail (`previous`), kept as the wind's is: copied once per rendered frame, and made the current
-//   one on a cut of the histories.
+//   trail (`previous`, a second record per tuft), kept as the wind's is: copied once per rendered
+//   frame, and made the current one on a cut of the histories.
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
+type Storage<T extends 'vec4'> = THREE.StorageBufferNode<T>;
+// (three's types give `min` float operands only)
+type IntMin = ( a: THREE.Node<'int'>, b: THREE.Node<'int'> ) => THREE.Node<'int'>;
 
 /** The trail's numbers: the walkers drawn at most and the samples of each one's track, their spacing
  * (s: the track reaches back ( samples - 1 ) * step at most), how far a meadow blade's root may
@@ -107,12 +122,20 @@ function trampleState() {
 export type TrampleState = ReturnType<typeof trampleState>;
 
 /** Add this object to shared before the meadow's material is built, then give it to Trample: the
- * frame being rendered and the frame rendered before it (`previous`). */
-export function createTrampleUniforms(): TrampleState & { previous: TrampleState } {
+ * frame being rendered and the frame rendered before it (`previous`), and the kernels that write
+ * the records the kinds read the trail by (`trampleKernel`), which Trample dispatches. */
+export function createTrampleUniforms(): TrampleState & { previous: TrampleState; kernels: THREE.ComputeNode[] } {
 
-	return { ...trampleState(), previous: trampleState() };
+	return { ...trampleState(), previous: trampleState(), kernels: [] };
 
 }
+
+/** The trail's uniforms with their kernels (`createTrampleUniforms`). */
+export type TrampleUniforms = ReturnType<typeof createTrampleUniforms>;
+
+/** The vec4s of a tuft's record of the trail: two per frame, the frame being rendered's and, under
+ * the temporal modes, the previous one's after them. */
+export const TRAMPLE_RECORD = TEMPORAL ? 4 : 2;
 
 /** The share of its deflection a blade keeps `age` seconds after a push: ( 1 + x ) e^-x at x = age /
  * TRAMPLE.settle, a released spring's return, critically damped, eased to 0 over the last quarter
@@ -124,55 +147,119 @@ function recovery( age: F ): F {
 
 }
 
-/** The trail on a blade rooted at `root()` (world x, z) in a tuft standing at `centre` (world x, z;
- * its blades' roots within TRAMPLE.spread of it): ( x, z ) the legs' push, a horizontal vector whose
- * length is the share of a full push the blade still keeps (0..1), and the feet's weight's share;
- * exactly 0 away from every walker (`trampleLoad` turns it into the blade's load). The walkers'
- * circles are tested at the tuft, and the root is built only for the tufts inside one: away from
- * the walkers a vertex pays for the tests alone. */
-export function trampleShare( state: TrampleState, centre: V2, root: () => V2 ): V3 {
+// The way's direction is taken from a stretch at least this long (m): the newest stretch is
+// shorter just after a step of the walker's clock, and a standing walker's have no length.
+const STRETCH = 0.03;
 
-	const { samples, legs, feet } = TRAMPLE;
-	// (in a function of its own: the loops and the branch need a stack to build into)
-	return Fn( () => {
+/** Writes a tuft's record of `state`'s trail at its anchor `centre` (world x, z) into `records` at
+ * `at`: the stretch of track that presses its blades hardest, as the point of the way nearest the
+ * anchor and the way's direction there, toward the walker (world x, z; 0 for a standing walker),
+ * then the age at that point, the age per metre back along the way, the distance along it to the
+ * walker's feet now, and 1 (0 and an empty record where no walker reaches the tuft). */
+function writeRecord( state: TrampleState, centre: V2, records: Storage<'vec4'>, at: THREE.Node<'uint'> ): void {
 
-		const way = vec2( 0 ).toVar(), weights = float( 0 ).toVar(), side = float( 0 ).toVar(), down = float( 0 ).toVar();
-		Loop( { start: int( 0 ), end: state.count, type: 'int', condition: '<' }, ( { i } ) => {
+	const { samples, legs, spread } = TRAMPLE;
+	const best = float( 0 ).toVar(), near = vec2( 0 ).toVar(), way = vec2( 0 ).toVar();
+	const age = float( 0 ).toVar(), slope = float( 0 ).toVar(), ahead = float( 0 ).toVar();
+	Loop( { start: int( 0 ), end: state.count, type: 'int', condition: '<' }, ( { i } ) => {
 
-			const walker = state.walkers.element( i );
-			const off = centre.sub( walker.xy );
-			If( dot( off, off ).lessThan( walker.z ), () => {
+		const walker = state.walkers.element( i );
+		const off = centre.sub( walker.xy );
+		If( dot( off, off ).lessThan( walker.z ), () => {
 
-				const at = root().toVar();
-				// (its counter named apart from the walkers' loop's)
-				const range = { start: int( 0 ), end: int( samples - 1 ), type: 'int' as const, condition: '<', name: 'j' };
-				Loop( range, ( inputs ) => {
+			const first = i.mul( int( samples ) ).toVar();
+			const feet = state.points.element( first ).xy;
+			// (its counter named apart from the walkers' loop's)
+			const range = { start: int( 0 ), end: int( samples - 1 ), type: 'int' as const, condition: '<', name: 'j' };
+			Loop( range, ( inputs ) => {
 
-					const j = ( inputs as unknown as { j: THREE.Node<'int'> } ).j;
-					const k = i.mul( int( samples ) ).add( j );
-					// a capsule from the newer sample `a` to the older `b` (a standing walker's has no length:
-					// its nearest point is then `a`, the newer)
-					const a = state.points.element( k ), b = state.points.element( k.add( int( 1 ) ) );
-					const run = a.xy.sub( b.xy ).toVar();
-					const u = clamp( dot( a.xy.sub( at ), run ).div( max( dot( run, run ), 1e-8 ) ), 0, 1 );
-					const away = at.sub( a.xy.sub( run.mul( u ) ) ).toVar();
-					const d = length( away );
-					const kept = recovery( mix( a.z, b.z, u ) ).toVar();
-					// the legs' push, turning in from the middle of the way over the feet's reach, and the
-					// feet's weight
-					const push = float( 1 ).sub( smoothstep( legs[ 0 ], legs[ 1 ], d ) ).mul( smoothstep( 0, feet[ 1 ], d ) ).mul( kept );
-					const weight = push.mul( push );
-					way.addAssign( away.mul( weight.div( max( d, 1e-4 ) ) ) );
-					weights.addAssign( weight );
-					side.assign( max( side, push ) );
-					down.assign( max( down, float( 1 ).sub( smoothstep( feet[ 0 ], feet[ 1 ], d ) ).mul( kept ) ) );
+				const j = ( inputs as unknown as { j: THREE.Node<'int'> } ).j;
+				const k = first.add( j );
+				// a stretch from the newer sample `a` to the older `b`, and the one after it, from `b` to `c`
+				const a = state.points.element( k ), b = state.points.element( k.add( int( 1 ) ) );
+				const c = state.points.element( first.add( ( min as unknown as IntMin )( j.add( int( 2 ) ), int( samples - 1 ) ) ) );
+				const run = a.xy.sub( b.xy ).toVar(), span = length( run ).toVar();
+				const u = clamp( dot( a.xy.sub( centre ), run ).div( max( span.mul( span ), 1e-8 ) ), 0, 1 );
+				const point = a.xy.sub( run.mul( u ) ).toVar();
+				const when = mix( a.z, b.z, u ).toVar();
+				const score = recovery( when ).mul( float( 1 ).sub( smoothstep( legs[ 0 ], legs[ 1 ] + spread, length( centre.sub( point ) ) ) ) );
+				If( score.greaterThan( best ), () => {
+
+					const next = b.xy.sub( c.xy ).toVar(), nextSpan = length( next ).toVar();
+					const own = span.greaterThanEqual( STRETCH ), after = nextSpan.greaterThanEqual( STRETCH );
+					const dir = run.div( max( span, 1e-6 ) ).toVar(), nextDir = next.div( max( nextSpan, 1e-6 ) ).toVar();
+					const rate = b.z.sub( a.z ).div( max( span, 1e-6 ) ).toVar(), nextRate = c.z.sub( b.z ).div( max( nextSpan, 1e-6 ) ).toVar();
+					const toward = select( own, dir, select( after, nextDir, vec2( 0 ) ) ).toVar();
+					best.assign( score );
+					near.assign( point );
+					way.assign( toward );
+					age.assign( when );
+					slope.assign( select( own, rate, select( after, nextRate, float( 0 ) ) ) );
+					ahead.assign( max( dot( feet.sub( point ), toward ), 0 ) );
 
 				} );
 
 			} );
 
 		} );
-		return vec3( way.mul( side.div( max( weights, 1e-8 ) ) ), down );
+
+	} );
+	records.element( at ).assign( vec4( near, way ) );
+	records.element( at.add( 1 ) ).assign( vec4( age, slope, ahead, step( 1e-6, best ) ) );
+
+}
+
+/** The kernel that writes every meadow tuft's record of the trail (TRAMPLE_RECORD vec4s per slot of
+ * the cull's pool, from each slot's anchor in `origins`: VegetationCull.ts), the frame being
+ * rendered's and under the temporal modes the previous one's; dispatched by `workgroups` (the
+ * cull's, which follow its pool) whenever the trail changes (`Trample`). */
+export function trampleKernel( uniforms: TrampleUniforms, origins: Storage<'vec4'>, records: Storage<'vec4'>, workgroups: [ number, number, number ] ): THREE.ComputeNode {
+
+	const kernel = Fn( () => {
+
+		const slot = workgroupId.x.mul( CULL_GROUP ).add( localId.x ).toVar();
+		const centre = origins.element( slot ).xz.toVar();
+		const at = slot.mul( TRAMPLE_RECORD ).toVar();
+		writeRecord( uniforms, centre, records, at );
+		if ( TEMPORAL ) writeRecord( uniforms.previous, centre, records, at.add( 2 ) );
+
+	} )().computeKernel( [ CULL_GROUP ] );
+	kernel.dispatchSize = workgroups;
+	kernel.setName( 'Grass.Trample' );
+	return kernel;
+
+}
+
+/** The trail on a blade rooted at `root()` (world x, z) in a tuft whose record of it is `record`
+ * (`record( 0 )`, `record( 1 )`: `trampleKernel`'s): ( x, z ) the legs' push, a horizontal vector
+ * whose length is the share of a full push the blade still keeps (0..1), and the feet's weight's
+ * share; exactly 0 in a tuft no walker reaches (`trampleLoad` turns it into the blade's load). The
+ * root is built only for the tufts the trail reaches: elsewhere a vertex reads one vec4 and tests
+ * it. The tuft's stretch of track stands for the way across the tuft, straight, its age along it
+ * linear, and ends at the walker's feet. */
+export function trampleShare( record: ( k: number ) => THREE.Node<'vec4'>, root: () => V2 ): V3 {
+
+	const { legs, feet } = TRAMPLE;
+	// (in a function of its own: the branch needs a stack to build into)
+	return Fn( () => {
+
+		const share = vec3( 0 ).toVar();
+		const r1 = record( 1 ).toVar();
+		If( r1.w.greaterThan( 0 ), () => {
+
+			const r0 = record( 0 ).toVar();
+			const at = root().toVar();
+			const along = min( dot( at.sub( r0.xy ), r0.zw ), r1.z ).toVar();
+			const away = at.sub( r0.xy.add( r0.zw.mul( along ) ) ).toVar();
+			const d = length( away ).toVar();
+			const kept = recovery( max( r1.x.sub( r1.y.mul( along ) ), 0 ) ).toVar();
+			// the legs' push, turning in from the middle of the way over the feet's reach, and the
+			// feet's weight
+			const push = float( 1 ).sub( smoothstep( legs[ 0 ], legs[ 1 ], d ) ).mul( smoothstep( 0, feet[ 1 ], d ) ).mul( kept );
+			share.assign( vec3( away.mul( push.div( max( d, 1e-4 ) ) ), float( 1 ).sub( smoothstep( feet[ 0 ], feet[ 1 ], d ) ).mul( kept ) ) );
+
+		} );
+		return share;
 
 	} )();
 
@@ -201,18 +288,22 @@ const _p = new THREE.Vector2();
 /** Writes the walkers' tracks into the trail's uniforms once per rendered frame. */
 export class Trample {
 
-	private readonly uniforms: ReturnType<typeof createTrampleUniforms>;
+	private readonly uniforms: TrampleUniforms;
 	private readonly order: { walker: TrampleWalker; d: number; i: number }[] = [];
+	// whether the records hold no trail (the kernel's for no walkers; a new pool's are zeros too):
+	// false at first, so the first update writes them and builds the kernel's pipeline at load, never
+	// in a growth's swap
+	private empty = false;
 
-	constructor( uniforms: ReturnType<typeof createTrampleUniforms> ) {
+	constructor( uniforms: TrampleUniforms ) {
 
 		this.uniforms = uniforms;
 
 	}
 
 	/** The trail of `walkers` (the TRAMPLE.walkers nearest `near` when there are more), after the
-	 * previous frame's has been kept. */
-	update( walkers: readonly TrampleWalker[], near: THREE.Vector3 ): void {
+	 * previous frame's has been kept, and the kinds' records of it written by `renderer`. */
+	update( walkers: readonly TrampleWalker[], near: THREE.Vector3, renderer: THREE.Renderer ): void {
 
 		this.keepPrevious();
 		const u = this.uniforms;
@@ -246,14 +337,28 @@ export class Trample {
 
 		}
 		u.count.value = count;
+		this.write( renderer );
 
 	}
 
 	/** A cut of the temporal modes' history (Motion.ts `taaCut`): the previous frame's trail becomes
 	 * the current one, so nothing moves across the cut. */
-	cut(): void {
+	cut( renderer: THREE.Renderer ): void {
 
 		this.keepPrevious();
+		this.write( renderer );
+
+	}
+
+	/** The kinds' records, written every frame a walker is drawn or was in the frame before, and
+	 * once more to empty them when none is: a function of the uniforms alone, whatever came before. */
+	private write( renderer: THREE.Renderer ): void {
+
+		const u = this.uniforms;
+		const none = u.count.value === 0 && ( ! TEMPORAL || u.previous.count.value === 0 );
+		if ( u.kernels.length === 0 || ( none && this.empty ) ) return;
+		renderer.compute( u.kernels );
+		this.empty = none;
 
 	}
 

@@ -83,6 +83,8 @@ import { runSteps } from '../Steps.ts';
 type UintMax = ( a: THREE.Node<'uint'>, b: THREE.Node<'uint'> ) => THREE.Node<'uint'>;
 
 const GROUP = 256;
+/** The cull's workgroup size: a kernel over the pool's slots dispatched by `workgroups` takes it. */
+export const CULL_GROUP = GROUP;
 const LOG2_GROUP = 8;
 // A batch's bands at most, counted per workgroup in BAND_WORDS words of three 10-bit fields.
 export const MAX_BANDS = 9;
@@ -104,6 +106,9 @@ export interface CullPayload<R> {
 	/** The buffer of the instance transforms (three's InstancedMesh reads its box from it): a
 	 * batch's padding repeats its first record's there. */
 	matrices: string;
+	/** Buffers of vec4s the kind's own kernels write per slot (`floats` per slot), zeros in a new
+	 * pool: the meadow's record of the islanders' trail (Trample.ts). */
+	scratch?: { name: string; floats: number }[];
 	/** Writes record `r` into slot `i` of the kind's arrays. */
 	write( r: R, i: number, arrays: Record<string, Float32Array> ): void;
 	/** Writes record `r`'s bounding sphere (world space) into `spheres` at `i * 4`: every pose the
@@ -213,6 +218,7 @@ export function poolBuffers<R>( payload: CullPayload<R>, pool: CullPool ): CullB
 	for ( let i = 0; i < n; i ++ ) visible[ i ] = i;
 	const buffers: CullBuffers = {};
 	for ( const b of payload.buffers ) buffers[ b.name ] = new THREE.StorageBufferAttribute( pool.arrays[ b.name ], b.itemSize );
+	for ( const b of payload.scratch ?? [] ) buffers[ b.name ] = new THREE.StorageBufferAttribute( new Float32Array( n * b.floats ), 4 );
 	buffers.spheres = new THREE.StorageBufferAttribute( pool.spheres, 4 );
 	buffers.visible = new THREE.StorageBufferAttribute( visible, 1 );
 	buffers.bands = new THREE.StorageBufferAttribute( new Uint32Array( n ), 1 );
@@ -318,6 +324,14 @@ export class VegetationCull<R> {
 	get bands(): number[][] {
 
 		return this.batches.map( ( b, k ) => b.caps.slice( 0, this.ranges[ k ].indirectOffsets.length ) );
+
+	}
+
+	/** The workgroups of CULL_GROUP slots the pool fills: an array a kernel over the slots takes as
+	 * its `dispatchSize`, so a new pool's size reaches it. */
+	get workgroups(): [ number, number, number ] {
+
+		return this.dispatch;
 
 	}
 
