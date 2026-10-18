@@ -59,13 +59,25 @@ function bedWarp( x: number, z: number ): [ number, number ] {
 
 }
 
-// the seagrass meadows' field, wherever the floor is deep enough for them
+// The seagrass meadows' field, wherever the floor is deep enough for them (seabedBeds): meadows a
+// few tens of metres across, with sand holes some ten metres across inside them (the blowouts and
+// channels a real meadow is broken by), about a fifth of the floor in all. The field changes over
+// several metres, so the open sea's 4 m lattice carries it without showing its triangles; the
+// material cuts the meadows' sharp, frayed edges out of it (SeabedLook.ts).
 function seagrass( x: number, z: number ): number {
 
 	const [ wx, wz ] = bedWarp( x, z );
-	return smoothstep( 0.1, 0.24, fbm2( ( x + wx ) * 0.07 + 11.2, ( z + wz ) * 0.07 + 4.6, 4 ) );
+	const meadow = smoothstep( - 0.02, 0.26, fbm2( ( x + wx ) * 0.06 + 11.2, ( z + wz ) * 0.06 + 4.6, 4 ) );
+	const holes = smoothstep( - 0.3, 0.05, fbm2( ( x - wz * 0.5 ) * 0.09 + 3.7, ( z + wx * 0.5 ) * 0.09 - 9.1, 3 ) );
+	return meadow * holes;
 
 }
+
+// Seagrass grows no shallower than about 3.5 m here and is full from 5.5 m: above that the swell's
+// stir keeps the sand bare (a meadow's upper limit is set by the waves, deeper on exposed coasts);
+// the shelf's first metres round the cliffs are its clean sand belt. Below it the clear water lets
+// meadows reach all the depths the sea floor has here.
+const SEAGRASS_DEPTH = [ 3.5, 5.5 ];
 
 const openSeagrass = onLattice( seagrass );
 
@@ -78,7 +90,7 @@ export function openSeaBeds( x: number, z: number ): [ number, number ] {
 
 // The open sea's mean seagrass cover (openSeaBeds over a large area), for the water's estimate of
 // the floor beyond the beds it is given.
-export const OPEN_SEAGRASS_MEAN = 0.157;
+export const OPEN_SEAGRASS_MEAN = 0.186;
 
 // ------------------------------------------------------------------ the shelf
 
@@ -273,12 +285,13 @@ export function floorAt( fp: Footprint ): HeightFn {
 // Seabed beds, baked per vertex so they never repeat (a texture lookup tiled every 32 m and
 // drew a lattice of identical dark patches): `grass` is the seagrass and algae cover, `pale`
 // the clean pale sand washed off the island. The pale sand reaches out from the cliffs in
-// irregular tongues and bays rather than an even ring, and the beds start where it thins.
+// irregular tongues and bays rather than an even ring, and the meadows start below the depth the
+// swell keeps bare (SEAGRASS_DEPTH, at the floor's own height `floor`, m) where it thins.
 // Both are smooth over a few metres; the material adds the fine edge detail. Past the shelf's
 // edge they blend onto the open sea's, as the floor does.
-export function seabedBeds( fp: Footprint ): ( x: number, z: number ) => [ number, number ] {
+export function seabedBeds( fp: Footprint ): ( x: number, z: number, floor: number ) => [ number, number ] {
 
-	return ( x: number, z: number ) => {
+	return ( x: number, z: number, floor: number ) => {
 
 		const distance = fp.dist( x, z );
 		const [ wx, wz ] = bedWarp( x, z );
@@ -286,7 +299,7 @@ export function seabedBeds( fp: Footprint ): ( x: number, z: number ) => [ numbe
 		// The pale sand thins out across the shelf, its last silt gone by the shelf's edge.
 		const shelf = ( 1 - smoothstep( 1, 12, reach ) ) * ( 0.75 + 0.25 * smoothstep( - 0.2, 0.2, fbm2( x * 0.19 + 3.3, z * 0.19 + 0.4, 2 ) ) );
 		const pale = Math.max( shelf, 0.22 * ( 1 - smoothstep( 12, LAND_REACH, reach ) ) );
-		const grass = seagrass( x, z ) * smoothstep( 4, 10, reach );
+		const grass = seagrass( x, z ) * smoothstep( SEAGRASS_DEPTH[ 0 ], SEAGRASS_DEPTH[ 1 ], - floor ) * smoothstep( 4, 10, reach );
 		const w = shelfShare( x, z, distance );
 		const [ openGrass, openPale ] = openSeaBeds( x, z );
 		return [ openGrass + ( grass - openGrass ) * w, openPale + ( pale - openPale ) * w ];
