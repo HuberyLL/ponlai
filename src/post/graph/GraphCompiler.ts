@@ -58,6 +58,10 @@ export interface ResourceDesc {
 	type?: string | number;
 	samples?: Samples;
 	filter?: 'linear' | 'nearest';
+	// a full mip chain, which three makes after each pass that draws the resource, every level a
+	// box filter of the one above (WebGPUTexturePassUtils): what a pass reads at a footprint wider
+	// than a texel (single-sampled colour only)
+	mips?: boolean;
 }
 
 export type ResourceKind = 'color' | 'depth' | 'import';
@@ -230,6 +234,7 @@ export class GraphDecl {
 	/** A colour resource (`persistent`: its content survives the frame). */
 	color( name: string, desc: ResourceDesc, persistent = false ): ResourceHandle {
 
+		if ( desc.mips && ( desc.samples ?? 1 ) !== 1 ) fail( `resource '${ name }': mips need a single-sampled target` );
 		return this.resource( name, 'color', desc, persistent, false );
 
 	}
