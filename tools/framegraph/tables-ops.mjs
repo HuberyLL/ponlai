@@ -16,7 +16,7 @@ const row = ( pass, colors, depth = null ) => ( { pass, colors, depth } );
 
 // every conditional pass but the upscale: the refraction, rain, fog with a bank bake, the light
 // shafts
-const FULL = [ 'refraction', 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'output' ];
+const FULL = [ 'refractionMask', 'refraction', 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'output' ];
 
 const POST = [
 	row( 'fogBank', [ col( 'fogBanks', 'clear', 'store' ) ] ),
@@ -32,7 +32,9 @@ const POST = [
 	row( 'output', [ col( 'canvas', 'clear', 'store' ) ] ),
 ];
 // the refraction's own single-sampled target, cleared, both stored for the water
-const REFRACTION_ROW = row( 'refraction', [ col( 'refraction', 'clear', 'store' ) ], dep( 'refractionDepth', true, 'clear', 'store' ) );
+const REFRACTION_ROW = row( 'refraction', [ col( 'refraction', 'load', 'store' ) ], dep( 'refractionDepth', true, 'load', 'store' ) );
+// the mask before it: cleared, its nearest depth drawn where the opaque image holds the floor
+const MASK_ROW = row( 'refractionMask', [ col( 'refraction', 'clear', 'store' ) ], dep( 'refractionDepth', true, 'clear', 'store' ) );
 const RESOLVES = {
 	depthResolve: row( 'depthResolve', [ col( 'linearDepth', 'clear', 'store' ) ] ),
 	opaqueCopy: row( 'opaqueCopy', [ col( 'opaqueColor', 'clear', 'store' ) ] ),
@@ -42,7 +44,7 @@ const RESOLVES = {
 
 export const LEGACY_FULL = [
 	row( 'opaque', [ col( 'sceneColor', 'clear', 'store', true ) ], dep( 'sceneDepth', true, 'clear', 'store' ) ),
-	REFRACTION_ROW, RESOLVES.depthResolve, RESOLVES.opaqueCopy, RESOLVES.underwaterPyramid,
+	RESOLVES.underwaterPyramid, MASK_ROW, REFRACTION_ROW, RESOLVES.depthResolve, RESOLVES.opaqueCopy,
 	row( 'water', [ col( 'sceneColor', 'load', 'store', true ) ], dep( 'sceneDepth', true, 'load', 'store' ) ),
 	RESOLVES.surfaceResolve,
 	row( 'rain', [ col( 'sceneColor', 'load', 'discard', true ) ], dep( 'sceneDepth', false, 'load', 'discard' ) ),
@@ -52,7 +54,7 @@ export const LEGACY_FULL = [
 export const DERIVED_FULL = [
 	// the copy samples the resolve before the water loads the samples
 	row( 'opaque', [ col( 'sceneColor', 'clear', 'store', true ) ], dep( 'sceneDepth', true, 'clear', 'store' ) ),
-	REFRACTION_ROW, RESOLVES.depthResolve, RESOLVES.opaqueCopy, RESOLVES.underwaterPyramid,
+	RESOLVES.underwaterPyramid, MASK_ROW, REFRACTION_ROW, RESOLVES.depthResolve, RESOLVES.opaqueCopy,
 	// the rain draws over the water's samples before anything samples them: no resolve
 	row( 'water', [ col( 'sceneColor', 'load', 'store', false ) ], dep( 'sceneDepth', true, 'load', 'store' ) ),
 	RESOLVES.surfaceResolve,
@@ -218,7 +220,7 @@ export const checks = [
 		const c = compileToday();
 		const dry = c.ops( 'derived', c.maskOf( FULL.filter( ( n ) => n !== 'rain' ) ) );
 		assert.deepEqual( find( dry, 'water' ), {
-			pass: 'water', index: 5, target: 'sceneColor|sceneDepth',
+			pass: 'water', index: 6, target: 'sceneColor|sceneDepth',
 			colors: [ col( 'sceneColor', 'load', 'discard', true ) ], depth: dep( 'sceneDepth', true, 'load', 'store' ), rewrite: true,
 		} );
 		assert.deepEqual( find( dry, 'opaque' ).colors, [ col( 'sceneColor', 'clear', 'store', true ) ] );
@@ -229,13 +231,13 @@ export const checks = [
 	[ 'derived ops: fog off, the sun away, refraction off, upscaling and msaa=1', () => {
 
 		const c = compileToday();
-		const clear = c.ops( 'derived', c.maskOf( [ 'refraction', 'rain', 'output' ] ) );
-		assert.deepEqual( clear.running, [ 'opaque', 'refraction', 'depthResolve', 'opaqueCopy', 'underwaterPyramid', 'water', 'surfaceResolve', 'rain', 'postConstants', 'composite', ...BLOOM_PASSES, 'sharp', 'display', 'output' ] );
+		const clear = c.ops( 'derived', c.maskOf( [ 'refractionMask', 'refraction', 'rain', 'output' ] ) );
+		assert.deepEqual( clear.running, [ 'opaque', 'underwaterPyramid', 'refractionMask', 'refraction', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve', 'rain', 'postConstants', 'composite', ...BLOOM_PASSES, 'sharp', 'display', 'output' ] );
 		assert.deepEqual( strip( clear ).slice( 0, 7 ), DERIVED_FULL.slice( 0, 7 ) );
 		// without the refraction the scene target's ops are the same (the water reads it optionally)
 		const dry = c.ops( 'derived', c.maskOf( [ 'rain', 'output' ] ) );
-		assert.deepEqual( strip( dry ).slice( 0, 6 ), DERIVED_FULL.filter( ( r ) => r.pass !== 'refraction' ).slice( 0, 6 ) );
-		const up = c.ops( 'derived', c.maskOf( [ 'refraction', 'rain', 'easu', 'upscaledOutput' ] ) );
+		assert.deepEqual( strip( dry ).slice( 0, 6 ), DERIVED_FULL.filter( ( r ) => r.pass !== 'refraction' && r.pass !== 'refractionMask' ).slice( 0, 6 ) );
+		const up = c.ops( 'derived', c.maskOf( [ 'refractionMask', 'refraction', 'rain', 'easu', 'upscaledOutput' ] ) );
 		assert.deepEqual( find( up, 'easu' ).colors, [ col( 'FSR.easu', 'clear', 'store' ) ] );
 		assert.deepEqual( find( up, 'upscaledOutput' ).colors, [ col( 'canvas', 'clear', 'store' ) ] );
 		assert.equal( up.rewrites, 2 );
@@ -342,7 +344,7 @@ export const checks = [
 					if ( p.target === 'sceneColor|sceneDepth' ) continue;
 					for ( const x of p.colors ) assert.deepEqual( [ x.store, x.resolve ], [ 'store', null ], `${ what } ${ p.pass }` );
 					// (the refraction's depth, single-sampled, is stored for the water)
-					assert.deepEqual( p.depth, p.pass === 'refraction' ? REFRACTION_ROW.depth : null, `${ what } ${ p.pass }` );
+					assert.deepEqual( p.depth, p.pass === 'refraction' ? REFRACTION_ROW.depth : p.pass === 'refractionMask' ? MASK_ROW.depth : null, `${ what } ${ p.pass }` );
 					assert.equal( p.rewrite, false, `${ what } ${ p.pass }` );
 
 				}

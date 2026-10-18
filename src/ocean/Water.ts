@@ -12,7 +12,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld, positionPrevious,
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
-	float, int, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
+	float, int, bool, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
 	abs, fwidth, reflect, refract, select, step, dFdx, dFdy, perspectiveDepthToViewZ, cameraNear, cameraFar,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
@@ -866,50 +866,59 @@ export class Water {
 			const found = float( 0 ).toVar();
 			if ( variant.refraction ) {
 
-				// What the refraction image shows is taken from the underwater pyramid (Pipeline.ts)
-				// wherever the end lies on the screen: the opaque pass drew the world under the sea at
-				// the render's resolution and samples, where the refraction image has half its pixel
-				// density and one sample, so the floor, its stones and its light read nine times
-				// coarser than the land at 4K. The pyramid is read over the pixel's footprint at the
-				// end (endDx, endDy: anisotropic, its mips): where the surface's slopes throw the ends
-				// of neighbouring pixels apart, a read at a point skipped most of what lay between
-				// them and broke the floor's edges and cobbles into crumbs, as a texture without mips
-				// shimmers in the distance; over the footprint it averages them, as the eye does.
-				// Divided by its weight, the read is the average of what lies under the sea there:
-				// what stands above the water in the opaque image (a cliff, the rim's grass, a figure)
-				// is left out of it, and where it covers the whole footprint (alpha near 0) the
-				// refraction image serves, which never drew it; and off the screen. Straight behind
-				// (an end in front of the surface, by the cliffs) keeps the refraction image as well.
-				const floorAt = ( q: V2, onImage: B, color: V3 ) => {
+				// What lies under the sea is taken from the underwater pyramid (Pipeline.ts) wherever the
+				// end lies on the screen: the opaque pass drew the world under the sea at the render's
+				// resolution and samples, where the refraction image has half its pixel density and
+				// one sample, so the floor, its stones and its light read nine times coarser than the
+				// land at 4K. The pyramid is read over the pixel's footprint at the end (endDx, endDy:
+				// anisotropic, its mips): where the surface's slopes throw the ends of neighbouring
+				// pixels apart, a read at a point skipped most of what lay between them and broke the
+				// floor's edges and cobbles into crumbs, as a texture without mips shimmers in the
+				// distance; over the footprint it averages them, as the eye does. Divided by its weight,
+				// the read is the average of what lies under the sea there: what stands above the water
+				// in the opaque image (a cliff, the rim's grass, a figure) is left out of it.
+				// The refraction image serves where the opaque image does not hold the floor: behind
+				// what stands above the water, and off the screen. It is shaded only there (the
+				// refraction mask, Pipeline.ts), so where the opaque pixel at a lookup drew what lies
+				// under the sea (its pyramid weight 1) the depth comes from the opaque pass too, and
+				// a colour read where the refraction image was masked (its coverage 0) is the
+				// pyramid's alone. Straight behind (an end in front of the surface, by the cliffs) is
+				// read at the same footprint as its refracted neighbours, so it neither stands out
+				// sharper nor softer.
+				const tUnderwater = texture( underwater );
+				const lookup = ( q: V2, onImage: B ) => {
 
-					const out = color.toVar();
+					const r = refractedAt( q );
+					const texel = pixel( q );
+					const opaque = onImage.and( textureLoad( tUnderwater, texel, int( 0 ) ).a.greaterThan( 0.999 ) ).toVar();
+					const z = select( opaque, textureLoad( tDepth, texel ).x, viewZOf( r.depth ) ).toVar();
+					const covered = opaque.or( r.color.a.greaterThan( 0.5 ).and( r.depth.lessThan( 1 ) ) ).toVar();
+					const color = r.color.rgb.div( max( r.color.a, 1e-4 ) ).toVar();
 					If( onImage, () => {
 
-						const f = texture( underwater, q ).grad( endDx, endDy ).toVar();
-						out.assign( mix( out, f.rgb.div( max( f.a, 1e-4 ) ), smoothstep( 0.02, 0.15, f.a ) ) );
+						const f = tUnderwater.sample( q ).grad( endDx, endDy ).toVar();
+						const w = select( r.color.a.greaterThan( 0.5 ), smoothstep( 0.02, 0.15, f.a ), float( 1 ) );
+						color.assign( mix( color, f.rgb.div( max( f.a, 1e-4 ) ), w ) );
 
 					} );
-					return out;
+					return { color, z, covered };
 
 				};
-				const end = refractedAt( uvR );
-				const covered = end.color.a.greaterThan( 0.5 ).and( end.depth.lessThan( 1 ) ).toVar();
-				const zEnd = viewZOf( end.depth ).toVar();
-				If( covered.and( behind( zEnd ) ), () => {
+				const end = lookup( uvR, onScreen );
+				If( end.covered.and( behind( end.z ) ), () => {
 
-					sceneCol.assign( floorAt( uvR, onScreen, end.color.rgb.div( end.color.a ) ) );
+					sceneCol.assign( end.color );
 					uvF.assign( uvR );
-					zF.assign( zEnd );
+					zF.assign( end.z );
 					found.assign( 1 );
 
-				} ).ElseIf( covered, () => {
+				} ).ElseIf( end.covered, () => {
 
-					const straight = refractedAt( screenUV );
-					const zStraight = viewZOf( straight.depth ).toVar();
-					If( straight.color.a.greaterThan( 0.5 ).and( straight.depth.lessThan( 1 ) ).and( behind( zStraight ) ), () => {
+					const straight = lookup( screenUV, bool( true ) );
+					If( straight.covered.and( behind( straight.z ) ), () => {
 
-						sceneCol.assign( straight.color.rgb.div( straight.color.a ) );
-						zF.assign( zStraight );
+						sceneCol.assign( straight.color );
+						zF.assign( straight.z );
 						found.assign( 1 );
 
 					} );

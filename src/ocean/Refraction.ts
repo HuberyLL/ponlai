@@ -31,7 +31,10 @@ import * as THREE from 'three/webgpu';
 // by joins too (the key light does: main.ts).
 //
 // The target: rgb the lit colour, a its coverage (cleared to 0: where nothing below the water was
-// drawn, the water falls back to the opaque copy), and its own depth.
+// drawn, the water falls back to the opaque copy), and its own depth. Most of the screen's floor the
+// opaque image holds as well, and the water reads it from there (the underwater pyramid), so a mask
+// drawn first into the depth at the nearest depth (Pipeline.ts) leaves those texels unshaded: the
+// pass shades what stands behind the surfaces above the water, beside them, and the guard band.
 //
 // The view is wider than the screen (a guard band): light bends down into the water, so a refracted
 // ray lands on floor lower on the screen than the pixel it is seen through, and near the bottom edge
