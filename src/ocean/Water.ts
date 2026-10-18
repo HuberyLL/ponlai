@@ -35,7 +35,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 // The sea surface: an FFT-displaced grid shaded as tidewater's WaterMaterial (4811ba4, its above-water
 // branch; the camera never goes under the sea):
 //   - the normal from the cascades' slopes over their horizontal stretch (WaterSurface), with
-//     near-field capillary ripples, the rocky shore's reflected wave and the rain's rings
+//     near-field capillary ripples (in the reflection and the glint, not the refraction), the rocky
+//     shore's reflected wave and the rain's rings
 //   - the sea's large-scale detail in world space (SeaDetail): gusts roughen the short waves the
 //     pixel cannot resolve and the near ripples, slicks smooth them, gusts and windrows add whitecaps;
 //     around the island the gusts are the meadow's, read in the vertex stage
@@ -48,7 +49,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     (rays near the horizon, reflectance over 0.05)
 //   - the sun's specular: GGX of the base roughness and the slopes the pixel cannot resolve (Cox-
 //     Munk's mean square slope for the wind, the share finer than the pixel)
-//   - refraction: the refracted view ray followed to the floor's height field, its end projected
+//   - refraction: the refracted view ray (through the surface without the near ripples) followed to
+//     the floor's height field, its end projected
 //     into the refraction pass's image of the world under the sea (Refraction.ts, through its wider
 //     view: the floor behind the cliffs above the waterline, and below the screen's bottom edge)
 //     where it lies behind the surface, else straight behind in that image; where the image holds
@@ -653,7 +655,13 @@ export class Water {
 			// Near-field capillary ripples: within a few metres a pixel covers less than the finest
 			// cascade's texel (about 3 cm) and the surface looks glassy; the finest cascade read again
 			// at about 1 and 2.3 m tiles (NEAR_RIPPLES), turned so that they never line up with it;
-			// damped in slicks with the short waves.
+			// damped in slicks with the short waves. They tilt the reflection and the glint only. Read
+			// at those scales with the cascade's own slopes, they curve the surface three to seven times
+			// as sharply as it does, and the refracted floor, seen through a metre or two of water, broke
+			// into crumbs; at 4K every pixel of the island camera's view is under their 4 cm, so that was
+			// all the shallows. The floor seen through real ripples that small and that quick is blurred
+			// by them, not folded.
+			const resolvedSlopes = vec2( slopes ).toVar();
 			const near = smoothstep( 0.04, 0.01, footprint ).mul( rough ).toVar();
 			If( near.greaterThan( 0.002 ), () => {
 
@@ -673,7 +681,9 @@ export class Water {
 			// A facet turned away from the eye (a fold of the choppy surface) is bent to just past
 			// grazing, not flipped: a flipped normal turns a fold into a white mirror of the sky.
 			const N0 = normalize( vec3( slopes.x.negate(), 1, slopes.y.negate() ) );
-			const N = normalize( N0.add( V.mul( max( dot( N0, V ).negate().add( 0.03 ), 0 ) ) ) ).toVar();
+			const unfold = ( n: V3 ) => normalize( n.add( V.mul( max( dot( n, V ).negate().add( 0.03 ), 0 ) ) ) );
+			const N = unfold( N0 ).toVar();
+			const Nrefracted = unfold( normalize( vec3( resolvedSlopes.x.negate(), 1, resolvedSlopes.y.negate() ) ) ).toVar();
 			const L = shared.sunDir;
 			const posV = cameraViewMatrix.mul( vec4( wp, 1 ) ).xyz.toVar();
 
@@ -810,7 +820,7 @@ export class Water {
 			// in that image; where the image holds nothing there (the shallows above its clip height,
 			// the sky), the opaque image at the end where it lies behind the surface, else straight
 			// behind.
-			const Tr = refract( V.negate(), N, 1 / IOR );
+			const Tr = refract( V.negate(), Nrefracted, 1 / IOR );
 			const Tv = normalize( vec3( Tr.x, min( Tr.y, - 0.08 ), Tr.z ) ).toVar();
 			const tDown = max( Tv.y.negate(), 0.04 ).toVar();
 			const L0 = max( thickness, 0 ).div( tDown ).toVar();
