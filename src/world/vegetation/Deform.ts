@@ -1,6 +1,6 @@
 import type * as THREE from 'three/webgpu';
-import { Fn, If, vec2, vec3, vec4, float, fract, mix, dot, max, normalize, length, smoothstep, step, inverseSqrt, cameraViewMatrix, cameraProjectionMatrix, screenSize } from 'three/tsl';
-import { LEAN_REF, gustWave, leanLoad, pressedLean, pressedStiffening, pressing, swayJitter, swingOf, wave, windField, type WindState } from '../../weather/Wind.ts';
+import { Fn, If, vec2, vec3, vec4, float, fract, mix, dot, max, normalize, length, smoothstep, step, inverseSqrt, sin, cameraViewMatrix, cameraProjectionMatrix, screenSize } from 'three/tsl';
+import { LEAN_REF, gustTravel, gustWave, leanLoad, pressedLean, pressedStiffening, pressing, swayJitter, swingOf, wave, windField, type WindState } from '../../weather/Wind.ts';
 import { puddleCover } from '../../weather/Puddles.ts';
 import { trampleLoad } from './Trample.ts';
 
@@ -26,6 +26,7 @@ const TAU = Math.PI * 2;
 
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
+type V4 = THREE.Node<'vec4'>;
 type F = THREE.Node<'float'>;
 
 /** The game's palm: mainBend's 30 swings per gust tile (0.89 Hz) at half that rate (`slow`,
@@ -98,6 +99,26 @@ export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F,
 
 }
 
+/** The wind at a meadow tuft's origin (world x, z), the same for all its blades (`bendBlade`): the
+ * gust field (`windField`), the sway's angle there before a blade's own phase (Wind.ts
+ * `gustTravel`), the sway's and the shiver's lean before the fade (`swayFade`) and the gust's
+ * linear lean (Wind.ts `leanLoad`). */
+export interface TuftWind { field: V4; travel: F; swing: F; shiver: F; load: F }
+
+/** `TuftWind` for the wind state `wind` at `root` (world x, z): two lookups of the gust map. */
+export function tuftWind( wind: WindState, root: V2 ): TuftWind {
+
+	const field = windField( wind, root ).toVar();
+	const { cycles, swing: sw, shiver: sh } = GRASS_WIND;
+	return {
+		field, travel: gustTravel( wind, root, cycles ),
+		swing: wind.breeze.mul( field.w.mul( sw.gust ).add( sw.base ) ),
+		shiver: wind.breeze.mul( field.w.mul( sh.gust ).add( sh.base ) ),
+		load: leanLoad( wind, field.w ),
+	};
+
+}
+
 /** The meadow's response to `windField`:
  * each tuft leans with the gust field at its root, its blades bending along their length (the
  * offset grows with the square of the blade parameter, `t2`) while every vertex keeps its distance
@@ -133,23 +154,25 @@ export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F,
  * and the elastica bends the blade by the whole, its shiver stiffened by it, its paler side shown
  * by the same measure. What that adds to the wind's lean turns the vertex about the blade's own
  * root after the wind's bend (a head's root is its stem's, the tuft's origin); exactly the wind's
- * bend where the trail is 0. The returned `lean` and `tilt` stay the wind's alone.
+ * bend where the trail is 0. The returned `lean` and `tilt` stay the wind's alone. `at` is the wind
+ * at the tuft's origin (`tuftWind`), worked out here when not given (the meadow reads its tufts'
+ * from a record per tuft, Grass.ts `meadowWind`).
  */
-export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t2: F, phase: F, fade?: F, rigidity?: F, flower?: F, trample?: TrampleBlade ): { position: V3; lean: V3; tilt: V3; pale: F } {
+export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t2: F, phase: F, fade?: F, rigidity?: F, flower?: F, trample?: TrampleBlade, at: TuftWind = tuftWind( wind, origin.xz ) ): { position: V3; lean: V3; tilt: V3; pale: F } {
 
-	const field = windField( wind, origin.xz ).toVar();
+	const field = at.field;
 	const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
-	const { cycles, spread, swing: sw, shiver: sh } = GRASS_WIND;
+	const { spread } = GRASS_WIND;
 	const faded = ( n: F ) => fade ? n.mul( fade ) : n;
-	const swing = gustWave( wind, origin.xz, cycles, phase.div( TAU ).sub( 0.5 ).mul( spread ) ).mul( faded( wind.breeze.mul( field.w.mul( sw.gust ).add( sw.base ) ) ) );
+	const swing = sin( at.travel.add( phase.div( TAU ).sub( 0.5 ).mul( spread ) ) ).mul( faded( at.swing ) );
 	const flutter = wave( wind.clock, 1.7, phase ).mul( 0.65 ).add( wave( wind.clock, 2.9, phase.mul( 2.3 ) ).mul( 0.35 ) );
-	const shiver = faded( wind.breeze.mul( field.w.mul( sh.gust ).add( sh.base ) ) ).mul( flutter );
+	const shiver = faded( at.shiver ).mul( flutter );
 	const eased = along.mul( field.z.add( swing ) ).add( across.mul( shiver ) ).toVar();
 	// the elastica's lean under the tuft's own load (above), and how far the wind has gone over to it
 	const { length: reference, stiffness, underside, always } = GRASS_WIND.pressed;
 	const cube = height.mul( height ).mul( height ).mul( 1 / ( reference ** 3 * stiffness ) );
 	const scale = rigidity ? cube.div( rigidity ) : cube;
-	const load = leanLoad( wind, field.w ).add( swing ).mul( scale ).toVar();
+	const load = at.load.add( swing ).mul( scale ).toVar();
 	const pressed = pressedLean( load );
 	const press = always ? float( 1 ) : pressing( wind );
 	const held = along.mul( pressed ).add( across.mul( shiver.mul( scale ).mul( pressedStiffening( load ) ) ) );

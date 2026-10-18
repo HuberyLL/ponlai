@@ -663,7 +663,9 @@ sunShadow.castFrontFaces( world.group );
 controls.setIsland( world.grounds, outline );
 let islandMaxDistance = controls.maxDistance;
 frameLand();
-// Drops stop on the first surface they meet: rock, turf, blades, leaves.
+// Drops stop on the first surface they meet: rock, turf, blades, leaves. The blades stand by their
+// tufts' records (Grass.ts TUFT_RECORD), written before this first draw of them.
+grass.userData.update( renderer );
 rain.collision.setArea( landBox );
 rain.bakeCollision( renderer, [ world.group, ...vegetation.roots( ( kind ) => kind.rainBake ) ] );
 mark( 'meshes' );
@@ -1617,8 +1619,9 @@ function tick( time: number ): void {
 	// smoothly without re-rasterising sub-texel casters every frame. The underwater map keeps the
 	// quality cadence.
 	sunShadow.update( renderer, scene, camera, sky.keyDir );
-	// the meadow's shade per tuft follows the sun's maps (Grass.ts `meadowShade`)
-	grass.userData.updateShade( renderer );
+	// the meadow's shade per tuft follows the sun's maps, its wind per tuft the wind (Grass.ts
+	// `meadowStill`, `meadowWind`)
+	grass.userData.update( renderer );
 	shadowElapsed += environmentDt;
 	if ( shadowElapsed >= runtimeQuality.refractedSun.interval && refractedSun.update() ) shadowElapsed = 0;
 	shared.time.value = simTime;
