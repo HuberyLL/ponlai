@@ -135,9 +135,9 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 // - Under the temporal modes a blade's previous position (motion vectors) is its bend under the
 //   previous frame's wind from the same rooted point, widened by this frame's offset: the culled
 //   list keeps each tuft's own slot, so the tuft is the same whichever instance draws it.
-// - The meadow's wildflowers are part of it: some lawn tufts carry one flower head on a thin stem,
-//   the low species on lower tussocks (LOW_FLOWER), the tall ones in tall tussocks about at their leaves' top, some
-//   partly hidden among them. Six species, each in
+// - The meadow's flowers are part of it: some lawn tufts carry one flower head on a thin stem,
+//   the low species on lower tussocks (LOW_FLOWER), the tall one in tall tussocks a little over
+//   their leaves, the tussock's leaves its species' (LEAVES). Two species of Penglai's texts, each in
 //   patches of its own where its habitat is (the moisture and turf fields of Meadow.ts, the rim
 //   distance), dense at a patch's centre and thinning to its edge, almost none between the
 //   patches (`FlowerPatches`, the species and their habitats at SPECIES), and none on the stacks
@@ -293,7 +293,7 @@ const LUSH = [ 0.88, 1.15 ], VIGOUR_LUSH = [ 0.25, 0.75 ], THIN_GAP = 0.1;
 // short turf's or the tall sward's by a draw against the pull, drew every pocket and every low
 // flower's patch as a hollow with a wall of tall tussocks round it.
 const GRADE = { stand: 0.25, answer: [ 0.55, 1.15 ] };
-// A low species' flowering tuft (pinks, dandelions, violets: they grow among shorter grass) stands
+// A low species' flowering tuft (the zhuyu: it grows among shorter grass) stands
 // at least LOW_FLOWER of the way down, a tall species' at its tall level; its neighbours stand as
 // their own spot has them (a low species' patch cut every tussock in it to the short turf, a hollow).
 const LOW_FLOWER = 0.55;
@@ -334,34 +334,35 @@ const LIP_DEPTH = 0.1, LIP_WALLS = 16, LIE = 0.012, LIE_SPREAD = 0.04, HOLD_SOFT
 // cull sphere for the drape's reach.
 const EDGE_REACH = 1, DRAPE_SHARE = 0.35, DRAPE_RADIUS = [ 0.12, 0.4 ], EDGE_PAD = 0.05;
 
-// The meadow's wildflowers are heads on some of its lawn tufts (`flowerTuftGeometry`), grown as
+// The meadow's flowers are heads on some of its lawn tufts (`flowerTuftGeometry`), grown as
 // wildflowers grow: each species in drifts of its own where its habitat is (DRIFT), dense in their
-// clumps and thinning to a scatter of single plants round them, and few between the drifts.
-// Pinks (Dianthus chinensis) in loose clumps along stretches of the cliff's edge, where the soil is
-// thin and dry, and on dry ground inland; wild chrysanthemums in dense clusters of small heads,
-// mostly yellow and a few white, on the grassy ground in from the edge and in the taller sward;
-// daylilies in loose clumps where the ground is damp; dandelions and violets in small, low patches
-// of short turf, the shallow pockets' most; a few balloon flowers on dry ground (the habitat fields,
-// `meadowMoisture`, `meadowTurf` and `meadowShallow`, Meadow.ts). They flower from spring to autumn; here they all flower at once, the year round,
-// which is the island's sign of an immortals' land. From the game's camera a scatter of five
-// colours read as confetti strewn over the lawn; patches of one colour read as the meadow's own
-// flowers. Each species' patch (`SPECIES`): its radius (m, a range), the share of its tufts that
-// flower at a clump's centre (`peak`, falling by 1 - u^2 at u of the clump's radius), and its weight
-// in a habitat (`habitat`).
+// clumps and thinning to a scatter of single plants round them, and few between the drifts. They are
+// Penglai's, after the texts on the immortals' islands:
+// - The yaoxiang (遙香草) of Daiyu, "its flowers like cinnabar, shining to the moon, its leaves long,
+//   narrow and white, like the day lily's" (Wang Jia, Shiyi ji, book 10): a day lily's form, cinnabar
+//   flowers gold in the throat, pale silvery leaves (the tussock's colour, LEAVES), in loose clumps
+//   over the meadow, the most in the sheltered sward and where the soil is deep or damp.
+// - The zhuyu (祝餘) of Zhaoyao mountain, "like chives, with blue-green flowers; who eats it is not
+//   hungry" (Shanhai jing, Nanshan jing): chives' leaves, blue-green (LEAVES), a round head of sky
+//   blue florets on a stalk over them, low among short turf, in dense clumps in the exposed coast's
+//   wind-cropped turf, the shallow pockets and on dry ground, and along stretches of the cliff's
+//   edge, where the soil is thin and dry, the yaoxiang on the grass in from them (the habitat fields, `meadowMoisture`, `meadowTurf` and `meadowShallow`, Meadow.ts).
+// All flower at once, the year round, which is the island's sign of an immortals' land. From the
+// game's camera a scatter of colours read as confetti strewn over the lawn; patches of one colour
+// read as the meadow's own flowers. Each species' patch (`SPECIES`): its radius (m, a range), the
+// share of its tufts that flower at a clump's centre (`peak`, falling by 1 - u^2 at u of the clump's
+// radius), and its weight in a habitat (`habitat`).
 type Species = { radius: [ number, number ]; peak: number };
-const DIANTHUS = 0, CHRYSANTHEMUM = 1, DAYLILY = 2, DANDELION = 3, VIOLET = 4, BALLOON = 5;
-// (a head of its own: the white wild chrysanthemum, WHITE_SHARE of that species' patches)
-const CHRYSANTHEMUM_WHITE = 6, WHITE_SHARE = 0.25;
+const YAOXIANG = 0, ZHUYU = 1;
 /** The flower heads by number (a flowering tuft's code is 1.5 + its number), for probes. */
-export const FLOWER_SPECIES = [ 'dianthus', 'chrysanthemum', 'daylily', 'dandelion', 'violet', 'balloon-flower', 'chrysanthemum-white' ];
+export const FLOWER_SPECIES = [ 'yaoxiang', 'zhuyu' ];
 const SPECIES: Species[] = [
-	{ radius: [ 0.45, 0.9 ], peak: 0.85 }, // pinks: loose clumps
-	{ radius: [ 0.4, 1 ], peak: 0.95 }, // wild chrysanthemum: dense clusters
-	{ radius: [ 0.6, 1.6 ], peak: 0.55 }, // daylily: loose clumps
-	{ radius: [ 0.3, 0.8 ], peak: 0.75 }, // dandelion: small patches
-	{ radius: [ 0.3, 0.8 ], peak: 0.75 }, // violet: low patches
-	{ radius: [ 0.3, 0.7 ], peak: 0.5 }, // balloon flower: a few
+	{ radius: [ 0.5, 1.2 ], peak: 0.6 }, // yaoxiang: loose clumps
+	{ radius: [ 0.4, 1 ], peak: 0.7 }, // zhuyu: dense clumps
 ];
+// A flowering tussock's leaves (its colour times these, linear): the yaoxiang's pale and silvery, the
+// zhuyu's a chive's blue-green.
+const LEAVES = [ [ 1.9, 1.5, 2.8 ], [ 0.8, 1, 1.7 ] ];
 // The inland patches: a world-anchored lattice of PATCH_CELL (m), each cell offering PATCH_SLOTS
 // patch centres jittered over it, each taken with PATCH_SHARE times a broad field's factor
 // (PATCH_FIELD cycles per metre, its noise turning over between PATCH_EDGE: stretches of the meadow
@@ -387,12 +388,12 @@ const INLAND_RIM = [ - 4, - 2.8 ];
 // The edge's patches: a finer lattice of EDGE_CELL (m), one patch a cell for EDGE_SHARE of them
 // times a field along the coast (EDGE_FIELD cycles per metre, turning over between EDGE_EDGE), so
 // they grow along stretches of the coast with long stretches of plain turf between (at a field of
-// 8 m turning over early they drew an unbroken pink line round the island top); a patch is pinks for
-// EDGE_DIANTHUS of them, else wild chrysanthemums. Each grows only in its own band of rim distance (m, in from the first two values,
-// out to the last two): the pinks on the outer edge (DIANTHUS_BAND), the chrysanthemums on the
-// grass in from it (CHRYSANTHEMUM_BAND).
-const EDGE_CELL = 1.1, EDGE_SHARE = 0.9, EDGE_FIELD = 0.07, EDGE_EDGE = [ - 0.32, 0.12 ], EDGE_DIANTHUS = 0.75;
-const DIANTHUS_BAND = [ - 3.2, - 2.2, - 0.6, - 0.35 ], CHRYSANTHEMUM_BAND = [ - 5.5, - 4.2, - 1.6, - 1 ];
+// 8 m turning over early they drew an unbroken line round the island top); a patch is zhuyu for
+// EDGE_ZHUYU of them, else yaoxiang. Each grows only in its own band of rim distance (m, in from the
+// first two values, out to the last two): the zhuyu on the outer edge's thin, dry soil (ZHUYU_BAND),
+// the yaoxiang on the grass in from it (YAOXIANG_BAND).
+const EDGE_CELL = 1.1, EDGE_SHARE = 0.9, EDGE_FIELD = 0.07, EDGE_EDGE = [ - 0.32, 0.12 ], EDGE_ZHUYU = 0.7;
+const ZHUYU_BAND = [ - 3.2, - 2.2, - 0.6, - 0.35 ], YAOXIANG_BAND = [ - 5.5, - 4.2, - 1.6, - 1 ];
 // Between the patches STRAY of the tufts flower alone, of the species their own spot favours: in the
 // tall sward its tall species, whose heads stand a little over the leaves (HEADS). None
 // on the rock stacks or within FLOWER_CLEAR (m) of the islander's walking loop (WalkLoop.ts),
@@ -402,18 +403,12 @@ const STRAY = 0.007, FLOWER_CLEAR = 0.5;
 const band = ( b: number[], rim: number ) => smoothstep( b[ 0 ], b[ 1 ], rim ) * ( 1 - smoothstep( b[ 2 ], b[ 3 ], rim ) );
 
 /** The inland species' weights in the habitat of moisture `wet`, sward `tall` and shallow soil
- * `shallow` (Meadow.ts): daylilies where it is damp, pinks and a few balloon flowers where it is
- * dry, dandelions and violets where the turf is short (the shallow pockets' short turf too), wild
- * chrysanthemums where it is tall. */
+ * `shallow` (Meadow.ts): the yaoxiang anywhere, the more in the sheltered sward and where it is deep
+ * or damp; the zhuyu in the exposed coast's short turf, the shallow pockets and on dry ground. */
 function habitat( wet: number, tall: number, shallow: number, out: number[] ): number[] {
 
-	const short = Math.max( 1 - 0.8 * tall, shallow ), dry = smoothstep( 0.4, 0.2, wet );
-	out[ DIANTHUS ] = 0.8 * dry;
-	out[ CHRYSANTHEMUM ] = 0.4 * tall;
-	out[ DAYLILY ] = 2 * smoothstep( 0.55, 0.75, wet );
-	out[ DANDELION ] = 1.2 * short;
-	out[ VIOLET ] = 0.9 * short;
-	out[ BALLOON ] = 0.9 * dry;
+	out[ YAOXIANG ] = 0.45 + 0.6 * smoothstep( 0.35, 0.65, tall ) + 0.8 * smoothstep( 0.5, 0.72, wet );
+	out[ ZHUYU ] = 1.2 * smoothstep( 0.45, 0.15, tall ) + 0.7 * shallow + 0.4 * smoothstep( 0.42, 0.22, wet );
 	return out;
 
 }
@@ -454,12 +449,6 @@ class FlowerPatches {
 
 	}
 
-	private head( species: number, white: number ): number {
-
-		return species === CHRYSANTHEMUM && white < WHITE_SHARE ? CHRYSANTHEMUM_WHITE : species;
-
-	}
-
 	private inlandCell( i: number, j: number ): Patch[] {
 
 		const key = i * 65536 + j;
@@ -469,7 +458,7 @@ class FlowerPatches {
 		for ( let k = 0; k < PATCH_SLOTS; k ++ ) {
 
 			const rng = cellStream( i, j, 401 + k );
-			const take = rng(), x = ( i + rng() ) * PATCH_CELL, z = ( j + rng() ) * PATCH_CELL, pick = rng(), size = rng(), white = rng();
+			const take = rng(), x = ( i + rng() ) * PATCH_CELL, z = ( j + rng() ) * PATCH_CELL, pick = rng(), size = rng();
 			const field = PATCH_FLOOR + ( 1 - PATCH_FLOOR ) * smoothstep( PATCH_EDGE[ 0 ], PATCH_EDGE[ 1 ], noise3( x * PATCH_FIELD - 7.7, 3.4, z * PATCH_FIELD + 5.1 ) );
 			const w = habitat( meadowMoisture( x, z ), this.turfAt( x, z ), meadowShallow( x, z ), this.weights );
 			if ( take >= PATCH_SHARE * field * Math.min( w.reduce( ( a, b ) => a + b, 0 ), 1 ) ) continue;
@@ -487,7 +476,7 @@ class FlowerPatches {
 				lobes.push( x + ax * along - az * across, z + az * along + ax * across, r * ( DRIFT.lobe[ 0 ] + drift() * ( DRIFT.lobe[ 1 ] - DRIFT.lobe[ 0 ] ) ) );
 
 			}
-			list.push( { species, head: this.head( species, white ), lobes, seeded: true } );
+			list.push( { species, head: species, lobes, seeded: true } );
 
 		}
 		this.inland.set( key, list );
@@ -502,12 +491,12 @@ class FlowerPatches {
 		if ( list ) return list;
 		list = [];
 		const rng = cellStream( i, j, 409 );
-		const take = rng(), x = ( i + rng() ) * EDGE_CELL, z = ( j + rng() ) * EDGE_CELL, pick = rng(), size = rng(), white = rng();
+		const take = rng(), x = ( i + rng() ) * EDGE_CELL, z = ( j + rng() ) * EDGE_CELL, pick = rng(), size = rng();
 		const field = smoothstep( EDGE_EDGE[ 0 ], EDGE_EDGE[ 1 ], noise3( x * EDGE_FIELD + 2.9, 8.6, z * EDGE_FIELD - 4.4 ) );
 		if ( take < EDGE_SHARE * field ) {
 
-			const species = pick < EDGE_DIANTHUS ? DIANTHUS : CHRYSANTHEMUM, [ r0, r1 ] = SPECIES[ species ].radius;
-			list.push( { species, head: this.head( species, white ), lobes: [ x, z, r0 + size * ( r1 - r0 ) ], seeded: false } );
+			const species = pick < EDGE_ZHUYU ? ZHUYU : YAOXIANG, [ r0, r1 ] = SPECIES[ species ].radius;
+			list.push( { species, head: species, lobes: [ x, z, r0 + size * ( r1 - r0 ) ], seeded: false } );
 
 		}
 		this.edge.set( key, list );
@@ -540,7 +529,7 @@ class FlowerPatches {
 		const found = this.found;
 		found.length = 0;
 		const inland = 1 - smoothstep( INLAND_RIM[ 0 ], INLAND_RIM[ 1 ], rim );
-		const edge = [ band( DIANTHUS_BAND, rim ), band( CHRYSANTHEMUM_BAND, rim ) ];
+		const edge = [ band( YAOXIANG_BAND, rim ), band( ZHUYU_BAND, rim ) ];
 		const visit = ( cell: number, lists: ( i: number, j: number ) => Patch[], weight: ( p: Patch ) => number ) => {
 
 			const ci = Math.floor( x / cell ), cj = Math.floor( z / cell );
@@ -553,7 +542,7 @@ class FlowerPatches {
 
 		};
 		if ( inland > 0 ) visit( PATCH_CELL, this.inlandCell, () => inland );
-		if ( edge[ 0 ] + edge[ 1 ] > 0 ) visit( EDGE_CELL, this.edgeCell, ( p ) => edge[ p.species === DIANTHUS ? 0 : 1 ] );
+		if ( edge[ 0 ] + edge[ 1 ] > 0 ) visit( EDGE_CELL, this.edgeCell, ( p ) => edge[ p.species ] );
 		if ( found.length === 0 ) return { head: - 1, share: 0 };
 		let none = 1, sum = 0;
 		for ( const f of found ) { none *= 1 - f.share; sum += f.share; }
@@ -569,16 +558,13 @@ class FlowerPatches {
 	}
 
 	/** The head a stray flower at ( x, z ), `rim` m from the edge, takes by its own spot's habitat
-	 * (draws `u`, `v`), or -1 where no flower grows. */
-	stray( x: number, z: number, rim: number, u: number, v: number ): number {
+	 * (the draw `u`), or -1 where no flower grows. */
+	stray( x: number, z: number, rim: number, u: number ): number {
 
 		const inland = 1 - smoothstep( INLAND_RIM[ 0 ], INLAND_RIM[ 1 ], rim );
-		const dianthus = band( DIANTHUS_BAND, rim ), chrysanthemum = band( CHRYSANTHEMUM_BAND, rim );
-		const most = Math.max( inland, dianthus, chrysanthemum );
+		const yaoxiang = band( YAOXIANG_BAND, rim ), zhuyu = band( ZHUYU_BAND, rim ), most = Math.max( inland, yaoxiang, zhuyu );
 		if ( most <= 0 ) return - 1;
-		const species = inland === most ? pickSpecies( habitat( meadowMoisture( x, z ), this.turfAt( x, z ), meadowShallow( x, z ), this.weights ), u )
-			: dianthus === most ? DIANTHUS : CHRYSANTHEMUM;
-		return species === CHRYSANTHEMUM && v < WHITE_SHARE ? CHRYSANTHEMUM_WHITE : species;
+		return inland === most ? pickSpecies( habitat( meadowMoisture( x, z ), this.turfAt( x, z ), meadowShallow( x, z ), this.weights ), u ) : zhuyu === most ? ZHUYU : YAOXIANG;
 
 	}
 
@@ -726,7 +712,7 @@ function flowerTuftGeometry( lawn: THREE.BufferGeometry ): THREE.BufferGeometry 
 	g.setAttribute( 'normal', new THREE.Float32BufferAttribute( N, 3 ) );
 	g.setAttribute( 'blade', new THREE.Float32BufferAttribute( T, 4 ) );
 	g.setIndex( [ ...head, ...Array.from( lawn.getIndex()!.array ) ] );
-	// the head rises past the blades' box (`headPose`: at most 0.5 of the tuft's height, a daylily's
+	// the head rises past the blades' box (`headPose`: at most 0.5 of the tuft's height, a yaoxiang's
 	// disc 0.14 m across near the camera and a widened one about 0.3 m far off) by less than the
 	// box's bounding sphere and the cull's pad leave (WIDEN_REACH, about 0.7 m far off, and SWAY_PAD);
 	// its stem stays within the blades' reach
@@ -1219,19 +1205,13 @@ function bladeStrips( side: F, jitter: F, tint: F, strips: F ) {
 }
 
 // The flower heads (`headPose`, `headShape`), each its own (`HEADS`, by head number: the species
-// in the order of `SPECIES`, then the white chrysanthemum). A head is a disc of HEAD_RADIUS times its
-// `size` times 0.8 to 1.25 (a hash of its tuft). The sizes keep the species' order of size (violets
-// the smallest, then the wild chrysanthemums, pinks and dandelions, balloon flowers, daylilies the
-// largest) at about twice the small flowers' real size and less for the large ones: at half that
-// the game's 22 m view showed the small heads as dots, not flowers, and the large ones need no help.
-// It stands at its `height` of its tuft's height (local units). The low species (pinks, dandelions,
-// violets) grow only on lower tussocks (`plantGrass`, LOW_FLOWER), low among their blades or at their tips;
-// the tall ones (wild chrysanthemums, daylilies, balloon flowers) only on tall tussocks, the wild
-// chrysanthemums at about the top of their leaves (the blades arc over to about 0.85 of their
-// length), a little above them or half hidden among them (yellow and white heads standing clear of
-// the lawn were the brightest things in the near view), and the daylilies and balloon flowers, as
-// their tall stems carry them, most of them a little over the leaves, so the few that grow alone in
-// the tall sward show (heads up to 0.5 m above the long blades' roots floated without a stem).
+// in the order of `SPECIES`). A head is a disc of HEAD_RADIUS times its `size` times 0.8 to 1.25 (a
+// hash of its tuft), about twice a small flower's real size and less for a large one: at half that
+// the game's 22 m view showed the small heads as dots, not flowers. It stands at its `height` of its
+// tuft's height (local units). The zhuyu grows only on lower tussocks (`plantGrass`, LOW_FLOWER), its
+// round head on its stalk over their blades; the yaoxiang only on tall tussocks, most of its heads
+// a little over the leaves, as its tall stems carry them, so the few that grow alone in the tall
+// sward show (heads up to 0.5 m above the long blades' roots floated without a stem).
 // It sits on its stem's tip, the stem leaning out from its tuft's axis toward a direction of its
 // own (its curve, STEM_TIP), tilted from
 // upright toward the tuft's own facing by HEAD_TILT (rad), as an open flower turns: from the game's
@@ -1254,20 +1234,10 @@ const HEAD_MIN_PIXELS = 2, HEAD_MAX_WIDEN = 4, HEAD_LIFT = 0.35;
 type Head = { petal: [ number, number, number ]; centre: [ number, number, number ]; inner: [ number, number ];
 	size: number; height: [ number, number ]; lobe: number; point: number; fringe: number; rays: number };
 const HEADS: Head[] = [
-	// pinks: rose petals, fringed, round a dark eye
-	{ petal: [ 0.5, 0.15, 0.24 ], centre: [ 0.24, 0.03, 0.07 ], inner: [ 0.22, 0.4 ], size: 0.95, height: [ 0.75, 1.1 ], lobe: 0.25, point: 0, fringe: 0.14, rays: 0 },
-	// wild chrysanthemum: small yellow rays round a golden disc
-	{ petal: [ 0.52, 0.36, 0.03 ], centre: [ 0.4, 0.24, 0.02 ], inner: [ 0.32, 0.34 ], size: 0.75, height: [ 0.72, 1.0 ], lobe: 0, point: 0, fringe: 0, rays: 1 },
-	// daylily: an orange trumpet, its pointed tepals yellow in the throat
-	{ petal: [ 0.52, 0.17, 0.02 ], centre: [ 0.52, 0.3, 0.03 ], inner: [ 0.08, 0.5 ], size: 1.5, height: [ 0.98, 1.22 ], lobe: 0.3, point: 0.25, fringe: 0, rays: 0 },
-	// dandelion: a dense yellow head, deeper at its middle, its rim finely toothed
-	{ petal: [ 0.54, 0.37, 0.02 ], centre: [ 0.4, 0.25, 0.012 ], inner: [ 0, 0.55 ], size: 1.0, height: [ 0.5, 0.9 ], lobe: 0.1, point: 0, fringe: 0.08, rays: 0 },
-	// violet: small, deep violet, its throat pale
-	{ petal: [ 0.2, 0.08, 0.38 ], centre: [ 0.4, 0.38, 0.44 ], inner: [ 0.08, 0.2 ], size: 0.6, height: [ 0.35, 0.7 ], lobe: 0.35, point: 0, fringe: 0, rays: 0 },
-	// balloon flower: a blue-violet star, paler at its centre
-	{ petal: [ 0.15, 0.13, 0.45 ], centre: [ 0.3, 0.3, 0.5 ], inner: [ 0.05, 0.3 ], size: 1.35, height: [ 0.95, 1.18 ], lobe: 0, point: 0.5, fringe: 0, rays: 0 },
-	// white wild chrysanthemum
-	{ petal: [ 0.5, 0.49, 0.45 ], centre: [ 0.4, 0.24, 0.02 ], inner: [ 0.32, 0.34 ], size: 0.75, height: [ 0.72, 1.0 ], lobe: 0, point: 0, fringe: 0, rays: 1 },
+	// yaoxiang: a day lily's trumpet, its pointed tepals cinnabar, gold in the throat
+	{ petal: [ 0.42, 0.022, 0.018 ], centre: [ 0.55, 0.24, 0.02 ], inner: [ 0.04, 0.3 ], size: 1.5, height: [ 0.98, 1.22 ], lobe: 0.3, point: 0.25, fringe: 0, rays: 0 },
+	// zhuyu: a round head of small sky blue florets, deeper at its middle, its rim starry
+	{ petal: [ 0.1, 0.22, 0.46 ], centre: [ 0.05, 0.11, 0.3 ], inner: [ 0, 0.6 ], size: 0.95, height: [ 1.0, 1.35 ], lobe: 0.1, point: 0, fringe: 0.14, rays: 0 },
 ];
 
 /** A value of each head (`values`, by head number) for the head number `h`. */
@@ -1658,7 +1628,7 @@ function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNod
 	// The head's fragments: its petals' colour and shape (`headShape`), lit as a petal.
 	const onHead = step( 1.5, bladeVarying.w );
 	// (only a head's fragments work out its shape and colour: a blade's take zeros, which the blends
-	// by `onHead` drop; worked out for every fragment, the six species' measures cost the whole meadow)
+	// by `onHead` drop; worked out for every fragment, the species' measures cost the whole meadow)
 	const headLook = Fn( () => {
 
 		const look = vec4( 0 ).toVar( 'grassHeadLook' );
@@ -1749,6 +1719,10 @@ function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNod
 		},
 	} ) );
 	mat.opacityNode = step( bladeVarying.x, bladeCoverage ).mul( mix( float( 1 ), headFragment.mask, onHead ) );
+	// The yaoxiang's flowers "shine to the moon": a light of their own, its petals' colour times
+	// `flags=yaoxiangGlow:<strength>` set at load (none without it: the look is still being chosen).
+	const glow = Number( debugFlags.yaoxiangGlow ?? 0 );
+	if ( glow > 0 ) mat.emissiveNode = headFragment.colour.mul( onHead.mul( step( bladeVarying.w, 2.5 + YAOXIANG + 0.5 ) ).mul( glow ) );
 	// A blade's specular at SPECULAR of a plain dielectric's (F0 0.04, F90 1): seen edge on, as the
 	// game camera sees upright blades, the full Fresnel term laid a pale sky reflection over the
 	// whole meadow, a grey veil that read as plastic and took a quarter of its saturation.
@@ -2019,7 +1993,7 @@ function tuftMesh( source: THREE.BufferGeometry, shape: TuftShape, floor: number
 // changed; each batch draws its surviving tufts through indirect arguments, set on its geometry
 // for that draw alone, so any other mesh over the same geometry (the collision bake's proxies)
 // draws every tuft.
-const _cameraPosition = new THREE.Vector3();
+const _cameraPosition = new THREE.Vector3(), _leaves = new THREE.Color();
 
 // (`base`: the indices drawn before the blades, a flowering tuft's head)
 interface Batch { mesh: THREE.InstancedMesh; box: THREE.Box3; shape: TuftShape; floor: number; thin: boolean; count: number; range: CullRange; base: number }
@@ -2192,12 +2166,12 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		// Whether the tuft flowers, and which head, from a stream of its own (the lawn's draws stay
 		// as they were): by the patches at it, or now and then alone between the patches.
 		const bloom = anchorStream( x, z, 211 );
-		const b0 = bloom(), b1 = bloom(), b2 = bloom();
+		const b0 = bloom(), b1 = bloom();
 		let flower = 0, head = - 1;
 		if ( ! onStack && ( ! walkDistance || walkDistance( x, z ) >= FLOWER_CLEAR ) ) {
 
 			const patch = patches.strongest( x, z, rim, b1 );
-			head = patch.share > 0 ? ( b0 < patch.share ? patch.head : - 1 ) : b0 < STRAY ? patches.stray( x, z, rim, b1, b2 ) : - 1;
+			head = patch.share > 0 ? ( b0 < patch.share ? patch.head : - 1 ) : b0 < STRAY ? patches.stray( x, z, rim, b1 ) : - 1;
 			if ( head >= 0 ) flower = 1.5 + head;
 
 		}
@@ -2206,7 +2180,7 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		// anywhere, else part of the way down as its spot pulls it (a shallow pocket or a low patch,
 		// GRADE); a flowering one as its species grows (LOW_FLOWER), so the flowers keep their
 		// habitat and count.
-		const lowFlower = head === DIANTHUS || head === DANDELION || head === VIOLET;
+		const lowFlower = head === ZHUYU;
 		const vigour = meadowVigour( x, z ), thin = meadowShallow( x, z );
 		let short = 0;
 		if ( onStack || own[ 0 ] >= 1 - SHORT_STAY ) short = 1;
@@ -2238,7 +2212,9 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		const blades = tallShare + ( 1 - tallShare ) * short;
 		density = blades;
 		sward.push( x, z, smoothstep( DENSE[ 0 ], DENSE[ 1 ], scl.y ) * density );
-		// Its colour: the lawn's everywhere (each blade then its own, `restBlade`).
+		// Its colour: the lawn's everywhere (each blade then its own, `restBlade`), a flowering
+		// tussock's its species' leaves' (LEAVES, the extra tuft beside it too).
+		if ( flower > 0 ) col.multiply( _leaves.fromArray( LEAVES[ head ] ) );
 		plant( flower > 0 ? lawnFlower : lawn, pos, q, scl, col, k, cover, rimEdge, 0, flower );
 
 		// About a quarter of the tussocks take a second tuft, picked by the anchor's own hash (no
