@@ -25,6 +25,7 @@ import { ShoreWaves } from './ocean/ShoreWaves.ts';
 import { Caustics } from './ocean/Caustics.ts';
 import { SeaDetail } from './ocean/SeaDetail.ts';
 import { showUnderwater } from './ocean/Refraction.ts';
+import { Wenyao } from './life/Wenyao.ts';
 import { Water } from './ocean/Water.ts';
 import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
@@ -596,6 +597,10 @@ const walk = walkPoints( data.walk );
 const walkDistance = walkLoopDistance( walk );
 const world = buildWorldMeshes( data, textures, shared, caustics, fields );
 scene.add( world.group );
+// The wenyao's schools off the island (life/Wenyao.ts): swimmers (Refraction.ts markSwimmer), which
+// the opaque pass draws where the eye sees them through the waves (Water.ts swimmerSway).
+const wenyao = new Wenyao( data, shared, caustics, fft );
+scene.add( wenyao.mesh );
 // The chunks' borders (GUI Ground folder, ?chunkBorders), built on first show.
 const chunkView = { borders: params.has( 'chunkBorders' ), lines: null as THREE.LineSegments | null };
 // the version shown (a grown island's, once the island grows)
@@ -806,6 +811,7 @@ const growth = new Growth( {
 		poseIslandView( islandViewOptions, islandTurned, islandZoom );
 		if ( follow ) followFraming();
 		shownData = version;
+		wenyao.setWorld( version );
 		sceneEvent( 'world swap' );
 
 	},
@@ -1644,6 +1650,8 @@ function tick( time: number ): void {
 	shoreWaves.update( fft, simTime );
 	// Whitewater is disabled in this scene; leave its history idle.
 	caustics.update( sky.keyDir, camera );
+	// (their schools take flight more often by night)
+	wenyao.update( paused ? 0 : dt, 1 - THREE.MathUtils.smoothstep( sky.grade.daylight, 0.2, 0.45 ) );
 	groundBounce.update( sky.seaRadiance );
 	characters?.update( renderer, scene, sun, simTime, paused ? 0 : dt );
 	game?.render( renderer, sun, paused ? 0 : rawDt );
@@ -1965,6 +1973,7 @@ const establishScene = async ( scene: string | URLSearchParams | { weather?: Wea
 	sky.lightning.reset();
 	stormSea.reset();
 	characters?.reset();
+	wenyao.reset();
 	pipeline.air.invalidate();
 	groundBounce.invalidate();
 	shadowElapsed = 0;
@@ -2198,7 +2207,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 };
 
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, groundBounce, grass, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, groundBounce, grass, wenyao, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
 	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, weather, sky, fft, establishScene, setTime, data: () => shownData, seaDetail, land: () => landBox }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes

@@ -15,8 +15,9 @@ packages, into `dist/licenses/`.
   [`src/sky/tidewater.LICENSE.txt`](src/sky/tidewater.LICENSE.txt),
   [`src/materials/tidewater.LICENSE.txt`](src/materials/tidewater.LICENSE.txt),
   [`src/lighting/tidewater.LICENSE.txt`](src/lighting/tidewater.LICENSE.txt),
-  [`src/post/tidewater.LICENSE.txt`](src/post/tidewater.LICENSE.txt) and
-  [`src/weather/tidewater.LICENSE.txt`](src/weather/tidewater.LICENSE.txt) (the same text)
+  [`src/post/tidewater.LICENSE.txt`](src/post/tidewater.LICENSE.txt),
+  [`src/weather/tidewater.LICENSE.txt`](src/weather/tidewater.LICENSE.txt) and
+  [`src/life/tidewater.LICENSE.txt`](src/life/tidewater.LICENSE.txt) (the same text)
 - From the three.js (TSL) edition, commit
   [`fd6cae6`](https://github.com/dgreenheck/tidewater/tree/fd6cae6fa57343d344e5c008e1abda974c824b86):
   - `src/ocean/OceanFFT.ts`: the multi-cascade FFT ocean (its time evolution and inverse FFT).
@@ -57,6 +58,14 @@ packages, into `dist/licenses/`.
     TSL.
     Its reflection march takes the steps that grow with the distance and the 260 m stop of
     `WaterMaterial.js`'s `_waterSSR`, and its refraction the lookups into the refraction image.
+  - `src/life/FishGeometry.ts`: the procedural fish mesh of `src/world/fish/FishGeometry.js` (the
+    body lofted from superellipse rings of an anatomy table, the fins as membranes between rays),
+    cut to a swimming fish, ported to TypeScript, with paired fins spread as wings.
+  - `src/life/Wenyao.ts`: the schooling of `src/world/Fish.js` (separation, alignment and cohesion
+    within a school, its goal in long straight runs, the turn back from shallow water, the heading,
+    bank and bend of each fish), with a flight of its own.
+  - `src/life/FishMaterial.ts`: the swimming wave and turning bend of `src/world/fish/FishMaterial.js`
+    (its three.js edition at fd6cae6, `swimVertex`).
   - `src/ocean/SeaDetail.ts`: the gusts, slicks and windrows of `SeaDetail.js` (its noise texture
     and sampling, ported from WGSL to TSL), driven by this project's wind.
   - `src/ocean/Refraction.ts`: the refraction source of `RefractionPass.js` (the scene below the

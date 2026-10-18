@@ -587,7 +587,10 @@ export class Pipeline {
 		// (alpha), and nothing where one lies above it (a cliff, the rim's grass, a figure) or is
 		// sky. Its mips, each a box filter of the level above, are then the average colour of what
 		// lies under the sea over any footprint, the surfaces above it left out: the water divides
-		// by the alpha.
+		// by the alpha. What swims in the water (marked by Refraction.ts `markSwimmer`: an alpha of 0)
+		// is left out too, as are the pixels it shares: the water finds it along its refracted ray
+		// in the opaque image (Water.ts), and the floor behind it comes from the refraction image,
+		// which never draws it.
 		const underwaterMat = new THREE.NodeMaterial();
 		underwaterMat.fragmentNode = Fn( () => {
 
@@ -603,8 +606,9 @@ export class Pipeline {
 			};
 			let w = below( depthSample( coord, 0 ) );
 			for ( let i = 1; i < SCENE_SAMPLES; i ++ ) w = w.mul( below( depthSample( coord, i ) ) );
-			const weight = w.toVar();
-			return vec4( textureLoad( texture( g.texture( sceneColor ) ), ivec2( coord ) ).rgb.mul( weight ), weight );
+			const color = ( textureLoad( texture( g.texture( sceneColor ) ), ivec2( coord ) ) as unknown as V4 ).toVar();
+			const weight = w.mul( step( 0.999, color.a ) ).toVar();
+			return vec4( color.rgb.mul( weight ), weight );
 
 		} )();
 		this.underwaterQuad = new THREE.QuadMesh( underwaterMat );

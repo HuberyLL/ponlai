@@ -5,6 +5,7 @@
  */
 
 import * as THREE from 'three/webgpu';
+import { float } from 'three/tsl';
 
 // The water's refraction source (tidewater's RefractionPass, 4811ba4): the scene below the water
 // only, drawn by the frame graph's `refraction` pass (Pipeline.ts) right after the opaque pass, with
@@ -107,6 +108,19 @@ export function refractedGroup( seaLevel: number ): THREE.ClippingGroup {
 	group.clippingPlanes = [ new THREE.Plane( new THREE.Vector3( 0, - 1, 0 ), seaLevel + CLIP_MARGIN ) ];
 	group.layers.set( REFRACTED_LAYER );
 	return group;
+
+}
+
+/** Marks `material` as something that swims in the water (the wenyao), which the refraction
+ * image leaves out: it writes an alpha of 0 into the opaque image (three assigns opaque materials
+ * an alpha of 1 under normal blending, so the mark takes none), the underwater pyramid leaves it
+ * out (Pipeline.ts), and the water finds it along its refracted rays (Water.ts). A swimmer is not
+ * shown to the refraction's camera: there it would stand in front of the floor that the rays
+ * passing beside it reach, which the water then could not read anywhere. */
+export function markSwimmer( material: THREE.NodeMaterial ): void {
+
+	material.blending = THREE.NoBlending;
+	material.opacityNode = float( 0 );
 
 }
 
