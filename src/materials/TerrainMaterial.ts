@@ -95,8 +95,10 @@ const LITTER_MEAN = ( () => {
 // FLOOR_SOIL, as the lip's root soil is) with moss and seedlings over FLOOR_GREEN of it (the roots'
 // colour), the soil in the litter's gaps near, their mean share (FLOOR_BARE) far. In a real meadow
 // the short turf shows its floor between upright leaves; green roots there read as a felt laid
-// under the flowers, and bare soil alone as a patch of mud.
-const FLOOR_OPEN = [ 0.3, 0.75 ], FLOOR = 0.6, FLOOR_SOIL = RIM_SOIL_TONE, FLOOR_GREEN = 0.35, FLOOR_BARE = ( 1 - LITTER_COVER ) ** LITTER_LAYERS.length;
+// under the flowers, and bare soil alone as a patch of mud. The soil is the meadow's base, not its
+// cover: at 0.6 of the floor with a third of it green, the short turf's patches read as brown
+// ground with a few blades on it.
+const FLOOR_OPEN = [ 0.3, 0.75 ], FLOOR = 0.5, FLOOR_SOIL = RIM_SOIL_TONE, FLOOR_GREEN = 0.6, FLOOR_BARE = ( 1 - LITTER_COVER ) ** LITTER_LAYERS.length;
 
 // canopy: direct light left under the meadow's blades (1 where nothing grows)
 // water: share under a water film or standing water (water's specular reflectance)

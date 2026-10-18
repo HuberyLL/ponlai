@@ -115,9 +115,10 @@ art decision changes; reference images stay out of the repository.
   each tussock from about 0.6 to 1.4 times the sward's height, its own colour and value, and now and
   then a low patch of one to a few short tussocks, where the low wildflowers grow. As in a real
   meadow its soil sets the odds: the sward rises a little where the soil is deep and damp and sinks
-  a little where it is thin, over some 14 m, and pockets of shallow soil a few metres across, a
-  tenth of the meadow, hold a short open turf with tussocks standing in it, its floor showing
-  between them: from above a soft mottling, tussock by tussock, never a zone, a line or a path.
+  a little where it is thin, over some 14 m, and in pockets of shallow soil a few metres across, a
+  tenth of the meadow, the sward slopes down toward a short turf, tussock by tussock, with tall
+  tussocks still standing in them: from above a soft mottling, never a zone, a line, a path or a
+  hollow (a short turf walled by tall tussocks, two levels, read as a hole dug into the lawn).
   From the ground up the sward has a summer meadow's layers: dead leaves and the old leaves' straw
   sheaths low in it, the green leaves, and over them a few flowering stems from each tall tussock,
   their slender panicles purple brown to straw a hand above the leaves (none on the short turf),
@@ -131,10 +132,11 @@ art decision changes; reference images stay out of the repository.
   tall sward is its bottom, never a flat floor: the colour of the blades' roots, as deep as their
   shade, with lying old leaves and a few dry ones; farther off, where the blades are under a
   pixel, it is the deeper green of their lower part, so from afar the meadow reads as one carpet.
-  How deep that shade is follows the sward over it: where the turf is short (the low patches, the
-  low flowers' patches) or broken by a gap, the light reaches the ground, and between the upright
-  leaves it shows the turf's floor, dead thatch and damp soil with moss, as a real short turf does:
-  never a dark hole among the flowers, never a felt of green, never bare mud. By night
+  How deep that shade is follows the sward over it: where the turf is short (the pockets, the low
+  patches) or broken by a gap, the light reaches the ground, and between the upright leaves it
+  shows the turf's floor, mostly moss and seedlings over some dead thatch and damp soil, as a real
+  short turf does: the meadow is the cover and the soil its base, never a dark hole among the
+  flowers, never a felt of green, never bare mud. By night
   the lawn is a dark, readable green (see Night). Toward a sheltered coast the grass runs to the
   lip and stands there, and the same grass grows out over it: its tufts at the lip spill over the
   edge, fine blades that arch over and hang down the wall, lying on the stone, never through it, and the lip alternates between
@@ -142,7 +144,8 @@ art decision changes; reference images stay out of the repository.
   root soil.
 - Wildflowers are part of the meadow: heads (a hand across at most: large enough that the game's
   close view reads them as flowers, not dots) on some of its tufts, each on a thin stem bent a
-  little by its head: the low species (pinks, dandelions, violets) in low patches of short turf,
+  little by its head: the low species (pinks, dandelions, violets) on lower tussocks among the
+  grass, never in a patch of their own cut short,
   the pinks along the lip's edge, the tall ones
   (wild chrysanthemums, daylilies, balloon flowers) in tall tussocks about at their leaves' top,
   some partly hidden among them, never floating over the grass. They are pinks, wild chrysanthemums (yellow, a few white), daylilies, dandelions, violets and a
