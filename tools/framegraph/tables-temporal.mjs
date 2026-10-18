@@ -33,6 +33,7 @@ export function declarePipelineTemporal( options = {} ) {
 	h.opaqueColor = g.color( 'opaqueColor', { size: RENDER, format: 'RGBA', type: 'HalfFloat' } );
 	h.surfaceDepth = g.color( 'surfaceDepth', { size: RENDER, format: 'Red', type: 'Float' } );
 	h.underwater = g.color( 'underwater', { size: RENDER, format: 'RGBA', type: 'HalfFloat', mips: true } );
+	h.refractionReach = g.color( 'refractionReach', { size: { of: 'fixed', width: 64, height: 1 }, format: 'RGBA', type: 'HalfFloat', filter: 'nearest' } );
 	h.refraction = g.color( 'refraction', { size: REFRACTION, format: 'RGBA', type: 'HalfFloat' } );
 	h.refractionDepth = g.depth( 'refractionDepth', { size: REFRACTION, type: 'Float' } );
 	h.velocity = g.color( 'velocity', { size: RENDER, format: 'RGBA', type: 'HalfFloat', samples: 'scene' } );
@@ -66,10 +67,13 @@ export function declarePipelineTemporal( options = {} ) {
 	} );
 	// declareRefraction: with the scene's jitter
 	g.addPass( 'underwaterPyramid', 'quad', ( b ) => ( b.read( h.sceneColor ), b.read( h.sceneDepth, 'samples' ), h.underwater = b.write( h.underwater ), { label: 'underwater pyramid', jittered: true } ) );
-	// the mask at the nearest depth where the opaque image holds the floor, then the refraction over it
+	// the lookups' reach past the screen, the mask at the nearest depth where the opaque image holds
+	// the floor or beyond that reach, then the refraction over it
+	g.addPass( 'refractionReach', 'quad', ( b ) => ( b.read( h.sceneDepth, 'samples' ), b.read( h.underwater ), h.refractionReach = b.write( h.refractionReach ), { label: 'refraction', jittered: true, when: () => true, whenLabel: 'refraction' } ) );
 	g.addPass( 'refractionMask', 'quad', ( b ) => {
 
 		b.read( h.underwater );
+		b.readOptional( h.refractionReach );
 		h.refraction = b.write( h.refraction, { clear: true } );
 		h.refractionDepth = b.depth( h.refractionDepth, { write: true, clear: true } );
 		return { label: 'refraction', mrt: refractionMRT, jittered: true, when: () => true, whenLabel: 'refraction' };
@@ -183,6 +187,7 @@ const DEPTH = ( write ) => ( { ...w( 'sceneDepth', R, null, 'Float' ), write } )
 export const TEMPORAL_SCENE = [
 	{ name: 'opaque', kind: 'scene', label: 'opaque scene', when: null, jittered: true, writes: SCENE, depth: DEPTH( true ), target: 'sceneColor+velocity|sceneDepth' },
 	{ name: 'underwaterPyramid', kind: 'quad', label: 'underwater pyramid', when: null, jittered: true, writes: [ w( 'underwater', R, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'underwater|-' },
+	{ name: 'refractionReach', kind: 'quad', label: 'refraction', when: 'refraction', jittered: true, writes: [ w( 'refractionReach', 'fixed:64x1', 'RGBA', 'HalfFloat' ) ], depth: null, target: 'refractionReach|-' },
 	{ name: 'refractionMask', kind: 'quad', label: 'refraction', when: 'refraction', jittered: true, writes: [ w( 'refraction', RF, 'RGBA', 'HalfFloat' ) ], depth: { ...w( 'refractionDepth', RF, null, 'Float' ), write: true }, target: 'refraction|refractionDepth' },
 	{ name: 'refraction', kind: 'scene', label: 'refraction', when: 'refraction', jittered: true, writes: [ w( 'refraction', RF, 'RGBA', 'HalfFloat' ) ], depth: { ...w( 'refractionDepth', RF, null, 'Float' ), write: true }, target: 'refraction|refractionDepth' },
 	{ name: 'depthResolve', kind: 'quad', label: 'depth & copy resolves', when: null, jittered: true, writes: [ w( 'linearDepth', R, 'RG', 'Float' ) ], depth: null, target: 'linearDepth|-' },
@@ -193,7 +198,7 @@ export const TEMPORAL_SCENE = [
 ];
 const POST = [ 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'postConstants', 'composite', ...BLOOM_PASSES, 'sharp', 'display', 'output', 'easu', 'upscaledOutput' ];
 const READS = {
-	opaque: [], underwaterPyramid: [ 'sceneColor@1:sample', 'sceneDepth@1:samples' ], refractionMask: [ 'underwater@1:sample' ], refraction: [],
+	opaque: [], underwaterPyramid: [ 'sceneColor@1:sample', 'sceneDepth@1:samples' ], refractionReach: [ 'sceneDepth@1:samples', 'underwater@1:sample' ], refractionMask: [ 'underwater@1:sample', 'refractionReach@1:sample?' ], refraction: [],
 	depthResolve: [ 'sceneDepth@1:samples' ], opaqueCopy: [ 'sceneColor@1:sample' ],
 	water: [ 'opaqueColor@1:sample', 'linearDepth@1:sample', 'underwater@1:sample', 'refraction@2:sample?', 'refractionDepth@2:sample?' ], surfaceResolve: [ 'sceneDepth@2:samples' ],
 	overlay: [ 'linearDepth@1:sample', 'surfaceDepth@1:sample' ],
@@ -209,7 +214,7 @@ const opsOf = ( t, pass ) => {
 
 };
 // every conditional pass of a frame with the refraction, fog and the light shafts, drawn directly
-const BASE = [ 'refractionMask', 'refraction', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'output' ];
+const BASE = [ 'refractionReach', 'refractionMask', 'refraction', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'output' ];
 
 // a CPU mock of what FrameGraph calls on three's renderer (as tables-runtime.mjs's)
 function mockRenderer( log ) {
