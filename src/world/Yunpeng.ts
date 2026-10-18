@@ -3,9 +3,8 @@ import { attribute, float, mix, normalGeometry, positionGeometry, smoothstep, ve
 import { GroundBounceLightingModel } from '../lighting/GroundBounce.ts';
 import type { Shared } from '../shared.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { wave } from '../weather/Wind.ts';
 import { hash3i, mulberry32, type Rng } from './noise.ts';
-import { mainBend } from './vegetation/Deform.ts';
+import { leafFlutter, mainBend } from './vegetation/Deform.ts';
 import { useVegetationMotion } from './vegetation/Material.ts';
 import type { VegetationKind } from './vegetation/Registry.ts';
 
@@ -31,7 +30,8 @@ import type { VegetationKind } from './vegetation/Registry.ts';
 //   own (YUNPENG.glow, as emission, too faint to show by day; `flags=yunpengGlow:<strength>` at load
 //   sets it for A/Bs).
 // - It sways in the one wind from each stalk's foot, its top the most (Deform.ts mainBend at half
-//   rate, a tall plant), the leaves fluttering.
+//   rate, a tall plant), each by its slenderness (`bendAt`), the leaves and the plume's tassels
+//   fluttering from their foot as the gusts pass (Deform.ts leafFlutter).
 // Every random choice of a clump draws from one stream seeded by where it stands. One mesh, one
 // vegetation kind (an ordinary shadow, no depth prepass). It takes no part in the growth swap: the
 // sites are the step-0 piece's and the ground is a function of the point.
@@ -112,8 +112,11 @@ function axisAt( k: Stalk, s: number, out: THREE.Vector3 ): THREE.Vector3 {
 }
 
 /** The bend's amplitude at s of a stalk (m at a fair day's typical gust): growing with the square of
- * the way up, and with the stalk's height. */
-const bendAt = ( k: Stalk, s: number ) => YUNPENG.bend * ( k.height / 5 ) * s * s;
+ * the way up, and with the stalk's slenderness, as a cantilever's tip under the wind's load along it
+ * (its drag on the stalk's width): the length to the fourth over the radius cubed, the radius
+ * growing as the height to the 0.6 (`stalk`), so a 5 m stalk takes YUNPENG.bend and a shorter one
+ * far less: the clump's stalks swing apart rather than as one. */
+const bendAt = ( k: Stalk, s: number ) => YUNPENG.bend * Math.pow( k.height / 5, 4 - 3 * 0.6 ) * s * s;
 
 /** One stalk: a tube from below the ground to the head's foot, then the head's spindle. */
 function stalk( b: Builder, k: Stalk ): void {
@@ -249,8 +252,7 @@ function material( shared: Shared ): THREE.MeshStandardNodeMaterial {
 
 			const bent = mainBend( wind, positionGeometry, root, sway.x, WIND.cycles, float( WIND.slow ) );
 			if ( wind === shared.wind ) trunk = bent.sway;
-			const flutter = wave( wind.clock, WIND.flutter, sway.z.mul( 6.2831853 ) ).mul( sway.y ).mul( wind.breeze );
-			return bent.position.add( normalGeometry.mul( flutter ) );
+			return bent.position.add( leafFlutter( wind, bent.field, normalGeometry, sway.y, sway.z, WIND.flutter ) );
 
 		},
 		sway: () => trunk,

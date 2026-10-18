@@ -29,7 +29,9 @@ import type { LeafAtlas } from './vegetation/TreeSurfaces.ts';
 //   and up so the stand shades as one mass, its inside darker (the cards' vertex colours).
 // - A few clusters of pale seeds like pearls among the leaves (the atlas).
 // The whole stand sways in the one wind, each culm from its own foot (`treeRoot`), bending most at
-// its top (`leafSway` x); the leaves flutter on their own phases.
+// its top (`leafSway` x) and by its slenderness (its length to the fourth over its radius cubed, as
+// a cantilever under the wind's load), so the culms swing apart rather than as one; each spray
+// flutters from its twig on its own phase as the gusts pass (Deform.ts leafFlutter).
 // Every random choice of a stand draws from one stream seeded by where it stands; each culm's
 // cards from a stream of their own (TreeMesh.ts streamAt).
 //
@@ -50,7 +52,7 @@ export const BAMBOO = {
 	branch: 1.3, // the longest branch (m, about halfway up a full culm)
 	card: 0.5, // a leaf card's side (m)
 	bend: 0.3, // a 7 m culm's sway at its top (m at a fair day's typical gust)
-	flutter: 0.035, // a card's flutter along its normal (m)
+	flutter: 0.035, // a card's flutter at its tip in a gust's core (m: Deform.ts leafFlutter)
 	size: [ 1, 0.7 ] as const, // the first stand's size, and every later one's
 };
 
@@ -250,7 +252,7 @@ function spray( st: Stand, c: Culm, from: THREE.Vector3, out: THREE.Vector3, siz
 			normal: [ nn.x, nn.y, nn.z ],
 			uv: [ tu + inset + u * ( 0.5 - 2 * inset ), tv + inset + v * ( 0.5 - 2 * inset ) ],
 			color: [ k, k, k ],
-			leafSway: [ c.sway( p.y ), BAMBOO.flutter, flutterPhase, 0 ],
+			leafSway: [ c.sway( p.y ), BAMBOO.flutter * cy, flutterPhase, 0 ],
 			treeRoot: root,
 		} );
 
@@ -297,7 +299,10 @@ function grow( culms: MeshBuilder, leaves: MeshBuilder, x: number, z: number, si
 			sway: () => 0,
 		};
 		const footY = c.foot.y;
-		c.sway = ( y ) => P.bend * ( height / P.height[ 1 ] ) * Math.pow( Math.min( 1, Math.max( 0, ( y - footY ) / height ) ), 2 );
+		// the culm's slenderness: a cantilever's tip under the wind's load along it (its drag on the
+		// culm's width) goes as the length to the fourth over the radius cubed (a full culm's 1)
+		const slender = Math.min( 2, Math.pow( height / P.height[ 1 ], 4 ) / Math.pow( c.radius / ( P.diameter / 2 ), 3 ) );
+		c.sway = ( y ) => P.bend * slender * Math.pow( Math.min( 1, Math.max( 0, ( y - footY ) / height ) ), 2 );
 		culm( st, c );
 
 	}

@@ -6,8 +6,7 @@ import {
 import { GroundBounceLightingModel } from '../../lighting/GroundBounce.ts';
 import { pnoise, hash22 } from '../../materials/ProceduralTextures.ts';
 import type { Shared } from '../../shared.ts';
-import { wave } from '../../weather/Wind.ts';
-import { mainBend } from './Deform.ts';
+import { leafFlutter, mainBend } from './Deform.ts';
 import { coverageAlphaTexture } from './LeafTexture.ts';
 import { vegetationMaterial } from './Material.ts';
 
@@ -332,7 +331,8 @@ function pointMips( image: ImageData, size: number ): THREE.Texture {
 
 /** A crown's wind: it bends from the trunk's foot by the main bend (`cycles`, at `slow` of its
  * rate) by the `leafSway` attribute's x (m at a fair day's typical gust); each card flutters on its
- * own phase (z) by y along its normal, at `flutter` Hz. */
+ * own phase (z) by y (m, 0 where it holds to its twig, the most at its tip), at `flutter` Hz
+ * (Deform.ts `leafFlutter`: in the gusts, across the wind). */
 export interface CrownWind { cycles: number; slow: number; flutter: number }
 
 /** A crown's leaves: the vegetation's leaf family on the atlas, each leaf toned by its id (by
@@ -360,8 +360,7 @@ export function leafMaterial( shared: Shared, atlas: LeafAtlas, foot: THREE.Vect
 
 			const bent = mainBend( wind, positionGeometry, root, sway.x, o.wind.cycles, float( o.wind.slow ) );
 			if ( wind === shared.wind ) crown = bent.sway;
-			const flutter = wave( wind.clock, o.wind.flutter, sway.z.mul( 6.2831853 ) ).mul( sway.y ).mul( wind.breeze );
-			return bent.position.add( normalGeometry.mul( flutter ) );
+			return bent.position.add( leafFlutter( wind, bent.field, normalGeometry, sway.y, sway.z, o.wind.flutter ) );
 
 		},
 		sway: () => crown,

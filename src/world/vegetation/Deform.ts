@@ -4,8 +4,8 @@ import { LEAN_REF, gustTravel, gustWave, leanLoad, pressedLean, pressedStiffenin
 import { puddleCover } from '../../weather/Puddles.ts';
 import { trampleLoad } from './Trample.ts';
 
-// How the vegetation moves: the plants' main bend (`mainBend`: kept for the trees to come; no kind
-// uses it today), the meadow's blades and flower heads (`bendBlade`, each on its own phase, `bladePhase`), a hanging
+// How the vegetation moves: the plants' main bend (`mainBend`: the yunpeng's stalks, the bamboo's
+// culms and leaves), their leaves' flutter (`leafFlutter`), the meadow's blades and flower heads (`bendBlade`, each on its own phase, `bladePhase`), a hanging
 // strand's pendulum (`hangingSway`, each hanging kind passing its own HangingWind: kept for the
 // hanging kinds to come; no kind uses it today, the grass over the cliff's edge being the meadow's
 // own tufts draped over it, which bend as its blades do) and standing water drowning a plant (`drown`: the meadow). Each kind's wind numbers (its amplitude, its swings per gust tile,
@@ -93,6 +93,28 @@ export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F,
 	const offset = unit.mul( amplitude );
 	const rel = position.sub( root ).toVar();
 	return { position: normalize( rel.add( offset ).add( vec3( 0, 1e-5, 0 ) ) ).mul( length( rel ) ).add( root ), field, sway: unit.xz.mul( LEAN_REF ) };
+
+}
+
+/** A leaf's flutter (a plant's leaves, cards or ribbons, about its main bend): `calm` of it between
+ * the gusts, all of it in a gust's core; `twist` of it across the wind (a leaf turning over in the
+ * gusts), the rest along its normal; two waves, the second at `second` times the rate (not a whole
+ * multiple, so the flutter never settles into one beat; rounded to Wind.ts `wave`'s three decimals,
+ * so it stays seamless where the clock wraps) and `share` of the sum. */
+export const LEAF_FLUTTER = { calm: 0.25, twist: 0.65, second: 1.618, share: 0.35 } as const;
+
+/** A leaf's flutter (an offset, m) by `amount` (m at a fair day's gust core: 0 where the leaf
+ * holds to its stalk, the most at its tip, so a leaf swings about its stalk rather than moving
+ * whole), on its own `phase` (0..1) at `rate` Hz, under the wind field `field` at the plant's root
+ * (`mainBend`'s): it flutters as the gusts pass and nearly rests between them, across the wind
+ * more than along its `normal`. `wind` is the frame's wind state (`shared.wind`, or `.previous`). */
+export function leafFlutter( wind: WindState, field: THREE.Node<'vec4'>, normal: V3, amount: F, phase: F, rate: number ): V3 {
+
+	const P = LEAF_FLUTTER;
+	const strength = wind.breeze.mul( field.w.mul( 1 - P.calm ).add( P.calm ) );
+	const beat = wave( wind.clock, rate, phase.mul( TAU ) ).mul( 1 - P.share ).add( wave( wind.clock, Math.round( rate * P.second * 1000 ) / 1000, phase.mul( TAU * 1.7 ).add( 1.3 ) ).mul( P.share ) );
+	const across = vec3( field.y.negate(), 0, field.x );
+	return across.mul( P.twist ).add( normal.mul( 1 - P.twist ) ).mul( beat.mul( amount ).mul( strength ) );
 
 }
 
