@@ -1261,13 +1261,14 @@ const OPEN = 0.35;
 // (the sward's depth where no anchor holds turf: the mean over the sward, SHORT_STAY of it short)
 const SWARD_FALLBACK = TALL_DENSE * ( 1 - SHORT_STAY );
 /** The blades' roots as the ground between them takes them (TerrainMaterial.ts's meadow ground):
- * the key's and the sky's light left at the root under the full shade (`key`, `sky`), the share of
- * its colour the deepest sward darkens (`darkening`: times the sward's depth there, the field of
- * SwardField.ts), the tall
- * sward's mean depth (`tall`: the full shade from it up), the shade left under the shortest turf
- * (`open`) and the blade-count curve's distances (`bands`, a uniform: the layer fades out where the
- * tufts thin). */
+ * the palette's mean at the root against the lawn (`colour`, the sward's shaded bottom), the key's
+ * and the sky's light left at the root under the full shade (`key`, `sky`), the share of its colour
+ * the deepest sward darkens (`darkening`: times the sward's depth there, the field of
+ * SwardField.ts), the tall sward's mean depth (`tall`: the full shade from it up), the shade left
+ * under the shortest turf (`open`) and the blade-count curve's distances (`bands`, a uniform: the
+ * litter fades out where the tufts thin). */
 export const GRASS_ROOTS = {
+	colour: [ ROOT.x * PALETTE_GAIN[ 0 ], ROOT.y * PALETTE_GAIN[ 0 ], ROOT.z * PALETTE_GAIN[ 0 ] ],
 	key: ROOT_KEY, sky: ROOT_SKY, bands: lodUniforms.bands,
 	darkening: 1 - ROOT_DARK, tall: TALL_DENSE, open: OPEN,
 };
