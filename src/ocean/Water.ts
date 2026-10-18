@@ -62,7 +62,7 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 // refraction pass's colour and depth.
 //
 // Kept of our own: the grid and its skirt, the waves' damping by the shore (the vertex stage), the
-// rocky shore's reflected wave (ShoreWaves), the reflection march with its box and the cliff foot's
+// rocky shore's reflected wave and the foam the waves leave on it (ShoreWaves), the reflection march with its box and the cliff foot's
 // lifted hit (traceSSR), the soft line where the surface cuts the rock, the motion vectors, the
 // rain's ripples and the storm's foam (parked weathers).
 // The sea continues to the horizon (a skirt around the wave grid, SKIRT_RADIUS); the camera's far
@@ -159,6 +159,9 @@ const MAX_MOTION_STEP = 0.25;
 
 // The whitecaps' foam pattern, repeats per metre (tidewater's foamScale).
 const FOAM_SCALE = 0.09;
+// The foam the waves leave at the rock (ShoreWaves), finer: bubbles of a few centimetres, cells of a decimetre
+// or two.
+const SHORE_FOAM_SCALE = 1;
 
 // The sky panorama's level the horizon's colour is read at (a band some 20 degrees high).
 const HORIZON_MIP = 5;
@@ -307,6 +310,7 @@ export class Water {
 		sss: uniform( 1 ), // the crests' translucency
 		foamIntensity: uniform( 1 ),
 		foamCoverage: uniform( 1 ),
+		shoreFoam: uniform( 1 ), // the foam the waves leave at the rock (ShoreWaves)
 		shadowMatrix: uniform( new THREE.Matrix4() ),
 		shadowOn: uniform( 0 ),
 	};
@@ -635,9 +639,12 @@ export class Water {
 			const fuv = vLag.mul( FOAM_SCALE ).toVar();
 			const p1 = texture( storm.pattern, fuv ).toVar();
 			const p2 = texture( storm.pattern, rotate( fuv, 0.6435 ).mul( 2.37 ).add( vec2( 0.31, 0.77 ) ) ).toVar();
-			// the sea's large-scale detail: ( rough, gust, slick, streak )
+			// the pattern of the foam at the rock, finer (SHORE_FOAM_SCALE)
+			const ps = texture( storm.pattern, rotate( vLag.mul( SHORE_FOAM_SCALE ), 1.13 ).add( vec2( 0.57, 0.19 ) ) ).toVar();
+			// the sea's large-scale detail: ( rough, gust, slick, streak ); the island's wave shadow
+			// smooths the slopes no pixel resolves as it damps the finest cascade (WaveDamping.ts LEE)
 			const sea = detail.sample( vLag, vIslandGust ).toVar();
-			const rough = sea.x;
+			const rough = sea.x.mul( vWeights.w );
 
 			// ---- the normal: the cascades' slopes over their horizontal stretch (tidewater's
 			// WaterSurface), the rock's reflected wave and the rain's rings in world xz
@@ -697,6 +704,20 @@ export class Water {
 			const soft = footprint.mul( 0.1 ).add( 0.06 );
 			const mat = smoothstep( threshold.sub( soft ), threshold.add( soft ), p1.x.mul( 0.62 ).add( p2.x.mul( 0.38 ) ) ).mul( p1.y.mul( 0.25 ).add( 0.8 ) );
 			const foam = mix( mat, coverage.mul( 0.85 ), smoothstep( 0.15, 1.2, footprint ) ).toVar();
+			// the foam the waves leave at the rock (ShoreWaves): a fresh burst, the pattern's bubbly mat,
+			// the foam lingering from the waves before, the pattern's lace, finer than the whitecaps' (a rock churns the foam
+			// finer than a breaking crest does); far away, its cover
+			const white = sat( shoreWave.w.mul( u.shoreFoam ) ).toVar();
+			// (the mat only above a cover of 0.3, from a burst; the lace from the first trace; none
+			// without a cover, where the pattern's veins reach 1)
+			// (softer edges than the whitecaps': up close a rock's foam frays into fine bubbles)
+			const matEdge = float( 1.2 ).sub( white ).toVar(), laceEdge = float( 1 ).sub( white.mul( 1.3 ) ).toVar(), shoreSoft = soft.add( 0.1 ).toVar();
+			const shoreMat = smoothstep( matEdge.sub( shoreSoft ), matEdge.add( shoreSoft ), ps.x );
+			const shoreLace = smoothstep( laceEdge.sub( shoreSoft ), laceEdge.add( shoreSoft ), ps.y );
+			// (thin foam lets the water show through; its pattern's cells fall below a pixel some three
+			// times sooner than the whitecaps')
+			const shoreFoam = max( shoreMat, shoreLace.mul( 0.75 ) ).mul( ps.z.mul( 0.3 ).add( 0.75 ) ).mul( white.mul( 0.35 ).add( 0.5 ) ).mul( smoothstep( 0, 0.05, white ) );
+			foam.assign( max( foam, mix( shoreFoam, white.mul( 0.6 ), smoothstep( 0.05, 0.4, footprint ) ) ) );
 
 			// ---- roughness: the slopes no pixel resolves at this distance (Cox-Munk's mean square
 			// slope 0.003 + 0.00512 U, the share finer than the pixel's wavenumber, scaled by the

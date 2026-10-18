@@ -11,6 +11,7 @@ import {
 } from 'three/tsl';
 import type { OceanFFT } from './OceanFFT.ts';
 import type { ShoreWaves } from './ShoreWaves.ts';
+import { LEE } from './WaveDamping.ts';
 import type { Shared } from '../shared.ts';
 import { createFoamPattern } from './FoamPattern.ts';
 import { Spray, type SprayLighting } from './Spray.ts';
@@ -23,8 +24,9 @@ type IV2 = THREE.Node<'ivec2'>;
 
 // The storm sea's memory: persistent whitecap foam and the spray torn off breaking crests.
 //
-// The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
-// rough sea with whitecaps on folding crests, foam that trails behind them and fades, and spray.
+// The sea is calm in everyday weather: no whitecaps on the open water (the foam the waves leave
+// at the rock is ShoreWaves'). Only a storm's gale builds a rough sea with whitecaps on folding crests, foam
+// that trails behind them and fades, and spray.
 // Storm foam and spray are lit by the scene, never self-lit.
 //
 // Whitecaps are born where the sea's horizontal Jacobian nears a fold (Tessendorf's choppy-wave
@@ -124,8 +126,8 @@ export class StormSea {
 			const sd = texture( shore, q ).level( float( 0 ) ).r;
 			const shelter = shoreWaves.shelter.sample( q ).level( float( 0 ) ).r;
 			const coastDamp = mix( float( 0.45 ), float( 1 ), smoothstep( 0, 7, sd ) );
-			const long = mix( float( 0.12 ), float( 1 ), shelter );
-			return vec4( long, long, mix( float( 0.8 ), float( 1 ), shelter ), 1 ).mul( coastDamp );
+			const long = mix( float( LEE.long ), float( 1 ), shelter );
+			return vec4( long, long, mix( float( LEE.medium ), float( 1 ), shelter ), 1 ).mul( coastDamp );
 
 		};
 		const weightOf = ( w: THREE.Node<'vec4'>, c: number ) => [ w.x, w.y, w.z, w.w ][ c ];

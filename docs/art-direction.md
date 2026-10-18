@@ -180,8 +180,20 @@ art decision changes; reference images stay out of the repository.
 
 - Rain, storm and fog are parked (`PARKED_WEATHER` in `src/sky/Weather.ts`): out of the rotation
   and the production page until the game needs them; the notes on them below stand for their revival.
-- The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
-  rough sea with whitecaps, trailing foam and spray. The sea continues to the horizon.
+- The sea is calm in everyday weather: no whitecaps on the open water. Only a storm's gale builds
+  a rough sea with whitecaps, trailing foam and spray. The sea continues to the horizon.
+- The island stands in the sea's way. Its foam follows the waves the eye sees arrive: where a
+  wave runs high against the rock the foot turns white as it strikes, and the foam spreads out and
+  thins to lace as it drains; where a wave runs low the rock stays bare. A wave's foam outlasts it
+  by several seconds, so the foot always carries some, which each new wave brightens and pushes out
+  rather than starting again; it thickens in a set of bigger waves and thins in a lull. The
+  backwash carries it out in tongues in some stretches and leaves it hugging the rock in others,
+  and it breaks into patches as it ages: never a ring at one distance from the rock. The foam falls
+  off as the coast turns from the swell and is absent where the waves slide along the rock. On an
+  everyday sea it is a narrow band, a few decimetres to a metre or two wide. No water thrown up the
+  rock, no foam that jumps or flashes, no rocks that stay white while their neighbours stay bare,
+  never wide fields of foam, which belong to a surf day. The lee lies in the island's wave shadow,
+  nearly smooth, without foam.
 - One dominant key light, sun by day and moon by night. By day the sun is near white and the air
   hazy: the horizon reads milky white rather than a cyan band, brightest toward the sun. A low
   sun's light stays golden orange. After sunset the island stays readable: through the minutes

@@ -166,12 +166,22 @@ export function shoreShelterPixels( shoreGrid: ShoreField, direction: { x: numbe
 	const visible = new Float32Array( count ), direct = new Float32Array( count );
 	const water = new Uint8Array( count ), distances = new Float32Array( count );
 	const angles = [ - spreadDegrees, - spreadDegrees / 2, 0, spreadDegrees / 2, spreadDegrees ], weights = [ 1, 2, 6, 2, 1 ];
-	const rays = angles.map( ( degrees, i ) => {
+	// Each cell turns the fan by its own fraction of a step (a hash of its world position): five
+	// fixed rays cut the penumbra into five steps, which read as streaks across the lee's calm.
+	const jitter = ( x: number, z: number ): number => {
+
+		let h = Math.imul( Math.round( x * 64 ) | 0, 0x27d4eb2d ) ^ Math.imul( Math.round( z * 64 ) | 0, 0x165667b1 );
+		h = Math.imul( h ^ ( h >>> 15 ), 0x85ebca6b );
+		h = Math.imul( h ^ ( h >>> 13 ), 0xc2b2ae35 );
+		return ( ( h ^ ( h >>> 16 ) ) >>> 0 ) / 4294967296 - 0.5;
+
+	};
+	const rayAt = ( degrees: number, weight: number ) => {
 
 		const a = degrees * Math.PI / 180;
-		return { x: - dx * Math.cos( a ) + dz * Math.sin( a ), z: - dx * Math.sin( a ) - dz * Math.cos( a ), weight: weights[ i ] };
+		return { x: - dx * Math.cos( a ) + dz * Math.sin( a ), z: - dx * Math.sin( a ) - dz * Math.cos( a ), weight };
 
-	} );
+	};
 	const x1 = info.x0 + info.width, z1 = info.z0 + info.height;
 	const minimumStep = Math.min( info.cellX, info.cellZ, shore.cell ) * 0.5;
 	const trace = ( x: number, z: number, rx: number, rz: number ): number => {
@@ -200,9 +210,10 @@ export function shoreShelterPixels( shoreGrid: ShoreField, direction: { x: numbe
 		if ( sd <= 0 ) continue;
 		water[ k ] = 1;
 		let sum = 0;
-		for ( let ray = 0; ray < rays.length; ray ++ ) {
+		const turn = jitter( x, z ) * spreadDegrees / 2;
+		for ( let ray = 0; ray < angles.length; ray ++ ) {
 
-			const r = rays[ ray ], visibility = trace( x, z, r.x, r.z );
+			const r = rayAt( angles[ ray ] + turn, weights[ ray ] ), visibility = trace( x, z, r.x, r.z );
 			sum += visibility * r.weight;
 			if ( ray === 2 ) direct[ k ] = visibility;
 
@@ -211,9 +222,9 @@ export function shoreShelterPixels( shoreGrid: ShoreField, direction: { x: numbe
 
 	}
 	unclampShore( distances, nx, nz, info.cellX, info.cellZ );
-	// Blur water neighbours only. This removes fan/grid steps at penumbra boundaries
-	// without bleeding a fully exposed wave through the solid island into a small inlet.
-	for ( let pass = 0; pass < 4; pass ++ ) {
+	// Blur water neighbours only. This removes fan/grid steps (and the jitter's noise) at penumbra
+	// boundaries without bleeding a fully exposed wave through the solid island into a small inlet.
+	for ( let pass = 0; pass < 8; pass ++ ) {
 
 		const previous = visible.slice();
 		for ( let j = 0; j < nz; j ++ ) for ( let i = 0; i < nx; i ++ ) {
