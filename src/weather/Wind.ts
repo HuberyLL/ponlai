@@ -390,9 +390,11 @@ export function pressing( wind: WindState ): Node<'float'> {
 }
 
 /** sin( 2 pi rate time + phase ) for the vegetation's clock (`clock`, scene seconds): `rate` in
- * Hz with at most three decimals, so it stays seamless where the clock wraps. */
+ * Hz with at most three decimals, so it stays seamless where the clock wraps; it refuses any other
+ * rate (whole cycles per CLOCK_PERIOD) when the shader is built. */
 export function wave( time: Node<'float'>, rate: number, phase: Node<'float'> | number = 0 ): Node<'float'> {
 
+	if ( Math.abs( rate * CLOCK_PERIOD - Math.round( rate * CLOCK_PERIOD ) ) > 1e-6 ) throw new RangeError( `wave: ${ rate } Hz is not whole cycles per ${ CLOCK_PERIOD } s` );
 	return sin( fract( time.mul( rate ) ).mul( Math.PI * 2 ).add( phase ) );
 
 }

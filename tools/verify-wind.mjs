@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Wind, createWindUniforms, gustWave, weatherWind, swayFrequency, CLOCK_PERIOD, GUST_ALONG, EDDY_TILE, EDDY_RATE, REFERENCE_SPEED, REFERENCE_GUSTINESS } from '../src/weather/Wind.ts';
+import { Wind, createWindUniforms, gustWave, wave, weatherWind, swayFrequency, CLOCK_PERIOD, GUST_ALONG, EDDY_TILE, EDDY_RATE, REFERENCE_SPEED, REFERENCE_GUSTINESS } from '../src/weather/Wind.ts';
 import { Weather, WIND_LEVELS, PREVAILING_HEADING } from '../src/sky/Weather.ts';
 import { debugFlags } from '../src/debug/DebugFlags.ts';
 
@@ -143,15 +143,14 @@ frames.update( 1 / 60, 8, 25 );
 assert.notDeepEqual( current( frames ), held );
 // The wrapped clocks may differ by a wrap between previous and current: every shader reads them
 // only through functions periodic in their wraps. Sources: every read of a wind state's `clock`
-// is the time of `wave` (sin of fract( time x rate ), at rates with whole cycles per
-// CLOCK_PERIOD), the gust scroll is read only in Wind.ts by the gust map's reads (windField and
+// is the time of `wave` (sin of fract( time x rate ), which refuses any rate without whole cycles
+// per CLOCK_PERIOD when the shader is built, so a rate passed by name is checked too), the gust scroll is read only in Wind.ts by the gust map's reads (windField and
 // gustAt, the sea's gusts: the map repeats over GUST_ALONG and EDDY_TILE, where the scroll wraps), and the sway scroll only in Wind.ts by
 // gustWave, the plants' sway, which takes whole swings per GUST_ALONG and refuses any other rate.
 const root = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '../src' );
 const sources = [];
 const walk = ( dir ) => { for ( const e of readdirSync( dir, { withFileTypes: true } ) ) { const f = path.join( dir, e.name ); if ( e.isDirectory() ) walk( f ); else if ( f.endsWith( '.ts' ) ) sources.push( [ path.relative( root, f ), readFileSync( f, 'utf8' ) ] ); } };
 walk( root );
-const whole = ( rate ) => Math.abs( rate * CLOCK_PERIOD - Math.round( rate * CLOCK_PERIOD ) ) < 1e-6;
 let reads = 0;
 for ( const [ file, text ] of sources ) {
 
@@ -162,9 +161,6 @@ for ( const [ file, text ] of sources ) {
 		const call = /wave\(\s*$/.test( text.slice( Math.max( 0, m.index - 12 ), m.index ) );
 		const line = text.slice( 0, m.index ).split( '\n' ).length;
 		assert.ok( call, `${ file }:${ line }: a wind clock read outside wave()` );
-		const rate = text.slice( m.index + m[ 0 ].length ).match( /^\s*,\s*([^,)]+)/ )[ 1 ].trim();
-		if ( /^[\d.]+$/.test( rate ) ) assert.ok( whole( Number( rate ) ), `${ file }:${ line }: rate ${ rate } is not whole cycles per period` );
-		else assert.fail( `${ file }:${ line }: rate ${ rate } is not checked` );
 
 	}
 	assert.ok( ! /gustScroll|swayScroll/.test( text ), `${ file }: a wind scroll read outside Wind.ts` );
@@ -173,6 +169,8 @@ for ( const [ file, text ] of sources ) {
 // (the grass's blades and hangingSway read them today: the scan must find them)
 assert.ok( reads >= 3, `found ${ reads } wind clock reads` );
 assert.throws( () => gustWave( createWindUniforms(), null, 2.5 ), RangeError, 'gustWave takes whole swings per gust tile' );
+assert.throws( () => wave( createWindUniforms().clock, 2.6001 ), RangeError, 'wave takes whole cycles per clock period' );
+assert.ok( wave( createWindUniforms().clock, 4.207 ), 'wave takes rates of three decimals' );
 // numerically: across the wraps the shaders' arguments move by the step alone
 const wrap = new Wind( createWindUniforms(), { speed: 6, time: CLOCK_PERIOD - 0.01 } );
 const atWrap = { clock: wrap.uniforms.clock.value, scroll: wrap.uniforms.gustScroll.value.clone() };
