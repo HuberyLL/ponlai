@@ -122,7 +122,12 @@ art decision changes; reference images stay out of the repository.
   From the ground up the sward has a summer meadow's layers: dead leaves and the old leaves' straw
   sheaths low in it, the green leaves, and over them a few flowering stems from each tall tussock,
   their slender panicles purple brown to straw a hand above the leaves (none on the short turf),
-  a faint haze over the green from the game's view, never a field of straw. The sward runs to the edge on
+  a faint haze over the green from the game's view, never a field of straw. Under the grass, where
+  it is short or broken, grow the low herbs of a real meadow: white clover's mats of three-leaved
+  leaves over the short turf of the shallow pockets, and greater plantain's flat rosettes of broad
+  oval leaves with a slender spike or two in the gaps, a little larger than life so the game's view
+  shows them, from 22 m a finer, rounder green over the earth of the openings, never a lawn of
+  their own. The sward runs to the edge on
   every coast, windward and lee alike: a windward lip shown short, yellow, thin over gravel and
   bared to the cliff's stone read from above as one more zone. Inside the grass
   there are no hard shadows, only a darkening toward the ground (a deep green, never black); the
