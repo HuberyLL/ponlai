@@ -77,11 +77,12 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   rooted within EDGE_REACH of the edge carries the nearest sample of the worker's lip
 //   (RimGround.ts `buildRimLip`) in the cull's `edge` buffer (`edgeTuftSteps`: the coast's offset
 //   along its outward direction, the roof's height, the outward direction and LIP_WALLS offsets of
-//   the stone every LIP_DEPTH down), and the vertex stage lays the part of each bent blade past the
-//   edge round a curl and down over it (`drape`) and holds every point outside the stone
-//   (`holdOff`), so a blade that reaches the stone lies along it, downward, and none passes into
-//   it; its previous position takes the same drape and hold. Both are 0 for the tufts without a
-//   record, which draw as the rest of the meadow.
+//   the stone every LIP_DEPTH down), and the vertex stage lays the part of a third of the bent
+//   blades past the edge round a curl and down over it (`drape`, DRAPE_SHARE), the rest arching out
+//   over it, and holds every point past the coast outside the stone (`holdOff`), so a blade that
+//   reaches the stone lies along it, downward, and none passes into it, while the blades over the
+//   turf's shoulder inland of the coast keep their shape; its previous position takes the same
+//   drape and hold. Both are 0 for the tufts without a record, which draw as the rest of the meadow.
 // - Blades do not cast into the sun's shadow map (narrower than a texel, they flicker as the sun
 //   moves): the meadow shades itself and its turf through MeadowCanopy. What the larger casters
 //   (rock, the islanders, the game's props) throw onto the blades is soft and light: a few bilinear lookups
@@ -367,33 +368,40 @@ const SHOULDER = 1.2, SHOULDER_LEAN = [ 0.3, 1.0 ], SHOULDER_TURN = 0.6, SHOULDE
 
 // The wall an edge tuft's blades lie on: its outward offset from the coast (m, `holdOff`) at every
 // LIP_DEPTH (m) under the roof, LIP_WALLS of them, from the roof down: the first at the coast
-// itself, the rest the worker's (RimGround.ts LIP_WALL, 10 cm apart), each LIE farther out. A point
-// is held out by a smooth maximum over HOLD_SOFT (m), so a blade meeting the stone bends onto it
-// rather than kinking, and the hold eases in over HOLD_ROOT (m) from the root, which sits on the
-// ground the profile only approximates.
-const LIP_DEPTH = 0.1, LIP_WALLS = 16, LIE = 0.012, HOLD_SOFT = 0.03, HOLD_ROOT = [ 0.01, 0.05 ];
+// itself, the rest the worker's (RimGround.ts LIP_WALL, 10 cm apart), each LIE farther out, and
+// each blade up to LIE_SPREAD (m) farther again by a hash of its own, so the blades lying on the stone
+// do not lie in one sheet. A point is held out by a smooth maximum over HOLD_SOFT (m), so a blade
+// meeting the stone bends onto it rather than kinking, and the hold eases in over HOLD_ROOT (m) from
+// the root, which sits on the ground the profile only approximates, and over HOLD_INLAND (m) inland of
+// the coast to none (the turf's shoulder, not the stone, lies there).
+const LIP_DEPTH = 0.1, LIP_WALLS = 16, LIE = 0.012, LIE_SPREAD = 0.04, HOLD_SOFT = 0.03, HOLD_ROOT = [ 0.01, 0.05 ], HOLD_INLAND = 0.04;
 // The meadow at the edge: its tufts rooted within EDGE_REACH (m) of the cliff's edge carry the
-// edge (`edgeTuftSteps`), and the part of a blade past it, held up by no ground, bends down over it
-// (`drape`) round a curl of DRAPE_RADIUS (m, the least and the most, by the blade, times the square
-// root of its tussock's stiffness) and then hangs: the sward itself rolls over the edge, the more of
-// a tuft the nearer it roots (a separate fringe of tufts along the edge read as a row of eyelashes
-// and broke into clumps). EDGE_PAD (m) widens such a tuft's cull sphere for the drape's reach.
-const EDGE_REACH = 1, DRAPE_RADIUS = [ 0.08, 0.2 ], EDGE_PAD = 0.05;
+// edge (`edgeTuftSteps`), and DRAPE_SHARE of their blades, by a hash of their own, flop over it: the
+// part past it bends down over it (`drape`) round a curl of DRAPE_RADIUS (m, the least and the
+// most, by the blade, times the square root of its tussock's stiffness) and then hangs; the others
+// keep their own shape out over the edge, as a free blade does, held off the stone where they meet
+// it. So the sward rolls over the edge, the more of a tuft the nearer it roots (a separate fringe of
+// tufts along the edge read as a row of eyelashes and broke into clumps), with blades arching out
+// over it among the hanging ones. Every blade draped round a curl of 8 to 20 cm drew every part of it
+// past the edge as a vertical line just outside it, lying on the stone at one offset: from the game's
+// view a comb of parallel bright strands along the whole lip. EDGE_PAD (m) widens such a tuft's
+// cull sphere for the drape's reach.
+const EDGE_REACH = 1, DRAPE_SHARE = 0.35, DRAPE_RADIUS = [ 0.12, 0.4 ], EDGE_PAD = 0.05;
 
 // The meadow's wildflowers are heads on some of its lawn tufts (`flowerTuftGeometry`), grown as
-// wildflowers grow: each species in patches of its own where its
-// habitat is, dense at a patch's centre and thinning to its edge, and almost none between the
-// patches. Pinks (Dianthus chinensis) in loose clumps along the cliff's edge, where the soil is thin
-// and dry, and on dry ground inland; wild chrysanthemums in dense clusters of small heads, mostly
-// yellow and a few white, on the grassy ground in from the edge and in the taller sward; daylilies
-// in loose clumps where the ground is damp; dandelions and violets in small, low patches of short
-// turf; a few balloon flowers on dry ground (the habitat fields, `meadowMoisture` and `meadowTurf`,
-// Meadow.ts). They flower from spring to autumn; here they all flower at once, the year round,
+// wildflowers grow: each species in drifts of its own where its habitat is (DRIFT), dense in their
+// clumps and thinning to a scatter of single plants round them, and few between the drifts.
+// Pinks (Dianthus chinensis) in loose clumps along stretches of the cliff's edge, where the soil is
+// thin and dry, and on dry ground inland; wild chrysanthemums in dense clusters of small heads,
+// mostly yellow and a few white, on the grassy ground in from the edge and in the taller sward;
+// daylilies in loose clumps where the ground is damp; dandelions and violets in small, low patches
+// of short turf, the shallow pockets' most; a few balloon flowers on dry ground (the habitat fields,
+// `meadowMoisture`, `meadowTurf` and `meadowShallow`, Meadow.ts). They flower from spring to autumn; here they all flower at once, the year round,
 // which is the island's sign of an immortals' land. From the game's camera a scatter of five
 // colours read as confetti strewn over the lawn; patches of one colour read as the meadow's own
 // flowers. Each species' patch (`SPECIES`): its radius (m, a range), the share of its tufts that
-// flower at its centre (`peak`, falling by 1 - u^2 at u of its radius), and its weight in a
-// habitat (`habitat`).
+// flower at a clump's centre (`peak`, falling by 1 - u^2 at u of the clump's radius), and its weight
+// in a habitat (`habitat`).
 type Species = { radius: [ number, number ]; peak: number };
 const DIANTHUS = 0, CHRYSANTHEMUM = 1, DAYLILY = 2, DANDELION = 3, VIOLET = 4, BALLOON = 5;
 // (a head of its own: the white wild chrysanthemum, WHITE_SHARE of that species' patches)
@@ -411,34 +419,49 @@ const SPECIES: Species[] = [
 // The inland patches: a world-anchored lattice of PATCH_CELL (m), each cell offering PATCH_SLOTS
 // patch centres jittered over it, each taken with PATCH_SHARE times a broad field's factor
 // (PATCH_FIELD cycles per metre, its noise turning over between PATCH_EDGE: stretches of the meadow
-// with many patches, stretches with a fifth as many, PATCH_FLOOR) and the habitat's total weight
+// with many patches, stretches with a sixth as many, PATCH_FLOOR) and the habitat's total weight
 // there. The species is drawn by its habitat weights at the centre. A patch reaches no farther than
-// PATCH_CELL from its centre, so a tuft looks at its own cell and the eight round it. None outward
-// of INLAND_RIM (rim distance, m: fading from its first value to its second), where the edge's
-// own patches take over.
-const PATCH_CELL = 4.5, PATCH_SLOTS = 3, PATCH_SHARE = 0.7, PATCH_FIELD = 0.05, PATCH_EDGE = [ - 0.3, 0.3 ], PATCH_FLOOR = 0.2;
+// PATCH_CELL from its centre (DRIFT), so a tuft looks at its own cell and the eight round it. None
+// outward of INLAND_RIM (rim distance, m: fading from its first value to its second), where the
+// edge's own patches take over.
+const PATCH_CELL = 4.5, PATCH_SLOTS = 3, PATCH_SHARE = 0.62, PATCH_FIELD = 0.05, PATCH_EDGE = [ - 0.3, 0.3 ], PATCH_FLOOR = 0.15;
+// An inland patch is a drift, as a colony of a wildflower grows, spreading from its first plants by
+// runners and the seed fallen near them: DRIFT.lobes clumps (the least and the most) strung along an
+// axis of its own, each `lobe` of the drift's radius across and its centre up to `spread` of it
+// from the drift's along the axis (`across` of that across it), so a drift is long and lobed rather
+// than a disc; its radius the species' range drawn toward its least (by the draw to the power
+// `skew`: many small drifts and a few large), `big` of them `bigScale` times as large, at most
+// `most` m; and round its clumps the plants grown from seed that fell farther, a share of the peak
+// from `satellite` at a clump's edge falling by e every `tail` m, out to `reach` m. Where drifts
+// meet, a tuft flowers by their joint share and takes one's species by its share, so their edges
+// mix rather than meet at a line (the strongest drift alone drew each as a disc of one colour).
+// (Its farthest point, `spread` + `lobe` of `most` and `reach`, stays within PATCH_CELL.)
+const DRIFT = { lobes: [ 2, 4 ], lobe: [ 0.45, 0.8 ], spread: 0.6, across: 0.25, skew: 1.6, big: 0.2, bigScale: 1.8, most: 2, satellite: 0.12, tail: 0.6, reach: 1.6 };
 const INLAND_RIM = [ - 4, - 2.8 ];
 // The edge's patches: a finer lattice of EDGE_CELL (m), one patch a cell for EDGE_SHARE of them
 // times a field along the coast (EDGE_FIELD cycles per metre, turning over between EDGE_EDGE), so
-// they make a broken band with gaps; a patch is pinks for EDGE_DIANTHUS of them, else wild
-// chrysanthemums. Each grows only in its own band of rim distance (m, in from the first two values,
+// they grow along stretches of the coast with long stretches of plain turf between (at a field of
+// 8 m turning over early they drew an unbroken pink line round the island top); a patch is pinks for
+// EDGE_DIANTHUS of them, else wild chrysanthemums. Each grows only in its own band of rim distance (m, in from the first two values,
 // out to the last two): the pinks on the outer edge (DIANTHUS_BAND), the chrysanthemums on the
 // grass in from it (CHRYSANTHEMUM_BAND).
-const EDGE_CELL = 1.1, EDGE_SHARE = 0.9, EDGE_FIELD = 0.12, EDGE_EDGE = [ - 0.45, 0.1 ], EDGE_DIANTHUS = 0.75;
+const EDGE_CELL = 1.1, EDGE_SHARE = 0.9, EDGE_FIELD = 0.07, EDGE_EDGE = [ - 0.32, 0.12 ], EDGE_DIANTHUS = 0.75;
 const DIANTHUS_BAND = [ - 3.2, - 2.2, - 0.6, - 0.35 ], CHRYSANTHEMUM_BAND = [ - 5.5, - 4.2, - 1.6, - 1 ];
-// Between the patches STRAY of the tufts flower alone, of the species their own spot favours. None
+// Between the patches STRAY of the tufts flower alone, of the species their own spot favours: in the
+// tall sward its tall species, whose heads stand a little over the leaves (HEADS). None
 // on the rock stacks or within FLOWER_CLEAR (m) of the islander's walking loop (WalkLoop.ts),
 // where the walker's legs pass.
-const STRAY = 0.004, FLOWER_CLEAR = 0.5;
+const STRAY = 0.007, FLOWER_CLEAR = 0.5;
 
 const band = ( b: number[], rim: number ) => smoothstep( b[ 0 ], b[ 1 ], rim ) * ( 1 - smoothstep( b[ 2 ], b[ 3 ], rim ) );
 
-/** The inland species' weights in the habitat of moisture `wet` and sward `tall` (Meadow.ts):
- * daylilies where it is damp, pinks and a few balloon flowers where it is dry, dandelions and
- * violets where the turf is short, wild chrysanthemums where it is tall. */
-function habitat( wet: number, tall: number, out: number[] ): number[] {
+/** The inland species' weights in the habitat of moisture `wet`, sward `tall` and shallow soil
+ * `shallow` (Meadow.ts): daylilies where it is damp, pinks and a few balloon flowers where it is
+ * dry, dandelions and violets where the turf is short (the shallow pockets' short turf too), wild
+ * chrysanthemums where it is tall. */
+function habitat( wet: number, tall: number, shallow: number, out: number[] ): number[] {
 
-	const short = 1 - 0.8 * tall, dry = smoothstep( 0.4, 0.2, wet );
+	const short = Math.max( 1 - 0.8 * tall, shallow ), dry = smoothstep( 0.4, 0.2, wet );
 	out[ DIANTHUS ] = 0.8 * dry;
 	out[ CHRYSANTHEMUM ] = 0.4 * tall;
 	out[ DAYLILY ] = 2 * smoothstep( 0.55, 0.75, wet );
@@ -463,7 +486,9 @@ function pickSpecies( w: number[], u: number ): number {
 
 }
 
-interface Patch { x: number; z: number; r: number; species: number; head: number }
+// A patch: its species and head, and its clumps ( x, z, radius each, m): a drift's DRIFT.lobes, an
+// edge patch's one; whether plants grown from seed scatter round it (`seeded`: the drifts).
+interface Patch { species: number; head: number; lobes: number[]; seeded: boolean }
 
 /** The meadow's flower patches, each lattice cell's computed once per planting (every value a
  * function of the cell alone). */
@@ -472,6 +497,7 @@ class FlowerPatches {
 	private inland = new Map<number, Patch[]>();
 	private edge = new Map<number, Patch[]>();
 	private weights = SPECIES.map( () => 0 );
+	private found: { patch: Patch; share: number }[] = [];
 
 	private turfAt: ( x: number, z: number ) => number;
 
@@ -482,10 +508,9 @@ class FlowerPatches {
 
 	}
 
-	private patch( x: number, z: number, species: number, size: number, white: number ): Patch {
+	private head( species: number, white: number ): number {
 
-		const [ r0, r1 ] = SPECIES[ species ].radius;
-		return { x, z, r: r0 + size * ( r1 - r0 ), species, head: species === CHRYSANTHEMUM && white < WHITE_SHARE ? CHRYSANTHEMUM_WHITE : species };
+		return species === CHRYSANTHEMUM && white < WHITE_SHARE ? CHRYSANTHEMUM_WHITE : species;
 
 	}
 
@@ -500,9 +525,23 @@ class FlowerPatches {
 			const rng = cellStream( i, j, 401 + k );
 			const take = rng(), x = ( i + rng() ) * PATCH_CELL, z = ( j + rng() ) * PATCH_CELL, pick = rng(), size = rng(), white = rng();
 			const field = PATCH_FLOOR + ( 1 - PATCH_FLOOR ) * smoothstep( PATCH_EDGE[ 0 ], PATCH_EDGE[ 1 ], noise3( x * PATCH_FIELD - 7.7, 3.4, z * PATCH_FIELD + 5.1 ) );
-			const w = habitat( meadowMoisture( x, z ), this.turfAt( x, z ), this.weights );
+			const w = habitat( meadowMoisture( x, z ), this.turfAt( x, z ), meadowShallow( x, z ), this.weights );
 			if ( take >= PATCH_SHARE * field * Math.min( w.reduce( ( a, b ) => a + b, 0 ), 1 ) ) continue;
-			list.push( this.patch( x, z, pickSpecies( w, pick ), size, white ) );
+			const species = pickSpecies( w, pick );
+			// the drift (DRIFT): its radius, its axis and its clumps along it, from draws of its own
+			const drift = cellStream( i, j, 421 + k );
+			const [ r0, r1 ] = SPECIES[ species ].radius;
+			const r = Math.min( ( r0 + size ** DRIFT.skew * ( r1 - r0 ) ) * ( drift() < DRIFT.big ? DRIFT.bigScale : 1 ), DRIFT.most );
+			const axis = drift() * Math.PI, ax = Math.cos( axis ), az = Math.sin( axis );
+			const count = DRIFT.lobes[ 0 ] + Math.floor( drift() * ( DRIFT.lobes[ 1 ] - DRIFT.lobes[ 0 ] + 1 ) );
+			const lobes: number[] = [];
+			for ( let l = 0; l < count; l ++ ) {
+
+				const along = ( 2 * drift() - 1 ) * DRIFT.spread * r, across = ( 2 * drift() - 1 ) * DRIFT.across * DRIFT.spread * r;
+				lobes.push( x + ax * along - az * across, z + az * along + ax * across, r * ( DRIFT.lobe[ 0 ] + drift() * ( DRIFT.lobe[ 1 ] - DRIFT.lobe[ 0 ] ) ) );
+
+			}
+			list.push( { species, head: this.head( species, white ), lobes, seeded: true } );
 
 		}
 		this.inland.set( key, list );
@@ -519,17 +558,41 @@ class FlowerPatches {
 		const rng = cellStream( i, j, 409 );
 		const take = rng(), x = ( i + rng() ) * EDGE_CELL, z = ( j + rng() ) * EDGE_CELL, pick = rng(), size = rng(), white = rng();
 		const field = smoothstep( EDGE_EDGE[ 0 ], EDGE_EDGE[ 1 ], noise3( x * EDGE_FIELD + 2.9, 8.6, z * EDGE_FIELD - 4.4 ) );
-		if ( take < EDGE_SHARE * field ) list.push( this.patch( x, z, pick < EDGE_DIANTHUS ? DIANTHUS : CHRYSANTHEMUM, size, white ) );
+		if ( take < EDGE_SHARE * field ) {
+
+			const species = pick < EDGE_DIANTHUS ? DIANTHUS : CHRYSANTHEMUM, [ r0, r1 ] = SPECIES[ species ].radius;
+			list.push( { species, head: this.head( species, white ), lobes: [ x, z, r0 + size * ( r1 - r0 ) ], seeded: false } );
+
+		}
 		this.edge.set( key, list );
 		return list;
 
 	}
 
-	/** The flower head of the patch strongest at ( x, z ), `rim` m from the edge (no colours mixed
-	 * where patches overlap), and the share of its tufts that flower there, 0 between the patches. */
-	strongest( x: number, z: number, rim: number ): { head: number; share: number } {
+	/** The share of a patch's tufts that flower at ( x, z ): its peak times 1 - u^2 at u of the
+	 * nearest clump's radius in, the seeded scatter round it (DRIFT) out. */
+	private share( p: Patch, x: number, z: number ): number {
 
-		let head = - 1, share = 0;
+		let inside = 0, gap = Infinity;
+		for ( let l = 0; l < p.lobes.length; l += 3 ) {
+
+			const d = Math.hypot( x - p.lobes[ l ], z - p.lobes[ l + 1 ] ), r = p.lobes[ l + 2 ];
+			inside = Math.max( inside, 1 - ( d * d ) / ( r * r ) );
+			gap = Math.min( gap, Math.max( d - r, 0 ) );
+
+		}
+		const seeded = p.seeded && gap < DRIFT.reach ? DRIFT.satellite * Math.exp( - gap / DRIFT.tail ) : 0;
+		return SPECIES[ p.species ].peak * Math.max( inside, seeded );
+
+	}
+
+	/** The flower head a tuft at ( x, z ), `rim` m from the edge, takes from the patches there (by
+	 * the draw `pick` over their shares: where they overlap, any one of them) and the share of the
+	 * tufts that flower there (their joint share), 0 between the patches. */
+	strongest( x: number, z: number, rim: number, pick: number ): { head: number; share: number } {
+
+		const found = this.found;
+		found.length = 0;
 		const inland = 1 - smoothstep( INLAND_RIM[ 0 ], INLAND_RIM[ 1 ], rim );
 		const edge = [ band( DIANTHUS_BAND, rim ), band( CHRYSANTHEMUM_BAND, rim ) ];
 		const visit = ( cell: number, lists: ( i: number, j: number ) => Patch[], weight: ( p: Patch ) => number ) => {
@@ -537,17 +600,25 @@ class FlowerPatches {
 			const ci = Math.floor( x / cell ), cj = Math.floor( z / cell );
 			for ( let j = cj - 1; j <= cj + 1; j ++ ) for ( let i = ci - 1; i <= ci + 1; i ++ ) for ( const p of lists.call( this, i, j ) ) {
 
-				const u2 = ( ( x - p.x ) ** 2 + ( z - p.z ) ** 2 ) / ( p.r * p.r );
-				if ( u2 >= 1 ) continue;
-				const s = SPECIES[ p.species ].peak * ( 1 - u2 ) * weight( p );
-				if ( s > share ) { share = s; head = p.head; }
+				const s = this.share( p, x, z ) * weight( p );
+				if ( s > 0 ) found.push( { patch: p, share: s } );
 
 			}
 
 		};
 		if ( inland > 0 ) visit( PATCH_CELL, this.inlandCell, () => inland );
 		if ( edge[ 0 ] + edge[ 1 ] > 0 ) visit( EDGE_CELL, this.edgeCell, ( p ) => edge[ p.species === DIANTHUS ? 0 : 1 ] );
-		return { head, share };
+		if ( found.length === 0 ) return { head: - 1, share: 0 };
+		let none = 1, sum = 0;
+		for ( const f of found ) { none *= 1 - f.share; sum += f.share; }
+		let at = pick * sum, head = found[ found.length - 1 ].patch.head;
+		for ( const f of found ) {
+
+			if ( at < f.share ) { head = f.patch.head; break; }
+			at -= f.share;
+
+		}
+		return { head, share: 1 - none };
 
 	}
 
@@ -559,7 +630,7 @@ class FlowerPatches {
 		const dianthus = band( DIANTHUS_BAND, rim ), chrysanthemum = band( CHRYSANTHEMUM_BAND, rim );
 		const most = Math.max( inland, dianthus, chrysanthemum );
 		if ( most <= 0 ) return - 1;
-		const species = inland === most ? pickSpecies( habitat( meadowMoisture( x, z ), this.turfAt( x, z ), this.weights ), u )
+		const species = inland === most ? pickSpecies( habitat( meadowMoisture( x, z ), this.turfAt( x, z ), meadowShallow( x, z ), this.weights ), u )
 			: dianthus === most ? DIANTHUS : CHRYSANTHEMUM;
 		return species === CHRYSANTHEMUM && v < WHITE_SHARE ? CHRYSANTHEMUM_WHITE : species;
 
@@ -1234,10 +1305,12 @@ function bladeStrips( side: F, jitter: F, tint: F, strips: F ) {
 // the game's 22 m view showed the small heads as dots, not flowers, and the large ones need no help.
 // It stands at its `height` of its tuft's height (local units). The low species (pinks, dandelions,
 // violets) grow only on lower tussocks (`plantGrass`, LOW_FLOWER), low among their blades or at their tips;
-// the tall ones (wild chrysanthemums, daylilies, balloon flowers) only on tall tussocks, at about
-// the top of their leaves (the blades arc over to about 0.85 of their length), a little above them
-// or half hidden among them (yellow and white heads standing clear of the lawn were the brightest
-// things in the near view; heads up to 0.5 m above the long blades' roots floated without a stem).
+// the tall ones (wild chrysanthemums, daylilies, balloon flowers) only on tall tussocks, the wild
+// chrysanthemums at about the top of their leaves (the blades arc over to about 0.85 of their
+// length), a little above them or half hidden among them (yellow and white heads standing clear of
+// the lawn were the brightest things in the near view), and the daylilies and balloon flowers, as
+// their tall stems carry them, most of them a little over the leaves, so the few that grow alone in
+// the tall sward show (heads up to 0.5 m above the long blades' roots floated without a stem).
 // It sits on its stem's tip, the stem leaning out from its tuft's axis toward a direction of its
 // own (its curve, STEM_TIP), tilted from
 // upright toward the tuft's own facing by HEAD_TILT (rad), as an open flower turns: from the game's
@@ -1265,13 +1338,13 @@ const HEADS: Head[] = [
 	// wild chrysanthemum: small yellow rays round a golden disc
 	{ petal: [ 0.52, 0.36, 0.03 ], centre: [ 0.4, 0.24, 0.02 ], inner: [ 0.32, 0.34 ], size: 0.75, height: [ 0.72, 1.0 ], lobe: 0, point: 0, fringe: 0, rays: 1 },
 	// daylily: an orange trumpet, its pointed tepals yellow in the throat
-	{ petal: [ 0.52, 0.17, 0.02 ], centre: [ 0.52, 0.3, 0.03 ], inner: [ 0.08, 0.5 ], size: 1.5, height: [ 0.88, 1.12 ], lobe: 0.3, point: 0.25, fringe: 0, rays: 0 },
+	{ petal: [ 0.52, 0.17, 0.02 ], centre: [ 0.52, 0.3, 0.03 ], inner: [ 0.08, 0.5 ], size: 1.5, height: [ 0.98, 1.22 ], lobe: 0.3, point: 0.25, fringe: 0, rays: 0 },
 	// dandelion: a dense yellow head, deeper at its middle, its rim finely toothed
 	{ petal: [ 0.54, 0.37, 0.02 ], centre: [ 0.4, 0.25, 0.012 ], inner: [ 0, 0.55 ], size: 1.0, height: [ 0.5, 0.9 ], lobe: 0.1, point: 0, fringe: 0.08, rays: 0 },
 	// violet: small, deep violet, its throat pale
 	{ petal: [ 0.2, 0.08, 0.38 ], centre: [ 0.4, 0.38, 0.44 ], inner: [ 0.08, 0.2 ], size: 0.6, height: [ 0.35, 0.7 ], lobe: 0.35, point: 0, fringe: 0, rays: 0 },
 	// balloon flower: a blue-violet star, paler at its centre
-	{ petal: [ 0.15, 0.13, 0.45 ], centre: [ 0.3, 0.3, 0.5 ], inner: [ 0.05, 0.3 ], size: 1.35, height: [ 0.85, 1.08 ], lobe: 0, point: 0.5, fringe: 0, rays: 0 },
+	{ petal: [ 0.15, 0.13, 0.45 ], centre: [ 0.3, 0.3, 0.5 ], inner: [ 0.05, 0.3 ], size: 1.35, height: [ 0.95, 1.18 ], lobe: 0, point: 0.5, fringe: 0, rays: 0 },
 	// white wild chrysanthemum
 	{ petal: [ 0.5, 0.49, 0.45 ], centre: [ 0.4, 0.24, 0.02 ], inner: [ 0.32, 0.34 ], size: 0.75, height: [ 0.72, 1.0 ], lobe: 0, point: 0, fringe: 0, rays: 1 },
 ];
@@ -1632,14 +1705,16 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const floor = origin.sub( vec3( 0, pool.mul( sink ), 0 ) ).toVar();
 	const grounded = ( q: V3 ) => q.add( tuftUp.mul( max( dot( floor.sub( q ), tuftUp ), 0 ) ) );
 	// A meadow tuft at the edge (`edgeTuftSteps`: its record's outward direction set) drapes the part
-	// of a blade past the edge over it: its distance past the edge, along the outward direction,
-	// is laid round a quarter curl of the blade's own radius (DRAPE_RADIUS), then straight down.
+	// of DRAPE_SHARE of its blades past the edge over it: its distance past the edge, along the
+	// outward direction, is laid round a quarter curl of the blade's own radius (DRAPE_RADIUS), then
+	// straight down.
 	const edgeOn = step( 1e-6, dot( edgeRecord.zw, edgeRecord.zw ) ).toVar();
 	const drape = ( q: V3 ) => {
 
 		const drapeRadius = mix( float( DRAPE_RADIUS[ 0 ] ), float( DRAPE_RADIUS[ 1 ] ), bladeHash( pose.id, pick, 8 ) ).mul( clump.stiffness.sqrt() ).toVar();
 		const out = edgeRecord.zw;
-		const past = max( dot( q.xz, out ).sub( edgeRecord.x ), 0 ).mul( edgeOn ).toVar();
+		const flops = step( bladeHash( pose.id, pick, 9 ), DRAPE_SHARE );
+		const past = max( dot( q.xz, out ).sub( edgeRecord.x ), 0 ).mul( edgeOn ).mul( flops ).toVar();
 		const angle = min( past.div( drapeRadius ), Math.PI / 2 );
 		const along = drapeRadius.mul( sin( angle ) ), drop = drapeRadius.mul( float( 1 ).sub( cos( angle ) ) ).add( max( past.sub( drapeRadius.mul( Math.PI / 2 ) ), 0 ) );
 		return q.sub( vec3( out.x, 0, out.y ).mul( past.sub( along ) ) ).sub( vec3( float( 0 ), drop, float( 0 ) ) );
@@ -1649,8 +1724,12 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// along the outward direction, every LIP_DEPTH under the roof, linear between them and held
 	// below the last): a point the wall would pass is moved out to it by a smooth maximum
 	// (HOLD_SOFT), so a blade that reaches the stone lies along it, downward; above the roof nothing
-	// bounds it, the wall falling away over 2 cm. The hold eases in from the root (HOLD_ROOT). 0 away
-	// from the edge (`edgeOn`).
+	// bounds it, the wall falling away over 2 cm, and inland of the coast nothing either (from
+	// HOLD_INLAND m in): there the ground is the turf's, which rounds down over the lip's shoulder below
+	// the roof, and the blades over it are in the air (held out to the wall line, every blade of the
+	// shoulder's tufts below the roof's height stood in one vertical sheet along the coast, a comb of
+	// bright strands from the game's view). The hold eases in from the root (HOLD_ROOT). 0 away from
+	// the edge (`edgeOn`).
 	const holdOff = ( q: V3 ) => {
 
 		const outward = mix( ground1.xz.div( max( length( ground1.xz ), 1e-6 ) ), edgeRecord.zw, edgeOn ).toVar();
@@ -1663,10 +1742,10 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 			wall = wall.add( dot( w, max( float( 1 ).sub( abs( vec4( u ).sub( vec4( 4 * j, 4 * j + 1, 4 * j + 2, 4 * j + 3 ) ) ) ), 0 ) ) );
 
 		} );
-		const stone = wall.sub( float( 1 ).sub( smoothstepN( - 0.02, 0, depth ) ) ).toVar();
+		const stone = wall.sub( float( 1 ).sub( smoothstepN( - 0.02, 0, depth ) ) ).add( bladeHash( pose.id, pick, 10 ).mul( LIE_SPREAD ) ).toVar();
 		const soft = max( float( HOLD_SOFT ).sub( abs( o.sub( stone ) ) ), 0 ).div( HOLD_SOFT );
 		const held = max( o, stone ).add( soft.mul( soft ).mul( HOLD_SOFT * 0.25 ) );
-		const ease = smoothstepN( HOLD_ROOT[ 0 ], HOLD_ROOT[ 1 ], length( q.sub( origin ) ) );
+		const ease = smoothstepN( HOLD_ROOT[ 0 ], HOLD_ROOT[ 1 ], length( q.sub( origin ) ) ).mul( smoothstepN( - HOLD_INLAND, 0, o ) );
 		return q.add( vec3( outward.x, 0, outward.y ).mul( held.sub( o ).mul( ease ).mul( edgeOn ) ) );
 
 	};
@@ -2193,13 +2272,13 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 
 		}
 		// Whether the tuft flowers, and which head, from a stream of its own (the lawn's draws stay
-		// as they were): by the patch strongest at it, or now and then alone between the patches.
+		// as they were): by the patches at it, or now and then alone between the patches.
 		const bloom = anchorStream( x, z, 211 );
 		const b0 = bloom(), b1 = bloom(), b2 = bloom();
 		let flower = 0, head = - 1;
 		if ( ! onStack && ( ! walkDistance || walkDistance( x, z ) >= FLOWER_CLEAR ) ) {
 
-			const patch = patches.strongest( x, z, rim );
+			const patch = patches.strongest( x, z, rim, b1 );
 			head = patch.share > 0 ? ( b0 < patch.share ? patch.head : - 1 ) : b0 < STRAY ? patches.stray( x, z, rim, b1, b2 ) : - 1;
 			if ( head >= 0 ) flower = 1.5 + head;
 

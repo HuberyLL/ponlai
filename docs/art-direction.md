@@ -150,13 +150,18 @@ art decision changes; reference images stay out of the repository.
   little by its head: the low species (pinks, dandelions, violets) on lower tussocks among the
   grass, never in a patch of their own cut short,
   the pinks along the lip's edge, the tall ones
-  (wild chrysanthemums, daylilies, balloon flowers) in tall tussocks about at their leaves' top,
-  some partly hidden among them, never floating over the grass. They are pinks, wild chrysanthemums (yellow, a few white), daylilies, dandelions, violets and a
-  few balloon flowers, all in flower at once, the year round: the island's sign of an immortals'
-  land. Each grows in patches of its own where its habitat is, dense at the centre and thinning
-  to the edge, with almost no flowers between: a broken band of pink along the cliff's edge,
-  chrysanthemums on the grass in from it, orange daylilies where the ground is damp, yellow and
-  violet in small low patches. Colours are soft rather than vivid, and no head (white and yellow
+  (wild chrysanthemums, daylilies, balloon flowers) in tall tussocks, the chrysanthemums about at
+  their leaves' top, some partly hidden among them, the daylilies and balloon flowers on their
+  taller stems a little over the leaves, never floating over the grass. They are pinks, wild
+  chrysanthemums (yellow, a few white), daylilies, dandelions, violets and a few balloon flowers,
+  all in flower at once, the year round: the island's sign of an immortals' land. Each grows as a
+  wildflower colony does, in drifts of its own where its habitat is: a few clumps strung together,
+  long and lobed rather than round, many small drifts and a few large, thinning to single plants
+  scattered round them, and where two drifts meet their flowers mingle; few flowers between the
+  drifts. Pink grows along stretches of the cliff's edge with long stretches of plain turf between
+  (an unbroken band round the island top read as a border drawn on it), chrysanthemums on the
+  grass in from it, orange daylilies where the ground is damp, yellow and violet in small low
+  patches of the short turf. Colours are soft rather than vivid, and no head (white and yellow
   least of all) outshines the lawn; never a scatter of mixed colours over the lawn, which reads as
   confetti. They sway with the grass, and from afar they are fine coloured specks in it, gathered
   in patches, not coloured stars or blots on the lawn.
