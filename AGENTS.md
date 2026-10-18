@@ -61,7 +61,7 @@ the fantasy in the world and a light touch on the image (clear shade, a golden a
   in place (`Growth.ts`, the shoal of a coming piece in `SeabedRise.ts`). Its kinds: the shapes
   (`WorldShapes.ts`), cliffs (`Cliff.ts`), submerged stones (`Stones.ts`), sea floor
   (`Bathymetry.ts`, `SeabedTile.ts`), rim (`RimGround.ts`), the meadow (`Grass.ts`,
-  its wildflowers, its low herbs and its tufts draped over the cliff's edge included; anchors `Anchors.ts`, soil from `ShoreSample.ts`; the
+  its wildflowers and its tufts draped over the cliff's edge included; anchors `Anchors.ts`, soil from `ShoreSample.ts`; the
   sward's depth over its ground in the meadow map, `SwardField.ts`), the islander's
   walking loop (`WalkLoop.ts`, `WalkPath.ts`) and the vegetation's depth prepass
   (`VegetationPrepass.ts`). `src/world/vegetation/` holds what every plant kind shares (material,
