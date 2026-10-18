@@ -19,8 +19,7 @@ type V3 = THREE.Node<'vec3'>;
 type B = THREE.Node<'bool'>;
 
 // The light below the water's surface, one model for everything lit under it (the terrain and the
-// sea floor, TerrainMaterial.ts; the sea life, world/life/LifeMaterial.ts), as tidewater's
-// UnderwaterLighting (4811ba4) lights it: the key light refracted at the mean surface and carried
+// sea floor, TerrainMaterial.ts), as tidewater's UnderwaterLighting (4811ba4) lights it: the key light refracted at the mean surface and carried
 // down the water column to the point under the long waves' surface (Beer-Lambert over the slant
 // path, the share that enters the water, the beam's change of area, and the caustics, which follow
 // the long waves' slope above and the gusts and slicks), faded in over the first 8 cm; and the
