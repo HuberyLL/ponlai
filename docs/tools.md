@@ -12,7 +12,11 @@ everyday commands; this file has the details. Each tool's own file says the rest
   colliding with another's: it takes the first free port in 6400-6499 (or checks `--port N` and
   names the pid and cwd holding it), builds first for `preview` unless `--no-build`, runs vite
   through `job.mjs` with its log at `artifacts/jobs/serve-<mode>-<port>.log`, waits until it
-  answers and prints the URL and the `job.mjs stop` command that ends it. It serves the checkout
+  answers and prints the URL and the `job.mjs stop` command that ends it. The URL it prints is
+  always its own server's: it reports success only while its job runs and the job's log shows
+  vite's ready line for that port, so a port another session takes at the same moment never
+  passes for its own. When vite finds the port taken it tries the next free one (with `--port N`
+  it exits 1 naming the holder). It serves the checkout
   the cwd is in, whichever copy of serve.mjs runs (outside the repository it exits 1), and its
   first line names that checkout's path, HEAD and branch.
 - `node tools/serve.mjs dev|preview --sha <rev>` serves another commit: a detached worktree at
