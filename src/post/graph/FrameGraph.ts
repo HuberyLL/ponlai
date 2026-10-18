@@ -259,8 +259,9 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 		const texture = new THREE.Texture( { width: 1, height: 1, depth: 1 } as unknown as HTMLImageElement );
 		texture.isRenderTargetTexture = true;
 		texture.flipY = false;
-		texture.generateMipmaps = false;
+		texture.generateMipmaps = desc.mips === true;
 		texture.minFilter = texture.magFilter = filterOf( desc.filter );
+		if ( desc.mips ) texture.minFilter = desc.filter === 'nearest' ? THREE.NearestMipmapNearestFilter : THREE.LinearMipmapLinearFilter;
 		if ( desc.format !== undefined ) texture.format = desc.format as THREE.AnyPixelFormat;
 		if ( desc.type !== undefined ) texture.type = desc.type as THREE.TextureDataType;
 		return texture;
@@ -1341,12 +1342,13 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 			const samples = compiled ? compiled.samplesOf( r ) : this.samplesOfDecl( r );
 			const actual = size( r.desc.size );
 			const owned = ! r.canvas && r.kind !== 'import';
-			// a multisampled colour also has its resolve texture; a ping-pong resource two textures
-			const perTexel = texelBytes( r.kind, r.desc.format, r.desc.type );
+			// a multisampled colour also has its resolve texture; a ping-pong resource two textures; a
+			// mip chain a third more
+			const perTexel = texelBytes( r.kind, r.desc.format, r.desc.type ) * ( r.desc.mips ? 4 / 3 : 1 );
 			const copies = ( r.kind === 'color' && samples > 1 ? samples + 1 : samples ) * ( p?.textures.length ?? 1 );
 			return {
 				name: r.name, kind: r.kind, format: constantName( FORMATS, r.desc.format ) ?? ( r.kind === 'depth' ? 'Depth' : null ), type: constantName( TYPES, r.desc.type ),
-				samples, persistent: r.persistent, pingPong: r.pingPong, imported: ! owned, canvas: r.canvas,
+				samples, mips: r.desc.mips === true, persistent: r.persistent, pingPong: r.pingPong, imported: ! owned, canvas: r.canvas,
 				historyValid: r.persistent || r.pingPong ? p?.valid ?? false : null,
 				size: sizeClassKey( r.desc.size ), actual,
 				versions: r.producers.map( ( i ) => i < 0 ? null : passes[ i ].name ),
@@ -1395,7 +1397,7 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 
 				versions.add( id );
 				const r = resources.get( resource )!;
-				const what = [ r.format ?? r.kind, r.type, r.samples > 1 ? `x${ r.samples }` : null, r.persistent && ! r.canvas ? 'persistent' : null, r.pingPong ? 'ping-pong' : null ].filter( Boolean ).join( ' ' );
+				const what = [ r.format ?? r.kind, r.type, r.samples > 1 ? `x${ r.samples }` : null, r.mips ? 'mips' : null, r.persistent && ! r.canvas ? 'persistent' : null, r.pingPong ? 'ping-pong' : null ].filter( Boolean ).join( ' ' );
 				lines.push( `\t${ q( id ) } [shape=ellipse, label=${ q( `${ resource } ${ v === 'previous' ? 'previous' : `v${ v }` }\n${ r.size }${ what ? ` ${ what }` : '' }` ) }${ r.canvas ? ', style=bold' : '' }];` );
 
 			}
@@ -1447,7 +1449,7 @@ export interface PassDescription {
 }
 
 export interface ResourceDescription {
-	name: string; kind: string; format: string | null; type: string | null; samples: number;
+	name: string; kind: string; format: string | null; type: string | null; samples: number; mips: boolean;
 	persistent: boolean; pingPong: boolean; imported: boolean; canvas: boolean;
 	// a history's validity (persistent and ping-pong resources), else null
 	historyValid: boolean | null;

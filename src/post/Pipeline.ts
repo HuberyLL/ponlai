@@ -8,7 +8,8 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, texture, textureLoad, uniform, uv, screenCoordinate, ivec2, int, vec2, vec3, vec4, float, mix,
 	smoothstep, clamp, max, min, dot, length, sin, log2, exp2, floor, luminance,
-	sRGBTransferOETF, fract, pow, mrt, outputStruct, mat4, output, acesFilmicToneMapping, atan, cos, abs, select, mod,
+	sRGBTransferOETF, fract, pow, mrt, outputStruct, mat4, output, acesFilmicToneMapping, atan, cos, abs, select, mod, step, Discard,
+	Loop, normalize, refract,
 } from 'three/tsl';
 import { fsr1 } from 'three/addons/tsl/display/FSR1Node.js';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
@@ -28,16 +29,24 @@ import { FrameGraph, type ResourceHandle, type SizeClass } from './graph/FrameGr
 import type { Sky } from '../sky/Sky.ts';
 import { DAY_EXPOSURE } from '../sky/DayCycle.ts';
 import type { Rain } from '../weather/Rain.ts';
-import { RefractionView, REFRACTION_SIZE } from '../ocean/Refraction.ts';
+import { CLIP_MARGIN, RefractionView, REFRACTION_GUARD, REFRACTION_SIZE } from '../ocean/Refraction.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 
 // Frame graph:
 //   opaque scene ── sceneRT (MSAA, SCENE_SAMPLES, half float, multisampled depth)
+//   underwater pyramid ── underwater (the opaque colour of what lies under the sea, premultiplied by
+//     that weight, and its mip chain: what the water refracts at each pixel's footprint)
+//   refraction reach ── refractionReach (64 texels: how far past each edge of the screen the
+//     water's refracted lookups reach in this view)
+//   refraction mask ── refractionDepth at the nearest depth wherever the opaque image already holds
+//     what lies under the sea, and in the guard band beyond that reach, so the refraction pass
+//     shades only what it alone can show
 //   depth resolve ── depthRT (view-space z of the opaque pass: sample 0, and the farthest sample)
 //   opaque copy ── opaqueRT (the resolved opaque colour: what the water refracts where the
 //     refraction image holds nothing, and reflects)
 //   refraction ── refraction and refractionDepth: the world under the sea through a wider view, at
-//     half the render's pixel density (ocean/Refraction.ts; the water's refraction source)
+//     half the render's pixel density (ocean/Refraction.ts; the water's refraction source where the
+//     opaque image does not hold the floor: behind what stands above the water, and off the screen)
 //   water ── back into sceneRT, depth-tested per sample against the opaque samples
 //   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included)
 //   rain ── into sceneRT (its multisampled colour and depth are then discarded: nothing reads them;
@@ -59,7 +68,7 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // jittered, and writes the motion vectors beside the colour:
 //   opaque scene ── sceneColor and velocity (an MRT: Motion.ts's sceneMRT), sceneDepth
 //   depth resolve ── depthRT (sample 0 twice: one sample)
-//   opaque copy ── opaqueRT, a copy of the texture (copyTextureToTexture)
+//   underwater pyramid, refraction reach and mask ── as above, jittered with the scene
 //   refraction ── as above, jittered with the scene
 //   water ── sceneColor and velocity (sceneMRT), depth-tested against the opaque depth
 //   surface resolve ── surfaceRT, copied at the frame's end into surfaceDepthPrev (the next
@@ -164,7 +173,8 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 //   the targets three's nodes draw into inside a pass), as three's defaults do; declare the depth
 //   to keep it.
 // - The water cannot sample the target it draws into: it reads `opaqueRT` and `depthRT` (sample 0,
-//   and the farthest sample for what lies behind the sea at an edge pixel). Post passes read
+//   and the farthest sample for what lies behind the sea at an edge pixel), and the underwater
+//   pyramid (`textures.underwater`). Post passes read
 //   `surfaceRT`, the nearest surface's depth with the sea's included. Multisampled depth is read
 //   with `textureLoad`, one sample at a time (the sample index in its level argument);
 //   single-sampled, that argument is a mip level, so load sample 0 only. View z below -9e4 is sky.
@@ -191,6 +201,14 @@ const VEIL_REACTIVE = { gain: 1.5, max: 0.6 };
 // coverage spread before the grade. Thin streaks drawn at their least width cover about two thirds
 // of the pixels their prefiltered quads touch (RainDrops.ts).
 const AFTER_COVERAGE = 0.65;
+// The refraction's reach past the screen's edges (refractionReach): texels per edge, the pixels each
+// follows toward it, and the margin the mask grows it by (screen uv: the reach times scale, plus add)
+// for the floor's slopes, which the floor seen straight behind leaves out, and the waves' beyond.
+const REACH = 64, REACH_SAMPLES = 16;
+// the surface's tilt the reach follows besides the flat sea (a slope), about twice the slopes'
+// spread across one axis in a strong wind
+const REACH_SLOPE = 0.3;
+const REACH_MARGIN = { scale: 1.3, add: 0.02 };
 // The rain layer's grade table (`gradeTable`): colours per channel, and the range they span (stops of
 // the scene colour times the exposure, display white at 0).
 const GRADE_TABLE = { size: 64, low: - 14, high: 7 };
@@ -262,6 +280,7 @@ export function postOptionsFromURL( search = location.search, base: Partial<Post
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
+type V4 = THREE.Node<'vec4'>;
 // what a pass's setup declares its reads and writes on
 type PassBuilder = Parameters<Parameters<FrameGraph<PipelineFrame>[ 'addPass' ]>[ 2 ]>[ 0 ];
 
@@ -373,17 +392,20 @@ export class Pipeline {
 	/** The frame graph: it owns the targets below and sizes them. */
 	readonly graph: FrameGraph<PipelineFrame>;
 	/** The graph's textures that materials outside the pipeline read: the resolved opaque colour
-	 * and linear depth (the water, the spray, the rain), the nearest surface's depth and the
-	 * refraction pass's colour and depth (the water). */
+	 * and linear depth (the water, the spray, the rain), the nearest surface's depth, the
+	 * underwater pyramid and the refraction pass's colour and depth (the water). */
 	readonly textures: {
 		readonly opaqueColor: THREE.Texture; readonly linearDepth: THREE.Texture; readonly surfaceDepth: THREE.Texture;
-		readonly refraction: THREE.Texture; readonly refractionDepth: THREE.Texture;
+		readonly underwater: THREE.Texture; readonly refraction: THREE.Texture; readonly refractionDepth: THREE.Texture;
 	};
+	/** The sea's mean level (m), which the underwater pyramid keeps what lies under (main.ts sets it
+	 * from the shared uniforms'). */
+	readonly seaLevel = uniform( 0 );
 	/** The refraction pass's camera (ocean/Refraction.ts). */
 	readonly refraction = new RefractionView();
 	private readonly resources: {
 		sceneColor: ResourceHandle; sceneDepth: ResourceHandle; linearDepth: ResourceHandle; opaqueColor: ResourceHandle;
-		refraction: ResourceHandle; refractionDepth: ResourceHandle;
+		underwater: ResourceHandle; refractionReach: ResourceHandle; refraction: ResourceHandle; refractionDepth: ResourceHandle;
 		surfaceDepth: ResourceHandle; velocity: ResourceHandle | null; surfaceDepthPrev: ResourceHandle | null; veilReactive: ResourceHandle | null;
 		rainAir: ResourceHandle | null; rainOverlay: ResourceHandle | null; rainLayer: ResourceHandle | null; rainInput: ResourceHandle | null; rainBehind: ResourceHandle | null; rainGrade: ResourceHandle | null;
 		hdr: ResourceHandle | null; sharp: ResourceHandle; display: ResourceHandle;
@@ -402,6 +424,9 @@ export class Pipeline {
 	private depthQuad: THREE.QuadMesh;
 	// (msaa and off: under the temporal modes the opaque copy is a texture copy)
 	private copyQuad: THREE.QuadMesh | null = null;
+	private underwaterQuad: THREE.QuadMesh;
+	private refractionReachQuad: THREE.QuadMesh;
+	private refractionMaskQuad: THREE.QuadMesh;
 	private surfaceQuad: THREE.QuadMesh;
 	// (msaa, off and the temporal modes with `taaResolve=off`: the resolve has a canvas pass of its own)
 	private output: THREE.RenderPipeline | null = null;
@@ -430,7 +455,8 @@ export class Pipeline {
 		exposure: uniform( 1 ), bloom: uniform( TIDEWATER_GRADE.bloom ), warmth: uniform( 0 ), saturation: uniform( 1 ), contrast: uniform( 1 ), tone: uniform( 0 ), night: uniform( 0 ), low: uniform( 0 ),
 		vignette: uniform( 0.3 ), grain: uniform( 0.01 ), time: uniform( 0 ),
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
-		projInv: uniform( new THREE.Matrix4() ),
+		projInv: uniform( new THREE.Matrix4() ), cameraWorld: uniform( new THREE.Matrix4() ),
+		proj: uniform( new THREE.Matrix4() ), view: uniform( new THREE.Matrix4() ),
 		grainOn: uniform( 1 ),
 		// 1 while the after pass draws (AfterResolve.ts): else its overlay holds an earlier frame's;
 		// and while the rain's layer pass runs
@@ -455,6 +481,13 @@ export class Pipeline {
 		const linearDepth = g.color( 'linearDepth', { size: RENDER, format: THREE.RGFormat, type: THREE.FloatType } );
 		const opaqueColor = g.color( 'opaqueColor', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
 		const surfaceDepth = g.color( 'surfaceDepth', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType } );
+		// what the water refracts at its footprint: the opaque colour under the sea and its mips
+		const underwater = g.color( 'underwater', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType, mips: true } );
+		// (read along the footprint's long axis: a surface seen at a slant stretches it)
+		g.texture( underwater ).anisotropy = 8;
+		// how far past each edge of the screen the water's refracted lookups reach (Pipeline's
+		// refraction mask): r below the screen per column, g left and b right of it per row
+		const refractionReach = g.color( 'refractionReach', { size: { of: 'fixed', width: REACH, height: 1 }, format: THREE.RGBAFormat, type: THREE.HalfFloatType, filter: 'nearest' } );
 		// the water's refraction source: the world under the sea, lit, and its depth (single-sampled)
 		const refraction = g.color( 'refraction', { size: REFRACTION_SIZE, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
 		const refractionDepth = g.depth( 'refractionDepth', { size: REFRACTION_SIZE, type: THREE.FloatType } );
@@ -493,16 +526,16 @@ export class Pipeline {
 		// the upscale's EASU image (the canvas's size) and the canvas (the resolve has its own)
 		const easu = O.fsrPort && ! RESOLVE && ! FSR3 ? g.color( 'FSR.easu', { size: { of: 'canvas' }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		const canvas = g.import( 'canvas', null, { of: 'canvas' } );
-		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, refraction, refractionDepth, surfaceDepth, velocity, surfaceDepthPrev, veilReactive, rainAir, rainOverlay, rainLayer, rainInput, rainBehind, rainGrade, hdr, sharp, display, easu, canvas };
+		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, underwater, refractionReach, refraction, refractionDepth, surfaceDepth, velocity, surfaceDepthPrev, veilReactive, rainAir, rainOverlay, rainLayer, rainInput, rainBehind, rainGrade, hdr, sharp, display, easu, canvas };
 		// the targets the frame draws into, made now (the probes, the warm-ups and the water's
 		// textures need them before the first frame)
 		g.renderTarget( velocity ? [ sceneColor, velocity ] : [ sceneColor ], sceneDepth );
-		for ( const h of [ linearDepth, opaqueColor, display ] ) g.renderTarget( [ h ] );
+		for ( const h of [ linearDepth, opaqueColor, underwater, refractionReach, display ] ) g.renderTarget( [ h ] );
 		g.renderTarget( [ refraction ], refractionDepth );
 		g.renderTarget( [ surfaceDepth ] );
 		this.textures = {
 			opaqueColor: g.texture( opaqueColor ), linearDepth: g.texture( linearDepth ), surfaceDepth: g.texture( surfaceDepth ),
-			refraction: g.texture( refraction ), refractionDepth: g.texture( refractionDepth ),
+			underwater: g.texture( underwater ), refraction: g.texture( refraction ), refractionDepth: g.texture( refractionDepth ),
 		};
 		// the sizes the passes read, the graph's shared extent uniforms (set with the targets' own
 		// sizes): the render's and the canvas's
@@ -548,6 +581,157 @@ export class Pipeline {
 			this.copyQuad = new THREE.QuadMesh( copyMat );
 
 		}
+		// The underwater pyramid's top level: the opaque colour where every sample of the pixel lies
+		// below the refraction's clip height (the floor, the stones, the cliffs' feet: what a ray
+		// through the sea can reach, as the refraction image holds it), premultiplied by that weight
+		// (alpha), and nothing where one lies above it (a cliff, the rim's grass, a figure) or is
+		// sky. Its mips, each a box filter of the level above, are then the average colour of what
+		// lies under the sea over any footprint, the surfaces above it left out: the water divides
+		// by the alpha.
+		const underwaterMat = new THREE.NodeMaterial();
+		underwaterMat.fragmentNode = Fn( () => {
+
+			const coord = screenCoordinate.xy;
+			const q = coord.div( renderSize );
+			const clip = this.seaLevel.add( CLIP_MARGIN );
+			const below = ( d: F ) => {
+
+				const v = u.projInv.mul( vec4( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ), d, 1 ) ).toVar();
+				const y = u.cameraWorld.mul( vec4( v.xyz.div( v.w ), 1 ) ).y;
+				return step( y, clip ).mul( step( d, 0.999999 ) );
+
+			};
+			let w = below( depthSample( coord, 0 ) );
+			for ( let i = 1; i < SCENE_SAMPLES; i ++ ) w = w.mul( below( depthSample( coord, i ) ) );
+			const weight = w.toVar();
+			return vec4( textureLoad( texture( g.texture( sceneColor ) ), ivec2( coord ) ).rgb.mul( weight ), weight );
+
+		} )();
+		this.underwaterQuad = new THREE.QuadMesh( underwaterMat );
+		// How far past each edge of the screen the water's refracted lookups reach. Light bends down
+		// into the water, so a refracted ray lands on floor lower on the screen than the pixel it is
+		// seen through: from the island camera's height about a fiftieth of the sea's pixels look
+		// past the screen's edge, a few per cent of its height at most, but seen low over the sea a
+		// quarter to half of them land under the near water, below the edge, as far as the guard
+		// band reaches and beyond. Each texel follows REACH_SAMPLES pixels toward one edge (denser
+		// near it) along its column (below) or row (left, right): the camera's ray to the sea,
+		// refracted, down to the floor the opaque pixel shows straight behind (where that pixel drew
+		// what lies under the sea), its end projected; the farthest past the edge. The flat sea and
+		// its ends below the screen alone missed a few in a thousand of the lookups past the edge
+		// low over a strong wind's sea; with the tilts none in ten thousand.
+		const tUnderwater = texture( g.texture( underwater ) );
+		const reachMat = new THREE.NodeMaterial();
+		reachMat.name = 'refractionReach';
+		reachMat.fragmentNode = Fn( () => {
+
+			const eye = u.cameraWorld.mul( vec4( 0, 0, 0, 1 ) ).xyz.toVar();
+			const sea = this.seaLevel;
+			// How far past the edges the refracted rays seen through screen uv q end: ( below, left,
+			// right, the sideways spill of an end below ), or 0 where q shows no floor under the sea.
+			// The sea's slopes tilt the rays, sideways most of all, which the flat sea leaves out
+			// (low over a gale's sea a tenth of the screen and more): the surface tilted by
+			// REACH_SLOPE across the view and along it as well.
+			const reachAt = ( q: V2 ) => {
+
+				const texel = ivec2( clamp( q.mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
+				const d = depthSample( vec2( texel ), 0 );
+				const v = u.projInv.mul( vec4( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y.mul( 2 ) ), d, 1 ) ).toVar();
+				const floor = u.cameraWorld.mul( vec4( v.xyz.div( v.w ), 1 ) ).xyz.toVar();
+				const dir = normalize( floor.sub( eye ) ).toVar();
+				const out = vec4( 0 ).toVar();
+				If( textureLoad( tUnderwater, texel, int( 0 ) ).a.greaterThan( 0.999 ).and( floor.y.lessThan( sea ) ).and( dir.y.lessThan( - 1e-3 ) ).and( eye.y.greaterThan( sea ) ), () => {
+
+					const surface = eye.add( dir.mul( eye.y.sub( sea ).div( dir.y.negate() ) ) ).toVar();
+					const along = normalize( vec3( dir.x, 0, dir.z ).add( vec3( 1e-5, 0, 0 ) ) ).toVar();
+					const across = vec3( along.z.negate(), 0, along.x ).toVar();
+					for ( const tilt of [ [ 0, 0 ], [ 1, 0 ], [ - 1, 0 ], [ 0, 1 ], [ 0, - 1 ] ] ) {
+
+						const n = normalize( vec3( 0, 1, 0 ).add( across.mul( tilt[ 0 ] * REACH_SLOPE ) ).add( along.mul( tilt[ 1 ] * REACH_SLOPE ) ) );
+						const t = refract( dir, n, 1 / 1.333 );
+						// (as the water keeps a ray heading down and bounds its path: Water.ts)
+						const down = normalize( vec3( t.x, min( t.y, - 0.08 ), t.z ) ).toVar();
+						const end = surface.add( down.mul( min( sea.sub( floor.y ).div( max( down.y.negate(), 0.04 ) ), 80 ) ) );
+						const c = u.proj.mul( u.view.mul( vec4( end, 1 ) ) ).toVar();
+						const e = vec2( c.x.div( c.w ).mul( 0.5 ).add( 0.5 ), float( 0.5 ).sub( c.y.div( c.w ).mul( 0.5 ) ) ).toVar();
+						const sideways = max( e.x.negate(), e.x.sub( 1 ) );
+						out.assign( max( out, vec4( e.y.sub( 1 ), e.x.negate(), e.x.sub( 1 ), select( e.y.greaterThan( 1 ), sideways, float( 0 ) ) ) ) );
+
+					}
+
+				} );
+				return out;
+
+			};
+			const at = screenCoordinate.x.div( REACH );
+			// (a: how far the ends below the screen spill past its sides, for the corners)
+			const below = float( 0 ).toVar(), left = float( 0 ).toVar(), right = float( 0 ).toVar(), spill = float( 0 ).toVar();
+			Loop( REACH_SAMPLES, ( { i } ) => {
+
+				// from the middle of the screen to its edge, the steps shrinking toward the edge
+				const f = float( 1 ).sub( float( i ).add( 0.5 ).div( REACH_SAMPLES ) );
+				const inset = f.mul( f ).mul( 0.5 );
+				const b = reachAt( vec2( at, float( 1 ).sub( inset ) ) ).toVar();
+				below.assign( max( below, b.x ) );
+				spill.assign( max( spill, b.w ) );
+				left.assign( max( left, reachAt( vec2( inset, at ) ).y ) );
+				right.assign( max( right, reachAt( vec2( float( 1 ).sub( inset ), at ) ).z ) );
+
+			} );
+			return vec4( below, left, right, spill );
+
+		} )();
+		this.refractionReachQuad = new THREE.QuadMesh( reachMat );
+		// The refraction mask: the full-screen triangle lies at the nearest depth, so where it is drawn
+		// the refraction pass's fragments fail the depth test before they are shaded. On the screen
+		// it is drawn where the opaque image already holds what lies under the sea, from which the
+		// water then reads (Water.ts): every opaque pixel within some eight of the refraction texel's
+		// place on the screen under the sea (the pyramid's weight of 1 at level 3, read bilinearly: a
+		// block of about 16 pixels), so the refraction image is kept for the water's filtered reads
+		// beside what stands above the water, and behind it (the four texels a bilinear read there
+		// takes: a lone pixel above the water at a small weight let a lookup meet a masked texel). In
+		// the guard band off the screen it is drawn beyond the lookups' reach past that edge
+		// (refractionReach, the largest of the columns or rows around; below a corner, the sideways
+		// spill of the ends below the screen as well), grown by REACH_MARGIN for the floor's slopes
+		// and the waves' beyond the reach's tilt.
+		const G = REFRACTION_GUARD;
+		const refractionSize = g.extent( REFRACTION_SIZE );
+		const tReach = texture( g.texture( refractionReach ) );
+		const maskMat = new THREE.NodeMaterial();
+		maskMat.name = 'refractionMask';
+		maskMat.colorWrite = false;
+		maskMat.fragmentNode = Fn( () => {
+
+			const r = screenCoordinate.xy.div( refractionSize );
+			const sx = r.x.mul( 2 ).sub( 1 ).mul( G.sx ).add( G.cx ), sy = float( 1 ).sub( r.y.mul( 2 ) ).mul( G.sy ).add( G.cy );
+			const q = vec2( sx.mul( 0.5 ).add( 0.5 ), float( 0.5 ).sub( sy.mul( 0.5 ) ) ).toVar();
+			const inside = q.x.greaterThan( 0 ).and( q.x.lessThan( 1 ) ).and( q.y.greaterThan( 0 ) ).and( q.y.lessThan( 1 ) );
+			// the reach past an edge around texel index k (a column for below, a row for the sides)
+			const reach = ( k: F ) => {
+
+				let m: V4 = vec4( 0 );
+				for ( let o = - 2; o <= 2; o ++ ) m = max( m, textureLoad( tReach, ivec2( int( clamp( k.add( o ), 0, REACH - 1 ) ), int( 0 ) ), int( 0 ) ) as unknown as V4 );
+				return m.mul( REACH_MARGIN.scale ).add( REACH_MARGIN.add );
+
+			};
+			const column = reach( floor( clamp( q.x, 0, 0.9999 ).mul( REACH ) ) ), row = reach( floor( clamp( q.y, 0, 0.9999 ).mul( REACH ) ) );
+			// (below a corner, the ends that left the screen through its bottom edge spill sideways)
+			const side = select( q.y.greaterThan( 1 ), column.w, float( 0 ) );
+			const within = q.y.sub( 1 ).lessThanEqual( column.x ).and( q.x.negate().lessThanEqual( max( row.y, side ) ) ).and( q.x.sub( 1 ).lessThanEqual( max( row.z, side ) ) );
+			// (the four level-3 texels around q, each 8 pixels square, all under the sea)
+			const level3 = renderSize.div( 8 ).floor().max( 1 );
+			const corner = ivec2( q.mul( level3 ).sub( 0.5 ).floor() );
+			let all: F = float( 1 );
+			for ( const [ dx, dy ] of [ [ 0, 0 ], [ 1, 0 ], [ 0, 1 ], [ 1, 1 ] ] ) {
+
+				const texel = ivec2( clamp( vec2( corner ).add( vec2( dx, dy ) ), vec2( 0 ), level3.sub( 1 ) ) );
+				all = min( all, ( textureLoad( tUnderwater, texel, int( 3 ) ) as unknown as V4 ).a );
+
+			}
+			Discard( select( inside, all.lessThan( 0.999 ), within ) );
+			return vec4( 0 );
+
+		} )();
+		this.refractionMaskQuad = new THREE.QuadMesh( maskMat );
 		// the nearest surface's view z
 		const surfaceMat = new THREE.NodeMaterial();
 		surfaceMat.fragmentNode = Fn( () => vec4( viewZ( screenCoordinate.xy, depthSample( screenCoordinate.xy, 0 ) ) ) )();
@@ -892,6 +1076,7 @@ export class Pipeline {
 				jitter.begin( f.camera );
 				const inverse = f.camera.projectionMatrixInverse;
 				this.u.projInv.value.copy( inverse );
+				this.u.proj.value.copy( f.camera.projectionMatrix );
 				this.air.setProjectionInverse( inverse );
 				this.shafts.setProjectionInverse( inverse );
 
@@ -926,7 +1111,7 @@ export class Pipeline {
 	private declarePasses(): void {
 
 		const g = this.graph;
-		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, velocity } = this.resources;
+		let { sceneColor, sceneDepth, linearDepth, opaqueColor, underwater, surfaceDepth, velocity } = this.resources;
 		if ( TEMPORAL ) [ sceneColor, surfaceDepth, velocity, opaqueColor ] = this.declareTemporalScene();
 		else {
 
@@ -937,7 +1122,8 @@ export class Pipeline {
 				return { label: 'opaque scene', scene: ( f ) => f.scene, camera: ( f ) => f.camera };
 
 			} );
-			const [ refraction, refractionDepth ] = this.declareRefraction();
+			let refraction: ResourceHandle, refractionDepth: ResourceHandle;
+			[ underwater, refraction, refractionDepth ] = this.declareRefraction( sceneColor, sceneDepth );
 			// linear depth, and a copy of the opaque colour for the water to refract and reflect (a pass
 			// cannot sample the target it draws into)
 			g.addPass( 'depthResolve', 'quad', ( b ) => {
@@ -959,6 +1145,7 @@ export class Pipeline {
 
 				b.read( opaqueColor );
 				b.read( linearDepth );
+				b.read( underwater );
 				b.readOptional( refraction );
 				b.readOptional( refractionDepth );
 				sceneColor = b.write( sceneColor );
@@ -1213,7 +1400,7 @@ export class Pipeline {
 			return { label: 'opaque scene', mrt: sceneMRT, jittered: true, scene: ( f ) => f.scene, camera: ( f ) => f.camera };
 
 		} );
-		const [ refraction, refractionDepth ] = this.declareRefraction();
+		const [ underwater, refraction, refractionDepth ] = this.declareRefraction( sceneColor, sceneDepth );
 		// (one sample: the farthest of the samples is sample 0)
 		g.addPass( 'depthResolve', 'quad', ( b ) => {
 
@@ -1235,6 +1422,7 @@ export class Pipeline {
 
 			b.read( opaqueColor );
 			b.read( linearDepth );
+			b.read( underwater );
 			b.readOptional( refraction );
 			b.readOptional( refractionDepth );
 			sceneColor = b.write( sceneColor );
@@ -1276,24 +1464,54 @@ export class Pipeline {
 
 	}
 
-	// The water's refraction source (ocean/Refraction.ts): the world under the sea through the wider
-	// view, right after the opaque pass, with the scene's jitter under the temporal modes. Off with
-	// `flags.refraction = false` (the water then refracts the opaque copy alone: Water.ts). Returns
-	// the colour's and the depth's versions.
-	private declareRefraction(): [ ResourceHandle, ResourceHandle ] {
+	// What the water refracts, right after the opaque pass, with the scene's jitter under the temporal
+	// modes: the underwater pyramid from the opaque pass's colour and samples, then the refraction
+	// source (ocean/Refraction.ts), the world under the sea through the wider view, shaded only
+	// outside the mask drawn first into its depth (see refractionMaskQuad). The refraction and its
+	// mask are off with `flags.refraction = false` (the water then refracts the opaque image alone:
+	// Water.ts). Returns the pyramid's, the refraction colour's and its depth's versions.
+	private declareRefraction( sceneColor: ResourceHandle, sceneDepth: ResourceHandle ): [ ResourceHandle, ResourceHandle, ResourceHandle ] {
 
-		let { refraction, refractionDepth } = this.resources;
-		this.graph.addPass( 'refraction', 'scene', ( b ) => {
+		const g = this.graph;
+		let { underwater, refractionReach, refraction, refractionDepth } = this.resources;
+		g.addPass( 'underwaterPyramid', 'quad', ( b ) => {
 
+			b.read( sceneColor );
+			b.read( sceneDepth, 'samples' );
+			underwater = b.write( underwater );
+			return { label: 'underwater pyramid', jittered: TEMPORAL, quad: this.underwaterQuad };
+
+		} );
+		const on = () => debugFlags.refraction !== false;
+		g.addPass( 'refractionReach', 'quad', ( b ) => {
+
+			b.read( sceneDepth, 'samples' );
+			b.read( underwater );
+			refractionReach = b.write( refractionReach );
+			return { label: 'refraction', jittered: TEMPORAL, when: on, whenLabel: 'refraction', quad: this.refractionReachQuad };
+
+		} );
+		g.addPass( 'refractionMask', 'quad', ( b ) => {
+
+			b.read( underwater );
+			// (the reach runs whenever the mask does)
+			b.readOptional( refractionReach );
 			refraction = b.write( refraction, { clear: true } );
 			refractionDepth = b.depth( refractionDepth, { write: true, clear: true } );
+			return { label: 'refraction', mrt: REFRACTION_MRT, jittered: TEMPORAL, when: on, whenLabel: 'refraction', quad: this.refractionMaskQuad };
+
+		} );
+		g.addPass( 'refraction', 'scene', ( b ) => {
+
+			refraction = b.write( refraction );
+			refractionDepth = b.depth( refractionDepth, { write: true } );
 			return {
-				label: 'refraction', mrt: REFRACTION_MRT, jittered: TEMPORAL, when: () => debugFlags.refraction !== false, whenLabel: 'refraction',
+				label: 'refraction', mrt: REFRACTION_MRT, jittered: TEMPORAL, when: on, whenLabel: 'refraction',
 				before: ( f ) => this.refraction.update( f.camera ), scene: ( f ) => f.scene, camera: () => this.refraction.camera,
 			};
 
 		} );
-		return [ refraction, refractionDepth ];
+		return [ underwater, refraction, refractionDepth ];
 
 	}
 
@@ -1395,6 +1613,9 @@ export class Pipeline {
 		const u = this.u;
 		camera.updateMatrixWorld();
 		u.projInv.value.copy( ( camera as THREE.PerspectiveCamera ).projectionMatrixInverse );
+		u.cameraWorld.value.copy( camera.matrixWorld );
+		u.proj.value.copy( camera.projectionMatrix );
+		u.view.value.copy( camera.matrixWorldInverse );
 		if ( TEMPORAL ) {
 
 			// this frame's rest (which picks the rest's jitter), jitter and motion, from the camera as
