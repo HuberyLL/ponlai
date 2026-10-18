@@ -121,8 +121,8 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   kernel) at its own root (a flower's head at its tuft's origin) as a load,
 //   their legs' push away from their way and their feet's weight, which the elastica takes with
 //   the wind's (`bendBlade`); a pushed blade rises back as a released spring, so a walker leaves a
-//   short wake that closes a couple of seconds behind it. The herbs take none. A parted blade
-//   keeps its shading. `flags.trample = false` at load leaves it out of the shader.
+//   short wake that closes a couple of seconds behind it. A parted blade keeps its shading.
+//   `flags.trample = false` at load leaves it out of the shader.
 // - Under MSAA a tuft's sway and shiver fade out as it shrinks to a few pixels on screen, its
 //   head with it, while its lean in the gusts stays (Deform.ts `swayFade`): far off, a swinging
 //   flower head or blade under a pixel crosses the multisamples and flashes from frame to frame,
@@ -150,14 +150,6 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   least size on screen and is drawn whole by its hash, as the blades are, and rises above its
 //   tuft's widened blades as they thin (HEAD_LIFT), so the island view shows the meadow's flowers
 //   as fine coloured specks gathered in patches.
-// - The meadow's low herbs grow under it where it is short or broken (PLANTAIN, CLOVER): a
-//   plantain's rosette in most of the sward's gaps, a batch of its own of a few blades (the herb
-//   batch, every blade at every distance), and white clover's mats over the short turf, a lawn
-//   tuft's blades turned into its leaflets three at a time (a clover tuft's share in its flower
-//   code's place, so the tufts take no new data and the lawn no new geometry). Their shapes and
-//   colours are worked out from the blade's index in its tuft and hashes in the blades' stages, in
-//   a branch only the herb batch and the clover tufts take (`herbPose`), and the fragment stage
-//   tells a herb's blade by its code under its tint in the blade's varying (no new varying).
 
 interface TuftShape {
 	blades: number; segs: number;
@@ -268,10 +260,9 @@ function lowPatch( x: number, z: number ): number {
 // hanging at the curve's limit), its own lean (`lean`, at most, in a direction of its own: its
 // blades turn toward it and grow longer on that side by SHEAR), a tall one its own count of blades
 // (`blades`, of the tuft's 16).
-// GAP of the tall tussocks without a flower grow nothing, small gaps where the ground shows, fewer
-// as a tussock comes down (GRADE: the short turf keeps every tuft and blade, a closed sward as thick
-// as the lawn, a tussock's share of blades rising to all of them), and most of the gaps hold a
-// plantain (HERB_GAP). A tussock's
+// GAP of the tussocks without a flower that stand less than half way down (GRADE) grow nothing,
+// small gaps where the ground shows (the short turf keeps every tuft and blade, a closed sward as
+// thick as the lawn: a tussock's share of blades rises to all of them as it comes down). A tussock's
 // blades gather toward its centre as it grows tall (by `gather`: the short turf keeps its blades
 // spread over the tuft's disc, so it stays a closed sward).
 const TUSSOCK = { spread: 0.4, shortSpread: 0.15, stiffness: 0.3, levelStiff: 1.5, lean: 0.3, blades: [ 12 * FUR, 16 * FUR ], extraBlades: [ 12 * FUR, 14 * FUR ], gather: 0.35 };
@@ -296,70 +287,6 @@ const GRADE = { stand: 0.25, answer: [ 0.55, 1.15 ] };
 // at least LOW_FLOWER of the way down, a tall species' at its tall level; its neighbours stand as
 // their own spot has them (a low species' patch cut every tussock in it to the short turf, a hollow).
 const LOW_FLOWER = 0.55;
-// The meadow's low herbs, the layer under the grass where it is short or broken, as a real
-// meadow's (they cannot grow in the tall sward's shade, and the grass cannot close over a gap they
-// hold); each drawn by the blades' stages from its own shapes in metres (`herbPose`) and colours
-// (HERB_COLOURS), swaying HERB_SWAY as much as a blade:
-// - Greater plantain (Plantago major): a rosette of broad, oval leaves on short stalks lying near
-//   the ground (PLANTAIN: each leaf `length` m long, its blade `width` of that across at its
-//   widest, rising at `rise` rad and arching back down), and a few slender flower spikes standing
-//   above them (`spike` m, at `spikeAngle` rad, a stalk swelling into its spike from `spikeHead` of
-//   its length). HERB_GAP of the sward's gaps (GAP) hold one, a tuft of the herb batch of its own
-//   (`herbTuftGeometry`: `leaves` leaf blades and `spikes` spike blades, each rosette keeping
-//   `count` leaves and up to `spikes` spikes by its own draws), so a gap reads as a plantain in a
-//   clearing of the sward rather than a hole.
-// - White clover (Trifolium repens): mats spreading over the short turf on their stolons, each leaf
-//   three round leaflets (CLOVER.leaflet m long, half again a real one's: the game's view showed the
-//   real size as specks) on a stalk CLOVER.stalk m high, within CLOVER.spread m of its tuft's root.
-//   On a world-anchored lattice of CLOVER.cell (m) a cell holds a mat for CLOVER.share of them,
-//   times CLOVER.shallow's factor (from its first where the soil is deep to its second in a shallow
-//   pocket's core), of a
-//   radius in CLOVER.radius (m), frayed by CLOVER.fray of it at CLOVER.frayRate cycles per metre and
-//   full over its inner CLOVER.core. In a mat a lawn tuft turns up to CLOVER.peak of its blades,
-//   three at a time, into a leaf's leaflets, CLOVER.tall of that on a tussock at its tall level and
-//   all of it on one at the short turf's (GRADE), and the mat pulls the sward down as a pocket does,
-//   CLOVER.pull of its weight. A tuft's clover share rides in its flower code's place, negative
-//   ( -1 - share; no flowering tuft takes clover), so the tufts take no new data.
-const PLANTAIN = { leaves: 7, spikes: 2, count: [ 4, 7 ], length: [ 0.1, 0.2 ], width: 0.36, rise: [ 0.3, 0.65 ], spike: [ 0.12, 0.24 ], spikeAngle: [ 1.25, 1.45 ], spikeHead: 0.45 };
-const HERB_GAP = 0.75, HERB_SWAY = 0.3;
-const CLOVER = { cell: 2.5, share: 0.5, shallow: [ 0.35, 1 ], radius: [ 0.5, 1.3 ], fray: 0.35, frayRate: 1.6, core: 0.4, peak: 0.95, tall: 0.15, pull: 0.85, leaflet: [ 0.032, 0.044 ], stalk: [ 0.02, 0.07 ], spread: 0.2 };
-// (a herb's lowest point over its tuft's root, which is planted 1.8 cm into the ground, m)
-const HERB_LIFT = 0.022;
-
-// each lattice cell's clover mat ( x, z, radius ), or null, worked out once (a function of the cell
-// alone)
-const cloverMats = new Map<number, [ number, number, number ] | null>();
-function cloverMatAt( i: number, j: number ): [ number, number, number ] | null {
-
-	const key = i * 65536 + j;
-	let m = cloverMats.get( key );
-	if ( m !== undefined ) return m;
-	const r = cellStream( i, j, 541 );
-	const take = r(), mx = ( i + r() ) * CLOVER.cell, mz = ( j + r() ) * CLOVER.cell;
-	const radius = CLOVER.radius[ 0 ] + r() * ( CLOVER.radius[ 1 ] - CLOVER.radius[ 0 ] );
-	const shallow = CLOVER.shallow[ 0 ] + ( CLOVER.shallow[ 1 ] - CLOVER.shallow[ 0 ] ) * meadowShallow( mx, mz );
-	m = take < CLOVER.share * shallow ? [ mx, mz, radius ] : null;
-	cloverMats.set( key, m );
-	return m;
-
-}
-
-/** How far ( x, z ) lies in a clover mat, 0 none to 1 its core (see CLOVER). A mat reaches no
- * farther than a cell from its centre, so a point looks at its own cell and the eight round it. */
-function cloverMat( x: number, z: number ): number {
-
-	const ci = Math.floor( x / CLOVER.cell ), cj = Math.floor( z / CLOVER.cell );
-	const fray = 1 + CLOVER.fray * noise3( x * CLOVER.frayRate + 4.1, 2.9, z * CLOVER.frayRate - 6.3 );
-	let w = 0;
-	for ( let j = cj - 1; j <= cj + 1; j ++ ) for ( let i = ci - 1; i <= ci + 1; i ++ ) {
-
-		const m = cloverMatAt( i, j );
-		if ( m ) w = Math.max( w, 1 - smoothstep( CLOVER.core, 1, Math.hypot( x - m[ 0 ], z - m[ 1 ] ) / ( m[ 2 ] * fray ) ) );
-
-	}
-	return w;
-
-}
 // A tussock's word in its colour's fourth channel: its stiffness (STIFF_RANGE, a byte), its lean
 // (a byte) and the lean's direction in its own frame (a byte), packed as integers under 2^24 so a
 // float holds them exactly.
@@ -802,49 +729,6 @@ function flowerTuftGeometry( lawn: THREE.BufferGeometry ): THREE.BufferGeometry 
 
 }
 
-// A plantain's tuft (the herb batch): PLANTAIN.leaves leaf blades, then PLANTAIN.spikes spike
-// blades, strips of HERB.segs segments whose shapes the vertex stage makes from its own draws
-// (`herbPose`): every vertex at the root with an upward normal, its `blade` ( its parameter
-// along, 0, 0, its side times one plus its hash within the tuft ). Every rosette draws all of them
-// (the batch's floor is 1): its few blades cost less than one lawn tuft's quarter.
-const HERB: TuftShape = { blades: PLANTAIN.leaves + PLANTAIN.spikes, segs: 4, r0: [ 0, 0 ], w: [ 0, 0 ] };
-function herbTuftGeometry(): THREE.BufferGeometry {
-
-	const rng = mulberry32( 11 );
-	const P: number[] = [], N: number[] = [], T: number[] = [], I: number[] = [];
-	for ( let b = 0; b < HERB.blades; b ++ ) {
-
-		const id = rng(), base = P.length / 3;
-		for ( let i = 0; i <= HERB.segs; i ++ ) for ( const sg of [ - 1, 1 ] ) {
-
-			P.push( 0, 0, 0 ); N.push( 0, 1, 0 ); T.push( i / HERB.segs, 0, 0, sg * ( 1 + id ) );
-
-		}
-		for ( let i = 0; i < HERB.segs; i ++ ) {
-
-			const k = base + i * 2;
-			I.push( k, k + 1, k + 2, k + 1, k + 3, k + 2 );
-
-		}
-
-	}
-	const g = new THREE.BufferGeometry();
-	g.setAttribute( 'position', new THREE.Float32BufferAttribute( P, 3 ) );
-	g.setAttribute( 'normal', new THREE.Float32BufferAttribute( N, 3 ) );
-	g.setAttribute( 'blade', new THREE.Float32BufferAttribute( T, 4 ) );
-	g.setIndex( I );
-	// (as `tuftGeometry`'s, at the short turf's height scale the rosettes are planted at: the leaves
-	// reach out to their longest, the spikes up to theirs; the widest narrow part is a leaf's stalk)
-	const out = PLANTAIN.length[ 1 ] * 1.2, top = ( PLANTAIN.spike[ 1 ] * 1.2 + HERB_LIFT ) / LEVEL.short;
-	g.userData.restBox = new THREE.Box3( new THREE.Vector3( - out, 0, - out ), new THREE.Vector3( out, top, out ) );
-	g.userData.reach = 0.05;
-	g.userData.halfWidth = 0.006;
-	g.userData.herbs = 1;
-	g.boundingBox = g.userData.restBox.clone();
-	return g;
-
-}
-
 // Thin blades alias. Their tips are a few millimetres wide, a fraction of a pixel from the
 // overview, so 4x MSAA catches them on some frames and misses them on others and the meadow
 // crawls as the camera moves. Each blade is kept at least `minWidth` pixels wide on screen,
@@ -1033,8 +917,6 @@ const cullBase = uniform( 0, 'uint' ).onObjectUpdate( ( { object } ) => ( object
 const cullOn = uniform( 0, 'uint' ).onObjectUpdate( ( { object } ) => object?.userData.grassCulled === true ? 1 : 0 );
 // 1 on the flowering batch (`flowerTuftGeometry`), the only one whose vertices take a head's pose
 const flowering = uniform( 0, 'uint' ).onObjectUpdate( ( { object } ) => ( object as THREE.Mesh | undefined )?.geometry?.userData.grassFlowers ?? 0 );
-// 1 on the herb batch (`herbTuftGeometry`), whose blades all take a plantain's shapes (`herbPose`)
-const herbal = uniform( 0, 'uint' ).onObjectUpdate( ( { object } ) => ( object as THREE.Mesh | undefined )?.geometry?.userData.grassHerbs ?? 0 );
 
 const TAU = Math.PI * 2;
 
@@ -1212,12 +1094,6 @@ const CULM_SHARE = 0.04, CULM_TALL = [ 0.3, 0.42 ], CULM_LENGTH = [ 1.25, 1.5 ],
 const CULM_STEM = 0.3, CULM_WIDTH = 1.25, CULM_HEAD = [ 0.62, 0.72 ];
 const PANICLE = [ [ 0.115, 0.07, 0.065 ], [ 0.18, 0.14, 0.075 ] ];
 const DRY_LENGTH = 0.5, DRY_STIFF = 0.4, SHEATH = 0.5;
-// The low herbs' colours (linear albedo, PLANTAIN, CLOVER): a plantain's leaf a deep, fresh green, its
-// spike's stalk a brownish green and its spike browner; a clover's leaflet a cooler, bluer green, and
-// the pale mark across it, HERB_MARK of the way to its colour at its middle. Each takes its value
-// times HERB_VALUE (by the blade's value hash: steadier than the grass's leaves).
-const HERB_COLOURS = { plantain: [ 0.05, 0.088, 0.03 ], stalk: [ 0.07, 0.082, 0.035 ], spike: [ 0.1, 0.082, 0.04 ], clover: [ 0.045, 0.09, 0.042 ], mark: [ 0.15, 0.18, 0.13 ] };
-const HERB_MARK = 0.55, HERB_VALUE = [ 0.85, 1.15 ];
 
 /** A blade's kind by its tint hash `tint` (the same at every vertex of the blade) and its tussock's
  * height scale `scaleY` (m): a culm (1 or 0) or a dead leaf (1 or 0, never a culm). */
@@ -1452,80 +1328,6 @@ const wetPuddle = Fn( ( [ xz, wetness ]: [ THREE.Node<'vec2'>, F ] ) => {
 
 } ).setLayout( { name: 'meadowPuddle', type: 'float', inputs: [ { name: 'xz', type: 'vec2' }, { name: 'wetness', type: 'float' } ] } );
 
-// A herb's blade in place of a grass blade's pose (PLANTAIN, CLOVER), as four columns: ( its local
-// position, 1 on a herb's blade ), ( its half width's offset, its width axis: local x, z ),
-// ( its root: local x, z, its length in metres, its colour's code: -2 a plantain's leaf, -3 its
-// spike, -4 a clover's leaflet ), zeros. Worked out on the herb batch (`plantain`, the `herbal`
-// uniform passed in) and on a clover tuft's blades (`clover`, its share), each from the blade's
-// index in its tuft (`index`) and hashes of it and its anchor (`pick`), in metres turned into the
-// tuft's units (the scale across from its height scale `scaleY` and `aspect`, as `restBlade`);
-// elsewhere zeros, which the blends by its flag drop. A plantain's leaf grows from the rosette's
-// centre at its own turn (the golden angle round from the last, so the leaves spread evenly), a
-// stalk widening into an oval blade; a spike stands nearly upright from the centre. A clover's
-// blades go in threes, each three a leaf (taken by the share): its centre on the tuft's disc, its
-// leaflets at a third of a turn apart on its stalk's top, rounded at their tips.
-const herbPose = Fn( ( [ on, blade, index, pick, clover, plantain, scaleY, aspect ]: [ F, THREE.Node<'vec4'>, F, F, F, F, F, F ] ) => {
-
-	const m = mat4( vec4( 0 ), vec4( 0 ), vec4( 0 ), vec4( 0 ) ).toVar();
-	If( on.greaterThan( 0.5 ), () => {
-
-		const t = blade.x, side = sign( blade.w );
-		const rosette = ( k: number ) => fract( sin( pick.mul( 71.3 + k * 13.1 ) ).mul( 43758.5453 ) );
-		const own = ( k: number ) => bladeHash( index, pick, 20 + k );
-		// the plantain's: a leaf (its first PLANTAIN.leaves blades, `count` of them kept) or a spike
-		const isLeaf = step( index, PLANTAIN.leaves - 0.5 ).toVar();
-		const size = mix( float( 0.8 ), float( 1.2 ), rosette( 2 ) );
-		const count = floorN( mix( float( PLANTAIN.count[ 0 ] ), float( PLANTAIN.count[ 1 ] + 1 ), rosette( 0 ) ) );
-		const raised = floorN( rosette( 1 ).mul( PLANTAIN.spikes + 1 ) );
-		const kept = mix( step( index.sub( PLANTAIN.leaves ).add( 0.5 ), raised ), step( index.add( 0.5 ), count ), isLeaf );
-		const leafLength = mix( float( PLANTAIN.length[ 0 ] ), float( PLANTAIN.length[ 1 ] ), own( 1 ) ).mul( size ).toVar();
-		const rise = mix( float( PLANTAIN.rise[ 0 ] ), float( PLANTAIN.rise[ 1 ] ), own( 2 ) );
-		const spikeLength = mix( float( PLANTAIN.spike[ 0 ] ), float( PLANTAIN.spike[ 1 ] ), own( 2 ) ).mul( size ).toVar();
-		const spikeAngle = mix( float( PLANTAIN.spikeAngle[ 0 ] ), float( PLANTAIN.spikeAngle[ 1 ] ), own( 1 ) );
-		const oval = sin( clamp( t.sub( 0.2 ).div( 0.8 ), 0, 1 ).mul( Math.PI ) );
-		const leafHalf = leafLength.mul( PLANTAIN.width * 0.5 ).mul( max( pow( max( oval, 0 ), 0.6 ), 0.1 ) );
-		const spikeHalf = mix( float( 0.0012 ), float( 0.0028 ), smoothstepN( PLANTAIN.spikeHead - 0.05, PLANTAIN.spikeHead + 0.03, t ) ).mul( float( 1 ).sub( smoothstepN( 0.9, 1, t ).mul( 0.6 ) ) );
-		const plantTurn = mix( own( 0 ).mul( TAU ), index.mul( 2.39996 ).add( rosette( 3 ).mul( TAU ) ).add( own( 0 ).sub( 0.5 ).mul( 0.5 ) ), isLeaf );
-		const plantAlong = mix( spikeLength.mul( t ).mul( cos( spikeAngle ) ), leafLength.mul( t ), isLeaf );
-		const plantUp = mix( spikeLength.mul( t ).mul( sin( spikeAngle ) ), leafLength.mul( sin( rise ) ).mul( t ).mul( float( 1 ).sub( t.mul( 0.75 ) ) ), isLeaf );
-		const plantHalf = mix( spikeHalf, leafHalf, isLeaf ).mul( kept );
-		// the clover's: a leaf's leaflet
-		const group = floorN( index.div( 3 ) ), leaflet = index.sub( group.mul( 3 ) );
-		const leafDraw = ( k: number ) => bladeHash( group, pick, 30 + k );
-		const isClover = step( leafDraw( 0 ), clover );
-		const r = leafDraw( 1 ).sqrt().mul( CLOVER.spread ), a = leafDraw( 2 ).mul( TAU );
-		const leafletLength = mix( float( CLOVER.leaflet[ 0 ] ), float( CLOVER.leaflet[ 1 ] ), leafDraw( 5 ) );
-		const stalk = mix( float( CLOVER.stalk[ 0 ] ), float( CLOVER.stalk[ 1 ] ), leafDraw( 3 ) );
-		const round = mix( float( 0.15 ), float( 1 ), sin( min( t.div( 0.7 ), 1 ).mul( Math.PI / 2 ) ) ).mul( float( 1 ).sub( smoothstepN( 0.75, 1, t ).mul( 0.45 ) ) );
-		// the herb's, by the batch
-		const turn = mix( leafDraw( 4 ).mul( TAU ).add( leaflet.mul( TAU / 3 ) ), plantTurn, plantain );
-		const dir = vec2( cos( turn ), sin( turn ) ).toVar();
-		const root = mix( vec2( cos( a ), sin( a ) ).mul( r ), vec2( 0 ), plantain );
-		const along = mix( leafletLength.mul( t ), plantAlong, plantain );
-		const up = mix( stalk.add( leafletLength.mul( t ).mul( 0.3 ) ), plantUp, plantain ).add( HERB_LIFT );
-		const half = mix( leafletLength.mul( 0.42 ).mul( round ), plantHalf, plantain );
-		const across = aspect.div( scaleY );
-		const axis = vec2( dir.y.negate(), dir.x );
-		// (the position holds its half width's offset, as a grass blade's: `pixelWideBlade` narrows it)
-		const offset = axis.mul( half.mul( side ).mul( across ) ).toVar();
-		const at = root.add( dir.mul( along ) ).mul( across ).add( offset );
-		const flag = mix( isClover, float( 1 ), plantain );
-		const code = mix( float( - 4 ), mix( float( - 3 ), float( - 2 ), isLeaf ), plantain );
-		m.assign( mat4(
-			vec4( at.x, up.div( scaleY ), at.y, flag ),
-			vec4( offset, axis ),
-			vec4( root.mul( across ), mix( leafletLength, mix( spikeLength, leafLength, isLeaf ), plantain ), code.mul( flag ) ),
-			vec4( 0 ),
-		) );
-
-	} );
-	return m;
-
-} ).setLayout( { name: 'meadowHerbPose', type: 'mat4', inputs: [
-	{ name: 'on', type: 'float' }, { name: 'blade', type: 'vec4' }, { name: 'index', type: 'float' }, { name: 'pick', type: 'float' },
-	{ name: 'clover', type: 'float' }, { name: 'plantain', type: 'float' }, { name: 'scaleY', type: 'float' }, { name: 'aspect', type: 'float' },
-] } );
-
 // A head's petals and colour, in the fragment stage, from where the fragment lies on the disc
 // (`radius`, 0 at the centre to 1 at the rim, and `across`, -1 to 1 across its sector) and the
 // head's number (`kind`): each sector is a petal, its outline and colours the head's (`HEADS`).
@@ -1638,23 +1440,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// outward direction, the roof's height, the outward direction, then the wall (LIP_WALLS offsets).
 	const edgeRecord = input.edge( 0 );
 	const walls = [ 1, 2, 3, 4 ].map( ( k ) => input.edge( k ) );
-	const grassPose = restBlade( blade, pick, scaleY, aspect, clump, isStem, head.stem );
-	// A herb's blade in its place (`herbPose`): the herb batch's plantains, and the leaflets of a
-	// tuft in a clover mat (its flower code -1 - its share); `herb` is 1 on a herb's vertex.
-	const herbColumns = herbPose( max( float( herbal ), step( ground0.y, - 0.5 ) ), blade, float( vertexIndex.div( bladeVerts ) ), pick,
-		max( ground0.y.negate().sub( 1 ), 0 ), float( herbal ), scaleY, aspect ).toVar( 'grassHerb' ) as unknown as { element( i: number ): THREE.Node<'vec4'> };
-	const herb = herbColumns.element( 0 ).w.toVar();
-	const pose = {
-		...grassPose,
-		position: mix( grassPose.position, herbColumns.element( 0 ).xyz, herb ),
-		offset: mix( grassPose.offset, herbColumns.element( 1 ).xy, herb ),
-		axis: mix( grassPose.axis, herbColumns.element( 1 ).zw, herb ).toVar(),
-		lean: grassPose.lean.mul( float( 1 ).sub( herb ) ),
-		base: mix( grassPose.base, herbColumns.element( 2 ).xy, herb ),
-		metres: mix( grassPose.metres, herbColumns.element( 2 ).z, herb ).toVar(),
-	};
-	// (a herb's blade sways HERB_SWAY as much as a grass blade)
-	const sway2 = t2.mul( mix( float( 1 ), float( HERB_SWAY ), herb ) );
+	const pose = restBlade( blade, pick, scaleY, aspect, clump, isStem, head.stem );
 	// Whole blades instead of partial coverage (after tidewater's GrassField, Daniel Greenheck, MIT;
 	// the technique only): a widened blade's fragment is drawn solid where the blade's coverage
 	// there (`pixelWideBlade`) is at or above the blade's own hash and not at all below it. A blade
@@ -1670,10 +1456,9 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// (taken per vertex: the blade's id comes from its attribute's magnitude, whose sign flips
 	// across the blade, so interpolated it is the id only at the edges).
 	// A head's vertex passes instead its keep hash, its place across its petal and from the centre,
-	// and 2 + its flower code, which tells it apart in the fragment stage (blade hashes are below 1);
-	// a herb's blade its tint hash plus its colour's code (`herbPose`: -2 to -4), below 0.
+	// and 2 + its flower code, which tells it apart in the fragment stage (blade hashes are below 1).
 	const bladeVarying = varying( mix(
-		vec4( pose.hash, pose.side, bladeHash( pose.id, pick, 5 ), bladeHash( pose.id, pick, 6 ).add( herbColumns.element( 2 ).w ) ),
+		vec4( pose.hash, pose.side, bladeHash( pose.id, pick, 5 ), bladeHash( pose.id, pick, 6 ) ),
 		vec4( head.hash, positionGeometry.x, blade.z, ground0.y.add( 1 ) ), isHead ), 'vGrassBlade' );
 	// sway: gusts travel across the meadow, the tips move most. `p` is the vertex of the blade's
 	// rest pose placed by the tuft's transform, i.e. in world space (the mesh itself stays
@@ -1773,16 +1558,15 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 
 	} )();
 	// The islanders' trail (Trample.ts) at the blade's root, a head's at its stem's (the tuft's
-	// origin), none on a herb; left out of the shader altogether under `flags.trample = false` at
-	// load. Under the temporal modes the previous position takes the previous frame's trail.
+	// origin); left out of the shader altogether under `flags.trample = false` at load. Under the
+	// temporal modes the previous position takes the previous frame's trail.
 	const trampled = debugFlags.trample !== false;
 	const bladeRoot = () => mix( input.matrix.mul( vec4( pose.base.x, 0, pose.base.y, 1 ) ).xz, origin.xz, isHead );
-	const unherbed = float( 1 ).sub( herb );
 	// the blade's share of the trail by its tuft's record (`frame` 0, or 1 for the previous frame's),
 	// and its root and own facing (world) where that is not 0
 	const trail = trampled ? cull.node( 'trail', 'vec4', true ) : null;
 	const trampleOf = ( frame: number ): TrampleBlade => ( {
-		share: trampleShare( ( k ) => trail!.element( tuftSlot.mul( TRAMPLE_RECORD ).add( frame * 2 + k ) ), bladeRoot ).mul( unherbed ),
+		share: trampleShare( ( k ) => trail!.element( tuftSlot.mul( TRAMPLE_RECORD ).add( frame * 2 + k ) ), bladeRoot ),
 		root: () => {
 
 			const r = bladeRoot().toVar();
@@ -1794,7 +1578,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const trample = trampled ? trampleOf( 0 ) : undefined;
 	if ( trample ) trample.share = trample.share.toVar( 'grassTrample' );
 	const trampleBefore = trampled && TEMPORAL ? trampleOf( 1 ) : undefined;
-	const bend = bendBlade( shared.wind, rooted, origin, bendHeight, sway2, phase, fade, clump.stiffness, flowerPart, trample );
+	const bend = bendBlade( shared.wind, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness, flowerPart, trample );
 	const bent = settle( bend.position ).toVar( 'grassBent' );
 	// A blade of a tuft past 70 m stands for as many of the blades it drew there as its gain over
 	// NEAR_GAIN (exactly 1 within 70 m) and is drawn as that many strips side by side, each with its
@@ -1804,11 +1588,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const rimVarying = varying( vec2( ground0.z, max( gain.div( NEAR_GAIN ), 1 ) ), 'vGrassRimCover' );
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
 	const cover = rimVarying.x;
-	// a herb's blade: its colour's code under its tint (`herbPose`, 0 on a grass blade or a head) and
-	// the tint itself
-	const herbCode = floorN( bladeVarying.w ).mul( step( bladeVarying.w, - 0.5 ) ).toVar();
-	const tintHash = bladeVarying.w.sub( herbCode ).toVar();
-	const strip = bladeStrips( bladeVarying.y, bladeVarying.z, tintHash, rimVarying.y );
+	const strip = bladeStrips( bladeVarying.y, bladeVarying.z, bladeVarying.w, rimVarying.y );
 	// Each blade takes its value (VALUE) and its root and tip colours from the palette (PALETTE, one
 	// draw along it, and DRY_SHARE dry leaves by a draw of their own): hashes of the blade and its
 	// tuft's anchor, so no two neighbouring blades match; the palette's mean is the lawn's colour.
@@ -1816,8 +1596,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const jitter = strip.jitter, tint = strip.tint;
 	const run = ( k: number ) => mix( mix( vec3( PALETTE.fresh[ k ] ), vec3( PALETTE.yellow[ k ] ), clamp( tint.mul( 2 ), 0, 1 ) ), vec3( PALETTE.olive[ k ] ), clamp( tint.mul( 2 ).sub( 1 ), 0, 1 ) );
 	// (the blade's kind by its own tint, not a far strip's: its shape is the blade's, `bladeKind`)
-	const herbBlade = step( herbCode, - 1.5 );
-	const culm = bladeKind( tintHash, tuft.w.div( CANOPY_TOP ) ).culm.mul( float( 1 ).sub( herbBlade ) );
+	const culm = bladeKind( bladeVarying.w, tuft.w.div( CANOPY_TOP ) ).culm;
 	const dry = step( 1 - DRY_SHARE, fract( tint.mul( 13.7 ) ) ).mul( float( 1 ).sub( culm ) );
 	const sheath = fract( tint.mul( 5.31 ) ).mul( SHEATH );
 	const value = jitter.mul( VALUE[ 1 ] - VALUE[ 0 ] ).add( VALUE[ 0 ] );
@@ -1831,16 +1610,8 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// a culm's colour: its straw green stem, its panicle (PANICLE, against the lawn's colour, which
 	// the instance colour multiplies in) from where it swells
 	const lawn = vec3( ...LAWN_COLOUR );
-	const panicle = mix( vec3( ...PANICLE[ 0 ] ), vec3( ...PANICLE[ 1 ] ), fract( tintHash.mul( 3.7 ) ) ).div( lawn );
+	const panicle = mix( vec3( ...PANICLE[ 0 ] ), vec3( ...PANICLE[ 1 ] ), fract( bladeVarying.w.mul( 3.7 ) ) ).div( lawn );
 	const culmColour = mix( mix( run( 1 ), vec3( PALETTE.dry[ 1 ] ), 0.5 ), panicle, smoothstepN( CULM_HEAD[ 0 ], CULM_HEAD[ 1 ], t ) );
-	// a herb's colour (HERB_COLOURS, against the lawn's as the panicle's): a plantain's leaf, its
-	// spike's stalk swelling into its spike, or a clover's leaflet with its pale mark, a V across
-	// its middle pointing to its stalk (on most leaves, by the tint)
-	const isHerb = ( code: number ) => step( abs( herbCode.sub( code ) ), 0.5 );
-	const mark = float( 1 ).sub( smoothstepN( 0.05, 0.12, abs( t.sub( abs( strip.side ).mul( 0.35 ).add( 0.3 ) ) ) ) ).mul( step( 0.3, tintHash ) ).mul( HERB_MARK );
-	const herbColour = vec3( ...HERB_COLOURS.plantain ).mul( isHerb( - 2 ) )
-		.add( mix( vec3( ...HERB_COLOURS.stalk ), vec3( ...HERB_COLOURS.spike ), smoothstepN( PLANTAIN.spikeHead - 0.05, PLANTAIN.spikeHead + 0.03, t ) ).mul( isHerb( - 3 ) ) )
-		.add( mix( vec3( ...HERB_COLOURS.clover ), vec3( ...HERB_COLOURS.mark ), mark ).mul( isHerb( - 4 ) ) ).div( lawn );
 	// The blade's side and width axis, for the edge here and the fold below. The edge is a lighter
 	// rim along the blade's margins, only seen where a blade is several pixels wide.
 	const side = strip.side;
@@ -1874,17 +1645,17 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const mat = vegetationMaterial( shared, withHeadLight( onHead, {
 		family: 'blade', roughness: 0.86,
 		wet: { tint: 0.92, roughness: 0.76 },
-		color: ( wet ) => mix( mix( mix( mix( root, tipColour, smoothstepN( 0.12, 1, t ) ), culmColour, culm ).mul( value ), herbColour.mul( jitter.mul( HERB_VALUE[ 1 ] - HERB_VALUE[ 0 ] ).add( HERB_VALUE[ 0 ] ) ), herbBlade ).mul( edge ), headFragment.colour, onHead ).mul( wet ),
+		color: ( wet ) => mix( mix( mix( root, tipColour, smoothstepN( 0.12, 1, t ) ), culmColour, culm ).mul( value ).mul( edge ), headFragment.colour, onHead ).mul( wet ),
 		rest: rooted,
 		// Short growth needs a smaller world-space sway to keep its tips above the soil.
 		// The widening and the narrowing by distance (`pixelWideBlade`, `tuftLod`) follow the current
 		// camera: a previous frame's pose from the registered displacement keeps them as they are now.
 		displacement: ( state ) => pixelWideBlade(
-			state === shared.wind ? bent : settle( bendBlade( state, rooted, origin, bendHeight, sway2, phase, fade, clump.stiffness, flowerPart, state === shared.wind.previous ? trampleBefore : trample ).position ), across, minWidth, keep, gain, isHead, headSize.coverage ),
+			state === shared.wind ? bent : settle( bendBlade( state, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness, flowerPart, state === shared.wind.previous ? trampleBefore : trample ).position ), across, minWidth, keep, gain, isHead, headSize.coverage ),
 		// Motion vectors (temporal modes): the blade bent by the previous frame's wind from the same
 		// rooted point, widened by the offset the current pose took (the widening follows the camera,
 		// whose motion Motion.ts adds): swayed - ( bent now - bent before ).
-		previous: ( swayed ) => TEMPORAL ? swayed.sub( bent ).add( settle( bendBlade( shared.wind.previous, rooted, origin, bendHeight, sway2, phase, fade, clump.stiffness, flowerPart, trampleBefore ).position ) ) : undefined,
+		previous: ( swayed ) => TEMPORAL ? swayed.sub( bent ).add( settle( bendBlade( shared.wind.previous, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness, flowerPart, trampleBefore ).position ) ) : undefined,
 		// The rest of three's instancing: the normal and the instance colour, before the blade moves.
 		beforePosition: () => {
 
@@ -2037,7 +1808,7 @@ const GRASS_PAYLOAD: CullPayload<Tuft> = {
 		// (the fourth channel: the tussock's word, `plantGrass`)
 		colors[ i * 4 ] = t.col.r; colors[ i * 4 + 1 ] = t.col.g; colors[ i * 4 + 2 ] = t.col.b; colors[ i * 4 + 3 ] = t.clump;
 		const e = t.m.elements;
-		// x: sky visibility, y: the flower code of a flowering tuft (1.5 + its head, `FLOWER_SPECIES`), or a clover tuft's -1 - its share (CLOVER), else 0, z: rim cover, w: rim edge (1 on the plateau's outer rim,
+		// x: sky visibility, y: the flower code of a flowering tuft (1.5 + its head, `FLOWER_SPECIES`, else 0), z: rim cover, w: rim edge (1 on the plateau's outer rim,
 		// where blades stand against the sea and stay narrower at 4x: the opaque pass's MSAA edge pixels
 		// there resolve against the sky-coloured clear, so every partly covered pixel a widened
 		// blade adds shows as a pale fringe over the sea); then the instance's local x axis with the
@@ -2091,7 +1862,6 @@ function tuftMesh( source: THREE.BufferGeometry, shape: TuftShape, floor: number
 	geometry.userData.grassFloor = floor;
 	geometry.userData.grassBladeVerts = ( shape.segs + 1 ) * 2;
 	geometry.userData.grassFlowers = ( source.userData.baseIndices ?? 0 ) > 0 ? 1 : 0;
-	geometry.userData.grassHerbs = source.userData.herbs ?? 0;
 	const mesh = new THREE.InstancedMesh( geometry, material, Math.max( range.count, 1 ) );
 	mesh.instanceMatrix.array = new Float32Array( 16 ); // replaced below; drop the copy InstancedMesh allocates
 	( mesh as unknown as { instanceMatrix: THREE.BufferAttribute } ).instanceMatrix = cull.buffer( 'matrices' );
@@ -2201,8 +1971,8 @@ function batchOf( source: THREE.BufferGeometry, shape: TuftShape, floor: number,
 /** The meadow's tufts of each kind, one record per instance: the lawn, its thin extra tufts and its
  * flowering tufts; and the sward's depth at every anchor that holds turf ( x, z, depth each: the
  * ground's field, SwardField.ts). */
-export interface GrassTufts { lawn: Tuft[]; lawnThin: Tuft[]; lawnFlower: Tuft[]; lawnHerb: Tuft[]; sward: number[] }
-type TuftKind = 'lawn' | 'lawnThin' | 'lawnFlower' | 'lawnHerb';
+export interface GrassTufts { lawn: Tuft[]; lawnThin: Tuft[]; lawnFlower: Tuft[]; sward: number[] }
+type TuftKind = 'lawn' | 'lawnThin' | 'lawnFlower';
 
 /** The tufts grown on the anchors `veg` (any of them: each anchor's tufts depend on that anchor
  * alone); `walkDistance` (m from a point to the islander's loop) keeps the flowers off the path;
@@ -2212,7 +1982,7 @@ type TuftKind = 'lawn' | 'lawnThin' | 'lawnFlower' | 'lawnHerb';
 export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number, shore?: ShoreField, rimLip?: RimLipData ): GrassTufts {
 
 	const n = veg.length / STRIDE;
-	const lawn: Tuft[] = [], lawnThin: Tuft[] = [], lawnFlower: Tuft[] = [], lawnHerb: Tuft[] = [], sward: number[] = [];
+	const lawn: Tuft[] = [], lawnThin: Tuft[] = [], lawnFlower: Tuft[] = [], sward: number[] = [];
 	// The soil (Meadow.ts `meadowSoil`) from the shore field as the ground samples it; without it, from
 	// each anchor's own rim distance alone (no side of the wind: tools that plant without the field).
 	let ownRim = 0;
@@ -2288,10 +2058,9 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		}
 		if ( out.lengthSq() > 1e-8 ) out.normalize();
 		// (draws added since, from a stream of their own: the tussock's answer to its spot's pull,
-		// GRADE, its side of straight out at the shoulder, SHOULDER_TURN, and whether its gap holds a
-		// plantain, HERB_GAP)
+		// GRADE, and its side of straight out at the shoulder, SHOULDER_TURN)
 		const grade = anchorStream( x, z, 263 );
-		const g0 = grade(), g1 = grade(), g2 = grade(), g3 = grade();
+		const g0 = grade(), g1 = grade(), g2 = grade();
 		if ( spill > 0 && ! onStack ) {
 
 			const side = ( 2 * g2 - 1 ) * SHOULDER_TURN, c = Math.cos( side ), s = Math.sin( side );
@@ -2314,30 +2083,18 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		}
 
 		// The tussock (LEVEL, TUSSOCK): short on the stacks' thin soil and for SHORT_STAY of them
-		// anywhere, else part of the way down as its spot pulls it (a shallow pocket, a low patch or a
-		// clover mat, GRADE, CLOVER); a flowering one as its species grows (LOW_FLOWER), so the
-		// flowers keep their habitat and count.
+		// anywhere, else part of the way down as its spot pulls it (a shallow pocket or a low patch,
+		// GRADE); a flowering one as its species grows (LOW_FLOWER), so the flowers keep their
+		// habitat and count.
 		const lowFlower = head === DIANTHUS || head === DANDELION || head === VIOLET;
-		const vigour = meadowVigour( x, z ), thin = meadowShallow( x, z ), clover = onStack ? 0 : cloverMat( x, z );
+		const vigour = meadowVigour( x, z ), thin = meadowShallow( x, z );
 		let short = 0;
 		if ( onStack || own[ 0 ] >= 1 - SHORT_STAY ) short = 1;
-		else if ( g0 >= GRADE.stand ) short = Math.min( Math.max( thin, lowPatch( x, z ), clover * CLOVER.pull ) * ( GRADE.answer[ 0 ] + ( GRADE.answer[ 1 ] - GRADE.answer[ 0 ] ) * g1 ), 1 );
+		else if ( g0 >= GRADE.stand ) short = Math.min( Math.max( thin, lowPatch( x, z ) ) * ( GRADE.answer[ 0 ] + ( GRADE.answer[ 1 ] - GRADE.answer[ 0 ] ) * g1 ), 1 );
 		if ( flower > 0 ) short = lowFlower ? Math.max( short, LOW_FLOWER ) : 0;
-		if ( flower === 0 && ! onStack && own[ 7 ] < GAP * ( 1 - short ) + THIN_GAP * thin ) {
+		if ( short < 0.5 && flower === 0 && own[ 7 ] < GAP + THIN_GAP * thin ) {
 
 			sward.push( x, z, - 1 );
-			// HERB_GAP of the gaps hold a plantain's rosette (PLANTAIN, the herb batch), planted at
-			// the short turf's height scale with a stiffness of 1.5 and no lean of its own
-			if ( g3 < HERB_GAP ) {
-
-				scl.set( PLANT_SPREAD, LEVEL.short, PLANT_SPREAD );
-				stiffByte = Math.round( ( 1.5 - STIFF_RANGE[ 0 ] ) / ( STIFF_RANGE[ 1 ] - STIFF_RANGE[ 0 ] ) * 255 );
-				leanByte = 0;
-				lean.set( 0, 0, 0 );
-				density = 1;
-				plant( lawnHerb, pos, q, scl, col, k, cover, rimEdge, 0 );
-
-			}
 			continue;
 
 		}
@@ -2361,11 +2118,8 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		const blades = tallShare + ( 1 - tallShare ) * short;
 		density = blades;
 		sward.push( x, z, smoothstep( DENSE[ 0 ], DENSE[ 1 ], scl.y ) * density );
-		// Its colour: the lawn's everywhere (each blade then its own, `restBlade`). In a clover mat its
-		// share of blades grown as clover's leaflets (CLOVER), in its flower code's place.
-		const cloverShare = flower > 0 ? 0 : clover * CLOVER.peak * ( CLOVER.tall + ( 1 - CLOVER.tall ) * short );
-		const code = flower > 0 ? flower : cloverShare > 0.02 ? - 1 - cloverShare : 0;
-		plant( flower > 0 ? lawnFlower : lawn, pos, q, scl, col, k, cover, rimEdge, 0, code );
+		// Its colour: the lawn's everywhere (each blade then its own, `restBlade`).
+		plant( flower > 0 ? lawnFlower : lawn, pos, q, scl, col, k, cover, rimEdge, 0, flower );
 
 		// About a quarter of the tussocks take a second tuft, picked by the anchor's own hash (no
 		// field: a field made patches of denser sward): beside the first, of its height and its
@@ -2378,13 +2132,13 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 			q.setFromUnitVectors( up, dir ).multiply( qy.setFromAxisAngle( up, draws[ 5 ] * Math.PI * 2 ) );
 			scl.set( PLANT_SPREAD * ( 0.9 + draws[ 6 ] * 0.2 ), scl.y * ( 0.96 + draws[ 7 ] * 0.08 ), PLANT_SPREAD * ( 0.9 + draws[ 6 ] * 0.2 ) );
 			density = ( TUSSOCK.extraBlades[ 0 ] + ( TUSSOCK.extraBlades[ 1 ] - TUSSOCK.extraBlades[ 0 ] ) * own[ 6 ] ) / LAWN.blades;
-			if ( grassQuality.thinTufts ) plant( lawnThin, pos, q, scl, col, k, cover, rimEdge, 1, Math.min( code, 0 ) );
+			if ( grassQuality.thinTufts ) plant( lawnThin, pos, q, scl, col, k, cover, rimEdge, 1 );
 
 		}
 
 	}
-	if ( rimLip ) runSteps( edgeTuftSteps( [ lawn, lawnThin, lawnFlower, lawnHerb ], rimLip ) );
-	return { lawn, lawnThin, lawnFlower, lawnHerb, sward };
+	if ( rimLip ) runSteps( edgeTuftSteps( [ lawn, lawnThin, lawnFlower ], rimLip ) );
+	return { lawn, lawnThin, lawnFlower, sward };
 
 }
 
@@ -2433,7 +2187,7 @@ export function* edgeTuftSteps( lists: Tuft[][], lip: RimLipData, per = Infinity
 
 /** The meadow: its lawn meshes in one group, drawing the tufts `plantGrass` grew; `sunShadow`
  * gives the blades the larger casters' soft shade. */
-export function buildGrass( { lawn, lawnThin, lawnFlower, lawnHerb, sward }: GrassTufts, shared: Shared, sunShadow: SunShadow ): THREE.Group {
+export function buildGrass( { lawn, lawnThin, lawnFlower, sward }: GrassTufts, shared: Shared, sunShadow: SunShadow ): THREE.Group {
 
 	setSwardField( runSteps( swardSteps( sward, SWARD_FALLBACK ) ) );
 
@@ -2464,8 +2218,6 @@ export function buildGrass( { lawn, lawnThin, lawnFlower, lawnHerb, sward }: Gra
 	// The flowering tufts draw on their own, over the lawn's blades and a head, so the tufts without
 	// a flower run no head vertices.
 	kinds.push( { geometry: flowerTuftGeometry( lawnGeometry ), shape: LAWN, floor: 0, tufts: lawnFlower, name: 'grass-lawn-flower', key: 'lawnFlower', thin: false, minShare } );
-	// The plantains' rosettes draw on their own, every blade at every distance (floor 1).
-	kinds.push( { geometry: herbTuftGeometry(), shape: HERB, floor: 1, tufts: lawnHerb, name: 'grass-herb', key: 'lawnHerb', thin: false, minShare: 1 } );
 	const cull: GrassCull = new VegetationCull( { name: 'Grass', payload: GRASS_PAYLOAD, lod: cullLod }, kinds.map( ( k ) => ( {
 		records: k.tufts, geometry: k.geometry, blades: k.shape.blades, floor: k.floor,
 		caps: bandCaps( k.shape.blades, k.floor, k.minShare ), bladeIndices: k.shape.segs * 6, baseIndices: k.geometry.userData.baseIndices ?? 0,
@@ -2587,19 +2339,18 @@ export function grassKind( group: THREE.Group, renderer: THREE.WebGPURenderer ):
 			*prepare( input ) {
 
 				const veg = input.data.vegetation, anchors = veg.length / STRIDE;
-				const tufts: GrassTufts = { lawn: [], lawnThin: [], lawnFlower: [], lawnHerb: [], sward: [] };
+				const tufts: GrassTufts = { lawn: [], lawnThin: [], lawnFlower: [], sward: [] };
 				for ( let a = 0; a < anchors; a += 16 ) {
 
 					const part = plantGrass( veg.subarray( a * STRIDE, Math.min( anchors, a + 16 ) * STRIDE ), input.data.rimGround, ( x, z ) => input.walkDistance( x, z ), input.data.shore );
 					tufts.lawn.push( ...part.lawn );
 					tufts.lawnThin.push( ...part.lawnThin );
 					tufts.lawnFlower.push( ...part.lawnFlower );
-					tufts.lawnHerb.push( ...part.lawnHerb );
 					tufts.sward.push( ...part.sward );
 					yield;
 
 				}
-				yield* edgeTuftSteps( [ tufts.lawn, tufts.lawnThin, tufts.lawnFlower, tufts.lawnHerb ], input.data.rimLip, 256 );
+				yield* edgeTuftSteps( [ tufts.lawn, tufts.lawnThin, tufts.lawnFlower ], input.data.rimLip, 256 );
 				const grass = yield* grassSteps( group, tufts, 256 );
 				yield;
 				for ( const buffer of Object.values( grass.buffers ) ) yield* uploadSteps( input.renderer, buffer, AttributeType.STORAGE );

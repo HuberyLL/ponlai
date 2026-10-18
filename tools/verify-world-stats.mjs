@@ -18,7 +18,6 @@
 //           islands run (step 8 on) is within 5 % for every kind. The counts print raw and per m^2,
 //           the flowers also by species; `--flowers <dir>` writes each island's turf anchors and
 //           flowering tufts ( x, z, species ) to <dir>/flowers-<seed>-<step>.json, to map them.
-//           The low herbs print too: the plantains' rosettes and the lawn's tufts in a clover mat.
 //   stones  on each seed and step run: no two stones overlap, every crown lies at or below
 //           -1.30 m, every stone lies within its class's reach of its cell (`checkStones`). Once
 //           per run, over seeds 1 - 6 at steps 0, 8 and 16, per 100 m of coast against the
@@ -402,14 +401,6 @@ function meadow( planting, island, chunks, pooled ) {
 	const bySpecies = species.map( () => 0 );
 	for ( const t of tufts.lawnFlower ) bySpecies[ Math.floor( t.flower - 1.5 ) ] ++;
 	if ( species.length ) console.log( `     flowers by species: ${ species.map( ( name, i ) => `${ name } ${ bySpecies[ i ] }` ).join( ', ' ) }` );
-	// the low herbs (Grass.ts: the plantains' rosettes, and the tufts in a clover mat, whose code is
-	// -1 - their clover share)
-	if ( tufts.lawnHerb ) {
-
-		const clover = tufts.lawn.filter( ( t ) => t.flower < 0 ), share = clover.reduce( ( a, t ) => a - 1 - t.flower, 0 );
-		console.log( `     herbs: plantains ${ tufts.lawnHerb.length }, clover tufts ${ clover.length } (${ ( 100 * clover.length / tufts.lawn.length ).toFixed( 1 ) } % of the lawn's, their mean share ${ ( share / Math.max( clover.length, 1 ) ).toFixed( 2 ) })` );
-
-	}
 	const dir = argument( '--flowers' );
 	if ( dir ) {
 

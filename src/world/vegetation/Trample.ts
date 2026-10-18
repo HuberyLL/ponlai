@@ -55,8 +55,6 @@ import { debugFlags } from '../../debug/DebugFlags.ts';
 // - The load is the elastica's linear lean (Wind.ts `leanLoad`) at the reference blade's length
 //   (Deform.ts GRASS_WIND.pressed.length) and scaled as the wind's by each blade's length cubed and
 //   its tussock's rigidity: tall blades are laid flat and parted widely, the short turf leans.
-//   The meadow's herbs take none (Grass.ts): pushed sideways, a plantain's leaf lying flat on the
-//   ground swung up through the upright.
 // - Cost: the record's kernel loops over the walkers (`count`, the TRAMPLE.walkers nearest the
 //   camera) per tuft, testing its track's bounding circle at the tuft's anchor (grown by
 //   TRAMPLE.legs[ 1 ] and TRAMPLE.spread), and runs only while a walker is drawn or was in the frame
