@@ -20,9 +20,8 @@ import type { Shared } from '../../shared.ts';
 //      sway for motion vectors, a kind's own vertex work before its position, the
 //      `flags.mv.wind` follower, the wind view)
 //   -> the normal and ambient occlusion -> the light through thin leaves (VegetationLighting).
-// Families: 'leaf' (alpha-tested folded leaves, vegetation/LeafTexture.ts: kept for the plant kinds
-// to come; no kind uses it today, since the rim bushes, the rim's trails and the plateau's plants
-// were removed), 'blade' (the meadow's blades and flower heads: tagged as vegetation, no leaf map, drawn
+// Families: 'leaf' (alpha-tested leaves: the bamboo's sprays, BambooMaterials.ts, on a map and
+// alpha map of their own; the folded leaf, vegetation/LeafTexture.ts, by default), 'blade' (the meadow's blades and flower heads: tagged as vegetation, no leaf map, drawn
 // whole or not at all: alpha to coverage at 4x, else `coverageDither`'s threshold) and 'sod' (not
 // tagged, so it takes the ordinary shadow filter and stays out of the depth prepass: kept for the
 // kinds to come; no kind uses it today, the grass over the cliff's edge being the meadow's own). A leaf's `alphaTest: 'alphaOnly'` keeps no numeric cut-out (as a material cloned with

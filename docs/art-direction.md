@@ -179,11 +179,14 @@ art decision changes; reference images stay out of the repository.
   stem two zhang long, at night it gives a white light") stands in clumps of straight white stalks
   at the windward cliff's edge, where nothing else stands in the sea wind, as many as the coast
   facing the wind is long.
-- Besides it, the terrain plants the meadow (grass, flowers) and its turf over the rim, nothing taller:
-  the island is a flat top ringed by cliffs, with no lee where shrubs or trees would grow, so it
-  has none (the shrubs, small trees, rim bushes and hanging leaf trails it once had were
-  placeholders). The walker's loop stays open meadow. Plants that matter to play are content
-  placed in the world, not terrain.
+- Penglai's own bamboo (浮筠之簳, Shiyi ji: "green leaves, purple stems, seeds as big as pearls")
+  grows in one stand at the starting island's heart, the most sheltered ground with the deepest
+  soil, the meadow and its flowers growing on under it.
+- Besides these, the terrain plants the meadow (grass, flowers) and its turf over the rim, and no
+  shrub or tree: the island is a flat top ringed by cliffs, with no lee where they would grow (the
+  shrubs, small trees, rim bushes and hanging leaf trails it once had were placeholders). The
+  walker's loop stays open meadow. Plants that matter to play are content placed in the world, not
+  terrain.
 - All vegetation moves in one wind: gusts visibly sweep the meadow and change as they go; still air
   is the rest pose. The wind turns with the weather and has levels (light, gentle, fresh, strong;
   gentle most of the time, fresh at times, light or strong rarely), coming mostly from within

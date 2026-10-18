@@ -432,6 +432,39 @@ function middle( land: LandLattice ): { w: Window; sd: Field2D; x: number; z: nu
 
 }
 
+/** The first bamboo stands (Bamboo.ts): how many (one: a stand's crown spreads about 6 m, and two
+ * filled half the starting island), and how far (m) each middle stands at least from the coast (the
+ * stand on the turf) and from the others. */
+export const GROVE = { count: 1, inland: 3.5, apart: 6 } as const;
+
+/** Where the starting island's first bamboo stands: up to GROVE.count points of the step-0
+ * piece alone (x, z, depth in m, one after another), the deepest first (ties in row order): the
+ * first at the island's heart, the most sheltered ground with the deepest soil, where a running
+ * bamboo spreads. A seed fixes them, and the land only grows, so later steps never move them. */
+export function startGrove( start: Piece ): number[] {
+
+	const { count, inland, apart } = GROVE;
+	const land = new LandLattice();
+	land.add( start );
+	const { w, sd } = middle( land );
+	const nx = w.i1 - w.i0;
+	const order: number[] = [];
+	for ( let k = 0; k < sd.data.length; k ++ ) if ( - sd.data[ k ] >= inland ) order.push( k );
+	order.sort( ( a, b ) => sd.data[ a ] - sd.data[ b ] || a - b );
+	const sites: number[] = [];
+	for ( const k of order ) {
+
+		if ( sites.length === count * 3 ) break;
+		const x = centre( w.i0 + k % nx ), z = centre( w.j0 + Math.floor( k / nx ) );
+		let free = true;
+		for ( let s = 0; s < sites.length && free; s += 3 ) free = Math.hypot( x - sites[ s ], z - sites[ s + 1 ] ) >= apart;
+		if ( free ) sites.push( x, z, - sd.data[ k ] );
+
+	}
+	return sites;
+
+}
+
 /** The yunpeng's clumps (Yunpeng.ts): one for every `per` m of the coast that faces the wind (its
  * outward normal within 60 degrees of it: `facing`, the cosine), how far in from the coast (m, the
  * least and the most: on the turf at the cliff's edge), how far apart (m), and where the prevailing

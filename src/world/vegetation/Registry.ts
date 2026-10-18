@@ -5,7 +5,8 @@ import type { WorldData } from '../types.ts';
 // The page's lists of vegetation roots read it (main.ts: the scene, the depth prepass, the sun's
 // caster box, the rain's collision bake; Growth.ts: the kinds' growth and the rain's bake after a
 // swap) instead of naming the kinds at each place.
-// - Order: the kinds are registered in the order the scene draws them (today the grass alone), and
+// - Order: the kinds are registered in the order the scene draws them (today the grass, then the
+//   yunpeng, then the bamboo's culms and leaves), and
 //   every list keeps it: draws of equal render order and depth keep their order.
 // - The depth prepass (`prepass`, VegetationPrepass.ts) and the shadow filter (`shadowFilter`,
 //   SunShadow.ts) are separate choices. The shadow filter is still read from the materials'
@@ -42,7 +43,7 @@ export interface KindGrowth<P> {
 }
 
 export interface VegetationKind<P = unknown> {
-	/** 'grass' */
+	/** 'grass', 'yunpeng', 'bamboo', ... */
 	name: string;
 	/** what the page adds to the scene */
 	root: THREE.Object3D;

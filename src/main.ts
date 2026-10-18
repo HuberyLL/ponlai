@@ -56,6 +56,8 @@ import { GroundBounce, installGroundBounce } from './lighting/GroundBounce.ts';
 import { islandSurfaceHeight, landBounds } from './world/WorldShapes.ts';
 import { LandLattice } from './world/IslandGrowth.ts';
 import { walkLoopDistance, walkPoints } from './world/WalkPath.ts';
+import { bambooKinds, buildBamboo } from './world/Bamboo.ts';
+import { leafAtlas as bambooAtlas } from './world/BambooMaterials.ts';
 import { setIslandClearing } from './weather/AerialPerspective.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { Trample } from './world/vegetation/Trample.ts';
@@ -636,6 +638,10 @@ vegetation.add( grassKind( grass, renderer ) );
 // the yunpeng's clumps at the windward cliff's edge (Yunpeng.ts)
 const yunpeng = buildYunpeng( data.yunpeng, islandSurfaceHeight, shared );
 if ( yunpeng ) vegetation.add( yunpengKind( yunpeng ) );
+// the bamboo's stand at the starting island's heart (Bamboo.ts), its leaves drawn once here
+// (BambooMaterials.ts)
+const bamboo = buildBamboo( data.grove, islandSurfaceHeight, { shared, atlas: bambooAtlas() } );
+if ( bamboo ) for ( const kind of bambooKinds( bamboo ) ) vegetation.add( kind );
 scene.add( ...vegetation.roots() );
 installWindMotionFlag( scene );
 installVegetationPrepass( scene, vegetation.roots( ( kind ) => kind.prepass ) );
@@ -647,6 +653,8 @@ const sunCasters = new THREE.Box3();
 const heldOpaque: THREE.Box3[] = [];
 // the yunpeng's stalks rise above the island too
 if ( yunpeng ) heldOpaque.push( new THREE.Box3().setFromObject( yunpeng ).expandByScalar( 0.4 ) );
+// the bamboo's crown rises above the island too
+if ( bamboo ) heldOpaque.push( new THREE.Box3().setFromObject( bamboo.culms ).union( new THREE.Box3().setFromObject( bamboo.leaves ) ).expandByScalar( 0.6 ) );
 function setSunCasters(): void {
 
 	sunCasters.makeEmpty();
@@ -762,7 +770,7 @@ water = new Water( {
 	refraction: { color: pipeline.textures.refraction, depth: pipeline.textures.refractionDepth },
 } );
 pipeline.seaLevel.value = shared.waterLevel.value;
-// the boxes held so far (the yunpeng's, a game's props shown before the sea was made)
+// the boxes held so far (the plants', a game's props shown before the sea was made)
 for ( const box of heldOpaque ) water.reflectionBounds.union( box );
 // the light under the water follows the long waves the sea's surface shows (Caustics.ts, the wave maps)
 caustics.attachWaves( { fft, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves, detail: seaDetail } );

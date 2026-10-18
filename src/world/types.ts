@@ -90,6 +90,8 @@ export interface WorldData {
 	walk: Float64Array;
 	// Where the yunpeng's clumps stand (Yunpeng.ts): x, z, depth (m) per clump.
 	yunpeng: Float64Array;
+	// Where the first bamboo stands (Bamboo.ts): x, z, depth (m) per stand.
+	grove: Float64Array;
 	timings: Record<string, number>;
 }
 

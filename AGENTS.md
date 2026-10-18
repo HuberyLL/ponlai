@@ -64,10 +64,12 @@ the fantasy in the world and a light touch on the image (clear shade, a golden a
   its wildflowers and its tufts draped over the cliff's edge included; anchors `Anchors.ts`, soil from `ShoreSample.ts`; the
   sward's depth over its ground in the meadow map, `SwardField.ts`), the yunpeng that stands
   among it (`Yunpeng.ts`, its sites the step-0 piece's: `IslandGrowth.ts`), the islander's
-  walking loop (`WalkLoop.ts`, `WalkPath.ts`) and the vegetation's depth prepass
+  walking loop (`WalkLoop.ts`, `WalkPath.ts`), the bamboo stands
+  the islanders' building stock will come from (`Bamboo.ts`, `BambooMaterials.ts`) and the vegetation's depth prepass
   (`VegetationPrepass.ts`). `src/world/vegetation/` holds what every plant kind shares (material,
-  coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the registry of kinds)
-  and the islanders' trail through the meadow (`Trample.ts`).
+  coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the registry of kinds,
+  the trees' tubes and leaf cards in `TreeMesh.ts` and their bark and leaf surfaces in
+  `TreeSurfaces.ts`) and the islanders' trail through the meadow (`Trample.ts`).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the refracted sun under water, the light every submerged material shares (`Underwater.ts`: a new
   underwater material lights with it, as the terrain does), the air/water interface, sky occlusion,

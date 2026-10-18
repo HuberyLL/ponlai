@@ -65,6 +65,8 @@ export interface LandData {
 	walk: Float64Array;
 	// the yunpeng's clumps (IslandGrowth.ts startYunpeng): x, z, depth per clump, the same at every step
 	yunpeng: Float64Array;
+	// the first bamboo stands (IslandGrowth.ts startGrove): x, z, depth per stand, the same at every step
+	grove: Float64Array;
 }
 
 /** The world fields' bounds: the land's box and 32 m round it, out to the world's 32 m grid. A
@@ -214,6 +216,7 @@ export function* mergeSteps( land: LandData, unordered: readonly ChunkData[] ): 
 		shore, seabedField, seabedBeds,
 		walk: land.walk,
 		yunpeng: land.yunpeng,
+		grove: land.grove,
 		timings: {},
 	};
 	busy += performance.now() - mark;
