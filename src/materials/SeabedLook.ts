@@ -27,9 +27,14 @@ export function seabedAlbedo( bed: V2, broad: F, detail: V3, shore: F ): { albed
 	const grass = smoothstep( 0.4, 0.6, bed.x.add( detail.x.sub( 0.5 ).mul( 0.35 ) ) );
 	const grassC = mix( vec3( 0.06, 0.085, 0.045 ), vec3( 0.13, 0.17, 0.085 ), detail.y );
 	// rubble and boulders shed from the cliffs: weathered limestone grit, a shade darker than
-	// the sand, so the cliff foot reads as a stony apron rather than a dark moat
-	const rubble = float( 1 ).sub( smoothstep( 0.5, broad.mul( 3 ).add( 5 ), shore ) ).mul( smoothstep( 0.3, 0.55, detail.x ) );
-	const rubbleC = mix( vec3( 0.2, 0.2, 0.18 ), vec3( 0.38, 0.37, 0.32 ), detail.x );
+	// the sand, so the cliff foot reads as a stony apron rather than a dark moat. Against the wall
+	// the cobbles close up, the sand left in pockets between them, and thin out over the apron;
+	// in patches they wear the olive film of algae and diatoms the submerged stones wear
+	// (TerrainMaterial), so they part from the sand by hue as well as value.
+	const foot = float( 1 ).sub( smoothstep( 0.5, 3, shore ) ).mul( 0.12 );
+	const rubble = float( 1 ).sub( smoothstep( 0.5, broad.mul( 3 ).add( 5 ), shore ) ).mul( smoothstep( float( 0.3 ).sub( foot ), float( 0.55 ).sub( foot ), detail.x ) );
+	const rubbleC = mix( vec3( 0.2, 0.2, 0.18 ), vec3( 0.38, 0.37, 0.32 ), detail.x )
+		.mul( mix( vec3( 1 ), vec3( 0.84, 0.74, 0.46 ), smoothstep( 0.45, 0.75, detail.y ).mul( 0.8 ) ) );
 	return { albedo: mix( mix( sand, grassC, grass ), rubbleC, rubble ), grass, rubble };
 
 }
