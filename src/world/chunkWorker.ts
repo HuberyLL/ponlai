@@ -27,7 +27,7 @@
 
 import { buildChunk, landField, landWindow, windowCells, CellCount, S, type ChunkData, type LandField } from './Chunks.ts';
 import { simplifierReady } from './IslandSimplify.ts';
-import { growLand, LandLattice, type Piece } from './IslandGrowth.ts';
+import { growLand, LandLattice, startYunpeng, type Piece } from './IslandGrowth.ts';
 import { buildFarFloor, nearLandCells, underLand } from './SeabedTile.ts';
 import { openSeaBeds, openSeaHeight, SHELF_CEILING } from './Bathymetry.ts';
 import { fieldBounds, BED_CELL, FLOOR_CELL, type LandData } from './ChunkMerge.ts';
@@ -71,7 +71,7 @@ export function buildLand( seed: number, step: number ): LandData {
 		}
 
 	}
-	return { seed, step, land: land.toBytes(), chunks, steps, far: buildFarFloor( near ), bounds, floor, beds, walk: new Float64Array( walkLoop( land ).flat() ) };
+	return { seed, step, land: land.toBytes(), chunks, steps, far: buildFarFloor( near ), bounds, floor, beds, walk: new Float64Array( walkLoop( land ).flat() ), yunpeng: new Float64Array( startYunpeng( pieces[ 0 ] ) ) };
 
 }
 

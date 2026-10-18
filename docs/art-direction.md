@@ -174,7 +174,12 @@ art decision changes; reference images stay out of the repository.
   soft rather than vivid, and no head outshines the lawn; never a scatter of mixed colours over
   the lawn, which reads as confetti. They sway with the grass, and from afar they are fine
   coloured specks in it, gathered in patches, not coloured stars or blots on the lawn.
-- The terrain plants the meadow (grass, flowers) and its turf over the rim, nothing taller:
+- A herb of the sunken mountain Yuanjiao stands among the meadow where the world explains it, the
+  starting island's and fixed as the land grows: the yunpeng (芸蓬, Shiyi ji: "white as snow, a
+  stem two zhang long, at night it gives a white light") stands in clumps of straight white stalks
+  at the windward cliff's edge, where nothing else stands in the sea wind, as many as the coast
+  facing the wind is long.
+- Besides it, the terrain plants the meadow (grass, flowers) and its turf over the rim, nothing taller:
   the island is a flat top ringed by cliffs, with no lee where shrubs or trees would grow, so it
   has none (the shrubs, small trees, rim bushes and hanging leaf trails it once had were
   placeholders). The walker's loop stays open meadow. Plants that matter to play are content

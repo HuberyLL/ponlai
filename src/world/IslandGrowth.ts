@@ -419,6 +419,70 @@ function settle( land: LandLattice, flooded: number[], step: number, site: Site 
 
 }
 
+// The land's middle: its deepest point (the signed distance's least cell, the first in row order),
+// its depth (m) and the distance field over the land's window grown by 2 m that it was found on.
+function middle( land: LandLattice ): { w: Window; sd: Field2D; x: number; z: number; depth: number } {
+
+	const w = pad( land.cells(), Math.ceil( 2 / CELL ) );
+	const sd = land.signedDistance( w );
+	let mid = 0;
+	for ( let k = 0; k < sd.data.length; k ++ ) if ( sd.data[ k ] < sd.data[ mid ] ) mid = k;
+	const nx = w.i1 - w.i0;
+	return { w, sd, x: centre( w.i0 + mid % nx ), z: centre( w.j0 + Math.floor( mid / nx ) ), depth: - sd.data[ mid ] };
+
+}
+
+/** The yunpeng's clumps (Yunpeng.ts): one for every `per` m of the coast that faces the wind (its
+ * outward normal within 60 degrees of it: `facing`, the cosine), how far in from the coast (m, the
+ * least and the most: on the turf at the cliff's edge), how far apart (m), and where the prevailing
+ * wind comes from (the unit vector toward it, Wind.ts's heading of 40 degrees, as Meadow.ts UPWIND). */
+export const YUNPENG = { per: 7, facing: 0.5, inland: [ 1.2, 2.6 ], apart: 4, upwind: [ Math.cos( 40 * Math.PI / 180 ), Math.sin( 40 * Math.PI / 180 ) ] } as const;
+
+/** Where the starting island's yunpeng stands: points of the step-0 piece alone (x, z, depth in m,
+ * one after another) on its band of turf at the cliff's edge where the coast faces the wind, as many
+ * as that stretch is long (YUNPENG.per, at least one), the most windward first (ties in row order):
+ * where the sea wind is strongest and nothing else stands. A seed fixes them, and the land only
+ * grows, so later steps never move them. */
+export function startYunpeng( start: Piece ): number[] {
+
+	const { per, facing, inland, apart, upwind } = YUNPENG;
+	const land = new LandLattice();
+	land.add( start );
+	const { w, sd, x: mx, z: mz } = middle( land );
+	const nx = w.i1 - w.i0;
+	const at = ( k: number ) => [ centre( w.i0 + k % nx ), centre( w.j0 + Math.floor( k / nx ) ) ];
+	// the band's cells whose coast faces the wind (the distance's gradient, outward), and the
+	// stretch of coast they stand for: the band's area over its width
+	const order: number[] = [];
+	for ( let k = nx; k < sd.data.length - nx; k ++ ) {
+
+		if ( - sd.data[ k ] < inland[ 0 ] || - sd.data[ k ] > inland[ 1 ] ) continue;
+		const gx = sd.data[ k + 1 ] - sd.data[ k - 1 ], gz = sd.data[ k + nx ] - sd.data[ k - nx ];
+		if ( gx * upwind[ 0 ] + gz * upwind[ 1 ] > facing * Math.hypot( gx, gz ) ) order.push( k );
+
+	}
+	const count = Math.max( 1, Math.round( order.length * CELL * CELL / ( inland[ 1 ] - inland[ 0 ] ) / per ) );
+	const windward = ( k: number ) => {
+
+		const [ x, z ] = at( k );
+		return ( x - mx ) * upwind[ 0 ] + ( z - mz ) * upwind[ 1 ];
+
+	};
+	order.sort( ( a, b ) => windward( b ) - windward( a ) || a - b );
+	const sites: number[] = [];
+	for ( const k of order ) {
+
+		if ( sites.length === count * 3 ) break;
+		const [ x, z ] = at( k );
+		let free = true;
+		for ( let s = 0; s < sites.length && free; s += 3 ) free = Math.hypot( x - sites[ s ], z - sites[ s + 1 ] ) >= apart;
+		if ( free ) sites.push( x, z, - sd.data[ k ] );
+
+	}
+	return sites;
+
+}
+
 // The piece a step adds to the land: step 0 is the starting island, flooded from the world's centre;
 // every later step draws from its own stream, so a piece does not depend on how many draws the
 // earlier steps took, and the land (with its recent headings) is all it reads.
@@ -438,12 +502,7 @@ export function nextPiece( seed: number, land: LandLattice, step: number ): Piec
 	}
 
 	// the island's middle: its deepest point
-	const w = pad( land.cells(), Math.ceil( 2 / CELL ) );
-	const sd = land.signedDistance( w );
-	let mid = 0;
-	for ( let k = 0; k < sd.data.length; k ++ ) if ( sd.data[ k ] < sd.data[ mid ] ) mid = k;
-	const nx = w.i1 - w.i0;
-	const mx = centre( w.i0 + mid % nx ), mz = centre( w.j0 + Math.floor( mid / nx ) );
+	const { w, sd, x: mx, z: mz } = middle( land );
 
 	// candidate sites: the first coast point along stratified directions
 	const cands: { x: number; z: number; ux: number; uz: number; r: number; rel: number; w: number }[] = [];

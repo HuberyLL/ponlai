@@ -39,6 +39,7 @@ import { buildChunkBorders } from './debug/ChunkBorders.ts';
 import { WIND_VIEW } from './debug/WindView.ts';
 import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';
 import { buildGrass, grassKind, plantGrass, setGrassQuality } from './world/Grass.ts';
+import { buildYunpeng, yunpengKind } from './world/Yunpeng.ts';
 import { meadowCanopy } from './lighting/MeadowCanopy.ts';
 import { Pipeline, postOptionsFromURL } from './post/Pipeline.ts';
 import { renderPixelRatio, dynamicMaxRatio, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
@@ -632,6 +633,9 @@ const grass = buildGrass( plantGrass( data.vegetation, data.rimGround, walkDista
 // of vegetation below reads it.
 const vegetation = new Vegetation();
 vegetation.add( grassKind( grass, renderer ) );
+// the yunpeng's clumps at the windward cliff's edge (Yunpeng.ts)
+const yunpeng = buildYunpeng( data.yunpeng, islandSurfaceHeight, shared );
+if ( yunpeng ) vegetation.add( yunpengKind( yunpeng ) );
 scene.add( ...vegetation.roots() );
 installWindMotionFlag( scene );
 installVegetationPrepass( scene, vegetation.roots( ( kind ) => kind.prepass ) );
@@ -641,6 +645,8 @@ installVegetationPrepass( scene, vegetation.roots( ( kind ) => kind.prepass ) );
 const sunCasters = new THREE.Box3();
 // the boxes the game's props hold (holdOpaque), kept over the island's growth
 const heldOpaque: THREE.Box3[] = [];
+// the yunpeng's stalks rise above the island too
+if ( yunpeng ) heldOpaque.push( new THREE.Box3().setFromObject( yunpeng ).expandByScalar( 0.4 ) );
 function setSunCasters(): void {
 
 	sunCasters.makeEmpty();
@@ -756,6 +762,8 @@ water = new Water( {
 	refraction: { color: pipeline.textures.refraction, depth: pipeline.textures.refractionDepth },
 } );
 pipeline.seaLevel.value = shared.waterLevel.value;
+// the boxes held so far (the yunpeng's, a game's props shown before the sea was made)
+for ( const box of heldOpaque ) water.reflectionBounds.union( box );
 // the light under the water follows the long waves the sea's surface shows (Caustics.ts, the wave maps)
 caustics.attachWaves( { fft, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves, detail: seaDetail } );
 applySkyFill();
@@ -1805,6 +1813,10 @@ if ( profiler ) {
 // the nodes r186 makes inside the first lit build, made by a throwaway one, so the frame's receivers
 // build the same code whichever comes first (graph/ThreePatches.ts)
 primeSharedNodes( renderer, scene, camera );
+// The yunpeng stands where the first view may not show it: its scene pass compiles ahead as a
+// latent of the opaque pass, so the view that first finds it builds no pipeline (the sun's map
+// draws it from the first frame on).
+if ( yunpeng ) await pipeline.graph.latent( 'opaque', [ yunpeng ] );
 mark( 'loop' );
 const loopBody = profiler ? profiler.wrapLoop( tick ) : tick;
 const animationLoop = detector ? ( time: number ) => detector.frame( loopBody, time ) : loopBody;

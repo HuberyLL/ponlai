@@ -88,6 +88,8 @@ export interface WorldData {
 	seabedBeds: SeabedBedField;
 	// The islander's walking loop (WalkLoop.ts): x, z per waypoint.
 	walk: Float64Array;
+	// Where the yunpeng's clumps stand (Yunpeng.ts): x, z, depth (m) per clump.
+	yunpeng: Float64Array;
 	timings: Record<string, number>;
 }
 
