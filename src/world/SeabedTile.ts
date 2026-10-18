@@ -74,7 +74,7 @@ export function buildFloorTile( ci: number, cj: number, fp: Footprint, solids: r
 		positions[ v * 3 ] = x; positions[ v * 3 + 1 ] = h[ k ]; positions[ v * 3 + 2 ] = z;
 		normalOf( normals, v * 3, h[ k - 1 ], h[ k + 1 ], h[ k - m ], h[ k + m ] );
 		ao[ v ] = near.length ? contact( x, positions[ v * 3 + 1 ], z, normals[ v * 3 ], normals[ v * 3 + 1 ], normals[ v * 3 + 2 ] ) : 1;
-		const [ grass, pale ] = beds( x, z );
+		const [ grass, pale ] = beds( x, z, h[ k ] );
 		bed[ v * 2 ] = grass; bed[ v * 2 + 1 ] = pale;
 
 	}

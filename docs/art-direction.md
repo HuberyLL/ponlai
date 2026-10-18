@@ -81,6 +81,11 @@ art decision changes; reference images stay out of the repository.
   nothing breaks the surface off the island. Large blocks heap below the stretches of coast that
   shed them; elsewhere the shelf is mostly clear sand and platform, never stones sprinkled evenly
   round the coast.
+- The floor round the coast zones as a real rocky shore's: cobbles with an olive film close against
+  the cliff's foot, then a belt of clean sand whose ripples, a hand's width apart, run along the
+  coast, and seagrass only below the swell's reach (from about 3.5 m down), in meadows tens of
+  metres across with sharp edges and sand holes. Nothing on the floor runs one way across the
+  whole sea.
 - The cliffs read as natural rock, never masonry: no level courses or evenly spaced joints, no
   lumps of dissolved limestone. A weathered face that has shed blocks along its joints and beds,
   breaks sharp above the waves and rounded only in the wave zone. No pocket reads as a black hole
