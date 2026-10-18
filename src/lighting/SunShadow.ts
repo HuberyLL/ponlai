@@ -29,7 +29,7 @@ type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: 
 // search, so the cross-fade stays continuous across a redraw; the mode is set per quality tier
 // (`setFilter`) before the materials build. Receivers read the maps through SolarShadow's gather
 // filter (see its rules on sampler types and derivatives); a receiver that wants only a soft,
-// cheap shade of the larger casters takes `softVisibility` in its vertex stage instead (the lawn). The caster-depth grid
+// cheap shade of the larger casters takes `softVisibility` in its vertex stage or a compute pass instead (the lawn: once per tuft). The caster-depth grid
 // (`nearestCasterDepth`) lets a march through the water skip the 2x2 volume lookups where nothing
 // casts, never the surface filter's PCSS search. It projects world-space columns of the casters,
 // walked from their vertices, or for meshes made in the world's workers folded in from the columns

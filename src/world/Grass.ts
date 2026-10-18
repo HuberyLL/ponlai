@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, attribute, positionLocal, normalViewGeometry, vec2, vec3, vec4, float, mix, max, min, dot, pow, clamp, fract, sin, select, normalize, floor as floorN,
+	Fn, attribute, positionLocal, workgroupId, localId, normalViewGeometry, vec2, vec3, vec4, float, mix, max, min, dot, pow, clamp, fract, sin, select, normalize, floor as floorN,
 	length, cameraPosition, cameraViewMatrix, cameraProjectionMatrix, screenSize, varying, varyingProperty, uniform,
 	smoothstep as smoothstepN, instanceIndex, vertexIndex, normalLocal, transformNormal, instanceColor, sign, abs, cos, step, specularColor, specularColorBlended, specularF90,
 	positionGeometry, cross, If, mat4,
@@ -25,7 +25,7 @@ import { ALPHA_TO_COVERAGE } from './vegetation/Coverage.ts';
 import { backlight, forwardLight, vegetationMaterial, type VegetationOptions } from './vegetation/Material.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
-import { VegetationCull, poolBuffers, poolSteps, type CullBatchInput, type CullBuffers, type CullPayload, type CullPool, type CullRange } from './vegetation/VegetationCull.ts';
+import { CULL_GROUP, VegetationCull, poolBuffers, poolSteps, type CullBatchInput, type CullBuffers, type CullPayload, type CullPool, type CullRange } from './vegetation/VegetationCull.ts';
 import { AttributeType, textureSteps, uploadSteps } from './Upload.ts';
 import { screenShare, screenShareNode } from './vegetation/Lod.ts';
 import type { VegetationKind } from './vegetation/Registry.ts';
@@ -87,9 +87,10 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 // - Blades do not cast into the sun's shadow map (narrower than a texel, they flicker as the sun
 //   moves): the meadow shades itself and its turf through MeadowCanopy. What the larger casters
 //   (rock, the islanders, the game's props) throw onto the blades is soft and light: a few bilinear lookups
-//   of the sun's map around each vertex (`SunShadow.softVisibility`), no penumbra search, taken in
-//   the vertex stage and handed to the sun's filter in place of its own (`userData.sunVisibility`);
-//   the clouds' shade multiplies in as on every surface (SolarShadow's `installOpenShadow`).
+//   of the sun's map around each tuft (`SunShadow.softVisibility`), no penumbra search, taken once
+//   per tuft in a compute pass whenever the sun's maps change (`meadowShade`), read by the vertex
+//   stage and handed to the sun's filter in place of its own (`userData.sunVisibility`); the
+//   clouds' shade multiplies in as on every surface (SolarShadow's `installOpenShadow`).
 // - On screen a blade stays at least 1.5 pixels wide at 4x (0.75 on the outer rim, where partly
 //   covered pixels show a pale fringe over the sea), and under the temporal modes the tier's
 //   `minWidth` (0 on high, the rim's no wider), so the meadow does not crawl as the camera moves, and
@@ -1054,11 +1055,12 @@ function restBlade( blade: THREE.Node<'vec4'>, pick: F, scaleY: F, aspect: F, cl
 
 }
 
-// What the larger casters throw onto the blades (`SunShadow.softVisibility`): its ring's radius
-// (m), so a caster's shade ends in a soft edge a few decimetres wide; how deep it shades
-// (a share of the direct light), lighter than on the ground, as light scatters through the blades;
-// and how far above its root a vertex looks up, so the root does not take the ground it stands in.
-const SHADE_RADIUS = 0.3, SHADE_DEPTH = 0.8, SHADE_LIFT = 0.08;
+// What the larger casters throw onto the blades (`SunShadow.softVisibility`, once per tuft:
+// `meadowShade`): its ring's radius (m), so a caster's shade ends in a soft edge a few decimetres
+// wide; how deep it shades (a share of the direct light), lighter than on the ground, as light
+// scatters through the blades; and where over its root a tuft looks up, a share of its height and a
+// lift (m), so it takes neither the ground it stands in nor only its tips' light.
+const SHADE_RADIUS = 0.3, SHADE_DEPTH = 0.8, SHADE_HEIGHT = 0.5, SHADE_LIFT = 0.08;
 // The blades' colour and light (grassMaterial): the root's and the tip's colour against the lawn's
 // (the mean of the blades' palette, PALETTE), the key light left at the root, the sky's at the root,
 // light through the upper blades (a broad lobe toward the sun and a faint floor from any side,
@@ -1165,8 +1167,8 @@ const SHEEN = new THREE.Vector3( 0.03, 0.0325, 0.0225 ), SHEEN_POWER = 2, SPECUL
 // The blade's fold (how far each half's normal turns toward its edge), how far its own lean tilts
 // its normal, and the lift of its thin bright edge (on the outer share EDGE_FROM of each half).
 const FOLD = 0.6, LEAN_NORMAL = 0.25, EDGE = 0.25, EDGE_FROM = 0.7;
-// The ring's lookups besides the centre: each costs 0.05 - 0.08 ms a frame in the island views
-// (every blade vertex takes them), and two keep the shade's cost near half the per-pixel filter's.
+// The ring's lookups besides the centre (taken per vertex, each cost 0.05 - 0.08 ms a frame in the
+// island views; per tuft, all of them together a few hundredths of a millisecond).
 const SHADE_TAPS = 2;
 
 // A far blade's strips (fragment stage): `side` runs from -1 to 1 across the blade, `strips` is
@@ -1372,7 +1374,7 @@ function withHeadLight( head: F, options: VegetationOptions ): VegetationOptions
 
 }
 
-function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ): THREE.MeshStandardNodeMaterial {
+function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNodeMaterial {
 
 	// The blades' opacity is 0 or 1 (whole blades, below): the factory's 'blade' family draws a
 	// fragment or drops it whole, by alpha to coverage or, without multisampling, by
@@ -1726,11 +1728,9 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 		specularF90.assign( SPECULAR );
 
 	};
-	// The larger casters' shade on the blades, soft and light (SHADE_*), at the rest pose like
-	// every vegetation shadow (VegetationShadow.ts), per vertex: the sun's filter takes it in place
-	// of its own (SunShadow `install`).
-	const shade = sunShadow.softVisibility( rooted.add( vec3( 0, SHADE_LIFT, 0 ) ), SHADE_RADIUS, SHADE_TAPS );
-	mat.userData.sunVisibility = varying( mix( float( 1 ), shade, SHADE_DEPTH ), 'vGrassSunVisibility' );
+	// The larger casters' shade on the blades, soft and light (SHADE_*), the tuft's (`meadowShade`):
+	// the sun's filter takes it in place of its own (SunShadow `install`).
+	mat.userData.sunVisibility = varying( cull.node( 'shade', 'vec4', true ).element( tuftSlot ).x, 'vGrassSunVisibility' );
 	mat.userData.wind = shared.wind.direction;
 	return mat;
 
@@ -1800,8 +1800,9 @@ const GRASS_PAYLOAD: CullPayload<Tuft> = {
 		{ name: 'edge', floats: 20, itemSize: 4 } ],
 	origin: 'origins',
 	matrices: 'matrices',
-	// each tuft's record of the islanders' trail (Trample.ts `trampleKernel`)
-	scratch: debugFlags.trample !== false ? [ { name: 'trail', floats: TRAMPLE_RECORD * 4 } ] : [],
+	// each tuft's soft shade (`meadowShade`) and record of the islanders' trail (Trample.ts
+	// `trampleKernel`)
+	scratch: [ { name: 'shade', floats: 4 }, ...( debugFlags.trample !== false ? [ { name: 'trail', floats: TRAMPLE_RECORD * 4 } ] : [] ) ],
 	write( t, i, { matrices, colors, ground, origins, edge } ) {
 
 		t.m.toArray( matrices, i * 16 );
@@ -1829,6 +1830,42 @@ const GRASS_PAYLOAD: CullPayload<Tuft> = {
 		folded: ( slot, origin, camera, node ) => node( 'ground' ).element( slot.mul( 3 ).add( 1 ) ).w.greaterThan( 0.5 ).and( length( camera.sub( origin ) ).greaterThanEqual( grassUniforms.thinFar.add( FOLD_PAD ) ) ),
 	},
 };
+
+/** The larger casters' shade on every tuft (SHADE_*), into the pool's `shade` buffer, which the
+ * blades read as their sun visibility (`grassMaterial`): taken per vertex, its lookups of both
+ * stepped maps were about a third of the meadow's vertex work, for a shade whose ring is wider than
+ * a tuft. The kernel runs over every slot whenever the sun's maps or their blend have changed
+ * (a redraw, the blend's weight as the sun turns, the first call) or the pool has: the returned
+ * function, which the frame calls after the sun's maps update and before it renders, as the
+ * trail's kernels run, outside the scene's passes (the grass group's `updateShade`; a paused clock
+ * runs it once). */
+function meadowShade( cull: GrassCull, sunShadow: SunShadow ): ( renderer: THREE.Renderer ) => void {
+
+	const origins = cull.node( 'origins', 'vec4', true ), shade = cull.node( 'shade', 'vec4' );
+	const kernel = Fn( () => {
+
+		const slot = workgroupId.x.mul( CULL_GROUP ).add( localId.x );
+		const origin = origins.element( slot ).toVar();
+		const at = origin.xyz.add( vec3( 0, origin.w.mul( SHADE_HEIGHT ).add( SHADE_LIFT ), 0 ) );
+		shade.element( slot ).assign( vec4( mix( float( 1 ), sunShadow.softVisibility( at, SHADE_RADIUS, SHADE_TAPS ), SHADE_DEPTH ), 0, 0, 0 ) );
+
+	} )().computeKernel( [ CULL_GROUP ] ).setName( 'Grass.Shade' );
+	// (the pool's filled workgroups: a new pool's size reaches it)
+	kernel.dispatchSize = cull.workgroups;
+	let draws = - 1, weight = - 1, ready = - 1, buffer: THREE.StorageBufferAttribute | null = null;
+	return ( renderer ) => {
+
+		const pool = cull.buffer( 'shade' );
+		if ( sunShadow.draws === draws && sunShadow.weight.value === weight && sunShadow.ready.value === ready && pool === buffer ) return;
+		draws = sunShadow.draws;
+		weight = sunShadow.weight.value;
+		ready = sunShadow.ready.value;
+		buffer = pool;
+		renderer.compute( kernel );
+
+	};
+
+}
 
 /** The vertex stage's view of the culled buffers: `index` is the drawn tuft's slot. */
 function tuftInputs( cull: GrassCull, index: THREE.Node<'uint'> ) {
@@ -2222,13 +2259,21 @@ export function buildGrass( { lawn, lawnThin, lawnFlower, sward }: GrassTufts, s
 		records: k.tufts, geometry: k.geometry, blades: k.shape.blades, floor: k.floor,
 		caps: bandCaps( k.shape.blades, k.floor, k.minShare ), bladeIndices: k.shape.segs * 6, baseIndices: k.geometry.userData.baseIndices ?? 0,
 	} ) ) );
-	const material = grassMaterial( shared, cull, sunShadow );
+	const material = grassMaterial( shared, cull );
+	const shade = meadowShade( cull, sunShadow );
 	// the tufts' records of the islanders' trail, written by Trample whenever the trail changes
 	if ( debugFlags.trample !== false ) shared.trample.kernels.push( group.userData.trail = trampleKernel( shared.trample, cull.node( 'origins', 'vec4', true ), cull.node( 'trail', 'vec4' ), cull.workgroups ) );
 	const batches = kinds.map( ( k, i ) => batchOf( k.geometry, k.shape, k.floor, material, cull, cull.ranges[ i ], k.tufts, k.name, k.thin ) );
 	for ( const b of batches ) {
 
-		b.mesh.onBeforeRender = ( renderer, _scene, camera ) => drawBatch( batches, cull, b, renderer as unknown as THREE.Renderer, camera );
+		b.mesh.onBeforeRender = ( renderer, _scene, camera ) => {
+
+			// (nothing to do but in the frame a growth's swap brought a new pool after the frame's own
+			// call: its shade, zeros, is taken before it draws)
+			shade( renderer as unknown as THREE.Renderer );
+			drawBatch( batches, cull, b, renderer as unknown as THREE.Renderer, camera );
+
+		};
 		// the indirect arguments belong to this draw alone
 		b.mesh.onAfterRender = () => {
 
@@ -2245,6 +2290,8 @@ export function buildGrass( { lawn, lawnThin, lawnFlower, sward }: GrassTufts, s
 	group.userData.thinFar = grassUniforms.thinFar;
 	group.userData.batches = batches;
 	group.userData.cull = cull;
+	// the tufts' soft shade, which the frame calls after the sun's maps update (main.ts)
+	group.userData.updateShade = shade;
 	group.userData.kinds = kinds.map( ( k ) => ( { geometry: k.geometry, key: k.key } ) );
 	// the flowering tufts' anchors on the land shown, [ x, y, z ] each (the parity views find the
 	// flowers by them: tools/parity/views.mjs)

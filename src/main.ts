@@ -1617,6 +1617,8 @@ function tick( time: number ): void {
 	// smoothly without re-rasterising sub-texel casters every frame. The underwater map keeps the
 	// quality cadence.
 	sunShadow.update( renderer, scene, camera, sky.keyDir );
+	// the meadow's shade per tuft follows the sun's maps (Grass.ts `meadowShade`)
+	grass.userData.updateShade( renderer );
 	shadowElapsed += environmentDt;
 	if ( shadowElapsed >= runtimeQuality.refractedSun.interval && refractedSun.update() ) shadowElapsed = 0;
 	shared.time.value = simTime;
