@@ -7,10 +7,11 @@ art decision changes; reference images stay out of the repository.
 ## The look
 
 - A small island in an open sea, a visual sample for a game, fantasy-realistic: the fantasy lives
-  in the world (the island, its everlasting flowers, later the sea's glow at night) and in a light
-  touch on the image, the airy feel of an immortals' island (Penglai). Deep clear water over pale
-  shallows with a sparkling glare toward the sun, chunky chiselled stone, a lush meadow with
-  wildflowers, and grass hanging over the rim. Keep the lower cliff stone exposed.
+  in the world (the island, its everlasting flowers, its creatures from the old texts, later the
+  sea's glow at night) and in a light touch on the image, the airy feel of an immortals' island
+  (Penglai). Deep clear water over pale shallows with a sparkling glare toward the sun, chunky
+  chiselled stone, a lush meadow with wildflowers, and grass hanging over the rim. Keep the lower
+  cliff stone exposed.
 - The light and the image are photographic, as real as tidewater's (its water, its light under
   the water, its display chain): the scene is lit by the sun or moon, the sky and the sunlight the
   ground bounces up, and the frame takes a filmic curve (ACES), tidewater's light grade (a slight
@@ -63,7 +64,7 @@ art decision changes; reference images stay out of the repository.
 
 ## Three layers in one world
 
-- Nature (cliffs, sea, plants) is realistic.
+- Nature (cliffs, sea, plants, creatures) is realistic.
 - Things people make (huts, boats, baskets, lanterns) are semi-realistic and handmade, a little
   chunky and rounded in form but with real materials (wood grain, rope, fired clay), and bridge the
   other two.
@@ -187,6 +188,59 @@ art decision changes; reference images stay out of the repository.
   gentle most of the time, fresh at times, light or strong rarely), coming mostly from within
   40 degrees of the prevailing wind and now and then from the opposite side; the landscape keeps
   the prevailing wind (the meadow's exposure).
+
+## Life
+
+- The island's life, in the sea, on the island and over both, is the life of Penglai and the other
+  mountains of the immortals as the old texts describe it (the Liezi, the Shiji, the Shanhaijing,
+  Wang Jia's Shiyi ji and their like), never a generic animal added for liveliness (a crab, or a
+  gull for its own sake). Each creature is a real species in body, gait and habitat, with one or
+  two departures from life, as the texts themselves make them: the Shanhaijing's wenyao is a
+  flying fish with a white head, a red beak and a bird's wings, and it flies by night; the Liezi's
+  trees are trees whose flowers and fruit are pearl and jade. There is no creature of the texts
+  alone, with no living model. Fantasy plants follow the same rule.
+- Each has a reason the world gives. It lives where its real species would: a turtle on the
+  seagrass it grazes, a clam in the sunlit shallows its algae need. Its numbers follow the extent
+  of that habitat (the coast's length, the shallows' or the meadow's area), and nothing is placed
+  by hand.
+- The island's own birds and beasts are white: real species in white plumage or coat ("its birds
+  and beasts are all pure white", the Liezi; "its creatures, birds and beasts, are all white", the
+  Shiji). Visitors from elsewhere (the jingwei from the western mountains, the wenyao from the
+  western sea) and the creatures of the sea keep their own colours.
+- Creatures belong to nature, so they are shaded as realistically as the plants, never stylised
+  like the islanders. From the game's view they read by silhouette and motion: a flock wheeling
+  overhead, a tall bird standing at the water's edge, a large shadow gliding through the clear
+  shallows, a school breaking the surface. A small creature of the texts is made larger than life
+  where that view would lose it.
+- No beings of human form (the jiaoren), no herds of phoenixes and qilin, and no dragons but the
+  bones they shed (as on Fangzhang in the Shiyi ji), which read as rock, like a whale's fossil
+  ribs. Any of these would turn the photograph into an illustrated myth.
+- The cast the texts give so far:
+  - In the shallows: the shen, giant clams with blue-green and gold mantles in sunlit water one to
+    five metres deep (in the Liji the pheasant "enters the great water and becomes a shen"). On a
+    calm, warm afternoon the mirage over the sea is its breath ("by the sea the shen's breath
+    forms towers", the Shiji), drawn as a real mirage, a stretched and doubled horizon, never a
+    palace painted on the sky. The young ao, green turtles, graze the seagrass meadows; the great
+    ao that hold the islands up in the Liezi are the island's story, never seen whole. The luobu,
+    Penglai's own great sea snail in the Shiyi ji, crawls out of its shell and carries it on its
+    back over the cobbles at the cliff's foot while it is warm, and draws back in when it cools.
+  - In deep water: the great fish of Yingzhou, "a thousand zhang long, spotted, with a horn on its
+    snout, dancing and playing in schools" (the Shiyi ji), a whale shark with a horn: now and then
+    a vast spotted shadow passing beyond the shelf's edge.
+  - On the sea: the wenyao, flying fish in schools that break from the swell offshore and glide,
+    by night as by day.
+  - Over the island and its coast: Penglai's own birds in the Shiyi ji. The yuanyang ("like a wild
+    goose, it wheels among the clouds, roosts on high peaks, and its feet never tread the ground";
+    not the mandarin duck) is a white skein of geese circling the island high up, never landing.
+    The honge ("coloured like a swan, shaped like an adjutant stork, with no gut, its feathers
+    growing from the bone") is a gaunt white stork that never feeds, standing still at the water's
+    edge below the cliffs. The ou of the Liezi, white gulls and terns, settle beside islanders
+    without guile and only dance overhead when one schemes. Now and then a jingwei, a crow-like
+    bird with a patterned head, a white beak and red feet, flies in from the west and drops a
+    pebble into the sea (the Shanhaijing).
+  - On the island: the xiushi of Yingzhou ("shaped like a qilin, it eats no living plant, drinks
+    no muddy water, and smells gold and jade in stones", the Shiyi ji), a white deer that noses
+    the stones rather than grazing.
 
 ## Sea, sky and weather
 
