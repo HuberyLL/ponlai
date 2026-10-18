@@ -6,9 +6,11 @@ import * as THREE from 'three/webgpu';
 // opaque and the silhouette lives in `alphaMap` alone (box-filtered mips would fill the card). Alpha
 // to coverage turns alpha short of cutoff + `fwidth` into partial coverage, so leaf interiors stay at
 // 1 rather than scaled down.
-// Kept for the plant kinds to come; no kind uses it today (the leafy plants it was drawn for, the
-// rim bushes, the rim's hanging trails and the plateau's shrubs and small trees, are removed; the
-// material factory's 'leaf' family, vegetation/Material.ts, takes its alpha map by default).
+// The folded leaf is kept for the plant kinds to come; no kind uses it today (the leafy plants it
+// was drawn for, the rim bushes, the rim's hanging trails and the plateau's shrubs and small trees,
+// are removed; the material factory's 'leaf' family, vegetation/Material.ts, takes its alpha map by
+// default). Its coverage-preserving mips (`coverageAlphaTexture`) serve any silhouette: the old
+// trees' leaf sprays take them (vegetation/TreeSurfaces.ts LeafPainter).
 
 // The leaf as a transparent silhouette; the colour map and the coverage map are both made
 // from it, so they always agree.
@@ -114,8 +116,17 @@ function filteredCoverage( alpha: Float32Array, w: number, cutoff: number ): num
 export function leafAlphaTexture( size = 128, cutoff = LEAF_ALPHA_TEST ): THREE.CanvasTexture {
 
 	const leaf = drawLeaf( size ).getContext( '2d' )!.getImageData( 0, 0, size, size ).data;
-	let level = new Float32Array( size * size );
-	for ( let i = 0; i < level.length; i ++ ) level[ i ] = leaf[ i * 4 + 3 ] / 255;
+	const alpha = new Float32Array( size * size );
+	for ( let i = 0; i < alpha.length; i ++ ) alpha[ i ] = leaf[ i * 4 + 3 ] / 255;
+	return coverageAlphaTexture( alpha, size, cutoff );
+
+}
+
+/** An alpha map from a square silhouette's alpha (0..1, row by row), its mips keeping the
+ * full-size silhouette's coverage at `cutoff` (see leafAlphaTexture). */
+export function coverageAlphaTexture( alpha: Float32Array, size: number, cutoff = LEAF_ALPHA_TEST ): THREE.CanvasTexture {
+
+	let level = alpha;
 	let covered = 0;
 	for ( const a of level ) if ( a > cutoff ) covered ++;
 	const coverage = covered / level.length;

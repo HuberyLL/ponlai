@@ -2,21 +2,20 @@ import * as THREE from 'three/webgpu';
 import { Fn, If, float, instanceIndex, instancedArray, uint, vec2, vec3, vec4 } from 'three/tsl';
 import { WIND_STATE_VEC4S, Wind, createWindUniforms, gustAt, packWindState, rootHash, swayFrequency, windField, windStateOf, type WindState } from '../weather/Wind.ts';
 import { plantGrass } from '../world/Grass.ts';
-import { GRASS_WIND, PALM_WIND, bendBlade, bladePhase, mainBend } from '../world/vegetation/Deform.ts';
+import { GRASS_WIND, bendBlade, bladePhase } from '../world/vegetation/Deform.ts';
 import { windDisplacement } from '../weather/Wind.ts';
 import { debugFlags } from './DebugFlags.ts';
 import type { WorldData } from '../world/types.ts';
-import type { Vegetation } from '../world/vegetation/Registry.ts';
 import type { Shared } from '../shared.ts';
 import { OPEN_DRIFT, type SeaDetail } from '../ocean/SeaDetail.ts';
 import type { Bounds } from '../world/WorldShapes.ts';
 
 // `__PONLAI__.windProbe( options )`: the numbers behind the wind view (WindView.ts), as JSON for
 // tools/probe.mjs. Every sway comes from the shaders' own TSL functions (Wind.ts `windField`,
-// vegetation/Deform.ts `bendBlade` and `mainBend` with each kind's constants), evaluated in a compute kernel built on the first
+// vegetation/Deform.ts `bendBlade` with each kind's constants), evaluated in a compute kernel built on the first
 // call (none exists on a page that never calls it, so the page's pipelines are unchanged), for the
 // plants' own inputs: tufts grown as the page grows them (`plantGrass`, sampled; the flowering
-// tufts' heads, which sway on their own, `bendBlade`'s `flower`, are not), the game's palms. The wind is a copy of the page's (`Wind`, the same
+// tufts' heads, which sway on their own, `bendBlade`'s `flower`, are not). The wind is a copy of the page's (`Wind`, the same
 // speed, heading, gustiness and scene time), stepped on the CPU and handed to the kernel per step through a
 // storage buffer, so the page's own wind is never touched. Two time series: fast (64 x 0.05 s,
 // the swing) and slow (40 x 0.5 s, the gusts' travel). Options: DEFAULTS below. The result is
@@ -42,7 +41,7 @@ import type { Bounds } from '../world/WorldShapes.ts';
 // apart), with the meadow's gust on the same grid: each one's travel and correlation lengths, and
 // their Pearson correlation by distance from the land's box (1 where the sea's gusts are the
 // meadow's, falling to tidewater's own pattern far out). `natural`: each kind's
-// natural sway frequency (Hz, the same in every wind). `w4`: every vegetation mesh and palm,
+// natural sway frequency (Hz, the same in every wind). `w4`: every vegetation mesh,
 // whether its material has a wind displacement.
 // `w5` (scene jumps and seeks, so last): for each kept weather and a few presets where every part
 // travels, as angles and speeds: the vegetation's wind, the weather's heading, the sea and its
@@ -70,7 +69,6 @@ export interface WindProbeContext {
 	establishScene: ( scene: never ) => Promise<unknown>; // main.ts's, with { weather, preset }
 	setTime: ( t: number ) => Promise<unknown>; // main.ts's seek of the scene clock
 	data: () => WorldData;
-	vegetation: Vegetation;
 	seaDetail: SeaDetail;
 	land: () => Bounds; // the land's box (WorldShapes.landBounds)
 
@@ -84,7 +82,7 @@ interface Options {
 }
 const DEFAULTS: Options = {
 	tufts: 20000, fast: { steps: 64, dt: 0.05 }, slow: { steps: 40, dt: 0.5 }, anchors: 1500, grid: 0.5,
-	w5: true, kinds: [ 'grass', 'palm' ], seed: 1,
+	w5: true, kinds: [ 'grass' ], seed: 1,
 	weathers: [ 'clear', 'fair', 'cloudy', 'overcast' ], presets: [ 'sunrise', 'noon', 'golden-hour', 'midnight' ], gustSpan: 0,
 	seaMargin: 160, seaGrid: 3,
 };
@@ -182,25 +180,6 @@ function kinds( ctx: WindProbeContext, o: Options ): Kind[] {
 			const origin = vec3( p.x, 0, p.y ), phase = bladePhase( p.w, rootHash( origin.xz ) );
 			const field = windField( wind, origin.xz );
 			return { s: bendBlade( wind, vec3( p.x, p.z, p.y ), origin, p.z, float( 1 ), phase ).lean.xz, d: field.xy.mul( field.z ) };
-
-		} );
-
-	}
-	if ( o.kinds.includes( 'palm' ) ) {
-
-		// the game's palms, as its view registers them (PalmView.ts `kind`)
-		const points: number[][] = [];
-		for ( const root of ctx.vegetation.roots( ( kind ) => kind.name === 'palm' ) ) {
-
-			const place = root.userData.palm as { root: THREE.Vector3 };
-			points.push( [ place.root.x, place.root.z, place.root.y, 0 ] );
-
-		}
-		add( 'palm', points, ( wind, p ) => {
-
-			const root = vec3( p.x, p.z, p.y );
-			const bend = mainBend( wind, root.add( vec3( 0, 4, 0 ) ), root, float( 0.3 ), PALM_WIND.cycles, float( PALM_WIND.slow ) );
-			return { s: bend.sway, d: bend.field.xy.mul( bend.field.z ) };
 
 		} );
 
@@ -471,7 +450,7 @@ async function gustGrid( ctx: WindProbeContext, o: Options, slow: ReturnType<typ
 
 }
 
-// W4: every vegetation mesh and palm, and what its material does with the wind
+// W4: every vegetation mesh, and what its material does with the wind
 function inventory( ctx: WindProbeContext ) {
 
 	const rows: Record<string, unknown>[] = [];
@@ -480,12 +459,12 @@ function inventory( ctx: WindProbeContext ) {
 		const mesh = object as THREE.Mesh;
 		if ( ! mesh.isMesh ) return;
 		const material = ( Array.isArray( mesh.material ) ? mesh.material[ 0 ] : mesh.material ) as THREE.Material;
-		const named = /palm|tree|bush|grass|reed|fern|plant|foliage|leaf|rim/i.test( `${ mesh.name } ${ material.name }` );
-		if ( ! material.userData.vegetation && ! mesh.userData.palm && ! windDisplacement( material ) && ! named ) return;
+		const named = /tree|bush|grass|reed|fern|plant|foliage|leaf|rim/i.test( `${ mesh.name } ${ material.name }` );
+		if ( ! material.userData.vegetation && ! windDisplacement( material ) && ! named ) return;
 		rows.push( {
 			mesh: mesh.name || mesh.type, material: material.name || material.type, parent: mesh.parent?.name,
 			vegetationTag: material.userData.vegetation === true, windDisplacement: !! windDisplacement( material ),
-			palm: !! mesh.userData.palm, visible: mesh.visible,
+			visible: mesh.visible,
 		} );
 
 	} );
@@ -496,7 +475,6 @@ function inventory( ctx: WindProbeContext ) {
 // each kind's natural sway frequency, Hz (Wind.ts `swayFrequency`; Deform.ts's numbers)
 const naturalFrequencies = () => ( {
 	grassAndFlowers: r3( swayFrequency( GRASS_WIND.cycles ) ),
-	palm: r3( swayFrequency( PALM_WIND.cycles / 2 ) ), // `slow`: half mainBend's rate
 } );
 
 // W5: the directions things travel in, degrees in the world's x-z plane ( atan2( z, x ) ), and

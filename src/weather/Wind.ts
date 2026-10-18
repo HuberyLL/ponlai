@@ -52,8 +52,7 @@ import { PREVAILING_HEADING, type WeatherState } from '../sky/Weather.ts';
 // +-0.4 rad, +-10 %). The swing is about a sixth of the lean, so a plant never swings upwind of
 // upright and stays within a few degrees of the local wind. Rates are whole swings per gust tile
 // (`swayScroll`, the natural frequencies: mainBend's 30 about 0.9 Hz; grass and its flowers 50,
-// 1.5 Hz; the palm half mainBend's), whatever the wind; only the amplitude grows with it. Leaf
-// edges, sprays and fronds still flutter on their own phases at fixed rates (`clock`), a small
+// 1.5 Hz), whatever the wind; only the amplitude grows with it. Leaf edges, sprays and fronds still flutter on their own phases at fixed rates (`clock`), a small
 // motion on top. Grass tufts and their flower heads bend with the field at their root (the tufts at the
 // cliff's edge too, their blades draped over it), and a hanging strand swings like a pendulum with
 // the same sway (vegetation/Deform.ts `hangingSway`: kept for the hanging kinds to come).
@@ -391,9 +390,11 @@ export function pressing( wind: WindState ): Node<'float'> {
 }
 
 /** sin( 2 pi rate time + phase ) for the vegetation's clock (`clock`, scene seconds): `rate` in
- * Hz with at most three decimals, so it stays seamless where the clock wraps. */
+ * Hz with at most three decimals, so it stays seamless where the clock wraps; it refuses any other
+ * rate (whole cycles per CLOCK_PERIOD) when the shader is built. */
 export function wave( time: Node<'float'>, rate: number, phase: Node<'float'> | number = 0 ): Node<'float'> {
 
+	if ( Math.abs( rate * CLOCK_PERIOD - Math.round( rate * CLOCK_PERIOD ) ) > 1e-6 ) throw new RangeError( `wave: ${ rate } Hz is not whole cycles per ${ CLOCK_PERIOD } s` );
 	return sin( fract( time.mul( rate ) ).mul( Math.PI * 2 ).add( phase ) );
 
 }

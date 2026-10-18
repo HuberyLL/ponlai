@@ -200,7 +200,7 @@ export function findWaysAgain( sim: Sim ): void {
 
 }
 
-/** A call in a few words, for a readout: "go palm", "do fish shore", "wait 600". */
+/** A call in a few words, for a readout: "go shore", "do fish shore", "wait 600". */
 export function describeCall( call: ActionCall ): string {
 
 	const values = Object.values( record( call.args ) ).filter( ( value ) => value !== undefined );

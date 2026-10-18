@@ -155,31 +155,38 @@ art decision changes; reference images stay out of the repository.
   edge, fine blades that arch over and hang down the wall, lying on the stone, never through it, and the lip alternates between
   overgrown stretches and cut-open
   root soil.
-- Wildflowers are part of the meadow: heads (a hand across at most: large enough that the game's
-  close view reads them as flowers, not dots) on some of its tufts, each on a thin stem bent a
-  little by its head: the low species (pinks, dandelions, violets) on lower tussocks among the
-  grass, never in a patch of their own cut short,
-  the pinks along the lip's edge, the tall ones
-  (wild chrysanthemums, daylilies, balloon flowers) in tall tussocks, the chrysanthemums about at
-  their leaves' top, some partly hidden among them, the daylilies and balloon flowers on their
-  taller stems a little over the leaves, never floating over the grass. They are pinks, wild
-  chrysanthemums (yellow, a few white), daylilies, dandelions, violets and a few balloon flowers,
-  all in flower at once, the year round: the island's sign of an immortals' land. Each grows as a
-  wildflower colony does, in drifts of its own where its habitat is: a few clumps strung together,
-  long and lobed rather than round, many small drifts and a few large, thinning to single plants
-  scattered round them, and where two drifts meet their flowers mingle; few flowers between the
-  drifts. Pink grows along stretches of the cliff's edge with long stretches of plain turf between
-  (an unbroken band round the island top read as a border drawn on it), chrysanthemums on the
-  grass in from it, orange daylilies where the ground is damp, yellow and violet in small low
-  patches of the short turf. Colours are soft rather than vivid, and no head (white and yellow
-  least of all) outshines the lawn; never a scatter of mixed colours over the lawn, which reads as
-  confetti. They sway with the grass, and from afar they are fine coloured specks in it, gathered
-  in patches, not coloured stars or blots on the lawn.
-- The terrain plants the meadow (grass, wildflowers) and its turf over the rim, nothing taller:
-  the island is a flat top ringed by cliffs, with no lee where shrubs or trees would grow, so it
-  has none (the shrubs, small trees, rim bushes and hanging leaf trails it once had were
-  placeholders). The walker's loop stays open meadow. Plants that matter to play (coconut palms)
-  are content placed in the world, not terrain.
+- Flowers are part of the meadow, and they are Penglai's, after the texts on the immortals'
+  islands, not a generic island's: heads (a hand across at most: large enough that the game's close
+  view reads them as flowers, not dots) on some of its tufts, each on a thin stem bent a little by
+  its head, never floating over the grass. The yaoxiang (遙香草, Shiyi ji: "flowers like cinnabar,
+  leaves narrow and white, like the day lily") stands in tall tussocks on its taller stems a little
+  over the leaves, a day lily's cinnabar trumpet gold in the throat, its tussock's leaves pale and
+  silvery; the zhuyu (祝餘, Shanhai jing: "like chives, with blue-green flowers") grows low among
+  shorter grass, a round head of sky blue florets over chives' blue-green leaves, never in a patch
+  of its own cut short. They are all in flower at once, the year round: the island's sign of an
+  immortals' land. Each grows as a wildflower colony does, in drifts of its own where its habitat
+  is: a few clumps strung together, long and lobed rather than round, many small drifts and a few
+  large, thinning to single plants scattered round them, and where two drifts meet their flowers
+  mingle; few flowers between the drifts. The zhuyu grows in the exposed coast's wind-cropped turf
+  and on dry ground, and along stretches of the cliff's edge with long stretches of plain turf
+  between (an unbroken band round the island top read as a border drawn on it), the yaoxiang over
+  the meadow, most in the sheltered sward, and on the grass in from the edge's zhuyu. Colours are
+  soft rather than vivid, and no head outshines the lawn; never a scatter of mixed colours over
+  the lawn, which reads as confetti. They sway with the grass, and from afar they are fine
+  coloured specks in it, gathered in patches, not coloured stars or blots on the lawn.
+- A herb of the sunken mountain Yuanjiao stands among the meadow where the world explains it, the
+  starting island's and fixed as the land grows: the yunpeng (芸蓬, Shiyi ji: "white as snow, a
+  stem two zhang long, at night it gives a white light") stands in clumps of straight white stalks
+  at the windward cliff's edge, where nothing else stands in the sea wind, as many as the coast
+  facing the wind is long.
+- Penglai's own bamboo (浮筠之簳, Shiyi ji: "green leaves, purple stems, seeds as big as pearls")
+  grows in one stand at the starting island's heart, the most sheltered ground with the deepest
+  soil, the meadow and its flowers growing on under it.
+- Besides these, the terrain plants the meadow (grass, flowers) and its turf over the rim, and no
+  shrub or tree: the island is a flat top ringed by cliffs, with no lee where they would grow (the
+  shrubs, small trees, rim bushes and hanging leaf trails it once had were placeholders). The
+  walker's loop stays open meadow. Plants that matter to play are content placed in the world, not
+  terrain.
 - All vegetation moves in one wind: gusts visibly sweep the meadow and change as they go; still air
   is the rest pose. The wind turns with the weather and has levels (light, gentle, fresh, strong;
   gentle most of the time, fresh at times, light or strong rarely), coming mostly from within

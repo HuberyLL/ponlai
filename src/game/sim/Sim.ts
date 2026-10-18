@@ -6,7 +6,7 @@ import { Grid, topOf } from './grid.ts';
 import { fallNeeds, START_NEEDS } from './needs.ts';
 import { findPath, goalAt } from './path.ts';
 import { BUILDING_KINDS, blueprintRefusal, newBuilding } from './buildings.ts';
-import { growPalms, newPalms, obstructPlaces } from './places.ts';
+import { obstructPlaces } from './places.ts';
 import { random } from './rng.ts';
 import { SAVE_VERSION } from './save.ts';
 import { GROWTH_STEPS, POPULATION_START, SECONDS_PER_GAME_DAY, SPEED_FACTORS, WALK_SPEED, piecesFor } from './types.ts';
@@ -16,11 +16,11 @@ import type { EntityId, IslandInput, SimState, Speed, Vec2, Villager } from './t
 // a save is the state itself. One seeded generator (SimState.rng) is its only source of chance.
 // The islanders are bodies on the ground grid with needs that fall (needs.ts), a bag (items.ts) and
 // an action under way (actions.ts); the places they act at (places.ts) keep their own state here
-// too (the palms' coconuts, the buildings). A brain may think for them (agent.ts) beside the
+// too (the buildings). A brain may think for them (agent.ts) beside the
 // world, never holding up a tick. The weather is the page's own: nothing in the simulation depends
 // on it.
 //
-// Each tick: the needs fall, the palms grow, each body walks a step and its action advances, then
+// Each tick: the needs fall, each body walks a step and its action advances, then
 // the temporary trigger asks the brain for a thought for every islander with nothing under way
 // (no action, no walk) and no thought in flight. A brain that answers at once (the stand-in) acts
 // within the tick, so a game with it is deterministic for a seed; a slow one acts when it answers.
@@ -180,7 +180,6 @@ export class Sim {
 
 		const state = this.state;
 		state.tick ++;
-		growPalms( state );
 		for ( const v of state.villagers ) {
 
 			v.prev.x = v.pos.x;
@@ -303,14 +302,12 @@ export class Sim {
 
 }
 
-/** A new game on an island grown by `pieces` (0: the starting island): its palm, and one islander
- * standing near the island's centre, facing it. */
+/** A new game on an island grown by `pieces` (0: the starting island): one islander standing
+ * near the island's centre, facing it. */
 export function newGame( input: IslandInput, options: { seed?: number; startHour?: number; pieces?: number } = {} ): Sim {
 
 	const seed = ( options.seed ?? 1 ) >>> 0;
-	const sim = new Sim( { version: SAVE_VERSION, seed, tick: 0, startHour: options.startHour ?? 8, rng: seed, villagers: [], palms: [], buildings: [], placed: {}, pieces: options.pieces ?? 0 }, input );
-	sim.state.palms = newPalms( sim );
-	obstructPlaces( sim );
+	const sim = new Sim( { version: SAVE_VERSION, seed, tick: 0, startHour: options.startHour ?? 8, rng: seed, villagers: [], buildings: [], placed: {}, pieces: options.pieces ?? 0 }, input );
 	sim.addIslander();
 	return sim;
 

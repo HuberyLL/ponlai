@@ -116,7 +116,10 @@ packages, into `dist/licenses/`.
     gravel of thin soil (`src/materials/ProceduralTextures.ts` `gravelBake`, read in
     `src/materials/TerrainMaterial.ts` at two rotated scales) follows the small stones of
     `src/world/terrain/DetailTextures.js` (a share of a periodic Worley lattice's cells holding a
-    stone) and the multi-scale, rotated detail reads of `src/world/Terrain.js`.
+    stone) and the multi-scale, rotated detail reads of `src/world/Terrain.js`. The trees' leaf
+    clumps (`src/world/vegetation/TreeMesh.ts` `leafClump`) follow the canopy cards of
+    `src/world/vegetation/PlantGeometry.js` (`addCard`, `lobeCards`: cards toward a lobe's shell,
+    their normals bent out from the lobe and from the crown, an exposure darkening the inside).
 - Changes: ported to TSL and TypeScript and modified throughout for this project's stylised look.
 
 ### three-geospatial

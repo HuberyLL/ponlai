@@ -62,11 +62,14 @@ the fantasy in the world and a light touch on the image (clear shade, a golden a
   (`WorldShapes.ts`), cliffs (`Cliff.ts`), submerged stones (`Stones.ts`), sea floor
   (`Bathymetry.ts`, `SeabedTile.ts`), rim (`RimGround.ts`), the meadow (`Grass.ts`,
   its wildflowers and its tufts draped over the cliff's edge included; anchors `Anchors.ts`, soil from `ShoreSample.ts`; the
-  sward's depth over its ground in the meadow map, `SwardField.ts`), the islander's
-  walking loop (`WalkLoop.ts`, `WalkPath.ts`) and the vegetation's depth prepass
+  sward's depth over its ground in the meadow map, `SwardField.ts`), the yunpeng that stands
+  among it (`Yunpeng.ts`, its sites the step-0 piece's: `IslandGrowth.ts`), the islander's
+  walking loop (`WalkLoop.ts`, `WalkPath.ts`), the bamboo stands
+  the islanders' building stock will come from (`Bamboo.ts`, `BambooMaterials.ts`) and the vegetation's depth prepass
   (`VegetationPrepass.ts`). `src/world/vegetation/` holds what every plant kind shares (material,
-  coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the registry of kinds)
-  and the islanders' trail through the meadow (`Trample.ts`).
+  coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the registry of kinds,
+  the trees' tubes and leaf cards in `TreeMesh.ts` and their bark and leaf surfaces in
+  `TreeSurfaces.ts`) and the islanders' trail through the meadow (`Trample.ts`).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the refracted sun under water, the light every submerged material shares (`Underwater.ts`: a new
   underwater material lights with it, as the terrain does), the air/water interface, sky occlusion,
@@ -106,7 +109,7 @@ the fantasy in the world and a light touch on the image (clear shade, a golden a
 - `src/game/`: the game behind `?game` (`Game.ts`, which also drives the island's growth by the
   population through `world/Growth.ts`): `sim/` is the headless simulation (no three.js or DOM;
   node runs it by stripping types; `sim/save.ts` is the save slot the world's start reads), `view/`
-  draws the islanders, the palm and the chest, and `Hud.ts` / `Placement.ts` are the player's
+  draws the islanders and the chest, and `Hud.ts` / `Placement.ts` are the player's
   prototype HUD.
 - `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the frame profiler, the frame-rate readout,
   the pipeline counter (`PipelineCounter.ts`), the wind view and its probe (`WindView.ts`,

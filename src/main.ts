@@ -39,6 +39,7 @@ import { buildChunkBorders } from './debug/ChunkBorders.ts';
 import { WIND_VIEW } from './debug/WindView.ts';
 import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';
 import { buildGrass, grassKind, plantGrass, setGrassQuality } from './world/Grass.ts';
+import { buildYunpeng, yunpengKind } from './world/Yunpeng.ts';
 import { meadowCanopy } from './lighting/MeadowCanopy.ts';
 import { Pipeline, postOptionsFromURL } from './post/Pipeline.ts';
 import { renderPixelRatio, dynamicMaxRatio, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
@@ -55,6 +56,8 @@ import { GroundBounce, installGroundBounce } from './lighting/GroundBounce.ts';
 import { islandSurfaceHeight, landBounds } from './world/WorldShapes.ts';
 import { LandLattice } from './world/IslandGrowth.ts';
 import { walkLoopDistance, walkPoints } from './world/WalkPath.ts';
+import { bambooKinds, buildBamboo } from './world/Bamboo.ts';
+import { leafAtlas as bambooAtlas } from './world/BambooMaterials.ts';
 import { setIslandClearing } from './weather/AerialPerspective.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { Trample } from './world/vegetation/Trample.ts';
@@ -632,6 +635,13 @@ const grass = buildGrass( plantGrass( data.vegetation, data.rimGround, walkDista
 // of vegetation below reads it.
 const vegetation = new Vegetation();
 vegetation.add( grassKind( grass, renderer ) );
+// the yunpeng's clumps at the windward cliff's edge (Yunpeng.ts)
+const yunpeng = buildYunpeng( data.yunpeng, islandSurfaceHeight, shared );
+if ( yunpeng ) vegetation.add( yunpengKind( yunpeng ) );
+// the bamboo's stand at the starting island's heart (Bamboo.ts), its leaves drawn once here
+// (BambooMaterials.ts)
+const bamboo = buildBamboo( data.grove, islandSurfaceHeight, { shared, atlas: bambooAtlas() } );
+if ( bamboo ) for ( const kind of bambooKinds( bamboo ) ) vegetation.add( kind );
 scene.add( ...vegetation.roots() );
 installWindMotionFlag( scene );
 installVegetationPrepass( scene, vegetation.roots( ( kind ) => kind.prepass ) );
@@ -641,6 +651,10 @@ installVegetationPrepass( scene, vegetation.roots( ( kind ) => kind.prepass ) );
 const sunCasters = new THREE.Box3();
 // the boxes the game's props hold (holdOpaque), kept over the island's growth
 const heldOpaque: THREE.Box3[] = [];
+// the yunpeng's stalks rise above the island too
+if ( yunpeng ) heldOpaque.push( new THREE.Box3().setFromObject( yunpeng ).expandByScalar( 0.4 ) );
+// the bamboo's crown rises above the island too
+if ( bamboo ) heldOpaque.push( new THREE.Box3().setFromObject( bamboo.culms ).union( new THREE.Box3().setFromObject( bamboo.leaves ) ).expandByScalar( 0.6 ) );
 function setSunCasters(): void {
 
 	sunCasters.makeEmpty();
@@ -709,8 +723,7 @@ if ( GAME ) {
 		// the island grows with the population (Growth.ts, made below: called from the frame loop on)
 		pieces: landOptions.step,
 		island: { approach: ( p ) => growth.approach( p ), grow: () => growth.grow() },
-		// A prop can rise above all the island grows (the palm's crown): the sun's map fits its
-		// casters and the sea's reflection marches its box, so both grow to hold it.
+		// A prop can rise above all the island grows: the sun's map fits its casters and the sea's reflection marches its box, so both grow to hold it.
 		holdOpaque: ( box ) => {
 
 			heldOpaque.push( box.clone() );
@@ -720,8 +733,6 @@ if ( GAME ) {
 		},
 		// the game's props, for the scene's pass and the sun's map (see compileDraws)
 		compileDraws,
-		// the game's palms join the vegetation's kinds while they are drawn
-		vegetation,
 		// every islander in the scene islander's proportions (the `islander` URL option). A figure
 		// is handed over once its pipelines are built, off the frame (GameView "First draws"): it
 		// arrives after the game's first frame, and each load brings its own material, so the frame
@@ -759,6 +770,8 @@ water = new Water( {
 	refraction: { color: pipeline.textures.refraction, depth: pipeline.textures.refractionDepth },
 } );
 pipeline.seaLevel.value = shared.waterLevel.value;
+// the boxes held so far (the plants', a game's props shown before the sea was made)
+for ( const box of heldOpaque ) water.reflectionBounds.union( box );
 // the light under the water follows the long waves the sea's surface shows (Caustics.ts, the wave maps)
 caustics.attachWaves( { fft, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves, detail: seaDetail } );
 applySkyFill();
@@ -1808,6 +1821,10 @@ if ( profiler ) {
 // the nodes r186 makes inside the first lit build, made by a throwaway one, so the frame's receivers
 // build the same code whichever comes first (graph/ThreePatches.ts)
 primeSharedNodes( renderer, scene, camera );
+// The yunpeng stands where the first view may not show it: its scene pass compiles ahead as a
+// latent of the opaque pass, so the view that first finds it builds no pipeline (the sun's map
+// draws it from the first frame on).
+if ( yunpeng ) await pipeline.graph.latent( 'opaque', [ yunpeng ] );
 mark( 'loop' );
 const loopBody = profiler ? profiler.wrapLoop( tick ) : tick;
 const animationLoop = detector ? ( time: number ) => detector.frame( loopBody, time ) : loopBody;
@@ -2183,7 +2200,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, groundBounce, grass, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
-	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, weather, sky, fft, establishScene, setTime, data: () => shownData, vegetation, seaDetail, land: () => landBox }, options ),
+	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, weather, sky, fft, establishScene, setTime, data: () => shownData, seaDetail, land: () => landBox }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes
 	growth: Object.assign( growth, { fieldBytes: () => fields.bytes() } ),
 	quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ),

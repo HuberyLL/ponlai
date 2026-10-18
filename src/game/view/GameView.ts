@@ -8,34 +8,31 @@ import type { EntityId } from '../sim/types.ts';
 import type { Sim } from '../sim/Sim.ts';
 import { BUILDING_KINDS, stageOf } from '../sim/buildings.ts';
 import type { BuildingState } from '../sim/types.ts';
-import { PalmView } from './PalmView.ts';
-import type { Vegetation } from '../../world/vegetation/Registry.ts';
 import { standIn } from './StandIn.ts';
 import { ChestView } from './ChestView.ts';
 import { SiteView } from './SiteView.ts';
 import { VillagerView, disposeFigure } from './VillagerView.ts';
 
-// The game drawn into the island scene: its islanders, its palms (PalmView) and its buildings,
-// each a construction site (SiteView, the same stages for every kind) until it is built and then
-// its kind's own model (MODELS: ChestView). Each frame it diffs the simulation's islanders, palms
-// and buildings by id (create, update, remove) and keeps every view in place between frames, so a
-// steady scene allocates nothing. The palms and the buildings cast into the sun's shadow map, which
-// is redrawn only as the sun turns (SunShadow.ts): whatever changes their shape (a site set down
-// or grown by a piece, a building finished, a coconut picked or grown) asks for a redraw. A palm's
-// crown rises above everything the island grows, so each prop's box (with room for its sway) grows
-// the sun map's casters and the sea's reflection box (GameViewOptions.holdOpaque).
+// The game drawn into the island scene: its islanders and its buildings, each a construction site
+// (SiteView, the same stages for every kind) until it is built and then its kind's own model
+// (MODELS: ChestView). Each frame it diffs the simulation's islanders and buildings by id (create,
+// update, remove) and keeps every view in place between frames, so a steady scene allocates
+// nothing. The buildings cast into the sun's shadow map, which is redrawn only as the sun turns
+// (SunShadow.ts): whatever changes their shape (a site set down or grown by a piece, a building
+// finished) asks for a redraw. A prop may rise above everything the island grows, so each prop's
+// box grows the sun map's casters and the sea's reflection box (GameViewOptions.holdOpaque).
 //
 // First draws: a mesh whose material or vertex layout nothing on screen has drawn yet builds its
 // pipelines in the frame that first shows it, synchronously: the chest's model stalled the frame
 // it appeared in by about 0.7 s on a cold shader cache (its main pass and its shadow-map pass),
 // the placement ring by about 0.2 s. So everything that can first show mid-game has a sample in
-// `propSamples` (a palm, each kind's model and its construction site; the HUD adds its own,
+// `propSamples` (each kind's model and its construction site; the HUD adds its own,
 // GameHud.samples), and the game compiles their pipelines off the frame once its first frame has
 // drawn (Game.render, GameContext.compileDraws). A sample must be built as the real thing is (the same view class,
 // material and attributes, castShadow and receiveShadow), since that is what the pipelines are
 // keyed by, and shares the real thing's material where it can, so that the shaders are built too
-// (Props.ts buildingMaterial: every building and site shares one; every palm shares PalmView's,
-// so a load, which draws the old view's palm anew, builds nothing). The samples are never drawn and are kept for the page's life: disposing one would
+// (Props.ts buildingMaterial: every building and site shares one). The samples are never drawn and
+// are kept for the page's life: disposing one would
 // release the pipelines it shares with the props drawn later. An islander's figure has no sample:
 // each load brings its own material, so `loadLook` hands a figure over only once its own draws
 // are compiled (main.ts), and a figure taken over on a load keeps the pipelines it drew with.
@@ -51,8 +48,6 @@ export interface GameViewOptions {
 	holdOpaque( box: THREE.Box3 ): void;
 	/** a skinned islander figure for a look index (src/characters/looks.ts) */
 	loadLook( look: number ): Promise<Figure>;
-	/** the page's vegetation registry, which holds the palms while they are drawn (GameContext) */
-	vegetation: Vegetation;
 	/** game ticks per second of the scene's clock at the game's normal pace (the day's length):
 	 * the meadow's trail recovers by it (world/vegetation/Trample.ts) */
 	ticksPerSecond(): number;
@@ -76,8 +71,7 @@ let samples: THREE.Object3D[] | null = null;
 export function propSamples(): THREE.Object3D[] {
 
 	if ( samples ) return samples;
-	// a palm: every palm shares its material (PalmView), so a loaded game's palm finds it built
-	samples = [ new PalmView( { id: 'palm', x: 0, z: 0, coconuts: 0, growth: 0 }, 0 ).mesh ];
+	samples = [];
 	for ( const kind of Object.keys( MODELS ) ) {
 
 		const sample = ( worked: number ): BuildingState => ( { id: kind, kind, x: 0, z: 0, worked, items: {} } );
@@ -89,9 +83,6 @@ export function propSamples(): THREE.Object3D[] {
 	return samples;
 
 }
-
-// room round a prop's rest pose for its sway: a gale lays the palm's crown over by a few decimetres
-const PROP_SWAY = 0.6;
 
 /** A built building's model. */
 interface BuildingModel { readonly mesh: THREE.Mesh; dispose(): void }
@@ -110,7 +101,6 @@ export class GameView {
 	private readonly group = new THREE.Group();
 	private readonly villagers: VillagerView[] = [];
 	private readonly byId = new Map<EntityId, VillagerView>();
-	private readonly palms = new Map<string, PalmView>();
 	private readonly buildings = new Map<string, BuildingDraw>();
 	private readonly shadowCentre = new THREE.Vector3();
 	private readonly scratch = new THREE.Vector3();
@@ -210,46 +200,20 @@ export class GameView {
 
 	}
 
-	// A prop into the scene, and its box, with room for its sway, into the sun's casters and the
-	// sea's reflection box: a palm's crown rises above everything the island grows.
+	// A prop into the scene, and its box into the sun's casters and the sea's reflection box.
 	private add( mesh: THREE.Mesh ): void {
 
 		this.group.add( mesh );
-		this.options.holdOpaque( new THREE.Box3().setFromObject( mesh ).expandByScalar( PROP_SWAY ) );
+		this.options.holdOpaque( new THREE.Box3().setFromObject( mesh ) );
 
 	}
 
-	/** Draw the palms and the buildings as the state holds them; true when what casts a shadow changed. */
+	/** Draw the buildings as the state holds them; true when what casts a shadow changed. */
 	private syncPlaces( stamp: number ): boolean {
 
 		const { sim } = this.options;
 		const state = sim.state, grid = sim.grid;
 		let changed = false;
-		for ( const palm of state.palms ) {
-
-			let view = this.palms.get( palm.id );
-			if ( ! view ) {
-
-				view = new PalmView( palm, grid.height( palm.x, palm.z ) );
-				this.palms.set( palm.id, view );
-				this.add( view.mesh );
-				this.options.vegetation.add( view.kind );
-				changed = true;
-
-			}
-			view.stamp = stamp;
-			if ( view.update( palm ) ) changed = true;
-
-		}
-		for ( const [ id, view ] of this.palms ) {
-
-			if ( view.stamp === stamp ) continue;
-			this.options.vegetation.remove( view.kind );
-			view.dispose();
-			this.palms.delete( id );
-			changed = true;
-
-		}
 		for ( const b of state.buildings ) {
 
 			let draw = this.buildings.get( b.id );
@@ -363,13 +327,6 @@ export class GameView {
 		for ( const v of this.villagers ) v.dispose();
 		this.villagers.length = 0;
 		this.byId.clear();
-		for ( const p of this.palms.values() ) {
-
-			this.options.vegetation.remove( p.kind );
-			p.dispose();
-
-		}
-		this.palms.clear();
 		for ( const draw of this.buildings.values() ) this.drop( draw );
 		this.buildings.clear();
 		this.group.removeFromParent();

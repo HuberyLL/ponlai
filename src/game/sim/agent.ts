@@ -26,7 +26,7 @@ export type ToolRegistry = Map<string, ToolHandler>;
 
 export type ToolCall = ActionCall;
 
-/** A place in sight, by its id and kind, and what shows on it (coconuts on a palm; inside a chest, while at it). */
+/** A place in sight, by its id and kind, and what shows on it (a site's progress; inside a chest, while at it). */
 export interface SeenPlace {
 	place: string;
 	kind: string;
