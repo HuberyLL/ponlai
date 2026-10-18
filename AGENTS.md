@@ -276,8 +276,9 @@ the fantasy in the world and a light touch on the image (clear shade, a golden a
   in its fragment stage: `Water.ts`), so it takes no history or reactive input: what the resolve
   needs from it goes out through its velocity. It refracts the refraction pass's image of what lies
   under the sea: a new mesh that can reach under the water joins it (`Refraction.ts`
-  `showUnderwater`), or the water shows what lies straight behind it in the opaque copy there. It
-  reflects only what lies inside `Water.reflectionBounds`: anything opaque placed off the island or
+  `showUnderwater`), or the water shows what lies straight behind it in the opaque copy there; what
+  swims in the upper water (a fish) is marked instead (`markSwimmer`), and its material adds
+  `Water.ts` `swimmerSway` to its position. It reflects only what lies inside `Water.reflectionBounds`: anything opaque placed off the island or
   above 3 m must grow that box (the game's props do: main.ts `holdOpaque`).
 - New frame work is a pass on the frame graph, its targets declared with a size class and every
   texture it binds declared as a read (the attachment ops discard what nothing declares), never an

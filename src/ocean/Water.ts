@@ -57,7 +57,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     opaque pass's sharper image of the same floor, read over the pixel's footprint at the end
 //     from the underwater pyramid (Pipeline.ts: its mips, what stands above the water left out);
 //     where the image holds nothing there (the shallows above its clip height, the sky), the
-//     opaque image, as before; a thin sheet of water takes the opaque image of the rock under it
+//     opaque image, as before; a thin sheet of water takes the opaque image of the rock under it;
+//     what swims in the water (Refraction.ts markSwimmer), in the opaque image straight behind,
+//     where its material places it as seen through the waves (swimmerSway)
 //   - the water body: Beer-Lambert absorption along that path, analytic single scattering of the sun
 //     and the sky (Henyey-Greenstein) and a multiple-scattering backscatter boost; the sun through the
 //     thin crests; whitecaps where the surface is compressed (tidewater's fresh foam, not its
@@ -185,6 +187,30 @@ const viewRay = Fn( ( [ q, projInv ]: [ V2, M4 ] ) => {
 	return v.xyz.div( v.w );
 
 } ).setLayout( { name: 'viewRay', type: 'vec3', inputs: [ { name: 'q', type: 'vec2' }, { name: 'projInv', type: 'mat4' } ] } );
+
+/** Where something swimming at world point `at` (Refraction.ts markSwimmer) appears to the eye
+ * through the sea's longer waves, as an offset to add to it (for its material's vertex stage): the
+ * ray through a flat sea less the ray refracted through those waves (the surface tilted by their
+ * slopes at `at`), followed down to its depth under the mean sea, `seaLevel`. The water then shows
+ * it straight behind the surface (Water.ts), where a flat sea leaves it whole and the waves sway it
+ * by a pixel or two; the shift a flat sea gives the whole view, which this leaves out, no eye can
+ * tell from where it lies. The finest cascade is left out: it turns the ray by as much across a
+ * fish's few centimetres, and seen through ripples that short a fish blurs rather than breaks. */
+export function swimmerSway( fft: OceanFFT, at: V3, seaLevel: F ): V3 {
+
+	const d = [ 0, 1, 2 ].map( ( c ) => texture( fft.derivatives, at.xz.div( fft.sizes[ c ] ) ).depth( int( c ) ).level( float( 0 ) ) as unknown as V4 ).reduce( ( a, b ) => a.add( b ) );
+	const tilted = normalize( vec3( d.x.div( max( d.z.add( 1 ), 0.2 ) ).negate(), 1, d.y.div( max( d.w.add( 1 ), 0.2 ) ).negate() ) );
+	const view = normalize( at.sub( cameraPosition ) );
+	const perDepth = ( n: V3 ) => {
+
+		const t = refract( view, n, 1 / IOR );
+		const down = normalize( vec3( t.x, min( t.y, - 0.08 ), t.z ) );
+		return down.div( max( down.y.negate(), 0.04 ) );
+
+	};
+	return perDepth( vec3( 0, 1, 0 ) ).sub( perDepth( tilted ) ).mul( max( seaLevel.sub( at.y ), 0 ) );
+
+}
 
 const projectView = Fn( ( [ p, proj ]: [ V3, M4 ] ) => {
 
@@ -904,22 +930,51 @@ export class Water {
 					return { color, z, covered };
 
 				};
-				const end = lookup( uvR, onScreen );
-				If( end.covered.and( behind( end.z ) ), () => {
+				// What swims in the water (Refraction.ts markSwimmer) is drawn in the opaque image alone,
+				// where its material places it as the eye sees it through the waves (swimmerSway), so
+				// the water shows it straight behind its pixel; the pyramid leaves it out, and the floor
+				// behind it comes from the refraction image (the mask keeps it there). Followed down the
+				// refracted ray instead, a fish a few centimetres wide fell between the march's steps
+				// and came apart, and the work for it here slowed the whole sea by a few tenths of a
+				// millisecond where nothing swam (a branch's registers count wherever the shader runs).
+				// (only where the pyramid's level 3 holds something besides the floor around the pixel,
+				// as it does around a swimmer: the open sea reads nothing more; gated by the distance to
+				// what lies behind, the pixels at a fish's edge, which the farthest of their samples
+				// shows behind it, were lost)
+				If( tUnderwater.sample( screenUV ).level( float( 3 ) ).a.lessThan( 0.999 ), () => {
 
-					sceneCol.assign( end.color );
-					uvF.assign( uvR );
-					zF.assign( end.z );
-					found.assign( 1 );
+					const behindTexel = pixel( screenUV );
+					const swimmer = textureLoad( texture( sceneColor ), behindTexel, int( 0 ) ).toVar();
+					const zSwimmer = textureLoad( tDepth, behindTexel ).x.toVar();
+					If( swimmer.a.lessThan( 0.999 ).and( behind( zSwimmer ) ), () => {
 
-				} ).ElseIf( end.covered, () => {
-
-					const straight = lookup( screenUV, bool( true ) );
-					If( straight.covered.and( behind( straight.z ) ), () => {
-
-						sceneCol.assign( straight.color );
-						zF.assign( straight.z );
+						sceneCol.assign( swimmer.rgb );
+						zF.assign( zSwimmer );
 						found.assign( 1 );
+
+					} );
+
+				} );
+				If( found.lessThan( 0.5 ), () => {
+
+					const end = lookup( uvR, onScreen );
+					If( end.covered.and( behind( end.z ) ), () => {
+
+						sceneCol.assign( end.color );
+						uvF.assign( uvR );
+						zF.assign( end.z );
+						found.assign( 1 );
+
+					} ).ElseIf( end.covered, () => {
+
+						const straight = lookup( screenUV, bool( true ) );
+						If( straight.covered.and( behind( straight.z ) ), () => {
+
+							sceneCol.assign( straight.color );
+							zF.assign( straight.z );
+							found.assign( 1 );
+
+						} );
 
 					} );
 
