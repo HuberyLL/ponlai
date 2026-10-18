@@ -42,6 +42,8 @@ interface MeadowSample { growth: number; tone: number }
 const LAWN = new THREE.Color( 0.0632, 0.0984, 0.0359 );
 /** The lawn's colour (linear albedo), before its tone: the blades' colours are factors on it. */
 export const LAWN_COLOUR = LAWN.toArray() as [ number, number, number ];
+/** How far the turf's value varies about the lawn's colour (a broad noise's -1 to 1 times it). */
+export const LAWN_TONE = 0.04;
 
 export function sampleMeadow( x: number, z: number ): MeadowSample {
 
@@ -267,7 +269,7 @@ export function soilDeep( depth: number ): number {
 
 function colorFromSample( sample: MeadowSample, target: THREE.Color ): THREE.Color {
 
-	return target.copy( LAWN ).multiplyScalar( 1 + sample.tone * 0.04 );
+	return target.copy( LAWN ).multiplyScalar( 1 + sample.tone * LAWN_TONE );
 
 }
 
@@ -279,13 +281,14 @@ export function meadowColor( x: number, z: number, target: THREE.Color ): THREE.
 
 let texels: Uint8Array | null = null;
 
-/** The meadow map's texels, MEADOW_SIZE square: RGB the turf's colour, A left at 0 for the sward's
- * depth (world/SwardField.ts). Baked once: a function of position alone. */
+/** The meadow map's texels, MEADOW_SIZE square: R the turf's tone (its colour is the lawn's times
+ * 1 + LAWN_TONE ( 2 R - 1 ), `colorFromSample`), G and A left at 0 for the sward's cover and depth
+ * (world/SwardField.ts). Baked once: a function of position alone. (The turf's colour, one hue
+ * whose value alone varies, took three channels the sward's cover now needs one of.) */
 export function meadowTexels(): Uint8Array {
 
 	if ( texels ) return texels;
 	const data = texels = new Uint8Array( MEADOW_SIZE * MEADOW_SIZE * 4 );
-	const color = new THREE.Color();
 	for ( let row = 0; row < MEADOW_SIZE; row ++ ) {
 
 		const z = ( ( row + 0.5 ) / MEADOW_SIZE - 0.5 ) * MEADOW_EXTENT;
@@ -293,12 +296,8 @@ export function meadowTexels(): Uint8Array {
 
 			// Bake texel centres so xz / MEADOW_EXTENT + 0.5 agrees with CPU instance colours.
 			const x = ( ( column + 0.5 ) / MEADOW_SIZE - 0.5 ) * MEADOW_EXTENT;
-			const sample = sampleMeadow( x, z );
-			colorFromSample( sample, color );
 			const k = ( row * MEADOW_SIZE + column ) * 4;
-			data[ k ] = Math.round( color.r * 255 );
-			data[ k + 1 ] = Math.round( color.g * 255 );
-			data[ k + 2 ] = Math.round( color.b * 255 );
+			data[ k ] = Math.round( ( sampleMeadow( x, z ).tone * 0.5 + 0.5 ) * 255 );
 
 		}
 

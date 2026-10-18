@@ -66,9 +66,10 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   tussocks standing in them (GRADE; Meadow.ts `meadowVigour`, `meadowShallow`); small low patches
 //   of one to a few tussocks (LOW) lie anywhere. No tiers or tints by the soil's zones, which read
 //   from above as zoning, no two levels, which read as hollows, and no noise's low end, whose valleys
-//   read as footpaths (the ground under a short or broken sward shows its floor, SwardField.ts, so a
-//   shallow pocket reads as short turf rather than a dark blotch). The soil's exposure (Meadow.ts)
-//   sites the flowers.
+//   read as footpaths. The short turf is a closed mat, its blades spread out over the ground (MAT),
+//   its ground its own base (SwardField.ts, TerrainMaterial.ts), so a shallow pocket reads as short
+//   turf rather than a dark blotch or bare earth; only a gap shows the soil. The soil's exposure
+//   (Meadow.ts) sites the flowers.
 //   The sward runs to the edge on every coast. GAP of the taller ones leave small gaps where the ground shows. The extra tufts fold away beyond about 35 m and are not drawn
 //   past their fold, 42 m. Toward the coast the sward rolls over a rounded shoulder: over its last
 //   metre and a half the tufts lean out more and stand a little lower (SHOULDER) and stiffer
@@ -209,6 +210,13 @@ const COARSE = { shares: [ 0.12, 0.35, 0.8 ], at: [ 0.55, 0.85 ] } as const;
 // The short turf's tufts (LEVEL.short, at most about 0.24 m) take none: the share fades in over these
 // height scales (m), below the tall sward's least.
 const SHORT_TOP = [ 0.22, 0.28 ] as const;
+// The short turf is a closed mat, as a wind-cropped or shallow-soil turf is: its tillers many and
+// spreading, its leaves splayed out over the ground. A tuft draws a few times fewer leaves than a
+// real turf holds, so a short tussock's (from its height scale MAT.level[ 1 ] (m) down to
+// MAT.level[ 0 ], fully) stand for more: MAT.width wider, reaching MAT.spread farther out and MAT.flat
+// less high, the same length nearly (`restBlade`). Upright short blades, a pixel wide from the game's
+// camera, stood as sticks over the earth: a short turf read as bare ground.
+const MAT = { level: [ 0.24, 0.36 ], width: 0.6, spread: 0.6, flat: 0.3 } as const;
 const HEIGHT_MAX = 1.25 * TALL / ( 1 + TALL_SHARE * ( TALL - 1 ) ) * ( 1 + SHEAR );
 const FACING = 2.2, ROOT_ANGLE = [ 1.0, 1.45 ], STIFFNESS = [ 0.75, 1.35 ];
 // The meadow's blade: a grass leaf (Physics.ts GRASS_BLADE) 0.6 mm thick at the root, as a tall
@@ -273,7 +281,7 @@ const GAP = 0.05;
 // of shallow soil (`meadowShallow`) THIN_GAP more of the tussocks leave a gap, each by its own draw.
 // So deep, damp ground grows a slightly taller sward: no line and no zone (two levels by the soil,
 // 4 times apart over 2 - 4 m, read as a mower's line).
-const LUSH = [ 0.88, 1.15 ], VIGOUR_LUSH = [ 0.25, 0.75 ], THIN_GAP = 0.15;
+const LUSH = [ 0.88, 1.15 ], VIGOUR_LUSH = [ 0.25, 0.75 ], THIN_GAP = 0.1;
 // A tussock stands part of the way from its tall level down to the short turf's (its `short`, 0 to
 // 1, the level, spread and share of blades blended by it), as far as its spot pulls it (the `pull`:
 // a pocket of shallow soil or a low patch, their weights falling over their frayed rims) answered by
@@ -1148,15 +1156,17 @@ function restBlade( blade: THREE.Node<'vec4'>, pick: F, scaleY: F, aspect: F, cl
 	const gravity = min( metres.mul( metres ).mul( metres ).mul( G_UNIT ).div( stiffness ), G_MAX );
 	const angle = bladeHash( id, pick, 4 ).sqrt().mul( ROOT_ANGLE[ 1 ] - ROOT_ANGLE[ 0 ] ).add( ROOT_ANGLE[ 0 ] );
 	const culmWidth = mix( float( CULM_STEM ), float( CULM_WIDTH ), smoothstepN( CULM_HEAD[ 0 ], CULM_HEAD[ 1 ], t ) );
-	const half = blade.z.mul( side ).mul( mix( mix( grass( 'width' ), culmWidth, culm ), float( 1 ), isStem ) );
+	// a short tussock's blades spread out as a mat (MAT): wider, and splayed out and down from its root
+	const mat = float( 1 ).sub( smoothstepN( MAT.level[ 0 ], MAT.level[ 1 ], scaleY ) ).mul( float( 1 ).sub( isStem ) ).mul( float( 1 ).sub( culm ) ).toVar();
+	const half = blade.z.mul( side ).mul( mix( mix( grass( 'width' ), culmWidth, culm ), float( 1 ), isStem ) ).mul( mat.mul( MAT.width ).add( 1 ) );
 	const offset0 = vec2( cos( blade.y ), sin( blade.y ) ).mul( half );
 	const axis = mix( vec2( cos( blade.y.add( turn ) ), sin( blade.y.add( turn ) ) ), vec2( stem.dir.y.negate(), stem.dir.x ), isStem ).toVar();
 	const offset = axis.mul( half );
 	const curve = bladeCurve( mix( mix( gravity, CULM_G, culm ), STEM_G, isStem ), mix( mix( angle, CULM_ANGLE, culm ), STEM_ANGLE, isStem ), t ).toVar();
 	const along = mix( dir, stem.dir, isStem ), reach = mix( length, stem.length, isStem ).toVar();
 	const base = positionLocal.xz.sub( offset0 ).mul( clump.gather );
-	const centre = base.add( along.mul( curve.x.mul( reach ).mul( aspect ) ) );
-	const position = vec3( centre.x.add( offset.x ), curve.y.mul( reach ), centre.y.add( offset.y ) );
+	const centre = base.add( along.mul( curve.x.mul( reach ).mul( aspect ).mul( mat.mul( MAT.spread ).add( 1 ) ) ) );
+	const position = vec3( centre.x.add( offset.x ), curve.y.mul( reach ).mul( float( 1 ).sub( mat.mul( MAT.flat ) ) ), centre.y.add( offset.y ) );
 	return { position, offset, axis, lean: along.mul( curve.z.mul( LEAN_NORMAL ) ), side, id, hash: bladeHash( id, pick, 7 ), metres, base };
 
 }
@@ -2297,7 +2307,7 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		if ( flower > 0 ) short = lowFlower ? Math.max( short, LOW_FLOWER ) : 0;
 		if ( flower === 0 && ! onStack && own[ 7 ] < GAP * ( 1 - short ) + THIN_GAP * thin ) {
 
-			sward.push( x, z, 0 );
+			sward.push( x, z, - 1 );
 			// HERB_GAP of the gaps hold a plantain's rosette (PLANTAIN, the herb batch), planted at
 			// the short turf's height scale with a stiffness of 1.5 and no lean of its own
 			if ( g3 < HERB_GAP ) {

@@ -135,13 +135,15 @@ art decision changes; reference images stay out of the repository.
   are the real clouds' (from the cloud layer overhead, drifting with it): no patches painted or
   animated onto the island to vary its light. The ground under the grass is what a real meadow
   shows there: under the dense sward its shaded bottom, the lower leaves' deep green with a little
-  straw, where no light reaches the soil; where the turf is short (the pockets, the low patches) or
-  broken by a gap, the island's yellow-brown earth under lying dead leaves, never a green turf skin
+  straw, where no light reaches the soil; where the sward is broken by a gap, the island's
+  yellow-brown earth under lying dead leaves, never a green turf skin
   laid under the near blades (it read as one, and on the lip's bevel its texture ran down the slope
-  in stripes). Farther off the openings' earth gives way to their short turf's colour, so from the
-  game's high views and from above the meadow is one dense sward, a little browner where it is
-  short, never thin grass over brown ground. At the lip the turf ends on its soil over the stone,
-  never a dark hole among the flowers. By night
+  in stripes). The short turf is a closed mat, as a wind-cropped or shallow-soil turf is: its
+  leaves splayed out over the ground, its base olive with thatch and only flecks of earth, so from
+  every view and at every zoom the meadow is one dense sward, a little yellower where it is short;
+  bare earth only in its few gaps, never thin grass over brown ground, and never a ground that
+  changes colour as the camera zooms. At the lip the turf ends on its soil over the stone, never a
+  dark hole among the flowers. By night
   the lawn is a dark, readable green (see Night). Toward a sheltered coast the grass runs to the
   lip and stands there, and the same grass grows out over it: its tufts at the lip spill over the
   edge, fine blades that arch over and hang down the wall, lying on the stone, never through it, and the lip alternates between
