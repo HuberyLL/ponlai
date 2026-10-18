@@ -44,7 +44,10 @@ art decision changes; reference images stay out of the repository.
   lens flares forced into the frame.
 - The water is tidewater's physically based model with clear water a little less pure than its
   tropical one: teal in the basin, a green turquoise (jade) over the sandy shallows, never a
-  saturated navy or a blue-cyan; greener still read as a lake beside the meadow.
+  saturated navy or a blue-cyan; greener still read as a lake beside the meadow. The shallows are
+  clear to the floor in everyday weather: the stones and the sunlight's network on the sand show
+  through the water, which wobbles them but never breaks them into crumbs, and the calm water
+  carries no film of foam.
 - The look is judged from the game's own view, the island camera zoomed out over the island, as
   well as close up. Light reads there through its direction and large-scale light and shade (lit
   and shaded slopes and cliffs, a glint or moon path on the sea, later warm lights and what stands

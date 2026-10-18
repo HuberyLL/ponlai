@@ -708,13 +708,16 @@ export class Water {
 
 			// ---- whitecaps: where the surface is compressed right now (tidewater's fresh foam), more
 			// of them inside gusts, and the windrows' trace of foam; a threshold on the foam pattern so
-			// that they grow and tear into lace; far away, the coverage itself
+			// that they grow and tear into lace; far away, the coverage itself. None without a cover:
+			// the pattern's peaks reach past the threshold's soft edge, and a faint film of foam, lit as
+			// a white scatterer under the full sun, showed as pale blotches a metre across on the calm
+			// shallows.
 			const fresh = sat( fft.foamBias.sub( 0.15 ).sub( jac ).mul( 2 ) );
 			const coverage = sat( fresh.mul( mix( float( 0.5 ), float( 1.5 ), sea.y ) ).add( sea.w.mul( 0.5 ) ).mul( u.foamCoverage ) );
 			const threshold = float( 1.05 ).sub( coverage.mul( 1.1 ) );
 			const soft = footprint.mul( 0.1 ).add( 0.06 );
 			const mat = smoothstep( threshold.sub( soft ), threshold.add( soft ), p1.x.mul( 0.62 ).add( p2.x.mul( 0.38 ) ) ).mul( p1.y.mul( 0.25 ).add( 0.8 ) );
-			const foam = mix( mat, coverage.mul( 0.85 ), smoothstep( 0.15, 1.2, footprint ) ).toVar();
+			const foam = mix( mat.mul( smoothstep( 0, 0.05, coverage ) ), coverage.mul( 0.85 ), smoothstep( 0.15, 1.2, footprint ) ).toVar();
 			// the foam the waves leave at the rock (ShoreWaves): a fresh burst, the pattern's bubbly mat,
 			// the foam lingering from the waves before, the pattern's lace, finer than the whitecaps' (a rock churns the foam
 			// finer than a breaking crest does); far away, its cover
