@@ -407,9 +407,17 @@ export function wave( time: Node<'float'>, rate: number, phase: Node<'float'> | 
  * whole number. */
 export function gustWave( wind: WindState, position: Node<'vec2'>, cycles: number, phase: Node<'float'> | number = 0 ): Node<'float'> {
 
+	return sin( gustTravel( wind, position, cycles ).add( phase ) );
+
+}
+
+/** `gustWave`'s angle at a point (world x, z) before a plant's own `phase` (0..2 pi): the same for
+ * every part of a plant rooted there. */
+export function gustTravel( wind: WindState, position: Node<'vec2'>, cycles: number ): Node<'float'> {
+
 	if ( ! Number.isInteger( cycles ) ) throw new RangeError( `gustWave: ${ cycles } is not a whole number of swings per gust tile` );
 	const travel = wind.swayScroll.mul( cycles / GUST_ALONG ).sub( dot( position, wind.direction ).div( SWAY_SPREAD ) );
-	return sin( fract( travel ).mul( TAU ).add( phase ) );
+	return fract( travel ).mul( TAU );
 
 }
 
