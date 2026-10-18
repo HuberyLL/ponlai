@@ -905,7 +905,13 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   reads from `src/debug/DebugFlags.ts`. Both give B/A as a ratio beside the delta. While a page
   of `--compare` stands stopped, its dynamic scale's clock stands still too (the debug hook
   `dynamicClock`; older builds without it let their holds and bars run out during the other
-  page's slices).
+  page's slices). The page that runs is brought to the front first, headless too: the two pages
+  are tabs of one window, and a tab behind still runs its frames (Playwright keeps it visible to
+  its page) but they are not presented, so it paces otherwise. With the tab opened last (B) left
+  in front, A/A runs on one build gave B a median frame interval 7-17 % longer with GPU
+  timestamps off, and longer with them on, beyond the interval, its GPU busy time unchanged. With
+  each page in front while it runs, the same A/As came out within their interval, on and off.
+  A/A runs (one build as both A and B) are the check for any change to how the compare runs.
 - `--scale-log` writes each page's dynamic-scale changes (time on the controller's clock, from and
   to, the rule and, for the GPU's rules, the predicted and measured 90th percentile) per scene to
   the output and to each scene's `scaleLog` in profile.json; in `--compare` also, per slice, how
