@@ -106,6 +106,9 @@ the fantasy in the world and a light touch on the image (clear shade, a golden a
   upstream shader header, the kernels (`Passes.ts`); the page's integration, its passes on the
   frame graph, rest and diagnostics (`Fsr3Upscaler.ts`) and its mip bias (`MipBias.ts`).
 - `src/characters/`: the islanders (modular low-poly figures, their light, ears, proportions).
+- `src/life/`: the island's creatures (`docs/art-direction.md`, Life), simulated per frame on the
+  rendering side: the wenyao's schools of flying fish (`Wenyao.ts`), the fish's mesh and material
+  (`FishGeometry.ts`, `FishMaterial.ts`).
 - `src/game/`: the game behind `?game` (`Game.ts`, which also drives the island's growth by the
   population through `world/Growth.ts`): `sim/` is the headless simulation (no three.js or DOM;
   node runs it by stripping types; `sim/save.ts` is the save slot the world's start reads), `view/`

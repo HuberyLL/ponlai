@@ -306,9 +306,12 @@ within a tolerance; the test mode keeps the byte-for-byte checks valid.
   `__THREE_GAME_DIAGNOSTICS__.settled` holds (capture.mjs's readiness). Every capture, parity and
   verify tool already loads its pages this way, so their exact checks hold as their headers say.
   The page's only history-dependent rendering effects are the temporal resolve (`aa=taa|taau|gt`,
-  frozen by its rest image, `TemporalRest.ts`, and compared within the temporal tolerance) and the
+  frozen by its rest image, `TemporalRest.ts`, and compared within the temporal tolerance), the
   states that settle on their own on a still scene (the clouds' view, the sky's bakes, the
-  refracted sun's map, the fog's bank), which `settled` waits for.
+  refracted sun's map, the fog's bank), which `settled` waits for, and the wenyao's schools
+  (`src/life/Wenyao.ts`), which step only with the scene clock's step from a layout the land gives:
+  a page loaded paused never steps them, `establishScene` returns them to that layout and a Grow
+  does too while they have not stepped, so the pause itself freezes them and they need no switch.
 - A new history-dependent effect:
   - `establishScene` (`src/main.ts`) clears its history; `tools/verify-scene-jump.mjs` checks it;
   - it reports itself to `settled` (main.ts `pending`, or the rest's signature) until it has
