@@ -373,6 +373,15 @@ export function pressedStiffening( x: Node<'float'> ): Node<'float'> {
 
 }
 
+/** The linear lean that holds a plant at the pressed lean `y` (>= 0), over `y`: the inverse of
+ * `pressedLean` divided by its argument, ( a y + sqrt( a^2 y^2 + 4 ) ) / 2 at a = PRESS_SATURATION,
+ * 1 at rest. */
+export function pressedLoadRatio( y: Node<'float'> ): Node<'float'> {
+
+	return y.mul( PRESS_SATURATION ).add( y.mul( y ).mul( PRESS_SATURATION * PRESS_SATURATION ).add( 4 ).sqrt() ).mul( 0.5 );
+
+}
+
 /** How far the plants have gone over to the elastica's lean (`pressedLean`): 0 up to fair's
  * pressure, exactly, and 1 from twice it (5.4 m/s) up. */
 export function pressing( wind: WindState ): Node<'float'> {

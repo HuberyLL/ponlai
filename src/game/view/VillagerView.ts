@@ -167,6 +167,15 @@ export class VillagerView implements TrampleWalker {
 
 	}
 
+	/** The trail's clock at the last record (s: game ticks over ticks per second), by which its
+	 * track's ages count. */
+	clock(): number {
+
+		const n = this.times.length;
+		return n > 0 ? this.times[ n - 1 ] / this.ticksPerSecond : 0;
+
+	}
+
 	/** Where the islander's feet were `age` seconds of the trail's clock before the last record (x,
 	 * z), between the positions shown (its oldest before them). */
 	track( age: number, out: THREE.Vector2 ): void {

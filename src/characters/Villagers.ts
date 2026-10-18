@@ -272,6 +272,13 @@ export class Villagers implements TrampleWalker {
 
 	}
 
+	/** The scene time of the last update, the clock its track's ages count by (Trample.ts). */
+	clock(): number {
+
+		return this.time;
+
+	}
+
 	/** Where the walker's feet were `age` scene seconds before the last update (x, z), by its
 	 * schedule on the loop it walks now (Trample.ts). */
 	track( age: number, out: THREE.Vector2 ): void {

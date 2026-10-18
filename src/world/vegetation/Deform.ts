@@ -1,8 +1,8 @@
 import type * as THREE from 'three/webgpu';
-import { vec3, vec4, float, fract, mix, dot, max, normalize, length, smoothstep, inverseSqrt, cameraViewMatrix, cameraProjectionMatrix, screenSize } from 'three/tsl';
+import { Fn, If, vec2, vec3, vec4, float, fract, mix, dot, max, normalize, length, smoothstep, step, inverseSqrt, cameraViewMatrix, cameraProjectionMatrix, screenSize } from 'three/tsl';
 import { LEAN_REF, gustWave, leanLoad, pressedLean, pressedStiffening, pressing, swayJitter, swingOf, wave, windField, type WindState } from '../../weather/Wind.ts';
 import { puddleCover } from '../../weather/Puddles.ts';
-import { tramplePale } from './Trample.ts';
+import { trampleLoad } from './Trample.ts';
 
 // How the vegetation moves: the plants' main bend (`mainBend`: today only the game's palm), the
 // meadow's blades and flower heads (`bendBlade`, each on its own phase, `bladePhase`), a hanging
@@ -63,6 +63,11 @@ export const GRASS_WIND = { cycles: 50, spread: 0.8, swing: { base: 0.009, gust:
 // short tussocks (Grass.ts), so heads bent as their tufts' blades moved a quarter to a fifth as
 // far as the sward around them in every wind and read as standing still.
 
+/** What `bendBlade` needs of a meadow blade for the islanders' trail: its share of the trail
+ * (Trample.ts `trampleShare`), and, built only where that is not 0, its root (world) and its own
+ * facing (world x, z, unit). */
+export interface TrampleBlade { share: V3; root: () => V3; facing: () => V2 }
+
 /** A plant's main bend, after Sousa's "Vegetation Procedural Animation and Shading in Crysis"
  * (GPU Gems 3, ch. 16): the whole plant leans with the gust field at its root and sways a little
  * about that lean, each vertex by `amplitude` (metres at a fair day's typical gust, see LEAN_REF;
@@ -120,12 +125,17 @@ export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F,
  * the normals turn by, and `pale`, the colour's factor (exactly 1 up to fair's wind). The normals
  * keep the eased lean in every wind: turned by the pressed one, the blades' soft upward normals
  * fell away from a high sun and a strong wind's gusts swept the meadow as dark bands, where a
- * field's pressed grass shows light ones. The islanders' trail through the grass (`trample`, the
- * lean Trample.ts `trampleLean` gives the blade's root: world x, z) joins the wind's lean, so a
- * blade a walker presses arcs over and sinks as under the wind, and shows its paler side by the
- * same measure (Trample.ts `tramplePale`); the returned `lean` and `tilt` stay the wind's alone.
+ * field's pressed grass shows light ones. The islanders' trail through the grass (`trample`: the
+ * share Trample.ts `trampleShare` gives the blade's root, the root itself and the blade's facing,
+ * world) is a load on the blade with the wind's (Trample.ts `trampleLoad`, scaled by the same
+ * length and rigidity): the legs' push adds to the wind's load as horizontal vectors, the feet's
+ * weight along the blade's own facing (a vertical load bends a strand further the way it leans),
+ * and the elastica bends the blade by the whole, its shiver stiffened by it, its paler side shown
+ * by the same measure. What that adds to the wind's lean turns the vertex about the blade's own
+ * root after the wind's bend (a head's root is its stem's, the tuft's origin); exactly the wind's
+ * bend where the trail is 0. The returned `lean` and `tilt` stay the wind's alone.
  */
-export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t2: F, phase: F, fade?: F, rigidity?: F, flower?: F, trample?: V2 ): { position: V3; lean: V3; tilt: V3; pale: F } {
+export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t2: F, phase: F, fade?: F, rigidity?: F, flower?: F, trample?: TrampleBlade ): { position: V3; lean: V3; tilt: V3; pale: F } {
 
 	const field = windField( wind, origin.xz ).toVar();
 	const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
@@ -144,26 +154,72 @@ export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t
 	const press = always ? float( 1 ) : pressing( wind );
 	const held = along.mul( pressed ).add( across.mul( shiver.mul( scale ).mul( pressedStiffening( load ) ) ) );
 	const lean = eased.add( held.sub( eased ).mul( press ) ).toVar();
-	const windPale = float( 1 ).add( float( 1 ).sub( inverseSqrt( pressed.mul( pressed ).mul( t2 ).add( 1 ) ) ).mul( press.mul( underside ) ) );
-	const pale = trample ? windPale.mul( tramplePale( trample, t2 ) ) : windPale;
-	const total = trample ? lean.add( vec3( trample.x, 0, trample.y ) ) : lean;
+	const paleBy = ( p: F ) => float( 1 ).add( float( 1 ).sub( inverseSqrt( p.mul( p ).mul( t2 ).add( 1 ) ) ).mul( press.mul( underside ) ) );
+	const windPale = paleBy( pressed );
 	const rel = rooted.sub( origin ).toVar();
 	const reach = length( rel );
-	const pressedBy = trample ? vec3( trample.x, 0, trample.y ) : null;
-	let offset: V3 = total.mul( height.mul( t2 ) ), tilt: V3 = eased;
+	let offset: V3 = lean.mul( height.mul( t2 ) ), tilt: V3 = eased;
 	if ( flower ) {
 
 		// a flower's head and stem (`flower` 1): the gust field's lean and the sway, unscaled by the
-		// tuft's height (GRASS_WIND.head), and a walker's press as a blade's; a blend, exact for the
-		// blades (`flower` 0)
+		// tuft's height (GRASS_WIND.head); a blend, exact for the blades (`flower` 0)
 		const { sway } = GRASS_WIND.head;
 		const nod = along.mul( field.z.add( swing.mul( sway ) ) ).add( across.mul( shiver.mul( sway ) ) ).toVar();
-		offset = mix( offset, ( pressedBy ? nod.add( pressedBy ) : nod ).mul( height.mul( t2 ) ), flower );
+		offset = mix( offset, nod.mul( height.mul( t2 ) ), flower );
 		tilt = mix( eased, nod, flower );
 
 	}
 	const bent = normalize( rel.add( offset ).add( vec3( 0, 1e-5, 0 ) ) ).mul( reach ).add( origin );
-	return { position: bent, lean, tilt, pale };
+	if ( ! trample ) return { position: bent, lean, tilt, pale: windPale };
+	// The trail, worked out only where it touches the blade: the wind's load and the legs' push as
+	// horizontal vectors (world x, z) and the feet's weight along the blade's own facing, bent by the
+	// elastica. What that adds to the wind's lean turns the vertex about the blade's own root, keeping
+	// its distance from it. Turned about the tuft's origin as the wind's lean is, a blade rooted up to
+	// 0.2 m to one side of it and pushed toward the other swung its upper half across the tuft,
+	// stretched by a third and more, and flipped back over the tuft's middle in a snap as its lean
+	// fell. The weight along the sum of the wind and the push instead flipped a blade over where the
+	// push against the wind cancelled it, on a line the wind's sway swept back and forth.
+	const { share, root, facing } = trample;
+	const on = step( 1e-20, dot( share, share ) ).mul( press );
+	// the trail's lean on the blade (world x, z) and what it adds to the wind's lean, built afresh for
+	// each branch that reads it (a node first built inside one branch is declared there alone)
+	const trailLean = () => {
+
+		const { push, weight } = trampleLoad( share, scale );
+		const all = vec2( field.x, field.y ).mul( load ).add( push ).add( facing().mul( weight ) ).toVar();
+		const stiffening = pressedStiffening( length( all ) );
+		const lain = all.mul( stiffening ).toVar();
+		return { lain, by: vec3( lain.x, 0, lain.y ).add( across.mul( shiver.mul( scale ).mul( stiffening ) ) ).sub( held ).mul( press ) };
+
+	};
+	// The position and the paler side each come out of a branch of their own: carried out of one
+	// branch together in a vec4, the position moved the shading of whole blades far from any walker
+	// by a level or more, though their shapes stayed to the bit.
+	const position = Fn( () => {
+
+		const q = bent.toVar();
+		If( on.greaterThan( 0 ), () => {
+
+			const pivot = root().toVar();
+			const arm = q.sub( pivot ).toVar();
+			q.assign( normalize( arm.add( trailLean().by.mul( height.mul( t2 ) ) ).add( vec3( 0, 1e-5, 0 ) ) ).mul( length( arm ) ).add( pivot ) );
+
+		} );
+		return q;
+
+	} )();
+	const lain = Fn( () => {
+
+		const l = float( 0 ).toVar();
+		If( on.greaterThan( 0 ), () => {
+
+			l.assign( length( trailLean().lain ) );
+
+		} );
+		return l;
+
+	} )();
+	return { position, lean, tilt, pale: windPale.add( paleBy( lain ).sub( windPale ).mul( on ) ) };
 
 }
 

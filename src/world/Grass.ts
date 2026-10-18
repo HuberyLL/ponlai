@@ -13,8 +13,8 @@ import { anchorStream, cellStream } from './Anchors.ts';
 import { LAWN_COLOUR, SHORE_RIM, SWARD_HEIGHT, meadowColor, meadowMoisture, meadowSoil, meadowShallow, meadowTurf, meadowVigour, supportsMeadow, type ShoreAt } from '../materials/Meadow.ts';
 import { soilUniforms } from '../materials/Soil.ts';
 import { rootHash } from '../weather/Wind.ts';
-import { bendBlade, bladePhase, drown, swayFade } from './vegetation/Deform.ts';
-import { trampleLean } from './vegetation/Trample.ts';
+import { bendBlade, bladePhase, drown, swayFade, type TrampleBlade } from './vegetation/Deform.ts';
+import { trampleShare, type TrampleState } from './vegetation/Trample.ts';
 import { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { PUDDLE_WET, puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
@@ -117,11 +117,11 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   normals turn with the bend, so a gust shows as a sheen (vegetation/Deform.ts `bendBlade`, its
 //   numbers GRASS_WIND, which the wind probe reads too).
 // - The islanders part the meadow as they walk through it (vegetation/Trample.ts): each blade reads
-//   the walkers' recent tracks at its own root (a flower's head at its tuft's origin) and leans
-//   away from them to either side, the lean added to the wind's (`bendBlade`), so a walker leaves a
-//   furrow that closes several seconds behind it. A parted blade keeps its shading: its lower half,
-//   laid out of the canopy, shows the trough darker than the sward between the brighter blades
-//   heaped at its sides. `flags.trample = false` at load leaves it out of the shader.
+//   the walkers' recent tracks at its own root (a flower's head at its tuft's origin) as a load,
+//   their legs' push away from their way and their feet's weight, which the elastica takes with
+//   the wind's (`bendBlade`); a pushed blade rises back as a released spring, so a walker leaves a
+//   short wake that closes a couple of seconds behind it. The herbs take none. A parted blade
+//   keeps its shading. `flags.trample = false` at load leaves it out of the shader.
 // - Under MSAA a tuft's sway and shiver fade out as it shrinks to a few pixels on screen, its
 //   head with it, while its lean in the gusts stays (Deform.ts `swayFade`): far off, a swinging
 //   flower head or blade under a pixel crosses the multisamples and flashes from frame to frame,
@@ -1167,7 +1167,7 @@ function restBlade( blade: THREE.Node<'vec4'>, pick: F, scaleY: F, aspect: F, cl
 	const base = positionLocal.xz.sub( offset0 ).mul( clump.gather );
 	const centre = base.add( along.mul( curve.x.mul( reach ).mul( aspect ).mul( mat.mul( MAT.spread ).add( 1 ) ) ) );
 	const position = vec3( centre.x.add( offset.x ), curve.y.mul( reach ).mul( float( 1 ).sub( mat.mul( MAT.flat ) ) ), centre.y.add( offset.y ) );
-	return { position, offset, axis, lean: along.mul( curve.z.mul( LEAN_NORMAL ) ), side, id, hash: bladeHash( id, pick, 7 ), metres, base };
+	return { position, offset, axis, lean: along.mul( curve.z.mul( LEAN_NORMAL ) ), side, id, hash: bladeHash( id, pick, 7 ), metres, base, facing: along };
 
 }
 
@@ -1772,12 +1772,25 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 
 	} )();
 	// The islanders' trail (Trample.ts) at the blade's root, a head's at its stem's (the tuft's
-	// origin); left out of the shader altogether under `flags.trample = false` at load. Under the
-	// temporal modes the previous position takes the previous frame's trail.
+	// origin), none on a herb; left out of the shader altogether under `flags.trample = false` at
+	// load. Under the temporal modes the previous position takes the previous frame's trail.
 	const trampled = debugFlags.trample !== false;
 	const bladeRoot = () => mix( input.matrix.mul( vec4( pose.base.x, 0, pose.base.y, 1 ) ).xz, origin.xz, isHead );
-	const trample = trampled ? trampleLean( shared.trample, origin.xz, bladeRoot ).toVar( 'grassTrample' ) : undefined;
-	const trampleBefore = trampled && TEMPORAL ? trampleLean( shared.trample.previous, origin.xz, bladeRoot ) : undefined;
+	const unherbed = float( 1 ).sub( herb );
+	// the blade's share of the trail, and its root and own facing (world) where that is not 0
+	const trampleOf = ( state: TrampleState ): TrampleBlade => ( {
+		share: trampleShare( state, origin.xz, bladeRoot ).mul( unherbed ),
+		root: () => {
+
+			const r = bladeRoot().toVar();
+			return vec3( r.x, origin.y, r.y );
+
+		},
+		facing: () => normalize( ground1.xz.mul( pose.facing.x ).add( ground2.xz.mul( pose.facing.y ) ) ),
+	} );
+	const trample = trampled ? trampleOf( shared.trample ) : undefined;
+	if ( trample ) trample.share = trample.share.toVar( 'grassTrample' );
+	const trampleBefore = trampled && TEMPORAL ? trampleOf( shared.trample.previous ) : undefined;
 	const bend = bendBlade( shared.wind, rooted, origin, bendHeight, sway2, phase, fade, clump.stiffness, flowerPart, trample );
 	const bent = settle( bend.position ).toVar( 'grassBent' );
 	// A blade of a tuft past 70 m stands for as many of the blades it drew there as its gain over
