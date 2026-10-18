@@ -106,7 +106,7 @@ the fantasy in the world and a light touch on the image (clear shade, a golden a
 - `src/game/`: the game behind `?game` (`Game.ts`, which also drives the island's growth by the
   population through `world/Growth.ts`): `sim/` is the headless simulation (no three.js or DOM;
   node runs it by stripping types; `sim/save.ts` is the save slot the world's start reads), `view/`
-  draws the islanders, the palm and the chest, and `Hud.ts` / `Placement.ts` are the player's
+  draws the islanders and the chest, and `Hud.ts` / `Placement.ts` are the player's
   prototype HUD.
 - `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the frame profiler, the frame-rate readout,
   the pipeline counter (`PipelineCounter.ts`), the wind view and its probe (`WindView.ts`,

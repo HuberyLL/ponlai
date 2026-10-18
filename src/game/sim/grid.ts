@@ -8,7 +8,7 @@ import type { Cell, GridApi, IslandInput, Vec2 } from './types.ts';
 // the land, so a loaded game rebuilds the same grid. The page gives the island's top from the world's chunks (their walk
 // tiles, `topFromTiles`, the same cells as the land's footprint 0.9 m inside its edge), so a grown
 // island's grid (`setIsland`, Growth.ts and Sim.addPiece) is a fresh load's; without them (the node checks) it is
-// found from the land. The game's own obstacles (a palm, the chest) are added on top by
+// found from the land. The game's own obstacles (the buildings) are added on top by
 // `obstruct`, from the simulation's state.
 
 const CELL = 0.5;
@@ -69,7 +69,7 @@ export class Grid implements GridApi {
 	readonly z0: number;
 	/** 1 on the island top, clear of the rim, whatever grows there (shared: never written) */
 	top: Uint8Array;
-	/** 1 where walkable: on the island top, clear of the rim, no palm or building */
+	/** 1 where walkable: on the island top, clear of the rim, no building */
 	readonly open: Uint8Array;
 	/** connected walkable regions: a label per open cell, -1 elsewhere */
 	readonly region: Int32Array;

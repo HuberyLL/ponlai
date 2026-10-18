@@ -11,8 +11,6 @@ import type { ActionResult, Items, Villager } from './types.ts';
 
 /** items a bag holds in all */
 export const BAG_CAPACITY = 4;
-/** hydration a coconut's water gives (needs.ts: about one every 8 game hours) */
-export const COCONUT_HYDRATION = 32;
 /** satiety a fish gives (needs.ts: about one every 12 game hours) */
 export const FISH_SATIETY = 36;
 
@@ -25,12 +23,6 @@ export interface ItemKind {
 }
 
 export const ITEMS: Readonly<Record<string, ItemKind>> = {
-	coconut: { uses: { drink: ( body ) => {
-
-		raiseNeed( body.needs, 'hydration', COCONUT_HYDRATION );
-		return { ok: true, value: 'drank a coconut' };
-
-	} } },
 	fish: { uses: { eat: ( body ) => {
 
 		raiseNeed( body.needs, 'satiety', FISH_SATIETY );

@@ -248,8 +248,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 - `windView` makes the vegetation's wind visible (debug pages only; read at load, so without it
   no shader changes; `src/debug/WindView.ts`): flat unlit arrows every 2 m over the meadow, just
   above the grass, point where the local wind blows (the eddies' veer included), longer in a
-  gust and brighter with the lean it gives; and every plant (grass and its flowers, its tufts draped over the cliff's edge among them, the game's
-  palm) is drawn unlit in the colour of its current sway s (tip
+  gust and brighter with the lean it gives; and every plant (grass and its flowers, its tufts draped over the cliff's edge among them) is drawn unlit in the colour of its current sway s (tip
   offset over height): the hue is s's angle from the mean wind on a cyclic map (downwind blue,
   upwind orange, left of the wind, counter-clockwise seen from above, magenta, right of it green),
   the brightness |s| / 0.15. `windView=arrows` or `windView=plants` shows one half. The numbers
@@ -1081,7 +1080,7 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
 - `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
   are CPU-only (plain `node`). `verify-game.mjs` checks the game's simulation: the clock, the
   ground and a path, a body walking to a point, a save round trip, a brain's late answer, and the
-  first prototype's rules (needs, the bag, the palm, fishing, the chest placed as a blueprint and
+  first prototype's rules (needs, thirst off, the bag, fishing, the chest placed as a blueprint and
   built, several chests with stable ids, two builders on one site, the actions, the perception, the stand-in brain over a few game days, a save mid-action); its island is in
   `tools/game-fixture.mjs`.
 - `tools/verify-growth-shape.mjs` (plain `node`) checks the island's growth over 32 seeds and 36

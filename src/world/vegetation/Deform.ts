@@ -4,8 +4,8 @@ import { LEAN_REF, gustTravel, gustWave, leanLoad, pressedLean, pressedStiffenin
 import { puddleCover } from '../../weather/Puddles.ts';
 import { trampleLoad } from './Trample.ts';
 
-// How the vegetation moves: the plants' main bend (`mainBend`: today only the game's palm), the
-// meadow's blades and flower heads (`bendBlade`, each on its own phase, `bladePhase`), a hanging
+// How the vegetation moves: the plants' main bend (`mainBend`: kept for the trees to come; no kind
+// uses it today), the meadow's blades and flower heads (`bendBlade`, each on its own phase, `bladePhase`), a hanging
 // strand's pendulum (`hangingSway`, each hanging kind passing its own HangingWind: kept for the
 // hanging kinds to come; no kind uses it today, the grass over the cliff's edge being the meadow's
 // own tufts draped over it, which bend as its blades do) and standing water drowning a plant (`drown`: the meadow). Each kind's wind numbers (its amplitude, its swings per gust tile,
@@ -29,9 +29,6 @@ type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 type F = THREE.Node<'float'>;
 
-/** The game's palm: mainBend's 30 swings per gust tile (0.89 Hz) at half that rate (`slow`,
- * 0.45 Hz); its crown's bend comes with its vertices (PalmView.ts `palmSway`). */
-export const PALM_WIND = { cycles: 30, slow: 1 } as const;
 /** The meadow's blades and their flower heads: their sway's swings per gust tile (1.48 Hz) and
  * how far apart the blades swing (a share of a swing), the sway's and the shiver's lean (per metre of the
  * tuft's height, in a still breeze and added at a full gust: `base + gust * field.w`), and the
@@ -77,7 +74,7 @@ export interface TrampleBlade { share: V3; root: () => V3; facing: () => V2 }
  * neighbours swing together, each plant only a little
  * apart (`swayJitter`), about a sixth of the lean (`swingOf`), a third of that across the wind.
  * `cycles` is the sway's rate in whole swings per gust tile (an even number: 0.89 Hz at 30), and
- * `slow` (0..1) eases it to half that rate for taller plants (the game's palm). `wind` is the frame's wind state (`shared.wind`, or `.previous`). Returns the bent
+ * `slow` (0..1) eases it to half that rate for taller plants. `wind` is the frame's wind state (`shared.wind`, or `.previous`). Returns the bent
  * position, the wind field's ( direction x, direction z, lean, gust ) at the root and the plant's
  * sway: its horizontal offset over `amplitude` times LEAN_REF, the lean and swing as a tip offset
  * over height (world x, z; for the wind view and probe, src/debug/WindView.ts; a shader that does

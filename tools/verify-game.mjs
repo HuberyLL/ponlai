@@ -1,11 +1,11 @@
 // Checks of the game's simulation, asserted: the clock and its ticks, the ground grid and a path
 // over it, a body that walks to a point and stops there, a save that loads back as it was, a brain
 // whose late answer is applied while the world ran on; then the first prototype's rules: needs that
-// fall and rise, the bag's capacity, the palm and its regrowth, fishing by the seeded generator,
+// fall and rise (thirst off: hydration holds), fishing by the seeded generator and the bag's capacity,
 // the chest placed as a blueprint and built, several of a kind with ids of their own, two
 // islanders building one site, actions that replace each other, a perception
-// without positions, the stand-in brain building the chest and keeping the islander fed and
-// watered for days, and a save taken mid-action; then the island's growth: a land grown by
+// without positions, the stand-in brain building the chest and keeping the islander fed for
+// days, and a save taken mid-action; then the island's growth: a land grown by
 // IslandGrowth, the population steps, the coming piece's cells, a step crossed adding exactly one
 // piece, the grid opening cells without reindexing, islanders walking onto the new piece, and a
 // save that keeps its piece count.
@@ -16,9 +16,9 @@ import { newGame, loadGame } from '../src/game/sim/Sim.ts';
 import { findPath, goalAt, lineClear } from '../src/game/sim/path.ts';
 import { perceive } from '../src/game/sim/agent.ts';
 import { StandInBrain } from '../src/game/sim/standin.ts';
-import { BAG_CAPACITY, COCONUT_HYDRATION, FISH_SATIETY } from '../src/game/sim/items.ts';
-import { HYDRATION_PER_DAY, SATIETY_PER_DAY } from '../src/game/sim/needs.ts';
-import { FISH_SECONDS, PALM_COCONUTS, PALM_REGROW_SECONDS, PICK_SECONDS } from '../src/game/sim/places.ts';
+import { BAG_CAPACITY, FISH_SATIETY } from '../src/game/sim/items.ts';
+import { HYDRATION_PER_DAY, SATIETY_PER_DAY, START_NEEDS } from '../src/game/sim/needs.ts';
+import { FISH_SECONDS } from '../src/game/sim/places.ts';
 import { CHEST_WORK, progressOf, stageOf } from '../src/game/sim/buildings.ts';
 import { GROWTH_STEPS, POPULATION_START, piecesFor } from '../src/game/sim/types.ts';
 import { SAVE_VERSION, savedPieces } from '../src/game/sim/save.ts';
@@ -151,7 +151,7 @@ function farthestOpen( grid, p ) {
 	sim.brain = { think: ( p ) => {
 
 		perceived = p;
-		return new Promise( ( resolve ) => setTimeout( () => resolve( [ { tool: 'go', args: { place: 'palm' } }, { tool: 'fly' } ] ), 5 ) );
+		return new Promise( ( resolve ) => setTimeout( () => resolve( [ { tool: 'go', args: { place: 'shore' } }, { tool: 'fly' } ] ), 5 ) );
 
 	} };
 	const tick = sim.state.tick, start = { ...v.pos };
@@ -166,7 +166,7 @@ function farthestOpen( grid, p ) {
 	assert.equal( sim.thinking( v.id ), false, 'the thought has landed' );
 	assert.equal( results[ 0 ].ok, true, 'its tool call ran on the body' );
 	assert.equal( results[ 1 ].ok, false, 'a tool that does not exist fails with a reason' );
-	assert.equal( v.action.call.args.place, 'palm', 'the body now goes where the answer said' );
+	assert.equal( v.action.call.args.place, 'shore', 'the body now goes where the answer said' );
 	sim.brain = null;
 	assert.equal( sim.think( v.id ), null, 'without a brain nothing thinks' );
 	console.log( 'brain: a late answer ran on the body while the world went on' );
@@ -209,62 +209,27 @@ function buildChest( sim ) {
 
 }
 
-// needs fall, and drinking and eating raise them
+// needs: satiety falls and eating raises it; thirst is off, so hydration holds
 {
 
 	const sim = newGame( input );
 	const v = sim.state.villagers[ 0 ];
 	const before = { ...v.needs };
 	sim.step( HOUR );
-	assert.ok( Math.abs( before.hydration - v.needs.hydration - HYDRATION_PER_DAY / 24 ) < 1e-9, 'hydration falls by its hourly rate' );
+	assert.equal( HYDRATION_PER_DAY, 0, 'thirst is off' );
+	assert.equal( v.needs.hydration, before.hydration, 'hydration holds' );
 	assert.ok( Math.abs( before.satiety - v.needs.satiety - SATIETY_PER_DAY / 24 ) < 1e-9, 'satiety falls by its hourly rate' );
-	assert.ok( HYDRATION_PER_DAY > SATIETY_PER_DAY, 'thirst comes faster than hunger' );
 	sim.step( 2 * 24 * HOUR );
-	assert.deepEqual( v.needs, { satiety: 0, hydration: 0 }, 'needs clamp at 0' );
-	v.bag = { coconut: 2, fish: 1 };
-	assert.deepEqual( run( sim, { tool: 'use', args: { item: 'coconut' } } ), { ok: true, value: 'drank a coconut' } );
-	assert.equal( v.needs.hydration, COCONUT_HYDRATION, 'a coconut raises hydration' );
+	assert.deepEqual( v.needs, { satiety: 0, hydration: START_NEEDS.hydration }, 'satiety clamps at 0' );
+	v.bag = { fish: 2 };
 	assert.equal( run( sim, { tool: 'use', args: { item: 'fish' } } ).ok, true );
 	assert.equal( v.needs.satiety, FISH_SATIETY, 'a fish raises satiety' );
-	assert.deepEqual( v.bag, { coconut: 1 }, 'using an item spends it' );
+	assert.deepEqual( v.bag, { fish: 1 }, 'using an item spends it' );
+	v.needs.satiety = 95;
+	run( sim, { tool: 'use', args: { item: 'fish' } } );
+	assert.equal( v.needs.satiety, 100, 'needs top out at 100' );
 	assert.equal( run( sim, { tool: 'use', args: { item: 'fish' } } ).ok, false, 'no fish to eat' );
-	v.needs.hydration = 95;
-	run( sim, { tool: 'use', args: { item: 'coconut' } } );
-	assert.equal( v.needs.hydration, 100, 'needs top out at 100' );
-	console.log( 'needs: fall per tick, clamp, drinking and eating raise them' );
-
-}
-
-// the palm: placed on the ground, picked, regrown; the bag's capacity
-{
-
-	const sim = newGame( input );
-	const v = sim.state.villagers[ 0 ], grid = sim.grid;
-	assert.equal( sim.state.palms.length, 1, 'one palm' );
-	const palm = sim.state.palms[ 0 ];
-	assert.ok( ! grid.openAt( palm.x, palm.z ), 'the palm blocks its ground' );
-	assert.deepEqual( newGame( input, { seed: 9 } ).state.palms, sim.state.palms, 'the palm grows where the ground says, whatever the seed' );
-	assert.equal( run( sim, { tool: 'do', args: { action: 'pick' } } ).ok, false, 'nothing to pick away from the palm' );
-	assert.deepEqual( run( sim, { tool: 'go', args: { place: 'palm' } } ), { ok: true, value: 'arrived at the palm' } );
-	assert.deepEqual( perceive( sim, v ).atHand, [ { place: 'palm', options: [ 'pick' ] } ], 'the palm is at hand' );
-	const tick = sim.state.tick;
-	assert.deepEqual( run( sim, { tool: 'do', args: { action: 'pick' } } ), { ok: true, value: 'picked a coconut' } );
-	assert.equal( sim.state.tick - tick, PICK_SECONDS, 'picking takes its while' );
-	assert.equal( palm.coconuts, PALM_COCONUTS - 1 );
-	assert.deepEqual( v.bag, { coconut: 1 } );
-	for ( let n = 1; n < BAG_CAPACITY; n ++ ) run( sim, { tool: 'do', args: { action: 'pick' } } );
-	assert.equal( v.bag.coconut, BAG_CAPACITY, 'items of a kind stack' );
-	assert.deepEqual( run( sim, { tool: 'do', args: { action: 'pick' } } ), { ok: false, reason: 'the bag is full' }, 'a full bag refuses more' );
-	assert.equal( palm.coconuts, PALM_COCONUTS - BAG_CAPACITY );
-	// the next coconut has grown since the first was picked
-	assert.ok( palm.growth > 0 );
-	sim.step( PALM_REGROW_SECONDS - palm.growth - 1 );
-	assert.equal( palm.coconuts, PALM_COCONUTS - BAG_CAPACITY, 'not yet regrown' );
-	sim.step( 1 );
-	assert.equal( palm.coconuts, PALM_COCONUTS - BAG_CAPACITY + 1, 'a coconut regrows' );
-	sim.step( 10 * PALM_REGROW_SECONDS );
-	assert.equal( palm.coconuts, PALM_COCONUTS, 'up to the palm\'s full count' );
-	console.log( `palm: at ${ palm.x }, ${ palm.z }; picked, a full bag refused, regrown` );
+	console.log( 'needs: satiety falls per tick, clamps, eating raises it; hydration holds' );
 
 }
 
@@ -291,7 +256,15 @@ function buildChest( sim ) {
 	assert.deepEqual( fishing( 5 ), a, 'one seed, the same catches' );
 	assert.ok( a.includes( 'caught a fish' ) && a.includes( 'caught nothing' ), 'a fish by chance' );
 	assert.notDeepEqual( fishing( 6 ), a, 'another seed, other catches' );
-	console.log( `fishing: ${ a.filter( ( c ) => c === 'caught a fish' ).length } of 12 tries caught a fish` );
+	// the bag: fish stack up to its capacity, and a full bag refuses more
+	const sim = newGame( input );
+	const v = sim.state.villagers[ 0 ];
+	run( sim, { tool: 'go', args: { place: 'shore' } } );
+	v.bag = { fish: BAG_CAPACITY - 1 };
+	for ( let n = 0; n < 50 && v.bag.fish < BAG_CAPACITY; n ++ ) run( sim, { tool: 'do', args: { action: 'fish' } } );
+	assert.deepEqual( v.bag, { fish: BAG_CAPACITY }, 'items of a kind stack' );
+	assert.deepEqual( run( sim, { tool: 'do', args: { action: 'fish' } } ), { ok: false, reason: 'the bag is full' }, 'a full bag refuses more' );
+	console.log( `fishing: ${ a.filter( ( c ) => c === 'caught a fish' ).length } of 12 tries caught a fish; a full bag refused` );
 
 }
 
@@ -299,9 +272,8 @@ function buildChest( sim ) {
 {
 
 	const sim = newGame( input );
-	const v = sim.state.villagers[ 0 ], palm = sim.state.palms[ 0 ];
+	const v = sim.state.villagers[ 0 ];
 	assert.equal( typeof sim.placeBlueprint( 'chest', 1e4, 0 ), 'string', 'not off the island' );
-	assert.equal( typeof sim.placeBlueprint( 'chest', palm.x, palm.z ), 'string', 'not on the palm' );
 	assert.equal( typeof sim.placeBlueprint( 'chest', v.pos.x, v.pos.z ), 'string', 'not on the islander' );
 	assert.deepEqual( sim.state.buildings, [] );
 	assert.equal( typeof sim.placeBlueprint( 'tower', 0, 0 ), 'string', 'no such kind' );
@@ -311,17 +283,17 @@ function buildChest( sim ) {
 	run( sim, { tool: 'go', args: { place: 'shore' } } );
 	assert.equal( perceive( sim, v ).seen.find( ( s ) => s.place === 'chest1' ).shows, undefined, 'its contents do not show from afar' );
 	assert.equal( run( sim, { tool: 'go', args: { place: 'chest1' } } ).ok, true );
-	v.bag = { fish: 2, coconut: 1 };
+	v.bag = { fish: 3 };
 	assert.equal( run( sim, { tool: 'do', args: { action: 'put', item: 'fish', count: 2 } } ).ok, true );
-	assert.equal( run( sim, { tool: 'do', args: { action: 'put', item: 'fish', count: 1 } } ).ok, false, 'cannot put what the bag lacks' );
+	assert.equal( run( sim, { tool: 'do', args: { action: 'put', item: 'fish', count: 2 } } ).ok, false, 'cannot put what the bag lacks' );
 	assert.equal( run( sim, { tool: 'do', args: { action: 'put', item: 'stone' } } ).ok, false, 'no such item' );
 	assert.deepEqual( sim.state.buildings[ 0 ].items, { fish: 2 } );
-	assert.deepEqual( v.bag, { coconut: 1 } );
+	assert.deepEqual( v.bag, { fish: 1 } );
 	assert.deepEqual( perceive( sim, v ).seen.find( ( s ) => s.place === 'chest1' ).shows, { items: { fish: 2 } }, 'its contents show while at it' );
 	assert.equal( run( sim, { tool: 'do', args: { action: 'take', item: 'fish', count: 3 } } ).ok, false, 'cannot take more than it holds' );
 	assert.equal( run( sim, { tool: 'do', args: { action: 'take', item: 'fish' } } ).ok, true, 'one by default' );
 	assert.deepEqual( sim.state.buildings[ 0 ].items, { fish: 1 } );
-	assert.deepEqual( v.bag, { coconut: 1, fish: 1 } );
+	assert.deepEqual( v.bag, { fish: 2 } );
 	const json = sim.save();
 	assert.deepEqual( loadGame( json, input ).grid.open, sim.grid.open, 'a loaded game blocks the same ground' );
 	console.log( `chest: placed at ${ at.x }, ${ at.z }, refused elsewhere, put and take` );
@@ -432,10 +404,10 @@ function buildChest( sim ) {
 	const v = sim.state.villagers[ 0 ];
 	const tools = sim.tools;
 	assert.deepEqual( [ ...tools.keys() ].sort(), [ 'do', 'go', 'say', 'use', 'wait' ], 'exactly five actions' );
-	assert.equal( tools.get( 'go' )( v, { place: 'palm' }, sim ).ok, true );
+	assert.equal( tools.get( 'go' )( v, { place: 'shore' }, sim ).ok, true );
 	assert.ok( v.path, 'walking' );
 	assert.equal( tools.get( 'go' )( v, { place: 'moon' }, sim ).ok, false );
-	assert.ok( v.path && v.action.call.args.place === 'palm', 'a refused action leaves the walk under way' );
+	assert.ok( v.path && v.action.call.args.place === 'shore', 'a refused action leaves the walk under way' );
 	assert.equal( v.last.result.ok, false, 'but its refusal is perceived' );
 	assert.equal( tools.get( 'wait' )( v, { seconds: 60 }, sim ).ok, true );
 	assert.equal( v.path, null, 'a new action replaces the walk' );
@@ -472,15 +444,15 @@ function buildChest( sim ) {
 	const numbers = JSON.stringify( p ).match( /-?\d+(\.\d+)?/g ).map( Number );
 	assert.ok( numbers.every( ( n ) => Number.isInteger( n ) ), 'every number in it is a count, a need or the time' );
 	assert.deepEqual( Object.keys( p ).sort(), [ 'atHand', 'body', 'last', 'seen', 'time' ] );
-	assert.deepEqual( p.seen.map( ( s ) => `${ s.place } ${ s.kind }` ).sort(), [ 'chest1 chest', 'palm palm', 'shore shore' ], 'the whole small island is in sight, each place by id and kind' );
+	assert.deepEqual( p.seen.map( ( s ) => `${ s.place } ${ s.kind }` ).sort(), [ 'chest1 chest', 'shore shore' ], 'the whole small island is in sight, each place by id and kind' );
 	assert.equal( p.time.day, 1 );
-	p.body.bag.coconut = 99;
+	p.body.bag.fish = 99;
 	assert.deepEqual( v.bag, {}, 'the perception is a copy' );
 	console.log( 'perception: time, seen, at hand, body and the last outcome, no positions' );
 
 }
 
-// the stand-in brain keeps the islander fed and watered for days, builds the chests placed and
+// the stand-in brain keeps the islander fed for days, builds the chests placed and
 // stocks the first, the same for a seed
 {
 
@@ -508,7 +480,7 @@ function buildChest( sim ) {
 	assert.ok( stocked.low > 45, `needs kept up with a chest (lowest ${ stocked.low.toFixed( 1 ) })` );
 	assert.ok( stocked.built > 0 && stocked.built < 24 * HOUR, `it builds both placed chests on the first day (by ${ ( stocked.built / HOUR ).toFixed( 1 ) } h)` );
 	const items = stocked.sim.state.buildings[ 0 ].items;
-	assert.ok( ( items.coconut ?? 0 ) > 0 && ( items.fish ?? 0 ) > 0, 'and it stocks the chest a little' );
+	assert.ok( ( items.fish ?? 0 ) > 0, 'and it stocks the chest a little' );
 	assert.equal( play( 2, 2 ).sim.save(), stocked.sim.save(), 'deterministic for a seed' );
 	console.log( `stand-in: ${ days } days, needs never below ${ Math.min( bare.low, stocked.low ).toFixed( 1 ) }; two chests built by ${ ( stocked.built / HOUR ).toFixed( 1 ) } h, holds ${ JSON.stringify( items ) }` );
 
@@ -517,7 +489,7 @@ function buildChest( sim ) {
 // a save taken mid-action plays on as the original
 {
 
-	for ( const [ what, call ] of [ [ 'fishing', { tool: 'do', args: { action: 'fish' } } ], [ 'walking', { tool: 'go', args: { place: 'palm' } } ] ] ) {
+	for ( const [ what, call ] of [ [ 'fishing', { tool: 'do', args: { action: 'fish' } } ], [ 'walking', { tool: 'go', args: { place: 'shore' } } ] ] ) {
 
 		const sim = newGame( input, { seed: 11 } );
 		const v = sim.state.villagers[ 0 ];
@@ -563,9 +535,9 @@ function buildChest( sim ) {
 	assert.equal( sim.population(), 1 );
 	const grid = sim.grid, top0 = grid.top.slice(), dims = [ grid.cols, grid.rows, grid.x0, grid.z0 ];
 	const kai = sim.state.villagers[ 0 ], kaiCell = grid.indexAt( kai.pos.x, kai.pos.z );
-	// a palm's cell, as indexed before the growth
-	const palm = sim.state.palms[ 0 ], palmCell = grid.indexAt( palm.x, palm.z );
-	assert.ok( ! grid.open[ palmCell ], 'the palm blocks its ground' );
+	// a chest's cell, as indexed before the growth
+	const chest = placeChest( sim ), chestCell = grid.indexAt( chest.x, chest.z );
+	assert.ok( ! grid.open[ chestCell ], 'the chest blocks its ground' );
 
 	// the population approaches the step: 1, 2, 3 islanders are at the start; 4 halfway; 5 due
 	for ( let p = 2; p <= 4; p ++ ) {
@@ -618,7 +590,7 @@ function buildChest( sim ) {
 	assert.equal( sim.comingLand, null, 'the coming land arrived' );
 
 	// the grid opens cells without reindexing: the same lattice, every cell on the top before still
-	// on it, the coming cells now on it, the palm's cell still blocked, the planned path walkable
+	// on it, the coming cells now on it, the chest's cell still blocked, the planned path walkable
 	assert.deepEqual( [ grid.cols, grid.rows, grid.x0, grid.z0 ], dims, 'the grid keeps its lattice' );
 	assert.equal( sim.grid, grid, 'the same grid object' );
 	let opened = 0;
@@ -634,8 +606,8 @@ function buildChest( sim ) {
 
 	}
 	assert.equal( opened, comingCells );
-	assert.equal( grid.indexAt( palm.x, palm.z ), palmCell );
-	assert.ok( ! grid.open[ palmCell ], 'the palm still blocks its ground' );
+	assert.equal( grid.indexAt( chest.x, chest.z ), chestCell );
+	assert.ok( ! grid.open[ chestCell ], 'the chest still blocks its ground' );
 	assert.equal( grid.region[ kaiCell ] >= 0, true );
 	for ( const k of planned ) assert.equal( grid.top[ k ], 1, 'a path planned before stays on the island' );
 

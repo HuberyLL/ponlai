@@ -6,7 +6,7 @@
 export const SAVE_KEY = 'ponlai.game';
 
 /** the state's shape this build reads; a save of another is refused */
-export const SAVE_VERSION = 16;
+export const SAVE_VERSION = 17;
 
 /** The island's pieces a save stands on (SimState.pieces), or null when there is no save or it
  * cannot be read (another version, not JSON). */

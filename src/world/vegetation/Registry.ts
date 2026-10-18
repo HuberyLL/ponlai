@@ -17,8 +17,6 @@ import type { WorldData } from '../types.ts';
 //   The kinds prepare and swap in registry order. A kind that writes its buffers in place at the
 //   swap stages the write ahead (`stage`, Upload.ts stagedWriteSteps): kept for the plant kinds to
 //   come; no kind uses it today (the grass takes new buffers).
-// - The game's palms are registered by the game's view (GameView.ts), which owns them; they take
-//   part in none of the lists above.
 
 /** A preparation step yields nothing (a slice ends) or a promise (wait for it: a worker, a compile). */
 export type GrowthSteps<T> = Generator<void | Promise<unknown>, T>;
@@ -44,7 +42,7 @@ export interface KindGrowth<P> {
 }
 
 export interface VegetationKind<P = unknown> {
-	/** 'grass' or 'palm' */
+	/** 'grass' */
 	name: string;
 	/** what the page adds to the scene */
 	root: THREE.Object3D;
@@ -78,13 +76,6 @@ export class Vegetation {
 
 		} );
 		this.kinds.push( kind );
-
-	}
-
-	remove( kind: VegetationKind ): void {
-
-		const i = this.kinds.indexOf( kind );
-		if ( i >= 0 ) this.kinds.splice( i, 1 );
 
 	}
 

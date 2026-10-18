@@ -178,8 +178,8 @@ art decision changes; reference images stay out of the repository.
 - The terrain plants the meadow (grass, wildflowers) and its turf over the rim, nothing taller:
   the island is a flat top ringed by cliffs, with no lee where shrubs or trees would grow, so it
   has none (the shrubs, small trees, rim bushes and hanging leaf trails it once had were
-  placeholders). The walker's loop stays open meadow. Plants that matter to play (coconut palms)
-  are content placed in the world, not terrain.
+  placeholders). The walker's loop stays open meadow. Plants that matter to play are content
+  placed in the world, not terrain.
 - All vegetation moves in one wind: gusts visibly sweep the meadow and change as they go; still air
   is the rest pose. The wind turns with the weather and has levels (light, gentle, fresh, strong;
   gentle most of the time, fresh at times, light or strong rarely), coming mostly from within

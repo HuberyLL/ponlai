@@ -78,7 +78,7 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //   and the fragment stage samples 15: the FFT's fields are array textures, a layer per cascade,
 //   the sun's two shadow steps share one array texture, and the storm foam is a storage buffer.
 // - The reflection only finds what lies inside `reflectionBounds` (see below): anything opaque
-//   placed off the island or above 3 m (REFLECTOR_HEIGHT; a palm, a boat, a hut, a mast) must grow
+//   placed off the island or above 3 m (REFLECTOR_HEIGHT; a tree, a boat, a hut, a mast) must grow
 //   that box, or the sea will not reflect it (the game's props do: main.ts `holdOpaque`).
 //
 // Motion vectors (the temporal modes, Motion.ts): the sea writes its velocity with its colour (class
@@ -263,7 +263,7 @@ export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSt
 // more) plus a metre's margin, and up past the meadow by the islanders'
 // 2 m plus a metre.
 // Hits below REFLECTION_FLOOR under the sea level already weigh nothing (see traceSSR), so the box
-// ends there. A placed object off the island or above 3 m (a palm, a hut, a mast) or a wider rim
+// ends there. A placed object off the island or above 3 m (a tree, a hut, a mast) or a wider rim
 // overhang must grow these, or its reflection is lost (debug builds warn, see checkReflectionBounds).
 const REFLECTOR_REACH = 1.5 + 1;
 const REFLECTOR_HEIGHT = 3;

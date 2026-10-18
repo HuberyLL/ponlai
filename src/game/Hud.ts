@@ -68,7 +68,7 @@ function text( e: HTMLElement, value: string ): void {
 
 }
 
-/** The bag as words: "2 coconut · 1 fish", or "empty". */
+/** The bag as words: "2 fish", or "empty". */
 function bagText( v: Villager ): string {
 
 	const kinds = Object.keys( v.bag ).sort();

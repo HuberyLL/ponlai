@@ -5,22 +5,19 @@ import { BAG_CAPACITY } from './items.ts';
 // connected (docs/game-design.md, "Next"). It reads only the Perception and answers with the five
 // actions, one call a thought, as a person would act on what they see and carry:
 //
-// - thirsty (hydration below THIRSTY): drink a carried coconut; else take one at the chest;
-//   else pick one at the palm (going there); else look in the chest; else wait for regrowth.
 // - hungry (satiety below HUNGRY): eat a carried fish; else take one at the chest; else fish
-//   at the shore (going there). The lower need comes first.
+//   at the shore (going there). Thirst is off (needs.ts): nothing on the island gives water yet.
 // - then a construction site in sight (a place that shows its construction, buildings.ts): build
 //   the first one listed (the first placed), going there first. Building runs until the site is
 //   done, an hour for a chest, which the needs' thresholds leave room for.
-// - otherwise keep one coconut and one fish in the bag; with a chest built (the first built one in
-//   sight, by kind), gather a second of each and carry it there until it holds STOCK of each (it
-//   sees what it holds only while standing at it, and remembers nothing); else wait a while.
+// - otherwise keep one fish in the bag; with a chest built (the first built one in sight, by
+//   kind), catch a second and carry it there until it holds STOCK (it sees what it holds only
+//   while standing at it, and remembers nothing); else wait a while.
 //
-// A full bag with nothing to drink or eat in it makes room by using what it holds most of.
+// The fish is the only item there is, so a bag with no fish in it is never full.
 
-const THIRSTY = 60;
 const HUNGRY = 60;
-/** what the islander stocks the chest up to, of each kind */
+/** what the islander stocks the chest up to */
 const STOCK = 4;
 /** the wait when there is nothing to do (game seconds) */
 const IDLE_SECONDS = 30 * 60;
@@ -52,68 +49,28 @@ export class StandInBrain implements Brain {
 		for ( const item in bag ) inBag += bag[ item ];
 		const full = inBag >= BAG_CAPACITY;
 		const at = ( id: string ) => p.atHand.some( ( h ) => h.place === id );
-		const sees = ( id: string ) => p.seen.find( ( s ) => s.place === id );
-		const coconutsOnPalm = number( sees( 'palm' )?.shows?.coconuts );
 		// a place under construction shows how far along it is; the chest counts once built
 		const site = p.seen.find( ( s ) => s.shows?.construction !== undefined );
 		const chest = p.seen.find( ( s ) => s.kind === 'chest' && s.shows?.construction === undefined );
 		const stored = ( item: string ) => number( ( chest?.shows?.items as Record<string, unknown> | undefined )?.[ item ] );
 
-		// a full bag with nothing for the need: make room with what it holds most of
-		const makeRoom = (): ToolCall => {
-
-			const most = Object.keys( bag ).sort( ( a, b ) => carried( b ) - carried( a ) )[ 0 ];
-			return chest && at( chest.place ) ? doAt( 'put', most, 1 ) : use( most );
-
-		};
-
-		const drink = (): ToolCall | null => {
-
-			if ( carried( 'coconut' ) > 0 ) return use( 'coconut' );
-			if ( chest && at( chest.place ) && stored( 'coconut' ) > 0 ) return full ? makeRoom() : doAt( 'take', 'coconut', 1 );
-			if ( full ) return makeRoom();
-			if ( coconutsOnPalm > 0 ) return at( 'palm' ) ? doAt( 'pick' ) : go( 'palm' );
-			if ( chest && ! at( chest.place ) ) return go( chest.place );
-			if ( ! sees( 'palm' ) ) return go( 'palm' );
-			return null;
-
-		};
-
-		const eat = (): ToolCall | null => {
+		if ( p.body.satiety < HUNGRY ) {
 
 			if ( carried( 'fish' ) > 0 ) return use( 'fish' );
-			if ( chest && at( chest.place ) && stored( 'fish' ) > 0 ) return full ? makeRoom() : doAt( 'take', 'fish', 1 );
-			if ( full ) return makeRoom();
+			if ( chest && at( chest.place ) && stored( 'fish' ) > 0 ) return doAt( 'take', 'fish', 1 );
 			return at( 'shore' ) ? doAt( 'fish' ) : go( 'shore' );
-
-		};
-
-		const needs = [
-			{ level: p.body.hydration, below: THIRSTY, act: drink },
-			{ level: p.body.satiety, below: HUNGRY, act: eat },
-		].filter( ( n ) => n.level < n.below ).sort( ( a, b ) => a.level - b.level );
-		for ( const need of needs ) {
-
-			const call = need.act();
-			if ( call ) return call;
 
 		}
 
 		if ( site ) return at( site.place ) ? doAt( 'build' ) : go( site.place );
 
-		// gather one of a kind: a coconut from the palm, a fish at the shore
-		const gather = ( item: string ): ToolCall | null => {
+		// catch a fish at the shore
+		const gather = (): ToolCall | null => full ? null : at( 'shore' ) ? doAt( 'fish' ) : go( 'shore' );
 
-			if ( full ) return null;
-			if ( item === 'coconut' ) return coconutsOnPalm > 0 ? ( at( 'palm' ) ? doAt( 'pick' ) : go( 'palm' ) ) : null;
-			return at( 'shore' ) ? doAt( 'fish' ) : go( 'shore' );
+		// keep one in the bag
+		if ( carried( 'fish' ) === 0 ) {
 
-		};
-
-		// keep one of each in the bag
-		for ( const item of [ 'coconut', 'fish' ] ) {
-
-			const call = carried( item ) === 0 ? gather( item ) : null;
+			const call = gather();
 			if ( call ) return call;
 
 		}
@@ -122,23 +79,23 @@ export class StandInBrain implements Brain {
 
 			if ( at( chest.place ) ) {
 
-				for ( const item of [ 'coconut', 'fish' ] ) if ( carried( item ) > 1 && stored( item ) < STOCK ) return doAt( 'put', item, carried( item ) - 1 );
-				for ( const item of [ 'coconut', 'fish' ] ) if ( stored( item ) < STOCK && carried( item ) < 2 ) {
+				if ( carried( 'fish' ) > 1 && stored( 'fish' ) < STOCK ) return doAt( 'put', 'fish', carried( 'fish' ) - 1 );
+				if ( stored( 'fish' ) < STOCK && carried( 'fish' ) < 2 ) {
 
-					const call = gather( item );
+					const call = gather();
 					if ( call ) return call;
 
 				}
 				return wait( IDLE_SECONDS );
 
 			}
-			for ( const item of [ 'coconut', 'fish' ] ) {
+			if ( carried( 'fish' ) < 2 ) {
 
-				const call = carried( item ) < 2 ? gather( item ) : null;
+				const call = gather();
 				if ( call ) return call;
 
 			}
-			if ( carried( 'coconut' ) > 1 || carried( 'fish' ) > 1 ) return go( chest.place );
+			if ( carried( 'fish' ) > 1 ) return go( chest.place );
 
 		}
 		return wait( IDLE_SECONDS );

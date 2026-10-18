@@ -28,7 +28,6 @@ import type { Shared } from '../../shared.ts';
 // kinds to come; no kind uses it today, the grass over the cliff's edge being the meadow's own). A leaf's `alphaTest: 'alphaOnly'` keeps no numeric cut-out (as a material cloned with
 // three's NodeMaterial.copy has, which skips Material's alphaTest setter): the shadow passes and 4x
 // cut it by its alpha alone.
-// The game's palm takes only the wind (`useVegetationMotion`) on its prop surface.
 // The meadow (Grass.ts) instances itself from the cull's storage buffers and widens its blades on
 // screen (`pixelWideBlade`) inside its own displacement; the factory only takes its hooks: its own
 // previous position (`previous`), its normal and instance colour (`beforePosition`) and its gloss

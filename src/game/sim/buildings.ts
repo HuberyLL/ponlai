@@ -7,7 +7,7 @@ import type { BuildingState, SimState, Vec2 } from './types.ts';
 // The buildings the player places: registered kinds, each a footprint, the work it takes and the
 // options the finished place offers. Placing is generic (Sim.placeBlueprint, refused by
 // blueprintRefusal): a building needs open main ground with a clear ring round its footprint
-// (CLEAR_RING, as the palm's, so it can never cut the main ground in two) and no body standing on
+// (CLEAR_RING, so it can never cut the main ground in two) and no body standing on
 // it; any number of a kind may stand. Each building's id is its kind's name and a count of that
 // kind ever placed (SimState.placed): chest1, chest2. An id is never reused, so it stays the same
 // across saves and the brain names the place by it (`go`, `do`). A new kind is one more entry in
@@ -53,8 +53,8 @@ export interface BuildingKind {
 
 /** the chest blocks a disc this wide (m, radius): its 0.9 x 0.55 m lid's half diagonal */
 export const CHEST_RADIUS = 0.55;
-/** A chest holds five bags' worth: about four days of one islander's food and water (three
- * coconuts and two fish a day, needs.ts), a store against a poor day's fishing, not a granary. */
+/** A chest holds five bags' worth: ten days of one islander's fish (two a day, needs.ts), a
+ * store against a poor day's fishing, not a granary. */
 export const CHEST_CAPACITY = 20;
 /** the chest's work (game seconds): see the header */
 export const CHEST_WORK = 3600;

@@ -4,15 +4,18 @@ import type { Needs } from './types.ts';
 // An islander's needs: satiety and hydration, 0..100, falling every tick and raised by eating and
 // drinking (items.ts). They clamp at 0 with no consequence yet (docs/game-design.md, "Next").
 //
-// The rates come from the game's day, so a day of play has a person's rhythm: someone drinks about
-// every 8 hours and eats about every 12. Hydration falls 96 a day (4 an hour) and a coconut gives
-// 32: one every 8 game hours holds it steady, three a day. Satiety falls 72 a day (3 an hour) and a
-// fish gives 36: one every 12 game hours, two a day. Thirst comes faster than hunger, as for a
-// person; either runs from full to empty in about a day and a day and a third, so a missed meal or
-// drink shows in the numbers within hours but nothing is lost to one mistake.
+// Thirst is off until the island has a water source of its own: hydration holds where it starts
+// (HYDRATION_PER_DAY is 0) and nothing raises it. The HUD still shows it.
+//
+// The rates come from the game's day, so a day of play has a person's rhythm: someone eats about
+// every 12 hours. Satiety falls 72 a day (3 an hour) and a fish gives 36: one every 12 game hours,
+// two a day. It runs from full to empty in a day and a third, so a missed meal shows in the numbers
+// within hours but nothing is lost to one mistake. With thirst on, hydration fell 96 a day (4 an
+// hour, a drink of 32 every 8 game hours), faster than hunger, as for a person.
 
 export const NEED_MAX = 100;
-export const HYDRATION_PER_DAY = 96;
+/** 0: thirst is off (see the header); 96 with a water source */
+export const HYDRATION_PER_DAY = 0;
 export const SATIETY_PER_DAY = 72;
 /** a new islander's needs: fed and watered, not full */
 export const START_NEEDS: Readonly<Needs> = { satiety: 80, hydration: 80 };

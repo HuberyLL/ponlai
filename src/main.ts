@@ -709,8 +709,7 @@ if ( GAME ) {
 		// the island grows with the population (Growth.ts, made below: called from the frame loop on)
 		pieces: landOptions.step,
 		island: { approach: ( p ) => growth.approach( p ), grow: () => growth.grow() },
-		// A prop can rise above all the island grows (the palm's crown): the sun's map fits its
-		// casters and the sea's reflection marches its box, so both grow to hold it.
+		// A prop can rise above all the island grows: the sun's map fits its casters and the sea's reflection marches its box, so both grow to hold it.
 		holdOpaque: ( box ) => {
 
 			heldOpaque.push( box.clone() );
@@ -720,8 +719,6 @@ if ( GAME ) {
 		},
 		// the game's props, for the scene's pass and the sun's map (see compileDraws)
 		compileDraws,
-		// the game's palms join the vegetation's kinds while they are drawn
-		vegetation,
 		// every islander in the scene islander's proportions (the `islander` URL option). A figure
 		// is handed over once its pipelines are built, off the frame (GameView "First draws"): it
 		// arrives after the game's first frame, and each load brings its own material, so the frame
@@ -2183,7 +2180,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, groundBounce, grass, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
-	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, weather, sky, fft, establishScene, setTime, data: () => shownData, vegetation, seaDetail, land: () => landBox }, options ),
+	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, weather, sky, fft, establishScene, setTime, data: () => shownData, seaDetail, land: () => landBox }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes
 	growth: Object.assign( growth, { fieldBytes: () => fields.bytes() } ),
 	quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ),

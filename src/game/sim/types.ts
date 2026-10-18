@@ -88,16 +88,6 @@ export type ActionResult = { ok: true; value?: string } | { ok: false; reason: s
 
 export interface ActionOutcome { call: ActionCall; result: ActionResult }
 
-/** A coconut palm (places.ts): where it stands, its coconuts and the regrowth of the next one. */
-export interface PalmState {
-	id: string;
-	x: number;
-	z: number;
-	coconuts: number;
-	/** game seconds grown toward the next coconut */
-	growth: number;
-}
-
 /** A building the player placed (buildings.ts): its kind, where it stands, the work done on it, what it holds. */
 export interface BuildingState {
 	/** its place's id: the kind's name and its count among that kind ever placed (chest1), never reused */
@@ -122,7 +112,6 @@ export interface SimState {
 	/** the seeded generator's state */
 	rng: number;
 	villagers: Villager[];
-	palms: PalmState[];
 	/** what the player placed, in the order placed */
 	buildings: BuildingState[];
 	/** how many of each building kind were ever placed: the count in their ids (buildings.ts) */

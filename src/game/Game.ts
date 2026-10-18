@@ -5,7 +5,6 @@ import type { SceneEventReason } from '../post/SceneEvents.ts';
 import type { CharacterShadow } from '../characters/CharacterShadow.ts';
 import type { Villager as Figure } from '../characters/Villagers.ts';
 import type { LandLattice } from '../world/IslandGrowth.ts';
-import type { Vegetation } from '../world/vegetation/Registry.ts';
 import { GameHud } from './Hud.ts';
 import { newGame, loadGame } from './sim/Sim.ts';
 import { SAVE_KEY, savedPieces } from './sim/save.ts';
@@ -20,7 +19,7 @@ import type { EntityId, IslandInput, Speed } from './sim/types.ts';
 
 // The island as a game (?game): the simulation (src/game/sim) runs the islanders' bodies, their
 // needs and the places they act at, a brain in its slot thinks for them (the stand-in of plain
-// rules by default, sim/standin.ts) and GameView draws them, the palm and the chest into the scene.
+// rules by default, sim/standin.ts) and GameView draws them and the chest into the scene.
 // The player's interface is a prototype HUD (Hud.ts): a readout of the islander and the player's
 // one act, setting the chest down as a blueprint the islander then builds (Placement.ts). The debug panel's Game folder (GameDebug.ts) and
 // the methods below, reached from the console as window.__PONLAI__.game, drive the rest. The
@@ -76,8 +75,6 @@ export interface GameContext {
 	refreshEnvironment(): Promise<void>;
 	/** compile the pipelines these objects will draw with (the scene's pass, the sun's shadow map) off the frame */
 	compileDraws( objects: THREE.Object3D[] ): Promise<void>;
-	/** the page's vegetation registry (world/vegetation/Registry.ts): the view registers its palms there */
-	vegetation: Vegetation;
 	/** a change of the scene for the temporal anti-aliasing (post/SceneEvents.ts: its table says which cut) */
 	sceneEvent( reason: SceneEventReason ): void;
 	/** the island's pieces the world was loaded with (its land step: the save's, or the `grow` URL option) */
@@ -191,7 +188,7 @@ export class Game {
 		sim.brain = this.brain;
 		if ( this.coming ) sim.setComing( this.coming );
 		this.view?.dispose();
-		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, holdOpaque: c.holdOpaque, loadLook: c.loadLook, vegetation: c.vegetation,
+		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, holdOpaque: c.holdOpaque, loadLook: c.loadLook,
 			ticksPerSecond: () => SECONDS_PER_GAME_DAY / c.dayCycle.dayLength } );
 		this.sim = sim;
 		c.sceneEvent( 'game begin' );

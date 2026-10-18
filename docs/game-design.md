@@ -98,7 +98,7 @@ The player should want to rebuild after watching their islanders walk the long w
   game loads its world at it. How a new islander arrives is not designed: the debug panel adds
   one by hand.
 - The trees and shrubs on today's island were placeholders for its look; plants that matter to
-  play (coconut palms) are content placed in the world, not part of the terrain.
+  play are content placed in the world, not part of the terrain.
 
 ## Time and thinking
 
@@ -123,10 +123,10 @@ items with their own options, never a new action.
 
 - `go` names a place, never a point or a distance: finding the way and walking it is the body's
   job, not the mind's.
-- `do` runs one of the actions the islander's current place offers (fish at the shore, pick a
-  coconut under the palm, put in or take out at the chest, build at a construction site). Fishing or picking is an option
-  of a place, not a verb of the islander.
-- `use` uses an item the islander carries (drink a coconut, eat a fish).
+- `do` runs one of the actions the islander's current place offers (fish at the shore, put
+  in or take out at the chest, build at a construction site). Fishing is an option of a place,
+  not a verb of the islander.
+- `use` uses an item the islander carries (eat a fish).
 - A new action replaces the one under way; stopping is not an action. `say` is the exception:
   speech comes from the mind, like thinking, so the islander talks while the body goes on.
 - People (giving, following, talking among islanders) are decided when there is more than one
@@ -161,11 +161,14 @@ are rules and numbers, like everything that decides outcomes (capacities, counts
 action takes, the chance of a catch, walking speed). What the islander knows and believes is not:
 distances, routes, how far or hard something is.
 
+Thirst is off for now: hydration holds where it starts, because nothing on the island gives water
+until the island has a water source of its own. The HUD still shows it.
+
 ### Perception
 
 An islander perceives what a person would, not the world's state:
 
-- **seen**: the places and things in sight, and what shows on them (coconuts on the palm), with no
+- **seen**: the places and things in sight, and what shows on them (a site's progress, a chest's contents while at it), with no
   positions or distances;
 - **at hand**: the place they stand at, and so which `do` options are open;
 - **the body**: satiety, hydration and the bag's contents, as numbers;
@@ -182,11 +185,12 @@ thought are designed with the language model.
 
 ## Next
 
-- The first prototype: one islander on the small island, with food and water.
-  - **Places**: the shore (fish: takes a while, a fish by chance), one coconut palm (pick a
-    coconut; it regrows them slowly), and a chest the player places by hand.
-  - **Items**: coconut (drink: hydration), fish (eat: satiety).
-  - **Needs** fall to zero with no consequence yet.
+- The first prototype: one islander on the small island, with food (water waits for a water
+  source of the island's own: thirst is off until then).
+  - **Places**: the shore (fish: takes a while, a fish by chance) and a chest the player places
+    by hand.
+  - **Items**: fish (eat: satiety).
+  - **Needs** fall to zero with no consequence yet; hydration holds.
   - **A stand-in brain** of plain rules thinks for the islander until the language model is
     connected; no weather and no talking yet.
 - After it, the prototype that tests whether talking to the islanders is fun: three islanders,
