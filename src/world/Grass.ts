@@ -153,7 +153,8 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   as fine coloured specks gathered in patches.
 
 interface TuftShape {
-	blades: number; segs: number;
+	// the blades, their segments, and their levels along their length (segs + 1 of them, 0 to 1)
+	blades: number; segs: number; rows: number[];
 	r0: [ number, number ]; // base offset from the tuft's axis
 	w: [ number, number ]; // blade width at the root (m)
 }
@@ -169,7 +170,13 @@ interface TuftShape {
 // ground from the game's camera as the 16 broad short blades did, and four segments draw the arc of a
 // drooping blade without a visible kink at the 22 m view.
 const FUR = 3;
-const LAWN: TuftShape = { blades: 16 * FUR, segs: 4, r0: [ 0, 0.2 ], w: [ 0.012, 0.015 ] };
+// A blade's levels: its root, half way up, three quarters up and its tip. A blade bends mostly toward
+// its tip (its offset grows as the square of the way up) and a culm's panicle widens between 0.62
+// and 0.72 of it (CULM_HEAD), so the level at a quarter, of four even segments, shaped nothing the
+// game's view shows (1.9 levels of mean difference at 22 m) and cost a fifth of the meadow's
+// vertices, about 2 ms in the island views; three even segments cut the panicles short.
+const LAWN_ROWS = [ 0, 0.5, 0.75, 1 ];
+const LAWN: TuftShape = { blades: 16 * FUR, segs: LAWN_ROWS.length - 1, rows: LAWN_ROWS, r0: [ 0, 0.2 ], w: [ 0.012, 0.015 ] };
 // Each blade's own rest pose, a hash of the blade and its tuft's anchor (`restBlade`): its length
 // times 0.75 to 1.25 of the tuft's height scale (and one in twelve a fifth longer, the mean kept at
 // 1), the direction it bends toward (out from the tuft's axis, within FACING / 2 either way), its
@@ -626,9 +633,9 @@ function tuftGeometry( shape: TuftShape, seed = 3 ) {
 		const base = P.length / 3;
 		for ( let i = 0; i <= segs; i ++ ) {
 
-			// levels of equal length along the blade, which keeps most of its width (0.7) to two
-			// thirds up and runs to a point
-			const t = i / segs;
+			// the shape's levels along the blade (LAWN_ROWS); its width keeps most of itself (0.7) to
+			// two thirds up and runs to a point
+			const t = shape.rows[ i ];
 			const hw = w * 0.5 * Math.sqrt( Math.max( 1 - t * t, 0 ) );
 			for ( const sg of [ - 1, 1 ] ) {
 
