@@ -133,13 +133,15 @@ art decision changes; reference images stay out of the repository.
   there are no hard shadows, only a darkening toward the ground (a deep green, never black); the
   shade of anything standing on it lies soft and light. The only shadows that cross the ground
   are the real clouds' (from the cloud layer overhead, drifting with it): no patches painted or
-  animated onto the island to vary its light. The ground under the grass is its soil, as a real
-  meadow's is: the island's yellow-brown earth under lying dead leaves, the green only in the
-  blades, never a green turf skin laid under them (it read as one, and on the lip's bevel its
-  texture ran down the slope in stripes). Under the tall sward it lies deep in the blades' shade,
-  so from the game's view the meadow stays green with the earth showing between the near blades;
-  where the turf is short (the pockets, the low patches) or broken by a gap, the light reaches it.
-  At the lip the turf ends on its soil over the stone, never a dark hole among the flowers. By night
+  animated onto the island to vary its light. The ground under the grass is what a real meadow
+  shows there: under the dense sward its shaded bottom, the lower leaves' deep green with a little
+  straw, where no light reaches the soil; where the turf is short (the pockets, the low patches) or
+  broken by a gap, the island's yellow-brown earth under lying dead leaves, never a green turf skin
+  laid under the near blades (it read as one, and on the lip's bevel its texture ran down the slope
+  in stripes). Farther off the openings' earth gives way to their short turf's colour, so from the
+  game's high views and from above the meadow is one dense sward, a little browner where it is
+  short, never thin grass over brown ground. At the lip the turf ends on its soil over the stone,
+  never a dark hole among the flowers. By night
   the lawn is a dark, readable green (see Night). Toward a sheltered coast the grass runs to the
   lip and stands there, and the same grass grows out over it: its tufts at the lip spill over the
   edge, fine blades that arch over and hang down the wall, lying on the stone, never through it, and the lip alternates between
