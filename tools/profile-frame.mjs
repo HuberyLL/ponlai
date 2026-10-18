@@ -92,7 +92,14 @@
 //   work; its queued frames and any sky bake drained before the other starts; its camera and
 //   clock wait, and its dynamic scale's clock with them, through the debug hook `dynamicClock`: its
 //   holds and bars do not run out during the other page's slices), since Chrome let one page's
-//   frames starve the other's queue. Deltas are reported with a 95 % interval from the slices' spread,
+//   frames starve the other's queue. The page that runs is brought to the front first, headless as
+//   on the display: the two pages are tabs of one window, and a tab behind runs its frames
+//   (Playwright keeps it visible to its page) without their being presented, so it paces otherwise.
+//   With the tab last opened (B) left in front, A/A runs on one build gave B a longer median frame
+//   interval, beyond the 95 % interval: +1.1 to +4.1 ms (7-17 %) with GPU timestamps off, +1.6 ms
+//   with them on, its GPU busy time unchanged (an A/B read a build's gain as a loss).
+//   Each in front, the same A/As came out within their interval, on and off.
+//   Deltas are reported with a 95 % interval from the slices' spread,
 //   beside each page's render scale per scene (high's dynamic scale can settle higher on one side,
 //   which the load-time render in the header does not show). Page errors name their page (A or B).
 //   Adaptive slices: `--slices` is the most a scene takes; from `--min-slices` on (4 with
@@ -2113,12 +2120,14 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 	pages.forEach( ( p, v ) => pageNames.set( p, 'AB'[ v ] ) );
 	for ( const p of pages ) await p.goto( 'about:blank' );
 	const gpuIdle = await loadIdle( log );
-	// one after the other (a page running starves the other's queue), each stopped once loaded
+	// one after the other (a page running starves the other's queue), each stopped once loaded and
+	// in front while it runs: the two pages are tabs of one window, and a tab behind runs frames
+	// that are not presented, at another pace (see the header)
 	const loaded = [];
 	for ( const v of [ 0, 1 ] ) {
 
 		step( `page ${ 'AB'[ v ] }'s load` );
-		if ( DISPLAY ) await pages[ v ].bringToFront();
+		await pages[ v ].bringToFront();
 		loaded[ v ] = await load( pages[ v ], bases[ v ], SCENES[ names[ 0 ] ].q, timestamps );
 		log( `${ 'AB'[ v ] } loaded ${ loaded[ v ].url } in ${ ( loaded[ v ].loadMs / 1000 ).toFixed( 1 ) } s (world cache ${ JSON.stringify( loaded[ v ].startup.diagnostics.worldCache ) }; runtime hooks ${ JSON.stringify( loaded[ v ].hooks ) })` );
 		if ( v === 0 ) await pages[ 0 ].evaluate( async () => {
@@ -2216,9 +2225,10 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 
 		if ( active === v ) return;
 		await halt();
-		// headed, a background tab gets no animation frames: the running page is the one in front
-		// (the page hides and shows itself without restarting a loop stopped here)
-		if ( DISPLAY && ! drawn ) {
+		// the running page is the one in front: headed, a background tab gets no animation frames
+		// (the page hides and shows itself without restarting a loop stopped here); headless, its
+		// frames are not presented (see the loads above)
+		if ( ! ( DISPLAY && drawn ) ) {
 
 			await pages[ v ].bringToFront();
 			front = v;
@@ -2253,7 +2263,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 	// A stood stopped while B loaded
 	stopped[ 0 ].push( { from: await frames[ 0 ].now() } );
 	active = 1;
-	if ( DISPLAY ) front = 1;
+	front = 1;
 	if ( SCALE_LOG ) {
 
 		atStop[ 0 ] = await scaleState( pages[ 0 ] );
@@ -2270,7 +2280,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 			step( 'the halt before the scene' );
 			await halt();
 			step( 'the cover before the scene' );
-			if ( front !== null && ! covered[ front ] ) await cover( front, true );
+			if ( DISPLAY && ! covered[ front ] ) await cover( front, true );
 			const held = await holdScene( scene, log );
 			if ( held === false ) break;
 			sceneIdle = held ?? sceneIdle;
@@ -3014,7 +3024,7 @@ async function main() {
 			const evals = [ opt( 'eval-a', opt( 'eval', '' ) ), opt( 'eval-b', opt( 'eval', '' ) ) ];
 			const tsModes = TIMESTAMP_MODE === 'both' ? [ true, false ] : [ TIMESTAMP_MODE !== 'off' ];
 			if ( TOGGLE ) meta.compare = { A: `${ URL_A } with on = false`, B: `${ URL_A } with on = true`, toggle: TOGGLE, block: BLOCK, blocks: BLOCKS, lag: LAG };
-			else if ( COMPARE && MODE === 'page' ) meta.compare = { A: COMPARE[ 0 ], B: COMPARE[ 1 ], evalA: evals[ 0 ], evalB: evals[ 1 ], slices: SLICES, minSlices: MIN_SLICES, stopMargin: STOP_MARGIN, stopWidth: STOP_WIDTH, slice: SLICE, settle: SETTLE };
+			else if ( COMPARE && MODE === 'page' ) meta.compare = { A: COMPARE[ 0 ], B: COMPARE[ 1 ], evalA: evals[ 0 ], evalB: evals[ 1 ], slices: SLICES, minSlices: MIN_SLICES, stopMargin: STOP_MARGIN, stopWidth: STOP_WIDTH, slice: SLICE, settle: SETTLE, front: true };
 			else if ( COMPARE ) meta.compare = { A: COMPARE[ 0 ], B: COMPARE[ 1 ], evalA: evals[ 0 ], evalB: evals[ 1 ] };
 			if ( SCALES.length ) meta.scales = SCALES;
 			if ( ACCEPT ) meta.accept = { target: TARGET, limit: r2( TARGET + TARGET_SLACK ), maxFrame: ACCEPT_MAX };
@@ -3274,7 +3284,7 @@ function sliceMarkdown( meta, reports ) {
 
 	const c = meta.compare;
 	const how = meta.mode === 'toggle' ? `in one page: \`${ c.toggle }\` applied every ${ c.block } frames, ${ c.blocks } blocks per scene (A B B A B A A B); GPU figures drop 2 frames after a change, frame intervals ${ c.lag }` :
-		`two pages in one browser, ${ c.minSlices < c.slices ? `${ c.minSlices } to ${ c.slices }` : c.slices } slices of ${ c.slice } s per scene (B A A B A B B A), each after the other page stopped and drained and this one ran ${ c.settle } s` +
+		`two pages in one browser, ${ c.minSlices < c.slices ? `${ c.minSlices } to ${ c.slices }` : c.slices } slices of ${ c.slice } s per scene (B A A B A B B A), each after the other page stopped and drained and this one ran ${ c.settle } s${ c.front ? ' in front' : '' }` +
 		( c.minSlices < c.slices ? ` (adaptive: after each block of 4 from ${ c.minSlices } slices on, a scene stopped once its leading delta's interval cleared zero by ${ c.stopMargin } or was within ± ${ c.stopWidth }, the latter with 4 slices a side)` : '' );
 	const lines = [ `# Frame profile ${ meta.mode === 'toggle' ? 'toggle' : 'compare' }: ${ meta.label }`, '',
 		`A: ${ c.A }${ c.evalA ? ` (eval ${ c.evalA })` : '' }`, `B: ${ c.B }${ c.evalB ? ` (eval ${ c.evalB })` : '' }`, '',
