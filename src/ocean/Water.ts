@@ -16,7 +16,8 @@ import {
 	abs, fwidth, reflect, refract, select, step, dFdx, dFdy, perspectiveDepthToViewZ, cameraNear, cameraFar,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
-import { FFT_SIZE, type OceanFFT } from './OceanFFT.ts';
+import { FFT_SIZE, NEAR_RIPPLES, type OceanFFT } from './OceanFFT.ts';
+import { COX_MUNK } from './OceanSpectrum.ts';
 import type { ShoreWaves } from './ShoreWaves.ts';
 import type { StormSea } from './StormSea.ts';
 import type { SeaDetail } from './SeaDetail.ts';
@@ -651,8 +652,8 @@ export class Water {
 			const slopes = vec2( d.x.div( max( d.z.add( 1 ), 0.2 ) ), d.y.div( max( d.w.add( 1 ), 0.2 ) ) ).add( shoreWave.yz ).add( rainGradient ).toVar();
 			// Near-field capillary ripples: within a few metres a pixel covers less than the finest
 			// cascade's texel (about 3 cm) and the surface looks glassy; the finest cascade read again
-			// at about 1 and 2.3 m tiles, turned so that they never line up with it; damped in slicks
-			// with the short waves.
+			// at about 1 and 2.3 m tiles (NEAR_RIPPLES), turned so that they never line up with it;
+			// damped in slicks with the short waves.
 			const near = smoothstep( 0.04, 0.01, footprint ).mul( rough ).toVar();
 			If( near.greaterThan( 0.002 ), () => {
 
@@ -663,7 +664,7 @@ export class Water {
 						.level( max( log2( footprint.div( texel ) ), 0 ) ).xy;
 
 				};
-				slopes.addAssign( rotate( ripple( 7.3, 0.63 ), - 0.63 ).mul( 0.55 ).add( rotate( ripple( 3.1, 2.14 ), - 2.14 ).mul( 0.35 ) ).mul( near ) );
+				slopes.addAssign( sum( NEAR_RIPPLES.map( ( r ) => rotate( ripple( r.scale, r.angle ), - r.angle ).mul( r.weight ) ) ).mul( near ) );
 
 			} );
 			const jac = d.z.add( 1 ).mul( d.w.add( 1 ) ).toVar();
@@ -722,7 +723,7 @@ export class Water {
 			// ---- roughness: the slopes no pixel resolves at this distance (Cox-Munk's mean square
 			// slope 0.003 + 0.00512 U, the share finer than the pixel's wavenumber, scaled by the
 			// gusts and slicks) over the base
-			const mss = windSpeed.mul( 0.00512 ).add( 0.003 );
+			const mss = windSpeed.mul( COX_MUNK.perWind ).add( COX_MUNK.base );
 			const unresolved = sat( log2( footprint.mul( 110 / PI ) ).div( 9 ) ).mul( rough.mul( rough ) ).toVar();
 			const alpha2 = u.roughness.mul( u.roughness ).add( mss.mul( 2 ).mul( unresolved ) ).add( foam.mul( 0.2 ) ).toVar();
 			const sigmaUnresolved = sqrt( mss.mul( unresolved ) ).toVar();

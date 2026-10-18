@@ -11,7 +11,7 @@ import {
 } from 'three/tsl';
 import { mulberry32 } from '../world/noise.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { DEFAULT_SWELL, seaState, waveSystemTerms, type SwellParams } from './OceanSpectrum.ts';
+import { COX_MUNK, DEFAULT_SWELL, seaState, slopeVariance, waveSystemTerms, type SwellParams, type WaveSpectrumSettings } from './OceanSpectrum.ts';
 
 // Multi-cascade FFT ocean (Tessendorf) on WebGPU compute, after tidewater's OceanFFT (4811ba4): four
 // cascades of non-integer size ratios, so the sum never shows a repeat, each holding the waves of
@@ -50,6 +50,18 @@ import { DEFAULT_SWELL, seaState, waveSystemTerms, type SwellParams } from './Oc
 // cascade's pass of a field asks for them.
 // Sample a cascade at its undisplaced world xz / size, in its layer (`texture( t, uv ).depth( c )`).
 //
+// The finest cascade holds the short wind ripples, from about a metre down to 5.5 cm, and with them
+// most of the surface's slope: the slope spectrum is nearly flat in log k, and this cascade spans four
+// of the six octaves. JONSWAP's tail carried there gave the gentle everyday wind (3.8 m/s) a mean
+// square slope of 0.024 over the four cascades, already more than Cox and Munk measured on a clean sea
+// at that wind (0.0225, every wave down to the capillaries), and the water's near ripples, which read
+// this cascade again at finer scales up close (NEAR_RIPPLES), took the sum to 0.0285. So steep a
+// surface folded the floor seen through a metre or two of water into crumbs. The cascade's amplitude
+// is scaled (`fineScale`, never above 1) so that the four cascades and the near ripples together hold
+// Cox and Munk's slope for the wind: about 0.78 at the gentle wind, 0.5 at the light one, 1 from about
+// 6 m/s, where the spectrum falls short of their slope. The caustics' fine networks, which this
+// cascade focuses, soften with it, as a calmer surface's do.
+//
 // The spectrum follows the weather's wind as tidewater's sea states follow its wind (`setWind`: the
 // fetch, choppiness and the swell's scale of OceanSpectrum.ts `seaState` at that speed, and its
 // heading), rebuilt on the GPU in the frame the wind changes, so a stronger wind makes longer waves,
@@ -76,6 +88,10 @@ const G = 9.81;
 export const CASCADE_SIZES = [ 733, 157, 33.3, 7.1 ];
 // a cascade's band starts this many fundamentals of its own tile above the next larger one's
 const BAND_FUNDAMENTALS = 6;
+// The water's near ripples (Water.ts): up close the finest cascade read again at tiles this many
+// times smaller, turned by an angle (radians) and weighted. Their slope counts in the finest
+// cascade's budget (see the note at the top).
+export const NEAR_RIPPLES = [ { scale: 7.3, angle: 0.63, weight: 0.55 }, { scale: 3.1, angle: 2.14, weight: 0.35 } ] as const;
 
 // A wave system's energy at wavenumber k (OceanSpectrum.ts createWaveSpectrum on the GPU, as
 // tidewater's init kernel): TMA-corrected JONSWAP times the directional spreading and the short
@@ -167,6 +183,9 @@ export class OceanFFT {
 	readonly foamBias = uniform( 0.5 );
 	private depthU = uniform( 8 );
 	private amplitudeU = uniform( 1 );
+	/** The finest cascade's amplitude against the spectrum's, so that the surface holds Cox and Munk's
+	 * slope (see the note at the top). */
+	readonly fineScale = uniform( 1 );
 	// the two wave systems' terms (OceanSpectrum.ts waveSystemTerms): ( alpha, peak omega, heading,
 	// spread ) and ( concentration, gamma, squared fade, 0 )
 	private systems = [ 0, 1 ].map( () => ( { a: uniform( new THREE.Vector4() ), b: uniform( new THREE.Vector4() ) } ) );
@@ -250,7 +269,7 @@ export class OceanFFT {
 					.and( i.notEqual( uint( N / 2 ) ) ).and( j.notEqual( uint( N / 2 ) ) );
 				const S = this.systems;
 				const energy = ( q: THREE.Node<'vec2'> ) => waveEnergy( q, S[ 0 ].a, S[ 0 ].b, this.depthU ).add( waveEnergy( q, S[ 1 ].a, S[ 1 ].b, this.depthU ) ).mul( dk.mul( dk ) );
-				const scale = this.amplitudeU.div( Math.SQRT2 );
+				const scale = this.amplitudeU.div( Math.SQRT2 ).mul( select( c.equal( uint( C - 1 ) ), this.fineScale, float( 1 ) ) );
 				const mirror = c.mul( NN ).add( uint( N ).sub( j ).mod( N ).mul( N ) ).add( uint( N ).sub( i ).mod( N ) );
 				const h = gauss.element( idx ).mul( sqrt( energy( k ).div( 2 ) ) ).mul( scale );
 				const hm = gauss.element( mirror ).mul( sqrt( energy( k.negate() ).div( 2 ) ) ).mul( scale );
@@ -473,14 +492,24 @@ export class OceanFFT {
 	/** Takes `params` and `swell` as they are now; the spectrum is rebuilt in the next update. */
 	rebuildSpectrum(): void {
 
-		const { windSpeed, windDirection, fetch, spread, swell, peakEnhancement, shortWavesFade } = this.params;
+		const { windSpeed, windDirection, fetch, spread, swell, peakEnhancement, shortWavesFade, depth } = this.params;
 		const S = this.swell;
-		const terms = [
-			waveSystemTerms( { windSpeed, windDirection, fetch, spread, swell, peakEnhancement, shortWavesFade } ),
-			waveSystemTerms( { scale: S.scale, windSpeed: S.windSpeed, windDirection: this.swellDirection,
-				fetch: S.fetch, spread: S.spread, swell: S.swell, peakEnhancement: S.peakEnhancement, shortWavesFade: S.shortWavesFade } ),
+		const systems: WaveSpectrumSettings[] = [
+			{ windSpeed, windDirection, fetch, spread, swell, peakEnhancement, shortWavesFade },
+			{ scale: S.scale, windSpeed: S.windSpeed, windDirection: this.swellDirection,
+				fetch: S.fetch, spread: S.spread, swell: S.swell, peakEnhancement: S.peakEnhancement, shortWavesFade: S.shortWavesFade },
 		];
-		terms.forEach( ( t, n ) => {
+		// The finest cascade's share of Cox and Munk's slope (see the note at the top): the coarser
+		// cascades' bands as rings, the finest one's out to its square of modes.
+		const amplitude2 = this.params.amplitude ** 2, sizes = this.sizes, C = sizes.length;
+		const band = ( k0: number, k1: number, square = false ) => systems.reduce( ( sum, system ) => sum + slopeVariance( system, depth, k0, k1, square ), 0 ) * amplitude2;
+		const fundamental = ( c: number ) => 2 * Math.PI / sizes[ c ];
+		const coarse = band( fundamental( 0 ), BAND_FUNDAMENTALS * fundamental( C - 1 ) );
+		const fine = band( BAND_FUNDAMENTALS * fundamental( C - 1 ), ( FFT_N / 2 - 1 ) * fundamental( C - 1 ), true )
+			* ( 1 + NEAR_RIPPLES.reduce( ( sum, r ) => sum + r.weight ** 2, 0 ) );
+		const budget = COX_MUNK.base + COX_MUNK.perWind * windSpeed;
+		this.fineScale.value = Math.sqrt( Math.min( Math.max( ( budget - coarse ) / fine, 0 ), 1 ) );
+		systems.map( waveSystemTerms ).forEach( ( t, n ) => {
 
 			this.systems[ n ].a.value.set( t.alpha, t.peakOmega, t.angle, t.spread );
 			this.systems[ n ].b.value.set( t.concentration, t.gamma, t.fade2, 0 );

@@ -116,30 +116,71 @@ export function waveSystemTerms( settings: WaveSpectrumSettings ): WaveSystemTer
 
 }
 
+// The TMA-corrected JONSWAP energy per unit wavenumber at k, summed over the directions (both
+// spreads integrate to 1 over the circle), with the short waves' fade.
+function radialEnergy( k: number, depth: number, { alpha, peakOmega, gamma, fade2 }: WaveSystemTerms ): number {
+
+	const omega = dispersion( k, depth );
+	const sigma = omega <= peakOmega ? 0.07 : 0.09;
+	const r = Math.exp( - ( ( omega - peakOmega ) ** 2 ) / ( 2 * sigma * sigma * peakOmega * peakOmega ) );
+	const jonswap = tmaCorrection( omega, depth ) * alpha * GRAVITY * GRAVITY / omega ** 5
+		* Math.exp( - 1.25 * ( peakOmega / omega ) ** 4 ) * gamma ** r;
+	return jonswap * Math.exp( - fade2 * k * k ) * dispersionDerivative( k, depth );
+
+}
+
 /** Returns the two-dimensional k-space energy density, including the omega-to-k Jacobian (the
  * GPU's is OceanFFT's `waveEnergy`, the same formulas). */
 export function createWaveSpectrum( settings: WaveSpectrumSettings, depth: number ): ( kx: number, kz: number ) => number {
 
 	if ( ! Number.isFinite( depth ) || depth <= 0 ) throw new RangeError( 'Ocean depth must be positive and finite.' );
-	const { alpha, peakOmega, angle, spread, concentration, gamma, fade2 } = waveSystemTerms( settings );
+	const terms = waveSystemTerms( settings );
+	const { peakOmega, angle, spread, concentration } = terms;
 	return ( kx, kz ) => {
 
 		const k = Math.hypot( kx, kz );
 		if ( k < 1e-6 ) return 0;
-		const omega = dispersion( k, depth );
-		const sigma = omega <= peakOmega ? 0.07 : 0.09;
-		const r = Math.exp( - ( ( omega - peakOmega ) ** 2 ) / ( 2 * sigma * sigma * peakOmega * peakOmega ) );
-		const jonswap = tmaCorrection( omega, depth ) * alpha * GRAVITY * GRAVITY / omega ** 5
-			* Math.exp( - 1.25 * ( peakOmega / omega ) ** 4 ) * gamma ** r;
-		const ratio = omega / peakOmega;
-		const spreadPower = ( omega > peakOmega ? 9.77 * ratio ** - 2.5 : 6.97 * ratio ** 5 )
+		const ratio = dispersion( k, depth ) / peakOmega;
+		const spreadPower = ( ratio > 1 ? 9.77 * ratio ** - 2.5 : 6.97 * ratio ** 5 )
 			+ Math.tanh( Math.min( ratio, 20 ) ) * 16 * concentration * concentration;
 		const theta = Math.atan2( kz, kx ) - angle, c = Math.cos( theta );
 		const broad = c > 0 ? c * c * 2 / Math.PI : 0;
 		const narrow = normalisationFactor( spreadPower ) * Math.abs( Math.cos( theta * 0.5 ) ) ** ( 2 * spreadPower );
 		const direction = broad + ( narrow - broad ) * spread;
-		return jonswap * direction * Math.exp( - fade2 * k * k ) * dispersionDerivative( k, depth ) / k;
+		return radialEnergy( k, depth, terms ) * direction / k;
 
 	};
+
+}
+
+/** Cox and Munk's mean square slope of a clean sea surface (1954: sun glitter photographed from the
+ * air), both axes together, at a wind of U m/s: 0.003 + 0.00512 U. It counts every wave down to the
+ * capillaries. */
+export const COX_MUNK = { base: 0.003, perWind: 0.00512 } as const;
+
+/** The mean square slope a wave system holds between the wavenumbers k0 and k1 (rad/m): its energy
+ * times k squared over that ring. With `square`, k1 is the half width of a square of modes (a
+ * cascade's last mode before its Nyquist) and the square's corners are counted too, each ring of
+ * them by the share of its circle inside the square (the directions taken as even there). */
+export function slopeVariance( settings: WaveSpectrumSettings, depth: number, k0: number, k1: number, square = false ): number {
+
+	const terms = waveSystemTerms( settings );
+	const integrate = ( a: number, b: number, share: ( k: number ) => number ) => {
+
+		// over log k, where the slope spectrum is nearly flat (Simpson's rule, 96 intervals)
+		const n = 96, span = Math.log( b / a );
+		let sum = 0;
+		for ( let i = 0; i <= n; i ++ ) {
+
+			const k = a * Math.exp( span * i / n );
+			const w = i === 0 || i === n ? 1 : i % 2 ? 4 : 2;
+			sum += w * radialEnergy( k, depth, terms ) * k * k * k * share( k );
+
+		}
+		return sum * span / ( 3 * n );
+
+	};
+	const ring = integrate( k0, k1, () => 1 );
+	return square ? ring + integrate( k1, k1 * Math.SQRT2, ( k ) => 1 - 4 / Math.PI * Math.acos( Math.min( k1 / k, 1 ) ) ) : ring;
 
 }
