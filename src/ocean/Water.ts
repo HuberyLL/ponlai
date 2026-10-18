@@ -16,7 +16,8 @@ import {
 	abs, fwidth, reflect, refract, select, step, dFdx, dFdy, perspectiveDepthToViewZ, cameraNear, cameraFar,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
-import { FFT_SIZE, type OceanFFT } from './OceanFFT.ts';
+import { FFT_SIZE, NEAR_RIPPLES, type OceanFFT } from './OceanFFT.ts';
+import { COX_MUNK } from './OceanSpectrum.ts';
 import type { ShoreWaves } from './ShoreWaves.ts';
 import type { StormSea } from './StormSea.ts';
 import type { SeaDetail } from './SeaDetail.ts';
@@ -34,7 +35,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 // The sea surface: an FFT-displaced grid shaded as tidewater's WaterMaterial (4811ba4, its above-water
 // branch; the camera never goes under the sea):
 //   - the normal from the cascades' slopes over their horizontal stretch (WaterSurface), with
-//     near-field capillary ripples, the rocky shore's reflected wave and the rain's rings
+//     near-field capillary ripples (in the reflection and the glint, not the refraction), the rocky
+//     shore's reflected wave and the rain's rings
 //   - the sea's large-scale detail in world space (SeaDetail): gusts roughen the short waves the
 //     pixel cannot resolve and the near ripples, slicks smooth them, gusts and windrows add whitecaps;
 //     around the island the gusts are the meadow's, read in the vertex stage
@@ -47,7 +49,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     (rays near the horizon, reflectance over 0.05)
 //   - the sun's specular: GGX of the base roughness and the slopes the pixel cannot resolve (Cox-
 //     Munk's mean square slope for the wind, the share finer than the pixel)
-//   - refraction: the refracted view ray followed to the floor's height field, its end projected
+//   - refraction: the refracted view ray (through the surface without the near ripples) followed to
+//     the floor's height field, its end projected
 //     into the refraction pass's image of the world under the sea (Refraction.ts, through its wider
 //     view: the floor behind the cliffs above the waterline, and below the screen's bottom edge)
 //     where it lies behind the surface, else straight behind in that image; where the image holds
@@ -651,8 +654,14 @@ export class Water {
 			const slopes = vec2( d.x.div( max( d.z.add( 1 ), 0.2 ) ), d.y.div( max( d.w.add( 1 ), 0.2 ) ) ).add( shoreWave.yz ).add( rainGradient ).toVar();
 			// Near-field capillary ripples: within a few metres a pixel covers less than the finest
 			// cascade's texel (about 3 cm) and the surface looks glassy; the finest cascade read again
-			// at about 1 and 2.3 m tiles, turned so that they never line up with it; damped in slicks
-			// with the short waves.
+			// at about 1 and 2.3 m tiles (NEAR_RIPPLES), turned so that they never line up with it;
+			// damped in slicks with the short waves. They tilt the reflection and the glint only. Read
+			// at those scales with the cascade's own slopes, they curve the surface three to seven times
+			// as sharply as it does, and the refracted floor, seen through a metre or two of water, broke
+			// into crumbs; at 4K every pixel of the island camera's view is under their 4 cm, so that was
+			// all the shallows. The floor seen through real ripples that small and that quick is blurred
+			// by them, not folded.
+			const resolvedSlopes = vec2( slopes ).toVar();
 			const near = smoothstep( 0.04, 0.01, footprint ).mul( rough ).toVar();
 			If( near.greaterThan( 0.002 ), () => {
 
@@ -663,7 +672,7 @@ export class Water {
 						.level( max( log2( footprint.div( texel ) ), 0 ) ).xy;
 
 				};
-				slopes.addAssign( rotate( ripple( 7.3, 0.63 ), - 0.63 ).mul( 0.55 ).add( rotate( ripple( 3.1, 2.14 ), - 2.14 ).mul( 0.35 ) ).mul( near ) );
+				slopes.addAssign( sum( NEAR_RIPPLES.map( ( r ) => rotate( ripple( r.scale, r.angle ), - r.angle ).mul( r.weight ) ) ).mul( near ) );
 
 			} );
 			const jac = d.z.add( 1 ).mul( d.w.add( 1 ) ).toVar();
@@ -672,7 +681,9 @@ export class Water {
 			// A facet turned away from the eye (a fold of the choppy surface) is bent to just past
 			// grazing, not flipped: a flipped normal turns a fold into a white mirror of the sky.
 			const N0 = normalize( vec3( slopes.x.negate(), 1, slopes.y.negate() ) );
-			const N = normalize( N0.add( V.mul( max( dot( N0, V ).negate().add( 0.03 ), 0 ) ) ) ).toVar();
+			const unfold = ( n: V3 ) => normalize( n.add( V.mul( max( dot( n, V ).negate().add( 0.03 ), 0 ) ) ) );
+			const N = unfold( N0 ).toVar();
+			const Nrefracted = unfold( normalize( vec3( resolvedSlopes.x.negate(), 1, resolvedSlopes.y.negate() ) ) ).toVar();
 			const L = shared.sunDir;
 			const posV = cameraViewMatrix.mul( vec4( wp, 1 ) ).xyz.toVar();
 
@@ -697,13 +708,16 @@ export class Water {
 
 			// ---- whitecaps: where the surface is compressed right now (tidewater's fresh foam), more
 			// of them inside gusts, and the windrows' trace of foam; a threshold on the foam pattern so
-			// that they grow and tear into lace; far away, the coverage itself
+			// that they grow and tear into lace; far away, the coverage itself. None without a cover:
+			// the pattern's peaks reach past the threshold's soft edge, and a faint film of foam, lit as
+			// a white scatterer under the full sun, showed as pale blotches a metre across on the calm
+			// shallows.
 			const fresh = sat( fft.foamBias.sub( 0.15 ).sub( jac ).mul( 2 ) );
 			const coverage = sat( fresh.mul( mix( float( 0.5 ), float( 1.5 ), sea.y ) ).add( sea.w.mul( 0.5 ) ).mul( u.foamCoverage ) );
 			const threshold = float( 1.05 ).sub( coverage.mul( 1.1 ) );
 			const soft = footprint.mul( 0.1 ).add( 0.06 );
 			const mat = smoothstep( threshold.sub( soft ), threshold.add( soft ), p1.x.mul( 0.62 ).add( p2.x.mul( 0.38 ) ) ).mul( p1.y.mul( 0.25 ).add( 0.8 ) );
-			const foam = mix( mat, coverage.mul( 0.85 ), smoothstep( 0.15, 1.2, footprint ) ).toVar();
+			const foam = mix( mat.mul( smoothstep( 0, 0.05, coverage ) ), coverage.mul( 0.85 ), smoothstep( 0.15, 1.2, footprint ) ).toVar();
 			// the foam the waves leave at the rock (ShoreWaves): a fresh burst, the pattern's bubbly mat,
 			// the foam lingering from the waves before, the pattern's lace, finer than the whitecaps' (a rock churns the foam
 			// finer than a breaking crest does); far away, its cover
@@ -722,7 +736,7 @@ export class Water {
 			// ---- roughness: the slopes no pixel resolves at this distance (Cox-Munk's mean square
 			// slope 0.003 + 0.00512 U, the share finer than the pixel's wavenumber, scaled by the
 			// gusts and slicks) over the base
-			const mss = windSpeed.mul( 0.00512 ).add( 0.003 );
+			const mss = windSpeed.mul( COX_MUNK.perWind ).add( COX_MUNK.base );
 			const unresolved = sat( log2( footprint.mul( 110 / PI ) ).div( 9 ) ).mul( rough.mul( rough ) ).toVar();
 			const alpha2 = u.roughness.mul( u.roughness ).add( mss.mul( 2 ).mul( unresolved ) ).add( foam.mul( 0.2 ) ).toVar();
 			const sigmaUnresolved = sqrt( mss.mul( unresolved ) ).toVar();
@@ -809,7 +823,7 @@ export class Water {
 			// in that image; where the image holds nothing there (the shallows above its clip height,
 			// the sky), the opaque image at the end where it lies behind the surface, else straight
 			// behind.
-			const Tr = refract( V.negate(), N, 1 / IOR );
+			const Tr = refract( V.negate(), Nrefracted, 1 / IOR );
 			const Tv = normalize( vec3( Tr.x, min( Tr.y, - 0.08 ), Tr.z ) ).toVar();
 			const tDown = max( Tv.y.negate(), 0.04 ).toVar();
 			const L0 = max( thickness, 0 ).div( tDown ).toVar();
