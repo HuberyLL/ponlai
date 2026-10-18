@@ -269,7 +269,7 @@ the fantasy in the world and a light touch on the image (clear shade, a golden a
   sampler type per depth texture per material (`SolarShadow.ts`).
 - Shadow passes keep `alphaTest` and `alphaMap` but not `map`; vegetation draws before the terrain
   (`renderOrder = -1`). See `vegetation/LeafTexture.ts` and `vegetation/Material.ts`.
-- The water samples neither the target it draws into nor many more textures (14 of WebGPU's 16
+- The water samples neither the target it draws into nor many more textures (15 of WebGPU's 16
   in its fragment stage: `Water.ts`), so it takes no history or reactive input: what the resolve
   needs from it goes out through its velocity. It refracts the refraction pass's image of what lies
   under the sea: a new mesh that can reach under the water joins it (`Refraction.ts`

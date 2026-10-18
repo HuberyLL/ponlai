@@ -36,12 +36,13 @@ const REFRACTION_ROW = row( 'refraction', [ col( 'refraction', 'clear', 'store' 
 const RESOLVES = {
 	depthResolve: row( 'depthResolve', [ col( 'linearDepth', 'clear', 'store' ) ] ),
 	opaqueCopy: row( 'opaqueCopy', [ col( 'opaqueColor', 'clear', 'store' ) ] ),
+	underwaterPyramid: row( 'underwaterPyramid', [ col( 'underwater', 'clear', 'store' ) ] ),
 	surfaceResolve: row( 'surfaceResolve', [ col( 'surfaceDepth', 'clear', 'store' ) ] ),
 };
 
 export const LEGACY_FULL = [
 	row( 'opaque', [ col( 'sceneColor', 'clear', 'store', true ) ], dep( 'sceneDepth', true, 'clear', 'store' ) ),
-	REFRACTION_ROW, RESOLVES.depthResolve, RESOLVES.opaqueCopy,
+	REFRACTION_ROW, RESOLVES.depthResolve, RESOLVES.opaqueCopy, RESOLVES.underwaterPyramid,
 	row( 'water', [ col( 'sceneColor', 'load', 'store', true ) ], dep( 'sceneDepth', true, 'load', 'store' ) ),
 	RESOLVES.surfaceResolve,
 	row( 'rain', [ col( 'sceneColor', 'load', 'discard', true ) ], dep( 'sceneDepth', false, 'load', 'discard' ) ),
@@ -51,7 +52,7 @@ export const LEGACY_FULL = [
 export const DERIVED_FULL = [
 	// the copy samples the resolve before the water loads the samples
 	row( 'opaque', [ col( 'sceneColor', 'clear', 'store', true ) ], dep( 'sceneDepth', true, 'clear', 'store' ) ),
-	REFRACTION_ROW, RESOLVES.depthResolve, RESOLVES.opaqueCopy,
+	REFRACTION_ROW, RESOLVES.depthResolve, RESOLVES.opaqueCopy, RESOLVES.underwaterPyramid,
 	// the rain draws over the water's samples before anything samples them: no resolve
 	row( 'water', [ col( 'sceneColor', 'load', 'store', false ) ], dep( 'sceneDepth', true, 'load', 'store' ) ),
 	RESOLVES.surfaceResolve,
@@ -217,7 +218,7 @@ export const checks = [
 		const c = compileToday();
 		const dry = c.ops( 'derived', c.maskOf( FULL.filter( ( n ) => n !== 'rain' ) ) );
 		assert.deepEqual( find( dry, 'water' ), {
-			pass: 'water', index: 4, target: 'sceneColor|sceneDepth',
+			pass: 'water', index: 5, target: 'sceneColor|sceneDepth',
 			colors: [ col( 'sceneColor', 'load', 'discard', true ) ], depth: dep( 'sceneDepth', true, 'load', 'store' ), rewrite: true,
 		} );
 		assert.deepEqual( find( dry, 'opaque' ).colors, [ col( 'sceneColor', 'clear', 'store', true ) ] );
@@ -229,7 +230,7 @@ export const checks = [
 
 		const c = compileToday();
 		const clear = c.ops( 'derived', c.maskOf( [ 'refraction', 'rain', 'output' ] ) );
-		assert.deepEqual( clear.running, [ 'opaque', 'refraction', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve', 'rain', 'postConstants', 'composite', ...BLOOM_PASSES, 'sharp', 'display', 'output' ] );
+		assert.deepEqual( clear.running, [ 'opaque', 'refraction', 'depthResolve', 'opaqueCopy', 'underwaterPyramid', 'water', 'surfaceResolve', 'rain', 'postConstants', 'composite', ...BLOOM_PASSES, 'sharp', 'display', 'output' ] );
 		assert.deepEqual( strip( clear ).slice( 0, 7 ), DERIVED_FULL.slice( 0, 7 ) );
 		// without the refraction the scene target's ops are the same (the water reads it optionally)
 		const dry = c.ops( 'derived', c.maskOf( [ 'rain', 'output' ] ) );

@@ -99,6 +99,7 @@ export function declareToday( options = {} ) {
 	h.linearDepth = g.color( 'linearDepth', { size: RENDER, format: 'RG', type: 'Float' } );
 	h.opaqueColor = g.color( 'opaqueColor', { size: RENDER, format: 'RGBA', type: 'HalfFloat' } );
 	h.surfaceDepth = g.color( 'surfaceDepth', { size: RENDER, format: 'Red', type: 'Float' } );
+	h.underwater = g.color( 'underwater', { size: RENDER, format: 'RGBA', type: 'HalfFloat', mips: true } );
 	if ( o.bankSize > 0 ) h.fogBanks = g.color( 'fogBanks', { size: { of: 'fixed', width: o.bankSize, height: o.bankSize }, format: 'Red', type: 'HalfFloat' }, true );
 	if ( o.fogScale < 1 ) {
 
@@ -145,10 +146,19 @@ export function declareToday( options = {} ) {
 		return { label: 'depth & copy resolves' };
 
 	} );
+	g.addPass( 'underwaterPyramid', 'quad', ( b ) => {
+
+		b.read( h.sceneColor );
+		b.read( h.sceneDepth, 'samples' );
+		h.underwater = b.write( h.underwater );
+		return { label: 'underwater pyramid' };
+
+	} );
 	g.addPass( 'water', 'scene', ( b ) => {
 
 		b.read( h.opaqueColor );
 		b.read( h.linearDepth );
+		b.read( h.underwater );
 		b.readOptional( h.refraction );
 		b.readOptional( h.refractionDepth );
 		h.sceneColor = b.write( h.sceneColor );
@@ -330,6 +340,7 @@ export function declarePipeline( options = {} ) {
 	h.linearDepth = g.color( 'linearDepth', { size: RENDER, format: 'RG', type: 'Float' } );
 	h.opaqueColor = g.color( 'opaqueColor', { size: RENDER, format: 'RGBA', type: 'HalfFloat' } );
 	h.surfaceDepth = g.color( 'surfaceDepth', { size: RENDER, format: 'Red', type: 'Float' } );
+	h.underwater = g.color( 'underwater', { size: RENDER, format: 'RGBA', type: 'HalfFloat', mips: true } );
 	h.refraction = g.color( 'refraction', { size: REFRACTION, format: 'RGBA', type: 'HalfFloat' } );
 	h.refractionDepth = g.depth( 'refractionDepth', { size: REFRACTION, type: 'Float' } );
 	if ( o.compositeOnce ) h.hdr = g.color( 'hdr', { size: RENDER, format: 'RGBA', type: 'HalfFloat' } );
@@ -369,10 +380,12 @@ export function declarePipeline( options = {} ) {
 	} );
 	g.addPass( 'depthResolve', 'quad', ( b ) => ( b.read( h.sceneDepth, 'samples' ), h.linearDepth = b.write( h.linearDepth ), { label: 'depth & copy resolves' } ) );
 	g.addPass( 'opaqueCopy', 'quad', ( b ) => ( b.read( h.sceneColor ), h.opaqueColor = b.write( h.opaqueColor ), { label: 'depth & copy resolves' } ) );
+	g.addPass( 'underwaterPyramid', 'quad', ( b ) => ( b.read( h.sceneColor ), b.read( h.sceneDepth, 'samples' ), h.underwater = b.write( h.underwater ), { label: 'underwater pyramid' } ) );
 	g.addPass( 'water', 'scene', ( b ) => {
 
 		b.read( h.opaqueColor );
 		b.read( h.linearDepth );
+		b.read( h.underwater );
 		b.readOptional( h.refraction );
 		b.readOptional( h.refractionDepth );
 		h.sceneColor = b.write( h.sceneColor );
@@ -466,6 +479,7 @@ export const TODAY = [
 	{ name: 'refraction', kind: 'scene', label: 'refraction', when: 'refraction', size: RF, writes: [ w( 'refraction', RF, 'RGBA', 'HalfFloat' ) ], depth: { ...w( 'refractionDepth', RF, null, 'Float' ), write: true }, target: 'refraction|refractionDepth' },
 	{ name: 'depthResolve', kind: 'quad', label: 'depth & copy resolves', when: null, size: R, writes: [ w( 'linearDepth', R, 'RG', 'Float' ) ], depth: null, target: 'linearDepth|-' },
 	{ name: 'opaqueCopy', kind: 'quad', label: 'depth & copy resolves', when: null, size: R, writes: [ w( 'opaqueColor', R, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'opaqueColor|-' },
+	{ name: 'underwaterPyramid', kind: 'quad', label: 'underwater pyramid', when: null, size: R, writes: [ w( 'underwater', R, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'underwater|-' },
 	{ name: 'water', kind: 'scene', label: 'water', when: null, size: R, writes: [ w( 'sceneColor', R, 'RGBA', 'HalfFloat', 4 ) ], depth: { ...w( 'sceneDepth', R, null, 'Float', 4 ), write: true }, target: 'sceneColor|sceneDepth' },
 	{ name: 'surfaceResolve', kind: 'quad', label: 'depth & copy resolves', when: null, size: R, writes: [ w( 'surfaceDepth', R, 'Red', 'Float' ) ], depth: null, target: 'surfaceDepth|-' },
 	{ name: 'rain', kind: 'scene', label: 'rain draw', when: 'rainVisible', size: R, writes: [ w( 'sceneColor', R, 'RGBA', 'HalfFloat', 4 ) ], depth: { ...w( 'sceneDepth', R, null, 'Float', 4 ), write: false }, target: 'sceneColor|sceneDepth' },
@@ -487,7 +501,8 @@ export const TODAY = [
 // what each pass of today's graph reads (`resource@version:mode`, `?` optional)
 export const TODAY_READS = {
 	opaque: [], refraction: [], depthResolve: [ 'sceneDepth@1:samples' ], opaqueCopy: [ 'sceneColor@1:sample' ],
-	water: [ 'opaqueColor@1:sample', 'linearDepth@1:sample', 'refraction@1:sample?', 'refractionDepth@1:sample?' ], surfaceResolve: [ 'sceneDepth@2:samples' ],
+	underwaterPyramid: [ 'sceneColor@1:sample', 'sceneDepth@1:samples' ],
+	water: [ 'opaqueColor@1:sample', 'linearDepth@1:sample', 'underwater@1:sample', 'refraction@1:sample?', 'refractionDepth@1:sample?' ], surfaceResolve: [ 'sceneDepth@2:samples' ],
 	rain: [ 'linearDepth@1:sample', 'surfaceDepth@1:sample' ], fogBank: [], fogDepth: [ 'surfaceDepth@1:sample' ],
 	fogMarch: [ 'fogNearestDepth@1:sample?', 'fogBanks@1:sample?' ],
 	shaftsSource: [ 'surfaceDepth@1:sample' ], shaftsRays: [ 'shafts.source@1:sample?' ], postConstants: [ 'shafts.source@1:sample?' ],
@@ -546,6 +561,7 @@ export const checks = [
 			[ 'refraction', [ 'refraction:clear/store' ], 'refractionDepth:clear/store', false ],
 			[ 'depthResolve', [ 'linearDepth:clear/store' ], null, false ],
 			[ 'opaqueCopy', [ 'opaqueColor:clear/store' ], null, false ],
+			[ 'underwaterPyramid', [ 'underwater:clear/store' ], null, false ],
 			[ 'water', [ 'sceneColor:load/store/resolve' ], 'sceneDepth:load/store', false ],
 			[ 'surfaceResolve', [ 'surfaceDepth:clear/store' ], null, false ],
 			[ 'rain', [ 'sceneColor:load/discard/resolve' ], 'sceneDepth:load/discard', true ],
@@ -580,7 +596,7 @@ export const checks = [
 		assert.deepEqual( c.passNames, ALL );
 		assert.deepEqual( c.conditional.map( ( i ) => c.decl.passes[ i ].name ), [ 'refraction', 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'output', 'easu', 'upscaledOutput' ] );
 		assert.deepEqual( c.summary().targets.map( ( t ) => [ t.key, t.size, t.samples ] ), [
-			[ 'sceneColor|sceneDepth', R, 4 ], [ 'refraction|refractionDepth', RF, 1 ], [ 'linearDepth|-', R, 1 ], [ 'opaqueColor|-', R, 1 ], [ 'surfaceDepth|-', R, 1 ],
+			[ 'sceneColor|sceneDepth', R, 4 ], [ 'refraction|refractionDepth', RF, 1 ], [ 'linearDepth|-', R, 1 ], [ 'opaqueColor|-', R, 1 ], [ 'underwater|-', R, 1 ], [ 'surfaceDepth|-', R, 1 ],
 			[ 'fogBanks|-', 'fixed:2048x2048', 1 ], [ 'fogNearestDepth|-', 'render:1:2:0', 1 ], [ 'fogMarch|-', 'render:1:2:0', 1 ],
 			[ 'shafts.source|-', H, 1 ], [ 'shafts.rays|-', H, 1 ], [ 'postConstants|-', 'fixed:1x1', 1 ], [ 'hdr|-', R, 1 ], ...BLOOM.rows.map( ( r ) => [ r.target, r.size, 1 ] ), [ 'sharp|-', R, 1 ],
 			[ 'display|-', R, 1 ], [ 'canvas|-', C, 1 ], [ 'FSR.easu|-', C, 1 ],
@@ -647,7 +663,7 @@ export const checks = [
 
 		const c = compileToday();
 		const run = ( ...enabled ) => c.running( c.maskOf( enabled ) ).map( ( i ) => c.decl.passes[ i ].name );
-		const scene = ( ...extra ) => [ 'opaque', ...extra, 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve' ];
+		const scene = ( ...extra ) => [ 'opaque', ...extra, 'depthResolve', 'opaqueCopy', 'underwaterPyramid', 'water', 'surfaceResolve' ];
 		const shafts = [ 'shaftsSource', 'shaftsRays' ];
 		assert.deepEqual( run( 'refraction', 'rain', 'fogBank', 'fogDepth', 'fogMarch', ...shafts, 'output' ), [ ...scene( 'refraction' ), 'rain', 'fogBank', 'fogDepth', 'fogMarch', ...shafts, ...TAIL, 'output' ] );
 		assert.deepEqual( run( 'refraction', 'fogDepth', 'fogMarch', 'output' ), [ ...scene( 'refraction' ), 'fogDepth', 'fogMarch', ...TAIL, 'output' ], 'rain off, the sun away' );

@@ -755,9 +755,10 @@ const stormSea = new StormSea( renderer, fft, shared, fields.shore, shoreWaves, 
 water = new Water( {
 	fft, sky, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves,
 	land: landBox, sunShadow, storm: stormSea, detail: seaDetail,
-	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, quality: quality.water,
+	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, underwater: pipeline.textures.underwater, quality: quality.water,
 	refraction: { color: pipeline.textures.refraction, depth: pipeline.textures.refractionDepth },
 } );
+pipeline.seaLevel.value = shared.waterLevel.value;
 // the light under the water follows the long waves the sea's surface shows (Caustics.ts, the wave maps)
 caustics.attachWaves( { fft, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves, detail: seaDetail } );
 applySkyFill();
