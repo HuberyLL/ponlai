@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import type { CharacterShadow } from '../../characters/CharacterShadow.ts';
 import type { Villager as Figure } from '../../characters/Villagers.ts';
-import { ISLANDER_LOOKS } from '../../characters/looks.ts';
+import type { LookColours } from '../../characters/looks.ts';
 import { ISLAND_TOP } from '../../world/WorldShapes.ts';
 import { SPEED_FACTORS } from '../sim/types.ts';
 import type { EntityId } from '../sim/types.ts';
@@ -48,6 +48,8 @@ export interface GameViewOptions {
 	holdOpaque( box: THREE.Box3 ): void;
 	/** a skinned islander figure for a look index (src/characters/looks.ts) */
 	loadLook( look: number ): Promise<Figure>;
+	/** the colours of a look index, for the stand-in shown when its figure cannot load */
+	lookColours( look: number ): LookColours;
 	/** game ticks per second of the scene's clock at the game's normal pace (the day's length):
 	 * the meadow's trail recovers by it (world/vegetation/Trample.ts) */
 	ticksPerSecond(): number;
@@ -192,7 +194,7 @@ export class GameView {
 
 			if ( this.disposed || this.byId.get( view.id ) !== view ) return;
 			// a stand-in, so the islander stays seen
-			view.showStandIn( standIn( look, ISLANDER_LOOKS[ look % ISLANDER_LOOKS.length ].colours ) );
+			view.showStandIn( standIn( look, this.options.lookColours( look ) ) );
 			view.loading = false;
 			console.error( `Could not load the figure for look ${ look }`, error );
 

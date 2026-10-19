@@ -4,6 +4,7 @@ import type { DayCycle } from '../sky/DayCycle.ts';
 import type { SceneEventReason } from '../post/SceneEvents.ts';
 import type { CharacterShadow } from '../characters/CharacterShadow.ts';
 import type { Villager as Figure } from '../characters/Villagers.ts';
+import type { LookColours } from '../characters/looks.ts';
 import type { LandLattice } from '../world/IslandGrowth.ts';
 import { GameHud } from './Hud.ts';
 import { newGame, loadGame } from './sim/Sim.ts';
@@ -69,6 +70,8 @@ export interface GameContext {
 	characterShadow: CharacterShadow;
 	/** a skinned islander figure for a look index, its pipelines compiled (GameView "First draws") */
 	loadLook( look: number ): Promise<Figure>;
+	/** the colours of a look index, for a stand-in figure (GameView) */
+	lookColours( look: number ): LookColours;
 	invalidateSunShadow(): void;
 	/** an opaque prop the game draws spans this box: the sun's shadow casters and the sea's reflection box grow to hold it */
 	holdOpaque( box: THREE.Box3 ): void;
@@ -188,7 +191,7 @@ export class Game {
 		sim.brain = this.brain;
 		if ( this.coming ) sim.setComing( this.coming );
 		this.view?.dispose();
-		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, holdOpaque: c.holdOpaque, loadLook: c.loadLook,
+		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, holdOpaque: c.holdOpaque, loadLook: c.loadLook, lookColours: c.lookColours,
 			ticksPerSecond: () => SECONDS_PER_GAME_DAY / c.dayCycle.dayLength } );
 		this.sim = sim;
 		c.sceneEvent( 'game begin' );

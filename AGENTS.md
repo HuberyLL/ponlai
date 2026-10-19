@@ -105,7 +105,9 @@ the fantasy in the world and a light touch on the image (clear shade, a golden a
   plan (`Host.ts`), its resources (`Resources.ts`) and bindings (`Bindings.ts`), one module per
   upstream shader header, the kernels (`Passes.ts`); the page's integration, its passes on the
   frame graph, rest and diagnostics (`Fsr3Upscaler.ts`) and its mip bias (`MipBias.ts`).
-- `src/characters/`: the islanders (modular low-poly figures, their light, ears, proportions).
+- `src/characters/`: the islanders (figures assembled on the kit's rig, their looks and proportions;
+  the kit look's cel light and ears, the Hanming look's feather and woven surfaces in
+  `FigureSurfaces.ts`).
 - `src/life/`: the island's creatures (`docs/art-direction.md`, Life), simulated per frame on the
   rendering side: the wenyao's schools of flying fish (`Wenyao.ts`), the fish's mesh and material
   (`FishGeometry.ts`, `FishMaterial.ts`).

@@ -370,10 +370,32 @@ packages, into `dist/licenses/`.
   the pack's own `License.txt` calls it "Ultimate Modular Males")
 - Licence: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
 - Files: parts of `Farmer.gltf` (its rig, clips and feet), `Adventurer.gltf` and `Casual_2.gltf`,
-  recoloured into the island's palette (the scene's islander and the game's islanders, their
-  colour variants in `src/characters/looks.ts`), given procedural pointed ears and merged into one
-  skinned mesh at load time. They are not in the repository yet: the dev server loads them
-  from the git-ignored `artifacts/assets/` while the character art is settled.
+  recoloured into the island's palette (the kit-dressed islanders, `look=kit`, their colour
+  variants in `src/characters/looks.ts`), given procedural pointed ears and merged into one
+  skinned mesh at load time. The Hanming islanders are built from them in Blender: the Farmer's
+  rig and clips, the Casual 2 head without its hair, the Beach outfit's body, legs and sandalled
+  feet, under a feather-carrying shell and a revolved bamboo hat of our own. They are not in the
+  repository yet: the dev server loads them from the git-ignored `artifacts/assets/` while the
+  character art is settled.
+
+### A single white feather closeup
+
+- Author: João Estevão Andrade de Freitas
+- Source: [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:A_single_white_feather_closeup.jpg)
+  (2004, from stock.xchng)
+- Licence: public domain
+- Files: cut out of its dark ground (the ground un-mixed from the edge's colour) into four feather
+  shapes in a 2048 x 1024 atlas, the Hanming islanders' feather cards. Not in the repository yet
+  (git-ignored `artifacts/assets/`).
+
+### Wicker 005
+
+- Author: ambientCG (Lennart Demes)
+- Source: [ambientCG](https://ambientcg.com/view?id=Wicker005)
+- Licence: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
+- Files: the colour, normal and roughness maps reduced to 512 px, the Hanming islanders' bamboo
+  hats, tinted to straw in `src/characters/FigureSurfaces.ts`. Not in the repository yet
+  (git-ignored `artifacts/assets/`).
 
 ### Cloud shape noise
 

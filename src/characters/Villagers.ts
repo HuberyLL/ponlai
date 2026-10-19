@@ -3,6 +3,7 @@ import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeVertexColourCharacterMaterial, KIND } from './CharacterMaterial.ts';
 import { CharacterShadow } from './CharacterShadow.ts';
+import { makeFeatherMaterial, makeLitFigureMaterial, makeWeaveMaterial } from './FigureSurfaces.ts';
 import { pointedEars } from './Ears.ts';
 import { reproportion, PROPORTIONS, type Proportions } from './Proportions.ts';
 import type { Shared } from '../shared.ts';
@@ -21,6 +22,10 @@ import type { TrampleWalker } from '../world/vegetation/Trample.ts';
 // sun-shadow map of the figures is multiplied into the island's (CharacterShadow.ts).
 // The walker parts the meadow (world/vegetation/Trample.ts): its track there is its schedule at the
 // scene clock's earlier times (`track`), so the trail behind it is a function of the clock as well.
+// A look may be `lit` (the feather-robed islanders, looks.ts HANMING): its painted parts take the
+// island's light (FigureSurfaces.ts) and its textured parts (`surface`: the feathers, the woven
+// hat) draw as meshes of their own on the same skeleton, re-proportioned with it; the feathers stay out
+// of the figures' shadow map, and the figure's height is its painted body's, hat left out.
 
 export type GroundFn = ( x: number, z: number ) => number;
 
@@ -29,6 +34,8 @@ export interface PartSpec {
 	from: string; part: string; paint: Record<string, [ THREE.ColorRepresentation, number ]>;
 	// a repaint for vertices driven mostly by the wrists and fingers (one material can cover sleeve and glove)
 	hands?: [ THREE.ColorRepresentation, number ];
+	/** a textured part drawn with its own surface (FigureSurfaces.ts) instead of painted */
+	surface?: 'feather' | 'weave';
 }
 
 const HEIGHT = 1.68;
@@ -89,7 +96,7 @@ function paintPart( mesh: THREE.SkinnedMesh, paint: PartSpec[ 'paint' ], hands?:
  * Assemble parts on the rig of the first part's file, with that file's animation clips, and
  * re-proportion the figure (Proportions.ts; the kit's own proportions by default).
  */
-export async function loadVillager( base: string, parts: PartSpec[], shared: Shared, proportions: Proportions = PROPORTIONS.stock ): Promise<Villager> {
+export async function loadVillager( base: string, parts: PartSpec[], shared: Shared, proportions: Proportions = PROPORTIONS.stock, lit = false ): Promise<Villager> {
 
 	const loader = new GLTFLoader();
 	const files = new Map<string, GLTF>();
@@ -98,6 +105,7 @@ export async function loadVillager( base: string, parts: PartSpec[], shared: Sha
 	const model = rig.scene;
 	let bound: THREE.SkinnedMesh | null = null;
 	const geometries: THREE.BufferGeometry[] = [];
+	const surfaces: { geometry: THREE.BufferGeometry; material: THREE.Material; casts: boolean }[] = [];
 	for ( const spec of parts ) {
 
 		// a part with several materials loads as a group of single-material skinned meshes
@@ -108,7 +116,13 @@ export async function loadVillager( base: string, parts: PartSpec[], shared: Sha
 
 			if ( ! ( o as THREE.SkinnedMesh ).isSkinnedMesh ) return;
 			skinned = o as THREE.SkinnedMesh;
-			painted.push( paintPart( skinned, spec.paint, spec.hands ) );
+			if ( spec.surface ) {
+
+				const source = skinned.material as THREE.MeshStandardMaterial;
+				const material = spec.surface === 'feather' ? makeFeatherMaterial( source.map! ) : makeWeaveMaterial( source );
+				surfaces.push( { geometry: skinned.geometry, material, casts: spec.surface !== 'feather' } );
+
+			} else painted.push( paintPart( skinned, spec.paint, spec.hands ) );
 
 		} );
 		geometries.push( ...painted );
@@ -124,14 +138,27 @@ export async function loadVillager( base: string, parts: PartSpec[], shared: Sha
 	const old: THREE.Object3D[] = [];
 	model.traverse( ( o ) => { if ( ( o as THREE.Mesh ).isMesh ) old.push( o ); } );
 	for ( const o of old ) o.removeFromParent();
-	const mesh = new THREE.SkinnedMesh( mergeGeometries( geometries )!, makeVertexColourCharacterMaterial( shared ) );
+	const mesh = new THREE.SkinnedMesh( mergeGeometries( geometries )!, lit ? makeLitFigureMaterial() : makeVertexColourCharacterMaterial( shared ) );
 	mesh.name = 'villager';
-	parent.add( mesh );
-	mesh.bind( template.skeleton, template.bindMatrix );
-	reproportion( mesh, rig.animations, proportions );
-	mesh.castShadow = false;
-	mesh.receiveShadow = true;
-	mesh.frustumCulled = false;
+	const meshes: THREE.SkinnedMesh<THREE.BufferGeometry, THREE.Material>[] = [ mesh ];
+	for ( const s of surfaces ) {
+
+		const part = new THREE.SkinnedMesh( s.geometry, s.material );
+		part.name = `villager ${ s.material.name }`;
+		if ( s.casts ) part.layers.enable( CharacterShadow.LAYER );
+		meshes.push( part );
+
+	}
+	for ( const m of meshes ) {
+
+		parent.add( m );
+		m.bind( template.skeleton, template.bindMatrix );
+		m.castShadow = false;
+		m.receiveShadow = true;
+		m.frustumCulled = false;
+
+	}
+	reproportion( meshes, rig.animations, proportions );
 	mesh.layers.enable( CharacterShadow.LAYER );
 
 	const group = new THREE.Group();

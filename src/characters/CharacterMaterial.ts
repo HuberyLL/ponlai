@@ -200,7 +200,7 @@ const skinMoving = uniform( 0 ).onObjectUpdate( ( { object } ) => object ? ( ski
 
 /** A figure's velocity under the temporal modes: class character, its skin's previous vertex in
  * the mesh's previous space (see above). */
-function addSkinnedMotion( mat: THREE.MeshStandardNodeMaterial ): void {
+export function addSkinnedMotion( mat: THREE.MeshStandardNodeMaterial ): void {
 
 	const material = mat as unknown as { setupPosition( builder: THREE.NodeBuilder ): THREE.Node };
 	const setupPosition = material.setupPosition.bind( mat );

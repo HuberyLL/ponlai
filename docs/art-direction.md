@@ -310,13 +310,18 @@ art decision changes; reference images stay out of the repository.
 
 ## Islanders
 
-- Simple low-poly figures with flat colours and simple faces, recoloured into the island's palette
-  and lit by the island's own light in soft cel steps; no outlines. Plants keep their realistic
-  shading.
-- A Hylian-like people (after The Legend of Zelda: Breath of the Wild): human in every way but for
-  long pointed ears that sweep back and a little up.
-- Plain dress while the basic look settles: undyed linen and calm earthy tones, leather shoes, no
-  hat.
-- The medium proportions of `src/characters/Proportions.ts` (about 4.7 heads tall, against the
-  kit's 5.5: a larger head, shorter legs, broader shoulders and hands), chosen by the user from four
-  builds; the kit's own stays selectable for comparison.
+- The people of 含明, west of Penglai, who stitch birds' feathers into clothes and drink the dew
+  (拾遗记 卷十). Their gear covers what a figure cannot do well, as Frostpunk's winter clothes do:
+  a woven bamboo hat (笠: the pointed 斗笠 and the flat crowned 箬笠) over a head with no hair and
+  no worked face, in the brim's shade.
+- White feathers stitched into a short-sleeved top worn open over the bare chest and belly and
+  into shorts to mid-thigh, bare arms and legs, straw sandals: little cloth, as on an island short
+  of everything. No sash or headcloth (a headcloth read as a bandit's).
+- The feathers must read as feathers up close (cards cut from a photograph, laid in overlapping
+  rows as a feather cloak's are), or they are not worn; the clothes keep no finer detail. From the
+  game's default distance the figure reads by colour and silhouette (straw disc, white top and
+  shorts, skin), the feathers' and weave's texture from the closest zoom.
+- Realistic, lit by the island's own light (no cel steps, no outlines), about 6.5 heads tall
+  (`real` in `src/characters/Proportions.ts`).
+- Built in Blender on the kit's rig and clips, never modelled in code. The earlier kit-dressed
+  islander (pointed ears, linen shirt, cel steps, the medium build) stays selectable (`look=kit`).

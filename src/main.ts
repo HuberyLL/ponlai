@@ -79,7 +79,7 @@ import { debugViewChoices, debugViewFromURL, installDebugView } from './post/gra
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
 import { Vegetation } from './world/vegetation/Registry.ts';
 import { installWindMotionFlag } from './world/WindMotion.ts';
-import { ISLANDER, ISLANDER_LOOKS } from './characters/looks.ts';
+import { HANMING, HANMING_LOOKS, ISLANDER, ISLANDER_LOOKS } from './characters/looks.ts';
 import type { Game } from './game/Game.ts';
 
 const params = new URLSearchParams( location.search );
@@ -689,14 +689,18 @@ rain.collision.setArea( landBox );
 rain.bakeCollision( renderer, [ world.group, ...vegetation.roots( ( kind ) => kind.rainBake ) ] );
 mark( 'meshes' );
 setStatus( 'Waking the villagers…' );
-// A plain islander while the basic look settles (src/characters/looks.ts: bare head, so the
-// pointed ears read, linen shirt, plain trousers, leather shoes); the game dresses its islanders
-// in the same look's colour variants.
-// Its proportions (`islander` URL option, GUI Islander folder) are the medium build of
-// Proportions.ts by default: chunkier and stylised, as the people layer of the art asks; the kit's
-// own (`stock`) and the other builds stay selectable for comparison.
-const islanderBuild = { proportions: ( PROPORTION_NAMES as string[] ).includes( params.get( 'islander' ) ?? '' ) ? params.get( 'islander' ) as ProportionName : 'medium' };
-const buildIslander = ( name: ProportionName ) => loadVillager( ISLANDER.base, ISLANDER.parts, shared, PROPORTIONS[ name ] );
+// The islanders are the Hanming people (src/characters/looks.ts HANMING: a woven bamboo hat, a
+// short-sleeved feather top worn open and feather shorts, lit as the island is); `look=kit` brings
+// back the kit-dressed islander (bare head, so the pointed ears read, linen shirt, plain trousers,
+// leather shoes, in cel steps). The game dresses its islanders in the look's variants.
+// Their proportions (`islander` URL option, GUI Islander folder) are the look's build of
+// Proportions.ts by default (the Hanming's realistic `real`, the kit figure's chunkier `medium`);
+// the kit's own (`stock`) and the other builds stay selectable for comparison.
+const KIT_LOOK = params.get( 'look' ) === 'kit';
+const SCENE_LOOK = KIT_LOOK ? ISLANDER : HANMING;
+const GAME_LOOKS = KIT_LOOK ? ISLANDER_LOOKS : HANMING_LOOKS;
+const islanderBuild = { proportions: ( PROPORTION_NAMES as string[] ).includes( params.get( 'islander' ) ?? '' ) ? params.get( 'islander' ) as ProportionName : SCENE_LOOK.build ?? 'medium' };
+const buildIslander = ( name: ProportionName ) => loadVillager( SCENE_LOOK.base, SCENE_LOOK.parts, shared, PROPORTIONS[ name ], SCENE_LOOK.lit );
 // Compiles what `objects` draw in the frame's passes ahead, off the frame: the scene's pass (a latent
 // of the frame graph's opaque pass, under its target and MRT: the temporal modes' velocity output is
 // part of its pipelines' keys) and then the sun's map, one draw at a time and in the order a frame
@@ -744,13 +748,14 @@ if ( GAME ) {
 		// that first drew it built its skinned pipelines (the scene's pass, then the figures' map).
 		loadLook: async ( look ) => {
 
-			const dress = ISLANDER_LOOKS[ look % ISLANDER_LOOKS.length ];
-			const figure = await loadVillager( dress.base, dress.parts, shared, PROPORTIONS[ islanderBuild.proportions ] );
+			const dress = GAME_LOOKS[ look % GAME_LOOKS.length ];
+			const figure = await loadVillager( dress.base, dress.parts, shared, PROPORTIONS[ islanderBuild.proportions ], dress.lit );
 			await pipeline.graph.latent( 'opaque', [ figure.group ] );
 			await characterShadow.compile( renderer, scene, figure.group );
 			return figure;
 
 		},
+		lookColours: ( look ) => GAME_LOOKS[ look % GAME_LOOKS.length ].colours,
 	} );
 
 } else {
