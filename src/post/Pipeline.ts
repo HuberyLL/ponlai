@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, texture, textureLoad, uniform, uv, screenCoordinate, ivec2, int, vec2, vec3, vec4, float, mix,
 	smoothstep, clamp, max, min, dot, length, sin, log2, exp2, floor, luminance,
-	sRGBTransferOETF, fract, pow, mrt, outputStruct, mat4, output, acesFilmicToneMapping, atan, cos, abs, select, mod, step, Discard,
+	sRGBTransferOETF, fract, pow, mrt, outputStruct, mat4, output, atan, cos, abs, select, mod, step, Discard,
 	Loop, normalize, refract,
 } from 'three/tsl';
 import { fsr1 } from 'three/addons/tsl/display/FSR1Node.js';
@@ -32,6 +32,7 @@ import { DAY_EXPOSURE } from '../sky/DayCycle.ts';
 import type { Rain } from '../weather/Rain.ts';
 import { CLIP_MARGIN, RefractionView, REFRACTION_GUARD, REFRACTION_SIZE } from '../ocean/Refraction.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { toneMatrices, whiteBalance } from './ToneSpace.ts';
 
 // Frame graph:
 //   opaque scene ── sceneRT (MSAA, SCENE_SAMPLES, half float, multisampled depth)
@@ -61,9 +62,9 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 //   bloom: tidewater's physical bloom from hdr (PhysicalBloom.ts: five 13-tap downsamples, four tent
 //   upsamples)
 //   sharp (hdr + the bloom at its strength)
-//   display: the exposure, tidewater's grade (a white balance nudge,
-//   saturation, the night's grade, the tone, contrast round mid grey, the vignette), ACES, sRGB,
-//   grain ── displayRT
+//   display: the exposure, tidewater's grade (saturation, the night's grade, the tone, contrast
+//   round mid grey, the vignette), the white balance and ACES in their curve space (ToneSpace.ts),
+//   sRGB, grain ── displayRT
 //   ── copied to the screen
 // Under the temporal modes (Antialiasing.ts: aa=taa|taau) the scene half is single-sampled and
 // jittered, and writes the motion vectors beside the colour:
@@ -184,8 +185,10 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // - In a full-screen pass the camera nodes are the pass's own camera: the scene camera's matrices
 //   come in as uniforms.
 // - The display chain is tidewater's (ACES_EXPOSURE): one curve and grade (the tone, TONE, and the
-//   night's grade, NIGHT, over it are off by default). The day and the night differ by the
-//   exposure, from the clock and the weather (DayCycle, Sky), calibrated against tidewater's
+//   night's grade, NIGHT, over it are off by default). The curve maps each channel in the space of
+//   ToneSpace.ts, AP1 with its red primary moved out, and the white balance is folded into its
+//   input matrix (`settings.white`, rebuilt only when it changes). The day and the night differ by
+//   the exposure, from the clock and the weather (DayCycle, Sky), calibrated against tidewater's
 //   metered frames, times EXPOSURE_GAIN (the day's and the night's).
 
 // The graph's dev checks (every target at its class's size, the attachment ops that reached
@@ -290,20 +293,36 @@ type V4 = THREE.Node<'vec4'>;
 type PassBuilder = Parameters<Parameters<FrameGraph<PipelineFrame>[ 'addPass' ]>[ 2 ]>[ 0 ];
 
 // tidewater's display chain (PostFX.js, 4811ba4): its physical bloom (PhysicalBloom.ts) added to
-// the image; its grade in linear light (a white balance nudge, saturation, contrast round mid grey,
-// the vignette); ACES at its exposure setting (ACES_EXPOSURE: three's fitted curve, as tidewater's
-// renderOutput) and the sRGB transfer; its luminance-weighted grain, and a dither. tidewater meters
-// its frame and scales it by an auto exposure before the grade; here the scene is scaled by the
-// clock's and the weather's exposure (`settings.exposure`: DayCycle and Sky, so a paused frame
-// repeats), calibrated against tidewater's metered frames at the same sun heights (DayCycle.ts).
+// the image; its grade in linear light (saturation, contrast round mid grey, the vignette); Hill's
+// ACES fit at its exposure setting (ACES_EXPOSURE, as tidewater's renderOutput), in the curve space
+// of ToneSpace.ts with the white balance folded into its input matrix (`toneCurve`), and the sRGB
+// transfer; its luminance-weighted grain, and a dither. tidewater meters its frame and scales it by
+// an auto exposure before the grade; here the scene is scaled by the clock's and the weather's
+// exposure (`settings.exposure`: DayCycle and Sky, so a paused frame repeats), calibrated against
+// tidewater's metered frames at the same sun heights (DayCycle.ts).
 const ACES_EXPOSURE = 0.55;
+
+// Hill's fit of the RRT and ODT, each channel through one curve in the curve's space: `input` takes
+// linear Rec.709 there (with the curve's exposure and the white balance), `output` brings it back
+// (ToneSpace.ts toneMatrices).
+const TONE_SPACE = toneMatrices();
+const toneCurve = Fn( ( [ c, input, output ]: [ V3, THREE.Node<'mat3'>, THREE.Node<'mat3'> ] ) => {
+
+	const v = ( input.mul( c ) as unknown as V3 ).toVar();
+	const a = v.mul( v.add( 0.0245786 ) ).sub( 0.000090537 );
+	const b = v.mul( v.add( 0.4329510 ).mul( 0.983729 ) ).add( 0.238081 );
+	return clamp( output.mul( a.div( b ) ) as unknown as V3, 0, 1 );
+
+} ).setLayout( { name: 'toneCurve', type: 'vec3', inputs: [ { name: 'c', type: 'vec3' }, { name: 'input', type: 'mat3' }, { name: 'output', type: 'mat3' } ] } );
 
 export interface PipelineSettings {
 	// the scene's exposure: scene radiance (over SCENE_RADIANCE_SCALE) into the frame the grade takes
 	exposure: number;
-	// tidewater's grade: the bloom's strength, the white balance nudge (red up and blue down by it),
-	// the saturation and the contrast round mid grey, the vignette and the grain
-	bloom: number; warmth: number; saturation: number; contrast: number; vignette: number; grain: number;
+	// the white balance: the colour white becomes, in linear Rec.709 (ToneSpace.ts whiteBalance)
+	white: [ number, number, number ];
+	// tidewater's grade: the bloom's strength, the saturation and the contrast round mid grey, the
+	// vignette and the grain
+	bloom: number; saturation: number; contrast: number; vignette: number; grain: number;
 	// the light's tone over tidewater's grade (0 none, 1 full): lights a touch golden, the shade a
 	// touch teal, the contrast round mid grey softer and the bloom a little stronger
 	tone: number;
@@ -385,10 +404,14 @@ const NIGHT_TINT = ( () => {
 
 } )();
 
-/** tidewater's grade (PostFX.js `PostParams`). */
-export const TIDEWATER_GRADE: Readonly<Pick<PipelineSettings, 'bloom' | 'warmth' | 'saturation' | 'contrast' | 'vignette' | 'grain'>> = {
-	bloom: 0.05, warmth: 0.02, saturation: 1.06, contrast: 1.04, vignette: 0.28, grain: 0.012,
+/** tidewater's grade (PostFX.js `PostParams`, its warmth now the white balance's default). */
+export const TIDEWATER_GRADE: Readonly<Pick<PipelineSettings, 'bloom' | 'saturation' | 'contrast' | 'vignette' | 'grain'>> = {
+	bloom: 0.05, saturation: 1.06, contrast: 1.04, vignette: 0.28, grain: 0.012,
 };
+// The white balance's default: tidewater's warmth (red up and blue down by 0.02), as the colour
+// white becomes. Its matrix takes white to ( 1.017, 0.997, 0.977 ), about tidewater's nudge at the
+// luminance kept.
+const WHITE: readonly [ number, number, number ] = [ 1.02, 1, 0.98 ];
 
 export class Pipeline {
 
@@ -396,7 +419,7 @@ export class Pipeline {
 	width = 1;
 	height = 1;
 	settings: PipelineSettings = {
-		exposure: DAY_EXPOSURE, ...TIDEWATER_GRADE, tone: TONE, night: 0, low: 0,
+		exposure: DAY_EXPOSURE, white: [ ...WHITE ], ...TIDEWATER_GRADE, tone: TONE, night: 0, low: 0,
 	};
 
 	// The canvas's size; larger than width x height while the frame is upscaled.
@@ -472,10 +495,14 @@ export class Pipeline {
 	private displayQuad: THREE.QuadMesh;
 	// tidewater's physical bloom (PhysicalBloom.ts)
 	private bloom!: PhysicalBloom;
+	// the white the tone curve's input matrix was last built for
+	private toneWhite = [ NaN, NaN, NaN ];
 	private u = {
 		// the scene's exposure (scene radiance into the frame the grade takes) and tidewater's grade
-		exposure: uniform( 1 ), bloom: uniform( TIDEWATER_GRADE.bloom ), warmth: uniform( 0 ), saturation: uniform( 1 ), contrast: uniform( 1 ), tone: uniform( 0 ), night: uniform( 0 ), low: uniform( 0 ),
+		exposure: uniform( 1 ), bloom: uniform( TIDEWATER_GRADE.bloom ), saturation: uniform( 1 ), contrast: uniform( 1 ), tone: uniform( 0 ), night: uniform( 0 ), low: uniform( 0 ),
 		vignette: uniform( 0.3 ), grain: uniform( 0.01 ), time: uniform( 0 ),
+		// the tone curve's input matrix (its exposure and the white balance in it) and output matrix
+		toneIn: uniform( new THREE.Matrix3() ), toneOut: uniform( TONE_SPACE.output ),
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
 		projInv: uniform( new THREE.Matrix4() ), cameraWorld: uniform( new THREE.Matrix4() ),
 		proj: uniform( new THREE.Matrix4() ), view: uniform( new THREE.Matrix4() ),
@@ -865,7 +892,7 @@ export class Pipeline {
 		const vignetteAt = ( _size: THREE.UniformNode<'vec2', THREE.Vector2> ) => float( 1 ).sub( smoothstep( 0.25, 0.75, length( uv().sub( 0.5 ).mul( vec2( 1, 0.8 ) ) ) ).mul( u.vignette ) );
 		const grade = ( lin: V3, vignette: boolean, encode: boolean ): V3 => {
 
-			const c = lin.mul( u.exposure ).mul( vec3( u.warmth.add( 1 ), 1, float( 1 ).sub( u.warmth ) ) ).toVar();
+			const c = lin.mul( u.exposure ).toVar();
 			c.assign( mix( vec3( luminance( c ) ), c, u.saturation ) );
 			// the night's grade (NIGHT): the greens turned toward blue-green, a silver-blue tint
 			If( u.night.greaterThan( 0.001 ), () => {
@@ -882,7 +909,7 @@ export class Pipeline {
 			c.mulAssign( mix( vec3( 1 ), vec3( LOW_SUN_WARM ), u.low.mul( smoothstep( LOW_SUN.from, LOW_SUN.to, luminance( c ) ) ) ) );
 			c.assign( pow( max( c, vec3( 0 ) ).div( 0.18 ), vec3( u.contrast.mul( float( 1 ).sub( u.tone.mul( 0.2 ) ) ) ) ).mul( 0.18 ) );
 			if ( vignette ) c.mulAssign( vignetteAt( FSR3 ? canvasSize : renderSize ) );
-			const t = ( acesFilmicToneMapping( c, float( ACES_EXPOSURE ) ) as V3 ).toVar();
+			const t = ( toneCurve( c, u.toneIn, u.toneOut ) as V3 ).toVar();
 			return encode ? sRGBTransferOETF( t ) as V3 : t;
 
 		};
@@ -1732,9 +1759,16 @@ export class Pipeline {
 		const S = this.settings;
 		const u = this.u;
 		u.exposure.value = S.exposure * EXPOSURE_GAIN.day * ( EXPOSURE_GAIN.night / EXPOSURE_GAIN.day ) ** S.night / SCENE_RADIANCE_SCALE;
-		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + S.night * NIGHT.bloom ); u.tone.value = S.tone; u.night.value = S.night; u.low.value = S.low; u.warmth.value = S.warmth; u.saturation.value = S.saturation; u.contrast.value = S.contrast;
+		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + S.night * NIGHT.bloom ); u.tone.value = S.tone; u.night.value = S.night; u.low.value = S.low; u.saturation.value = S.saturation; u.contrast.value = S.contrast;
 		u.vignette.value = S.vignette; u.grain.value = S.grain; u.time.value = time;
 		u.grainOn.value = this.upscaling ? 0 : 1;
+		const [ r, g, b ] = S.white;
+		if ( r !== this.toneWhite[ 0 ] || g !== this.toneWhite[ 1 ] || b !== this.toneWhite[ 2 ] ) {
+
+			this.toneWhite = [ r, g, b ];
+			u.toneIn.value.copy( TONE_SPACE.input ).multiply( whiteBalance( S.white ) ).multiplyScalar( ACES_EXPOSURE / 0.6 );
+
+		}
 
 	}
 
