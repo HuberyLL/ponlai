@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, texture, textureLoad, uniform, uv, screenCoordinate, ivec2, int, vec2, vec3, vec4, float, mix,
 	smoothstep, clamp, max, min, dot, length, sin, log2, exp2, floor, luminance,
-	sRGBTransferOETF, fract, pow, mrt, outputStruct, mat4, output, atan, cos, abs, select, mod, step, Discard,
+	sRGBTransferOETF, sRGBTransferEOTF, fract, pow, mrt, outputStruct, mat4, output, atan, cos, abs, select, mod, step, Discard,
 	Loop, normalize, refract,
 } from 'three/tsl';
 import { fsr1 } from 'three/addons/tsl/display/FSR1Node.js';
@@ -33,6 +33,7 @@ import type { Rain } from '../weather/Rain.ts';
 import { CLIP_MARGIN, RefractionView, REFRACTION_GUARD, REFRACTION_SIZE } from '../ocean/Refraction.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { toneMatrices, whiteBalance } from './ToneSpace.ts';
+import { lutNodes, sampleLut } from './GradeLut.ts';
 
 // Frame graph:
 //   opaque scene ── sceneRT (MSAA, SCENE_SAMPLES, half float, multisampled depth)
@@ -320,6 +321,8 @@ export interface PipelineSettings {
 	exposure: number;
 	// the white balance: the colour white becomes, in linear Rec.709 (ToneSpace.ts whiteBalance)
 	white: [ number, number, number ];
+	// the grade's two tables (GradeLut.ts, `Pipeline.luts`): 0 the first, 1 the second
+	lut: number;
 	// tidewater's grade: the bloom's strength, the saturation and the contrast round mid grey, the
 	// vignette and the grain
 	bloom: number; saturation: number; contrast: number; vignette: number; grain: number;
@@ -419,7 +422,7 @@ export class Pipeline {
 	width = 1;
 	height = 1;
 	settings: PipelineSettings = {
-		exposure: DAY_EXPOSURE, white: [ ...WHITE ], ...TIDEWATER_GRADE, tone: TONE, night: 0, low: 0,
+		exposure: DAY_EXPOSURE, white: [ ...WHITE ], lut: 0, ...TIDEWATER_GRADE, tone: TONE, night: 0, low: 0,
 	};
 
 	// The canvas's size; larger than width x height while the frame is upscaled.
@@ -495,6 +498,9 @@ export class Pipeline {
 	private displayQuad: THREE.QuadMesh;
 	// tidewater's physical bloom (PhysicalBloom.ts)
 	private bloom!: PhysicalBloom;
+	/** The grade's two tables' base nodes (GradeLut.ts): a table of LUT_SIZE^3 set as a node's
+	 * `value` replaces it; `settings.lut` blends from the first to the second. */
+	readonly luts = lutNodes();
 	// the white the tone curve's input matrix was last built for
 	private toneWhite = [ NaN, NaN, NaN ];
 	private u = {
@@ -503,6 +509,8 @@ export class Pipeline {
 		vignette: uniform( 0.3 ), grain: uniform( 0.01 ), time: uniform( 0 ),
 		// the tone curve's input matrix (its exposure and the white balance in it) and output matrix
 		toneIn: uniform( new THREE.Matrix3() ), toneOut: uniform( TONE_SPACE.output ),
+		// the blend toward the grade's second table
+		lut: uniform( 0 ),
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
 		projInv: uniform( new THREE.Matrix4() ), cameraWorld: uniform( new THREE.Matrix4() ),
 		proj: uniform( new THREE.Matrix4() ), view: uniform( new THREE.Matrix4() ),
@@ -910,7 +918,10 @@ export class Pipeline {
 			c.assign( pow( max( c, vec3( 0 ) ).div( 0.18 ), vec3( u.contrast.mul( float( 1 ).sub( u.tone.mul( 0.2 ) ) ) ) ).mul( 0.18 ) );
 			if ( vignette ) c.mulAssign( vignetteAt( FSR3 ? canvasSize : renderSize ) );
 			const t = ( toneCurve( c, u.toneIn, u.toneOut ) as V3 ).toVar();
-			return encode ? sRGBTransferOETF( t ) as V3 : t;
+			// the grade's tables, in display values (GradeLut.ts)
+			const shown = ( sRGBTransferOETF( t ) as V3 ).toVar();
+			const looked = mix( sampleLut( this.luts[ 0 ], shown ), sampleLut( this.luts[ 1 ], shown ), u.lut ).toVar();
+			return encode ? looked : sRGBTransferEOTF( looked ) as V3;
 
 		};
 		// tidewater's grain (luminance weighted, triangular, new with every step of the scene clock)
@@ -1759,7 +1770,7 @@ export class Pipeline {
 		const S = this.settings;
 		const u = this.u;
 		u.exposure.value = S.exposure * EXPOSURE_GAIN.day * ( EXPOSURE_GAIN.night / EXPOSURE_GAIN.day ) ** S.night / SCENE_RADIANCE_SCALE;
-		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + S.night * NIGHT.bloom ); u.tone.value = S.tone; u.night.value = S.night; u.low.value = S.low; u.saturation.value = S.saturation; u.contrast.value = S.contrast;
+		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + S.night * NIGHT.bloom ); u.tone.value = S.tone; u.night.value = S.night; u.low.value = S.low; u.lut.value = S.lut; u.saturation.value = S.saturation; u.contrast.value = S.contrast;
 		u.vignette.value = S.vignette; u.grain.value = S.grain; u.time.value = time;
 		u.grainOn.value = this.upscaling ? 0 : 1;
 		const [ r, g, b ] = S.white;
