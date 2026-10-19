@@ -4,6 +4,11 @@ The look the user chose and what to avoid. It says what the scene must look like
 gets there: each module's header comment holds its own rules and reasons. Change this file when an
 art decision changes; reference images stay out of the repository.
 
+## Inspiration
+
+- The look is inspired by the eastern aesthetic of Ghost of Tsushima: its light, its colour and
+  its fields of grass and flowers.
+
 ## The look
 
 - A small island in an open sea, a visual sample for a game, fantasy-realistic: the fantasy lives
