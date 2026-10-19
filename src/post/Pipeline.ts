@@ -34,6 +34,7 @@ import { CLIP_MARGIN, RefractionView, REFRACTION_GUARD, REFRACTION_SIZE } from '
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { toneMatrices, whiteBalance } from './ToneSpace.ts';
 import { lutNodes, sampleLut } from './GradeLut.ts';
+import { LocalTone } from './LocalTone.ts';
 
 // Frame graph:
 //   opaque scene ── sceneRT (MSAA, SCENE_SAMPLES, half float, multisampled depth)
@@ -63,9 +64,11 @@ import { lutNodes, sampleLut } from './GradeLut.ts';
 //   bloom: tidewater's physical bloom from hdr (PhysicalBloom.ts: five 13-tap downsamples, four tent
 //   upsamples)
 //   sharp (hdr + the bloom at its strength)
-//   display: the exposure, tidewater's grade (saturation, the night's grade, the tone, contrast
-//   round mid grey, the vignette), the white balance and ACES in their curve space (ToneSpace.ts),
-//   sRGB, grain ── displayRT
+//   local tone: the sharp image's log luminance (localTone.luma), its bilateral grid and the grid
+//   blurred across (localTone.grid, gridX, gridXY: LocalTone.ts), at fixed sizes
+//   display: the exposure, the local tone mapping, tidewater's grade (saturation, the night's
+//   grade, the tone, contrast round mid grey, the vignette), the white balance and ACES in their
+//   curve space (ToneSpace.ts), sRGB, the grade's two tables (GradeLut.ts), grain ── displayRT
 //   ── copied to the screen
 // Under the temporal modes (Antialiasing.ts: aa=taa|taau) the scene half is single-sampled and
 // jittered, and writes the motion vectors beside the colour:
@@ -185,8 +188,10 @@ import { lutNodes, sampleLut } from './GradeLut.ts';
 //   single-sampled, that argument is a mip level, so load sample 0 only. View z below -9e4 is sky.
 // - In a full-screen pass the camera nodes are the pass's own camera: the scene camera's matrices
 //   come in as uniforms.
-// - The display chain is tidewater's (ACES_EXPOSURE): one curve and grade (the tone, TONE, and the
-//   night's grade, NIGHT, over it are off by default). The curve maps each channel in the space of
+// - The display chain is tidewater's (ACES_EXPOSURE) with Patry's (SIGGRAPH 2021) over it: the local
+//   tone mapping first (LocalTone.ts: a function of the frame, nothing kept between frames), one
+//   curve and grade (the tone, TONE, and the night's grade, NIGHT, over it are off by default), then
+//   the grade's tables (GradeLut.ts, the identity until set). The curve maps each channel in the space of
 //   ToneSpace.ts, AP1 with its red primary moved out, and the white balance is folded into its
 //   input matrix (`settings.white`, rebuilt only when it changes). The day and the night differ by
 //   the exposure, from the clock and the weather (DayCycle, Sky), calibrated against tidewater's
@@ -354,6 +359,8 @@ const TONE = Number( debugFlags.tone ?? 0 );
 // CLEAR_SHADE), and the sea and the sky with it a fifth above it. By night: day for night, about
 // two stops under the day's metered level (the night's was 2.5 at the day's gain, 1.7 under the
 // lifted shade and the film's night). `flags=exposureGain:<k>` and `nightExposureGain:<k>` at load.
+// The local tone mapping (LocalTone.ts), on unless `flags=localTone:false` at load.
+const LOCAL_TONE_ON = debugFlags.localTone !== false;
 const EXPOSURE_GAIN = { day: Number( debugFlags.exposureGain ?? 1.2 ), night: Number( debugFlags.nightExposureGain ?? 1.65 ) };
 
 // The low sun's light (art direction: a low sun's light golden, its shade blue-violet): as the sun
@@ -498,6 +505,8 @@ export class Pipeline {
 	private displayQuad: THREE.QuadMesh;
 	// tidewater's physical bloom (PhysicalBloom.ts)
 	private bloom!: PhysicalBloom;
+	// the local tone mapping (LocalTone.ts; null with `flags=localTone:false`)
+	readonly localTone: LocalTone | null = null;
 	/** The grade's two tables' base nodes (GradeLut.ts): a table of LUT_SIZE^3 set as a node's
 	 * `value` replaces it; `settings.lut` blends from the first to the second. */
 	readonly luts = lutNodes();
@@ -890,17 +899,24 @@ export class Pipeline {
 
 		// (at the pixel drawn, or at render uv `q`: the rain's layer, AfterResolve.ts)
 		const sharpAt = ( q?: V2 ): V3 => ( q ? tSharp.sample( q ) : tSharp ).rgb;
+		// the local tone mapping's grid of the sharp image (LocalTone.ts)
+		const localTone = this.localTone = LOCAL_TONE_ON ? new LocalTone( g, tSharp, u.exposure ) : null;
+		// scene radiance at screen uv `q` with the local tone mapping's change there (for the grade's
+		// table, which holds the rest of the grade)
+		const localAt = ( lin: V3, q: V2 ): V3 => localTone ? localTone.apply( lin.mul( u.exposure ), q ).div( u.exposure ) : lin;
 
 		// ---- tidewater's grade, to display values (see ACES_EXPOSURE): the scene at the exposure, the
 		// white balance nudge, saturation and contrast round mid grey in linear light, the vignette
 		// (the resolve leaves it to the canvas pass, after the accumulation), ACES and the sRGB
-		// transfer (`encode` false: the graded colour in linear light, before the transfer).
+		// transfer (`encode` false: the graded colour in linear light, before the transfer). `at`: the
+		// screen uv whose local tone mapping it takes (none for the grade's table).
 		// the vignette's factor at the pixel being drawn (tidewater's: elliptical in the frame's own
 		// uv, soft; the same into an image of any size)
 		const vignetteAt = ( _size: THREE.UniformNode<'vec2', THREE.Vector2> ) => float( 1 ).sub( smoothstep( 0.25, 0.75, length( uv().sub( 0.5 ).mul( vec2( 1, 0.8 ) ) ) ).mul( u.vignette ) );
-		const grade = ( lin: V3, vignette: boolean, encode: boolean ): V3 => {
+		const grade = ( lin: V3, vignette: boolean, encode: boolean, at?: V2 ): V3 => {
 
 			const c = lin.mul( u.exposure ).toVar();
+			if ( localTone && at ) c.assign( localTone.apply( c, at ) );
 			c.assign( mix( vec3( luminance( c ) ), c, u.saturation ) );
 			// the night's grade (NIGHT): the greens turned toward blue-green, a silver-blue tint
 			If( u.night.greaterThan( 0.001 ), () => {
@@ -948,7 +964,7 @@ export class Pipeline {
 		// pass adds.
 		const displayMat = new THREE.NodeMaterial();
 		displayMat.name = 'Post.Display';
-		displayMat.fragmentNode = Fn( () => finish( grade( sharpAt(), ! RESOLVE, ! LINEAR_DISPLAY ), FSR3 ? canvasSize : renderSize, RESOLVE ? float( 0 ) : u.grainOn ) )();
+		displayMat.fragmentNode = Fn( () => finish( grade( sharpAt(), ! RESOLVE, ! LINEAR_DISPLAY, uv() ), FSR3 ? canvasSize : renderSize, RESOLVE ? float( 0 ) : u.grainOn ) )();
 		this.displayQuad = new THREE.QuadMesh( displayMat );
 		this.displayQuad.name = 'Post.Display';
 
@@ -1107,11 +1123,12 @@ export class Pipeline {
 				} );
 				// (the change at the rain's own coverage of a sample, AFTER_COVERAGE, spread over the pixel)
 				const full = max( before.add( after.sub( before ).div( AFTER_COVERAGE ) ), vec3( 0 ) );
-				if ( table ) out.assign( vec4( gradeTable( full ).sub( gradeTable( before ) ).mul( AFTER_COVERAGE ), 1 ) );
+				const at = vec2( texel ).add( 0.5 ).div( renderSize ).toVar();
+				if ( table ) out.assign( vec4( gradeTable( localAt( full, at ) ).sub( gradeTable( localAt( before, at ) ) ).mul( AFTER_COVERAGE ), 1 ) );
 				else {
 
-					const graded = LINEAR_DISPLAY ? ( textureLoad( tAfterDisplay, texel ) as unknown as THREE.Node<'vec4'> ).rgb : grade( before, false, ! LINEAR_DISPLAY );
-					out.assign( vec4( grade( full, false, ! LINEAR_DISPLAY ).sub( graded ).mul( AFTER_COVERAGE ), 1 ) );
+					const graded = LINEAR_DISPLAY ? ( textureLoad( tAfterDisplay, texel ) as unknown as THREE.Node<'vec4'> ).rgb : grade( before, false, ! LINEAR_DISPLAY, at );
+					out.assign( vec4( grade( full, false, ! LINEAR_DISPLAY, at ).sub( graded ).mul( AFTER_COVERAGE ), 1 ) );
 
 				}
 
@@ -1371,11 +1388,13 @@ export class Pipeline {
 			return { label: hdr ? 'sharp (composite + blooms)' : 'composite (air, fog, veil)', quad: sharpQuad };
 
 		} );
-		// the grade
+		// the local tone mapping's grid (LocalTone.ts), then the grade
+		const toneGrid = this.localTone ? this.localTone.passes( g, ( b ) => b.read( sharp ) ) : null;
 		const displayQuad = this.displayQuad;
 		g.addPass( 'display', 'quad', ( b ) => {
 
 			b.read( sharp );
+			if ( toneGrid ) b.read( toneGrid );
 			display = b.write( display );
 			return { label: 'grade', quad: displayQuad };
 
@@ -1442,6 +1461,7 @@ export class Pipeline {
 
 					b.read( surfaceDepth );
 					b.read( display );
+					if ( toneGrid ) b.read( toneGrid );
 					b.readOptional( rainInput );
 					if ( rainBehind ) b.readOptional( rainBehind );
 					b.readOptional( rainOverlay! );
@@ -1449,7 +1469,7 @@ export class Pipeline {
 					return { label: 'rain layer', when: ( f ) => this.layerRuns( f ) && ! this.afterHeld() && ! temporal.drawsLayer, whenLabel: 'rain || spray, not held, not inline', quad: layerQuad };
 
 				} );
-				return { optional: [ rainLayer, rainOverlay!, rainInput, ...( rainBehind ? [ rainBehind ] : [] ), rainGrade ], required: [ surfaceDepth, display ] };
+				return { optional: [ rainLayer, rainOverlay!, rainInput, ...( rainBehind ? [ rainBehind ] : [] ), rainGrade ], required: [ surfaceDepth, display, ...( toneGrid ? [ toneGrid ] : [] ) ] };
 
 			} : undefined;
 			this.temporal.declare( { display, velocity: velocity!, surfaceDepth, surfaceDepthPrev: surfaceDepthPrev!, veilReactive, canvas, after } );
