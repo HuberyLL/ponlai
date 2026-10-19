@@ -117,7 +117,7 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   covered (alpha to coverage drew its sample patterns as a grid of dots along the blades). Close
 //   up blades render unchanged. Single-sampled (`msaa=1`) blades stay one pixel wide.
 // - Each tuft draws fewer blades the farther it stands from the view camera: on high 24 of its 48
-//   within 20 m, easing to 12 at 40 m and to 6 at 70 m (GrassQuality, Quality.ts), and beyond that
+//   within 5 m, easing to 18 at 10 m, 12 at 40 m and 6 at 70 m (GrassQuality, Quality.ts), and beyond that
 //   as vegetation/Lod.ts's rule has it, by ( 70 m / distance )^2 (2 at about 120 m), never
 //   fewer than two (LEAST_BLADES). A dropped blade narrows to nothing over a short distance of its
 //   own, and the kept ones widen and cover for it (`tuftLod`, `pixelWideBlade`), so density and
@@ -609,12 +609,12 @@ class FlowerSwaths {
  * when the grass is planted and built (set them before `plantGrass`); the defaults are the high tier's. */
 export interface GrassQuality {
 	/** Lawn blades drawn per tuft (of 48) at the camera distances `bladeBands`: the first count up
-	 * to the first distance, easing linearly to the second count at the second distance and to the
-	 * third at the third, and the third beyond (see `tuftLod`). The counts change the cost only:
-	 * the kept blades cover for the rest at every count. */
-	lawnBlades: [ number, number, number ];
-	/** Camera distances (m) from a tuft where its blade counts `lawnBlades` apply. */
-	bladeBands: [ number, number, number ];
+	 * to the first distance, easing linearly to each next count at each next distance, and the last
+	 * beyond (see `tuftLod`). The counts change the cost only: the kept blades cover for the rest
+	 * at every count where they are a few pixels wide (`pixelWideBlade`). */
+	lawnBlades: [ number, number, number, number ];
+	/** Camera distances (m) from a tuft where its blade counts `lawnBlades` apply, increasing. */
+	bladeBands: [ number, number, number, number ];
 	/** Whether the extra tufts of thick patches exist at all. */
 	thinTufts: boolean;
 	/** Camera distances (m) over which the extra tufts fold into their roots; past the second the
@@ -627,7 +627,7 @@ export interface GrassQuality {
 	 * temporal modes; 4x multisampling keeps 2 and one sample outside them 1. */
 	minWidth: number;
 }
-const grassQuality: GrassQuality = { lawnBlades: [ 24, 12, 6 ], bladeBands: [ 20, 40, 70 ], thinTufts: true, thinFold: [ 1e4, 1e4 + 12 ], canopyPerVertex: false, minWidth: 0 };
+const grassQuality: GrassQuality = { lawnBlades: [ 24, 18, 12, 6 ], bladeBands: [ 5, 10, 40, 70 ], thinTufts: true, thinFold: [ 1e4, 1e4 + 12 ], canopyPerVertex: false, minWidth: 0 };
 
 export function setGrassQuality( quality: Partial<GrassQuality> ): void {
 
@@ -814,7 +814,7 @@ const tuftFloor = uniform( 0 ).onObjectUpdate( ( { object } ) => ( object as THR
 const bladeVerts = uniform( 6, 'uint' ).onObjectUpdate( ( { object } ) => ( object as THREE.Mesh | undefined )?.geometry?.userData.grassBladeVerts ?? 6 );
 // The blade-count curve (`GrassQuality.lawnBlades` over `bladeBands`), the counts as shares of
 // the lawn's 16; set by `buildGrass`.
-const lodUniforms = { bands: uniform( new THREE.Vector3( 25, 45, 70 ) ), shares: uniform( new THREE.Vector3( 1, 0.5, 0.25 ) ) };
+const lodUniforms = { bands: uniform( new THREE.Vector4( 5, 10, 40, 70 ) ), shares: uniform( new THREE.Vector4( 0.5, 0.375, 0.25, 0.125 ) ) };
 // Beyond the curve's last distance a tuft keeps its last count times vegetation/Lod.ts's share by
 // distance, but never fewer than this many blades: one widened blade, even drawn as strips, read
 // at the island view as long parallel streaks where the four blades showed a fine grain; two keep
@@ -838,10 +838,10 @@ const cullLod = {
  * tuft. */
 function bladeShare( distance: number, floor: number ): number {
 
-	const [ b0, b1, b2 ] = grassQuality.bladeBands, [ c0, c1, c2 ] = grassQuality.lawnBlades;
+	const [ b0, b1, b2, b3 ] = grassQuality.bladeBands, [ c0, c1, c2, c3 ] = grassQuality.lawnBlades;
 	const s = ( x: number ) => Math.min( Math.max( x, 0 ), 1 );
-	const near = ( c0 + ( c1 - c0 ) * s( ( distance - b0 ) / ( b1 - b0 ) ) + ( c2 - c1 ) * s( ( distance - b1 ) / ( b2 - b1 ) ) ) / LAWN.blades;
-	return Math.max( near * screenShare( distance, b2 ), floor, LEAST_BLADES / LAWN.blades );
+	const near = ( c0 + ( c1 - c0 ) * s( ( distance - b0 ) / ( b1 - b0 ) ) + ( c2 - c1 ) * s( ( distance - b1 ) / ( b2 - b1 ) ) + ( c3 - c2 ) * s( ( distance - b2 ) / ( b3 - b2 ) ) ) / LAWN.blades;
+	return Math.max( near * screenShare( distance, b3 ), floor, LEAST_BLADES / LAWN.blades );
 
 }
 
@@ -880,10 +880,11 @@ function bladeCount( origin: V3, camera: V3, blades: F, floor: F, on: F ): F {
 	const d = length( camera.sub( origin ) ).mul( float( 1 ).sub( stagger.mul( LOD_STAGGER ) ) );
 	const { bands, shares } = lodUniforms;
 	const share = mix( shares.x, shares.y, clamp( d.sub( bands.x ).div( bands.y.sub( bands.x ) ), 0, 1 ) )
-		.add( shares.z.sub( shares.y ).mul( clamp( d.sub( bands.y ).div( bands.z.sub( bands.y ) ), 0, 1 ) ) );
+		.add( shares.z.sub( shares.y ).mul( clamp( d.sub( bands.y ).div( bands.z.sub( bands.y ) ), 0, 1 ) ) )
+		.add( shares.w.sub( shares.z ).mul( clamp( d.sub( bands.z ).div( bands.w.sub( bands.z ) ), 0, 1 ) ) );
 	// (the share by distance is exactly 1 within the last band and the least count under the
 	// curve's there, so a tuft within 70 m keeps the count it had to the bit)
-	const far = share.mul( screenShareNode( d, bands.z ) );
+	const far = share.mul( screenShareNode( d, bands.w ) );
 	return mix( blades, blades.mul( max( far, max( floor, float( LEAST_BLADES ).div( blades ) ) ) ), on );
 
 }
@@ -1209,11 +1210,11 @@ const SWARD_FALLBACK = TALL_DENSE * ( 1 - SHORT_STAY );
  * and the sky's light left at the root under the full shade (`key`, `sky`), the share of its colour
  * the deepest sward darkens (`darkening`: times the sward's depth there, the field of
  * SwardField.ts), the tall sward's mean depth (`tall`: the full shade from it up), the shade left
- * under the shortest turf (`open`) and the blade-count curve's distances (`bands`, a uniform: the
- * litter fades out where the tufts thin). */
+ * under the shortest turf (`open`) and the camera distances (m) over which the litter between the
+ * roots fades out (`litter`, a uniform: from 20 m the blades are under a pixel wide and widen). */
 export const GRASS_ROOTS = {
 	colour: [ ROOT.x * PALETTE_GAIN[ 0 ], ROOT.y * PALETTE_GAIN[ 0 ], ROOT.z * PALETTE_GAIN[ 0 ] ],
-	key: ROOT_KEY, sky: ROOT_SKY, bands: lodUniforms.bands,
+	key: ROOT_KEY, sky: ROOT_SKY, litter: uniform( new THREE.Vector2( 20, 40 ) ),
 	darkening: 1 - ROOT_DARK, tall: TALL_DENSE, open: OPEN,
 };
 const TRANSLUCENT_FORWARD = 1, FORWARD_POWER = 3;

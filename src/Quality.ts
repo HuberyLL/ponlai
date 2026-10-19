@@ -223,18 +223,23 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { fogScale: 0.5, fogSteps: 12, bankSize: 2048 },
 		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH },
-		// 24 of each tuft's 48 blades within 20 m, the kept ones twice as wide (they widen to keep the
+		// 24 of each tuft's 48 blades within 5 m, the kept ones twice as wide (they widen to keep the
 		// cover), at least 1.5 pixels wide under MSAA (Grass.ts `grassUniforms`): at 45 m a blade draws
 		// about two thirds as wide as 16 blades did, with the same flicker relative to the many-sample
 		// reference (about 1.8 times its own) and a fifth more error against it; 32 and 48 blades,
 		// thinner still, grained more (48: nearly half again 16's error). Farther off fewer, the
-		// blades thinned by distance: 12 at 40 m and 6 at 70 m. All 24 at every
+		// blades thinned by distance: 18 at 10 m, 12 at 40 m and 6 at 70 m. The
+		// game camera's near end (24 m) sees its meadow from about 12 to 35 m, where the blades are a
+		// few pixels wide and the kept ones widen for the rest: 18 there rather than 24 drew it 0.45 ms
+		// faster with its mean brightness within 0.3 % (its cost there follows its vertices, not its
+		// pixels: a vertex stage that computed nothing cost about half the full one). Within 5 m the
+		// blades are too wide on screen to widen, and 18 thinned a close view's foreground. All 24 at every
 		// distance drew about 225 thousand blades twice a frame (the depth prepass and the colour
 		// pass) at the island view, and its vertex stage cost 4.2 ms there (as much at native 4K);
 		// these counts drew it in 2.3 ms with the meadow's mean brightness unchanged (within 1 % at
 		// 45 m and 110 m) and less flicker in a gust (a fifth less at 45 m). The extra tufts never
 		// fold: folding them past 25 - 37 m darkened the lawn there by 4 - 5 %, its cover lost.
-		grass: { lawnBlades: [ 24, 12, 6 ], bladeBands: [ 20, 40, 70 ], thinTufts: true, thinFold: [ 1e4, 1e4 + 12 ], canopyPerVertex: false, minWidth: 0 },
+		grass: { lawnBlades: [ 24, 18, 12, 6 ], bladeBands: [ 5, 10, 40, 70 ], thinTufts: true, thinFold: [ 1e4, 1e4 + 12 ], canopyPerVertex: false, minWidth: 0 },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 512,
 		frameRate: 60,
@@ -255,7 +260,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { fogScale: 0.5, fogSteps: 8, bankSize: 2048 },
 		shadow: { surface: PCSS_LIGHT, vegetation: BILINEAR },
-		grass: { lawnBlades: [ 12, 8, 4 ], bladeBands: [ 25, 45, 70 ], thinTufts: false, thinFold: [ 1e4, 1e4 + 12 ], canopyPerVertex: true, minWidth: 2 },
+		grass: { lawnBlades: [ 12, 12, 8, 4 ], bladeBands: [ 20, 25, 45, 70 ], thinTufts: false, thinFold: [ 1e4, 1e4 + 12 ], canopyPerVertex: true, minWidth: 2 },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 256,
 		frameRate: 60,
@@ -276,7 +281,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { fogScale: 0.25, fogSteps: 8, bankSize: 1024 },
 		shadow: { surface: BILINEAR, vegetation: BILINEAR },
-		grass: { lawnBlades: [ 8, 8, 4 ], bladeBands: [ 25, 45, 70 ], thinTufts: false, thinFold: [ 1e4, 1e4 + 12 ], canopyPerVertex: true, minWidth: 2 },
+		grass: { lawnBlades: [ 8, 8, 8, 4 ], bladeBands: [ 20, 25, 45, 70 ], thinTufts: false, thinFold: [ 1e4, 1e4 + 12 ], canopyPerVertex: true, minWidth: 2 },
 		rainShading: { veilShells: 2, rippleLayers: 1 },
 		environmentSource: 256,
 		// light enough to render on most refreshes of a fast display: held to 60 Hz there, its
@@ -301,7 +306,7 @@ export function isQualityTier( value: unknown ): value is QualityTier {
 }
 
 /** The tier's profile with `?tier.<knob path>=<value>` options over it, for A/B captures of one
- * knob (`tier.post.fogScale=0.5`, `tier.water.ssrRays=2`, `tier.grass.lawnBlades=16,8,4`,
+ * knob (`tier.post.fogScale=0.5`, `tier.water.ssrRays=2`, `tier.grass.lawnBlades=24,16,8,4`,
  * `tier.shadow.surface.soft=false`). A path
  * must name an existing knob; numbers, booleans and comma lists are parsed. */
 export function qualityProfile( tier: QualityTier, search = location.search ): QualityProfile {
