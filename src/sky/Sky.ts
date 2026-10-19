@@ -336,7 +336,9 @@ export class Sky {
 	private viewHeight = 1;
 	private cloudTime = 0;
 	solarIlluminance = new THREE.Color();
-	readonly grade = { exposure: DAY_EXPOSURE, daylight: 1 };
+	// (`deck`: how closed the cloud deck is, less in rain: the metered exposure's weather term,
+	// post/Exposure.ts)
+	readonly grade = { exposure: DAY_EXPOSURE, daylight: 1, deck: 0 };
 	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
 	skyIrradiance = new THREE.Color(); // E / PI over the upper hemisphere
 	seaColor = new THREE.Color( 0.0045, 0.0125, 0.0140 );
@@ -746,6 +748,20 @@ export class Sky {
 
 	}
 
+	/** The sky's irradiance over pi as lent to the island (`islandIrradianceNode`) on the CPU, from
+	 * `skyIrradiance` (exact after an explicit bake, a diagnostic during a running cycle). */
+	islandSkyIrradiance( target = new THREE.Color() ): THREE.Color {
+
+		const light = this.skyIrradiance, tint = this.islandTint.value, gain = this.islandGain.value;
+		const l = 0.2126 * light.r + 0.7152 * light.g + 0.0722 * light.b;
+		return target.setRGB(
+			( light.r + ( tint.x * l - light.r ) * tint.w ) * gain,
+			( light.g + ( tint.y * l - light.g ) * tint.w ) * gain,
+			( light.b + ( tint.z * l - light.b ) * tint.w ) * gain,
+		);
+
+	}
+
 	/** Evaluate the sun, moon, key light, stars, grade and displayed weather for this frame.
 	 * Everything that moves with the clock is continuous here; bakes only capture this state. */
 	track( celestial: DayCycleSnapshot | null, weather: Readonly<WeatherState> | null, coverageOverride: number | null = null, front: WeatherFront | null = null ): void {
@@ -822,11 +838,13 @@ export class Sky {
 		const overcast = weather ? THREE.MathUtils.smoothstep( coverage, 0.65, 0.98 ) : 0;
 		const ambientGain = weather?.ambientGain ?? 1;
 		const directVisibility = weather?.directVisibility ?? 1;
-		// Adapt to the dimmer diffuse daylight under a closed deck, as tidewater's auto exposure
-		// would: it lifts a frame darker than its target only partly (by the ratio's 0.8th power), so
-		// an overcast island view meters about three quarters of a clear one's (4.7 times the
-		// exposure); less so in rain, which should read as heavy.
+		// The reference exposure (the frame's is metered from the light: post/Exposure.ts) adapts to
+		// the dimmer diffuse daylight under a closed deck, as tidewater's auto exposure would: it lifts
+		// a frame darker than its target only partly (by the ratio's 0.8th power), so an overcast
+		// island view meters about three quarters of a clear one's (4.7 times the exposure); less so
+		// in rain, which should read as heavy.
 		this.grade.exposure *= 1 + 3.7 * overcast * this.grade.daylight * ( 1 - 0.7 * ( weather?.rain ?? 0 ) );
+		this.grade.deck = overcast * ( 1 - 0.7 * ( weather?.rain ?? 0 ) );
 		// After dark a closed deck hides the moon and stars; the eye adapts further so a rainy
 		// dusk or night stays readable, still darker than a clear moonlit night.
 		this.grade.exposure *= 1 + overcast * ( celestial?.overcastAdaptation ?? 0 );

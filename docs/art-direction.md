@@ -18,10 +18,15 @@ art decision changes; reference images stay out of the repository.
   chiselled stone, a lush meadow with wildflowers, and grass hanging over the rim. Keep the lower
   cliff stone exposed.
 - The light and the image are photographic, as real as tidewater's (its water, its light under
-  the water, its display chain): the scene is lit by the sun or moon, the sky and the sunlight the
-  ground bounces up, and the frame takes a filmic curve (ACES), tidewater's light grade (a slight
-  warm white balance, a touch more saturation and contrast, a vignette, film grain) and a faint
-  physical bloom over the whole image.
+  the water): the scene is lit by the sun or moon, the sky and the sunlight the ground bounces up.
+  The frame is developed in stages: a local tone mapping keeps a bright
+  sea, glare or sky from burning out and greying while the land keeps its level (the brights drawn
+  a quarter toward mid grey, the shade left as it is, the detail kept); a filmic curve (ACES)
+  whose working space keeps a low sun's reds from turning yellow; a white balance given as the
+  colour white becomes (for now tidewater's slight warmth); tidewater's touch more saturation and
+  contrast, a vignette and film grain; a faint physical bloom over the whole image; and two grade
+  tables that a look can blend between by time of day or place (both the identity until our own
+  grades are made).
 - The light keeps the sun's and the sky's own balance, by day and by night, so that the land shows
   where the light comes from: a clump of grass, a stone or a figure has a lit side and a shaded
   one, and its shade falls on what lies beside it. Nothing lifts the shade toward the light: an
@@ -34,10 +39,12 @@ art decision changes; reference images stay out of the repository.
 - No thick haze or fog laid evenly over the frame for an airy feel: it reads as smog. Mist, if
   any, gathers in bright banks round the island and the cliff's foot.
 - Real phenomena are not exaggerated; no hue turns, no glow round every highlight.
-- The exposure follows the time of day and the weather, calibrated against tidewater's frames at
-  the same sun elevation, then raised by a gain: 1.2 by day (the meadow, darker without its
-  lifted shade and translucent floor, back at tidewater's metered level) and 1.65 by night (about
-  two stops under the day, as a film's day for night exposes it); a sun in the frame
+- The exposure is metered from the light the island receives (the sun or the moon and the sky),
+  not from the frame, so a dark meadow or sea is not brightened toward grey; a compensation by
+  the scene's brightness, by day and by night, sets each scene's look. It keeps the levels the
+  earlier exposure by the time of day gave, calibrated against tidewater's frames: a clear noon
+  shows a grey card two stops over mid grey, the night sits about two stops under the day (as a
+  film's day for night exposes it) and holds its exposure whatever the moon. A sun in the frame
   may read a little brighter than its eye-adapting exposure would show it. Overcast stays about
   three quarters of the same view's clear day. The night keeps the moonlit island readable (see
   Night).
