@@ -116,9 +116,9 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   solid as far up as its coverage stays above its own hash. No pixel of a blade is partly
 //   covered (alpha to coverage drew its sample patterns as a grid of dots along the blades). Close
 //   up blades render unchanged. Single-sampled (`msaa=1`) blades stay one pixel wide.
-// - Each tuft draws fewer blades the farther it stands from the view camera: on high every one of
-//   its 16 within 25 m, easing to 8 at 45 m and to 4 at 70 m (GrassQuality), and beyond that as
-//   vegetation/Lod.ts's rule has it, by ( 70 m / distance )^2 (2 at about 100 m), never
+// - Each tuft draws fewer blades the farther it stands from the view camera: on high 24 of its 48
+//   within 20 m, easing to 12 at 40 m and to 6 at 70 m (GrassQuality, Quality.ts), and beyond that
+//   as vegetation/Lod.ts's rule has it, by ( 70 m / distance )^2 (2 at about 120 m), never
 //   fewer than two (LEAST_BLADES). A dropped blade narrows to nothing over a short distance of its
 //   own, and the kept ones widen and cover for it (`tuftLod`, `pixelWideBlade`), so density and
 //   brightness hold. The island view sees its whole meadow from 120 to 200 m: it drew 4 blades a
@@ -608,15 +608,18 @@ class FlowerSwaths {
 /** The meadow's cost knobs for a quality tier. They shape the meshes and shaders, so they apply
  * when the grass is planted and built (set them before `plantGrass`); the defaults are the high tier's. */
 export interface GrassQuality {
-	/** Lawn blades drawn per tuft (of 16) at the camera distances `bladeBands`: the first count up
+	/** Lawn blades drawn per tuft (of 48) at the camera distances `bladeBands`: the first count up
 	 * to the first distance, easing linearly to the second count at the second distance and to the
 	 * third at the third, and the third beyond (see `tuftLod`). The counts change the cost only:
 	 * the kept blades cover for the rest at every count. */
 	lawnBlades: [ number, number, number ];
 	/** Camera distances (m) from a tuft where its blade counts `lawnBlades` apply. */
 	bladeBands: [ number, number, number ];
-	/** Whether the extra tufts of thick patches exist at all (they fold away beyond 42 m). */
+	/** Whether the extra tufts of thick patches exist at all. */
 	thinTufts: boolean;
+	/** Camera distances (m) over which the extra tufts fold into their roots; past the second the
+	 * cull drops them (1e4: never). */
+	thinFold: [ number, number ];
 	/** Light through the canopy per vertex instead of per pixel: the dapple inside a blade is
 	 * lost close up, so it suits the lower tiers only. */
 	canopyPerVertex: boolean;
@@ -624,7 +627,7 @@ export interface GrassQuality {
 	 * temporal modes; 4x multisampling keeps 2 and one sample outside them 1. */
 	minWidth: number;
 }
-const grassQuality: GrassQuality = { lawnBlades: [ 16, 8, 4 ], bladeBands: [ 25, 45, 70 ], thinTufts: true, canopyPerVertex: false, minWidth: 2 };
+const grassQuality: GrassQuality = { lawnBlades: [ 24, 12, 6 ], bladeBands: [ 20, 40, 70 ], thinTufts: true, thinFold: [ 1e4, 1e4 + 12 ], canopyPerVertex: false, minWidth: 0 };
 
 export function setGrassQuality( quality: Partial<GrassQuality> ): void {
 
@@ -2385,6 +2388,8 @@ export function buildGrass( { lawn, lawnThin, lawnFlower, sward }: GrassTufts, s
 	grassUniforms.rimMinWidth.value = Math.min( RIM_MIN_WIDTH, grassUniforms.minWidth.value );
 	lodUniforms.bands.value.fromArray( grassQuality.bladeBands );
 	lodUniforms.shares.value.fromArray( grassQuality.lawnBlades ).divideScalar( LAWN.blades );
+	grassUniforms.thinNear.value = grassQuality.thinFold[ 0 ];
+	grassUniforms.thinFar.value = grassQuality.thinFold[ 1 ];
 	const group = new THREE.Group();
 	group.name = 'grass';
 	const lawnGeometry = tuftGeometry( LAWN, 3 );
