@@ -223,12 +223,18 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { fogScale: 0.5, fogSteps: 12, bankSize: 2048 },
 		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH },
-		// 24 of each tuft's 48 blades, the kept ones twice as wide (they widen to keep the cover),
-		// at least 1.5 pixels wide under MSAA (Grass.ts `grassUniforms`): at the island view's 45 m
-		// a blade draws about two thirds as wide as 16 blades did, with the same flicker relative to
-		// the many-sample reference (about 1.8 times its own) and a fifth more error against it;
-		// 32 and 48 blades, thinner still, grained more (48: nearly half again 16's error)
-		grass: { lawnBlades: [ 24, 24, 24 ], bladeBands: [ 1000, 1001, 1002 ], thinTufts: true, canopyPerVertex: false, minWidth: 0 },
+		// 24 of each tuft's 48 blades within 20 m, the kept ones twice as wide (they widen to keep the
+		// cover), at least 1.5 pixels wide under MSAA (Grass.ts `grassUniforms`): at 45 m a blade draws
+		// about two thirds as wide as 16 blades did, with the same flicker relative to the many-sample
+		// reference (about 1.8 times its own) and a fifth more error against it; 32 and 48 blades,
+		// thinner still, grained more (48: nearly half again 16's error). Farther off fewer, the
+		// blades thinned by distance: 12 at 40 m and 6 at 70 m. All 24 at every
+		// distance drew about 225 thousand blades twice a frame (the depth prepass and the colour
+		// pass) at the island view, and its vertex stage cost 4.2 ms there (as much at native 4K);
+		// these counts drew it in 2.3 ms with the meadow's mean brightness unchanged (within 1 % at
+		// 45 m and 110 m) and less flicker in a gust (a fifth less at 45 m). The extra tufts never
+		// fold: folding them past 25 - 37 m darkened the lawn there by 4 - 5 %, its cover lost.
+		grass: { lawnBlades: [ 24, 12, 6 ], bladeBands: [ 20, 40, 70 ], thinTufts: true, thinFold: [ 1e4, 1e4 + 12 ], canopyPerVertex: false, minWidth: 0 },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 512,
 		frameRate: 60,
@@ -249,7 +255,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { fogScale: 0.5, fogSteps: 8, bankSize: 2048 },
 		shadow: { surface: PCSS_LIGHT, vegetation: BILINEAR },
-		grass: { lawnBlades: [ 12, 8, 4 ], bladeBands: [ 25, 45, 70 ], thinTufts: false, canopyPerVertex: true, minWidth: 2 },
+		grass: { lawnBlades: [ 12, 8, 4 ], bladeBands: [ 25, 45, 70 ], thinTufts: false, thinFold: [ 1e4, 1e4 + 12 ], canopyPerVertex: true, minWidth: 2 },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 256,
 		frameRate: 60,
@@ -270,7 +276,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { fogScale: 0.25, fogSteps: 8, bankSize: 1024 },
 		shadow: { surface: BILINEAR, vegetation: BILINEAR },
-		grass: { lawnBlades: [ 8, 8, 4 ], bladeBands: [ 25, 45, 70 ], thinTufts: false, canopyPerVertex: true, minWidth: 2 },
+		grass: { lawnBlades: [ 8, 8, 4 ], bladeBands: [ 25, 45, 70 ], thinTufts: false, thinFold: [ 1e4, 1e4 + 12 ], canopyPerVertex: true, minWidth: 2 },
 		rainShading: { veilShells: 2, rippleLayers: 1 },
 		environmentSource: 256,
 		// light enough to render on most refreshes of a fast display: held to 60 Hz there, its
