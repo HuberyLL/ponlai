@@ -1258,7 +1258,7 @@ islanderF.add( characterLook.shadowSaturation, 'value', 0.5, 2, 0.01 ).name( 'sh
 // the display chain (Pipeline.ts): tidewater's grade (TIDEWATER_GRADE), its exposure from the clock
 // and the weather, the white balance, the local tone mapping and the grade's tables
 const postF = gui.addFolder( 'Post' );
-postF.add( S, 'exposure', 0.1, 5, 0.01 ).listen();
+postF.add( S, 'exposureOffset', - 3, 3, 0.05 ).name( 'exposure offset (stops)' );
 postF.add( S, 'bloom', 0, 0.3, 0.005 );
 postF.addColor( S, 'white' ).name( 'white balance' );
 if ( pipeline.localTone ) {

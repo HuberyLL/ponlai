@@ -639,7 +639,10 @@ comment where it is used.
   Gaussian (`src/post/LocalTone.ts`), per-channel tone mapping in AP1 with its red primary moved
   out to x 0.75 and a white balance chosen as the colour white becomes, folded into the curve's
   input matrix (`src/post/ToneSpace.ts`), and 32^3 grade tables
-  (`src/post/GradeLut.ts`). Used as techniques only; the tables' content is our own. The
+  (`src/post/GradeLut.ts`), and an exposure metered primarily from the illuminance rather than
+  the frame's luminance (`src/post/Exposure.ts`). Used as techniques only; the tables' content
+  and the exposure's compensation are our own. The exposure's compensation looked up by the
+  metered EV: the exposure compensation curve of Unreal Engine's auto exposure. The
   bilateral grid: Jiawen Chen, Sylvain Paris and Frédo Durand, *Real-time Edge-Aware Image
   Processing with the Bilateral Grid* (SIGGRAPH 2007). The white balance's chromatic adaptation:
   the von Kries transform in K. M. Lam's Bradford cone space (1985). The curve itself is Stephen

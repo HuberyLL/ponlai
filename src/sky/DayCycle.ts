@@ -12,7 +12,9 @@ import { Matrix3, Vector3 } from 'three/webgpu';
 //
 // The exposure follows the sun's elevation (EXPOSURE_KEYS), calibrated against tidewater under its
 // display chain (Pipeline.ts): it only rises from afternoon into night and holds from about -6
-// degrees on, so the island reads by moonlight and starlight.
+// degrees on. It no longer sets the frame's exposure, which the display chain meters from the
+// light (post/Exposure.ts): it stays the reference the night sky's own light is tuned against
+// (`nightSkyLevel`).
 // The night ambient rises as the sun's skylight fades after sunset, and the moon's key comes in
 // as soon as the handoff has turned it (MOON_KEY_TOP), so twilight is never darker than the
 // night; the night sky's own light (stars, airglow, moon disk, the sky's night

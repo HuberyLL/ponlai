@@ -39,10 +39,12 @@ art decision changes; reference images stay out of the repository.
 - No thick haze or fog laid evenly over the frame for an airy feel: it reads as smog. Mist, if
   any, gathers in bright banks round the island and the cliff's foot.
 - Real phenomena are not exaggerated; no hue turns, no glow round every highlight.
-- The exposure follows the time of day and the weather, calibrated against tidewater's frames at
-  the same sun elevation, then raised by a gain: 1.2 by day (the meadow, darker without its
-  lifted shade and translucent floor, back at tidewater's metered level) and 1.65 by night (about
-  two stops under the day, as a film's day for night exposes it); a sun in the frame
+- The exposure is metered from the light the island receives (the sun or the moon and the sky),
+  not from the frame, so a dark meadow or sea is not brightened toward grey; a compensation by
+  the scene's brightness, by day and by night, sets each scene's look. It keeps the levels the
+  earlier exposure by the time of day gave, calibrated against tidewater's frames: a clear noon
+  shows a grey card two stops over mid grey, the night sits about two stops under the day (as a
+  film's day for night exposes it) and holds its exposure whatever the moon. A sun in the frame
   may read a little brighter than its eye-adapting exposure would show it. Overcast stays about
   three quarters of the same view's clear day. The night keeps the moonlit island readable (see
   Night).

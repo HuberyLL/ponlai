@@ -39,9 +39,8 @@
 // `lowSun` (a number, or `true` for 1; off unless set) scales the low sun's warm light and
 // blue-violet shade (sky/Sky.ts lowSun), read every frame (the shade's at the next environment bake).
 // Read at load: `tone` (a number, 0 unless set) and `filmNight = true` bring back the grade's tone
-// and the film's night (post/Pipeline.ts TONE, NIGHT); `exposureGain` and `nightExposureGain`
-// (numbers, 1.2 and 1.65 unless set) the gains on the exposure by day and by night (EXPOSURE_GAIN);
-// `localTone = false` builds the display chain without its local tone mapping (post/LocalTone.ts).
+// and the film's night (post/Pipeline.ts TONE, NIGHT); `localTone = false` builds the display
+// chain without its local tone mapping (post/LocalTone.ts).
 // The meadow's light, each on unless false: `meadowShade` (its screen-space shade and the
 // vegetation's depth pass, post/MeadowShade.ts), `meadowCast` (the taller tussocks' shade on their
 // neighbours, world/Grass.ts `meadowStill`), `groundCast` (the crowns' shade on the turf,
