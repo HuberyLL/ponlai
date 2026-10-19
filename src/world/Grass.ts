@@ -1145,9 +1145,9 @@ const PALETTE = ( () => {
 // A deep green, never black: the root colour and the canopy's shade multiply in.
 const ROOT_DARK = 0.3, DENSE = [ 0.2, 0.6 ];
 const ROOT_KEY = 0.45, ROOT_SKY = 0.55;
-// The light through the blades from any side (`TRANSLUCENT_FLOOR`), small: at 0.6 the blades turned
-// from the sun glowed as brightly through as the ones against it and the gaps between them never
-// darkened; the light through them now comes mostly from the half of the view toward the sun.
+// The light through the blades comes from the half of the view toward the sun alone: a share of it
+// from any side (once 0.6, then 0.3) lit the blades turned from the sun as those against it, and
+// with the shade's lift (Sky.ts CLEAR_SHADE) the meadow showed no side the light came from.
 // A tussock's depth (`dense`: its height scale over DENSE times its share of blades) is the share
 // of the full darkening its roots take; the tall sward's mean depth over its tussocks' heights
 // (TUSSOCK.spread about the level) and blades is TALL_DENSE. The shade over a root, its canopy's
@@ -1178,7 +1178,7 @@ export const GRASS_ROOTS = {
 	key: ROOT_KEY, sky: ROOT_SKY, bands: lodUniforms.bands,
 	darkening: 1 - ROOT_DARK, tall: TALL_DENSE, open: OPEN,
 };
-const TRANSLUCENT_FLOOR = 0.3, TRANSLUCENT_FORWARD = 1, FORWARD_POWER = 3;
+const TRANSLUCENT_FORWARD = 1, FORWARD_POWER = 3;
 const TRANSLUCENT_TINT = new THREE.Vector3( 1.2, 1.2, 0.8 );
 const SHEEN = new THREE.Vector3( 0.03, 0.0325, 0.0225 ), SHEEN_POWER = 2, SPECULAR = 0.35;
 // The blade's fold (how far each half's normal turns toward its edge), how far its own lean tilts
@@ -1698,15 +1698,15 @@ function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNod
 			// Light through the upper blades, yellower than the light off them (it crosses the
 			// leaf): over the whole half of the view that faces the sun, strongest looking into it
 			// (`forwardLight`; the game camera looks down, so a narrow lobe round the sun never met
-			// the lawn by day), and some from any side, so lit tips glow yellow-green over roots the
-			// key reaches at ROOT_KEY, below the canopy's own shade. A soft gloss along the blades (`SHEEN`): a blade is a thin strip standing
+			// the lawn by day), so lit tips glow yellow-green over roots the key reaches at
+			// ROOT_KEY, below the canopy's own shade. A soft gloss along the blades (`SHEEN`): a blade is a thin strip standing
 			// along its envelope's normal, so it reflects as a fibre about that axis (Kajiya and
 			// Kay's sine of the half vector), broad and faint, brightest on the tips toward a low
 			// sun; at half its first strength, as with the specular it paled the lawn toward a coated
 			// look. Both follow the key light alone, so by night they stay as faint as the moon.
 			return {
 				scale: () => mix( mix( float( 1 ), float( ROOT_KEY ), rootShade ), float( 1 ), t ).mul( canopy ),
-				extra: ( L, V ) => forwardLight( L, V, FORWARD_POWER ).mul( TRANSLUCENT_FORWARD ).add( TRANSLUCENT_FLOOR ).mul( t2 ).mul( vec3( TRANSLUCENT_TINT ) ),
+				extra: ( L, V ) => forwardLight( L, V, FORWARD_POWER ).mul( TRANSLUCENT_FORWARD ).mul( t2 ).mul( vec3( TRANSLUCENT_TINT ) ),
 				sheen: ( L, V, N ) => {
 
 					const along = dot( N, normalize( L.add( V ) ) );

@@ -17,30 +17,25 @@ art decision changes; reference images stay out of the repository.
   ground bounces up, and the frame takes a filmic curve (ACES), tidewater's light grade (a slight
   warm white balance, a touch more saturation and contrast, a vignette, film grain) and a faint
   physical bloom over the whole image.
-- Over that photograph, a light push toward a painted one, never a veil over it:
-  - The shade by day is clear, never black: the skylit faces of the cliffs and the meadow's
-    shaded side open up a little, a touch cool, while cracks, the meadow's floor and what the sky
-    cannot reach stay deep. It comes from more sky light on the island, not from lifting the
-    blacks: a lift in the grade greyed every dark alike and laid a milky film over the frame, as
-    the old art-directed layer did. A low sun's shade already holds more sky and takes less; an
-    overcast island, all in shade, takes none.
-  - Lights a touch golden, the shade a touch teal, the contrast a little softer, the bloom a
-    little stronger (the grade's tone, at half of its full step: the full step greyed the frame).
-  - A low sun (below about 12 degrees, gone by 28) lights a deeper gold toward orange, from the
-    midtones up, and the island's shade turns blue-violet (its sky light, not the sea's or the
-    sky's). At the horizon the frame is golden already and takes little more.
-  - No thick haze or fog laid evenly over the frame for an airy feel: it reads as smog. Mist, if
-    any, gathers in bright banks round the island and the cliff's foot.
-  - The night is a film's night (day for night), not a dark one: the moonlit island clearly
-    readable, its shade open (the night sky's light on the island, not a lifted black), the
-    meadow a cool green toward blue-green, the frame a touch silver-blue, a small cool halo round
-    the moon and its path on the sea (see Night).
-- Real phenomena are not exaggerated beyond that; no hue turns but the night meadow's, no glow
-  round every highlight.
+- The light keeps the sun's and the sky's own balance, by day and by night, so that the land shows
+  where the light comes from: a clump of grass, a stone or a figure has a lit side and a shaded
+  one, and its shade falls on what lies beside it. Nothing lifts the shade toward the light: an
+  extra share of sky light on the island (a "clear shade"), a grade tone that softened the
+  contrast and recoloured the lights and the shade, a low sun's recolouring and a film's day for
+  night were all tried and taken off, because together with the meadow's own soft light they left
+  a shaded clump within a quarter of a lit one's brightness (in a clear day's real light the
+  shade holds a third to an eighth of it) and the meadow read as lit by an overcast sky. The
+  frame's brightness comes from the exposure, which keeps the ratio between light and shade.
+- No thick haze or fog laid evenly over the frame for an airy feel: it reads as smog. Mist, if
+  any, gathers in bright banks round the island and the cliff's foot.
+- Real phenomena are not exaggerated; no hue turns, no glow round every highlight.
 - The exposure follows the time of day and the weather, calibrated against tidewater's frames at
-  the same sun elevation, so the day reads as tidewater's does; a sun in the frame may read a
-  little brighter than its eye-adapting exposure would show it. Overcast stays about three
-  quarters of the same view's clear day. The night keeps the moonlit island readable (see Night).
+  the same sun elevation, then raised by a gain: 1.2 by day (the meadow, darker without its
+  lifted shade and translucent floor, back at tidewater's metered level) and 1.65 by night (about
+  two stops under the day, as a film's day for night exposes it); a sun in the frame
+  may read a little brighter than its eye-adapting exposure would show it. Overcast stays about
+  three quarters of the same view's clear day. The night keeps the moonlit island readable (see
+  Night).
 - No lens effects a photograph of a real place would not have: no tilt-shift miniature blur, no
   lens flares forced into the frame.
 - The water is tidewater's physically based model with clear water a little less pure than its
@@ -288,12 +283,9 @@ art decision changes; reference images stay out of the repository.
 
 ## Night
 
-- The night takes the day's curve and grade with a light night grade over them, a film's day for
-  night rather than a simulation of the eye's night vision: the meadow's greens turned toward
-  blue-green, a slight silver-blue tint, a stronger bloom for a small cool halo round the moon,
-  its clouds and its path. Stone, sand, skin and a future fantasy glow (sea life, magic) keep
-  their colours and saturation. Its exposure keeps the moonlit island clearly readable and the
-  moon's path on the sea crisp; the shade stays open by the night sky's light on the island; a
+- The night takes the day's curve and grade under the moon's own light: its key from one side,
+  its shade not lifted, so the moonlit meadow shows its clumps' lit and shaded sides as the day
+  does. Its exposure keeps the moonlit island readable and the moon's path on the sea crisp; a
   moonless night is darker, a deep navy island, still readable.
 - The island reads by moonlight and starlight; twilight is never darker than the night. The
   moon takes over the key soon after the sun has gone.
@@ -302,8 +294,8 @@ art decision changes; reference images stay out of the repository.
   comes in at a slant: slopes show a lit and a shaded side and the sea carries a moon path, where
   a moon near the zenith lit the island flat. The moon path and the moonlit meadow glow softly in
   that view too.
-- The night meadow is a dark, readable, cool green toward blue-green (not black, olive or teal);
-  stone, sand and skin keep their colours.
+- The night meadow is a dark, readable green under the moon (not black); stone, sand and skin keep
+  their colours.
 - The stars and Milky Way are the real sky as seen near 28 degrees south, points with a natural
   spread of brightness, below white except the brightest few; only those near the horizon
   scintillate.

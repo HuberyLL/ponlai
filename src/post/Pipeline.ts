@@ -180,10 +180,10 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 //   single-sampled, that argument is a mip level, so load sample 0 only. View z below -9e4 is sky.
 // - In a full-screen pass the camera nodes are the pass's own camera: the scene camera's matrices
 //   come in as uniforms.
-// - The display chain is tidewater's (ACES_EXPOSURE): one curve and grade, with a light tone
-//   (TONE) and the night's grade (NIGHT) over it. The day and the night differ by the exposure,
-//   from the clock and the weather (DayCycle, Sky), calibrated against tidewater's metered frames,
-//   and by that night grade.
+// - The display chain is tidewater's (ACES_EXPOSURE): one curve and grade (the tone, TONE, and the
+//   night's grade, NIGHT, over it are off by default). The day and the night differ by the
+//   exposure, from the clock and the weather (DayCycle, Sky), calibrated against tidewater's
+//   metered frames, times EXPOSURE_GAIN (the day's and the night's).
 
 // The graph's dev checks (every target at its class's size, the attachment ops that reached
 // WebGPU): on the dev server and with `?debug`.
@@ -314,9 +314,20 @@ export interface PipelineSettings {
 // the exposed luminance, so the night takes it as the day), the contrast round mid grey softens by
 // a tenth and the bloom strengthens by a quarter. It lifts no black: a constant fill in the grade
 // greyed everything below mid grey alike and veiled the frame; the shade's openness comes from the
-// sky light the island takes instead (Sky.ts DAY_SHADE). 0.5 of the full step was chosen over 0
-// and 1 by eye.
-const TONE = 0.5;
+// sky light the island takes instead (Sky.ts CLEAR_SHADE). 0.5 of the full step was chosen over 0
+// and 1 by eye. Off by default since (docs/art-direction.md, the look): with the clear
+// shade it took the light's direction out of the meadow. `flags=tone:<t>` sets it at load for A/Bs.
+const TONE = Number( debugFlags.tone ?? 0 );
+// Gains on the calibrated exposure, by day and by night (blended in log by the night's weight,
+// `settings.night`); the light and the shade keep their ratio under either. By day: without the
+// blades' translucent floor and with their own shade the meadow darkened, and tidewater's meter
+// (the calibration's: its centre-weighted log mean, ACES's input about 0.15 at noon) read the noon
+// island view 12 % under its level; 1.2 brings it back (6 % over: 1.14 restores it in full, its
+// partial lift of a dark frame 1.11). 1.4 had brought back the mean the lifted shade gave (Sky.ts
+// CLEAR_SHADE), and the sea and the sky with it a fifth above it. By night: day for night, about
+// two stops under the day's metered level (the night's was 2.5 at the day's gain, 1.7 under the
+// lifted shade and the film's night). `flags=exposureGain:<k>` and `nightExposureGain:<k>` at load.
+const EXPOSURE_GAIN = { day: Number( debugFlags.exposureGain ?? 1.2 ), night: Number( debugFlags.nightExposureGain ?? 1.65 ) };
 
 // The low sun's light (art direction: a low sun's light golden, its shade blue-violet): as the sun
 // sinks below 12 degrees (Sky.ts lowSun) what it lights turns a deeper gold toward orange, from the
@@ -341,7 +352,9 @@ const LOW_SUN_WARM = ( () => {
 // turned the stone, sand and skin blue too. 0.4 radians takes the meadow to about 143 degrees, a
 // cool green toward blue-green (0.65 read as teal). The tint is drawn toward at `tint` and keeps
 // the luminance. The shade's readability is the sky light's (Sky.ts CLEAR_SHADE), not a lift.
-const NIGHT = { greenTurn: 0.4, tint: [ 0.84, 0.96, 1.16 ] as const, amount: 0.3, bloom: 1.5 };
+// Off by default with the clear shade, as the night keeps the moon's own light (`flags=filmNight:true`
+// at load for A/Bs).
+const NIGHT = debugFlags.filmNight === true ? { greenTurn: 0.4, tint: [ 0.84, 0.96, 1.16 ] as const, amount: 0.3, bloom: 1.5 } : { greenTurn: 0, tint: [ 0.84, 0.96, 1.16 ] as const, amount: 0, bloom: 0 };
 const nightGreenTurn = Fn( ( [ c0, turn ]: [ V3, F ] ) => {
 
 	const c = c0.toVar();
@@ -1656,7 +1669,7 @@ export class Pipeline {
 
 		const S = this.settings;
 		const u = this.u;
-		u.exposure.value = S.exposure / SCENE_RADIANCE_SCALE;
+		u.exposure.value = S.exposure * EXPOSURE_GAIN.day * ( EXPOSURE_GAIN.night / EXPOSURE_GAIN.day ) ** S.night / SCENE_RADIANCE_SCALE;
 		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + S.night * NIGHT.bloom ); u.tone.value = S.tone; u.night.value = S.night; u.low.value = S.low; u.warmth.value = S.warmth; u.saturation.value = S.saturation; u.contrast.value = S.contrast;
 		u.vignette.value = S.vignette; u.grain.value = S.grain; u.time.value = time;
 		u.grainOn.value = this.upscaling ? 0 : 1;
