@@ -28,8 +28,9 @@ art decision changes; reference images stay out of the repository.
   tables that a look can blend between by time of day or place (both the identity until our own
   grades are made).
 - The light keeps the sun's and the sky's own balance, by day and by night, so that the land shows
-  where the light comes from: a clump of grass, a stone or a figure has a lit side and a shaded
-  one, and its shade falls on what lies beside it. Nothing lifts the shade toward the light: an
+  where the light comes from: a stone or a figure has a lit side and a shaded one, and its shade
+  falls on what lies beside it; the meadow shows it in its slopes, in the light through its blades
+  and in the sheen a gust sweeps over it. Nothing lifts the shade toward the light: an
   extra share of sky light on the island (a "clear shade"), a grade tone that softened the
   contrast and recoloured the lights and the shade, a low sun's recolouring and a film's day for
   night were all tried and taken off, because together with the meadow's own soft light they left
@@ -110,15 +111,22 @@ art decision changes; reference images stay out of the repository.
   thin places, fewer where bare stone meets the meadow. Not fans of long blades like small palm
   leaves. What hangs over the rim is the
   meadow's own grass, not leafy branches; the lowest quarter of the cliff above the sea stays bare.
-- The meadow is a sward of tussocks, closed as a whole and every tussock and blade its own: dense,
-  long, sword-shaped blades, wide to high up and tapering to a point, arcing over under their
-  weight, each a little taller or shorter, turned and leaning its own way, so they cross rather
-  than look combed; each tussock its own height, stiffness and lean, so the wind moves them
-  together but never combs them flat as one pile. Each blade is folded along its midrib, one half
-  lit and the other shaded, with a thin lighter edge, and differs clearly in value (about a third
-  either way) and colour (fresh green, yellow green, olive, a few dry leaves), all of it on a
-  tussock's scale or finer, so the lawn's average stays one colour; never a single dyed green,
-  which reads as plastic.
+- The meadow is one even sward: from the game's view a uniform
+  carpet of grass with only soft, broad changes over it, never a field of tussocks or lumps. Close
+  up it is dense, long, sword-shaped blades, wide to high up and tapering to a point, arcing over
+  under their weight, each a little taller or shorter, turned and leaning its own way, so they
+  cross rather than look combed. The grass is grouped into clumps that share their height, lean
+  and colour and differ from each other only a little (a tenth of the height either way), so the
+  field is not a mown lawn and the wind moves it in broad sweeps but never combs it flat as one
+  pile; clumps grown as visible mounds (a quarter of them half again as tall, leaning out, each lit
+  on one side and shaded on the other) drew the island top as a field of lumps. Each blade is
+  folded along its midrib, one half lit and the other shaded, with a thin lighter edge, and only a
+  little apart from its neighbours in value and colour; the colour (fresh green, yellow green,
+  olive, a few dry leaves) changes from stroke to stroke, a few clumps sharing one, a little either
+  way, so the lawn reads as a painter's strokes of one green and its
+  average stays one colour; never a single dyed green, which reads as plastic, and never every
+  blade and tussock its own value and height, which from the game's view grains the lawn into a
+  scatter of tussocks over dark ground.
   One grass colour, a bright, fresh, natural green, matte with only a faint gloss (no pale sheen
   over the blades, which reads as plastic): the gaps between blades a deep, cooler green (never
   near black) under tips that stand out lighter and yellow-green where the sun shines through
@@ -128,14 +136,10 @@ art decision changes; reference images stay out of the repository.
   sward, about 0.5 m, with no zones across it: tiers of height and tint by the soil (a short
   yellow-green band along the windward coast, a taller, deeper grass on deep soil, gravel patches
   inland) read from above as a map laid over the meadow. Its layering comes from the grass itself,
-  which grows in clumps about a metre across, a quarter of
-  them tall (1.3 to 1.65 times the sward's height, a mound of blades leaning out), most ordinary
-  (their tussocks leaning together), a fifth short and closed, low between the others; each clump
-  shares most of its tussocks' height and lean and a little of its tone, each tussock keeping a
-  fifth of its own, and now and then a low patch of one to a few short tussocks, where the low
-  wildflowers grow. Each clump takes the light as a mound does, its side toward the sun lit and its
-  far side in its own shade, and the lower clumps beside a tall one lie in its shade: from the
-  game's view the meadow shows where the light comes from, by day and by moonlight. As in a real
+  which grows in clumps about a metre across, each a little
+  taller or shorter than its neighbours, giving its tussocks nearly all of their height and lean
+  and its density, and its stroke its colour; now and then a low patch of one to a few short
+  tussocks lies among them. As in a real
   meadow its soil sets the odds: the sward rises a little where the soil is deep and damp and sinks
   a little where it is thin, over some 14 m, and in pockets of shallow soil a few metres across, a
   tenth of the meadow, the sward slopes down toward a short turf, tussock by tussock, with tall
@@ -179,16 +183,16 @@ art decision changes; reference images stay out of the repository.
   silvery; the zhuyu (祝餘, Shanhai jing: "like chives, with blue-green flowers") grows low among
   shorter grass, a round head of sky blue florets over chives' blue-green leaves, never in a patch
   of its own cut short. They are all in flower at once, the year round: the island's sign of an
-  immortals' land. Each grows as a wildflower colony does, in drifts of its own where its habitat
-  is: a few clumps strung together, long and lobed rather than round, many small drifts and a few
-  large, thinning to single plants scattered round them, and where two drifts meet their flowers
-  mingle; few flowers between the drifts. The zhuyu grows in the exposed coast's wind-cropped turf
-  and on dry ground, and along stretches of the cliff's edge with long stretches of plain turf
-  between (an unbroken band round the island top read as a border drawn on it), the yaoxiang over
-  the meadow, most in the sheltered sward, and on the grass in from the edge's zhuyu. Colours are
-  soft rather than vivid, and no head outshines the lawn; never a scatter of mixed colours over
-  the lawn, which reads as confetti. They sway with the grass, and from afar they are fine
-  coloured specks in it, gathered in patches, not coloured stars or blots on the lawn.
+  immortals' land. They grow in swaths of one kind, as if
+  painted by a broad brush; the swaths are some 6 m across, spread evenly over the island top (even the
+  small starting island holds a few), dense over most of it and thinning at its rim, a few single
+  plants between the swaths, none in the bamboo's shade or on the lip itself. Each swath's kind is
+  its ground's: the zhuyu in the exposed coast's wind-cropped turf, the shallow pockets and on dry
+  ground, the yaoxiang over the rest of the meadow, most in the sheltered sward. Many small drifts
+  of both strung along the coast read from the game's view as a scatter of specks over the whole
+  island top. Colours are soft rather than vivid, and no head outshines the lawn; never a scatter
+  of mixed colours over the lawn, which reads as confetti. They sway with the grass, and from afar
+  a swath is a stroke of fine coloured specks in it, not coloured stars or blots on the lawn.
 - A herb of the sunken mountain Yuanjiao stands among the meadow where the world explains it, the
   starting island's and fixed as the land grows: the yunpeng (芸蓬, Shiyi ji: "white as snow, a
   stem two zhang long, at night it gives a white light") stands in clumps of straight white stalks

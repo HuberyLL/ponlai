@@ -619,14 +619,16 @@ comment where it is used.
   `src/world/Grass.ts`. Used as a technique only; the gust map is our own.
   The map's noise is Ken Perlin's improved gradient noise (*Improving Noise*, SIGGRAPH 2002),
   made periodic.
-- Each meadow blade a random mix of root and tip colours and a random value, and the sward
-  darkened toward the ground by its height and density: SimonDev's *Quick_Grass*
+- Each meadow blade a mix of root and tip colours, and the sward darkened toward the ground by its
+  height and density: SimonDev's *Quick_Grass*
   (github.com/simondevyoutube/Quick_Grass, MIT, copyright 2023 simondevyoutube), its grass
   shader, in `src/world/Grass.ts` (`PALETTE`, `ROOT_DARK`). Used as a technique only.
-- The meadow grouped into Voronoi clumps that share their tussocks' parameters, a clump's common
-  normal, and the grass's shade from a coarse stand-in for its heights with screen-space shadows
-  for the detail: Sucker Punch Productions' grass in *Ghost of Tsushima* (Eric Wohllaib,
-  *Procedural Grass in 'Ghost of Tsushima'*, GDC 2021), in `src/world/Grass.ts` (`CLUMP`),
+- The meadow grouped into Voronoi clumps that share their tussocks' parameters and colour (a
+  colour gradient along the blade whose other axis the clump picks), a clump's common normal and
+  less gloss far off, flowers laid in swaths of one kind, and the grass's shade from a coarse
+  stand-in for its heights with screen-space shadows for the detail: Sucker Punch Productions'
+  grass in *Ghost of Tsushima* (Eric Wohllaib, *Procedural Grass in 'Ghost of Tsushima'*, GDC
+  2021), in `src/world/Grass.ts` (`CLUMP`, `STROKE`, `FAR`, `SWATH`),
   `src/world/SwardField.ts` and `src/lighting/MeadowCanopy.ts` (the crowns and their shade) and
   `src/post/MeadowShade.ts`. Used as techniques only.
 - Screen-space shadows for the key light over the depth: Bend Studio's (Graham Aldridge, *Days

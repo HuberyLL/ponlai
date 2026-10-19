@@ -45,7 +45,8 @@
 // vegetation's depth pass, post/MeadowShade.ts), `meadowCast` (the taller tussocks' shade on their
 // neighbours, world/Grass.ts `meadowStill`), `groundCast` (the crowns' shade on the turf,
 // materials/TerrainMaterial.ts), `grassClumps` (the tussocks' clumps, world/Grass.ts CLUMP);
-// `grassDome` (a number, 1 unless set; 0 or false: off) scales the clumps' dome normals.
+// `grassFar` (a number, 1 unless set; 0: off) scales the far blades' turn to their clump's normal
+// (world/Grass.ts FAR).
 export interface MotionSourceFlags { camera?: boolean; object?: boolean; skin?: boolean; wind?: boolean; sea?: boolean; foam?: boolean }
 export const debugFlags: Record<string, boolean | number | string | MotionSourceFlags | undefined> & { mv: MotionSourceFlags } = { mv: {} };
 
