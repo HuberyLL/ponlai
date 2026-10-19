@@ -238,6 +238,12 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 - `flags=<name>:<value>,...` (debug builds: sets `debugFlags` as the page loads, before anything
   reads them; values `true` / `false`, numbers or strings, `mv.<source>` a motion source), e.g.
   `flags=taaClampDrop:false` for a capture's or clip's `--q`.
+- The meadow's light and the grade's switches (`src/debug/DebugFlags.ts` lists them all), for A/Bs
+  of the look: `flags=meadowShade:false` (the screen-space shade and its depth pass),
+  `meadowCast:false`, `groundCast:false`, `grassClumps:false`, `grassDome:<k>`; the look taken off
+  comes back by `clearShade:true`, `lowSun:true`, `tone:0.5`, `filmNight:true`, and
+  `exposureGain:<k>` and `nightExposureGain:<k>` replace the exposure's gains (1.2 by day, 1.65 by
+  night). `fgview=meadowShade` shows the shade's map.
 - Under the temporal modes `flags.mv.camera` / `object` = false leave a source out of the motion
   vectors, `flags.jitter = false` the jitter, `s.taaCut( reason )` cuts the history and
   `s.motionCheck()` lists the materials whose motion vectors are missing or partial.

@@ -115,9 +115,15 @@ art decision changes; reference images stay out of the repository.
   camouflage and dark blotches), and no pattern of dots on the blades. The island top is one
   sward, about 0.5 m, with no zones across it: tiers of height and tint by the soil (a short
   yellow-green band along the windward coast, a taller, deeper grass on deep soil, gravel patches
-  inland) read from above as a map laid over the meadow. Its layering comes from the grass itself:
-  each tussock from about 0.6 to 1.4 times the sward's height, its own colour and value, and now and
-  then a low patch of one to a few short tussocks, where the low wildflowers grow. As in a real
+  inland) read from above as a map laid over the meadow. Its layering comes from the grass itself,
+  which grows in clumps about a metre across, a quarter of
+  them tall (1.3 to 1.65 times the sward's height, a mound of blades leaning out), most ordinary
+  (their tussocks leaning together), a fifth short and closed, low between the others; each clump
+  shares most of its tussocks' height and lean and a little of its tone, each tussock keeping a
+  fifth of its own, and now and then a low patch of one to a few short tussocks, where the low
+  wildflowers grow. Each clump takes the light as a mound does, its side toward the sun lit and its
+  far side in its own shade, and the lower clumps beside a tall one lie in its shade: from the
+  game's view the meadow shows where the light comes from, by day and by moonlight. As in a real
   meadow its soil sets the odds: the sward rises a little where the soil is deep and damp and sinks
   a little where it is thin, over some 14 m, and in pockets of shallow soil a few metres across, a
   tenth of the meadow, the sward slopes down toward a short turf, tussock by tussock, with tall
@@ -130,11 +136,13 @@ art decision changes; reference images stay out of the repository.
   under it (clover mats and plantain rosettes were tried: from the game's view they did not read).
   The sward runs to the edge on
   every coast, windward and lee alike: a windward lip shown short, yellow, thin over gravel and
-  bared to the cliff's stone read from above as one more zone. Inside the grass
-  there are no hard shadows, only a darkening toward the ground (a deep green, never black); the
-  shade of anything standing on it lies soft and light. The only shadows that cross the ground
-  are the real clouds' (from the cloud layer overhead, drifting with it): no patches painted or
-  animated onto the island to vary its light. The ground under the grass is what a real meadow
+  bared to the cliff's stone read from above as one more zone. Inside the grass the shade is the
+  grass's own, never painted: the blades and clumps toward the sun shade those behind them and the
+  ground under and beside them, softly, as light passes between blades, darkening toward the
+  ground (a deep green, never black); the shade of anything standing on it lies soft and light.
+  The only large shadows that cross the meadow are the real clouds' (from the cloud layer
+  overhead, drifting with it): no patches painted or animated onto the island to vary its light.
+  The ground under the grass is what a real meadow
   shows there: under the dense sward its shaded bottom, the lower leaves' deep green with a little
   straw, where no light reaches the soil; where the sward is broken by a gap, the island's
   yellow-brown earth under lying dead leaves, never a green turf skin

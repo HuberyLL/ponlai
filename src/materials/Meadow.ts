@@ -21,9 +21,10 @@ export { MEADOW_MIN_UP, MEADOW_MAX_DROP, supportsMeadow } from '../world/MeadowS
 // `meadowTurf`) site the wildflowers' patches, and the plants to come will be placed by them. The
 // sward runs to the edge on every coast: a windward lip shown short, yellow, thin over gravel and
 // bared to the cliff's stone in stretches read from above as one more zone, and was taken off.
-// The map covers the land lattice's whole extent, wherever the island grows, at 0.25 m: RGB the
-// turf's colour, A the sward's depth over the ground, baked from the meadow's tussocks
-// (world/SwardField.ts, which holds the map).
+// The map covers the land lattice's whole extent, wherever the island grows, at 0.25 m: R the
+// turf's tone, G the sward's cover, B the height of its crowns over the ground and A the sward's
+// depth over it, the last three baked from the meadow's tussocks (world/SwardField.ts, which holds
+// the map).
 export const MEADOW_EXTENT = 2 * GROWTH.half;
 export const MEADOW_SIZE = MEADOW_EXTENT * 4;
 
@@ -282,7 +283,7 @@ export function meadowColor( x: number, z: number, target: THREE.Color ): THREE.
 let texels: Uint8Array | null = null;
 
 /** The meadow map's texels, MEADOW_SIZE square: R the turf's tone (its colour is the lawn's times
- * 1 + LAWN_TONE ( 2 R - 1 ), `colorFromSample`), G and A left at 0 for the sward's cover and depth
+ * 1 + LAWN_TONE ( 2 R - 1 ), `colorFromSample`), G, B and A left at 0 for the sward's cover, crowns and depth
  * (world/SwardField.ts). Baked once: a function of position alone. (The turf's colour, one hue
  * whose value alone varies, took three channels the sward's cover now needs one of.) */
 export function meadowTexels(): Uint8Array {

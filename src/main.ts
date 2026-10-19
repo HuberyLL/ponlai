@@ -76,7 +76,7 @@ import { TemporalAA, type TemporalFrame } from './post/TemporalAA.ts';
 import { watchPipelines, type SettleFrame } from './post/Settled.ts';
 import { SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
 import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
-import { installVegetationPrepass } from './world/VegetationPrepass.ts';
+import { installVegetationPrepass, prepassScene } from './world/VegetationPrepass.ts';
 import { Vegetation } from './world/vegetation/Registry.ts';
 import { installWindMotionFlag } from './world/WindMotion.ts';
 import { HANMING, HANMING_LOOKS, ISLANDER, ISLANDER_LOOKS } from './characters/looks.ts';
@@ -1666,7 +1666,7 @@ function tick( time: number ): void {
 	// it with the streaks after the resolve)
 	const overlay = ! AFTER_RESOLVE && ( rain!.mesh.visible || ( TEMPORAL && stormSea.spray.mesh.visible ) );
 	const after = AFTER_RESOLVE && ( rain!.mesh.visible || stormSea.spray.mesh.visible );
-	pipeline.render( { scene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, afterScene: after ? afterScene : undefined, camera, water: water!, sun, time: simTime, temporal: temporalFrame( rawDt, paused ? 0 : dt ), settle: settleFrame( bakeDue ) } );
+	pipeline.render( { scene, prepassScene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, afterScene: after ? afterScene : undefined, camera, water: water!, sun, time: simTime, temporal: temporalFrame( rawDt, paused ? 0 : dt ), settle: settleFrame( bakeDue ) } );
 	steerRenderScale( rawDt );
 	submitBatch.flush();
 	frame ++;

@@ -21,6 +21,7 @@ import { AA_MODE, AFTER_RESOLVE, FSR3, RESOLVE, SCENE_SAMPLES, TEMPORAL } from '
 import { beginMotionFrame, onTaaCut, overlayMRT, sceneMRT } from './Motion.ts';
 import { RAIN_OVERLAY, afterMRT } from './AfterResolve.ts';
 import { jitter } from './Jitter.ts';
+import { MEADOW_SHADE, meadowDepthMaterial, meadowShade, meadowShadeMaterial } from './MeadowShade.ts';
 import { TemporalAA, type TemporalFrame, type TemporalMode } from './TemporalAA.ts';
 import { Settled, type SettleFrame } from './Settled.ts';
 import { Fsr3Upscaler } from './fsr3/Fsr3Upscaler.ts';
@@ -135,7 +136,9 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // them all from `setSize`'s render and canvas sizes. The passes read their sizes from the graph's
 // extent uniforms.
 // The graph runs the whole frame as passes that declare what they read and write: the scene half
-// (opaque, the depth and copy resolves, water, the surface resolve, rain), the sea fog (its bank
+// (at 4x outside the temporal modes first the vegetation's depth, its resolve and the meadow's
+// shade, MeadowShade.ts; then opaque over that depth, the depth and copy resolves, water, the
+// surface resolve, rain), the sea fog (its bank
 // map, nearest depth and march), the light shafts' two passes, the composite's constants, the
 // composite, the bloom (PhysicalBloom.ts: a pass per level), the sharp image, the display pass,
 // and the canvas pass, or EASU and the sharpening canvas pass while upscaling. Every pass but the
@@ -227,6 +230,8 @@ const REFRACTION_MRT: THREE.MRTNode = mrt( { refraction: output } ).setClearColo
  * rings) and the storm's spray, drawn after the resolve (AfterResolve.ts), while either shows. */
 export interface PipelineFrame {
 	scene: THREE.Scene; waterScene: THREE.Scene; rainScene?: THREE.Scene; overlay?: boolean; afterScene?: THREE.Scene; camera: THREE.Camera;
+	// the vegetation's depth copies with the meadow's shade (VegetationPrepass.ts `prepassScene`)
+	prepassScene?: THREE.Scene;
 	water: { prepare( sun: THREE.DirectionalLight ): void } | null; sun: THREE.DirectionalLight; time: number;
 	// the temporal resolve's per-frame inputs from the page (the rest's signature and stability, the
 	// frame's delta)
@@ -418,6 +423,7 @@ export class Pipeline {
 	readonly refraction = new RefractionView();
 	private readonly resources: {
 		sceneColor: ResourceHandle; sceneDepth: ResourceHandle; linearDepth: ResourceHandle; opaqueColor: ResourceHandle;
+		meadowCoverage: ResourceHandle | null; meadowDepth: ResourceHandle | null; meadowShade: ResourceHandle | null;
 		underwater: ResourceHandle; refractionReach: ResourceHandle; refraction: ResourceHandle; refractionDepth: ResourceHandle;
 		surfaceDepth: ResourceHandle; velocity: ResourceHandle | null; surfaceDepthPrev: ResourceHandle | null; veilReactive: ResourceHandle | null;
 		rainAir: ResourceHandle | null; rainOverlay: ResourceHandle | null; rainLayer: ResourceHandle | null; rainInput: ResourceHandle | null; rainBehind: ResourceHandle | null; rainGrade: ResourceHandle | null;
@@ -441,6 +447,9 @@ export class Pipeline {
 	private refractionReachQuad: THREE.QuadMesh;
 	private refractionMaskQuad: THREE.QuadMesh;
 	private surfaceQuad: THREE.QuadMesh;
+	// the meadow's shade: the depth's nearest view z and the march (MeadowShade.ts)
+	private meadowDepthQuad: THREE.QuadMesh | null = null;
+	private meadowShadeQuad: THREE.QuadMesh | null = null;
 	// (msaa, off and the temporal modes with `taaResolve=off`: the resolve has a canvas pass of its own)
 	private output: THREE.RenderPipeline | null = null;
 	// FSR.ts's sharpening canvas pass after EASU (the fsrPort option), or three's FSR1Node (post=three-fsr)
@@ -470,6 +479,8 @@ export class Pipeline {
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
 		projInv: uniform( new THREE.Matrix4() ), cameraWorld: uniform( new THREE.Matrix4() ),
 		proj: uniform( new THREE.Matrix4() ), view: uniform( new THREE.Matrix4() ),
+		// the key light's direction in the scene camera's view space (the meadow's shade)
+		keyView: uniform( new THREE.Vector3( 0, 1, 0 ) ),
 		grainOn: uniform( 1 ),
 		// 1 while the after pass draws (AfterResolve.ts): else its overlay holds an earlier frame's;
 		// and while the rain's layer pass runs
@@ -539,13 +550,27 @@ export class Pipeline {
 		// the upscale's EASU image (the canvas's size) and the canvas (the resolve has its own)
 		const easu = O.fsrPort && ! RESOLVE && ! FSR3 ? g.color( 'FSR.easu', { size: { of: 'canvas' }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		const canvas = g.import( 'canvas', null, { of: 'canvas' } );
-		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, underwater, refractionReach, refraction, refractionDepth, surfaceDepth, velocity, surfaceDepthPrev, veilReactive, rainAir, rainOverlay, rainLayer, rainInput, rainBehind, rainGrade, hdr, sharp, display, easu, canvas };
+		// The meadow's shade (MeadowShade.ts): the colour the vegetation's depth pass draws beside the
+		// scene's depth (three's targets carry one; never read: with an alpha channel, which alpha to
+		// coverage needs), the depth's nearest view z and the shade.
+		const meadowCoverage = MEADOW_SHADE ? g.color( 'meadowCoverage', { size: RENDER, format: THREE.RGBAFormat, type: THREE.UnsignedByteType, samples: 'scene' } ) : null;
+		const meadowDepth = MEADOW_SHADE ? g.color( 'meadowDepth', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType } ) : null;
+		const meadowShadeMap = MEADOW_SHADE ? g.color( 'meadowShade', { size: RENDER, format: THREE.RedFormat, type: THREE.UnsignedByteType, filter: 'nearest' } ) : null;
+		this.resources = { meadowCoverage, meadowDepth, meadowShade: meadowShadeMap, sceneColor, sceneDepth, linearDepth, opaqueColor, underwater, refractionReach, refraction, refractionDepth, surfaceDepth, velocity, surfaceDepthPrev, veilReactive, rainAir, rainOverlay, rainLayer, rainInput, rainBehind, rainGrade, hdr, sharp, display, easu, canvas };
 		// the targets the frame draws into, made now (the probes, the warm-ups and the water's
 		// textures need them before the first frame)
 		g.renderTarget( velocity ? [ sceneColor, velocity ] : [ sceneColor ], sceneDepth );
 		for ( const h of [ linearDepth, opaqueColor, underwater, refractionReach, display ] ) g.renderTarget( [ h ] );
 		g.renderTarget( [ refraction ], refractionDepth );
 		g.renderTarget( [ surfaceDepth ] );
+		if ( meadowCoverage && meadowDepth && meadowShadeMap ) {
+
+			g.renderTarget( [ meadowCoverage ], sceneDepth );
+			g.renderTarget( [ meadowDepth ] );
+			g.renderTarget( [ meadowShadeMap ] );
+			meadowShade.value = g.texture( meadowShadeMap );
+
+		}
 		this.textures = {
 			opaqueColor: g.texture( opaqueColor ), linearDepth: g.texture( linearDepth ), surfaceDepth: g.texture( surfaceDepth ),
 			underwater: g.texture( underwater ), refraction: g.texture( refraction ), refractionDepth: g.texture( refractionDepth ),
@@ -587,6 +612,12 @@ export class Pipeline {
 
 		} )();
 		this.depthQuad = new THREE.QuadMesh( resolveMat );
+		if ( meadowDepth ) {
+
+			this.meadowDepthQuad = new THREE.QuadMesh( meadowDepthMaterial( g.texture( sceneDepth ), renderSize, u.projInv ) );
+			this.meadowShadeQuad = new THREE.QuadMesh( meadowShadeMaterial( g.texture( meadowDepth ), renderSize, u.proj, u.projInv, u.keyView ) );
+
+		}
 		if ( ! TEMPORAL ) {
 
 			const copyMat = new THREE.NodeMaterial();
@@ -1132,10 +1163,40 @@ export class Pipeline {
 		if ( TEMPORAL ) [ sceneColor, surfaceDepth, velocity, opaqueColor ] = this.declareTemporalScene();
 		else {
 
+			// the vegetation's depth first, its shade over it (MeadowShade.ts), then the opaque scene
+			// over that depth
+			let { meadowCoverage, meadowDepth, meadowShade: shade } = this.resources;
+			const depthQuad = this.meadowDepthQuad, shadeQuad = this.meadowShadeQuad;
+			if ( meadowCoverage && meadowDepth && shade && depthQuad && shadeQuad ) {
+
+				g.addPass( 'meadowDepth', 'scene', ( b ) => {
+
+					meadowCoverage = b.write( meadowCoverage!, { clear: true } );
+					sceneDepth = b.depth( sceneDepth, { write: true, clear: true } );
+					return { label: 'vegetation depth', scene: ( f ) => f.prepassScene!, camera: ( f ) => f.camera };
+
+				} );
+				g.addPass( 'meadowDepthResolve', 'quad', ( b ) => {
+
+					b.read( sceneDepth, 'samples' );
+					meadowDepth = b.write( meadowDepth! );
+					return { label: 'meadow shade', quad: depthQuad };
+
+				} );
+				g.addPass( 'meadowShade', 'quad', ( b ) => {
+
+					b.read( meadowDepth! );
+					shade = b.write( shade! );
+					return { label: 'meadow shade', quad: shadeQuad };
+
+				} );
+
+			}
 			g.addPass( 'opaque', 'scene', ( b ) => {
 
+				if ( shade ) b.read( shade );
 				sceneColor = b.write( sceneColor, { clear: true } );
-				sceneDepth = b.depth( sceneDepth, { write: true, clear: true } );
+				sceneDepth = b.depth( sceneDepth, { write: true, clear: ! shade } );
 				return { label: 'opaque scene', scene: ( f ) => f.scene, camera: ( f ) => f.camera };
 
 			} );
@@ -1633,6 +1694,7 @@ export class Pipeline {
 		u.cameraWorld.value.copy( camera.matrixWorld );
 		u.proj.value.copy( camera.projectionMatrix );
 		u.view.value.copy( camera.matrixWorldInverse );
+		u.keyView.value.copy( frame.sun.position ).sub( frame.sun.target.position ).transformDirection( camera.matrixWorldInverse );
 		if ( TEMPORAL ) {
 
 			// this frame's rest (which picks the rest's jitter), jitter and motion, from the camera as

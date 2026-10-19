@@ -85,10 +85,12 @@ export function bloomTable( inputReads ) {
  * LightShafts.passes, PhysicalBloom, FSR), as the expected table: the graph Pipeline declares
  * (declarePipeline below) compiles to it. For the `post=` switches of a variant: `fogScale` (1: the
  * full-resolution fog of full-fog), `bankSize` (0: no-bank), `fsrPort` (false: three-fsr),
- * `compositeOnce` (false: inline-composite); store-scene changes the ops only (`legacyDiscard`). */
+ * `compositeOnce` (false: inline-composite), `meadowShade` (false: the meadow's shade off, as
+ * MeadowShade.ts's MEADOW_SHADE is at msaa 1 or with `flags=meadowShade:false`); store-scene changes
+ * the ops only (`legacyDiscard`). */
 export function declareToday( options = {} ) {
 
-	const o = { fogScale: 0.5, bankSize: 2048, fsrPort: true, compositeOnce: true, ...options };
+	const o = { fogScale: 0.5, bankSize: 2048, fsrPort: true, compositeOnce: true, meadowShade: true, ...options };
 	const g = new GraphDecl();
 	const k = Math.round( 1 / o.fogScale );
 	const h = {};
@@ -117,11 +119,48 @@ export function declareToday( options = {} ) {
 	h.display = g.color( 'display', { size: RENDER, format: 'RGBA', type: 'Float' } );
 	if ( o.fsrPort ) h.easu = g.color( 'FSR.easu', { size: CANVAS, format: 'RGBA', type: 'HalfFloat' } );
 	h.canvas = g.import( 'canvas', { size: CANVAS }, true );
+	// the meadow's shade: the coverage the vegetation's depth pass draws beside the scene's depth
+	// (never read), the depth's nearest view z and the shade
+	if ( o.meadowShade ) {
 
+		h.meadowCoverage = g.color( 'meadowCoverage', { size: RENDER, format: 'RGBA', type: 'UnsignedByte', samples: 'scene' } );
+		h.meadowDepth = g.color( 'meadowDepth', { size: RENDER, format: 'Red', type: 'Float' } );
+		h.meadowShade = g.color( 'meadowShade', { size: RENDER, format: 'Red', type: 'UnsignedByte', filter: 'nearest' } );
+
+	}
+
+	// the vegetation's depth into the scene's depth, its nearest sample resolved, the shade marched
+	// over it; the opaque pass then loads that depth instead of clearing it
+	if ( h.meadowShade ) {
+
+		g.addPass( 'meadowDepth', 'scene', ( b ) => {
+
+			h.meadowCoverage = b.write( h.meadowCoverage, { clear: true } );
+			h.sceneDepth = b.depth( h.sceneDepth, { write: true, clear: true } );
+			return { label: 'vegetation depth' };
+
+		} );
+		g.addPass( 'meadowDepthResolve', 'quad', ( b ) => {
+
+			b.read( h.sceneDepth, 'samples' );
+			h.meadowDepth = b.write( h.meadowDepth );
+			return { label: 'meadow shade' };
+
+		} );
+		g.addPass( 'meadowShade', 'quad', ( b ) => {
+
+			b.read( h.meadowDepth );
+			h.meadowShade = b.write( h.meadowShade );
+			return { label: 'meadow shade' };
+
+		} );
+
+	}
 	g.addPass( 'opaque', 'scene', ( b ) => {
 
+		if ( h.meadowShade ) b.read( h.meadowShade );
 		h.sceneColor = b.write( h.sceneColor, { clear: true } );
-		h.sceneDepth = b.depth( h.sceneDepth, { write: true, clear: true } );
+		h.sceneDepth = b.depth( h.sceneDepth, { write: true, clear: ! h.meadowShade } );
 		return { label: 'opaque scene' };
 
 	} );
@@ -327,8 +366,9 @@ export function declareToday( options = {} ) {
 
 }
 
+// (the meadow's shade only at 4x, as MEADOW_SHADE)
 export const compileToday = ( options = {}, samples = 4, legacyDiscard ) =>
-	compileGraph( declareToday( options ).g, { sceneSamples: samples, ...( legacyDiscard ? { legacyDiscard } : {} ) } );
+	compileGraph( declareToday( { meadowShade: samples === 4, ...options } ).g, { sceneSamples: samples, ...( legacyDiscard ? { legacyDiscard } : {} ) } );
 
 /** The graph Pipeline declares (Pipeline's constructor, declarePasses and declareRefraction,
  * AerialPerspective.apply and passes, LightShafts.build and passes, PhysicalBloom), in its order of
@@ -336,7 +376,7 @@ export const compileToday = ( options = {}, samples = 4, legacyDiscard ) =>
  * pass of its own. Compiled, it is today's graph (declareToday). */
 export function declarePipeline( options = {} ) {
 
-	const o = { fogScale: 0.5, bankSize: 2048, fsrPort: true, compositeOnce: true, ...options };
+	const o = { fogScale: 0.5, bankSize: 2048, fsrPort: true, compositeOnce: true, meadowShade: true, ...options };
 	const g = new GraphDecl();
 	const k = Math.round( 1 / o.fogScale );
 	const h = {};
@@ -355,6 +395,14 @@ export function declarePipeline( options = {} ) {
 	h.display = g.color( 'display', { size: RENDER, format: 'RGBA', type: 'Float' } );
 	if ( o.fsrPort ) h.easu = g.color( 'FSR.easu', { size: CANVAS, format: 'RGBA', type: 'HalfFloat' } );
 	h.canvas = g.import( 'canvas', { size: CANVAS }, true );
+	// (the meadow's shade, after the canvas)
+	if ( o.meadowShade ) {
+
+		h.meadowCoverage = g.color( 'meadowCoverage', { size: RENDER, format: 'RGBA', type: 'UnsignedByte', samples: 'scene' } );
+		h.meadowDepth = g.color( 'meadowDepth', { size: RENDER, format: 'Red', type: 'Float' } );
+		h.meadowShade = g.color( 'meadowShade', { size: RENDER, format: 'Red', type: 'UnsignedByte', filter: 'nearest' } );
+
+	}
 	h.constants = g.color( 'postConstants', { size: { of: 'fixed', width: 1, height: 1 }, format: 'RGBA', type: 'Float' } );
 	// AerialPerspective.apply
 	if ( o.bankSize > 0 ) h.fogBanks = g.color( 'fogBanks', { size: { of: 'fixed', width: o.bankSize, height: o.bankSize }, format: 'Red', type: 'HalfFloat' }, true );
@@ -370,11 +418,26 @@ export function declarePipeline( options = {} ) {
 	// Pipeline's constructor, after the composite: PhysicalBloom
 	h.bloom = declareBloomTargets( g );
 
-	// declarePasses: the scene half (declareRefraction after the opaque scene)
+	// declarePasses: the scene half (the meadow's shade before the opaque scene, declareRefraction
+	// after it)
+	if ( h.meadowShade ) {
+
+		g.addPass( 'meadowDepth', 'scene', ( b ) => {
+
+			h.meadowCoverage = b.write( h.meadowCoverage, { clear: true } );
+			h.sceneDepth = b.depth( h.sceneDepth, { write: true, clear: true } );
+			return { label: 'vegetation depth' };
+
+		} );
+		g.addPass( 'meadowDepthResolve', 'quad', ( b ) => ( b.read( h.sceneDepth, 'samples' ), h.meadowDepth = b.write( h.meadowDepth ), { label: 'meadow shade' } ) );
+		g.addPass( 'meadowShade', 'quad', ( b ) => ( b.read( h.meadowDepth ), h.meadowShade = b.write( h.meadowShade ), { label: 'meadow shade' } ) );
+
+	}
 	g.addPass( 'opaque', 'scene', ( b ) => {
 
+		if ( h.meadowShade ) b.read( h.meadowShade );
 		h.sceneColor = b.write( h.sceneColor, { clear: true } );
-		h.sceneDepth = b.depth( h.sceneDepth, { write: true, clear: true } );
+		h.sceneDepth = b.depth( h.sceneDepth, { write: true, clear: ! h.meadowShade } );
 		return { label: 'opaque scene' };
 
 	} );
@@ -486,7 +549,7 @@ export function declarePipeline( options = {} ) {
 }
 
 export const compilePipeline = ( options = {}, samples = 4, legacyDiscard ) =>
-	compileGraph( declarePipeline( options ).g, { sceneSamples: samples, ...( legacyDiscard ? { legacyDiscard } : {} ) } );
+	compileGraph( declarePipeline( { meadowShade: samples === 4, ...options } ).g, { sceneSamples: samples, ...( legacyDiscard ? { legacyDiscard } : {} ) } );
 
 // ---- the expected table of today's msaa4 graph
 
@@ -494,6 +557,11 @@ const R = 'render:1:0:0', C = 'canvas:1', H = 'render:0.5:0:1', RF = 'render:0.6
 const w = ( name, size, format, type, samples = 1 ) => ( { name, size, format, type, samples } );
 const BLOOM = bloomTable( [ 'hdr@1:sample' ] );
 export const TODAY = [
+	// the meadow's shade: the vegetation's depth into the scene's depth, beside a coverage it never
+	// reads, then the depth's nearest view z and the shade over it
+	{ name: 'meadowDepth', kind: 'scene', label: 'vegetation depth', when: null, size: R, writes: [ w( 'meadowCoverage', R, 'RGBA', 'UnsignedByte', 4 ) ], depth: { ...w( 'sceneDepth', R, null, 'Float', 4 ), write: true }, target: 'meadowCoverage|sceneDepth' },
+	{ name: 'meadowDepthResolve', kind: 'quad', label: 'meadow shade', when: null, size: R, writes: [ w( 'meadowDepth', R, 'Red', 'Float' ) ], depth: null, target: 'meadowDepth|-' },
+	{ name: 'meadowShade', kind: 'quad', label: 'meadow shade', when: null, size: R, writes: [ w( 'meadowShade', R, 'Red', 'UnsignedByte' ) ], depth: null, target: 'meadowShade|-' },
 	{ name: 'opaque', kind: 'scene', label: 'opaque scene', when: null, size: R, writes: [ w( 'sceneColor', R, 'RGBA', 'HalfFloat', 4 ) ], depth: { ...w( 'sceneDepth', R, null, 'Float', 4 ), write: true }, target: 'sceneColor|sceneDepth' },
 	{ name: 'underwaterPyramid', kind: 'quad', label: 'underwater pyramid', when: null, size: R, writes: [ w( 'underwater', R, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'underwater|-' },
 	{ name: 'refractionReach', kind: 'quad', label: 'refraction', when: 'refraction', size: 'fixed:64x1', writes: [ w( 'refractionReach', 'fixed:64x1', 'RGBA', 'HalfFloat' ) ], depth: null, target: 'refractionReach|-' },
@@ -519,11 +587,13 @@ export const TODAY = [
 	{ name: 'upscaledOutput', kind: 'chain', label: 'output & FSR', when: 'upscaling', size: C, writes: [ w( 'canvas', C, null, null ) ], depth: null, target: 'canvas|-' },
 ];
 
-// what each pass of today's graph reads (`resource@version:mode`, `?` optional)
+// what each pass of today's graph reads (`resource@version:mode`, `?` optional; the scene's depth
+// is the vegetation depth pass's at v1, the opaque scene's at v2, the water's at v3)
 export const TODAY_READS = {
-	opaque: [], underwaterPyramid: [ 'sceneColor@1:sample', 'sceneDepth@1:samples' ], refractionReach: [ 'sceneDepth@1:samples', 'underwater@1:sample' ], refractionMask: [ 'underwater@1:sample', 'refractionReach@1:sample?' ], refraction: [],
-	depthResolve: [ 'sceneDepth@1:samples' ], opaqueCopy: [ 'sceneColor@1:sample' ],
-	water: [ 'opaqueColor@1:sample', 'linearDepth@1:sample', 'underwater@1:sample', 'refraction@2:sample?', 'refractionDepth@2:sample?' ], surfaceResolve: [ 'sceneDepth@2:samples' ],
+	meadowDepth: [], meadowDepthResolve: [ 'sceneDepth@1:samples' ], meadowShade: [ 'meadowDepth@1:sample' ],
+	opaque: [ 'meadowShade@1:sample' ], underwaterPyramid: [ 'sceneColor@1:sample', 'sceneDepth@2:samples' ], refractionReach: [ 'sceneDepth@2:samples', 'underwater@1:sample' ], refractionMask: [ 'underwater@1:sample', 'refractionReach@1:sample?' ], refraction: [],
+	depthResolve: [ 'sceneDepth@2:samples' ], opaqueCopy: [ 'sceneColor@1:sample' ],
+	water: [ 'opaqueColor@1:sample', 'linearDepth@1:sample', 'underwater@1:sample', 'refraction@2:sample?', 'refractionDepth@2:sample?' ], surfaceResolve: [ 'sceneDepth@3:samples' ],
 	rain: [ 'linearDepth@1:sample', 'surfaceDepth@1:sample' ], fogBank: [], fogDepth: [ 'surfaceDepth@1:sample' ],
 	fogMarch: [ 'fogNearestDepth@1:sample?', 'fogBanks@1:sample?' ],
 	shaftsSource: [ 'surfaceDepth@1:sample' ], shaftsRays: [ 'shafts.source@1:sample?' ], postConstants: [ 'shafts.source@1:sample?' ],
@@ -534,6 +604,8 @@ export const TODAY_READS = {
 };
 
 const ALL = TODAY.map( ( p ) => p.name );
+// the meadow's shade, at 4x only (MEADOW_SHADE)
+const MEADOW = [ 'meadowDepth', 'meadowDepthResolve', 'meadowShade' ];
 const without = ( ...names ) => ALL.filter( ( n ) => ! names.includes( n ) );
 // the passes the bloom and the sharp image run after, a frame's tail
 const TAIL = [ 'postConstants', 'composite', ...BLOOM_PASSES, 'sharp', 'display' ];
@@ -560,7 +632,7 @@ export const checks = [
 			summary: x.summary(),
 			ops: Array.from( { length: x.fullMask + 1 }, ( _, m ) => [ x.ops( 'legacy', m ), x.ops( 'derived', m ) ] ),
 		} );
-		const variants = [ {}, { fogScale: 1 }, { fogScale: 0.25 }, { bankSize: 0 }, { fsrPort: false }, { compositeOnce: false }, { fogScale: 1, bankSize: 0, fsrPort: false, compositeOnce: false } ];
+		const variants = [ {}, { fogScale: 1 }, { fogScale: 0.25 }, { bankSize: 0 }, { fsrPort: false }, { compositeOnce: false }, { meadowShade: false }, { fogScale: 1, bankSize: 0, fsrPort: false, compositeOnce: false } ];
 		for ( const options of variants ) for ( const [ samples, discard ] of [ [ 4, undefined ], [ 1, undefined ], [ 4, [] ] ] ) {
 
 			const what = `${ JSON.stringify( options ) } samples ${ samples }${ discard ? ' store-scene' : '' }`;
@@ -578,7 +650,11 @@ export const checks = [
 		const rows = ( t ) => t.passes.map( ( p ) => [ p.pass, p.colors.map( ( x ) => `${ x.resource }:${ x.load }/${ x.store }${ x.resolve === null ? '' : x.resolve ? '/resolve' : '/no-resolve' }` ), p.depth && `${ p.depth.resource }:${ p.depth.load }/${ p.depth.store }`, p.rewrite ] );
 		const rainOn = c.ops( 'legacy', c.maskOf( [ 'refractionReach', 'refractionMask', 'refraction', 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'output' ] ) );
 		assert.deepEqual( rows( rainOn ), [
-			[ 'opaque', [ 'sceneColor:clear/store/resolve' ], 'sceneDepth:clear/store', false ],
+			[ 'meadowDepth', [ 'meadowCoverage:clear/store/resolve' ], 'sceneDepth:clear/store', false ],
+			[ 'meadowDepthResolve', [ 'meadowDepth:clear/store' ], null, false ],
+			[ 'meadowShade', [ 'meadowShade:clear/store' ], null, false ],
+			// (over the vegetation's depth)
+			[ 'opaque', [ 'sceneColor:clear/store/resolve' ], 'sceneDepth:load/store', false ],
 			[ 'underwaterPyramid', [ 'underwater:clear/store' ], null, false ],
 			[ 'refractionReach', [ 'refractionReach:clear/store' ], null, false ],
 			[ 'refractionMask', [ 'refraction:clear/store' ], 'refractionDepth:clear/store', false ],
@@ -619,7 +695,7 @@ export const checks = [
 		assert.deepEqual( c.passNames, ALL );
 		assert.deepEqual( c.conditional.map( ( i ) => c.decl.passes[ i ].name ), [ 'refractionReach', 'refractionMask', 'refraction', 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'output', 'easu', 'upscaledOutput' ] );
 		assert.deepEqual( c.summary().targets.map( ( t ) => [ t.key, t.size, t.samples ] ), [
-			[ 'sceneColor|sceneDepth', R, 4 ], [ 'underwater|-', R, 1 ], [ 'refractionReach|-', 'fixed:64x1', 1 ], [ 'refraction|refractionDepth', RF, 1 ], [ 'linearDepth|-', R, 1 ], [ 'opaqueColor|-', R, 1 ], [ 'surfaceDepth|-', R, 1 ],
+			[ 'meadowCoverage|sceneDepth', R, 4 ], [ 'meadowDepth|-', R, 1 ], [ 'meadowShade|-', R, 1 ], [ 'sceneColor|sceneDepth', R, 4 ], [ 'underwater|-', R, 1 ], [ 'refractionReach|-', 'fixed:64x1', 1 ], [ 'refraction|refractionDepth', RF, 1 ], [ 'linearDepth|-', R, 1 ], [ 'opaqueColor|-', R, 1 ], [ 'surfaceDepth|-', R, 1 ],
 			[ 'fogBanks|-', 'fixed:2048x2048', 1 ], [ 'fogNearestDepth|-', 'render:1:2:0', 1 ], [ 'fogMarch|-', 'render:1:2:0', 1 ],
 			[ 'shafts.source|-', H, 1 ], [ 'shafts.rays|-', H, 1 ], [ 'postConstants|-', 'fixed:1x1', 1 ], [ 'hdr|-', R, 1 ], ...BLOOM.rows.map( ( r ) => [ r.target, r.size, 1 ] ), [ 'sharp|-', R, 1 ],
 			[ 'display|-', R, 1 ], [ 'canvas|-', C, 1 ], [ 'FSR.easu|-', C, 1 ],
@@ -630,10 +706,10 @@ export const checks = [
 
 	} ],
 
-	[ 'today: msaa=1 keeps the graph with single-sampled scene targets', () => {
+	[ 'today: msaa=1 keeps the graph with single-sampled scene targets, without the meadow\'s shade', () => {
 
 		const c = compileToday( {}, 1 );
-		const one = TODAY.map( ( p ) => ( {
+		const one = TODAY.filter( ( p ) => ! MEADOW.includes( p.name ) ).map( ( p ) => ( {
 			...p,
 			writes: p.writes.map( ( x ) => ( { ...x, samples: 1 } ) ),
 			depth: p.depth && { ...p.depth, samples: 1 },
@@ -686,7 +762,7 @@ export const checks = [
 
 		const c = compileToday();
 		const run = ( ...enabled ) => c.running( c.maskOf( enabled ) ).map( ( i ) => c.decl.passes[ i ].name );
-		const scene = ( ...extra ) => [ 'opaque', 'underwaterPyramid', ...extra, 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve' ];
+		const scene = ( ...extra ) => [ ...MEADOW, 'opaque', 'underwaterPyramid', ...extra, 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve' ];
 		const shafts = [ 'shaftsSource', 'shaftsRays' ];
 		assert.deepEqual( run( 'refractionReach', 'refractionMask', 'refraction', 'rain', 'fogBank', 'fogDepth', 'fogMarch', ...shafts, 'output' ), [ ...scene( 'refractionReach', 'refractionMask', 'refraction' ), 'rain', 'fogBank', 'fogDepth', 'fogMarch', ...shafts, ...TAIL, 'output' ] );
 		assert.deepEqual( run( 'refractionReach', 'refractionMask', 'refraction', 'fogDepth', 'fogMarch', 'output' ), [ ...scene( 'refractionReach', 'refractionMask', 'refraction' ), 'fogDepth', 'fogMarch', ...TAIL, 'output' ], 'rain off, the sun away' );

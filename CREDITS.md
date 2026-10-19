@@ -623,6 +623,15 @@ comment where it is used.
   darkened toward the ground by its height and density: SimonDev's *Quick_Grass*
   (github.com/simondevyoutube/Quick_Grass, MIT, copyright 2023 simondevyoutube), its grass
   shader, in `src/world/Grass.ts` (`PALETTE`, `ROOT_DARK`). Used as a technique only.
+- The meadow grouped into Voronoi clumps that share their tussocks' parameters, a clump's common
+  normal, and the grass's shade from a coarse stand-in for its heights with screen-space shadows
+  for the detail: Sucker Punch Productions' grass in *Ghost of Tsushima* (Eric Wohllaib,
+  *Procedural Grass in 'Ghost of Tsushima'*, GDC 2021), in `src/world/Grass.ts` (`CLUMP`),
+  `src/world/SwardField.ts` and `src/lighting/MeadowCanopy.ts` (the crowns and their shade) and
+  `src/post/MeadowShade.ts`. Used as techniques only.
+- Screen-space shadows for the key light over the depth: Bend Studio's (Graham Aldridge, *Days
+  Gone*, Sony Creators Conference / SIGGRAPH 2023), in `src/post/MeadowShade.ts`, as a plain
+  per-pixel march. Used as a technique only.
 
 ## References
 

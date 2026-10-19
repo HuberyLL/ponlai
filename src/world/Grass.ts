@@ -15,16 +15,17 @@ import { soilUniforms } from '../materials/Soil.ts';
 import { rootHash, type WindState } from '../weather/Wind.ts';
 import { bendBlade, bladePhase, drown, swayFade, tuftWind, type TrampleBlade, type TuftWind } from './vegetation/Deform.ts';
 import { TRAMPLE_RECORD, trampleKernel, trampleShare } from './vegetation/Trample.ts';
-import { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
+import { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight, meadowCastLight } from '../lighting/MeadowCanopy.ts';
 import { PUDDLE_WET, puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { GRASS_BLADE, gravityNumber, type StrandMaterial } from './vegetation/Physics.ts';
 import { runSteps } from './Steps.ts';
-import { setSwardField, swardSteps } from './SwardField.ts';
+import { canopySteps, canopyTop, crownSteps, setCanopyTop, setSwardField, swardSteps } from './SwardField.ts';
 import { ALPHA_TO_COVERAGE } from './vegetation/Coverage.ts';
 import { backlight, forwardLight, vegetationMaterial, type VegetationOptions } from './vegetation/Material.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
+import { MEADOW_SHADE, meadowShadeAt } from '../post/MeadowShade.ts';
 import { CULL_GROUP, VegetationCull, poolBuffers, poolSteps, type CullBatchInput, type CullBuffers, type CullPayload, type CullPool, type CullRange } from './vegetation/VegetationCull.ts';
 import { AttributeType, textureSteps, uploadSteps } from './Upload.ts';
 import { screenShare, screenShareNode } from './vegetation/Lod.ts';
@@ -45,8 +46,10 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 // cooler root to a lighter, yellower tip, where the key light shines through the blade, the sward
 // darkening toward its roots by its density, with a faint gloss along the blades and little of a
 // dielectric's specular; soft upward normals join the blades to the turf rather than lighting every
-// tuft as a cushion, and each blade is folded along its midrib, one half turned to the light and the
-// other from it, with a thin lighter edge. The sward has a real meadow's layers from the ground up
+// tuft as a cushion, its clump's dome turning them (CLUMP), and each blade is folded along its
+// midrib, one half turned to the light and the other from it, with a thin lighter edge. The light
+// through a blade is the light toward the sun's half of the view alone (`forwardLight`). The sward
+// has a real meadow's layers from the ground up
 // (CULM_*, DRY_*): dead leaves drooped low and the old leaves' straw sheaths at the bottom, the green
 // leaves, and over them a few of each tall tussock's blades grown as flowering stems whose
 // spike-like panicles, purple brown to straw, stand above the leaves.
@@ -85,7 +88,14 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   turf's shoulder inland of the coast keep their shape; its previous position takes the same
 //   drape and hold. Both are 0 for the tufts without a record, which draw as the rest of the meadow.
 // - Blades do not cast into the sun's shadow map (narrower than a texel, they flicker as the sun
-//   moves): the meadow shades itself and its turf through MeadowCanopy. What the larger casters
+//   moves). The meadow shades itself: at 4x outside the temporal modes the blades in front of the
+//   light shade those behind them at each pixel (post/MeadowShade.ts, its march over the
+//   vegetation's depth, `meadowShadeAt`), in place of a level canopy's mean shade (MeadowCanopy,
+//   which the temporal modes keep); the taller tussocks shade their neighbours through the sward's
+//   top (SwardField.ts `canopyTop`, MeadowCanopy.ts `meadowCastLight`), once per tuft with the
+//   larger casters' shade below (off with `flags.meadowCast = false` at load); and the turf takes
+//   the crowns' shade toward the light (TerrainMaterial.ts, MeadowCanopy.ts `meadowGroundLight`).
+//   What the larger casters
 //   (rock, the islanders, the game's props) throw onto the blades is soft and light: a few bilinear lookups
 //   of the sun's map around each tuft (`SunShadow.softVisibility`), no penumbra search, taken once
 //   per tuft in a compute pass whenever the sun's maps change (`meadowStill`), read by the vertex
@@ -277,6 +287,71 @@ function lowPatch( x: number, z: number ): number {
 // spread over the tuft's disc, so it stays a closed sward).
 const TUSSOCK = { spread: 0.4, shortSpread: 0.15, stiffness: 0.3, levelStiff: 1.5, lean: 0.3, blades: [ 12 * FUR, 16 * FUR ], extraBlades: [ 12 * FUR, 14 * FUR ], gather: 0.35 };
 const GAP = 0.05;
+// Clumps (the technique of Wohllaib, GDC 2021: blades grouped into Voronoi clumps
+// that share most of their parameters, pulled together and pointed alike, so the field shows its
+// structure where a blade's own randomness only grains it): the tussocks share a clump of a
+// world-anchored Voronoi lattice of `cell` (m), its centre jittered within its cell. A clump is
+// one of `types` (by `share`): a tall one (`height` times its level, its tussocks leaning out
+// from its centre by `out`, more at its rim: a mound of blades), an ordinary one (its tussocks
+// leaning together toward its own side by `same`, the share of the clump's lean in theirs) or a
+// short one, which keeps all of its blades (`full`), a closed sward low between the others, not
+// the ground; over it the tussocks stand lower toward its rim (`mound`, at the rim), each keeps
+// `own` of the height spread its own, and one at its rim leaves a gap more often (`rimGap`, from
+// `rim` of the way out), so the clumps stand apart with the dark sward between them; its colour's
+// value varies by `value`. The short turf keeps its level (a clump's share falls as a tussock comes
+// down). The tallest stand `cap` times the ordinary level. Off with `flags=grassClumps:false` at
+// load.
+const CLUMP = {
+	cell: 0.9, mound: 0.2, own: 0.2, rimGap: 0, rim: 0.7, value: 0.07, cap: 2,
+	types: [
+		{ share: 0.25, height: [ 1.3, 1.65 ], out: [ 0.15, 0.45 ], same: 0, full: 0, dome: 2 },
+		{ share: 0.55, height: [ 0.85, 1.1 ], out: [ 0, 0 ], same: 0.8, full: 0, dome: 1.6 },
+		{ share: 0.2, height: [ 0.7, 0.9 ], out: [ 0, 0 ], same: 0, full: 1, dome: 1 },
+	],
+} as const;
+const CLUMPS = debugFlags.grassClumps !== false;
+// A clump's normals are a dome's (`dome` by its type, times DOME): its tussocks' normals turn out
+// from its centre by the way to its rim, so each clump has a side lit by the key and one turned
+// from it, as a tree's crown takes a sphere's normals and grass blades a clump's
+// common normal far off: a blade's own soft upward normal lights every clump alike, and the
+// meadow shows no side the light comes from. `flags=grassDome:<k>` scales it at load (0: off).
+const DOME = typeof debugFlags.grassDome === 'number' ? debugFlags.grassDome : debugFlags.grassDome === false ? 0 : 1;
+interface Clump { cx: number; cz: number; t: number; type: number; height: number; out: number; turn: number; value: number }
+const _clump: Clump = { cx: 0, cz: 0, t: 0, type: 0, height: 1, out: 0, turn: 0, value: 0.5 };
+// The clump at ( x, z ): the nearest of the 3 x 3 cells' centres, `t` the way from it toward the
+// border (0 at the centre, 1 where the next nearest is as near), its draws from its cell's stream.
+function clumpAt( x: number, z: number ): Clump {
+
+	const ci = Math.floor( x / CLUMP.cell ), cj = Math.floor( z / CLUMP.cell );
+	let best = Infinity, next = Infinity, bi = 0, bj = 0, bx = 0, bz = 0;
+	for ( let j = cj - 1; j <= cj + 1; j ++ ) for ( let i = ci - 1; i <= ci + 1; i ++ ) {
+
+		const r = cellStream( i, j, 401 );
+		const px = ( i + r() ) * CLUMP.cell, pz = ( j + r() ) * CLUMP.cell, d = Math.hypot( x - px, z - pz );
+		if ( d < best ) {
+
+			next = best;
+			best = d; bi = i; bj = j; bx = px; bz = pz;
+
+		} else if ( d < next ) next = d;
+
+	}
+	const r = cellStream( bi, bj, 401 );
+	r(); r();
+	const pick = r();
+	let type = 0;
+	for ( let acc = 0; type < CLUMP.types.length - 1; type ++ ) if ( pick < ( acc += CLUMP.types[ type ].share ) ) break;
+	const T = CLUMP.types[ type ];
+	_clump.cx = bx; _clump.cz = bz;
+	_clump.t = Math.min( 2 * best / ( best + next ), 1 );
+	_clump.type = type;
+	_clump.height = T.height[ 0 ] + ( T.height[ 1 ] - T.height[ 0 ] ) * r();
+	_clump.out = T.out[ 0 ] + ( T.out[ 1 ] - T.out[ 0 ] ) * r();
+	_clump.turn = r() * Math.PI * 2;
+	_clump.value = r();
+	return _clump;
+
+}
 // The sward follows its soil (Meadow.ts SWARD_SOIL): a tall tussock's level is the ordinary level
 // times LUSH (from the first at the vigour VIGOUR_LUSH[ 0 ] to the second at VIGOUR_LUSH[ 1 ]), no
 // taller than the tallest tussock of the ordinary level (the meadow's bounds hold); and in a pocket
@@ -1385,7 +1460,10 @@ function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNod
 	const input = tuftInputs( cull, tuftSlot );
 	// The tuft's instance data, read as the instanced attributes were: what the fragment stage
 	// reads passes as a varying, as an attribute did.
-	const ground0 = input.ground( 0 ), ground1 = input.ground( 1 ), ground2 = input.ground( 2 );
+	// (the tuft's local x axis is its matrix's first column; its slot in `ground` holds the clump's
+	// dome, CLUMP)
+	const ground0 = input.ground( 0 ), dome = input.ground( 1 ), ground2 = input.ground( 2 );
+	const ground1 = vec4( ( input.matrix as unknown as Columns ).element( 0 ).xyz, dome.w );
 	const skyVisibility = varying( ground0.x, 'vGrassSkyVisibility' );
 	const tuftOrigin = varying( input.origin, 'vGrassTuftOrigin' );
 	const blade = attribute<'vec4'>( 'blade', 'vec4' );
@@ -1666,7 +1744,10 @@ function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNod
 			// The blade's own lean tilts it too, so blades leaning apart take the light apart.
 			const normal = transformNormal( normalLocal, input.matrix );
 			const leanWorld = ground1.xyz.mul( pose.lean.x ).add( ground2.xyz.mul( pose.lean.y ) );
-			normalLocal.assign( mix( normalize( normal.add( bend.tilt.mul( t.mul( 1.5 ) ) ).add( leanWorld.mul( t ) ) ), normalize( head.normal.add( bend.tilt.mul( 1.5 ) ) ), isHead ) );
+			let bladeNormal = normalize( normal.add( bend.tilt.mul( t.mul( 1.5 ) ) ).add( leanWorld.mul( t ) ) );
+			// (its clump's dome, CLUMP)
+			if ( DOME > 0 ) bladeNormal = normalize( bladeNormal.add( vec3( dome.x, 0, dome.y ) ) );
+			normalLocal.assign( mix( bladeNormal, normalize( head.normal.add( bend.tilt.mul( 1.5 ) ) ), isHead ) );
 			// (a head takes its own colour, not the lawn's)
 			// (a blade lying over in a strong wind shows its paler side, `bendBlade`'s `pale`: 1 up to fair's wind)
 			// (the sward's depth, ROOT_DARK: per vertex, the blade's segments ease it in smoothly)
@@ -1692,7 +1773,9 @@ function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNod
 		// is that pose in world space.
 		light: ( rest ) => {
 
-			const canopy = grassQuality.canopyPerVertex
+			// (with the meadow's shade its march shades the blades in front of the light, at each
+			// pixel, in place of the canopy's mean: post/MeadowShade.ts)
+			const canopy = MEADOW_SHADE ? float( 1 ) : grassQuality.canopyPerVertex
 				? varying( meadowCanopyLight( canopyDepth( rooted ), shared.sunDir ) )
 				: meadowCanopyLight( canopyDepth( rest ), shared.sunDir );
 			// Light through the upper blades, yellower than the light off them (it crosses the
@@ -1735,7 +1818,10 @@ function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNod
 	};
 	// The larger casters' shade on the blades, soft and light (SHADE_*), the tuft's (`meadowStill`):
 	// the sun's filter takes it in place of its own (SunShadow `install`).
-	mat.userData.sunVisibility = varying( ownMore.w, 'vGrassSunVisibility' );
+	// With the meadow's shade (post/MeadowShade.ts) the blades and tussocks in front of the light
+	// shade it too, at the fragment's pixel.
+	const visibility = varying( ownMore.w, 'vGrassSunVisibility' );
+	mat.userData.sunVisibility = MEADOW_SHADE ? visibility.mul( meadowShadeAt() ) : visibility;
 	mat.userData.wind = shared.wind.direction;
 	return mat;
 
@@ -1743,9 +1829,11 @@ function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNod
 
 /** A tuft's record; a tuft at the cliff's edge also its `edge` record (20 floats: `edgeTuftSteps`)
  * and how far past its blades' reach the drape and the hold off the wall may move them (`pad`, m). */
-export interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3; flower: number; density: number; clump: number; edge?: Float32Array; pad?: number }
+export interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3; flower: number; density: number; clump: number; dome?: readonly [ number, number ]; edge?: Float32Array; pad?: number }
 
 type GrassCull = VegetationCull<Tuft>;
+// a mat4 node's columns (TSL has them; @types/three does not declare them)
+type Columns = { element( i: number ): THREE.Node<'vec4'> };
 
 // The cull's bounds of a tuft (`tuftSphere`). Its widened blades reach out by at most WIDEN_REACH
 // times their half width (`MAX_WIDEN` times the blade gain at 70 m, NEAR_GAIN: a tuft there keeps
@@ -1827,11 +1915,12 @@ const GRASS_PAYLOAD: CullPayload<Tuft> = {
 		// where blades stand against the sea and stay narrower at 4x: the opaque pass's MSAA edge pixels
 		// there resolve against the sky-coloured clear, so every partly covered pixel a widened
 		// blade adds shows as a pale fringe over the sea); then the instance's local x axis with the
-		// thin flag (1 for the extra tufts that fold away with distance), and its local z axis with
+		// thin flag (1 for the extra tufts that fold away with distance; the shader takes the x axis
+		// from the matrix, its slot here holds the clump's dome: CLUMP), and its local z axis with
 		// the share of its blades the soil lets it keep (`density`, `tuftLod`). A blade's width lies
 		// in the plane of those axes: the vertex stage keeps thin blades a minimum width on screen
 		// in world space.
-		ground.set( [ t.visibility, t.flower, t.cover, t.rimEdge, e[ 0 ], e[ 1 ], e[ 2 ], t.thin, e[ 8 ], e[ 9 ], e[ 10 ], t.density ], i * 12 );
+		ground.set( [ t.visibility, t.flower, t.cover, t.rimEdge, t.dome?.[ 0 ] ?? 0, t.dome?.[ 1 ] ?? 0, 0, t.thin, e[ 8 ], e[ 9 ], e[ 10 ], t.density ], i * 12 );
 		t.origin.toArray( origins, i * 4 );
 		origins[ i * 4 + 3 ] = t.top;
 		if ( t.edge ) edge.set( t.edge, i * 20 );
@@ -1846,26 +1935,29 @@ const GRASS_PAYLOAD: CullPayload<Tuft> = {
 };
 
 /** The still part of every tuft's record (TUFT_RECORD): its tussock's values and the larger
- * casters' shade on it (SHADE_*), which the blades read as their sun visibility (`grassMaterial`).
+ * casters' shade on it (SHADE_*) times its taller neighbours' (`meadowCastLight`), which the blades
+ * read as their sun visibility (`grassMaterial`).
  * Taken per vertex, the shade's lookups of both stepped maps were about a third of the meadow's
  * vertex work, for a shade whose ring is wider than a tuft. The kernel runs over every slot
  * whenever the sun's maps or their blend have changed (a redraw, the blend's weight as the sun
- * turns, the first call) or the pool has: the returned function, which the frame calls after the
+ * turns, the first call), the key light has turned or the pool has: the returned function, which the frame calls after the
  * sun's maps update and before it renders, as the trail's kernels run, outside the scene's passes
  * (the grass group's `update`; a paused clock runs it once). */
-function meadowStill( cull: GrassCull, sunShadow: SunShadow ): ( renderer: THREE.Renderer ) => void {
+function meadowStill( cull: GrassCull, sunShadow: SunShadow, shared: Shared ): ( renderer: THREE.Renderer ) => void {
 
-	const origins = cull.node( 'origins', 'vec4', true ), colors = cull.node( 'colors', 'vec4', true ), ground = cull.node( 'ground', 'vec4', true );
+	const origins = cull.node( 'origins', 'vec4', true ), colors = cull.node( 'colors', 'vec4', true ), matrices = cull.node( 'matrices', 'mat4', true );
 	const record = cull.node( 'tuft', 'vec4' );
+	const cast = debugFlags.meadowCast !== false;
 	const kernel = Fn( () => {
 
 		const slot = workgroupId.x.mul( CULL_GROUP ).add( localId.x ).toVar();
 		const origin = origins.element( slot ).toVar();
 		const at = origin.xyz.add( vec3( 0, origin.w.mul( SHADE_HEIGHT ).add( SHADE_LIFT ), 0 ) );
-		const shade = mix( float( 1 ), sunShadow.softVisibility( at, SHADE_RADIUS, SHADE_TAPS ), SHADE_DEPTH );
+		const caster = mix( float( 1 ), sunShadow.softVisibility( at, SHADE_RADIUS, SHADE_TAPS ), SHADE_DEPTH );
+		const shade = cast ? caster.mul( meadowCastLight( canopyTop, origin.xyz.add( vec3( 0, origin.w, 0 ) ), shared.sunDir ) ) : caster;
 		const scaleY = origin.w.div( CANOPY_TOP ).toVar();
 		const own = tussockOf( colors.element( slot ).w, scaleY );
-		const aspect = scaleY.div( length( ground.element( slot.mul( 3 ).add( 1 ) ).xyz ) );
+		const aspect = scaleY.div( length( ( matrices.element( slot ) as unknown as Columns ).element( 0 ).xyz ) );
 		record.element( slot.mul( TUFT_RECORD ) ).assign( vec4( own.stiffness, own.lean, own.gather, own.coarse ) );
 		record.element( slot.mul( TUFT_RECORD ).add( 1 ) ).assign( vec4( own.dir, aspect, shade ) );
 
@@ -1873,10 +1965,12 @@ function meadowStill( cull: GrassCull, sunShadow: SunShadow ): ( renderer: THREE
 	// (the pool's filled workgroups: a new pool's size reaches it)
 	kernel.dispatchSize = cull.workgroups;
 	let draws = - 1, weight = - 1, ready = - 1, buffer: THREE.StorageBufferAttribute | null = null;
+	const key = new THREE.Vector3( NaN, NaN, NaN );
 	return ( renderer ) => {
 
 		const pool = cull.buffer( 'tuft' );
-		if ( sunShadow.draws === draws && sunShadow.weight.value === weight && sunShadow.ready.value === ready && pool === buffer ) return;
+		if ( sunShadow.draws === draws && sunShadow.weight.value === weight && sunShadow.ready.value === ready && pool === buffer && ( ! cast || key.equals( shared.sunDir.value ) ) ) return;
+		key.copy( shared.sunDir.value );
 		draws = sunShadow.draws;
 		weight = sunShadow.weight.value;
 		ready = sunShadow.ready.value;
@@ -2088,6 +2182,7 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 	const out = new THREE.Vector3(), lean = new THREE.Vector3(), local = new THREE.Vector3();
 	const col = new THREE.Color();
 	let density = 1, stiffByte = 0, leanByte = 0;
+	let dome: readonly [ number, number ] | undefined;
 	// the tussock's word for a tuft turned by `rotation`: its lean's direction in the tuft's frame
 	const word = ( rotation: THREE.Quaternion ) => {
 
@@ -2099,7 +2194,7 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 	const plant = ( list: Tuft[], at: THREE.Vector3, rotation: THREE.Quaternion, scale: THREE.Vector3, color: THREE.Color,
 		k: number, cover: number, rimEdge: number, thin: number, flower = 0 ) => list.push( {
 		m: new THREE.Matrix4().compose( at, rotation, scale ), col: color.clone(), visibility: veg[ k + 8 ], cover, rimEdge, thin,
-		top: scale.y * CANOPY_TOP, origin: at.clone(), flower, density, clump: word( rotation ),
+		top: scale.y * CANOPY_TOP, origin: at.clone(), flower, density, clump: word( rotation ), dome,
 	} );
 
 	for ( let i = 0; i < n; i ++ ) {
@@ -2186,7 +2281,11 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		if ( onStack || own[ 0 ] >= 1 - SHORT_STAY ) short = 1;
 		else if ( g0 >= GRADE.stand ) short = Math.min( Math.max( thin, lowPatch( x, z ) ) * ( GRADE.answer[ 0 ] + ( GRADE.answer[ 1 ] - GRADE.answer[ 0 ] ) * g1 ), 1 );
 		if ( flower > 0 ) short = lowFlower ? Math.max( short, LOW_FLOWER ) : 0;
-		if ( short < 0.5 && flower === 0 && own[ 7 ] < GAP + THIN_GAP * thin ) {
+		// its clump (CLUMP), the more the taller it stands
+		const clump = CLUMPS && ! onStack ? clumpAt( x, z ) : null;
+		const clumped = clump ? 1 - short : 0;
+		const rimGap = clump ? CLUMP.rimGap * smoothstep( CLUMP.rim, 1, clump.t ) * clumped : 0;
+		if ( short < 0.5 && flower === 0 && own[ 7 ] < GAP + THIN_GAP * thin + rimGap ) {
 
 			sward.push( x, z, - 1 );
 			continue;
@@ -2195,7 +2294,9 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		const lush = LUSH[ 0 ] + ( LUSH[ 1 ] - LUSH[ 0 ] ) * smoothstep( VIGOUR_LUSH[ 0 ], VIGOUR_LUSH[ 1 ], vigour );
 		const level = LEVEL.ordinary * lush + ( LEVEL.short - LEVEL.ordinary * lush ) * short;
 		const spread = TUSSOCK.spread + ( TUSSOCK.shortSpread - TUSSOCK.spread ) * short;
-		const height = Math.min( level * ( 1 + spread * ( 2 * own[ 1 ] - 1 ) ), LEVEL.ordinary * ( 1 + TUSSOCK.spread ) );
+		const ownSpread = clump ? spread + ( CLUMP.own - spread ) * clumped : spread;
+		const clumpHeight = clump ? 1 + ( clump.height * ( 1 - CLUMP.mound * clump.t * clump.t ) - 1 ) * clumped : 1;
+		const height = Math.min( level * clumpHeight * ( 1 + ownSpread * ( 2 * own[ 1 ] - 1 ) ), LEVEL.ordinary * ( clump ? CLUMP.cap : 1 + TUSSOCK.spread ) );
 		scl.y = height;
 		if ( spill > 0 && ! onStack ) scl.y *= 1 - spill * ( SHOULDER_LOW[ 0 ] + SHOULDER_LOW[ 1 ] * draws[ 1 ] );
 		scl.x *= 0.65 + 0.35 * cover;
@@ -2206,15 +2307,38 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		stiffByte = Math.round( Math.min( Math.max( ( stiffness - STIFF_RANGE[ 0 ] ) / ( STIFF_RANGE[ 1 ] - STIFF_RANGE[ 0 ] ), 0 ), 1 ) * 255 );
 		const turn = own[ 3 ] * Math.PI * 2, mine = TUSSOCK.lean * own[ 4 ];
 		lean.set( Math.cos( turn ) * mine, 0, Math.sin( turn ) * mine );
+		if ( clump ) {
+
+			// a tall clump's tussocks lean out from its centre, more at its rim; an ordinary one's
+			// toward its side
+			const T = CLUMP.types[ clump.type ];
+			const ox = x - clump.cx, oz = z - clump.cz, ol = Math.hypot( ox, oz );
+			const outward = clump.out * ( 0.3 + 0.7 * clump.t );
+			const cx = ( ol > 1e-4 ? ox / ol * outward : 0 ) + Math.cos( clump.turn ) * TUSSOCK.lean * T.same;
+			const cz = ( ol > 1e-4 ? oz / ol * outward : 0 ) + Math.sin( clump.turn ) * TUSSOCK.lean * T.same;
+			const keep = 1 - clumped * ( T.out[ 1 ] > 0 || T.same > 0 ? 0.8 : 0 );
+			lean.set( lean.x * keep + cx * clumped, 0, lean.z * keep + cz * clumped );
+
+		}
 		leanByte = Math.round( Math.min( lean.length(), 1 ) * 255 );
 		// Each tussock keeps its own share of the blades (TUSSOCK.blades), all of them as it comes down.
 		const tallShare = ( TUSSOCK.blades[ 0 ] + ( TUSSOCK.blades[ 1 ] - TUSSOCK.blades[ 0 ] ) * own[ 5 ] ) / LAWN.blades;
-		const blades = tallShare + ( 1 - tallShare ) * short;
+		let blades = tallShare + ( 1 - tallShare ) * short;
+		if ( clump ) blades += ( 1 - blades ) * CLUMP.types[ clump.type ].full * clumped;
 		density = blades;
 		sward.push( x, z, smoothstep( DENSE[ 0 ], DENSE[ 1 ], scl.y ) * density );
 		// Its colour: the lawn's everywhere (each blade then its own, `restBlade`), a flowering
 		// tussock's its species' leaves' (LEAVES, the extra tuft beside it too).
 		if ( flower > 0 ) col.multiply( _leaves.fromArray( LEAVES[ head ] ) );
+		if ( clump ) col.multiplyScalar( 1 + CLUMP.value * ( 2 * clump.value - 1 ) * clumped );
+		// its clump's dome: the way out from the clump's centre to its rim, by the clump's type
+		dome = undefined;
+		if ( clump && DOME > 0 ) {
+
+			const ox = x - clump.cx, oz = z - clump.cz, ol = Math.hypot( ox, oz ), k = clump.t * CLUMP.types[ clump.type ].dome * clumped * DOME;
+			if ( ol > 1e-4 ) dome = [ ox / ol * k, oz / ol * k ];
+
+		}
 		plant( flower > 0 ? lawnFlower : lawn, pos, q, scl, col, k, cover, rimEdge, 0, flower );
 
 		// About a quarter of the tussocks take a second tuft, picked by the anchor's own hash (no
@@ -2285,7 +2409,9 @@ export function* edgeTuftSteps( lists: Tuft[][], lip: RimLipData, per = Infinity
  * gives the blades the larger casters' soft shade. */
 export function buildGrass( { lawn, lawnThin, lawnFlower, sward }: GrassTufts, shared: Shared, sunShadow: SunShadow ): THREE.Group {
 
-	setSwardField( runSteps( swardSteps( sward, SWARD_FALLBACK ) ) );
+	const crowns = runSteps( crownSteps( [ lawn, lawnThin, lawnFlower ] ) );
+	setSwardField( runSteps( swardSteps( sward, SWARD_FALLBACK, crowns ) ) );
+	setCanopyTop( runSteps( canopySteps( crowns ) ) );
 
 	// (the tier's least blade width applies under the temporal modes only: 4x and one sample keep
 	// theirs, see `grassUniforms`)
@@ -2319,7 +2445,7 @@ export function buildGrass( { lawn, lawnThin, lawnFlower, sward }: GrassTufts, s
 		caps: bandCaps( k.shape.blades, k.floor, k.minShare ), bladeIndices: k.shape.segs * 6, baseIndices: k.geometry.userData.baseIndices ?? 0,
 	} ) ) );
 	const material = grassMaterial( shared, cull );
-	const still = meadowStill( cull, sunShadow ), wind = meadowWind( cull, shared );
+	const still = meadowStill( cull, sunShadow, shared ), wind = meadowWind( cull, shared );
 	// the tufts' records of the islanders' trail, written by Trample whenever the trail changes
 	if ( debugFlags.trample !== false ) shared.trample.kernels.push( group.userData.trail = trampleKernel( shared.trample, cull.node( 'origins', 'vec4', true ), cull.node( 'trail', 'vec4' ), cull.workgroups ) );
 	const batches = kinds.map( ( k, i ) => batchOf( k.geometry, k.shape, k.floor, material, cull, cull.ranges[ i ], k.tufts, k.name, k.thin ) );
@@ -2388,11 +2514,11 @@ export function buildGrass( { lawn, lawnThin, lawnFlower, sward }: GrassTufts, s
 /** A meadow grown on another land, ready for `setGrass`: the pool of its tufts in the meadow's
  * batches, the buffers made for it (to be uploaded before the swap), each batch's planting box
  * and count, and the sward's field over its ground (SwardField.ts, uploaded). */
-export interface GrassPrepared { pool: CullPool; buffers: CullBuffers; boxes: THREE.Box3[]; counts: number[]; sward: THREE.DataTexture }
+export interface GrassPrepared { pool: CullPool; buffers: CullBuffers; boxes: THREE.Box3[]; counts: number[]; sward: THREE.DataTexture; crowns: THREE.DataTexture }
 
 /** The pool of `tufts` for the meadow `group` (buildGrass), in steps (VegetationCull's `poolSteps`): the
  * growth (Growth.ts) takes them in idle time. */
-function* grassSteps( group: THREE.Group, tufts: GrassTufts, per = 4000 ): Generator<void, Omit<GrassPrepared, 'sward'>> {
+function* grassSteps( group: THREE.Group, tufts: GrassTufts, per = 4000 ): Generator<void, Omit<GrassPrepared, 'sward' | 'crowns'>> {
 
 	const kinds = group.userData.kinds as { geometry: THREE.BufferGeometry; key: TuftKind }[];
 	const inputs: CullBatchInput<Tuft>[] = kinds.map( ( k ) => ( { records: tufts[ k.key ], geometry: k.geometry } ) );
@@ -2440,8 +2566,9 @@ function setGrass( group: THREE.Group, prepared: GrassPrepared ): CullBuffers {
 // The meadow as a vegetation kind (vegetation/Registry.ts): a grown island's meadow is planted a
 // slice of anchors at a step and its cull pool filled and uploaded ahead; the swap points the
 // pool's storage nodes at the new buffers (`setGrass`, no pipeline), and the old buffers leave the
-// renderer's attributes once nothing draws them; the sward's field over its ground (SwardField.ts)
-// is baked from the new tufts and uploaded ahead too, and set on its base node in the swap. It
+// renderer's attributes once nothing draws them; the sward's field over its ground and its top
+// (SwardField.ts) are baked from the new tufts and uploaded ahead too, and set on their base nodes
+// in the swap. It
 // stays out of the sun's caster box, as it always has.
 export function grassKind( group: THREE.Group, renderer: THREE.WebGPURenderer ): VegetationKind<GrassPrepared> {
 
@@ -2466,14 +2593,17 @@ export function grassKind( group: THREE.Group, renderer: THREE.WebGPURenderer ):
 				const grass = yield* grassSteps( group, tufts, 256 );
 				yield;
 				for ( const buffer of Object.values( grass.buffers ) ) yield* uploadSteps( input.renderer, buffer, AttributeType.STORAGE );
-				const sward = yield* swardSteps( tufts.sward, SWARD_FALLBACK );
+				const crownData = yield* crownSteps( [ tufts.lawn, tufts.lawnThin, tufts.lawnFlower ] );
+				const sward = yield* swardSteps( tufts.sward, SWARD_FALLBACK, crownData );
 				yield* textureSteps( input.renderer, sward );
-				return { ...grass, sward };
+				const crowns = yield* canopySteps( crownData );
+				yield* textureSteps( input.renderer, crowns );
+				return { ...grass, sward, crowns };
 
 			},
 			swap( prepared ) {
 
-				const old = setGrass( group, prepared ), oldSward = setSwardField( prepared.sward );
+				const old = setGrass( group, prepared ), oldSward = setSwardField( prepared.sward ), oldCrowns = setCanopyTop( prepared.crowns );
 				// (the new pool's records of the islanders' trail are zeros until written: Trample.ts)
 				if ( group.userData.trail ) renderer.compute( group.userData.trail );
 				return () => {
@@ -2481,6 +2611,7 @@ export function grassKind( group: THREE.Group, renderer: THREE.WebGPURenderer ):
 					const attributes = ( renderer as unknown as { _attributes?: { delete( attribute: unknown ): void } } )._attributes;
 					for ( const buffer of Object.values( old ) ) attributes?.delete( buffer );
 					oldSward.dispose();
+					oldCrowns.dispose();
 
 				};
 

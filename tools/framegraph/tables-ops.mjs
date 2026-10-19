@@ -37,6 +37,11 @@ const REFRACTION_ROW = row( 'refraction', [ col( 'refraction', 'load', 'store' )
 const MASK_ROW = row( 'refractionMask', [ col( 'refraction', 'clear', 'store' ) ], dep( 'refractionDepth', true, 'clear', 'store' ) );
 // and the lookups' reach it reads
 const REACH_ROW = row( 'refractionReach', [ col( 'refractionReach', 'clear', 'store' ) ] );
+// the meadow's shade (at 4x): the depth's nearest view z and the shade, both read by the next pass
+const MEADOW_ROWS = [
+	row( 'meadowDepthResolve', [ col( 'meadowDepth', 'clear', 'store' ) ] ),
+	row( 'meadowShade', [ col( 'meadowShade', 'clear', 'store' ) ] ),
+];
 const RESOLVES = {
 	depthResolve: row( 'depthResolve', [ col( 'linearDepth', 'clear', 'store' ) ] ),
 	opaqueCopy: row( 'opaqueCopy', [ col( 'opaqueColor', 'clear', 'store' ) ] ),
@@ -45,7 +50,9 @@ const RESOLVES = {
 };
 
 export const LEGACY_FULL = [
-	row( 'opaque', [ col( 'sceneColor', 'clear', 'store', true ) ], dep( 'sceneDepth', true, 'clear', 'store' ) ),
+	row( 'meadowDepth', [ col( 'meadowCoverage', 'clear', 'store', true ) ], dep( 'sceneDepth', true, 'clear', 'store' ) ),
+	...MEADOW_ROWS,
+	row( 'opaque', [ col( 'sceneColor', 'clear', 'store', true ) ], dep( 'sceneDepth', true, 'load', 'store' ) ),
 	RESOLVES.underwaterPyramid, REACH_ROW, MASK_ROW, REFRACTION_ROW, RESOLVES.depthResolve, RESOLVES.opaqueCopy,
 	row( 'water', [ col( 'sceneColor', 'load', 'store', true ) ], dep( 'sceneDepth', true, 'load', 'store' ) ),
 	RESOLVES.surfaceResolve,
@@ -54,8 +61,13 @@ export const LEGACY_FULL = [
 ];
 
 export const DERIVED_FULL = [
-	// the copy samples the resolve before the water loads the samples
-	row( 'opaque', [ col( 'sceneColor', 'clear', 'store', true ) ], dep( 'sceneDepth', true, 'clear', 'store' ) ),
+	// the vegetation's coverage is never read: its samples discarded (still resolved, as the last
+	// write of a multisampled colour is); its depth stored for the resolve and the opaque scene
+	row( 'meadowDepth', [ col( 'meadowCoverage', 'clear', 'discard', true ) ], dep( 'sceneDepth', true, 'clear', 'store' ) ),
+	...MEADOW_ROWS,
+	// the copy samples the resolve before the water loads the samples; the depth loads the
+	// vegetation's
+	row( 'opaque', [ col( 'sceneColor', 'clear', 'store', true ) ], dep( 'sceneDepth', true, 'load', 'store' ) ),
 	RESOLVES.underwaterPyramid, REACH_ROW, MASK_ROW, REFRACTION_ROW, RESOLVES.depthResolve, RESOLVES.opaqueCopy,
 	// the rain draws over the water's samples before anything samples them: no resolve
 	row( 'water', [ col( 'sceneColor', 'load', 'store', false ) ], dep( 'sceneDepth', true, 'load', 'store' ) ),
@@ -213,7 +225,8 @@ export const checks = [
 		const c = compileToday();
 		const full = c.ops( 'derived', c.maskOf( FULL ) );
 		assert.deepEqual( strip( full ), DERIVED_FULL );
-		assert.equal( full.rewrites, 2 );
+		// (the vegetation depth pass's discarded coverage, the water, the rain)
+		assert.equal( full.rewrites, 3 );
 
 	} ],
 
@@ -222,11 +235,12 @@ export const checks = [
 		const c = compileToday();
 		const dry = c.ops( 'derived', c.maskOf( FULL.filter( ( n ) => n !== 'rain' ) ) );
 		assert.deepEqual( find( dry, 'water' ), {
-			pass: 'water', index: 7, target: 'sceneColor|sceneDepth',
+			pass: 'water', index: 10, target: 'sceneColor|sceneDepth',
 			colors: [ col( 'sceneColor', 'load', 'discard', true ) ], depth: dep( 'sceneDepth', true, 'load', 'store' ), rewrite: true,
 		} );
 		assert.deepEqual( find( dry, 'opaque' ).colors, [ col( 'sceneColor', 'clear', 'store', true ) ] );
-		assert.equal( dry.rewrites, 1 );
+		// (and the vegetation depth pass's coverage)
+		assert.equal( dry.rewrites, 2 );
 
 	} ],
 
@@ -234,15 +248,15 @@ export const checks = [
 
 		const c = compileToday();
 		const clear = c.ops( 'derived', c.maskOf( [ 'refractionReach', 'refractionMask', 'refraction', 'rain', 'output' ] ) );
-		assert.deepEqual( clear.running, [ 'opaque', 'underwaterPyramid', 'refractionReach', 'refractionMask', 'refraction', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve', 'rain', 'postConstants', 'composite', ...BLOOM_PASSES, 'sharp', 'display', 'output' ] );
-		assert.deepEqual( strip( clear ).slice( 0, 7 ), DERIVED_FULL.slice( 0, 7 ) );
+		assert.deepEqual( clear.running, [ 'meadowDepth', 'meadowDepthResolve', 'meadowShade', 'opaque', 'underwaterPyramid', 'refractionReach', 'refractionMask', 'refraction', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve', 'rain', 'postConstants', 'composite', ...BLOOM_PASSES, 'sharp', 'display', 'output' ] );
+		assert.deepEqual( strip( clear ).slice( 0, 10 ), DERIVED_FULL.slice( 0, 10 ) );
 		// without the refraction the scene target's ops are the same (the water reads it optionally)
 		const dry = c.ops( 'derived', c.maskOf( [ 'rain', 'output' ] ) );
-		assert.deepEqual( strip( dry ).slice( 0, 6 ), DERIVED_FULL.filter( ( r ) => r.pass !== 'refraction' && r.pass !== 'refractionMask' && r.pass !== 'refractionReach' ).slice( 0, 6 ) );
+		assert.deepEqual( strip( dry ).slice( 0, 9 ), DERIVED_FULL.filter( ( r ) => r.pass !== 'refraction' && r.pass !== 'refractionMask' && r.pass !== 'refractionReach' ).slice( 0, 9 ) );
 		const up = c.ops( 'derived', c.maskOf( [ 'refractionReach', 'refractionMask', 'refraction', 'rain', 'easu', 'upscaledOutput' ] ) );
 		assert.deepEqual( find( up, 'easu' ).colors, [ col( 'FSR.easu', 'clear', 'store' ) ] );
 		assert.deepEqual( find( up, 'upscaledOutput' ).colors, [ col( 'canvas', 'clear', 'store' ) ] );
-		assert.equal( up.rewrites, 2 );
+		assert.equal( up.rewrites, 3 );
 		// single-sampled: every colour is read later; only the rain's depth goes unread
 		const single = compileToday( {}, 1 );
 		const s = single.ops( 'derived', single.maskOf( FULL ) );
@@ -260,7 +274,8 @@ export const checks = [
 			const t = c.ops( 'derived', m );
 			for ( const p of t.passes ) for ( const x of p.colors ) {
 
-				if ( x.resource !== 'sceneColor' ) assert.equal( x.store, 'store', `${ p.pass } ${ x.resource } mask ${ m }` );
+				// (the vegetation's coverage is never read)
+				if ( x.resource !== 'sceneColor' ) assert.equal( x.store, x.resource === 'meadowCoverage' ? 'discard' : 'store', `${ p.pass } ${ x.resource } mask ${ m }` );
 
 			}
 			// the last draw into the samples always resolves
@@ -314,14 +329,17 @@ export const checks = [
 
 	[ 'derived ops, msaa 4: the scene target per rain on/off, direct and upscaled, refraction, fog and the shafts on or off', () => {
 
-		// the scene target's rows depend on the rain alone; every other attachment is stored
+		// the scene target's rows depend on the rain alone; every other attachment is stored but the
+		// vegetation's coverage, which nothing reads
+		const VEGETATION = DERIVED_FULL[ 0 ];
 		const WET = [
-			row( 'opaque', [ col( 'sceneColor', 'clear', 'store', true ) ], dep( 'sceneDepth', true, 'clear', 'store' ) ),
+			VEGETATION,
+			row( 'opaque', [ col( 'sceneColor', 'clear', 'store', true ) ], dep( 'sceneDepth', true, 'load', 'store' ) ),
 			row( 'water', [ col( 'sceneColor', 'load', 'store', false ) ], dep( 'sceneDepth', true, 'load', 'store' ) ),
 			row( 'rain', [ col( 'sceneColor', 'load', 'discard', true ) ], dep( 'sceneDepth', false, 'load', 'discard' ) ),
 		];
 		const DRY = [
-			WET[ 0 ],
+			WET[ 0 ], WET[ 1 ],
 			row( 'water', [ col( 'sceneColor', 'load', 'discard', true ) ], dep( 'sceneDepth', true, 'load', 'store' ) ),
 		];
 		const variants = [ {}, { fsrPort: false }, { compositeOnce: false }, { fogScale: 1, bankSize: 0 } ];
@@ -339,22 +357,22 @@ export const checks = [
 				const t = c.ops( 'derived', m );
 				const wet = ( m & rain ) !== 0;
 				const what = `${ compile.name } ${ JSON.stringify( options ) } mask ${ m } (rain ${ wet ? 'on' : 'off' }, ${ out === direct ? 'direct' : 'upscaled' })`;
-				assert.deepEqual( strip( t ).filter( ( p ) => [ 'opaque', 'water', 'rain' ].includes( p.pass ) ), wet ? WET : DRY, what );
-				assert.equal( t.rewrites, wet ? 2 : 1, what );
+				assert.deepEqual( strip( t ).filter( ( p ) => [ 'meadowDepth', 'opaque', 'water', 'rain' ].includes( p.pass ) ), wet ? WET : DRY, what );
+				assert.equal( t.rewrites, wet ? 3 : 2, what );
 				for ( const p of t.passes ) {
 
-					if ( p.target === 'sceneColor|sceneDepth' ) continue;
+					if ( p.target === 'sceneColor|sceneDepth' || p.pass === 'meadowDepth' ) continue;
 					for ( const x of p.colors ) assert.deepEqual( [ x.store, x.resolve ], [ 'store', null ], `${ what } ${ p.pass }` );
 					// (the refraction's depth, single-sampled, is stored for the water)
 					assert.deepEqual( p.depth, p.pass === 'refraction' ? REFRACTION_ROW.depth : p.pass === 'refractionMask' ? MASK_ROW.depth : null, `${ what } ${ p.pass }` );
 					assert.equal( p.rewrite, false, `${ what } ${ p.pass }` );
 
 				}
-				// derived and legacy differ only in the water's resolve (rain on) or its colour
-				// store (rain off), and the rain's ops are legacy's
+				// derived and legacy differ only in the vegetation's coverage store and the water's
+				// resolve (rain on) or its colour store (rain off), and the rain's ops are legacy's
 				const legacy = c.ops( 'legacy', m );
 				const diff = t.passes.flatMap( ( p, i ) => JSON.stringify( p ) === JSON.stringify( legacy.passes[ i ] ) ? [] : [ p.pass ] );
-				assert.deepEqual( diff, [ 'water' ], what );
+				assert.deepEqual( diff, [ 'meadowDepth', 'water' ], what );
 
 			}
 
@@ -399,7 +417,8 @@ export const checks = [
 					p.colors.forEach( ( x, j ) => {
 
 						assert.equal( x.store, 'store', `${ what } ${ p.pass }` );
-						assert.equal( x.resolve, samples > 1 && p.target === 'sceneColor|sceneDepth' ? true : null, `${ what } ${ p.pass }` );
+						// (the multisampled targets: the scene's, and the vegetation's coverage beside its depth)
+						assert.equal( x.resolve, samples > 1 && p.target.endsWith( '|sceneDepth' ) ? true : null, `${ what } ${ p.pass }` );
 						assert.equal( x.load, d.passes[ i ].colors[ j ].load, `${ what } ${ p.pass }` );
 
 					} );
@@ -611,7 +630,8 @@ export const checks = [
 			const batch = m.installBatch( backend.device );
 			const ops = new AttachmentOps( backend, { mode: 'derived' } );
 			ops.install();
-			assert.equal( frame( backend, ops ), table.rewrites );
+			// (the frame enters the water and the rain only, both rewritten)
+			assert.equal( frame( backend, ops ), 2 );
 			assert.equal( ops.overwrapped, false );
 			assert.equal( m.base.length, 0, 'nothing reaches WebGPU before the flush' );
 			batch.flush();
