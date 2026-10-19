@@ -1255,11 +1255,22 @@ islanderF.add( characterLook.softCloth, 'value', 0.005, 0.4, 0.005 ).name( 'clot
 islanderF.add( characterLook.softSkin, 'value', 0.005, 0.4, 0.005 ).name( 'skin edge' );
 islanderF.add( characterLook.skyRimGain, 'value', 0, 4, 0.01 ).name( 'sky rim' );
 islanderF.add( characterLook.shadowSaturation, 'value', 0.5, 2, 0.01 ).name( 'shade saturation' );
-// tidewater's grade (Pipeline.ts TIDEWATER_GRADE), its exposure from the clock and the weather
+// the display chain (Pipeline.ts): tidewater's grade (TIDEWATER_GRADE), its exposure from the clock
+// and the weather, the white balance, the local tone mapping and the grade's tables
 const postF = gui.addFolder( 'Post' );
 postF.add( S, 'exposure', 0.1, 5, 0.01 ).listen();
 postF.add( S, 'bloom', 0, 0.3, 0.005 );
 postF.addColor( S, 'white' ).name( 'white balance' );
+if ( pipeline.localTone ) {
+
+	// the local tone mapping (LocalTone.ts): the contrast above and below mid grey, the detail
+	const local = pipeline.localTone.uniforms;
+	postF.add( local.high, 'value', 0.3, 1.2, 0.01 ).name( 'local contrast, lights' );
+	postF.add( local.low, 'value', 0.3, 1.2, 0.01 ).name( 'local contrast, shade' );
+	postF.add( local.detail, 'value', 0.5, 2, 0.01 ).name( 'local detail' );
+
+}
+postF.add( S, 'lut', 0, 1, 0.01 ).name( 'grade table blend' );
 postF.add( S, 'saturation', 0, 2, 0.01 );
 postF.add( S, 'contrast', 0.8, 1.3, 0.01 );
 postF.add( S, 'tone', 0, 1, 0.01 );

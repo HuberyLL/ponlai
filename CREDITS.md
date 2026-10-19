@@ -77,9 +77,9 @@ packages, into `dist/licenses/`.
     `Sky.js`, ported from WGSL to TSL.
   - `src/post/PhysicalBloom.ts`: the physically motivated bloom of `PostFX.js` (after Jimenez,
     SIGGRAPH 2014: 13-tap downsamples, the first through the Karis average, and 3x3 tent
-    upsamples); `src/post/Pipeline.ts`: its grade (the white balance nudge, saturation and contrast
-    round mid grey, the vignette, the luminance-weighted grain) before three's ACES at its
-    exposure, ported from WGSL to TSL.
+    upsamples); `src/post/Pipeline.ts`: its grade (saturation and contrast round mid grey, the
+    vignette, the luminance-weighted grain; its warm white balance nudge is now the white
+    balance's default) before the ACES fit at its exposure, ported from WGSL to TSL.
   - `src/post/TemporalLocks.ts`: the motion cap, the temporal reactive and the clamp-drop of
     `TemporalUpscale.js`'s accumulation, which is AMD's FSR 2 (see "FSR 2" below; licence
     [`src/post/tidewater-fsr2.LICENSE.txt`](src/post/tidewater-fsr2.LICENSE.txt), both notices).
@@ -632,6 +632,18 @@ comment where it is used.
 - Screen-space shadows for the key light over the depth: Bend Studio's (Graham Aldridge, *Days
   Gone*, Sony Creators Conference / SIGGRAPH 2023), in `src/post/MeadowShade.ts`, as a plain
   per-pixel march. Used as a technique only.
+- The display chain (Jasmin Patry,
+  *Real-Time Samurai Cinema: Lighting, Atmosphere, and Tonemapping in Ghost of Tsushima*,
+  SIGGRAPH 2021 Advances in Real-Time Rendering in Games course): local tone mapping as a
+  detail-preserving contrast change on a 64x32x64 bilateral grid blended 40 / 60 with a wide
+  Gaussian (`src/post/LocalTone.ts`), per-channel tone mapping in AP1 with its red primary moved
+  out to x 0.75 and a white balance chosen as the colour white becomes, folded into the curve's
+  input matrix (`src/post/ToneSpace.ts`), and 32^3 grade tables
+  (`src/post/GradeLut.ts`). Used as techniques only; the tables' content is our own. The
+  bilateral grid: Jiawen Chen, Sylvain Paris and Frédo Durand, *Real-time Edge-Aware Image
+  Processing with the Bilateral Grid* (SIGGRAPH 2007). The white balance's chromatic adaptation:
+  the von Kries transform in K. M. Lam's Bradford cone space (1985). The curve itself is Stephen
+  Hill's fit of ACES's RRT and ODT, as three.js's `acesFilmicToneMapping` has it.
 
 ## References
 

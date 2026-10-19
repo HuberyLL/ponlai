@@ -18,10 +18,15 @@ art decision changes; reference images stay out of the repository.
   chiselled stone, a lush meadow with wildflowers, and grass hanging over the rim. Keep the lower
   cliff stone exposed.
 - The light and the image are photographic, as real as tidewater's (its water, its light under
-  the water, its display chain): the scene is lit by the sun or moon, the sky and the sunlight the
-  ground bounces up, and the frame takes a filmic curve (ACES), tidewater's light grade (a slight
-  warm white balance, a touch more saturation and contrast, a vignette, film grain) and a faint
-  physical bloom over the whole image.
+  the water): the scene is lit by the sun or moon, the sky and the sunlight the ground bounces up.
+  The frame is developed in stages: a local tone mapping keeps a bright
+  sea, glare or sky from burning out and greying while the land keeps its level (the brights drawn
+  a quarter toward mid grey, the shade left as it is, the detail kept); a filmic curve (ACES)
+  whose working space keeps a low sun's reds from turning yellow; a white balance given as the
+  colour white becomes (for now tidewater's slight warmth); tidewater's touch more saturation and
+  contrast, a vignette and film grain; a faint physical bloom over the whole image; and two grade
+  tables that a look can blend between by time of day or place (both the identity until our own
+  grades are made).
 - The light keeps the sun's and the sky's own balance, by day and by night, so that the land shows
   where the light comes from: a clump of grass, a stone or a figure has a lit side and a shaded
   one, and its shade falls on what lies beside it. Nothing lifts the shade toward the light: an

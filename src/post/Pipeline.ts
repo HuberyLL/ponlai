@@ -191,11 +191,11 @@ import { LocalTone } from './LocalTone.ts';
 // - The display chain is tidewater's (ACES_EXPOSURE) with Patry's (SIGGRAPH 2021) over it: the local
 //   tone mapping first (LocalTone.ts: a function of the frame, nothing kept between frames), one
 //   curve and grade (the tone, TONE, and the night's grade, NIGHT, over it are off by default), then
-//   the grade's tables (GradeLut.ts, the identity until set). The curve maps each channel in the space of
-//   ToneSpace.ts, AP1 with its red primary moved out, and the white balance is folded into its
-//   input matrix (`settings.white`, rebuilt only when it changes). The day and the night differ by
-//   the exposure, from the clock and the weather (DayCycle, Sky), calibrated against tidewater's
-//   metered frames, times EXPOSURE_GAIN (the day's and the night's).
+//   the grade's tables (GradeLut.ts, the identity until set). The curve maps each channel in the
+//   space of ToneSpace.ts, AP1 with its red primary moved out, and the white balance is folded
+//   into its input matrix (`settings.white`, rebuilt only when it changes). The day and the night
+//   differ by the exposure, from the clock and the weather (DayCycle, Sky), calibrated against
+//   tidewater's metered frames, times EXPOSURE_GAIN (the day's and the night's).
 
 // The graph's dev checks (every target at its class's size, the attachment ops that reached
 // WebGPU): on the dev server and with `?debug`.
