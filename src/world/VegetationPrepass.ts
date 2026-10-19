@@ -3,6 +3,7 @@ import { materialColor, vec4 } from 'three/tsl';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { VELOCITY_CLEAR, velocityOutput } from '../post/Motion.ts';
+import { MEADOW_SHADE } from '../post/MeadowShade.ts';
 
 // A depth prepass for the alpha-to-coverage vegetation (today the grass and its flower heads).
 //
@@ -38,6 +39,12 @@ import { VELOCITY_CLEAR, velocityOutput } from '../post/Motion.ts';
 //   prepass (under the temporal modes its alpha test alone). The image is then the old one, but
 //   it saves far less.
 // URL options, read at load: vegPrepass=0, vegPrepass=coverage (vegPrepassOpaque = false).
+//
+// With the meadow's shade (post/MeadowShade.ts: at 4x outside the temporal modes) the depth copies
+// are not their meshes' children but live in a scene of their own (`prepassScene`), drawn in a pass
+// of its own before the opaque scene, into the same depth, which the shade's march reads and the
+// opaque pass loads: the equal test holds as before. Before each of its renders the scene takes its
+// copies' transforms and visibility from their meshes, ancestors included, as children would.
 //
 // Rules for anything that touches it:
 // - At 4x the vegetation's coverage is decided by the prepass alone: the shaded draw is plain
@@ -109,6 +116,11 @@ function depthMaterial( source: THREE.MeshStandardNodeMaterial ): THREE.MeshBasi
 	return m;
 
 }
+
+/** The depth copies' scene with the meadow's shade (post/MeadowShade.ts): drawn in a pass of its
+ * own before the opaque scene, into the same depth (Pipeline.ts). */
+export const prepassScene = new THREE.Scene();
+prepassScene.name = 'vegetation prepass';
 
 // the shaded mesh, its material and its depth copy
 type Pair = { mesh: THREE.Mesh; material: THREE.MeshStandardNodeMaterial; depth: THREE.Mesh };
@@ -182,8 +194,15 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 			depth.userData.grassCulled = mesh.userData.grassCulled;
 
 		};
-		// a child: it follows the mesh's transform and visibility
-		mesh.add( depth );
+		// a child: it follows the mesh's transform and visibility; with the meadow's shade, in the
+		// scene of its own pass, following them there (`prepassScene`)
+		if ( MEADOW_SHADE ) {
+
+			depth.matrixAutoUpdate = false;
+			depth.matrixWorldAutoUpdate = false;
+			prepassScene.add( depth );
+
+		} else mesh.add( depth );
 		if ( ! patched.has( material ) ) {
 
 			patched.add( material );
@@ -253,6 +272,22 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 
 		apply();
 		previous.apply( scene, args );
+
+	};
+	// (the copies in a scene of their own draw before the scene: they take their meshes' transform
+	// and visibility, ancestors included, as children would)
+	if ( MEADOW_SHADE ) prepassScene.onBeforeRender = () => {
+
+		apply();
+		for ( const p of pairs ) {
+
+			p.mesh.updateWorldMatrix( true, false );
+			p.depth.matrixWorld.copy( p.mesh.matrixWorld );
+			let shown = debugFlags.vegPrepass !== false;
+			for ( let o: THREE.Object3D | null = p.mesh; o && shown; o = o.parent ) shown = o.visible;
+			p.depth.visible = shown;
+
+		}
 
 	};
 	const info: VegetationPrepassInfo = { pairs: pairs.length, materials: patched.size, depthMaterials: depthCopies.size };

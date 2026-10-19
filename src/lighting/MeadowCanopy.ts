@@ -1,5 +1,6 @@
-import { Fn, exp, float, max, min, mix, uniform } from 'three/tsl';
+import { Fn, clamp, exp, float, length, max, min, mix, uniform } from 'three/tsl';
 import type * as THREE from 'three/webgpu';
+import { MEADOW_EXTENT } from '../materials/Meadow.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -14,6 +15,12 @@ type V3 = THREE.Node<'vec3'>;
 // the lawn's own root-to-tip colour (Grass.ts) carries the darkening near the ground instead. Of
 // the key light, `open` passes as if through the gaps between blades, and the rest falls off with
 // the path through the canopy, so a low sun deepens the shade without turning the meadow olive.
+// That canopy is level, as deep over every point, and gives every blade at one depth the same share
+// of the key, so none is lit and none shaded: with the meadow's screen-space shade (post/
+// MeadowShade.ts) the blades take its march in its place and keep this only under the temporal
+// modes. What it leaves out is the sward's own relief: the taller tussocks stand over their
+// neighbours and shade them on the side away from the light (`meadowCastLight`, once per tuft), and
+// the crowns shade the ground under and beside them (`meadowGroundLight`, the turf's).
 export const meadowCanopy = {
 	density: uniform( 5 ), // extinction per metre of canopy along the ray
 	// The share of the key light that reaches any depth between the blades. Low, so the roots and
@@ -51,3 +58,64 @@ export function meadowCanopyLight( depth: F, key: V3 ): F {
 // stand in the sward, take their depth below its top.
 export const CANOPY_TOP = 0.8;
 export const TURF_CANOPY_DEPTH = 0.2;
+
+// The taller tussocks' shade on their neighbours: the key's ray from a tuft's top crosses the
+// crowns of the sward's top (SwardField.ts `canopyTop`) that stand over it, and the light falls off
+// with the length it runs through them, as through the canopy above. Over a level sward the ray
+// rises clear of its neighbours' crowns, so this adds nothing to the canopy's own shade; a tuft
+// lower than those toward the light lies in their shade, a long one under a low sun. The ray is
+// looked up at CAST_STEPS (m along the ground) up to 3.5 m, where a tussock a metre over its
+// neighbour still shades it with the sun 16 degrees up; CAST_SOFT (m) softens a crown's edge.
+export const meadowCast = {
+	density: uniform( 3 ), // extinction per metre of crowns along the ray
+	open: uniform( 0.25 ), // the share of the key that passes between the crowns' blades
+};
+const CAST_STEPS = [ 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 3.5 ];
+const CAST_SOFT = 0.05;
+
+/** The share of the key light that reaches `top` (a tuft's top, world) past the crowns of `crowns`
+ * (the sward's top) toward `key` (unit, toward the light). For a compute kernel: it samples at
+ * level 0, and unrolls its lookups. */
+export function meadowCastLight( crowns: THREE.TextureNode, top: V3, key: V3 ): F {
+
+	const flat = max( length( key.xz ), 1e-3 ).toVar();
+	const along = key.xz.div( flat ).toVar(), rise = key.y.div( flat ).toVar();
+	let path: F = float( 0 ), last = 0;
+	for ( const t of CAST_STEPS ) {
+
+		const q = top.xz.add( along.mul( t ) );
+		const crown = crowns.sample( q.div( MEADOW_EXTENT ).add( 0.5 ) ).level( float( 0 ) ).r;
+		path = path.add( clamp( crown.sub( top.y.add( rise.mul( t ) ) ).div( CAST_SOFT ), 0, 1 ).mul( t - last ) );
+		last = t;
+
+	}
+	// (along the ray: its run over the ground over the cosine of the key's elevation)
+	return mix( exp( meadowCast.density.negate().mul( path ).div( flat ) ), float( 1 ), meadowCast.open );
+
+}
+
+// The ground under the meadow lit through its crowns: the key's ray from a point of the ground
+// runs through the crowns over it and round it (their height over the ground, `over`, the meadow
+// map's B: SwardField.ts), the light falling off with the length it runs through them, as the
+// tufts' own cast (`meadowCastLight`). Under a tuft the ray starts inside its crown and the ground
+// lies in its shade; in a gap the ground is lit unless a taller clump stands toward the light, and
+// a clump's shade falls on the ground beside it. Its lookups at GROUND_STEPS (m along the ground);
+// the ground beside a clump is level with the clump's root, near enough over the plateau.
+const GROUND_STEPS = [ 0.08, 0.16, 0.25, 0.35, 0.5, 0.7, 1, 1.4, 2, 2.8 ];
+
+/** The share of the key light that reaches the ground at `at` (world) past the crowns, `over( xz )`
+ * their height over the ground there (m), toward `key` (unit). Its lookups take no derivatives. */
+export function meadowGroundLight( over: ( xz: THREE.Node<'vec2'> ) => F, at: V3, key: V3 ): F {
+
+	const flat = max( length( key.xz ), 1e-3 ).toVar();
+	const along = key.xz.div( flat ).toVar(), rise = key.y.div( flat ).toVar();
+	let path: F = float( 0 ), last = 0;
+	for ( const t of GROUND_STEPS ) {
+
+		path = path.add( clamp( over( at.xz.add( along.mul( t ) ) ).sub( rise.mul( t ) ).div( CAST_SOFT ), 0, 1 ).mul( t - last ) );
+		last = t;
+
+	}
+	return mix( exp( meadowCast.density.negate().mul( path ).div( flat ) ), float( 1 ), meadowCast.open );
+
+}

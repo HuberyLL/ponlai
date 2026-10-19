@@ -33,11 +33,19 @@
 // `trample = false` leaves the islanders' trail through the meadow (world/vegetation/Trample.ts) out
 // of the meadow's shader when set at load (`flags=trample:false`), and empties its walkers when set
 // at run time (--toggle "s.flags.trample = !on" times the trail's loop).
-// `clearShade` (a number, 1 unless set; `false` reads as 0) scales the sky light the island takes
-// for its clear shade (sky/Sky.ts CLEAR_SHADE), read whenever the sky tracks the clock: 0 shows
-// the shade without it (an environment bake later, `refreshEnvironment()` while paused).
-// `lowSun` (a number, 1 unless set; `false` reads as 0) scales the low sun's warm light and
+// `clearShade` (a number, or `true` for 1; off unless set) scales the sky light the island takes
+// for its clear shade (sky/Sky.ts CLEAR_SHADE), read whenever the sky tracks the clock (an
+// environment bake later, `refreshEnvironment()` while paused).
+// `lowSun` (a number, or `true` for 1; off unless set) scales the low sun's warm light and
 // blue-violet shade (sky/Sky.ts lowSun), read every frame (the shade's at the next environment bake).
+// Read at load: `tone` (a number, 0 unless set) and `filmNight = true` bring back the grade's tone
+// and the film's night (post/Pipeline.ts TONE, NIGHT); `exposureGain` and `nightExposureGain`
+// (numbers, 1.2 and 1.65 unless set) the gains on the exposure by day and by night (EXPOSURE_GAIN).
+// The meadow's light, each on unless false: `meadowShade` (its screen-space shade and the
+// vegetation's depth pass, post/MeadowShade.ts), `meadowCast` (the taller tussocks' shade on their
+// neighbours, world/Grass.ts `meadowStill`), `groundCast` (the crowns' shade on the turf,
+// materials/TerrainMaterial.ts), `grassClumps` (the tussocks' clumps, world/Grass.ts CLUMP);
+// `grassDome` (a number, 1 unless set; 0 or false: off) scales the clumps' dome normals.
 export interface MotionSourceFlags { camera?: boolean; object?: boolean; skin?: boolean; wind?: boolean; sea?: boolean; foam?: boolean }
 export const debugFlags: Record<string, boolean | number | string | MotionSourceFlags | undefined> & { mv: MotionSourceFlags } = { mv: {} };
 

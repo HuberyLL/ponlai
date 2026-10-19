@@ -10,10 +10,10 @@ import { LAWN_COLOUR, LAWN_TONE, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_MAX_DROP }
 import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, SOIL_PALETTE, soilUniforms } from './Soil.ts';
 import { RIM_FRINGE_FADE, RIM_INNER_LIMIT, RIM_MAX_DROP } from '../world/RimGround.ts';
 import { GRASS_ROOTS } from '../world/Grass.ts';
-import { swardField } from '../world/SwardField.ts';
+import { CROWN_SCALE, swardField } from '../world/SwardField.ts';
 import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
 import { underwaterLight, UnderwaterLightingModel } from '../lighting/Underwater.ts';
-import { TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
+import { TURF_CANOPY_DEPTH, meadowCanopyLight, meadowGroundLight } from '../lighting/MeadowCanopy.ts';
 import { puddleField, puddleRipples } from '../weather/Puddles.ts';
 import { seabedAlbedo } from './SeabedLook.ts';
 import { DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness } from './Wetness.ts';
@@ -21,6 +21,10 @@ import { hexReadScan, heightBlend, type HexScan } from './HexTiling.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { FSR3 } from '../post/Antialiasing.ts';
 import { fsr3MipBiasScale } from '../post/fsr3/MipBias.ts';
+
+// The meadow's ground shaded by its crowns toward the light (`meadowGroundLight`); off with
+// `flags=groundCast:false` at load (the canopy's mean depth instead).
+const GROUND_CAST = debugFlags.groundCast !== false;
 
 // PBR materials for the rock and the sea floor: MeshStandardNodeMaterial (lights, shadows, IBL)
 // with the surface built procedurally in world space (triplanar baked detail, moss, wet band,
@@ -537,8 +541,12 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 				rootLight.assign( turfCover.mul( shade ) );
 				mossC.assign( mix( mossC, ground, turfCover ) );
 				rimGrassC.assign( ground );
-				// The blades above shade the turf, through the canopy's depth there (MeadowCanopy.ts).
-				canopy.assign( meadowCanopyLight( turfCover.mul( shade ).mul( TURF_CANOPY_DEPTH ), shared.sunDir ).mul( mix( float( 1 ), float( GRASS_ROOTS.key ), rootLight ) ) );
+				// The blades above shade the turf: through the crowns over it and toward the light, so
+				// the clumps cast on the ground between them (the meadow map's B, MeadowCanopy.ts
+				// `meadowGroundLight`); without the crowns' heights (`flags=groundCast:false`), through
+				// the canopy's depth there.
+				if ( GROUND_CAST ) canopy.assign( meadowGroundLight( ( xz ) => texture( swardField, xz.div( MEADOW_EXTENT ).add( 0.5 ) ).level( float( 0 ) ).b.mul( CROWN_SCALE ), p, shared.sunDir ) );
+				else canopy.assign( meadowCanopyLight( turfCover.mul( shade ).mul( TURF_CANOPY_DEPTH ), shared.sunDir ).mul( mix( float( 1 ), float( GRASS_ROOTS.key ), rootLight ) ) );
 				Hg.assign( mix( Hg, c1.mul( 0.5 ).add( c2.mul( 0.5 ) ), legacyTurf ) );
 
 			} );

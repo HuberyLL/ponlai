@@ -61,7 +61,8 @@ the fantasy in the world and a light touch on the image (clear shade, a golden a
   in place (`Growth.ts`, the shoal of a coming piece in `SeabedRise.ts`). Its kinds: the shapes
   (`WorldShapes.ts`), cliffs (`Cliff.ts`), submerged stones (`Stones.ts`), sea floor
   (`Bathymetry.ts`, `SeabedTile.ts`), rim (`RimGround.ts`), the meadow (`Grass.ts`,
-  its wildflowers and its tufts draped over the cliff's edge included; anchors `Anchors.ts`, soil from `ShoreSample.ts`; the
+  its clumps, its wildflowers and its tufts draped over the cliff's edge included; its crowns'
+  heights in `SwardField.ts`; anchors `Anchors.ts`, soil from `ShoreSample.ts`; the
   sward's depth over its ground in the meadow map, `SwardField.ts`), the yunpeng that stands
   among it (`Yunpeng.ts`, its sites the step-0 piece's: `IslandGrowth.ts`), the islander's
   walking loop (`WalkLoop.ts`, `WalkPath.ts`), the bamboo stands
@@ -73,7 +74,7 @@ the fantasy in the world and a light touch on the image (clear shade, a golden a
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the refracted sun under water, the light every submerged material shares (`Underwater.ts`: a new
   underwater material lights with it, as the terrain does), the air/water interface, sky occlusion,
-  the meadow's canopy light, the sunlight the ground bounces up (`GroundBounce.ts`: a new lit
+  the meadow's canopy light and its crowns' shade (`MeadowCanopy.ts`), the sunlight the ground bounces up (`GroundBounce.ts`: a new lit
   material adds it in its lighting model, `addGroundBounce` or `groundBounceLight`, never a bounce
   of its own).
 - `src/materials/`: procedural textures (the gravel bake: `ProceduralTextures.ts`), the terrain
@@ -88,8 +89,8 @@ the fantasy in the world and a light touch on the image (clear shade, a golden a
   one wind field all vegetation moves in), lightning, rain,
   puddles, distant air and sea fog (`AerialPerspective.ts`).
 - `src/post/`: the frame's passes and tidewater's display chain (`Pipeline.ts`, its bloom in
-  `PhysicalBloom.ts`), light shafts
-  (`LightShafts.ts`), FSR 1, render scale and dynamic resolution (`RenderScale.ts`,
+  `PhysicalBloom.ts`), the meadow's screen-space shade over the vegetation's depth (`MeadowShade.ts`),
+  light shafts (`LightShafts.ts`), FSR 1, render scale and dynamic resolution (`RenderScale.ts`,
   `DynamicResolution.ts`), the frame pacer, the submit batching, the signal that a paused frame is
   final (`Settled.ts`), the anti-aliasing mode and the scene's sample count (`Antialiasing.ts`); under the
   temporal modes the jitter (`Jitter.ts`), the motion vectors (`Motion.ts`), the temporal resolve

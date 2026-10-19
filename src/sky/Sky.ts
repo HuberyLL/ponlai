@@ -193,7 +193,10 @@ function islandSky( elevation: number, tint: THREE.Vector4 ): number {
 
 }
 
-// Art direction: the shade is clear, never black (docs/art-direction.md, Light). Shade is lit by
+// Off by default (docs/art-direction.md, the look: the light keeps the sun's and the sky's
+// own balance): with the meadow's own soft light the lifted shade left a shaded clump within a
+// quarter of a lit one and the meadow showed no side the light came from. `flags=clearShade:<k>`
+// (or `true`) brings it back for A/Bs. What it was: the shade clear, never black. Shade is lit by
 // the sky alone, so the sky light lent to the island (as ISLAND_SKY's: the environment's source
 // and the islanders' fill) takes a gain and turns a touch cooler: the skylit faces of the cliffs
 // and the meadow's shaded side open up while what the sky cannot reach (cracks, the meadow's
@@ -205,8 +208,7 @@ function islandSky( elevation: number, tint: THREE.Vector4 ): number {
 // rows begin; past them, in the night, the night sky's fill takes a share of its own, so the
 // moonlit island's shade stays readable (a film's night, not a dark one). Cloud leaves the whole
 // island in shade, where a gain only brightens it: the share fades with the direct visibility,
-// none by overcast. A noon gain of 1.8 was chosen over 2.5 by eye (the shade turned cold);
-// `flags.clearShade` scales the share (0 turns it off).
+// none by overcast. A noon gain of 1.8 was chosen over 2.5 by eye (the shade turned cold).
 const CLEAR_SHADE: readonly { at: number; share: number }[] = [
 	{ at: 45, share: 0.8 },
 	{ at: 26, share: 0.55 },
@@ -224,13 +226,13 @@ const CLEAR_SHADE_TINT = ( ( r: number, g: number, b: number ) => {
 
 } )( 0.86, 1, 1.1 );
 
-// Art direction: a low sun's light is golden and its shade cool blue-violet (docs/art-direction.md,
-// Light). The shade's half: from about 12 degrees down to the horizon the sky light lent to the
+// Off by default with the clear shade (`flags=lowSun:<k>` or `true` for A/Bs). What it was: a low
+// sun's light golden and its shade cool blue-violet. The shade's half: from about 12 degrees down to the horizon the sky light lent to the
 // island turns from CLEAR_SHADE's cool cyan toward blue-violet, drawn toward it by up to
 // LOW_SUN.amount whatever the gain (a low sun's share of the gain is small), so only the island's
 // shade takes it, never the sea or the sky. It fades out above LOW_SUN.top, and below the horizon
 // into ISLAND_SKY's warm evening cast; cloud takes it out with the direct sun. The light's half is
-// the grade's (Pipeline.ts LOW_SUN, by `lowSun`). `flags.lowSun` scales both (0 turns them off).
+// the grade's (Pipeline.ts LOW_SUN, by `lowSun`).
 const LOW_SUN = { full: 12, top: 28, amount: 0.65 };
 const LOW_SUN_TINT = ( ( r: number, g: number, b: number ) => {
 
@@ -244,7 +246,8 @@ const LOW_SUN_TINT = ( ( r: number, g: number, b: number ) => {
  * 3 degrees (the grade's warm light, Pipeline.ts, and the island's blue-violet shade, Sky.ts). */
 export function lowSun( elevation: number, direct: number ): number {
 
-	const scale = typeof debugFlags.lowSun === 'number' ? debugFlags.lowSun : debugFlags.lowSun === false ? 0 : 1;
+	// (off unless a number is set, with the clear shade)
+	const scale = typeof debugFlags.lowSun === 'number' ? debugFlags.lowSun : debugFlags.lowSun === true ? 1 : 0;
 	return THREE.MathUtils.smoothstep( elevation, 0, 3 ) * ( 1 - THREE.MathUtils.smoothstep( elevation, LOW_SUN.full, LOW_SUN.top ) )
 		* THREE.MathUtils.smoothstep( direct, 0.3, 0.95 ) * scale;
 
@@ -263,7 +266,8 @@ function clearShade( elevation: number, direct: number ): number {
 		break;
 
 	}
-	const scale = typeof debugFlags.clearShade === 'number' ? debugFlags.clearShade : debugFlags.clearShade === false ? 0 : 1;
+	// (off unless a number is set: the lifted shade took the light's direction out of the meadow)
+	const scale = typeof debugFlags.clearShade === 'number' ? debugFlags.clearShade : debugFlags.clearShade === true ? 1 : 0;
 	return share * THREE.MathUtils.smoothstep( direct, 0.3, 0.95 ) * scale;
 
 }
