@@ -259,8 +259,11 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   frequencies, and per weather where every part travels and how fast: the plants, the sea and its
   swell, the open sea's gusts, the sea fog, the cumulus and the cirrus), through the probe as
   `--eval "return JSON.stringify( await P.windProbe() )"`.
-- `islander` picks the islanders' proportions (`medium`, the default, or `stock` (the kit's own),
-  `subtle` and `strong` builds of `Proportions.ts`); also in the GUI's Islander folder, which
+- `look=kit` dresses the islanders in the earlier kit look (pointed ears, linen shirt, cel steps)
+  instead of the feather-clad Hanming look (`src/characters/looks.ts`).
+- `islander` picks the islanders' proportions (the look's own by default: `real` for the Hanming
+  look, `medium` for the kit's; or `stock` (the kit's own), `subtle` and `strong` builds of
+  `Proportions.ts`); also in the GUI's Islander folder, which
   rebuilds the scene's walker in place. In game mode the folder's proportion control is disabled:
   the game's islanders take their build from the URL option as they load, so a change applies on
   the next load.
