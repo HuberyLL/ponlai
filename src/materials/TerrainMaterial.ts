@@ -498,12 +498,11 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 				// The meadow's ground (GROUND_*, FLOOR_*, BOTTOM_THATCH, TURF_*): the tall sward's shaded
 				// bottom, the short turf's base, a gap's soil, under lying dead leaves near, darkened by
 				// the sward's depth there (the meadow map's A) as the blades' roots are, and lit as they
-				// are (`rootLight`, the roots' key and sky). The litter fades out as the tufts thin (the
-				// blade curve's first two distances, Grass.ts: past the first the blades are under a pixel
-				// wide and widen) and on the lip's bevel (GROUND_FLAT), the colours' means and their
-				// light stay.
+				// are (`rootLight`, the roots' key and sky). The litter fades out where the blades narrow
+				// under a pixel and widen (Grass.ts GRASS_ROOTS `litter`) and on the lip's bevel
+				// (GROUND_FLAT), the colours' means and their light stay.
 				const R = GRASS_ROOTS;
-				const near = float( 1 ).sub( smoothstep( R.bands.x, R.bands.y, length( cameraPosition.sub( p ) ) ) ).mul( smoothstep( GROUND_FLAT[ 0 ], GROUND_FLAT[ 1 ], up ) ).toVar();
+				const near = float( 1 ).sub( smoothstep( R.litter.x, R.litter.y, length( cameraPosition.sub( p ) ) ) ).mul( smoothstep( GROUND_FLAT[ 0 ], GROUND_FLAT[ 1 ], up ) ).toVar();
 				// the sward's depth here (SwardField.ts), its darkening at the root (Grass.ts) and its
 				// shade: full from the tall sward's mean depth up, `open` of it under the shortest turf
 				const sward = meadow.a;
