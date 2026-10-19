@@ -265,17 +265,25 @@ export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t
 
 }
 
-/** The share of its sway (`bendBlade`'s `fade`) a meadow tuft rooted at `root` keeps by its
- * `height` (m) on screen in render pixels, height * P[1][1] * screen height / ( 2 * view depth ):
- * all of it from GRASS_WIND.fade.full pixels up, none below GRASS_WIND.fade.none. Pixels rather
- * than metres, so the dynamic scale and the zoom's fov keep the rule; the projection's ( 1, 1 ) is
- * the same jittered or not (the temporal jitter shifts only the clip offsets), so the scene's
- * projection gives the unjittered size. */
-export function swayFade( root: V3, height: F ): F {
+/** The height on screen in render pixels of `height` (m) standing at `root`, height * P[1][1] *
+ * screen height / ( 2 * view depth ). Pixels rather than metres, so the dynamic scale and the
+ * zoom's fov keep the rules made by it; the projection's ( 1, 1 ) is the same jittered or not (the
+ * temporal jitter shifts only the clip offsets), so the scene's projection gives the unjittered
+ * size. */
+export function screenHeight( root: V3, height: F ): F {
 
 	const depth = max( cameraViewMatrix.mul( vec4( root, 1 ) ).z.negate(), 1e-3 );
 	const p11 = ( cameraProjectionMatrix as unknown as { element( i: number ): { element( i: number ): F } } ).element( 1 ).element( 1 );
-	return smoothstep( GRASS_WIND.fade.none, GRASS_WIND.fade.full, height.mul( p11 ).mul( screenSize.y ).div( depth.mul( 2 ) ) );
+	return height.mul( p11 ).mul( screenSize.y ).div( depth.mul( 2 ) );
+
+}
+
+/** The share of its sway (`bendBlade`'s `fade`) a meadow tuft rooted at `root` keeps by its
+ * `height` (m) on screen (`screenHeight`): all of it from GRASS_WIND.fade.full pixels up, none below
+ * GRASS_WIND.fade.none. */
+export function swayFade( root: V3, height: F ): F {
+
+	return smoothstep( GRASS_WIND.fade.none, GRASS_WIND.fade.full, screenHeight( root, height ) );
 
 }
 

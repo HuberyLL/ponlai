@@ -240,7 +240,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `flags=taaClampDrop:false` for a capture's or clip's `--q`.
 - The meadow's light and the grade's switches (`src/debug/DebugFlags.ts` lists them all), for A/Bs
   of the look: `flags=meadowShade:false` (the screen-space shade and its depth pass),
-  `meadowCast:false`, `groundCast:false`, `grassClumps:false`, `grassDome:<k>`; the look taken off
+  `meadowCast:false`, `groundCast:false`, `grassClumps:false`, `grassFar:<k>`; the look taken off
   comes back by `clearShade:true`, `lowSun:true`, `tone:0.5`, `filmNight:true`; `localTone:false`
   builds the display chain without its local tone mapping. The metered exposure is shifted by the
   GUI's `exposure offset (stops)` (Post folder), and its compensation's points are

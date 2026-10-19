@@ -12,13 +12,13 @@ export { MEADOW_MIN_UP, MEADOW_MAX_DROP, supportsMeadow } from '../world/MeadowS
 // field of bare earth, once broke it into patches that from the overview read as camouflage and
 // dark blotches.
 // The growth field is the island top's structure for the root bed at the rim (Soil.ts). The sward's
-// layering comes from the tussocks themselves (Grass.ts: each its own height, colour and value, and
-// now and then a low patch of one to a few of them), on odds and a level its soil sets
+// layering comes from the tussocks themselves (Grass.ts: their clumps' heights, colours and values,
+// and now and then a low patch of one to a few of them), on odds and a level its soil sets
 // (`meadowVigour`, `meadowShallow`, below): never from zones of the soil. Height tiers by the soil
 // (short exposed turf, a deep soil's taller grass) and their tints read from above as zoning across
 // the island top, a map laid over the meadow, and were taken off the screen. The soil's fields stay in code
 // (`meadowSoil`, `meadowTurf`, `soilShort`, `soilDeep`): the habitat fields (`meadowMoisture`,
-// `meadowTurf`) site the wildflowers' patches, and the plants to come will be placed by them. The
+// `meadowTurf`) pick the wildflowers' species, and the plants to come will be placed by them. The
 // sward runs to the edge on every coast: a windward lip shown short, yellow, thin over gravel and
 // bared to the cliff's stone in stretches read from above as one more zone, and was taken off.
 // The map covers the land lattice's whole extent, wherever the island grows, at 0.25 m: R the
@@ -57,8 +57,8 @@ export function sampleMeadow( x: number, z: number ): MeadowSample {
 }
 
 // The meadow's habitat: two broad fields of fixed seeds that say where its plants grow, the way a
-// real island top's turf and wildflowers follow the ground (Grass.ts sites the flower patches by
-// them). Neither changes the lawn's colour or height yet.
+// real island top's turf and wildflowers follow the ground (Grass.ts picks each flower swath's
+// species by them). Neither changes the lawn's colour or height yet.
 
 /** The ground's moisture under the meadow at ( x, z ), 0 dry to 1 damp: a low-frequency field (its
  * drifts some 25 m across), so the island top has a damp hollow or two and a dry stretch or two. */

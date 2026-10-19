@@ -8,12 +8,13 @@ import {
 import { LIP_INFO, sampleRimGround, rimGrassCover } from './RimGround.ts';
 import type { RimGroundField, RimLipData, ShoreField } from './types.ts';
 import { shoreDistance } from './ShoreSample.ts';
-import { mulberry32, noise3, smoothstep } from './noise.ts';
+import { mulberry32, smoothstep } from './noise.ts';
 import { anchorStream, cellStream } from './Anchors.ts';
+import { BAMBOO } from './Bamboo.ts';
 import { LAWN_COLOUR, SHORE_RIM, SWARD_HEIGHT, meadowColor, meadowMoisture, meadowSoil, meadowShallow, meadowTurf, meadowVigour, supportsMeadow, type ShoreAt } from '../materials/Meadow.ts';
 import { soilUniforms } from '../materials/Soil.ts';
 import { rootHash, type WindState } from '../weather/Wind.ts';
-import { bendBlade, bladePhase, drown, swayFade, tuftWind, type TrampleBlade, type TuftWind } from './vegetation/Deform.ts';
+import { bendBlade, bladePhase, drown, screenHeight, swayFade, tuftWind, type TrampleBlade, type TuftWind } from './vegetation/Deform.ts';
 import { TRAMPLE_RECORD, trampleKernel, trampleShare } from './vegetation/Trample.ts';
 import { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight, meadowCastLight } from '../lighting/MeadowCanopy.ts';
 import { PUDDLE_WET, puddleCover } from '../weather/Puddles.ts';
@@ -34,21 +35,24 @@ import type { Shared } from '../shared.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
 
 // The meadow on the island top: a sward of tussocks, one instanced tuft on every planting anchor
-// and a second beside it on about a quarter of them (one tussock of 12 to 30 blades), each tussock
-// its own height, stiffness and lean, so the sward closes as a whole and sways with the wind but no
-// two neighbouring tussocks stand or bend alike. The blades are long and thin (0.5 m on ordinary
-// soil, 1.2 to 1.5 cm at the root), sword-shaped, wide to two thirds up and running to a point;
-// each takes its own length, facing, root angle and stiffness and its own value and colour, all
-// hashed from the blade and its anchor, and the shape its weight gives it (vegetation/Physics.ts,
-// fitted to a curve: `restBlade`): long blades arc over and droop, short ones stand nearly straight.
-// Long, thin blades are what lets the wind show: a short blade's tip barely travels. One grass
-// colour (Meadow.ts) as the blades' mean, each blade a mix of a palette of greens from a deeper,
-// cooler root to a lighter, yellower tip, where the key light shines through the blade, the sward
-// darkening toward its roots by its density, with a faint gloss along the blades and little of a
-// dielectric's specular; soft upward normals join the blades to the turf rather than lighting every
-// tuft as a cushion, its clump's dome turning them (CLUMP), and each blade is folded along its
-// midrib, one half turned to the light and the other from it, with a thin lighter edge. The light
-// through a blade is the light toward the sun's half of the view alone (`forwardLight`). The sward
+// and a second beside it on about a quarter of them (one tussock of 12 to 30 blades), grouped into
+// clumps about a metre across whose tussocks stand, lean and colour alike (CLUMP), so the sward
+// closes as a whole, reads from the game's view in strokes of a painter's brush rather than a grain
+// of tussocks, and sways with the wind as its clumps do. The blades are long and thin (0.5 m on
+// ordinary soil, 1.2 to 1.5 cm at the root), sword-shaped, wide to two thirds up and running to a
+// point; each takes its own length, facing, root angle and stiffness, all hashed from the blade and
+// its anchor, and the shape its weight gives it (vegetation/Physics.ts, fitted to a curve:
+// `restBlade`): long blades arc over and droop, short ones stand nearly straight. Long, thin blades
+// are what lets the wind show: a short blade's tip barely travels. One grass colour (Meadow.ts) as
+// the blades' mean, from a deeper, cooler root to a lighter, yellower tip, where the key light
+// shines through the blade, its place on a palette of greens its stroke's (STROKE: a few clumps
+// share one) and each blade only a little apart from it; the sward darkening toward its roots by
+// its density, with a faint gloss along the blades and little of a dielectric's specular; soft
+// upward normals join the blades to the turf rather than lighting every tuft as a cushion, and each
+// blade is folded along its midrib, one half turned to
+// the light and the other from it, with a thin lighter edge; far off a blade takes its clump's
+// normal, unfolded (FAR). The light through a blade is the light toward the sun's half of the view
+// alone (`forwardLight`). The sward
 // has a real meadow's layers from the ground up
 // (CULM_*, DRY_*): dead leaves drooped low and the old leaves' straw sheaths at the bottom, the green
 // leaves, and over them a few of each tall tussock's blades grown as flowering stems whose
@@ -59,10 +63,14 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 // no placed features.
 //
 // Rules (the look is in docs/art-direction.md; the reasons are below, where each is built):
-// - Variation lives on a tussock's scale, each tussock (an anchor's tufts, under a metre across)
-//   drawing its height, stiffness, lean and blade count from its anchor's own stream (TUSSOCK,
-//   `plantGrass`) and each blade its length, pose, value and colour (`restBlade`, PALETTE), the
-//   means kept. The soil sets the odds and the level those draws take, never a zone: the tall
+// - Variation lives between the clumps, not within them: the
+//   clumps of a world-anchored lattice (CLUMP) give their tussocks most of their height, their lean,
+//   their blade count and, by the strokes of a coarser lattice (STROKE), their colour; a tussock
+//   keeps a little of its own height and lean (TUSSOCK), and each blade its length and pose
+//   (`restBlade`) and a tenth of its value and a fifth of the palette's run (BLADE_TINT), the means
+//   kept. Each tussock and blade drawing its height, lean, value and tint by itself (a third either
+//   way), with a gap in every twentieth, drew the sward from the game's view as a grain of
+//   tussocks over the dark ground between them. The soil sets the odds and the level those draws take, never a zone: the tall
 //   sward's level rises and falls a little with its soil's vigour over some 14 m (LUSH), and pockets
 //   of shallow soil a few metres across pull their tussocks down toward a short turf, each tussock
 //   part of the way by a draw of its own and some not at all, so the sward slopes into them with
@@ -71,9 +79,9 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   from above as zoning, no two levels, which read as hollows, and no noise's low end, whose valleys
 //   read as footpaths. The short turf is a closed mat, its blades spread out over the ground (MAT),
 //   its ground its own base (SwardField.ts, TerrainMaterial.ts), so a shallow pocket reads as short
-//   turf rather than a dark blotch or bare earth; only a gap shows the soil. The soil's exposure
-//   (Meadow.ts) sites the flowers.
-//   The sward runs to the edge on every coast. GAP of the taller ones leave small gaps where the ground shows. The extra tufts fold away beyond about 35 m and are not drawn
+//   turf rather than a dark blotch or bare earth; only a gap shows the soil (THIN_GAP, in a shallow
+//   pocket). The soil's exposure and moisture (Meadow.ts) pick the flowers' species.
+//   The sward runs to the edge on every coast. The extra tufts fold away beyond about 35 m and are not drawn
 //   past their fold, 42 m. Toward the coast the sward rolls over a rounded shoulder: over its last
 //   metre and a half the tufts lean out more and stand a little lower (SHOULDER) and stiffer
 //   (LIP_STIFF).
@@ -148,10 +156,11 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 // - The meadow's flowers are part of it: some lawn tufts carry one flower head on a thin stem,
 //   the low species on lower tussocks (LOW_FLOWER), the tall one in tall tussocks a little over
 //   their leaves, the tussock's leaves its species' (LEAVES). Two species of Penglai's texts, each in
-//   patches of its own where its habitat is (the moisture and turf fields of Meadow.ts, the rim
-//   distance), dense at a patch's centre and thinning to its edge, almost none between the
-//   patches (`FlowerPatches`, the species and their habitats at SPECIES), and none on the stacks
-//   or on the islander's walking loop. The flowering tufts are a batch of their own
+//   swaths of its own, a few metres across, as a painter lays a field's flowers in broad strokes
+//   (`FlowerSwaths`, SWATH: one species a swath, by the habitat at its centre, the moisture and turf
+//   fields of Meadow.ts), dense over most of a swath and thinning at its rim, a few single flowers
+//   between the swaths, and none on the stacks, on the islander's walking loop or in the bamboo's
+//   shade. The flowering tufts are a batch of their own
 //   over the lawn's blades, a head and its stem (`flowerTuftGeometry`), so the other tufts run no
 //   head vertices; the head's and the stem's indices come first, so every band keeps them whole
 //   while its tuft drops blades. A stem is a blade on the stem's curve (STEM_TIP); a head goes
@@ -162,7 +171,7 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   values ride in the blade's; its species by the tuft's flower code). Far off it widens to a
 //   least size on screen and is drawn whole by its hash, as the blades are, and rises above its
 //   tuft's widened blades as they thin (HEAD_LIFT), so the island view shows the meadow's flowers
-//   as fine coloured specks gathered in patches.
+//   as a swath of fine coloured specks.
 
 interface TuftShape {
 	// the blades, their segments, and their levels along their length (segs + 1 of them, 0 to 1)
@@ -173,9 +182,8 @@ interface TuftShape {
 
 // Lawn: 16 long, thin blades a tuft (0.5 m on the plateau's ordinary soil, 1.2 to 1.5 cm wide at the
 // root, 30 to 40 to one), their roots spread evenly over a disc of about twice the anchors' spacing
-// (r0 is drawn by area), so neighbouring short tufts meet in one sward instead of rosettes; a tall
-// tussock gathers its roots in toward its centre (TUSSOCK.gather) and its blades arc out over its
-// neighbours. Each blade's
+// (r0 is drawn by area), so neighbouring tufts meet in one sward instead of rosettes, and a tall
+// tussock's blades arc out over its neighbours. Each blade's
 // shape is its own rest pose under its weight (`restBlade`), drawn as a strip of four segments of
 // equal length, sword-shaped (Physics.ts's section: wide to two thirds up, running to a point).
 // Long, thin blades are what shows the wind (a short blade's tip barely travels); 16 of them cover the
@@ -274,50 +282,80 @@ function lowPatch( x: number, z: number ): number {
 
 }
 // Each tussock (one per planting anchor, its extra tuft beside it part of it: TUSSOCK) takes its own
-// height about its level (times 1 +- `spread`, the short turf's tighter, `shortSpread`), stiffness
-// (times 1 +- `stiffness`; a taller tussock's blades are thicker, so they stiffen by its height
-// over the level's to the power `levelStiff`, and the tallest droop like the others rather than
-// hanging at the curve's limit), its own lean (`lean`, at most, in a direction of its own: its
-// blades turn toward it and grow longer on that side by SHEAR), a tall one its own count of blades
-// (`blades`, of the tuft's 16).
-// GAP of the tussocks without a flower that stand less than half way down (GRADE) grow nothing,
-// small gaps where the ground shows (the short turf keeps every tuft and blade, a closed sward as
-// thick as the lawn: a tussock's share of blades rises to all of them as it comes down). A tussock's
-// blades gather toward its centre as it grows tall (by `gather`: the short turf keeps its blades
-// spread over the tuft's disc, so it stays a closed sward).
-const TUSSOCK = { spread: 0.4, shortSpread: 0.15, stiffness: 0.3, levelStiff: 1.5, lean: 0.3, blades: [ 12 * FUR, 16 * FUR ], extraBlades: [ 12 * FUR, 14 * FUR ], gather: 0.35 };
-const GAP = 0.05;
+// height about its level (times 1 +- `spread`, the short turf's `shortSpread`; in a clump only its
+// clump's `own` of it, CLUMP), stiffness (times 1 +- `stiffness`; a taller tussock's blades are
+// thicker, so they stiffen by its height over the level's to the power `levelStiff`, and the
+// tallest droop like the others rather than hanging at the curve's limit), its own lean (`lean`, at
+// most, in a direction of its own: its blades turn toward it and grow longer on that side by SHEAR;
+// in a clump mostly its clump's) and its share of the tuft's 16 blades (`blades`, the least and the
+// most, by its clump's draw: a clump stands denser or sparser as a whole). Within a clump the
+// tussocks differ little: drawing their height (+-40 %), lean (0.3) and blade count each by itself,
+// with a gap in one of twenty and a tall one's roots gathered to its centre, drew the sward from the
+// game's view as separate tussocks over the dark ground between them. Only in a pocket of shallow
+// soil does a tussock now and then leave a gap (THIN_GAP); the short turf keeps every tuft and blade,
+// a closed sward as thick as the lawn (a tussock's share of blades rises to all of them as it comes
+// down).
+const TUSSOCK = { spread: 0.1, shortSpread: 0.1, stiffness: 0.3, levelStiff: 1.5, lean: 0.12, blades: [ 12 * FUR, 16 * FUR ], extraBlades: [ 12 * FUR, 14 * FUR ] };
 // Clumps (the technique of Wohllaib, GDC 2021: blades grouped into Voronoi clumps
-// that share most of their parameters, pulled together and pointed alike, so the field shows its
-// structure where a blade's own randomness only grains it): the tussocks share a clump of a
-// world-anchored Voronoi lattice of `cell` (m), its centre jittered within its cell. A clump is
-// one of `types` (by `share`): a tall one (`height` times its level, its tussocks leaning out
-// from its centre by `out`, more at its rim: a mound of blades), an ordinary one (its tussocks
-// leaning together toward its own side by `same`, the share of the clump's lean in theirs) or a
-// short one, which keeps all of its blades (`full`), a closed sward low between the others, not
-// the ground; over it the tussocks stand lower toward its rim (`mound`, at the rim), each keeps
-// `own` of the height spread its own, and one at its rim leaves a gap more often (`rimGap`, from
-// `rim` of the way out), so the clumps stand apart with the dark sward between them; its colour's
-// value varies by `value`. The short turf keeps its level (a clump's share falls as a tussock comes
-// down). The tallest stand `cap` times the ordinary level. Off with `flags=grassClumps:false` at
-// load.
+// that share their height, facing and colour, so a field is not a golf course's lawn, the clumps
+// differing from each other only a little to keep the painted look): the tussocks share a clump
+// of a world-anchored Voronoi lattice of `cell` (m), its centre jittered within its cell. A clump
+// is one of `types` (by `share`), a little taller or shorter (`height` times its level), its
+// tussocks leaning together toward its own side (`same`, the share of the clump's lean in theirs);
+// a short one keeps all of its blades (`full`). Each tussock keeps `own` of the height spread its
+// own, and one at its rim leaves a gap more often (`rimGap`, from `rim` of the way out). The short
+// turf keeps its level (a clump's share falls as a tussock comes down). The tallest stand `cap`
+// times the ordinary level. Clumps grown as visible shapes, a quarter of them mounds 1.3 to 1.65
+// times the level leaning out from their centres, a fifth 0.7 to 0.9, each lit and shaded as a dome,
+// drew the meadow from the game's view as a field of lumps rather than one sward. Off with
+// `flags=grassClumps:false` at load.
 const CLUMP = {
-	cell: 0.9, mound: 0.2, own: 0.2, rimGap: 0, rim: 0.7, value: 0.07, cap: 2,
+	cell: 0.9, own: 0.05, rimGap: 0, rim: 0.7, cap: 2, same: 0.8,
 	types: [
-		{ share: 0.25, height: [ 1.3, 1.65 ], out: [ 0.15, 0.45 ], same: 0, full: 0, dome: 2 },
-		{ share: 0.55, height: [ 0.85, 1.1 ], out: [ 0, 0 ], same: 0.8, full: 0, dome: 1.6 },
-		{ share: 0.2, height: [ 0.7, 0.9 ], out: [ 0, 0 ], same: 0, full: 1, dome: 1 },
+		{ share: 0.25, height: [ 1.05, 1.15 ], full: 0 },
+		{ share: 0.55, height: [ 0.95, 1.05 ], full: 0 },
+		{ share: 0.2, height: [ 0.88, 0.95 ], full: 1 },
 	],
 } as const;
 const CLUMPS = debugFlags.grassClumps !== false;
-// A clump's normals are a dome's (`dome` by its type, times DOME): its tussocks' normals turn out
-// from its centre by the way to its rim, so each clump has a side lit by the key and one turned
-// from it, as a tree's crown takes a sphere's normals and grass blades a clump's
-// common normal far off: a blade's own soft upward normal lights every clump alike, and the
-// meadow shows no side the light comes from. `flags=grassDome:<k>` scales it at load (0: off).
-const DOME = typeof debugFlags.grassDome === 'number' ? debugFlags.grassDome : debugFlags.grassDome === false ? 0 : 1;
-interface Clump { cx: number; cz: number; t: number; type: number; height: number; out: number; turn: number; value: number }
-const _clump: Clump = { cx: 0, cz: 0, t: 0, type: 0, height: 1, out: 0, turn: 0, value: 0.5 };
+// The blades' colour by their clump (the technique of Wohllaib, GDC 2021: a 2D
+// gradient whose v runs along the blade, dark at the root and light at the tip, and whose u the
+// blade's clump picks rather than each blade drawing its own colour, so a field shows splashes of
+// colour): each clump takes a place on the palette's run (fresh green, yellow green, olive: PALETTE)
+// and a value, its stroke's, the cell of a coarser Voronoi lattice of `cell` (m) its centre falls in,
+// with `own` of the run and of the value's draw its own; the value varies by `value` either way.
+// The place rides in the tuft's record (`tint`, Tuft) to the fragment stage, where each blade takes
+// BLADE_TINT.run of the run about it and BLADE_TINT.value of a value its own. Strokes of a few
+// clumps read from the game's view as a painter's strokes over the lawn; a clump's own colour, under
+// a metre, cut the lawn's grain at the blades' scale by a tenth there and showed no strokes.
+const STROKE = { cell: 3, own: 0.15, value: 0.1 };
+const BLADE_TINT = { value: 0.06, run: 0.1 };
+// Far off, a blade takes its clump's normal (its tuft's up turned by the gust's tilt), unfolded, and loses FAR.sheen of its gloss, so blades lean their normals
+// toward their clump's with the distance and drop their gloss (the variance of their normals under a
+// pixel): the share rises from none where the tuft stands FAR.pixels[ 1 ] pixels tall on screen to
+// `share` where it stands FAR.pixels[ 0 ], so a gust sweeps the far meadow as a sheen of whole
+// clumps rather than a glitter of blades. A function of the tuft and the current camera, so a
+// paused frame repeats. `flags=grassFar:<k>` scales it at load (0: off).
+const FAR = { share: 0.8 * ( typeof debugFlags.grassFar === 'number' ? debugFlags.grassFar : 1 ), pixels: [ 8, 40 ], sheen: 0.7 };
+interface Clump { cx: number; cz: number; t: number; type: number; height: number; turn: number; value: number; tint: number; blades: number }
+const _clump: Clump = { cx: 0, cz: 0, t: 0, type: 0, height: 1, turn: 0, value: 0.5, tint: 0.5, blades: 0.5 };
+/** The stroke whose cell holds ( x, z ) (STROKE): its value and its place on the palette's run. */
+function strokeAt( x: number, z: number ): { value: number; tint: number } {
+
+	const cell = STROKE.cell, ci = Math.floor( x / cell ), cj = Math.floor( z / cell );
+	let best = Infinity, bi = 0, bj = 0;
+	for ( let j = cj - 1; j <= cj + 1; j ++ ) for ( let i = ci - 1; i <= ci + 1; i ++ ) {
+
+		const r = cellStream( i, j, 503 );
+		const d = Math.hypot( x - ( i + r() ) * cell, z - ( j + r() ) * cell );
+		if ( d < best ) { best = d; bi = i; bj = j; }
+
+	}
+	const r = cellStream( bi, bj, 503 );
+	r(); r();
+	return { value: r(), tint: r() };
+
+}
 // The clump at ( x, z ): the nearest of the 3 x 3 cells' centres, `t` the way from it toward the
 // border (0 at the centre, 1 where the next nearest is as near), its draws from its cell's stream.
 function clumpAt( x: number, z: number ): Clump {
@@ -346,16 +384,18 @@ function clumpAt( x: number, z: number ): Clump {
 	_clump.t = Math.min( 2 * best / ( best + next ), 1 );
 	_clump.type = type;
 	_clump.height = T.height[ 0 ] + ( T.height[ 1 ] - T.height[ 0 ] ) * r();
-	_clump.out = T.out[ 0 ] + ( T.out[ 1 ] - T.out[ 0 ] ) * r();
+	r(); // (the draw of a mound's outward lean, kept so the later draws stay)
 	_clump.turn = r() * Math.PI * 2;
 	_clump.value = r();
+	_clump.tint = r();
+	_clump.blades = r();
 	return _clump;
 
 }
 // The sward follows its soil (Meadow.ts SWARD_SOIL): a tall tussock's level is the ordinary level
 // times LUSH (from the first at the vigour VIGOUR_LUSH[ 0 ] to the second at VIGOUR_LUSH[ 1 ]), no
 // taller than the tallest tussock of the ordinary level (the meadow's bounds hold); and in a pocket
-// of shallow soil (`meadowShallow`) THIN_GAP more of the tussocks leave a gap, each by its own draw.
+// of shallow soil (`meadowShallow`) THIN_GAP of the tussocks leave a gap, each by its own draw.
 // So deep, damp ground grows a slightly taller sward: no line and no zone (two levels by the soil,
 // 4 times apart over 2 - 4 m, read as a mower's line).
 const LUSH = [ 0.88, 1.15 ], VIGOUR_LUSH = [ 0.25, 0.75 ], THIN_GAP = 0.1;
@@ -409,77 +449,50 @@ const LIP_DEPTH = 0.1, LIP_WALLS = 16, LIE = 0.012, LIE_SPREAD = 0.04, HOLD_SOFT
 // cull sphere for the drape's reach.
 const EDGE_REACH = 1, DRAPE_SHARE = 0.35, DRAPE_RADIUS = [ 0.12, 0.4 ], EDGE_PAD = 0.05;
 
-// The meadow's flowers are heads on some of its lawn tufts (`flowerTuftGeometry`), grown as
-// wildflowers grow: each species in drifts of its own where its habitat is (DRIFT), dense in their
-// clumps and thinning to a scatter of single plants round them, and few between the drifts. They are
+// The meadow's flowers are heads on some of its lawn tufts (`flowerTuftGeometry`), each species in
+// swaths of its own, one kind to a swath as if painted
+// there by a giant brush stroke (Wohllaib, GDC 2021) rather than many kinds intermingled. They are
 // Penglai's, after the texts on the immortals' islands:
 // - The yaoxiang (遙香草) of Daiyu, "its flowers like cinnabar, shining to the moon, its leaves long,
 //   narrow and white, like the day lily's" (Wang Jia, Shiyi ji, book 10): a day lily's form, cinnabar
-//   flowers gold in the throat, pale silvery leaves (the tussock's colour, LEAVES), in loose clumps
-//   over the meadow, the most in the sheltered sward and where the soil is deep or damp.
+//   flowers gold in the throat, pale silvery leaves (the tussock's colour, LEAVES), the most in the
+//   sheltered sward and where the soil is deep or damp.
 // - The zhuyu (祝餘) of Zhaoyao mountain, "like chives, with blue-green flowers; who eats it is not
 //   hungry" (Shanhai jing, Nanshan jing): chives' leaves, blue-green (LEAVES), a round head of sky
-//   blue florets on a stalk over them, low among short turf, in dense clumps in the exposed coast's
-//   wind-cropped turf, the shallow pockets and on dry ground, and along stretches of the cliff's
-//   edge, where the soil is thin and dry, the yaoxiang on the grass in from them (the habitat fields, `meadowMoisture`, `meadowTurf` and `meadowShallow`, Meadow.ts).
-// All flower at once, the year round, which is the island's sign of an immortals' land. From the
-// game's camera a scatter of colours read as confetti strewn over the lawn; patches of one colour
-// read as the meadow's own flowers. Each species' patch (`SPECIES`): its radius (m, a range), the
-// share of its tufts that flower at a clump's centre (`peak`, falling by 1 - u^2 at u of the clump's
-// radius), and its weight in a habitat (`habitat`).
-type Species = { radius: [ number, number ]; peak: number };
+//   blue florets on a stalk over them, low among short turf: the exposed coast's wind-cropped turf,
+//   the shallow pockets and dry ground (the habitat fields, `meadowMoisture`, `meadowTurf` and
+//   `meadowShallow`, Meadow.ts).
 const YAOXIANG = 0, ZHUYU = 1;
 /** The flower heads by number (a flowering tuft's code is 1.5 + its number), for probes. */
 export const FLOWER_SPECIES = [ 'yaoxiang', 'zhuyu' ];
-const SPECIES: Species[] = [
-	{ radius: [ 0.5, 1.2 ], peak: 0.6 }, // yaoxiang: loose clumps
-	{ radius: [ 0.4, 1 ], peak: 0.7 }, // zhuyu: dense clumps
-];
 // A flowering tussock's leaves (its colour times these, linear): the yaoxiang's pale and silvery, the
 // zhuyu's a chive's blue-green.
 const LEAVES = [ [ 1.9, 1.5, 2.8 ], [ 0.8, 1, 1.7 ] ];
-// The inland patches: a world-anchored lattice of PATCH_CELL (m), each cell offering PATCH_SLOTS
-// patch centres jittered over it, each taken with PATCH_SHARE times a broad field's factor
-// (PATCH_FIELD cycles per metre, its noise turning over between PATCH_EDGE: stretches of the meadow
-// with many patches, stretches with a sixth as many, PATCH_FLOOR) and the habitat's total weight
-// there. The species is drawn by its habitat weights at the centre. A patch reaches no farther than
-// PATCH_CELL from its centre (DRIFT), so a tuft looks at its own cell and the eight round it. None
-// outward of INLAND_RIM (rim distance, m: fading from its first value to its second), where the
-// edge's own patches take over.
-const PATCH_CELL = 4.5, PATCH_SLOTS = 3, PATCH_SHARE = 0.62, PATCH_FIELD = 0.05, PATCH_EDGE = [ - 0.3, 0.3 ], PATCH_FLOOR = 0.15;
-// An inland patch is a drift, as a colony of a wildflower grows, spreading from its first plants by
-// runners and the seed fallen near them: DRIFT.lobes clumps (the least and the most) strung along an
-// axis of its own, each `lobe` of the drift's radius across and its centre up to `spread` of it
-// from the drift's along the axis (`across` of that across it), so a drift is long and lobed rather
-// than a disc; its radius the species' range drawn toward its least (by the draw to the power
-// `skew`: many small drifts and a few large), `big` of them `bigScale` times as large, at most
-// `most` m; and round its clumps the plants grown from seed that fell farther, a share of the peak
-// from `satellite` at a clump's edge falling by e every `tail` m, out to `reach` m. Where drifts
-// meet, a tuft flowers by their joint share and takes one's species by its share, so their edges
-// mix rather than meet at a line (the strongest drift alone drew each as a disc of one colour).
-// (Its farthest point, `spread` + `lobe` of `most` and `reach`, stays within PATCH_CELL.)
-const DRIFT = { lobes: [ 2, 4 ], lobe: [ 0.45, 0.8 ], spread: 0.6, across: 0.25, skew: 1.6, big: 0.2, bigScale: 1.8, most: 2, satellite: 0.12, tail: 0.6, reach: 1.6 };
-const INLAND_RIM = [ - 4, - 2.8 ];
-// The edge's patches: a finer lattice of EDGE_CELL (m), one patch a cell for EDGE_SHARE of them
-// times a field along the coast (EDGE_FIELD cycles per metre, turning over between EDGE_EDGE), so
-// they grow along stretches of the coast with long stretches of plain turf between (at a field of
-// 8 m turning over early they drew an unbroken line round the island top); a patch is zhuyu for
-// EDGE_ZHUYU of them, else yaoxiang. Each grows only in its own band of rim distance (m, in from the
-// first two values, out to the last two): the zhuyu on the outer edge's thin, dry soil (ZHUYU_BAND),
-// the yaoxiang on the grass in from it (YAOXIANG_BAND).
-const EDGE_CELL = 1.1, EDGE_SHARE = 0.9, EDGE_FIELD = 0.07, EDGE_EDGE = [ - 0.32, 0.12 ], EDGE_ZHUYU = 0.7;
-const ZHUYU_BAND = [ - 3.2, - 2.2, - 0.6, - 0.35 ], YAOXIANG_BAND = [ - 5.5, - 4.2, - 1.6, - 1 ];
-// Between the patches STRAY of the tufts flower alone, of the species their own spot favours: in the
-// tall sward its tall species, whose heads stand a little over the leaves (HEADS). None
+// The swaths: the cells of a world-anchored Voronoi lattice of `cell` (m), each centre jittered over
+// its cell; one cell in each block of `block` x `block` cells flowers, the first in an order the
+// block draws whose centre lies on the meadow (LAND m in from the edge) and clear of the bamboo
+// (GROVE_CLEAR m from a stand's centre: its shade, where a sunlit meadow's flowers do not bloom), so
+// the swaths spread evenly and even the small starting island holds a few (a cell's own draw left
+// it one or none). Each is of one species, drawn by the habitat's weights at its centre. In a swath
+// `peak` of the tufts flower, out to `edge[ 0 ]` of the way from its centre to its border, thinning
+// to none at `edge[ 1 ]`: a broad swath with a soft rim. The peak keeps the meadow's count of
+// flowers (about one tuft in twelve, `tools/verify-world-stats.mjs`), so the island's flowers are
+// a few broad swaths where they were many small drifts: from the game's view the drifts, a metre or
+// two across and strung along the coast, read as a scatter of specks over the whole island top, the
+// swaths as strokes of one colour. None within FLOWER_LIP (m from the edge: from the first to the
+// second) of the cliff's edge, where its tufts drape over it. As the island grows, a block at the
+// coast may move its swath onto the new land.
+const SWATH = { cell: 6, block: 2, peak: 0.6, edge: [ 0.55, 0.92 ] };
+const LAND = - 1.2;
+const FLOWER_LIP = [ - 0.6, - 0.35 ], GROVE_CLEAR = BAMBOO.radius;
+// Between the swaths STRAY of the tufts flower alone, of the species their own spot favours. None
 // on the rock stacks or within FLOWER_CLEAR (m) of the islander's walking loop (WalkLoop.ts),
 // where the walker's legs pass.
 const STRAY = 0.007, FLOWER_CLEAR = 0.5;
 
-const band = ( b: number[], rim: number ) => smoothstep( b[ 0 ], b[ 1 ], rim ) * ( 1 - smoothstep( b[ 2 ], b[ 3 ], rim ) );
-
-/** The inland species' weights in the habitat of moisture `wet`, sward `tall` and shallow soil
- * `shallow` (Meadow.ts): the yaoxiang anywhere, the more in the sheltered sward and where it is deep
- * or damp; the zhuyu in the exposed coast's short turf, the shallow pockets and on dry ground. */
+/** The species' weights in the habitat of moisture `wet`, sward `tall` and shallow soil `shallow`
+ * (Meadow.ts): the yaoxiang anywhere, the more in the sheltered sward and where it is deep or damp;
+ * the zhuyu in the exposed coast's short turf, the shallow pockets and on dry ground. */
 function habitat( wet: number, tall: number, shallow: number, out: number[] ): number[] {
 
 	out[ YAOXIANG ] = 0.45 + 0.6 * smoothstep( 0.35, 0.65, tall ) + 0.8 * smoothstep( 0.5, 0.72, wet );
@@ -502,133 +515,82 @@ function pickSpecies( w: number[], u: number ): number {
 
 }
 
-// A patch: its species and head, and its clumps ( x, z, radius each, m): a drift's DRIFT.lobes, an
-// edge patch's one; whether plants grown from seed scatter round it (`seeded`: the drifts).
-interface Patch { species: number; head: number; lobes: number[]; seeded: boolean }
+/** The meadow's flower swaths (SWATH): a function of position, the land's edge and the bamboo's
+ * stands, each cell's and block's draws their own. */
+class FlowerSwaths {
 
-/** The meadow's flower patches, each lattice cell's computed once per planting (every value a
- * function of the cell alone). */
-class FlowerPatches {
-
-	private inland = new Map<number, Patch[]>();
-	private edge = new Map<number, Patch[]>();
-	private weights = SPECIES.map( () => 0 );
-	private found: { patch: Patch; share: number }[] = [];
-
+	private weights = [ 0, 0 ];
+	private chosen = new Map<number, number>();
 	private turfAt: ( x: number, z: number ) => number;
+	private rimAt: ( x: number, z: number ) => number;
+	private grove: ArrayLike<number>;
 
-	/** `turfAt`: the sward the soil grows at a point (Meadow.ts `meadowTurf`). */
-	constructor( turfAt: ( x: number, z: number ) => number ) {
+	/** `turfAt`: the sward the soil grows at a point (Meadow.ts `meadowTurf`); `rimAt`: the distance
+	 * to the cliff's edge (m, negative inland; RimGround.ts); `grove`: the bamboo stands, x, z and
+	 * depth each (Bamboo.ts). */
+	constructor( turfAt: ( x: number, z: number ) => number, rimAt: ( x: number, z: number ) => number, grove: ArrayLike<number> = [] ) {
 
 		this.turfAt = turfAt;
+		this.rimAt = rimAt;
+		this.grove = grove;
 
 	}
 
-	private inlandCell( i: number, j: number ): Patch[] {
+	/** The cell ( i + 65536 j ) that flowers in block ( bi, bj ), or NaN if none of its cells can. */
+	private blockCell( bi: number, bj: number ): number {
 
-		const key = i * 65536 + j;
-		let list = this.inland.get( key );
-		if ( list ) return list;
-		list = [];
-		for ( let k = 0; k < PATCH_SLOTS; k ++ ) {
+		const key = bi * 65536 + bj;
+		const known = this.chosen.get( key );
+		if ( known !== undefined ) return known;
+		const n = SWATH.block * SWATH.block, order = Array.from( { length: n }, ( _, k ) => k ), r = cellStream( bi, bj, 607 );
+		for ( let k = n - 1; k > 0; k -- ) {
 
-			const rng = cellStream( i, j, 401 + k );
-			const take = rng(), x = ( i + rng() ) * PATCH_CELL, z = ( j + rng() ) * PATCH_CELL, pick = rng(), size = rng();
-			const field = PATCH_FLOOR + ( 1 - PATCH_FLOOR ) * smoothstep( PATCH_EDGE[ 0 ], PATCH_EDGE[ 1 ], noise3( x * PATCH_FIELD - 7.7, 3.4, z * PATCH_FIELD + 5.1 ) );
-			const w = habitat( meadowMoisture( x, z ), this.turfAt( x, z ), meadowShallow( x, z ), this.weights );
-			if ( take >= PATCH_SHARE * field * Math.min( w.reduce( ( a, b ) => a + b, 0 ), 1 ) ) continue;
-			const species = pickSpecies( w, pick );
-			// the drift (DRIFT): its radius, its axis and its clumps along it, from draws of its own
-			const drift = cellStream( i, j, 421 + k );
-			const [ r0, r1 ] = SPECIES[ species ].radius;
-			const r = Math.min( ( r0 + size ** DRIFT.skew * ( r1 - r0 ) ) * ( drift() < DRIFT.big ? DRIFT.bigScale : 1 ), DRIFT.most );
-			const axis = drift() * Math.PI, ax = Math.cos( axis ), az = Math.sin( axis );
-			const count = DRIFT.lobes[ 0 ] + Math.floor( drift() * ( DRIFT.lobes[ 1 ] - DRIFT.lobes[ 0 ] + 1 ) );
-			const lobes: number[] = [];
-			for ( let l = 0; l < count; l ++ ) {
-
-				const along = ( 2 * drift() - 1 ) * DRIFT.spread * r, across = ( 2 * drift() - 1 ) * DRIFT.across * DRIFT.spread * r;
-				lobes.push( x + ax * along - az * across, z + az * along + ax * across, r * ( DRIFT.lobe[ 0 ] + drift() * ( DRIFT.lobe[ 1 ] - DRIFT.lobe[ 0 ] ) ) );
-
-			}
-			list.push( { species, head: species, lobes, seeded: true } );
+			const m = Math.floor( r() * ( k + 1 ) );
+			[ order[ k ], order[ m ] ] = [ order[ m ], order[ k ] ];
 
 		}
-		this.inland.set( key, list );
-		return list;
+		let found = NaN;
+		for ( const k of order ) {
+
+			const i = bi * SWATH.block + k % SWATH.block, j = bj * SWATH.block + Math.floor( k / SWATH.block );
+			const c = cellStream( i, j, 601 ), x = ( i + c() ) * SWATH.cell, z = ( j + c() ) * SWATH.cell;
+			if ( this.rimAt( x, z ) >= LAND ) continue;
+			let shaded = false;
+			for ( let g = 0; g < this.grove.length; g += 3 ) if ( Math.hypot( x - this.grove[ g ], z - this.grove[ g + 1 ] ) < GROVE_CLEAR ) shaded = true;
+			if ( shaded ) continue;
+			found = i + 65536 * j;
+			break;
+
+		}
+		this.chosen.set( key, found );
+		return found;
 
 	}
 
-	private edgeCell( i: number, j: number ): Patch[] {
+	/** The flower head of the swath at ( x, z ), `rim` m from the edge, and the share of its tufts
+	 * that flower there (0 between the swaths). */
+	at( x: number, z: number, rim: number ): { head: number; share: number } {
 
-		const key = i * 65536 + j;
-		let list = this.edge.get( key );
-		if ( list ) return list;
-		list = [];
-		const rng = cellStream( i, j, 409 );
-		const take = rng(), x = ( i + rng() ) * EDGE_CELL, z = ( j + rng() ) * EDGE_CELL, pick = rng(), size = rng();
-		const field = smoothstep( EDGE_EDGE[ 0 ], EDGE_EDGE[ 1 ], noise3( x * EDGE_FIELD + 2.9, 8.6, z * EDGE_FIELD - 4.4 ) );
-		if ( take < EDGE_SHARE * field ) {
+		const cell = SWATH.cell, ci = Math.floor( x / cell ), cj = Math.floor( z / cell );
+		let best = Infinity, next = Infinity, bi = 0, bj = 0, bx = 0, bz = 0;
+		for ( let j = cj - 1; j <= cj + 1; j ++ ) for ( let i = ci - 1; i <= ci + 1; i ++ ) {
 
-			const species = pick < EDGE_ZHUYU ? ZHUYU : YAOXIANG, [ r0, r1 ] = SPECIES[ species ].radius;
-			list.push( { species, head: species, lobes: [ x, z, r0 + size * ( r1 - r0 ) ], seeded: false } );
+			const r = cellStream( i, j, 601 );
+			const px = ( i + r() ) * cell, pz = ( j + r() ) * cell, d = Math.hypot( x - px, z - pz );
+			if ( d < best ) {
 
-		}
-		this.edge.set( key, list );
-		return list;
+				next = best;
+				best = d; bi = i; bj = j; bx = px; bz = pz;
 
-	}
-
-	/** The share of a patch's tufts that flower at ( x, z ): its peak times 1 - u^2 at u of the
-	 * nearest clump's radius in, the seeded scatter round it (DRIFT) out. */
-	private share( p: Patch, x: number, z: number ): number {
-
-		let inside = 0, gap = Infinity;
-		for ( let l = 0; l < p.lobes.length; l += 3 ) {
-
-			const d = Math.hypot( x - p.lobes[ l ], z - p.lobes[ l + 1 ] ), r = p.lobes[ l + 2 ];
-			inside = Math.max( inside, 1 - ( d * d ) / ( r * r ) );
-			gap = Math.min( gap, Math.max( d - r, 0 ) );
+			} else if ( d < next ) next = d;
 
 		}
-		const seeded = p.seeded && gap < DRIFT.reach ? DRIFT.satellite * Math.exp( - gap / DRIFT.tail ) : 0;
-		return SPECIES[ p.species ].peak * Math.max( inside, seeded );
-
-	}
-
-	/** The flower head a tuft at ( x, z ), `rim` m from the edge, takes from the patches there (by
-	 * the draw `pick` over their shares: where they overlap, any one of them) and the share of the
-	 * tufts that flower there (their joint share), 0 between the patches. */
-	strongest( x: number, z: number, rim: number, pick: number ): { head: number; share: number } {
-
-		const found = this.found;
-		found.length = 0;
-		const inland = 1 - smoothstep( INLAND_RIM[ 0 ], INLAND_RIM[ 1 ], rim );
-		const edge = [ band( YAOXIANG_BAND, rim ), band( ZHUYU_BAND, rim ) ];
-		const visit = ( cell: number, lists: ( i: number, j: number ) => Patch[], weight: ( p: Patch ) => number ) => {
-
-			const ci = Math.floor( x / cell ), cj = Math.floor( z / cell );
-			for ( let j = cj - 1; j <= cj + 1; j ++ ) for ( let i = ci - 1; i <= ci + 1; i ++ ) for ( const p of lists.call( this, i, j ) ) {
-
-				const s = this.share( p, x, z ) * weight( p );
-				if ( s > 0 ) found.push( { patch: p, share: s } );
-
-			}
-
-		};
-		if ( inland > 0 ) visit( PATCH_CELL, this.inlandCell, () => inland );
-		if ( edge[ 0 ] + edge[ 1 ] > 0 ) visit( EDGE_CELL, this.edgeCell, ( p ) => edge[ p.species ] );
-		if ( found.length === 0 ) return { head: - 1, share: 0 };
-		let none = 1, sum = 0;
-		for ( const f of found ) { none *= 1 - f.share; sum += f.share; }
-		let at = pick * sum, head = found[ found.length - 1 ].patch.head;
-		for ( const f of found ) {
-
-			if ( at < f.share ) { head = f.patch.head; break; }
-			at -= f.share;
-
-		}
-		return { head, share: 1 - none };
+		if ( this.blockCell( Math.floor( bi / SWATH.block ), Math.floor( bj / SWATH.block ) ) !== bi + 65536 * bj ) return { head: - 1, share: 0 };
+		const r = cellStream( bi, bj, 601 );
+		r(); r();
+		const head = pickSpecies( habitat( meadowMoisture( bx, bz ), this.turfAt( bx, bz ), meadowShallow( bx, bz ), this.weights ), r() );
+		const t = Math.min( 2 * best / ( best + next ), 1 );
+		return { head, share: SWATH.peak * ( 1 - smoothstep( SWATH.edge[ 0 ], SWATH.edge[ 1 ], t ) ) * ( 1 - smoothstep( FLOWER_LIP[ 0 ], FLOWER_LIP[ 1 ], rim ) ) };
 
 	}
 
@@ -636,10 +598,8 @@ class FlowerPatches {
 	 * (the draw `u`), or -1 where no flower grows. */
 	stray( x: number, z: number, rim: number, u: number ): number {
 
-		const inland = 1 - smoothstep( INLAND_RIM[ 0 ], INLAND_RIM[ 1 ], rim );
-		const yaoxiang = band( YAOXIANG_BAND, rim ), zhuyu = band( ZHUYU_BAND, rim ), most = Math.max( inland, yaoxiang, zhuyu );
-		if ( most <= 0 ) return - 1;
-		return inland === most ? pickSpecies( habitat( meadowMoisture( x, z ), this.turfAt( x, z ), meadowShallow( x, z ), this.weights ), u ) : zhuyu === most ? ZHUYU : YAOXIANG;
+		if ( rim > FLOWER_LIP[ 0 ] ) return - 1;
+		return pickSpecies( habitat( meadowMoisture( x, z ), this.turfAt( x, z ), meadowShallow( x, z ), this.weights ), u );
 
 	}
 
@@ -1065,9 +1025,9 @@ const STEM_TIP = ( () => {
 } )();
 
 /** A tussock's own values in the vertex stage (from its word, `plantGrass`): its stiffness, its lean
- * (0 to 1), the lean's direction in the tuft's frame (local x, z) and how far its blades' roots
- * gather toward its centre (a scale of their offsets) and its share of broad leaves (COARSE). */
-interface Tussock { stiffness: F; lean: F; dir: THREE.Node<'vec2'>; gather: F; coarse: F }
+ * (0 to 1), the lean's direction in the tuft's frame (local x, z) and its share of broad leaves
+ * (COARSE). */
+interface Tussock { stiffness: F; lean: F; dir: THREE.Node<'vec2'>; coarse: F }
 
 /** A tussock's own values (`Tussock`) from its word (`plantGrass`: its stiffness, lean and the lean's
  * direction, a byte each) and its tuft's height scale `scaleY` (m). */
@@ -1078,7 +1038,6 @@ function tussockOf( word: F, scaleY: F ): Tussock {
 	return {
 		stiffness: lowByte.mul( ( STIFF_RANGE[ 1 ] - STIFF_RANGE[ 0 ] ) / 255 ).add( STIFF_RANGE[ 0 ] ).toVar(),
 		lean: mid.div( 255 ).toVar(), dir: vec2( cos( leanAngle ), sin( leanAngle ) ).toVar(),
-		gather: float( 1 ).sub( smoothstepN( LEVEL.short + 0.04, LEVEL.ordinary, scaleY ).mul( TUSSOCK.gather ) ),
 		// (a hash of its stiffness and lean bytes, its own draws; none on the short turf)
 		coarse: ( () => {
 
@@ -1103,8 +1062,7 @@ function tussockOf( word: F, scaleY: F ): Tussock {
 // lies on, the blade's id, the hash it is kept by where it is widened (`grassMaterial`'s opacity),
 // its length (m) and its root (local x, z: where the islanders' trail is read, Trample.ts).
 // The blade's tussock (`clump`) turns it toward its lean and lengthens it on that side (SHEAR: the
-// lengths' mean over a tussock stays), stiffens it by its own stiffness and gathers its root toward
-// the centre. A flower's stem (`isStem` 1, `stem`: its direction in the tuft's frame and its length
+// lengths' mean over a tussock stays) and stiffens it by its own stiffness. A flower's stem (`isStem` 1, `stem`: its direction in the tuft's frame and its length
 // in the tuft's units, `headPose`) takes the same curve at the stem's numbers.
 // At the cliff's edge the vertex stage drapes the rest pose's bent blade over it (`drape`).
 function restBlade( blade: THREE.Node<'vec4'>, pick: F, scaleY: F, aspect: F, clump: Tussock, isStem: F, stem: { dir: THREE.Node<'vec2'>; length: F } ) {
@@ -1140,7 +1098,7 @@ function restBlade( blade: THREE.Node<'vec4'>, pick: F, scaleY: F, aspect: F, cl
 	const offset = axis.mul( half );
 	const curve = bladeCurve( mix( mix( gravity, CULM_G, culm ), STEM_G, isStem ), mix( mix( angle, CULM_ANGLE, culm ), STEM_ANGLE, isStem ), t ).toVar();
 	const along = mix( dir, stem.dir, isStem ), reach = mix( length, stem.length, isStem ).toVar();
-	const base = positionLocal.xz.sub( offset0 ).mul( clump.gather );
+	const base = positionLocal.xz.sub( offset0 );
 	const centre = base.add( along.mul( curve.x.mul( reach ).mul( aspect ).mul( mat.mul( MAT.spread ).add( 1 ) ) ) );
 	const position = vec3( centre.x.add( offset.x ), curve.y.mul( reach ).mul( float( 1 ).sub( mat.mul( MAT.flat ) ) ), centre.y.add( offset.y ) );
 	return { position, offset, axis, lean: along.mul( curve.z.mul( LEAN_NORMAL ) ), side, id, hash: bladeHash( id, pick, 7 ), metres, base, facing: along };
@@ -1159,14 +1117,16 @@ const SHADE_RADIUS = 0.3, SHADE_DEPTH = 0.8, SHADE_HEIGHT = 0.5, SHADE_LIFT = 0.
 // tinted against the albedo), the gloss along them (its colour and the sine's power) and their
 // specular against a plain dielectric's (see `grassMaterial`).
 const ROOT = new THREE.Vector3( 0.42, 0.7, 0.56 ), TIP = new THREE.Vector3( 1.2, 1.17, 0.88 );
-// The blades' palette, after SimonDev's Quick_Grass (MIT; the technique only: each blade a random
-// mix of base and tip colours and a random value, and the sward darkened toward the ground by its
-// height and density): each blade takes a root and a tip colour from one draw along fresh green,
-// yellow green and olive (`PALETTE`, factors on ROOT and TIP), DRY_SHARE of them a dry, yellower
-// leaf, and its value times VALUE ( 0.65 to 1.35, the mean 1 ). The palette is divided by its mean,
-// so the lawn's average colour stays ROOT to TIP of the lawn's. With blades only +-4 % apart in
-// value and one tint the long sward read as plastic; real grass varies by a third from leaf to leaf.
-const DRY_SHARE = 0.12, VALUE = [ 0.65, 1.35 ];
+// The blades' palette, after SimonDev's Quick_Grass (MIT; the technique only: a mix of base and tip
+// colours, and the sward darkened toward the ground by its height and density): a blade takes a root
+// and a tip colour from one place along fresh green, yellow green and olive (`PALETTE`, factors on
+// ROOT and TIP), its stroke's with a little of its own (STROKE, BLADE_TINT), and DRY_SHARE of them a
+// dry, yellower leaf. The palette is divided by its mean over the run, which the strokes' places
+// cover evenly, so the lawn's average colour stays ROOT to TIP of the lawn's. Blades only +-4 %
+// apart in value and of one tint everywhere read as plastic; each blade a third apart from its
+// neighbours (as real leaves are) grained the lawn from the game's view; the strokes carry the
+// colour's variety and the blades keep a little of their own.
+const DRY_SHARE = 0.12;
 // The sward's layers, as a real meadow's from the ground up: the dead leaves and the old leaves'
 // straw sheaths at the bottom, the green leaves, and the flowering stems over them.
 // - Of a tall tussock's blades CULM_SHARE are flowering stems, culms (fading in over the height
@@ -1460,12 +1420,16 @@ function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNod
 	const input = tuftInputs( cull, tuftSlot );
 	// The tuft's instance data, read as the instanced attributes were: what the fragment stage
 	// reads passes as a varying, as an attribute did.
-	// (the tuft's local x axis is its matrix's first column; its slot in `ground` holds the clump's
-	// dome, CLUMP)
-	const ground0 = input.ground( 0 ), dome = input.ground( 1 ), ground2 = input.ground( 2 );
-	const ground1 = vec4( ( input.matrix as unknown as Columns ).element( 0 ).xyz, dome.w );
-	const skyVisibility = varying( ground0.x, 'vGrassSkyVisibility' );
+	// (the tuft's local x axis is its matrix's first column; its slots in `ground` hold its stroke's
+	// place on the palette's run and the thin flag)
+	const ground0 = input.ground( 0 ), groundMid = input.ground( 1 ), ground2 = input.ground( 2 );
+	const ground1 = vec4( ( input.matrix as unknown as Columns ).element( 0 ).xyz, groundMid.w );
 	const tuftOrigin = varying( input.origin, 'vGrassTuftOrigin' );
+	// The tuft's sky visibility, its stroke's place on the palette's run (STROKE) and its far share
+	// (FAR), in one varying (the meadow's varyings are near WebGPU's limit).
+	const farShare = FAR.share > 0 ? float( 1 ).sub( smoothstepN( FAR.pixels[ 0 ], FAR.pixels[ 1 ], screenHeight( input.origin.xyz, input.origin.w ) ) ).mul( FAR.share ).toVar( 'grassFarShare' ) : float( 0 );
+	const tuftLook = varying( vec3( ground0.x, groundMid.z, farShare ), 'vGrassTuftLook' );
+	const skyVisibility = tuftLook.x;
 	const blade = attribute<'vec4'>( 'blade', 'vec4' );
 	const t = blade.x;
 	const t2 = t.mul( t );
@@ -1505,7 +1469,7 @@ function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNod
 		centre: headColumns.element( 0 ).xyz, radius: headColumns.element( 0 ).w, offset: headColumns.element( 1 ).xyz, hash: headColumns.element( 1 ).w,
 		normal: headColumns.element( 2 ).xyz, stem: { dir: headColumns.element( 3 ).xy, length: headColumns.element( 2 ).w },
 	};
-	const clump: Tussock = { stiffness: own.x, lean: own.y, gather: own.z, coarse: own.w, dir: ownMore.xy };
+	const clump: Tussock = { stiffness: own.x, lean: own.y, coarse: own.w, dir: ownMore.xy };
 	// A tuft's edge record (`edgeTuftSteps`, zeros away from the edge): the coast's offset along its
 	// outward direction, the roof's height, the outward direction, then the wall (LIP_WALLS offsets).
 	const edgeRecord = input.edge( 0 );
@@ -1670,17 +1634,18 @@ function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNod
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
 	const cover = rimVarying.x;
 	const strip = bladeStrips( bladeVarying.y, bladeVarying.z, bladeVarying.w, rimVarying.y );
-	// Each blade takes its value (VALUE) and its root and tip colours from the palette (PALETTE, one
-	// draw along it, and DRY_SHARE dry leaves by a draw of their own): hashes of the blade and its
-	// tuft's anchor, so no two neighbouring blades match; the palette's mean is the lawn's colour.
-	// The blades are far finer than any patch, so they tell apart close up without mottling the lawn.
+	// Each blade takes its root and tip colours from the palette at its stroke's place and a little of
+	// its own, and a value a little apart (BLADE_TINT), by hashes of the blade and its tuft's anchor;
+	// DRY_SHARE dry leaves by a draw of their own. The palette's mean is the lawn's colour.
 	const jitter = strip.jitter, tint = strip.tint;
-	const run = ( k: number ) => mix( mix( vec3( PALETTE.fresh[ k ] ), vec3( PALETTE.yellow[ k ] ), clamp( tint.mul( 2 ), 0, 1 ) ), vec3( PALETTE.olive[ k ] ), clamp( tint.mul( 2 ).sub( 1 ), 0, 1 ) );
+	// (its place on the run its stroke's, BLADE_TINT.run of it the blade's own about it)
+	const onRun = clamp( tuftLook.y.add( tint.sub( 0.5 ).mul( BLADE_TINT.run ) ), 0, 1 );
+	const run = ( k: number ) => mix( mix( vec3( PALETTE.fresh[ k ] ), vec3( PALETTE.yellow[ k ] ), clamp( onRun.mul( 2 ), 0, 1 ) ), vec3( PALETTE.olive[ k ] ), clamp( onRun.mul( 2 ).sub( 1 ), 0, 1 ) );
 	// (the blade's kind by its own tint, not a far strip's: its shape is the blade's, `bladeKind`)
 	const culm = bladeKind( bladeVarying.w, tuft.w.div( CANOPY_TOP ) ).culm;
 	const dry = step( 1 - DRY_SHARE, fract( tint.mul( 13.7 ) ) ).mul( float( 1 ).sub( culm ) );
 	const sheath = fract( tint.mul( 5.31 ) ).mul( SHEATH );
-	const value = jitter.mul( VALUE[ 1 ] - VALUE[ 0 ] ).add( VALUE[ 0 ] );
+	const value = jitter.mul( 2 ).sub( 1 ).mul( BLADE_TINT.value ).add( 1 );
 	// A deeper, cooler green at the root to a light, fresh green at the tip (the instance colour
 	// multiplies in), so the gaps between blades read as a deeper green, never near black (that
 	// read as holes in a bright lawn), and the sward has depth without looking dirty. The light
@@ -1745,8 +1710,8 @@ function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNod
 			const normal = transformNormal( normalLocal, input.matrix );
 			const leanWorld = ground1.xyz.mul( pose.lean.x ).add( ground2.xyz.mul( pose.lean.y ) );
 			let bladeNormal = normalize( normal.add( bend.tilt.mul( t.mul( 1.5 ) ) ).add( leanWorld.mul( t ) ) );
-			// (its clump's dome, CLUMP)
-			if ( DOME > 0 ) bladeNormal = normalize( bladeNormal.add( vec3( dome.x, 0, dome.y ) ) );
+			// (far off, its clump's: FAR)
+			if ( FAR.share > 0 ) bladeNormal = normalize( mix( bladeNormal, normalize( tuftUp.add( bend.tilt.mul( 0.75 ) ) ), farShare ) );
 			normalLocal.assign( mix( bladeNormal, normalize( head.normal.add( bend.tilt.mul( 1.5 ) ) ), isHead ) );
 			// (a head takes its own colour, not the lawn's)
 			// (a blade lying over in a strong wind shows its paler side, `bendBlade`'s `pale`: 1 up to fair's wind)
@@ -1762,7 +1727,7 @@ function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNod
 		// toward its own edge, so one half takes the light and the other turns from it (FOLD), as a
 		// leaf folded along its midrib does.
 		// A head is not folded.
-		normal: normalize( normalViewGeometry.add( axisView.mul( clamp( side.mul( 4 ), - 1, 1 ).mul( FOLD ).mul( bladeOnly ) ) ) ),
+		normal: normalize( normalViewGeometry.add( axisView.mul( clamp( side.mul( 4 ), - 1, 1 ).mul( FOLD ).mul( bladeOnly ).mul( float( 1 ).sub( tuftLook.z ) ) ) ) ),
 		// The static visibility affects indirect illumination only; sunlight keeps its own shadows.
 		// Both the sky's light (here) and the key light (`VegetationLighting` below) fall off toward
 		// the root.
@@ -1794,7 +1759,7 @@ function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNod
 
 					const along = dot( N, normalize( L.add( V ) ) );
 					const facing = clamp( dot( N, L ).add( 0.35 ), 0, 1 );
-					return vec3( SHEEN ).mul( pow( clamp( float( 1 ).sub( along.mul( along ) ), 0, 1 ), SHEEN_POWER ).mul( facing ).mul( t2 ) );
+					return vec3( SHEEN ).mul( pow( clamp( float( 1 ).sub( along.mul( along ) ), 0, 1 ), SHEEN_POWER ).mul( facing ).mul( t2 ) ).mul( float( 1 ).sub( tuftLook.z.mul( FAR.sheen ) ) );
 
 				},
 			};
@@ -1829,7 +1794,7 @@ function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNod
 
 /** A tuft's record; a tuft at the cliff's edge also its `edge` record (20 floats: `edgeTuftSteps`)
  * and how far past its blades' reach the drape and the hold off the wall may move them (`pad`, m). */
-export interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3; flower: number; density: number; clump: number; dome?: readonly [ number, number ]; edge?: Float32Array; pad?: number }
+export interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3; flower: number; density: number; clump: number; tint?: number; edge?: Float32Array; pad?: number }
 
 type GrassCull = VegetationCull<Tuft>;
 // a mat4 node's columns (TSL has them; @types/three does not declare them)
@@ -1886,7 +1851,7 @@ function tuftSphere( t: Tuft, geometry: THREE.BufferGeometry, spheres: Float32Ar
 }
 
 // A tuft's record (vec4s, the pool's `tuft`), what every vertex of it would work out alike: its
-// tussock's values (`tussockOf`: stiffness, lean, gather, coarse), the lean's direction with the
+// tussock's values (`tussockOf`: stiffness, lean, none, coarse), the lean's direction with the
 // aspect and its shade (`meadowStill`), then the wind at its origin (`meadowWind`: two vec4s of the
 // frame being rendered, and under the temporal modes two of the previous one after them). One
 // buffer: the vertex stage binds eight storage buffers, WebGPU's least limit. Every draw of the
@@ -1916,11 +1881,11 @@ const GRASS_PAYLOAD: CullPayload<Tuft> = {
 		// there resolve against the sky-coloured clear, so every partly covered pixel a widened
 		// blade adds shows as a pale fringe over the sea); then the instance's local x axis with the
 		// thin flag (1 for the extra tufts that fold away with distance; the shader takes the x axis
-		// from the matrix, its slot here holds the clump's dome: CLUMP), and its local z axis with
+		// from the matrix, its slot here holds its stroke's place on the palette's run: STROKE), and its local z axis with
 		// the share of its blades the soil lets it keep (`density`, `tuftLod`). A blade's width lies
 		// in the plane of those axes: the vertex stage keeps thin blades a minimum width on screen
 		// in world space.
-		ground.set( [ t.visibility, t.flower, t.cover, t.rimEdge, t.dome?.[ 0 ] ?? 0, t.dome?.[ 1 ] ?? 0, 0, t.thin, e[ 8 ], e[ 9 ], e[ 10 ], t.density ], i * 12 );
+		ground.set( [ t.visibility, t.flower, t.cover, t.rimEdge, 0, 0, t.tint ?? 0.5, t.thin, e[ 8 ], e[ 9 ], e[ 10 ], t.density ], i * 12 );
 		t.origin.toArray( origins, i * 4 );
 		origins[ i * 4 + 3 ] = t.top;
 		if ( t.edge ) edge.set( t.edge, i * 20 );
@@ -1958,7 +1923,7 @@ function meadowStill( cull: GrassCull, sunShadow: SunShadow, shared: Shared ): (
 		const scaleY = origin.w.div( CANOPY_TOP ).toVar();
 		const own = tussockOf( colors.element( slot ).w, scaleY );
 		const aspect = scaleY.div( length( ( matrices.element( slot ) as unknown as Columns ).element( 0 ).xyz ) );
-		record.element( slot.mul( TUFT_RECORD ) ).assign( vec4( own.stiffness, own.lean, own.gather, own.coarse ) );
+		record.element( slot.mul( TUFT_RECORD ) ).assign( vec4( own.stiffness, own.lean, 0, own.coarse ) );
 		record.element( slot.mul( TUFT_RECORD ).add( 1 ) ).assign( vec4( own.dir, aspect, shade ) );
 
 	} )().computeKernel( [ CULL_GROUP ] ).setName( 'Grass.Still' );
@@ -2167,7 +2132,7 @@ type TuftKind = 'lawn' | 'lawnThin' | 'lawnFlower';
  * `shore` (the world's shore field) gives the soil's depth its coast term, as the ground reads it
  * (the anchor's own rim distance without it); `rimLip` (the worker's lip) gives the tufts near the
  * cliff's edge their edge records (`edgeTuftSteps`). */
-export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number, shore?: ShoreField, rimLip?: RimLipData ): GrassTufts {
+export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number, shore?: ShoreField, rimLip?: RimLipData, grove?: ArrayLike<number> ): GrassTufts {
 
 	const n = veg.length / STRIDE;
 	const lawn: Tuft[] = [], lawnThin: Tuft[] = [], lawnFlower: Tuft[] = [], sward: number[] = [];
@@ -2175,14 +2140,14 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 	// each anchor's own rim distance alone (no side of the wind: tools that plant without the field).
 	let ownRim = 0;
 	const shoreAt: ShoreAt = shore ? ( x, z ) => shoreDistance( shore, x, z ) : () => ownRim - SHORE_RIM;
-	const patches = new FlowerPatches( ( x, z ) => meadowTurf( meadowSoil( x, z, shoreAt ) ) );
+	const swaths = new FlowerSwaths( ( x, z ) => meadowTurf( meadowSoil( x, z, shoreAt ) ), rimGround ? ( x, z ) => sampleRimGround( rimGround, x, z ).distance : () => - Infinity, grove );
 	const draws = new Float32Array( 8 ), own = new Float32Array( 8 );
 	const q = new THREE.Quaternion(), qy = new THREE.Quaternion(), inverse = new THREE.Quaternion();
 	const up = new THREE.Vector3( 0, 1, 0 ), dir = new THREE.Vector3(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
 	const out = new THREE.Vector3(), lean = new THREE.Vector3(), local = new THREE.Vector3();
 	const col = new THREE.Color();
 	let density = 1, stiffByte = 0, leanByte = 0;
-	let dome: readonly [ number, number ] | undefined;
+	let tint = 0.5;
 	// the tussock's word for a tuft turned by `rotation`: its lean's direction in the tuft's frame
 	const word = ( rotation: THREE.Quaternion ) => {
 
@@ -2194,7 +2159,7 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 	const plant = ( list: Tuft[], at: THREE.Vector3, rotation: THREE.Quaternion, scale: THREE.Vector3, color: THREE.Color,
 		k: number, cover: number, rimEdge: number, thin: number, flower = 0 ) => list.push( {
 		m: new THREE.Matrix4().compose( at, rotation, scale ), col: color.clone(), visibility: veg[ k + 8 ], cover, rimEdge, thin,
-		top: scale.y * CANOPY_TOP, origin: at.clone(), flower, density, clump: word( rotation ), dome,
+		top: scale.y * CANOPY_TOP, origin: at.clone(), flower, density, clump: word( rotation ), tint,
 	} );
 
 	for ( let i = 0; i < n; i ++ ) {
@@ -2259,14 +2224,14 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 
 		}
 		// Whether the tuft flowers, and which head, from a stream of its own (the lawn's draws stay
-		// as they were): by the patches at it, or now and then alone between the patches.
+		// as they were): by the swath at it, or now and then alone between the swaths.
 		const bloom = anchorStream( x, z, 211 );
 		const b0 = bloom(), b1 = bloom();
 		let flower = 0, head = - 1;
 		if ( ! onStack && ( ! walkDistance || walkDistance( x, z ) >= FLOWER_CLEAR ) ) {
 
-			const patch = patches.strongest( x, z, rim, b1 );
-			head = patch.share > 0 ? ( b0 < patch.share ? patch.head : - 1 ) : b0 < STRAY ? patches.stray( x, z, rim, b1 ) : - 1;
+			const swath = swaths.at( x, z, rim );
+			head = swath.share > 0 ? ( b0 < swath.share ? swath.head : - 1 ) : b0 < STRAY ? swaths.stray( x, z, rim, b1 ) : - 1;
 			if ( head >= 0 ) flower = 1.5 + head;
 
 		}
@@ -2285,7 +2250,7 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		const clump = CLUMPS && ! onStack ? clumpAt( x, z ) : null;
 		const clumped = clump ? 1 - short : 0;
 		const rimGap = clump ? CLUMP.rimGap * smoothstep( CLUMP.rim, 1, clump.t ) * clumped : 0;
-		if ( short < 0.5 && flower === 0 && own[ 7 ] < GAP + THIN_GAP * thin + rimGap ) {
+		if ( short < 0.5 && flower === 0 && own[ 7 ] < THIN_GAP * thin + rimGap ) {
 
 			sward.push( x, z, - 1 );
 			continue;
@@ -2295,7 +2260,7 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		const level = LEVEL.ordinary * lush + ( LEVEL.short - LEVEL.ordinary * lush ) * short;
 		const spread = TUSSOCK.spread + ( TUSSOCK.shortSpread - TUSSOCK.spread ) * short;
 		const ownSpread = clump ? spread + ( CLUMP.own - spread ) * clumped : spread;
-		const clumpHeight = clump ? 1 + ( clump.height * ( 1 - CLUMP.mound * clump.t * clump.t ) - 1 ) * clumped : 1;
+		const clumpHeight = clump ? 1 + ( clump.height - 1 ) * clumped : 1;
 		const height = Math.min( level * clumpHeight * ( 1 + ownSpread * ( 2 * own[ 1 ] - 1 ) ), LEVEL.ordinary * ( clump ? CLUMP.cap : 1 + TUSSOCK.spread ) );
 		scl.y = height;
 		if ( spill > 0 && ! onStack ) scl.y *= 1 - spill * ( SHOULDER_LOW[ 0 ] + SHOULDER_LOW[ 1 ] * draws[ 1 ] );
@@ -2309,34 +2274,32 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		lean.set( Math.cos( turn ) * mine, 0, Math.sin( turn ) * mine );
 		if ( clump ) {
 
-			// a tall clump's tussocks lean out from its centre, more at its rim; an ordinary one's
-			// toward its side
-			const T = CLUMP.types[ clump.type ];
-			const ox = x - clump.cx, oz = z - clump.cz, ol = Math.hypot( ox, oz );
-			const outward = clump.out * ( 0.3 + 0.7 * clump.t );
-			const cx = ( ol > 1e-4 ? ox / ol * outward : 0 ) + Math.cos( clump.turn ) * TUSSOCK.lean * T.same;
-			const cz = ( ol > 1e-4 ? oz / ol * outward : 0 ) + Math.sin( clump.turn ) * TUSSOCK.lean * T.same;
-			const keep = 1 - clumped * ( T.out[ 1 ] > 0 || T.same > 0 ? 0.8 : 0 );
+			// its clump's lean toward the clump's own side, a fifth of its own kept
+			const cx = Math.cos( clump.turn ) * TUSSOCK.lean * CLUMP.same, cz = Math.sin( clump.turn ) * TUSSOCK.lean * CLUMP.same;
+			const keep = 1 - 0.8 * clumped;
 			lean.set( lean.x * keep + cx * clumped, 0, lean.z * keep + cz * clumped );
 
 		}
 		leanByte = Math.round( Math.min( lean.length(), 1 ) * 255 );
-		// Each tussock keeps its own share of the blades (TUSSOCK.blades), all of them as it comes down.
-		const tallShare = ( TUSSOCK.blades[ 0 ] + ( TUSSOCK.blades[ 1 ] - TUSSOCK.blades[ 0 ] ) * own[ 5 ] ) / LAWN.blades;
+		// Each tussock keeps its clump's share of the blades (TUSSOCK.blades), all of them as it comes
+		// down; one out of the clumps (the stacks') its own.
+		const share = clump ? clump.blades : own[ 5 ];
+		const tallShare = ( TUSSOCK.blades[ 0 ] + ( TUSSOCK.blades[ 1 ] - TUSSOCK.blades[ 0 ] ) * share ) / LAWN.blades;
 		let blades = tallShare + ( 1 - tallShare ) * short;
 		if ( clump ) blades += ( 1 - blades ) * CLUMP.types[ clump.type ].full * clumped;
 		density = blades;
 		sward.push( x, z, smoothstep( DENSE[ 0 ], DENSE[ 1 ], scl.y ) * density );
-		// Its colour: the lawn's everywhere (each blade then its own, `restBlade`), a flowering
-		// tussock's its species' leaves' (LEAVES, the extra tuft beside it too).
+		// Its colour: the lawn's everywhere, a flowering tussock's its species' leaves' (LEAVES, the
+		// extra tuft beside it too).
 		if ( flower > 0 ) col.multiply( _leaves.fromArray( LEAVES[ head ] ) );
-		if ( clump ) col.multiplyScalar( 1 + CLUMP.value * ( 2 * clump.value - 1 ) * clumped );
-		// its clump's dome: the way out from the clump's centre to its rim, by the clump's type
-		dome = undefined;
-		if ( clump && DOME > 0 ) {
+		// Its place on the palette's run and its value: its clump's stroke's, a little of the clump's own
+		// (STROKE); the middle of the run out of the clumps.
+		tint = 0.5;
+		if ( clump ) {
 
-			const ox = x - clump.cx, oz = z - clump.cz, ol = Math.hypot( ox, oz ), k = clump.t * CLUMP.types[ clump.type ].dome * clumped * DOME;
-			if ( ol > 1e-4 ) dome = [ ox / ol * k, oz / ol * k ];
+			const stroke = strokeAt( clump.cx, clump.cz );
+			tint = Math.min( Math.max( stroke.tint + ( clump.tint - 0.5 ) * 2 * STROKE.own, 0 ), 1 );
+			col.multiplyScalar( 1 + STROKE.value * ( 2 * ( stroke.value + ( clump.value - 0.5 ) * 2 * STROKE.own ) - 1 ) );
 
 		}
 		plant( flower > 0 ? lawnFlower : lawn, pos, q, scl, col, k, cover, rimEdge, 0, flower );
@@ -2351,7 +2314,7 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 			dir.set( veg[ k + 3 ], veg[ k + 4 ], veg[ k + 5 ] ).lerp( up, 0.3 ).normalize();
 			q.setFromUnitVectors( up, dir ).multiply( qy.setFromAxisAngle( up, draws[ 5 ] * Math.PI * 2 ) );
 			scl.set( PLANT_SPREAD * ( 0.9 + draws[ 6 ] * 0.2 ), scl.y * ( 0.96 + draws[ 7 ] * 0.08 ), PLANT_SPREAD * ( 0.9 + draws[ 6 ] * 0.2 ) );
-			density = ( TUSSOCK.extraBlades[ 0 ] + ( TUSSOCK.extraBlades[ 1 ] - TUSSOCK.extraBlades[ 0 ] ) * own[ 6 ] ) / LAWN.blades;
+			density = ( TUSSOCK.extraBlades[ 0 ] + ( TUSSOCK.extraBlades[ 1 ] - TUSSOCK.extraBlades[ 0 ] ) * ( clump ? clump.blades : own[ 6 ] ) ) / LAWN.blades;
 			if ( grassQuality.thinTufts ) plant( lawnThin, pos, q, scl, col, k, cover, rimEdge, 1 );
 
 		}
@@ -2581,7 +2544,7 @@ export function grassKind( group: THREE.Group, renderer: THREE.WebGPURenderer ):
 				const tufts: GrassTufts = { lawn: [], lawnThin: [], lawnFlower: [], sward: [] };
 				for ( let a = 0; a < anchors; a += 16 ) {
 
-					const part = plantGrass( veg.subarray( a * STRIDE, Math.min( anchors, a + 16 ) * STRIDE ), input.data.rimGround, ( x, z ) => input.walkDistance( x, z ), input.data.shore );
+					const part = plantGrass( veg.subarray( a * STRIDE, Math.min( anchors, a + 16 ) * STRIDE ), input.data.rimGround, ( x, z ) => input.walkDistance( x, z ), input.data.shore, undefined, input.data.grove );
 					tufts.lawn.push( ...part.lawn );
 					tufts.lawnThin.push( ...part.lawnThin );
 					tufts.lawnFlower.push( ...part.lawnFlower );

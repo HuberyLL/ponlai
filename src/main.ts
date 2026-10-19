@@ -635,7 +635,7 @@ refractedSun.setCasters( world.group, world.subsets );
 refractedSun.bindTerrain( world.group, caustics );
 await refractedSun.prepare();
 setGrassQuality( quality.grass );
-const grass = buildGrass( plantGrass( data.vegetation, data.rimGround, walkDistance, data.shore, data.rimLip ), shared, sunShadow );
+const grass = buildGrass( plantGrass( data.vegetation, data.rimGround, walkDistance, data.shore, data.rimLip, data.grove ), shared, sunShadow );
 // The vegetation's kinds (vegetation/Registry.ts), in the order the scene draws them; every list
 // of vegetation below reads it.
 const vegetation = new Vegetation();
