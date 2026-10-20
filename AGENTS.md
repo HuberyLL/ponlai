@@ -60,8 +60,8 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   in place (`Growth.ts`, the shoal of a coming piece in `SeabedRise.ts`). Its kinds: the shapes
   (`WorldShapes.ts`), cliffs (`Cliff.ts`), submerged stones (`Stones.ts`), sea floor
   (`Bathymetry.ts`, `SeabedTile.ts`), rim (`RimGround.ts`), the meadow (`Grass.ts`,
-  its clumps, its wildflowers and its tufts draped over the cliff's edge included; its crowns'
-  heights in `SwardField.ts`; anchors `Anchors.ts`, soil from `ShoreSample.ts`; the
+  its clumps and its tufts draped over the cliff's edge included, and the swaths of its flowers,
+  whole plants drawn in `Flowers.ts`; its crowns' heights in `SwardField.ts`; anchors `Anchors.ts`, soil from `ShoreSample.ts`; the
   sward's depth over its ground in the meadow map, `SwardField.ts`), the yunpeng that stands
   among it (`Yunpeng.ts`, its sites the step-0 piece's: `IslandGrowth.ts`), the islander's
   walking loop (`WalkLoop.ts`, `WalkPath.ts`), the bamboo stands

@@ -628,6 +628,12 @@ comment where it is used.
   2021), in `src/world/Grass.ts` (`CLUMP`, `STROKE`, `FAR`, `SWATH`),
   `src/world/SwardField.ts` and `src/lighting/MeadowCanopy.ts` (the crowns and their shade) and
   `src/post/MeadowShade.ts`. Used as techniques only.
+- The meadow's flowers as whole authored plants placed procedurally over the fields, one kind to a
+  swath as if laid by a broad brush, drawn as GPU-culled instances: Sucker Punch Productions'
+  fields in *Ghost of Tsushima* (Eric Wohllaib, *Procedural Grass in 'Ghost of Tsushima'*, GDC
+  2021); far instances dropped at random by a per-instance hash beyond a distance (stochastic
+  instance falloff: Matt Pohlmann, *Samurai Landscapes: Building and Rendering Tsushima Island on
+  PS4*, GDC 2021), in `src/world/Flowers.ts`. Used as techniques only.
 - Screen-space shadows for the key light over the depth: Bend Studio's (Graham Aldridge, *Days
   Gone*, Sony Creators Conference / SIGGRAPH 2023), in `src/post/MeadowShade.ts`, as a plain
   per-pixel march. Used as a technique only.

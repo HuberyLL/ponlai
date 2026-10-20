@@ -4,7 +4,7 @@ import type * as THREE from 'three/webgpu';
 type F = THREE.Node<'float'>;
 
 // The vegetation's level of detail by distance: one rule every plant kind thins by (today the
-// meadow and its flower heads, Grass.ts; the plant kinds to come follow it).
+// meadow, Grass.ts, and its flowering plants, Flowers.ts; the plant kinds to come follow it).
 //
 // Rules:
 // - Beyond a reference distance a record keeps the share ( reference / distance )^2 of the parts it

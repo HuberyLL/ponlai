@@ -93,7 +93,7 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
 
 All paused at `t=12`, at the tier's own pixel ratio (no `dpr`): on high, 1728x1117 CSS at DPR 2
 renders 2592x1675 and FSR 1 brings it to 3456x2234. Placements derive from the island mesh's
-bounds, the meadow's flower heads and the tufts at the cliff's edge, the islander and the sun and moon,
+bounds, the meadow's flowering plants and the tufts at the cliff's edge, the islander and the sun and moon,
 so they follow any tile layout.
 
 `parity` (the default group, 12 views): the profiler's scenes (`tools/profile-frame.mjs`),
@@ -155,7 +155,7 @@ the boxes placed before it.
 | anchor | point |
 |---|---|
 | meadow-near, meadow-band-40m, meadow-band-70m | meadow ground about 5, 40 and 70 m from the camera (the lawn's blade bands) |
-| flowers | the nearest 2 m cell of the meadow with a few flower heads (the flowering tufts' anchors) |
+| flowers | the nearest 2 m cell of the meadow with a few flowering plants (Flowers.ts) |
 | rim-lip | the nearest stretch of the lip facing the camera |
 | cliff-edge-sea | the cliff's foot at the waterline, facing the camera |
 | cliff-edge-sky | the lip seen from below against the sky (from a camera near the top's height, the island's silhouette above the sea horizon) |

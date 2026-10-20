@@ -38,7 +38,7 @@ import { runSteps } from '../Steps.ts';
 // its first: its draw starts at 0.
 //
 // A kind is one pool (chunk design, section 8): a batch per sort of record (the meadow's lawn, its
-// thin extra tufts and its flowering tufts, each batch over its own geometry) holds every chunk's records in the chunks' order ( cj, ci ), as the
+// thin extra tufts, each batch over its own geometry) holds every chunk's records in the chunks' order ( cj, ci ), as the
 // anchors come (ChunkMerge.ts), each drawn in one draw. The buffers hold a capacity, the next power
 // of two of the slots the batches fill; the dispatches cover the filled workgroups, and the slots
 // past them are never visible. A grown island's pool (World growth, Growth.ts) is a new pool: its
@@ -126,7 +126,7 @@ export interface CullBatchInput<R> {
 	blades?: number; floor?: number;
 	/** The part counts of the batch's bands, descending (at most MAX_BANDS), and the indices of
 	 * one part: a band's draw takes its cap's parts, after `baseIndices` drawn by every band (a
-	 * part every record keeps whole: the meadow's flower heads). */
+	 * part every record keeps whole: a flowering plant's flowers and scapes, Flowers.ts). */
 	caps?: number[]; bladeIndices?: number; baseIndices?: number;
 }
 

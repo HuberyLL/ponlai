@@ -21,7 +21,7 @@ import type { Shared } from '../../shared.ts';
 //      `flags.mv.wind` follower, the wind view)
 //   -> the normal and ambient occlusion -> the light through thin leaves (VegetationLighting).
 // Families: 'leaf' (alpha-tested leaves: the bamboo's sprays, BambooMaterials.ts, on a map and
-// alpha map of their own; the folded leaf, vegetation/LeafTexture.ts, by default), 'blade' (the meadow's blades and flower heads: tagged as vegetation, no leaf map, drawn
+// alpha map of their own; the folded leaf, vegetation/LeafTexture.ts, by default), 'blade' (the meadow's blades: tagged as vegetation, no leaf map, drawn
 // whole or not at all: alpha to coverage at 4x, else `coverageDither`'s threshold) and 'sod' (not
 // tagged, so it takes the ordinary shadow filter and stays out of the depth prepass: kept for the
 // kinds to come; no kind uses it today, the grass over the cliff's edge being the meadow's own). A leaf's `alphaTest: 'alphaOnly'` keeps no numeric cut-out (as a material cloned with
