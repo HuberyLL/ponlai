@@ -23,10 +23,10 @@ art decision changes; reference images stay out of the repository.
   sea, glare or sky from burning out and greying while the land keeps its level (the brights drawn
   a quarter toward mid grey, the shade left as it is, the detail kept); a filmic curve (ACES)
   whose working space keeps a low sun's reds from turning yellow; a white balance given as the
-  colour white becomes (for now tidewater's slight warmth); tidewater's touch more saturation and
-  contrast, a vignette and film grain; a faint physical bloom over the whole image; and two grade
-  tables that a look can blend between by time of day or place (both the identity until our own
-  grades are made).
+  colour white becomes (for now tidewater's slight warmth); a vignette and film grain; a faint
+  physical bloom over the whole image; and two grade tables, generated from a grade's parameters,
+  that a look can blend between by time of day or place (the first holds tidewater's touch more
+  saturation and contrast until our own grade is made, the second is the identity).
 - The light keeps the sun's and the sky's own balance, by day and by night, so that the land shows
   where the light comes from: a stone or a figure has a lit side and a shaded one, and its shade
   falls on what lies beside it; the meadow shows it in its slopes, in the light through its blades

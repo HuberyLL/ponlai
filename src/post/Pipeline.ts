@@ -69,8 +69,8 @@ import { meter, meteredExposure } from './Exposure.ts';
 //   sharp (hdr + the bloom at its strength)
 //   local tone: the sharp image's log luminance (localTone.luma), its bilateral grid and the grid
 //   blurred across (localTone.grid, gridX, gridXY: LocalTone.ts), at fixed sizes
-//   display: the exposure, the local tone mapping, tidewater's grade (saturation, the night's
-//   grade, the tone, contrast round mid grey, the vignette), the white balance and ACES in their
+//   display: the exposure, the local tone mapping, tidewater's grade (the night's grade, the
+//   tone, the vignette), the white balance and ACES in their
 //   curve space (ToneSpace.ts), sRGB, the grade's two tables (GradeLut.ts), grain ── displayRT
 //   ── copied to the screen
 // Under the temporal modes (Antialiasing.ts: aa=taa|taau) the scene half is single-sampled and
@@ -309,7 +309,8 @@ type V4 = THREE.Node<'vec4'>;
 type PassBuilder = Parameters<Parameters<FrameGraph<PipelineFrame>[ 'addPass' ]>[ 2 ]>[ 0 ];
 
 // tidewater's display chain (PostFX.js, 4811ba4): its physical bloom (PhysicalBloom.ts) added to
-// the image; its grade in linear light (saturation, contrast round mid grey, the vignette); Hill's
+// the image; its grade in linear light (the vignette; its saturation and contrast are the grade
+// table's now, GradeLut.ts BASE_GRADE); Hill's
 // ACES fit at its exposure setting (ACES_EXPOSURE, as tidewater's renderOutput), in the curve space
 // of ToneSpace.ts with the white balance folded into its input matrix (`toneCurve`), and the sRGB
 // transfer; its luminance-weighted grain, and a dither. tidewater meters its frame's luminance and
@@ -345,9 +346,8 @@ export interface PipelineSettings {
 	white: [ number, number, number ];
 	// the grade's two tables (GradeLut.ts, `Pipeline.luts`): 0 the first, 1 the second
 	lut: number;
-	// tidewater's grade: the bloom's strength, the saturation and the contrast round mid grey, the
-	// vignette and the grain
-	bloom: number; saturation: number; contrast: number; vignette: number; grain: number;
+	// tidewater's grade: the bloom's strength, the vignette and the grain
+	bloom: number; vignette: number; grain: number;
 	// the light's tone over tidewater's grade (0 none, 1 full): lights a touch golden, the shade a
 	// touch teal, the contrast round mid grey softer and the bloom a little stronger
 	tone: number;
@@ -422,8 +422,8 @@ const NIGHT_TINT = ( () => {
 } )();
 
 /** tidewater's grade (PostFX.js `PostParams`, its warmth now the white balance's default). */
-export const TIDEWATER_GRADE: Readonly<Pick<PipelineSettings, 'bloom' | 'saturation' | 'contrast' | 'vignette' | 'grain'>> = {
-	bloom: 0.05, saturation: 1.06, contrast: 1.04, vignette: 0.28, grain: 0.012,
+export const TIDEWATER_GRADE: Readonly<Pick<PipelineSettings, 'bloom' | 'vignette' | 'grain'>> = {
+	bloom: 0.05, vignette: 0.28, grain: 0.012,
 };
 // The white balance's default: tidewater's warmth (red up and blue down by 0.02), as the colour
 // white becomes. Its matrix takes white to ( 1.017, 0.997, 0.977 ), about tidewater's nudge at the
@@ -528,7 +528,7 @@ export class Pipeline {
 	private u = {
 		// the meter's key light (its illuminance on level ground), the cloud deck's closure and the
 		// GUI's offset on the metered exposure (stops: Exposure.ts), and tidewater's grade
-		keyIlluminance: uniform( 0 ), deck: uniform( 0 ), exposureOffset: uniform( 0 ), bloom: uniform( TIDEWATER_GRADE.bloom ), saturation: uniform( 1 ), contrast: uniform( 1 ), tone: uniform( 0 ), night: uniform( 0 ), low: uniform( 0 ),
+		keyIlluminance: uniform( 0 ), deck: uniform( 0 ), exposureOffset: uniform( 0 ), bloom: uniform( TIDEWATER_GRADE.bloom ), tone: uniform( 0 ), night: uniform( 0 ), low: uniform( 0 ),
 		vignette: uniform( 0.3 ), grain: uniform( 0.01 ), time: uniform( 0 ),
 		// the tone curve's input matrix (its exposure and the white balance in it) and output matrix
 		toneIn: uniform( new THREE.Matrix3() ), toneOut: uniform( TONE_SPACE.output ),
@@ -922,9 +922,9 @@ export class Pipeline {
 		const localAt = ( lin: V3, q: V2 ): V3 => localTone ? localTone.apply( lin.mul( exposure ), q ).div( exposure ) : lin;
 
 		// ---- tidewater's grade, to display values (see ACES_EXPOSURE): the scene at the exposure, the
-		// white balance nudge, saturation and contrast round mid grey in linear light, the vignette
-		// (the resolve leaves it to the canvas pass, after the accumulation), ACES and the sRGB
-		// transfer (`encode` false: the graded colour in linear light, before the transfer). `at`: the
+		// vignette (the resolve leaves it to the canvas pass, after the accumulation), ACES with the
+		// white balance, the sRGB transfer and the grade's tables (its saturation and contrast are the
+		// table's, GradeLut.ts) (`encode` false: the graded colour in linear light, before the transfer). `at`: the
 		// screen uv whose local tone mapping it takes (none for the grade's table).
 		// the vignette's factor at the pixel being drawn (tidewater's: elliptical in the frame's own
 		// uv, soft; the same into an image of any size)
@@ -933,7 +933,6 @@ export class Pipeline {
 
 			const c = lin.mul( exposure ).toVar();
 			if ( localTone && at ) c.assign( localTone.apply( c, at ) );
-			c.assign( mix( vec3( luminance( c ) ), c, u.saturation ) );
 			// the night's grade (NIGHT): the greens turned toward blue-green, a silver-blue tint
 			If( u.night.greaterThan( 0.001 ), () => {
 
@@ -947,7 +946,7 @@ export class Pipeline {
 			c.mulAssign( mix( vec3( 0.95, 1.0, 1.04 ), vec3( 1.06, 1.0, 0.9 ), lights ).sub( 1 ).mul( u.tone ).add( 1 ) );
 			// the low sun's warmer light (LOW_SUN)
 			c.mulAssign( mix( vec3( 1 ), vec3( LOW_SUN_WARM ), u.low.mul( smoothstep( LOW_SUN.from, LOW_SUN.to, luminance( c ) ) ) ) );
-			c.assign( pow( max( c, vec3( 0 ) ).div( 0.18 ), vec3( u.contrast.mul( float( 1 ).sub( u.tone.mul( 0.2 ) ) ) ) ).mul( 0.18 ) );
+			c.assign( pow( max( c, vec3( 0 ) ).div( 0.18 ), vec3( float( 1 ).sub( u.tone.mul( 0.2 ) ) ) ).mul( 0.18 ) );
 			if ( vignette ) c.mulAssign( vignetteAt( FSR3 ? canvasSize : renderSize ) );
 			const t = ( toneCurve( c, u.toneIn, u.toneOut ) as V3 ).toVar();
 			// the grade's tables, in display values (GradeLut.ts)
@@ -1822,7 +1821,7 @@ export class Pipeline {
 		u.keyIlluminance.value = keyIlluminance( this.sky );
 		u.deck.value = this.sky.grade.deck;
 		u.exposureOffset.value = S.exposureOffset;
-		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + S.night * NIGHT.bloom ); u.tone.value = S.tone; u.night.value = S.night; u.low.value = S.low; u.lut.value = S.lut; u.saturation.value = S.saturation; u.contrast.value = S.contrast;
+		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + S.night * NIGHT.bloom ); u.tone.value = S.tone; u.night.value = S.night; u.low.value = S.low; u.lut.value = S.lut;
 		u.vignette.value = S.vignette; u.grain.value = S.grain; u.time.value = time;
 		u.grainOn.value = this.upscaling ? 0 : 1;
 		const [ r, g, b ] = S.white;

@@ -88,8 +88,13 @@ export const NEUTRAL_GRADE: Readonly<GradeParams> = {
 	bands: { grass: band( 132, 35 ), sky: band( 252, 30, 0.08 ), sea: band( 198, 28 ), flowers: band( 25, 35 ) },
 };
 
-/** The base grade: the clear day's, which the other grades build on. */
-export const BASE_GRADE: Readonly<GradeParams> = gradeOf( {} );
+/** The base grade: the clear day's, which the other grades build on. tidewater's touch more
+ * saturation and contrast (1.06 and 1.04 about mid grey, in linear light before the curve: its
+ * PostFX.js) moved into the table: 1.08 and 1.05 here came closest over the five views of the
+ * kept weathers it was fitted on (the fair noon island, meadow and horizon, the golden hour and
+ * the overcast island: a mean of 0.43 levels apart, 0.9 % of the pixels over 2 levels; a curve
+ * after the tone curve cannot match one before it exactly). */
+export const BASE_GRADE: Readonly<GradeParams> = gradeOf( { saturation: 1.08, contrast: 1.05 } );
 
 /** A grade of `NEUTRAL_GRADE`'s parameters with `changes` over them (a deep copy). */
 export function gradeOf( changes: GradeChanges, base: Readonly<GradeParams> = NEUTRAL_GRADE ): GradeParams {
