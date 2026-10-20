@@ -70,6 +70,10 @@ export const SCENE_EVENTS = {
 
 export type SceneEventReason = keyof typeof SCENE_EVENTS;
 
+// the events after which a still frame draws what it drew before (the loop restarted, the page
+// shown again, a key toggled the pause or the GUI): they leave the epoch's `scene` count
+const SAME_SCENE: ReadonlySet<SceneEventReason> = new Set( [ 'loop start', 'visible', 'key toggle' ] );
+
 /** The last event raised (the diagnostics' `taa.lastEvent`), and how many. */
 export const sceneEvents = {
 	last: null as { reason: SceneEventReason; cut: boolean; frame: number } | null,
@@ -80,7 +84,7 @@ export const sceneEvents = {
  * history where the table says so. */
 export function sceneEvent( reason: SceneEventReason ): void {
 
-	restEpoch.bump( reason );
+	restEpoch.bump( reason, ! SAME_SCENE.has( reason ) );
 	if ( ! TEMPORAL ) return;
 	const cut = SCENE_EVENTS[ reason ];
 	if ( cut ) taaCut( reason );

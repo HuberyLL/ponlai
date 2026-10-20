@@ -45,14 +45,19 @@ export function restKey( key: number[], camera: { matrixWorld: { elements: reado
 
 }
 
-/** The epoch of the scene's state: a bump restarts the rest (and nothing else). */
+/** The epoch of the scene's state: a bump restarts the rest (and nothing else). `scene` counts
+ * only the bumps that may change what a still frame draws: a restart of the frame loop or the page
+ * shown again leaves it (a rest of the scene alone, the haze's, survives the capture tools'
+ * stopping and starting the loop for each grab; the temporal resolve's own rest starts over). */
 export const restEpoch = {
 	value: 0,
+	scene: 0,
 	// the last bump's reason, for the diagnostics
 	reason: null as string | null,
-	bump( reason: string ): void {
+	bump( reason: string, scene = true ): void {
 
 		this.value ++;
+		if ( scene ) this.scene ++;
 		this.reason = reason;
 
 	},
