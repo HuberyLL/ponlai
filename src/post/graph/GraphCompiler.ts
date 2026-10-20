@@ -21,7 +21,7 @@
 
 /** The size of a resource: a share of the scene's render, of the canvas, or fixed. The rounding is
  * the one the passes had before the graph: `floor( w * scale )` (rtt passes and bloom chains, at
- * least `min` when given), `max( floor( w / divisor ), 1 )` (the reduced sea fog), and the canvas
+ * least `min` when given), `max( floor( w / divisor ), 1 )` (a reduced pass), and the canvas
  * never smaller than the render. */
 export type SizeClass =
 	| { of: 'render'; scale?: number; divisor?: number; min?: number }

@@ -86,10 +86,12 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   (`DayCycle.ts`), the night sky and its data (`NightSky.ts`, `StarCatalog.ts`), the weather: its sky presets, its wind's levels and heading and the auto chain (`Weather.ts`).
 - `src/weather/`: wind (`Wind.ts`: the weather's one wind, which every part reads from it, and the
   one wind field all vegetation moves in), lightning, rain,
-  puddles, distant air and sea fog (`AerialPerspective.ts`).
+  puddles, the air's haze and sea fog as one froxel volume lit by the atmosphere and shadowed by
+  the sun's maps and the clouds (`VolumetricHaze.ts`).
 - `src/post/`: the frame's passes and tidewater's display chain (`Pipeline.ts`, its bloom in
   `PhysicalBloom.ts`), the meadow's screen-space shade over the vegetation's depth (`MeadowShade.ts`),
-  light shafts (`LightShafts.ts`), FSR 1, render scale and dynamic resolution (`RenderScale.ts`,
+  the sun's glare and, until the haze reaches the clouds' gaps, the screen-space light shafts
+  (`LightShafts.ts`), FSR 1, render scale and dynamic resolution (`RenderScale.ts`,
   `DynamicResolution.ts`), the frame pacer, the submit batching, the signal that a paused frame is
   final (`Settled.ts`), the anti-aliasing mode and the scene's sample count (`Antialiasing.ts`); under the
   temporal modes the jitter (`Jitter.ts`), the motion vectors (`Motion.ts`), the temporal resolve
@@ -157,7 +159,7 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   world-anchored cell, never one running stream across many items), never from coordinates placed
   by hand, and counts follow the measured coast length or area. So does everything fitted to the
   land on the page (the views, the camera's limits, the shore and rain fields, the reflection's
-  box, the sea fog's clearing, the walking loop, the game's grid). Generation stays deterministic
+  box, the walking loop, the game's grid). Generation stays deterministic
   whatever the thread count.
 - The world is built in chunks (`Chunks.ts`): a chunk's content is a function of its window of the
   land field (the chunk grown by 32 m); a new piece rebuilds the chunks whose window meets it
@@ -339,8 +341,8 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   of its own must be installed before it.
 - Under the temporal modes the scene passes (the graph's jittered span) see the camera's projection
   jittered by a fraction of a render pixel. Work keyed, culled or placed by the camera takes the
-  unjittered projection (`jitter.uniforms.unjitteredProjection`): the sky dome, the grass cull and
-  the light shafts' sun do (`Jitter.ts`).
+  unjittered projection (`jitter.uniforms.unjitteredProjection`): the sky dome, the grass cull, the
+  haze's froxel grid and the light shafts' sun do (`Jitter.ts`).
 - What a frame reads from the frame before (a history, the previous depth, an object's previous
   matrix, a clock's step) advances once per rendered frame, not per draw or per tick. A texture's
   history is declared on the graph: a ping-pong resource read through `previous()`, or a frame-end

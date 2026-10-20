@@ -19,7 +19,7 @@ import type { N } from './Core.ts';
 // The page's FSR 3.1 upscaler (Antialiasing.ts: aa=fsr3), on the TSL port of AMD's FidelityFX FSR
 // 3.1.5 in this folder (Host.ts: the host's maths and frame plan; Bindings.ts: the resources and
 // constants; Passes.ts: the kernels). It stands where AMD's integration guide puts it: after the
-// scene and its composite of air, fog and shafts (`hdr`, scene radiance at the render's size, FSR's
+// scene and its composite of haze and shafts (`hdr`, scene radiance at the render's size, FSR's
 // HDR input), before the blooms, the depth of field, the look's glow and the grade, which run on its
 // output at the canvas's size (Pipeline.ts).
 //

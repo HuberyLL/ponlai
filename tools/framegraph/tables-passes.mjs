@@ -9,8 +9,11 @@ import { GraphDecl, GraphError, compileGraph, resolveSize } from '../../src/post
 
 const RENDER = { of: 'render' };
 const CANVAS = { of: 'canvas' };
+// the haze's froxel grid (src/weather/VolumetricHaze.ts DEFAULT_HAZE_GRID: 160x90 cells, its
+// volumes imported as fixed-size storage textures, the kernels sized by them)
+export const HAZE = { of: 'fixed', width: 160, height: 90 };
 // half the render, at least a texel: the light shafts
-const HALF = { of: 'render', scale: 0.5, min: 1 };
+export const HALF = { of: 'render', scale: 0.5, min: 1 };
 // the water's refraction source (src/ocean/Refraction.ts REFRACTION_SIZE: half the render, times
 // the guard band's 1.3; that module imports three, so the scale is restated here)
 export const REFRACTION = { of: 'render', scale: 0.5 * 1.3, min: 1 };
@@ -81,18 +84,17 @@ export function bloomTable( inputReads ) {
 
 }
 
-/** Today's msaa4 graph with a pass for every draw (Pipeline, the refraction, AerialPerspective and
+/** Today's msaa4 graph with a pass for every draw (Pipeline, the refraction, VolumetricHaze.passes,
  * LightShafts.passes, PhysicalBloom, FSR), as the expected table: the graph Pipeline declares
- * (declarePipeline below) compiles to it. For the `post=` switches of a variant: `fogScale` (1: the
- * full-resolution fog of full-fog), `bankSize` (0: no-bank), `fsrPort` (false: three-fsr),
- * `compositeOnce` (false: inline-composite), `meadowShade` (false: the meadow's shade off, as
+ * (declarePipeline below) compiles to it. For the `post=` switches of a variant:
+ * `fsrPort` (false: three-fsr), `compositeOnce` (false: inline-composite), `meadowShade` (false:
+ * the meadow's shade off, as
  * MeadowShade.ts's MEADOW_SHADE is at msaa 1 or with `flags=meadowShade:false`); store-scene changes
  * the ops only (`legacyDiscard`). */
 export function declareToday( options = {} ) {
 
-	const o = { fogScale: 0.5, bankSize: 2048, fsrPort: true, compositeOnce: true, meadowShade: true, ...options };
+	const o = { fsrPort: true, compositeOnce: true, meadowShade: true, ...options };
 	const g = new GraphDecl();
-	const k = Math.round( 1 / o.fogScale );
 	const h = {};
 	h.sceneColor = g.color( 'sceneColor', { size: RENDER, format: 'RGBA', type: 'HalfFloat', samples: 'scene' } );
 	h.sceneDepth = g.depth( 'sceneDepth', { size: RENDER, type: 'Float', samples: 'scene' } );
@@ -103,13 +105,9 @@ export function declareToday( options = {} ) {
 	h.surfaceDepth = g.color( 'surfaceDepth', { size: RENDER, format: 'Red', type: 'Float' } );
 	h.underwater = g.color( 'underwater', { size: RENDER, format: 'RGBA', type: 'HalfFloat', mips: true } );
 	h.refractionReach = g.color( 'refractionReach', { size: { of: 'fixed', width: 64, height: 1 }, format: 'RGBA', type: 'HalfFloat', filter: 'nearest' } );
-	if ( o.bankSize > 0 ) h.fogBanks = g.color( 'fogBanks', { size: { of: 'fixed', width: o.bankSize, height: o.bankSize }, format: 'Red', type: 'HalfFloat' }, true );
-	if ( o.fogScale < 1 ) {
-
-		h.fogNearestDepth = g.color( 'fogNearestDepth', { size: { of: 'render', divisor: k }, format: 'Red', type: 'Float' } );
-		h.fogMarch = g.color( 'fogMarch', { size: { of: 'render', divisor: k }, format: 'RGBA', type: 'HalfFloat' } );
-
-	}
+	// the haze's volumes, made outside the graph and written by its kernels through storage
+	h.hazeVisibility = g.import( 'haze.visibility', { size: HAZE, format: 'RGBA', type: 'HalfFloat', samples: 1 } );
+	h.hazeLight = g.import( 'haze.light', { size: HAZE, format: 'RGBA', type: 'HalfFloat', samples: 1 } );
 	h.shaftsSource = g.color( 'shafts.source', { size: HALF, format: 'RGBA', type: 'HalfFloat' } );
 	h.shaftsRays = g.color( 'shafts.rays', { size: HALF, format: 'RGBA', type: 'HalfFloat' } );
 	h.constants = g.color( 'postConstants', { size: { of: 'fixed', width: 1, height: 1 }, format: 'RGBA', type: 'Float' } );
@@ -227,31 +225,20 @@ export function declareToday( options = {} ) {
 		return { label: 'rain draw', when: () => true, whenLabel: 'rainVisible' };
 
 	} );
-	if ( h.fogBanks ) g.addPass( 'fogBank', 'quad', ( b ) => {
+	// the haze's kernels: the shadow (skipped while a rest holds it), then the light volume over it
+	g.addPass( 'hazeShadow', 'compute', ( b ) => {
 
-		h.fogBanks = b.write( h.fogBanks );
-		return { label: 'composite (air, fog, veil)', when: () => true, whenLabel: 'fog && bankDue' };
+		h.hazeVisibility = b.storage( h.hazeVisibility );
+		return { label: 'volumetric haze', size: HAZE, when: () => true, whenLabel: 'not held by a rest' };
 
 	} );
-	if ( h.fogMarch ) {
+	g.addPass( 'hazeLight', 'compute', ( b ) => {
 
-		g.addPass( 'fogDepth', 'quad', ( b ) => {
+		b.readOptional( h.hazeVisibility );
+		h.hazeLight = b.storage( h.hazeLight );
+		return { label: 'volumetric haze', size: HAZE };
 
-			b.read( h.surfaceDepth );
-			h.fogNearestDepth = b.write( h.fogNearestDepth );
-			return { label: 'composite (air, fog, veil)', when: () => true, whenLabel: 'fog' };
-
-		} );
-		g.addPass( 'fogMarch', 'quad', ( b ) => {
-
-			b.readOptional( h.fogNearestDepth );
-			if ( h.fogBanks ) b.readOptional( h.fogBanks );
-			h.fogMarch = b.write( h.fogMarch );
-			return { label: 'composite (air, fog, veil)', when: () => true, whenLabel: 'fog' };
-
-		} );
-
-	}
+	} );
 	// the light shafts: the open sky near the sun, the rays marched over it (while the sun faces
 	// the view)
 	g.addPass( 'shaftsSource', 'quad', ( b ) => {
@@ -268,7 +255,8 @@ export function declareToday( options = {} ) {
 		return { label: 'light shafts', when: () => true, whenLabel: 'facing > 0' };
 
 	} );
-	// the composite's per-frame constants, into a texel
+	// the composite's per-frame constants, into a texel (the sun disk's visibility, from the shafts'
+	// source)
 	g.addPass( 'postConstants', 'quad', ( b ) => {
 
 		b.readOptional( h.shaftsSource );
@@ -276,24 +264,19 @@ export function declareToday( options = {} ) {
 		return { label: 'composite (air, fog, veil)' };
 
 	} );
-	// what the composite reads: the scene after the rain, the surface depth, the sea fog and the shafts
+	// what the composite reads: the scene after the rain, the surface depth, the haze's light, the
+	// shafts and the constants
 	const compositeReads = ( b ) => {
 
 		b.readOptional( h.sceneColor );
 		b.read( h.surfaceDepth );
-		if ( h.fogMarch ) {
-
-			b.readOptional( h.fogMarch );
-			b.readOptional( h.fogNearestDepth );
-
-		}
-		if ( h.fogBanks ) b.readOptional( h.fogBanks );
+		b.read( h.hazeLight );
 		b.readOptional( h.shaftsSource );
 		b.readOptional( h.shaftsRays );
 		b.read( h.constants );
 
 	};
-	// the composite of air, fog, veil and shafts, rendered once into hdr
+	// the composite of the haze, the veil and the shafts, rendered once into hdr
 	if ( h.hdr ) g.addPass( 'composite', 'quad', ( b ) => {
 
 		compositeReads( b );
@@ -371,14 +354,13 @@ export const compileToday = ( options = {}, samples = 4, legacyDiscard ) =>
 	compileGraph( declareToday( { meadowShade: samples === 4, ...options } ).g, { sceneSamples: samples, ...( legacyDiscard ? { legacyDiscard } : {} ) } );
 
 /** The graph Pipeline declares (Pipeline's constructor, declarePasses and declareRefraction,
- * AerialPerspective.apply and passes, LightShafts.build and passes, PhysicalBloom), in its order of
+ * VolumetricHaze.apply and passes, LightShafts.build and passes, PhysicalBloom), in its order of
  * declaration, for the post options of a variant as in declareToday: every draw of the frame is a
  * pass of its own. Compiled, it is today's graph (declareToday). */
 export function declarePipeline( options = {} ) {
 
-	const o = { fogScale: 0.5, bankSize: 2048, fsrPort: true, compositeOnce: true, meadowShade: true, ...options };
+	const o = { fsrPort: true, compositeOnce: true, meadowShade: true, ...options };
 	const g = new GraphDecl();
-	const k = Math.round( 1 / o.fogScale );
 	const h = {};
 	// Pipeline's constructor
 	h.sceneColor = g.color( 'sceneColor', { size: RENDER, format: 'RGBA', type: 'HalfFloat', samples: 'scene' } );
@@ -404,14 +386,10 @@ export function declarePipeline( options = {} ) {
 
 	}
 	h.constants = g.color( 'postConstants', { size: { of: 'fixed', width: 1, height: 1 }, format: 'RGBA', type: 'Float' } );
-	// AerialPerspective.apply
-	if ( o.bankSize > 0 ) h.fogBanks = g.color( 'fogBanks', { size: { of: 'fixed', width: o.bankSize, height: o.bankSize }, format: 'Red', type: 'HalfFloat' }, true );
-	if ( o.fogScale < 1 ) {
-
-		h.fogNearestDepth = g.color( 'fogNearestDepth', { size: { of: 'render', divisor: k }, format: 'Red', type: 'Float' } );
-		h.fogMarch = g.color( 'fogMarch', { size: { of: 'render', divisor: k }, format: 'RGBA', type: 'HalfFloat' } );
-
-	}
+	// VolumetricHaze.apply: its volumes imported (FrameGraph.import: the texture's format and type,
+	// one sample)
+	h.hazeVisibility = g.import( 'haze.visibility', { size: HAZE, format: 'RGBA', type: 'HalfFloat', samples: 1 } );
+	h.hazeLight = g.import( 'haze.light', { size: HAZE, format: 'RGBA', type: 'HalfFloat', samples: 1 } );
 	// LightShafts.build
 	h.shaftsSource = g.color( 'shafts.source', { size: HALF, format: 'RGBA', type: 'HalfFloat' } );
 	h.shaftsRays = g.color( 'shafts.rays', { size: HALF, format: 'RGBA', type: 'HalfFloat' } );
@@ -485,33 +463,17 @@ export function declarePipeline( options = {} ) {
 		return { label: 'rain draw', when: () => true, whenLabel: 'rainVisible' };
 
 	} );
-	// AerialPerspective.passes
-	const FOG = 'composite (air, fog, veil)';
-	if ( h.fogBanks ) g.addPass( 'fogBank', 'quad', ( b ) => ( h.fogBanks = b.write( h.fogBanks ), { label: FOG, when: () => true, whenLabel: 'fog && bankDue' } ) );
-	if ( h.fogMarch ) {
-
-		g.addPass( 'fogDepth', 'quad', ( b ) => ( b.read( h.surfaceDepth ), h.fogNearestDepth = b.write( h.fogNearestDepth ), { label: FOG, when: () => true, whenLabel: 'fog' } ) );
-		g.addPass( 'fogMarch', 'quad', ( b ) => {
-
-			b.readOptional( h.fogNearestDepth );
-			if ( h.fogBanks ) b.readOptional( h.fogBanks );
-			h.fogMarch = b.write( h.fogMarch );
-			return { label: FOG, when: () => true, whenLabel: 'fog' };
-
-		} );
-
-	}
-	const fogReads = [ h.fogMarch, h.fogNearestDepth, h.fogBanks ].filter( Boolean );
+	// VolumetricHaze.passes
+	const hazeReads = declareHazePasses( g, h );
 	// declarePasses: the post passes (LightShafts.passes first)
-	const shaftReads = [];
-	g.addPass( 'shaftsSource', 'quad', ( b ) => ( b.read( h.surfaceDepth ), shaftReads[ 0 ] = b.write( h.shaftsSource ), { label: 'light shafts', when: () => true, whenLabel: 'facing > 0' } ) );
-	g.addPass( 'shaftsRays', 'quad', ( b ) => ( b.readOptional( shaftReads[ 0 ] ), shaftReads[ 1 ] = b.write( h.shaftsRays ), { label: 'light shafts', when: () => true, whenLabel: 'facing > 0' } ) );
+	const FOG = 'composite (air, fog, veil)';
+	const shaftReads = declareShaftPasses( g, h );
 	g.addPass( 'postConstants', 'quad', ( b ) => ( b.readOptional( shaftReads[ 0 ] ), h.constants = b.write( h.constants ), { label: FOG } ) );
 	const compositeReads = ( b ) => {
 
 		b.readOptional( h.sceneColor );
 		b.read( h.surfaceDepth );
-		for ( const x of fogReads ) b.readOptional( x );
+		for ( const x of hazeReads ) b.read( x );
 		for ( const x of shaftReads ) b.readOptional( x );
 		b.read( h.constants );
 
@@ -548,12 +510,36 @@ export function declarePipeline( options = {} ) {
 
 }
 
+/** VolumetricHaze.passes over the volumes in `h` (`hazeVisibility`, `hazeLight`): the shadow's
+ * kernel, skipped while a rest holds it, and the light's, which reads the shadow optionally;
+ * returns what the composite reads (the light volume). */
+export function declareHazePasses( g, h ) {
+
+	let visibility = h.hazeVisibility, light = h.hazeLight;
+	g.addPass( 'hazeShadow', 'compute', ( b ) => ( visibility = b.storage( visibility ), { label: 'volumetric haze', size: HAZE, when: () => true, whenLabel: 'not held by a rest' } ) );
+	g.addPass( 'hazeLight', 'compute', ( b ) => ( b.readOptional( visibility ), light = b.storage( light ), { label: 'volumetric haze', size: HAZE } ) );
+	return [ light ];
+
+}
+
+/** LightShafts.passes over `h` (`surfaceDepth`, `shaftsSource`, `shaftsRays`): the open sky near the
+ * sun, then the rays marched over it, both while the sun faces the view; returns what the
+ * composite reads (the source and the rays). */
+export function declareShaftPasses( g, h ) {
+
+	const shaftReads = [];
+	g.addPass( 'shaftsSource', 'quad', ( b ) => ( b.read( h.surfaceDepth ), shaftReads[ 0 ] = b.write( h.shaftsSource ), { label: 'light shafts', when: () => true, whenLabel: 'facing > 0' } ) );
+	g.addPass( 'shaftsRays', 'quad', ( b ) => ( b.readOptional( shaftReads[ 0 ] ), shaftReads[ 1 ] = b.write( h.shaftsRays ), { label: 'light shafts', when: () => true, whenLabel: 'facing > 0' } ) );
+	return shaftReads;
+
+}
+
 export const compilePipeline = ( options = {}, samples = 4, legacyDiscard ) =>
 	compileGraph( declarePipeline( { meadowShade: samples === 4, ...options } ).g, { sceneSamples: samples, ...( legacyDiscard ? { legacyDiscard } : {} ) } );
 
 // ---- the expected table of today's msaa4 graph
 
-const R = 'render:1:0:0', C = 'canvas:1', H = 'render:0.5:0:1', RF = 'render:0.65:0:1';
+const R = 'render:1:0:0', C = 'canvas:1', H = 'render:0.5:0:1', HZ = 'fixed:160x90', RF = 'render:0.65:0:1';
 const w = ( name, size, format, type, samples = 1 ) => ( { name, size, format, type, samples } );
 const BLOOM = bloomTable( [ 'hdr@1:sample' ] );
 export const TODAY = [
@@ -572,9 +558,10 @@ export const TODAY = [
 	{ name: 'water', kind: 'scene', label: 'water', when: null, size: R, writes: [ w( 'sceneColor', R, 'RGBA', 'HalfFloat', 4 ) ], depth: { ...w( 'sceneDepth', R, null, 'Float', 4 ), write: true }, target: 'sceneColor|sceneDepth' },
 	{ name: 'surfaceResolve', kind: 'quad', label: 'depth & copy resolves', when: null, size: R, writes: [ w( 'surfaceDepth', R, 'Red', 'Float' ) ], depth: null, target: 'surfaceDepth|-' },
 	{ name: 'rain', kind: 'scene', label: 'rain draw', when: 'rainVisible', size: R, writes: [ w( 'sceneColor', R, 'RGBA', 'HalfFloat', 4 ) ], depth: { ...w( 'sceneDepth', R, null, 'Float', 4 ), write: false }, target: 'sceneColor|sceneDepth' },
-	{ name: 'fogBank', kind: 'quad', label: 'composite (air, fog, veil)', when: 'fog && bankDue', size: 'fixed:2048x2048', writes: [ w( 'fogBanks', 'fixed:2048x2048', 'Red', 'HalfFloat' ) ], depth: null, target: 'fogBanks|-' },
-	{ name: 'fogDepth', kind: 'quad', label: 'composite (air, fog, veil)', when: 'fog', size: 'render:1:2:0', writes: [ w( 'fogNearestDepth', 'render:1:2:0', 'Red', 'Float' ) ], depth: null, target: 'fogNearestDepth|-' },
-	{ name: 'fogMarch', kind: 'quad', label: 'composite (air, fog, veil)', when: 'fog', size: 'render:1:2:0', writes: [ w( 'fogMarch', 'render:1:2:0', 'RGBA', 'HalfFloat' ) ], depth: null, target: 'fogMarch|-' },
+	// the haze's kernels: no attachments and no target, their volumes written through storage, the
+	// pass sized by its grid
+	{ name: 'hazeShadow', kind: 'compute', label: 'volumetric haze', when: 'not held by a rest', size: HZ, writes: [], storage: [ w( 'haze.visibility', HZ, 'RGBA', 'HalfFloat' ) ], depth: null, target: null },
+	{ name: 'hazeLight', kind: 'compute', label: 'volumetric haze', when: null, size: HZ, writes: [], storage: [ w( 'haze.light', HZ, 'RGBA', 'HalfFloat' ) ], depth: null, target: null },
 	{ name: 'shaftsSource', kind: 'quad', label: 'light shafts', when: 'facing > 0', size: H, writes: [ w( 'shafts.source', H, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'shafts.source|-' },
 	{ name: 'shaftsRays', kind: 'quad', label: 'light shafts', when: 'facing > 0', size: H, writes: [ w( 'shafts.rays', H, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'shafts.rays|-' },
 	{ name: 'postConstants', kind: 'quad', label: 'composite (air, fog, veil)', when: null, size: 'fixed:1x1', writes: [ w( 'postConstants', 'fixed:1x1', 'RGBA', 'Float' ) ], depth: null, target: 'postConstants|-' },
@@ -594,10 +581,9 @@ export const TODAY_READS = {
 	opaque: [ 'meadowShade@1:sample' ], underwaterPyramid: [ 'sceneColor@1:sample', 'sceneDepth@2:samples' ], refractionReach: [ 'sceneDepth@2:samples', 'underwater@1:sample' ], refractionMask: [ 'underwater@1:sample', 'refractionReach@1:sample?' ], refraction: [],
 	depthResolve: [ 'sceneDepth@2:samples' ], opaqueCopy: [ 'sceneColor@1:sample' ],
 	water: [ 'opaqueColor@1:sample', 'linearDepth@1:sample', 'underwater@1:sample', 'refraction@2:sample?', 'refractionDepth@2:sample?' ], surfaceResolve: [ 'sceneDepth@3:samples' ],
-	rain: [ 'linearDepth@1:sample', 'surfaceDepth@1:sample' ], fogBank: [], fogDepth: [ 'surfaceDepth@1:sample' ],
-	fogMarch: [ 'fogNearestDepth@1:sample?', 'fogBanks@1:sample?' ],
+	rain: [ 'linearDepth@1:sample', 'surfaceDepth@1:sample' ], hazeShadow: [], hazeLight: [ 'haze.visibility@1:sample?' ],
 	shaftsSource: [ 'surfaceDepth@1:sample' ], shaftsRays: [ 'shafts.source@1:sample?' ], postConstants: [ 'shafts.source@1:sample?' ],
-	composite: [ 'sceneColor@3:sample?', 'surfaceDepth@1:sample', 'fogMarch@1:sample?', 'fogNearestDepth@1:sample?', 'fogBanks@1:sample?', 'shafts.source@1:sample?', 'shafts.rays@1:sample?', 'postConstants@1:sample' ],
+	composite: [ 'sceneColor@3:sample?', 'surfaceDepth@1:sample', 'haze.light@1:sample', 'shafts.source@1:sample?', 'shafts.rays@1:sample?', 'postConstants@1:sample' ],
 	...BLOOM.reads,
 	sharp: [ 'hdr@1:sample', BLOOM.result ], display: [ 'sharp@1:sample' ],
 	output: [ 'display@1:sample' ], easu: [ 'display@1:sample' ], upscaledOutput: [ 'FSR.easu@1:sample?' ],
@@ -612,7 +598,7 @@ const TAIL = [ 'postConstants', 'composite', ...BLOOM_PASSES, 'sharp', 'display'
 
 function compareTable( summary, expected ) {
 
-	const got = summary.passes.map( ( p ) => ( { name: p.name, kind: p.kind, label: p.label, when: p.when, size: p.size, writes: p.writes, depth: p.depth, target: p.target } ) );
+	const got = summary.passes.map( ( p ) => ( { name: p.name, kind: p.kind, label: p.label, when: p.when, size: p.size, writes: p.writes, ...( p.storage ? { storage: p.storage } : {} ), depth: p.depth, target: p.target } ) );
 	assert.deepEqual( got, expected );
 	assert.ok( summary.passes.every( ( p ) => ! p.culled ), 'nothing of today\'s graph is culled' );
 
@@ -632,7 +618,7 @@ export const checks = [
 			summary: x.summary(),
 			ops: Array.from( { length: x.fullMask + 1 }, ( _, m ) => [ x.ops( 'legacy', m ), x.ops( 'derived', m ) ] ),
 		} );
-		const variants = [ {}, { fogScale: 1 }, { fogScale: 0.25 }, { bankSize: 0 }, { fsrPort: false }, { compositeOnce: false }, { meadowShade: false }, { fogScale: 1, bankSize: 0, fsrPort: false, compositeOnce: false } ];
+		const variants = [ {}, { fsrPort: false }, { compositeOnce: false }, { meadowShade: false }, { fsrPort: false, compositeOnce: false } ];
 		for ( const options of variants ) for ( const [ samples, discard ] of [ [ 4, undefined ], [ 1, undefined ], [ 4, [] ] ] ) {
 
 			const what = `${ JSON.stringify( options ) } samples ${ samples }${ discard ? ' store-scene' : '' }`;
@@ -648,7 +634,7 @@ export const checks = [
 
 		const c = compilePipeline();
 		const rows = ( t ) => t.passes.map( ( p ) => [ p.pass, p.colors.map( ( x ) => `${ x.resource }:${ x.load }/${ x.store }${ x.resolve === null ? '' : x.resolve ? '/resolve' : '/no-resolve' }` ), p.depth && `${ p.depth.resource }:${ p.depth.load }/${ p.depth.store }`, p.rewrite ] );
-		const rainOn = c.ops( 'legacy', c.maskOf( [ 'refractionReach', 'refractionMask', 'refraction', 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'output' ] ) );
+		const rainOn = c.ops( 'legacy', c.maskOf( [ 'refractionReach', 'refractionMask', 'refraction', 'rain', 'hazeShadow', 'shaftsSource', 'shaftsRays', 'output' ] ) );
 		assert.deepEqual( rows( rainOn ), [
 			[ 'meadowDepth', [ 'meadowCoverage:clear/store/resolve' ], 'sceneDepth:clear/store', false ],
 			[ 'meadowDepthResolve', [ 'meadowDepth:clear/store' ], null, false ],
@@ -664,9 +650,9 @@ export const checks = [
 			[ 'water', [ 'sceneColor:load/store/resolve' ], 'sceneDepth:load/store', false ],
 			[ 'surfaceResolve', [ 'surfaceDepth:clear/store' ], null, false ],
 			[ 'rain', [ 'sceneColor:load/discard/resolve' ], 'sceneDepth:load/discard', true ],
-			[ 'fogBank', [ 'fogBanks:clear/store' ], null, false ],
-			[ 'fogDepth', [ 'fogNearestDepth:clear/store' ], null, false ],
-			[ 'fogMarch', [ 'fogMarch:clear/store' ], null, false ],
+			// (the haze's kernels have no attachments)
+			[ 'hazeShadow', [], null, false ],
+			[ 'hazeLight', [], null, false ],
 			[ 'shaftsSource', [ 'shafts.source:clear/store' ], null, false ],
 			[ 'shaftsRays', [ 'shafts.rays:clear/store' ], null, false ],
 			[ 'postConstants', [ 'postConstants:clear/store' ], null, false ],
@@ -677,8 +663,8 @@ export const checks = [
 			[ 'output', [ 'canvas:clear/store' ], null, false ],
 		] );
 		assert.equal( rainOn.rewrites, 1 );
-		const upscaled = c.ops( 'legacy', c.maskOf( [ 'rain', 'shaftsSource', 'shaftsRays', 'easu', 'upscaledOutput' ] ) );
-		assert.deepEqual( upscaled.running.slice( - 5 - TAIL.length ), [ 'rain', 'shaftsSource', 'shaftsRays', ...TAIL, 'easu', 'upscaledOutput' ] );
+		const upscaled = c.ops( 'legacy', c.maskOf( [ 'rain', 'hazeShadow', 'shaftsSource', 'shaftsRays', 'easu', 'upscaledOutput' ] ) );
+		assert.deepEqual( upscaled.running.slice( - 7 - TAIL.length ), [ 'rain', 'hazeShadow', 'hazeLight', 'shaftsSource', 'shaftsRays', ...TAIL, 'easu', 'upscaledOutput' ] );
 		assert.equal( upscaled.rewrites, 1, 'the upscale rewrites nothing' );
 		assert.equal( c.ops( 'legacy', c.maskOf( [ 'refraction', 'output' ] ) ).rewrites, 0, 'without the rain nothing is discarded (the water\'s stores stay)' );
 		const single = compilePipeline( {}, 1 );
@@ -693,16 +679,18 @@ export const checks = [
 		const c = compileToday();
 		compareTable( c.summary(), TODAY );
 		assert.deepEqual( c.passNames, ALL );
-		assert.deepEqual( c.conditional.map( ( i ) => c.decl.passes[ i ].name ), [ 'refractionReach', 'refractionMask', 'refraction', 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'output', 'easu', 'upscaledOutput' ] );
+		assert.deepEqual( c.conditional.map( ( i ) => c.decl.passes[ i ].name ), [ 'refractionReach', 'refractionMask', 'refraction', 'rain', 'hazeShadow', 'shaftsSource', 'shaftsRays', 'output', 'easu', 'upscaledOutput' ] );
 		assert.deepEqual( c.summary().targets.map( ( t ) => [ t.key, t.size, t.samples ] ), [
 			[ 'meadowCoverage|sceneDepth', R, 4 ], [ 'meadowDepth|-', R, 1 ], [ 'meadowShade|-', R, 1 ], [ 'sceneColor|sceneDepth', R, 4 ], [ 'underwater|-', R, 1 ], [ 'refractionReach|-', 'fixed:64x1', 1 ], [ 'refraction|refractionDepth', RF, 1 ], [ 'linearDepth|-', R, 1 ], [ 'opaqueColor|-', R, 1 ], [ 'surfaceDepth|-', R, 1 ],
-			[ 'fogBanks|-', 'fixed:2048x2048', 1 ], [ 'fogNearestDepth|-', 'render:1:2:0', 1 ], [ 'fogMarch|-', 'render:1:2:0', 1 ],
+			// (the haze's kernels draw into no target)
 			[ 'shafts.source|-', H, 1 ], [ 'shafts.rays|-', H, 1 ], [ 'postConstants|-', 'fixed:1x1', 1 ], [ 'hdr|-', R, 1 ], ...BLOOM.rows.map( ( r ) => [ r.target, r.size, 1 ] ), [ 'sharp|-', R, 1 ],
 			[ 'display|-', R, 1 ], [ 'canvas|-', C, 1 ], [ 'FSR.easu|-', C, 1 ],
 		] );
 		// the refraction's view is wider than the screen: 1.3 times both ways at half the render
 		assert.deepEqual( resolveSize( REFRACTION, { render: { width: 2560, height: 1440 }, canvas: { width: 3840, height: 2160 } } ), { width: 1664, height: 936 } );
 		assert.equal( c.jitterSpan, null );
+		// the haze's volumes are imports written through storage: they root their kernels
+		assert.deepEqual( c.culled, [] );
 
 	} ],
 
@@ -718,7 +706,7 @@ export const checks = [
 
 	} ],
 
-	[ 'sizes: the rounding of each class (rtt floor, fog max(floor(w/k),1), halfRes min 1, canvas >= render)', () => {
+	[ 'sizes: the rounding of each class (rtt floor, divisor max(floor(w/k),1), halfRes min 1, canvas >= render)', () => {
 
 		const e = { render: { width: 1673, height: 941 }, canvas: { width: 2560, height: 1440 } };
 		assert.deepEqual( resolveSize( { of: 'render' }, e ), { width: 1673, height: 941 } );
@@ -728,7 +716,7 @@ export const checks = [
 		assert.deepEqual( resolveSize( { of: 'render', scale: 0.5, min: 1 }, { render: { width: 1, height: 1 }, canvas: { width: 1, height: 1 } } ), { width: 1, height: 1 } );
 		assert.deepEqual( resolveSize( { of: 'canvas' }, e ), { width: 2560, height: 1440 } );
 		assert.deepEqual( resolveSize( { of: 'canvas' }, { render: { width: 3000, height: 900 }, canvas: { width: 2560, height: 1440 } } ), { width: 3000, height: 1440 } );
-		assert.deepEqual( resolveSize( { of: 'fixed', width: 2048, height: 2048 }, e ), { width: 2048, height: 2048 } );
+		assert.deepEqual( resolveSize( HAZE, e ), { width: 160, height: 90 } );
 
 	} ],
 
@@ -736,12 +724,10 @@ export const checks = [
 	[ 'variants: the post= switches change the graph as Pipeline builds it', () => {
 
 		const cases = [
-			[ 'full-fog', { fogScale: 1 }, without( 'fogDepth', 'fogMarch' ) ],
-			[ 'no-bank', { bankSize: 0 }, without( 'fogBank' ) ],
 			[ 'three-fsr', { fsrPort: false }, [ ...without( 'easu', 'upscaledOutput' ), 'upscaledOutputThree' ] ],
 			// (store-scene changes the ops only)
 			[ 'inline-composite', { compositeOnce: false }, without( 'composite' ) ],
-			[ 'legacy (all)', { fogScale: 1, bankSize: 0, fsrPort: false, compositeOnce: false }, [ ...without( 'fogBank', 'fogDepth', 'fogMarch', 'composite', 'easu', 'upscaledOutput' ), 'upscaledOutputThree' ] ],
+			[ 'legacy (all)', { fsrPort: false, compositeOnce: false }, [ ...without( 'composite', 'easu', 'upscaledOutput' ), 'upscaledOutputThree' ] ],
 		];
 		for ( const [ name, options, passes ] of cases ) {
 
@@ -758,18 +744,18 @@ export const checks = [
 
 	} ],
 
-	[ 'variants: refraction, rain, fog, the shafts and upscaling select the passes that run', () => {
+	[ 'variants: refraction, rain, the haze\'s shadow, the shafts and upscaling select the passes that run', () => {
 
 		const c = compileToday();
 		const run = ( ...enabled ) => c.running( c.maskOf( enabled ) ).map( ( i ) => c.decl.passes[ i ].name );
 		const scene = ( ...extra ) => [ ...MEADOW, 'opaque', 'underwaterPyramid', ...extra, 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve' ];
 		const shafts = [ 'shaftsSource', 'shaftsRays' ];
-		assert.deepEqual( run( 'refractionReach', 'refractionMask', 'refraction', 'rain', 'fogBank', 'fogDepth', 'fogMarch', ...shafts, 'output' ), [ ...scene( 'refractionReach', 'refractionMask', 'refraction' ), 'rain', 'fogBank', 'fogDepth', 'fogMarch', ...shafts, ...TAIL, 'output' ] );
-		assert.deepEqual( run( 'refractionReach', 'refractionMask', 'refraction', 'fogDepth', 'fogMarch', 'output' ), [ ...scene( 'refractionReach', 'refractionMask', 'refraction' ), 'fogDepth', 'fogMarch', ...TAIL, 'output' ], 'rain off, the sun away' );
-		assert.deepEqual( run( 'refractionReach', 'refractionMask', 'refraction', 'rain', ...shafts, 'output' ), [ ...scene( 'refractionReach', 'refractionMask', 'refraction' ), 'rain', ...shafts, ...TAIL, 'output' ], 'fog off' );
-		assert.deepEqual( run( 'rain', 'output' ), [ ...scene(), 'rain', ...TAIL, 'output' ], 'refraction off (the water refracts the opaque copy alone), fog off, the sun away' );
-		assert.deepEqual( run( 'refractionReach', 'refractionMask', 'refraction', 'easu', 'upscaledOutput' ), [ ...scene( 'refractionReach', 'refractionMask', 'refraction' ), ...TAIL, 'easu', 'upscaledOutput' ], 'upscaling' );
-		assert.equal( c.fullMask, 4095 );
+		assert.deepEqual( run( 'refractionReach', 'refractionMask', 'refraction', 'rain', 'hazeShadow', ...shafts, 'output' ), [ ...scene( 'refractionReach', 'refractionMask', 'refraction' ), 'rain', 'hazeShadow', 'hazeLight', ...shafts, ...TAIL, 'output' ] );
+		assert.deepEqual( run( 'refractionReach', 'refractionMask', 'refraction', 'hazeShadow', 'output' ), [ ...scene( 'refractionReach', 'refractionMask', 'refraction' ), 'hazeShadow', 'hazeLight', ...TAIL, 'output' ], 'rain off, the sun away' );
+		assert.deepEqual( run( 'refractionReach', 'refractionMask', 'refraction', 'rain', ...shafts, 'output' ), [ ...scene( 'refractionReach', 'refractionMask', 'refraction' ), 'rain', 'hazeLight', ...shafts, ...TAIL, 'output' ], 'the haze\'s shadow held by a rest: its light still runs' );
+		assert.deepEqual( run( 'rain', 'output' ), [ ...scene(), 'rain', 'hazeLight', ...TAIL, 'output' ], 'refraction off (the water refracts the opaque copy alone), the shadow held, the sun away' );
+		assert.deepEqual( run( 'refractionReach', 'refractionMask', 'refraction', 'easu', 'upscaledOutput' ), [ ...scene( 'refractionReach', 'refractionMask', 'refraction' ), 'hazeLight', ...TAIL, 'easu', 'upscaledOutput' ], 'upscaling' );
+		assert.equal( c.fullMask, 1023 );
 
 	} ],
 

@@ -35,7 +35,7 @@ import { compileBound, compileChain, compileLatent, compileNodes, compileQuad, s
 // first pass draws; the recreations then happen while nothing holds content. So are the targets
 // no pass draws into (a frame-end copy's destination, a texture written by storage), whose first
 // use is not a draw. Any other target initialises itself when a pass first draws into it, as
-// before the graph: a pass that runs only now and then (the sea fog, the upscale) allocates
+// before the graph: a pass that runs only now and then (the rain, the upscale) allocates
 // nothing until it does. A depth texture's size is set by the graph itself, since three resizes it
 // only through the one target that owns it.
 //
@@ -76,7 +76,7 @@ export interface PassDef<F> extends PassFlags {
 	// scene: objects drawn only later (weather, effects), for the warm-up
 	latent?(): THREE.Object3D[];
 	// after the warm-up primed the pass (see `warm`): forget what of its owner's the priming wrote,
-	// so the first real frame redoes it as on a cold load (the sea fog's bank map)
+	// so the first real frame redoes it as on a cold load (a map its owner bakes when due)
 	invalidate?(): void;
 	// quad: a full-screen material
 	quad?: THREE.QuadMesh;
@@ -106,11 +106,12 @@ export interface CurrentPass { readonly name: string; readonly label: string; re
 
 const passScales = ( size: SizeClass | null ): 'pixel' | 'fixed' => size?.of === 'render' ? 'pixel' : 'fixed';
 
-/** What the owners of passes (the sea fog, the upscale) declare on the graph while it is built. */
+/** What the owners of passes (the haze, the upscale) declare on the graph while it is built. */
 export interface GraphResources {
 	color( name: string, desc: ResourceDesc, persistent?: boolean ): ResourceHandle;
 	renderTarget( colors: readonly ResourceHandle[], depth?: ResourceHandle | null ): THREE.RenderTarget;
 	texture( h: ResourceHandle, parity?: 0 | 1 ): THREE.Texture;
+	import( name: string, target: THREE.Texture | THREE.RenderTarget | null, size: SizeClass ): ResourceHandle;
 	extent( size: SizeClass ): Uniform2;
 	texel( size: SizeClass ): Uniform2;
 	onResize( size: SizeClass, hook: ( width: number, height: number ) => void ): void;

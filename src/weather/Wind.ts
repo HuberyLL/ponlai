@@ -33,7 +33,7 @@ import { PREVAILING_HEADING, type WeatherState } from '../sky/Weather.ts';
 //   as one patch; farther out tidewater's octaves drift with `displacement`.
 // - the clouds: `displacement`, which Clouds.setDrift turns into each layer's drift aloft;
 //   `direction` for the fronts, the cirrus and the tops' lean (sky/Sky.ts, Clouds.ts).
-// - the air: `displacement` (the sea fog's drift, main.ts; the clouds' drift), `velocity` (rain, the storm's spray),
+// - the air: `displacement` (the clouds' drift), `velocity` (rain, the storm's spray),
 //   `direction` (the storm sea's foam).
 // The wind probe's W5 (`__PONLAI__.windProbe`) reports where each of them travels.
 //

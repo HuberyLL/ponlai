@@ -28,8 +28,8 @@ import { jitter } from './Jitter.ts';
 //   bilinearly (`afterResolveCover`). An edge then covers a streak by a fraction over about a render
 //   pixel, as the resolve antialiased the edge itself, rather than in the render's steps; a streak
 //   in front of both sides is untouched.
-// - Air, fog and shafts: the composite is affine in the scene colour at each pixel,
-//   hdr = A scene + B (A the air's transmittance; B the light the air, fog and shafts add). Under
+// - Haze and shafts: the composite is affine in the scene colour at each pixel,
+//   hdr = A scene + B (A the haze's transmittance; B the light the haze and the shafts add). Under
 //   AFTER_RESOLVE the composite writes A (`rainAir`, R16F at the render's size, in place of
 //   veilReactive: the same cost in fair weather) and no veil; B is the grade's input less A times
 //   the scene colour, so a streak takes the air of what lies behind it, as it did drawn into the

@@ -43,6 +43,7 @@ import { buildGrass, grassKind, plantGrass, setGrassQuality } from './world/Gras
 import { buildYunpeng, yunpengKind } from './world/Yunpeng.ts';
 import { meadowCanopy } from './lighting/MeadowCanopy.ts';
 import { Pipeline, postOptionsFromURL } from './post/Pipeline.ts';
+import type { HazeFrame } from './weather/VolumetricHaze.ts';
 import { renderPixelRatio, dynamicMaxRatio, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
@@ -59,7 +60,6 @@ import { LandLattice } from './world/IslandGrowth.ts';
 import { walkLoopDistance, walkPoints } from './world/WalkPath.ts';
 import { bambooKinds, buildBamboo } from './world/Bamboo.ts';
 import { leafAtlas as bambooAtlas } from './world/BambooMaterials.ts';
-import { setIslandClearing } from './weather/AerialPerspective.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { Trample } from './world/vegetation/Trample.ts';
 import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters/Proportions.ts';
@@ -482,7 +482,7 @@ if ( fgview ) installDebugView( fgview, {
 		jitterNdc: jitter.uniforms.ndc, opaqueBelow: ( MOTION_CLASS.opaque + MOTION_CLASS.vegetation ) / 2,
 	},
 } );
-const pipeline = new Pipeline( renderer, sky, rain, postOptionsFromURL( location.search, quality.post ), quality.taa );
+const pipeline = new Pipeline( renderer, sky, sunShadow, rain, postOptionsFromURL( location.search, quality.post ), quality.taa );
 // The ground truth (aa=gt, debug builds) renders at the canvas's resolution (see resize) without
 // film grain: an image of the scene alone.
 if ( AA_MODE === 'gt' ) pipeline.settings.grain = 0;
@@ -576,9 +576,6 @@ function setLand( next: LandLattice, step: number, measured = measureLand( next 
 	outline = measured.outline;
 	( { centroid, scale: landScale, onLand } = measured.framing );
 	target.copy( onLand( 1.5, 0.5, 1 ) );
-	// the sea fog thins over the island and in its lee
-	const fogClearing = onLand( 0, 0, 0 );
-	setIslandClearing( fogClearing.x, fogClearing.z, 20 * landScale, 100 * landScale );
 	Object.assign( landInfo, { step, bounds: landBox, centroid, scale: landScale, target: target.toArray() } );
 
 }
@@ -1276,6 +1273,33 @@ postF.add( S, 'contrast', 0.8, 1.3, 0.01 );
 postF.add( S, 'tone', 0, 1, 0.01 );
 postF.add( S, 'vignette', 0, 1, 0.01 );
 postF.add( S, 'grain', 0, 0.05, 0.001 );
+// the haze (weather/VolumetricHaze.ts): its slices, its medium (the weather sets the haze's and the
+// fog's amounts), its light, the shadow's filter and the A/B switches
+const hazeF = gui.addFolder( 'Haze' );
+const H = pipeline.air.settings;
+hazeF.add( H, 'near', 0.05, 20, 0.05 ).name( 'grid near (m)' );
+hazeF.add( H, 'far', 1000, 200000, 1000 ).name( 'grid far (m)' );
+hazeF.add( H, 'growth', 1.02, 1.4, 0.01 ).name( 'slice growth' );
+hazeF.add( H, 'marineShare', 0, 1, 0.01 ).name( 'marine share' );
+hazeF.add( H, 'marineHeight', 10, 1000, 1 ).name( 'marine height (m)' );
+hazeF.add( H, 'aerosolHeight', 100, 5000, 10 ).name( 'aerosol height (m)' );
+hazeF.add( H, 'fogExtinction', 0, 0.05, 0.0001 ).name( 'fog extinction (1/m)' );
+hazeF.add( H, 'fogTop', 0, 300, 1 ).name( 'fog top (m)' );
+hazeF.add( H, 'fogWidth', 0.5, 100, 0.5 ).name( 'fog step width (m)' );
+hazeF.add( H, 'fogAbove', 0, 1, 0.01 ).name( 'fog above / below' );
+hazeF.add( H, 'albedo', 0, 1, 0.01 );
+hazeF.add( H, 'anisotropy', - 0.5, 0.95, 0.01 ).name( 'phase anisotropy' );
+hazeF.add( H, 'isotropic', 0, 1, 0.01 ).name( 'isotropic share' );
+hazeF.add( H, 'sun', 0, 4, 0.01 ).name( 'key light scale' );
+hazeF.add( H, 'ambient', 0, 4, 0.01 ).name( 'ambient scale' );
+hazeF.add( H, 'blend', 0.01, 1, 0.01 ).name( 'shadow blend' );
+hazeF.add( H, 'restFrames', 1, 64, 1 ).name( 'rest frames' );
+hazeF.add( H, 'jitter' );
+hazeF.add( H, 'tricubic' );
+hazeF.add( H, 'densityAA' ).name( 'density AA' );
+hazeF.add( H, 'sky' ).name( 'haze over the sky' );
+hazeF.add( H, 'debug', { off: 0, 'key light visibility': 1 } ).name( 'debug view' );
+hazeF.close();
 if ( DEBUG ) {
 
 	// The frame graph's debug view (fgview): its choices from the graph's description. The graph
@@ -1518,6 +1542,13 @@ function temporalFrame( dt: number, step: number ): TemporalFrame | undefined {
 	return { signature: [ strikeSignature() ], stable: restStable(), dt, step, interval: pacer.target > 0 ? 1000 / pacer.target : 1000 / 60 };
 
 }
+// The haze's rest (weather/VolumetricHaze.ts): the temporal rest's signature and the sun maps' redraw
+// counts (a redraw changes its shadow without changing the key), and whether the frame may rest.
+function hazeFrame(): HazeFrame {
+
+	return { time: simTime, signature: [ strikeSignature(), sunShadow.draws, refractedSun.draws ], stable: restStable() };
+
+}
 // The settled signal's inputs (post/Settled.ts; debug builds): the rest's, the sun maps' redraw
 // counts, and what will still change the frame without changing the key.
 let revealed = false;
@@ -1529,6 +1560,7 @@ function settleFrame( bakeDue: boolean ): SettleFrame | undefined {
 	if ( refractedSun.pending ) pending.push( 'refracted sun' );
 	if ( framingGlide.running ) pending.push( 'camera glide' );
 	if ( sunShadow.pending ) pending.push( 'sun shadow' );
+	if ( pipeline.air.pending ) pending.push( 'haze rest' );
 	// the loading screen covers the canvas until its fade (index.html) has ended
 	if ( ! revealed ) revealed = loading === null || ( loading.classList.contains( 'done' ) && getComputedStyle( loading ).opacity === '0' );
 	return { signature: [ strikeSignature(), sunShadow.draws, refractedSun.draws ], stable: restStable(), pending, shown: revealed };
@@ -1598,8 +1630,6 @@ function tick( time: number ): void {
 	publishLighting();
 	pipeline.air.haze.value = sky.weather.haze;
 	pipeline.air.fog.value = sky.weather.fog;
-	pipeline.air.fogOffset.value.copy( shared.wind.displacement.value ).negate();
-	pipeline.air.fogTime.value = simTime;
 	pipeline.air.keyDir.value.copy( sky.keyDir );
 	pipeline.air.keyColor.value.copy( sky.keyColor ).multiplyScalar( 1 - THREE.MathUtils.smoothstep( sky.clouds.coverage.value, 0.7, 0.97 ) );
 	pipeline.shafts.setSun( sky.sunDir, sky.sunColor );
@@ -1677,7 +1707,7 @@ function tick( time: number ): void {
 	// it with the streaks after the resolve)
 	const overlay = ! AFTER_RESOLVE && ( rain!.mesh.visible || ( TEMPORAL && stormSea.spray.mesh.visible ) );
 	const after = AFTER_RESOLVE && ( rain!.mesh.visible || stormSea.spray.mesh.visible );
-	pipeline.render( { scene, prepassScene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, afterScene: after ? afterScene : undefined, camera, water: water!, sun, time: simTime, temporal: temporalFrame( rawDt, paused ? 0 : dt ), settle: settleFrame( bakeDue ) } );
+	pipeline.render( { scene, prepassScene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, afterScene: after ? afterScene : undefined, camera, water: water!, sun, time: simTime, temporal: temporalFrame( rawDt, paused ? 0 : dt ), settle: settleFrame( bakeDue ), haze: hazeFrame() } );
 	steerRenderScale( rawDt );
 	submitBatch.flush();
 	frame ++;
@@ -1689,7 +1719,7 @@ function tick( time: number ): void {
 // quantiles. A periodic sky bake runs its slices in the ticks while the sky is busy, from the one
 // that starts it to the one that publishes it.
 let skyWasBusy = false;
-const periodicCounts = { sunShadow: 0, refractedSun: 0, fogBank: 0 };
+const periodicCounts = { sunShadow: 0, refractedSun: 0 };
 function periodicWork(): number {
 
 	let heavy = 0;
@@ -1697,10 +1727,8 @@ function periodicWork(): number {
 	skyWasBusy = sky.busy;
 	if ( sunShadow.draws !== periodicCounts.sunShadow ) heavy |= PeriodicWork.sunShadow;
 	if ( refractedSun.draws !== periodicCounts.refractedSun ) heavy |= PeriodicWork.refractedSun;
-	if ( pipeline.air.bankBakes !== periodicCounts.fogBank ) heavy |= PeriodicWork.fogBank;
 	periodicCounts.sunShadow = sunShadow.draws;
 	periodicCounts.refractedSun = refractedSun.draws;
-	periodicCounts.fogBank = pipeline.air.bankBakes;
 	return heavy;
 
 }

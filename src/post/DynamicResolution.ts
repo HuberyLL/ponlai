@@ -241,7 +241,7 @@ const STORE_KEY = 'soomi.renderScale', STORE_ENTRIES = 8;
 const FALL_LATE = 0.1, FALL_SPAN = 2, RETURN_FIT = 0.8, RETURN_SPAN = 5, RETURN_WAIT = 10, RETURN_MAX = 80;
 
 /** Periodic work in a frame (bits of `sample`'s `heavy`). */
-export const PeriodicWork = { skyBake: 1, sunShadow: 2, refractedSun: 4, fogBank: 8 } as const;
+export const PeriodicWork = { skyBake: 1, sunShadow: 2, refractedSun: 4 } as const;
 const WORK_KINDS = Object.values( PeriodicWork );
 
 export interface DynamicResolutionOptions {
