@@ -100,6 +100,9 @@ const COS_NOON_AZIMUTH = Math.cos( NOON_AZIMUTH );
 // is the south celestial pole and the island lies near 28 degrees south, like Rapa Nui.
 const MERIDIAN = new Vector3( COS_INCLINATION * COS_NOON_AZIMUTH, SIN_INCLINATION, COS_INCLINATION * SIN_NOON_AZIMUTH );
 const WEST = new Vector3( SIN_NOON_AZIMUTH, 0, - COS_NOON_AZIMUTH );
+/** The direction toward the sun at noon (unit): where the island's shade falls at midday is away
+ * from it (the meadow's flowers keep out of the bamboo's, world/Grass.ts). */
+export const NOON_SUN: Readonly<Vector3> = MERIDIAN.clone();
 const NORTH_POLE = WEST.clone().cross( MERIDIAN ).normalize();
 // How far the moon's orbit is tilted from the sun's toward the horizon, about the east-west axis
 // (see the header): it culminates at 62 - 25 = 37 degrees.

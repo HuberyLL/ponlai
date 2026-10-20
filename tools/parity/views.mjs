@@ -4,7 +4,7 @@
 // island's bounds and height grid as the camera's ground holds them (`controls.ground`,
 // IslandGround: made from the chunks' meshes in the workers, so the page's meshes and their
 // vertices are never read and a build that simplifies the drawn meshes frames alike), the meadow's
-// flower heads and its tufts at the cliff's edge, the islander and the sun and moon, so they follow any land, as tools/profile-frame.mjs places its
+// flowering plants and its tufts at the cliff's edge, the islander and the sun and moon, so they follow any land, as tools/profile-frame.mjs places its
 // scenes.
 //
 // Groups: `parity` (the views every parity check runs; the default) and `taa` (6 close views for
@@ -143,7 +143,7 @@ const ANCHORS = {
 	'meadow-near': () => meadowAt( 5, 2.5, 20 ),
 	'meadow-band-40m': () => meadowAt( 40, 34, 46 ),
 	'meadow-band-70m': () => meadowAt( 70, 62, 80 ),
-	// the nearest 2 m cell of the meadow with a few flower heads in it
+	// the nearest 2 m cell of the meadow with a few flowering plants in it
 	'flowers': () => pick( flowerBeds().filter( ( b ) => b.n >= 4 && dist( b.p ) < 90 ).map( ( b ) => ( { p: b.p, score: dist( b.p ) - b.n * 0.05 } ) ), clearView ),
 	// the nearest stretch of the lip (with the meadow draped over it) facing the camera
 	'rim-lip': () => pick( lips().map( ( c ) => ( { p: c.p, score: dist( c.p ) } ) ).filter( ( c ) => c.score > 4 ) ),
@@ -269,7 +269,7 @@ export const VIEWS = {
 	'islander-close': { group: 'taa', q: 'weather=fair&preset=noon', eval: `${ ISLANDER }
 		s.controls.minDistance = 2; s.controls.target.copy( c ); s.camera.position.set( c.x + 3.2, c.y + 2.4, c.z + 3.6 ); s.camera.lookAt( c ); ( s.controls.settle ?? s.controls.update ).call( s.controls );`,
 	crops: [ 'islander-head', 'islander-hands', 'meadow-near' ] },
-	// 1.2 m over the densest flowers (3 m cells of the meadow's flower heads), looking 35 degrees down
+	// 1.2 m over the densest flowers (3 m cells of the meadow's flowering plants), looking 35 degrees down
 	// and away from the island's centre
 	'flowers-close': { group: 'taa', q: 'weather=fair&preset=noon', eval: `const b = isl(), bins = new Map();
 		for ( const [ x, y, z ] of s.grass.userData.flowerHeads() ) {

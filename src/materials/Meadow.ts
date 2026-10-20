@@ -29,8 +29,7 @@ export const MEADOW_EXTENT = 2 * GROWTH.half;
 export const MEADOW_SIZE = MEADOW_EXTENT * 4;
 
 /** The lawn's tuft height scale (m) on ordinary soil, the middle of its three levels: the mean
- * length of its blades, which arc over under their weight (Grass.ts), its flower heads among their
- * tips. */
+ * length of its blades, which arc over under their weight (Grass.ts). */
 export const SWARD_HEIGHT = 0.5;
 
 interface MeadowSample { growth: number; tone: number }

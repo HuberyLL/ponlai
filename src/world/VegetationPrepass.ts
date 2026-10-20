@@ -5,7 +5,7 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 import { VELOCITY_CLEAR, velocityOutput } from '../post/Motion.ts';
 import { MEADOW_SHADE } from '../post/MeadowShade.ts';
 
-// A depth prepass for the alpha-to-coverage vegetation (today the grass and its flower heads).
+// A depth prepass for the alpha-to-coverage vegetation (today the grass and its flowering plants).
 //
 // Profiling at 4x MSAA showed that nearly all of the vegetation's cost is its fragment shading:
 // the same draws with a flat shader were 4.4 ms (render scale 1) to 5.9 ms (1.5) cheaper over the
