@@ -4,9 +4,10 @@ import { Matrix3, Vector3 } from 'three/webgpu';
 // balance, as 3x3 matrices built here from chromaticities, so the white balance costs nothing per
 // pixel beyond the two matrix products the curve takes anyway.
 //
-// The curve is Stephen Hill's fit of ACES's RRT and ODT (three's acesFilmicToneMapping): it turns
-// linear Rec.709 into AP1 (ACEScg) with the RRT's saturation, maps each channel through one curve
-// and turns the result back through the ODT's saturation. Per-channel tone mapping in the rendering
+// The matrices are Stephen Hill's fit of ACES's RRT and ODT (three's acesFilmicToneMapping): it
+// turns linear Rec.709 into AP1 (ACEScg) with the RRT's saturation, maps each channel through one
+// curve (Pipeline.ts toneCurve: at first Hill's, now an adjustable one fitted to it) and turns the
+// result back through the ODT's saturation. Per-channel tone mapping in the rendering
 // space clips saturated colours toward cyan, magenta and yellow; AP1 rolls them off toward white,
 // but bends reds and oranges toward yellow (a low sun's glints and sky). After Patry, "Real-Time
 // Samurai Cinema" (SIGGRAPH 2021), the curve's space is AP1 with its red primary moved from x 0.713

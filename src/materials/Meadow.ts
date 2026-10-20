@@ -38,7 +38,9 @@ interface MeadowSample { growth: number; tone: number }
 // about 0.8 of green on screen, and enough blue that the lit lawn reads soft and green rather than
 // lime; the yellow of the lit tips comes from the light through them, Grass.ts). Its saturation is
 // about an eighth below the first lawn's ( 0.06, 0.1, 0.029 ), its luminance the same: with the
-// long blades' own spread of tints (Grass.ts) the full green read as a dyed, plastic sward.
+// long blades' own spread of tints (Grass.ts) the full green read as a dyed, plastic sward. The
+// page draws the meadow twice as light as this (shared.ts lawnGain): this is the measured leaf,
+// the look's meadow is painted lighter.
 const LAWN = new THREE.Color( 0.0632, 0.0984, 0.0359 );
 /** The lawn's colour (linear albedo), before its tone: the blades' colours are factors on it. */
 export const LAWN_COLOUR = LAWN.toArray() as [ number, number, number ];

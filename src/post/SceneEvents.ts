@@ -50,6 +50,9 @@ export const SCENE_EVENTS = {
 	'camera mode': true,
 	// any control of the GUI (bubbling to its root): it retunes the image in place
 	'gui': false,
+	// a look's knob set from a script (`setGrade`: the grade's table filled anew; `setLawnGain`):
+	// the same, without the GUI
+	'retune': false,
 	// the page's keyboard toggles (Space: pause, H: the GUI)
 	'key toggle': false,
 	// the game (?game, Game.ts): a simulation installed (start, load), its speed or pause, an order

@@ -44,6 +44,7 @@ import { buildYunpeng, yunpengKind } from './world/Yunpeng.ts';
 import { meadowCanopy } from './lighting/MeadowCanopy.ts';
 import { Pipeline, postOptionsFromURL } from './post/Pipeline.ts';
 import type { HazeFrame } from './weather/VolumetricHaze.ts';
+import type { GradeChanges } from './post/GradeLut.ts';
 import { renderPixelRatio, dynamicMaxRatio, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
@@ -1258,6 +1259,19 @@ const postF = gui.addFolder( 'Post' );
 postF.add( S, 'exposureOffset', - 3, 3, 0.05 ).name( 'exposure offset (stops)' );
 postF.add( S, 'bloom', 0, 0.3, 0.005 );
 postF.addColor( S, 'white' ).name( 'white balance' );
+{
+
+	// the tone curve (Pipeline.ts toneCurve): Lottes's contrast and shoulder, the input that shows
+	// white, what mid grey shows (linear) and the toe lift
+	const curveF = postF.addFolder( 'Tone curve' );
+	curveF.add( S.curve, 'contrast', 1, 2.5, 0.005 );
+	curveF.add( S.curve, 'shoulder', 0.85, 1.15, 0.001 );
+	curveF.add( S.curve, 'white', 2, 100, 0.1 ).name( 'white (input)' );
+	curveF.add( S.curve, 'mid', 0.04, 0.2, 0.0005 ).name( 'mid grey shown (linear)' );
+	curveF.add( S.curve, 'toe', - 0.01, 0.1, 0.0005 ).name( 'toe lift' );
+	curveF.close();
+
+}
 if ( pipeline.localTone ) {
 
 	// the local tone mapping (LocalTone.ts): the contrast above and below mid grey, the detail
@@ -1268,8 +1282,43 @@ if ( pipeline.localTone ) {
 
 }
 postF.add( S, 'lut', 0, 1, 0.01 ).name( 'grade table blend' );
-postF.add( S, 'saturation', 0, 2, 0.01 );
-postF.add( S, 'contrast', 0.8, 1.3, 0.01 );
+// the meadow's albedo against its lawn colour (shared.lawnGain), tuned with the exposure
+postF.add( shared.lawnGain, 'value', 0.5, 3, 0.01 ).name( 'meadow albedo (x)' ).onChange( () => groundBounce.invalidate() );
+postF.add( shared.rockGain, 'value', 0.5, 3, 0.01 ).name( 'cliff albedo (x)' );
+postF.add( shared.leafGain, 'value', 0.5, 3, 0.01 ).name( 'tree leaves albedo (x)' );
+{
+
+	// the first table's grade (GradeLut.ts), its table filled anew on every change
+	const grade = pipeline.grade, fill = () => pipeline.setGrade();
+	const gradeF = postF.addFolder( 'Grade table' );
+	gradeF.add( grade, 'contrast', 0.8, 1.3, 0.005 ).onChange( fill );
+	gradeF.add( grade, 'saturation', 0.5, 1.6, 0.005 ).onChange( fill );
+	gradeF.add( grade.split, '0', 0.1, 0.8, 0.01 ).name( 'shadows end (L)' ).onChange( fill );
+	gradeF.add( grade.split, '1', 0.3, 0.98, 0.01 ).name( 'highlights begin (L)' ).onChange( fill );
+	for ( const name of [ 'shadows', 'midtones', 'highlights' ] as const ) {
+
+		const zoneF = gradeF.addFolder( name ), zone = grade[ name ];
+		zoneF.add( zone, 'value', - 1, 1, 0.01 ).name( 'value (stops)' ).onChange( fill );
+		zoneF.addColor( zone, 'tint' ).onChange( fill );
+		zoneF.add( zone, 'saturation', 0.5, 1.6, 0.005 ).onChange( fill );
+		zoneF.close();
+
+	}
+	for ( const [ name, band ] of Object.entries( grade.bands ) ) {
+
+		const bandF = gradeF.addFolder( `${ name } (hue band)` );
+		bandF.add( band, 'hue', 0, 360, 1 ).onChange( fill );
+		bandF.add( band, 'width', 5, 90, 1 ).onChange( fill );
+		bandF.add( band, 'saturation', 0, 2, 0.01 ).onChange( fill );
+		bandF.add( band, 'value', - 1, 1, 0.01 ).name( 'value (stops)' ).onChange( fill );
+		bandF.add( band, 'shift', - 30, 30, 0.5 ).name( 'hue turn' ).onChange( fill );
+		bandF.add( band, 'ceiling', 0.03, 1, 0.005 ).name( 'chroma ceiling' ).onChange( fill );
+		bandF.close();
+
+	}
+	gradeF.close();
+
+}
 postF.add( S, 'tone', 0, 1, 0.01 );
 postF.add( S, 'vignette', 0, 1, 0.01 );
 postF.add( S, 'grain', 0, 0.05, 0.001 );
@@ -2251,7 +2300,14 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 };
 
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, groundBounce, grass, wenyao, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, groundBounce,
+	// the look's knobs from a script (the GUI's raise their own events): the first table's grade
+	// (Pipeline.setGrade, GradeLut.ts), the meadow's albedo (shared.lawnGain), the cliff's
+	// (shared.rockGain) and the trees' leaves' (shared.leafGain)
+	setGrade: ( changes?: GradeChanges ) => { pipeline.setGrade( changes ); sceneEvent( 'retune' ); },
+	setLawnGain: ( gain: number ) => { shared.lawnGain.value = gain; groundBounce.invalidate(); sceneEvent( 'retune' ); },
+	setRockGain: ( gain: number ) => { shared.rockGain.value = gain; sceneEvent( 'retune' ); },
+	setLeafGain: ( gain: number ) => { shared.leafGain.value = gain; sceneEvent( 'retune' ); }, grass, wenyao, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
 	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, weather, sky, fft, establishScene, setTime, data: () => shownData, seaDetail, land: () => landBox }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes

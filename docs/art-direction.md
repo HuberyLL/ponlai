@@ -21,12 +21,16 @@ art decision changes; reference images stay out of the repository.
   the water): the scene is lit by the sun or moon, the sky and the sunlight the ground bounces up.
   The frame is developed in stages: a local tone mapping keeps a bright
   sea, glare or sky from burning out and greying while the land keeps its level (the brights drawn
-  a quarter toward mid grey, the shade left as it is, the detail kept); a filmic curve (ACES)
-  whose working space keeps a low sun's reds from turning yellow; a white balance given as the
-  colour white becomes (for now tidewater's slight warmth); tidewater's touch more saturation and
-  contrast, a vignette and film grain; a faint physical bloom over the whole image; and two grade
-  tables that a look can blend between by time of day or place (both the identity until our own
-  grades are made).
+  a quarter toward mid grey, the shade left as it is, the detail kept); a filmic curve (ACES's
+  shape, a little softer: its contrast eased and, by day, its toe lifted, as a print's flare
+  lifts its blacks (by night, when the whole frame lies in the toe, the lift greyed it); its contrast, shoulder, white and toe adjustable) whose working space keeps a low sun's
+  reds from turning yellow; a white balance given as the colour white becomes (a touch cool, so
+  the light meadow and the pale noon sky read fresh rather than yellow); a vignette and film grain;
+  a faint physical bloom over the whole image; and two grade tables, generated from a grade's
+  parameters, that a look can blend between by time of day or place (the first holds the clear
+  day's grade: tidewater's touch more saturation and contrast, the meadow's green turned a little
+  toward a sunlit field's yellow, the sky's soft blue kept light and the red flowers' colour kept
+  against the cool white; the second is the identity).
 - The light keeps the sun's and the sky's own balance, by day and by night, so that the land shows
   where the light comes from: a stone or a figure has a lit side and a shaded one, and its shade
   falls on what lies beside it; the meadow shows it in its slopes, in the light through its blades
@@ -48,12 +52,14 @@ art decision changes; reference images stay out of the repository.
   from the side or behind against darker ground; the rays through the clouds' gaps are drawn over
   the sky with the sun in view. Mist also gathers in bright banks and wisps round the island and
   the cliff's foot (not drawn yet).
-- Real phenomena are not exaggerated; no hue turns, no glow round every highlight.
+- Real phenomena are not exaggerated; no glow round every highlight, and no hue turned further
+  than a few degrees (the grade turns the meadow's green 5 degrees toward yellow, no more).
 - The exposure is metered from the light the island receives (the sun or the moon and the sky),
   not from the frame, so a dark meadow or sea is not brightened toward grey; a compensation by
   the scene's brightness, by day and by night, sets each scene's look. It keeps the levels the
-  earlier exposure by the time of day gave, calibrated against tidewater's frames: a clear noon
-  shows a grey card two stops over mid grey, the night sits about two stops under the day (as a
+  earlier exposure by the time of day gave, calibrated against tidewater's frames, the day's a
+  quarter stop down with the meadow's light albedo (Meadow): a clear noon shows a grey card one
+  and three quarter stops over mid grey, the night sits about two stops under the day (as a
   film's day for night exposes it) and holds its exposure whatever the moon. A sun in the frame
   may read a little brighter than its eye-adapting exposure would show it. Overcast stays about
   three quarters of the same view's clear day. The night keeps the moonlit island readable (see
@@ -76,7 +82,9 @@ art decision changes; reference images stay out of the repository.
   frame with glare. It never follows the clock, so returning to the view never jumps.
 - Sunlit stone keeps its grain and its grey: a cliff face turned to the sun is the brightest
   ground in the frame but never a flat cream-white sheet. The stone is kept darker than real
-  limestone so that the exposure set for the meadow leaves it below the curve's shoulder. A wall
+  limestone so that the exposure set for the meadow leaves it below the curve's shoulder, but
+  lighter than the meadow's albedo (about one and a half times it), so a face lit from the side
+  stands out from the grass as a pale cliff rather than a dark band. A wall
   over bright shallows takes their teal light from below.
 
 ## Three layers in one world
@@ -136,6 +144,10 @@ art decision changes; reference images stay out of the repository.
   average stays one colour; never a single dyed green, which reads as plastic, and never every
   blade and tussock its own value and height, which from the game's view grains the lawn into a
   scatter of tussocks over dark ground.
+  The meadow is painted light: its albedo at the top of real
+  foliage, twice the measured lawn green's, and the day's exposure a quarter stop down with it, so
+  the lit meadow is the frame's bright ground and the sea and the sky keep their depth. The trees'
+  leaves are lightened with it, a little lighter still, so a crown parts from the sward under it.
   One grass colour, a bright, fresh, natural green, matte with only a faint gloss (no pale sheen
   over the blades, which reads as plastic): the gaps between blades a deep, cooler green (never
   near black) under tips that stand out lighter and yellow-green where the sun shines through

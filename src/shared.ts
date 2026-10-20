@@ -10,6 +10,22 @@ export const shared = {
 	wind: createWindUniforms(),
 	// the islanders' trail through the meadow (world/vegetation/Trample.ts)
 	trample: createTrampleUniforms(),
+	// the meadow's albedo against its lawn colour (materials/Meadow.ts LAWN): the blades', the turf's
+	// under them and the ground bounce's over the plateau (GroundBounce.ts); 1 the lawn as LAWN gives
+	// it. 2: the look keeps the meadow light, at the top of measured foliage (about 0.12 a blade),
+	// the day's exposure a quarter stop down with it (Exposure.ts COMPENSATION); the flowers keep
+	// their own albedo, a little under the blades' then, and on screen under the lit grass tips
+	lawnGain: uniform( 2 ),
+	// the cliff's albedo above the water against its stone (TerrainMaterial.ts `rock`); 1 the stone as
+	// it is. 1.6: the stone stays lighter than the lightened meadow (about one and a half times its
+	// albedo), and a face lit from the side at noon keeps the share of the lit grass it showed
+	// before (seven tenths); under the water it stays as it is, so the sea's shading keeps its own
+	rockGain: uniform( 1.6 ),
+	// the trees' leaves' albedo against their atlas (world/vegetation/TreeSurfaces.ts leafMaterial:
+	// the bamboo's crowns); 1 the atlas as it is. 1.3: the leaves stay a little lighter than the
+	// lightened meadow (about 1.2 times its albedo), so a crown parts from the sward under it; at 1
+	// it merged with it under overcast and by night
+	leafGain: uniform( 1.3 ),
 	rain: uniform( 0 ),
 	wetness: uniform( 0 ),
 	waterLevel: uniform( 0 ),

@@ -382,7 +382,7 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		// hides the layers below it): the blend leaves the masks as they are there rather than
 		// reading the placeholder colour.
 		const hb = ( mask: F, height: F, width: number ): F => hex ? select( scanned!, heightBlend( mask, height, float( width ) ), mask ) : mask;
-		const rock = mix( vec3( 0.124, 0.13, 0.126 ), vec3( 0.188, 0.19, 0.176 ), vTint ).toVar();
+		const rock = mix( vec3( 0.124, 0.13, 0.126 ), vec3( 0.188, 0.19, 0.176 ), vTint ).mul( mix( float( 1 ), shared.rockGain, smoothstep( - 0.5, 0.5, p.y ) ) ).toVar();
 		rock.mulAssign( mix( vec3( 0.97, 0.99, 1.03 ), vec3( 1.025, 1.0, 0.965 ), fract( vTint.mul( 7.31 ) ) ) );
 		// Desaturate the source to fit this limestone palette, but keep its correlated grain,
 		// mineral stains and roughness. Fine colour follows the same relief as the normal map.
@@ -515,7 +515,7 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 				// the straw in it more the shorter the turf; the soil's share: a gap's (no cover, the
 				// meadow map's G) and the short turf's few
 				const short = float( 1 ).sub( smoothstep( FLOOR_OPEN[ 0 ], FLOOR_OPEN[ 1 ], sward.div( R.tall ) ) ).toVar();
-				const lawn = vec3( ...LAWN_COLOUR ).mul( meadow.r.mul( 2 ).sub( 1 ).mul( LAWN_TONE ).add( 1 ) );
+				const lawn = vec3( ...LAWN_COLOUR ).mul( meadow.r.mul( 2 ).sub( 1 ).mul( LAWN_TONE ).add( 1 ) ).mul( shared.lawnGain );
 				const fibres = smoothstep( 0.2, 0.65, c1.mul( 0.55 ).add( c2.mul( 0.45 ) ) );
 				const bottom = mix( lawn.mul( mix( float( 0.92 ), float( 1.06 ), fibres ) ).mul( vec3( ...R.colour ) ), thatch, mix( float( BOTTOM_THATCH ), float( TURF_THATCH ), short ) ).mul( rootDark ).toVar();
 				const soilShare = float( 1 ).sub( meadow.g.mul( float( 1 ).sub( short.mul( TURF_SOIL ) ) ) ).toVar();
