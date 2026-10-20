@@ -515,7 +515,7 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 				// the straw in it more the shorter the turf; the soil's share: a gap's (no cover, the
 				// meadow map's G) and the short turf's few
 				const short = float( 1 ).sub( smoothstep( FLOOR_OPEN[ 0 ], FLOOR_OPEN[ 1 ], sward.div( R.tall ) ) ).toVar();
-				const lawn = vec3( ...LAWN_COLOUR ).mul( meadow.r.mul( 2 ).sub( 1 ).mul( LAWN_TONE ).add( 1 ) );
+				const lawn = vec3( ...LAWN_COLOUR ).mul( meadow.r.mul( 2 ).sub( 1 ).mul( LAWN_TONE ).add( 1 ) ).mul( shared.lawnGain );
 				const fibres = smoothstep( 0.2, 0.65, c1.mul( 0.55 ).add( c2.mul( 0.45 ) ) );
 				const bottom = mix( lawn.mul( mix( float( 0.92 ), float( 1.06 ), fibres ) ).mul( vec3( ...R.colour ) ), thatch, mix( float( BOTTOM_THATCH ), float( TURF_THATCH ), short ) ).mul( rootDark ).toVar();
 				const soilShare = float( 1 ).sub( meadow.g.mul( float( 1 ).sub( short.mul( TURF_SOIL ) ) ) ).toVar();

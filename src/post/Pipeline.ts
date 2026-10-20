@@ -33,7 +33,7 @@ import type { Rain } from '../weather/Rain.ts';
 import { CLIP_MARGIN, RefractionView, REFRACTION_GUARD, REFRACTION_SIZE } from '../ocean/Refraction.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { toneMatrices, whiteBalance } from './ToneSpace.ts';
-import { lutNodes, sampleLut } from './GradeLut.ts';
+import { BASE_GRADE, fillGradeLut, gradeOf, lutNodes, mergeGrade, sampleLut, type GradeChanges, type GradeParams } from './GradeLut.ts';
 import { LocalTone } from './LocalTone.ts';
 import { meter, meteredExposure } from './Exposure.ts';
 
@@ -194,7 +194,8 @@ import { meter, meteredExposure } from './Exposure.ts';
 // - The display chain is tidewater's (ACES_EXPOSURE) with Patry's (SIGGRAPH 2021) over it: the local
 //   tone mapping first (LocalTone.ts: a function of the frame, nothing kept between frames), one
 //   curve and grade (the tone, TONE, and the night's grade, NIGHT, over it are off by default), then
-//   the grade's tables (GradeLut.ts, the identity until set). The curve maps each channel in the
+//   the grade's tables (GradeLut.ts: the first generated from the grade's parameters, `grade` and
+//   `setGrade`, the second the identity). The curve maps each channel in the
 //   space of ToneSpace.ts, AP1 with its red primary moved out, and the white balance is folded
 //   into its input matrix (`settings.white`, rebuilt only when it changes). The exposure is metered
 //   from the frame's light in the shaders (Exposure.ts: the key light and the sky's irradiance on
@@ -328,6 +329,11 @@ const toneCurve = Fn( ( [ c, input, output ]: [ V3, THREE.Node<'mat3'>, THREE.No
 	return clamp( output.mul( a.div( b ) ) as unknown as V3, 0, 1 );
 
 } ).setLayout( { name: 'toneCurve', type: 'vec3', inputs: [ { name: 'c', type: 'vec3' }, { name: 'input', type: 'mat3' }, { name: 'output', type: 'mat3' } ] } );
+// The same curve on one channel, on the CPU: grey keeps its channels equal through both matrices.
+const hill = ( v: number ) => ( v * ( v + 0.0245786 ) - 0.000090537 ) / ( v * ( v + 0.4329510 ) * 0.983729 + 0.238081 );
+// The exposed mid grey (0.18) as the curve shows it, in linear display values: the grade's contrast
+// pivots there (GradeLut.ts).
+const SHOWN_GREY = hill( 0.18 * ACES_EXPOSURE / 0.6 );
 
 export interface PipelineSettings {
 	// the clock's and the weather's exposure (DayCycle, Sky): the reference the night sky's own light
@@ -515,6 +521,8 @@ export class Pipeline {
 	/** The grade's two tables' base nodes (GradeLut.ts): a table of LUT_SIZE^3 set as a node's
 	 * `value` replaces it; `settings.lut` blends from the first to the second. */
 	readonly luts = lutNodes();
+	/** The first table's grade (GradeLut.ts): `setGrade` changes it and fills the table anew. */
+	readonly grade: GradeParams = gradeOf( {}, BASE_GRADE );
 	// the white the tone curve's input matrix was last built for
 	private toneWhite = [ NaN, NaN, NaN ];
 	private u = {
@@ -543,6 +551,7 @@ export class Pipeline {
 
 		this.renderer = renderer;
 		this.rain = rain;
+		fillGradeLut( this.grade, SHOWN_GREY, this.luts[ 0 ].value as THREE.Data3DTexture );
 		this.options = { ...DEFAULT_POST_OPTIONS, ...options };
 		this.settled.settle = ( temporal ?? QUALITY.high.taa ).restSettle;
 		const O = this.options;
@@ -1784,6 +1793,15 @@ export class Pipeline {
 		this.u.afterOn.value = frame.afterScene !== undefined ? 1 : 0;
 		this.u.layerOn.value = this.layerRuns( frame ) ? 1 : 0;
 		this.graph.execute( frame );
+
+	}
+
+	/** Sets `changes` over the first table's grade and fills the table anew (GradeLut.ts); the
+	 * caller raises the scene event (main.ts `setGrade`, the GUI's). */
+	setGrade( changes: GradeChanges = {} ): void {
+
+		mergeGrade( this.grade, changes );
+		fillGradeLut( this.grade, SHOWN_GREY, this.luts[ 0 ].value as THREE.Data3DTexture );
 
 	}
 

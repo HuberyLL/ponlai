@@ -124,7 +124,7 @@ export class GroundBounce {
 			const floorY = texture( fields.floor, at ).level( float( 0 ) ).r;
 			const beds = texture( fields.beds, at ).level( float( 0 ) ).rg;
 			const L = shared.sunDir;
-			const land = mix( TURF, RIM, smoothstep( - 1.5, 0, sd ) );
+			const land = mix( TURF.mul( shared.lawnGain ), RIM, smoothstep( - 1.5, 0, sd ) );
 			// the sea: the floor seen through the water column, down and back up
 			const depth = max( shared.waterLevel.sub( floorY ), 0 );
 			const floor = mix( mix( SAND, SEAGRASS, smoothstep( 0.3, 0.7, beds.x ) ), RUBBLE, smoothstep( 6.5, 0.5, sd ).mul( 0.5 ) );

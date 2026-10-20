@@ -244,7 +244,12 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   builds the display chain without its local tone mapping. The metered exposure is shifted by the
   GUI's `exposure offset (stops)` (Post folder), and its compensation's points are
   `src/post/Exposure.ts` `COMPENSATION`; `__PONLAI__.pipeline.meter()` reads the meter (EV,
-  compensation, exposure) on the CPU. `fgview=meadowShade` shows the shade's map.
+  compensation, exposure) on the CPU. The grade's first table is generated from parameters
+  (`src/post/GradeLut.ts`, `s.pipeline.grade`): the GUI's Grade table folder (in Post), or
+  `__PONLAI__.setGrade( { saturation: 1.1, shadows: { tint: [ 0.95, 1, 1.05 ] } } )` from a capture's
+  `::js` or a quick variant (the changes nested as the grade's own, set over it). The meadow's
+  albedo against its lawn colour: the GUI's `meadow albedo (x)` or `__PONLAI__.setLawnGain( k )`.
+  `fgview=meadowShade` shows the shade's map.
 - Under the temporal modes `flags.mv.camera` / `object` = false leave a source out of the motion
   vectors, `flags.jitter = false` the jitter, `s.taaCut( reason )` cuts the history and
   `s.motionCheck()` lists the materials whose motion vectors are missing or partial.

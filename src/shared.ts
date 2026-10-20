@@ -10,6 +10,9 @@ export const shared = {
 	wind: createWindUniforms(),
 	// the islanders' trail through the meadow (world/vegetation/Trample.ts)
 	trample: createTrampleUniforms(),
+	// the meadow's albedo against its lawn colour (materials/Meadow.ts LAWN): the blades', the turf's
+	// under them and the ground bounce's over the plateau (GroundBounce.ts), 1 the lawn as it is
+	lawnGain: uniform( 1 ),
 	rain: uniform( 0 ),
 	wetness: uniform( 0 ),
 	waterLevel: uniform( 0 ),

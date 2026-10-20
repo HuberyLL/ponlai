@@ -1545,7 +1545,7 @@ function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNod
 			const dense = smoothstepN( DENSE[ 0 ], DENSE[ 1 ], scaleY ).mul( ground2.w );
 			const below = float( 1 ).sub( t ).toVar();
 			const depth = float( 1 ).sub( dense.mul( 1 - ROOT_DARK ).mul( below.mul( below ).mul( below ) ) );
-			instanceColor.assign( input.color.mul( bend.pale ).mul( depth ) );
+			instanceColor.assign( input.color.mul( bend.pale ).mul( depth ).mul( shared.lawnGain ) );
 
 		},
 		sway: () => bend.lean.xz,
