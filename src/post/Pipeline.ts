@@ -311,7 +311,7 @@ type PassBuilder = Parameters<Parameters<FrameGraph<PipelineFrame>[ 'addPass' ]>
 // tidewater's display chain (PostFX.js, 4811ba4): its physical bloom (PhysicalBloom.ts) added to
 // the image; its grade in linear light (the vignette; its saturation and contrast are the grade
 // table's now, GradeLut.ts BASE_GRADE); a tone curve (at first Hill's ACES fit, now one fitted to
-// it: `toneCurve`) at tidewater's exposure setting (ACES_EXPOSURE, as its renderOutput), in the
+// it and softened: `toneCurve`) at tidewater's exposure setting (ACES_EXPOSURE, as its renderOutput), in the
 // curve space of ToneSpace.ts with the white balance folded into its input matrix, and the sRGB
 // transfer; its luminance-weighted grain, and a dither. tidewater meters its frame's luminance and
 // scales it by an auto exposure before the grade; here the exposure is metered from the light
@@ -328,16 +328,23 @@ const ACES_EXPOSURE = 0.55;
 // units, at least 0 after it; ours): b and c are solved with it included, so mid grey and white
 // stay where they are and the lift raises the shadows alone, as a flare lifts a print's blacks out
 // of the toe (a negative lift clips them instead).
-// TONE_CURVE is Hill's fit of the RRT and ODT, the curve the page drew with before, fitted through
-// the curve's matrices over colours of the scene's hues (grey, the meadow's greens, the sea's teal,
-// the sky's blue, a warm white, the flowers' red and blue) from 9 stops under mid grey to 4.5 over:
-// within 0.85 display levels of it, a mean of 0.25 (a fit on grey alone missed saturated colours,
-// whose weakest channel lies deep in the toe, by up to 3.8).
+// TONE_CURVE began as Hill's fit of the RRT and ODT, the curve the page drew with before, fitted
+// through the curve's matrices over colours of the scene's hues (grey, the meadow's greens, the
+// sea's teal, the sky's blue, a warm white, the flowers' red and blue) from 9 stops under mid grey
+// to 4.5 over: contrast 1.7057 and a toe lift of 0.0011 came within 0.85 display levels of it, a
+// mean of 0.25 (a fit on grey alone missed saturated colours, whose weakest channel lies deep in
+// the toe, by up to 3.8). The look softens it, with the lightened meadow (shared.ts lawnGain):
+// contrast 1.6 and a toe lift of 0.0161, which raise the shade (the meadow under the trees, the
+// cliff's shaded faces) by a few levels and leave mid grey and white where they were. The lift is
+// the day's: it fades to the fit's (FIT_TOE) as the night's grade comes in (`night`), because the
+// whole moonlit frame lies in the toe, where it greyed the sea and flattened the meadow (the
+// midnight sea half again as bright).
 const TONE_SPACE = toneMatrices();
 // the exposed mid grey (0.18) in the curve's input units
 const MID_IN = 0.18 * ACES_EXPOSURE / 0.6;
 export interface ToneCurve { contrast: number; shoulder: number; white: number; mid: number; toe: number }
-export const TONE_CURVE: Readonly<ToneCurve> = { contrast: 1.7057, shoulder: 0.96119, white: 11.073, mid: 0.09309, toe: 0.0011 };
+export const TONE_CURVE: Readonly<ToneCurve> = { contrast: 1.6, shoulder: 0.96119, white: 11.073, mid: 0.09309, toe: 0.0161 };
+const FIT_TOE = 0.0011;
 /** The curve's a, a d, b and c (see above). */
 function curveShape( { contrast: a, shoulder: d, white, mid, toe }: ToneCurve, target = new THREE.Vector4() ): THREE.Vector4 {
 
@@ -448,10 +455,10 @@ const NIGHT_TINT = ( () => {
 export const TIDEWATER_GRADE: Readonly<Pick<PipelineSettings, 'bloom' | 'vignette' | 'grain'>> = {
 	bloom: 0.05, vignette: 0.28, grain: 0.012,
 };
-// The white balance's default: tidewater's warmth (red up and blue down by 0.02), as the colour
-// white becomes. Its matrix takes white to ( 1.017, 0.997, 0.977 ), about tidewater's nudge at the
-// luminance kept.
-const WHITE: readonly [ number, number, number ] = [ 1.02, 1, 0.98 ];
+// The white balance's default, as the colour white becomes: a touch cool (red down 0.02, blue up
+// 0.03), set with the lightened meadow, which with tidewater's warmth before ( 1.02, 1, 0.98 )
+// read yellow and heavy beside the pale noon sky.
+const WHITE: readonly [ number, number, number ] = [ 0.98, 1, 1.03 ];
 
 // the key light's illuminance on level ground (the meter's, Exposure.ts)
 const keyIlluminance = ( sky: Sky ) => luminanceOf( sky.keyColor ) * Math.max( sky.keyDir.y, 0 );
@@ -1858,12 +1865,14 @@ export class Pipeline {
 			u.toneIn.value.copy( TONE_SPACE.input ).multiply( whiteBalance( S.white ) ).multiplyScalar( ACES_EXPOSURE / 0.6 );
 
 		}
-		const C = S.curve, key = `${ C.contrast } ${ C.shoulder } ${ C.white } ${ C.mid } ${ C.toe }`;
+		// (the day's toe lift, faded out by night: TONE_CURVE)
+		const C = S.curve, toe = C.toe + ( Math.min( C.toe, FIT_TOE ) - C.toe ) * S.night;
+		const key = `${ C.contrast } ${ C.shoulder } ${ C.white } ${ C.mid } ${ toe }`;
 		if ( key !== this.toneCurveKey ) {
 
 			this.toneCurveKey = key;
-			curveShape( C, u.toneShape.value );
-			u.toe.value = C.toe;
+			curveShape( { ...C, toe }, u.toneShape.value );
+			u.toe.value = toe;
 
 		}
 

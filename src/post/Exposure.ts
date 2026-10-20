@@ -31,7 +31,10 @@ type V3 = THREE.Node<'vec3'>;
 //   without the moon, the overcast noon and midnight. The meter lands with those frames as they
 //   were, within about a tenth of a stop (an overcast low sun, which the clock's exposure lifted to
 //   show a grey card near white, now shows darker), and the points are the look's knobs. The
-//   night's is a line of a stop per stop: the exposure holds by night, as the clock's did.
+//   night's is a line of a stop per stop: the exposure holds by night, as the clock's did. The
+//   day's then went a quarter stop down with the meadow's albedo doubled (shared.ts lawnGain): the
+//   lit meadow shows about a stop brighter than before, the sea and the sky a little darker (the
+//   sky's soft blue taken back up by the grade, GradeLut.ts BASE_GRADE).
 
 /** The meter's reference: the fair noon island view's illuminance (scene units) reads as EV 15. */
 export const METER = { reference: 0.564, ev: 15 } as const;
@@ -39,7 +42,7 @@ const CALIBRATION = 12.89;
 type Curve = readonly ( readonly [ number, number ] )[];
 /** The compensation by day and by night: [ EV, stops ] ascending, and the deck's stops. */
 export const COMPENSATION: { readonly day: { curve: Curve; deck: number }; readonly night: { curve: Curve; deck: number } } = {
-	day: { curve: [ [ 9.9, - 2.0 ], [ 10.85, - 1.45 ], [ 11.85, - 1.0 ], [ 12.8, - 0.65 ], [ 13.9, - 0.48 ], [ 14.8, - 0.2 ], [ 15, 0 ], [ 16, 0 ] ], deck: 1.18 },
+	day: { curve: [ [ 9.9, - 2.25 ], [ 10.85, - 1.7 ], [ 11.85, - 1.25 ], [ 12.8, - 0.9 ], [ 13.9, - 0.73 ], [ 14.8, - 0.45 ], [ 15, - 0.25 ], [ 16, - 0.25 ] ], deck: 1.18 },
 	night: { curve: [ [ 7.84, - 2.31 ], [ 9.84, - 0.31 ] ], deck: 1.62 },
 };
 

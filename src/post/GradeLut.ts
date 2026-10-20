@@ -93,8 +93,12 @@ export const NEUTRAL_GRADE: Readonly<GradeParams> = {
  * PostFX.js) moved into the table: 1.08 and 1.05 here came closest over the five views of the
  * kept weathers it was fitted on (the fair noon island, meadow and horizon, the golden hour and
  * the overcast island: a mean of 0.43 levels apart, 0.9 % of the pixels over 2 levels; a curve
- * after the tone curve cannot match one before it exactly). */
-export const BASE_GRADE: Readonly<GradeParams> = gradeOf( { saturation: 1.08, contrast: 1.05 } );
+ * after the tone curve cannot match one before it exactly). With the lightened meadow (shared.ts
+ * lawnGain) and the day's exposure a quarter stop down: the meadow's green turned 5 degrees toward
+ * yellow (a sunlit field's rather than a lawn's); the sky's soft blue a quarter stop up again
+ * (its band's chroma ceiling keeps the blue flowers out); the red flowers' chroma times 1.15, which
+ * the cooler white balance and the softer tone curve had cut by about a fifth (to a tenth now). */
+export const BASE_GRADE: Readonly<GradeParams> = gradeOf( { saturation: 1.08, contrast: 1.05, bands: { grass: { shift: - 5 }, sky: { value: 0.25 }, flowers: { saturation: 1.15 } } } );
 
 /** A grade of `NEUTRAL_GRADE`'s parameters with `changes` over them (a deep copy). */
 export function gradeOf( changes: GradeChanges, base: Readonly<GradeParams> = NEUTRAL_GRADE ): GradeParams {
