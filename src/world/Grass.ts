@@ -1947,7 +1947,8 @@ export interface GrassTufts { lawn: Tuft[]; lawnThin: Tuft[]; sward: number[]; f
 type TuftKind = 'lawn' | 'lawnThin';
 
 /** The tufts grown on the anchors `veg` (any of them: each anchor's tufts depend on that anchor
- * alone); `walkDistance` (m from a point to the islander's loop) keeps the flowers off the path;
+ * alone, but for a flower swath's species, which the whole land's swaths settle: FlowerSwaths
+ * `givenSpecies`); `walkDistance` (m from a point to the islander's loop) keeps the flowers off the path;
  * `shore` (the world's shore field) gives the soil's depth its coast term, as the ground reads it
  * (the anchor's own rim distance without it); `rimLip` (the worker's lip) gives the tufts near the
  * cliff's edge their edge records (`edgeTuftSteps`). */
