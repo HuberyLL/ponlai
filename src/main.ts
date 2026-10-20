@@ -1259,6 +1259,19 @@ const postF = gui.addFolder( 'Post' );
 postF.add( S, 'exposureOffset', - 3, 3, 0.05 ).name( 'exposure offset (stops)' );
 postF.add( S, 'bloom', 0, 0.3, 0.005 );
 postF.addColor( S, 'white' ).name( 'white balance' );
+{
+
+	// the tone curve (Pipeline.ts toneCurve): Lottes's contrast and shoulder, the input that shows
+	// white, what mid grey shows (linear) and the toe lift
+	const curveF = postF.addFolder( 'Tone curve' );
+	curveF.add( S.curve, 'contrast', 1, 2.5, 0.005 );
+	curveF.add( S.curve, 'shoulder', 0.85, 1.15, 0.001 );
+	curveF.add( S.curve, 'white', 2, 100, 0.1 ).name( 'white (input)' );
+	curveF.add( S.curve, 'mid', 0.04, 0.2, 0.0005 ).name( 'mid grey shown (linear)' );
+	curveF.add( S.curve, 'toe', - 0.01, 0.1, 0.0005 ).name( 'toe lift' );
+	curveF.close();
+
+}
 if ( pipeline.localTone ) {
 
 	// the local tone mapping (LocalTone.ts): the contrast above and below mid grey, the detail

@@ -655,7 +655,10 @@ comment where it is used.
   generated from parameters in Björn Ottosson's Oklab (*A perceptual color space for image
   processing*, 2020): its lightness, chroma and hue for the zones, the contrast curve and the hue
   bands (`src/post/GradeLut.ts`); the shadows / midtones / highlights split is an editor's colour
-  wheels'. Used as techniques only.
+  wheels'. Used as techniques only. The tone curve's family is Timothy Lottes's (*Advanced
+  Techniques and Optimization of HDR Color Pipelines*, GDC 2016): contrast, shoulder, white point
+  and mid grey, its two constants solved from them (`src/post/Pipeline.ts`); its toe lift and the
+  defaults fitted to Hill's curve are ours.
 - The volumetric haze after the same talk (Patry 2021, its atmospheric lighting and volumetric
   haze), in `src/weather/VolumetricHaze.ts`: a froxel grid over the whole view from 10 cm to
   100 km in slices each 20 % deeper than the last, a density made only of analytic, integrable

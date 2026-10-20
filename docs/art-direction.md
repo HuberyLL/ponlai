@@ -21,8 +21,9 @@ art decision changes; reference images stay out of the repository.
   the water): the scene is lit by the sun or moon, the sky and the sunlight the ground bounces up.
   The frame is developed in stages: a local tone mapping keeps a bright
   sea, glare or sky from burning out and greying while the land keeps its level (the brights drawn
-  a quarter toward mid grey, the shade left as it is, the detail kept); a filmic curve (ACES)
-  whose working space keeps a low sun's reds from turning yellow; a white balance given as the
+  a quarter toward mid grey, the shade left as it is, the detail kept); a filmic curve (for now
+  ACES's shape, its contrast, shoulder, white and toe adjustable) whose working space keeps a low
+  sun's reds from turning yellow; a white balance given as the
   colour white becomes (for now tidewater's slight warmth); a vignette and film grain; a faint
   physical bloom over the whole image; and two grade tables, generated from a grade's parameters,
   that a look can blend between by time of day or place (the first holds tidewater's touch more

@@ -310,31 +310,52 @@ type PassBuilder = Parameters<Parameters<FrameGraph<PipelineFrame>[ 'addPass' ]>
 
 // tidewater's display chain (PostFX.js, 4811ba4): its physical bloom (PhysicalBloom.ts) added to
 // the image; its grade in linear light (the vignette; its saturation and contrast are the grade
-// table's now, GradeLut.ts BASE_GRADE); Hill's
-// ACES fit at its exposure setting (ACES_EXPOSURE, as tidewater's renderOutput), in the curve space
-// of ToneSpace.ts with the white balance folded into its input matrix (`toneCurve`), and the sRGB
+// table's now, GradeLut.ts BASE_GRADE); a tone curve (at first Hill's ACES fit, now one fitted to
+// it: `toneCurve`) at tidewater's exposure setting (ACES_EXPOSURE, as its renderOutput), in the
+// curve space of ToneSpace.ts with the white balance folded into its input matrix, and the sRGB
 // transfer; its luminance-weighted grain, and a dither. tidewater meters its frame's luminance and
 // scales it by an auto exposure before the grade; here the exposure is metered from the light
 // (Exposure.ts), a function of the frame, so a paused frame repeats.
 const ACES_EXPOSURE = 0.55;
 
-// Hill's fit of the RRT and ODT, each channel through one curve in the curve's space: `input` takes
-// linear Rec.709 there (with the curve's exposure and the white balance), `output` brings it back
-// (ToneSpace.ts toneMatrices).
+// The tone curve, each channel through one curve in the curve's space: `input` takes linear Rec.709
+// there (with the curve's exposure and the white balance), `output` brings it back (ToneSpace.ts
+// toneMatrices, whose RRT and ODT saturation are Hill's). The curve is Timothy Lottes's ("Advanced
+// Techniques and Optimization of HDR Color Pipelines", GDC 2016), y = t^a / ( t^(a d) b + c ): its
+// contrast a (the slope of the shadows and midtones in log-log), its shoulder d, the input that
+// shows white (`white`) and what the exposed mid grey shows (`mid`, linear), b and c solved from
+// those two points (`curveShape`). t is the input plus a toe lift (`toe`, in the curve's input
+// units, at least 0 after it; ours): b and c are solved with it included, so mid grey and white
+// stay where they are and the lift raises the shadows alone, as a flare lifts a print's blacks out
+// of the toe (a negative lift clips them instead).
+// TONE_CURVE is Hill's fit of the RRT and ODT, the curve the page drew with before, fitted through
+// the curve's matrices over colours of the scene's hues (grey, the meadow's greens, the sea's teal,
+// the sky's blue, a warm white, the flowers' red and blue) from 9 stops under mid grey to 4.5 over:
+// within 0.85 display levels of it, a mean of 0.25 (a fit on grey alone missed saturated colours,
+// whose weakest channel lies deep in the toe, by up to 3.8).
 const TONE_SPACE = toneMatrices();
-const toneCurve = Fn( ( [ c, input, output ]: [ V3, THREE.Node<'mat3'>, THREE.Node<'mat3'> ] ) => {
+// the exposed mid grey (0.18) in the curve's input units
+const MID_IN = 0.18 * ACES_EXPOSURE / 0.6;
+export interface ToneCurve { contrast: number; shoulder: number; white: number; mid: number; toe: number }
+export const TONE_CURVE: Readonly<ToneCurve> = { contrast: 1.7057, shoulder: 0.96119, white: 11.073, mid: 0.09309, toe: 0.0011 };
+/** The curve's a, a d, b and c (see above). */
+function curveShape( { contrast: a, shoulder: d, white, mid, toe }: ToneCurve, target = new THREE.Vector4() ): THREE.Vector4 {
 
-	const v = ( input.mul( c ) as unknown as V3 ).toVar();
-	const a = v.mul( v.add( 0.0245786 ) ).sub( 0.000090537 );
-	const b = v.mul( v.add( 0.4329510 ).mul( 0.983729 ) ).add( 0.238081 );
-	return clamp( output.mul( a.div( b ) ) as unknown as V3, 0, 1 );
+	const ad = a * d, tm = MID_IN + toe, tw = white + toe;
+	const b = ( tm ** a / mid - tw ** a ) / ( tm ** ad - tw ** ad );
+	return target.set( a, ad, b, tw ** a - tw ** ad * b );
 
-} ).setLayout( { name: 'toneCurve', type: 'vec3', inputs: [ { name: 'c', type: 'vec3' }, { name: 'input', type: 'mat3' }, { name: 'output', type: 'mat3' } ] } );
-// The same curve on one channel, on the CPU: grey keeps its channels equal through both matrices.
-const hill = ( v: number ) => ( v * ( v + 0.0245786 ) - 0.000090537 ) / ( v * ( v + 0.4329510 ) * 0.983729 + 0.238081 );
-// The exposed mid grey (0.18) as the curve shows it, in linear display values: the grade's contrast
-// pivots there (GradeLut.ts).
-const SHOWN_GREY = hill( 0.18 * ACES_EXPOSURE / 0.6 );
+}
+const toneCurve = Fn( ( [ c, input, output, shape, toe ]: [ V3, THREE.Node<'mat3'>, THREE.Node<'mat3'>, V4, F ] ) => {
+
+	const t = max( ( input.mul( c ) as unknown as V3 ).add( toe ), vec3( 0 ) ).toVar();
+	const y = pow( t, vec3( shape.x ) ).div( pow( t, vec3( shape.y ) ).mul( shape.z ).add( shape.w ) );
+	return clamp( output.mul( y ) as unknown as V3, 0, 1 );
+
+} ).setLayout( { name: 'toneCurve', type: 'vec3', inputs: [ { name: 'c', type: 'vec3' }, { name: 'input', type: 'mat3' }, { name: 'output', type: 'mat3' }, { name: 'shape', type: 'vec4' }, { name: 'toe', type: 'float' } ] } );
+// The exposed mid grey as the default curve shows it, in linear display values: the grade's
+// contrast pivots there (GradeLut.ts).
+const SHOWN_GREY = TONE_CURVE.mid;
 
 export interface PipelineSettings {
 	// the clock's and the weather's exposure (DayCycle, Sky): the reference the night sky's own light
@@ -344,6 +365,8 @@ export interface PipelineSettings {
 	exposureOffset: number;
 	// the white balance: the colour white becomes, in linear Rec.709 (ToneSpace.ts whiteBalance)
 	white: [ number, number, number ];
+	// the tone curve's contrast, shoulder, white, mid grey and toe lift (`toneCurve`, TONE_CURVE)
+	curve: ToneCurve;
 	// the grade's two tables (GradeLut.ts, `Pipeline.luts`): 0 the first, 1 the second
 	lut: number;
 	// tidewater's grade: the bloom's strength, the vignette and the grain
@@ -440,7 +463,7 @@ export class Pipeline {
 	width = 1;
 	height = 1;
 	settings: PipelineSettings = {
-		exposure: DAY_EXPOSURE, exposureOffset: 0, white: [ ...WHITE ], lut: 0, ...TIDEWATER_GRADE, tone: TONE, night: 0, low: 0,
+		exposure: DAY_EXPOSURE, exposureOffset: 0, white: [ ...WHITE ], curve: { ...TONE_CURVE }, lut: 0, ...TIDEWATER_GRADE, tone: TONE, night: 0, low: 0,
 	};
 
 	// The canvas's size; larger than width x height while the frame is upscaled.
@@ -525,6 +548,8 @@ export class Pipeline {
 	readonly grade: GradeParams = gradeOf( {}, BASE_GRADE );
 	// the white the tone curve's input matrix was last built for
 	private toneWhite = [ NaN, NaN, NaN ];
+	// the tone curve the shape's uniform was last solved for
+	private toneCurveKey = '';
 	private u = {
 		// the meter's key light (its illuminance on level ground), the cloud deck's closure and the
 		// GUI's offset on the metered exposure (stops: Exposure.ts), and tidewater's grade
@@ -532,6 +557,8 @@ export class Pipeline {
 		vignette: uniform( 0.3 ), grain: uniform( 0.01 ), time: uniform( 0 ),
 		// the tone curve's input matrix (its exposure and the white balance in it) and output matrix
 		toneIn: uniform( new THREE.Matrix3() ), toneOut: uniform( TONE_SPACE.output ),
+		// the tone curve's a, a d, b and c, and its toe lift (`toneCurve`)
+		toneShape: uniform( curveShape( TONE_CURVE ) ), toe: uniform( TONE_CURVE.toe ),
 		// the blend toward the grade's second table
 		lut: uniform( 0 ),
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
@@ -948,7 +975,7 @@ export class Pipeline {
 			c.mulAssign( mix( vec3( 1 ), vec3( LOW_SUN_WARM ), u.low.mul( smoothstep( LOW_SUN.from, LOW_SUN.to, luminance( c ) ) ) ) );
 			c.assign( pow( max( c, vec3( 0 ) ).div( 0.18 ), vec3( float( 1 ).sub( u.tone.mul( 0.2 ) ) ) ).mul( 0.18 ) );
 			if ( vignette ) c.mulAssign( vignetteAt( FSR3 ? canvasSize : renderSize ) );
-			const t = ( toneCurve( c, u.toneIn, u.toneOut ) as V3 ).toVar();
+			const t = ( toneCurve( c, u.toneIn, u.toneOut, u.toneShape, u.toe ) as V3 ).toVar();
 			// the grade's tables, in display values (GradeLut.ts)
 			const shown = ( sRGBTransferOETF( t ) as V3 ).toVar();
 			const looked = mix( sampleLut( this.luts[ 0 ], shown ), sampleLut( this.luts[ 1 ], shown ), u.lut ).toVar();
@@ -1829,6 +1856,14 @@ export class Pipeline {
 
 			this.toneWhite = [ r, g, b ];
 			u.toneIn.value.copy( TONE_SPACE.input ).multiply( whiteBalance( S.white ) ).multiplyScalar( ACES_EXPOSURE / 0.6 );
+
+		}
+		const C = S.curve, key = `${ C.contrast } ${ C.shoulder } ${ C.white } ${ C.mid } ${ C.toe }`;
+		if ( key !== this.toneCurveKey ) {
+
+			this.toneCurveKey = key;
+			curveShape( C, u.toneShape.value );
+			u.toe.value = C.toe;
 
 		}
 
