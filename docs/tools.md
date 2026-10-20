@@ -147,7 +147,7 @@ Quality and look:
 
 - `quality` (low, medium, high: the tier of every knob in `src/Quality.ts`; without it high, the
   only active tier: medium and low are parked, see Parked quality tiers), `tier.<knob>=<value>`
-  overrides one knob for an A/B (e.g. `tier.post.fogScale=0.5`). The GPU timing that once chose
+  overrides one knob for an A/B (e.g. `tier.post.hazeGrid.width=128`). The GPU timing that once chose
   the tier (`src/QualityDetect.ts`, `autoQuality`) is parked with them.
 
 Rendering and A/B options, read at load (runtime switches for one-page A/Bs live in
@@ -198,8 +198,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 - `terrainHex=0` (the cliff's plain triplanar tiling and smooth layer masks; for an A/B inside one
   page each cliff material swaps to its other variant through `material.userData.terrainVariant`,
   as `TerrainMaterial.ts` shows: the flag itself is read only when the material is built).
-- `post=legacy` (or a comma list of `inline-composite`, `full-fog`, `no-bank`, `three-fsr`,
-  `store-scene`: the frame graph without the first performance round's changes).
+- `post=legacy` (or a comma list of `inline-composite`, `three-fsr`, `store-scene`: the frame graph without the first performance round's changes).
 - `shadowFilter=legacy|sl1|sl1,sl3` (the sun shadow's filter path).
 - `gpuTimer=off` (high's dynamic resolution without its timestamp queries: it then steers by the
   frame intervals).
@@ -226,7 +225,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   resolve kept, also what `post=store-scene` and `post=legacy` choose; `off`, three's own),
   `fgPrime=0` (the warm-up renders nothing ahead, see `src/post/graph/FrameGraph.ts`).
 - `fgview=<resource>[.<output>]` (debug builds: the frame graph's debug view draws one of its
-  resources over the canvas, shown by what it holds, e.g. `linearDepth`, `fogMarch.a`, `FSR.easu`;
+  resources over the canvas, shown by what it holds, e.g. `linearDepth`, `surfaceDepth`, `FSR.easu`;
   outputs `r` / `g` / `b` / `a`, `previous`, a depth's `sample<n>`; under the temporal modes also
   `class`, `reactive`, `reproject` and `reproject.diff`, views of the motion vectors, and the
   resolve's decisions: `weight` (the history's share of the resolved pixel, black: this frame
@@ -265,8 +264,13 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   neighbours' correlation, the gust field's size and travel, the sea's gusts against it around the
   island (`gust.sea`), the plants' wiring, their natural sway
   frequencies, and per weather where every part travels and how fast: the plants, the sea and its
-  swell, the open sea's gusts, the sea fog, the cumulus and the cirrus), through the probe as
+  swell, the open sea's gusts, the air's displacement (`fog`), the cumulus and the cirrus), through the probe as
   `--eval "return JSON.stringify( await P.windProbe() )"`.
+- The haze (`src/weather/VolumetricHaze.ts`): its knobs are the GUI's Haze folder and
+  `__PONLAI__.pipeline.air.settings` (read every frame; a change of the slices, the jitter or the
+  rest's length also restarts the shadow's rest); its
+  `debug: 1` shows the key light's visibility in the froxel at each pixel's depth (a grey card in
+  that light: mid grey lit, black shadowed), the shadow the shafts are cut from.
 - `look=kit` dresses the islanders in the earlier kit look (pointed ears, linen shirt, cel steps)
   instead of the feather-clad Hanming look (`src/characters/looks.ts`).
 - `islander` picks the islanders' proportions (the look's own by default: `real` for the Hanming
@@ -319,7 +323,9 @@ within a tolerance; the test mode keeps the byte-for-byte checks valid.
   The page's only history-dependent rendering effects are the temporal resolve (`aa=taa|taau|gt`,
   frozen by its rest image, `TemporalRest.ts`, and compared within the temporal tolerance), the
   states that settle on their own on a still scene (the clouds' view, the sky's bakes, the
-  refracted sun's map, the fog's bank), which `settled` waits for, and the wenyao's schools
+  refracted sun's map, the haze's shadow, which averages a fixed sequence of jitters from nothing
+  on a still scene and holds it: `src/weather/VolumetricHaze.ts`), which `settled` waits for, and
+  the wenyao's schools
   (`src/life/Wenyao.ts`), which step only with the scene clock's step from a layout the land gives:
   a page loaded paused never steps them, `establishScene` returns them to that layout and a Grow
   does too while they have not stepped, so the pause itself freezes them and they need no switch.

@@ -31,7 +31,7 @@ import { ffxFsr3UpscalerGetJitterPhaseCount } from './fsr3/Host.ts';
 // the scene at its centre plus `px`. The projection is shifted the other way in NDC (by `ndc`),
 // applied to the camera by `begin` and undone exactly by `end` (the graph's jitter hooks, around
 // the jittered passes that run). Everything outside the span sees the camera unjittered: the sky
-// and grass cull keys, the light shafts' sun position, the motion vectors (which are the motion
+// and grass cull keys, the haze's froxel grid, the light shafts' sun position, the motion vectors (which are the motion
 // of the unjittered views: the jitter is no motion). `debugFlags.jitter = false` renders without
 // it (the motion vectors' unit checks).
 //

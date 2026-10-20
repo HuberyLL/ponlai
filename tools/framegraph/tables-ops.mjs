@@ -14,14 +14,14 @@ const col = ( resource, load, store, resolve = null ) => ( { resource, load, sto
 const dep = ( resource, write, load, store ) => ( { resource, write, load, store } );
 const row = ( pass, colors, depth = null ) => ( { pass, colors, depth } );
 
-// every conditional pass but the upscale: the refraction, rain, fog with a bank bake, the light
+// every conditional pass but the upscale: the refraction, rain, the haze's shadow, the light
 // shafts
-const FULL = [ 'refractionReach', 'refractionMask', 'refraction', 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'output' ];
+const FULL = [ 'refractionReach', 'refractionMask', 'refraction', 'rain', 'hazeShadow', 'shaftsSource', 'shaftsRays', 'output' ];
 
 const POST = [
-	row( 'fogBank', [ col( 'fogBanks', 'clear', 'store' ) ] ),
-	row( 'fogDepth', [ col( 'fogNearestDepth', 'clear', 'store' ) ] ),
-	row( 'fogMarch', [ col( 'fogMarch', 'clear', 'store' ) ] ),
+	// the haze's kernels: no attachments, so no ops (their volumes are written through storage)
+	row( 'hazeShadow', [] ),
+	row( 'hazeLight', [] ),
 	row( 'shaftsSource', [ col( 'shafts.source', 'clear', 'store' ) ] ),
 	row( 'shaftsRays', [ col( 'shafts.rays', 'clear', 'store' ) ] ),
 	row( 'postConstants', [ col( 'postConstants', 'clear', 'store' ) ] ),
@@ -244,11 +244,11 @@ export const checks = [
 
 	} ],
 
-	[ 'derived ops: fog off, the sun away, refraction off, upscaling and msaa=1', () => {
+	[ 'derived ops: the haze\'s shadow held, the sun away, refraction off, upscaling and msaa=1', () => {
 
 		const c = compileToday();
 		const clear = c.ops( 'derived', c.maskOf( [ 'refractionReach', 'refractionMask', 'refraction', 'rain', 'output' ] ) );
-		assert.deepEqual( clear.running, [ 'meadowDepth', 'meadowDepthResolve', 'meadowShade', 'opaque', 'underwaterPyramid', 'refractionReach', 'refractionMask', 'refraction', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve', 'rain', 'postConstants', 'composite', ...BLOOM_PASSES, 'sharp', 'display', 'output' ] );
+		assert.deepEqual( clear.running, [ 'meadowDepth', 'meadowDepthResolve', 'meadowShade', 'opaque', 'underwaterPyramid', 'refractionReach', 'refractionMask', 'refraction', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve', 'rain', 'hazeLight', 'postConstants', 'composite', ...BLOOM_PASSES, 'sharp', 'display', 'output' ] );
 		assert.deepEqual( strip( clear ).slice( 0, 10 ), DERIVED_FULL.slice( 0, 10 ) );
 		// without the refraction the scene target's ops are the same (the water reads it optionally)
 		const dry = c.ops( 'derived', c.maskOf( [ 'rain', 'output' ] ) );
@@ -327,7 +327,7 @@ export const checks = [
 
 	} ],
 
-	[ 'derived ops, msaa 4: the scene target per rain on/off, direct and upscaled, refraction, fog and the shafts on or off', () => {
+	[ 'derived ops, msaa 4: the scene target per rain on/off, direct and upscaled, refraction, the haze\'s shadow and the shafts on or off', () => {
 
 		// the scene target's rows depend on the rain alone; every other attachment is stored but the
 		// vegetation's coverage, which nothing reads
@@ -342,7 +342,7 @@ export const checks = [
 			WET[ 0 ], WET[ 1 ],
 			row( 'water', [ col( 'sceneColor', 'load', 'discard', true ) ], dep( 'sceneDepth', true, 'load', 'store' ) ),
 		];
-		const variants = [ {}, { fsrPort: false }, { compositeOnce: false }, { fogScale: 1, bankSize: 0 } ];
+		const variants = [ {}, { fsrPort: false }, { compositeOnce: false }, { fsrPort: false, compositeOnce: false } ];
 		for ( const [ compile, options ] of [ compileToday, compilePipeline ].flatMap( ( f ) => variants.map( ( o ) => [ f, o ] ) ) ) {
 
 			const c = compile( options );
@@ -463,9 +463,9 @@ export const checks = [
 		assert.equal( opsModeFromURL( '' ), 'derived' );
 		assert.equal( opsModeFromURL( null ), 'derived' );
 		assert.equal( opsModeFromURL( '?post=store-scene' ), 'store' );
-		assert.equal( opsModeFromURL( '?post=full-fog,store-scene' ), 'store' );
+		assert.equal( opsModeFromURL( '?post=three-fsr,store-scene' ), 'store' );
 		assert.equal( opsModeFromURL( '?post=legacy' ), 'store', 'post=legacy includes store-scene' );
-		assert.equal( opsModeFromURL( '?post=full-fog' ), 'derived' );
+		assert.equal( opsModeFromURL( '?post=three-fsr' ), 'derived' );
 		assert.equal( opsModeFromURL( '?post=store-scene&fgOps=derived' ), 'derived', 'an explicit fgOps wins' );
 		assert.equal( opsModeFromURL( '?post=store-scene&fgOps=legacy' ), 'legacy' );
 		assert.equal( new AttachmentOps( mockWebGPU().Backend.prototype ).mode, 'derived', 'the default in a page without the option (node: no location)' );

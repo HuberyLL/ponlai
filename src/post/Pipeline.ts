@@ -12,7 +12,7 @@ import {
 	Loop, normalize, refract,
 } from 'three/tsl';
 import { fsr1 } from 'three/addons/tsl/display/FSR1Node.js';
-import { AerialPerspective, DEFAULT_AIR_OPTIONS, type AirOptions } from '../weather/AerialPerspective.ts';
+import { VolumetricHaze, DEFAULT_HAZE_GRID, type HazeFrame, type HazeGrid } from '../weather/VolumetricHaze.ts';
 import { LightShafts } from './LightShafts.ts';
 import { FSR } from './FSR.ts';
 import { PhysicalBloom } from './PhysicalBloom.ts';
@@ -27,6 +27,7 @@ import { Fsr3Upscaler } from './fsr3/Fsr3Upscaler.ts';
 import { QUALITY, type TemporalSettings } from '../Quality.ts';
 import { FrameGraph, type ResourceHandle, type SizeClass } from './graph/FrameGraph.ts';
 import type { Sky } from '../sky/Sky.ts';
+import type { SunShadow } from '../lighting/SunShadow.ts';
 import { DAY_EXPOSURE } from '../sky/DayCycle.ts';
 import type { Rain } from '../weather/Rain.ts';
 import { CLIP_MARGIN, RefractionView, REFRACTION_GUARD, REFRACTION_SIZE } from '../ocean/Refraction.ts';
@@ -55,12 +56,14 @@ import { meter, meteredExposure } from './Exposure.ts';
 //   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included)
 //   rain ── into sceneRT (its multisampled colour and depth are then discarded: nothing reads them;
 //     without rain the water discards the colour and the surface resolve's read keeps the depth)
-//   sea fog (in fog: the bank noise baked into a map, the march at half resolution)
+//   haze (weather/VolumetricHaze.ts): its froxel grid's shadow kernel (skipped while a rest holds it)
+//   and its light kernel, which integrates each column into the light volume
 //   light shafts: the open sky near the sun, the rays marched toward it (half resolution, while the
-//   sun faces the view)
-//   constants: what the composite takes that is the same for every pixel (the horizon's average,
-//   the sun disk's visibility), evaluated once into a texel
-//   composite (air, fog, rain veil, shafts) ── hdr, once (the veil after the resolve under taa, taau)
+//   sun faces the view): the crepuscular rays through the clouds' gaps until the haze reaches them
+//   constants: what the composite takes that is the same for every pixel (the sun disk's
+//   visibility), evaluated once into a texel
+//   composite (haze, rain veil, shafts and the sun's glare) ── hdr, once (the veil after the resolve
+//   under taa, taau)
 //   bloom: tidewater's physical bloom from hdr (PhysicalBloom.ts: five 13-tap downsamples, four tent
 //   upsamples)
 //   sharp (hdr + the bloom at its strength)
@@ -130,7 +133,7 @@ import { meter, meteredExposure } from './Exposure.ts';
 // veil is drawn after the resolve instead (AfterResolve.ts) and the composite writes, in place of
 // veilReactive, the air's transmittance (rainAir, R16F at the render's size), which it hands over:
 // the composite is affine in the scene colour at a pixel, hdr = A scene + B, so the streaks drawn
-// after the resolve take the air, fog and shafts of what lies behind them as they did drawn before
+// after the resolve take the haze and the shafts of what lies behind them as they did drawn before
 // the composite.
 // Every pass runs at the scene's render size or a share of it. When the canvas is larger (a quality
 // preset below the display's resolution), displayRT goes through FSR 1 (edge-adaptive upsampling,
@@ -143,24 +146,24 @@ import { meter, meteredExposure } from './Exposure.ts';
 // The graph runs the whole frame as passes that declare what they read and write: the scene half
 // (at 4x outside the temporal modes first the vegetation's depth, its resolve and the meadow's
 // shade, MeadowShade.ts; then opaque over that depth, the depth and copy resolves, water, the
-// surface resolve, rain), the sea fog (its bank
-// map, nearest depth and march), the light shafts' two passes, the composite's constants, the
+// surface resolve, rain), the haze's two kernels, the light shafts' two passes, the composite's
+// constants, the
 // composite, the bloom (PhysicalBloom.ts: a pass per level), the sharp image, the display pass,
 // and the canvas pass, or EASU and the sharpening canvas pass while upscaling. Every pass but the
 // scene passes and the canvas passes is a full-screen quad of its own, and no pass renders another
 // inside it (but three's FSR1Node, `post=three-fsr`, in its canvas pass). Each pass that runs only
-// now and then (rain, fog, the light shafts, either output) says when by a predicate the graph
-// evaluates at the frame's start. A pass whose output weighs nothing in what reads it (the shafts
-// without the sun toward the view) is skipped rather than drawn and multiplied by 0; its reader
-// reads it optionally and gets what it last held, finite, times 0. The `post=` legacy switches
-// are variants of the graph, chosen as it is built.
+// now and then (rain, the haze's shadow, the light shafts, either output) says when by a predicate
+// the graph evaluates at the frame's start. A pass whose output weighs nothing in what reads it (the
+// shafts without the sun toward the view) is skipped rather than drawn and multiplied by 0; its
+// reader reads it optionally and gets what it last held, finite, times 0. The
+// `post=` legacy switches are variants of the graph, chosen as it is built.
 // At startup the graph's warm-up (`graph.warm`, from main.ts) compiles every pass, so one that
-// first runs later (fog, the upscale) builds nothing then.
+// first runs later (the rain, the upscale) builds nothing then.
 
 //
 // Rules (the look itself is in docs/art-direction.md):
 // - Sizes are owned by the graph (graph/FrameGraph.ts): it sizes every target by its size class
-//   from `setSize` (the render; a share of it: the sea fog's reduced targets, the shafts' halves; the canvas: FSR's EASU target; fixed: the fog's bank map), and every pass reads
+//   from `setSize` (the render; a share of it: the shafts' halves, the bloom's levels; the canvas: FSR's EASU target; fixed: the haze's volumes), and every pass reads
 //   its sizes from the graph's shared extent uniforms (`graph.extent( cls )`, `graph.texel( cls )`
 //   for one over it), never from a copy of its own. Declare a new target on the graph with its
 //   class, and new post work as a pass of its own drawing into it, not as an rtt() inside another
@@ -174,7 +177,7 @@ import { meter, meteredExposure } from './Exposure.ts';
 //   binds from the scene target (colour, multisampled depth) must be declared (`read`,
 //   `readOptional`): an undeclared read of a discarded attachment shows garbage, and one between
 //   the water and the rain sees the scene without the sea.
-// - `render` is `graph.execute`: the sea fog's bank, depth and march and the
+// - `render` is `graph.execute`: the haze's kernels and the
 //   output and FSR passes are graph passes too (the `post=` switches choose which are declared at
 //   load), so new frame work goes in as a pass, not as a call around the graph. A pass that
 //   declares no depth clears whatever depth its target holds outside the graph (the canvas's, and
@@ -250,12 +253,17 @@ export interface PipelineFrame {
 	temporal?: TemporalFrame;
 	// the settled signal's per-frame inputs (Settled.ts; debug builds): left out, it is not observed
 	settle?: SettleFrame;
+	// the haze's rest inputs (VolumetricHaze.ts: the page's signature and stability); left out, the
+	// haze never rests
+	haze?: HazeFrame;
 }
 
 /** The frame graph's structural choices, fixed when the page loads (the quality tier sets them;
  * the defaults are today's high). `?post=legacy` restores the graph before they were introduced,
  * for A/B timing; `?post=` also takes a comma list of single switches (see `postOptionsFromURL`). */
-export interface PostOptions extends AirOptions {
+export interface PostOptions {
+	// the haze's froxel grid (VolumetricHaze.ts)
+	hazeGrid: HazeGrid;
 	// the composite evaluated once into a texture the bloom and the sharp image read (else each
 	// re-evaluates it)
 	compositeOnce: boolean;
@@ -268,13 +276,11 @@ export interface PostOptions extends AirOptions {
 }
 
 export const DEFAULT_POST_OPTIONS: Readonly<PostOptions> = {
-	...DEFAULT_AIR_OPTIONS, compositeOnce: true, fsrPort: true, discardScene: true,
+	hazeGrid: DEFAULT_HAZE_GRID, compositeOnce: true, fsrPort: true, discardScene: true,
 };
 
 const LEGACY_SWITCHES: Record<string, Partial<PostOptions>> = {
 	'inline-composite': { compositeOnce: false },
-	'full-fog': { fogScale: 1 },
-	'no-bank': { bankSize: 0 },
 	'three-fsr': { fsrPort: false },
 	'store-scene': { discardScene: false },
 };
@@ -462,7 +468,7 @@ export class Pipeline {
 		hdr: ResourceHandle | null; sharp: ResourceHandle; display: ResourceHandle;
 		easu: ResourceHandle | null; canvas: ResourceHandle;
 	};
-	readonly air: AerialPerspective;
+	readonly air: VolumetricHaze;
 	readonly shafts = new LightShafts();
 	readonly options: Readonly<PostOptions>;
 	/** The temporal modes' resolve (null under msaa and off, and with `taaResolve=off`). */
@@ -488,7 +494,7 @@ export class Pipeline {
 	private upscaledOutput: THREE.RenderPipeline | null = null;
 	private upscaledOutputThree: THREE.RenderPipeline | null = null;
 	private fsr: FSR | null = null;
-	// the composite of the air, fog, rain veil and shafts over the scene, into hdr (the
+	// the composite of the haze, the rain veil and the shafts over the scene, into hdr (the
 	// compositeOnce option)
 	private compositeQuad: THREE.QuadMesh | null = null;
 	// the composite's per-frame constants, into a texel (`postConstants`)
@@ -533,14 +539,14 @@ export class Pipeline {
 
 
 	/** `temporal`: the tier's resolve settings (Quality.ts `taa`), for the temporal modes. */
-	constructor( renderer: THREE.WebGPURenderer, private readonly sky: Sky, rain?: Rain, options: Partial<PostOptions> = postOptionsFromURL(), temporal?: TemporalSettings ) {
+	constructor( renderer: THREE.WebGPURenderer, private readonly sky: Sky, sunShadow: SunShadow, rain?: Rain, options: Partial<PostOptions> = postOptionsFromURL(), temporal?: TemporalSettings ) {
 
 		this.renderer = renderer;
 		this.rain = rain;
 		this.options = { ...DEFAULT_POST_OPTIONS, ...options };
 		this.settled.settle = ( temporal ?? QUALITY.high.taa ).restSettle;
 		const O = this.options;
-		this.air = new AerialPerspective( O );
+		this.air = new VolumetricHaze( sunShadow, sky.atmosphere, O.hazeGrid );
 		// The scene's target: half-float colour and float depth at the scene's sample count, then
 		// the resolves the water and the post passes read (single-sampled).
 		const g = this.graph = new FrameGraph<PipelineFrame>( renderer, { sceneSamples: SCENE_SAMPLES, legacyDiscard: O.discardScene ? [ 'rain' ] : [], dev: DEV, prime: PRIME } );
@@ -838,23 +844,22 @@ export class Pipeline {
 		// where the veil is drawn, the air's transmittance)
 		const veil = rain && ! AFTER_RESOLVE ? ( d: V3, distance: F, background: V3 ) => rain.veil( d, distance, background ) : undefined;
 		// What the composite takes that is the same for every pixel of a frame, evaluated once into
-		// a texel by a pass of its own and loaded there: the horizon's average colour the air takes
-		// looking down (rgb: four panorama samples) and the sun disk's unobstructed fraction for the
+		// a texel by a pass of its own and loaded there: the sun disk's unobstructed fraction for the
 		// glare (a: five samples of the shafts' source). In full float, so the composite gets exactly
-		// the values it computed itself.
+		// the value it computed itself.
 		const constants = this.constants.output = g.color( 'postConstants', { size: { of: 'fixed', width: 1, height: 1 }, format: THREE.RGBAFormat, type: THREE.FloatType } );
 		const constant = textureLoad( texture( g.texture( constants ) ), ivec2( 0 ) ) as unknown as THREE.Node<'vec4'>;
-		const aired = this.air.apply( sceneTex.rgb, tSurfaceDepth, sky, g, rainAir ? ( _d, _distance, background, transmittance ) => vec4( background, transmittance ) : veil, constant.rgb );
+		const aired = this.air.apply( sceneTex.rgb, tSurfaceDepth, sky, g, rainAir ? ( _d, _distance, background, transmittance ) => vec4( background, transmittance ) : veil );
 		const shafts = this.shafts.build( tSurfaceDepth, sky, g, constant.a );
 		const constantsMat = new THREE.NodeMaterial();
 		constantsMat.name = 'Post.Constants';
-		constantsMat.fragmentNode = vec4( this.air.around( sky ), this.shafts.visibility() );
+		constantsMat.fragmentNode = vec4( 0, 0, 0, this.shafts.visibility() );
 		this.constants.quad = new THREE.QuadMesh( constantsMat );
 		this.constants.quad.name = 'Post.Constants';
 		const composited = aired.rgb.add( shafts );
 		// Rendered once (the composite pass, into hdr), the composite feeds the sharp image and both
-		// blooms' high passes; as an expression each of them evaluated it again, the sea fog's march
-		// included. The high passes run at half resolution and sample it bilinearly, as they sampled
+		// blooms' high passes; as an expression each of them evaluated it again, the haze's
+		// tricubic lookups included. The high passes run at half resolution and sample it bilinearly, as they sampled
 		// the scene colour before.
 		let tHdr: THREE.TextureNode | null = null;
 		if ( hdr ) {
@@ -867,7 +872,7 @@ export class Pipeline {
 				: vec4( composited, 1 );
 			// After the resolve the air's transmittance instead, the second target: the composite is
 			// affine in the scene colour at a pixel, hdr = A scene + B (A the transmittance, B the light
-			// the air, fog and shafts add), so a streak drawn after the resolve takes the air of what
+			// the haze and the shafts add), so a streak drawn after the resolve takes the air of what
 			// lies behind it as it would have here (AfterResolve.ts).
 			if ( rainAir ) compositeMat.fragmentNode = outputStruct( vec4( composited, 1 ), vec4( aired.a ) );
 			this.compositeQuad = new THREE.QuadMesh( compositeMat );
@@ -1018,7 +1023,7 @@ export class Pipeline {
 		const tAfterDisplay = texture( tDisplay );
 		// What the layer reads at a render texel, drawn by a pass of its own at the render's size while
 		// it runs (`rainInput`): the grade's input there (as the display pass has it: `diffused`) and
-		// the air's transmittance (A), in `rainInput`; and the light the air, fog and shafts add (B,
+		// the air's transmittance (A), in `rainInput`; and the light the haze and the shafts add (B,
 		// the grade's input less A times the scene), in `rainBehind`. Evaluated per canvas pixel instead
 		// (six or more of them read each texel), they took a fifth of the layer's time.
 		const tRainInput = rainInput ? texture( g.texture( rainInput ) ) : null;
@@ -1173,8 +1178,8 @@ export class Pipeline {
 			// The jitter shifts the camera's projection through the scene half (the graph's jittered
 			// span) and is undone after it; the post passes reconstruct positions with the inverse
 			// the frame was drawn with, set once the jitter is on (Jitter.ts): the composite's own, the
-			// air's rays (its fog march and composite) and the shafts' (only the sun's position on
-			// screen stays unjittered, from `update`).
+			// haze's rays (its composite: the froxel grid itself stays unjittered) and the shafts' (only
+			// the sun's position on screen stays unjittered, from `update`).
 			jitter.mode = AA_MODE === 'taau' ? 'taau' : FSR3 ? 'fsr3' : 'taa';
 			g.hooks.jitterBegin = ( f ) => {
 
@@ -1313,16 +1318,14 @@ export class Pipeline {
 			} );
 
 		}
-		// the sea fog: its bank map when due, the nearest depth and the reduced march (only while
-		// there is fog; the composite reads what they last drew)
-		const fogReads = this.air.passes( g, surfaceDepth );
+		// the haze: its shadow (skipped while a rest holds it) and its light volume
+		const hazeReads = this.air.passes( g );
 		let { hdr, sharp, display, easu, canvas, veilReactive, rainAir } = this.resources;
 		// the light shafts: the open sky near the sun, and the rays marched over it (while the sun is
 		// toward the view: the composite weighs them by `facing`, 0 otherwise)
 		const shaftReads = this.shafts.passes( g, surfaceDepth );
-		// the composite's per-frame constants, into a texel: the horizon's average and the sun disk's
-		// visibility (from the shafts' source, skipped with the shafts, when the composite weighs
-		// the glare by 0)
+		// the composite's per-frame constants, into a texel: the sun disk's visibility (from the
+		// shafts' source, skipped with the shafts, when the composite weighs the glare by 0)
 		let constants = this.constants.output;
 		const constantsQuad = this.constants.quad;
 		g.addPass( 'postConstants', 'quad', ( b ) => {
@@ -1333,18 +1336,17 @@ export class Pipeline {
 
 		} );
 		// what the composite reads: the scene (after the rain, which may be skipped), the nearest
-		// surface's depth, the sea fog (its passes run only in fog), the light shafts and the
-		// constants
+		// surface's depth, the haze's light, the light shafts and the constants
 		const compositeReads = ( b: PassBuilder ) => {
 
 			b.readOptional( sceneColor );
 			b.read( surfaceDepth );
-			for ( const h of fogReads ) b.readOptional( h );
+			for ( const h of hazeReads ) b.read( h );
 			for ( const h of shaftReads ) b.readOptional( h );
 			b.read( constants );
 
 		};
-		// the composite of the air, fog, veil and shafts, rendered once
+		// the composite of the haze, the veil and the shafts, rendered once
 		const compositeQuad = this.compositeQuad;
 		if ( hdr && compositeQuad ) g.addPass( 'composite', 'quad', ( b ) => {
 
@@ -1661,7 +1663,7 @@ export class Pipeline {
 		this.temporal?.beforeResize( { render: { width: w, height: h }, canvas: { width: outputWidth, height: outputHeight } } );
 		this.width = w; this.height = h;
 		this.outputWidth = Math.max( outputWidth, w ); this.outputHeight = Math.max( outputHeight, h );
-		// every target by its size class (the reduced fog's, the fixed bank map's, the upscale's at
+		// every target by its size class (the bloom's levels, the fixed constants', the upscale's at
 		// the canvas), the extent uniforms the passes read their sizes from, and the chain's own
 		// passes through their resize hook
 		this.graph.setExtents( { render: { width: w, height: h }, canvas: { width: outputWidth, height: outputHeight } } );
@@ -1775,9 +1777,9 @@ export class Pipeline {
 
 		}
 		if ( frame.settle ) this.settled.observe( camera, this.width, this.height, this.outputWidth, this.outputHeight, frame.time, frame.settle, this.resolver?.rest ?? null );
-		this.air.update( camera );
-		this.shafts.update( camera as THREE.PerspectiveCamera, this.air.haze.value, this.air.fogTransmittance( camera.position.y, this.shafts.sunDirection ),
-			TEMPORAL ? jitter.uniforms.unjitteredProjection.value : camera.projectionMatrix );
+		const projection = TEMPORAL ? jitter.uniforms.unjitteredProjection.value : camera.projectionMatrix;
+		this.air.update( camera, projection, this.width, this.height, this.outputWidth, this.outputHeight, frame.haze ?? { time: frame.time, signature: [], stable: false } );
+		this.shafts.update( camera as THREE.PerspectiveCamera, this.air.haze.value, this.air.transmittance( camera.position.y, this.shafts.sunDirection ), projection );
 		this.updateDisplay( frame );
 		this.u.afterOn.value = frame.afterScene !== undefined ? 1 : 0;
 		this.u.layerOn.value = this.layerRuns( frame ) ? 1 : 0;

@@ -16,6 +16,11 @@ const HALF: SizeClass = { of: 'render', scale: 0.5, min: 1 };
 
 /** Crepuscular rays (the Tyndall effect in hazy air) and the sun's glare.
  *
+ * The rays are the screen-space stand-in for what the volumetric haze (weather/VolumetricHaze.ts)
+ * cannot show yet: the beams through the clouds' gaps over the sky, which the haze leaves to the
+ * atmosphere and whose clouds' shadow map reaches 12 km. The haze shows the shafts every caster
+ * cuts out of the air over the land and the sea.
+ *
  * Light scattered by haze shows the shadows clouds and the island cast through the air as
  * beams converging on the sun. In screen space they are the visible sky around the sun, with
  * cloud and island silhouettes, blurred radially toward the sun's position (after Mitchell,
@@ -203,7 +208,7 @@ export class LightShafts {
 
 	}
 
-	/** The frame's camera, haze and the fog's transmittance toward the sun. `projection`: the camera's
+	/** The frame's camera, haze and the haze's transmittance toward the sun. `projection`: the camera's
 	 * projection without the temporal modes' jitter (Jitter.ts), which the sun's position on screen
 	 * leaves out: a jittered sun would shake the rays' origin by a fraction of a pixel each frame
 	 * (default: the camera's own, unjittered outside the graph's jittered span). */

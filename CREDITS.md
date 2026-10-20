@@ -103,14 +103,11 @@ packages, into `dist/licenses/`.
     `src/world/terrain/TerrainShading.js` (the variation stretched down the two vertical projection
     planes, weighted by how squarely each faces the surface, and its 40 % darkening), ported from
     WGSL to TSL and turned into the paths that rain water takes down the cliffs while they are wet.
-  - `src/weather/AerialPerspective.ts`: the distant air from `src/post/AirHaze.js`, ported from WGSL
-    to TSL: two exponential height layers (a thin marine layer and a deeper aerosol layer, in its
-    proportions) with their optical depth integrated analytically along the view ray, the sky just
-    above the horizon in the view direction as the haze's light, and the key light's share of it
-    scattered through its Cornette-Shanks phase function near the camera. Its volumetric and
-    screen-space sun shafts were not ported (`src/post/LightShafts.ts` stays). The protected
-    foreground, the sea fog banks (marched, with bank-dependent heights and a clearing over the
-    island), their lighting and the morning mist are this project's.
+  - `src/weather/VolumetricHaze.ts`: from `src/post/AirHaze.js`, the haze's two exponential
+    height layers (a thin marine layer and a deeper aerosol layer, in its proportions and scale
+    heights) and its Cornette-Shanks phase function with a share of isotropic scattering. The
+    froxel volume they now fill, its lighting, its shadow and its composite are this project's
+    (after Patry: see Acknowledgements), as is the morning mist.
   - The celestial clock, geometric lunar phase and the star and Milky Way rendering are original
     code; the star catalogue and Milky Way map they draw are listed under Assets. (The lunar disk's
     shading and imagery are credited under three-geospatial, a-starry-sky and the CGI Moon Kit.) Weather blending,
@@ -649,6 +646,21 @@ comment where it is used.
   Processing with the Bilateral Grid* (SIGGRAPH 2007). The white balance's chromatic adaptation:
   the von Kries transform in K. M. Lam's Bradford cone space (1985). The curve itself is Stephen
   Hill's fit of ACES's RRT and ODT, as three.js's `acesFilmicToneMapping` has it.
+- The volumetric haze after the same talk (Patry 2021, its atmospheric lighting and volumetric
+  haze), in `src/weather/VolumetricHaze.ts`: a froxel grid over the whole view from 10 cm to
+  100 km in slices each 20 % deeper than the last, a density made only of analytic, integrable
+  height functions (exponential layers and a sigmoidal layer), the key light's shadow sampled at a
+  jittered point per froxel and filtered over frames (its share alone, not the light), Mie light
+  by the shadow and the rest by an ambient occlusion, the in-scattered light stored divided by its
+  opacity with the opacity recomputed exactly per pixel (density anti-aliasing), and a tricubic
+  B-spline lookup. Used as techniques only; the densities and the light's balance are our own.
+  The froxel volume itself: Bartlomiej Wronski, *Volumetric Fog: Unified Compute Shader-Based
+  Solution to Atmospheric Scattering* (SIGGRAPH 2014 Advances in Real-Time Rendering course), and
+  Michal Drobot, *Rendering of Call of Duty: Infinite Warfare* (Digital Dragons 2017).
+  The tricubic B-spline in eight trilinear taps: Christian Sigg and Markus Hadwiger, *Fast
+  Third-Order Texture Filtering* (GPU Gems 2, 2005). The jitter's per-froxel offset: Jorge
+  Jimenez's interleaved gradient noise (*Next Generation Post Processing in Call of Duty: Advanced
+  Warfare*, SIGGRAPH 2014).
 
 ## References
 

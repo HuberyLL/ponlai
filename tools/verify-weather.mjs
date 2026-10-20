@@ -143,7 +143,7 @@ try {
 			sharedColor: s.shared.sunColor.value.toArray(), sharedDir: s.shared.sunDir.value.toArray(),
 			skyIrradiance: sky.skyIrradiance.toArray(),
 			sunIntoWater: s.shared.sunIntoWater.value, muSun: s.shared.muSun.value,
-			displayedHaze: sky.weather.haze, haze: scalar( s.pipeline.air.haze ), clearEnd: scalar( s.pipeline.air.clearEnd ),
+			displayedHaze: sky.weather.haze, haze: scalar( s.pipeline.air.haze ),
 			exposure: s.pipeline.settings.exposure,
 			radiance: { finite, minimum, maximum },
 			memory: { ...s.renderer.info.memory }, diagnostics: { ...window.__THREE_GAME_DIAGNOSTICS__ },
@@ -174,7 +174,6 @@ try {
 		assert.ok( Number.isFinite( state.haze ) && state.haze >= 0, `${ label }: air haze` );
 		near( state.displayedHaze, state.weather.haze, 1e-8, `${ label }: displayed weather haze` );
 		near( state.haze, state.displayedHaze, 1e-8, `${ label }: pipeline haze follows displayed sky` );
-		assert.ok( Number.isFinite( state.clearEnd ) && state.clearEnd > 0, `${ label }: protected foreground distance` );
 		assert.ok( Number.isFinite( state.exposure ) && state.exposure > 0, `${ label }: exposure` );
 		assert.ok( Number.isFinite( state.sunIntoWater ) && state.sunIntoWater >= 0 && state.sunIntoWater <= 1, `${ label }: water transmission` );
 		assert.ok( Number.isFinite( state.muSun ) && state.muSun > 0 && state.muSun <= 1, `${ label }: refracted light elevation` );

@@ -47,8 +47,8 @@ import type { Bounds } from '../world/WorldShapes.ts';
 // travels, as angles and speeds: the vegetation's wind, the weather's heading, the sea and its
 // swell (the FFT's headings: the wind sea's turns with the weather, the swell's stays on the
 // prevailing heading plus its offset), the open sea's gusts (SeaDetail.ts: the air's displacement times
-// OPEN_DRIFT; around the island they are the meadow's, `gust.sea`), the sea fog (the air's
-// displacement), the cumulus (their weather map
+// OPEN_DRIFT; around the island they are the meadow's, `gust.sea`), the air's displacement
+// (`fog`: what drifts with the surface wind), the cumulus (their weather map
 // and shape noise drift together; `evolve` moves the shape vertically, in place) and the cirrus,
 // each by minus the change of its sampling offset (Clouds.ts `layerOffsets`). The drifts are
 // read off the page across a seek of 1 s (`setTime`), so they are the page's own, and every gap is

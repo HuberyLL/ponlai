@@ -37,8 +37,17 @@ art decision changes; reference images stay out of the repository.
   a shaded clump within a quarter of a lit one's brightness (in a clear day's real light the
   shade holds a third to an eighth of it) and the meadow read as lit by an overcast sky. The
   frame's brightness comes from the exposure, which keeps the ratio between light and shade.
-- No thick haze or fog laid evenly over the frame for an airy feel: it reads as smog. Mist, if
-  any, gathers in bright banks round the island and the cliff's foot.
+- The air is a lit medium, a volumetric haze: haze and mist are one
+  volume of air, lit by the sun and the sky and cut by every shadow, thin and layered by height,
+  never a flat tint laid over the frame for an airy feel (that reads as smog). Its density follows
+  what the weather lets one see (an overcast sea sees about 10 km; the morning mist, about 3 km,
+  lies at the cliff's foot), so from the game's views the island and the teal sea keep their colour
+  and the haze gathers with distance toward the horizon. It lies over the land and the sea, not
+  over the sky, which keeps the atmosphere's own haze: laid over the sky as well it whitened it
+  toward a low sun and took the clouds' contrast. Shafts show where the air is thick enough and lit
+  from the side or behind against darker ground; the rays through the clouds' gaps are drawn over
+  the sky with the sun in view. Mist also gathers in bright banks and wisps round the island and
+  the cliff's foot (not drawn yet).
 - Real phenomena are not exaggerated; no hue turns, no glow round every highlight.
 - The exposure is metered from the light the island receives (the sun or the moon and the sky),
   not from the frame, so a dark meadow or sea is not brightened toward grey; a compensation by
@@ -292,9 +301,12 @@ art decision changes; reference images stay out of the repository.
   sun and moon are drawn at twice their true size. The day cycle is authored, not astronomical.
 - The sunlit ground lights what stands over it from below, one bounce for every lit surface: the
   shallows' sand the cliff's walls, the meadow the islanders' undersides; strongest around midday.
-- Bad weather dims and desaturates the existing light; it never adds a grey screen veil, and it
-  stays dimmer and greyer than a clear day. Distant air leaves the island's foreground clear as
-  the view pulls back. Sea fog is a low layer that may surround the island, never a uniform tint.
+- Bad weather dims and desaturates the existing light and thickens the air as its visibility
+  falls; the haze it adds is the air's own, lit and shaded like the rest of the scene, never a grey
+  screen veil, and it stays dimmer and greyer than a clear day. The haze starts at the camera, as
+  air does, yet from the game's views the island's foreground stays clear (a few percent of veil
+  from 45 to 190 m). Sea fog is a low layer at the cliff's foot that may surround the island,
+  never a uniform tint.
 - Weather changes sweep the sky as a front from upwind. The clouds drift downwind with the wind
   aloft, faster than the surface wind (the cumulus about twice it, the cirrus about three times,
   along their fibres), so they never move against the grass and the sea.

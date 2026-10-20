@@ -9,22 +9,20 @@
 import assert from 'node:assert/strict';
 import { GraphDecl, compileGraph } from '../../src/post/graph/GraphCompiler.ts';
 import { FrameGraph } from '../../src/post/graph/FrameGraph.ts';
-import { BLOOM_PASSES, REFRACTION, declareBloomPasses, declareBloomTargets } from './tables-passes.mjs';
+import { BLOOM_PASSES, HALF, HAZE, REFRACTION, declareBloomPasses, declareBloomTargets, declareHazePasses, declareShaftPasses } from './tables-passes.mjs';
 
 const RENDER = { of: 'render' };
 const CANVAS = { of: 'canvas' };
-const HALF = { of: 'render', scale: 0.5, min: 1 };
 
 /** The graph Pipeline declares under the temporal modes (its constructor, declareTemporalScene and
- * declareRefraction, the post passes of declarePasses, AerialPerspective, LightShafts and
+ * declareRefraction, the post passes of declarePasses, VolumetricHaze, LightShafts and
  * PhysicalBloom; the canvas passes msaa's), for the post options of a variant as tables-passes.mjs's
  * declarePipeline takes them. `debugView`: a resource name the
  * debug view keeps (its pass is left out). */
 export function declarePipelineTemporal( options = {} ) {
 
-	const o = { fogScale: 0.5, bankSize: 2048, fsrPort: true, compositeOnce: true, debugView: null, ...options };
+	const o = { fsrPort: true, compositeOnce: true, debugView: null, ...options };
 	const g = new GraphDecl();
-	const k = Math.round( 1 / o.fogScale );
 	const h = {};
 	// Pipeline's constructor (the scene's sample count is 1: 'scene' resolves to it)
 	h.sceneColor = g.color( 'sceneColor', { size: RENDER, format: 'RGBA', type: 'HalfFloat', samples: 'scene' } );
@@ -44,13 +42,10 @@ export function declarePipelineTemporal( options = {} ) {
 	if ( o.fsrPort ) h.easu = g.color( 'FSR.easu', { size: CANVAS, format: 'RGBA', type: 'HalfFloat' } );
 	h.canvas = g.import( 'canvas', { size: CANVAS }, true );
 	h.constants = g.color( 'postConstants', { size: { of: 'fixed', width: 1, height: 1 }, format: 'RGBA', type: 'Float' } );
-	if ( o.bankSize > 0 ) h.fogBanks = g.color( 'fogBanks', { size: { of: 'fixed', width: o.bankSize, height: o.bankSize }, format: 'Red', type: 'HalfFloat' }, true );
-	if ( o.fogScale < 1 ) {
-
-		h.fogNearestDepth = g.color( 'fogNearestDepth', { size: { of: 'render', divisor: k }, format: 'Red', type: 'Float' } );
-		h.fogMarch = g.color( 'fogMarch', { size: { of: 'render', divisor: k }, format: 'RGBA', type: 'HalfFloat' } );
-
-	}
+	// VolumetricHaze.apply: its volumes imported
+	h.hazeVisibility = g.import( 'haze.visibility', { size: HAZE, format: 'RGBA', type: 'HalfFloat', samples: 1 } );
+	h.hazeLight = g.import( 'haze.light', { size: HAZE, format: 'RGBA', type: 'HalfFloat', samples: 1 } );
+	// LightShafts.build
 	h.shaftsSource = g.color( 'shafts.source', { size: HALF, format: 'RGBA', type: 'HalfFloat' } );
 	h.shaftsRays = g.color( 'shafts.rays', { size: HALF, format: 'RGBA', type: 'HalfFloat' } );
 	h.bloom = declareBloomTargets( g );
@@ -113,32 +108,17 @@ export function declarePipelineTemporal( options = {} ) {
 
 	} );
 	g.copyToPersistent( h.surfaceDepth, h.surfaceDepthPrev );
-	// the post passes, as under msaa (declarePasses, AerialPerspective.passes, LightShafts.passes)
+	// the post passes, as under msaa (VolumetricHaze.passes, then declarePasses', LightShafts.passes
+	// first)
+	const hazeReads = declareHazePasses( g, h );
 	const FOG = 'composite (air, fog, veil)';
-	if ( h.fogBanks ) g.addPass( 'fogBank', 'quad', ( b ) => ( h.fogBanks = b.write( h.fogBanks ), { label: FOG, when: () => true, whenLabel: 'fog && bankDue' } ) );
-	if ( h.fogMarch ) {
-
-		g.addPass( 'fogDepth', 'quad', ( b ) => ( b.read( h.surfaceDepth ), h.fogNearestDepth = b.write( h.fogNearestDepth ), { label: FOG, when: () => true, whenLabel: 'fog' } ) );
-		g.addPass( 'fogMarch', 'quad', ( b ) => {
-
-			b.readOptional( h.fogNearestDepth );
-			if ( h.fogBanks ) b.readOptional( h.fogBanks );
-			h.fogMarch = b.write( h.fogMarch );
-			return { label: FOG, when: () => true, whenLabel: 'fog' };
-
-		} );
-
-	}
-	const fogReads = [ h.fogMarch, h.fogNearestDepth, h.fogBanks ].filter( Boolean );
-	const shaftReads = [];
-	g.addPass( 'shaftsSource', 'quad', ( b ) => ( b.read( h.surfaceDepth ), shaftReads[ 0 ] = b.write( h.shaftsSource ), { label: 'light shafts', when: () => true, whenLabel: 'facing > 0' } ) );
-	g.addPass( 'shaftsRays', 'quad', ( b ) => ( b.readOptional( shaftReads[ 0 ] ), shaftReads[ 1 ] = b.write( h.shaftsRays ), { label: 'light shafts', when: () => true, whenLabel: 'facing > 0' } ) );
+	const shaftReads = declareShaftPasses( g, h );
 	g.addPass( 'postConstants', 'quad', ( b ) => ( b.readOptional( shaftReads[ 0 ] ), h.constants = b.write( h.constants ), { label: FOG } ) );
 	const compositeReads = ( b ) => {
 
 		b.readOptional( h.sceneColor );
 		b.read( h.surfaceDepth );
-		for ( const x of fogReads ) b.readOptional( x );
+		for ( const x of hazeReads ) b.read( x );
 		for ( const x of shaftReads ) b.readOptional( x );
 		b.read( h.constants );
 
@@ -196,13 +176,15 @@ export const TEMPORAL_SCENE = [
 	{ name: 'surfaceResolve', kind: 'quad', label: 'depth & copy resolves', when: null, jittered: true, writes: [ w( 'surfaceDepth', R, 'Red', 'Float' ) ], depth: null, target: 'surfaceDepth|-' },
 	{ name: 'overlay', kind: 'scene', label: 'overlay', when: 'rain || spray', jittered: true, writes: SCENE, depth: DEPTH( false ), target: 'sceneColor+velocity|sceneDepth' },
 ];
-const POST = [ 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'postConstants', 'composite', ...BLOOM_PASSES, 'sharp', 'display', 'output', 'easu', 'upscaledOutput' ];
+const POST = [ 'hazeShadow', 'hazeLight', 'shaftsSource', 'shaftsRays', 'postConstants', 'composite', ...BLOOM_PASSES, 'sharp', 'display', 'output', 'easu', 'upscaledOutput' ];
 const READS = {
 	opaque: [], underwaterPyramid: [ 'sceneColor@1:sample', 'sceneDepth@1:samples' ], refractionReach: [ 'sceneDepth@1:samples', 'underwater@1:sample' ], refractionMask: [ 'underwater@1:sample', 'refractionReach@1:sample?' ], refraction: [],
 	depthResolve: [ 'sceneDepth@1:samples' ], opaqueCopy: [ 'sceneColor@1:sample' ],
 	water: [ 'opaqueColor@1:sample', 'linearDepth@1:sample', 'underwater@1:sample', 'refraction@2:sample?', 'refractionDepth@2:sample?' ], surfaceResolve: [ 'sceneDepth@2:samples' ],
 	overlay: [ 'linearDepth@1:sample', 'surfaceDepth@1:sample' ],
-	composite: [ 'sceneColor@3:sample?', 'surfaceDepth@1:sample', 'fogMarch@1:sample?', 'fogNearestDepth@1:sample?', 'fogBanks@1:sample?', 'shafts.source@1:sample?', 'shafts.rays@1:sample?', 'postConstants@1:sample' ],
+	hazeShadow: [], hazeLight: [ 'haze.visibility@1:sample?' ],
+	shaftsSource: [ 'surfaceDepth@1:sample' ], shaftsRays: [ 'shafts.source@1:sample?' ], postConstants: [ 'shafts.source@1:sample?' ],
+	composite: [ 'sceneColor@3:sample?', 'surfaceDepth@1:sample', 'haze.light@1:sample', 'shafts.source@1:sample?', 'shafts.rays@1:sample?', 'postConstants@1:sample' ],
 };
 
 const col = ( resource, load, store, resolve = null ) => ( { resource, load, store, resolve } );
@@ -213,8 +195,9 @@ const opsOf = ( t, pass ) => {
 	return p && { colors: p.colors, depth: p.depth, rewrite: p.rewrite };
 
 };
-// every conditional pass of a frame with the refraction, fog and the light shafts, drawn directly
-const BASE = [ 'refractionReach', 'refractionMask', 'refraction', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'output' ];
+// every conditional pass of a frame with the refraction, the haze's shadow and the light shafts,
+// drawn directly
+const BASE = [ 'refractionReach', 'refractionMask', 'refraction', 'hazeShadow', 'shaftsSource', 'shaftsRays', 'output' ];
 
 // a CPU mock of what FrameGraph calls on three's renderer (as tables-runtime.mjs's)
 function mockRenderer( log ) {
@@ -260,7 +243,7 @@ export const checks = [
 
 	[ 'temporal: every post option variant compiles, its scene half unchanged', () => {
 
-		for ( const variant of [ { fogScale: 1 }, { bankSize: 0 }, { fsrPort: false }, { compositeOnce: false } ] ) {
+		for ( const variant of [ { fsrPort: false }, { compositeOnce: false }, { fsrPort: false, compositeOnce: false } ] ) {
 
 			const c = compileTemporal( variant );
 			assert.deepEqual( c.culled, [], JSON.stringify( variant ) );

@@ -44,9 +44,9 @@ export interface WeatherState {
 	density: number;
 	directVisibility: number;
 	ambientGain: number;
-	// Air extinction per metre at sea level, faded in across the scene's clear foreground. A clear
+	// Air extinction per metre at sea level, from the camera on (weather/VolumetricHaze.ts). A clear
 	// maritime day sees 20 - 50 km (Koschmieder: 3.912 / extinction), so clear and fair air stay
-	// near 1 - 2e-4; cloud, rain and fog thicken it.
+	// near 1 - 2e-4; an overcast or cloudy sea about 10 km (4e-4); rain and fog thicken it.
 	haze: number;
 	// The weather's one wind, which every part of the scene takes from weather/Wind.ts. The mean
 	// wind 10 m up (U10), m/s: its level's (`WIND_LEVELS`).
@@ -60,7 +60,8 @@ export interface WeatherState {
 	// over land), its level's; the plants' gusts lean them by its excess pressure (Wind.ts).
 	gustiness: number;
 	rain: number;
-	// Sea fog: 0 none, 1 a dense bank a few hundred metres deep in visibility.
+	// Sea fog: 0 none, 1 a layer at the cliff's foot that sees 1 km, the threshold of fog (below it
+	// mist; VolumetricHaze.ts sets the layer's top and its extinction per unit).
 	fog: number;
 	// Thunderstorm: lightning, storm seas and whitecaps (0 none, 1 a full storm).
 	storm: number;
@@ -101,7 +102,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>>
 	clear: { coverage: 0, density: 0.8, directVisibility: 1, ambientGain: 1, haze: 0.00012, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
 	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, ambientGain: 0.99, haze: 0.0002, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
 	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 0.78, ambientGain: 0.91, haze: 0.00042, rain: 0, fog: 0, storm: 0, cirrus: 0.15 },
-	overcast: { coverage: 0.94, density: 1.6, directVisibility: 0.3, ambientGain: 0.76, haze: 0.0016, rain: 0, fog: 0.08, storm: 0, cirrus: 0 },
+	overcast: { coverage: 0.94, density: 1.6, directVisibility: 0.3, ambientGain: 0.76, haze: 0.00039, rain: 0, fog: 0.08, storm: 0, cirrus: 0 },
 	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, ambientGain: 0.62, haze: 0.0025, rain: 0.75, fog: 0.22, storm: 0, cirrus: 0 },
 	// A squall: the darkest deck, heavy rain, a strong wind (PRESET_WIND) and a rough, white-capped sea.
 	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, ambientGain: 0.45, haze: 0.0035, rain: 1, fog: 0.3, storm: 1, cirrus: 0 },
