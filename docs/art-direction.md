@@ -184,24 +184,28 @@ art decision changes; reference images stay out of the repository.
   overgrown stretches and cut-open
   root soil.
 - Flowers are part of the meadow, and they are Penglai's, after the texts on the immortals'
-  islands, not a generic island's: heads (a hand across at most: large enough that the game's close
-  view reads them as flowers, not dots) on some of its tufts, each on a thin stem bent a little by
-  its head, never floating over the grass. The yaoxiang (遙香草, Shiyi ji: "flowers like cinnabar,
-  leaves narrow and white, like the day lily") stands in tall tussocks on its taller stems a little
-  over the leaves, a day lily's cinnabar trumpet gold in the throat, its tussock's leaves pale and
-  silvery; the zhuyu (祝餘, Shanhai jing: "like chives, with blue-green flowers") grows low among
-  shorter grass, a round head of sky blue florets over chives' blue-green leaves, never in a patch
-  of its own cut short. They are all in flower at once, the year round: the island's sign of an
-  immortals' land. They grow in swaths of one kind, as if
-  painted by a broad brush; the swaths are some 6 m across, spread evenly over the island top (even the
-  small starting island holds a few), dense over most of it and thinning at its rim, a few single
-  plants between the swaths, none in the bamboo's shade or on the lip itself. Each swath's kind is
-  its ground's: the zhuyu in the exposed coast's wind-cropped turf, the shallow pockets and on dry
-  ground, the yaoxiang over the rest of the meadow, most in the sheltered sward. Many small drifts
-  of both strung along the coast read from the game's view as a scatter of specks over the whole
-  island top. Colours are soft rather than vivid, and no head outshines the lawn; never a scatter
-  of mixed colours over the lawn, which reads as confetti. They sway with the grass, and from afar
-  a swath is a stroke of fine coloured specks in it, not coloured stars or blots on the lawn.
+  islands, not a generic island's: whole plants among the grass, never heads floating over it. The
+  yaoxiang (遙香草, Shiyi ji: "flowers like cinnabar, leaves narrow and white, like the day lily") is
+  a day lily's clump: a fountain of narrow, pale silvery leaves and two to four scapes over the
+  sward, each holding cinnabar trumpets out at a slant, each its own way, dark in the throat, with
+  buds, a closed trumpet or a spent flower among them; the zhuyu (祝餘, Shanhai jing: "like chives,
+  with blue-green flowers") is a chive's clump of dark blue-green leaves under round heads of sky
+  blue star florets, loose enough to see the stars, just over the sward, with tight pale buds and
+  half-open heads among them. The plants differ: taller and shorter scapes (some heads held low
+  among the blades and shaded with them), larger and smaller flowers, a little apart in colour.
+  They are all in flower at once, the year round: the island's sign of an immortals' land.
+- They grow in swaths of one kind, as if painted by a broad
+  brush; the swaths are some 6 m across, spread evenly over the island top, and from the game's view each
+  swath is one stroke of colour on the lawn, cinnabar or sky blue, its flowers covering about a
+  third of its middle (the green showing between them) and thinning at its rim; a few single plants
+  between the swaths. Each swath's kind is its ground's: the zhuyu in the exposed coast's
+  wind-cropped turf, the shallow pockets and on dry ground (among shorter grass), the yaoxiang over
+  the rest of the meadow, most in the sheltered sward. None on the lip itself and none in the
+  bamboo's crown or its noon shade (flowers there drew dull). Flowers scattered as small drifts or
+  single heads read from the game's view as specks or confetti, never as the island's colour. They
+  are lit as the meadow is, darker low among the blades and lighter at the top, and never brighter
+  than the sunlit grass tips: a flower that outshines the lawn reads as lit from within. They sway
+  with the grass.
 - A herb of the sunken mountain Yuanjiao stands among the meadow where the world explains it, the
   starting island's and fixed as the land grows: the yunpeng (芸蓬, Shiyi ji: "white as snow, a
   stem two zhang long, at night it gives a white light") stands in clumps of straight white stalks
