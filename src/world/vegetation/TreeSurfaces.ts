@@ -354,7 +354,8 @@ export function leafMaterial( shared: Shared, atlas: LeafAtlas, foot: THREE.Vect
 		leaf: { map: atlas.map, alphaMap: atlas.alpha },
 		wet: { tint: 0.75, roughness: 0.25 },
 		// each leaf's own tone (the atlas's tones vary by colour already: this varies them by leaf)
-		color: ( tint ) => materialColor.mul( vec4( vec3( id.b.mul( o.tone ).add( 1 - o.tone / 2 ).mul( tint ) ), 1 ) ),
+		// (and the look's gain over the atlas: shared.ts leafGain)
+		color: ( tint ) => materialColor.mul( vec4( vec3( id.b.mul( o.tone ).add( 1 - o.tone / 2 ).mul( tint ).mul( shared.leafGain ) ), 1 ) ),
 		rest: positionGeometry,
 		displacement: ( wind ) => {
 

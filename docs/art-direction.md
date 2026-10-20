@@ -146,7 +146,8 @@ art decision changes; reference images stay out of the repository.
   scatter of tussocks over dark ground.
   The meadow is painted light: its albedo at the top of real
   foliage, twice the measured lawn green's, and the day's exposure a quarter stop down with it, so
-  the lit meadow is the frame's bright ground and the sea and the sky keep their depth.
+  the lit meadow is the frame's bright ground and the sea and the sky keep their depth. The trees'
+  leaves are lightened with it, a little lighter still, so a crown parts from the sward under it.
   One grass colour, a bright, fresh, natural green, matte with only a faint gloss (no pale sheen
   over the blades, which reads as plastic): the gaps between blades a deep, cooler green (never
   near black) under tips that stand out lighter and yellow-green where the sun shines through

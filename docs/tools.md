@@ -249,7 +249,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `__PONLAI__.setGrade( { saturation: 1.1, shadows: { tint: [ 0.95, 1, 1.05 ] } } )` from a capture's
   `::js` or a quick variant (the changes nested as the grade's own, set over it). The meadow's
   albedo against its lawn colour: the GUI's `meadow albedo (x)` or `__PONLAI__.setLawnGain( k )`; the
-  cliff's above the water against its stone: `cliff albedo (x)` or `__PONLAI__.setRockGain( k )`.
+  cliff's above the water against its stone: `cliff albedo (x)` or `__PONLAI__.setRockGain( k )`;
+  the trees' leaves against their atlas: `tree leaves albedo (x)` or `__PONLAI__.setLeafGain( k )`.
   The tone curve's contrast, shoulder, white, mid grey and toe lift: the GUI's Tone curve folder (in
   Post), or `s.pipeline.settings.curve` (read every frame; `src/post/Pipeline.ts` TONE_CURVE).
   `fgview=meadowShade` shows the shade's map.
