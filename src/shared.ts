@@ -13,6 +13,9 @@ export const shared = {
 	// the meadow's albedo against its lawn colour (materials/Meadow.ts LAWN): the blades', the turf's
 	// under them and the ground bounce's over the plateau (GroundBounce.ts), 1 the lawn as it is
 	lawnGain: uniform( 1 ),
+	// the cliff's albedo above the water against its stone (TerrainMaterial.ts `rock`), 1 the stone as
+	// it is; under the water it stays as it is, so the sea's shading keeps its own
+	rockGain: uniform( 1 ),
 	rain: uniform( 0 ),
 	wetness: uniform( 0 ),
 	waterLevel: uniform( 0 ),

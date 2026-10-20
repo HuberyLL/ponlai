@@ -1284,6 +1284,7 @@ if ( pipeline.localTone ) {
 postF.add( S, 'lut', 0, 1, 0.01 ).name( 'grade table blend' );
 // the meadow's albedo against its lawn colour (shared.lawnGain), tuned with the exposure
 postF.add( shared.lawnGain, 'value', 0.5, 3, 0.01 ).name( 'meadow albedo (x)' ).onChange( () => groundBounce.invalidate() );
+postF.add( shared.rockGain, 'value', 0.5, 3, 0.01 ).name( 'cliff albedo (x)' );
 {
 
 	// the first table's grade (GradeLut.ts), its table filled anew on every change
@@ -2300,9 +2301,11 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, groundBounce,
 	// the look's knobs from a script (the GUI's raise their own events): the first table's grade
-	// (Pipeline.setGrade, GradeLut.ts) and the meadow's albedo (shared.lawnGain)
+	// (Pipeline.setGrade, GradeLut.ts), the meadow's albedo (shared.lawnGain) and the cliff's
+	// (shared.rockGain)
 	setGrade: ( changes?: GradeChanges ) => { pipeline.setGrade( changes ); sceneEvent( 'retune' ); },
-	setLawnGain: ( gain: number ) => { shared.lawnGain.value = gain; groundBounce.invalidate(); sceneEvent( 'retune' ); }, grass, wenyao, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+	setLawnGain: ( gain: number ) => { shared.lawnGain.value = gain; groundBounce.invalidate(); sceneEvent( 'retune' ); },
+	setRockGain: ( gain: number ) => { shared.rockGain.value = gain; sceneEvent( 'retune' ); }, grass, wenyao, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
 	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, weather, sky, fft, establishScene, setTime, data: () => shownData, seaDetail, land: () => landBox }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes
