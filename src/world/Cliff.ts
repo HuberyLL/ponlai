@@ -11,7 +11,10 @@
 // face breaks into long faces and short returns. The sea undercuts the foot in a notch that is
 // deepest where the coast is most exposed and gives way to a rounded ramp where it is sheltered,
 // and rounds every edge in the wave zone; above it the weather opens the softer beds into
-// recesses that pinch out within a few metres, and the edges stay as sharp as they broke.
+// recesses that pinch out within a few metres, and the edges stay as sharp as they broke. At the
+// top, soil creep and the weather wear the crest back into a convex shoulder that rolls the free
+// face over into the plateau and blunts every break through it (the convexity of a creeping crest
+// after Gilbert, *The convexity of hilltops*, Journal of Geology 17, 1909).
 // (Scar inventory and the geometry of fracture-bounded blocks after Prémaillon et al., *Conceptual
 // model of fracture-limited sea cliff erosion*, Earth Surface Processes and Landforms 46, 2021;
 // tidal notches after Antonioli et al., *Tidal notches in Mediterranean Sea*, Quaternary Science
@@ -23,7 +26,8 @@
 // edges at every angle the joint sets allow. The small breaks are flakes, a flat facet ending in
 // a step, rather than small pockets: those, and pairs of pockets side by side, read as dark holes
 // (eyes) in the shade, and many small rounded ones as the lumps of dissolved limestone. The field stays a true distance inside each block
-// (gradient 1), so the dual-contouring surface nets keep facets flat and their edges crisp.
+// (gradient 1), so the dual-contouring surface nets keep facets flat and their edges crisp (all but
+// the shoulder's, meshed by plain surface nets: WorldShapes.ts `cliffSharpCells`).
 // `cliffEvents` is the coast's field of large falls (discs hashed per world cell, more of them on
 // active stretches of a fixed-seed noise): the stretches that shed blocks, where the sea's blocks
 // heap (Stones.ts) and whatever else must agree on them reads it. The wall's own scars do not read
@@ -50,17 +54,22 @@
 // - Natural rock, never masonry: the two joint sets run oblique to the world's axes, no level
 //   courses or evenly spaced joints. Scar floors and roofs lie on a parting only some of the time;
 //   partings and soft beds open over a few metres and pinch out; under the meadow the wall weathers
-//   back to an upper slope rather than jutting as a slab.
+//   back to an upper slope rather than jutting as a slab, and its lip rolls over into the meadow in
+//   a convex shoulder (a quarter ellipse about 0.6 - 1.9 m in from the face and 0.3 - 0.9 m down,
+//   broad on some stretches and tighter on others), never a sharp corner.
 // - Pockets are much shallower than they are wide and tall, their roofs open outward, two never
 //   crowd each other at one height, and their occlusion is lifted a little, so none reads as a
 //   black hole or a pair of eyes in the shade.
 // - Above the waves breaks stay sharp (rims rounded by a few centimetres at most); only the wave
-//   zone rounds them. The notch comes and goes with the coast's exposure and its roof stays above
-//   the calm sea's crests; joint faces run on below the sea, so no ledge follows the waterline.
-// - The weathering relief fades out at the meadow, whose height stays `islandSurfaceHeight`. Steps
-//   where a block fell from the lip stop below the meadow's planting height (2.8 m) and carry no
-//   turf (TerrainMaterial keeps it off them). No waterfalls; moss and greenery on the wall stay in
-//   its upper 1.2 m (TerrainMaterial).
+//   zone and the crest round them (the crest by up to 0.6 m, a fresh break less), so no crisp
+//   notch cuts the shoulder. The notch comes and goes with the coast's exposure and its roof stays
+//   above the calm sea's crests; joint faces run on below the sea, so no ledge follows the
+//   waterline.
+// - The weathering relief fades out at the meadow, whose height stays `islandSurfaceHeight` from
+//   about 1.75 m inland of the coast (nearer, the shoulder and the crest's rounding of breaks lower
+//   it). Steps where a block fell from the lip stop below the meadow's planting height (2.8 m) and
+//   carry no turf (TerrainMaterial keeps it off them). No waterfalls; moss and greenery on the wall
+//   stay in its upper 1.2 m (TerrainMaterial).
 
 import { hash3i, noise3, smax, smoothstep } from './noise.ts';
 
@@ -209,6 +218,8 @@ export interface Scar {
 	key: number; // its coast seed's key: with the level, the order the scars are cut in
 	cx: number; cy: number; cz: number; size: number; // its anchor on the surface (a pocket's centre) and half width
 	x0: number; x1: number; z0: number; z1: number; y0: number; y1: number; // bounds
+	// the plan bounds without the crest's rounding: how far the scar itself reaches (shed)
+	near: { x0: number; x1: number; z0: number; z1: number };
 }
 
 // a joint face, a step fallen from the lip, a pocket (a block fallen out of the face), a flake
@@ -232,7 +243,7 @@ interface Level {
 // Three generations: joint faces that set the plan of a stretch of coast, pockets where blocks
 // fell out of them and flakes spalled off them, and smaller flakes on them. Above the
 // waves the rims stay sharp, a few centimetres at most: fractured rock breaks crisply, and only
-// the sea rounds its edges (see rimRound).
+// the sea and the weathered crest round its edges (see rimRound).
 const LEVELS: Level[] = [
 	{ cell: 3.6, off: 1.3, per: 1, keep: 0.95, width: [ 1.1, 2.5 ], depth: [ 0.3, 0.85 ], height: [ 1.3, 2.6 ], floor: [ - 1.6, - 0.3 ], face: 1, lip: 0.5, fresh: 0.25, round: [ 0.012, 0.035 ], irregular: 0.2, flake: 0 },
 	{ cell: 2.0, off: 0.6, per: 3, keep: 0.65, width: [ 0.35, 1.0 ], depth: [ 0.14, 0.4 ], height: [ 0.5, 1.6 ], floor: [ 0.35, 2.3 ], face: 0.35, lip: 0.12, fresh: 0.3, round: [ 0.01, 0.03 ], irregular: 0.3, flake: 0.5 },
@@ -256,9 +267,29 @@ export const REACH_A = 4.5, REACH_B = 3.0;
 const MAX_REACH = 1.3;
 // The meadow's planting height: a floor cut into the lip stays clear below it.
 const BARE_STEP = 2.55;
+// How much the crest rounds the rims of the scars cut through its shoulder (m, the smooth maximum's
+// width; a fresh scar's a little less): a crisp notch in the rolled-over lip would bring back the
+// sharp corner the shoulder rounds off.
+const CREST_ROUND = 0.6;
 
 const wrap = ( a: number ) => Math.atan2( Math.sin( a ), Math.cos( a ) );
 const lerp = ( a: number, b: number, t: number ) => a + ( b - a ) * t;
+
+// The solid behind a face ( a <= 0, a the distance out from it ) and under a top ( b <= 0, the
+// height above it ), their corner rolled over by a quarter ellipse reaching rh in from the face
+// and rv down from the top: the face and the top stay exact, and the field is continuous where
+// the arc meets them. (The rounded intersection of hg_sdf's fOpIntersectionRound, Mercury, with
+// Inigo Quilez's approximate ellipse distance for the arc.)
+function shoulder( a: number, b: number, rh: number, rv: number ): number {
+
+	const d = Math.max( a, b );
+	const qx = a + rh, qy = b + rv;
+	if ( qx <= 0 || qy <= 0 ) return d;
+	const ux = qx / rh, uy = qy / rv;
+	const k0 = Math.hypot( ux, uy ), k1 = Math.hypot( ux / rh, uy / rv );
+	return Math.max( d, k0 * ( k0 - 1 ) / k1 );
+
+}
 
 // The polytope's vertices: all triple intersections inside every plane (x, y, z each).
 function vertices( p: Float64Array, n: number ): number[] {
@@ -324,11 +355,15 @@ function bounds( s: Scar, angle: number ): boolean {
 
 	}
 	if ( ! ( x1 > x0 ) || ! ( y1 > y0 ) || ! ( z1 > z0 ) ) return false;
-	// rounding reaches a little beyond the faces
-	const m = s.round + 0.05;
-	s.x0 = Math.max( x0 - m, s.cx - reach ); s.x1 = Math.min( x1 + m, s.cx + reach );
-	s.z0 = Math.max( z0 - m, s.cz - reach ); s.z1 = Math.min( z1 + m, s.cz + reach );
-	s.y0 = y0 - m; s.y1 = y1 + m;
+	// rounding reaches a little beyond the faces, and the crest's further
+	const m = s.round + 0.05, c = m + CREST_ROUND;
+	s.near = {
+		x0: Math.max( x0 - m, s.cx - reach ), x1: Math.min( x1 + m, s.cx + reach ),
+		z0: Math.max( z0 - m, s.cz - reach ), z1: Math.min( z1 + m, s.cz + reach ),
+	};
+	s.x0 = Math.max( x0 - c, s.cx - reach ); s.x1 = Math.min( x1 + c, s.cx + reach );
+	s.z0 = Math.max( z0 - c, s.cz - reach ); s.z1 = Math.min( z1 + c, s.cz + reach );
+	s.y0 = y0 - m; s.y1 = y1 + c;
 	return true;
 
 }
@@ -402,7 +437,7 @@ export class CliffWall {
 	private grid = new Map<number, number[]>();
 	// column cache
 	private cx = NaN; private cz = NaN;
-	private s = 0; private topY = 0; private batter = 0; private lipRound = 0; private shift = 0;
+	private s = 0; private topY = 0; private batter = 0; private shoulderH = 0; private shoulderV = 0; private shift = 0;
 	private notch = 0; private notchY = 0; private ramp = 0; private expo = 0;
 	private list: number[] = []; // scar indices whose plan bounds hold the column
 	private coef: number[] = []; // per listed scar and plane: n.x * x + n.z * z - c, n.y
@@ -812,7 +847,7 @@ export class CliffWall {
 			id: r( 36 ), fresh, level, kind: face ? 'face' : lip ? 'lip' : 'pocket', key: 0,
 			cx: px, cy: ( yF + Math.min( yR, top ) ) * 0.5, cz: pz, size: ( wPlus + wMinus ) * 0.5,
 			round: fresh > 0 ? 0.006 + r( 37 ) * 0.01 : lerp( L.round[ 0 ], L.round[ 1 ], r( 37 ) ),
-			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0,
+			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0, near: { x0: 0, x1: 0, z0: 0, z1: 0 },
 		};
 		return bounds( scar, angN ) ? scar : null;
 
@@ -897,7 +932,7 @@ export class CliffWall {
 			id: r( 36 ), fresh, level, kind: 'flake', key: 0,
 			cx: px, cy: yA, cz: pz, size: W,
 			round: fresh > 0 ? 0.005 : lerp( L.round[ 0 ], L.round[ 1 ], r( 37 ) ),
-			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0,
+			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0, near: { x0: 0, x1: 0, z0: 0, z1: 0 },
 		};
 		return bounds( scar, Math.atan2( n[ 1 ], n[ 0 ] ) ) ? scar : null;
 
@@ -956,7 +991,7 @@ export class CliffWall {
 			planes: new Float64Array( planes ), n: planes.length / 4, floor, lip: true,
 			id: r( 29 ), fresh: 0, level: GULLY.level, kind: 'gully', key: 0,
 			cx: px, cy: 1.2, cz: pz, size: half, round: 0.025 + r( 30 ) * 0.025,
-			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0,
+			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0, near: { x0: 0, x1: 0, z0: 0, z1: 0 },
 		};
 		return bounds( scar, angN ) ? scar : null;
 
@@ -976,8 +1011,11 @@ export class CliffWall {
 		if ( this.s < - 3 || this.s > 3 ) return;
 		// The wall leans back a little, by a slowly varying batter.
 		this.batter = 0.03 + 0.11 * smoothstep( - 0.5, 0.6, noise3( x * 0.13 + 2.2, 5.5, z * 0.13 - 1.4 ) );
-		// The lip is rounded where soil and roots have worked it, sharp where it has broken.
-		this.lipRound = 0.03 + 0.17 * smoothstep( - 0.3, 0.5, noise3( x * 0.37 - 4.1, 2.6, z * 0.37 + 3.3 ) );
+		// The lip rolls over in a convex shoulder, as a weathered crest does over the free face below
+		// it: broad on some stretches, tighter on others, and uneven within a metre or so.
+		const broad = smoothstep( - 0.45, 0.55, noise3( x * 0.15 - 4.1, 2.6, z * 0.15 + 3.3 ) );
+		this.shoulderH = 0.75 + 0.95 * broad + 0.2 * noise3( x * 0.95 + 1.7, 8.3, z * 0.95 - 2.9 );
+		this.shoulderV = 0.42 + 0.4 * broad + 0.1 * noise3( x * 1.1 - 6.2, 3.9, z * 1.1 + 0.4 );
 		this.expo = exposureAt( this.dist, x, z );
 		// The notch is cut deepest where the waves strike hardest; where it is shallow, a rounded
 		// ramp of rock stands at the foot instead.
@@ -1009,7 +1047,7 @@ export class CliffWall {
 
 	}
 
-	// The plain base face: battered, notched at the sea, its lip rounded.
+	// The plain base face: battered, notched at the sea, its lip rolled over in the shoulder.
 	private base( y: number ): number {
 
 		const drop = this.topY - y;
@@ -1018,14 +1056,17 @@ export class CliffWall {
 		let d = this.s - this.batter * h;
 		// the ramp at the foot of sheltered stretches
 		d -= this.ramp * smoothstep( 0.25, - 0.7, y );
-		return smax( d, y - this.topY, this.lipRound );
+		return shoulder( d, y - this.topY, this.shoulderH, this.shoulderV );
 
 	}
 
-	// Rounding of a scar's rim: the waves round every edge in their reach.
-	private static rimRound( s: Scar, y: number ): number {
+	// Rounding of a scar's rim: the waves round every edge in their reach, and the crest every edge
+	// in its shoulder.
+	private rimRound( s: Scar, y: number ): number {
 
-		return s.round + 0.09 * smoothstep( - 1.1, - 0.3, y ) * ( 1 - smoothstep( 0.45, 1.1, y ) );
+		const waves = 0.09 * smoothstep( - 1.1, - 0.3, y ) * ( 1 - smoothstep( 0.45, 1.1, y ) );
+		const crest = CREST_ROUND * ( 1 - 0.6 * s.fresh ) * smoothstep( this.topY - this.shoulderV - 0.6, this.topY - 0.1, y );
+		return s.round + waves + crest;
 
 	}
 
@@ -1051,7 +1092,7 @@ export class CliffWall {
 			}
 			o += n * 2;
 			// (the rims rounded by the polynomial smooth maximum, after Inigo Quilez's smooth minimum)
-			const cut = - db, k = CliffWall.rimRound( s, y );
+			const cut = - db, k = this.rimRound( s, y );
 			if ( cut > d - k ) {
 
 				if ( cut > d ) { owner = this.list[ li ]; ownPlane = arg; }
@@ -1137,8 +1178,8 @@ export class CliffWall {
 		for ( const s of this.scars ) {
 
 			if ( s.fresh <= 0 || s.level > 0 ) continue;
-			const cx = ( s.x0 + s.x1 ) * 0.5, cz = ( s.z0 + s.z1 ) * 0.5;
-			const r = Math.max( s.x1 - s.x0, s.z1 - s.z0 ) * 0.5 + 0.8;
+			const b = s.near, cx = ( b.x0 + b.x1 ) * 0.5, cz = ( b.z0 + b.z1 ) * 0.5;
+			const r = Math.max( b.x1 - b.x0, b.z1 - b.z0 ) * 0.5 + 0.8;
 			const d2 = ( ( x - cx ) ** 2 + ( z - cz ) ** 2 ) / ( r * r );
 			if ( d2 < 1 ) w = Math.max( w, 1 - d2 );
 

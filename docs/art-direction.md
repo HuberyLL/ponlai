@@ -114,13 +114,15 @@ art decision changes; reference images stay out of the repository.
   whole sea.
 - The cliffs read as natural rock, never masonry: no level courses or evenly spaced joints, no
   lumps of dissolved limestone. A weathered face that has shed blocks along its joints and beds,
-  breaks sharp above the waves and rounded only in the wave zone. No pocket reads as a black hole
-  or a pair of eyes in the shade. Under the meadow the wall weathers back to an upper slope rather
-  than jutting as a slab. No ledge follows the waterline. No waterfalls. Moss and greenery on the
-  wall stay in its upper 1.2 m; the lower cliff stays bare stone.
-- Plants and meadow cover are rooted on the island top, never on cliff faces. The meadow runs to
-  the lip and meets the stone there, with no sod rolled over the edge. It passes into the cliff
-  through grass growing from the lip and hanging over it as one fringe, as on a sea cliff's top: dense, short,
+  breaks sharp above the waves, rounded in the wave zone and at the crest. No pocket reads as a
+  black hole or a pair of eyes in the shade. Under the meadow the wall weathers back to an upper
+  slope rather than jutting as a slab, and rolls over into the meadow in a broad convex shoulder
+  of weathered stone, never a sharp corner: broader on some stretches, tighter on others, the
+  breaks through it blunted rather than notched. No ledge follows the waterline. No waterfalls.
+  Moss and greenery on the wall stay in its upper 1.2 m; the lower cliff stays bare stone.
+- Plants and meadow cover are rooted on the island top, never on cliff faces. The meadow runs out
+  onto the shoulder and meets the stone where it steepens, with no sod rolled over the edge. It
+  passes into the cliff through grass growing from the lip and hanging over it as one fringe, as on a sea cliff's top: dense, short,
   nearly parallel bundles of the meadow's blades (mostly 0.15 - 0.5 m, a few to 0.8 m), each
   bent by its own weight into one smooth arc (stiff at the root, soft at the tip: long blades
   arc over and hang, short ones only bend), lying on the stone where they meet
