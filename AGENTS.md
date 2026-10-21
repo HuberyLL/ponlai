@@ -43,7 +43,7 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 
 ## Map
 
-- `docs/`: `art-direction.md`, `game-design.md`, `tools.md`.
+- `docs/`: `art-direction.md`, `game-design.md`, `tools.md`, `ui.md` (the game UI's spec: read it before UI work).
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__PONLAI__` and
   `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug` / `?profile`.
 - `src/Quality.ts`: the quality tiers, every cost knob in one table (high the only active one);
