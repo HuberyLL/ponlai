@@ -367,10 +367,12 @@ const M2 = {
 // The flowering plants per m^2 of land by seed / growth step: the whole-plant swaths' count
 // (Grass.ts `plantGrass`, PLANT_SHARE and STRAY, the plants of Flowers.ts), planted with the
 // bamboo's stands (no swath in their crown or noon shade) and every species on an island of two
-// swaths or more, from a run when they replaced the flowering tufts.
+// swaths or more, from a run on the cliff's rolled-over lip. The top coast decides which coastal
+// cells may hold a swath, so a change to the lip moves whole swaths: the shoulder's moved one
+// island's count by 10 % and the four grown islands' by 1 %.
 const PLANTS = {
-	'1/0': 1.3205, '1/8': 1.2655, '1/12': 1.0482,
-	'2/0': 0.6240, '2/8': 1.0891, '2/12': 1.0366,
+	'1/0': 1.3155, '1/8': 1.1350, '1/12': 1.0985,
+	'2/0': 0.6166, '2/8': 1.0886, '2/12': 1.0445,
 };
 
 // Grass.ts and WalkLoop.ts build three.js objects (and import modules plain node cannot
