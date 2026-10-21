@@ -220,16 +220,21 @@ export function solidSide( fp: Footprint, x: number, z: number ): number {
 
 }
 
-// The mesh cells that should keep the cliff's edges sharp (dual contouring): the wall and its
-// lip down to below the reach of clear water; the flat meadow and the deep toe keep the plain
-// surface-nets vertex, which needs no extra field samples.
+// The mesh cells that should keep the cliff's edges sharp (dual contouring): the wall down to
+// below the reach of clear water. The meadow, the deep toe and the top SHOULDER_DEPTH of the wall
+// keep the plain surface-nets vertex, which needs no extra field samples. The wall's lip rolls
+// over in a convex shoulder and the rims of breaks through it are rounded (Cliff.ts): on such a
+// curved surface dual contouring puts every vertex at the meeting of its cell's tangent planes,
+// out of the curve, and the lip's edge became a row of voxel-sized teeth that its shadow drew on
+// the steps under it.
+const SHOULDER_DEPTH = 1.1;
 export function cliffSharpCells( fp: Footprint ): ( x: number, y: number, z: number ) => boolean {
 
 	return ( x, y, z ) => {
 
 		if ( y < - 1.8 ) return false;
 		const d = fp.dist( x, z );
-		return d > - 3.4 && d < 3.2 && ( d > - 1.4 || y < islandSurfaceHeight( x, z ) - 0.08 );
+		return d > - 3.4 && d < 3.2 && y < islandSurfaceHeight( x, z ) - SHOULDER_DEPTH;
 
 	};
 

@@ -26,7 +26,8 @@
 // edges at every angle the joint sets allow. The small breaks are flakes, a flat facet ending in
 // a step, rather than small pockets: those, and pairs of pockets side by side, read as dark holes
 // (eyes) in the shade, and many small rounded ones as the lumps of dissolved limestone. The field stays a true distance inside each block
-// (gradient 1), so the dual-contouring surface nets keep facets flat and their edges crisp.
+// (gradient 1), so the dual-contouring surface nets keep facets flat and their edges crisp (all but
+// the shoulder's, meshed by plain surface nets: WorldShapes.ts `cliffSharpCells`).
 // `cliffEvents` is the coast's field of large falls (discs hashed per world cell, more of them on
 // active stretches of a fixed-seed noise): the stretches that shed blocks, where the sea's blocks
 // heap (Stones.ts) and whatever else must agree on them reads it. The wall's own scars do not read
