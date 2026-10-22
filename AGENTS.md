@@ -30,7 +30,7 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
     own. `tools/wgsl-build.mjs`: builds TSL to WGSL in node, without a GPU.
   - `tools/profile-frame.mjs`: frame time on a production build.
   - `tools/assets.mjs`: the game's assets in `public/` against `assets.lock.json` (status, pull,
-    release); the dev server and the build pull what is missing on their own.
+    release, publish); the dev server and the build pull what is missing on their own.
   - `tools/verify-*.mjs`: regression probes. After any change to the world's generator, run
     `node tools/verify-world-chunks.mjs` before captures.
 - Everything that renders the scene in a browser takes the GPU lock

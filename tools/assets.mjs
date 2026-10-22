@@ -10,14 +10,21 @@
 //   node tools/assets.mjs pull [--force]  fills public/ from the lock's release; a file that differs
 //                                         from the lock is work in progress and is kept, unless
 //                                         --force
-//   node tools/assets.mjs release [--notes <text>] [--attach <file>]...
+//   node tools/assets.mjs release [--notes <text>] [--attach <file>]... [--local]
 //                                         packs public/ as the next release, publishes it with gh
 //                                         and rewrites the lock; --attach uploads more files beside
-//                                         the archive (masters of our own, such as a Blender file)
+//                                         the archive (masters of our own, such as a Blender file);
+//                                         --local packs it into the cache and rewrites the lock but
+//                                         uploads nothing (gh not needed)
+//   node tools/assets.mjs publish [--attach <file>]...
+//                                         uploads the lock's release packed with --local, from this
+//                                         machine's cache, as it was packed (the lock stays valid)
 // Rules:
 // - A published release never changes: adding, changing or removing a file cuts the next one, and
 //   the lock moves in the same commit as the code that needs it.
 // - The archive holds the whole set, so one release is one version of the game's assets.
+// - A release packed with --local exists only in this machine's cache until it is published: a
+//   checkout elsewhere cannot pull it, and the cache's archive must be kept until then.
 // - Downloads are cached in git's common directory (ponlai-assets/<release>/), shared by every
 //   worktree and never tracked; each worktree gets its own copy of the files (a clone where the
 //   file system can).
@@ -224,10 +231,27 @@ function originRepo( root ) {
 
 }
 
-/** Packs public/ as the next release, publishes it and writes the lock. */
-export function releaseAssets( root, { notes = '', attach = [] } = {} ) {
+const needGh = () => {
 
 	if ( ! hasGh() ) throw new Error( 'a release is published with gh (https://cli.github.com), which is not installed' );
+
+};
+
+/** Uploads a packed release from the cache: its archive, its notes and `attach`. */
+function upload( root, lock, attach ) {
+
+	const dir = join( cacheRoot( root ), lock.release );
+	const archive = join( dir, lock.archive.name );
+	const version = lock.release.match( TAG )[ 1 ];
+	execFileSync( 'gh', [ 'release', 'create', lock.release, archive, ...attach, '--repo', lock.repo, '--title', `Assets v${ version }`, '--notes-file', join( dir, 'notes.md' ) ], { stdio: 'inherit' } );
+
+}
+
+/** Packs public/ as the next release, writes the lock and, unless `local`, publishes it. */
+export function releaseAssets( root, { notes = '', attach = [], local = false } = {} ) {
+
+	if ( local && attach.length > 0 ) throw new Error( '--attach goes with publish, not with --local' );
+	if ( ! local ) needGh();
 	const old = readLock( root );
 	const names = listFiles( join( root, PUBLIC ) );
 	if ( names.length === 0 ) throw new Error( 'public/ is empty' );
@@ -266,11 +290,27 @@ export function releaseAssets( root, { notes = '', attach = [] } = {} ) {
 		'',
 		...lines( 'Added', added ), ...lines( 'Changed', changed ), ...lines( 'Removed', removed ),
 	].join( '\n' );
-	execFileSync( 'gh', [ 'release', 'create', release, archive, ...attach, '--repo', repo, '--title', `Assets v${ version }`, '--notes', body ], { stdio: 'inherit' } );
+	writeFileSync( join( dir, 'notes.md' ), body );
 
 	const lock = { repo, release, archive: { name: `ponlai-assets-v${ version }.tar.gz`, size: statSync( archive ).size, sha256: sha256( archive ) }, files };
+	if ( ! local ) upload( root, lock, attach );
 	writeFileSync( join( root, LOCK ), JSON.stringify( lock, null, '\t' ) + '\n' );
 	return { release, added, changed, removed };
+
+}
+
+/** Publishes the lock's release, packed earlier with --local. */
+export function publishAssets( root, { attach = [] } = {} ) {
+
+	needGh();
+	const lock = readLock( root );
+	if ( lock === null ) throw new Error( `no ${ LOCK } in ${ root }` );
+	const dir = join( cacheRoot( root ), lock.release );
+	const archive = join( dir, lock.archive.name );
+	if ( ! existsSync( archive ) || statSync( archive ).size !== lock.archive.size || sha256( archive ) !== lock.archive.sha256 ) throw new Error( `${ lock.archive.name } in the cache does not match assets.lock.json: ${ lock.release } was not packed on this machine` );
+	if ( ! existsSync( join( dir, 'notes.md' ) ) ) writeFileSync( join( dir, 'notes.md' ), `The game's assets, version ${ lock.release.match( TAG )[ 1 ] } (tools/assets.mjs).` );
+	upload( root, lock, attach );
+	return lock.release;
 
 }
 
@@ -278,13 +318,14 @@ async function main() {
 
 	const args = process.argv.slice( 2 );
 	const command = args[ 0 ] && ! args[ 0 ].startsWith( '--' ) ? args.shift() : 'status';
-	const options = { force: false, notes: '', attach: [] };
+	const options = { force: false, notes: '', attach: [], local: false };
 	for ( let i = 0; i < args.length; i ++ ) {
 
 		const arg = args[ i ];
 		if ( arg === '--force' && command === 'pull' ) options.force = true;
 		else if ( arg === '--notes' && command === 'release' ) options.notes = args[ ++ i ] ?? '';
-		else if ( arg === '--attach' && command === 'release' ) options.attach.push( resolve( args[ ++ i ] ?? '' ) );
+		else if ( arg === '--attach' && ( command === 'release' || command === 'publish' ) ) options.attach.push( resolve( args[ ++ i ] ?? '' ) );
+		else if ( arg === '--local' && command === 'release' ) options.local = true;
 		else throw new Error( `unknown option for ${ command }: ${ arg }` );
 
 	}
@@ -312,7 +353,11 @@ async function main() {
 	} else if ( command === 'release' ) {
 
 		const { release, added, changed, removed } = releaseAssets( root, options );
-		console.log( `${ release }: ${ added.length } added, ${ changed.length } changed, ${ removed.length } removed; commit ${ LOCK } with the change that needs it` );
+		console.log( `${ release }${ options.local ? ' (packed, not published)' : '' }: ${ added.length } added, ${ changed.length } changed, ${ removed.length } removed; commit ${ LOCK } with the change that needs it` );
+
+	} else if ( command === 'publish' ) {
+
+		console.log( `${ publishAssets( root, options ) }: published` );
 
 	} else {
 

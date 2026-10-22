@@ -101,6 +101,10 @@ so a commit names the assets it runs with and a checkout of it gets exactly thos
   added, changed and removed) and rewrites `assets.lock.json`. `--attach` uploads more files
   beside the archive: the masters of our own assets that the page does not load (a Blender file, a
   layered source image).
+- `release --local` packs the next release into the cache and rewrites the lock without uploading
+  anything (no `gh` needed); `publish [--attach <file>]...` later uploads the lock's release from
+  the cache as it was packed, so the committed lock stays valid. Until then the release exists on
+  this machine only: its cache must be kept, and a checkout elsewhere cannot pull it.
 - `node tools/verify-no-binaries.mjs [--staged | --history]` fails on an asset type, a file git
   reads as binary or one over 1 MiB in the index (`--staged`: in what a commit adds; the
   pre-commit hook runs it), or anywhere in history (`--history`). `.gitignore` refuses the asset
