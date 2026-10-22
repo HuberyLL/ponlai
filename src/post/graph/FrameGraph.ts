@@ -7,6 +7,7 @@ import {
 } from './GraphCompiler.ts';
 import { AttachmentOps } from './AttachmentOps.ts';
 import { compileBound, compileChain, compileLatent, compileNodes, compileQuad, sceneOf } from './Compile.ts';
+import { ownDepthClears } from './ThreePatches.ts';
 
 // The frame graph's runtime: it owns the graph's textures and render targets, their sizes and
 // lifetimes, and executes the compiled passes in order with three's own executors (a scene render,
@@ -37,7 +38,9 @@ import { compileBound, compileChain, compileLatent, compileNodes, compileQuad, s
 // use is not a draw. Any other target initialises itself when a pass first draws into it, as
 // before the graph: a pass that runs only now and then (the rain, the upscale) allocates
 // nothing until it does. A depth texture's size is set by the graph itself, since three resizes it
-// only through the one target that owns it.
+// only through the one target that owns it. A recreated target is also new to three's clear of a
+// target's depth on its first render, which would wipe a depth a pass loads (the vegetation's
+// prepass under the opaque scene): the graph owns those clears (ThreePatches.ts `ownDepthClears`).
 //
 // A pass that declares no depth clears whatever depth its target holds outside the graph (the
 // canvas's, and the targets three's nodes draw into inside a pass), as three's defaults do; declare
@@ -742,6 +745,8 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 
 			r.depth = rt.depthBuffer;
 			r.stencil = rt.stencilBuffer;
+			// (three would clear a depth the pass loads on the target's first render after a resize)
+			if ( rt.depthBuffer ) ownDepthClears( r, rt );
 
 		}
 		// clear or load, as the compiled ops say (the same in both tables; a pass's colour writes
