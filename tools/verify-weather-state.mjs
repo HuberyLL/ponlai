@@ -199,6 +199,36 @@ for ( const invalid of [ 'hail', '__proto__', '', null ] ) {
 	for ( let t = 0; t < 600; t ++ ) held.update( 1 );
 	assert.equal( held.target, 'rain', 'without auto the weather holds' );
 }
+// The forecast is the auto chain read ahead (the game's forecast): run at frame-sized steps, the
+// chain takes every turn it said, to the same sky, and reading it ahead moves nothing. The chain
+// counts its dwell from the frame after a front ends, so each turn may come up to a step either
+// side of the time read ahead, and the k-th turn within k + 1 steps. Mid-front, the front under way
+// comes first.
+{
+	for ( const [ start, step ] of [ [ 'fair', 0.25 ], [ 'overcast', 1.5 ] ] ) {
+		const chain = new Weather( start );
+		chain.auto = true;
+		for ( let t = 0; t < 700; t += step ) chain.update( step );
+		const span = 4 * 3600, turns = chain.forecast( span );
+		assert.deepEqual( chain.forecast( span ), turns, 'reading ahead must not move the chain' );
+		let k = turns.length > 0 && turns[ 0 ].at < 0 ? 1 : 0, sky = chain.target;
+		assert.ok( turns.length - k > 30, `four hours of weather should hold many turns, saw ${ turns.length }` );
+		for ( let t = 0; t < span && k < turns.length; t += step ) {
+			chain.update( step );
+			if ( chain.target === sky ) continue;
+			const turn = turns[ k ++ ];
+			assert.equal( chain.target, turn.to, `the chain turned to ${ chain.target }, the forecast said ${ turn.to }` );
+			assert.equal( chain.origin, turn.from );
+			assert.ok( Math.abs( turn.at - t ) <= ( k + 1 ) * step + 1e-9, `turn ${ k } at ${ t } s was forecast at ${ turn.at } s` );
+			sky = chain.target;
+		}
+		assert.equal( k, turns.length, 'every forecast turn must come' );
+	}
+	const front = new Weather( 'clear' );
+	front.setWeather( 'cloudy', 40 );
+	front.update( 10 );
+	assert.deepEqual( front.forecast( 3600 ), [ { at: - 10, duration: 40, from: 'clear', to: 'cloudy' } ], 'without auto weather only the front under way is forecast' );
+}
 // Showers linger after the rain overhead stops, so a clearing sky can still hold a rainbow.
 {
 	const clearing = new Weather( 'rain' );
@@ -212,4 +242,4 @@ for ( const invalid of [ 'hail', '__proto__', '', null ] ) {
 }
 assert.ok( QUALITY.low.cloudMarch.viewSteps < QUALITY.high.cloudMarch.viewSteps );
 assert.ok( QUALITY.low.rainDrops < QUALITY.high.rainDrops );
-console.log( 'weather state: transition, interruption, pause, presets, heading wrap, wind levels and headings with any sky, auto chain and its wind, moisture, parked weathers out of the chain, lingering showers, ranges and validation passed' );
+console.log( 'weather state: transition, interruption, pause, presets, heading wrap, wind levels and headings with any sky, auto chain and its wind, the forecast read ahead, moisture, parked weathers out of the chain, lingering showers, ranges and validation passed' );
