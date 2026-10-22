@@ -24,6 +24,8 @@ everyday commands; this file has the details. Each tool's own file says the rest
   links the main checkout's entries (vite's caches left out) when the commit's package-lock.json
   is the same, else `npm ci` runs there; `preview` builds once per worktree (`dist/.serve-sha`).
   The log is `artifacts/jobs/serve-<mode>-sha-<12 hex>-<port>.log` in the calling checkout.
+  A commit from before the assets left git (no `assets.lock.json`) gets the files it lacks from
+  the calling checkout's `public/`, in their current versions.
   `node tools/serve.mjs clean` removes every sha-* worktree; one with a live job is skipped and named (stop its job first).
 - The game's assets (textures, models, fonts, baked data) are not in git: the dev server and the
   build fill the git-ignored `public/` from the release `assets.lock.json` names (Assets, below),
