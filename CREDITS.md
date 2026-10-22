@@ -634,7 +634,8 @@ comment where it is used.
   of Tsushima'*, GDC 2021: 2D Perlin noise scrolled in the wind's direction; Bill Rockenbeck,
   *Blowing from the West: Simulating Wind in Ghost of Tsushima*, GDC 2021: the wind's strength
   varied by time-varying Perlin noise), in `src/weather/Wind.ts` (`windField`) and
-  `src/world/Grass.ts`. Used as a technique only; the gust map is our own.
+  `src/world/Grass.ts`. Used as a technique only; the tileable map, its ranking to an even
+  spread, its two scales and the wind's integrated travel are our own.
   The map's noise is Ken Perlin's improved gradient noise (*Improving Noise*, SIGGRAPH 2002),
   made periodic.
 - Each meadow blade a mix of root and tip colours, and the sward darkened toward the ground by its
@@ -650,7 +651,7 @@ comment where it is used.
   `src/world/SwardField.ts` and `src/lighting/MeadowCanopy.ts` (the crowns and their shade) and
   `src/post/MeadowShade.ts`. Used as techniques only.
 - The meadow's flowers as whole authored plants placed procedurally over the fields, one kind to a
-  swath as if laid by a broad brush, drawn as GPU-culled instances: Sucker Punch Productions'
+  swath as if laid by a broad brush, drawn as GPU instances: Sucker Punch Productions'
   fields in *Ghost of Tsushima* (Eric Wohllaib, *Procedural Grass in 'Ghost of Tsushima'*, GDC
   2021); far instances dropped at random by a per-instance hash beyond a distance (stochastic
   instance falloff: Matt Pohlmann, *Samurai Landscapes: Building and Rendering Tsushima Island on
@@ -664,8 +665,8 @@ comment where it is used.
   detail-preserving contrast change on a 64x32x64 bilateral grid blended 40 / 60 with a wide
   Gaussian (`src/post/LocalTone.ts`), per-channel tone mapping in AP1 with its red primary moved
   out to x 0.75 and a white balance chosen as the colour white becomes, folded into the curve's
-  input matrix (`src/post/ToneSpace.ts`), and 32^3 grade tables
-  (`src/post/GradeLut.ts`), and an exposure metered primarily from the illuminance rather than
+  input matrix (`src/post/ToneSpace.ts`), 32^3 grade tables used conservatively (blending two is
+  ours: `src/post/GradeLut.ts`), and an exposure metered primarily from the illuminance rather than
   the frame's luminance (`src/post/Exposure.ts`). Used as techniques only; the tables' content
   and the exposure's compensation are our own. The exposure's compensation looked up by the
   metered EV: the exposure compensation curve of Unreal Engine's auto exposure. The
