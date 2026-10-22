@@ -7,14 +7,14 @@
 
 @font-face {
 	font-family: 'Ponlai Brush';
-	src: url( './fonts/PonlaiBrush.woff2' ) format( 'woff2' );
+	src: url( '/fonts/PonlaiBrush.woff2' ) format( 'woff2' );
 	unicode-range: U+0020-007E, U+00B7;
 	font-display: block;
 }
 
 @font-face {
 	font-family: 'Ponlai Brush Display';
-	src: url( './fonts/PonlaiBrushDisplay.woff2' ) format( 'woff2' );
+	src: url( '/fonts/PonlaiBrushDisplay.woff2' ) format( 'woff2' );
 	unicode-range: U+0020-007E, U+00B7;
 	font-display: block;
 }

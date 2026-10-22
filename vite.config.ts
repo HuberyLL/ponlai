@@ -65,7 +65,7 @@ function licences(): Plugin {
 
 export default defineConfig( {
 	base: './',
-	// assets(): the git-ignored islander models, served and linked into dist/ (tools/vite-assets.mjs);
+	// assets(): fills the git-ignored public/ from the assets release (tools/vite-assets.mjs);
 	// the world generator's source hash, for the world cache (src/world/WorldCache.ts)
 	plugins: [ licences(), assets(), worldGeneratorHash() ],
 	server: {

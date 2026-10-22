@@ -39,7 +39,7 @@ import { TopRow } from './TopRow.ts';
 //
 // Type: Ma Shan Zheng (马善政) for calligraphy, LXGW WenKai GB (霞鹜文楷 GB, sliced by unicode-range,
 // so a page loads only the slices its characters need) for running text, and our own brush fonts
-// (fonts/) first in every stack for numerals and Latin (ui.css). The layout is the design's
+// (public/fonts/) first in every stack for numerals and Latin (ui.css). The layout is the design's
 // 1600 x 900 board scaled to the window (`--k`: the smaller of its width over 1600 and height over
 // 900), each part anchored to the edge it is drawn against.
 //

@@ -29,9 +29,9 @@
 // each of the main checkout's entries except vite's caches (.vite, .vite-temp, .cache): a link to
 // the whole folder would put the worktree's prebundled dependencies into the main checkout's
 // cache, which its own dev server uses. With another lockfile it runs `npm ci` there instead. The
-// islanders' assets link themselves (tools/vite-assets.mjs, in commits that have it). `preview`
-// builds once per worktree: a successful build writes the sha into dist/.serve-sha, and a call that
-// finds it skips the build. The vite job runs in the worktree, with its log in the calling checkout's
+// assets fill its public/ themselves (tools/vite-assets.mjs, in commits that have
+// assets.lock.json). `preview` builds once per worktree: a successful build writes the sha into
+// dist/.serve-sha, and a call that finds it skips the build. The vite job runs in the worktree, with its log in the calling checkout's
 // artifacts/jobs/ (serve-<mode>-sha-<12 hex>-<port>.log), so `clean` cannot delete it.
 // `clean` skips, and names, a sha-* worktree with a live job (job.mjs list --cwd), since a server
 // another session started may still be in use; it removes the other (git worktree remove --force: node_modules and dist are untracked; the links are

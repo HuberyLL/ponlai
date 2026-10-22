@@ -339,6 +339,9 @@ packages, into `dist/licenses/`.
 
 ## Assets
 
+These files are not in the repository: they ship in the assets release that `assets.lock.json`
+names, under the paths given here in `public/` (`tools/assets.mjs`).
+
 ### Rock Face 03
 
 - Author: Dario Barresi (photography), Rico Cilliers (processing)
@@ -371,9 +374,9 @@ packages, into `dist/licenses/`.
   variants in `src/characters/looks.ts`), given procedural pointed ears and merged into one
   skinned mesh at load time. The Hanming islanders are built from them in Blender: the Farmer's
   rig and clips, the Casual 2 head without its hair, the Beach outfit's body, legs and sandalled
-  feet, under a feather-carrying shell and a revolved bamboo hat of our own. They are not in the
-  repository yet: the dev server loads them from the git-ignored `artifacts/assets/` while the
-  character art is settled.
+  feet, under a feather-carrying shell and a revolved bamboo hat of our own. The three kit files
+  are `public/characters/quaternius/ultimate-modular-characters/`, unchanged; the Hanming
+  islanders are `public/characters/hanming/Hanming.gltf` and `Hanming.bin`.
 
 ### A single white feather closeup
 
@@ -382,8 +385,8 @@ packages, into `dist/licenses/`.
   (2004, from stock.xchng)
 - Licence: public domain
 - Files: cut out of its dark ground (the ground un-mixed from the edge's colour) into four feather
-  shapes in a 2048 x 1024 atlas, the Hanming islanders' feather cards. Not in the repository yet
-  (git-ignored `artifacts/assets/`).
+  shapes in a 2048 x 1024 atlas, the Hanming islanders' feather cards
+  (`public/characters/hanming/textures/feather-atlas.png`).
 
 ### Wicker 005
 
@@ -391,8 +394,8 @@ packages, into `dist/licenses/`.
 - Source: [ambientCG](https://ambientcg.com/view?id=Wicker005)
 - Licence: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
 - Files: the colour, normal and roughness maps reduced to 512 px, the Hanming islanders' bamboo
-  hats, tinted to straw in `src/characters/FigureSurfaces.ts`. Not in the repository yet
-  (git-ignored `artifacts/assets/`).
+  hats, tinted to straw in `src/characters/FigureSurfaces.ts`
+  (`public/characters/hanming/textures/wicker-*`).
 
 ### Cloud shape noise
 
