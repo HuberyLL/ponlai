@@ -1,5 +1,5 @@
 // Starts the dev or preview server of the checkout the cwd is in, on a free port, through job.mjs.
-// Agents used to pick a port by hand, look it up with lsof and start vite themselves; in T37 a
+// Agents used to pick a port by hand, look it up with lsof and start vite themselves, and a
 // worktree's server failed on a port another worktree's server already held. This picks a free
 // port (or names who holds the one asked for), starts vite detached with its log under
 // artifacts/jobs/, waits until its own server answers and prints the URL and how to stop it.
@@ -30,7 +30,11 @@
 // the whole folder would put the worktree's prebundled dependencies into the main checkout's
 // cache, which its own dev server uses. With another lockfile it runs `npm ci` there instead. The
 // assets fill its public/ themselves (tools/vite-assets.mjs, in commits that have
-// assets.lock.json). `preview` builds once per worktree: a successful build writes the sha into
+// assets.lock.json). A commit without the lock, from before the assets left git, holds none of
+// them (the history was rewritten without them): the files its public/ lacks are copied from the
+// calling checkout's public/ (the brush fonts, which then sat in src/game/ui/fonts/, there), so an
+// asset changed since shows in its later version.
+// `preview` builds once per worktree: a successful build writes the sha into
 // dist/.serve-sha, and a call that finds it skips the build. The vite job runs in the worktree, with its log in the calling checkout's
 // artifacts/jobs/ (serve-<mode>-sha-<12 hex>-<port>.log), so `clean` cannot delete it.
 // `clean` skips, and names, a sha-* worktree with a live job (job.mjs list --cwd), since a server
@@ -40,7 +44,7 @@
 import './qos.mjs';
 import net from 'node:net';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { constants, copyFileSync, existsSync, readFileSync, readdirSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -199,6 +203,51 @@ if ( rev !== null ) {
 			if ( r.status !== 0 ) process.exit( r.status ?? 1 );
 
 		}
+
+	}
+
+	const from = join( caller, 'public' );
+	if ( ! existsSync( join( repo, 'assets.lock.json' ) ) && existsSync( from ) ) {
+
+		let copied = 0;
+		const fill = ( dir ) => {
+
+			for ( const e of readdirSync( join( from, dir ), { withFileTypes: true } ) ) {
+
+				const path = join( dir, e.name ), target = join( repo, 'public', path );
+				if ( e.isDirectory() ) fill( path );
+				else if ( ! existsSync( target ) ) {
+
+					mkdirSync( dirname( target ), { recursive: true } );
+					copyFileSync( join( from, path ), target, constants.COPYFILE_FICLONE );
+					copied ++;
+
+				}
+
+			}
+
+		};
+
+		fill( '' );
+
+		// The brush fonts sat beside the UI's stylesheet before they moved to public/fonts/.
+		const ui = join( repo, 'src', 'game', 'ui' ), fonts = join( from, 'fonts' );
+		if ( existsSync( join( ui, 'ui.css' ) ) && existsSync( fonts ) ) {
+
+			const css = readFileSync( join( ui, 'ui.css' ), 'utf8' );
+			for ( const name of readdirSync( fonts ) ) {
+
+				const target = join( ui, 'fonts', name );
+				if ( ! css.includes( `./fonts/${ name }` ) || existsSync( target ) ) continue;
+				mkdirSync( dirname( target ), { recursive: true } );
+				copyFileSync( join( fonts, name ), target, constants.COPYFILE_FICLONE );
+				copied ++;
+
+			}
+
+		}
+
+		console.log( `public/: no assets.lock.json, ${ copied } file(s) it lacked copied from ${ from }` );
 
 	}
 
