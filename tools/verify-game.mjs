@@ -3,7 +3,7 @@
 // whose late answer is applied while the world ran on; then the first prototype's rules: needs that
 // fall and rise (thirst off: hydration holds), fishing by the seeded generator and the bag's capacity,
 // the chest placed as a blueprint and built, several of a kind with ids of their own, two
-// islanders building one site, actions that replace each other, a perception
+// islanders building one site, the island's stock (its stores) and a cost's shortfall, actions that replace each other, a perception
 // without positions, the stand-in brain building the chest and keeping the islander fed for
 // days, and a save taken mid-action; then the island's growth: a land grown by
 // IslandGrowth, the population steps, the coming piece's cells, a step crossed adding exactly one
@@ -22,6 +22,7 @@ import { FISH_SECONDS } from '../src/game/sim/places.ts';
 import { CHEST_WORK, progressOf, stageOf } from '../src/game/sim/buildings.ts';
 import { GROWTH_STEPS, POPULATION_START, piecesFor } from '../src/game/sim/types.ts';
 import { SAVE_VERSION, savedPieces } from '../src/game/sim/save.ts';
+import { shortfall, stockOf } from '../src/game/sim/stock.ts';
 import { input, inputAt } from './game-fixture.mjs';
 
 const HOUR = 3600;
@@ -482,7 +483,15 @@ function buildChest( sim ) {
 	const items = stocked.sim.state.buildings[ 0 ].items;
 	assert.ok( ( items.fish ?? 0 ) > 0, 'and it stocks the chest a little' );
 	assert.equal( play( 2, 2 ).sim.save(), stocked.sim.save(), 'deterministic for a seed' );
-	console.log( `stand-in: ${ days } days, needs never below ${ Math.min( bare.low, stocked.low ).toFixed( 1 ) }; two chests built by ${ ( stocked.built / HOUR ).toFixed( 1 ) } h, holds ${ JSON.stringify( items ) }` );
+	// the island's stock is what its stores hold, not what the islander carries (the interface's top row)
+	const stock = stockOf( stocked.sim.state );
+	const stored = {};
+	for ( const b of stocked.sim.state.buildings ) for ( const kind in b.items ) stored[ kind ] = ( stored[ kind ] ?? 0 ) + b.items[ kind ];
+	assert.deepEqual( stock, stored, 'the stock sums the stores' );
+	assert.deepEqual( stockOf( bare.sim.state ), {}, 'with no store the island holds nothing, whatever the bag holds' );
+	assert.deepEqual( shortfall( { fish: stock.fish }, stock ), {}, 'a cost the stock meets lacks nothing' );
+	assert.deepEqual( shortfall( { fish: stock.fish + 2, wood: 3 }, stock ), { fish: 2, wood: 3 }, 'a shortfall names each kind and how many more' );
+	console.log( `stand-in: ${ days } days, needs never below ${ Math.min( bare.low, stocked.low ).toFixed( 1 ) }; two chests built by ${ ( stocked.built / HOUR ).toFixed( 1 ) } h, holds ${ JSON.stringify( items ) }; the stock and its shortfall` );
 
 }
 
@@ -611,7 +620,7 @@ function buildChest( sim ) {
 	assert.equal( grid.region[ kaiCell ] >= 0, true );
 	for ( const k of planned ) assert.equal( grid.top[ k ], 1, 'a path planned before stays on the island' );
 
-	// islanders walk onto the new piece: the open coming cell of the main ground farthest from Kai
+	// islanders walk onto the new piece: the open coming cell of the main ground farthest from the first islander
 	let target = - 1, best = - 1;
 	for ( let k = 0; k < coming.length; k ++ ) {
 

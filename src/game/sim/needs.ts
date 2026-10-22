@@ -14,6 +14,10 @@ import type { Needs } from './types.ts';
 // hour, a drink of 32 every 8 game hours), faster than hunger, as for a person.
 
 export const NEED_MAX = 100;
+/** a need at or below this is critical: the interface raises its alert and the record notes it
+ * (docs/ui.md, Islanders), and below LOW_NEED its bar turns toward the alert's colour */
+export const CRITICAL_NEED = 20;
+export const LOW_NEED = 50;
 /** 0: thirst is off (see the header); 96 with a water source */
 export const HYDRATION_PER_DAY = 0;
 export const SATIETY_PER_DAY = 72;

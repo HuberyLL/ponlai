@@ -34,8 +34,8 @@ import type { EntityId, IslandInput, SimState, Speed, Vec2, Villager } from './t
 // its cells are `comingLand` from the moment the page has it, for planning.
 
 export { SAVE_VERSION };
-// the islanders' names, in the order they arrive
-const NAMES = [ 'Kai', 'Lani', 'Noa', 'Mele', 'Tavi', 'Sina', 'Rua', 'Ana', 'Iko', 'Hina' ];
+// the islanders' names, in the order they arrive: Chinese, as the interface is (docs/ui.md)
+const NAMES = [ '阿凯', '阿木', '小禾', '阿青', '石头', '阿月', '阿海', '小满', '阿岚', '竹生', '阿珠', '老周' ];
 // islanders after the first stand round the island's middle a golden angle apart
 const GOLDEN_ANGLE = Math.PI * ( 3 - Math.sqrt( 5 ) );
 
@@ -286,7 +286,7 @@ export class Sim {
 
 		const v = this.villager( id );
 		if ( ! v || ! this.brain || this.thoughts.has( id ) ) return null;
-		const answer = this.brain.think( perceive( this, v ) );
+		const answer = this.brain.think( perceive( this, v ), v.id );
 		if ( ! ( answer instanceof Promise ) ) return Promise.resolve( act( this, v, answer ) );
 		const thought = answer.then( ( calls ) => act( this, v, calls ) ).finally( () => this.thoughts.delete( id ) );
 		this.thoughts.set( id, thought );

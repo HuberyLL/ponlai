@@ -1,6 +1,6 @@
 import { placesAt, placesOf } from './places.ts';
 import type { Sim } from './Sim.ts';
-import type { ActionCall, ActionOutcome, ActionResult, Items, Villager } from './types.ts';
+import type { ActionCall, ActionOutcome, ActionResult, EntityId, Items, Villager } from './types.ts';
 
 // The agent loop's frame: a brain thinks from what an islander perceives and answers with tool
 // calls, which run on the islander's body. The tools are the five actions (actions.ts).
@@ -52,9 +52,13 @@ export interface Perception {
 	last: ActionOutcome | null;
 }
 
-/** What decides for the islanders (Sim.brain): tool calls now, or later through a Promise. */
+/** What decides for the islanders (Sim.brain): tool calls now, or later through a Promise. It is
+ * told whom it thinks for (the islander's id: a brain keeps a memory per islander). */
 export interface Brain {
-	think( perception: Perception ): ToolCall[] | Promise<ToolCall[]>;
+	think( perception: Perception, who: EntityId ): ToolCall[] | Promise<ToolCall[]>;
+	/** whether it hears the player's words: the game asks it for a thought as they are said
+	 * (Game.speak, Game.takeHeard); the stand-in does not */
+	readonly hears?: boolean;
 }
 
 /** The perception hook: what an islander perceives now (copies: the brain cannot touch the state). */
