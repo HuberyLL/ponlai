@@ -25,11 +25,9 @@ everyday commands; this file has the details. Each tool's own file says the rest
   is the same, else `npm ci` runs there; `preview` builds once per worktree (`dist/.serve-sha`).
   The log is `artifacts/jobs/serve-<mode>-sha-<12 hex>-<port>.log` in the calling checkout.
   `node tools/serve.mjs clean` removes every sha-* worktree; one with a live job is skipped and named (stop its job first).
-- The islanders load from the git-ignored `artifacts/assets/`. `tools/vite-assets.mjs` finds the
-  folder (the checkout's own, else the main checkout's through git's common directory, so a fresh
-  worktree needs no link): the dev server serves it and `vite build` links it into
-  `dist/artifacts/assets`. Without either, the build warns once and the page stays on the loading
-  screen.
+- The game's assets (textures, models, fonts, baked data) are not in git: the dev server and the
+  build fill the git-ignored `public/` from the release `assets.lock.json` names (Assets, below),
+  so a fresh clone or worktree needs no setup.
 - `window.__PONLAI__` (scene handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the
   dev server or with `?debug` (or `?profile`, which also loads the frame profiler).
   `__PONLAI__.loop.step( { frames, dt, scale, camera, onFrame, clock, converge } )` stops the live loop and
@@ -78,6 +76,51 @@ everyday commands; this file has the details. Each tool's own file says the rest
   last 5 s, the frames late by a refresh against the paced interval and the intervals over 25 ms
   since the scene showed (or the reset button), the render scale and the GPU's median frame time
   (high only), and how the quality tier was chosen.
+
+## Assets
+
+Every binary file the page loads (textures, models, fonts, audio, baked data) is an asset, and no
+asset goes into git: a repository that keeps every version of every binary only grows, and its
+history cannot be cut back without rewriting it. The assets live in `public/`, git-ignored, which
+Vite serves at the site's root and copies into `dist/`. Each version of the whole set is published
+as one archive (`ponlai-assets-v<N>.tar.gz`) on a GitHub release tagged `assets-v<N>`.
+`assets.lock.json`, committed, pins the release, the archive's size and SHA-256 and every file's,
+so a commit names the assets it runs with and a checkout of it gets exactly those back.
+
+- The dev server and the build pull the files `public/` lacks (`tools/vite-assets.mjs`). They are
+  downloaded once into git's common directory (`ponlai-assets/<release>/`, shared by every
+  worktree) and copied into each checkout's `public/`. A file that differs from the lock is work
+  in progress: it is kept and named. A build fails when a listed file is missing; the dev server
+  starts without it (the page waits at its loading screen).
+- `node tools/assets.mjs [status]` compares `public/` with the lock (missing, changed and unlisted
+  files; exit 1 when it differs). `pull [--force]` fills `public/` from the lock's release
+  (`--force` also replaces changed files). Downloads go through `gh` while the repository is
+  private, else the release's public URL.
+- `node tools/assets.mjs release [--notes <text>] [--attach <file>]...` publishes `public/` as the
+  next release: it packs the whole set, creates the release with `gh` (its notes list what was
+  added, changed and removed) and rewrites `assets.lock.json`. `--attach` uploads more files
+  beside the archive: the masters of our own assets that the page does not load (a Blender file, a
+  layered source image).
+- `node tools/verify-no-binaries.mjs [--staged | --history]` fails on an asset type, a file git
+  reads as binary or one over 1 MiB in the index (`--staged`: in what a commit adds; the
+  pre-commit hook runs it), or anywhere in history (`--history`). `.gitignore` refuses the asset
+  types to `git add` as well.
+
+Rules:
+
+- A file the page loads is placed under `public/` and loaded through
+  `import.meta.env.BASE_URL + '<path under public/>'` (a stylesheet: `url( '/<path>' )`, which Vite
+  rewrites for the base), never from `artifacts/` or another machine path.
+- Adding, changing or removing an asset cuts the next release; a published release never changes
+  (a broken one is followed by the next, never replaced). The commit that needs the new files
+  carries the new `assets.lock.json`, so every commit still builds with its own assets.
+- A release holds only files that may be redistributed: every third-party file is listed in
+  `CREDITS.md` (source, author, licence, processing) under its path in `public/` before it ships.
+- A file made by a tool from a source (the moon, the stars, the Milky Way) keeps its tool in
+  `tools/`; the release holds the output, and `CREDITS.md` names the tool and the source.
+- Masters of our own (Blender files, layered images) that the page does not load go beside the
+  archive with `--attach`, on the release whose files they were exported for. Third-party sources
+  stay with their publisher; `CREDITS.md` links them.
 
 ## URL options
 
@@ -1073,6 +1116,9 @@ what these do not give (automation, A/B statistics, pass names).
 Whether a grown page draws what a fresh load of its land draws (views, chunk hashes, the rain
 map, the camera's ground, pipelines and memory across swaps): `tools/verify-growth-swap.mjs`, not a
 probe eval of one's own.
+
+Which assets a commit runs with, whether `public/` matches them, and how to publish a change to
+them: `tools/assets.mjs` (Assets), never a file committed to git.
 
 What WGSL a TSL kernel, pass or material compiles to, which bindings and uniforms each stage
 declares, and whether one exceeds WebGPU's default limits, without a GPU: `tools/wgsl-build.mjs`

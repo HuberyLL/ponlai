@@ -3,12 +3,10 @@ import type { ProportionName } from './Proportions.ts';
 import type { PartSpec } from './Villagers.ts';
 
 // The islanders' dress: modular parts (Ultimate Modular Characters by Quaternius, CC0) repainted
-// in the island's palette (sRGB, as they should read in sunlight). The models are local,
-// unversioned assets (artifacts/ is git-ignored) while the character art is still changing: the
-// dev server serves them and a build links them into dist/, from the main checkout in a worktree
-// (tools/vite-assets.mjs).
+// in the island's palette (sRGB, as they should read in sunlight). The models are assets in public/
+// (tools/assets.mjs).
 
-export const umc = ( name: string ) => `/artifacts/assets/quaternius/ultimate-modular-characters/${ name }.gltf`;
+export const umc = ( name: string ) => `${ import.meta.env.BASE_URL }characters/quaternius/ultimate-modular-characters/${ name }.gltf`;
 
 /** A look's colours: its parts are painted in them, and a stand-in figure wears them when the parts are missing. */
 export interface LookColours { skin: string; hair: string; brows: string; shirt: string; trousers: string; shoes: string; soles: string }
@@ -55,9 +53,8 @@ export const ISLANDER_LOOKS: readonly Look[] = [
 // Blender on the kit's Farmer rig (its clips), with the Casual 2 head and the Beach outfit's bare
 // body (its vest painted as skin), legs and sandalled feet; the top and shorts are a shell under
 // rows of feather cards cut from a photograph, laid as a feather cloak's feathers are tied to its
-// backing (artifacts/assets/hanming, git-ignored while the art settles). Drawn in the island's
-// light at about 6.5 heads (Proportions.ts `real`).
-export const hanming = ( name: string ) => `/artifacts/assets/hanming/${ name }.gltf`;
+// backing. Drawn in the island's light at about 6.5 heads (Proportions.ts `real`).
+export const hanming = ( name: string ) => `${ import.meta.env.BASE_URL }characters/hanming/${ name }.gltf`;
 
 /** `shirt` and `trousers` are the feathers' white and `hair` the hat's straw (for stand-ins),
  * `shoes` the sandals. */

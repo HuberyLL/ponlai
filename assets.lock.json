@@ -1,0 +1,83 @@
+{
+	"repo": "HuberyLL/ponlai",
+	"release": "assets-v1",
+	"archive": {
+		"name": "ponlai-assets-v1.tar.gz",
+		"size": 10181596,
+		"sha256": "6223d5b3694fcdf1646d7fcb280090d4afe87ce281921acccc6c238a6d0022fa"
+	},
+	"files": {
+		"characters/hanming/Hanming.bin": {
+			"size": 3347056,
+			"sha256": "610385f8ef66ae97ae6d63627b71d23e8f7a55b4b68699bcd7518e2b95589570"
+		},
+		"characters/hanming/Hanming.gltf": {
+			"size": 1321140,
+			"sha256": "700ce666322a5301497f534819814c890ef5ed2ef4c214a4b6a4a525d5890d7c"
+		},
+		"characters/hanming/textures/feather-atlas.png": {
+			"size": 1502081,
+			"sha256": "dc8ff6cbaffee46754155b6d1a1549f4db075ad6eaae97e6327e0027d92887f7"
+		},
+		"characters/hanming/textures/wicker-color.jpg": {
+			"size": 47635,
+			"sha256": "931ecf32051ddb0468be17b966106e9d9cc1299d7528101a783b045a51054471"
+		},
+		"characters/hanming/textures/wicker-normalgl.jpg": {
+			"size": 83369,
+			"sha256": "f891515ad697a6199ee616b2d27a03724110993ff129047e34cc62051c6596cb"
+		},
+		"characters/hanming/textures/wicker-roughness.png": {
+			"size": 297624,
+			"sha256": "910ee2028c6a914c74aa569b4ba7f37c84d06ef613400fe5062124bb34c27321"
+		},
+		"characters/quaternius/ultimate-modular-characters/Adventurer.gltf": {
+			"size": 3671456,
+			"sha256": "21f7a61afb6bd6cef6961490c367594e3c2fc01ec1f041662131172ce763063e"
+		},
+		"characters/quaternius/ultimate-modular-characters/Casual_2.gltf": {
+			"size": 3058092,
+			"sha256": "55c654d09a2a5ff6e3bd6158d4a1b462f181cd6f1e12a0f5e9d959f9c3abc438"
+		},
+		"characters/quaternius/ultimate-modular-characters/Farmer.gltf": {
+			"size": 2998119,
+			"sha256": "46d3e85fa8d848ee479ab8e4672c16724ee4ea51f3af5733705a153937f93555"
+		},
+		"clouds/baseShape64.bin": {
+			"size": 908287,
+			"sha256": "1e11118d70768aaeb0050ff3dd19d0c9f4321e5dc02eda8c6805e838f89c35c4"
+		},
+		"fonts/PonlaiBrush.woff2": {
+			"size": 13096,
+			"sha256": "345d7ca8165c048cb783f9469404cf819c1c636bbf8dfbe5e12cc8bfa17c1126"
+		},
+		"fonts/PonlaiBrushDisplay.woff2": {
+			"size": 12824,
+			"sha256": "012bf5b314dd9a0c066554640c3a29e27c8b79bac36e9c83080a68668a46310b"
+		},
+		"sky/milkyway.png": {
+			"size": 174545,
+			"sha256": "de25a08e9b21c93ffccf23049dad43a090a2eda2b6aa0db19373e6bb68776e6a"
+		},
+		"sky/moon/moon_color.jpg": {
+			"size": 151810,
+			"sha256": "5d367d90af7cba394a34776893152e62e81e30d0588389189af0e0485aa92acd"
+		},
+		"sky/moon/moon_height.png": {
+			"size": 251858,
+			"sha256": "55f542e30c4c3280175648c90f5af165b8cb51c160367723c76e2464a3a83d72"
+		},
+		"sky/stars.bin": {
+			"size": 72776,
+			"sha256": "098c1697276cb8bf0fdadbe3257206c9e1d282f34b428bfcf5a883e9202428b1"
+		},
+		"textures/rock/rock_albedo.jpg": {
+			"size": 927082,
+			"sha256": "ea48e0e47ad42c8bd312476178b1248ec66f0eb19156a26a1c222f2a40caaf2d"
+		},
+		"textures/rock/rock_detail.png": {
+			"size": 2866842,
+			"sha256": "f4490343c0b426a6887943fb780af0766ff84baa07db8c160f9e32682d8238cb"
+		}
+	}
+}

@@ -24,8 +24,8 @@ MSAA sets are captured in the test mode (`docs/tools.md`, Test mode), where the 
 Capture a production build (`npm run build`, then `npx vite preview --host 127.0.0.1 --port <port>
 --strictPort`), each branch from its own worktree on its own port. The URL needs `?debug`
 (capture-set.mjs adds it): `window.__PONLAI__` and the diagnostics exist only on the dev server or
-with it. The islanders' models (`/artifacts/assets/...`, git-ignored) need no setup: the build
-links them into `dist/`, from the main checkout in a worktree (`tools/vite-assets.mjs`).
+with it. The assets need no setup: the build pulls what `public/` lacks from the release
+`assets.lock.json` names (`tools/vite-assets.mjs`; `docs/tools.md`, Assets).
 
 Paused captures take the GPU lock shared (`tools/gpu-lock.mjs`): their pixels do not depend on what
 else renders, so they run beside other paused captures and probes, and wait for timing runs. Each
@@ -455,7 +455,7 @@ zombie) leaves a stale claim, which the next request takes over; when `ps` canno
 (a loaded machine) the process counts as alive, since taking over a live capture would put two
 writers in one directory. A process releases and records only a claim that is still its own. Before capturing, the tool checks
 which worktree serves the reference URL's port (`lsof`): it refuses a server whose commit differs
-from the reference's in what the build reads (`src/`, `index.html`, `public/`, `vite.config.ts`,
+from the reference's in what the build reads (`src/`, `index.html`, `assets.lock.json`, `vite.config.ts`,
 `package.json`, `package-lock.json`, `tsconfig.json`; a branch that changed only tools or docs
 serves the same build) or that has uncommitted changes there, and warns when `dist/` is older than
 the last commit of those inputs. `node

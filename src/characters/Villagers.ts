@@ -17,9 +17,8 @@ import type { TrampleWalker } from '../world/vegetation/Trample.ts';
 // Its place on the loop is a function of the scene clock; its clips cross-fade on the frame delta,
 // which a paused clock holds, so a scene jump restarts them (`reset`).
 // Their dress stays plain while the basic look settles: undyed linen and calm earthy tones, leather
-// shoes, no hat (looks.ts). While the character art is settled the models load from the
-// git-ignored artifacts/assets/ (tools/vite-assets.mjs serves and links them). A small moving
-// sun-shadow map of the figures is multiplied into the island's (CharacterShadow.ts).
+// shoes, no hat (looks.ts). A small moving sun-shadow map of the figures is multiplied into the
+// island's (CharacterShadow.ts).
 // The walker parts the meadow (world/vegetation/Trample.ts): its track there is its schedule at the
 // scene clock's earlier times (`track`), so the trail behind it is a function of the clock as well.
 // A look may be `lit` (the feather-robed islanders, looks.ts HANMING): its painted parts take the

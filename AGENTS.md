@@ -29,6 +29,8 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   - `tools/probe.mjs`: reads values from the page as JSON, instead of a Playwright script of one's
     own. `tools/wgsl-build.mjs`: builds TSL to WGSL in node, without a GPU.
   - `tools/profile-frame.mjs`: frame time on a production build.
+  - `tools/assets.mjs`: the game's assets in `public/` against `assets.lock.json` (status, pull,
+    release); the dev server and the build pull what is missing on their own.
   - `tools/verify-*.mjs`: regression probes. After any change to the world's generator, run
     `node tools/verify-world-chunks.mjs` before captures.
 - Everything that renders the scene in a browser takes the GPU lock
@@ -44,6 +46,8 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 ## Map
 
 - `docs/`: `art-direction.md`, `game-design.md`, `tools.md`, `ui.md` (the game UI's spec: read it before UI work).
+- `public/` (git-ignored): the game's assets, filled from the GitHub release `assets.lock.json`
+  names (`tools/assets.mjs`, `tools/vite-assets.mjs`; `docs/tools.md`, Assets).
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__PONLAI__` and
   `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug` / `?profile`.
 - `src/Quality.ts`: the quality tiers, every cost knob in one table (high the only active one);
@@ -128,7 +132,8 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   `tools/verify-i18n.mjs`), the brush icons (`Icons.ts`), strokes (`Brush.ts`) and the ink of the
   long ones (`Ink.ts`, drawn by `InkPath.ts`, `tools/verify-ink.mjs`), what it lays into the
   scene in the camera's perspective (`Space.ts`: the words over the islanders and in flight),
-  palette (`Palette.ts`), styles (`ui.css`) and our own brush fonts (`fonts/`).
+  palette (`Palette.ts`), styles (`ui.css`) and the licences of its fonts (`fonts/`; our own brush
+  fonts are assets, `public/fonts/`).
 - `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the frame profiler, the frame-rate readout,
   the pipeline counter (`PipelineCounter.ts`), the wind view and its probe (`WindView.ts`,
   `WindArrows.ts`, `WindProbe.ts`).
@@ -222,6 +227,12 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   build collects their licences into `dist/licenses/`); any other licence text that must ship goes
   in `LICENCE_FILES` in `vite.config.ts`. Do not commit reference images, and do not ship
   third-party art without a licence.
+- No asset goes into git: every binary file the page loads (textures, models, fonts, audio, baked
+  data) lives in the git-ignored `public/`, is loaded through `import.meta.env.BASE_URL`, and ships
+  in a GitHub release (`assets-v<N>`) that `assets.lock.json` pins. A change to the assets cuts the
+  next release (a published one never changes), and the new lock goes in the commit whose code
+  needs it. Nothing binary or over 1 MiB is committed anywhere (`tools/verify-no-binaries.mjs`;
+  `docs/tools.md`, Assets).
 - Keep machine details out of the repository (hardware, user names, local paths); describe
   measurements in relative terms.
 - Comments and docs state what was measured and found, not where the notes are: never cite the
