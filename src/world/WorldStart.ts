@@ -18,7 +18,7 @@ import * as THREE from 'three/webgpu';
 import { loadWorld, type LoadedWorld } from './WorldChunks.ts';
 import { GROWTH, type LandLattice } from './IslandGrowth.ts';
 import { landArea, landCentroid } from './WorldShapes.ts';
-import { SAVE_KEY, savedPieces } from '../game/sim/save.ts';
+import { readSlot, resumesSave, savedPieces } from '../game/save.ts';
 
 const params = new URLSearchParams( location.search );
 const intParam = ( name: string, fallback: number ) => {
@@ -28,9 +28,9 @@ const intParam = ( name: string, fallback: number ) => {
 
 };
 
-// A resumed game (`?game&load`) stands on the island its save grew (game/sim/save.ts): its piece
-// count is the step, unless the `grow` option is given.
-const savedStep = () => params.has( 'game' ) && params.has( 'load' ) ? savedPieces( localStorage.getItem( SAVE_KEY ) ) ?? 0 : 0;
+// A resumed game (game/save.ts `resumesSave`: the page keeps the save, or `load`) stands on the
+// island its save grew: its piece count is the step, unless the `grow` option is given.
+const savedStep = () => params.has( 'game' ) && resumesSave( params ) ? savedPieces( readSlot() ) ?? 0 : 0;
 
 /** The island: the land a world seed grows in `grow` steps after the starting island
  * (IslandGrowth.ts; the `seed` and `grow` URL options, 1 and 0 by default; a resumed game's

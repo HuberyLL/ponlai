@@ -1,0 +1,165 @@
+{
+	"time": {
+		"day": "Day {{day}}"
+	},
+	"list": {
+		"and": ", ",
+		"then": ", "
+	},
+	"top": {
+		"speeds": "Speed",
+		"pause": "Pause",
+		"speed1": "Normal speed",
+		"speed3": "Speed ×3",
+		"speed6": "Speed ×6"
+	},
+	"weather": {
+		"kind": {
+			"clear": "Clear",
+			"cloudy": "Cloudy",
+			"overcast": "Overcast"
+		},
+		"label": "Weather: {{now}} now, {{turns}}",
+		"turn": "{{kind}} at {{hour}}:00",
+		"steady": "no change all day"
+	},
+	"stock": {
+		"label": "In store: {{list}}",
+		"count": "{{name}} {{count}}",
+		"more": "Also {{list}}"
+	},
+	"resource": {
+		"wood": "Wood",
+		"bamboo": "Bamboo",
+		"stone": "Stone",
+		"leaf": "Leaves",
+		"fish": "Fish",
+		"water": "Water",
+		"rope": "Rope",
+		"clay": "Clay",
+		"shell": "Shells",
+		"fruit": "Fruit",
+		"salt": "Salt"
+	},
+	"item": {
+		"fish": "Fish"
+	},
+	"place": {
+		"shore": "the shore"
+	},
+	"doing": {
+		"go": "Going to {{place}}",
+		"wait": "Resting",
+		"walk": "Walking",
+		"think": "Thinking",
+		"idle": "Resting",
+		"do": {
+			"fish": "Fishing",
+			"build": "Building the {{place}}",
+			"put": "Putting things in the {{place}}",
+			"take": "Taking things from the {{place}}"
+		}
+	},
+	"tag": {
+		"satiety": "Satiety",
+		"hydration": "Hydration",
+		"bag": "Bag",
+		"slot": "{{name}} {{count}}",
+		"empty": "Empty"
+	},
+	"speak": {
+		"title": "Speak"
+	},
+	"build": {
+		"title": "Build",
+		"search": "Search buildings",
+		"notFound": "Nothing found",
+		"noneRecent": "Nothing placed yet",
+		"back": "Back",
+		"on": "On",
+		"cost": "{{name}} {{count}}",
+		"hours": "h",
+		"locked": "Not buildable yet",
+		"place": "Click the island to place it",
+		"copy": "{{name}} {{n}}",
+		"group": {
+			"live": "Homes",
+			"food": "Food",
+			"water": "Water",
+			"store": "Storage",
+			"work": "Workshops",
+			"guard": "Shelter",
+			"recent": "Recent"
+		},
+		"sub": {
+			"home": "Living",
+			"fire": "Fire",
+			"sea": "Sea",
+			"land": "Land",
+			"stove": "Kitchen",
+			"wind": "Wind",
+			"watch": "Watch"
+		},
+		"refusal": {
+			"noGround": "Not enough open ground here",
+			"occupied": "Someone is standing here"
+		}
+	},
+	"building": {
+		"hut": { "name": "Hut", "use": "Keeps off wind and rain; sleeps 2", "words": "house sleep" },
+		"cabin": { "name": "Cabin", "use": "Sturdier; sleeps 4", "words": "house sleep" },
+		"stonehouse": { "name": "Stone house", "use": "Stands through a storm; sleeps 4", "words": "house sleep storm" },
+		"hearth": { "name": "Hearth", "use": "Warmth at night, dries clothes", "words": "fire warm" },
+		"rack": { "name": "Fish rack", "use": "Dried fish keeps longer", "words": "fish dry" },
+		"net": { "name": "Net rack", "use": "Mend and dry nets; more fish", "words": "fish net" },
+		"jetty": { "name": "Jetty", "use": "Fish in deep water", "words": "fish sea" },
+		"perch": { "name": "Fishing rock", "use": "A place to fish from the rocks", "words": "fish" },
+		"pond": { "name": "Fish pond", "use": "Keeps fish alive until eaten", "words": "fish keep" },
+		"garden": { "name": "Vegetable plot", "use": "Grows vegetables; needs watering", "words": "grow vegetables" },
+		"orchard": { "name": "Orchard", "use": "Fruit trees; fruit in a few days", "words": "fruit grow" },
+		"stove": { "name": "Stove", "use": "Cooks fish; cooked food lasts longer", "words": "cook fire" },
+		"smoke": { "name": "Smokehouse", "use": "Smoked fish keeps longer", "words": "fish smoke" },
+		"jar": { "name": "Rain jar", "use": "Catches rain; holds 10", "words": "water rain" },
+		"shed": { "name": "Rain shed", "use": "Catches a wide sweep of rain into the jars", "words": "water rain" },
+		"well": { "name": "Well", "use": "Fresh water without rain", "words": "water dig" },
+		"chest": { "name": "Chest", "use": "Holds things; up to 20", "words": "store keep" },
+		"granary": { "name": "Granary", "use": "Keeps food off the damp ground", "words": "food store" },
+		"woodpile": { "name": "Woodpile", "use": "Keeps wood dry in the rain", "words": "wood store" },
+		"carpentry": { "name": "Carpenter's shop", "use": "Turns wood into boards and beams", "words": "wood make" },
+		"mason": { "name": "Mason's shop", "use": "Cuts stone", "words": "stone make" },
+		"windbreak": { "name": "Windbreak", "use": "Holds back a storm's wind", "words": "wind storm" },
+		"stonewall": { "name": "Stone wall", "use": "A sturdier windbreak", "words": "wind storm stone" },
+		"fence": { "name": "Bamboo fence", "use": "A low woven wall against the wind", "words": "bamboo wind vegetables" },
+		"tower": { "name": "Watchtower", "use": "Sees storms coming sooner", "words": "storm watch" },
+		"lighthouse": { "name": "Lighthouse", "use": "Guides boats at night", "words": "boat night" }
+	},
+	"record": {
+		"title": "Chronicle",
+		"close": "Close",
+		"contents": "Chronicle contents",
+		"island": "Ponlai",
+		"earlier": "Earlier",
+		"later": "Later",
+		"today": "Today",
+		"empty": "Nothing recorded on this day yet.",
+		"more": "{{mark}} +{{count}}",
+		"you": "You, {{to}}",
+		"toAll": "to everyone",
+		"toSome": "to {{names}}",
+		"landings_one": "{{count}} came ashore",
+		"landings_other": "{{count}} came ashore",
+		"deed": {
+			"landed": "{{who}} came ashore",
+			"landed_own": "Came ashore",
+			"built": "{{building}} built",
+			"need": "{{who}}: {{need}}",
+			"need_own": "{{need}}",
+			"placed": "{{building}} sited"
+		},
+		"need": {
+			"satiety": "hungry",
+			"hydration": "thirsty",
+			"other": "in need"
+		}
+	}
+}

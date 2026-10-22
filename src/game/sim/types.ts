@@ -102,7 +102,7 @@ export interface BuildingState {
 }
 
 export interface SimState {
-	/** see save.ts SAVE_VERSION */
+	/** the save's version it was written with (../save.ts SAVE_VERSION) */
 	version: number;
 	seed: number;
 	/** game seconds since the game began */

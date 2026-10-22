@@ -8,7 +8,7 @@ import { findPath, goalAt } from './path.ts';
 import { BUILDING_KINDS, blueprintRefusal, newBuilding } from './buildings.ts';
 import { obstructPlaces } from './places.ts';
 import { random } from './rng.ts';
-import { SAVE_VERSION } from './save.ts';
+import { SAVE_VERSION } from '../save.ts';
 import { GROWTH_STEPS, POPULATION_START, SECONDS_PER_GAME_DAY, SPEED_FACTORS, WALK_SPEED, piecesFor } from './types.ts';
 import type { EntityId, IslandInput, SimState, Speed, Vec2, Villager } from './types.ts';
 
@@ -34,8 +34,9 @@ import type { EntityId, IslandInput, SimState, Speed, Vec2, Villager } from './t
 // its cells are `comingLand` from the moment the page has it, for planning.
 
 export { SAVE_VERSION };
-// the islanders' names, in the order they arrive
-const NAMES = [ 'Kai', 'Lani', 'Noa', 'Mele', 'Tavi', 'Sina', 'Rua', 'Ana', 'Iko', 'Hina' ];
+// the islanders' names, in the order they arrive: Chinese, the language the interface is written in
+// (docs/ui.md); a name is content kept in the save, not a word of the interface's catalogue (ui/i18n/)
+const NAMES = [ '阿凯', '阿木', '小禾', '阿青', '石头', '阿月', '阿海', '小满', '阿岚', '竹生', '阿珠', '老周' ];
 // islanders after the first stand round the island's middle a golden angle apart
 const GOLDEN_ANGLE = Math.PI * ( 3 - Math.sqrt( 5 ) );
 
@@ -286,7 +287,7 @@ export class Sim {
 
 		const v = this.villager( id );
 		if ( ! v || ! this.brain || this.thoughts.has( id ) ) return null;
-		const answer = this.brain.think( perceive( this, v ) );
+		const answer = this.brain.think( perceive( this, v ), v.id );
 		if ( ! ( answer instanceof Promise ) ) return Promise.resolve( act( this, v, answer ) );
 		const thought = answer.then( ( calls ) => act( this, v, calls ) ).finally( () => this.thoughts.delete( id ) );
 		this.thoughts.set( id, thought );
@@ -313,10 +314,11 @@ export function newGame( input: IslandInput, options: { seed?: number; startHour
 
 }
 
-/** A saved game; throws when the save is from another version. */
-export function loadGame( json: string, input: IslandInput ): Sim {
+/** A saved game, from its state or that state's JSON (Sim.save); throws when it is from another
+ * version (a whole save is read, and brought to this version, by ../save.ts readSave). */
+export function loadGame( saved: string | SimState, input: IslandInput ): Sim {
 
-	const state = JSON.parse( json ) as SimState;
+	const state = typeof saved === 'string' ? JSON.parse( saved ) as SimState : saved;
 	if ( state.version !== SAVE_VERSION ) throw new Error( 'This save is from another version of the game' );
 	return new Sim( state, input );
 

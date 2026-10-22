@@ -429,6 +429,27 @@ packages, into `dist/licenses/`.
   ascension toward the poles, and stored as the square root of its share of the brightest star
   clouds in 8 bits.
 
+### LXGW WenKai GB (霞鹜文楷 GB)
+
+- Author: LXGW, from Fontworks' Klee One; web font package `lxgw-wenkai-gb-web` by CM_Bill
+- Source: [LxgwWenKaiGB](https://github.com/lxgw/LxgwWenKaiGB), through npm
+  [`lxgw-wenkai-gb-web`](https://www.npmjs.com/package/lxgw-wenkai-gb-web)
+- Licence: SIL Open Font License 1.1, see
+  [`src/game/ui/fonts/LXGWWenKaiGB.OFL.txt`](src/game/ui/fonts/LXGWWenKaiGB.OFL.txt)
+- Files: the regular weight as the package ships it, sliced by `unicode-range` into small WOFF2
+  files, so a page loads only the slices its characters need; the game interface's running text
+  (`src/game/ui/GameUi.ts`). Unchanged.
+
+### Ma Shan Zheng (马善政)
+
+- Author: The MaShanZheng Project Authors (Ma Shan Zheng); web font package by Fontsource
+- Source: [googlefonts/mashanzheng](https://github.com/googlefonts/mashanzheng), through npm
+  [`@fontsource/ma-shan-zheng`](https://www.npmjs.com/package/@fontsource/ma-shan-zheng)
+- Licence: SIL Open Font License 1.1, see
+  [`src/game/ui/fonts/MaShanZheng.OFL.txt`](src/game/ui/fonts/MaShanZheng.OFL.txt)
+- Files: the package's `unicode-range` slices, unchanged; the game interface's calligraphy (the
+  day, name tags, the record's title).
+
 ## Acknowledgements
 
 Published techniques this project implements without using their code; each is also credited in a

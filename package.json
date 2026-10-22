@@ -11,7 +11,10 @@
     "typecheck": "node tools/qos.mjs tsc"
   },
   "dependencies": {
+    "@fontsource/ma-shan-zheng": "^5.3.1",
+    "i18next": "^26.4.2",
     "lil-gui": "^0.21.0",
+    "lxgw-wenkai-gb-web": "^1.530.0",
     "three": "^0.186.1"
   },
   "devDependencies": {

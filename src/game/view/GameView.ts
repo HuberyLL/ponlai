@@ -120,6 +120,17 @@ export class GameView {
 
 	}
 
+	/** Where an islander stands as drawn this frame (its feet, world metres), into `out`; false
+	 * while nothing is drawn for it. The interface hangs its tag and marks there (ui/People.ts). */
+	anchor( id: EntityId, out: THREE.Vector3 ): boolean {
+
+		const view = this.byId.get( id );
+		if ( ! view || ! view.drawn ) return false;
+		out.copy( view.root.position );
+		return true;
+
+	}
+
 	/** The islanders drawn, which part the meadow (world/vegetation/Trample.ts). */
 	walkers(): VillagerView[] {
 

@@ -299,23 +299,43 @@ Game:
 - `game` (the island as a game), `hour` (the start hour, default 8), `dayLength` (real seconds
   per game day at 1x, default 1440: 24 minutes), `paused` (the game starts paused; the scene runs
   again once the game does), `load` (resume the game saved in this browser, its world loaded at the
-  save's piece count unless `grow` is given). The page's own
-  `weather` option and auto weather work in the game as without it.
-- The player's interface is a prototype HUD (`src/game/Hud.ts`): a readout of the islander (day
-  and time, satiety and hydration, the bag, what they are doing, each unbuilt site's progress in
-  percent, the last words said and how the last action ended) and a "Place chest" button that arms placement: a ring on the turf
-  previews the spot (green, or red with the reason), a click places it, Escape cancels, and the
-  control is gone once the chest is placed (`src/game/Placement.ts`). Space pauses only the game
+  save's piece count unless `grow` is given), `new` (start a new game, which replaces the save at
+  its first save), `autosave=on|off` (whether the page keeps the save itself, resuming it as it
+  loads and saving every minute and when the page is hidden or left: on by default, off in an
+  automated browser so a capture or a check neither resumes a game left in its profile nor leaves
+  one; `load` resumes whatever it says; `src/game/save.ts`), `lang` (the interface's language: `zh-CN`, the
+  default, or `en`, a snapshot whose missing words show in Chinese: `src/game/ui/i18n/`). The
+  page's own `weather` option and auto weather work in the game as without it.
+- The player's interface is 蜃光 (`src/game/ui/GameUi.ts`, its spec `docs/ui.md`): the top row
+  (day and time, the speeds, the weather now and the next 24 game hours read ahead from the auto
+  chain, the island's resources, the record's scroll), a click on an islander for their tag and
+  ring (again, or on open ground, lets go; Esc too), the speak bar (Enter opens it and sends; the
+  words fly to the islander selected, or to everyone in view), the build bar (the mallet at the
+  bottom right; groups, buildings, `/` to search, 1-9 to choose, the arrows to scroll, Esc and
+  Enter) and the record (沧海录: the scroll; Esc, the arrows). Choosing the chest in the build bar
+  arms its placement in the scene: a ring on the turf previews the spot (green, or red with the
+  reason in the bar), a click places it (`src/game/Placement.ts`). Space pauses only the game
   clock, the GUI's hour, clock pause and time preset are off (the game's clock owns the time of
-  day), and its Game folder (`src/game/GameDebug.ts`) sets the speed and pauses, saves and loads, shows one islander's body
+  day), and its Game folder (`src/game/GameDebug.ts`) sets the speed and pauses, saves, loads and
+  starts a new game (`saved`: when the game was last saved, and whether autosave is on), shows one islander's body
   (position, the action under way, whether a thought is in flight) and sends it walking to the
   next click on the island; its Growth subfolder shows the population against the next step and
-  adds an islander (one piece per 2 islanders above 3: the island grows at 5 islanders). The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
+  adds an islander (one piece per 2 islanders above 3: the island grows at 5 islanders). Its
+  Interface subfolder shows the states the game does not reach yet: "many rows" (the build
+  roster three times over, more resource kinds than the row shows whole), "placeholder days" (nine
+  days in the record), "hearing brain" (hears the player, thinks a few seconds with the heard
+  words circling, answers a placeholder line), a line said by the inspected islander, their
+  needs low or critical, and the language (reloads the page with `lang`). The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
   by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `.tools` (the five
   actions), `setBrain( brain )` (kept across a load; `null` leaves the islander idle),
   `think( id )`, `walkTo( id, x, z )`, `placeBlueprint( kind, x, z )` (a building of a kind,
   `'chest'`, any number, each with an id like `chest1`; returns why not, or null), `focus( id )`, `setSpeed`, `togglePause`,
-  `addIslander()`, `save` and `load` (a save of another piece count loads only with the page);
+  `addIslander()`, `save` and `load` (a save of another piece count loads only with the page),
+  `startOver()` (a new game on the island shown), `autosave()` (the page's save: skipped when
+  nothing changed), `.keeps` and `.savedAt`,
+  `speak( words, ids | 'all' )` (the player's words: into the record, and to a brain that hears),
+  `say( id, words )`, `setNeed( id, need, value )`, `forecast( hours )` (the weather's turns, in
+  game hours), `.record` (the record's entries) and `.ui` (`setMany( true )`);
   `.sim.comingLand` holds the next piece's cells once the page has it.
 
 ## Test mode
@@ -1110,8 +1130,22 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   are CPU-only (plain `node`). `verify-game.mjs` checks the game's simulation: the clock, the
   ground and a path, a body walking to a point, a save round trip, a brain's late answer, and the
   first prototype's rules (needs, thirst off, the bag, fishing, the chest placed as a blueprint and
-  built, several chests with stable ids, two builders on one site, the actions, the perception, the stand-in brain over a few game days, a save mid-action); its island is in
+  built, several chests with stable ids, two builders on one site, the actions, the perception, the stand-in brain over a few game days, a save mid-action), the save file
+  (`src/game/save.ts`: the simulation and the record read back as written and played on the same,
+  a version-17 save carried over, saves no step reaches refused) and the island's growth; its island is in
   `tools/game-fixture.mjs`.
+- `tools/verify-i18n.mjs [--strict] [--list]` (plain `node`) checks the game interface's words:
+  it fails on Chinese written in `src/` outside the catalogues (`src/game/ui/i18n/`; the content
+  it allows, the islanders' names and the debug panel's placeholder lines, is listed in the tool)
+  and on an empty source string, and reports how far each other catalogue has drifted from
+  `zh-CN.json`: keys missing (shown in Chinese), keys the source no longer has, values naming
+  `{{values}}` the source does not give. `--strict` fails on the drift too; `--list` names every
+  drifted key. Run it after a change to the interface's text.
+- `tools/verify-ink.mjs` (plain `node`) checks the interface's ink (`src/game/ui/Ink.ts`) on
+  strokes drawn as the page draws them, at high's scale: the same stroke and seed ink the same; it
+  never adds ink or reaches past the outline; a short stroke keeps its ink; a long one keeps its
+  first press and dries toward its exit, a thin one less than a broad one; a gauge told not to dry
+  keeps its exit.
 - `tools/verify-growth-shape.mjs` (plain `node`) checks the island's growth over 32 seeds and 36
   steps: the coast's solidity, elongation and share along the lattice axes, that a grown land
   equals the same steps taken one at a time through a saved land, and the lattice's margin; it

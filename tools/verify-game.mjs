@@ -3,9 +3,11 @@
 // whose late answer is applied while the world ran on; then the first prototype's rules: needs that
 // fall and rise (thirst off: hydration holds), fishing by the seeded generator and the bag's capacity,
 // the chest placed as a blueprint and built, several of a kind with ids of their own, two
-// islanders building one site, actions that replace each other, a perception
+// islanders building one site, the island's stock (its stores) and a cost's shortfall, actions that replace each other, a perception
 // without positions, the stand-in brain building the chest and keeping the islander fed for
-// days, and a save taken mid-action; then the island's growth: a land grown by
+// days, and a save taken mid-action; the save file (the simulation and its record read back as
+// written, a save of version 17 brought to this one, saves no step reaches refused, and a record
+// restored from a save that keeps the entries the original keeps); then the island's growth: a land grown by
 // IslandGrowth, the population steps, the coming piece's cells, a step crossed adding exactly one
 // piece, the grid opening cells without reindexing, islanders walking onto the new piece, and a
 // save that keeps its piece count.
@@ -21,7 +23,9 @@ import { HYDRATION_PER_DAY, SATIETY_PER_DAY, START_NEEDS } from '../src/game/sim
 import { FISH_SECONDS } from '../src/game/sim/places.ts';
 import { CHEST_WORK, progressOf, stageOf } from '../src/game/sim/buildings.ts';
 import { GROWTH_STEPS, POPULATION_START, piecesFor } from '../src/game/sim/types.ts';
-import { SAVE_VERSION, savedPieces } from '../src/game/sim/save.ts';
+import { SAVE_VERSION, readSave, savedPieces, writeSave } from '../src/game/save.ts';
+import { Chronicle } from '../src/game/Chronicle.ts';
+import { shortfall, stockOf } from '../src/game/sim/stock.ts';
 import { input, inputAt } from './game-fixture.mjs';
 
 const HOUR = 3600;
@@ -482,7 +486,15 @@ function buildChest( sim ) {
 	const items = stocked.sim.state.buildings[ 0 ].items;
 	assert.ok( ( items.fish ?? 0 ) > 0, 'and it stocks the chest a little' );
 	assert.equal( play( 2, 2 ).sim.save(), stocked.sim.save(), 'deterministic for a seed' );
-	console.log( `stand-in: ${ days } days, needs never below ${ Math.min( bare.low, stocked.low ).toFixed( 1 ) }; two chests built by ${ ( stocked.built / HOUR ).toFixed( 1 ) } h, holds ${ JSON.stringify( items ) }` );
+	// the island's stock is what its stores hold, not what the islander carries (the interface's top row)
+	const stock = stockOf( stocked.sim.state );
+	const stored = {};
+	for ( const b of stocked.sim.state.buildings ) for ( const kind in b.items ) stored[ kind ] = ( stored[ kind ] ?? 0 ) + b.items[ kind ];
+	assert.deepEqual( stock, stored, 'the stock sums the stores' );
+	assert.deepEqual( stockOf( bare.sim.state ), {}, 'with no store the island holds nothing, whatever the bag holds' );
+	assert.deepEqual( shortfall( { fish: stock.fish }, stock ), {}, 'a cost the stock meets lacks nothing' );
+	assert.deepEqual( shortfall( { fish: stock.fish + 2, wood: 3 }, stock ), { fish: 2, wood: 3 }, 'a shortfall names each kind and how many more' );
+	console.log( `stand-in: ${ days } days, needs never below ${ Math.min( bare.low, stocked.low ).toFixed( 1 ) }; two chests built by ${ ( stocked.built / HOUR ).toFixed( 1 ) } h, holds ${ JSON.stringify( items ) }; the stock and its shortfall` );
 
 }
 
@@ -507,6 +519,79 @@ function buildChest( sim ) {
 
 	}
 	console.log( 'save: mid-action, loaded back and played on for two days the same' );
+
+}
+
+// the save file: the simulation and its record (Chronicle) read back as written; a record restored
+// and watching the same ticks keeps the entries the original keeps, a need noted before the save not
+// noted again; a save of version 17 (the state alone) brought to this version; others refused
+{
+
+	// the page's frames: the simulation runs a minute, then the record looks (the sky by the day)
+	const watch = ( sim, record, seconds ) => {
+
+		for ( let t = 0; t < seconds; t += 60 ) {
+
+			sim.step( 60 );
+			record.observe( sim, sim.day() % 2 ? 'cloudy' : 'fair', 60 / HOUR );
+
+		}
+
+	};
+	const sim = newGame( input, { seed: 2 } );
+	sim.brain = new StandInBrain();
+	const record = new Chronicle();
+	record.observe( sim, 'fair', 0 );
+	placeChest( sim );
+	watch( sim, record, 30 * HOUR );
+	record.add( sim, { kind: 'said', who: 'player', to: 'all', text: 'words' } );
+	sim.state.villagers[ 0 ].needs.satiety = 5;
+	watch( sim, record, 60 );
+	const kinds = new Set( record.entries.map( ( e ) => e.kind ) );
+	for ( const kind of [ 'landed', 'placed', 'built', 'said', 'need' ] ) assert.ok( kinds.has( kind ), `the record holds a ${ kind } entry` );
+	assert.deepEqual( record.save().alerted, [ `${ sim.state.villagers[ 0 ].id }:satiety` ], 'and the need it noted' );
+	// saved between the line and its re-arm: noted already, as the save must say
+	sim.state.villagers[ 0 ].needs.satiety = 25;
+	record.observe( sim, 'cloudy', 0 );
+
+	const json = writeSave( sim.state, record.save() );
+	const save = readSave( json );
+	assert.equal( save.version, SAVE_VERSION );
+	assert.equal( JSON.stringify( save.sim ), sim.save(), 'the save holds the simulation\'s state' );
+	assert.equal( JSON.stringify( save.record ), JSON.stringify( record.save() ), 'and the record' );
+	assert.equal( savedPieces( json ), 0 );
+	const loaded = loadGame( save.sim, input );
+	loaded.brain = new StandInBrain();
+	const restored = new Chronicle();
+	restored.restore( save.record );
+	restored.observe( loaded, 'cloudy', 0 );
+	assert.equal( JSON.stringify( restored.save() ), JSON.stringify( record.save() ), 'the first look at the loaded game notes nothing again' );
+	assert.deepEqual( [ ...restored.landed ], [ ...record.landed ], 'the landings come back' );
+	for ( const [ game, book ] of [ [ sim, record ], [ loaded, restored ] ] ) {
+
+		game.state.villagers[ 0 ].needs.satiety = 10;
+		book.observe( game, 'cloudy', 0 );
+
+	}
+	assert.equal( JSON.stringify( restored.save() ), JSON.stringify( record.save() ), 'a need noted before the save is not noted again' );
+	watch( sim, record, 2 * 24 * HOUR );
+	watch( loaded, restored, 2 * 24 * HOUR );
+	assert.equal( loaded.save(), sim.save() );
+	assert.equal( JSON.stringify( restored.save() ), JSON.stringify( record.save() ), 'a restored record keeps the entries the original keeps' );
+
+	// version 17: the simulation's state alone
+	const old = JSON.stringify( { ...JSON.parse( sim.save() ), version: 17 } );
+	const brought = readSave( old );
+	assert.equal( brought.version, SAVE_VERSION );
+	assert.equal( JSON.stringify( loadGame( brought.sim, input ).state ), sim.save(), 'a save of version 17 loads as it was' );
+	assert.deepEqual( brought.record, { entries: [], skies: {}, alerted: [] }, 'with an empty record' );
+	assert.equal( savedPieces( old ), 0 );
+	for ( const bad of [ null, '', 'not json', '[]', '{}', JSON.stringify( { ...JSON.parse( old ), version: 16 } ), JSON.stringify( { ...save, version: SAVE_VERSION + 1 } ), JSON.stringify( { ...save, sim: null } ) ] ) {
+
+		assert.equal( readSave( bad ), null, `refused: ${ String( bad ).slice( 0, 40 ) }` );
+
+	}
+	console.log( `save file: ${ json.length } bytes with ${ record.entries.length } record entries, read back and played on two days the same, record included; version 17 brought over; others refused` );
 
 }
 
@@ -611,7 +696,7 @@ function buildChest( sim ) {
 	assert.equal( grid.region[ kaiCell ] >= 0, true );
 	for ( const k of planned ) assert.equal( grid.top[ k ], 1, 'a path planned before stays on the island' );
 
-	// islanders walk onto the new piece: the open coming cell of the main ground farthest from Kai
+	// islanders walk onto the new piece: the open coming cell of the main ground farthest from the first islander
 	let target = - 1, best = - 1;
 	for ( let k = 0; k < coming.length; k ++ ) {
 
@@ -632,9 +717,9 @@ function buildChest( sim ) {
 	for ( const v of sim.state.villagers ) assert.ok( coming[ grid.indexAt( v.pos.x, v.pos.z ) ] || Math.hypot( v.pos.x - grid.centreX( target ), v.pos.z - grid.centreZ( target ) ) < 1.5, `${ v.name } stands on the new piece` );
 
 	// a save keeps its piece count, and loads back on its land at it
-	const json = sim.save();
-	assert.equal( savedPieces( json ), 1, 'the save stands on one piece' );
-	assert.equal( savedPieces( JSON.stringify( { ...JSON.parse( json ), version: SAVE_VERSION - 1 } ) ), null, 'a save of another version stands on none' );
+	const json = sim.save(), file = writeSave( sim.state, new Chronicle().save() );
+	assert.equal( savedPieces( file ), 1, 'the save stands on one piece' );
+	assert.equal( savedPieces( JSON.stringify( { ...JSON.parse( file ), version: SAVE_VERSION + 1 } ) ), null, 'a save no step reaches stands on none' );
 	assert.equal( savedPieces( null ), null );
 	const loaded = loadGame( json, next );
 	assert.equal( loaded.state.pieces, 1 );

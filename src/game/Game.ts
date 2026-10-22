@@ -6,9 +6,9 @@ import type { CharacterShadow } from '../characters/CharacterShadow.ts';
 import type { Villager as Figure } from '../characters/Villagers.ts';
 import type { LookColours } from '../characters/looks.ts';
 import type { LandLattice } from '../world/IslandGrowth.ts';
-import { GameHud } from './Hud.ts';
+import { GameUi } from './ui/GameUi.ts';
 import { newGame, loadGame } from './sim/Sim.ts';
-import { SAVE_KEY, savedPieces } from './sim/save.ts';
+import { SAVE_KEY, UNREAD_KEY, keepsSave, readSave, readSlot, resumesSave, savedPieces, writeSave } from './save.ts';
 import type { Sim } from './sim/Sim.ts';
 import { actionTools } from './sim/actions.ts';
 import type { Brain, ToolRegistry, ToolResult } from './sim/agent.ts';
@@ -16,20 +16,30 @@ import { StandInBrain } from './sim/standin.ts';
 import { GameView, propSamples } from './view/GameView.ts';
 import { SECONDS_PER_GAME_DAY } from './sim/types.ts';
 import type { TrampleWalker } from '../world/vegetation/Trample.ts';
-import type { EntityId, IslandInput, Speed } from './sim/types.ts';
+import type { Weather, WeatherName } from '../sky/Weather.ts';
+import { Chronicle } from './Chronicle.ts';
+import type { RecordSave } from './Chronicle.ts';
+import { stockOf } from './sim/stock.ts';
+import type { EntityId, IslandInput, Items, Speed } from './sim/types.ts';
 
 // The island as a game (?game): the simulation (src/game/sim) runs the islanders' bodies, their
 // needs and the places they act at, a brain in its slot thinks for them (the stand-in of plain
 // rules by default, sim/standin.ts) and GameView draws them and the chest into the scene.
-// The player's interface is a prototype HUD (Hud.ts): a readout of the islander and the player's
-// one act, setting the chest down as a blueprint the islander then builds (Placement.ts). The debug panel's Game folder (GameDebug.ts) and
+// The player's interface is 蜃光 (ui/GameUi.ts, docs/ui.md): the top row (day and time, speeds,
+// the weather and its forecast, the island's stock, the record), the islanders' tags and marks, the
+// speak bar, the build bar (which hands a building the simulation knows to the placement in the
+// scene, Placement.ts) and the record (沧海录), whose history the game keeps (Chronicle.ts). The debug panel's Game folder (GameDebug.ts) and
 // the methods below, reached from the console as window.__PONLAI__.game, drive the rest. The
 // simulation's clock sets the time of day; the page's sky follows it, so pausing or speeding up the
 // game turns the sky with it. The weather is the page's own, as without ?game, running on the day
-// clock. Waves, wind and rain keep real time.
+// clock, and its auto chain read ahead is the game's forecast (`forecast`, in game hours). Waves,
+// wind and rain keep real time. The player speaks to the islanders through `speak`: the words go
+// into the record and, for a brain that hears, wait per listener for its next thought
+// (`takeHeard`); the stand-in does not hear.
 //
 // URL options: hour (start hour, default 8), paused (start paused), load (resume the saved game),
-// dayLength (real seconds per game day at 1x); see docs/tools.md.
+// new (start a new game), autosave (on, off), dayLength (real seconds per game day at 1x); see
+// docs/tools.md.
 //
 // Rules: without ?game the page stays the art-review scene, unchanged. The game is the first
 // prototype of docs/game-design.md ("Next"): nothing is built ahead of that design. The brain's
@@ -39,7 +49,12 @@ import type { EntityId, IslandInput, Speed } from './sim/types.ts';
 // arrives; one thought per islander may be in flight. What starts a thought is not decided: until
 // it is, the simulation asks whenever an islander has nothing under way (sim/Sim.ts), and the
 // console may ask with `think`. Walking is the body's motor, reached by the `go` action (walkTo is
-// the debug panel's). The save is the state as JSON with a version number, in one slot. The ground
+// the debug panel's). The save is the simulation's state and the record as JSON with a version
+// number, in one slot (save.ts, which says what is saved and how a save carries over to the next
+// build). Where the page keeps it (`keepsSave`: not in an automated browser) the game resumes it at
+// start and saves every AUTOSAVE_SECONDS while the page shows (only when something changed), and
+// when the page is hidden or left; a save it cannot read is copied aside before the first save
+// over it. The debug panel and the console save, load and start over by hand anywhere. The ground
 // comes from the world generator's own exports: the land (its walkable grid, sim/grid.ts, spans the
 // land lattice's extent anchored to the world, so growth only opens cells). What changes the drawn scene at once (a simulation
 // installed at start or load, the speed or the pause, a placed blueprint, the placement ring the
@@ -67,6 +82,8 @@ export interface GameContext {
 	land: LandLattice;
 	top?: Uint8Array;
 	dayCycle: DayCycle;
+	/** the page's weather: the sky the game shows, and its auto chain read ahead (the forecast) */
+	weather: Weather;
 	characterShadow: CharacterShadow;
 	/** a skinned islander figure for a look index, its pipelines compiled (GameView "First draws") */
 	loadLook( look: number ): Promise<Figure>;
@@ -89,6 +106,9 @@ export interface GameContext {
 
 // a stalled frame (a background tab, a debugger stop) resumes without running hours at once
 const MAX_FRAME = 0.25;
+// real seconds between the saves the page makes as the game runs: at most this much play is lost
+// to a crash (a hidden or closed page saves at once)
+const AUTOSAVE_SECONDS = 60;
 
 // The simulation's island from the world generator's own exports: its land and top.
 function islandInput( land: LandLattice, top?: Uint8Array ): IslandInput {
@@ -103,11 +123,23 @@ export class Game {
 
 		const game = new Game( context );
 		// a new game starts at the page's hour (the `hour` URL option), on the island loaded
-		const sim = ( context.params.has( 'load' ) ? game.savedGame() : null ) ?? newGame( game.input, { startHour: context.dayCycle.hour, pieces: context.pieces } );
+		const saved = resumesSave( context.params ) ? game.savedGame( game.keeps ) : null;
+		const sim = saved?.sim ?? newGame( game.input, { startHour: game.startHour, pieces: context.pieces } );
 		// (a save stands on the world loaded for it, unless the `grow` URL option chose another)
 		sim.state.pieces = context.pieces;
 		if ( context.params.has( 'paused' ) ) sim.speed = 0;
-		await game.begin( sim );
+		await game.begin( sim, saved?.record );
+		if ( game.keeps ) {
+
+			// a page hidden (another tab, a minimised window, a phone's app switch) may never show again
+			document.addEventListener( 'visibilitychange', () => {
+
+				if ( document.visibilityState === 'hidden' ) game.autosave();
+
+			} );
+			addEventListener( 'pagehide', () => game.autosave() );
+
+		}
 		return game;
 
 	}
@@ -117,7 +149,12 @@ export class Game {
 	private readonly context: GameContext;
 	private input: IslandInput;
 	private debug: { update(): void; reset(): void } | null = null;
-	private hud: GameHud | null = null;
+	/** the player's interface (null until the first simulation is installed) */
+	ui: GameUi | null = null;
+	/** the island's record (沧海录): what happened since the game was installed (Chronicle.ts) */
+	readonly record = new Chronicle();
+	// the player's words each islander has heard and no thought has taken yet (takeHeard)
+	private readonly heard = new Map<EntityId, string[]>();
 	/** the tools a brain acts through, by name (sim/agent.ts): the five actions, kept across a load */
 	readonly tools: ToolRegistry = actionTools();
 	// the brain in the islanders' slot, kept across a load (setBrain)
@@ -132,10 +169,24 @@ export class Game {
 	private framesDrawn = 0;
 	private compiling = false;
 
+	/** whether the page keeps the save itself: resumes it at start and saves as the game runs (save.ts) */
+	readonly keeps: boolean;
+	/** when the game was last saved (ms since the epoch), by hand or by the page; null: not since the page loaded */
+	savedAt: number | null = null;
+	// the hour a new game starts at: the page's (the `hour` URL option)
+	private readonly startHour: number;
+	// the next autosave (performance.now ms), the game as last saved (to skip a save of no change),
+	// and whether the last one failed (said once, not every minute)
+	private nextSave = 0;
+	private lastSaved = '';
+	private saveFailed = false;
+
 	private constructor( context: GameContext ) {
 
 		this.context = context;
 		this.input = islandInput( context.land, context.top );
+		this.keeps = keepsSave( context.params );
+		this.startHour = context.dayCycle.hour;
 
 	}
 
@@ -166,25 +217,39 @@ export class Game {
 
 	}
 
-	/** The saved game, or null when there is none or it cannot be read. */
-	private savedGame(): Sim | null {
+	/** The saved game, or null when there is none or it cannot be read. One that cannot be read is
+	 * copied aside (UNREAD_KEY) when `setAside`: the page is about to save over it. */
+	private savedGame( setAside = false ): { sim: Sim; record: RecordSave } | null {
 
+		const json = readSlot();
+		if ( json === null ) return null;
+		const save = readSave( json );
 		try {
 
-			const json = localStorage.getItem( SAVE_KEY );
-			return json === null ? null : loadGame( json, this.input );
+			if ( save ) return { sim: loadGame( save.sim, this.input ), record: save.record };
 
 		} catch ( error ) {
 
 			console.error( 'Could not load the saved game', error );
-			return null;
 
 		}
+		if ( setAside ) {
+
+			try {
+
+				localStorage.setItem( UNREAD_KEY, json );
+				console.warn( `The saved game could not be read by this build: kept as ${ UNREAD_KEY }, and a new game started` );
+
+			} catch { /* storage refused: the slot is not written either */ }
+
+		}
+		return null;
 
 	}
 
-	/** Install a simulation: its tools and brain, a fresh view, and the day clock set to its hour at once. */
-	private async begin( sim: Sim ): Promise<void> {
+	/** Install a simulation (and its record, for a saved game): its tools and brain, a fresh view,
+	 * and the day clock set to its hour at once. */
+	private async begin( sim: Sim, record?: RecordSave ): Promise<void> {
 
 		const c = this.context;
 		sim.tools = this.tools;
@@ -194,10 +259,17 @@ export class Game {
 		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, holdOpaque: c.holdOpaque, loadLook: c.loadLook, lookColours: c.lookColours,
 			ticksPerSecond: () => SECONDS_PER_GAME_DAY / c.dayCycle.dayLength } );
 		this.sim = sim;
+		this.record.reset();
+		if ( record ) this.record.restore( record );
+		this.heard.clear();
+		this.lastSaved = '';
+		this.nextSave = performance.now() + AUTOSAVE_SECONDS * 1000;
+		// the record's first look, before any tick: a new game's islanders land at its start
+		this.record.observe( sim, this.weatherNow().shown, 0 );
 		c.sceneEvent( 'game begin' );
 		this.debug?.reset();
-		if ( this.hud ) this.hud.reset();
-		else this.hud = new GameHud( this, c );
+		if ( this.ui ) this.ui.reset();
+		else this.ui = new GameUi( this, c );
 		// the simulation owns the time of day; the day clock only follows it
 		c.dayCycle.paused = false;
 		const before = c.dayCycle.hour;
@@ -263,11 +335,13 @@ export class Game {
 		if ( ! this.compiling && ++ this.framesDrawn > 1 ) {
 
 			this.compiling = true;
-			this.context.compileDraws( [ ...propSamples(), ...this.hud!.samples() ] ).catch( ( error: unknown ) => console.error( 'Could not compile the game\'s props', error ) );
+			this.context.compileDraws( [ ...propSamples(), ...this.ui!.samples() ] ).catch( ( error: unknown ) => console.error( 'Could not compile the game\'s props', error ) );
 
 		}
-		this.hud?.update();
+		this.record.observe( this.sim, this.weatherNow().shown, this.gameDt / 3600 );
+		this.ui?.update();
 		this.debug?.update();
+		if ( this.keeps && performance.now() >= this.nextSave ) this.autosave();
 
 	}
 
@@ -285,21 +359,38 @@ export class Game {
 
 	}
 
-	/** Saves the game; says whether it was saved. Storage can be off (private windows, blocked site
-	 * data), and then the game goes on unsaved instead of throwing. */
+	/** Saves the game and its record; says whether it was saved. Storage can be off (private
+	 * windows, blocked site data) or full, and then the game goes on unsaved instead of throwing. */
 	save(): string {
 
+		// what happened since the frame's look goes in too (the panel's click comes between frames)
+		this.record.observe( this.sim, this.weatherNow().shown, 0 );
+		const sim = this.sim.state, record = this.record.save();
 		try {
 
-			localStorage.setItem( SAVE_KEY, this.sim.save() );
+			localStorage.setItem( SAVE_KEY, writeSave( sim, record ) );
+			this.savedAt = Date.now();
+			this.lastSaved = JSON.stringify( { sim, record } );
+			this.saveFailed = false;
 			return 'Saved';
 
 		} catch ( error ) {
 
-			console.error( 'Could not save the game', error );
-			return 'Could not save: this browser does not allow storage here';
+			if ( ! this.saveFailed ) console.error( 'Could not save the game', error );
+			this.saveFailed = true;
+			return 'Could not save: this browser does not allow storage here, or it is full';
 
 		}
+
+	}
+
+	/** The page's own save, as the game runs and as the page is hidden or left: skipped when
+	 * nothing changed since the last. */
+	autosave(): void {
+
+		this.nextSave = performance.now() + AUTOSAVE_SECONDS * 1000;
+		this.record.observe( this.sim, this.weatherNow().shown, 0 );
+		if ( JSON.stringify( { sim: this.sim.state, record: this.record.save() } ) !== this.lastSaved ) this.save();
 
 	}
 
@@ -307,14 +398,22 @@ export class Game {
 	 * another piece count loads with the page (`?game&load`), not here. */
 	async load(): Promise<string> {
 
-		let json: string | null = null;
-		try { json = localStorage.getItem( SAVE_KEY ); } catch { /* storage off: no save */ }
-		const pieces = savedPieces( json );
+		const pieces = savedPieces( readSlot() );
 		if ( pieces !== null && pieces !== this.sim.state.pieces ) return `The save stands on ${ pieces } pieces, this island on ${ this.sim.state.pieces }: reload with ?game&load`;
-		const sim = this.savedGame();
-		if ( ! sim ) return 'No saved game was loaded';
-		await this.begin( sim );
+		const saved = this.savedGame();
+		if ( ! saved ) return 'No saved game was loaded';
+		await this.begin( saved.sim, saved.record );
 		return 'Loaded';
+
+	}
+
+	/** A new game on the island shown, at the page's start hour; where the page keeps the save it
+	 * replaces the saved game at once. */
+	async startOver(): Promise<string> {
+
+		await this.begin( newGame( this.input, { startHour: this.startHour, pieces: this.sim.state.pieces } ) );
+		if ( this.keeps ) this.autosave();
+		return this.keeps ? 'New game, saved over the old one' : 'New game';
 
 	}
 
@@ -322,6 +421,7 @@ export class Game {
 	setBrain( brain: Brain | null ): void {
 
 		this.brain = brain;
+		this.heard.clear();
 		this.sim.brain = brain;
 
 	}
@@ -349,10 +449,103 @@ export class Game {
 
 	}
 
-	/** Whether every islander shows on screen: the page keeps its loading screen until then. */
+	/** The weather now: the sky the front under way left and the one it moves to, how far along it
+	 * is (0..1; 1 with no front), and the sky shown (the nearer of the two). */
+	weatherNow(): { from: WeatherName; to: WeatherName; progress: number; shown: WeatherName } {
+
+		const w = this.context.weather, from = w.origin, to = w.target, progress = w.progress;
+		return { from, to, progress, shown: progress < 0.5 ? from : to };
+
+	}
+
+	/** The weather's turns over the next `hours` game hours, read ahead from its auto chain
+	 * (Weather.forecast): each front's start and length in game hours from now (the front under way
+	 * first, its start negative), and the skies it moves between. */
+	forecast( hours: number ): { at: number; duration: number; from: WeatherName; to: WeatherName }[] {
+
+		// the weather runs on the day clock: a game hour is a 24th of the day's length
+		const perHour = this.context.dayCycle.dayLength / 24;
+		return this.context.weather.forecast( hours * perHour ).map( ( turn ) => ( { at: turn.at / perHour, duration: turn.duration / perHour, from: turn.from, to: turn.to } ) );
+
+	}
+
+	/** What the island holds: its stores' items by kind (sim/stock.ts). */
+	stock(): Items {
+
+		return stockOf( this.sim.state );
+
+	}
+
+	/** The player speaks: words to some islanders (their ids) or to everyone. They go into the
+	 * record; for a brain that hears, each listener keeps them until a thought takes them
+	 * (takeHeard), and is asked for one now. */
+	speak( words: string, to: EntityId[] | 'all' ): void {
+
+		const text = words.trim();
+		if ( ! text ) return;
+		this.record.add( this.sim, { kind: 'said', who: 'player', to, text } );
+		if ( ! this.brain?.hears ) return;
+		const listeners = to === 'all' ? this.sim.state.villagers.map( ( v ) => v.id ) : to;
+		for ( const id of listeners ) {
+
+			let lines = this.heard.get( id );
+			if ( ! lines ) this.heard.set( id, lines = [] );
+			lines.push( text );
+
+		}
+		// (Sim.think: not while a thought is in flight; the words then wait for the next)
+		for ( const id of listeners ) this.sim.think( id );
+
+	}
+
+	/** An islander says something (the `say` action on their body: the debug panel's and the
+	 * console's; a brain says through its tools). Null when said, else why not. */
+	say( id: EntityId, words: string ): string | null {
+
+		const v = this.sim.villager( id ), say = this.tools.get( 'say' );
+		if ( ! v || ! say ) return 'No such islander';
+		const result = say( v, { words }, this.sim );
+		return result.ok ? null : result.reason;
+
+	}
+
+	/** Set an islander's need by hand (the debug panel's: to see the interface's ramps and alerts). */
+	setNeed( id: EntityId, need: 'satiety' | 'hydration', value: number ): void {
+
+		const v = this.sim.villager( id );
+		if ( v ) v.needs[ need ] = Math.min( Math.max( value, 0 ), 100 );
+
+	}
+
+	/** The player's words an islander has heard since the last call for it, oldest first (for a
+	 * brain that hears: hearing the leader is designed with the language model). */
+	takeHeard( id: EntityId ): string[] {
+
+		const lines = this.heard.get( id ) ?? [];
+		this.heard.delete( id );
+		return lines;
+
+	}
+
+	/** Whether the player's words wait for an islander's next thought. */
+	hasHeard( id: EntityId ): boolean {
+
+		return ( this.heard.get( id )?.length ?? 0 ) > 0;
+
+	}
+
+	/** Where an islander stands as drawn (its feet, world metres), into `out`; false while not drawn. */
+	anchor( id: EntityId, out: THREE.Vector3 ): boolean {
+
+		return this.view?.anchor( id, out ) ?? false;
+
+	}
+
+	/** Whether every islander shows on screen and the interface's fonts are in: the page keeps its
+	 * loading screen until then. */
 	ready(): boolean {
 
-		return this.view?.ready ?? false;
+		return ( this.view?.ready ?? false ) && ( this.ui?.ready ?? false );
 
 	}
 

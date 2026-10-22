@@ -27,6 +27,12 @@
 //   tools/verify-weather-state.mjs measures it). The wind's draws take a random stream of their
 //   own, so the sky's sequence is the one it was before the wind had levels.
 //
+// The auto chain's sky takes its draws from one seeded stream (dwell, pick, the front's length, in
+// that order each turn), so its future is known: `forecast` reads it ahead without moving it (the
+// game's forecast, src/game/ui/Forecast.ts). The chain counts its dwell down by the frames' steps
+// from the frame after a front ends, so a turn comes up to a step either side of the time read
+// ahead (tools/verify-weather-state.mjs); the forecast is read again as the weather moves on.
+//
 // Parked weathers (`PARKED_WEATHER`: rain, storm, fog) slowed every line of work down, so until the
 // game needs them as pressure (docs/game-design.md) they are out of the rotation: the auto chain
 // never reaches them, the production page refuses them (main.ts falls back to fair) and the default
@@ -144,6 +150,39 @@ export interface WeatherFront {
 	progress: number;
 }
 
+/** A change of sky in the forecast: when its front starts (seconds of the weather's clock from
+ * now; negative for the front under way), how long it takes, and the skies it moves between. */
+export interface WeatherTurn {
+	at: number;
+	duration: number;
+	from: WeatherName;
+	to: WeatherName;
+}
+
+// mulberry32: one draw from a seed, and the seed after it
+function mulberry32( seed: number ): { seed: number; value: number } {
+
+	const s = ( seed + 0x6D2B79F5 ) | 0;
+	let t = Math.imul( s ^ ( s >>> 15 ), s | 1 );
+	t ^= t + Math.imul( t ^ ( t >>> 7 ), t | 61 );
+	return { seed: s, value: ( ( t ^ ( t >>> 14 ) ) >>> 0 ) / 4294967296 };
+
+}
+
+// The auto chain's next sky from the current one, for a draw in [ 0, 1 ).
+function nextSky( name: WeatherName, pick: number ): WeatherName {
+
+	const options = NEXT[ name ];
+	for ( const [ next, weight ] of options ) {
+
+		if ( pick < weight ) return next;
+		pick -= weight;
+
+	}
+	return options[ options.length - 1 ][ 0 ];
+
+}
+
 const fields = [ ...Object.keys( WEATHER_PRESETS.clear ), 'windSpeed', 'windDirection', 'gustiness' ] as ( keyof Preset )[];
 // The auto-weather chain's seeds (mulberry32), at construction and at `establish`: the sky's, and
 // the wind's own stream.
@@ -187,6 +226,8 @@ export class Weather {
 	private from: Preset;
 	private destination: Readonly<Preset>;
 	private targetName: WeatherName;
+	// the sky the front under way left (the target itself once it has arrived)
+	private originName: WeatherName;
 	private windLevel: WindLevel;
 	private windHeading: number;
 	private elapsed = 0;
@@ -212,6 +253,7 @@ export class Weather {
 		this.from = { ...preset };
 		this.destination = preset;
 		this.targetName = name;
+		this.originName = name;
 
 	}
 
@@ -229,6 +271,7 @@ export class Weather {
 		this.from = { ...preset };
 		this.destination = preset;
 		this.targetName = name;
+		this.originName = name;
 		this.elapsed = 0;
 		this.duration = 0;
 		this.dwell = 0;
@@ -239,6 +282,8 @@ export class Weather {
 
 	get state(): Readonly<WeatherState> { return this.current; }
 	get target(): WeatherName { return this.targetName; }
+	/** The sky the front under way set out from (the target once it has arrived). */
+	get origin(): WeatherName { return this.duration > this.elapsed ? this.originName : this.targetName; }
 	/** The wind the weather is at or moving to: its level and heading (0 - 360 degrees). */
 	get windTarget(): { level: WindLevel; heading: number } { return { level: this.windLevel, heading: this.windHeading }; }
 	get progress(): number { return this.duration > 0 ? this.elapsed / this.duration : 1; }
@@ -274,6 +319,7 @@ export class Weather {
 		// back to the previous named preset, and every new transition eases out of its snapshot.
 		this.from = { ...this.current };
 		this.destination = preset;
+		this.originName = this.targetName;
 		this.targetName = name;
 		this.windLevel = level;
 		this.windHeading = preset.windDirection;
@@ -286,21 +332,64 @@ export class Weather {
 
 	private random(): number {
 
-		// mulberry32
-		let t = this.seed = ( this.seed + 0x6D2B79F5 ) | 0;
-		t = Math.imul( t ^ ( t >>> 15 ), t | 1 );
-		t ^= t + Math.imul( t ^ ( t >>> 7 ), t | 61 );
-		return ( ( t ^ ( t >>> 14 ) ) >>> 0 ) / 4294967296;
+		const draw = mulberry32( this.seed );
+		this.seed = draw.seed;
+		return draw.value;
 
 	}
 
 	// The wind's own stream (mulberry32), so its draws leave the sky's sequence as it was.
 	private windRandom(): number {
 
-		let t = this.windSeed = ( this.windSeed + 0x6D2B79F5 ) | 0;
-		t = Math.imul( t ^ ( t >>> 15 ), t | 1 );
-		t ^= t + Math.imul( t ^ ( t >>> 7 ), t | 61 );
-		return ( ( t ^ ( t >>> 14 ) ) >>> 0 ) / 4294967296;
+		const draw = mulberry32( this.windSeed );
+		this.windSeed = draw.seed;
+		return draw.value;
+
+	}
+
+	/**
+	 * The skies the weather moves through over the next `seconds` of its clock (the seconds `update`
+	 * is given): the front under way first (its `at` negative), then each turn the auto chain will
+	 * take, read ahead from its seeds without moving it (see the header). Without auto weather the
+	 * sky holds after the front under way.
+	 */
+	forecast( seconds: number ): WeatherTurn[] {
+
+		const turns: WeatherTurn[] = [];
+		let t = 0;
+		if ( this.duration > this.elapsed ) {
+
+			turns.push( { at: - this.elapsed, duration: this.duration, from: this.originName, to: this.targetName } );
+			t = this.duration - this.elapsed;
+
+		}
+		if ( ! this.auto ) return turns;
+		let seed = this.seed, dwell = this.dwell, name = this.targetName;
+		while ( t < seconds ) {
+
+			let draw;
+			if ( dwell <= 0 ) {
+
+				draw = mulberry32( seed );
+				seed = draw.seed;
+				dwell = 90 + draw.value * 150;
+
+			}
+			t += dwell;
+			if ( t >= seconds ) break;
+			draw = mulberry32( seed );
+			seed = draw.seed;
+			const next = nextSky( name, draw.value );
+			draw = mulberry32( seed );
+			seed = draw.seed;
+			const duration = 30 + draw.value * 30;
+			turns.push( { at: t, duration, from: name, to: next } );
+			name = next;
+			t += duration;
+			dwell = 0;
+
+		}
+		return turns;
 
 	}
 
@@ -337,15 +426,7 @@ export class Weather {
 		if ( this.dwell <= 0 ) this.dwell = 90 + this.random() * 150;
 		this.dwell -= dt;
 		if ( this.dwell > 0 ) return;
-		let pick = this.random();
-		const options = NEXT[ this.targetName ];
-		let next = options[ options.length - 1 ][ 0 ];
-		for ( const [ name, weight ] of options ) {
-
-			if ( pick < weight ) { next = name; break; }
-			pick -= weight;
-
-		}
+		const next = nextSky( this.targetName, this.random() );
 		const duration = 30 + this.random() * 30;
 		this.moveTo( next, this.nextWindLevel( next ), this.nextWindHeading(), duration );
 

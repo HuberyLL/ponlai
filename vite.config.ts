@@ -26,6 +26,9 @@ const LICENCE_FILES: Record<string, string> = {
 	'licenses/fsr.LICENSE.txt': 'src/post/fsr.LICENSE.txt',
 	'licenses/fidelityfx-fsr3.LICENSE.txt': 'src/post/fidelityfx-fsr3.LICENSE.txt',
 	'licenses/meshoptimizer.LICENSE.txt': 'src/world/meshoptimizer.LICENSE.txt',
+	// the game interface's fonts (OFL: the licence travels with the font files the build copies)
+	'licenses/LXGWWenKaiGB.OFL.txt': 'src/game/ui/fonts/LXGWWenKaiGB.OFL.txt',
+	'licenses/MaShanZheng.OFL.txt': 'src/game/ui/fonts/MaShanZheng.OFL.txt',
 };
 
 function licences(): Plugin {

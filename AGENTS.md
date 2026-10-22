@@ -115,9 +115,20 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   (`FishGeometry.ts`, `FishMaterial.ts`).
 - `src/game/`: the game behind `?game` (`Game.ts`, which also drives the island's growth by the
   population through `world/Growth.ts`): `sim/` is the headless simulation (no three.js or DOM;
-  node runs it by stripping types; `sim/save.ts` is the save slot the world's start reads), `view/`
-  draws the islanders and the chest, and `Hud.ts` / `Placement.ts` are the player's
-  prototype HUD.
+  node runs it by stripping types), `save.ts` is the save (one slot: the simulation's state and the
+  record, versioned with steps that carry old saves over; the world's start reads its piece count),
+  `view/`
+  draws the islanders and the chest, `Chronicle.ts` keeps the record of what happened and
+  `Placement.ts` places a building chosen in the build bar. `ui/` is the player's interface
+  (`GameUi.ts`, spec `docs/ui.md`): its parts (`TopRow.ts`, `Forecast.ts`, `ResourceRow.ts`,
+  `People.ts`, `SpeakBar.ts`, `BuildBar.ts`, `Record.ts`), the lists it shows as data with
+  placeholder rows (`data/`: buildings, resources, weather kinds, the record's kinds, the words for
+  the simulation's states), its words in i18next catalogues (`i18n/`: `zh-CN.json` the source,
+  `en.json` an unmaintained snapshot; no player-facing string is written in code,
+  `tools/verify-i18n.mjs`), the brush icons (`Icons.ts`), strokes (`Brush.ts`) and the ink of the
+  long ones (`Ink.ts`, drawn by `InkPath.ts`, `tools/verify-ink.mjs`), what it lays into the
+  scene in the camera's perspective (`Space.ts`: the words over the islanders and in flight),
+  palette (`Palette.ts`), styles (`ui.css`) and our own brush fonts (`fonts/`).
 - `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the frame profiler, the frame-rate readout,
   the pipeline counter (`PipelineCounter.ts`), the wind view and its probe (`WindView.ts`,
   `WindArrows.ts`, `WindProbe.ts`).
