@@ -191,8 +191,9 @@ import { meter, meteredExposure } from './Exposure.ts';
 //   single-sampled, that argument is a mip level, so load sample 0 only. View z below -9e4 is sky.
 // - In a full-screen pass the camera nodes are the pass's own camera: the scene camera's matrices
 //   come in as uniforms.
-// - The display chain is tidewater's (ACES_EXPOSURE) with Patry's (SIGGRAPH 2021) over it: the local
-//   tone mapping first (LocalTone.ts: a function of the frame, nothing kept between frames), one
+// - The display chain is tidewater's (ACES_EXPOSURE) with, over it, Patry's (SIGGRAPH 2021) local
+//   tone mapping, curve space and white balance, in this order: the local tone mapping first
+//   (LocalTone.ts: a function of the frame, nothing kept between frames), one
 //   curve and grade (the tone, TONE, and the night's grade, NIGHT, over it are off by default), then
 //   the grade's tables (GradeLut.ts: the first generated from the grade's parameters, `grade` and
 //   `setGrade`, the second the identity). The curve maps each channel in the

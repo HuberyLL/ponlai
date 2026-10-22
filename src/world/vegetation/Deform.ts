@@ -138,7 +138,8 @@ export function tuftWind( wind: WindState, root: V2 ): TuftWind {
  * offset grows with the square of the blade parameter, `t2`) while every vertex keeps its distance
  * from the root, so a bent blade arcs over and sinks rather than stretching. About that lean the
  * blades sway along the wind with their neighbours (Wind.ts `gustWave`, GRASS_WIND.cycles swings
- * per gust tile), each a little apart (`phase`, the blade's own, `bladePhase`, within +-0.4 rad),
+ * per gust tile), each a little apart (`phase`, the blade's own, `bladePhase`, within +-0.4 rad:
+ * a hash per blade offsets the sine's phase, a technique from Wohllaib, GDC 2021),
  * and shiver across it on their own phase, a quarter of that sway. `fade` (0..1, `swayFade`)
  * scales the sway and shiver but not the lean; the frame's bend and the previous frame's take the
  * same one. `wind` is the frame's wind state (`shared.wind`, or `.previous`). `rigidity` (the

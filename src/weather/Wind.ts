@@ -37,12 +37,13 @@ import { PREVAILING_HEADING, type WeatherState } from '../sky/Weather.ts';
 //   `direction` (the storm sea's foam).
 // The wind probe's W5 (`__PONLAI__.windProbe`) reports where each of them travels.
 //
-// `windField` (noise scrolled with the wind: Wohllaib, GDC 2021, its
-// strength varied by Perlin noise, Rockenbeck, GDC 2021; the map is ours):
-// a tileable gust map (two channels of periodic noise, ranked
-// to an even spread) scrolled with the wind's integrated along-wind travel, its gust fronts long
-// across the wind and finer eddies running faster inside them, so gusts visibly sweep the meadow
-// and change as they go. It gives a lean (tip offset over height) from the wind's pressure; still
+// `windField`: a tileable gust map (two channels of periodic noise, ranked to an even spread)
+// scrolled with the wind's integrated along-wind travel, its gust fronts long across the wind and
+// finer eddies running faster inside them, so gusts visibly sweep the meadow and change as they go
+// (wind as noise scrolled downwind for its push: Wohllaib, GDC 2021, its
+// strength varied by Perlin noise so gusts show in the grass, Rockenbeck, GDC 2021; the tileable
+// map, its ranking, its two scales and the integrated travel are ours). It gives a lean (tip offset
+// over height) from the wind's pressure; still
 // air is the rest pose. Plants answer it in Crysis's layers (Sousa, GPU Gems 3 ch. 16): the whole
 // plant bends from its root with the field at the root, every vertex keeping its distance from it
 // (`mainBend`), and sways a little about that lean (`gustWave`, `swingOf`). The sway is driven by

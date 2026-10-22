@@ -14,8 +14,9 @@ import type { Shared } from '../shared.ts';
 
 // The meadow's flowers as whole plants, in swaths of one kind (Grass.ts FlowerSwaths decides where,
 // and gives every species a swath on an island of two or more): a plant artists would author,
-// drawn as instances that the GPU culls (vegetation/VegetationCull.ts), a technique
-// Eric Wohllaib presented in Procedural Grass in Ghost of Tsushima, GDC 2021. From the
+// placed procedurally and drawn as GPU instances (a technique Eric Wohllaib presented in
+// Procedural Grass in Ghost of Tsushima, GDC 2021), and culled on the GPU
+// (vegetation/VegetationCull.ts). From the
 // game's view a swath is one stroke of colour, its flowers covering about a third of its middle
 // (Grass.ts PLANT_SHARE: the green shows between them). Penglai's, after the immortals' islands:
 // - The yaoxiang (遙香草) of Daiyu, "its flowers like cinnabar, shining to the moon, its leaves long,

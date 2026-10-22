@@ -29,9 +29,10 @@ type V4 = THREE.Node<'vec4'>;
 //   - the medium's density is analytic and integrable along any ray: two exponential height layers
 //     (a thin marine layer over the sea and a deeper aerosol layer, whose sum at sea level is the
 //     weather's haze) and the talk's sigmoidal layer (the sea fog, dense below its top and thin
-//     above). The talk prints the sigmoid's weight as z^2 / (z^2 + k^2), which is even in z and no
-//     step; this is the algebraic sigmoid it stands for, 1/2 + 1/2 x / sqrt( x^2 + k^2 ) with x the
-//     height over the layer's top, whose mean over any span of heights has a closed form. Local
+//     above). The talk's slide prints the layer as lerp( d0, d1, 1/2 z^2 / ( z^2 + k_s^2 ) + 1/2 ),
+//     whose weight is even in z and no step; this is the algebraic sigmoid we take it to stand for,
+//     1/2 + 1/2 x / sqrt( x^2 + k^2 ) with x the height over the layer's top, whose mean over any
+//     span of heights has a closed form. Local
 //     variation (banks, wisps, ground fog) belongs to particles, not to the density.
 //   - a froxel grid over the view in slices each deeper than the one before by a fixed share (the
 //     talk's PS4 grid is 128 x 64 x 64; high's 160 x 90 makes a froxel about 16 render pixels

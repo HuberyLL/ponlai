@@ -30,7 +30,10 @@ art decision changes; reference images stay out of the repository.
   parameters, that a look can blend between by time of day or place (the first holds the clear
   day's grade: tidewater's touch more saturation and contrast, the meadow's green turned a little
   toward a sunlit field's yellow, the sky's soft blue kept light and the red flowers' colour kept
-  against the cool white; the second is the identity).
+  against the cool white; the second is the identity). The local tone mapping, the curve's working
+  space, the white balance and the grade tables follow the display chain Patry
+  presented (SIGGRAPH 2021); the toe's lift, the vignette, the grain, the bloom and the blend of
+  two tables are ours.
 - The light keeps the sun's and the sky's own balance, by day and by night, so that the land shows
   where the light comes from: a stone or a figure has a lit side and a shaded one, and its shade
   falls on what lies beside it; the meadow shows it in its slopes, in the light through its blades
