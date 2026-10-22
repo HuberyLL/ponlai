@@ -1,5 +1,7 @@
 import { DAY_PRESETS } from '../../../sky/DayCycle.ts';
 import type { WeatherName } from '../../../sky/Weather.ts';
+import { t } from '../i18n/i18n.ts';
+import type { Catalogue } from '../i18n/i18n.ts';
 
 // The kinds of weather the player is shown (docs/ui.md, Weather forecast): the kept weathers only,
 // 晴 (clear and fair: a third of the sky in small cloud is still a fine day), 多云 and 阴, with
@@ -12,10 +14,13 @@ import type { WeatherName } from '../../../sky/Weather.ts';
 // how far its cloud has taken the sky (the light shrinks toward the upper left behind it), `cloud`
 // where its cloud sits (the cloud's offset in the icon's units; null: none) and `back` whether a
 // second cloud stands behind. `rank` orders kinds from fine to bad: of two turns of the forecast
-// too close to show both, the worse one stays.
+// too close to show both, the worse one stays. A kind's name is the catalogue's (i18n/zh-CN.json
+// `weather.kind`, by id), resolved when the table loads.
+
+type KindId = keyof Catalogue[ 'weather' ][ 'kind' ];
 
 export interface WeatherKind {
-	id: string;
+	id: KindId;
 	name: string;
 	/** the engine's skies this kind shows */
 	engine: readonly WeatherName[];
@@ -26,10 +31,12 @@ export interface WeatherKind {
 	live: { light: number; cover: number; cloud: readonly [ number, number ] | null; back: number };
 }
 
+const kind = ( k: Omit<WeatherKind, 'name'> ): WeatherKind => ( { ...k, name: t( `weather.kind.${ k.id }` ) } );
+
 export const WEATHER_KINDS: readonly WeatherKind[] = [
-	{ id: 'clear', name: '晴', engine: [ 'clear', 'fair' ], rank: 0, icon: 'sun', night: 'moon', live: { light: 1, cover: 0, cloud: null, back: 0 } },
-	{ id: 'cloudy', name: '多云', engine: [ 'cloudy' ], rank: 1, icon: 'cloud', night: 'cloudNight', live: { light: 1, cover: 1, cloud: [ 2, 7 ], back: 0 } },
-	{ id: 'overcast', name: '阴', engine: [ 'overcast' ], rank: 2, icon: 'overcast', live: { light: 0, cover: 1, cloud: [ - 1, 7 ], back: 1 } },
+	kind( { id: 'clear', engine: [ 'clear', 'fair' ], rank: 0, icon: 'sun', night: 'moon', live: { light: 1, cover: 0, cloud: null, back: 0 } } ),
+	kind( { id: 'cloudy', engine: [ 'cloudy' ], rank: 1, icon: 'cloud', night: 'cloudNight', live: { light: 1, cover: 1, cloud: [ 2, 7 ], back: 0 } } ),
+	kind( { id: 'overcast', engine: [ 'overcast' ], rank: 2, icon: 'overcast', live: { light: 0, cover: 1, cloud: [ - 1, 7 ], back: 1 } } ),
 ];
 
 /** The kind a sky of the engine shows as (a parked sky: the nearest kept kind, 阴). */

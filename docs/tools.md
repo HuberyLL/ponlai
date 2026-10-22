@@ -299,8 +299,9 @@ Game:
 - `game` (the island as a game), `hour` (the start hour, default 8), `dayLength` (real seconds
   per game day at 1x, default 1440: 24 minutes), `paused` (the game starts paused; the scene runs
   again once the game does), `load` (resume the game saved in this browser, its world loaded at the
-  save's piece count unless `grow` is given). The page's own
-  `weather` option and auto weather work in the game as without it.
+  save's piece count unless `grow` is given), `lang` (the interface's language: `zh-CN`, the
+  default, or `en`, a snapshot whose missing words show in Chinese: `src/game/ui/i18n/`). The
+  page's own `weather` option and auto weather work in the game as without it.
 - The player's interface is 蜃光 (`src/game/ui/GameUi.ts`, its spec `docs/ui.md`): the top row
   (day and time, the speeds, the weather now and the next 24 game hours read ahead from the auto
   chain, the island's resources, the record's scroll), a click on an islander for their tag and
@@ -318,8 +319,8 @@ Game:
   Interface subfolder shows the states the game does not reach yet: "many rows" (the build
   roster three times over, more resource kinds than the row shows whole), "placeholder days" (nine
   days in the record), "hearing brain" (hears the player, thinks a few seconds with the heard
-  words circling, answers a placeholder line), a line said by the inspected islander, and their
-  needs low or critical. The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
+  words circling, answers a placeholder line), a line said by the inspected islander, their
+  needs low or critical, and the language (reloads the page with `lang`). The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
   by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `.tools` (the five
   actions), `setBrain( brain )` (kept across a load; `null` leaves the islander idle),
   `think( id )`, `walkTo( id, x, z )`, `placeBlueprint( kind, x, z )` (a building of a kind,
@@ -1124,6 +1125,13 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   first prototype's rules (needs, thirst off, the bag, fishing, the chest placed as a blueprint and
   built, several chests with stable ids, two builders on one site, the actions, the perception, the stand-in brain over a few game days, a save mid-action); its island is in
   `tools/game-fixture.mjs`.
+- `tools/verify-i18n.mjs [--strict] [--list]` (plain `node`) checks the game interface's words:
+  it fails on Chinese written in `src/` outside the catalogues (`src/game/ui/i18n/`; the content
+  it allows, the islanders' names and the debug panel's placeholder lines, is listed in the tool)
+  and on an empty source string, and reports how far each other catalogue has drifted from
+  `zh-CN.json`: keys missing (shown in Chinese), keys the source no longer has, values naming
+  `{{values}}` the source does not give. `--strict` fails on the drift too; `--list` names every
+  drifted key. Run it after a change to the interface's text.
 - `tools/verify-growth-shape.mjs` (plain `node`) checks the island's growth over 32 seeds and 36
   steps: the coast's solidity, elongation and share along the lattice axes, that a grown land
   equals the same steps taken one at a time through a saved land, and the lattice's margin; it

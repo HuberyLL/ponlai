@@ -2,6 +2,7 @@ import type { EntityId } from '../sim/types.ts';
 import { level, upright } from './Brush.ts';
 import { PALETTE } from './Palette.ts';
 import { css, el, flag, svgEl, text } from './dom.ts';
+import { t } from './i18n/i18n.ts';
 import type { People } from './People.ts';
 import type { UiShared } from './Shared.ts';
 
@@ -120,12 +121,12 @@ export class SpeakBar {
 		};
 		stroke( false );
 		this.mid = el( 'div', 'mid', row );
-		this.hint = el( 'span', 'hint', this.mid, '说话' );
+		this.hint = el( 'span', 'hint', this.mid, t( 'speak.title' ) );
 		stroke( true );
 		this.mirror = el( 'div', 'pl-mirror', root );
 		this.mirror.setAttribute( 'aria-hidden', 'true' );
 		const field = this.field = el( 'input', 'pl-field', root );
-		field.setAttribute( 'aria-label', '说话' );
+		field.setAttribute( 'aria-label', t( 'speak.title' ) );
 		field.autocomplete = 'off';
 		field.spellcheck = false;
 		this.caret = svgEl( 'svg', { class: 'pl-caret', viewBox: '0 0 6 22', 'aria-hidden': 'true' }, root );

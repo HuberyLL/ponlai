@@ -1,5 +1,6 @@
 import type { WeatherName } from '../../../sky/Weather.ts';
 import type { RecordEntry } from '../../Chronicle.ts';
+import { lookup, t } from '../i18n/i18n.ts';
 
 // The kinds of entry the record (沧海录) shows (docs/ui.md, 沧海录): how each reads as a row of the
 // day's log, and the mark it puts over its day on the river. The game keeps the entries
@@ -9,7 +10,8 @@ import type { RecordEntry } from '../../Chronicle.ts';
 //
 // Words are the player's (精白) or an islander's (缟) and read as a speaker and their line; every
 // other entry is a deed, one line. `deed` writes it from the entry, the namer of islanders and
-// buildings, and whether the page is one islander's (their own name then goes unsaid).
+// buildings, and whether the page is one islander's (their own name then goes unsaid: the
+// catalogue's `_own` form). The words are the catalogue's (i18n/zh-CN.json `record.deed`).
 
 export interface RecordNames {
 	/** an islander's name by id */
@@ -29,44 +31,33 @@ export interface RecordKind {
 	deed( e: RecordEntry, names: RecordNames, own: boolean ): string;
 }
 
-const NEED_WORDS: Readonly<Record<string, { deed: string; icon: string }>> = {
-	satiety: { deed: '饥饿', icon: 'satiety' },
-	hydration: { deed: '口渴', icon: 'drop' },
-};
+/** a need's icon on the river (the words: `record.need`) */
+const NEED_ICONS: Readonly<Record<string, string>> = { satiety: 'satiety', hydration: 'drop' };
+const needWords = ( need: string ) => lookup( `record.need.${ need }`, t( 'record.need.other' ) );
+const own = ( yes: boolean ) => ( yes ? { context: 'own' } : {} );
 
 export const RECORD_KINDS: Readonly<Record<string, RecordKind>> = {
-	landed: { id: 'landed', rank: 0, mark: { icon: () => 'boat' }, deed: ( e, n, own ) => ( own ? '' : n.person( e.who ) + '　' ) + '登岛' },
-	built: { id: 'built', rank: 1, mark: { icon: () => 'build' }, deed: ( e, n ) => n.building( e.text ?? '' ) + '建成' },
-	need: { id: 'need', rank: 2, mark: { icon: ( e ) => NEED_WORDS[ e.text ?? '' ]?.icon ?? 'satiety', alarm: true },
-		deed: ( e, n, own ) => ( own ? '' : n.person( e.who ) + '　' ) + ( NEED_WORDS[ e.text ?? '' ]?.deed ?? '告急' ) },
-	placed: { id: 'placed', rank: 9, deed: ( e, n ) => n.building( e.text ?? '' ) + '定址' },
+	landed: { id: 'landed', rank: 0, mark: { icon: () => 'boat' }, deed: ( e, n, mine ) => t( 'record.deed.landed', { who: n.person( e.who ), ...own( mine ) } ) },
+	built: { id: 'built', rank: 1, mark: { icon: () => 'build' }, deed: ( e, n ) => t( 'record.deed.built', { building: n.building( e.text ?? '' ) } ) },
+	need: { id: 'need', rank: 2, mark: { icon: ( e ) => NEED_ICONS[ e.text ?? '' ] ?? 'satiety', alarm: true },
+		deed: ( e, n, mine ) => t( 'record.deed.need', { who: n.person( e.who ), need: needWords( e.text ?? '' ), ...own( mine ) } ) },
+	placed: { id: 'placed', rank: 9, deed: ( e, n ) => t( 'record.deed.placed', { building: n.building( e.text ?? '' ) } ) },
 	said: { id: 'said', rank: 9, words: true, deed: ( e ) => e.text ?? '' },
 };
 
 /** Several landings on one day read as one mark over it on the island's page: N人登岛. */
-export const LANDINGS = ( n: number ) => `${ chineseNumber( n ) }人登岛`;
-
-const DIGITS = '〇一二三四五六七八九';
-
-/** A whole number in Chinese numerals, as the days are named (第十二日). */
-export function chineseNumber( v: number ): string {
-
-	if ( v < 10 ) return DIGITS[ v ];
-	if ( v < 20 ) return '十' + ( v % 10 ? DIGITS[ v % 10 ] : '' );
-	if ( v < 100 ) return DIGITS[ Math.floor( v / 10 ) ] + '十' + ( v % 10 ? DIGITS[ v % 10 ] : '' );
-	return String( v );
-
-}
+export const LANDINGS = ( n: number ) => t( 'record.landings', { count: n } );
 
 /** A day's name: 第一日. */
-export const dayName = ( day: number ) => `第${ chineseNumber( day ) }日`;
+export const dayName = ( day: number ) => t( 'time.day', { day } );
 
 /**
  * Placeholder days for the debug panel (Interface, "placeholder days"): nine days of landings,
  * words, buildings and alarms, so the river scrolls, the list of islanders runs past seven names and
  * every mark shows. Islanders are given by their place in the roll (0 the first: the game's own
  * islanders where it has them, else PLACEHOLDER_NAMES), the player as 'player'; each day's weather
- * is PLACEHOLDER_SKIES'.
+ * is PLACEHOLDER_SKIES'. The names and lines are content (what people are called and say, as the
+ * game's own are: sim/Sim.ts), not the interface's words, so they are not in the catalogue.
  */
 export const PLACEHOLDER_NAMES = [ '阿凯', '阿木', '小禾', '阿青', '石头', '阿月', '阿海', '小满', '阿岚', '竹生' ];
 export const PLACEHOLDER_SKIES: readonly WeatherName[] = [ 'fair', 'cloudy', 'clear', 'overcast', 'fair', 'cloudy', 'overcast', 'clear', 'fair' ];

@@ -34,7 +34,8 @@ import type { EntityId, IslandInput, SimState, Speed, Vec2, Villager } from './t
 // its cells are `comingLand` from the moment the page has it, for planning.
 
 export { SAVE_VERSION };
-// the islanders' names, in the order they arrive: Chinese, as the interface is (docs/ui.md)
+// the islanders' names, in the order they arrive: Chinese, the language the interface is written in
+// (docs/ui.md); a name is content kept in the save, not a word of the interface's catalogue (ui/i18n/)
 const NAMES = [ '阿凯', '阿木', '小禾', '阿青', '石头', '阿月', '阿海', '小满', '阿岚', '竹生', '阿珠', '老周' ];
 // islanders after the first stand round the island's middle a golden angle apart
 const GOLDEN_ANGLE = Math.PI * ( 3 - Math.sqrt( 5 ) );

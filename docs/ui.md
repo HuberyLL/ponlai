@@ -16,7 +16,8 @@ marked *changed*).
   short of a material, no icon yet).
 - **Out of scope for now**: a settings menu (frame rate, anti-aliasing and the rest wait); the
   placement of a building in the world (it belongs to the 3D scene: `src/game/Placement.ts`);
-  telling time in 时辰 (the clock reads `08:00` until decided); the English version.
+  telling time in 时辰 (the clock reads `08:00` until decided); the English version (its catalogue
+  is a snapshot, not maintained until then: As built, Languages).
 - **Weather**: only the kept weathers are shown (*changed*): 晴 (clear and fair), 多云 (cloudy)
   and 阴 (overcast), with night faces for 晴 (moon) and 多云 (moon behind cloud). The parked kinds
   (雨, 风暴, 雾) are drawn on the canvas and join when their weathers return.
@@ -25,7 +26,8 @@ marked *changed*).
 ## Principles
 
 The interface is a mirage over the sea: hidden in mist until needed, then it surfaces. Chinese
-only (an English version is made separately, never mixed).
+is the language it is designed and written in; another language is a translation of every word
+(an English version is made separately, never mixed with the Chinese once released).
 
 - **No frames.** No borders, boxes or panels: a soft mist shadow (黛 at low alpha, blurred) holds
   the text up off the scene.
@@ -211,6 +213,8 @@ interface hides; Esc or × closes; ←/→ step days.
   that changes on a paused page raises a scene event (`src/post/SceneEvents.ts`).
 - Lists render from data; adding a building, a resource, a weather kind or a record event never
   touches the components.
+- Every word the player reads is a key of the catalogue (`src/game/ui/i18n/`), never a string in
+  code; a list's row names its words by its id.
 - Keyboard focus and `aria-label` on every control; text fits its longest likely value at
   1920×1080 CSS pixels.
 
@@ -243,6 +247,14 @@ from a board, it is said here.
 - **Record**: the game keeps it (`src/game/Chronicle.ts`) from the moment the game is installed
   on the page; it is not in the save yet, so a loaded game's record starts at the load. Its river
   runs to today, or to the last day it names (the debug panel's placeholder days).
+- **Languages**: the words are i18next catalogues in `src/game/ui/i18n/` (its header has the
+  rules): `zh-CN.json` is the source and the default, `en.json` a snapshot of it that is not kept up
+  while the game is in development, so a key it lacks shows the Chinese. `?lang=en` (or the debug
+  panel's Interface › language) loads the page in English; the language is read once at load. The
+  islanders' names and what people say (the placeholder days, the hearing brain's lines) are
+  content, not catalogue words. The English page is laid out with the Chinese page's measures and
+  letter spacing, untuned. `tools/verify-i18n.mjs` fails on Chinese written in code outside the
+  catalogues and reports how far `en.json` has drifted.
 - **Focus**: the keyboard's focus is shown as the pointer's hover is (精白, the stroke beneath),
   never a frame. The record takes the focus itself on opening (not its ×, which Space would press)
   and gives it back on closing; while it is open no key but its own reaches the page.

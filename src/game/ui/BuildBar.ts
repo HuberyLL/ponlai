@@ -1,9 +1,10 @@
 import { level, upright } from './Brush.ts';
 import { iconSvg } from './Icons.ts';
 import { BUILD_GROUPS } from './data/buildings.ts';
-import type { BuildingRow } from './data/buildings.ts';
+import type { BuildGroup, BuildingRow } from './data/buildings.ts';
 import { refusalWords } from './data/words.ts';
 import { attr, css, el, flag, iconButton, svgEl, text } from './dom.ts';
+import { t } from './i18n/i18n.ts';
 import type { UiShared } from './Shared.ts';
 
 // The build bar (docs/ui.md, Build bar; the design canvas's BuildNotes and SpeakFlow): opened by the
@@ -37,8 +38,9 @@ export interface PlacementHandle {
 	/** arm placing a building of the simulation's kind (null: disarm) */
 	arm( kind: string | null ): void;
 	readonly armed: string | null;
-	/** what to tell the player while placing: how, or why the spot is refused */
-	readonly hint: { words: string; refused: boolean } | null;
+	/** while placing: why the spot under the pointer is refused (the simulation's reason, data/words.ts
+	 * puts it in words), or null where it would place (the bar then says how) */
+	readonly hint: { refusal: string | null } | null;
 }
 
 interface Item { row: BuildingRow; x: number; button: HTMLButtonElement; inView: boolean }
@@ -86,8 +88,8 @@ export class BuildBar {
 		this.onToggle = onToggle;
 		this.onTalk = onTalk;
 		const root = this.root = el( 'div', 'pl-build closed', parent );
-		root.setAttribute( 'aria-label', '建造' );
-		this.mallet = iconButton( '建造', 'build', 32, parent, () => this.setOpen( ! this.open ), 'pl-mallet' );
+		root.setAttribute( 'aria-label', t( 'build.title' ) );
+		this.mallet = iconButton( t( 'build.title' ), 'build', 32, parent, () => this.setOpen( ! this.open ), 'pl-mallet' );
 		this.mallet.setAttribute( 'aria-expanded', 'false' );
 
 		// tier 1: the groups, leftward from the mallet: the recent group, a tick, the others, a tick, the magnifier
@@ -99,7 +101,7 @@ export class BuildBar {
 		for ( const x of [ firstX - 12, RECENT_X - 10 ] ) svgEl( 'path', { d: upright( x + 3, TIER1 + 9, TIER1 + 35, 2, 0.4 ), fill: 'var(--gao)', 'fill-opacity': 0.4 }, strokes );
 		regular.forEach( ( g, i ) => this.addGroup( g.id, g.name, g.icon, firstX + GROUP_STEP * i ) );
 		for ( const g of recent ) this.addGroup( g.id, g.name, g.icon, RECENT_X );
-		const magnifier = iconButton( '搜索建筑', 'search', 22, root, () => this.search.focus(), 'bi' );
+		const magnifier = iconButton( t( 'build.search' ), 'search', 22, root, () => this.search.focus(), 'bi' );
 		css( magnifier, 'left', `${ searchX }px` );
 		css( magnifier, 'top', `${ TIER1 }px` );
 
@@ -111,17 +113,17 @@ export class BuildBar {
 		this.linePath = svgEl( 'path', { fill: 'var(--gao)', 'fill-opacity': 0.8 }, this.line );
 		this.clip = el( 'div', 'clip', tier2 );
 		this.shift = el( 'div', 'shift', this.clip );
-		this.none = el( 'div', 'none', this.shift, '没有找到' );
-		this.back = iconButton( '往前', 'chevron', 30, tier2, () => this.scrollBy( - 1 ), 'arrow' );
+		this.none = el( 'div', 'none', this.shift, t( 'build.notFound' ) );
+		this.back = iconButton( t( 'build.back' ), 'chevron', 30, tier2, () => this.scrollBy( - 1 ), 'arrow' );
 		css( this.back, 'left', '-44px' );
-		this.on = iconButton( '往后', 'chevron', 30, tier2, () => this.scrollBy( 1 ), 'arrow' );
+		this.on = iconButton( t( 'build.on' ), 'chevron', 30, tier2, () => this.scrollBy( 1 ), 'arrow' );
 		css( this.on, 'right', '-40px' );
 		this.on.querySelector( 'svg' )!.style.transform = 'scaleX(-1)';
 		const head = el( 'div', 'head', tier2 );
 		css( head, 'right', 'calc(100% + 46px)' );
 		this.groupName = el( 'div', 'group-name pl-title pl-xb', head );
 		const search = this.search = el( 'input', 'search', head );
-		search.setAttribute( 'aria-label', '搜索建筑' );
+		search.setAttribute( 'aria-label', t( 'build.search' ) );
 		search.autocomplete = 'off';
 		search.spellcheck = false;
 		search.addEventListener( 'input', () => {
@@ -165,7 +167,7 @@ export class BuildBar {
 
 	}
 
-	private addGroup( id: string, name: string, icon: string, x: number ): void {
+	private addGroup( id: BuildGroup[ 'id' ], name: string, icon: string, x: number ): void {
 
 		const b = iconButton( name, icon, 26, this.root, () => this.pickGroup( id ), 'bi group' );
 		css( b, 'left', `${ x }px` );
@@ -209,7 +211,7 @@ export class BuildBar {
 
 	}
 
-	private pickGroup( id: string ): void {
+	private pickGroup( id: BuildGroup[ 'id' ] ): void {
 
 		this.clearSearch();
 		this.group = id;
@@ -301,11 +303,11 @@ export class BuildBar {
 	// What tier 2 lists: the chosen group in small groups, the recent ones, or what the search finds.
 	private list(): { rows: BuildingRow[]; grouped: boolean } {
 
-		const roster = this.shared.roster, q = this.query.trim();
+		const roster = this.shared.roster, q = this.query.trim().toLocaleLowerCase();
 		if ( q ) {
 
 			const groupName = ( id: string ) => BUILD_GROUPS.find( ( g ) => g.id === id )?.name ?? '';
-			return { rows: roster.filter( ( r ) => [ r.name, r.use, groupName( r.group ), r.sub, ...r.words ].some( ( t ) => t && t.includes( q ) ) ), grouped: false };
+			return { rows: roster.filter( ( r ) => [ r.name, r.use, groupName( r.group ), r.subName, ...r.words ].some( ( w ) => w && w.toLocaleLowerCase().includes( q ) ) ), grouped: false };
 
 		}
 		if ( BUILD_GROUPS.find( ( g ) => g.id === this.group )?.recent ) {
@@ -338,7 +340,7 @@ export class BuildBar {
 				x += GAP;
 
 			}
-			if ( grouped && row.sub && row.sub !== prev ) subs.push( sub = { name: row.sub, from: x, to: x + SLOT } );
+			if ( grouped && row.sub && row.sub !== prev ) subs.push( sub = { name: row.subName, from: x, to: x + SLOT } );
 			else if ( grouped && row.sub && sub ) sub.to = x + SLOT;
 			prev = row.sub;
 			const button = iconButton( row.name, row.icon, 40, this.shift, () => {
@@ -415,7 +417,7 @@ export class BuildBar {
 		flag( this.search, 'open', searching );
 		css( this.search, 'width', searching ? `${ Math.max( 40, Array.from( this.query ).length * 20 + 8 ) }px` : '0' );
 		css( this.none, 'display', rows.length === 0 ? '' : 'none' );
-		text( this.none, this.query.trim() ? '没有找到' : '还没有放过' );
+		text( this.none, this.query.trim() ? t( 'build.notFound' ) : t( 'build.noneRecent' ) );
 		const max = Math.max( 0, this.width - this.view );
 		css( this.shift, 'transform', `translateX(${ - this.scroll }px)` );
 		const fade = `linear-gradient(90deg, ${ this.scroll > 0 ? 'transparent 0, #000 40px' : '#000 0' }, ${ this.scroll < max ? '#000 calc(100% - 40px), transparent 100%' : '#000 100%' })`;
@@ -469,14 +471,14 @@ export class BuildBar {
 
 					const res = shared.resources.find( ( r ) => r.id === id );
 					const part = el( 'span', '', this.detailCost );
-					part.setAttribute( 'aria-label', `${ res?.name ?? id } ${ row.cost[ id ] }` );
+					part.setAttribute( 'aria-label', t( 'build.cost', { name: res?.name ?? id, count: row.cost[ id ] } ) );
 					part.appendChild( iconSvg( res?.icon ?? null, 18 ) );
 					el( 'span', `pl-num${ Object.hasOwn( lacks, id ) ? ' pl-zhu' : '' }`, part, String( row.cost[ id ] ) );
 
 				}
 				const hours = el( 'span', 'hours', this.detailCost );
 				el( 'span', 'pl-num', hours, String( row.hours ) );
-				el( 'span', '', hours, '工时' );
+				el( 'span', '', hours, t( 'build.hours' ) );
 
 			}
 
@@ -484,8 +486,8 @@ export class BuildBar {
 		css( this.detailCost, 'display', row.buildable ? '' : 'none' );
 		// a building the simulation places says how, or why the spot under the pointer is refused
 		const hint = row.id === this.chosen && row.kind && this.placement.armed === row.kind ? this.placement.hint : null;
-		text( this.detailNote, ! row.buildable ? '还不能建' : hint ? ( hint.refused ? refusalWords( hint.words ) : hint.words ) : '' );
-		flag( this.detailNote, 'refused', hint?.refused === true );
+		text( this.detailNote, ! row.buildable ? t( 'build.locked' ) : hint ? ( hint.refusal !== null ? refusalWords( hint.refusal ) : t( 'build.place' ) ) : '' );
+		flag( this.detailNote, 'refused', hint !== null && hint.refusal !== null );
 
 	}
 

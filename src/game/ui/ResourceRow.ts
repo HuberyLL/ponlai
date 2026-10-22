@@ -2,6 +2,7 @@ import { iconSvg } from './Icons.ts';
 import { RESOURCE_GROUPS, ROW_MAX } from './data/resources.ts';
 import type { ResourceRow as Row } from './data/resources.ts';
 import { attr, el, flag, text } from './dom.ts';
+import { t } from './i18n/i18n.ts';
 import type { UiShared } from './Shared.ts';
 
 // The island's resources at the top right (docs/ui.md, Resources): always in view, one icon and one
@@ -24,6 +25,8 @@ export class ResourceRow {
 	private cells: Cell[] = [];
 	private groups: Group[] = [];
 	private built = - 1;
+	// the counts the label for screen readers last said
+	private said = '';
 
 	constructor( parent: Element, shared: UiShared ) {
 
@@ -41,7 +44,7 @@ export class ResourceRow {
 		this.groups = [];
 		for ( const g of RESOURCE_GROUPS ) {
 
-			const members = rows.filter( ( r ) => r.group === g.id );
+			const members = rows.filter( ( r ) => r.group === g );
 			if ( members.length === 0 ) continue;
 			const box = el( 'div', 'pl-stock-group', this.root );
 			const group: Group = { more: null, hidden: [] };
@@ -65,13 +68,14 @@ export class ResourceRow {
 				// keyboard opens the group as the pointer does
 				group.more = el( 'span', 'pl-more pl-num', box, `+${ group.hidden.length }` );
 				group.more.tabIndex = 0;
-				group.more.setAttribute( 'aria-label', `另有${ group.hidden.map( ( c ) => c.row.name ).join( '、' ) }` );
+				group.more.setAttribute( 'aria-label', t( 'stock.more', { list: group.hidden.map( ( c ) => c.row.name ).join( t( 'list.and' ) ) } ) );
 
 			}
 			this.groups.push( group );
 
 		}
 		this.built = this.shared.lists;
+		this.said = '';
 
 	}
 
@@ -80,17 +84,23 @@ export class ResourceRow {
 		const shared = this.shared;
 		if ( this.built !== shared.lists ) this.build();
 		const lacks = shared.shown ? shared.short( shared.shown ) : {};
-		const parts: string[] = [];
+		let counts = '';
 		for ( const c of this.cells ) {
 
 			const n = shared.stock[ c.row.id ] ?? 0;
 			text( c.num, String( n ) );
 			flag( c.box, 'short', Object.hasOwn( lacks, c.row.id ) );
-			parts.push( `${ c.row.name }${ n }` );
+			counts += `${ n },`;
 
 		}
 		for ( const g of this.groups ) if ( g.more ) flag( g.more, 'short', g.hidden.some( ( c ) => Object.hasOwn( lacks, c.row.id ) ) );
-		attr( this.root, 'aria-label', `现有：${ parts.join( '，' ) }` );
+		if ( counts !== this.said ) {
+
+			this.said = counts;
+			const parts = this.cells.map( ( c ) => t( 'stock.count', { name: c.row.name, count: shared.stock[ c.row.id ] ?? 0 } ) );
+			attr( this.root, 'aria-label', t( 'stock.label', { list: parts.join( t( 'list.then' ) ) } ) );
+
+		}
 
 	}
 

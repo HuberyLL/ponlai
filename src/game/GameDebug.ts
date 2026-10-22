@@ -10,6 +10,7 @@ import { StandInBrain } from './sim/standin.ts';
 import { GROWTH_STEPS } from './sim/types.ts';
 import type { EntityId, Speed } from './sim/types.ts';
 import { PLACEHOLDER_DAYS, PLACEHOLDER_NAMES, PLACEHOLDER_SKIES } from './ui/data/record.ts';
+import { LOCALES, locale } from './ui/i18n/i18n.ts';
 
 // The game's developer controls: a Game folder in the scene's lil-gui panel (H), not a player
 // interface. It sets the speed and pauses, saves and loads, shows one islander's body as the
@@ -20,7 +21,8 @@ import { PLACEHOLDER_DAYS, PLACEHOLDER_NAMES, PLACEHOLDER_SKIES } from './ui/dat
 // folder puts the player's interface (ui/GameUi.ts) into the states the game does not reach yet:
 // the lists at three times their size, nine placeholder days in the record, a brain that hears the
 // player and answers after a thought (HearingBrain), a line said by the islander inspected, and
-// their needs low and critical. Everything goes through the Game's methods, which the console
+// their needs low and critical; and it picks the interface's language, which reloads the page with
+// `?lang=` (a load knob: ui/i18n/i18n.ts). Everything goes through the Game's methods, which the console
 // reaches as window.__PONLAI__.game.
 
 // placeholder answers of the hearing brain
@@ -123,6 +125,13 @@ export class GameDebug {
 			game.setNeed( f.islander, 'hydration', 9 );
 
 		} }, 'critical' ).name( 'needs critical (14, 9)' );
+		ui.add( { lang: locale }, 'lang', LOCALES ).name( 'language (reloads)' ).onChange( ( lang: string ) => {
+
+			const url = new URL( location.href );
+			url.searchParams.set( 'lang', lang );
+			location.assign( url );
+
+		} );
 
 		const who = folder.addFolder( 'Inspect islander' );
 		this.islander = who.add( f, 'islander', {} ).onChange( ( id: EntityId ) => game.focus( id ) );

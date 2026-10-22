@@ -121,7 +121,9 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   (`GameUi.ts`, spec `docs/ui.md`): its parts (`TopRow.ts`, `Forecast.ts`, `ResourceRow.ts`,
   `People.ts`, `SpeakBar.ts`, `BuildBar.ts`, `Record.ts`), the lists it shows as data with
   placeholder rows (`data/`: buildings, resources, weather kinds, the record's kinds, the words for
-  the simulation's states), the brush icons (`Icons.ts`), strokes (`Brush.ts`), palette
+  the simulation's states), its words in i18next catalogues (`i18n/`: `zh-CN.json` the source,
+  `en.json` an unmaintained snapshot; no player-facing string is written in code,
+  `tools/verify-i18n.mjs`), the brush icons (`Icons.ts`), strokes (`Brush.ts`), palette
   (`Palette.ts`), styles (`ui.css`) and our own brush fonts (`fonts/`).
 - `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the frame profiler, the frame-rate readout,
   the pipeline counter (`PipelineCounter.ts`), the wind view and its probe (`WindView.ts`,

@@ -1,0 +1,164 @@
+{
+	"time": {
+		"day": "第{{day, chinese}}日"
+	},
+	"list": {
+		"and": "、",
+		"then": "，"
+	},
+	"top": {
+		"speeds": "速度",
+		"pause": "暂停",
+		"speed1": "一倍速",
+		"speed3": "三倍速",
+		"speed6": "六倍速"
+	},
+	"weather": {
+		"kind": {
+			"clear": "晴",
+			"cloudy": "多云",
+			"overcast": "阴"
+		},
+		"label": "天气：此刻{{now}}，{{turns}}",
+		"turn": "{{hour}}时转{{kind}}",
+		"steady": "一日不变"
+	},
+	"stock": {
+		"label": "现有：{{list}}",
+		"count": "{{name}}{{count}}",
+		"more": "另有{{list}}"
+	},
+	"resource": {
+		"wood": "木",
+		"bamboo": "竹",
+		"stone": "石",
+		"leaf": "叶",
+		"fish": "鱼",
+		"water": "水",
+		"rope": "绳",
+		"clay": "陶土",
+		"shell": "贝",
+		"fruit": "果",
+		"salt": "盐"
+	},
+	"item": {
+		"fish": "鱼"
+	},
+	"place": {
+		"shore": "海边"
+	},
+	"doing": {
+		"go": "去{{place}}",
+		"wait": "歇着",
+		"walk": "走动",
+		"think": "在想",
+		"idle": "歇着",
+		"do": {
+			"fish": "钓鱼",
+			"build": "盖{{place}}",
+			"put": "往{{place}}里放东西",
+			"take": "从{{place}}里拿东西"
+		}
+	},
+	"tag": {
+		"satiety": "饱食",
+		"hydration": "水分",
+		"bag": "行囊",
+		"slot": "{{name}} {{count}}",
+		"empty": "空"
+	},
+	"speak": {
+		"title": "说话"
+	},
+	"build": {
+		"title": "建造",
+		"search": "搜索建筑",
+		"notFound": "没有找到",
+		"noneRecent": "还没有放过",
+		"back": "往前",
+		"on": "往后",
+		"cost": "{{name}} {{count}}",
+		"hours": "工时",
+		"locked": "还不能建",
+		"place": "点岛上放下",
+		"copy": "{{name}}·{{n, chinese}}",
+		"group": {
+			"live": "居所",
+			"food": "食物",
+			"water": "淡水",
+			"store": "储藏",
+			"work": "工坊",
+			"guard": "防灾",
+			"recent": "近用"
+		},
+		"sub": {
+			"home": "住",
+			"fire": "火",
+			"sea": "海",
+			"land": "地",
+			"stove": "灶",
+			"wind": "风",
+			"watch": "望"
+		},
+		"refusal": {
+			"noGround": "这里空地不够",
+			"occupied": "有人站在这里"
+		}
+	},
+	"building": {
+		"hut": { "name": "草棚", "use": "遮风挡雨，可睡 2 人", "words": "屋 睡" },
+		"cabin": { "name": "木屋", "use": "结实些，可睡 4 人", "words": "屋 睡" },
+		"stonehouse": { "name": "石屋", "use": "风暴也吹不倒，可睡 4 人", "words": "屋 睡 风暴" },
+		"hearth": { "name": "火塘", "use": "夜里取暖，烤干衣裳", "words": "火 暖" },
+		"rack": { "name": "晒鱼架", "use": "晒干的鱼放得久", "words": "鱼 晒" },
+		"net": { "name": "渔网架", "use": "补网、晾网，打鱼多些", "words": "鱼 网" },
+		"jetty": { "name": "栈桥", "use": "去深水处钓鱼", "words": "鱼 钓 海" },
+		"perch": { "name": "钓台", "use": "礁石上钓鱼的地方", "words": "鱼 钓" },
+		"pond": { "name": "鱼塘", "use": "养活鱼，随吃随取", "words": "鱼 养" },
+		"garden": { "name": "菜圃", "use": "种些菜，要浇水", "words": "种 菜" },
+		"orchard": { "name": "果林", "use": "种果树，几日后结果", "words": "果 种" },
+		"stove": { "name": "灶台", "use": "煮鱼，熟食更顶饿", "words": "煮 火" },
+		"smoke": { "name": "熏房", "use": "熏鱼，放得更久", "words": "鱼 熏" },
+		"jar": { "name": "雨水缸", "use": "下雨时接水，可存 10 份", "words": "水 雨" },
+		"shed": { "name": "集水棚", "use": "大片接雨，流进缸里", "words": "水 雨" },
+		"well": { "name": "井", "use": "挖到淡水，不靠下雨", "words": "水 挖" },
+		"chest": { "name": "箱子", "use": "放东西，可存 20 件", "words": "放 存" },
+		"granary": { "name": "仓", "use": "离地存粮，不怕潮", "words": "粮 存" },
+		"woodpile": { "name": "柴堆", "use": "堆木头，雨淋不湿", "words": "木 存" },
+		"carpentry": { "name": "木工坊", "use": "把木头做成板和梁", "words": "木 做" },
+		"mason": { "name": "石工坊", "use": "凿石块", "words": "石 做" },
+		"windbreak": { "name": "挡风墙", "use": "挡住风暴的风", "words": "风 风暴" },
+		"stonewall": { "name": "石墙", "use": "更结实的挡风墙", "words": "风 风暴 石" },
+		"fence": { "name": "竹篱", "use": "竹子编的矮墙，挡风护菜", "words": "竹 风 菜" },
+		"tower": { "name": "望楼", "use": "早些看见风暴", "words": "风暴 看" },
+		"lighthouse": { "name": "灯塔", "use": "夜里给船指路", "words": "船 夜" }
+	},
+	"record": {
+		"title": "沧海录",
+		"close": "合上",
+		"contents": "沧海录目录",
+		"island": "蓬莱",
+		"earlier": "更早",
+		"later": "更晚",
+		"today": "今日",
+		"empty": "这一日还没有记下什么。",
+		"more": "{{mark}}　+{{count}}",
+		"you": "你　{{to}}",
+		"toAll": "对众人",
+		"toSome": "对{{names}}",
+		"landings": "{{count, chinese}}人登岛",
+		"deed": {
+			"landed": "{{who}}　登岛",
+			"landed_own": "登岛",
+			"built": "{{building}}建成",
+			"need": "{{who}}　{{need}}",
+			"need_own": "{{need}}",
+			"placed": "{{building}}定址"
+		},
+		"need": {
+			"satiety": "饥饿",
+			"hydration": "口渴",
+			"other": "告急"
+		}
+	}
+}

@@ -5,6 +5,7 @@ import type { WeatherName } from '../../sky/Weather.ts';
 import { nightness, weatherIcon, weatherKind } from './data/weather.ts';
 import type { WeatherKind } from './data/weather.ts';
 import { attr, css, el, svgEl } from './dom.ts';
+import { t } from './i18n/i18n.ts';
 
 // The weather in the top row (docs/ui.md, Weather forecast; the design canvas's WeatherAnim): the
 // weather now as one live icon in parts, and the next 24 game hours as one brush stroke beside it.
@@ -251,8 +252,8 @@ export class Forecast {
 
 	private label( now: WeatherKind ): string {
 
-		const turns = this.turns.map( ( m ) => `${ Math.floor( hourOfDay( m.at ) ) }时转${ m.kind.name }` );
-		return `天气：此刻${ now.name }，${ turns.length > 0 ? turns.join( '，' ) : '一日不变' }`;
+		const turns = this.turns.map( ( m ) => t( 'weather.turn', { hour: Math.floor( hourOfDay( m.at ) ), kind: m.kind.name } ) );
+		return t( 'weather.label', { now: now.name, turns: turns.length > 0 ? turns.join( t( 'list.then' ) ) : t( 'weather.steady' ) } );
 
 	}
 

@@ -22,9 +22,6 @@ import { PlacementPreview } from './view/PlacementPreview.ts';
 // ring (moved, recoloured, shown or hidden) is a scene event ('game input'): on a paused page the
 // temporal anti-aliasing shows a converged image until told the scene changed.
 
-/** what the bar says while placing (the simulation's refusals are put in words by data/words.ts) */
-const HINT = '点岛上放下';
-
 export class BlueprintPlacement implements PlacementHandle {
 
 	private readonly game: Game;
@@ -32,8 +29,9 @@ export class BlueprintPlacement implements PlacementHandle {
 	private readonly preview = new PlacementPreview();
 	/** the kind armed, or null */
 	armed: string | null = null;
-	/** what the bar tells the player while placing */
-	hint: { words: string; refused: boolean } | null = null;
+	/** while placing: the simulation's refusal of the spot, or null where it would place (the bar
+	 * puts either in words: ui/data/words.ts, the catalogue's `build.place`) */
+	hint: { refusal: string | null } | null = null;
 	/** a building was placed */
 	onPlaced: () => void = () => {};
 	private down = false;
@@ -104,7 +102,7 @@ export class BlueprintPlacement implements PlacementHandle {
 		const sim = this.game.sim, p = this.target();
 		const reason = p && this.armed && blueprintRefusal( sim, this.armed, p );
 		this.ring( p, p !== null && reason === null );
-		this.hint = reason ? { words: reason, refused: true } : { words: HINT, refused: false };
+		this.hint = { refusal: reason || null };
 
 	}
 
@@ -120,7 +118,7 @@ export class BlueprintPlacement implements PlacementHandle {
 		const reason = this.game.placeBlueprint( this.armed, p.x, p.z );
 		if ( reason ) {
 
-			this.hint = { words: reason, refused: true };
+			this.hint = { refusal: reason };
 			return;
 
 		}

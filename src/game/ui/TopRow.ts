@@ -4,6 +4,7 @@ import { upright } from './Brush.ts';
 import { dayName } from './data/record.ts';
 import { attr, el, flag, iconButton, strokeSvg, text } from './dom.ts';
 import { Forecast } from './Forecast.ts';
+import { t } from './i18n/i18n.ts';
 import { ResourceRow } from './ResourceRow.ts';
 import type { UiShared } from './Shared.ts';
 
@@ -14,10 +15,10 @@ import type { UiShared } from './Shared.ts';
 // strokes. The speeds act through Game.setSpeed, the scroll opens the record (Record.ts).
 
 const SPEEDS: readonly { speed: Speed; label: string; icon: string }[] = [
-	{ speed: 0, label: '暂停', icon: 'pause' },
-	{ speed: 1, label: '一倍速', icon: 'speed1' },
-	{ speed: 2, label: '三倍速', icon: 'speed3' },
-	{ speed: 3, label: '六倍速', icon: 'speed6' },
+	{ speed: 0, label: t( 'top.pause' ), icon: 'pause' },
+	{ speed: 1, label: t( 'top.speed1' ), icon: 'speed1' },
+	{ speed: 2, label: t( 'top.speed3' ), icon: 'speed3' },
+	{ speed: 3, label: t( 'top.speed6' ), icon: 'speed6' },
 ];
 // each speed's icon size: the arrows grow with the speed
 const SPEED_SIZE: Readonly<Record<string, [ number, number ]>> = { pause: [ 12, 14 ], speed1: [ 12, 14 ], speed3: [ 20, 14 ], speed6: [ 28, 14 ] };
@@ -33,6 +34,7 @@ export class TopRow {
 	private readonly speeds: HTMLButtonElement[] = [];
 	private readonly forecast: Forecast;
 	private readonly stock: ResourceRow;
+	private dayShown = 0;
 
 	constructor( parent: Element, shared: UiShared, openRecord: () => void ) {
 
@@ -45,7 +47,7 @@ export class TopRow {
 		strokeSvg( 6, 40, DIVIDER, 'pl-divider pl-sh', top ).svg.style.opacity = '0.8';
 		const speeds = el( 'div', 'pl-speeds', top );
 		speeds.setAttribute( 'role', 'group' );
-		speeds.setAttribute( 'aria-label', '速度' );
+		speeds.setAttribute( 'aria-label', t( 'top.speeds' ) );
 		for ( const s of SPEEDS ) {
 
 			const b = iconButton( s.label, s.icon, 14, speeds, () => shared.game.setSpeed( s.speed ) );
@@ -61,7 +63,7 @@ export class TopRow {
 		this.forecast = new Forecast( top );
 		this.stock = new ResourceRow( root, shared );
 		strokeSvg( 6, 40, DIVIDER, 'pl-divider pl-stock-divider pl-sh', root ).svg.style.opacity = '0.8';
-		iconButton( '沧海录', 'record', 30, root, openRecord, 'pl-record-btn' );
+		iconButton( t( 'record.title' ), 'record', 30, root, openRecord, 'pl-record-btn' );
 
 	}
 
@@ -69,9 +71,10 @@ export class TopRow {
 
 		const game = this.shared.game, sim = game.sim;
 		// game hours since day one's midnight, between ticks
-		const t = sim.state.startHour + ( sim.state.tick + sim.alpha ) / 3600;
-		const minutes = Math.floor( t * 60 ) % ( 24 * 60 );
-		text( this.day, dayName( Math.floor( t / 24 ) + 1 ) );
+		const hour = sim.state.startHour + ( sim.state.tick + sim.alpha ) / 3600;
+		const minutes = Math.floor( hour * 60 ) % ( 24 * 60 );
+		const day = Math.floor( hour / 24 ) + 1;
+		if ( day !== this.dayShown ) text( this.day, dayName( this.dayShown = day ) );
 		text( this.clock, `${ String( Math.floor( minutes / 60 ) ).padStart( 2, '0' ) }:${ String( minutes % 60 ).padStart( 2, '0' ) }` );
 		for ( let i = 0; i < SPEEDS.length; i ++ ) {
 
@@ -80,7 +83,7 @@ export class TopRow {
 			attr( this.speeds[ i ], 'aria-pressed', String( current ) );
 
 		}
-		this.forecast.update( game, t );
+		this.forecast.update( game, hour );
 		this.stock.update();
 
 	}

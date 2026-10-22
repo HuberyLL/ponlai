@@ -9,6 +9,7 @@ import { iconSvg, setIcon } from './Icons.ts';
 import { PALETTE, mix } from './Palette.ts';
 import { doingWords, itemName } from './data/words.ts';
 import { attr, css, el, flag, svgEl, text, under } from './dom.ts';
+import { t } from './i18n/i18n.ts';
 import type { UiShared } from './Shared.ts';
 
 // The islanders' marks over the scene (docs/ui.md, Islanders: selection and alerts; Speaking):
@@ -449,7 +450,7 @@ class Tag {
 	private readonly doing: HTMLElement;
 	private readonly needs: { key: keyof Needs; colour: string; icon: SVGSVGElement; fill: SVGPathElement; num: HTMLElement; shown: number }[] = [];
 	private readonly bag: HTMLElement;
-	private readonly slots: { box: HTMLButtonElement; icon: SVGSVGElement; count: HTMLElement }[] = [];
+	private readonly slots: { box: HTMLButtonElement; icon: SVGSVGElement; count: HTMLElement; label: string }[] = [];
 	private chosenSlot = - 1;
 	private who: EntityId | null = null;
 	// the tag's size, measured again only when what it shows changed
@@ -464,7 +465,7 @@ class Tag {
 		this.name = el( 'div', 'name pl-title pl-xb', head );
 		this.doing = el( 'div', 'doing pl-mist', head );
 		const track = level( 1, 129, 4, 2.6, 0.4, { entry: 0.06, exit: 0.2, start: 0.4, end: 0.3, swell: 0 } );
-		for ( const [ key, icon, colour, label ] of [ [ 'satiety', 'satiety', PALETTE.hupo, '饱食' ], [ 'hydration', 'drop', PALETTE.tianshuibi, '水分' ] ] as const ) {
+		for ( const [ key, icon, colour, label ] of [ [ 'satiety', 'satiety', PALETTE.hupo, t( 'tag.satiety' ) ], [ 'hydration', 'drop', PALETTE.tianshuibi, t( 'tag.hydration' ) ] ] as const ) {
 
 			const row = el( 'div', 'need', root );
 			const svg = row.appendChild( iconSvg( icon, 18, 'pl-sh' ) );
@@ -478,7 +479,7 @@ class Tag {
 
 		}
 		this.bag = el( 'div', 'bag', root );
-		this.bag.setAttribute( 'aria-label', '行囊' );
+		this.bag.setAttribute( 'aria-label', t( 'tag.bag' ) );
 		for ( let i = 0; i < BAG_CAPACITY; i ++ ) {
 
 			const box = el( 'button', 'pl-btn pl-slot', this.bag );
@@ -492,7 +493,7 @@ class Tag {
 				if ( e.detail > 0 ) box.blur();
 
 			} );
-			this.slots.push( { box, icon, count } );
+			this.slots.push( { box, icon, count, label: '' } );
 
 		}
 
@@ -545,7 +546,14 @@ class Tag {
 			text( s.count, kind && v.bag[ kind ] > 1 ? String( v.bag[ kind ] ) : kind ? '1' : '' );
 			flag( s.box, 'empty', ! kind );
 			flag( s.box, 'on', i === this.chosenSlot );
-			attr( s.box, 'aria-label', kind ? `${ itemName( kind ) } ${ v.bag[ kind ] }` : '空' );
+			// (its label only when its kind or count changed: a word costs a lookup)
+			const label = `${ kind }|${ kind ? v.bag[ kind ] : 0 }`;
+			if ( s.label !== label ) {
+
+				s.label = label;
+				attr( s.box, 'aria-label', kind ? t( 'tag.slot', { name: itemName( kind ), count: v.bag[ kind ] } ) : t( 'tag.empty' ) );
+
+			}
 
 		}
 		// beside the islander, kept inside the interface

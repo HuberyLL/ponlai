@@ -7,7 +7,9 @@ import { BlueprintPlacement } from '../Placement.ts';
 import { BuildBar } from './BuildBar.ts';
 import { BUILDINGS, rosterTimes } from './data/buildings.ts';
 import { MORE_RESOURCES, RESOURCES } from './data/resources.ts';
+import { dayName } from './data/record.ts';
 import { el, flag } from './dom.ts';
+import { locale, t } from './i18n/i18n.ts';
 import { PALETTE } from './Palette.ts';
 import { People } from './People.ts';
 import { Record } from './Record.ts';
@@ -17,7 +19,8 @@ import { TopRow } from './TopRow.ts';
 
 // 蜃光, the player's interface in ?game (docs/ui.md, the spec it follows; the design canvas's boards
 // predate the decisions it marks as changed). The interface is a mirage over the sea: no frames, a
-// mist shadow under white brush line art, Chinese only. Its parts:
+// mist shadow under white brush line art, in one language: Chinese, the language the game is written
+// in, or another by `?lang=` (i18n/i18n.ts: every word is a catalogue's). Its parts:
 //   TopRow.ts      the day and time, the speeds, the weather and its forecast (Forecast.ts), the
 //                  island's resources (ResourceRow.ts) and the record's scroll
 //   People.ts      the islanders' marks: the selected one's ring and tag, alerts, thinking, speech
@@ -27,7 +30,8 @@ import { TopRow } from './TopRow.ts';
 //   Record.ts      沧海录, the record, over the dimmed and stopped world
 // Every list they show is data in ./data (the buildings, the resources, the weather kinds, the
 // record's kinds of entry, the words for the simulation's states), each with placeholder rows that
-// cover every state; the icons are Icons.ts, the strokes Brush.ts, the colours Palette.ts.
+// cover every state, their words in the catalogue by the rows' ids; the icons are Icons.ts, the
+// strokes Brush.ts, the colours Palette.ts.
 //
 // Type: Ma Shan Zheng (马善政) for calligraphy, LXGW WenKai GB (霞鹜文楷 GB, sliced by unicode-range,
 // so a page loads only the slices its characters need) for running text, and our own brush fonts
@@ -57,9 +61,10 @@ export interface UiContext {
 
 // the design's board, which the window scales
 const BOARD_W = 1600, BOARD_H = 900;
-// what the fonts must have before the interface shows (the loading screen waits: Game.ready)
+// what the fonts must have before the interface shows (the loading screen waits: Game.ready): the
+// slices of the words the interface opens with (the first ten days' names and the titles)
 const FONT_SAMPLES = [ '26px "Ma Shan Zheng"', '18px "LXGW WenKai GB"', '18px "Ponlai Brush"', '30px "Ponlai Brush Display"' ];
-const FONT_TEXT = '第一二三四五六七八九十日沧海录说话蓬莱 0123456789:';
+const FONT_TEXT = [ ...Array.from( { length: 10 }, ( _, i ) => dayName( i + 1 ) ), t( 'record.title' ), t( 'speak.title' ), t( 'record.island' ), ' 0123456789:' ].join( '' );
 
 export class GameUi {
 
@@ -77,7 +82,7 @@ export class GameUi {
 
 		const shared = this.shared = new UiShared( game );
 		const root = this.root = el( 'div', 'pl-ui', document.body );
-		root.lang = 'zh-CN';
+		root.lang = locale;
 		for ( const [ name, colour ] of Object.entries( PALETTE ) ) root.style.setProperty( `--${ name }`, colour );
 		el( 'div', 'pl-veil top', root );
 		el( 'div', 'pl-veil bottom', root );

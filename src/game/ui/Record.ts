@@ -9,6 +9,7 @@ import type { RecordNames } from './data/record.ts';
 import { WEATHER_KINDS, weatherKind } from './data/weather.ts';
 import type { WeatherKind } from './data/weather.ts';
 import { attr, css, el, flag, iconButton, svgEl, text } from './dom.ts';
+import { t } from './i18n/i18n.ts';
 import type { UiShared } from './Shared.ts';
 
 // 沧海录, the record (docs/ui.md; the design canvas's RecMain and RecPerson): opened by the scroll
@@ -71,13 +72,13 @@ export class Record {
 		const root = this.root = el( 'div', 'pl-record', parent );
 		root.setAttribute( 'role', 'dialog' );
 		root.setAttribute( 'aria-modal', 'true' );
-		root.setAttribute( 'aria-label', '沧海录' );
+		root.setAttribute( 'aria-label', t( 'record.title' ) );
 		// the dialog itself takes the focus on opening (not its ×, which Space or Enter would press)
 		root.tabIndex = - 1;
 		el( 'div', 'dim', root );
 		const page = el( 'div', 'page', root );
-		el( 'h2', 'pl-title pl-xb', page, '沧海录' );
-		iconButton( '合上', 'close', 22, page, () => this.setOpen( false ), 'close' );
+		el( 'h2', 'pl-title pl-xb', page, t( 'record.title' ) );
+		iconButton( t( 'record.close' ), 'close', 22, page, () => this.setOpen( false ), 'close' );
 
 		// the defs the list's wash and the day's line share
 		const defs = svgEl( 'defs', {}, svgEl( 'svg', { width: 0, height: 0, style: 'position: absolute', 'aria-hidden': 'true' }, page ) );
@@ -92,8 +93,8 @@ export class Record {
 		gradient( 'pl-rec-river', 380, 1540, [ [ 0, 0 ], [ 0.08, 0.85 ], [ 0.92, 0.85 ], [ 1, 0 ] ] );
 
 		const nav = el( 'nav', '', page );
-		nav.setAttribute( 'aria-label', '沧海录目录' );
-		this.island = this.entry( nav, '蓬莱', 'island', 'all' );
+		nav.setAttribute( 'aria-label', t( 'record.contents' ) );
+		this.island = this.entry( nav, t( 'record.island' ), 'island', 'all' );
 		this.list = el( 'div', 'list', nav );
 		this.list.addEventListener( 'scroll', this.fadeList );
 		const rule = svgEl( 'svg', { class: 'rule', width: 8, height: 500, viewBox: '0 0 8 500', 'aria-hidden': 'true' }, page );
@@ -115,9 +116,9 @@ export class Record {
 		const stroke = svgEl( 'svg', { class: 'pl-sh', width: 1160, height: 300, viewBox: '380 600 1160 300', 'aria-hidden': 'true' }, river );
 		svgEl( 'path', { d: RIVER, fill: 'url(#pl-rec-river)' }, stroke );
 		this.days = el( 'div', 'days', river );
-		this.earlier = iconButton( '更早', 'chevron', 40, river, () => this.shift( - 1 ), 'arrow' );
+		this.earlier = iconButton( t( 'record.earlier' ), 'chevron', 40, river, () => this.shift( - 1 ), 'arrow' );
 		css( this.earlier, 'left', '12px' );
-		this.later = iconButton( '更晚', 'chevron', 40, river, () => this.shift( 1 ), 'arrow' );
+		this.later = iconButton( t( 'record.later' ), 'chevron', 40, river, () => this.shift( 1 ), 'arrow' );
 		css( this.later, 'left', '1088px' );
 		this.later.querySelector( 'svg' )!.style.transform = 'scaleX(-1)';
 
@@ -335,14 +336,14 @@ export class Record {
 			el( 'span', 't pl-num', row, `${ String( Math.floor( e.minute / 60 ) ).padStart( 2, '0' ) }:${ String( e.minute % 60 ).padStart( 2, '0' ) }` );
 			if ( kind.words ) {
 
-				const to = e.to === 'all' ? '对众人' : Array.isArray( e.to ) ? `对${ e.to.map( this.naming.person ).join( '、' ) }` : '';
-				el( 'span', 'who', row, e.who === 'player' ? `你　${ to }` : this.naming.person( e.who ) );
+				const to = e.to === 'all' ? t( 'record.toAll' ) : Array.isArray( e.to ) ? t( 'record.toSome', { names: e.to.map( this.naming.person ).join( t( 'list.and' ) ) } ) : '';
+				el( 'span', 'who', row, e.who === 'player' ? t( 'record.you', { to } ) : this.naming.person( e.who ) );
 				el( 'span', `say${ e.who === 'player' ? ' player' : '' }`, row, kind.deed( e, this.naming, false ) );
 
 			} else el( 'span', 'deed', row, kind.deed( e, this.naming, own && e.who === this.who ) );
 
 		}
-		if ( entries.length === 0 ) el( 'div', 'empty', box, '这一日还没有记下什么。' );
+		if ( entries.length === 0 ) el( 'div', 'empty', box, t( 'record.empty' ) );
 		this.rows.textContent = '';
 		this.rows.appendChild( box );
 
@@ -359,7 +360,7 @@ export class Record {
 		const landings = top.kind === 'landed' && ! own ? marks.filter( ( e ) => e.kind === 'landed' ).length : 1;
 		const words = top.kind === 'landed' && ! own && landings > 1 ? LANDINGS( landings ) : kind.deed( top, this.naming, own && top.who === this.who );
 		const more = marks.length - landings;
-		return { icon: kind.mark!.icon( top ), text: words + ( more > 0 ? `　+${ more }` : '' ), alarm: kind.mark!.alarm === true };
+		return { icon: kind.mark!.icon( top ), text: more > 0 ? t( 'record.more', { mark: words, count: more } ) : words, alarm: kind.mark!.alarm === true };
 
 	}
 
@@ -411,7 +412,8 @@ export class Record {
 			if ( wx ) setIcon( v.wxIcon, wx.icon );
 			text( v.wxName, wx?.name ?? '' );
 			css( v.today, 'display', d === today ? '' : 'none' );
-			attr( v.button, 'aria-label', `${ dayName( d ) }${ d === today ? '，今日' : '' }${ wx ? '，' + wx.name : '' }${ mark ? '，' + mark.text : '' }` );
+			const said = [ dayName( d ), d === today ? t( 'record.today' ) : '', wx?.name ?? '', mark?.text ?? '' ];
+			attr( v.button, 'aria-label', said.filter( Boolean ).join( t( 'list.then' ) ) );
 
 		}
 		flag( this.earlier, 'off', this.start <= lo );
@@ -440,7 +442,7 @@ export class Record {
 		svgEl( 'circle', { cx: 0, cy: 0, r: 6, fill: PALETTE.gao, class: 'core' }, dropSvg );
 		const label = el( 'div', 'label', button );
 		el( 'div', 'pl-title', label, dayName( day ) );
-		const today = el( 'div', 'today', label, '今日' );
+		const today = el( 'div', 'today', label, t( 'record.today' ) );
 		return { day, button, mark, markIcon, markText, wx, wxIcon, wxName, drop, label, today };
 
 	}
