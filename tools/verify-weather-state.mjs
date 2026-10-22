@@ -213,7 +213,8 @@ for ( const invalid of [ 'hail', '__proto__', '', null ] ) {
 		assert.deepEqual( chain.forecast( span ), turns, 'reading ahead must not move the chain' );
 		let k = turns.length > 0 && turns[ 0 ].at < 0 ? 1 : 0, sky = chain.target;
 		assert.ok( turns.length - k > 30, `four hours of weather should hold many turns, saw ${ turns.length }` );
-		for ( let t = 0; t < span && k < turns.length; t += step ) {
+		// (run past the span by the slack the last turns may need)
+		for ( let t = 0; t < span + ( turns.length + 1 ) * step && k < turns.length; t += step ) {
 			chain.update( step );
 			if ( chain.target === sky ) continue;
 			const turn = turns[ k ++ ];

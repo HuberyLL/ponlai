@@ -452,6 +452,8 @@ class Tag {
 	private readonly slots: { box: HTMLButtonElement; icon: SVGSVGElement; count: HTMLElement }[] = [];
 	private chosenSlot = - 1;
 	private who: EntityId | null = null;
+	// the tag's size, measured again only when what it shows changed
+	private size = { key: '', w: 0, h: 0 };
 
 	constructor( parent: Element, shared: UiShared ) {
 
@@ -510,9 +512,10 @@ class Tag {
 
 		}
 		const shared = this.shared, sim = shared.game.sim;
+		const doing = doingWords( sim, v, shared.buildingName );
 		text( this.name, v.name );
-		this.root.setAttribute( 'aria-label', v.name );
-		text( this.doing, doingWords( sim, v, shared.buildingName ) );
+		attr( this.root, 'aria-label', v.name );
+		text( this.doing, doing );
 		for ( const n of this.needs ) {
 
 			const value = Math.round( v.needs[ n.key ] ), critical = value <= CRITICAL_NEED;
@@ -546,7 +549,9 @@ class Tag {
 
 		}
 		// beside the islander, kept inside the interface
-		const tw = this.root.offsetWidth, th = this.root.offsetHeight;
+		const key = `${ v.name }|${ doing }|${ Math.round( v.needs.satiety ) }|${ Math.round( v.needs.hydration ) }|${ kinds.length + free }`;
+		if ( key !== this.size.key ) this.size = { key, w: this.root.offsetWidth, h: this.root.offsetHeight };
+		const tw = this.size.w, th = this.size.h;
 		const left = Math.min( Math.max( x, 8 ), w - tw - 8 ), top = Math.min( Math.max( y - th, 90 ), h - th - 110 );
 		css( this.root, 'transform', `translate(${ left.toFixed( 1 ) }px,${ top.toFixed( 1 ) }px)` );
 

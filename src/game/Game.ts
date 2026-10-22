@@ -33,8 +33,8 @@ import type { EntityId, IslandInput, Items, Speed } from './sim/types.ts';
 // game turns the sky with it. The weather is the page's own, as without ?game, running on the day
 // clock, and its auto chain read ahead is the game's forecast (`forecast`, in game hours). Waves,
 // wind and rain keep real time. The player speaks to the islanders through `speak`: the words go
-// into the record and wait, per listener, for a brain that hears (`takeHeard`); the stand-in does
-// not.
+// into the record and, for a brain that hears, wait per listener for its next thought
+// (`takeHeard`); the stand-in does not hear.
 //
 // URL options: hour (start hour, default 8), paused (start paused), load (resume the saved game),
 // dayLength (real seconds per game day at 1x); see docs/tools.md.
@@ -211,6 +211,8 @@ export class Game {
 		this.sim = sim;
 		this.record.reset();
 		this.heard.clear();
+		// the record's first look, before any tick: a new game's islanders land at its start
+		this.record.observe( sim, this.weatherNow().shown, 0 );
 		c.sceneEvent( 'game begin' );
 		this.debug?.reset();
 		if ( this.ui ) this.ui.reset();
@@ -340,6 +342,7 @@ export class Game {
 	setBrain( brain: Brain | null ): void {
 
 		this.brain = brain;
+		this.heard.clear();
 		this.sim.brain = brain;
 
 	}
@@ -395,11 +398,14 @@ export class Game {
 	}
 
 	/** The player speaks: words to some islanders (their ids) or to everyone. They go into the
-	 * record, and each listener keeps them until a thought takes them (takeHeard). */
+	 * record; for a brain that hears, each listener keeps them until a thought takes them
+	 * (takeHeard), and is asked for one now. */
 	speak( words: string, to: EntityId[] | 'all' ): void {
 
 		const text = words.trim();
 		if ( ! text ) return;
+		this.record.add( this.sim, { kind: 'said', who: 'player', to, text } );
+		if ( ! this.brain?.hears ) return;
 		const listeners = to === 'all' ? this.sim.state.villagers.map( ( v ) => v.id ) : to;
 		for ( const id of listeners ) {
 
@@ -408,9 +414,8 @@ export class Game {
 			lines.push( text );
 
 		}
-		this.record.add( this.sim, { kind: 'said', who: 'player', to, text } );
-		// a brain that hears thinks over them now (Sim.think: not while a thought is in flight)
-		if ( this.brain?.hears ) for ( const id of listeners ) this.sim.think( id );
+		// (Sim.think: not while a thought is in flight; the words then wait for the next)
+		for ( const id of listeners ) this.sim.think( id );
 
 	}
 

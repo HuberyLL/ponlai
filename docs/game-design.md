@@ -175,8 +175,9 @@ An islander perceives what a person would, not the world's state:
 - **the time**: the day and the time of day.
 
 Memory (what they saw last, what happened when they acted), hearing the leader, and what starts a
-thought are designed with the language model. As built, the player's words wait for each listener's
-next thought, and a brain that hears is asked for one as they are said; the stand-in does not hear.
+thought are designed with the language model. As built, for a brain that hears, the player's words
+wait for each listener's next thought and it is asked for one as they are said; the stand-in does
+not hear.
 
 ## Not now
 

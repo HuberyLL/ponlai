@@ -178,6 +178,7 @@ export class SpeakBar {
 
 		for ( const g of this.flights ) g.el.remove();
 		this.flights = [];
+		this.nextFree = 0;
 
 	}
 
@@ -185,6 +186,8 @@ export class SpeakBar {
 
 		const shared = this.shared, now = shared.now, k = shared.k;
 		const w = innerWidth / k, cx = w / 2, wl = cx - MAX_W / 2, wr = cx + MAX_W / 2;
+		// (read before this frame's writes: whether the field has scrolled past its cap)
+		const scrolled = this.field.value.length > 0 && this.field.scrollLeft > 0;
 		const selected = shared.selected !== null ? shared.game.sim.villager( shared.selected ) : undefined;
 		text( this.who, selected?.name ?? '' );
 		flag( this.who, 'shown', selected !== undefined );
@@ -223,7 +226,7 @@ export class SpeakBar {
 		const fl = Math.max( wl, this.textX );
 		css( this.field, 'left', `${ fl.toFixed( 1 ) }px` );
 		css( this.field, 'width', `${ Math.max( 24, Math.min( this.textW + 160, wr + 2 - fl ) ).toFixed( 1 ) }px` );
-		const fade = this.field.scrollLeft > 0 ? 'linear-gradient(90deg, transparent 0, #000 28px)' : 'none';
+		const fade = scrolled ? 'linear-gradient(90deg, transparent 0, #000 28px)' : 'none';
 		css( this.field, 'mask-image', fade );
 		css( this.field, '-webkit-mask-image', fade );
 		css( this.mirror, 'left', `${ fl.toFixed( 1 ) }px` );

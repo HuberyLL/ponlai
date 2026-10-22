@@ -50,6 +50,7 @@ export class BuildBar {
 	private readonly shared: UiShared;
 	private readonly placement: PlacementHandle;
 	private readonly onToggle: ( open: boolean ) => void;
+	private readonly onTalk: () => void;
 	private readonly groups: { id: string; button: HTMLButtonElement }[] = [];
 	private readonly tier2: HTMLElement;
 	private readonly line: SVGSVGElement;
@@ -78,11 +79,12 @@ export class BuildBar {
 	private hover: string | null = null;
 	private scroll = 0;
 
-	constructor( parent: Element, shared: UiShared, placement: PlacementHandle, onToggle: ( open: boolean ) => void ) {
+	constructor( parent: Element, shared: UiShared, placement: PlacementHandle, onToggle: ( open: boolean ) => void, onTalk: () => void ) {
 
 		this.shared = shared;
 		this.placement = placement;
 		this.onToggle = onToggle;
+		this.onTalk = onTalk;
 		const root = this.root = el( 'div', 'pl-build closed', parent );
 		root.setAttribute( 'aria-label', '建造' );
 		this.mallet = iconButton( '建造', 'build', 32, parent, () => this.setOpen( ! this.open ), 'pl-mallet' );
@@ -135,11 +137,18 @@ export class BuildBar {
 		} );
 		search.addEventListener( 'keydown', ( e ) => {
 
+			// a key while an input method composes belongs to it
+			if ( e.isComposing || e.keyCode === 229 ) return;
 			if ( e.key === 'Escape' ) {
 
 				e.preventDefault();
 				e.stopPropagation();
 				this.clearSearch();
+
+			} else if ( e.key === 'Enter' ) {
+
+				e.preventDefault();
+				this.talk();
 
 			}
 
@@ -184,10 +193,19 @@ export class BuildBar {
 
 	}
 
-	/** A new simulation: the bar closes, nothing chosen. */
+	/** Enter: the bar closes (if open) and the player talks. */
+	talk(): void {
+
+		this.setOpen( false );
+		this.onTalk();
+
+	}
+
+	/** A new simulation: the bar closes, nothing chosen, no search. */
 	reset(): void {
 
 		this.setOpen( false );
+		this.clearSearch();
 
 	}
 

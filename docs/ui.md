@@ -232,8 +232,8 @@ from a board, it is said here.
   the scene); the ring passes over the figure's legs, as the placement ring passes over the meadow.
   The bag shows a slot per kind with its count, then a faint ring per free place; a click marks a
   slot 金 and does nothing more yet.
-- **Speaking**: the words go into the record and wait for each listener's next thought
-  (`Game.takeHeard`); a brain that hears (`Brain.hears`) is asked for a thought as they are said.
+- **Speaking**: the words go into the record; for a brain that hears (`Brain.hears`) they wait for
+  each listener's next thought (`Game.takeHeard`), and it is asked for one as they are said.
   The stand-in does not hear, so its islanders never think aloud; the debug panel's hearing brain
   shows the whole loop (words landing, the thinking ring, an answer).
 - **Build bar**: only a building the simulation knows (its row's `kind`: the chest) hands over to
@@ -244,7 +244,8 @@ from a board, it is said here.
   on the page; it is not in the save yet, so a loaded game's record starts at the load. Its river
   runs to today, or to the last day it names (the debug panel's placeholder days).
 - **Focus**: the keyboard's focus is shown as the pointer's hover is (精白, the stroke beneath),
-  never a frame.
+  never a frame. The record takes the focus itself on opening (not its ×, which Space would press)
+  and gives it back on closing; while it is open no key but its own reaches the page.
 - **Not yet**: painted brush textures (every stroke is drawn in code), the placement of any
   building but the chest, the record in the save, a thought started by hearing for the stand-in,
   and everything Scope now leaves out.

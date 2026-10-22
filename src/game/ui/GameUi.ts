@@ -93,7 +93,7 @@ export class GameUi {
 
 			this.speak.away = open;
 
-		} );
+		}, () => this.speak.focus() );
 		this.placement.onPlaced = () => this.build.placed();
 		this.record = new Record( root, shared, ( open ) => flag( root, 'recording', open ) );
 		this.people.selectable = () => this.placement.armed === null && ! this.record.open;
@@ -177,16 +177,18 @@ export class GameUi {
 		};
 		const target = e.target as Element | null;
 		const typing = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+		// the browser's own shortcuts are never the interface's
+		if ( e.ctrlKey || e.metaKey || e.altKey ) return;
 		if ( this.record.open ) {
 
-			// the world behind is still: nothing reaches it; a button keeps its own Enter and Space
-			const onButton = target instanceof HTMLButtonElement && ( e.key === 'Enter' || e.key === ' ' );
-			if ( this.record.key( e ) && ! onButton ) take();
-			else if ( ! onButton && e.key !== 'Tab' ) e.stopImmediatePropagation();
+			// the world behind is still: no other key reaches the page or the camera (their
+			// defaults stay: Tab, a button's Enter and Space, F5)
+			if ( this.record.key( e ) ) take();
+			else e.stopImmediatePropagation();
 			return;
 
 		}
-		if ( typing || e.ctrlKey || e.metaKey || e.altKey ) return;
+		if ( typing ) return;
 		if ( this.build.key( e ) ) {
 
 			take();
@@ -196,8 +198,7 @@ export class GameUi {
 		if ( e.key === 'Enter' && ! ( target instanceof HTMLButtonElement ) ) {
 
 			// Enter leaves building for talking, or opens the bar to talk
-			if ( this.build.open ) this.build.setOpen( false );
-			this.speak.focus();
+			this.build.talk();
 			take();
 
 		} else if ( e.key === 'Escape' && this.shared.selected !== null ) {

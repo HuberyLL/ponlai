@@ -153,18 +153,25 @@ export class Record {
 
 			this.resume = game.sim.speed;
 			if ( game.sim.speed !== 0 ) game.setSpeed( 0 );
-			this.returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+			// the focus goes back on closing only to where the keyboard had it: a button the pointer
+			// pressed keeps no focus, so Space stays the game's pause
+			const before = document.activeElement;
+			this.returnFocus = before instanceof HTMLElement && before !== document.body && before.matches( ':focus-visible' ) ? before : null;
 			this.show( 'all', this.today(), this.today() );
 			this.root.focus( { preventScroll: true } );
+
+			this.onOpen( open );
 
 		} else {
 
 			if ( game.sim.speed === 0 && this.resume !== 0 ) game.setSpeed( this.resume );
-			this.returnFocus?.focus( { preventScroll: true } );
+			// the interface shows again first: a hidden element cannot take the focus back
+			this.onOpen( open );
+			if ( this.returnFocus ) this.returnFocus.focus( { preventScroll: true } );
+			else if ( this.root.contains( document.activeElement ) ) ( document.activeElement as HTMLElement ).blur();
 			this.returnFocus = null;
 
 		}
-		this.onOpen( open );
 
 	}
 
@@ -176,13 +183,13 @@ export class Record {
 
 	}
 
-	/** The record's keys while it is open (all of them: the world behind it is still); true when taken. */
+	/** The record's own keys while it is open (Esc, ←/→); true when it took the key. */
 	key( e: KeyboardEvent ): boolean {
 
 		if ( ! this.open ) return false;
 		if ( e.key === 'Escape' ) this.setOpen( false );
 		else if ( e.key === 'ArrowLeft' || e.key === 'ArrowRight' ) this.step( e.key === 'ArrowLeft' ? - 1 : 1 );
-		else if ( e.key === 'Tab' || e.key === 'Enter' || e.key === ' ' ) return false;
+		else return false;
 		return true;
 
 	}

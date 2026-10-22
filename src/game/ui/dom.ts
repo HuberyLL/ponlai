@@ -40,10 +40,19 @@ export function attr( e: Element, name: string, value: string ): void {
 
 }
 
-/** Set an inline style property only when it changed. */
+// the values `css` wrote, by element and property: compared instead of the style's own reading,
+// which the browser normalises ('1.000' reads '1', a translate gains spaces), so that a steady
+// value is written once and a still interface writes nothing
+const written = new WeakMap<Element, Map<string, string>>();
+
+/** Set an inline style property only when it changed (set it through here only). */
 export function css( e: HTMLElement | SVGElement, name: string, value: string ): void {
 
-	if ( e.style.getPropertyValue( name ) !== value ) e.style.setProperty( name, value );
+	let values = written.get( e );
+	if ( ! values ) written.set( e, values = new Map() );
+	if ( values.get( name ) === value ) return;
+	values.set( name, value );
+	e.style.setProperty( name, value );
 
 }
 
