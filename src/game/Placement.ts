@@ -1,18 +1,20 @@
 import type * as THREE from 'three/webgpu';
 import { CLICK_SLOP } from '../camera/IslandCameraControls.ts';
 import type { Game } from './Game.ts';
-import type { HudContext } from './Hud.ts';
 import { groundPoint, pointerRay } from './pick.ts';
 import { blueprintRefusal } from './sim/buildings.ts';
 import type { Vec2 } from './sim/types.ts';
+import type { PlacementHandle } from './ui/BuildBar.ts';
+import type { UiContext } from './ui/GameUi.ts';
 import { PlacementPreview } from './view/PlacementPreview.ts';
 
-// The player's first control: placing the chest by hand. A button arms placement; while armed,
-// a ring on the turf under the pointer shows where it would stand (PlacementPreview: green where
-// it can go, red where the simulation would refuse it, with the reason over the button), and a
-// click on the island places it through Game.placeBlueprint. A refused click leaves placement
-// armed; Escape or the button again cancels. Once the chest stands (placed now or in a
-// loaded game) the control is gone.
+// Placing a building in the scene: the build bar arms it with a kind the simulation knows (its
+// roster row's `kind`: the chest) and disarms it when the choice is cleared or the bar closes.
+// While armed, a ring on the turf under the pointer shows where it would stand (PlacementPreview:
+// green where it can go, red where the simulation would refuse it), the bar says how or why not
+// (`hint`), and a click on the island places it through Game.placeBlueprint. A refused click leaves
+// it armed; a placed building disarms it and tells the bar (`onPlaced`). The placement of every
+// other building, and the scene's own look of it, wait (docs/ui.md, Scope now).
 //
 // Rules: a press that moves CLICK_SLOP or more is the camera's drag, not a click, as for the debug
 // panel's send-to-click; the preview reads the same refusal the simulation applies
@@ -20,48 +22,35 @@ import { PlacementPreview } from './view/PlacementPreview.ts';
 // ring (moved, recoloured, shown or hidden) is a scene event ('game input'): on a paused page the
 // temporal anti-aliasing shows a converged image until told the scene changed.
 
-const HINT = 'Click the island to place it · Esc to cancel';
+/** what the bar says while placing (the simulation's refusals are put in words by data/words.ts) */
+const HINT = '点岛上放下';
 
-export class ChestPlacement {
+export class BlueprintPlacement implements PlacementHandle {
 
 	private readonly game: Game;
-	private readonly context: HudContext;
-	private readonly box: HTMLElement;
-	private readonly hint: HTMLElement;
-	private readonly button: HTMLButtonElement;
+	private readonly context: UiContext;
 	private readonly preview = new PlacementPreview();
-	private armed = false;
+	/** the kind armed, or null */
+	armed: string | null = null;
+	/** what the bar tells the player while placing */
+	hint: { words: string; refused: boolean } | null = null;
+	/** a building was placed */
+	onPlaced: () => void = () => {};
 	private down = false;
 	private downX = 0;
 	private downY = 0;
 	private pointer: { x: number; y: number } | null = null;
 
-	constructor( game: Game, context: HudContext, box: HTMLElement ) {
+	constructor( game: Game, context: UiContext ) {
 
 		this.game = game;
 		this.context = context;
-		this.box = box;
-		this.hint = document.createElement( 'div' );
-		this.hint.className = 'hint';
-		this.button = document.createElement( 'button' );
-		this.button.type = 'button';
-		this.button.addEventListener( 'click', () => {
-
-			this.arm( ! this.armed );
-			// keep Space for the game's pause, not this button
-			this.button.blur();
-
-		} );
-		box.append( this.hint, this.button );
 		context.scene.add( this.preview.mesh );
 		const canvas = context.canvas;
 		canvas.addEventListener( 'pointerdown', this.onDown );
 		canvas.addEventListener( 'pointermove', this.onMove );
 		canvas.addEventListener( 'pointerup', this.onUp );
 		canvas.addEventListener( 'pointerleave', this.onLeave );
-		addEventListener( 'keydown', this.onKey );
-		this.arm( false );
-		this.reset();
 
 	}
 
@@ -72,11 +61,10 @@ export class ChestPlacement {
 
 	}
 
-	/** A new simulation was installed (start, load): show the control only while there is no chest. */
+	/** A new simulation was installed (start, load): nothing armed. */
 	reset(): void {
 
-		this.arm( false );
-		this.box.style.display = this.game.sim.state.buildings.some( ( b ) => b.kind === 'chest' ) ? 'none' : '';
+		this.arm( null );
 
 	}
 
@@ -87,26 +75,18 @@ export class ChestPlacement {
 
 	}
 
-	private arm( on: boolean ): void {
+	arm( kind: string | null ): void {
 
-		this.armed = on;
-		this.box.classList.toggle( 'armed', on );
-		this.button.textContent = on ? 'Cancel' : 'Place chest';
-		this.context.canvas.style.cursor = on ? 'crosshair' : '';
-		if ( on ) this.showPreview();
+		if ( this.armed === kind ) return;
+		this.armed = kind;
+		this.context.canvas.style.cursor = kind ? 'crosshair' : '';
+		if ( kind ) this.showPreview();
 		else {
 
 			this.ring( null, false );
-			this.say( '' );
+			this.hint = null;
 
 		}
-
-	}
-
-	private say( words: string, refused = false ): void {
-
-		if ( this.hint.textContent !== words ) this.hint.textContent = words;
-		this.hint.classList.toggle( 'refused', refused );
 
 	}
 
@@ -122,9 +102,9 @@ export class ChestPlacement {
 	private showPreview(): void {
 
 		const sim = this.game.sim, p = this.target();
-		const reason = p && blueprintRefusal( sim, 'chest', p );
+		const reason = p && this.armed && blueprintRefusal( sim, this.armed, p );
 		this.ring( p, p !== null && reason === null );
-		this.say( reason || HINT, !! reason );
+		this.hint = reason ? { words: reason, refused: true } : { words: HINT, refused: false };
 
 	}
 
@@ -136,15 +116,16 @@ export class ChestPlacement {
 
 	private place( p: Vec2 ): void {
 
-		const reason = this.game.placeBlueprint( 'chest', p.x, p.z );
+		if ( ! this.armed ) return;
+		const reason = this.game.placeBlueprint( this.armed, p.x, p.z );
 		if ( reason ) {
 
-			this.say( reason, true );
+			this.hint = { words: reason, refused: true };
 			return;
 
 		}
-		this.arm( false );
-		this.box.style.display = 'none';
+		this.arm( null );
+		this.onPlaced();
 
 	}
 
@@ -175,12 +156,6 @@ export class ChestPlacement {
 		this.pointer = { x: e.clientX, y: e.clientY };
 		const p = this.target();
 		if ( p ) this.place( p );
-
-	};
-
-	private readonly onKey = ( e: KeyboardEvent ): void => {
-
-		if ( e.code === 'Escape' && this.armed ) this.arm( false );
 
 	};
 

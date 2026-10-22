@@ -301,21 +301,33 @@ Game:
   again once the game does), `load` (resume the game saved in this browser, its world loaded at the
   save's piece count unless `grow` is given). The page's own
   `weather` option and auto weather work in the game as without it.
-- The player's interface is a prototype HUD (`src/game/Hud.ts`): a readout of the islander (day
-  and time, satiety and hydration, the bag, what they are doing, each unbuilt site's progress in
-  percent, the last words said and how the last action ended) and a "Place chest" button that arms placement: a ring on the turf
-  previews the spot (green, or red with the reason), a click places it, Escape cancels, and the
-  control is gone once the chest is placed (`src/game/Placement.ts`). Space pauses only the game
+- The player's interface is 蜃光 (`src/game/ui/GameUi.ts`, its spec `docs/ui.md`): the top row
+  (day and time, the speeds, the weather now and the next 24 game hours read ahead from the auto
+  chain, the island's resources, the record's scroll), a click on an islander for their tag and
+  ring (again, or on open ground, lets go; Esc too), the speak bar (Enter opens it and sends; the
+  words fly to the islander selected, or to everyone in view), the build bar (the mallet at the
+  bottom right; groups, buildings, `/` to search, 1-9 to choose, the arrows to scroll, Esc and
+  Enter) and the record (沧海录: the scroll; Esc, the arrows). Choosing the chest in the build bar
+  arms its placement in the scene: a ring on the turf previews the spot (green, or red with the
+  reason in the bar), a click places it (`src/game/Placement.ts`). Space pauses only the game
   clock, the GUI's hour, clock pause and time preset are off (the game's clock owns the time of
   day), and its Game folder (`src/game/GameDebug.ts`) sets the speed and pauses, saves and loads, shows one islander's body
   (position, the action under way, whether a thought is in flight) and sends it walking to the
   next click on the island; its Growth subfolder shows the population against the next step and
-  adds an islander (one piece per 2 islanders above 3: the island grows at 5 islanders). The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
+  adds an islander (one piece per 2 islanders above 3: the island grows at 5 islanders). Its
+  Interface subfolder shows the states the game does not reach yet: "many rows" (the build
+  roster three times over, more resource kinds than the row shows whole), "placeholder days" (nine
+  days in the record), "hearing brain" (hears the player, thinks a few seconds with the heard
+  words circling, answers a placeholder line), a line said by the inspected islander, and their
+  needs low or critical. The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
   by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `.tools` (the five
   actions), `setBrain( brain )` (kept across a load; `null` leaves the islander idle),
   `think( id )`, `walkTo( id, x, z )`, `placeBlueprint( kind, x, z )` (a building of a kind,
   `'chest'`, any number, each with an id like `chest1`; returns why not, or null), `focus( id )`, `setSpeed`, `togglePause`,
-  `addIslander()`, `save` and `load` (a save of another piece count loads only with the page);
+  `addIslander()`, `save` and `load` (a save of another piece count loads only with the page),
+  `speak( words, ids | 'all' )` (the player's words: into the record, and to a brain that hears),
+  `say( id, words )`, `setNeed( id, need, value )`, `forecast( hours )` (the weather's turns, in
+  game hours), `.record` (the record's entries) and `.ui` (`setMany( true )`);
   `.sim.comingLand` holds the next piece's cells once the page has it.
 
 ## Test mode

@@ -1,7 +1,8 @@
 # Ponlai: game UI (蜃光, "mirage light")
 
-The interface of `?game`: what the player sees over the scene. It replaces the prototype HUD
-(`src/game/Hud.ts`). The designs live on the project's design canvas as boards (named below:
+The interface of `?game`: what the player sees over the scene, built in `src/game/ui/`
+(`GameUi.ts` and its parts; As built, at the end, says where it departs from or adds to this
+file). The designs live on the project's design canvas as boards (named below:
 **Style**, **Type**, **SpeakFlow**, **BuildNotes**, **WeatherAnim**); this file is the spec the
 code follows, and where it and a board disagree, this file wins (the boards predate the decisions
 marked *changed*).
@@ -212,3 +213,38 @@ interface hides; Esc or × closes; ←/→ step days.
   touches the components.
 - Keyboard focus and `aria-label` on every control; text fits its longest likely value at
   1920×1080 CSS pixels.
+
+## As built
+
+`src/game/ui/` follows this file; where it had to decide something this file leaves open, or departs
+from a board, it is said here.
+
+- **Scale**: the parts are laid out on the boards' 1600 x 900 and scaled to the window by the
+  smaller of its width over 1600 and its height over 900 (1.2 at 1920 x 1080 CSS pixels), each
+  anchored to the edge it is drawn against.
+- **Forecast**: the auto chain read ahead by `Weather.forecast` (seeded: a turn comes within a
+  frame of when it was read); with auto weather off the sky holds and the stroke has no marks.
+- **Resources**: a kind the simulation has as an item (fish) counts the stores (`sim/stock.ts`);
+  the others show their row's placeholder count until the simulation has materials. What a
+  building lacks is the simulation's `shortfall`, never the bar's own sum.
+- **Islanders**: their names are Chinese (`sim/Sim.ts`). The ring at the feet and the words over
+  the heads are drawn over the canvas through the camera each frame (the placement's ring stays in
+  the scene); the ring passes over the figure's legs, as the placement ring passes over the meadow.
+  The bag shows a slot per kind with its count, then a faint ring per free place; a click marks a
+  slot 金 and does nothing more yet.
+- **Speaking**: the words go into the record and wait for each listener's next thought
+  (`Game.takeHeard`); a brain that hears (`Brain.hears`) is asked for a thought as they are said.
+  The stand-in does not hear, so its islanders never think aloud; the debug panel's hearing brain
+  shows the whole loop (words landing, the thinking ring, an answer).
+- **Build bar**: only a building the simulation knows (its row's `kind`: the chest) hands over to
+  the placement in the scene; the detail then says how (点岛上放下) or why the spot is refused. A
+  row not yet buildable still shows its detail on hover (还不能建). The recent group lists what
+  the island has had placed, the latest first.
+- **Record**: the game keeps it (`src/game/Chronicle.ts`) from the moment the game is installed
+  on the page; it is not in the save yet, so a loaded game's record starts at the load. Its river
+  runs to today, or to the last day it names (the debug panel's placeholder days).
+- **Focus**: the keyboard's focus is shown as the pointer's hover is (精白, the stroke beneath),
+  never a frame.
+- **Not yet**: painted brush textures (every stroke is drawn in code), the placement of any
+  building but the chest, the record in the save, a thought started by hearing for the stand-in,
+  and everything Scope now leaves out.

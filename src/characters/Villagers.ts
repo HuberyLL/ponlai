@@ -38,7 +38,8 @@ export interface PartSpec {
 	surface?: 'feather' | 'weave';
 }
 
-const HEIGHT = 1.68;
+/** an islander figure's height, feet to crown (m): the game's interface hangs its marks over it */
+export const FIGURE_HEIGHT = 1.68;
 const FADE = 0.35;
 
 export interface Villager {
@@ -165,7 +166,7 @@ export async function loadVillager( base: string, parts: PartSpec[], shared: Sha
 	group.add( model );
 	model.updateMatrixWorld( true );
 	const box = new THREE.Box3().setFromObject( mesh, true );
-	model.scale.setScalar( HEIGHT / ( box.max.y - box.min.y ) );
+	model.scale.setScalar( FIGURE_HEIGHT / ( box.max.y - box.min.y ) );
 	model.position.y = - box.min.y * model.scale.y;
 	const mixer = new THREE.AnimationMixer( model );
 	const actions: Record<string, THREE.AnimationAction> = {};

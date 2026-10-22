@@ -6,7 +6,7 @@ import type { CharacterShadow } from '../characters/CharacterShadow.ts';
 import type { Villager as Figure } from '../characters/Villagers.ts';
 import type { LookColours } from '../characters/looks.ts';
 import type { LandLattice } from '../world/IslandGrowth.ts';
-import { GameHud } from './Hud.ts';
+import { GameUi } from './ui/GameUi.ts';
 import { newGame, loadGame } from './sim/Sim.ts';
 import { SAVE_KEY, savedPieces } from './sim/save.ts';
 import type { Sim } from './sim/Sim.ts';
@@ -16,17 +16,25 @@ import { StandInBrain } from './sim/standin.ts';
 import { GameView, propSamples } from './view/GameView.ts';
 import { SECONDS_PER_GAME_DAY } from './sim/types.ts';
 import type { TrampleWalker } from '../world/vegetation/Trample.ts';
-import type { EntityId, IslandInput, Speed } from './sim/types.ts';
+import type { Weather, WeatherName } from '../sky/Weather.ts';
+import { Chronicle } from './Chronicle.ts';
+import { stockOf } from './sim/stock.ts';
+import type { EntityId, IslandInput, Items, Speed } from './sim/types.ts';
 
 // The island as a game (?game): the simulation (src/game/sim) runs the islanders' bodies, their
 // needs and the places they act at, a brain in its slot thinks for them (the stand-in of plain
 // rules by default, sim/standin.ts) and GameView draws them and the chest into the scene.
-// The player's interface is a prototype HUD (Hud.ts): a readout of the islander and the player's
-// one act, setting the chest down as a blueprint the islander then builds (Placement.ts). The debug panel's Game folder (GameDebug.ts) and
+// The player's interface is 蜃光 (ui/GameUi.ts, docs/ui.md): the top row (day and time, speeds,
+// the weather and its forecast, the island's stock, the record), the islanders' tags and marks, the
+// speak bar, the build bar (which hands a building the simulation knows to the placement in the
+// scene, Placement.ts) and the record (沧海录), whose history the game keeps (Chronicle.ts). The debug panel's Game folder (GameDebug.ts) and
 // the methods below, reached from the console as window.__PONLAI__.game, drive the rest. The
 // simulation's clock sets the time of day; the page's sky follows it, so pausing or speeding up the
 // game turns the sky with it. The weather is the page's own, as without ?game, running on the day
-// clock. Waves, wind and rain keep real time.
+// clock, and its auto chain read ahead is the game's forecast (`forecast`, in game hours). Waves,
+// wind and rain keep real time. The player speaks to the islanders through `speak`: the words go
+// into the record and wait, per listener, for a brain that hears (`takeHeard`); the stand-in does
+// not.
 //
 // URL options: hour (start hour, default 8), paused (start paused), load (resume the saved game),
 // dayLength (real seconds per game day at 1x); see docs/tools.md.
@@ -67,6 +75,8 @@ export interface GameContext {
 	land: LandLattice;
 	top?: Uint8Array;
 	dayCycle: DayCycle;
+	/** the page's weather: the sky the game shows, and its auto chain read ahead (the forecast) */
+	weather: Weather;
 	characterShadow: CharacterShadow;
 	/** a skinned islander figure for a look index, its pipelines compiled (GameView "First draws") */
 	loadLook( look: number ): Promise<Figure>;
@@ -117,7 +127,12 @@ export class Game {
 	private readonly context: GameContext;
 	private input: IslandInput;
 	private debug: { update(): void; reset(): void } | null = null;
-	private hud: GameHud | null = null;
+	/** the player's interface (null until the first simulation is installed) */
+	ui: GameUi | null = null;
+	/** the island's record (沧海录): what happened since the game was installed (Chronicle.ts) */
+	readonly record = new Chronicle();
+	// the player's words each islander has heard and no thought has taken yet (takeHeard)
+	private readonly heard = new Map<EntityId, string[]>();
 	/** the tools a brain acts through, by name (sim/agent.ts): the five actions, kept across a load */
 	readonly tools: ToolRegistry = actionTools();
 	// the brain in the islanders' slot, kept across a load (setBrain)
@@ -194,10 +209,12 @@ export class Game {
 		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, holdOpaque: c.holdOpaque, loadLook: c.loadLook, lookColours: c.lookColours,
 			ticksPerSecond: () => SECONDS_PER_GAME_DAY / c.dayCycle.dayLength } );
 		this.sim = sim;
+		this.record.reset();
+		this.heard.clear();
 		c.sceneEvent( 'game begin' );
 		this.debug?.reset();
-		if ( this.hud ) this.hud.reset();
-		else this.hud = new GameHud( this, c );
+		if ( this.ui ) this.ui.reset();
+		else this.ui = new GameUi( this, c );
 		// the simulation owns the time of day; the day clock only follows it
 		c.dayCycle.paused = false;
 		const before = c.dayCycle.hour;
@@ -263,10 +280,11 @@ export class Game {
 		if ( ! this.compiling && ++ this.framesDrawn > 1 ) {
 
 			this.compiling = true;
-			this.context.compileDraws( [ ...propSamples(), ...this.hud!.samples() ] ).catch( ( error: unknown ) => console.error( 'Could not compile the game\'s props', error ) );
+			this.context.compileDraws( [ ...propSamples(), ...this.ui!.samples() ] ).catch( ( error: unknown ) => console.error( 'Could not compile the game\'s props', error ) );
 
 		}
-		this.hud?.update();
+		this.record.observe( this.sim, this.weatherNow().shown, this.gameDt / 3600 );
+		this.ui?.update();
 		this.debug?.update();
 
 	}
@@ -349,10 +367,101 @@ export class Game {
 
 	}
 
-	/** Whether every islander shows on screen: the page keeps its loading screen until then. */
+	/** The weather now: the sky the front under way left and the one it moves to, how far along it
+	 * is (0..1; 1 with no front), and the sky shown (the nearer of the two). */
+	weatherNow(): { from: WeatherName; to: WeatherName; progress: number; shown: WeatherName } {
+
+		const w = this.context.weather, from = w.origin, to = w.target, progress = w.progress;
+		return { from, to, progress, shown: progress < 0.5 ? from : to };
+
+	}
+
+	/** The weather's turns over the next `hours` game hours, read ahead from its auto chain
+	 * (Weather.forecast): each front's start and length in game hours from now (the front under way
+	 * first, its start negative), and the skies it moves between. */
+	forecast( hours: number ): { at: number; duration: number; from: WeatherName; to: WeatherName }[] {
+
+		// the weather runs on the day clock: a game hour is a 24th of the day's length
+		const perHour = this.context.dayCycle.dayLength / 24;
+		return this.context.weather.forecast( hours * perHour ).map( ( turn ) => ( { at: turn.at / perHour, duration: turn.duration / perHour, from: turn.from, to: turn.to } ) );
+
+	}
+
+	/** What the island holds: its stores' items by kind (sim/stock.ts). */
+	stock(): Items {
+
+		return stockOf( this.sim.state );
+
+	}
+
+	/** The player speaks: words to some islanders (their ids) or to everyone. They go into the
+	 * record, and each listener keeps them until a thought takes them (takeHeard). */
+	speak( words: string, to: EntityId[] | 'all' ): void {
+
+		const text = words.trim();
+		if ( ! text ) return;
+		const listeners = to === 'all' ? this.sim.state.villagers.map( ( v ) => v.id ) : to;
+		for ( const id of listeners ) {
+
+			let lines = this.heard.get( id );
+			if ( ! lines ) this.heard.set( id, lines = [] );
+			lines.push( text );
+
+		}
+		this.record.add( this.sim, { kind: 'said', who: 'player', to, text } );
+		// a brain that hears thinks over them now (Sim.think: not while a thought is in flight)
+		if ( this.brain?.hears ) for ( const id of listeners ) this.sim.think( id );
+
+	}
+
+	/** An islander says something (the `say` action on their body: the debug panel's and the
+	 * console's; a brain says through its tools). Null when said, else why not. */
+	say( id: EntityId, words: string ): string | null {
+
+		const v = this.sim.villager( id ), say = this.tools.get( 'say' );
+		if ( ! v || ! say ) return 'No such islander';
+		const result = say( v, { words }, this.sim );
+		return result.ok ? null : result.reason;
+
+	}
+
+	/** Set an islander's need by hand (the debug panel's: to see the interface's ramps and alerts). */
+	setNeed( id: EntityId, need: 'satiety' | 'hydration', value: number ): void {
+
+		const v = this.sim.villager( id );
+		if ( v ) v.needs[ need ] = Math.min( Math.max( value, 0 ), 100 );
+
+	}
+
+	/** The player's words an islander has heard since the last call for it, oldest first (for a
+	 * brain that hears: hearing the leader is designed with the language model). */
+	takeHeard( id: EntityId ): string[] {
+
+		const lines = this.heard.get( id ) ?? [];
+		this.heard.delete( id );
+		return lines;
+
+	}
+
+	/** Whether the player's words wait for an islander's next thought. */
+	hasHeard( id: EntityId ): boolean {
+
+		return ( this.heard.get( id )?.length ?? 0 ) > 0;
+
+	}
+
+	/** Where an islander stands as drawn (its feet, world metres), into `out`; false while not drawn. */
+	anchor( id: EntityId, out: THREE.Vector3 ): boolean {
+
+		return this.view?.anchor( id, out ) ?? false;
+
+	}
+
+	/** Whether every islander shows on screen and the interface's fonts are in: the page keeps its
+	 * loading screen until then. */
 	ready(): boolean {
 
-		return this.view?.ready ?? false;
+		return ( this.view?.ready ?? false ) && ( this.ui?.ready ?? false );
 
 	}
 

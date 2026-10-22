@@ -1,0 +1,431 @@
+/*
+ * 蜃光, the game's interface (docs/ui.md). Everything sits over the scene's canvas and never in
+ * it. The layout is in the design canvas's units: a 1600 x 900 board, scaled to the window by
+ * `--k` (GameUi.ts), anchored to the edges it is drawn against. Colours are the palette's variables
+ * (Palette.ts sets them on the root). No frames: a mist shadow holds text and icons off the scene.
+ */
+
+@font-face {
+	font-family: 'Ponlai Brush';
+	src: url( './fonts/PonlaiBrush.woff2' ) format( 'woff2' );
+	unicode-range: U+0020-007E, U+00B7;
+	font-display: block;
+}
+
+@font-face {
+	font-family: 'Ponlai Brush Display';
+	src: url( './fonts/PonlaiBrushDisplay.woff2' ) format( 'woff2' );
+	unicode-range: U+0020-007E, U+00B7;
+	font-display: block;
+}
+
+.pl-ui {
+	--body: 'Ponlai Brush', 'LXGW WenKai GB', serif;
+	--title: 'Ponlai Brush Display', 'Ma Shan Zheng', serif;
+	--mist: 0 1px 3px rgba( 15, 30, 33, 0.9 ), 0 0 10px rgba( 15, 30, 33, 0.45 );
+	--ease: cubic-bezier( 0.3, 0, 0.2, 1 );
+	position: fixed;
+	left: 0;
+	top: 0;
+	width: calc( 100vw / var( --k, 1 ) );
+	height: calc( 100vh / var( --k, 1 ) );
+	transform: scale( var( --k, 1 ) );
+	transform-origin: 0 0;
+	z-index: 5;
+	pointer-events: none;
+	overflow: hidden;
+	font-family: var( --body );
+	font-size: 16px;
+	line-height: 1.4;
+	color: var( --gao );
+	font-synthesis: none;
+	font-variant-numeric: tabular-nums;
+	-webkit-font-smoothing: antialiased;
+	user-select: none;
+}
+
+.pl-ui * { font-synthesis: none; box-sizing: border-box; }
+
+/* the mist the scene fades into under the top row and the bars */
+.pl-veil { position: absolute; left: 0; right: 0; pointer-events: none; transition: opacity 0.4s ease; }
+.pl-veil.top { top: 0; height: 150px; background: linear-gradient( 180deg, rgba( 15, 30, 33, 0.66 ), rgba( 15, 30, 33, 0 ) ); }
+.pl-veil.bottom { bottom: 0; height: 200px; background: linear-gradient( 0deg, rgba( 15, 30, 33, 0.72 ), rgba( 15, 30, 33, 0 ) ); }
+
+/* type */
+.pl-title { font-family: var( --title ); font-weight: 400; line-height: 1; }
+.pl-xb {
+	background-image: linear-gradient( 180deg, var( --jingbai ) 0%, var( --gao ) 40%, #e4e3d8 66%, var( --yuebai ) 100% );
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+	filter: drop-shadow( 0 1px 1px rgba( 15, 30, 33, 0.9 ) ) drop-shadow( 0 0 8px rgba( 214, 236, 240, 0.22 ) );
+}
+.pl-mist { text-shadow: var( --mist ); }
+.pl-sh { filter: drop-shadow( 0 1px 2px rgba( 15, 30, 33, 0.85 ) ); }
+.pl-label { color: var( --cang ); letter-spacing: 0.3em; }
+.pl-num { font-family: var( --body ); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; white-space: nowrap; }
+.pl-num.big { font-family: 'Ponlai Brush Display', 'LXGW WenKai GB', serif; }
+.pl-zhu { color: var( --zhu ); }
+
+/* buttons: the icon is the button (no frame, no label); hover 精白 with a faint stroke rising beneath,
+   pressed sinks, disabled faint, selected one 金 stroke beneath, the others of a set 苍 */
+.pl-btn {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var( --gao );
+	font: inherit;
+	cursor: pointer;
+	pointer-events: auto;
+	transition: color 0.2s ease, opacity 0.25s ease, transform 0.12s ease;
+}
+.pl-btn > .pl-face { display: flex; transition: transform 0.2s ease; }
+.pl-btn > .pl-under {
+	position: absolute;
+	left: 50%;
+	bottom: 2px;
+	width: 34px;
+	height: 6px;
+	color: var( --gao );
+	opacity: 0;
+	transform: translate( -50%, 4px );
+	transition: opacity 0.2s ease, transform 0.25s var( --ease ), color 0.2s ease;
+	pointer-events: none;
+}
+.pl-btn.dim { color: var( --cang ); }
+.pl-btn:hover:not( :disabled ):not( .locked ) { color: var( --jingbai ); }
+.pl-btn:hover:not( :disabled ):not( .locked ) > .pl-under { opacity: 0.35; transform: translate( -50%, 0 ); }
+.pl-btn:active:not( :disabled ):not( .locked ) { transform: translateY( 1px ); opacity: 0.75; }
+.pl-btn.on > .pl-under { opacity: 1; color: var( --jin ); transform: translate( -50%, 0 ); }
+.pl-btn:disabled, .pl-btn.locked { opacity: 0.28; cursor: default; }
+/* the keyboard's focus is no frame: the button turns 精白 and its stroke rises, as under the pointer */
+.pl-btn:focus { outline: none; }
+.pl-btn:focus-visible { color: var( --jingbai ); }
+.pl-btn:focus-visible > .pl-under { opacity: 0.6; transform: translate( -50%, 0 ); }
+.pl-btn.on:focus-visible > .pl-under { opacity: 1; }
+.pl-more:focus-visible { outline: none; color: var( --jingbai ); }
+
+/* ------------------------------------------------------------------ the top row */
+
+.pl-hud { position: absolute; inset: 0; transition: opacity 0.3s ease; }
+.pl-top { position: absolute; left: 40px; top: 26px; height: 48px; display: flex; align-items: center; gap: 22px; }
+.pl-when { display: flex; align-items: baseline; gap: 14px; }
+.pl-day { font-size: 26px; white-space: nowrap; }
+.pl-clock { width: 92px; font-size: 30px; letter-spacing: 0.04em; }
+.pl-divider { display: block; flex: none; color: var( --gao ); }
+.pl-speeds { display: flex; align-items: center; gap: 14px; padding: 0 4px; }
+.pl-speeds .pl-btn { height: 44px; }
+.pl-speeds .pl-btn > .pl-under { width: 24px; bottom: 4px; }
+
+.pl-forecast { position: relative; width: 260px; height: 34px; color: var( --gao ); }
+.pl-forecast .live { position: absolute; left: 0; top: 0; width: 30px; height: 30px; overflow: visible; }
+.pl-forecast .stroke { position: absolute; left: 40px; top: 0; overflow: visible; }
+.pl-forecast .mark { position: absolute; left: 0; top: 2px; width: 18px; height: 18px; opacity: 0; }
+.pl-forecast .tick { position: absolute; left: 0; top: 20px; width: 4px; height: 12px; opacity: 0; }
+
+.pl-stock { position: absolute; right: 108px; top: 26px; height: 48px; display: flex; align-items: center; gap: 26px; }
+.pl-stock-group { display: flex; align-items: center; gap: 18px; pointer-events: auto; }
+.pl-res { display: flex; align-items: center; gap: 7px; }
+.pl-res .pl-num { font-size: 18px; transition: color 0.2s ease; }
+.pl-res.short .pl-num { color: var( --zhu ); }
+.pl-res.extra { display: none; }
+.pl-stock-group:hover .pl-res.extra, .pl-stock-group:focus-within .pl-res.extra { display: flex; }
+.pl-stock-group:hover .pl-more, .pl-stock-group:focus-within .pl-more { display: none; }
+.pl-more { font-size: 15px; color: var( --cang ); letter-spacing: 0.06em; }
+.pl-more.short { color: var( --zhu ); }
+.pl-record-btn { position: absolute; right: 34px; top: 26px; width: 48px; height: 48px; }
+.pl-stock-divider { position: absolute; right: 90px; top: 30px; }
+
+/* ------------------------------------------------------------------ the islanders */
+
+.pl-people { position: absolute; inset: 0; pointer-events: none; }
+.pl-people > svg.marks { position: absolute; left: 0; top: 0; overflow: visible; }
+.pl-person { position: absolute; left: 0; top: 0; will-change: transform; }
+.pl-person.hidden { display: none; }
+.pl-alerts { position: absolute; left: 0; bottom: 0; display: flex; gap: 4px; transform: translateX( -50% ); color: var( --zhu ); transition: opacity 0.3s ease; }
+.pl-think { position: absolute; left: 0; top: 0; transition: opacity 0.5s ease; }
+.pl-think > span {
+	position: absolute;
+	left: 0;
+	top: 0;
+	white-space: pre;
+	color: var( --gao );
+	text-shadow: var( --mist );
+	will-change: transform, opacity;
+}
+.pl-talk {
+	position: absolute;
+	left: 0;
+	bottom: 0;
+	width: max-content;
+	max-width: 15em;
+	transform: translateX( -50% );
+	text-align: center;
+	line-height: 1.45;
+	letter-spacing: 0.04em;
+	color: var( --gao );
+	text-shadow: var( --mist );
+}
+.pl-talk > span { display: inline-block; white-space: pre; }
+.pl-talk > .wait { visibility: hidden; }
+.pl-talk > .pop { animation: pl-pop 0.28s cubic-bezier( 0.2, 0.9, 0.3, 1.25 ) both; }
+.pl-talk > .gone { animation: pl-gone 0.7s cubic-bezier( 0.4, 0, 0.6, 1 ) both; }
+@keyframes pl-pop {
+	0% { opacity: 0; transform: translate( var( --dx ), var( --dy ) ) scale( 0.3 ); }
+	55% { opacity: 1; }
+	100% { opacity: 1; transform: none; }
+}
+@keyframes pl-gone {
+	0% { opacity: 1; transform: none; filter: blur( 0 ); }
+	100% { opacity: 0; transform: translateY( -8px ); filter: blur( 2px ); }
+}
+
+/* the tag beside the selected islander */
+.pl-tag { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; gap: 10px; white-space: nowrap; transition: opacity 0.3s ease; pointer-events: auto; }
+.pl-tag .head { display: flex; align-items: baseline; gap: 14px; }
+.pl-tag .name { font-size: 30px; }
+.pl-tag .doing { font-size: 12px; letter-spacing: 0.2em; opacity: 0.8; }
+.pl-tag .need { display: flex; align-items: center; gap: 10px; }
+.pl-tag .need .pl-num { width: 2em; font-size: 14px; }
+.pl-tag .bag { display: flex; align-items: center; gap: 10px; }
+.pl-slot { position: relative; width: 26px; height: 26px; }
+.pl-slot .count { position: absolute; right: -6px; bottom: -4px; font-size: 10px; }
+.pl-slot.empty { opacity: 0.3; }
+.pl-slot > .pl-under { width: 24px; bottom: -6px; }
+
+/* ------------------------------------------------------------------ the speak bar */
+
+.pl-speak { position: absolute; left: 0; right: 0; bottom: 34px; height: 64px; transition: opacity 0.3s ease; }
+.pl-speak.away, .pl-speak.away .row, .pl-speak.away .pl-field { opacity: 0; pointer-events: none; }
+.pl-speak .who {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 0;
+	text-align: center;
+	font-size: 14px;
+	letter-spacing: 0.3em;
+	padding-left: 0.3em;
+	text-shadow: var( --mist );
+	opacity: 0;
+	transform: translateY( 6px );
+	transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.pl-speak .who.shown { opacity: 1; transform: none; }
+.pl-speak .row {
+	position: absolute;
+	left: 50%;
+	bottom: 0;
+	transform: translateX( -50% );
+	height: 34px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 18px;
+	cursor: text;
+	pointer-events: auto;
+	transition: gap 0.45s var( --ease );
+}
+.pl-speak .row.open { gap: 22px; }
+.pl-speak .row > svg { height: 12px; width: 140px; transition: width 0.45s var( --ease ); }
+.pl-speak .row.open > svg { width: 260px; }
+.pl-speak .mid { position: relative; width: 68px; height: 34px; }
+.pl-speak .hint {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate( -50%, -50% );
+	font-size: 15px;
+	letter-spacing: 0.4em;
+	padding-left: 0.4em;
+	white-space: nowrap;
+	text-shadow: var( --mist );
+	transition: opacity 0.25s ease;
+}
+.pl-field, .pl-mirror {
+	position: absolute;
+	top: 30px;
+	height: 34px;
+	font-family: var( --body );
+	font-size: 19px;
+	letter-spacing: 0.06em;
+}
+.pl-field {
+	width: 68px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	outline: none;
+	background: transparent;
+	color: var( --jingbai );
+	caret-color: transparent;
+	text-shadow: 0 1px 3px rgba( 15, 30, 33, 0.85 );
+	pointer-events: auto;
+	user-select: text;
+	transition: opacity 0.25s ease;
+}
+.pl-field::selection { background: rgba( 214, 236, 240, 0.3 ); }
+.pl-mirror { width: max-content; display: flex; align-items: center; white-space: pre; opacity: 0; pointer-events: none; }
+.pl-caret { position: absolute; top: 36px; width: 6px; height: 22px; color: var( --jingbai ); opacity: 0; pointer-events: none; }
+.pl-caret.blink { animation: pl-blink 1.05s steps( 1, end ) infinite; }
+@keyframes pl-blink { 0%, 55% { opacity: 1; } 56%, 100% { opacity: 0; } }
+
+/* characters in flight to a listener */
+.pl-flights { position: absolute; inset: 0; pointer-events: none; }
+.pl-fly {
+	position: absolute;
+	left: 0;
+	top: 0;
+	font-size: 19px;
+	letter-spacing: 0.06em;
+	color: var( --jingbai );
+	text-shadow: 0 1px 3px rgba( 15, 30, 33, 0.85 );
+	white-space: pre;
+	opacity: 0;
+	will-change: transform, opacity;
+}
+
+/* ------------------------------------------------------------------ the build bar */
+
+.pl-build { position: absolute; right: 0; bottom: 0; width: 1600px; height: 200px; pointer-events: none; transition: opacity 0.3s ease; }
+.pl-build.closed { opacity: 0; visibility: hidden; }
+.pl-build .strokes { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.pl-build .bi { position: absolute; width: 44px; height: 44px; }
+.pl-build .bi > .pl-under { width: 30px; bottom: 0; }
+.pl-build .group > .pl-face { transition: transform 0.2s ease; }
+.pl-build .group.current > .pl-face { transform: translateY( -4px ); }
+.pl-build .tier2 { position: absolute; height: 64px; transition: left 0.3s var( --ease ), width 0.3s var( --ease ); }
+.pl-build .tier2 .line { position: absolute; left: -10px; top: 54px; height: 12px; overflow: visible; }
+.pl-build .clip { position: absolute; left: 0; top: 0; height: 120px; overflow: hidden; }
+.pl-build .shift { position: absolute; left: 0; top: 0; height: 120px; transition: transform 0.35s var( --ease ); }
+.pl-build .item { position: absolute; top: 2px; width: 52px; height: 52px; }
+.pl-build .item > .pl-face { transition: transform 0.2s ease; }
+.pl-build .item.chosen > .pl-face { transform: translateY( -5px ); }
+.pl-build .item.chosen > .pl-under { width: 36px; bottom: -4px; }
+.pl-build .item.short:not( .chosen ) { opacity: 0.55; }
+.pl-build .item.locked { opacity: 0.28; }
+.pl-build .sub { position: absolute; top: 66px; font-size: 11px; letter-spacing: 0.4em; text-indent: 0.4em; color: var( --cang ); text-align: center; text-shadow: var( --mist ); }
+.pl-build .gap { position: absolute; top: 20px; }
+.pl-build .none { position: absolute; left: 0; top: 18px; width: 300px; font-size: 14px; letter-spacing: 0.2em; color: var( --cang ); text-shadow: var( --mist ); }
+.pl-build .arrow { position: absolute; top: 6px; width: 36px; height: 52px; transition: opacity 0.25s ease; }
+.pl-build .arrow.off { opacity: 0; pointer-events: none; }
+.pl-build .head { position: absolute; top: 14px; display: flex; align-items: center; justify-content: flex-end; white-space: nowrap; }
+.pl-build .head .group-name { font-size: 24px; }
+.pl-build .search {
+	width: 0;
+	opacity: 0;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	outline: none;
+	background: none;
+	font-family: var( --body );
+	font-size: 19px;
+	letter-spacing: 0.06em;
+	color: var( --jingbai );
+	caret-color: var( --jingbai );
+	text-align: right;
+	text-shadow: var( --mist );
+	pointer-events: auto;
+	user-select: text;
+}
+.pl-build .search.open { opacity: 1; }
+.pl-build .detail {
+	position: absolute;
+	width: 420px;
+	height: 170px;
+	display: flex;
+	align-items: flex-end;
+	justify-content: center;
+	padding-bottom: 14px;
+	background: radial-gradient( ellipse 50% 50% at 50% 50%, rgba( 15, 30, 33, 0.72 ) 0%, rgba( 15, 30, 33, 0.45 ) 55%, rgba( 15, 30, 33, 0 ) 100% );
+	opacity: 0;
+	transition: left 0.25s var( --ease ), opacity 0.2s ease;
+	pointer-events: none;
+}
+.pl-build .detail .body { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.pl-build .detail .name { font-size: 30px; }
+.pl-build .detail .use { font-size: 14px; letter-spacing: 0.08em; opacity: 0.85; text-shadow: var( --mist ); }
+.pl-build .detail .cost { display: flex; align-items: center; gap: 16px; }
+.pl-build .detail .cost > span { display: flex; align-items: center; gap: 6px; }
+.pl-build .detail .cost .pl-num { font-size: 16px; }
+.pl-build .detail .hours { display: flex; align-items: baseline; gap: 4px; margin-left: 4px; }
+.pl-build .detail .hours > span:last-child { font-size: 13px; letter-spacing: 0.1em; color: var( --cang ); }
+.pl-build .detail .note { font-size: 13px; letter-spacing: 0.3em; color: var( --cang ); text-shadow: var( --mist ); }
+.pl-build .detail .note.refused { color: var( --zhu ); letter-spacing: 0.15em; }
+.pl-mallet { position: absolute; right: 34px; bottom: 30px; width: 52px; height: 52px; z-index: 1; }
+.pl-mallet > .pl-under { width: 40px; bottom: 2px; }
+
+/* ------------------------------------------------------------------ the record (沧海录) */
+
+.pl-record { position: absolute; inset: 0; pointer-events: auto; opacity: 0; visibility: hidden; transition: opacity 0.35s ease, visibility 0s linear 0.35s; }
+.pl-record.open { opacity: 1; visibility: visible; transition: opacity 0.35s ease; }
+.pl-record:focus { outline: none; }
+.pl-record .dim { position: absolute; inset: 0; background: rgba( 15, 30, 33, 0.82 ); }
+.pl-record .page { position: absolute; left: 50%; top: 50%; width: 1600px; height: 900px; margin: -450px 0 0 -800px; }
+.pl-record h2 { position: absolute; left: 64px; top: 44px; margin: 0; font-size: 56px; }
+.pl-record .close { position: absolute; right: 40px; top: 30px; width: 44px; height: 44px; }
+.pl-record nav { position: absolute; left: 52px; top: 150px; width: 220px; display: flex; flex-direction: column; gap: 6px; }
+.pl-record nav .list { display: flex; flex-direction: column; gap: 6px; max-height: 400px; overflow-y: auto; scrollbar-width: none; }
+.pl-record nav .list::-webkit-scrollbar { display: none; }
+.pl-record nav .pl-btn {
+	flex: none;
+	width: 220px;
+	height: 52px;
+	padding: 0 14px;
+	justify-content: flex-start;
+	gap: 14px;
+	font-size: 18px;
+	letter-spacing: 0.3em;
+	color: var( --cang );
+}
+.pl-record nav .pl-btn.current { color: var( --gao ); }
+.pl-record nav .pl-btn > svg.wash { position: absolute; left: 0; top: 0; opacity: 0; transition: opacity 0.25s ease; }
+.pl-record nav .pl-btn.current > svg.wash { opacity: 1; }
+.pl-record nav .pl-btn > * { position: relative; }
+.pl-record nav .pl-btn > svg.wash { position: absolute; }
+.pl-record .rule { position: absolute; left: 300px; top: 140px; }
+.pl-record .person { position: absolute; left: 380px; top: 150px; width: 200px; display: flex; flex-direction: column; align-items: center; gap: 18px; }
+.pl-record .person .name { font-size: 52px; }
+.pl-record .log { position: absolute; top: 140px; display: flex; flex-direction: column; gap: 15px; }
+.pl-record .log .day { display: flex; align-items: center; gap: 14px; }
+.pl-record .log .day .pl-title { font-size: 30px; }
+.pl-record .rows { max-height: 390px; overflow-y: auto; display: flex; flex-direction: column-reverse; scrollbar-width: none; }
+.pl-record .rows::-webkit-scrollbar { display: none; }
+.pl-record .rows > div { display: flex; flex-direction: column; gap: 15px; }
+.pl-record .entry { display: grid; grid-template-columns: 56px 1fr; gap: 4px 16px; }
+.pl-record .entry .t { font-size: 13px; color: var( --cang ); padding-top: 2px; }
+.pl-record .entry .who { font-size: 13px; letter-spacing: 0.2em; color: var( --cang ); }
+.pl-record .entry .say { grid-column: 2; font-size: 17px; line-height: 1.6; user-select: text; }
+.pl-record .entry .say.player { color: var( --jingbai ); }
+.pl-record .entry .deed { font-size: 15px; letter-spacing: 0.15em; opacity: 0.85; }
+.pl-record .empty { font-size: 15px; letter-spacing: 0.15em; color: var( --cang ); }
+.pl-record .river { position: absolute; left: 380px; top: 600px; width: 1160px; height: 300px; }
+.pl-record .river > svg { position: absolute; left: 0; top: 0; pointer-events: none; }
+.pl-record .river .days { position: absolute; left: 60px; top: 0; width: 1040px; height: 300px; overflow: hidden; }
+.pl-record .rday {
+	position: absolute;
+	top: 0;
+	width: 140px;
+	height: 300px;
+	margin-left: -70px;
+	display: block;
+	transition: left 0.45s var( --ease ), opacity 0.35s ease;
+}
+.pl-record .rday .mark { position: absolute; left: 0; right: 0; top: 30px; height: 22px; display: flex; align-items: center; justify-content: center; gap: 6px; opacity: 0.85; }
+.pl-record .rday .mark > span { font-size: 13px; letter-spacing: 0.1em; white-space: nowrap; text-shadow: var( --mist ); }
+.pl-record .rday .mark.alarm { color: var( --zhu ); opacity: 1; }
+.pl-record .rday .wx { position: absolute; left: 0; right: 0; top: 64px; height: 20px; display: flex; align-items: center; justify-content: center; gap: 5px; color: var( --cang ); font-size: 12px; }
+.pl-record .rday .drop { position: absolute; left: 50px; top: 122px; overflow: visible; }
+.pl-record .rday .label { position: absolute; left: 0; right: 0; top: 172px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.pl-record .rday .label .pl-title { white-space: nowrap; font-size: 22px; opacity: 0.85; transition: font-size 0.3s ease; }
+.pl-record .rday.current .label .pl-title { font-size: 26px; opacity: 1; }
+.pl-record .rday .today { font-size: 12px; letter-spacing: 0.3em; color: var( --cang ); }
+.pl-record .river .arrow { position: absolute; top: 122px; width: 40px; height: 40px; transition: opacity 0.3s ease; }
+.pl-record .river .arrow.off { opacity: 0; pointer-events: none; }
+.pl-ui.recording .pl-hud, .pl-ui.recording .pl-people, .pl-ui.recording .pl-speak, .pl-ui.recording .pl-build, .pl-ui.recording .pl-flights, .pl-ui.recording .pl-veil { visibility: hidden; }

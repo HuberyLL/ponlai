@@ -714,9 +714,9 @@ async function compileDraws( objects: THREE.Object3D[] ): Promise<void> {
 	else console.warn( 'The sun\'s shadow map is not built yet: these draws compile their shadow pass when first drawn' );
 
 }
-// ?game turns the island into the game: its own islanders and a clock that drives the sky (no
-// player interface yet: the GUI's Game folder and window.__PONLAI__.game drive it). Without it
-// the scene stays the art-review scene with one islander walking a loop.
+// ?game turns the island into the game: its own islanders, a clock that drives the sky and the
+// player's interface (src/game/ui/GameUi.ts); the GUI's Game folder and window.__PONLAI__.game
+// drive the rest. Without it the scene stays the art-review scene with one islander walking a loop.
 const GAME = params.has( 'game' );
 let characters: Villagers | null = null;
 let game: Game | null = null;
@@ -726,7 +726,7 @@ if ( GAME ) {
 	const { Game } = await import( './game/Game.ts' );
 	game = await Game.start( {
 		params, scene, camera, canvas: renderer.domElement, land, top: topFromTiles( worldCache.version.chunks ),
-		dayCycle, characterShadow, invalidateSunShadow, refreshEnvironment, sceneEvent,
+		dayCycle, weather, characterShadow, invalidateSunShadow, refreshEnvironment, sceneEvent,
 		// the island grows with the population (Growth.ts, made below: called from the frame loop on)
 		pieces: landOptions.step,
 		island: { approach: ( p ) => growth.approach( p ), grow: () => growth.grow() },
