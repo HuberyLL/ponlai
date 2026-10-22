@@ -244,9 +244,14 @@ from a board, it is said here.
   the placement in the scene; the detail then says how (点岛上放下) or why the spot is refused. A
   row not yet buildable still shows its detail on hover (还不能建). The recent group lists what
   the island has had placed, the latest first.
-- **Record**: the game keeps it (`src/game/Chronicle.ts`) from the moment the game is installed
-  on the page; it is not in the save yet, so a loaded game's record starts at the load. Its river
-  runs to today, or to the last day it names (the debug panel's placeholder days).
+- **Record**: the game keeps it (`src/game/Chronicle.ts`) and it is part of the save
+  (`src/game/save.ts`): a resumed game's record goes on from where it was saved, and a game saved
+  before it was (save version 17) resumes with an empty one, its islanders' landings unknown. Its
+  river runs to today, or to the last day it names (the debug panel's placeholder days, which are
+  entries like any other and so are saved too).
+- **Saving**: there is no save or load control for the player yet (no menu: Scope now). The page
+  saves the game itself, every minute while it runs and when it is hidden or left, and resumes it
+  when it loads (`src/game/save.ts`).
 - **Languages**: the words are i18next catalogues in `src/game/ui/i18n/` (its header has the
   rules): `zh-CN.json` is the source and the default, `en.json` a snapshot of it that is not kept up
   while the game is in development, so a key it lacks shows the Chinese. `?lang=en` (or the debug
@@ -259,5 +264,6 @@ from a board, it is said here.
   never a frame. The record takes the focus itself on opening (not its ×, which Space would press)
   and gives it back on closing; while it is open no key but its own reaches the page.
 - **Not yet**: painted brush textures (every stroke is drawn in code), the placement of any
-  building but the chest, the record in the save, a thought started by hearing for the stand-in,
+  building but the chest, a player's save or load control or a sign that the game was saved, a
+  thought started by hearing for the stand-in,
   and everything Scope now leaves out.

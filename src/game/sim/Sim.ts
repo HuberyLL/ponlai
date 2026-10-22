@@ -8,7 +8,7 @@ import { findPath, goalAt } from './path.ts';
 import { BUILDING_KINDS, blueprintRefusal, newBuilding } from './buildings.ts';
 import { obstructPlaces } from './places.ts';
 import { random } from './rng.ts';
-import { SAVE_VERSION } from './save.ts';
+import { SAVE_VERSION } from '../save.ts';
 import { GROWTH_STEPS, POPULATION_START, SECONDS_PER_GAME_DAY, SPEED_FACTORS, WALK_SPEED, piecesFor } from './types.ts';
 import type { EntityId, IslandInput, SimState, Speed, Vec2, Villager } from './types.ts';
 
@@ -314,10 +314,11 @@ export function newGame( input: IslandInput, options: { seed?: number; startHour
 
 }
 
-/** A saved game; throws when the save is from another version. */
-export function loadGame( json: string, input: IslandInput ): Sim {
+/** A saved game, from its state or that state's JSON (Sim.save); throws when it is from another
+ * version (a whole save is read, and brought to this version, by ../save.ts readSave). */
+export function loadGame( saved: string | SimState, input: IslandInput ): Sim {
 
-	const state = JSON.parse( json ) as SimState;
+	const state = typeof saved === 'string' ? JSON.parse( saved ) as SimState : saved;
 	if ( state.version !== SAVE_VERSION ) throw new Error( 'This save is from another version of the game' );
 	return new Sim( state, input );
 
