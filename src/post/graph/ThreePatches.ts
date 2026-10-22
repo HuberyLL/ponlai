@@ -1,5 +1,5 @@
 import { REVISION, Mesh, MeshStandardNodeMaterial, PlaneGeometry } from 'three/webgpu';
-import type { Camera, Light, Node, Scene, WebGPURenderer } from 'three/webgpu';
+import type { Camera, Light, Node, RenderTarget, Scene, WebGPURenderer } from 'three/webgpu';
 
 // Cache-key patches for three r186's node and pipeline caches, so a material drawn into targets
 // of different layouts (another MRT, other attachment formats or names) gets a shader and a
@@ -53,6 +53,16 @@ import type { Camera, Light, Node, Scene, WebGPURenderer } from 'three/webgpu';
 // the frame builds has the later code whatever its order. It makes no pipeline; three keeps the
 // shadow map it creates for the real receivers (so the map's first redraw moves to the loop's first
 // frame, SunShadow.ts). Paused views at grow 0, 6 and 12 drew the same pixels with it as without.
+//
+// And the graph's depth clears (`ownDepthClears`). r186 clears a render target's depth before the
+// first render into it whenever the renderer's flags clear colour but not depth
+// (`Renderer._renderScene`, its `depthInitialized` record of the target), and a resize disposes the
+// target, which drops that record. So on the frame after every change of the render scale the
+// opaque pass (colour cleared, the depth loaded) wiped the depth the vegetation's prepass had just
+// drawn into the shared depth (VegetationPrepass.ts), and every shaded draw testing depth for
+// equality against it failed: the meadow, the bamboo's leaves and the yunpeng vanished for one
+// frame. The graph declares every clear and load of the depth it owns, so it marks each target
+// with depth initialised as it binds it, and three adds no clear of its own.
 
 type Texture = { format: unknown; type: unknown; name: string };
 type RenderContext = { mrt?: { id: number } | null; textures: Texture[] | null };
@@ -193,5 +203,16 @@ export function primeSharedNodes( renderer: WebGPURenderer, scene: Scene, camera
 	mesh.geometry.dispose();
 	material.dispose();
 	return true;
+
+}
+
+/** Marks `target`'s depth as initialised for three, so r186 never clears it on its own: the frame
+ * graph decides every clear and load of the depth it owns (see the header). Call as the graph binds
+ * a target with depth, before it renders into it. */
+export function ownDepthClears( renderer: unknown, target: RenderTarget ): void {
+
+	// (`get` makes the record when the target has none yet; three's first render then fills it in)
+	const textures = ( renderer as { _textures?: { get( target: RenderTarget ): { depthInitialized?: boolean } } } )._textures;
+	if ( textures ) textures.get( target ).depthInitialized = true;
 
 }
