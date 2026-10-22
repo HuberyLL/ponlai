@@ -1141,6 +1141,11 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   `zh-CN.json`: keys missing (shown in Chinese), keys the source no longer has, values naming
   `{{values}}` the source does not give. `--strict` fails on the drift too; `--list` names every
   drifted key. Run it after a change to the interface's text.
+- `tools/verify-ink.mjs` (plain `node`) checks the interface's ink (`src/game/ui/Ink.ts`) on
+  strokes drawn as the page draws them, at high's scale: the same stroke and seed ink the same; it
+  never adds ink or reaches past the outline; a short stroke keeps its ink; a long one keeps its
+  first press and dries toward its exit, a thin one less than a broad one; a gauge told not to dry
+  keeps its exit.
 - `tools/verify-growth-shape.mjs` (plain `node`) checks the island's growth over 32 seeds and 36
   steps: the coast's solidity, elongation and share along the lattice axes, that a grown land
   equals the same steps taken one at a time through a saved land, and the lattice's margin; it

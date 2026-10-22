@@ -1,8 +1,10 @@
 import { SPEED_FACTORS } from '../sim/types.ts';
 import type { Speed } from '../sim/types.ts';
-import { upright } from './Brush.ts';
+import { uprightStroke } from './Brush.ts';
 import { dayName } from './data/record.ts';
-import { attr, el, flag, iconButton, strokeSvg, text } from './dom.ts';
+import { attr, el, flag, iconButton, svgEl, text } from './dom.ts';
+import { InkPath } from './InkPath.ts';
+import { PALETTE } from './Palette.ts';
 import { Forecast } from './Forecast.ts';
 import { t } from './i18n/i18n.ts';
 import { ResourceRow } from './ResourceRow.ts';
@@ -23,7 +25,16 @@ const SPEEDS: readonly { speed: Speed; label: string; icon: string }[] = [
 // each speed's icon size: the arrows grow with the speed
 const SPEED_SIZE: Readonly<Record<string, [ number, number ]>> = { pause: [ 12, 14 ], speed1: [ 12, 14 ], speed3: [ 20, 14 ], speed6: [ 28, 14 ] };
 
-const DIVIDER = upright( 3, 1, 39, 2.4, 0.6 );
+const DIVIDER = uprightStroke( 3, 1, 39, 2.4, 0.6 );
+
+// A divider of the row: an upright inked stroke (InkPath.ts), each its own seed.
+function divider( className: string, parent: Element, seed: number ): void {
+
+	const svg = svgEl( 'svg', { class: className, width: 6, height: 40, viewBox: '0 0 6 40', 'aria-hidden': 'true' }, parent );
+	svg.style.opacity = '0.8';
+	new InkPath( svg, { colour: PALETTE.gao }, seed ).set( DIVIDER );
+
+}
 
 export class TopRow {
 
@@ -44,7 +55,7 @@ export class TopRow {
 		const when = el( 'div', 'pl-when', top );
 		this.day = el( 'div', 'pl-day pl-title pl-xb', when );
 		this.clock = el( 'div', 'pl-clock pl-num big pl-xb', when, '08:00' );
-		strokeSvg( 6, 40, DIVIDER, 'pl-divider pl-sh', top ).svg.style.opacity = '0.8';
+		divider( 'pl-divider pl-sh', top, 11 );
 		const speeds = el( 'div', 'pl-speeds', top );
 		speeds.setAttribute( 'role', 'group' );
 		speeds.setAttribute( 'aria-label', t( 'top.speeds' ) );
@@ -59,10 +70,10 @@ export class TopRow {
 			this.speeds.push( b );
 
 		}
-		strokeSvg( 6, 40, DIVIDER, 'pl-divider pl-sh', top ).svg.style.opacity = '0.8';
+		divider( 'pl-divider pl-sh', top, 12 );
 		this.forecast = new Forecast( top );
 		this.stock = new ResourceRow( root, shared );
-		strokeSvg( 6, 40, DIVIDER, 'pl-divider pl-stock-divider pl-sh', root ).svg.style.opacity = '0.8';
+		divider( 'pl-divider pl-stock-divider pl-sh', root, 13 );
 		iconButton( t( 'record.title' ), 'record', 30, root, openRecord, 'pl-record-btn' );
 
 	}

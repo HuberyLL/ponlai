@@ -1,9 +1,11 @@
-import { level, upright } from './Brush.ts';
+import { levelStroke, upright } from './Brush.ts';
 import { iconSvg } from './Icons.ts';
 import { BUILD_GROUPS } from './data/buildings.ts';
 import type { BuildGroup, BuildingRow } from './data/buildings.ts';
 import { refusalWords } from './data/words.ts';
 import { attr, css, el, flag, iconButton, svgEl, text } from './dom.ts';
+import { InkPath } from './InkPath.ts';
+import { PALETTE } from './Palette.ts';
 import { t } from './i18n/i18n.ts';
 import type { UiShared } from './Shared.ts';
 
@@ -56,7 +58,7 @@ export class BuildBar {
 	private readonly groups: { id: string; button: HTMLButtonElement }[] = [];
 	private readonly tier2: HTMLElement;
 	private readonly line: SVGSVGElement;
-	private readonly linePath: SVGPathElement;
+	private readonly lineInk: InkPath;
 	private readonly clip: HTMLElement;
 	private readonly shift: HTMLElement;
 	private readonly back: HTMLButtonElement;
@@ -97,7 +99,7 @@ export class BuildBar {
 		const firstX = RECENT_X - 58 - GROUP_STEP * ( regular.length - 1 );
 		const searchX = firstX - 62;
 		const strokes = svgEl( 'svg', { class: 'strokes pl-sh', width: 1600, height: 200, viewBox: '0 0 1600 200', 'aria-hidden': 'true' }, root );
-		svgEl( 'path', { d: level( searchX - 12, 1532, 176, 3.4, 1.4, { entry: 0.06, exit: 0.3 } ), fill: 'var(--gao)', 'fill-opacity': 0.85 }, strokes );
+		new InkPath( strokes, { colour: PALETTE.gao, opacity: 0.85 }, 41 ).set( levelStroke( searchX - 12, 1532, 176, 3.4, 1.4, { entry: 0.06, exit: 0.3 } ) );
 		for ( const x of [ firstX - 12, RECENT_X - 10 ] ) svgEl( 'path', { d: upright( x + 3, TIER1 + 9, TIER1 + 35, 2, 0.4 ), fill: 'var(--gao)', 'fill-opacity': 0.4 }, strokes );
 		regular.forEach( ( g, i ) => this.addGroup( g.id, g.name, g.icon, firstX + GROUP_STEP * i ) );
 		for ( const g of recent ) this.addGroup( g.id, g.name, g.icon, RECENT_X );
@@ -110,7 +112,7 @@ export class BuildBar {
 		css( tier2, 'top', `${ TIER2 }px` );
 		tier2.addEventListener( 'wheel', this.onWheel, { passive: true } );
 		this.line = svgEl( 'svg', { class: 'line pl-sh', height: 12, 'aria-hidden': 'true' }, tier2 );
-		this.linePath = svgEl( 'path', { fill: 'var(--gao)', 'fill-opacity': 0.8 }, this.line );
+		this.lineInk = new InkPath( this.line, { colour: PALETTE.gao, opacity: 0.8 }, 42 );
 		this.clip = el( 'div', 'clip', tier2 );
 		this.shift = el( 'div', 'shift', this.clip );
 		this.none = el( 'div', 'none', this.shift, t( 'build.notFound' ) );
@@ -379,7 +381,7 @@ export class BuildBar {
 		css( this.clip, 'width', `${ this.view }px` );
 		attr( this.line, 'width', String( this.view + 20 ) );
 		attr( this.line, 'viewBox', `0 0 ${ this.view + 20 } 12` );
-		attr( this.linePath, 'd', level( 1, this.view + 19, 6.2, 3, 0.8, { entry: 0.06, exit: 0.3 } ) );
+		this.lineInk.set( levelStroke( 1, this.view + 19, 6.2, 3, 0.8, { entry: 0.06, exit: 0.3 } ) );
 
 	}
 

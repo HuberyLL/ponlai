@@ -1,10 +1,12 @@
 import type { Game } from '../Game.ts';
 import { upright } from './Brush.ts';
+import type { Stroke } from './Brush.ts';
 import { iconSvg, setIcon } from './Icons.ts';
 import type { WeatherName } from '../../sky/Weather.ts';
 import { nightness, weatherIcon, weatherKind } from './data/weather.ts';
 import type { WeatherKind } from './data/weather.ts';
 import { attr, css, el, svgEl } from './dom.ts';
+import { InkPath } from './InkPath.ts';
 import { t } from './i18n/i18n.ts';
 
 // The weather in the top row (docs/ui.md, Weather forecast; the design canvas's WeatherAnim): the
@@ -16,13 +18,15 @@ import { t } from './i18n/i18n.ts';
 //   motions (the rays turning, the cloud drifting) follow the game's clock, so a paused game holds
 //   it still and a paused page's frame is still.
 // - The stroke spans 24 game hours at 9 px an hour, thick by day and thin by night, with a tick at
-//   midnight; its wobble is tied to the hour, so it flows left as time passes. A small icon stands
-//   at each turn of the weather (the middle of its front), in the kind turned to (its night face
-//   by night); of two turns closer than 20 px the first keeps its place and the worse kind stays.
-//   The turns are the engine's auto chain read ahead (Game.forecast), read again each game minute.
+//   midnight; its wobble is tied to the hour, so it flows left as time passes. It is inked
+//   (InkPath.ts), its dry tail toward the far hours, and drawn again as it moves a quarter pixel. A
+//   small icon stands at each turn of the weather (the middle of its front), in the kind turned to
+//   (its night face by night); of two turns closer than 20 px the first keeps its place and the
+//   worse kind stays. The turns are the engine's auto chain read ahead (Game.forecast), read again
+//   each game minute.
 //
-// Rules: it writes only what changed (the stroke's path changes as the hour moves, a mark when it
-// moves a tenth of a pixel); its label for screen readers says the weather now and its turns.
+// Rules: it writes only what changed (the stroke as it moves a quarter pixel, a mark when it moves a
+// tenth of a pixel); its label for screen readers says the weather now and its turns.
 
 const PX_PER_HOUR = 9, WIDTH = 216, LEFT = 40, MARKS = 8, TICKS = 2, MARK_GAP = 20;
 const smooth = ( a: number, b: number, x: number ) => {
@@ -61,7 +65,7 @@ export class Forecast {
 	private readonly cloud: SVGGElement;
 	private readonly cloudDrift: SVGGElement;
 	private readonly cut: SVGGElement;
-	private readonly stroke: SVGPathElement;
+	private readonly stroke: InkPath;
 	private readonly marks: SVGSVGElement[] = [];
 	private readonly ticks: SVGSVGElement[] = [];
 	private turns: Turn[] = [];
@@ -94,10 +98,7 @@ export class Forecast {
 		svgEl( 'path', { d: CLOUD_BASE, fill: 'currentColor' }, this.cloudDrift );
 
 		const stroke = svgEl( 'svg', { class: 'stroke', width: WIDTH, height: 34, viewBox: `0 0 ${ WIDTH } 34`, 'aria-hidden': 'true' }, root );
-		const gradient = svgEl( 'linearGradient', { id: `${ id }g`, x1: 0, x2: WIDTH, y1: 0, y2: 0, gradientUnits: 'userSpaceOnUse' }, svgEl( 'defs', {}, stroke ) );
-		svgEl( 'stop', { offset: 0, 'stop-color': 'currentColor', 'stop-opacity': 0.95 }, gradient );
-		svgEl( 'stop', { offset: 1, 'stop-color': 'currentColor', 'stop-opacity': 0.3 }, gradient );
-		this.stroke = svgEl( 'path', { fill: `url(#${ id }g)` }, stroke );
+		this.stroke = new InkPath( stroke, { colour: 'currentColor', gradient: { x1: 0, x2: WIDTH, stops: [ [ 0, 0.95 ], [ 1, 0.3 ] ] } }, 21 );
 		for ( let i = 0; i < MARKS; i ++ ) this.marks.push( root.appendChild( iconSvg( 'sun', 18, 'mark' ) ) );
 		for ( let i = 0; i < TICKS; i ++ ) {
 
@@ -122,7 +123,8 @@ export class Forecast {
 			attr( this.root, 'aria-label', this.label( weatherKind( now.shown ) ) );
 
 		}
-		attr( this.stroke, 'd', strokePath( t ) );
+		// (at a quarter pixel's steps: the stroke moves a fifth of a pixel a second at 1x)
+		this.stroke.set( strokePath( Math.round( t * PX_PER_HOUR * 4 ) / ( PX_PER_HOUR * 4 ) ) );
 		const fade = ( x: number ) => smooth( 0, 16, x ) * ( 1 - smooth( WIDTH - 18, WIDTH, x ) );
 		for ( let i = 0; i < MARKS; i ++ ) {
 
@@ -261,9 +263,10 @@ export class Forecast {
 
 /** The 24 hours' stroke at game hour t: thick by day and thin by night, tapering at both ends; its
  * wobble is tied to the hour, so it flows left with time. */
-function strokePath( t: number ): string {
+function strokePath( t: number ): Stroke {
 
 	let top = '', bottom = '';
+	const frame: Stroke[ 'frame' ] = { points: [], half: [] };
 	for ( let x = 0; x <= WIDTH; x += 3 ) {
 
 		const tt = t + x / PX_PER_HOUR;
@@ -272,8 +275,10 @@ function strokePath( t: number ): string {
 		const y = 26 + 0.55 * Math.sin( tt * 0.85 ) + 0.3 * Math.sin( tt * 2.3 + 0.7 );
 		top += `${ x ? ' L' : 'M' }${ x } ${ ( y - hw ).toFixed( 2 ) }`;
 		bottom = ` L${ x } ${ ( y + hw ).toFixed( 2 ) }${ bottom }`;
+		frame.points.push( { x, y } );
+		frame.half.push( hw );
 
 	}
-	return `${ top }${ bottom } Z`;
+	return { d: `${ top }${ bottom } Z`, frame };
 
 }

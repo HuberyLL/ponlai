@@ -34,7 +34,8 @@ is the language it is designed and written in; another language is a translation
 - **Every line is a brush stroke**: sharp entry, a full middle, a tapering exit, a slight curve.
   Icons, dividers, bars, rings and leader lines all follow it. Within one figure keep weight
   contrast (a solid axis, a faint paper edge). Strokes are drawn in code (width varying along the
-  path) until painted textures replace them.
+  path), and the long ones are inked as a brush leaves them: the outline stays exactly as drawn and
+  the ink only leaves it (As built, Ink).
 - **Icons are the buttons**: white line art with no label on the button (`aria-label` for screen
   readers). Hover turns it 精白 with a faint stroke rising beneath it.
 - **No ornaments**: no corner pieces, dots, glints or extra connecting lines.
@@ -263,7 +264,20 @@ from a board, it is said here.
 - **Focus**: the keyboard's focus is shown as the pointer's hover is (精白, the stroke beneath),
   never a frame. The record takes the focus itself on opening (not its ×, which Space would press)
   and gives it back on closing; while it is open no key but its own reaches the page.
-- **Not yet**: painted brush textures (every stroke is drawn in code), the placement of any
-  building but the chest, a player's save or load control or a sign that the game was saved, a
+- **Ink**: the long strokes are inked (`src/game/ui/Ink.ts`, drawn by `InkPath.ts`): the record's
+  river, rule, day line and list wash, the build bar's two strokes, the speak bar's, the need bars,
+  the forecast's stroke, the ring at the feet, its 金 stroke and the leader, the top row's
+  dividers. Each keeps its outline and loses ink only: its tail runs dry from halfway (飞白, streaks
+  of bare paper along the stroke, the tip parting into threads), a few thin gaps of bare paper run
+  through it, its edge is drunk in a little by the paper, and the ink thins slightly after the first
+  press. A stroke is ink or paper, never a lighter grey of ink in lines or patches: on the dark scene
+  that reads as a stain. How dry comes with a stroke's length in widths (an icon's strokes stay as
+  drawn, and icons and ticks are not inked) and half as much on a thin stroke; the gaps, the edge
+  and the tone show only on a stroke wide enough on screen. A need's bar is a gauge and does not dry
+  (its ends say the value and the whole). The ring at the feet is an ensō: it starts at its front
+  left and goes round the back, so its dry tail falls on its heavy near side. The style is the one
+  chosen from samples (dry from halfway, three quarters dry at the exit, the edge drunk in, the gaps
+  "more"); `tools/verify-ink.mjs` checks it.
+- **Not yet**: the placement of any building but the chest, a player's save or load control or a sign that the game was saved, a
   thought started by hearing for the stand-in,
   and everything Scope now leaves out.

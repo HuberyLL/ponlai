@@ -1,7 +1,8 @@
 import type { WeatherName } from '../../sky/Weather.ts';
 import type { RecordEntry } from '../Chronicle.ts';
 import type { EntityId, Speed } from '../sim/types.ts';
-import { along, cubic, upright } from './Brush.ts';
+import { cubic, lensFrame, stroke, uprightStroke } from './Brush.ts';
+import type { Point } from './Brush.ts';
 import { iconSvg, setIcon } from './Icons.ts';
 import { PALETTE } from './Palette.ts';
 import { LANDINGS, RECORD_KINDS, dayName } from './data/record.ts';
@@ -9,6 +10,7 @@ import type { RecordNames } from './data/record.ts';
 import { WEATHER_KINDS, weatherKind } from './data/weather.ts';
 import type { WeatherKind } from './data/weather.ts';
 import { attr, css, el, flag, iconButton, svgEl, text } from './dom.ts';
+import { InkPath } from './InkPath.ts';
 import { t } from './i18n/i18n.ts';
 import type { UiShared } from './Shared.ts';
 
@@ -32,6 +34,14 @@ import type { UiShared } from './Shared.ts';
 
 const VIS = 7, DAY_STEP = 146;
 const RIVER = 'M380 742 C560 728 760 756 960 742 C1160 728 1360 756 1540 742 C1360 760 1160 736 960 750 C760 764 560 736 380 742 Z';
+// its frame for the ink: a lens, its upper side out and its lower side back
+const chain = ( ...curves: [ Point, Point, Point, Point ][] ) => curves.flatMap( ( c, i ) => cubic( ...c, 64 ).slice( i ? 1 : 0 ) );
+const RIVER_FRAME = lensFrame(
+	chain( [ { x: 380, y: 742 }, { x: 560, y: 728 }, { x: 760, y: 756 }, { x: 960, y: 742 } ], [ { x: 960, y: 742 }, { x: 1160, y: 728 }, { x: 1360, y: 756 }, { x: 1540, y: 742 } ] ),
+	chain( [ { x: 1540, y: 742 }, { x: 1360, y: 760 }, { x: 1160, y: 736 }, { x: 960, y: 750 } ], [ { x: 960, y: 750 }, { x: 760, y: 764 }, { x: 560, y: 736 }, { x: 380, y: 742 } ] ) );
+// the wash behind the chosen entry of the list, a lens, and its frame
+const WASH = 'M2 26 C40 12 140 10 218 22 C140 40 40 42 2 26 Z';
+const WASH_FRAME = lensFrame( cubic( { x: 2, y: 26 }, { x: 40, y: 12 }, { x: 140, y: 10 }, { x: 218, y: 22 }, 48 ), cubic( { x: 218, y: 22 }, { x: 140, y: 40 }, { x: 40, y: 42 }, { x: 2, y: 26 }, 48 ) );
 const DROP = 'M0 -9 a9 9 0 1 0 0.01 0 Z';
 const RING = 'M0 -16 a16 16 0 1 0 0.01 0 Z M1 -13 a13 13 0 1 0 0.01 0 Z';
 // an islander a placeholder entry names but the game has not (the debug panel's placeholder days)
@@ -80,25 +90,13 @@ export class Record {
 		el( 'h2', 'pl-title pl-xb', page, t( 'record.title' ) );
 		iconButton( t( 'record.close' ), 'close', 22, page, () => this.setOpen( false ), 'close' );
 
-		// the defs the list's wash and the day's line share
-		const defs = svgEl( 'defs', {}, svgEl( 'svg', { width: 0, height: 0, style: 'position: absolute', 'aria-hidden': 'true' }, page ) );
-		const gradient = ( id: string, x1: number, x2: number, stops: [ number, number ][] ) => {
-
-			const g = svgEl( 'linearGradient', { id, x1, x2, y1: 0, y2: 0, gradientUnits: 'userSpaceOnUse' }, defs );
-			for ( const [ offset, opacity ] of stops ) svgEl( 'stop', { offset, 'stop-color': PALETTE.gao, 'stop-opacity': opacity }, g );
-
-		};
-		gradient( 'pl-rec-sel', 0, 220, [ [ 0, 0.18 ], [ 1, 0 ] ] );
-		gradient( 'pl-rec-day', 0, 420, [ [ 0, 0.7 ], [ 1, 0 ] ] );
-		gradient( 'pl-rec-river', 380, 1540, [ [ 0, 0 ], [ 0.08, 0.85 ], [ 0.92, 0.85 ], [ 1, 0 ] ] );
-
 		const nav = el( 'nav', '', page );
 		nav.setAttribute( 'aria-label', t( 'record.contents' ) );
 		this.island = this.entry( nav, t( 'record.island' ), 'island', 'all' );
 		this.list = el( 'div', 'list', nav );
 		this.list.addEventListener( 'scroll', this.fadeList );
 		const rule = svgEl( 'svg', { class: 'rule', width: 8, height: 500, viewBox: '0 0 8 500', 'aria-hidden': 'true' }, page );
-		svgEl( 'path', { d: upright( 4, 1, 499, 3, 0.8, { entry: 0.08, exit: 0.3 } ), fill: PALETTE.gao, 'fill-opacity': 0.3 }, rule );
+		new InkPath( rule, { colour: PALETTE.gao, opacity: 0.3 }, 31 ).set( uprightStroke( 4, 1, 499, 3, 0.8, { entry: 0.08, exit: 0.3 } ) );
 
 		this.person = el( 'div', 'person', page );
 		this.person.appendChild( iconSvg( 'figure', 150, 'pl-sh' ) ).setAttribute( 'height', '180' );
@@ -107,14 +105,15 @@ export class Record {
 		const head = el( 'div', 'day', this.log );
 		this.dayTitle = el( 'span', 'pl-title pl-xb', head );
 		const line = svgEl( 'svg', { width: 420, height: 8, viewBox: '0 0 420 8', 'aria-hidden': 'true' }, head );
-		svgEl( 'path', { d: along( cubic( { x: 1, y: 4.6 }, { x: 120, y: 3 }, { x: 300, y: 3.2 }, { x: 419, y: 4 } ), 2.2, { entry: 0.05, exit: 0.6 } ), fill: 'url(#pl-rec-day)' }, line );
+		new InkPath( line, { colour: PALETTE.gao, gradient: { x1: 0, x2: 420, stops: [ [ 0, 0.7 ], [ 1, 0 ] ] } }, 32 )
+			.set( stroke( cubic( { x: 1, y: 4.6 }, { x: 120, y: 3 }, { x: 300, y: 3.2 }, { x: 419, y: 4 } ), 2.2, { entry: 0.05, exit: 0.6 } ) );
 		this.rows = el( 'div', 'rows', this.log );
 		this.rows.setAttribute( 'aria-live', 'polite' );
 
 		const river = el( 'div', 'river', page );
 		river.addEventListener( 'wheel', this.onWheel, { passive: true } );
-		const stroke = svgEl( 'svg', { class: 'pl-sh', width: 1160, height: 300, viewBox: '380 600 1160 300', 'aria-hidden': 'true' }, river );
-		svgEl( 'path', { d: RIVER, fill: 'url(#pl-rec-river)' }, stroke );
+		const strokes = svgEl( 'svg', { class: 'pl-sh', width: 1160, height: 300, viewBox: '380 600 1160 300', 'aria-hidden': 'true' }, river );
+		new InkPath( strokes, { colour: PALETTE.gao, gradient: { x1: 380, x2: 1540, stops: [ [ 0, 0 ], [ 0.08, 0.85 ], [ 0.92, 0.85 ], [ 1, 0 ] ] } }, 33 ).set( { d: RIVER, frame: RIVER_FRAME } );
 		this.days = el( 'div', 'days', river );
 		this.earlier = iconButton( t( 'record.earlier' ), 'chevron', 40, river, () => this.shift( - 1 ), 'arrow' );
 		css( this.earlier, 'left', '12px' );
@@ -130,7 +129,7 @@ export class Record {
 		const b = el( 'button', 'pl-btn', parent );
 		b.type = 'button';
 		const wash = svgEl( 'svg', { class: 'wash', width: 220, height: 52, viewBox: '0 0 220 52', 'aria-hidden': 'true' }, b );
-		svgEl( 'path', { d: 'M2 26 C40 12 140 10 218 22 C140 40 40 42 2 26 Z', fill: 'url(#pl-rec-sel)' }, wash );
+		new InkPath( wash, { colour: PALETTE.gao, gradient: { x1: 0, x2: 220, stops: [ [ 0, 0.18 ], [ 1, 0 ] ] } }, 34 ).set( { d: WASH, frame: WASH_FRAME } );
 		b.appendChild( iconSvg( icon, 28 ) );
 		el( 'span', '', b, name );
 		b.addEventListener( 'click', ( e ) => {

@@ -9,6 +9,7 @@ import { BUILDINGS, rosterTimes } from './data/buildings.ts';
 import { MORE_RESOURCES, RESOURCES } from './data/resources.ts';
 import { dayName } from './data/record.ts';
 import { el, flag } from './dom.ts';
+import { setInkUnit } from './InkPath.ts';
 import { locale, t } from './i18n/i18n.ts';
 import { PALETTE } from './Palette.ts';
 import { People } from './People.ts';
@@ -84,6 +85,8 @@ export class GameUi {
 		const root = this.root = el( 'div', 'pl-ui', document.body );
 		root.lang = locale;
 		for ( const [ name, colour ] of Object.entries( PALETTE ) ) root.style.setProperty( `--${ name }`, colour );
+		// (the scale first: the parts' inked strokes draw for it as they are built)
+		this.rescale();
 		el( 'div', 'pl-veil top', root );
 		el( 'div', 'pl-veil bottom', root );
 		// (the islanders' marks first: their clicks on the scene are heard before the placement's,
@@ -108,7 +111,6 @@ export class GameUi {
 			this.fontsLoaded = true;
 
 		} );
-		this.rescale();
 
 	}
 
@@ -165,6 +167,8 @@ export class GameUi {
 	private rescale(): void {
 
 		const k = Math.min( Math.max( Math.min( innerWidth / BOARD_W, innerHeight / BOARD_H ), 0.75 ), 3 );
+		// the inked strokes' pixels: the scale's and the screen's (a zoom, a window moved to another screen)
+		setInkUnit( k * devicePixelRatio );
 		if ( k === this.shared.k ) return;
 		this.shared.k = k;
 		this.root.style.setProperty( '--k', String( k ) );

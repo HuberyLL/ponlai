@@ -1,7 +1,8 @@
 import type { EntityId } from '../sim/types.ts';
-import { level, upright } from './Brush.ts';
+import { levelStroke, upright } from './Brush.ts';
 import { PALETTE } from './Palette.ts';
 import { css, el, flag, svgEl, text } from './dom.ts';
+import { InkPath } from './InkPath.ts';
 import { t } from './i18n/i18n.ts';
 import type { People } from './People.ts';
 import type { UiShared } from './Shared.ts';
@@ -111,12 +112,9 @@ export class SpeakBar {
 
 			const svg = svgEl( 'svg', { class: 'pl-sh', viewBox: '0 0 260 12', preserveAspectRatio: 'none', 'aria-hidden': 'true' }, row );
 			if ( mirrored ) svg.style.transform = 'scaleX(-1)';
-			const id = `pl-sf${ mirrored ? 'r' : 'l' }`;
-			const g = svgEl( 'linearGradient', { id, x1: 0, y1: 0, x2: 260, y2: 0, gradientUnits: 'userSpaceOnUse' }, svgEl( 'defs', {}, svg ) );
-			svgEl( 'stop', { offset: 0, 'stop-color': PALETTE.gao, 'stop-opacity': 0 }, g );
-			svgEl( 'stop', { offset: 0.6, 'stop-color': PALETTE.gao, 'stop-opacity': 0.85 }, g );
-			svgEl( 'stop', { offset: 1, 'stop-color': PALETTE.gao }, g );
-			svgEl( 'path', { d: level( 2, 257, 6.4, 2.4, 0.9, { entry: 0.1, exit: 0.12, start: 0.3, end: 0.35 } ), fill: `url(#${ id })` }, svg );
+			// (each its own seed: the mirror's ink is not the left one's turned over)
+			new InkPath( svg, { colour: PALETTE.gao, gradient: { x1: 0, x2: 260, stops: [ [ 0, 0 ], [ 0.6, 0.85 ], [ 1, 1 ] ] } }, mirrored ? 52 : 51 )
+				.set( levelStroke( 2, 257, 6.4, 2.4, 0.9, { entry: 0.1, exit: 0.12, start: 0.3, end: 0.35 } ) );
 
 		};
 		stroke( false );

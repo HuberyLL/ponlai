@@ -97,12 +97,3 @@ export function iconButton( label: string, icon: string | null, size: number, pa
 	return b;
 
 }
-
-/** A filled brush path in a fresh SVG of a size, its view box the same size. */
-export function strokeSvg( width: number, height: number, d: string, className = '', parent?: Element | null ): { svg: SVGSVGElement; path: SVGPathElement } {
-
-	const svg = svgEl( 'svg', { class: className, width, height, viewBox: `0 0 ${ width } ${ height }`, 'aria-hidden': 'true' }, parent );
-	const path = svgEl( 'path', { d, fill: 'currentColor' }, svg );
-	return { svg, path };
-
-}

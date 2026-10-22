@@ -4,11 +4,13 @@ import { CLICK_SLOP } from '../../camera/IslandCameraControls.ts';
 import { BAG_CAPACITY, total } from '../sim/items.ts';
 import { CRITICAL_NEED, LOW_NEED } from '../sim/needs.ts';
 import type { EntityId, Needs, Villager } from '../sim/types.ts';
-import { along, cubic, level, ring } from './Brush.ts';
+import { cubic, levelStroke, ringStroke, stroke } from './Brush.ts';
+import type { Stroke } from './Brush.ts';
 import { iconSvg, setIcon } from './Icons.ts';
 import { PALETTE, mix } from './Palette.ts';
 import { doingWords, itemName } from './data/words.ts';
 import { attr, css, el, flag, svgEl, text, under } from './dom.ts';
+import { InkPath } from './InkPath.ts';
 import { t } from './i18n/i18n.ts';
 import type { UiShared } from './Shared.ts';
 
@@ -32,7 +34,9 @@ import type { UiShared } from './Shared.ts';
 //
 // Everything is placed each frame from the islanders as drawn (Game.anchor: their feet) through the
 // camera, in the interface's units; over the head from the bottom up, always in the same places:
-// the thinking ring, the alerts, the words. The ring and the leader are paths of one SVG layer.
+// the thinking ring, the alerts, the words. The ring, its 金 stroke and the leader are inked strokes
+// of one SVG layer (InkPath.ts), drawn again as they move; the ring is an ensō that starts at its
+// front left and goes round the back, so its dry tail falls on its heavy near side.
 //
 // Rules: it reads the simulation and the drawn figures, and changes nothing but the selection (and
 // the shadow's focus, which follows it: Game.focus). It is DOM over the canvas: a paused frame's
@@ -42,6 +46,8 @@ import type { UiShared } from './Shared.ts';
 const RING_RADIUS = 0.42, RING_POINTS = 40;
 // the tag's place from the head's top (interface px): its lower left corner, the leader's ends
 const TAG = { x: 62, y: - 46 }, LEADER = { x0: 9, y0: 10, x1: 56, y1: - 40 };
+// the leader from the head's top, placed there each frame
+const LEADER_STROKE = stroke( cubic( { x: LEADER.x0, y: LEADER.y0 }, { x: LEADER.x0 + 12, y: LEADER.y0 - 18 }, { x: LEADER.x1 - 18, y: LEADER.y1 + 14 }, { x: LEADER.x1, y: LEADER.y1 }, 16 ), 2.6, { entry: 0.3, exit: 0.5, start: 0.5, end: 0.15 } );
 const THINK_SLOTS = 6, THINK_ROUND = 4800;
 const POP_EVERY = 70, HOLD = 2500, HOLD_PER_CHAR = 300, MELT = 700;
 
@@ -83,9 +89,9 @@ export class People {
 	private readonly camera: THREE.PerspectiveCamera;
 	private readonly marks = new Map<EntityId, Mark>();
 	private readonly svg: SVGSVGElement;
-	private readonly ringPath: SVGPathElement;
-	private readonly goldPath: SVGPathElement;
-	private readonly leaderPath: SVGPathElement;
+	private readonly ringInk: InkPath;
+	private readonly goldInk: InkPath;
+	private readonly leaderInk: InkPath;
 	private readonly tag: Tag;
 	private frame = 0;
 	private down: { x: number; y: number } | null = null;
@@ -98,9 +104,9 @@ export class People {
 		this.camera = camera;
 		this.root = el( 'div', 'pl-people', parent );
 		this.svg = svgEl( 'svg', { class: 'marks pl-sh', width: 1, height: 1, 'aria-hidden': 'true' }, this.root );
-		this.ringPath = svgEl( 'path', { fill: PALETTE.gao, 'fill-rule': 'evenodd' }, this.svg );
-		this.goldPath = svgEl( 'path', { fill: PALETTE.jin }, this.svg );
-		this.leaderPath = svgEl( 'path', { fill: PALETTE.gao }, this.svg );
+		this.ringInk = new InkPath( this.svg, { colour: PALETTE.gao, evenOdd: true }, 61 );
+		this.goldInk = new InkPath( this.svg, { colour: PALETTE.jin }, 62 );
+		this.leaderInk = new InkPath( this.svg, { colour: PALETTE.gao }, 63 );
 		this.tag = new Tag( this.root, shared );
 		canvas.addEventListener( 'pointerdown', this.onDown );
 		canvas.addEventListener( 'pointerup', this.onUp );
@@ -157,7 +163,7 @@ export class People {
 		attr( this.svg, 'width', String( w ) );
 		attr( this.svg, 'height', String( h ) );
 		attr( this.svg, 'viewBox', `0 0 ${ w } ${ h }` );
-		let ringD = '', goldD = '', leaderD = '';
+		let ring: ReturnType<People[ 'ring' ]> = null, leaderAt: { x: number; y: number } | null = null;
 		for ( const v of sim.state.villagers ) {
 
 			let m = this.marks.get( v.id );
@@ -172,10 +178,8 @@ export class People {
 			this.talking( m, v );
 			if ( selected && m.shown ) {
 
-				const r = this.ring( v.id, w, h );
-				ringD = r.ring;
-				goldD = r.gold;
-				leaderD = along( cubic( { x: m.x + LEADER.x0, y: m.y + LEADER.y0 }, { x: m.x + LEADER.x0 + 12, y: m.y + LEADER.y0 - 18 }, { x: m.x + LEADER.x1 - 18, y: m.y + LEADER.y1 + 14 }, { x: m.x + LEADER.x1, y: m.y + LEADER.y1 }, 16 ), 2.6, { entry: 0.3, exit: 0.5, start: 0.5, end: 0.15 } );
+				ring = this.ring( v.id, w, h );
+				leaderAt = { x: m.x, y: m.y };
 
 			}
 
@@ -188,9 +192,9 @@ export class People {
 			if ( shared.selected === id ) this.select( null );
 
 		}
-		attr( this.ringPath, 'd', ringD );
-		attr( this.goldPath, 'd', goldD );
-		attr( this.leaderPath, 'd', leaderD );
+		this.ringInk.set( ring?.ring ?? null, ring?.at );
+		this.goldInk.set( ring?.gold ?? null, ring?.at );
+		this.leaderInk.set( leaderAt && LEADER_STROKE, leaderAt ?? undefined );
 		const selected = shared.selected !== null ? this.marks.get( shared.selected ) : undefined;
 		const v = selected && sim.villager( selected.id );
 		this.tag.update( v && selected.shown ? v : null, selected ? selected.x + TAG.x : 0, selected ? selected.y + TAG.y : 0, w, h );
@@ -229,11 +233,12 @@ export class People {
 
 	}
 
-	// The ring at the feet (thick in front, thin behind) and its 金 stroke, as paths.
-	private ring( id: EntityId, w: number, h: number ): { ring: string; gold: string } {
+	// The ring at the feet (thick in front, thin behind) and its 金 stroke, as strokes about the
+	// ring's middle on screen (`at`).
+	private ring( id: EntityId, w: number, h: number ): { at: { x: number; y: number }; ring: Stroke; gold: Stroke } | null {
 
 		const sim = this.shared.game.sim;
-		if ( ! this.shared.game.anchor( id, _p ) ) return { ring: '', gold: '' };
+		if ( ! this.shared.game.anchor( id, _p ) ) return null;
 		const cx = _p.x, cz = _p.z, pts: { x: number; y: number }[] = [];
 		for ( let i = 0; i < RING_POINTS; i ++ ) {
 
@@ -242,6 +247,8 @@ export class People {
 			pts.push( { x: ( _q.x + 1 ) / 2 * w, y: ( 1 - _q.y ) / 2 * h } );
 
 		}
+		// the ring in its own coordinates about its middle, to a quarter unit: while it only moves (an
+		// islander walking under a still camera) its ink is moved, not drawn again (InkPath.ts)
 		let top = Infinity, bottom = - Infinity, left = Infinity, right = - Infinity;
 		for ( const p of pts ) {
 
@@ -251,12 +258,31 @@ export class People {
 			right = Math.max( right, p.x );
 
 		}
+		const at = { x: ( left + right ) / 2, y: ( top + bottom ) / 2 }, quarter = ( v: number ) => Math.round( v * 4 ) / 4;
+		const own = pts.map( ( p ) => ( { x: quarter( p.x - at.x ), y: quarter( p.y - at.y ) } ) );
+		const back = Math.min( ...own.map( ( p ) => p.y ) ), near = Math.max( ...own.map( ( p ) => p.y ) );
+		const wide = Math.max( ...own.map( ( p ) => p.x ) ) - Math.min( ...own.map( ( p ) => p.x ) );
 		// the nearer side (lower on screen) carries the weight
-		const front = ( p: { y: number } ) => ( p.y - top ) / Math.max( bottom - top, 1e-3 );
-		const scale = Math.min( Math.max( ( right - left ) / 56, 0.5 ), 1.6 );
-		const widths = pts.map( ( p ) => ( 0.7 + 2.6 * front( p ) ** 1.5 ) * scale );
-		const mid = ( left + right ) / 2, span = ( right - left ) * 0.32;
-		return { ring: ring( pts, widths ), gold: level( mid - span, mid + span, bottom + 4 * scale, 2.2 * scale, - 1.5 * scale, { entry: 0.2, exit: 0.45 } ) };
+		const front = ( p: { y: number } ) => ( p.y - back ) / Math.max( near - back, 1e-3 );
+		const scale = Math.min( Math.max( wide / 56, 0.5 ), 1.6 );
+		const widths = own.map( ( p ) => ( 0.7 + 2.6 * front( p ) ** 1.5 ) * scale );
+		const span = wide * 0.32;
+		// as a stroke: from the point at the front left (as seen), round the back first
+		const start = Math.PI * 0.87;
+		let from = 0, nearest = Infinity;
+		own.forEach( ( p, i ) => {
+
+			const off = Math.abs( ( ( Math.atan2( p.y, p.x ) - start ) % ( 2 * Math.PI ) + 3 * Math.PI ) % ( 2 * Math.PI ) - Math.PI );
+			if ( off < nearest ) {
+
+				nearest = off;
+				from = i;
+
+			}
+
+		} );
+		const step = own[ ( from + 1 ) % own.length ].y < own[ from ].y ? 1 : - 1;
+		return { at, ring: ringStroke( own, widths, from, step ), gold: levelStroke( - span, span, near + 4 * scale, 2.2 * scale, - 1.5 * scale, { entry: 0.2, exit: 0.45 } ) };
 
 	}
 
@@ -448,7 +474,7 @@ class Tag {
 	private readonly root: HTMLElement;
 	private readonly name: HTMLElement;
 	private readonly doing: HTMLElement;
-	private readonly needs: { key: keyof Needs; colour: string; icon: SVGSVGElement; fill: SVGPathElement; num: HTMLElement; shown: number }[] = [];
+	private readonly needs: { key: keyof Needs; colour: string; icon: SVGSVGElement; fill: InkPath; num: HTMLElement; shown: number }[] = [];
 	private readonly bag: HTMLElement;
 	private readonly slots: { box: HTMLButtonElement; icon: SVGSVGElement; count: HTMLElement; label: string }[] = [];
 	private chosenSlot = - 1;
@@ -464,7 +490,7 @@ class Tag {
 		const head = el( 'div', 'head', root );
 		this.name = el( 'div', 'name pl-title pl-xb', head );
 		this.doing = el( 'div', 'doing pl-mist', head );
-		const track = level( 1, 129, 4, 2.6, 0.4, { entry: 0.06, exit: 0.2, start: 0.4, end: 0.3, swell: 0 } );
+		const track = levelStroke( 1, 129, 4, 2.6, 0.4, { entry: 0.06, exit: 0.2, start: 0.4, end: 0.3, swell: 0 } );
 		for ( const [ key, icon, colour, label ] of [ [ 'satiety', 'satiety', PALETTE.hupo, t( 'tag.satiety' ) ], [ 'hydration', 'drop', PALETTE.tianshuibi, t( 'tag.hydration' ) ] ] as const ) {
 
 			const row = el( 'div', 'need', root );
@@ -473,8 +499,9 @@ class Tag {
 			svg.setAttribute( 'aria-label', label );
 			svg.removeAttribute( 'aria-hidden' );
 			const bar = svgEl( 'svg', { class: 'pl-sh', width: 130, height: 8, viewBox: '0 0 130 8', 'aria-hidden': 'true' }, row );
-			svgEl( 'path', { d: track, fill: PALETTE.gao, 'fill-opacity': 0.2 }, bar );
-			const fill = svgEl( 'path', { fill: colour }, bar );
+			// (a gauge: its ends say the value and the whole, so it does not dry out)
+			new InkPath( bar, { colour: PALETTE.gao, opacity: 0.2 }, key === 'satiety' ? 64 : 66, 0 ).set( track );
+			const fill = new InkPath( bar, { colour }, key === 'satiety' ? 65 : 67, 0 );
 			this.needs.push( { key, colour, icon: svg, fill, num: el( 'span', 'pl-num pl-mist', row ), shown: - 1 } );
 
 		}
@@ -528,8 +555,8 @@ class Tag {
 				n.shown = value;
 				// the bar's own colour, blending to 朱 as the need runs low
 				const t = ( LOW_NEED - value ) / ( LOW_NEED - CRITICAL_NEED );
-				attr( n.fill, 'fill', mix( n.colour, PALETTE.zhu, t ) );
-				attr( n.fill, 'd', value > 0 ? level( 1, 1 + 128 * value / 100, 4, 4.4, 0.4, { entry: 0.05, exit: Math.min( 0.6, 12 / Math.max( value, 1 ) ), start: 0.5, end: 0.2, swell: 0 } ) : '' );
+				n.fill.setPaint( { colour: mix( n.colour, PALETTE.zhu, t ) } );
+				n.fill.set( value > 0 ? levelStroke( 1, 1 + 128 * value / 100, 4, 4.4, 0.4, { entry: 0.05, exit: Math.min( 0.6, 12 / Math.max( value, 1 ) ), start: 0.5, end: 0.2, swell: 0 } ) : null );
 
 			}
 
