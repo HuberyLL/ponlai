@@ -5,8 +5,8 @@ import { float, texture3D } from 'three/tsl';
 // after the tone curve, two of them blended by a weight (Pipeline.ts `settings.lut`) so a look can
 // move between two grades, by the time of day or by place. After Patry, "Real-Time Samurai Cinema"
 // (SIGGRAPH 2021): 32^3 sRGB tables, used conservatively (a table that bends colours hard bands
-// between its texels), the larger moves left to the white balance (here also the
-// exposure). Their content is ours, tuned in our own scenes.
+// between its texels), the larger moves left to the white balance (and here the exposure). Their
+// content is ours, tuned in our own scenes.
 // - Half float: the identity cube holds its values to 2^-12, so it returns its input within a
 //   tenth of a display level (eight-bit texels would round to half a level).
 // - Sampled at texel centres (the colour scaled by ( size - 1 ) / size and offset half a texel),
