@@ -148,41 +148,26 @@
 .pl-person { position: absolute; left: 0; top: 0; will-change: transform; }
 .pl-person.hidden { display: none; }
 .pl-alerts { position: absolute; left: 0; bottom: 0; display: flex; gap: 4px; transform: translateX( -50% ); color: var( --zhu ); transition: opacity 0.3s ease; }
+/* what stands in the world (Space.ts): each placed by its own matrix3d from the interface's top left */
+.pl-space { position: absolute; inset: 0; pointer-events: none; }
+.pl-space .hidden { display: none; }
 .pl-think { position: absolute; left: 0; top: 0; transition: opacity 0.5s ease; }
-.pl-think > span {
+.pl-talk { position: absolute; left: 0; top: 0; }
+/* a character in the world: drawn at 64 px (People.ts GLYPH) and laid down to its size on screen, its
+   mist in em so it keeps to the character's size */
+.pl-glyph {
 	position: absolute;
 	left: 0;
 	top: 0;
-	white-space: pre;
-	color: var( --gao );
-	text-shadow: var( --mist );
-	will-change: transform, opacity;
-}
-.pl-talk {
-	position: absolute;
-	left: 0;
-	bottom: 0;
-	width: max-content;
-	max-width: 15em;
-	transform: translateX( -50% );
+	width: 64px;
+	height: 64px;
+	font-size: 64px;
+	line-height: 64px;
 	text-align: center;
-	line-height: 1.45;
-	letter-spacing: 0.04em;
+	white-space: pre;
+	transform-origin: 0 0;
 	color: var( --gao );
-	text-shadow: var( --mist );
-}
-.pl-talk > span { display: inline-block; white-space: pre; }
-.pl-talk > .wait { visibility: hidden; }
-.pl-talk > .pop { animation: pl-pop 0.28s cubic-bezier( 0.2, 0.9, 0.3, 1.25 ) both; }
-.pl-talk > .gone { animation: pl-gone 0.7s cubic-bezier( 0.4, 0, 0.6, 1 ) both; }
-@keyframes pl-pop {
-	0% { opacity: 0; transform: translate( var( --dx ), var( --dy ) ) scale( 0.3 ); }
-	55% { opacity: 1; }
-	100% { opacity: 1; transform: none; }
-}
-@keyframes pl-gone {
-	0% { opacity: 1; transform: none; filter: blur( 0 ); }
-	100% { opacity: 0; transform: translateY( -8px ); filter: blur( 2px ); }
+	text-shadow: 0 0.07em 0.2em rgba( 15, 30, 33, 0.9 ), 0 0 0.6em rgba( 15, 30, 33, 0.45 );
 }
 
 /* the tag beside the selected islander */
@@ -277,17 +262,10 @@
 
 /* characters in flight to a listener */
 .pl-flights { position: absolute; inset: 0; pointer-events: none; }
-.pl-fly {
-	position: absolute;
-	left: 0;
-	top: 0;
-	font-size: 19px;
-	letter-spacing: 0.06em;
+.pl-glyph.pl-fly {
 	color: var( --jingbai );
-	text-shadow: 0 1px 3px rgba( 15, 30, 33, 0.85 );
-	white-space: pre;
+	text-shadow: 0 0.05em 0.16em rgba( 15, 30, 33, 0.85 );
 	opacity: 0;
-	will-change: transform, opacity;
 }
 
 /* ------------------------------------------------------------------ the build bar */

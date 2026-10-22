@@ -13,8 +13,9 @@ import { attr, css, el, flag, svgEl, text, under } from './dom.ts';
 import { InkPath } from './InkPath.ts';
 import { t } from './i18n/i18n.ts';
 import type { UiShared } from './Shared.ts';
+import { Space } from './Space.ts';
 
-// The islanders' marks over the scene (docs/ui.md, Islanders: selection and alerts; Speaking):
+// The islanders' marks (docs/ui.md, Islanders: selection and alerts; Speaking; Screen and world):
 //
 // - Selected (a click on an islander, again or on open ground to let go): a ring at the feet, thick
 //   in front and thin behind, with one 金 stroke beneath its front, and the tag beside them (人旁
@@ -26,40 +27,65 @@ import type { UiShared } from './Shared.ts';
 // - An unselected islander with a critical need: its icon in 朱 over the head, no ring, no backing;
 //   both side by side, satiety on the left.
 // - Thinking (a thought in flight, Sim.thinking, after hearing the player): the characters heard
-//   circle above the head, at most six at a time, the whole line taking turns as each passes behind
-//   the head; words heard meanwhile wait for the next thought.
-// - Speaking (Villager.said changed): the characters pop out above the head one at a time, sized by
-//   the figure's size on screen; the line holds 2.5 s and 0.3 s a character, then melts away one by
-//   one. A line still showing melts first.
+//   circle the head, at most six at a time, the whole line taking turns as each passes behind the
+//   head; words heard meanwhile wait for the next thought.
+// - Speaking (Villager.said changed): the characters pop out of the mouth one at a time, each
+//   swinging open to face the viewer, sized by the figure's size on screen; the line holds 2.5 s
+//   and 0.3 s a character, then melts away one by one, each turning aside as it rises. A line still
+//   showing melts first.
 //
-// Everything is placed each frame from the islanders as drawn (Game.anchor: their feet) through the
-// camera, in the interface's units; over the head from the bottom up, always in the same places:
-// the thinking ring, the alerts, the words. The ring, its 金 stroke and the leader are inked strokes
-// of one SVG layer (InkPath.ts), drawn again as they move; the ring is an ensō that starts at its
-// front left and goes round the back, so its dry tail falls on its heavy near side.
+// What belongs to the islander's world stands in it: the ring lies on the ground at the feet (its
+// points on the land, seen through the camera each frame, the near side the heavier); the
+// thinking ring turns round the head in 3D, each character facing out from it and turned half
+// toward the viewer, so the characters at the sides show foreshortened and those behind the head
+// edge on; the speech stands over the head facing the viewer (both DOM laid into the scene through
+// the camera: Space.ts). What the player reads about an islander stays on the screen, beside
+// them: the tag and its leader, the alerts. Everything is placed each frame from the islanders as
+// drawn (Game.anchor: their feet), at sizes from their size on screen, so near and far islanders
+// keep readable words; over the head from the bottom up, always in the same places: the thinking
+// ring, the alerts, the words. The ring, its 金 stroke and the leader are inked strokes of one SVG
+// layer over the screen (InkPath.ts), drawn again as they change: laid into the scene as an image
+// in perspective instead, the browser resampled the ring's thin back into dashes. The ring is an
+// ensō that starts at its front left and goes round the back, so its dry tail falls on its heavy
+// near side.
 //
 // Rules: it reads the simulation and the drawn figures, and changes nothing but the selection (and
 // the shadow's focus, which follows it: Game.focus). It is DOM over the canvas: a paused frame's
 // pixels never change for it. Its own motion (words, the thinking ring) runs on real time, as a
 // mind's does; nothing of it shows on a page loaded paused with nobody selected.
 
-const RING_RADIUS = 0.42, RING_POINTS = 40;
+const RING_RADIUS = 0.42, RING_POINTS = 40, RING_LIFT = 0.03;
 // the tag's place from the head's top (interface px): its lower left corner, the leader's ends
 const TAG = { x: 62, y: - 46 }, LEADER = { x0: 9, y0: 10, x1: 56, y1: - 40 };
 // the leader from the head's top, placed there each frame
 const LEADER_STROKE = stroke( cubic( { x: LEADER.x0, y: LEADER.y0 }, { x: LEADER.x0 + 12, y: LEADER.y0 - 18 }, { x: LEADER.x1 - 18, y: LEADER.y1 + 14 }, { x: LEADER.x1, y: LEADER.y1 }, 16 ), 2.6, { entry: 0.3, exit: 0.5, start: 0.5, end: 0.15 } );
 const THINK_SLOTS = 6, THINK_ROUND = 4800;
-const POP_EVERY = 70, HOLD = 2500, HOLD_PER_CHAR = 300, MELT = 700;
+// the thinking ring is seen from this far above its plane (its height over its width on screen),
+// whatever the camera's pitch: tilted toward a camera looking down, so it never reads as a halo
+// seen from above; and the share by which its characters turn from facing out toward the viewer
+const THINK_FLAT = 0.18, THINK_FACE = 0.45;
+const POP_EVERY = 70, POP = 280, HOLD = 2500, HOLD_PER_CHAR = 300, MELT = 700, MELT_EVERY = 40;
+// the speech's lines: characters to a line, a character's advance and a line's height (em)
+const TALK_LINE = 14, TALK_ADVANCE = 1.04, TALK_LEADING = 1.45;
+// a character in the world: its element's own size (px; its font size, so it rasterises sharp at
+// the sizes it is seen at), and the mouth under the head's top (m) the speech comes out of
+export const GLYPH = 64;
+const MOUTH = 0.2;
 
-const _p = new THREE.Vector3(), _q = new THREE.Vector3();
+const _p = new THREE.Vector3(), _q = new THREE.Vector3(), _c = new THREE.Vector3(), _n = new THREE.Vector3();
+const _r = new THREE.Vector3(), _d = new THREE.Vector3(), _v = new THREE.Vector3();
+const _gx = new THREE.Vector3(), _gy = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3();
+const UP = new THREE.Vector3( 0, 1, 0 );
 
-interface Talk { chars: HTMLSpanElement[]; start: number; until: number; gone: number; out: boolean }
+interface Talk { chars: HTMLSpanElement[]; start: number; until: number; out: boolean; melted: number; gone: number }
 
 interface Mark {
 	id: EntityId;
+	/** on screen, at the head: the alerts */
 	root: HTMLElement;
 	alerts: HTMLElement;
 	alertIcons: SVGSVGElement[];
+	/** in the world (Space.ts): the thinking ring's characters and the speech's */
 	think: HTMLElement;
 	thinkChars: HTMLSpanElement[];
 	talkBox: HTMLElement;
@@ -76,17 +102,26 @@ interface Mark {
 	x: number;
 	y: number;
 	size: number;
+	/** this frame: the head's top in the world, its depth from the camera and the interface px a
+	 * metre spans across the view there, and up the figure */
+	head: THREE.Vector3;
+	depth: number;
+	across: number;
+	upright: number;
 	seen: number;
 }
 
-/** Where an islander's head is on screen this frame, for the words flying to it. */
-export interface HeadPoint { x: number; y: number; size: number }
+/** Where an islander's head is this frame, for the words flying to it: on screen (interface px),
+ * the figure's height there, and its depth from the camera (m). */
+export interface HeadPoint { x: number; y: number; size: number; depth: number }
 
 export class People {
 
 	readonly root: HTMLElement;
+	/** the world the marks stand in (the speak bar's words in flight too), updated first each frame */
+	readonly space: Space;
 	private readonly shared: UiShared;
-	private readonly camera: THREE.PerspectiveCamera;
+	private readonly world: HTMLElement;
 	private readonly marks = new Map<EntityId, Mark>();
 	private readonly svg: SVGSVGElement;
 	private readonly ringInk: InkPath;
@@ -101,12 +136,14 @@ export class People {
 	constructor( parent: Element, shared: UiShared, camera: THREE.PerspectiveCamera, canvas: HTMLCanvasElement ) {
 
 		this.shared = shared;
-		this.camera = camera;
+		this.space = new Space( camera );
 		this.root = el( 'div', 'pl-people', parent );
 		this.svg = svgEl( 'svg', { class: 'marks pl-sh', width: 1, height: 1, 'aria-hidden': 'true' }, this.root );
 		this.ringInk = new InkPath( this.svg, { colour: PALETTE.gao, evenOdd: true }, 61 );
 		this.goldInk = new InkPath( this.svg, { colour: PALETTE.jin }, 62 );
 		this.leaderInk = new InkPath( this.svg, { colour: PALETTE.gao }, 63 );
+		// the words in the world, over the ring
+		this.world = el( 'div', 'pl-space', this.root );
 		this.tag = new Tag( this.root, shared );
 		canvas.addEventListener( 'pointerdown', this.onDown );
 		canvas.addEventListener( 'pointerup', this.onUp );
@@ -116,7 +153,7 @@ export class People {
 	/** A new simulation (start, load): every mark starts over, nobody selected. */
 	reset(): void {
 
-		for ( const m of this.marks.values() ) m.root.remove();
+		for ( const m of this.marks.values() ) this.drop( m );
 		this.marks.clear();
 		this.select( null );
 
@@ -135,7 +172,7 @@ export class People {
 	head( id: EntityId ): HeadPoint | null {
 
 		const m = this.marks.get( id );
-		return m && m.shown ? { x: m.x, y: m.y, size: m.size } : null;
+		return m && m.shown ? { x: m.x, y: m.y, size: m.size, depth: m.depth } : null;
 
 	}
 
@@ -157,9 +194,9 @@ export class People {
 	update(): void {
 
 		const shared = this.shared, sim = shared.game.sim, frame = ++ this.frame;
-		this.camera.updateMatrixWorld();
 		// the interface's size in its own pixels (the window's, over its scale)
 		const w = innerWidth / shared.k, h = innerHeight / shared.k;
+		this.space.update( w, h );
 		attr( this.svg, 'width', String( w ) );
 		attr( this.svg, 'height', String( h ) );
 		attr( this.svg, 'viewBox', `0 0 ${ w } ${ h }` );
@@ -172,13 +209,15 @@ export class People {
 			this.place( m, w, h );
 			const selected = shared.selected === v.id;
 			flag( m.root, 'hidden', ! m.shown );
+			flag( m.think, 'hidden', ! m.shown );
+			flag( m.talkBox, 'hidden', ! m.shown );
 			if ( m.shown ) css( m.root, 'transform', `translate(${ m.x.toFixed( 1 ) }px,${ m.y.toFixed( 1 ) }px)` );
 			this.alerts( m, v.needs, selected );
 			this.thinking( m, sim.thinking( v.id ) );
 			this.talking( m, v );
 			if ( selected && m.shown ) {
 
-				ring = this.ring( v.id, w, h );
+				ring = this.ring( v.id );
 				leaderAt = { x: m.x, y: m.y };
 
 			}
@@ -187,7 +226,7 @@ export class People {
 		for ( const [ id, m ] of this.marks ) {
 
 			if ( m.seen === frame ) continue;
-			m.root.remove();
+			this.drop( m );
 			this.marks.delete( id );
 			if ( shared.selected === id ) this.select( null );
 
@@ -207,35 +246,47 @@ export class People {
 		const alerts = el( 'div', 'pl-alerts pl-sh', root );
 		const alertIcons = [ iconSvg( 'satiety', 20 ), iconSvg( 'drop', 20 ) ];
 		for ( const icon of alertIcons ) alerts.appendChild( icon );
-		const think = el( 'div', 'pl-think', root );
+		const think = el( 'div', 'pl-think', this.world );
 		const thinkChars: HTMLSpanElement[] = [];
-		for ( let i = 0; i < THINK_SLOTS; i ++ ) thinkChars.push( el( 'span', '', think ) );
-		const talkBox = el( 'div', 'pl-talk', root );
+		for ( let i = 0; i < THINK_SLOTS; i ++ ) thinkChars.push( el( 'span', 'pl-glyph', think ) );
+		const talkBox = el( 'div', 'pl-talk', this.world );
 		return { id: v.id, root, alerts, alertIcons, think, thinkChars, talkBox, talk: null, said: v.said, heard: [], thought: null,
-			shown: false, x: 0, y: 0, size: 0, seen: 0 };
+			shown: false, x: 0, y: 0, size: 0, head: new THREE.Vector3(), depth: 0, across: 1, upright: 1, seen: 0 };
 
 	}
 
-	// The islander's head on screen (interface px) and its height there, from its drawn feet.
+	private drop( m: Mark ): void {
+
+		m.root.remove();
+		m.think.remove();
+		m.talkBox.remove();
+
+	}
+
+	// The islander's head on screen (interface px), the figure's height there, and the head in the
+	// world, from its drawn feet.
 	private place( m: Mark, w: number, h: number ): void {
 
 		m.shown = false;
 		if ( ! this.shared.game.anchor( m.id, _p ) ) return;
-		_q.copy( _p );
-		_q.y += FIGURE_HEIGHT;
-		_p.project( this.camera );
-		_q.project( this.camera );
-		if ( _q.z > 1 || _q.z < - 1 ) return;
-		m.x = ( _q.x + 1 ) / 2 * w;
-		m.y = ( 1 - _q.y ) / 2 * h;
-		m.size = Math.abs( _p.y - _q.y ) / 2 * h;
+		m.head.copy( _p );
+		m.head.y += FIGURE_HEIGHT;
+		const space = this.space;
+		if ( ! space.project( _p, _q ) || ! space.project( m.head, _c ) ) return;
+		m.x = _c.x;
+		m.y = _c.y;
+		m.size = Math.abs( _q.y - _c.y );
+		m.depth = _c.z;
+		m.across = space.pixelsPerMetre( m.depth );
+		// (a camera right overhead sees the figure from its head: kept from shrinking to nothing)
+		m.upright = Math.max( m.size / FIGURE_HEIGHT, 0.3 * m.across );
 		m.shown = m.x > - 100 && m.x < w + 100 && m.y > - 100 && m.y < h + 100;
 
 	}
 
 	// The ring at the feet (thick in front, thin behind) and its 金 stroke, as strokes about the
 	// ring's middle on screen (`at`).
-	private ring( id: EntityId, w: number, h: number ): { at: { x: number; y: number }; ring: Stroke; gold: Stroke } | null {
+	private ring( id: EntityId ): { at: { x: number; y: number }; ring: Stroke; gold: Stroke } | null {
 
 		const sim = this.shared.game.sim;
 		if ( ! this.shared.game.anchor( id, _p ) ) return null;
@@ -243,8 +294,8 @@ export class People {
 		for ( let i = 0; i < RING_POINTS; i ++ ) {
 
 			const a = i / RING_POINTS * Math.PI * 2, x = cx + Math.cos( a ) * RING_RADIUS, z = cz + Math.sin( a ) * RING_RADIUS;
-			_q.set( x, sim.grid.height( x, z ) + 0.03, z ).project( this.camera );
-			pts.push( { x: ( _q.x + 1 ) / 2 * w, y: ( 1 - _q.y ) / 2 * h } );
+			if ( ! this.space.project( _q.set( x, sim.grid.height( x, z ) + RING_LIFT, z ), _c ) ) return null;
+			pts.push( { x: _c.x, y: _c.y } );
 
 		}
 		// the ring in its own coordinates about its middle, to a quarter unit: while it only moves (an
@@ -283,6 +334,14 @@ export class People {
 		} );
 		const step = own[ ( from + 1 ) % own.length ].y < own[ from ].y ? 1 : - 1;
 		return { at, ring: ringStroke( own, widths, from, step ), gold: levelStroke( - span, span, near + 4 * scale, 2.2 * scale, - 1.5 * scale, { entry: 0.2, exit: 0.45 } ) };
+
+	}
+
+	// A character in the world: its middle at `centre`, its x and y (down) along `ax` and `ay`
+	// (unit vectors), `size` metres to an em.
+	private glyph( e: HTMLElement, centre: THREE.Vector3, ax: THREE.Vector3, ay: THREE.Vector3, size: number ): void {
+
+		this.space.place( e, centre, _a.copy( ax ).multiplyScalar( size / GLYPH ), _b.copy( ay ).multiplyScalar( size / GLYPH ), GLYPH, GLYPH );
 
 	}
 
@@ -328,9 +387,21 @@ export class People {
 		const chars = m.thought ? m.heard.filter( ( h ) => h.line <= upTo ).map( ( h ) => h.c ) : [];
 		const th = m.thought && chars.length > 0 ? { chars, t0: m.thought.t0 } : null;
 		css( m.think, 'opacity', th ? '1' : '0' );
-		if ( ! th ) return;
+		if ( ! th || ! m.shown ) return;
 		const gp = Math.max( 9, this.wordSize( m ) * 0.58 ), nr = Math.min( THINK_SLOTS, th.chars.length );
-		const rx = Math.min( Math.max( gp * 1.6 + 10, nr * gp * 0.62 ), THINK_SLOTS * gp * 0.62 ), ry = rx * 0.18 + 1;
+		const rx = Math.min( Math.max( gp * 1.6 + 10, nr * gp * 0.62 ), THINK_SLOTS * gp * 0.62 );
+		// the ring's middle over the head; its axes: to the right as seen, toward the viewer in its
+		// plane, and its plane's normal, tilted toward the viewer until it is seen THINK_FLAT
+		_c.copy( m.head ).addScaledVector( UP, ( gp * 0.6 + 6 ) / m.upright );
+		_v.subVectors( this.space.eye, _c ).normalize();
+		_d.set( _v.x, 0, _v.z );
+		if ( _d.lengthSq() < 1e-8 ) _d.copy( this.space.up ).negate().setY( 0 );
+		_d.normalize();
+		_r.crossVectors( UP, _d ).normalize();
+		const tilt = Math.asin( Math.min( Math.max( _v.y, - 1 ), 1 ) ) - Math.asin( THINK_FLAT );
+		_n.copy( UP ).multiplyScalar( Math.cos( tilt ) ).addScaledVector( _d, - Math.sin( tilt ) );
+		_d.multiplyScalar( Math.cos( tilt ) ).addScaledVector( UP, Math.sin( tilt ) );
+		const radius = rx / m.across;
 		for ( let k = 0; k < THINK_SLOTS; k ++ ) {
 
 			const span = m.thinkChars[ k ];
@@ -347,13 +418,17 @@ export class People {
 			const at = count <= nr ? k : turn * nr - k + Math.ceil( nr / 2 ) - 1;
 			text( span, th.chars[ ( ( at % count ) + count ) % count ] );
 			// round from the right, across the front to the left, and back behind
-			const a = u * Math.PI * 2, x = rx * Math.cos( a ), y = ry * Math.sin( a ) - gp * 0.6 - 6;
-			const frontness = Math.sin( a );
+			const a = u * Math.PI * 2, frontness = Math.sin( a );
 			const opacity = frontness >= 0 ? 0.35 + 0.45 * frontness : Math.max( 0, 0.35 + 0.6 * frontness ) * ( 1 - smoothBack( u ) );
 			const scale = 1 + 0.12 * Math.max( frontness, 0 ) - 0.13 * Math.max( - frontness, 0 );
-			css( span, 'font-size', `${ gp.toFixed( 1 ) }px` );
+			_p.copy( _c ).addScaledVector( _r, radius * Math.cos( a ) ).addScaledVector( _d, radius * frontness );
+			// facing out from the ring, turned toward the viewer by THINK_FACE (from the front)
+			const off = ( ( a - Math.PI / 2 ) % ( 2 * Math.PI ) + 3 * Math.PI ) % ( 2 * Math.PI ) - Math.PI;
+			const b = Math.PI / 2 + off * ( 1 - THINK_FACE );
+			_gx.copy( _r ).multiplyScalar( Math.sin( b ) ).addScaledVector( _d, - Math.cos( b ) );
+			_gy.copy( _n ).negate();
+			this.glyph( span, _p, _gx, _gy, gp * scale / m.across );
 			css( span, 'opacity', opacity.toFixed( 3 ) );
-			css( span, 'transform', `translate(${ x.toFixed( 1 ) }px,${ y.toFixed( 1 ) }px) translate(-50%,-50%) scale(${ scale.toFixed( 3 ) })` );
 
 		}
 
@@ -371,19 +446,11 @@ export class People {
 			const old = m.talk;
 			const chars = Array.from( v.said.words );
 			const start = now + lead;
-			const talk: Talk = { chars: [], start, until: start + ( chars.length - 1 ) * POP_EVERY + HOLD + HOLD_PER_CHAR * chars.length, gone: 0, out: false };
-			const size = this.wordSize( m );
+			const talk: Talk = { chars: [], start, until: start + ( chars.length - 1 ) * POP_EVERY + HOLD + HOLD_PER_CHAR * chars.length, out: false, melted: 0, gone: 0 };
 			const build = () => {
 
 				old?.chars.forEach( ( s ) => s.remove() );
-				talk.chars = chars.map( ( c, q ) => {
-
-					const s = el( 'span', 'wait', m.talkBox, c );
-					s.style.setProperty( '--dx', `${ ( ( ( chars.length - 1 ) / 2 - q ) * size * 1.04 ).toFixed( 0 ) }px` );
-					s.style.setProperty( '--dy', `${ ( size * 1.6 ).toFixed( 0 ) }px` );
-					return s;
-
-				} );
+				talk.chars = chars.map( ( c ) => el( 'span', 'pl-glyph', m.talkBox, c ) );
 
 			};
 			if ( lead === 0 ) build();
@@ -392,35 +459,63 @@ export class People {
 
 		}
 		const talk = m.talk;
-		css( m.talkBox, 'font-size', `${ this.wordSize( m ).toFixed( 1 ) }px` );
-		css( m.talkBox, 'bottom', `${ ( this.ringRoom( m ) + ( m.alerts.style.opacity === '1' ? 30 : 6 ) ).toFixed( 1 ) }px` );
-		if ( ! talk || talk.chars.length === 0 ) return;
-		const shown = Math.floor( ( now - talk.start ) / POP_EVERY ) + 1;
-		if ( ! talk.out ) talk.chars.forEach( ( s, q ) => {
-
-			if ( q < shown && s.className === 'wait' ) s.className = 'pop';
-
-		} );
+		if ( ! talk ) return;
 		if ( ! talk.out && now >= talk.until ) this.melt( talk );
 		if ( talk.out && now >= talk.gone ) {
 
 			talk.chars.forEach( ( s ) => s.remove() );
 			if ( m.talk === talk ) m.talk = null;
+			return;
 
 		}
+		if ( talk.chars.length === 0 || ! m.shown ) return;
+		// facing the viewer over the thinking ring's room (and the alerts', when they show), in lines
+		// of TALK_LINE centred and stacked upward from the last
+		const space = this.space, size = this.wordSize( m ) / m.across, n = talk.chars.length, lines = Math.ceil( n / TALK_LINE );
+		const bottom = this.ringRoom( m ) + ( m.alerts.style.opacity === '1' ? 30 : 6 );
+		_c.copy( m.head ).addScaledVector( UP, bottom / m.upright );
+		// where each character comes from: the mouth
+		_q.copy( m.head ).addScaledVector( UP, - MOUTH );
+		talk.chars.forEach( ( s, q ) => {
+
+			const line = Math.floor( q / TALK_LINE ), col = q % TALK_LINE, inLine = Math.min( TALK_LINE, n - line * TALK_LINE );
+			_p.copy( _c ).addScaledVector( space.up, ( lines - line - 0.5 ) * TALK_LEADING * size )
+				.addScaledVector( space.right, ( col - ( inLine - 1 ) / 2 ) * TALK_ADVANCE * size );
+			const popped = Math.min( Math.max( ( now - talk.start - q * POP_EVERY ) / POP, 0 ), 1 );
+			if ( popped <= 0 ) {
+
+				css( s, 'opacity', '0' );
+				return;
+
+			}
+			// out of the mouth, small and edge on, swinging open to face the viewer (overshooting a little)
+			const e = backOut( popped ), side = q % 2 ? 1 : - 1;
+			_p.lerpVectors( _q, _p, e );
+			let opacity = Math.min( 1, popped / 0.55 ), yaw = side * ( 1 - e ) * 1.4, scale = 0.3 + 0.7 * e, blur = 0;
+			if ( talk.out ) {
+
+				// melting: rising a little, turning aside and blurring as it fades
+				const g = smooth( Math.min( Math.max( ( now - talk.melted - q * MELT_EVERY ) / MELT, 0 ), 1 ) );
+				_p.addScaledVector( space.up, 8 * g / m.across );
+				opacity *= 1 - g;
+				yaw += side * 0.9 * g;
+				blur = 2 * g;
+
+			}
+			space.facing( yaw, 0, 0, _gx, _gy );
+			this.glyph( s, _p, _gx, _gy, size * scale );
+			css( s, 'opacity', opacity.toFixed( 3 ) );
+			css( s, 'filter', blur > 0.01 ? `blur(${ ( blur * GLYPH / Math.max( this.wordSize( m ) * scale, 1 ) ).toFixed( 1 ) }px)` : 'none' );
+
+		} );
 
 	}
 
 	private melt( talk: Talk ): void {
 
 		talk.out = true;
-		talk.gone = this.shared.now + MELT + 40 * talk.chars.length;
-		talk.chars.forEach( ( s, q ) => {
-
-			s.style.animationDelay = `${ ( q * 0.04 ).toFixed( 2 ) }s`;
-			s.className = 'gone';
-
-		} );
+		talk.melted = this.shared.now;
+		talk.gone = this.shared.now + MELT + MELT_EVERY * talk.chars.length;
 
 	}
 
@@ -464,6 +559,16 @@ function smoothBack( u: number ): number {
 
 	const d = Math.abs( u - 0.75 );
 	return d < 0.03 ? 1 : d > 0.07 ? 0 : 1 - ( d - 0.03 ) / 0.04;
+
+}
+
+const smooth = ( t: number ) => t * t * ( 3 - 2 * t );
+
+// rising past 1 and settling back (an ease out with an overshoot)
+function backOut( t: number ): number {
+
+	const c = 1.4, u = t - 1;
+	return 1 + ( c + 1 ) * u * u * u + c * u * u;
 
 }
 

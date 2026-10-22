@@ -126,8 +126,9 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   the simulation's states), its words in i18next catalogues (`i18n/`: `zh-CN.json` the source,
   `en.json` an unmaintained snapshot; no player-facing string is written in code,
   `tools/verify-i18n.mjs`), the brush icons (`Icons.ts`), strokes (`Brush.ts`) and the ink of the
-  long ones (`Ink.ts`, drawn by `InkPath.ts`, `tools/verify-ink.mjs`), palette
-  (`Palette.ts`), styles (`ui.css`) and our own brush fonts (`fonts/`).
+  long ones (`Ink.ts`, drawn by `InkPath.ts`, `tools/verify-ink.mjs`), what it lays into the
+  scene in the camera's perspective (`Space.ts`: the words over the islanders and in flight),
+  palette (`Palette.ts`), styles (`ui.css`) and our own brush fonts (`fonts/`).
 - `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the frame profiler, the frame-rate readout,
   the pipeline counter (`PipelineCounter.ts`), the wind view and its probe (`WindView.ts`,
   `WindArrows.ts`, `WindProbe.ts`).

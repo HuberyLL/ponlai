@@ -1,9 +1,11 @@
+import * as THREE from 'three/webgpu';
 import type { EntityId } from '../sim/types.ts';
 import { levelStroke, upright } from './Brush.ts';
 import { PALETTE } from './Palette.ts';
 import { css, el, flag, svgEl, text } from './dom.ts';
 import { InkPath } from './InkPath.ts';
 import { t } from './i18n/i18n.ts';
+import { GLYPH } from './People.ts';
 import type { People } from './People.ts';
 import type { UiShared } from './Shared.ts';
 
@@ -20,6 +22,10 @@ import type { UiShared } from './Shared.ts';
 //   of the line and the character) and travels about 1.3 s along an arc on the listener's left into
 //   their head, shrinking and fading; the end follows the head every frame, so the words turn when
 //   the islander walks; a character sinking into the head is heard (People.hear), with no effect;
+// - the words leave the screen for the world (docs/ui.md, Screen and world): a character lifts off
+//   the glass toward the player, its top tipping out, then dives into the scene to the head
+//   (Space.ts: from a few metres before the camera to the head's depth), turning in the air as a
+//   leaf does; the arc and the sizes on screen are the flight's, its depth and its turns the world's;
 // - to everyone, the line is cut into runs, left to right across the listeners in view, and the
 //   runs fly at once; with fewer characters than listeners, the outer listeners take them.
 // A line sent while one is still leaving queues behind it; with nobody on screen to hear, the
@@ -31,6 +37,12 @@ import type { UiShared } from './Shared.ts';
 
 const MAX_W = 560, REST_MID = 68, SLOT_LEAVE = 100, SLOT_CLOSE = 350, WAIT = 450, FLY = 1600, ARC = 0.82;
 const PUNCTUATION = /[，。！？、；：,.!?;:]/;
+// where a character stands while it is on the bar: this far before the camera (m), past its near
+// plane; the most it turns in flight (rad) and how far it lifts toward the player as it leaves
+const BAR_DEPTH = 3, TURN = 0.9, LIFT = 0.5;
+// a character's size on the bar (the field's font size, ui.css)
+const BAR_PX = 19;
+const _at = new THREE.Vector3(), _ax = new THREE.Vector3(), _ay = new THREE.Vector3();
 
 interface Flight {
 	el: HTMLElement;
@@ -348,7 +360,7 @@ export class SpeakBar {
 			longest = Math.max( longest, offs[ i ] + gapAfter( i ) );
 			// fewer characters than listeners: they go to listeners spread across the group
 			const person = listeners.length === 0 ? null : listeners[ runs === listeners.length ? r : Math.round( r * ( listeners.length - 1 ) / Math.max( 1, runs - 1 ) ) ];
-			const e = el( 'div', 'pl-fly', this.layer, p.c );
+			const e = el( 'div', 'pl-glyph pl-fly', this.layer, p.c );
 			e.setAttribute( 'aria-hidden', 'true' );
 			this.flights.push( { el: e, c: p.c, cx: p.x, y, w: p.w, gw: p.gw, person, line, start: start + offs[ i ], dur,
 				c1: [ 110 * rnd( i, 2 ), 70 * rnd( i, 3 ) ], c2: [ 80 * rnd( i, 4 ), 60 * rnd( i, 5 ) ],
@@ -371,7 +383,7 @@ export class SpeakBar {
 			if ( now < g.start ) {
 
 				// still on the bar, fading out towards the left edge like the field's text
-				css( e, 'transform', `translate(${ g.cx.toFixed( 1 ) }px,${ g.y.toFixed( 1 ) }px) translate(-50%,-50%)` );
+				this.put( e, g.cx, g.y, BAR_DEPTH, 1, 0, 0, 0 );
 				css( e, 'opacity', Math.max( 0, Math.min( 1, ( g.cx - wl ) / 28 ) ).toFixed( 3 ) );
 				continue;
 
@@ -397,7 +409,7 @@ export class SpeakBar {
 
 				// nobody on screen to hear it: it rises a little and fades where it stands
 				const t = u / 0.35;
-				css( e, 'transform', `translate(${ g.x.toFixed( 1 ) }px,${ ( g.y - 30 * t ).toFixed( 1 ) }px) translate(-50%,-50%)` );
+				this.put( e, g.x, g.y - 30 * t, BAR_DEPTH, 1, 0, 0, 0 );
 				css( e, 'opacity', ( 1 - t ).toFixed( 3 ) );
 				continue;
 
@@ -419,17 +431,31 @@ export class SpeakBar {
 			// drifting: a sway across the path and a slight tilt, swelling in mid-flight, gone at either end
 			const tx = 3 * v * v * ( p1[ 0 ] - p0[ 0 ] ) + 6 * v * a * ( p2[ 0 ] - p1[ 0 ] ) + 3 * a * a * ( p3[ 0 ] - p2[ 0 ] );
 			const ty = 3 * v * v * ( p1[ 1 ] - p0[ 1 ] ) + 6 * v * a * ( p2[ 1 ] - p1[ 1 ] ) + 3 * a * a * ( p3[ 1 ] - p2[ 1 ] );
-			const tl = Math.hypot( tx, ty ) || 1, d = g.sway * Math.sin( 2 * Math.PI * g.turns * a + g.phase ) * Math.sin( Math.PI * a );
-			const sx = - ty / tl * d, sy = tx / tl * d;
-			const tilt = g.tilt * Math.sin( Math.PI * a );
-			const scale = u < ARC ? 1 - 0.5 * a : 0.5 - 0.15 * b;
+			const tl = Math.hypot( tx, ty ) || 1, swing = Math.sin( 2 * Math.PI * g.turns * a + g.phase ) * Math.sin( Math.PI * a );
+			const d = g.sway * swing, sx = - ty / tl * d, sy = tx / tl * d;
+			const tilt = g.tilt * Math.sin( Math.PI * a ) * Math.PI / 180;
+			// lifting off the glass toward the player over the first third of the arc, its top tipping out
+			const lift = Math.sin( Math.PI * Math.min( a / 0.3, 1 ) );
+			const scale = ( u < ARC ? 1 - 0.5 * a : 0.5 - 0.15 * b ) * ( 1 + LIFT * lift );
 			const opacity = u < 0.1 ? 1 : u < ARC ? 1 - 0.4 * ease( ( u - 0.1 ) / ( ARC - 0.1 ) ) : 0.6 * ( 1 - b );
-			css( e, 'transform', `translate(${ ( x + sx ).toFixed( 1 ) }px,${ ( yy + sy ).toFixed( 1 ) }px) translate(-50%,-50%) rotate(${ tilt.toFixed( 1 ) }deg) scale(${ scale.toFixed( 3 ) })` );
+			// into the scene: from the bar's depth to the head's, even in the log of the depth
+			const depth = BAR_DEPTH * ( Math.max( head.depth, BAR_DEPTH ) / BAR_DEPTH ) ** a;
+			this.put( e, x + sx, yy + sy, depth, scale, TURN * swing, 0.6 * lift, tilt );
 			// one from out of sight shows only once it has left the edge
 			const shown = g.hidden ? Math.min( 1, Math.max( 0, ( now - g.start ) / 150 ) ) : 1;
 			css( e, 'opacity', ( opacity * shown ).toFixed( 3 ) );
 
 		}
+
+	}
+
+	// A character in the world, seen at ( x, y ) on screen (interface px) `depth` metres before the
+	// camera, `scale` times its size on the bar, turned by `yaw`, `pitch` and `roll` (Space.facing).
+	private put( e: HTMLElement, x: number, y: number, depth: number, scale: number, yaw: number, pitch: number, roll: number ): void {
+
+		const space = this.people.space, size = BAR_PX * scale / space.pixelsPerMetre( depth ) / GLYPH;
+		space.facing( yaw, pitch, roll, _ax, _ay );
+		space.place( e, space.unproject( x, y, depth, _at ), _ax.multiplyScalar( size ), _ay.multiplyScalar( size ), GLYPH, GLYPH );
 
 	}
 

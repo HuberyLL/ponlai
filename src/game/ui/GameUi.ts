@@ -26,6 +26,9 @@ import { TopRow } from './TopRow.ts';
 //                  island's resources (ResourceRow.ts) and the record's scroll
 //   People.ts      the islanders' marks: the selected one's ring and tag, alerts, thinking, speech
 //   SpeakBar.ts    talking to the islanders, and the words flying to them
+// What the player reads stays on the screen; what belongs to the islanders' world (the ring, the
+// words over a head, the words in flight) stands in it, laid into the scene through the camera
+// (Space.ts; docs/ui.md, Screen and world).
 //   BuildBar.ts    the build bar, which hands a building the simulation knows to the placement in
 //                  the scene (../Placement.ts)
 //   Record.ts      沧海录, the record, over the dimmed and stopped world

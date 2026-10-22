@@ -39,6 +39,12 @@ is the language it is designed and written in; another language is a translation
 - **Icons are the buttons**: white line art with no label on the button (`aria-label` for screen
   readers). Hover turns it 精白 with a faint stroke rising beneath it.
 - **No ornaments**: no corner pieces, dots, glints or extra connecting lines.
+- **Screen and world** (*changed*): the player watches the island from behind the screen, as its
+  maker, and the camera is their eye. What they read about the world stays on the screen: the top
+  row, the forecast, the resources, the bars, the record, and beside an islander their tag and
+  alerts. What belongs to the islanders' world stands in it, in the camera's perspective: the ring
+  lies on the ground at the feet, the thinking ring turns round the head, the speech stands over
+  it, and the player's words leave the screen and fly into the world to the listener.
 - **Status is a thin brush bar** with its exact number after it; the bar's fill blends from its
   own colour to 朱 as it runs low. No dials or cards.
 - **Numbers are exact**: `08:00`, a need of `74`, progress in percent. The islanders perceive
@@ -135,14 +141,19 @@ shows nothing above.
   0.08 s (pausing a little at punctuation) and travels about 1.3 s along an arc on the listener's
   left into their head, shrinking and fading as it goes; each character's arc and sway differ a
   little. The end point follows the head every frame, so the words turn when the islander walks.
-  No hit effect: a character sinking into the head is heard.
+  No hit effect: a character sinking into the head is heard. The words leave the screen for the
+  world (*changed*): a character lifts off the glass toward the player, its top tipping out, then
+  dives into the scene to the head, turning in the air as a leaf does.
 - **To everyone**: the line is cut into runs, left to right across the listeners in view, and the
   runs fly at once; with fewer characters than listeners, the outer listeners take them.
 - **Thinking**: the heard characters circle above the head, at most six at a time, the whole line
-  taking turns; words heard while thinking queue until the thought ends.
+  taking turns; words heard while thinking queue until the thought ends. The ring turns round the
+  head in the world (*changed*): each character faces out from it, turned half toward the viewer,
+  so the ones at the sides show narrowed and the ones behind the head turn edge on and fade.
 - **An islander speaks**: the characters pop out above the head one at a time, sized by the
   camera's distance; the line holds 2.5 s plus 0.3 s per character, then melts away character by
-  character.
+  character. In the world (*changed*), a character comes out of the mouth small and edge on and
+  swings open to face the viewer as it takes its place; melting, it rises, turns aside and blurs.
 
 ### Build bar
 
@@ -210,8 +221,9 @@ interface hides; Esc or × closes; ←/→ step days.
 - The UI reads the simulation and acts only through `Game`'s methods; it never duplicates a game
   rule (a refusal, a cost check) but asks the simulation for it.
 - It never touches the canvas's pixels, so paused frames stay exact; DOM is written only where its
-  text changed. Anything drawn in the 3D scene (the ring at the feet, words flying to a head)
-  that changes on a paused page raises a scene event (`src/post/SceneEvents.ts`).
+  text changed. What stands in the world (Screen and world) is DOM too, laid into the scene through
+  the camera, never drawn in it. Anything drawn in the 3D scene itself (the placement ring) that
+  changes on a paused page raises a scene event (`src/post/SceneEvents.ts`).
 - Lists render from data; adding a building, a resource, a weather kind or a record event never
   touches the components.
 - Every word the player reads is a key of the catalogue (`src/game/ui/i18n/`), never a string in
@@ -232,9 +244,15 @@ from a board, it is said here.
 - **Resources**: a kind the simulation has as an item (fish) counts the stores (`sim/stock.ts`);
   the others show their row's placeholder count until the simulation has materials. What a
   building lacks is the simulation's `shortfall`, never the bar's own sum.
-- **Islanders**: their names are Chinese (`sim/Sim.ts`). The ring at the feet and the words over
-  the heads are drawn over the canvas through the camera each frame (the placement's ring stays in
-  the scene); the ring passes over the figure's legs, as the placement ring passes over the meadow.
+- **Islanders**: their names are Chinese (`sim/Sim.ts`). What stands in the world is DOM over the
+  canvas, placed through the camera each frame (the placement's ring stays in the scene): the
+  ring at the feet is drawn on screen from its points on the land, and the characters (thinking,
+  speaking, in flight) are elements laid into the scene in perspective (`src/game/ui/Space.ts`),
+  drawn at the screen's resolution in the palette's colours. Nothing in the scene hides them: the
+  ring passes over the figure's legs, as the placement ring passes over the meadow, and words pass
+  in front of trees. The ring stays a drawing on screen because, laid into the scene as an image
+  in perspective, its thin back was resampled into dashes. Their sizes come from the figure's size
+  on screen (as Speaking says), so a far islander's words stay readable.
   The bag shows a slot per kind with its count, then a faint ring per free place; a click marks a
   slot 金 and does nothing more yet.
 - **Speaking**: the words go into the record; for a brain that hears (`Brain.hears`) they wait for
