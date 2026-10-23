@@ -7,10 +7,11 @@
 // without positions, the stand-in brain building the chest and keeping the islander fed for
 // days, and a save taken mid-action; the save file (the simulation and its record read back as
 // written, a save of version 17 brought to this one, saves no step reaches refused, and a record
-// restored from a save that keeps the entries the original keeps); then the island's growth: a land
-// grown by IslandGrowth, the population steps, the coming piece's cells, a step crossed adding
-// exactly one piece, the grid opening cells without reindexing, islanders walking onto the new
-// piece, the shore moving to the new coast as on a fresh load, and a save that keeps its piece count.
+// restored from a save that keeps the entries the original keeps, a game resumed at its start
+// included); then the island's growth: a land grown by IslandGrowth, the population steps, the
+// coming piece's cells, a step crossed adding exactly one piece, the grid opening cells without
+// reindexing, islanders walking onto the new piece, the shore moving to the new coast as on a
+// fresh load, and a save that keeps its piece count.
 // Pure CPU; Node 22.18+ strips the imported TypeScript.
 // Run: node tools/verify-game.mjs
 import assert from 'node:assert/strict';
@@ -525,7 +526,8 @@ function buildChest( sim ) {
 
 // the save file: the simulation and its record (Chronicle) read back as written; a record restored
 // and watching the same ticks keeps the entries the original keeps, a need noted before the save not
-// noted again; a save of version 17 (the state alone) brought to this version; others refused
+// noted again, a landing not noted again on a game resumed at its start; a save of version 17 (the
+// state alone) brought to this version; others refused
 {
 
 	// the page's frames: the simulation runs a minute, then the record looks (the sky by the day)
@@ -579,6 +581,25 @@ function buildChest( sim ) {
 	watch( loaded, restored, 2 * 24 * HOUR );
 	assert.equal( loaded.save(), sim.save() );
 	assert.equal( JSON.stringify( restored.save() ), JSON.stringify( record.save() ), 'a restored record keeps the entries the original keeps' );
+
+	// a game saved before its first tick (?game&paused) and resumed again and again: each islander
+	// landed once
+	{
+
+		const fresh = newGame( input, { seed: 5 } );
+		let book = new Chronicle(), file;
+		book.observe( fresh, 'fair', 0 );
+		for ( let load = 0; load < 3; load ++ ) {
+
+			file = readSave( writeSave( fresh.state, book.save() ) );
+			book = new Chronicle();
+			book.restore( file.record );
+			book.observe( loadGame( file.sim, input ), 'fair', 0 );
+
+		}
+		assert.equal( book.entries.filter( ( e ) => e.kind === 'landed' ).length, fresh.population(), 'a game resumed at its start keeps one landing per islander' );
+
+	}
 
 	// version 17: the simulation's state alone
 	const old = JSON.stringify( { ...JSON.parse( sim.save() ), version: 17 } );
