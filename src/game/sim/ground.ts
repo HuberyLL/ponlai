@@ -5,16 +5,18 @@ import type { Vec2 } from './types.ts';
 // inside the island top's edge, the shore band along that edge, and whether a patch of ground is
 // clear for something to stand on it. Everything derives from the grid (the world's own island and
 // obstacles), never from coordinates placed by hand, so a grown island gets the same rules on its
-// new ground.
+// new ground. The edge and the shore are kept per island top (Grid.top, which a grown island
+// replaces while its grid stays: Grid.setIsland), so a grown game's shore is a fresh load's.
 
 /** the shore: walkable ground within this distance (m) of the island top's edge (two cells) */
 export const SHORE_BAND = 1.0;
 /** open ground a building needs round the ground it blocks (m), for clearAround */
 export const CLEAR_RING = 1.0;
 
-// per grid: the distance field and the shore's base cells (before the game's own obstacles)
-const edges = new WeakMap<Grid, Float32Array>();
-const shores = new WeakMap<Grid, Uint8Array>();
+// per island top (Grid.top): the distance field and the shore's base cells (before the game's own
+// obstacles)
+const edges = new WeakMap<Uint8Array, Float32Array>();
+const shores = new WeakMap<Uint8Array, Uint8Array>();
 
 /**
  * Metres from each cell's centre to the nearest cell off the island top (a two-pass chamfer
@@ -22,9 +24,9 @@ const shores = new WeakMap<Grid, Uint8Array>();
  */
 export function edgeDistance( grid: Grid ): Float32Array {
 
-	let d = edges.get( grid );
-	if ( d ) return d;
 	const { cols, rows, top, size } = grid;
+	let d = edges.get( top );
+	if ( d ) return d;
 	d = new Float32Array( cols * rows );
 	const diag = size * Math.SQRT2;
 	for ( let k = 0; k < d.length; k ++ ) d[ k ] = top[ k ] ? Infinity : 0;
@@ -44,7 +46,7 @@ export function edgeDistance( grid: Grid ): Float32Array {
 		d[ k ] = Math.min( d[ k ], at( i + 1, j ) + size, at( i, j + 1 ) + size, at( i + 1, j + 1 ) + diag, at( i - 1, j + 1 ) + diag );
 
 	}
-	edges.set( grid, d );
+	edges.set( top, d );
 	return d;
 
 }
@@ -52,12 +54,12 @@ export function edgeDistance( grid: Grid ): Float32Array {
 /** 1 for the island top's cells within SHORE_BAND of its edge, whatever stands on them. */
 export function shoreMask( grid: Grid ): Uint8Array {
 
-	let m = shores.get( grid );
+	let m = shores.get( grid.top );
 	if ( m ) return m;
 	const d = edgeDistance( grid );
 	m = new Uint8Array( d.length );
 	for ( let k = 0; k < d.length; k ++ ) m[ k ] = d[ k ] > 0 && d[ k ] <= SHORE_BAND + 1e-4 ? 1 : 0;
-	shores.set( grid, m );
+	shores.set( grid.top, m );
 	return m;
 
 }

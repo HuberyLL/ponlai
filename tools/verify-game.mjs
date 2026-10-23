@@ -7,10 +7,10 @@
 // without positions, the stand-in brain building the chest and keeping the islander fed for
 // days, and a save taken mid-action; the save file (the simulation and its record read back as
 // written, a save of version 17 brought to this one, saves no step reaches refused, and a record
-// restored from a save that keeps the entries the original keeps); then the island's growth: a land grown by
-// IslandGrowth, the population steps, the coming piece's cells, a step crossed adding exactly one
-// piece, the grid opening cells without reindexing, islanders walking onto the new piece, and a
-// save that keeps its piece count.
+// restored from a save that keeps the entries the original keeps); then the island's growth: a land
+// grown by IslandGrowth, the population steps, the coming piece's cells, a step crossed adding
+// exactly one piece, the grid opening cells without reindexing, islanders walking onto the new
+// piece, the shore moving to the new coast as on a fresh load, and a save that keeps its piece count.
 // Pure CPU; Node 22.18+ strips the imported TypeScript.
 // Run: node tools/verify-game.mjs
 import assert from 'node:assert/strict';
@@ -26,6 +26,7 @@ import { GROWTH_STEPS, POPULATION_START, piecesFor } from '../src/game/sim/types
 import { SAVE_VERSION, readSave, savedPieces, writeSave } from '../src/game/save.ts';
 import { Chronicle } from '../src/game/Chronicle.ts';
 import { shortfall, stockOf } from '../src/game/sim/stock.ts';
+import { shoreMask } from '../src/game/sim/ground.ts';
 import { input, inputAt } from './game-fixture.mjs';
 
 const HOUR = 3600;
@@ -619,6 +620,8 @@ function buildChest( sim ) {
 	assert.equal( sim.state.pieces, 0 );
 	assert.equal( sim.population(), 1 );
 	const grid = sim.grid, top0 = grid.top.slice(), dims = [ grid.cols, grid.rows, grid.x0, grid.z0 ];
+	// the shore as the islanders know it before the growth (they fish there)
+	const shore0 = shoreMask( grid ).slice();
 	const kai = sim.state.villagers[ 0 ], kaiCell = grid.indexAt( kai.pos.x, kai.pos.z );
 	// a chest's cell, as indexed before the growth
 	const chest = placeChest( sim ), chestCell = grid.indexAt( chest.x, chest.z );
@@ -729,10 +732,26 @@ function buildChest( sim ) {
 	loaded.step( 600 );
 	sim.step( 600 );
 	assert.equal( loaded.save(), sim.save(), 'and plays on as the original' );
+	// the shore follows the new coast: a grown game's is a fresh load's, and the islanders fishing and
+	// stocking on it play on the same in both
+	assert.deepEqual( shoreMask( sim.grid ), shoreMask( loaded.grid ), 'the grown game\'s shore is a fresh load\'s' );
+	let newShore = 0, inland = 0;
+	for ( let k = 0; k < coming.length; k ++ ) {
+
+		if ( shoreMask( sim.grid )[ k ] && ! top0[ k ] ) newShore ++;
+		if ( shore0[ k ] && ! shoreMask( sim.grid )[ k ] ) inland ++;
+
+	}
+	assert.ok( newShore > 0 && inland > 0, 'the shore runs along the new piece, and the old coast it met is inland' );
+	sim.brain = new StandInBrain();
+	loaded.brain = new StandInBrain();
+	sim.step( 24 * HOUR );
+	loaded.step( 24 * HOUR );
+	assert.equal( loaded.save(), sim.save(), 'and the islanders play on as on a fresh load, a day of fishing included' );
 
 	// a new game on a grown island starts at its piece count
 	assert.equal( newGame( next, { pieces: 1 } ).state.pieces, 1 );
-	console.log( `growth: ${ ( gained * 0.0625 ).toFixed( 0 ) } m^2 of land, ${ comingCells } coming cells opened at 5 islanders, one piece, ${ sim.population() } islanders walked onto it; saved at 1 piece and loaded back` );
+	console.log( `growth: ${ ( gained * 0.0625 ).toFixed( 0 ) } m^2 of land, ${ comingCells } coming cells opened at 5 islanders, one piece, ${ sim.population() } islanders walked onto it; the shore moved (${ newShore } cells on the piece, ${ inland } inland); saved at 1 piece and loaded back` );
 
 }
 

@@ -1,7 +1,6 @@
 import { buildings, obstructBuildings } from './buildings.ts';
 import { shoreMask } from './ground.ts';
 import { BAG_CAPACITY, intoBag, total } from './items.ts';
-import type { Grid } from './grid.ts';
 import type { Sim } from './Sim.ts';
 import type { ActionResult, Vec2, Villager } from './types.ts';
 
@@ -63,19 +62,19 @@ type PlaceKind = ( sim: Sim ) => Place[];
 
 // ------------------------------------------------------------------ shore
 
-// per grid: the shore's cells (the places are built anew each time they are looked up, every tick
-// of a timed `do`)
-const shoreCells = new WeakMap<Grid, number[]>();
+// per shore mask (ground.ts shoreMask: one per island top, so a grown island has its own): the
+// shore's cells (the places are built anew each time they are looked up, every tick of a timed `do`)
+const shoreCells = new WeakMap<Uint8Array, number[]>();
 
 function shore( sim: Sim ): Place[] {
 
 	const grid = sim.grid, mask = shoreMask( grid );
-	let cells = shoreCells.get( grid );
+	let cells = shoreCells.get( mask );
 	if ( ! cells ) {
 
 		cells = [];
 		for ( let k = 0; k < mask.length; k ++ ) if ( mask[ k ] ) cells.push( k );
-		shoreCells.set( grid, cells );
+		shoreCells.set( mask, cells );
 
 	}
 	return [ {
