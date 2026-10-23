@@ -437,7 +437,7 @@ export class BuildBar {
 			flag( it.button, 'short', Object.keys( shared.short( it.row ) ).length > 0 );
 			attr( it.button, 'aria-disabled', String( locked ) );
 			attr( it.button, 'aria-pressed', String( chosen ) );
-			it.button.tabIndex = it.inView ? 0 : - 1;
+			attr( it.button, 'tabindex', it.inView ? '0' : '-1' );
 			// (a row not yet buildable still tells what it is on hover; choosing refuses it)
 			css( it.button, 'pointer-events', it.inView ? 'auto' : 'none' );
 
