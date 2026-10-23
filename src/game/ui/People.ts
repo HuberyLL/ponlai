@@ -688,7 +688,8 @@ class Tag {
 		text( this.doing, doing );
 		for ( const n of this.needs ) {
 
-			const value = Math.round( v.needs[ n.key ] ), critical = value <= CRITICAL_NEED;
+			// (critical as the alerts and the record read it: the need itself, not the number shown)
+			const value = Math.round( v.needs[ n.key ] ), critical = v.needs[ n.key ] <= CRITICAL_NEED;
 			text( n.num, String( value ) );
 			css( n.num, 'color', critical ? PALETTE.zhu : '' );
 			css( n.icon, 'color', critical ? PALETTE.zhu : '' );
