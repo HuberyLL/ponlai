@@ -417,6 +417,14 @@ export class Game {
 
 	}
 
+	/** Whether the brain hears the player's words (sim/agent.ts Brain.hears): the interface keeps
+	 * the characters that land for its next thought only then. */
+	hears(): boolean {
+
+		return this.brain?.hears ?? false;
+
+	}
+
 	/** The brain that thinks for the islanders (sim/agent.ts Brain; null: none), kept across a load. */
 	setBrain( brain: Brain | null ): void {
 

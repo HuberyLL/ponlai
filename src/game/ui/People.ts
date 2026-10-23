@@ -28,7 +28,8 @@ import { Space } from './Space.ts';
 //   both side by side, satiety on the left.
 // - Thinking (a thought in flight, Sim.thinking, after hearing the player): the characters heard
 //   circle the head, at most six at a time, the whole line taking turns as each passes behind the
-//   head; words heard meanwhile wait for the next thought.
+//   head; words heard meanwhile wait for the next thought. Only a brain that hears keeps the
+//   characters that land (Game.hears): the stand-in's islanders hear none.
 // - Speaking (Villager.said changed): the characters pop out of the mouth one at a time, each
 //   swinging open to face the viewer, sized by the figure's size on screen; the line holds 2.5 s
 //   and 0.3 s a character, then melts away one by one, each turning aside as it rises. A line still
@@ -186,17 +187,18 @@ export class People {
 
 	}
 
-	/** A character of the player's `line` (UiShared.lines) has sunk into an islander's head: it is heard. */
+	/** A character of the player's `line` (UiShared.lines) has sunk into an islander's head: it is
+	 * heard, by a brain that hears. */
 	hear( id: EntityId, c: string, line: number ): void {
 
 		const m = this.marks.get( id );
-		if ( m && ! /[，。！？、；：,.!?;:\s]/.test( c ) ) m.heard.push( { c, line } );
+		if ( m && this.shared.game.hears() && ! /[，。！？、；：,.!?;:\s]/.test( c ) ) m.heard.push( { c, line } );
 
 	}
 
 	update(): void {
 
-		const shared = this.shared, sim = shared.game.sim, frame = ++ this.frame;
+		const shared = this.shared, sim = shared.game.sim, frame = ++ this.frame, hears = shared.game.hears();
 		// the interface's size in its own pixels (the window's, over its scale)
 		const w = innerWidth / shared.k, h = innerHeight / shared.k;
 		this.space.update( w, h );
@@ -216,6 +218,8 @@ export class People {
 			flag( m.talkBox, 'hidden', ! m.shown );
 			if ( m.shown ) css( m.root, 'transform', `translate(${ m.x.toFixed( 1 ) }px,${ m.y.toFixed( 1 ) }px)` );
 			this.alerts( m, v.needs, selected );
+			// (a brain that does not hear, put in its slot, keeps nothing heard for the next that does)
+			if ( ! hears && m.heard.length > 0 ) m.heard = [];
 			this.thinking( m, sim.thinking( v.id ) );
 			this.talking( m, v );
 			if ( selected && m.shown ) {
