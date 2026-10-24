@@ -424,7 +424,7 @@ within a tolerance; the test mode keeps the byte-for-byte checks valid.
 ## Captures
 
 `node tools/capture.mjs <name> [--w 1672 --h 941] [--q "paused&t=12&dpr=1"] [--eval js|@file]...
-[--verbose]` takes a screenshot of the running dev server into `artifacts/captures/`
+[--eval-ready js|@file]... [--verbose]` takes a screenshot of the running dev server into `artifacts/captures/`
 (git-ignored) and prints frame diagnostics. It needs Playwright's Chromium once
 (`npx playwright install chromium`), or `CHROME_PATH` set to a WebGPU-capable Chrome.
 
@@ -433,6 +433,10 @@ expression, a function or statements with a `return`, `await`, `@file`; `P`, `D`
 `sleep( ms )`, `until( fn, timeoutMs )`): wait in an eval with `await until( () => D.settled )`,
 not a polling loop. Each eval's value lands in the capture's JSON as `evals: [ { eval, value } |
 { eval, error } ]`; an eval that throws fails the capture (exit 1), which is still shot.
+`--eval` runs before readiness, on a fresh load before the sun's map has even drawn (receivers
+read lit until it has), so it sets the view up; a reading of the frame that is shot goes in
+`--eval-ready`, which runs once the page is ready, with the loop stopped on that frame (JSON
+`readyEvals`). capture-set passes both through after its `--`.
 
 Captures and clips run in "fast mode" (`tools/capture-browser.mjs`): the browser runs in a
 persistent profile slot, `artifacts/.capture-profiles/<browser build>/<n>` of the main checkout
@@ -440,11 +444,12 @@ persistent profile slot, `artifacts/.capture-profiles/<browser build>/<n>` of th
 delete), so the world cache and the GPU shader cache hit from the second capture on. A capture
 takes the free slots its page (origin and build) used last first (`affinity.json` beside the
 slots), else the lowest free one. A paused
-capture is shot once its image stops changing: grabbed every 2 frames from the frame after the
-evals, shot when a comparison found no pixel changed (after 40 frames, at most 5000
+capture waits for the page's `settled` signal (`src/post/Settled.ts`, with the loop running; past
+`--timeout` it goes on and prints `unsettled`) and is then shot once its image stops changing:
+grabbed every 2 frames, shot when a comparison found no pixel changed (after 40 frames, at most 5000
 changed pixels count as unchanged; after 120 the view is shot anyway, marked `capped`). A paused
 temporal page (taa, taau, gt) is not compared: it is shot once its rest has converged
-(`TemporalRest.ts`), and the `--stable-*` options do not apply to it. Every capture waits for the
+(`TemporalRest.ts`) and `settled` holds, and the `--stable-*` options do not apply to it. Every capture waits for the
 loading screen's fade-out to finish (its computed opacity 0), not only for its `done` class: a
 shot during the fade has the screen blended over the whole frame.
 Replayed over per-frame traces of the 24 parity views, these defaults shot no load early and every
@@ -1147,8 +1152,10 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   long run gives way at its boundaries to a request ranked before it. It never holds a slot while
   it does CPU work or waits for something else.
 - Readiness comes from the page, never from a fixed frame count or a sleep. Use
-  capture-browser's `waitForScene` and `waitForStable`, or the diagnostics' `settled`. A fixed
-  40-frame wait passed or failed by chance on a busy GPU.
+  capture-browser's `waitForScene`, `waitForSettled` (the diagnostics' `settled`, with the loop
+  running) and `waitForStable`, in that order. A fixed 40-frame wait passed or failed by chance on
+  a busy GPU. A reading of the frame is taken once it is ready, not right after the load: a fresh
+  load's first frames are drawn before the sun's map, with every receiver lit.
 - Expensive results that depend only on the commit, the tool and the browser are stored and
   reused through `parity/reference.mjs`; record in the key everything that changes them.
 - CPU-heavy node tools import `qos.mjs` first. Python tools declare their dependencies inline (PEP
