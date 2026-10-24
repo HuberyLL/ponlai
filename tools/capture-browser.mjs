@@ -96,8 +96,19 @@
 //   wait holds on every build, older ones included, and costs at most the fade's remaining second.
 // - A running (not paused) capture, or one given --ready-frames n, waits for that fixed count of
 //   rendered frames instead (READY_FRAMES, 60, for a running one). `wait` and `settle` (ms) add
-//   fixed delays before and after the floor. Later the page's own settled signal joins the stable
-//   image.
+//   fixed delays before and after the floor.
+// - Before the grabs a paused page also waits for its own settled signal (waitForSettled, which
+//   capture.mjs calls; verify-growth-swap waits for it too): src/post/Settled.ts holds it false
+//   while a pipeline compiles asynchronously or a sun shadow redraw is due, and until 8 quiet frames
+//   share the scene's key, so the grabs start on the frame the page keeps. Stability alone met that
+//   only through the loading screen, which a fresh load lifts once the sun's map has drawn: frames
+//   drawn while a pipeline compiles repeat each other (three skips the draw), so two of them
+//   compare equal. The wait runs with the loop going, since each grab's restart of the loop starts
+//   the signal's run over. Under the temporal modes the capture's own epoch bump restarts the
+//   haze's rest too, which outlasts the resolve's: the resolve's rest then converges on frames
+//   that were not all quiet and the signal reports `stale` (a paused taa page stayed so for 600
+//   frames). The wait starts the resolve's rest over then, by an epoch bump that is not a scene
+//   bump, so the haze's rest is kept; the page settled about 50 frames after the wait began.
 //
 // The shot. The PNGs a capture writes (capture.mjs's frames, capture-clip's crops and full frames)
 // are taken by the same shooter as the grab, not by Playwright's `page.screenshot`: the same pixels
@@ -504,6 +515,47 @@ export function samePixels( a, b ) {
 	if ( a.equals( b ) ) return true;
 	const x = decodePng( a ), y = decodePng( b );
 	return x.width === y.width && x.height === y.height && Buffer.compare( x.data, y.data ) === 0;
+
+}
+
+/** Waits, with the frame loop running, until the page's settled signal holds (src/post/Settled.ts:
+ * the paused page will draw the same frame from now on; see Readiness by stability above) and
+ * returns the record a capture's JSON keeps as `ready.settled`: { settled, framesWaited, wallMs },
+ * with the signal's `settle` block when it did not hold within `timeout` (ms; no error: the
+ * stability wait follows and the shot is still taken), or { signal: false } on a page that has no
+ * signal to wait for (an older build, or a temporal page without a rest, which never settles).
+ * Call it before waitForStable: its grabs restart the loop, a scene event that starts the signal's
+ * run over, so the signal cannot hold during them. */
+export async function waitForSettled( page, { timeout = 60000 } = {} ) {
+
+	return page.evaluate( async ( timeout ) => {
+
+		const s = window.__PONLAI__, diag = () => window.__THREE_GAME_DIAGNOSTICS__;
+		if ( typeof diag()?.settled !== 'boolean' || diag().taa?.restTarget === 0 ) return { signal: false };
+		s.loop?.start();
+		const from = s.renderer.info.frame, start = performance.now();
+		const settled = await new Promise( ( resolve ) => {
+
+			const tick = () => {
+
+				if ( diag().settled === true ) resolve( true );
+				else if ( performance.now() - start > timeout ) resolve( false );
+				else {
+
+					// a temporal rest that converged before the page was quiet starts over (Settled.ts `stale`),
+					// not as a scene bump, which would restart the haze's rest as well and so make it stale again
+					if ( diag().settle?.stale ) s.taa?.epoch.bump( 'settle', false );
+					requestAnimationFrame( tick );
+
+				}
+
+			};
+			tick();
+
+		} );
+		return { settled, framesWaited: s.renderer.info.frame - from, wallMs: Math.round( performance.now() - start ), ...( settled ? {} : { settle: diag().settle } ) };
+
+	}, timeout );
 
 }
 

@@ -85,7 +85,8 @@
 //   screenshot's clip), measured against the store's MSAA and ground-truth rest entries of the
 //   commit (--store) on those crops; a short table per variant.
 // Options after `--` pass through to capture.mjs (e.g. `-- --wait-for "expr" --frames 4 --every 5`;
-// an `--eval` there runs after the view's own).
+// an `--eval` there runs after the view's own, before readiness, and an `--eval-ready` once the
+// view is ready, on the frame shot: a reading of the frame belongs there).
 // Production builds need `?debug` (added here) and the islanders' assets linked into the build's
 // output; see tools/parity/README.md.
 // The set and its capture.mjs workers run with the application scheduling policy on macOS
