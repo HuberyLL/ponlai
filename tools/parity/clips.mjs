@@ -21,8 +21,8 @@
 //   still                    the base pose every frame
 //
 // A render scale schedule is given as shares of the tier's nominal ratio (`__PONLAI__.nominalScale()`,
-// 4/3 on high at the default size), so it keeps its meaning at any --size; the page turns it into
-// the absolute ratios `loop.step` takes.
+// 2K's pixel count on high: 1.38 at the default size), so it keeps its meaning at any --size; the
+// page turns it into the absolute ratios `loop.step` takes.
 //
 // A clip may step `lead` frames before its frame 0 (at frame 0's pose and scale, the clock running
 // as the clip's, nothing captured): a temporal mode starts each clip with its history cut (the

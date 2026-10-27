@@ -7,12 +7,16 @@ import type { RenderScaleRule } from '../Quality.ts';
 //
 // Pixel ratios of the scene's render, relative to CSS pixels, never above the display's or the
 // cap (ocean optics, clouds and the post passes scale with the pixel count):
-// - high: dynamic, steered by the GPU's frame time (DynamicResolution.ts), from the display's own
-//   ratio (up to OUTPUT_PIXEL_RATIO_CAP: native 4K on a 2x display at 1920x1080) down to half the
-//   canvas's (1080p at 4K output). A load starts at, and a paused or pinned page holds, the
-//   baseline: two thirds of the maximum (1440p internal at 4K output, scale 4/3, FSR 1's Quality
-//   1.5x upscale), the level every trade-off is judged at. This returns the baseline as the
-//   nominal, `dynamicMaxRatio` the top of the range;
+// - high: dynamic, steered by the GPU's frame time (DynamicResolution.ts), between a floor and the
+//   display's own ratio (up to OUTPUT_PIXEL_RATIO_CAP). Its baseline and floor are counts of
+//   rendered pixels, not shares of the display's ratio, so that a frame costs about the same on any
+//   display: the standard, 2K output (2560x1440 at a 1x display), renders natively and drops to
+//   about 1080p when busy, and a 4K display (1920x1080 CSS at 2x) renders 1440p (scale 4/3, FSR 1's
+//   Quality 1.5x upscale), drops to 1080p and climbs to native 4K with headroom. A load starts at,
+//   and a paused or pinned page holds, the baseline, capped by the maximum (a display of 2K or fewer
+//   pixels renders natively there). The floor is at most `floorShare` of the maximum per axis, so a
+//   small display's floor stays below its maximum. `dynamicRange` gives the three; this returns the
+//   baseline as the nominal;
 // - medium and low (parked, Quality.ts): a budget of rendered pixels (1600x900 and 1280x720 today);
 //   `?dpr` and the GUI's full resolution lift it.
 // The canvas always matches the display (up to OUTPUT_PIXEL_RATIO_CAP): a render below it is
@@ -32,15 +36,31 @@ export function renderPixelRatio( width: number, height: number, rule: RenderSca
 
 	const requested = Math.min( devicePixelRatio, cap );
 	if ( full ) return requested;
-	if ( 'dynamic' in rule ) return dynamicMaxRatio( rule, cap ) * rule.dynamic.baselineShare;
+	if ( 'dynamic' in rule ) return dynamicRange( width, height, devicePixelRatio, rule, cap ).baseline;
 	return Math.min( requested, Math.sqrt( rule.budget / Math.max( width * height, 1 ) ) );
 
 }
 
-/** The top of a dynamic tier's range: the display's ratio, up to the cap and the tier's `max`. */
-export function dynamicMaxRatio( rule: Extract<RenderScaleRule, { dynamic: unknown }>, cap: number ): number {
+/** A dynamic tier's range of render pixel ratios for a `width` x `height` CSS-pixel view. */
+export interface DynamicRange {
+	// the display's `ratio`, up to the cap and the tier's `max`
+	max: number;
+	// the ratio that renders the tier's `baseline` pixels, within the floor and the maximum
+	baseline: number;
+	// the ratio that renders the tier's `floor` pixels, at most `floorShare` of the maximum
+	floor: number;
+}
 
-	return Math.min( devicePixelRatio, cap, rule.dynamic.max );
+/** A dynamic tier's range on a display of pixel ratio `ratio` (pure: the tools compute high's
+ * standard pin with it). */
+export function dynamicRange( width: number, height: number, ratio: number, rule: Extract<RenderScaleRule, { dynamic: unknown }>, cap: number ): DynamicRange {
+
+	const { dynamic } = rule;
+	const area = Math.max( width * height, 1 );
+	const max = Math.min( ratio, cap, dynamic.max );
+	const floor = Math.min( Math.sqrt( dynamic.floor / area ), dynamic.floorShare * max );
+	const baseline = Math.min( Math.max( Math.sqrt( dynamic.baseline / area ), floor ), max );
+	return { max, baseline, floor };
 
 }
 

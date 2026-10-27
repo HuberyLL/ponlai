@@ -45,7 +45,7 @@ import { meadowCanopy } from './lighting/MeadowCanopy.ts';
 import { Pipeline, postOptionsFromURL } from './post/Pipeline.ts';
 import type { HazeFrame } from './weather/VolumetricHaze.ts';
 import type { GradeChanges } from './post/GradeLut.ts';
-import { renderPixelRatio, dynamicMaxRatio, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
+import { renderPixelRatio, dynamicRange, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
 import { SubmitBatch } from './post/SubmitBatch.ts';
@@ -1373,14 +1373,15 @@ if ( DEBUG ) {
 // ------------------------------------------------------------------ loop
 
 // High's render scale is dynamic (DynamicResolution.ts): it starts at its baseline (the nominal:
-// 1440p internal at 4K output), moves between the display's ratio and a floor (1080p) by the GPU's
-// frame time, and renders at the baseline while the scene is paused, so paused frames and captures
-// render at the scale its trade-offs are judged at (pinned, ?dpr or full resolution, at that ratio).
+// 2K's pixel count, native at 2K output and 1440p at 4K output), moves between the display's ratio
+// and a floor (about 1080p's pixel count) by the GPU's frame time, and renders at the baseline
+// while the scene is paused, so paused frames and captures render at the scale its trade-offs are
+// judged at (pinned, ?dpr or full resolution, at that ratio).
 // (the ground truth renders at the canvas's resolution: no dynamic scale)
-const dynamicRule = 'dynamic' in quality.render && AA_MODE !== 'gt' ? quality.render.dynamic : null;
+const dynamicRule = 'dynamic' in quality.render && AA_MODE !== 'gt' ? quality.render : null;
 // Under TAAU and FSR 3 the floor rises so the canvas is at most TAAU_MAX_UPSCALE times the render per axis
 // (DynamicResolution.ts).
-const dynamicResolution = dynamicRule ? new DynamicResolution( { ...dynamicRule, maxUpscale: AA_MODE === 'taau' || AA_MODE === 'fsr3' ? TAAU_MAX_UPSCALE : Infinity } ) : null;
+const dynamicResolution = dynamicRule ? new DynamicResolution( { ...dynamicRange( innerWidth, innerHeight, devicePixelRatio, dynamicRule, DPR_CAP ), step: dynamicRule.dynamic.step, maxUpscale: AA_MODE === 'taau' || AA_MODE === 'fsr3' ? TAAU_MAX_UPSCALE : Infinity } ) : null;
 // The tier's frame rate is held on a faster display (FramePacer.ts), which then shows each frame for
 // the same number of refreshes, falling back to the next divisor when the dynamic scale's floor
 // cannot hold it. `frameRate=auto` is that default; `frameRate=<fps>` holds a fixed rate (0 renders on
@@ -1458,8 +1459,9 @@ function resize(): void {
 	nominalScale = renderPixelRatio( w, h, quality.render, resolution.full, DPR_CAP );
 	// the ground truth renders at the canvas's ratio, every pixel of it
 	if ( AA_MODE === 'gt' ) nominalScale = outputPixelRatio( nominalScale );
-	// the dynamic range tops out at the display's ratio, above the baseline it starts from
-	if ( dynamicResolution && 'dynamic' in quality.render ) dynamicResolution.setMax( resolution.full ? nominalScale : dynamicMaxRatio( quality.render, DPR_CAP ) );
+	// the dynamic range for this view: from the display's ratio (a pinned one's) down to the floor,
+	// its baseline among them
+	if ( dynamicResolution && dynamicRule ) dynamicResolution.setRange( dynamicRange( w, h, resolution.full ? nominalScale : devicePixelRatio, dynamicRule, DPR_CAP ) );
 	renderer.setPixelRatio( outputPixelRatio( nominalScale ) );
 	dynamicResolution?.setCanvasRatio( renderer.getPixelRatio() );
 	renderer.setSize( w, h );

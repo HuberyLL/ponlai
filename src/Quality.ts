@@ -3,19 +3,21 @@
 // control reloads the page with it.
 //
 // High is the reference image and the only active tier: every trade-off of image against time is
-// judged on it, at its standard: 4K output (3840x2160: 1920x1080 CSS pixels at a device pixel ratio
-// of 2) rendered at 1440p (2560x1440, render scale 4/3, FSR 1's 1.5x upscale) with MSAA 4x (`aa`)
-// at 60 fps, with a GPU budget of about 14 ms a frame in the normal scenes (island views, the
-// meadow close up), leaving about 15 % of the 16.7 ms frame for pacing and the OS. 1440p is the
-// guaranteed level: a load starts there and a paused page renders there; the dynamic render scale
-// (`render`, post/DynamicResolution.ts) climbs to the display's own ratio (native 4K) with headroom
-// and drops to half the output's linear resolution (1080p) when busy. The meadow is built for the island view's
+// judged on it, at its standard: 2K output (2560x1440 at a device pixel ratio of 1) rendered
+// natively, with no upscale, with MSAA 4x (`aa`) at 60 fps, with a GPU budget of about 14 ms a
+// frame in the normal scenes (island views, the meadow close up), leaving about 15 % of the 16.7 ms
+// frame for pacing and the OS. 2K's pixel count is the guaranteed level: a load starts there and a
+// paused page renders there; the dynamic render scale (`render`, post/DynamicResolution.ts) climbs
+// to the display's own ratio with headroom and drops to about 1080p's pixel count when busy. A 4K
+// display (1920x1080 CSS at 2x) renders the same pixels as 1440p (scale 4/3, upscaled by FSR 1),
+// climbs to native 4K and drops to 1080p. The meadow is built for the island view's
 // distance (main.ts starts it at 45 m): its blades stay a few pixels wide there (`grass`), so MSAA
-// resolves their edges within a frame, with no history to ghost or soften. At native 4K, MSAA held
-// the frame's flicker and sharpness within about 5 % of the many-sample reference from 40 to 55 m
-// (one sample a pixel: a fifth to a third more flicker and grain), and 1440p with MSAA looked
-// nearly the same at 1:1, a little softer, for about seven tenths of native 4K's GPU time; `taau`
-// at 1440p softened the meadow to about four fifths of the reference's sharpness.
+// resolves their edges within a frame, with no history to ghost or soften. Measured at 4K output:
+// at native 4K, MSAA held the frame's flicker and sharpness within about 5 % of the many-sample
+// reference from 40 to 55 m (one sample a pixel: a fifth to a third more flicker and grain), and
+// 1440p with MSAA, upscaled to 4K, looked nearly the same at 1:1, a little softer, for about seven
+// tenths of native 4K's GPU time; `taau` at 1440p softened the meadow to about four fifths of the
+// reference's sharpness.
 //
 // Parked tiers (`PARKED_QUALITY`: medium, low) slowed every line of work down, so until they are
 // revived as their own milestone they are out of the default choice (no GPU timing picks them), the
@@ -76,11 +78,13 @@ export const ACTIVE_QUALITY: ReadonlyArray<QualityTier> = QUALITY_TIERS.filter( 
 export type RenderScaleRule =
 	// a fixed budget of rendered pixels (the scale follows the window's size)
 	| { budget: number }
-	// dynamic resolution: from `max` (capped by the display's own ratio) down to `floorShare` of the
-	// canvas's pixel ratio (the output's linear resolution) in `step`s, steered by the GPU's frame
-	// time (post/DynamicResolution.ts); a share keeps a 1x display's floor below its maximum. A load,
-	// a paused page and a pinned one render at the baseline, `baselineShare` of the maximum.
-	| { dynamic: { max: number; baselineShare: number; floorShare: number; step: number } };
+	// dynamic resolution: from `max` (capped by the display's own ratio) down to the ratio that renders
+	// `floor` pixels in `step`s, steered by the GPU's frame time (post/DynamicResolution.ts). A load,
+	// a paused page and a pinned one render at the ratio that renders `baseline` pixels, capped by
+	// the maximum. Pixel counts rather than shares of the display's ratio, so a frame costs about
+	// the same on any display; the floor is at most `floorShare` of the maximum per axis, which keeps
+	// a small display's floor below its maximum (post/RenderScale.ts `dynamicRange`).
+	| { dynamic: { max: number; baseline: number; floor: number; floorShare: number; step: number } };
 
 /** The temporal resolve's settings (taa and taau; read once as the resolve is built). */
 export interface TemporalSettings {
@@ -218,7 +222,9 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 	high: {
 		aa: 'msaa',
 		taa: { ...TAA },
-		render: { dynamic: { max: 2, baselineShare: 2 / 3, floorShare: 0.5, step: 0.05 } },
+		// 2K's pixels at the baseline (the standard renders natively, a 4K display at 1440p) and 1080p's
+		// at the floor; a display of 1080p or fewer pixels drops at most a quarter per axis
+		render: { dynamic: { max: 2, baseline: 2560 * 1440, floor: 1920 * 1080, floorShare: 0.75, step: 0.05 } },
 		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { hazeGrid: { width: 160, height: 90, depth: 64 } },
 		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH },

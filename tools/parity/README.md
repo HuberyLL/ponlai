@@ -92,7 +92,7 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
 ## Views (views.mjs)
 
 All paused at `t=12`, at the tier's own pixel ratio (no `dpr`): on high, 1728x1117 CSS at DPR 2
-renders 2592x1675 and FSR 1 brings it to 3456x2234. Placements derive from the island mesh's
+renders 2K's pixel count, 2388x1543, and FSR 1 brings it to 3456x2234. Placements derive from the island mesh's
 bounds, the meadow's flowering plants and the tufts at the cliff's edge, the islander and the sun and moon,
 so they follow any tile layout.
 
