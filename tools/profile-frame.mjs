@@ -13,12 +13,12 @@
 // with more than a quarter of its slices contended is marked contended (see annotateLoads;
 // `--load-timeline off` turns it off).
 //
-//   node tools/profile-frame.mjs [url] [--scenes a,b | --scene a] [--w 1920 --h 1080 --scale 2]
+//   node tools/profile-frame.mjs [url] [--scenes a,b | --scene a] [--w 2560 --h 1440 --scale 1]
 //        [--quality high] [--timestamps on|off|both|auto] [--warmup s] [--seconds 7] [--orbit 3]
 //        [--eval "js"] [--repeat n] [--shots] [--detail] [--raw] [--out dir] [--label name]
 //        [--q "extra=url&options"] [--hooks off] [--world-cache off] [--idle-threshold 15] [--idle-wait s] [--contended]
 //        [--load-timeline off]
-//        [--mode page | reload] [--fresh] [--vsync] [--accept [--target 16.7] [--strict]] [--scales 1.5,1.25,1]
+//        [--mode page | reload] [--fresh] [--vsync] [--accept [--target 16.7] [--strict]] [--scales 1,0.9,0.75]
 //        [--scale-settle s] [--drs-store] [--frame-fallback] [--preload-wait 60] [--display [--motion user | orbit | none]]
 //        [--hang 180] [--scale-log] [--unpinned]
 //   node tools/profile-frame.mjs --compare urlA urlB [--eval-a "js"] [--eval-b "js"] [--scenes ...]
@@ -30,10 +30,12 @@
 //   node tools/profile-frame.mjs --list
 //
 // The reference is a production build (`npm run build && npm run preview`, port 5191, the
-// default url); the dev server works for quick checks. The default viewport is a generic 4K
-// display (1920x1080 CSS at DPR 2). High is timed at its standard by default (src/Quality.ts:
-// 1440p with MSAA at 4K output): its render scale pinned at two thirds of the viewport's ratio
-// (`dpr=1.3333333333333333` added to the query), so profiles and --compare measure the level every trade-off is judged at;
+// default url); the dev server works for quick checks. The default viewport is a generic 2K
+// display (2560x1440 CSS at DPR 1). High is timed at its standard by default (src/Quality.ts: 2K
+// output rendered natively with MSAA): its render scale pinned at the dynamic rule's baseline for
+// the viewport (`dpr=1` added to the query at the default; `dpr=1.3333333333333333`, 1440p, for
+// `--w 1920 --h 1080 --scale 2`, a 4K display; src/post/RenderScale.ts `dynamicRange`), so
+// profiles and --compare measure the level every trade-off is judged at;
 // `--unpinned` leaves the tier's own rule (a dynamic one steering) (to see where it
 // settles, with --scale-settle and --scale-log). --accept, --display, --scales and a dpr of the
 // url's or --q's own are never pinned. Chrome comes from CHROME_PATH, else the system Chrome, else
@@ -136,7 +138,7 @@
 //   passes and no GPU hitches (its headroom under the frame): `--timestamps both` runs every scene
 //   twice as before, `off` never with timestamps.
 //   Headless 60 Hz does not show how a faster display paces the frames (see --display).
-// - scales (`--scales 1.5,1.25,1`): the run once per render scale (the page's `dpr` option), in one
+// - scales (`--scales 1,0.9,0.75`): the run once per render scale (the page's `dpr` option), in one
 //   invocation, with a table of every scene at every scale (for the threshold where a scene holds
 //   60 Hz, and the settle points of a dynamic resolution). The url and `--q` must not set `dpr`
 //   themselves (the page reads the first of a repeated option); a scale above the display's pixel
@@ -240,6 +242,8 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { withGpuLock, leaseGpuLock, waitForIdleGpu, gpuClients, sampleGpuUtilisation } from './gpu-lock.mjs';
 import { announceHeadedRun, requireDisplayAllowed } from './display-gate.mjs';
+import { QUALITY as QUALITY_TABLE } from '../src/Quality.ts';
+import { dynamicRange, OUTPUT_PIXEL_RATIO_CAP } from '../src/post/RenderScale.ts';
 import { startLoadTimeline, markSlices, windowLoad } from './load-timeline.mjs';
 
 // ------------------------------------------------------------------ options
@@ -299,7 +303,7 @@ if ( MOTION === 'user' && ! DISPLAY ) throw new Error( '--motion user drives a h
 const MODE = opt( 'mode', 'page' );
 if ( ! [ 'page', 'reload' ].includes( MODE ) ) throw new Error( '--mode page | reload' );
 const TOGGLE = opt( 'toggle', '' );
-const W = Number( opt( 'w', 1920 ) ), H = Number( opt( 'h', 1080 ) ), SCALE = Number( opt( 'scale', 2 ) );
+const W = Number( opt( 'w', 2560 ) ), H = Number( opt( 'h', 1440 ) ), SCALE = Number( opt( 'scale', 1 ) );
 const QUALITY = opt( 'quality', 'high' );
 // warm-up after a load (reload mode) or a scene switch (page modes, which also wait for compiles)
 const WARMUP = Number( opt( 'warmup', MODE === 'reload' ? 3 : 1.5 ) ), SECONDS = Number( opt( 'seconds', DISPLAY ? 20 : 7 ) ), ORBIT = Number( opt( 'orbit', 3 ) );
@@ -358,7 +362,7 @@ if ( ACCEPT && TIMESTAMP_MODE === 'on' ) throw new Error( '--accept judges the f
 if ( TIMESTAMP_MODE === 'auto' && ! ACCEPT ) throw new Error( '--timestamps auto picks scenes by their acceptance verdict: it goes with --accept' );
 // --scales: render scales (the page's dpr option) to sweep in one invocation
 const SCALES = opt( 'scales', '' ).split( ',' ).map( ( x ) => x.trim() ).filter( Boolean ).map( Number );
-if ( SCALES.some( ( x ) => ! ( x > 0 ) ) ) throw new Error( '--scales takes a list of positive numbers, e.g. 1.5,1.25,1' );
+if ( SCALES.some( ( x ) => ! ( x > 0 ) ) ) throw new Error( '--scales takes a list of positive numbers, e.g. 1,0.9,0.75' );
 // --hooks off: no ?profile, frame intervals only (to check what the hooks cost, or a build without them)
 const HOOKS = opt( 'hooks', 'on' ) !== 'off';
 // GPU utilisation (%) above which something outside the run is rendering, and how long to wait
@@ -399,15 +403,16 @@ if ( DISPLAY ) requireDisplayAllowed( 'profile-frame --display' );
 if ( ( ACCEPT || SCALES.length ) && ( COMPARE || TOGGLE ) ) throw new Error( '--accept and --scales are for profile runs, not --compare or --toggle' );
 // the page reads the first of a repeated option, so a dpr in the url or --q would win over --scales
 if ( SCALES.length && [ new URL( URL_A ).search.slice( 1 ), EXTRA_Q ].some( ( q ) => new URLSearchParams( q ).has( 'dpr' ) ) ) throw new Error( '--scales sets the dpr option itself: remove dpr from the url and --q' );
-// High's standard pin: a profile or --compare of high times at its standard (src/Quality.ts: 1440p,
-// two thirds of the display's ratio, 4/3 at the default 1920x1080@2), its render scale pinned by the page's `dpr`, so
-// every run measures the level trade-offs are judged at.
+// High's standard pin: a profile or --compare of high times at its standard (src/Quality.ts: 2K's
+// pixel count, the baseline of its dynamic rule for the viewport: 1 at the default 2560x1440@1, 4/3
+// at 1920x1080@2), its render scale pinned by the page's `dpr`, so every run measures the level
+// trade-offs are judged at.
 // `--unpinned` leaves the dynamic resolution steering (where it settles); --accept (the frame rate
 // a player sees), --display, --scales and a dpr in the url or --q are never pinned.
 const UNPINNED = flags.has( '--unpinned' );
 const BASELINE_DPR = QUALITY === 'high' && ! UNPINNED && ! ACCEPT && ! DISPLAY && ! SCALES.length &&
 	! [ new URL( URL_A ).search.slice( 1 ), COMPARE ? new URL( COMPARE[ 1 ] ).search.slice( 1 ) : '', EXTRA_Q ].some( ( q ) => new URLSearchParams( q ).has( 'dpr' ) )
-	? String( Math.min( SCALE, 2 ) * 2 / 3 ) : '';
+	? String( dynamicRange( W, H, SCALE, QUALITY_TABLE.high.render, OUTPUT_PIXEL_RATIO_CAP ).baseline ) : '';
 const OUT = opt( 'out', path.join( 'artifacts/perf', LABEL ) );
 // The page's remembered dynamic scale (`drsStore`): an A/B (--compare) or an acceptance run turns it
 // off (`drsStore=off`), so neither side starts from a scale the other, or an earlier run, settled at;
