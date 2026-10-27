@@ -26,7 +26,9 @@ import { waveDamping } from './WaveDamping.ts';
 import type { Shared } from '../shared.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
 import { rainRippleGradient } from '../weather/Rain.ts';
-import { ISLAND_TOP, type Bounds } from '../world/WorldShapes.ts';
+import { ISLAND_TOP, LAND_REACH, type Bounds } from '../world/WorldShapes.ts';
+import { GROWTH } from '../world/IslandGrowth.ts';
+import { FAR_HALF } from '../world/SeabedTile.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { REFERENCE_SPEED } from '../weather/Wind.ts';
 import { motionNode, motionState, motionUniforms, outputStruct, reactiveUniforms } from '../post/Motion.ts';
@@ -71,7 +73,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 // Kept of our own: the grid and its skirt, the waves' damping by the shore (the vertex stage), the
 // rocky shore's reflected wave and the foam the waves leave on it (ShoreWaves), the reflection march with its box and the cliff foot's
 // lifted hit (traceSSR), the soft line where the surface cuts the rock, the motion vectors, the
-// rain's ripples and the storm's foam (parked weathers).
+// rain's ripples and the storm's foam (parked weathers), and the open sea's deepening past the
+// shelf (OPEN_DEEPENING), which fades the floor's light out before the far floor's edge.
 // The sea continues to the horizon (a skirt around the wave grid, SKIRT_RADIUS); the camera's far
 // plane and the sky-depth thresholds (-9e4; the resolved sky is -1e5) stay beyond it.
 //
@@ -108,6 +111,25 @@ type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 type M4 = THREE.Node<'mat4'>;
 type B = THREE.Node<'bool'>;
+
+// The open sea beyond the island's shelf is taken to be deep. Its floor is drawn at an even depth
+// of some ten metres out to the far floor's square edge (SeabedTile.ts FAR_HALF), and the water
+// shows a floor that shallow plainly, so where the floor stopped the edge ran across the sea as a
+// straight line: the floor-lit water inside it, the open water's colour outside. The water now adds
+// this much depth to its path to the floor, over a rounded square round the world's centre (a
+// 4-norm, so its contours have no straight runs): none out to the land lattice's corner and
+// LAND_REACH past it, where no grown island's shelf reaches, and the full depth from 16 m inside the
+// far floor's edge, where the floor's light is absorbed all but entirely, so the edge no longer
+// shows, and the shallows fade into deep water in between. The floor's mesh is not lowered: the
+// opaque image holds the floor as the eye sees it straight, without refraction, and a floor that
+// fell away faster than the view's slant left no image of itself behind the shelf's lip, so the
+// refracted lookups found nothing there and drew the lip as a hard line instead.
+const OPEN_DEEPENING = {
+	from: GROWTH.half * Math.SQRT2 ** 0.5 + LAND_REACH, // the lattice's corner: ( 2 ** 0.25 ) * half
+	to: FAR_HALF - 16,
+	depth: 30, // m
+	left: 0.05, // the share of the light down the full depth that the fade's shape follows
+};
 
 const PI = Math.PI;
 const IOR = 1.333;
@@ -502,6 +524,17 @@ export class Water {
 		// the surface's height over the mean sea (the waves and the rock's reflected wave): the crests
 		const vWaveH = varying( displaced.y.sub( shared.waterLevel ) );
 		const floorHeight = ( p: V2 ) => texture( seabedHeight, fieldUV( p ) ).level( float( 0 ) ).r;
+		// How much deeper the open sea is taken to be than its floor at xz (m): OPEN_DEEPENING.
+		// The depth grows as the light it lets through falls in a smoothstep (Beer-Lambert: the depth
+		// is the log of that share), so the fade spreads over the whole way rather than happening in
+		// its first metres.
+		const openDeepening = ( p: V2 ) => {
+
+			const p2 = p.mul( p );
+			const s = smoothstep( OPEN_DEEPENING.from, OPEN_DEEPENING.to, sqrt( sqrt( dot( p2, p2 ) ) ) );
+			return log2( float( 1 ).sub( s.mul( 1 - OPEN_DEEPENING.left ) ) ).mul( OPEN_DEEPENING.depth / Math.log2( OPEN_DEEPENING.left ) );
+
+		};
 		const windSpeed = shared.wind.breeze.mul( REFERENCE_SPEED );
 		const FINE = fft.cascades - 1;
 		const sum = <T extends F | V2 | V3 | V4>( terms: T[] ) => terms.reduce( ( a, b ) => ( a as V4 ).add( b ) as unknown as T );
@@ -1006,7 +1039,9 @@ export class Water {
 			} );
 			// what stands in front of the floor (stones, the cliff's foot) shortens the path
 			const rayF = viewRay( uvF, cameraProjectionMatrixInverse ).toVar();
-			const pathLen = clamp( min( Lter, length( rayF.mul( zF.div( rayF.z ) ).sub( posV ) ) ), 0, 400 ).toVar();
+			// and off the shelf the water deepens (OPEN_DEEPENING) the path down the refracted ray
+			const deepening = openDeepening( wp.xz.add( Tv.xz.mul( Lend ) ) ).div( tDown );
+			const pathLen = clamp( min( Lter, length( rayF.mul( zF.div( rayF.z ) ).sub( posV ) ) ).add( deepening ), 0, 400 ).toVar();
 
 			// ---- the water body: Beer-Lambert absorption along the path, and the sun and the sky
 			// scattered into it analytically (single scattering, Henyey-Greenstein, and a multiple
