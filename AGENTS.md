@@ -18,6 +18,8 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 
 - TypeScript (strict), Vite, three.js `WebGPURenderer` (`three/webgpu`, `three/tsl`). WebGPU is
   required (the ocean FFT runs on compute shaders); without it the page shows a message.
+- The game's simulation moves its rigid bodies with Rapier's deterministic build
+  (`@dimforge/rapier3d-deterministic-compat`, pinned exactly: its snapshot is part of the save).
 - `npm run dev` (port 5190), `npm run build` (type-checks, then bundles), `npm run typecheck`,
   `npm run preview` (port 5191). URL options and in-page keys: `docs/tools.md`.
 - The tools are in `tools/`, their manual in `docs/tools.md` (Which tool for which question). The
@@ -121,11 +123,12 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 - `src/game/`: the game behind `?game` (`Game.ts`, which also drives the island's growth by the
   population through `world/Growth.ts`): `sim/` is the headless simulation (no three.js or DOM;
   node runs it by stripping types; the other islanders as places, hearing, giving and following,
-  in `sim/people.ts`), `save.ts` is the save (one slot: the simulation's state and the
+  in `sim/people.ts`; the things on the ground in `sim/things.ts`, moved by the simulation's
+  physics world in `sim/physics.ts`), `save.ts` is the save (one slot: the simulation's state and the
   record, versioned: a save of another version is set aside and a new game started; the world's
   start reads its piece count),
   `view/`
-  draws the islanders and the chest, `Chronicle.ts` keeps the record of what happened and
+  draws the islanders, the chest and the things on the ground (`view/ThingsView.ts`), `Chronicle.ts` keeps the record of what happened and
   `Placement.ts` places a building chosen in the build bar. `ui/` is the player's interface
   (`GameUi.ts`, spec `docs/ui.md`): its parts (`TopRow.ts`, `Forecast.ts`, `ResourceRow.ts`,
   `People.ts`, `SpeakBar.ts`, `BuildBar.ts`, `Record.ts`), the lists it shows as data with

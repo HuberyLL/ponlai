@@ -133,8 +133,9 @@ items with their own options, never a new action.
   the body's job, not the mind's. A person moves, so the body keeps after them until it is beside
   them.
 - `do` runs one of the actions the islander's current place offers (fish at the shore, put
-  in or take out at the chest, build at a construction site). Fishing is an option of a place,
-  not a verb of the islander. Where several places are at hand, `do` may name the one it means.
+  in or take out at the chest, build at a construction site, drop on the ground, take a thing
+  lying beside them). Fishing is an option of a place, not a verb of the islander. Where several
+  places are at hand, `do` may name the one it means.
 - `use` uses an item the islander carries (eat a fish), and spends it.
 - A new action replaces the one under way; stopping is not an action. `say` is the exception:
   speech comes from the mind, like thinking, so the islander talks while the body goes on.
@@ -175,6 +176,21 @@ is a place that moves, and offers its options to whoever stands beside them.
   caught goes into the bag; a full bag refuses it.
 - A chest is a place that holds more; the islander puts in and takes out there.
 
+### Things on the ground
+
+- What leaves a bag for the ground is a thing of its own: one fish here, another there, never a
+  pile or a count at a spot. It falls, rolls and comes to rest where real rigid-body physics
+  leaves it, worked out inside the simulation, so where a thing lies is part of the world and of
+  the save, the same on every run.
+- The ground is a place at hand wherever one can walk: `do( drop )` lets items fall from the
+  hands, a little ahead of the islander. Each thing is a place of its own, named by its item and
+  a count (fish3), that offers `take` to whoever stands beside it while their bag has room; one
+  still rolling can be taken, and `go` to one that rolls away keeps after it.
+- A death drops the whole bag where the islander stood, and a catch the bag cannot hold falls at
+  the islander's feet. The islanders, the buildings and the ground are bodies too: a walker
+  pushes a fish aside, a fish lies against a chest. What rolls off the island falls into the sea
+  and is gone.
+
 ### Needs
 
 Satiety and hydration, 0 to 100, fall with time and rise when the islander eats or drinks. They
@@ -191,7 +207,7 @@ An islander perceives what a person would, not the world's state:
 
 - **seen**: the places, people and things in sight, and what shows on them (a site's progress, a
   chest's contents while at it; a person's name, age and what they are doing, never their needs
-  or bag), with no positions or distances;
+  or bag; a thing on the ground by its id and item), with no positions or distances;
 - **at hand**: the place they stand at, and so which `do` options are open;
 - **noticed**: what others did to them since their last thought: the words heard, what was handed
   to them;

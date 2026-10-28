@@ -1,6 +1,7 @@
 // The islanders' bodies by age and sex, as growth curves relative to the adult of the same sex:
 // keyed values, linearly interpolated, so that a child grows and an elder ages smoothly. Pure
-// numbers, no three.js, so the simulation can read them too. A figure takes them on its rig in
+// numbers, no three.js, so the simulation can read them too (its bodies' statures, `heightAt`:
+// sim/physics.ts). A figure takes them on its rig in
 // FigureAge.ts (the bones' proportions solved from the shares of the height below, the shape keys
 // weighted, the elder's stoop).
 //
