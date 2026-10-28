@@ -1,6 +1,7 @@
 import type { WeatherName } from '../../../sky/Weather.ts';
 import type { RecordEntry } from '../../Chronicle.ts';
 import { lookup, t } from '../i18n/i18n.ts';
+import { itemName } from './words.ts';
 
 // The kinds of entry the record (沧海录) shows (docs/ui.md, 沧海录): how each reads as a row of the
 // day's log, and the mark it puts over its day on the river. The game keeps the entries
@@ -45,6 +46,11 @@ export const RECORD_KINDS: Readonly<Record<string, RecordKind>> = {
 		deed: ( e, n, mine ) => t( 'record.deed.need', { who: n.person( e.who ), need: needWords( e.text ?? '' ), ...own( mine ) } ) },
 	placed: { id: 'placed', rank: 9, deed: ( e, n ) => t( 'record.deed.placed', { building: n.building( e.text ?? '' ) } ) },
 	said: { id: 'said', rank: 9, words: true, deed: ( e ) => e.text ?? '' },
+	// one islander handing another something (no mark: it logs)
+	gave: { id: 'gave', rank: 9, deed: ( e, n, mine ) => t( 'record.deed.gave', {
+		who: n.person( e.who ), to: n.person( Array.isArray( e.to ) ? e.to[ 0 ] : '' ), count: e.count ?? 1,
+		unit: lookup( `unit.${ e.text ?? '' }`, '' ), item: itemName( e.text ?? '' ), ...own( mine ),
+	} ) },
 };
 
 /** Several landings on one day read as one mark over it on the island's page: N人登岛. */

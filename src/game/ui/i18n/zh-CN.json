@@ -44,11 +44,15 @@
 	"item": {
 		"fish": "鱼"
 	},
+	"unit": {
+		"fish": "条"
+	},
 	"place": {
 		"shore": "海边"
 	},
 	"doing": {
 		"go": "去{{place}}",
+		"goTo": "去{{place}}那儿",
 		"wait": "歇着",
 		"walk": "走动",
 		"think": "在想",
@@ -57,7 +61,8 @@
 			"fish": "钓鱼",
 			"build": "盖{{place}}",
 			"put": "往{{place}}里放东西",
-			"take": "从{{place}}里拿东西"
+			"take": "从{{place}}里拿东西",
+			"follow": "跟着{{place}}"
 		}
 	},
 	"tag": {
@@ -155,7 +160,9 @@
 			"built": "{{building}}建成",
 			"need": "{{who}}　{{need}}",
 			"need_own": "{{need}}",
-			"placed": "{{building}}定址"
+			"placed": "{{building}}定址",
+			"gave": "{{who}}　给{{to}} {{count}} {{unit}}{{item}}",
+			"gave_own": "给{{to}} {{count}} {{unit}}{{item}}"
 		},
 		"need": {
 			"satiety": "饥饿",
