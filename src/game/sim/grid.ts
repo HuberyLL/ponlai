@@ -1,5 +1,6 @@
 import { buildFootprint, islandSurfaceHeight } from '../../world/WorldShapes.ts';
 import { GROWTH, type LandLattice } from '../../world/IslandGrowth.ts';
+import { planar } from './maths.ts';
 import type { Cell, GridApi, IslandInput, Vec2 } from './types.ts';
 
 // The ground grid: 0.5 m cells over the land lattice's whole extent, anchored to the world, so a
@@ -210,8 +211,8 @@ export class Grid implements GridApi {
 			if ( best >= 0 && this.g[ c ] > bestD ) break;
 			if ( fits( c ) ) {
 
-				const d = Math.hypot( this.centreX( c ) - cx, this.centreZ( c ) - cz );
-				if ( best < 0 || d < Math.hypot( this.centreX( best ) - cx, this.centreZ( best ) - cz ) ) best = c;
+				const d = planar( this.centreX( c ) - cx, this.centreZ( c ) - cz );
+				if ( best < 0 || d < planar( this.centreX( best ) - cx, this.centreZ( best ) - cz ) ) best = c;
 				bestD = this.g[ c ];
 				continue;
 
@@ -253,7 +254,7 @@ export class Grid implements GridApi {
 
 			if ( ! this.inBounds( i, j ) ) continue;
 			const cx = this.x0 + ( i + 0.5 ) * CELL, cz = this.z0 + ( j + 0.5 ) * CELL;
-			if ( Math.hypot( cx - x, cz - z ) <= r ) this.open[ j * this.cols + i ] = 0;
+			if ( planar( cx - x, cz - z ) <= r ) this.open[ j * this.cols + i ] = 0;
 
 		}
 

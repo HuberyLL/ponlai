@@ -6,6 +6,7 @@ import { Grid, topOf } from './grid.ts';
 import { fallNeeds, START_NEEDS } from './needs.ts';
 import { findPath, goalAt } from './path.ts';
 import { BUILDING_KINDS, blueprintRefusal, newBuilding } from './buildings.ts';
+import { direction, planar } from './maths.ts';
 import { obstructPlaces } from './places.ts';
 import { random } from './rng.ts';
 import { ageOf, drawLifespan, paceOf } from './life.ts';
@@ -51,7 +52,9 @@ const NAMES: Readonly<Record<Sex, readonly string[]>> = {
 // the ages of the islanders a game starts with, and of those the debug panel adds (years)
 const GROWN = [ 20, 35 ] as const;
 // islanders after the first stand round the island's middle a golden angle apart
-const GOLDEN_ANGLE = Math.PI * ( 3 - Math.sqrt( 5 ) );
+// the golden angle's cosine and sine (π ( 3 − √5 ) rad), as literals: each new islander starts a
+// golden turn on from the last, turned with exact operations (maths.ts)
+const GOLDEN_COS = - 0.7373688780783197, GOLDEN_SIN = 0.6754902942615238;
 
 export class Sim {
 
@@ -138,8 +141,9 @@ export class Sim {
 		const state = this.state, grid = this.grid, n = state.villagers.length;
 		const sex = body.sex ?? ( this.random() < 0.5 ? 'male' : 'female' );
 		const age = body.age ?? GROWN[ 0 ] + ( GROWN[ 1 ] - GROWN[ 0 ] ) * this.random();
-		const a = n * GOLDEN_ANGLE;
-		const k = grid.nearestOpen( grid.indexAt( Math.cos( a ) * 1.5, Math.sin( a ) * 1.5 ), 40, grid.main );
+		let rx = 1, rz = 0;
+		for ( let i = 0; i < n; i ++ ) [ rx, rz ] = [ rx * GOLDEN_COS - rz * GOLDEN_SIN, rx * GOLDEN_SIN + rz * GOLDEN_COS ];
+		const k = grid.nearestOpen( grid.indexAt( rx * 1.5, rz * 1.5 ), 40, grid.main );
 		if ( k < 0 ) throw new Error( 'No open ground near the island\'s centre' );
 		const p = grid.centreOf( k );
 		const count = n + state.dead.length;
@@ -147,7 +151,7 @@ export class Sim {
 		const id = `v${ count + 1 }`;
 		state.villagers.push( {
 			id, name, look: count, sex, born: state.tick - Math.round( age * SECONDS_PER_YEAR ), lifespan: drawLifespan( state, sex, age ),
-			pos: { ...p }, prev: { ...p }, heading: Math.atan2( - p.x, - p.z ), path: null,
+			pos: { ...p }, prev: { ...p }, facing: direction( - p.x, - p.z ) ?? { x: 0, z: 1 }, path: null,
 			needs: { ...START_NEEDS }, bag: {}, action: null, last: null, said: null, gave: null, noticed: [],
 		} );
 		return id;
@@ -295,8 +299,8 @@ export class Sim {
 
 			const wp = path[ 0 ];
 			const dx = wp.x - v.pos.x, dz = wp.z - v.pos.z;
-			const d = Math.hypot( dx, dz );
-			if ( d > 1e-9 ) v.heading = Math.atan2( dx, dz );
+			const d = planar( dx, dz );
+			if ( d > 1e-9 ) v.facing = { x: dx / d, z: dz / d };
 			if ( d <= left ) {
 
 				v.pos.x = wp.x;

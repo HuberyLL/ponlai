@@ -1,5 +1,6 @@
 import { paceAt } from '../../characters/Ages.ts';
 import type { Sex } from '../../characters/Ages.ts';
+import { exp, log } from './maths.ts';
 import { random } from './rng.ts';
 import type { RngState } from './rng.ts';
 import { SECONDS_PER_YEAR } from './types.ts';
@@ -42,7 +43,7 @@ export function paceOf( v: Pick<Villager, 'born'>, tick: number ): number {
 export function drawLifespan( state: RngState, sex: Sex, age: number ): number {
 
 	const { mode, growth } = GOMPERTZ[ sex ];
-	const e = - Math.log( 1 - random( state ) );
-	return Math.log( Math.exp( growth * age ) + Math.exp( growth * mode ) * e ) / growth;
+	const e = - log( 1 - random( state ) );
+	return log( exp( growth * age ) + exp( growth * mode ) * e ) / growth;
 
 }

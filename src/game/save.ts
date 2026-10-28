@@ -29,7 +29,7 @@ export const SAVE_KEY = 'ponlai.game';
 export const UNREAD_KEY = 'ponlai.game.unread';
 
 /** the save's shape this build writes */
-export const SAVE_VERSION = 20;
+export const SAVE_VERSION = 21;
 
 export interface SaveFile {
 	version: number;

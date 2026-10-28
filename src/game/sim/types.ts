@@ -57,8 +57,8 @@ export interface Villager {
 	/** world position (m) now and at the previous tick, for interpolation */
 	pos: Vec2;
 	prev: Vec2;
-	/** facing in radians, atan2( dx, dz ): the scene's yaw convention */
-	heading: number;
+	/** the way it faces, a unit vector in the ground plane (the view takes its yaw, atan2( x, z )) */
+	facing: Vec2;
 	/** waypoints still ahead while walking; null while standing */
 	path: Vec2[] | null;
 	/** 0..100 each (needs.ts) */

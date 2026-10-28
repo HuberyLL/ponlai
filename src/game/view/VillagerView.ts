@@ -105,14 +105,15 @@ export class VillagerView implements TrampleWalker {
 		const x = v.prev.x + ( v.pos.x - v.prev.x ) * alpha;
 		const z = v.prev.z + ( v.pos.z - v.prev.z ) * alpha;
 		const y = grid.height( x, z );
+		const heading = Math.atan2( v.facing.x, v.facing.z );
 		if ( Number.isNaN( this.heading ) ) {
 
 			// a new view (a game just started or loaded) shows the pose at once, paused or not
-			this.heading = v.heading;
+			this.heading = heading;
 
 		} else if ( gameDt > 0 ) {
 
-			const d = Math.atan2( Math.sin( v.heading - this.heading ), Math.cos( v.heading - this.heading ) );
+			const d = Math.atan2( Math.sin( heading - this.heading ), Math.cos( heading - this.heading ) );
 			this.heading += d * Math.min( 1, gameDt * 6 );
 
 		}

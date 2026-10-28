@@ -1,4 +1,5 @@
 import type { Grid } from './grid.ts';
+import { planar } from './maths.ts';
 import type { Vec2 } from './types.ts';
 
 // What the game reads off the island's ground for its places (places.ts): how far each cell lies
@@ -74,7 +75,7 @@ export function cellsWithin( grid: Grid, p: Vec2, r: number ): number[] {
 
 		if ( ! grid.inBounds( i, j ) ) continue;
 		const k = j * grid.cols + i;
-		if ( Math.hypot( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) <= r ) out.push( k );
+		if ( planar( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) <= r ) out.push( k );
 
 	}
 	return out;
