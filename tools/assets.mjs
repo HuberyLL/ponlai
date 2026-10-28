@@ -23,6 +23,8 @@
 // - A published release never changes: adding, changing or removing a file cuts the next one, and
 //   the lock moves in the same commit as the code that needs it.
 // - The archive holds the whole set, so one release is one version of the game's assets.
+// - A new release takes the first number past the lock's that this machine's cache does not hold:
+//   another branch may have packed the lock's successor already, its lock not merged here yet.
 // - A release packed with --local exists only in this machine's cache until it is published: a
 //   checkout elsewhere cannot pull it, and the cache's archive must be kept until then.
 // - Downloads are cached in git's common directory (ponlai-assets/<release>/), shared by every
@@ -270,7 +272,8 @@ export function releaseAssets( root, { notes = '', attach = [], local = false } 
 	const removed = Object.keys( before ).filter( ( n ) => ! ( n in files ) );
 	if ( old && added.length + changed.length + removed.length === 0 ) throw new Error( `public/ matches ${ old.release }: nothing to release` );
 
-	const version = old ? Number( old.release.match( TAG )[ 1 ] ) + 1 : 1;
+	let version = old ? Number( old.release.match( TAG )[ 1 ] ) + 1 : 1;
+	while ( existsSync( join( cacheRoot( root ), `assets-v${ version }` ) ) ) version ++;
 	const release = `assets-v${ version }`;
 	const repo = old ? old.repo : originRepo( root );
 	const dir = join( cacheRoot( root ), release );
