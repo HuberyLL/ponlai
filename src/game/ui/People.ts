@@ -28,11 +28,13 @@ import { Space } from './Space.ts';
 //   both side by side, satiety on the left.
 // - Thinking (a thought in flight, Sim.thinking, after hearing the player): the characters heard
 //   circle the head, at most six at a time, the whole line taking turns as each passes behind the
-//   head; words heard meanwhile wait for the next thought.
+//   head; words heard meanwhile wait for the next thought. Only a brain that hears keeps the
+//   characters that land (Game.hears): the stand-in's islanders hear none.
 // - Speaking (Villager.said changed): the characters pop out of the mouth one at a time, each
 //   swinging open to face the viewer, sized by the figure's size on screen; the line holds 2.5 s
 //   and 0.3 s a character, then melts away one by one, each turning aside as it rises. A line still
-//   showing melts first.
+//   showing melts first (MELT), and the new one comes out as it goes; a line said before the new one
+//   came out takes its place.
 //
 // What belongs to the islander's world stands in it: the ring lies on the ground at the feet (its
 // points on the land, seen through the camera each frame, the near side the heavier); the
@@ -90,6 +92,8 @@ interface Mark {
 	thinkChars: HTMLSpanElement[];
 	talkBox: HTMLElement;
 	talk: Talk | null;
+	/** the line before it, melting until the new one comes out */
+	leaving: Talk | null;
 	/** the line last shown (Villager.said: each line said is a new object, whatever the tick) */
 	said: Villager[ 'said' ];
 	/** characters heard (landed from the speak bar), each with the line it came in */
@@ -183,17 +187,18 @@ export class People {
 
 	}
 
-	/** A character of the player's `line` (UiShared.lines) has sunk into an islander's head: it is heard. */
+	/** A character of the player's `line` (UiShared.lines) has sunk into an islander's head: it is
+	 * heard, by a brain that hears. */
 	hear( id: EntityId, c: string, line: number ): void {
 
 		const m = this.marks.get( id );
-		if ( m && ! /[，。！？、；：,.!?;:\s]/.test( c ) ) m.heard.push( { c, line } );
+		if ( m && this.shared.game.hears() && ! /[，。！？、；：,.!?;:\s]/.test( c ) ) m.heard.push( { c, line } );
 
 	}
 
 	update(): void {
 
-		const shared = this.shared, sim = shared.game.sim, frame = ++ this.frame;
+		const shared = this.shared, sim = shared.game.sim, frame = ++ this.frame, hears = shared.game.hears();
 		// the interface's size in its own pixels (the window's, over its scale)
 		const w = innerWidth / shared.k, h = innerHeight / shared.k;
 		this.space.update( w, h );
@@ -213,6 +218,8 @@ export class People {
 			flag( m.talkBox, 'hidden', ! m.shown );
 			if ( m.shown ) css( m.root, 'transform', `translate(${ m.x.toFixed( 1 ) }px,${ m.y.toFixed( 1 ) }px)` );
 			this.alerts( m, v.needs, selected );
+			// (a brain that does not hear, put in its slot, keeps nothing heard for the next that does)
+			if ( ! hears && m.heard.length > 0 ) m.heard = [];
 			this.thinking( m, sim.thinking( v.id ) );
 			this.talking( m, v );
 			if ( selected && m.shown ) {
@@ -250,7 +257,7 @@ export class People {
 		const thinkChars: HTMLSpanElement[] = [];
 		for ( let i = 0; i < THINK_SLOTS; i ++ ) thinkChars.push( el( 'span', 'pl-glyph', think ) );
 		const talkBox = el( 'div', 'pl-talk', this.world );
-		return { id: v.id, root, alerts, alertIcons, think, thinkChars, talkBox, talk: null, said: v.said, heard: [], thought: null,
+		return { id: v.id, root, alerts, alertIcons, think, thinkChars, talkBox, talk: null, leaving: null, said: v.said, heard: [], thought: null,
 			shown: false, x: 0, y: 0, size: 0, head: new THREE.Vector3(), depth: 0, across: 1, upright: 1, seen: 0 };
 
 	}
@@ -434,40 +441,63 @@ export class People {
 
 	}
 
-	// Speech over the head: a new line pops out a character at a time, holds, then melts.
+	// Speech over the head: a new line pops out a character at a time, holds, then melts. A line still
+	// showing melts first, drawn as it goes until the new one comes out (`leaving`); a new line that
+	// has not come out yet gives way to a newer one, which comes out when it would have.
 	private talking( m: Mark, v: Villager ): void {
 
 		const now = this.shared.now;
 		if ( v.said !== m.said && v.said ) {
 
 			m.said = v.said;
-			const lead = m.talk && ! m.talk.out ? MELT : 0;
-			if ( m.talk && ! m.talk.out ) this.melt( m.talk );
 			const old = m.talk;
+			let start = now;
+			if ( old && now < old.start ) {
+
+				clear( old );
+				start = old.start;
+
+			} else if ( old ) {
+
+				if ( ! old.out ) {
+
+					this.melt( old );
+					start = now + MELT;
+
+				}
+				if ( m.leaving ) clear( m.leaving );
+				m.leaving = old;
+
+			}
 			const chars = Array.from( v.said.words );
-			const start = now + lead;
-			const talk: Talk = { chars: [], start, until: start + ( chars.length - 1 ) * POP_EVERY + HOLD + HOLD_PER_CHAR * chars.length, out: false, melted: 0, gone: 0 };
-			const build = () => {
-
-				old?.chars.forEach( ( s ) => s.remove() );
-				talk.chars = chars.map( ( c ) => el( 'span', 'pl-glyph', m.talkBox, c ) );
-
-			};
-			if ( lead === 0 ) build();
-			else window.setTimeout( build, lead );
-			m.talk = talk;
+			m.talk = { chars: chars.map( ( c ) => el( 'span', 'pl-glyph', m.talkBox, c ) ), start, until: start + ( chars.length - 1 ) * POP_EVERY + HOLD + HOLD_PER_CHAR * chars.length, out: false, melted: 0, gone: 0 };
 
 		}
+		if ( m.leaving && ( ! m.talk || now >= m.talk.start ) ) {
+
+			clear( m.leaving );
+			m.leaving = null;
+
+		}
+		if ( m.leaving ) this.say( m, m.leaving );
 		const talk = m.talk;
 		if ( ! talk ) return;
 		if ( ! talk.out && now >= talk.until ) this.melt( talk );
 		if ( talk.out && now >= talk.gone ) {
 
-			talk.chars.forEach( ( s ) => s.remove() );
-			if ( m.talk === talk ) m.talk = null;
+			clear( talk );
+			m.talk = null;
 			return;
 
 		}
+		this.say( m, talk );
+
+	}
+
+	// A line's characters over the head, as far as it has come out (or melted) now.
+	private say( m: Mark, talk: Talk ): void {
+
+		const now = this.shared.now;
 		if ( talk.chars.length === 0 || ! m.shown ) return;
 		// facing the viewer over the thinking ring's room (and the alerts', when they show), in lines
 		// of TALK_LINE centred and stacked upward from the last
@@ -572,6 +602,13 @@ function backOut( t: number ): number {
 
 }
 
+// a line's characters off the page
+function clear( talk: Talk ): void {
+
+	talk.chars.forEach( ( s ) => s.remove() );
+
+}
+
 /** The tag beside the selected islander. */
 class Tag {
 
@@ -651,7 +688,8 @@ class Tag {
 		text( this.doing, doing );
 		for ( const n of this.needs ) {
 
-			const value = Math.round( v.needs[ n.key ] ), critical = value <= CRITICAL_NEED;
+			// (critical as the alerts and the record read it: the need itself, not the number shown)
+			const value = Math.round( v.needs[ n.key ] ), critical = v.needs[ n.key ] <= CRITICAL_NEED;
 			text( n.num, String( value ) );
 			css( n.num, 'color', critical ? PALETTE.zhu : '' );
 			css( n.icon, 'color', critical ? PALETTE.zhu : '' );

@@ -153,7 +153,8 @@ export class GameDebug {
 
 		const sim = this.game.sim, f = this.fields;
 		const options: Record<string, EntityId> = {};
-		for ( const v of sim.state.villagers ) options[ v.name ] = v.id;
+		// (names repeat past the simulation's list of them: a repeated one is told by its id)
+		for ( const v of sim.state.villagers ) options[ Object.hasOwn( options, v.name ) ? `${ v.name } (${ v.id })` : v.name ] = v.id;
 		( this.islander as unknown as { options( o: object ): Controller } ).options( options );
 		if ( ! sim.state.villagers.some( ( v ) => v.id === f.islander ) ) f.islander = sim.state.villagers[ 0 ]?.id ?? '';
 		this.islander.updateDisplay();

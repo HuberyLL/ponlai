@@ -134,8 +134,9 @@ export class Chronicle {
 
 			if ( ! this.said.has( v.id ) ) {
 
-				// a new game's islanders land at its start; a loaded game's came before the record
-				if ( ! fresh || state.tick === 0 ) this.add( sim, { kind: 'landed', who: v.id } );
+				// a new game's islanders land at its start; a loaded game's came before the record, or are
+				// in it already (a game saved before its first tick, ?game&paused)
+				if ( ( ! fresh || state.tick === 0 ) && ! this.landed.has( v.id ) ) this.add( sim, { kind: 'landed', who: v.id } );
 				this.said.set( v.id, v.said );
 
 			}
