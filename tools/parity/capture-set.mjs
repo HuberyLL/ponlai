@@ -13,8 +13,8 @@
 //
 // Every view is the frame of `<baseUrl>?debug&paused&t=12&quality=<q>[&aa=<mode>][&<extra>]&<view's
 // query>` (the order matters: the page reads the first of a repeated option) at the given CSS size and
-// device pixel ratio (1728x1117 at 2 by default: high renders 2592x1675 and FSR 1 brings it to
-// 3456x2234), after the view's eval; it is written as `<outDir>/<view>.png`, its diagnostics and crop
+// device pixel ratio (1728x1117 at 2 by default: high renders 2K's pixel count, 2388x1543, and
+// FSR 1 brings it to 3456x2234), after the view's eval; it is written as `<outDir>/<view>.png`, its diagnostics and crop
 // anchors `<view>.json` and capture.mjs's output `<view>.log`.
 // Ad-hoc views (adhoc.mjs, whose header has the rules) instead of or beside views.mjs's, through the
 //   same path (pages, jump, readiness, --jobs, --repeat, --reference, --check, --quick):

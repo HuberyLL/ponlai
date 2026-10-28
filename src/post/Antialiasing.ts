@@ -5,8 +5,8 @@
 //
 // Modes:
 // - `msaa`: the scene multisampled 4x, the vegetation's cut-outs and thin blades by alpha to
-//   coverage, upscaled by FSR 1 when the render is below the canvas: high's, at 1440p
-//   (Quality.ts);
+//   coverage, upscaled by FSR 1 when the render is below the canvas (high's at 4K output, 1440p;
+//   at 2K output it renders natively: Quality.ts);
 // - `off`: one sample, leaves alpha-tested and grass blades dithered (`msaa=1` before);
 // - `taa`, `taau`: temporal anti-aliasing at the render's size, and temporal upsampling to the
 //   canvas: one sample, jittered, with motion vectors (Jitter.ts, Motion.ts), resolved against a

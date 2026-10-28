@@ -205,17 +205,18 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   one base node each material samples them by (`WorldFields.ts`), and other passes keep their
   materials across rebakes (`RainCollision.ts`).
 - Changes need to hold in the kept weathers only (clear, fair, cloudy, overcast), and on high only
-  (4K output: 1920x1080 CSS pixels at DPR 2). The parked weathers (rain, storm, fog:
+  (2K output: 2560x1440 CSS pixels at DPR 1). The parked weathers (rain, storm, fog:
   `PARKED_WEATHER` in `src/sky/Weather.ts`) and quality tiers (medium, low: `PARKED_QUALITY` in
   `src/Quality.ts`) are revived later as their own milestones: new work need not support them, but
   must keep them compiling and loadable by name (`?weather=`, `?quality=`). The default checks
   leave them out (`docs/tools.md`, Parked weathers, Parked quality tiers). Changes are judged at
-  high's standard: 4K output rendered at 1440p (scale 4/3, upscaled by FSR 1) with MSAA 4x at
-  60 fps, about 14 ms of GPU time a frame in the normal scenes; the dynamic resolution climbs to
-  native 4K with headroom and drops to 1080p when busy, and a paused page renders at the baseline (`src/Quality.ts`, profile-frame's default pin:
-  `docs/tools.md`, Measuring frame time).
+  high's standard: 2K output rendered natively (no upscale) with MSAA 4x at 60 fps, about 14 ms
+  of GPU time a frame in the normal scenes; the dynamic resolution keeps 2K's pixel count as its
+  baseline on any display (1440p upscaled by FSR 1 on a 4K one), climbs to the display's own ratio
+  with headroom and drops to about 1080p's pixel count when busy, and a paused page renders at the
+  baseline (`src/Quality.ts`, profile-frame's default pin: `docs/tools.md`, Measuring frame time).
 - Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
-  state. High at 4K output is the reference image, the only active tier and the one every
+  state. High at 2K output is the reference image, the only active tier and the one every
   trade-off is judged on; every default in the modules is high's. A load knob is read
   once when materials and the frame graph are built, so a change of tier reloads the page.
 - Third-party code: files adapted from another project open with a `/*! ... */` notice (project,
