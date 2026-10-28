@@ -732,3 +732,8 @@ images from them are used (the bodies' curves take a few rounded key values off 
   [*Leg length, body proportion, and health: a review with a note on beauty*](https://doi.org/10.3390/ijerph7031047)
   (International Journal of Environmental Research and Public Health 7, 2010); the stature lost
   in old age, as the Baltimore Longitudinal Study of Aging reports it.
+- The islanders' lifespans (`src/game/sim/life.ts`): Gompertz's law of mortality (Benjamin
+  Gompertz, *On the Nature of the Function Expressive of the Law of Human Mortality*,
+  Philosophical Transactions of the Royal Society 115, 1825), fitted to the old ages of Japan's
+  abridged life table for 2022, Ministry of Health, Labour and Welfare,
+  [*令和4年簡易生命表の概況*](https://www.mhlw.go.jp/toukei/saikin/hw/life/life22/index.html).

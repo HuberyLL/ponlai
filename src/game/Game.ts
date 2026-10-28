@@ -108,8 +108,6 @@ export interface GameContext {
 
 // a stalled frame (a background tab, a debugger stop) resumes without running hours at once
 const MAX_FRAME = 0.25;
-// the body of an islander the `bodies` URL option leaves out
-const ADULT: Body = { sex: 'male', age: 30 };
 // real seconds between the saves the page makes as the game runs: at most this much play is lost
 // to a crash (a hidden or closed page saves at once)
 const AUTOSAVE_SECONDS = 60;
@@ -128,7 +126,7 @@ export class Game {
 		const game = new Game( context );
 		// a new game starts at the page's hour (the `hour` URL option), on the island loaded
 		const saved = resumesSave( context.params ) ? game.savedGame( game.keeps ) : null;
-		const sim = saved?.sim ?? newGame( game.input, { startHour: game.startHour, pieces: context.pieces } );
+		const sim = saved?.sim ?? newGame( game.input, { startHour: game.startHour, pieces: context.pieces, bodies: game.bodies } );
 		// (a save stands on the world loaded for it, unless the `grow` URL option chose another)
 		sim.state.pieces = context.pieces;
 		if ( context.params.has( 'paused' ) ) sim.speed = 0;
@@ -184,8 +182,8 @@ export class Game {
 	private nextSave = 0;
 	private lastSaved = '';
 	private saveFailed = false;
-	// the islanders' bodies until the simulation keeps their sex and age: the `bodies` URL option's,
-	// in the islanders' order (Ages.ts parseBodies), the rest adult men
+	// the sexes and ages a new game's islanders start at instead of the simulation's three (the
+	// `bodies` URL option, Ages.ts parseBodies)
 	private readonly bodies: Body[];
 
 	private constructor( context: GameContext ) {
@@ -265,7 +263,7 @@ export class Game {
 		if ( this.coming ) sim.setComing( this.coming );
 		this.view?.dispose();
 		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, holdOpaque: c.holdOpaque, loadLook: c.loadLook, lookColours: c.lookColours,
-			body: ( v ) => this.bodies[ sim.state.villagers.indexOf( v as typeof sim.state.villagers[ number ] ) ] ?? ADULT,
+			body: ( v ) => ( { sex: v.sex, age: sim.age( v ) } ),
 			ticksPerSecond: () => SECONDS_PER_GAME_DAY / c.dayCycle.dayLength } );
 		this.sim = sim;
 		this.record.reset();
@@ -420,7 +418,7 @@ export class Game {
 	 * replaces the saved game at once. */
 	async startOver(): Promise<string> {
 
-		await this.begin( newGame( this.input, { startHour: this.startHour, pieces: this.sim.state.pieces } ) );
+		await this.begin( newGame( this.input, { startHour: this.startHour, pieces: this.sim.state.pieces, bodies: this.bodies } ) );
 		if ( this.keeps ) this.autosave();
 		return this.keeps ? 'New game, saved over the old one' : 'New game';
 

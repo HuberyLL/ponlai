@@ -150,6 +150,8 @@
 		"deed": {
 			"landed": "{{who}}　登岛",
 			"landed_own": "登岛",
+			"died": "{{who}}　寿终，享年 {{age}} 岁",
+			"died_own": "寿终，享年 {{age}} 岁",
 			"built": "{{building}}建成",
 			"need": "{{who}}　{{need}}",
 			"need_own": "{{need}}",

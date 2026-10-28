@@ -56,7 +56,7 @@ export class UiShared {
 	/** A building's name by the simulation's kind (the roster's row that places it). */
 	readonly buildingName = ( kind: string ): string => this.roster.find( ( r ) => r.kind === kind )?.name ?? kind;
 
-	/** An islander's name by id. */
-	readonly personName = ( id: string ): string => this.game.sim.villager( id )?.name ?? id;
+	/** An islander's name by id, the dead's included. */
+	readonly personName = ( id: string ): string => this.game.sim.nameOf( id ) ?? id;
 
 }

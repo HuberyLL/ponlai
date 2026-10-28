@@ -341,8 +341,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `F6` (a girl of six); an age under 2 is drawn as a two-year-old (`src/characters/Ages.ts`). The
   GUI's Islander folder sets both (a new sex dresses the walker again, a new age prepares its body
   in idle time and puts it on in one frame: `FigureAge.ts`); in game mode both are disabled.
-  `bodies` gives the game's islanders theirs, comma-separated in the islanders' order
-  (`bodies=F28,M75`), the rest adult men, until the simulation keeps their sex and age.
+  `bodies` starts a new game with islanders of these sexes and ages instead of the simulation's
+  three (a man, a woman and one of either, 20 to 35 years old): `bodies=F28,M75,M6`; a resumed
+  save keeps its own (add `new` to start over). They age a year a game day from there.
 - `profile` (`?profile`, or `?profile=frames` without GPU timestamps) loads
   `src/debug/FrameProfiler.ts`, which labels every render and compute pass, reads their GPU
   timestamps and exposes `window.__PONLAI_PROFILE__`; without it the page builds the same

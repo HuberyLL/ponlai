@@ -38,6 +38,8 @@ const own = ( yes: boolean ) => ( yes ? { context: 'own' } : {} );
 
 export const RECORD_KINDS: Readonly<Record<string, RecordKind>> = {
 	landed: { id: 'landed', rank: 0, mark: { icon: () => 'boat' }, deed: ( e, n, mine ) => t( 'record.deed.landed', { who: n.person( e.who ), ...own( mine ) } ) },
+	// (no mark of its own yet: it logs)
+	died: { id: 'died', rank: 9, deed: ( e, n, mine ) => t( 'record.deed.died', { who: n.person( e.who ), age: e.text ?? '', ...own( mine ) } ) },
 	built: { id: 'built', rank: 1, mark: { icon: () => 'build' }, deed: ( e, n ) => t( 'record.deed.built', { building: n.building( e.text ?? '' ) } ) },
 	need: { id: 'need', rank: 2, mark: { icon: ( e ) => NEED_ICONS[ e.text ?? '' ] ?? 'satiety', alarm: true },
 		deed: ( e, n, mine ) => t( 'record.deed.need', { who: n.person( e.who ), need: needWords( e.text ?? '' ), ...own( mine ) } ) },

@@ -8,6 +8,7 @@
 
 import { GROWTH } from '../../world/IslandGrowth.ts';
 import type { LandLattice } from '../../world/IslandGrowth.ts';
+import type { Sex } from '../../characters/Ages.ts';
 
 export interface Vec2 { x: number; z: number }
 
@@ -21,7 +22,10 @@ export type Speed = 0 | 1 | 2 | 3;
 export const SPEED_FACTORS: Readonly<Record<Speed, number>> = { 0: 0, 1: 1, 2: 3, 3: 6 };
 /** one tick is one game second */
 export const SECONDS_PER_GAME_DAY = 86400;
-/** walking speed, metres per game second: 1.8 m/s on screen at the game's 24-minute day at 1x */
+/** a year of an islander's life is a game day (docs/game-design.md, The islanders) */
+export const SECONDS_PER_YEAR = SECONDS_PER_GAME_DAY;
+/** an adult's walking speed, metres per game second: 1.8 m/s on screen at the game's 24-minute
+ * day at 1x (a child and the old walk slower: life.ts `paceOf`) */
 export const WALK_SPEED = 0.9 * 2880 / 86400;
 
 /** the population the island's growth counts from (docs/game-design.md: a few islanders on a
@@ -49,6 +53,11 @@ export interface Villager {
 	name: string;
 	/** palette index for the view (src/characters/looks.ts) */
 	look: number;
+	sex: Sex;
+	/** the tick it was born at, before 0 for those who came grown (its age: life.ts `ageOf`) */
+	born: number;
+	/** the age it dies of old age at (years), drawn as it came (life.ts) */
+	lifespan: number;
 	/** world position (m) now and at the previous tick, for interpolation */
 	pos: Vec2;
 	prev: Vec2;
@@ -66,6 +75,16 @@ export interface Villager {
 	last: ActionOutcome | null;
 	/** the last words said, and the tick they were said at */
 	said: { words: string; tick: number } | null;
+}
+
+/** An islander who died: what the record still names them by. */
+export interface Departed {
+	id: EntityId;
+	name: string;
+	sex: Sex;
+	born: number;
+	/** the tick it died at */
+	died: number;
 }
 
 export interface Needs { satiety: number; hydration: number }
@@ -112,6 +131,8 @@ export interface SimState {
 	/** the seeded generator's state */
 	rng: number;
 	villagers: Villager[];
+	/** the islanders who died, in the order they died */
+	dead: Departed[];
 	/** what the player placed, in the order placed */
 	buildings: BuildingState[];
 	/** how many of each building kind were ever placed: the count in their ids (buildings.ts) */

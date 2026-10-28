@@ -264,8 +264,7 @@ from a board, it is said here.
   row not yet buildable still shows its detail on hover (还不能建). The recent group lists what
   the island has had placed, the latest first.
 - **Record**: the game keeps it (`src/game/Chronicle.ts`) and it is part of the save
-  (`src/game/save.ts`): a resumed game's record goes on from where it was saved, and a game saved
-  before it was (save version 17) resumes with an empty one, its islanders' landings unknown. Its
+  (`src/game/save.ts`): a resumed game's record goes on from where it was saved. Its
   river runs to today, or to the last day it names (the debug panel's placeholder days, which are
   entries like any other and so are saved too).
 - **Saving**: there is no save or load control for the player yet (no menu: Scope now). The page
