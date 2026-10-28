@@ -1,4 +1,5 @@
 import type { Grid } from './grid.ts';
+import { planar } from './maths.ts';
 import type { Vec2 } from './types.ts';
 
 // Paths over the ground grid: A* across 8 neighbours without cutting corners, then pulled
@@ -22,7 +23,7 @@ export interface Goal {
 
 function distance( a: Vec2, b: Vec2 ): number {
 
-	return Math.hypot( a.x - b.x, a.z - b.z );
+	return planar( a.x - b.x, a.z - b.z );
 
 }
 
@@ -51,7 +52,7 @@ export function placeGoal( grid: Grid, place: { near(): number[]; reaches( k: nu
 export function lineClear( grid: Grid, a: Vec2, b: Vec2 ): boolean {
 
 	const dx = b.x - a.x, dz = b.z - a.z;
-	const len = Math.hypot( dx, dz );
+	const len = planar( dx, dz );
 	if ( len < 1e-6 ) return grid.openAt( a.x, a.z );
 	const steps = Math.ceil( len / 0.1 );
 	const px = - dz / len * CLEARANCE, pz = dx / len * CLEARANCE;
@@ -140,7 +141,7 @@ export function findPath( grid: Grid, from: Vec2, goal: Goal ): Vec2[] | null {
 		return out;
 
 	}
-	const h = ( k: number ) => Math.max( 0, Math.hypot( grid.centreX( k ) - goal.point.x, grid.centreZ( k ) - goal.point.z ) - goal.slack );
+	const h = ( k: number ) => Math.max( 0, planar( grid.centreX( k ) - goal.point.x, grid.centreZ( k ) - goal.point.z ) - goal.slack );
 	const { g, parent, seen, closed, open } = grid;
 	g[ start ] = 0;
 	parent[ start ] = - 1;

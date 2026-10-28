@@ -4,6 +4,7 @@ import { ageOf } from './life.ts';
 import { findPath, lineClear, placeGoal } from './path.ts';
 import type { DoArgs, Place, PlaceOption } from './places.ts';
 import type { Sim } from './Sim.ts';
+import { planar } from './maths.ts';
 import type { Notice, Vec2, Villager } from './types.ts';
 
 // The other islanders as places (docs/game-design.md, "People"): a person is a place that moves,
@@ -42,7 +43,7 @@ export const FOLLOW_GAP = 1.5;
 // a follower in the open makes for a point this far short of the one followed (m)
 const STEP_SHORT = 0.8;
 
-const distance = ( a: Vec2, b: Vec2 ) => Math.hypot( a.x - b.x, a.z - b.z );
+const distance = ( a: Vec2, b: Vec2 ) => planar( a.x - b.x, a.z - b.z );
 
 /** Something done to an islander, for its next thought; the oldest beyond NOTICED_KEPT go. */
 export function notify( v: Villager, notice: Notice ): void {
@@ -158,7 +159,7 @@ function personPlace( sim: Sim, v: Villager ): Place {
 	return {
 		id: v.id,
 		kind: 'person',
-		reaches: ( k ) => k >= 0 && Math.hypot( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) <= PERSON_REACH,
+		reaches: ( k ) => k >= 0 && planar( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) <= PERSON_REACH,
 		near: () => cellsWithin( grid, p, PERSON_REACH ),
 		distance: ( q ) => distance( q, p ),
 		shows: () => ( { name: v.name, age: Math.floor( ageOf( v, sim.state.tick ) ), doing: doingOf( v ) } ),

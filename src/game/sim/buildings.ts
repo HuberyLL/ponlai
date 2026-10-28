@@ -2,6 +2,7 @@ import { CLEAR_RING, cellsWithin, clearAround } from './ground.ts';
 import { BAG_CAPACITY, addItems, count, itemCount, removeItems, total } from './items.ts';
 import type { Place, PlaceOption } from './places.ts';
 import type { Sim } from './Sim.ts';
+import { planar } from './maths.ts';
 import type { BuildingState, SimState, Vec2 } from './types.ts';
 
 // The buildings the player places: registered kinds, each a footprint, the work it takes and the
@@ -178,9 +179,9 @@ function buildingPlace( sim: Sim, b: BuildingState ): Place {
 	return {
 		id: b.id,
 		kind: b.kind,
-		reaches: ( k ) => k >= 0 && Math.hypot( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) <= reach,
+		reaches: ( k ) => k >= 0 && planar( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) <= reach,
 		near: () => cellsWithin( grid, p, reach ),
-		distance: ( q ) => Math.hypot( q.x - p.x, q.z - p.z ),
+		distance: ( q ) => planar( q.x - p.x, q.z - p.z ),
 		shows: ( at ) => built ? kind.shows( b, at ) : siteShows( b ),
 		options: built ? { ...kind.options( b ), build: buildOption( b, kind ) } : { build: buildOption( b, kind ) },
 	};

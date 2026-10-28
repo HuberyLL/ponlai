@@ -121,7 +121,8 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 - `src/game/`: the game behind `?game` (`Game.ts`, which also drives the island's growth by the
   population through `world/Growth.ts`): `sim/` is the headless simulation (no three.js or DOM;
   node runs it by stripping types; the other islanders as places, hearing, giving and following,
-  in `sim/people.ts`), `save.ts` is the save (one slot: the simulation's state and the
+  in `sim/people.ts`; only exact operations in the rules, the few functions they need in
+  `sim/maths.ts`), `save.ts` is the save (one slot: the simulation's state and the
   record, versioned: a save of another version is set aside and a new game started; the world's
   start reads its piece count),
   `view/`

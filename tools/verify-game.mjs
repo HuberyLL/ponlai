@@ -16,7 +16,8 @@
 // heard within earshot and noticed until the next thought, the others in sight by name, age and
 // what they do, `do` naming its place, giving (and its refusals and record entry), going to someone
 // who walks away, following until replaced or the one followed dies, the stand-in asking for food
-// and being given it, and a save mid-follow that plays on the same.
+// and being given it, and a save mid-follow that plays on the same; last, the rules' maths: no
+// function in src/game/sim whose result differs between engines, and its own exp and log against Math's.
 // Pure CPU; Node 22.18+ strips the imported TypeScript.
 // Run: node tools/verify-game.mjs
 import assert from 'node:assert/strict';
@@ -36,6 +37,9 @@ import { SAVE_VERSION, readSave, savedPieces, writeSave } from '../src/game/save
 import { Chronicle } from '../src/game/Chronicle.ts';
 import { shortfall, stockOf } from '../src/game/sim/stock.ts';
 import { shoreMask } from '../src/game/sim/ground.ts';
+import { exp, log } from '../src/game/sim/maths.ts';
+import { readdirSync, readFileSync } from 'node:fs';
+import ts from 'typescript';
 import { input, inputAt } from './game-fixture.mjs';
 
 const HOUR = 3600;
@@ -1110,6 +1114,40 @@ function buildChest( sim ) {
 		console.log( `stand-in: ${ events.join( ', ' ) } by ${ ( sim.state.tick / 60 ).toFixed( 0 ) } min; ${ b.name } gave, ${ a.name } ate` );
 
 	}
+
+}
+
+// ------------------------------------------------------------------ the rules' maths
+
+{
+
+	// exact operations only (sim/maths.ts), in the rules and in what they call (Ages.ts): any use of
+	// Math but a listed exact function, and any ** (TypeScript strips the comments and types first,
+	// so a // inside a string or a type cannot hide or fake one)
+	const files = readdirSync( new URL( '../src/game/sim/', import.meta.url ) ).filter( ( f ) => f.endsWith( '.ts' ) ).map( ( f ) => `src/game/sim/${ f }` ).concat( 'src/characters/Ages.ts' );
+	const exact = /\bMath\b(?!\.(?:sqrt|floor|ceil|round|trunc|abs|min|max|sign|fround|imul|clz32|PI|SQRT2|SQRT1_2)\b)/;
+	for ( const file of files ) {
+
+		const code = ts.transpileModule( readFileSync( new URL( `../${ file }`, import.meta.url ), 'utf8' ), { compilerOptions: { target: ts.ScriptTarget.ESNext, removeComments: true } } ).outputText;
+		assert.ok( ! exact.test( code ), `${ file } uses Math beyond its exact functions: ${ code.match( new RegExp( `.*${ exact.source }.*` ) )?.[ 0 ].trim() }` );
+		assert.ok( ! code.includes( '**' ), `${ file } uses the ** operator` );
+
+	}
+	// exp and log against Math's, relative, over the lifespans' inputs, both ends and just below 1
+	let worst = 0;
+	const rel = ( a, b ) => b === 0 ? Math.abs( a ) : Math.abs( a / b - 1 );
+	const xs = [], ys = [];
+	for ( let k = 0; k <= 4000; k ++ ) xs.push( - 700 + k * 0.35, - 20 + k * 0.01 );
+	for ( let k = 0; k <= 4000; k ++ ) ys.push( Math.exp( - 700 + k * 0.35 ), 0.5 + k / 4000 );
+	for ( let k = 1; k <= 52; k ++ ) ys.push( 1 - 2 ** - k, 1 + 2 ** - k );
+	for ( const x of xs ) worst = Math.max( worst, rel( exp( x ), Math.exp( x ) ) );
+	for ( const y of ys ) if ( y !== 1 ) worst = Math.max( worst, rel( log( y ), Math.log( y ) ) );
+	assert.ok( worst < 1e-14, `exp and log within ${ worst } of Math's` );
+	assert.equal( exp( 1e6 ), Infinity );
+	assert.equal( exp( - 1e6 ), 0 );
+	assert.equal( log( Infinity ), Infinity );
+	assert.equal( log( 1 ), 0 );
+	console.log( `maths: the rules call only exact operations; exp and log within ${ worst.toExponential( 1 ) } of Math's` );
 
 }
 

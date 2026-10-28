@@ -3,6 +3,7 @@ import { shoreMask } from './ground.ts';
 import { BAG_CAPACITY, intoBag, total } from './items.ts';
 import { people, personById } from './people.ts';
 import type { Sim } from './Sim.ts';
+import { planar } from './maths.ts';
 import type { ActionResult, Vec2, Villager } from './types.ts';
 
 // The places an islander can go to and act at. Places are content: each kind below builds its
@@ -95,7 +96,7 @@ function shore( sim: Sim ): Place {
 		distance: ( p ) => {
 
 			let d = Infinity;
-			for ( const k of cells ) if ( grid.open[ k ] ) d = Math.min( d, Math.hypot( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) );
+			for ( const k of cells ) if ( grid.open[ k ] ) d = Math.min( d, planar( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) );
 			return d;
 
 		},
