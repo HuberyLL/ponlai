@@ -75,7 +75,16 @@ export interface Villager {
 	last: ActionOutcome | null;
 	/** the last words said, and the tick they were said at */
 	said: { words: string; tick: number } | null;
+	/** the last hand-over (people.ts `give`): to whom, what and when; null before the first. Each
+	 * one is a new object, which the record watches as it watches `said` */
+	gave: { to: EntityId; item: string; count: number; tick: number } | null;
+	/** what others did to the islander since its last thought, oldest first, at most NOTICED_KEPT
+	 * (people.ts): Sim.think drops what a thought perceived once its answer is acted on */
+	noticed: Notice[];
 }
+
+/** Something another islander did to one: words it heard, or items handed to it, at a tick. */
+export type Notice = { who: EntityId; tick: number; said: string } | { who: EntityId; tick: number; gave: Items };
 
 /** An islander who died: what the record still names them by. */
 export interface Departed {
@@ -98,7 +107,8 @@ export interface ActionCall { tool: string; args?: unknown }
 /** An action with duration, as the islander's state: walking (`go`, with Villager.path), `wait` and a timed `do`. */
 export interface ActionState {
 	call: ActionCall;
-	/** the tick it ends at; null for `go`, which ends on arrival */
+	/** the tick it ends at; null for `go`, which ends on arrival, and for a `do` that runs until a
+	 * new action replaces it (`follow`) */
 	until: number | null;
 }
 

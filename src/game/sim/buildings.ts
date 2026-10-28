@@ -1,6 +1,6 @@
 import { CLEAR_RING, cellsWithin, clearAround } from './ground.ts';
-import { BAG_CAPACITY, addItems, count, isItem, removeItems, total } from './items.ts';
-import type { DoArgs, Place, PlaceOption } from './places.ts';
+import { BAG_CAPACITY, addItems, count, itemCount, removeItems, total } from './items.ts';
+import type { Place, PlaceOption } from './places.ts';
 import type { Sim } from './Sim.ts';
 import type { BuildingState, SimState, Vec2 } from './types.ts';
 
@@ -58,16 +58,6 @@ export const CHEST_RADIUS = 0.55;
 export const CHEST_CAPACITY = 20;
 /** the chest's work (game seconds): see the header */
 export const CHEST_WORK = 3600;
-
-/** The item and count a put or take names, or why they are not one. */
-function itemCount( args: DoArgs ): { item: string; n: number } | string {
-
-	if ( ! isItem( args.item ) ) return `there is no item called ${ String( args.item ) }`;
-	const n = args.count ?? 1;
-	if ( typeof n !== 'number' || ! Number.isInteger( n ) || n < 1 ) return 'the count must be a whole number from 1';
-	return { item: args.item, n };
-
-}
 
 const chest: BuildingKind = {
 	radius: CHEST_RADIUS,
@@ -201,6 +191,14 @@ function buildingPlace( sim: Sim, b: BuildingState ): Place {
 export function buildings( sim: Sim ): Place[] {
 
 	return sim.state.buildings.map( ( b ) => buildingPlace( sim, b ) );
+
+}
+
+/** The building with an id as a place, or null (places.ts `placeById`). */
+export function buildingById( sim: Sim, id: string ): Place | null {
+
+	const b = buildingOf( sim.state, id );
+	return b ? buildingPlace( sim, b ) : null;
 
 }
 

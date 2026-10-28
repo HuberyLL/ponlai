@@ -36,6 +36,17 @@ export function goalAt( grid: Grid, target: Vec2 ): Goal | null {
 
 }
 
+/** Where to stand at a place (places.ts: what it reaches, round what it is near): its open cells on
+ * the main ground, the nearest by the walk; null when it has none. */
+export function placeGoal( grid: Grid, place: { near(): number[]; reaches( k: number ): boolean } ): Goal | null {
+
+	const cells = place.near().filter( ( k ) => grid.region[ k ] === grid.main && place.reaches( k ) );
+	if ( cells.length === 0 ) return null;
+	// no target point: the nearest cell by the walk (a search without a heuristic)
+	return { cells, point: { x: 0, z: 0 }, slack: Infinity, exact: null };
+
+}
+
 /** True when a body can walk the straight segment from a to b on walkable cells. */
 export function lineClear( grid: Grid, a: Vec2, b: Vec2 ): boolean {
 

@@ -7,10 +7,10 @@ import { SECONDS_PER_YEAR } from './sim/types.ts';
 import type { EntityId, Needs, Villager } from './sim/types.ts';
 
 // The island's record (沧海录, docs/ui.md): what happened, day by day, as the game sees it happen.
-// Islanders landing and dying, the player's words and the islanders', buildings set out and
-// finished, a need turning critical, and how long each sky held on each day. The interface reads it
-// (src/game/ui/Record.ts) and turns each entry into words and a mark by its kind's row
-// (src/game/ui/data/record.ts), so a new kind of entry is a new row there.
+// Islanders landing and dying, the player's words and the islanders', what one islander handed
+// another, buildings set out and finished, a need turning critical, and how long each sky held on
+// each day. The interface reads it (src/game/ui/Record.ts) and turns each entry into words and a
+// mark by its kind's row (src/game/ui/data/record.ts), so a new kind of entry is a new row there.
 //
 // Rules: it watches the simulation once a frame (Game.render) and never changes it; the player's
 // words come through Game.speak. It is part of the save (save.ts): `save` gives its entries, the
@@ -25,15 +25,18 @@ import type { EntityId, Needs, Villager } from './sim/types.ts';
 export type RecordWho = EntityId | 'player' | 'island';
 
 export interface RecordEntry {
-	/** its kind (src/game/ui/data/record.ts): landed, died, said, placed, built, need */
+	/** its kind (src/game/ui/data/record.ts): landed, died, said, gave, placed, built, need */
 	kind: string;
 	day: number;
 	minute: number;
 	who: RecordWho;
-	/** whom words were said to: the islanders' ids, or everyone */
+	/** whom words were said to (the islanders' ids, or everyone), or whom something was given to */
 	to?: EntityId[] | 'all';
-	/** the words said; a building's kind; a need's name (satiety, hydration); the age one died at */
+	/** the words said; the item given; a building's kind; a need's name (satiety, hydration); the
+	 * age one died at */
 	text?: string;
+	/** how many were given */
+	count?: number;
 	/** the building an entry is about (its id) */
 	subject?: string;
 }
@@ -60,8 +63,9 @@ export class Chronicle {
 	/** changes so far */
 	version = 0;
 	private watching = false;
-	// the line each islander said last (each line said is a new object, whatever the tick)
+	// the line each islander said last and its last hand-over (each a new object, whatever the tick)
 	private readonly said = new Map<EntityId, Villager[ 'said' ]>();
+	private readonly gave = new Map<EntityId, Villager[ 'gave' ]>();
 	private readonly built = new Map<string, boolean>();
 	private readonly alerted = new Set<string>();
 
@@ -73,6 +77,7 @@ export class Chronicle {
 		this.skies.clear();
 		this.landed.clear();
 		this.said.clear();
+		this.gave.clear();
 		this.built.clear();
 		this.alerted.clear();
 		this.watching = false;
@@ -138,12 +143,19 @@ export class Chronicle {
 				// in it already (a game saved before its first tick, ?game&paused)
 				if ( ( ! fresh || state.tick === 0 ) && ! this.landed.has( v.id ) ) this.add( sim, { kind: 'landed', who: v.id } );
 				this.said.set( v.id, v.said );
+				this.gave.set( v.id, v.gave );
 
 			}
 			if ( v.said && v.said !== this.said.get( v.id ) ) {
 
 				this.said.set( v.id, v.said );
 				this.add( sim, { kind: 'said', who: v.id, text: v.said.words } );
+
+			}
+			if ( v.gave && v.gave !== this.gave.get( v.id ) ) {
+
+				this.gave.set( v.id, v.gave );
+				this.add( sim, { kind: 'gave', who: v.id, to: [ v.gave.to ], text: v.gave.item, count: v.gave.count } );
 
 			}
 			for ( const need of Object.keys( v.needs ) as ( keyof Needs )[] ) {
@@ -163,6 +175,7 @@ export class Chronicle {
 		if ( this.said.size > state.villagers.length ) for ( const d of state.dead ) {
 
 			if ( ! this.said.delete( d.id ) ) continue;
+			this.gave.delete( d.id );
 			for ( const need of [ 'satiety', 'hydration' ] ) this.alerted.delete( `${ d.id }:${ need }` );
 			const at = { tick: d.died, startHour: state.startHour };
 			this.add( sim, { kind: 'died', who: d.id, text: String( Math.floor( ( d.died - d.born ) / SECONDS_PER_YEAR ) ), day: dayOf( at ) + 1, minute: Math.floor( hourOf( at ) * 60 ) } );

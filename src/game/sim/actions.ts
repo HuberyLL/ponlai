@@ -1,29 +1,32 @@
 import type { ToolHandler, ToolRegistry } from './agent.ts';
 import { ITEMS, count, isItem, removeItems } from './items.ts';
-import { findPath, goalAt } from './path.ts';
-import type { Goal } from './path.ts';
-import { placesAt, placesOf } from './places.ts';
+import { findPath, goalAt, placeGoal } from './path.ts';
+import { PERSON_REACH, hear } from './people.ts';
+import { placeById, placesAt } from './places.ts';
 import type { DoArgs, Place } from './places.ts';
 import type { Sim } from './Sim.ts';
 import type { ActionCall, ActionResult, Villager } from './types.ts';
 
 // The five actions an islander acts through, registered as the brain's tools (Sim.tools):
 //
-//   go( { place } )      walk to a place, named by its id, never a point (the body finds the way)
-//   say( { words } )     say something (kept in Villager.said; nobody hears it yet), alongside
-//                        whatever the body is doing
+//   go( { place } )      walk to a place or a person, named by its id, never a point (the body
+//                        finds the way, and keeps after a person who moves until beside them)
+//   say( { words } )     say something (kept in Villager.said, heard within earshot: people.ts),
+//                        alongside whatever the body is doing
 //   wait( { seconds } )  stand for a while
-//   do( { action, ... } ) run an option of a place the islander stands at (places.ts)
+//   do( { action, place?, ... } ) run an option of a place the islander stands at (places.ts):
+//                        the one `place` names, else the first that offers it
 //   use( { item, use? } ) run a use of a carried item (items.ts); the first unless one is named
 //
 // Rules: a new action replaces the one under way (a refused one replaces nothing); stopping is not
 // an action. Saying is the exception: speech comes from the mind, not the body, so it neither
 // replaces the action under way nor takes the place of its outcome in Villager.last. An action with duration (walking, waiting, fishing, picking, building) is Villager.action and
 // advances per tick (`advanceAction`); it ends with an outcome in Villager.last, which the next
-// thought perceives. An instant one (use, put, take, a refusal) leaves its outcome there at
+// thought perceives. An instant one (use, put, take, give, a refusal) leaves its outcome there at
 // once. A tool's own result says whether the action began (or what it did, when instant). A timed
 // `do` runs its option's `during` every tick it lasts (building adds its work there and ends when
-// the work is done), then its `finish` when its time is up.
+// the work is done), then its `finish` when its time is up; one without an end (`follow`) runs
+// until a new action replaces it, its `during` ends it, or its place is gone.
 
 /** How a call begins: refused, done, or under way (its outcome comes when it ends). */
 const UNDER_WAY: ActionResult = { ok: true, value: 'under way' };
@@ -60,24 +63,13 @@ function record( args: unknown ): Record<string, unknown> {
 
 }
 
-/** Where to stand at a place: its open cells on the main ground. */
-function placeGoal( sim: Sim, place: Place ): Goal | null {
-
-	const grid = sim.grid;
-	const cells = place.near().filter( ( k ) => grid.region[ k ] === grid.main && place.reaches( k ) );
-	if ( cells.length === 0 ) return null;
-	// no target point: the nearest cell by the walk (a search without a heuristic)
-	return { cells, point: { x: 0, z: 0 }, slack: Infinity, exact: null };
-
-}
-
 const go: ToolHandler = ( body, args, sim ) => {
 
 	const id = record( args ).place;
 	const call = { tool: 'go', args: { place: id } };
-	const place = placesOf( sim ).find( ( p ) => p.id === id );
+	const place = placeById( sim, body, id );
 	if ( ! place ) return refuse( body, call, `there is no place called ${ String( id ) }` );
-	const goal = placeGoal( sim, place );
+	const goal = placeGoal( sim.grid, place );
 	const path = goal && findPath( sim.grid, body.pos, goal );
 	if ( ! path ) return refuse( body, call, `no way to the ${ place.id }` );
 	replace( body );
@@ -93,6 +85,7 @@ const say: ToolHandler = ( body, args, sim ) => {
 	const words = record( args ).words;
 	if ( typeof words !== 'string' || words.trim() === '' ) return { ok: false, reason: 'nothing to say' };
 	body.said = { words, tick: sim.state.tick };
+	hear( sim, body, words );
 	return { ok: true, value: 'said it' };
 
 };
@@ -129,18 +122,21 @@ const doAction: ToolHandler = ( body, args, sim ) => {
 	const a = record( args );
 	const action = String( a.action );
 	const here = placesAt( sim, body );
-	// a place that offers it now first: a built site keeps `build` closed (buildings.ts)
 	const offers = ( p: Place ) => Object.hasOwn( p.options, action );
-	const place = here.find( ( p ) => offers( p ) && p.options[ action ].open( sim ) ) ?? here.find( offers );
-	const doArgs: DoArgs = { ...a, action, place: place?.id ?? '' };
+	const named = typeof a.place === 'string' ? a.place : null;
+	// the place named, else one that offers it now first: a built site keeps `build` closed (buildings.ts)
+	const place = named !== null ? here.find( ( p ) => p.id === named ) : here.find( ( p ) => offers( p ) && p.options[ action ].open( sim ) ) ?? here.find( offers );
+	const doArgs: DoArgs = { ...a, action, place: place?.id ?? named ?? '' };
 	const call = { tool: 'do', args: doArgs };
+	if ( named !== null && ! place ) return refuse( body, call, `not at ${ named }` );
 	if ( here.length === 0 ) return refuse( body, call, 'not at any place' );
 	if ( ! place ) return refuse( body, call, `nothing here offers ${ action }` );
+	if ( ! offers( place ) ) return refuse( body, call, `${ place.id } does not offer ${ action }` );
 	const start = place.options[ action ].start( sim, body, doArgs );
 	if ( ! start.ok ) return refuse( body, call, start.reason );
 	replace( body );
 	if ( ! ( 'seconds' in start ) ) return end( body, call, start );
-	body.action = { call, until: sim.state.tick + start.seconds };
+	body.action = { call, until: start.seconds === null ? null : sim.state.tick + start.seconds };
 	return UNDER_WAY;
 
 };
@@ -160,21 +156,51 @@ export function advanceAction( sim: Sim, body: Villager ): void {
 	const call = action.call;
 	if ( call.tool === 'go' ) {
 
-		if ( body.path ) return;
 		const id = record( call.args ).place;
-		const place = placesOf( sim ).find( ( p ) => p.id === id );
+		const place = placeById( sim, body, id );
+		// the person gone (died) on the way
+		if ( ! place ) {
+
+			body.path = null;
+			end( body, call, { ok: false, reason: 'could not get there' } );
+			return;
+
+		}
+		if ( place.kind === 'person' ) {
+
+			// a person moves: find the way again whenever it no longer ends beside them
+			const tail = body.path?.[ body.path.length - 1 ];
+			if ( tail ? place.distance( tail ) > PERSON_REACH : ! place.reaches( sim.grid.indexAt( body.pos.x, body.pos.z ) ) ) {
+
+				const goal = placeGoal( sim.grid, place );
+				const path = goal && findPath( sim.grid, body.pos, goal );
+				body.path = path && path.length > 0 ? path : null;
+				if ( body.path ) return;
+
+			}
+
+		}
+		if ( body.path ) return;
 		const k = sim.grid.indexAt( body.pos.x, body.pos.z );
-		end( body, call, place && place.reaches( k ) ? { ok: true, value: `arrived at the ${ place.id }` } : { ok: false, reason: 'could not get there' } );
+		end( body, call, place.reaches( k ) ? { ok: true, value: `arrived at the ${ place.id }` } : { ok: false, reason: 'could not get there' } );
 		return;
 
 	}
 	if ( call.tool === 'do' ) {
 
 		const args = call.args as DoArgs;
-		const option = placesOf( sim ).find( ( p ) => p.id === args.place )?.options[ args.action ];
+		const place = placeById( sim, body, args.place );
+		// the place gone (the one followed died): the option ends there
+		if ( ! place ) {
+
+			end( body, call, { ok: false, reason: `${ args.place } is gone` } );
+			return;
+
+		}
+		const option = place.options[ args.action ];
 		const done = option?.during?.( sim, body, args );
 		if ( done ) end( body, call, done );
-		else if ( action.until !== null && sim.state.tick >= action.until ) end( body, call, option?.finish ? option.finish( sim, body, args ) : { ok: false, reason: 'the place is gone' } );
+		else if ( action.until !== null && sim.state.tick >= action.until ) end( body, call, option?.finish ? option.finish( sim, body, args ) : { ok: false, reason: `${ args.place } does not offer ${ args.action }` } );
 		return;
 
 	}
@@ -190,8 +216,8 @@ export function findWaysAgain( sim: Sim ): void {
 
 		if ( ! body.path ) continue;
 		const call = body.action?.call;
-		const place = call?.tool === 'go' ? placesOf( sim ).find( ( p ) => p.id === record( call.args ).place ) : undefined;
-		const goal = place ? placeGoal( sim, place ) : goalAt( sim.grid, body.path[ body.path.length - 1 ] );
+		const place = call?.tool === 'go' ? placeById( sim, body, record( call.args ).place ) : null;
+		const goal = place ? placeGoal( sim.grid, place ) : goalAt( sim.grid, body.path[ body.path.length - 1 ] );
 		const path = goal && findPath( sim.grid, body.pos, goal );
 		// no way any more: the walk ends here (a `go` then ends as not arrived)
 		body.path = path && path.length > 0 ? path : null;

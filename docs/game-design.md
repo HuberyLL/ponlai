@@ -48,6 +48,8 @@ This is not an "AI town" to watch: the player acts all the time, and the islande
   are with accidents left out (`src/game/sim/life.ts`), and the record notes the death. A game
   starts with three grown islanders: a man, a woman and one of either, 20 to 35 years old. Births
   and how newcomers arrive are not designed yet.
+- They live among each other: they hear what is said near them, hand each other things and
+  follow one another (Actions, People).
 
 ## Pressure
 
@@ -124,19 +126,32 @@ items with their own options, never a new action.
 | Kind | Action | Its options come from |
 |---|---|---|
 | The body's own | `go( place )`, `say( words )`, `wait( time )` | fixed, available anywhere |
-| A place's | `do( action )` | the place the islander stands at |
+| A place's | `do( action )` | the place or person the islander stands at |
 | An item's | `use( item )` | the item, carried in the bag |
 
-- `go` names a place, never a point or a distance: finding the way and walking it is the body's
-  job, not the mind's.
+- `go` names a place or a person, never a point or a distance: finding the way and walking it is
+  the body's job, not the mind's. A person moves, so the body keeps after them until it is beside
+  them.
 - `do` runs one of the actions the islander's current place offers (fish at the shore, put
   in or take out at the chest, build at a construction site). Fishing is an option of a place,
-  not a verb of the islander.
-- `use` uses an item the islander carries (eat a fish).
+  not a verb of the islander. Where several places are at hand, `do` may name the one it means.
+- `use` uses an item the islander carries (eat a fish), and spends it.
 - A new action replaces the one under way; stopping is not an action. `say` is the exception:
   speech comes from the mind, like thinking, so the islander talks while the body goes on.
-- People (giving, following, talking among islanders) are decided when there is more than one
-  islander.
+
+### People
+
+The other islanders are part of the world, like places: there is no action of their own. A person
+is a place that moves, and offers its options to whoever stands beside them.
+
+- **Talking**: what an islander says is heard by every other islander within earshot (15 m), who
+  notices it: who said what, and when. Words are the only way to ask, agree or refuse; nothing
+  else needs the other's consent.
+- **Giving**: `do( give )` beside someone hands them items from the bag. The rules check it: a
+  giver gives only what they carry, and a full bag cannot take more, so the gift is refused and
+  stays with the giver. The one given to notices who gave them what.
+- **Following**: `do( follow )` beside someone keeps a step or two behind them wherever they walk,
+  until a new action replaces it or the one followed is gone.
 
 ### Building
 
@@ -174,9 +189,12 @@ until the island has a water source of its own. The HUD still shows it.
 
 An islander perceives what a person would, not the world's state:
 
-- **seen**: the places and things in sight, and what shows on them (a site's progress, a chest's contents while at it), with no
-  positions or distances;
+- **seen**: the places, people and things in sight, and what shows on them (a site's progress, a
+  chest's contents while at it; a person's name, age and what they are doing, never their needs
+  or bag), with no positions or distances;
 - **at hand**: the place they stand at, and so which `do` options are open;
+- **noticed**: what others did to them since their last thought: the words heard, what was handed
+  to them;
 - **the body**: satiety, hydration and the bag's contents, as numbers;
 - **the time**: the day and the time of day.
 

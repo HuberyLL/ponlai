@@ -12,17 +12,22 @@
 // entries the original keeps, a game resumed at its start included); then the island's growth: a land grown by IslandGrowth, the population steps, the
 // coming piece's cells, a step crossed adding exactly one piece, the grid opening cells without
 // reindexing, islanders walking onto the new piece, the shore moving to the new coast as on a
-// fresh load, and a save that keeps its piece count.
+// fresh load, and a save that keeps its piece count; then the islanders among themselves: words
+// heard within earshot and noticed until the next thought, the others in sight by name, age and
+// what they do, `do` naming its place, giving (and its refusals and record entry), going to someone
+// who walks away, following until replaced or the one followed dies, the stand-in asking for food
+// and being given it, and a save mid-follow that plays on the same.
 // Pure CPU; Node 22.18+ strips the imported TypeScript.
 // Run: node tools/verify-game.mjs
 import assert from 'node:assert/strict';
 import { newGame, loadGame } from '../src/game/sim/Sim.ts';
 import { findPath, goalAt, lineClear } from '../src/game/sim/path.ts';
 import { perceive } from '../src/game/sim/agent.ts';
-import { StandInBrain } from '../src/game/sim/standin.ts';
+import { HUNGRY_WORDS, StandInBrain, THANKS_WORDS } from '../src/game/sim/standin.ts';
+import { EARSHOT, FOLLOW_GAP, NOTICED_KEPT, PERSON_REACH } from '../src/game/sim/people.ts';
 import { BAG_CAPACITY, FISH_SATIETY } from '../src/game/sim/items.ts';
 import { HYDRATION_PER_DAY, SATIETY_PER_DAY, START_NEEDS } from '../src/game/sim/needs.ts';
-import { FISH_SECONDS } from '../src/game/sim/places.ts';
+import { FISH_SECONDS, placesAt } from '../src/game/sim/places.ts';
 import { CHEST_WORK, progressOf, stageOf } from '../src/game/sim/buildings.ts';
 import { GROWTH_STEPS, POPULATION_START, SECONDS_PER_GAME_DAY, SECONDS_PER_YEAR, WALK_SPEED, piecesFor } from '../src/game/sim/types.ts';
 import { ageOf, drawLifespan } from '../src/game/sim/life.ts';
@@ -452,8 +457,8 @@ function buildChest( sim ) {
 	walk( p, 'perception' );
 	const numbers = JSON.stringify( p ).match( /-?\d+(\.\d+)?/g ).map( Number );
 	assert.ok( numbers.every( ( n ) => Number.isInteger( n ) ), 'every number in it is a count, a need or the time' );
-	assert.deepEqual( Object.keys( p ).sort(), [ 'atHand', 'body', 'last', 'seen', 'time' ] );
-	assert.deepEqual( p.seen.map( ( s ) => `${ s.place } ${ s.kind }` ).sort(), [ 'chest1 chest', 'shore shore' ], 'the whole small island is in sight, each place by id and kind' );
+	assert.deepEqual( Object.keys( p ).sort(), [ 'atHand', 'body', 'last', 'noticed', 'seen', 'time' ] );
+	assert.deepEqual( p.seen.map( ( s ) => `${ s.place } ${ s.kind }` ).sort(), [ 'chest1 chest', 'shore shore', 'v2 person', 'v3 person' ], 'the whole small island is in sight, each place and the others by id and kind' );
 	assert.equal( p.time.day, 1 );
 	p.body.bag.fish = 99;
 	assert.deepEqual( v.bag, {}, 'the perception is a copy' );
@@ -850,6 +855,261 @@ function buildChest( sim ) {
 	// a new game on a grown island starts at its piece count
 	assert.equal( newGame( next, { pieces: 1 } ).state.pieces, 1 );
 	console.log( `growth: ${ ( gained * 0.0625 ).toFixed( 0 ) } m^2 of land, ${ comingCells } coming cells opened at 5 islanders, one piece, ${ sim.population() } islanders walked onto it; the shore moved (${ newShore } cells on the piece, ${ inland } inland); saved at 1 piece and loaded back` );
+
+}
+
+// ------------------------------------------------------------------ the islanders among themselves
+
+{
+
+	const adults = [ { sex: 'male', age: 30 }, { sex: 'female', age: 30 }, { sex: 'male', age: 30 } ];
+	const dist = ( p, q ) => Math.hypot( p.x - q.x, p.z - q.z );
+	const act = ( sim, v, tool, args ) => sim.tools.get( tool )( v, args, sim );
+	/** stand a body on the centre of the open main cell whose centre lies nearest d metres from p */
+	const standAt = ( sim, v, p, d ) => {
+
+		const grid = sim.grid;
+		let best = - 1, err = Infinity;
+		for ( let k = 0; k < grid.open.length; k ++ ) {
+
+			if ( grid.region[ k ] !== grid.main ) continue;
+			const e = Math.abs( Math.hypot( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) - d );
+			if ( e < err ) { err = e; best = k; }
+
+		}
+		const c = grid.centreOf( best );
+		v.pos = { ...c };
+		v.prev = { ...c };
+		v.path = null;
+		v.action = null;
+		return c;
+
+	};
+	/** what a brain is handed for an islander: a thought by a brain that only looks */
+	const perceived = ( sim, v ) => {
+
+		let seen = null;
+		sim.brain = { think: ( p ) => { seen = p; return []; } };
+		sim.think( v.id );
+		sim.brain = null;
+		return seen;
+
+	};
+
+	// hearing: within earshot, the others only, noticed until the next thought, at most NOTICED_KEPT
+	{
+
+		const sim = newGame( input, { seed: 3, bodies: adults } );
+		const [ a, b, c ] = sim.state.villagers;
+		standAt( sim, b, a.pos, 8 );
+		standAt( sim, c, a.pos, EARSHOT + 5 );
+		assert.ok( dist( a.pos, c.pos ) > EARSHOT && dist( a.pos, b.pos ) < EARSHOT );
+		sim.step( 10 );
+		assert.equal( act( sim, a, 'say', { words: 'hello' } ).ok, true );
+		assert.deepEqual( b.noticed, [ { who: a.id, tick: sim.state.tick, said: 'hello' } ], 'heard within earshot' );
+		assert.deepEqual( a.noticed, [], 'not by the speaker' );
+		assert.deepEqual( c.noticed, [], 'not by one out of earshot' );
+		const minutes = Math.floor( sim.hour() * 60 );
+		assert.deepEqual( perceived( sim, b ).noticed, [ { who: a.id, name: a.name, time: { day: 1, hour: Math.floor( minutes / 60 ), minute: minutes % 60 }, said: 'hello' } ], 'perceived with the speaker\'s name and the time' );
+		assert.deepEqual( b.noticed, [], 'and gone once perceived' );
+		assert.deepEqual( perceived( sim, b ).noticed, [], 'the next thought hears nothing again' );
+		for ( let n = 0; n < NOTICED_KEPT + 2; n ++ ) act( sim, a, 'say', { words: `w${ n }` } );
+		assert.deepEqual( b.noticed.map( ( x ) => x.said ), Array.from( { length: NOTICED_KEPT }, ( _, n ) => `w${ n + 2 }` ), `at most ${ NOTICED_KEPT } kept, the oldest forgotten` );
+		// a thought in flight is not saved: what it perceived stays noticed until its answer is acted
+		// on, so a game saved meanwhile and loaded perceives it again; what came meanwhile stays after
+		perceived( sim, b );
+		act( sim, a, 'say', { words: 'one' } );
+		let answer = null, slow = null;
+		sim.brain = { think: ( p ) => { slow = p; return new Promise( ( resolve ) => { answer = resolve; } ); } };
+		const thought = sim.think( b.id );
+		sim.brain = null;
+		assert.deepEqual( slow.noticed.map( ( x ) => x.said ), [ 'one' ] );
+		act( sim, a, 'say', { words: 'two' } );
+		const loaded = loadGame( sim.save(), input );
+		const lb = loaded.villager( b.id );
+		assert.deepEqual( lb.noticed.map( ( x ) => x.said ), [ 'one', 'two' ], 'saved with a thought in flight: still noticed' );
+		assert.deepEqual( perceived( loaded, lb ).noticed.map( ( x ) => x.said ), [ 'one', 'two' ], 'and perceived again once loaded' );
+		answer( [] );
+		await thought;
+		assert.deepEqual( b.noticed.map( ( x ) => x.said ), [ 'two' ], 'the answer takes what its thought perceived, and no more' );
+		console.log( `hearing: within ${ EARSHOT } m by the others, perceived once with name and time, ${ NOTICED_KEPT } kept; kept through a save with a thought in flight` );
+
+	}
+
+	// people in sight, never oneself; `do` naming its place
+	{
+
+		const sim = newGame( input, { seed: 3, bodies: adults } );
+		const [ a, b ] = sim.state.villagers;
+		const chest = buildChest( sim );
+		run( sim, { tool: 'go', args: { place: 'shore' } } );
+		standAt( sim, b, a.pos, 1 );
+		act( sim, b, 'wait', { seconds: 600 } );
+		const p = perceive( sim, a );
+		assert.deepEqual( p.seen.find( ( s ) => s.place === b.id ), { place: b.id, kind: 'person', shows: { name: b.name, age: Math.floor( sim.age( b ) ), doing: 'wait' } }, 'a person shows name, age and doing' );
+		assert.ok( ! p.seen.some( ( s ) => s.place === a.id ) && ! p.atHand.some( ( h ) => h.place === a.id ), 'never oneself' );
+		assert.equal( p.seen.find( ( s ) => s.place === chest.id ).shows, undefined, 'a chest\'s contents not from afar' );
+		assert.deepEqual( p.atHand.find( ( h ) => h.place === b.id ).options, [ 'give', 'follow' ], 'beside someone: give and follow' );
+		standAt( sim, b, a.pos, 6 );
+		assert.deepEqual( act( sim, b, 'go', { place: chest.id } ), { ok: true, value: 'under way' } );
+		assert.equal( perceive( sim, a ).seen.find( ( s ) => s.place === b.id ).shows.doing, 'go' );
+		sim.walkTo( b.id, a.pos );
+		assert.equal( perceive( sim, a ).seen.find( ( s ) => s.place === b.id ).shows.doing, 'walk', 'a walk without an action' );
+		standAt( sim, b, a.pos, 1 );
+		a.bag = { fish: 1 };
+		assert.deepEqual( act( sim, a, 'do', { action: 'give', place: chest.id, item: 'fish' } ), { ok: false, reason: `not at ${ chest.id }` }, 'a place not at hand is refused' );
+		assert.deepEqual( act( sim, a, 'do', { action: 'fish', place: b.id } ), { ok: false, reason: `${ b.id } does not offer fish` } );
+		assert.equal( act( sim, a, 'do', { action: 'fish', place: 'shore' } ).ok, true, 'a place at hand runs it' );
+		assert.equal( a.action.call.args.place, 'shore' );
+		assert.deepEqual( act( sim, a, 'do', { action: 'give', place: b.id, item: 'fish' } ), { ok: true, value: `gave 1 fish to ${ b.id }` } );
+		console.log( 'people: seen by name, age and doing, never oneself; do runs at the place it names' );
+
+	}
+
+	// giving: the items move, the receiver notices, the record notes it; refused whole
+	{
+
+		const sim = newGame( input, { seed: 4, bodies: adults } );
+		const [ a, b ] = sim.state.villagers;
+		standAt( sim, b, a.pos, 1 );
+		const record = new Chronicle();
+		record.observe( sim, 'fair', 0 );
+		a.bag = { fish: 3 };
+		b.bag = { fish: BAG_CAPACITY - 1 };
+		assert.deepEqual( act( sim, a, 'do', { action: 'give', place: b.id, item: 'fish', count: 2 } ), { ok: false, reason: `${ b.id }'s bag has no room for that` } );
+		assert.deepEqual( [ a.bag, b.bag, a.gave ], [ { fish: 3 }, { fish: BAG_CAPACITY - 1 }, null ], 'nothing moves' );
+		b.bag = {};
+		assert.deepEqual( act( sim, a, 'do', { action: 'give', item: 'fish', count: 2 } ), { ok: true, value: `gave 2 fish to ${ b.id }` }, 'unnamed: the person at hand' );
+		assert.deepEqual( [ a.bag, b.bag ], [ { fish: 1 }, { fish: 2 } ], 'the items move' );
+		assert.deepEqual( b.noticed, [ { who: a.id, tick: sim.state.tick, gave: { fish: 2 } } ], 'the receiver notices the gift' );
+		assert.deepEqual( a.gave, { to: b.id, item: 'fish', count: 2, tick: sim.state.tick } );
+		assert.deepEqual( act( sim, a, 'do', { action: 'give', place: b.id, item: 'fish', count: 2 } ), { ok: false, reason: 'the bag holds 1 fish' }, 'a giver gives only what it carries' );
+		assert.deepEqual( [ a.bag, b.bag ], [ { fish: 1 }, { fish: 2 } ] );
+		record.observe( sim, 'fair', 0 );
+		record.observe( sim, 'fair', 0 );
+		const gifts = record.entries.filter( ( e ) => e.kind === 'gave' );
+		assert.equal( gifts.length, 1, 'one record entry' );
+		assert.deepEqual( [ gifts[ 0 ].who, gifts[ 0 ].to, gifts[ 0 ].text, gifts[ 0 ].count ], [ a.id, [ b.id ], 'fish', 2 ] );
+		const again = new Chronicle();
+		again.restore( record.save() );
+		again.observe( loadGame( sim.save(), input ), 'fair', 0 );
+		assert.equal( again.entries.filter( ( e ) => e.kind === 'gave' ).length, 1, 'a load notes nothing old' );
+		console.log( 'give: items moved and noticed, refused whole for a full bag or a short one, recorded once' );
+
+	}
+
+	// go( person ): reaches someone walking away
+	{
+
+		const sim = newGame( input, { seed: 5, bodies: adults } );
+		const [ a, b ] = sim.state.villagers;
+		standAt( sim, b, a.pos, 6 );
+		assert.equal( sim.walkTo( b.id, farthestOpen( sim.grid, a.pos ) ), null );
+		assert.equal( act( sim, a, 'go', { place: b.id } ).ok, true );
+		let ticks = 0;
+		while ( a.action && ticks < 2 * HOUR ) { sim.step( 1 ); ticks ++; }
+		assert.deepEqual( a.last.result, { ok: true, value: `arrived at the ${ b.id }` } );
+		assert.ok( dist( a.pos, b.pos ) <= PERSON_REACH + 0.4, `beside them (${ dist( a.pos, b.pos ).toFixed( 2 ) } m)` );
+		assert.equal( b.path, null, 'once they stopped' );
+		assert.deepEqual( act( sim, a, 'go', { place: a.id } ), { ok: false, reason: `there is no place called ${ a.id }` }, 'never to oneself' );
+		console.log( `go: caught up with a walker in ${ ticks } s` );
+
+	}
+
+	// follow: within the gap while the leader walks, at rest beside them whenever both stand,
+	// replaced by a new action, ended by a death; a save mid-follow plays on the same
+	{
+
+		const sim = newGame( input, { seed: 6, bodies: adults } );
+		const [ a, b ] = sim.state.villagers;
+		const beside = () => placesAt( sim, a ).some( ( p ) => p.id === b.id );
+		// beside the leader where it stood when the follower looked (the leader walks after it in a tick)
+		const besideBefore = () => {
+
+			const k = sim.grid.indexAt( a.pos.x, a.pos.z );
+			return dist( sim.grid.centreOf( k ), b.prev ) <= PERSON_REACH;
+
+		};
+		standAt( sim, a, b.pos, 1 );
+		assert.equal( act( sim, a, 'do', { action: 'follow', place: b.id } ).ok, true );
+		assert.equal( a.action.until, null, 'without an end' );
+		const far = farthestOpen( sim.grid, b.pos );
+		assert.equal( sim.walkTo( b.id, far ), null );
+		let gap = 0, ticks = 0, stops = 0, apart = 0, walking = a.path !== null;
+		act( sim, b, 'say', { words: 'this way' } );
+		sim.step( 30 );
+		const loaded = loadGame( sim.save(), input );
+		assert.equal( loaded.save(), sim.save() );
+		const tick = () => {
+
+			sim.step( 1 );
+			loaded.step( 1 );
+			ticks ++;
+			gap = Math.max( gap, dist( a.pos, b.pos ) );
+			// it comes to rest beside them, and stands apart only while they walk on
+			if ( walking && ! a.path ) {
+
+				stops ++;
+				assert.ok( besideBefore(), `the follower stopped beside the leader (tick ${ ticks }, ${ dist( a.pos, b.pos ).toFixed( 2 ) } m)` );
+
+			}
+			if ( ! a.path && ! b.path && ! beside() ) apart ++;
+			walking = a.path !== null;
+
+		};
+		while ( b.path && ticks < 2 * HOUR ) tick();
+		const walked = ticks;
+		for ( let i = 0; i < 120; i ++ ) tick();
+		assert.equal( loaded.save(), sim.save(), 'a game saved mid-follow plays on the same' );
+		assert.ok( walked > 300, `the leader walked a while (${ walked } s)` );
+		assert.ok( gap <= FOLLOW_GAP + 0.25, `the follower kept within the gap (at most ${ gap.toFixed( 2 ) } m)` );
+		assert.ok( stops > 0, 'the follower stood on the way' );
+		assert.ok( apart <= 2, `with both standing, the leader at hand (apart ${ apart } s)` );
+		assert.equal( a.action.call.args.action, 'follow', 'still following once the leader stopped' );
+		assert.ok( beside(), `at rest beside the leader (${ dist( a.pos, b.pos ).toFixed( 2 ) } m)` );
+		assert.equal( act( sim, a, 'wait', { seconds: 60 } ).ok, true );
+		assert.equal( a.action.call.tool, 'wait', 'a new action replaces it' );
+		assert.equal( act( sim, a, 'do', { action: 'follow', place: b.id } ).ok, true, 'following again from where it rests, without a go' );
+		b.lifespan = sim.age( b ) + 10 / SECONDS_PER_YEAR;
+		sim.step( 20 );
+		assert.equal( sim.villager( b.id ), undefined );
+		assert.deepEqual( [ a.action, a.last.result ], [ null, { ok: false, reason: `${ b.id } is gone` } ], 'it ends when the one followed dies' );
+		console.log( `follow: ${ walked } s behind a walker, never more than ${ gap.toFixed( 2 ) } m away, stopped ${ stops } times, each beside them; both standing apart ${ apart } s; at rest beside them; replaced, followed again without a go, then ended by a death; saved and loaded mid-follow` );
+
+	}
+
+	// the stand-in: the hungry one asks, a fed one within earshot walks over and gives, thanks
+	{
+
+		const play = () => {
+
+			const sim = newGame( input, { seed: 8, bodies: adults.slice( 0, 2 ) } );
+			const [ a, b ] = sim.state.villagers;
+			standAt( sim, b, a.pos, 8 );
+			a.needs.satiety = 50;
+			b.needs.satiety = 90;
+			b.bag = { fish: 1 };
+			sim.brain = new StandInBrain();
+			const events = [];
+			let said = null, gave = null, went = false;
+			for ( let t = 0; t < 2 * HOUR && ! ( said && said.words === THANKS_WORDS ); t ++ ) {
+
+				sim.step( 1 );
+				if ( a.said !== said ) events.push( `${ a.id } says ${ ( said = a.said ).words }` );
+				if ( ! went && b.action?.call.tool === 'go' && b.action.call.args.place === a.id ) events.push( `${ b.id } goes to ${ a.id }` ), went = true;
+				if ( b.gave !== gave ) events.push( `${ ( gave = b.gave ).to } given ${ gave.count } ${ gave.item }` );
+
+			}
+			return { sim, a, b, events };
+
+		};
+		const { sim, a, b, events } = play();
+		assert.deepEqual( events, [ `${ a.id } says ${ HUNGRY_WORDS }`, `${ b.id } goes to ${ a.id }`, `${ a.id } given 1 fish`, `${ a.id } says ${ THANKS_WORDS }` ], 'asked, walked over, given, thanked' );
+		assert.ok( a.needs.satiety > 60, `and the hungry one ate (satiety ${ a.needs.satiety.toFixed( 1 ) })` );
+		assert.equal( play().sim.save(), sim.save(), 'deterministic' );
+		console.log( `stand-in: ${ events.join( ', ' ) } by ${ ( sim.state.tick / 60 ).toFixed( 0 ) } min; ${ b.name } gave, ${ a.name } ate` );
+
+	}
 
 }
 
