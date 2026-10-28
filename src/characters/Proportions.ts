@@ -282,14 +282,17 @@ export function planProportions( skeleton: THREE.Skeleton, p: Proportions ): Pla
 /**
  * The geometry, in the armature's bind space: each bone carries its flesh to its new origin. The
  * mesh's vertices from `start` up to `end`, read from and written to `position` and `normal` (the
- * mesh's own, or copies of the same layout), its skin and bind matrix as bound.
+ * mesh's own, or copies of the same layout), its skin and bind matrix as bound. The way back
+ * is the bind matrix's own inverse: in the attached bind mode three sets `bindMatrixInverse` to
+ * the inverse of the mesh's world matrix at every update, so a body reshaped once the figure has
+ * been drawn would carry where it stood and how it was scaled.
  */
 export function reshape( mesh: THREE.SkinnedMesh, plan: Plan, position: THREE.BufferAttribute, normal: THREE.BufferAttribute, start: number, end: number ): void {
 
 	const { origin, moved, flesh, inverseFlesh } = plan;
 	const geometry = mesh.geometry;
 	const skinIndex = geometry.getAttribute( 'skinIndex' ), skinWeight = geometry.getAttribute( 'skinWeight' );
-	const toBind = mesh.bindMatrix, fromBind = mesh.bindMatrixInverse;
+	const toBind = mesh.bindMatrix, fromBind = _bindInverse.copy( toBind ).invert();
 	const normalTo = _m.getNormalMatrix( toBind ), normalFrom = _n.getNormalMatrix( fromBind );
 	const v = _v, q = _q, sum = _sum, nrm = _nrm, nsum = _nsum;
 	for ( let k = start; k < end; k ++ ) {
@@ -321,7 +324,7 @@ export function reshape( mesh: THREE.SkinnedMesh, plan: Plan, position: THREE.Bu
 
 }
 
-const _m = new THREE.Matrix3(), _n = new THREE.Matrix3();
+const _m = new THREE.Matrix3(), _n = new THREE.Matrix3(), _bindInverse = new THREE.Matrix4();
 const _v = new THREE.Vector3(), _q = new THREE.Vector3(), _sum = new THREE.Vector3(), _nrm = new THREE.Vector3(), _nsum = new THREE.Vector3();
 
 /** The rig: the skeleton's bind and rest poses and the clips' keys, moved as planned. */
