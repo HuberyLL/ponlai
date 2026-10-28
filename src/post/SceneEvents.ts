@@ -59,7 +59,7 @@ export const SCENE_EVENTS = {
 	// that changes what stands on the island (a placed blueprint), and an overlay the player's input
 	// moves (the placement ring following the pointer, Placement.ts)
 	'game begin': true,
-	'game speed': false,
+	'game pause': false,
 	'game order': false,
 	'game input': false,
 	// the island grew (World growth, Growth.ts): new land where the sea was, the rest unchanged; the

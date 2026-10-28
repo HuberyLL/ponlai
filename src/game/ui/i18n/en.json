@@ -7,11 +7,9 @@
 		"then": ", "
 	},
 	"top": {
-		"speeds": "Speed",
+		"run": "Time",
 		"pause": "Pause",
-		"speed1": "Normal speed",
-		"speed3": "Speed ×3",
-		"speed6": "Speed ×6"
+		"play": "Play"
 	},
 	"weather": {
 		"kind": {

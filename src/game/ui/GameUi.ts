@@ -22,7 +22,7 @@ import { TopRow } from './TopRow.ts';
 // predate the decisions it marks as changed). The interface is a mirage over the sea: no frames, a
 // mist shadow under white brush line art, in one language: Chinese, the language the game is written
 // in, or another by `?lang=` (i18n/i18n.ts: every word is a catalogue's). Its parts:
-//   TopRow.ts      the day and time, the speeds, the weather and its forecast (Forecast.ts), the
+//   TopRow.ts      the day and time, pause and play, the weather and its forecast (Forecast.ts), the
 //                  island's resources (ResourceRow.ts) and the record's scroll
 //   People.ts      the islanders' marks: the selected one's ring and tag, alerts, thinking, speech
 //   SpeakBar.ts    talking to the islanders, and the words flying to them

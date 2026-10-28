@@ -17,10 +17,6 @@ export interface Vec3 { x: number; y: number; z: number }
 export interface Cell { i: number; j: number }
 
 export type EntityId = string;
-/** paused, then the three play speeds */
-export type Speed = 0 | 1 | 2 | 3;
-/** game time runs this many times faster than the day clock's own rate at each speed */
-export const SPEED_FACTORS: Readonly<Record<Speed, number>> = { 0: 0, 1: 1, 2: 3, 3: 6 };
 /** one tick is one game second */
 export const SECONDS_PER_GAME_DAY = 86400;
 /** a year of an islander's life is a game day (docs/game-design.md, The islanders) */

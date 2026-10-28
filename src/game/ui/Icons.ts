@@ -8,11 +8,9 @@
 
 /** id to its view box and body */
 export const ICONS: Readonly<Record<string, readonly [ string, string ]>> = {
-	// the speeds (pause, 1x, 3x, 6x: sim/types.ts SPEED_FACTORS)
+	// pause and play
 	pause: [ '0 0 12 14', '<path fill="currentColor" d="M3 1.5 Q1.7 7 3 12.5 Q4.3 7 3 1.5 Z M9 1.5 Q7.7 7 9 12.5 Q10.3 7 9 1.5 Z"/>' ],
-	speed1: [ '0 0 12 14', '<path fill="currentColor" d="M2 1.5 C5.2 3.6 8 5.4 11 7 C8 8.6 5.2 10.4 2 12.5 C2.7 9 2.7 5 2 1.5 Z"/>' ],
-	speed3: [ '0 0 20 14', '<path fill="currentColor" d="M1 1.5 C3.8 3.6 6.4 5.4 9 7 C6.4 8.6 3.8 10.4 1 12.5 C1.6 9 1.6 5 1 1.5 Z M10 1.5 C12.8 3.6 15.4 5.4 18 7 C15.4 8.6 12.8 10.4 10 12.5 C10.6 9 10.6 5 10 1.5 Z"/>' ],
-	speed6: [ '0 0 28 14', '<path fill="currentColor" d="M1 1.5 C3.8 3.6 6.4 5.4 9 7 C6.4 8.6 3.8 10.4 1 12.5 C1.6 9 1.6 5 1 1.5 Z M10 1.5 C12.8 3.6 15.4 5.4 18 7 C15.4 8.6 12.8 10.4 10 12.5 C10.6 9 10.6 5 10 1.5 Z M19 1.5 C21.8 3.6 24.4 5.4 27 7 C24.4 8.6 21.8 10.4 19 12.5 C19.6 9 19.6 5 19 1.5 Z"/>' ],
+	play: [ '0 0 12 14', '<path fill="currentColor" d="M2 1.5 C5.2 3.6 8 5.4 11 7 C8 8.6 5.2 10.4 2 12.5 C2.7 9 2.7 5 2 1.5 Z"/>' ],
 	// the weather, by day and by night (the live icon draws its own parts: Forecast.ts); rain, storm and fog wait with their weathers
 	sun: [ '0 0 32 32', '<g><path fill="currentColor" d="M24.8 16 Q26.6 17.1 28.4 16 Q26.6 14.8 24.8 16 Z M22.2 22.2 Q22.6 24.4 24.8 24.8 Q24.4 22.6 22.2 22.2 Z M16 24.8 Q14.8 26.6 16 28.4 Q17.1 26.6 16 24.8 Z M9.8 22.2 Q7.6 22.6 7.2 24.8 Q9.4 24.4 9.8 22.2 Z M7.2 16 Q5.4 14.8 3.6 16 Q5.4 17.1 7.2 16 Z M9.8 9.8 Q9.4 7.6 7.2 7.2 Q7.6 9.4 9.8 9.8 Z M16 7.2 Q17.1 5.4 16 3.6 Q14.8 5.4 16 7.2 Z M22.2 9.8 Q24.4 9.4 24.8 7.2 Q22.6 7.6 22.2 9.8 Z"/></g><path fill="currentColor" fill-rule="evenodd" d="M16 9.4 a6.6 6.6 0 1 0 0.01 0 Z M16.5 11 a4.8 4.8 0 1 0 0.01 0 Z"/>' ],
 	moon: [ '0 0 32 32', '<path fill="currentColor" d="M23.5 19.6 A9.2 9.2 0 1 1 14 6.8 A8 8 0 0 0 23.5 19.6 Z"/>' ],
