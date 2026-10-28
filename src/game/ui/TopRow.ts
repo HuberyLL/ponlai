@@ -1,5 +1,3 @@
-import { SPEED_FACTORS } from '../sim/types.ts';
-import type { Speed } from '../sim/types.ts';
 import { uprightStroke } from './Brush.ts';
 import { dayName } from './data/record.ts';
 import { attr, el, flag, iconButton, svgEl, text } from './dom.ts';
@@ -11,19 +9,17 @@ import { ResourceRow } from './ResourceRow.ts';
 import type { UiShared } from './Shared.ts';
 
 // The top row (docs/ui.md, Top row): at the left the day in calligraphy and the time in the brush
-// numerals (08:00, the game's clock: telling time in 时辰 is not decided), the speeds (pause, 1x,
-// 3x, 6x; the current one 缟, the others 苍) and the weather with its forecast (Forecast.ts); at the
+// numerals (08:00, the game's clock: telling time in 时辰 is not decided), pause and play (the
+// game runs at one speed; the current one 缟, the other 苍) and the weather with its forecast (Forecast.ts); at the
 // right the island's resources (ResourceRow.ts) and the record's scroll (沧海录), split by brush
-// strokes. The speeds act through Game.setSpeed, the scroll opens the record (Record.ts).
+// strokes. They act through Game.setPaused, the scroll opens the record (Record.ts).
 
-const SPEEDS: readonly { speed: Speed; label: string; icon: string }[] = [
-	{ speed: 0, label: t( 'top.pause' ), icon: 'pause' },
-	{ speed: 1, label: t( 'top.speed1' ), icon: 'speed1' },
-	{ speed: 2, label: t( 'top.speed3' ), icon: 'speed3' },
-	{ speed: 3, label: t( 'top.speed6' ), icon: 'speed6' },
+const CLOCK: readonly { paused: boolean; label: string; icon: string }[] = [
+	{ paused: true, label: t( 'top.pause' ), icon: 'pause' },
+	{ paused: false, label: t( 'top.play' ), icon: 'play' },
 ];
-// each speed's icon size: the arrows grow with the speed
-const SPEED_SIZE: Readonly<Record<string, [ number, number ]>> = { pause: [ 12, 14 ], speed1: [ 12, 14 ], speed3: [ 20, 14 ], speed6: [ 28, 14 ] };
+// each icon's size
+const ICON_SIZE: Readonly<Record<string, [ number, number ]>> = { pause: [ 12, 14 ], play: [ 12, 14 ] };
 
 const DIVIDER = uprightStroke( 3, 1, 39, 2.4, 0.6 );
 
@@ -42,7 +38,7 @@ export class TopRow {
 	private readonly shared: UiShared;
 	private readonly day: HTMLElement;
 	private readonly clock: HTMLElement;
-	private readonly speeds: HTMLButtonElement[] = [];
+	private readonly clockButtons: HTMLButtonElement[] = [];
 	private readonly forecast: Forecast;
 	private readonly stock: ResourceRow;
 	private dayShown = 0;
@@ -56,18 +52,18 @@ export class TopRow {
 		this.day = el( 'div', 'pl-day pl-title pl-xb', when );
 		this.clock = el( 'div', 'pl-clock pl-num big pl-xb', when, '08:00' );
 		divider( 'pl-divider pl-sh', top, 11 );
-		const speeds = el( 'div', 'pl-speeds', top );
-		speeds.setAttribute( 'role', 'group' );
-		speeds.setAttribute( 'aria-label', t( 'top.speeds' ) );
-		for ( const s of SPEEDS ) {
+		const buttons = el( 'div', 'pl-run', top );
+		buttons.setAttribute( 'role', 'group' );
+		buttons.setAttribute( 'aria-label', t( 'top.run' ) );
+		for ( const s of CLOCK ) {
 
-			const b = iconButton( s.label, s.icon, 14, speeds, () => shared.game.setSpeed( s.speed ) );
-			const [ w, h ] = SPEED_SIZE[ s.icon ];
+			const b = iconButton( s.label, s.icon, 14, buttons, () => shared.game.setPaused( s.paused ) );
+			const [ w, h ] = ICON_SIZE[ s.icon ];
 			const svg = b.querySelector( 'svg' )!;
 			svg.setAttribute( 'width', String( w ) );
 			svg.setAttribute( 'height', String( h ) );
 			b.style.width = `${ Math.max( 28, w + 16 ) }px`;
-			this.speeds.push( b );
+			this.clockButtons.push( b );
 
 		}
 		divider( 'pl-divider pl-sh', top, 12 );
@@ -87,11 +83,11 @@ export class TopRow {
 		const day = Math.floor( hour / 24 ) + 1;
 		if ( day !== this.dayShown ) text( this.day, dayName( this.dayShown = day ) );
 		text( this.clock, `${ String( Math.floor( minutes / 60 ) ).padStart( 2, '0' ) }:${ String( minutes % 60 ).padStart( 2, '0' ) }` );
-		for ( let i = 0; i < SPEEDS.length; i ++ ) {
+		for ( let i = 0; i < CLOCK.length; i ++ ) {
 
-			const current = SPEED_FACTORS[ sim.speed ] === SPEED_FACTORS[ SPEEDS[ i ].speed ];
-			flag( this.speeds[ i ], 'dim', ! current );
-			attr( this.speeds[ i ], 'aria-pressed', String( current ) );
+			const current = sim.paused === CLOCK[ i ].paused;
+			flag( this.clockButtons[ i ], 'dim', ! current );
+			attr( this.clockButtons[ i ], 'aria-pressed', String( current ) );
 
 		}
 		this.forecast.update( game, hour );

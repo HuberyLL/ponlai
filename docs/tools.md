@@ -366,7 +366,7 @@ Game:
   default, or `en`, a snapshot whose missing words show in Chinese: `src/game/ui/i18n/`). The
   page's own `weather` option and auto weather work in the game as without it.
 - The player's interface is 蜃光 (`src/game/ui/GameUi.ts`, its spec `docs/ui.md`): the top row
-  (day and time, the speeds, the weather now and the next 24 game hours read ahead from the auto
+  (day and time, pause and play, the weather now and the next 24 game hours read ahead from the auto
   chain, the island's resources, the record's scroll), a click on an islander for their tag and
   ring (again, or on open ground, lets go; Esc too), the speak bar (Enter opens it and sends; the
   words fly to the islander selected, or to everyone in view), the build bar (the mallet at the
@@ -375,7 +375,7 @@ Game:
   arms its placement in the scene: a ring on the turf previews the spot (green, or red with the
   reason in the bar), a click places it (`src/game/Placement.ts`). Space pauses only the game
   clock, the GUI's hour, clock pause and time preset are off (the game's clock owns the time of
-  day), and its Game folder (`src/game/GameDebug.ts`) sets the speed and pauses, saves, loads and
+  day), and its Game folder (`src/game/GameDebug.ts`) pauses and resumes, saves, loads and
   starts a new game (`saved`: when the game was last saved, and whether autosave is on), shows one islander's body
   (position, the action under way, whether a thought is in flight) and sends it walking to the
   next click on the island; its Growth subfolder shows the population against the next step and
@@ -388,7 +388,7 @@ Game:
   by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `.tools` (the five
   actions), `setBrain( brain )` (kept across a load; `null` leaves the islander idle),
   `think( id )`, `walkTo( id, x, z )`, `placeBlueprint( kind, x, z )` (a building of a kind,
-  `'chest'`, any number, each with an id like `chest1`; returns why not, or null), `focus( id )`, `setSpeed`, `togglePause`,
+  `'chest'`, any number, each with an id like `chest1`; returns why not, or null), `focus( id )`, `setPaused`, `togglePause`,
   `addIslander()`, `save` and `load` (a save of another piece count loads only with the page),
   `startOver()` (a new game on the island shown), `autosave()` (the page's save: skipped when
   nothing changed), `.keeps` and `.savedAt`,

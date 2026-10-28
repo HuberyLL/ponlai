@@ -4,7 +4,6 @@ import { FIGURE_HEIGHT, type Villager as Figure } from '../../characters/Village
 import type { Body, Sex } from '../../characters/Ages.ts';
 import type { LookColours } from '../../characters/looks.ts';
 import { ISLAND_TOP } from '../../world/WorldShapes.ts';
-import { SPEED_FACTORS } from '../sim/types.ts';
 import type { EntityId } from '../sim/types.ts';
 import type { Sim } from '../sim/Sim.ts';
 import { BUILDING_KINDS, stageOf } from '../sim/buildings.ts';
@@ -170,11 +169,12 @@ export class GameView {
 		if ( this.disposed ) return;
 		const { sim } = this.options;
 		const state = sim.state, grid = sim.grid;
-		const factor = SPEED_FACTORS[ sim.speed ];
+		// the game's pace against real time: 1 while it runs, 0 while paused
+		const factor = sim.paused ? 0 : 1;
 		const stamp = ++ this.stamp;
 		// Game seconds per game-paced second (the figures' clock): the ticks stepped plus the
 		// change in the tick fraction give exactly the game time this frame advanced
-		const pace = factor > 0 && realDt > 0 ? ( gameDt + sim.alpha - this.lastAlpha ) / ( realDt * factor ) : NaN;
+		const pace = factor > 0 && realDt > 0 ? ( gameDt + sim.alpha - this.lastAlpha ) / realDt : NaN;
 		this.lastAlpha = sim.alpha;
 
 		// one figure a frame puts on a body prepared for its age (a copy of its meshes and rig)

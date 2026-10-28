@@ -118,9 +118,9 @@
 .pl-day { font-size: 26px; white-space: nowrap; }
 .pl-clock { width: 92px; font-size: 30px; letter-spacing: 0.04em; }
 .pl-divider { display: block; flex: none; color: var( --gao ); }
-.pl-speeds { display: flex; align-items: center; gap: 14px; padding: 0 4px; }
-.pl-speeds .pl-btn { height: 44px; }
-.pl-speeds .pl-btn > .pl-under { width: 24px; bottom: 4px; }
+.pl-run { display: flex; align-items: center; gap: 14px; padding: 0 4px; }
+.pl-run .pl-btn { height: 44px; }
+.pl-run .pl-btn > .pl-under { width: 24px; bottom: 4px; }
 
 .pl-forecast { position: relative; width: 260px; height: 34px; color: var( --gao ); }
 .pl-forecast .live { position: absolute; left: 0; top: 0; width: 30px; height: 30px; overflow: visible; }

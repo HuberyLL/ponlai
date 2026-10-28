@@ -1,6 +1,6 @@
 import type { WeatherName } from '../../sky/Weather.ts';
 import type { RecordEntry } from '../Chronicle.ts';
-import type { EntityId, Speed } from '../sim/types.ts';
+import type { EntityId } from '../sim/types.ts';
 import { cubic, lensFrame, stroke, uprightStroke } from './Brush.ts';
 import type { Point } from './Brush.ts';
 import { iconSvg, setIcon } from './Icons.ts';
@@ -15,8 +15,8 @@ import { t } from './i18n/i18n.ts';
 import type { UiShared } from './Shared.ts';
 
 // 沧海录, the record (docs/ui.md; the design canvas's RecMain and RecPerson): opened by the scroll
-// at the top right over the dimmed, stopped world (the game paused while it is open, its speed
-// given back on closing); the rest of the interface hides. Esc or × closes it; ←/→ step the days.
+// at the top right over the dimmed, stopped world (the game paused while it is open, and running
+// again on closing if it ran before); the rest of the interface hides. Esc or × closes it; ←/→ step the days.
 // - Left: 蓬莱 (the whole island) pinned on top, then every islander who has landed, scrolling past
 //   about seven names (no scrollbar; a fade at an edge only where more names lie beyond).
 // - A page: 蓬莱's logs everything; an islander's is their life from landing on, under a large
@@ -70,7 +70,7 @@ export class Record {
 	private who: EntityId | 'all' = 'all';
 	private day = 1;
 	private start = 1;
-	private resume: Speed = 1;
+	private resume = true;
 	private drawn = '';
 	private wheelAt = 0;
 	private returnFocus: HTMLElement | null = null;
@@ -151,8 +151,8 @@ export class Record {
 		flag( this.root, 'open', open );
 		if ( open ) {
 
-			this.resume = game.sim.speed;
-			if ( game.sim.speed !== 0 ) game.setSpeed( 0 );
+			this.resume = ! game.sim.paused;
+			if ( this.resume ) game.setPaused( true );
 			// the focus goes back on closing only to where the keyboard had it: a button the pointer
 			// pressed keeps no focus, so Space stays the game's pause
 			const before = document.activeElement;
@@ -164,7 +164,7 @@ export class Record {
 
 		} else {
 
-			if ( game.sim.speed === 0 && this.resume !== 0 ) game.setSpeed( this.resume );
+			if ( game.sim.paused && this.resume ) game.setPaused( false );
 			// the interface shows again first: a hidden element cannot take the focus back
 			this.onOpen( open );
 			if ( this.returnFocus ) this.returnFocus.focus( { preventScroll: true } );

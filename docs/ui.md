@@ -91,7 +91,7 @@ are 苍 with wider letter spacing.
 
 Normal (缟), hover (精白, a faint stroke beneath), pressed (sinks, dimmer), disabled (faint, no
 pointer), selected (one 金 stroke beneath). In a set of exclusive choices the current one is 缟
-and the others 苍 (the speeds).
+and the others 苍 (pause and play).
 
 ## Components
 
@@ -100,8 +100,8 @@ SpeakFlow prototype.
 
 ### Top row
 
-Left to right: the day and time (`第一日` in calligraphy, `08:00` in the brush numerals); the
-speeds (pause, 1×, 3×, 6×: `SPEED_FACTORS` in `src/game/sim/types.ts`); the weather forecast;
+Left to right: the day and time (`第一日` in calligraphy, `08:00` in the brush numerals); pause
+and play (the game runs at one speed); the weather forecast;
 then, at the right, the resources and the record's scroll icon (沧海录).
 
 **Weather forecast** (board WeatherAnim). The live "now" icon is one drawing in parts that morphs

@@ -7,8 +7,8 @@ import { TRAMPLE, type TrampleWalker } from '../../world/vegetation/Trample.ts';
 // One islander on screen: the sim's body drawn by a loaded figure (or a plain stand-in when the
 // figure cannot load). Position interpolates between the last two ticks, the heading turns
 // smoothly toward the sim's facing, and the body's motion picks the idle or walk clip with a
-// short crossfade. The figure's clock runs at the game's pace, so speeding the game up speeds the
-// islanders up and a paused game freezes them mid-step. A figure with a body shows the islander's
+// short crossfade. The figure's clock runs at the game's pace, so a paused game freezes the
+// islanders mid-step. A figure with a body shows the islander's
 // age each frame, and puts on the body prepared for it, one figure a frame (GameView;
 // characters/FigureAge.ts).
 // It parts the meadow (world/vegetation/Trample.ts) along the positions it has shown, kept by the
@@ -93,8 +93,8 @@ export class VillagerView implements TrampleWalker {
 	}
 
 	/**
-	 * Per frame. realDt drives smoothing that should not change with game speed; gameDt (real
-	 * seconds times the speed factor) drives everything the islander does, so a pause holds it.
+	 * Per frame. realDt drives smoothing that goes on while paused; gameDt (real
+	 * seconds times the factor, 1 running and 0 paused) drives everything the islander does, so a pause holds it.
 	 * pace: game seconds per game-paced second this frame (NaN when unknown); age: the islander's
 	 * (years); swap: whether this frame may put on a body prepared for the age (FigureAge.ts swap),
 	 * which it returns once it has.
@@ -132,8 +132,8 @@ export class VillagerView implements TrampleWalker {
 				swapped = true;
 
 			}
-			// Crossfades last FADE real seconds at any speed; the mixer runs at the game's pace.
-			this.play( walking ? 'Walk' : 'Idle_Neutral', FADE * Math.max( factor, 1 ) );
+			// the mixer runs at the game's pace
+			this.play( walking ? 'Walk' : 'Idle_Neutral', FADE );
 			const walk = f.actions.Walk;
 			if ( walk && walking && pace > 0 ) {
 

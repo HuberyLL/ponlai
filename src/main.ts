@@ -1649,7 +1649,7 @@ function tick( time: number ): void {
 	// the scheduler still submits at most one coalesced bake instead of catching up a queue.
 	const environmentDt = Math.min( rawDt, 1 );
 	// ?game&paused starts the game paused; once the game runs, so does the scene
-	if ( paused && game && game.sim.speed !== 0 ) paused = false;
+	if ( paused && game && ! game.sim.paused ) paused = false;
 	if ( ! paused ) simTime += dt;
 	// In the game the simulation's clock sets the pace of the day (and so of the page's weather).
 	const clockDt = game ? game.update( rawDt ) : rawDt;

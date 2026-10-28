@@ -7,11 +7,9 @@
 		"then": "，"
 	},
 	"top": {
-		"speeds": "速度",
+		"run": "时间",
 		"pause": "暂停",
-		"speed1": "一倍速",
-		"speed3": "三倍速",
-		"speed6": "六倍速"
+		"play": "继续"
 	},
 	"weather": {
 		"kind": {

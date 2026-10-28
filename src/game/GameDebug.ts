@@ -8,12 +8,12 @@ import { describeCall } from './sim/actions.ts';
 import type { Brain, Perception, ToolCall } from './sim/agent.ts';
 import { StandInBrain } from './sim/standin.ts';
 import { GROWTH_STEPS } from './sim/types.ts';
-import type { EntityId, Speed } from './sim/types.ts';
+import type { EntityId } from './sim/types.ts';
 import { PLACEHOLDER_DAYS, PLACEHOLDER_NAMES, PLACEHOLDER_SKIES } from './ui/data/record.ts';
 import { LOCALES, locale } from './ui/i18n/i18n.ts';
 
 // The game's developer controls: a Game folder in the scene's lil-gui panel (H), not a player
-// interface. It sets the speed and pauses, saves, loads and starts a new game (the save's slot:
+// interface. It pauses and resumes, saves, loads and starts a new game (the save's slot:
 // save.ts; `saved` says when the game was last saved and whether the page saves it itself), shows
 // one islander's body as the simulation holds it (where it is, the action under way, whether a
 // thought is in flight for it) and sends that body walking to the next click on the island. Its
@@ -60,7 +60,6 @@ class HearingBrain implements Brain {
 
 // ms between refreshes of the read-only fields
 const REFRESH_MS = 250;
-const SPEEDS: Record<string, Speed> = { paused: 0, '1x': 1, '3x': 2, '6x': 3 };
 
 export class GameDebug {
 
@@ -69,7 +68,7 @@ export class GameDebug {
 	private readonly canvas: HTMLCanvasElement;
 	private readonly folder: GUI;
 	private readonly fields = {
-		speed: 1 as Speed, status: '', saved: '', islander: '' as EntityId, position: '', doing: '', thinking: false,
+		paused: false, status: '', saved: '', islander: '' as EntityId, position: '', doing: '', thinking: false,
 		population: '',
 	};
 	private readonly islander: Controller;
@@ -90,7 +89,7 @@ export class GameDebug {
 		const f = this.fields;
 		const folder = this.folder = gui.addFolder( 'Game' );
 
-		folder.add( f, 'speed', SPEEDS ).onChange( ( speed: Speed ) => game.setSpeed( speed ) );
+		folder.add( f, 'paused' ).onChange( ( paused: boolean ) => game.setPaused( paused ) );
 		folder.add( { pause: () => game.togglePause() }, 'pause' ).name( 'pause / resume (Space)' );
 		folder.add( { save: () => {
 
@@ -170,7 +169,7 @@ export class GameDebug {
 		if ( now < this.nextRefresh || this.folder._closed || this.folder.root._hidden ) return;
 		this.nextRefresh = now + REFRESH_MS;
 		const f = this.fields, sim = this.game.sim;
-		f.speed = sim.speed;
+		f.paused = sim.paused;
 		const at = this.game.savedAt === null ? 'not since the page loaded' : new Date( this.game.savedAt ).toLocaleTimeString();
 		f.saved = `${ at }${ this.game.keeps ? ', autosave on' : ', autosave off' }`;
 		const next = GROWTH_STEPS[ sim.state.pieces ];

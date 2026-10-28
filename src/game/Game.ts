@@ -22,20 +22,20 @@ import type { Weather, WeatherName } from '../sky/Weather.ts';
 import { Chronicle } from './Chronicle.ts';
 import type { RecordSave } from './Chronicle.ts';
 import { stockOf } from './sim/stock.ts';
-import type { EntityId, IslandInput, Items, Speed } from './sim/types.ts';
+import type { EntityId, IslandInput, Items } from './sim/types.ts';
 
 // The island as a game (?game): the simulation (src/game/sim) runs the islanders' bodies, their
 // needs, the places they act at and the things on the ground (their rigid bodies in the physics
 // world, sim/physics.ts, whose engine `start` loads before any simulation is made), a brain in its
 // slot thinks for them (the stand-in of plain rules by default, sim/standin.ts) and GameView draws
 // them, the chest and the things into the scene.
-// The player's interface is 蜃光 (ui/GameUi.ts, docs/ui.md): the top row (day and time, speeds,
+// The player's interface is 蜃光 (ui/GameUi.ts, docs/ui.md): the top row (day and time, pause and play,
 // the weather and its forecast, the island's stock, the record), the islanders' tags and marks, the
 // speak bar, the build bar (which hands a building the simulation knows to the placement in the
 // scene, Placement.ts) and the record (沧海录), whose history the game keeps (Chronicle.ts). The debug panel's Game folder (GameDebug.ts) and
 // the methods below, reached from the console as window.__PONLAI__.game, drive the rest. The
-// simulation's clock sets the time of day; the page's sky follows it, so pausing or speeding up the
-// game turns the sky with it. The weather is the page's own, as without ?game, running on the day
+// simulation's clock sets the time of day; the page's sky follows it, so pausing the game stops the
+// sky with it. The weather is the page's own, as without ?game, running on the day
 // clock, and its auto chain read ahead is the game's forecast (`forecast`, in game hours). Waves,
 // wind and rain keep real time. The player speaks to the islanders through `speak`: the words go
 // into the record and, for a brain that hears, wait per listener for its next thought
@@ -62,7 +62,7 @@ import type { EntityId, IslandInput, Items, Speed } from './sim/types.ts';
 // over it. The debug panel and the console save, load and start over by hand anywhere. The ground
 // comes from the world generator's own exports: the land (its walkable grid, sim/grid.ts, spans the
 // land lattice's extent anchored to the world, so growth only opens cells). What changes the drawn scene at once (a simulation
-// installed at start or load, the speed or the pause, a placed blueprint, the placement ring the
+// installed at start or load, the pause, a placed blueprint, the placement ring the
 // pointer moves) tells the page through the context's `sceneEvent` (post/SceneEvents.ts), so the
 // temporal anti-aliasing cuts its history or converges a paused frame again.
 //
@@ -137,7 +137,7 @@ export class Game {
 		// its world's ground is this land's)
 		if ( saved && sim.state.pieces !== context.pieces ) sim.physics.setGround( sim.state, sim.grid );
 		sim.state.pieces = context.pieces;
-		if ( context.params.has( 'paused' ) ) sim.speed = 0;
+		if ( context.params.has( 'paused' ) ) sim.paused = true;
 		await game.begin( sim, saved?.record );
 		if ( game.keeps ) {
 
@@ -170,7 +170,6 @@ export class Game {
 	// the brain in the islanders' slot, kept across a load (setBrain)
 	private brain: Brain | null = new StandInBrain();
 	private gameDt = 0;
-	private resumeSpeed: Speed = 1;
 	// a grow asked of the page and not yet in
 	private growing = false;
 	// the pending piece's island, kept for a simulation installed later (a load)
@@ -301,8 +300,6 @@ export class Game {
 	update( rawDt: number ): number {
 
 		const secondsPerDay = this.context.dayCycle.dayLength;
-		// a speed set directly (the debug panel, the console) is the one Space resumes
-		if ( this.sim.speed !== 0 ) this.resumeSpeed = this.sim.speed;
 		this.gameDt = this.sim.advance( Math.min( Math.max( rawDt, 0 ), MAX_FRAME ), secondsPerDay );
 		this.grow();
 		return this.gameDt * secondsPerDay / SECONDS_PER_GAME_DAY;
@@ -364,15 +361,14 @@ export class Game {
 
 	togglePause(): void {
 
-		this.sim.speed = this.sim.speed === 0 ? this.resumeSpeed : 0;
-		this.context.sceneEvent( 'game speed' );
+		this.setPaused( ! this.sim.paused );
 
 	}
 
-	setSpeed( speed: Speed ): void {
+	setPaused( paused: boolean ): void {
 
-		this.sim.speed = speed;
-		this.context.sceneEvent( 'game speed' );
+		this.sim.paused = paused;
+		this.context.sceneEvent( 'game pause' );
 
 	}
 

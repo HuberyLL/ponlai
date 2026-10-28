@@ -12,8 +12,8 @@ import { dropItems, settleThings } from './things.ts';
 import { random } from './rng.ts';
 import { ageOf, drawLifespan, paceOf } from './life.ts';
 import { SAVE_VERSION } from '../save.ts';
-import { GROWTH_STEPS, POPULATION_START, SECONDS_PER_GAME_DAY, SECONDS_PER_YEAR, SPEED_FACTORS, WALK_SPEED, piecesFor } from './types.ts';
-import type { EntityId, IslandInput, SimState, Speed, Vec2, Villager } from './types.ts';
+import { GROWTH_STEPS, POPULATION_START, SECONDS_PER_GAME_DAY, SECONDS_PER_YEAR, WALK_SPEED, piecesFor } from './types.ts';
+import type { EntityId, IslandInput, SimState, Vec2, Villager } from './types.ts';
 import type { Body, Sex } from '../../characters/Ages.ts';
 
 // The island simulation: a fixed step of one game second, with every change kept in SimState, so
@@ -70,7 +70,8 @@ export class Sim {
 	readonly grid: Grid;
 	/** the rigid bodies (physics.ts): a new world, or the one the state's snapshot holds */
 	readonly physics: Physics;
-	speed: Speed = 1;
+	/** the game runs at the day clock's own rate, or not at all */
+	paused = false;
 	/** fraction of the next tick already elapsed (0..1), for interpolating positions */
 	alpha = 0;
 	/** the tools a brain acts through, by name: the five actions (actions.ts) */
@@ -208,11 +209,12 @@ export class Sim {
 
 	}
 
-	/** Run forward by real seconds at the current speed, given the day clock's length in real
-	 * seconds; returns the game seconds (ticks) run. */
+	/** Run forward by real seconds at the day clock's rate (nothing while paused), given the day
+	 * clock's length in real seconds; returns the game seconds (ticks) run. */
 	advance( realSeconds: number, secondsPerDay: number ): number {
 
-		this.carry += realSeconds * SPEED_FACTORS[ this.speed ] * SECONDS_PER_GAME_DAY / secondsPerDay;
+		if ( this.paused ) return 0;
+		this.carry += realSeconds * SECONDS_PER_GAME_DAY / secondsPerDay;
 		const ticks = Math.floor( this.carry );
 		this.carry -= ticks;
 		this.alpha = this.carry;

@@ -28,9 +28,8 @@ import type { BuildingState, SimState, Vec3, Villager } from './types.ts';
 // Rules: the world is a function of the state's history and the seed alone: no wall clock and no
 // Math.random (the spread and spin of what is dropped come from the state's generator), every body
 // made, moved and removed in the simulation's own order. One step a tick, of PHYSICS_STEP: a
-// tick's length on screen at the game's 24-minute day at 1x (the basis WALK_SPEED is written on),
-// so at the faster speeds things fall faster exactly as the islanders walk faster; the simulation
-// never reads the page's day length. The integration parameters are set here explicitly (the
+// tick's length on screen at the game's 24-minute day (the basis WALK_SPEED is written on), so
+// things fall at the pace the islanders walk; the simulation never reads the page's day length. The integration parameters are set here explicitly (the
 // solver's iterations at Rapier's defaults), so an upgrade that changes a default shows in the diff.
 // The save holds the world as Rapier's snapshot (SimState.physics, taken when the game is saved:
 // Sim.save), whose format is Rapier's: a Rapier upgrade bumps SAVE_VERSION. A restored world

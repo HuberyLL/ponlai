@@ -79,16 +79,16 @@ function farthestOpen( grid, p ) {
 	sim.step( HOUR );
 	assert.equal( sim.state.tick, HOUR, 'one tick per game second' );
 	assert.equal( sim.hour(), 9 );
-	// at 1x a game day lasts the day clock's length: a 1440 s day runs 60 game seconds a real one
-	assert.equal( sim.advance( 1, 1440 ), 60, 'the speed and the day length set the ticks per real second' );
-	sim.speed = 0;
+	// a game day lasts the day clock's length: a 1440 s day runs 60 game seconds a real one
+	assert.equal( sim.advance( 1, 1440 ), 60, 'the day length sets the ticks per real second' );
+	sim.paused = true;
 	assert.equal( sim.advance( 1, 1440 ), 0, 'a paused game runs no ticks' );
-	sim.speed = 1;
+	sim.paused = false;
 	sim.step( 16 * HOUR );
 	assert.equal( sim.day(), 1, 'the day turns at midnight' );
 	const a = newGame( input, { seed: 7 } ), b = newGame( input, { seed: 7 } );
 	assert.deepEqual( [ a.random(), a.random() ], [ b.random(), b.random() ], 'one seed, one sequence' );
-	console.log( 'clock: ticks, speed, day and the seeded generator' );
+	console.log( 'clock: ticks, pause, day and the seeded generator' );
 
 }
 
