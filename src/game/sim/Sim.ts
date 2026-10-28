@@ -7,6 +7,8 @@ import { fallNeeds, START_NEEDS } from './needs.ts';
 import { findPath, goalAt } from './path.ts';
 import { BUILDING_KINDS, blueprintRefusal, newBuilding } from './buildings.ts';
 import { obstructPlaces } from './places.ts';
+import { Physics } from './physics.ts';
+import { dropItems, settleThings } from './things.ts';
 import { random } from './rng.ts';
 import { ageOf, drawLifespan, paceOf } from './life.ts';
 import { SAVE_VERSION } from '../save.ts';
@@ -19,14 +21,23 @@ import type { Body, Sex } from '../../characters/Ages.ts';
 // The islanders are bodies on the ground grid with needs that fall (needs.ts), a bag (items.ts) and
 // an action under way (actions.ts), and are places to one another (people.ts: they hear each other,
 // give and follow); the places they act at (places.ts) keep their own state here too (the
-// buildings). A brain may think for them (agent.ts) beside the world, never holding up a tick.
-// The weather is the page's own: nothing in the simulation depends on it.
+// buildings). What lies on the ground is single things (things.ts), rigid bodies in the
+// simulation's own physics world (physics.ts, Sim.physics: the ground, the buildings and the
+// islanders' capsules are bodies there too). A brain may think for them (agent.ts) beside the
+// world, never holding up a tick. The weather is the page's own: nothing in the simulation depends
+// on it.
 //
 // Each tick: the needs fall, each body walks a step (at its age's pace) and its action advances,
-// those who reached their lifespan die (life.ts), then the temporary trigger asks the brain for a
-// thought for every islander with nothing under way (no action, no walk) and no thought in flight.
-// A brain that answers at once (the stand-in) acts within the tick, so a game with it is
-// deterministic for a seed; a slow one acts when it answers.
+// those who reached their lifespan die (life.ts; the bag falls where they stood); then the
+// physics: the islanders' capsules are moved to where they walked and the buildings' boxes set to
+// their stage, the world steps once, and the things that moved copy their poses (those lost to the
+// sea go). The step comes after the actions and the deaths so that what they dropped this tick
+// (a catch with no room in the bag, a death's bag) falls in it, and after the walk so that a
+// capsule pushes from where its islander now stands. Then the temporary trigger asks the brain
+// for a thought for every islander with nothing under way (no action, no walk) and no thought in
+// flight; what a thought drops lies at its spawn point until the next tick's step. A brain that
+// answers at once (the stand-in) acts within the tick, so a game with it is deterministic for a
+// seed; a slow one acts when it answers.
 //
 // The island grows with the population (docs/game-design.md, "How the island grows"): the
 // population is the islanders' count, and each step of GROWTH_STEPS (types.ts) is one piece. The
@@ -57,6 +68,8 @@ export class Sim {
 
 	readonly state: SimState;
 	readonly grid: Grid;
+	/** the rigid bodies (physics.ts): a new world, or the one the state's snapshot holds */
+	readonly physics: Physics;
 	speed: Speed = 1;
 	/** fraction of the next tick already elapsed (0..1), for interpolating positions */
 	alpha = 0;
@@ -76,6 +89,15 @@ export class Sim {
 		this.state = state;
 		this.grid = new Grid( input );
 		obstructPlaces( this );
+		this.physics = new Physics( state.physics );
+		if ( ! state.physics ) this.physics.setGround( state, this.grid );
+
+	}
+
+	/** Release the physics world (the simulation is not used again). */
+	dispose(): void {
+
+		this.physics.free();
 
 	}
 
@@ -123,6 +145,7 @@ export class Sim {
 
 		this.grid.setIsland( input );
 		obstructPlaces( this );
+		this.physics.setGround( this.state, this.grid );
 		findWaysAgain( this );
 		this.state.pieces ++;
 		this.comingLand = null;
@@ -144,11 +167,13 @@ export class Sim {
 		const count = n + state.dead.length;
 		const pool = NAMES[ sex ], name = pool.find( ( x ) => ! state.villagers.some( ( v ) => v.name === x ) ) ?? pool[ count % pool.length ];
 		const id = `v${ count + 1 }`;
-		state.villagers.push( {
+		const v: Villager = {
 			id, name, look: count, sex, born: state.tick - Math.round( age * SECONDS_PER_YEAR ), lifespan: drawLifespan( state, sex, age ),
-			pos: { ...p }, prev: { ...p }, heading: Math.atan2( - p.x, - p.z ), path: null,
+			pos: { ...p }, prev: { ...p }, heading: Math.atan2( - p.x, - p.z ), body: - 1, path: null,
 			needs: { ...START_NEEDS }, bag: {}, action: null, last: null, said: null, gave: null, noticed: [],
-		} );
+		};
+		this.physics.addBody( v, grid, state.tick );
+		state.villagers.push( v );
 		return id;
 
 	}
@@ -217,18 +242,26 @@ export class Sim {
 
 		}
 		if ( state.villagers.some( ( v ) => ageOf( v, state.tick ) >= v.lifespan ) ) this.die();
+		this.physics.syncBodies( state, this.grid );
+		this.physics.step();
+		settleThings( this );
 		if ( ! this.brain ) return;
 		for ( const v of state.villagers ) if ( ! v.action && ! v.path && ! this.thoughts.has( v.id ) ) this.think( v.id );
 
 	}
 
-	/** Those who reached their lifespan leave the roll for the list of the dead. */
+	/** Those who reached their lifespan leave the roll for the list of the dead; what they carried
+	 * falls where they stood, before their capsule goes. */
 	private die(): void {
 
 		const state = this.state;
 		state.villagers = state.villagers.filter( ( v ) => {
 
 			if ( ageOf( v, state.tick ) < v.lifespan ) return true;
+			const bag = Object.entries( v.bag );
+			v.bag = {};
+			if ( bag.length > 0 ) dropItems( this, v, bag, false );
+			this.physics.removeBody( v.body );
 			state.dead.push( { id: v.id, name: v.name, sex: v.sex, born: v.born, died: state.tick } );
 			return false;
 
@@ -354,9 +387,17 @@ export class Sim {
 
 	}
 
+	/** The state with the physics world's snapshot taken now: what a save writes. */
+	snapshot(): SimState {
+
+		this.state.physics = this.physics.snapshot();
+		return this.state;
+
+	}
+
 	save(): string {
 
-		return JSON.stringify( this.state );
+		return JSON.stringify( this.snapshot() );
 
 	}
 
@@ -368,7 +409,7 @@ export class Sim {
 export function newGame( input: IslandInput, options: { seed?: number; startHour?: number; pieces?: number; bodies?: readonly Body[] } = {} ): Sim {
 
 	const seed = ( options.seed ?? 1 ) >>> 0;
-	const sim = new Sim( { version: SAVE_VERSION, seed, tick: 0, startHour: options.startHour ?? 8, rng: seed, villagers: [], dead: [], buildings: [], placed: {}, pieces: options.pieces ?? 0 }, input );
+	const sim = new Sim( { version: SAVE_VERSION, seed, tick: 0, startHour: options.startHour ?? 8, rng: seed, villagers: [], dead: [], buildings: [], placed: {}, pieces: options.pieces ?? 0, things: [], nextThing: 0, ground: - 1, physics: '' }, input );
 	const bodies: readonly Partial<Body>[] = options.bodies?.length ? options.bodies : [ { sex: 'male' }, { sex: 'female' }, {} ];
 	for ( const body of bodies ) sim.addIslander( body );
 	return sim;

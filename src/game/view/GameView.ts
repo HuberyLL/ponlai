@@ -80,7 +80,7 @@ export function propSamples(): THREE.Object3D[] {
 	samples = [];
 	for ( const kind of Object.keys( MODELS ) ) {
 
-		const sample = ( worked: number ): BuildingState => ( { id: kind, kind, x: 0, z: 0, worked, items: {} } );
+		const sample = ( worked: number ): BuildingState => ( { id: kind, kind, x: 0, z: 0, worked, items: {}, collider: null } );
 		samples.push( MODELS[ kind ]( sample( BUILDING_KINDS[ kind ].work ), 0 ).mesh );
 		// its site half built (the marks, the frame, the pile)
 		samples.push( new SiteView( sample( BUILDING_KINDS[ kind ].work / 2 ), 0 ).mesh );

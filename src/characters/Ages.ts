@@ -122,7 +122,7 @@ export function growth( sex: Sex, age: number ): Growth {
 	const leg = at( LEG, young );
 	return {
 		age, sex,
-		height: ADULT_HEIGHT[ sex ] * at( HEIGHT[ sex ], young ),
+		height: heightAt( sex, age ),
 		legShare: leg * sexed( 'legs' ),
 		headShare: at( HEAD, young ) / at( HEIGHT[ sex ], young ) * sexed( 'head' ),
 		neck: at( NECK, age ),
@@ -135,6 +135,14 @@ export function growth( sex: Sex, age: number ): Growth {
 		spine: 1 - SPINE_LOSS[ sex ] * elder,
 		female, child: at( CHILD, age ), elder,
 	};
+
+}
+
+/** The standing height (m) at an age, before the old's loss: growth's `height` alone (the
+ * simulation's bodies stand this tall, sim/physics.ts). */
+export function heightAt( sex: Sex, age: number ): number {
+
+	return ADULT_HEIGHT[ sex ] * at( HEIGHT[ sex ], Math.min( Math.max( age, 2 ), 18 ) );
 
 }
 

@@ -103,7 +103,7 @@ export function perceive( sim: Sim, body: Villager ): Perception {
 	return structuredClone( {
 		time: timeOf( sim.state.tick ),
 		seen,
-		atHand: here.map( ( p ) => ( { place: p.id, options: Object.keys( p.options ).filter( ( o ) => p.options[ o ].open( sim ) ) } ) ),
+		atHand: here.map( ( p ) => ( { place: p.id, options: Object.keys( p.options ).filter( ( o ) => p.options[ o ].open( sim, body ) ) } ) ),
 		noticed,
 		body: {
 			satiety: Math.round( body.needs.satiety ),
