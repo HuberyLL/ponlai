@@ -24,9 +24,10 @@
 //   and frames. Examples: `D.settled` (the paused page will draw the same frame from now on),
 //   `D.taa?.converged`, `D.frame > 300`.
 // - `--frames n`: waits for n rendered frames; `--sleep ms` waits that long.
-// Before the steps, every query waits until the page is up: `__PONLAI__` and the diagnostics exist,
-// one frame rendered, and the loading screen gone (its fade finished, tools/capture-browser.mjs
-// `waitForScene`). The page is not stopped or settled further: add an `--until` for that.
+// Before the steps, every query waits until the page is up (each wait, the navigation included, up
+// to --timeout): `__PONLAI__` and the diagnostics exist, one frame rendered, and the loading screen
+// gone (its fade finished, tools/capture-browser.mjs `waitForScene`). The page is not stopped or
+// settled further: add an `--until` for that.
 // `--init js` runs before any of the page's scripts on every load (Playwright's addInitScript), for
 // hooks that must see the start, such as wrapping `GPUDevice.prototype.createRenderPipeline`.
 //
@@ -100,7 +101,8 @@ const renderedFrame = ( page ) => page.evaluate( () => window.__PONLAI__?.render
 
 async function load( page, query ) {
 
-	await page.goto( `${ url }?${ query }` );
+	// the navigation takes --timeout too: Playwright's own 30 s runs out on a contended GPU
+	await page.goto( `${ url }?${ query }`, { timeout } );
 	await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } ).catch( async ( error ) => {
 
 		// where the load stood: the loading screen's status line
