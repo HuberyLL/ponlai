@@ -2,7 +2,6 @@ import { buildingById, buildings, obstructBuildings } from './buildings.ts';
 import { shoreMask } from './ground.ts';
 import { BAG_CAPACITY, intoBag, total } from './items.ts';
 import { people, personById } from './people.ts';
-import { dropItems, ground, thingById, things } from './things.ts';
 import type { Sim } from './Sim.ts';
 import type { ActionResult, Vec2, Villager } from './types.ts';
 
@@ -12,15 +11,11 @@ import type { ActionResult, Vec2, Villager } from './types.ts';
 // A new kind of place is one more entry in PLACE_KINDS: its places, and the one with an id.
 //
 // - shore: the island's edge band of walkable ground (ground.ts SHORE_BAND), one place all round.
-//   `fish` takes FISH_SECONDS and brings a fish by chance (the seeded generator, at its end); a
-//   catch the bag has no room for (it filled while fishing) falls at the islander's feet
-//   (things.ts), the outcome still `caught a fish`.
+//   `fish` takes FISH_SECONDS and brings a fish by chance (the seeded generator, at its end).
 // - buildings: what the player places (buildings.ts: chests), each a place by its id (chest1).
 // - people: every living islander, a place that moves (people.ts: give, follow), by its id (v2).
-// - things: what lies on the ground, each a place that moves (things.ts: take), by its id (fish3).
-// - ground: the ground itself, at hand wherever one can walk (things.ts: drop).
 //
-// Every place has an id, which the brain names it by, and a kind (shore, chest, person, fish), which
+// Every place has an id, which the brain names it by, and a kind (shore, chest, person), which
 // perception shows beside the id so that several of a kind read as such.
 //
 // Standing at a place means standing on one of its cells (`reaches`): walking to it (`go`) ends on
@@ -43,8 +38,8 @@ export interface DoArgs { action: string; place: string; item?: unknown; count?:
 export type Start = ActionResult | { ok: true; seconds: number | null };
 
 export interface PlaceOption {
-	/** whether the place offers it now to a body, from the place's state and the body's (listed at hand) */
-	open( sim: Sim, body: Villager ): boolean;
+	/** whether the place offers it now, from the place's own state (listed at hand) */
+	open( sim: Sim ): boolean;
 	start( sim: Sim, body: Villager, args: DoArgs ): Start;
 	/** each tick a timed option runs (its first one after it began): a result ends it there, early */
 	during?( sim: Sim, body: Villager, args: DoArgs ): ActionResult | null;
@@ -54,11 +49,8 @@ export interface PlaceOption {
 
 export interface Place {
 	id: string;
-	/** what kind of place it is: 'shore', a building's kind, 'person', a thing's item or 'ground' */
+	/** what kind of place it is: 'shore', a building's kind or 'person' */
 	kind: string;
-	/** a place that moves (a person, a thing): `go` finds its way again when it no longer ends
-	 * beside it (actions.ts) */
-	moves?: boolean;
 	/** whether standing on cell k is standing at the place */
 	reaches( k: number ): boolean;
 	/** the cells near it to test with `reaches` (all of them for the shore) */
@@ -115,8 +107,8 @@ function shore( sim: Sim ): Place {
 				finish: ( s, body ) => {
 
 					if ( s.random() >= FISH_CHANCE ) return { ok: true, value: 'caught nothing' };
-					if ( intoBag( body, 'fish' ) ) dropItems( s, body, [ [ 'fish', 1 ] ] );
-					return { ok: true, value: 'caught a fish' };
+					const full = intoBag( body, 'fish' );
+					return full ? { ok: false, reason: full } : { ok: true, value: 'caught a fish' };
 
 				},
 			},
@@ -131,8 +123,6 @@ function shore( sim: Sim ): Place {
 const PLACE_KINDS: readonly PlaceKind[] = [
 	{ all: buildings, byId: buildingById },
 	{ all: people, byId: personById },
-	{ all: things, byId: thingById },
-	{ all: ( sim ) => [ ground( sim ) ], byId: ( sim, id ) => id === 'ground' ? ground( sim ) : null },
 	{ all: ( sim ) => [ shore( sim ) ], byId: ( sim, id ) => id === 'shore' ? shore( sim ) : null },
 ];
 
@@ -174,7 +164,7 @@ export function placesAt( sim: Sim, body: Villager, places = placesFor( sim, bod
 
 }
 
-/** Block the ground the game's own buildings stand on (a loaded game's, or a new one's). */
+/** Block the ground the game's own things stand on (a loaded game's, or a new one's). */
 export function obstructPlaces( sim: Sim ): void {
 
 	obstructBuildings( sim );

@@ -1,7 +1,7 @@
 import type { ToolHandler, ToolRegistry } from './agent.ts';
 import { ITEMS, count, isItem, removeItems } from './items.ts';
 import { findPath, goalAt, placeGoal } from './path.ts';
-import { hear } from './people.ts';
+import { PERSON_REACH, hear } from './people.ts';
 import { placeById, placesAt } from './places.ts';
 import type { DoArgs, Place } from './places.ts';
 import type { Sim } from './Sim.ts';
@@ -9,9 +9,8 @@ import type { ActionCall, ActionResult, Villager } from './types.ts';
 
 // The five actions an islander acts through, registered as the brain's tools (Sim.tools):
 //
-//   go( { place } )      walk to a place, a person or a thing, named by its id, never a point (the
-//                        body finds the way, and keeps after a place that moves, a person who
-//                        walks or a thing that rolls, until beside it)
+//   go( { place } )      walk to a place or a person, named by its id, never a point (the body
+//                        finds the way, and keeps after a person who moves until beside them)
 //   say( { words } )     say something (kept in Villager.said, heard within earshot: people.ts),
 //                        alongside whatever the body is doing
 //   wait( { seconds } )  stand for a while
@@ -126,7 +125,7 @@ const doAction: ToolHandler = ( body, args, sim ) => {
 	const offers = ( p: Place ) => Object.hasOwn( p.options, action );
 	const named = typeof a.place === 'string' ? a.place : null;
 	// the place named, else one that offers it now first: a built site keeps `build` closed (buildings.ts)
-	const place = named !== null ? here.find( ( p ) => p.id === named ) : here.find( ( p ) => offers( p ) && p.options[ action ].open( sim, body ) ) ?? here.find( offers );
+	const place = named !== null ? here.find( ( p ) => p.id === named ) : here.find( ( p ) => offers( p ) && p.options[ action ].open( sim ) ) ?? here.find( offers );
 	const doArgs: DoArgs = { ...a, action, place: place?.id ?? named ?? '' };
 	const call = { tool: 'do', args: doArgs };
 	if ( named !== null && ! place ) return refuse( body, call, `not at ${ named }` );
@@ -159,7 +158,7 @@ export function advanceAction( sim: Sim, body: Villager ): void {
 
 		const id = record( call.args ).place;
 		const place = placeById( sim, body, id );
-		// the person gone (died) or the thing gone (taken, lost to the sea) on the way
+		// the person gone (died) on the way
 		if ( ! place ) {
 
 			body.path = null;
@@ -167,11 +166,11 @@ export function advanceAction( sim: Sim, body: Villager ): void {
 			return;
 
 		}
-		if ( place.moves ) {
+		if ( place.kind === 'person' ) {
 
-			// a person walks, a thing rolls: find the way again whenever it no longer ends beside it
-			const tail = body.path?.[ body.path.length - 1 ] ?? body.pos;
-			if ( ! place.reaches( sim.grid.indexAt( tail.x, tail.z ) ) ) {
+			// a person moves: find the way again whenever it no longer ends beside them
+			const tail = body.path?.[ body.path.length - 1 ];
+			if ( tail ? place.distance( tail ) > PERSON_REACH : ! place.reaches( sim.grid.indexAt( body.pos.x, body.pos.z ) ) ) {
 
 				const goal = placeGoal( sim.grid, place );
 				const path = goal && findPath( sim.grid, body.pos, goal );

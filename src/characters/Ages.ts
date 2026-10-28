@@ -1,7 +1,6 @@
 // The islanders' bodies by age and sex, as growth curves relative to the adult of the same sex:
 // keyed values, linearly interpolated, so that a child grows and an elder ages smoothly. Pure
-// numbers, no three.js, so the simulation can read them too (its bodies' statures, `heightAt`:
-// sim/physics.ts). A figure takes them on its rig in
+// numbers, no three.js, so the simulation can read them too. A figure takes them on its rig in
 // FigureAge.ts (the bones' proportions solved from the shares of the height below, the shape keys
 // weighted, the elder's stoop).
 //
@@ -123,7 +122,7 @@ export function growth( sex: Sex, age: number ): Growth {
 	const leg = at( LEG, young );
 	return {
 		age, sex,
-		height: heightAt( sex, age ),
+		height: ADULT_HEIGHT[ sex ] * at( HEIGHT[ sex ], young ),
 		legShare: leg * sexed( 'legs' ),
 		headShare: at( HEAD, young ) / at( HEIGHT[ sex ], young ) * sexed( 'head' ),
 		neck: at( NECK, age ),
@@ -136,14 +135,6 @@ export function growth( sex: Sex, age: number ): Growth {
 		spine: 1 - SPINE_LOSS[ sex ] * elder,
 		female, child: at( CHILD, age ), elder,
 	};
-
-}
-
-/** The standing height (m) at an age, before the old's loss: growth's `height` alone (the
- * simulation's bodies stand this tall, sim/physics.ts). */
-export function heightAt( sex: Sex, age: number ): number {
-
-	return ADULT_HEIGHT[ sex ] * at( HEIGHT[ sex ], Math.min( Math.max( age, 2 ), 18 ) );
 
 }
 

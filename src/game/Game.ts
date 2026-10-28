@@ -9,7 +9,6 @@ import { parseBodies, type Body } from '../characters/Ages.ts';
 import type { LandLattice } from '../world/IslandGrowth.ts';
 import { GameUi } from './ui/GameUi.ts';
 import { newGame, loadGame } from './sim/Sim.ts';
-import { initPhysics } from './sim/physics.ts';
 import { SAVE_KEY, UNREAD_KEY, keepsSave, readSave, readSlot, resumesSave, savedPieces, writeSave } from './save.ts';
 import type { Sim } from './sim/Sim.ts';
 import { actionTools } from './sim/actions.ts';
@@ -25,10 +24,8 @@ import { stockOf } from './sim/stock.ts';
 import type { EntityId, IslandInput, Items } from './sim/types.ts';
 
 // The island as a game (?game): the simulation (src/game/sim) runs the islanders' bodies, their
-// needs, the places they act at and the things on the ground (their rigid bodies in the physics
-// world, sim/physics.ts, whose engine `start` loads before any simulation is made), a brain in its
-// slot thinks for them (the stand-in of plain rules by default, sim/standin.ts) and GameView draws
-// them, the chest and the things into the scene.
+// needs and the places they act at, a brain in its slot thinks for them (the stand-in of plain
+// rules by default, sim/standin.ts) and GameView draws them and the chest into the scene.
 // The player's interface is 蜃光 (ui/GameUi.ts, docs/ui.md): the top row (day and time, pause and play,
 // the weather and its forecast, the island's stock, the record), the islanders' tags and marks, the
 // speak bar, the build bar (which hands a building the simulation knows to the placement in the
@@ -53,8 +50,7 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // arrives; one thought per islander may be in flight. What starts a thought is not decided: until
 // it is, the simulation asks whenever an islander has nothing under way (sim/Sim.ts), and the
 // console may ask with `think`. Walking is the body's motor, reached by the `go` action (walkTo is
-// the debug panel's). The save is the simulation's state (its physics world's snapshot
-// taken as it saves) and the record as JSON with a version
+// the debug panel's). The save is the simulation's state and the record as JSON with a version
 // number, in one slot (save.ts, which says what is saved and how a save carries over to the next
 // build). Where the page keeps it (`keepsSave`: not in an automated browser) the game resumes it at
 // start and saves every AUTOSAVE_SECONDS while the page shows (only when something changed), and
@@ -127,15 +123,11 @@ export class Game {
 
 	static async start( context: GameContext ): Promise<Game> {
 
-		// the physics engine's WebAssembly (sim/physics.ts), which every simulation's world needs
-		await initPhysics();
 		const game = new Game( context );
 		// a new game starts at the page's hour (the `hour` URL option), on the island loaded
 		const saved = resumesSave( context.params ) ? game.savedGame( game.keeps ) : null;
 		const sim = saved?.sim ?? newGame( game.input, { startHour: game.startHour, pieces: context.pieces, bodies: game.bodies } );
-		// (a save stands on the world loaded for it, unless the `grow` URL option chose another: then
-		// its world's ground is this land's)
-		if ( saved && sim.state.pieces !== context.pieces ) sim.physics.setGround( sim.state, sim.grid );
+		// (a save stands on the world loaded for it, unless the `grow` URL option chose another)
 		sim.state.pieces = context.pieces;
 		if ( context.params.has( 'paused' ) ) sim.paused = true;
 		await game.begin( sim, saved?.record );
@@ -269,8 +261,6 @@ export class Game {
 		sim.brain = this.brain;
 		if ( this.coming ) sim.setComing( this.coming );
 		this.view?.dispose();
-		// the simulation replaced lets its physics world go (its WebAssembly memory)
-		if ( this.sim && this.sim !== sim ) this.sim.dispose();
 		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, holdOpaque: c.holdOpaque, loadLook: c.loadLook, lookColours: c.lookColours,
 			body: ( v ) => ( { sex: v.sex, age: sim.age( v ) } ),
 			ticksPerSecond: () => SECONDS_PER_GAME_DAY / c.dayCycle.dayLength } );
@@ -378,8 +368,7 @@ export class Game {
 
 		// what happened since the frame's look goes in too (the panel's click comes between frames)
 		this.record.observe( this.sim, this.weatherNow().shown, 0 );
-		// the state with its physics world's snapshot taken now (sim/Sim.ts snapshot)
-		const sim = this.sim.snapshot(), record = this.record.save();
+		const sim = this.sim.state, record = this.record.save();
 		try {
 
 			localStorage.setItem( SAVE_KEY, writeSave( sim, record ) );
@@ -404,7 +393,7 @@ export class Game {
 
 		this.nextSave = performance.now() + AUTOSAVE_SECONDS * 1000;
 		this.record.observe( this.sim, this.weatherNow().shown, 0 );
-		if ( JSON.stringify( { sim: this.sim.snapshot(), record: this.record.save() } ) !== this.lastSaved ) this.save();
+		if ( JSON.stringify( { sim: this.sim.state, record: this.record.save() } ) !== this.lastSaved ) this.save();
 
 	}
 

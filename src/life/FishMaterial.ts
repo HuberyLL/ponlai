@@ -47,7 +47,7 @@ export interface Skin {
 }
 
 /** A wing's rays turn back to this share of their spread angle when folded. */
-export const FOLD = 0.1;
+const FOLD = 0.1;
 
 // rotates v by the unit quaternion q
 const rotateQ = ( q: V4, v: V3 ): V3 => v.add( cross( q.xyz, cross( q.xyz, v ).add( v.mul( q.w ) ) ).mul( 2 ) );

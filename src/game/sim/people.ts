@@ -158,7 +158,6 @@ function personPlace( sim: Sim, v: Villager ): Place {
 	return {
 		id: v.id,
 		kind: 'person',
-		moves: true,
 		reaches: ( k ) => k >= 0 && Math.hypot( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) <= PERSON_REACH,
 		near: () => cellsWithin( grid, p, PERSON_REACH ),
 		distance: ( q ) => distance( q, p ),
