@@ -64,6 +64,7 @@ import { leafAtlas as bambooAtlas } from './world/BambooMaterials.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { Trample } from './world/vegetation/Trample.ts';
 import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters/Proportions.ts';
+import { parseBodies, type Body, type Sex } from './characters/Ages.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
@@ -693,12 +694,16 @@ setStatus( 'Waking the villagers…' );
 // leather shoes, in cel steps). The game dresses its islanders in the look's variants.
 // Their proportions (`islander` URL option, GUI Islander folder) are the look's build of
 // Proportions.ts by default (the Hanming's realistic `real`, the kit figure's chunkier `medium`);
-// the kit's own (`stock`) and the other builds stay selectable for comparison.
+// the kit's own (`stock`) and the other builds stay selectable for comparison. A Hanming islander
+// has a sex and an age (characters/Ages.ts, FigureAge.ts), the build that of its adult man: the
+// scene's walker the `body` URL option's (`F6`: a girl of six; a man of 30 by default, GUI
+// Islander folder), the game's from the game (Game.ts).
 const KIT_LOOK = params.get( 'look' ) === 'kit';
 const SCENE_LOOK = KIT_LOOK ? ISLANDER : HANMING;
 const GAME_LOOKS = KIT_LOOK ? ISLANDER_LOOKS : HANMING_LOOKS;
 const islanderBuild = { proportions: ( PROPORTION_NAMES as string[] ).includes( params.get( 'islander' ) ?? '' ) ? params.get( 'islander' ) as ProportionName : SCENE_LOOK.build ?? 'medium' };
-const buildIslander = ( name: ProportionName ) => loadVillager( SCENE_LOOK.base, SCENE_LOOK.parts, shared, PROPORTIONS[ name ], SCENE_LOOK.lit );
+const sceneBody: Body = { ...parseBodies( params.get( 'body' ) )[ 0 ] ?? { sex: 'male', age: 30 } };
+const buildIslander = ( name: ProportionName ) => loadVillager( SCENE_LOOK.base, SCENE_LOOK.parts, shared, PROPORTIONS[ name ], SCENE_LOOK.lit, SCENE_LOOK.ages ? sceneBody : undefined );
 // Compiles what `objects` draw in the frame's passes ahead, off the frame: the scene's pass (a latent
 // of the frame graph's opaque pass, under its target and MRT: the temporal modes' velocity output is
 // part of its pipelines' keys) and then the sun's map, one draw at a time and in the order a frame
@@ -744,10 +749,10 @@ if ( GAME ) {
 		// is handed over once its pipelines are built, off the frame (GameView "First draws"): it
 		// arrives after the game's first frame, and each load brings its own material, so the frame
 		// that first drew it built its skinned pipelines (the scene's pass, then the figures' map).
-		loadLook: async ( look ) => {
+		loadLook: async ( look, body ) => {
 
 			const dress = GAME_LOOKS[ look % GAME_LOOKS.length ];
-			const figure = await loadVillager( dress.base, dress.parts, shared, PROPORTIONS[ islanderBuild.proportions ], dress.lit );
+			const figure = await loadVillager( dress.base, dress.parts, shared, PROPORTIONS[ islanderBuild.proportions ], dress.lit, dress.ages ? body : undefined );
 			await pipeline.graph.latent( 'opaque', [ figure.group ] );
 			await characterShadow.compile( renderer, scene, figure.group );
 			return figure;
@@ -1240,8 +1245,16 @@ waveF.add( fft.params, 'amplitude', 0, 3, 0.01 ).onFinishChange( rebuild );
 waveF.add( fft.params, 'choppiness', 0, 1.5, 0.01 ).onFinishChange( rebuild );
 const islanderF = gui.addFolder( 'Islander' );
 const proportionsControl = islanderF.add( islanderBuild, 'proportions', PROPORTION_NAMES ).onChange( async ( name: ProportionName ) => characters?.setWalker( await buildIslander( name ) ) );
-// the game's islanders take their build as they load (the `islander` URL option); the scene's
-// walker is rebuilt in place
+// the scene walker's body: a new sex dresses it again, a new age builds it again in place
+// (FigureAge.ts); the game's islanders take their build and bodies as they load
+const sexControl = islanderF.add( sceneBody, 'sex', [ 'male', 'female' ] satisfies Sex[] ).onChange( async () => characters?.setWalker( await buildIslander( islanderBuild.proportions ) ) );
+const ageControl = islanderF.add( sceneBody, 'age', 2, 100, 0.25 ).onChange( ( age: number ) => characters?.walker.age?.set( age ) );
+if ( game || ! SCENE_LOOK.ages ) {
+
+	sexControl.disable();
+	ageControl.disable();
+
+}
 if ( game ) proportionsControl.disable();
 // the game's developer controls (GameDebug.ts)
 if ( game ) await game.addDebugFolder( gui );

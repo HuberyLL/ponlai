@@ -113,14 +113,16 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   frame graph, rest and diagnostics (`Fsr3Upscaler.ts`) and its mip bias (`MipBias.ts`).
 - `src/characters/`: the islanders (figures assembled on the kit's rig, their looks and proportions;
   the kit look's cel light and ears, the Hanming look's feather and woven surfaces in
-  `FigureSurfaces.ts`).
+  `FigureSurfaces.ts`; their bodies by sex and age as growth curves in `Ages.ts`, which a figure
+  takes on its rig and shape keys in `FigureAge.ts`).
 - `src/life/`: the island's creatures (`docs/art-direction.md`, Life), simulated per frame on the
   rendering side: the wenyao's schools of flying fish (`Wenyao.ts`), the fish's mesh and material
   (`FishGeometry.ts`, `FishMaterial.ts`).
 - `src/game/`: the game behind `?game` (`Game.ts`, which also drives the island's growth by the
   population through `world/Growth.ts`): `sim/` is the headless simulation (no three.js or DOM;
   node runs it by stripping types), `save.ts` is the save (one slot: the simulation's state and the
-  record, versioned with steps that carry old saves over; the world's start reads its piece count),
+  record, versioned: a save of another version is set aside and a new game started; the world's
+  start reads its piece count),
   `view/`
   draws the islanders and the chest, `Chronicle.ts` keeps the record of what happened and
   `Placement.ts` places a building chosen in the build bar. `ui/` is the player's interface

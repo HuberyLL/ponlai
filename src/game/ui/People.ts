@@ -1,5 +1,4 @@
 import * as THREE from 'three/webgpu';
-import { FIGURE_HEIGHT } from '../../characters/Villagers.ts';
 import { CLICK_SLOP } from '../../camera/IslandCameraControls.ts';
 import { BAG_CAPACITY, total } from '../sim/items.ts';
 import { CRITICAL_NEED, LOW_NEED } from '../sim/needs.ts';
@@ -276,8 +275,9 @@ export class People {
 
 		m.shown = false;
 		if ( ! this.shared.game.anchor( m.id, _p ) ) return;
+		const height = this.shared.game.figureHeight( m.id );
 		m.head.copy( _p );
-		m.head.y += FIGURE_HEIGHT;
+		m.head.y += height;
 		const space = this.space;
 		if ( ! space.project( _p, _q ) || ! space.project( m.head, _c ) ) return;
 		m.x = _c.x;
@@ -286,7 +286,7 @@ export class People {
 		m.depth = _c.z;
 		m.across = space.pixelsPerMetre( m.depth );
 		// (a camera right overhead sees the figure from its head: kept from shrinking to nothing)
-		m.upright = Math.max( m.size / FIGURE_HEIGHT, 0.3 * m.across );
+		m.upright = Math.max( m.size / height, 0.3 * m.across );
 		m.shown = m.x > - 100 && m.x < w + 100 && m.y > - 100 && m.y < h + 100;
 
 	}

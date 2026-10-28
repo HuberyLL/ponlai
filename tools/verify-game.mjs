@@ -5,10 +5,11 @@
 // the chest placed as a blueprint and built, several of a kind with ids of their own, two
 // islanders building one site, the island's stock (its stores) and a cost's shortfall, actions that replace each other, a perception
 // without positions, the stand-in brain building the chest and keeping the islander fed for
-// days, and a save taken mid-action; the save file (the simulation and its record read back as
-// written, a save of version 17 brought to this one, saves no step reaches refused, and a record
-// restored from a save that keeps the entries the original keeps, a game resumed at its start
-// included); then the island's growth: a land grown by IslandGrowth, the population steps, the
+// days, and a save taken mid-action; the islanders' lives (the starting three, ages that run a year
+// a game day, lifespans drawn by Gompertz's law, a death noted in the record, a slower pace at the
+// ends of life, ids never reused); the save file (the simulation and its record read back as
+// written, a save of another version refused, and a record restored from a save that keeps the
+// entries the original keeps, a game resumed at its start included); then the island's growth: a land grown by IslandGrowth, the population steps, the
 // coming piece's cells, a step crossed adding exactly one piece, the grid opening cells without
 // reindexing, islanders walking onto the new piece, the shore moving to the new coast as on a
 // fresh load, and a save that keeps its piece count.
@@ -23,7 +24,9 @@ import { BAG_CAPACITY, FISH_SATIETY } from '../src/game/sim/items.ts';
 import { HYDRATION_PER_DAY, SATIETY_PER_DAY, START_NEEDS } from '../src/game/sim/needs.ts';
 import { FISH_SECONDS } from '../src/game/sim/places.ts';
 import { CHEST_WORK, progressOf, stageOf } from '../src/game/sim/buildings.ts';
-import { GROWTH_STEPS, POPULATION_START, piecesFor } from '../src/game/sim/types.ts';
+import { GROWTH_STEPS, POPULATION_START, SECONDS_PER_GAME_DAY, SECONDS_PER_YEAR, WALK_SPEED, piecesFor } from '../src/game/sim/types.ts';
+import { ageOf, drawLifespan } from '../src/game/sim/life.ts';
+import { hourOf } from '../src/game/sim/clock.ts';
 import { SAVE_VERSION, readSave, savedPieces, writeSave } from '../src/game/save.ts';
 import { Chronicle } from '../src/game/Chronicle.ts';
 import { shortfall, stockOf } from '../src/game/sim/stock.ts';
@@ -524,10 +527,92 @@ function buildChest( sim ) {
 
 }
 
+// ------------------------------------------------------------------ the islanders' lives
+
+{
+
+	// the starting three: a man, a woman and one of either, grown, named by sex
+	for ( let seed = 1; seed <= 20; seed ++ ) {
+
+		const sim = newGame( input, { seed } );
+		const [ a, b, c ] = sim.state.villagers;
+		assert.deepEqual( [ a.sex, b.sex ], [ 'male', 'female' ], 'a man and a woman' );
+		assert.ok( c.sex === 'male' || c.sex === 'female' );
+		for ( const v of sim.state.villagers ) {
+
+			assert.ok( sim.age( v ) >= 20 && sim.age( v ) <= 35, `${ v.name } is grown (${ sim.age( v ).toFixed( 1 ) })` );
+			assert.ok( v.lifespan > sim.age( v ), 'and lives on' );
+
+		}
+		assert.equal( new Set( sim.state.villagers.map( ( v ) => v.name ) ).size, 3, 'three names' );
+
+	}
+	const sim = newGame( input, { seed: 9 } );
+	const v = sim.state.villagers[ 0 ], age0 = sim.age( v );
+	sim.step( SECONDS_PER_GAME_DAY );
+	assert.ok( Math.abs( sim.age( v ) - age0 - 1 ) < 1e-9, 'a game day is a year' );
+	assert.deepEqual( newGame( input, { bodies: [ { sex: 'female', age: 6 }, { sex: 'male', age: 80 } ] } ).state.villagers.map( ( u ) => [ u.sex, Math.round( ageOf( u, 0 ) ) ] ), [ [ 'female', 6 ], [ 'male', 80 ] ], 'a new game with the bodies asked for' );
+
+	// lifespans: Gompertz's law, a man's drawn at 20 averaging about 82, a woman's about 88, none
+	// before the age drawn at
+	const draws = { male: [], female: [] }, rng = { rng: 12345 };
+	for ( const sex of [ 'male', 'female' ] ) for ( let k = 0; k < 20000; k ++ ) draws[ sex ].push( drawLifespan( rng, sex, 20 ) );
+	const mean = ( xs ) => xs.reduce( ( s, x ) => s + x, 0 ) / xs.length;
+	const [ man, woman ] = [ mean( draws.male ), mean( draws.female ) ];
+	assert.ok( man > 81 && man < 83 && woman > 87 && woman < 89, `mean lifespans at 20: ${ man.toFixed( 1 ) }, ${ woman.toFixed( 1 ) }` );
+	assert.ok( Math.min( ...draws.male, ...draws.female ) >= 20, 'none dies before the age it was drawn at' );
+	for ( let k = 0; k < 1000; k ++ ) assert.ok( drawLifespan( rng, 'male', 95 ) >= 95 );
+
+	// the old and the young walk slower
+	const pace = ( age ) => {
+
+		const g = newGame( input, { seed: 4, bodies: [ { sex: 'male', age } ] } );
+		const u = g.state.villagers[ 0 ], from = { ...u.pos };
+		g.walkTo( u.id, farthestOpen( g.grid, u.pos ) );
+		g.step( 10 );
+		return Math.hypot( u.pos.x - from.x, u.pos.z - from.z ) / 10;
+
+	};
+	assert.ok( Math.abs( pace( 30 ) - WALK_SPEED ) < 1e-9, 'an adult walks at the walking speed' );
+	assert.ok( pace( 85 ) < 0.8 * WALK_SPEED && pace( 4 ) < 0.8 * WALK_SPEED, 'the old and a small child slower' );
+
+	// a death: the islander leaves the roll for the list of the dead at its lifespan, the record
+	// notes it at the tick it died at and names it, and a newcomer takes a new id
+	const record = new Chronicle();
+	record.observe( sim, 'fair', 0 );
+	const dying = sim.state.villagers[ 1 ];
+	dying.lifespan = sim.age( dying ) + 0.5;
+	for ( let t = 0; t < 2; t ++ ) {
+
+		sim.step( 12 * HOUR );
+		record.observe( sim, 'fair', 0 );
+
+	}
+	assert.equal( sim.villager( dying.id ), undefined, 'the dead leave the roll' );
+	assert.equal( sim.population(), 2 );
+	const dead = sim.state.dead[ 0 ];
+	assert.equal( dead.id, dying.id );
+	assert.ok( Math.abs( ( dead.died - dead.born ) / SECONDS_PER_YEAR - dying.lifespan ) < 2 / SECONDS_PER_YEAR, 'at its lifespan' );
+	assert.equal( sim.nameOf( dying.id ), dying.name, 'still named' );
+	const noted = record.entries.filter( ( e ) => e.kind === 'died' );
+	assert.equal( noted.length, 1, 'the record notes the death once' );
+	assert.equal( noted[ 0 ].who, dying.id );
+	assert.equal( noted[ 0 ].text, String( Math.floor( dying.lifespan ) ) );
+	assert.equal( noted[ 0 ].minute, Math.floor( hourOf( { tick: dead.died, startHour: sim.state.startHour } ) * 60 ), 'at the minute it died' );
+	const id = sim.addIslander();
+	assert.ok( id !== dying.id && ! sim.state.villagers.slice( 0, - 1 ).some( ( u ) => u.id === id ), 'a newcomer takes an id never used' );
+	const loaded = loadGame( sim.save(), input );
+	sim.step( 2 * HOUR );
+	loaded.step( 2 * HOUR );
+	assert.equal( loaded.save(), sim.save(), 'a game with its dead loads back and plays on the same' );
+	console.log( `lives: the starting three grown, a year a game day; mean lifespans at 20 of ${ man.toFixed( 1 ) } (men) and ${ woman.toFixed( 1 ) } (women); a slower pace young and old; a death noted and named` );
+
+}
+
 // the save file: the simulation and its record (Chronicle) read back as written; a record restored
 // and watching the same ticks keeps the entries the original keeps, a need noted before the save not
-// noted again, a landing not noted again on a game resumed at its start; a save of version 17 (the
-// state alone) brought to this version; others refused
+// noted again, a landing not noted again on a game resumed at its start; a save of another version
+// refused
 {
 
 	// the page's frames: the simulation runs a minute, then the record looks (the sky by the day)
@@ -601,19 +686,15 @@ function buildChest( sim ) {
 
 	}
 
-	// version 17: the simulation's state alone
-	const old = JSON.stringify( { ...JSON.parse( sim.save() ), version: 17 } );
-	const brought = readSave( old );
-	assert.equal( brought.version, SAVE_VERSION );
-	assert.equal( JSON.stringify( loadGame( brought.sim, input ).state ), sim.save(), 'a save of version 17 loads as it was' );
-	assert.deepEqual( brought.record, { entries: [], skies: {}, alerted: [] }, 'with an empty record' );
-	assert.equal( savedPieces( old ), 0 );
-	for ( const bad of [ null, '', 'not json', '[]', '{}', JSON.stringify( { ...JSON.parse( old ), version: 16 } ), JSON.stringify( { ...save, version: SAVE_VERSION + 1 } ), JSON.stringify( { ...save, sim: null } ) ] ) {
+	// a save of another version, older or newer, is not read (the page sets it aside)
+	const older = { ...save, version: SAVE_VERSION - 1, sim: { ...save.sim, version: SAVE_VERSION - 1 } };
+	for ( const bad of [ null, '', 'not json', '[]', '{}', JSON.stringify( older ), JSON.stringify( { ...save, version: SAVE_VERSION + 1 } ), JSON.stringify( { ...save, sim: null } ) ] ) {
 
 		assert.equal( readSave( bad ), null, `refused: ${ String( bad ).slice( 0, 40 ) }` );
 
 	}
-	console.log( `save file: ${ json.length } bytes with ${ record.entries.length } record entries, read back and played on two days the same, record included; version 17 brought over; others refused` );
+	assert.equal( savedPieces( JSON.stringify( older ) ), null );
+	console.log( `save file: ${ json.length } bytes with ${ record.entries.length } record entries, read back and played on two days the same, record included; other versions refused` );
 
 }
 
@@ -639,7 +720,7 @@ function buildChest( sim ) {
 
 	const sim = newGame( input, { seed: 3 } );
 	assert.equal( sim.state.pieces, 0 );
-	assert.equal( sim.population(), 1 );
+	assert.equal( sim.population(), POPULATION_START );
 	const grid = sim.grid, top0 = grid.top.slice(), dims = [ grid.cols, grid.rows, grid.x0, grid.z0 ];
 	// the shore as the islanders know it before the growth (they fish there)
 	const shore0 = shoreMask( grid ).slice();
@@ -648,13 +729,9 @@ function buildChest( sim ) {
 	const chest = placeChest( sim ), chestCell = grid.indexAt( chest.x, chest.z );
 	assert.ok( ! grid.open[ chestCell ], 'the chest blocks its ground' );
 
-	// the population approaches the step: 1, 2, 3 islanders are at the start; 4 halfway; 5 due
-	for ( let p = 2; p <= 4; p ++ ) {
-
-		sim.addIslander();
-		assert.equal( sim.growthDue(), false, `${ p } islanders: no growth yet` );
-
-	}
+	// the population approaches the step: 3 islanders are at the start; 4 halfway; 5 due
+	sim.addIslander();
+	assert.equal( sim.growthDue(), false, '4 islanders: no growth yet' );
 	assert.equal( sim.approach(), 0.5, '4 islanders: halfway to the first step' );
 	for ( const v of sim.state.villagers ) assert.equal( grid.region[ grid.indexAt( v.pos.x, v.pos.z ) ], grid.main, `${ v.name } arrives on the main ground` );
 	assert.equal( new Set( sim.state.villagers.map( ( v ) => v.id ) ).size, 4, 'each islander an id of its own' );

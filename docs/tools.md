@@ -106,7 +106,10 @@ so a commit names the assets it runs with and a checkout of it gets exactly thos
 - `release --local` packs the next release into the cache and rewrites the lock without uploading
   anything (no `gh` needed); `publish [--attach <file>]...` later uploads the lock's release from
   the cache as it was packed, so the committed lock stays valid. Until then the release exists on
-  this machine only: its cache must be kept, and a checkout elsewhere cannot pull it.
+  this machine only: its cache must be kept, and a checkout elsewhere cannot pull it. A release
+  takes the first number past the lock's that the cache does not hold, so a branch packing from an
+  older lock never overwrites another branch's pack (the two locks then merge by hand: the later
+  release repacked over both sets of changes).
 - `node tools/verify-no-binaries.mjs [--staged | --history]` fails on an asset type, a file git
   reads as binary or one over 1 MiB in the index (`--staged`: in what a commit adds; the
   pre-commit hook runs it), or anywhere in history (`--history`). `.gitignore` refuses the asset
@@ -337,6 +340,13 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   rebuilds the scene's walker in place. In game mode the folder's proportion control is disabled:
   the game's islanders take their build from the URL option as they load, so a change applies on
   the next load.
+- `body` gives the scene's walker (Hanming look) a sex and an age: `M30` (a man of 30, the default),
+  `F6` (a girl of six); an age under 2 is drawn as a two-year-old (`src/characters/Ages.ts`). The
+  GUI's Islander folder sets both (a new sex dresses the walker again, a new age prepares its body
+  in idle time and puts it on in one frame: `FigureAge.ts`); in game mode both are disabled.
+  `bodies` starts a new game with islanders of these sexes and ages instead of the simulation's
+  three (a man, a woman and one of either, 20 to 35 years old): `bodies=F28,M75,M6`; a resumed
+  save keeps its own (add `new` to start over). They age a year a game day from there.
 - `profile` (`?profile`, or `?profile=frames` without GPU timestamps) loads
   `src/debug/FrameProfiler.ts`, which labels every render and compute pass, reads their GPU
   timestamps and exposes `window.__PONLAI_PROFILE__`; without it the page builds the same

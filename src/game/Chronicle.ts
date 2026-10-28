@@ -1,12 +1,14 @@
 import type { WeatherName } from '../sky/Weather.ts';
 import { stageOf } from './sim/buildings.ts';
 import { CRITICAL_NEED } from './sim/needs.ts';
+import { dayOf, hourOf } from './sim/clock.ts';
 import type { Sim } from './sim/Sim.ts';
+import { SECONDS_PER_YEAR } from './sim/types.ts';
 import type { EntityId, Needs, Villager } from './sim/types.ts';
 
 // The island's record (沧海录, docs/ui.md): what happened, day by day, as the game sees it happen.
-// Islanders landing, the player's words and the islanders', buildings set out and finished, a need
-// turning critical, and how long each sky held on each day. The interface reads it
+// Islanders landing and dying, the player's words and the islanders', buildings set out and
+// finished, a need turning critical, and how long each sky held on each day. The interface reads it
 // (src/game/ui/Record.ts) and turns each entry into words and a mark by its kind's row
 // (src/game/ui/data/record.ts), so a new kind of entry is a new row there.
 //
@@ -15,24 +17,22 @@ import type { EntityId, Needs, Villager } from './sim/types.ts';
 // skies of each day and the critical needs it has noted (so a need is not noted twice across a
 // load), and `restore` takes them back into a record just reset, whose first look at the loaded
 // simulation then notes nothing that happened before the save. A record restored and watching the
-// same ticks keeps the entries the original keeps (tools/verify-game.mjs). A game saved before the
-// record was (a save of version 17) resumes with an empty one, its islanders listed with their
-// landing unknown. A day is the game's day counted from 1, a time the minute of that day; entries
-// are kept in the order they happened. `version` counts the changes, so a reader redraws only when
+// same ticks keeps the entries the original keeps (tools/verify-game.mjs). A day is the game's day
+// counted from 1, a time the minute of that day; entries are kept in the order they happened. `version` counts the changes, so a reader redraws only when
 // it moved.
 
 /** who an entry is about: an islander, the player, or the island as a whole (a building finished) */
 export type RecordWho = EntityId | 'player' | 'island';
 
 export interface RecordEntry {
-	/** its kind (src/game/ui/data/record.ts): landed, said, placed, built, need */
+	/** its kind (src/game/ui/data/record.ts): landed, died, said, placed, built, need */
 	kind: string;
 	day: number;
 	minute: number;
 	who: RecordWho;
 	/** whom words were said to: the islanders' ids, or everyone */
 	to?: EntityId[] | 'all';
-	/** the words said; a building's kind; a need's name (satiety, hydration) */
+	/** the words said; a building's kind; a need's name (satiety, hydration); the age one died at */
 	text?: string;
 	/** the building an entry is about (its id) */
 	subject?: string;
@@ -157,6 +157,15 @@ export class Chronicle {
 				} else if ( value > CRITICAL_NEED + REARM ) this.alerted.delete( key );
 
 			}
+
+		}
+		// those seen before and gone from the roll died (at the tick the list of the dead keeps)
+		if ( this.said.size > state.villagers.length ) for ( const d of state.dead ) {
+
+			if ( ! this.said.delete( d.id ) ) continue;
+			for ( const need of [ 'satiety', 'hydration' ] ) this.alerted.delete( `${ d.id }:${ need }` );
+			const at = { tick: d.died, startHour: state.startHour };
+			this.add( sim, { kind: 'died', who: d.id, text: String( Math.floor( ( d.died - d.born ) / SECONDS_PER_YEAR ) ), day: dayOf( at ) + 1, minute: Math.floor( hourOf( at ) * 60 ) } );
 
 		}
 		for ( const b of state.buildings ) {

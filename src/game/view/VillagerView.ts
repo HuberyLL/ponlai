@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
-import type { Villager as Figure } from '../../characters/Villagers.ts';
+import { animate, FIGURE_HEIGHT, type Villager as Figure } from '../../characters/Villagers.ts';
+import type { Sex } from '../../characters/Ages.ts';
 import type { EntityId, GridApi, Villager } from '../sim/types.ts';
 import { TRAMPLE, type TrampleWalker } from '../../world/vegetation/Trample.ts';
 
@@ -7,7 +8,9 @@ import { TRAMPLE, type TrampleWalker } from '../../world/vegetation/Trample.ts';
 // figure cannot load). Position interpolates between the last two ticks, the heading turns
 // smoothly toward the sim's facing, and the body's motion picks the idle or walk clip with a
 // short crossfade. The figure's clock runs at the game's pace, so speeding the game up speeds the
-// islanders up and a paused game freezes them mid-step.
+// islanders up and a paused game freezes them mid-step. A figure with a body shows the islander's
+// age each frame, and puts on the body prepared for it, one figure a frame (GameView;
+// characters/FigureAge.ts).
 // It parts the meadow (world/vegetation/Trample.ts) along the positions it has shown, kept by the
 // game's clock for the trail's length (`record`, `track`): a paused game holds its trail, and a new
 // view (a game started or loaded) starts without one.
@@ -22,8 +25,9 @@ export class VillagerView implements TrampleWalker {
 	readonly root = new THREE.Group();
 	/** hips, for the figure's shadow map */
 	readonly centre = new THREE.Vector3();
-	/** the look index its figure was loaded for (Villager.look) */
+	/** the look index its figure was loaded for (Villager.look) and the sex it wears */
 	readonly look: number;
+	readonly sex: Sex;
 	figure: Figure | null = null;
 	loading = false;
 	stamp = 0;
@@ -36,10 +40,11 @@ export class VillagerView implements TrampleWalker {
 	private readonly times: number[] = [];
 	private ticksPerSecond = 1;
 
-	constructor( id: EntityId, look: number ) {
+	constructor( id: EntityId, look: number, sex: Sex ) {
 
 		this.id = id;
 		this.look = look;
+		this.sex = sex;
 		this.root.name = `villager:${ id }`;
 
 	}
@@ -90,9 +95,11 @@ export class VillagerView implements TrampleWalker {
 	/**
 	 * Per frame. realDt drives smoothing that should not change with game speed; gameDt (real
 	 * seconds times the speed factor) drives everything the islander does, so a pause holds it.
-	 * pace: game seconds per game-paced second this frame (NaN when unknown).
+	 * pace: game seconds per game-paced second this frame (NaN when unknown); age: the islander's
+	 * (years); swap: whether this frame may put on a body prepared for the age (FigureAge.ts swap),
+	 * which it returns once it has.
 	 */
-	update( v: Readonly<Villager>, grid: GridApi, alpha: number, realDt: number, factor: number, pace: number ): void {
+	update( v: Readonly<Villager>, age: number, grid: GridApi, alpha: number, realDt: number, factor: number, pace: number, swap: boolean ): boolean {
 
 		const gameDt = realDt * factor;
 		const x = v.prev.x + ( v.pos.x - v.prev.x ) * alpha;
@@ -111,12 +118,20 @@ export class VillagerView implements TrampleWalker {
 		}
 		this.root.position.set( x, y, z );
 		this.root.rotation.y = this.heading;
-		this.centre.copy( this.root.position ).y += 0.85;
 
 		const walking = v.path !== null;
 		const f = this.figure;
+		let swapped = false;
+		this.centre.copy( this.root.position ).y += ( f ? f.height : FIGURE_HEIGHT ) / 2;
 		if ( f ) {
 
+			f.age?.set( age );
+			if ( swap && f.age?.ready ) {
+
+				f.age.swap();
+				swapped = true;
+
+			}
 			// Crossfades last FADE real seconds at any speed; the mixer runs at the game's pace.
 			this.play( walking ? 'Walk' : 'Idle_Neutral', FADE * Math.max( factor, 1 ) );
 			const walk = f.actions.Walk;
@@ -128,9 +143,10 @@ export class VillagerView implements TrampleWalker {
 				walk.timeScale = THREE.MathUtils.clamp( step * pace / f.strideSpeed, 0.15, 3 );
 
 			}
-			f.mixer.update( gameDt );
+			animate( f, gameDt );
 
 		}
+		return swapped;
 
 	}
 

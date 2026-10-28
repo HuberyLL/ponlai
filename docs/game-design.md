@@ -42,6 +42,12 @@ This is not an "AI town" to watch: the player acts all the time, and the islande
   browser, not a "search Twitter" tool); every task, from fetching water to building a hut, is
   composed from those. What using a thing does is defined by the thing, so new content adds
   things to the world, not new actions.
+- They live a life: a game day is a year of it. A body is a man's or a woman's at its age, from a
+  child of two to the stooped old (`src/characters/Ages.ts`), and changes smoothly as it ages.
+  Each islander dies of old age at a lifespan drawn as it comes, as a present-day population's
+  are with accidents left out (`src/game/sim/life.ts`), and the record notes the death. A game
+  starts with three grown islanders: a man, a woman and one of either, 20 to 35 years old. Births
+  and how newcomers arrive are not designed yet.
 
 ## Pressure
 

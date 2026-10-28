@@ -3,8 +3,9 @@ import type GUI from 'lil-gui';
 import type { DayCycle } from '../sky/DayCycle.ts';
 import type { SceneEventReason } from '../post/SceneEvents.ts';
 import type { CharacterShadow } from '../characters/CharacterShadow.ts';
-import type { Villager as Figure } from '../characters/Villagers.ts';
+import { FIGURE_HEIGHT, type Villager as Figure } from '../characters/Villagers.ts';
 import type { LookColours } from '../characters/looks.ts';
+import { parseBodies, type Body } from '../characters/Ages.ts';
 import type { LandLattice } from '../world/IslandGrowth.ts';
 import { GameUi } from './ui/GameUi.ts';
 import { newGame, loadGame } from './sim/Sim.ts';
@@ -85,8 +86,9 @@ export interface GameContext {
 	/** the page's weather: the sky the game shows, and its auto chain read ahead (the forecast) */
 	weather: Weather;
 	characterShadow: CharacterShadow;
-	/** a skinned islander figure for a look index, its pipelines compiled (GameView "First draws") */
-	loadLook( look: number ): Promise<Figure>;
+	/** a skinned islander figure for a look index, with a body where the look takes one (Villagers.ts
+	 * loadVillager), its pipelines compiled (GameView "First draws") */
+	loadLook( look: number, body: Body ): Promise<Figure>;
 	/** the colours of a look index, for a stand-in figure (GameView) */
 	lookColours( look: number ): LookColours;
 	invalidateSunShadow(): void;
@@ -124,7 +126,7 @@ export class Game {
 		const game = new Game( context );
 		// a new game starts at the page's hour (the `hour` URL option), on the island loaded
 		const saved = resumesSave( context.params ) ? game.savedGame( game.keeps ) : null;
-		const sim = saved?.sim ?? newGame( game.input, { startHour: game.startHour, pieces: context.pieces } );
+		const sim = saved?.sim ?? newGame( game.input, { startHour: game.startHour, pieces: context.pieces, bodies: game.bodies } );
 		// (a save stands on the world loaded for it, unless the `grow` URL option chose another)
 		sim.state.pieces = context.pieces;
 		if ( context.params.has( 'paused' ) ) sim.speed = 0;
@@ -180,6 +182,9 @@ export class Game {
 	private nextSave = 0;
 	private lastSaved = '';
 	private saveFailed = false;
+	// the sexes and ages a new game's islanders start at instead of the simulation's three (the
+	// `bodies` URL option, Ages.ts parseBodies)
+	private readonly bodies: Body[];
 
 	private constructor( context: GameContext ) {
 
@@ -187,6 +192,7 @@ export class Game {
 		this.input = islandInput( context.land, context.top );
 		this.keeps = keepsSave( context.params );
 		this.startHour = context.dayCycle.hour;
+		this.bodies = parseBodies( context.params.get( 'bodies' ) );
 
 	}
 
@@ -257,6 +263,7 @@ export class Game {
 		if ( this.coming ) sim.setComing( this.coming );
 		this.view?.dispose();
 		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, holdOpaque: c.holdOpaque, loadLook: c.loadLook, lookColours: c.lookColours,
+			body: ( v ) => ( { sex: v.sex, age: sim.age( v ) } ),
 			ticksPerSecond: () => SECONDS_PER_GAME_DAY / c.dayCycle.dayLength } );
 		this.sim = sim;
 		this.record.reset();
@@ -411,7 +418,7 @@ export class Game {
 	 * replaces the saved game at once. */
 	async startOver(): Promise<string> {
 
-		await this.begin( newGame( this.input, { startHour: this.startHour, pieces: this.sim.state.pieces } ) );
+		await this.begin( newGame( this.input, { startHour: this.startHour, pieces: this.sim.state.pieces, bodies: this.bodies } ) );
 		if ( this.keeps ) this.autosave();
 		return this.keeps ? 'New game, saved over the old one' : 'New game';
 
@@ -546,6 +553,13 @@ export class Game {
 	anchor( id: EntityId, out: THREE.Vector3 ): boolean {
 
 		return this.view?.anchor( id, out ) ?? false;
+
+	}
+
+	/** An islander's height as drawn (m, feet to crown), which the interface's marks hang over. */
+	figureHeight( id: EntityId ): number {
+
+		return this.view?.figureHeight( id ) ?? FIGURE_HEIGHT;
 
 	}
 

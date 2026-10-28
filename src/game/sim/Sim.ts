@@ -8,9 +8,11 @@ import { findPath, goalAt } from './path.ts';
 import { BUILDING_KINDS, blueprintRefusal, newBuilding } from './buildings.ts';
 import { obstructPlaces } from './places.ts';
 import { random } from './rng.ts';
+import { ageOf, drawLifespan, paceOf } from './life.ts';
 import { SAVE_VERSION } from '../save.ts';
-import { GROWTH_STEPS, POPULATION_START, SECONDS_PER_GAME_DAY, SPEED_FACTORS, WALK_SPEED, piecesFor } from './types.ts';
+import { GROWTH_STEPS, POPULATION_START, SECONDS_PER_GAME_DAY, SECONDS_PER_YEAR, SPEED_FACTORS, WALK_SPEED, piecesFor } from './types.ts';
 import type { EntityId, IslandInput, SimState, Speed, Vec2, Villager } from './types.ts';
+import type { Body, Sex } from '../../characters/Ages.ts';
 
 // The island simulation: a fixed step of one game second, with every change kept in SimState, so
 // a save is the state itself. One seeded generator (SimState.rng) is its only source of chance.
@@ -20,9 +22,9 @@ import type { EntityId, IslandInput, SimState, Speed, Vec2, Villager } from './t
 // world, never holding up a tick. The weather is the page's own: nothing in the simulation depends
 // on it.
 //
-// Each tick: the needs fall, each body walks a step and its action advances, then
-// the temporary trigger asks the brain for a thought for every islander with nothing under way
-// (no action, no walk) and no thought in flight. A brain that answers at once (the stand-in) acts
+// Each tick: the needs fall, each body walks a step (at its age's pace) and its action advances,
+// those who reached their lifespan die (life.ts), then the temporary trigger asks the brain for a
+// thought for every islander with nothing under way (no action, no walk) and no thought in flight. A brain that answers at once (the stand-in) acts
 // within the tick, so a game with it is deterministic for a seed; a slow one acts when it answers.
 //
 // The island grows with the population (docs/game-design.md, "How the island grows"): the
@@ -32,11 +34,21 @@ import type { EntityId, IslandInput, SimState, Speed, Vec2, Villager } from './t
 // the new land back as `addPiece`, which opens its cells and counts the piece (SimState.pieces: the
 // land step the game stands on, so a save loads its world at it). The piece to come is known ahead:
 // its cells are `comingLand` from the moment the page has it, for planning.
+//
+// A new game starts with three grown islanders: a man, a woman and one of either, each 20 to 35
+// years old, from the seed. An islander who dies leaves the roll for the list of the dead
+// (SimState.dead), and ids are never reused.
 
 export { SAVE_VERSION };
-// the islanders' names, in the order they arrive: Chinese, the language the interface is written in
-// (docs/ui.md); a name is content kept in the save, not a word of the interface's catalogue (ui/i18n/)
-const NAMES = [ '阿凯', '阿木', '小禾', '阿青', '石头', '阿月', '阿海', '小满', '阿岚', '竹生', '阿珠', '老周' ];
+// the islanders' names by sex, the first that no living islander holds: Chinese, the language the
+// interface is written in (docs/ui.md); a name is content kept in the save, not a word of the
+// interface's catalogue (ui/i18n/)
+const NAMES: Readonly<Record<Sex, readonly string[]>> = {
+	male: [ '阿凯', '阿木', '石头', '阿海', '竹生', '阿林' ],
+	female: [ '小禾', '阿青', '阿月', '小满', '阿岚', '阿珠' ],
+};
+// the ages of the islanders a game starts with, and of those the debug panel adds (years)
+const GROWN = [ 20, 35 ] as const;
 // islanders after the first stand round the island's middle a golden angle apart
 const GOLDEN_ANGLE = Math.PI * ( 3 - Math.sqrt( 5 ) );
 
@@ -116,21 +128,34 @@ export class Sim {
 
 	}
 
-	/** A new islander, standing near the island's middle (the debug panel's population bump: how
-	 * islanders arrive is not designed yet); returns its id. */
-	addIslander(): EntityId {
+	/** A new islander of a sex and age, standing near the island's middle; what is not given is
+	 * drawn: either sex, grown (20 to 35). Without a body it is the debug panel's population bump,
+	 * as how islanders arrive is not designed yet. Returns its id. */
+	addIslander( body: Partial<Body> = {} ): EntityId {
 
 		const state = this.state, grid = this.grid, n = state.villagers.length;
+		const sex = body.sex ?? ( this.random() < 0.5 ? 'male' : 'female' );
+		const age = body.age ?? GROWN[ 0 ] + ( GROWN[ 1 ] - GROWN[ 0 ] ) * this.random();
 		const a = n * GOLDEN_ANGLE;
 		const k = grid.nearestOpen( grid.indexAt( Math.cos( a ) * 1.5, Math.sin( a ) * 1.5 ), 40, grid.main );
 		if ( k < 0 ) throw new Error( 'No open ground near the island\'s centre' );
 		const p = grid.centreOf( k );
-		const id = `v${ n + 1 }`;
+		const count = n + state.dead.length;
+		const pool = NAMES[ sex ], name = pool.find( ( x ) => ! state.villagers.some( ( v ) => v.name === x ) ) ?? pool[ count % pool.length ];
+		const id = `v${ count + 1 }`;
 		state.villagers.push( {
-			id, name: NAMES[ n % NAMES.length ], look: n, pos: { ...p }, prev: { ...p }, heading: Math.atan2( - p.x, - p.z ), path: null,
+			id, name, look: count, sex, born: state.tick - Math.round( age * SECONDS_PER_YEAR ), lifespan: drawLifespan( state, sex, age ),
+			pos: { ...p }, prev: { ...p }, heading: Math.atan2( - p.x, - p.z ), path: null,
 			needs: { ...START_NEEDS }, bag: {}, action: null, last: null, said: null,
 		} );
 		return id;
+
+	}
+
+	/** An islander's age (years) now, between ticks too (`alpha`), as the figures show it. */
+	age( v: Readonly<Villager> ): number {
+
+		return ageOf( v, this.state.tick + this.alpha );
 
 	}
 
@@ -190,8 +215,23 @@ export class Sim {
 			advanceAction( this, v );
 
 		}
+		if ( state.villagers.some( ( v ) => ageOf( v, state.tick ) >= v.lifespan ) ) this.die();
 		if ( ! this.brain ) return;
 		for ( const v of state.villagers ) if ( ! v.action && ! v.path && ! this.thoughts.has( v.id ) ) this.think( v.id );
+
+	}
+
+	/** Those who reached their lifespan leave the roll for the list of the dead. */
+	private die(): void {
+
+		const state = this.state;
+		state.villagers = state.villagers.filter( ( v ) => {
+
+			if ( ageOf( v, state.tick ) < v.lifespan ) return true;
+			state.dead.push( { id: v.id, name: v.name, sex: v.sex, born: v.born, died: state.tick } );
+			return false;
+
+		} );
 
 	}
 
@@ -200,6 +240,13 @@ export class Sim {
 	villager( id: EntityId ): Villager | undefined {
 
 		return this.state.villagers.find( ( v ) => v.id === id );
+
+	}
+
+	/** An islander's name by id, the dead's included. */
+	nameOf( id: EntityId ): string | undefined {
+
+		return ( this.villager( id ) ?? this.state.dead.find( ( d ) => d.id === id ) )?.name;
 
 	}
 
@@ -240,7 +287,7 @@ export class Sim {
 
 		const path = v.path;
 		if ( ! path ) return;
-		let left = WALK_SPEED;
+		let left = WALK_SPEED * paceOf( v, this.state.tick );
 		while ( left > 0 && path.length > 0 ) {
 
 			const wp = path[ 0 ];
@@ -303,19 +350,21 @@ export class Sim {
 
 }
 
-/** A new game on an island grown by `pieces` (0: the starting island): one islander standing
- * near the island's centre, facing it. */
-export function newGame( input: IslandInput, options: { seed?: number; startHour?: number; pieces?: number } = {} ): Sim {
+/** A new game on an island grown by `pieces` (0: the starting island): its islanders standing
+ * near the island's centre, facing it, a man, a woman and one of either, grown (`bodies` gives
+ * others: the `bodies` URL option, Game.ts). */
+export function newGame( input: IslandInput, options: { seed?: number; startHour?: number; pieces?: number; bodies?: readonly Body[] } = {} ): Sim {
 
 	const seed = ( options.seed ?? 1 ) >>> 0;
-	const sim = new Sim( { version: SAVE_VERSION, seed, tick: 0, startHour: options.startHour ?? 8, rng: seed, villagers: [], buildings: [], placed: {}, pieces: options.pieces ?? 0 }, input );
-	sim.addIslander();
+	const sim = new Sim( { version: SAVE_VERSION, seed, tick: 0, startHour: options.startHour ?? 8, rng: seed, villagers: [], dead: [], buildings: [], placed: {}, pieces: options.pieces ?? 0 }, input );
+	const bodies: readonly Partial<Body>[] = options.bodies?.length ? options.bodies : [ { sex: 'male' }, { sex: 'female' }, {} ];
+	for ( const body of bodies ) sim.addIslander( body );
 	return sim;
 
 }
 
 /** A saved game, from its state or that state's JSON (Sim.save); throws when it is from another
- * version (a whole save is read, and brought to this version, by ../save.ts readSave). */
+ * version (a whole save is read by ../save.ts readSave). */
 export function loadGame( saved: string | SimState, input: IslandInput ): Sim {
 
 	const state = typeof saved === 'string' ? JSON.parse( saved ) as SimState : saved;
