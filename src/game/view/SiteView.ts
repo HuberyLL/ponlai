@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { BUILDING_KINDS, progressOf, siteFrame } from '../sim/buildings.ts';
+import { BUILDING_KINDS, progressOf } from '../sim/buildings.ts';
 import type { BuildingState } from '../sim/types.ts';
 import { BOX, LOG, PropBuilder, at, buildingMaterial, hashAt } from './Props.ts';
 import type { RGB } from './Props.ts';
@@ -72,9 +72,9 @@ function sitePlan( site: BuildingState ): { marks: Piece[]; pieces: Piece[]; pil
 		return [ c[ 0 ] * f, c[ 1 ] * f, c[ 2 ] * f ];
 
 	};
-	// the square inscribed in the footprint's disc, the frame's height, its timbers' section (the
-	// simulation's box of the site rises by the same tiers: buildings.ts bodyBox)
-	const { half: h, height, section: s, tiers } = siteFrame( r );
+	// the square inscribed in the footprint's disc, the frame's height, its timbers' section
+	const h = r / Math.SQRT2, height = 1.1 * r, s = 0.03 + 0.04 * r;
+	const tiers = Math.min( 6, Math.max( 2, Math.round( height / 0.2 ) ) );
 	const corners = [ [ - 1, - 1 ], [ 1, - 1 ], [ 1, 1 ], [ - 1, 1 ] ];
 
 	// --- the plan: turned soil over the square, four stakes, a cord round them

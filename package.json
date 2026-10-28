@@ -11,7 +11,6 @@
     "typecheck": "node tools/qos.mjs tsc"
   },
   "dependencies": {
-    "@dimforge/rapier3d-deterministic-compat": "0.21.0",
     "@fontsource/ma-shan-zheng": "^5.3.1",
     "i18next": "^26.4.2",
     "lil-gui": "^0.21.0",

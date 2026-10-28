@@ -11,24 +11,22 @@ import type { BuildingState, Villager } from '../sim/types.ts';
 import { standIn } from './StandIn.ts';
 import { ChestView } from './ChestView.ts';
 import { SiteView } from './SiteView.ts';
-import { ThingsView, thingSamples } from './ThingsView.ts';
 import { VillagerView, disposeFigure } from './VillagerView.ts';
 
-// The game drawn into the island scene: its islanders, its buildings, each a construction site
+// The game drawn into the island scene: its islanders and its buildings, each a construction site
 // (SiteView, the same stages for every kind) until it is built and then its kind's own model
-// (MODELS: ChestView), and the things lying on the ground (ThingsView, an instanced mesh per item
-// kind). Each frame it diffs the simulation's islanders and buildings by id (create,
+// (MODELS: ChestView). Each frame it diffs the simulation's islanders and buildings by id (create,
 // update, remove) and keeps every view in place between frames, so a steady scene allocates
-// nothing. The buildings and the things cast into the sun's shadow map, which is redrawn only as the
-// sun turns (SunShadow.ts): whatever changes their shape (a site set down or grown by a piece, a
-// building finished, a thing that moves, comes or goes) asks for a redraw. A prop may rise above everything the island grows, so each prop's
+// nothing. The buildings cast into the sun's shadow map, which is redrawn only as the sun turns
+// (SunShadow.ts): whatever changes their shape (a site set down or grown by a piece, a building
+// finished) asks for a redraw. A prop may rise above everything the island grows, so each prop's
 // box grows the sun map's casters and the sea's reflection box (GameViewOptions.holdOpaque).
 //
 // First draws: a mesh whose material or vertex layout nothing on screen has drawn yet builds its
 // pipelines in the frame that first shows it, synchronously: the chest's model stalled the frame
 // it appeared in by about 0.7 s on a cold shader cache (its main pass and its shadow-map pass),
 // the placement ring by about 0.2 s. So everything that can first show mid-game has a sample in
-// `propSamples` (each kind's model and its construction site, each item kind's things; the HUD adds its own,
+// `propSamples` (each kind's model and its construction site; the HUD adds its own,
 // GameHud.samples), and the game compiles their pipelines off the frame once its first frame has
 // drawn (Game.render, GameContext.compileDraws). A sample must be built as the real thing is (the same view class,
 // material and attributes, castShadow and receiveShadow), since that is what the pipelines are
@@ -81,13 +79,12 @@ export function propSamples(): THREE.Object3D[] {
 	samples = [];
 	for ( const kind of Object.keys( MODELS ) ) {
 
-		const sample = ( worked: number ): BuildingState => ( { id: kind, kind, x: 0, z: 0, worked, items: {}, collider: null } );
+		const sample = ( worked: number ): BuildingState => ( { id: kind, kind, x: 0, z: 0, worked, items: {} } );
 		samples.push( MODELS[ kind ]( sample( BUILDING_KINDS[ kind ].work ), 0 ).mesh );
 		// its site half built (the marks, the frame, the pile)
 		samples.push( new SiteView( sample( BUILDING_KINDS[ kind ].work / 2 ), 0 ).mesh );
 
 	}
-	samples.push( ...thingSamples() );
 	return samples;
 
 }
@@ -110,7 +107,6 @@ export class GameView {
 	private readonly villagers: VillagerView[] = [];
 	private readonly byId = new Map<EntityId, VillagerView>();
 	private readonly buildings = new Map<string, BuildingDraw>();
-	private readonly things: ThingsView;
 	private readonly shadowCentre = new THREE.Vector3();
 	private readonly scratch = new THREE.Vector3();
 	/** the islander the figures' shadow map follows (the debug panel's pick); null: the one nearest the view's middle */
@@ -124,7 +120,6 @@ export class GameView {
 		this.options = options;
 		this.group.name = 'game';
 		options.scene.add( this.group );
-		this.things = new ThingsView( this.group, options.holdOpaque );
 
 	}
 
@@ -202,8 +197,7 @@ export class GameView {
 		// the figures this view did not take over from the last one
 		if ( spares.size > 0 ) disposeSpares();
 		this.sweep( stamp );
-		const places = this.syncPlaces( stamp ), things = this.things.update( sim );
-		if ( places || things ) this.options.invalidateSunShadow();
+		if ( this.syncPlaces( stamp ) ) this.options.invalidateSunShadow();
 
 		// one figure at a time casts (the map is 2.5 m wide): the focused islander, else the one
 		// nearest the middle of the view
@@ -363,7 +357,6 @@ export class GameView {
 		this.byId.clear();
 		for ( const draw of this.buildings.values() ) this.drop( draw );
 		this.buildings.clear();
-		this.things.dispose();
 		this.group.removeFromParent();
 
 	}

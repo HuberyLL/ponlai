@@ -8,16 +8,14 @@ import { BAG_CAPACITY } from './items.ts';
 //
 // - given something (a gift among what it noticed): it says THANKS_WORDS, once a thought, beside
 //   whatever it does.
-// - hungry (satiety below HUNGRY): eat a carried fish; else take one at the chest; else pick up a
-//   fish lying in sight (things.ts: the first listed, going there first; not one its last `go`
-//   failed to reach); else fish at the shore. Setting off for the shore from elsewhere with nothing to eat, it says
+// - hungry (satiety below HUNGRY): eat a carried fish; else take one at the chest; else fish
+//   at the shore. Setting off for the shore from elsewhere with nothing to eat, it says
 //   HUNGRY_WORDS (only then, so a hungry spell is one line, not one per thought). Thirst is off
 //   (needs.ts): nothing on the island gives water yet.
 // - having walked over to someone (its last action a `go` to a person in sight, arrived) with a
 //   fish in the bag: give them one.
 // - having heard HUNGRY_WORDS from someone in sight, fed and carrying a fish: give them one at
 //   once if they are beside it, else go to them.
-// - with room in the bag, a fish lying in sight: pick it up first, as when hungry.
 // - then a construction site in sight (a place that shows its construction, buildings.ts): build
 //   the first one listed (the first placed), going there first. Building runs until the site is
 //   done, an hour for a chest, which the needs' thresholds leave room for.
@@ -44,7 +42,6 @@ const doAt = ( action: string, item?: string, count?: number ): ToolCall => ( { 
 const say = ( words: string ): ToolCall => ( { tool: 'say', args: { words } } );
 const giveFish = ( place: string ): ToolCall => ( { tool: 'do', args: { action: 'give', place, item: 'fish', count: 1 } } );
 const wait = ( seconds: number ): ToolCall => ( { tool: 'wait', args: { seconds } } );
-const pickUp = ( place: string ): ToolCall => ( { tool: 'do', args: { action: 'take', place } } );
 
 function number( value: unknown ): number {
 
@@ -54,18 +51,6 @@ function number( value: unknown ): number {
 
 /** whether a place is at hand */
 const at = ( p: Perception, id: string ) => p.atHand.some( ( h ) => h.place === id );
-
-/** A fish lying in sight, picked up where it lies or walked to; null: none, or only the one the
- * last `go` could not reach. */
-function fishOnTheGround( p: Perception ): ToolCall | null {
-
-	const last = p.last;
-	const unreached = last?.call.tool === 'go' && ! last.result.ok ? ( last.call.args as Record<string, unknown> | undefined )?.place : undefined;
-	const thing = p.seen.find( ( s ) => s.kind === 'fish' && s.place !== unreached );
-	if ( ! thing ) return null;
-	return at( p, thing.place ) ? pickUp( thing.place ) : go( thing.place );
-
-}
 
 export class StandInBrain implements Brain {
 
@@ -94,7 +79,7 @@ export class StandInBrain implements Brain {
 
 			if ( fish > 0 ) return use( 'fish' );
 			const chest = p.seen.find( ( s ) => s.kind === 'chest' && at( p, s.place ) && number( ( s.shows?.items as Record<string, unknown> | undefined )?.fish ) > 0 );
-			return chest ? { tool: 'do', args: { action: 'take', place: chest.place, item: 'fish', count: 1 } } : fishOnTheGround( p );
+			return chest ? { tool: 'do', args: { action: 'take', place: chest.place, item: 'fish', count: 1 } } : null;
 
 		}
 		if ( fish === 0 ) return null;
@@ -123,12 +108,6 @@ export class StandInBrain implements Brain {
 		const chest = p.seen.find( ( s ) => s.kind === 'chest' && s.shows?.construction === undefined );
 		const stored = ( item: string ) => number( ( chest?.shows?.items as Record<string, unknown> | undefined )?.[ item ] );
 
-		if ( ! full ) {
-
-			const call = fishOnTheGround( p );
-			if ( call ) return call;
-
-		}
 		if ( site ) return at( p, site.place ) ? doAt( 'build' ) : go( site.place );
 
 		// catch a fish at the shore
