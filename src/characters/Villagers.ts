@@ -6,6 +6,9 @@ import { CharacterShadow } from './CharacterShadow.ts';
 import { makeFeatherMaterial, makeLitFigureMaterial, makeWeaveMaterial } from './FigureSurfaces.ts';
 import { pointedEars } from './Ears.ts';
 import { reproportion, PROPORTIONS, type Proportions } from './Proportions.ts';
+import { FigureAge, derivedShapeKeys, mergeShapeKeys, strideSteps, takeShapeKeys, type ShapeKeys } from './FigureAge.ts';
+import { runSteps } from '../world/Steps.ts';
+import type { Body, Sex } from './Ages.ts';
 import type { Shared } from '../shared.ts';
 import type { TrampleWalker } from '../world/vegetation/Trample.ts';
 
@@ -25,6 +28,10 @@ import type { TrampleWalker } from '../world/vegetation/Trample.ts';
 // island's light (FigureSurfaces.ts) and its textured parts (`surface`: the feathers, the woven
 // hat) draw as meshes of their own on the same skeleton, re-proportioned with it; the feathers stay out
 // of the figures' shadow map, and the figure's height is its painted body's, hat left out.
+// A figure loaded with a body (a sex and an age: Ages.ts) wears its sex's parts and takes its
+// age's shape and proportions instead of a fixed build (FigureAge.ts): its height follows the
+// age, and its clips animate through `animate`, which lays the old's stoop on them. Every part's
+// shape keys come off its geometry as it loads, so no figure draws morph targets.
 
 export type GroundFn = ( x: number, z: number ) => number;
 
@@ -35,17 +42,36 @@ export interface PartSpec {
 	hands?: [ THREE.ColorRepresentation, number ];
 	/** a textured part drawn with its own surface (FigureSurfaces.ts) instead of painted */
 	surface?: 'feather' | 'weave';
+	/** worn by one sex only (a figure without a body is a man) */
+	sex?: Sex;
 }
 
-/** an islander figure's height, feet to crown (m): the game's interface hangs its marks over it */
+/** the height of a figure without a body, feet to crown (m) */
 export const FIGURE_HEIGHT = 1.68;
 const FADE = 0.35;
+/** the clips the islanders play: a figure with a body keeps only these, which each body it puts on
+ * makes again (FigureAge.ts) */
+export const CLIPS = [ 'Idle_Neutral', 'Walk' ];
 
 export interface Villager {
 	group: THREE.Group;
 	mixer: THREE.AnimationMixer;
 	actions: Record<string, THREE.AnimationAction>;
-	strideSpeed: number;
+	/** its walk's ground speed (m per second of the clip) */
+	readonly strideSpeed: number;
+	/** feet to crown as it stands (m), hat left out: the game's interface hangs its marks over it */
+	readonly height: number;
+	/** its body's age (a figure loaded with a body), else null */
+	age: FigureAge | null;
+}
+
+/** Animate a figure by `dt` seconds of its clips (and its age's stoop on them). */
+export function animate( figure: Villager, dt: number ): void {
+
+	figure.age?.unbend();
+	figure.mixer.update( dt );
+	figure.age?.bend();
+
 }
 
 /** Bake a part's material groups into vertex colours and shading channels. */
@@ -94,41 +120,60 @@ function paintPart( mesh: THREE.SkinnedMesh, paint: PartSpec[ 'paint' ], hands?:
 
 /**
  * Assemble parts on the rig of the first part's file, with that file's animation clips, and
- * re-proportion the figure (Proportions.ts; the kit's own proportions by default).
+ * re-proportion the figure (Proportions.ts; the kit's own proportions by default), or give it a
+ * body's sex and age, its proportions those of its age against these (FigureAge.ts).
  */
-export async function loadVillager( base: string, parts: PartSpec[], shared: Shared, proportions: Proportions = PROPORTIONS.stock, lit = false ): Promise<Villager> {
+export async function loadVillager( base: string, parts: PartSpec[], shared: Shared, proportions: Proportions = PROPORTIONS.stock, lit = false, body?: Body ): Promise<Villager> {
 
 	const loader = new GLTFLoader();
 	const files = new Map<string, GLTF>();
-	for ( const name of new Set( [ base, ...parts.map( ( p ) => p.from ) ] ) ) files.set( name, await loader.loadAsync( name ) );
+	const worn = parts.filter( ( p ) => ! p.sex || p.sex === ( body?.sex ?? 'male' ) );
+	for ( const name of new Set( [ base, ...worn.map( ( p ) => p.from ) ] ) ) files.set( name, await loader.loadAsync( name ) );
 	const rig = files.get( base )!;
 	const model = rig.scene;
 	let bound: THREE.SkinnedMesh | null = null;
+	// the painted geometries and their shape keys, in the order they merge
 	const geometries: THREE.BufferGeometry[] = [];
-	const surfaces: { geometry: THREE.BufferGeometry; material: THREE.Material; casts: boolean }[] = [];
-	for ( const spec of parts ) {
+	const keyed: ( ShapeKeys | null )[] = [];
+	const surfaces: { geometry: THREE.BufferGeometry; material: THREE.Material; casts: boolean; keys: ShapeKeys }[] = [];
+	for ( const spec of worn ) {
 
 		// a part with several materials loads as a group of single-material skinned meshes
 		const node = files.get( spec.from )!.scene.getObjectByName( spec.part )!;
 		const painted: THREE.BufferGeometry[] = [];
+		const paintedKeys: ShapeKeys[] = [];
 		let skinned: THREE.SkinnedMesh | null = null;
 		node.traverse( ( o ) => {
 
 			if ( ! ( o as THREE.SkinnedMesh ).isSkinnedMesh ) return;
 			skinned = o as THREE.SkinnedMesh;
+			const keys = takeShapeKeys( skinned );
 			if ( spec.surface ) {
 
 				const source = skinned.material as THREE.MeshStandardMaterial;
 				const material = spec.surface === 'feather' ? makeFeatherMaterial( source.map! ) : makeWeaveMaterial( source );
-				surfaces.push( { geometry: skinned.geometry, material, casts: spec.surface !== 'feather' } );
+				surfaces.push( { geometry: skinned.geometry, material, casts: spec.surface !== 'feather', keys } );
 
-			} else painted.push( paintPart( skinned, spec.paint, spec.hands ) );
+			} else {
+
+				painted.push( paintPart( skinned, spec.paint, spec.hands ) );
+				paintedKeys.push( keys );
+
+			}
 
 		} );
 		geometries.push( ...painted );
-		// every head of the kit (named *_Head) grows the islanders' pointed ears
-		const ears = skinned && /Head$/.test( spec.part ) ? pointedEars( skinned, painted ) : null;
-		if ( ears ) geometries.push( ears );
+		keyed.push( ...paintedKeys );
+		// every head of the kit (named *_Head) grows the islanders' pointed ears, which follow the
+		// head's keys as they are grown again on each keyed head
+		const head = skinned as THREE.SkinnedMesh | null;
+		const ears = head && /Head$/.test( spec.part ) ? pointedEars( head, painted ) : null;
+		if ( head && ears ) {
+
+			geometries.push( ears );
+			keyed.push( body ? derivedShapeKeys( painted, paintedKeys, ears, ( keyedHead ) => pointedEars( head, keyedHead ) ) : null );
+
+		}
 
 	}
 	// drop the rig file's own meshes; keep its armature
@@ -138,7 +183,8 @@ export async function loadVillager( base: string, parts: PartSpec[], shared: Sha
 	const old: THREE.Object3D[] = [];
 	model.traverse( ( o ) => { if ( ( o as THREE.Mesh ).isMesh ) old.push( o ); } );
 	for ( const o of old ) o.removeFromParent();
-	const mesh = new THREE.SkinnedMesh( mergeGeometries( geometries )!, lit ? makeLitFigureMaterial() : makeVertexColourCharacterMaterial( shared ) );
+	const merged = mergeGeometries( geometries )!;
+	const mesh = new THREE.SkinnedMesh( merged, lit ? makeLitFigureMaterial() : makeVertexColourCharacterMaterial( shared ) );
 	mesh.name = 'villager';
 	const meshes: THREE.SkinnedMesh<THREE.BufferGeometry, THREE.Material>[] = [ mesh ];
 	for ( const s of surfaces ) {
@@ -158,52 +204,41 @@ export async function loadVillager( base: string, parts: PartSpec[], shared: Sha
 		m.frustumCulled = false;
 
 	}
-	reproportion( meshes, rig.animations, proportions );
 	mesh.layers.enable( CharacterShadow.LAYER );
-
 	const group = new THREE.Group();
 	group.add( model );
-	model.updateMatrixWorld( true );
-	const box = new THREE.Box3().setFromObject( mesh, true );
-	model.scale.setScalar( FIGURE_HEIGHT / ( box.max.y - box.min.y ) );
-	model.position.y = - box.min.y * model.scale.y;
+	let age: FigureAge | null = null;
+	if ( body ) {
+
+		const ageing: { mesh: THREE.SkinnedMesh; keys: ShapeKeys }[] = [ { mesh, keys: mergeShapeKeys( geometries.map( ( geometry, i ) => ( { geometry, keys: keyed[ i ] } ) ), merged ) } ];
+		surfaces.forEach( ( s, i ) => ageing.push( { mesh: meshes[ i + 1 ], keys: s.keys } ) );
+		rig.animations = rig.animations.filter( ( c ) => CLIPS.includes( c.name ) );
+		age = new FigureAge( { model, meshes: ageing, clips: rig.animations, build: proportions }, body.sex );
+		age.set( body.age );
+
+	} else {
+
+		reproportion( meshes, rig.animations, proportions );
+		model.updateMatrixWorld( true );
+		const box = new THREE.Box3().setFromObject( mesh, true );
+		model.scale.setScalar( FIGURE_HEIGHT / ( box.max.y - box.min.y ) );
+		model.position.y = - box.min.y * model.scale.y;
+
+	}
 	const mixer = new THREE.AnimationMixer( model );
 	const actions: Record<string, THREE.AnimationAction> = {};
 	for ( const clip of rig.animations ) actions[ clip.name ] = mixer.clipAction( clip );
-	return { group, mixer, actions, strideSpeed: measureStride( model, mixer, actions.Walk ) };
+	const stride = age ? 0 : runSteps( strideSteps( model, actions.Walk.getClip() ) );
+	const figure: Villager = { group, mixer, actions, get strideSpeed() {
 
-}
+		return age ? age.strideSpeed : stride;
 
-/** Ground speed of a walk clip: how fast a planted foot moves back under the hips. */
-function measureStride( model: THREE.Object3D, mixer: THREE.AnimationMixer, walk: THREE.AnimationAction ): number {
+	}, get height() {
 
-	// GLTFLoader drops the dot from node names (Foot.L -> FootL)
-	const foot = model.getObjectByName( 'FootL' )!;
-	const clip = walk.getClip();
-	walk.play();
-	const samples: { t: number; y: number; z: number }[] = [];
-	const p = new THREE.Vector3();
-	const n = 120;
-	for ( let i = 0; i <= n; i ++ ) {
+		return age ? age.height : FIGURE_HEIGHT;
 
-		mixer.setTime( clip.duration * i / n );
-		model.updateMatrixWorld( true );
-		foot.getWorldPosition( p );
-		samples.push( { t: clip.duration * i / n, y: p.y, z: p.z } );
-
-	}
-	walk.stop();
-	mixer.setTime( 0 );
-	const minY = Math.min( ...samples.map( ( s ) => s.y ) );
-	const v: number[] = [];
-	for ( let i = 1; i < samples.length; i ++ ) {
-
-		const a = samples[ i - 1 ], b = samples[ i ];
-		if ( a.y < minY + 0.015 && b.y < minY + 0.015 ) v.push( - ( b.z - a.z ) / ( b.t - a.t ) );
-
-	}
-	v.sort( ( x, y ) => x - y );
-	return Math.abs( v[ Math.floor( v.length / 2 ) ] ?? 1 );
+	}, age };
+	return figure;
 
 }
 
@@ -353,9 +388,11 @@ export class Villagers implements TrampleWalker {
 			this.walking = walking;
 
 		}
+		// a body prepared for an age that has moved on (FigureAge.ts)
+		if ( w.age?.ready ) w.age.swap();
 		w.actions.Walk.timeScale = this.speed / w.strideSpeed;
-		w.mixer.update( Math.max( dt, 0 ) );
-		this.centre.copy( w.group.position ).y += 0.85;
+		animate( w, Math.max( dt, 0 ) );
+		this.centre.copy( w.group.position ).y += w.height / 2;
 		this.shadow.update( renderer, scene, sun, this.centre );
 
 	}

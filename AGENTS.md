@@ -113,7 +113,8 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   frame graph, rest and diagnostics (`Fsr3Upscaler.ts`) and its mip bias (`MipBias.ts`).
 - `src/characters/`: the islanders (figures assembled on the kit's rig, their looks and proportions;
   the kit look's cel light and ears, the Hanming look's feather and woven surfaces in
-  `FigureSurfaces.ts`).
+  `FigureSurfaces.ts`; their bodies by sex and age as growth curves in `Ages.ts`, which a figure
+  takes on its rig and shape keys in `FigureAge.ts`).
 - `src/life/`: the island's creatures (`docs/art-direction.md`, Life), simulated per frame on the
   rendering side: the wenyao's schools of flying fish (`Wenyao.ts`), the fish's mesh and material
   (`FishGeometry.ts`, `FishMaterial.ts`).

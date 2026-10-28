@@ -337,6 +337,12 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   rebuilds the scene's walker in place. In game mode the folder's proportion control is disabled:
   the game's islanders take their build from the URL option as they load, so a change applies on
   the next load.
+- `body` gives the scene's walker (Hanming look) a sex and an age: `M30` (a man of 30, the default),
+  `F6` (a girl of six); an age under 2 is drawn as a two-year-old (`src/characters/Ages.ts`). The
+  GUI's Islander folder sets both (a new sex dresses the walker again, a new age prepares its body
+  in idle time and puts it on in one frame: `FigureAge.ts`); in game mode both are disabled.
+  `bodies` gives the game's islanders theirs, comma-separated in the islanders' order
+  (`bodies=F28,M75`), the rest adult men, until the simulation keeps their sex and age.
 - `profile` (`?profile`, or `?profile=frames` without GPU timestamps) loads
   `src/debug/FrameProfiler.ts`, which labels every render and compute pass, reads their GPU
   timestamps and exposes `window.__PONLAI_PROFILE__`; without it the page builds the same

@@ -3,8 +3,9 @@ import type GUI from 'lil-gui';
 import type { DayCycle } from '../sky/DayCycle.ts';
 import type { SceneEventReason } from '../post/SceneEvents.ts';
 import type { CharacterShadow } from '../characters/CharacterShadow.ts';
-import type { Villager as Figure } from '../characters/Villagers.ts';
+import { FIGURE_HEIGHT, type Villager as Figure } from '../characters/Villagers.ts';
 import type { LookColours } from '../characters/looks.ts';
+import { parseBodies, type Body } from '../characters/Ages.ts';
 import type { LandLattice } from '../world/IslandGrowth.ts';
 import { GameUi } from './ui/GameUi.ts';
 import { newGame, loadGame } from './sim/Sim.ts';
@@ -85,8 +86,9 @@ export interface GameContext {
 	/** the page's weather: the sky the game shows, and its auto chain read ahead (the forecast) */
 	weather: Weather;
 	characterShadow: CharacterShadow;
-	/** a skinned islander figure for a look index, its pipelines compiled (GameView "First draws") */
-	loadLook( look: number ): Promise<Figure>;
+	/** a skinned islander figure for a look index, with a body where the look takes one (Villagers.ts
+	 * loadVillager), its pipelines compiled (GameView "First draws") */
+	loadLook( look: number, body: Body ): Promise<Figure>;
 	/** the colours of a look index, for a stand-in figure (GameView) */
 	lookColours( look: number ): LookColours;
 	invalidateSunShadow(): void;
@@ -106,6 +108,8 @@ export interface GameContext {
 
 // a stalled frame (a background tab, a debugger stop) resumes without running hours at once
 const MAX_FRAME = 0.25;
+// the body of an islander the `bodies` URL option leaves out
+const ADULT: Body = { sex: 'male', age: 30 };
 // real seconds between the saves the page makes as the game runs: at most this much play is lost
 // to a crash (a hidden or closed page saves at once)
 const AUTOSAVE_SECONDS = 60;
@@ -180,6 +184,9 @@ export class Game {
 	private nextSave = 0;
 	private lastSaved = '';
 	private saveFailed = false;
+	// the islanders' bodies until the simulation keeps their sex and age: the `bodies` URL option's,
+	// in the islanders' order (Ages.ts parseBodies), the rest adult men
+	private readonly bodies: Body[];
 
 	private constructor( context: GameContext ) {
 
@@ -187,6 +194,7 @@ export class Game {
 		this.input = islandInput( context.land, context.top );
 		this.keeps = keepsSave( context.params );
 		this.startHour = context.dayCycle.hour;
+		this.bodies = parseBodies( context.params.get( 'bodies' ) );
 
 	}
 
@@ -257,6 +265,7 @@ export class Game {
 		if ( this.coming ) sim.setComing( this.coming );
 		this.view?.dispose();
 		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, holdOpaque: c.holdOpaque, loadLook: c.loadLook, lookColours: c.lookColours,
+			body: ( v ) => this.bodies[ sim.state.villagers.indexOf( v as typeof sim.state.villagers[ number ] ) ] ?? ADULT,
 			ticksPerSecond: () => SECONDS_PER_GAME_DAY / c.dayCycle.dayLength } );
 		this.sim = sim;
 		this.record.reset();
@@ -546,6 +555,13 @@ export class Game {
 	anchor( id: EntityId, out: THREE.Vector3 ): boolean {
 
 		return this.view?.anchor( id, out ) ?? false;
+
+	}
+
+	/** An islander's height as drawn (m, feet to crown), which the interface's marks hang over. */
+	figureHeight( id: EntityId ): number {
+
+		return this.view?.figureHeight( id ) ?? FIGURE_HEIGHT;
 
 	}
 

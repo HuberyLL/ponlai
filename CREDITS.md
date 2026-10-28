@@ -374,7 +374,8 @@ names, under the paths given here in `public/` (`tools/assets.mjs`).
   variants in `src/characters/looks.ts`), given procedural pointed ears and merged into one
   skinned mesh at load time. The Hanming islanders are built from them in Blender: the Farmer's
   rig and clips, the Casual 2 head without its hair, the Beach outfit's body, legs and sandalled
-  feet, under a feather-carrying shell and a revolved bamboo hat of our own. The three kit files
+  feet, under a feather-carrying shell and a revolved bamboo hat of our own, with a woman's dress
+  and shape keys of our own for a woman's figure, a child's and an elder's. The three kit files
   are `public/characters/quaternius/ultimate-modular-characters/`, unchanged; the Hanming
   islanders are `public/characters/hanming/Hanming.gltf` and `Hanming.bin`.
 
@@ -702,7 +703,8 @@ comment where it is used.
 
 ## References
 
-Sources that informed the procedural layout; no code, data or images from them are used.
+Sources that informed the procedural layout and the islanders' bodies; no code, data tables or
+images from them are used (the bodies' curves take a few rounded key values off theirs).
 
 - Seabed substrate: Page C. Valentine, USGS,
   [*Sediment classification and the characterization, identification, and mapping of geologic substrates*](https://www.usgs.gov/publications/sediment-classification-and-characterization-identification-and-mapping-geologic)
@@ -724,3 +726,9 @@ Sources that informed the procedural layout; no code, data or images from them a
   [*Yellow and grey lichens on supralittoral rock*](https://www.marlin.ac.uk/habitats/detail/96/yellow_and_grey_lichens_on_supralittoral_rock);
   the dark runoff streaks of rock-dwelling cyanobacteria ("Tintenstriche"),
   [*Gloeocapsa magma*](https://en.wikipedia.org/wiki/Gloeocapsa_magma) and the literature it cites.
+- The islanders' growth and ageing (`src/characters/Ages.ts`): stature by age, the CDC 2000 growth
+  charts' medians ([CDC Growth Charts](https://www.cdc.gov/growthcharts/), public domain); the
+  leg's share of the height, Barry Bogin and Maria Inês Varela-Silva,
+  [*Leg length, body proportion, and health: a review with a note on beauty*](https://doi.org/10.3390/ijerph7031047)
+  (International Journal of Environmental Research and Public Health 7, 2010); the stature lost
+  in old age, as the Baltimore Longitudinal Study of Aging reports it.

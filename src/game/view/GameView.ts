@@ -1,13 +1,14 @@
 import * as THREE from 'three/webgpu';
 import type { CharacterShadow } from '../../characters/CharacterShadow.ts';
-import type { Villager as Figure } from '../../characters/Villagers.ts';
+import { FIGURE_HEIGHT, type Villager as Figure } from '../../characters/Villagers.ts';
+import type { Body, Sex } from '../../characters/Ages.ts';
 import type { LookColours } from '../../characters/looks.ts';
 import { ISLAND_TOP } from '../../world/WorldShapes.ts';
 import { SPEED_FACTORS } from '../sim/types.ts';
 import type { EntityId } from '../sim/types.ts';
 import type { Sim } from '../sim/Sim.ts';
 import { BUILDING_KINDS, stageOf } from '../sim/buildings.ts';
-import type { BuildingState } from '../sim/types.ts';
+import type { BuildingState, Villager } from '../sim/types.ts';
 import { standIn } from './StandIn.ts';
 import { ChestView } from './ChestView.ts';
 import { SiteView } from './SiteView.ts';
@@ -46,8 +47,10 @@ export interface GameViewOptions {
 	invalidateSunShadow(): void;
 	/** grow the sun's shadow casters and the sea's reflection box to hold a prop's box (GameContext) */
 	holdOpaque( box: THREE.Box3 ): void;
-	/** a skinned islander figure for a look index (src/characters/looks.ts) */
-	loadLook( look: number ): Promise<Figure>;
+	/** a skinned islander figure for a look index (src/characters/looks.ts), with a body where the look takes one */
+	loadLook( look: number, body: Body ): Promise<Figure>;
+	/** an islander's sex and age (its figure keeps the sex it was made with) */
+	body( v: Readonly<Villager> ): Readonly<Body>;
 	/** the colours of a look index, for the stand-in shown when its figure cannot load */
 	lookColours( look: number ): LookColours;
 	/** game ticks per second of the scene's clock at the game's normal pace (the day's length):
@@ -55,10 +58,11 @@ export interface GameViewOptions {
 	ticksPerSecond(): number;
 }
 
-// Figures kept from the last GameView for the next one: a loaded game has the same islanders, and
-// taking a figure over is instant where loading it again leaves the islanders unseen for a moment.
-// The next view disposes whatever it does not take.
-const spares = new Map<number, Figure[]>();
+// Figures kept from the last GameView for the next one, by look and sex (`spareKey`): a loaded
+// game has the same islanders, and taking a figure over is instant where loading it again leaves
+// the islanders unseen for a moment. The next view disposes whatever it does not take.
+const spares = new Map<string, Figure[]>();
+const spareKey = ( look: number, sex: Sex ) => `${ look } ${ sex }`;
 
 function disposeSpares(): void {
 
@@ -131,6 +135,13 @@ export class GameView {
 
 	}
 
+	/** An islander's height as drawn (m, feet to crown): its figure's, or a stand-in's. */
+	figureHeight( id: EntityId ): number {
+
+		return this.byId.get( id )?.figure?.height ?? FIGURE_HEIGHT;
+
+	}
+
 	/** The islanders drawn, which part the meadow (world/vegetation/Trample.ts). */
 	walkers(): VillagerView[] {
 
@@ -161,22 +172,25 @@ export class GameView {
 		const pace = factor > 0 && realDt > 0 ? ( gameDt + sim.alpha - this.lastAlpha ) / ( realDt * factor ) : NaN;
 		this.lastAlpha = sim.alpha;
 
+		// one figure a frame puts on a body prepared for its age (a copy of its meshes and rig)
+		let swap = true;
 		for ( const v of state.villagers ) {
 
 			let view = this.byId.get( v.id );
+			const body = this.options.body( v );
 			if ( ! view ) {
 
-				view = new VillagerView( v.id, v.look );
+				view = new VillagerView( v.id, v.look, body.sex );
 				this.villagers.push( view );
 				this.byId.set( v.id, view );
 				this.group.add( view.root );
-				const spare = spares.get( v.look )?.pop();
+				const spare = spares.get( spareKey( v.look, body.sex ) )?.pop();
 				if ( spare ) view.attach( spare );
 
 			}
 			view.stamp = stamp;
-			if ( ! view.drawn && ! view.loading ) this.load( view );
-			view.update( v, grid, sim.alpha, realDt, factor, pace );
+			if ( ! view.drawn && ! view.loading ) this.load( view, body.age );
+			if ( view.update( v, body.age, grid, sim.alpha, realDt, factor, pace, swap ) ) swap = false;
 			view.record( state.tick + sim.alpha, this.options.ticksPerSecond() );
 
 		}
@@ -191,11 +205,11 @@ export class GameView {
 
 	}
 
-	private load( view: VillagerView ): void {
+	private load( view: VillagerView, age: number ): void {
 
 		const look = view.look;
 		view.loading = true;
-		this.options.loadLook( look ).then( ( figure ) => {
+		this.options.loadLook( look, { sex: view.sex, age } ).then( ( figure ) => {
 
 			// the islander may have gone (or the game closed) while its figure loaded
 			if ( this.disposed || this.byId.get( view.id ) !== view ) disposeFigure( figure );
@@ -332,8 +346,9 @@ export class GameView {
 
 			const f = v.release();
 			if ( ! f ) continue;
-			let list = spares.get( v.look );
-			if ( ! list ) spares.set( v.look, list = [] );
+			const key = spareKey( v.look, v.sex );
+			let list = spares.get( key );
+			if ( ! list ) spares.set( key, list = [] );
 			list.push( f );
 
 		}

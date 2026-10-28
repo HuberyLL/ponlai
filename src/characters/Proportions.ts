@@ -6,7 +6,7 @@ import * as THREE from 'three/webgpu';
 // each part, the assembled figure is re-proportioned once at build time, on its bind pose:
 //
 // - every bone moves to a new bind position (bone offsets scaled: legs, arms, neck, hands, the
-//   shoulders and hip joints spread), its rotation kept;
+//   spine's segments, the shoulders and hip joints spread), its rotation kept;
 // - every vertex follows the bones it is skinned to, each bone carrying its flesh along and
 //   scaling it about the bone's origin (uniformly for the head and hands, across the bone for
 //   the limbs' thickness, along it for their length, sideways for the torso), blended by the
@@ -26,6 +26,9 @@ import * as THREE from 'three/webgpu';
 // build (about 6.5 heads); `stock` (the kit's own) stays selectable for comparison (`?islander`).
 // A figure drawn as several meshes on one skeleton (a painted body, its textured parts) is
 // re-proportioned as one: the bones and clips once, every mesh's geometry alike.
+// The work comes in three parts: the plan on the bind pose (`planProportions`), the vertices
+// (`reshape`) and the rig and clips (`rerig`). `reproportion` runs them at once; a figure that
+// changes with its age runs them on copies, a few vertices at a time (FigureAge.ts).
 
 export interface Proportions {
 	/** uniform scale of the head (and ears) about the top of the neck */
@@ -36,6 +39,9 @@ export interface Proportions {
 	torso: number;
 	/** spread of the hip joints and width of the pelvis */
 	hips: number;
+	/** length of the spine, from the hips to the neck (the abdomen, torso and chest; an old
+	 * figure's spine is shorter: FigureAge.ts) */
+	spine: number;
 	/** thickness of the arms and legs */
 	limbs: number;
 	/** upper and lower arm length */
@@ -50,16 +56,16 @@ export interface Proportions {
 	armsOut: number;
 }
 
-const STOCK: Proportions = { head: 1, neck: 1, torso: 1, hips: 1, limbs: 1, arms: 1, hands: 1, legs: 1, feet: 1, armsOut: 0 };
+const STOCK: Proportions = { head: 1, neck: 1, torso: 1, hips: 1, spine: 1, limbs: 1, arms: 1, hands: 1, legs: 1, feet: 1, armsOut: 0 };
 
 export const PROPORTIONS = {
 	stock: STOCK,
-	subtle: { head: 1.08, neck: 0.9, torso: 1.06, hips: 1.03, limbs: 1.06, arms: 0.97, hands: 1.1, legs: 0.93, feet: 1.05, armsOut: 1.5 },
-	medium: { head: 1.16, neck: 0.8, torso: 1.12, hips: 1.06, limbs: 1.12, arms: 0.94, hands: 1.2, legs: 0.86, feet: 1.1, armsOut: 2.5 },
-	strong: { head: 1.26, neck: 0.68, torso: 1.2, hips: 1.1, limbs: 1.2, arms: 0.9, hands: 1.3, legs: 0.78, feet: 1.16, armsOut: 3.5 },
+	subtle: { head: 1.08, neck: 0.9, torso: 1.06, hips: 1.03, spine: 1, limbs: 1.06, arms: 0.97, hands: 1.1, legs: 0.93, feet: 1.05, armsOut: 1.5 },
+	medium: { head: 1.16, neck: 0.8, torso: 1.12, hips: 1.06, spine: 1, limbs: 1.12, arms: 0.94, hands: 1.2, legs: 0.86, feet: 1.1, armsOut: 2.5 },
+	strong: { head: 1.26, neck: 0.68, torso: 1.2, hips: 1.1, spine: 1, limbs: 1.2, arms: 0.9, hands: 1.3, legs: 0.78, feet: 1.16, armsOut: 3.5 },
 	// about 6.5 heads tall: a smaller head and longer legs than the kit's, the arms held out a little
 	// over the feathers (looks.ts HANMING)
-	real: { head: 0.85, neck: 1, torso: 1, hips: 1, limbs: 1, arms: 1, hands: 1, legs: 1.07, feet: 1, armsOut: 3 },
+	real: { head: 0.85, neck: 1, torso: 1, hips: 1, spine: 1, limbs: 1, arms: 1, hands: 1, legs: 1.07, feet: 1, armsOut: 3 },
 } satisfies Record<string, Proportions>;
 
 export type ProportionName = keyof typeof PROPORTIONS;
@@ -74,6 +80,8 @@ export function isStock( p: Proportions ): boolean {
 // the kit's bones, as GLTFLoader names them (it drops the dot: Foot.L -> FootL)
 const SIDES = [ 'L', 'R' ] as const;
 const SPINE = /^(Body|Hips|Abdomen|Torso|Chest)$/;
+// the spine's segments, each from its parent: the hips to the abdomen, on to the neck
+const SEGMENTS = /^(Abdomen|Torso|Chest|Neck)$/;
 
 /** A scale of `along` along the unit axis d and `across` perpendicular to it. */
 function axial( d: THREE.Vector3, along: number, across: number ): THREE.Matrix3 {
@@ -92,16 +100,53 @@ function axial( d: THREE.Vector3, along: number, across: number ): THREE.Matrix3
 const diagonal = ( x: number, y: number, z: number ) => new THREE.Matrix3().set( x, 0, 0, 0, y, 0, 0, 0, z );
 const uniform = ( s: number ) => diagonal( s, s, s );
 
+/** A re-proportioning planned on a skeleton's bind pose: each bone's bind origin and the one it
+ * moves to, the map of the flesh it carries about its origin, the legs' bones, the body's (the
+ * hips' parent) and the feet's height. */
+export interface Plan {
+	p: Proportions;
+	parent: number[];
+	bind: THREE.Matrix4[];
+	origin: THREE.Vector3[];
+	moved: THREE.Vector3[];
+	flesh: THREE.Matrix3[];
+	inverseFlesh: THREE.Matrix3[];
+	legs: { upper: number; lower: number; foot: number }[];
+	body: number;
+	ground: number;
+}
+
 /**
  * Re-proportion a skinned figure built on the kit's rig: its geometry (every mesh bound to the
  * one skeleton), its skeleton's bind pose and rest pose, and the bone translations of its clips
- * (changed in place).
+ * (changed in place). In three parts, which a figure that changes with age runs on copies, a few
+ * vertices at a time (FigureAge.ts): the plan, the vertices (`reshape`) and the rig (`rerig`).
  */
 export function reproportion( meshes: THREE.SkinnedMesh | THREE.SkinnedMesh[], clips: THREE.AnimationClip[], p: Proportions ): void {
 
 	if ( isStock( p ) ) return;
 	const list = Array.isArray( meshes ) ? meshes : [ meshes ];
 	const skeleton = list[ 0 ].skeleton;
+	const plan = planProportions( skeleton, p );
+	for ( const mesh of list ) {
+
+		const geometry = mesh.geometry;
+		const position = geometry.getAttribute( 'position' ) as THREE.BufferAttribute;
+		const normal = geometry.getAttribute( 'normal' ) as THREE.BufferAttribute;
+		reshape( mesh, plan, position, normal, 0, position.count );
+		position.needsUpdate = true;
+		normal.needsUpdate = true;
+		geometry.computeBoundingBox();
+		geometry.computeBoundingSphere();
+
+	}
+	rerig( skeleton, clips, plan );
+
+}
+
+/** Plan the proportions on a skeleton's bind pose (its bone inverses). */
+export function planProportions( skeleton: THREE.Skeleton, p: Proportions ): Plan {
+
 	const bones = skeleton.bones;
 	const n = bones.length;
 	const find = ( name: string ) => bones.findIndex( ( b ) => b.name === name );
@@ -123,6 +168,14 @@ export function reproportion( meshes: THREE.SkinnedMesh | THREE.SkinnedMesh[], c
 		else if ( name === 'Neck' ) flesh[ i ] = axial( axis[ i ], p.neck, 1 );
 		else if ( name === 'Body' || name === 'Hips' ) flesh[ i ] = diagonal( p.hips, 1, depth( p.hips ) );
 		else if ( SPINE.test( name ) ) flesh[ i ] = torso.clone();
+		// a shorter spine: its three segments, and the neck's root on the chest, come down; their
+		// flesh shrinks along them
+		if ( p.spine !== 1 && SEGMENTS.test( name ) ) {
+
+			offset[ i ] = diagonal( 1, p.spine, 1 );
+			if ( name !== 'Neck' ) flesh[ i ].multiply( axial( axis[ i ], p.spine, 1 ) );
+
+		}
 
 	}
 	const head = find( 'Head' );
@@ -222,50 +275,62 @@ export function reproportion( meshes: THREE.SkinnedMesh | THREE.SkinnedMesh[], c
 
 	}
 	for ( const { lower, foot } of legs ) moved[ foot ].copy( origin[ foot ] ).sub( origin[ lower ] ).multiplyScalar( p.legs ).add( moved[ lower ] );
+	return { p, parent, bind, origin, moved, flesh, inverseFlesh: flesh.map( ( m ) => m.clone().invert() ), legs, body, ground };
 
-	// the geometry, in the armature's bind space: each bone carries its flesh to its new origin
-	const inverseFlesh = flesh.map( ( m ) => m.clone().invert() );
-	for ( const mesh of list ) {
+}
 
-		const geometry = mesh.geometry;
-		const position = geometry.getAttribute( 'position' ) as THREE.BufferAttribute;
-		const normal = geometry.getAttribute( 'normal' ) as THREE.BufferAttribute;
-		const skinIndex = geometry.getAttribute( 'skinIndex' ), skinWeight = geometry.getAttribute( 'skinWeight' );
-		const toBind = mesh.bindMatrix, fromBind = mesh.bindMatrixInverse;
-		const normalTo = new THREE.Matrix3().getNormalMatrix( toBind ), normalFrom = new THREE.Matrix3().getNormalMatrix( fromBind );
-		const v = new THREE.Vector3(), q = new THREE.Vector3(), sum = new THREE.Vector3(), nrm = new THREE.Vector3(), nsum = new THREE.Vector3();
-		for ( let k = 0; k < position.count; k ++ ) {
+/**
+ * The geometry, in the armature's bind space: each bone carries its flesh to its new origin. The
+ * mesh's vertices from `start` up to `end`, read from and written to `position` and `normal` (the
+ * mesh's own, or copies of the same layout), its skin and bind matrix as bound.
+ */
+export function reshape( mesh: THREE.SkinnedMesh, plan: Plan, position: THREE.BufferAttribute, normal: THREE.BufferAttribute, start: number, end: number ): void {
 
-			v.fromBufferAttribute( position, k ).applyMatrix4( toBind );
-			nrm.fromBufferAttribute( normal, k ).applyMatrix3( normalTo );
-			sum.set( 0, 0, 0 );
-			nsum.set( 0, 0, 0 );
-			let total = 0;
-			for ( let c = 0; c < 4; c ++ ) {
+	const { origin, moved, flesh, inverseFlesh } = plan;
+	const geometry = mesh.geometry;
+	const skinIndex = geometry.getAttribute( 'skinIndex' ), skinWeight = geometry.getAttribute( 'skinWeight' );
+	const toBind = mesh.bindMatrix, fromBind = mesh.bindMatrixInverse;
+	const normalTo = _m.getNormalMatrix( toBind ), normalFrom = _n.getNormalMatrix( fromBind );
+	const v = _v, q = _q, sum = _sum, nrm = _nrm, nsum = _nsum;
+	for ( let k = start; k < end; k ++ ) {
 
-				const w = skinWeight.getComponent( k, c );
-				if ( w === 0 ) continue;
-				const b = skinIndex.getComponent( k, c );
-				q.copy( v ).sub( origin[ b ] ).applyMatrix3( flesh[ b ] ).add( moved[ b ] );
-				sum.addScaledVector( q, w );
-				q.copy( nrm ).applyMatrix3( inverseFlesh[ b ] );
-				nsum.addScaledVector( q, w );
-				total += w;
+		v.fromBufferAttribute( position, k ).applyMatrix4( toBind );
+		nrm.fromBufferAttribute( normal, k ).applyMatrix3( normalTo );
+		sum.set( 0, 0, 0 );
+		nsum.set( 0, 0, 0 );
+		let total = 0;
+		for ( let c = 0; c < 4; c ++ ) {
 
-			}
-			if ( total === 0 ) continue;
-			sum.divideScalar( total ).applyMatrix4( fromBind );
-			position.setXYZ( k, sum.x, sum.y, sum.z );
-			nsum.applyMatrix3( normalFrom ).normalize();
-			normal.setXYZ( k, nsum.x, nsum.y, nsum.z );
+			const w = skinWeight.getComponent( k, c );
+			if ( w === 0 ) continue;
+			const b = skinIndex.getComponent( k, c );
+			q.copy( v ).sub( origin[ b ] ).applyMatrix3( flesh[ b ] ).add( moved[ b ] );
+			sum.addScaledVector( q, w );
+			q.copy( nrm ).applyMatrix3( inverseFlesh[ b ] );
+			nsum.addScaledVector( q, w );
+			total += w;
 
 		}
-		position.needsUpdate = true;
-		normal.needsUpdate = true;
-		geometry.computeBoundingBox();
-		geometry.computeBoundingSphere();
+		if ( total === 0 ) continue;
+		sum.divideScalar( total ).applyMatrix4( fromBind );
+		position.setXYZ( k, sum.x, sum.y, sum.z );
+		nsum.applyMatrix3( normalFrom ).normalize();
+		normal.setXYZ( k, nsum.x, nsum.y, nsum.z );
 
 	}
+
+}
+
+const _m = new THREE.Matrix3(), _n = new THREE.Matrix3();
+const _v = new THREE.Vector3(), _q = new THREE.Vector3(), _sum = new THREE.Vector3(), _nrm = new THREE.Vector3(), _nsum = new THREE.Vector3();
+
+/** The rig: the skeleton's bind and rest poses and the clips' keys, moved as planned. */
+export function rerig( skeleton: THREE.Skeleton, clips: THREE.AnimationClip[], plan: Plan ): void {
+
+	const { p, parent, bind, origin, moved, legs, body, ground } = plan;
+	const bones = skeleton.bones;
+	const n = bones.length;
+	const find = ( name: string ) => bones.findIndex( ( b ) => b.name === name );
 
 	// the bind pose: the same rotations at the new origins
 	for ( let i = 0; i < n; i ++ ) skeleton.boneInverses[ i ].multiply( new THREE.Matrix4().makeTranslation( origin[ i ].clone().sub( moved[ i ] ) ) );

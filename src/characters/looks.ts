@@ -13,8 +13,9 @@ export interface LookColours { skin: string; hair: string; brows: string; shirt:
 
 /** A rig file (its skeleton and animation clips) and the parts dressed on it; `lit` figures take the
  * island's own light (FigureSurfaces.ts) instead of the kit figures' cel steps, `build` their
- * proportions unless the `islander` URL option names others. */
-export interface Look { base: string; parts: PartSpec[]; colours: LookColours; lit?: boolean; build?: ProportionName }
+ * proportions unless the `islander` URL option names others; `ages`: its file holds the shape keys
+ * of sex and age, so its figures take a body (FigureAge.ts), the build that of its adult man. */
+export interface Look { base: string; parts: PartSpec[]; colours: LookColours; lit?: boolean; build?: ProportionName; ages?: boolean }
 
 // A plain islander while the basic look settles: bare head (so the pointed ears read), a linen
 // shirt, plain trousers and leather shoes. The kit's pockets, trims and two-tone panels are
@@ -53,7 +54,11 @@ export const ISLANDER_LOOKS: readonly Look[] = [
 // Blender on the kit's Farmer rig (its clips), with the Casual 2 head and the Beach outfit's bare
 // body (its vest painted as skin), legs and sandalled feet; the top and shorts are a shell under
 // rows of feather cards cut from a photograph, laid as a feather cloak's feathers are tied to its
-// backing. Drawn in the island's light at about 6.5 heads (Proportions.ts `real`).
+// backing. Drawn in the island's light at about 6.5 heads (Proportions.ts `real`). A woman's top
+// is closed in front and a little longer; the body is in two parts, so that she does not draw the
+// trunk her top covers (where the body, skinned unlike the top, would show through it as the old
+// stoop) and a man draws the chest and belly his open top shows. Children and the old wear their
+// sex's dress, the hat made smaller for a child (FigureAge.ts).
 export const hanming = ( name: string ) => `${ import.meta.env.BASE_URL }characters/hanming/${ name }.gltf`;
 
 /** `shirt` and `trousers` are the feathers' white and `hair` the hat's straw (for stand-ins),
@@ -61,13 +66,16 @@ export const hanming = ( name: string ) => `${ import.meta.env.BASE_URL }charact
 function hanmingLook( c: LookColours, hat: 'Dou' | 'Ruo' ): Look {
 
 	const from = hanming( 'Hanming' );
-	return { base: from, colours: c, lit: true, build: 'real', parts: [
+	return { base: from, colours: c, lit: true, build: 'real', ages: true, parts: [
 		{ from, part: 'Hanming_Head', paint: { Skin: [ c.skin, KIND.skin ], Brows: [ c.brows, KIND.hair ], Eye: [ '#2a1d18', KIND.cloth ] } },
 		{ from, part: 'Hanming_Body', paint: { Skin: [ c.skin, KIND.skin ] } },
+		{ from, part: 'Hanming_Chest', paint: { Skin: [ c.skin, KIND.skin ] }, sex: 'male' },
 		{ from, part: 'Hanming_Legs', paint: { Skin: [ c.skin, KIND.skin ] } },
 		{ from, part: 'Hanming_Feet', paint: { Skin: [ c.skin, KIND.skin ], Shoes: [ c.shoes, KIND.leather ] } },
-		{ from, part: 'Hanming_Robe', paint: { Robe: [ c.shirt, KIND.cloth ] } },
-		{ from, part: 'Hanming_Feathers', paint: {}, surface: 'feather' },
+		{ from, part: 'Hanming_Robe', paint: { Robe: [ c.shirt, KIND.cloth ] }, sex: 'male' },
+		{ from, part: 'Hanming_Feathers', paint: {}, surface: 'feather', sex: 'male' },
+		{ from, part: 'Hanming_RobeF', paint: { Robe: [ c.shirt, KIND.cloth ] }, sex: 'female' },
+		{ from, part: 'Hanming_FeathersF', paint: {}, surface: 'feather', sex: 'female' },
 		{ from, part: `Hanming_Hat${ hat }`, paint: {}, surface: 'weave' },
 	] };
 
