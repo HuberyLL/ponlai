@@ -55,7 +55,7 @@ import { makeFishMaterial, type Skin } from './FishMaterial.ts';
 // samples, and reads the floor behind it from the refraction image, which leaves it out. It casts no
 // shadow.
 
-const WENYAO: Anatomy = {
+export const WENYAO: Anatomy = {
 	body: 0.8, sec: 2.4,
 	top: [ [ 0, 0.004 ], [ 0.03, 0.022 ], [ 0.08, 0.045 ], [ 0.18, 0.064 ], [ 0.35, 0.072 ], [ 0.55, 0.066 ], [ 0.75, 0.047 ], [ 0.9, 0.032 ], [ 1, 0.026 ] ],
 	bot: [ [ 0, 0.004 ], [ 0.03, 0.02 ], [ 0.08, 0.04 ], [ 0.18, 0.057 ], [ 0.35, 0.064 ], [ 0.55, 0.058 ], [ 0.75, 0.041 ], [ 0.9, 0.028 ], [ 1, 0.022 ] ],
@@ -68,7 +68,7 @@ const WENYAO: Anatomy = {
 	caudal: { len: 0.21, span: 0.13, fork: 0.38, lower: 1.3, rays: 15 },
 };
 
-const SKIN: Skin = {
+export const SKIN: Skin = {
 	back: 0x4b7486, marks: 0x173240, flank: 0xb4c7d3, belly: 0xedefea, head: 0xe9e6dc, snout: 0xb5321d,
 	fin: 0x627a88, finEdge: 0x2b3c46, iris: 0xcdc49e,
 	headEnd: 0.17, snoutEnd: 0.03,
