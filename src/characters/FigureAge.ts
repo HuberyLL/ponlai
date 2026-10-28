@@ -16,8 +16,9 @@ import { boundsSteps, runSteps } from '../world/Steps.ts';
 //   keys);
 // - the figure is scaled so that its height before the old's loss is the curve's, its soles on
 //   the ground, and its walk's ground speed with it;
-// - the old stoop: a fixed bend of the back, neck and head about the body's sideways axis, laid on
-//   the clips' pose after each mixer update (`bend`) and taken off before the next (`unbend`).
+// - the old stoop: a fixed bend of the back, neck and head about the body's sideways axis, the
+//   upper arms turned back against it, laid on the clips' pose after each mixer update (`bend`)
+//   and taken off before the next (`unbend`).
 //
 // The body is built again when the age leaves the one it was built for (Ages.ts builtAge: a
 // quarter year for a child, a year for the old); between builds the height, the stride and the
@@ -494,8 +495,9 @@ export class FigureAge {
 
 	}
 
-	/** The old's stoop on the pose the mixer just set: each bone of the back, neck and head turned
-	 * about the body's sideways axis, parents first (a parent's turn carries its children). */
+	/** The old's stoop on the pose the mixer just set: each bone of the back, neck, head and upper
+	 * arms turned about the body's sideways axis, parents first (a parent's turn carries its
+	 * children). */
 	bend(): void {
 
 		if ( this.elder <= 0 || this.bent ) return;

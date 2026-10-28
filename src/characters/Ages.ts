@@ -71,8 +71,10 @@ const PACE: Keys = [ [ 3, .70 ], [ 5, .77 ], [ 8, .88 ], [ 12, .96 ], [ 18, 1 ],
 
 /** degrees each bone of the back and neck bends forward at the elder weight 1: most in the upper
  * back (a kyphosis; a bend low in the back folded the belly into the closed top), the head
- * raised against the rest so the gaze stays about level */
-export const STOOP = { Abdomen: 2, Torso: 8, Chest: 12, Neck: 8, Head: - 24 } as const;
+ * raised against the rest so the gaze stays about level, and the upper arms turned back as far as
+ * the back bends, so they hang plumb from the shoulders (carried with the back, they swung back
+ * and held the hands behind the hips, bent at the wrist) */
+export const STOOP = { Abdomen: 2, Torso: 8, Chest: 12, UpperArmL: - 22, UpperArmR: - 22, Neck: 8, Head: - 24 } as const;
 
 type Keys = readonly ( readonly [ number, number ] )[];
 
