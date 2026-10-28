@@ -120,7 +120,8 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   (`FishGeometry.ts`, `FishMaterial.ts`).
 - `src/game/`: the game behind `?game` (`Game.ts`, which also drives the island's growth by the
   population through `world/Growth.ts`): `sim/` is the headless simulation (no three.js or DOM;
-  node runs it by stripping types), `save.ts` is the save (one slot: the simulation's state and the
+  node runs it by stripping types; the other islanders as places, hearing, giving and following,
+  in `sim/people.ts`), `save.ts` is the save (one slot: the simulation's state and the
   record, versioned: a save of another version is set aside and a new game started; the world's
   start reads its piece count),
   `view/`

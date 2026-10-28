@@ -1,6 +1,6 @@
 import { actionTools, advanceAction, findWaysAgain } from './actions.ts';
 import { act, perceive } from './agent.ts';
-import type { Brain, ToolRegistry, ToolResult } from './agent.ts';
+import type { Brain, ToolCall, ToolRegistry, ToolResult } from './agent.ts';
 import { dayOf, hourOf } from './clock.ts';
 import { Grid, topOf } from './grid.ts';
 import { fallNeeds, START_NEEDS } from './needs.ts';
@@ -17,15 +17,16 @@ import type { Body, Sex } from '../../characters/Ages.ts';
 // The island simulation: a fixed step of one game second, with every change kept in SimState, so
 // a save is the state itself. One seeded generator (SimState.rng) is its only source of chance.
 // The islanders are bodies on the ground grid with needs that fall (needs.ts), a bag (items.ts) and
-// an action under way (actions.ts); the places they act at (places.ts) keep their own state here
-// too (the buildings). A brain may think for them (agent.ts) beside the
-// world, never holding up a tick. The weather is the page's own: nothing in the simulation depends
-// on it.
+// an action under way (actions.ts), and are places to one another (people.ts: they hear each other,
+// give and follow); the places they act at (places.ts) keep their own state here too (the
+// buildings). A brain may think for them (agent.ts) beside the world, never holding up a tick.
+// The weather is the page's own: nothing in the simulation depends on it.
 //
 // Each tick: the needs fall, each body walks a step (at its age's pace) and its action advances,
 // those who reached their lifespan die (life.ts), then the temporary trigger asks the brain for a
-// thought for every islander with nothing under way (no action, no walk) and no thought in flight. A brain that answers at once (the stand-in) acts
-// within the tick, so a game with it is deterministic for a seed; a slow one acts when it answers.
+// thought for every islander with nothing under way (no action, no walk) and no thought in flight.
+// A brain that answers at once (the stand-in) acts within the tick, so a game with it is
+// deterministic for a seed; a slow one acts when it answers.
 //
 // The island grows with the population (docs/game-design.md, "How the island grows"): the
 // population is the islanders' count, and each step of GROWTH_STEPS (types.ts) is one piece. The
@@ -146,7 +147,7 @@ export class Sim {
 		state.villagers.push( {
 			id, name, look: count, sex, born: state.tick - Math.round( age * SECONDS_PER_YEAR ), lifespan: drawLifespan( state, sex, age ),
 			pos: { ...p }, prev: { ...p }, heading: Math.atan2( - p.x, - p.z ), path: null,
-			needs: { ...START_NEEDS }, bag: {}, action: null, last: null, said: null,
+			needs: { ...START_NEEDS }, bag: {}, action: null, last: null, said: null, gave: null, noticed: [],
 		} );
 		return id;
 
@@ -334,9 +335,20 @@ export class Sim {
 
 		const v = this.villager( id );
 		if ( ! v || ! this.brain || this.thoughts.has( id ) ) return null;
-		const answer = this.brain.think( perceive( this, v ), v.id );
-		if ( ! ( answer instanceof Promise ) ) return Promise.resolve( act( this, v, answer ) );
-		const thought = answer.then( ( calls ) => act( this, v, calls ) ).finally( () => this.thoughts.delete( id ) );
+		const perception = perceive( this, v );
+		// what it noticed is the thought's once its answer is acted on, not before: a thought in flight
+		// is not saved, and a loaded game asks again with the notices still there. Those that came
+		// meanwhile stay for the next thought (by identity: the oldest may have been forgotten since)
+		const taken = new Set( v.noticed );
+		const answered = ( calls: ToolCall[] ) => {
+
+			v.noticed = v.noticed.filter( ( n ) => ! taken.has( n ) );
+			return act( this, v, calls );
+
+		};
+		const answer = this.brain.think( perception, v.id );
+		if ( ! ( answer instanceof Promise ) ) return Promise.resolve( answered( answer ) );
+		const thought = answer.then( answered ).finally( () => this.thoughts.delete( id ) );
 		this.thoughts.set( id, thought );
 		return thought;
 

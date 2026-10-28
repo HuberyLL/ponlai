@@ -1,24 +1,27 @@
-import { buildings, obstructBuildings } from './buildings.ts';
+import { buildingById, buildings, obstructBuildings } from './buildings.ts';
 import { shoreMask } from './ground.ts';
 import { BAG_CAPACITY, intoBag, total } from './items.ts';
+import { people, personById } from './people.ts';
 import type { Sim } from './Sim.ts';
 import type { ActionResult, Vec2, Villager } from './types.ts';
 
 // The places an islander can go to and act at. Places are content: each kind below builds its
 // places from the simulation's state and registers its own options, which `do( action )`
 // (actions.ts) runs at a place the islander stands at; the simulation holds no branch per place.
-// A new kind of place is one more entry in PLACE_KINDS.
+// A new kind of place is one more entry in PLACE_KINDS: its places, and the one with an id.
 //
 // - shore: the island's edge band of walkable ground (ground.ts SHORE_BAND), one place all round.
 //   `fish` takes FISH_SECONDS and brings a fish by chance (the seeded generator, at its end).
 // - buildings: what the player places (buildings.ts: chests), each a place by its id (chest1).
+// - people: every living islander, a place that moves (people.ts: give, follow), by its id (v2).
 //
-// Every place has an id, which the brain names it by, and a kind (shore, chest), which
+// Every place has an id, which the brain names it by, and a kind (shore, chest, person), which
 // perception shows beside the id so that several of a kind read as such.
 //
 // Standing at a place means standing on one of its cells (`reaches`): walking to it (`go`) ends on
 // the nearest such cell. Reaches may overlap; a body then stands at both places, and `do` runs the
-// option of the first that offers it, in PLACE_KINDS' order.
+// option of the place it names, else of the first that offers it, in PLACE_KINDS' order. A body is
+// never a place to itself: it neither stands at nor sees its own person (`placesFor`).
 //
 // Rates: a fish for about an hour of fishing (half the tries of 20 minutes catch) against the two
 // an islander eats a day (needs.ts), so the shore keeps one islander and leaves a little to store.
@@ -27,11 +30,12 @@ import type { ActionResult, Vec2, Villager } from './types.ts';
 export const FISH_SECONDS = 20 * 60;
 export const FISH_CHANCE = 0.5;
 
-/** A `do` option's arguments (put and take name an item and a count). */
+/** A `do` option's arguments (put, take and give name an item and a count). */
 export interface DoArgs { action: string; place: string; item?: unknown; count?: unknown }
 
-/** How an option begins: refused, done at once, or running for a while and then `finish`. */
-export type Start = ActionResult | { ok: true; seconds: number };
+/** How an option begins: refused, done at once, or running for a while and then `finish`
+ * (seconds null: until a new action replaces it, or its `during` ends it: `follow`). */
+export type Start = ActionResult | { ok: true; seconds: number | null };
 
 export interface PlaceOption {
 	/** whether the place offers it now, from the place's own state (listed at hand) */
@@ -45,7 +49,7 @@ export interface PlaceOption {
 
 export interface Place {
 	id: string;
-	/** what kind of place it is: 'shore' or a building's kind */
+	/** what kind of place it is: 'shore', a building's kind or 'person' */
 	kind: string;
 	/** whether standing on cell k is standing at the place */
 	reaches( k: number ): boolean;
@@ -58,15 +62,21 @@ export interface Place {
 	options: Record<string, PlaceOption>;
 }
 
-type PlaceKind = ( sim: Sim ) => Place[];
+interface PlaceKind {
+	/** every place of the kind */
+	all( sim: Sim ): Place[];
+	/** the place of the kind with an id, or null: builds only that one */
+	byId( sim: Sim, id: string ): Place | null;
+}
 
 // ------------------------------------------------------------------ shore
 
 // per shore mask (ground.ts shoreMask: one per island top, so a grown island has its own): the
-// shore's cells (the places are built anew each time they are looked up, every tick of a timed `do`)
+// shore's cells (the places are built anew each time they are looked up, every tick of a `go` or a
+// timed `do`)
 const shoreCells = new WeakMap<Uint8Array, number[]>();
 
-function shore( sim: Sim ): Place[] {
+function shore( sim: Sim ): Place {
 
 	const grid = sim.grid, mask = shoreMask( grid );
 	let cells = shoreCells.get( mask );
@@ -77,7 +87,7 @@ function shore( sim: Sim ): Place[] {
 		shoreCells.set( mask, cells );
 
 	}
-	return [ {
+	return {
 		id: 'shore',
 		kind: 'shore',
 		reaches: ( k ) => k >= 0 && mask[ k ] === 1,
@@ -103,27 +113,54 @@ function shore( sim: Sim ): Place[] {
 				},
 			},
 		},
-	} ];
+	};
 
 }
 
 // ------------------------------------------------------------------ the registry
 
 /** every kind of place; the order is the order of preference when places stood at offer the same option */
-const PLACE_KINDS: readonly PlaceKind[] = [ buildings, shore ];
+const PLACE_KINDS: readonly PlaceKind[] = [
+	{ all: buildings, byId: buildingById },
+	{ all: people, byId: personById },
+	{ all: ( sim ) => [ shore( sim ) ], byId: ( sim, id ) => id === 'shore' ? shore( sim ) : null },
+];
 
-/** The places on the island now. */
+/** The places on the island now, every islander's person among them. */
 export function placesOf( sim: Sim ): Place[] {
 
-	return PLACE_KINDS.flatMap( ( kind ) => kind( sim ) );
+	return PLACE_KINDS.flatMap( ( kind ) => kind.all( sim ) );
 
 }
 
-/** The places a body stands at (several where their reaches overlap: a chest by the shore). */
-export function placesAt( sim: Sim, body: Villager, places = placesOf( sim ) ): Place[] {
+/** The places there are for a body: all but its own person. */
+export function placesFor( sim: Sim, body: Villager ): Place[] {
+
+	return placesOf( sim ).filter( ( p ) => p.id !== body.id );
+
+}
+
+/** The place with an id there is for a body (never its own person), or null; builds only that one,
+ * for what looks a place up every tick (a `go`, a timed `do`). */
+export function placeById( sim: Sim, body: Villager, id: unknown ): Place | null {
+
+	if ( typeof id !== 'string' || id === body.id ) return null;
+	for ( const kind of PLACE_KINDS ) {
+
+		const place = kind.byId( sim, id );
+		if ( place ) return place;
+
+	}
+	return null;
+
+}
+
+/** The places a body stands at (several where their reaches overlap: a chest by the shore, someone
+ * beside it), never its own person. */
+export function placesAt( sim: Sim, body: Villager, places = placesFor( sim, body ) ): Place[] {
 
 	const k = sim.grid.indexAt( body.pos.x, body.pos.z );
-	return places.filter( ( p ) => p.reaches( k ) );
+	return places.filter( ( p ) => p.id !== body.id && p.reaches( k ) );
 
 }
 

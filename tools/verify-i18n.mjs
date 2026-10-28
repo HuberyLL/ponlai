@@ -23,10 +23,11 @@ const strict = process.argv.includes( '--strict' ), list = process.argv.includes
 // Chinese characters, CJK punctuation and full-width forms
 const CJK = /[　-〿㐀-䶿一-鿿豈-﫿＀-￯]/;
 // the literals that are content, not the interface's words: the islanders' names (they are the
-// save's), and the debug panel's placeholder lines and days (what people say, as a brain's lines
-// will be); by file and the variable they are declared in
+// save's), the stand-in brain's lines, and the debug panel's placeholder lines and days (what
+// people say, as a brain's lines will be); by file and the variable they are declared in
 const ALLOWED = {
 	'src/game/sim/Sim.ts': [ 'NAMES' ],
+	'src/game/sim/standin.ts': [ 'HUNGRY_WORDS', 'THANKS_WORDS' ],
 	'src/game/GameDebug.ts': [ 'REPLIES' ],
 	'src/game/ui/data/record.ts': [ 'PLACEHOLDER_NAMES', 'PLACEHOLDER_DAYS' ],
 };

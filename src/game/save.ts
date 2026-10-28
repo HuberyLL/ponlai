@@ -10,7 +10,8 @@ import type { SimState } from './sim/types.ts';
 //
 // What is not saved: what the page holds rather than the game (the weather, the camera, which page
 // of the record is open), a brain's thought in flight (the islander is asked again once it has
-// nothing under way) and the player's words no thought has taken yet.
+// nothing under way, and still holds what it noticed, which only an answer acted on takes) and the
+// player's words no thought has taken yet.
 //
 // The page keeps the slot itself (`keepsSave`): it resumes the saved game as it loads, and saves it
 // every minute while it runs and when the page is hidden or left (Game.ts). It does not in an
@@ -28,7 +29,7 @@ export const SAVE_KEY = 'ponlai.game';
 export const UNREAD_KEY = 'ponlai.game.unread';
 
 /** the save's shape this build writes */
-export const SAVE_VERSION = 19;
+export const SAVE_VERSION = 20;
 
 export interface SaveFile {
 	version: number;
