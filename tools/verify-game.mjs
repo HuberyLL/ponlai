@@ -16,10 +16,17 @@
 // heard within earshot and noticed until the next thought, the others in sight by name, age and
 // what they do, `do` naming its place, giving (and its refusals and record entry), going to someone
 // who walks away, following until replaced or the one followed dies, the stand-in asking for food
-// and being given it, and a save mid-follow that plays on the same.
+// and being given it, and a save mid-follow that plays on the same; then the things on the ground,
+// in the simulation's physics world: dropped fish that fall and come to rest on the island, apart,
+// the same bit for bit over two runs, after a save taken mid-fall and whatever the ticks' split;
+// taking one (refused for a full bag), going to one that slides; the sea taking what falls past
+// the rim; a death's bag and a catch past a full bag on the ground; a walker pushing a resting
+// fish; a grown island's new ground under resting things; the hungry stand-in picking one up
+// before fishing; and the cost of a tick and of a save with things in it (printed, not asserted).
 // Pure CPU; Node 22.18+ strips the imported TypeScript.
 // Run: node tools/verify-game.mjs
 import assert from 'node:assert/strict';
+import { initPhysics } from '../src/game/sim/physics.ts';
 import { newGame, loadGame } from '../src/game/sim/Sim.ts';
 import { findPath, goalAt, lineClear } from '../src/game/sim/path.ts';
 import { perceive } from '../src/game/sim/agent.ts';
@@ -36,7 +43,10 @@ import { SAVE_VERSION, readSave, savedPieces, writeSave } from '../src/game/save
 import { Chronicle } from '../src/game/Chronicle.ts';
 import { shortfall, stockOf } from '../src/game/sim/stock.ts';
 import { shoreMask } from '../src/game/sim/ground.ts';
+import { REACH, THING_KINDS, dropThing } from '../src/game/sim/things.ts';
 import { input, inputAt } from './game-fixture.mjs';
+
+await initPhysics();
 
 const HOUR = 3600;
 
@@ -322,7 +332,7 @@ function buildChest( sim ) {
 	const v = sim.state.villagers[ 0 ];
 	const at = placeChest( sim );
 	const site = sim.state.buildings[ 0 ];
-	assert.deepEqual( site, { id: 'chest1', kind: 'chest', x: at.x, z: at.z, worked: 0, items: {} } );
+	assert.deepEqual( site, { id: 'chest1', kind: 'chest', x: at.x, z: at.z, worked: 0, items: {}, collider: null } );
 	assert.equal( stageOf( site ), 'planned' );
 	assert.ok( ! sim.grid.openAt( at.x, at.z ), 'the site blocks its ground from the start' );
 	assert.deepEqual( perceive( sim, v ).seen.find( ( s ) => s.place === 'chest1' ).shows, { construction: 0 }, 'a planned site shows as one, not begun' );
@@ -458,7 +468,7 @@ function buildChest( sim ) {
 	const numbers = JSON.stringify( p ).match( /-?\d+(\.\d+)?/g ).map( Number );
 	assert.ok( numbers.every( ( n ) => Number.isInteger( n ) ), 'every number in it is a count, a need or the time' );
 	assert.deepEqual( Object.keys( p ).sort(), [ 'atHand', 'body', 'last', 'noticed', 'seen', 'time' ] );
-	assert.deepEqual( p.seen.map( ( s ) => `${ s.place } ${ s.kind }` ).sort(), [ 'chest1 chest', 'shore shore', 'v2 person', 'v3 person' ], 'the whole small island is in sight, each place and the others by id and kind' );
+	assert.deepEqual( p.seen.map( ( s ) => `${ s.place } ${ s.kind }` ).sort(), [ 'chest1 chest', 'ground ground', 'shore shore', 'v2 person', 'v3 person' ], 'the whole small island is in sight, each place and the others by id and kind' );
 	assert.equal( p.time.day, 1 );
 	p.body.bag.fish = 99;
 	assert.deepEqual( v.bag, {}, 'the perception is a copy' );
@@ -647,7 +657,7 @@ function buildChest( sim ) {
 	sim.state.villagers[ 0 ].needs.satiety = 25;
 	record.observe( sim, 'cloudy', 0 );
 
-	const json = writeSave( sim.state, record.save() );
+	const json = writeSave( sim.snapshot(), record.save() );
 	const save = readSave( json );
 	assert.equal( save.version, SAVE_VERSION );
 	assert.equal( JSON.stringify( save.sim ), sim.save(), 'the save holds the simulation\'s state' );
@@ -681,7 +691,7 @@ function buildChest( sim ) {
 		book.observe( fresh, 'fair', 0 );
 		for ( let load = 0; load < 3; load ++ ) {
 
-			file = readSave( writeSave( fresh.state, book.save() ) );
+			file = readSave( writeSave( fresh.snapshot(), book.save() ) );
 			book = new Chronicle();
 			book.restore( file.record );
 			book.observe( loadGame( file.sim, input ), 'fair', 0 );
@@ -823,7 +833,7 @@ function buildChest( sim ) {
 	for ( const v of sim.state.villagers ) assert.ok( coming[ grid.indexAt( v.pos.x, v.pos.z ) ] || Math.hypot( v.pos.x - grid.centreX( target ), v.pos.z - grid.centreZ( target ) ) < 1.5, `${ v.name } stands on the new piece` );
 
 	// a save keeps its piece count, and loads back on its land at it
-	const json = sim.save(), file = writeSave( sim.state, new Chronicle().save() );
+	const json = sim.save(), file = writeSave( sim.snapshot(), new Chronicle().save() );
 	assert.equal( savedPieces( file ), 1, 'the save stands on one piece' );
 	assert.equal( savedPieces( JSON.stringify( { ...JSON.parse( file ), version: SAVE_VERSION + 1 } ) ), null, 'a save no step reaches stands on none' );
 	assert.equal( savedPieces( null ), null );
@@ -860,41 +870,41 @@ function buildChest( sim ) {
 
 // ------------------------------------------------------------------ the islanders among themselves
 
+const adults = [ { sex: 'male', age: 30 }, { sex: 'female', age: 30 }, { sex: 'male', age: 30 } ];
+const dist = ( p, q ) => Math.hypot( p.x - q.x, p.z - q.z );
+const act = ( sim, v, tool, args ) => sim.tools.get( tool )( v, args, sim );
+/** stand a body on the centre of the open main cell whose centre lies nearest d metres from p */
+const standAt = ( sim, v, p, d ) => {
+
+	const grid = sim.grid;
+	let best = - 1, err = Infinity;
+	for ( let k = 0; k < grid.open.length; k ++ ) {
+
+		if ( grid.region[ k ] !== grid.main ) continue;
+		const e = Math.abs( Math.hypot( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) - d );
+		if ( e < err ) { err = e; best = k; }
+
+	}
+	const c = grid.centreOf( best );
+	v.pos = { ...c };
+	v.prev = { ...c };
+	v.path = null;
+	v.action = null;
+	return c;
+
+};
+/** what a brain is handed for an islander: a thought by a brain that only looks */
+const perceived = ( sim, v ) => {
+
+	let seen = null;
+	sim.brain = { think: ( p ) => { seen = p; return []; } };
+	sim.think( v.id );
+	sim.brain = null;
+	return seen;
+
+};
+
 {
-
-	const adults = [ { sex: 'male', age: 30 }, { sex: 'female', age: 30 }, { sex: 'male', age: 30 } ];
-	const dist = ( p, q ) => Math.hypot( p.x - q.x, p.z - q.z );
-	const act = ( sim, v, tool, args ) => sim.tools.get( tool )( v, args, sim );
-	/** stand a body on the centre of the open main cell whose centre lies nearest d metres from p */
-	const standAt = ( sim, v, p, d ) => {
-
-		const grid = sim.grid;
-		let best = - 1, err = Infinity;
-		for ( let k = 0; k < grid.open.length; k ++ ) {
-
-			if ( grid.region[ k ] !== grid.main ) continue;
-			const e = Math.abs( Math.hypot( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) - d );
-			if ( e < err ) { err = e; best = k; }
-
-		}
-		const c = grid.centreOf( best );
-		v.pos = { ...c };
-		v.prev = { ...c };
-		v.path = null;
-		v.action = null;
-		return c;
-
-	};
-	/** what a brain is handed for an islander: a thought by a brain that only looks */
-	const perceived = ( sim, v ) => {
-
-		let seen = null;
-		sim.brain = { think: ( p ) => { seen = p; return []; } };
-		sim.think( v.id );
-		sim.brain = null;
-		return seen;
-
-	};
 
 	// hearing: within earshot, the others only, noticed until the next thought, at most NOTICED_KEPT
 	{
@@ -1108,6 +1118,282 @@ function buildChest( sim ) {
 		assert.ok( a.needs.satiety > 60, `and the hungry one ate (satiety ${ a.needs.satiety.toFixed( 1 ) })` );
 		assert.equal( play().sim.save(), sim.save(), 'deterministic' );
 		console.log( `stand-in: ${ events.join( ', ' ) } by ${ ( sim.state.tick / 60 ).toFixed( 0 ) } min; ${ b.name } gave, ${ a.name } ate` );
+
+	}
+
+}
+
+// ------------------------------------------------------------------ things on the ground
+
+{
+
+	const kind = THING_KINDS.fish;
+	/** the centre of the open cell nearest d metres from p (standAt's, standing no one there) */
+	const cellAt = ( sim, p, d ) => standAt( sim, {}, p, d );
+	const poses = ( sim ) => JSON.stringify( sim.state.things.map( ( t ) => [ t.id, t.pos, t.rot ] ) );
+	/** step until every thing sleeps (or `limit` ticks); the ticks it took */
+	const settle = ( sim, limit = 600 ) => {
+
+		let ticks = 0;
+		while ( ticks < limit && sim.state.things.some( ( t ) => ! sim.physics.sleeping( t.body ) ) ) {
+
+			sim.step( 1 );
+			ticks ++;
+
+		}
+		return ticks;
+
+	};
+	/** a game with an islander standing still on a cell well inside the island, two fish dropped from its hand */
+	const dropped = ( seed = 9 ) => {
+
+		const sim = newGame( input, { seed, bodies: adults } );
+		const [ a, b, c ] = sim.state.villagers;
+		standAt( sim, a, { x: 0, z: 0 }, 0 );
+		standAt( sim, b, a.pos, 12 );
+		standAt( sim, c, a.pos, 14 );
+		sim.step( 1 );
+		a.bag = { fish: 2 };
+		assert.deepEqual( act( sim, a, 'do', { action: 'drop', item: 'fish', count: 2 } ), { ok: true, value: 'dropped 2 fish' } );
+		return { sim, a };
+
+	};
+
+	// two fish fall, collide and come to rest on the ground, apart, on the island
+	{
+
+		const { sim, a } = dropped();
+		assert.deepEqual( a.bag, {}, 'the bag gave them' );
+		assert.equal( sim.state.things.length, 2 );
+		assert.deepEqual( act( sim, a, 'do', { action: 'drop', item: 'fish' } ), { ok: false, reason: 'the bag holds 0 fish' }, 'a bag drops only what it carries' );
+		const ticks = settle( sim );
+		assert.ok( ticks < 300, `asleep within a few seconds on screen (${ ticks } ticks)` );
+		const shrunk = { x: kind.size.x - 0.01, y: kind.size.y - 0.01, z: kind.size.z - 0.01 };
+		const rests = [];
+		for ( const t of sim.state.things ) {
+
+			const ground = sim.grid.height( t.pos.x, t.pos.z );
+			rests.push( t.pos.y - ground );
+			assert.ok( Math.abs( t.pos.y - ground - kind.size.x / 2 ) < 0.012, `${ t.id } rests on its flank on the ground (${ ( t.pos.y - ground ).toFixed( 3 ) } m over it)` );
+			assert.equal( sim.physics.overlaps( shrunk, kind.border - 0.005, t.pos, t.rot, t.body ), false, `${ t.id } inside nothing` );
+			assert.equal( sim.grid.top[ sim.grid.indexAt( t.pos.x, t.pos.z ) ], 1, `${ t.id } on the island` );
+			assert.ok( dist( t.pos, a.pos ) < 1.5, `${ t.id } beside the islander` );
+			assert.deepEqual( t.prev, { pos: t.pos, rot: t.rot }, 'at rest, its pose before is its pose' );
+
+		}
+		console.log( `things: two fish asleep in ${ ticks } ticks, ${ rests.map( ( r ) => r.toFixed( 3 ) ).join( ' and ' ) } m over the ground, apart` );
+
+	}
+
+	// deterministic: the same calls twice; saved mid-fall and loaded; ticks split otherwise
+	{
+
+		const a = dropped(), b = dropped();
+		a.sim.step( 10 );
+		b.sim.step( 10 );
+		assert.ok( a.sim.state.things.every( ( t ) => t.pos.y > a.sim.grid.height( t.pos.x, t.pos.z ) + 0.2 ), 'mid-fall' );
+		const loaded = loadGame( a.sim.save(), input );
+		assert.equal( loaded.save(), a.sim.save(), 'loaded mid-fall as saved' );
+		a.sim.step( 300 );
+		for ( let t = 0; t < 300; t ++ ) b.sim.step( 1 );
+		loaded.step( 7 );
+		loaded.step( 293 );
+		assert.equal( poses( b.sim ), poses( a.sim ), 'the same seed and calls, every pose the same, however the ticks are split' );
+		assert.equal( poses( loaded ), poses( a.sim ), 'loaded mid-fall, every pose the same' );
+		assert.equal( loaded.save(), a.sim.save(), 'and the whole game' );
+		console.log( 'things: the same poses bit for bit over two runs, a save mid-fall and ticks split otherwise' );
+
+	}
+
+	// take: refused with a full bag; taken from beside; a rolling thing reached by go
+	{
+
+		const { sim, a } = dropped();
+		settle( sim );
+		const [ t ] = sim.state.things, body = t.body;
+		a.bag = { fish: BAG_CAPACITY };
+		const options = perceive( sim, a ).atHand.find( ( h ) => h.place === t.id )?.options;
+		assert.deepEqual( options, [], 'a full bag: take is not offered' );
+		assert.deepEqual( act( sim, a, 'do', { action: 'take', place: t.id } ), { ok: false, reason: 'the bag is full' }, 'and refused' );
+		a.bag = {};
+		assert.deepEqual( act( sim, a, 'do', { action: 'take', place: t.id } ), { ok: true, value: 'took 1 fish' } );
+		assert.deepEqual( [ a.bag, sim.state.things.length, sim.physics.world.getRigidBody( body ) ], [ { fish: 1 }, 1, null ], 'the bag gains it, the thing and its body are gone' );
+		// a fish thrown off along the ground, followed while it slides
+		const far = cellAt( sim, a.pos, 6 );
+		const rolling = dropThing( sim, 'fish', { x: far.x, y: sim.grid.height( far.x, far.z ) + 0.1, z: far.z }, { x: 3, y: 0, z: 0 } );
+		sim.step( 1 );
+		assert.equal( act( sim, a, 'go', { place: rolling.id } ).ok, true );
+		let ticks = 0;
+		while ( a.action && ticks < HOUR ) { sim.step( 1 ); ticks ++; }
+		assert.deepEqual( a.last.result, { ok: true, value: `arrived at the ${ rolling.id }` } );
+		assert.ok( dist( a.pos, rolling.pos ) <= REACH + 0.01, `beside it where it lies (${ dist( a.pos, rolling.pos ).toFixed( 2 ) } m)` );
+		console.log( `take: refused for a full bag, taken with its body; a sliding fish reached in ${ ticks } s` );
+
+	}
+
+	// the sea takes what falls past the rim
+	{
+
+		const sim = newGame( input, { seed: 9 } );
+		const rim = farthestOpen( sim.grid, { x: 0, z: 0 } ), r = Math.hypot( rim.x, rim.z );
+		const out = { x: rim.x * ( r + 4 ) / r, z: rim.z * ( r + 4 ) / r };
+		const t = dropThing( sim, 'fish', { x: out.x, y: 2, z: out.z }, { x: 0, y: 0, z: 0 } );
+		let ticks = 0;
+		while ( sim.state.things.length && ticks < 600 ) { sim.step( 1 ); ticks ++; }
+		assert.deepEqual( [ sim.state.things.length, sim.physics.world.getRigidBody( t.body ) ], [ 0, null ], `fallen into the sea and gone (${ ticks } ticks)` );
+		console.log( `sea: a fish past the rim gone in ${ ticks } ticks` );
+
+	}
+
+	// a death drops the bag where the islander stood; a catch the bag cannot hold falls to the ground
+	{
+
+		const sim = newGame( input, { seed: 10, bodies: adults } );
+		const [ a, b ] = sim.state.villagers;
+		const at = { ...a.pos };
+		a.bag = { fish: 3 };
+		a.lifespan = sim.age( a ) + 5 / SECONDS_PER_YEAR;
+		sim.step( 10 );
+		assert.equal( sim.villager( a.id ), undefined );
+		settle( sim );
+		assert.equal( sim.state.things.length, 3, 'the bag on the ground' );
+		for ( const t of sim.state.things ) assert.ok( dist( t.pos, at ) < 0.6, `where it stood (${ dist( t.pos, at ).toFixed( 2 ) } m)` );
+		// b fishes on: fishing begun with room, the bag full by the time a fish bites
+		assert.equal( sim.state.villagers[ 0 ], b );
+		assert.equal( run( sim, { tool: 'go', args: { place: 'shore' } } ).ok, true );
+		let caught = null;
+		for ( let n = 0; n < 30 && caught === null; n ++ ) {
+
+			b.bag = { fish: BAG_CAPACITY - 1 };
+			assert.equal( act( sim, b, 'do', { action: 'fish' } ).ok, true );
+			b.bag = { fish: BAG_CAPACITY };
+			const before = sim.state.things.length;
+			while ( b.action ) sim.step( 1 );
+			if ( b.last.result.value === 'caught a fish' ) caught = sim.state.things.length - before;
+
+		}
+		assert.equal( caught, 1, 'a catch into a full bag lands on the ground' );
+		assert.deepEqual( b.bag, { fish: BAG_CAPACITY }, 'and the bag stays full' );
+		console.log( 'drops: a death\'s bag where the islander stood, a catch past a full bag on the ground' );
+
+	}
+
+	// an islander walking through a resting fish pushes it
+	{
+
+		const { sim, a } = dropped();
+		settle( sim );
+		const [ t ] = sim.state.things;
+		const lay = { ...t.pos };
+		// from 3 m before it to 3 m past it, straight over it
+		const from = standAt( sim, a, lay, 3 );
+		const to = { x: lay.x + ( lay.x - from.x ), z: lay.z + ( lay.z - from.z ) };
+		sim.step( 1 );
+		assert.equal( sim.walkTo( a.id, to ), null );
+		let ticks = 0;
+		while ( a.path && ticks < HOUR ) { sim.step( 1 ); ticks ++; }
+		settle( sim );
+		const moved = Math.hypot( t.pos.x - lay.x, t.pos.z - lay.z );
+		assert.ok( moved > 0.05, `pushed (${ moved.toFixed( 2 ) } m)` );
+		console.log( `push: a walker moved a resting fish ${ moved.toFixed( 2 ) } m` );
+
+	}
+
+	// a grown island: the ground's collider replaced, resting things still where they lay
+	{
+
+		const { sim } = dropped();
+		settle( sim );
+		const ground = sim.state.ground, colliders = sim.physics.world.colliders.len(), lay = poses( sim );
+		sim.addPiece( inputAt( 1 ) );
+		// (a handle's slot is reused: a lookup by the old handle finds the new collider)
+		assert.notEqual( sim.state.ground, ground, 'a new ground collider' );
+		assert.equal( sim.physics.world.colliders.len(), colliders, 'in place of the old one' );
+		sim.step( 120 );
+		settle( sim );
+		for ( const [ k, t ] of sim.state.things.entries() ) {
+
+			const before = JSON.parse( lay )[ k ][ 1 ];
+			assert.ok( Math.hypot( t.pos.x - before.x, t.pos.y - before.y, t.pos.z - before.z ) < 1e-3, `${ t.id } stays put` );
+
+		}
+		console.log( 'growth: the ground collider replaced, resting things stay put' );
+
+	}
+
+	// the stand-in: hungry, it picks up a fish in sight before going to fish
+	{
+
+		const play = () => {
+
+			const sim = newGame( input, { seed: 11, bodies: adults.slice( 0, 1 ) } );
+			const [ a ] = sim.state.villagers;
+			standAt( sim, a, { x: 0, z: 0 }, 0 );
+			const c = cellAt( sim, a.pos, 6 );
+			const t = dropThing( sim, 'fish', { x: c.x, y: sim.grid.height( c.x, c.z ) + 0.3, z: c.z }, { x: 0, y: 0, z: 0 } );
+			settle( sim );
+			a.needs.satiety = 50;
+			// the stand-in, its calls noted as it answers
+			const brain = new StandInBrain(), calls = [];
+			sim.brain = { think: ( p, who ) => {
+
+				const answer = brain.think( p, who );
+				calls.push( ...answer );
+				return answer;
+
+			} };
+			for ( let tick = 0; tick < HOUR && ! calls.some( ( c ) => c.tool === 'use' ); tick ++ ) sim.step( 1 );
+			return { sim, a, t, calls };
+
+		};
+		const { sim, a, t, calls } = play();
+		const said = calls.map( ( c ) => c.tool === 'do' ? `do ${ c.args.action } ${ c.args.place }` : `${ c.tool } ${ c.args.place ?? c.args.item ?? '' }` );
+		assert.deepEqual( said, [ `go ${ t.id }`, `do take ${ t.id }`, 'use fish' ], 'went to the fish, took it and ate it, never fishing' );
+		assert.equal( sim.state.things.length, 0 );
+		assert.ok( a.needs.satiety > 60 );
+		assert.equal( play().sim.save(), sim.save(), 'deterministic' );
+		console.log( `stand-in: ${ said.join( ', ' ) } by ${ ( sim.state.tick / 60 ).toFixed( 0 ) } min` );
+
+	}
+
+	// the cost of a step: everything asleep with three walking; twenty fish falling
+	{
+
+		const time = ( sim, ticks ) => {
+
+			const t0 = performance.now();
+			sim.step( ticks );
+			return ( performance.now() - t0 ) / ticks * 1000;
+
+		};
+		const walking = ( fish ) => {
+
+			const sim = newGame( input, { seed: 12, bodies: adults } );
+			if ( fish ) {
+
+				const a = sim.state.villagers[ 0 ];
+				a.bag = { fish: 10 };
+				act( sim, a, 'do', { action: 'drop', item: 'fish', count: 10 } );
+				settle( sim, 2000 );
+
+			}
+			for ( const v of sim.state.villagers ) sim.walkTo( v.id, farthestOpen( sim.grid, v.pos ) );
+			sim.step( 60 );
+			return sim;
+
+		};
+		const bare = time( walking( false ), 600 ), asleep = time( walking( true ), 600 );
+		const falling = newGame( input, { seed: 12, bodies: adults } );
+		for ( let k = 0; k < 20; k ++ ) {
+
+			const c = cellAt( falling, { x: 0, z: 0 }, 1 + k * 0.4 );
+			dropThing( falling, 'fish', { x: c.x, y: falling.grid.height( c.x, c.z ) + 1.2 + 0.1 * k, z: c.z }, { x: 0, y: 0, z: 0 } );
+
+		}
+		falling.step( 1 );
+		const fall = time( falling, 60 );
+		const tenFish = walking( true ), size = tenFish.save().length, none = newGame( input, { seed: 12, bodies: adults } ).save().length;
+		console.log( `cost: a tick ${ bare.toFixed( 1 ) } us with three walking, ${ asleep.toFixed( 1 ) } us with ten fish asleep besides, ${ fall.toFixed( 1 ) } us with twenty falling; a save with ten fish ${ size } bytes, without ${ none }` );
 
 	}
 

@@ -2,7 +2,7 @@ import { CLEAR_RING, cellsWithin, clearAround } from './ground.ts';
 import { BAG_CAPACITY, addItems, count, itemCount, removeItems, total } from './items.ts';
 import type { Place, PlaceOption } from './places.ts';
 import type { Sim } from './Sim.ts';
-import type { BuildingState, SimState, Vec2 } from './types.ts';
+import type { BuildingState, SimState, Vec2, Vec3 } from './types.ts';
 
 // The buildings the player places: registered kinds, each a footprint, the work it takes and the
 // options the finished place offers. Placing is generic (Sim.placeBlueprint, refused by
@@ -26,6 +26,11 @@ import type { BuildingState, SimState, Vec2 } from './types.ts';
 // every state that decides outcomes. No materials yet (nothing on the island gives wood or stone): building costs time
 // only. Cancelling a site is not designed yet.
 //
+// Each building is a fixed box in the physics world (physics.ts), the box of what its view draws at
+// its stage (`bodyBox`): none while it is only marked out, the frame's (`siteFrame`, the same
+// sizes SiteView builds it from) as it rises by tiers, the finished model's (BuildingKind.size)
+// once built, turned as it is drawn (its front to the island's middle).
+//
 // - chest: a wooden chest that holds CHEST_CAPACITY items. `put` and `take` ( { item, count } )
 //   are instant; what is inside shows only to someone standing at it. CHEST_WORK is about a game
 //   hour: a few planks and a lid knocked together by one person, which at the game's day (24 real
@@ -43,6 +48,8 @@ export interface BuildingKind {
 	radius: number;
 	/** the work it takes, game seconds of one islander's building */
 	work: number;
+	/** the finished model's box (m: width along its x, height, depth along its z) */
+	size: Vec3;
 	/** what shows on the finished building, to someone who sees it or stands at it */
 	shows( building: BuildingState, at: boolean ): Record<string, unknown> | null;
 	/** the options the finished building offers */
@@ -58,10 +65,13 @@ export const CHEST_RADIUS = 0.55;
 export const CHEST_CAPACITY = 20;
 /** the chest's work (game seconds): see the header */
 export const CHEST_WORK = 3600;
+/** the chest's box (m): its lid 0.9 x 0.55 m, 0.6 m tall on its skids (ChestView.ts draws it) */
+export const CHEST_SIZE: Vec3 = { x: 0.9, y: 0.6, z: 0.55 };
 
 const chest: BuildingKind = {
 	radius: CHEST_RADIUS,
 	work: CHEST_WORK,
+	size: CHEST_SIZE,
 	shows: ( box, at ) => at ? { items: { ...box.items } } : null,
 	options: ( box ) => ( {
 		put: {
@@ -126,7 +136,7 @@ export function newBuilding( state: SimState, kind: string, x: number, z: number
 
 	const n = ( state.placed[ kind ] ?? 0 ) + 1;
 	state.placed[ kind ] = n;
-	return { id: `${ kind }${ n }`, kind, x, z, worked: 0, items: {} };
+	return { id: `${ kind }${ n }`, kind, x, z, worked: 0, items: {}, collider: null };
 
 }
 
@@ -142,6 +152,35 @@ export function stageOf( b: BuildingState ): Stage {
 
 	const progress = progressOf( b );
 	return progress >= 1 ? 'built' : progress > 0 ? 'building' : 'planned';
+
+}
+
+/** A construction site's frame for a footprint's radius (SiteView.ts builds it from these): the
+ * square inscribed in the disc (its half side, m), the frame's height, its timbers' section and
+ * the tiers it rises in. */
+export function siteFrame( radius: number ): { half: number; height: number; section: number; tiers: number } {
+
+	const height = 1.1 * radius;
+	return { half: radius / Math.SQRT2, height, section: 0.03 + 0.04 * radius, tiers: Math.min( 6, Math.max( 2, Math.round( height / 0.2 ) ) ) };
+
+}
+
+/** The box a building is in the physics world at its stage (half extents, m, and its turn about
+ * the vertical: its front, +z, to the island's middle); null while it is only marked out. */
+export function bodyBox( b: BuildingState ): { half: Vec3; yaw: number } | null {
+
+	const stage = stageOf( b ), yaw = Math.atan2( - b.x, - b.z );
+	if ( stage === 'planned' ) return null;
+	if ( stage === 'built' ) {
+
+		const s = BUILDING_KINDS[ b.kind ].size;
+		return { half: { x: s.x / 2, y: s.y / 2, z: s.z / 2 }, yaw };
+
+	}
+	// the frame up to the tier its progress has reached
+	const f = siteFrame( BUILDING_KINDS[ b.kind ].radius );
+	const top = f.section + Math.ceil( progressOf( b ) * f.tiers ) * ( f.height - f.section ) / f.tiers;
+	return { half: { x: f.half, y: top / 2, z: f.half }, yaw };
 
 }
 

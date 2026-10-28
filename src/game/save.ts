@@ -2,8 +2,8 @@ import type { RecordSave } from './Chronicle.ts';
 import type { SimState } from './sim/types.ts';
 
 // The game's save: one slot in this browser's storage (localStorage) holding the game as JSON with
-// a version number: the simulation's state (sim/Sim.ts, where every change of the world is kept)
-// and the record (沧海录, Chronicle.ts: its entries, the skies of each day and which critical needs
+// a version number: the simulation's state (sim/Sim.ts, where every change of the world is kept,
+// its physics world included as the engine's own snapshot: sim/physics.ts) and the record (沧海录, Chronicle.ts: its entries, the skies of each day and which critical needs
 // it has noted). Kept apart from Game.ts so the world's start (world/WorldStart.ts) can read the
 // saved piece count as the page loads, before the world is asked for, without the game's code; and
 // plain TypeScript, so node's checks read saves (tools/verify-game.mjs).
@@ -19,7 +19,8 @@ import type { SimState } from './sim/types.ts';
 // one there; the `autosave` URL option (on, off) decides anywhere. `load` resumes the save whatever
 // that says, and `new` starts a new game, which replaces the save at its first save.
 //
-// Rules: a change to what is saved bumps SAVE_VERSION. While the game is in development a save of
+// Rules: a change to what is saved bumps SAVE_VERSION, and so does an upgrade of the physics engine
+// (its snapshot is the engine's own bytes). While the game is in development a save of
 // another version is not carried over: the page starts a new game, and copies the old save to
 // UNREAD_KEY before it saves over the slot, so it is never lost unseen.
 
@@ -29,7 +30,7 @@ export const SAVE_KEY = 'ponlai.game';
 export const UNREAD_KEY = 'ponlai.game.unread';
 
 /** the save's shape this build writes */
-export const SAVE_VERSION = 20;
+export const SAVE_VERSION = 21;
 
 export interface SaveFile {
 	version: number;

@@ -11,6 +11,7 @@ import type { LandLattice } from '../../world/IslandGrowth.ts';
 import type { Sex } from '../../characters/Ages.ts';
 
 export interface Vec2 { x: number; z: number }
+export interface Vec3 { x: number; y: number; z: number }
 
 /** A cell of the simulation's ground grid: column i along +x, row j along +z. */
 export interface Cell { i: number; j: number }
@@ -63,6 +64,8 @@ export interface Villager {
 	prev: Vec2;
 	/** facing in radians, atan2( dx, dz ): the scene's yaw convention */
 	heading: number;
+	/** its kinematic capsule in the physics world (physics.ts): Rapier's handle */
+	body: number;
 	/** waypoints still ahead while walking; null while standing */
 	path: Vec2[] | null;
 	/** 0..100 each (needs.ts) */
@@ -128,6 +131,23 @@ export interface BuildingState {
 	worked: number;
 	/** what it holds (the chest's store; empty for a kind that holds nothing) */
 	items: Items;
+	/** its fixed box in the physics world at its stage (physics.ts, buildings.ts `bodyBox`):
+	 * Rapier's handle, null while it has none */
+	collider: number | null;
+}
+
+/** Something lying on the ground (things.ts): one item, a rigid body of its own. */
+export interface Thing {
+	/** its place's id: its item's kind and the count of things ever made (fish3), never reused */
+	id: string;
+	item: string;
+	/** its body in the physics world: Rapier's handle */
+	body: number;
+	/** its pose after this tick's step (m, and a quaternion [ x, y, z, w ]) */
+	pos: Vec3;
+	rot: number[];
+	/** its pose before it, for the view to interpolate by Sim.alpha */
+	prev: { pos: Vec3; rot: number[] };
 }
 
 export interface SimState {
@@ -150,6 +170,15 @@ export interface SimState {
 	/** the pieces the island has grown by after the starting island: the land step the game stands
 	 * on (world/Growth.ts), so a save loads its world at it */
 	pieces: number;
+	/** what lies on the ground, in the order it came to lie (things.ts) */
+	things: Thing[];
+	/** the things ever made, every kind together: the count in their ids */
+	nextThing: number;
+	/** the ground's heightfield in the physics world: Rapier's handle (-1 before it is made) */
+	ground: number;
+	/** the physics world as Rapier's snapshot (base64), taken when the game is saved (Sim.save);
+	 * empty for a new game's state before its first save */
+	physics: string;
 }
 
 /**

@@ -62,6 +62,8 @@
 			"build": "盖{{place}}",
 			"put": "往{{place}}里放东西",
 			"take": "从{{place}}里拿东西",
+			"pickUp": "捡起{{place}}",
+			"drop": "放下 {{count}} {{unit}}{{item}}",
 			"follow": "跟着{{place}}"
 		}
 	},

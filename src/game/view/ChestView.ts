@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { CHEST_SIZE } from '../sim/buildings.ts';
 import type { BuildingState } from '../sim/types.ts';
 import { BOX, PropBuilder, at, buildingMaterial, hashAt } from './Props.ts';
 import type { RGB } from './Props.ts';
@@ -7,8 +8,9 @@ import type { RGB } from './Props.ts';
 // the props' faceted style (Props.ts), as the art direction's things people make are, handmade and
 // a little chunky: a body of horizontal planks on two skids, darker corner posts, a lid of planks
 // with a rim, two dark bands over body and lid and a clasp at the front. About 0.9 x 0.55 m and
-// 0.6 m tall, so the disc it blocks (CHEST_RADIUS) is its lid's half diagonal: what is drawn is
-// what the islanders walk round. Its front faces the island's middle (the world origin), so a
+// 0.6 m tall, so the disc it blocks (CHEST_RADIUS) is its lid's half diagonal and its box in the
+// simulation's physics (CHEST_SIZE) its body and lid: what is drawn is what the islanders walk
+// round and what things lie against. Its front faces the island's middle (the world origin), so a
 // loaded game draws it the same; its planks vary by a hash of where it stands. It shares one
 // material with every building and site (Props.ts buildingMaterial), the sample the game compiles
 // at start among them (GameView "First draws"): a chest drawn later finds its shaders built, not
@@ -20,7 +22,8 @@ const WOOD_PALE: RGB = [ 0.2, 0.125, 0.07 ];
 const POST: RGB = [ 0.1, 0.06, 0.035 ];
 const BAND: RGB = [ 0.045, 0.04, 0.035 ];
 
-const HALF_X = 0.45, HALF_Z = 0.275;
+// the simulation's box of it (sim/buildings.ts CHEST_SIZE): skids, body and lid make its height
+const HALF_X = CHEST_SIZE.x / 2, HALF_Z = CHEST_SIZE.z / 2;
 const SKID = 0.05; // the skids' height: the body stands on them
 const BODY = 0.4; // the body's height above the skids
 const LID = 0.15; // the lid's height
