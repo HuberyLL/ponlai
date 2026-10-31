@@ -5,7 +5,7 @@ import {
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
 import { solarShadowVisibility, solarVolumeVisibility } from './SolarShadow.ts';
-import { SUN_ANGULAR_RADIUS } from './Radiometry.ts';
+import { NORMAL_OFFSET } from './SunShadow.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { LEVEL_MARGIN, type SubmergedSubset } from '../world/ChunkDerived.ts';
 
@@ -299,20 +299,19 @@ export class RefractedSun {
 
 	}
 
-	submergedVisibilityNode( point: V3, angularRadius: F = float( SUN_ANGULAR_RADIUS / WATER_IOR ), geometricNormal?: V3, active?: THREE.Node<'bool'> ): F {
+	submergedVisibilityNode( point: V3, geometricNormal?: V3, active?: THREE.Node<'bool'> ): F {
 
 		const normal = geometricNormal ? normalize( geometricNormal ) : undefined;
 		// Geometry normals describe the caster plane; bump normals would move the receiver
 		// independently of the depth geometry and turn detail textures into shadow artefacts.
-		const receiver = normal ? point.add( normal.mul( 0.01 ) ) : point;
-		// The shared filter compares the receiver plane at all four texel centres. Its former
-		// full-texel slope guard is unnecessary and would detach nearby submerged contacts.
+		// The shared filter compares a footprint's four texels at one depth, so the receiver looks
+		// its shadow up the sun's normal offset away in this map's texels (SunShadow NORMAL_OFFSET:
+		// what clears a lit plane's rise inside a footprint); nearer contacts are not resolved.
+		const texel = max( this.worldSpan.x.div( this.mapSize.x ), this.worldSpan.y.div( this.mapSize.y ) );
+		const receiver = normal ? point.add( normal.mul( texel.mul( NORMAL_OFFSET.near ) ) ) : point;
 		const coordinate = shadowCoordinate( receiver, this.matrix, this.contactBias.div( this.depthRange ) );
-		// Snell compresses the solar disk. Its oblique image is elliptical; radius / IOR
-		// conservatively retains the larger axis, while sharing directional PCSS with air.
-		return solarShadowVisibility( this.target.depthTexture!, coordinate, {
-			mapSize: this.mapSize, worldSpan: this.worldSpan, depthRange: this.depthRange, angularRadius, active,
-		} );
+		// the air's disk filter, two of this map's texels wide
+		return solarShadowVisibility( this.target.depthTexture!, coordinate, { mapSize: this.mapSize, active } );
 
 	}
 
@@ -386,7 +385,7 @@ export class RefractedSun {
 				// undefined ones); above the water it skips its map reads and returns lit.
 				receiver.receivedShadowNode = Fn( ( [ airVisibility ]: [ V3 ] ) => {
 
-					const submerged = this.submergedVisibilityNode( positionWorld, undefined, normalWorldGeometry, underwater ).toVar();
+					const submerged = this.submergedVisibilityNode( positionWorld, normalWorldGeometry, underwater ).toVar();
 					return airVisibility.mul( select( underwater, submerged, float( 1 ) ) );
 
 				} ) as unknown as THREE.NodeMaterial['receivedShadowNode'];
@@ -675,11 +674,8 @@ export async function probeRefractedSun( renderer: THREE.WebGPURenderer ): Promi
 
 		const point = vec3( uv().x.mul( 2 * extent ).sub( extent ), floorY, 0 );
 		const entry = refracted.surfaceEntryNode( point );
-		const airVisibility = solarShadowVisibility( airTarget.depthTexture!, shadowCoordinate( entry, airMatrix, float( 0.02 / airRange ) ), {
-			mapSize: vec2( 1024 ), worldSpan: vec2( airCamera.right - airCamera.left, airCamera.top - airCamera.bottom ),
-			depthRange: float( airRange ), angularRadius: float( 0 ),
-		} );
-		const wetVisibility = refracted.submergedVisibilityNode( point, float( 0 ), vec3( 0, 1, 0 ) );
+		const airVisibility = solarShadowVisibility( airTarget.depthTexture!, shadowCoordinate( entry, airMatrix, float( 0.02 / airRange ) ), { mapSize: vec2( 1024 ) } );
+		const wetVisibility = refracted.submergedVisibilityNode( point, vec3( 0, 1, 0 ) );
 		return vec4( airVisibility, wetVisibility, airVisibility.mul( wetVisibility ), refracted.directionNode.y.mul( refracted.beamScaleNode ) );
 
 	} )();
@@ -724,7 +720,7 @@ export async function probeRefractedSun( renderer: THREE.WebGPURenderer ): Promi
 		const local = vec3( uv().x.mul( 12 ).sub( 6 ), 0, uv().y.mul( 4 ).sub( 2 ) );
 		const point = grazingTransform.mul( vec4( local, 1 ) ).xyz;
 		const normal = vec3( ...grazingNormal.toArray() );
-		const offset = grazingMap.submergedVisibilityNode( point, undefined, normal );
+		const offset = grazingMap.submergedVisibilityNode( point, normal );
 		const unoffset = grazingMap.submergedVisibilityNode( point );
 		return vec4( offset, unoffset, 1, 1 );
 
@@ -856,7 +852,9 @@ export async function probeRefractedSun( renderer: THREE.WebGPURenderer ): Promi
 			&& air.maximumEdgeError < step * 1.5 && submerged.maximumEdgeError < step * 1.5 && relativeError < 1e-5
 			&& fixture.every( ( sample ) => Number.isFinite( sample.measuredDepth ) && sample.absoluteError < 0.004 )
 			&& Number.isFinite( minimumVisibility ) && minimumVisibility > 0.999
-			&& Number.isFinite( unoffsetMinimumVisibility ) && unoffsetMinimumVisibility > 0.999,
+			// without the normal offset the hardware comparisons shade the grazing plane: the
+			// fixture exercises the footprint's rise that the offset clears
+			&& Number.isFinite( unoffsetMinimumVisibility ) && unoffsetMinimumVisibility < 0.95,
 		pixels, air, submerged, horizontalIrradiance: { expected: sun.y, measured, relativeError },
 		refractionShortening: - floorY * ( airSlope - waterSlope ), fixture, grazingPlane: grazing,
 	};

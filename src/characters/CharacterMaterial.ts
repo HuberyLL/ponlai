@@ -1,14 +1,20 @@
 import * as THREE from 'three/webgpu';
 import {
 	attribute, uniform, vec3, vec4, float, mix, smoothstep, clamp, dot, max, abs, pow, normalize, luminance, select,
-	normalView, normalWorld, positionViewDirection, positionLocal, positionPrevious,
+	normalView, normalWorld, positionViewDirection, positionLocal, positionPrevious, positionWorld,
 	diffuseColor, vertexColor,
 } from 'three/tsl';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { groundBounceLight } from '../lighting/GroundBounce.ts';
 import { motionNode, motionState, velocityOutput } from '../post/Motion.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { useLightLayer } from '../debug/LightLayer.ts';
+import { ambient, gradeOcclusion } from '../lighting/AmbientGrade.ts';
+import { addLocalLights } from '../lighting/LocalLights.ts';
+import { ambientField, ambientPoint, ambientVolumeOn } from '../lighting/AmbientSample.ts';
+import { liftKey } from '../lighting/KeyLift.ts';
 import type { Shared } from '../shared.ts';
+import { meterAmbient, meterKey, meterStart, writeMeter } from '../lighting/MeterLight.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -20,8 +26,22 @@ type Reflected = { directDiffuse: V3; directSpecular: V3; indirectDiffuse: V3; i
 // thin rim catches the sun along the silhouette. The light's colour, the sky's irradiance and
 // the shadow maps are the scene's own, so a figure sits in the island's light while its forms
 // stay simple and graphic. Flat colours and simple faces in the island's palette, soft cel steps,
-// no outlines; plants keep their realistic shading (docs/art-direction.md).
+// no outlines; plants keep their realistic shading (docs/art-direction.md). The cel light, its
+// highlight included, takes the key's shading direction (lighting/KeyLift.ts: lifted under a low
+// key, the moon's fixed direction by night), as the island's materials and the shadow maps do.
 //
+// The sky fill and the rim take the ambient volume's light where the figure stands
+// (lighting/AmbientSample.ts), as the island round it does; with `flags=ambientVolume:0` the
+// island's level sky and the environment's irradiance.
+// The ambient grade (lighting/AmbientGrade.ts) scales the sky rim by
+// `skySpecular`, the ground's bounce by `sunBounce` (as every material takes it), and the baked
+// occlusion in the fill by `aoStrength`. The local lights (lighting/LocalLights.ts) light a figure
+// with plain Lambert diffuse on its albedo (its key has no Fresnel weight), under the fill's
+// occlusion.
+//
+// The metering illuminance (lighting/MeterLight.ts) takes the cel light's own factors: the key by
+// the band, the cast shadow and the form step, the fill (sky and the ground's bounce) by its
+// occlusion and gain, as the colour does.
 // Under the temporal modes the material writes the figure's motion vectors, its walk and its
 // skin kept apart (see "motion vectors" below).
 
@@ -60,6 +80,16 @@ class CharacterLighting extends THREE.LightingModel {
 		super();
 		this.shade = shade;
 		this.shared = shared;
+		// the lighting layer's debug views (debug/LightLayer.ts), as the physical models take them
+		useLightLayer( this );
+
+	}
+
+	start( builder: THREE.NodeBuilder ): void {
+
+		// the metering illuminance's sums (lighting/MeterLight.ts), filled by the terms below
+		meterStart();
+		super.start( builder );
 
 	}
 
@@ -67,7 +97,9 @@ class CharacterLighting extends THREE.LightingModel {
 
 		const reflectedLight = out as unknown as Reflected;
 
-		const L = lightDirection as V3, N = normalView, V = positionViewDirection;
+		// the key's shading direction, as the island's materials take it (lifted under a low key, the
+		// moon's fixed direction by night: lighting/KeyLift.ts)
+		const L = liftKey( lightDirection as V3 ).toVar(), N = normalView, V = positionViewDirection;
 		const kind = this.shade.x;
 		const skin = is( kind, KIND_SKIN ), hair = is( kind, KIND_HAIR );
 		const shiny = is( kind, KIND_METAL ).add( is( kind, KIND_LEATHER ).mul( 0.25 ) );
@@ -90,6 +122,8 @@ class CharacterLighting extends THREE.LightingModel {
 		const albedo = diffuseColor.rgb;
 		const direct = sun.mul( albedo ).mul( lit.mul( form ).mul( look.sunGain ).mul( 1 / Math.PI ) );
 		reflectedLight.directDiffuse.addAssign( direct );
+		// the key's metering illuminance by the cel light's own factor, as the diffuse takes it
+		meterKey.addAssign( sun.mul( lit.mul( form ).mul( look.sunGain ) ) );
 		// light scattered under the skin warms the edge between light and shade
 		const edge = band.mul( band.oneMinus() ).mul( 4 ).mul( cast ).mul( skin );
 		reflectedLight.directDiffuse.addAssign( sun.mul( albedo ).mul( vec3( 0.85, 0.22, 0.1 ) ).mul( edge.mul( 0.3 / Math.PI ) ) );
@@ -106,23 +140,39 @@ class CharacterLighting extends THREE.LightingModel {
 
 		const ctx = builder.context as unknown as { iblIrradiance: V3; reflectedLight: Reflected };
 		const look = characterLook;
-		const sky = this.shared.islandIrradianceSource; // E / pi on a level surface, as lent to the island
+		// With the ambient volume (lighting/AmbientSample.ts) the sky is its light where the figure
+		// stands (graded by the relight already), degree 1 in front of the surface; without it the
+		// island's level sky and the environment's irradiance.
+		const volume = ambientVolumeOn( 'figures' ) ? ambientField( ambientPoint( positionWorld, normalWorld ), 1 ) : null;
+		// E / pi on a level surface, as lent to the island
+		const sky = volume ? volume.at( vec3( 0, 1, 0 ) ).mul( 1 / Math.PI ).toVar() : this.shared.islandIrradianceSource;
 		const up = normalWorld.y;
 		// The shade side keeps one fill colour (a flattened sky dome), with a little of the
 		// environment's direction for warmth toward the sun and blue away from it.
 		const dome = sky.mul( mix( float( 0.55 ), float( 1 ), up.mul( 0.5 ).add( 0.5 ) ) );
-		const env = ( ctx.iblIrradiance ).mul( 1 / Math.PI );
+		const env = volume ? volume.at( normalWorld ).mul( 1 / Math.PI ) : ( ctx.iblIrradiance ).mul( 1 / Math.PI );
 		const skyFill = mix( dome, env, 0.3 );
 		// the sunlit ground below throws its light up into the shade (lighting/GroundBounce.ts), E / pi
 		// as the sky's
 		const bounce = groundBounceLight().mul( 1 / Math.PI );
-		const ao = this.shade.y;
+		const ao = gradeOcclusion( this.shade.y ).toVar();
 		const albedo = diffuseColor.rgb;
 		// painted shade keeps (and slightly deepens) the colour instead of greying it
 		const shadeAlbedo = max( mix( vec3( luminance( albedo ) ), albedo, look.shadowSaturation ), vec3( 0 ) );
 		const skin = is( this.shade.x, KIND_SKIN );
 		const warm = mix( vec3( 1 ), vec3( 1.1, 0.93, 0.88 ), skin );
-		ctx.reflectedLight.indirectDiffuse.addAssign( shadeAlbedo.mul( warm ).mul( skyFill.add( bounce ).mul( ao ).mul( look.fillGain ) ) );
+		const fill = skyFill.add( bounce ).mul( ao ).mul( look.fillGain ).toVar();
+		ctx.reflectedLight.indirectDiffuse.addAssign( shadeAlbedo.mul( warm ).mul( fill ) );
+		// the fill's metering illuminance (E, from its E / pi: lighting/MeterLight.ts)
+		meterAmbient.addAssign( fill.mul( Math.PI ) );
+		// the local lights (lighting/LocalLights.ts): plain Lambert, as the figure's key has no
+		// Fresnel weight, under the figure's own occlusion
+		addLocalLights( builder, ( L, light ) => {
+
+			const lambert = light.mul( clamp( dot( normalView, L ), 0, 1 ) ).toVar();
+			return { reflected: lambert.mul( albedo ), meter: lambert };
+
+		}, ao );
 
 		// a cool, light rim along the silhouette's shaded side: the sky behind the figure and a
 		// little of the sun scattered in it
@@ -130,7 +180,7 @@ class CharacterLighting extends THREE.LightingModel {
 		const shaded = this.lit ? this.lit.oneMinus() : float( 1 );
 		const skyRim = smoothstep( 0.52, 0.78, fres ).mul( shaded ).mul( smoothstep( - 0.3, 0.5, up ) ).mul( look.skyRimGain );
 		const rimLight = sky.mul( 2.2 ).add( this.shared.sunColor.mul( 0.05 ) );
-		ctx.reflectedLight.indirectSpecular.addAssign( rimLight.mul( albedo.add( luminance( albedo ).mul( 0.5 ) ) ).mul( skyRim ) );
+		ctx.reflectedLight.indirectSpecular.addAssign( rimLight.mul( albedo.add( luminance( albedo ).mul( 0.5 ) ) ).mul( skyRim ).mul( ambient.skySpecular ) );
 
 	}
 
@@ -146,6 +196,7 @@ export function makeVertexColourCharacterMaterial( shared: Shared ): THREE.MeshS
 	const shade = attribute<'vec4'>( 'shade', 'vec4' );
 	mat.colorNode = vertexColor().rgb.mul( characterLook.albedo );
 	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new CharacterLighting( shade, shared );
+	writeMeter( mat );
 	if ( TEMPORAL ) addSkinnedMotion( mat );
 	return mat;
 

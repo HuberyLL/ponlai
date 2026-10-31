@@ -1,5 +1,5 @@
 import type * as THREE from 'three/webgpu';
-import { Fn, modelWorldMatrix, positionPrevious, varyingProperty, vec4 } from 'three/tsl';
+import { Fn, If, modelWorldMatrix, positionPrevious, positionWorld, select, uniform, varyingProperty, vec4 } from 'three/tsl';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { motionNode, velocityOutput } from '../post/Motion.ts';
 import { windDisplacement, type WindUniforms } from '../weather/Wind.ts';
@@ -7,8 +7,10 @@ import { windDisplacement, type WindUniforms } from '../weather/Wind.ts';
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 
-// Thin leaves move across individual shadow texels. Cast their rest silhouette and receive
-// its shadow in the same pose, while the visible surface keeps its original wind animation.
+// The plants cast their shadows in their swayed pose, so the shadows move with them, and receive
+// them in the same pose: a leaf cast in one pose and looked up in another would put its own shadow
+// beside itself (acne and flicker as it sways). `flags.shadowWind = false` casts and receives in the
+// rest pose instead (see below), which keeps thin leaves from moving across shadow texels.
 // Returns the rest pose in world space for any other light term that must stay as still.
 // castMask (per vertex, 0 or 1) keeps parts out of the shadow map: stems and stalks are a few
 // millimetres across, well under a texel, so the map could only show them as dashes that come
@@ -22,12 +24,21 @@ type V3 = THREE.Node<'vec3'>;
 // `positionPrevious` in its position stage, after the rest inputs are read and before three moves
 // `positionLocal` to the swayed pose, and writes its velocity as class vegetation. Only the
 // material itself does: the vegetation prepass's depth copies share this position node but write
-// no motion (VegetationPrepass.ts), the shadow passes draw the rest pose, and a draw without a
+// no motion (VegetationPrepass.ts), the shadow passes write no velocity, and a draw without a
 // velocity target needs no previous data, so none of them evaluates the sway twice. Without the
 // temporal modes nothing is built for it (MSAA's shaders are unchanged).
 // `flags.mv.wind = false` (WindMotion.ts sets `userData.windMotion = false`) builds the material
 // with the current pose as the previous one: no wind motion and no second sway, the A/B of its
 // cost and the MV-UNIT check's "source off".
+//
+// The pose is a switch: each caster's shadow position, and the position each receiver looks its
+// shadow up at, take the swayed pose while `shadowWindOn` is 1, which SunShadow.ts sets every frame from `flags.shadowWind` (on unless false,
+// debug/DebugFlags.ts) and which also makes it redraw the map every frame. Both poses share one
+// pipeline, so --toggle can time the swayed shadows within a page. The rest pose stays in
+// `userData.castRest` for the passes that must keep it whatever the flag (the rain's collision map,
+// RainCollision.ts).
+export const shadowWindOn = uniform( 1 );
+
 export function useRestPoseShadows( material: THREE.NodeMaterial, restPosition: V3, animatedPosition: V3, castMask?: F, previousPosition?: V3 ): V3 {
 
 	const restWorld = varyingProperty( 'vec3', 'vVegetationShadowRestWorld' );
@@ -47,8 +58,21 @@ export function useRestPoseShadows( material: THREE.NodeMaterial, restPosition: 
 		return animatedPosition;
 
 	} )();
-	material.castShadowPositionNode = castMask ? restPosition.mul( castMask ) : restPosition;
-	material.receivedShadowPositionNode = restWorld;
+	const castRest = castMask ? restPosition.mul( castMask ) : restPosition;
+	material.userData.castRest = castRest;
+	material.castShadowPositionNode = Fn( () => {
+
+		const cast = restPosition.toVar();
+		If( shadowWindOn.greaterThan( 0.5 ), () => {
+
+			cast.assign( animatedPosition );
+
+		} );
+		return castMask ? cast.mul( castMask ) : cast;
+
+	} )();
+	// both poses' world positions are varyings already; the uniform picks one (no branch)
+	material.receivedShadowPositionNode = select( shadowWindOn.greaterThan( 0.5 ), positionWorld, restWorld );
 	if ( previous ) {
 
 		material.userData.motion = 'animated';

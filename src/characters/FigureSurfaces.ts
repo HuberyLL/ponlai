@@ -2,6 +2,8 @@ import * as THREE from 'three/webgpu';
 import { attribute, clamp, diffuseColor, dot, float, mix, normalView, positionViewDirection, pow, texture, uniform, vec4, vertexColor } from 'three/tsl';
 import { ALPHA_TO_COVERAGE, TEMPORAL } from '../post/Antialiasing.ts';
 import { GroundBounceLightingModel } from '../lighting/GroundBounce.ts';
+import { meterKey, writeMeter } from '../lighting/MeterLight.ts';
+import type { AmbientReceiver } from '../lighting/AmbientSample.ts';
 import { useLeafCoverage } from '../world/vegetation/Coverage.ts';
 import { addSkinnedMotion, KIND } from './CharacterMaterial.ts';
 
@@ -19,7 +21,10 @@ type Reflected = { directDiffuse: V3 };
 //   and bound rim (geometry a little proud of the weave) darker through the vertex colours.
 // Each figure part casts into the figures' shadow map but the feathers (their cards would cast
 // whole rectangles; the shell under them casts the figure's shape), and every part receives that
-// map, so a hat's brim shades the face and shoulders under it.
+// map, so a hat's brim shades the face and shoulders under it. Every part reads the ambient volume
+// at degree 2 under the receiver name the kit figures' model uses too, `figures`
+// (lighting/AmbientSample.ts), so `flags=ambientVolumeOff:figures` sends both looks back to the
+// environment's light.
 
 export const figureLook = {
 	// the feathers' white (a multiplier on the photograph, linear): a white feather's albedo, kept
@@ -31,6 +36,9 @@ export const figureLook = {
 	weaveTint: uniform( new THREE.Vector3( 1.75, 1.85, 1.2 ) ),
 };
 
+// how every part reads the ambient volume (lighting/AmbientSample.ts)
+const FIGURE_AMBIENT: AmbientReceiver = { bands: 2, kind: 'figures' };
+
 /** The painted body (vertex colours, `shade` kind per vertex) in the island's light. */
 export function makeLitFigureMaterial(): THREE.MeshStandardNodeMaterial {
 
@@ -41,7 +49,8 @@ export function makeLitFigureMaterial(): THREE.MeshStandardNodeMaterial {
 	const leather = float( 1 ).sub( clamp( kind.sub( KIND.leather ).abs(), 0, 1 ) );
 	mat.colorNode = vertexColor().rgb;
 	mat.roughnessNode = mix( mix( float( 0.88 ), float( 0.55 ), skin ), float( 0.62 ), leather );
-	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new GroundBounceLightingModel();
+	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new GroundBounceLightingModel( FIGURE_AMBIENT );
+	writeMeter( mat );
 	if ( TEMPORAL ) addSkinnedMotion( mat );
 	return mat;
 
@@ -53,11 +62,14 @@ class FeatherLighting extends GroundBounceLightingModel {
 	direct( input: THREE.LightingModelDirectInput, builder?: THREE.NodeBuilder ): void {
 
 		( super.direct as ( i: THREE.LightingModelDirectInput, b?: THREE.NodeBuilder ) => void )( input, builder );
-		const L = input.lightDirection as V3, V = positionViewDirection, N = normalView;
+		// along the key's shading direction, as the physical direct term (lighting/KeyLift.ts)
+		const L = this.shadeDirection( input.lightDirection as V3 ), V = positionViewDirection, N = normalView;
 		const wrap = clamp( dot( N, L ).mul( 0.5 ).add( 0.5 ), 0, 1 );
 		const back = pow( clamp( dot( V.negate(), L ), 0, 1 ), 3 );
 		const through = wrap.mul( wrap ).mul( 0.25 ).add( back.mul( 0.6 ) ).mul( figureLook.featherTransmission );
 		( input.reflectedLight as unknown as Reflected ).directDiffuse.addAssign( ( input.lightColor as V3 ).mul( diffuseColor.rgb ).mul( through ).mul( 1 / Math.PI ) );
+		// the light through in the metering illuminance (lighting/MeterLight.ts)
+		meterKey.addAssign( ( input.lightColor as V3 ).mul( through ) );
 
 	}
 
@@ -74,7 +86,8 @@ export function makeFeatherMaterial( map: THREE.Texture ): THREE.MeshStandardNod
 	// apart from its neighbours
 	const photo = texture( map );
 	mat.colorNode = vec4( photo.rgb.mul( figureLook.featherTint ).mul( vertexColor().rgb ), photo.a );
-	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new FeatherLighting();
+	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new FeatherLighting( FIGURE_AMBIENT );
+	writeMeter( mat );
 	useLeafCoverage( mat, alphaTest );
 	if ( TEMPORAL ) addSkinnedMotion( mat );
 	return mat;
@@ -92,7 +105,8 @@ export function makeWeaveMaterial( source: THREE.MeshStandardMaterial ): THREE.M
 	mat.name = 'weave';
 	// the vertex colours darken the ribs, rings and bound rim against the weave
 	if ( source.map ) mat.colorNode = texture( source.map ).rgb.mul( figureLook.weaveTint ).mul( vertexColor().rgb );
-	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new GroundBounceLightingModel();
+	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new GroundBounceLightingModel( FIGURE_AMBIENT );
+	writeMeter( mat );
 	if ( TEMPORAL ) addSkinnedMotion( mat );
 	return mat;
 

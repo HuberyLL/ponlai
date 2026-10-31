@@ -18,7 +18,11 @@ import {
 //   gravel    R cover of the first stones   G cover of the next stones   B the stones' height
 //             A low-frequency variation (normalsB's A, again: the cliff reads it here, which keeps
 //             its fragment stage within WebGPU's 16 sampled textures)
-// All periodic over [0, 1), mipmapped, anisotropic.
+// All periodic over [0, 1), mipmapped, anisotropic. Each is baked into a 2D target of its own (the
+// normals read the heights), then every level of the four is copied into the layers of one array
+// texture (`DETAIL_LAYER`), which the materials read: one binding where there were four, the same
+// texels and the same filtering, so the terrain's fragment stage keeps slots free under WebGPU's 16
+// sampled textures.
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -175,13 +179,60 @@ const gravelBake = ( q: V2 ) => Fn( () => {
 } )();
 
 export interface DetailTextures {
-	soil: THREE.Texture;
-	heights: THREE.Texture;
-	gravel: THREE.Texture;
-	normalsA: THREE.Texture;
-	normalsB: THREE.Texture;
-	rockAlbedo: THREE.Texture;
-	rockDetail: THREE.Texture;
+	soil: THREE.DataArrayTexture; // layers: the root bed (Soil.ts), the bamboo groves' density
+	// the baked maps: each a layer of one array texture (`DETAIL_LAYER`), sampled as
+	// `texture( tex.heights, uv )`
+	heights: THREE.TextureNode;
+	gravel: THREE.TextureNode;
+	normalsA: THREE.TextureNode;
+	normalsB: THREE.TextureNode;
+	// the CC0 scans (SCAN_LAYER): colour (sRGB) and detail (normal x, y and roughness)
+	scanAlbedo: THREE.DataArrayTexture;
+	scanDetail: THREE.DataArrayTexture;
+}
+
+/** The baked maps' layers in their array texture. */
+export const DETAIL_LAYER = { heights: 0, normalsA: 1, normalsB: 2, gravel: 3 } as const;
+
+/** The scans' layers in the texture arrays: the cliff's stone, the open meadow's ground and the
+ * bamboo groves' floor. One array per map keeps the terrain's fragment stage within WebGPU's 16
+ * sampled textures. */
+export const SCAN_LAYER = { rock: 0, meadow: 1, grove: 2 } as const;
+const SCAN_FILES = [ 'rock/rock', 'ground/meadow', 'ground/grove' ];
+const SCAN_SIZE = 1024;
+/** The scans' smallest mip, 1x1: each layer's own mean colour. */
+export const SCAN_TOP_MIP = Math.log2( SCAN_SIZE );
+
+// A scan's pixels, decoded as stored (no colour conversion; the detail maps carry no alpha, so
+// the canvas's premultiplied storage keeps them exact), bottom row first as a loaded texture's
+// flipped upload has them.
+async function scanPixels( path: string ): Promise<Uint8ClampedArray> {
+
+	const blob = await ( await fetch( `${ import.meta.env.BASE_URL }textures/${ path }` ) ).blob();
+	const bitmap = await createImageBitmap( blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none', imageOrientation: 'flipY' } );
+	const canvas = new OffscreenCanvas( SCAN_SIZE, SCAN_SIZE );
+	const context = canvas.getContext( '2d' )!;
+	context.drawImage( bitmap, 0, 0, SCAN_SIZE, SCAN_SIZE );
+	bitmap.close();
+	return context.getImageData( 0, 0, SCAN_SIZE, SCAN_SIZE ).data;
+
+}
+
+async function scanArray( suffix: string, colorSpace: string ): Promise<THREE.DataArrayTexture> {
+
+	const layers = await Promise.all( SCAN_FILES.map( ( file ) => scanPixels( file + suffix ) ) );
+	const data = new Uint8Array( SCAN_SIZE * SCAN_SIZE * 4 * layers.length );
+	layers.forEach( ( pixels, i ) => data.set( pixels, i * SCAN_SIZE * SCAN_SIZE * 4 ) );
+	const map = new THREE.DataArrayTexture( data, SCAN_SIZE, SCAN_SIZE, layers.length );
+	map.colorSpace = colorSpace;
+	map.wrapS = map.wrapT = THREE.RepeatWrapping;
+	map.magFilter = THREE.LinearFilter;
+	map.minFilter = THREE.LinearMipmapLinearFilter;
+	map.generateMipmaps = true;
+	map.anisotropy = 8;
+	map.needsUpdate = true;
+	return map;
+
 }
 
 export async function bakeProceduralTextures( renderer: THREE.WebGPURenderer, size = 1024 ): Promise<DetailTextures> {
@@ -231,22 +282,50 @@ export async function bakeProceduralTextures( renderer: THREE.WebGPURenderer, si
 	render( gravel, gravelBake( uv() ) );
 
 	renderer.setRenderTarget( prev );
+	const detail = detailArray( renderer, [ heights, normalsA, normalsB, gravel ], size );
+	const layer = ( i: number ) => texture( detail ).depth( int( i ) );
 
-	// CC0 scan supplies irregular mineral relief; generated textures still serve moss and sand.
-	// Keep the detail map linear: its RGB is OpenGL normals and alpha is roughness.
-	const loader = new THREE.TextureLoader();
-	const [ rockAlbedo, rockDetail ] = await Promise.all( [
-		loader.loadAsync( `${ import.meta.env.BASE_URL }textures/rock/rock_albedo.jpg` ),
-		loader.loadAsync( `${ import.meta.env.BASE_URL }textures/rock/rock_detail.png` ),
-	] );
-	rockAlbedo.colorSpace = THREE.SRGBColorSpace;
-	for ( const map of [ rockAlbedo, rockDetail ] ) {
+	// CC0 scans supply the stone's irregular mineral relief and the meadow ground's soil and fallen
+	// leaves; generated textures still serve moss and sand. Keep the detail maps linear.
+	const [ scanAlbedo, scanDetail ] = await Promise.all( [ scanArray( '_albedo.jpg', THREE.SRGBColorSpace ), scanArray( '_detail.png', THREE.NoColorSpace ) ] );
+	return {
+		soil: createSoilTexture(), heights: layer( DETAIL_LAYER.heights ), gravel: layer( DETAIL_LAYER.gravel ),
+		normalsA: layer( DETAIL_LAYER.normalsA ), normalsB: layer( DETAIL_LAYER.normalsB ), scanAlbedo, scanDetail,
+	};
 
-		map.wrapS = map.wrapT = THREE.RepeatWrapping;
-		map.anisotropy = 8;
-		map.needsUpdate = true;
+}
 
-	}
-	return { soil: createSoilTexture(), heights: heights.texture, gravel: gravel.texture, normalsA: normalsA.texture, normalsB: normalsB.texture, rockAlbedo, rockDetail };
+// The baked targets' every level copied into the layers of one array texture (in DETAIL_LAYER's
+// order), with the targets' sampler; the targets are freed. The array is allocated with its mips
+// and its own generation turned off before the copies, so its levels are the targets' box-filtered
+// mips exactly (a copy into level 0 would otherwise regenerate them).
+function detailArray( renderer: THREE.WebGPURenderer, targets: THREE.RenderTarget[], size: number ): THREE.Texture {
+
+	const array = new THREE.RenderTarget( size, size, {
+		depth: targets.length, type: THREE.UnsignedByteType, generateMipmaps: true,
+		minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
+		wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, depthBuffer: false,
+		anisotropy: 8,
+	} );
+	array.texture.name = 'detail';
+	renderer.initRenderTarget( array );
+	array.texture.generateMipmaps = false;
+	const levels = Math.floor( Math.log2( size ) ) + 1;
+	const region = new THREE.Box2();
+	const at = new THREE.Vector3();
+	targets.forEach( ( rt, i ) => {
+
+		for ( let level = 0; level < levels; level ++ ) {
+
+			const s = Math.max( size >> level, 1 );
+			region.min.set( 0, 0 );
+			region.max.set( s, s );
+			renderer.copyTextureToTexture( rt.texture, array.texture, region, at.set( 0, 0, i ), level, level );
+
+		}
+		rt.dispose();
+
+	} );
+	return array.texture;
 
 }

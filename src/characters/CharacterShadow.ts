@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
-import { Fn, uniform, vec2, vec4, float } from 'three/tsl';
-import { solarShadowVisibility } from '../lighting/SolarShadow.ts';
+import { Fn, uniform, vec2, vec3, vec4, float, floor } from 'three/tsl';
+import { solarVolumeVisibility } from '../lighting/SolarShadow.ts';
 import { compileLatentInto } from '../post/graph/Compile.ts';
 
 type F = THREE.Node<'float'>;
@@ -11,8 +11,11 @@ type Filter = ( input: FilterInput ) => F;
 // The island's sun shadow map is drawn once and redrawn only when the light changes. Moving
 // figures get a small map of their own along the same sun direction, drawn every frame, and
 // every shadow receiver multiplies both visibilities through the sun's shadow filter: the
-// meadow, the game's props and the figures themselves take the figures' shadows with the same
-// contact-hardening penumbra as the island's.
+// meadow, the game's props and the figures themselves take the figures' shadows. This map is read
+// with a 5 x 5 texel tent made of nine bilinear comparisons (`tentVisibility`; Castaño's PCF
+// weights, "Shadow Mapping Summary - Part 1", 2013), each a 2 x 2 footprint gathered with a comparison
+// (textureGatherCompare): only figures cast into it, so it needs no receiver plane. Under a low key the island's map is drawn along the
+// key's lifted direction (lighting/SunShadow.ts, lighting/KeyLift.ts), and so is this one (`along`).
 
 // sun shadow coordinates: x, y from NDC to texture space (v down), WebGPU depth unchanged
 const NDC_TO_TEXTURE = new THREE.Matrix4().set(
@@ -22,6 +25,29 @@ const NDC_TO_TEXTURE = new THREE.Matrix4().set(
 	0, 0, 0, 1,
 );
 
+// A 5 x 5 texel tent from nine bilinear comparisons: per axis three taps whose bilinear weights
+// and offsets add up to the tent's five texel weights at any sub-texel position s (Castaño).
+function tentVisibility( depth: THREE.DepthTexture, coordinate: V3, size: number ): F {
+
+	const texel = 1 / size;
+	const at = coordinate.xy.mul( size );
+	const base = floor( at.add( 0.5 ) );
+	const s = at.add( 0.5 ).sub( base );
+	const corner = base.sub( 0.5 ).mul( texel );
+	// per axis: weights ( 4 - 3s, 7, 1 + 3s ), offsets in texels
+	const weights = [ float( 4 ).sub( s.mul( 3 ) ), vec2( 7 ), float( 1 ).add( s.mul( 3 ) ) ];
+	const offsets = [ float( 3 ).sub( s.mul( 2 ) ).div( weights[ 0 ] ).sub( 2 ), float( 3 ).add( s ).div( 7 ), s.div( weights[ 2 ] ).add( 2 ) ];
+	let sum: F = float( 0 );
+	for ( let j = 0; j < 3; j ++ ) for ( let i = 0; i < 3; i ++ ) {
+
+		const q = corner.add( vec2( offsets[ i ].x, offsets[ j ].y ).mul( texel ) );
+		sum = sum.add( weights[ i ].x.mul( weights[ j ].y ).mul( solarVolumeVisibility( depth, vec3( q, coordinate.z ), vec2( size ) ) ) );
+
+	}
+	return sum.div( 144 );
+
+}
+
 export class CharacterShadow {
 
 	// figures that cast into this map render on this layer as well as the default one
@@ -30,7 +56,6 @@ export class CharacterShadow {
 	readonly target: THREE.RenderTarget;
 	private readonly depth: THREE.DepthTexture;
 	private readonly size: number;
-	private readonly half: number;
 	private readonly range: number;
 	private readonly bias: number;
 	// static sun shadow coordinates -> this map's coordinates
@@ -39,12 +64,15 @@ export class CharacterShadow {
 	private readonly sunToTexture = new THREE.Matrix4();
 	private readonly localToTexture = new THREE.Matrix4();
 	private readonly direction = new THREE.Vector3();
+	/** The world direction toward the light the map is drawn along, read at every update (main.ts
+	 * `shadowDirection`: the key's, lifted under a low key); the light's own where it is unset or
+	 * the light already stands along it. */
+	along: THREE.Vector3 | null = null;
 
 	/** size: texels; half: half the covered width (m) across the sun; range: depth span (m). */
 	constructor( size = 1024, half = 1.25, range = 24 ) {
 
 		this.size = size;
-		this.half = half;
 		this.range = range;
 		this.bias = - 0.006 / range;
 		this.depth = new THREE.DepthTexture( size, size, THREE.FloatType );
@@ -77,7 +105,7 @@ export class CharacterShadow {
 		const shadow = sun.shadow as unknown as { filterNode: Filter };
 		const island = shadow.filterNode;
 		const depth = this.depth, toLocal = this.toLocal;
-		const parameters = { mapSize: vec2( this.size ), worldSpan: vec2( this.half * 2 ), depthRange: float( this.range ) };
+		const size = this.size;
 		shadow.filterNode = Fn( ( input: FilterInput, builder: THREE.NodeBuilder ) => {
 
 			// TSL hands a Fn its arguments behind a proxy; pass the island's filter a plain object
@@ -86,7 +114,7 @@ export class CharacterShadow {
 			// shadowing the simple flat-coloured forms reads as a stain rather than as form.
 			if ( builder.material?.userData.casterOfCharacterShadow === true ) return island( own );
 			const local = toLocal.mul( vec4( input.shadowCoord, 1 ) ).xyz;
-			return island( own ).mul( solarShadowVisibility( depth, local, parameters ) );
+			return island( own ).mul( tentVisibility( depth, local, size ) );
 
 		} ) as unknown as Filter;
 
@@ -125,6 +153,7 @@ export class CharacterShadow {
 		// matrix paired with that raster; the figures still get their own fresh map below.
 		if ( sun.shadow.needsUpdate || sun.shadow.autoUpdate ) sun.shadow.updateMatrices( sun );
 		this.direction.subVectors( sun.position, sun.target.position ).normalize();
+		if ( this.along && this.direction.angleTo( this.along ) > 1e-6 ) this.direction.copy( this.along ).normalize();
 		cam.position.copy( centre ).addScaledVector( this.direction, this.range * 0.5 );
 		cam.up.set( 0, 1, 0 );
 		cam.lookAt( centre );

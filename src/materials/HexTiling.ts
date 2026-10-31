@@ -105,11 +105,12 @@ export const rotateBack = ( d: V2, tap: V4 ): V2 => vec2( d.x.mul( tap.z ).sub( 
 // A scan's colour and normal map read through the hex tiles (Mikkelsen's hex2colTex and
 // bumphex2derivNMap): each tile reads both with its own offset and rotation and with the
 // gradients turned to match, so the mip level and anisotropy follow the tile, and the tiles'
-// colour, slope (turned back into the surface's frame) and roughness (the normal map's alpha)
-// are summed with one set of weights, from the colour's height. Call it inside the branch that
+// colour, slope (turned back into the surface's frame) and roughness (the normal map's blue: it
+// holds the normal's x and y only) are summed with one set of weights, from the colour's height. Call it inside the branch that
 // needs the scan; the reads are explicit-gradient, so they may sit in non-uniform control flow.
 export interface HexScan {
-	colour: THREE.Texture; normal: THREE.Texture;
+	// texture arrays and the scan's layer in them
+	colour: THREE.Texture; normal: THREE.Texture; layer: number;
 	// the texture's scale over st, the grid's rate and the tiles' largest turn in radians
 	scale: number; rate: number; maxAngle: number;
 	// what a tile left unread holds (its weight is zero)
@@ -129,8 +130,8 @@ export function hexReadScan( st: V2, gx: V2, gy: V2, scan: HexScan, colour: V4, 
 
 			const q = tap.xy.mul( scan.scale );
 			const qgx = rotateInto( gx, tap ).mul( scan.scale ), qgy = rotateInto( gy, tap ).mul( scan.scale );
-			cs[ i ].assign( texture( scan.colour, q ).grad( qgx, qgy ) );
-			fs[ i ].assign( texture( scan.normal, q ).grad( qgx, qgy ) );
+			cs[ i ].assign( texture( scan.colour, q ).grad( qgx, qgy ).depth( float( scan.layer ) ) );
+			fs[ i ].assign( texture( scan.normal, q ).grad( qgx, qgy ).depth( float( scan.layer ) ) );
 
 		} );
 
@@ -140,7 +141,7 @@ export function hexReadScan( st: V2, gx: V2, gy: V2, scan: HexScan, colour: V4, 
 	slope.assign( rotateBack( scan.slope( fs[ 0 ] ), taps[ 0 ] ).mul( W.x )
 		.add( rotateBack( scan.slope( fs[ 1 ] ), taps[ 1 ] ).mul( W.y ) )
 		.add( rotateBack( scan.slope( fs[ 2 ] ), taps[ 2 ] ).mul( W.z ) ) );
-	roughness.assign( fs[ 0 ].a.mul( W.x ).add( fs[ 1 ].a.mul( W.y ) ).add( fs[ 2 ].a.mul( W.z ) ) );
+	roughness.assign( fs[ 0 ].b.mul( W.x ).add( fs[ 1 ].b.mul( W.y ) ).add( fs[ 2 ].b.mul( W.z ) ) );
 
 }
 

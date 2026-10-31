@@ -62,7 +62,7 @@ export const wetRoughness = ( rough: F, porosity: F, soak: F ) =>
 
 export interface RunnelInput {
 
-	tex: THREE.Texture; // low-frequency variation in alpha (the detail textures' normalsB)
+	tex: THREE.TextureNode; // low-frequency variation in alpha (the detail textures' gravel layer)
 	p: V3; n: V3; // world position and geometry normal
 	dpx: V3; dpy: V3; // screen derivatives of p, taken in uniform control flow by the caller
 	warp: F; // slow variation (0 to 1, tens of metres) that shifts the columns along the cliffs
