@@ -155,7 +155,7 @@ the boxes placed before it.
 | anchor | point |
 |---|---|
 | meadow-near, meadow-band-40m, meadow-band-70m | meadow ground about 5, 40 and 70 m from the camera (the lawn's blade bands) |
-| flowers | the nearest 2 m cell of the meadow with a few flowering plants (Flowers.ts) |
+| flowers | the nearest 2 m cell of the meadow with a few flowering plants (none since the meadow lost its flowers: the crop is skipped) |
 | rim-lip | the nearest stretch of the lip facing the camera |
 | cliff-edge-sea | the cliff's foot at the waterline, facing the camera |
 | cliff-edge-sky | the lip seen from below against the sky (from a camera near the top's height, the island's silhouette above the sea horizon) |
@@ -258,7 +258,7 @@ node tools/parity/capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,
     [--store <root>/<sha>] [--ref-url <refUrl>] [--runs runs.csv] [--task name]
 ```
 
-- One page per view (loaded as capture-set loads it, film grain 0 as in capture-clip). The base is
+- One page per view (loaded as capture-set loads it). The base is
   shot once ready, then each `--variant` in order on the same page: its js runs (`s` is
   `window.__PONLAI__`), the loop starts again, the temporal rest restarts (an epoch bump), the
   page is ready again as capture.mjs makes it (stability for MSAA, the converged rest for taa,
@@ -624,13 +624,13 @@ uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/cli
   depend on how long the page ran before it; every periodic sky bake reads its irradiance back (it
   sets a lightning strike's fill) and the next frame waits for it, so a clip does not depend on how
   long its frames took either. Clips take the GPU lock shared.
-- Film grain is set to 0 on every side (it is re-seeded each frame and would add noise to the
-  temporal metrics); `clip.json` records it.
+- The exposure's adaptation is frozen on every side while a clip runs (snapped to its target every
+  frame), so a temporal clip and its converged rest or MSAA do not differ by the adaptation's lag.
 - A paused one-frame clip without a temporal rest (`rest` under msaa, off, gt-hi) is stepped again
   and shot whole until two shots agree within the readiness tolerance (at most 6 shots, else the
   clip fails and writes nothing): a single stepped frame can be the GPU's alternative image (task O;
   most often while other browsers render), which the readiness check before it cannot see. `clip.json` records the
-  shots (`recheck`); `--test-fault` draws the first one with film grain to test it. Header of
+  shots (`recheck`); `--test-fault` draws the first one half a stop brighter to test it. Header of
   `capture-clip.mjs`.
 - Crops: the view's anchors, or the clip's own (`night-still`: the horizon's stars, no crop of the
   view's rest image), or `--crops`, are read once at the base pose, and each frame projects
@@ -640,7 +640,7 @@ uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/cli
 - `--aa gt`: the temporal modes' ground truth (`aa=gt`, debug builds): the temporal graph at the
   canvas's resolution, each captured frame held still after its tick (`loop.step`'s `converge`)
   until the temporal rest has averaged `--gt-jitters` jittered renders of it with a box filter
-  (32 by default, 64 for a one-frame clip such as `rest`), unsharpened and without grain, cropped
+  (32 by default, 64 for a one-frame clip such as `rest`), unsharpened, cropped
   at the test's own size. The scale schedule is ignored. It renders every tier (the tier's own
   content at the canvas's resolution), so each tier has its own ground truth. Keep its sets per
   merge-base under `<parity root>/<sha>/gt/<tier>/`. Paused temporal captures (capture.mjs, capture-set.mjs) wait for the

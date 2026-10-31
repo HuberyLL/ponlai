@@ -8,8 +8,8 @@
 //       [--size 1728x1117@2] [--store <root>/<sha>] [--ref-url R] [--timeout ms] [--runs file.csv] [--task name]
 //
 // One page per view, loaded as capture-set loads it (`?debug&paused&t=12&quality=..[&aa=..][&q]&<view>`,
-// in a profile slot, the view's eval with the crop anchors, film grain 0 as capture-clip.mjs sets it,
-// so the crops compare with the store's rest entries). On that page:
+// in a profile slot, the view's eval with the crop anchors, so the crops compare with the store's
+// rest entries). On that page:
 //   1. the base: ready as capture.mjs is (below), then shot;
 //   2. each --variant in order: its js runs in the page (awaited; `s` is window.__PONLAI__), the
 //      loop starts again, the temporal rest restarts (an epoch bump: the variant need not be in the
@@ -211,15 +211,6 @@ export async function main( argv ) {
 			await page.goto( url );
 			await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } );
 			await page.evaluate( viewEval( view, crops ) );
-			// no film grain, as the store's rest entries (capture-clip.mjs)
-			const grain = await page.evaluate( () => {
-
-				const settings = window.__PONLAI__.pipeline?.settings;
-				const before = settings && typeof settings.grain === 'number' ? settings.grain : null;
-				if ( before !== null ) settings.grain = 0;
-				return before;
-
-			} );
 			viewRecord.loadMs = Date.now() - t0 - viewRecord.lockMs;
 			// the anchors' world points: the reference's, else the page's own
 			const anchors = anchorsFile && existsSync( anchorsFile )
@@ -281,7 +272,7 @@ export async function main( argv ) {
 				const shotMs = Date.now() - s0;
 				await writeFile( path.join( dir, 'clip.json' ), JSON.stringify( {
 					name: `quick-${ variant.label }-${ view }`, url, quick: true, variant, clip: 'rest', clipDef: { ...CLIPS.rest }, view, aa: o.aa ?? null, quality,
-					viewport: { width: W, height: H, deviceScaleFactor: DSF }, cropPx: BOX * DSF, grain: { was: grain, captured: 0 }, frames: 1, every: 1, dense: [], full: [],
+					viewport: { width: W, height: H, deviceScaleFactor: DSF }, cropPx: BOX * DSF, frames: 1, every: 1, dense: [], full: [],
 					browser: session.version, slot: session.slot, ready: readiness, anchors, anchorsFrom: anchorsFile,
 					boxes: [ { i: 0, time: state.time, render: state.render, frame: state.frame, ...( state.taa ? { taa: state.taa } : {} ), boxes: state.boxes } ], errors: errors.slice(),
 				}, null, 2 ) );

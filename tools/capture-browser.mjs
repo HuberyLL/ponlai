@@ -98,7 +98,7 @@
 //   rendered frames instead (READY_FRAMES, 60, for a running one). `wait` and `settle` (ms) add
 //   fixed delays before and after the floor.
 // - Before the grabs a paused page also waits for its own settled signal (waitForSettled, which
-//   capture.mjs calls; verify-growth-swap waits for it too): src/post/Settled.ts holds it false
+//   capture.mjs and verify-scene-jump call; verify-growth-swap waits for it too): src/post/Settled.ts holds it false
 //   while a pipeline compiles asynchronously or a sun shadow redraw is due, and until 8 quiet frames
 //   share the scene's key, so the grabs start on the frame the page keeps. Stability alone met that
 //   only through the loading screen, which a fresh load lifts once the sun's map has drawn: frames

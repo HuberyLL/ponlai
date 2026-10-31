@@ -159,9 +159,11 @@ try {
 	await page.evaluate( async () => { window.__PONLAI__.dayCycle.moonPhase = 0.5; await window.__PONLAI__.refreshEnvironment(); } );
 	report.phases.fullMoon = await snapshot();
 	validateState( report.phases.fullMoon, 'full moon' );
-	assert.ok( luma( report.phases.newMoon.keyColor ) < luma( report.phases.fullMoon.keyColor ) * 0.25, 'New moon must suppress direct moonlight' );
-	assert.ok( energy( report.phases.newMoon ) < energy( report.phases.fullMoon ), 'The full moon must supply more lighting energy than the new moon' );
-	report.checks.push( 'Moon phase controls actual night lighting' );
+	// The phase shapes only the drawn moon (DayCycle's header): the key is the full moon's at every
+	// phase, and the night's light moves only by the drawn disk's share of the sky.
+	near( luma( report.phases.newMoon.keyColor ), luma( report.phases.fullMoon.keyColor ), luma( report.phases.fullMoon.keyColor ) * 1e-6, 'The phase must not change the moon\'s key' );
+	assert.ok( energy( report.phases.newMoon ) > energy( report.phases.fullMoon ) * 0.95, 'The phase must not darken the night' );
+	report.checks.push( 'Moon phase leaves the night lighting as it is' );
 	await page.evaluate( () => window.__PONLAI__.setPreset( 'golden-hour' ) );
 	near( await page.evaluate( () => window.__PONLAI__.dayCycle.hour ), 16, 1e-8, 'Golden-hour preset' );
 

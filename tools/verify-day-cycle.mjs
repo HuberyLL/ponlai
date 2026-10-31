@@ -95,16 +95,22 @@ for ( const hour of [ 0, 6, 12, 18, 24 ] ) {
 	near( before.overcastAdaptation, after.overcastAdaptation, 1e-4 );
 
 }
-// The moon's orbit is tilted from the sun's about the east-west axis, so the phase's angular
-// separation holds exactly where the two orbits meet: at 6:00 and 18:00, with the sun on that axis.
-for ( const hour of [ 6, 18 ] ) {
+// The moon keeps a full moon's place at every phase; the phase lights only its drawn disk, from
+// where the sun would stand on the moon's orbit, the phase's angle away. At 6:00 and 18:00, where
+// the two orbits meet, the full moon's light is the sun itself.
+for ( const hour of [ 0, 6, 18, 21 ] ) {
 
 	cycle.setHour( hour );
+	cycle.moonPhase = 0.5;
+	const full = cycle.snapshot();
+	if ( hour === 6 || hour === 18 ) assert.ok( full.moonSunDir.distanceTo( full.sunDir ) < 1e-10 );
 	for ( const phase of [ 0, 0.125, 0.25, 0.5, 0.75, 0.875, 1 ] ) {
 
 		cycle.moonPhase = phase;
 		const s = cycle.snapshot();
-		near( s.sunDir.dot( s.moonDir ), Math.cos( 2 * Math.PI * phase ) );
+		assert.ok( s.moonDir.distanceTo( full.moonDir ) < 1e-12 && s.keyDir.distanceTo( full.keyDir ) < 1e-12 );
+		near( s.moonKeyGain, full.moonKeyGain );
+		near( s.moonSunDir.dot( s.moonDir ), Math.cos( 2 * Math.PI * phase ) );
 		near( s.moonIllumination, ( 1 - Math.cos( 2 * Math.PI * phase ) ) / 2 );
 
 	}
@@ -126,7 +132,7 @@ for ( const phase of [ 0, 0.125, 0.25, 0.499999, 0.5, 0.500001, 0.75, 0.875, 0.9
 			assert.ok( state.keyDir.toArray().every( Number.isFinite ) );
 			// (the moon's key rises from the end of the handoff, -2.5 degrees)
 			if ( elevation >= - 2.5 ) near( state.moonKeyGain, 0 );
-			if ( phase === 0 || state.moonElevation <= 0 ) assert.equal( state.moonKeyGain, 0 );
+			if ( state.moonElevation <= 0 ) assert.equal( state.moonKeyGain, 0 );
 			if ( elevation >= - 0.7 ) assert.ok( state.keyDir.distanceTo( state.sunDir ) < 1e-10 );
 			if ( elevation <= - 2.5 ) assert.ok( state.keyDir.distanceTo( state.moonDir ) < 1e-10 );
 			cycle.setHour( hour - 1e-7 );
@@ -146,17 +152,17 @@ for ( const phase of [ 0, 0.125, 0.25, 0.499999, 0.5, 0.500001, 0.75, 0.875, 0.9
 	}
 
 }
-// The moon's authored orbit culminates at 37 degrees (the sun's 62 less its 25 degree tilt): a
-// waxing quarter at 18:00, a waning one at 6:00, a full moon at midnight.
-cycle.moonPhase = 0.25;
-cycle.setHour( 18 );
-near( cycle.snapshot().moonElevation, 37 );
-cycle.moonPhase = 0.75;
-cycle.setHour( 6 );
-near( cycle.snapshot().moonElevation, 37 );
+// The moon's authored orbit culminates at 20 degrees (the sun's 62 less its 42 degree tilt), at
+// midnight whatever the phase; a new clock's moon is full.
+assert.equal( new DayCycle().moonPhase, 0.5 );
+for ( const phase of [ 0, 0.25, 0.5, 0.75 ] ) {
+
+	cycle.moonPhase = phase;
+	cycle.setHour( 0 );
+	near( cycle.snapshot().moonElevation, 20 );
+
+}
 cycle.moonPhase = 0.5;
-cycle.setHour( 0 );
-near( cycle.snapshot().moonElevation, 37 );
 // A full moon still rises due east at 18:00, where the sun rose, and sets due west at 6:00, where
 // the sun set; through the night it stays above the horizon.
 for ( const [ hour, sunHour ] of [ [ 18, 6 ], [ 6, 18 ] ] ) {

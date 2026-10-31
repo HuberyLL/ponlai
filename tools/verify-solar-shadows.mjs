@@ -1,6 +1,7 @@
-// GPU regression: physical contact hardening plus unoccluded receiver planes at low solar elevation.
+// GPU regression: the sun shadow's disk filter keeps one penumbra width at any caster distance,
+// and receiver planes stay unoccluded at low solar elevation.
 // Needs the Vite dev server: it imports /src/ modules into the page (tools/dev-server.mjs).
-// Usage: node tools/verify-solar-shadows.mjs http://127.0.0.1:5190 [extra query, e.g. shadowFilter=legacy]
+// Usage: node tools/verify-solar-shadows.mjs http://127.0.0.1:5190 [extra query]
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
 import { requireDevServer } from './dev-server.mjs';

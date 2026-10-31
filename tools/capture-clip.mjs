@@ -9,8 +9,9 @@
 //       [--task name] [--anchors-from clip.json] [--stable-* (capture.mjs)] [--ready-frames n] [--wait ms] [--settle ms] [--verbose]
 //       [--test-fault]
 //
-// The page loads `U?debug&paused&t=12&quality=<q>&aa=<mode>[&<extra>]&<view's query>[&<clip's
-// query>]` (`aa=off` adds `msaa=1`; `aa` reaches builds that read it, others ignore it) in a
+// The page loads `U?debug&paused&testMode=0&t=12&quality=<q>&aa=<mode>[&<extra>]&<view's query>[&<clip's
+// query>]` (`aa=off` adds `msaa=1`; `aa` reaches builds that read it, others ignore it; `testMode=0`
+// leaves the test mode's switch out, so what it turns off moves in the clips: src/debug/TestMode.ts) in a
 // persistent profile slot, runs the view's eval (the crop anchors' setup included), waits for the
 // scene as capture.mjs does (tools/capture-browser.mjs: the image stopped changing, with the same
 // --stable-* options, or under taa / taau / gt the rest converged, or --ready-frames' fixed count;
@@ -37,7 +38,7 @@
 // temporal graph at the canvas's resolution, each captured frame held still after its tick until
 // the temporal rest has averaged `--gt-jitters` jittered renders of it with a box filter
 // (`loop.step`'s `converge`; 32 by default, 64 for a clip of one frame, the rest GT), without
-// sharpening or grain. Its crops are cut at the test's own size (no downsampling). It renders every
+// sharpening. Its crops are cut at the test's own size (no downsampling). It renders every
 // frame at the canvas's ratio: a clip's scale schedule applies to the test and MSAA sides only.
 // Ground-truth sets are shared per merge-base (`<parity root>/<sha>/gt/`).
 //
@@ -47,7 +48,7 @@
 // rest and capture the frame as stepped, shot twice (below).
 //
 // The rest shot twice. The readiness check vouches for the frames it compared, not for the frame the
-// clip then steps: the clip's eval and grain 0 come after it, so the stepped frame is a new render,
+// clip then steps: the clip's evals come after it, so the stepped frame is a new render,
 // and a single frame can come out as a discrete alternative image (measured:
 // 0.3-1 M px of scattered vegetation pixels off by up to 190 levels, mean about 0, the same
 // image each time; and about 1.5 % of the frames stepped in the first seconds
@@ -68,8 +69,9 @@
 // A clip's lead frames (clips.mjs: stepped before frame 0 at frame 0's pose and scale, never shot)
 // run once, before the first shot; each further shot steps one frame at frame 0's pose and scale,
 // without the lead (the clock is paused, so the scene is frame 0's).
-// `--test-fault` checks the check: frame 0 (with any lead frames before it) is drawn with film grain
-// 0.1 (a mean-zero speckle over the whole frame) and grain goes back to 0 for the next.
+// `--test-fault` checks the check: frame 0 (with any lead frames before it) is drawn with the
+// exposure offset raised by half a stop (the whole frame brighter) and the offset goes back for the
+// next, so the first shot must be rejected and the crops taken from a later, agreeing one.
 //
 // --aa gt-hi is the interim ground truth (plan section 3.3): MSAA on high at twice a nominal ratio
 // for the --size given (nominal = min( ratio, 1.5 ), so 3 at the default @2 and 2 at @1: high's
@@ -87,9 +89,11 @@
 // meadow is finer and slightly darker than any real 1.5x render. Judge vegetation look against
 // MSAA, not GT-HI.
 //
-// Film grain is set to 0 on every side (plan section 3.3: it is re-seeded each frame, so it would
-// add noise to F, TI and S, and the GT's 2x2 downsample would halve it); clip.json records it
-// (`grain`). The per-pixel dither of a level stays: it is fixed per pixel.
+// The exposure's adaptation is frozen on every side while a clip runs (`__PONLAI_CLIP__` set: the
+// pipeline snaps the exposure to its target every frame, Exposure.ts): a converged or stopped-clock
+// rest jumps to the target while running frames would still be catching up to it, so a temporal
+// clip compared with its rest or with MSAA would differ by the lag alone. The per-pixel dither of
+// a level stays: it is fixed per pixel.
 //
 // --setup js runs page code (`s` = `window.__PONLAI__`, `dt` the step) after the clip's own setup,
 // before frame 0: a change the clip should watch unfold, such as `s.setWind( { heading: 220 }, 20 )`
@@ -204,7 +208,7 @@ function downsample2( { width, height, data } ) {
 
 // ------------------------------------------------------------------ the page
 
-let query = `debug&paused&t=12&quality=${ quality }&aa=${ gt ? 'msaa' : aa }`;
+let query = `debug&paused&testMode=0&t=12&quality=${ quality }&aa=${ gt ? 'msaa' : aa }`;
 if ( aa === 'off' ) query += '&msaa=1';
 if ( gt ) query += `&dpr=${ GT_RATIO }`;
 if ( gtRest ) query += `&tier.taa.gtJitters=${ gtJitters }`;
@@ -267,20 +271,16 @@ try {
 	}
 
 	await page.evaluate( clipEval( options.clip, { frames, ...( options.dt ? { dt: Number( options.dt ) } : {} ), ...( options.setup ? { setup: options.setup } : {} ) } ) );
-	// no film grain in a metric capture; the GT keeps its own fixed ratio (no scale schedule)
-	const grain = await page.evaluate( ( gt ) => {
+	// the GT keeps its own fixed ratio (no scale schedule)
+	await page.evaluate( ( gt ) => {
 
-		const s = window.__PONLAI__, settings = s.pipeline?.settings;
-		const before = settings && typeof settings.grain === 'number' ? settings.grain : null;
-		if ( before !== null ) settings.grain = 0;
+		const s = window.__PONLAI__;
 		if ( gt && window.__PONLAI_CLIP__.scale ) window.__PONLAI_CLIP__.scale = null;
 		// (a temporal page's rest starts over: what the evals changed need not be in its key)
 		s.taa?.epoch.bump( 'clip' );
-		return before;
 
 	}, gt || gtRest );
 	if ( gtRest && ! ( await page.evaluate( () => window.__THREE_GAME_DIAGNOSTICS__?.aa === 'gt' && window.__PONLAI__.taa ) ) ) throw new Error( 'this build has no aa=gt (or it fell back to another mode)' );
-	if ( grain === null ) throw new Error( 'this build has no __PONLAI__.pipeline.settings.grain to turn off' );
 	const scaleSchedule = clip.scale ? ( gt || gtRest ? 'ignored: the ground truth renders at its fixed ratio' : 'applied' ) : 'none';
 	const diagBefore = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
 	// the anchors' world points at the base pose, then their boxes per frame in CSS px
@@ -350,9 +350,10 @@ try {
 		// the clip's lead frames step before its frame 0, at frame 0's pose and scale, uncaptured
 		// (clips.mjs); the frames are numbered from the clip's frame 0
 		const lead = clip.lead ?? 0;
-		// --test-fault: frame 0 (and any lead frames before it, never shot) drawn with a speckle of
-		// film grain, taken out after frame 0's shots
-		if ( fault ) s.pipeline.settings.grain = 0.1;
+		// --test-fault: frame 0 (and any lead frames before it, never shot) drawn half a stop
+		// brighter, the offset restored after frame 0's shots
+		const offset = s.pipeline.settings.exposureOffset;
+		if ( fault ) s.pipeline.settings.exposureOffset = offset + 0.5;
 		const result = await s.loop.step( {
 			frames: lead + clip.frames, dt: clip.dt, clock: clip.clock, camera: ( k ) => clip.camera( Math.max( k - lead, 0 ) ),
 			...( clip.scale ? { scale: [ ...Array( lead ).fill( clip.scale[ 0 ] ), ...clip.scale ] } : {} ),
@@ -379,7 +380,7 @@ try {
 				const state = { render: [ s.pipeline.width, s.pipeline.height ], view: hash( [ ...s.camera.matrixWorld.elements, ...s.camera.projectionMatrix.elements ] ), frame: s.renderer.info.frame,
 					...( s.taa ? { taa: { converged: s.taa.converged, restFrames: s.taa.rest.frames, restTarget: s.taa.rest.target } } : {} ) };
 				await window.__ponlaiClipFrame( i, out, s.clockTime(), state );
-				if ( fault ) s.pipeline.settings.grain = 0;
+				if ( fault ) s.pipeline.settings.exposureOffset = offset;
 
 			},
 		} );
@@ -444,7 +445,7 @@ try {
 	await writeFile( path.join( outDir, 'clip.json' ), JSON.stringify( {
 		name, url, clip: options.clip, clipDef: { ...clip, at: undefined, setup: undefined }, ...( options.setup ? { setup: options.setup } : {} ), view: viewName, aa, quality, ...( gtRest ? { gtJitters } : {} ),
 		viewport: { width: W * cssScale, height: H * cssScale, deviceScaleFactor: ratio }, gtFallback, downsample: gt ? 2 : 1,
-		cropPx: gt ? BOX * cssScale * ratio / 2 : BOX * ratio, grain: { was: grain, captured: 0 }, scaleSchedule, frames, every, dense, full: [ ...full ],
+		cropPx: gt ? BOX * cssScale * ratio / 2 : BOX * ratio, scaleSchedule, frames, every, dense, full: [ ...full ],
 		browser: session.version, slot: session.slot, ready, ...( recheckRecord ? { recheck: recheckRecord } : {} ), anchors, boxes, stepped, diagBefore, diagAfter, errors,
 		wallMinutes: ( Date.now() - started ) / 60000, gpuBusyBefore: busy,
 	}, null, 2 ) );

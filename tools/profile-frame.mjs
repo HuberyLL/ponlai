@@ -1426,8 +1426,16 @@ async function prepare( page, scene, evalJs, establish ) {
 
 }
 
-// Every finished frame of a page, pulled as it arrives (the GPU timestamps read back a few frames
-// late) and sorted into measuring windows afterwards by the page's own clock.
+// How long a window's last frames may take to get their GPU timestamps (ms). Uncapped, the page
+// runs as far ahead of the GPU as Chrome lets it (about 120 frames: 3.5 s on the island at noon,
+// more for slower frames), and a frame is pending until its own read-back returns
+// (src/debug/FrameProfiler.ts `settle`), so this only guards against a page that stopped
+// answering. A 6 s wait, with the profiler's own 4 s cutoff, left A/B runs without timed frames.
+const READBACK_WAIT_MS = 30000;
+
+// Every finished frame of a page, pulled as it arrives (the GPU timestamps read back as many
+// frames late as the GPU runs behind) and sorted into measuring windows afterwards by the page's
+// own clock.
 class Frames {
 
 	constructor( page ) {
@@ -1448,7 +1456,7 @@ class Frames {
 	// waits until every frame started before `t1` has its timestamps, then pulls them
 	async settle( t1 ) {
 
-		await this.page.waitForFunction( ( t1 ) => window.__PONLAI_PROFILE__.pending( t1 ) === 0, t1, { timeout: 6000, polling: 50 } ).catch( () => {} );
+		await this.page.waitForFunction( ( t1 ) => window.__PONLAI_PROFILE__.pending( t1 ) === 0, t1, { timeout: READBACK_WAIT_MS, polling: 50 } ).catch( () => {} );
 		await this.pull();
 
 	}
@@ -1554,7 +1562,7 @@ async function measure( page, scene ) {
 	const [ utilisation ] = await Promise.all( [ sampleGpuUtilisation( Math.max( SECONDS - 0.5, 0.5 ) ), page.waitForTimeout( SECONDS * 1000 ) ] );
 	const t1 = await page.evaluate( () => performance.now() );
 	// the last frames' timestamps arrive a few frames later
-	await page.waitForFunction( ( t1 ) => window.__PONLAI_PROFILE__.pending( t1 ) === 0, t1, { timeout: 6000, polling: 50 } ).catch( () => {} );
+	await page.waitForFunction( ( t1 ) => window.__PONLAI_PROFILE__.pending( t1 ) === 0, t1, { timeout: READBACK_WAIT_MS, polling: 50 } ).catch( () => {} );
 	const frames = ( await page.evaluate( () => window.__PONLAI_PROFILE__.take() ) ).filter( ( f ) => f.t >= t0 && f.t < t1 );
 	const info = await page.evaluate( () => {
 
