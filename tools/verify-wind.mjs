@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Wind, createWindUniforms, gustWave, wave, weatherWind, swayFrequency, CLOCK_PERIOD, GUST_ALONG, EDDY_TILE, EDDY_RATE, REFERENCE_SPEED, REFERENCE_GUSTINESS } from '../src/weather/Wind.ts';
+import { Wind, createWindUniforms, flutterWave, plantRate, plantWave, wave, weatherWind, CLOCK_PERIOD, GUST_TILE, GUST_TRAVEL, GUST_TIME_PERIOD, GUST_EVOLUTION, PLANT_RATE_BANDS, PLANT_RATE_SPREAD, REFERENCE_SPEED, REFERENCE_GUSTINESS, plantSpeedOf } from '../src/weather/Wind.ts';
 import { Weather, WIND_LEVELS, PREVAILING_HEADING } from '../src/sky/Weather.ts';
 import { debugFlags } from '../src/debug/DebugFlags.ts';
 
@@ -47,36 +47,50 @@ for ( const [ name, level ] of Object.entries( WIND_LEVELS ) ) {
 }
 // fair's load is the wind the plants and the sea were tuned at
 assert.deepEqual( weatherWind( new Weather( 'fair' ).state ), { speed: REFERENCE_SPEED, heading: PREVAILING_HEADING, gustiness: REFERENCE_GUSTINESS } );
-// The gusts' lean: fair's gust factor gives the lean the plants were tuned at, exactly; it grows
-// with the gust's excess pressure, and a gustless wind leans the plants by its mean alone.
-const gusts = ( g ) => new Wind( createWindUniforms(), { gustiness: g } ).uniforms.gustLean.value;
-assert.equal( gusts( REFERENCE_GUSTINESS ), 0.13, 'fair\'s gusts lean the plants as before' );
-assert.equal( gusts( 1 ), 0 );
-near( gusts( 1.5 ) / gusts( REFERENCE_GUSTINESS ), ( 1.5 ** 2 - 1 ) / ( REFERENCE_GUSTINESS ** 2 - 1 ), 1e-12 );
+// A plant's own sway rate (Wind.ts `plantRate`, `plantWave`'s): its kind's and up to
+// PLANT_RATE_SPREAD of it quicker, in PLANT_RATE_BANDS bands from the kind's own to the spread's
+// top, always whole cycles per CLOCK_PERIOD (the bamboo's culms, the yunpeng and the branches, the
+// sprays: Deform.ts).
+for ( const rate of [ 0.095, 0.16, 0.21 ] ) {
+
+	const bands = new Set();
+	for ( let i = 0; i < 1024; i ++ ) {
+
+		const f = plantRate( rate, ( i + 0.5 ) / 1024 );
+		near( f * CLOCK_PERIOD, Math.round( f * CLOCK_PERIOD ), 1e-6 );
+		assert.ok( f >= rate - 1e-12 && f <= rate * ( 1 + PLANT_RATE_SPREAD ) + 0.0005 + 1e-12, `${ rate }: ${ f }` );
+		bands.add( f );
+
+	}
+	assert.equal( bands.size, PLANT_RATE_BANDS, `${ rate }: ${ [ ...bands ] }` );
+	assert.ok( bands.has( rate ) && Math.max( ...bands ) >= rate * ( 1 + PLANT_RATE_SPREAD ) - 0.0005, `${ rate }: ${ [ ...bands ] }` );
+
+}
 // The sea's spectrum starts from the reference speed and the prevailing heading, whatever the
 // weather's wind (OceanFFT.setWind then takes the weather's speed and heading for the wind sea),
 // and its swell keeps the prevailing heading.
 assert.deepEqual( new Wind( createWindUniforms(), { speed: 11, heading: 25 } ).spectrumWind, { windSpeed: REFERENCE_SPEED, windDirection: PREVAILING_HEADING, swellHeading: PREVAILING_HEADING } );
-// The plants' sway keeps its natural frequency in any wind: its scroll and the leaves' clock are
-// the same at any speed, while the gusts travel with the wind. In a fair wind the sway's scroll is
-// the gusts' own, bit for bit, as the sway took it before the two were parted (fair's paused frames
-// do not change), after a seek and after steps alike.
+// The leaves' flutter keeps its rate in any wind: their clock is the same at any speed, while the
+// gusts travel GUST_TRAVEL times the plants' speed and the grass and the plants sway on the plants'
+// travel; the gusts' time axis runs at GUST_EVOLUTION whatever the wind.
 for ( const t of [ 0, 12, 37.25, 86400 * 3 + 0.5 ] ) {
 
 	const calm = new Wind( createWindUniforms(), { speed: 1, time: t } ), gale = new Wind( createWindUniforms(), { speed: 11, time: t } );
-	assert.equal( calm.uniforms.swayScroll.value, gale.uniforms.swayScroll.value );
 	assert.equal( calm.uniforms.clock.value, gale.uniforms.clock.value );
-	const fairState = new Weather( 'fair' ).state;
-	const fair = new Wind( createWindUniforms(), { ...weatherWind( fairState ), time: t } );
-	assert.equal( fair.uniforms.swayScroll.value, fair.uniforms.gustScroll.value.x, 'fair\'s sway is the gusts\' scroll' );
-	for ( let i = 0; i < 90; i ++ ) fair.update( i % 3 ? 1 / 60 : 1 / 30, fairState.windSpeed );
-	assert.equal( fair.uniforms.swayScroll.value, fair.uniforms.gustScroll.value.x, 'fair\'s sway is the gusts\' scroll after steps' );
+	assert.equal( calm.uniforms.gustTime.value, gale.uniforms.gustTime.value );
+	near( gale.uniforms.gustTime.value, t * GUST_EVOLUTION % GUST_TIME_PERIOD, 1e-9 );
+	near( gale.uniforms.gustScroll.value, GUST_TRAVEL * t * plantSpeedOf( 11 ) % GUST_TILE, 1e-6 );
+	// the plants' phase clock is their travel (their speed, U10 mapped): the grass's and the
+	// plants' swing quickens with the wind
+	near( gale.uniforms.plantClock.value, t * plantSpeedOf( 11 ) % CLOCK_PERIOD, 1e-6 );
+	near( calm.uniforms.plantClock.value, t * plantSpeedOf( 1 ) % CLOCK_PERIOD, 1e-6 );
 
 }
-near( swayFrequency( 50 ), 50 * 3.8 / GUST_ALONG, 1e-12 );
-// The vegetation's clocks and gust scroll: frozen while paused, the same after a seek as after
+// the gusts' time wraps where the clock does: GUST_EVOLUTION cells a second over CLOCK_PERIOD
+near( GUST_TIME_PERIOD, GUST_EVOLUTION * CLOCK_PERIOD, 1e-12 );
+// The vegetation's clocks and the gusts' scroll and time: frozen while paused, the same after a seek as after
 // running there at a constant speed, wrapped within their periods and tiles.
-const veg = ( w ) => [ w.uniforms.clock.value, w.uniforms.swayScroll.value, w.uniforms.gustScroll.value.x, w.uniforms.gustScroll.value.y ];
+const veg = ( w ) => [ w.uniforms.clock.value, w.uniforms.gustScroll.value, w.uniforms.gustTime.value, w.uniforms.plantClock.value ];
 const ran = new Wind( createWindUniforms(), { speed: 11, time: 30 } );
 const frozen = veg( ran );
 ran.update( 0, 11 );
@@ -84,15 +98,19 @@ assert.deepEqual( veg( ran ), frozen, 'A paused frame must not move the plants' 
 for ( let i = 0; i < 600; i ++ ) ran.update( 1 / 60, 11 );
 const sought = new Wind( createWindUniforms(), { speed: 11, time: 40 } );
 veg( ran ).forEach( ( v, i ) => near( v, veg( sought )[ i ], 1e-6 ) );
-assert.equal( sought.uniforms.pressure.value, ( 11 / 3.8 ) ** 2 );
+assert.equal( sought.uniforms.breeze.value, 11 / 3.8 );
+// the plants' speed: the levels' points, a line between them and past the last one
+for ( const [ u, p ] of [ [ 0, 0 ], [ 1.5, 4 ], [ 3.8, 9.5 ], [ 7, 13 ], [ 11, 17 ], [ 5.4, 11.25 ], [ 15, 21 ] ] ) near( plantSpeedOf( u ), p, 1e-9 );
+assert.equal( sought.uniforms.plantSpeed.value, plantSpeedOf( 11 ) );
 const long = new Wind( createWindUniforms(), { speed: 11, time: 86400 * 3 + 0.5 } );
-const [ clock, sway, gustTravel, eddies ] = veg( long );
-assert.ok( clock >= 0 && clock < CLOCK_PERIOD && sway >= 0 && sway < GUST_ALONG );
-assert.ok( gustTravel >= 0 && gustTravel < GUST_ALONG && eddies >= 0 && eddies < EDDY_TILE );
+const [ clock, gustTravel, gustTime, plantClock ] = veg( long );
+assert.ok( plantClock >= 0 && plantClock < CLOCK_PERIOD );
+assert.ok( clock >= 0 && clock < CLOCK_PERIOD );
+assert.ok( gustTravel >= 0 && gustTravel < GUST_TILE && gustTime >= 0 && gustTime < GUST_TIME_PERIOD );
 // The previous frame's wind (for motion vectors) is what the last update published, and equals
 // the current one after a reset and on a paused frame.
-const prev = ( w ) => { const p = w.uniforms.previous; return [ p.clock.value, p.swayScroll.value, p.gustScroll.value.x, p.gustScroll.value.y, p.pressure.value ]; };
-const cur = ( w ) => [ ...veg( w ), w.uniforms.pressure.value ];
+const prev = ( w ) => { const p = w.uniforms.previous; return [ p.clock.value, p.gustScroll.value, p.gustTime.value, p.plantClock.value, p.breeze.value, p.plantSpeed.value ]; };
+const cur = ( w ) => [ ...veg( w ), w.uniforms.breeze.value, w.uniforms.plantSpeed.value ];
 const step = new Wind( createWindUniforms(), { speed: 6, time: 12 } );
 assert.deepEqual( prev( step ), cur( step ), 'A reset leaves no motion' );
 const last = cur( step );
@@ -143,10 +161,10 @@ frames.update( 1 / 60, 8, 25 );
 assert.notDeepEqual( current( frames ), held );
 // The wrapped clocks may differ by a wrap between previous and current: every shader reads them
 // only through functions periodic in their wraps. Sources: every read of a wind state's `clock`
-// is the time of `wave` (sin of fract( time x rate ), which refuses any rate without whole cycles
-// per CLOCK_PERIOD when the shader is built, so a rate passed by name is checked too), the gust scroll is read only in Wind.ts by the gust map's reads (windField and
-// gustAt, the sea's gusts: the map repeats over GUST_ALONG and EDDY_TILE, where the scroll wraps), and the sway scroll only in Wind.ts by
-// gustWave, the plants' sway, which takes whole swings per GUST_ALONG and refuses any other rate.
+// or `plantClock` (the plants' phase clock, which wraps there too) is the time of `wave` (sin of fract( time x rate ), which refuses any rate without whole cycles
+// per CLOCK_PERIOD when the shader is built, so a rate passed by name is checked too) or, in Wind.ts, of `plantWave` (the plants'
+// sway on `plantClock`, at rates rounded to whole cycles per CLOCK_PERIOD) and `flutterWave` (the leaves', on `clock`, whole cycles per CLOCK_PERIOD), and the gusts' scroll and time are read only in Wind.ts, by
+// gustAt (windField and the sea's gusts) and windBefore (the falling leaves' back-dated steps): the noise repeats over GUST_TILE and GUST_TIME_PERIOD, where they wrap.
 const root = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '../src' );
 const sources = [];
 const walk = ( dir ) => { for ( const e of readdirSync( dir, { withFileTypes: true } ) ) { const f = path.join( dir, e.name ); if ( e.isDirectory() ) walk( f ); else if ( f.endsWith( '.ts' ) ) sources.push( [ path.relative( root, f ), readFileSync( f, 'utf8' ) ] ); } };
@@ -155,7 +173,7 @@ let reads = 0;
 for ( const [ file, text ] of sources ) {
 
 	if ( file === path.join( 'weather', 'Wind.ts' ) ) continue;
-	for ( const m of text.matchAll( /\b(?:wind|state|previous)\.clock\b/g ) ) {
+	for ( const m of text.matchAll( /\b(?:wind|state|previous)\.(?:clock|plantClock)\b/g ) ) {
 
 		reads ++;
 		const call = /wave\(\s*$/.test( text.slice( Math.max( 0, m.index - 12 ), m.index ) );
@@ -163,32 +181,35 @@ for ( const [ file, text ] of sources ) {
 		assert.ok( call, `${ file }:${ line }: a wind clock read outside wave()` );
 
 	}
-	assert.ok( ! /gustScroll|swayScroll/.test( text ), `${ file }: a wind scroll read outside Wind.ts` );
+	assert.ok( ! /gustScroll|gustTime/.test( text ), `${ file }: a wind scroll read outside Wind.ts` );
 
 }
-// (the grass's blades and hangingSway read them today: the scan must find them)
-assert.ok( reads >= 3, `found ${ reads } wind clock reads` );
-assert.throws( () => gustWave( createWindUniforms(), null, 2.5 ), RangeError, 'gustWave takes whole swings per gust tile' );
+// (the grass's blades read them today: the scan must find them)
+assert.ok( reads >= 1, `found ${ reads } wind clock reads` );
+assert.throws( () => plantWave( createWindUniforms(), 0.0951, null, null ), RangeError, 'plantWave takes whole cycles per clock period' );
+assert.throws( () => flutterWave( createWindUniforms(), 2.6001, null ), RangeError, 'flutterWave takes whole cycles per clock period' );
 assert.throws( () => wave( createWindUniforms().clock, 2.6001 ), RangeError, 'wave takes whole cycles per clock period' );
 assert.ok( wave( createWindUniforms().clock, 4.207 ), 'wave takes rates of three decimals' );
 // numerically: across the wraps the shaders' arguments move by the step alone
 const wrap = new Wind( createWindUniforms(), { speed: 6, time: CLOCK_PERIOD - 0.01 } );
-const atWrap = { clock: wrap.uniforms.clock.value, scroll: wrap.uniforms.gustScroll.value.clone() };
+const atWrap = { clock: wrap.uniforms.clock.value, gustTime: wrap.uniforms.gustTime.value };
+const turn = ( a, b ) => { const d = ( ( b - a ) % 1 + 1.5 ) % 1 - 0.5; return d; };
+const grassWrap = new Wind( createWindUniforms(), { speed: 6, time: CLOCK_PERIOD / plantSpeedOf( 6 ) - 0.01 } );
+const g0 = grassWrap.uniforms.plantClock.value;
+grassWrap.update( 0.02, 6 );
+const g1 = grassWrap.uniforms.plantClock.value;
+assert.ok( g1 < g0, 'the plants\' clock wrapped' );
+// the grass's rate, and each band of the bamboo's culms
+for ( const rate of [ 0.084, ...[ 0, 0.3, 0.6, 0.9 ].map( ( xi ) => plantRate( 0.095, xi / 16 ) ) ] ) near( turn( g0 * rate, g1 * rate ), 0.02 * plantSpeedOf( 6 ) * rate, 1e-6 );
 wrap.update( 0.02, 6 );
 assert.ok( wrap.uniforms.clock.value < atWrap.clock, 'the clock wrapped' );
-const turn = ( a, b ) => { const d = ( ( b - a ) % 1 + 1.5 ) % 1 - 0.5; return d; };
+assert.ok( wrap.uniforms.gustTime.value < atWrap.gustTime, 'the gusts\' time wrapped' );
 near( turn( atWrap.clock * 0.702, wrap.uniforms.clock.value * 0.702 ), 0.02 * 0.702, 1e-6 );
-const sways = new Wind( createWindUniforms(), { speed: 6, time: GUST_ALONG / REFERENCE_SPEED - 0.01 } );
-const sw0 = sways.uniforms.swayScroll.value;
-sways.update( 0.02, 6 );
-assert.ok( sways.uniforms.swayScroll.value < sw0, 'the sway scroll wrapped' );
-near( turn( sw0 / GUST_ALONG, sways.uniforms.swayScroll.value / GUST_ALONG ), 0.02 * REFERENCE_SPEED / GUST_ALONG, 1e-9 );
-const tiles = new Wind( createWindUniforms(), { speed: 6, time: GUST_ALONG / 6 - 0.01 } );
-const s0 = tiles.uniforms.gustScroll.value.clone();
+near( turn( atWrap.gustTime / GUST_TIME_PERIOD, wrap.uniforms.gustTime.value / GUST_TIME_PERIOD ), 0.02 * GUST_EVOLUTION / GUST_TIME_PERIOD, 1e-9 );
+const gustSpeed = GUST_TRAVEL * plantSpeedOf( 6 );
+const tiles = new Wind( createWindUniforms(), { speed: 6, time: GUST_TILE / gustSpeed - 0.01 } );
+const s0 = tiles.uniforms.gustScroll.value;
 tiles.update( 0.02, 6 );
-assert.ok( tiles.uniforms.gustScroll.value.x < s0.x, 'the gust scroll wrapped' );
-near( turn( s0.x / GUST_ALONG, tiles.uniforms.gustScroll.value.x / GUST_ALONG ), 0.02 * 6 / GUST_ALONG, 1e-9 );
-near( turn( s0.y / EDDY_TILE, tiles.uniforms.gustScroll.value.y / EDDY_TILE ), 0.02 * 6 * EDDY_RATE / EDDY_TILE, 1e-9 );
-const map = long.uniforms.gustMap.image;
-assert.equal( map.data.length, map.width * map.height * 2 );
-console.log( 'Wind: pause, advection direction, update cadence, calm ocean bounds in light and gentle winds, the levels\' numbers and fair\'s wind, the gusts\' lean, the sea\'s spectrum wind, the sway\'s natural frequency (fair\'s bit for bit), deterministic seek and the previous frame of the vegetation wind (rendered frames, seek, cut, windFreeze, periodic reads of the wrapped clocks) pass.' );
+assert.ok( tiles.uniforms.gustScroll.value < s0, 'the gust scroll wrapped' );
+near( turn( s0 / GUST_TILE, tiles.uniforms.gustScroll.value / GUST_TILE ), 0.02 * gustSpeed / GUST_TILE, 1e-9 );
+console.log( 'Wind: pause, advection direction, update cadence, calm ocean bounds in light and gentle winds, the levels\' numbers and fair\'s wind, the plants\' own rates and bands, the sea\'s spectrum wind, the flutter\'s fixed rate and the sway\'s clock, the gusts\' scroll and time, deterministic seek and the previous frame of the vegetation wind (rendered frames, seek, cut, windFreeze, periodic reads of the wrapped clocks) pass.' );

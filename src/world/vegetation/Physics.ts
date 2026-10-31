@@ -1,7 +1,7 @@
 // The vegetation's shapes under load: a blade or a stem is a thin elastic strand clamped at its
 // root, bent by its own weight (and, to come, by the wind's pressure) against its stiffness, and
 // held off whatever it lies on. Every kind that takes a physical shape reads its numbers and
-// curves here: the meadow's blades and flower stems (Grass.ts: a fit of the free shapes over the
+// curves here: the meadow's blades (Grass.ts: a fit of the free shapes over the
 // upright blades' range, `bladeCurve`; at the cliff's edge Grass.ts drapes the fitted blade over
 // the edge and holds it off the wall in the vertex stage, no physical shape). The family of free
 // shapes (`drapeTable`) and a shape solved against a wall (`strandShape`, `drape` with a wall) are

@@ -1,5 +1,5 @@
 import type * as THREE from 'three/webgpu';
-import { Fn, float, max, fwidth, diffuseColor, screenCoordinate, ivec2, int } from 'three/tsl';
+import { Fn, float, max, fwidth, fract, diffuseColor, screenCoordinate, ivec2, int, vec2, dot } from 'three/tsl';
 import { ALPHA_TO_COVERAGE, TEMPORAL } from '../../post/Antialiasing.ts';
 import { jitter } from '../../post/Jitter.ts';
 import { LEAF_ALPHA_TEST } from './LeafTexture.ts';
@@ -14,6 +14,9 @@ import { LEAF_ALPHA_TEST } from './LeafTexture.ts';
 //   `alphaToCoverage`: it is off without multisampling, and the depth prepass
 //   (VegetationPrepass.ts) turns it off on the shaded draws. The terrain's meadow detail is flagged
 //   `userData.meadowDetail` instead, so it never takes the vegetation's shadow filter.
+// - A plant's two levels cross-fade by a stipple (`stippleThreshold`, PlantInstances.ts): each
+//   pixel of a plant in the switch's band is drawn by one level or the other, never both and never
+//   neither.
 
 type F = THREE.Node<'float'>;
 
@@ -86,3 +89,19 @@ export function useLeafCoverage( material: THREE.NodeMaterial, cutoff = LEAF_ALP
 	if ( TEMPORAL ) material.alphaTestNode = coverageAlphaTest( diffuseColor.a, float( cutoff ) );
 
 }
+
+/** The plants' level stipple (PlantInstances.ts): a threshold per pixel, 0..1, that the near level
+ * keeps at or above the far level's share and the far level below it, so the two levels split each
+ * pixel between them and their sum covers it once. Interleaved gradient noise (Jimenez, "Next
+ * Generation Post Processing in Call of Duty: Advanced Warfare", SIGGRAPH 2014): its thresholds
+ * spread evenly over every few pixels, so a half-faded plant reads as a fine grain rather than the
+ * Bayer pattern's grid. Fixed per pixel in a paused page and at 4x (the test mode's image a function
+ * of the view alone); under the temporal modes the pattern moves 5.588 pixels a frame by the
+ * jitter's dither index, as Jimenez's does, so the resolve averages the fade (the rest sequence's
+ * indices while the scene rests, as `coverageDither`). */
+export const stippleThreshold = Fn( () => {
+
+	const p = TEMPORAL ? screenCoordinate.xy.add( float( jitter.uniforms.ditherIndex ).mul( 5.588238 ) ) : screenCoordinate.xy;
+	return fract( float( 52.9829189 ).mul( fract( dot( p, vec2( 0.06711056, 0.00583715 ) ) ) ) );
+
+} );

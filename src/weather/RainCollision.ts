@@ -11,9 +11,10 @@
  */
 
 import * as THREE from 'three/webgpu';
-import { Fn, ivec2, max, positionWorld, select, textureLoad, uniform, vec4 } from 'three/tsl';
+import { Fn, ivec2, max, positionWorld, select, texture, textureLoad, uniform, vec4 } from 'three/tsl';
 import { ISLAND_TOP, type Bounds } from '../world/WorldShapes.ts';
 import { compileLatentInto } from '../post/graph/Compile.ts';
+import { followPlantDraw } from '../world/vegetation/PlantInstances.ts';
 import { shared } from '../shared.ts';
 
 type F = THREE.Node<'float'>;
@@ -28,29 +29,54 @@ const PAD = 6;
 /** The highest surface under every point of the island, seen from straight above: an
  * orthographic camera draws world height into a small half-float target over the land's box
  * (`setArea`). Beyond it, and wherever nothing was drawn, the sea is the ground. The island
- * never moves, so the map is drawn once (with the plants at rest), not every frame. */
+ * never moves, so the map is drawn once (with the plants at rest), not every frame, and again on
+ * a Grow, whatever the weather: besides the rain's drops, the haze reads it for the cover that
+ * hides it from the open sky (VolumetricHaze.ts HazeCover, `topAt` and `version`).
+ * A bake draws into a second map (`setArea` sizes it, `bakeSteps` may spread over frames) while
+ * the readers keep the map of the bake before; the finished map is swapped in whole, with its
+ * placement, through the one texture node every reader samples by (its base's value: no new
+ * material or pipeline), so no frame reads a map half drawn. The map swapped out is released. */
 export class RainCollision {
 
-	readonly target: THREE.RenderTarget;
+	// the map the readers sample (`front`) and the one a bake draws into (`back`)
+	private front: THREE.RenderTarget;
+	private back: THREE.RenderTarget;
+	// the base node every reader's load clones, whose value is the front map's texture
+	private readonly map: THREE.TextureNode;
 	readonly camera: THREE.OrthographicCamera;
-	// x0, z0 of the map and 1 / its width and depth (m).
+	// x0, z0 of the map and 1 / its width and depth (m), and its texels: the front map's; the back
+	// map's wait in `area` until its bake finishes
 	private readonly xform = uniform( new THREE.Vector4() );
 	private readonly size = uniform( new THREE.Vector2() );
+	private readonly area = { xform: new THREE.Vector4(), size: new THREE.Vector2( 1, 1 ) };
 	readonly waterLevel = uniform( 0 );
 	// Highest height in the map: above it a drop cannot have hit anything yet.
 	readonly ceiling: number;
 	/** Height of the first surface a drop meets falling onto world (x, z): the island's top
 	 * wherever it was drawn, else the sea. */
 	readonly groundAt: ( xz: V2 ) => F;
+	/** `groundAt` built inline, for a kernel of its own (a layout helper reading uniforms can be
+	 * emitted with another compute kernel's uniform names: AGENTS.md) */
+	readonly topAt: ( xz: V2 ) => F;
+	/** counts the bakes finished, each one's map whole (the haze's rest starts over on a new one) */
+	version = 0;
 
 	constructor() {
 
 		// sized to the land by setArea; until then an empty map (the sea everywhere)
-		this.target = new THREE.RenderTarget( 1, 1, { type: THREE.HalfFloatType, depthBuffer: true } );
-		this.target.texture.name = 'rainCollisionHeight';
-		// Nearest texels: a filtered lookup would blend the cliff top with the sea below it.
-		this.target.texture.minFilter = this.target.texture.magFilter = THREE.NearestFilter;
-		this.target.texture.generateMipmaps = false;
+		const map = () => {
+
+			const target = new THREE.RenderTarget( 1, 1, { type: THREE.HalfFloatType, depthBuffer: true } );
+			target.texture.name = 'rainCollisionHeight';
+			// Nearest texels: a filtered lookup would blend the cliff top with the sea below it.
+			target.texture.minFilter = target.texture.magFilter = THREE.NearestFilter;
+			target.texture.generateMipmaps = false;
+			return target;
+
+		};
+		this.front = map();
+		this.back = map();
+		this.map = texture( this.front.texture );
 		this.size.value.set( 1, 1 );
 		this.camera = new THREE.OrthographicCamera( - 1, 1, 1, - 1, 0, 80 );
 		// Looking straight down with -z up the image: x runs right, z down the rows from z0.
@@ -58,27 +84,33 @@ export class RainCollision {
 		// The figures reach two metres above the meadow; the ceiling
 		// keeps a margin over them and the plants, so no drop falls through their tops.
 		this.ceiling = ISLAND_TOP + 4;
-		const texture = this.target.texture, xform = this.xform, size = this.size, waterLevel = this.waterLevel;
-		this.groundAt = Fn( ( [ xz ]: [ V2 ] ) => {
+		const heights = this.map, xform = this.xform, size = this.size, waterLevel = this.waterLevel;
+		const top = ( xz: V2 ): F => {
 
 			const uv = xz.sub( xform.xy ).mul( xform.zw ).toVar();
 			const inside = uv.x.greaterThanEqual( 0 ).and( uv.x.lessThan( 1 ) ).and( uv.y.greaterThanEqual( 0 ) ).and( uv.y.lessThan( 1 ) );
-			const sample = textureLoad( texture, ivec2( uv.clamp( 0, 0.9999 ).mul( size ) ) ).toVar();
+			const sample = textureLoad( heights, ivec2( uv.clamp( 0, 0.9999 ).mul( size ) ) ).toVar();
 			return max( select( inside.and( sample.a.greaterThan( 0.5 ) ), sample.r, waterLevel ), waterLevel );
 
-		} ).setLayout( { name: 'ponlaiRainGround', type: 'float', inputs: [ { name: 'xz', type: 'vec2' } ] } ) as unknown as ( xz: V2 ) => F;
+		};
+		this.topAt = top;
+		this.groundAt = Fn( ( [ xz ]: [ V2 ] ) => top( xz ) ).setLayout( { name: 'ponlaiRainGround', type: 'float', inputs: [ { name: 'xz', type: 'vec2' } ] } ) as unknown as ( xz: V2 ) => F;
 
 	}
 
-	/** Covers the land's box `bounds` (WorldShapes.landBounds) and PAD round it; bake after. */
+	/** The map the readers sample (the last finished bake's). */
+	get target(): THREE.RenderTarget { return this.front; }
+
+	/** Covers the land's box `bounds` (WorldShapes.landBounds) and PAD round it, for the next bake
+	 * (the readers keep the last bake's map and placement until it finishes); bake after. */
 	setArea( bounds: Bounds ): void {
 
 		const x0 = bounds.x0 - PAD, z0 = bounds.z0 - PAD;
 		const width = bounds.x1 - bounds.x0 + PAD * 2, depth = bounds.z1 - bounds.z0 + PAD * 2;
 		const w = Math.ceil( width * TEXELS_PER_METRE ), h = Math.ceil( depth * TEXELS_PER_METRE );
-		this.target.setSize( w, h );
-		this.xform.value.set( x0, z0, 1 / width, 1 / depth );
-		this.size.value.set( w, h );
+		this.back.setSize( w, h );
+		this.area.xform.set( x0, z0, 1 / width, 1 / depth );
+		this.area.size.set( w, h );
 		const camera = this.camera;
 		camera.left = - width / 2; camera.right = width / 2; camera.top = depth / 2; camera.bottom = - depth / 2;
 		camera.updateProjectionMatrix();
@@ -118,7 +150,7 @@ export class RainCollision {
 
 			const mesh = object as THREE.Mesh;
 			// (a vegetation mesh's depth prepass copy, VegetationPrepass.ts, prints the same shape; a
-			// mesh marked `rainBake: false` leaves its shape to another: no mesh is today)
+			// mesh marked `rainBake: false` leaves its shape to another: a plant's far level)
 			if ( ! mesh.isMesh || ( mesh as THREE.SkinnedMesh ).isSkinnedMesh || ! object.visible || mesh.userData.prepassCopy || mesh.userData.rainBake === false ) return;
 			seen.add( mesh );
 			const instanced = mesh as THREE.InstancedMesh;
@@ -151,7 +183,7 @@ export class RainCollision {
 			for ( const p of part ) p.geometry.setDrawRange( 0, Infinity );
 			const target = renderer.getRenderTarget(), autoClear = renderer.autoClear;
 			const clear = renderer.getClearColor( new THREE.Color() ), alpha = renderer.getClearAlpha();
-			renderer.setRenderTarget( this.target );
+			renderer.setRenderTarget( this.back );
 			renderer.setClearColor( 0x000000, 0 );
 			if ( first === 0 ) renderer.clear();
 			renderer.autoClear = false;
@@ -172,6 +204,13 @@ export class RainCollision {
 		// object, and its uniform buffers, per object until it is disposed), once the new proxies
 		// have drawn, so a pipeline they shared is never left without a user
 		for ( const proxy of dropped ) proxy.dispose();
+		// the finished map swapped in whole, with its placement; the one swapped out released
+		[ this.front, this.back ] = [ this.back, this.front ];
+		this.map.value = this.front.texture;
+		this.xform.value.copy( this.area.xform );
+		this.size.value.copy( this.area.size );
+		this.back.dispose();
+		this.version ++;
 
 	}
 
@@ -188,7 +227,7 @@ export class RainCollision {
 			return proxy;
 
 		} );
-		return compileLatentInto( renderer, proxies, this.scene, this.camera, this.target );
+		return compileLatentInto( renderer, proxies, this.scene, this.camera, this.back );
 
 	}
 
@@ -206,6 +245,20 @@ export class RainCollision {
 			proxy = copy;
 
 		} else proxy = new THREE.Mesh( mesh.geometry, this.heightOf( source ) );
+		// a plant's draw takes its arguments as it draws (world/vegetation/PlantInstances.ts): every
+		// plant at its near level for this camera
+		if ( mesh.userData.plantDraw !== undefined ) {
+
+			const plant = proxy;
+			plant.onBeforeRender = ( renderer, scene, camera, geometry, material, group ) => {
+
+				mesh.onBeforeRender( renderer, scene, camera, geometry, material, group );
+				followPlantDraw( plant, mesh );
+
+			};
+			plant.onAfterRender = ( renderer, scene, camera, geometry, material, group ) => mesh.onAfterRender( renderer, scene, camera, geometry, material, group );
+
+		}
 		proxy.matrixAutoUpdate = false;
 		proxy.frustumCulled = false;
 		this.proxies.set( mesh, proxy );
@@ -224,8 +277,9 @@ export class RainCollision {
 		if ( material ) return material;
 		const node = source as THREE.MeshStandardNodeMaterial;
 		material = new THREE.MeshBasicNodeMaterial( { side: THREE.DoubleSide } );
-		// the rest pose a vegetation material casts with (VegetationShadow.ts), never the shadow's push
-		const rest = node.userData.shadowPush ? null : node.castShadowPositionNode;
+		// the rest pose a vegetation material casts with (VegetationShadow.ts `castRest`, whatever
+		// `flags.shadowWind` says), never the shadow's push
+		const rest = node.userData.shadowPush ? null : node.userData.castRest ?? node.castShadowPositionNode;
 		material.positionNode = rest ?? node.positionNode ?? null;
 		if ( node.alphaMap ) {
 
@@ -241,7 +295,8 @@ export class RainCollision {
 
 	dispose(): void {
 
-		this.target.dispose();
+		this.front.dispose();
+		this.back.dispose();
 		for ( const material of this.materials.values() ) material.dispose();
 
 	}

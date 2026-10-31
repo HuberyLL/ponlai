@@ -4,8 +4,9 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { VELOCITY_CLEAR, velocityOutput } from '../post/Motion.ts';
 import { MEADOW_SHADE } from '../post/MeadowShade.ts';
+import { followPlantDraw } from './vegetation/PlantInstances.ts';
 
-// A depth prepass for the alpha-to-coverage vegetation (today the grass and its flowering plants).
+// A depth prepass for the alpha-to-coverage vegetation (today the meadow's blades).
 //
 // Profiling at 4x MSAA showed that nearly all of the vegetation's cost is its fragment shading:
 // the same draws with a flat shader were 4.4 ms (render scale 1) to 5.9 ms (1.5) cheaper over the
@@ -56,7 +57,10 @@ import { MEADOW_SHADE } from '../post/MeadowShade.ts';
 // - Keep `material.alphaTest` itself at its value (the shadow passes copy it) and leave it out of
 //   the shaded draw's shader build only.
 // - A new alpha-to-coverage vegetation kind registers with `prepass: true` (vegetation/Registry.ts:
-//   main.ts hands the registered roots to `installVegetationPrepass`); anything that finds
+//   main.ts hands the registered roots to `installVegetationPrepass`). The pairs follow the meshes
+//   under the roots, walked before each render (a grown chunk's bamboo: Bamboo.ts), a new mesh on a
+//   patched material paired with the depth copy's material its neighbours drew with, the copy of a
+//   mesh that left dropped and disposed a few walks later. Anything that finds
 //   vegetation after the first frame reads `userData.vegetation` (this turns `alphaToCoverage` off).
 // - A depth copy's material is made once per shaded material (the grass's three batches share one),
 //   so its node graph and pipelines are built once.
@@ -65,8 +69,9 @@ import { MEADOW_SHADE } from '../post/MeadowShade.ts';
 // two programs differ (the shaded one computes much more), and the shader compiler then reorders
 // or contracts the position's arithmetic differently: a few samples fail the test and show the
 // clear colour behind. WGSL's `@invariant` on the clip position forbids that. three does not emit
-// it, so both materials patch the declarations of the builder that compiles them.
-function invariantPosition( material: THREE.NodeMaterial ): void {
+// it, so both materials patch the declarations of the builder that compiles them (the opaque
+// prepass's pairs too: OpaquePrepass.ts).
+export function invariantPosition( material: THREE.NodeMaterial ): void {
 
 	const setup = material.setup;
 	material.setup = function ( this: THREE.NodeMaterial, builder: THREE.NodeBuilder ) {
@@ -140,25 +145,24 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 	if ( option === '0' ) debugFlags.vegPrepass = false;
 	if ( option === 'coverage' ) debugFlags.vegPrepassOpaque = false;
 
-	const meshes: THREE.Mesh[] = [];
-	for ( const root of roots ) root.traverse( ( object ) => {
-
-		const mesh = object as THREE.Mesh;
-		// (a mesh off the view's layer, a caster of the sun's map alone, draws no depth there)
-		if ( ! mesh.isMesh || Array.isArray( mesh.material ) || ! mesh.layers.isEnabled( 0 ) ) return;
-		// (`alphaToCoverage` is off under the temporal modes: the vegetation's tag finds the same
-		// meshes there)
-		const material = mesh.material as THREE.Material;
-		if ( TEMPORAL ? material.userData.vegetation === true : material.alphaToCoverage === true ) meshes.push( mesh );
-
-	} );
-
 	const pairs: Pair[] = [];
 	const patched = new Set<THREE.Material>();
 	// one depth copy per shaded material, whatever number of meshes draw with it (the grass's
 	// batches share theirs): the same shader, so the same pipelines
 	const depthCopies = new Map<THREE.Material, THREE.MeshBasicNodeMaterial>();
-	for ( const mesh of meshes ) {
+	// whether a mesh takes a pair: (`alphaToCoverage` is off under the temporal modes, and on a
+	// patched material once the prepass applies: the vegetation's tag and the patched set find the
+	// same meshes there)
+	const eligible = ( object: THREE.Object3D ): object is THREE.Mesh => {
+
+		const mesh = object as THREE.Mesh;
+		// (a mesh off the view's layer, a caster of the sun's map alone, draws no depth there)
+		if ( ! mesh.isMesh || mesh.userData.prepassCopy || Array.isArray( mesh.material ) || ! mesh.layers.isEnabled( 0 ) ) return false;
+		const material = mesh.material as THREE.Material;
+		return TEMPORAL ? material.userData.vegetation === true : material.alphaToCoverage === true || patched.has( material );
+
+	};
+	const pair = ( mesh: THREE.Mesh ) => {
 
 		const material = mesh.material as THREE.MeshStandardNodeMaterial;
 		let depthCopy = depthCopies.get( material );
@@ -181,8 +185,9 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 		depth.receiveShadow = false;
 		depth.renderOrder = mesh.renderOrder - 2;
 		depth.visible = false;
-		// The grass picks its instances and blade count as it is drawn (Grass.ts); the copy draws
-		// first, so it makes the same choice for the same camera. It reads the culled list only
+		// The grass and the plants pick their instances as they are drawn (Grass.ts,
+		// vegetation/PlantInstances.ts); the copy draws first, so it makes the same choice for the
+		// same camera. It reads the culled list only
 		// when the mesh does (`grassCulled`): otherwise it would draw the first tufts in slot order
 		// and the shaded draw's equal test would fail over most of the meadow.
 		const before = mesh.onBeforeRender;
@@ -192,6 +197,8 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 			if ( ( depth as THREE.InstancedMesh ).isInstancedMesh ) ( depth as THREE.InstancedMesh ).count = ( mesh as THREE.InstancedMesh ).count;
 			depth.userData.grassLod = mesh.userData.grassLod;
 			depth.userData.grassCulled = mesh.userData.grassCulled;
+			// a plant's draw (vegetation/PlantInstances.ts): its draw and instance count
+			followPlantDraw( depth, mesh );
 
 		};
 		// a child: it follows the mesh's transform and visibility; with the meadow's shade, in the
@@ -241,10 +248,52 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 		}
 		pairs.push( { mesh, material, depth } );
 
-	}
+	};
+	// The pairs follow the meshes under the roots (a grown chunk's: its material is its neighbours',
+	// so its copy builds no pipeline), walked before each render: a new mesh is paired, and the copy
+	// of one that left is dropped, disposed as an object a few walks later (three keeps a render
+	// object, and its uniform buffers, per object until then).
+	const paired = new Map<THREE.Mesh, Pair>();
+	const retired: { depth: THREE.Mesh; at: number }[] = [];
+	let walks = 0;
+	const sync = () => {
+
+		walks ++;
+		while ( retired.length > 0 && retired[ 0 ].at <= walks ) retired.shift()!.depth.dispose();
+		const seen = new Set<THREE.Mesh>();
+		for ( const root of roots ) root.traverse( ( object ) => { if ( eligible( object ) ) seen.add( object ); } );
+		let changed = false;
+		for ( const mesh of seen ) if ( ! paired.has( mesh ) ) {
+
+			pair( mesh );
+			paired.set( mesh, pairs[ pairs.length - 1 ] );
+			changed = true;
+
+		}
+		for ( const [ mesh, p ] of paired ) if ( ! seen.has( mesh ) ) {
+
+			p.depth.removeFromParent();
+			pairs.splice( pairs.indexOf( p ), 1 );
+			paired.delete( mesh );
+			retired.push( { depth: p.depth, at: walks + 6 } );
+			changed = true;
+
+		}
+		// (a new pair takes the flags' state)
+		if ( changed ) {
+
+			state = '';
+			info.pairs = pairs.length;
+
+		}
+
+	};
+
+	let state = '';
+	const info: VegetationPrepassInfo = { pairs: 0, materials: 0, depthMaterials: 0 };
+	sync();
 
 	// Applied before each render of the scene, so the debug flags switch it at run time.
-	let state = '';
 	const apply = () => {
 
 		const on = debugFlags.vegPrepass !== false;
@@ -270,6 +319,7 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 	const previous = scene.onBeforeRender;
 	scene.onBeforeRender = ( ...args ) => {
 
+		sync();
 		apply();
 		previous.apply( scene, args );
 
@@ -278,6 +328,7 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 	// and visibility, ancestors included, as children would)
 	if ( MEADOW_SHADE ) prepassScene.onBeforeRender = () => {
 
+		sync();
 		apply();
 		for ( const p of pairs ) {
 
@@ -290,7 +341,9 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 		}
 
 	};
-	const info: VegetationPrepassInfo = { pairs: pairs.length, materials: patched.size, depthMaterials: depthCopies.size };
+	info.pairs = pairs.length;
+	info.materials = patched.size;
+	info.depthMaterials = depthCopies.size;
 	scene.userData.vegetationPrepass = info;
 	return info;
 

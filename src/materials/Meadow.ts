@@ -12,38 +12,38 @@ export { MEADOW_MIN_UP, MEADOW_MAX_DROP, supportsMeadow } from '../world/MeadowS
 // field of bare earth, once broke it into patches that from the overview read as camouflage and
 // dark blotches.
 // The growth field is the island top's structure for the root bed at the rim (Soil.ts). The sward's
-// layering comes from the tussocks themselves (Grass.ts: their clumps' heights, colours and values,
-// and now and then a low patch of one to a few of them), on odds and a level its soil sets
-// (`meadowVigour`, `meadowShallow`, below): never from zones of the soil. Height tiers by the soil
-// (short exposed turf, a deep soil's taller grass) and their tints read from above as zoning across
-// the island top, a map laid over the meadow, and were taken off the screen. The soil's fields stay in code
-// (`meadowSoil`, `meadowTurf`, `soilShort`, `soilDeep`): the habitat fields (`meadowMoisture`,
-// `meadowTurf`) pick the wildflowers' species, and the plants to come will be placed by them. The
-// sward runs to the edge on every coast: a windward lip shown short, yellow, thin over gravel and
-// bared to the cliff's stone in stretches read from above as one more zone, and was taken off.
+// layering comes from the blades themselves (Grass.ts: each blade's length and lean, its clump's
+// height and colour), never from zones of the soil. Height tiers by the soil (short exposed turf, a
+// deep soil's taller grass) and their tints read from above as zoning across the island top, a map
+// laid over the meadow, and were taken off the screen. The soil's fields stay in code (`meadowSoil`,
+// `meadowTurf`, `soilShort`, `soilDeep`, `meadowVigour`, `meadowShallow`): the plants to come will
+// be placed by the habitat fields (`meadowMoisture`, `meadowTurf`). The sward runs to the edge on
+// every coast: a windward lip shown short, yellow, thin over gravel and bared to the cliff's stone
+// in stretches read from above as one more zone, and was taken off.
 // The map covers the land lattice's whole extent, wherever the island grows, at 0.25 m: R the
 // turf's tone, G the sward's cover, B the height of its crowns over the ground and A the sward's
-// depth over it, the last three baked from the meadow's tussocks (world/SwardField.ts, which holds
-// the map).
+// depth over it, the last three baked from the meadow's anchors (world/SwardField.ts, which holds
+// the map; Grass.ts gives each anchor that holds turf the sward's depth).
 export const MEADOW_EXTENT = 2 * GROWTH.half;
 export const MEADOW_SIZE = MEADOW_EXTENT * 4;
 
 /** The lawn's tuft height scale (m) on ordinary soil, the middle of its three levels: the mean
  * length of its blades, which arc over under their weight (Grass.ts). */
-export const SWARD_HEIGHT = 0.5;
+export const SWARD_HEIGHT = 0.45;
 
 interface MeadowSample { growth: number; tone: number }
 
-// Linear albedo, before the blades' root-to-tip colour: a muted, slightly cool green (red at
-// about 0.8 of green on screen, and enough blue that the lit lawn reads soft and green rather than
-// lime; the yellow of the lit tips comes from the light through them, Grass.ts). Its saturation is
-// about an eighth below the first lawn's ( 0.06, 0.1, 0.029 ), its luminance the same: with the
-// long blades' own spread of tints (Grass.ts) the full green read as a dyed, plastic sward. The
-// page draws the meadow twice as light as this (shared.ts lawnGain): this is the measured leaf,
-// the look's meadow is painted lighter.
+// Linear albedo of the lawn as a whole: a muted, slightly cool green, the colour the meadow's
+// tone and the ground under it are set against. The tone's knob (shared.ts lawnGain) lightens or
+// darkens the blades (Grass.ts) and the turf together.
 const LAWN = new THREE.Color( 0.0632, 0.0984, 0.0359 );
-/** The lawn's colour (linear albedo), before its tone: the blades' colours are factors on it. */
+/** The lawn's colour (linear albedo), before its tone: the turf under the blades is set against it. */
 export const LAWN_COLOUR = LAWN.toArray() as [ number, number, number ];
+/** The meadow's albedo against LAWN_COLOUR on load (shared.ts lawnGain, a knob): the lawn's colour
+ * at the blades' value (Grass.ts BLADE_COLOUR, about 0.08), so the turf under them (TerrainMaterial.ts,
+ * Grass.ts GRASS_ROOTS) is set against the blades' own. The blades' colours are divided by it, so
+ * at LAWN_GAIN they are their own. */
+export const LAWN_GAIN = 0.926;
 /** How far the turf's value varies about the lawn's colour (a broad noise's -1 to 1 times it). */
 export const LAWN_TONE = 0.04;
 
@@ -58,8 +58,8 @@ export function sampleMeadow( x: number, z: number ): MeadowSample {
 }
 
 // The meadow's habitat: two broad fields of fixed seeds that say where its plants grow, the way a
-// real island top's turf and wildflowers follow the ground (Grass.ts picks each flower swath's
-// species by them). Neither changes the lawn's colour or height yet.
+// real island top's turf and wildflowers follow the ground; the plants to come will be placed by
+// them. Neither changes the lawn's colour or height.
 
 /** The ground's moisture under the meadow at ( x, z ), 0 dry to 1 damp: a low-frequency field (its
  * drifts some 25 m across), so the island top has a damp hollow or two and a dry stretch or two. */
@@ -93,14 +93,14 @@ export function meadowMoisture( x: number, z: number ): number {
 // draws the short turf's inner edge out into downwind tongues and gives the moderately exposed
 // ground downwind of the windward coast a streak or two. The soil's `depth` is the shelter squared
 // times the distance from the coast (SOIL.far) times a broad field (SOIL.deepRate, a few patches
-// across a large island; only the grass reads it). Measured on the anchors (each about equal area):
+// across a large island). Measured on the anchors (each about equal area):
 // at the twelfth growth step the short tier is some 27 % of the meadow (the windward coast's band
 // 21 %, half of it 6 m deep and its tongues to 13 m; the lee coast's 0 - 1 m 4 %; inland streaks
 // under 1 %), its core 4 % and deep soil 18 %; at the start the short tier is 46 % (the windward
 // half of a small island), its core 11 %, deep soil 12 % at its centre, the lee half green, so the
 // starting island shows all three of the sward's levels (deep soil was 3 % of it and 14 % at the
-// twelfth step with the depth reaching full from 8 m in and the tier over 0.53 - 0.78 of it). The grass
-// (Grass.ts, on the CPU, the shore field bilinear) reads it to site the flowers.
+// twelfth step with the depth reaching full from 8 m in and the tier over 0.53 - 0.78 of it). The
+// blades do not read it (Grass.ts); the plants to come will.
 
 /** The prevailing wind's origin at rest: the unit vector toward where it comes from (Wind.ts's
  * heading of 40 degrees). */
@@ -185,19 +185,19 @@ function meadowTongueWith( P: typeof SOIL, x: number, z: number ): number {
 // The sward's soil: how tall and close the turf grows, from the depth and water of its soil. In a
 // real meadow the grass is taller and lusher where the soil is deep and damp, and over shallow soil
 // (the rock near the surface, in pockets a few metres across) it is a short, open turf; they run
-// into each other over metres, tussock by tussock, never along a line. Two fields of fixed seeds:
+// into each other over metres, never along a line. Two fields of fixed seeds, which the blades do
+// not read (Grass.ts):
 // - `meadowVigour`, the soil's depth and water over some 14 m (SWARD_SOIL.broad cycles per metre)
 //   and the moisture field's 25 m (SWARD_SOIL.wet of it): its median about 0.5, its 5th and 95th
-//   percentiles about 0.25 and 0.75 on a grown island. It sets the tall sward's level, gently.
+//   percentiles about 0.25 and 0.75 on a grown island.
 // - `meadowShallow`, the pockets of shallow soil: on a world-anchored lattice of POCKET.cell (m),
 //   a cell holds one for POCKET.share of them, times POCKET.vigour's factor (from its first where
 //   the vigour at its centre is 0 to its second at 1), its centre clear of the cell's sides by its
 //   largest radius (so a point looks at its own cell and the eight round it), its radius
 //   POCKET.radius (m), frayed by POCKET.fray of it by a noise of POCKET.frayRate cycles per metre;
-//   full over its inner POCKET.core of the radius and easing out to its edge. Grass.ts grows a
-//   pocket as a short open turf with tussocks standing in it, fewer toward its middle: a pocket of
-//   3 - 6 m every few cells, their weight 11 % of the first island's meadow, 8 % at the twelfth
-//   growth step.
+//   full over its inner POCKET.core of the radius and easing out to its edge: a pocket of 3 - 6 m
+//   every few cells, their weight 11 % of the first island's meadow, 8 % at the twelfth growth
+//   step.
 // Neither is the wind's exposure: from the coast's side a band of short turf across the windward
 // half of a small island read from above as a zone laid over the meadow. Nor the low end of a
 // noise: its 14 m drifts made a third of the first island short, and its 5 m valleys ran into
@@ -248,7 +248,7 @@ export function meadowShallow( x: number, z: number ): number {
 
 }
 
-/** The sward the soil `soil` grows, 0 short to 1 tall: the wildflowers' habitat (Grass.ts). */
+/** The sward the soil `soil` grows, 0 short to 1 tall: the wildflowers' habitat. */
 export function meadowTurf( soil: MeadowSoil ): number {
 
 	return ( 1 - soilShort( soil.exposure ) ) * ( 0.55 + 0.45 * soilDeep( soil.depth ) );

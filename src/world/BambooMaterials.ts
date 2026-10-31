@@ -1,18 +1,34 @@
 import * as THREE from 'three/webgpu';
 import { attribute, float, mix, mx_noise_float, positionGeometry, smoothstep, vec3 } from 'three/tsl';
 import { GroundBounceLightingModel } from '../lighting/GroundBounce.ts';
+import { CANOPY_SHADE } from '../lighting/AmbientSample.ts';
+import { receiveScreenAO } from '../post/GTAO.ts';
+import { receiveScreenShadow, screenThickness } from '../post/MeadowShade.ts';
 import type { Shared } from '../shared.ts';
 import { mulberry32 } from './noise.ts';
-import { mainBend } from './vegetation/Deform.ts';
+import { GROVES } from './BambooGroves.ts';
+import { CROWN_DRAG, branchBend, mainBend } from './vegetation/Deform.ts';
 import { useVegetationMotion } from './vegetation/Material.ts';
-import { LeafPainter, leafMaterial as treeLeaves, type LeafAtlas } from './vegetation/TreeSurfaces.ts';
+import { placeVertex, type PlantDraw, type PlantInstances } from './vegetation/PlantInstances.ts';
+import { IDENTITY_COLOUR, LeafPainter, leafMaterial as treeLeaves, plantTint, type LeafAtlas, type PlantTint } from './vegetation/TreeSurfaces.ts';
+import { rootHash } from '../weather/Wind.ts';
+import { writeMeter } from '../lighting/MeterLight.ts';
+import { tuneUniform } from '../debug/Tune.ts';
 
 // The bamboo's surfaces (Bamboo.ts): its culms and its leaves.
 //
-// Culms: smooth and glossy, green the first year, then purple in blotches that spread until the
-// culm is a deep purple (the culm's age, from its `culm` attribute, against a noise stretched along
-// the culm); a band of pale wax under each node, a fine streaking along the grain. No maps: the
-// colour is a function of the rest position, so it holds still on a swaying culm.
+// Culms: smooth with a soft sheen, green the first year, then purple in blotches that spread until
+// the culm is a muted purple (the culm's age, from its `culm` attribute, against a noise stretched
+// along the culm); a thin pale ring of wax just under each node, a fine streaking along the grain.
+// As light as the meadow's grass and the leaves, whatever their age (the green a little lighter):
+// a painted grove keeps its materials close in value, the culms reading against the dark between
+// them by their light and shade, not by a dark colour of their own (so the purple is a dusty one).
+// The sky reaches a culm's lower part only through its grove's canopy, so a grove is dark inside
+// and its culms light where the sun finds them: the ambient volume's irradiance
+// (lighting/AmbientSample.ts) sees the grove and darkens it, read at the culm's own normal, so a
+// face toward the grove's open side takes more than one toward its inside; without the volume the
+// `culm` attribute's third (Bamboo.ts) darkens it on the environment's irradiance.
+// No maps: the colour is a function of the rest position, so it holds still on a swaying culm.
 //
 // Leaves: narrow, lance-shaped, about a hand long and a finger wide, drawn to a long point and
 // curving a little; two to four at a twig's end in a narrow fan pointing on with it (the
@@ -21,43 +37,80 @@ import { LeafPainter, leafMaterial as treeLeaves, type LeafAtlas } from './veget
 // leaves a few yellow. Here and there a cluster of pale, lustrous seeds, as big as pearls.
 
 /** The culms' colours (linear albedo): new green, purple, the wax under the nodes. */
-const CULM = { green: [ 0.075, 0.14, 0.04 ], purple: [ 0.05, 0.014, 0.038 ], wax: [ 0.32, 0.31, 0.33 ] } as const;
+const CULM = { green: [ 0.124, 0.146, 0.056 ], purple: [ 0.13, 0.082, 0.09 ], wax: [ 0.25, 0.24, 0.2 ] } as const;
 
-/** The bamboo's wind: tall, light culms swing quicker than a tree's crown (Deform.ts
- * mainBend: `slow` eases toward half the rate); the narrow leaves flutter fast. */
-export const BAMBOO_WIND = { cycles: 30, slow: 0.4, flutter: 2.6 } as const;
+/** The culms' occlusion on the ambient volume's path: a soft grounding alone, the culm `foot`
+ * darker at its foot and back to its light by `footHeight` m up (the ground at the foot has no term
+ * of its own). The grove's darkness is the volume's: a culm in a grove's shade stands lighter than
+ * the floor at its foot, which looks up into the canopy while the culm's sides look out level
+ * through the grove. A share of the canopy's height term kept on the volume (the `culm`
+ * attribute's third) darkened them twice: without it the culms in a grove's shade came out about a
+ * quarter lighter, those at its edge as light as the open shade's ground beside them. */
+const CULM_SHADE = { foot: 0.05, footHeight: 1 } as const;
 
-/** The culms and branches: their colour by age and place in the internode, swaying from each
- * culm's foot (`treeRoot`) by `leafSway` x. */
-export function culmMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
+/** Each culm's own tint over its leaves (TreeSurfaces.ts plantTint): a little cooler, neutral, a
+ * little yellower, by the culm's hash; and the leaves' colour matrix. The culms' wood takes only
+ * its matrix (no leaf there). */
+export const BAMBOO_TINT: PlantTint = { keys: [ [ 0.47, 0.5, 0.52 ], [ 0.5, 0.5, 0.5 ], [ 0.54, 0.52, 0.46 ] ], keep: 0.4, matrix: IDENTITY_COLOUR };
+const CULM_TINT: PlantTint = { ...BAMBOO_TINT, matrix: IDENTITY_COLOUR };
 
-	const material = new THREE.MeshStandardNodeMaterial( { roughness: 0.32, metalness: 0 } );
-	const culm = attribute<'vec2'>( 'culm', 'vec2' );
-	const age = culm.x, phase = culm.y;
-	const root = attribute<'vec3'>( 'treeRoot', 'vec3' );
-	const sway = attribute<'vec4'>( 'leafSway', 'vec4' );
-	// blotches along the culm, through which the purple spreads as it ages
-	const blotch = mx_noise_float( positionGeometry.mul( vec3( 22, 2.5, 22 ) ) ).mul( 0.5 ).add( 0.5 );
+/** The bamboo's wind: the culms' sway rate (swings a metre of the plants' travel, Deform.ts
+ * mainBend: 0.9 Hz on a fair day), the drag's exponent of the wind, its leaved crown's
+ * (2 + Deform.ts CROWN_DRAG.v), and the narrow leaves' flutter (Hz). */
+export const BAMBOO_WIND = { rate: 0.095, drag: 2 + CROWN_DRAG.v, flutter: 2.6 } as const;
+
+/** The culms and branches of a plant draw (PlantInstances.ts): their colour by the culm's age
+ * (its instance's `look` x) and place in the internode (the `culm` attribute), bending from the
+ * culm's foot by `leafSway` x, the prototype's eta^2, eta (its share of the culm's height) in w,
+ * under the culm's wind load (its instance's); a branch then bends on its own about its start
+ * (Deform.ts branchBend, `branchFrom`, `branchTo`, placed with the culm). */
+export function culmMaterial( shared: Shared, plants: PlantInstances ): THREE.MeshStandardNodeMaterial {
+
+	const material = new THREE.MeshStandardNodeMaterial( { roughness: 0.5, metalness: 0 } );
+	const v = plants.vertex(), place = placeVertex( v );
+	const phase = attribute<'float'>( 'culm', 'float' );
+	const age = v.lookVarying.x, grove = v.lookVarying.y;
+	const eta = attribute<'vec4'>( 'leafSway', 'vec4' ).w;
+	// blotches along the culm, through which the purple spreads as it ages: on the prototype's rest
+	// position (so they hold still on a swaying culm) moved by the culm's foot (so no two culms of a
+	// prototype share them)
+	const grain = positionGeometry.add( v.footVarying );
+	const blotch = mx_noise_float( grain.mul( vec3( 22, 2.5, 22 ) ) ).mul( 0.5 ).add( 0.5 );
 	const purple = smoothstep( blotch.sub( 0.18 ), blotch.add( 0.18 ), age );
-	const streak = mx_noise_float( positionGeometry.mul( vec3( 160, 1.2, 160 ) ) ).mul( 0.12 ).add( 1 );
-	// the wax just under the node above
-	const wax = smoothstep( 0.82, 0.95, phase ).mul( float( 1 ).sub( smoothstep( 0.975, 1, phase ) ) ).mul( 0.6 );
-	material.colorNode = mix( mix( vec3( ...CULM.green ), vec3( ...CULM.purple ), purple ).mul( streak ), vec3( ...CULM.wax ), wax );
-	material.roughnessNode = mix( mix( float( 0.4 ), float( 0.28 ), purple ), float( 0.7 ), wax );
+	const streak = mx_noise_float( grain.mul( vec3( 160, 1.2, 160 ) ) ).mul( 0.12 ).add( 1 );
+	// the ring of wax just under the node above
+	const wax = smoothstep( 0.9, 0.96, phase ).mul( float( 1 ).sub( smoothstep( 0.985, 1, phase ) ) ).mul( 0.5 );
+	material.colorNode = plantTint( mix( mix( vec3( ...CULM.green ), vec3( ...CULM.purple ), purple ).mul( streak ), vec3( ...CULM.wax ), wax ), rootHash( v.footVarying.xz ), float( 0 ), CULM_TINT );
+	material.roughnessNode = mix( mix( float( 0.55 ), float( 0.45 ), purple ), float( 0.75 ), wax );
 	material.name = 'bamboo culms';
-	( material as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new GroundBounceLightingModel();
+	receiveScreenAO( material );
+	// the whole scene's screen-space shade on the key (post/MeadowShade.ts); as a caster in it, a
+	// grown culm's foot diameter deep, so the march does not take a culm for a wall far behind it
+	receiveScreenShadow( material );
+	screenThickness( material, GROVES.height / GROVES.slender );
+	// the ambient volume at degree 2, as the island's other receivers (lighting/AmbientSample.ts)
+	( material as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new GroundBounceLightingModel( { bands: 2, kind: 'culms' } );
+	writeMeter( material );
 	let bend: THREE.Node<'vec2'> | undefined;
-	useVegetationMotion( material, shared.wind, {
-		rest: positionGeometry,
+	const rest = useVegetationMotion( material, shared.wind, {
+		rest: place.position,
 		displacement: ( wind ) => {
 
-			const bent = mainBend( wind, positionGeometry, root, sway.x, BAMBOO_WIND.cycles, float( BAMBOO_WIND.slow ) );
+			const bent = mainBend( wind, place.position, place.root, place.sway.x, place.sway.w, place.load, BAMBOO_WIND );
 			if ( wind === shared.wind ) bend = bent.sway;
-			return bent.position;
+			return bent.position.add( branchBend( wind, place.position, place.root, place.limb( 'branchFrom' ), place.limb( 'branchTo' ), bent.field ) );
 
 		},
 		sway: () => bend,
+		beforePosition: place.before,
 	} );
+	// the sky's light past the grove's canopy (`groveSky`'s form by the culm's grove density and
+	// the point's share of its height), where the ambient volume does not carry it
+	// (AmbientSample.ts CANOPY_SHADE; 1 keeps the occlusion's path for the screen-space one); on the
+	// volume's path the foot's grounding alone; the sun keeps its own shadows
+	const sky = float( 1 ).sub( grove.mul( GROVES.shade ).mul( float( 1 ).sub( smoothstep( 0.3, 0.9, eta ) ) ) );
+	const foot = smoothstep( 0, CULM_SHADE.footHeight, rest.y.sub( v.footVarying.y ) ).mul( CULM_SHADE.foot ).add( 1 - CULM_SHADE.foot );
+	material.aoNode = CANOPY_SHADE ? sky : foot;
 	return material;
 
 }
@@ -230,10 +283,48 @@ export function leafAtlas( size = 512 ): LeafAtlas {
 
 }
 
-/** The leaves' material: the trees' leaf material on the atlas, swaying with each culm (from its
- * foot, `treeRoot`), fluttering. */
-export function leafMaterial( shared: Shared, atlas: LeafAtlas ): THREE.MeshStandardNodeMaterial {
+/** How much light a bamboo leaf lets through (vegetation/Material.ts): the crowns'. Tunable on debug pages (debug/Tune.ts: `lighting.vegetation.bambooTranslucency`). */
+export const LEAF_TRANSLUCENCY = tuneUniform( 'lighting.vegetation.bambooTranslucency', 0.5, { min: 0.2, max: 1 } );
 
-	return treeLeaves( shared, atlas, attribute<'vec3'>( 'treeRoot', 'vec3' ), { name: 'bamboo leaves', roughness: 0.75, wind: BAMBOO_WIND, tone: 0.22 } );
+/** The leaves' material: the trees' leaf material on the atlas over a plant draw's prototype
+ * (PlantInstances.ts), swaying with each culm (from its foot), fluttering, toned by the plant's
+ * `look` z (a shoot's depth in its grove); half translucent (`LEAF_TRANSLUCENCY`: the strength of
+ * the light through them, VegetationLighting; a leaf's diffuse does not wrap), firmer leaves than
+ * the meadow's blades. */
+export function leafMaterial( shared: Shared, atlas: LeafAtlas, plants: PlantInstances ): THREE.MeshStandardNodeMaterial {
+
+	const v = plants.vertex();
+	const material = treeLeaves( shared, atlas, v.foot, {
+		name: 'bamboo leaves', roughness: 0.75, wind: BAMBOO_WIND, branches: true, tint: BAMBOO_TINT, tone: 0.22, translucency: LEAF_TRANSLUCENCY,
+		place: placeVertex( v ), shade: v.lookVarying.z,
+	} );
+	// the screen-space ambient occlusion (post/GTAO.ts) and shade on the key (post/MeadowShade.ts)
+	receiveScreenAO( material );
+	receiveScreenShadow( material );
+	return material;
+
+}
+
+/** The bamboo's parts (Bamboo.ts): its culms' draws and its leaves'. */
+export const BAMBOO_PARTS = [ 'bamboo culms', 'bamboo leaves' ];
+
+/** Each plant draw's material (PlantInstances.ts `material`): the culms' whole draws one, their
+ * fading draws one with the level stipple, the leaves one with it (all their draws fade). */
+export function bambooMaterials( surfaces: { shared: Shared; atlas: LeafAtlas } ): ( draw: PlantDraw, plants: PlantInstances ) => THREE.Material {
+
+	let whole: THREE.Material | null = null, fading: THREE.Material | null = null, leaves: THREE.Material | null = null;
+	const stippled = ( material: THREE.MeshStandardNodeMaterial, plants: PlantInstances ) => {
+
+		plants.useStipple( material );
+		return material;
+
+	};
+	return ( draw, plants ) => {
+
+		if ( draw.part === 1 ) return leaves ??= stippled( leafMaterial( surfaces.shared, surfaces.atlas, plants ), plants );
+		if ( draw.fade === 0 ) return whole ??= culmMaterial( surfaces.shared, plants );
+		return fading ??= stippled( culmMaterial( surfaces.shared, plants ), plants );
+
+	};
 
 }

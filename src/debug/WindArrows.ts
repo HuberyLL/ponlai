@@ -72,9 +72,10 @@ function windArrowMaterial( wind: WindUniforms ): THREE.MeshBasicNodeMaterial {
 	const swayed = setWindDisplacement( material, arrow, wind );
 	useRestPoseShadows( material, cell.xyz, swayed, undefined, previousSway( material, wind ) );
 	followWindMotionFlag( material );
-	// brighter with the lean (a fair day's gust leans about 0.17), warmer in a gust
+	// brighter with the load the plants take there (Wind.ts `plantLoad`, full from 0.33), warmer
+	// in a gust
 	const field = varying( windField( wind, cell.xz ), 'vWindArrow' );
-	const bright = clamp( field.z.div( 0.17 ), 0, 1 ).mul( 0.75 ).add( 0.25 );
+	const bright = clamp( field.z.div( 0.33 ), 0, 1 ).mul( 0.75 ).add( 0.25 );
 	material.colorNode = mix( vec3( 0.55, 0.75, 1 ), vec3( 1, 0.85, 0.2 ), field.w ).mul( bright ).mul( GAIN );
 	return material;
 

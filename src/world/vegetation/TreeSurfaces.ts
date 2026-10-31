@@ -1,14 +1,17 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, Loop, attribute, dot, float, floor, fract, int, length, materialColor, max, mix, mod, normalGeometry, normalMap, normalize,
-	positionGeometry, sqrt, texture, uv, vec2, vec3, vec4, If,
+	positionGeometry, select, sqrt, texture, uv, vec2, vec3, vec4, If,
 } from 'three/tsl';
 import { GroundBounceLightingModel } from '../../lighting/GroundBounce.ts';
 import { pnoise, hash22 } from '../../materials/ProceduralTextures.ts';
 import type { Shared } from '../../shared.ts';
-import { leafFlutter, mainBend } from './Deform.ts';
+import { branchBend, leafFlutter, mainBend, sprayBend } from './Deform.ts';
+import { rootHash } from '../../weather/Wind.ts';
 import { coverageAlphaTexture } from './LeafTexture.ts';
 import { vegetationMaterial } from './Material.ts';
+import type { PlacedVertex } from './PlantInstances.ts';
+import { writeMeter } from '../../lighting/MeterLight.ts';
 
 // What every tree's surfaces are made from (BambooMaterials.ts; the bark for the trees to
 // come), with no image files:
@@ -24,6 +27,10 @@ import { vegetationMaterial } from './Material.ts';
 //   distance. `leafMaterial` puts the vegetation's material on it (vegetation/Material.ts: leaf
 //   family, alpha to coverage, the depth prepass, light through the leaves), each leaf toned by its
 //   id, the crown bending in the one wind and each card fluttering.
+// - Each plant's own tint (`plantTint`): its hash looks up a gradient of two or three colours about
+//   overlay's neutral grey, laid over the albedo where the plant has leaves, less the share it
+//   keeps, then a colour matrix of the material's (near the identity), so plants of one kind differ
+//   a little in colour.
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -156,6 +163,7 @@ export function barkMaterial( maps: BarkMaps, colours: BarkColours, name: string
 	material.aoNode = mix( float( 1 ), mix( colours.fissureAo, 0.8, dead ), h.a.mul( float( 1 ).sub( dead ) ) );
 	material.name = name;
 	( material as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new GroundBounceLightingModel();
+	writeMeter( material );
 	return material;
 
 }
@@ -329,24 +337,62 @@ function pointMips( image: ImageData, size: number ): THREE.Texture {
 
 }
 
-/** A crown's wind: it bends from the trunk's foot by the main bend (`cycles`, at `slow` of its
- * rate) by the `leafSway` attribute's x (m at a fair day's typical gust); each card flutters on its
- * own phase (z) by y (m, 0 where it holds to its twig, the most at its tip), at `flutter` Hz
- * (Deform.ts `leafFlutter`: in the gusts, across the wind). */
-export interface CrownWind { cycles: number; slow: number; flutter: number }
+/** A material's per-plant tint (`plantTint`): the gradient's three keys (linear colours about 0.5,
+ * overlay's neutral, at the plant's hash 0, 0.5 and 1), the share of the albedo kept from it, and
+ * the material's colour matrix (rows, row-major). */
+export interface PlantTint { keys: readonly ( readonly [ number, number, number ] )[]; keep: number; matrix: readonly number[] }
+
+/** The identity colour matrix. */
+export const IDENTITY_COLOUR = [ 1, 0, 0, 0, 1, 0, 0, 0, 1 ] as const;
+
+/** `albedo` tinted for the plant of hash `xi` (0..1) by `t`: the gradient's colour at xi blended
+ * toward overlay's neutral 0.5 outside the `mask` (1 on leaves) and by the share kept, overlaid on
+ * the albedo ( 2 a b below a half, 1 - 2 ( 1 - a )( 1 - b ) above ), then the material's matrix. */
+export function plantTint( albedo: V3, xi: F, mask: F, t: PlantTint ): V3 {
+
+	const [ k0, k1, k2 ] = t.keys.map( ( k ) => vec3( ...k ) );
+	const key = mix( mix( k0, k1, xi.mul( 2 ).clamp( 0, 1 ) ), k2, xi.mul( 2 ).sub( 1 ).clamp( 0, 1 ) );
+	const blend = mix( vec3( 0.5 ), key, mask.mul( 1 - t.keep ) ).toVar();
+	const a = albedo.toVar();
+	const low = a.mul( blend ).mul( 2 ).toVar(), high = float( 1 ).sub( float( 1 ).sub( a ).mul( float( 1 ).sub( blend ) ).mul( 2 ) ).toVar();
+	const over = vec3( select( a.x.lessThan( 0.5 ), low.x, high.x ), select( a.y.lessThan( 0.5 ), low.y, high.y ), select( a.z.lessThan( 0.5 ), low.z, high.z ) );
+	const m = t.matrix;
+	return vec3( dot( vec3( m[ 0 ], m[ 1 ], m[ 2 ] ), over ), dot( vec3( m[ 3 ], m[ 4 ], m[ 5 ] ), over ), dot( vec3( m[ 6 ], m[ 7 ], m[ 8 ] ), over ) );
+
+}
+
+/** A crown's wind: it bends from the trunk's foot by the main bend (Deform.ts `mainBend`, at its
+ * sway `rate`, swings a metre of the plants' travel, its drag growing as the wind to `drag`) by the
+ * `leafSway` attribute's x (the yield ( 1 - stiffness ) eta^2, eta, the point's share of the
+ * plant's height, in w) under the plant's wind load (an instance's; 1 without one); each card
+ * flutters on its own phase (z) by y (A_l w^2, m: w 0 where it holds to its twig, 1 at its tip), at
+ * `flutter` Hz (Deform.ts `leafFlutter`: in the gusts, across the wind). */
+export interface CrownWind { rate: number; drag: number; flutter: number }
 
 /** A crown's leaves: the vegetation's leaf family on the atlas, each leaf toned by its id (by
  * `tone` about 1), swaying from `foot` (a tree's, or a node: several trees' in one mesh, per
- * vertex); `sheen` takes the leaf's id for a gloss of its own. */
+ * vertex), letting light through by `translucency` (VegetationLighting). With `branches` the
+ * cards move with their branch and their spray too (Deform.ts `branchBend`, `sprayBend`, the mesh's
+ * TreeMesh.ts BRANCH_ATTRIBUTES). With `tint` each plant (its foot's hash) takes its own tint over
+ * the leaves (`plantTint`). With `place` the mesh is a prototype drawn as instances
+ * (PlantInstances.ts): every point, normal and limb placed by the instance, the plant's foot its
+ * root. */
 export function leafMaterial( shared: Shared, atlas: LeafAtlas, foot: THREE.Vector3 | V3, o: {
-	name: string; roughness: number; wind: CrownWind; tone: number;
-	sheen?: ( id: V4 ) => ( L: V3, V: V3, N: V3 ) => V3;
+	name: string; roughness: number; wind: CrownWind; branches?: boolean; tint?: PlantTint; tone: number; translucency: F | number;
+	/** an instanced plant's vertex (PlantInstances.ts `placeVertex`; `foot` is then ignored) and its
+	 * leaves' shade (fragment) */
+	place?: PlacedVertex; shade?: F;
 } ): THREE.MeshStandardNodeMaterial {
 
-	const sway = attribute<'vec4'>( 'leafSway', 'vec4' );
-	const root = foot instanceof THREE.Vector3 ? vec3( foot.x, foot.y, foot.z ) : foot;
-	// the leaf under the fragment: sampled once, in the colour's (uniform) flow, and read again by
-	// the sheen in the lighting
+	const place = o.place;
+	const sway = place ? place.sway : attribute<'vec4'>( 'leafSway', 'vec4' );
+	const root = place ? place.root : foot instanceof THREE.Vector3 ? vec3( foot.x, foot.y, foot.z ) : foot;
+	// (the per-plant tint in the fragment: an instance's foot through a varying)
+	const tintRoot = place ? place.rootVarying : root;
+	const position = place ? place.position : positionGeometry;
+	const normal = place ? place.normal : normalGeometry;
+	const limb = ( name: string ) => place ? place.limb( name ) : attribute<'vec4'>( name, 'vec4' );
+	// the leaf under the fragment: sampled once, in the colour's (uniform) flow
 	const id = texture( atlas.ids, uv() ).toVar( 'leafId' );
 	let crown: V2 | undefined;
 	return vegetationMaterial( shared, {
@@ -355,17 +401,30 @@ export function leafMaterial( shared: Shared, atlas: LeafAtlas, foot: THREE.Vect
 		wet: { tint: 0.75, roughness: 0.25 },
 		// each leaf's own tone (the atlas's tones vary by colour already: this varies them by leaf)
 		// (and the look's gain over the atlas: shared.ts leafGain)
-		color: ( tint ) => materialColor.mul( vec4( vec3( id.b.mul( o.tone ).add( 1 - o.tone / 2 ).mul( tint ).mul( shared.leafGain ) ), 1 ) ),
-		rest: positionGeometry,
+		color: ( tint ) => {
+
+			const leaf = vec3( id.b.mul( o.tone ).add( 1 - o.tone / 2 ).mul( tint ).mul( shared.leafGain ) );
+			const base = materialColor.mul( vec4( o.shade ? leaf.mul( o.shade ) : leaf, 1 ) );
+			if ( ! o.tint ) return base;
+			const c = base.toVar();
+			return vec4( plantTint( c.rgb, rootHash( tintRoot.xz ), float( 1 ), o.tint ), c.a );
+
+		},
+		rest: position,
 		displacement: ( wind ) => {
 
-			const bent = mainBend( wind, positionGeometry, root, sway.x, o.wind.cycles, float( o.wind.slow ) );
+			const bent = mainBend( wind, position, root, sway.x, sway.w, place ? place.load : float( 1 ), o.wind );
 			if ( wind === shared.wind ) crown = bent.sway;
-			return bent.position.add( leafFlutter( wind, bent.field, normalGeometry, sway.y, sway.z, o.wind.flutter ) );
+			const flutter = leafFlutter( wind, bent.field, normal, sway.y, sway.z, o.wind.flutter, position );
+			if ( ! o.branches ) return bent.position.add( flutter );
+			const limbs = branchBend( wind, position, root, limb( 'branchFrom' ), limb( 'branchTo' ), bent.field )
+				.add( sprayBend( wind, position, root, limb( 'sprayFrom' ), limb( 'sprayTo' ), bent.field ) );
+			return bent.position.add( limbs ).add( flutter );
 
 		},
 		sway: () => crown,
-		light: { scale: float( 1 ), sheen: o.sheen?.( id ) },
+		beforePosition: place?.before,
+		light: { scale: float( 1 ), translucency: o.translucency },
 	} );
 
 }
