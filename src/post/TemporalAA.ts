@@ -138,7 +138,7 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   complete; the ground truth's rest is a box filter over 64 jitters (centred on their mean:
 //   Jitter.ts) at the canvas's resolution.
 // - The canvas pass sharpens the encoded image and adds what must not be accumulated: the vignette
-//   (in linear, before the encoding, as the grade did), RCAS sharpening (FSR.ts), the grain and the
+//   (in linear, before the encoding, as the grade did), RCAS sharpening (FSR.ts) and the
 //   dither. A class with `sharpenMoving` stops is sharpened more where it moves on screen (by its
 //   speed from the velocity under the pixel): the sea, whose short history, resampled each frame,
 //   came out at 0.7 of the ground truth's sharpness under a pan (vegetation keeps the frame's: more
@@ -154,7 +154,7 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 // - After the resolve (taa, taau: AfterResolve.ts) the rain's streaks and the storm's spray are
 //   drawn unjittered into an overlay at the canvas's size, between the resolve's passes and the
 //   canvas pass (`after`), and the canvas pass adds the change the rain veil and that overlay make
-//   to the graded colour (`layer`) after RCAS, before the grain: the pixels it changes are decoded
+//   to the graded colour (`layer`) after RCAS, before the dither: the pixels it changes are decoded
 //   to linear light (the sRGB transfer undone), changed and encoded
 //   again; the vignette applies to the change as to the image. Nothing of it enters a history. A
 //   running frame's canvas pass draws the change itself (`layerInline`: a build of its own, used
@@ -215,7 +215,7 @@ const CAP_FRAMES = 10;
 
 /** The graph's resources the resolve reads (their versions after the passes before it). */
 export interface TemporalInputs {
-	// the graded image at the render's size, before the vignette and grain (in linear light under
+	// the graded image at the render's size, before the vignette and dither (in linear light under
 	// `linear`, else display values)
 	display: ResourceHandle;
 	velocity: ResourceHandle;
@@ -237,7 +237,7 @@ export interface TemporalOptions {
 	settings: TemporalSettings;
 	// the grade's vignette factor at the pixel drawn into an image of `size`
 	vignette: ( size: Uniform2 ) => F;
-	// the canvas's grain and dither (`on` 0 leaves them out)
+	// the canvas's dither (`on` 0 leaves them out)
 	finish: ( s: V3, size: Uniform2, on: F ) => V4;
 	// a fresh node (one per shader): what the canvas pass adds to its image at its pixel, after the
 	// resolve (the change to the graded colour, in linear light under `linear`, without the vignette;
@@ -689,7 +689,7 @@ export class TemporalAA {
 		if ( ! taa ) return;
 
 		// TAA below the canvas: the resolved image encoded at the render's size (the vignette in
-		// linear, as the grade had it), EASU to the canvas, and RCAS with the grain and dither there.
+		// linear, as the grade had it), EASU to the canvas, and RCAS with the dither there.
 		let encoded = this.encoded!, easuImage = this.easuImage!;
 		const encodeNode = ( source: THREE.Texture ) => Fn( () => {
 

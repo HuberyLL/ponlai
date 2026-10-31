@@ -6,6 +6,7 @@ import {
 import { TEMPORAL } from './Antialiasing.ts';
 import { jitter } from './Jitter.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { preExposedRGBA, preExposedScalar } from './PreExposure.ts';
 
 // Motion vectors for the temporal modes (Antialiasing.ts: aa=taa|taau): where each surface point
 // drawn this frame was in the previous rendered frame, as NDC of the unjittered views. They are
@@ -52,6 +53,23 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // layout function (the sea's `sceneViewZ` then fails to compile): time the velocity's cost by
 // comparing pages (`--compare` of `aa=off` against a temporal mode), not by switching a page's
 // target.
+//
+// The metering illuminance (`meterLight`, Pipeline.ts) is the scene target's attachment beside the
+// colour in every mode: after `velocity` under the temporal modes, second under msaa and off. Every
+// pass that draws into the scene target therefore has an MRT (three gives a pass without one a
+// single output, which a pipeline of two attachments does not validate), and every fragmentNode
+// material drawn there writes it through `outputStruct`. The scene MRT writes 0 (no reading: the
+// meter skips it), unblended: the attachment has one channel, so three outputs it as a scalar and
+// WebGPU refuses any blend that reads the source's alpha, which every transparent blending of three
+// does. A transparent draw in the opaque or the water pass (the lightning's bolt, the spray in msaa's
+// water pass) therefore writes 0 over the M under it, and its pixels drop out of the meter. The
+// overlay MRT and msaa's rain MRT keep it (src x 0 + dst x 1, no alpha read). A lit material writes
+// its own M through `meterOutput` (its MRT node, merged over the pass's); its MRT node would replace
+// its output in a pass without an MRT, so such a material is drawn only in passes that have one (the
+// scene's and the refraction's, whose MRT drops the names its target lacks).
+// Both are pre-exposed here (PreExposure.ts): the scene MRT's and the overlay MRT's colour, an
+// `outputStruct`'s colour and M, and a `meterOutput`'s M are given in scene units and stored times
+// 2^P, so a material never multiplies by it itself.
 //
 // A cut (`taaCut`: a seek, a jump of the camera, a new scene) makes the previous frame the current
 // one for the camera, the objects and whatever else registers with `onTaaCut` (the wind's previous
@@ -237,19 +255,39 @@ export function overlayVelocity( reactive: THREE.Node<'float'> | number = 0 ): T
 
 }
 
-/** A fragmentNode material's outputs: under the temporal modes its colour and its velocity, in the
- * scene target's attachment order; otherwise the colour alone (the material is unchanged). */
-export function outputStruct( color: THREE.Node, velocity: THREE.Node<'vec4'> ): THREE.Node {
+/** The metering illuminance's attachment, the frame graph's resource of that name (Pipeline.ts). */
+export const METER_LIGHT = 'meterLight';
 
-	return TEMPORAL ? threeOutputStruct( color, velocity ) as unknown as THREE.Node : color;
+// M as the attachment's output (one channel: the MRT outputs it as a scalar)
+const NO_METER = float( 0 );
+
+/** A fragmentNode material's outputs in the scene target's attachment order: its colour (an RGBA
+ * in scene units), under the temporal modes its velocity, and the metering illuminance `meter` (M,
+ * scene units; 0, no reading, when not given: see the note at the top); colour and M stored
+ * pre-exposed. */
+export function outputStruct( color: THREE.Node, velocity: THREE.Node<'vec4'>, meter?: THREE.Node<'float'> ): THREE.Node {
+
+	const m = meter ? preExposedScalar( meter ) : NO_METER;
+	const c = preExposedRGBA( color as THREE.Node<'vec4'> );
+	return ( TEMPORAL ? threeOutputStruct( c, velocity, m ) : threeOutputStruct( c, m ) ) as unknown as THREE.Node;
 
 }
 
 /** A material's own velocity, as its `mrtNode` (merged over the pass's MRT) under the temporal modes;
- * null otherwise, where a material's MRT node would replace its output. */
+ * null otherwise, where the scene passes keep their own. */
 export function velocityOutput( velocity: THREE.Node<'vec4'> ): THREE.MRTNode | null {
 
 	return TEMPORAL ? mrt( { velocity } ) : null;
+
+}
+
+/** A lit material's metering illuminance M (scene units of luminance: Pipeline.ts `meterLight`), and
+ * under the temporal modes its own velocity if given, as its `mrtNode` (merged over the pass's MRT).
+ * Only for materials drawn in passes with an MRT (see the note at the top). */
+export function meterOutput( meter: THREE.Node<'float'>, velocity?: THREE.Node<'vec4'> ): THREE.MRTNode {
+
+	const m = preExposedScalar( meter );
+	return mrt( TEMPORAL && velocity ? { [ METER_LIGHT ]: m, velocity } : { [ METER_LIGHT ]: m } );
 
 }
 
@@ -271,17 +309,35 @@ function keepMaxBlending(): THREE.BlendMode {
 
 }
 
-/** The opaque and water passes' MRT: every material's colour as it blends, and its motion as an
- * ordinary surface's (class opaque), overwriting the velocity. */
-export const sceneMRT: THREE.MRTNode = mrt( { sceneColor: output, velocity: motionNode( 'opaque' ) } )
+// the metering illuminance kept under a draw: src x 0 + dst x 1 (no factor reads an alpha)
+function keepBlending(): THREE.BlendMode {
+
+	const blend = new THREE.BlendMode( THREE.CustomBlending );
+	blend.blendSrc = blend.blendSrcAlpha = THREE.ZeroFactor;
+	blend.blendDst = blend.blendDstAlpha = THREE.OneFactor;
+	blend.blendEquation = blend.blendEquationAlpha = THREE.AddEquation;
+	return blend;
+
+}
+
+/** The opaque and water passes' MRT: every material's colour as it blends, under the temporal modes
+ * its motion as an ordinary surface's (class opaque), overwriting the velocity, and the metering
+ * illuminance, overwritten, no reading (0) unless the material writes one (cleared to 0). */
+export const sceneMRT: THREE.MRTNode = mrt( TEMPORAL
+	? { sceneColor: preExposedRGBA( output ), velocity: motionNode( 'opaque' ), [ METER_LIGHT ]: NO_METER }
+	: { sceneColor: preExposedRGBA( output ), [ METER_LIGHT ]: NO_METER } )
 	.setBlendMode( 'sceneColor', materialBlending() )
+	.setClearColor( METER_LIGHT, new THREE.Color( 0, 0, 0 ), 0 )
 	.setClearColor( 'velocity', new THREE.Color( VELOCITY_CLEAR[ 0 ], VELOCITY_CLEAR[ 1 ], VELOCITY_CLEAR[ 2 ] ), VELOCITY_CLEAR[ 3 ] );
 
 /** The overlay pass's MRT (the rain, the storm's spray): the velocity kept, its reactive weight the
- * larger. */
-export const overlayMRT: THREE.MRTNode = mrt( { sceneColor: output, velocity: overlayVelocity( 0 ) } )
+ * larger, and the metering illuminance kept. Under msaa and off the rain pass's (no velocity). */
+export const overlayMRT: THREE.MRTNode = mrt( TEMPORAL
+	? { sceneColor: preExposedRGBA( output ), velocity: overlayVelocity( 0 ), [ METER_LIGHT ]: NO_METER }
+	: { sceneColor: preExposedRGBA( output ), [ METER_LIGHT ]: NO_METER } )
 	.setBlendMode( 'sceneColor', materialBlending() )
-	.setBlendMode( 'velocity', keepMaxBlending() );
+	.setBlendMode( 'velocity', keepMaxBlending() )
+	.setBlendMode( METER_LIGHT, keepBlending() );
 
 // ---- the debug check
 

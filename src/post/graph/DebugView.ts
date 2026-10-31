@@ -33,6 +33,9 @@ import { debugFlags } from '../../debug/DebugFlags.ts';
 //   single    one channel (a red format, or the `.r` / `.g` / `.b` / `.a` output): grey, clamped
 //   history   a persistent or ping-pong colour (`.previous`: the ping-pong's previous texture): as
 //             colour, clamped
+//   vector    the displacement field (world/vegetation/Displacement.ts), its `.previous` too: its
+//             world direction (x, z) as a hue, its size as the brightness (full at 10, about a
+//             full push of the islanders' legs)
 // Every texel is loaded, not filtered, at the resource's own size stretched over the canvas. The
 // legacy attachment ops (`fgOps=legacy`) discard the scene target's samples in the rain pass
 // whatever reads them, so a view of `sceneDepth` while it rains needs the derived ops.
@@ -61,7 +64,7 @@ import { debugFlags } from '../../debug/DebugFlags.ts';
 //   clip          how far the history lay outside the neighbourhood's clip box (0 inside, white at
 //                 twice its width), grey
 
-export type DebugViewKind = 'hdr' | 'display' | 'linear' | 'depth' | 'viewZ' | 'velocity' | 'single' | 'history' | 'colour';
+export type DebugViewKind = 'hdr' | 'display' | 'linear' | 'depth' | 'viewZ' | 'velocity' | 'vector' | 'single' | 'history' | 'colour';
 
 export interface DebugViewRequest { resource: string; output: string | null }
 
@@ -93,6 +96,8 @@ const CHANNELS = [ 'r', 'g', 'b', 'a' ];
 const NEAR = 0.5, FAR = 2000;
 // velocity at full brightness, in render pixels
 const VELOCITY_FULL = 16;
+// the displacement field's size at full brightness
+const VECTOR_FULL = 10;
 
 /** `fgview` from the URL (null: none). */
 export function debugViewFromURL( search: string = location.search ): string | null {
@@ -119,6 +124,7 @@ function kindOf( r: ResourceDecl, output: string | null ): DebugViewKind {
 	if ( output && CHANNELS.includes( output ) ) return viewZ ? 'viewZ' : 'single';
 	if ( r.kind === 'depth' ) return 'depth';
 	if ( /velocity/i.test( r.name ) ) return 'velocity';
+	if ( r.name === 'displacement' ) return 'vector';
 	if ( DISPLAY_REFERRED.has( r.name ) ) return r.name === 'display' && r.desc.type === THREE.HalfFloatType ? 'linear' : 'display';
 	if ( viewZ ) return 'viewZ';
 	if ( r.desc.format === THREE.RedFormat ) return 'single';
@@ -224,6 +230,13 @@ function declareDebugView( graph: FrameGraph<unknown>, value: string, options: D
 	const logDepth = ( z: THREE.Node<'float'> ) => clamp( log2( max( abs( z ), NEAR ).div( NEAR ) ).div( Math.log2( FAR / NEAR ) ), 0, 1 );
 	const channel = output && CHANNELS.includes( output ) ? output : 'r';
 
+	// hue from a direction (an HSV wheel at full saturation)
+	const wheel = ( v: THREE.Node<'vec2'> ) => {
+
+		const h = fract( atan( v.y, v.x ).div( 2 * Math.PI ) );
+		return clamp( abs( fract( vec3( h ).add( vec3( 1, 2 / 3, 1 / 3 ) ) ).mul( 6 ).sub( 3 ) ).sub( 1 ), 0, 1 );
+
+	};
 	const shown = Fn( () => {
 
 		if ( kind === 'depth' ) {
@@ -243,13 +256,12 @@ function declareDebugView( graph: FrameGraph<unknown>, value: string, options: D
 			case 'hdr': return sRGBTransferOETF( clamp( neutralToneMapping( t.rgb, exposure ) as THREE.Node<'vec3'>, 0, 1 ) );
 			case 'velocity': {
 
-				// hue from the direction (an HSV wheel at full saturation), brightness from the length
+				// hue from the direction, brightness from the length
 				const px = t.xy.mul( size ).mul( 0.5 );
-				const h = fract( atan( px.y, px.x ).div( 2 * Math.PI ) );
-				const wheel = clamp( abs( fract( vec3( h ).add( vec3( 1, 2 / 3, 1 / 3 ) ) ).mul( 6 ).sub( 3 ) ).sub( 1 ), 0, 1 );
-				return wheel.mul( min( length( px ).div( VELOCITY_FULL ), 1 ) );
+				return wheel( px ).mul( min( length( px ).div( VELOCITY_FULL ), 1 ) );
 
 			}
+			case 'vector': return wheel( t.xy ).mul( min( length( t.xy ).div( VECTOR_FULL ), 1 ) );
 			default: return clamp( t.rgb, 0, 1 );
 
 		}

@@ -8,6 +8,33 @@
 //
 //   <entry>      a module in this repository (a path), or the name of one in tools/wgsl-build/:
 //                `fsr3` builds every kernel of src/post/fsr3/ as the page builds them
+//                `ambient-relight` the ambient light's relight and its debug view
+//                (src/lighting/AmbientRelight.ts)
+//                `ambient-materials` the lit materials that read the ambient volume
+//                (src/lighting/AmbientSample.ts)
+//                `meadow` the displacement field's sprites and the meadow's blades
+//                (src/world/vegetation/Displacement.ts, src/world/Grass.ts)
+//                `plants` the plants that bend in the wind: the bamboo's culms and leaves (its
+//                instanced draws' materials) and the yunpeng's whole and fading draws
+//                (src/world/BambooMaterials.ts, src/world/Yunpeng.ts)
+//                `local-lights` the local lights' clusters kernel and the lit materials that
+//                bind the most (src/lighting/LocalLights.ts)
+//                `haze` the volumetric haze's light kernel and the sky dome's haze
+//                (src/weather/VolumetricHaze.ts)
+//                `night` the moon on the dome, the flare and its visibility, and the
+//                composite's rods' colour (src/sky/NightSky.ts, src/post/LightShafts.ts,
+//                src/post/Purkinje.ts)
+//                `terrain` the island's ground, the stones and the sea floor
+//                (src/materials/TerrainMaterial.ts)
+//                `post` the post chain's own passes: the exposure's meter, the bloom's levels
+//                and the local tone's grid and slicing (src/post/Metering.ts, Exposure.ts,
+//                PhysicalBloom.ts, LocalTone.ts)
+//                `clouds` the clouds' panorama, shadow and view kernels (src/sky/Clouds.ts)
+//                `atmosphere` the atmosphere's bakes and slices, the earth shadow's mean and the
+//                sky's radiance (src/sky/Atmosphere.ts)
+//                `sky` the materials that read the clear sky: the environment's panorama bake,
+//                the cloudless sky's irradiance and the dome, fogged, in the scene pass's MRT
+//                (src/sky/Sky.ts)
 //   --out        the output folder (default artifacts/wgsl/<entry name>/); the tool's own files in
 //                it (*.wgsl, bindings.txt, report.json) are replaced, nothing else is touched
 //   --features   the device features three sees (default none: WebGPU core). The page's device
@@ -27,12 +54,15 @@
 // warm-up's order). A shader is:
 //   - a ComputeNode (`Fn( ... )().compute( ... )`): written as <name>.wgsl;
 //   - a NodeMaterial: drawn as a full-screen pass (a QuadMesh, as the frame graph's passes draw);
-//   - `{ material, object, scene, camera }` (object, scene and camera optional): a draw of
+//   - `{ material, object, scene, camera, mrt }` (all but material optional): a draw of
 //     `object` (default a QuadMesh) with the scene's lights, `scene.environmentNode` and
 //     `scene.fogNode`; written as <name>.vert.wgsl and <name>.frag.wgsl.
 // Draws render into one rgba16float render target (not the canvas, so no output transform) with no
-// MRT, shadow pass or clipping planes: a material the page draws into the scene pass's MRT builds
-// with other outputs there.
+// shadow pass or clipping planes, and with no MRT unless the draw gives one (`mrt`, the pass's
+// MRTNode, such as Motion.ts `sceneMRT`): then into one rgba16float texture per output, named as
+// its outputs, with the material's own `mrtNode` merged over it as the page's passes merge it. A
+// material whose `mrtNode` names outputs the target lacks writes none of them without it, and the
+// code that feeds them (and the textures it reads) is left out.
 //
 // What it guarantees: each file is the WGSL three generates for the node graph the entry built, on
 // a device with those features: the text the page creates its module from when the entry builds
@@ -148,7 +178,7 @@ function buildCompute( renderer, node ) {
 
 }
 
-function buildDraw( renderer, { material, object = null, scene = null, camera = null } ) {
+function buildDraw( renderer, { material, object = null, scene = null, camera = null, mrt = null } ) {
 
 	object ??= new THREE.QuadMesh( material );
 	camera ??= object.isQuadMesh ? object.camera : new THREE.PerspectiveCamera();
@@ -169,7 +199,29 @@ function buildDraw( renderer, { material, object = null, scene = null, camera = 
 	builder.environmentNode = scene.environmentNode ?? null;
 	builder.fogNode = scene.fogNode ?? null;
 	builder.clippingContext = null;
-	builder.build();
+	if ( ! mrt ) {
+
+		builder.build();
+		return { builder, stages: { vertex: builder.vertexShader, fragment: builder.fragmentShader } };
+
+	}
+	// into a target of one rgba16float texture per output, named as the MRT's outputs
+	const target = renderer.getRenderTarget();
+	const names = Object.keys( mrt.outputNodes );
+	const outputs = new THREE.RenderTarget( 1, 1, { type: THREE.HalfFloatType, depthBuffer: false, count: names.length } );
+	names.forEach( ( name, i ) => outputs.textures[ i ].name = name );
+	renderer.setRenderTarget( outputs );
+	renderer.setMRT( mrt );
+	try {
+
+		builder.build();
+
+	} finally {
+
+		renderer.setMRT( null );
+		renderer.setRenderTarget( target );
+
+	}
 	return { builder, stages: { vertex: builder.vertexShader, fragment: builder.fragmentShader } };
 
 }

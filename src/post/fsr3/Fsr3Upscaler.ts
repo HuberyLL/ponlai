@@ -14,6 +14,7 @@ import { createPassKernels, type Fsr3PassKernels } from './Passes.ts';
 import * as H from './Host.ts';
 import * as R from './Resources.ts';
 import { fsr3MipBiasScale } from './MipBias.ts';
+import { preExposure } from '../PreExposure.ts';
 import type { N } from './Core.ts';
 
 // The page's FSR 3.1 upscaler (Antialiasing.ts: aa=fsr3), on the TSL port of AMD's FidelityFX FSR
@@ -24,8 +25,15 @@ import type { N } from './Core.ts';
 // output at the canvas's size (Pipeline.ts).
 //
 // Inputs, as FSR takes them:
-// - colour: `hdr`, with the HDR flag; exposure: the factor the grade's tone curve applies to it
-//   (Pipeline's `curveExposure`, so FSR's luma heuristics see what the curve sees), pre-exposure 1;
+// - colour: `hdr`, with the HDR flag; exposure: the factor the display chain applies to it,
+//   2^( EV - P ), EV loaded from the exposure state's texel the meter writes (Pipeline's
+//   `exposureState`, declared as a read of the passes; so FSR's luma heuristics see what the grade
+//   sees) over the pre-exposure 2^P hdr carries (PreExposure.ts), which is FSR's pre-exposure: FSR
+//   3.1 multiplies its input by the exposure and its history by the ratio of this frame's
+//   pre-exposure to the last (`deltaPreExposure`), so the history follows a new P exactly. The
+//   reactive generator compares the scene's colour with the opaque image in scene units (both
+//   divided by 2^P), as it did before the pre-exposure. While the rest's sequence runs after a new
+//   P, the held copy (stored at the old P) is not shown: the sequence's own frames are;
 // - depth: the nearest surface's view z (`surfaceDepth`, the sea included) as reversed infinite
 //   device depth `near / -z` (0 for the sky, z <= -9e4), flags DEPTH_INVERTED | DEPTH_INFINITE, the
 //   camera's near and far and its live vertical field of view (from the projection);
@@ -86,12 +94,15 @@ export interface Fsr3GraphInputs {
 	hdr: ResourceHandle; surfaceDepth: ResourceHandle; velocity: ResourceHandle; veilReactive: ResourceHandle | null;
 	// the scene colour before the composite and the opaque copy (the generator's)
 	sceneColor: ResourceHandle; opaqueColor: ResourceHandle;
+	// the exposure state the exposure node loads (Pipeline's, Metering.ts), read by every kernel pass
+	exposure?: ResourceHandle;
 }
 
 export interface Fsr3Options {
 	settings: TemporalSettings;
-	// the grade's exposure of `hdr` (Pipeline's curveExposure)
-	exposure: THREE.Node<'float'>;
+	// the display chain's exposure of `hdr` (2^EV from Pipeline's exposure state): builds a new
+	// texture read at each call, as every accessor must (Bindings.ts)
+	exposure: () => THREE.Node<'float'>;
 	// FSR's debug view (DRAW_DEBUG_VIEW over its output: `?fsrDebug`, debug builds)
 	debugView: boolean;
 }
@@ -172,6 +183,9 @@ export class Fsr3Upscaler {
 	// the texture nodes the post chain reads FSR's output through (their value: the output or the held copy)
 	private readonly sources: THREE.TextureNode[] = [];
 	private showHeld = false;
+	// the pre-exposure (PreExposure.ts `stops`) FSR's output was last written at, and the held copy's
+	private outputStops = 0;
+	private heldStops = 0;
 	private resetReason: string | null = 'start';
 	private readonly key: number[] = [];
 	private settingsKey = '';
@@ -233,7 +247,7 @@ export class Fsr3Upscaler {
 
 			},
 			LoadInputMotionVector: ( p ) => load( tVelocity, p ).xy,
-			LoadInputExposure: () => options.exposure,
+			LoadInputExposure: options.exposure,
 			LoadReactiveMask: reactive,
 			GetReactiveMaskResourceDimensions: () => ivec2( this.bindings.RenderSize() ),
 		};
@@ -246,7 +260,8 @@ export class Fsr3Upscaler {
 		if ( autoReactive ) {
 
 			const tScene = texture( g.texture( inputs.sceneColor ) ), tOpaque = texture( g.texture( inputs.opaqueColor ) );
-			const bindings = new Fsr3Bindings( { ...description(), inputs: { ...fsrInputs, LoadInputColor: ( p ) => load( tScene, p ).rgb, LoadOpaqueOnly: ( p ) => load( tOpaque, p ).rgb } } );
+			// (in scene units: its threshold and tone map are absolute, PreExposure.ts)
+			const bindings = new Fsr3Bindings( { ...description(), inputs: { ...fsrInputs, LoadInputColor: ( p ) => load( tScene, p ).rgb.mul( preExposure.inverse ), LoadOpaqueOnly: ( p ) => load( tOpaque, p ).rgb.mul( preExposure.inverse ) } } );
 			( this as unknown as { generator: Fsr3Upscaler[ 'generator' ] } ).generator = { bindings, kernel: createPassKernels( bindings, this.maxSize, this.maxSize ).pass( H.FFX_FSR3UPSCALER_PASS_GENERATE_REACTIVE ) };
 
 		}
@@ -317,6 +332,7 @@ export class Fsr3Upscaler {
 
 			g.addPass( name, 'compute', ( b ) => {
 
+				if ( inputs.exposure ) b.read( inputs.exposure );
 				reads( b );
 				return {
 					label: 'FSR 3', size, neverCull: true, when, whenLabel: 'fsr3 dispatching', compute: [ k.pass( passId ), ...extra ],
@@ -473,7 +489,9 @@ export class Fsr3Upscaler {
 	 * bindings, the post chain's source and the mip bias. */
 	prepareFrame( camera: THREE.PerspectiveCamera, renderWidth: number, renderHeight: number, outputWidth: number, outputHeight: number ): void {
 
-		const value = this.showHeld ? this.held : this.output;
+		// (the held copy is taken at the rest's first frame from the last output, at that output's P)
+		if ( this.dispatching && this.rest.index === 0 ) this.heldStops = this.outputStops;
+		const value = this.showHeld && this.heldStops === preExposure.stops ? this.held : this.output;
 		for ( const node of this.sources ) node.value = value;
 		fsr3MipBiasScale.value = debugFlags.fsrMipBias === false ? 1 : renderWidth / Math.max( outputWidth, 1 );
 		if ( ! this.dispatching ) return;
@@ -499,6 +517,7 @@ export class Fsr3Upscaler {
 		desc.cameraFar = camera.far;
 		desc.cameraFovAngleVertical = fovOf( jitter.uniforms.unjitteredProjection.value );
 		const plan = this.plan = this.context.dispatch( desc );
+		this.outputStops = preExposure.stops;
 		this.bindings.setFrame( plan );
 		const generator = this.generator;
 		if ( generator ) {
@@ -530,7 +549,7 @@ export class Fsr3Upscaler {
 			renderSize: { ...render }, upscaleSize: { ...upscale },
 			enableSharpening: true, sharpness: this.settings.fsr3.sharpness,
 			frameTimeDelta: step.step > 0 ? step.step * 1000 : step.interval,
-			preExposure: 1, reset: false, cameraNear: 1, cameraFar: 60000, cameraFovAngleVertical: Math.PI / 4,
+			preExposure: preExposure.scale.value, reset: false, cameraNear: 1, cameraFar: 60000, cameraFovAngleVertical: Math.PI / 4,
 			viewSpaceToMetersFactor: 1,
 			flags: this.options.debugView ? H.FFX_FSR3UPSCALER_DISPATCH_DRAW_DEBUG_VIEW : 0,
 		};

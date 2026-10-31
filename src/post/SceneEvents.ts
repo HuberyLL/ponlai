@@ -16,8 +16,10 @@ import { restEpoch } from './TemporalRest.ts';
 // Generic sites only (main.ts's setters and handlers, the game's context hook), never the camera
 // controls' internals: a teleport of the camera that no event covers (a direct assignment from the
 // console, a control's own jump) is caught by Motion.ts's camera-delta detector (more than 8 m,
-// 30 degrees or 2 % of field of view in one rendered frame). Under MSAA only the epoch bumps: the
-// page's settled signal (Settled.ts) reads it in every mode; nothing else listens.
+// 30 degrees or 2 % of field of view in one rendered frame). Under MSAA the epoch bumps, which the
+// page's settled signal (Settled.ts) reads in every mode, and the cuts reach `onSceneCut`'s
+// listeners, which hear them in every mode (the exposure's adaptation: Pipeline.ts); the
+// temporal histories listen through Motion.ts `onTaaCut`.
 //
 // The diagnostics' `taa.lastEvent` (TemporalAA.ts) holds the last event: its reason, whether it cut,
 // and the rendered frame it followed (`frame`: the motion's frame count when it was raised; it
@@ -83,13 +85,23 @@ export const sceneEvents = {
 	count: 0,
 };
 
+const cutListeners: ( ( reason: SceneEventReason ) => void )[] = [];
+
+/** Called with the reason whenever an event that cuts is raised, in every anti-aliasing mode. */
+export function onSceneCut( listener: ( reason: SceneEventReason ) => void ): void {
+
+	cutListeners.push( listener );
+
+}
+
 /** A change of the scene the temporal modes must know of: bumps the rest's epoch, and cuts the
  * history where the table says so. */
 export function sceneEvent( reason: SceneEventReason ): void {
 
 	restEpoch.bump( reason, ! SAME_SCENE.has( reason ) );
-	if ( ! TEMPORAL ) return;
 	const cut = SCENE_EVENTS[ reason ];
+	if ( cut ) for ( const listener of cutListeners ) listener( reason );
+	if ( ! TEMPORAL ) return;
 	if ( cut ) taaCut( reason );
 	sceneEvents.last = { reason, cut, frame: motionState.frame };
 	sceneEvents.count ++;

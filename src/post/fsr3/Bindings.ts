@@ -56,8 +56,9 @@ import * as R from './Resources.ts';
 //   variable where it is first built and reads that variable at every later use, and the kernels
 //   first call some accessors inside a branch (`Exposure()` inside the accumulate kernel's
 //   reprojection and LumaInstability's `If`), so a kept node would read 0 on every pixel that
-//   skips the branch. A float uniform is emitted as its uniform at each use (the page's exposure,
-//   `Pipeline.ts`'s curveExposure: seen in the generated accumulate kernel).
+//   skips the branch. A float uniform is emitted as its uniform at each use. The page's exposure
+//   is a texture load (the exposure state's texel, `Pipeline.ts`), so its accessor builds the load
+//   anew at each call too.
 // - `setFrame( plan )` each frame before the dispatches: copies the plan's constants into the
 //   uniforms and points every ping-pong and aliased binding at this frame's side (a new bind
 //   group, no new pipeline).
