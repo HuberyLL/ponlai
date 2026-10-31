@@ -2497,6 +2497,8 @@ if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { lan
 		}
 
 	} ),
+	// the scene's linear radiance over screen boxes (debug/Radiance.ts), loaded on first call
+	radiance: async ( options?: import( './debug/Radiance.ts' ).RadianceOptions ) => ( await import( './debug/Radiance.ts' ) ).readRadiance( renderer, pipeline, options, camera ),
 	// the meadow map (world/SwardField.ts: RGBA bytes, G the sward's cover) and the extent it spans
 	// round the origin, for tools that pick a view over the meadow
 	meadowMap: async () => {
@@ -2516,6 +2518,8 @@ if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { lan
 	},
 	// where the yunpeng's clumps stand on the current land ( x, z, size per clump) and their lights
 	yunpengSites: () => ( { clumps: yunpeng.sites().flatMap( ( c ) => [ c.x, c.z, c.size ] ), lights: yunpeng.lights().map( ( l ) => ( { position: l.position.toArray(), intensity: l.intensity.toArray(), range: l.range } ) ) } ),
+	// the ambient light's irradiance on open level ground, from the probes (debug/AmbientProbe.ts)
+	ambientProbe: async ( options?: Record<string, number> ) => ( await import( './debug/AmbientProbe.ts' ) ).ambientProbe( { renderer, heightAt: ( x, z ) => controls.ground.heightAt( x, z ), land: landBox }, options ),
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
 	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, weather, sky, fft, establishScene, setTime, data: () => shownData, seaDetail, land: () => landBox }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes
