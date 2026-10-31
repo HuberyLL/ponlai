@@ -13,7 +13,7 @@
 // with more than a quarter of its slices contended is marked contended (see annotateLoads;
 // `--load-timeline off` turns it off).
 //
-//   node tools/profile-frame.mjs [url] [--scenes a,b | --scene a] [--w 2560 --h 1440 --scale 1]
+//   node tools/profile-frame.mjs [url] [--scenes a,b | --scene a] [--w 1920 --h 1080 --scale 2]
 //        [--quality high] [--timestamps on|off|both|auto] [--warmup s] [--seconds 7] [--orbit 3]
 //        [--eval "js"] [--repeat n] [--shots] [--detail] [--raw] [--out dir] [--label name]
 //        [--q "extra=url&options"] [--hooks off] [--world-cache off] [--idle-threshold 15] [--idle-wait s] [--contended]
@@ -30,11 +30,11 @@
 //   node tools/profile-frame.mjs --list
 //
 // The reference is a production build (`npm run build && npm run preview`, port 5191, the
-// default url); the dev server works for quick checks. The default viewport is a generic 2K
-// display (2560x1440 CSS at DPR 1). High is timed at its standard by default (src/Quality.ts: 2K
-// output rendered natively with MSAA): its render scale pinned at the dynamic rule's baseline for
-// the viewport (`dpr=1` added to the query at the default; `dpr=1.3333333333333333`, 1440p, for
-// `--w 1920 --h 1080 --scale 2`, a 4K display; src/post/RenderScale.ts `dynamicRange`), so
+// default url); the dev server works for quick checks. The default viewport is a generic 4K
+// display (1920x1080 CSS at DPR 2). High is timed at its standard by default (src/Quality.ts: 4K
+// output at 1440p's pixel count with MSAA): its render scale pinned at the dynamic rule's baseline
+// for the viewport (`dpr=1.3333333333333333` added to the query at the default; `dpr=1` for
+// `--w 2560 --h 1440 --scale 1`, a 2K display; src/post/RenderScale.ts `dynamicRange`), so
 // profiles and --compare measure the level every trade-off is judged at;
 // `--unpinned` leaves the tier's own rule (a dynamic one steering) (to see where it
 // settles, with --scale-settle and --scale-log). --accept, --display, --scales and a dpr of the
@@ -303,7 +303,7 @@ if ( MOTION === 'user' && ! DISPLAY ) throw new Error( '--motion user drives a h
 const MODE = opt( 'mode', 'page' );
 if ( ! [ 'page', 'reload' ].includes( MODE ) ) throw new Error( '--mode page | reload' );
 const TOGGLE = opt( 'toggle', '' );
-const W = Number( opt( 'w', 2560 ) ), H = Number( opt( 'h', 1440 ) ), SCALE = Number( opt( 'scale', 1 ) );
+const W = Number( opt( 'w', 1920 ) ), H = Number( opt( 'h', 1080 ) ), SCALE = Number( opt( 'scale', 2 ) );
 const QUALITY = opt( 'quality', 'high' );
 // warm-up after a load (reload mode) or a scene switch (page modes, which also wait for compiles)
 const WARMUP = Number( opt( 'warmup', MODE === 'reload' ? 3 : 1.5 ) ), SECONDS = Number( opt( 'seconds', DISPLAY ? 20 : 7 ) ), ORBIT = Number( opt( 'orbit', 3 ) );
@@ -403,9 +403,9 @@ if ( DISPLAY ) requireDisplayAllowed( 'profile-frame --display' );
 if ( ( ACCEPT || SCALES.length ) && ( COMPARE || TOGGLE ) ) throw new Error( '--accept and --scales are for profile runs, not --compare or --toggle' );
 // the page reads the first of a repeated option, so a dpr in the url or --q would win over --scales
 if ( SCALES.length && [ new URL( URL_A ).search.slice( 1 ), EXTRA_Q ].some( ( q ) => new URLSearchParams( q ).has( 'dpr' ) ) ) throw new Error( '--scales sets the dpr option itself: remove dpr from the url and --q' );
-// High's standard pin: a profile or --compare of high times at its standard (src/Quality.ts: 2K's
-// pixel count, the baseline of its dynamic rule for the viewport: 1 at the default 2560x1440@1, 4/3
-// at 1920x1080@2), its render scale pinned by the page's `dpr`, so every run measures the level
+// High's standard pin: a profile or --compare of high times at its standard (src/Quality.ts: 1440p's
+// pixel count, the baseline of its dynamic rule for the viewport: 4/3 at the default 1920x1080@2, 1
+// at 2560x1440@1), its render scale pinned by the page's `dpr`, so every run measures the level
 // trade-offs are judged at.
 // `--unpinned` leaves the dynamic resolution steering (where it settles); --accept (the frame rate
 // a player sees), --display, --scales and a dpr in the url or --q are never pinned.

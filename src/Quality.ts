@@ -3,14 +3,15 @@
 // control reloads the page with it.
 //
 // High is the reference image and the only active tier: every trade-off of image against time is
-// judged on it, at its standard: 2K output (2560x1440 at a device pixel ratio of 1) rendered
-// natively, with no upscale, with MSAA 4x (`aa`) at 60 fps, with a GPU budget of about 14 ms a
-// frame in the normal scenes (island views, the meadow close up), leaving about 15 % of the 16.7 ms
-// frame for pacing and the OS. 2K's pixel count is the guaranteed level: a load starts there and a
-// paused page renders there; the dynamic render scale (`render`, post/DynamicResolution.ts) climbs
-// to the display's own ratio with headroom and drops to about 1080p's pixel count when busy. A 4K
-// display (1920x1080 CSS at 2x) renders the same pixels as 1440p (scale 4/3, upscaled by FSR 1),
-// climbs to native 4K and drops to 1080p. The meadow is built for the island view's
+// judged on it, at its standard: 4K output (1920x1080 at a device pixel ratio of 2) at 60 fps with
+// MSAA 4x (`aa`), with a GPU budget of about 14 ms a frame in the normal scenes (island views, the
+// meadow close up), leaving about 15 % of the 16.7 ms frame for pacing and the OS. 1440p's pixel
+// count, upscaled by FSR 1 (scale 4/3), is the guaranteed level: a load starts there and a paused
+// page renders there; the dynamic render scale (`render`, post/DynamicResolution.ts) climbs toward
+// native 4K with headroom and drops to about 1080p's pixel count when busy. Native 4K takes about
+// half as much GPU time again as the baseline, about 45 fps in the normal scenes, so 60 fps there
+// is the scale's reach and not the standard. A 2K display (2560x1440 at 1x) renders the same pixels
+// natively and drops to about 1080p's. The meadow is built for the island view's
 // distance (main.ts starts it at 45 m): its blades stay a few pixels wide there (`grass`), so MSAA
 // resolves their edges within a frame, with no history to ghost or soften. Measured at 4K output:
 // at native 4K, MSAA held the frame's flicker and sharpness within about 5 % of the many-sample
@@ -214,7 +215,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 	high: {
 		aa: 'msaa',
 		taa: { ...TAA },
-		// 2K's pixels at the baseline (the standard renders natively, a 4K display at 1440p) and 1080p's
+		// 1440p's pixels at the baseline (the standard upscales them, a 2K display is native) and 1080p's
 		// at the floor; a display of 1080p or fewer pixels drops at most a quarter per axis
 		render: { dynamic: { max: 2, baseline: 2560 * 1440, floor: 1920 * 1080, floorShare: 0.75, step: 0.05 } },
 		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },

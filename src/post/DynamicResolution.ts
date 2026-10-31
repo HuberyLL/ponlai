@@ -146,10 +146,10 @@ import type { DynamicRange } from './RenderScale.ts';
 //   times the render per axis (`maxUpscale`): below that a moving image has too few samples per
 //   output pixel. The quality floor is then the floor, and nothing goes below it. MSAA (FSR 1)
 //   keeps the tier's floor, the quality floor and the steps below it.
-// High's baseline (Quality.ts, RenderScale.ts `dynamicRange`): 2K's pixel count, the standard's
-// 2K output (2560x1440 at a 1x display) rendered natively with MSAA, the level 60 fps is guaranteed
-// at, with about 14 ms of GPU time a frame in the normal scenes; on a 4K display (1920x1080 CSS at
-// 2x) the same pixels are 1440p, scale 4/3 (FSR 1's Quality 1.5x upscale). A load starts there; the
+// High's baseline (Quality.ts, RenderScale.ts `dynamicRange`): 1440p's pixel count with MSAA, the
+// level 60 fps is guaranteed at, with about 14 ms of GPU time a frame in the normal scenes: scale
+// 4/3 on the standard's 4K output (1920x1080 CSS at 2x, FSR 1's Quality 1.5x upscale), native on a
+// 2K display (2560x1440 at 1x). A load starts there; the
 // page renders there whenever the scene is paused, so paused frames and captures render at the
 // baseline whatever scale the running page had reached (pinned, `?dpr` or the GUI's full
 // resolution, at that ratio instead). The range runs from the display's ratio (up to the canvas's

@@ -751,7 +751,7 @@ when `--steps` names them. `verify-weather-effects.mjs` and the rain parts of `v
 are parked with them: not part of any default check.
 
 Parked quality tiers: medium and low (`src/Quality.ts` `PARKED_QUALITY`) are out of the default
-choice and checks; high at 2K output (2560x1440 CSS pixels at DPR 1, profile-frame's default
+choice and checks; high at 4K output (1920x1080 CSS pixels at DPR 2, profile-frame's default
 viewport) is the only active tier. A page without `quality` loads high (the GPU timing that picked
 a tier, `src/QualityDetect.ts`, is parked with them) and the GUI lists high alone. Every tool's
 default is high: profile-frame's `--quality` (and so its scene matrix and `--accept`),
@@ -1114,7 +1114,7 @@ one tells the user beforehand, as information rather than a question.
 ## Frame profiler: `tools/profile-frame.mjs`
 
 ```
-node tools/profile-frame.mjs [url] [--scenes a,b] [--w 2560 --h 1440 --scale 1] [--quality high]
+node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] [--quality high]
   [--timestamps on|off|both|auto] [--eval "js"] [--repeat n] [--shots] [--vsync] [--accept [--strict]]
   [--idle-wait s] [--contended] [--load-timeline off] [--hang s] [--scale-log]
   [--scales 1,0.75] [--scale-settle s] [--display [--motion user|orbit|none] [--window WxH]]
@@ -1302,7 +1302,7 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 2560 --h 1440 --scale 1] 
 ### Measuring frame time
 
 - Measure on a production build, under the GPU lock: the scene matrix at the default generic
-  display (2560x1440 CSS at DPR 1, quality high), before and after a change (`--compare` for an
+  display (1920x1080 CSS at DPR 2, quality high), before and after a change (`--compare` for an
   A/B, or `--toggle` on a debug flag while the change is in development).
 - Judge an A/B by its GPU time per pass (timestamps on); take frame rates from a run without GPU
   timestamps (`--timestamps off` or `both`): Chrome ran frames up to a quarter faster with them
@@ -1313,11 +1313,11 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 2560 --h 1440 --scale 1] 
   `island-fair-noon` and `meadow-close`); the profiler waits for each frame's own read-back, with
   no time limit, and `missingPasses` counts only passes whose query was never written or whose
   read-back failed. A run with `timedFrames` 0 is a bug, not a busy GPU.
-- High is timed at its standard by default: 2K output (2560x1440 CSS at DPR 1) rendered natively
-  (no upscale) with MSAA 4x, the level every trade-off is judged at, with about 14 ms of GPU time a
-  frame in the normal scenes (island views, `meadow-close`) as the budget. A profile, `--compare`
-  or `--toggle` of high pins the baseline of its dynamic rule for the viewport (`dpr=1` at the
-  default; `dpr=1.3333333333333333`, 1440p, at `--w 1920 --h 1080 --scale 2`, a 4K display:
+- High is timed at its standard by default: 4K output (1920x1080 CSS at DPR 2) at 1440p's pixel
+  count, upscaled by FSR 1, with MSAA 4x, the level every trade-off is judged at, with about 14 ms
+  of GPU time a frame in the normal scenes (island views, `meadow-close`) as the budget. A profile,
+  `--compare` or `--toggle` of high pins the baseline of its dynamic rule for the viewport
+  (`dpr=1.3333333333333333` at the default; `dpr=1` at `--w 2560 --h 1440 --scale 1`, a 2K display:
   `src/post/RenderScale.ts` `dynamicRange`); `--unpinned` leaves the
   tier's own rule (a dynamic one steering, with `--scale-settle 5 --scale-log` to see where it
   settles). `--accept`, `--display`, `--scales` and a `dpr` of the url's or `--q`'s own are never
