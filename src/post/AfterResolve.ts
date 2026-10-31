@@ -3,6 +3,7 @@ import {
 	clamp, floor, float, int, ivec2, max, mrt, output, screenCoordinate, screenSize, texture, textureLoad, textureSize, vec2,
 } from 'three/tsl';
 import { jitter } from './Jitter.ts';
+import { preExposedRGBA } from './PreExposure.ts';
 
 // Rain after the resolve (Antialiasing.ts `AFTER_RESOLVE`: aa=taa|taau). The rain's streaks, its
 // splashes, its veil and the storm's spray are thin, fast or brief, and translucent: drawn into the jittered frame they leave
@@ -43,7 +44,7 @@ import { jitter } from './Jitter.ts';
 //   sizes and, below the canvas, lost its faint streaks against the ground truth (ghosting 1.5 x
 //   MSAA's, from 0.2 x).
 // - Grade: while it rains or the overlay holds something, the canvas pass adds the change the rain
-//   makes to the graded colour after RCAS and before the grain (TemporalAA.ts `layer`). At the
+//   makes to the graded colour after RCAS and before the dither (TemporalAA.ts `layer`). At the
 //   render texel nearest the point the pixel shows, the display pass's grade input (the sharp image,
 //   taken once a texel by a pass at the render's size, `rainInput`: per canvas pixel it took a fifth
 //   of the layer's time) has the veil, then the overlay, laid over it in scene radiance, as they were
@@ -83,8 +84,9 @@ type IV2 = THREE.Node<'ivec2'>;
 /** The overlay's resource name (the MRT finds its output by it). */
 export const RAIN_OVERLAY = 'rainOverlay';
 
-/** The after pass's MRT: the overlay, cleared to zero, blended as each material says. */
-export const afterMRT: THREE.MRTNode = mrt( { [ RAIN_OVERLAY ]: output } )
+/** The after pass's MRT: the overlay, cleared to zero, blended as each material says, pre-exposed
+ * as hdr is (PreExposure.ts), whose units the rain layer adds it in. */
+export const afterMRT: THREE.MRTNode = mrt( { [ RAIN_OVERLAY ]: preExposedRGBA( output ) } )
 	.setBlendMode( RAIN_OVERLAY, new THREE.BlendMode( THREE.MaterialBlending ) )
 	.setClearColor( RAIN_OVERLAY, new THREE.Color( 0, 0, 0 ), 0 );
 

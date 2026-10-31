@@ -7,12 +7,14 @@ import { Matrix3, Vector3 } from 'three/webgpu';
 // The matrices are Stephen Hill's fit of ACES's RRT and ODT (three's acesFilmicToneMapping): it
 // turns linear Rec.709 into AP1 (ACEScg) with the RRT's saturation, maps each channel through one
 // curve (Pipeline.ts toneCurve: at first Hill's, now an adjustable one fitted to it) and turns the
-// result back through the ODT's saturation. Per-channel tone mapping in the rendering
+// result back through the ODT's saturation. The two saturations (about 0.89 together) are left at 1
+// now (CURVE_SATURATION): the curve no longer greys every colour alike, and the grade's hue bands
+// (GradeLut.ts BASE_GRADE) set each hue's saturation instead. Per-channel tone mapping in the rendering
 // space clips saturated colours toward cyan, magenta and yellow; AP1 rolls them off toward white,
 // but bends reds and oranges toward yellow (a low sun's glints and sky). After Patry, "Real-Time
 // Samurai Cinema" (SIGGRAPH 2021), the curve's space is AP1 with its red primary moved from x 0.713
-// to 0.75 (TONE_RED_X). Built with AP1's own primaries, the matrices are Hill's constants to their
-// five decimals (`toneMatrices( { redX: AP1.r[ 0 ] } )`).
+// to 0.75 (TONE_RED_X). Built with AP1's own primaries and Hill's saturations, the matrices are
+// Hill's constants to their five decimals (`toneMatrices( { redX: AP1.r[ 0 ], ...HILL_SATURATION } )`).
 //
 // The white balance, after Patry too: the colour that white is to become (in linear Rec.709, as an
 // artist picks it: bluer white for a bluer frame), reached by a von Kries adaptation in Bradford's
@@ -29,7 +31,9 @@ export const AP1: Primaries = { r: [ 0.713, 0.293 ], g: [ 0.165, 0.830 ], b: [ 0
 // turning yellow without changing how yellows (a golden meadow) roll off.
 export const TONE_RED_X = 0.75;
 // Hill's fit: the RRT's and the ODT's saturation, in the curve's space.
-const RRT_SAT = 0.96, ODT_SAT = 0.93;
+export const HILL_SATURATION = { rrt: 0.96, odt: 0.93 };
+// The curve's own: none.
+const CURVE_SATURATION = { rrt: 1, odt: 1 };
 
 // Bradford's cone response (Lam 1985), the space the white balance adapts in.
 const BRADFORD = new Matrix3().set(
@@ -78,15 +82,15 @@ const XYZ_TO_REC709 = REC709_TO_XYZ.clone().invert();
 /** The tone curve's input matrix (linear Rec.709 to the curve's space, the RRT's saturation in it)
  * and output matrix (the ODT's saturation, back to linear Rec.709), for a curve space of AP1 with
  * its red primary at `redX`. */
-export function toneMatrices( { redX = TONE_RED_X } = {} ): { input: Matrix3; output: Matrix3 } {
+export function toneMatrices( { redX = TONE_RED_X, rrt = CURVE_SATURATION.rrt, odt = CURVE_SATURATION.odt } = {} ): { input: Matrix3; output: Matrix3 } {
 
 	const space: Primaries = { ...AP1, r: [ redX, AP1.r[ 1 ] ] };
 	const toXYZ = rgbToXYZ( space ), fromXYZ = toXYZ.clone().invert();
 	const toD60 = adaptation( xyz( REC709.white ), xyz( space.white ) );
 	const toD65 = toD60.clone().invert();
 	return {
-		input: saturation( RRT_SAT, toXYZ ).multiply( fromXYZ ).multiply( toD60 ).multiply( REC709_TO_XYZ ),
-		output: XYZ_TO_REC709.clone().multiply( toD65 ).multiply( toXYZ ).multiply( saturation( ODT_SAT, toXYZ ) ),
+		input: saturation( rrt, toXYZ ).multiply( fromXYZ ).multiply( toD60 ).multiply( REC709_TO_XYZ ),
+		output: XYZ_TO_REC709.clone().multiply( toD65 ).multiply( toXYZ ).multiply( saturation( odt, toXYZ ) ),
 	};
 
 }

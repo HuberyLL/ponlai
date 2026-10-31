@@ -57,6 +57,13 @@ export interface IslandChunk {
 	refracted: SubmergedSubset;
 }
 
+// The ambient light's probes merged into one lattice (AmbientProbes.ts `mergeProbes`): the box of
+// the chunks that baked probes, nx x ny x nz probes of PROBE_STRIDE floats in rows ( z, then y,
+// then x ), the probe ( i, j, k ) at ( x0, y0, z0 ) + ( i, j, k ) spacing; then ny more, the open
+// sea's probe at each level, for every point outside the box (and the gaps inside it, which hold
+// copies of it). Invalid probes (deep in a solid) hold their neighbours' mean, filled by the merge.
+export interface AmbientLattice { x0: number; y0: number; z0: number; spacing: number; nx: number; ny: number; nz: number; probes: Float32Array }
+
 // One land version's world, merged from its chunks (ChunkMerge.ts).
 export interface WorldData {
 	// the grown land (LandLattice.toBytes)
@@ -88,10 +95,7 @@ export interface WorldData {
 	seabedBeds: SeabedBedField;
 	// The islander's walking loop (WalkLoop.ts): x, z per waypoint.
 	walk: Float64Array;
-	// Where the yunpeng's clumps stand (Yunpeng.ts): x, z, depth (m) per clump.
-	yunpeng: Float64Array;
-	// Where the first bamboo stands (Bamboo.ts): x, z, depth (m) per stand.
-	grove: Float64Array;
+	ambient: AmbientLattice;
 	timings: Record<string, number>;
 }
 
@@ -101,4 +105,7 @@ export interface WorldOptions {
 	step?: number;
 	// Disable only the cross-object contact bake for CPU comparison; geometry stays identical.
 	contactOcclusion?: boolean;
+	// the bamboo's canopy in the sky visibility the chunks bake (Chunks.ts ChunkOptions); by default
+	// the page's (lighting/AmbientSample.ts CANOPY_SHADE)
+	canopyShade?: boolean;
 }

@@ -37,7 +37,7 @@ export const GROWTH = {
 	lowAmp: 12, lowFreq: 0.008,
 	dome: 0.35, // m per m from the centre: keeps a long run of pieces from carrying the land off one way
 	// a piece: the flood's priority is the relief less pull times the elliptic distance from the site
-	startArea: 400, pieceArea: 180, pieceSpread: [ 0.55, 1.5 ], // m^2, the piece's area times U( spread )
+	startArea: 1000, pieceArea: 180, pieceSpread: [ 0.55, 1.5 ], // m^2, the piece's area times U( spread )
 	pull: 1.2, // about the relief's slope: a piece follows its contours into headlands and bays, yet stays
 	// a lobe rather than a crescent round the coast (a crescent's length over its thickness is about
 	// twice the slope over the pull)
@@ -429,90 +429,6 @@ function middle( land: LandLattice ): { w: Window; sd: Field2D; x: number; z: nu
 	for ( let k = 0; k < sd.data.length; k ++ ) if ( sd.data[ k ] < sd.data[ mid ] ) mid = k;
 	const nx = w.i1 - w.i0;
 	return { w, sd, x: centre( w.i0 + mid % nx ), z: centre( w.j0 + Math.floor( mid / nx ) ), depth: - sd.data[ mid ] };
-
-}
-
-/** The first bamboo stands (Bamboo.ts): how many (one: a stand's crown spreads about 6 m, and two
- * filled half the starting island), and how far (m) each middle stands at least from the coast (the
- * stand on the turf) and from the others. */
-export const GROVE = { count: 1, inland: 3.5, apart: 6 } as const;
-
-/** Where the starting island's first bamboo stands: up to GROVE.count points of the step-0
- * piece alone (x, z, depth in m, one after another), the deepest first (ties in row order): the
- * first at the island's heart, the most sheltered ground with the deepest soil, where a running
- * bamboo spreads. A seed fixes them, and the land only grows, so later steps never move them. */
-export function startGrove( start: Piece ): number[] {
-
-	const { count, inland, apart } = GROVE;
-	const land = new LandLattice();
-	land.add( start );
-	const { w, sd } = middle( land );
-	const nx = w.i1 - w.i0;
-	const order: number[] = [];
-	for ( let k = 0; k < sd.data.length; k ++ ) if ( - sd.data[ k ] >= inland ) order.push( k );
-	order.sort( ( a, b ) => sd.data[ a ] - sd.data[ b ] || a - b );
-	const sites: number[] = [];
-	for ( const k of order ) {
-
-		if ( sites.length === count * 3 ) break;
-		const x = centre( w.i0 + k % nx ), z = centre( w.j0 + Math.floor( k / nx ) );
-		let free = true;
-		for ( let s = 0; s < sites.length && free; s += 3 ) free = Math.hypot( x - sites[ s ], z - sites[ s + 1 ] ) >= apart;
-		if ( free ) sites.push( x, z, - sd.data[ k ] );
-
-	}
-	return sites;
-
-}
-
-/** The yunpeng's clumps (Yunpeng.ts): one for every `per` m of the coast that faces the wind (its
- * outward normal within 60 degrees of it: `facing`, the cosine), how far in from the coast (m, the
- * least and the most: on the turf at the cliff's edge), how far apart (m), and where the prevailing
- * wind comes from (the unit vector toward it, Wind.ts's heading of 40 degrees, as Meadow.ts UPWIND). */
-export const YUNPENG = { per: 7, facing: 0.5, inland: [ 1.2, 2.6 ], apart: 4, upwind: [ Math.cos( 40 * Math.PI / 180 ), Math.sin( 40 * Math.PI / 180 ) ] } as const;
-
-/** Where the starting island's yunpeng stands: points of the step-0 piece alone (x, z, depth in m,
- * one after another) on its band of turf at the cliff's edge where the coast faces the wind, as many
- * as that stretch is long (YUNPENG.per, at least one), the most windward first (ties in row order):
- * where the sea wind is strongest and nothing else stands. A seed fixes them, and the land only
- * grows, so later steps never move them. */
-export function startYunpeng( start: Piece ): number[] {
-
-	const { per, facing, inland, apart, upwind } = YUNPENG;
-	const land = new LandLattice();
-	land.add( start );
-	const { w, sd, x: mx, z: mz } = middle( land );
-	const nx = w.i1 - w.i0;
-	const at = ( k: number ) => [ centre( w.i0 + k % nx ), centre( w.j0 + Math.floor( k / nx ) ) ];
-	// the band's cells whose coast faces the wind (the distance's gradient, outward), and the
-	// stretch of coast they stand for: the band's area over its width
-	const order: number[] = [];
-	for ( let k = nx; k < sd.data.length - nx; k ++ ) {
-
-		if ( - sd.data[ k ] < inland[ 0 ] || - sd.data[ k ] > inland[ 1 ] ) continue;
-		const gx = sd.data[ k + 1 ] - sd.data[ k - 1 ], gz = sd.data[ k + nx ] - sd.data[ k - nx ];
-		if ( gx * upwind[ 0 ] + gz * upwind[ 1 ] > facing * Math.hypot( gx, gz ) ) order.push( k );
-
-	}
-	const count = Math.max( 1, Math.round( order.length * CELL * CELL / ( inland[ 1 ] - inland[ 0 ] ) / per ) );
-	const windward = ( k: number ) => {
-
-		const [ x, z ] = at( k );
-		return ( x - mx ) * upwind[ 0 ] + ( z - mz ) * upwind[ 1 ];
-
-	};
-	order.sort( ( a, b ) => windward( b ) - windward( a ) || a - b );
-	const sites: number[] = [];
-	for ( const k of order ) {
-
-		if ( sites.length === count * 3 ) break;
-		const [ x, z ] = at( k );
-		let free = true;
-		for ( let s = 0; s < sites.length && free; s += 3 ) free = Math.hypot( x - sites[ s ], z - sites[ s + 1 ] ) >= apart;
-		if ( free ) sites.push( x, z, - sd.data[ k ] );
-
-	}
-	return sites;
 
 }
 

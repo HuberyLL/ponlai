@@ -1,92 +1,179 @@
 import * as THREE from 'three/webgpu';
-import { Fn, float, log2, exp2, max, mix, dot, vec3 } from 'three/tsl';
+import { Fn, If, abs, clamp, exp, exp2, float, log2, max, min, mix, select, vec3, vec4 } from 'three/tsl';
+import type { DayKeys } from './DayKeys.ts';
+import { tuneKeys } from '../debug/Tune.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
+type V4 = THREE.Node<'vec4'>;
 
-// The frame's exposure, metered from the light. The meter reads the illuminance, not the frame's
-// luminance, so the albedo stays out of it: a dark meadow or sea is not brightened toward mid grey
-// (after Patry, "Real-Time Samurai Cinema", SIGGRAPH 2021: a primarily illuminance-based exposure).
-// A compensation looked up by the scene's brightness then sets the look of each scene, as an
-// exposure compensation curve over the metered EV does (Unreal Engine's auto exposure).
-// - The meter: the island's illuminance on level ground, the key light (the sun, or the moon) at
-//   its height plus the sky's irradiance as the island takes it (Sky.ts islandIrradianceNode),
-//   evaluated in the shaders from this frame's light: a function of the clock and the weather, so
-//   a paused frame repeats and every pass reads the same value; nothing adapts over time.
-// - Its EV: log2 of the illuminance, 15 at the fair noon island view's (METER.reference, measured).
-// - The exposure: CALIBRATION / E x 2^compensation, so an 18 % grey card on level ground shows at
-//   0.18 CALIBRATION / pi times 2^compensation whatever the light. With no compensation the card
-//   shows at 0.74, two stops over mid grey: the level the clock's exposure (calibrated against
-//   tidewater's frames, whose meter weighs their dark sea and meadow) gave the fair noon.
-// - The compensation, in stops: a curve by day and one by night over the EV (points linear
-//   between, extended with their end segments' slopes), blended as the night's grade comes in
-//   (`night`, Pipeline's), plus the cloud deck's term (`deck`, Sky.ts grade.deck) times its stops.
-//   Two curves, because the night is lit far above a real night (a full moon gives the island
-//   about a sunset's light), so the EV alone cannot tell a moonlit night from a sunset. The deck's
-//   term, because a light meter does not lift the dim, diffusely lit overcast frame: without it
-//   the overcast noon showed at two fifths of the clear one, where the art direction keeps about
-//   three quarters.
-// - The default points are the clock's exposure the meter replaced, measured over the meter: the
-//   clear day hour by hour from sunrise to sunset, the night at dawn, dusk and midnight with and
-//   without the moon, the overcast noon and midnight. The meter lands with those frames as they
-//   were, within about a tenth of a stop (an overcast low sun, which the clock's exposure lifted to
-//   show a grey card near white, now shows darker), and the points are the look's knobs. The
-//   night's is a line of a stop per stop: the exposure holds by night, as the clock's did. The
-//   day's then went a quarter stop down with the meadow's albedo doubled (shared.ts lawnGain): the
-//   lit meadow shows about a stop brighter than before, the sea and the sky a little darker (the
-//   sky's soft blue taken back up by the grade, GradeLut.ts BASE_GRADE).
+// The frame's exposure target, in stops (EV = log2 of the factor that scales scene radiance into
+// the exposed image), from the metering histograms (Metering.ts) and the sky. The meter reads the
+// light falling on the scene, not the light leaving it, so the albedo stays out of it: a dark
+// meadow stays dark against a pale beach (after Patry, "Real-Time Samurai Cinema", SIGGRAPH 2021:
+// a primarily illuminance-based exposure).
+// - m_M: the mean of log2 M (the metering illuminance) over its histogram between the 10th and the
+//   90th percentile of the total weight, bins at their centres, a bin that straddles a percentile
+//   counted in part: a trimmed mean that ignores crevices and glints.
+// - m_H: the mean of log2 Y (hdr's luminance) between its 90th and 97th percentile: the
+//   brightness of the frame's brightest few percent.
+// - m_S: log2 of the sky's geometric-mean luminance exp( mean ln Y ) over the upper hemisphere
+//   (shared.ts `skyMeterLog2`: Sky.ts reduces it from each environment bake, and the dome writes
+//   the same luminance as its metering illuminance), so a sky-filled view is metered by the sky's
+//   overall brightness, not by the bright sky about the sun.
+// - The keys (EXPOSURE_KEYS, DayKeys.ts): the key κ (a white diffuser under the frame's typical
+//   light lands at 2^κ), the highlight key κ_H (the bright band lands at 2^κ_H at most) and the
+//   sky's share β.
+// - The target, in three steps:
+//   - The meter: e_S = κ - m_S, the sky's own exposure, and e_M = κ - m_M, the scene's. The
+//     frame's metered exposure blends them in stops by the sky's share,
+//     e_m = ( 1 - β ) e_M + β e_S: a weighted metering pattern, the sky weighing into the meter as
+//     a region of the frame does in a camera's weighted metering.
+//   - The highlight guard: e_H = κ_H - m_H, and e is the soft minimum of e_m and e_H,
+//     e = -k log2( 2^( -e_m / k ) + 2^( -e_H / k ) ) with k = SOFT_MIN (a quarter of a stop): the
+//     lower of the two where they lie apart, eased where they meet, so the exposure does not turn
+//     a corner as a view's highlight guard takes over from its meter (at most k under the lower,
+//     where they are equal; under a tenth of a stop once they lie half a stop apart). The guard
+//     holds down the whole metered exposure, the sky's share included.
+//   - The bound: EV_t = clamp( e, e_m - R, e_m + R ) plus the GUI's offset (stops), both bounds
+//     offset too, R = EXPOSURE_RANGE (5 stops): the guard may pull the exposure at most R stops
+//     under the meter, however bright the frame's brightest few percent. e never lies over e_m (a
+//     soft minimum lies under both its terms), so the upper bound only closes the range the
+//     adaptation holds EV in (`exposureAdapt`).
+// - No reading: where M's histogram holds less than a sample's weight (no metered material in
+//   view, or no material writing M at all), e_M is the sky's exposure e_S, so the meter is the
+//   sky's alone whatever β, and the frame is exposed by the sky and held down by the highlight
+//   guard; where Y's holds none, the guard drops out and e is e_m alone.
+// - The night's darkness is the night key's job: the meter reads night light as it reads the day's.
+// - Adaptation (`exposureAdapt`): the exposure EV follows its target EV_t as a critically damped
+//   second-order filter on EV, EV'' = -2 ω EV' - ω^2 ( EV - EV_t ), ω = 1 / τ (Lowe, "Critically
+//   Damped Ease-In/Ease-Out Smoothing", Game Programming Gems 4, 2004): it starts with no kink;
+//   from rest a held target is reached without overshoot; a target that moves while the EV is
+//   moving can be passed by a little. A target that turns back mid-way bends the motion rather
+//   than restarting it. Each frame takes the filter's exact step over the scene clock's step dt
+//   for the target held over it, with y = EV - EV_t and v = EV':
+//   y' = ( y + ( v + ω y ) dt ) e^( -ω dt ), v' = ( v - ω ( v + ω y ) dt ) e^( -ω dt ), stable at
+//   any dt and the same curve at any frame rate. τ is keyed by the way the exposure moves:
+//   `adaptUp` while it rises (the view grew darker), `adaptDown` while it falls (the view grew
+//   brighter). Both are 0.05 s in every key, the eye's light adaptation: Durand and Dorsey model
+//   the cones' recovery of sensitivity after a rise or a small fall of the light as a first-order
+//   filter of time constant 0.1 s ("Interactive Tone Mapping", Eurographics Workshop on
+//   Rendering, 2000), and the scene's changes of light by day (a pan from the sea to the land, a
+//   cloud's shadow) are of that kind, not the minutes of dark adaptation after a large fall. Two
+//   such filters in a row, as this one is, lag an input that moves at a steady rate (a pan) by
+//   2 τ, a first-order filter by its own time constant, so τ = 0.05 s lags a pan by the eye's
+//   0.1 s. From rest the share of a held step still to go is y( t ) / y( 0 ) = ( 1 + ω t )
+//   e^( -ω t ), so half the step is covered in about 0.084 s and 90 % of it in about 0.19 s.
+//   Held at a bound of the target's range, EV stops there and its
+//   velocity is cleared, so it leaves the bound from rest.
+//   The state, one RGBA32F texel: ( EV, v, EV_t, moved ), stops, stops per second, stops, and 1
+//   where this frame's EV differs from the previous frame's (as floats, exactly), else 0. A reset
+//   (the page's first frame, a scene event that cuts), a paused clock (dt 0) and so the test mode,
+//   a paused page, put EV = EV_t and v = 0: a paused frame equals a fresh load's. `moved` is a
+//   diagnostic (the page's exposure readout): after a snap it is 1 for one frame, until EV stands
+//   still. Nothing in the frame reads the previous frame's exposure before the meter.
+// - A stepped clip (capture-clip.mjs, `window.__PONLAI_CLIP__` set) snaps the same way on every
+//   frame: a temporal rest converged on a stopped clock jumps to its target while running frames
+//   still lag behind theirs, so a clip compared with its rest or with MSAA would differ by the lag
+//   alone. Freezing the adaptation on every side compares the images, not the adaptation.
+// - EV stays absolute (scene units to the exposed image). `hdr` is stored pre-exposed by 2^P
+//   (PreExposure.ts), so the display chain reads the exposure as 2^( EV - P ) (Pipeline.ts
+//   `exposureRead`), and P follows this EV read back a frame or two late.
 
-/** The meter's reference: the fair noon island view's illuminance (scene units) reads as EV 15. */
-export const METER = { reference: 0.564, ev: 15 } as const;
-const CALIBRATION = 12.89;
-type Curve = readonly ( readonly [ number, number ] )[];
-/** The compensation by day and by night: [ EV, stops ] ascending, and the deck's stops. */
-export const COMPENSATION: { readonly day: { curve: Curve; deck: number }; readonly night: { curve: Curve; deck: number } } = {
-	day: { curve: [ [ 9.9, - 2.25 ], [ 10.85, - 1.7 ], [ 11.85, - 1.25 ], [ 12.8, - 0.9 ], [ 13.9, - 0.73 ], [ 14.8, - 0.45 ], [ 15, - 0.25 ], [ 16, - 0.25 ] ], deck: 1.18 },
-	night: { curve: [ [ 7.84, - 2.31 ], [ 9.84, - 0.31 ] ], deck: 1.62 },
-};
+export interface ExposureKey extends Record<string, number> {
+	// κ, stops: where a white diffuser under the frame's typical light lands in the exposed image
+	key: number;
+	// κ_H, stops: the highest the frame's bright band (Y's 90th to 97th percentile) lands
+	highlight: number;
+	// β: the sky's share of the meter (its own exposure's, against the scene's)
+	sky: number;
+	// τ, seconds: the adaptation's time constant while the exposure rises (the view grew darker)
+	adaptUp: number;
+	// τ, seconds: the adaptation's time constant while the exposure falls (the view grew brighter)
+	adaptDown: number;
+}
 
-// the stops on `curve` at `ev`, linear between its points and along its end segments beyond
-const along = ( curve: Curve, ev: F ): F => {
+/** The exposure's keys (DayKeys.ts): the golden hour (a sun at 3 degrees), a low sun (12), a high
+ * one (40), a clouded day and the night. They are fitted on the exposed white of a diffuser under
+ * the sun's direct light alone (by night the shaded one), seen toward and away from the sun, with
+ * the sky's light as Sky.ts SKY_LIGHT sets it, together with the sky's light, the haze and the
+ * grading. The highlight key is what darkens a view toward a low sun against one away from it, the
+ * bright band about the sun capping the exposure. The high key's β runs to about 0.9, where the sky
+ * nearly alone sets the exposure. The clouded key was fitted on the whites under the cloudy sky:
+ * its β went to 0, the meter alone, and its κ_H lies 2.3 stops over its κ, so the guard holds a
+ * clouded view down only where its brightest few percent lie more than 2.3 stops over its metered
+ * light (under a sky with no sun, rarely). The night has one white: β 0 (the meter alone), κ and κ_H
+ * fitted. The adaptation's time constants are the same in every key (the header, Adaptation).
+ * Tunable on debug pages (debug/Tune.ts): `post.exposure.<value>@<key>`. */
+export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
+	day: [
+		{ at: 3, name: 'golden', values: { key: 0.102, highlight: 1.15, sky: 0.107, adaptUp: 0.05, adaptDown: 0.05 } },
+		{ at: 12, name: 'low', values: { key: 0.332, highlight: 0.52, sky: 0.441, adaptUp: 0.05, adaptDown: 0.05 } },
+		{ at: 40, name: 'high', values: { key: - 1.05, highlight: 1.44, sky: 0.915, adaptUp: 0.05, adaptDown: 0.05 } },
+	],
+	cloudy: { key: 0.784, highlight: 3.09, sky: 0, adaptUp: 0.05, adaptDown: 0.05 },
+	night: { key: - 2.64, highlight: - 2.48, sky: 0, adaptUp: 0.05, adaptDown: 0.05 },
+}, { key: { min: - 6, max: 3 }, highlight: { min: - 3, max: 4 }, sky: { min: 0, max: 1 }, adaptUp: { min: 0.02, max: 4, scale: 'log' }, adaptDown: { min: 0.02, max: 4, scale: 'log' } } );
 
-	const slope = ( i: number ) => ( curve[ i + 1 ][ 1 ] - curve[ i ][ 1 ] ) / ( curve[ i + 1 ][ 0 ] - curve[ i ][ 0 ] );
-	let c: F = float( curve[ 0 ][ 1 ] ).add( ev.sub( curve[ 0 ][ 0 ] ).mul( slope( 0 ) ) );
-	for ( let i = 1; i < curve.length - 1; i ++ ) c = c.add( max( ev.sub( curve[ i ][ 0 ] ), 0 ).mul( slope( i ) - slope( i - 1 ) ) );
-	return c;
+/** How far under the meter's exposure e_m the highlight guard may pull the target, in stops (the
+ * bound's half width about e_m: see the header). */
+export const EXPOSURE_RANGE = 5;
+/** The soft minimum's width k, in stops (see the header). */
+export const SOFT_MIN = 0.25;
 
-};
-const alongCPU = ( curve: Curve, ev: number ): number => {
+/** The target: ( EV_t, its lower bound, its upper bound ), stops, from the trimmed means `meter`
+ * ( m_M ) and `high` ( m_H ), whether each histogram had a reading (`hasMeter`, `hasHigh`: 0 or
+ * 1), the sky's log2 luminance `sky` ( m_S ), the keys and the GUI's `offset` (stops). */
+export const exposureTarget = Fn( ( [ meter, hasMeter, high, hasHigh, sky, key, highlight, skyShare, offset ]: F[] ) => {
 
-	const slope = ( i: number ) => ( curve[ i + 1 ][ 1 ] - curve[ i ][ 1 ] ) / ( curve[ i + 1 ][ 0 ] - curve[ i ][ 0 ] );
-	let c = curve[ 0 ][ 1 ] + ( ev - curve[ 0 ][ 0 ] ) * slope( 0 );
-	for ( let i = 1; i < curve.length - 1; i ++ ) c += Math.max( ev - curve[ i ][ 0 ], 0 ) * ( slope( i ) - slope( i - 1 ) );
-	return c;
+	// the meter: the scene's exposure and the sky's blended in stops by the sky's share (the sky's
+	// alone where the scene has no reading)
+	const eS = key.sub( sky ).toVar();
+	const eM = select( hasMeter.greaterThan( 0.5 ), key.sub( meter ), eS ).toVar();
+	const metered = mix( eM, eS, skyShare ).toVar();
+	// the highlight guard over the whole of it: the soft minimum, as the lower one less its easing
+	// (no power of a large value to overflow)
+	const eH = highlight.sub( high ).toVar();
+	const soft = min( metered, eH ).sub( log2( exp2( abs( metered.sub( eH ) ).div( - SOFT_MIN ) ).add( 1 ) ).mul( SOFT_MIN ) ).toVar();
+	const e = select( hasHigh.greaterThan( 0.5 ), soft, metered );
+	// the bound about the meter: how far the guard may pull it down
+	const lo = metered.sub( EXPOSURE_RANGE ).add( offset ), hi = metered.add( EXPOSURE_RANGE ).add( offset );
+	return vec3( clamp( e.add( offset ), lo, hi ), lo, hi );
 
-};
-
-/** The exposure (scene radiance to the exposed image) for the key light's illuminance on level
- * ground `key`, the sky's irradiance over pi `sky`, the night's weight `night` and the deck's
- * closure `deck`, times 2^`offset` (stops: the GUI's). */
-export const meteredExposure = Fn( ( [ key, sky, night, deck, offset ]: [ F, V3, F, F, F ] ) => {
-
-	const e = max( key.add( dot( sky, vec3( 0.2126, 0.7152, 0.0722 ) ).mul( Math.PI ) ), 1e-8 ).toVar();
-	const ev = log2( e.div( METER.reference ) ).add( METER.ev ).toVar();
-	const { day, night: dark } = COMPENSATION;
-	const byDay = along( day.curve, ev ).add( deck.mul( day.deck ) );
-	const byNight = along( dark.curve, ev ).add( deck.mul( dark.deck ) );
-	return exp2( mix( byDay, byNight, night ).add( offset ) ).mul( CALIBRATION ).div( e );
-
-} ).setLayout( { name: 'meteredExposure', type: 'float', inputs: [
-	{ name: 'key', type: 'float' }, { name: 'sky', type: 'vec3' }, { name: 'night', type: 'float' }, { name: 'deck', type: 'float' }, { name: 'offset', type: 'float' },
+} ).setLayout( { name: 'exposureTarget', type: 'vec3', inputs: [
+	{ name: 'meter', type: 'float' }, { name: 'hasMeter', type: 'float' }, { name: 'high', type: 'float' }, { name: 'hasHigh', type: 'float' },
+	{ name: 'sky', type: 'float' }, { name: 'key', type: 'float' }, { name: 'highlight', type: 'float' }, { name: 'skyShare', type: 'float' }, { name: 'offset', type: 'float' },
 ] } );
 
-/** The same on the CPU, for diagnostics (`sky`: the irradiance over pi, as lent to the island). */
-export function meter( key: number, sky: THREE.Color, night: number, deck: number, offset = 0 ): { illuminance: number; ev: number; compensation: number; exposure: number } {
+/** The exposure state's step: from the target `aim` ( EV_t, its bounds: `exposureTarget` ), the
+ * previous state ( EV, v, EV_t, moved ), the scene clock's step `dt` (seconds), the time
+ * constants `up` and `down` (seconds) and `snap` (1: reset to the target), the new state. */
+export const exposureAdapt = Fn( ( [ aim, previous, dt, up, down, snap ]: [ V3, V4, F, F, F, F ] ) => {
 
-	const e = Math.max( key + Math.PI * ( 0.2126 * sky.r + 0.7152 * sky.g + 0.0722 * sky.b ), 1e-8 );
-	const ev = Math.log2( e / METER.reference ) + METER.ev;
-	const { day, night: dark } = COMPENSATION;
-	const c = THREE.MathUtils.lerp( alongCPU( day.curve, ev ) + deck * day.deck, alongCPU( dark.curve, ev ) + deck * dark.deck, night );
-	return { illuminance: e, ev, compensation: c, exposure: 2 ** ( c + offset ) * CALIBRATION / e };
+	const t = aim.x.toVar(), lo = aim.y.toVar(), hi = aim.z.toVar();
+	const y0 = previous.x.sub( t ).toVar(), v0 = previous.y.toVar();
+	// (rising while the target lies over the exposure)
+	const tau = select( y0.lessThan( 0 ), up, down ).toVar();
+	const w = float( 1 ).div( max( tau, 1e-4 ) ).toVar();
+	const decay = exp( w.mul( dt ).negate() ).toVar();
+	const c = v0.add( w.mul( y0 ) ).mul( dt ).toVar();
+	const ev = t.add( y0.add( c ).mul( decay ) ).toVar();
+	const v = v0.sub( w.mul( c ) ).mul( decay ).toVar();
+	If( ev.lessThan( lo ).or( ev.greaterThan( hi ) ), () => {
 
-}
+		ev.assign( clamp( ev, lo, hi ) );
+		v.assign( 0 );
+
+	} );
+	If( snap.greaterThan( 0.5 ), () => {
+
+		ev.assign( t );
+		v.assign( 0 );
+
+	} );
+	return vec4( ev, v, t, select( ev.notEqual( previous.x ), float( 1 ), float( 0 ) ) );
+
+} ).setLayout( { name: 'exposureAdapt', type: 'vec4', inputs: [
+	{ name: 'aim', type: 'vec3' }, { name: 'previous', type: 'vec4' }, { name: 'dt', type: 'float' },
+	{ name: 'up', type: 'float' }, { name: 'down', type: 'float' }, { name: 'snap', type: 'float' },
+] } );

@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { texture, vec2 } from 'three/tsl';
 import { MEADOW_EXTENT, MEADOW_SIZE, meadowTexels } from '../materials/Meadow.ts';
-import { ISLAND_TOP } from './WorldShapes.ts';
+import { ISLAND_TOP, SWELL } from './WorldShapes.ts';
 
 // The sward's cover and depth over the ground: whether and how deep in the meadow each point of its
 // turf lies, for the ground under the blades (TerrainMaterial.ts's meadow ground). Every anchor that
@@ -135,7 +135,7 @@ export function setSwardField( field: THREE.DataTexture ): THREE.Texture {
 const CROWN_REACH = 0.35;
 /** The meadow map's B: the crowns' height over the ground, over this (m). */
 export const CROWN_SCALE = 1;
-const BARE = ISLAND_TOP - 2;
+const BARE = ISLAND_TOP - SWELL.height - 2;
 
 function canopyMap( data: Uint16Array, size: number ): THREE.DataTexture {
 

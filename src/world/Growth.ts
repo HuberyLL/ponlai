@@ -14,6 +14,7 @@ import type { ChunkData } from './Chunks.ts';
 import type { IslandChunk, WorldData } from './types.ts';
 import type { ShoreWaves, ShoreFields } from '../ocean/ShoreWaves.ts';
 import type { RefractedSun } from '../lighting/RefractedSun.ts';
+import type { AmbientPrepared, AmbientVolume } from '../lighting/AmbientVolume.ts';
 import type { Rain } from '../weather/Rain.ts';
 import { Villagers } from '../characters/Villagers.ts';
 import { SeabedRise } from './SeabedRise.ts';
@@ -41,9 +42,12 @@ import { SeabedRise } from './SeabedRise.ts';
 //   of the changed land chunks, the merged kinds' new geometry (the stones, the sea floor, their
 //   bounds found in steps: Steps.ts), the walking loop, each vegetation kind its
 //   own part in registry order (vegetation/Registry.ts: the meadow planted a slice of anchors at a
-//   step and its edge tufts' records a few hundred tufts at a step, its cull pool filled), the world fields (WorldFields.ts)
+//   step and its edge tufts' records a few hundred tufts at a step, its cull pool filled; the
+//   bamboo planted again per land chunk and, where its sites changed, its instance pool filled
+//   and uploaded: Bamboo.ts, vegetation/PlantInstances.ts), the world fields (WorldFields.ts)
 //   and the shore's wave fields (in a worker, ShoreWaves.ts, on a copy of the shore field made in
-//   steps). Every buffer and texture goes up ahead, a slice a step (Upload.ts: buffers mapped at
+//   steps), the ambient light's probes (lighting/AmbientVolume.ts: the merged lattice's buffer).
+//   Every buffer and texture goes up ahead, a slice a step (Upload.ts: buffers mapped at
 //   creation and copies on the GPU, never queue writes, which stalled the page for hundreds of
 //   milliseconds with the GPU busy). A kind whose instances are written in place at the swap (a
 //   new instanced mesh would be a node build of tens of milliseconds) stages their data ahead too,
@@ -58,9 +62,9 @@ import { SeabedRise } from './SeabedRise.ts';
 // - The swap, in the frame's tick before the camera and the shadows update (main.ts's one-line
 //   hook): the changed island meshes out and the new ones in (ordered by chunk, ( cj, ci ), as a
 //   page loaded on that land orders them), the merged kinds' geometry, then each vegetation kind's
-//   swap (the meadow's pool, its edge records with it: the cull's storage nodes (vegetation/VegetationCull.ts) pointed at the new buffers),
+//   swap (the meadow's pool, its edge records with it, and the bamboo's instance pool: the cull's storage nodes (vegetation/VegetationCull.ts) pointed at the new buffers),
 //   the fields' changed squares (copied on the GPU) or new textures, the shore's wave fields, the
-//   refracted sun's casters, the walker's loop, and the page's own (main.ts `onSwap`: the land's
+//   ambient light's probes (their storage node pointed at the new buffer), the refracted sun's casters, the walker's loop, and the page's own (main.ts `onSwap`: the land's
 //   box and framing as measured ahead, the fog's clearing, the sun's caster box and columns, the
 //   sea's reflection box, the camera's ground).
 // - The frames after it, one step each: the rain's collision map (resized, then baked again eight
@@ -93,6 +97,7 @@ export interface GrowthPage<M = unknown> {
 	vegetation: Vegetation;
 	shoreWaves: ShoreWaves;
 	refractedSun: RefractedSun;
+	ambient: AmbientVolume;
 	rain: Rain;
 	characters: Villagers | null;
 	/** the game (?game): the pending piece once it is ready (`setComing`), the new land after a swap (`setIsland`) */
@@ -128,6 +133,7 @@ interface Prepared<M> {
 	vegetation: { kind: VegetationKind; prepared: unknown }[];
 	fields: FieldsPrepared;
 	shore: ShoreFields;
+	ambient: AmbientPrepared;
 	top: Uint8Array;
 	// the kinds' staged in-place writes, freed after the swap
 	staged: ( () => void )[];
@@ -524,10 +530,12 @@ export class Growth<M = unknown> {
 		yield page.shoreWaves.fieldsFor( data, copy ).then( ( fieldsOf ) => { shore = fieldsOf; } );
 		yield* textureSteps( renderer, shore!.boundary );
 		yield* textureSteps( renderer, shore!.shelter );
+		this.stage = 'ambient';
+		const ambient = yield* page.ambient.prepare( data.ambient );
 		const top = topFromTiles( chunks );
 		return {
 			version, measured, bounds, data, land, changed, islands: { add, remove }, rocks, seabed, walk,
-			vegetation, fields, shore: shore!, top, staged,
+			vegetation, fields, shore: shore!, ambient, top, staged,
 		};
 
 	}
@@ -581,6 +589,8 @@ export class Growth<M = unknown> {
 		const oldFields = page.fields.apply( p.fields, page.renderer ), oldTextures = page.shoreWaves.setFields( p.shore );
 		disposals.push( () => { for ( const dispose of oldFields ) dispose(); for ( const texture of oldTextures ) texture.dispose(); } );
 		part( 'fields' );
+		disposals.push( page.ambient.apply( p.ambient ) );
+		part( 'ambient' );
 		// what draws or reads the island
 		disposals.push( page.refractedSun.setCasters( world.group, world.subsets ) );
 		page.characters?.setLoop( p.walk );

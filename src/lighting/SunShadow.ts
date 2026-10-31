@@ -1,8 +1,12 @@
 import * as THREE from 'three/webgpu';
-import { Fn, uniform, uniformArray, texture, vec3, vec4, int, float, clamp, floor, dot, select, mix, positionLocal, modelWorldMatrixInverse } from 'three/tsl';
+import { Fn, uniform, uniformArray, texture, vec4, int, float, clamp, floor, dot, max, select, mix, positionLocal, positionView, normalWorld, modelWorldMatrixInverse } from 'three/tsl';
 import { compileByRendering, compileLatentInto } from '../post/graph/Compile.ts';
-import { solarSteppedShadowVisibility, solarVolumeVisibility, solarPCFVisibility, SOLAR_SHADOW_TAPS, SHADOW_FILTER_PATH, type SolarShadowTaps } from './SolarShadow.ts';
+import { solarSteppedShadowVisibility, solarVolumeVisibility, solarPCFVisibility } from './SolarShadow.ts';
+import { screenShadowAt } from '../post/MeadowShade.ts';
 import type { CasterColumns } from '../world/ChunkDerived.ts';
+import { shadowWindOn } from '../world/VegetationShadow.ts';
+import { debugFlags } from '../debug/DebugFlags.ts';
+import { tuneUniform } from '../debug/Tune.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -10,6 +14,13 @@ type FilterInput = { shadowCoord: V3 };
 type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: THREE.Scene; camera: THREE.Camera } ): void; shadowMap: THREE.RenderTarget | null };
 
 // The key light's shadow map, redrawn in steps of the light's direction and cross-faded.
+//
+// The map is drawn along the direction `update` is given, not the light's own: main.ts passes the
+// key's lifted direction (lighting/KeyLift.ts `liftedKeyDirection`), so under a low key the shadows
+// fall along the direction the surfaces' whole direct term takes (the moon's fixed direction by
+// night, which is then the key's own too), while the light keeps its true direction for what does
+// not lift (the water's glint, the refracted sun). The light stands along the given direction only while three's pass draws the map
+// (`render`), which builds the map's view from the light.
 //
 // Stems, leaf stalks and leaves seen edge-on are thinner than a shadow texel. Whether such a
 // caster covers a texel centre flips as the projection turns, so a map redrawn every frame
@@ -24,14 +35,16 @@ type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: 
 // fades. The blend is a function of the key direction alone, so a paused clock holds it exactly.
 //
 // The map is fitted to the island's casters; the sea floor's stones cast only into the refracted
-// map (RefractedSun.ts). Grass blades, stems, leaf stalks and twigs stay out of it (MeadowCanopy,
-// VegetationShadow.ts). Both stepped maps always share one filter mode, each with its own blocker
-// search, so the cross-fade stays continuous across a redraw; the mode is set per quality tier
-// (`setFilter`) before the materials build. Receivers read the maps through SolarShadow's gather
-// filter (see its rules on sampler types and derivatives); a receiver that wants only a soft,
-// cheap shade of the larger casters takes `softVisibility` in its vertex stage or a compute pass instead (the lawn: once per tuft). The caster-depth grid
+// map (RefractedSun.ts). Grass blades, stems, leaf stalks and twigs stay out of it (VegetationShadow.ts);
+// the meadow's layer shades the blades and the ground under and beside it where they read the map
+// (Grass.ts `meadowLayerLight`, through a material's `userData.sunShade`). Both stepped
+// maps are filtered alike, each on its own, so the cross-fade stays continuous across a redraw.
+// A receiver's screen-space shade (post/MeadowShade.ts) multiplies the filter's visibility: its own
+// (`userData.sunShade`, the meadow's blades) or the whole scene's at its pixel (`receiveScreenShadow`).
+// Receivers read the maps through SolarShadow's disk filter (a fixed radius of two texels; see its
+// rules on sampler types and derivatives). The caster-depth grid
 // (`nearestCasterDepth`) lets a march through the water skip the 2x2 volume lookups where nothing
-// casts, never the surface filter's PCSS search. It projects world-space columns of the casters,
+// casts, never the surface filter's disk. It projects world-space columns of the casters,
 // walked from their vertices, or for meshes made in the world's workers folded in from the columns
 // they came with (`setCasters`, ChunkDerived.ts), so the main thread does not walk those.
 //
@@ -51,6 +64,10 @@ type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: 
 // a few centimetres. Only this map changes: three's `shadowSide` is set for the draw and restored,
 // and the refracted map draws its casters with a material of its own.
 //
+// A receiver of the filter looks its shadow up a normal offset away (`offsetCoordinate`), in the
+// current map's texels and growing with view depth (NORMAL_OFFSET), the normal turned toward the
+// light on vegetation; three's own normal bias is 0. The water keeps a fixed offset of its own.
+//
 // The map's first redraw builds every caster's pass into it, and three builds the map itself only
 // with the first receiver, the throwaway one built just before the loop (graph/ThreePatches.ts
 // `primeSharedNodes`), so no warm-up before the loop could compile those passes into it. Drawn as
@@ -61,24 +78,52 @@ type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: 
 // redraw itself, its node builds made in its order, as three would make them: compiled ahead in
 // another order, the receivers' and casters' shaders came out with other temporaries and moved a
 // few pixels by one level (three r186 emits from shared node state).
+//
+// The plants cast in their swayed pose (VegetationShadow.ts), so the map is redrawn every frame, as
+// a cut is, with no previous map to cross-fade: the sub-texel casters boil again, the price of
+// shadows that move with the wind. `flags.shadowWind = false` (read every frame) casts the rest
+// pose and brings back the stepped redraws above. Those redraws leave `draws` alone, as the map changes only with the
+// clock then: a paused page holds the wind, so every redraw draws the same map and it still settles.
+// What follows the light's steps rather than every map (the ground bounce's bake, GroundBounce.ts)
+// keys on `steps` instead: every counted redraw, and under the swaying redraws each turn of `step`
+// since the last, so a running clock still steps it and a paused page (no turn) still settles.
+// A change of the flag redraws from scratch on the next update.
 const STEP = THREE.MathUtils.degToRad( 0.2 );
-/** The layer of a mesh only the sun's map draws (its camera enables it; the view's does not): a
- * caster of a shape of its own (a plant whose far leaves the view thins casts with all of them).
- * Kept for the plant kinds to come; no kind uses it today (the removed plateau plants did). */
-export const SUN_MAP_LAYER = 6;
 // how far closed solids' cast depth is pushed away from the light (m), see above
 const FRONT_PUSH = 0.03;
 // A larger turn in one frame is a cut (a new hour, preset or manual sun): redraw without history.
 const CUT = THREE.MathUtils.degToRad( 1 );
 const PREVIOUS = 0, CURRENT = 1;
+// The receivers' normal offset (`offsetCoordinate`), in the current map's texels: `near` at the
+// eye, `far` from `depth` metres of view depth on (`depth` the island camera's middle distance).
+// It is what keeps a lit plane out of its own shadow under the filter's hardware comparisons
+// (SolarShadow.ts): a bilinear comparison tests its footprint's four texels at one depth, and a
+// texel up to one texel away along each axis sits higher on a plane lit at elevation e by up to
+// cot e * ( |cos a| + |sin a| ) texels (a the plane's direction across the map), while an offset of
+// d texels along the normal clears d / sin e. Both meet at d = cos e * ( |cos a| + |sin a| ), at
+// most cos e * 1.41: 1.4 texels, about 3 cm in a clear noon's map (45 m over 2048 texels). Measured
+// on the ramp probe (verifySolarShadowRamp, sun 32 and 10 degrees up): a clear plane kept 1 at every
+// phase with 1.4, but fell to 0.93 at 32 degrees and 0.80 at 10 with the former 0.55 (1.2 cm).
+// A caster nearer its receiver than this clears is not resolved by the map: the screen-space
+// shadow draws those contacts. `far` keeps the same floor, since the footprint's rise is the same
+// in texels at any distance. Vegetation turns the offset toward the light by
+// clamp( VEGETATION_FLIP * N.L, -1, 1 ): a leaf lit from behind looks up its shadow from its
+// sunlit side, not from inside its own depth, which left lit specks on backlit foliage (tunable,
+// `lighting.sunShadow.vegetationFlip`, a uniform). By the bound above, a face at incidence cosine c
+// needs at least sqrt( 1 - c^2 ) of the offset, which clamp( k c ) gives for c >= 1 / sqrt( 1 + k^2 ):
+// a band of grazing leaves about 1 / k wide still looks its shadow up too near itself. Measured on
+// paused captures of a bamboo crown, lit from in front and from behind, under a clear noon and a
+// clear golden hour, against the sign's limit (k = 10^4): the share of foliage pixels more than 8
+// levels off falls about as 1 / k (golden hour from behind, the worst: 0.585 % at 4, 0.046 % at 24,
+// 0.018 % at 48; the noon views settle by 3). At 48 the isolated specks (at most 4 pixels, more than
+// 8 levels off) come to about 1 in 10^4 foliage pixels at worst: 1.07 from behind in the golden
+// hour, against 24 at 4, with 0.82 at 64 gaining little; 0.12 from in front; none at noon. It pushes
+// no lit leaf into shadow: from 4 to 48 the mean of the brightest tenth of the backlit crown's
+// foliage moves under 0.05 % (the specks it loses), the front-lit crowns' under 0.01 %.
+export const NORMAL_OFFSET = { near: 1.4, far: 1.4, depth: 100 };
+const VEGETATION_FLIP = /*@__PURE__*/ tuneUniform( 'lighting.sunShadow.vegetationFlip', 48, { min: 1, max: 128, scale: 'log' } );
 // the side three draws a caster's faces into a (non-VSM) map with: Renderer's _shadowSide (r186)
 const SHADOW_SIDE = { [ THREE.FrontSide ]: THREE.BackSide, [ THREE.BackSide ]: THREE.FrontSide, [ THREE.DoubleSide ]: THREE.DoubleSide };
-// A lighter filter for vegetation (grass blades and leaves, `markVegetation`), for the quality
-// tiers below high (setFilter): it fills much of the frame with small, overlapping receivers whose
-// own dapple hides a coarser penumbra. Not the default: fewer blocker taps re-roll the dapple's
-// penumbrae, which a close view of shaded foliage shows as scattered pixels changing by up to half
-// their brightness.
-export const VEGETATION_TAPS: Readonly<SolarShadowTaps> = { soft: true, blockerSamples: 4, filterSamples: 4 };
 // The caster-depth grid (nearestCasterDepth): light-space cells per side of each map, world cells
 // along the casters' longer side, and the padding for what the rest pose leaves out (wind sway,
 // the rim's lean): metres up, and world cells sideways.
@@ -120,14 +165,13 @@ export class SunShadow {
 	readonly toPrevious = uniform( new THREE.Matrix4() );
 	readonly mapSize = uniform( new THREE.Vector2( 1, 1 ) );
 	readonly span = uniform( new THREE.Vector2( 1, 1 ) );
-	readonly range = uniform( 1 );
-	readonly previousSpan = uniform( new THREE.Vector2( 1, 1 ) );
-	readonly previousRange = uniform( 1 );
 	// false until the first map has been drawn: receivers are lit rather than reading an empty layer
 	readonly ready = uniform( 0 );
 	// world -> the current map's shadow coordinate (three's, bias included), for lookups made away
-	// from three's receiver path (`softVisibility`)
+	// from three's receiver path (GroundBounce's bake, the haze)
 	readonly coordinate = uniform( new THREE.Matrix4() );
+	// the direction the map is drawn along (world, toward the light), for the normal offset
+	readonly direction = uniform( new THREE.Vector3( 0, 1, 0 ) );
 	private readonly sun: THREE.DirectionalLight;
 	// Both maps share one array texture (previous, current), so a receiver binds one texture as
 	// before: the water already binds as many as WebGPU guarantees. three's own map is only the
@@ -146,10 +190,6 @@ export class SunShadow {
 	private readonly margin: number;
 	// the light's turn between redraws (radians)
 	step = STEP;
-	// The filter for ordinary receivers and for vegetation (`userData.vegetation`). They compile into
-	// each receiver's material, so set them (setFilter) before the first receiver is built.
-	private taps: Readonly<SolarShadowTaps> = SOLAR_SHADOW_TAPS;
-	private vegetationTaps: Readonly<SolarShadowTaps> = SHADOW_FILTER_PATH.vegetation ? VEGETATION_TAPS : SOLAR_SHADOW_TAPS;
 	private hasPrevious = false;
 	private cut = true;
 	// Whether the casters' passes into the map have their pipelines (see the header).
@@ -157,10 +197,15 @@ export class SunShadow {
 	/** Maps drawn since the page loaded (the settled signal's signature, post/Settled.ts; the dynamic
 	 * resolution leaves frames with periodic work out of its quantiles). */
 	draws = 0;
+	/** The light's steps since the page loaded: the counted redraws, and under the swaying casters'
+	 * per-frame redraws each turn of `step` since the last (see the header). */
+	steps = 0;
+	private readonly stepFrom = new THREE.Vector3();
 	private readonly previousCoordinate = new THREE.Matrix4();
 	private readonly currentCoordinate = new THREE.Matrix4();
 	private readonly corner = new THREE.Vector3();
 	private readonly target = new THREE.Vector3();
+	private readonly lightPosition = new THREE.Vector3();
 	private readonly lightBounds = new THREE.Box3();
 	private readonly currentLayer = new THREE.Box3( new THREE.Vector3( 0, 0, CURRENT ), new THREE.Vector3( 1, 1, CURRENT + 1 ) );
 	private readonly toCurrentLayer = new THREE.Vector3( 0, 0, CURRENT );
@@ -193,26 +238,44 @@ export class SunShadow {
 		this.maps = new THREE.RenderTarget( width, height, { depth: 2, depthTexture: depth, depthBuffer: true } );
 		this.depth = texture( depth );
 		sun.shadow.autoUpdate = false;
-		sun.shadow.camera.layers.enable( SUN_MAP_LAYER );
 
 	}
 
 	/** Install the blended filter on the sun's shadow; receivers built afterwards use it. */
 	install(): void {
 
-		const filter = Fn( ( { shadowCoord }: FilterInput, builder: THREE.NodeBuilder ) => {
+		const filter = Fn( ( { shadowCoord: unbiased }: FilterInput, builder: THREE.NodeBuilder ) => {
 
 			const material = builder.material as THREE.Material | null;
-			// A receiver that brings its own visibility (the lawn's `softVisibility`, made in its
-			// vertex stage) takes it in place of the filter.
+			// A receiver that brings its own visibility takes it in place of the filter.
 			const own = material?.userData.sunVisibility as F | undefined;
 			if ( own ) return own;
+			const shadowCoord = this.offsetCoordinate( unbiased, material?.userData.vegetation === true );
 			// Vegetation is told by its tag, not by alphaToCoverage, which is off without multisampling.
-			return this.surfaceVisibility( shadowCoord, material?.userData.vegetation === true ? this.vegetationTaps : this.taps );
+			const visibility = this.surfaceVisibility( shadowCoord );
+			// A receiver's own shade on top of the map's (the meadow's blades: their screen-space
+			// shade, post/MeadowShade.ts; they and the ground under and beside them: the meadow's
+			// layer, Grass.ts `meadowLayerLight`), or the whole scene's screen-space shade at its
+			// pixel for one marked for it (`receiveScreenShadow`: the bamboo, the yunpeng)
+			const shade = ( material?.userData.sunShade as F | undefined ) ?? ( material?.userData.screenShadow === true ? screenShadowAt() : undefined );
+			return shade ? visibility.mul( shade ) : visibility;
 
 		} );
 		// The runtime exposes filterNode; @types/three has not declared this WebGPU hook yet.
 		( this.sun.shadow as unknown as { filterNode: typeof filter } ).filterNode = filter;
+
+	}
+
+	/** A receiver's coordinate in the current map moved along its normal by the normal offset
+	 * (NORMAL_OFFSET, in texels, growing with view depth), the normal turned toward the light for
+	 * vegetation. three's own normal bias stays 0 (main.ts): this one replaces it. */
+	offsetCoordinate( coordinate: V3, vegetation: boolean ): V3 {
+
+		const texel = max( this.span.x.div( this.mapSize.x ), this.span.y.div( this.mapSize.y ) );
+		const depth = clamp( positionView.z.negate().div( NORMAL_OFFSET.depth ), 0, 1 );
+		const metres = mix( float( NORMAL_OFFSET.near ), float( NORMAL_OFFSET.far ), depth ).mul( texel );
+		const along = vegetation ? normalWorld.mul( clamp( dot( normalWorld, this.direction ).mul( VEGETATION_FLIP ), - 1, 1 ) ) : normalWorld;
+		return coordinate.add( this.coordinate.mul( vec4( along.mul( metres ), 0 ) ).xyz ).toVar();
 
 	}
 
@@ -223,24 +286,14 @@ export class SunShadow {
 
 	}
 
-	/** The filter's taps for receivers built from now on (a quality tier's mode): ordinary
-	 * receivers and the vegetation (`markVegetation`). `soft: false` keeps the bilinear comparison
-	 * of both stepped maps alone. Materials already built keep the filter they compiled with. */
-	setFilter( taps: Readonly<SolarShadowTaps>, vegetationTaps: Readonly<SolarShadowTaps> = taps ): void {
-
-		this.taps = { ...taps };
-		this.vegetationTaps = { ...vegetationTaps };
-
-	}
-
 	/** A surface's visibility from its coordinate in the current map (three's shadow coordinate).
 	 * Both maps keep the same filter, so the cross-fade between them stays continuous. */
-	surfaceVisibility( coordinate: V3, taps: Readonly<SolarShadowTaps> = this.taps ): F {
+	surfaceVisibility( coordinate: V3 ): F {
 
 		return solarSteppedShadowVisibility( this.depth,
-			{ coordinate: this.previousCoordinateNode( coordinate ), worldSpan: this.previousSpan, depthRange: this.previousRange, active: this.weight.lessThan( 1 ), layer: PREVIOUS },
-			{ coordinate, worldSpan: this.span, depthRange: this.range, active: this.ready.greaterThan( 0 ), layer: CURRENT },
-			this.weight, { mapSize: this.mapSize, taps } );
+			{ coordinate: this.previousCoordinateNode( coordinate ), active: this.weight.lessThan( 1 ), layer: PREVIOUS },
+			{ coordinate, active: this.ready.greaterThan( 0 ), layer: CURRENT },
+			this.weight, { mapSize: this.mapSize } );
 
 	}
 
@@ -272,32 +325,13 @@ export class SunShadow {
 
 	}
 
-	/** A soft visibility of the world point `world`, without derivatives or a receiver plane, so it
-	 * can be taken in a vertex stage: the bilinear lookups of both stepped maps (volumeVisibility)
-	 * at the point and at `taps` points around it on a level ring of `radius` metres, averaged. Used
-	 * where a soft, cheap shadow of the larger casters is wanted (the lawn's blades, Grass.ts): the
-	 * ring's points lie on the receiver's level, so flat ground under it does not shadow it. */
-	softVisibility( world: V3, radius: number, taps = 4 ): F {
-
-		const at = ( dx: number, dz: number ) => this.volumeVisibility( this.coordinate.mul( vec4( world.add( vec3( dx, 0, dz ) ), 1 ) ).xyz );
-		let sum = at( 0, 0 );
-		for ( let i = 0; i < taps; i ++ ) {
-
-			const a = ( i + 0.5 ) / taps * Math.PI * 2;
-			sum = sum.add( at( Math.cos( a ) * radius, Math.sin( a ) * radius ) );
-
-		}
-		return sum.div( taps + 1 );
-
-	}
-
 	/** The nearest caster's depth (in that map's shadow coordinate z, bias included) over the
 	 * light-space cell holding a coordinate of the current map, or of the previous one with
 	 * `previous`; 2 where nothing casts, 0 before the grid's first projection. A point of that
 	 * map no deeper than it is lit by the 2x2 bilinear lookups (volumeVisibility, the water
 	 * column), whose footprint the cells already include, so a march may skip those lookups. It
-	 * does not bound the surface filter's PCSS search, which can reach many texels further: never
-	 * skip surfaceVisibility on its word. The grid comes from the casters' geometry at rest,
+	 * does not bound the surface filter's disk, which reaches two texels further and compares along
+	 * the receiver's plane: never skip surfaceVisibility on its word. The grid comes from the casters' geometry at rest,
 	 * padded for wind and the rim's lean, and is re-projected at each step. */
 	nearestCasterDepth( coordinate: V3, previous = false ): F {
 
@@ -423,10 +457,12 @@ export class SunShadow {
 
 	}
 
-	/** Once per frame, after the light has moved and before anything renders with the map. */
+	/** Once per frame, after the light has moved and before anything renders with the map, which
+	 * is drawn along `keyDir` (a world direction toward the light: see the header). */
 	update( renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, keyDir: THREE.Vector3 ): void {
 
 		const shadow = this.sun.shadow;
+		this.direction.value.copy( keyDir ).normalize();
 		// three builds its map and the node drawing it with the first receiver's build (primeSharedNodes)
 		const node = shadow.shadowNode as unknown as ShadowRenderer | undefined;
 		const map = node?.shadowMap;
@@ -452,9 +488,23 @@ export class SunShadow {
 		}
 		const turned = this.drawn.lengthSq() > 0 ? this.drawn.angleTo( keyDir ) : Infinity;
 		const resized = this.maps.width !== shadow.mapSize.width || this.maps.height !== shadow.mapSize.height;
-		if ( this.cut || turned > CUT || resized ) {
+		const swaying = debugFlags.shadowWind !== false;
+		if ( swaying !== ( shadowWindOn.value > 0.5 ) ) {
 
-			this.draw( renderer, scene, camera, node, map, keyDir );
+			shadowWindOn.value = swaying ? 1 : 0;
+			this.cut = true;
+
+		}
+		const cut = this.cut || turned > CUT || resized;
+		if ( cut || swaying ) {
+
+			if ( ! cut && this.stepFrom.angleTo( keyDir ) >= this.step ) {
+
+				this.steps ++;
+				this.stepFrom.copy( keyDir );
+
+			}
+			this.draw( renderer, scene, camera, node, map, keyDir, cut );
 			this.hasPrevious = false;
 			this.cut = false;
 			if ( this.gridWanted ) {
@@ -469,8 +519,6 @@ export class SunShadow {
 			// the current map becomes the previous one, with its projection
 			renderer.copyTextureToTexture( this.maps.depthTexture!, this.maps.depthTexture!, this.currentLayer, this.toPreviousLayer );
 			shadowCoordinateMatrix( shadow, this.previousCoordinate );
-			this.previousSpan.value.copy( this.span.value );
-			this.previousRange.value = this.range.value;
 			this.draw( renderer, scene, camera, node, map, keyDir );
 			this.hasPrevious = true;
 			if ( this.gridWanted ) {
@@ -500,10 +548,18 @@ export class SunShadow {
 
 	}
 
-	private draw( renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, node: ShadowRenderer, map: THREE.RenderTarget, keyDir: THREE.Vector3 ): void {
+	// `counted: false` for the swaying casters' redraws, which change the map only as the clock does
+	// (the settled signal and the frame pacer read `draws`)
+	private draw( renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, node: ShadowRenderer, map: THREE.RenderTarget, keyDir: THREE.Vector3, counted = true ): void {
 
 		const shadow = this.sun.shadow, shadowCamera = shadow.camera;
-		this.draws ++;
+		if ( counted ) {
+
+			this.draws ++;
+			this.steps ++;
+			this.stepFrom.copy( keyDir );
+
+		}
 		this.drawn.copy( keyDir );
 		// Draw now rather than inside the next scene render, so the copy below lands before any
 		// receiver reads the array. This is what ShadowNode.updateBefore would do with the flag.
@@ -513,15 +569,20 @@ export class SunShadow {
 		this.currentLayer.max.set( map.width, map.height, CURRENT + 1 );
 		this.mapSize.value.set( map.width, map.height );
 		this.span.value.set( shadowCamera.right - shadowCamera.left, shadowCamera.top - shadowCamera.bottom );
-		this.range.value = shadowCamera.far - shadowCamera.near;
 		shadowCoordinateMatrix( shadow, this.coordinate.value );
 		this.ready.value = 1;
 
 	}
 
-	// three's map, fitted to the casters for `keyDir` and drawn
+	// three's map, fitted to the casters for `keyDir` and drawn along it (the light stands there
+	// for the draw: see the header)
 	private render( renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, node: ShadowRenderer, keyDir: THREE.Vector3 ): void {
 
+		// (a light already along it stays as it is, so an unlifted key's map is the light's own bit for bit)
+		const sun = this.sun, along = this.target.subVectors( sun.position, sun.target.position );
+		const moved = along.angleTo( keyDir ) > 1e-6;
+		this.lightPosition.copy( sun.position );
+		if ( moved ) sun.position.copy( keyDir ).normalize().multiplyScalar( along.length() ).add( sun.target.position );
 		this.fit( renderer, keyDir );
 		// closed solids cast their front faces into this map alone (see the header)
 		const sides = new Map( [ ...this.frontCasters ].map( ( material ) => [ material, material.shadowSide ] ) );
@@ -529,7 +590,13 @@ export class SunShadow {
 		this.frontPush.value.copy( keyDir ).normalize().multiplyScalar( - FRONT_PUSH );
 		node.updateShadow( { renderer, scene, camera } );
 		for ( const [ material, side ] of sides ) material.shadowSide = side;
-		this.sun.shadow.needsUpdate = false;
+		sun.shadow.needsUpdate = false;
+		if ( moved ) {
+
+			sun.position.copy( this.lightPosition );
+			sun.updateMatrixWorld();
+
+		}
 
 	}
 

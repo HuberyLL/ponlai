@@ -23,8 +23,10 @@ import {
 import { bakeSynoptic, loadCloudShape } from '../materials/CloudNoise.ts';
 import { bakeCirrusFibres, sampleCirrusFibres } from './Cirrus.ts';
 import { RAINBOW_MAX_ANGLE, RAINBOW_SIZE, RAINBOW_TABLE } from './RainbowTable.data.ts';
-import type { Atmosphere } from './Atmosphere.ts';
+import { skyRayleighPhase, type Atmosphere } from './Atmosphere.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { tune, tuneUniform } from '../debug/Tune.ts';
+import { markSkyRetune } from './SkyRetune.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -35,16 +37,43 @@ type V4 = THREE.Node<'vec4'>;
 //   - density: a cloud shell kilometres thick; a procedural weather map sets where cloud may
 //     stand, and a 64^3 Perlin-Worley shape noise dilates its tops into heaps and erodes their
 //     margins, more strongly higher up. Edges stay soft; bases rest on the richer weather.
-//   - lighting: a cone-traced light march (taps growing geometrically to a few kilometres) with
-//     three multiple-scattering orders of a droplet phase, in-scatter darkening of thin margins
-//     away from the sun ("powder"), darker bases, sky light occluded by the cloud above, a
-//     little sea bounce; aerial perspective and a melt into the sky far out.
+//   - lighting: a light march toward the key light in segments that grow geometrically and span
+//     the shell's depth, with a tail on to its top (off for now); the light's optical depth scaled
+//     by each step's own transmittance, taken over the finest step's length whatever the march's
+//     cone (so the view and the coarser panorama light a cloud alike); two Henyey-Greenstein lobes
+//     (forward 0.8, back -0.2), tidewater's droplet phase's first order, 80 / 20 where the light gets
+//     through and all back lobe deep inside, mixed by the light's transmittance through the step (the
+//     blend after Patry, "Real-Time Samurai Cinema", SIGGRAPH 2021, p. 97), the sun's and the
+//     moon's mixed by their light at the shell's height (the atmosphere's in-scatter table there,
+//     the moon's under its gains: Atmosphere.ts `moonRayleigh`, `moonMie`),
+//     in place of multiple-scattering octaves, a powder term and a base shadow; sky light full
+//     where the light's path is clear and falling toward a ramp up the shell where it is shadowed
+//     (dark bases, bright tops). The march sums these as two factors, direct and ambient, which
+//     take their colours once it ends, from the atmosphere's in-scatter table at the shell's mean
+//     height toward the ray: the lit side the Mie share's colour times each body's light gain
+//     (Sky.ts trackClouds), the shaded side the Rayleigh share under its phase (no polariser),
+//     desaturated, times the earth's shadow there and each body's illuminance, its factor tinted
+//     toward the opacity and toned on its log luminance (both neutral until fitted). The march adds
+//     no air of its own, nor does the cirrus: the dome lays the haze over both at the clouds'
+//     distance. Rain, cirrus and the view's clamp share the targets as colours, so the factors are
+//     coloured in the march, not where they are shown.
+//   - the cirrus (highAt): single scattering of the key light under an ice phase, plus the sky's
+//     light from the zenith and the night ambient (`nightAmbient`, Sky.ts trackClouds). That
+//     ambient is a fixed light of its own, which neither the sky's night gain nor the moon's
+//     gains reach, and on a clear night it sets nearly all of the cirrus' brightness; the cirrus'
+//     share of it takes a gain (`cirrusNightAmbient`: `sky.night.cirrusAmbient`, 0 to 2, 1 as
+//     before). The cumulus' march takes the ambient ungained.
 //   - march: coarse steps until cloud is found, then fine ones; whole cells of the weather map
 //     that cannot reach the ray's height are skipped.
 // The view is ray marched in screen space, one pixel of every 4 x 4 block per frame, accumulated
 // with reprojection (camera motion and wind drift), clamped to this frame's neighbourhood and
 // upsampled bicubically; a panorama of the upper sky serves reflections, the environment and the
-// sun's visibility; a shadow map holds the layer's transmittance along the key light.
+// sun's visibility; a shadow map holds the layer's transmittance along the key light, at the
+// weather's share of the layer's optical depth (`shadowDensity`, Weather.ts), read with a
+// cubic B-spline built from four bilinear taps (`shadow`), with fades toward lit by the distance
+// from the island's centre and by the view's angle from a chosen direction (inert until fitted);
+// the haze reads it at each point's ground point along the same flat beam, with its B-spline blur
+// for sharpening (`shadowAlongBeam`).
 // This project keeps its own weather on top: coverage and density sweep in as a front from
 // upwind, rain hangs in curtains under raining cloud, and high cirrus (Cirrus.ts) lies above.
 // Both layers drift downwind with the wind aloft, a multiple of the weather's surface wind veered
@@ -85,12 +114,26 @@ const EROSION_BASE = 0.24, EROSION_PEAK = 2.15;
 const BASE_WEATHER = 0.54, BASE_WEATHER_END = 0.13; // bases need richer weather
 const SKEW = 1750; // metres the tops lean downwind
 const HORIZON_START = 20000, HORIZON_RAMP = 45000, HORIZON_AMOUNT = 0.12; // more cloud far out
-const POWDER = 0.7, AMBIENT = 0.7 * ( 1 + 0.99 ), BASE_SHADOW = 0.88, BASE_SHADOW_HEIGHT = 0.13;
-const BOUNCE = new THREE.Color( 0.009134058699157796, 0.015208514418949472, 0.018500220124016652 );
-const MELT_START = 25000, MELT_END = 45000;
+const AMBIENT = 0.7 * ( 1 + 0.99 );
+const HORIZON_RING = 16; // azimuths in the half ring of horizon sky a cloud's base sees (see horizonRing)
 const STEP = 25; // metres: the finest step and the first light segment
+// The cloud's two phase lobes (see makeMarch): tidewater's droplet phase's first order, two
+// Henyey-Greenstein lobes, `forward` and `back` asymmetries, the back one's share `backShare` of the
+// light where it still gets through; deep in the cloud the back lobe alone (the blend after Patry 2021,
+// p. 97). Tunable at load (`sky.clouds.lobeForward`,
+// `lobeBack`, `lobeBackShare`).
+const LOBE = {
+	forward: tune( 'sky.clouds.lobeForward', 0.8, { min: 0.3, max: 0.95, load: true } )(),
+	back: tune( 'sky.clouds.lobeBack', - 0.2, { min: - 0.6, max: 0.2, load: true } )(),
+	backShare: tune( 'sky.clouds.lobeBackShare', 0.2, { min: 0, max: 0.6, load: true } )(),
+};
+// The light march's segments grow by this factor, the first sized so that they span the shell's
+// depth together (updateLightTaps).
+const LIGHT_GROWTH = 2.25;
+// The shell's mean height (km), where the clouds read the atmosphere's in-scatter table.
+const CLOUD_HEIGHT_KM = ( SHELL_BOTTOM + SHELL_THICKNESS / 2 ) / 1000;
 // The most light march taps a tier may ask for (see setMarch); the uniforms hold this many.
-const MAX_LIGHT_TAPS = 5, FULL_LIGHTING_ALPHA = 0.5, LIGHT_REUSE_STEPS = 3;
+const MAX_LIGHT_TAPS = 6, FULL_LIGHTING_ALPHA = 0.5, LIGHT_REUSE_STEPS = 3;
 const AP_DIST = 30000; // aerial perspective scale toward the horizon
 const FAR = 250000;
 // A weather change sweeps across this many metres of sky, arriving from upwind.
@@ -151,7 +194,7 @@ export interface CloudMarch {
 	lightTaps: number; // taps of the light march toward the key light (1 to MAX_LIGHT_TAPS)
 	rainSteps: number; // segments of the rain curtains' march
 }
-const MARCH_DEFAULTS: CloudMarch = { viewSteps: 256, panoramaSteps: 128, lightTaps: 5, rainSteps: 16 };
+const MARCH_DEFAULTS: CloudMarch = { viewSteps: 256, panoramaSteps: 128, lightTaps: 6, rainSteps: 16 };
 
 // How the view's resolution is set: a fraction of the render, or of the display (the render high
 // draws at its nominal ratio: the display's, up to 1.5), so a lower render scale does not soften
@@ -241,11 +284,9 @@ const layerDistance = Fn( ( [ h, mu, a ]: [ F, F, F ] ) => {
 // Normalised Henyey-Greenstein phase.
 const henyeyGreenstein = ( cosTheta: F, g: number ) =>
 	float( 1 - g * g ).div( max( float( 1 + g * g ).sub( cosTheta.mul( 2 * g ) ), 1e-3 ).pow( 1.5 ).mul( 4 * Math.PI ) );
-// Droplet phase: 80 % forward, 20 % back; each higher scattering order halves the asymmetry.
-const dropletPhases = ( mu: F ) => vec3( henyeyGreenstein( mu, 0.8 ), henyeyGreenstein( mu, 0.4 ), henyeyGreenstein( mu, 0.2 ) ).mul( 0.8 )
-	.add( vec3( henyeyGreenstein( mu, - 0.2 ), henyeyGreenstein( mu, - 0.1 ), henyeyGreenstein( mu, - 0.05 ) ).mul( 0.2 ) );
-
 const sat = ( x: F ) => clamp( x, 0, 1 );
+const luminance = ( c: V3 ) => dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
+const desaturate = ( c: V3, k: F ) => mix( c, vec3( luminance( c ) ), k );
 const over = ( a: V4, b: V4 ) => vec4( a.rgb.add( b.rgb.mul( a.a ) ), a.a.mul( b.a ) );
 // Height in the shell (0 at the base, 1 at the top) of a camera-relative point; the parabolic
 // curvature term avoids subtracting two planet radii in float.
@@ -313,6 +354,8 @@ export class Clouds {
 	// Coverage and density over the island; they drive the lighting decisions for the deck.
 	readonly coverage = uniform( 0.28 );
 	readonly density = uniform( 1 );
+	// the share of the layer's optical depth its shadow map is cast with (the weather's)
+	readonly shadowDensity = uniform( 1 );
 	// The weather front: values before and after, the linear progress over the island and the
 	// unit horizontal direction the weather comes from.
 	readonly coverageFrom = uniform( 0.28 );
@@ -334,6 +377,9 @@ export class Clouds {
 	readonly frontAxis = uniform( new THREE.Vector2( 1, 0 ) );
 	// High cirrus: amount and the unit direction its fibres are combed along (the wind).
 	readonly cirrus = uniform( 0 );
+	// The gain on the sunlight the cirrus scatters (Sky.ts SKY_LIGHT times CIRRUS_SHARE, beside the
+	// atmosphere's own): its forward peak round the sun is part of the sky's light against the sun's.
+	readonly cirrusSunGain = uniform( 1 );
 	readonly cirrusAxis = uniform( new THREE.Vector2( 1, 0 ) );
 	// The cumulus' drift: the field is sampled at p + windOffset. Set through setDrift, which keeps
 	// it within one noise period.
@@ -346,11 +392,39 @@ export class Clouds {
 	readonly lightColor = uniform( new THREE.Color( 0.5, 0.45, 0.38 ) );
 	// Night sky glow and moonlit fill, added to the atmosphere's own sky light.
 	readonly nightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
-	readonly seaBounce = uniform( new THREE.Color( 0, 0, 0 ) );
+	// The gain on the night ambient the cirrus takes (its sky light at night comes almost all from
+	// it, and no other night tunable reaches it); a change rebakes the panorama and the environment.
+	readonly cirrusNightAmbient = tuneUniform( 'sky.night.cirrusAmbient', 0.0472, { min: 0, max: 2, onChange: markSkyRetune } );
 	// Art balance of beam to sky light inside the clouds. A low sun's beam is already reddened
 	// by the atmosphere; favouring it keeps sunset clouds glowing instead of muddy.
 	readonly directGain = uniform( 1 );
 	readonly ambientGain = uniform( 1 );
+	// The light march's tail density (relative to a density of one) and the floor of the step
+	// transmittance that scales the light's optical depth (makeMarch): both mechanisms in place, both
+	// off.
+	readonly lightTail = uniform( 0 );
+	readonly lightFloor = uniform( 0 );
+	// How far the in-scatter that weighs the sun's lobes against the moon's is desaturated toward
+	// its luminance: the haze's clear-day value when it was set (weather/HazeKeys.ts), not linked to
+	// it; the haze's has since been fitted higher, and the clouds' keeps its own until they are
+	// fitted.
+	readonly lightDesaturation = uniform( 0.26 );
+	// The clouds' colours (makeMarch): each body's direct light gain (Sky.ts trackClouds), the
+	// shaded side's desaturation, its per-channel tint toward the opacity and its tone (pivot in
+	// log2 luminance, slope, lift: neutral).
+	readonly sunLight = uniform( 1 );
+	readonly moonLight = uniform( 0 );
+	readonly ambientDesaturation = uniform( 0.26 );
+	readonly ambientTint = uniform( new THREE.Vector3( 0, 0, 0 ) );
+	readonly ambientTone = uniform( new THREE.Vector3( 0, 1, 0 ) );
+	// The cloud shadow's fades toward lit (shadow): clamp( a_d r^2 + b_d ), r the horizontal distance
+	// (m) from shadowCentre, and clamp( a_a |d - d0|^2 + b_a ), d the direction from the camera to the
+	// point and d0 shadowFadeDirection, as ( a_d, b_d, a_a, b_a ). They start inert: the distance's
+	// reaches 1 only past the map's half span (6 km), where the map's own edge fade has already
+	// lifted the shadow, and the angle's is 0.
+	readonly shadowFade = uniform( new THREE.Vector4( 10 / ( SHADOW_SPAN / 2 ) ** 2, - 10, 0, 0 ) );
+	readonly shadowCentre = uniform( new THREE.Vector2( 0, 0 ) );
+	readonly shadowFadeDirection = uniform( new THREE.Vector3( 0, - 1, 0 ) );
 	readonly evolve = uniform( 0 );
 	readonly origin = uniform( new THREE.Vector3( 0, 15, 0 ) );
 	// The panorama; replaced when its size changes (setDome), so readers go through domeNode.
@@ -606,38 +680,67 @@ export class Clouds {
 
 		};
 
-		const skyAt = ( rd: V3 ) => this.atmosphere.skyRadiance( rd ).add( this.nightAmbient.rgb );
+		const skyAt = ( rd: V3 ) => this.atmosphere.skyRadiance( rd, false ).add( this.nightAmbient.rgb );
+		// The horizon sky a cloud's base sees is the whole ring round it, not the side toward the
+		// sun: a low sun's orange glow fills a short arc of that ring, so the ring's average is far
+		// paler, and the sun's own colour reaches the clouds through their direct light. The
+		// sky's radiance is symmetric about the sun's azimuth, so a half ring from the sun round to
+		// its opposite side holds the whole ring's average; its azimuths are relative to the sun,
+		// so the average moves smoothly with it.
+		const horizonRing = () => {
+
+			const s = this.atmosphere.sunDir;
+			const toward = normalize( vec2( s.x.add( 1e-5 ), s.z ) ).toVar();
+			const sum = vec3( 0 ).toVar();
+			Loop( HORIZON_RING, ( { i } ) => {
+
+				const a = float( i ).add( 0.5 ).mul( Math.PI / HORIZON_RING ).toVar();
+				const c = cos( a ), n = sin( a );
+				sum.addAssign( skyAt( normalize( vec3( toward.x.mul( c ).sub( toward.y.mul( n ) ), 0.03, toward.x.mul( n ).add( toward.y.mul( c ) ) ) ) ) );
+
+			} );
+			return sum.mul( 1 / HORIZON_RING );
+
+		};
 		const heightAlongRay = ( t: F, rd: V3 ) => this.camY.add( rd.y.mul( t ) ).add( dot( rd.xz, rd.xz ).mul( t ).mul( t ).div( 2 * EARTH_RADIUS ) ).sub( SHELL_BOTTOM ).div( SHELL_THICKNESS );
 
-		// Ray march the shell along rd (camera relative). L includes aerial perspective; `flash`
+		// Ray march the shell along rd (camera relative); `flash`
 		// adds the lightning inside the cloud.
 		const makeMarch = ( maxSteps: number, pixelCone: F, stepCone: F, flash = false ) => ( rd: V3, jitter: F ) => {
 
 			const start = layerDistance( this.camY, rd.y, float( SHELL_BOTTOM ) ).toVar();
 			const end = min( layerDistance( this.camY, rd.y, float( SHELL_BOTTOM + SHELL_THICKNESS ) ), FAR ).toVar();
 			const color = vec3( 0 ).toVar(), flashColor = vec3( 0 ).toVar();
+			// the march's light factors: direct (phase included) and ambient, each per unit of its colour
+			const directLight = float( 0 ).toVar(), ambientLight = float( 0 ).toVar();
+			// The atmosphere's in-scatter at the shell's mean height toward rd, per unit of the sun's
+			// and of the moon's illuminance: it weighs their lobes and colours the factors.
+			const a = this.atmosphere;
+			const sunRows = a.cloudRows( rd.y, CLOUD_HEIGHT_KM, 0 ), moonRows = a.cloudRows( rd.y, CLOUD_HEIGHT_KM, 1 );
+			const sunMie = desaturate( sunRows.mie, this.lightDesaturation ).toVar(), moonMie = desaturate( moonRows.mie, this.lightDesaturation ).toVar();
 			const transmission = float( 1 ).toVar(), weightedDepth = float( 0 ).toVar();
 			// The shell's coverage at its fullest here: the bound for skipping empty cells.
 			const coverageBound = shellCoverage( max( this.coverageFrom, this.coverageTo ) ).toVar();
 			If( rd.y.greaterThan( - 0.001 ).and( end.greaterThan( start ) ).and( coverageBound.greaterThan( 0 ) ), () => {
 
 				const L = this.lightDir;
-				const lightCosine = dot( rd, L ).toVar();
-				const phase = dropletPhases( lightCosine ).toVar();
 				const direct = this.lightColor.rgb.mul( this.directGain ).toVar();
-				const zenith = skyAt( vec3( 0, 1, 0 ) ).toVar();
-				const horizon = skyAt( normalize( vec3( L.x.add( 1e-5 ), 0.03, L.z ) ) ).toVar();
-				const bounce = vec3( BOUNCE.r, BOUNCE.g, BOUNCE.b ).mul( direct ).mul( max( L.y, 0 ) ).toVar();
-				const ambientScale = this.ambientGain.mul( AMBIENT ).toVar();
-				// Thin margins away from the sun are darker; the forward-scattered silver linings stay.
-				const powderWeight = float( 1 ).sub( smoothstep( 0.2, 0.95, lightCosine ) ).mul( POWDER ).toVar();
+				// The sun's and the moon's lobes, mixed by their light at the shell's height: each
+				// one's aerosol in-scatter there (the atmosphere's table, desaturated as the haze's
+				// light is) times its illuminance, so the switch at dusk follows the light.
+				const sunY = luminance( sunMie ).mul( luminance( a.sunIlluminance.rgb ) );
+				const moonY = luminance( moonMie ).mul( luminance( a.moonIlluminance.rgb ) );
+				const sunShare = smoothstep( 0, 1, sunY.div( max( sunY.add( moonY ), 1e-20 ) ) ).toVar();
+				const sunNu = dot( rd, a.sunDir ).toVar(), moonNu = dot( rd, a.moonDir ).toVar();
+				const forwardLobe = mix( henyeyGreenstein( moonNu, LOBE.forward ), henyeyGreenstein( sunNu, LOBE.forward ), sunShare ).toVar();
+				const backLobe = mix( henyeyGreenstein( moonNu, LOBE.back ), henyeyGreenstein( sunNu, LOBE.back ), sunShare ).toVar();
 				const hasDirectLight = max( direct.x, max( direct.y, direct.z ) ).greaterThan( 1e-5 ).toVar();
 				const t = start.add( jitter.mul( STEP ) ).toVar();
 				const coarse = int( 1 ).toVar(), emptyRun = int( 0 ).toVar();
 				const accumulatedDepth = float( 0 ).toVar(), refineEnd = float( - 1 ).toVar();
 				const cellStart = float( - 1 ).toVar(), cellEnd = float( - 1 ).toVar(), maximumWeather = float( 1 ).toVar();
 				const shadowAt = float( - FAR ).toVar(), shadowDensity = float( - 1 ).toVar(), shadowCheap = int( - 1 ).toVar();
-				const shadowTau = float( 0 ).toVar(), skyTau = float( 0 ).toVar();
+				const shadowTau = float( 0 ).toVar();
 				Loop( maxSteps, () => {
 
 					If( t.greaterThanEqual( end ).or( transmission.lessThan( 0.003 ) ), () => {
@@ -726,8 +829,13 @@ export class Clouds {
 					const surfaceStep = clamp( float( 0.5 ).div( max( sigmaT, 1e-6 ) ), fineStep.mul( 0.15 ), fineStep );
 					const stepLength = min( mix( surfaceStep, fineStep.mul( 3 ), smoothstep( 1, 3, accumulatedDepth ) ), end.sub( t ) ).toVar();
 					const height = sat( c.h ).toVar();
-					const baseShadow = mix( float( 1 ), mix( float( 0.15 ), float( 1 ), smoothstep( 0, BASE_SHADOW_HEIGHT, height ) ), BASE_SHADOW );
-					const powder = mix( float( 1 ), float( 1 ).sub( exp( density.mul( - 2 ) ) ), powderWeight );
+					const stepT = exp( sigmaT.mul( stepLength ).negate() ).toVar();
+					// The step's transmittance the light reads (below) over a step of the finest
+					// length, whatever this march's cone: the scaling and the lobes' mix stand for
+					// scattering inside a step, so a longer step lit the same cloud brighter, and the
+					// panorama's coarser march (the environment, reflections) lit an overcast deck
+					// several times brighter than the view does.
+					const lightStepT = exp( sigmaT.mul( min( mix( clamp( float( 0.5 ).div( max( sigmaT, 1e-6 ) ), STEP * 0.15, STEP ), STEP * 3, smoothstep( 1, 3, accumulatedDepth ) ), end.sub( t ) ) ).negate() ).toVar();
 					const cheap = float( 1 ).sub( transmission ).greaterThanEqual( FULL_LIGHTING_ALPHA ).toVar();
 					const reuse = min( fineStep.mul( LIGHT_REUSE_STEPS ), Math.max( 20, EROSION_SCALE * 0.03 ) );
 					If( abs( t.sub( shadowAt ) ).greaterThanEqual( reuse ).or( abs( density.sub( shadowDensity ) ).greaterThan( 0.08 ) ).or( select( cheap, int( 1 ), int( 0 ) ).notEqual( shadowCheap ) ), () => {
@@ -736,8 +844,11 @@ export class Clouds {
 						const scale = front.y.mul( DENSITY );
 						If( hasDirectLight, () => {
 
-							// The light march: taps growing along a narrow cone toward the key light.
-							const tau = float( 0 ).toVar();
+							// The light march: segments growing along a narrow cone toward the key light,
+							// spanning the shell's depth; past them a tail runs on to the shell's top at a
+							// constant density.
+							const toTop = float( 1 ).sub( c.h ).mul( SHELL_THICKNESS ).div( max( L.y, 0.05 ) );
+							const tau = max( toTop.sub( SHELL_THICKNESS ), 0 ).mul( this.lightTail ).mul( scale ).toVar();
 							for ( let i = 0; i < lightTaps; i ++ ) {
 
 								If( tau.lessThan( 32 ), () => {
@@ -751,33 +862,25 @@ export class Clouds {
 							shadowTau.assign( tau );
 
 						} );
-						// Sky light: two broad probes of the cloud above.
-						const skyLods = lods.add( 1 );
-						skyTau.assign( lightDensity( p.add( vec3( 0, 125, 0 ) ), coverage, skyLods, true ).mul( 250 )
-							.add( lightDensity( p.add( vec3( 0, 600, 0 ) ), coverage, skyLods, true ).mul( 700 ) ).mul( scale ) );
 						shadowAt.assign( t );
 						shadowDensity.assign( density );
 						shadowCheap.assign( select( cheap, int( 1 ), int( 0 ) ) );
 
 					} );
-					const energy = float( 0 ).toVar();
-					If( hasDirectLight, () => {
-
-						// Three scattering orders: transmittance through the optical depth, its half and quarter.
-						const quarter = exp( shadowTau.add( sigmaT.mul( STEP ) ).mul( - 0.25 ) ).toVar();
-						const half = quarter.mul( quarter ).toVar();
-						energy.assign( dot( vec3( half.mul( half ), half.mul( 0.5 ), quarter.mul( 0.25 ) ), phase ) );
-
-					} );
-					// Under a closed deck the sky is hidden far beyond the two probes: the base sees the
-					// deck and the dark sea, so its sky light fades with the coverage.
-					const skyVisibility = float( 0.8 ).div( skyTau.add( sigmaT.mul( 25 ) ).mul( 0.35 ).add( 1 ) ).add( 0.2 )
-						.mul( mix( float( 1 ), float( 0.3 ), smoothstep( 0.7, 0.95, coverage ) ) );
-					const ambient = mix( mix( zenith, horizon, 0.55 ), zenith, sqrt( height ) ).mul( skyVisibility ).add( bounce.mul( float( 1 ).sub( height ) ) ).mul( ambientScale );
-					const radiance = direct.mul( energy.mul( powder ).mul( baseShadow ) ).add( ambient );
-					const stepT = exp( sigmaT.mul( stepLength ).negate() ).toVar();
+					// The light's optical depth is scaled by the step's own transmittance (over the
+					// finest step's length, held at lightFloor or above): a dense step's light comes mostly from scattering inside it,
+					// not down the whole sun path. That and the two lobes stand in for multiple
+					// scattering: the forward lobe rules where sunlight still gets through (the
+					// margins, the silver lining), the back lobe alone deep in the cloud.
+					const lightT = exp( shadowTau.negate() );
+					const scaledT = exp( shadowTau.mul( max( this.lightFloor, lightStepT ) ).negate() ).toVar();
+					const backShare = mix( float( 1 ), float( LOBE.backShare ), smoothstep( 0, 1, lightT.mul( lightStepT ) ) );
+					const phase = mix( forwardLobe, backLobe, backShare );
 					const alpha = transmission.mul( float( 1 ).sub( stepT ) ).toVar();
-					color.addAssign( radiance.mul( alpha ) );
+					directLight.addAssign( alpha.mul( scaledT ).mul( phase ) );
+					// Sky light: full where the light's path is clear; where it is shadowed, falling to a
+					// ramp up the shell (dark bases, bright tops: full at the top).
+					ambientLight.addAssign( alpha.mul( height.mul( float( 1 ).sub( scaledT ) ).add( scaledT ) ) );
 					if ( flash ) {
 
 						If( this.flashOn.greaterThan( 0.5 ), () => {
@@ -796,19 +899,35 @@ export class Clouds {
 
 			} );
 			const alpha = float( 1 ).sub( transmission ).toVar();
+			// The factors' colours, from the atmosphere at the shell's height, so the lit sides follow
+			// the sun's colour there at any hour and the shaded sides take the sky's colour and depth.
+			// Lit: direct x the Mie in-scatter's colour (its chromaticity, desaturated) x each body's
+			// light gain. Shaded: the ambient factor, tinted per channel toward the opacity and toned
+			// on its log luminance, x the Rayleigh in-scatter under its phase (desaturated) x the
+			// earth's shadow there x each body's illuminance x the ambient gain; plus the night's own
+			// glow. Both factors are sums over the march, already premultiplied by the opacity.
+			If( directLight.add( ambientLight ).greaterThan( 0 ), () => {
+
+				const chroma = ( c: V3 ) => c.div( max( luminance( c ), 1e-20 ) );
+				const lit = chroma( sunMie ).mul( this.sunLight ).add( chroma( moonMie ).mul( this.moonLight ) ).mul( directLight );
+				const skyOf = ( rows: { rayleigh: V3 }, body: 0 | 1, light: V3, illuminance: V3 ) => desaturate(
+					rows.rayleigh.mul( skyRayleighPhase( dot( rd, light ), a.rayleighForward ) ), this.ambientDesaturation )
+					.mul( a.earthShadowAt( float( CLOUD_HEIGHT_KM ), rd, body ) ).mul( illuminance );
+				const skyLight = skyOf( sunRows, 0, a.sunDir, a.sunIlluminance.rgb ).add( skyOf( moonRows, 1, a.moonDir, a.moonIlluminance.rgb ) )
+					.mul( this.ambientGain.mul( AMBIENT ) ).add( this.nightAmbient.rgb.mul( this.ambientGain.mul( AMBIENT ) ) );
+				const tinted = mix( vec3( ambientLight ), vec3( alpha ), this.ambientTint ).toVar();
+				// tone: log2 luminance moved about a pivot by a slope and a lift, applied as a scale
+				const y = log2( max( luminance( tinted ), 1e-12 ) );
+				const tone = this.ambientTone;
+				const shade = tinted.mul( y.sub( tone.x ).mul( tone.y.sub( 1 ) ).add( tone.z ).exp2() );
+				color.assign( lit.add( shade.mul( skyLight ) ) );
+
+			} );
 			const depth = select( alpha.greaterThan( 1e-4 ), weightedDepth.div( max( alpha, 1e-4 ) ), start.add( 4000 ) ).toVar();
-			// Aerial perspective toward the sky behind, then the far melt into the sky.
-			const sky = skyAt( rd ).toVar();
-			// Under a closed deck the air ahead is lit by the deck, not by a clear sky: the haze toward
-			// the sky behind thins so the distant deck keeps its grey down to the horizon.
-			const closed = smoothstep( 0.7, 0.95, shellCoverage( this.coverage ) ).toVar();
-			const ap = exp( depth.mul( - 1 / AP_DIST ).div( closed.mul( 5 ).add( 1 ) ) );
-			const hazed = mix( sky.mul( alpha ), color, ap );
-			// A closed deck runs on to the horizon in its own grey rather than melting into a clear sky.
-			const melt = smoothstep( MELT_START, MELT_END, depth ).mul( float( 1 ).sub( closed ) );
-			const L = mix( hazed, sky.mul( alpha ), melt );
-			// The lightning inside the cloud, kept apart (see buildView), under the same air.
-			const F = flashColor.mul( ap ).mul( float( 1 ).sub( melt ) );
+			// No air of its own: the dome fogs the clouds at their distance (Sky.ts fogDome).
+			const L = color;
+			// The lightning inside the cloud, kept apart (see buildView).
+			const F = flashColor;
 			// The march stops once 0.3 % of the light gets through: the rest counts as opaque.
 			return { L, F, T: sat( transmission.sub( 0.003 ).div( 0.997 ) ), depth };
 
@@ -864,10 +983,10 @@ export class Clouds {
 				// direction; from below the dark sea gives back almost nothing. Where the sun reaches
 				// the drops they add its light, brightest looking toward it.
 				const zenith = skyAt( vec3( 0, 1, 0 ) ).toVar();
-				const sunHorizon = skyAt( normalize( vec3( L.x.add( 1e-5 ), 0.03, L.z ) ) );
+				const horizon = horizonRing();
 				const closed = smoothstep( 0.7, 0.95, shellCoverage( this.coverage ) ).toVar();
 				const deckLight = mix( float( 1 ), float( 0.3 ), closed ).toVar();
-				const cloudBase = mix( zenith, sunHorizon, 0.55 ).mul( AMBIENT * 0.25 ).mul( deckLight ).toVar();
+				const cloudBase = mix( zenith, horizon, 0.55 ).mul( AMBIENT * 0.25 ).mul( deckLight ).toVar();
 				const sideLight = skyAt( normalize( vec3( rd.x.add( 1e-5 ), 0.03, rd.z ) ) ).mul( deckLight ).toVar();
 				// Distant curtains fade into the air ahead: toward the sky behind them where it is
 				// open, toward the deck's base where a closed deck hides it; under a deck the haze is
@@ -1000,11 +1119,11 @@ export class Clouds {
 				const phase = henyeyGreenstein( cosine, 0.85 ).mul( 0.4 ).add( henyeyGreenstein( cosine, 0.3 ).mul( 0.35 ) )
 					.add( henyeyGreenstein( cosine, - 0.15 ).mul( 0.25 ) ).add( halo );
 				const through = exp( tau.mul( - 0.5 ).div( max( this.lightDir.y, 0.1 ) ) );
-				const sun = this.lightColor.rgb.mul( this.directGain );
+				const sun = this.lightColor.rgb.mul( this.directGain ).mul( this.cirrusSunGain );
 				const lit = sun.mul( phase.mul( through ).add( float( 1 ).sub( through ).mul( 0.06 ) ) )
-					.add( this.atmosphere.skyRadiance( vec3( 0, 1, 0 ) ).add( this.nightAmbient.rgb ).mul( 0.9 ) ).mul( alpha );
-				const air = exp( t.mul( - 0.25 / AP_DIST ) );
-				result.assign( vec4( lit.mul( air ).add( skyAt( rd ).mul( alpha ).mul( float( 1 ).sub( air ) ) ), float( 1 ).sub( alpha ) ) );
+					.add( this.atmosphere.skyRadiance( vec3( 0, 1, 0 ), false ).add( this.nightAmbient.rgb.mul( this.cirrusNightAmbient ) ).mul( 0.9 ) ).mul( alpha );
+				// No air of its own: the dome fogs it with the clouds (Sky.ts fogDome).
+				result.assign( vec4( lit, float( 1 ).sub( alpha ) ) );
 
 			} );
 			return result;
@@ -1052,12 +1171,13 @@ export class Clouds {
 				const ly = max( L.y, 0.08 );
 				const ray = vec3( L.x, ly, L.z ).toVar();
 				const t0 = float( SHELL_BOTTOM ).div( ly ), dt = float( SHELL_THICKNESS / 16 ).div( ly ).toVar();
+				// (the optical depth at the weather's share of the deck's: `shadowDensity`)
 				const tau = float( 0 ).toVar();
 				Loop( 16, ( { i } ) => {
 
 					const p = vec3( ground.x, 0, ground.y ).add( ray.mul( t0.add( float( i ).add( 0.5 ).mul( dt ) ) ) ).toVar();
 					const front = frontAt( p.xz ).toVar();
-					tau.addAssign( lightDensity( p, front.x, vec2( 2 ), false ).mul( front.y ).mul( DENSITY ).mul( dt ) );
+					tau.addAssign( lightDensity( p, front.x, vec2( 2 ), false ).mul( front.y ).mul( DENSITY ).mul( this.shadowDensity ).mul( dt ) );
 					If( tau.greaterThan( 12 ), () => {
 
 						Break();
@@ -1517,9 +1637,9 @@ export class Clouds {
 
 	}
 
-	// The light march toward the key light: a short local segment, then taps growing
-	// geometrically to a few kilometres, spread over a narrow cone (golden-angle spiral) and read
-	// at mip levels matching their spacing.
+	// The light march toward the key light: segments growing by LIGHT_GROWTH, the first sized so
+	// that together they span the shell's depth, spread over a narrow cone (golden-angle spiral) and
+	// read at mip levels matching their spacing.
 	private updateLightTaps(): void {
 
 		const L = this.lightDir.value;
@@ -1527,15 +1647,15 @@ export class Clouds {
 		tangent.normalize();
 		const bitangent = new THREE.Vector3().crossVectors( L, tangent );
 		const taps = this.march.lightTaps;
+		const first = SHELL_THICKNESS * ( LIGHT_GROWTH - 1 ) / ( LIGHT_GROWTH ** taps - 1 );
 		for ( let k = 0; k < taps; k ++ ) {
 
-			const i = k + 1;
-			const growth = 1.7 ** i, mid = STEP * ( ( growth - 1 ) / 0.7 + growth * 0.5 );
-			const angle = i * 2.399963, radius = Math.sqrt( ( i + 0.5 ) / ( taps + 1 ) ) * 0.05 * mid;
+			const length = first * LIGHT_GROWTH ** k, mid = first * ( LIGHT_GROWTH ** k - 1 ) / ( LIGHT_GROWTH - 1 ) + length * 0.5;
+			const angle = ( k + 1 ) * 2.399963, radius = Math.sqrt( ( k + 1.5 ) / ( taps + 1 ) ) * 0.05 * mid;
 			const u = Math.cos( angle ) * radius, v = Math.sin( angle ) * radius;
 			this.lightTaps[ k ].value.set(
 				L.x * mid + tangent.x * u + bitangent.x * v, L.y * mid + tangent.y * u + bitangent.y * v,
-				L.z * mid + tangent.z * u + bitangent.z * v, STEP * growth );
+				L.z * mid + tangent.z * u + bitangent.z * v, length );
 			const footprint = mid * 0.1;
 			this.lightLods[ k ].value.set( Math.max( 0, Math.log2( footprint * 64 / BASE_SCALE ) ), Math.max( 0, Math.log2( footprint * 64 / EROSION_SCALE ) ) );
 
@@ -1634,7 +1754,7 @@ export class Clouds {
 
 	/** Light of the lightning inside the clouds in a direction, for reflections and directions
 	 * outside the view: the march's light where the ray enters the cloud deck, times the cloud's
-	 * `opacity` there, with the view's aerial perspective. Without texture lookups it costs the
+	 * `opacity` there (the dome fogs it with the clouds). Without texture lookups it costs the
 	 * water shader no sampler. */
 	flashAt( direction: V3, opacity: F ): V3 {
 
@@ -1644,9 +1764,7 @@ export class Clouds {
 			// A little above the base, where the march gathers most of a thick deck's light.
 			const t = layerDistance( this.camY, direction.y, float( SHELL_BOTTOM + 150 ) ).toVar();
 			const p = vec3( direction.x.mul( t ), this.camY.add( direction.y.mul( t ) ), direction.z.mul( t ) );
-			const closed = smoothstep( 0.7, 0.95, shellCoverage( this.coverage ) );
-			const ap = exp( t.mul( - 1 / AP_DIST ).div( closed.mul( 5 ).add( 1 ) ) );
-			result.assign( this.flashLight( p ).mul( opacity ).mul( ap ).mul( smoothstep( 0, 0.04, direction.y ) ) );
+			result.assign( this.flashLight( p ).mul( opacity ).mul( smoothstep( 0, 0.04, direction.y ) ) );
 
 		} );
 		return result;
@@ -1724,13 +1842,81 @@ export class Clouds {
 	shadow( worldPosition: V3 ): F {
 
 		const q = worldPosition.xz.div( SHADOW_SPAN ).add( 0.5 ).toVar();
-		const s = texture( this.shadowMap, q ).level( float( 0 ) ).r;
+		// a cubic B-spline over the map's 47 m texels, from four bilinear taps (Sigg and Hadwiger,
+		// "Fast Third-Order Texture Filtering", GPU Gems 2, ch. 20): the shadow's edges stay round
+		// where a bilinear lookup draws straight segments and diamonds tens of metres long
+		const c = q.mul( SHADOW_SIZE ).sub( 0.5 ).toVar();
+		const i = floor( c ).toVar(), f = c.sub( i ).toVar();
+		const f2 = f.mul( f ).toVar(), f3 = f2.mul( f ).toVar();
+		const w0 = f.oneMinus().mul( f.oneMinus() ).mul( f.oneMinus() ).div( 6 );
+		const w1 = f3.mul( 3 ).sub( f2.mul( 6 ) ).add( 4 ).div( 6 ).toVar();
+		const w2 = f.mul( 3 ).add( f2.mul( 3 ) ).sub( f3.mul( 3 ) ).add( 1 ).div( 6 );
+		const w3 = f3.div( 6 ).toVar();
+		const g0 = w0.add( w1 ).toVar(), g1 = w2.add( w3 ).toVar();
+		// the taps' texel centres, i + 0.5 moved by h0 = w1 / g0 - 1 and h1 = w3 / g1 + 1
+		const p0 = i.add( 0.5 ).add( w1.div( g0 ).sub( 1 ) ).div( SHADOW_SIZE ).toVar();
+		const p1 = i.add( 0.5 ).add( w3.div( max( g1, 1e-6 ) ).add( 1 ) ).div( SHADOW_SIZE ).toVar();
+		const tap = ( x: F, y: F ): F => texture( this.shadowMap, vec2( x, y ) ).level( float( 0 ) ).r;
+		const s = mix(
+			mix( tap( p0.x, p0.y ), tap( p1.x, p0.y ), g1.x ),
+			mix( tap( p0.x, p1.y ), tap( p1.x, p1.y ), g1.x ),
+			g1.y,
+		);
 		// The direct beam takes the full transmittance: the sky light already fills a cloud's shadow,
 		// and even a sixth of the sun left on the water glitters through a closed deck. The map holds
-		// no data beyond its edge, so the shadow fades out toward it.
+		// no data beyond its edge, so the shadow fades out toward it (shadowFadeAt).
+		return mix( s, float( 1 ), this.shadowFadeAt( q, worldPosition ) );
+
+	}
+
+	/** The shadow map read for the point `p` of the air (the haze's shafts, VolumetricHaze.ts): the
+	 * map holds each ground point's flat beam toward `lightDir`, its slope clamped at 0.08, so p is
+	 * taken down that same beam to its ground point, p.xz - L.xz p.y / max( L.y, 0.08 ). Returns
+	 * ( the map's bilinear sample, its bicubic B-spline blur ), both faded toward lit as `shadow()`
+	 * fades them for p (the edge of the map, the distance and direction fades). The blur takes four
+	 * bilinear taps (Sigg and Hadwiger, "Fast Third-Order Texture Filtering", GPU Gems 2, 2005); the
+	 * B-spline smooths rather than interpolates (it does not pass through the texels' values), as a
+	 * blur for the unsharp mask should. */
+	shadowAlongBeam( p: V3 ): V2 {
+
+		const L = this.lightDir, shadowed = p;
+		const ground = p.xz.sub( L.xz.mul( p.y.div( max( L.y, 0.08 ) ) ) );
+		const q = ground.div( SHADOW_SPAN ).add( 0.5 ).toVar();
+		const map = this.shadowMap;
+		const point = texture( map, q ).level( float( 0 ) ).r;
+		const coord = q.mul( SHADOW_SIZE ).sub( 0.5 ).toVar();
+		const index = floor( coord ).toVar();
+		const f = coord.sub( index ).toVar();
+		const f2 = f.mul( f ), f3 = f2.mul( f );
+		const w0 = f3.negate().add( f2.mul( 3 ) ).sub( f.mul( 3 ) ).add( 1 ).div( 6 );
+		const w1 = f3.mul( 3 ).sub( f2.mul( 6 ) ).add( 4 ).div( 6 );
+		const w2 = f3.mul( - 3 ).add( f2.mul( 3 ) ).add( f.mul( 3 ) ).add( 1 ).div( 6 );
+		const w3 = f3.div( 6 );
+		const g0 = w0.add( w1 ).toVar(), g1 = w2.add( w3 );
+		const h0 = index.sub( 0.5 ).add( w1.div( g0 ) ).div( SHADOW_SIZE ).toVar();
+		const h1 = index.add( 1.5 ).add( w3.div( g1 ) ).div( SHADOW_SIZE ).toVar();
+		const tap = ( a: V2, b: V2 ) => texture( map, vec2( a.x, b.y ) ).level( float( 0 ) ).r;
+		const blur = mix( mix( tap( h1, h1 ), tap( h0, h1 ), g0.x ), mix( tap( h1, h0 ), tap( h0, h0 ), g0.x ), g0.y );
+		const lit = this.shadowFadeAt( q, shadowed );
+		return mix( vec2( point, blur ), vec2( 1 ), lit );
+
+	}
+
+	// How far a shadow read at map coordinate q for the point `shadowed` fades toward lit: toward
+	// the map's edge, where it holds no data, and by the distance and direction fades (shadowFade).
+	private shadowFadeAt( q: V2, shadowed: V3 ): F {
+
 		const edge = abs( q.sub( 0.5 ) );
-		const inside = float( 1 ).sub( smoothstep( 0.42, 0.5, max( edge.x, edge.y ) ) );
-		return mix( float( 1 ), s, inside );
+		const outside = smoothstep( 0.42, 0.5, max( edge.x, edge.y ) );
+		// Far and grazing shadows fade toward lit, so they do not dim the island wrongly: by the
+		// squared horizontal distance from the island's centre, and by the squared distance of the
+		// direction to the point (from the camera) from a chosen one (shadowFade, shadowFadeDirection).
+		const f = this.shadowFade;
+		const r = shadowed.xz.sub( this.shadowCentre );
+		const toPoint = shadowed.sub( this.origin ).toVar();
+		const d = toPoint.div( max( length( toPoint ), 1e-6 ) ).sub( this.shadowFadeDirection );
+		const fade = max( sat( dot( r, r ).mul( f.x ).add( f.y ) ), sat( dot( d, d ).mul( f.z ).add( f.w ) ) );
+		return max( outside, fade );
 
 	}
 

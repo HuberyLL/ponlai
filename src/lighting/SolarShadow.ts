@@ -1,50 +1,103 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, Loop, uniform, texture, textureLoad, reference, float, int, vec2, vec3, vec4, ivec2, uv,
-	min, max, abs, clamp, cos, sin, pow, tan, dot, select, dFdx, dFdy, floor, fract, mix, smoothstep, step, positionWorld,
+	Fn, If, uniform, texture, textureLoad, reference, float, int, vec2, vec3, vec4, ivec2, uv,
+	min, max, abs, clamp, cos, sin, dot, select, dFdx, dFdy, floor, fract, mix, smoothstep, positionWorld,
 	interleavedGradientNoise, vogelDiskSample, screenCoordinate,
 } from 'three/tsl';
-import { SUN_ANGULAR_RADIUS } from './Radiometry.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type B = THREE.Node<'bool'>;
 
-// The sun's soft shadow: PCSS for the solar disk, each 2x2 footprint read with one
-// `textureGather` and compared by hand. three picks one sampler type per depth texture per
-// material, so a material whose filter gathers a map reads that map only by gather and compares by
-// hand (`solarVolumeVisibility`); a comparison-sampler reference belongs in a material of its own.
+// The sun's soft shadow: a Poisson disk of POISSON_POINTS points, POISSON_RADIUS map texels wide,
+// turned per screen pixel by a fixed hash (the same every frame, so a paused frame repeats), each
+// point one hardware comparison sample (a 2x2 bilinear comparison) whose comparison depth is the
+// receiver's moved along its plane to the point (the depth slope from the coordinate's screen
+// derivatives). The penumbra is the same width whatever the caster's distance: a contact-hardening
+// search (PCSS) varied it with the blocker depth, at the cost of six more loads per receiver and
+// penumbrae that hardened and softened as blockers came and went.
+// The hardware compares the four texels of a footprint at one depth, so the plane's change inside
+// a footprint (up to a texel's worth of slope) is left to the receivers' normal offset
+// (SunShadow `offsetCoordinate`): a blocker closer to its receiver than that offset clears is not
+// resolved by the map, and the screen-space shadow draws such contacts. Comparing at each texel's
+// centre instead (a gather compared by hand) resolved them but cost several milliseconds a frame.
+// textureSampleCompare runs only in uniform control flow: the disk is sampled unconditionally and
+// a receiver outside the map or not `active` takes 1 by a select afterwards; only a uniform
+// condition (the stepped sun's weight) may branch around it.
+// three picks one sampler type per depth texture per material, so every sampled read of these maps
+// is a comparison: the volume lookups gather with a comparison (`solarVolumeVisibility`); raw
+// depths are read with textureLoad, which takes no sampler.
 // Filters that take `dFdx` / `dFdy` stay out of `select()` / `If` branches (`installOpenShadow`).
 
-const BLOCKER_SAMPLES = 6, FILTER_SAMPLES = 8;
+// The disk: POISSON_POINTS points in the unit disk whose least distance apart is the largest
+// found, from a fixed seed (`poissonDisk`), scaled to POISSON_RADIUS texels: on a 2048 map of the
+// island about a grass blade's width; a wider disk shows its screen-fixed pattern.
+const POISSON_POINTS = 8, POISSON_RADIUS = 2;
 
-// PCSS: Fernando, "Percentage-Closer Soft Shadows", SIGGRAPH 2005 sketches.
-// For a directional disk the penumbra radius is blocker-receiver distance * tan(solar radius),
-// rather than the perspective-light size ratio. No upstream source code is used here.
-const solarShadowDiskOffset = Fn( ( [ index, count, rotation, exponent ]: [ F, F, F, F ] ) => {
+function poissonDisk( count: number, seed: number ): [ number, number ][] {
 
-	const radius = pow( index.add( 0.5 ).div( count ), exponent );
-	const angle = index.mul( 2.399963229728653 ).add( rotation );
-	return vec2( cos( angle ), sin( angle ) ).mul( radius );
+	// mulberry32: a small seeded stream, so the disk is the same on every load
+	let state = seed >>> 0;
+	const random = () => {
 
-} ).setLayout( { name: 'solarShadowDiskOffset', type: 'vec2', inputs: [
-	{ name: 'index', type: 'float' }, { name: 'count', type: 'float' },
-	{ name: 'rotation', type: 'float' }, { name: 'exponent', type: 'float' },
-] } );
+		state = ( state + 0x6d2b79f5 ) >>> 0;
+		let t = state;
+		t = Math.imul( t ^ ( t >>> 15 ), t | 1 );
+		t ^= t + Math.imul( t ^ ( t >>> 7 ), t | 61 );
+		return ( ( t ^ ( t >>> 14 ) ) >>> 0 ) / 4294967296;
 
-const solarPenumbraRadius = Fn( ( [ receiverDepth, blockerDepth, depthRange, angularRadius, worldSpan ]: [ F, F, F, F, V2 ] ) => {
+	};
+	const inDisk = (): [ number, number ] => {
 
-	return max( receiverDepth.sub( blockerDepth ), 0 ).mul( depthRange )
-		.mul( tan( max( angularRadius, 0 ) ) ).div( max( worldSpan, vec2( 1e-3 ) ) );
+		for ( ;; ) {
 
-} ).setLayout( { name: 'solarPenumbraRadius', type: 'vec2', inputs: [
-	{ name: 'receiverDepth', type: 'float' }, { name: 'blockerDepth', type: 'float' },
-	{ name: 'depthRange', type: 'float' }, { name: 'angularRadius', type: 'float' },
-	{ name: 'worldSpan', type: 'vec2' },
-] } );
+			const x = random() * 2 - 1, y = random() * 2 - 1;
+			if ( x * x + y * y <= 1 ) return [ x, y ];
 
-const receiverGradient = Fn( ( [ dx, dy ]: [ V3, V3 ] ) => {
+		}
+
+	};
+	const least = ( points: [ number, number ][] ) => {
+
+		let d = Infinity;
+		for ( let i = 0; i < points.length; i ++ ) for ( let j = i + 1; j < points.length; j ++ ) {
+
+			d = Math.min( d, Math.hypot( points[ i ][ 0 ] - points[ j ][ 0 ], points[ i ][ 1 ] - points[ j ][ 1 ] ) );
+
+		}
+		return d;
+
+	};
+	// the best of many random sets, then moves of single points kept while the least distance grows
+	let best = Array.from( { length: count }, inDisk ), bestLeast = least( best );
+	for ( let trial = 0; trial < 4096; trial ++ ) {
+
+		const points = Array.from( { length: count }, inDisk ), d = least( points );
+		if ( d > bestLeast ) { best = points; bestLeast = d; }
+
+	}
+	for ( let move = 0; move < 8192; move ++ ) {
+
+		const step = 0.1 * ( 1 - move / 8192 );
+		const i = Math.floor( random() * count );
+		const [ x, y ] = [ best[ i ][ 0 ] + ( random() * 2 - 1 ) * step, best[ i ][ 1 ] + ( random() * 2 - 1 ) * step ];
+		if ( x * x + y * y > 1 ) continue;
+		const moved = best.slice();
+		moved[ i ] = [ x, y ];
+		const d = least( moved );
+		if ( d > bestLeast ) { best = moved; bestLeast = d; }
+
+	}
+	return best;
+
+}
+
+const POISSON_DISK = poissonDisk( POISSON_POINTS, 0x50ad15c );
+
+/** The receiver plane's depth slope over the map's coordinate, from the coordinate's screen
+ * derivatives (take them in uniform control flow). */
+export const receiverGradient = Fn( ( [ dx, dy ]: [ V3, V3 ] ) => {
 
 	const determinant = dx.x.mul( dy.y ).sub( dx.y.mul( dy.x ) ).toVar();
 	// Judge the projected plane's conditioning relative to its derivative lengths. An
@@ -61,75 +114,31 @@ const receiverGradient = Fn( ( [ dx, dy ]: [ V3, V3 ] ) => {
 } ).setLayout( { name: 'solarShadowReceiverGradient', type: 'vec2', inputs: [
 	{ name: 'dx', type: 'vec3' }, { name: 'dy', type: 'vec3' },
 ] } );
-
-// How a receiver filters a shadow map. `soft` false keeps the bilinear comparison alone (no
-// blocker search, no penumbra disk): the quality tiers' cheapest mode.
-export interface SolarShadowTaps {
-	soft: boolean;
-	blockerSamples: number;
-	filterSamples: number;
-}
-
-export const SOLAR_SHADOW_TAPS: Readonly<SolarShadowTaps> = { soft: true, blockerSamples: BLOCKER_SAMPLES, filterSamples: FILTER_SAMPLES };
-
-// Startup switch for timing the shadow filter against its former path (debug A/B only, read once
-// at load because the filter compiles into every lit material): `?shadowFilter=legacy` is the
-// hardware comparison and four loads per footprint; tokens `sl1` (gather) and `sl3` (the lighter
-// vegetation taps, a lower tier's mode) switch the parts on. The default is sl1.
-function readShadowFilterPath(): { gather: boolean; vegetation: boolean } {
-
-	const value = typeof location === 'undefined' ? null : new URLSearchParams( location.search ).get( 'shadowFilter' );
-	if ( value === null ) return { gather: true, vegetation: false };
-	// '+' in a query string decodes to a space
-	const tokens = value.toLowerCase().split( /[\s+,]+/ );
-	return { gather: tokens.includes( 'sl1' ), vegetation: tokens.includes( 'sl3' ) };
-
-}
-
-export const SHADOW_FILTER_PATH = readShadowFilterPath();
-
 export interface SolarShadowParameters {
 	mapSize: V2;
-	worldSpan: V2;
-	depthRange: F;
-	angularRadius?: F;
 	depthKind?: 'depth' | 'color';
 	// false skips the raw depth reads (the result is then fully lit): a map that is not in use
 	active?: B;
 	// the layer of an array depth texture
 	layer?: number;
-	taps?: Readonly<SolarShadowTaps>;
 }
 
-// One map of a filtered lookup: its coordinate, projection and layer.
+// One map of a filtered lookup: its coordinate and layer.
 export interface SolarShadowLayer {
 	coordinate: V3;
-	worldSpan: V2;
-	depthRange: F;
 	active?: B;
 	layer?: number;
 }
 
 interface SolarShadowSharedParameters {
 	mapSize: V2;
-	angularRadius?: F;
 	depthKind?: 'depth' | 'color';
-	taps?: Readonly<SolarShadowTaps>;
-	// one gather per 2x2 footprint, compared by hand (false: the hardware comparison and four loads)
-	gather?: boolean;
 }
 
 // Address one layer of an array depth texture; a plain texture passes through.
 function inLayer( node: THREE.TextureNode, layer?: number ): THREE.TextureNode {
 
 	return layer === undefined ? node : node.depth( int( layer ) ) as unknown as THREE.TextureNode;
-
-}
-
-// textureGather of a 2x2 footprint. WGSL returns (0,1), (1,1), (1,0), (0,0) as x, y, z, w.
-function gatherDepth( depth: THREE.Texture | THREE.TextureNode, uvNode: V2, layer?: number ): THREE.Node<'vec4'> {
-
-	return inLayer( texture( depth, uvNode ), layer ).gather() as unknown as THREE.Node<'vec4'>;
 
 }
 
@@ -145,14 +154,13 @@ export const volumeShadowRayMayIntersect = Fn( ( [ start, end ]: [ V3, V3 ] ) =>
 	{ name: 'start', type: 'vec3' }, { name: 'end', type: 'vec3' },
 ] } );
 
-// Volume samples have no receiver plane. Gather four base-level depths without derivatives, so
-// depth integration can run in nonuniform control flow, and compare them by hand: a comparison
-// sampler on a map that the surface filter gathers raw would be a second sampler type for one
-// binding, which three cannot express.
+// Volume samples have no receiver plane. Gather the four base-level comparisons without
+// derivatives (textureGatherCompare), so depth integration can run in nonuniform control flow, and
+// weigh them bilinearly: the hardware comparison's bilinear PCF, through the comparison sampler
+// the surface filter binds the map with.
 // Keep texture bindings local to the material, as for the surface-shadow factory below.
 export function solarVolumeVisibility( depth: THREE.Texture | THREE.TextureNode, coordinate: V3, mapSize: V2, active?: B, layer?: number ): F {
 
-	const gather = SHADOW_FILTER_PATH.gather;
 	return Fn( () => {
 
 		const sc = coordinate.toVar();
@@ -165,10 +173,9 @@ export function solarVolumeVisibility( depth: THREE.Texture | THREE.TextureNode,
 
 			const size = max( mapSize, vec2( 1 ) ).toVar();
 			const weight = fract( sc.xy.mul( size ).sub( 0.5 ) ).toVar();
-			// textureGather(Compare) has no implicit LOD or uniform-flow restriction.
-			// step( z, d ) is 1 where z <= d: the comparison's LessEqual
-			const taps = ( gather ? step( vec4( sc.z ), gatherDepth( depth, sc.xy, layer ) )
-				: inLayer( texture( depth, sc.xy ), layer ).gather().compare( sc.z ) as unknown as THREE.Node<'vec4'> ).toVar();
+			// textureGatherCompare has no implicit LOD or uniform-flow restriction; WGSL returns the
+			// texels (0,1), (1,1), (1,0), (0,0) as x, y, z, w, 1 where z <= d (LessEqual)
+			const taps = ( inLayer( texture( depth, sc.xy ), layer ).gather().compare( sc.z ) as unknown as THREE.Node<'vec4'> ).toVar();
 			visibility.assign( mix( mix( taps.w, taps.z, weight.x ), mix( taps.x, taps.y, weight.x ), weight.y ) );
 
 		} );
@@ -179,10 +186,10 @@ export function solarVolumeVisibility( depth: THREE.Texture | THREE.TextureNode,
 }
 
 // three's PCFShadowFilter, which tidewater's water takes (the waves break up any penumbra detail a
-// contact-hardening filter would add): five bilinear comparisons on a Vogel disk of one texel's
+// wider filter would add): five bilinear comparisons on a Vogel disk of one texel's
 // radius, the disk turned per pixel by interleaved gradient noise (fixed per pixel, so a paused
-// frame repeats). Each comparison gathers its footprint and compares by hand (solarVolumeVisibility),
-// so the map keeps the one sampler type the other filters read it by.
+// frame repeats). Each comparison gathers its footprint's comparisons (solarVolumeVisibility), so
+// it runs in any control flow.
 export function solarPCFVisibility( depth: THREE.Texture | THREE.TextureNode, coordinate: V3, mapSize: V2, active?: B, layer?: number ): F {
 
 	return Fn( () => {
@@ -203,180 +210,105 @@ export function solarPCFVisibility( depth: THREE.Texture | THREE.TextureNode, co
 
 }
 
-// Percentage-closer soft shadows for one map (or one layer of an array) of a depth texture.
+// The disk filter for one map (or one layer of an array) of a depth texture.
 // Call inside a Fn: it returns the visibility variable.
-function solarShadowLayer( depth: THREE.Texture | THREE.TextureNode, { coordinate, worldSpan, depthRange, active, layer }: SolarShadowLayer,
-	{ mapSize, angularRadius = float( SUN_ANGULAR_RADIUS ), depthKind = 'depth', taps = SOLAR_SHADOW_TAPS, gather = SHADOW_FILTER_PATH.gather }: SolarShadowSharedParameters ): F {
+function solarShadowLayer( depth: THREE.Texture | THREE.TextureNode, { coordinate, active, layer }: SolarShadowLayer,
+	{ mapSize, depthKind = 'depth' }: SolarShadowSharedParameters ): F {
 
-	const { soft, blockerSamples, filterSamples } = taps;
-	// Gather reads the raw depths of a 2x2 footprint in one fetch. A colour render target holding
-	// depth (the probe's reference) keeps four loads.
-	const gathered = gather && depthKind === 'depth';
 	const sc = coordinate.toVar();
-	// Derivatives and comparison samples all execute in uniform control flow. The depth slope
-	// removes receiver-plane self-shadowing without moving the contact by a large fixed bias.
+	// Derivatives all execute in uniform control flow. The depth slope carries the comparison
+	// depth to each disk point along the receiver's plane, so the disk's width adds no
+	// self-shadowing and needs no slope bias (within a point's footprint the normal offset covers it). A receiver plane too flat
+	// to matter compares the plain depth; a NaN gradient fails the test too and takes the same path
+	// (comparing along it would shadow the pixel outright); a huge but finite one, where the
+	// derivatives straddle a jump such as the refracted entry point at the waterline, passes,
+	// already clamped by receiverGradient.
 	const gradient = receiverGradient( dFdx( sc ), dFdy( sc ) ).toVar();
-	// A fixed disk pattern stays attached to the light projection. Screen noise would
-	// change a surface's sparse blocker samples as the camera moves, without a TAA pass.
-	const rotation = float( 0.7 );
+	const plane = select( max( abs( gradient.x ), abs( gradient.y ) ).greaterThan( 1e-7 ), gradient, vec2( 0 ) ).toVar();
 	const size = max( mapSize, vec2( 1 ) ).toVar();
-	const span = max( worldSpan, vec2( 1e-3 ) ).toVar();
+	// the disk's turn: a hash of the screen pixel, fixed per pixel
+	const angle = interleavedGradientNoise( screenCoordinate.xy ).mul( 2 * Math.PI ).toVar();
+	const turn = vec2( cos( angle ), sin( angle ) ).mul( POISSON_RADIUS ).div( size ).toVar();
 	const loadDepth = ( pixel: THREE.Node<'ivec2'> ): F => {
 
 		const loaded = inLayer( textureLoad( depth, pixel ), layer );
 		return depthKind === 'color' ? loaded.x : loaded as unknown as F;
 
 	};
-	const compareSample = ( q: V2, compareDepth: F, plane: V2 = gradient ): F => {
+	const compareSample = ( q: V2, compareDepth: F ): F => {
 
-		// Hardware PCF applies one comparison depth to four texels. The receiver plane
-		// changes inside that footprint too, even when the solar disk radius is zero.
-		// Compare at each actual texel centre before interpolation: no extra slope bias
-		// is needed, so a nearby caster keeps its contact on a steep receiver.
+		// one hardware comparison: the four texels of the footprint at one comparison depth
+		if ( depthKind === 'depth' ) return ( inLayer( texture( depth, q ), layer ).compare( compareDepth ) as unknown as F ).toVar();
+		// a colour render target holding depth (the probe's reference): the same semantics in four loads
 		const texel = q.mul( size ).sub( 0.5 ).toVar(), base = floor( texel ).toVar();
 		const weight = fract( texel ).toVar();
-		// Gather at the footprint's centre, the corner its four texels share: it picks the same
-		// four texels as floor() above at any sub-texel position, with clamp-to-edge at the border
-		// matching the clamped loads.
-		const footprint = gathered ? gatherDepth( depth, base.add( 1 ).div( size ), layer ).toVar() : null;
 		const compare = ( x: number, y: number ) => {
 
 			const pixel = clamp( base.add( vec2( x, y ) ), vec2( 0 ), size.sub( 1 ) ).toVar();
-			const centreOffset = pixel.add( 0.5 ).div( size ).sub( q );
-			const receiverDepth = compareDepth.add( dot( plane, centreOffset ) );
-			const stored = footprint ? footprint[ ( [ 'w', 'z', 'x', 'y' ] as const )[ y * 2 + x ] ] as F : loadDepth( ivec2( pixel ) );
-			return select( receiverDepth.lessThanEqual( stored ), float( 1 ), float( 0 ) );
+			return select( compareDepth.lessThanEqual( loadDepth( ivec2( pixel ) ) ), float( 1 ), float( 0 ) );
 
 		};
 		return mix( mix( compare( 0, 0 ), compare( 1, 0 ), weight.x ),
-			mix( compare( 0, 1 ), compare( 1, 1 ), weight.x ), weight.y );
+			mix( compare( 0, 1 ), compare( 1, 1 ), weight.x ), weight.y ).toVar();
 
 	};
-	// Three deduplicates texture uniforms by UUID and chooses the first access's sampler
-	// type. Without gather, register a real comparison before raw loads. It remains the exact
-	// centre result for a depth-constant receiver; sloped receivers use texel-plane comparisons.
-	const centre = ( depthKind === 'depth' && ! gathered ? inLayer( texture( depth, clamp( sc.xy, vec2( 0 ), vec2( 1 ) ) ), layer )
-		.compare( sc.z ) as unknown as F : float( 1 ) ).toVar();
 	let inside = sc.x.greaterThanEqual( 0 ).and( sc.y.greaterThanEqual( 0 ) )
 		.and( sc.x.lessThanEqual( 1 ) ).and( sc.y.lessThanEqual( 1 ) )
 		.and( sc.z.greaterThanEqual( 0 ) ).and( sc.z.lessThanEqual( 1 ) );
 	if ( active ) inside = inside.and( active );
-	const visibility = float( 1 ).toVar();
-	// Ocean pixels beyond the island's light frustum need no raw shadow-map accesses.
-	// Derivatives and the binding's comparison sample above still run uniformly.
-	If( inside, () => {
+	// sampled in uniform control flow whatever the receiver (textureSampleCompare), then selected
+	let sum: F = float( 0 );
+	for ( const [ px, py ] of POISSON_DISK ) {
 
-		if ( depthKind === 'depth' && ! gathered ) {
+		// the point turned and scaled to the map: ( px, py ) rotated by the pixel's angle
+		const offset = vec2( turn.x.mul( px ).sub( turn.y.mul( py ) ), turn.y.mul( px ).add( turn.x.mul( py ) ) ).toVar();
+		const q = sc.xy.add( offset ).toVar();
+		const within = q.x.greaterThanEqual( 0 ).and( q.y.greaterThanEqual( 0 ) )
+			.and( q.x.lessThanEqual( 1 ) ).and( q.y.lessThanEqual( 1 ) );
+		const sample = compareSample( q, sc.z.add( dot( plane, offset ) ) );
+		sum = sum.add( select( within, sample, float( 1 ) ) );
 
-			visibility.assign( centre );
-			If( max( abs( gradient.x ), abs( gradient.y ) ).greaterThan( 1e-7 ), () => {
-
-				visibility.assign( compareSample( sc.xy, sc.z ) );
-
-			} );
-
-		} else {
-
-			// The centre keeps the former split: a receiver plane too flat to matter compares the
-			// plain depth, as the hardware comparison did. A NaN gradient fails the test too and
-			// takes the same path (comparing along it would shadow the pixel outright); a huge but
-			// finite one, where the derivatives straddle a jump such as the refracted entry point
-			// at the waterline, passes, already clamped by receiverGradient, as on the legacy path.
-			const usable = max( abs( gradient.x ), abs( gradient.y ) ).greaterThan( 1e-7 );
-			visibility.assign( compareSample( sc.xy, sc.z, select( usable, gradient, vec2( 0 ) ) ) );
-
-		}
-		if ( ! soft ) return;
-		// This conservative search covers any caster between the receiver and the near plane.
-		// Progressive radii retain samples close to a thin leaf or a sharp contact, as well as
-		// finding more distant blockers. The first sample is the centre itself.
-		const searchRadius = solarPenumbraRadius( max( sc.z, 0 ), float( 0 ), depthRange, angularRadius, span ).toVar();
-		const blockerDepth = float( 0 ).toVar(), blockerCount = float( 0 ).toVar();
-		Loop( blockerSamples, ( { i } ) => {
-
-			const index = float( i );
-			const offset = select( index.equal( 0 ), vec2( 0 ),
-				solarShadowDiskOffset( max( index.sub( 1 ), 0 ), float( blockerSamples - 1 ), rotation, float( 2 ) ) ).mul( searchRadius ).toVar();
-			const q = sc.xy.add( offset ).toVar();
-			const inside = q.x.greaterThanEqual( 0 ).and( q.y.greaterThanEqual( 0 ) )
-				.and( q.x.lessThanEqual( 1 ) ).and( q.y.lessThanEqual( 1 ) );
-			const pixel = clamp( floor( q.mul( size ) ), vec2( 0 ), size.sub( 1 ) ).toVar();
-			const stored = loadDepth( ivec2( pixel ) ).toVar();
-			// A raw load uses the containing texel centre, not the requested disk position.
-			// Correcting only the requested offset mistakes a sloped clear plane for a blocker.
-			const centreOffset = pixel.add( 0.5 ).div( size ).sub( sc.xy );
-			const corrected = stored.sub( dot( gradient, centreOffset ) ).toVar();
-			const blocker = select( inside.and( corrected.lessThan( sc.z ) ), float( 1 ), float( 0 ) ).toVar();
-			blockerDepth.addAssign( corrected.mul( blocker ) );
-			blockerCount.addAssign( blocker );
-
-		} );
-		const average = select( blockerCount.greaterThan( 0 ), blockerDepth.div( max( blockerCount, 1 ) ), sc.z );
-		const radius = solarPenumbraRadius( sc.z, average, depthRange, angularRadius, span ).toVar();
-		const radiusTexels = max( radius.x.mul( size.x ), radius.y.mul( size.y ) ).toVar();
-		// Bilinear comparison already covers a texel footprint. A solar penumbra below a
-		// quarter texel needs no extra disk taps; fade them in to avoid a threshold jump.
-		// When every search tap is blocked the point lies in the umbra, since the search
-		// spans the widest penumbra possible at this depth: the bilinear result stands, and
-		// the disk taps are left to the penumbra bands.
-		If( blockerCount.greaterThan( 0 ).and( blockerCount.lessThan( blockerSamples ) ).and( radiusTexels.greaterThan( 0.25 ) ), () => {
-
-			const filtered = visibility.toVar();
-
-			Loop( filterSamples - 1, ( { i } ) => {
-
-				const offset = solarShadowDiskOffset( float( i ).add( 1 ), float( filterSamples ), rotation, float( 0.5 ) ).mul( radius ).toVar();
-				const q = sc.xy.add( offset ).toVar();
-				const inside = q.x.greaterThanEqual( 0 ).and( q.y.greaterThanEqual( 0 ) )
-					.and( q.x.lessThanEqual( 1 ) ).and( q.y.lessThanEqual( 1 ) );
-				const compareDepth = sc.z.add( dot( gradient, offset ) );
-				const sample = compareSample( q, compareDepth );
-				filtered.addAssign( select( inside, sample, float( 1 ) ) );
-
-			} );
-			visibility.assign( mix( visibility, filtered.div( filterSamples ), smoothstep( 0.25, 0.75, radiusTexels ) ) );
-
-		} );
-
-	} );
-	return visibility;
+	}
+	return select( inside, sum.div( POISSON_POINTS ), float( 1 ) ).toVar();
 
 }
 
 // Texture access stays in a material-local node factory. A shared layout function must never
 // close over a texture or uniform binding generated for a different material.
 export function solarShadowVisibility( depth: THREE.Texture | THREE.TextureNode, coordinate: V3,
-	{ mapSize, worldSpan, depthRange, angularRadius, depthKind = 'depth', active, layer, taps }: SolarShadowParameters ): F {
+	{ mapSize, depthKind = 'depth', active, layer }: SolarShadowParameters ): F {
 
-	return Fn( () => solarShadowLayer( depth, { coordinate, worldSpan, depthRange, active, layer },
-		{ mapSize, angularRadius, depthKind, taps } ) )();
+	return Fn( () => solarShadowLayer( depth, { coordinate, active, layer }, { mapSize, depthKind } ) )();
 
 }
 
 // Two maps of one depth texture blended by weight (the stepped sun: previous, current), each
-// filtered on its own with the same taps: a map's result never depends on the other, so the
-// cross-fade stays continuous across a redraw, when the current map becomes the previous one.
-// (Filtering both in one shared loop was tried and measured no faster.)
+// filtered on its own: a map's result never depends on the other, so the cross-fade stays
+// continuous across a redraw, when the current map becomes the previous one.
 export function solarSteppedShadowVisibility( depth: THREE.Texture | THREE.TextureNode, previous: SolarShadowLayer, current: SolarShadowLayer, weight: F,
-	{ mapSize, angularRadius, taps }: { mapSize: V2; angularRadius?: F; taps?: Readonly<SolarShadowTaps> } ): F {
+	{ mapSize }: { mapSize: V2 } ): F {
 
-	return mix(
-		Fn( () => solarShadowLayer( depth, previous, { mapSize, angularRadius, taps } ) )(),
-		Fn( () => solarShadowLayer( depth, current, { mapSize, angularRadius, taps } ) )(),
-		weight );
+	return Fn( () => {
+
+		// textureSampleCompare needs uniform control flow: branch on the uniform weight only
+		const before = float( 1 ).toVar();
+		If( weight.lessThan( 1 ), () => {
+
+			before.assign( solarShadowLayer( depth, previous, { mapSize } ) );
+
+		} );
+		return mix( before, solarShadowLayer( depth, current, { mapSize } ), weight );
+
+	} )();
 
 }
 
-// Standard receivers and custom water share the same projection dimensions and angular source.
+// The filter as a light's own filterNode (the probes' standard receiver).
 export function installSolarShadowFilter( sun: THREE.DirectionalLight ): void {
 
-	const camera = sun.shadow.camera;
 	const mapSize = reference( 'mapSize', 'vec2', sun.shadow );
-	const worldSpan = vec2( reference( 'right', 'float', camera ).sub( reference( 'left', 'float', camera ) ),
-		reference( 'top', 'float', camera ).sub( reference( 'bottom', 'float', camera ) ) );
-	const depthRange = reference( 'far', 'float', camera ).sub( reference( 'near', 'float', camera ) );
 	const filter = Fn( ( { depthTexture, shadowCoord }: { depthTexture: THREE.DepthTexture; shadowCoord: V3 } ) =>
-		solarShadowVisibility( depthTexture, shadowCoord, { mapSize, worldSpan, depthRange } ) );
+		solarShadowVisibility( depthTexture, shadowCoord, { mapSize } ) );
 	// The runtime exposes filterNode; @types/three has not declared this WebGPU hook yet.
 	( sun.shadow as unknown as { filterNode: typeof filter } ).filterNode = filter;
 
@@ -393,8 +325,10 @@ type FrustumShadowFilter = ( builder: THREE.NodeBuilder, inputs: ShadowFilterInp
 // derivatives are undefined for a quad that straddles the test (the refracted entry points at the
 // waterline jump in and out of the map): such pixels read whatever the neighbouring lanes left and
 // changed with any edit to the shader. The filter is evaluated first, in uniform control flow (it
-// returns lit outside the map itself), and only its result is selected.
-export function installOpenShadow( sun: THREE.DirectionalLight, visibility: ( position: V3 ) => F ): void {
+// returns lit outside the map itself), and only its result is selected. `strength` fades the map's
+// shadow (a closed deck's soft light shows no cast shadow: Weather.ts `castShadow`); the clouds' is
+// the visibility's own.
+export function installOpenShadow( sun: THREE.DirectionalLight, visibility: ( position: V3 ) => F, strength: F ): void {
 
 	const node = new THREE.ShadowNode( sun, null ) as unknown as { setupShadowFilter: FrustumShadowFilter };
 	node.setupShadowFilter = ( _builder, { filterFn, depthTexture, shadowCoord, shadow, depthLayer } ) => Fn( () => {
@@ -403,7 +337,7 @@ export function installOpenShadow( sun: THREE.DirectionalLight, visibility: ( po
 		const frustum = shadowCoord.x.greaterThanEqual( 0 ).and( shadowCoord.x.lessThanEqual( 1 ) )
 			.and( shadowCoord.y.greaterThanEqual( 0 ) ).and( shadowCoord.y.lessThanEqual( 1 ) )
 			.and( shadowCoord.z.lessThanEqual( 1 ) );
-		return select( frustum, filtered, float( 1 ) ).mul( visibility( positionWorld ) );
+		return mix( float( 1 ), select( frustum, filtered, float( 1 ) ), strength ).mul( visibility( positionWorld ) );
 
 	} )();
 	sun.shadow.shadowNode = node as unknown as THREE.Node;
@@ -470,7 +404,7 @@ export async function verifySolarShadow( renderer: THREE.WebGPURenderer ) {
 	sun.shadow.mapSize.set( width, width );
 	installSolarShadowFilter( sun );
 	const standardFilter = ( sun.shadow as unknown as { filterNode: ( input: { depthTexture: THREE.DepthTexture; shadowCoord: V3 } ) => F } ).filterNode;
-	const parameters = { mapSize: vec2( width ), worldSpan: vec2( span ), depthRange: float( depthRange ) };
+	const parameters = { mapSize: vec2( width ) };
 	outputMaterial.fragmentNode = Fn( () => {
 
 		const q = uv();
@@ -478,8 +412,8 @@ export async function verifySolarShadow( renderer: THREE.WebGPURenderer ) {
 		const standard = standardFilter( { depthTexture, shadowCoord: far } );
 		const color = solarShadowVisibility( field.texture, far, { ...parameters, depthKind: 'color' } );
 		const contact = solarShadowVisibility( depthTexture, near, parameters );
-		const hard = solarShadowVisibility( depthTexture, far, { ...parameters, angularRadius: float( 0 ) } );
-		return vec4( standard, color, contact, hard );
+		const bilinear = solarVolumeVisibility( depthTexture, far, vec2( width ) );
+		return vec4( standard, color, contact, bilinear );
 
 	} )();
 	const fieldQuad = new THREE.QuadMesh( fieldMaterial ), outputQuad = new THREE.QuadMesh( outputMaterial );
@@ -551,7 +485,9 @@ export async function verifySolarShadow( renderer: THREE.WebGPURenderer ) {
 			}
 
 		}
-		if ( widths[ 0 ] < 4 || widths[ 2 ] > widths[ 0 ] * 0.5 || widths[ 3 ] > 2 ) throw new Error( `Solar contact-hardening failed: ${ JSON.stringify( diagnostics ) }` );
+		// the disk's penumbra: as wide for a caster at the contact as for one 10 m away, within the
+		// disk and its bilinear footprints, and wider than the bilinear comparison alone
+		if ( widths[ 0 ] < 2 || widths[ 0 ] > 2 * ( POISSON_RADIUS + 1 ) || Math.abs( widths[ 2 ] - widths[ 0 ] ) > 1 || widths[ 3 ] > 2 ) throw new Error( `Solar disk filter width failed: ${ JSON.stringify( diagnostics ) }` );
 		if ( maximumDifference > 0.01 ) throw new Error( `Colour-depth and standard shadow samplers disagree by ${ maximumDifference }` );
 		for ( const profile of profiles ) {
 
@@ -565,7 +501,7 @@ export async function verifySolarShadow( renderer: THREE.WebGPURenderer ) {
 			}
 
 		}
-		return { ...diagnostics, physicalFarDiameterMetres: 2 * 10 * Math.tan( SUN_ANGULAR_RADIUS ),
+		return { ...diagnostics, diskRadiusTexels: POISSON_RADIUS,
 			farReceiverGapMetres: 10, contactReceiverGapMetres: 0.01, width, height, profiles };
 
 	} finally {
@@ -580,12 +516,18 @@ export async function verifySolarShadow( renderer: THREE.WebGPURenderer ) {
 
 }
 
-// A clear tilted depth field must stay fully lit at every subtexel phase. The reference native
-// PCF intentionally omits the four-corner correction, proving that the fixture exercises the bug.
-// It is the hardware comparison sampler, drawn by a material of its own, so it stays independent
-// of the gathered path; the gathered volume lookup (solarVolumeVisibility) must match it.
-// A 3 cm blocker on that same plane must keep its attached contact instead of needing slope bias.
-// Filtering hardware may hold the bilinear weights to 8 bits per axis: up to 1/256 on each.
+// A clear tilted depth field, looked up a normal offset away as the game's receivers are, must stay
+// fully lit at every subtexel phase. The reference native PCF, without the offset, proves that the
+// fixture exercises the receiver plane's rise inside a footprint. It is the hardware comparison
+// sampler alone, drawn by a material of its own; the gathered volume lookup (solarVolumeVisibility)
+// must match it.
+// The hardware compares a footprint's four texels at one depth, so a blocker nearer its receiver
+// than the normal offset clears plus one footprint's rise is not resolved by the map: such contacts
+// (a 3 cm blocker on this plane) are the screen-space shadow's. The blocker here stands 3 cm beyond
+// that reach and must cast a full umbra with its edge within a texel of where the offset lookup
+// puts it.
+// Filtering hardware may hold the bilinear weights to 8 bits per axis: up to 1/256 on each. The
+// same bounds the surface filter's comparisons against the colour copy's hand-weighted ones.
 const VOLUME_REFERENCE_TOLERANCE = 2 / 255;
 export async function verifySolarShadowRamp( renderer: THREE.WebGPURenderer ) {
 
@@ -606,6 +548,11 @@ export async function verifySolarShadowRamp( renderer: THREE.WebGPURenderer ) {
 
 	}
 	const gradient = uniform( new THREE.Vector2() ), phase = uniform( new THREE.Vector2() ), gap = uniform( 0 );
+	// the receivers' normal offset as the game applies it (SunShadow offsetCoordinate), in this
+	// map's coordinate: the plane's normal toward the light, NORMAL_OFFSET.near texels long (the
+	// eye's end, the smallest), loaded here so this module keeps no import of SunShadow
+	const { NORMAL_OFFSET } = await import( './SunShadow.ts' );
+	const shift = uniform( new THREE.Vector3() );
 	const planeDepth = ( q: V2 ) => float( 0.5 ).add( dot( gradient, q.sub( 0.5 ) ) );
 	const fieldDepth = planeDepth( uv() ).sub( select( uv().x.lessThan( 0.5 ), gap, float( 0 ) ) );
 	fieldMaterial.fragmentNode = vec4( fieldDepth, fieldDepth, fieldDepth, float( 1 ) );
@@ -617,10 +564,9 @@ export async function verifySolarShadowRamp( renderer: THREE.WebGPURenderer ) {
 	sun.shadow.mapSize.set( mapSize, mapSize );
 	installSolarShadowFilter( sun );
 	const standardFilter = ( sun.shadow as unknown as { filterNode: ( input: { depthTexture: THREE.DepthTexture; shadowCoord: V3 } ) => F } ).filterNode;
-	const parameters = { mapSize: vec2( mapSize ), worldSpan: vec2( span ), depthRange: float( depthRange ) };
+	const parameters = { mapSize: vec2( mapSize ) };
 	const probeCoordinate = () => uv().mul( vec2( 0.4, 0.2 ) ).add( vec2( 0.3, 0.4 ) ).add( phase.div( mapSize ) ).toVar();
-	// Only 1 cm of physical ray clearance: a slope-dependent blanket bias would erase
-	// this nearby 3 cm blocker at the lower elevation instead of fixing interpolation.
+	// Only 1 cm of physical ray clearance besides the normal offset.
 	const probeDepth = ( q: V2 ) => planeDepth( q ).sub( 0.01 / depthRange ).toVar();
 	// Hardware PCF semantics: one comparison depth for the four texels, from the comparison
 	// sampler. One material cannot bind the depth texture with two sampler types, so this one
@@ -635,10 +581,10 @@ export async function verifySolarShadowRamp( renderer: THREE.WebGPURenderer ) {
 
 		const q = probeCoordinate();
 		const receiverDepth = probeDepth( q );
-		// The same semantics as the volume lookup reads them (gathered, or a comparison sampler on
-		// the legacy path), checked against the reference above.
+		// The same semantics as the volume lookup reads them (gathered and compared by hand),
+		// checked against the reference above.
 		const native = solarVolumeVisibility( depthTexture, vec3( q, receiverDepth ), vec2( mapSize ) ).toVar();
-		const coordinate = vec3( q, receiverDepth );
+		const coordinate = vec3( q, receiverDepth ).add( shift );
 		const standard = standardFilter( { depthTexture, shadowCoord: coordinate } );
 		const color = solarShadowVisibility( field.texture, coordinate, { ...parameters, depthKind: 'color' } );
 		return vec4( standard, color, native, float( 1 ) );
@@ -652,7 +598,8 @@ export async function verifySolarShadowRamp( renderer: THREE.WebGPURenderer ) {
 	const cases: { elevation: number; slopeDegrees: number; phase: number[]; clearMinimum: number[];
 		nativeClearMinimum: number; volumeClearMinimum: number; volumeReferenceDifference: number;
 		contactMaximumUmbra: number[]; contactMinimumLit: number[];
-		contactWidthMetres: number[]; contactEdgeErrorMetres: number[]; maximumDifference: number }[] = [];
+		contactWidthMetres: number[]; contactEdgeErrorMetres: number[]; maximumDifference: number; blockerGapMetres: number }[] = [];
+	const failures: typeof cases = [];
 	let ready = false;
 	try {
 
@@ -665,13 +612,23 @@ export async function verifySolarShadowRamp( renderer: THREE.WebGPURenderer ) {
 			const slope = span / ( depthRange * Math.tan( THREE.MathUtils.degToRad( elevation ) ) );
 			const angle = THREE.MathUtils.degToRad( slopeDegrees );
 			gradient.value.set( Math.cos( angle ) * slope, Math.sin( angle ) * slope );
+			// the plane rises toward the light along -gradient: its unit normal toward the light is
+			// ( cos e * dir, -sin e ) in metres across and along the map
+			const sunward = THREE.MathUtils.degToRad( elevation ), offsetMetres = NORMAL_OFFSET.near * span / mapSize;
+			// the blocker: 3 cm beyond the clearance the offset gives ( d / sin e ) plus one footprint's
+			// rise ( cot e * ( |cos a| + |sin a| ) texels ), the depth the map leaves to the screen
+			const reachMetres = offsetMetres / Math.sin( sunward ) +
+				span / mapSize / Math.tan( sunward ) * ( Math.abs( Math.cos( angle ) ) + Math.abs( Math.sin( angle ) ) );
+			const blockerMetres = reachMetres + 0.03;
+			shift.value.set( Math.cos( angle ) * Math.cos( sunward ) * offsetMetres / span,
+				Math.sin( angle ) * Math.cos( sunward ) * offsetMetres / span, - Math.sin( sunward ) * offsetMetres / depthRange );
 			phase.value.set( subpixel[ 0 ], subpixel[ 1 ] );
 			const clearMinimum = [ 1, 1 ], maximumUmbra = [ 0, 0 ], minimumLit = [ 1, 1 ];
 			let nativeMinimum = 1, volumeMinimum = 1, volumeDifference = 0, maximumDifference = 0;
 			const profiles = [ new Array<number>( width ).fill( 0 ), new Array<number>( width ).fill( 0 ) ];
 			for ( const contact of [ false, true ] ) {
 
-				gap.value = contact ? 0.03 / depthRange : 0;
+				gap.value = contact ? blockerMetres / depthRange : 0;
 				renderer.setRenderTarget( field );
 				if ( ! ready ) await renderSolarProbeQuad( renderer, fieldQuad );
 				else fieldQuad.render( renderer );
@@ -722,32 +679,32 @@ export async function verifySolarShadowRamp( renderer: THREE.WebGPURenderer ) {
 				let nearest = 0;
 				for ( let x = 1; x < width; x ++ ) if ( Math.abs( p[ x ] - 0.5 ) < Math.abs( p[ nearest ] - 0.5 ) ) nearest = x;
 				const q = ( nearest + 0.5 ) / width * 0.4 + 0.3 + subpixel[ 0 ] / mapSize;
-				return Math.abs( q - 0.5 ) * span;
+				// the offset lookup reads the map shift.x further along: the edge is expected there
+				return Math.abs( q + shift.value.x - 0.5 ) * span;
 
 			} );
 			const result = { elevation, slopeDegrees, phase: subpixel, clearMinimum, nativeClearMinimum: nativeMinimum,
 				volumeClearMinimum: volumeMinimum, volumeReferenceDifference: volumeDifference, contactMaximumUmbra: maximumUmbra,
-				contactMinimumLit: minimumLit, contactWidthMetres, contactEdgeErrorMetres, maximumDifference };
+				contactMinimumLit: minimumLit, contactWidthMetres, contactEdgeErrorMetres, maximumDifference, blockerGapMetres: blockerMetres };
 			cases.push( result );
 			// The gathered volume lookup must be the hardware comparison's bilinear PCF, to within the
 			// filtering hardware's sub-texel weight precision; a misplaced texel differs by a quarter
 			// or more somewhere along the step.
 			if ( clearMinimum.some( ( v ) => v < 0.99999 ) || nativeMinimum > 0.95 || volumeDifference > VOLUME_REFERENCE_TOLERANCE ||
 				maximumUmbra.some( ( v ) => v > 1e-5 ) || minimumLit.some( ( v ) => v < 0.99999 ) ||
-				contactWidthMetres.some( ( v ) => v > 1.5 * span / mapSize ) ||
-				contactEdgeErrorMetres.some( ( v ) => v > span / mapSize ) || maximumDifference > 1e-4 ) {
+				contactWidthMetres.some( ( v ) => v > ( 2 * POISSON_RADIUS + 1.5 ) * span / mapSize ) ||
+				contactEdgeErrorMetres.some( ( v ) => v > span / mapSize ) || maximumDifference > VOLUME_REFERENCE_TOLERANCE ) {
 
-				throw new Error( `Solar receiver-plane interpolation failed: ${ JSON.stringify( result ) }` );
+				failures.push( result );
 
 			}
 
 		}
-		// depth fetches per receiver: a gather or four loads per bilinear footprint, one load per search tap
-		const footprintFetches = SHADOW_FILTER_PATH.gather ? 1 : 4;
+		if ( failures.length ) throw new Error( `Solar receiver-plane interpolation failed: ${ JSON.stringify( failures ) }` );
+		// depth fetches per receiver: one hardware comparison (a 2x2 footprint) per disk point
 		return { mapSize, width, height, texelMetres: span / mapSize, physicalClearanceMetres: 0.01,
-			contactBlockerGapMetres: 0.03, blockerPositions: BLOCKER_SAMPLES, filterPositions: FILTER_SAMPLES,
-			gather: SHADOW_FILTER_PATH.gather, maximumDepthFetches: BLOCKER_SAMPLES + footprintFetches * FILTER_SAMPLES,
-			clearPlaneDepthFetches: BLOCKER_SAMPLES + footprintFetches, maximumNativeComparisons: SHADOW_FILTER_PATH.gather ? 0 : 1, cases };
+			normalOffsetTexels: NORMAL_OFFSET.near, contactBlockerBeyondReachMetres: 0.03, diskPoints: POISSON_POINTS, diskRadiusTexels: POISSON_RADIUS,
+			depthFetches: POISSON_POINTS, cases };
 
 	} finally {
 

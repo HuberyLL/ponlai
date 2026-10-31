@@ -1,8 +1,13 @@
 import * as THREE from 'three/webgpu';
-import { Fn, If, float, instanceIndex, instancedArray, uint, vec2, vec3, vec4 } from 'three/tsl';
-import { WIND_STATE_VEC4S, Wind, createWindUniforms, gustAt, packWindState, rootHash, swayFrequency, windField, windStateOf, type WindState } from '../weather/Wind.ts';
-import { plantGrass } from '../world/Grass.ts';
-import { GRASS_WIND, bendBlade, bladePhase } from '../world/vegetation/Deform.ts';
+import { Fn, If, float, instanceIndex, instancedArray, tan, uint, vec2, vec3, vec4 } from 'three/tsl';
+import { GUST_TRAVEL, PLANT_RATE_BANDS, PLANT_RATE_SPREAD, WIND_STATE_VEC4S, Wind, createWindUniforms, gustAt, packWindState, plantSpeedOf, plantWind, windField, windStateOf, type WindState } from '../weather/Wind.ts';
+import { bladeWindOffset, plantGrass } from '../world/Grass.ts';
+import { BAMBOO_WIND } from '../world/BambooMaterials.ts';
+import { culmLoad } from '../world/Bamboo.ts';
+import { GROVES } from '../world/BambooGroves.ts';
+import { YUNPENG, YUNPENG_WIND, stalkLoad } from '../world/Yunpeng.ts';
+import type { PlantWind } from '../world/vegetation/Deform.ts';
+import { mainBend, plantLean } from '../world/vegetation/Deform.ts';
 import { windDisplacement } from '../weather/Wind.ts';
 import { debugFlags } from './DebugFlags.ts';
 import type { WorldData } from '../world/types.ts';
@@ -12,20 +17,25 @@ import type { Bounds } from '../world/WorldShapes.ts';
 
 // `__PONLAI__.windProbe( options )`: the numbers behind the wind view (WindView.ts), as JSON for
 // tools/probe.mjs. Every sway comes from the shaders' own TSL functions (Wind.ts `windField`,
-// vegetation/Deform.ts `bendBlade` with each kind's constants), evaluated in a compute kernel built on the first
+// Grass.ts `bladeWindOffset` for the meadow's blades, each kind's constants for the plants),
+// evaluated in a compute kernel built on the first
 // call (none exists on a page that never calls it, so the page's pipelines are unchanged), for the
 // plants' own inputs: tufts grown as the page grows them (`plantGrass`, sampled). The wind is a copy of the page's (`Wind`, the same
 // speed, heading, gustiness and scene time), stepped on the CPU and handed to the kernel per step through a
 // storage buffer, so the page's own wind is never touched. Two time series: fast (64 x 0.05 s,
-// the swing) and slow (40 x 0.5 s, the gusts' travel). Options: DEFAULTS below. The result is
-// large and deep: probe.mjs takes it as `--eval "JSON.stringify( await P.windProbe( { ... } ) )"`.
+// the swing) and slow (40 x 0.5 s, the gusts' travel). Options: DEFAULTS below; `kinds` takes
+// 'grass', 'bamboo' and 'yunpeng' (the plants' main bend at their tops, Deform.ts `mainBend`, for
+// each kind's tallest plant: the grown culm, the 5 m stalk). The result is large and deep:
+// probe.mjs takes it as `--eval "JSON.stringify( await P.windProbe( { ... } ) )"`.
 //
-// Per kind of plant, for each series: the sway s (tip offset over height, LEAN_REF's unit) against
-// the local wind d (`windField`'s direction at the root, the eddies' veer included) and the mean
+// Per kind of plant, for each series: the sway s (tip offset over height) against
+// the local wind d (`windField`'s direction at the root) and the mean
 // wind D: histograms of its angle in 15 degree bins, the share pointing upwind (s . d < 0) and
 // beyond +-30 degrees; the mean lean along the wind L, the plants' own temporal deviation along and
-// across it (RMS over plants), and their ratios; the swing alone (s . d less the lean `windField`
-// gives at the root: what the plant adds to the gusts' lean), against L and the across sway; between neighbouring plants, by distance bin, the
+// across it (RMS over plants), and their ratios; for a plant the swing alone (s . d less its bend
+// in the gusted wind, the lean with no swing), against L and the across sway; a blade's sway has
+// no such lean to take off, so the grass leaves those three out; between neighbouring plants, by
+// distance bin, the
 // mean correlation of their along-wind series, raw ("total", uncentred cosine: lean and swing) and
 // Pearson ("swing", each series less its mean), over all pairs, pairs separated along the wind
 // (within 30 degrees of it) and across it (within 30 degrees of square); and the Pearson
@@ -39,8 +49,9 @@ import type { Bounds } from '../world/WorldShapes.ts';
 // displacement of each step) on a grid over the land's box grown by `seaMargin` metres (`seaGrid`
 // apart), with the meadow's gust on the same grid: each one's travel and correlation lengths, and
 // their Pearson correlation by distance from the land's box (1 where the sea's gusts are the
-// meadow's, falling to tidewater's own pattern far out). `natural`: each kind's
-// natural sway frequency (Hz, the same in every wind). `w4`: every vegetation mesh,
+// meadow's, falling to tidewater's own pattern far out). `swayRates`: each plant kind's sway
+// rate (swings a metre of the plants' travel) and its frequency in the page's wind (Hz). `w4`:
+// every vegetation mesh,
 // whether its material has a wind displacement.
 // `w5` (scene jumps and seeks, so last): for each kept weather and a few presets where every part
 // travels, as angles and speeds: the vegetation's wind, the weather's heading, the sea and its
@@ -124,7 +135,7 @@ function windStates( ctx: WindProbeContext, { steps, dt }: Series ): { states: F
 
 }
 
-// d: the local wind's direction times the lean `windField` gives there; `air` the step's
+// d: the local wind's direction times the plants' load `windField` gives there; `air` the step's
 // ( displacement, scene time, 0 )
 type Body = ( wind: WindState, input: V4, air: V4 ) => { s: V2; d: V2 };
 
@@ -139,9 +150,9 @@ async function evaluate( renderer: THREE.WebGPURenderer, inputs: Float32Array, s
 		If( i.lessThan( uint( total ) ), () => {
 
 			const plant = i.div( uint( steps ) ), k = i.mod( uint( steps ) ).mul( uint( STATE ) );
-			const s0 = state.element( k ).toVar(), s1 = state.element( k.add( 1 ) ).toVar(), s2 = state.element( k.add( 2 ) ).toVar();
-			const wind = windStateOf( s0, s1, s2 );
-			const r = body( wind, input.element( plant ).toVar(), state.element( k.add( 3 ) ).toVar() );
+			const s0 = state.element( k ).toVar(), s1 = state.element( k.add( 1 ) ).toVar();
+			const wind = windStateOf( s0, s1 );
+			const r = body( wind, input.element( plant ).toVar(), state.element( k.add( 2 ) ).toVar() );
 			out.element( i ).assign( vec4( r.s, r.d ) );
 
 		} );
@@ -168,17 +179,36 @@ function kinds( ctx: WindProbeContext, o: Options ): Kind[] {
 		out.push( { name, inputs, root, body } );
 
 	};
+	const { crowns: all } = plantGrass( data.vegetation );
+	const keep = Math.min( 1, o.tufts / all.length );
+	const points = all.filter( () => random() < keep ).map( ( t ) => [ t.origin.x, t.origin.z, t.top, random() ] );
 	if ( o.kinds.includes( 'grass' ) ) {
 
-		// Grass.ts grassMaterial: the blade's phase from its id and a hash of the tuft's origin
-		const { lawn: all } = plantGrass( data.vegetation, data.rimGround, undefined, data.shore );
-		const keep = Math.min( 1, o.tufts / all.length );
-		const points = all.filter( () => random() < keep ).map( ( t ) => [ t.origin.x, t.origin.z, t.top, random() ] );
+		// Grass.ts `bladeWindOffset`: blades on the meadow's turf anchors, each on a seed of its own
 		add( 'grass', points, ( wind, p ) => {
 
-			const origin = vec3( p.x, 0, p.y ), phase = bladePhase( p.w, rootHash( origin.xz ) );
-			const field = windField( wind, origin.xz );
-			return { s: bendBlade( wind, vec3( p.x, p.z, p.y ), origin, p.z, float( 1 ), phase ).lean.xz, d: field.xy.mul( field.z ) };
+			const field = windField( wind, vec2( p.x, p.y ) );
+			return { s: bladeWindOffset( wind, field, p.w ), d: field.xy };
+
+		} );
+
+	}
+	// Deform.ts `mainBend`'s top (its sway at eta 1) for the kind's wind and its tallest plant's
+	// load (the grown culm, BambooGroves.ts GROVES; the tallest stalk), on the same anchors: the
+	// gust field's statistics are the same wherever a plant stands
+	const tallest = YUNPENG.height[ 0 ][ 1 ];
+	const plants: [ string, PlantWind, number ][] = [
+		[ 'bamboo', BAMBOO_WIND, culmLoad( GROVES.height, GROVES.height / GROVES.slender / 2 ) ],
+		[ 'yunpeng', YUNPENG_WIND, stalkLoad( tallest ) ],
+	];
+	for ( const [ name, kind, load ] of plants ) {
+
+		if ( ! o.kinds.includes( name ) ) continue;
+		add( name, points, ( wind, p ) => {
+
+			const root = vec3( p.x, 0, p.y );
+			const bent = mainBend( wind, root.add( vec3( 0, 1, 0 ) ), root, float( 1 ), float( 1 ), float( load ), kind );
+			return { s: bent.sway, d: bent.field.xy.mul( tan( plantLean( plantWind( wind, bent.field.w ), float( load ), kind ) ) ) };
 
 		} );
 
@@ -238,8 +268,8 @@ function sways( kind: Kind, result: Float32Array, steps: number, D: THREE.Vector
 		upwindShare: r3( upwind / count ), beyond30Share: r3( wide / count ),
 		lean: r3( L ), sigmaAlong: r3( sAlong ), sigmaAcross: r3( sAcross ),
 		sigmaAlongOverLean: r3( sAlong / L ), sigmaAcrossOverLean: r3( sAcross / L ), acrossOverAlong: r3( sAcross / sAlong ),
-		// the swing alone (RMS of s . d less the field's lean), against the lean and the across sway
-		swingAlong: r3( swing ), swingOverLean: r3( swing / L ), acrossOverSwing: r3( sAcross / swing ),
+		// the swing alone (RMS of s . d less the plant's lean), against the lean and the across sway
+		...( kind.name === 'grass' ? {} : { swingAlong: r3( swing ), swingOverLean: r3( swing / L ), acrossOverSwing: r3( sAcross / swing ) } ),
 		correlation: correlations( kind.root, along, steps, D, random, anchors ),
 		// the same pairs' correlation of the swing alone (Pearson)
 		swingCorrelation: correlations( kind.root, ownSeries, steps, D, rng( 99 ), anchors ),
@@ -411,7 +441,7 @@ async function gustGrid( ctx: WindProbeContext, o: Options, slow: ReturnType<typ
 	// cross-correlation, refined by a parabola
 	const travel = ( m: number ) => {
 
-		const range = Math.ceil( slow.speed * 1.6 * o.slow.dt * m / h ) + 2, across = Math.ceil( 3 / h );
+		const range = Math.ceil( GUST_TRAVEL * plantSpeedOf( slow.speed ) * 1.3 * o.slow.dt * m / h ) + 2, across = Math.ceil( 3 / h );
 		let best = - Infinity, bi = 0, bj = 0;
 		const score = new Map<string, number>();
 		const corr = ( di: number, dj: number ) => {
@@ -444,7 +474,7 @@ async function gustGrid( ctx: WindProbeContext, o: Options, slow: ReturnType<typ
 		meanGust: r3( mean ), gustShare: r3( gusty / N ),
 		correlationLength: { along: length( true ), across: length( false ) },
 		travel: [ 1, 2, 4 ].map( travel ),
-		windSpeed: slow.speed,
+		windSpeed: slow.speed, gustSpeed: r3( GUST_TRAVEL * plantSpeedOf( slow.speed ) ),
 	} };
 
 }
@@ -471,9 +501,13 @@ function inventory( ctx: WindProbeContext ) {
 
 }
 
-// each kind's natural sway frequency, Hz (Wind.ts `swayFrequency`; Deform.ts's numbers)
-const naturalFrequencies = () => ( {
-	grassAndFlowers: r3( swayFrequency( GRASS_WIND.cycles ) ),
+// each plant kind's sway rate, swings a metre of the plants' travel (Deform.ts mainBend's rate;
+// each plant up to PLANT_RATE_SPREAD of it quicker in PLANT_RATE_BANDS bands: Wind.ts
+// `plantWave`), and its frequency (Hz) at the plants' speed `speed`
+const swayRates = ( speed: number ) => ( {
+	perMetre: { bamboo: BAMBOO_WIND.rate, yunpeng: YUNPENG_WIND.rate },
+	hz: { bamboo: r3( BAMBOO_WIND.rate * speed ), yunpeng: r3( YUNPENG_WIND.rate * speed ) },
+	spread: PLANT_RATE_SPREAD, bands: PLANT_RATE_BANDS,
 } );
 
 // W5: the directions things travel in, degrees in the world's x-z plane ( atan2( z, x ) ), and
@@ -552,7 +586,7 @@ export async function windProbe( ctx: WindProbeContext, options: Partial<Options
 	const w5 = o.w5 ? await directions( ctx, o ) : null;
 	return {
 		time, windSpeed: fast.speed, heading: fast.heading, gustiness: ctx.wind.gustiness, meanDirection: [ r3( fast.direction.x ), r3( fast.direction.y ) ],
-		natural: naturalFrequencies(),
+		swayRates: swayRates( plantSpeedOf( fast.speed ) ),
 		series: { fast: o.fast, slow: o.slow }, plants, gust, w4, w5, ms: Math.round( performance.now() - t0 ),
 	};
 

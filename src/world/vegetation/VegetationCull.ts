@@ -6,11 +6,12 @@ import { TEMPORAL } from '../../post/Antialiasing.ts';
 import { jitter } from '../../post/Jitter.ts';
 import { runSteps } from '../Steps.ts';
 
-// GPU-driven culling for an instanced vegetation kind (today the meadow's tufts, Grass.ts). Every
-// record of every batch lives in one set of storage buffers: the kind's payload (`CullPayload`: its
-// buffers and what it writes into a slot; the meadow's instance transform, colour, ground inputs
-// and planting anchor) and the cull's own (a bounding sphere the kind gives, the visible list, the
-// bands). Before the view camera draws the kind, a compute pass tests each record's sphere against
+// GPU-driven culling for an instanced vegetation kind (today the plants drawn as instances of a few
+// prototypes, PlantInstances.ts: the bamboo; the meadow generates its blades per view instead and
+// takes only `unjitteredPadded` from here). Every record of every batch lives in one set of storage
+// buffers: the kind's payload (`CullPayload`: its buffers and what it writes into a slot; a plant's
+// place, form and level band) and the cull's own (a bounding sphere the kind gives, the visible
+// list, the bands). Before the view camera draws the kind, a compute pass tests each record's sphere against
 // the view frustum (and, where the kind folds records away by distance, `CullPayload.fold`, drops
 // those the vertex stage would collapse to a point anyway), and writes the indices of the records
 // that pass, in their original order, plus each batch's indirect draw arguments. The draw then
@@ -71,7 +72,7 @@ import { runSteps } from '../Steps.ts';
 //   `flags.grassBands = false` puts every visible tuft in its batch's first band (the one draw of
 //   before), for A/Bs.
 // - A batch's padding to whole workgroups repeats its first record's transform in the payload's
-//   `matrices` buffer: never drawn (its sphere is never visible), but three's InstancedMesh box
+//   `matrices` buffer, where it has one: never drawn (its sphere is never visible), but three's InstancedMesh box
 //   reads the matrices from slot 0 up to a batch's count, and a zero matrix there divides by a zero
 //   w (a NaN box: Water.ts's reflection check). Slots past the last batch are never read.
 // - A material that applies instancing itself from storage buffers must hold the placed position
@@ -103,11 +104,11 @@ export interface CullPayload<R> {
 	/** The buffer holding each slot's anchor in its first vec4's x, y, z: the distance the LOD
 	 * counts parts by (`CullLod.count`). */
 	origin: string;
-	/** The buffer of the instance transforms (three's InstancedMesh reads its box from it): a
-	 * batch's padding repeats its first record's there. */
-	matrices: string;
+	/** The buffer of the instance transforms, for a kind drawn as three's InstancedMesh (which reads
+	 * its box from it): a batch's padding repeats its first record's there. */
+	matrices?: string;
 	/** Buffers of vec4s the kind's own kernels write per slot (`floats` per slot), zeros in a new
-	 * pool: the meadow's record of the islanders' trail (Trample.ts). */
+	 * pool (no kind keeps one today). */
 	scratch?: { name: string; floats: number }[];
 	/** Writes record `r` into slot `i` of the kind's arrays. */
 	write( r: R, i: number, arrays: Record<string, Float32Array> ): void;
@@ -126,7 +127,7 @@ export interface CullBatchInput<R> {
 	blades?: number; floor?: number;
 	/** The part counts of the batch's bands, descending (at most MAX_BANDS), and the indices of
 	 * one part: a band's draw takes its cap's parts, after `baseIndices` drawn by every band (a
-	 * part every record keeps whole: a flowering plant's flowers and scapes, Flowers.ts). */
+	 * part every record keeps whole: a plant's flowers and scapes). */
 	caps?: number[]; bladeIndices?: number; baseIndices?: number;
 }
 
@@ -205,8 +206,8 @@ export function* poolSteps<R>( payload: CullPayload<R>, batches: CullBatchInput<
 
 	}
 	// (the rules, above: a batch's padding repeats its first record's transform)
-	const matrices = arrays[ payload.matrices ];
-	for ( const range of ranges ) for ( let i = range.start + range.count; i < range.groupEnd * GROUP && range.count > 0; i ++ ) matrices.copyWithin( i * 16, range.start * 16, range.start * 16 + 16 );
+	const matrices = payload.matrices ? arrays[ payload.matrices ] : null;
+	if ( matrices ) for ( const range of ranges ) for ( let i = range.start + range.count; i < range.groupEnd * GROUP && range.count > 0; i ++ ) matrices.copyWithin( i * 16, range.start * 16, range.start * 16 + 16 );
 	return { slots: n, groups, ranges, arrays, spheres };
 
 }
@@ -235,7 +236,7 @@ const _padded = new THREE.Matrix4(), _size = new THREE.Vector2();
 // would dispatch every frame of a still view. It takes the unjittered projection instead, widened
 // by one render pixel on each side: the jittered frustum lies inside it whatever the offset. Any
 // other camera keeps its own projection. Null when `camera` is not the jittered view camera.
-function unjitteredPadded( renderer: THREE.Renderer, camera: THREE.Camera ): THREE.Matrix4 | null {
+export function unjitteredPadded( renderer: THREE.Renderer, camera: THREE.Camera ): THREE.Matrix4 | null {
 
 	const q = jitter.uniforms.unjitteredProjection.value.elements, p = camera.projectionMatrix.elements;
 	const d = jitter.uniforms.ndc.value;
@@ -429,7 +430,7 @@ export class VegetationCull<R> {
 			let inside = s.w.greaterThanEqual( 0 );
 			const radius = pad ? s.w.add( pad ).toVar() : s.w;
 			for ( const p of planes ) inside = inside.and( dot( p.xyz, s.xyz ).add( p.w ).greaterThanEqual( radius.negate() ) );
-			// (records the kind has folded away at this distance, the meadow's thin extra tufts)
+			// (records the kind has folded away at this distance: a plant's level outside its band)
 			if ( ! fold ) return inside;
 			const folded = fold.folded( gi, origins.element( gi ).xyz, cameraPosition, ( buffer ) => this.node( buffer, 'vec4', true ) );
 			return inside.and( folded.not() );

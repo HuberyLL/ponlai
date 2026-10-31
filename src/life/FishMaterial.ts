@@ -14,6 +14,7 @@ import type { Caustics } from '../ocean/Caustics.ts';
 import { underwaterLight, UnderwaterLightingModel } from '../lighting/Underwater.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { PART, type Anatomy } from './FishGeometry.ts';
+import { writeMeter } from '../lighting/MeterLight.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -34,7 +35,10 @@ type V4 = THREE.Node<'vec4'>;
 // snout, a painted eye, and the fins darker toward their edge with their rays. The silvery flank
 // is a metal-like specular layer (guanine). It is lit as everything under the water is
 // (Underwater.ts: the key down the water column with the caustics, the ambient dimmer and bluer
-// with depth); above the water, as it flies, as in the air.
+// with depth); above the water, as it flies, as in the air. Its ambient diffuse is the ambient
+// volume's (lighting/AmbientSample.ts) through the model's default, degree 1 weighted by depth: in
+// flight the volume's light where the fish is, under the water the environment's carried down the
+// column.
 
 /** The colours of a species' skin (sRGB hex). */
 export interface Skin {
@@ -143,6 +147,7 @@ export function makeFishMaterial( S: Anatomy, skin: Skin, shared: Shared, causti
 
 	const light = underwaterLight( shared, caustics );
 	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new UnderwaterLightingModel( light, { terminator: false } );
+	writeMeter( mat );
 	return mat;
 
 }

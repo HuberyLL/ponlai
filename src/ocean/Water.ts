@@ -13,7 +13,7 @@ import {
 	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld, positionPrevious,
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
 	float, int, bool, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
-	abs, fwidth, reflect, refract, select, step, dFdx, dFdy, perspectiveDepthToViewZ, cameraNear, cameraFar,
+	abs, fwidth, reflect, refract, select, step, dFdx, dFdy, perspectiveDepthToViewZ, cameraNear, cameraFar, luminance, property,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
 import { FFT_SIZE, NEAR_RIPPLES, type OceanFFT } from './OceanFFT.ts';
@@ -26,12 +26,13 @@ import { waveDamping } from './WaveDamping.ts';
 import type { Shared } from '../shared.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
 import { rainRippleGradient } from '../weather/Rain.ts';
-import { ISLAND_TOP, LAND_REACH, type Bounds } from '../world/WorldShapes.ts';
+import { ISLAND_PEAK, LAND_REACH, type Bounds } from '../world/WorldShapes.ts';
 import { GROWTH } from '../world/IslandGrowth.ts';
 import { FAR_HALF } from '../world/SeabedTile.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { REFERENCE_SPEED } from '../weather/Wind.ts';
 import { motionNode, motionState, motionUniforms, outputStruct, reactiveUniforms } from '../post/Motion.ts';
+import { sceneUnits } from '../post/PreExposure.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 
 // The sea surface: an FFT-displaced grid shaded as tidewater's WaterMaterial (4811ba4, its above-water
@@ -68,7 +69,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     persistent foam, which integrates in time), lit as a bright diffuse scatterer
 // Drawn after the opaque pass into the same multisampled target, depth-tested per sample against
 // the opaque surfaces, reading a copy of that pass's resolved colour, its linear depth and the
-// underwater pyramid, and the refraction pass's colour and depth.
+// underwater pyramid, and the refraction pass's colour and depth. Those images hold radiance
+// pre-exposed, and so does the water's own output (post/PreExposure.ts): it reads them back in
+// scene units (`sceneUnits`) and shades in scene units, and its `outputStruct` stores the result.
 //
 // Kept of our own: the grid and its skirt, the waves' damping by the shore (the vertex stage), the
 // rocky shore's reflected wave and the foam the waves leave on it (ShoreWaves), the reflection march with its box and the cliff foot's
@@ -84,7 +87,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //   the sun's two shadow steps share one array texture, and the storm foam is a storage buffer.
 // - The reflection only finds what lies inside `reflectionBounds` (see below): anything opaque
 //   placed off the island or above 3 m (REFLECTOR_HEIGHT; a tree, a boat, a hut, a mast) must grow
-//   that box, or the sea will not reflect it (the game's props do: main.ts `holdOpaque`).
+//   that box through `hold`, or the sea will not reflect it (the game's props and the plants'
+//   crowns do: main.ts `holdOpaque`, `holdPlants`). A held box never lowers the box's floor.
 //
 // Motion vectors (the temporal modes, Motion.ts): the sea writes its velocity with its colour (class
 // water). Each vertex is moved back to where it was a step of the scene clock ago (`step`: the
@@ -311,8 +315,10 @@ export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSt
 // more) plus a metre's margin, and up past the meadow by the islanders'
 // 2 m plus a metre.
 // Hits below REFLECTION_FLOOR under the sea level already weigh nothing (see traceSSR), so the box
-// ends there. A placed object off the island or above 3 m (a tree, a hut, a mast) or a wider rim
-// overhang must grow these, or its reflection is lost (debug builds warn, see checkReflectionBounds).
+// ends there, whatever is held (`hold` clips a held box at that floor: a plant's box reaches far
+// below the ground, and would otherwise deepen the march's box for nothing). A placed object off
+// the island or above 3 m (a tree, a hut, a mast) or a wider rim overhang must grow these, or its
+// reflection is lost (debug builds warn, see checkReflectionBounds).
 const REFLECTOR_REACH = 1.5 + 1;
 const REFLECTOR_HEIGHT = 3;
 const REFLECTION_FLOOR = 0.35;
@@ -353,8 +359,8 @@ export class Water {
 	material: THREE.NodeMaterial;
 	readonly quality: WaterQuality;
 	// Everything opaque above the sea that the reflection can show (see REFLECTOR_REACH). Anything
-	// built off the island later (a boat, a hut on stilts) must lie inside it: grow it with
-	// expandByObject or union, and the water picks it up on the next frame.
+	// built off the island later (a boat, a hut on stilts) must lie inside it: grow it with `hold`,
+	// and the water picks it up on the next frame.
 	readonly reflectionBounds: THREE.Box3;
 	// tidewater's water material's settings
 	uniforms = {
@@ -371,7 +377,9 @@ export class Water {
 	};
 
 	private shadowBias = uniform( 0 );
-	private shadowNormalBias = uniform( 0 );
+	// the level surface's normal offset into the sun's map (m): the receivers' former fixed offset,
+	// kept here since SunShadow's own follows a surface's normal and view depth
+	private shadowNormalBias = uniform( 0.012 );
 	private shadowIntensity = uniform( 1 );
 	private reflectorMin = uniform( new THREE.Vector3() );
 	private reflectorMax = uniform( new THREE.Vector3() );
@@ -549,7 +557,8 @@ export class Water {
 		// drawn only into the samples it is in front of, so where a cliff or a figure covers part of
 		// the pixel, the sea's samples hold what is behind them, not the figure of sample 0.
 		const behindViewZ = textureLoad( tDepth, pixel( screenUV ) ).y;
-		const sceneAt = ( q: V2 ) => texture( sceneColor, q ).level( float( 0 ) ).rgb;
+		// (the scene's images hold radiance pre-exposed: read back in scene units, PreExposure.ts)
+		const sceneAt = ( q: V2 ) => sceneUnits( texture( sceneColor, q ).level( float( 0 ) ).rgb );
 		// The refraction pass's image at a screen uv, through its wider view (Refraction.ts): its
 		// colour, filtered (premultiplied by its coverage, alpha), and the view z of its nearest texel.
 		const G = REFRACTION_GUARD;
@@ -684,6 +693,9 @@ export class Water {
 
 		} ).setLayout( { name: 'traceSSR', type: 'vec4', inputs: [ { name: 'posV', type: 'vec3' }, { name: 'Rv', type: 'vec3' } ] } );
 
+		// the surface's metering illuminance, assigned inside the shading (from its sun's shadow and
+		// clouds) and read by the outputs after it: a fragment-stage property, no varying
+		const meter = property( 'float', 'WaterMeter' ) as unknown as THREE.Node<'float'>;
 		material.fragmentNode = Fn( () => {
 
 			const time = shared.time;
@@ -752,7 +764,7 @@ export class Water {
 
 			// ---- the sun reaching the surface: the sun shadow's maps, read as tidewater's water reads
 			// its own (sunShadowPCF: three's five-tap PCF, the surface taken as level for the normal
-			// bias; the waves break up any penumbra detail a contact-hardening filter would add), with
+			// bias; the waves break up any penumbra detail the surfaces' wider disk would add), with
 			// the fade from the previous map (SunShadow), and the clouds
 			const sc = u.shadowMatrix.mul( vec4( wp.add( vec3( 0, this.shadowNormalBias, 0 ) ), 1 ) ).toVar();
 			const s3 = sc.xyz.div( max( sc.w, 1e-6 ) ).toVar();
@@ -761,6 +773,10 @@ export class Water {
 			const shadow = mix( float( 1 ), visibility, this.shadowIntensity.mul( u.shadowOn ) ).toVar();
 			const cloudTransmission = sky.cloudVisibility( wp ).toVar();
 			const sunLight = shared.sunColor.mul( shadow ).mul( cloudTransmission ).toVar();
+			// the surface's metering illuminance (lighting/MeterLight.ts): the sky's upper hemisphere
+			// (its irradiance on level water over pi) and the key on level water, no reflection nor
+			// light from within the water
+			meter.assign( luminance( shared.skyIrradianceSource ).add( luminance( sunLight ).mul( max( L.y, 0 ) ).mul( 1 / Math.PI ) ) );
 
 			// ---- what lies straight behind this pixel (linear depth: view-space z, < -9e4 = sky)
 			const z0 = behindViewZ.toVar();
@@ -960,7 +976,7 @@ export class Water {
 						color.assign( mix( color, f.rgb.div( max( f.a, 1e-4 ) ), w ) );
 
 					} );
-					return { color, z, covered };
+					return { color: sceneUnits( color ), z, covered };
 
 				};
 				// What swims in the water (Refraction.ts markSwimmer) is drawn in the opaque image alone,
@@ -981,7 +997,7 @@ export class Water {
 					const zSwimmer = textureLoad( tDepth, behindTexel ).x.toVar();
 					If( swimmer.a.lessThan( 0.999 ).and( behind( zSwimmer ) ), () => {
 
-						sceneCol.assign( swimmer.rgb );
+						sceneCol.assign( sceneUnits( swimmer.rgb ) );
 						zF.assign( zSwimmer );
 						found.assign( 1 );
 
@@ -1163,15 +1179,12 @@ export class Water {
 			return vec4( min( col, vec3( 16000 ) ), reactive ?? 1 );
 
 		} )();
-		// the temporal modes' second output, the velocity (Motion.ts): the camera's motion and the
-		// waves' (their previous position, above), and the glints' reactive weight (the shading's
-		// alpha under the temporal modes)
-		if ( TEMPORAL ) {
-
-			const shade = material.fragmentNode as V4;
-			material.fragmentNode = outputStruct( vec4( shade.xyz, 1 ), motionNode( 'water', shade.w ) );
-
-		}
+		// the scene target's other outputs (Motion.ts `outputStruct`): under the temporal modes the
+		// velocity, the camera's motion and the waves' (their previous position, above), and the
+		// glints' reactive weight (the shading's alpha under the temporal modes); the metering
+		// illuminance of the surface (above)
+		const shade = material.fragmentNode as V4;
+		material.fragmentNode = outputStruct( vec4( shade.xyz, 1 ), motionNode( 'water', shade.w ), meter );
 		material.userData.motion = 'animated';
 		material.side = THREE.DoubleSide;
 		return material;
@@ -1218,7 +1231,6 @@ export class Water {
 
 			// the maps themselves are read through SunShadow
 			this.shadowBias.value = sun.shadow.bias;
-			this.shadowNormalBias.value = sun.shadow.normalBias;
 			this.shadowIntensity.value = sun.shadow.intensity;
 			u.shadowMatrix.value.copy( sun.shadow.matrix );
 			u.shadowOn.value = 1;
@@ -1229,35 +1241,55 @@ export class Water {
 
 	/** The reflection's box for the land's box `b` (WorldShapes.landBounds): again when the land
 	 * grows (Growth.ts), which grows it; whatever was held beyond it (a placed prop: the caller
-	 * unions it in again) is dropped. Debug builds measure the scene against it once, at the load:
+	 * holds it again, `hold`) is dropped. Debug builds measure the scene against it once, at the load:
 	 * not after a growth step, whose frame it would take tens of milliseconds (it reads every
 	 * vertex); a page loaded on the grown land measures that land. */
 	setLand( b: Bounds ): void {
 
 		this.inputs.detail.setLand( b );
 		this.reflectionBounds.set(
-			new THREE.Vector3( b.x0 - REFLECTOR_REACH, this.inputs.shared.waterLevel.value - REFLECTION_FLOOR, b.z0 - REFLECTOR_REACH ),
-			new THREE.Vector3( b.x1 + REFLECTOR_REACH, ISLAND_TOP + REFLECTOR_HEIGHT, b.z1 + REFLECTOR_REACH ) );
+			new THREE.Vector3( b.x0 - REFLECTOR_REACH, this.reflectionFloor, b.z0 - REFLECTOR_REACH ),
+			new THREE.Vector3( b.x1 + REFLECTOR_REACH, ISLAND_PEAK + REFLECTOR_HEIGHT, b.z1 + REFLECTOR_REACH ) );
 
 	}
 
-	// The measured box of every opaque surface under root above the reflection's floor, against
-	// reflectionBounds; warns about any that pokes out (its reflection would be lost). Debug only:
-	// it reads every vertex once.
+	/** Grows the reflection's box to hold `box` (a placed prop, the plants' crowns) above the box's
+	 * floor: the part below it is left out, since hits there weigh nothing (REFLECTION_FLOOR). */
+	hold( box: THREE.Box3 ): void {
+
+		const floor = this.reflectionFloor;
+		if ( box.isEmpty() || box.max.y <= floor ) return;
+		const held = box.clone();
+		held.min.y = Math.max( held.min.y, floor );
+		this.reflectionBounds.union( held );
+
+	}
+
+	// the reflection box's floor: REFLECTION_FLOOR under the sea level, whatever is held
+	private get reflectionFloor(): number {
+
+		return this.inputs.shared.waterLevel.value - REFLECTION_FLOOR;
+
+	}
+
+	// The measured box of every opaque surface under root above the reflection's floor (the fixed
+	// one, REFLECTION_FLOOR under the sea), against reflectionBounds; warns about any that pokes out
+	// (its reflection would be lost). Debug only: it reads every vertex once.
 	checkReflectionBounds( root: THREE.Object3D ): THREE.Box3 {
 
-		const floor = this.reflectionBounds.min.y;
+		const floor = this.reflectionFloor;
 		const measured = new THREE.Box3(), part = new THREE.Box3(), v = new THREE.Vector3();
 		const outside: string[] = [];
 		const skip = new Set<THREE.Object3D>();
 		this.inputs.sky.dome.traverse( ( o ) => skip.add( o ) );
 		this.inputs.sky.lightning.group.traverse( ( o ) => skip.add( o ) );
 		root.updateWorldMatrix( true, true );
-		// Only what is drawn: a hidden group's children are skipped with it.
+		// Only what is drawn: a hidden group's children are skipped with it, and a mesh off the
+		// view's layer (a caster only the sun's map draws).
 		root.traverseVisible( ( object ) => {
 
 			const mesh = object as THREE.Mesh;
-			if ( ! mesh.isMesh || skip.has( mesh ) ) return;
+			if ( ! mesh.isMesh || skip.has( mesh ) || ! mesh.layers.isEnabled( 0 ) ) return;
 			const materials = Array.isArray( mesh.material ) ? mesh.material : [ mesh.material ];
 			if ( materials.every( ( m ) => m.transparent || ! m.depthWrite ) ) return;
 			part.makeEmpty();

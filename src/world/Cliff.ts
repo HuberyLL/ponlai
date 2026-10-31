@@ -67,9 +67,9 @@
 //   waterline.
 // - The weathering relief fades out at the meadow, whose height stays `islandSurfaceHeight` from
 //   about 1.75 m inland of the coast (nearer, the shoulder and the crest's rounding of breaks lower
-//   it). Steps where a block fell from the lip stop below the meadow's planting height (2.8 m) and
-//   carry no turf (TerrainMaterial keeps it off them). No waterfalls; moss and greenery on the wall
-//   stay in its upper 1.2 m (TerrainMaterial).
+//   it). Steps where a block fell from the lip stop below the meadow's planting height (0.3 m under
+//   its own top) and carry no turf (TerrainMaterial keeps it off them). No waterfalls; moss and
+//   greenery on the wall stay in its upper 1.2 m (TerrainMaterial).
 
 import { hash3i, noise3, smax, smoothstep } from './noise.ts';
 

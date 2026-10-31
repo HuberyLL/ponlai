@@ -12,21 +12,21 @@ type V3 = THREE.Node<'vec3'>;
 // `windView` (any other value) both.
 //
 // - Arrows: one flat arrow every 2 m over the meadow shown (inside the coast), lying just
-//   above the meadow's canopy, pointing where the local wind blows (`windField`'s direction, with
-//   the eddies' veer), longer in a gust (`field.w`) and brighter with the lean it gives (`field.z`),
+//   above the meadow's canopy, pointing where the local wind blows (`windField`'s direction, the
+//   wind's own), longer in a gust (`field.w`) and brighter with the plants' load there (`field.z`, Wind.ts `plantLoad`),
 //   unlit. Their vertex stage calls `windField( shared.wind, cell )` itself, so they move with
 //   the wind, and record their displacement as the vegetation does (`setWindDisplacement`,
 //   `previousSway`), so the temporal modes see their motion. Built by WindArrows.ts.
-// - Plants: every vegetation material (the grass and its flowers, its tufts draped over the cliff's edge
-//   among them) draws, unlit, a colour for its plant's current sway s, its horizontal tip
-//   offset over its height (lean plus swing, the unit of LEAN_REF): the hue is the angle of s from
+// - Plants: every plant material that bends from its root (vegetation/Deform.ts `mainBend`: the
+//   yunpeng, the bamboo) draws, unlit, a colour for its plant's current sway s, its horizontal tip
+//   offset over its height (lean plus swing); the meadow's blades are not coloured (their sway's
+//   numbers: the probe's `grass`, Grass.ts `bladeWindOffset`). The hue is the angle of s from
 //   the mean wind (`shared.wind.direction`), on a cyclic map: downwind blue, upwind orange, s
 //   turned left of the wind (counter-clockwise seen from above) magenta, right of it green; the
-//   brightness is |s| / 0.15, saturating. Each material passes the sway its displacement
-//   computes (Grass.ts `bendBlade`'s lean, vegetation/Deform.ts `mainBend`'s and `hangingSway`'s
-//   sway: the deforms a kind may use) through `showSway`; the colour is taken in the vertex stage and passes as a
-//   varying. A right wind shows a patch of meadow in one hue, brightening and darkening as gusts
-//   cross it, the hue shifting only slowly at a gust's edge.
+//   brightness is |s| / 0.15, saturating. Each material passes the sway `mainBend` computes
+//   through `showSway` (vegetation/Material.ts); the colour is taken in the vertex stage and
+//   passes as a varying. A right wind shows a stand in one hue, brightening and darkening as
+//   gusts cross it, the hue shifting only slowly at a gust's edge.
 // The numbers behind the view come from `__PONLAI__.windProbe` (src/debug/WindProbe.ts).
 
 const params = new URLSearchParams( location.search );

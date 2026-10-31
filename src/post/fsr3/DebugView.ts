@@ -133,7 +133,11 @@ export function DebugView( b: Fsr3Bindings, iPxPosIn: N ): void {
 
 	const DRAW_VIEWPORT = ( fn: ( b: Fsr3Bindings, p: N, v: FfxDebugViewport ) => void, v: FfxDebugViewport ) => {
 
-		If( pointIsInsideViewport( iPxPos, v ), () => fn( b, iPxPos, v ) );
+		If( pointIsInsideViewport( iPxPos, v ), () => {
+
+			fn( b, iPxPos, v );
+
+		} );
 
 	};
 

@@ -468,13 +468,14 @@ export function rimLipPresence( x: number, z: number, retreat: number ): number 
 // The highest solid surface in a column, marched down from above the plateau.
 export function topAt( sdf: SDF, x: number, z: number ): number | undefined {
 
-	let y = ISLAND_TOP + 0.6;
+	const top = islandSurfaceHeight( x, z );
+	let y = top + 0.6;
 	for ( let i = 0; i < 70; i ++ ) {
 
 		const d = sdf( x, y, z );
 		if ( d < 0.002 ) return y;
 		y -= Math.max( 0.004, d * 0.7 );
-		if ( y < ISLAND_TOP - 0.3 ) return;
+		if ( y < top - 0.3 ) return;
 
 	}
 

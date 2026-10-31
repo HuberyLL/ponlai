@@ -6,14 +6,17 @@
 // and the debug view. The Lanczos LUT permutation is left out: the page never builds it.
 //
 // The frame graph is a stand-in that hands each input its texture in Pipeline.ts's format, with
-// the graph's linear filter. The sizes do not reach the WGSL (the kernels read them from uniforms:
-// Passes.ts).
+// the graph's linear filter. The exposure is the page's builder (Pipeline.ts `exposureRead`): a new
+// load of the exposure state's texel at each call, over the pre-exposure, as Fsr3Upscaler.ts's
+// `exposure` option takes it. The sizes do not reach the WGSL (the kernels read them from
+// uniforms: Passes.ts).
 
 import * as THREE from 'three/webgpu';
-import { uniform } from 'three/tsl';
+import { exp2, ivec2, texture, textureLoad } from 'three/tsl';
 import { Fsr3Upscaler } from '../../src/post/fsr3/Fsr3Upscaler.ts';
 import * as H from '../../src/post/fsr3/Host.ts';
 import * as R from '../../src/post/fsr3/Resources.ts';
+import { preExposure } from '../../src/post/PreExposure.ts';
 import { QUALITY } from '../../src/Quality.ts';
 
 // a graph resource as Pipeline.ts declares it
@@ -39,9 +42,11 @@ export default function ( { renderer } ) {
 		surfaceDepth: input( 'surfaceDepth', THREE.RedFormat, THREE.FloatType ),
 		veilReactive: input( 'veilReactive', THREE.RedFormat, THREE.HalfFloatType ),
 	};
+	const exposureState = input( 'exposureState', THREE.RGBAFormat, THREE.FloatType );
+	const exposure = () => exp2( textureLoad( texture( graph.texture( exposureState ) ), ivec2( 0 ) ).x ).mul( preExposure.inverse );
 	const taa = QUALITY.high.taa;
 	const settings = { ...taa, fsr3: { ...taa.fsr3, autoReactive: true } };
-	const fsr = new Fsr3Upscaler( renderer, graph, inputs, { settings, exposure: uniform( 1 ), debugView: true } );
+	const fsr = new Fsr3Upscaler( renderer, graph, inputs, { settings, exposure, debugView: true } );
 
 	// (the upscaler's private kernels, generator and clear jobs)
 	const k = fsr.kernels;

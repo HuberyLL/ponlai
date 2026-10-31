@@ -25,23 +25,23 @@ import type { Shared } from '../shared.ts';
 // reads it at the surface's undisplaced point.
 //
 // A gust is one thing over the sea and the land: around the island the sea's gusts are the gusts
-// that sweep the meadow (Wind.ts `gustAt`, the gust map scrolled with the wind's travel), so a dark
-// rough patch on the water upwind travels onto the island at the wind's speed, sweeps the grass at
-// the same place and moment, and leaves the lee as a patch on the water again. The meadow's gust
-// (0 between gusts, 1 at a core, peaked at 0; a third of the area in a gust) is mapped to the
-// spread of tidewater's (ISLAND_LULL + ISLAND_SPAN x gust: the same mean, 0.55, and spread, 0.26,
-// measured over both noise maps), so the sea's mean roughness stays tidewater's. Its 128 m x 288 m
-// tile would repeat visibly toward the horizon, so it holds out to ISLAND_NEAR metres from the
-// land's box and gives way to tidewater's two octaves by ISLAND_FAR (`setLand`, which Water.setLand
-// calls, so it follows a grown island). The water reads the island's gust in its vertex stage
-// (`islandGust`, the gust map in that stage's textures: the fragment stage samples 14 of its 16)
-// and hands it over in a varying; its grid's spacing grows to a few metres at ISLAND_FAR, finer
-// than the gusts' 32 m cells. tidewater's octaves drift with the wind's integrated displacement (at
-// the wind's speed, as the meadow's gusts travel; tidewater moved them at 0.7 times it), so both
-// travel together through the blend.
+// that sweep the meadow (Wind.ts `gustAt`, a noise field swept with the wind's travel and reshaped
+// in time), so a dark rough patch on the water upwind travels onto the island at the wind's speed,
+// sweeps the grass at the same place and moment, and leaves the lee as a patch on the water again.
+// The meadow's gust q (0..1) is mapped by ISLAND_LULL + ISLAND_SPAN x q, a mapping set for the
+// earlier gust map (then 0 between gusts and 1 at a core, a third of the area in a gust: the same
+// mean, 0.55, and spread, 0.26, as tidewater's, measured over both noise maps) and kept as it was.
+// The gust field's repeat (Wind.ts GUST_TILE) would show toward the horizon, so it holds out to
+// ISLAND_NEAR metres from the land's box and gives way to tidewater's two octaves by ISLAND_FAR
+// (`setLand`, which Water.setLand calls, so it follows a grown island). The water reads the
+// island's gust in its vertex stage (`islandGust`: arithmetic, no texture) and hands it over in a
+// varying; its grid's spacing grows to a few metres at ISLAND_FAR, finer than the gusts' 43 m
+// cells. tidewater's octaves drift with the wind's integrated displacement (at the wind's speed;
+// tidewater moved them at 0.7 times it), slower than the meadow's gusts (Wind.ts GUST_TRAVEL times
+// the plants' speed), which run across the near water at the meadow's pace.
 //
-// Its inputs are the weather's wind (Wind.ts): the travel direction and the speed, the gust map's
-// scroll and the integrated displacement, so the pattern is a function of the wind's state and the
+// Its inputs are the weather's wind (Wind.ts): the travel direction and the speed, the gust field's
+// travel and time and the integrated displacement, so the pattern is a function of the wind's state and the
 // scene clock and a paused frame repeats. The noise is a tileable smooth fbm in four channels, made
 // once on the CPU with fixed seeds (256 texels, half float, bilinear, repeating; low frequency, so
 // no mipmaps).
@@ -54,7 +54,7 @@ const NOISE_SIZE = 256;
 const ISLAND_LULL = 0.3;
 const ISLAND_SPAN = 0.72;
 /** tidewater's octaves drift with the wind's integrated displacement times this: at the wind's
- * speed, as the meadow's gusts travel (tidewater's own, 0.7, lagged behind them). */
+ * speed (tidewater's own, 0.7, lagged behind it). */
 export const OPEN_DRIFT = 1;
 // metres from the land's box: the meadow's gusts alone within NEAR, tidewater's alone from FAR
 const ISLAND_NEAR = 60;

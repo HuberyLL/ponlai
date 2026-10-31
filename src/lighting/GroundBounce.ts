@@ -7,11 +7,21 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, texture, uniform, vec2, vec3, vec4, float, int, max, mix, clamp, smoothstep, exp, dot, length, select,
-	screenCoordinate, positionWorld, normalWorld,
+	screenCoordinate, positionWorld, normalWorld, positionViewDirection, normalView, normalViewGeometry, diffuseContribution,
+	specularColor, specularColorBlended, specularF90, F_Schlick, roughness, luminance, diffuseColor, metalness,
 } from 'three/tsl';
+import { soilGroveSwell } from '../materials/Soil.ts';
 import { ISLAND_TOP } from '../world/WorldShapes.ts';
 import type { SunShadow } from './SunShadow.ts';
 import type { Shared } from '../shared.ts';
+import { useLightLayer } from '../debug/LightLayer.ts';
+import { ambient, diffuseOcclusion, useAmbientGrade } from './AmbientGrade.ts';
+import { addLocalLights } from './LocalLights.ts';
+import { GROUND_BOUNCE_LAND, type AmbientReceiver } from './AmbientSample.ts';
+import { liftKey } from './KeyLift.ts';
+import { glossAlpha, specularGGX, fresnel90, keyGlint, glintDirection, glintNormalisation } from './SurfaceBRDF.ts';
+import { environmentBRDF } from './EnvironmentBRDF.ts';
+import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 
 // Sunlight bounced off the ground, one diffuse bounce (tidewater's GroundBounce, 4811ba4): the
 // sunlit plateau lights the islanders' undersides and the grass from below, the bright shallows
@@ -27,12 +37,13 @@ import type { Shared } from '../shared.ts';
 // environment's lower half already gives a face turned down (the distant sea's radiance, Sky's
 // `seaRadiance`, where tidewater's environment has the atmosphere's dark ground), then blurred
 // (a binomial 5x5 of 1 m steps, as 3x3 bilinear lookups). Alpha: the height of the bouncing
-// surface (the plateau's top or the sea level). It is drawn at 256 texels, blurred into the
+// surface (the plateau's top over its swells, or the sea level). It is drawn at 256 texels, blurred into the
 // caustics' array target (its last layer, Caustics `bounceLayer`): the materials lit under the
 // water already bind WebGPU's 16 sampled textures, and the caustics' map is one of them. Like the
 // caustics, it is drawn before the frame graph, after the sun's map. It is a function of the key's direction and colour, the sun's maps,
-// the sea's radiance and the world fields. It is drawn with the sun's map: at each of its redraws
-// (a step of the key's turn, SunShadow.ts), from that map alone and the key as it stands then, and
+// the sea's radiance and the world fields. It is drawn with the sun's map's steps (`steps`: a step
+// of the key's turn, SunShadow.ts, counted also while the swaying plants redraw that map every
+// frame), from that map alone and the key as it stands then, and
 // whenever the sea's radiance or the fields change (a growth swap and a scene jump through
 // `invalidate`, since the fields change in place). Drawn every frame the clock ran, its two passes
 // took a tenth of a millisecond or more; between steps the key turns by at most 0.2 degrees, which
@@ -54,6 +65,33 @@ import type { Shared } from '../shared.ts';
 // lighting model calls `addGroundBounce` at the start of its `indirect` (the terrain's, the
 // vegetation's, `GroundBounceLightingModel` for the game's props), a model of its own reads
 // `groundBounceLight` (the islanders'), never a bounce of its own. The water does not take it.
+// The bounce takes the ambient grade's `sunBounce` where every material takes it
+// (`groundBounceLight`). Beside the ambient volume (lighting/AmbientSample.ts), whose relight
+// bounces the key off the land round each probe (AmbientRelight.ts), the bake keeps the sea's part
+// alone (the land's albedo 0): the bright shallows that light the cliff's walls, which the volume's
+// imaginary ground does not carry, so no material counts the land's bounce twice;
+// `flags=groundBounceLand` keeps it whole beside the volume, and `flags=ambientVolume:0` (no
+// volume) keeps it whole as before. The physical models extend `GroundBounceLightingModel`, which
+// also reads the ambient volume (lighting/AmbientSample.ts), applies the ambient grade to the
+// ambient light and the occlusion (lighting/AmbientGrade.ts) and the lighting layer's debug views
+// (debug/LightLayer.ts: `flags=lightOnly`, `ambientOnly`); a model of its own calls
+// `useLightLayer` in its constructor and reads the grade's uniforms itself.
+// The model's direct light is its own: Lambert under 1 - lum( F ) and the shared GGX of
+// lighting/SurfaceBRDF.ts (alpha the perceptual roughness squared, Schlick-GGX visibility) in place
+// of three's BRDF_GGX; F90 follows F0 (`fresnel90`, set over the material's own F90 in `start`);
+// the environment's specular takes the split sum integrated for that GGX (lighting/EnvironmentBRDF.ts) in place of three's DFG table, and its
+// prefiltered environment is read at the roughness whose square is the GGX's alpha.
+// The diffuse, direct and ambient, loses the Fresnel's luminance (1 - lum( F ), 1 - lum( F0 A +
+// F90 B )), not a colour, and three's multiple scattering terms are gone. The whole direct term,
+// diffuse and specular with its Fresnel, takes the key's shading direction (`shadeDirection`:
+// lifted under a low key, lighting/KeyLift.ts), as the sun's shadows do; the specular takes its
+// light from the disk's representative point round that direction (lighting/SurfaceBRDF.ts
+// `keyGlint`). The diffuse of one light is `diffuseResponse` (Lambert under 1 - lum( F( V.H ) ), a
+// subclass's own on top), which the key and every local light (lighting/LocalLights.ts, along their
+// true direction, under the ambient diffuse's occlusion) take alike.
+// Each term also adds its irradiance to the metering illuminance's sums (lighting/MeterLight.ts):
+// the key's times its cosine in `direct`, the irradiance and the environment's (or the volume's)
+// in the ambient diffuse; the occlusion multiplies them in the ambient grade's (AmbientGrade.ts).
 // The lookup is inlined into each material: as a layout function reading this module's uniforms and
 // texture, r186 emits it with the first material's binding names in the next one (SeaDetail.ts).
 
@@ -84,6 +122,8 @@ export interface GroundBounceInputs {
 	sunShadow: SunShadow;
 	// the world fields (WorldFields.ts): the shore's sea-level distance, the floor's height and beds
 	fields: { shore: THREE.TextureNode; floor: THREE.TextureNode; beds: THREE.TextureNode };
+	// the soil map (Soil.ts): the plateau's swell, the height of the land's bouncing surface
+	soil: THREE.Texture;
 	// the array target and layer the map is blurred into (Caustics `target`, `bounceLayer`)
 	target: THREE.RenderTarget;
 	layer: number;
@@ -130,9 +170,11 @@ export class GroundBounce {
 			const floor = mix( mix( SAND, SEAGRASS, smoothstep( 0.3, 0.7, beds.x ) ), RUBBLE, smoothstep( 6.5, 0.5, sd ).mul( 0.5 ) );
 			const sea = floor.mul( exp( shared.sigA.add( shared.sigS ).mul( depth ).mul( - 2.4 ) ) ).mul( 0.9 ).add( WATER_BODY );
 			const wet = smoothstep( - 0.25, 0.25, sd ).toVar();
-			const albedo = mix( land, sea, wet );
-			const top = mix( float( ISLAND_TOP ), shared.waterLevel, wet );
-			const lift = select( wet.lessThan( 0.5 ), float( ISLAND_TOP ), shared.waterLevel ).add( SHADOW_LIFT );
+			// (the land's bounce is the ambient volume's where materials read it: see the header)
+			const albedo = GROUND_BOUNCE_LAND ? mix( land, sea, wet ) : sea.mul( wet );
+			const ground = float( ISLAND_TOP ).add( soilGroveSwell( inputs.soil, xz ).swell ).toVar();
+			const top = mix( ground, shared.waterLevel, wet );
+			const lift = select( wet.lessThan( 0.5 ), ground, shared.waterLevel ).add( SHADOW_LIFT );
 			const visibility = sunShadow.currentPCFVisibility( sunShadow.coordinate.mul( vec4( xz.x, lift, xz.y, 1 ) ).xyz );
 			const E = max( L.y, 0 ).mul( visibility ).mul( smoothstep( - 0.02, 0.05, L.y ) );
 			return vec4( max( albedo.mul( E ).sub( this.envGround ), vec3( 0 ) ), top );
@@ -192,13 +234,13 @@ export class GroundBounce {
 	}
 
 	/** Once a frame, after the sun's map and the caustics: draws the map again at the sun's map's
-	 * redraws and when the sea or the fields changed (see the header). `sea`: the environment's lower
+	 * steps and when the sea or the fields changed (see the header). `sea`: the environment's lower
 	 * half (Sky `seaRadiance`). */
 	update( sea: THREE.Color ): void {
 
 		const { renderer: r, shared, sunShadow, target, layer } = this.inputs;
 		const fill = shared.skyFill.value, x = shared.shoreXform.value;
-		const signature = [ sunShadow.draws, sunShadow.ready.value, sea.r, sea.g, sea.b, fill,
+		const signature = [ sunShadow.steps, sunShadow.ready.value, sea.r, sea.g, sea.b, fill,
 			x.x, x.y, x.z, x.w, shared.waterLevel.value ].join( ',' );
 		if ( signature === this.signature ) return;
 		this.signature = signature;
@@ -240,10 +282,11 @@ export function installGroundBounce( bounce: GroundBounce ): void {
 
 }
 
-/** The ground bounce's irradiance at the surface being lit (none where none is installed). */
+/** The ground bounce's irradiance at the surface being lit, at the ambient grade's `sunBounce`
+ * (none where none is installed). */
 export function groundBounceLight(): V3 {
 
-	return installed ? installed.irradiance( positionWorld, normalWorld ) : vec3( 0 );
+	return installed ? installed.irradiance( positionWorld, normalWorld ).mul( ambient.sunBounce ) : vec3( 0 );
 
 }
 
@@ -255,13 +298,171 @@ export function addGroundBounce( builder: THREE.NodeBuilder ): void {
 
 }
 
-/** Three's physical lighting with the ground bounce, for lit materials without a model of their own
- * (the game's props). */
+/** A light's diffuse cosine and the diffuse's Fresnel weight, ( saturate( N.L ), 1 - lum( F( V.H ) ) )
+ * (view space; F0 and F90 the material's, Schlick's F): one shader function, which the key's direct
+ * term and every local light call (`diffuseResponse`). */
+export const diffuseFresnel = /*@__PURE__*/ Fn( ( [ N, V, L, f0, f90 ]: [ V3, V3, V3, V3, F ] ) => {
+
+	const H = L.add( V ).normalize();
+	const F = luminance( F_Schlick( { f0, f90, dotVH: clamp( dot( V, H ), 0, 1 ) } ) as unknown as V3 );
+	return vec2( clamp( dot( N, L ), 0, 1 ), float( 1 ).sub( F ) );
+
+} ).setLayout( { name: 'diffuseFresnel', type: 'vec2', inputs: [
+	{ name: 'N', type: 'vec3' }, { name: 'V', type: 'vec3' }, { name: 'L', type: 'vec3' }, { name: 'f0', type: 'vec3' }, { name: 'f90', type: 'float' },
+] } );
+
+/** Three's physical lighting with the ground bounce: the game's props and the other lit materials
+ * without a model of their own use it as it is, and the physical models (the terrain's and the
+ * vegetation's, lighting/Underwater.ts and world/VegetationLighting.ts, the feathers') extend it, so
+ * the ambient volume's diffuse (lighting/AmbientSample.ts, `ambient`: degree 2 by default), the
+ * ambient grade (lighting/AmbientGrade.ts), the local lights (lighting/LocalLights.ts), the low
+ * key's lift (lighting/KeyLift.ts) and the lighting layer's debug views (debug/LightLayer.ts) reach
+ * every one of them from here. */
 export class GroundBounceLightingModel extends THREE.PhysicalLightingModel {
+
+	/** How the model reads the ambient volume for its ambient diffuse (lighting/AmbientSample.ts;
+	 * null: the environment's), read when the material builds. */
+	ambient: AmbientReceiver | null;
+
+	constructor( ambient: AmbientReceiver | null = { bands: 2 } ) {
+
+		super();
+		this.ambient = ambient;
+		useAmbientGrade( this, () => this.ambient );
+		useLightLayer( this );
+
+	}
+
+	/** The direction the key's whole direct term takes, for the key's view-space direction L: L
+	 * lifted under a low key, the moon's fixed direction by night (lighting/KeyLift.ts).
+	 * UnderwaterLightingModel keeps the refracted sun's own under the water. */
+	shadeDirection( L: V3 ): V3 {
+
+		return liftKey( L );
+
+	}
+
+	/** GGX's alpha from the material's gloss (lighting/SurfaceBRDF.ts), set in `start`. */
+	protected alpha: F | null = null;
+	/** The environment BRDF's ( A, B ) (lighting/EnvironmentBRDF.ts), set in `start`. */
+	protected envBRDF: THREE.Node<'vec2'> | null = null;
+
+	start( builder: THREE.NodeBuilder ): void {
+
+		// the metering illuminance's sums (lighting/MeterLight.ts), filled by the terms below
+		meterStart();
+		const gloss = roughness.oneMinus().toVar( 'surfaceGloss' );
+		this.alpha = glossAlpha( gloss ).toVar( 'surfaceAlpha' );
+		// the split sum's A and B for the shared GGX (lighting/EnvironmentBRDF.ts), and the
+		// environment's prefiltered lookup at the roughness whose square is the GGX's alpha
+		this.envBRDF = environmentBRDF( gloss, clamp( dot( normalView, positionViewDirection ), 0, 1 ) ).toVar( 'envBRDF' );
+		roughness.assign( this.alpha.sqrt() );
+		// F90 from F0, whatever the material's setupSpecular set (lighting/SurfaceBRDF.ts)
+		specularF90.assign( fresnel90( specularColor as unknown as V3 ) );
+		// three's PhysicalLightingModel.start adds only iridescence and transmission (unused here)
+		// and its DFG table, which this model replaces: binding that table beside ours took the
+		// materials lit under the water past WebGPU's 16 sampled textures
+		THREE.LightingModel.prototype.start.call( this, builder );
+
+	}
+
+	/** The split sum's single scattering F0 A + F90 B for a reflectance F0. */
+	private envSpecular( f0: V3 ): V3 {
+
+		const fab = this.envBRDF!;
+		return f0.mul( fab.x ).add( vec3( specularF90 ).mul( fab.y ) );
+
+	}
+
+	/** The irradiance's diffuse (the ambient lights, the ground's bounce): Lambert under
+	 * 1 - lum( F0 A + F90 B ), with no multiple scattering term. */
+	indirectDiffuse( builder: THREE.NodeBuilder ): void {
+
+		const { irradiance, reflectedLight } = builder.context as unknown as { irradiance: V3; reflectedLight: { indirectDiffuse: V3 } };
+		const weight = float( 1 ).sub( luminance( this.envSpecular( specularColor as unknown as V3 ) ) );
+		reflectedLight.indirectDiffuse.addAssign( irradiance.mul( diffuseContribution ).mul( weight ).mul( 1 / Math.PI ) );
+		meterAmbient.addAssign( irradiance );
+
+	}
+
+	/** The environment's specular, radiance x ( F0 A + F90 B ), and its diffuse, Lambert under
+	 * 1 - lum( F0 A + F90 B ) (a luminance, so a tinted F0 does not tint the diffuse its
+	 * complement); no multiple scattering term (there are no metals here, where it shows). */
+	indirectSpecular( builder: THREE.NodeBuilder ): void {
+
+		const { radiance, iblIrradiance, reflectedLight } = builder.context as unknown as { radiance: V3; iblIrradiance: V3; reflectedLight: { indirectDiffuse: V3; indirectSpecular: V3 } };
+		const dielectric = this.envSpecular( specularColor as unknown as V3 ).toVar();
+		const single = mix( dielectric, this.envSpecular( diffuseColor.rgb ), metalness );
+		reflectedLight.indirectSpecular.addAssign( radiance.mul( single ) );
+		reflectedLight.indirectDiffuse.addAssign( iblIrradiance.mul( diffuseContribution ).mul( float( 1 ).sub( luminance( dielectric ) ) ).mul( 1 / Math.PI ) );
+		meterAmbient.addAssign( iblIrradiance );
+
+	}
+
+	/** The diffuse a light gives, from the view-space direction to it L and its light without the
+	 * cosine: what the surface reflects (on its albedo, before 1 / pi) and its metering illuminance
+	 * (lighting/MeterLight.ts). Here Lambert under 1 - lum( F( V.H ) ) (`diffuseFresnel`);
+	 * VegetationLighting's adds its wrap, light through and thin layer. The key's `direct` and every
+	 * local light (lighting/LocalLights.ts) shade by it, so one light is the same on every kind. */
+	diffuseResponse( L: V3, light: V3 ): { reflected: V3; meter: V3 } {
+
+		const r = diffuseFresnel( normalView, positionViewDirection, L, specularColor as unknown as V3, specularF90 as unknown as F ).toVar();
+		return { reflected: light.mul( diffuseContribution ).mul( r.x.mul( r.y ) ), meter: light.mul( r.x ) };
+
+	}
+
+	/** The physical direct light along `shadeDirection` (the key lifted under a low key: the key is
+	 * the scene's one direct light, main.ts `sun`): Lambert under 1 - lum( F ) for the diffuse, and
+	 * the shared GGX (lighting/SurfaceBRDF.ts) for the specular, from the disk's representative
+	 * point round that direction. */
+	direct( input: THREE.LightingModelDirectInput, builder: THREE.NodeBuilder ): void {
+
+		void builder;
+		const L = this.shadeDirection( input.lightDirection as V3 ).toVar(), V = positionViewDirection, N = normalView;
+		const lightColor = input.lightColor as V3;
+		const diffuse = this.diffuseResponse( L, lightColor );
+		( input.reflectedLight.directDiffuse as V3 ).addAssign( diffuse.reflected.mul( 1 / Math.PI ) );
+		meterKey.addAssign( diffuse.meter );
+		// the specular from the disk's representative point (lighting/SurfaceBRDF.ts `keyGlint`)
+		const R = keyGlint.radius;
+		const Lg = glintDirection( L, N, V, normalViewGeometry, R.tan() ).toVar();
+		const Hg = Lg.add( V ).normalize();
+		const NL = clamp( dot( N, Lg ), 0, 1 ).toVar();
+		const NV = clamp( dot( N, V ), 0, 1 );
+		const NH = clamp( dot( N, Hg ), 0, 1 );
+		const VHg = clamp( dot( V, Hg ), 0, 1 );
+		const spec = specularGGX( NL, NV, NH, VHg, this.alpha!, specularColorBlended as unknown as V3, fresnel90( specularColorBlended as unknown as V3 ) )
+			.mul( glintNormalisation( this.alpha!, R, keyGlint.spread ) );
+		( input.reflectedLight.directSpecular as V3 ).addAssign( lightColor.mul( NL ).mul( spec ) );
+
+	}
+
+	/** What dims the local lights as the model dims its key (none here; the water column's
+	 * attenuation in UnderwaterLightingModel). */
+	localScale(): THREE.Node<'float'> | THREE.Node<'vec3'> | undefined {
+
+		return undefined;
+
+	}
+
+	/** What dims the irradiance gathered before the local lights (the ambient lights and the
+	 * ground's bounce): none here; VegetationLighting's occlusion from root to tip. */
+	ambientScale(): THREE.Node<'float'> | undefined {
+
+		return undefined;
+
+	}
 
 	indirect( builder: THREE.NodeBuilder ): void {
 
 		addGroundBounce( builder );
+		const scale = this.ambientScale();
+		if ( scale ) ( builder.context as unknown as { irradiance: V3 } ).irradiance.mulAssign( scale );
+		// the local lights' diffuse (lighting/LocalLights.ts), once per material: shaded as the key's
+		// diffuse, under the ambient diffuse's occlusion and what dims the key
+		const local = this.localScale();
+		const occlusion = diffuseOcclusion( builder );
+		addLocalLights( builder, ( L, light ) => this.diffuseResponse( L, light ), local ? occlusion.mul( local ).toVar() : occlusion );
 		super.indirect( builder );
 
 	}

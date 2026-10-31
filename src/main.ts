@@ -12,9 +12,9 @@ import GUI from 'lil-gui';
 import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraControls.ts';
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
-import { Sky, lowSun } from './sky/Sky.ts';
-import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
-import { Weather, WEATHER_PRESETS, WIND_LEVELS, isParkedWeather, isWindLevel, type WeatherName, type WindChoice, type WindLevel } from './sky/Weather.ts';
+import { Sky } from './sky/Sky.ts';
+import { DayCycle, DAY_PRESETS, nightAmbientAt, sunRising, type DayPreset } from './sky/DayCycle.ts';
+import { Weather, WEATHER_PRESETS, WIND_LEVELS, isParkedWeather, isWindLevel, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
 import { Wind, weatherWind } from './weather/Wind.ts';
@@ -39,11 +39,13 @@ import { worldJob, worldProgress, landOptions, landFraming, worldCacheOn } from 
 import { buildChunkBorders } from './debug/ChunkBorders.ts';
 import { WIND_VIEW } from './debug/WindView.ts';
 import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';
-import { buildGrass, grassKind, plantGrass, setGrassQuality } from './world/Grass.ts';
-import { buildYunpeng, yunpengKind } from './world/Yunpeng.ts';
+import { buildGrass, grassKind, plantGrass } from './world/Grass.ts';
+import { buildYunpeng, yunpengKind, yunpengNight } from './world/Yunpeng.ts';
 import { meadowCanopy } from './lighting/MeadowCanopy.ts';
-import { Pipeline, postOptionsFromURL } from './post/Pipeline.ts';
+import { Pipeline, postOptionsFromURL, WHITE_BALANCE } from './post/Pipeline.ts';
+import { LOCAL_TONE } from './post/LocalTone.ts';
 import type { HazeFrame } from './weather/VolumetricHaze.ts';
+import { hazeKeyAt, type HazeKey } from './weather/HazeKeys.ts';
 import type { GradeChanges } from './post/GradeLut.ts';
 import { renderPixelRatio, dynamicRange, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
@@ -56,10 +58,18 @@ import { installOpenShadow } from './lighting/SolarShadow.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
 import { GroundBounce, installGroundBounce } from './lighting/GroundBounce.ts';
+import { AMBIENT_KNOBS, ambientGrade } from './lighting/AmbientGrade.ts';
+import { localLights, testSources } from './lighting/LocalLights.ts';
+import { liftedKeyDirection, liftedKeyHeight, updateKeyLift } from './lighting/KeyLift.ts';
+import { keyGlint } from './lighting/SurfaceBRDF.ts';
+import { AmbientVolume, type AmbientView } from './lighting/AmbientVolume.ts';
+import { installAmbientVolume, installEnvironmentHarmonics } from './lighting/AmbientSample.ts';
+import { AmbientRelight, AmbientSky } from './lighting/AmbientRelight.ts';
 import { islandSurfaceHeight, landBounds } from './world/WorldShapes.ts';
 import { LandLattice } from './world/IslandGrowth.ts';
-import { walkLoopDistance, walkPoints } from './world/WalkPath.ts';
+import { walkPoints } from './world/WalkPath.ts';
 import { bambooKinds, buildBamboo } from './world/Bamboo.ts';
+import { loadBambooLook } from './world/BambooGroves.ts';
 import { leafAtlas as bambooAtlas } from './world/BambooMaterials.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { Trample } from './world/vegetation/Trample.ts';
@@ -68,17 +78,25 @@ import { parseBodies, type Body, type Sex } from './characters/Ages.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
+import { tuneApi } from './debug/Tune.ts';
+import { skyRetune } from './sky/SkyRetune.ts';
 import { AA_MODE, AA_SOURCE, AFTER_RESOLVE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './post/Antialiasing.ts';
 import type { LatentRegistry } from './post/graph/FrameGraph.ts';
 import { MOTION_CLASS, motionCheck, motionState, motionUniforms, onTaaCut, taaCut } from './post/Motion.ts';
 import { jitter } from './post/Jitter.ts';
 import { restEpoch } from './post/TemporalRest.ts';
+import { PRE_EXPOSURE_PENDING, preExposure } from './post/PreExposure.ts';
 import { sceneEvent } from './post/SceneEvents.ts';
 import { TemporalAA, type TemporalFrame } from './post/TemporalAA.ts';
 import { watchPipelines, type SettleFrame } from './post/Settled.ts';
-import { SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
+import { SCENE_RADIANCE_SCALE, MOON_GLINT_RADIUS } from './lighting/Radiometry.ts';
+import { SUN_GLINT_DISC } from './lighting/SunDisc.ts';
 import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 import { installVegetationPrepass, prepassScene } from './world/VegetationPrepass.ts';
+import { displacementField } from './world/vegetation/Displacement.ts';
+import { installOpaquePrepass, opaquePrepassScene } from './world/OpaquePrepass.ts';
+import { GTAO, gtaoUniforms } from './post/GTAO.ts';
+import { SS_SHADOW } from './post/MeadowShade.ts';
 import { Vegetation } from './world/vegetation/Registry.ts';
 import { installWindMotionFlag } from './world/WindMotion.ts';
 import { HANMING, HANMING_LOOKS, ISLANDER, ISLANDER_LOOKS } from './characters/looks.ts';
@@ -173,7 +191,8 @@ const camera = new THREE.PerspectiveCamera( 27, innerWidth / innerHeight, 1, 600
 // framing, moved to the land's centroid and scaled by its size. An explicit `dist` is in metres.
 const target = new THREE.Vector3();
 // the island's camera: it starts at the island view's pose and the hand moves it (pans within the
-// land's soft bounds, turns, tilts and zooms between 22 and 70 m: IslandCameraControls.ts), the
+// land's soft bounds, turns, tilts and zooms out from the island view's framing to 70 m or the
+// framing's own distance, never in past the framing: IslandCameraControls.ts), the
 // drags followed on the frame that draws them; `cameraInput=off` (or the GUI's 'move by hand')
 // holds the view at its framing
 const controls = new IslandCameraControls( camera, renderer.domElement );
@@ -248,7 +267,7 @@ function sceneOptions( options: URLSearchParams ) {
 		autoWeather: ! options.has( 'weather' ) && ! options.has( 'wind' ) && ! options.has( 'windDir' ),
 		day: { hour: numberParam( 'hour', params.has( 'game' ) ? 8 : 16, options ),
 			dayLength: Math.max( 30, numberParam( 'dayLength', params.has( 'game' ) ? 1440 : 2880, options ) ),
-			paused: options.has( 'paused' ) || options.get( 'clock' ) === 'paused', moonPhase: numberParam( 'moon', 0.25, options ) },
+			paused: options.has( 'paused' ) || options.get( 'clock' ) === 'paused', moonPhase: numberParam( 'moon', 0.5, options ) },
 		preset: preset && Object.hasOwn( DAY_PRESETS, preset ) ? preset as DayPreset : null,
 		paused: options.has( 'paused' ),
 		time: Math.max( 0, numberParam( 't', 0, options ) ),
@@ -272,10 +291,11 @@ const wind = new Wind( shared.wind, { ...weatherWind( weather.state ), time: sim
 // Across a cut of the temporal modes' history (Motion.ts) the vegetation's wind has no motion either:
 // its previous state becomes the current one.
 if ( TEMPORAL ) onTaaCut( () => wind.cut() );
-// The islanders' trail through the meadow (world/vegetation/Trample.ts), written after they move
-// each frame; across a cut its previous state becomes the current one too.
-const trample = new Trample( shared.trample );
-if ( TEMPORAL ) onTaaCut( () => trample.cut( renderer ) );
+// The islanders' trail through the meadow (world/vegetation/Trample.ts), drawn after they move each
+// frame into the displacement field (world/vegetation/Displacement.ts): fixed over the whole
+// island, drawn again each frame; across a cut its frame before is not read.
+const trample = new Trample( displacementField );
+if ( TEMPORAL ) onTaaCut( () => displacementField?.cut() );
 let rain: Rain | undefined;
 let skyElapsed = 0;
 let lastSkyTime = simTime;
@@ -324,16 +344,15 @@ sun.shadow.mapSize.set( 2048, 2048 );
 // The map is fitted to the island's casters once the world exists, and redrawn in small steps of
 // the key light with a cross-fade (SunShadow). Its bias, 1 cm along the light ray, follows each
 // fit's depth range; receiver-plane correction in the shared filter keeps contacts sharp without
-// a wide blur.
-sun.shadow.normalBias = 0.012;
+// a wide blur. The normal offset is SunShadow's (in texels, growing with view depth): three's
+// own stays 0.
+sun.shadow.normalBias = 0;
 const sunShadow = new SunShadow( sun, { bias: 0.01 } );
-// compiled into every receiver's material, so set before any is built
-sunShadow.setFilter( quality.shadow.surface, quality.shadow.vegetation );
 sunShadow.install();
 // Cloud shadowing shares the density field in the visible/reflected sky. Bake its long solar
 // path once at low resolution, then sample the same transmission on every receiver, including
 // those beyond the island's shadow map (the sea floor seen through the water).
-installOpenShadow( sun, ( position ) => sky.cloudVisibility( position ) );
+installOpenShadow( sun, ( position ) => sky.keyCloudVisibility( position ), sky.castShadow );
 // Moving figures cast through a small map of their own that every receiver multiplies in. It
 // must be installed before any receiving material is built.
 const characterShadow = new CharacterShadow();
@@ -342,6 +361,10 @@ characterShadow.install( sun );
 // redraw the map; a jump of the light or an edit to the casters redraws it from scratch.
 function invalidateSunShadow(): void { sunShadow.invalidate(); }
 scene.add( sun, sun.target );
+// the direction the sun's map and the figures' are drawn along: the key's, lifted under a low key
+// (lighting/KeyLift.ts)
+const shadowDirection = new THREE.Vector3( 0, 1, 0 );
+characterShadow.along = shadowDirection;
 
 function fresnel( cosI: number, eta: number ): number {
 
@@ -352,6 +375,25 @@ function fresnel( cosI: number, eta: number ): number {
 }
 
 let sunUpdates = Promise.resolve();
+// The haze by the hour and the weather (weather/HazeKeys.ts): its amount over the weather's, the
+// morning mist beside the weather's sea fog, its spectral extinction and its light, set on the
+// medium the frame and the environment's bake read (the bake lays it over its source: Sky.ts
+// `fogEnvironment`), so a bake sees the haze of the state it bakes.
+// (the first bake runs before the pipeline holds the haze: `hazeReady` below)
+let hazeReady = false;
+function prepareHaze( state: Readonly<WeatherState> ): void {
+
+	if ( ! hazeReady ) return;
+	hazeKeyAt( sky.elevation, sunRising( sky.sunDir ), weather.skyMix, sky.weather.windSpeed, sky.weather.rain, hazeKey );
+	pipeline.air.haze.value = sky.weather.haze * hazeKey.amount;
+	pipeline.air.fog.value = Math.max( sky.weather.fog, hazeKey.mist );
+	pipeline.air.setLook( hazeKey );
+	pipeline.air.weatherLight.direct = state.directVisibility;
+	pipeline.air.weatherLight.ambient = state.ambientGain;
+	pipeline.air.prepareMedium();
+
+}
+
 function prepareSkyState(): void {
 
 	const celestial = manualSun ? null : dayCycle.snapshot();
@@ -359,7 +401,9 @@ function prepareSkyState(): void {
 	const state = weather.snapshot();
 	if ( cloudOverride !== null ) state.coverage = cloudOverride;
 	sky.setWeather( state );
-	sky.track( celestial, state, cloudOverride, weather.front );
+	keyGlint.spread.value = state.glintSpread ?? 0;
+	sky.track( celestial, state, cloudOverride, weather.front, weather.skyMix );
+	prepareHaze( state );
 	lastWeatherSignature = `${ state.coverage },${ state.density },${ state.directVisibility },${ state.ambientGain },${ state.haze }`;
 
 }
@@ -370,6 +414,9 @@ function publishLighting(): void {
 	sun.intensity = 1;
 	sun.position.copy( sky.keyDir ).multiplyScalar( 120 ).add( sun.target.position );
 	shared.sunDir.value.copy( sky.keyDir );
+	updateKeyLift( sky.keyDir, sky.keyIsMoon );
+	keyGlint.radius.value = sky.keyIsMoon ? MOON_GLINT_RADIUS : SUN_GLINT_DISC;
+	liftedKeyDirection( sky.keyDir, sky.keyIsMoon, shadowDirection );
 	shared.sunColor.value.set( sky.keyColor.r, sky.keyColor.g, sky.keyColor.b );
 	const cosI = Math.max( sky.keyDir.y, 0 );
 	shared.sunIntoWater.value = sky.keyDir.y > 0 ? 1 - fresnel( cosI, 1.333 ) : 0;
@@ -449,12 +496,21 @@ function applySkyFill(): void {
 
 let water: Water | undefined;
 
+// the sky's harmonics for the ambient light's relight (lighting/AmbientRelight.ts), projected from
+// every bake's environment source from the first on
+const ambientSky = new AmbientSky( renderer );
+sky.onEnvironmentSource = ( source, atlases ) => ambientSky.project( source, atlases );
+
 setStatus( 'Lighting the sky…' );
 await refreshEnvironment();
 mark( 'sky' );
 shared.skyIrradianceSource = sky.irradianceNode.mul( shared.skyFill );
 shared.islandIrradianceSource = sky.islandIrradianceNode.mul( shared.skyFill );
+shared.skyMeterLog2 = sky.meterLog2Node;
 
+// the bamboo's groves (`bamboo=cover,height` loads another look of them), which the ground's
+// floor follows (the textures' grove field) and the meadow thins under and the bamboo stands in
+loadBambooLook( params.get( 'bamboo' ) );
 const textures = await bakeProceduralTextures( renderer );
 // tidewater's two wave systems at the prevailing heading (Wind.ts `spectrumWind`) and tidewater's
 // sea state for the wind (OceanSpectrum.ts `seaState`: its fetch, choppiness and swell), rebuilt
@@ -481,7 +537,8 @@ rain.setLightNode( shared.skyIrradianceSource, shared.sunDir, shared.sunColor, s
 // before the pipeline compiles it.
 const fgview = DEBUG ? debugViewFromURL() : null;
 if ( fgview ) installDebugView( fgview, {
-	exposure: () => pipeline.settings.exposure / SCENE_RADIANCE_SCALE,
+	// (the targets hold scene radiance pre-exposed: PreExposure.ts)
+	exposure: () => pipeline.settings.exposure / SCENE_RADIANCE_SCALE * preExposure.inverse.value,
 	// (the resolve exists while the pipeline compiles its graph, before `pipeline` is assigned)
 	temporal: () => TemporalAA.current,
 	motion: {
@@ -490,9 +547,6 @@ if ( fgview ) installDebugView( fgview, {
 	},
 } );
 const pipeline = new Pipeline( renderer, sky, sunShadow, rain, postOptionsFromURL( location.search, quality.post ), quality.taa );
-// The ground truth (aa=gt, debug builds) renders at the canvas's resolution (see resize) without
-// film grain: an image of the scene alone.
-if ( AA_MODE === 'gt' ) pipeline.settings.grain = 0;
 // The profiler labels each pass the graph runs by the pass's label (its groups), unless a
 // target or object it knows labels it otherwise (the passes inside the display chain).
 if ( profiler ) {
@@ -593,12 +647,10 @@ setLand( land, landOptions.step );
 const fields = new WorldFields( data, shared.shoreXform.value );
 // the sunlight the ground bounces up (lighting/GroundBounce.ts), which every lit material adds: so
 // installed before any of them builds; its map shares the caustics' target
-const groundBounce = new GroundBounce( { renderer, shared, sunShadow, fields, target: caustics.target, layer: caustics.bounceLayer, cloud: ( position ) => sky.cloudVisibility( position ) } );
+const groundBounce = new GroundBounce( { renderer, shared, sunShadow, fields, soil: textures.soil, target: caustics.target, layer: caustics.bounceLayer, cloud: ( position ) => sky.keyCloudVisibility( position ) } );
 installGroundBounce( groundBounce );
 const shoreWaves = new ShoreWaves( renderer, data, shared, fields.shore, fft, fields.floor );
-// The meadow's flowers keep clear of the islander's walking loop, 5 m in from the coast.
 const walk = walkPoints( data.walk );
-const walkDistance = walkLoopDistance( walk );
 const world = buildWorldMeshes( data, textures, shared, caustics, fields );
 scene.add( world.group );
 // The wenyao's schools off the island (life/Wenyao.ts): swimmers (Refraction.ts markSwimmer), which
@@ -631,6 +683,20 @@ const showWindArrows = () => {
 
 };
 showWindArrows();
+// The ambient light's probes on the GPU (lighting/AmbientVolume.ts), relit every frame into their
+// irradiance (lighting/AmbientRelight.ts), which every lit island material reads for its ambient
+// diffuse (lighting/AmbientSample.ts: installed before any of them builds), and their debug view
+// (`ambientProbes=sky|bounce|irradiance` on a debug page, the GUI's Ground folder), built on first
+// show.
+const ambient = new AmbientVolume( renderer, data.ambient );
+installAmbientVolume( ambient );
+const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyCloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation } );
+// the environment's own harmonics, which the specular's relight divides by (AmbientSample.ts)
+installEnvironmentHarmonics( ambientRelight );
+// the haze's shadow kernels read the probes' sky visibility, so they compile now (Pipeline.ts)
+const hazeShadowCompiled = pipeline.compileHazeShadow();
+const ambientView = { mode: ( DEBUG && params.get( 'ambientProbes' ) || 'off' ) as AmbientView };
+ambient.show( ambientView.mode, scene );
 const refractedSun = new RefractedSun( renderer, shared );
 runtime.refractedSun = refractedSun;
 refractedSun.angleGate = THREE.MathUtils.degToRad( runtimeQuality.refractedSun.angleGate );
@@ -638,32 +704,52 @@ refractedSun.angleGate = THREE.MathUtils.degToRad( runtimeQuality.refractedSun.a
 refractedSun.setCasters( world.group, world.subsets );
 refractedSun.bindTerrain( world.group, caustics );
 await refractedSun.prepare();
-setGrassQuality( quality.grass );
-const grass = buildGrass( plantGrass( data.vegetation, data.rimGround, walkDistance, data.shore, data.rimLip, data.grove ), shared, sunShadow );
+const grass = buildGrass( plantGrass( data.vegetation ), shared );
 // The vegetation's kinds (vegetation/Registry.ts), in the order the scene draws them; every list
 // of vegetation below reads it.
 const vegetation = new Vegetation();
-vegetation.add( grassKind( grass, renderer ) );
-// the yunpeng's clumps at the windward cliff's edge (Yunpeng.ts)
-const yunpeng = buildYunpeng( data.yunpeng, islandSurfaceHeight, shared );
-if ( yunpeng ) vegetation.add( yunpengKind( yunpeng ) );
-// the bamboo's stand at the starting island's heart (Bamboo.ts), its leaves drawn once here
-// (BambooMaterials.ts)
-const bamboo = buildBamboo( data.grove, islandSurfaceHeight, { shared, atlas: bambooAtlas() } );
-if ( bamboo ) for ( const kind of bambooKinds( bamboo ) ) vegetation.add( kind );
+vegetation.add( grassKind( grass ) );
+// the yunpeng's clumps in the meadow, instances of a few prototypes at two levels (Yunpeng.ts)
+const yunpeng = buildYunpeng( data, shared );
+vegetation.add( yunpengKind( yunpeng ) );
+// its light by night, a local light per clump (lighting/LocalLights.ts), moved as the island grows
+// (`onSwap`); `flags=lightTest:N`: N white test sources over the meadow, for the local lights' cost
+// tests, loaded once, with the light of stand-in clumps (the island may hold none)
+const testLights = typeof debugFlags.lightTest === 'number' ? testSources( debugFlags.lightTest, landBox, ( x, z ) => land.inside( x, z ), islandSurfaceHeight, yunpeng.sampleLights() ) : [];
+const setLocalSources = () => {
+
+	localLights.sources = [ ...yunpeng.lights(), ...testLights ];
+
+};
+setLocalSources();
+// the bamboo over the whole island, instances of a few prototypes at two levels (Bamboo.ts,
+// vegetation/PlantInstances.ts), its leaves drawn once here (BambooMaterials.ts)
+const bamboo = buildBamboo( data, { shared, atlas: bambooAtlas() } );
+for ( const kind of bambooKinds( bamboo ) ) vegetation.add( kind );
 scene.add( ...vegetation.roots() );
 installWindMotionFlag( scene );
 installVegetationPrepass( scene, vegetation.roots( ( kind ) => kind.prepass ) );
+// the opaque scene's depth for the ambient occlusion (post/GTAO.ts, high's `ao` knob) and the
+// screen-space shade over the whole scene (post/MeadowShade.ts `SS_SHADOW`): the island, its stones
+// and floor, and the plants without a prepass of their own
+if ( GTAO || SS_SHADOW ) installOpaquePrepass( [ world.group, ...vegetation.roots( ( kind ) => ! kind.prepass ) ] );
 // Everything that casts into the sun's map: the figures cast through their own map, and the sea
 // floor's stones only into the refracted one. The game's props grow it (holdOpaque below), and so
 // does the island (setSunCasters again at each growth step).
 const sunCasters = new THREE.Box3();
 // the boxes the game's props hold (holdOpaque), kept over the island's growth
 const heldOpaque: THREE.Box3[] = [];
-// the yunpeng's stalks rise above the island too
-if ( yunpeng ) heldOpaque.push( new THREE.Box3().setFromObject( yunpeng ).expandByScalar( 0.4 ) );
-// the bamboo's crown rises above the island too
-if ( bamboo ) heldOpaque.push( new THREE.Box3().setFromObject( bamboo.culms ).union( new THREE.Box3().setFromObject( bamboo.leaves ) ).expandByScalar( 0.6 ) );
+// the bamboo's crown and the yunpeng's stalks rise above the island too (their boxes follow the
+// growth: `onSwap`)
+const bambooBox = new THREE.Box3(), yunpengBox = new THREE.Box3();
+const holdPlants = () => {
+
+	bambooBox.setFromObject( bamboo.culms ).union( new THREE.Box3().setFromObject( bamboo.leaves ) ).expandByScalar( 0.6 );
+	yunpengBox.setFromObject( yunpeng.root );
+
+};
+holdPlants();
+heldOpaque.push( bambooBox, yunpengBox );
 function setSunCasters(): void {
 
 	sunCasters.makeEmpty();
@@ -686,9 +772,8 @@ sunShadow.castFrontFaces( world.group );
 controls.setIsland( world.grounds, outline );
 let islandMaxDistance = controls.maxDistance;
 frameLand();
-// Drops stop on the first surface they meet: rock, turf, blades, leaves. The blades stand by their
-// tufts' records (Grass.ts TUFT_RECORD), written before this first draw of them.
-grass.userData.update( renderer );
+// Drops stop on the first surface they meet: rock, turf, leaves (the meadow's blades are generated
+// as they draw, Grass.ts, and stay out of the bake).
 rain.collision.setArea( landBox );
 rain.bakeCollision( renderer, [ world.group, ...vegetation.roots( ( kind ) => kind.rainBake ) ] );
 mark( 'meshes' );
@@ -745,7 +830,7 @@ if ( GAME ) {
 
 			heldOpaque.push( box.clone() );
 			if ( ! sunCasters.containsBox( box ) ) sunShadow.setCasters( sunCasters.union( box ) );
-			water?.reflectionBounds.union( box );
+			water?.hold( box );
 
 		},
 		// the game's props, for the scene's pass and the sun's map (see compileDraws)
@@ -789,7 +874,7 @@ water = new Water( {
 } );
 pipeline.seaLevel.value = shared.waterLevel.value;
 // the boxes held so far (the plants', a game's props shown before the sea was made)
-for ( const box of heldOpaque ) water.reflectionBounds.union( box );
+for ( const box of heldOpaque ) water.hold( box );
 // the light under the water follows the long waves the sea's surface shows (Caustics.ts, the wave maps)
 caustics.attachWaves( { fft, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves, detail: seaDetail } );
 applySkyFill();
@@ -808,13 +893,15 @@ console.info( `world: ${ worldCache.hits } of ${ worldCache.chunks + 1 } records
 // (for the diagnostics, which follow a grown island)
 const worldInfo = { worldTriangles: world.triangles };
 const growth = new Growth( {
-	renderer, world, fields, vegetation, shoreWaves, refractedSun, rain, characters, game,
+	renderer, world, fields, vegetation, shoreWaves, refractedSun, ambient, rain, characters, game,
 	measure: measureLand,
 	onSwap: ( next, version, measured ) => {
 
 		setLand( next, growth.state.step, measured );
 		water!.setLand( landBox );
-		for ( const box of heldOpaque ) water!.reflectionBounds.union( box );
+		holdPlants();
+		setLocalSources();
+		for ( const box of heldOpaque ) water!.hold( box );
 		setSunCasters();
 		groundBounce.invalidate();
 		// (asked before the pose changes: whether the camera holds the island view)
@@ -884,8 +971,8 @@ const viewDirection = new THREE.Vector3();
 // The default azimuth (180: the view looks along +z, about 23 degrees east of the meridian the sun
 // and the full moon culminate on) is fixed, never following the clock, so the R key always returns
 // to the same view. It was 318, looking away from the meridian: the morning sun lit the island
-// flat from behind the camera and the moon path never entered the frame. From 180 the full moon's
-// path is in view at 21:00 and at midnight, while the sun lights the cliffs from the side at 9:00
+// flat from behind the camera and the moon path never entered the frame. From 180 the moon's path
+// is in view all night (the moon stands at its culmination's azimuth: lighting/KeyLift.ts), while the sun lights the cliffs from the side at 9:00
 // and 16:00 (a lit and a shaded side) and its glints at noon keep to a corner of the frame.
 function placeOrbit( on: THREE.PerspectiveCamera, orbit: IslandCameraControls, options: URLSearchParams, turn = 0, zoom = 0 ): void {
 
@@ -1182,6 +1269,7 @@ groundF.add( ground, 'soil' ).name( 'soil layer' ).onChange( ( enabled: boolean 
 } );
 groundF.add( soilUniforms.depth, 'value', 0.5, 1.75, 0.05 ).name( 'soil depth' ).onChange( invalidateSunShadow );
 groundF.add( chunkView, 'borders' ).name( 'chunk borders' ).onChange( showChunkBorders );
+groundF.add( ambientView, 'mode', [ 'off', 'sky', 'bounce', 'irradiance' ] ).name( 'ambient probes' ).onChange( ( mode: AmbientView ) => ambient.show( mode, scene ) );
 // The island's growth (Growth.ts): Grow swaps in the next piece once it is generated and prepared.
 const islandF = gui.addFolder( 'Island' );
 islandF.add( growth.state, 'step' ).name( 'growth step' ).listen().disable();
@@ -1228,6 +1316,19 @@ sunF.add( sky, 'sunIlluminance', 2, 20, 0.1 ).name( 'illuminance' ).onFinishChan
 sunF.add( sky.atmosphere.mieScale, 'value', 0.1, 5, 0.01 ).name( 'aerosol scattering' ).onFinishChange( applySun );
 sunF.add( lighting, 'skyFill', 0, 3, 0.01 ).name( 'sky fill' ).onChange( applySkyFill );
 sunF.add( groundBounce.strength, 'value', 0, 2, 0.01 ).name( 'ground bounce' );
+// the ambient grade (lighting/AmbientGrade.ts): the values the table gives now, and an override
+// whose sliders replace them while it is on, for live tuning
+const ambientF = gui.addFolder( 'Ambient' );
+for ( const key of AMBIENT_KNOBS ) ambientF.add( ambientGrade.current, key ).name( key ).listen().disable();
+const retuneAmbient = () => sceneEvent( 'retune' );
+ambientF.add( ambientGrade, 'override' ).name( 'override' ).onChange( retuneAmbient );
+for ( const key of AMBIENT_KNOBS ) ambientF.add( ambientGrade.manual, key, 0, key === 'directionality' || key === 'aoStrength' ? 1 : 3, 0.01 ).name( `${ key } (override)` ).onChange( retuneAmbient );
+ambientF.close();
+// the local lights (lighting/LocalLights.ts): on or off, and the art gain over the sources' light
+const localLightsF = gui.addFolder( 'Local lights' );
+localLightsF.add( localLights, 'enabled' ).name( 'on' ).onChange( retuneAmbient );
+localLightsF.add( localLights, 'gain', 0, 16, 0.1 ).name( 'gain' ).onChange( retuneAmbient );
+localLightsF.close();
 const waterF = gui.addFolder( 'Water' );
 const optics = { clarity: 1.0, turbidity: 1.0 };
 const baseA = shared.sigA.value.clone(), baseS = shared.sigS.value.clone();
@@ -1278,28 +1379,36 @@ islanderF.add( characterLook.shadowSaturation, 'value', 0.5, 2, 0.01 ).name( 'sh
 // and the weather, the white balance, the local tone mapping and the grade's tables
 const postF = gui.addFolder( 'Post' );
 postF.add( S, 'exposureOffset', - 3, 3, 0.05 ).name( 'exposure offset (stops)' );
-postF.add( S, 'bloom', 0, 0.3, 0.005 );
-postF.addColor( S, 'white' ).name( 'white balance' );
+postF.add( S, 'bloom', 0, 3, 0.05 ).name( 'bloom strength' );
 {
 
-	// the tone curve (Pipeline.ts toneCurve): Lottes's contrast and shoulder, the input that shows
-	// white, what mid grey shows (linear) and the toe lift
+	// the clear day's white balance, noon down to 9 degrees (Pipeline.ts WHITE_BALANCE)
+	const day = WHITE_BALANCE.day[ WHITE_BALANCE.day.length - 1 ].values;
+	postF.add( day, 'r', 0.5, 1.5, 0.005 ).name( 'white balance red (day)' );
+	postF.add( day, 'b', 0.5, 1.5, 0.005 ).name( 'white balance blue (day)' );
+
+}
+{
+
+	// the tone curve (ToneCurve.ts): its slope at black, what mid grey shows (linear) and the input
+	// that shows white; a set the solve cannot meet warns and keeps the last good curve (only the
+	// default set failing throws, on the dev server)
 	const curveF = postF.addFolder( 'Tone curve' );
-	curveF.add( S.curve, 'contrast', 1, 2.5, 0.005 );
-	curveF.add( S.curve, 'shoulder', 0.85, 1.15, 0.001 );
-	curveF.add( S.curve, 'white', 2, 100, 0.1 ).name( 'white (input)' );
-	curveF.add( S.curve, 'mid', 0.04, 0.2, 0.0005 ).name( 'mid grey shown (linear)' );
-	curveF.add( S.curve, 'toe', - 0.01, 0.1, 0.0005 ).name( 'toe lift' );
+	curveF.add( S.curve, 'toe', 1.5, 3, 0.01 ).name( 'slope at black' );
+	curveF.add( S.curve, 'mid', 0.12, 0.22, 0.0005 ).name( 'mid grey shown (linear)' );
+	curveF.add( S.curve, 'white', 8, 32, 0.1 ).name( 'white (input)' );
 	curveF.close();
 
 }
 if ( pipeline.localTone ) {
 
-	// the local tone mapping (LocalTone.ts): the contrast above and below mid grey, the detail
-	const local = pipeline.localTone.uniforms;
-	postF.add( local.high, 'value', 0.3, 1.2, 0.01 ).name( 'local contrast, lights' );
-	postF.add( local.low, 'value', 0.3, 1.2, 0.01 ).name( 'local contrast, shade' );
-	postF.add( local.detail, 'value', 0.5, 2, 0.01 ).name( 'local detail' );
+	// the local tone mapping's smooth hinge (LocalTone.ts): the high sun's key, the last of the
+	// day's (the frame's values are keyed by the sun every frame)
+	const high = LOCAL_TONE.keys.day[ LOCAL_TONE.keys.day.length - 1 ].values;
+	postF.add( high, 'hinge', - 3, 2, 0.01 ).name( 'local hinge (stops over mid grey, high sun)' );
+	postF.add( high, 'high', - 0.6, 0.2, 0.01 ).name( 'local slope over the hinge (high sun)' );
+	postF.add( high, 'low', - 0.4, 0.4, 0.01 ).name( 'local slope under the hinge (high sun)' );
+	postF.add( high, 'width', 0.05, 2, 0.01 ).name( 'local knee width (stops, high sun)' );
 
 }
 postF.add( S, 'lut', 0, 1, 0.01 ).name( 'grade table blend' );
@@ -1342,33 +1451,39 @@ postF.add( shared.leafGain, 'value', 0.5, 3, 0.01 ).name( 'tree leaves albedo (x
 }
 postF.add( S, 'tone', 0, 1, 0.01 );
 postF.add( S, 'vignette', 0, 1, 0.01 );
-postF.add( S, 'grain', 0, 0.05, 0.001 );
-// the haze (weather/VolumetricHaze.ts): its slices, its medium (the weather sets the haze's and the
-// fog's amounts), its light, the shadow's filter and the A/B switches
+// the haze (weather/VolumetricHaze.ts): its slices, its medium (the weather and the hour's key set the
+// haze's amount, colour and shape, the fog's and the mist's amount: weather/HazeKeys.ts), its light, the
+// shadow's filter and the A/B switches
 const hazeF = gui.addFolder( 'Haze' );
 const H = pipeline.air.settings;
+// the hour's and the weather's key, written each frame (weather/HazeKeys.ts)
+const hazeKey: HazeKey = { amount: 1, sigmaRed: 1, sigmaGreen: 1, sigmaBlue: 1, desaturate: 0, gain: 1, mist: 0, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
+	top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, skyDepth: 0, nearDensity: 1, nearStart: 250, nearEnd: 600 };
+// the haze exists now: bake the environment again as a scene jump does, so it holds the haze a
+// jump's bake lays over it (Sky.ts `fogEnvironment`) and a fresh load equals a jump
+hazeReady = true;
+await bakeEnvironment( true );
 hazeF.add( H, 'near', 0.05, 20, 0.05 ).name( 'grid near (m)' );
 hazeF.add( H, 'far', 1000, 200000, 1000 ).name( 'grid far (m)' );
 hazeF.add( H, 'growth', 1.02, 1.4, 0.01 ).name( 'slice growth' );
-hazeF.add( H, 'marineShare', 0, 1, 0.01 ).name( 'marine share' );
-hazeF.add( H, 'marineHeight', 10, 1000, 1 ).name( 'marine height (m)' );
-hazeF.add( H, 'aerosolHeight', 100, 5000, 10 ).name( 'aerosol height (m)' );
 hazeF.add( H, 'fogExtinction', 0, 0.05, 0.0001 ).name( 'fog extinction (1/m)' );
-hazeF.add( H, 'fogTop', 0, 300, 1 ).name( 'fog top (m)' );
-hazeF.add( H, 'fogWidth', 0.5, 100, 0.5 ).name( 'fog step width (m)' );
-hazeF.add( H, 'fogAbove', 0, 1, 0.01 ).name( 'fog above / below' );
 hazeF.add( H, 'albedo', 0, 1, 0.01 );
 hazeF.add( H, 'anisotropy', - 0.5, 0.95, 0.01 ).name( 'phase anisotropy' );
-hazeF.add( H, 'isotropic', 0, 1, 0.01 ).name( 'isotropic share' );
-hazeF.add( H, 'sun', 0, 4, 0.01 ).name( 'key light scale' );
-hazeF.add( H, 'ambient', 0, 4, 0.01 ).name( 'ambient scale' );
+hazeF.add( H, 'horizon', 0.1, 10, 0.1 ).name( 'sun over horizon half-width (deg)' );
+hazeF.add( H, 'gain', 0, 4, 0.01 ).name( 'brightness gain' );
+hazeF.add( H, 'ambientFloor', 0, 1, 0.01 ).name( 'ambient floor under cover' );
+hazeF.add( H, 'ambientSoftness', 0.1, 10, 0.1 ).name( 'cover top half-width (m)' );
 hazeF.add( H, 'blend', 0.01, 1, 0.01 ).name( 'shadow blend' );
 hazeF.add( H, 'restFrames', 1, 64, 1 ).name( 'rest frames' );
 hazeF.add( H, 'jitter' );
 hazeF.add( H, 'tricubic' );
 hazeF.add( H, 'densityAA' ).name( 'density AA' );
 hazeF.add( H, 'sky' ).name( 'haze over the sky' );
+hazeF.add( H, 'nearHaze' ).name( 'thinner near haze' );
 hazeF.add( H, 'debug', { off: 0, 'key light visibility': 1 } ).name( 'debug view' );
+// the screen-space rays (off by default: the haze shows the shafts) and the sun's flare, for A/Bs
+hazeF.add( pipeline.shafts.strength, 'value', 0, 2, 0.01 ).name( 'screen-space rays' ).onChange( () => sceneEvent( 'retune' ) );
+hazeF.add( pipeline.shafts.glare, 'value', 0, 4, 0.01 ).name( 'sun flare' ).onChange( () => sceneEvent( 'retune' ) );
 hazeF.close();
 if ( DEBUG ) {
 
@@ -1633,6 +1748,9 @@ function settleFrame( bakeDue: boolean ): SettleFrame | undefined {
 	if ( framingGlide.running ) pending.push( 'camera glide' );
 	if ( sunShadow.pending ) pending.push( 'sun shadow' );
 	if ( pipeline.air.pending ) pending.push( 'haze rest' );
+	if ( pipeline.exposurePending ) pending.push( 'exposure' );
+	if ( preExposure.pending ) pending.push( PRE_EXPOSURE_PENDING );
+	if ( ! ambientRelight.ready ) pending.push( 'ambient relight' );
 	// the loading screen covers the canvas until its fade (index.html) has ended
 	if ( ! revealed ) revealed = loading === null || ( loading.classList.contains( 'done' ) && getComputedStyle( loading ).opacity === '0' );
 	return { signature: [ strikeSignature(), sunShadow.draws, refractedSun.draws ], stable: restStable(), pending, shown: revealed };
@@ -1697,14 +1815,20 @@ function tick( time: number ): void {
 	renderer.info.reset();
 	// Sun, moon, key light and grade follow the clock every frame; only the baked reflection,
 	// environment and cloud products cross-fade between bakes.
-	sky.track( manualSun ? null : dayCycle.snapshot(), weather.state, cloudOverride, weather.front );
+	sky.track( manualSun ? null : dayCycle.snapshot(), weather.state, cloudOverride, weather.front, weather.skyMix );
 	sky.advance( environmentDt );
 	publishLighting();
-	pipeline.air.haze.value = sky.weather.haze;
-	pipeline.air.fog.value = sky.weather.fog;
+	// the ambient grade by the sun and the weather's blend of the kept skies (lighting/AmbientGrade.ts)
+	ambientGrade.update( sky.elevation, weather.skyMix );
+	// the yunpeng's glow and its local lights by the night's share (lighting/LocalLights.ts: its
+	// pass sorts the sources in view)
+	yunpengNight.value = nightAmbientAt( sky.elevation );
+	localLights.update( yunpengNight.value );
+	prepareHaze( weather.state );
 	pipeline.air.keyDir.value.copy( sky.keyDir );
 	pipeline.air.keyColor.value.copy( sky.keyColor ).multiplyScalar( 1 - THREE.MathUtils.smoothstep( sky.clouds.coverage.value, 0.7, 0.97 ) );
 	pipeline.shafts.setSun( sky.sunDir, sky.sunColor );
+	pipeline.shafts.setMoon( sky.moonDir, sky.keyColor, sky.keyIsMoon );
 	wind.update( paused ? 0 : dt, weather.state.windSpeed, weather.state.windDirection, weather.state.gustiness );
 	// Lightning follows the scene clock, so a paused frame holds its strike; it lights the clouds'
 	// march below, so it goes first.
@@ -1733,10 +1857,11 @@ function tick( time: number ): void {
 		// the night's grade (Pipeline NIGHT): none through the afterglow, all of it once the
 		// daylight has gone
 		S.night = 1 - THREE.MathUtils.smoothstep( sky.grade.daylight, 0.2, 0.45 );
-		// the low sun's warmer lights (Pipeline LOW_SUN)
-		S.low = lowSun( sky.elevation, weather.state.directVisibility );
 
 	}
+	// the weather's stops of the exposure and the clouded day's keys (Pipeline `skyMix`)
+	const skyMix = weather.skyMix;
+	for ( let i = 0; i < skyMix.length; i ++ ) S.skyMix[ i ] = skyMix[ i ];
 	skyElapsed += environmentDt;
 	const skyInterval = runtimeQuality.skyUpdateInterval;
 	const ws = weather.state;
@@ -1754,12 +1879,9 @@ function tick( time: number ): void {
 	// a periodic bake waits for its interval (the settled signal waits for it too)
 	const bakeDue = ! sky.busy && ( simTime !== lastSkyTime || weatherSignature !== lastWeatherSignature || ( ! manualSun && dayCycle.hour !== lastSkyHour ) );
 	// The sun's map steps with the key light and cross-fades between steps, so its shadows move
-	// smoothly without re-rasterising sub-texel casters every frame. The underwater map keeps the
-	// quality cadence.
-	sunShadow.update( renderer, scene, camera, sky.keyDir );
-	// the meadow's shade per tuft follows the sun's maps, its wind per tuft the wind (Grass.ts
-	// `meadowStill`, `meadowWind`)
-	grass.userData.update( renderer );
+	// smoothly without re-rasterising sub-texel casters every frame; it is drawn along the lifted
+	// key. The underwater map keeps the quality cadence.
+	sunShadow.update( renderer, scene, camera, shadowDirection );
 	shadowElapsed += environmentDt;
 	if ( shadowElapsed >= runtimeQuality.refractedSun.interval && refractedSun.update() ) shadowElapsed = 0;
 	shared.time.value = simTime;
@@ -1771,15 +1893,16 @@ function tick( time: number ): void {
 	// (their schools take flight more often by night)
 	wenyao.update( paused ? 0 : dt, 1 - THREE.MathUtils.smoothstep( sky.grade.daylight, 0.2, 0.45 ) );
 	groundBounce.update( sky.seaRadiance );
+	ambientRelight.update();
 	characters?.update( renderer, scene, sun, simTime, paused ? 0 : dt );
 	game?.render( renderer, sun, paused ? 0 : rawDt );
-	trample.update( game ? game.walkers() : characters ? [ characters ] : [], camera.position, renderer );
+	trample.update( game ? game.walkers() : characters ? [ characters ] : [], controls.target );
 
 	// (the ground truth draws the storm's spray with the rain, in the overlay pass; taa and taau draw
 	// it with the streaks after the resolve)
 	const overlay = ! AFTER_RESOLVE && ( rain!.mesh.visible || ( TEMPORAL && stormSea.spray.mesh.visible ) );
 	const after = AFTER_RESOLVE && ( rain!.mesh.visible || stormSea.spray.mesh.visible );
-	pipeline.render( { scene, prepassScene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, afterScene: after ? afterScene : undefined, camera, water: water!, sun, time: simTime, temporal: temporalFrame( rawDt, paused ? 0 : dt ), settle: settleFrame( bakeDue ), haze: hazeFrame() } );
+	pipeline.render( { scene, prepassScene, opaquePrepassScene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, afterScene: after ? afterScene : undefined, camera, water: water!, sun, keyDirection: shadowDirection, time: simTime, temporal: temporalFrame( rawDt, paused ? 0 : dt ), settle: settleFrame( bakeDue ), haze: hazeFrame() } );
 	steerRenderScale( rawDt );
 	submitBatch.flush();
 	frame ++;
@@ -1865,10 +1988,10 @@ function diagnostics( now = false ): void {
 	const current = ( window as unknown as Record<string, Record<string, unknown> | undefined> ).__THREE_GAME_DIAGNOSTICS__;
 	if ( ! now && frame % 30 !== 1 ) {
 
-		// the temporal resolve's state and the settled signal on every frame: the capture tools wait
-		// for them
+		// the temporal resolve's state, the settled signal and the pre-exposure on every frame: the
+		// capture tools wait for them
 		if ( current && pipeline.resolver ) current.taa = pipeline.resolver.diagnostics();
-		if ( current ) Object.assign( current, { settled: pipeline.settled.value, settle: pipeline.settled.diagnostics() } );
+		if ( current ) Object.assign( current, { settled: pipeline.settled.value, settle: pipeline.settled.diagnostics(), preExposure: preExposure.diagnostics() } );
 		return;
 
 	}
@@ -1903,6 +2026,8 @@ function diagnostics( now = false ): void {
 		skyTransitioning: sky.transitioning,
 		quality: qualityTier,
 		weather: weather.target,
+		// the ambient grade's values (lighting/AmbientGrade.ts) and whether the GUI overrides them
+		ambient: { ...ambientGrade.current, override: ambientGrade.override },
 		weatherProgress: + weather.progress.toFixed( 3 ),
 		rain: + sky.weather.rain.toFixed( 3 ),
 		wetness: + shared.wetness.value.toFixed( 3 ),
@@ -1923,13 +2048,18 @@ function diagnostics( now = false ): void {
 		// whether the paused page will draw the same frame from now on, and why not (post/Settled.ts)
 		settled: pipeline.settled.value,
 		settle: pipeline.settled.diagnostics(),
+		// the pre-exposure's stops, the P the last reading asks for, whether it is pending, the
+		// exposure EV last read back, its changes and its readings, the view and its quiet frames
+		// (post/PreExposure.ts)
+		preExposure: preExposure.diagnostics(),
 	};
 
 }
 
 // The storm's foam and spray need the world's shore fields, so they register (and compile) last;
-// the loop then waits for every first-use pipeline (see "first-use pipelines").
-await Promise.all( [ warming, stormSea.registerLatent( overlayLatents ) ] );
+// the loop then waits for every first-use pipeline (see "first-use pipelines"), the haze's shadow
+// kernels' included.
+await Promise.all( [ warming, hazeShadowCompiled, stormSea.registerLatent( overlayLatents ) ] );
 
 // The temporal modes' debug check (Motion.ts): the materials whose velocity is missing or partial,
 // for the movers' motion vectors still to come.
@@ -1945,10 +2075,6 @@ if ( profiler ) {
 // the nodes r186 makes inside the first lit build, made by a throwaway one, so the frame's receivers
 // build the same code whichever comes first (graph/ThreePatches.ts)
 primeSharedNodes( renderer, scene, camera );
-// The yunpeng stands where the first view may not show it: its scene pass compiles ahead as a
-// latent of the opaque pass, so the view that first finds it builds no pipeline (the sun's map
-// draws it from the first frame on).
-if ( yunpeng ) await pipeline.graph.latent( 'opaque', [ yunpeng ] );
 mark( 'loop' );
 const loopBody = profiler ? profiler.wrapLoop( tick ) : tick;
 const animationLoop = detector ? ( time: number ) => detector.frame( loopBody, time ) : loopBody;
@@ -1973,12 +2099,13 @@ sceneEvent( 'loop start' );
 // The game's islanders show before it lifts too: their figures arrive after the first frames once
 // their pipelines are compiled (GameView "First draws"), which on a cold shader cache took seconds.
 // So do the sun's shadows: its map draws for the first time once its casters' pipelines exist, a
-// few frames in (SunShadow).
+// few frames in (SunShadow). And the ambient light: its volume holds zeros until its first relight,
+// once the sky has been projected (AmbientRelight `ready`).
 const REVEAL_WAIT = 3000;
 const revealAt = performance.now() + REVEAL_WAIT;
 const reveal = () => {
 
-	const waiting = ! approachWritten || sunShadow.draws === 0 || ( detector !== null && ( detector.pending || ( detector.result !== null && detector.result.tier !== qualityTier ) ) ) || ( game !== null && ! game.ready() ) || dynamicResolution !== null && dynamicResolution.settling && ( gpuTimer !== null || profiler?.timestamps === true ) &&
+	const waiting = ! approachWritten || sunShadow.draws === 0 || ! ambientRelight.ready || ( detector !== null && ( detector.pending || ( detector.result !== null && detector.result.tier !== qualityTier ) ) ) || ( game !== null && ! game.ready() ) || dynamicResolution !== null && dynamicResolution.settling && ( gpuTimer !== null || profiler?.timestamps === true ) &&
 		! paused && ! resolution.full && performance.now() < revealAt;
 	if ( waiting ) setTimeout( reveal, 50 );
 	else {
@@ -2324,6 +2451,19 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 };
 
 if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, groundBounce,
+	// the direction the surfaces take the key's light from, the low key's lift included (lighting/KeyLift.ts)
+	keyShading: () => liftedKeyDirection( sky.keyDir, sky.keyIsMoon, new THREE.Vector3() ),
+	// the ambient grade (lighting/AmbientGrade.ts): `current`, `table`, `override` and `manual`
+	ambient: ambientGrade,
+	// the local lights (lighting/LocalLights.ts): `sources`, `gain`, `enabled`, `info()` (a promise: the
+	// sources in view, the fullest cluster, the clusters that overflowed)
+	localLights,
+	// the screen-space ambient occlusion's knobs (post/GTAO.ts `gtaoUniforms`: cutoff, recede, base, maxTexels, fullDistance)
+	gtao: gtaoUniforms,
+	// the ambient light's probes (lighting/AmbientVolume.ts): `info()` and `hash()`
+	ambientVolume: ambient,
+	// their relight (lighting/AmbientRelight.ts): `readback()` and `hash()` of its output
+	ambientRelight,
 	// the look's knobs from a script (the GUI's raise their own events): the first table's grade
 	// (Pipeline.setGrade, GradeLut.ts), the meadow's albedo (shared.lawnGain), the cliff's
 	// (shared.rockGain) and the trees' leaves' (shared.leafGain)
@@ -2331,6 +2471,39 @@ if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { lan
 	setLawnGain: ( gain: number ) => { shared.lawnGain.value = gain; groundBounce.invalidate(); sceneEvent( 'retune' ); },
 	setRockGain: ( gain: number ) => { shared.rockGain.value = gain; sceneEvent( 'retune' ); },
 	setLeafGain: ( gain: number ) => { shared.leafGain.value = gain; sceneEvent( 'retune' ); }, grass, wenyao, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+	// the tunable parameters (debug/Tune.ts): set( { name: value } ), get, list, reset, query; a value
+	// the environment's bakes depend on rebakes them (sky/SkyRetune.ts) as a scene jump bakes (from
+	// Sky.reset: a regular bake carries the last bake's state and moved a noon frame by a few levels)
+	tune: tuneApi( () => {
+
+		sceneEvent( 'retune' );
+		if ( skyRetune.dirty ) {
+
+			skyRetune.dirty = false;
+			sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( () => bakeEnvironment( true ) );
+
+		}
+
+	} ),
+	// the meadow map (world/SwardField.ts: RGBA bytes, G the sward's cover) and the extent it spans
+	// round the origin, for tools that pick a view over the meadow
+	meadowMap: async () => {
+
+		const [ { swardField }, { MEADOW_EXTENT } ] = await Promise.all( [ import( './world/SwardField.ts' ), import( './materials/Meadow.ts' ) ] );
+		const image = swardField.value.image as { data: Uint8Array; width: number };
+		return { data: image.data, size: image.width, extent: MEADOW_EXTENT };
+
+	},
+	// where the bamboo's culms and shoots stand on the current land ( x, z, ... flat), for tools that keep a
+	// view clear of the groves
+	bambooSites: () => {
+
+		const { culms, shoots } = bamboo.sites();
+		return [ ...culms, ...shoots ].flatMap( ( c ) => [ c.x, c.z ] );
+
+	},
+	// where the yunpeng's clumps stand on the current land ( x, z, size per clump) and their lights
+	yunpengSites: () => ( { clumps: yunpeng.sites().flatMap( ( c ) => [ c.x, c.z, c.size ] ), lights: yunpeng.lights().map( ( l ) => ( { position: l.position.toArray(), intensity: l.intensity.toArray(), range: l.range } ) ) } ),
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
 	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, weather, sky, fft, establishScene, setTime, data: () => shownData, seaDetail, land: () => landBox }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes

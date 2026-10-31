@@ -47,10 +47,14 @@ import type * as THREE from 'three/webgpu';
 // tick (the sky's bakes), whose submits block as well.
 //
 // With the frame rate uncapped (no vsync, as the profiling tool runs Chrome by default), nothing
-// but that backpressure bounds how far the page runs ahead of the GPU: headless Chrome queued
-// about two dozen frames before blocking. A GPU spike then surfaces in the frame interval that many
-// frames later, so the tool attributes GPU hitches on the GPU's own timeline (`gpuInterval`), and
-// the timestamps take as long to read back (hence the ring of buffers and the patient settle).
+// but that backpressure bounds how far the page runs ahead of the GPU: on the island at noon
+// headless Chrome queued about 120 frames (the GPU took 3.5 s to drain once the loop stopped). A
+// GPU spike then surfaces in the frame interval that many frames later, so the tool attributes GPU
+// hitches on the GPU's own timeline (`gpuInterval`), and the timestamps take as long to read back:
+// each frame's queries are resolved into a read-back buffer of a ring at its end, and the frame
+// waits for its own read-backs, however long the GPU runs behind (`settle`). A wall-clock cutoff
+// (4 s) dropped every pass of every frame once a frame took much over 33 ms (46 ms in the A/B
+// runs), since 120 of them then took longer than that to drain.
 // Holding the tick until fewer frames are queued was tried and dropped: Chrome reports finished
 // work in batches, which bunched the ticks and made the intervals jitter.
 //
@@ -106,6 +110,9 @@ interface Frame {
 	calls: number;
 	triangles: number;
 	finishedAt: number;
+	// the read-backs submitted up to its end (`readbacks`): once all of them have returned, a pass
+	// still without timestamps never had a query written and will not get one
+	readbacks: number;
 	scale: number;
 }
 
@@ -127,7 +134,7 @@ export interface FrameRecord {
 	gpuInterval: number; // the GPU's completion of this frame since the previous frame's
 	span: number; // first pass start to last pass end on the GPU (may overlap the previous frame)
 	passes: number;
-	missing: number; // passes whose timestamps never arrived
+	missing: number; // passes without timestamps (no query written, a read-back lost or failed)
 	pipelines: number; // render and compute pipelines created this frame
 	pipelineMs: number; // JS time spent creating them
 	calls: number;
@@ -167,14 +174,12 @@ type Backend = {
 type Named = { name?: string; isQuadMesh?: boolean; isScene?: boolean; isComputeNode?: boolean; texture?: THREE.Texture; width?: number; height?: number };
 
 // read-back buffers in flight: one per pool (render, compute) per frame. In an uncapped run their
-// maps resolved more than 64 frames after their frame, so a ring of 128 ran out and lost a pool's
-// passes in about a third of the frames; a buffer holds one frame's queries, so a deeper ring
-// costs little memory
+// maps resolve as late as the GPU runs behind (about 120 frames on the island at noon), so a ring
+// of 128 ran out and lost a pool's passes in about a third of the frames; a buffer holds one
+// frame's queries, so a deeper ring costs little memory
 const RING = 1024;
 // a read-back buffer's size: its frame's queries, rounded up so most frames reuse any free buffer
 const readbackBytes = ( queries: number ) => Math.max( 4096, 2 ** Math.ceil( Math.log2( queries * 8 ) ) );
-// a frame whose timestamps have not arrived by then is recorded with its passes missing
-const LATE_MS = 4000;
 // an encoding call counts as a wait only from this long (ms): its own work (well under a
 // microsecond; the coarsened timer reads it as 0 or 0.1 ms) stays JS, a block takes milliseconds
 const ENCODE_BLOCK_MS = 0.25;
@@ -222,7 +227,10 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 		private detail = false;
 		private raw = false;
 		private lost = 0;
-		private failed = { map: 0, zero: 0, order: 0, late: 0 };
+		private failed = { map: 0, zero: 0, order: 0, unread: 0 };
+		// read-backs submitted so far, and the serials (1, 2, ...) of those still in flight
+		private readbacks = 0;
+		private inFlight = new Set<number>();
 		private latency: number[] = [];
 		readonly marks: Record<string, number> = {};
 		// the first frames: their ticks, and when the GPU finished each (`done`, since navigation: the
@@ -515,7 +523,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			this.context = null;
 			this.frame = {
 				id: this.nodeFrame.frameId, time: 0, now: performance.now(), js: 0, jsWall: 0, wait: 0, waits: { submit: 0, write: 0, texture: 0, encode: 0 }, outside: 0, outsideWait: 0, gap: NaN, passes: [], pending: 0,
-				pipelines: 0, pipelineMs: 0, calls: 0, triangles: 0, finishedAt: 0, scale: this.renderScale,
+				pipelines: 0, pipelineMs: 0, calls: 0, triangles: 0, finishedAt: 0, readbacks: 0, scale: this.renderScale,
 			};
 			this.pipelineCount = 0;
 			this.pipelineMs = 0;
@@ -534,6 +542,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			frame.finishedAt = performance.now();
 			this.open.push( frame );
 			if ( this.timestamps ) this.resolve();
+			frame.readbacks = this.readbacks;
 			this.settle();
 
 		}
@@ -652,6 +661,8 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 			}
 			slot.busy = true;
+			const serial = ++ this.readbacks;
+			this.inFlight.add( serial );
 			const encoder = device.createCommandEncoder( { label: 'profiler.resolve' } );
 			encoder.resolveQuerySet( pool.querySet, 0, count, pool.resolveBuffer, 0 );
 			encoder.copyBufferToBuffer( pool.resolveBuffer, 0, slot.buffer, 0, bytes );
@@ -666,14 +677,17 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 				const times = new BigUint64Array( buffer.getMappedRange( 0, bytes ).slice( 0 ) );
 				buffer.unmap();
 				slot!.busy = false;
+				this.inFlight.delete( serial );
 				for ( const [ uid, base ] of offsets ) this.deliver( uid, times[ base ], times[ base + 1 ] );
 				this.settle();
 
 			}, () => {
 
 				slot!.busy = false;
+				this.inFlight.delete( serial );
 				this.failed.map += offsets.size;
 				for ( const uid of offsets.keys() ) this.deliver( uid, null, null );
+				this.settle();
 
 			} );
 
@@ -701,18 +715,22 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 		}
 
-		/** Moves frames whose passes all reported (or that waited more than a second) to `done`. */
+		/** Moves frames to `done`, in order, once their passes all reported or every read-back
+		 * submitted up to their end has returned (a pass still without timestamps then never had a
+		 * query written). No wall-clock cutoff: a read-back returns when the GPU reaches it, which in
+		 * an uncapped run is as many seconds as the GPU runs behind. */
 		private settle(): void {
 
-			const now = performance.now();
+			let oldest = Infinity;
+			for ( const serial of this.inFlight ) oldest = Math.min( oldest, serial );
 			while ( this.open.length ) {
 
 				const frame = this.open[ 0 ];
 				const pending = frame.passes.filter( ( p ) => ! p.done );
-				if ( pending.length && now - frame.finishedAt < LATE_MS ) break;
+				if ( pending.length && oldest <= frame.readbacks ) break;
 				this.open.shift();
 				for ( const pass of pending ) this.byUid.delete( pass.uid );
-				this.failed.late += pending.length;
+				this.failed.unread += pending.length;
 				const record = this.record( frame );
 				this.done.push( record );
 				this.onRecord?.( record );

@@ -12,7 +12,9 @@ import {
 import type { Shared } from '../shared.ts';
 import { causticsColorAt, type Caustics } from '../ocean/Caustics.ts';
 import { refractedSunDirectionNode, refractedSunBeamScaleNode } from './RefractedSun.ts';
-import { addGroundBounce } from './GroundBounce.ts';
+import { GroundBounceLightingModel } from './GroundBounce.ts';
+import { meterAmbient } from './MeterLight.ts';
+import type { AmbientReceiver } from './AmbientSample.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -31,6 +33,10 @@ type B = THREE.Node<'bool'>;
 // here must not. (tidewater leaves the key at its direction in the air with no share or beam
 // factor: the same on a level floor; here the refracted direction lights steep submerged walls as
 // the sun reaches them, and the share that enters the water follows the sun's height.)
+//
+// Above the water the ambient diffuse is the ambient volume's (lighting/AmbientSample.ts), as on
+// every lit island material; the probes do not model the water, so below it the environment's
+// (`UnderwaterModelOptions.ambient`).
 //
 // A material calls `underwaterLight` with its own above-water terms (the terrain's canopy shade and
 // its reflected caustic shimmer; nothing for a material that never reaches the surface) and installs
@@ -130,11 +136,20 @@ export interface UnderwaterModelOptions {
 	// shadow map cannot shade). Off for a double-sided surface, whose geometric normal faces away
 	// on its inner side.
 	terminator?: boolean;
+	// How the part above the water reads the ambient volume (lighting/AmbientSample.ts; default
+	// degree 1); null keeps the environment's irradiance everywhere. The volume's share falls to
+	// nothing over the first 30 cm below the mean level (`AMBIENT_DEPTH`), where the environment's
+	// light carried down the column takes over.
+	ambient?: Omit<AmbientReceiver, 'weight'> | null;
 }
 
+// the depth (m) below the mean level over which the volume's share of the ambient falls to none
+const AMBIENT_DEPTH = 0.3;
+
 /** The physical lighting model with the key light and the ambient carried down the water column
- * (`underwaterLight`). */
-export class UnderwaterLightingModel extends THREE.PhysicalLightingModel {
+ * (`underwaterLight`), on GroundBounceLightingModel (the ground's bounce, the low key's lift above
+ * the water, the lighting layer's debug views). */
+export class UnderwaterLightingModel extends GroundBounceLightingModel {
 
 	light: UnderwaterLight;
 	options: UnderwaterModelOptions;
@@ -144,6 +159,7 @@ export class UnderwaterLightingModel extends THREE.PhysicalLightingModel {
 		super();
 		this.light = light;
 		this.options = options;
+		this.ambient = options.ambient === null ? null : { bands: 1, ...options.ambient, weight: smoothstep( 0, AMBIENT_DEPTH, light.depth ).oneMinus() };
 
 	}
 
@@ -155,20 +171,41 @@ export class UnderwaterLightingModel extends THREE.PhysicalLightingModel {
 		// surface there occludes only itself (the bias clears it). Their sunlit specks twinkled
 		// inside the cliff's own shadow along its creases. A surface facing away from the light
 		// cannot see it; fade the key light out over the last few degrees before the terminator.
+		// Above the water the terminator is the lifted key's (lighting/KeyLift.ts), as the sun's map
+		// is drawn along it: a face turned from the true key but toward the lifted one takes the
+		// lifted diffuse, lit or shaded by that map.
 		let lightColor = ( input.lightColor as V3 ).mul( this.light.sun );
-		if ( this.options.terminator !== false ) lightColor = lightColor.mul( smoothstep( 0, 0.06, dot( normalViewGeometry, lightDirection ) ) );
+		if ( this.options.terminator !== false ) lightColor = lightColor.mul( smoothstep( 0, 0.06, dot( normalViewGeometry, this.shadeDirection( lightDirection ) ) ) );
 		const color = lightColor.toVar();
 		super.direct( { ...input, lightDirection, lightColor: color }, builder );
 
 	}
 
+	/** Under the water the refracted sun's own direction: the low key's lift is the air's
+	 * (lighting/KeyLift.ts). */
+	shadeDirection( L: V3 ): V3 {
+
+		const lifted = super.shadeDirection( L ).toVar();
+		return select( this.light.under, L, lifted );
+
+	}
+
+	/** The local lights reach a submerged point down the water column, as the ambient does (and
+	 * without the terrain's shimmer band above the water). */
+	localScale(): V3 {
+
+		return this.light.specular;
+
+	}
+
 	indirect( builder: THREE.NodeBuilder ): void {
 
-		// the light the sunlit ground bounces up (above the water only: GroundBounce.ts)
-		addGroundBounce( builder );
+		// the light the sunlit ground bounces up (above the water only: GroundBounce.ts), then three's
 		super.indirect( builder );
 		const reflected = ( builder.context as unknown as { reflectedLight: { indirectDiffuse: V3; indirectSpecular: V3 } } ).reflectedLight;
 		reflected.indirectDiffuse.mulAssign( this.light.ambient );
+		// the metering illuminance's ambient down the column, as the diffuse (lighting/MeterLight.ts)
+		meterAmbient.mulAssign( this.light.ambient );
 		reflected.indirectSpecular.mulAssign( this.light.specular );
 
 	}

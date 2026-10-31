@@ -20,7 +20,7 @@ import type { RenderScaleRule } from '../Quality.ts';
 // - medium and low (parked, Quality.ts): a budget of rendered pixels (1600x900 and 1280x720 today);
 //   `?dpr` and the GUI's full resolution lift it.
 // The canvas always matches the display (up to OUTPUT_PIXEL_RATIO_CAP): a render below it is
-// upscaled inside the frame graph with FSR 1 and the grain added after, never stretched by the
+// upscaled inside the frame graph with FSR 1 and the dither added after, never stretched by the
 // browser. Every pass is sized to the render, not the canvas (the frame graph sizes each target by
 // its size class). At the display's ratio nothing is upscaled, so `dpr=1` captures are unchanged. The
 // tiers never save through multisampling: every one draws the scene at 4x (Quality.ts).

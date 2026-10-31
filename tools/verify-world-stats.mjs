@@ -1,5 +1,5 @@
 // Statistical checks for the chunked world generator (plain node, CPU only):
-//   node tools/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n] [--flowers <dir>]
+//   node tools/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n]
 //
 // tools/verify-world-chunks.mjs proves the chunks' seams and locality (a chunk equals itself built
 // incrementally, from scratch and as part of a block), not that what they make still has the
@@ -9,16 +9,11 @@
 // The contact shade is off (`contactOcclusion: false`): it only sets the anchors' sky visibility,
 // which no statistic counts.
 //
-//   meadow  the turf anchors of every chunk, the grass tufts planted on them (from the chunks' rim
-//           ground texels, assembled) and the flowering plants among them (Flowers.ts), per m^2 of
-//           land: the anchors and tufts against the counts before the anchors were hashed
-//           (M2; the lawn's extra tufts, since picked by hash rather than a
-//           field, keep its count), the plants against the whole-plant swaths' own count (PLANTS,
-//           counted since they grow in swaths by habitat). Starting islands are printed only (a
-//           fresh draw moves the extra tufts by up to 25 %); the sum over the grown islands run
-//           (step 8 on) is within 5 % for every kind. The counts print raw and per m^2, the plants
-//           also by species; `--flowers <dir>` writes each island's turf anchors and flowering
-//           plants ( x, z, species ) to <dir>/flowers-<seed>-<step>.json, to map them.
+//   meadow  the turf anchors of every chunk, per m^2 of land, against the counts before the
+//           anchors were hashed (M2): the sum over the grown islands run (step 8
+//           on) within 5 %; starting islands printed only. The open meadow's anchors (out of the
+//           groves: BambooGroves.ts `groveAt` below OPEN) and the groves' floor's print beside them.
+//           (The blades are generated on the GPU as they draw, Grass.ts: nothing to count here.)
 //   stones  on each seed and step run: no two stones overlap, every crown lies at or below
 //           -1.30 m, every stone lies within its class's reach of its cell (`checkStones`). Once
 //           per run, over seeds 1 - 6 at steps 0, 8 and 16, per 100 m of coast against the
@@ -40,15 +35,13 @@
 import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, writeFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
-import { growLand, LandLattice, startGrove } from '../src/world/IslandGrowth.ts';
+import { growLand, LandLattice } from '../src/world/IslandGrowth.ts';
 import { buildChunk, chunkKeys, landField, landWindow, parseChunkKey, windowFootprint, R, S } from '../src/world/Chunks.ts';
 import { coastWobble, islandSurfaceHeight, landArea, makeIslandSDF, ISLAND_BOTTOM } from '../src/world/WorldShapes.ts';
 import { CliffWall, REACH_A, REACH_B } from '../src/world/Cliff.ts';
 import { floorAt } from '../src/world/Bathymetry.ts';
 import { placeStones, rockExtent, CELL, REACH } from '../src/world/Stones.ts';
-import { assembleRimGround, RIM_CELL } from '../src/world/RimGround.ts';
 import { VEGETATION_STRIDE } from '../src/world/types.ts';
 import { verifyCache } from './verify-cache.mjs';
 import { simplifierReady } from '../src/world/IslandSimplify.ts';
@@ -67,21 +60,22 @@ const SCAR = 0.4;
 const COAST_STEP = 0.25;
 
 // Stones per 100 m of coast by class (the cobbles with their blocks) on seeds 1 - 6 at steps 0, 8
-// and 16 (3603 m of coast), since the fallen blocks heap below the wall's fresh scars and the
-// stretches that shed blocks, and the shelf elsewhere is mostly clear (Stones.ts, Cliff.ts cliffEvents): 145 in all. The running
+// and 16 (4429 m of coast, taken again when the starting island grew from 400 to 1000 m^2, which
+// changed the islands and so their coasts' share of scars; 145 in all before, 146 now), since the fallen blocks heap below the wall's fresh scars and the
+// stretches that shed blocks, and the shelf elsewhere is mostly clear (Stones.ts, Cliff.ts cliffEvents). The running
 // stream's even scatter, which these replaced, placed 255 (blocks 71.6, near patches 136.9, outer
 // 35.9, isolated 11.0), read as stones sprinkled round the whole coast.
 const CLASS = [ 'fallen blocks', 'near patches', 'outer patches', 'isolated' ];
-const TODAY = [ 57.8, 59.6, 24.2, 3.3 ];
+const TODAY = [ 53.1, 70.3, 19.8, 2.9 ];
 
 // Large stones per 100 m of coast on the same islands (the scatter's: 28.6, 26.4, 58.0, 4.8): fallen blocks of size 0.6 m or more
 // (the size the cobbles stay below), stones of 0.6 m or more within 2.5 m and within 8 m of the
 // coast, and stones over 1.7 m within 8 m (the largest blocks and the patches' main fragments).
 const SIZES = [
-	{ label: 'fallen blocks', today: 21.4, test: ( r, c ) => c === 0 && r.s >= 0.6 },
-	{ label: 'stones of 0.6 m or more within 2.5 m', today: 15.4, test: ( r, c, d ) => r.s >= 0.6 && d < 2.5 },
-	{ label: 'stones of 0.6 m or more within 8 m', today: 32.1, test: ( r, c, d ) => r.s >= 0.6 && d < 8 },
-	{ label: 'stones over 1.7 m within 8 m', today: 2.4, test: ( r, c, d ) => r.s > 1.7 && d < 8 },
+	{ label: 'fallen blocks', today: 19.8, test: ( r, c ) => c === 0 && r.s >= 0.6 },
+	{ label: 'stones of 0.6 m or more within 2.5 m', today: 15.3, test: ( r, c, d ) => r.s >= 0.6 && d < 2.5 },
+	{ label: 'stones of 0.6 m or more within 8 m', today: 32.7, test: ( r, c, d ) => r.s >= 0.6 && d < 8 },
+	{ label: 'stones over 1.7 m within 8 m', today: 3.1, test: ( r, c, d ) => r.s > 1.7 && d < 8 },
 ];
 
 // The chunk's stones as `buildChunk` places them (its window's footprint, the island solid over the
@@ -354,27 +348,17 @@ const percent = ( n, m ) => `${ ( ( n / m - 1 ) * 100 ).toFixed( 1 ) } %`;
 // ------------------------------------------------------------------ the meadow
 
 // Counts on the whole island before the hashes (the world worker's
-// anchors, then buildGrass with the walking loop), by seed / growth step; `lawn` counts every lawn
-// tuft.
+// anchors), by seed / growth step. The anchors are judged per m^2 (`perM2`: M2's anchors over the
+// land they were counted on, the starting island of 400 m^2 and its growth), so the counts hold for
+// any starting island.
 const M2 = {
-	'1/0': { anchors: 7105, lawn: 7004, thin: 1789 },
-	'1/8': { anchors: 36163, lawn: 35910, thin: 10150 },
+	'1/0': { anchors: 7105, lawn: 7004, thin: 1789, perM2: 17.70 },
+	'1/8': { anchors: 36163, lawn: 35910, thin: 10150, perM2: 17.94 },
 	'1/12': { anchors: 49465, lawn: 49189, thin: 13931 },
-	'2/0': { anchors: 7081, lawn: 7013, thin: 1555 },
-	'2/8': { anchors: 38584, lawn: 38349, thin: 9271 },
+	'2/0': { anchors: 7081, lawn: 7013, thin: 1555, perM2: 17.46 },
+	'2/8': { anchors: 38584, lawn: 38349, thin: 9271, perM2: 18.20 },
 	'2/12': { anchors: 52357, lawn: 52084, thin: 13629 },
 };
-// The flowering plants per m^2 of land by seed / growth step: the whole-plant swaths' count
-// (Grass.ts `plantGrass`, PLANT_SHARE and STRAY, the plants of Flowers.ts), planted with the
-// bamboo's stands (no swath in their crown or noon shade) and every species on an island of two
-// swaths or more, from a run on the cliff's rolled-over lip. The top coast decides which coastal
-// cells may hold a swath, so a change to the lip moves whole swaths: the shoulder's moved one
-// island's count by 10 % and the four grown islands' by 1 %.
-const PLANTS = {
-	'1/0': 1.3155, '1/8': 1.1350, '1/12': 1.0985,
-	'2/0': 0.6166, '2/8': 1.0886, '2/12': 1.0445,
-};
-
 // Grass.ts and WalkLoop.ts build three.js objects (and import modules plain node cannot
 // strip), so they load through Vite's SSR loader, on the main thread only.
 async function loadPlanting() {
@@ -385,48 +369,30 @@ async function loadPlanting() {
 		root: new URL( '../', import.meta.url ).pathname, configFile: false, logLevel: 'error', appType: 'custom',
 		server: { middlewareMode: true, hmr: false, ws: false, watch: null }, optimizeDeps: { noDiscovery: true, include: [] },
 	} );
-	const { plantGrass, FLOWER_SPECIES: flowerSpecies } = await server.ssrLoadModule( '/src/world/Grass.ts' );
-	const { walkLoop } = await server.ssrLoadModule( '/src/world/WalkLoop.ts' );
-	const { walkLoopDistance } = await server.ssrLoadModule( '/src/world/WalkPath.ts' );
+	const { groveAt } = await server.ssrLoadModule( '/src/world/BambooGroves.ts' );
 	await server.close();
-	return { plantGrass, flowerSpecies, walkLoop, walkLoopDistance };
+	return { groveAt };
 
 }
+
+// (the groves' density below which a point counts as open meadow)
+const OPEN = 0.02;
 
 function meadow( planting, island, chunks, pooled ) {
 
 	const { seed, step, land } = island;
 	const anchors = concat( chunks.map( ( c ) => c.anchors ) );
-	// the chunks' rim ground texels (160 x 160 over each chunk with island), assembled
-	const n = Math.round( S / RIM_CELL );
-	const rimGround = assembleRimGround( chunks.filter( ( c ) => c.rimGround.length > 0 ).map( ( c ) => ( { data: c.rimGround, nx: n, nz: n, x0: c.ci * S, z0: c.cj * S, cell: RIM_CELL } ) ) );
-	const walkDistance = planting.walkLoopDistance( planting.walkLoop( land ) );
-	const tufts = planting.plantGrass( anchors, rimGround, walkDistance, undefined, undefined, island.grove );
-	const counts = { anchors: anchors.length / VEGETATION_STRIDE, lawn: tufts.lawn.length, thin: tufts.lawnThin.length, plants: tufts.flowers.length };
-	const area = landArea( land ), key = `${ seed }/${ step }`;
-	const reference = M2[ key ] && PLANTS[ key ] !== undefined ? { ...M2[ key ], plants: PLANTS[ key ] * area } : undefined;
-	console.log( `     meadow seed ${ seed } grow ${ step }: ${ Object.entries( counts ).map( ( [ kind, k ] ) =>
-		`${ kind } ${ k } (${ ( k / area ).toFixed( kind === 'plants' ? 4 : 2 ) }/m2${ reference ? `, ${ percent( k, reference[ kind ] ) }` : '' })` ).join( ', ' ) }${ reference ? ' against M2 and PLANTS' : '' }` );
-	// the plants by species (Grass.ts FLOWER_SPECIES, `FlowerPlant.species`)
-	const species = planting.flowerSpecies ?? [];
-	const bySpecies = species.map( () => 0 );
-	for ( const p of tufts.flowers ) bySpecies[ p.species ] ++;
-	if ( species.length ) console.log( `     plants by species: ${ species.map( ( name, i ) => `${ name } ${ bySpecies[ i ] } (${ ( bySpecies[ i ] / area ).toFixed( 4 ) }/m2)` ).join( ', ' ) }` );
-	const dir = argument( '--flowers' );
-	if ( dir ) {
+	const count = anchors.length / VEGETATION_STRIDE;
+	const area = landArea( land ), reference = M2[ `${ seed }/${ step }` ];
+	// the open meadow's anchors, out of the bamboo's groves
+	let openAnchors = 0;
+	for ( let k = 0; k < anchors.length; k += VEGETATION_STRIDE ) if ( planting.groveAt( anchors[ k ], anchors[ k + 2 ] ) < OPEN ) openAnchors ++;
+	console.log( `     meadow seed ${ seed } grow ${ step }: anchors ${ count } (${ ( count / area ).toFixed( 2 ) }/m2), open meadow ${ openAnchors }, groves' floor ${ count - openAnchors }` );
+	if ( reference && reference.perM2 && step >= 8 ) {
 
-		mkdirSync( dir, { recursive: true } );
-		const turf = [];
-		for ( let k = 0; k < anchors.length; k += VEGETATION_STRIDE ) turf.push( Math.round( anchors[ k ] * 100 ) / 100, Math.round( anchors[ k + 2 ] * 100 ) / 100 );
-		const flowers = tufts.flowers.flatMap( ( p ) => [ Math.round( p.origin.x * 100 ) / 100, Math.round( p.origin.z * 100 ) / 100, p.species ] );
-		writeFileSync( `${ dir }/flowers-${ seed }-${ step }.json`, JSON.stringify( { species, turf, flowers } ) );
-
-	}
-	if ( reference && step >= 8 ) for ( const kind in counts ) {
-
-		pooled[ kind ] ??= [ 0, 0 ];
-		pooled[ kind ][ 0 ] += counts[ kind ];
-		pooled[ kind ][ 1 ] += reference[ kind ];
+		pooled[ 'anchors (per m^2)' ] ??= [ 0, 0 ];
+		pooled[ 'anchors (per m^2)' ][ 0 ] += count;
+		pooled[ 'anchors (per m^2)' ][ 1 ] += reference.perM2 * area;
 
 	}
 
@@ -436,12 +402,12 @@ function judgeMeadow( pooled ) {
 
 	if ( ! Object.keys( pooled ).length ) {
 
-		console.log( '     meadow density not judged: no grown island run (step 8 on) has M2 and PLANTS counts' );
+		console.log( '     meadow density not judged: no grown island run (step 8 on) has M2 counts' );
 		return;
 
 	}
 	const off = Object.values( pooled ).some( ( [ n, m ] ) => Math.abs( n / m - 1 ) > 0.05 );
-	judge( ! off, `meadow density over the grown islands run against M2 and PLANTS (within 5 %): ${ Object.entries( pooled ).map( ( [ kind, [ n, m ] ] ) => `${ kind } ${ percent( n, m ) }` ).join( ', ' ) }` );
+	judge( ! off, `meadow density over the grown islands run against M2 (within 5 %): ${ Object.entries( pooled ).map( ( [ kind, [ n, m ] ] ) => `${ kind } ${ percent( n, m ) }` ).join( ', ' ) }` );
 
 }
 
@@ -584,7 +550,6 @@ async function main() {
 		const version = island.seed * 1000 + island.step, kind = island.built ? 'chunk' : 'stones';
 		island.land = land;
 		// the bamboo's stands, whose crown and noon shade the swaths keep out of (Grass.ts), as the page has them
-		island.grove = startGrove( grown.pieces[ 0 ] );
 		island.chunks = Promise.all( chunkKeys( land ).map( ( key ) => {
 
 			const [ ci, cj ] = parseChunkKey( key );

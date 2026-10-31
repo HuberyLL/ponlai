@@ -1,14 +1,19 @@
 import * as THREE from 'three/webgpu';
 import { float, texture3D } from 'three/tsl';
 
-// The grade's look-up tables: colour cubes of LUT_SIZE^3 in display (sRGB-encoded) values, applied
-// after the tone curve, two of them blended by a weight (Pipeline.ts `settings.lut`) so a look can
-// move between two grades, by the time of day or by place. After Patry, "Real-Time Samurai Cinema"
-// (SIGGRAPH 2021): 32^3 sRGB tables, used conservatively (a table that bends colours hard bands
-// between its texels), the larger moves left to the white balance (and here the exposure). Their
-// content is ours, tuned in our own scenes.
-// - Half float: the identity cube holds its values to 2^-12, so it returns its input within a
-//   tenth of a display level (eight-bit texels would round to half a level).
+// The grade's look-up tables: colour cubes of LUT_SIZE^3 applied after the tone curve, two of them
+// blended by a weight (Pipeline.ts `settings.lut`) so a look can move between two grades, by the
+// time of day or by place. After Patry, "Real-Time Samurai Cinema" (SIGGRAPH 2021): 32^3 tables,
+// used conservatively (a table that bends colours hard bands between its texels), the larger moves
+// left to the white balance (and here the exposure). Their content is ours, tuned in our own scenes.
+// - Encoding, our own choice: a table is indexed by q = sqrt( L ), L the curve's output (linear
+//   display light, 0..1), and holds q too: a texel at q_in grades the linear colour q_in^2 and
+//   stores the square root of the graded linear colour. Indexed by L itself, a table would spend
+//   most of its cells on the highlights; the square root gives the darks more of them, spacing the
+//   texels about as evenly in lightness as the sRGB transfer did, with no transfer of its own to
+//   undo, so the output transfer (Pipeline.ts) is applied after the tables, once.
+// - Half float, rounded to the nearest: the identity cube holds its values to 2^-12, so it returns
+//   its input within a tenth of a display level (eight-bit texels would round to half a level).
 // - Sampled at texel centres (the colour scaled by ( size - 1 ) / size and offset half a texel),
 //   trilinear, at level 0: the rain layer grades inside branches, where an implicit level is not
 //   allowed.
@@ -18,9 +23,9 @@ import { float, texture3D } from 'three/tsl';
 //
 // A table is generated from a grade's parameters (`GradeParams`) when the page loads, never stored
 // as an image, so its knobs stay readable and later grades build on them. On a display colour, in
-// order:
-// - Its zone: shadows, midtones and highlights by its lightness (Oklab L, the display's perceived
-//   lightness), the shadows fading out by `split[ 0 ]` and the highlights in from `split[ 1 ]` to
+// order, on the linear colour a texel stands for:
+// - Its zone: shadows, midtones and highlights by its lightness (Oklab L of the linear colour, the
+//   display's perceived lightness), the shadows fading out by `split[ 0 ]` and the highlights in from `split[ 1 ]` to
 //   white, the midtones between (the shadows / midtones / highlights split of an editor's colour
 //   wheels). Each zone brightens or darkens (`value`, stops), turns toward a tint (the colour its
 //   white becomes, its luminance kept: as the white balance's, so two tints are a split toning) and
@@ -29,11 +34,11 @@ import { float, texture3D } from 'three/tsl';
 //   exposed mid grey shows at), meeting with the slope `contrast` there and keeping black and white
 //   where they are; the colour's chroma follows its lightness, so the curve leaves its saturation.
 // - Saturation: the chroma times `saturation`, the zone's own, and the hue bands'.
-// - Hue bands (grass, sky, sea, flowers): a band about a centre hue (Oklab hue, degrees) of a
+// - Hue bands (grass, sky, sea, flowers, the warm hues, purple): a band about a centre hue (Oklab hue, degrees) of a
 //   half-width, weighted by a raised cosine across it and faded out toward grey (low chroma, where
 //   hue is noise) and, where it has one, above a chroma ceiling, scales the chroma, brightens or
-//   darkens (stops) and turns the hue (degrees). The sea's band starts neutral: the sea's colour is
-//   the water's own (Water.ts); the grade only places it in the frame.
+//   darkens (stops) and turns the hue (degrees). The sea's colour is the water's own (Water.ts):
+//   the grade only places it in the frame.
 // Oklab (Björn Ottosson, "A perceptual color space for image processing", 2020): its lightness and
 // hue keep a colour's hue as its chroma or lightness change, which linear RGB does not.
 
@@ -68,7 +73,7 @@ export interface GradeParams {
 	// the lightness (Oklab L) where the shadows have faded out, and where the highlights begin
 	split: [ number, number ];
 	shadows: GradeZone; midtones: GradeZone; highlights: GradeZone;
-	bands: { grass: GradeBand; sky: GradeBand; sea: GradeBand; flowers: GradeBand };
+	bands: { grass: GradeBand; sky: GradeBand; sea: GradeBand; flowers: GradeBand; warm: GradeBand; purple: GradeBand };
 }
 
 const zone = (): GradeZone => ( { value: 0, tint: [ 1, 1, 1 ], saturation: 1 } );
@@ -77,7 +82,9 @@ const band = ( hue: number, width: number, ceiling = 1 ): GradeBand => ( { hue, 
 /** The grade that changes nothing: its table is the identity. The bands sit where the kinds'
  * colours fall in the fair noon views (Oklab hue of their display colours, measured): the meadow
  * and the trees about 120 to 145 degrees, the sea 180 (the shallows) to 220 (the open sea toward
- * the horizon), the sky 230 (low) to 260 (high), the red flowers 20 to 30. A table grades colours,
+ * the horizon), the sky 230 (low) to 260 (high), the red flowers 20 to 30. Two bands are hues, not
+ * kinds: the warm ones from red to yellow (the low sun's light, earth, bark, the flowers), wide, and
+ * purple. A table grades colours,
  * not things: the blue flowers share the sky's hue, and only their chroma keeps them out of its
  * band (the noon sky's about 0.05 to 0.08, the flowers' 0.12 to 0.14 in the middle of a swath, its
  * ceiling between: a third to a seventh of the band's weight on the flowers is left, the sky's
@@ -85,20 +92,33 @@ const band = ( hue: number, width: number, ceiling = 1 ): GradeBand => ( { hue, 
 export const NEUTRAL_GRADE: Readonly<GradeParams> = {
 	contrast: 1, saturation: 1, split: [ 0.45, 0.7 ],
 	shadows: zone(), midtones: zone(), highlights: zone(),
-	bands: { grass: band( 132, 35 ), sky: band( 252, 30, 0.08 ), sea: band( 198, 28 ), flowers: band( 25, 35 ) },
+	bands: { grass: band( 132, 35 ), sky: band( 252, 30, 0.08 ), sea: band( 198, 28 ), flowers: band( 25, 35 ), warm: band( 70, 75 ), purple: band( 330, 35 ) },
 };
 
-/** The base grade: the clear day's, which the other grades build on. tidewater's touch more
- * saturation and contrast (1.06 and 1.04 about mid grey, in linear light before the curve: its
- * PostFX.js) moved into the table: 1.08 and 1.05 here came closest over the five views of the
- * kept weathers it was fitted on (the fair noon island, meadow and horizon, the golden hour and
- * the overcast island: a mean of 0.43 levels apart, 0.9 % of the pixels over 2 levels; a curve
- * after the tone curve cannot match one before it exactly). With the lightened meadow (shared.ts
- * lawnGain) and the day's exposure a quarter stop down: the meadow's green turned 5 degrees toward
- * yellow (a sunlit field's rather than a lawn's); the sky's soft blue a quarter stop up again
- * (its band's chroma ceiling keeps the blue flowers out); the red flowers' chroma times 1.15, which
- * the cooler white balance and the softer tone curve had cut by about a fifth (to a tenth now). */
-export const BASE_GRADE: Readonly<GradeParams> = gradeOf( { saturation: 1.08, contrast: 1.05, bands: { grass: { shift: - 5 }, sky: { value: 0.25 }, flowers: { saturation: 1.15 } } } );
+/** The base grade: the day's, which the other grades build on. No contrast and no saturation over
+ * the whole frame (the contrast is the shade's, Pipeline.ts SHADE_CONTRAST, and the tone curve's):
+ * each hue moved on its own, lightly, the neutral axis left where it is but for a touch of cool in
+ * the highlights.
+ * - The warm hues (red to yellow) times 1.15: the earth, the bark and the low sun's light keep
+ *   their colour under the softer curve. The red flowers times 1.15 over that, which the cooler
+ *   white balance and the softer curve had cut by about a fifth; their band also turns red-orange
+ *   4 degrees toward red.
+ * - The sky's blue times 1.2: the noon sky read pale and grey over the brighter curve.
+ * - The green times 0.95 and turned 3.5 degrees toward yellow: the cool noon white balance
+ *   (Pipeline.ts WHITE_BALANCE) already takes the sunlit meadow from yellow-green to green, and a
+ *   turn toward blue-green over it took the lit blades past it (on screen, in linear light, their mean red
+ *   to green about 0.53 to 0.60 at 4 degrees toward blue-green, 0.61 to 0.66 at this turn, from
+ *   0.74 to 0.81 under a neutral white), and a touch less loud than the sky over it.
+ * - The sea's blue-green times 1.05 and turned 7 degrees toward blue; purple turned 6 degrees
+ *   toward red.
+ * - The highlights' white turned a touch cool (an Oklab chroma of about 0.008 at a hue of 260). */
+export const BASE_GRADE: Readonly<GradeParams> = gradeOf( {
+	highlights: { tint: [ 0.97, 1, 1.05 ] },
+	bands: {
+		grass: { saturation: 0.95, shift: - 3.5 }, sky: { saturation: 1.2 }, sea: { saturation: 1.05, shift: 7 },
+		flowers: { saturation: 1.15, shift: - 4 }, warm: { saturation: 1.15 }, purple: { shift: - 6 },
+	},
+} );
 
 /** A grade of `NEUTRAL_GRADE`'s parameters with `changes` over them (a deep copy). */
 export function gradeOf( changes: GradeChanges, base: Readonly<GradeParams> = NEUTRAL_GRADE ): GradeParams {
@@ -130,6 +150,15 @@ export function mergeGrade( grade: GradeParams, changes: GradeChanges ): GradePa
 
 }
 
+// a half float to the nearest (three's toHalfFloat drops the bits below the mantissa, up to a whole
+// step low; the tables' values are all in 0..1, so the next code up is the next value)
+const half = ( v: number ) => {
+
+	const h = THREE.DataUtils.toHalfFloat( v );
+	return Math.abs( THREE.DataUtils.fromHalfFloat( h + 1 ) - v ) < Math.abs( THREE.DataUtils.fromHalfFloat( h ) - v ) ? h + 1 : h;
+
+};
+
 /** The identity table: each texel holds its own colour. */
 export function identityLut( size = LUT_SIZE ): THREE.Data3DTexture {
 
@@ -137,9 +166,9 @@ export function identityLut( size = LUT_SIZE ): THREE.Data3DTexture {
 	const one = THREE.DataUtils.toHalfFloat( 1 );
 	for ( let b = 0, i = 0; b < size; b ++ ) for ( let g = 0; g < size; g ++ ) for ( let r = 0; r < size; r ++, i += 4 ) {
 
-		data[ i ] = THREE.DataUtils.toHalfFloat( r / ( size - 1 ) );
-		data[ i + 1 ] = THREE.DataUtils.toHalfFloat( g / ( size - 1 ) );
-		data[ i + 2 ] = THREE.DataUtils.toHalfFloat( b / ( size - 1 ) );
+		data[ i ] = half( r / ( size - 1 ) );
+		data[ i + 1 ] = half( g / ( size - 1 ) );
+		data[ i + 2 ] = half( b / ( size - 1 ) );
 		data[ i + 3 ] = one;
 
 	}
@@ -155,9 +184,9 @@ export function identityLut( size = LUT_SIZE ): THREE.Data3DTexture {
 
 }
 
-// the sRGB transfer, as three's sRGBTransferEOTF / OETF
-const decode = ( v: number ) => v <= 0.04045 ? v / 12.92 : ( ( v + 0.055 ) / 1.055 ) ** 2.4;
-const encode = ( v: number ) => v <= 0.0031308 ? v * 12.92 : 1.055 * v ** ( 1 / 2.4 ) - 0.055;
+// the tables' encoding: the square root of linear display light, and back
+const decode = ( q: number ) => q * q;
+const encode = ( v: number ) => Math.sqrt( v );
 const smoothstep = ( a: number, b: number, x: number ) => {
 
 	const t = Math.min( Math.max( ( x - a ) / ( b - a ), 0 ), 1 );
@@ -190,8 +219,9 @@ function fromOklab( L: number, a: number, b: number, out: RGB ): RGB {
 
 }
 
-/** A display colour ( 0..1, sRGB-encoded ) through the grade `p`, whose contrast pivots at the
- * lightness of the linear display value `grey` (the exposed mid grey through the tone curve). */
+/** A table's colour ( 0..1, the square root of linear display light ) through the grade `p`, whose
+ * contrast pivots at the lightness of the linear display value `grey` (the exposed mid grey
+ * through the tone curve); returned in the same encoding. */
 export function gradeColour( p: Readonly<GradeParams>, grey: number, c: Readonly<RGB>, out: RGB = [ 0, 0, 0 ] ): RGB {
 
 	const lin: RGB = [ decode( c[ 0 ] ), decode( c[ 1 ] ), decode( c[ 2 ] ) ];
@@ -267,9 +297,9 @@ export function fillGradeLut( p: Readonly<GradeParams>, grey: number, lut = iden
 
 		c[ 0 ] = ri / ( n - 1 ); c[ 1 ] = gi / ( n - 1 ); c[ 2 ] = bi / ( n - 1 );
 		gradeColour( p, grey, c, out );
-		data[ i ] = THREE.DataUtils.toHalfFloat( out[ 0 ] );
-		data[ i + 1 ] = THREE.DataUtils.toHalfFloat( out[ 1 ] );
-		data[ i + 2 ] = THREE.DataUtils.toHalfFloat( out[ 2 ] );
+		data[ i ] = half( out[ 0 ] );
+		data[ i + 1 ] = half( out[ 1 ] );
+		data[ i + 2 ] = half( out[ 2 ] );
 
 	}
 	lut.needsUpdate = true;
@@ -284,7 +314,8 @@ export function lutNodes(): [ THREE.Texture3DNode, THREE.Texture3DNode ] {
 
 }
 
-/** A display colour ( 0..1 ) through a table's base node, at texel centres and level 0. */
+/** A table's colour q ( 0..1, the square root of linear display light: q = sqrt( L ) ) through a
+ * table's base node, at texel centres and level 0; returned in the same encoding. */
 export function sampleLut( lut: THREE.Texture3DNode, c: THREE.Node<'vec3'> ): THREE.Node<'vec3'> {
 
 	const n = LUT_SIZE;

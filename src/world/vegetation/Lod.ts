@@ -1,10 +1,10 @@
-import { Fn, float, max, min } from 'three/tsl';
+import { Fn, clamp, float, max, min } from 'three/tsl';
 import type * as THREE from 'three/webgpu';
 
 type F = THREE.Node<'float'>;
 
 // The vegetation's level of detail by distance: one rule every plant kind thins by (today the
-// meadow, Grass.ts, and its flowering plants, Flowers.ts; the plant kinds to come follow it).
+// meadow, Grass.ts; the plant kinds to come follow it).
 //
 // Rules:
 // - Beyond a reference distance a record keeps the share ( reference / distance )^2 of the parts it
@@ -40,4 +40,34 @@ export const screenShareNode = Fn( ( [ distance, reference ]: [ F, F ] ) => {
 
 } ).setLayout( { name: 'vegetationScreenShare', type: 'float', inputs: [
 	{ name: 'distance', type: 'float' }, { name: 'reference', type: 'float' },
+] } );
+
+// A plant's two levels (PlantInstances.ts): the near one, the authored mesh, and a far one with
+// fewer sides, rings and leaf cards. The switch starts where the plant's stem is `pixels` render
+// pixels wide on screen, so it follows the screen as the share above does, not a distance in
+// metres; over `band` of that distance on, both levels draw, the near one dropping out and the far
+// one coming in by the same fade (`levelFade`), cut by the stipple (Coverage.ts `stippleThreshold`).
+// The render height is high's baseline (1440 pixels: Quality.ts), not the frame's: the dynamic
+// resolution's steps would otherwise move every switch, and a paused frame renders at the baseline.
+export const LEVEL_SWITCH = { pixels: 3, band: 0.15, renderHeight: 1440 } as const;
+
+/** Metres of distance per metre of stem width at which a stem is LEVEL_SWITCH.pixels wide, for a
+ * camera whose projection's y scale ( 1 / tan( fov / 2 ) ) is `projectionY`. */
+export function switchScale( projectionY: number ): number {
+
+	return LEVEL_SWITCH.renderHeight * projectionY / ( 2 * LEVEL_SWITCH.pixels );
+
+}
+
+/** The far level's share in the switch's band, 0 at `start` (m) and 1 at ( 1 + band ) start, as
+ * v = saturate( a d^2 + b ): the band's ends in the screen share's square measure (`screenShare`),
+ * so it eases in as the plant's area on screen shrinks. */
+export const levelFade = Fn( ( [ distance, start ]: [ F, F ] ) => {
+
+	const end = ( 1 + LEVEL_SWITCH.band ) ** 2 - 1;
+	const r = distance.div( max( start, float( 1e-3 ) ) );
+	return clamp( r.mul( r ).sub( 1 ).div( end ), 0, 1 );
+
+} ).setLayout( { name: 'vegetationLevelFade', type: 'float', inputs: [
+	{ name: 'distance', type: 'float' }, { name: 'start', type: 'float' },
 ] } );
