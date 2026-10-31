@@ -38,7 +38,9 @@ type V4 = THREE.Node<'vec4'>;
 //     stand, and a 64^3 Perlin-Worley shape noise dilates its tops into heaps and erodes their
 //     margins, more strongly higher up. Edges stay soft; bases rest on the richer weather.
 //   - lighting: a light march toward the key light in segments that grow geometrically and span
-//     the shell's depth, with a tail on to its top (off for now); the light's optical depth scaled
+//     the shell's depth, with a tail on to its top (off for now), run however faint the light, since
+//     its depth shades the sky light too, and moving without a jump for the same reason (Sky.ts
+//     trackClouds); the light's optical depth scaled
 //     by each step's own transmittance, taken over the finest step's length whatever the march's
 //     cone (so the view and the coarser panorama light a cloud alike); two Henyey-Greenstein lobes
 //     (forward 0.8, back -0.2), tidewater's droplet phase's first order, 80 / 20 where the light gets
@@ -72,6 +74,7 @@ type V4 = THREE.Node<'vec4'>;
 // weather's share of the layer's optical depth (`shadowDensity`, Weather.ts), read with a
 // cubic B-spline built from four bilinear taps (`shadow`), with fades toward lit by the distance
 // from the island's centre and by the view's angle from a chosen direction (inert until fitted);
+// a light on the horizon casts none, the map fading to lit as the light sets (`shadowShare`);
 // the haze reads it at each point's ground point along the same flat beam, with its B-spline blur
 // for sharpening (`shadowAlongBeam`).
 // This project keeps its own weather on top: coverage and density sweep in as a front from
@@ -388,6 +391,10 @@ export class Clouds {
 	// samples: the synoptic cover's, the fine fibres' and the broad fibres' (setDrift).
 	readonly cirrusShift = { synoptic: uniform( new THREE.Vector2() ), fine: uniform( new THREE.Vector2() ), broad: uniform( new THREE.Vector2() ) };
 	readonly lightDir = uniform( new THREE.Vector3( 0.75, 0.53, - 0.12 ).normalize() );
+	// The share of the clouds' shadow the map holds, none with the light on the horizon: Sky.ts
+	// fades it, since a step there showed on the meter through the haze's light even with no direct
+	// light on the island.
+	readonly shadowShare = uniform( 1 );
 	// Irradiance arriving at the cloud layer from the key light (scene units).
 	readonly lightColor = uniform( new THREE.Color( 0.5, 0.45, 0.38 ) );
 	// Night sky glow and moonlit fill, added to the atmosphere's own sky light.
@@ -724,7 +731,6 @@ export class Clouds {
 			If( rd.y.greaterThan( - 0.001 ).and( end.greaterThan( start ) ).and( coverageBound.greaterThan( 0 ) ), () => {
 
 				const L = this.lightDir;
-				const direct = this.lightColor.rgb.mul( this.directGain ).toVar();
 				// The sun's and the moon's lobes, mixed by their light at the shell's height: each
 				// one's aerosol in-scatter there (the atmosphere's table, desaturated as the haze's
 				// light is) times its illuminance, so the switch at dusk follows the light.
@@ -734,7 +740,6 @@ export class Clouds {
 				const sunNu = dot( rd, a.sunDir ).toVar(), moonNu = dot( rd, a.moonDir ).toVar();
 				const forwardLobe = mix( henyeyGreenstein( moonNu, LOBE.forward ), henyeyGreenstein( sunNu, LOBE.forward ), sunShare ).toVar();
 				const backLobe = mix( henyeyGreenstein( moonNu, LOBE.back ), henyeyGreenstein( sunNu, LOBE.back ), sunShare ).toVar();
-				const hasDirectLight = max( direct.x, max( direct.y, direct.z ) ).greaterThan( 1e-5 ).toVar();
 				const t = start.add( jitter.mul( STEP ) ).toVar();
 				const coarse = int( 1 ).toVar(), emptyRun = int( 0 ).toVar();
 				const accumulatedDepth = float( 0 ).toVar(), refineEnd = float( - 1 ).toVar();
@@ -842,26 +847,24 @@ export class Clouds {
 
 						const lods = vec2( baseLod, erosionLod ).toVar();
 						const scale = front.y.mul( DENSITY );
-						If( hasDirectLight, () => {
+						// The light march: segments growing along a narrow cone toward the key light,
+						// spanning the shell's depth; past them a tail runs on to the shell's top at a
+						// constant density. It runs however faint the light: its depth also shades the
+						// sky light below, so a deck skipping it in the twilight, between the moon's
+						// light fading out and the sun's reaching it, came out eight times brighter.
+						const toTop = float( 1 ).sub( c.h ).mul( SHELL_THICKNESS ).div( max( L.y, 0.05 ) );
+						const tau = max( toTop.sub( SHELL_THICKNESS ), 0 ).mul( this.lightTail ).mul( scale ).toVar();
+						for ( let i = 0; i < lightTaps; i ++ ) {
 
-							// The light march: segments growing along a narrow cone toward the key light,
-							// spanning the shell's depth; past them a tail runs on to the shell's top at a
-							// constant density.
-							const toTop = float( 1 ).sub( c.h ).mul( SHELL_THICKNESS ).div( max( L.y, 0.05 ) );
-							const tau = max( toTop.sub( SHELL_THICKNESS ), 0 ).mul( this.lightTail ).mul( scale ).toVar();
-							for ( let i = 0; i < lightTaps; i ++ ) {
+							If( tau.lessThan( 32 ), () => {
 
-								If( tau.lessThan( 32 ), () => {
+								const tap = this.lightTaps[ i ];
+								tau.addAssign( lightDensity( p.add( tap.xyz ), coverage, max( lods, this.lightLods[ i ] ), cheap ).mul( tap.w ).mul( scale ) );
 
-									const tap = this.lightTaps[ i ];
-									tau.addAssign( lightDensity( p.add( tap.xyz ), coverage, max( lods, this.lightLods[ i ] ), cheap ).mul( tap.w ).mul( scale ) );
+							} );
 
-								} );
-
-							}
-							shadowTau.assign( tau );
-
-						} );
+						}
+						shadowTau.assign( tau );
 						shadowAt.assign( t );
 						shadowDensity.assign( density );
 						shadowCheap.assign( select( cheap, int( 1 ), int( 0 ) ) );
@@ -1166,7 +1169,7 @@ export class Clouds {
 			const ground = vec2( float( x ), float( y ) ).add( 0.5 ).div( SHADOW_SIZE ).sub( 0.5 ).mul( SHADOW_SPAN ).sub( this.camXZ ).toVar();
 			const L = this.lightDir;
 			const visibility = float( 1 ).toVar();
-			If( L.y.greaterThan( 0.02 ), () => {
+			If( this.shadowShare.greaterThan( 0 ), () => {
 
 				const ly = max( L.y, 0.08 );
 				const ray = vec3( L.x, ly, L.z ).toVar();
@@ -1186,7 +1189,8 @@ export class Clouds {
 
 				} );
 				// Multiple scattering lets a little light through even thick cloud.
-				visibility.assign( exp( tau.negate() ).mul( 0.8 ).add( exp( tau.mul( - 0.25 ) ).mul( 0.2 ) ) );
+				const cast = exp( tau.negate() ).mul( 0.8 ).add( exp( tau.mul( - 0.25 ) ).mul( 0.2 ) );
+				visibility.assign( mix( float( 1 ), cast, this.shadowShare ) );
 
 			} );
 			textureStore( this.shadowMap, ivec2( int( x ), int( y ) ), vec4( visibility ) );
