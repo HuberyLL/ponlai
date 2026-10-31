@@ -1,31 +1,29 @@
 import * as THREE from 'three/webgpu';
-import { uniform, vec3 } from 'three/tsl';
+import { float, uniform, vec3 } from 'three/tsl';
 import { createWindUniforms } from './weather/Wind.ts';
-import { createTrampleUniforms } from './world/vegetation/Trample.ts';
+import { displacementUniforms } from './world/vegetation/Displacement.ts';
+import { LAWN_GAIN } from './materials/Meadow.ts';
 
 // Uniforms shared by the water, the terrain and the vegetation (one node each, read by every
 // material that uses it).
 export const shared = {
 	time: uniform( 0 ),
 	wind: createWindUniforms(),
-	// the islanders' trail through the meadow (world/vegetation/Trample.ts)
-	trample: createTrampleUniforms(),
+	// the displacement field the islanders part the meadow through (world/vegetation/Trample.ts): the
+	// base nodes the blades sample it by (world/vegetation/Displacement.ts)
+	displacement: displacementUniforms,
 	// the meadow's albedo against its lawn colour (materials/Meadow.ts LAWN): the blades', the turf's
 	// under them and the ground bounce's over the plateau (GroundBounce.ts); 1 the lawn as LAWN gives
-	// it. 2: the look keeps the meadow light, at the top of measured foliage (about 0.12 a blade),
-	// the day's exposure a quarter stop down with it (Exposure.ts COMPENSATION); the flowers keep
-	// their own albedo, a little under the blades' then, and on screen under the lit grass tips
-	lawnGain: uniform( 2 ),
+	// it. LAWN_GAIN: the blades' albedo on load (Grass.ts)
+	lawnGain: uniform( LAWN_GAIN ),
 	// the cliff's albedo above the water against its stone (TerrainMaterial.ts `rock`); 1 the stone as
-	// it is. 1.6: the stone stays lighter than the lightened meadow (about one and a half times its
-	// albedo), and a face lit from the side at noon keeps the share of the lit grass it showed
-	// before (seven tenths); under the water it stays as it is, so the sea's shading keeps its own
+	// it is. 1.6: the stone at about twice the meadow's albedo (about 0.18); under the water it stays
+	// as it is, so the sea's shading keeps its own
 	rockGain: uniform( 1.6 ),
 	// the trees' leaves' albedo against their atlas (world/vegetation/TreeSurfaces.ts leafMaterial:
-	// the bamboo's crowns); 1 the atlas as it is. 1.3: the leaves stay a little lighter than the
-	// lightened meadow (about 1.2 times its albedo), so a crown parts from the sward under it; at 1
-	// it merged with it under overcast and by night
-	leafGain: uniform( 1.3 ),
+	// the bamboo's crowns); 1 the atlas as it is. 0.9: the leaves about 1.2 times the meadow's
+	// albedo (about 0.1), so a crown parts from the sward under it under overcast and by night
+	leafGain: uniform( 0.9 ),
 	rain: uniform( 0 ),
 	wetness: uniform( 0 ),
 	waterLevel: uniform( 0 ),
@@ -53,6 +51,9 @@ export const shared = {
 	skyIrradianceSource: vec3( 0 ) as THREE.Node<'vec3'>,
 	// The same as lent to the island after sunset (Sky.islandIrradianceNode): the islanders' fill.
 	islandIrradianceSource: vec3( 0 ) as THREE.Node<'vec3'>,
+	// log2 of the sky's geometric-mean luminance (Sky.meterLog2Node, scene units): the exposure's
+	// sky term, the dome's metering illuminance being this luminance's
+	skyMeterLog2: float( 0 ) as THREE.Node<'float'>,
 };
 
 export type Shared = typeof shared;

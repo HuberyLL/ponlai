@@ -1,3 +1,4 @@
+import { PRE_EXPOSURE_PENDING } from './PreExposure.ts';
 import { TemporalRest, restKey } from './TemporalRest.ts';
 
 // The page's settled signal (`__THREE_GAME_DIAGNOSTICS__.settled`, debug builds): true once a paused
@@ -40,6 +41,15 @@ import { TemporalRest, restKey } from './TemporalRest.ts';
 // scale change, a seek or any scene event (each bumps the epoch: SceneEvents.ts), `establishScene`
 // and every other bake (the sky is busy), a forced strike, a redraw of either sun map. A running
 // clock changes the key every frame, so a running page never settles.
+//
+// The pre-exposure (PreExposure.ts) is pending in its own way: it waits for a reading of a frame
+// drawn the settle frames into this run, so the run counts the frames that wait for nothing else
+// (`sceneQuiet`: stable, no pipeline compiling, nothing but the pre-exposure in `pending`), and the
+// signal holds only once the pre-exposure is not pending as well. Were the run to wait for it too,
+// it would start only after a reading of a frame already the settle frames into it had come back:
+// under the temporal modes then later than the rest's sequence began, so never `covered`, and a
+// tool's bump on `stale` started both over again. A new P bumps the epoch, so the run (and under
+// the temporal modes the rest) starts again on frames of the P it settles on.
 //
 // It reads state and changes nothing the frame draws (the pipeline counter wraps the device's
 // two async creation calls and passes them through unchanged).
@@ -100,6 +110,10 @@ export class Settled {
 	turns = 0;
 	/** Under the temporal modes: the rest converged on frames that were not all quiet (see above). */
 	stale = false;
+	/** The last frame was stable and waited for nothing but the pre-exposure: no other refresh
+	 * pending, no pipeline compiling. The quiet run counts such frames, and PreExposure.ts takes
+	 * the readings that end its `pending` from them. */
+	sceneQuiet = false;
 	private frame = 0;
 	private quietStart = 0;
 	private restStart = 0;
@@ -121,13 +135,15 @@ export class Settled {
 		const r = this.rest;
 		r.settle = 0;
 		r.sequence = Math.max( 1, temporal ? temporal.sequence : this.settle );
-		r.observe( key, input.stable && input.pending.length === 0 && ! compiling );
+		// (the run leaves the pre-exposure out: it waits for frames of this run, see the header)
+		this.sceneQuiet = input.stable && ! compiling && input.pending.every( ( p ) => p === PRE_EXPOSURE_PENDING );
+		r.observe( key, this.sceneQuiet );
 		if ( r.frames === 1 ) this.quietStart = this.frame;
 		if ( temporal && temporal.frames === 1 ) this.restStart = this.frame;
 		const was = this.value;
 		const covered = temporal !== null && this.quietStart <= this.restStart + temporal.settle;
 		this.stale = temporal !== null && temporal.converged && r.converged && ! covered;
-		this.value = input.shown && ( temporal ? temporal.converged && r.converged && covered : r.converged );
+		this.value = input.shown && ! input.pending.includes( PRE_EXPOSURE_PENDING ) && ( temporal ? temporal.converged && r.converged && covered : r.converged );
 		if ( this.value && ! was ) {
 
 			this.since = this.frame;

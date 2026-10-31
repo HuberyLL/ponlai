@@ -38,19 +38,19 @@
 // - runtime: setters the page applies through `applySkyQuality` (main.ts) at load; a debug page can
 //   override them there (`s.applyQuality( { ... } )`) to time one at a time.
 // Load knobs reach their modules as `water` (Water.ts; its `fftAnisotropy` goes to OceanFFT's
-// output targets), `grass` (`setGrassQuality`), `shadow` (`SunShadow.setFilter`), `rainShading` (`setRainShading`), `post` (`PostOptions` for
+// output targets), `rainShading` (`setRainShading`), `post` (`PostOptions` for
 // `new Pipeline`), `environmentSource` (`Sky.setEnvironmentSource`, before the first bake),
-// `frameRate` (FramePacer), `aa` (the anti-aliasing mode, post/Antialiasing.ts, which also chooses
-// the tier, since the vegetation's modules read the mode as they load), `taa` (the temporal
-// resolve's settings, TemporalAA.ts) and `render` (RenderScale.ts). Runtime ones: the cloud view
+// `frameRate` (FramePacer), `ao` (post/GTAO.ts, read there as it loads), `aa` (the anti-aliasing
+// mode, post/Antialiasing.ts, which also chooses the tier, since the vegetation's modules read the
+// mode as they load), `taa` (the temporal resolve's settings, TemporalAA.ts) and `render`
+// (RenderScale.ts). Runtime ones: the cloud view
 // (`Sky.setCloudView`), the clouds' `setDome`, `setMarch` and `setShadowRefresh`,
 // `Sky.setEnvironmentCadence`, the sky bake interval, the refracted sun's interval and
 // `angleGate`, and the rain's drop count. Every default in the modules themselves is high's.
 // `?tier.<knob>=<value>` overrides one knob for an A/B.
 //
 // The parked medium and low traded a little of high's image for time, each knob judged in captures:
-// one screen-space reflection ray (its 14 steps grow by 1.51, so it reaches as far as high's), a
-// lighter sun-shadow filter (bilinear on vegetation, and on everything on low), fewer lawn blades
+// one screen-space reflection ray (its 14 steps grow by 1.51, so it reaches as far as high's), fewer lawn blades
 // with the canopy light per vertex, a coarser haze grid and fewer depth-of-field taps, a cheaper
 // cloud march and panorama refresh, slower sky bakes with the environment's PMREM on every second
 // one from a 256-wide source, a coarser refracted-sun gate and fewer rain drops; low also draws
@@ -59,8 +59,6 @@
 //
 // This module imports types only, so the CPU-only tools can read the table under plain node.
 import type { WaterQuality } from './ocean/Water.ts';
-import type { GrassQuality } from './world/Grass.ts';
-import type { SolarShadowTaps } from './lighting/SolarShadow.ts';
 import type { CloudMarch, CloudViewScale } from './sky/Clouds.ts';
 import type { PostOptions } from './post/Pipeline.ts';
 import type { AAMode } from './post/Antialiasing.ts';
@@ -174,11 +172,10 @@ export interface QualityProfile {
 	water: WaterQuality;
 	// the frame graph's structural options (the haze's froxel grid); the rest keep their defaults
 	post: Pick<PostOptions, 'hazeGrid'>;
-	// the sun shadow's filter, for most receivers, for vegetation and for the sea's surface (both
-	// stepped maps alike). On the sea it shades only the glints and the subsurface glow, so a lighter
-	// filter there shows little at noon.
-	shadow: { surface: SolarShadowTaps; vegetation: SolarShadowTaps };
-	grass: GrassQuality;
+	// the screen-space ambient occlusion and the opaque depth prepass it reads (post/GTAO.ts; built
+	// only where the meadow's shade runs, at 4x outside the temporal modes; `flags=gtao` overrides it;
+	// the screen-space shade over the whole scene builds that prepass too, post/MeadowShade.ts)
+	ao: boolean;
 	// the rain veil's shells and the sea's ripple layers
 	rainShading: { veilShells: number; rippleLayers: number };
 	// the environment's PMREM source width (fixes the atlases' size before the first bake)
@@ -204,11 +201,6 @@ export interface QualityProfile {
 
 }
 
-const PCSS_HIGH: SolarShadowTaps = { soft: true, blockerSamples: 6, filterSamples: 8 };
-// high's sea surface: in a sweep against PCSS_HIGH the error stayed flat down to 4 / 5 (the
-// change sits on the glints' edges, unseen side by side); 3 / 4 came out no faster
-const PCSS_LIGHT: SolarShadowTaps = { soft: true, blockerSamples: 4, filterSamples: 5 };
-const BILINEAR: SolarShadowTaps = { soft: false, blockerSamples: 0, filterSamples: 0 };
 const TAA: TemporalSettings = {
 	framesStill: 24, framesStillWater: 12, framesMoving: 5, speedFull: 16, gammaStill: 1.25, gammaMove: 0.75,
 	classFrames: [ 1, 1, 0.4, 0.8, 0 ], classGamma: [ 0, 0.25, 0, - 0.25, 0 ], waterFar: [ 150, 600 ], glintReactive: { from: 2, to: 8, max: 1 },
@@ -227,30 +219,13 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		render: { dynamic: { max: 2, baseline: 2560 * 1440, floor: 1920 * 1080, floorShare: 0.75, step: 0.05 } },
 		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { hazeGrid: { width: 160, height: 90, depth: 64 } },
-		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH },
-		// 24 of each tuft's 48 blades within 5 m, the kept ones twice as wide (they widen to keep the
-		// cover), at least 1.5 pixels wide under MSAA (Grass.ts `grassUniforms`): at 45 m a blade draws
-		// about two thirds as wide as 16 blades did, with the same flicker relative to the many-sample
-		// reference (about 1.8 times its own) and a fifth more error against it; 32 and 48 blades,
-		// thinner still, grained more (48: nearly half again 16's error). Farther off fewer, the
-		// blades thinned by distance: 18 at 10 m, 12 at 40 m and 6 at 70 m. The
-		// game camera's near end (24 m) sees its meadow from about 12 to 35 m, where the blades are a
-		// few pixels wide and the kept ones widen for the rest: 18 there rather than 24 drew it 0.45 ms
-		// faster with its mean brightness within 0.3 % (its cost there follows its vertices, not its
-		// pixels: a vertex stage that computed nothing cost about half the full one). Within 5 m the
-		// blades are too wide on screen to widen, and 18 thinned a close view's foreground. All 24 at every
-		// distance drew about 225 thousand blades twice a frame (the depth prepass and the colour
-		// pass) at the island view, and its vertex stage cost 4.2 ms there (as much at native 4K);
-		// these counts drew it in 2.3 ms with the meadow's mean brightness unchanged (within 1 % at
-		// 45 m and 110 m) and less flicker in a gust (a fifth less at 45 m). The extra tufts never
-		// fold: folding them past 25 - 37 m darkened the lawn there by 4 - 5 %, its cover lost.
-		grass: { lawnBlades: [ 24, 18, 12, 6 ], bladeBands: [ 5, 10, 40, 70 ], thinTufts: true, thinFold: [ 1e4, 1e4 + 12 ], canopyPerVertex: false, minWidth: 0 },
+		ao: true,
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 512,
 		frameRate: 60,
 		cloudView: { display: 0.45 },
 		cloudDome: { width: 1024, height: 256, strideX: 4, strideY: 8 },
-		cloudMarch: { viewSteps: 256, panoramaSteps: 128, lightTaps: 5, rainSteps: 16 },
+		cloudMarch: { viewSteps: 256, panoramaSteps: 128, lightTaps: 6, rainSteps: 16 },
 		cloudShadowRows: 1 / 8,
 		skyUpdateInterval: 0.5,
 		environmentEvery: 1,
@@ -264,8 +239,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		render: { budget: 1600 * 900 },
 		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { hazeGrid: { width: 128, height: 72, depth: 64 } },
-		shadow: { surface: PCSS_LIGHT, vegetation: BILINEAR },
-		grass: { lawnBlades: [ 12, 12, 8, 4 ], bladeBands: [ 20, 25, 45, 70 ], thinTufts: false, thinFold: [ 1e4, 1e4 + 12 ], canopyPerVertex: true, minWidth: 2 },
+		ao: false,
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 256,
 		frameRate: 60,
@@ -285,8 +259,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		// (the merged storm foam turned the crests' streaks into scattered lace: kept as on high)
 		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { hazeGrid: { width: 96, height: 54, depth: 64 } },
-		shadow: { surface: BILINEAR, vegetation: BILINEAR },
-		grass: { lawnBlades: [ 8, 8, 8, 4 ], bladeBands: [ 20, 25, 45, 70 ], thinTufts: false, thinFold: [ 1e4, 1e4 + 12 ], canopyPerVertex: true, minWidth: 2 },
+		ao: false,
 		rainShading: { veilShells: 2, rippleLayers: 1 },
 		environmentSource: 256,
 		// light enough to render on most refreshes of a fast display: held to 60 Hz there, its
@@ -311,14 +284,12 @@ export function isQualityTier( value: unknown ): value is QualityTier {
 }
 
 /** The tier's profile with `?tier.<knob path>=<value>` options over it, for A/B captures of one
- * knob (`tier.post.hazeGrid.width=128`, `tier.water.ssrRays=2`, `tier.grass.lawnBlades=24,16,8,4`,
- * `tier.shadow.surface.soft=false`). A path
+ * knob (`tier.post.hazeGrid.width=128`, `tier.water.ssrRays=2`). A path
  * must name an existing knob; numbers, booleans and comma lists are parsed. */
 export function qualityProfile( tier: QualityTier, search = location.search ): QualityProfile {
 
-	// a JSON copy, not structuredClone: that keeps the table's shared objects shared (high's surface
-	// and vegetation shadow filters are one PCSS_HIGH), so an override of one knob would change its
-	// siblings too
+	// a JSON copy, not structuredClone: that keeps the table's shared objects shared (the tiers'
+	// `taa` copies share TAA's nested arrays), so an override of one knob would change its siblings too
 	const profile = JSON.parse( JSON.stringify( QUALITY[ tier ] ) ) as QualityProfile;
 	for ( const [ key, raw ] of new URLSearchParams( search ) ) {
 

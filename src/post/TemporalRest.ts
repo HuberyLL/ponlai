@@ -33,14 +33,14 @@
 // anti-aliasing mode, MSAA included.
 
 /** Fills `key` with what a frame draws from: the camera's unjittered view and projection, the
- * scene clock, the render's and the output's sizes, the epoch, then `extra` (the caller's own
- * signature). */
+ * scene clock, the render's and the output's sizes, the epoch (`restEpoch.value` unless given:
+ * PreExposure.ts leaves its own bumps out), then `extra` (the caller's own signature). */
 export function restKey( key: number[], camera: { matrixWorld: { elements: readonly number[] }; projectionMatrix: { elements: readonly number[] } },
-	renderWidth: number, renderHeight: number, outputWidth: number, outputHeight: number, time: number, extra: readonly number[] ): number[] {
+	renderWidth: number, renderHeight: number, outputWidth: number, outputHeight: number, time: number, extra: readonly number[], epoch = restEpoch.value ): number[] {
 
 	key.length = 0;
 	key.push( ...camera.matrixWorld.elements, ...camera.projectionMatrix.elements, time, renderWidth, renderHeight, outputWidth, outputHeight,
-		restEpoch.value, ...extra );
+		epoch, ...extra );
 	return key;
 
 }
