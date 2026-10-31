@@ -11,7 +11,7 @@ import * as THREE from 'three/webgpu';
 import GUI from 'lil-gui';
 import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraControls.ts';
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';
-import { FramingGlide, IslandTurn, frameIsland, landOutline } from './camera/IslandFraming.ts';
+import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
 import { Sky, lowSun } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, WIND_LEVELS, isParkedWeather, isWindLevel, type WeatherName, type WindChoice, type WindLevel } from './sky/Weather.ts';
@@ -191,15 +191,20 @@ const framingGlide = new FramingGlide();
 // wheel); how far it has turned from the query's heading (rad), and its zoom (0 the farthest, 1
 // the nearest: IslandFraming.ts)
 const islandTurn = new IslandTurn( renderer.domElement );
+// (the island view never zooms in past its framing, held or by hand: `islandNearest`)
+islandTurn.wheelZoom = 0;
 let islandTurned = 0, islandZoom = 0;
 const initialCameraFov = camera.fov;
 const orbitMaxPolar = controls.maxPolarAngle;
 const orbitMinDistance = controls.minDistance;
-// The island view starts at most 45 m from its pivot, looking 50 degrees down (`polar` 40): the
-// whole starting plateau in view with a margin, the ground read as a map while the cliff's depth
-// still shows, the islanders large enough to follow, and the meadow's blades a few pixels wide, so
-// MSAA keeps them close to the many-sample reference. A land whose framing stands nearer keeps it.
-const ISLAND_START_DISTANCE = 45;
+// the island view's nearest zoom: its pose's own distance (frameLand, poseIslandView), so the
+// hand zooms out from the framing but never in past it; the review views keep `orbitMinDistance`
+let islandNearest = orbitMinDistance;
+// The island view starts where it frames the land alone (without its ring of shallows) from its own
+// heading, looking 50 degrees down (`polar` 40): the whole island in view with a margin of sea, the
+// ground read as a map while the cliff's depth still shows (IslandFraming.ts `landFitDistance`).
+// Framing the shallows too, or the land from every heading, stood half as far again and left the
+// island small in the frame; a fixed 45 m held the first island of 400 m^2 but not one of 1000.
 const freeControls = new FreeCameraControls( camera, renderer.domElement );
 
 // ------------------------------------------------------------------ sky, light, water optics
@@ -869,8 +874,8 @@ const viewDirection = new THREE.Vector3();
 
 // The island view on this land at the `polar` and `az` options (degrees): the camera that just
 // frames the land and its ring of shallows from there (IslandFraming.ts), at the camera's aspect,
-// brought in to ISLAND_START_DISTANCE when the framing stands farther (the zoom then runs from there
-// to the least distance); with a `dist` option (m),
+// brought in to where it frames the land alone from its heading (`landFitDistance`; the zoom then runs from there to the
+// least distance); with a `dist` option (m),
 // the camera on its sphere about the default pivot at that distance instead. Then a settle within
 // the orbit's limits, the farthest zoom raised to the framing's distance (from the land's own each
 // time, so it never only grows). At rest the pose depends only on the pivot, the position and the
@@ -898,10 +903,10 @@ function placeOrbit( on: THREE.PerspectiveCamera, orbit: IslandCameraControls, o
 		const view = { polar, azimuth, fov: initialCameraFov, aspect };
 		frameIsland( outline, view, on.position, orbit.target );
 		const framed = on.position.distanceTo( orbit.target );
-		orbit.maxDistance = Math.max( islandMaxDistance, Math.min( framed, ISLAND_START_DISTANCE ) );
+		const start = Math.min( framed, landFitDistance( outline, view ) );
+		orbit.maxDistance = Math.max( islandMaxDistance, start );
 		// (from the start distance at zoom 0 to the least at 1, eased on the log as the framing's zoom)
-		if ( framed > ISLAND_START_DISTANCE ) on.position.sub( orbit.target ).setLength( ISLAND_START_DISTANCE * Math.pow( orbit.minDistance / ISLAND_START_DISTANCE, zoom ) ).add( orbit.target );
-		else if ( zoom > 0 ) frameIsland( outline, view, on.position, orbit.target, zoom );
+		on.position.sub( orbit.target ).setLength( start * Math.pow( Math.min( orbit.minDistance / start, 1 ), zoom ) ).add( orbit.target );
 
 	}
 	orbit.settle();
@@ -914,6 +919,7 @@ function frameLand(): void {
 	initialCameraPosition.copy( camera.position );
 	initialCameraQuaternion.copy( camera.quaternion );
 	initialCameraTarget.copy( controls.target );
+	controls.minDistance = islandNearest = camera.position.distanceTo( controls.target );
 
 }
 
@@ -938,6 +944,8 @@ function poseIslandView( options: URLSearchParams, turn = 0, zoom = 0 ): void {
 	initialCameraQuaternion.copy( probe.quaternion );
 	initialCameraTarget.copy( orbit.target );
 	controls.maxDistance = orbit.maxDistance;
+	islandNearest = probe.position.distanceTo( orbit.target );
+	applyOrbitLimit();
 
 }
 
@@ -984,7 +992,7 @@ function applyOrbitLimit(): void {
 	// cannot swing the camera round below its target and under the sea.
 	const sky = reviewView.camera === 'sky';
 	controls.maxPolarAngle = sky ? Math.PI : orbitMaxPolar;
-	controls.minDistance = sky ? 0.01 : orbitMinDistance;
+	controls.minDistance = sky ? 0.01 : reviewView.camera === 'island' ? islandNearest : orbitMinDistance;
 	controls.enableZoom = controls.enablePan = ! sky;
 	// only the island view widens: the review views and the free flight keep their own fov
 	controls.widenFov = fovWidening.on && controls.enabled && reviewView.camera === 'island';
