@@ -5,8 +5,9 @@
 //
 // Everything here is generic, so any land builds itself the same way: the footprint and the
 // cliffs derive from the land, the island's SDF and noise fields with fixed seeds (hashes of
-// position in world-anchored cells), never from coordinates placed by hand. Keep the flat central
-// plateau: natural contour, slope and weathering belong to the outer rim and the cliffs (Cliff.ts).
+// position in world-anchored cells), never from coordinates placed by hand. The island's top is a
+// plateau that rolls (`islandSwell`): low mounds and hollows about its level, flat on average;
+// weathering belongs to the outer rim and the cliffs (Cliff.ts).
 
 import { Field2D, roundCorners } from './Field2D.ts';
 import { noise3, smoothstep } from './noise.ts';
@@ -34,6 +35,16 @@ export type HeightFn = ( x: number, z: number ) => number;
 
 export const ISLAND_TOP = 3.1;
 export const ISLAND_BOTTOM = - 5.6;
+
+// The plateau's swells (`islandSwell`), as a meadow over old ground rolls (a field of low mounds,
+// banks and hollows, never a hill): a noise of the point, its domain warped (`warp`, m) so the
+// mounds run out in banks and lobes, its wavelength `scale` (m), with smaller hummocks (`hummock`,
+// m, `share` of it) over them; its level standardised once over a fixed stretch of the world (never
+// over the land, so a grown island keeps its ground) to a mean of 0, and eased to at most `height`
+// (m) above or below ISLAND_TOP. A load knob of the generator: the worker reads the same values.
+export const SWELL = { height: 1, scale: 18, warp: 5, hummock: 7, share: 0.35 };
+/** The highest the island's top reaches (m): its swells' and its fine noise's peaks over its level. */
+export const ISLAND_PEAK = ISLAND_TOP + SWELL.height + 0.2;
 
 // The farthest the generator reads the land (m): the footprint's distance is clamped to +-this, so
 // whatever is made at a point depends only on the land within about this distance of it, and the
@@ -140,11 +151,43 @@ export function coastWobble( x: number, z: number ): number {
 
 }
 
-// Soil support and the rim root bed follow the same undisturbed surface as the mesh.
-// Fallen columns and chips remain geometry-owned, so exposed stone can interrupt the turf.
+function swellNoise( x: number, z: number ): number {
+
+	const P = SWELL, f = 1 / P.scale, g = f * 0.7;
+	const wx = x + P.warp * noise3( x * g + 2.3, 9.1, z * g - 6.6 ), wz = z + P.warp * noise3( x * g - 4.8, 3.3, z * g + 1.9 );
+	return noise3( wx * f + 11.7, 5.5, wz * f - 3.9 ) + P.share * noise3( x / P.hummock - 7.2, 2.6, z / P.hummock + 5.1 );
+
+}
+
+// The swells' standardisation: the noise's mean and spread over a fixed 512 m square of the world
+// (64 x 64 points), and the eased level's mean there, found once.
+let swellLevels: { mean: number; spread: number; offset: number } | null = null;
+const ease = ( v: number ) => Math.tanh( v * 0.6 );
+
+/** The plateau's swell at ( x, z ) (m about ISLAND_TOP, SWELL): flat on average over the world. */
+export function islandSwell( x: number, z: number ): number {
+
+	if ( ! swellLevels ) {
+
+		const n = 64, v = new Float64Array( n * n );
+		for ( let j = 0; j < n; j ++ ) for ( let i = 0; i < n; i ++ ) v[ j * n + i ] = swellNoise( ( i + 0.5 ) * 8 - 256, ( j + 0.5 ) * 8 - 256 );
+		const mean = v.reduce( ( a, b ) => a + b, 0 ) / v.length;
+		const spread = Math.sqrt( v.reduce( ( a, b ) => a + ( b - mean ) ** 2, 0 ) / v.length );
+		const offset = v.reduce( ( a, b ) => a + ease( ( b - mean ) / spread ), 0 ) / v.length;
+		swellLevels = { mean, spread, offset };
+
+	}
+	const L = swellLevels;
+	return SWELL.height * ( ease( ( swellNoise( x, z ) - L.mean ) / L.spread ) - L.offset );
+
+}
+
+// Soil support and the rim root bed follow the same undisturbed surface as the mesh: the swells and
+// a fine noise over them. Fallen columns and chips remain geometry-owned, so exposed stone can
+// interrupt the turf.
 export function islandSurfaceHeight( x: number, z: number ): number {
 
-	return ISLAND_TOP + noise3( x * 0.18, 4.1, z * 0.18 ) * 0.12 + noise3( x * 0.7, 1.3, z * 0.7 ) * 0.04;
+	return ISLAND_TOP + islandSwell( x, z ) + noise3( x * 0.18, 4.1, z * 0.18 ) * 0.12 + noise3( x * 0.7, 1.3, z * 0.7 ) * 0.04;
 
 }
 

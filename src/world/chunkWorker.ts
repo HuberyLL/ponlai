@@ -27,7 +27,7 @@
 
 import { buildChunk, landField, landWindow, windowCells, CellCount, S, type ChunkData, type LandField } from './Chunks.ts';
 import { simplifierReady } from './IslandSimplify.ts';
-import { growLand, LandLattice, startGrove, startYunpeng, type Piece } from './IslandGrowth.ts';
+import { growLand, LandLattice, type Piece } from './IslandGrowth.ts';
 import { buildFarFloor, nearLandCells, underLand } from './SeabedTile.ts';
 import { openSeaBeds, openSeaHeight, SHELF_CEILING } from './Bathymetry.ts';
 import { fieldBounds, BED_CELL, FLOOR_CELL, type LandData } from './ChunkMerge.ts';
@@ -71,7 +71,7 @@ export function buildLand( seed: number, step: number ): LandData {
 		}
 
 	}
-	return { seed, step, land: land.toBytes(), chunks, steps, far: buildFarFloor( near ), bounds, floor, beds, walk: new Float64Array( walkLoop( land ).flat() ), grove: new Float64Array( startGrove( pieces[ 0 ] ) ), yunpeng: new Float64Array( startYunpeng( pieces[ 0 ] ) ) };
+	return { seed, step, land: land.toBytes(), chunks, steps, far: buildFarFloor( near ), bounds, floor, beds, walk: new Float64Array( walkLoop( land ).flat() ) };
 
 }
 
@@ -98,7 +98,7 @@ export type ChunkJob =
 	| { kind: 'land'; seed: number; step: number; key: string | null }
 	| { kind: 'field'; land: Uint8Array; copies: number }
 	| { kind: 'use'; land: Uint8Array; field: LandField }
-	| { kind: 'chunk'; ci: number; cj: number; version: number; key: string | null; contactOcclusion: boolean }
+	| { kind: 'chunk'; ci: number; cj: number; version: number; key: string | null; contactOcclusion: boolean; canopyShade: boolean }
 	| { kind: 'keep'; keys: string[] }
 	| { kind: 'close' };
 
@@ -190,7 +190,7 @@ async function run( job: ChunkJob ): Promise<void> {
 			}
 			if ( ! land || ! field ) { post( { kind: 'need', ci: job.ci, cj: job.cj } ); break; }
 			await simplifierReady;
-			const data = buildChunk( landWindow( field, job.ci, job.cj ), land, job.ci, job.cj, { version: job.version, contactOcclusion: job.contactOcclusion } );
+			const data = buildChunk( landWindow( field, job.ci, job.cj ), land, job.ci, job.cj, { version: job.version, contactOcclusion: job.contactOcclusion, canopyShade: job.canopyShade } );
 			if ( cache ) track( cache.write( job.key!, data ) );
 			post( { kind: 'chunk', data, cache: cache ? 'miss' : job.key !== null ? 'error' : 'off', ms: performance.now() - t } );
 			break;

@@ -114,6 +114,15 @@ export function* uploadSteps( renderer: THREE.WebGPURenderer, attribute: Attribu
 
 }
 
+/** Frees `attribute`'s GPU buffer, as three frees a geometry's on dispose (r186 Attributes.delete:
+ * the buffer destroyed, the renderer's memory info updated). For a buffer no geometry owns, such as
+ * a storage node's that a swap replaced, once nothing draws with it. */
+export function freeAttribute( renderer: THREE.WebGPURenderer, attribute: Attribute ): void {
+
+	( renderer as unknown as { _attributes?: { delete( attribute: unknown ): unknown } } )._attributes?.delete( attribute );
+
+}
+
 // (`staged`: the array's version when it was staged; `version`: the write's, once the copy is made)
 type Staged = { buffer: GpuBuffer | null; count: number; staged: number; version: number; copied: WeakSet<GpuBuffer> };
 type WrappedBackend = Backend & { updateAttribute( attribute: unknown ): void; [ STAGED ]?: WeakMap<ArrayBufferView, Staged> };

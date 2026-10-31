@@ -51,7 +51,7 @@ function mix32( h: number ): number {
  * to the surface and kept if it faces up enough to hold turf (the rounded rim included). Appends
  * x, y, z, nx, ny, nz, rim (`rimDist`: signed distance to the shape's edge, negative inside) and
  * kind (0 island) per anchor, in the order of the cells ( j, then i ). */
-export function scatterTop( sdf: SDF, own: Bounds, yTop: number, rimDist: ( x: number, z: number ) => number, out: number[] ): void {
+export function scatterTop( sdf: SDF, own: Bounds, topAt: ( x: number, z: number ) => number, rimDist: ( x: number, z: number ) => number, out: number[] ): void {
 
 	const i0 = Math.floor( own.x0 / CELL ) - 1, i1 = Math.ceil( own.x1 / CELL ) + 1;
 	const j0 = Math.floor( own.z0 / CELL ) - 1, j1 = Math.ceil( own.z1 / CELL ) + 1;
@@ -60,6 +60,7 @@ export function scatterTop( sdf: SDF, own: Bounds, yTop: number, rimDist: ( x: n
 		const px = ( i + 0.5 ) * CELL + ( hash3i( i, j, 4242 ) - 0.5 ) * CELL * JITTER;
 		const pz = ( j + 0.5 ) * CELL + ( hash3i( i, j, 4243 ) - 0.5 ) * CELL * JITTER;
 		if ( px < own.x0 || px >= own.x1 || pz < own.z0 || pz >= own.z1 ) continue;
+		const yTop = topAt( px, pz );
 		let y = yTop + 1.2;
 		let hit = false;
 		for ( let k = 0; k < 80; k ++ ) {

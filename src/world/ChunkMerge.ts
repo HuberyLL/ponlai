@@ -29,6 +29,9 @@
 //   floor tile at the texels' centres on the meshes' diagonal, as Bathymetry's `floorAt` reads
 //   the rendered floor; elsewhere they are what the land job put there (chunkWorker.ts
 //   `buildLand`: the open sea's, or the shelf's ceiling under the land).
+// - The ambient light's probes are one lattice over the box of the chunks that baked them, each
+//   chunk's copied into its square and the open sea's in the gaps, the invalid ones then filled from
+//   their neighbours (AmbientProbes.ts `mergeProbes`).
 
 import type { ChunkData } from './Chunks.ts';
 import { LandLattice } from './IslandGrowth.ts';
@@ -36,6 +39,7 @@ import { tileIndices, SEABED_TILE, TILE_SIDE, type FarFloor } from './SeabedTile
 import { gridBoxes, mergeRimLips, RIM_BOX, RIM_CELL, RIM_PAD, RIM_REACH } from './RimGround.ts';
 import { landBounds, ISLAND_TOP, LAND_REACH, type Bounds } from './WorldShapes.ts';
 import { submergedIndex, SEA_LEVEL } from './ChunkDerived.ts';
+import { mergeProbes } from './AmbientProbes.ts';
 import type { IslandChunk, MeshData, Rock, WorldData } from './types.ts';
 
 // The world fields' cells (m): the shore's distance, the floor's height and the floor's beds.
@@ -63,10 +67,6 @@ export interface LandData {
 	beds: Float32Array;
 	// the islander's walking loop on this land (WalkLoop.ts): x, z per waypoint, as computed (doubles)
 	walk: Float64Array;
-	// the yunpeng's clumps (IslandGrowth.ts startYunpeng): x, z, depth per clump, the same at every step
-	yunpeng: Float64Array;
-	// the first bamboo stands (IslandGrowth.ts startGrove): x, z, depth per stand, the same at every step
-	grove: Float64Array;
 }
 
 /** The world fields' bounds: the land's box and 32 m round it, out to the world's 32 m grid. A
@@ -207,6 +207,8 @@ export function* mergeSteps( land: LandData, unordered: readonly ChunkData[] ): 
 	const vegetation = concat( chunks.map( ( c ) => c.anchors ) );
 	yield* pause();
 	const rimLip = mergeRimLips( chunks.map( ( c ) => c.lip ) );
+	yield* pause();
+	const ambient = yield* pausing( mergeProbes( chunks ) );
 	const data: WorldData = {
 		land: land.land, chunks: chunkList,
 		islands, stones, rocks, seabed, refracted,
@@ -215,8 +217,7 @@ export function* mergeSteps( land: LandData, unordered: readonly ChunkData[] ): 
 		rimLip,
 		shore, seabedField, seabedBeds,
 		walk: land.walk,
-		yunpeng: land.yunpeng,
-		grove: land.grove,
+		ambient,
 		timings: {},
 	};
 	busy += performance.now() - mark;

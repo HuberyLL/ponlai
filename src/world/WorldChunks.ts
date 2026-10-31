@@ -43,9 +43,10 @@ import { LandLattice } from './IslandGrowth.ts';
 import type { ChunkData } from './Chunks.ts';
 import type { ChunkJob, ChunkReply, CacheResult } from './chunkWorker.ts';
 import type { WorldData, WorldOptions } from './types.ts';
+import { CANOPY_SHADE } from '../lighting/AmbientSample.ts';
 
 // bumped whenever what a record holds changes without the generator's sources changing
-const CACHE_FORMAT = 5;
+const CACHE_FORMAT = 6;
 // the chunk's side (m): Chunks.ts S
 const CHUNK = 16;
 
@@ -113,10 +114,10 @@ export function loadWorld( options: WorldOptions = {}, load: LoadOptions = {} ):
 export function generateVersion( options: WorldOptions = {}, { cache = true, pivot, progress, threads: wanted, from, clock }: LoadOptions = {} ): Promise<Generated> {
 
 	const t0 = performance.now();
-	const { worldSeed = 1, step = 0, contactOcclusion = true } = options;
+	const { worldSeed = 1, step = 0, contactOcclusion = true, canopyShade = CANOPY_SHADE } = options;
 	const generator = cache ? WORLD_GENERATOR_HASH : null;
 	const key = ( ...parts: unknown[] ) => generator === null ? null
-		: JSON.stringify( [ CACHE_FORMAT, generator, { worldSeed, contactOcclusion }, navigator.userAgent, ...parts ] );
+		: JSON.stringify( [ CACHE_FORMAT, generator, { worldSeed, contactOcclusion, canopyShade }, navigator.userAgent, ...parts ] );
 	const threads = wanted ?? Math.min( 6, Math.max( 1, ( navigator.hardwareConcurrency || 4 ) - 2 ) );
 
 	return new Promise( ( resolve, reject ) => {
@@ -164,7 +165,7 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 				}
 				const next = field ? needs.shift() ?? queue.shift() : generator !== null ? queue.shift() : undefined;
 				if ( ! next ) continue;
-				send( slot, { kind: 'chunk', ci: next.ci, cj: next.cj, version: step, key: key( next.ci, next.cj, next.steps ), contactOcclusion } );
+				send( slot, { kind: 'chunk', ci: next.ci, cj: next.cj, version: step, key: key( next.ci, next.cj, next.steps ), contactOcclusion, canopyShade } );
 
 			}
 
