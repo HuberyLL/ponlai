@@ -23,6 +23,8 @@ import { SHELF_REACH } from '../world/Bathymetry.ts';
 //   samples, wins). Fitting the frustum's sides to the set alone left the island above the frame's
 //   centre: in perspective the near ring of shallows takes more of the frame than the far one.
 // - A margin of FRAME_MARGIN of the half frame stays free on every side.
+// - The view starts nearer than this framing: where it frames the land alone from its own heading
+//   (`landFitDistance`).
 // - When the land grows the camera glides to the new framing (`FramingGlide`, on the scene clock's
 //   step, eased in and out over `duration`); a paused page takes it at once (main.ts).
 // - The only input is a turn about the pivot and a zoom (`IslandTurn`): Q / E held, or a right or
@@ -30,10 +32,14 @@ import { SHELF_REACH } from '../world/Bathymetry.ts';
 //   that distance, the farthest, to the one that frames the land alone without its shallows from
 //   every side, the nearest, so the whole island always stays in view. The zoom is kept as a share
 //   of that range (on the log of the distance), so it holds through a turn, a growth step and a
-//   resize; the key R returns to the query's heading and the farthest zoom.
+//   resize; the key R returns to the query's heading and the farthest zoom. The page sets
+//   `wheelZoom` to 0: the island view never zooms in past its framing (main.ts `islandNearest`).
 
 /** The share of the half frame kept free round the framed island. */
 export const FRAME_MARGIN = 0.04;
+/** The share of the half frame kept free round the land at the view's start (`landFitDistance`):
+ * wider, as what stands on the land (the bamboo, some 13 m tall) reaches past its outline. */
+export const START_MARGIN = 0.16;
 
 const CELL = GROWTH.cell, X0 = - GROWTH.half;
 
@@ -115,7 +121,7 @@ function landCentre( outline: readonly number[], out: THREE.Vector3 ): THREE.Vec
 // Sets the view's axes (`_f` forward, `_r` right, `_u` up, as `lookAt` makes them for an offset
 // along ( polar, azimuth )) and returns how far back from the pivot the camera must stand for
 // every framed point to fall inside the frame from this heading.
-function fitDistance( outline: readonly number[], pivot: THREE.Vector3, view: FramingView, azimuth: number, reach: number ): number {
+function fitDistance( outline: readonly number[], pivot: THREE.Vector3, view: FramingView, azimuth: number, reach: number, margin = FRAME_MARGIN ): number {
 
 	const sp = Math.sin( view.polar ), cp = Math.cos( view.polar ), sa = Math.sin( azimuth ), ca = Math.cos( azimuth );
 	_f.set( - sp * sa, - cp, - sp * ca );
@@ -132,7 +138,7 @@ function fitDistance( outline: readonly number[], pivot: THREE.Vector3, view: Fr
 	};
 	// c = pivot - s f. A side's plane through the camera, ( ±axis - t f ) · ( q - c ) <= 0 for every
 	// framed q, holds once s >= ( support - w · pivot ) / t, as w · f = -t.
-	const tan = Math.tan( THREE.MathUtils.degToRad( view.fov ) / 2 ) * ( 1 - FRAME_MARGIN );
+	const tan = Math.tan( THREE.MathUtils.degToRad( view.fov ) / 2 ) * ( 1 - margin );
 	const tH = tan * view.aspect, tV = tan;
 	const back = ( w: THREE.Vector3, t: number ) => ( support( w ) - w.dot( pivot ) ) / t;
 	return Math.max(
@@ -173,6 +179,15 @@ export function frameIsland( outline: readonly number[], view: FramingView, posi
 	const s = zoom > 0 ? far * Math.pow( Math.min( near / far, 1 ), zoom ) : far;
 	// (the axes are the last heading fitted: the view's own)
 	position.copy( pivot ).addScaledVector( _f, - s );
+
+}
+
+/** How far back from the land's centre the camera stands to frame the land alone (without its
+ * ring of shallows) from `view`'s own heading: the island view's start (main.ts `placeOrbit`). A
+ * turn keeps that distance, so from another heading a long island may reach past the frame's edge. */
+export function landFitDistance( outline: readonly number[], view: FramingView ): number {
+
+	return fitDistance( outline, landCentre( outline, _pivot ), view, view.azimuth, 0, START_MARGIN );
 
 }
 

@@ -1,5 +1,5 @@
 // Regression probe for the island camera's anchors (src/camera/IslandCameraControls.ts): a wheel
-// zoom and a pinch close in on the ground under the cursor, and a drag keeps the grabbed ground
+// zoom and a pinch move out from the ground under the cursor, and a drag keeps the grabbed ground
 // under it, so that point stays at the cursor's pixel on every frame.
 //
 //   node tools/verify-zoom-anchor.mjs [url] [--runs 24] [--q "extra&query"] [--out file.json] [--timeout 600000]
@@ -8,13 +8,15 @@
 // `debug` in --q for `window.__PONLAI__`. One page (tools/probe.mjs, the GPU lock shared, 1600x900)
 // runs the cases, each from a scene jump to its start view, with synthetic input dispatched on the
 // canvas between rendered frames:
-//   wheel-sea    a macOS wheel notch (deltaY -4.000244140625) every 3 frames from 58 m to the
-//                nearest zoom, the cursor at 72 % / 62 % over the water; `--runs` times, as a
+//   wheel-sea    a macOS wheel notch out (deltaY +4.000244140625) every 3 frames from 40 m to the
+//                farthest zoom, the cursor at 72 % / 62 % over the water (the island view zooms
+//                out only, from its pose's distance: main.ts `islandNearest`); `--runs` times, as a
 //                per-anchor failure of a few in a hundred needs that many notches to show (the sea's
 //                hit once rounded to a miss for 2 % of anchors: IslandGround.ts)
-//   wheel-land   the same with the cursor at 45 % / 50 % over the island, a quarter as many runs
+//   wheel-land   the same from 22 m with the cursor at 45 % / 50 % over the island, a quarter as
+//                many runs
 //   pinch-out    a ctrl wheel (Chrome's pinch) of +4 every frame from 22 m, the cursor at 30 % / 70 %
-//   pinch-in     a ctrl wheel of -8 every frame from 58 m, the cursor at 55 % / 45 %
+//   pinch-fast   a ctrl wheel of +8 every frame from 22 m, the cursor at 55 % / 45 %
 //   drag         a left drag of 6 px right and 3 px up per frame for 30 frames, at 22 m
 // Per case the ground under the cursor is taken once before the input (`controls.groundAt`) and
 // projected after every frame; its distance from the cursor is the drift. Every anchor a zoom takes
@@ -50,10 +52,10 @@ const query = options.q ? `paused&cameraInput&${ options.q }` : 'paused&cameraIn
 const MAX_DRIFT = 0.5;
 
 const cases = [
-	{ name: 'wheel-sea', start: 'paused&dist=58&polar=50&az=318', at: [ 0.72, 0.62 ], input: 'wheel', delta: - 4.000244140625, every: 3, frames: 60, runs },
-	{ name: 'wheel-land', start: 'paused&dist=58&polar=50&az=318', at: [ 0.45, 0.5 ], input: 'wheel', delta: - 4.000244140625, every: 3, frames: 60, runs: Math.max( 1, Math.ceil( runs / 4 ) ) },
+	{ name: 'wheel-sea', start: 'paused&dist=40&polar=50&az=318', at: [ 0.72, 0.62 ], input: 'wheel', delta: 4.000244140625, every: 3, frames: 60, runs },
+	{ name: 'wheel-land', start: 'paused&dist=22&polar=50&az=318', at: [ 0.45, 0.5 ], input: 'wheel', delta: 4.000244140625, every: 3, frames: 60, runs: Math.max( 1, Math.ceil( runs / 4 ) ) },
 	{ name: 'pinch-out', start: 'paused&dist=22&polar=78&az=318', at: [ 0.3, 0.7 ], input: 'pinch', delta: 4, every: 1, frames: 30, runs: 1 },
-	{ name: 'pinch-in', start: 'paused&dist=58&polar=50&az=318', at: [ 0.55, 0.45 ], input: 'pinch', delta: - 8, every: 1, frames: 30, runs: 1 },
+	{ name: 'pinch-fast', start: 'paused&dist=22&polar=50&az=318', at: [ 0.55, 0.45 ], input: 'pinch', delta: 8, every: 1, frames: 30, runs: 1 },
 	{ name: 'drag', start: 'paused&dist=22&polar=60&az=300', at: [ 0.4, 0.55 ], input: 'drag', frames: 30, runs: 1 },
 ];
 
