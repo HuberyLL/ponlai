@@ -35,6 +35,8 @@ import { tuneUniform } from '../debug/Tune.ts';
 // painters' 个, not a star), the twigs off a branchlet (a 2x2
 // atlas of sprays on the trees' painter, vegetation/TreeSurfaces.ts). A clear green, the old
 // leaves a few yellow. Here and there a cluster of pale, lustrous seeds, as big as pearls.
+// The leaves the wind takes off the crowns (weather/FallingLeaves.ts) are one such leaf on a card
+// of its own (`singleLeaf`), tinted per leaf in the crowns' mix of colours (`LEAF_TINTS`).
 
 /** The culms' colours (linear albedo): new green, purple, the wax under the nodes. */
 const CULM = { green: [ 0.124, 0.146, 0.056 ], purple: [ 0.13, 0.082, 0.09 ], wax: [ 0.25, 0.24, 0.2 ] } as const;
@@ -283,7 +285,51 @@ export function leafAtlas( size = 512 ): LeafAtlas {
 
 }
 
-/** How much light a bamboo leaf lets through (vegetation/Material.ts): the crowns'. Tunable on debug pages (debug/Tune.ts: `lighting.vegetation.bambooTranslucency`). */
+/** The leaves' colours as linear factors over the clear green, and their shares: a single leaf's
+ * tint (weather/FallingLeaves.ts), so a leaf off the crowns takes their mix of colours. */
+export const LEAF_TINTS: readonly { tint: readonly [ number, number, number ]; share: number }[] = LEAF_COLOURS.map( ( c, i ) => ( {
+	tint: [ 0, 1, 2 ].map( ( k ) => srgbToLinear( c[ k ] ) / srgbToLinear( LEAF_COLOURS[ 0 ][ k ] ) ) as [ number, number, number ],
+	share: LEAF_SHARE[ i ],
+} ) );
+
+function srgbToLinear( v: number ): number {
+
+	const c = v / 255;
+	return c <= 0.04045 ? c / 12.92 : ( ( c + 0.055 ) / 1.055 ) ** 2.4;
+
+}
+
+/** One bamboo leaf across a square texture in the clear green (the first of LEAF_COLOURS), its
+ * stalk at the left edge's middle and its tip near the right edge, with the crowns' midrib and
+ * shading: the falling leaves' card (weather/FallingLeaves.ts), which tints it per leaf
+ * (LEAF_TINTS). */
+export function singleLeaf( size = 128 ): LeafAtlas {
+
+	const paint = new LeafPainter( size, mulberry32( 0x1eaf ), CURVE, 'rgb(56,90,38)' );
+	const length = size * 0.9, width = length * 0.15, bend = length * 0.05;
+	const path = leafPath( length, width, bend );
+	const [ r, g, b ] = LEAF_COLOURS[ 0 ];
+	paint.leaf( path, size * 0.05, size / 2 - bend / 2, 0, width, [ r, g, b ], ( gc ) => {
+
+		gc.save();
+		gc.clip( path );
+		gc.fillStyle = 'rgba(0,0,0,0.1)';
+		gc.fillRect( 0, 0, length * 1.1, width + bend );
+		gc.restore();
+		gc.strokeStyle = `rgba(${ r + 30 },${ g + 30 },${ b + 18 },0.45)`;
+		gc.lineWidth = Math.max( 0.5, width * 0.09 );
+		gc.beginPath();
+		gc.moveTo( 0, 0 );
+		for ( let k = 1; k <= 8; k ++ ) gc.lineTo( length * 0.92 * k / 8, bend * ( 0.92 * k / 8 ) ** 2 );
+		gc.stroke();
+
+	} );
+	return paint.finish( 'falling bamboo leaf' );
+
+}
+
+/** How much light a bamboo leaf lets through (vegetation/Material.ts): the crowns' and a fallen
+ * leaf's. Tunable on debug pages (debug/Tune.ts: `lighting.vegetation.bambooTranslucency`). */
 export const LEAF_TRANSLUCENCY = tuneUniform( 'lighting.vegetation.bambooTranslucency', 0.5, { min: 0.2, max: 1 } );
 
 /** The leaves' material: the trees' leaf material on the atlas over a plant draw's prototype

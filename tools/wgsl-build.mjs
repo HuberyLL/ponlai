@@ -17,6 +17,8 @@
 //                `plants` the plants that bend in the wind: the bamboo's culms and leaves (its
 //                instanced draws' materials) and the yunpeng's whole and fading draws
 //                (src/world/BambooMaterials.ts, src/world/Yunpeng.ts)
+//                `falling-leaves` the falling leaves' step and prewarm kernels and draw
+//                (src/weather/FallingLeaves.ts)
 //                `local-lights` the local lights' clusters kernel and the lit materials that
 //                bind the most (src/lighting/LocalLights.ts)
 //                `haze` the volumetric haze's light kernel and the sky dome's haze
