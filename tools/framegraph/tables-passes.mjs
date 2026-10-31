@@ -19,11 +19,12 @@ export const HALF = { of: 'render', scale: 0.5, min: 1 };
 export const REFRACTION = { of: 'render', scale: 0.5 * 1.3, min: 1 };
 
 
-// ---- tidewater's physical bloom (src/post/PhysicalBloom.ts): five downsamples from the bloom's
-// input to 1/2 ... 1/32 of the render, then four upsamples, each adding the level above it, back
+// ---- tidewater's physical bloom (src/post/PhysicalBloom.ts): the sky's mask at half the render
+// from the surface's depth, eight downsamples from the bloom's input to 1/2 ... 1/256 of the
+// render (the first reading the mask), then seven upsamples, each adding the level below it, back
 // to 1/2; the reader takes the last upsample
 
-const LEVELS = 5;
+const LEVELS = 8;
 const levelSize = ( i ) => ( { of: 'render', scale: 0.5 / 2 ** i, min: 1 } );
 const levelKey = ( i ) => `render:${ 0.5 / 2 ** i }:0:1`;
 const BLOOM_LABEL = 'bloom';
@@ -32,21 +33,28 @@ const BLOOM_LABEL = 'bloom';
 export function declareBloomTargets( g ) {
 
 	const color = ( name, size ) => g.color( name, { size, format: 'RGBA', type: 'HalfFloat' } );
+	const sky = g.color( 'bloom.sky', { size: levelSize( 0 ), format: 'Red', type: 'UnsignedByte' } );
 	const down = Array.from( { length: LEVELS }, ( _, i ) => color( `bloom.down${ i }`, levelSize( i ) ) );
 	const up = Array.from( { length: LEVELS - 1 }, ( _, i ) => color( `bloom.up${ i }`, levelSize( i ) ) );
-	return { down, up };
+	return { sky, down, up };
 
 }
 
-/** PhysicalBloom.passes: the first downsample's reads of the input declared by `reads`; returns
- * the result's version (the last upsample's). */
-export function declareBloomPasses( g, t, reads ) {
+/** PhysicalBloom.passes: the mask's reads of the surface's depth declared by `skyReads`, the first
+ * downsample's reads of the input by `reads`; returns the result's version (the last upsample's). */
+export function declareBloomPasses( g, t, reads, skyReads ) {
 
 	const down = [ ...t.down ], up = [ ...t.up ];
+	let sky = t.sky;
+	g.addPass( 'bloomSky', 'quad', ( b ) => ( skyReads( b ), sky = b.write( sky ), { label: BLOOM_LABEL } ) );
 	for ( let i = 0; i < LEVELS; i ++ ) g.addPass( `bloomDown${ i }`, 'quad', ( b ) => {
 
-		if ( i === 0 ) reads( b );
-		else b.read( down[ i - 1 ] );
+		if ( i === 0 ) {
+
+			reads( b );
+			b.read( sky );
+
+		} else b.read( down[ i - 1 ] );
 		down[ i ] = b.write( down[ i ] );
 		return { label: BLOOM_LABEL };
 
@@ -64,11 +72,12 @@ export function declareBloomPasses( g, t, reads ) {
 }
 
 /** The bloom's passes, in order. */
-export const BLOOM_PASSES = [ ...Array.from( { length: LEVELS }, ( _, i ) => `bloomDown${ i }` ), ...Array.from( { length: LEVELS - 1 }, ( _, i ) => `bloomUp${ LEVELS - 2 - i }` ) ];
+export const BLOOM_PASSES = [ 'bloomSky', ...Array.from( { length: LEVELS }, ( _, i ) => `bloomDown${ i }` ), ...Array.from( { length: LEVELS - 1 }, ( _, i ) => `bloomUp${ LEVELS - 2 - i }` ) ];
 
-/** The bloom's rows of the expected table (`inputReads`: the first downsample's reads, as
- * `resource@version:mode`), what each pass reads, and the result as its reader reads it. */
-export function bloomTable( inputReads ) {
+/** The bloom's rows of the expected table (`inputReads`: the first downsample's reads of the
+ * input, `skyReads` the mask's, as `resource@version:mode`), what each pass reads, and the result
+ * as its reader reads it. */
+export function bloomTable( inputReads, skyReads = [] ) {
 
 	const rows = [], reads = {};
 	const pass = ( name, i, target, read ) => {
@@ -78,7 +87,10 @@ export function bloomTable( inputReads ) {
 		reads[ name ] = read;
 
 	};
-	for ( let i = 0; i < LEVELS; i ++ ) pass( `bloomDown${ i }`, i, `bloom.down${ i }`, i === 0 ? inputReads : [ `bloom.down${ i - 1 }@1:sample` ] );
+	const size = levelKey( 0 );
+	rows.push( { name: 'bloomSky', kind: 'quad', label: BLOOM_LABEL, when: null, size, writes: [ { name: 'bloom.sky', size, format: 'Red', type: 'UnsignedByte', samples: 1 } ], depth: null, target: 'bloom.sky|-' } );
+	reads.bloomSky = skyReads;
+	for ( let i = 0; i < LEVELS; i ++ ) pass( `bloomDown${ i }`, i, `bloom.down${ i }`, i === 0 ? [ ...inputReads, 'bloom.sky@1:sample' ] : [ `bloom.down${ i - 1 }@1:sample` ] );
 	for ( let i = LEVELS - 2; i >= 0; i -- ) pass( `bloomUp${ i }`, i, `bloom.up${ i }`, [ i === LEVELS - 2 ? `bloom.down${ LEVELS - 1 }@1:sample` : `bloom.up${ i + 1 }@1:sample`, `bloom.down${ i }@1:sample` ] );
 	return { rows, reads, result: 'bloom.up0@1:sample' };
 
@@ -290,7 +302,7 @@ export function declareToday( options = {} ) {
 		if ( h.hdr ) b.read( h.hdr );
 		else b.readOptional( h.sceneColor );
 
-	} );
+	}, ( b ) => b.read( h.surfaceDepth ) );
 	// the sharp image: the composite (inline without its pass) and the bloom
 	g.addPass( 'sharp', 'quad', ( b ) => {
 
@@ -484,7 +496,7 @@ export function declarePipeline( options = {} ) {
 		if ( h.hdr ) b.read( h.hdr );
 		else b.readOptional( h.sceneColor );
 
-	} );
+	}, ( b ) => b.read( h.surfaceDepth ) );
 	g.addPass( 'sharp', 'quad', ( b ) => {
 
 		if ( h.hdr ) b.read( h.hdr );
@@ -541,7 +553,7 @@ export const compilePipeline = ( options = {}, samples = 4, legacyDiscard ) =>
 
 const R = 'render:1:0:0', C = 'canvas:1', H = 'render:0.5:0:1', HZ = 'fixed:160x90', RF = 'render:0.65:0:1';
 const w = ( name, size, format, type, samples = 1 ) => ( { name, size, format, type, samples } );
-const BLOOM = bloomTable( [ 'hdr@1:sample' ] );
+const BLOOM = bloomTable( [ 'hdr@1:sample' ], [ 'surfaceDepth@1:sample' ] );
 export const TODAY = [
 	// the meadow's shade: the vegetation's depth into the scene's depth, beside a coverage it never
 	// reads, then the depth's nearest view z and the shade over it
@@ -739,7 +751,7 @@ export const checks = [
 		// inline-composite: the bloom takes the scene's colour after the rain (which may be skipped),
 		// the sharp image evaluates the composite itself
 		const reads = Object.fromEntries( compileToday( { compositeOnce: false } ).summary().passes.map( ( p ) => [ p.name, p.reads ] ) );
-		assert.deepEqual( reads.bloomDown0, [ 'sceneColor@3:sample?' ] );
+		assert.deepEqual( reads.bloomDown0, [ 'sceneColor@3:sample?', 'bloom.sky@1:sample' ] );
 		assert.deepEqual( reads.sharp, [ ...TODAY_READS.composite, BLOOM.result ] );
 
 	} ],

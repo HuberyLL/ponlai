@@ -129,7 +129,7 @@ export function declarePipelineTemporal( options = {} ) {
 		if ( h.hdr ) b.read( h.hdr );
 		else b.readOptional( h.sceneColor );
 
-	} );
+	}, ( b ) => b.read( h.surfaceDepth ) );
 	g.addPass( 'sharp', 'quad', ( b ) => {
 
 		if ( h.hdr ) b.read( h.hdr );

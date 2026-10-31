@@ -22,24 +22,27 @@
 //   must come out different).
 // Then on both pages alike: the pending piece prepared (so neither page has idle-time work running
 // while it is measured; the page keeps one piece ahead after a grow), 30 frames, and then the chunk
-// hashes (`growth.chunkHashes()`), the world fields' bytes, renderer.info.memory, the pipeline
-// count, the camera's ground grid (`controls.ground`: its lattice and heights) and the rain's
-// collision map (`rain.collision.target`, read back with readRenderTargetPixelsAsync, its size and
-// placement `xform`). The ground's heights and the rain map's texels are shipped to node and
-// compared there (no store in the page). Then each view is shot: the first on the page as it
-// loaded (or grew: no scene jump, so state a grow leaves behind is not cleared before it is seen),
-// each later one reached by the exact scene jump (`establishScene`, the page's step standing for
-// `grow`) on both pages alike. Before its own eval every view puts the camera on the island view's
-// pose (`setCameraMode( 'orbit' )`, `setCameraView( 'island' )`): a grow leaves the player's camera
-// where it was by design, while the pose follows the land, so without it the first view of the
-// grown page is framed on the land it loaded with. A view is ready once the diagnostics' `settled` signal holds and the
-// image stops changing (capture-browser's waitForStable); it is shot, two more frames are drawn
-// and it is shot again (`stable`: whether both are the same pixels, and how many differ). A paused
-// page still leaves its settled image for single frames now and then (capture-browser's header:
-// from a few pixels up), so a view passes when its first shots on G and F, or its second shots,
-// are the same pixels: a real difference shows in both pairs, the frame noise in one at most
-// (the 12-step check saw 1 and 2 pixels change between the shots of two views of G, and G's first
-// shots equal F's).
+// hashes (`growth.chunkHashes()`), the world fields' bytes, the ambient light's probes
+// (`ambientVolume.hash()` and `ambientVolume.info()`: lighting/AmbientVolume.ts) and their
+// relit irradiance (`ambientRelight.hash()`, lighting/AmbientRelight.ts: its readback builds one
+// compute pipeline on each page alike),
+// renderer.info.memory, the pipeline count, the camera's ground grid (`controls.ground`: its
+// lattice and heights) and the rain's collision map (`rain.collision.target`, read back with
+// readRenderTargetPixelsAsync, its size and placement `xform`). The ground's heights and the rain
+// map's texels are shipped to node and compared there (no store in the page). Then each view is
+// shot: the first on the page as it loaded (or grew: no scene jump, so state a grow leaves behind
+// is not cleared before it is seen), each later one reached by the exact scene jump
+// (`establishScene`, the page's step standing for `grow`) on both pages alike. Before its own eval
+// every view puts the camera on the island view's pose (`setCameraMode( 'orbit' )`, `setCameraView(
+// 'island' )`): a grow leaves the player's camera where it was by design, while the pose follows
+// the land, so without it the first view of the grown page is framed on the land it loaded with. A
+// view is ready once the diagnostics' `settled` signal holds and the image stops changing
+// (capture-browser's waitForStable); it is shot, two more frames are drawn and it is shot again
+// (`stable`: whether both are the same pixels, and how many differ). A paused page still leaves its
+// settled image for single frames now and then (capture-browser's header: from a few pixels up), so
+// a view passes when its first shots on G and F, or its second shots, are the same pixels: a real
+// difference shows in both pairs, the frame noise in one at most (the 12-step check saw 1 and 2
+// pixels change between the shots of two views of G, and G's first shots equal F's).
 //
 // Views: parity view names (tools/parity/views.mjs; their query joins the common one), with the
 // aliases island = island-fair-noon, cliffs = water-skim-cliffs, meadow = meadow-close. Views
@@ -53,6 +56,8 @@
 // - ground: the ground grid's lattice equal and every height equal (compared cell by cell over the
 //   union of both grids, as the camera reads them: the sea, 0, outside a grid);
 // - fields: the world fields' bytes equal;
+// - ambient: the ambient light's probe lattice equal (its SHA-256 and its description), and the
+//   relight's output (its SHA-256);
 // - pipelines: the count the same before and after every grow on G, the same at every step, and
 //   equal on G and F both when measured and after the views;
 // - memory: renderer.info.memory's uniformBuffers and textures on G at most MEMORY_TOLERANCE (2)
@@ -283,6 +288,7 @@ async function measure( page ) {
 			step: s.growth.state.step,
 			hashes: s.growth.chunkHashes(),
 			fields: s.growth.fieldBytes(),
+			ambient: { hash: await s.ambientVolume.hash(), ...s.ambientVolume.info(), irradiance: await s.ambientRelight.hash() },
 			memory: { ...s.renderer.info.memory },
 			pipelines: s.pipelines.total,
 			ground: { nx: g.nx, nz: g.nz, x0: g.x0, z0: g.z0, heights: await b64( g.heights ) },
@@ -427,7 +433,7 @@ try {
 			} );
 			measured[ side ] = m;
 			rec.step = m.step;
-			rec.measured = { pipelines: m.pipelines, memory: m.memory, fields: m.fields, chunks: Object.keys( m.hashes ).length,
+			rec.measured = { pipelines: m.pipelines, memory: m.memory, fields: m.fields, ambient: m.ambient, chunks: Object.keys( m.hashes ).length,
 				ground: { nx: m.ground.nx, nz: m.ground.nz, x0: m.ground.x0, z0: m.ground.z0 }, rain: { w: m.rain.w, h: m.rain.h, xform: m.rain.xform } };
 			log( side, `measured at step ${ m.step }: ${ rec.measured.chunks } chunks, pipelines ${ m.pipelines }, uniformBuffers ${ m.memory.uniformBuffers }, textures ${ m.memory.textures }, rain map ${ m.rain.w } x ${ m.rain.h }` );
 			rec.shots = {};
@@ -544,6 +550,8 @@ if ( failure ) {
 	verdicts.ground = compare.ground.sameGrid && compare.ground.differ === 0;
 	compare.fields = { G: G.fields, F: F.fields };
 	verdicts.fields = JSON.stringify( G.fields ) === JSON.stringify( F.fields );
+	compare.ambient = { G: G.ambient, F: F.ambient };
+	verdicts.ambient = JSON.stringify( G.ambient ) === JSON.stringify( F.ambient );
 	const perStep = pg.grows.flatMap( ( g ) => [ g.pipelinesBefore, g.pipelinesAfter ] );
 	compare.pipelines = { grows: perStep, measured: [ G.pipelines, F.pipelines ], afterViews: [ pg.pipelinesAfterViews, pf.pipelinesAfterViews ] };
 	verdicts.pipelines = perStep.every( ( p ) => p === perStep[ 0 ] ) && G.pipelines === F.pipelines && pg.pipelinesAfterViews === pf.pipelinesAfterViews;
@@ -575,6 +583,7 @@ if ( ! failure ) {
 	line( 'rain', c.rain.sameSize ? `${ c.rain.differ } of ${ c.rain.texels } texels differ${ c.rain.sameXform ? '' : ', xform differs' }` : `sizes differ ${ JSON.stringify( c.rain.size ) }` );
 	line( 'ground', `${ c.ground.differ } of ${ c.ground.cells } cells differ${ c.ground.sameGrid ? '' : ', grids differ' }` );
 	line( 'fields', `${ c.fields.G.total } / ${ c.fields.F.total } bytes` );
+	line( 'ambient', `${ c.ambient.G.probes } / ${ c.ambient.F.probes } probes, ${ verdicts.ambient ? 'equal' : 'differ' }` );
 	line( 'pipelines', `grows ${ [ ...new Set( c.pipelines.grows ) ].join( ', ' ) }, measured ${ c.pipelines.measured.join( ' / ' ) }, after views ${ c.pipelines.afterViews.join( ' / ' ) }` );
 	line( 'memory', `uniformBuffers ${ c.memory.uniformBuffers.join( ' / ' ) }, textures ${ c.memory.textures.join( ' / ' ) } (G at most ${ MEMORY_TOLERANCE } above F)` );
 	line( 'console', `errors ${ c.console.errors.join( ' / ' ) }, warnings ${ c.console.warnings.join( ' / ' ) }` );

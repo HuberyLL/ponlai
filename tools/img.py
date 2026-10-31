@@ -2,13 +2,15 @@
 # requires-python = ">=3.10"
 # dependencies = ["numpy", "pillow"]
 # ///
-"""One image tool for captures: differences, crops, side-by-side sheets and statistics.
+"""One image tool for captures: differences, crops, side-by-side sheets, statistics and profiles
+around a point.
 
   uv run tools/img.py diff  A B            [region] [--thr 1,2,8,32] [--bbox-thr 0] [--heat P] [--gain 8] [--json]
   uv run tools/img.py crop  IMG|DIR...     region [--zoom N] --out DIR
   uv run tools/img.py sheet IMG|DIR...     [region] [--labels a,b] [--cols N] [--diff] [--zoom N | --scale F | --width W] --out FILE
-  uv run tools/img.py stats IMG|DIR...     [region] [--pct 1,5,50,95,99] [--json]
+  uv run tools/img.py stats IMG|DIR...     [region] [--pct 1,5,50,95,99] [--oklab] [--cover] [--json]
   uv run tools/img.py flicker CLIP|DIR...  [region] [--frames a-b] [--spike 20,40] [--odd 2.5] [--drop-odd] [--map P] [--gain 8] [--json] [--save]
+  uv run tools/img.py radial IMG|DIR...    --centre x,y | --centre-key KEY  [--rings 0,2,4,8,15,30,50] [--fov F] [--half up] [--json]
 
   region: --box [name=]x,y,w,h (repeatable) and/or --anchor name[,name] | all  [--anchors FILE.json]
 
@@ -37,7 +39,10 @@ is given; a full frame wider than 1280 px is scaled down to 1280 by default.
 
 stats: per image and region, compare-captures.py's metrics (mean RGB, luma mean and standard
 deviation, the mean luma difference of adjacent pixels, the share of pixels with luma over 245)
-and the luma percentiles of --pct.
+and the luma percentiles of --pct. --oklab adds the median Oklab lightness, chroma and hue (degrees)
+of the region's pixels (sRGB decoded), the screen colour a look is judged by; --cover adds the share
+of pixels (%) whose red exceeds twice their green: the meadow's blades in a capture taken with
+`flags=grassMask` (src/world/Grass.ts), which paints them red over the green ground.
 
 flicker: frame-to-frame flicker of a run of consecutive frames, per region: a capture-clip clip
 directory (its whole frames, <clip>/full/<i>.png, in frame order) or a directory of PNGs named by
@@ -63,6 +68,16 @@ frame. A frame whose flash share over all the regions exceeds --odd (2.5) times 
 and the median by 0.5 per mille is listed (`odd`); --drop-odd leaves out every term that reads
 one, so A/Bs of small effects compare the wind's flicker rather than which clip caught an odd
 frame.
+
+radial: the profile around a point (the sun), ring by ring: per ring the median R, G, B (code
+values), the median luma (Rec. 709 on code values), the median linear luma (sRGB decoded, 0 - 1) and
+the count of the ring's pixels inside the frame. --rings are the rings' edges in percent of the
+image's height, or in degrees from the point with --fov (the capture's vertical field of view: a
+radius r maps to tan(r) / tan(fov / 2) half heights, exact at the frame's centre). --centre is the
+point in pixels, or in fractions of the width and height when both are at most 1; --centre-key
+reads it, in fractions, from the capture JSON's --eval-ready values (the first one that holds KEY,
+as [x, y]), so each image takes its own. --half up|down|left|right keeps the half of each ring on
+that side of the point (up: the sky over a sun near the horizon, without the sea under it).
 
 Regions: --box takes pixels of the image as stored (a capture at dpr 2 has twice the CSS size).
 --anchor reads the named crop anchors of the capture's JSON (<name>.json next to <name>.png,
@@ -333,6 +348,11 @@ def cmd_stats(a):
             m = metrics(R)
             y = R.astype(np.float64) @ LUMA
             m["lumaPercentiles"] = {f"{p:g}": round(float(v), 2) for p, v in zip(pct, np.percentile(y, pct))}
+            if a.oklab:
+                m["oklab"] = oklab_median(R)
+            if a.cover:
+                rgb = R[..., :3].astype(np.int32)
+                m["cover"] = round(float(np.mean(rgb[..., 0] > 2 * rgb[..., 1])) * 100, 2)
             res.append({"name": f.name, "region": label, "box": list(box)} | m)
     if a.json:
         print(json.dumps(res, indent=2))
@@ -343,7 +363,87 @@ def cmd_stats(a):
         n = r["name"] + (f" / {r['region']}" if r["region"] else "")
         print(f"{n:{w}} {','.join(f'{v:.1f}' for v in r['meanRGB']):>20} {r['lumaMean']:7.2f} {r['lumaStdDev']:6.2f} "
               f"{r['meanAdjacentLumaDifference']:6.3f} {r['brightPixelPercent']:7.3f}  "
-              + " ".join(f"{v:7.2f}" for v in r["lumaPercentiles"].values()))
+              + " ".join(f"{v:7.2f}" for v in r["lumaPercentiles"].values())
+              + (f"  oklab L {r['oklab']['L']:.3f} C {r['oklab']['C']:.3f} h {r['oklab']['h']:.1f}" if "oklab" in r else "")
+              + (f"  cover {r['cover']:.1f}%" if "cover" in r else ""))
+
+
+def oklab_median(R):
+    """The median Oklab L, C and hue (degrees) of 8-bit sRGB pixels (Björn Ottosson's Oklab)."""
+    c = R[..., :3].reshape(-1, 3).astype(np.float64) / 255
+    lin = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+    lms = lin @ np.array([[0.4122214708, 0.2119034982, 0.0883024619],
+                          [0.5363325363, 0.6806995451, 0.2817188376],
+                          [0.0514459929, 0.1073969566, 0.6299787005]])
+    l_, m_, s_ = np.cbrt(lms).T
+    L = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_
+    A = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_
+    B = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_
+    h = np.degrees(np.arctan2(B, A)) % 360
+    return {"L": round(float(np.median(L)), 4), "C": round(float(np.median(np.hypot(A, B))), 4), "h": round(float(np.median(h)), 1)}
+
+
+# --------------------------------------------------------------------------------------------- radial
+
+def centre_of(f, a, shape):
+    """The radial profile's centre in pixels: --centre, else the capture JSON's --eval-ready value."""
+    h, w = shape[:2]
+    if a.centre:
+        x, y = (float(v) for v in a.centre.split(","))
+    else:
+        j = Path(f).with_suffix(".json")
+        vals = [e.get("value") for e in json.loads(j.read_text()).get("readyEvals", [])] if j.exists() else []
+        hit = next((v[a.centre_key] for v in vals if isinstance(v, dict) and a.centre_key in v), None)
+        if hit is None:
+            sys.exit(f"radial: {f}: no --eval-ready value holds {a.centre_key}")
+        x, y = hit
+    return (x * w, y * h) if x <= 1 and y <= 1 else (x, y)
+
+
+def cmd_radial(a):
+    if not a.centre and not a.centre_key:
+        sys.exit("radial: give --centre x,y or --centre-key KEY")
+    edges = [float(v) for v in a.rings.split(",")]
+    res = []
+    for f in expand(a.images, a.match):
+        X = decode(f)
+        h, w = X.shape[:2]
+        cx, cy = centre_of(f, a, X.shape)
+        if a.fov:
+            half = np.tan(np.radians(a.fov) / 2)
+            px = [np.tan(np.radians(e)) / half * h / 2 for e in edges]
+        else:
+            px = [e / 100 * h for e in edges]
+        yy, xx = np.mgrid[0:h, 0:w]
+        dx, dy = xx + 0.5 - cx, yy + 0.5 - cy
+        r = np.hypot(dx, dy)
+        side = {"up": dy < 0, "down": dy > 0, "left": dx < 0, "right": dx > 0}.get(a.half, np.ones_like(r, bool))
+        rgb = X[..., :3].astype(np.float64)
+        lin = rgb / 255
+        lin = np.where(lin <= 0.04045, lin / 12.92, ((lin + 0.055) / 1.055) ** 2.4) @ LUMA
+        rings = []
+        for k in range(len(edges) - 1):
+            m = (r >= px[k]) & (r < px[k + 1]) & side
+            n = int(m.sum())
+            ring = {"from": edges[k], "to": edges[k + 1], "pixels": n}
+            if n:
+                med = np.median(rgb[m], axis=0)
+                ring |= {"rgb": [round(float(v), 1) for v in med], "luma": round(float(np.median(rgb[m] @ LUMA)), 1),
+                         "linear": round(float(np.median(lin[m])), 5)}
+            rings.append(ring)
+        res.append({"name": f.name, "centre": [round(cx, 1), round(cy, 1)], "unit": "deg" if a.fov else "%h", "half": a.half, "rings": rings})
+    if a.json:
+        print(json.dumps(res, indent=2))
+        return
+    for r in res:
+        half = f", {r['half']} half" if r["half"] else ""
+        print(f"{r['name']}  centre {r['centre'][0]:.0f},{r['centre'][1]:.0f}  ({r['unit']}{half})")
+        for g in r["rings"]:
+            span = f"{g['from']:g}-{g['to']:g}"
+            if "rgb" not in g:
+                print(f"  {span:>9}  (outside the frame)")
+                continue
+            print(f"  {span:>9}  rgb {','.join(f'{v:.0f}' for v in g['rgb']):>11}  luma {g['luma']:6.1f}  linear {g['linear']:.4f}  n {g['pixels']}")
 
 
 # -------------------------------------------------------------------------------------------- flicker
@@ -495,6 +595,8 @@ def main():
     p.add_argument("images", nargs="+")
     common(p)
     p.add_argument("--pct", default="1,5,50,95,99")
+    p.add_argument("--oklab", action="store_true", help="the median Oklab L, C and hue")
+    p.add_argument("--cover", action="store_true", help="the share of red pixels (a grassMask capture's blades)")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_stats)
 
@@ -511,6 +613,17 @@ def main():
     p.add_argument("--drop-odd", action="store_true", help="leave out the terms that read an odd frame")
     p.add_argument("--jobs", type=int, default=min(4, max(1, (os.cpu_count() or 2) // 2)))
     p.set_defaults(fn=cmd_flicker)
+
+    p = sub.add_parser("radial", help="the median ring by ring around a point (the sun)")
+    p.add_argument("images", nargs="+")
+    p.add_argument("--match", default="*.png", help="the files a directory stands for")
+    p.add_argument("--centre", help="x,y in pixels, or fractions when both are at most 1")
+    p.add_argument("--centre-key", help="the centre, in fractions, from this key of the capture JSON's --eval-ready values")
+    p.add_argument("--rings", default="0,2,4,8,15,30,50", help="ring edges: percent of the height, or degrees with --fov")
+    p.add_argument("--fov", type=float, help="the capture's vertical fov (degrees): --rings in degrees")
+    p.add_argument("--half", choices=["up", "down", "left", "right"], help="keep the half of each ring on this side of the point")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=cmd_radial)
 
     a = ap.parse_args()
     a.fn(a)

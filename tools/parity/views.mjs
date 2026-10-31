@@ -270,12 +270,14 @@ export const VIEWS = {
 		s.controls.minDistance = 2; s.controls.target.copy( c ); s.camera.position.set( c.x + 3.2, c.y + 2.4, c.z + 3.6 ); s.camera.lookAt( c ); ( s.controls.settle ?? s.controls.update ).call( s.controls );`,
 	crops: [ 'islander-head', 'islander-hands', 'meadow-near' ] },
 	// 1.2 m over the densest flowers (3 m cells of the meadow's flowering plants), looking 35 degrees down
-	// and away from the island's centre
+	// and away from the island's centre; the flowers are off by default (`--q flowers` plants them, a
+	// load-time option a jump cannot change), so without them it looks at the island's centre
 	'flowers-close': { group: 'taa', q: 'weather=fair&preset=noon', eval: `const b = isl(), bins = new Map();
 		for ( const [ x, y, z ] of s.grass.userData.flowerHeads() ) {
 				const key = Math.floor( x / 3 ) + ',' + Math.floor( z / 3 ); const e = bins.get( key ) ?? { n: 0, x: 0, y: 0, z: 0, key };
 				e.n ++; e.x += x; e.y += y; e.z += z; bins.set( key, e ); }
-		const best = [ ...bins.values() ].sort( ( a, c ) => c.n - a.n || ( a.key < c.key ? - 1 : 1 ) )[ 0 ];
+		// (a page without them, as a jump from one: the island's centre)
+		const best = [ ...bins.values() ].sort( ( a, c ) => c.n - a.n || ( a.key < c.key ? - 1 : 1 ) )[ 0 ] ?? { n: 1, x: b.cx, y: b.top, z: b.cz };
 		const f = [ best.x / best.n, best.y / best.n, best.z / best.n ];
 		let dx = f[ 0 ] - b.cx, dz = f[ 2 ] - b.cz; const len = Math.hypot( dx, dz ) || 1; dx /= len; dz /= len;
 		const back = 1.2 / Math.tan( 35 * Math.PI / 180 );

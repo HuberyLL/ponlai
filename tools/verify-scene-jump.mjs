@@ -68,7 +68,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
-import { waitForScene, waitForStable, stableOptions, stopLoop } from './capture-browser.mjs';
+import { waitForScene, waitForSettled, waitForStable, stableOptions, stopLoop } from './capture-browser.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { selectViews, viewQuery } from './parity/adhoc.mjs';
 
@@ -160,9 +160,11 @@ async function open( q ) {
 }
 
 // the view's evals run, then readiness as capture.mjs's by default (tools/capture-browser.mjs): the
-// floor's frames and the loading screen gone, a temporal page's rest restarted and converged, then
-// the image stable (or the rest held) with the loop stopped; `--frames n` waits that fixed count
-// instead. Returns the record the shot's JSON keeps as `ready`.
+// floor's frames and the loading screen gone, a temporal page's rest restarted and converged, the
+// page's settled signal (the fresh side's capture.mjs waits for it too: stability alone can shoot a
+// jump before the page's last change, such as a pre-exposure read back late), then the image stable
+// (or the rest held) with the loop stopped; `--frames n` waits that fixed count instead. Returns the
+// record the shot's JSON keeps as `ready`.
 async function settle( page, js ) {
 
 	if ( js ) await page.evaluate( js );
@@ -180,7 +182,10 @@ async function settle( page, js ) {
 		return { rule: 'frames', frames };
 
 	}
-	return waitForStable( page, { ...stable, timeout } );
+	const settled = await waitForSettled( page, { timeout } );
+	const ready = await waitForStable( page, { ...stable, timeout } );
+	ready.settled = settled;
+	return ready;
 
 }
 

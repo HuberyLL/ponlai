@@ -89,10 +89,11 @@ export function runInPage( page, js, { mode = 'eval', timeout = 60000, slotBindi
 		const tracer = () => window.__pipelineTrace ?? ( 0, eval )( trace );
 		const pipelines = { mark: () => tracer().mark(), since: ( mark ) => tracer().since( mark ) };
 		const frames = ( n ) => { const target = frameNow() + n; return until( () => frameNow() >= target ); };
-		// an expression, else statements; a function value is called
-		let body;
-		try { new Function( `return (${ js }\n)` ); body = `return (${ js }\n);`; } catch { body = js; }
+		// an expression, else statements; a function value is called (the test parses as an async
+		// function, so an expression with `await` is still an expression)
 		const AsyncFunction = ( async () => {} ).constructor;
+		let body;
+		try { new AsyncFunction( `return (${ js }\n)` ); body = `return (${ js }\n);`; } catch { body = js; }
 		const fn = new AsyncFunction( 'P', 'D', 'frames', 'sleep', 'until', 'pipelines', body );
 		const value = async () => {
 
