@@ -61,7 +61,8 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // island takes its light from (lighting/KeyLift.ts `moonDirection`), and the key's direction
 // (`keyDir`) turns there over the handoff and holds there all night, so the water's glint, the
 // caustics and the clouds' light see the moon where it is drawn; its phase keeps the orbit's
-// angle to the sun (`track`). After sunset the light
+// angle to the sun (`track`). The clouds take their own path between the two in the twilight, while
+// no light reaches them (CLOUD_TURN). After sunset the light
 // the sky lends the island takes a gain of its own (ISLAND_SKY), which the sky the eye sees, the
 // sea's reflection of it and the sea's own body never take. The dome lays the air's haze over
 // itself (`fogDome`, VolumetricHaze.ts `skyHaze`): the clouds at the distance to their shell's middle
@@ -492,6 +493,12 @@ const _white = new THREE.Color();
 // The sun's elevations (degrees) over which the moon comes into the clouds' light, in full below the
 // first: the night sky's ramp, later than the moon's key (DayCycle MOON_KEY_TOP).
 const CLOUD_MOON = [ - 7, - 3 ] as const;
+// The sun's elevations (degrees) over which the light the clouds march toward sets from the moon's
+// key to the sun's height, then comes round to the sun's azimuth: after the moon's light on them has
+// gone (CLOUD_MOON) and before the sun's reaches them (`sunlightAt` at 2 km, above about -2).
+const CLOUD_TURN = [ - 3, - 2.5, - 2 ] as const;
+// The sine of the sun's elevation over which the clouds' shadow comes in as it rises.
+const CLOUD_SHADOW_SET = [ - 0.02, 0.02 ] as const;
 
 // The moon's key, a share of the sun's illuminance per channel: cool blue (red over green 0.8, blue
 // over green 1.4), so the moonlit ground itself reads blue; the shade is bluer still from the night
@@ -1372,7 +1379,24 @@ export class Sky {
 		// (CLOUD_MOON), not the key's earlier one that keeps the island lit after sunset.
 		const moonGain = celestial ? ( 1 - THREE.MathUtils.smoothstep( celestial.elevation, CLOUD_MOON[ 0 ], CLOUD_MOON[ 1 ] ) ) * celestial.moonVisibility : 0;
 		const sunUp = ! celestial || celestial.elevation > - 2.5;
-		clouds.lightDir.value.copy( sunUp ? this.sunDir : this.keyDir );
+		// The march's depth shades the clouds' sky light as well as their direct light, and the same
+		// direction casts their shadow, so it moves without a jump even while no direct light reaches
+		// them: a jump there stepped the deck's brightness, half a stop on the meter under overcast.
+		// It sets first, its shadow fading out on the way down, so its turn round to the sun, under
+		// the horizon, sweeps no shadow across the island.
+		const elevation = celestial?.elevation ?? 90;
+		const setting = THREE.MathUtils.smoothstep( elevation, CLOUD_TURN[ 0 ], CLOUD_TURN[ 1 ] ), round = THREE.MathUtils.smoothstep( elevation, CLOUD_TURN[ 1 ], CLOUD_TURN[ 2 ] );
+		clouds.shadowShare.value = elevation < CLOUD_TURN[ 1 ] ? 1 - setting : THREE.MathUtils.smoothstep( this.sunDir.y, CLOUD_SHADOW_SET[ 0 ], CLOUD_SHADOW_SET[ 1 ] );
+		clouds.lightDir.value.copy( setting === 0 ? this.keyDir : this.sunDir );
+		if ( celestial && setting > 0 && round < 1 ) {
+
+			const from = moonDirection( celestial.moonDir, _keyTo );
+			const y = THREE.MathUtils.lerp( from.y, this.sunDir.y, setting ), start = Math.atan2( from.z, from.x );
+			const turn = Math.atan2( this.sunDir.z, this.sunDir.x ) - start;
+			const azimuth = start + Math.atan2( Math.sin( turn ), Math.cos( turn ) ) * round, across = Math.sqrt( 1 - y * y );
+			clouds.lightDir.value.set( across * Math.cos( azimuth ), y, across * Math.sin( azimuth ) );
+
+		}
 		clouds.lightColor.value.copy( sunUp ? sunAbove : new THREE.Color( 0, 0, 0 ) );
 		// The clouds belong to the night sky: their moonlight and night ambient keep its level.
 		const moonLight = illuminance * 0.04 * moonGain * this.nightSkyLevel;
