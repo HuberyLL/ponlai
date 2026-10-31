@@ -77,7 +77,9 @@ packages, into `dist/licenses/`.
     `Sky.js`, ported from WGSL to TSL.
   - `src/post/PhysicalBloom.ts`: the physically motivated bloom of `PostFX.js` (after Jimenez,
     SIGGRAPH 2014: 13-tap downsamples, the first through the Karis average, and 3x3 tent
-    upsamples); `src/post/Pipeline.ts`: its grade (saturation and contrast round mid grey, the
+    upsamples; its threshold the quadratic soft knee of Unity's Post Processing Stack v2 bloom,
+    below; with a threshold of the sky's own and a weight per level);
+    `src/post/Pipeline.ts`: its grade (saturation and contrast round mid grey, the
     vignette, the luminance-weighted grain; its warm white balance nudge is now the white
     balance's default) before the ACES fit at its exposure, ported from WGSL to TSL.
   - `src/post/TemporalLocks.ts`: the motion cap, the temporal reactive and the clamp-drop of
@@ -87,9 +89,8 @@ packages, into `dist/licenses/`.
     `SkyProClouds.js`, tidewater's port of the Three.js Sky Pro clouds ("Partly cloudy" preset),
     ported from WGSL to TSL: the procedural weather map and its bounds grid, the shell density
     (weather plus coverage, dilated and eroded by the shape noise, soft height-dependent edges),
-    the cone-traced light march with three scattering orders, powder, darker bases and sky light
-    occlusion, the coarse / fine march with empty-cell skipping, aerial perspective and the far
-    melt, the cloud shadow, and the shape noise loader. From `Clouds.js`: the screen-space view
+    darker bases and sky light occlusion, the coarse / fine march with empty-cell skipping, aerial perspective (the rain
+    curtains'), the cloud shadow, and the shape noise loader. From `Clouds.js`: the screen-space view
     trace with its reprojected, neighbourhood-clamped history and bicubic upsampling, and the
     synoptic field. The weather fronts, the mapping of this project's coverage onto the shell,
     the darker closed deck and the settled view of a paused scene are this project's (the rain
@@ -113,19 +114,17 @@ packages, into `dist/licenses/`.
     shading and imagery are credited under three-geospatial, a-starry-sky and the CGI Moon Kit.) Weather blending,
     integrated wind and the rain veil and ripple gradients are original Ponlai code as well; the
     wet-material response implements the published techniques acknowledged below.
-  - Techniques without code: the meadow's blades thinned by distance in `src/world/Grass.ts`
-    (`tuftLod`) follow the tier fade of `src/world/vegetation/GrassField.js` (each blade narrowing
-    to nothing over a short distance of its own while the kept ones widen so that the blade count
-    times the width holds), and its blades kept whole rather than partly covered (each widened
-    blade drawn solid as far as its coverage stays above its own hash, `grassMaterial`), after the
-    same file's opaque blades; written for this project's tufts, culling and coverage rules. The
-    gravel of thin soil (`src/materials/ProceduralTextures.ts` `gravelBake`, read in
+  - Techniques without code: the gravel of thin soil (`src/materials/ProceduralTextures.ts` `gravelBake`, read in
     `src/materials/TerrainMaterial.ts` at two rotated scales) follows the small stones of
     `src/world/terrain/DetailTextures.js` (a share of a periodic Worley lattice's cells holding a
     stone) and the multi-scale, rotated detail reads of `src/world/Terrain.js`. The trees' leaf
     clumps (`src/world/vegetation/TreeMesh.ts` `leafClump`) follow the canopy cards of
     `src/world/vegetation/PlantGeometry.js` (`addCard`, `lobeCards`: cards toward a lobe's shell,
     their normals bent out from the lobe and from the crown, an exposure darkening the inside).
+    The local lights (`src/lighting/LocalLights.ts`) follow `src/materials/LocalLights.js`: the
+    sources a project's own list rather than three lights, evaluated by every lit material in a
+    loop, inverse-square with the smooth range window ( 1 - ( d / r )^4 )^2, no shadows (the
+    nearest-lights selection and its faded edge since replaced by clusters, below).
 - Changes: ported to TSL and TypeScript and modified throughout for this project's stylised look.
 
 ### three-geospatial
@@ -348,8 +347,26 @@ names, under the paths given here in `public/` (`tools/assets.mjs`).
 - Source: [Poly Haven](https://polyhaven.com/a/rock_face_03)
 - Licence: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
 - Files: `public/textures/rock/rock_albedo.jpg` is the 1K diffuse map, unchanged.
-  `public/textures/rock/rock_detail.png` packs the 1K OpenGL normal map (RGB) and roughness map
-  (alpha), reduced to 8 bits.
+  `public/textures/rock/rock_detail.png` packs the 1K OpenGL normal map's x and y (red, green) and
+  the roughness map (blue), reduced to 8 bits.
+
+### Brown Mud Leaves 01
+
+- Author: Rob Tuytel
+- Source: [Poly Haven](https://polyhaven.com/a/brown_mud_leaves_01)
+- Licence: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
+- Files: built by `tools/build-ground-textures.py` from the 1K maps.
+  `public/textures/ground/meadow_albedo.jpg` is the diffuse map, unchanged;
+  `public/textures/ground/meadow_detail.png` packs the OpenGL normal map's x and y (red, green) and
+  the roughness map (blue). The open meadow's ground.
+
+### Forest Ground 01
+
+- Author: Rob Tuytel
+- Source: [Poly Haven](https://polyhaven.com/a/forrest_ground_01)
+- Licence: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
+- Files: built by `tools/build-ground-textures.py` from the 1K maps, as Brown Mud Leaves 01:
+  `public/textures/ground/grove_albedo.jpg` and `grove_detail.png`. The bamboo groves' floor.
 
 ### CGI Moon Kit
 
@@ -481,9 +498,10 @@ comment where it is used.
   the projected-solid-angle irradiance integral.
 - Air/water interface: Snell's law and dielectric transport as described in
   [*Physically Based Rendering*, fourth edition](https://pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF).
-- Contact-hardening solar shadows: Randima Fernando,
-  [*Percentage-Closer Soft Shadows*](https://download.nvidia.com/developer/presentations/2005/SIGGRAPH/Percentage_Closer_Soft_Shadows.pdf)
-  (SIGGRAPH 2005).
+- The figures' shadow map read with a 5 x 5 texel tent from nine bilinear comparisons, in
+  `src/characters/CharacterShadow.ts`: Ignacio Castaño, *Shadow Mapping Summary – Part 1* (The
+  Witness blog, 2013), its weights for a tent filter made of fewer bilinear PCF taps. Used as a
+  technique only.
 - Local sky occlusion: John C. Hart, [*Sphere Tracing*](https://doi.org/10.1007/s003710050084) (1996),
   with the [cosine-weighted hemisphere sampler in PBRT](https://pbr-book.org/4ed/Sampling_Algorithms/Sampling_Multidimensional_Functions).
 - Filtered wave-slope moments: Marc Olano and Dan Baker,
@@ -491,14 +509,26 @@ comment where it is used.
 - Microfacet masking: Eric Heitz,
   [*Understanding the Masking-Shadowing Function in Microfacet-Based BRDFs*](https://jcgt.org/published/0003/02/03/)
   (JCGT 2014); the error-function approximation is Abramowitz and Stegun, equation 7.1.26.
+- The shared specular BRDF, in `src/lighting/SurfaceBRDF.ts` and `src/lighting/EnvironmentBRDF.ts`:
+  Smith's visibility for GGX in Schlick's form with k = alpha / 2, and the environment's specular
+  as the split sum, the prefiltered environment times the environment BRDF integrated for the
+  same GGX into a scale and a bias on F0, and the key's glint from a representative point, the
+  point of the key's disk closest to the reflected ray, its highlight renormalised by the widened
+  lobe's ( alpha / alpha' )^2, from Brian Karis,
+  [*Real Shading in Unreal Engine 4*](https://cdn2.unrealengine.com/Resources/files/2013SiggraphPresentationsNotes-26915738.pdf)
+  (SIGGRAPH 2013 Physically Based Shading course notes); the closest point applied to a disk
+  light as in Sébastien Lagarde and Charles de Rousiers,
+  [*Moving Frostbite to Physically Based Rendering 3.0*](https://seblagarde.wordpress.com/wp-content/uploads/2015/07/course_notes_moving_frostbite_to_pbr_v32.pdf)
+  (SIGGRAPH 2014 Physically Based Shading course notes). GGX's alpha as the perceptual roughness
+  squared, Disney's reparameterisation as Karis 2013 (above) adopts it from Brent Burley,
+  *Physically-Based Shading at Disney* (SIGGRAPH 2012 Physically Based Shading course notes); the
+  Fresnel's value at grazing angles from F0, saturate( 50 F0 ), Christian Schüler's rule (ShaderX7,
+  2009) as given by Lagarde and de Rousiers (above). Used as techniques only; the table's layout,
+  the widened alpha and the glint's clamp at grazing views are our own.
 - Volumetric clouds: Andrew Schneider,
   [*The Real-time Volumetric Cloudscapes of Horizon Zero Dawn*](https://www.guerrilla-games.com/read/the-real-time-volumetric-cloudscapes-of-horizon-zero-dawn)
   (SIGGRAPH 2015): Perlin-Worley shape noise, Worley erosion, weather-map coverage and height
-  profiles. Multiple-scattering octaves: Magnus Wrenninge et al.,
-  [*Oz: The Great and Volumetric*](https://magnuswrenninge.com/wp-content/uploads/2021/03/Wrenninge-OzTheGreatAndVolumetric.pdf)
-  (SIGGRAPH 2013 talk). Diffuse transmission through thick decks uses the two-stream
-  approximation (e.g. Bohren, *Multiple scattering of light and some of its observable consequences*,
-  Am. J. Phys. 55, 1987).
+  profiles.
 - Lunar shading: Yasuhiro Fujii,
   [*A tiny improvement of Oren-Nayar reflectance model*](https://mimosa-pudica.net/improved-oren-nayar.html),
   through the adapted three-geospatial source above.
@@ -537,13 +567,6 @@ comment where it is used.
   [*Computing Alpha Mipmaps*](http://the-witness.net/news/2010/09/computing-alpha-mipmaps/) (2010):
   each mip keeps the full-size leaf's share above the alpha-test cutoff, remapped through a steep
   ramp instead of a scale so alpha-to-coverage keeps leaves solid (`src/world/vegetation/LeafTexture.ts`).
-- Airglow: H. W. Jensen, F. Durand, M. M. Stark, S. Premoze, J. Dorsey and P. Shirley,
-  [*A Physically-Based Night Sky Model*](https://doi.org/10.1145/383259.383306) (SIGGRAPH 2001): a
-  thin emitting shell about 100 km up (the van Rhijn brightening toward the horizon) seen through
-  the lower atmosphere's extinction, with F. Kasten and A. T. Young's air mass (Applied Optics 28,
-  1989); dimmed by a bright moon as in [a-starry-sky](https://github.com/Dante83/a-starry-sky)
-  (MIT), whose code is not used.
-
 - Rainbow colours (through the adapted table bake above): G. B. Airy, *On the intensity of light
   in the neighbourhood of a caustic* (Trans. Camb. Phil. Soc., 1838); J. S. Marshall and W. M.
   Palmer, *The distribution of raindrops with size* (J. Meteorology 5, 1948); C. Wyman, P.-P. Sloan
@@ -572,9 +595,6 @@ comment where it is used.
   overexposed, defocused exposure of the same view, 1980s), as a blurred copy of the highlights added
   back over the image (`src/post/Pipeline.ts`). Its hue-selective colour follows the secondary
   (HSL-keyed) correction of colour grading, and its warm / cool split the photographic split tone.
-- Grass blades kept a minimum width on screen with their coverage lowered to match (drawn as
-  whole blades), so thin blades stop crawling under camera motion: Emil Persson, *Phone-wire AA*
-  (2012 demo and write-up on [humus.name](http://www.humus.name/)).
 - Sharp cliff edges on the island mesh (vertices placed at the least-squares point of the edge
   crossings' tangent planes): Tao Ju, Frank Losasso, Scott Schaefer and Joe Warren,
   [*Dual Contouring of Hermite Data*](https://www.cs.rice.edu/~jwarren/papers/dualcontour.pdf)
@@ -589,11 +609,13 @@ comment where it is used.
   it, so a steady drag moves the view by the same amount every frame: the input resampling of
   Android's `InputTransport` (`RESAMPLE_LATENCY`), used as a technique only.
 - Vegetation wind in layers (the whole plant bent from its root keeping each vertex's distance to
-  it, leaf edges fluttering along the normal): Tiago Sousa,
+  it; a detail bend of each branch on a phase of its own; leaf edges fluttering along the normal;
+  smoothed triangle waves in place of sines): Tiago Sousa,
   *Vegetation Procedural Animation and Shading in Crysis* (GPU Gems 3, chapter 16, 2007), in
-  `src/world/vegetation/Deform.ts` (`mainBend`, `hangingSway`). Each plant answering the
-  local wind like a spring at its own natural frequency: Santa Monica Studio's wind in *God of War*
-  (Rupert Renard, *Wind Simulation in God of War*, GDC 2019), in `mainBend`.
+  `src/world/vegetation/Deform.ts` (`mainBend`; the branches' and sprays' bends, `branchBend` and
+  `sprayBend`; `leafFlutter`) and `src/weather/Wind.ts` (`flutterWave`, the smooth triangle wave).
+  Used as techniques only; the branches pressed downwind across the wind, the sprays' bend on their
+  branch and the numbers are our own.
 - The island's growth (`src/world/IslandGrowth.ts`): coastlines as the level sets of a fractal
   surface, after Benoit B. Mandelbrot, *The Fractal Geometry of Nature* (1982); islands shaped
   from noise, after Amit Patel, [*Making maps with noise*](https://www.redblobgames.com/maps/terrain-from-noise/)
@@ -633,39 +655,60 @@ comment where it is used.
   automation screenshot comparison (`FAutomationScreenshotTolerance`); NVIDIA FLIP (Andersson et
   al., *FLIP: A Difference Evaluator for Alternating Images*, HPG 2020) is reported through the
   optional `flip-evaluator` package (BSD-3-Clause). Used as techniques only.
-- Gusts as a noise field scrolled with the wind, sweeping across the grass: Sucker Punch
-  Productions' wind and grass in *Ghost of Tsushima* (Eric Wohllaib, *Procedural Grass in 'Ghost
-  of Tsushima'*, GDC 2021: 2D Perlin noise scrolled in the wind's direction; Bill Rockenbeck,
+- Gusts as a noise field scrolled with the wind, sweeping across the grass: techniques Eric
+  Wohllaib and Bill Rockenbeck presented (Eric Wohllaib, *Procedural Grass in 'Ghost of Tsushima'*, GDC 2021:
+  2D Perlin noise scrolled in the wind's direction; Bill Rockenbeck,
   *Blowing from the West: Simulating Wind in Ghost of Tsushima*, GDC 2021: the wind's strength
-  varied by time-varying Perlin noise), in `src/weather/Wind.ts` (`windField`) and
-  `src/world/Grass.ts`. Used as a technique only; the tileable map, its ranking to an even
-  spread, its two scales and the wind's integrated travel are our own.
-  The map's noise is Ken Perlin's improved gradient noise (*Improving Noise*, SIGGRAPH 2002),
-  made periodic.
-- Each meadow blade a mix of root and tip colours, and the sward darkened toward the ground by its
-  height and density: SimonDev's *Quick_Grass*
-  (github.com/simondevyoutube/Quick_Grass, MIT, copyright 2023 simondevyoutube), its grass
-  shader, in `src/world/Grass.ts` (`PALETTE`, `ROOT_DARK`). Used as a technique only.
-- The meadow grouped into Voronoi clumps that share their tussocks' parameters and colour (a
-  colour gradient along the blade whose other axis the clump picks), a clump's common normal and
-  less gloss far off, flowers laid in swaths of one kind, and the grass's shade from a coarse
-  stand-in for its heights with screen-space shadows for the detail: Sucker Punch Productions'
-  grass in *Ghost of Tsushima* (Eric Wohllaib, *Procedural Grass in 'Ghost of Tsushima'*, GDC
-  2021), in `src/world/Grass.ts` (`CLUMP`, `STROKE`, `FAR`, `SWATH`),
-  `src/world/SwardField.ts` and `src/lighting/MeadowCanopy.ts` (the crowns and their shade) and
-  `src/post/MeadowShade.ts`. Used as techniques only.
-- The meadow's flowers as whole authored plants placed procedurally over the fields, one kind to a
-  swath as if laid by a broad brush, drawn as GPU instances: Sucker Punch Productions'
-  fields in *Ghost of Tsushima* (Eric Wohllaib, *Procedural Grass in 'Ghost of Tsushima'*, GDC
-  2021); far instances dropped at random by a per-instance hash beyond a distance (stochastic
-  instance falloff: Matt Pohlmann, *Samurai Landscapes: Building and Rendering Tsushima Island on
-  PS4*, GDC 2021), in `src/world/Flowers.ts`. Used as techniques only.
-- Screen-space shadows for the key light over the depth: Bend Studio's (Graham Aldridge, *Days
-  Gone*, Sony Creators Conference / SIGGRAPH 2023), in `src/post/MeadowShade.ts`, as a plain
+  varied by time-varying Perlin noise), in `src/weather/Wind.ts` (`gustAt`, read by `windField`,
+  the meadow's blades and the sea's gusts). Used as a technique only; the noise's time axis, the
+  wind's integrated travel and time, the scale and the strength's linear law are our own.
+  The noise is Ken Perlin's improved gradient noise (*Improving Noise*, SIGGRAPH 2002) in 3D, made
+  periodic; its lattice is hashed by PCG's output permutation (Mark Jarzynski and Marc Olano,
+  *Hash Functions for GPU Rendering*, Journal of Computer Graphics Techniques 9(3), 2020).
+- The displacement field the islanders part the meadow through: a 2D displacement buffer about
+  the camera, written by particles of their own kind, a technique Bill Rockenbeck presented
+  (*Blowing from the West: Simulating Wind in Ghost of Tsushima*, GDC 2021), in `src/world/vegetation/Displacement.ts`. Used as a technique only; the window's size,
+  the analytic sprites and their strengths from the trail's recovery are our own. Its readers
+  sample it with a cubic B-spline in four bilinear taps: Christian Sigg and Markus Hadwiger, *Fast
+  Third-Order Texture Filtering* (GPU Gems 2, chapter 20, 2005).
+- The meadow's procedural blades, techniques Eric Wohllaib presented
+  (*Procedural Grass in 'Ghost of Tsushima'*, GDC 2021), in `src/world/Grass.ts`:
+  single blades instead of cards; one blade per cell of a tile grid, offset at random and culled
+  by distance and by the view; the ground map's texel picked at random among the four nearest,
+  weighted by the position, so the meadow's edge is dithered; sixteen numbers a blade; Voronoi
+  clumps (the nearest of nine jittered points) that set their blades' height and facing and draw
+  them toward their centre (`CLUMP`); the camera's position among what shapes a blade (`NEAR`);
+  compute passes that count the blades and write the indirect draw's arguments; vertices made
+  from the vertex and instance index alone, 15 to a blade, the rows' spacing along it a parameter
+  of its own (`ROWS`), the near tiles keeping one blade of four where the far ones take over
+  (`LOD`); a short blade folded into two leaves on one strip (an idea the talk credits to
+  Outerra); a quadratic Bezier whose tip the tilt and facing place and whose middle control point
+  the bend pushes off the chord, the width stepped along the axis square to the facing and the
+  normal from the curve's derivative and that axis (`bladeVertex`); the facing taken from the wind
+  (`bladeFacing`) and a sine's bob phased by each blade's hash and the place along it (`swingAt`);
+  normals tilted outward for a rounded blade, edge-on blades thickened across the view
+  (`THICKEN`), and far off the normal leaned toward a common one and the gloss lowered
+  (`SURFACE`); the colour along the blade, chosen per clump between two columns kept close
+  (`BLADE_COLOUR`); the light through the blade and its occlusion given along its length
+  (`TRANSLUCENCY`, `AO`); and the grass's shadow from the ground raised to the blades' height
+  (`meadowLayerLight`; the crowns' heights the turf is shaded by: `src/world/SwardField.ts`,
+  `src/lighting/MeadowCanopy.ts`) with screen-space shadows for the detail
+  (`src/post/MeadowShade.ts`). Used as techniques only; the far draw of fewer rows, the folded
+  blade's shared root row, the shadow worked out where it is received and the numbers are our own.
+- The meadow's blades bent by their sway (`SWING`, `swingPush` in `src/world/Grass.ts`): the
+  Euler-Bernoulli relation of a beam's curvature to its bending moment (M = EI kappa), the blade's
+  curvature following the moment of the drag along it. Used as a technique only; the bend from the
+  root is our own.
+- Short blades folded into two leaves, and each level of the grass's distance LOD halving the
+  blades and doubling the width of the rest: Outerra,
+  [*Procedural grass rendering*](https://outerra.blogspot.com/2012/05/procedural-grass-rendering.html)
+  (2012-05-27), in `src/world/Grass.ts`. Used as techniques only.
+- Screen-space shadows for the key light over the depth: a technique Graham Aldridge presented
+  for *Days Gone* (Sony Creators Conference / SIGGRAPH 2023), in `src/post/MeadowShade.ts`, as a plain
   per-pixel march. Used as a technique only.
-- The display chain (Jasmin Patry,
-  *Real-Time Samurai Cinema: Lighting, Atmosphere, and Tonemapping in Ghost of Tsushima*,
-  SIGGRAPH 2021 Advances in Real-Time Rendering in Games course): local tone mapping as a
+- The display chain, techniques Jasmin Patry presented
+  (*Real-Time Samurai Cinema: Lighting, Atmosphere, and Tonemapping in Ghost of Tsushima*, SIGGRAPH 2021
+  Advances in Real-Time Rendering in Games course): local tone mapping as a
   detail-preserving contrast change on a 64x32x64 bilateral grid blended 40 / 60 with a wide
   Gaussian (`src/post/LocalTone.ts`), per-channel tone mapping in AP1 with its red primary moved
   out to x 0.75 and a white balance chosen as the colour white becomes, folded into the curve's
@@ -677,14 +720,68 @@ comment where it is used.
   bilateral grid: Jiawen Chen, Sylvain Paris and Frédo Durand, *Real-time Edge-Aware Image
   Processing with the Bilateral Grid* (SIGGRAPH 2007). The white balance's chromatic adaptation:
   the von Kries transform in K. M. Lam's Bradford cone space (1985). The curve itself is Stephen
-  Hill's fit of ACES's RRT and ODT, as three.js's `acesFilmicToneMapping` has it. The tables are
+  Hill's fit of ACES's RRT and ODT, as three.js's `acesFilmicToneMapping` has it (its matrices, now
+  without their saturation). The tables are
   generated from parameters in Björn Ottosson's Oklab (*A perceptual color space for image
   processing*, 2020): its lightness, chroma and hue for the zones, the contrast curve and the hue
   bands (`src/post/GradeLut.ts`); the shadows / midtones / highlights split is an editor's colour
   wheels'. Used as techniques only. The tone curve's family is Timothy Lottes's (*Advanced
   Techniques and Optimization of HDR Color Pipelines*, GDC 2016): contrast, shoulder, white point
-  and mid grey, its two constants solved from them (`src/post/Pipeline.ts`); its toe lift and the
-  defaults fitted to Hill's curve are ours.
+  and mid grey, its two constants solved from them (`src/post/Pipeline.ts`); its bent toe and its
+  defaults (at first fitted to Hill's curve, now set on our own frames) are ours.
+- The clouds' two phase lobes, all back lobe deep in the cloud and blended toward their share
+  where the light gets through by the light's transmittance through each step
+  (`src/sky/Clouds.ts`), after the same talk (Patry 2021, p. 97). Used as a technique only; the
+  lobes are tidewater's droplet phase's first order (above).
+- The Purkinje shift after the same talk (Patry 2021, p. 160-168: the rods' change to the cones'
+  signals in an opponent colour space, with the constants and the shader's form it gives), in
+  `src/post/Purkinje.ts`; the model is Dingcai Cao, Joel Pokorny, Vivianne C. Smith and Andrew J.
+  Zele, *Rod contributions to color perception: linear with rod contrast* (Vision Research 48,
+  2008), the receptors' curves normalised as Adam G. Kirk and James F. O'Brien have them
+  (*Perceptually Based Tone Mapping for Low-Light Conditions*, SIGGRAPH 2011), and the RGB
+  colours' spectra follow Brian Smits's method (*An RGB-to-Spectrum Conversion for Reflectances*,
+  Journal of Graphics Tools, 1999). Its matrices are computed from the CIE 1931 2-degree colour
+  matching functions, Andrew Stockman and Lindsay T. Sharpe's 2-degree cone fundamentals (2000)
+  and the CIE 1951 scotopic luminous efficiency, as the Colour & Vision Research Laboratory's
+  database (cvrl.org) has them, and the CIE's standard illuminant D65. Used as a technique only;
+  the input's scale and the strength are ours.
+- The ambient light's probes after the same talk (Patry 2021, its diffuse indirect lighting), in
+  `src/world/AmbientProbes.ts`: a regular grid of probes in degree-2 spherical harmonics (p. 16),
+  each baked with its sky visibility, mono, for the sky's harmonics to be multiplied by at run time
+  (p. 24), and its bounced sky visibility, the world lit by a uniform white sky, for the sky's
+  average colour to be multiplied by (p. 25). Used as techniques only; the lattice, the rays, the
+  occluders and the albedos are our own. Probes caught in a solid moved to the nearest free point or
+  marked invalid: Zander Majercik, Adam Marrs, Josef Spjut and Morgan McGuire, *Scaling Probe-Based
+  Real-Time Dynamic Global Illumination for Production* (JCGT 10(2), 2021). The harmonics' basis and
+  cosine lobe: Ravi Ramamoorthi and Pat Hanrahan, *An Efficient Representation for Irradiance
+  Environment Maps* (SIGGRAPH 2001).
+- The ambient light's relight after the same talk (Patry 2021), in `src/lighting/AmbientRelight.ts`
+  and `src/lighting/Harmonics.ts`: the sky's radiance projected onto the harmonics and multiplied by
+  each probe's sky visibility (p. 24), the bounced sky visibility lit by the sky's average (p. 25,
+  from the constant band; we take the upper half's mean), the sun's bounce as two windowed lobes off
+  an imaginary ground and wall facing the sun (pp. 32-33), the directionality boost toward the
+  linear band's maximum (p. 43) and the deringing window found on the GPU (p. 46). Used as
+  techniques only; the lobes' weights, the search for the minimum and the output's layout are our
+  own. The product of two functions in the harmonics through their triple integrals: Peter-Pike
+  Sloan, *Stupid Spherical Harmonics (SH) Tricks* (GDC 2008). The window: Peter-Pike Sloan,
+  *Deringing Spherical Harmonics* (SIGGRAPH Asia 2017 Technical Briefs). The cosine lobe:
+  Ramamoorthi and Hanrahan (2001, above).
+- The materials' reading of the ambient light's probes, in `src/lighting/AmbientSample.ts`: the
+  probes' irradiance evaluated at each surface's normal from their harmonics, degree 1 or 2 by the
+  receiver (Ramamoorthi and Hanrahan 2001, above), blended into the open sea's at the box's edge,
+  and for the translucent receivers through band weights projected from their wrapped lobe by the
+  same paper's Legendre coefficients of a clamped cosine;
+  and the environment's specular normalised by the irradiance where it is read, after the same
+  talk (Patry 2021, p. 63: the reflection probes' luminance normalised by a single sample of the
+  harmonics' irradiance, converted to luminance), here the ratio of the local irradiance's
+  luminance to that of the environment's own harmonics at the same normal, capped. The specular's
+  occlusion by a cone round the reflected direction, its half-angle from the lobe's roughness,
+  against an occluder: after Sébastien Lagarde and Charles de Rousiers, *Moving Frostbite to
+  Physically Based Rendering 3.0* (above, its specular occlusion), here against the surface's own
+  horizon. Used as techniques only; the sampling point's offsets, the seam's blend, the ratio's
+  form and cap, and the cone's test against the horizon, its form and its constants are our own.
+  The sample moved off the surface along its normal and toward the eye against leaks through thin
+  walls: after Majercik et al. (2021, above).
 - The volumetric haze after the same talk (Patry 2021, its atmospheric lighting and volumetric
   haze), in `src/weather/VolumetricHaze.ts`: a froxel grid over the whole view from 10 cm to
   100 km in slices each 20 % deeper than the last, a density made only of analytic, integrable
@@ -696,15 +793,61 @@ comment where it is used.
   The froxel volume itself: Bartlomiej Wronski, *Volumetric Fog: Unified Compute Shader-Based
   Solution to Atmospheric Scattering* (SIGGRAPH 2014 Advances in Real-Time Rendering course), and
   Michal Drobot, *Rendering of Call of Duty: Infinite Warfare* (Digital Dragons 2017).
-  The tricubic B-spline in eight trilinear taps: Christian Sigg and Markus Hadwiger, *Fast
-  Third-Order Texture Filtering* (GPU Gems 2, 2005). The jitter's per-froxel offset: Jorge
+  The tricubic B-spline in eight trilinear taps, and the cloud shadow map's cubic B-spline in four
+  bilinear taps (`src/sky/Clouds.ts`): Christian Sigg and Markus Hadwiger, *Fast Third-Order
+  Texture Filtering* (GPU Gems 2, 2005). The jitter's per-froxel offset: Jorge
   Jimenez's interleaved gradient noise (*Next Generation Post Processing in Call of Duty: Advanced
   Warfare*, SIGGRAPH 2014).
+- The ambient grade after the same talk (Patry 2021, p. 10) and
+  Jasmin Patry, *Samurai Shading in Ghost of Tsushima* (SIGGRAPH 2020 Physically Based Shading course, p. 9): global knobs on the
+  lighting, among them the ambient diffuse and specular balance and the sky's brightness, set per
+  weather and time of day over physically based lighting, in `src/lighting/AmbientGrade.ts`. Used
+  as a technique only; the table's knobs, rows and values are our own.
+- The vegetation's wrapped diffuse, in `src/world/VegetationLighting.ts`: the half-Lambert's shape,
+  the cosine scaled by a half, biased by a half and squared, from Jason Mitchell, *Shading in
+  Valve's Source Engine* (SIGGRAPH 2006, slide 25); a translucency kept energy-conserving beside
+  the Lambertian diffuse, after Patry 2020 (above, p. 9, its notes). Used as techniques only; the
+  normalisation to the clamped cosine's integral over the sphere, the blend between them by
+  translucency and the light through the blades and leaves (`src/world/vegetation/Material.ts`
+  `transmission`) are our own, but for its forward lobe, Schlick's phase function
+  ( 1 - k^2 ) / ( 4 pi ( 1 - k cos )^2 ): Philippe Blasi, Bertrand Le Saëc and Christophe Schlick,
+  *A Rendering Algorithm for Discrete Volume Density Objects* (Computer Graphics Forum 12(3),
+  Eurographics 1993). The leaves' thin layer, single scattering in a layer seen from the lit side:
+  Pat Hanrahan and Wolfgang Krueger, *Reflection from Layered Surfaces due to Subsurface
+  Scattering* (SIGGRAPH 1993), its single-scattering term in the layer's optical depth and the
+  two cosines. Used as a technique only; the lobe round the half vector, the gain, the light's
+  wrapped cosine and the layer's response under a uniform sky are our own.
+- The local lights' clusters, in `src/lighting/LocalLights.ts` and
+  `src/lighting/LocalLightClusters.ts`: Ola Olsson, Markus Billeter and Ulf Assarsson,
+  *Clustered Deferred and Forward Shading* (HPG 2012), the view cut into screen tiles and exponential depth slices, each cluster listing
+  the lights whose spheres meet its box; the per-cluster compute pass over a fixed grid with lists
+  in storage buffers as three.js r186's `ClusteredLightsNode` builds them (mechanism only; our
+  sort, slices, packing and lookup are our own). The range window and the inverse-square
+  falloff's softening: Brian Karis, *Real Shading in Unreal Engine 4* (above).
+- The screen-space ambient occlusion, in `src/post/GTAO.ts`: Jorge Jimenez, Xian-Chun Wu, Angelo
+  Pesce and Adrian Jarabo, *Practical Realtime Strategies for Accurate Indirect Occlusion*
+  (Activision technical memo ATVI-TR-16-01, 2016): horizon search per slice and the cosine-weighted
+  visible arc against the slice's projected normal in closed form. Its practical shape (the
+  horizons' distance falloff, the low starting horizons, the projected normal's length as the
+  slice's weight, and the thin-occluder heuristic that stretches a sample's distance along the
+  view) follows Intel's [XeGTAO](https://github.com/GameTechDev/XeGTAO) (MIT). Used as techniques
+  only; the code is our own.
+- The exposure's adaptation, a critically damped second-order filter on the EV: Thomas Lowe,
+  *Critically Damped Ease-In/Ease-Out Smoothing* (Game Programming Gems 4, 2004), in
+  `src/post/Exposure.ts`. Used as a technique only; the exact step per frame is our own. Its time
+  constants follow the cones' light adaptation, a time constant of 0.1 s: Frédo Durand and Julie
+  Dorsey, *Interactive Tone Mapping* (Eurographics Workshop on Rendering, 2000).
+- The bloom's threshold, a quadratic soft knee on the brightest channel that scales the colour
+  whole: the curve of Unity Technologies' *Post Processing Stack v2* bloom
+  ([PostProcessing](https://github.com/Unity-Technologies/PostProcessing)), in
+  `src/post/PhysicalBloom.ts`, set so the glow starts at the threshold. Used as a technique only,
+  with no code.
 
-## References
+## Sources
 
-Sources that informed the procedural layout and the islanders' bodies; no code, data tables or
-images from them are used (the bodies' curves take a few rounded key values off theirs).
+Sources that informed the procedural layout, the islanders' bodies and the physical constants
+behind the wind and the leaves' light; no code, data tables or images from them are used (the
+bodies' curves take a few rounded key values off theirs).
 
 - Seabed substrate: Page C. Valentine, USGS,
   [*Sediment classification and the characterization, identification, and mapping of geologic substrates*](https://www.usgs.gov/publications/sediment-classification-and-characterization-identification-and-mapping-geologic)
@@ -737,3 +880,45 @@ images from them are used (the bodies' curves take a few rounded key values off 
   Philosophical Transactions of the Royal Society 115, 1825), fitted to the old ages of Japan's
   abridged life table for 2022, Ministry of Health, Labour and Welfare,
   [*令和4年簡易生命表の概況*](https://www.mhlw.go.jp/toukei/saikin/hw/life/life22/index.html).
+- The wind's gusts and the plants' sway (`src/weather/Wind.ts`, `src/world/vegetation/Deform.ts`):
+  the turbulence length scale of EN 1991-1-4's Annex B and its peak velocity pressure, as given in
+  Casimir Katz, *Computational Mechanics: Enhanced Civil Engineering Applications
+  (Wind)* (TU München lecture slides) and in Zlatko Marković, Jelena Dobrić and Nina Gluhović,
+  *Comparison of wind actions according to Eurocode and previous regulations* (Scientific Journal
+  of Civil Engineering 9 (1), 2020): the gusts' size from terrain category 0 at the code's least
+  height, the plants' swing from each wind level's turbulence intensity. The gusts' travel from
+  how fast the large eddies over a canopy go: M. R. Raupach, J. J. Finnigan and Y. Brunet,
+  *Coherent eddies and turbulence in vegetation canopies: the mixing-layer analogy*
+  (Boundary-Layer Meteorology 78, 1996), as given in Ian C. Tse, Cristina M. Poindexter and Evan A.
+  Variano, *Wind-driven water motions in wetlands with emergent vegetation* (Water Resources
+  Research, 2016); Andreas Christen, D. Scherer, D. Schindler and R. Vogt, *Convection velocity
+  and spatial turbulence statistics in the trunk space of a forest* (18th Symposium on Boundary
+  Layers and Turbulence, 2008).
+- The grass blade's bend under the wind (`src/world/Grass.ts`): the drag's bound on a flexible
+  blade's turning, Frédérick Gosselin, Emmanuel de Langre and Bruno A. Machado-Almeida, *Drag
+  reduction of flexible plates by reconfiguration* (Journal of Fluid Mechanics 650, 2010), and
+  Mitul Luhar and Heidi M. Nepf, *Flow-induced reconfiguration of buoyant and flexible aquatic
+  vegetation* (Limnology and Oceanography 56, 2011).
+- The leaves' diffuse reflection (`src/world/VegetationLighting.ts` THIN_LAYER): leaves' BRDF
+  modelled as a specular sheen off the cuticle plus a diffuse component taken as Lambertian, Laurent
+  Bousquet, Sophie Lachérade, Stéphane Jacquemoud and Ismaël Moya, *Leaf BRDF measurements and
+  model for specular and diffuse components differentiation* (Remote Sensing of Environment 98,
+  2005), and the same authors without Lachérade, *Leaf BRDF and BTDF measurements and model*
+  (ISPMSRS 2005, Beijing); Lifeng Wang, Wenle Wang, Julie Dorsey, Xu Yang, Baining Guo and
+  Heung-Yeung Shum, *Real-time rendering of plant leaves* (SIGGRAPH 2005).
+- The plants' main bend under the wind's drag (`src/world/vegetation/Deform.ts`,
+  `src/world/Bamboo.ts`, `src/world/Yunpeng.ts`): a leaved crown's drag coefficient and its fall
+  with the wind as a power law, A. Koizumi, J. Motoyama, K. Sawata, Y. Sasaki and T. Hirai,
+  *Evaluation of drag coefficients of poplar-tree crowns by a field test method* (Journal of Wood
+  Science 56 (3), 2010); the bamboo culm's wall and modulus, P. G. Dixon and L. J. Gibson, *The structure and
+  mechanics of Moso bamboo material* (Journal of the Royal Society Interface 11, 2014); the
+  yunpeng's stalk drawn on the giant reed: the ceiling on a smooth cylinder's force coefficient as
+  given in A. Padewska-Jurczak, P. Szczepaniak and R. Walentyński, *Experimental and numerical analyses of
+  airflow around two cylinders angled to the direction of wind* (Bulletin of the Polish Academy of
+  Sciences: Technical Sciences 71 (1), 2023), the reed's wall from F. S. Coppolino, *Prove di
+  caratterizzazione meccanica della canna comune (Arundo Donax) in prospettiva di un uso
+  strutturale sostenibile* (master's thesis, University of Bologna, 2020), and the moduli of its
+  parenchyma in bending and its rind in tension from H.-C. Spatz et al., *Biomechanics of the giant
+  reed Arundo donax* (Philosophical Transactions of the Royal Society B 352, 1997), as Coppolino
+  reports them; the wind's log law over
+  EN 1991-1-4's terrain category 0, as given in Marković, Dobrić and Gluhović (above).

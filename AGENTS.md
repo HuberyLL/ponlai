@@ -1,8 +1,9 @@
 # Ponlai
 
 A small island in an open sea, rendered in the browser: a visual sample for a game, and the game
-growing behind `?game`. Inspired by the eastern aesthetic of Ghost of Tsushima, the look is a physically
-based scene lit as the sun and the sky give it (deep clear water, chunky stone, a lush meadow
+growing behind `?game`. The look is a calm, painterly island,
+inspired by the eastern aesthetic of Ghost of Tsushima, on a physically based scene lit as the
+sun and the sky give it (deep clear water, chunky stone, a lush meadow that moves in the wind,
 with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game's design:
 `docs/game-design.md` (read it before gameplay work).
 
@@ -53,7 +54,7 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 - `src/Quality.ts`: the quality tiers, every cost knob in one table (high the only active one);
   `src/QualityDetect.ts` takes `?quality` or high (its GPU timing is parked with the lower tiers).
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation.
-- `src/camera/`: the island camera, which starts framing the land from at most 45 m
+- `src/camera/`: the island camera, which starts framing the land alone from its heading
   (`IslandFraming.ts`, main.ts `placeOrbit`) and which the hand pans within the land's soft
   bounds, turns, tilts and zooms (`IslandCameraControls.ts`, the ground it grabs in
   `IslandGround.ts`), and the free flight.
@@ -61,27 +62,47 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   (`Chunks.ts`, `IslandSimplify.ts`, `ChunkDerived.ts`), built on a pool of workers
   (`WorldStart.ts`, `WorldChunks.ts`, `chunkWorker.ts`), cached per chunk (`WorldCache.ts`), merged
   (`ChunkMerge.ts`) and drawn (`World.ts`, the world fields' textures in `WorldFields.ts`), and grown
-  in place (`Growth.ts`, the shoal of a coming piece in `SeabedRise.ts`). Its kinds: the shapes
-  (`WorldShapes.ts`), cliffs (`Cliff.ts`), submerged stones (`Stones.ts`), sea floor
+  in place (`Growth.ts`, the shoal of a coming piece in `SeabedRise.ts`). Its kinds: the shapes and the
+  top's low swells (`WorldShapes.ts`), cliffs (`Cliff.ts`), submerged stones (`Stones.ts`), sea floor
   (`Bathymetry.ts`, `SeabedTile.ts`), rim (`RimGround.ts`), the meadow (`Grass.ts`,
-  its clumps and its tufts draped over the cliff's edge included, and the swaths of its flowers,
-  whole plants drawn in `Flowers.ts`; its crowns' heights in `SwardField.ts`; anchors `Anchors.ts`, soil from `ShoreSample.ts`; the
+  its blades generated on the GPU as they draw; its crowns' heights in `SwardField.ts`; anchors `Anchors.ts`, soil from `ShoreSample.ts`; the
   sward's depth over its ground in the meadow map, `SwardField.ts`), the yunpeng that stands
-  among it (`Yunpeng.ts`, its sites the step-0 piece's: `IslandGrowth.ts`), the islander's
-  walking loop (`WalkLoop.ts`, `WalkPath.ts`), the bamboo stands
-  the islanders' building stock will come from (`Bamboo.ts`, `BambooMaterials.ts`) and the vegetation's depth prepass
-  (`VegetationPrepass.ts`). `src/world/vegetation/` holds what every plant kind shares (material,
-  coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the registry of kinds,
-  the trees' tubes and leaf cards in `TreeMesh.ts` and their bark and leaf surfaces in
-  `TreeSurfaces.ts`) and the islanders' trail through the meadow (`Trample.ts`).
+  among it, single clumps far apart (where: `YunpengSites.ts`; its stalks instances of a few
+  prototypes at two levels and its lights: `Yunpeng.ts`), the islander's
+  walking loop (`WalkLoop.ts`, `WalkPath.ts`), the bamboo over the whole island that the
+  islanders' building stock will come from (where its culms stand and the litter on its groves' floor, which the grass keeps off:
+  `BambooGroves.ts`; the culms, instances of a few prototypes at two levels: `Bamboo.ts`,
+  `BambooMaterials.ts`), the vegetation's depth prepass (`VegetationPrepass.ts`)
+  and the opaque scene's, for the ambient occlusion (`OpaquePrepass.ts`), and the ambient light's
+  probes, baked per chunk (`AmbientProbes.ts`). `src/world/vegetation/` holds what every plant kind
+  shares (material, coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the
+  registry of kinds, the trees' tubes and leaf cards in `TreeMesh.ts` and their bark and leaf surfaces in
+  `TreeSurfaces.ts`, the authored plants drawn as instances of a few prototypes with two levels and
+  a stipple between them in `PlantInstances.ts`) and the islanders' trail through the meadow (`Trample.ts`, drawn as sprites
+  into the displacement field the blades read, `Displacement.ts`, a frame-graph pass).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the refracted sun under water, the light every submerged material shares (`Underwater.ts`: a new
   underwater material lights with it, as the terrain does), the air/water interface, sky occlusion,
-  the meadow's canopy light and its crowns' shade (`MeadowCanopy.ts`), the sunlight the ground bounces up (`GroundBounce.ts`: a new lit
+  the meadow's canopy light and its crowns' shade (`MeadowCanopy.ts`), the ambient light's probes
+  on the GPU (`AmbientVolume.ts`: the lattice's buffer and uniforms, its output texture, its debug
+  view), relit every frame by the sky's harmonics and the key into their irradiance
+  (`AmbientRelight.ts`: the output's packing; the harmonics' operations in `Harmonics.ts`), which
+  every lit island material reads for its ambient diffuse (`AmbientSample.ts`: a new lit material
+  takes it through its lighting model, `GroundBounceLightingModel`'s `ambient`, never the
+  environment's irradiance alone; `flags=ambientVolume:0` builds them without it), the sunlight the ground bounces up (`GroundBounce.ts`: a new lit
   material adds it in its lighting model, `addGroundBounce` or `groundBounceLight`, never a bounce
-  of its own).
-- `src/materials/`: procedural textures (the gravel bake: `ProceduralTextures.ts`), the terrain
-  (`TerrainMaterial.ts`), wet surfaces, the meadow's habitat and soil-depth fields (`Meadow.ts`).
+  of its own), the ambient grade's per-weather, per-elevation knobs on the island's ambient light
+  (`AmbientGrade.ts`: a new lit material builds on `GroundBounceLightingModel` or reads its
+  uniforms), the local lights (`LocalLights.ts`: every source in view, such as the yunpeng's
+  clumps by night, sorted into clusters of the main view by a compute pass ahead of the scene
+  passes, which every lit model looks its fragment's list up in; the grid and the CPU sort in
+  `LocalLightClusters.ts`; a new source joins `localLights.sources`, never a three light, and a
+  lit model of its own adds `addLocalLights`), the low key's lift of the diffuse's cosine (`KeyLift.ts`: a lit model of its
+  own takes its key's cosine from `GroundBounceLightingModel`'s `shadeDirection`), the metering
+  illuminance every lit material writes beside its colour for the exposure (`MeterLight.ts`: a new
+  lit material calls `writeMeter` and draws only in passes with an MRT).
+- `src/materials/`: procedural textures (the gravel bake and the scans' texture arrays:
+  `ProceduralTextures.ts`), the terrain (`TerrainMaterial.ts`, its ground scans hex-tiled), wet surfaces, the meadow's habitat and soil-depth fields (`Meadow.ts`).
 - `src/ocean/`: FFT ocean, shore waves, the share of each wave cascade a point of the sea keeps
   (`WaveDamping.ts`), caustics and the wave maps the light under the water reads (`Caustics.ts`),
   water shading (`Water.ts`), the sea's large-scale detail (`SeaDetail.ts`: gusts, slicks,
@@ -91,11 +112,14 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 - `src/weather/`: wind (`Wind.ts`: the weather's one wind, which every part reads from it, and the
   one wind field all vegetation moves in), lightning, rain,
   puddles, the air's haze and sea fog as one froxel volume lit by the atmosphere and shadowed by
-  the sun's maps and the clouds (`VolumetricHaze.ts`).
+  the sun's maps and the clouds (`VolumetricHaze.ts`), the bamboo leaves the wind takes off the
+  island (`FallingLeaves.ts`: a fixed ring of leaves born round the view and stepped on the GPU by one
+  compute pass).
 - `src/post/`: the frame's passes and tidewater's display chain (`Pipeline.ts`, its bloom in
-  `PhysicalBloom.ts`), the meadow's screen-space shade over the vegetation's depth (`MeadowShade.ts`),
-  the sun's glare and, until the haze reaches the clouds' gaps, the screen-space light shafts
-  (`LightShafts.ts`), FSR 1, render scale and dynamic resolution (`RenderScale.ts`,
+  `PhysicalBloom.ts`), the pre-exposure every writer of the scene's colour and metering light
+  multiplies by and every scene-unit reader divides out (`PreExposure.ts`), the key's screen-space shade over the vegetation's and the opaque scene's depth (`MeadowShade.ts`),
+  the screen-space ambient occlusion the ambient light takes (`GTAO.ts`, on in high),
+  the sun's flare (added to the bloom, `PhysicalBloom.ts`) and the screen-space light shafts, off by default (`LightShafts.ts`), FSR 1, render scale and dynamic resolution (`RenderScale.ts`,
   `DynamicResolution.ts`), the frame pacer, the submit batching, the signal that a paused frame is
   final (`Settled.ts`), the anti-aliasing mode and the scene's sample count (`Antialiasing.ts`); under the
   temporal modes the jitter (`Jitter.ts`), the motion vectors (`Motion.ts`), the temporal resolve
@@ -138,9 +162,12 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   scene in the camera's perspective (`Space.ts`: the words over the islanders and in flight),
   palette (`Palette.ts`), styles (`ui.css`) and the licences of its fonts (`fonts/`; our own brush
   fonts are assets, `public/fonts/`).
-- `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the frame profiler, the frame-rate readout,
+- `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the test mode's switch (`TestMode.ts`), the frame profiler, the frame-rate readout,
   the pipeline counter (`PipelineCounter.ts`), the wind view and its probe (`WindView.ts`,
-  `WindArrows.ts`, `WindProbe.ts`).
+  `WindArrows.ts`, `WindProbe.ts`), the lighting layer's light-only and ambient-only views
+  (`LightLayer.ts`), the scene's linear radiance over screen boxes (`Radiance.ts`) and what each
+  cell of a grid shows (`RadianceAov.ts`, the kinds' codes in `Classes.ts`), and the named numbers
+  a script or the console can set on a running page (`Tune.ts`).
 - `tools/`: captures, profiling, the GPU lock and the probes (`docs/tools.md`); the WGSL build
   (`wgsl-build.mjs`, its entries in `wgsl-build/`); the world's chunk checks
   (`verify-world-chunks.mjs`) and statistics (`verify-world-stats.mjs`), on the node helpers in
@@ -189,8 +216,8 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   itself. Data on a chunk border must be bit-identical in both chunks: lattices are world-anchored,
   scars are cut in canonical order, curvature comes from the apron, and a chunk's own triangles
   never go through `computeVertexNormals`. The page draws the island a mesh per land chunk and
-  every other kind as one mesh or pool, concatenated in the chunks' order ( cj, ci ) whatever
-  order the workers finished in (`ChunkMerge.ts`, `World.ts`).
+  every other kind as one mesh or pool (the bamboo an instance pool), concatenated in the chunks'
+  order ( cj, ci ) whatever order the workers finished in (`ChunkMerge.ts`, `World.ts`).
 - The island grows in place (`Growth.ts`): a Grow swaps in only the changed chunks in one frame, and
   every dependent of the land's shape follows it, the same function of the version as at load (a
   grown page draws a page loaded on that land bit for bit in the test mode:
@@ -313,7 +340,7 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   `showUnderwater`), or the water shows what lies straight behind it in the opaque copy there; what
   swims in the upper water (a fish) is marked instead (`markSwimmer`), and its material adds
   `Water.ts` `swimmerSway` to its position. It reflects only what lies inside `Water.reflectionBounds`: anything opaque placed off the island or
-  above 3 m must grow that box (the game's props do: main.ts `holdOpaque`).
+  above 3 m must grow that box through `Water.hold` (the game's props do: main.ts `holdOpaque`).
 - New frame work is a pass on the frame graph, its targets declared with a size class and every
   texture it binds declared as a read (the attachment ops discard what nothing declares), never an
   rtt() inside another pass's material or a call around the graph (`Pipeline.ts`).
@@ -351,6 +378,9 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   render three makes of its own that cannot be compiled before its first frame (the sun's map,
   built with the first receiver) compiles by rendering it once with asynchronous pipelines
   (`compileByRendering`, `SunShadow.ts`).
+- A draw whose pipeline an asynchronous compile is still creating is skipped without a word (r186,
+  `Pipelines.isReady`), so a one-time render such as a bake waits for the warm-up that compiles it
+  (`Sky.ts` `warm`).
 - A fragmentNode that writes several attachments must be the `outputStruct( ... )` itself: one
   returned from inside an `Fn` is emitted with a single output (`struct member m0 not found`).
   Build the members in one `Fn` and return them as a matrix's columns (`TemporalAA.ts`
@@ -377,5 +407,6 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   of its own around the graph (`GraphCompiler.ts`).
 - Timestamp queries (`trackTimestamp`) have one owner at a time (`DynamicResolution.ts`).
 - `Sky.ts` drives three's private `PMREMGenerator` steps, `SunShadow.compileCasters` mirrors
-  three's shadow-pass material, and `graph/ThreePatches.ts`, `graph/AttachmentOps.ts` and
+  three's shadow-pass material, `debug/AmbientProbe.ts` frees its storage buffers through the
+  renderer's private attribute map, and `graph/ThreePatches.ts`, `graph/AttachmentOps.ts` and
   `graph/Compile.ts` patch or stand in for r186 internals: re-check them on a three upgrade.

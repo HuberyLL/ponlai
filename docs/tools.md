@@ -60,19 +60,21 @@ everyday commands; this file has the details. Each tool's own file says the rest
 - Keys: H toggles the GUI, Space pauses, R or 1/2/3 jump to the island, horizon and sky views, F
   toggles a corner readout of the frame cadence.
 - The island camera starts at the island view's pose: the land's centre in the middle of the
-  frame, at most 45 m out, looking 50 degrees down (`polar` 40) from the `az` heading (a smaller
-  land, framed nearer with its ring of shallows, keeps that framing: `src/camera/IslandFraming.ts`).
+  frame, as far out as frames the land alone from that heading with a margin of sea (about 96 m on
+  the starting island), looking 50 degrees down (`polar` 40) from the `az` heading (a land framed
+  nearer with its ring of shallows keeps that framing: `src/camera/IslandFraming.ts`).
   While the camera still holds that pose it follows it when the window's shape changes, and glides
   to it (about 1.6 s, on the scene clock) when the land grows; a paused page takes it at once. The
   hand moves it (`src/camera/IslandCameraControls.ts`): a left drag grabs the ground, a right or
   middle drag (or Option / Ctrl with the left) turns and tilts, the wheel zooms toward the pointer
-  between 22 and 70 m; on a trackpad a two-finger swipe pans, a pinch zooms and Option with a swipe
+  out from the island view's own distance to 70 m (or that distance, if farther), never in past it
+  (main.ts `islandNearest`; the review views keep 22 m); on a trackpad a two-finger swipe pans, a pinch zooms and Option with a swipe
   turns and tilts; W A S D or the arrows pan, Q / E turn, T / G tilt (straight down to 8 degrees
   over the horizon), + / - zoom, Shift speeds them up. The pivot stays over the land and its ring of
   shallows (its convex hull grown by 14 m); pulled past that, it goes on against a growing
   resistance (at most 10 m farther) and springs back once let go. R returns to the island view's pose. `cameraInput=off` (or the GUI's Camera ›
   move by hand) holds the view at its pose: Q / E or a right or middle drag then turn it about the
-  land's centre, and the wheel zooms from the start distance in to 22 m.
+  land's centre, and the wheel does not zoom.
 - The GUI's Performance folder (`src/debug/FrameStats.ts`, from the rendered frames' rAF
   timestamps) shows the frame rate over the last second, the interval's p95 and maximum over the
   last 5 s, the frames late by a refresh against the paced interval and the intervals over 25 ms
@@ -137,8 +139,8 @@ View and capture:
 
 - `paused`, `t` (scene time), `dpr` (render pixel ratio, pinned), `polar`, `az` (the island
   view's tilt and heading, 40 and 180 degrees by default), `dist` (m; without it the island view
-  frames the land and its shallows, IslandFraming.ts, brought in to 45 m from the default pivot
-  when that framing stands farther; with it the camera stands that far from the default pivot), `cameraInput=off` (the hand does not move the island camera: on by default), `gui`, `camera` (`orbit`, the
+  frames the land and its shallows, IslandFraming.ts, brought in to where it frames the land alone
+  from its heading when that framing stands farther; with it the camera stands that far from the default pivot), `cameraInput=off` (the hand does not move the island camera: on by default), `gui`, `camera` (`orbit`, the
   default: the island camera; or `free`: fly with the mouse, WASD, Q/E and Shift).
   The island view's fov widens as it closes in: `nearFov` (degrees at the closest zoom, 42 by
   default; `off` keeps 27 at every distance) and `nearFovFrom` (the distance in m it widens from,
@@ -153,6 +155,12 @@ The island:
   land in 16 m chunks and frames its views on it; debug pages expose `window.__PONLAI__.land` (`seed`,
   `step`, `bounds`, `centroid`, the views' `scale` against the first island and the default pivot
   `target`) for the tools to frame by, which follows the island as it grows.
+- `bamboo=cover,height` loads another look of the bamboo (src/world/BambooGroves.ts): the share
+  of the land its groves hold (0 to 1) and a grown culm's height (m); either left out keeps the
+  default. A load-time option, for comparing looks: the culms, their young shoots and the
+  meadow's thinning under the groves follow it, the canopy's shade baked into the world's chunks
+  (their sky visibility) and the ambient light's probes (src/world/AmbientProbes.ts) keep the
+  default groves.
 - Growing in place (src/world/Growth.ts): Grow (the GUI's Island folder) or `await
   __PONLAI__.growth.grow()` generates the next piece in the background and swaps it in (the
   promise resolves once the frames after the swap are done); from then on the page keeps a piece
@@ -178,8 +186,8 @@ The island:
 Sky and weather:
 
 - `hour`, `preset` (dawn, sunrise, noon, golden-hour, sunset, dusk, midnight), `dayLength`
-  (seconds), `moon` (phase), `clock=paused` (freezes only the day clock; `paused` freezes it with
-  the scene).
+  (seconds), `moon` (phase: 0.5, a full moon, by default; it shapes only the drawn moon),
+  `clock=paused` (freezes only the day clock; `paused` freezes it with the scene).
 - `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load as established,
   already wet; without it, `wind` and `windDir` the weather and its wind evolve on their own, among
   the kept presets), `clouds` (coverage override).
@@ -234,13 +242,13 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 - `aa=gt` (debug builds only; refused with a warning otherwise): the ground truth the temporal
   modes are measured against: the temporal graph at the canvas's resolution, no dynamic scale,
   whose rest averages `tier.taa.gtJitters` jittered frames (64 by default, 32 per frame of a
-  motion clip) with a box filter, without the sharpening or the grain (the dither kept).
+  motion clip) with a box filter, without the sharpening (the dither kept).
   `loop.step`'s `converge( i )`, where it returns true, holds the scene after frame i's tick and
   renders it until the rest has converged; `tools/capture-clip.mjs --aa gt [--gt-jitters n]` captures it that way,
   and so does a clip of one frame (`--clip rest`) under `aa=taa|taau` (their own rest sequence).
   After `loop.step`, `loop.start()` resumes the clock with a first delta of at most one frame.
 - `taaResolve=off` (debug builds): the temporal modes without their resolve, the jittered frame
-  shown as it renders, through the output passes with the grade's vignette and grain.
+  shown as it renders, through the output passes with the grade's vignette and dither.
 - `worldCache=off` (generate every chunk of the island instead of loading it from the browser's
   IndexedDB cache, as on a first visit; `src/world/WorldChunks.ts`). The cache keeps one record per
   chunk, so a land grown by a piece reloads the chunks the piece did not reach; the diagnostics'
@@ -251,7 +259,6 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   page each cliff material swaps to its other variant through `material.userData.terrainVariant`,
   as `TerrainMaterial.ts` shows: the flag itself is read only when the material is built).
 - `post=legacy` (or a comma list of `inline-composite`, `three-fsr`, `store-scene`: the frame graph without the first performance round's changes).
-- `shadowFilter=legacy|sl1|sl1,sl3` (the sun shadow's filter path).
 - `gpuTimer=off` (high's dynamic resolution without its timestamp queries: it then steers by the
   frame intervals).
 - `drsStore=on|off` (whether high starts from the render scale it last held, kept in localStorage
@@ -277,7 +284,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   resolve kept, also what `post=store-scene` and `post=legacy` choose; `off`, three's own),
   `fgPrime=0` (the warm-up renders nothing ahead, see `src/post/graph/FrameGraph.ts`).
 - `fgview=<resource>[.<output>]` (debug builds: the frame graph's debug view draws one of its
-  resources over the canvas, shown by what it holds, e.g. `linearDepth`, `surfaceDepth`, `FSR.easu`;
+  resources over the canvas, shown by what it holds, e.g. `linearDepth`, `surfaceDepth`, `FSR.easu`,
+  `displacement` (the meadow's displacement field: its direction as a hue, its size as brightness);
   outputs `r` / `g` / `b` / `a`, `previous`, a depth's `sample<n>`; under the temporal modes also
   `class`, `reactive`, `reproject` and `reproject.diff`, views of the motion vectors, and the
   resolve's decisions: `weight` (the history's share of the resolved pixel, black: this frame
@@ -288,24 +296,121 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `s.pipeline.graph.describe()` and `dot()` list the graph).
 - `flags=<name>:<value>,...` (debug builds: sets `debugFlags` as the page loads, before anything
   reads them; values `true` / `false`, numbers or strings, `mv.<source>` a motion source), e.g.
-  `flags=taaClampDrop:false` for a capture's or clip's `--q`.
+  `flags=taaClampDrop:false` for a capture's or clip's `--q`. A name alone reads as `true`
+  (`flags=lightOnly,ambientOnly`).
+- The lighting layer on its own (`src/debug/LightLayer.ts`, read at load): `flags=lightOnly` makes
+  every lit surface's diffuse albedo 0.5 grey, specular kept, so the image is the light a grey card
+  returns there; `lightOnly:2` also turns the specular off; `grey:<albedo>` sets that grey
+  (`grey:0.18`: an 18 % grey card everywhere, whose screen code values set the exposure and the
+  tone curve); `ambientOnly` takes the key light (the
+  sun or the moon, with the vegetation's and the feathers' light through them) out of the lit
+  materials, leaving the sky's light and the ground's bounce. They combine: one minus the radiance under
+  `lightOnly,ambientOnly` over that under `lightOnly` is a point's share of direct light.
+  `opaqueVegetation` lights the vegetation as opaque surfaces (no light through a leaf or blade,
+  no wrap, its ambient unweighted by its translucency), so a plant takes only the diffuse light an
+  opaque card in its place would; it combines with the others.
+  `albedoOnly` draws every lit surface unlit in its own diffuse albedo (over the other two), so the
+  frame's linear colour is the albedo where each surface lies on screen. `occlusionOnly` (over the
+  three) draws every lit surface unlit in the occlusion its ambient diffuse takes (the material's,
+  the screen's where it receives it, a plant's root-to-tip occlusion), grey: the open sky the light
+  uses, where the screen-space occlusion alone misses the turf's roots. The water, sky, clouds,
+  haze and emission are left as they are. Off, the shaders and frames are unchanged.
+  `bareGround` hides the meadow's blades and lights its turf as bare ground (`src/world/Grass.ts`
+  `BARE_GROUND`): beside a frame with the blades, the light bare ground takes at the same pixels.
+  `classes` draws every lit surface unlit in a code of its kind (ground, rock, grass, leaves, wood,
+  figure, other: `src/debug/Classes.ts`), which `radiance`'s `aov: 'class'` decodes per cell; the
+  sky and the sea are told by depth. Emissive surfaces (the yunpeng's glow) spoil their codes and
+  read as no kind, and so does a pixel whose samples blend two kinds: load the page with `aa=off`
+  (the cut-out leaves cover half the island's pixels in part under MSAA).
+- The scene's linear radiance over boxes, as numbers (`src/debug/Radiance.ts`): `await
+  __PONLAI__.radiance( { boxes: { lit: [ x, y, w, h ], ... }, image: [ 3456, 2234 ], grid: [ nx, ny ],
+  source: 'opaque' } )`. Boxes are fractions of the frame from its top-left, or pixels of an image
+  of size `image` (a capture's PNG, the boxes `img.py stats` takes); none means the whole frame.
+  `source` is `opaque` (the default: the resolved opaque colour, before the sea, the haze and the
+  post chain), `hdr` (the composite, with the sea and the air) or `meterLight` (the metering
+  illuminance M). Per box: `px`, `rgb` (mean linear), `Y`, `Yp` (10th, 50th, 90th percentile of Y),
+  `oklab` ( L, a, b, C, h in degrees) and `range` (the half float's limits over the stored values:
+  the shares `below` 2^-14 and `above` 65504, `min`, `max`; `nonSky: true` leaves the sky out).
+  The targets store radiance pre-exposed, times 2^P (`src/post/PreExposure.ts`): every value but
+  `range` is in scene units, divided by 2^P, and `preExposure` is the P (stops) of the frame read.
+  `exposure` is the exposure state (`ev` and its `target` in stops, the
+  factor `exposure` = 2^ev on scene units, ev's `velocity` in stops a second and `moved`, 1 where that
+  frame's ev differed from the frame's before: `src/post/Exposure.ts`); `grid` adds the mean colour of each cell of an
+  nx by ny grid (`grid.rgb`, three per cell, row by row). Measure under `lightOnly` for the light
+  alone. From a probe (`--eval "await P.radiance( { boxes: ... } )"`, after `--until "D.settled"`
+  or `--frames n`) or from a capture's `-- --eval-ready @file`, which runs once the page is ready
+  (a capture's `--eval` only sets the view up) and whose value lands in the capture's JSON
+  (`readyEvals[].value`); one call per frame read.
+  For a script that reads cells: `cell: n` averages only the n by n texels at each grid cell's
+  centre and `boxes: {}` skips the boxes; `source: 'sharp'` reads the composite with the bloom added
+  (before the local tone and the tone curve); `aov: 'depth' | 'normal' | 'ao' | 'class'` returns
+  per cell, instead of the radiance, the view depth with the sky's and the sea's shares, the world
+  normal, the screen-space occlusion or the kind (`src/debug/RadianceAov.ts`); `rings: { sun, step,
+  count, sky }` the luminance in rings of angle around the sun before and after the bloom, and over
+  the sky's band 30 to 60 degrees from it.
+- Tunable parameters (`src/debug/Tune.ts`, debug pages): `__PONLAI__.tune.list()` names every
+  registered number (its value, default, range, scale, and whether it is read at load),
+  `tune.set( { name: value } )` sets them with no reload and no new pipeline (a load-time one needs
+  `tune=<base64 JSON>` in the URL, which applies before the materials build; `tune.query( values )`
+  writes it) and reports a combination the code cannot use (`invalid`), `tune.reset()` restores the
+  defaults. At the defaults a paused frame is byte for byte the frame without them. Names:
+  `post.exposure.key@high` (an exposure key per sun height, `@golden`, `@low`, `@high`, `@cloudy`,
+  `@night`; the local gain's `post.localTone.hinge@high`, `high`, `low`, `width` alike), `post.tone.midGrey`,
+  `post.tone.blackSlope`, `post.tone.white`; the shade's contrast `post.shade.pivot@day`, `slope`
+  (`@golden`, `@day`, `@cloudy`, `@night`), the bloom's `post.bloom.strength` and the sun's glare
+  `post.glare`.
+- The ambient grade (`src/lighting/AmbientGrade.ts`): `__PONLAI__.ambient.current` holds the five
+  knobs the table gives for the sun and the weather now (also `D.ambient`), `table` the table's own
+  output; `override = true` with `manual.<knob>` replaces it from the next frame (the GUI's Ambient
+  folder does the same), e.g. `--eval "P.ambient.override = true; P.ambient.manual.skyBounce =
+  0.5"` before a radiance read under `lightOnly`.
 - The meadow's light and the grade's switches (`src/debug/DebugFlags.ts` lists them all), for A/Bs
   of the look: `flags=meadowShade:false` (the screen-space shade and its depth pass),
-  `meadowCast:false`, `groundCast:false`, `grassClumps:false`, `grassFar:<k>`; the look taken off
+  `groundCast:false`, `groundShade:false`, `grassShadow:false`, `grassClumps:false`,
+  `shadowWind:false` (the plants cast their rest pose and the sun's map goes back to its stepped
+  redraws; live, so `--toggle "s.flags.shadowWind = on"` times the swayed shadows); the meadow's
+  make at load: `grassDensity:<k>` (blades per m^2 over the meadow's 125), `grassWidth:<k>`, `grassLod:false`,
+  and `grassMask:true`, which paints the blades flat red for `img.py stats
+  --cover` (`src/world/Grass.ts`), or `grassMask:exact`, which draws them unlit in a red far above
+  any radiance, so each pixel's cover is exact in the opaque colour, or `grassMask:albedo`, unlit in
+  their own diffuse colour (both for `tools/meadow-light.mjs`); the look taken off
   comes back by `clearShade:true`, `lowSun:true`, `tone:0.5`, `filmNight:true`; `localTone:false`
   builds the display chain without its local tone mapping. The metered exposure is shifted by the
-  GUI's `exposure offset (stops)` (Post folder), and its compensation's points are
-  `src/post/Exposure.ts` `COMPENSATION`; `__PONLAI__.pipeline.meter()` reads the meter (EV,
-  compensation, exposure) on the CPU. The grade's first table is generated from parameters
+  GUI's `exposure offset (stops)` (Post folder); its keys are `src/post/Exposure.ts`
+  `EXPOSURE_KEYS`, and `await __PONLAI__.pipeline.readExposure()` reads its state back from the GPU
+  (the same fields as `radiance`'s `exposure`). The grade's
+  first table is generated from parameters
   (`src/post/GradeLut.ts`, `s.pipeline.grade`): the GUI's Grade table folder (in Post), or
   `__PONLAI__.setGrade( { saturation: 1.1, shadows: { tint: [ 0.95, 1, 1.05 ] } } )` from a capture's
   `::js` or a quick variant (the changes nested as the grade's own, set over it). The meadow's
   albedo against its lawn colour: the GUI's `meadow albedo (x)` or `__PONLAI__.setLawnGain( k )`; the
   cliff's above the water against its stone: `cliff albedo (x)` or `__PONLAI__.setRockGain( k )`;
   the trees' leaves against their atlas: `tree leaves albedo (x)` or `__PONLAI__.setLeafGain( k )`.
-  The tone curve's contrast, shoulder, white, mid grey and toe lift: the GUI's Tone curve folder (in
-  Post), or `s.pipeline.settings.curve` (read every frame; `src/post/Pipeline.ts` TONE_CURVE).
+  The tone curve's slope at black, the mid grey it shows and the input that shows white: the GUI's
+  Tone curve folder (in Post), or `s.pipeline.settings.curve` (read every frame; `src/post/ToneCurve.ts`
+  TONE_CURVE; a set the solve cannot meet keeps the last good curve and warns, and only the default
+  set failing throws, on the dev server).
   `fgview=meadowShade` shows the shade's map.
+- The screen-space ambient occlusion (`src/post/GTAO.ts`, on in high: the tier's `ao` knob builds it
+  and the opaque scene's depth prepass at load, `src/world/OpaquePrepass.ts`): `flags=gtao:false`
+  builds without it, `flags=gtao` with it on another tier; `__PONLAI__.gtao` holds its knobs (cutoff, recede, base, maxTexels, fullDistance). At run time
+  `flags.gtao = false` skips its passes and the receivers read 1 (`--toggle "s.flags.gtao = on"`
+  times its passes; `--compare` against `?flags=gtao:false` the depth prepass too). `fgview=gtao.r`
+  shows the occlusion the materials read, `fgview=gtaoRaw.r` the slices' before the blur.
+- The local lights (`src/lighting/LocalLights.ts`: by night the yunpeng's light round its clumps):
+  `flags=localLights:0` (or `false`) turns them off, at load or at run time, so
+  `--toggle "s.flags.localLights = on"` times their clusters' pass and the materials' lookup (on
+  a night view: by day neither runs). `flags=lightTest:N` (at load) adds N white test sources
+  over the meadow, with the range and light of stand-in yunpeng clumps (the same on any land), for
+  cost and overflow tests (64 and 256 are the usual loads). The GUI's Local lights folder turns them off and sets their art gain;
+  `await __PONLAI__.localLights.info()` reads the last pass back: `sources` (in the table),
+  `inView` (sorted into the clusters this frame), `fullest` (the most sources touching one
+  cluster), `overflowed` (clusters with more than `perCluster`, whose farthest are dropped),
+  `clusterBytes` and `tableBytes`; `__PONLAI__.localLights.sources` lists every source, and
+  `__PONLAI__.yunpengSites()` where the yunpeng's clumps stand on the current land ( x, z, size
+  per clump) with their lights.
+  `node tools/verify-local-lights.mjs [seed]` checks the clusters' CPU sort, slices and lookup
+  (plain `node`).
 - Under the temporal modes `flags.mv.camera` / `object` = false leave a source out of the motion
   vectors, `flags.jitter = false` the jitter, `s.taaCut( reason )` cuts the history and
   `s.motionCheck()` lists the materials whose motion vectors are missing or partial.
@@ -313,25 +418,58 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   in the shaded draw).
 - `chunkBorders` shows the world's 16 m chunks as lines above the sea and the meadow (also the
   GUI's Ground folder, `chunk borders`), to tell a seam from a chunk border.
+- `ambientProbes=sky|bounce|irradiance` shows the ambient light's probes (debug pages; also the
+  GUI's Ground folder, `ambient probes`; `src/lighting/AmbientVolume.ts`): a small unlit sphere at
+  each probe, where it was baked, coloured by its harmonics at the sphere's normal (`sky` the sky
+  visibility, white where a side sees the whole sky; `bounce` the bounced sky visibility, x8; red
+  where the probe is invalid in both; `irradiance` the relight's output over pi, the light a white
+  Lambertian face would reflect, in the scene's units). Built on first show, so a page without it
+  compiles nothing for it. The lattice from a script: `__PONLAI__.ambientVolume.info()` (origin,
+  dims, spacing, probes, bytes) and `await __PONLAI__.ambientVolume.hash()` (SHA-256 of its bits,
+  the same on a grown page as on a fresh load of its land); the relight's output
+  (`src/lighting/AmbientRelight.ts`): `await __PONLAI__.ambientRelight.readback()` (its texels as
+  floats, with the texture's size) and `await __PONLAI__.ambientRelight.hash()` (SHA-256 of them;
+  the first call builds one compute pipeline for the copy).
+- The materials' ambient diffuse from the volume (`src/lighting/AmbientSample.ts`, on unless set
+  off, read at load): `flags=ambientVolume:0` (or `false`) builds every lit material on the
+  environment's irradiance and the ground bounce whole, the shaders as before the volume (the A/B
+  of the volume, and the byte check against them; the flag cannot switch at run time, as the
+  materials' pipelines differ); `flags=groundBounceLand` keeps the ground bounce's land beside the
+  volume (`src/lighting/GroundBounce.ts`; by default the volume carries the land's bounce and the
+  ground bounce its sea alone); `flags=canopyShade` keeps the bamboo canopy's own shade on the sky
+  light beside the volume (the island's and the meadow's baked sky visibility and the culms':
+  by default the volume, whose probes see the groves, carries it; the chunks bake it, so they
+  are generated again, or read from their own cache entries); `flags=ambientVolumeOff:<kinds>`
+  sends the receivers named (`/` between them, `all` every one: `terrain`, `stones`, `meadow`,
+  `culms`, `leaves`, `figures`, else a material's name such as `yunpeng` or `fish`) back to the
+  environment's irradiance, the rest unchanged. It is for timing each receiver's read of the
+  volume only: the chunks' bakes and the ground bounce's land stay the volume path's, so a
+  receiver sent back looks as neither path does; `flags=ambientVolume:0` gives the old path.
 - `windView` makes the vegetation's wind visible (debug pages only; read at load, so without it
   no shader changes; `src/debug/WindView.ts`): flat unlit arrows every 2 m over the meadow, just
-  above the grass, point where the local wind blows (the eddies' veer included), longer in a
-  gust and brighter with the lean it gives; and every plant (grass and its flowers, its tufts draped over the cliff's edge among them) is drawn unlit in the colour of its current sway s (tip
-  offset over height): the hue is s's angle from the mean wind on a cyclic map (downwind blue,
+  above the grass, point where the local wind blows, longer in a gust, and their brightness
+  shows the load the plants take there (`plantLoad`); and every plant that bends from its root
+  (the yunpeng, the bamboo; not the meadow's blades) is drawn unlit in the colour of its current
+  sway s (tip offset over height): the hue is s's angle from the mean wind on a cyclic map (downwind blue,
   upwind orange, left of the wind, counter-clockwise seen from above, magenta, right of it green),
   the brightness |s| / 0.15. `windView=arrows` or `windView=plants` shows one half. The numbers
   behind it: `__PONLAI__.windProbe( options )` (`src/debug/WindProbe.ts`: the shaders' own wind
-  functions in a compute kernel built on the first call; angle histograms, lean and swing,
+  functions in a compute kernel built on the first call; per kind of plant (`kinds`: `grass`,
+  `bamboo`, `yunpeng`, the last two their main bend at the top) angle histograms, lean and swing,
   neighbours' correlation, the gust field's size and travel, the sea's gusts against it around the
-  island (`gust.sea`), the plants' wiring, their natural sway
-  frequencies, and per weather where every part travels and how fast: the plants, the sea and its
+  island (`gust.sea`), the plants' wiring, their sway
+  rates, and per weather where every part travels and how fast: the plants, the sea and its
   swell, the open sea's gusts, the air's displacement (`fog`), the cumulus and the cirrus), through the probe as
   `--eval "return JSON.stringify( await P.windProbe() )"`.
 - The haze (`src/weather/VolumetricHaze.ts`): its knobs are the GUI's Haze folder and
   `__PONLAI__.pipeline.air.settings` (read every frame; a change of the slices, the jitter or the
   rest's length also restarts the shadow's rest); its
   `debug: 1` shows the key light's visibility in the froxel at each pixel's depth (a grey card in
-  that light: mid grey lit, black shadowed), the shadow the shafts are cut from.
+  that light: mid grey lit, black shadowed), the shadow the shafts are cut from. Its
+  `readings( height, from?, to? )` gives the medium's numbers without a capture: green's
+  extinction at a height, each band's sigma, a horizontal view's RGB transmittance over 1 and 3 km and the
+  distance its luminance halves in, and the transmittance between two points (probe:
+  `--eval "const c = P.camera.position, t = P.land.target; return P.pipeline.air.readings( c.y, c, { x: t[ 0 ], y: t[ 1 ], z: t[ 2 ] } )"`).
 - `look=kit` dresses the islanders in the earlier kit look (pointed ears, linen shirt, cel steps)
   instead of the feather-clad Hanming look (`src/characters/looks.ts`).
 - `islander` picks the islanders' proportions (the look's own by default: `real` for the Hanming
@@ -412,18 +550,28 @@ within a tolerance; the test mode keeps the byte-for-byte checks valid.
   frozen by its rest image, `TemporalRest.ts`, and compared within the temporal tolerance), the
   states that settle on their own on a still scene (the clouds' view, the sky's bakes, the
   refracted sun's map, the haze's shadow, which averages a fixed sequence of jitters from nothing
-  on a still scene and holds it: `src/weather/VolumetricHaze.ts`), which `settled` waits for, and
-  the wenyao's schools
+  on a still scene and holds it: `src/weather/VolumetricHaze.ts`), which `settled` waits for,
+  the exposure's adaptation (`src/post/Exposure.ts`), which takes its target at once while the
+  scene clock does not step, so the pause itself freezes it, and keeps `settled` false until it
+  has reached its target, the pre-exposure (`src/post/PreExposure.ts`), a whole-stop scale of the
+  stored radiance taken from the exposure read back, which a scene jump resets, which reaches the
+  same value on a still scene whatever came before and keeps `settled` false until the P a frame
+  used is the one its own exposure asks for, read from a frame drawn the settle frames into a
+  quiet run of the view (so under MSAA, the test mode's, P does not change under a settled page;
+  under the temporal modes an EV at a hair from a half stop can still move it, and `settled` then
+  turns false), and the wenyao's schools
   (`src/life/Wenyao.ts`), which step only with the scene clock's step from a layout the land gives:
   a page loaded paused never steps them, `establishScene` returns them to that layout and a Grow
   does too while they have not stepped, so the pause itself freezes them and they need no switch.
+  The falling leaves (`src/weather/FallingLeaves.ts`) are history-dependent and off under the
+  test mode's switch (below): not made, so `settled` never waits for them.
 - A new history-dependent effect:
   - `establishScene` (`src/main.ts`) clears its history; `tools/verify-scene-jump.mjs` checks it;
   - it reports itself to `settled` (main.ts `pending`, or the rest's signature) until it has
     converged on a still scene, or it is frozen or turned off in the test mode;
-  - the first such effect adds the test mode's one switch, a load-time query option every such
-    effect reads (frozen or off), and the capture, parity and verify tools set it by default, with
-    an option to leave it out; later effects read the same switch;
+  - under the test mode's one switch (`src/debug/TestMode.ts`: on with `paused`, which every
+    capture, parity and verify tool loads with, unless `testMode=0` leaves it out, as
+    `tools/capture-clip.mjs` does so the clips show what moves) it is frozen or off;
   - a Grow does not clear rendering history (`tools/verify-growth-swap.mjs` shoots its first view
     without a jump), so the effect is frozen or off under the switch there, or the swap resets it;
   - its module joins `WATCH.motion` in `tools/parity/carry.mjs` when its paths are not already
@@ -477,9 +625,14 @@ captures (`uv run tools/img.py <cmd>`: its dependencies are inline, no system Pi
 needed): `diff` (two images or two directories: max, mean, pixels over levels, signed bias, luma
 change, bounding box, `--heat` map), `crop` (boxes or a capture's named anchors, `--zoom`),
 `sheet` (a labelled grid of images, directories or crops, `--diff` for A | B | diff) and `stats`
-(mean RGB, luma, percentiles per image or region) and `flicker` (a clip's consecutive whole
+(mean RGB, luma, percentiles per image or region; `--oklab` adds the Oklab lightness, chroma and
+hue medians, `--cover` the share of a mask capture's pixels painted flat red, as `grassMask:true`
+paints the blades) and `flicker` (a clip's consecutive whole
 frames, capture-clip's `--full`: the temporal flicker per region, mean frame difference, temporal
-high-pass, one-frame flashes and a `--map` of where they fall); regions are `--box
+high-pass, one-frame flashes and a `--map` of where they fall) and `radial` (the median colour,
+luma and linear luma ring by ring around a point, such as the sun's place an `--eval-ready` step
+returned: `--centre-key`; rings in percent of the frame's height, or degrees with `--fov`; `--half up`
+keeps the sky over a low sun without the sea under it); regions are `--box
 [name=]x,y,w,h` or `--anchor name|all` from the capture's JSON. Its numbers are diff-set.py's and
 compare-captures.py's (shared helpers in `tools/parity/pixels.py`). `tools/compare-captures.py` measures two overview
 captures (`uv run --with numpy --with pillow`). Where shapes differ (growth steps, seeds, a
@@ -493,7 +646,7 @@ headless in one warm capture browser. It compares the views (parity view names, 
 island, cliffs, meadow; each shot twice, two frames apart, after the settled signal and a stable
 image; the first shots or the second byte for byte) on decoded pixels, the chunk hashes, the rain's
 collision map read back in each page (0 differing texels), the camera's ground grid, the world
-fields' bytes, the pipeline count (constant across every swap, equal on both pages), renderer.info's
+fields' bytes, the ambient light's probe lattice and its relit irradiance (their SHA-256), the pipeline count (constant across every swap, equal on both pages), renderer.info's
 uniform buffers and textures (the grown page at most 2 above the fresh one) and the console (no
 errors). Per step it records the swap's time and the memory. The GPU lock is shared and held only
 while a page renders: it is released while the page prepares its next piece. Writes `report.json`
@@ -645,22 +798,74 @@ freshly loaded pages (a grown page against a fresh `grow=1` page) in one call.
   earlier pipelines are not listed, nor wrappers of one's own needed);
 - the game: `--q "debug&game" --eval "P.game.sim.state.villagers[ 0 ]"`;
 - frame time: `--exclusive --q "debug" --frames 300 --eval "D.frameMs"` (profile-frame for A/B).
+- the light in linear radiance over boxes: `--q "debug&paused&flags=lightOnly" --frames 60
+  --eval "await P.radiance( { boxes: { a: [ 0.4, 0.6, 0.1, 0.1 ] } } )"` (URL options, the lighting
+  layer).
 
 Steps, scope, the value's serialisation and the exit code are in the file's header.
+
+`node tools/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]...
+[--views-file f.json [--views a,b]]` measures the meadow's light on its leaf pixels in linear
+radiance: the sunlit blades' bright and dark clusters against the bare ground in the same sun,
+their mean, the share that is lit, the shaded blades against shaded bare ground, the light the turf
+under the sward takes, the blades' cover (over the lawn, the frame's centre and bands of view
+depth), their albedo and its spread and the turf's between them, the leaf's and the turf's colour,
+the Oklab of the sunlit lawn on the canvas, and the sunlit leaf and bare turf on the canvas as a
+close look reads them (their luminance, colour and texture's swing) with the share of the frame the
+gaps between the blades take, the spread of the lawn's luminance, the specular's share of the
+sunlit blades' light, and the soil between them against the sunlit blades (a table of its own: the
+colour of the brighter half of the bare pixels redder than green and of the blades' brightest
+third, their ratios, and the soil's relief, its luminance's 90th over its 10th percentile). Each view is read on seven fresh loads (the blades'
+exact cover mask with everything but the land and the blades hidden, every surface's albedo
+(`albedoOnly`), `lightOnly`, with `bareGround`, with `ambientOnly` too,
+the normal frame, and `lightOnly:2`, the light without its specular) once `settled` holds, its views reached by the scene jump and a camera placed
+relative to the sun (so elevations compare like for like) or by a views file's evals, as
+capture-set takes them. Lawn that something stands in front of counts for the cover only. It writes
+`meadow-light.json`, the canvas and a picture of the pixel sort per view, and prints a table. The
+sort and every measure are in the file's header. A change to the blades' shading alone moves three
+of the seven pages: `--save dir` keeps a run's pages on disk (about 30 MB a view and page) and
+`--pages light,normal,matte --reuse dir` shoots only those three, reading the others from it; `--pages none`
+reads them all, with no browser, to run changed measures on a saved run. `lean` in `--pages` adds an
+eighth load (`grassMask:lean`) and a table of the blades' lean from upright over the lawn they
+cover, as drawn (the wind's nod and the push away from a near eye included) and by their pose
+alone: its 10th, 50th and 90th percentiles and the shares under 15 and over 60 degrees.
 
 ## WGSL builds: `tools/wgsl-build.mjs`
 
 `node tools/wgsl-build.mjs <entry> [--out dir] [--features a,b] [--q query]` builds TSL shaders to
-WGSL in node, with no GPU, no browser and no GPU lock: three's WGSL node builder on a
-WebGPURenderer that is never initialised. The entry is a module that returns the shaders to build
-(compute kernels, full-screen passes as a NodeMaterial, draws as `{ material, object, scene,
-camera }`), in the order the page first builds them; the tool loads it through Vite's SSR loader
-with the project's config, so it imports the page's modules as the dev server serves them, and
-`--q` sets the `location.search` their load knobs read. Entries live in `tools/wgsl-build/`
-(`fsr3`: every kernel of `src/post/fsr3/`, built by the page's own `Fsr3Upscaler` in a frame's
-order, the reactive-mask generator and the debug view included); the entry's contract is in the
-tool's header. `--features` gives the device features three sees: default none (WebGPU core),
-while the page's device has every feature its adapter offers, and `float32-filterable` and
+WGSL in node, with no GPU, no browser and no GPU lock: three's WGSL node builder on a WebGPURenderer
+that is never initialised. The entry is a module that returns the shaders to build (compute kernels,
+full-screen passes as a NodeMaterial, draws as `{ material, object, scene, camera, mrt }`, `mrt`
+the pass's MRT a scene material draws into), in the order
+the page first builds them; the tool loads it through Vite's SSR loader with the project's config,
+so it imports the page's modules as the dev server serves them, and `--q` sets the `location.search`
+their load knobs read. Entries live in `tools/wgsl-build/` (`fsr3`: every kernel of
+`src/post/fsr3/`, built by the page's own `Fsr3Upscaler` in a frame's order, the reactive-mask
+generator and the debug view included; `ambient-relight`: the sky's projection, the relight, its
+readback and the probes' debug view, `src/lighting/AmbientRelight.ts`; `ambient-materials`: the
+lit materials that read the ambient volume, `src/lighting/AmbientSample.ts`, with the volume or,
+under `--q "flags=ambientVolume:0"`, without it; `gtao`: the ambient
+occlusion's depth, slices and blur, `src/post/GTAO.ts`; `meadow`: the displacement field's
+sprites and the near and far blades that read it, `src/world/vegetation/Displacement.ts` and
+`src/world/Grass.ts`, built from an empty plan; `falling-leaves`: the falling leaves' step and
+prewarm kernels and draw, `src/weather/FallingLeaves.ts`; `local-lights`: the local lights'
+clusters kernel and the lit materials that bind the most with their lookup, the terrain's cliff
+and seabed and the islanders' figure, `src/lighting/LocalLights.ts`; `haze`: the volumetric haze's
+light kernel and the haze the sky dome lays on itself, `src/weather/VolumetricHaze.ts`; `night`:
+the moon on the dome (`src/sky/NightSky.ts`), the flare and its visibility
+(`src/post/LightShafts.ts`) and the composite's rods' colour (`src/post/Purkinje.ts`); `terrain`:
+the island's ground, the stones and the sea floor, `src/materials/TerrainMaterial.ts`; `post`: the
+post chain's own passes, the exposure's meter, the bloom's levels and the local tone's grid and
+slicing, `src/post/Metering.ts`, `Exposure.ts`, `PhysicalBloom.ts`, `LocalTone.ts`; `clouds`: the
+clouds' panorama march, shadow and view kernels on the page's atmosphere, `src/sky/Clouds.ts`, with
+a stand-in shape noise and the GPU bakes skipped; `atmosphere`: the atmosphere's bakes, the
+slices cut from its table, the earth shadow's mean over the azimuth and the sky's radiance,
+`src/sky/Atmosphere.ts`; `sky`: the materials that read the clear sky, and so the earth's shadow:
+the environment's panorama bake, the cloudless sky's irradiance and the dome as the page draws it
+(fogged by the haze, into the scene pass's MRT), `src/sky/Sky.ts`, with the moon's maps stood in
+empty); the entry's contract is in the tool's
+header. `--features` gives the device features three sees: default none (WebGPU core), while the
+page's device has every feature its adapter offers, and `float32-filterable` and
 `texture-formats-tier1` change the WGSL.
 
 Each shader goes to `artifacts/wgsl/<entry>/<name>.wgsl` (a draw's to `.vert.wgsl` and
@@ -1103,7 +1308,11 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 2560 --h 1440 --scale 1] 
   timestamps (`--timestamps off` or `both`): Chrome ran frames up to a quarter faster with them
   on, so their per-pass split shows where the time goes, not the frame rate a player sees. (A tier
   with a dynamic resolution keeps its own timestamp queries in every run, as a player's page does;
-  `--q gpuTimer=off` leaves them out.)
+  `--q gpuTimer=off` leaves them out.) Uncapped, the page runs about 120 frames ahead of the GPU,
+  so a frame's timestamps come back seconds later (a scene's `profiler.readbackMs`: 2.5-6.5 s on
+  `island-fair-noon` and `meadow-close`); the profiler waits for each frame's own read-back, with
+  no time limit, and `missingPasses` counts only passes whose query was never written or whose
+  read-back failed. A run with `timedFrames` 0 is a bug, not a busy GPU.
 - High is timed at its standard by default: 2K output (2560x1440 CSS at DPR 1) rendered natively
   (no upscale) with MSAA 4x, the level every trade-off is judged at, with about 14 ms of GPU time a
   frame in the normal scenes (island views, `meadow-close`) as the budget. A profile, `--compare`
@@ -1137,8 +1346,17 @@ Animation Hitches templates show when frames reached the display and what the GP
 what these do not give (automation, A/B statistics, pass names).
 
 Whether a grown page draws what a fresh load of its land draws (views, chunk hashes, the rain
-map, the camera's ground, pipelines and memory across swaps): `tools/verify-growth-swap.mjs`, not a
+map, the camera's ground, the ambient probes, pipelines and memory across swaps): `tools/verify-growth-swap.mjs`, not a
 probe eval of one's own.
+
+How much light reaches a surface, its colour, and how much of it is the sun's, apart from the
+albedos and the display chain: `flags=lightOnly` (and `ambientOnly`) with `__PONLAI__.radiance`
+(URL options), not a PNG's pixel values, which have been through exposure, the tone curve, the
+grade and bloom.
+
+How bright the meadow's sunlit blades are against bare ground, how many of them are lit, how dark
+the shaded ones are, how much of the lawn they cover and what colour the lit lawn shows:
+`tools/meadow-light.mjs` (Probes), not a radiance box of one's own over a mixed patch.
 
 Which assets a commit runs with, whether `public/` matches them, and how to publish a change to
 them: `tools/assets.mjs` (Assets), never a file committed to git.
@@ -1186,15 +1404,16 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   exit 1 at once (`tools/dev-server.mjs`).
   `tools/verify-scene.mjs` checks a production preview. `tools/verify-scene-jump.mjs` captures the
   parity views reached by scene jumps in one page and as fresh loads, for `diff-set.py`, each shot
-  ready by capture.mjs's stability rule (`tools/parity/README.md`, One page, many views);
+  ready as capture.mjs's paused shots are (the page's settled signal, then the stability rule:
+  `tools/parity/README.md`, One page, many views);
   `--check <root>/<sha>/<set>` runs the whole check (the stored set of fresh loads, a page per
   view, both jump orders at once, the diff) in one command. `--view "name:query[::js]"`
   (repeatable) adds ad-hoc views with capture-set's syntax (`like=<view>` included), so a jump
   into a new scene option is checked as `--views island-fair-noon --view near:dist=40`; their fresh
   loads are stored with their definitions' hashes, so a changed query captures a new reference.
 - `tools/verify-zoom-anchor.mjs [url] [--runs 24] [--out file.json]` checks the island camera's
-  anchors in one probe page (with `cameraInput`): wheel zooms with the cursor over the sea (`--runs` times) and over
-  land, a pinch out and in, and a drag; it fails on any zoom anchor that found no ground or a drift
+  anchors in one probe page (with `cameraInput`): wheel zooms out with the cursor over the sea (`--runs` times) and
+  over land, two pinches out, and a drag (the island view zooms out only, from its pose's distance); it fails on any zoom anchor that found no ground or a drift
   of the point under the cursor of 0.5 px or more. Run it after a change to the island camera or
   its ground (`src/camera/`).
 - `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
@@ -1247,9 +1466,7 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
 - `tools/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n]` (plain `node`) builds
   every chunk of whole islands on a pool of worker threads (`buildChunk`, contact shade off) and
   checks the statistics of the union of what they own, with the bounds the look was tuned on: the
-  meadow's anchors, tufts and flowering tufts per m^2 against M2 (grown islands summed, 5 %; the
-  flowers also printed by species, and `--flowers <dir>` writes each island's turf anchors and
-  flowering tufts as JSON to map them); the stones'
+  meadow's anchors per m^2 against M2 (grown islands summed, 5 %); the stones'
   overlaps, crowns and reach per island, and over seeds 1 - 6 at steps 0, 8, 16 their classes and
   large sizes per 100 m of coast against today's (20 %) and their gathering below the scars; the
   cliff's scars, on each chunk's own wall: none cuts rock beyond its reach (4.5 m, 3 m) and none
@@ -1302,7 +1519,8 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   Its steps' waits are part of what it measures and stay fixed.
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
 - `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
-  (`uv run --with pillow --with numpy`). `tools/build-star-catalog.mjs` and
+  (`uv run --with pillow --with numpy`), `tools/build-ground-textures.py` the meadow ground's from
+  two Poly Haven scans (the same way). `tools/build-star-catalog.mjs` and
   `tools/build-milky-way.py` rebuild the night sky's data in `public/sky/` from the raw catalogue
   and map (each file says where to get them and how to run it).
   `tools/bake-rainbow-table.mjs` generates `src/sky/RainbowTable.data.ts`.

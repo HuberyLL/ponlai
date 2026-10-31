@@ -79,9 +79,9 @@ The player should want to rebuild after watching their islanders walk the long w
 
 - **Trigger**: population. Each time the island reaches the next population step, it grows by
   one piece of land. No story has to justify it.
-- **How much**: the island starts at about 400 m^2 (a little larger than today's) and a piece
-  adds about 180 m^2 on average (from about 100 to 270 m^2), for at most 36 steps, by which
-  the island has grown to about 7,500 m^2.
+- **How much**: the island starts at about 1,000 m^2 (room for a bamboo grove and a meadow for
+  the first islanders) and a piece adds about 180 m^2 on average (from about 100 to 270 m^2), for
+  at most 36 steps, by which the island has grown to about 8,000 m^2.
 - **Where**: chosen at random, but from the centre outward: each new piece joins the island's
   current edge near its middle, so the island grows all round rather than stretching one way,
   and the player can plan around it. The shape must stay irregular and natural, like a real

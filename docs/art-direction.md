@@ -2,16 +2,13 @@
 
 The look the user chose and what to avoid. It says what the scene must look like, not how the code
 gets there: each module's header comment holds its own rules and reasons. Change this file when an
-art decision changes; reference images stay out of the repository.
-
-## Inspiration
-
-- The look is inspired by the eastern aesthetic of Ghost of Tsushima: its light, its colour and
-  its fields of grass and flowers.
+art decision changes; images from elsewhere stay out of the repository.
 
 ## The look
 
-- A small island in an open sea, a visual sample for a game, fantasy-realistic: the fantasy lives
+- A small island in an open sea, a visual sample for a game, fantasy-realistic,
+  inspired by the eastern aesthetic of Ghost of Tsushima: a calm, painterly light, restrained
+  colour, and wide fields of grass and flowers that move together in the wind. The fantasy lives
   in the world (the island, its everlasting flowers, its creatures from the old texts, later the
   sea's glow at night) and in a light touch on the image, the airy feel of an immortals' island
   (Penglai). Deep clear water over pale shallows with a sparkling glare toward the sun, chunky
@@ -20,20 +17,32 @@ art decision changes; reference images stay out of the repository.
 - The light and the image are photographic, as real as tidewater's (its water, its light under
   the water): the scene is lit by the sun or moon, the sky and the sunlight the ground bounces up.
   The frame is developed in stages: a local tone mapping keeps a bright
-  sea, glare or sky from burning out and greying while the land keeps its level (the brights drawn
-  a quarter toward mid grey, the shade left as it is, the detail kept); a filmic curve (ACES's
-  shape, a little softer: its contrast eased and, by day, its toe lifted, as a print's flare
-  lifts its blacks (by night, when the whole frame lies in the toe, the lift greyed it); its contrast, shoulder, white and toe adjustable) whose working space keeps a low sun's
-  reds from turning yellow; a white balance given as the colour white becomes (a touch cool, so
-  the light meadow and the pale noon sky read fresh rather than yellow); a vignette and film grain;
-  a faint physical bloom over the whole image; and two grade tables, generated from a grade's
-  parameters, that a look can blend between by time of day or place (the first holds the clear
-  day's grade: tidewater's touch more saturation and contrast, the meadow's green turned a little
-  toward a sunlit field's yellow, the sky's soft blue kept light and the red flowers' colour kept
-  against the cool white; the second is the identity). The local tone mapping, the curve's working
-  space, the white balance and the grade tables follow the display chain Patry
-  presented (SIGGRAPH 2021); the toe's lift, the vignette, the grain, the bloom and the blend of
-  two tables are ours.
+  sea, glare or sky from burning out and greying while the land keeps its level (by day only what
+  lies well over the lit ground is drawn toward it; under a low sun the land is drawn up as well,
+  the more the darker its surroundings; the detail is kept); the shade's contrast, deepened under a
+  pivot so the shade stays solid under the soft curve (over the lit ground by day; a quarter of a
+  stop under mid grey under a low sun, where the long shadows take the most, and gently under clouds
+  and by night); a soft filmic curve (gentle in the shadows and midtones,
+  with a long shoulder and a long toe, which deep in the dark halves the screen's level every
+  two stops, keeping the shade's gradations, and still reaches black, with no floor veiling the
+  darks; its contrast, shoulder, white and toe adjustable; no saturation of its own, which the
+  grade's hue bands set)
+  whose working space keeps a low sun's reds from turning yellow; a white balance given as the colour white becomes, by the time and the weather (a clear
+  day cool from noon to a low sun, against the sun's slight warmth, so the lit ground reads a touch
+  cool and the shade, the sky and the sea clearly cool; the golden hour a little warm, the clouded
+  skies and the night cool); a bloom only on what is truly bright (the sun's
+  glints on the sea, the sun, a moonlit path), never a veil over the whole frame, and next to none
+  under a clouded sky; a vignette that darkens only the corners, and no grain; and two grade
+  tables, generated from a grade's
+  parameters, that a look can blend between by time of day or place (the first holds the day's
+  grade: no contrast or saturation over the whole frame, each hue moved lightly on its own, the
+  warm hues and the sky's blue a little richer, the green a touch quieter and turned a little toward yellow against the cool white balance, the sea's
+  blue-green a little bluer, the red flowers' colour kept against the cool white and the
+  highlights a touch cool; the second is the identity). The exposure lets the frame darken as the
+  sun sinks, so a low sun reads as a low sun. The local tone mapping, the curve's working space,
+  the white balance and the grade tables are techniques Patry presented (SIGGRAPH 2021); the
+  curve's toe, the shade's contrast, the vignette, the bloom and
+  the blend of two tables are ours.
 - The light keeps the sun's and the sky's own balance, by day and by night, so that the land shows
   where the light comes from: a stone or a figure has a lit side and a shaded one, and its shade
   falls on what lies beside it; the meadow shows it in its slopes, in the light through its blades
@@ -41,32 +50,73 @@ art decision changes; reference images stay out of the repository.
   extra share of sky light on the island (a "clear shade"), a grade tone that softened the
   contrast and recoloured the lights and the shade, a low sun's recolouring and a film's day for
   night were all tried and taken off, because together with the meadow's own soft light they left
-  a shaded clump within a quarter of a lit one's brightness (in a clear day's real light the
-  shade holds a third to an eighth of it) and the meadow read as lit by an overcast sky. The
+  a shaded clump within a quarter of a lit one's brightness (on a clear day the shade on flat
+  ground holds about a tenth to a thirteenth of the lit ground's light at noon, about an eighth
+  in the afternoon and a third to a sixth under a low sun: the higher the sun, the harder the
+  contrast) and the meadow read as lit by an overcast sky. The
   frame's brightness comes from the exposure, which keeps the ratio between light and shade.
-- The air is a lit medium, a volumetric haze: haze and mist are one
-  volume of air, lit by the sun and the sky and cut by every shadow, thin and layered by height,
-  never a flat tint laid over the frame for an airy feel (that reads as smog). Its density follows
-  what the weather lets one see (an overcast sea sees about 10 km; the morning mist, about 3 km,
-  lies at the cliff's foot), so from the game's views the island and the teal sea keep their colour
-  and the haze gathers with distance toward the horizon. It lies over the land and the sea, not
-  over the sky, which keeps the atmosphere's own haze: laid over the sky as well it whitened it
-  toward a low sun and took the clouds' contrast. Shafts show where the air is thick enough and lit
-  from the side or behind against darker ground; the rays through the clouds' gaps are drawn over
-  the sky with the sun in view. Mist also gathers in bright banks and wisps round the island and
-  the cliff's foot (not drawn yet).
+- The shade is lit by the sky the island lets through (the ambient volume, which sees the land,
+  its groves and its cliffs: `src/lighting/AmbientSample.ts`). At noon on a clear or fair day the
+  open meadow's lit side is about 3 to 4.5 times its shade; a low sun's lit side comes down toward
+  its shade, and that is left as it is. A grove's floor in shade should read about half the open
+  shade at its edge, darker deeper in. Its culms in shade are at least as light as the floor
+  beside them, never dark silhouettes, and the faces toward the grove's open sides should read
+  lighter than those toward its inside. Where a culm or a stone meets the ground the contact
+  darkens by a tenth at most, gone within about a metre: a grounding, never a dark ring. Where
+  the grass, the culms and the ground's relief close the sky, the shade loses some of its light
+  broadly, over metres (the screen-space ambient occlusion, on in high: `src/post/GTAO.ts`, and
+  at the turf's roots the share of the sky its blades leave): the ground among the grass in shade
+  about a quarter to a third darker than without that loss, a grove's floor about a fifth, a
+  culm's sides a little, lit surfaces not at all. The ambient light is set for the shade with
+  that loss in it, never pressed down once more for it, and a loss two terms estimate counts
+  once (the turf takes the stronger of the two).
+- The air is a lit medium, a volumetric haze: haze and mist are one volume
+  of air, lit by the sun and the sky and cut by every shadow, thin and layered by height, never a
+  flat tint laid over the frame for an airy feel (that reads as smog). Its density follows what the
+  weather lets one see, and it is coloured: a clear day's air is a blue layer whose light falls to
+  half in about 2 km at the game's camera height, the blue lost first (within a kilometre less than
+  half of it gets through, three kilometres off almost none), so far sea and land turn blue-grey and
+  the low sun's light reddens; a cloudy sky's air is grey and about as thick. It lies as a ground
+  layer with a soft top tens of metres up: the hills rise out of it, the camera stands in its upper
+  half, and the distant haze thins slowly with height. From the game's
+  views the island keeps its colour (at least nine tenths of its light reaches the camera by day)
+  and the haze gathers with distance toward the horizon. The far sea and the low sky end in the same
+  haze: a milky band, brighter than the sky above it, closes over the horizon with no step or dark
+  line where sea meets sky, and fades by 10 - 15 degrees up. Across from the sun
+  the haze lifts the atmosphere's dim low sky (about twice); beside the sun it is flatter than the
+  atmosphere's own glow and dims it a little. The air follows the hour more than anything else: clear before dawn; on calm, dry
+  mornings a mist as the sun comes up, a soft low layer over the whole island that the camera
+  stands in (never a sheet on the sea), near neutral, its band over the horizon a few times as
+  bright as the lit grass in front of it, gone once the sun is 7 degrees up; coloured and even
+  through the day; thick and fully orange at the golden hour, yet paler than the lit ground;
+  thinner after sunset; a visible grey-blue layer by night. A cloudy day's air keeps less colour
+  and shows brighter than a clear day's (about twice with the sun 25 degrees up). It lies over the
+  land, the sea and the low sky alike; the light the sky lends the scene is the atmosphere's alone.
+  Shafts show only where the
+  air is thick enough and lit from the side or behind against darker ground, the haze's own
+  (strongest in the morning mist and at the golden hour, faint at a clear noon); no rays are
+  painted over the sky. The sun's disk is drawn larger than life (1.1 degrees), softly
+  limb-darkened, its edge clean; round it a soft glow sized by the frame, not the field of view, near white at its core and fading
+  as the square of the distance past half the frame, with no streaks, ghosts or rings. It weakens
+  with the share of the disk left uncovered yet stays wide through a gap in leaves, goes with the
+  disk when the sun leaves the frame, and is weaker against the bright sky round a low sun. Mist also gathers in bright banks and
+  wisps round the island and the cliff's foot (not drawn yet).
 - Real phenomena are not exaggerated; no glow round every highlight, and no hue turned further
-  than a few degrees (the grade turns the meadow's green 5 degrees toward yellow, no more).
-- The exposure is metered from the light the island receives (the sun or the moon and the sky),
-  not from the frame, so a dark meadow or sea is not brightened toward grey; a compensation by
-  the scene's brightness, by day and by night, sets each scene's look. It keeps the levels the
-  earlier exposure by the time of day gave, calibrated against tidewater's frames, the day's a
-  quarter stop down with the meadow's light albedo (Meadow): a clear noon shows a grey card one
-  and three quarter stops over mid grey, the night sits about two stops under the day (as a
-  film's day for night exposes it) and holds its exposure whatever the moon. A sun in the frame
-  may read a little brighter than its eye-adapting exposure would show it. Overcast stays about
-  three quarters of the same view's clear day. The night keeps the moonlit island readable (see
-  Night).
+  than a few degrees (the grade turns no hue more than 7 degrees).
+- The exposure is metered from the light falling on what the frame shows, not the light leaving it,
+  so a dark meadow or sea is not brightened toward grey; by day the sky weighs into the meter, most
+  of all under a high sun, and the frame's brightest few percent hold it down, which darkens a view
+  toward a low sun against one away from it. The frame darkens with the light: a clear noon shows a
+  sunlit grey card on level ground at a screen code of about 0.70 to 0.75 (its open shade near
+  0.15), and as the sun goes down the card goes down with it, the more the lower the sun, so a low
+  sun reads as a low sun (in the golden hour, with the sun at 3 degrees, a grey card on the island
+  shows about ( 0.5, 0.3, 0.05 ) on screen, the local tone's lift included); the deep night shows a
+  moonlit grey card at a green code of about 0.1 to 0.2, and holds its exposure whatever the moon. A
+  clouded sky is metered by the view's own light: in the view of the whole island the ground shows
+  about three quarters of a stop under a clear day's sunlit ground at the same hour, on a cloudy and
+  an overcast day alike, and other views lie within about half a stop of that. A sun in the frame
+  may read a little brighter than its eye-adapting exposure would show it. The night keeps the
+  moonlit island readable (see Night).
 - No lens effects a photograph of a real place would not have: no tilt-shift miniature blur, no
   lens flares forced into the frame.
 - The water is tidewater's physically based model with clear water a little less pure than its
@@ -104,8 +154,12 @@ art decision changes; reference images stay out of the repository.
 
 - The island grows one piece of land at a time from a starting island at the world's centre
   (docs/game-design.md, "How the island grows"): its coast always irregular and natural, never
-  drifting toward a square or a circle. Keep a flat central plateau. Natural contour, slope and
-  weathering variation belong to the outer rim and cliffs.
+  drifting toward a square or a circle. Its top is a plateau that rolls as an old meadow does:
+  low mounds, banks and hollows of about half a metre to a metre either
+  way, some 18 m across with smaller hummocks on them, the slopes mostly under 12 degrees and never
+  past what the grass holds; flat on average, never a hill, a bowl or a tilt. The cliff's height
+  follows it along the coast. Contour, slope and weathering variation of the stone belong to the
+  outer rim and cliffs.
 - Offshore stones stay submerged and form patchy seabed detail: no exposed sea stacks or reefs;
   nothing breaks the surface off the island. Large blocks heap below the stretches of coast that
   shed them; elsewhere the shelf is mostly clear sand and platform, never stones sprinkled evenly
@@ -141,18 +195,18 @@ art decision changes; reference images stay out of the repository.
   and colour and differ from each other only a little (a tenth of the height either way), so the
   field is not a mown lawn and the wind moves it in broad sweeps but never combs it flat as one
   pile; clumps grown as visible mounds (a quarter of them half again as tall, leaning out, each lit
-  on one side and shaded on the other) drew the island top as a field of lumps. Each blade is
-  folded along its midrib, one half lit and the other shaded, with a thin lighter edge, and only a
-  little apart from its neighbours in value and colour; the colour (fresh green, yellow green,
+  on one side and shaded on the other) drew the island top as a field of lumps. Each blade reads
+  as a rounded leaf, its light turning across its width (a short one folded into two leaves), and
+  only a little apart from its neighbours in value and colour; the colour (fresh green, yellow green,
   olive, a few dry leaves) changes from stroke to stroke, a few clumps sharing one, a little either
   way, so the lawn reads as a painter's strokes of one green and its
   average stays one colour; never a single dyed green, which reads as plastic, and never every
-  blade and tussock its own value and height, which from the game's view grains the lawn into a
-  scatter of tussocks over dark ground.
-  The meadow is painted light: its albedo at the top of real
-  foliage, twice the measured lawn green's, and the day's exposure a quarter stop down with it, so
-  the lit meadow is the frame's bright ground and the sea and the sky keep their depth. The trees'
-  leaves are lightened with it, a little lighter still, so a crown parts from the sward under it.
+  blade and clump its own value and height, which from the game's view grains the lawn into a
+  scatter of tufts over dark ground.
+  The materials keep albedos within real ones: the meadow's blades a sunlit leaf's
+  (about 0.08), the cliff's stone about twice the grass, the trees' leaves about a fifth lighter
+  than the grass, so a crown parts from the sward under it; the frame's brightness is the
+  exposure's, never albedos pushed past real ones.
   One grass colour, a bright, fresh, natural green, matte with only a faint gloss (no pale sheen
   over the blades, which reads as plastic): the gaps between blades a deep, cooler green (never
   near black) under tips that stand out lighter and yellow-green where the sun shines through
@@ -162,19 +216,13 @@ art decision changes; reference images stay out of the repository.
   sward, about 0.5 m, with no zones across it: tiers of height and tint by the soil (a short
   yellow-green band along the windward coast, a taller, deeper grass on deep soil, gravel patches
   inland) read from above as a map laid over the meadow. Its layering comes from the grass itself,
-  which grows in clumps about a metre across, each a little
-  taller or shorter than its neighbours, giving its tussocks nearly all of their height and lean
-  and its density, and its stroke its colour; now and then a low patch of one to a few short
-  tussocks lies among them. As in a real
-  meadow its soil sets the odds: the sward rises a little where the soil is deep and damp and sinks
-  a little where it is thin, over some 14 m, and in pockets of shallow soil a few metres across, a
-  tenth of the meadow, the sward slopes down toward a short turf, tussock by tussock, with tall
-  tussocks still standing in them: from above a soft mottling, never a zone, a line, a path or a
-  hollow (a short turf walled by tall tussocks, two levels, read as a hole dug into the lawn).
-  From the ground up the sward has a summer meadow's layers: dead leaves and the old leaves' straw
-  sheaths low in it, the green leaves, and over them a few flowering stems from each tall tussock,
-  their slender panicles purple brown to straw a hand above the leaves (none on the short turf),
-  a faint haze over the green from the game's view, never a field of straw. No low herbs grow
+  which grows in clumps about a metre across, each a little taller or shorter than its neighbours,
+  giving its blades their lean and its stroke its colour. Its height swings gently: patches a few
+  metres across over broad swells, a short turf here and a taller sward there, running into each
+  other blade by blade: from above a soft mottling, never a zone, a line, a path or a hollow (a
+  short turf walled by tall grass, two levels, read as a hole dug into the lawn).
+  From the ground up the sward has a meadow's layers: dead leaves and the old leaves' straw sheaths
+  low in it and the green leaves over them; no flowering stems stand over it. No low herbs grow
   under it (clover mats and plantain rosettes were tried: from the game's view they did not read).
   The sward runs to the edge on
   every coast, windward and lee alike: a windward lip shown short, yellow, thin over gravel and
@@ -184,22 +232,27 @@ art decision changes; reference images stay out of the repository.
   ground (a deep green, never black); the shade of anything standing on it lies soft and light.
   The only large shadows that cross the meadow are the real clouds' (from the cloud layer
   overhead, drifting with it): no patches painted or animated onto the island to vary its light.
-  The ground under the grass is what a real meadow
-  shows there: under the dense sward its shaded bottom, the lower leaves' deep green with a little
-  straw, where no light reaches the soil; where the sward is broken by a gap, the island's
-  yellow-brown earth under lying dead leaves, never a green turf skin
-  laid under the near blades (it read as one, and on the lip's bevel its texture ran down the slope
-  in stripes). The short turf is a closed mat, as a wind-cropped or shallow-soil turf is: its
+  The ground between the blades is a grass-coloured ground, near and far alike: about the blades'
+  own mean albedo (a twentieth above it), a little warmer, in the lawn's tone, softly mottled over
+  1 - 3 m and grained by a scanned ground's value (about +-15 % in all), without the scan's colour.
+  The blades thin with distance, and a ground of their own colour lets them thin with no ring of
+  another colour sliding with the camera and no flat green either; brown earth shows only where
+  the sward truly parts, a near detail on a few edges. The same grass ground runs on under the
+  bamboo culms; the groves' own floor is their litter (see the bamboo below). Never a ground mapped
+  from above on the lip's bevel (it ran down the slope in
+  stripes). The short turf is a closed mat, as a wind-cropped or shallow-soil turf is: its
   leaves splayed out over the ground, its base olive with thatch and only flecks of earth, so from
   every view and at every zoom the meadow is one dense sward, a little yellower where it is short;
   bare earth only in its few gaps, never thin grass over brown ground, and never a ground that
   changes colour as the camera zooms. At the lip the turf ends on its soil over the stone, never a
   dark hole among the flowers. By night
-  the lawn is a dark, readable green (see Night). Toward a sheltered coast the grass runs to the
+  the lawn is a dark, readable green cooled toward blue (see Night). Toward a sheltered coast the grass runs to the
   lip and stands there, and the same grass grows out over it: its tufts at the lip spill over the
   edge, fine blades that arch over and hang down the wall, lying on the stone, never through it, and the lip alternates between
   overgrown stretches and cut-open
   root soil.
+- The flowers are off for now (`?flowers` brings them back): Penglai's bamboo grows over the whole
+  island, and whether its meadow keeps flowers among the groves is still open. As they were made:
 - Flowers are part of the meadow, and they are Penglai's, after the texts on the immortals'
   islands, not a generic island's: whole plants among the grass, never heads floating over it. The
   yaoxiang (遙香草, Shiyi ji: "flowers like cinnabar, leaves narrow and white, like the day lily") is
@@ -211,28 +264,44 @@ art decision changes; reference images stay out of the repository.
   half-open heads among them. The plants differ: taller and shorter scapes (some heads held low
   among the blades and shaded with them), larger and smaller flowers, a little apart in colour.
   They are all in flower at once, the year round: the island's sign of an immortals' land.
-- They grow in swaths of one kind, as if painted by a broad
-  brush; the swaths are some 6 m across, spread evenly over the island top, and from the game's view each
+- They grow in swaths of one kind as if painted by a broad
+  brush; ours are some 6 m across, spread evenly over the island top, and from the game's view each
   swath is one stroke of colour on the lawn, cinnabar or sky blue, its flowers covering about a
   third of its middle (the green showing between them) and thinning at its rim; a few single plants
   between the swaths. Each swath's kind is its ground's: the zhuyu in the exposed coast's
   wind-cropped turf, the shallow pockets and on dry ground (among shorter grass), the yaoxiang over
   the rest of the meadow, most in the sheltered sward. None on the lip itself and none in the
-  bamboo's crown or its noon shade (flowers there drew dull). Flowers scattered as small drifts or
+  bamboo's groves or their shade (flowers there drew dull). Flowers scattered as small drifts or
   single heads read from the game's view as specks or confetti, never as the island's colour. They
   are lit as the meadow is, darker low among the blades and lighter at the top, and never brighter
   than the sunlit grass tips: a flower that outshines the lawn reads as lit from within. They sway
   with the grass.
-- A herb of the sunken mountain Yuanjiao stands among the meadow where the world explains it, the
-  starting island's and fixed as the land grows: the yunpeng (芸蓬, Shiyi ji: "white as snow, a
-  stem two zhang long, at night it gives a white light") stands in clumps of straight white stalks
-  at the windward cliff's edge, where nothing else stands in the sea wind, as many as the coast
-  facing the wind is long.
+- A herb of the sunken mountain Yuanjiao grows in the meadow: the yunpeng (芸蓬, Shiyi ji: "white
+  as snow, a stem two zhang long, at night it gives a white light"), single clumps of straight white
+  stalks far apart (at least about 13 m) on the open meadow, out of the bamboo's groves and their
+  litter and in from the cliff's edge, an accent and never a stand: about ten on a grown island,
+  and maybe none on the starting island, whose meadow is small. Its glow by night stays a soft
+  white that lights the ground round a clump, never a lamp; a drift of such clumps would hide the
+  islanders by night.
 - Penglai's own bamboo (浮筠之簳, Shiyi ji: "green leaves, purple stems, seeds as big as pearls")
-  grows in one stand at the starting island's heart, the most sheltered ground with the deepest
-  soil, the meadow and its flowers growing on under it.
-- Besides these, the terrain plants the meadow (grass, flowers) and its turf over the rim, and no
-  shrub or tree: the island is a flat top ringed by cliffs, with no lee where they would grow (the
+  grows over the whole island as a running bamboo left to itself takes a hillside: in groves of
+  even height whose edges run out in lobes, single culms ahead of them on the open meadow, and
+  glades of meadow between, never one round crown nor a closed forest. No placement rule: it
+  stands at the cliff's edge as anywhere else. Its culms are tall and slender, bare to about half
+  their height, their leaves narrow and in loose drooping layers, so the culms show from above
+  between them. Its materials keep close in value, as a painted grove does: the culms (a dusty
+  purple, the young ones green) and the leaves about as light as the meadow's grass, the grove
+  reading by its light and shade, not by dark colours. A grove is dark inside, its canopy hiding
+  most of the sky from its floor, its culms lit where the sun finds them. Its floor is the meadow's
+  grass up to a couple of metres inside the culm line, then clearings of fallen leaves, about
+  half of the floor where a grove is deep, with ragged edges about a metre across, a few stray
+  tufts of grass left in them, and small bare discs under its clusters of young shoots. The
+  litter is paler than the grass ground (about a third brighter) and nearly neutral, a
+  brownish grey with the grain of leaves and twigs, never a dark brown; patches of a low
+  blue-green groundcover, a metre to a few across, lie on about a seventh of it. The grass does
+  not shorten toward a clearing: it stops at the litter's edge at its full height.
+- Besides these, the terrain plants the meadow (grass, and the flowers when they are on) and its turf over the rim, and no
+  shrub or tree: the island is a low, rolling top ringed by cliffs, with no lee where they would grow (the
   shrubs, small trees, rim bushes and hanging leaf trails it once had were placeholders). The
   walker's loop stays open meadow. Plants that matter to play are content placed in the world, not
   terrain.
@@ -314,12 +383,14 @@ art decision changes; reference images stay out of the repository.
   never wide fields of foam, which belong to a surf day. The lee lies in the island's wave shadow,
   nearly smooth, without foam.
 - One dominant key light, sun by day and moon by night. By day the sun is near white and the air
-  hazy: the horizon reads milky white rather than a cyan band, brightest toward the sun. A low
-  sun's light stays golden orange. After sunset the island stays readable: through the minutes
-  between the sun's last light and the moon's, the meadow keeps its light (warm under the
+  hazy: the horizon reads milky white rather than a cyan band, brightest toward the sun. The
+  sun's light warms from about 20 degrees, turns orange by 10 and orange red near the horizon.
+  After sunset the island stays readable: through the minutes between the sun's last light and the moon's, the meadow keeps its light (warm under the
   afterglow, then green), never dipping below its night brightness; the light that holds it up is
   lent to the island alone. The
-  sun and moon are drawn at twice their true size. The day cycle is authored, not astronomical.
+  sun is drawn at twice its true size, the moon at about five times (some 2.6 degrees across),
+  so it reads as the night's light source; it is no brighter per unit of sky for it, and the
+  moonlight on the island keeps its level. The day cycle is authored, not astronomical.
 - The sunlit ground lights what stands over it from below, one bounce for every lit surface: the
   shallows' sand the cliff's walls, the meadow the islanders' undersides; strongest around midday.
 - Bad weather dims and desaturates the existing light and thickens the air as its visibility
@@ -331,9 +402,11 @@ art decision changes; reference images stay out of the repository.
 - Weather changes sweep the sky as a front from upwind. The clouds drift downwind with the wind
   aloft, faster than the surface wind (the cumulus about twice it, the cirrus about three times,
   along their fibres), so they never move against the grass and the sea.
-- The sky keeps the atmosphere's own colours through sunset, twilight and the blue hour: no
+- Through sunset the sky's light takes a gain of its own: the golden hour's warm one down to a sun
+  at 2 degrees, then a continuous move to the night key by -6 degrees. It sets the dusk's warm
+  light, and where it colours the sky it decides. Beyond it, no
   painted pink, magenta or deep-blue twilight, which dyes the sea one flat colour and reads as a
-  filter. Twilight's mood comes from the light on the island, not from tinting the sky.
+  filter; twilight's mood comes from the light on the island.
 - Rain is light streaks and ripples on the water. Wetness darkens rock and plants within small
   limits and glosses bare stone; water runs down the cliffs in sparse darker runnels; puddles fill
   fixed hollows and read as water from above.
@@ -341,18 +414,24 @@ art decision changes; reference images stay out of the repository.
 ## Night
 
 - The night takes the day's curve and grade under the moon's own light: its key from one side,
-  its shade not lifted, so the moonlit meadow shows its clumps' lit and shaded sides as the day
-  does. Its exposure keeps the moonlit island readable and the moon's path on the sea crisp; a
-  moonless night is darker, a deep navy island, still readable.
+  its shade drawn up a little (as an eye adapted to the dark sees it), so the moonlit meadow still
+  shows its clumps' lit and shaded sides as the day does. The night is cool: as the rods take over
+  from the cones, dark colours come up and turn blue (the Purkinje shift), so the moonlit meadow
+  cools toward blue while its grass still reads green, the shade, the sea and the sky a little
+  more, and the reds darken. Its exposure keeps the moonlit island readable and the moon's path on the sea crisp.
+  Every night has its moon, up from dusk to dawn: the phase shows only on the drawn moon and
+  never darkens the night.
 - The island reads by moonlight and starlight; twilight is never darker than the night. The
   moon takes over the key soon after the sun has gone.
-- The moon keeps a lower orbit than the sun (it culminates at 37 degrees, not 62), still rising
-  due east and setting due west at the sun's hours, so seen from the game's overview its light
+- The moon keeps a lower orbit than the sun (it culminates at 20 degrees, not 62), rising due
+  east at sunset and setting due west at sunrise, so seen from the game's overview its light
   comes in at a slant: slopes show a lit and a shaded side and the sea carries a moon path, where
   a moon near the zenith lit the island flat. The moon path and the moonlit meadow glow softly in
-  that view too.
-- The night meadow is a dark, readable green under the moon (not black); stone, sand and skin keep
-  their colours.
+  that view too. While it is up the moon is drawn where the island takes its light from (one fixed
+  place all night, a little above its orbit's culmination), and the glow of the air around it
+  comes from there too, so the disk, its glow and the light on the land stand together.
+- The night meadow is a dark, readable green cooled toward blue under the moon (not black); stone,
+  sand and skin stay apart from it and from each other in tone.
 - The stars and Milky Way are the real sky as seen near 28 degrees south, points with a natural
   spread of brightness, below white except the brightest few; only those near the horizon
   scintillate.
