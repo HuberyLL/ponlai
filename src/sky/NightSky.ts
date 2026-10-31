@@ -18,22 +18,33 @@ import {
 	normalize, length, fwidth, dFdx, dFdy, abs, clamp, max, min, mix, pow, smoothstep, exp, sqrt, select, acos,
 	sign, texture,
 } from 'three/tsl';
-import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS } from '../lighting/Radiometry.ts';
+import { SCENE_RADIANCE_SCALE, MOON_GLINT_RADIUS } from '../lighting/Radiometry.ts';
+import { tuneUniform } from '../debug/Tune.ts';
+import { markSkyRetune } from './SkyRetune.ts';
 import { STAR_CELLS, CELL_SLOTS, CELL_COUNT, MILKY_WAY_WIDTH, MILKY_WAY_HEIGHT, skyWords, starRecords, loadNightSkyData } from './StarCatalog.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
-// The night sky: stars, Milky Way, airglow and moon. The stars and Milky Way are the real sky as
+// The night sky: stars, Milky Way and moon. The stars and Milky Way are the real sky as
 // seen near 28 degrees south (the sun's authored path fixes the latitude, DayCycle.ts), turning
 // with the clock about the south celestial pole; procedural grain and faint stars only add detail
 // below the catalogue and the map. Stars are points with a natural spread of brightness, kept below
 // white except the brightest few; only those near the horizon scintillate. The night is
-// art-directed (docs/art-direction.md): colours stay as authored, no night-vision shift.
+// art-directed (docs/art-direction.md): the sky's colours are drawn as authored, and any
+// night-vision shift is the post chain's (Purkinje.ts, off by default), over the whole frame.
 
-// As wide as the displayed sun, as in reality; both are drawn at twice their true size.
-export const MOON_ANGULAR_RADIUS = SUN_DISPLAY_RADIUS;
+// The drawn disk's angular radius: five times the true moon's (Radiometry.ts MOON_GLINT_RADIUS,
+// 0.0045 rad), about 2.6 degrees across, a look choice so the disk reads as the night's light
+// source in the island's views (about 75 pixels across at 2K under a 49 degree field of view,
+// where the colour map's near side has 512 texels and the height map's 256). Only the disk grows:
+// its radiance is per unit solid angle and stays as it was, and the moonlight's level is the key's
+// own (Sky.ts MOON_KEY), never this disk's solid angle. What follows the radius: the ray/sphere
+// normal, the limb's chord (MOON_CHORD), the map footprint's cap (per radius), the stars it hides
+// (`moonOcclusion`), the clouds' mean over the disk (Sky.ts `discCloudTransmittance`) and the fade
+// below the horizon (`lunarDisk`).
+export const MOON_ANGULAR_RADIUS = 5 * MOON_GLINT_RADIUS;
 
 const nightHash = Fn( ( [ p ]: [ V2 ] ) => {
 
@@ -324,7 +335,10 @@ const earthPhaseLaw = Fn( ( [ elongation ]: [ F ] ) => {
 } ).setLayout( { name: 'ponlaiEarthPhaseLaw', type: 'float', inputs: [ { name: 'elongation', type: 'float' } ] } );
 
 // Forward scattering by haze around the moon: a tight aureole and a wide, faint halo, scaled
-// by how much of the disk is lit.
+// by how much of the disk is lit. Painted on the dome, so it stays off by default (`glow` 0): the
+// air's haze scatters the moonlight around the disk itself (VolumetricHaze.ts, the moon's aerosol
+// share), and this is kept for a touch of aureole within a degree or two of the disk that the
+// haze's grid cannot resolve.
 const nightMoonGlow = Fn( ( [ direction, sunDir, moonDir, moonColor ]: [ V3, V3, V3, V3 ] ) => {
 
 	const angle = acos( clamp( dot( direction, moonDir ), - 1, 1 ) ).toVar();
@@ -337,29 +351,10 @@ const nightMoonGlow = Fn( ( [ direction, sunDir, moonDir, moonColor ]: [ V3, V3,
 	{ name: 'moonDir', type: 'vec3' }, { name: 'moonColor', type: 'vec3' },
 ] } );
 
-// Airglow: the upper atmosphere's own faint light, mostly the green 557.7 nm oxygen line from a
-// layer about 100 km up. Seen through that thin shell it brightens toward the horizon (the van
-// Rhijn factor) until extinction in the thick low air wins, so it peaks some 10 - 15 degrees up.
-// After H. W. Jensen et al., "A Physically-Based Night Sky Model" (SIGGRAPH 2001); a bright moon
-// halves it, as a-starry-sky (https://github.com/Dante83/a-starry-sky) does. Soft green, a faint
-// band low on a clear moonless sky; zenith extinction per channel as at a clear sea-level site.
-const AIRGLOW_SHELL = ( 6371 / ( 6371 + 100 ) ) ** 2;
-const AIRGLOW_COLOR = new THREE.Vector3( 0.35, 1, 0.3 ).multiplyScalar( 0.0016 * SCENE_RADIANCE_SCALE );
-const nightAirglow = Fn( ( [ direction, moonWash ]: [ V3, F ] ) => {
-
-	const height = max( direction.y, 0 ).toVar();
-	const vanRhijn = float( 1 ).div( sqrt( float( 1 ).sub( height.mul( height ).oneMinus().mul( AIRGLOW_SHELL ) ) ) );
-	// Kasten and Young's (1989) air mass stays finite at the horizon.
-	const elevation = float( 90 ).sub( acos( height ).mul( 180 / Math.PI ) );
-	const airMass = float( 1 ).div( height.add( pow( elevation.add( 6.07995 ), - 1.6364 ).mul( 0.50572 ) ) );
-	const transmittance = exp( vec3( 0.1, 0.17, 0.28 ).mul( airMass ).negate() );
-	return vec3( AIRGLOW_COLOR.x, AIRGLOW_COLOR.y, AIRGLOW_COLOR.z ).mul( vanRhijn ).mul( transmittance )
-		.mul( float( 1 ).sub( clamp( moonWash, 0, 1 ).mul( 0.5 ) ) );
-
-} ).setLayout( { name: 'ponlaiNightAirglow', type: 'vec3', inputs: [ { name: 'direction', type: 'vec3' }, { name: 'moonWash', type: 'float' } ] } );
-
 export class NightSky {
 
+	// the sunlight on the drawn moon: where the sun stands on the moon's orbit at its phase
+	// (DayCycle `moonSunDir`), so the disk shows the phase whatever the hour
 	readonly sunDir = uniform( new THREE.Vector3( 1, 0, 0 ) );
 	readonly moonDir = uniform( new THREE.Vector3( - 1, 0, 0 ) );
 	// Full illuminated disk radiance in scene units. Phase comes only from the directions.
@@ -370,8 +365,9 @@ export class NightSky {
 	readonly time = uniform( 0 );
 	// A bright moon's scattered light washes out the Milky Way and the faintest stars.
 	readonly moonWash = uniform( 0 );
-	// Strength of the haze glow around the moon (an art control; 0 leaves the bare disk).
-	readonly glow = uniform( 1 );
+	// Strength of the painted glow around the moon (`nightMoonGlow`; 0, the default, leaves the
+	// disk and the haze's own glow).
+	readonly glow = tuneUniform( 'sky.night.moonGlow', 0.00068, { min: 0, max: 1, onChange: markSkyRetune } );
 	// Scale of the lunar relief over its true height (an art control; 0 leaves a smooth ball).
 	readonly relief = uniform( 1.4 );
 	// Strength of the earthshine over a-starry-sky's (an art control).
@@ -569,13 +565,6 @@ export class NightSky {
 			return radiance;
 
 		} )();
-
-	}
-
-	/** The night sky's faint glow of its own, fading with twilight, moonlight and cloud like the stars. */
-	airglow( direction: V3, visibility: F = this.starVisibility ): V3 {
-
-		return nightAirglow( direction, this.moonWash ).mul( clamp( visibility, 0, 1 ) );
 
 	}
 

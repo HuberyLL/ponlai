@@ -1,20 +1,26 @@
 /*!
  * Portions adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater):
- * the haze's two exponential height layers (their proportions and scale heights) and its phase
- * function, from `AirHaze.js`.
+ * the haze's deep exponential height layer (its scale height) and its phase function,
+ * from `AirHaze.js`.
  * Copyright (c) 2026 DRG Software Solutions LLC
  * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
  */
 
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, Loop, uniform, texture, texture3D, textureLoad, textureStore, instanceIndex, uv, int, ivec2, ivec3,
-	vec2, vec3, vec4, float, max, min, clamp, exp, exp2, log2, sqrt, mix, dot, normalize, select, fract, floor, varying,
+	Fn, If, Loop, uniform, texture, texture3D, textureLoad, textureStore, instanceIndex, instancedArray, uv, int, ivec2, ivec3,
+	vec2, vec3, vec4, float, max, min, clamp, exp, exp2, log2, sqrt, mix, dot, normalize, select, fract, floor, varying, asin, smoothstep,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
+import { EARTH_RADIUS, SHELL_BOTTOM, SHELL_THICKNESS } from '../sky/Clouds.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
-import type { Atmosphere } from '../sky/Atmosphere.ts';
+import { MIE_G, cornetteShanks, polariser, skyRayleighPhase, type Atmosphere } from '../sky/Atmosphere.ts';
+import { bandPush, bandToDisplay, bandToDisplayColor } from '../sky/BandMatrix.ts';
+import { ISLAND_TOP } from '../world/WorldShapes.ts';
+import type { HazeKey } from './HazeKeys.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { tune, tuneObject, tuneUniform } from '../debug/Tune.ts';
+import { markSkyRetune } from '../sky/SkyRetune.ts';
 import type { FrameGraph, GraphResources, ResourceHandle, SizeClass } from '../post/graph/FrameGraph.ts';
 import { TemporalRest, restEpoch } from '../post/TemporalRest.ts';
 
@@ -26,14 +32,51 @@ type V4 = THREE.Node<'vec4'>;
 // The air's haze and the sea's fog as one participating medium in a froxel volume, after Patry,
 // "Real-Time Samurai Cinema", SIGGRAPH 2021 (its volumetric haze, built on Wronski, SIGGRAPH 2014,
 // and Drobot, Digital Dragons 2017):
-//   - the medium's density is analytic and integrable along any ray: two exponential height layers
-//     (a thin marine layer over the sea and a deeper aerosol layer, whose sum at sea level is the
-//     weather's haze) and the talk's sigmoidal layer (the sea fog, dense below its top and thin
-//     above). The talk's slide prints the layer as lerp( d0, d1, 1/2 z^2 / ( z^2 + k_s^2 ) + 1/2 ),
-//     whose weight is even in z and no step; this is the algebraic sigmoid we take it to stand for,
-//     1/2 + 1/2 x / sqrt( x^2 + k^2 ) with x the height over the layer's top, whose mean over any
-//     span of heights has a closed form. Local
-//     variation (banks, wisps, ground fog) belongs to particles, not to the density.
+//   - the medium's density is analytic and integrable along any ray: a ground layer, the talk's
+//     sigmoidal layer, dense below a soft top and thinning above it, and a deep exponential aerosol
+//     layer. Their shape is the hour's key's (HazeKeys.ts: the layer's top over the island and its
+//     width, the aerosol's share and scale height), from 10 m, 50 m, 0.035 and 1.4 km. The width
+//     grows with the camera's height over the sea by the key's `widthSlope` (by night the layer
+//     thickens as the camera climbs, so the night's haze still shows from high up): set each frame
+//     from the camera, one width for the volume, the sky and the CPU's readings, and a ray read from
+//     another height (`skyHaze`'s `from`, the probe's rays, `transmittance`) takes its start's. The talk's slide prints the layer as
+//     lerp( d0, d1, 1/2 z^2 / ( z^2 + k_s^2 ) + 1/2 ), whose weight is even in z and no step; this is
+//     the algebraic sigmoid we take it to stand for, rho_f ( 1 - u / sqrt( w^2 + u^2 ) ) with u the
+//     height over the layer's top, whose mean over any span of heights has a closed form. At the
+//     starting shape its step is 50 m wide, so the camera, 30 - 60 m up, stands in its upper half
+//     and the hills rise out of it, and it thins as the inverse square of the height far above, so
+//     the distant haze thins less with height than an exponential layer would. The weather's haze sets rho_f (and the deep
+//     layer's density, the key's share of it); its sea fog and the morning mist thicken it. An
+//     optical depth is a ray's length times the mean density over the heights it spans: the closed
+//     form along the ray, which holds its value on a level ray with no branch. Local variation
+//     (banks, wisps, ground fog) belongs to particles, not to the density.
+//   - the weather thins the haze near the camera (Weather.ts `nearDensity`, `nearStart`,
+//     `nearEnd`, through the haze's key): along each ray the optical depth from the camera out to
+//     t metres is f( t ) times the far medium's, f = k up to d0, a smoothstep back to 1 at d1, 1
+//     beyond (`nearFactor`). Past d1 every ray keeps its optical depth exactly, however the medium
+//     varies with height, so the far haze, the horizon and the sky (whose rays reach far past d1)
+//     are unchanged; what the near air loses, the shell between d0 and d1 takes back (its density
+//     f rho + tau f', never below 0), so the haze seems to begin there. A whole ray's depth (the
+//     sky, the probe, the composite) is f of its length times the far depth; the light kernel
+//     carries the far depth tau along each column and takes each slice's opacity from the change
+//     of f tau over it, which also weighs what the slice scatters (the light per opacity is
+//     unchanged), so the shadows and the grid stay as they were. Rays read from another height
+//     (`skyHaze`'s `from`, the probe's) count the distance from their own start. Only the cloudy
+//     and the overcast sky thin it (k under 1, d0 250 m, d1 600 m: the game's camera reaches at
+//     most about 240 m to the island's far side), so the island's views read through less air; the
+//     other skies keep 1, which leaves every depth as it was. The near start is Unreal Engine's
+//     exponential height fog's Start Distance (its public documentation), here eased and given
+//     back beyond it.
+//     `nearHaze` off (the settings) takes the far density everywhere.
+//   - the extinction is spectral: each band's is the density times the band's weight sigma, keyed
+//     by the hour and the weather (HazeKeys.ts: by day red : green : blue = 0.38 : 0.53 : 0.655, at
+//     the golden hour 0.45 : 0.53 : 1.19). The air loses its blue before its red (far land and sea
+//     turn blue-grey and the low sun's light reddens), while cloud and fog droplets scatter grey
+//     (the overcast's keys are to be fitted toward it). The scattered light and the opacity are
+//     integrated per channel, so the light volume holds three channels of L / alpha and green's
+//     alpha, and the composite recomputes each channel's opacity. Every opacity the eye sees goes
+//     through the band-to-display matrix (sky/BandMatrix.ts, the identity by default): the light
+//     kernel's slice weights, the composite's opacity and the CPU `transmittance`.
 //   - a froxel grid over the view in slices each deeper than the one before by a fixed share (the
 //     talk's PS4 grid is 128 x 64 x 64; high's 160 x 90 makes a froxel about 16 render pixels
 //     across at 1440p). Its size is fixed, so no kernel follows the render's scale. The talk's slices
@@ -42,14 +85,85 @@ type V4 = THREE.Node<'vec4'>;
 //     plants' shadows out of the air. From 10 m to 30 km, each 15 % deeper, 19 of the 64 slices lie
 //     in that range instead of 12 (6.6 m deep at 50 m), at no cost; four times the froxels across
 //     (the talk's PC density) sharpened the shadows less and cost about six times as much.
-//   - the light is the atmosphere's (3b in the talk's terms): the key light as Sky gives it (the
-//     sun, or the moon, through the atmosphere; nothing under a closed deck) scattered by the
-//     haze's phase function and multiplied by its shadow, and the sky's irradiance, isotropic, with
-//     the ground's bounce of both, multiplied by an ambient occlusion (1: the island is open and
-//     there are no probes of the sky's visibility). Mie by the shadow, the rest by the occlusion.
+//   - the light is the atmosphere's (3b in the talk's terms): each froxel takes the sky's in-scatter
+//     along its own view direction at its own altitude (Atmosphere.ts's fog table, without the
+//     phase; a direction under the froxel's horizon reads the horizon's sky side), so distant haze
+//     is the horizon sky's colour, the same in-scatter seen through more medium, over the far sea
+//     as over the sky, and haze and sky meet without a seam at every hour. It comes in two shares, each
+//     turned toward its luminance by the key's `desaturate` after its phase:
+//       - Rayleigh: the table's Rayleigh share through the sky's Rayleigh phase (Atmosphere.ts
+//         `skyRayleighPhase`), lit by the open sky (its colour times the ambient visibility) and by
+//         the sun (its colour under the polariser, times the sun's visibility), times the earth's
+//         shadow at the froxel. By day under a clear or fair sky the sun's colour here is 0: the air's
+//         blue is sky light, and sunlit blue haze would glow.
+//       - aerosol: the table's Mie share through the Cornette-Shanks lobe, times the sun's colour
+//         and visibility once the sun stands over the froxel's horizon (a smoothstep 3 degrees
+//         either side of it, the horizon dipping by sqrt( 2 h / R ) at the froxel's height): the warm
+//         glow toward the sun.
+//     The colours are the sky's illuminance colour (Atmosphere `sunIlluminance`), the open sky's
+//     times the weather's diffuse gain and the sun's times its direct share; the sun's Rayleigh
+//     colour is the aerosol's times the key's `sunRayleigh`. The shares' weights and a gain (1.87,
+//     times the key's) scale the sum; all are keyed (HazeKeys.ts): the day's and the golden hour's
+//     were fitted with the sky's light, the other hours' start at 1. The moon lights the haze the
+//     same way, its two shares added to the sun's:
+//     the moon's fog table (its shares under the moon's gains, Atmosphere.ts `moonRayleigh`,
+//     `moonMie`, as the sky's are), its direction (the night key's: Sky.ts `track`), phases, polariser and
+//     earth shadow, and its colours the sun's scaled by the moon key (Atmosphere `moonIlluminance`,
+//     the moon's sky), except for its aerosol share, whose light and lobe are its own
+//     (MOON_AEROSOL): a pale blue-green of the same luminance as the moon's sky light, times a gain,
+//     through a Cornette-Shanks lobe of its own anisotropy, so the glow of the air around the moon is
+//     tuned apart from the sun's while the day keeps the sky's lobe. Both bodies take the key light's
+//     visibility below, which follows the moon at night, when the sun's shares are dark under the
+//     earth's shadow and the horizon. The moon's table is read along the moon's direction at the
+//     froxel's altitude, the sun's along the view. A row along the view is the in-scatter over that
+//     ray's whole path and grows toward the horizon, so read along the view the haze's moonlight was
+//     the phase's angle from the moon times the view's elevation: on the moon's side the far sky
+//     brightened low down from the table (the moon's aerosol share alone about two thirds of the
+//     sky 5 - 15 degrees up and more than 25 degrees from the moon), and the glow round the moon
+//     came out flat in angle, its outer rings taking in the bright low rows. A haze lit by the moon
+//     scatters it once, its angular shape set by the phase alone (Wronski, "Volumetric Fog",
+//     SIGGRAPH 2014; Hillaire, "Physically Based and Unified Volumetric Rendering in Frostbite",
+//     SIGGRAPH 2015): read along the moon, the moonlight a unit of haze scatters depends on the view
+//     only through the phases, the view's elevation enters only through the haze's density and depth
+//     along it, and toward the moon, where the view's elevation is the moon's, the level is the
+//     one the view's row gave. Measured on the composite's sky at a moonlit tune (the moon 24
+//     degrees up, the view centred on it): within 2 degrees of the moon unchanged (under 0.5 %); the ratio of
+//     the sky 2 degrees from the moon to 17 degrees from it from 3.0 to 3.8; more than 25 degrees
+//     from the moon, the sky 0 - 5 degrees up about 0.39 of what it was, 5 - 15 degrees up 0.73,
+//     15 - 30 degrees 0.98, and 30 - 60 degrees up 7 % brighter (the rows along the moon are longer
+//     than the high views'); facing away from the moon 0.77, 0.86, 0.99 and 1.01. The far sea
+//     still meets the horizon sky without a step (both are the haze's there). By day the moon's
+//     light is 0: a clear noon's and a golden hour's paused frames are unchanged byte for byte. The
+//     earth's shadow stays the view's: with the moon 10 to 40 degrees up (KeyLift.ts), over every
+//     froxel's horizon, it is about 1. The level follows the moon's elevation through its row's
+//     length (a lower moon's row is longer, so its haze brighter, where a real haze would dim as the
+//     moonlight crosses more air); the moon keeps one direction all night (KeyLift.ts), so the haze
+//     keeps one level from dusk to dawn, and the elevation is a tuning the haze's gain answers.
+//   - the ambient visibility (the open sky's share that reaches a froxel) is the visibility volume's
+//     second channel, sampled, filtered and held at rest with the key light's: 0 under the island's
+//     cover and 1 above it, rising over 1.5 m either side of the cover's top (the rain's collision
+//     map, RainCollision.ts: the highest surface seen from straight above, the bamboo's crowns, a
+//     cliff's overhang; the sea off the island), times the ambient probes' sky visibility, never
+//     below 0.024. Where the top is the sea's it is 1, under the surface and in the air just over
+//     it alike: water hides nothing of the sky, and the slices under the surface show only through
+//     the composite's tricubic filter, whose footprint reaches a slice or more past the sea's
+//     depth, so their dark pulled the sea's pixels about 5 % under the air's own light. The
+//     land's rise is unchanged (the slices inside the hills stay dark). That floor is fixed, not fitted: the sky's measures cannot tell it (their cost
+//     barely moved across its range, and a fit that left it free drifted to its upper bound), so it
+//     waits for measures of the haze under cover. The probes' read is HazeCover `skyVisibility`,
+//     which the pipeline fills with
+//     lighting/AmbientSample.ts `ambientSkyVisibility` (1 on the open sea; the volume is installed
+//     with the world, so the shadow kernels compile then, not in the warm-up: HazeCover `late`):
+//     under the bamboo, the overhangs and in the island's hollows the haze darkens, the open haze
+//     is unchanged. The cover's redraws (a Grow's) restart the rest.
 //   - the shadow is the sun's stepped shadow maps (SunShadow.volumeVisibility) and the clouds'
-//     shadow along the key light, sampled once per froxel at a jittered point and filtered over
-//     frames: what any caster or cloud cuts out of the lit air shows as shafts, whether or not the
+//     shadow along the key light (`cloudShaft`: the clouds' map read at the point's ground point
+//     along the clouds' own light, the flat beam the map was built along, sharpened against its blur
+//     so the gaps show as shafts, lifted above the shell's base and floored; the gain 10, no floor and no cut
+//     toward the light until fitted), sampled at four points of each froxel whenever it is recomputed
+//     (the frame's jittered point and three more the R3 sequence's steps from it, averaged, so the
+//     history converges to the cell's mean) and filtered over frames, the history weighing 0.95
+//     (the ambient visibility with it): what any caster or cloud cuts out of the lit air shows as shafts, whether or not the
 //     sun is in view. The filter keeps the shadow's share (and the occlusion's) only, never the
 //     light, so a change of the light shows at once and leaves no trail.
 //   - a second kernel integrates each column of froxels front to back, every slice's optical depth
@@ -60,36 +174,77 @@ type V4 = THREE.Node<'vec4'>;
 //     anti-aliasing). It samples the volume with a tricubic B-spline (eight trilinear taps; Sigg
 //     and Hadwiger, "Fast Third-Order Texture Filtering", GPU Gems 2, 2005), which joins the shafts
 //     to their openings.
-//   - the sky is left as the atmosphere draws it (`sky` off): it already holds the atmosphere's own
-//     aerosols (Atmosphere.ts `mieScale`: an extinction of about 1e-5 / m at sea level, 1.2 km
-//     high) and their glow round the sun, and the haze's layers laid over it as well whitened the
-//     sky toward a low sun and hid the clouds, while the far sea, hazed to its saturation, already
-//     meets the horizon's colour. With `sky` on the sky is behind the haze too, at the grid's far
-//     end (a ray below the horizon ends on the distant sea the sky draws), the deep layer adding
-//     only its excess over the atmosphere's aerosols and the marine layer and the fog whole.
+//   - the haze covers the sky (`sky`), and the sky lays it on itself: the dome (Sky.ts `fogDome`,
+//     `skyHaze` here) takes the atmosphere's colour through the haze along the whole way to the
+//     atmosphere's top (or to the sea for a ray below the horizon), its optical depth taken along a
+//     straight ray whose height climbs with the direction alone, never lifted by the planet's curve,
+//     so the haze closes over the sky near the horizon (two parts, the far one from the height the
+//     curve lifts the ray to, took too little air at 1 degree), plus the haze's light read at
+//     that distance or the grid's far end, whichever is nearer; the clouds in front of it take the
+//     same out to their shell's middle height, over their opacity; the composite leaves the sky's
+//     pixels. So the haze's kernels run ahead of the scene passes, which declare the light volume
+//     as a read (Pipeline.ts); they read the sun's maps, the clouds' shadow and the camera, never
+//     the scene's depth, and keep the unjittered projection under the temporal modes. Both layers are laid over the atmosphere whole: its own aerosols
+//     (Atmosphere.ts `mieScale`) are not taken out of them, the sky's fog being the volume's on top
+//     of the atmosphere. The ground layer closes over the horizon, so the far sea and the horizon's
+//     sky end in the same haze. The light the sky lends (Sky.ts's bakes, the probes) is the
+//     atmosphere's alone: the haze is laid over the image only.
+//     The dome's own sky ray (the dome's call, `skyHaze`'s `dome`, with no distance) adds a thin
+//     haze of its own to the medium's depth: uniform in height over the air's whole height, the
+//     key's `skyDepth` (green's optical depth per kilometre of the ray; HazeKeys.ts). Over the
+//     island's distances, a few kilometres, its share is negligible, while the sky's rays (about
+//     60 km straight up, 170 km at 20 degrees, 300 km at 10) are long enough for it to close the
+//     dome, so one depth separates the island's views from the sky by the length of their rays
+//     alone. Its light is the volume's light per opacity times the whole opacity, as the medium's:
+//     with a depth (a fog night's; every key keeps 0) the moon's disc fades behind it, the sky near
+//     and below the moon turns to the haze's phase lobe over an even floor, and the stars and the
+//     atmosphere show through only high up, where the rays are short. The clouds' haze, the probe's
+//     sky rays, the CPU `transmittance` (the sun's glare, the flares' visibility) and `openSky`
+//     (the light the sky lends) read the medium alone.
 //
 // Rules: the shadow's filter is a history-dependent effect (AGENTS.md). While the scene runs, each
 // froxel blends its new sample into its history, reprojected through the previous frame's camera,
 // and takes the new sample alone where the history falls outside the grid, after a cut (the key
 // light turns more than CUT in a frame, the camera jumps) and after `invalidate`. A scene at rest
 // (the key TemporalRest tests: the camera, the clock, the sizes, the epoch's scene count, which a
-// restart of the frame loop leaves, the page's signature and the haze's own inputs) converges once, the way the temporal resolve's rest does: after its settle
+// restart of the frame loop leaves, the page's signature and the haze's own inputs, the medium's
+// among them) converges once, the way the temporal resolve's rest does: after its settle
 // frames it averages a fixed sequence of jitters with exact weights, from nothing, then holds the
 // result and skips the shadow kernel. A paused frame is then a function of the scene alone,
 // however it was reached, and `pending` holds the page's settled signal until it has converged.
-// The light kernel runs every frame. The rays through the clouds' gaps over the sky stay the
-// screen-space shafts' (post/LightShafts.ts) while the haze leaves the sky. Local lights, when there
+// The light kernel runs every frame. Local lights, when there
 // are any, add to the light the integration takes per froxel; the talk filters theirs in a volume of
 // their own.
 
+// the shadow's sub-samples per froxel and recompute
+const SUB_SAMPLES = 4;
 // a key light that turns more than this in one frame is a cut: the shadow's history is dropped
 const CUT = THREE.MathUtils.degToRad( 1 );
 // a camera that moves more than this in one frame (metres, or radians of turn) is a cut
 const JUMP = { distance: 8, angle: THREE.MathUtils.degToRad( 30 ) };
-// below this the key light's elevation is held for the clouds' shadow (see the shadow kernel)
-const LOW_KEY = 0.05;
 // view z of the sky (the composite's depth holds -1e5 there)
 const SKY_Z = - 9e4;
+// the rays `probe` takes at once
+const PROBE_RAYS = 64;
+const _transmittance = new THREE.Color(), _reading = new THREE.Color();
+// Rec. 709 luminance, toward which the light's colours turn (`desaturate`)
+const LUMINANCE = vec3( 0.2126, 0.7152, 0.0722 );
+const luminance = ( c: THREE.Color ): number => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+
+// The moon's aerosol light in the haze: its colour as red and blue over green, scaled to the
+// Rec. 709 luminance of the moon's sky light there (Atmosphere `moonIlluminance` times the weather's
+// direct share), so a new colour moves the hue and not the level, times a gain; and the anisotropy of
+// its Cornette-Shanks lobe. A pale blue-green under a lobe a little tighter than the sky's: the air
+// around the moon glows cool rather than in the moon key's own blue, over a few degrees.
+// Tunable on debug pages (debug/Tune.ts `haze.moon.*`).
+const MOON_AEROSOL = {
+	red: tune( 'haze.moon.red', 0.333, { min: 0.2, max: 1, onChange: markSkyRetune } ),
+	blue: tune( 'haze.moon.blue', 0.669, { min: 0.5, max: 1.2, onChange: markSkyRetune } ),
+	gain: tune( 'haze.moon.gain', 0.279, { min: 0.25, max: 4, scale: 'log', onChange: markSkyRetune } ),
+	anisotropy: 0.797,
+};
+// the planet's radius and the atmosphere's top (m from its centre: Atmosphere.ts RG, RT)
+const ATMOSPHERE_BOTTOM = 6360e3, ATMOSPHERE_TOP = 6420e3;
 
 /** The froxel grid's size, fixed when the page loads (the quality tier's `post.hazeGrid`). */
 export interface HazeGrid { width: number; height: number; depth: number }
@@ -98,28 +253,30 @@ export const DEFAULT_HAZE_GRID: Readonly<HazeGrid> = { width: 160, height: 90, d
 
 /** The haze's knobs (the GUI's Haze folder, `__PONLAI__.pipeline.air.settings`). The shadow's
  * temporal filter and the composite's filters are the talk's, the slices fitted to the island's
- * camera (see the header); the haze's two layers and the phase are the earlier analytic haze's, and
- * the fog's layer is sized by its visibility, until they are tuned. */
+ * camera (see the header; the medium's shape is the hour's key's, HazeKeys.ts), the phases from how
+ * the air brightens toward the sun, the shares' weight and the gain by eye on a few points of the sky
+ * and the island, until they are fitted. */
 export const HAZE_DEFAULTS = {
 	// the slices: the grid's near and far view depth (metres) and each slice's depth over the last's
 	near: 10, far: 30000, growth: 1.15,
-	// the haze: the marine layer's share of the weather's extinction at sea level, its scale height,
-	// and the aerosol layer's (the rest of it) (metres)
-	marineShare: 1.5 / 1.82, marineHeight: 110, aerosolHeight: 1400,
-	// the sea fog's sigmoidal layer: extinction below its top per unit of the weather's fog (1/m:
-	// one unit sees 1 km, the threshold of fog, Koschmieder's 3.912 / 1000; the morning's 0.3 is a
-	// mist that sees 3.3 km), the top's height and the width of the step (metres: a layer at the
-	// cliff's foot), and the density above as a share of below (the talk's 0)
-	fogExtinction: 3.912 / 1000, fogTop: 10, fogWidth: 4, fogAbove: 0,
-	// the light: the medium's single-scattering albedo, its phase (a Cornette-Shanks lobe of this
-	// anisotropy with this share of isotropic scattering), and scales of the key light's and the
-	// ambient light's share
-	albedo: 1, anisotropy: 0.62, isotropic: 0.3, sun: 1, ambient: 1,
-	// the shadow's filter: a running frame's weight, and the frames a rest averages
-	blend: 0.1, restFrames: 16,
+	// the sea fog and the morning mist: the ground layer's deep green extinction per unit of the
+	// weather's fog (1/m: one unit sees 1 km, the threshold of fog, Koschmieder's 3.912 / 1000)
+	fogExtinction: 3.912 / 1000,
+	// the light: the medium's single-scattering albedo, the aerosol share's phase (a Cornette-Shanks
+	// lobe of the sky's aerosol anisotropy, Atmosphere.ts MIE_G, half its peak about 13 degrees off
+	// the sun and a 1/280 of it behind), the gain over both shares, and the half-width of the sun's
+	// rise over a froxel's horizon (degrees)
+	albedo: 1, anisotropy: MIE_G, gain: 1.87, horizon: 3,
+	// the ambient visibility: its floor under cover, and the half-width (metres) of its rise
+	// through the cover's top
+	ambientFloor: 0.024, ambientSoftness: 1.5,
+	// the shadow's filter: a running frame's weight (1 - the history's, 0.95), and the frames a rest
+	// averages
+	blend: 0.05, restFrames: 16,
 	// A/B switches: the jittered shadow samples, the tricubic filter (else trilinear), the density
-	// anti-aliasing (else the opacity the grid holds), the haze over the sky
-	jitter: true, tricubic: true, densityAA: true, sky: false,
+	// anti-aliasing (else the opacity the grid holds), the haze over the sky, the weather's thinner
+	// near haze (else the far density everywhere)
+	jitter: true, tricubic: true, densityAA: true, sky: true, nearHaze: true,
 	// a debug view: 0 off, 1 the key light's visibility in the froxel at each pixel's depth
 	debug: 0,
 };
@@ -134,41 +291,43 @@ const expShare = Fn( ( [ x ]: [ F ] ) => {
 	return select( x.lessThan( 1e-3 ), series, float( 1 ).sub( exp( x.negate() ) ).div( max( x, 1e-30 ) ) );
 
 } ).setLayout( { name: 'hazeExpShare', type: 'float', inputs: [ { name: 'x', type: 'float' } ] } );
+const expShare3 = ( x: V3 ): V3 => vec3( expShare( x.x ), expShare( x.y ), expShare( x.z ) );
 
-// The medium's mean extinction (1/m) over the heights between a and b (metres, either order; below
-// the sea it holds its value at sea level, which only rays hidden under the water reach): two
-// exponential layers (extinction at sea level, scale height) and the sigmoidal layer (below, above,
-// top, width). An optical depth is a ray's length times the mean over the heights it spans.
-const meanExtinction = Fn( ( [ a0, b0, layerA, layerB, fog ]: [ F, F, V2, V2, V4 ] ) => {
+// The medium's mean density (1/m, before each band's sigma) over the heights between a and b
+// (metres, either order; below the sea it holds its value at sea level, which only rays hidden
+// under the water reach): the exponential layer (density at sea level, scale height) and the ground
+// layer (rho_f, top, width). An optical depth is a ray's length times the mean over the heights it
+// spans.
+const meanExtinction = Fn( ( [ a0, b0, layer, ground ]: [ F, F, V2, V3 ] ) => {
 
 	const a = max( min( a0, b0 ), 0 ).toVar();
 	const b = max( max( a0, b0 ), 0 ).toVar();
 	const span = b.sub( a ).toVar();
 	const exponential = ( l: V2 ) => l.x.mul( exp( a.div( l.y ).negate() ) ).mul( expShare( span.div( l.y ) ) );
-	// the sigmoid's weight 1/2 + 1/2 x / r integrates to ( x + r ) / 2, r = sqrt( x^2 + k^2 ); its
-	// mean, written so that no difference cancels: 1/2 + 1/2 ( xa + xb ) / ( ra + rb )
-	const xa = a.sub( fog.z ).toVar(), xb = b.sub( fog.z ).toVar();
-	const k2 = fog.w.mul( fog.w );
-	const r = sqrt( xa.mul( xa ).add( k2 ) ).add( sqrt( xb.mul( xb ).add( k2 ) ) );
-	const above = xa.add( xb ).div( max( r, 1e-6 ) ).mul( 0.5 ).add( 0.5 );
-	return exponential( layerA ).add( exponential( layerB ) ).add( mix( fog.x, fog.y, above ) );
+	// the ground layer's weight 1 - u / r integrates to u - r, r = sqrt( u^2 + w^2 ); its mean,
+	// written so that no difference cancels: 1 - ( ua + ub ) / ( ra + rb )
+	const ua = a.sub( ground.y ).toVar(), ub = b.sub( ground.y ).toVar();
+	const w2 = ground.z.mul( ground.z );
+	const r = sqrt( ua.mul( ua ).add( w2 ) ).add( sqrt( ub.mul( ub ).add( w2 ) ) );
+	const weight = float( 1 ).sub( ua.add( ub ).div( max( r, 1e-6 ) ) );
+	return exponential( layer ).add( ground.x.mul( weight ) );
 
 } ).setLayout( { name: 'hazeMeanExtinction', type: 'float', inputs: [
-	{ name: 'a0', type: 'float' }, { name: 'b0', type: 'float' }, { name: 'layerA', type: 'vec2' },
-	{ name: 'layerB', type: 'vec2' }, { name: 'fog', type: 'vec4' },
+	{ name: 'a0', type: 'float' }, { name: 'b0', type: 'float' }, { name: 'layer', type: 'vec2' }, { name: 'ground', type: 'vec3' },
 ] } );
 
-// Cornette-Shanks with a share of isotropic scattering (normalised over the sphere: 1/sr).
-const hazePhase = Fn( ( [ cosine, g, isotropic ]: [ F, F, F ] ) => {
+// The near haze's factor on the optical depth from the camera out to t metres ( k, d0, d1 ): k up
+// to d0, a smoothstep back to 1 at d1, then 1. Written 1 - ( 1 - k )( 1 - s ), it is 1 exactly past d1
+// and with k = 1, so those rays keep their depth to the bit.
+const nearFactor = Fn( ( [ t, near ]: [ F, V3 ] ) => {
 
-	const g2 = g.mul( g ).toVar();
-	const cs = float( 3 / ( 8 * Math.PI ) ).mul( float( 1 ).sub( g2 ) ).div( g2.add( 2 ) ).mul( cosine.mul( cosine ).add( 1 ) )
-		.div( max( g2.add( 1 ).sub( cosine.mul( g ).mul( 2 ) ), 1e-4 ).pow( 1.5 ) );
-	return mix( cs, float( 1 / ( 4 * Math.PI ) ), isotropic );
+	return float( 1 ).sub( float( 1 ).sub( near.x ).mul( float( 1 ).sub( smoothstep( near.y, max( near.z, near.y.add( 1e-3 ) ), t ) ) ) );
 
-} ).setLayout( { name: 'hazePhase', type: 'float', inputs: [
-	{ name: 'cosine', type: 'float' }, { name: 'g', type: 'float' }, { name: 'isotropic', type: 'float' },
-] } );
+} ).setLayout( { name: 'hazeNearFactor', type: 'float', inputs: [ { name: 't', type: 'float' }, { name: 'near', type: 'vec3' } ] } );
+
+// A whole ray's length out to t as the near haze weighs it: its optical depth is this times the far
+// mean density over the heights it spans.
+const nearLength = ( t: F, near: V3 ): F => t.mul( nearFactor( t, near ) );
 
 // Interleaved gradient noise (Jimenez, "Next Generation Post Processing in Call of Duty: Advanced
 // Warfare", SIGGRAPH 2014): a fixed offset per froxel, so the frames' common jitter sequence lands
@@ -189,6 +348,27 @@ function halton( index: number, base: number ): number {
 
 }
 
+/** What hides the haze from the open sky, for its ambient visibility (Pipeline.ts gives the rain's
+ * collision map, RainCollision.ts, and the ambient probes' sky visibility): the island's highest surface seen from straight above, and
+ * the ambient probes' sky visibility. */
+export interface HazeCover {
+	/** the height (m) of the highest surface under world ( x, z ), the sea's off the island; an
+	 * inline node (no layout: the shadow kernel is not the only compute kernel that reads it) */
+	topAt( xz: V2 ): F;
+	/** the sea's height (m), the top off the island */
+	readonly seaLevel: F;
+	/** counts the top's redraws (a Grow's), so the shadow's rest starts over on each */
+	readonly version: number;
+	/** the probes' sky visibility at a world point, 1 off the island; left out, 1. Called when the
+	 * shadow kernels build. */
+	skyVisibility?: ( p: V3 ) => F;
+	/** set when `skyVisibility` reads what exists only later (the ambient volume, installed with the
+	 * world, after the graph's warm-up has started): the warm-up then leaves the shadow kernels,
+	 * and the owner compiles them once it is ready (`shadowKernels`, Pipeline.ts
+	 * `compileHazeShadow`), before the first frame */
+	late?: boolean;
+}
+
 /** What the page tells the haze each frame (main.ts): the rest's signature (what changes the
  * frame without changing the camera or the clock: a forced strike, the sun maps' redraws) and
  * whether the scene may rest (no sky bake in flight, no transition running). */
@@ -198,36 +378,70 @@ export interface HazeFrame { time: number; signature: readonly number[]; stable:
  * maps and the clouds, composited over the scene and the sky (see the header). */
 export class VolumetricHaze {
 
-	// the weather's haze (its extinction at sea level, 1/m) and sea fog (0 none, 1 dense)
+	// the weather's haze (the ground layer's deep extinction in the band of sigma 1, 2 rho_f, 1/m:
+	// Weather.ts `haze`) and its sea fog or mist (0 none, 1 sees 1 km)
 	readonly haze = uniform( 0 );
 	readonly fog = uniform( 0 );
+	// the hour's and the weather's key (HazeKeys.ts, `setLook`): each band's sigma, the light's
+	// desaturation, the gain over `gain`, the sun's share in the Rayleigh light and the two shares'
+	// weights, the medium's shape (the ground layer's top over the island's level and its width,
+	// the aerosol layer's share and scale height, the dome's own depth per kilometre) and the near
+	// haze (its density factor, start, end)
+	readonly look = { sigma: new THREE.Vector3( 1, 1, 1 ), desaturate: 0.26, gain: 1, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
+		top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, skyDepth: 0, nearDensity: 1, nearStart: 250, nearEnd: 600 };
+	// the weather's share of the sun's direct light below the clouds and its diffuse gain
+	// (Weather.ts `directVisibility`, `ambientGain`), which scale the light's colours
+	readonly weatherLight = { direct: 1, ambient: 1 };
 	// The key light the air scatters: its direction and its irradiance below the clouds (a closed
 	// deck leaves no beam to scatter).
 	readonly keyDir = uniform( new THREE.Vector3( 0, 1, 0 ) );
 	readonly keyColor = uniform( new THREE.Color( 0, 0, 0 ) );
-	readonly settings: HazeSettings = { ...HAZE_DEFAULTS };
+	// the moon's aerosol lobe (MOON_AEROSOL)
+	private readonly moonAnisotropy = tuneUniform( 'haze.moon.mieG', MOON_AEROSOL.anisotropy, { min: 0.7, max: 0.82, onChange: markSkyRetune } );
+	// the medium's and the light's tunable knobs (debug/Tune.ts; the sun's aerosol share takes
+	// the sky's lobe, the moon's its own: `moonAnisotropy`, MOON_AEROSOL)
+	readonly settings: HazeSettings = tuneObject( { ...HAZE_DEFAULTS },
+		{ anisotropy: 'sky.atmosphere.mieG', horizon: 'haze.light.horizon', ambientFloor: 'haze.ambient.floor' },
+		{ anisotropy: { min: 0.5, max: 0.9, onChange: markSkyRetune },
+			horizon: { min: 0.5, max: 10, onChange: markSkyRetune }, ambientFloor: { min: 0, max: 0.2, onChange: markSkyRetune } } );
 	readonly grid: Readonly<HazeGrid>;
 	/** The shadow's rest (see the header); `pending` while it has not converged. */
 	readonly rest = new TemporalRest();
 
 	private readonly sunShadow: SunShadow;
-	// the medium: the exponential layers ( extinction at sea level, scale height ) and the sigmoid
-	// ( below, above, top, width ), from the weather and the settings
-	private readonly layerA = uniform( new THREE.Vector2( 0, 110 ) );
-	private readonly layerB = uniform( new THREE.Vector2( 0, 1400 ) );
-	// the deep layer over the sky: its excess over the atmosphere's own aerosols
-	private readonly layerSky = uniform( new THREE.Vector2( 0, 1400 ) );
-	private readonly fogLayer = uniform( new THREE.Vector4( 0, 0, 20, 8 ) );
-	// the light's settings: albedo, anisotropy, isotropic share, key light's scale
-	private readonly lightSettings = uniform( new THREE.Vector4( 1, 0.62, 0.3, 1 ) );
-	private readonly ambientScale = uniform( 1 );
+	// the medium: the exponential layer ( density at sea level, scale height ) and the ground layer
+	// ( rho_f, top, width ), from the weather and the settings, and each band's sigma
+	private readonly layer = uniform( new THREE.Vector2( 0, 1400 ) );
+	private readonly ground = uniform( new THREE.Vector3( 0, 13, 50 ) );
+	// the ground layer's width at the sea and its growth with the start's height ( m, m per m ), for
+	// a ray from another height than the camera's (`groundFrom`)
+	private readonly widthRule = uniform( new THREE.Vector2( 50, 0 ) );
+	private readonly sigma = uniform( new THREE.Vector3( 1, 1, 1 ) );
+	// the dome's own thin haze (the key's `skyDepth`), in the medium's depth per metre before each
+	// band's sigma: green's optical depth per metre over green's sigma (`skyHaze` with `dome`)
+	private readonly skyDepth = uniform( 0 );
+	// the near haze: its density factor and where it eases back to 1 ( k, d0, d1 in m: `nearLength` )
+	private readonly near = uniform( new THREE.Vector3( 1, 250, 600 ) );
+	// the light's settings: albedo, anisotropy, the gain, the horizon's half-width (radians)
+	private readonly lightSettings = uniform( new THREE.Vector4( 1, 0.76, 1, 0.05 ) );
+	// the light's colours toward their luminance (0 as given, 1 grey)
+	private readonly desaturate = uniform( 0.26 );
+	// the light's colours per body (the sun's, the moon's: each one's illuminance the sky is drawn
+	// with, scaled): the Rayleigh share's lit by the open sky and by the body, the aerosol share's;
+	// and the shares' weights
+	private readonly ambientColour = [ uniform( new THREE.Color( 0, 0, 0 ) ), uniform( new THREE.Color( 0, 0, 0 ) ) ] as const;
+	private readonly sunRayleighColour = [ uniform( new THREE.Color( 0, 0, 0 ) ), uniform( new THREE.Color( 0, 0, 0 ) ) ] as const;
+	private readonly mieColour = [ uniform( new THREE.Color( 0, 0, 0 ) ), uniform( new THREE.Color( 0, 0, 0 ) ) ] as const;
+	private readonly weights = uniform( new THREE.Vector2( 1, 1 ) );
 	private readonly atmosphere: Atmosphere;
 	// the slices: near, the first slice's depth, the growth and its log2
 	private readonly slices = uniform( new THREE.Vector4( 10, 0.6, 1.15, Math.log2( 1.15 ) ) );
 	private readonly far = uniform( 100000 );
 	// the grid's camera, unjittered (the volume does not shake with the temporal modes' jitter)
 	private readonly gridInverse = uniform( new THREE.Matrix4() );
+	private readonly gridProjection = uniform( new THREE.Matrix4() );
 	private readonly cameraWorld = uniform( new THREE.Matrix4() );
+	private readonly cameraInverse = uniform( new THREE.Matrix4() );
 	private readonly origin = uniform( new THREE.Vector3() );
 	// the previous frame's view-projection (unjittered), for the history's reprojection
 	private readonly previousViewProjection = uniform( new THREE.Matrix4() );
@@ -239,17 +453,31 @@ export class VolumetricHaze {
 	private readonly sequence = uniform( new THREE.Vector3( 0.5, 0.5, 0.5 ) );
 	private readonly restIndex = uniform( - 1 );
 	private readonly blend = uniform( 1 );
+	// the clouds' shafts (cloudShaft): the unsharp mask's gain, the floor, the lift's cut toward the
+	// key light
+	readonly cloudShafts = uniform( new THREE.Vector3( 10, 0, 0 ) );
+	// the ambient visibility's floor and the half-width of its rise (m)
+	private readonly ambientSettings = uniform( new THREE.Vector2() );
+	private cover: HazeCover | null = null;
 	// the composite's switches: the haze over the sky, tricubic, density anti-aliasing, the debug view
 	private readonly switches = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
+	// `probe`'s kernel and its buffers, built on its first call
+	private probeKernel: { input: THREE.StorageBufferNode<'vec4'>; heights: THREE.StorageBufferNode<'float'>; out: THREE.StorageBufferNode<'vec4'>; kernel: THREE.ComputeNode } | null = null;
 	// the render's size, the frame graph's (set in `apply`)
 	private resolution!: THREE.UniformNode<'vec2', THREE.Vector2>;
 
-	// The shadow's two volumes (r: the key light's visibility, g: the ambient occlusion), written in
+	// The shadow's two volumes (r: the key light's visibility, g: the ambient visibility), written in
 	// turn: `written` holds the newest. The light's volume (rgb: L / alpha, a: alpha at each
 	// slice's far boundary).
 	private readonly visibility: [ THREE.Storage3DTexture, THREE.Storage3DTexture ];
 	private readonly light: THREE.Storage3DTexture;
 	private visibilityKernels: THREE.ComputeNode[] = [];
+	/** The shadow's kernels (both ping-pong sides), for an owner whose cover is `late` to compile. */
+	get shadowKernels(): readonly THREE.ComputeNode[] {
+
+		return this.visibilityKernels;
+
+	}
 	private lightKernels: THREE.ComputeNode[] = [];
 	private resources: { visibility: ResourceHandle; light: ResourceHandle } | null = null;
 	private written = 0;
@@ -338,6 +566,52 @@ export class VolumetricHaze {
 
 	}
 
+	// The key light's and the open sky's visibility at the point q (0 .. 1 on each axis) of the
+	// froxel at `cell`.
+	private visibilityAt( cell: V3, q: V3, size: V2, sky: Sky ): V2 {
+
+		const p = this.gridPoint( cell.xy.add( q.xy ).div( size ), this.sliceDepth( cell.z.add( q.z ) ) ).toVar();
+		// the sun's maps (lit outside them and before the first is drawn). The maps' depth ends
+		// below the casters (at the sea's troughs), but a low sun throws their shadow through the
+		// air far beyond that: a point past the far end lies behind every caster of its texel, so
+		// it is compared at the far end.
+		const coordinate = this.sunShadow.coordinate.mul( vec4( p, 1 ) ).xyz.toVar();
+		const sun = this.sunShadow.volumeVisibility( vec3( coordinate.xy, min( coordinate.z, 0.99999 ) ) ).toVar();
+		const key = sun.mul( this.cloudShaft( p, sky ) );
+		// the open sky's: dark under the cover's top, lit above it, rising over ± the softness, open
+		// wherever the top is the sea's, times the probes' sky visibility, never below the floor
+		const cover = this.cover, A = this.ambientSettings;
+		const top = cover ? cover.topAt( p.xz ).toVar() : float( 0 );
+		const open = cover ? select( top.lessThan( cover.seaLevel.add( 0.02 ) ), float( 1 ), smoothstep( A.y.negate(), A.y, p.y.sub( top ) ) ) : float( 1 );
+		const ambient = max( A.x, open.mul( cover?.skyVisibility ? cover.skyVisibility( p ) : float( 1 ) ) );
+		return vec2( key, ambient );
+
+	}
+
+	// The clouds' visibility along the key light from the point p of the air. The clouds' shadow map
+	// holds, for each ground point, the transmittance along a flat beam toward the clouds' light
+	// (Clouds.ts `shadowAlongBeam`), so the point is taken to its ground point along that same flat
+	// beam and that light: a beam followed over the planet's curve instead, or along the haze's key
+	// direction, meets the map a kilometre off at a low sun and leaves it below a sun of 0.08, where
+	// the map clamps its own slope. The read is sharpened by an unsharp mask against its B-spline
+	// blur, since the map is coarse and the shafts would blur into a general dimming without it;
+	// lifted toward lit for a point above the shell's base (its height over the planet's curve,
+	// a point d metres from the island's centre d^2 / 2R lower), less so toward the key light
+	// (contrasty shafts against the sun), and floored.
+	private cloudShaft( p: V3, sky: Sky ): F {
+
+		const clouds = sky.clouds, s = this.keyDir, C = this.cloudShafts;
+		const read = clouds.shadowAlongBeam( p ).toVar();
+		const sharp = clamp( read.x.add( C.x.mul( read.x.sub( read.y ) ) ), 0, 1 );
+		// the height above the sphere, from the shell's base (0) to its top (1)
+		const r = p.xz.sub( clouds.shadowCentre );
+		const height = p.y.add( dot( r, r ).div( 2 * EARTH_RADIUS ) );
+		const lift = clamp( height.sub( SHELL_BOTTOM ).div( SHELL_THICKNESS ), 0, 1 ).mul( float( 1 ).sub( sharp ) );
+		const toward = clamp( dot( normalize( p.sub( this.origin ) ), s ), 0, 1 );
+		return max( C.y, sharp.add( lift ).sub( lift.mul( C.z ).mul( toward ) ) );
+
+	}
+
 	// The shadow kernel writing volume `w` (reading the other one's history): one thread per froxel.
 	private buildVisibilityKernel( w: number, sky: Sky ): THREE.ComputeNode {
 
@@ -356,23 +630,22 @@ export class VolumetricHaze {
 				const n = vec3( gradientNoise( cell.xy.add( cell.z.mul( 5.588238 ) ) ), gradientNoise( cell.yx.add( cell.z.mul( 7.123 ) ).add( 17.3 ) ),
 					gradientNoise( vec2( cell.z.mul( 3.17 ).add( cell.x ), cell.y.mul( 1.91 ).add( 41.7 ) ) ) );
 				const o = fract( this.sequence.add( n ) ).toVar();
-				const p = this.gridPoint( cell.xy.add( o.xy ).div( size ), this.sliceDepth( cell.z.add( o.z ) ) ).toVar();
-				// the sun's maps (lit outside them and before the first is drawn). The maps' depth ends
-				// below the casters (at the sea's troughs), but a low sun throws their shadow through the
-				// air far beyond that: a point past the far end lies behind every caster of its texel, so
-				// it is compared at the far end.
-				const coordinate = this.sunShadow.coordinate.mul( vec4( p, 1 ) ).xyz.toVar();
-				const sun = this.sunShadow.volumeVisibility( vec3( coordinate.xy, min( coordinate.z, 0.99999 ) ) ).toVar();
-				// the clouds' shadow map holds the transmittance along the key light from the ground: a
-				// point of the air takes the ground point its beam passes over
-				const rise = max( p.y, 0 ).div( max( this.keyDir.y, LOW_KEY ) );
-				const ground = p.xz.sub( this.keyDir.xz.mul( rise ) );
-				const visible = sun.mul( sky.cloudVisibility( vec3( ground.x, 0, ground.y ) ) ).toVar();
+				// N sub-samples about it, the R3 sequence's steps apart (Roberts, "The Unreasonable
+				// Effectiveness of Quasirandom Sequences", 2018), averaged: a recomputed froxel takes its
+				// cell's mean, so its history converges to that rather than to whichever point it took
+				const visible = vec2( 0 ).toVar();
+				Loop( SUB_SAMPLES, ( { i } ) => {
+
+					const q = fract( o.add( vec3( 0.8191725, 0.6710436, 0.5497005 ).mul( float( i ) ) ) );
+					visible.addAssign( this.visibilityAt( cell, q, size, sky ) );
+
+				} );
+				visible.divAssign( SUB_SAMPLES );
 				const out = visible.toVar();
 				If( this.restIndex.greaterThanEqual( 0 ), () => {
 
 					// at rest: the exact mean of the sequence so far (index 0 starts it over)
-					const kept = before.load( ivec3( x, y, z ) ).r;
+					const kept = before.load( ivec3( x, y, z ) ).xy;
 					out.assign( kept.mul( this.restIndex ).add( visible ).div( this.restIndex.add( 1 ) ) );
 
 				} ).ElseIf( this.blend.lessThan( 1 ), () => {
@@ -386,12 +659,12 @@ export class VolumetricHaze {
 						.and( uvw.y.greaterThanEqual( 0 ) ).and( uvw.y.lessThanEqual( 1 ) ).and( uvw.z.lessThanEqual( 1 ) );
 					If( inside, () => {
 
-						out.assign( mix( history.sample( uvw ).level( float( 0 ) ).r, visible, this.blend ) );
+						out.assign( mix( history.sample( uvw ).level( float( 0 ) ).xy, visible, this.blend ) );
 
 					} );
 
 				} );
-				textureStore( target, ivec3( x, y, z ), vec4( out, 1, 0, 1 ) );
+				textureStore( target, ivec3( x, y, z ), vec4( out, 0, 1 ) );
 
 			} );
 
@@ -399,8 +672,57 @@ export class VolumetricHaze {
 
 	}
 
-	// The light kernel reading shadow volume `r`: one thread per column, front to back.
-	private buildLightKernel( r: number, sky: Sky ): THREE.ComputeNode {
+	// The light kernel reading shadow volume `r`: one thread per column, front to back, each channel
+	// through its own optical depth.
+	// The light the air scatters toward the eye along `direction` (the light kernel's, per slice:
+	// see the header): a function of a point's height (metres) and of the sun's and the open sky's
+	// visibility there, its terms per body built once for the direction.
+	private scatterToward( direction: V3 ): ( y: F, sun: F, ambient: F ) => V3 {
+
+		const [ albedo, g, gain, horizon ] = [ this.lightSettings.x, this.lightSettings.y, this.lightSettings.z, this.lightSettings.w ];
+		// the sky's in-scatter along the column's direction at each froxel's altitude (the fog
+		// table), through the phases at use: the Rayleigh share lit by the open sky and by the sun
+		// (the latter under the polariser), the aerosol share by the sun once it stands over the
+		// froxel's horizon; each share's colour turned toward its luminance first
+		const atmosphere = this.atmosphere;
+		const grey = ( colour: V3 ): V3 => mix( colour, vec3( dot( colour, LUMINANCE ) ), this.desaturate );
+		// per body (0 the sun, 1 the moon), what the column shares: its direction, the phases and
+		// its elevation
+		const bodies = ( [ 0, 1 ] as const ).map( ( b ) => {
+
+			const light = b === 0 ? atmosphere.sunDir : atmosphere.moonDir;
+			const nu = dot( direction, light ).toVar();
+			return {
+				b, light, rayleighPhase: skyRayleighPhase( nu, atmosphere.rayleighForward ).toVar(), miePhase: cornetteShanks( nu, b === 0 ? g : this.moonAnisotropy ).toVar(),
+				direct: this.sunRayleighColour[ b ].mul( polariser( nu, atmosphere.polarisation ) ).toVar(), elevation: asin( clamp( light.y, - 1, 1 ) ).toVar(),
+			};
+
+		} );
+		return ( y, sun, ambient ) => {
+
+			// (the froxel's altitude, km; its geometric horizon dips by sqrt( 2 h / R ))
+			const height = max( y, 0 ).div( 1000 ).toVar();
+			const dip = sqrt( height.mul( 2 / 6360 ) ).toVar();
+			const scattered = vec3( 0 ).toVar();
+			for ( const body of bodies ) {
+
+				// (the sun's rows along the view, the moon's along the moon: see the header)
+				const rows = atmosphere.fogRows( body.b === 0 ? direction.y : body.light.y, height, body.b );
+				const shadow = atmosphere.earthShadowAt( height, direction, body.b );
+				const above = smoothstep( horizon.negate(), horizon, body.elevation.add( dip ) );
+				const rayleigh = grey( rows.rayleigh.mul( body.rayleighPhase ) )
+					.mul( this.ambientColour[ body.b ].mul( ambient ).add( body.direct.mul( sun ) ) ).mul( shadow );
+				const mie = grey( rows.mie.mul( body.miePhase ) ).mul( this.mieColour[ body.b ] ).mul( above.mul( sun ) );
+				scattered.addAssign( rayleigh.mul( this.weights.x ).add( mie.mul( this.weights.y ) ) );
+
+			}
+			return scattered.mul( gain.mul( albedo ) );
+
+		};
+
+	}
+
+	private buildLightKernel( r: number ): THREE.ComputeNode {
 
 		const { width: W, height: H, depth: D } = this.grid;
 		const shade = texture3D( this.visibility[ r ] );
@@ -412,34 +734,41 @@ export class VolumetricHaze {
 				const x = int( instanceIndex.mod( W ) ).toVar(), y = int( instanceIndex.div( W ) ).toVar();
 				const { view, direction } = this.gridRay( vec2( float( x ).add( 0.5 ), float( y ).add( 0.5 ) ).div( vec2( W, H ) ) );
 				const forward = view.z.negate().toVar();
-				const [ albedo, g, isotropic, sunScale ] = [ this.lightSettings.x, this.lightSettings.y, this.lightSettings.z, this.lightSettings.w ];
-				// in-scattered radiance per unit of scattering: the key light through the phase, and the
-				// sky's irradiance (E / pi) from above with the ground's bounce of both from below
-				const key = this.keyColor.rgb.mul( hazePhase( dot( direction, this.keyDir ), g, isotropic ) ).mul( sunScale ).mul( albedo ).toVar();
-				const skyLight = sky.irradianceNode;
-				const bounce = this.keyColor.rgb.mul( max( this.keyDir.y, 0 ).div( Math.PI ) ).add( skyLight ).mul( this.atmosphere.groundAlbedo.rgb );
-				const ambient = skyLight.add( bounce ).mul( 0.5 ).mul( this.ambientScale ).mul( albedo ).toVar();
-				const sum = vec3( 0 ).toVar(), alpha = float( 0 ).toVar();
+				const scatter = this.scatterToward( direction );
+				// (alpha: the band opacity in front; shown: the display opacity, through the band-to-display
+				// matrix, which keeps 1 and so acts on an opacity as on a transmittance)
+				const sum = vec3( 0 ).toVar(), alpha = vec3( 0 ).toVar(), shown = vec3( 0 ).toVar();
 				const t0 = this.slices.x.div( forward ).toVar();
 				const y0 = this.origin.y.add( direction.y.mul( t0 ) ).toVar();
+				// the near haze: the far optical depth from the camera (`far`) and its factor at t0; a
+				// slice's is f1 tau1 - f0 tau0, written as f1 dtau + tau0 ( f1 - f0 ) so that f = 1
+				// leaves dtau exactly
+				const far = this.sigma.mul( t0.mul( meanExtinction( this.origin.y, y0, this.layer, this.ground ) ) ).toVar();
+				const f0 = nearFactor( t0, this.near ).toVar();
 				Loop( D, ( { i } ) => {
 
 					const t1 = this.sliceDepth( float( i ).add( 1 ) ).div( forward ).toVar();
 					const y1 = this.origin.y.add( direction.y.mul( t1 ) ).toVar();
-					const tau = t1.sub( t0 ).mul( meanExtinction( y0, y1, this.layerA, this.layerB, this.fogLayer ) );
-					// the slice's share of the light that reaches the eye: what it scatters times what
-					// lies in front of it
-					const w = float( 1 ).sub( alpha ).mul( tau.mul( expShare( tau ) ) ).toVar();
+					const step = this.sigma.mul( t1.sub( t0 ).mul( meanExtinction( y0, y1, this.layer, this.ground ) ) ).toVar();
+					const f1 = nearFactor( t1, this.near ).toVar();
+					const tau = step.mul( f1 ).add( far.mul( f1.sub( f0 ) ) ).toVar();
+					far.addAssign( step );
+					f0.assign( f1 );
+					// the slice's share of the light that reaches the eye, per channel: what it scatters
+					// times what lies in front of it
+					const w = vec3( 1 ).sub( alpha ).mul( tau.mul( expShare3( tau ) ) ).toVar();
 					const fraction = shade.load( ivec3( x, y, i ) );
-					const scattered = key.mul( fraction.r ).add( ambient.mul( fraction.g ) ).toVar();
-					sum.addAssign( scattered.mul( w ) );
+					const scattered = scatter( y0.add( y1 ).mul( 0.5 ), fraction.r, fraction.g ).toVar();
 					alpha.addAssign( w );
+					const next = bandToDisplay( alpha, bandPush ).toVar();
+					sum.addAssign( scattered.mul( next.sub( shown ) ) );
+					shown.assign( next );
 					// L / alpha: the mean light of the haze in front, its limit where there is none yet
-					const mean = select( alpha.greaterThan( 1e-20 ), sum.div( max( alpha, 1e-20 ) ), scattered );
+					const mean = select( shown.y.greaterThan( 1e-20 ), sum.div( max( shown, vec3( 1e-20 ) ) ), scattered );
 					// (the debug view: the visibility as a grey card in the key light, so the display's
 					// exposure shows 1 as mid grey)
-					const shown = select( this.switches.w.greaterThan( 0.5 ), vec3( fraction.r.mul( dot( this.keyColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) ) ).mul( 0.18 / Math.PI ) ), mean );
-					textureStore( target, ivec3( x, y, i ), vec4( shown, alpha ) );
+					const out = select( this.switches.w.greaterThan( 0.5 ), vec3( fraction.r.mul( dot( this.keyColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) ) ).mul( 0.18 / Math.PI ) ), mean );
+					textureStore( target, ivec3( x, y, i ), vec4( out, alpha.y ) );
 					t0.assign( t1 );
 					y0.assign( y1 );
 
@@ -477,6 +806,190 @@ export class VolumetricHaze {
 
 	}
 
+	// `colour` seen through the haze over `reach` metres along the grid's ray through screen uv q,
+	// `forward` its view depth per metre: the light volume sampled at reach (at most the grid's far
+	// end), the opacity exact from the medium's optical depth `depth` (before each band's sigma; or
+	// the grid's own with the density anti-aliasing off), each channel through its sigma and the
+	// band-to-display matrix.
+	private fogOver( colour: V3, q: V2, forward: F, reach: F, depth: F ): { result: V3; opacity: V3 } {
+
+		const { depth: D } = this.grid;
+		const tau = this.sigma.mul( depth ).toVar();
+		const exact = bandToDisplay( tau.mul( expShare3( tau ) ), bandPush ).toVar();
+		const at = min( reach.mul( forward ), this.far );
+		const uvw = vec3( q, this.sliceCoordinate( at ).sub( 0.5 ).div( D ) );
+		const light = this.sampleLight( uvw ).toVar();
+		// (the grid holds green's band opacity: each channel's transmittance is green's to the power
+		// of its sigma over green's, then through the band-to-display matrix)
+		const held = bandToDisplay( vec3( 1 ).sub( exp2( this.sigma.div( this.sigma.y ).mul( log2( max( float( 1 ).sub( light.a ), 1e-30 ) ) ) ) ), bandPush ).toVar();
+		const opacity = select( this.switches.z.greaterThan( 0.5 ), exact, held ).toVar();
+		const result = select( this.switches.w.greaterThan( 0.5 ), light.rgb, mix( colour, light.rgb, opacity ) );
+		return { result, opacity };
+
+	}
+
+	/** The haze toward the world direction `d`, for the sky dome (Sky.ts `fogDome`), out to
+	 * `distance` (a cloud's) or by default the sky's own (to the atmosphere's top, or to the sea for a
+	 * ray below the horizon): the light it adds (the light volume sampled there or at the grid's far
+	 * end, whichever is nearer, times the opacity) and its transmittance, the opacity taken along the
+	 * whole distance; none with `sky` off. The ray's screen position is the grid's own (unjittered)
+	 * projection of `d`, so the dome reads the volume where the grid holds it whether or not it draws
+	 * jittered. `from` stands the ray's start at another height (metres; the camera's by default),
+	 * which changes the opacity only: the light is the volume's, read on the camera's grid. `dome`
+	 * (the dome's own call, Pipeline.ts) adds, on the sky's own ray only (no `distance`, no `from`),
+	 * the dome's thin haze (the key's `skyDepth`, see the header) to the medium's depth; every other
+	 * caller (the clouds' haze, `probe`) reads the medium alone. */
+	skyHaze( d: V3, distance?: F, from?: F, dome = false ): { light: V3; transmittance: V3 } {
+
+		const view = this.cameraInverse.mul( vec4( d, 0 ) ).xyz.toVar();
+		const clip = this.gridProjection.mul( vec4( view, 1 ) ).toVar();
+		const q = vec2( clip.x.div( clip.w ).mul( 0.5 ).add( 0.5 ), float( 0.5 ).sub( clip.y.div( clip.w ).mul( 0.5 ) ) );
+		const forward = max( view.z.negate(), 1e-4 ).toVar();
+		// the distance to the atmosphere's top on the sphere (a difference of squares, which keeps
+		// its digits at the planet's radius), or to the sea, flat, as the haze's surfaces take it
+		const y = () => from ?? this.origin.y;
+		const r = y().add( ATMOSPHERE_BOTTOM ).toVar();
+		const top = r.mul( d.y ).negate().add( sqrt( r.mul( r ).mul( d.y.mul( d.y ) ).add( float( ATMOSPHERE_TOP ).sub( r ).mul( r.add( ATMOSPHERE_TOP ) ) ) ) );
+		const down = d.y.lessThan( 0 ).toVar();
+		const whole = select( down, y().div( max( d.y.negate(), 1e-6 ) ), top ).toVar();
+		const length = ( distance ? min( distance, whole ) : whole ).toVar();
+		// the optical depth along a straight ray, as the haze's surfaces take it: the length times the
+		// medium's mean density over the heights it spans (`meanExtinction`), the height climbing with
+		// d.y alone, not lifted by the planet's curve. So the haze closes over the sky near the horizon:
+		// at 1 degree the ray holds the ground layer and the aerosols' lower air for tens of kilometres.
+		// (Two parts, the far one from the height the curve lifts the ray to, took about half a degree's
+		// worth of air too little there: 1 - T in green 0.873 against 0.913 straight, a bent ray
+		// integrated in steps 0.889, in the same medium; above 3 degrees the three differ by 0.02 or less.)
+		const medium = nearLength( length, this.near ).mul( meanExtinction( y(), y().add( d.y.mul( length ) ), this.layer, from ? this.groundFrom( from ) : this.ground ) );
+		// the dome's own thin haze, uniform in height over its whole length (below the horizon too,
+		// to the sea), in the medium's units: green's transmittance gains exp( - skyDepth L_km ), the
+		// other bands follow through sigma (0 by default adds exactly nothing)
+		const depth = dome && ! distance && ! from ? medium.add( length.mul( this.skyDepth ) ) : medium;
+		const fog = this.fogOver( vec3( 0 ), q, forward, length, depth );
+		const on = this.switches.x.greaterThan( 0.5 );
+		return { light: select( on, fog.result, vec3( 0 ) ), transmittance: select( on, vec3( 1 ).sub( fog.opacity ), vec3( 1 ) ) };
+
+	}
+
+	/** The haze toward the world direction `d` from `height` metres over the sea, out to `distance`
+	 * (a cloud's) or by default the sky's whole way (as `skyHaze` takes it), shadowed by the clouds alone: the light it adds and its
+	 * transmittance, for the environment's bake (Sky.ts `fogEnvironment`), which takes every
+	 * direction, so it marches the light kernel's slices along `d` itself instead of reading the
+	 * camera's grid (the same light, the sun and the open sky seen whole at every slice). The light
+	 * is the mean over the slices out to the sky's distance or the grid's far end, whichever is
+	 * nearer, times the opacity taken along the whole distance; none with `sky` off. */
+	openSky( d: V3, height: number, clouds: Sky, distance?: F ): { light: V3; transmittance: V3 } {
+
+		const { depth: D } = this.grid;
+		const y = float( height );
+		const ground = this.groundFrom( y );
+		const r = y.add( ATMOSPHERE_BOTTOM ).toVar();
+		const top = r.mul( d.y ).negate().add( sqrt( r.mul( r ).mul( d.y.mul( d.y ) ).add( float( ATMOSPHERE_TOP ).sub( r ).mul( r.add( ATMOSPHERE_TOP ) ) ) ) );
+		const sky = select( d.y.lessThan( 0 ), y.div( max( d.y.negate(), 1e-6 ) ), top );
+		const whole = ( distance ? min( distance, sky ) : sky ).toVar();
+		const reach = min( whole, this.far ).toVar();
+		const scatter = this.scatterToward( d );
+		// the light kernel's march along d (its view depth per metre 1), each slice cut at reach
+		const sum = vec3( 0 ).toVar(), alpha = vec3( 0 ).toVar(), shown = vec3( 0 ).toVar();
+		const t0 = min( this.slices.x, reach ).toVar();
+		const y0 = y.add( d.y.mul( t0 ) ).toVar();
+		const far = this.sigma.mul( t0.mul( meanExtinction( y, y0, this.layer, ground ) ) ).toVar();
+		const f0 = nearFactor( t0, this.near ).toVar();
+		// the sun's visibility at a point t metres along d: the clouds' shadow, as the shadow kernel
+		// takes it (no caster of the island's: its maps reach no farther than the island)
+		const shaft = ( t: F ): F => this.cloudShaft( vec3( 0, y, 0 ).add( d.mul( t ) ), clouds );
+		const first = scatter( y.add( y0 ).mul( 0.5 ), shaft( t0.mul( 0.5 ) ), float( 1 ) ).toVar();
+		Loop( D, ( { i } ) => {
+
+			const t1 = min( this.sliceDepth( float( i ).add( 1 ) ), reach ).toVar();
+			const y1 = y.add( d.y.mul( t1 ) ).toVar();
+			const step = this.sigma.mul( t1.sub( t0 ).mul( meanExtinction( y0, y1, this.layer, ground ) ) ).toVar();
+			const f1 = nearFactor( t1, this.near ).toVar();
+			const tau = step.mul( f1 ).add( far.mul( f1.sub( f0 ) ) ).toVar();
+			far.addAssign( step );
+			f0.assign( f1 );
+			const w = vec3( 1 ).sub( alpha ).mul( tau.mul( expShare3( tau ) ) ).toVar();
+			alpha.addAssign( w );
+			const next = bandToDisplay( alpha, bandPush ).toVar();
+			sum.addAssign( scatter( y0.add( y1 ).mul( 0.5 ), shaft( t0.add( t1 ).mul( 0.5 ) ), float( 1 ) ).mul( next.sub( shown ) ) );
+			shown.assign( next );
+			t0.assign( t1 );
+			y0.assign( y1 );
+
+		} );
+		const mean = select( shown.y.greaterThan( 1e-20 ), sum.div( max( shown, vec3( 1e-20 ) ) ), first );
+		// the opacity along the whole distance, as `skyHaze` takes it
+		const depth = nearLength( whole, this.near ).mul( meanExtinction( y, y.add( d.y.mul( whole ) ), this.layer, ground ) );
+		const tau = this.sigma.mul( depth ).toVar();
+		const opacity = bandToDisplay( tau.mul( expShare3( tau ) ), bandPush ).toVar();
+		const on = this.switches.x.greaterThan( 0.5 );
+		return { light: select( on, mean.mul( opacity ), vec3( 0 ) ), transmittance: select( on, vec3( 1 ).sub( opacity ), vec3( 1 ) ) };
+
+	}
+
+	/** The haze the frame lays over each of `rays` (world directions from the camera; at most
+	 * PROBE_RAYS): over a surface at `distance` metres, as the composite fogs it, or with no
+	 * distance over the sky, as the dome fogs itself (`skyHaze`, to the atmosphere's top). Each
+	 * reading is the opacity 1 - T per display channel and the light it lays at full opacity (the
+	 * haze's added colour over the opacity), evaluated on the GPU by the composite's own nodes
+	 * (`fogOver`) on the last frame's camera, medium and light volume, in a kernel built on the
+	 * first call (none exists on a page that never calls it). A ray's `height` (metres over the sea)
+	 * starts it there instead of at the camera: the opacity is the medium's own along that ray, as
+	 * a camera there would see it, while the light stays the camera's volume's. A sky ray reads the
+	 * medium alone, without the dome's own thin haze (`skyHaze`'s `dome`, the key's `skyDepth`). For
+	 * a script that reads cells. */
+	async probe( renderer: THREE.WebGPURenderer, rays: readonly { direction: THREE.Vector3Like; distance?: number; height?: number }[] ): Promise<{ opacity: number[]; light: number[] }[]> {
+
+		if ( rays.length > PROBE_RAYS ) throw new Error( `VolumetricHaze.probe: at most ${ PROBE_RAYS } rays` );
+		if ( ! this.probeKernel ) {
+
+			const input = instancedArray( PROBE_RAYS, 'vec4' ), heights = instancedArray( PROBE_RAYS, 'float' ), out = instancedArray( PROBE_RAYS * 2, 'vec4' );
+			const kernel = Fn( () => {
+
+				const ray = input.element( instanceIndex ).toVar();
+				const d = normalize( ray.xyz ).toVar();
+				const from = heights.element( instanceIndex ).toVar();
+				// (the medium alone: not the dome's own haze, so the readings are the medium's opacity)
+				const sky = this.skyHaze( d, undefined, from, false );
+				// (a surface: the composite's ray, through the grid's own projection of d)
+				const view = this.cameraInverse.mul( vec4( d, 0 ) ).xyz.toVar();
+				const clip = this.gridProjection.mul( vec4( view, 1 ) ).toVar();
+				const q = vec2( clip.x.div( clip.w ).mul( 0.5 ).add( 0.5 ), float( 0.5 ).sub( clip.y.div( clip.w ).mul( 0.5 ) ) );
+				const distance = max( ray.w, 0 ).toVar();
+				const surface = this.fogOver( vec3( 0 ), q, view.z.negate(), distance, nearLength( distance, this.near ).mul( meanExtinction( from, from.add( d.y.mul( distance ) ), this.layer, this.groundFrom( from ) ) ) );
+				const onSky = ray.w.lessThan( 0 ).toVar();
+				const opacity = select( onSky, vec3( 1 ).sub( sky.transmittance ), surface.opacity ).toVar();
+				const added = select( onSky, sky.light, surface.result ).toVar();
+				out.element( instanceIndex.mul( 2 ) ).assign( vec4( opacity, 0 ) );
+				out.element( instanceIndex.mul( 2 ).add( 1 ) ).assign( vec4( added, 0 ) );
+
+			} )().compute( PROBE_RAYS, [ 64 ] ).setName( 'Haze.Probe' );
+			this.probeKernel = { input, heights, out, kernel };
+
+		}
+		const { input, heights, out, kernel } = this.probeKernel;
+		const data = ( input.value as THREE.StorageBufferAttribute ).array as Float32Array;
+		const from = ( heights.value as THREE.StorageBufferAttribute ).array as Float32Array;
+		data.fill( 0 );
+		rays.forEach( ( ray, i ) => {
+
+			data.set( [ ray.direction.x, ray.direction.y, ray.direction.z, ray.distance ?? - 1 ], i * 4 );
+			from[ i ] = ray.height ?? this.origin.value.y;
+
+		} );
+		( input.value as THREE.StorageBufferAttribute ).needsUpdate = true;
+		( heights.value as THREE.StorageBufferAttribute ).needsUpdate = true;
+		await renderer.computeAsync( kernel );
+		const buffer = new Float32Array( await renderer.getArrayBufferAsync( out.value as THREE.StorageBufferAttribute ) );
+		return rays.map( ( _r, i ) => {
+
+			const opacity = Array.from( buffer.subarray( i * 8, i * 8 + 3 ) ), added = buffer.subarray( i * 8 + 4, i * 8 + 7 );
+			return { opacity, light: opacity.map( ( o, c ) => o > 0 ? added[ c ] / o : 0 ) };
+
+		} );
+
+	}
+
 	/** `depth` is the linear view z of the nearest surface, the sea's included. `veil` returns the
 	 * colour `background` seen through the rain along a view direction, in front of content at a
 	 * given distance, and the veil's opacity there in its alpha, which the result keeps (0 without
@@ -487,7 +1000,7 @@ export class VolumetricHaze {
 	 * is built. */
 	apply( color: V3, depth: THREE.Texture, sky: Sky, graph: GraphResources, veil?: ( direction: V3, distance: F, background: V3, transmittance: F ) => V4 ): V4 {
 
-		const { width: W, height: H, depth: D } = this.grid;
+		const { width: W, height: H } = this.grid;
 		this.resolution = graph.extent( { of: 'render' } );
 		const fixed: SizeClass = { of: 'fixed', width: W, height: H };
 		this.resources = {
@@ -495,7 +1008,7 @@ export class VolumetricHaze {
 			light: graph.import( 'haze.light', this.light, fixed ),
 		};
 		this.visibilityKernels = [ this.buildVisibilityKernel( 0, sky ), this.buildVisibilityKernel( 1, sky ) ];
-		this.lightKernels = [ this.buildLightKernel( 0, sky ), this.buildLightKernel( 1, sky ) ];
+		this.lightKernels = [ this.buildLightKernel( 0 ), this.buildLightKernel( 1 ) ];
 		const sceneDepth = texture( depth );
 		return Fn( () => {
 
@@ -508,25 +1021,14 @@ export class VolumetricHaze {
 			const view = normalize( ray ).toVar();
 			const direction = normalize( this.cameraWorld.mul( vec4( view, 0 ) ).xyz ).toVar();
 			const forward = view.z.negate().toVar();
+			// (the sky fogs itself, `skyHaze`: its pixels are left as they are)
 			const sky_ = z.lessThan( SKY_Z ).toVar();
 			// (the veil's distance: the surface's, 1e5 for the sky)
 			const distance = select( sky_, float( 1e5 ), z.div( view.z ) ).toVar();
-			// The haze reaches the surface, or the grid's far end through the sky; a ray below the
-			// horizon ends there on the distant sea the sky draws.
-			const reach = select( sky_, this.far.div( forward ), distance ).toVar();
-			If( sky_.and( direction.y.lessThan( 0 ) ), () => {
-
-				reach.assign( min( reach, this.origin.y.div( direction.y.negate() ) ) );
-
-			} );
-			const tau = reach.mul( meanExtinction( this.origin.y, this.origin.y.add( direction.y.mul( reach ) ), this.layerA, select( sky_, this.layerSky, this.layerB ), this.fogLayer ) );
-			const exact = tau.mul( expShare( tau ) );
-			const uvw = vec3( q, this.sliceCoordinate( reach.mul( forward ) ).sub( 0.5 ).div( D ) );
-			const light = this.sampleLight( uvw ).toVar();
-			const opacity = select( this.switches.z.greaterThan( 0.5 ), exact, light.a )
-				.mul( select( sky_.and( this.switches.x.lessThan( 0.5 ) ), float( 0 ), float( 1 ) ) ).toVar();
-			const result = select( this.switches.w.greaterThan( 0.5 ), light.rgb, mix( color, light.rgb, opacity ) );
-			const transmittance = float( 1 ).sub( opacity );
+			const fogged = this.fogOver( color, q, forward, distance, nearLength( distance, this.near ).mul( meanExtinction( this.origin.y, this.origin.y.add( direction.y.mul( distance ) ), this.layer, this.ground ) ) );
+			const result = select( sky_, color, fogged.result );
+			// (the veil's: green's)
+			const transmittance = float( 1 ).sub( select( sky_, float( 0 ), fogged.opacity.y ) );
 			return veil ? veil( direction, distance, result, transmittance ) : vec4( result, 0 );
 
 		} )();
@@ -545,7 +1047,7 @@ export class VolumetricHaze {
 
 			visibility = b.storage( visibility );
 			return {
-				label: LABEL, size, when: () => this.shadowDue && debugFlags.hazeKernels !== false, whenLabel: 'not held by a rest', compute: this.visibilityKernels,
+				label: LABEL, size, when: () => this.shadowDue && debugFlags.hazeKernels !== false, whenLabel: 'not held by a rest', compute: this.cover?.late ? undefined : this.visibilityKernels,
 				run: ( _f, g ) => {
 
 					this.written = 1 - this.written;
@@ -574,6 +1076,53 @@ export class VolumetricHaze {
 
 	}
 
+	/** Sets the medium and its light from the look, the amounts and the weather's light (the
+	 * camera's height only for the ground layer's width at the camera): what `openSky` reads, so
+	 * the environment's bake calls it before it bakes (main.ts `prepareHaze`), and `update` every
+	 * frame. */
+	prepareMedium(): void {
+
+		const S = this.settings;
+		// the medium
+		// (the haze is the deep part's extinction, 2 rho_f, in the band of sigma 1; the fog's unit is
+		// the deep part's green extinction)
+		const look = this.look;
+		this.sigma.value.copy( look.sigma );
+		const rho = this.haze.value / 2 + this.fog.value * S.fogExtinction / ( 2 * Math.max( look.sigma.y, 1e-6 ) );
+		this.widthRule.value.set( look.width, look.widthSlope );
+		this.ground.value.set( rho, ISLAND_TOP + look.top, this.widthAt( this.origin.value.y ) );
+		this.layer.value.set( rho * look.aerosolShare, look.aerosolHeight );
+		this.skyDepth.value = look.skyDepth / 1000 / Math.max( look.sigma.y, 1e-6 );
+		this.near.value.set( S.nearHaze ? look.nearDensity : 1, look.nearStart, Math.max( look.nearEnd, look.nearStart ) );
+		this.desaturate.value = look.desaturate;
+		this.lightSettings.value.set( S.albedo, S.anisotropy, S.gain * look.gain, THREE.MathUtils.degToRad( S.horizon ) );
+		// the light's colours per body: its illuminance the sky is drawn with (Atmosphere
+		// `sunIlluminance`, `moonIlluminance`: the moon key), the open sky's by the weather's diffuse
+		// gain, the body's by its direct share, and its Rayleigh light the key's share of the aerosol's;
+		// the moon's aerosol light then takes its own colour at the same luminance, times its gain
+		const weather = this.weatherLight;
+		[ this.atmosphere.sunIlluminance.value, this.atmosphere.moonIlluminance.value ].forEach( ( illuminance, b ) => {
+
+			this.ambientColour[ b ].value.copy( illuminance ).multiplyScalar( weather.ambient );
+			this.mieColour[ b ].value.copy( illuminance ).multiplyScalar( weather.direct );
+			this.sunRayleighColour[ b ].value.copy( this.mieColour[ b ].value ).multiplyScalar( look.sunRayleigh );
+
+		} );
+		const moonMie = this.mieColour[ 1 ].value;
+		const red = MOON_AEROSOL.red(), blue = MOON_AEROSOL.blue();
+		const level = luminance( moonMie ) * MOON_AEROSOL.gain() / ( 0.2126 * red + 0.7152 + 0.0722 * blue );
+		moonMie.setRGB( red * level, level, blue * level );
+		this.weights.value.set( look.rayleighWeight, look.mieWeight );
+		this.ambientSettings.value.set( S.ambientFloor, S.ambientSoftness );
+		this.switches.value.set( S.sky ? 1 : 0, S.tricubic ? 1 : 0, S.densityAA ? 1 : 0, S.debug );
+		// the slices
+		const { depth } = this.grid;
+		const g = S.growth, first = ( S.far - S.near ) * ( g - 1 ) / ( Math.pow( g, depth ) - 1 );
+		this.slices.value.set( S.near, first, g, Math.log2( g ) );
+		this.far.value = S.far;
+
+	}
+
 	/** Once per frame, before the graph runs: the camera (its view, and its projection without the
 	 * temporal modes' jitter), the render's and the output's sizes, and the page's frame. Sets the
 	 * medium and the light from the weather and the settings, and the shadow's filter for the
@@ -583,22 +1132,11 @@ export class VolumetricHaze {
 		const S = this.settings;
 		this.projectionInverse.value.copy( ( camera as THREE.PerspectiveCamera ).projectionMatrixInverse );
 		this.gridInverse.value.copy( projection ).invert();
+		this.gridProjection.value.copy( projection );
+		this.cameraInverse.value.copy( camera.matrixWorldInverse );
 		this.cameraWorld.value.copy( camera.matrixWorld );
 		this.origin.value.setFromMatrixPosition( camera.matrixWorld );
-		// the medium
-		const haze = this.haze.value, fog = this.fog.value * S.fogExtinction;
-		this.layerA.value.set( haze * S.marineShare, S.marineHeight );
-		this.layerB.value.set( haze * ( 1 - S.marineShare ), S.aerosolHeight );
-		this.layerSky.value.set( Math.max( haze * ( 1 - S.marineShare ) - this.skyAerosol(), 0 ), S.aerosolHeight );
-		this.fogLayer.value.set( fog, fog * S.fogAbove, S.fogTop, S.fogWidth );
-		this.lightSettings.value.set( S.albedo, S.anisotropy, S.isotropic, S.sun );
-		this.ambientScale.value = S.ambient;
-		this.switches.value.set( S.sky ? 1 : 0, S.tricubic ? 1 : 0, S.densityAA ? 1 : 0, S.debug );
-		// the slices
-		const { depth } = this.grid;
-		const g = S.growth, first = ( S.far - S.near ) * ( g - 1 ) / ( Math.pow( g, depth ) - 1 );
-		this.slices.value.set( S.near, first, g, Math.log2( g ) );
-		this.far.value = S.far;
+		this.prepareMedium();
 
 		// the shadow's filter
 		this.viewProjection.multiplyMatrices( projection, camera.matrixWorldInverse );
@@ -607,6 +1145,8 @@ export class VolumetricHaze {
 		key.length = 0;
 		key.push( ...camera.matrixWorld.elements, ...projection.elements, frame.time, width, height, outputWidth, outputHeight, restEpoch.scene,
 			...frame.signature, ...this.keyDir.value.toArray(), this.keyColor.value.r, this.keyColor.value.g, this.keyColor.value.b,
+			...this.ground.value.toArray(), ...this.layer.value.toArray(), ...this.sigma.value.toArray(), ...this.near.value.toArray(),
+			S.ambientFloor, S.ambientSoftness, this.cover?.version ?? 0,
 			S.near, S.far, S.growth, S.restFrames, S.jitter ? 1 : 0 );
 		this.rest.sequence = S.restFrames;
 		this.rest.observe( key, frame.stable );
@@ -659,6 +1199,38 @@ export class VolumetricHaze {
 
 	}
 
+	/** Takes the hour's and the weather's key (HazeKeys.ts): each band's sigma, the desaturation, the
+	 * gain, the sun's share in the Rayleigh light, the shares' weights and the medium's shape. The amounts themselves go
+	 * in through `haze` and `fog`. */
+	setLook( key: Readonly<HazeKey> ): void {
+
+		const look = this.look;
+		look.sigma.set( key.sigmaRed, key.sigmaGreen, key.sigmaBlue );
+		look.desaturate = key.desaturate;
+		look.gain = key.gain;
+		look.sunRayleigh = key.sunRayleigh;
+		look.rayleighWeight = key.rayleighWeight;
+		look.mieWeight = key.mieWeight;
+		look.top = key.top;
+		look.width = key.width;
+		look.widthSlope = key.widthSlope;
+		look.aerosolShare = key.aerosolShare;
+		look.aerosolHeight = key.aerosolHeight;
+		look.skyDepth = key.skyDepth;
+		look.nearDensity = key.nearDensity;
+		look.nearStart = key.nearStart;
+		look.nearEnd = key.nearEnd;
+
+	}
+
+	/** Takes what hides the haze from the open sky (see HazeCover); before the frame graph is built
+	 * (`apply`), whose shadow kernel reads it. Without one the ambient visibility is 1. */
+	setCover( cover: HazeCover ): void {
+
+		this.cover = cover;
+
+	}
+
 	/** Drops the shadow's history and its rest (a scene jump: `establishScene`). */
 	invalidate(): void {
 
@@ -668,36 +1240,104 @@ export class VolumetricHaze {
 
 	}
 
-	// the atmosphere's own aerosol extinction at sea level (1/m: Atmosphere.ts, 4.440e-3 / km per
-	// unit of `mieScale`), which the sky already holds
-	private skyAerosol(): number {
+	/** The medium's transmittance from a point at `height` toward `direction`, to the atmosphere's top
+	 * (for the sun's glare, a sky pixel, as the dome takes it, `skyHaze`: 1 with `sky` off):
+	 * each channel's through its sigma and the band-to-display matrix, in `rgb` if given, and their
+	 * luminance returned (which the matrix keeps, short of its clamp). The medium's alone: the dome's
+	 * own thin haze (`skyHaze`'s `dome`) is left out, so the glare and the flares it dims (the moon's
+	 * among them) do not fade with the dome. */
+	transmittance( height: number, direction: THREE.Vector3, rgb = _transmittance ): number {
 
-		return this.atmosphere.mieScale.value * 4.440e-6;
+		if ( ! this.settings.sky ) return 1;
+		// (as `skyHaze` takes it: along the whole way to the atmosphere's top, on a straight ray)
+		const dy = Math.max( direction.y, 1e-4 ), r = height + ATMOSPHERE_BOTTOM;
+		const length = - r * dy + Math.sqrt( r * r * dy * dy + ( ATMOSPHERE_TOP - r ) * ( ATMOSPHERE_TOP + r ) );
+		const tau = this.nearLengthAt( length ) * this.meanExtinctionAt( height, height + dy * length, this.widthAt( height ) );
+		const sigma = this.sigma.value;
+		bandToDisplayColor( rgb.setRGB( Math.exp( - tau * sigma.x ), Math.exp( - tau * sigma.y ), Math.exp( - tau * sigma.z ) ) );
+		return 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
 
 	}
 
-	/** The medium's transmittance from a point at `height` toward `direction`, to the grid's far end
-	 * (for the sun's glare, a sky pixel: 1 while the haze leaves the sky, else as the composite takes
-	 * it over the sky, the deep layer's excess over the atmosphere's aerosols). */
-	transmittance( height: number, direction: THREE.Vector3 ): number {
+	/** Green's extinction at sea level (1/m), as the last `update` set it, within the near haze's
+	 * reach (times its density factor): how hazy the air is, for the screen-space rays
+	 * (LightShafts.ts), which stay near the camera. */
+	get seaLevelExtinction(): number {
 
-		const S = this.settings;
-		if ( ! S.sky ) return 1;
-		const dy = Math.max( direction.y, 1e-4 );
-		const reach = S.far;
-		const a = Math.max( height, 0 ), b = Math.max( height + dy * reach, 0 );
-		const exponential = ( sigma: number, h: number ) => sigma * h * ( Math.exp( - a / h ) - Math.exp( - b / h ) ) / dy;
-		const haze = this.haze.value, fog = this.fog.value * S.fogExtinction, k = S.fogWidth;
-		// the sigmoid's integral over heights, ( x + r ) / 2 of its weight
-		const integral = ( y: number ) => {
+		return this.sigma.value.y * this.meanExtinctionAt( 0, 0 ) * this.near.value.x;
 
-			const x = y - S.fogTop;
-			return fog * y + fog * ( S.fogAbove - 1 ) * 0.5 * ( x + Math.sqrt( x * x + k * k ) );
+	}
 
-		};
-		const tau = exponential( haze * S.marineShare, S.marineHeight ) + exponential( Math.max( haze * ( 1 - S.marineShare ) - this.skyAerosol(), 0 ), S.aerosolHeight )
-			+ ( integral( b ) - integral( a ) ) / dy;
-		return Math.exp( - tau );
+	/** Readings of the medium as the last `update` set it, for the probes (tools/probe.mjs): green's
+	 * extinction at `height` (1/m) and each band's sigma; a horizontal view's transmittance at that height
+	 * over 1 km and 3 km (RGB) and the distance at which its luminance falls to half (m); and, given
+	 * two points, the RGB and luminance transmittance between them (an eye and the island's centre).
+	 * The extinction is the far medium's; the transmittances are a ray's from the eye, through the
+	 * near haze. */
+	readings( height: number, from?: THREE.Vector3Like, to?: THREE.Vector3Like ): {
+		extinction: number; sigma: number[]; km1: number[]; km3: number[]; half: number; between?: { rgb: number[]; Y: number; distance: number };
+	} {
+
+		const sigma = this.sigma.value.toArray();
+		const density = this.meanExtinctionAt( height, height );
+		const display = ( c: number[] ) => bandToDisplayColor( _reading.fromArray( c ) ).toArray();
+		const across = ( d: number ) => display( sigma.map( ( t ) => Math.exp( - t * density * this.nearLengthAt( d ) ) ) );
+		const luminance = ( c: number[] ) => 0.2126 * c[ 0 ] + 0.7152 * c[ 1 ] + 0.0722 * c[ 2 ];
+		// the luminance falls monotonically with distance: halve the bracket
+		let lo = 0, hi = 1e6;
+		for ( let i = 0; i < 60; i ++ ) {
+
+			const mid = ( lo + hi ) / 2;
+			if ( luminance( across( mid ) ) > 0.5 ) lo = mid; else hi = mid;
+
+		}
+		const round = ( x: number ) => Number( x.toPrecision( 4 ) );
+		const out: ReturnType<VolumetricHaze[ 'readings' ]> = { extinction: round( density * sigma[ 1 ] ), sigma, km1: across( 1000 ).map( round ), km3: across( 3000 ).map( round ), half: round( lo ) };
+		if ( from && to ) {
+
+			const distance = Math.hypot( to.x - from.x, to.y - from.y, to.z - from.z );
+			const tau = this.nearLengthAt( distance ) * this.meanExtinctionAt( from.y, to.y );
+			const rgb = display( sigma.map( ( t ) => Math.exp( - t * tau ) ) );
+			out.between = { rgb: rgb.map( round ), Y: round( luminance( rgb ) ), distance: round( distance ) };
+
+		}
+		return out;
+
+	}
+
+	// nearLength on the CPU, with the near haze `update` set
+	private nearLengthAt( t: number ): number {
+
+		const [ k, d0, d1 ] = this.near.value.toArray();
+		const u = THREE.MathUtils.clamp( ( t - d0 ) / Math.max( d1 - d0, 1e-3 ), 0, 1 );
+		return t * ( 1 - ( 1 - k ) * ( 1 - u * u * ( 3 - 2 * u ) ) );
+
+	}
+
+	// the ground layer's width for a start at `height` over the sea (m)
+	private widthAt( height: number ): number {
+
+		return this.look.width + this.look.widthSlope * Math.max( height, 0 );
+
+	}
+
+	// the ground layer for a ray that starts at `from` (m) instead of the camera's height
+	private groundFrom( from: F ): V3 {
+
+		return vec3( this.ground.x, this.ground.y, this.widthRule.x.add( this.widthRule.y.mul( max( from, 0 ) ) ) );
+
+	}
+
+	// meanExtinction on the CPU (the density, over heights a to b, the ground layer `width` wide),
+	// from the layers `update` set
+	private meanExtinctionAt( a0: number, b0: number, width = this.ground.value.z ): number {
+
+		const a = Math.max( Math.min( a0, b0 ), 0 ), b = Math.max( a0, b0, 0 ), span = b - a;
+		const share = ( x: number ) => x < 1e-3 ? 1 - x / 2 + x * x / 6 : ( 1 - Math.exp( - x ) ) / x;
+		const layer = this.layer.value, ground = this.ground.value;
+		const ua = a - ground.y, ub = b - ground.y, w2 = width * width;
+		const r = Math.sqrt( ua * ua + w2 ) + Math.sqrt( ub * ub + w2 );
+		return layer.x * Math.exp( - a / layer.y ) * share( span / layer.y ) + ground.x * ( 1 - ( ua + ub ) / Math.max( r, 1e-6 ) );
 
 	}
 

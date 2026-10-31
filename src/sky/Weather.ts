@@ -38,22 +38,58 @@
 // never reaches them, the production page refuses them (main.ts falls back to fair) and the default
 // checks skip them. Their code stays and keeps compiling; debug builds (the dev server, `?debug`)
 // still reach every preset, so captures, probes and a later revival can use them.
+//
+// Beside its fields the weather keeps the kept skies' shares in the sky as it stands (`skyMix`,
+// a parked sky counting as overcast), blended by a front as the fields are, for the lighting's
+// per-weather knobs (lighting/AmbientGrade.ts).
 
 export type WeatherName = 'clear' | 'fair' | 'cloudy' | 'overcast' | 'rain' | 'storm' | 'fog';
 
 export const PARKED_WEATHER: ReadonlyArray<WeatherName> = [ 'rain', 'storm', 'fog' ];
 export const isParkedWeather = ( name: string ): boolean => ( PARKED_WEATHER as readonly string[] ).includes( name );
+/** The kept skies, in the order of `Weather.skyMix`. */
+export const KEPT_SKIES: ReadonlyArray<WeatherName> = [ 'clear', 'fair', 'cloudy', 'overcast' ];
+// a sky's share of each kept sky: its own, or overcast's for a parked one
+const skyShares = ( name: WeatherName ): number[] => {
+
+	const at = KEPT_SKIES.indexOf( name );
+	return KEPT_SKIES.map( ( _, i ) => i === ( at < 0 ? KEPT_SKIES.indexOf( 'overcast' ) : at ) ? 1 : 0 );
+
+};
 
 export interface WeatherState {
 
 	coverage: number;
 	density: number;
 	directVisibility: number;
+	// The share of the key's direct light the land keeps under the thickest cloud: the floor of the
+	// clouds' shadow on the island (Sky.ts `keyCloudVisibility`). 1 takes the deck's shadow away,
+	// leaving `directVisibility` alone to set the land's direct light.
+	cloudFloor: number;
+	// How much of the key's cast shadow (the sun's map: groves, cliffs, culms) the land shows, 1 all
+	// of it (lighting/SolarShadow.ts `installOpenShadow`).
+	castShadow: number;
+	// The share of the deck's optical depth its shadow is cast with (sky/Clouds.ts `shadowDensity`):
+	// 1 casts the deck's own, less lets more of the sun through the same clouds.
+	shadowDensity: number;
+	// How far the key's glint widens toward a rough lobe (lighting/SurfaceBRDF.ts `keyGlint`): 0
+	// keeps the disk's representative point as it is, in every weather so far; a knob for wet ones.
+	glintSpread: number;
 	ambientGain: number;
-	// Air extinction per metre at sea level, from the camera on (weather/VolumetricHaze.ts). A clear
-	// maritime day sees 20 - 50 km (Koschmieder: 3.912 / extinction), so clear and fair air stay
-	// near 1 - 2e-4; an overcast or cloudy sea about 10 km (4e-4); rain and fog thicken it.
+	// The air's haze, per metre: the extinction, in the band whose spectral weight is 1 (blue on a
+	// clear day: the hour's key gives the bands' weights, weather/HazeKeys.ts), of the ground layer's
+	// deep part, under its soft top (the hour's key's shape: weather/HazeKeys.ts,
+	// weather/VolumetricHaze.ts). A clear or fair day's is 2e-3, a cloudy sky's 0.8 of
+	// it, an overcast sky's 1.43; rain and fog thicken it. The hour's key scales it.
 	haze: number;
+	// The haze near the camera: the optical depth from the camera out to a distance is `nearDensity`
+	// times the far medium's up to `nearStart` metres, eased back to 1 by `nearEnd` and 1 beyond
+	// (weather/VolumetricHaze.ts). Under cloud the island's views keep the land readable through a
+	// thinner near air while every ray past `nearEnd`, the horizon's and the sky's, keeps its depth;
+	// the other skies keep 1 (the cloudy's and the overcast's are tunable, weather/HazeKeys.ts).
+	nearDensity: number;
+	nearStart: number;
+	nearEnd: number;
 	// The weather's one wind, which every part of the scene takes from weather/Wind.ts. The mean
 	// wind 10 m up (U10), m/s: its level's (`WIND_LEVELS`).
 	windSpeed: number;
@@ -66,8 +102,8 @@ export interface WeatherState {
 	// over land), its level's; the plants' gusts lean them by its excess pressure (Wind.ts).
 	gustiness: number;
 	rain: number;
-	// Sea fog: 0 none, 1 a layer at the cliff's foot that sees 1 km, the threshold of fog (below it
-	// mist; VolumetricHaze.ts sets the layer's top and its extinction per unit).
+	// Sea fog: 0 none, 1 a ground layer whose deep part sees 1 km in green, the threshold of fog
+	// (below it mist). It thickens the haze's ground layer (VolumetricHaze.ts `fogExtinction`).
 	fog: number;
 	// Thunderstorm: lightning, storm seas and whitecaps (0 none, 1 a full storm).
 	storm: number;
@@ -104,16 +140,27 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // The atmosphere retains its colour. Cloud extinction, diffuse fill and distant air change
 // together; none of these presets adds a grey screen veil. Fog is a low layer over the sea that
 // the camera looks through, not a tint over the frame.
+// The island's direct light under cloud: a cloudy sky's cumulus pass the full sun through their
+// gaps and keep about 8 % of it in their shadow (`cloudFloor`), so a cloud's shadow on the land
+// still shows the groves' shadows faintly, at about 1.2 to 1.8 times lit to shaded. Overcast is a
+// dark grey sky with the sun still shining: the frame reads as a clear one about half a stop
+// darker, the sun on the ground 0.5 to 0.85 of a clear day's at the same height with shadows as
+// hard as a clear day's (`directVisibility` 0.7, `castShadow` 1) and lit to shaded 6 to 9, the
+// open shade 0.6 to 0.75 of a clear day's. Its cloud shadow is cast at a share of the deck's
+// optical depth (`shadowDensity`), with no floor (`cloudFloor` 0): most of the time the sun shines
+// on the island, and the land darkens as the deck's thick parts drift over it, while the shadow
+// maps keep the island's own shadows. That share sets the land's illuminance against the sky's
+// luminance.
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
-	clear: { coverage: 0, density: 0.8, directVisibility: 1, ambientGain: 1, haze: 0.00012, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
-	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, ambientGain: 0.99, haze: 0.0002, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
-	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 0.78, ambientGain: 0.91, haze: 0.00042, rain: 0, fog: 0, storm: 0, cirrus: 0.15 },
-	overcast: { coverage: 0.94, density: 1.6, directVisibility: 0.3, ambientGain: 0.76, haze: 0.00039, rain: 0, fog: 0.08, storm: 0, cirrus: 0 },
-	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, ambientGain: 0.62, haze: 0.0025, rain: 0.75, fog: 0.22, storm: 0, cirrus: 0 },
+	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, haze: 0.002, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
+	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, haze: 0.002, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
+	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, haze: 0.0106, nearDensity: 0.44, nearStart: 250, nearEnd: 600, rain: 0, fog: 0, storm: 0, cirrus: 0.15 },
+	overcast: { coverage: 0.94, density: 1.6, directVisibility: 0.7, cloudFloor: 0, castShadow: 1, shadowDensity: 0.03, glintSpread: 0, ambientGain: 0.76, haze: 0.00974, nearDensity: 0.44, nearStart: 250, nearEnd: 600, rain: 0, fog: 0.08, storm: 0, cirrus: 0 },
+	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, haze: 0.0095, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0.75, fog: 0.22, storm: 0, cirrus: 0 },
 	// A squall: the darkest deck, heavy rain, a strong wind (PRESET_WIND) and a rough, white-capped sea.
-	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, ambientGain: 0.45, haze: 0.0035, rain: 1, fog: 0.3, storm: 1, cirrus: 0 },
+	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, haze: 0.0135, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 1, fog: 0.3, storm: 1, cirrus: 0 },
 	// Sea fog forms in calm, moist air under thin high cloud; the sun shows as a pale disk.
-	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, ambientGain: 0.92, haze: 0.0012, rain: 0, fog: 1, storm: 0, cirrus: 0.4 },
+	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, haze: 0.0046, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0, fog: 1, storm: 0, cirrus: 0.4 },
 };
 
 // Auto weather: from each state, the next one and its weight. The chain moves among the kept
@@ -230,6 +277,10 @@ export class Weather {
 	private originName: WeatherName;
 	private windLevel: WindLevel;
 	private windHeading: number;
+	// the kept skies' shares in the sky as it stands (`skyMix`), blended as the state's fields are
+	private mix: number[];
+	private mixFrom: number[];
+	private mixTo: number[];
 	private elapsed = 0;
 	private duration = 0;
 	// Auto weather: a seeded chain, so a given start and time always give the same sky and wind.
@@ -254,6 +305,9 @@ export class Weather {
 		this.destination = preset;
 		this.targetName = name;
 		this.originName = name;
+		this.mixTo = skyShares( name );
+		this.mixFrom = [ ...this.mixTo ];
+		this.mix = [ ...this.mixTo ];
 
 	}
 
@@ -272,6 +326,9 @@ export class Weather {
 		this.destination = preset;
 		this.targetName = name;
 		this.originName = name;
+		this.mixTo = skyShares( name );
+		this.mixFrom = [ ...this.mixTo ];
+		this.mix = [ ...this.mixTo ];
 		this.elapsed = 0;
 		this.duration = 0;
 		this.dwell = 0;
@@ -290,6 +347,11 @@ export class Weather {
 	get front(): WeatherFront { return { from: this.from, to: this.destination, progress: this.progress }; }
 
 	snapshot(): WeatherState { return { ...this.current }; }
+	/** The kept skies' shares in the sky as it stands (KEPT_SKIES' order, summing to 1): a front
+	 * moves them from where they stood to its target's as it moves the state's fields; a parked sky
+	 * counts as overcast. The lighting's per-weather knobs weight their columns by it
+	 * (lighting/AmbientGrade.ts). */
+	get skyMix(): readonly number[] { return this.mix; }
 
 	/** Moves to the sky `name` over `duration` seconds. The wind keeps its target unless `wind`
 	 * names one, or the sky is a parked one with a wind of its own. */
@@ -321,12 +383,19 @@ export class Weather {
 		this.destination = preset;
 		this.originName = this.targetName;
 		this.targetName = name;
+		this.mixFrom = [ ...this.mix ];
+		this.mixTo = skyShares( name );
 		this.windLevel = level;
 		this.windHeading = preset.windDirection;
 		this.elapsed = 0;
 		this.duration = duration;
 		this.dwell = 0;
-		if ( duration === 0 ) for ( const key of fields ) this.current[ key ] = preset[ key ];
+		if ( duration === 0 ) {
+
+			for ( const key of fields ) this.current[ key ] = preset[ key ];
+			this.mix = [ ...this.mixTo ];
+
+		}
 
 	}
 
@@ -456,6 +525,7 @@ export class Weather {
 				this.current[ key ] = b === 1 ? this.destination[ key ] : this.from[ key ] + delta * blend;
 
 			}
+			for ( let i = 0; i < this.mix.length; i ++ ) this.mix[ i ] = b === 1 ? this.mixTo[ i ] : this.mixFrom[ i ] + ( this.mixTo[ i ] - this.mixFrom[ i ] ) * blend;
 
 		}
 
