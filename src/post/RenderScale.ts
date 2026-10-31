@@ -10,9 +10,9 @@ import type { RenderScaleRule } from '../Quality.ts';
 // - high: dynamic, steered by the GPU's frame time (DynamicResolution.ts), between a floor and the
 //   display's own ratio (up to OUTPUT_PIXEL_RATIO_CAP). Its baseline and floor are counts of
 //   rendered pixels, not shares of the display's ratio, so that a frame costs about the same on any
-//   display: the standard, 2K output (2560x1440 at a 1x display), renders natively and drops to
-//   about 1080p when busy, and a 4K display (1920x1080 CSS at 2x) renders 1440p (scale 4/3, FSR 1's
-//   Quality 1.5x upscale), drops to 1080p and climbs to native 4K with headroom. A load starts at,
+//   display: the standard, 4K output (1920x1080 CSS at 2x), renders 1440p (scale 4/3, FSR 1's
+//   Quality 1.5x upscale), drops to 1080p and climbs to native 4K with headroom, and a 2K display
+//   (2560x1440 at 1x) renders natively and drops to about 1080p when busy. A load starts at,
 //   and a paused or pinned page holds, the baseline, capped by the maximum (a display of 2K or fewer
 //   pixels renders natively there). The floor is at most `floorShare` of the maximum per axis, so a
 //   small display's floor stays below its maximum. `dynamicRange` gives the three; this returns the
