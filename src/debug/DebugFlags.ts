@@ -109,6 +109,8 @@
 // `hazeKernels = false` skips the volumetric haze's two kernels (weather/VolumetricHaze.ts), read
 // every frame, so --toggle "s.flags.hazeKernels = on" times them (the composite then reads the
 // volumes as they last were).
+// `fallingLeaves = false` skips the falling leaves' pass and hides them (weather/FallingLeaves.ts),
+// read every frame, so --toggle "s.flags.fallingLeaves = on" times them.
 export interface MotionSourceFlags { camera?: boolean; object?: boolean; skin?: boolean; wind?: boolean; sea?: boolean; foam?: boolean }
 export const debugFlags: Record<string, boolean | number | string | MotionSourceFlags | undefined> & { mv: MotionSourceFlags } = { mv: {} };
 

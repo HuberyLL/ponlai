@@ -26,6 +26,7 @@ import { Caustics } from './ocean/Caustics.ts';
 import { SeaDetail } from './ocean/SeaDetail.ts';
 import { showUnderwater } from './ocean/Refraction.ts';
 import { Wenyao } from './life/Wenyao.ts';
+import { FallingLeaves } from './weather/FallingLeaves.ts';
 import { Water } from './ocean/Water.ts';
 import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
@@ -70,7 +71,7 @@ import { LandLattice } from './world/IslandGrowth.ts';
 import { walkPoints } from './world/WalkPath.ts';
 import { bambooKinds, buildBamboo } from './world/Bamboo.ts';
 import { loadBambooLook } from './world/BambooGroves.ts';
-import { leafAtlas as bambooAtlas } from './world/BambooMaterials.ts';
+import { leafAtlas as bambooAtlas, singleLeaf } from './world/BambooMaterials.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { Trample } from './world/vegetation/Trample.ts';
 import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters/Proportions.ts';
@@ -78,6 +79,7 @@ import { parseBodies, type Body, type Sex } from './characters/Ages.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
+import { TEST_MODE } from './debug/TestMode.ts';
 import { tuneApi } from './debug/Tune.ts';
 import { skyRetune } from './sky/SkyRetune.ts';
 import { AA_MODE, AA_SOURCE, AFTER_RESOLVE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './post/Antialiasing.ts';
@@ -657,6 +659,11 @@ scene.add( world.group );
 // the opaque pass draws where the eye sees them through the waves (Water.ts swimmerSway).
 const wenyao = new Wenyao( data, shared, caustics, fft );
 scene.add( wenyao.mesh );
+// The bamboo leaves the wind takes off the island (weather/FallingLeaves.ts): stepped by their pass on
+// the frame graph, drawn in the opaque scene; the test mode leaves them out (debug/TestMode.ts).
+const fallingLeaves = TEST_MODE ? null : new FallingLeaves( { shared, fields, soil: textures.soil, wind, atlas: singleLeaf() } );
+pipeline.fallingLeaves = fallingLeaves;
+if ( fallingLeaves ) scene.add( fallingLeaves.mesh );
 // The chunks' borders (GUI Ground folder, ?chunkBorders), built on first show.
 const chunkView = { borders: params.has( 'chunkBorders' ), lines: null as THREE.LineSegments | null };
 // the version shown (a grown island's, once the island grows)
@@ -1892,6 +1899,7 @@ function tick( time: number ): void {
 	caustics.update( sky.keyDir, camera );
 	// (their schools take flight more often by night)
 	wenyao.update( paused ? 0 : dt, 1 - THREE.MathUtils.smoothstep( sky.grade.daylight, 0.2, 0.45 ) );
+	fallingLeaves?.update( simTime, freeControls.enabled ? camera.position : controls.target, camera.position );
 	groundBounce.update( sky.seaRadiance );
 	ambientRelight.update();
 	characters?.update( renderer, scene, sun, simTime, paused ? 0 : dt );
@@ -2075,6 +2083,9 @@ if ( profiler ) {
 // the nodes r186 makes inside the first lit build, made by a throwaway one, so the frame's receivers
 // build the same code whichever comes first (graph/ThreePatches.ts)
 primeSharedNodes( renderer, scene, camera );
+// The falling leaves, which the warm-up ran before they existed, and their kernels compile ahead
+// as latents of the opaque pass, so the view that first finds them builds no pipeline.
+if ( fallingLeaves ) await pipeline.graph.latent( 'opaque', [ fallingLeaves.mesh ], [ fallingLeaves.kernel, fallingLeaves.prewarm ] );
 mark( 'loop' );
 const loopBody = profiler ? profiler.wrapLoop( tick ) : tick;
 const animationLoop = detector ? ( time: number ) => detector.frame( loopBody, time ) : loopBody;
@@ -2217,6 +2228,7 @@ const establishScene = async ( scene: string | URLSearchParams | { weather?: Wea
 	stormSea.reset();
 	characters?.reset();
 	wenyao.reset();
+	fallingLeaves?.reset();
 	pipeline.air.invalidate();
 	groundBounce.invalidate();
 	shadowElapsed = 0;
@@ -2470,7 +2482,7 @@ if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { lan
 	setGrade: ( changes?: GradeChanges ) => { pipeline.setGrade( changes ); sceneEvent( 'retune' ); },
 	setLawnGain: ( gain: number ) => { shared.lawnGain.value = gain; groundBounce.invalidate(); sceneEvent( 'retune' ); },
 	setRockGain: ( gain: number ) => { shared.rockGain.value = gain; sceneEvent( 'retune' ); },
-	setLeafGain: ( gain: number ) => { shared.leafGain.value = gain; sceneEvent( 'retune' ); }, grass, wenyao, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+	setLeafGain: ( gain: number ) => { shared.leafGain.value = gain; sceneEvent( 'retune' ); }, grass, wenyao, fallingLeaves, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the tunable parameters (debug/Tune.ts): set( { name: value } ), get, list, reset, query; a value
 	// the environment's bakes depend on rebakes them (sky/SkyRetune.ts) as a scene jump bakes (from
 	// Sky.reset: a regular bake carries the last bake's state and moved a noon frame by a few levels)

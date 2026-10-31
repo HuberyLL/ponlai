@@ -427,7 +427,7 @@ export function testSources( n: number, bounds: { x0: number; z0: number; x1: nu
 
 /** The clusters' compute pass, declared ahead of every scene pass (the light table and the
  * clusters are storage buffers, which the graph does not track as resources: the pass is ordered
- * by its declaration and never culled). Fixed in size (the grid at
+ * by its declaration and never culled, as the falling leaves' are). Fixed in size (the grid at
  * the 2K baseline), so the dynamic resolution builds nothing; it runs only while the lights are
  * active, and dispatches nothing when no source is in view. */
 export function localLightsPass<Frame extends { camera: THREE.Camera }>( g: FrameGraph<Frame> ): void {
