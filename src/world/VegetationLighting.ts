@@ -5,6 +5,7 @@ import { translucentWrap, type AmbientReceiver } from '../lighting/AmbientSample
 import { meterAmbient } from '../lighting/MeterLight.ts';
 import { tuneApply } from '../debug/Tune.ts';
 import { OPAQUE_VEGETATION } from '../debug/LightLayer.ts';
+import { leafBack } from './vegetation/LeafLight.ts';
 
 type V3 = THREE.Node<'vec3'>;
 type F = THREE.Node<'float'>;
@@ -42,9 +43,12 @@ type F = THREE.Node<'float'>;
 // SIGGRAPH 1993), on the face toward the viewer, by the light's wrapped cosine and the view's
 // against the geometric normal, round the half vector in a lobe (flat by default), times a gain:
 // it takes the Lambert's place by smoothstep( 0, 0.5, t ) (`THIN_SHARE`), not added to it (a leaf
-// of t 0.5, the bamboo's, or more is all layer), and a leaf has no light through it (`extra` is a
-// blade's), so a sunlit leaf sends back what a Lambertian surface of its albedo would, within 8 %
-// up to 65 degrees (`THIN_LAYER`); and under the ambient light its ambient diffuse is
+// of t 0.5, the bamboo's, or more is all layer), so a sunlit leaf sends back what a Lambertian
+// surface of its albedo would, within 8 % up to 65 degrees (`THIN_LAYER`). `extra` is a blade's: a
+// leaf's light through it is one term on the same share, the light on its far face by its cosine
+// times a share keyed by the sun and the weather (vegetation/LeafLight.ts `back`, 0 by night and
+// under a closed sky), so a leaf lit from behind glows on the same albedo and a crown has no black
+// side toward the sun; and under the ambient light its ambient diffuse is
 // mix( E( n ), E_HK, t ): the plain irradiance at its normal, unweighted, blended toward the
 // layer's, E_HK = E01( 3/4 n ) G k_sky F( mu_v ) (lighting/AmbientSample.ts `thin`: the constant
 // and the linear band at three quarters of the geometric normal; F the layer's response under a
@@ -314,7 +318,7 @@ export class VegetationLighting extends GroundBounceLightingModel {
 	/** One light's diffuse (lighting/GroundBounce.ts): a blade's wrapped Lambert (or an opaque
 	 * leaf's plain one) under the Fresnel weight plus the light through (`extra`), or a translucent
 	 * leaf's plain Lambert blended toward its thin layer by smoothstep( 0, THIN_SHARE, t ), lit on the face toward
-	 * the viewer (a leaf takes no light from behind), on the albedo as the Lambert term (1 / pi). The key's `direct` (along the lifted key, lighting/KeyLift.ts) and every
+	 * the viewer, plus the light on its far face by `leafBack` on that same share, on the albedo as the Lambert term (1 / pi). The key's `direct` (along the lifted key, lighting/KeyLift.ts) and every
 	 * local light take it. */
 	diffuseResponse( L: V3, light: V3 ): { reflected: V3; meter: V3 } {
 
@@ -323,14 +327,17 @@ export class VegetationLighting extends GroundBounceLightingModel {
 		const r = ( this.wrap ? wrappedDiffuseFresnel( N, V, L, this.t(), f0, f90 ) : diffuseFresnel( N, V, L, f0, f90 ) ).toVar();
 		if ( this.thin ) {
 
-			// a leaf: the thin layer in the Lambert's place by smoothstep( 0, THIN_SHARE, t ), no light through
+			// a leaf: the thin layer in the Lambert's place by smoothstep( 0, THIN_SHARE, t ), and
+			// the light on its far face through it on the same share
 			const n = facingGeometry();
 			const H = L.add( V ).normalize();
-			const hk = thinLayerScatter( dot( N, L ), abs( dot( V, n ) ), abs( dot( H, n ) ), thin.wrap, thin.perWrapScale, thin.negTau, thin.lobe, thin.gain ).toVar();
+			const NL = dot( N, L ).toVar();
+			const hk = thinLayerScatter( NL, abs( dot( V, n ) ), abs( dot( H, n ) ), thin.wrap, thin.perWrapScale, thin.negTau, thin.lobe, thin.gain ).toVar();
 			const s = smoothstep( 0, THIN_SHARE, this.t() ).toVar();
+			const back = clamp( NL.negate(), 0, 1 ).mul( leafBack ).mul( s ).toVar();
 			return {
-				reflected: light.mul( diffuseContribution.mul( mix( r.x.mul( r.y ), hk, s ) ) ),
-				meter: light.mul( mix( r.x, hk, s ) ),
+				reflected: light.mul( diffuseContribution.mul( mix( r.x.mul( r.y ), hk, s ).add( back ) ) ),
+				meter: light.mul( mix( r.x, hk, s ).add( back ) ),
 			};
 
 		}
