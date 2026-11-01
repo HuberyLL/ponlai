@@ -1,7 +1,10 @@
 // Regression for the sun/moon key light handoff. The key light, grade and sky follow the clock
 // every frame, so a sweep through the handoff band must carry zero direct energy while the
-// key turns from one body to the other, and every frame must match the clock's own state.
-// Run against the dev server: node tools/verify-celestial-handoff.mjs http://127.0.0.1:5190
+// key turns from one body to the other, and every frame must show the clock's own state: by day
+// the key is the sun's direction, by night it holds where the moon is drawn (KeyLift.ts
+// `moonDirection`), and over the handoff it turns from the one to the other (Sky.ts `keyDir`).
+// Run against the dev server, whose modules it imports for the moon's direction:
+// node tools/verify-celestial-handoff.mjs http://127.0.0.1:5190
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
@@ -35,11 +38,23 @@ try {
 		s.dayCycle.moonPhase = 0.5;
 		await s.setWeather( 'clear', 0 );
 		const frame = () => new Promise( ( resolve ) => requestAnimationFrame( resolve ) );
+		const { moonDirection } = await import( '/src/lighting/KeyLift.ts' );
+		const Quaternion = s.camera.quaternion.constructor;
+		// the key's direction at this clock, as Sky.ts sets it from the same snapshot
+		const clockKey = ( clock ) => {
+
+			if ( clock.handoff === 0 ) return clock.keyDir;
+			const drawn = moonDirection( clock.moonDir, clock.moonDir.clone() );
+			if ( clock.handoff === 1 ) return drawn;
+			const turn = new Quaternion().setFromUnitVectors( clock.moonDir, drawn );
+			return clock.keyDir.clone().applyQuaternion( new Quaternion().slerpQuaternions( new Quaternion(), turn, clock.handoff ) );
+
+		};
 		const read = () => {
 
 			const clock = s.dayCycle.snapshot();
 			return {
-				hour: clock.hour, elevation: clock.elevation, clockKey: clock.keyDir.toArray(),
+				hour: clock.hour, elevation: clock.elevation, clockKey: clockKey( clock ).toArray(),
 				clockGrade: { exposure: clock.exposure, daylight: clock.daylight },
 				dir: s.sky.keyDir.toArray(), color: s.sky.keyColor.toArray(),
 				grade: { ...s.sky.grade }, exposure: s.pipeline.settings.exposure,
