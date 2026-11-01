@@ -77,8 +77,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //   - the water body: Beer-Lambert absorption along that path, analytic single scattering of the sun
 //     (the same sun the floor takes: the share that enters the water and the beam's change of area,
 //     so the body dims as the sun sinks) and of the sky (Henyey-Greenstein) and a multiple-scattering
-//     backscatter boost; the veil, the sky light the fine particles under the surface send back
-//     (`VEIL`), which gives the deep water its quiet slate under cloud, takes the warm sky's colour
+//     backscatter boost, the sun's scattering limited in colour over a short path (`SHELF_SCATTER`),
+//     so a high sun does not lay blue over the shallows; the veil, the sky light the fine particles
+//     under the surface send back (`VEIL`), which gives the deep water its quiet slate under cloud, takes the warm sky's colour
 //     with the sun low and stays off the shallows; the sun through the thin crests, which keeps the water's own colour and
 //     the sun's; whitecaps where the surface is compressed (tidewater's fresh foam, not its
 //     persistent foam, which integrates in time), lit as a bright diffuse scatterer
@@ -255,6 +256,36 @@ const REFLECTION_BAND = { ramp: 0.18, hue: 0.6, level: 2.2, dusk: [ - 0.05, - 0.
 // even the waves out. Sigma here is the sea's, before the waves' damping: the damped one falls away
 // where the fine waves do, and the lee stood out as a smooth pale tongue.
 const SLOPE_FRESNEL = 5.4;
+
+// The colour of the sun's light scattered in the water over the shelf. Through the display's balance
+// a sun near white in the scene reads blue green, and in the shallows its scattered light is what lays
+// that over the floor as the sun climbs. So, by a path of about `depth` metres (a Gaussian, so the
+// open sea past it keeps its scattering whole), that light holds its blue to at most `blue` of its
+// green and its red to at least `red` of its green, which keeps its brightness. The sun comes down
+// into these limits on its own by about 12 degrees, and from there down nothing here acts. The
+// ratio is the key's, worked once a frame (`updateShelfScatter`): a closed sky or the moon leaves the
+// colour alone.
+const SHELF_SCATTER = { depth: 8, blue: 0.53, red: 1.5 } as const;
+const shelfTint = uniform( new THREE.Vector3( 1, 1, 1 ) );
+
+/** Sets the shelf's scattered light's tint from the key's colour: `share` of the way to the limits
+ * (`SHELF_SCATTER`), 0 leaving it white. Once a frame, beside the weather's clouded share. */
+export function updateShelfScatter( key: THREE.Color, share: number ): void {
+
+	const { r, g, b } = key;
+	const tint = shelfTint.value;
+	if ( ! ( g > 0 ) ) {
+
+		tint.set( 1, 1, 1 );
+		return;
+
+	}
+
+	tint.x = 1 + share * ( r > 0 ? Math.max( SHELF_SCATTER.red * g / r, 1 ) - 1 : 0 );
+	tint.y = 1;
+	tint.z = 1 + share * ( b > 0 ? Math.min( SHELF_SCATTER.blue * g / b, 1 ) - 1 : 0 );
+
+}
 
 // The veil: the fine particles the waves keep stirred under the surface send back sky light. It
 // fills in with the view path (e-folding at `depth` metres), so the shallows stay as clear as their
@@ -1156,7 +1187,8 @@ export class Water {
 			const ph = phaseHG( dot( Tv, Ls ), float( 0.86 ) ).mul( 0.7 ).add( 0.3 / ( 4 * PI ) );
 			const bb = sigS.mul( u.backscatter );
 			const albedoMS = bb.mul( 0.33 * 4 ).div( sigA.add( bb ) ).toVar();
-			const inSun = sunIn.mul( sigS.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) ).mul( float( 1 ).sub( exp( kSun.negate().mul( pathLen ) ) ) ).div( kSun );
+			const shelfShare = exp( pathLen.mul( pathLen ).div( - SHELF_SCATTER.depth * SHELF_SCATTER.depth ) );
+			const inSun = sunIn.mul( mix( vec3( 1 ), shelfTint, shelfShare ) ).mul( sigS.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) ).mul( float( 1 ).sub( exp( kSun.negate().mul( pathLen ) ) ) ).div( kSun );
 			const inAmb = shared.skyIrradianceSource.mul( sigS.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ).mul( float( 1 ).sub( exp( kAmb.negate().mul( pathLen ) ) ) ).div( kAmb );
 			// the sun through the thin crests: light entering a crest's top and back scatters out of its
 			// face over a broad lobe, down some 1.5 m of the water it crossed
