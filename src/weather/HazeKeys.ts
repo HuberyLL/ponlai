@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { tuneObject, type TuneOptions } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
-import { KEPT_SKIES, WEATHER_PRESETS } from '../sky/Weather.ts';
+import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun } from '../sky/Weather.ts';
 
 // The haze's keys: what the air does by the hour and the weather, set as a few quantities one sees
 // (how far the light carries, the colour it loses, how bright and how coloured the air shows) at
@@ -79,6 +79,11 @@ import { KEPT_SKIES, WEATHER_PRESETS } from '../sky/Weather.ts';
 // `nearEnd`; VolumetricHaze's header): the key's near factor, start and end are its presets'
 // blended by the sky's shares, each kept sky's tunable
 // (`sky.weather.nearDensity|nearStart|nearEnd@<clear|fair|cloudy|overcast>`).
+// A clouded sky's near density falls to 0.4 of its preset's as the sun climbs from 30 to 40 degrees
+// (Weather.ts `cloudedHighSun`): that high the sky's light turns the air bluer and a little brighter,
+// and with the sun behind the cloud the meter lifts the land and the air together, so the same near
+// air would lie over the land as a pale blue veil. What the near air loses the land keeps; the sea
+// past `nearEnd` and the sky keep their depth.
 
 export interface HazeKey {
 
@@ -194,6 +199,8 @@ for ( const [ s, name ] of [ [ 0, 'clear' ], [ 1, 'fair' ], [ 2, 'cloudy' ], [ 3
 		{ nearDensity: { min: 0.02, max: 1, scale: 'log', onChange: markSkyRetune }, nearStart: { min: 50, max: 800, onChange: markSkyRetune }, nearEnd: { min: 100, max: 1500, onChange: markSkyRetune } } );
 
 }
+// a clouded sky's near density at a high sun over its preset's (see the header)
+const HIGH_SUN_NEAR = 0.4;
 // per kept sky, the sun's share in the haze's Rayleigh light: off under a clear or fair sky, on
 // under cloud
 const SUN_RAYLEIGH = [ 0, 0, 1, 1 ];
@@ -247,6 +254,7 @@ export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly 
 	out.width *= width;
 	out.amount *= haze;
 	out.sunRayleigh = 1 - ( 1 - out.sunRayleigh ) * ( 1 - sunRayleigh );
+	out.nearDensity *= 1 + ( HIGH_SUN_NEAR - 1 ) * cloudedHighSun( elevation, skyMix );
 	out.mist *= ( 1 - THREE.MathUtils.smoothstep( wind, 3.5, 5 ) ) * ( 1 - rain );
 	return out;
 
