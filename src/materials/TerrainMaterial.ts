@@ -1004,7 +1004,8 @@ function seabedSurface( { tex, shore, shared }: Ctx, shoreXform: THREE.Node<'vec
 
 // The light below the surface is the shared underwater model (lighting/Underwater.ts): the sun
 // path through the water column and the dimmer ambient. Above the water the terrain adds its
-// own: the meadow's canopy shade on the key and a lift of the light the sea reflects onto the rock.
+// own: the meadow's canopy shade on the key. The light the sea sends onto the rock above it is the
+// ground bounce's (lighting/GroundBounce.ts).
 
 type TerrainVariant = ( hex: boolean, from?: THREE.NodeMaterial ) => THREE.MeshStandardNodeMaterial;
 
@@ -1094,21 +1095,7 @@ function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, waveMaps: Wav
 
 	};
 
-	// The lift of the light the sea reflects onto the rock, read only in the band above the water
-	// where it shows: it has faded to nothing 1.2 m up, and most of the island's rock lies above it.
-	const above = positionWorld.y.sub( shared.waterLevel );
-	// It is direct-light energy: it must not move ambient light through the zero-energy sun/moon
-	// handoff or turn the moon into a daylight source.
-	const directGain = clamp( max( shared.sunColor.x, max( shared.sunColor.y, shared.sunColor.z ) ).mul( 3 ), 0, 1 );
-	const light = underwaterLight( shared, waveMaps, {
-		aboveSun: vec3( surf.get( 'canopy' ) ),
-		aboveAmbient: {
-			when: above.lessThan( 1.2 ),
-			// Light reflected up from the sea onto the rock just above it: a steady 28 % lift of
-			// the ambient.
-			value: () => vec3( float( 0.28 ).mul( float( 1 ).sub( smoothstep( 0, 1.2, above ) ) ).mul( directGain ).add( 1 ) ),
-		},
-	} );
+	const light = underwaterLight( shared, waveMaps, { aboveSun: vec3( surf.get( 'canopy' ) ) } );
 	// the ambient volume above the water (lighting/AmbientSample.ts): degree 2 on the plateau, the
 	// cliffs and the stones. At degree 1
 	// the volume's directionality boost turns the light the lit meadow bounces up against level

@@ -83,7 +83,7 @@
 
 import { GROVES, culmAt, groveAt } from './BambooGroves.ts';
 import { islandSurfaceHeight, solidSide, ISLAND_BOTTOM, ISLAND_PEAK, ISLAND_TOP, type Bounds, type Footprint, type HeightFn } from './WorldShapes.ts';
-import { SEABED_TILE } from './SeabedTile.ts';
+import { FLOOR_ALBEDO, SEABED_TILE } from './SeabedTile.ts';
 import { smoothstep } from './noise.ts';
 import type { SolidBounds } from '../lighting/SkyOcclusion.ts';
 import type { AmbientLattice, SDF } from './types.ts';
@@ -119,8 +119,8 @@ const GROVE_FLOOR = scanLook( [ 0.2918, 0.2482, 0.1198 ], 0.8, 0.355 );
 // the cliff's stone: TerrainMaterial.ts's rock at its mean tint, above the water times the
 // rock's gain (shared.ts rockGain)
 const ROCK = [ ( 0.124 + 0.188 ) / 2, ( 0.13 + 0.19 ) / 2, ( 0.126 + 0.176 ) / 2 ], ROCK_GAIN = 1.6;
-// the floor: pale sand, the cliff foot's rubble (GroundBounce.ts SAND, RUBBLE)
-const SAND = [ 0.46, 0.435, 0.365 ], RUBBLE = [ 0.29, 0.285, 0.25 ];
+// the floor: pale sand, the cliff foot's rubble, at the floor's gain (SeabedTile.ts FLOOR_ALBEDO)
+const SAND = FLOOR_ALBEDO.sand.map( c => c * FLOOR_ALBEDO.gain ), RUBBLE = FLOOR_ALBEDO.rubble.map( c => c * FLOOR_ALBEDO.gain );
 // the water's body seen from under its surface: its backscatter (GroundBounce.ts WATER_BODY)
 const WATER_BODY = [ 0.01, 0.025, 0.03 ];
 // the culms: BambooMaterials.ts CULM, green to purple by the groves' age mix (BambooGroves.ts

@@ -12,6 +12,7 @@ import {
 } from 'three/tsl';
 import { soilGroveSwell } from '../materials/Soil.ts';
 import { ISLAND_TOP } from '../world/WorldShapes.ts';
+import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
 import type { SunShadow } from './SunShadow.ts';
 import type { Shared } from '../shared.ts';
 import { useLightLayer } from '../debug/LightLayer.ts';
@@ -110,9 +111,9 @@ const REACH = 1;
 // how far above the ground the bake takes the key's visibility (m): above the plateau's relief
 const SHADOW_LIFT = 0.2;
 // linear albedos: the plateau's turf (the islanders' former bounce, tidewater's grass), the rim's
-// stone, and the floor's (SeabedLook's means)
+// stone, and the floor's (its means at its gain: SeabedTile.ts FLOOR_ALBEDO)
 const TURF = vec3( 0.075, 0.11, 0.032 ), RIM = vec3( 0.08, 0.075, 0.065 );
-const SAND = vec3( 0.46, 0.435, 0.365 ), SEAGRASS = vec3( 0.095, 0.128, 0.065 ), RUBBLE = vec3( 0.29, 0.285, 0.25 );
+const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.gain ), SEAGRASS = vec3( 0.095, 0.128, 0.065 ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.gain );
 // the water's own backscatter seen from above (tidewater's)
 const WATER_BODY = vec3( 0.01, 0.025, 0.03 );
 

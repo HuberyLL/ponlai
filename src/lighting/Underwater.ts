@@ -36,9 +36,9 @@ type B = THREE.Node<'bool'>;
 // every lit island material; the probes do not model the water, so below it the environment's
 // (`UnderwaterModelOptions.ambient`).
 //
-// A material calls `underwaterLight` with its own above-water terms (the terrain's canopy shade and
-// the lift of the sea's light on the rock; nothing for a material that never reaches the surface) and installs
-// `UnderwaterLightingModel` as its lighting model; it also sets `userData.refractedSolarReceiver`,
+// A material calls `underwaterLight` with its own key above the water (the terrain's canopy shade;
+// nothing for a material that never reaches the surface) and installs `UnderwaterLightingModel` as
+// its lighting model; it also sets `userData.refractedSolarReceiver`,
 // so RefractedSun.bindTerrain gives it the refracted sun's shadow map.
 //
 
@@ -53,25 +53,17 @@ export interface UnderwaterLight {
 	sun: V3;
 	// the refracted key's direction in view space, which replaces the light's under water
 	sunView: V3;
-	// the ambient's multiplier: under water its attenuation, above it the material's `aboveAmbient`
-	// (1 without one)
+	// the ambient's multiplier, diffuse and specular: its attenuation down the column, 1 above the water
 	ambient: V3;
-	// the specular ambient's multiplier
-	specular: V3;
-	// the ambient's attenuation down the column (1 above the water)
-	ambientAttenuation: V3;
 }
 
 export interface UnderwaterOptions {
 	// the key's multiplier above the water (the terrain's canopy shade); 1 without one
 	aboveSun?: V3;
-	// the ambient's multiplier in a band above the water (the terrain's lift of the sea's light): `when`
-	// the band holds, `value` builds it inside its branch
-	aboveAmbient?: { when: B; value: () => V3 };
 }
 
 /** The underwater light at `positionWorld` (see the header). */
-export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun, aboveAmbient }: UnderwaterOptions = {} ): UnderwaterLight {
+export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun }: UnderwaterOptions = {} ): UnderwaterLight {
 
 	// the water above this point: the long waves' surface for the key, the mean level for the
 	// ambient (the wave maps; a level sea above the water's reach)
@@ -102,21 +94,8 @@ export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun,
 	} )();
 	const depth = dW.max( 0 );
 	const ambAtt = exp( sigT.negate().mul( depth ).mul( 1.2 ) ).mul( 0.85 ).toVar();
-	const water = mix( vec3( 1 ), ambAtt, smoothstep( 0, 0.1, depth ) );
-	// (the water's multiplier is 1 above the mean level; built outside any branch, see `sun`)
-	const ambient = Fn( () => {
-
-		const mul = water.toVar();
-		if ( aboveAmbient ) If( dW.lessThanEqual( 0 ).and( aboveAmbient.when ), () => {
-
-			mul.assign( aboveAmbient.value() );
-
-		} );
-		return mul;
-
-	} )();
-	const specular = select( dW.greaterThan( 0 ), water, vec3( 1 ) );
-	return { under, depth: dW, sun, sunView: waterSunView, ambient, specular, ambientAttenuation: select( dW.greaterThan( 0 ), ambAtt, vec3( 1 ) ) };
+	const ambient = mix( vec3( 1 ), ambAtt, smoothstep( 0, 0.1, depth ) );
+	return { under, depth: dW, sun, sunView: waterSunView, ambient };
 
 }
 
@@ -180,11 +159,10 @@ export class UnderwaterLightingModel extends GroundBounceLightingModel {
 
 	}
 
-	/** The local lights reach a submerged point down the water column, as the ambient does (and
-	 * without the terrain's band above the water). */
+	/** The local lights reach a submerged point down the water column, as the ambient does. */
 	localScale(): V3 {
 
-		return this.light.specular;
+		return this.light.ambient;
 
 	}
 
@@ -196,7 +174,7 @@ export class UnderwaterLightingModel extends GroundBounceLightingModel {
 		reflected.indirectDiffuse.mulAssign( this.light.ambient );
 		// the metering illuminance's ambient down the column, as the diffuse (lighting/MeterLight.ts)
 		meterAmbient.mulAssign( this.light.ambient );
-		reflected.indirectSpecular.mulAssign( this.light.specular );
+		reflected.indirectSpecular.mulAssign( this.light.ambient );
 
 	}
 
