@@ -24,6 +24,11 @@ export const shared = {
 	// the bamboo's crowns); 1 the atlas as it is: the leaves about 1.5 times the meadow's albedo
 	// (about 0.12), so a crown parts from the sward under it under overcast and by night
 	leafGain: uniform( 1 ),
+	// the weather's share of a cloudy or overcast sky: 0 under a clear or fair one, 1 under a closed one
+	clouded: uniform( 0 ),
+	// what the sward's ambient diffuse is multiplied by (materials/SwardTint.ts); white under a clear
+	// or fair sky
+	swardTint: uniform( new THREE.Vector3( 1, 1, 1 ) ),
 	rain: uniform( 0 ),
 	wetness: uniform( 0 ),
 	waterLevel: uniform( 0 ),

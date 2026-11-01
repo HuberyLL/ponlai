@@ -78,7 +78,7 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   shares (material, coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the
   registry of kinds, the trees' tubes and leaf cards in `TreeMesh.ts` and their bark and leaf surfaces in
   `TreeSurfaces.ts`, the authored plants drawn as instances of a few prototypes with two levels and
-  a stipple between them in `PlantInstances.ts`) and the islanders' trail through the meadow (`Trample.ts`, drawn as sprites
+  a stipple between them in `PlantInstances.ts`, what a tree's leaves pass on of the key in `LeafLight.ts`) and the islanders' trail through the meadow (`Trample.ts`, drawn as sprites
   into the displacement field the blades read, `Displacement.ts`, a frame-graph pass).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the refracted sun under water, the light every submerged material shares (`Underwater.ts`: a new
@@ -102,7 +102,7 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   illuminance every lit material writes beside its colour for the exposure (`MeterLight.ts`: a new
   lit material calls `writeMeter` and draws only in passes with an MRT).
 - `src/materials/`: procedural textures (the gravel bake and the scans' texture arrays:
-  `ProceduralTextures.ts`), the terrain (`TerrainMaterial.ts`, its ground scans hex-tiled), wet surfaces, the meadow's habitat and soil-depth fields (`Meadow.ts`).
+  `ProceduralTextures.ts`), the terrain (`TerrainMaterial.ts`, its ground scans hex-tiled), wet surfaces, the meadow's habitat and soil-depth fields (`Meadow.ts`), what a closed sky's light turns into in the sward (`SwardTint.ts`, shared by the blades and the turf).
 - `src/ocean/`: FFT ocean, shore waves, the share of each wave cascade a point of the sea keeps
   (`WaveDamping.ts`), the wave maps the light under the water reads (`WaveMaps.ts`),
   water shading (`Water.ts`), the sea's large-scale detail (`SeaDetail.ts`: gusts, slicks,
