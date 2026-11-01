@@ -117,7 +117,7 @@ export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
 	day: [
 		{ at: 3, name: 'golden', values: { key: - 0.38, highlight: 0.27, sky: 0.05, adaptUp: 0.05, adaptDown: 0.05 } },
 		{ at: 12, name: 'low', values: { key: 0.332, highlight: 0.52, sky: 0.441, adaptUp: 0.05, adaptDown: 0.05 } },
-		{ at: 40, name: 'high', values: { key: - 1.05, highlight: 1.44, sky: 0.915, adaptUp: 0.05, adaptDown: 0.05 } },
+		{ at: 40, name: 'high', values: { key: - 1.05, highlight: 1.44, sky: 0.92, adaptUp: 0.05, adaptDown: 0.05 } },
 	],
 	cloudy: [
 		{ at: 0, name: 'cloudySunset', values: { key: - 0.12, highlight: 3.05, sky: 0, adaptUp: 0.05, adaptDown: 0.05 } },

@@ -391,7 +391,7 @@ const SKY_LIGHT_LOW_SUN: readonly DayKey<{ r: number; g: number; b: number }>[] 
 const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'sky.light', {
 	day: [ ...SKY_LIGHT_LOW_SUN, { at: 40, name: 'high', values: { r: 0.235, g: 0.232, b: 0.346 } } ],
 	cloudy: [ ...SKY_LIGHT_LOW_SUN, { at: 40, name: 'cloudyHigh', values: { r: 0.25, g: 0.232, b: 0.28 } } ],
-	night: { r: 0.045, g: 0.0229, b: 0.0284 },
+	night: { r: 0.045, g: 0.023, b: 0.028 },
 }, { r: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune }, g: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune }, b: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune } } );
 const _skyLight = { r: 0, g: 0, b: 0 };
 // per kept sky, the share of the deck's optical depth its shadow is cast with (Weather.ts
