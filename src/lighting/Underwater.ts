@@ -7,10 +7,10 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, float, vec3, vec4, positionWorld, normalViewGeometry, cameraViewMatrix,
-	normalize, exp, dot, select, smoothstep, mix, max, dFdx, dFdy,
+	normalize, exp, dot, select, smoothstep, mix, max,
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
-import { causticsColorAt, type Caustics } from '../ocean/Caustics.ts';
+import type { WaveMaps } from '../ocean/WaveMaps.ts';
 import { refractedSunDirectionNode, refractedSunBeamScaleNode } from './RefractedSun.ts';
 import { GroundBounceLightingModel } from './GroundBounce.ts';
 import { meterAmbient } from './MeterLight.ts';
@@ -73,38 +73,30 @@ export interface UnderwaterOptions {
 }
 
 /** The underwater light at `positionWorld` (see the header). */
-export function underwaterLight( shared: Shared, caustics: Caustics, { aboveSun, aboveAmbient }: UnderwaterOptions = {} ): UnderwaterLight {
+export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun, aboveAmbient }: UnderwaterOptions = {} ): UnderwaterLight {
 
 	// the water above this point: the long waves' surface for the key, the mean level for the
 	// ambient (the wave maps; a level sea above the water's reach)
 	const p = positionWorld;
 	const sigT = shared.sigA.add( shared.sigS );
-	const waves = caustics.wavesAt( p ).toVar();
-	const level = caustics.levelAt( p ).toVar();
+	const waves = waveMaps.wavesAt( p ).toVar();
 	const dSun = shared.waterLevel.add( waves.x ).sub( p.y ).toVar();
-	const dW = shared.waterLevel.add( level.x ).sub( p.y ).toVar();
+	const dW = shared.waterLevel.add( waves.w ).sub( p.y ).toVar();
 	const under = dSun.greaterThan( 0 );
 	// Snell's direction and the beam-area factor must change together. For a horizontal
 	// floor, muWater * (muAir / muWater) preserves transmitted horizontal irradiance;
 	// steep submerged walls now receive the correct refracted projection as well.
 	const waterSun = refractedSunDirectionNode( shared.sunDir );
 	const waterSunView = normalize( cameraViewMatrix.mul( vec4( waterSun, 0 ) ).xyz );
-	// The caustics are read only where they are seen: below the water for the sun's path (and in
-	// a material's own band above it). Most of the island's rock lies above both, and a select()
-	// would read them everywhere. They sample with explicit gradients (the pixel's footprint,
-	// taken before the branch) or an explicit level, so the reads may sit inside these branches.
+	// (`under` first builds the wave maps' variable, outside the branch, so that every later reader
+	// finds it declared)
 	const sun = Fn( () => {
 
 		const att = ( aboveSun ?? vec3( float( 1 ) ) ).toVar();
-		const footprint = { dx: dFdx( p.xz ).toVar(), dy: dFdy( p.xz ).toVar() };
-		// (the maps' variables are first built here, outside the branch, so that every later reader
-		// finds them declared)
-		const detail = level.y.toVar();
 		If( under, () => {
 
 			const path = exp( sigT.negate().mul( dSun ).div( max( waterSun.y, 0.15 ) ) );
-			const caust = causticsColorAt( caustics, p, dSun, { slope: waves.yz, foam: waves.w, detail, footprint } );
-			att.assign( mix( att, path.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) ).mul( caust ), smoothstep( 0, 0.08, dSun ) ) );
+			att.assign( mix( att, path.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) ), smoothstep( 0, 0.08, dSun ) ) );
 
 		} );
 		return att;
@@ -113,7 +105,7 @@ export function underwaterLight( shared: Shared, caustics: Caustics, { aboveSun,
 	const depth = dW.max( 0 );
 	const ambAtt = exp( sigT.negate().mul( depth ).mul( 1.2 ) ).mul( 0.85 ).add( vec3( 0, 0.02, 0.04 ).mul( exp( depth.mul( - 0.1 ) ) ) ).toVar();
 	const water = mix( vec3( 1 ), ambAtt, smoothstep( 0, 0.1, depth ) );
-	// (the water's multiplier is 1 above the mean level; built outside any branch, see `detail`)
+	// (the water's multiplier is 1 above the mean level; built outside any branch, see `sun`)
 	const ambient = Fn( () => {
 
 		const mul = water.toVar();

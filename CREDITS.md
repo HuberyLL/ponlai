@@ -479,8 +479,6 @@ comment where it is used.
 - FFT ocean: J. Tessendorf,
   [*Simulating Ocean Water*](https://jtessen.people.clemson.edu/reports/papers_files/coursenotes2002.pdf)
   (SIGGRAPH course notes, 2002 revision).
-- Rasterised caustics: Evan Wallace, [*WebGL Water*](https://madebyevan.com/webgl-water/) and
-  [*Rendering Realtime Caustics in WebGL*](https://medium.com/@evanwallace/rendering-realtime-caustics-in-webgl-2a99a29a0b2c).
 - Hex-tiling's predecessor, by-example noise that blends randomly placed tiles with a
   histogram-preserving blend: Eric Heitz and Fabrice Neyret,
   [*High-Performance By-Example Noise using a Histogram-Preserving Blending Operator*](https://eheitzresearch.wordpress.com/722-2/)

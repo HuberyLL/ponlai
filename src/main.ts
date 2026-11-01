@@ -22,7 +22,7 @@ import { Rain, setRainShading } from './weather/Rain.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
 import { seaState } from './ocean/OceanSpectrum.ts';
 import { ShoreWaves } from './ocean/ShoreWaves.ts';
-import { Caustics } from './ocean/Caustics.ts';
+import { WaveMaps } from './ocean/WaveMaps.ts';
 import { SeaDetail } from './ocean/SeaDetail.ts';
 import { showUnderwater } from './ocean/Refraction.ts';
 import { Wenyao } from './life/Wenyao.ts';
@@ -523,8 +523,8 @@ const fft = new OceanFFT( renderer, {
 	...wind.spectrumWind, fetch: sea.fetch, choppiness: sea.choppiness, distantSwell: { scale: sea.swell },
 	anisotropy: quality.water.fftAnisotropy,
 } );
-const caustics = new Caustics( renderer, fft );
-// the sea's gusts, slicks and windrows (the water's roughness, and the caustics' through the wave maps)
+const waveMaps = new WaveMaps( renderer );
+// the sea's gusts, slicks and windrows (the water's roughness)
 const seaDetail = new SeaDetail( shared );
 // the veil's shells and the sea's ripple layers are built into the rain's and the water's materials
 setRainShading( quality.rainShading );
@@ -588,12 +588,11 @@ const overlayLatents: LatentRegistry = TEMPORAL
 // while the world is generated and built; the loop starts once they are ready. The frame graph's
 // warm-up compiles every pass the frame may run, those that run only at times included (fog, rain,
 // the view distance, either output), each under its own binding (its target and MRT are part of
-// its pipelines' keys), with the objects their owners register as drawn only at times; the sky and
-// the caustics compile their own renders. The storm's foam and spray need the world's shore fields
-// and register with it.
+// its pipelines' keys), with the objects their owners register as drawn only at times; the sky
+// compiles its own renders. The storm's foam and spray need the world's shore fields and register
+// with it.
 const warming = Promise.all( [
 	sky.warm( renderer ),
-	caustics.warm(),
 	// the drops and splashes, and the bolts, registered with the passes they draw in before the
 	// graph's warm-up starts, which compiles them with every pass (graph/FrameGraph.ts `warm`)
 	rain.registerLatent( overlayLatents ),
@@ -648,16 +647,16 @@ setLand( land, landOptions.step );
 // rim ground over its own.
 const fields = new WorldFields( data, shared.shoreXform.value );
 // the sunlight the ground bounces up (lighting/GroundBounce.ts), which every lit material adds: so
-// installed before any of them builds; its map shares the caustics' target
-const groundBounce = new GroundBounce( { renderer, shared, sunShadow, fields, soil: textures.soil, target: caustics.target, layer: caustics.bounceLayer, cloud: ( position ) => sky.keyCloudVisibility( position ) } );
+// installed before any of them builds; its map shares the wave maps' target
+const groundBounce = new GroundBounce( { renderer, shared, sunShadow, fields, soil: textures.soil, target: waveMaps.target, layer: waveMaps.bounceLayer, cloud: ( position ) => sky.keyCloudVisibility( position ) } );
 installGroundBounce( groundBounce );
 const shoreWaves = new ShoreWaves( renderer, data, shared, fields.shore, fft, fields.floor );
 const walk = walkPoints( data.walk );
-const world = buildWorldMeshes( data, textures, shared, caustics, fields );
+const world = buildWorldMeshes( data, textures, shared, waveMaps, fields );
 scene.add( world.group );
 // The wenyao's schools off the island (life/Wenyao.ts): swimmers (Refraction.ts markSwimmer), which
 // the opaque pass draws where the eye sees them through the waves (Water.ts swimmerSway).
-const wenyao = new Wenyao( data, shared, caustics, fft );
+const wenyao = new Wenyao( data, shared, waveMaps, fft );
 scene.add( wenyao.mesh );
 // The bamboo leaves the wind takes off the island (weather/FallingLeaves.ts): stepped by their pass on
 // the frame graph, drawn in the opaque scene; the test mode leaves them out (debug/TestMode.ts).
@@ -709,7 +708,7 @@ runtime.refractedSun = refractedSun;
 refractedSun.angleGate = THREE.MathUtils.degToRad( runtimeQuality.refractedSun.angleGate );
 // the stones', floor's and island parts' triangles under the water come with the chunks (World.ts)
 refractedSun.setCasters( world.group, world.subsets );
-refractedSun.bindTerrain( world.group, caustics );
+refractedSun.bindTerrain( world.group, waveMaps );
 await refractedSun.prepare();
 const grass = buildGrass( plantGrass( data.vegetation ), shared );
 // The vegetation's kinds (vegetation/Registry.ts), in the order the scene draws them; every list
@@ -882,8 +881,8 @@ water = new Water( {
 pipeline.seaLevel.value = shared.waterLevel.value;
 // the boxes held so far (the plants', a game's props shown before the sea was made)
 for ( const box of heldOpaque ) water.hold( box );
-// the light under the water follows the long waves the sea's surface shows (Caustics.ts, the wave maps)
-caustics.attachWaves( { fft, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves, detail: seaDetail } );
+// the light under the water follows the long waves the sea's surface shows (WaveMaps.ts)
+waveMaps.attachWaves( { fft, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves } );
 applySkyFill();
 waterScene.add( water.mesh );
 ( AFTER_RESOLVE ? afterScene : TEMPORAL ? rainScene : waterScene ).add( stormSea.spray.mesh );
@@ -1896,7 +1895,7 @@ function tick( time: number ): void {
 	stormSea.update( simTime, weather.state.storm, camera );
 	shoreWaves.update( fft, simTime );
 	// Whitewater is disabled in this scene; leave its history idle.
-	caustics.update( sky.keyDir, camera );
+	waveMaps.update( camera );
 	// (their schools take flight more often by night)
 	wenyao.update( paused ? 0 : dt, 1 - THREE.MathUtils.smoothstep( sky.grade.daylight, 0.2, 0.45 ) );
 	fallingLeaves?.update( simTime, freeControls.enabled ? camera.position : controls.target, camera.position );
@@ -2077,7 +2076,7 @@ if ( DEBUG && TEMPORAL ) console.info( 'motion check', motionCheck( motionPasses
 if ( profiler ) {
 
 	const { labelPonlaiPasses } = await import( './debug/FrameProfiler.ts' );
-	labelPonlaiPasses( profiler, { scene, waterScene, rainScene, pipeline, sky, rain, sunShadow, refractedSun, fft, stormSea, shoreWaves, caustics, groundBounce, characters } );
+	labelPonlaiPasses( profiler, { scene, waterScene, rainScene, pipeline, sky, rain, sunShadow, refractedSun, fft, stormSea, shoreWaves, waveMaps, groundBounce, characters } );
 
 }
 // the nodes r186 makes inside the first lit build, made by a throwaway one, so the frame's receivers
@@ -2462,7 +2461,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 };
 
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, groundBounce,
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, waveMaps, water, pipeline, shared, refractedSun, groundBounce,
 	// the direction the surfaces take the key's light from, the low key's lift included (lighting/KeyLift.ts)
 	keyShading: () => liftedKeyDirection( sky.keyDir, sky.keyIsMoon, new THREE.Vector3() ),
 	// the ambient grade (lighting/AmbientGrade.ts): `current`, `table`, `override` and `manual`

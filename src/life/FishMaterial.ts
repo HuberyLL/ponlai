@@ -10,7 +10,7 @@ import {
 	normalize, cross, positionGeometry, normalGeometry, normalLocal, positionPrevious,
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
-import type { Caustics } from '../ocean/Caustics.ts';
+import type { WaveMaps } from '../ocean/WaveMaps.ts';
 import { underwaterLight, UnderwaterLightingModel } from '../lighting/Underwater.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { PART, type Anatomy } from './FishGeometry.ts';
@@ -63,7 +63,7 @@ const turnY = ( v: V3, a: F ) => vec3( v.x.mul( cos( a ) ).add( v.z.mul( sin( a 
  * iMotion ( phase, amplitude, bend, fold ) and iBefore ( the previous x, y, z, phase ). `sway`: an
  * offset added to each placed vertex (the water's swimmerSway: where the eye sees it through the
  * waves). */
-export function makeFishMaterial( S: Anatomy, skin: Skin, shared: Shared, caustics: Caustics, roots: { pectoral: number; pelvic: number }, sway?: ( at: V3 ) => V3 ): THREE.MeshStandardNodeMaterial {
+export function makeFishMaterial( S: Anatomy, skin: Skin, shared: Shared, waveMaps: WaveMaps, roots: { pectoral: number; pelvic: number }, sway?: ( at: V3 ) => V3 ): THREE.MeshStandardNodeMaterial {
 
 	const mat = new THREE.MeshStandardNodeMaterial();
 	mat.name = 'fish';
@@ -145,7 +145,7 @@ export function makeFishMaterial( S: Anatomy, skin: Skin, shared: Shared, causti
 	mat.metalnessNode = select( body, silver.mul( 0.55 ), float( 0 ) );
 	mat.roughnessNode = select( body, mix( float( 0.42 ), float( 0.26 ), silver ), float( 0.5 ) );
 
-	const light = underwaterLight( shared, caustics );
+	const light = underwaterLight( shared, waveMaps );
 	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new UnderwaterLightingModel( light, { terminator: false } );
 	writeMeter( mat );
 	return mat;

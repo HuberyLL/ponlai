@@ -6,7 +6,7 @@
 
 import * as THREE from 'three/webgpu';
 import type { Shared } from '../shared.ts';
-import type { Caustics } from '../ocean/Caustics.ts';
+import type { WaveMaps } from '../ocean/WaveMaps.ts';
 import { markSwimmer } from '../ocean/Refraction.ts';
 import { swimmerSway } from '../ocean/Water.ts';
 import type { OceanFFT } from '../ocean/OceanFFT.ts';
@@ -177,7 +177,7 @@ export class Wenyao {
 	private readonly nbrs = new Uint16Array( CAPACITY );
 	private readonly attrs: Record<'iPose' | 'iTurn' | 'iMotion' | 'iBefore', THREE.InstancedBufferAttribute>;
 
-	constructor( data: WorldData, shared: Shared, caustics: Caustics, fft: OceanFFT ) {
+	constructor( data: WorldData, shared: Shared, waveMaps: WaveMaps, fft: OceanFFT ) {
 
 		const base = fishGeometry( WENYAO, 0 );
 		const geometry = new THREE.InstancedBufferGeometry();
@@ -186,7 +186,7 @@ export class Wenyao {
 		const attr = () => new THREE.InstancedBufferAttribute( new Float32Array( CAPACITY * 4 ), 4 );
 		this.attrs = { iPose: attr(), iTurn: attr(), iMotion: attr(), iBefore: attr() };
 		for ( const [ name, a ] of Object.entries( this.attrs ) ) geometry.setAttribute( name, a );
-		const material = makeFishMaterial( WENYAO, SKIN, shared, caustics, { pectoral: wingRoot( WENYAO, WENYAO.pectoral ), pelvic: wingRoot( WENYAO, WENYAO.pelvic ) }, ( p ) => swimmerSway( fft, p, shared.waterLevel ) );
+		const material = makeFishMaterial( WENYAO, SKIN, shared, waveMaps, { pectoral: wingRoot( WENYAO, WENYAO.pectoral ), pelvic: wingRoot( WENYAO, WENYAO.pelvic ) }, ( p ) => swimmerSway( fft, p, shared.waterLevel ) );
 		markSwimmer( material );
 		this.mesh = new THREE.Mesh( geometry, material );
 		this.mesh.name = 'wenyao';

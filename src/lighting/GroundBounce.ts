@@ -124,7 +124,7 @@ export interface GroundBounceInputs {
 	fields: { shore: THREE.TextureNode; floor: THREE.TextureNode; beds: THREE.TextureNode };
 	// the soil map (Soil.ts): the plateau's swell, the height of the land's bouncing surface
 	soil: THREE.Texture;
-	// the array target and layer the map is blurred into (Caustics `target`, `bounceLayer`)
+	// the array target and layer the map is blurred into (WaveMaps `target`, `bounceLayer`)
 	target: THREE.RenderTarget;
 	layer: number;
 	// the cloud shadow's visibility of the key at a world point
@@ -251,12 +251,8 @@ export class GroundBounce {
 		const prev = r.getRenderTarget();
 		r.setRenderTarget( this.raw );
 		this.rawQuad.render( r );
-		// (read at level 0 only: the caustics' mip chain is made after their own layers)
-		const mips = target.texture.generateMipmaps;
-		target.texture.generateMipmaps = false;
 		r.setRenderTarget( target, layer );
 		this.blurQuad.render( r );
-		target.texture.generateMipmaps = mips;
 		r.setRenderTarget( prev );
 		this.ready.value = 1;
 		this.bakes ++;
