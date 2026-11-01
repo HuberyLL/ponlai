@@ -3,38 +3,59 @@
 // at each key and moves between them), held beyond the first and the last; a clouded day's values,
 // where a look has them, come in over them by the weather's cloud (Pipeline.ts `cloud`: 0 under a
 // clear or fair sky, 1 under a cloudy or overcast one), and the night's over both by the night's
-// weight (Pipeline.ts `night`, from the daylight). Each look sets its own keys: the shade's contrast
-// holds one value from the noon down to a 9 degree sun, the exposure and the local tone move between
-// 40, 12 and 3 degrees. Read on the
-// CPU once a frame into uniforms, so a value is a function of the clock and the weather alone and
-// a paused frame repeats. A day key may carry a `name` (`golden`), which names its values as
-// tunables (debug/Tune.ts `tuneKeys`: `<prefix>.<value>@<name>`, else `@day<i>`).
+// weight (Pipeline.ts `night`, from the daylight). A look's clouded values are one set where they
+// hold at every sun, or keys by the elevation of their own, read as the day's are, where a flat set
+// would leave the land as bright at sunset as in the afternoon. Each look sets its own keys: the
+// shade's contrast holds one value from the noon down to a 9 degree sun, the exposure and the local
+// tone move between 40, 12 and 3 degrees. Read on the CPU once a frame into uniforms, so a value is
+// a function of the clock and the weather alone and a paused frame repeats. A key may carry a `name` (`golden`), which names its values as
+// tunables (debug/Tune.ts `tuneKeys`: `<prefix>.<value>@<name>`, else `@day<i>`, `@cloudy<i>`).
 
 export type KeyValues = Record<string, number>;
+export interface DayKey<T extends KeyValues> {
+	readonly at: number;
+	readonly values: T;
+	readonly name?: string;
+}
 export interface DayKeys<T extends KeyValues> {
 	// ascending by elevation
-	readonly day: readonly { readonly at: number; readonly values: T; readonly name?: string }[];
-	// a cloudy or overcast day's, whatever the sun's elevation (none: the clear day's)
-	readonly cloudy?: T;
+	readonly day: readonly DayKey<T>[];
+	// a cloudy or overcast day's: one set at every sun, or keys ascending by elevation (none: the
+	// clear day's)
+	readonly cloudy?: T | readonly DayKey<T>[];
 	readonly night: T;
 }
 
 const smooth = ( t: number ) => t * t * ( 3 - 2 * t );
 
+/** Whether a look's clouded values are keys by the elevation. */
+export function hasKeys<T extends KeyValues>( cloudy: T | readonly DayKey<T>[] ): cloudy is readonly DayKey<T>[] {
+
+	return Array.isArray( cloudy );
+
+}
+
+// The value `k` of `keys` at the sun's `elevation`.
+function along<T extends KeyValues>( keys: readonly DayKey<T>[], elevation: number, k: string ): number {
+
+	let i = 0;
+	while ( i < keys.length - 1 && elevation > keys[ i + 1 ].at ) i ++;
+	const a = keys[ i ], b = keys[ Math.min( i + 1, keys.length - 1 ) ];
+	const t = b.at > a.at ? smooth( Math.min( Math.max( ( elevation - a.at ) / ( b.at - a.at ), 0 ), 1 ) ) : 0;
+	return a.values[ k ] + ( b.values[ k ] - a.values[ k ] ) * t;
+
+}
+
 /** `keys`' values at the sun's `elevation` (degrees), the night's weight `night` and the weather's
  * cloud `cloud`, into `out`. */
 export function keyed<T extends KeyValues>( keys: DayKeys<T>, elevation: number, night: number, out: T, cloud = 0 ): T {
 
-	const { day } = keys;
-	let i = 0;
-	while ( i < day.length - 1 && elevation > day[ i + 1 ].at ) i ++;
-	const a = day[ i ], b = day[ Math.min( i + 1, day.length - 1 ) ];
-	const t = b.at > a.at ? smooth( Math.min( Math.max( ( elevation - a.at ) / ( b.at - a.at ), 0 ), 1 ) ) : 0;
+	const { day, cloudy } = keys;
 	const o = out as KeyValues;
-	for ( const k in a.values ) {
+	for ( const k in day[ 0 ].values ) {
 
-		let v = a.values[ k ] + ( b.values[ k ] - a.values[ k ] ) * t;
-		if ( keys.cloudy ) v += ( keys.cloudy[ k ] - v ) * cloud;
+		let v = along( day, elevation, k );
+		if ( cloudy ) v += ( ( hasKeys( cloudy ) ? along( cloudy, elevation, k ) : cloudy[ k ] ) - v ) * cloud;
 		o[ k ] = v + ( keys.night[ k ] - v ) * night;
 
 	}

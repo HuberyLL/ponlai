@@ -696,7 +696,7 @@ showWindArrows();
 // show.
 const ambient = new AmbientVolume( renderer, data.ambient );
 installAmbientVolume( ambient );
-const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyCloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation } );
+const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyCloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation, clouded: () => weather.skyMix[ 2 ] + weather.skyMix[ 3 ] } );
 // the environment's own harmonics, which the specular's relight divides by (AmbientSample.ts)
 installEnvironmentHarmonics( ambientRelight );
 // the haze's shadow kernels read the probes' sky visibility, so they compile now (Pipeline.ts)
@@ -1388,10 +1388,10 @@ postF.add( S, 'exposureOffset', - 3, 3, 0.05 ).name( 'exposure offset (stops)' )
 postF.add( S, 'bloom', 0, 3, 0.05 ).name( 'bloom strength' );
 {
 
-	// the clear day's white balance, noon down to 9 degrees (Pipeline.ts WHITE_BALANCE)
+	// the high sun's white balance (Pipeline.ts WHITE_BALANCE)
 	const day = WHITE_BALANCE.day[ WHITE_BALANCE.day.length - 1 ].values;
-	postF.add( day, 'r', 0.5, 1.5, 0.005 ).name( 'white balance red (day)' );
-	postF.add( day, 'b', 0.5, 1.5, 0.005 ).name( 'white balance blue (day)' );
+	postF.add( day, 'r', 0.4, 1.5, 0.005 ).name( 'white balance red (high sun)' );
+	postF.add( day, 'b', 0.5, 1.5, 0.005 ).name( 'white balance blue (high sun)' );
 
 }
 {

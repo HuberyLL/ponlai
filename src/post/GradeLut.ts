@@ -100,7 +100,9 @@ export const NEUTRAL_GRADE: Readonly<GradeParams> = {
  * each hue moved on its own, lightly, the neutral axis left where it is but for a touch of cool in
  * the highlights.
  * - The warm hues (red to yellow) times 1.15: the earth, the bark and the low sun's light keep
- *   their colour under the softer curve. The red flowers times 1.15 over that, which the cooler
+ *   their colour under the softer curve; they also turn 8 degrees toward red, so the golden hour's
+ *   light reads orange where the curve's shoulder turns it yellow (a degree or so on the day's
+ *   rock and meadow). The red flowers times 1.15 over that, which the cooler
  *   white balance and the softer curve had cut by about a fifth; their band also turns red-orange
  *   4 degrees toward red.
  * - The sky's blue times 1.2: the noon sky read pale and grey over the brighter curve.
@@ -116,7 +118,7 @@ export const BASE_GRADE: Readonly<GradeParams> = gradeOf( {
 	highlights: { tint: [ 0.97, 1, 1.05 ] },
 	bands: {
 		grass: { saturation: 0.95, shift: - 3.5 }, sky: { saturation: 1.2 }, sea: { saturation: 1.05, shift: 7 },
-		flowers: { saturation: 1.15, shift: - 4 }, warm: { saturation: 1.15 }, purple: { shift: - 6 },
+		flowers: { saturation: 1.15, shift: - 4 }, warm: { saturation: 1.15, shift: - 8 }, purple: { shift: - 6 },
 	},
 } );
 

@@ -28,8 +28,9 @@ art decision changes; images from elsewhere stay out of the repository.
   darks; its contrast, shoulder, white and toe adjustable; no saturation of its own, which the
   grade's hue bands set)
   whose working space keeps a low sun's reds from turning yellow; a white balance given as the colour white becomes, by the time and the weather (a clear
-  day cool from noon to a low sun, against the sun's slight warmth, so the lit ground reads a touch
-  cool and the shade, the sky and the sea clearly cool; the golden hour a little warm, the clouded
+  day cool from noon to a low sun, against the sun's warmth, so sunlit rock reads a pale neutral, the
+  meadow keeps its green and the sky and the sea stay blue, while the shade stays the colour of what
+  stands in it, never blue; the golden hour a little warm, the clouded
   skies and the night cool); a bloom only on what is truly bright (the sun's
   glints on the sea, the sun, a moonlit path), never a veil over the whole frame, and next to none
   under a clouded sky; a vignette that darkens only the corners, and no grain; and two grade
@@ -79,7 +80,9 @@ art decision changes; images from elsewhere stay out of the repository.
   the low sun's light reddens; a cloudy sky's air is grey and about as thick. It lies as a ground
   layer with a soft top tens of metres up: the hills rise out of it, the camera stands in its upper
   half, and the distant haze thins slowly with height. From the game's
-  views the island keeps its colour (at least nine tenths of its light reaches the camera by day)
+  views the island keeps its colour (at least nine tenths of its light reaches the camera by day,
+  the air of the first few hundred metres thin under every kept sky, so the shade stays the land's
+  own colour and no veil of the sky's light lies over the island)
   and the haze gathers with distance toward the horizon. The far sea and the low sky end in the same
   haze: a milky band, brighter than the sky above it, closes over the horizon with no step or dark
   line where sea meets sky, and fades by 10 - 15 degrees up. Across from the sun
@@ -109,13 +112,19 @@ art decision changes; images from elsewhere stay out of the repository.
   toward a low sun against one away from it. The frame darkens with the light: a clear noon shows a
   sunlit grey card on level ground at a screen code of about 0.70 to 0.75 (its open shade near
   0.15), and as the sun goes down the card goes down with it, the more the lower the sun, so a low
-  sun reads as a low sun (in the golden hour, with the sun at 3 degrees, a grey card on the island
-  shows about ( 0.5, 0.3, 0.05 ) on screen, the local tone's lift included); the deep night shows a
+  sun reads as a low sun (in the golden hour, with the sun at 3 degrees, a sunlit cliff is orange
+  with deep brown shade, a stop or more under its light, and the sky over it a shade redder and
+  dimmer, not a yellow-gold face under a pale sky); the deep night shows a
   moonlit grey card at a green code of about 0.1 to 0.2, and holds its exposure whatever the moon. A
   clouded sky is metered by the view's own light: in the view of the whole island the ground shows
-  about three quarters of a stop under a clear day's sunlit ground at the same hour, on a cloudy and
-  an overcast day alike, and other views lie within about half a stop of that. A sun in the frame
-  may read a little brighter than its eye-adapting exposure would show it. The night keeps the
+  about a stop under a clear day's sunlit ground at the same hour, on a cloudy and an overcast
+  day alike, and other views lie within about half a stop of that. Under cloud, with the sun at 30
+  degrees or higher, the land takes about four times a clear day's share of the sky's light, so it
+  stands in soft daylight under a pale sky rather than as a dim island under a bright one, lit to
+  shaded about 2 to 4. The share and the exposure let go together as the sun falls, so a clouded
+  evening comes on by degrees from about 20 degrees of sun: dark and quiet at sunset, neither black
+  nor lit yellow, and never brighter at a lower sun but where the cloud opens for a moment. A sun
+  in the frame may read a little brighter than its eye-adapting exposure would show it. The night keeps the
   moonlit island readable (see Night).
 - No lens effects a photograph of a real place would not have: no tilt-shift miniature blur, no
   lens flares forced into the frame.
@@ -248,7 +257,7 @@ art decision changes; images from elsewhere stay out of the repository.
   bare earth only in its few gaps, never thin grass over brown ground, and never a ground that
   changes colour as the camera zooms. At the lip the turf ends on its soil over the stone, never a
   dark hole among the flowers. By night
-  the lawn is a dark, readable green cooled toward blue (see Night). Toward a sheltered coast the grass runs to the
+  the lawn is a dark, quiet green with a hint of cool (see Night). Toward a sheltered coast the grass runs to the
   lip and stands there, and the same grass grows out over it: its tufts at the lip spill over the
   edge, fine blades that arch over and hang down the wall, lying on the stone, never through it, and the lip alternates between
   overgrown stretches and cut-open
@@ -419,9 +428,10 @@ art decision changes; images from elsewhere stay out of the repository.
 - The night takes the day's curve and grade under the moon's own light: its key from one side,
   its shade drawn up a little (as an eye adapted to the dark sees it), so the moonlit meadow still
   shows its clumps' lit and shaded sides as the day does. The night is cool: as the rods take over
-  from the cones, dark colours come up and turn blue (the Purkinje shift), so the moonlit meadow
-  cools toward blue while its grass still reads green, the shade, the sea and the sky a little
-  more, and the reds darken. Its exposure keeps the moonlit island readable and the moon's path on the sea crisp.
+  from the cones, dark colours come up and turn blue (the Purkinje shift), but the blue belongs to
+  the sky and the sea: the land under them goes dark and quiet, far less saturated than they are,
+  the meadow nearly black with a hint of cool green, the rock a cool grey that catches the moon and
+  stands as the brightest thing on the island. Its exposure keeps the moonlit island readable and the moon's path on the sea crisp.
   Every night has its moon, up from dusk to dawn: the phase shows only on the drawn moon and
   never darkens the night.
 - The island reads by moonlight and starlight; twilight is never darker than the night. The
@@ -433,7 +443,7 @@ art decision changes; images from elsewhere stay out of the repository.
   that view too. While it is up the moon is drawn where the island takes its light from (one fixed
   place all night, a little above its orbit's culmination), and the glow of the air around it
   comes from there too, so the disk, its glow and the light on the land stand together.
-- The night meadow is a dark, readable green cooled toward blue under the moon (not black); stone,
+- The night meadow is a dark, quiet green with a hint of cool under the moon (not black); stone,
   sand and skin stay apart from it and from each other in tone.
 - The stars and Milky Way are the real sky as seen near 28 degrees south, points with a natural
   spread of brightness, below white except the brightest few; only those near the horizon

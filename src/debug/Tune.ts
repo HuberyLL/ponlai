@@ -1,5 +1,5 @@
 import { uniform } from 'three/tsl';
-import type { DayKeys, KeyValues } from '../post/DayKeys.ts';
+import { hasKeys, type DayKey, type DayKeys, type KeyValues } from '../post/DayKeys.ts';
 
 // Tunable parameters: named numbers a script or the console can set on a running page. Debug pages
 // only (the dev server, ?debug, ?profile); elsewhere every function here returns the default as given and registers nothing, so
@@ -15,8 +15,8 @@ import type { DayKeys, KeyValues } from '../post/DayKeys.ts';
 // - Names are `<line>.<module>.<quantity>` (`post.tone.blackSlope`). A DayKeys table (DayKeys.ts)
 //   registers each value of each key as `<prefix>.<value>@<key>`: the day's keys by their `name`,
 //   else `day<i>` in their order, and `cloudy` and `night` (`post.exposure.key@high`,
-//   `post.exposure.key@night`); `keyed()` reads them through getters, so a set value is read on the
-//   next frame. `tuneObject` turns properties of an object the code already reads (a settings
+//   `post.exposure.key@night`); a look's clouded keys by the elevation go by their `name`, else
+//   `cloudy<i>`; `keyed()` reads them through getters, so a set value is read on the next frame. `tuneObject` turns properties of an object the code already reads (a settings
 //   object the GUI edits too) into accessors of the registry.
 // - Options: `min` / `max`, the range a script may move the value in (a hint: nothing is clamped
 //   here, the script may give its own); `scale` 'linear' (the default) or 'log' (a script moves the
@@ -171,9 +171,10 @@ export function tuneKeys<T extends KeyValues>( prefix: string, keys: DayKeys<T>,
 		return out as T;
 
 	};
+	const along = ( list: readonly DayKey<T>[], prefix: string ) => list.map( ( d, i ) => ( { ...d, values: wrap( d.values, d.name ?? `${ prefix }${ i }` ) } ) );
 	return {
-		day: keys.day.map( ( d, i ) => ( { ...d, values: wrap( d.values, d.name ?? `day${ i }` ) } ) ),
-		...( keys.cloudy ? { cloudy: wrap( keys.cloudy, 'cloudy' ) } : {} ),
+		day: along( keys.day, 'day' ),
+		...( keys.cloudy ? { cloudy: hasKeys( keys.cloudy ) ? along( keys.cloudy, 'cloudy' ) : wrap( keys.cloudy, 'cloudy' ) } : {} ),
 		night: wrap( keys.night, 'night' ),
 	};
 

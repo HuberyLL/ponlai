@@ -463,14 +463,15 @@ const LOCAL_TONE_ON = debugFlags.localTone !== false;
 // the shade lost its weight; this gives it back without touching the lit ground and the sky. The
 // pivot (stops over mid grey) and slope are set per key (keyed by the sun's elevation,
 // DayKeys.ts). By day the pivot sits over the lit ground, so the whole shade deepens, from noon down
-// to a sun at 9 degrees; the golden hour's slope runs to 0, its long shadows taking their weight
-// from the light alone (its pivot then does nothing and keeps its start). The clouded sky deepens
+// to a sun at 9 degrees; the golden hour keeps most of the slope with its pivot nearly a stop under
+// mid grey, so only what lies in the long shadows drops, and the sunlit cliff stays as it is. The
+// clouded sky deepens
 // its darks too, from about 0.9 of a stop over mid grey; the night's slope runs to 0 as well, its
 // darks set by the local tone alone (its pivot acts only while the night fades in under a clouded
 // sky, beside the cloudy key's: DayKeys.ts `keyed` blends the cloud in first).
 // Tunable on debug pages (debug/Tune.ts): `post.shade.<value>@golden`, `@day`, `@cloudy`, `@night`.
 export const SHADE_CONTRAST: DayKeys<{ pivot: number; slope: number }> = tuneKeys( 'post.shade', {
-	day: [ { at: 4, name: 'golden', values: { pivot: 0.0684, slope: 0 } }, { at: 9, name: 'day', values: { pivot: 1.58, slope: 0.449 } } ],
+	day: [ { at: 4, name: 'golden', values: { pivot: - 0.86, slope: 0.37 } }, { at: 9, name: 'day', values: { pivot: 1.58, slope: 0.449 } } ],
 	cloudy: { pivot: 0.902, slope: 0.18 },
 	night: { pivot: 0.516, slope: 0 },
 }, { pivot: { min: - 3, max: 4 }, slope: { min: 0, max: 0.5 } } );
@@ -478,12 +479,12 @@ export const SHADE_CONTRAST: DayKeys<{ pivot: number; slope: number }> = tuneKey
 // The desaturation before the local tone's gain: each colour drawn toward its own luminance by
 // `amount` (0 keeps it, 1 grey), c + ( Y( c ) - c ) amount, keyed by the sun and the weather
 // (DayKeys.ts); below 0 it saturates. Keyed as the white balance is, so each key sets its own: the
-// golden hour saturates by a third, the day keeps its colours, the clouded sky fades them by a
-// fifth, the night by about a half.
+// golden hour saturates by a sixth, the day keeps its colours, the clouded sky fades them by a
+// twelfth, the night by about a half.
 // Tunable on debug pages (debug/Tune.ts): `post.desaturate.amount@golden`, `@day`, `@cloudy`, `@night`.
 export const DESATURATION: DayKeys<{ amount: number }> = tuneKeys( 'post.desaturate', {
-	day: [ { at: 4, name: 'golden', values: { amount: - 0.331 } }, { at: 9, name: 'day', values: { amount: 0.0122 } } ],
-	cloudy: { amount: 0.184 },
+	day: [ { at: 4, name: 'golden', values: { amount: - 0.163 } }, { at: 9, name: 'day', values: { amount: 0.0122 } } ],
+	cloudy: { amount: 0.08 },
 	night: { amount: 0.481 },
 }, { amount: { min: - 0.5, max: 1 } } );
 
@@ -546,19 +547,21 @@ export function vignetteFactor( at: V2, strength: F ): F {
 
 }
 // The white balance, as the colour white becomes (linear Rec.709), by the sun's elevation, under a
-// clouded sky and at night (DayKeys.ts), fitted with the light. A clear day pushes the display well
-// past neutral toward cool from noon down to a sun at 9 degrees (red at its bound, half of green,
-// blue 1.36), one look for the whole day as the other keyed knobs keep it: the noon sun's warmth on
-// the lit ground is held back and what the blue sky lights turns clearly cool. The golden hour warms
-// a little further (red 1.05, blue 0.9); the clouded skies take a cool white too (red 0.78, blue
-// 1.16), their grey light kept from reading warm. The night takes a cool white too (red 0.76, blue
-// 1.4), on top of the moon's light and the rods' (Purkinje.ts).
-// Tunable on debug pages (debug/Tune.ts): `post.white.<r|g|b>@golden`, `@day`, `@cloudy`, `@night`.
+// clouded sky and at night (DayKeys.ts), fitted with the light. A clear day pushes the display past
+// neutral toward cool, the sun's warmth on the lit ground held back: furthest at a sun of 9 degrees
+// (red half of green, blue 1.36), which keeps the low sun's rock and meadow, and less by 40 degrees
+// (red 0.59, blue 1.25, the `high` key), where the stronger cast would turn sunlit rock blue. The
+// high key moves with the sky's (Sky.ts SKY_LIGHT), which takes the inverse, so the sky holds its
+// colour. The golden hour warms a little further (red 1.05, blue 0.9); the clouded skies take a cool
+// white too (red 0.78, blue 1.16), their grey light kept from reading warm. The night takes a cool
+// white too (red 0.53, blue 1.2), on top of the moon's light and the rods' (Purkinje.ts).
+// Tunable on debug pages (debug/Tune.ts): `post.white.<r|g|b>@golden`, `@day`, `@high`, `@cloudy`,
+// `@night`.
 export const WHITE_BALANCE: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'post.white', {
-	day: [ { at: 4, name: 'golden', values: { r: 1.05, g: 1, b: 0.9 } }, { at: 9, name: 'day', values: { r: 0.5, g: 1, b: 1.36 } } ],
+	day: [ { at: 4, name: 'golden', values: { r: 1.05, g: 1, b: 0.9 } }, { at: 9, name: 'day', values: { r: 0.5, g: 1, b: 1.36 } }, { at: 40, name: 'high', values: { r: 0.593, g: 1, b: 1.248 } } ],
 	cloudy: { r: 0.775, g: 1, b: 1.16 },
-	night: { r: 0.764, g: 1, b: 1.4 },
-}, { r: { min: 0.5, max: 1.5 }, g: { min: 0.5, max: 1.5 }, b: { min: 0.5, max: 1.5 } } );
+	night: { r: 0.527, g: 1, b: 1.2 },
+}, { r: { min: 0.4, max: 1.5 }, g: { min: 0.5, max: 1.5 }, b: { min: 0.5, max: 1.5 } } );
 
 
 export class Pipeline {

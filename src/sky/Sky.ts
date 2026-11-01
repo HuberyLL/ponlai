@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, uv, uniform, texture, positionWorld, cameraPosition, normalize, smoothstep, dot,
 	vec2, vec3, vec4, ivec2, float, sqrt, max, atan, asin, clamp, cos, sin, mix, abs, select,
-	pmremTexture, textureLoad, Loop, cross, exp2, log2, positionView, fwidth, length,
+	pmremTexture, textureLoad, Loop, cross, exp2, log2, positionView, fwidth, length, step,
 } from 'three/tsl';
 import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE, SUN_LIMB_U1, SUN_LIMB_U2 } from '../lighting/Radiometry.ts';
@@ -69,7 +69,8 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // height, the sky behind them along the whole way; so the haze's composite leaves the sky's pixels.
 // The environment's bake lays the same haze over its source as the dome does (`fogEnvironment`,
 // VolumetricHaze.ts `openSky`, toward every direction from the sea's level, unshadowed): the environment and the dome
-// are one sky, its haze light included, so the ground's sky light takes the light the haze scatters.
+// are one sky, its haze light included, so the ground's sky light takes the light the haze scatters
+// and the sea reflects it (the seen panorama, above the horizon).
 // The sun's disc and the moon's are dimmed by the clouds' mean transmittance over each disc, read
 // from the panorama into a texel ahead of the scene (`discCloudTransmittance`), and hidden by the
 // clouds' opacity once, in the composite. The key light's colour does not take that mean: the lit
@@ -358,19 +359,20 @@ function clearShade( elevation: number, direct: number ): number {
 // island's moonlight takes the key's level with a hue of its own (`moonHue`). The keys were fitted
 // to the sky's brightness and colour in bands of elevation and of angle from the sun, together with
 // the atmosphere's phase and aerosol and the haze's keys, once the environment's bake took the
-// haze's light: the golden key takes the sky warm (red over blue about 1.3), the low key near grey,
-// the high key blue (blue over red about 1.2), the atmosphere's own colour doing the rest, and the
-// night key is about 0.01, its red about a third of its green: the clear night's dome is nearly
-// dark, its low sky the haze's moonlit light (HazeKeys.ts NIGHT) and its blue the moonlit
-// atmosphere's own.
+// haze's light: the golden key takes the sky warm (red over blue about 2.5), the low key near grey,
+// the high key blue (blue over red about 1.5), the atmosphere's own colour doing the rest, and the
+// night key is about 0.03, its red about twice its green, which the night's white balance takes
+// back (Pipeline.ts WHITE_BALANCE): the land's dark colours stay near neutral under it, the clear
+// night's dome is dark, its low sky the haze's moonlit light (HazeKeys.ts NIGHT) and its blue the
+// moonlit atmosphere's own and the rods' (Purkinje.ts).
 // Tunable on debug pages (debug/Tune.ts): `sky.light.<r|g|b>@<golden|low|high|night>`.
 const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'sky.light', {
 	day: [
-		{ at: 3, name: 'golden', values: { r: 0.216, g: 0.178, b: 0.162 } },
+		{ at: 3, name: 'golden', values: { r: 0.3, g: 0.18, b: 0.12 } },
 		{ at: 12, name: 'low', values: { r: 0.221, g: 0.192, b: 0.194 } },
-		{ at: 40, name: 'high', values: { r: 0.288, g: 0.252, b: 0.350 } },
+		{ at: 40, name: 'high', values: { r: 0.235, g: 0.232, b: 0.346 } },
 	],
-	night: { r: 0.005, g: 0.0136, b: 0.0104 },
+	night: { r: 0.045, g: 0.0229, b: 0.0284 },
 }, { r: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune }, g: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune }, b: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune } } );
 const _skyLight = { r: 0, g: 0, b: 0 };
 // per kept sky, the share of the deck's optical depth its shadow is cast with (Weather.ts
@@ -454,20 +456,21 @@ const lendIsland = Fn( ( [ light, tint, gain ]: [ V3, V4, F ] ) => {
 // Art direction: within a few degrees of the horizon the sun shines through twenty to forty air
 // masses and its light turns an almost pure red (red/blue above 100 at one degree), which paints
 // the island like lava. The optical depth that sets the key's hue is capped softly past about
-// four degrees (SUN_HUE_DEPTH), while its luminance keeps the full extinction: a low sun stays
-// orange red (red/green about 2.6 at four degrees, 2.8 at the golden hour and below 2.8 at the
-// horizon, red/blue at most about 18) and still dims as it sets. Above that the key's hue is
+// four degrees (`sky.key.hueDepth`), while its luminance keeps the full extinction: a low sun stays
+// orange red (red/green about 2.1 from six degrees to the golden hour and 1.8 at the horizon,
+// red/blue at most about 7) and still dims as it sets. Above that the key's hue is
 // chosen rather than the air's own course, which reddens evenly with the air mass: a warm
 // white while the sun is high (KEY_WHITE: red/green 1.15, blue/green 0.95 at noon, 1.17 and 0.9
 // at 30 degrees) that loses its blue first (0.8 at 20 degrees, red/green 1.2) and turns orange
 // between 15 and 10 degrees (1.45 and 0.55 at 11.5). So each of the two ratios takes the air's
-// change of it in part, by the air's depth in green (KEY_REDDENS for red/green, KEY_YELLOWS for
+// change of it in part, by the air's depth in green (`sky.key.reddens` for red/green, `.yellows` for
 // blue/green: about none at noon, two thirds at that depth, all of it past twice it). The sky and
 // clouds keep their own colours, and the key's luminance is the sun tint's.
-const SUN_HUE_DEPTH = 1.8;
+const sunHueDepth = tune( 'sky.key.hueDepth', 2.03, { min: 1, max: 4, onChange: markSkyRetune } );
 // the key's white: linear red/green and blue/green while the sun is high
 const KEY_WHITE = [ 1.15, 0.96 ] as const;
-const KEY_REDDENS = 0.75, KEY_YELLOWS = 0.52;
+const keyReddens = tune( 'sky.key.reddens', 0.75, { min: 0.3, max: 1.5, onChange: markSkyRetune } );
+const keyYellows = tune( 'sky.key.yellows', 0.52, { min: 0.2, max: 1.2, onChange: markSkyRetune } );
 // The low sun's lift of the clouds' beam and fill (trackClouds), fading as the sky closes.
 const lowSunOf = ( elevation: number, coverage: number ) => THREE.MathUtils.smoothstep( elevation, - 4, 1 )
 	* ( 1 - THREE.MathUtils.smoothstep( elevation, 6, 20 ) ) * ( 1 - THREE.MathUtils.smoothstep( coverage, 0.35, 0.65 ) );
@@ -480,10 +483,10 @@ function keyHue( transmittance: THREE.Color, tint: THREE.Color ): THREE.Color {
 	const { r, g, b } = transmittance;
 	if ( g <= 0 ) return transmittance.setRGB( 0, 0, 0 );
 	const depth = - Math.log( g );
-	const scale = 1 / Math.pow( 1 + Math.pow( depth / SUN_HUE_DEPTH, 6 ), 1 / 6 );
+	const scale = 1 / Math.pow( 1 + Math.pow( depth / sunHueDepth(), 6 ), 1 / 6 );
 	const share = ( onset: number ) => scale * ( 1 - Math.exp( - Math.pow( depth / onset, 2.5 ) ) );
 	const before = luma( transmittance.clone().multiply( tint ) );
-	transmittance.setRGB( KEY_WHITE[ 0 ] * Math.pow( r / g, share( KEY_REDDENS ) ), 1, KEY_WHITE[ 1 ] * Math.pow( b / g, share( KEY_YELLOWS ) ) );
+	transmittance.setRGB( KEY_WHITE[ 0 ] * Math.pow( r / g, share( keyReddens() ) ), 1, KEY_WHITE[ 1 ] * Math.pow( b / g, share( keyYellows() ) ) );
 	return transmittance.multiplyScalar( before / luma( transmittance ) );
 
 }
@@ -501,10 +504,8 @@ const CLOUD_TURN = [ - 3, - 2.5, - 2 ] as const;
 const CLOUD_SHADOW_SET = [ - 0.02, 0.02 ] as const;
 
 // The moon's key, a share of the sun's illuminance per channel: cool blue (red over green 0.8, blue
-// over green 1.4), so the moonlit ground itself reads blue; the shade is bluer still from the night
-// sky's light (ISLAND_SKY's night row), not from a whiter moon. Its level is the moonlit ground's
-// relation to the night's other light; how bright the night shows is the exposure's night key
-// (post/Exposure.ts).
+// over green 1.4). Its level is the moonlit ground's relation to the night's other light; how bright
+// the night shows is the exposure's night key (post/Exposure.ts).
 // The moonlit sky, clouds and haze keep this colour (`moonIlluminance`): there it is the sky's night
 // gain's and the haze's own to colour. The island's moonlight takes its level and a hue of its own
 // (`moonHue`).
@@ -516,14 +517,16 @@ const luminance709 = ( r: number, g: number, b: number ) => 0.2126 * r + 0.7152 
 const MOON_KEY_LUMINANCE = luminance709( MOON_KEY[ 0 ], MOON_KEY[ 1 ], MOON_KEY[ 2 ] );
 // a gain on the moon's key light (keyColor: the land, the sea's glitter, the haze's scatter of the
 // key), the moonlit sky and clouds keeping MOON_KEY under the sky's night gain: the
-// moonlit ground takes about eighteen times the night sky's light on open ground, while the sky keeps
+// moonlit ground takes several times the night sky's light on open ground, while the sky keeps
 // its moon glow. It is the island's moonlight's level; `moonHue` its colour.
-const moonKeyGain = tune( 'lighting.moon.gain', 0.471, { min: 0.05, max: 4, scale: 'log' } );
+const moonKeyGain = tune( 'lighting.moon.gain', 0.545, { min: 0.05, max: 4, scale: 'log' } );
 // The island's moonlight's red and blue over green. They move the moonlit ground's colour without
 // its level (the hue keeps MOON_KEY's luminance) and without the moonlit sky's, clouds' and haze's,
 // which keep MOON_KEY. At MOON_KEY's own (MOON_KEY_RED, MOON_KEY_BLUE) the hue is exactly white.
-const moonKeyRed = tune( 'lighting.moon.red', 0.4, { min: 0.4, max: 1.2 } );
-const moonKeyBlue = tune( 'lighting.moon.blue', 2.99, { min: 0.8, max: 4 } );
+// Through the night's white balance these leave moonlit rock a cool grey, the island's brightest
+// thing, with no more chroma than the sky over it, and the meadow nearly black with a hint of green.
+const moonKeyRed = tune( 'lighting.moon.red', 0.74, { min: 0.3, max: 1.2 } );
+const moonKeyBlue = tune( 'lighting.moon.blue', 2.37, { min: 0.8, max: 4 } );
 const _moonKey = new THREE.Color();
 const _moonHue = new THREE.Color();
 
@@ -686,7 +689,8 @@ export class Sky {
 	private bakeIslandTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
 	private bakeIslandGain = uniform( 1 );
 	// 1 while the bake draws the environment's source or the probe's panorama, which take the haze
-	// (`fogEnvironment`); the seen panorama under the horizon is fogged by the dome itself
+	// all round (`fogEnvironment`); the seen panorama takes it above the horizon only, as the dome
+	// fogs what it shows of it under the horizon itself
 	private bakeHaze = uniform( 0 );
 	private starFootprint = uniform( 1 );
 
@@ -878,7 +882,10 @@ export class Sky {
 				const cloudHaze = haze( up, inside.div( sqrt( b.mul( b ).add( inside ) ).add( b ) ) );
 				const seen = sky.light.add( sky.transmittance.mul( clear ) ).mul( cloud.a )
 					.add( cloudHaze.light.mul( float( 1 ).sub( cloud.a ) ) ).add( cloudHaze.transmittance.mul( cloud.rgb ) );
-				fogged = mix( air, seen, this.bakeHaze );
+				// (the seen panorama only above the horizon, where the water reads it: what the sea
+				// reflects is the sky the dome draws, and under cloud the haze's light is nearly all of
+				// that; below the horizon the dome fogs it itself)
+				fogged = mix( air, seen, max( this.bakeHaze, step( 0, d.y ) ) );
 
 			}
 			const sky = lendIsland( fogged.mul( this.ambientGain ), this.bakeIslandTint, this.bakeIslandGain );
@@ -890,8 +897,8 @@ export class Sky {
 
 	}
 
-	/** Lays the haze over the environment's source and the irradiance probe's panorama as the dome
-	 * lays it on itself (`fogDome`; not over the seen panorama, which the dome fogs), toward every
+	/** Lays the haze over the environment's source, the irradiance probe's panorama and the seen
+	 * panorama above the horizon as the dome lays it on itself (`fogDome`), toward every
 	 * direction from one height (VolumetricHaze.ts `openSky`): the environment and the dome
 	 * are one sky, its haze light included, so the ground's sky light (the irradiance probe, the
 	 * relit ambient's SH) takes the light the haze scatters as the sky the eye sees does. Called

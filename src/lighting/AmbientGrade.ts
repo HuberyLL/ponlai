@@ -24,12 +24,13 @@ import { tune } from '../debug/Tune.ts';
 // light the scene does not yet carry.
 //
 // Set so far: the sun's bounce. The sky's diffuse light takes no knob: the volume's sky term and
-// the sky it bounces follow the sky itself at gain 1 (AmbientRelight.ts) at every hour and in
-// every weather, so the evening and the night take the light their own sky gives, and the
-// metering illuminance takes the sky's light as it stands (it is the incident light: Pipeline.ts
-// `meterLight`). The fair sky's
-// reflection takes 0.65 at sunset and 0.74 at -1.3 degrees (`skySpecular`), where its lit cloud
-// held the island above the golden hour's brightness (Sky.ts ISLAND_SKY).
+// the sky it bounces follow the sky itself at gain 1 (AmbientRelight.ts) at every hour and in every
+// weather, so the evening and the night take the light their own sky gives, and the metering
+// illuminance takes the sky's light as it stands (it is the incident light: Pipeline.ts
+// `meterLight`). The sky's reflection takes half from a sun at 5.5 degrees to one at -1.3
+// (`skySpecular`), under clear and fair skies alike, so a low sun's shade stands dark against the
+// lit rock and does not rise back through the sunset; the night's row returns it by -2.6 degrees,
+// under the night's exposure.
 //
 // The sun's bounce is 4.5 by day under the clear and the fair sky down to 9 degrees, lets go along
 // a smooth step to 1.1 at 4 degrees and holds about 1 to its last light at -1.3; the moon's is 3.2
@@ -121,11 +122,11 @@ export const AMBIENT_GRADE: readonly AmbientRow[] = [
 	{ at: 10, clear: { ...D, sunBounce: 4.5 }, fair: { ...D, sunBounce: 4.5 }, cloudy: { ...D, sunBounce: 2.4 }, overcast: { ...D, sunBounce: 1.5 } },
 	{ at: 9, clear: { ...D, sunBounce: 4.5 }, fair: { ...D, sunBounce: 4.5 }, cloudy: { ...D, sunBounce: 2.4 }, overcast: { ...D, sunBounce: 1.5 } },
 	{ at: 7, clear: { ...D, sunBounce: 3.45 }, fair: { ...D, sunBounce: 3.45 }, cloudy: { ...D, sunBounce: 1.85 }, overcast: { ...D, sunBounce: 1.15 } },
-	{ at: 5.5, clear: { ...D, sunBounce: 2.05 }, fair: { ...D, sunBounce: 2.05 }, cloudy: { ...D, sunBounce: 1.1 }, overcast: { ...D, sunBounce: 0.68 } },
-	{ at: 4, clear: { ...D, sunBounce: 1.1 }, fair: { ...D, sunBounce: 1.1 }, cloudy: { ...D, sunBounce: 0.6 }, overcast: { ...D, sunBounce: 0.37 } },
-	{ at: 2, clear: D, fair: D, cloudy: { ...D, sunBounce: 0.6 }, overcast: { ...D, sunBounce: 0.33 } },
-	{ at: 0, clear: D, fair: { ...D, skySpecular: 0.65 }, cloudy: { ...D, sunBounce: 0.6 }, overcast: { ...D, sunBounce: 0.33 } },
-	{ at: - 1.3, clear: D, fair: { ...D, skySpecular: 0.74 }, cloudy: { ...D, sunBounce: 0.6 }, overcast: { ...D, sunBounce: 0.33 } },
+	{ at: 5.5, clear: { ...D, skySpecular: 0.5, sunBounce: 2.05 }, fair: { ...D, skySpecular: 0.5, sunBounce: 2.05 }, cloudy: { ...D, sunBounce: 1.1 }, overcast: { ...D, sunBounce: 0.68 } },
+	{ at: 4, clear: { ...D, skySpecular: 0.5, sunBounce: 1.1 }, fair: { ...D, skySpecular: 0.5, sunBounce: 1.1 }, cloudy: { ...D, sunBounce: 0.6 }, overcast: { ...D, sunBounce: 0.37 } },
+	{ at: 2, clear: { ...D, skySpecular: 0.5 }, fair: { ...D, skySpecular: 0.5 }, cloudy: { ...D, sunBounce: 0.6 }, overcast: { ...D, sunBounce: 0.33 } },
+	{ at: 0, clear: { ...D, skySpecular: 0.5 }, fair: { ...D, skySpecular: 0.5 }, cloudy: { ...D, sunBounce: 0.6 }, overcast: { ...D, sunBounce: 0.33 } },
+	{ at: - 1.3, clear: { ...D, skySpecular: 0.5 }, fair: { ...D, skySpecular: 0.5 }, cloudy: { ...D, sunBounce: 0.6 }, overcast: { ...D, sunBounce: 0.33 } },
 	{ at: - 2.6, clear: { ...D, sunBounce: 3.2 }, fair: { ...D, sunBounce: 3.2 }, cloudy: { ...D, sunBounce: 1.7 }, overcast: { ...D, sunBounce: 1.7 } },
 	{ at: - 4, clear: { ...D, sunBounce: 3.2 }, fair: { ...D, sunBounce: 3.2 }, cloudy: { ...D, sunBounce: 1.7 }, overcast: { ...D, sunBounce: 1.7 } },
 	{ at: - 18, clear: { ...D, sunBounce: 3.2 }, fair: { ...D, sunBounce: 3.2 }, cloudy: { ...D, sunBounce: 1.7 }, overcast: { ...D, sunBounce: 1.7 } },
@@ -161,9 +162,10 @@ export function evaluateAmbient( elevation: number, weights: readonly number[], 
 
 }
 
-/** A gain on the table's `sunBounce` at every hour and in every weather (fitted, 0.868): scales the
- * key's bounce throughout without reshaping the table. */
-const sunBounceGain = tune( 'lighting.grade.sunBounce', 0.868, { min: 0.25, max: 4, scale: 'log' } );
+/** A gain on the table's `sunBounce` at every hour and in every weather: scales the key's bounce
+ * throughout without reshaping the table. One now the near air no longer lifts the shade: the
+ * shade's level is the light the ground sends up. */
+const sunBounceGain = tune( 'lighting.grade.sunBounce', 1, { min: 0.25, max: 4, scale: 'log' } );
 
 /** The grade's uniforms, read by the lighting models. */
 export const ambient = {
