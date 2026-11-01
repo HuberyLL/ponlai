@@ -253,8 +253,10 @@ const SLOPE_FRESNEL = 5.4;
 // share), which the water carries, not in the red, which it takes in its first metres: a red sky
 // feeds it little, so the sea at sunset sinks below its shoals and its waves show. Its colour is the
 // sky's at `chroma` of its saturation, by the particles' `tint`: warm under a warm sky, a grey slate
-// under cloud. Its share is high under cloud and low at noon, when the sun's single scattering rules.
-const VEIL = { gain: 0.119, depth: 6, blue: 0.35, chroma: 0.68, tint: [ 0.77, 1, 0.58 ] } as const;
+// under cloud. The tint keeps most of the red, so the open sea takes a low sun's colour as the sky
+// does, and the slow fill keeps that colour off the shallows' floor. Its share is high under cloud
+// and low at noon, when the sun's single scattering rules.
+const VEIL = { gain: 0.119, depth: 12, blue: 0.35, chroma: 0.68, tint: [ 0.92, 1, 0.58 ] } as const;
 
 // The reflection's march stops this far along the ray (m); its hits fade out from 120 m (tidewater's).
 const SSR_FARTHEST = 260;
