@@ -639,6 +639,15 @@ captures (`uv run --with numpy --with pillow`). Where shapes differ (growth step
 regenerated island), judge the look by eye and region statistics (`tools/capture-growth.mjs`), not
 by pixel difference.
 
+`node tools/colour-rows.mjs shoot <url> <dir> --views-file f.json [--pages normal,light,ambient,classes]`
+takes a views file's frames on one page per flag set, under the shared GPU lock, and `node
+tools/colour-rows.mjs rows <dir> [--sort <dir>] [--boxes f.json] [--views a,b] [--out f.json] [--json]`,
+plain node, reads them: final-pixel Oklab L, C and h per view, per kind of surface and per kind of
+light (sun and shade by the cell's direct share), with the sky, the sea, the darkest 5 % of the land
+and any boxes, into `<dir>/rows.json` and a table. A view `<base>--<variant>` is read through the
+sort of `<base>`, so its rows are the same cells; variants need only `--pages normal`. It prints what
+the frames hold and judges nothing. Its header has the sort.
+
 `node tools/verify-growth-swap.mjs <base url> [--steps 6] [--views island,cliffs,meadow] [--q
 "query"] [--fresh-grow M] [--out dir]` checks the growth in place: a page loaded at `grow=0` and
 grown N times by `__PONLAI__.growth.grow()` against a fresh load of `grow=N`, both paused and
@@ -1344,6 +1353,10 @@ Animation Hitches templates show when frames reached the display and what the GP
 (`xcrun xctrace record --template 'Metal System Trace' --attach <Chrome GPU process pid>
 --time-limit 10s --output <file>.trace`, then open it in Instruments). Extend our tools only for
 what these do not give (automation, A/B statistics, pass names).
+
+What colour a surface shows on screen, by kind and by light (sunlit rock, shaded grass, the sky,
+the darkest land), the same cells before and after a change, or a box with its dark and lit halves:
+`tools/colour-rows.mjs` (Captures), not a hand-placed box over mixed light.
 
 Whether a grown page draws what a fresh load of its land draws (views, chunk hashes, the rain
 map, the camera's ground, the ambient probes, pipelines and memory across swaps): `tools/verify-growth-swap.mjs`, not a
