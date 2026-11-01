@@ -35,7 +35,8 @@ interface MeadowSample { growth: number; tone: number }
 
 // Linear albedo of the lawn as a whole, a deep olive green: the blades' mean (Grass.ts meadowMean)
 // over LAWN_GAIN. The tone's knob (shared.ts lawnGain) lightens or darkens the blades (Grass.ts)
-// and the turf together. The ambient light's bake holds a copy (AmbientProbes.ts LAWN_TOP).
+// and the turf together. The land's bounce reads it (GroundBounce.ts), and the ambient light's
+// bake holds a copy (AmbientProbes.ts LAWN_TOP).
 const LAWN = new THREE.Color( 0.0700, 0.0978, 0.0109 );
 /** The lawn's colour (linear albedo), before its tone. */
 export const LAWN_COLOUR = LAWN.toArray() as [ number, number, number ];
