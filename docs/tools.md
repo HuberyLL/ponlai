@@ -359,8 +359,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `post.tone.blackSlope`, `post.tone.white`; the shade's contrast `post.shade.pivot@day`, `slope`
   (`@golden`, `@day`, `@cloudy`, `@night`), the bloom's `post.bloom.strength` and the sun's glare
   `post.glare`; the display's white `post.white.r@high` (`g`, `b`; `@day`, `@golden`, `@cloudy`,
-  `@night`), the sky's light `sky.light.r@high` (`g`, `b`; `@low`, `@golden`, `@night`), the key's
-  colour at a low sun `sky.key.hueDepth`, `reddens`, `yellows`, the near air
+  `@night`), the sky's light `sky.light.r@high` (`g`, `b`; `@low`, `@golden`, `@cloudyHigh`, `@night`), the
+  key's colour at a low sun `sky.key.hueDepth`, `reddens`, `yellows`, the near air
   `sky.weather.nearDensity@clear` (`nearStart`, `nearEnd`; `@fair`, `@cloudy`, `@overcast`) and the
   land's share of the sky's light `lighting.relight.skyGain@high` (`@low`, `@golden`, `@cloudy`,
   `@cloudyBlue`, `@night`), and the key a tree's shaded leaves take through the leaves over them

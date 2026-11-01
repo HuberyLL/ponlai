@@ -80,9 +80,9 @@ import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun } from '../sky/Weather.ts';
 // blended by the sky's shares, each kept sky's tunable
 // (`sky.weather.nearDensity|nearStart|nearEnd@<clear|fair|cloudy|overcast>`).
 // A clouded sky's near density falls to 0.4 of its preset's as the sun climbs from 30 to 40 degrees
-// (Weather.ts `cloudedHighSun`): that high the sky's light turns the air bluer and a little brighter,
-// and with the sun behind the cloud the meter lifts the land and the air together, so the same near
-// air would lie over the land as a pale blue veil. What the near air loses the land keeps; the sea
+// (Weather.ts `cloudedHighSun`): that high the sky's light turns the air a little brighter, and with
+// the sun behind the cloud the meter lifts the land and the air together, so the same near air
+// would lie over the land as a pale veil. What the near air loses the land keeps; the sea
 // past `nearEnd` and the sky keep their depth.
 
 export interface HazeKey {

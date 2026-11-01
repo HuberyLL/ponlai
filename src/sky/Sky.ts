@@ -23,8 +23,8 @@ import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
 import { DAY_EXPOSURE, type DayCycleSnapshot } from './DayCycle.ts';
-import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, type WeatherFront, type WeatherState } from './Weather.ts';
-import { keyed, type DayKeys } from '../post/DayKeys.ts';
+import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, type WeatherFront, type WeatherState } from './Weather.ts';
+import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 import { moonDirection } from '../lighting/KeyLift.ts';
@@ -214,9 +214,9 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 // before both were fitted (SKY_LIGHT, post/Exposure.ts), so the brightness each row gives is to be
 // measured again; the rows' shape, a lift through the afterglow easing to none by the night, holds.
 // The rows at 1, 0.5, 0, -3.3 and -5.3 degrees take the colour the rows around them gave there.
-// By day a clouded sky lends the island its own light: the sky's high key (SKY_LIGHT) gives the sky
-// its blue, which a deck of cloud does not pass on, so from 30 to 40 degrees the light lent to the
-// island is drawn most of the way to a warm grey (CLOUD_LIGHT_TINT, Weather.ts `cloudedHighSun`). The land
+// By day a clouded sky lends the island its own light: a deck of cloud passes on little of the blue
+// of the sky's high key (SKY_LIGHT), so from 12 to 40 degrees, as that key climbs, the light lent to
+// the island is drawn most of the way to a warm grey (CLOUD_LIGHT_TINT, Weather.ts `cloudedHighSun`). The land
 // keeps its green under a high sun; the meter's level is the same, the tint keeping the luminance.
 const CLOUD_LIGHT_TINT = ( ( r: number, g: number, b: number, amount: number ) => {
 
@@ -376,13 +376,21 @@ function clearShade( elevation: number, direct: number ): number {
 // back (Pipeline.ts WHITE_BALANCE): the land's dark colours stay near neutral under it, the clear
 // night's dome is dark, its low sky the haze's moonlit light (HazeKeys.ts NIGHT) and its blue the
 // moonlit atmosphere's own and the rods' (Purkinje.ts).
-// Tunable on debug pages (debug/Tune.ts): `sky.light.<r|g|b>@<golden|low|high|night>`.
+// Under cloud the high key has a twin (`cloudyHigh`, taken by the weather's clouded share, Weather.ts
+// `cloudedShare`): a deck of cloud gives the sky and the air no such blue, and the air over the land
+// takes this light whole (VolumetricHaze.ts), so at the day's blue the crowns under a clouded sky
+// turned blue grey, most of all at 30 degrees, where that blue meets the near air's full density
+// (HazeKeys.ts). The twin stays near grey, blue over red about 1.1, at about the day's luminance, so
+// the air's hue moves and the land's level and the exposure do not. Its golden and low keys are the
+// day's own, so a clouded sky parts from a clear one only over 12 degrees.
+// Tunable on debug pages (debug/Tune.ts): `sky.light.<r|g|b>@<golden|low|high|cloudyHigh|night>`.
+const SKY_LIGHT_LOW_SUN: readonly DayKey<{ r: number; g: number; b: number }>[] = [
+	{ at: 3, name: 'golden', values: { r: 0.3, g: 0.18, b: 0.12 } },
+	{ at: 12, name: 'low', values: { r: 0.221, g: 0.192, b: 0.194 } },
+];
 const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'sky.light', {
-	day: [
-		{ at: 3, name: 'golden', values: { r: 0.3, g: 0.18, b: 0.12 } },
-		{ at: 12, name: 'low', values: { r: 0.221, g: 0.192, b: 0.194 } },
-		{ at: 40, name: 'high', values: { r: 0.235, g: 0.232, b: 0.346 } },
-	],
+	day: [ ...SKY_LIGHT_LOW_SUN, { at: 40, name: 'high', values: { r: 0.235, g: 0.232, b: 0.346 } } ],
+	cloudy: [ ...SKY_LIGHT_LOW_SUN, { at: 40, name: 'cloudyHigh', values: { r: 0.25, g: 0.232, b: 0.28 } } ],
 	night: { r: 0.045, g: 0.0229, b: 0.0284 },
 }, { r: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune }, g: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune }, b: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune } } );
 const _skyLight = { r: 0, g: 0, b: 0 };
@@ -429,15 +437,15 @@ function byElevation<K extends string>( rows: readonly ( { at: number } & Record
 const TWILIGHT_END = - 6;
 // (`flags=skyGain:false` leaves the sky as the atmosphere gives it, `lowKey:false` the key as its
 // transmittance gives it, for A/Bs)
-const skyGain = ( elevation: number, target: THREE.Color ) => {
+const skyGain = ( elevation: number, cloud: number, target: THREE.Color ) => {
 
 	if ( debugFlags.skyGain === false ) return target.setScalar( 1 );
-	const { r, g, b } = keyed( SKY_LIGHT, elevation, 1 - THREE.MathUtils.smoothstep( elevation, TWILIGHT_END, 2 ), _skyLight );
+	const { r, g, b } = keyed( SKY_LIGHT, elevation, 1 - THREE.MathUtils.smoothstep( elevation, TWILIGHT_END, 2 ), _skyLight, cloud );
 	return target.setRGB( r, g, b );
 
 };
 const _skyGain = new THREE.Color();
-const cirrusGain = ( elevation: number ) => ( debugFlags.skyGain === false ? 1 : luma( skyGain( elevation, _skyGain ) ) * CIRRUS_SHARE ) * ( typeof debugFlags.cirrusSky === 'number' ? debugFlags.cirrusSky : 1 );
+const cirrusGain = ( elevation: number, cloud: number ) => ( debugFlags.skyGain === false ? 1 : luma( skyGain( elevation, cloud, _skyGain ) ) * CIRRUS_SHARE ) * ( typeof debugFlags.cirrusSky === 'number' ? debugFlags.cirrusSky : 1 );
 const lowKey = ( elevation: number ) => debugFlags.lowKey === false ? 1 : byElevation( LOW_KEY, elevation, 'gain' );
 
 // A sky radiance or irradiance as lent to the island (ISLAND_SKY): drawn toward `tint.rgb` at its
@@ -1241,8 +1249,9 @@ export class Sky {
 		const moonSky = SKY_LIGHT.night;
 		this.moonKeyColor.setRGB( MOON_KEY[ 0 ] * moonKey, MOON_KEY[ 1 ] * moonKey, MOON_KEY[ 2 ] * moonKey );
 		this.atmosphere.moonIlluminance.value.setRGB( this.moonKeyColor.r * moonSky.r, this.moonKeyColor.g * moonSky.g, this.moonKeyColor.b * moonSky.b );
-		this.atmosphere.sunIlluminance.value.copy( this.solarIlluminance ).multiply( skyGain( this.elevation, _skyGain ) );
-		this.clouds.cirrusSunGain.value = cirrusGain( this.elevation );
+		const cloud = skyMix ? cloudedShare( skyMix ) : 0;
+		this.atmosphere.sunIlluminance.value.copy( this.solarIlluminance ).multiply( skyGain( this.elevation, cloud, _skyGain ) );
+		this.clouds.cirrusSunGain.value = cirrusGain( this.elevation, cloud );
 		this.atmosphere.updateSync();
 		// Cap the hue of the air's extinction first, then fade by the disk's visible share, so the
 		// setting disk only dims the key and does not bleach it.
@@ -1295,7 +1304,7 @@ export class Sky {
 			}
 			if ( low > 0 ) tint.set( tint.x + ( LOW_SUN_TINT[ 0 ] - tint.x ) * low, tint.y + ( LOW_SUN_TINT[ 1 ] - tint.y ) * low,
 				tint.z + ( LOW_SUN_TINT[ 2 ] - tint.z ) * low, Math.max( tint.w, LOW_SUN.amount * low ) );
-			const clouded = skyMix ? cloudedHighSun( celestial.elevation, skyMix ) : 0;
+			const clouded = skyMix ? cloudedHighSun( celestial.elevation, skyMix, 12 ) : 0;
 			if ( clouded > 0 ) tint.set( CLOUD_LIGHT_TINT[ 0 ], CLOUD_LIGHT_TINT[ 1 ], CLOUD_LIGHT_TINT[ 2 ], CLOUD_LIGHT_TINT[ 3 ] * clouded );
 
 		} else {
