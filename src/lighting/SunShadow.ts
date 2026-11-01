@@ -5,6 +5,7 @@ import { solarSteppedShadowVisibility, solarVolumeVisibility, solarPCFVisibility
 import { screenShadowAt } from '../post/MeadowShade.ts';
 import type { CasterColumns } from '../world/ChunkDerived.ts';
 import { shadowWindOn } from '../world/VegetationShadow.ts';
+import { leafThrough } from '../world/vegetation/LeafLight.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tuneUniform } from '../debug/Tune.ts';
 
@@ -41,6 +42,11 @@ type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: 
 // maps are filtered alike, each on its own, so the cross-fade stays continuous across a redraw.
 // A receiver's screen-space shade (post/MeadowShade.ts) multiplies the filter's visibility: its own
 // (`userData.sunShade`, the meadow's blades) or the whole scene's at its pixel (`receiveScreenShadow`).
+// A tree's leaves, marked `userData.keyThrough`, take the two's product on a floor (`leafThrough`,
+// world/vegetation/LeafLight.ts): the map draws every leaf as black, where a crown's leaves pass on
+// a share of the sun to the leaves under them. The floor is a uniform stand-in for that light, on the
+// receivers alone; a caster that let part of the sun through would change the shade on the grove's
+// ground too and cost a map of its own. The clouds' shadow multiplies it as it does the map.
 // Receivers read the maps through SolarShadow's disk filter (a fixed radius of two texels; see its
 // rules on sampler types and derivatives). The caster-depth grid
 // (`nearestCasterDepth`) lets a march through the water skip the 2x2 volume lookups where nothing
@@ -258,7 +264,9 @@ export class SunShadow {
 			// layer, Grass.ts `meadowLayerLight`), or the whole scene's screen-space shade at its
 			// pixel for one marked for it (`receiveScreenShadow`: the bamboo, the yunpeng)
 			const shade = ( material?.userData.sunShade as F | undefined ) ?? ( material?.userData.screenShadow === true ? screenShadowAt() : undefined );
-			return shade ? visibility.mul( shade ) : visibility;
+			const seen = shade ? visibility.mul( shade ) : visibility;
+			// the light a shaded leaf takes through the leaves over it (`userData.keyThrough`)
+			return material?.userData.keyThrough === true ? seen.add( leafThrough.mul( float( 1 ).sub( seen ) ) ) : seen;
 
 		} );
 		// The runtime exposes filterNode; @types/three has not declared this WebGPU hook yet.

@@ -353,6 +353,8 @@ export function leafMaterial( shared: Shared, atlas: LeafAtlas, plants: PlantIns
 	// the screen-space ambient occlusion (post/GTAO.ts) and shade on the key (post/MeadowShade.ts)
 	receiveScreenAO( material );
 	receiveScreenShadow( material );
+	// what the leaves over a shaded leaf pass on of the key (vegetation/LeafLight.ts)
+	material.userData.keyThrough = true;
 	return material;
 
 }

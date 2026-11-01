@@ -225,7 +225,10 @@ art decision changes; images from elsewhere stay out of the repository.
   little darker than it as a crown draws them, its inner leaves greyed, so a crown stands a little
   under the sward's value; the frame's brightness is the exposure's, never albedos pushed past real
   ones. A tree's leaves are nearly as matte as the blades: no pale sheen over a crown, whose lit
-  leaves stay a plain green and whose depth stays dark.
+  leaves stay a plain green and whose depth stays dark. Under a sun of any height the crown's
+  shaded leaves still take a share of it through the leaves above, so a crown's dark half reads
+  green rather than as dark and as blue as the sky; at a sun on the horizon, under a closed sky and
+  by night it takes none.
   One grass colour, a bright, fresh, natural green, matte with only a faint gloss (no pale sheen
   over the blades, which reads as plastic): the gaps between blades a deep, cooler green (never
   near black) under tips that stand out lighter and yellow-green where the sun shines through
