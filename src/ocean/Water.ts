@@ -60,7 +60,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     of a mirror's reflectance; the screen-space reflection of the cliffs and the islanders behind
 //     tidewater's gate (rays near the horizon, reflectance over 0.05)
 //   - the sun's specular: GGX of the base roughness and the slopes the pixel cannot resolve (Cox-
-//     Munk's mean square slope for the wind, the share finer than the pixel)
+//     Munk's mean square slope for the wind, the share finer than the pixel), under a soft ceiling
+//     that falls as the sun climbs (`GLINT_KNEE`), so a high sun's lobe does not blow whole swells
+//     white from above and a low sun keeps its road on the water; the moon's glint has none
 //   - refraction: the refracted view ray (through the surface without the near ripples) followed to
 //     the floor's height field, its end projected
 //     into the refraction pass's image of the world under the sea (Refraction.ts, through its wider
@@ -114,9 +116,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 // The storm's foam rides the water's undisplaced grid (StormSea), so it moves as the surface does:
 // `flags.mv.sea = false` leaves out the waves' motion, the foam's with it (the sea has no foam
 // geometry of its own for `flags.mv.foam`). The reactive weight marks the sun's glints: the glint's
-// luminance against a white diffuse surface under the same light, smoothstep( 2, 8, ratio ) by
-// default (the resolve's settings, Motion.ts reactiveUniforms), so that a sparkle is not smeared
-// into the history.
+// luminance before its ceiling against a white diffuse surface under the same light, smoothstep( 2,
+// 8, ratio ) by default (the resolve's settings, Motion.ts reactiveUniforms), so that a sparkle is
+// not smeared into the history.
 //
 // Screen conventions (WebGPU): uv ( 0, 0 ) is the top-left corner, NDC y points up, depth runs 0..1.
 // Texture samples that need screen-space derivatives are taken first, while control flow is still
@@ -213,6 +215,13 @@ const SHORE_FOAM_SCALE = 1;
 // The share of the key's chroma in the glint: 1 by day, 0 under the moon (main.ts publishLighting).
 // At the handover between them the key has no energy, so the step is not seen.
 export const keyChroma = uniform( 1 );
+
+// The glint's soft ceiling: the specular S eases toward S / ( 1 + GLINT_KNEE S y^2 ), y the sine of the
+// sun's height. Seen from above at a high sun the eye stands inside the lobe with the waves' slopes
+// unresolved, and the lobe drew swell-sized blobs of pure white; the ceiling stands the sparkle under
+// white. It rises with the square of the falling sun, so a low sun's road keeps its blaze. At y 0.77
+// it stands near half a sunlit white card.
+const GLINT_KNEE = 13.25;
 
 // The sky panorama's level the horizon's colour is read at (a band some 20 degrees high).
 const HORIZON_MIP = 5;
@@ -965,7 +974,9 @@ export class Water {
 			const spec = D_GGX( max( dot( N, H ), 0 ), alpha2 ).mul( V_SmithGGX( NdL, NdV, alpha2 ) )
 				.mul( fresnelDielectric( max( dot( V, H ), 0 ), float( IOR ) ) ).mul( NdL );
 			// (physically a glint is some 1e5 times the sky; held inside half float's range)
-			const sunSpec = mix( vec3( luminance( sunLight ) ), sunLight, keyChroma ).mul( min( spec, 400 ) ).toVar();
+			const glintLight = mix( vec3( luminance( sunLight ) ), sunLight, keyChroma ).toVar();
+			const glint = min( spec, 400 ).toVar();
+			const sunSpec = glintLight.mul( glint.div( glint.mul( L.y ).mul( L.y ).mul( GLINT_KNEE ).mul( keyChroma ).add( 1 ) ) ).toVar();
 
 			// ---- refraction: the refracted view ray (Snell; kept heading down where a coarse crest
 			// would turn it up) followed to the floor, two refinements on the floor's height, its end
@@ -1167,7 +1178,7 @@ export class Water {
 			const col = mix( water, foamLit.mul( u.foamIntensity ).add( sunSpec.mul( 0.05 ) ), sat( foam ) ).toVar();
 			// (temporal modes) the glints' reactive weight: their luminance against a white diffuse
 			// surface under the same sun and sky (the note at the top)
-			const reactive = TEMPORAL ? smoothstep( reactiveUniforms.glintFrom, reactiveUniforms.glintTo, lum( sunSpec )
+			const reactive = TEMPORAL ? smoothstep( reactiveUniforms.glintFrom, reactiveUniforms.glintTo, lum( glintLight.mul( glint ) )
 				.div( max( lum( shared.skyIrradianceSource.add( sunLight.mul( max( L.y, 0 ) ).div( PI ) ) ), 1e-6 ) ) ).mul( reactiveUniforms.glintMax ) : null;
 
 			// Whitecaps in a storm (Tessendorf's choppy-wave criterion: the horizontal Jacobian of the
