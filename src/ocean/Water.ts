@@ -54,13 +54,14 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     scales the pixel's own Fresnel, so the waves the pixel does resolve keep their relief; the
 //     sky reflected along a direction the unresolved slopes lift toward the higher, darker sky,
 //     reflections below the horizon darkened toward the horizon's colour, the whole of it moved from
-//     the low band toward the sky's light by the view's elevation (`REFLECTION_BAND`: the sea's copper
-//     at a low sun, its level under cloud); both read the sea's slopes
-//     before the waves' damping, so a lee stands level with the sea round it, never a pale tongue
+//     the low band toward the sky's light by the view's elevation (`REFLECTION_BAND`: its colour with
+//     the sun up, its level under cloud); both read the sea's slopes before the waves' damping, so a lee stands level with the sea round it, never a pale tongue
 //     of a mirror's reflectance; the screen-space reflection of the cliffs and the islanders behind
 //     tidewater's gate (rays near the horizon, reflectance over 0.05)
 //   - the sun's specular: GGX of the base roughness and the slopes the pixel cannot resolve (Cox-
-//     Munk's mean square slope for the wind, the share finer than the pixel)
+//     Munk's mean square slope for the wind, the share finer than the pixel), under a soft ceiling
+//     that falls as the sun climbs (`GLINT_KNEE`), so a high sun's lobe does not blow whole swells
+//     white from above and a low sun keeps its road on the water; the moon's glint has none
 //   - refraction: the refracted view ray (through the surface without the near ripples) followed to
 //     the floor's height field, its end projected
 //     into the refraction pass's image of the world under the sea (Refraction.ts, through its wider
@@ -75,8 +76,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //   - the water body: Beer-Lambert absorption along that path, analytic single scattering of the sun
 //     (the same sun the floor takes: the share that enters the water and the beam's change of area,
 //     so the body dims as the sun sinks) and of the sky (Henyey-Greenstein) and a multiple-scattering
-//     backscatter boost; the veil, the sky light the fine particles under the surface send back
-//     (`VEIL`), which gives the deep water its quiet slate under cloud, takes the warm sky's colour
+//     backscatter boost, the sun's scattering limited in colour over a short path (`SHELF_SCATTER`),
+//     so a high sun does not lay blue over the shallows; the veil, the sky light the fine particles
+//     under the surface send back (`VEIL`), which gives the deep water its quiet slate under cloud, takes the warm sky's colour
 //     with the sun low and stays off the shallows; the sun through the thin crests, which keeps the water's own colour and
 //     the sun's; whitecaps where the surface is compressed (tidewater's fresh foam, not its
 //     persistent foam, which integrates in time), lit as a bright diffuse scatterer
@@ -114,9 +116,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 // The storm's foam rides the water's undisplaced grid (StormSea), so it moves as the surface does:
 // `flags.mv.sea = false` leaves out the waves' motion, the foam's with it (the sea has no foam
 // geometry of its own for `flags.mv.foam`). The reactive weight marks the sun's glints: the glint's
-// luminance against a white diffuse surface under the same light, smoothstep( 2, 8, ratio ) by
-// default (the resolve's settings, Motion.ts reactiveUniforms), so that a sparkle is not smeared
-// into the history.
+// luminance before its ceiling against a white diffuse surface under the same light, smoothstep( 2,
+// 8, ratio ) by default (the resolve's settings, Motion.ts reactiveUniforms), so that a sparkle is
+// not smeared into the history.
 //
 // Screen conventions (WebGPU): uv ( 0, 0 ) is the top-left corner, NDC y points up, depth runs 0..1.
 // Texture samples that need screen-space derivatives are taken first, while control flow is still
@@ -214,6 +216,13 @@ const SHORE_FOAM_SCALE = 1;
 // At the handover between them the key has no energy, so the step is not seen.
 export const keyChroma = uniform( 1 );
 
+// The glint's soft ceiling: the specular S eases toward S / ( 1 + GLINT_KNEE S y^2 ), y the sine of the
+// sun's height. Seen from above at a high sun the eye stands inside the lobe with the waves' slopes
+// unresolved, and the lobe drew swell-sized blobs of pure white; the ceiling stands the sparkle under
+// white. It rises with the square of the falling sun, so a low sun's road keeps its blaze. At y 0.77
+// it stands near half a sunlit white card.
+const GLINT_KNEE = 13.25;
+
 // The sky panorama's level the horizon's colour is read at (a band some 20 degrees high).
 const HORIZON_MIP = 5;
 
@@ -225,19 +234,20 @@ const REFLECTION_TILT = 0.35, BELOW_HORIZON = 0.6;
 // straight across, the band: at a low sun the pale half of the sky opposite the sun, under cloud the
 // bright strip low down. So the reflection is scaled in two ways, as factors, which keep the waves'
 // relief a proportion of it:
-// - its colour moves toward the whole sky's light by `hue` of the way, its luminance kept, which gives
-//   the sea the low sun's copper on the side away from the sun. It comes in with the view's elevation
-//   (`ramp`), so the far sea keeps the band and joins the sky, and it goes as the sun passes from 1 to
-//   3 degrees under the horizon (`dusk`, its height), where the sky's light holds the afterglow's red
-//   over a blue band and the sea would turn violet;
+// - its colour moves toward the whole sky's light by `hue` of the way, its luminance kept, which keeps
+//   the reflection from the band's own colour while the sun stands up. It comes in with the view's
+//   elevation (`ramp`), so the far sea keeps the band and joins the sky, and it goes as the sun falls
+//   from about 11 to 3 degrees (`lowSun`, its height): by then the sky's light is warm over a band
+//   that is not, and the factor reddened the mirror's own relief, which a far swell holds in patches;
 // - under cloud, the band's excess over the sky's light goes by ( light / band ) ^ `level`. The level is
 //   chosen, not the sky's light: it stands the clouded sea level between a view along the water and
 //   one from above, and takes the metallic relief off the swell, which is a share of that band. It
 //   rests where the band stands at or under the sky's light, so a steep view keeps its reflection. It
 //   fades away toward the sun (`sunward`, the cosine between the eye and the sun on the water's
-//   plane), where the band is brightest and the sea would go dark under a bright sky, and it goes
-//   with the hue at `dusk`: after sunset and by night the band is all the clouded sea's relief has.
-const REFLECTION_BAND = { ramp: 0.18, hue: 0.6, level: 2.2, dusk: [ - 0.05, - 0.015 ], sunward: [ - 0.7, 0.1 ] } as const;
+//   plane), where the band is brightest and the sea would go dark under a bright sky, and it goes as
+//   the sun passes from 1 to 3 degrees under the horizon (`dusk`, its height): after sunset and by
+//   night the band is all the clouded sea's relief has.
+const REFLECTION_BAND = { ramp: 0.18, hue: 0.6, level: 2.2, lowSun: [ 0.05, 0.2 ], dusk: [ - 0.05, - 0.015 ], sunward: [ - 0.7, 0.1 ] } as const;
 
 // The mean Fresnel over unresolved slopes: a facet's reflectance climbs so steeply at grazing that
 // the sheet reads as facets turned some two sigma toward the eye, the view's cosine to the mean
@@ -246,6 +256,36 @@ const REFLECTION_BAND = { ramp: 0.18, hue: 0.6, level: 2.2, dusk: [ - 0.05, - 0.
 // even the waves out. Sigma here is the sea's, before the waves' damping: the damped one falls away
 // where the fine waves do, and the lee stood out as a smooth pale tongue.
 const SLOPE_FRESNEL = 5.4;
+
+// The colour of the sun's light scattered in the water over the shelf. Through the display's balance
+// a sun near white in the scene reads blue green, and in the shallows its scattered light is what lays
+// that over the floor as the sun climbs. So, by a path of about `depth` metres (a Gaussian, so the
+// open sea past it keeps its scattering whole), that light holds its blue to at most `blue` of its
+// green and its red to at least `red` of its green, which keeps its brightness. The sun comes down
+// into these limits on its own by about 12 degrees, and from there down nothing here acts. The
+// ratio is the key's, worked once a frame (`updateShelfScatter`): a closed sky or the moon leaves the
+// colour alone.
+const SHELF_SCATTER = { depth: 8, blue: 0.53, red: 1.5 } as const;
+const shelfTint = uniform( new THREE.Vector3( 1, 1, 1 ) );
+
+/** Sets the shelf's scattered light's tint from the key's colour: `share` of the way to the limits
+ * (`SHELF_SCATTER`), 0 leaving it white. Once a frame, beside the weather's clouded share. */
+export function updateShelfScatter( key: THREE.Color, share: number ): void {
+
+	const { r, g, b } = key;
+	const tint = shelfTint.value;
+	if ( ! ( g > 0 ) ) {
+
+		tint.set( 1, 1, 1 );
+		return;
+
+	}
+
+	tint.x = 1 + share * ( r > 0 ? Math.max( SHELF_SCATTER.red * g / r, 1 ) - 1 : 0 );
+	tint.y = 1;
+	tint.z = 1 + share * ( b > 0 ? Math.min( SHELF_SCATTER.blue * g / b, 1 ) - 1 : 0 );
+
+}
 
 // The veil: the fine particles the waves keep stirred under the surface send back sky light. It
 // fills in with the view path (e-folding at `depth` metres), so the shallows stay as clear as their
@@ -909,10 +949,9 @@ export class Water {
 			const bandRamp = smoothstep( 0, REFLECTION_BAND.ramp, V.y ).toVar();
 			const sunDir = sky.atmosphere.sunDir;
 			const hue = skyLight.div( max( horizon, vec3( 1e-8 ) ) ).div( max( skyOverBand, 1e-5 ) );
-			const duskFade = smoothstep( ...REFLECTION_BAND.dusk, sunDir.y ).toVar();
-			const hueShare = bandRamp.mul( REFLECTION_BAND.hue ).mul( duskFade );
+			const hueShare = bandRamp.mul( REFLECTION_BAND.hue ).mul( smoothstep( ...REFLECTION_BAND.lowSun, sunDir.y ) );
 			const level = pow( min( skyOverBand, 1 ), REFLECTION_BAND.level );
-			const levelShare = bandRamp.mul( shared.clouded ).mul( duskFade ).mul( smoothstep( ...REFLECTION_BAND.sunward, dot( normalize( V.xz.add( 1e-5 ) ), normalize( sunDir.xz.add( 1e-5 ) ) ) ) );
+			const levelShare = bandRamp.mul( shared.clouded ).mul( smoothstep( ...REFLECTION_BAND.dusk, sunDir.y ) ).mul( smoothstep( ...REFLECTION_BAND.sunward, dot( normalize( V.xz.add( 1e-5 ) ), normalize( sunDir.xz.add( 1e-5 ) ) ) ) );
 			const refl = mix( horizon.mul( BELOW_HORIZON ), skyReflection, horizonOcc )
 				.mul( mix( vec3( 1 ), hue, hueShare ) ).mul( mix( float( 1 ), level, levelShare ) ).toVar();
 			// The cliffs and the islanders from the screen: only rays near the horizon can meet them,
@@ -965,7 +1004,9 @@ export class Water {
 			const spec = D_GGX( max( dot( N, H ), 0 ), alpha2 ).mul( V_SmithGGX( NdL, NdV, alpha2 ) )
 				.mul( fresnelDielectric( max( dot( V, H ), 0 ), float( IOR ) ) ).mul( NdL );
 			// (physically a glint is some 1e5 times the sky; held inside half float's range)
-			const sunSpec = mix( vec3( luminance( sunLight ) ), sunLight, keyChroma ).mul( min( spec, 400 ) ).toVar();
+			const glintLight = mix( vec3( luminance( sunLight ) ), sunLight, keyChroma ).toVar();
+			const glint = min( spec, 400 ).toVar();
+			const sunSpec = glintLight.mul( glint.div( glint.mul( L.y ).mul( L.y ).mul( GLINT_KNEE ).mul( keyChroma ).add( 1 ) ) ).toVar();
 
 			// ---- refraction: the refracted view ray (Snell; kept heading down where a coarse crest
 			// would turn it up) followed to the floor, two refinements on the floor's height, its end
@@ -1145,7 +1186,8 @@ export class Water {
 			const ph = phaseHG( dot( Tv, Ls ), float( 0.86 ) ).mul( 0.7 ).add( 0.3 / ( 4 * PI ) );
 			const bb = sigS.mul( u.backscatter );
 			const albedoMS = bb.mul( 0.33 * 4 ).div( sigA.add( bb ) ).toVar();
-			const inSun = sunIn.mul( sigS.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) ).mul( float( 1 ).sub( exp( kSun.negate().mul( pathLen ) ) ) ).div( kSun );
+			const shelfShare = exp( pathLen.mul( pathLen ).div( - SHELF_SCATTER.depth * SHELF_SCATTER.depth ) );
+			const inSun = sunIn.mul( mix( vec3( 1 ), shelfTint, shelfShare ) ).mul( sigS.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) ).mul( float( 1 ).sub( exp( kSun.negate().mul( pathLen ) ) ) ).div( kSun );
 			const inAmb = shared.skyIrradianceSource.mul( sigS.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ).mul( float( 1 ).sub( exp( kAmb.negate().mul( pathLen ) ) ) ).div( kAmb );
 			// the sun through the thin crests: light entering a crest's top and back scatters out of its
 			// face over a broad lobe, down some 1.5 m of the water it crossed
@@ -1167,7 +1209,7 @@ export class Water {
 			const col = mix( water, foamLit.mul( u.foamIntensity ).add( sunSpec.mul( 0.05 ) ), sat( foam ) ).toVar();
 			// (temporal modes) the glints' reactive weight: their luminance against a white diffuse
 			// surface under the same sun and sky (the note at the top)
-			const reactive = TEMPORAL ? smoothstep( reactiveUniforms.glintFrom, reactiveUniforms.glintTo, lum( sunSpec )
+			const reactive = TEMPORAL ? smoothstep( reactiveUniforms.glintFrom, reactiveUniforms.glintTo, lum( glintLight.mul( glint ) )
 				.div( max( lum( shared.skyIrradianceSource.add( sunLight.mul( max( L.y, 0 ) ).div( PI ) ) ), 1e-6 ) ) ).mul( reactiveUniforms.glintMax ) : null;
 
 			// Whitecaps in a storm (Tessendorf's choppy-wave criterion: the horizontal Jacobian of the

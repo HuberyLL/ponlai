@@ -27,7 +27,7 @@ import { SeaDetail } from './ocean/SeaDetail.ts';
 import { showUnderwater } from './ocean/Refraction.ts';
 import { Wenyao } from './life/Wenyao.ts';
 import { FallingLeaves } from './weather/FallingLeaves.ts';
-import { Water, keyChroma } from './ocean/Water.ts';
+import { Water, keyChroma, updateShelfScatter } from './ocean/Water.ts';
 import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
@@ -1830,6 +1830,7 @@ function tick( time: number ): void {
 	// the ambient grade by the sun and the weather's blend of the kept skies (lighting/AmbientGrade.ts)
 	ambientGrade.update( sky.elevation, weather.skyMix );
 	shared.clouded.value = cloudedShare( weather.skyMix );
+	updateShelfScatter( sky.keyColor, sky.keyIsMoon ? 0 : 1 - shared.clouded.value );
 	// the yunpeng's glow and its local lights by the night's share (lighting/LocalLights.ts: its
 	// pass sorts the sources in view)
 	yunpengNight.value = nightAmbientAt( sky.elevation );
