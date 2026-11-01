@@ -13,7 +13,7 @@ import { tuneObject } from '../debug/Tune.ts';
 //
 // Read once a frame into shared.ts `swardTint` (main.ts), exactly white under a clear or fair sky.
 // Tunable on debug pages (debug/Tune.ts): `lighting.sward.tint.r`, `g`, `b`.
-const TINT = tuneObject( { r: 0.6, g: 1.1, b: 0.9 }, { r: 'lighting.sward.tint.r', g: 'lighting.sward.tint.g', b: 'lighting.sward.tint.b' }, {
+const TINT = tuneObject( { r: 0.5, g: 1.1, b: 0.9 }, { r: 'lighting.sward.tint.r', g: 'lighting.sward.tint.g', b: 'lighting.sward.tint.b' }, {
 	r: { min: 0.2, max: 1.2 }, g: { min: 0.8, max: 1.4 }, b: { min: 0.8, max: 1.4 },
 } );
 

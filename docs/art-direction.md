@@ -232,7 +232,8 @@ art decision changes; images from elsewhere stay out of the repository.
   shaded leaves still take a share of it through the leaves above, so a crown's dark half reads
   green rather than as dark and as blue as the sky; at a sun on the horizon, under a closed sky and
   by night it takes none. A leaf lit from behind glows on its own albedo, so a crown seen
-  against the sun has no black side.
+  against the sun has no black side. Under a closed sky a crown keeps its green as the lawn does, a
+  dark, rich green, the sky's light having passed through and off its leaves.
   One grass colour, a bright, fresh, natural green, matte with only a faint gloss (no pale sheen
   over the blades, which reads as plastic): the gaps between blades a deep, cooler green (never
   near black) under tips that stand out lighter and yellow-green where the sun shines through
