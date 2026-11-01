@@ -34,7 +34,7 @@ import { keyed, type DayKeys } from '../../post/DayKeys.ts';
 // and a paused frame repeats. Tunable on debug pages (debug/Tune.ts):
 // `lighting.vegetation.leaf.through@golden`, `@low`, `@high`, `@cloudy`, `@night`, and `back` alike;
 // `lighting.vegetation.leaf.tint.r`, `g`, `b`.
-export const LEAF_LIGHT: DayKeys<{ through: number; back: number }> = tuneKeys( 'lighting.vegetation.leaf', {
+const LEAF_LIGHT: DayKeys<{ through: number; back: number }> = tuneKeys( 'lighting.vegetation.leaf', {
 	day: [
 		{ at: 3, name: 'golden', values: { through: 0, back: 0.8 } },
 		{ at: 12, name: 'low', values: { through: 0.18, back: 0.8 } },
