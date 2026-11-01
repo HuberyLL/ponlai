@@ -74,7 +74,7 @@ type V4 = THREE.Node<'vec4'>;
 //     by the hour and the weather (HazeKeys.ts: by day red : green : blue = 0.38 : 0.53 : 0.655, at
 //     the golden hour 0.45 : 0.53 : 1.19). The air loses its blue before its red (far land and sea
 //     turn blue-grey and the low sun's light reddens), while cloud and fog droplets scatter grey
-//     (the overcast's keys are to be fitted toward it). The scattered light and the opacity are
+//     (the overcast's keys are still to be set toward it). The scattered light and the opacity are
 //     integrated per channel, so the light volume holds three channels of L / alpha and green's
 //     alpha, and the composite recomputes each channel's opacity. Every opacity the eye sees goes
 //     through the band-to-display matrix (sky/BandMatrix.ts, the identity by default): the light
@@ -111,7 +111,7 @@ type V4 = THREE.Node<'vec4'>;
 //     times the weather's diffuse gain and the sun's times its direct share; the sun's Rayleigh
 //     colour is the aerosol's times the key's `sunRayleigh`. The shares' weights and a gain (1.87,
 //     times the key's) scale the sum; all are keyed (HazeKeys.ts): the day's and the golden hour's
-//     were fitted with the sky's light, the other hours' start at 1. The moon lights the haze the
+//     were set with the sky's light, the other hours' start at 1. The moon lights the haze the
 //     same way, its two shares added to the sun's:
 //     the moon's fog table (its shares under the moon's gains, Atmosphere.ts `moonRayleigh`,
 //     `moonMie`, as the sky's are), its direction (the night key's: Sky.ts `track`), phases, polariser and
@@ -155,9 +155,8 @@ type V4 = THREE.Node<'vec4'>;
 //     it alike: water hides nothing of the sky, and the slices under the surface show only through
 //     the composite's tricubic filter, whose footprint reaches a slice or more past the sea's
 //     depth, so their dark pulled the sea's pixels about 5 % under the air's own light. The
-//     land's rise is unchanged (the slices inside the hills stay dark). That floor is fixed, not fitted: the sky's measures cannot tell it (their cost
-//     barely moved across its range, and a fit that left it free drifted to its upper bound), so it
-//     waits for measures of the haze under cover. The probes' read is HazeCover `skyVisibility`,
+//     land's rise is unchanged (the slices inside the hills stay dark). That floor is fixed: the sky barely changes across its
+//     range, so it waits for measures of the haze under cover. The probes' read is HazeCover `skyVisibility`,
 //     which the pipeline fills with
 //     lighting/AmbientSample.ts `ambientSkyVisibility` (1 on the open sea; the volume is installed
 //     with the world, so the shadow kernels compile then, not in the warm-up: HazeCover `late`):
@@ -167,7 +166,7 @@ type V4 = THREE.Node<'vec4'>;
 //     shadow along the key light (`cloudShaft`: the clouds' map read at the point's ground point
 //     along the clouds' own light, the flat beam the map was built along, sharpened against its blur
 //     so the gaps show as shafts, lifted above the shell's base and floored; the gain 10, no floor and no cut
-//     toward the light until fitted), sampled at four points of each froxel whenever it is recomputed
+//     toward the light until set), sampled at four points of each froxel whenever it is recomputed
 //     (the frame's jittered point and three more the R3 sequence's steps from it, averaged, so the
 //     history converges to the cell's mean) and filtered over frames, the history weighing 0.95
 //     (the ambient visibility with it): what any caster or cloud cuts out of the lit air shows as shafts, whether or not the
@@ -262,7 +261,7 @@ export const DEFAULT_HAZE_GRID: Readonly<HazeGrid> = { width: 160, height: 90, d
  * temporal filter and the composite's filters are the talk's, the slices fitted to the island's
  * camera (see the header; the medium's shape is the hour's key's, HazeKeys.ts), the phases from how
  * the air brightens toward the sun, the shares' weight and the gain by eye on a few points of the sky
- * and the island, until they are fitted. */
+ * and the island. */
 export const HAZE_DEFAULTS = {
 	// the slices: the grid's near and far view depth (metres) and each slice's depth over the last's
 	near: 10, far: 30000, growth: 1.15,

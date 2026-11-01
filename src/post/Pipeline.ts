@@ -548,7 +548,7 @@ export function vignetteFactor( at: V2, strength: F ): F {
 
 }
 // The white balance, as the colour white becomes (linear Rec.709), by the sun's elevation, under a
-// clouded sky and at night (DayKeys.ts), fitted with the light. A clear day pushes the display past
+// clouded sky and at night (DayKeys.ts), set with the light. A clear day pushes the display past
 // neutral toward cool, the sun's warmth on the lit ground held back: furthest at a sun of 9 degrees
 // (red half of green, blue 1.36), which keeps the low sun's rock and meadow, and less by 40 degrees
 // (red 0.59, blue 1.25, the `high` key), where the stronger cast would turn sunlit rock blue. The

@@ -11,8 +11,8 @@ import { Matrix3, Vector3 } from 'three/webgpu';
 // the full extinction (Sky.ts `keyHue`). The sky, sun, moon, stars, key light and grade follow
 // the clock every frame. `reset` sets the clock as the constructor does (a scene jump).
 //
-// The reference exposure follows the sun's elevation (EXPOSURE_KEYS), calibrated once against
-// tidewater under an earlier display chain: it only rises from afternoon into night and holds
+// The reference exposure follows the sun's elevation (EXPOSURE_KEYS), set once under an
+// earlier display chain: it only rises from afternoon into night and holds
 // from about -6 degrees on. It does not set the frame's exposure, which the display chain meters
 // from the light (post/Exposure.ts): it is the reference the night sky's own light is tuned
 // against (`nightSkyLevel`).

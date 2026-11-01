@@ -211,7 +211,7 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 // this light too) fall steadily from the golden hour's to the night's, where without them it
 // sagged a little after the handoff (-2.6 degrees: the sun's skylight gone and the moon's key,
 // DayCycle MOON_KEY_TOP, only starting). They were set against the sky's light and the exposure
-// before both were fitted (SKY_LIGHT, post/Exposure.ts), so the brightness each row gives is to be
+// before both were set (SKY_LIGHT, post/Exposure.ts), so the brightness each row gives is to be
 // measured again; the rows' shape, a lift through the afterglow easing to none by the night, holds.
 // The rows at 1, 0.5, 0, -3.3 and -5.3 degrees take the colour the rows around them gave there.
 // By day a clouded sky lends the island its own light: a deck of cloud passes on little of the blue
@@ -357,7 +357,7 @@ function clearShade( elevation: number, direct: number ): number {
 // probe that light the island, the sea's reflection and the clouds' and the haze's sky light, and
 // the sky the eye sees stays the sky that lights. The two light the shade in different colours, the
 // atmosphere's blue and the cirrus' warm; the cirrus takes three quarters of the atmosphere's gain
-// (set when the noon shade's blue was tuned by eye, before the keys were fitted), and one gain on
+// (set when the noon shade's blue was tuned by eye, before the keys were set), and one gain on
 // both keeps that mix at every hour. How the sky's light falls with the sun is the atmosphere's
 // own (the aerosol's wide base and the multiple scattering that grows along long paths:
 // Atmosphere.ts), not rows by the sun's elevation. Below 2 degrees the gain moves from the golden
@@ -367,8 +367,8 @@ function clearShade( elevation: number, direct: number ): number {
 // brighter than the golden key, its blue more so). The sun's own light
 // (its transmittance, the disk) and the cumulus it lights are untouched. The night key is the moonlit
 // sky's gain on the moon's key light (MOON_KEY), which the sky, the clouds and the haze take; the
-// island's moonlight takes the key's level with a hue of its own (`moonHue`). The keys were fitted
-// to the sky's brightness and colour in bands of elevation and of angle from the sun, together with
+// island's moonlight takes the key's level with a hue of its own (`moonHue`). The keys set
+// the sky's brightness and colour in bands of elevation and of angle from the sun, together with
 // the atmosphere's phase and aerosol and the haze's keys, once the environment's bake took the
 // haze's light: the golden key takes the sky warm (red over blue about 2.5), the low key near grey,
 // the high key blue (blue over red about 1.5), the atmosphere's own colour doing the rest, and the
