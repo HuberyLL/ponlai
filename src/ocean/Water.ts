@@ -209,6 +209,10 @@ const SHORE_FOAM_SCALE = 1;
 // The sky panorama's level the horizon's colour is read at (a band some 20 degrees high).
 const HORIZON_MIP = 5;
 
+// How far the slopes no pixel resolves lift the mean reflection, in sigma of their slope, and what
+// a reflection below the horizon keeps of the horizon's colour.
+const REFLECTION_TILT = 0.35, BELOW_HORIZON = 0.6;
+
 // The mean Fresnel over unresolved slopes: a facet's reflectance climbs so steeply at grazing that
 // the sheet reads as facets turned some two sigma toward the eye, the view's cosine to the mean
 // surface at sqrt( cos^2 + k sigma^2 ) (k this). What that takes off the flat surface's Fresnel it
@@ -857,10 +861,11 @@ export class Water {
 			// How the reflected direction turns across a quarter of the pixel, diagonally (taken here,
 			// while control flow is uniform): the screen-space reflection traces a ray on either side.
 			const reflectionJitter = dFdx( Rraw ).add( dFdy( Rraw ) ).mul( 0.25 ).toVar();
-			// Unresolved facets tilt the mean reflection toward the higher, darker sky; reflections
-			// below the horizon meet other waves and fade toward the darkened horizon (and a sheet of
-			// water thinner than a quarter metre keeps the sky).
-			const R = normalize( vec3( Rraw.x, max( Rraw.y, 0.004 ).add( sigmaUnresolved.mul( 1.3 ).mul( float( 1 ).sub( max( Rraw.y, 0 ) ) ) ), Rraw.z ) );
+			// Unresolved facets tilt the mean reflection toward the higher, darker sky, a little, so
+			// the far sea pales and joins the sky's lower band; reflections below the horizon meet
+			// other waves and fade toward the darkened horizon (and a sheet of water thinner than a
+			// quarter metre keeps the sky).
+			const R = normalize( vec3( Rraw.x, max( Rraw.y, 0.004 ).add( sigmaMean.mul( REFLECTION_TILT ).mul( float( 1 ).sub( max( Rraw.y, 0 ) ) ) ), Rraw.z ) );
 			const thickness = wp.y.sub( floorHeight( wp.xz ) ).toVar();
 			const horizonOcc = max( smoothstep( - 0.12, 0.08, Rraw.y ), smoothstep( 0.25, 0.06, thickness ) ).toVar();
 			const skyReflection = vec3( 0 ).toVar();
@@ -870,7 +875,7 @@ export class Water {
 
 			} );
 			const horizon = sky.sampleBackground( normalize( vec3( Rraw.x, 0, Rraw.z ).add( vec3( 1e-5, 0, 0 ) ) ), float( HORIZON_MIP ) );
-			const refl = mix( horizon.mul( 0.35 ), skyReflection, horizonOcc ).toVar();
+			const refl = mix( horizon.mul( BELOW_HORIZON ), skyReflection, horizonOcc ).toVar();
 			// The cliffs and the islanders from the screen: only rays near the horizon can meet them,
 			// and where the reflectance is small the reflection cannot be seen (tidewater's gate).
 			If( u.ssr.greaterThan( 0.5 ).and( Rraw.y.lessThan( 0.45 ) ).and( Fr.greaterThan( quality.ssrMinFresnel ) ), () => {
