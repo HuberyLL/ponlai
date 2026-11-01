@@ -80,7 +80,7 @@ export function loadBambooLook( option: string | null ): void {
 
 }
 
-/** A culm's place and build: its foot, height (m), foot radius (m), age (0 green to 1 purple), the
+/** A culm's place and build: its foot, height (m), foot radius (m), age (0 new to 1 old), the
  * level way it leans ( outX, outZ ), its lean (rad) and bow (m), the groves' density at its foot
  * and the seed of its form. */
 export interface CulmSite {

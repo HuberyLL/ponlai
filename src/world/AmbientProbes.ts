@@ -123,10 +123,11 @@ const ROCK = [ ( 0.124 + 0.188 ) / 2, ( 0.13 + 0.19 ) / 2, ( 0.126 + 0.176 ) / 2
 const SAND = FLOOR_ALBEDO.sand.map( c => c * FLOOR_ALBEDO.gain ), RUBBLE = FLOOR_ALBEDO.rubble.map( c => c * FLOOR_ALBEDO.gain );
 // the water's body seen from under its surface: its backscatter (GroundBounce.ts WATER_BODY)
 const WATER_BODY = [ 0.01, 0.025, 0.03 ];
-// the culms: BambooMaterials.ts CULM, green to purple by the groves' age mix (BambooGroves.ts
-// plantCulms: a fifth green, a fifth and more between, the rest purple)
-const PURPLE_SHARE = 0.22 * 0.55 + 0.58;
-const CULM = [ 0, 1, 2 ].map( ( c ) => [ 0.124, 0.146, 0.056 ][ c ] * ( 1 - PURPLE_SHARE ) + [ 0.13, 0.082, 0.09 ][ c ] * PURPLE_SHARE );
+// the culms: BambooMaterials.ts CULM, green to the age's end by the groves' age mix (BambooGroves.ts
+// plantCulms: a fifth new, a fifth and more between, the rest old), the end dull green on most
+// culms and dusty purple on PURPLE_CULMS of them
+const AGED_SHARE = 0.22 * 0.55 + 0.58, PURPLE_CULMS = 0.2;
+const CULM = [ 0, 1, 2 ].map( ( c ) => [ 0.042, 0.07, 0.02 ][ c ] * ( 1 - AGED_SHARE ) + ( [ 0.046, 0.066, 0.026 ][ c ] * ( 1 - PURPLE_CULMS ) + [ 0.068, 0.054, 0.072 ][ c ] * PURPLE_CULMS ) * AGED_SHARE );
 // the leaves: BambooMaterials.ts LEAF_COLOURS (sRGB) by LEAF_SHARE, in linear; a bamboo leaf lets
 // through about a third of what it reflects in the visible, so its scattering albedo is its
 // reflectance times 1.3

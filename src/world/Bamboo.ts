@@ -20,7 +20,10 @@ import type { LeafAtlas } from './vegetation/TreeSurfaces.ts';
 // running bamboo whose culms come up green and turn purple-black in their second or third year,
 // a white bloom of wax under each node, the narrow leaves in fans at the twigs' ends. It grows over
 // the whole island in groves and single culms (BambooGroves.ts: where each culm stands, its
-// height, girth, age, lean and bow); this module builds the culms there.
+// height, girth, age, lean and bow); this module builds the culms there. The text gives the
+// bamboo its origin, not its look: here the stems are a mid to dark green, the leaves' family, and
+// a dim dusty purple stays on a minority of old culms at the same lightness, the old lore kept on a
+// few stems (BambooMaterials.ts).
 //
 // A culm's form, after groves of Phyllostachys:
 // - Straight internodes, short at the foot and longer up the culm (about three times its girth), a
