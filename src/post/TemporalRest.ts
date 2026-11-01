@@ -8,8 +8,8 @@
 // sequence of `sequence` jitters (Halton indices 1..N centred on their mean, Jitter.ts `restIndex`;
 // the vegetation's dither takes N mod 16) is averaged with exact weights into an image of its own (TemporalAA.ts: the
 // rest resolve, no clip, no cap, nothing reprojected), shown from the sequence's last frame on and
-// held while the rest lasts. The running history keeps updating underneath, so the frame after the
-// rest ends continues from it. What the image shows then depends only on the scene: a paused frame
+// held while the rest lasts, the jitter staying at the sequence's last index. The running history
+// keeps updating underneath, so the frame after the rest ends continues from it. What the image shows then depends only on the scene: a paused frame
 // repeats exactly, however it was reached.
 //
 // The rest is the canvas's image: what the page lays over the canvas is not in it. A rest shot while
