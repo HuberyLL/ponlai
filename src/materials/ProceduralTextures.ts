@@ -235,7 +235,10 @@ async function scanArray( suffix: string, colorSpace: string ): Promise<THREE.Da
 
 }
 
-export async function bakeProceduralTextures( renderer: THREE.WebGPURenderer, size = 1024 ): Promise<DetailTextures> {
+// texels on a side of the baked detail layers
+export const DETAIL_SIZE = 1024;
+
+export async function bakeProceduralTextures( renderer: THREE.WebGPURenderer, size = DETAIL_SIZE ): Promise<DetailTextures> {
 
 	const make = ( name: string ) => {
 

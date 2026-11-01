@@ -5,7 +5,7 @@ import {
 	normalize, abs, pow, sqrt, max, min, dot, sign, mix, smoothstep, clamp, fract, floor, sin, cos, exp, log2, select, dFdx, dFdy, length, varying,
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
-import { SCAN_LAYER, SCAN_TOP_MIP, type DetailTextures } from './ProceduralTextures.ts';
+import { DETAIL_SIZE, SCAN_LAYER, SCAN_TOP_MIP, type DetailTextures } from './ProceduralTextures.ts';
 import { GTAO, floorOcclusion, receiveScreenAO, screenAOAt } from '../post/GTAO.ts';
 import { LAWN_GAIN, LAWN_TONE, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_MAX_DROP } from './Meadow.ts';
 import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, SOIL_PALETTE, soilGroveSwell, soilUniforms } from './Soil.ts';
@@ -962,8 +962,15 @@ function seabedSurface( { tex, shore, shared }: Ctx, shoreXform: THREE.Node<'vec
 		const bed = attribute<'vec2'>( 'bed', 'vec2' );
 
 		// (the detail texture's tiled ripples left out at their mean, 0.5: the ripples are RIPPLE's)
-		const look = seabedAlbedo( bed, big, vec3( H.x, H.y, 0.5 ), sd );
-		const albedo = look.albedo.toVar(), grass = look.grass.toVar(), rubble = look.rubble.toVar();
+		const pdx = dFdx( p.xz ).toVar(), pdy = dFdy( p.xz ).toVar();
+		const [ w1, s1, w2, s2 ] = RIPPLE.warp;
+		const lowNoise = texture( tex.normalsB, p.xz.mul( w1 ).add( 0.41 ) ).a.sub( 0.5 ).toVar();
+		// the gravel's level is worked out here, where derivatives may be taken: the stones are sampled
+		// inside the apron's branch only (SeabedLook.ts), so the rest of the floor does not pay for them
+		const texelsPerPixel = log2( max( length( pdx ), length( pdy ) ).mul( DETAIL_SIZE ) ).toVar();
+		const gravelAt = ( rate: number, c: number, sn: number, at: number ) => texture( tex.gravel, mat2( c, sn, - sn, c ).mul( p.xz ).mul( rate ).add( at ) ).level( texelsPerPixel.add( Math.log2( rate ) ) );
+		const look = seabedAlbedo( bed, big, vec3( H.x, H.y, 0.5 ), sd, lowNoise, gravelAt );
+		const albedo = look.albedo.toVar(), grass = look.grass.toVar(), rubble = look.rubble.toVar(), relief = look.relief.toVar();
 
 		// --- wave ripples (RIPPLE): the contours' direction over a metre and a bit (across a crease
 		// the differences cancel), the crests' phase and its gradient in world xz from the screen's
@@ -971,11 +978,10 @@ function seabedSurface( { tex, shore, shared }: Ctx, shoreXform: THREE.Node<'vec
 		const e = 0.6;
 		const across = vec2( shoreAt( p.xz.add( vec2( e, 0 ) ) ).sub( shoreAt( p.xz.sub( vec2( e, 0 ) ) ) ),
 			shoreAt( p.xz.add( vec2( 0, e ) ) ).sub( shoreAt( p.xz.sub( vec2( 0, e ) ) ) ) ).div( 2 * e );
-		const [ w1, s1, w2, s2 ] = RIPPLE.warp;
-		const wander = texture( tex.normalsB, p.xz.mul( w1 ).add( 0.41 ) ).a.sub( 0.5 ).mul( s1 )
+		const wander = lowNoise.mul( s1 )
 			.add( texture( tex.normalsB, p.zx.mul( w2 ).add( 0.17 ) ).a.sub( 0.5 ).mul( s2 ) );
 		const phase = sd.div( RIPPLE.spacing ).add( wander ).toVar();
-		const pdx = dFdx( p.xz ).toVar(), pdy = dFdy( p.xz ).toVar(), fdx = dFdx( phase ).toVar(), fdy = dFdy( phase ).toVar();
+		const fdx = dFdx( phase ).toVar(), fdy = dFdy( phase ).toVar();
 		const det = pdx.x.mul( pdy.y ).sub( pdx.y.mul( pdy.x ) );
 		const safeDet = select( abs( det ).lessThan( 1e-12 ), float( 1e-12 ), det );
 		const grad = vec2( fdx.mul( pdy.y ).sub( fdy.mul( pdx.y ) ), fdy.mul( pdx.x ).sub( fdx.mul( pdy.x ) ) ).div( safeDet );
@@ -996,13 +1002,17 @@ function seabedSurface( { tex, shore, shared }: Ctx, shoreXform: THREE.Node<'vec
 		const grain = vec2( B.r.mul( 2 ).sub( 1 ), B.g.mul( 2 ).sub( 1 ) ).mul( 0.06 );
 		const nSand = normalize( vec3( grain.x.sub( rippleSlope.x ), 1, grain.y.sub( rippleSlope.y ) ) );
 		// cobbles and the meadows' clumps: the detail texture's rounded lumps (its moss cushions). The
-		// rock's own normal drew its long thin fractures across the sand wherever the rubble thinned
+		// rock's own normal drew its long thin fractures across the sand wherever the apron thinned
 		// out, as meandering grooves no cobble field has.
 		const nRock = normalize( vec3( A.b.mul( 2 ).sub( 1 ), 0, A.a.mul( 2 ).sub( 1 ) ).mul( 1.3 ).add( vec3( 0, 1, 0 ) ) );
 		// keep the macro slope of the mesh
 		const t = normalize( n0.cross( vec3( 0, 0, 1 ) ) );
 		const b = t.cross( n0 );
-		const dn = mix( nSand, nRock, max( rubble, grass.mul( 0.6 ) ) );
+		// the stones' rounded sides, from the screen derivatives of their height after the branch, in
+		// world xz as the ripples' are: no sample of its own, and it lights one side of each stone
+		const rdx = dFdx( relief ).toVar(), rdy = dFdy( relief ).toVar();
+		const stoneSlope = vec2( rdx.mul( pdy.y ).sub( rdy.mul( pdx.y ) ), rdy.mul( pdx.x ).sub( rdx.mul( pdy.x ) ) ).div( safeDet ).mul( 0.04 );
+		const dn = mix( nSand, nRock, max( rubble, grass.mul( 0.6 ) ) ).sub( vec3( stoneSlope.x, 0, stoneSlope.y ) );
 		const nW = normalize( t.mul( dn.x ).add( n0.mul( dn.y ) ).add( b.mul( dn.z ) ) );
 
 		const detailAO = mix( float( 1 ), float( 0.85 ), rubble ).mul( mix( float( 0.8 ), float( 1 ), H.b ) );
