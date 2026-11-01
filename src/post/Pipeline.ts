@@ -463,14 +463,15 @@ const LOCAL_TONE_ON = debugFlags.localTone !== false;
 // the shade lost its weight; this gives it back without touching the lit ground and the sky. The
 // pivot (stops over mid grey) and slope are set per key (keyed by the sun's elevation,
 // DayKeys.ts). By day the pivot sits over the lit ground, so the whole shade deepens, from noon down
-// to a sun at 9 degrees; the golden hour's slope runs to 0, its long shadows taking their weight
-// from the light alone (its pivot then does nothing and keeps its start). The clouded sky deepens
+// to a sun at 9 degrees; the golden hour keeps most of the slope with its pivot nearly a stop under
+// mid grey, so only what lies in the long shadows drops, and the sunlit cliff stays as it is. The
+// clouded sky deepens
 // its darks too, from about 0.9 of a stop over mid grey; the night's slope runs to 0 as well, its
 // darks set by the local tone alone (its pivot acts only while the night fades in under a clouded
 // sky, beside the cloudy key's: DayKeys.ts `keyed` blends the cloud in first).
 // Tunable on debug pages (debug/Tune.ts): `post.shade.<value>@golden`, `@day`, `@cloudy`, `@night`.
 export const SHADE_CONTRAST: DayKeys<{ pivot: number; slope: number }> = tuneKeys( 'post.shade', {
-	day: [ { at: 4, name: 'golden', values: { pivot: 0.0684, slope: 0 } }, { at: 9, name: 'day', values: { pivot: 1.58, slope: 0.449 } } ],
+	day: [ { at: 4, name: 'golden', values: { pivot: - 0.86, slope: 0.37 } }, { at: 9, name: 'day', values: { pivot: 1.58, slope: 0.449 } } ],
 	cloudy: { pivot: 0.902, slope: 0.18 },
 	night: { pivot: 0.516, slope: 0 },
 }, { pivot: { min: - 3, max: 4 }, slope: { min: 0, max: 0.5 } } );
@@ -478,11 +479,11 @@ export const SHADE_CONTRAST: DayKeys<{ pivot: number; slope: number }> = tuneKey
 // The desaturation before the local tone's gain: each colour drawn toward its own luminance by
 // `amount` (0 keeps it, 1 grey), c + ( Y( c ) - c ) amount, keyed by the sun and the weather
 // (DayKeys.ts); below 0 it saturates. Keyed as the white balance is, so each key sets its own: the
-// golden hour saturates by a third, the day and the clouded sky keep their colours, the night
+// golden hour saturates by a sixth, the day and the clouded sky keep their colours, the night
 // fades them by about a half.
 // Tunable on debug pages (debug/Tune.ts): `post.desaturate.amount@golden`, `@day`, `@cloudy`, `@night`.
 export const DESATURATION: DayKeys<{ amount: number }> = tuneKeys( 'post.desaturate', {
-	day: [ { at: 4, name: 'golden', values: { amount: - 0.331 } }, { at: 9, name: 'day', values: { amount: 0.0122 } } ],
+	day: [ { at: 4, name: 'golden', values: { amount: - 0.163 } }, { at: 9, name: 'day', values: { amount: 0.0122 } } ],
 	cloudy: { amount: 0.026 },
 	night: { amount: 0.481 },
 }, { amount: { min: - 0.5, max: 1 } } );

@@ -112,8 +112,9 @@ art decision changes; images from elsewhere stay out of the repository.
   toward a low sun against one away from it. The frame darkens with the light: a clear noon shows a
   sunlit grey card on level ground at a screen code of about 0.70 to 0.75 (its open shade near
   0.15), and as the sun goes down the card goes down with it, the more the lower the sun, so a low
-  sun reads as a low sun (in the golden hour, with the sun at 3 degrees, a grey card on the island
-  shows about ( 0.5, 0.3, 0.05 ) on screen, the local tone's lift included); the deep night shows a
+  sun reads as a low sun (in the golden hour, with the sun at 3 degrees, a sunlit cliff is orange
+  with deep brown shade, a stop or more under its light, and the sky over it a shade redder and
+  dimmer, not a yellow-gold face under a pale sky); the deep night shows a
   moonlit grey card at a green code of about 0.1 to 0.2, and holds its exposure whatever the moon. A
   clouded sky is metered by the view's own light: in the view of the whole island the ground shows
   about two stops under a clear day's sunlit ground at the same hour, on a cloudy and an overcast

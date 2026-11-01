@@ -98,7 +98,9 @@ export interface ExposureKey extends Record<string, number> {
  * the sun's direct light alone (by night the shaded one), seen toward and away from the sun, with
  * the sky's light as Sky.ts SKY_LIGHT sets it, together with the sky's light, the haze and the
  * grading. The highlight key is what darkens a view toward a low sun against one away from it, the
- * bright band about the sun capping the exposure. The high key's β runs to about 0.9, where the sky
+ * bright band about the sun capping the exposure. The golden key sits under the low one, about half
+ * a stop under the meter and the highlights' guard close over it, so a sun at 3 degrees leaves a
+ * sunlit cliff orange and its shade deep. The high key's β runs to about 0.9, where the sky
  * nearly alone sets the exposure. The clouded key was fitted on the whites under the cloudy sky:
  * its β went to 0, the meter alone, and its κ_H lies 2.3 stops over its κ, so the guard holds a
  * clouded view down only where its brightest few percent lie more than 2.3 stops over its metered
@@ -107,7 +109,7 @@ export interface ExposureKey extends Record<string, number> {
  * Tunable on debug pages (debug/Tune.ts): `post.exposure.<value>@<key>`. */
 export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
 	day: [
-		{ at: 3, name: 'golden', values: { key: 0.102, highlight: 1.15, sky: 0.107, adaptUp: 0.05, adaptDown: 0.05 } },
+		{ at: 3, name: 'golden', values: { key: - 0.38, highlight: 0.27, sky: 0.05, adaptUp: 0.05, adaptDown: 0.05 } },
 		{ at: 12, name: 'low', values: { key: 0.332, highlight: 0.52, sky: 0.441, adaptUp: 0.05, adaptDown: 0.05 } },
 		{ at: 40, name: 'high', values: { key: - 1.05, highlight: 1.44, sky: 0.915, adaptUp: 0.05, adaptDown: 0.05 } },
 	],

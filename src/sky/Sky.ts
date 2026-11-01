@@ -359,7 +359,7 @@ function clearShade( elevation: number, direct: number ): number {
 // island's moonlight takes the key's level with a hue of its own (`moonHue`). The keys were fitted
 // to the sky's brightness and colour in bands of elevation and of angle from the sun, together with
 // the atmosphere's phase and aerosol and the haze's keys, once the environment's bake took the
-// haze's light: the golden key takes the sky warm (red over blue about 1.3), the low key near grey,
+// haze's light: the golden key takes the sky warm (red over blue about 2.5), the low key near grey,
 // the high key blue (blue over red about 1.5), the atmosphere's own colour doing the rest, and the
 // night key is about 0.01, its red about a third of its green: the clear night's dome is nearly
 // dark, its low sky the haze's moonlit light (HazeKeys.ts NIGHT) and its blue the moonlit
@@ -367,7 +367,7 @@ function clearShade( elevation: number, direct: number ): number {
 // Tunable on debug pages (debug/Tune.ts): `sky.light.<r|g|b>@<golden|low|high|night>`.
 const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'sky.light', {
 	day: [
-		{ at: 3, name: 'golden', values: { r: 0.216, g: 0.178, b: 0.162 } },
+		{ at: 3, name: 'golden', values: { r: 0.3, g: 0.18, b: 0.12 } },
 		{ at: 12, name: 'low', values: { r: 0.221, g: 0.192, b: 0.194 } },
 		{ at: 40, name: 'high', values: { r: 0.235, g: 0.232, b: 0.346 } },
 	],
@@ -455,20 +455,21 @@ const lendIsland = Fn( ( [ light, tint, gain ]: [ V3, V4, F ] ) => {
 // Art direction: within a few degrees of the horizon the sun shines through twenty to forty air
 // masses and its light turns an almost pure red (red/blue above 100 at one degree), which paints
 // the island like lava. The optical depth that sets the key's hue is capped softly past about
-// four degrees (SUN_HUE_DEPTH), while its luminance keeps the full extinction: a low sun stays
-// orange red (red/green about 2.6 at four degrees, 2.8 at the golden hour and below 2.8 at the
-// horizon, red/blue at most about 18) and still dims as it sets. Above that the key's hue is
+// four degrees (`sky.key.hueDepth`), while its luminance keeps the full extinction: a low sun stays
+// orange red (red/green about 2.1 from six degrees to the golden hour and 1.8 at the horizon,
+// red/blue at most about 7) and still dims as it sets. Above that the key's hue is
 // chosen rather than the air's own course, which reddens evenly with the air mass: a warm
 // white while the sun is high (KEY_WHITE: red/green 1.15, blue/green 0.95 at noon, 1.17 and 0.9
 // at 30 degrees) that loses its blue first (0.8 at 20 degrees, red/green 1.2) and turns orange
 // between 15 and 10 degrees (1.45 and 0.55 at 11.5). So each of the two ratios takes the air's
-// change of it in part, by the air's depth in green (KEY_REDDENS for red/green, KEY_YELLOWS for
+// change of it in part, by the air's depth in green (`sky.key.reddens` for red/green, `.yellows` for
 // blue/green: about none at noon, two thirds at that depth, all of it past twice it). The sky and
 // clouds keep their own colours, and the key's luminance is the sun tint's.
-const SUN_HUE_DEPTH = 1.8;
+const sunHueDepth = tune( 'sky.key.hueDepth', 2.03, { min: 1, max: 4, onChange: markSkyRetune } );
 // the key's white: linear red/green and blue/green while the sun is high
 const KEY_WHITE = [ 1.15, 0.96 ] as const;
-const KEY_REDDENS = 0.75, KEY_YELLOWS = 0.52;
+const keyReddens = tune( 'sky.key.reddens', 0.75, { min: 0.3, max: 1.5, onChange: markSkyRetune } );
+const keyYellows = tune( 'sky.key.yellows', 0.52, { min: 0.2, max: 1.2, onChange: markSkyRetune } );
 // The low sun's lift of the clouds' beam and fill (trackClouds), fading as the sky closes.
 const lowSunOf = ( elevation: number, coverage: number ) => THREE.MathUtils.smoothstep( elevation, - 4, 1 )
 	* ( 1 - THREE.MathUtils.smoothstep( elevation, 6, 20 ) ) * ( 1 - THREE.MathUtils.smoothstep( coverage, 0.35, 0.65 ) );
@@ -481,10 +482,10 @@ function keyHue( transmittance: THREE.Color, tint: THREE.Color ): THREE.Color {
 	const { r, g, b } = transmittance;
 	if ( g <= 0 ) return transmittance.setRGB( 0, 0, 0 );
 	const depth = - Math.log( g );
-	const scale = 1 / Math.pow( 1 + Math.pow( depth / SUN_HUE_DEPTH, 6 ), 1 / 6 );
+	const scale = 1 / Math.pow( 1 + Math.pow( depth / sunHueDepth(), 6 ), 1 / 6 );
 	const share = ( onset: number ) => scale * ( 1 - Math.exp( - Math.pow( depth / onset, 2.5 ) ) );
 	const before = luma( transmittance.clone().multiply( tint ) );
-	transmittance.setRGB( KEY_WHITE[ 0 ] * Math.pow( r / g, share( KEY_REDDENS ) ), 1, KEY_WHITE[ 1 ] * Math.pow( b / g, share( KEY_YELLOWS ) ) );
+	transmittance.setRGB( KEY_WHITE[ 0 ] * Math.pow( r / g, share( keyReddens() ) ), 1, KEY_WHITE[ 1 ] * Math.pow( b / g, share( keyYellows() ) ) );
 	return transmittance.multiplyScalar( before / luma( transmittance ) );
 
 }
