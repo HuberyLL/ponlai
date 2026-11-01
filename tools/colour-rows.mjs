@@ -9,6 +9,7 @@
 // shoot takes the frames: one tools/parity/capture-set.mjs run per page below, on one warm page
 // each, under the shared GPU lock, into `<dir>/<page>/`. The views file is capture-set's (a view's
 // `eval` sets its variant up). Each view ends with this tool's read of the page (PAGE_READ).
+// Paths are taken from the cwd the tool is called in, wherever that is; the runs start in the repo.
 // rows is plain node over that output: no browser and no GPU. It prints what the frames hold and
 // nothing else: it knows no ranges and judges nothing. Exit 0, or 1 when a page or a view is missing.
 //
@@ -114,7 +115,7 @@ function shoot( list ) {
 
 	const { positional, options } = parse( list, [ 'views-file', 'pages', 'size', 'q' ] );
 	if ( positional.length !== 2 || ! options[ 'views-file' ] ) usage( 'shoot needs <url> <dir> --views-file f.json' );
-	const [ url, dir ] = positional;
+	const url = positional[ 0 ], dir = path.resolve( positional[ 1 ] ), viewsFile = path.resolve( options[ 'views-file' ] );
 	const pages = ( options.pages ?? Object.keys( PAGES ).join( ',' ) ).split( ',' );
 	for ( const page of pages ) if ( PAGES[ page ] === undefined ) usage( `no page ${ page } (of ${ Object.keys( PAGES ).join( ', ' ) })` );
 	for ( const page of pages ) {
@@ -123,7 +124,7 @@ function shoot( list ) {
 		console.log( `colour-rows: page ${ page }` );
 		const run = spawnSync( process.execPath, [ 'tools/gpu-lock.mjs', 'run', '--shared', '--',
 			process.execPath, 'tools/parity/capture-set.mjs', url, path.join( dir, page ), '--size', options.size ?? '2560x1440@1', '--jobs', '1',
-			'--views-file', options[ 'views-file' ], ...( q ? [ '--q', q ] : [] ), '--', '--eval-ready', PAGE_READ ], { cwd: REPO, stdio: 'inherit' } );
+			'--views-file', viewsFile, ...( q ? [ '--q', q ] : [] ), '--', '--eval-ready', PAGE_READ ], { cwd: REPO, stdio: 'inherit' } );
 		if ( run.status !== 0 ) {
 
 			console.error( `colour-rows: page ${ page } failed` );
