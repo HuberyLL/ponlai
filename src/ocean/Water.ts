@@ -46,7 +46,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     around the island the gusts are the meadow's, read in the vertex stage
 //   - the sun reaching the surface (`sunLight`): the key light through the sun shadow's maps (as
 //     tidewater's water reads its own: three's five-tap PCF at the surface point, the normal bias
-//     straight up) and the clouds; the glint, the water body and the foam all take this one light
+//     straight up) and the clouds; the water body and the foam take this one light, and so does
+//     the glint, by day: the moon's glint is grey (`keyChroma`), so its path on the sea stays pale
+//     rather than a sheet of the moon's saturated blue, which the water body keeps
 //   - exact dielectric Fresnel, its mean over the slopes no pixel resolves on the distant sea (a
 //     mirror's grazing reflectance is too much for a sheet of small facets turned every way), which
 //     scales the pixel's own Fresnel, so the waves the pixel does resolve keep their relief; the
@@ -205,6 +207,10 @@ const FOAM_SCALE = 0.09;
 // The foam the waves leave at the rock (ShoreWaves), finer: bubbles of a few centimetres, cells of a decimetre
 // or two.
 const SHORE_FOAM_SCALE = 1;
+
+// The share of the key's chroma in the glint: 1 by day, 0 under the moon (main.ts publishLighting).
+// At the handover between them the key has no energy, so the step is not seen.
+export const keyChroma = uniform( 1 );
 
 // The sky panorama's level the horizon's colour is read at (a band some 20 degrees high).
 const HORIZON_MIP = 5;
@@ -926,7 +932,7 @@ export class Water {
 			const spec = D_GGX( max( dot( N, H ), 0 ), alpha2 ).mul( V_SmithGGX( NdL, NdV, alpha2 ) )
 				.mul( fresnelDielectric( max( dot( V, H ), 0 ), float( IOR ) ) ).mul( NdL );
 			// (physically a glint is some 1e5 times the sky; held inside half float's range)
-			const sunSpec = sunLight.mul( min( spec, 400 ) ).toVar();
+			const sunSpec = mix( vec3( luminance( sunLight ) ), sunLight, keyChroma ).mul( min( spec, 400 ) ).toVar();
 
 			// ---- refraction: the refracted view ray (Snell; kept heading down where a coarse crest
 			// would turn it up) followed to the floor, two refinements on the floor's height, its end
