@@ -36,8 +36,8 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../wor
 //               degree 2 (p. 24), times the sky's scale (`skyScale`): the sky's fill (main.ts
 //               `skyFill`, the environment's intensity) times the probes' own sky gain (PROBE_SKY,
 //               keyed by the sun's own elevation, not the key's, so the moon's key at night does
-//               not move it: golden, low and high, a clouded day's over them, the night's by -6
-//               degrees), which the seen sky never takes, so the ground's sky light can be set
+//               not move it: golden, low and high, a clouded day's keys over them, the night's by
+//               -6 degrees), which the seen sky never takes, so the ground's sky light can be set
 //               against the sun's and the sky's at every hour and under cloud; the grade adds no
 //               gain of its own here (AmbientGrade.ts);
 //     bounced   the probe's bounced sky visibility (the world lit by a uniform white sky, one
@@ -205,18 +205,29 @@ const BOUNCE_GAIN = 9.4;
  * fifth under the seen sky's. About 5 at night: the clear night's sky is mostly the haze's moonlit
  * light over a nearly dark dome, of which the environment takes only a part, and the moonlit ground
  * keeps about eighteen times the sky's light on open ground (Sky.ts `moonKeyGain`). 3.5 under
- * cloud, at any height of the sun: the land under a deck stands against a bright dome, and at the
- * day's 0.8 a cliff's face reads a tenth of the sky's exposed luminance, a dim island under a pale
- * sky. The gain lifts the land and its shade (lit to shaded falls to about 2 to 4 in the frame) and
- * leaves the sky as drawn; the meter takes a part of it, about 0.2 stops per doubling in the view of
- * the whole island, so the exposure's clouded key sits higher with it (post/Exposure.ts). */
+ * cloud with the sun at 30 degrees or higher: the land under a deck stands against a bright dome, and
+ * at the day's 0.8 a cliff's face reads a tenth of the sky's exposed luminance, a dim island under a
+ * pale sky. The gain lifts the land and its shade (lit to shaded falls to about 2 to 4 in the frame)
+ * and leaves the sky as drawn; the meter takes a part of it, about 0.2 stops per doubling in the view
+ * of the whole island, so the exposure's clouded key sits higher with it (post/Exposure.ts). It lets
+ * go with the sun: with no direct light on the land the meter's mean runs over the sea, which takes
+ * no gain, and the land, which does, so the land stands about the gain's square root over the meter,
+ * and a flat 3.5 left it brighter at 3 degrees than at 30. So under cloud it falls to 1.8 by 20
+ * degrees, 1.6 at 3 and 1 at -1, and returns to 3.5 by -2.7, where the night's exposure has come in
+ * whole (the blue hour's light is the night's sky's, which the day's keys do not touch). */
 const PROBE_SKY: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight', {
 	day: [
 		{ at: 3, name: 'golden', values: { skyGain: 0.774 } },
 		{ at: 12, name: 'low', values: { skyGain: 0.834 } },
 		{ at: 40, name: 'high', values: { skyGain: 0.78 } },
 	],
-	cloudy: { skyGain: 3.5 },
+	cloudy: [
+		{ at: - 2.7, name: 'cloudyBlue', values: { skyGain: 3.5 } },
+		{ at: - 1, name: 'cloudySunset', values: { skyGain: 1 } },
+		{ at: 3, name: 'cloudyGolden', values: { skyGain: 1.6 } },
+		{ at: 20, name: 'cloudyLow', values: { skyGain: 1.8 } },
+		{ at: 30, name: 'cloudy', values: { skyGain: 3.5 } },
+	],
 	night: { skyGain: 5 },
 }, { skyGain: { min: 0.25, max: 8, scale: 'log' } } );
 const _probeSky = { skyGain: 1 };

@@ -149,10 +149,10 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // dark grey sky with the sun still shining: the frame reads as a clear one about a stop darker,
 // the sun on the ground 0.5 to 0.85 of a clear day's at the same height with shadows as sharp as a
 // clear day's (`directVisibility` 0.7, `castShadow` 1) and lit to shaded about 2 in the frame, the
-// land's sky light being lifted under cloud (lighting/AmbientRelight.ts PROBE_SKY). Its cloud
-// shadow is cast at a share of the deck's optical depth (`shadowDensity`), with no floor
-// (`cloudFloor` 0): most of the time the sun shines
-// on the island, and the land darkens as the deck's thick parts drift over it, while the shadow
+// land's sky light being lifted under cloud while the sun stands at 30 degrees or more, and let go
+// toward sunset (lighting/AmbientRelight.ts PROBE_SKY). Its cloud shadow is cast at a share of the
+// deck's optical depth (`shadowDensity`), with no floor (`cloudFloor` 0): most of the time the sun
+// shines on the island, and the land darkens as the deck's thick parts drift over it, while the shadow
 // maps keep the island's own shadows. That share sets the land's illuminance against the sky's
 // luminance.
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
