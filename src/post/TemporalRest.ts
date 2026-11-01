@@ -8,8 +8,8 @@
 // sequence of `sequence` jitters (Halton indices 1..N centred on their mean, Jitter.ts `restIndex`;
 // the vegetation's dither takes N mod 16) is averaged with exact weights into an image of its own (TemporalAA.ts: the
 // rest resolve, no clip, no cap, nothing reprojected), shown from the sequence's last frame on and
-// held while the rest lasts. The running history keeps updating underneath, so the frame after the
-// rest ends continues from it. What the image shows then depends only on the scene: a paused frame
+// held while the rest lasts, the jitter staying at the sequence's last index. The running history
+// keeps updating underneath, so the frame after the rest ends continues from it. What the image shows then depends only on the scene: a paused frame
 // repeats exactly, however it was reached.
 //
 // The rest is the canvas's image: what the page lays over the canvas is not in it. A rest shot while
@@ -24,7 +24,8 @@
 // and projection, the scene clock, the render's and the output's sizes, the epoch, the resolve's live
 // settings and the page's own signature of the rest (main.ts: a forced lightning strike, which a
 // review sets while paused). The frame is not at rest while the page says it is unstable (a sky bake
-// in flight, a sky transition still running). Anything else that changes the image without changing
+// in flight, a sky transition still running, the haze's own rest not done: VolumetricHaze.ts).
+// Anything else that changes the image without changing
 // the key (a GUI control, a weather jump, a seek to the same time) bumps the epoch
 // (`restEpoch.bump( reason )`): the scene events (SceneEvents.ts `sceneEvent`) call it from every
 // site that changes the scene, `__PONLAI__.taa.restart()` among them.

@@ -366,7 +366,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `@cloudyBlue`, `@night`), and the key a tree's shaded leaves take through the leaves over them
   `lighting.vegetation.leaf.through@high` (`@low`, `@golden`, `@cloudy`, `@night`) and what a leaf
   sends on of the key on its far face, `lighting.vegetation.leaf.back@high` alike, the sward's tint under a closed sky
-  `lighting.sward.tint.r` (`g`, `b`).
+  `lighting.sward.tint.r` (`g`, `b`) and the crowns', `lighting.vegetation.leaf.tint.r` (`g`, `b`).
 - The ambient grade (`src/lighting/AmbientGrade.ts`): `__PONLAI__.ambient.current` holds the five
   knobs the table gives for the sun and the weather now (also `D.ambient`), `table` the table's own
   output; `override = true` with `manual.<knob>` replaces it from the next frame (the GUI's Ambient

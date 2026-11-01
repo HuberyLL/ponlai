@@ -72,7 +72,7 @@ type V4 = THREE.Node<'vec4'>;
 // - The extra term, smooth over a level's texel, comes out of every level whole: the result holds
 //   it times the weights' sum (`strength`), so its caller divides it by that and the reader's
 //   factor, and it leaves at its own radiance.
-// The clear high sun's key (from 9 degrees up) is fitted with the day's exposure and grade, its
+// The clear high sun's key (from 9 degrees up) is set with the day's exposure and grade, its
 // levels' weights on the halo about the sun out to some 50 degrees. The bloom stands for the
 // lens's scatter, and the lens does not change with the sky: on the exposed image the same light
 // glows the same, so a clouded sky takes the high sun's key whole (under cloud the land and the sky

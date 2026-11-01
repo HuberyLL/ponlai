@@ -94,14 +94,14 @@ export interface ExposureKey extends Record<string, number> {
 }
 
 /** The exposure's keys (DayKeys.ts): the golden hour (a sun at 3 degrees), a low sun (12), a high
- * one (40), a clouded day's, held above 6 degrees, and the night. They are fitted on the exposed white
+ * one (40), a clouded day's, held above 6 degrees, and the night. They are set against the exposed white
  * of a diffuser under the sun's direct light alone (by night the shaded one), seen toward and away
  * from the sun, with the sky's light as Sky.ts SKY_LIGHT sets it, together with the sky's light,
  * the haze and the grading. The highlight key is what darkens a view toward a low sun against one
  * away from it, the bright band about the sun capping the exposure. The golden key sits under the
  * low one, about half a stop under the meter and the highlights' guard close over it, so a sun at 3
  * degrees leaves a sunlit cliff orange and its shade deep. The high key's β runs to about 0.9,
- * where the sky nearly alone sets the exposure. The clouded key was fitted on the whites under the
+ * where the sky nearly alone sets the exposure. The clouded key was set against the whites under the
  * cloudy sky: its β went to 0, the meter alone, and its κ_H lies 2.5 stops over its κ, so the guard
  * holds a clouded view down only where its brightest few percent lie more than 2.5 stops over its
  * metered light (under a sky with no sun, rarely). A meter alone holds the land level down to
@@ -117,7 +117,7 @@ export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
 	day: [
 		{ at: 3, name: 'golden', values: { key: - 0.38, highlight: 0.27, sky: 0.05, adaptUp: 0.05, adaptDown: 0.05 } },
 		{ at: 12, name: 'low', values: { key: 0.332, highlight: 0.52, sky: 0.441, adaptUp: 0.05, adaptDown: 0.05 } },
-		{ at: 40, name: 'high', values: { key: - 1.05, highlight: 1.44, sky: 0.915, adaptUp: 0.05, adaptDown: 0.05 } },
+		{ at: 40, name: 'high', values: { key: - 1.05, highlight: 1.44, sky: 0.92, adaptUp: 0.05, adaptDown: 0.05 } },
 	],
 	cloudy: [
 		{ at: 0, name: 'cloudySunset', values: { key: - 0.12, highlight: 3.05, sky: 0, adaptUp: 0.05, adaptDown: 0.05 } },

@@ -102,7 +102,7 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   illuminance every lit material writes beside its colour for the exposure (`MeterLight.ts`: a new
   lit material calls `writeMeter` and draws only in passes with an MRT).
 - `src/materials/`: procedural textures (the gravel bake and the scans' texture arrays:
-  `ProceduralTextures.ts`), the terrain (`TerrainMaterial.ts`, its ground scans hex-tiled), wet surfaces, the meadow's habitat and soil-depth fields (`Meadow.ts`), what a closed sky's light turns into in the sward (`SwardTint.ts`, shared by the blades and the turf).
+  `ProceduralTextures.ts`), the terrain (`TerrainMaterial.ts`, its ground scans hex-tiled), the sea floor's colour (`SeabedLook.ts`), wet surfaces, the meadow's habitat and soil-depth fields (`Meadow.ts`), what a closed sky's light turns into in the sward (`SwardTint.ts`, shared by the blades and the turf).
 - `src/ocean/`: FFT ocean, shore waves, the share of each wave cascade a point of the sea keeps
   (`WaveDamping.ts`), the wave maps the light under the water reads (`WaveMaps.ts`),
   water shading (`Water.ts`), the sea's large-scale detail (`SeaDetail.ts`: gusts, slicks,
@@ -112,11 +112,11 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 - `src/weather/`: wind (`Wind.ts`: the weather's one wind, which every part reads from it, and the
   one wind field all vegetation moves in), lightning, rain,
   puddles, the air's haze and sea fog as one froxel volume lit by the atmosphere and shadowed by
-  the sun's maps and the clouds (`VolumetricHaze.ts`), the bamboo leaves the wind takes off the
+  the sun's maps and the clouds (`VolumetricHaze.ts`, its keys by the hour and the weather in `HazeKeys.ts`), the bamboo leaves the wind takes off the
   island (`FallingLeaves.ts`: a fixed ring of leaves born round the view and stepped on the GPU by one
   compute pass).
 - `src/post/`: the frame's passes and tidewater's display chain (`Pipeline.ts`, its bloom in
-  `PhysicalBloom.ts`), the pre-exposure every writer of the scene's colour and metering light
+  `PhysicalBloom.ts`, the colour the rods lend low light in `Purkinje.ts`), the pre-exposure every writer of the scene's colour and metering light
   multiplies by and every scene-unit reader divides out (`PreExposure.ts`), the key's screen-space shade over the vegetation's and the opaque scene's depth (`MeadowShade.ts`),
   the screen-space ambient occlusion the ambient light takes (`GTAO.ts`, on in high),
   the sun's flare (added to the bloom, `PhysicalBloom.ts`) and the screen-space light shafts, off by default (`LightShafts.ts`), FSR 1, render scale and dynamic resolution (`RenderScale.ts`,

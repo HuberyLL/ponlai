@@ -49,7 +49,7 @@ type V3 = THREE.Node<'vec3'>;
  * crown a little, with the blue in the albedo set against it (BambooColours.ts). On the family, so
  * the crowns and the falling leaves take it alike, and any tree to come. Tunable on debug pages
  * (debug/Tune.ts: `vegetation.leaf.f0`). */
-export const LEAF_F0 = /*@__PURE__*/ tuneUniform( 'vegetation.leaf.f0', 0.02, { min: 0.008, max: 0.04 } );
+const LEAF_F0 = /*@__PURE__*/ tuneUniform( 'vegetation.leaf.f0', 0.02, { min: 0.008, max: 0.04 } );
 
 /** A surface's specular reflectance F0, for the sky's reflection and the key's glint alike. F0
  * alone: F90 follows it in the lighting model (GroundBounce.ts `start`, lighting/SurfaceBRDF.ts

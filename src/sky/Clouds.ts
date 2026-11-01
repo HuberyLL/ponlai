@@ -55,7 +55,7 @@ type V4 = THREE.Node<'vec4'>;
 //     height toward the ray: the lit side the Mie share's colour times each body's light gain
 //     (Sky.ts trackClouds), the shaded side the Rayleigh share under its phase (no polariser),
 //     desaturated, times the earth's shadow there and each body's illuminance, its factor tinted
-//     toward the opacity and toned on its log luminance (both neutral until fitted). The march adds
+//     toward the opacity and toned on its log luminance (both neutral until set). The march adds
 //     no air of its own, nor does the cirrus: the dome lays the haze over both at the clouds'
 //     distance. Rain, cirrus and the view's clamp share the targets as colours, so the factors are
 //     coloured in the march, not where they are shown.
@@ -73,7 +73,7 @@ type V4 = THREE.Node<'vec4'>;
 // sun's visibility; a shadow map holds the layer's transmittance along the key light, at the
 // weather's share of the layer's optical depth (`shadowDensity`, Weather.ts), read with a
 // cubic B-spline built from four bilinear taps (`shadow`), with fades toward lit by the distance
-// from the island's centre and by the view's angle from a chosen direction (inert until fitted);
+// from the island's centre and by the view's angle from a chosen direction (inert until set);
 // a light on the horizon casts none, the map fading to lit as the light sets (`shadowShare`);
 // the haze reads it at each point's ground point along the same flat beam, with its B-spline blur
 // for sharpening (`shadowAlongBeam`).
@@ -413,8 +413,7 @@ export class Clouds {
 	readonly lightFloor = uniform( 0 );
 	// How far the in-scatter that weighs the sun's lobes against the moon's is desaturated toward
 	// its luminance: the haze's clear-day value when it was set (weather/HazeKeys.ts), not linked to
-	// it; the haze's has since been fitted higher, and the clouds' keeps its own until they are
-	// fitted.
+	// it; the haze's has since been set higher, and the clouds' keeps its own until theirs is set.
 	readonly lightDesaturation = uniform( 0.26 );
 	// The clouds' colours (makeMarch): each body's direct light gain (Sky.ts trackClouds), the
 	// shaded side's desaturation, its per-channel tint toward the opacity and its tone (pivot in

@@ -11,14 +11,14 @@ import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun } from '../sky/Weather.ts';
 // scene jump hold one value, and a change of hour or weather writes the haze's uniforms only.
 //
 // Each key holds:
-//   - amount: the weather's haze over its preset's: 0.66 by day and 0.61 at the golden hour (fitted),
+//   - amount: the weather's haze over its preset's: 0.66 by day and 0.61 at the golden hour,
 //     about half before dawn, near 1 in the morning, a fifth more after sunset, and two and a half
 //     times by night (a visible layer). How far the light carries at a height follows from it and the
 //     medium's shape below.
 //   - the medium's shape (VolumetricHaze's header): `top`, the ground layer's top over the island's
 //     level (m), `width`, the width of its step (m), `aerosolShare`, the deep aerosol layer's density
 //     at sea level over the ground layer's, and `aerosolHeight`, its scale height (m). The day's
-//     were fitted to 78 m, 55 m, 0.06 and 0.76 km, the golden hour's to 50 m, 43 m, 0.13 and 1.0 km
+//     are 78 m, 55 m, 0.06 and 0.76 km, the golden hour's 50 m, 43 m, 0.13 and 1.0 km
 //     (a deeper ground layer than the 10 m the other hours keep, with more aerosol over it); the
 //     day's, the golden hour's and the night's are tunable, and the other hours take the day's. `widthSlope` widens the step with the camera's height over
 //     the sea (m per m, 0 to start): by night the haze layer thickens as the camera climbs, so the
@@ -32,24 +32,24 @@ import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun } from '../sky/Weather.ts';
 //     the low sky turns to the haze's own light, a fog night's look; the clear night keeps 0, its
 //     low sky lit by the haze layer itself. The weather's scales leave it as it is.
 //   - sigma: the medium's spectral extinction, each band's weight on the density (VolumetricHaze's
-//     header), the weather's `haze` the blue's. The day's and the golden hour's were fitted (with
-//     the sky's light, Sky.ts SKY_LIGHT): by day red : green : blue = 0.36 : 0.53 : 1.02, at the
+//     header), the weather's `haze` the blue's. The day's and the golden hour's were set with
+//     the sky's light (Sky.ts SKY_LIGHT): by day red : green : blue = 0.36 : 0.53 : 1.02, at the
 //     golden hour 0.41 : 0.53 : 0.83, the air losing its blue first, and by night 0.46 : 0.53 : 0.69.
 //     The hours between take these by the sun's elevation (`twilight`): the mist at sunrise the
 //     golden hour's (it stands within a degree of the golden key's elevations), the morning the
 //     day's (from where the day key starts on the evening side), and the twilight before dawn and
 //     after sunset the night's and the golden hour's blended linearly in elevation at the middle of
 //     each key's rows.
-//     The overcast's are to be fitted toward grey.
+//     The overcast's are still to be set toward grey.
 //   - desaturate: how far each of the haze's two shares of light (VolumetricHaze's header) turns
-//     toward its luminance: all of it by day (fitted: the day's air shows its sky's colour through
+//     toward its luminance: all of it by day (the day's air shows its sky's colour through
 //     the haze's sigma, not its own), half in the morning, after sunset and by night, nearly all
-//     of it in the mist, which shows near neutral, and a third at the golden hour (fitted), whose
+//     of it in the mist, which shows near neutral, and a third at the golden hour, whose
 //     air takes most of the sun's orange.
 //   - gain: the haze's light over the day's (VolumetricHaze `gain`, which multiplies both shares):
 //     how bright the air shows against the day's, 1.2 - 1.7 before dawn, 1.7 in the mist, 1.5 in the
 //     morning and 2.5 after sunset, taken as one sees them; the day's 1.73, the golden hour's 1.43
-//     and the night's 1.05 were fitted (by night the haze's moonlit light is most of the low sky's,
+//     and the night's 1.05 were set with the sky's light (by night the haze's moonlit light is most of the low sky's,
 //     so this sets how far the sky near the horizon stands over the sky above it).
 //   - mist: the morning mist in the sea fog's units (VolumetricHaze `fogExtinction`), which thickens
 //     the haze's ground layer, soft and low over the whole island, not a sheet on the sea.
@@ -60,14 +60,14 @@ import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun } from '../sky/Weather.ts';
 //     under a clear or fair sky, where the air's blue is sky light only and the sun reaches the
 //     haze through its aerosol share; 1 at a low sun, by night and under cloud. The moon's share
 //     takes the same value.
-//   - rayleighWeight, mieWeight: the two shares' weights, 1 until fitted. By day the Rayleigh share
+//   - rayleighWeight, mieWeight: the two shares' weights, 1 until set. By day the Rayleigh share
 //     takes 2.03 and the aerosol's 0.35 (a blue air with a faint glow toward the sun); at the golden
 //     hour the Rayleigh share 0.22 and the aerosol's 1.43 (a warm glow round the low sun).
 // The weather adds its own: under the cloudy and the overcast sky the air keeps about half the
 // clear day's colour (0.53 times) and shows twice as bright.
 // The overcast's is taken as the cloudy's, without a direct check. Each kept sky scales the hour's
 // sigma per band, the aerosol layer's share and its scale height, and the ground layer's top and
-// width (1 under the clear and the fair sky; the cloudy's and the overcast's were fitted and are
+// width (1 under the clear and the fair sky; the cloudy's and the overcast's are
 // tunable: `sky.weather.<sigmaRed|sigmaBlue|aerosolScale|aerosolHeight|topScale|widthScale>@<cloudy|
 // overcast>`): under cloud the air turns redder in its extinction (red 1.42, blue 0.56 times), its
 // aerosol about twice as dense and three times as deep, the ground layer half as high and a tenth
@@ -117,7 +117,7 @@ const key = ( amount: number, [ sigmaRed, sigmaGreen, sigmaBlue ]: Sigma, desatu
 const SHAPE = { top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, skyDepth: 0 };
 // the near haze every key starts from (the weather's replaces it)
 const NEAR = { nearDensity: 1, nearStart: 250, nearEnd: 600 };
-// the fitted keys' spectral extinction, and the hours between's from them by the sun's elevation
+// the three keys' spectral extinction, and the hours between's from them by the sun's elevation
 // (see the header): the night's at -12 degrees, the golden hour's at 2
 const NIGHT_SIGMA: Sigma = [ 0.463, 0.53, 0.694 ];
 const GOLDEN_SIGMA: Sigma = [ 0.412, 0.53, 0.826 ];
@@ -172,7 +172,7 @@ const SHAPED: ReadonlySet<HazeKey> = new Set( [ DAY, GOLDEN, NIGHT ] );
 const KEEP = [ 1, 1, 0.53, 0.53 ];
 const GAIN = [ 1, 1, 2, 2 ];
 // per kept sky, the scale of each band's sigma, of the aerosol layer's share and of its scale
-// height, of the ground layer's top and width (the cloudy's and the overcast's fitted), the
+// height, of the ground layer's top and width, the
 // weather's haze and its near haze (its preset's until tuned)
 const CLOUD_SCALE = { sigmaRed: 1.42, sigmaGreen: 1, sigmaBlue: 0.555, aerosolScale: 2.2, aerosolHeight: 3.09, topScale: 0.495, widthScale: 0.901 };
 const CLEAR_SCALE = { sigmaRed: 1, sigmaGreen: 1, sigmaBlue: 1, aerosolScale: 1, aerosolHeight: 1, topScale: 1, widthScale: 1 };

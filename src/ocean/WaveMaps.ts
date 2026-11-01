@@ -40,7 +40,7 @@ const LAYERS = BOUNCE_LAYER + 1;
 const WAVE_REACH = 2.5;
 
 /** What the wave maps' bake reads (WaveMaps.attachWaves). */
-export type WaveMapInputs = WaveDampingInputs;
+type WaveMapInputs = WaveDampingInputs;
 
 export class WaveMaps {
 
