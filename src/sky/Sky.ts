@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, uv, uniform, texture, positionWorld, cameraPosition, normalize, smoothstep, dot,
 	vec2, vec3, vec4, ivec2, float, sqrt, max, atan, asin, clamp, cos, sin, mix, abs, select,
-	pmremTexture, textureLoad, Loop, cross, exp2, log2, positionView, fwidth, length,
+	pmremTexture, textureLoad, Loop, cross, exp2, log2, positionView, fwidth, length, step,
 } from 'three/tsl';
 import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE, SUN_LIMB_U1, SUN_LIMB_U2 } from '../lighting/Radiometry.ts';
@@ -69,7 +69,8 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // height, the sky behind them along the whole way; so the haze's composite leaves the sky's pixels.
 // The environment's bake lays the same haze over its source as the dome does (`fogEnvironment`,
 // VolumetricHaze.ts `openSky`, toward every direction from the sea's level, unshadowed): the environment and the dome
-// are one sky, its haze light included, so the ground's sky light takes the light the haze scatters.
+// are one sky, its haze light included, so the ground's sky light takes the light the haze scatters
+// and the sea reflects it (the seen panorama, above the horizon).
 // The sun's disc and the moon's are dimmed by the clouds' mean transmittance over each disc, read
 // from the panorama into a texel ahead of the scene (`discCloudTransmittance`), and hidden by the
 // clouds' opacity once, in the composite. The key light's colour does not take that mean: the lit
@@ -686,7 +687,8 @@ export class Sky {
 	private bakeIslandTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
 	private bakeIslandGain = uniform( 1 );
 	// 1 while the bake draws the environment's source or the probe's panorama, which take the haze
-	// (`fogEnvironment`); the seen panorama under the horizon is fogged by the dome itself
+	// all round (`fogEnvironment`); the seen panorama takes it above the horizon only, as the dome
+	// fogs what it shows of it under the horizon itself
 	private bakeHaze = uniform( 0 );
 	private starFootprint = uniform( 1 );
 
@@ -878,7 +880,10 @@ export class Sky {
 				const cloudHaze = haze( up, inside.div( sqrt( b.mul( b ).add( inside ) ).add( b ) ) );
 				const seen = sky.light.add( sky.transmittance.mul( clear ) ).mul( cloud.a )
 					.add( cloudHaze.light.mul( float( 1 ).sub( cloud.a ) ) ).add( cloudHaze.transmittance.mul( cloud.rgb ) );
-				fogged = mix( air, seen, this.bakeHaze );
+				// (the seen panorama only above the horizon, where the water reads it: what the sea
+				// reflects is the sky the dome draws, and under cloud the haze's light is nearly all of
+				// that; below the horizon the dome fogs it itself)
+				fogged = mix( air, seen, max( this.bakeHaze, step( 0, d.y ) ) );
 
 			}
 			const sky = lendIsland( fogged.mul( this.ambientGain ), this.bakeIslandTint, this.bakeIslandGain );
@@ -890,8 +895,8 @@ export class Sky {
 
 	}
 
-	/** Lays the haze over the environment's source and the irradiance probe's panorama as the dome
-	 * lays it on itself (`fogDome`; not over the seen panorama, which the dome fogs), toward every
+	/** Lays the haze over the environment's source, the irradiance probe's panorama and the seen
+	 * panorama above the horizon as the dome lays it on itself (`fogDome`), toward every
 	 * direction from one height (VolumetricHaze.ts `openSky`): the environment and the dome
 	 * are one sky, its haze light included, so the ground's sky light (the irradiance probe, the
 	 * relit ambient's SH) takes the light the haze scatters as the sky the eye sees does. Called
