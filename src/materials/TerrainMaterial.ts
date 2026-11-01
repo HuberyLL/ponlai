@@ -17,6 +17,7 @@ import { underwaterLight, UnderwaterLightingModel } from '../lighting/Underwater
 import { TURF_CANOPY_DEPTH, meadowCanopyLight, meadowGroundLight } from '../lighting/MeadowCanopy.ts';
 import { puddleField, puddleRipples } from '../weather/Puddles.ts';
 import { seabedAlbedo } from './SeabedLook.ts';
+import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
 import { DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness } from './Wetness.ts';
 import { hexReadScan, heightBlend, type HexScan } from './HexTiling.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -866,7 +867,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 			? mix( float( 0.65 ), float( 0.24 ), deep ).mul( mix( float( 0.28 ), float( 1 ), colony ) )
 			: mix( float( 0.85 ), float( 0.5 ), deep ) );
 		albedo.assign( mix( albedo, algaeC.mul( H.r.mul( 0.6 ).add( 0.7 ) ), algaeCoverage ) );
-		albedo.assign( mix( albedo, vec3( 0.30, 0.26, 0.19 ), silt.mul( 0.7 ) ) );
+		albedo.assign( mix( albedo, vec3( 0.30, 0.26, 0.19 ).mul( FLOOR_ALBEDO.gain ), silt.mul( 0.7 ) ) );
 		// Below the tidal band the stone wears an olive-brown film of algae and diatoms on the faces
 		// that catch the light, in patches, so submerged stones and the underwater cliff separate
 		// from the pale sand by hue as well as value. Each stone also keeps more of its own shade.

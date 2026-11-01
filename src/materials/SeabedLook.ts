@@ -6,8 +6,9 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type F = THREE.Node<'float'>;
 
-// The sea floor's colour, for its material (TerrainMaterial's seabed). The sand and the rubble
-// take FLOOR_ALBEDO's gain alike, which the ground bounce and the ambient probes read too.
+// The sea floor's colour, for its material (TerrainMaterial's seabed). The sand, the seagrass and
+// the rubble take FLOOR_ALBEDO's gain alike, so the sand stays the lightest of them; the ground
+// bounce and the ambient probes read it too.
 //   bed:    seagrass cover and pale-sand share, baked per vertex (Bathymetry's seabedBeds)
 //   broad:  the sand's broad variation (the detail textures' normalsB alpha, some 77 m a tile)
 //   detail: the tiled detail heights (r rock, g moss cushions, b sand ripples), or their means
@@ -26,7 +27,7 @@ export function seabedAlbedo( bed: V2, broad: F, detail: V3, shore: F ): { albed
 	// seagrass and algae beds: dark olive meadows whose edges fray over a few decimetres (a
 	// meadow's edge is a sharp step from leaves to bare sand, not a gradient)
 	const grass = smoothstep( 0.4, 0.6, bed.x.add( detail.x.sub( 0.5 ).mul( 0.35 ) ) );
-	const grassC = mix( vec3( 0.06, 0.085, 0.045 ), vec3( 0.13, 0.17, 0.085 ), detail.y );
+	const grassC = mix( vec3( 0.06, 0.085, 0.045 ), vec3( 0.13, 0.17, 0.085 ), detail.y ).mul( FLOOR_ALBEDO.gain );
 	// rubble and boulders shed from the cliffs: weathered limestone grit, a shade darker than
 	// the sand, so the cliff foot reads as a stony apron rather than a dark moat. Against the wall
 	// the cobbles close up, the sand left in pockets between them, and thin out over the apron;

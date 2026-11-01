@@ -13,10 +13,12 @@ import { GROWTH, type LandLattice } from './IslandGrowth.ts';
 import { contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclusion.ts';
 
 export const SEABED_TILE = 16;
-// The sea floor's albedo: the means of its pale sand and its rubble at gain 1, and the gain the floor
-// takes on both (SeabedLook.ts), so that what the floor bounces up (GroundBounce.ts) and what the
-// ambient probes see of it (AmbientProbes.ts) stay the floor the eye sees. It lives here because
-// SeabedLook.ts imports three and the probes are built in the chunk workers.
+// The sea floor's albedo: the means of its pale sand and its rubble at gain 1, and the gain all that
+// lies on the floor takes (SeabedLook.ts its sand, seagrass and rubble, TerrainMaterial.ts the silt on
+// the submerged stones), so that its parts keep their order, the sand the lightest, and what the
+// floor bounces up (GroundBounce.ts) and what the ambient probes see of it (AmbientProbes.ts) stay the
+// floor the eye sees. It lives here because SeabedLook.ts imports three and the probes are built in
+// the chunk workers.
 export const FLOOR_ALBEDO = { sand: [ 0.46, 0.435, 0.365 ], rubble: [ 0.29, 0.285, 0.25 ], gain: 0.35 } as const;
 // vertices along a tile's side
 export const TILE_SIDE = SEABED_TILE / FLOOR_STEP + 1;

@@ -113,7 +113,7 @@ const SHADOW_LIFT = 0.2;
 // linear albedos: the plateau's turf (the islanders' former bounce, tidewater's grass), the rim's
 // stone, and the floor's (its means at its gain: SeabedTile.ts FLOOR_ALBEDO)
 const TURF = vec3( 0.075, 0.11, 0.032 ), RIM = vec3( 0.08, 0.075, 0.065 );
-const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.gain ), SEAGRASS = vec3( 0.095, 0.128, 0.065 ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.gain );
+const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.gain ), SEAGRASS = vec3( 0.095, 0.128, 0.065 ).mul( FLOOR_ALBEDO.gain ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.gain );
 // the water's own backscatter seen from above (tidewater's)
 const WATER_BODY = vec3( 0.01, 0.025, 0.03 );
 
