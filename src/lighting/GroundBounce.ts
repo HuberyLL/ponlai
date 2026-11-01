@@ -32,7 +32,9 @@ import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 // The bake: a map over the world fields' bounds (the land's box and 32 m round it: shoreXform) of
 // the light the ground reflects per unit of the key's irradiance: its albedo (the plateau's turf,
 // stone over the rim's last metre and a half; over the sea the floor's sand, seagrass and the
-// cliff foot's rubble seen through the water column, down and back up, as tidewater's sea) times
+// cliff foot's rubble seen through the water column, down and back up, as tidewater's sea, at the
+// floor's bounce gain and not the gain it is seen at: the cliffs' shaded walls are lit mostly by
+// these shallows, and at the seen gain they read a purple grey, SeabedTile.ts FLOOR_ALBEDO) times
 // the cosine of the key on the level ground times the key's visibility there (the sun's shadow map,
 // a little above the ground so the plateau's relief stays under the lookup; tidewater takes its
 // heightfield's shadow, which the island's own shadow map already holds here), minus what the
@@ -113,9 +115,9 @@ const REACH = 1;
 const SHADOW_LIFT = 0.2;
 // linear albedos: the plateau's lawn, which times shared.lawnGain is the blades' mean, as the
 // probes' bake sees it (AmbientProbes.ts LAWN_TOP), the rim's stone, and the floor's (its means at
-// its gain: SeabedTile.ts FLOOR_ALBEDO)
+// its bounce gain: SeabedTile.ts FLOOR_ALBEDO)
 const LAWN = vec3( ...LAWN_COLOUR ), RIM = vec3( 0.08, 0.075, 0.065 );
-const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.gain ), SEAGRASS = vec3( 0.108, 0.146, 0.074 ).mul( FLOOR_ALBEDO.gain ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.gain );
+const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.bounce ), SEAGRASS = vec3( 0.108, 0.146, 0.074 ).mul( FLOOR_ALBEDO.bounce ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.bounce );
 // the water's own backscatter seen from above (tidewater's)
 const WATER_BODY = vec3( 0.01, 0.025, 0.03 );
 
