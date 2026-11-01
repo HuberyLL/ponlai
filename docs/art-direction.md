@@ -79,7 +79,9 @@ art decision changes; images from elsewhere stay out of the repository.
   the low sun's light reddens; a cloudy sky's air is grey and about as thick. It lies as a ground
   layer with a soft top tens of metres up: the hills rise out of it, the camera stands in its upper
   half, and the distant haze thins slowly with height. From the game's
-  views the island keeps its colour (at least nine tenths of its light reaches the camera by day)
+  views the island keeps its colour (at least nine tenths of its light reaches the camera by day,
+  the air of the first few hundred metres thin under every kept sky, so the shade stays the land's
+  own colour and no veil of the sky's light lies over the island)
   and the haze gathers with distance toward the horizon. The far sea and the low sky end in the same
   haze: a milky band, brighter than the sky above it, closes over the horizon with no step or dark
   line where sea meets sky, and fades by 10 - 15 degrees up. Across from the sun

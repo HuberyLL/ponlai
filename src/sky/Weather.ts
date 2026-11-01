@@ -84,9 +84,9 @@ export interface WeatherState {
 	haze: number;
 	// The haze near the camera: the optical depth from the camera out to a distance is `nearDensity`
 	// times the far medium's up to `nearStart` metres, eased back to 1 by `nearEnd` and 1 beyond
-	// (weather/VolumetricHaze.ts). Under cloud the island's views keep the land readable through a
-	// thinner near air while every ray past `nearEnd`, the horizon's and the sky's, keeps its depth;
-	// the other skies keep 1 (the cloudy's and the overcast's are tunable, weather/HazeKeys.ts).
+	// (weather/VolumetricHaze.ts). Under the kept skies the island's views read through a thin near
+	// air while every ray past `nearEnd`, the horizon's and the sky's, keeps its depth; the parked
+	// skies keep 1 (the kept skies' are tunable, weather/HazeKeys.ts).
 	nearDensity: number;
 	nearStart: number;
 	nearEnd: number;
@@ -152,8 +152,8 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // maps keep the island's own shadows. That share sets the land's illuminance against the sky's
 // luminance.
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
-	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, haze: 0.002, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
-	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, haze: 0.002, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
+	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, haze: 0.002, nearDensity: 0.2, nearStart: 250, nearEnd: 600, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
+	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, haze: 0.002, nearDensity: 0.2, nearStart: 250, nearEnd: 600, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
 	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, haze: 0.0106, nearDensity: 0.44, nearStart: 250, nearEnd: 600, rain: 0, fog: 0, storm: 0, cirrus: 0.15 },
 	overcast: { coverage: 0.94, density: 1.6, directVisibility: 0.7, cloudFloor: 0, castShadow: 1, shadowDensity: 0.03, glintSpread: 0, ambientGain: 0.76, haze: 0.00974, nearDensity: 0.44, nearStart: 250, nearEnd: 600, rain: 0, fog: 0.08, storm: 0, cirrus: 0 },
 	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, haze: 0.0095, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0.75, fog: 0.22, storm: 0, cirrus: 0 },
