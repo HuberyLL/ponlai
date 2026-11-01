@@ -81,6 +81,7 @@
 //   Underwater.ts's, and the probes there carry only the geometry (the water's surface lets the sky
 //   through, no attenuation).
 
+import { CULM, LEAF_COLOURS, LEAF_SHARE, PURPLE_CULMS } from './BambooColours.ts';
 import { GROVES, culmAt, groveAt } from './BambooGroves.ts';
 import { islandSurfaceHeight, solidSide, ISLAND_BOTTOM, ISLAND_PEAK, ISLAND_TOP, type Bounds, type Footprint, type HeightFn } from './WorldShapes.ts';
 import { FLOOR_ALBEDO, SEABED_TILE } from './SeabedTile.ts';
@@ -123,15 +124,15 @@ const ROCK = [ ( 0.124 + 0.188 ) / 2, ( 0.13 + 0.19 ) / 2, ( 0.126 + 0.176 ) / 2
 const SAND = FLOOR_ALBEDO.sand.map( c => c * FLOOR_ALBEDO.gain ), RUBBLE = FLOOR_ALBEDO.rubble.map( c => c * FLOOR_ALBEDO.gain );
 // the water's body seen from under its surface: its backscatter (GroundBounce.ts WATER_BODY)
 const WATER_BODY = [ 0.01, 0.025, 0.03 ];
-// the culms: BambooMaterials.ts CULM, green to the age's end by the groves' age mix (BambooGroves.ts
+// the culms: BambooColours.ts CULM, green to the age's end by the groves' age mix (BambooGroves.ts
 // plantCulms: a fifth new, a fifth and more between, the rest old), the end dull green on most
 // culms and dusty purple on PURPLE_CULMS of them
-const AGED_SHARE = 0.22 * 0.55 + 0.58, PURPLE_CULMS = 0.2;
-const CULM = [ 0, 1, 2 ].map( ( c ) => [ 0.042, 0.07, 0.02 ][ c ] * ( 1 - AGED_SHARE ) + ( [ 0.046, 0.066, 0.026 ][ c ] * ( 1 - PURPLE_CULMS ) + [ 0.068, 0.054, 0.072 ][ c ] * PURPLE_CULMS ) * AGED_SHARE );
-// the leaves: BambooMaterials.ts LEAF_COLOURS (sRGB) by LEAF_SHARE, in linear; a bamboo leaf lets
+const AGED_SHARE = 0.22 * 0.55 + 0.58;
+const CULM_MEAN = [ 0, 1, 2 ].map( ( c ) => CULM.green[ c ] * ( 1 - AGED_SHARE ) + ( CULM.dull[ c ] * ( 1 - PURPLE_CULMS ) + CULM.purple[ c ] * PURPLE_CULMS ) * AGED_SHARE );
+// the leaves: BambooColours.ts LEAF_COLOURS (sRGB) by LEAF_SHARE, in linear; a bamboo leaf lets
 // through about a third of what it reflects in the visible, so its scattering albedo is its
 // reflectance times 1.3
-const LEAF = leafAlbedo( [ [ 62, 100, 36 ], [ 50, 84, 30 ], [ 76, 114, 42 ], [ 100, 132, 50 ], [ 150, 140, 66 ] ], [ 0.42, 0.27, 0.2, 0.08, 0.03 ] ).map( ( v ) => 1.3 * v );
+const LEAF = leafAlbedo( LEAF_COLOURS, LEAF_SHARE ).map( ( v ) => 1.3 * v );
 // where a culm's branches start, of its height (Bamboo.ts BAMBOO.branches), and its longest
 // branch (BAMBOO.branch): a crown's leaves stand about 0.6 of that round its axis
 const BRANCHES = 0.55, BRANCH = 0.12;
@@ -143,7 +144,7 @@ function scanLook( mean: number[], saturation: number, gain: number ): number[] 
 
 }
 
-function leafAlbedo( colours: number[][], share: number[] ): number[] {
+function leafAlbedo( colours: readonly ( readonly number[] )[], share: readonly number[] ): number[] {
 
 	const linear = ( v: number ) => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : Math.pow( ( c + 0.055 ) / 1.055, 2.4 ); };
 	return [ 0, 1, 2 ].map( ( c ) => colours.reduce( ( sum, rgb, k ) => sum + linear( rgb[ c ] ) * share[ k ], 0 ) );
@@ -498,9 +499,9 @@ class Tracer {
 				// through the crown above it
 				const sky = 0.5 * Math.exp( - leaves[ c ] * ( mediumTop[ c ] - Math.max( y, crown[ c ] ) ) );
 				const w = T * a * sky / st;
-				sr += w * ( sc * CULM[ 0 ] + sl * LEAF[ 0 ] );
-				sg += w * ( sc * CULM[ 1 ] + sl * LEAF[ 1 ] );
-				sb += w * ( sc * CULM[ 2 ] + sl * LEAF[ 2 ] );
+				sr += w * ( sc * CULM_MEAN[ 0 ] + sl * LEAF[ 0 ] );
+				sg += w * ( sc * CULM_MEAN[ 1 ] + sl * LEAF[ 1 ] );
+				sb += w * ( sc * CULM_MEAN[ 2 ] + sl * LEAF[ 2 ] );
 
 			}
 			T *= 1 - a;

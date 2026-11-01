@@ -72,7 +72,7 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   walking loop (`WalkLoop.ts`, `WalkPath.ts`), the bamboo over the whole island that the
   islanders' building stock will come from (where its culms stand and the litter on its groves' floor, which the grass keeps off:
   `BambooGroves.ts`; the culms, instances of a few prototypes at two levels: `Bamboo.ts`,
-  `BambooMaterials.ts`), the vegetation's depth prepass (`VegetationPrepass.ts`)
+  `BambooMaterials.ts`, their colours, which the probes see too, in `BambooColours.ts`), the vegetation's depth prepass (`VegetationPrepass.ts`)
   and the opaque scene's, for the ambient occlusion (`OpaquePrepass.ts`), and the ambient light's
   probes, baked per chunk (`AmbientProbes.ts`). `src/world/vegetation/` holds what every plant kind
   shares (material, coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the
