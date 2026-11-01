@@ -361,9 +361,10 @@ function clearShade( elevation: number, direct: number ): number {
 // the atmosphere's phase and aerosol and the haze's keys, once the environment's bake took the
 // haze's light: the golden key takes the sky warm (red over blue about 2.5), the low key near grey,
 // the high key blue (blue over red about 1.5), the atmosphere's own colour doing the rest, and the
-// night key is about 0.01, its red about a third of its green: the clear night's dome is nearly
-// dark, its low sky the haze's moonlit light (HazeKeys.ts NIGHT) and its blue the moonlit
-// atmosphere's own.
+// night key is about 0.03, its red about twice its green, which the night's white balance takes
+// back (Pipeline.ts WHITE_BALANCE): the land's dark colours stay near neutral under it, the clear
+// night's dome is dark, its low sky the haze's moonlit light (HazeKeys.ts NIGHT) and its blue the
+// moonlit atmosphere's own and the rods' (Purkinje.ts).
 // Tunable on debug pages (debug/Tune.ts): `sky.light.<r|g|b>@<golden|low|high|night>`.
 const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'sky.light', {
 	day: [
@@ -371,7 +372,7 @@ const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'sky.l
 		{ at: 12, name: 'low', values: { r: 0.221, g: 0.192, b: 0.194 } },
 		{ at: 40, name: 'high', values: { r: 0.235, g: 0.232, b: 0.346 } },
 	],
-	night: { r: 0.005, g: 0.0136, b: 0.0104 },
+	night: { r: 0.045, g: 0.0229, b: 0.0284 },
 }, { r: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune }, g: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune }, b: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune } } );
 const _skyLight = { r: 0, g: 0, b: 0 };
 // per kept sky, the share of the deck's optical depth its shadow is cast with (Weather.ts
@@ -503,10 +504,8 @@ const CLOUD_TURN = [ - 3, - 2.5, - 2 ] as const;
 const CLOUD_SHADOW_SET = [ - 0.02, 0.02 ] as const;
 
 // The moon's key, a share of the sun's illuminance per channel: cool blue (red over green 0.8, blue
-// over green 1.4), so the moonlit ground itself reads blue; the shade is bluer still from the night
-// sky's light (ISLAND_SKY's night row), not from a whiter moon. Its level is the moonlit ground's
-// relation to the night's other light; how bright the night shows is the exposure's night key
-// (post/Exposure.ts).
+// over green 1.4). Its level is the moonlit ground's relation to the night's other light; how bright
+// the night shows is the exposure's night key (post/Exposure.ts).
 // The moonlit sky, clouds and haze keep this colour (`moonIlluminance`): there it is the sky's night
 // gain's and the haze's own to colour. The island's moonlight takes its level and a hue of its own
 // (`moonHue`).
@@ -518,14 +517,16 @@ const luminance709 = ( r: number, g: number, b: number ) => 0.2126 * r + 0.7152 
 const MOON_KEY_LUMINANCE = luminance709( MOON_KEY[ 0 ], MOON_KEY[ 1 ], MOON_KEY[ 2 ] );
 // a gain on the moon's key light (keyColor: the land, the sea's glitter, the haze's scatter of the
 // key), the moonlit sky and clouds keeping MOON_KEY under the sky's night gain: the
-// moonlit ground takes about eighteen times the night sky's light on open ground, while the sky keeps
+// moonlit ground takes several times the night sky's light on open ground, while the sky keeps
 // its moon glow. It is the island's moonlight's level; `moonHue` its colour.
-const moonKeyGain = tune( 'lighting.moon.gain', 0.471, { min: 0.05, max: 4, scale: 'log' } );
+const moonKeyGain = tune( 'lighting.moon.gain', 0.545, { min: 0.05, max: 4, scale: 'log' } );
 // The island's moonlight's red and blue over green. They move the moonlit ground's colour without
 // its level (the hue keeps MOON_KEY's luminance) and without the moonlit sky's, clouds' and haze's,
 // which keep MOON_KEY. At MOON_KEY's own (MOON_KEY_RED, MOON_KEY_BLUE) the hue is exactly white.
-const moonKeyRed = tune( 'lighting.moon.red', 0.4, { min: 0.4, max: 1.2 } );
-const moonKeyBlue = tune( 'lighting.moon.blue', 2.99, { min: 0.8, max: 4 } );
+// Through the night's white balance these leave moonlit rock a cool grey, the island's brightest
+// thing, with no more chroma than the sky over it, and the meadow nearly black with a hint of green.
+const moonKeyRed = tune( 'lighting.moon.red', 0.74, { min: 0.3, max: 1.2 } );
+const moonKeyBlue = tune( 'lighting.moon.blue', 2.37, { min: 0.8, max: 4 } );
 const _moonKey = new THREE.Color();
 const _moonHue = new THREE.Color();
 

@@ -554,13 +554,13 @@ export function vignetteFactor( at: V2, strength: F ): F {
 // high key moves with the sky's (Sky.ts SKY_LIGHT), which takes the inverse, so the sky holds its
 // colour. The golden hour warms a little further (red 1.05, blue 0.9); the clouded skies take a cool
 // white too (red 0.78, blue 1.16), their grey light kept from reading warm. The night takes a cool
-// white too (red 0.76, blue 1.4), on top of the moon's light and the rods' (Purkinje.ts).
+// white too (red 0.53, blue 1.2), on top of the moon's light and the rods' (Purkinje.ts).
 // Tunable on debug pages (debug/Tune.ts): `post.white.<r|g|b>@golden`, `@day`, `@high`, `@cloudy`,
 // `@night`.
 export const WHITE_BALANCE: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'post.white', {
 	day: [ { at: 4, name: 'golden', values: { r: 1.05, g: 1, b: 0.9 } }, { at: 9, name: 'day', values: { r: 0.5, g: 1, b: 1.36 } }, { at: 40, name: 'high', values: { r: 0.593, g: 1, b: 1.248 } } ],
 	cloudy: { r: 0.775, g: 1, b: 1.16 },
-	night: { r: 0.764, g: 1, b: 1.4 },
+	night: { r: 0.527, g: 1, b: 1.2 },
 }, { r: { min: 0.4, max: 1.5 }, g: { min: 0.5, max: 1.5 }, b: { min: 0.5, max: 1.5 } } );
 
 

@@ -252,7 +252,7 @@ art decision changes; images from elsewhere stay out of the repository.
   bare earth only in its few gaps, never thin grass over brown ground, and never a ground that
   changes colour as the camera zooms. At the lip the turf ends on its soil over the stone, never a
   dark hole among the flowers. By night
-  the lawn is a dark, readable green cooled toward blue (see Night). Toward a sheltered coast the grass runs to the
+  the lawn is a dark, quiet green with a hint of cool (see Night). Toward a sheltered coast the grass runs to the
   lip and stands there, and the same grass grows out over it: its tufts at the lip spill over the
   edge, fine blades that arch over and hang down the wall, lying on the stone, never through it, and the lip alternates between
   overgrown stretches and cut-open
@@ -423,9 +423,10 @@ art decision changes; images from elsewhere stay out of the repository.
 - The night takes the day's curve and grade under the moon's own light: its key from one side,
   its shade drawn up a little (as an eye adapted to the dark sees it), so the moonlit meadow still
   shows its clumps' lit and shaded sides as the day does. The night is cool: as the rods take over
-  from the cones, dark colours come up and turn blue (the Purkinje shift), so the moonlit meadow
-  cools toward blue while its grass still reads green, the shade, the sea and the sky a little
-  more, and the reds darken. Its exposure keeps the moonlit island readable and the moon's path on the sea crisp.
+  from the cones, dark colours come up and turn blue (the Purkinje shift), but the blue belongs to
+  the sky and the sea: the land under them goes dark and quiet, far less saturated than they are,
+  the meadow nearly black with a hint of cool green, the rock a cool grey that catches the moon and
+  stands as the brightest thing on the island. Its exposure keeps the moonlit island readable and the moon's path on the sea crisp.
   Every night has its moon, up from dusk to dawn: the phase shows only on the drawn moon and
   never darkens the night.
 - The island reads by moonlight and starlight; twilight is never darker than the night. The
@@ -437,7 +438,7 @@ art decision changes; images from elsewhere stay out of the repository.
   that view too. While it is up the moon is drawn where the island takes its light from (one fixed
   place all night, a little above its orbit's culmination), and the glow of the air around it
   comes from there too, so the disk, its glow and the light on the land stand together.
-- The night meadow is a dark, readable green cooled toward blue under the moon (not black); stone,
+- The night meadow is a dark, quiet green with a hint of cool under the moon (not black); stone,
   sand and skin stay apart from it and from each other in tone.
 - The stars and Milky Way are the real sky as seen near 28 degrees south, points with a natural
   spread of brightness, below white except the brightest few; only those near the horizon

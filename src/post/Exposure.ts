@@ -114,7 +114,7 @@ export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
 		{ at: 40, name: 'high', values: { key: - 1.05, highlight: 1.44, sky: 0.915, adaptUp: 0.05, adaptDown: 0.05 } },
 	],
 	cloudy: { key: 0.12, highlight: 2.42, sky: 0, adaptUp: 0.05, adaptDown: 0.05 },
-	night: { key: - 2.64, highlight: - 2.48, sky: 0, adaptUp: 0.05, adaptDown: 0.05 },
+	night: { key: - 2.26, highlight: - 2.03, sky: 0, adaptUp: 0.05, adaptDown: 0.05 },
 }, { key: { min: - 6, max: 3 }, highlight: { min: - 3, max: 4 }, sky: { min: 0, max: 1 }, adaptUp: { min: 0.02, max: 4, scale: 'log' }, adaptDown: { min: 0.02, max: 4, scale: 'log' } } );
 
 /** How far under the meter's exposure e_m the highlight guard may pull the target, in stops (the
