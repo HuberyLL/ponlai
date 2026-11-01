@@ -1,7 +1,7 @@
 import { Matrix3, Vector3 } from 'three/webgpu';
 
 // The day cycle: authored, not astronomical. One dominant key light (the sun by day, the moon by
-// night) drives terrain, characters, water, caustics and every shadow map; a sun/moon handoff
+// night) drives terrain, characters, water and every shadow map; a sun/moon handoff
 // passes through zero direct light: the sun's key fades as its drawn disk sinks below the horizon,
 // and only then turns toward the moon (HANDOFF_TOP; `keyDir` turns along the orbits, and Sky.ts
 // `track` bends its moon end to where the moon is drawn). The sun is drawn at twice its true

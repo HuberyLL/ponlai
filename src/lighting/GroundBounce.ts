@@ -38,9 +38,9 @@ import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 // `seaRadiance`, where tidewater's environment has the atmosphere's dark ground), then blurred
 // (a binomial 5x5 of 1 m steps, as 3x3 bilinear lookups). Alpha: the height of the bouncing
 // surface (the plateau's top over its swells, or the sea level). It is drawn at 256 texels, blurred into the
-// caustics' array target (its last layer, Caustics `bounceLayer`): the materials lit under the
-// water already bind WebGPU's 16 sampled textures, and the caustics' map is one of them. Like the
-// caustics, it is drawn before the frame graph, after the sun's map. It is a function of the key's direction and colour, the sun's maps,
+// wave maps' array target (its last layer, WaveMaps `bounceLayer`), so the materials lit under the
+// water take no texture more for it. Like the wave maps, it is drawn before the frame graph, after
+// the sun's map. It is a function of the key's direction and colour, the sun's maps,
 // the sea's radiance and the world fields. It is drawn with the sun's map's steps (`steps`: a step
 // of the key's turn, SunShadow.ts, counted also while the swaying plants redraw that map every
 // frame), from that map alone and the key as it stands then, and
@@ -98,7 +98,7 @@ import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 
-// the bake's texels per side (the blurred map takes the caustics target's)
+// the bake's texels per side (the blurred map takes the wave maps' target's)
 const RAW = 256;
 // objects round the receiver shade part of the ground it sees (their shadows are not in the map)
 const SURROUND = 0.6;
@@ -233,7 +233,7 @@ export class GroundBounce {
 
 	}
 
-	/** Once a frame, after the sun's map and the caustics: draws the map again at the sun's map's
+	/** Once a frame, after the sun's map and the wave maps: draws the map again at the sun's map's
 	 * steps and when the sea or the fields changed (see the header). `sea`: the environment's lower
 	 * half (Sky `seaRadiance`). */
 	update( sea: THREE.Color ): void {

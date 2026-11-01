@@ -23,13 +23,12 @@ type B = THREE.Node<'bool'>;
 // The light below the water's surface, one model for everything lit under it (the terrain and the
 // sea floor, TerrainMaterial.ts), as tidewater's UnderwaterLighting (4811ba4) lights it: the key light refracted at the mean surface and carried
 // down the water column to the point under the long waves' surface (Beer-Lambert over the slant
-// path, the share that enters the water, the beam's change of area, and the caustics, which follow
-// the long waves' slope above and the gusts and slicks), faded in over the first 8 cm; and the
-// ambient and specular light under the mean level, dimmer and bluer with the depth (Beer-Lambert
-// over 1.2 times the depth, 85 % of it, with a little in-scattered blue), faded in over the first
-// 10 cm. The long waves, the mean level and the gust factor come from the wave maps baked once a
-// frame (Caustics.ts `wavesAt`, `levelAt`), so the waterline on the rock rises and falls with the
-// swell. The water shader adds the view path from the point back to the eye, so a material lit
+// path, the share that enters the water and the beam's change of area), faded in over the first
+// 8 cm; and the ambient and specular light under the mean level, dimmer and bluer with the depth
+// (Beer-Lambert over 1.2 times the depth, 85 % of it, with a little in-scattered blue), faded in
+// over the first 10 cm. The long waves and the mean level come from the wave maps baked once a
+// frame (WaveMaps.ts `wavesAt`), so the waterline on the rock rises and falls with the swell. The
+// water shader adds the view path from the point back to the eye, so a material lit
 // here must not. (tidewater leaves the key at its direction in the air with no share or beam
 // factor: the same on a level floor; here the refracted direction lights steep submerged walls as
 // the sun reaches them, and the share that enters the water follows the sun's height.)
@@ -39,7 +38,7 @@ type B = THREE.Node<'bool'>;
 // (`UnderwaterModelOptions.ambient`).
 //
 // A material calls `underwaterLight` with its own above-water terms (the terrain's canopy shade and
-// its reflected caustic shimmer; nothing for a material that never reaches the surface) and installs
+// the lift of the sea's light on the rock; nothing for a material that never reaches the surface) and installs
 // `UnderwaterLightingModel` as its lighting model; it also sets `userData.refractedSolarReceiver`,
 // so RefractedSun.bindTerrain gives it the refracted sun's shadow map.
 //
@@ -50,8 +49,8 @@ export interface UnderwaterLight {
 	under: B;
 	// the water column above it to the mean level (m, negative above the water)
 	depth: F;
-	// the key light's colour multiplier: under water its path down the column (with caustics),
-	// above it the material's own `aboveSun`
+	// the key light's colour multiplier: under water its path down the column, above it the
+	// material's own `aboveSun`
 	sun: V3;
 	// the refracted key's direction in view space, which replaces the light's under water
 	sunView: V3;
@@ -67,7 +66,7 @@ export interface UnderwaterLight {
 export interface UnderwaterOptions {
 	// the key's multiplier above the water (the terrain's canopy shade); 1 without one
 	aboveSun?: V3;
-	// the ambient's multiplier in a band above the water (the terrain's reflected shimmer): `when`
+	// the ambient's multiplier in a band above the water (the terrain's lift of the sea's light): `when`
 	// the band holds, `value` builds it inside its branch
 	aboveAmbient?: { when: B; value: () => V3 };
 }
@@ -183,7 +182,7 @@ export class UnderwaterLightingModel extends GroundBounceLightingModel {
 	}
 
 	/** The local lights reach a submerged point down the water column, as the ambient does (and
-	 * without the terrain's shimmer band above the water). */
+	 * without the terrain's band above the water). */
 	localScale(): V3 {
 
 		return this.light.specular;

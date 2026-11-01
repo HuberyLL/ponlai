@@ -43,7 +43,7 @@ const GROUND_SHADE = MEADOW_SHADE && debugFlags.groundShade !== false;
 // PBR materials for the rock and the sea floor: MeshStandardNodeMaterial (lights, shadows, IBL)
 // with the surface built procedurally in world space (triplanar baked detail, moss, wet band,
 // algae, sediment) and the light below the water attenuated on its way down (sun path through
-// the water column, caustics, ambient) by a lighting model of its own, so the water shader only
+// the water column, ambient) by a lighting model of its own, so the water shader only
 // has to add the view path. Above the water its ambient diffuse is the ambient volume's
 // (lighting/AmbientSample.ts), whose probes see the groves and the cliffs, with the environment's
 // specular occluded by it.
@@ -1003,9 +1003,8 @@ function seabedSurface( { tex, shore, shared }: Ctx, shoreXform: THREE.Node<'vec
 }
 
 // The light below the surface is the shared underwater model (lighting/Underwater.ts): the sun
-// path through the water column (with caustics) and the dimmer, bluer ambient. Above the water the
-// terrain adds its own: the meadow's canopy shade on the key and a faint caustic shimmer reflected
-// onto the rock.
+// path through the water column and the dimmer, bluer ambient. Above the water the terrain adds its
+// own: the meadow's canopy shade on the key and a lift of the light the sea reflects onto the rock.
 
 type TerrainVariant = ( hex: boolean, from?: THREE.NodeMaterial ) => THREE.MeshStandardNodeMaterial;
 

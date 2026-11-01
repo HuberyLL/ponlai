@@ -59,8 +59,8 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // night floor of its own. The moon, while it is up, is drawn and lights the sky (and through the
 // atmosphere's `moonDir` the clouds and the haze) from the night key's fixed direction, where the
 // island takes its light from (lighting/KeyLift.ts `moonDirection`), and the key's direction
-// (`keyDir`) turns there over the handoff and holds there all night, so the water's glint, the
-// caustics and the clouds' light see the moon where it is drawn; its phase keeps the orbit's
+// (`keyDir`) turns there over the handoff and holds there all night, so the water's glint and the
+// clouds' light see the moon where it is drawn; its phase keeps the orbit's
 // angle to the sun (`track`). The clouds take their own path between the two in the twilight, while
 // no light reaches them (CLOUD_TURN). After sunset the light
 // the sky lends the island takes a gain of its own (ISLAND_SKY), which the sky the eye sees, the
@@ -515,7 +515,7 @@ const MOON_KEY_RED = 0.8, MOON_KEY_BLUE = 1.4;
 const luminance709 = ( r: number, g: number, b: number ) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
 const MOON_KEY_LUMINANCE = luminance709( MOON_KEY[ 0 ], MOON_KEY[ 1 ], MOON_KEY[ 2 ] );
 // a gain on the moon's key light (keyColor: the land, the sea's glitter, the haze's scatter of the
-// key, the caustics), the moonlit sky and clouds keeping MOON_KEY under the sky's night gain: the
+// key), the moonlit sky and clouds keeping MOON_KEY under the sky's night gain: the
 // moonlit ground takes about eighteen times the night sky's light on open ground, while the sky keeps
 // its moon glow. It is the island's moonlight's level; `moonHue` its colour.
 const moonKeyGain = tune( 'lighting.moon.gain', 0.471, { min: 0.05, max: 4, scale: 'log' } );
@@ -1234,7 +1234,7 @@ export class Sky {
 		// The key turns from the sun to the moon where it is drawn (KeyLift `moonDirection`): over
 		// the handoff its turn along the orbits gains, in step, the turn from the moon's orbit to
 		// that direction, so it arrives there without a jump and holds there all night. Everything
-		// that reads the key's direction (the water's glint, the caustics, the refracted light
+		// that reads the key's direction (the water's glint, the refracted light
 		// under the water, the clouds, the haze) then sees the moon where it is drawn. By day
 		// (no handoff) the key is the sun's direction itself.
 		this.keyDir.copy( celestial?.keyDir ?? this.sunDir );

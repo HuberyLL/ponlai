@@ -33,15 +33,13 @@ packages, into `dist/licenses/`.
     helpers from `OceanFFT.js`, ported to TypeScript, and the sea states of `src/ui/AppUI.js`;
     `OceanFFT.ts` sums its two wave systems (`local` and `swell`) into four cascades of its sizes
     and bands, and takes the shallow-water attenuation of each cascade from `WaterSurface.js`.
-  - `src/ocean/Caustics.ts`: the rasterised caustics of `Caustics.js`, two layers of two focal
-    planes with their lookup (dispersion, depth blur and fade, footprint filtering, the gust and
-    slick factor), ported from WGSL to TSL; and the wave maps of `UnderwaterLighting.js` (the long
-    waves, the mean level and that factor baked once a frame into two maps centred on the camera,
-    with their lookup).
+  - `src/ocean/WaveMaps.ts`: the wave maps of `UnderwaterLighting.js` (the long waves and the mean
+    level baked once a frame into two maps centred on the camera, with their lookup), ported from
+    WGSL to TSL.
   - `src/lighting/Underwater.ts`: the key light and ambient under the water of
     `UnderwaterLighting.js`'s direct and ambient hooks (the depth under the long waves, the
-    caustics through their slope, the ambient's attenuation and blue); `src/lighting/RefractedSun.ts`
-    reads the air's shadow map at the entry point of its shadow position hook.
+    ambient's attenuation and blue); `src/lighting/RefractedSun.ts` reads the air's shadow map at
+    the entry point of its shadow position hook.
   - `src/lighting/GroundBounce.ts`: the ground bounce of `GroundBounce.js` (the map of the light
     the ground reflects, its land cover and sea seen through the water column, the environment's
     own ground taken off, the binomial blur, and its lookup: the lower hemisphere's view factor,
