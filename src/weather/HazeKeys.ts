@@ -190,7 +190,7 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 }
 for ( const [ s, name ] of [ [ 0, 'clear' ], [ 1, 'fair' ], [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 
-	tuneObject( SKY_SCALE[ s ], { nearDensity: `sky.weather.nearDensity@${ name }` }, { nearDensity: { min: 0.05, max: 1, scale: 'log', onChange: markSkyRetune } } );
+	tuneObject( SKY_SCALE[ s ], { nearDensity: `sky.weather.nearDensity@${ name }` }, { nearDensity: { min: 0.02, max: 1, scale: 'log', onChange: markSkyRetune } } );
 
 }
 // per kept sky, the sun's share in the haze's Rayleigh light: off under a clear or fair sky, on

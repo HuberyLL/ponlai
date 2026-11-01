@@ -115,8 +115,8 @@ art decision changes; images from elsewhere stay out of the repository.
   shows about ( 0.5, 0.3, 0.05 ) on screen, the local tone's lift included); the deep night shows a
   moonlit grey card at a green code of about 0.1 to 0.2, and holds its exposure whatever the moon. A
   clouded sky is metered by the view's own light: in the view of the whole island the ground shows
-  about three quarters of a stop under a clear day's sunlit ground at the same hour, on a cloudy and
-  an overcast day alike, and other views lie within about half a stop of that. A sun in the frame
+  about two stops under a clear day's sunlit ground at the same hour, on a cloudy and an overcast
+  day alike, and other views lie within about half a stop of that. A sun in the frame
   may read a little brighter than its eye-adapting exposure would show it. The night keeps the
   moonlit island readable (see Night).
 - No lens effects a photograph of a real place would not have: no tilt-shift miniature blur, no
