@@ -59,10 +59,10 @@ art decision changes; images from elsewhere stay out of the repository.
   its groves and its cliffs: `src/lighting/AmbientSample.ts`). At noon on a clear or fair day the
   open meadow's lit side is about 3 to 4.5 times its shade; a low sun's lit side comes down toward
   its shade, and that is left as it is. A grove's floor in shade should read about half the open
-  shade at its edge, darker deeper in. Its culms in shade are at least as light as the floor
-  beside them, never dark silhouettes, and the faces toward the grove's open sides should read
-  lighter than those toward its inside. Where a culm or a stone meets the ground the contact
-  darkens by a tenth at most, gone within about a metre: a grounding, never a dark ring. Where
+  shade at its edge, darker deeper in. Its culms in shade stand a little darker than the crowns
+  over them, dark green stems against the light between, and the faces toward the grove's open
+  sides read lighter than those toward its inside. Where a culm or a stone meets the ground the
+  contact darkens by a tenth at most, gone within about a metre: a grounding, never a dark ring. Where
   the grass, the culms and the ground's relief close the sky, the shade loses some of its light
   broadly, over metres (the screen-space ambient occlusion, on in high: `src/post/GTAO.ts`, and
   at the turf's roots the share of the sky its blades leave): the ground among the grass in shade
@@ -291,10 +291,11 @@ art decision changes; images from elsewhere stay out of the repository.
   glades of meadow between, never one round crown nor a closed forest. No placement rule: it
   stands at the cliff's edge as anywhere else. Its culms are tall and slender, bare to about half
   their height, their leaves narrow and in loose drooping layers, so the culms show from above
-  between them. Its materials keep close in value, as a painted grove does: the culms (a dusty
-  purple, the young ones green) and the leaves about as light as the meadow's grass, the grove
-  reading by its light and shade, not by dark colours. A grove is dark inside, its canopy hiding
-  most of the sky from its floor, its culms lit where the sun finds them. Its floor is the meadow's
+  between them. Its stems are a mid to dark green, one family with its leaves and the meadow and
+  most of the time darker than the crowns, and a minority of old culms turn a dim dusty purple at
+  the same lightness, so the purple of the old text shows up close and the grove still reads as
+  one green, by its light and shade. A grove is dark inside, its canopy hiding most of the sky from
+  its floor, its culms lit where the sun finds them. Its floor is the meadow's
   grass up to a couple of metres inside the culm line, then clearings of fallen leaves, about
   half of the floor where a grove is deep, with ragged edges about a metre across, a few stray
   tufts of grass left in them, and small bare discs under its clusters of young shoots. The

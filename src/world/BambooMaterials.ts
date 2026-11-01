@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { attribute, float, mix, mx_noise_float, positionGeometry, smoothstep, vec3 } from 'three/tsl';
+import { attribute, float, mix, mx_noise_float, positionGeometry, smoothstep, step, varying, vec3 } from 'three/tsl';
 import { GroundBounceLightingModel } from '../lighting/GroundBounce.ts';
 import { CANOPY_SHADE } from '../lighting/AmbientSample.ts';
 import { receiveScreenAO } from '../post/GTAO.ts';
@@ -8,7 +8,7 @@ import type { Shared } from '../shared.ts';
 import { mulberry32 } from './noise.ts';
 import { GROVES } from './BambooGroves.ts';
 import { CROWN_DRAG, branchBend, mainBend } from './vegetation/Deform.ts';
-import { useVegetationMotion } from './vegetation/Material.ts';
+import { useSpecular, useVegetationMotion } from './vegetation/Material.ts';
 import { placeVertex, type PlantDraw, type PlantInstances } from './vegetation/PlantInstances.ts';
 import { IDENTITY_COLOUR, LeafPainter, leafMaterial as treeLeaves, plantTint, type LeafAtlas, type PlantTint } from './vegetation/TreeSurfaces.ts';
 import { rootHash } from '../weather/Wind.ts';
@@ -17,12 +17,15 @@ import { tuneUniform } from '../debug/Tune.ts';
 
 // The bamboo's surfaces (Bamboo.ts): its culms and its leaves.
 //
-// Culms: smooth with a soft sheen, green the first year, then purple in blotches that spread until
-// the culm is a muted purple (the culm's age, from its `culm` attribute, against a noise stretched
-// along the culm); a thin pale ring of wax just under each node, a fine streaking along the grain.
-// As light as the meadow's grass and the leaves, whatever their age (the green a little lighter):
-// a painted grove keeps its materials close in value, the culms reading against the dark between
-// them by their light and shade, not by a dark colour of their own (so the purple is a dusty one).
+// Culms: smooth with a soft sheen, a mid to dark green: fresh the first year, then duller in
+// blotches that spread until the culm is a dull green (the culm's age, from its `culm` attribute,
+// against a noise stretched along the culm); a thin pale ring of wax just under each node, a fine
+// streaking along the grain. On a minority of the old culms (`PURPLE_CULMS`, by a hash of the foot)
+// the age turns a dim dusty purple instead, the island's old lore on a few stems, at the same
+// lightness, so the grove stays one family of green. They are the plants' own colour: darker than
+// a lit crown, the same value old or young, stems that read dark against the light and lit where
+// the sun finds them, never the palest thing in a grove. Their specular is a little over a leaf's
+// (`CULM_F0`), a smooth cuticle.
 // The sky reaches a culm's lower part only through its grove's canopy, so a grove is dark inside
 // and its culms light where the sun finds them: the ambient volume's irradiance
 // (lighting/AmbientSample.ts) sees the grove and darkens it, read at the culm's own normal, so a
@@ -38,13 +41,19 @@ import { tuneUniform } from '../debug/Tune.ts';
 // The leaves the wind takes off the crowns (weather/FallingLeaves.ts) are one such leaf on a card
 // of its own (`singleLeaf`), tinted per leaf in the crowns' mix of colours (`LEAF_TINTS`).
 
-/** The culms' colours (linear albedo): new green, purple, the wax under the nodes. */
-const CULM = { green: [ 0.124, 0.146, 0.056 ], purple: [ 0.13, 0.082, 0.09 ], wax: [ 0.25, 0.24, 0.2 ] } as const;
+/** The culms' colours (linear albedo): new green, the age's end on most culms, its end on the
+ * minority, the wax under the nodes. Green, dull and purple share an Oklab lightness of about 0.39.
+ * world/AmbientProbes.ts keeps a copy of their mean (`CULM`). */
+const CULM = { green: [ 0.042, 0.07, 0.02 ], dull: [ 0.046, 0.066, 0.026 ], purple: [ 0.068, 0.054, 0.072 ], wax: [ 0.09, 0.09, 0.07 ] } as const;
+/** The share of the culms whose age ends in the dusty purple. */
+const PURPLE_CULMS = 0.2;
+/** The culms' specular reflectance (vegetation/Material.ts useSpecular). */
+const CULM_F0 = 0.016;
 
 /** The culms' occlusion on the ambient volume's path: a soft grounding alone, the culm `foot`
  * darker at its foot and back to its light by `footHeight` m up (the ground at the foot has no term
- * of its own). The grove's darkness is the volume's: a culm in a grove's shade stands lighter than
- * the floor at its foot, which looks up into the canopy while the culm's sides look out level
+ * of its own). The grove's darkness is the volume's: a culm in a grove's shade takes more light
+ * than the floor at its foot, which looks up into the canopy while the culm's sides look out level
  * through the grove. A share of the canopy's height term kept on the volume (the `culm`
  * attribute's third) darkened them twice: without it the culms in a grove's shade came out about a
  * quarter lighter, those at its edge as light as the open shade's ground beside them. */
@@ -73,17 +82,22 @@ export function culmMaterial( shared: Shared, plants: PlantInstances ): THREE.Me
 	const phase = attribute<'float'>( 'culm', 'float' );
 	const age = v.lookVarying.x, grove = v.lookVarying.y;
 	const eta = attribute<'vec4'>( 'leafSway', 'vec4' ).w;
-	// blotches along the culm, through which the purple spreads as it ages: on the prototype's rest
+	// blotches along the culm, through which its age spreads: on the prototype's rest
 	// position (so they hold still on a swaying culm) moved by the culm's foot (so no two culms of a
 	// prototype share them)
 	const grain = positionGeometry.add( v.footVarying );
 	const blotch = mx_noise_float( grain.mul( vec3( 22, 2.5, 22 ) ) ).mul( 0.5 ).add( 0.5 );
-	const purple = smoothstep( blotch.sub( 0.18 ), blotch.add( 0.18 ), age );
+	const aged = smoothstep( blotch.sub( 0.18 ), blotch.add( 0.18 ), age );
+	// the minority: a hash of the foot, taken in the vertex stage so a culm is one or the other
+	// from end to end, whatever the interpolation does to a varying foot
+	const oldPurple = varying( float( 1 ).sub( step( PURPLE_CULMS, rootHash( v.foot.xz ) ) ), 'vCulmPurple' );
+	const ageEnd = mix( vec3( ...CULM.dull ), vec3( ...CULM.purple ), oldPurple );
 	const streak = mx_noise_float( grain.mul( vec3( 160, 1.2, 160 ) ) ).mul( 0.12 ).add( 1 );
 	// the ring of wax just under the node above
 	const wax = smoothstep( 0.9, 0.96, phase ).mul( float( 1 ).sub( smoothstep( 0.985, 1, phase ) ) ).mul( 0.5 );
-	material.colorNode = plantTint( mix( mix( vec3( ...CULM.green ), vec3( ...CULM.purple ), purple ).mul( streak ), vec3( ...CULM.wax ), wax ), rootHash( v.footVarying.xz ), float( 0 ), CULM_TINT );
-	material.roughnessNode = mix( mix( float( 0.55 ), float( 0.45 ), purple ), float( 0.75 ), wax );
+	material.colorNode = plantTint( mix( mix( vec3( ...CULM.green ), ageEnd, aged ).mul( streak ), vec3( ...CULM.wax ), wax ), rootHash( v.footVarying.xz ), float( 0 ), CULM_TINT );
+	material.roughnessNode = mix( mix( float( 0.62 ), float( 0.55 ), aged ), float( 0.75 ), wax );
+	useSpecular( material, float( CULM_F0 ) );
 	material.name = 'bamboo culms';
 	receiveScreenAO( material );
 	// the whole scene's screen-space shade on the key (post/MeadowShade.ts); as a caster in it, a
