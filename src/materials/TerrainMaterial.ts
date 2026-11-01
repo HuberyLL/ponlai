@@ -225,6 +225,9 @@ const stoneSlope = Fn( ( [ v ]: [ THREE.Node<'vec4'> ] ) => {
 // darkening of the stone and their shade on its ambient light.
 const PUDDLE_F0 = 0.2, FLOW_F0 = 0.5, RING_GAIN = 5;
 const RUNNEL_DARKENING = 0.6, RUNNEL_SHADE = 0.7;
+// The reflectance of stone and sand under the water over theirs in the air: Fresnel's at normal
+// incidence, ( ( 1.5 - 1.33 ) / ( 1.5 + 1.33 ) )^2 against 0.04.
+const STONE_UNDER_WATER = 0.09;
 
 interface Ctx {
 	tex: DetailTextures; shared: Shared; topY: F; vegetation: boolean; shore: FieldTexture;
@@ -893,9 +896,11 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		// The wave-washed band glistens on the walls. On a face that looks up at the sky (a sloping
 		// foot or ledge in a gully at the waterline) the same gloss mirrored the bright low sky as
 		// a pale sheet streaked by the stone's relief, which read from afar as water running down
-		// the gully, so it fades out on such faces; they keep the band's darker, damp albedo.
+		// the gully, so it fades out on such faces; they keep the band's darker, damp albedo. The
+		// wall's own gloss stays broad (0.5): sharper, at a grazing view it mirrored the environment's
+		// lower half as a thin blue line along the waterline.
 		const washed = wet.mul( float( 1 ).sub( deep ) ).mul( float( 1 ).sub( smoothstep( 0.2, 0.55, up ) ) );
-		rough.assign( mix( rough, float( 0.28 ), washed ) );
+		rough.assign( mix( rough, float( 0.5 ), washed ) );
 
 		// The island's jointed wall occludes much of its own sky; a share of that occlusion keeps
 		// the shadowed blocks airy while the crevices stay dark, though never black: the whole
@@ -1096,9 +1101,9 @@ function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, waveMaps: Wav
 
 	};
 
-	const light = underwaterLight( shared, waveMaps, { aboveSun: vec3( surf.get( 'canopy' ) ) } );
-	// the ambient volume above the water (lighting/AmbientSample.ts): degree 2 on the plateau, the
-	// cliffs and the stones. At degree 1
+	const light = underwaterLight( shared, waveMaps, { aboveSun: vec3( surf.get( 'canopy' ) ), specular: STONE_UNDER_WATER } );
+	// the ambient volume (lighting/AmbientSample.ts): degree 2 on the plateau, the cliffs and the
+	// stones, under the water too (lighting/Underwater.ts). At degree 1
 	// the volume's directionality boost turns the light the lit meadow bounces up against level
 	// ground in its shade, darkening it (AmbientRelight.ts, known limits); degree 2's quadratic band
 	// gives it back. None on the sea floor, which lies under the water, where the environment's

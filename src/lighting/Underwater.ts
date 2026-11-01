@@ -32,9 +32,17 @@ type B = THREE.Node<'bool'>;
 // factor: the same on a level floor; here the refracted direction lights steep submerged walls as
 // the sun reaches them, and the share that enters the water follows the sun's height.)
 //
-// Above the water the ambient diffuse is the ambient volume's (lighting/AmbientSample.ts), as on
-// every lit island material; the probes do not model the water, so below it the environment's
-// (`UnderwaterModelOptions.ambient`).
+// The ambient diffuse is the ambient volume's (lighting/AmbientSample.ts) above the water, as on
+// every lit island material, and below it on the cliffs and the stones: the probes hold the island's
+// shade and leave the water to the attenuation here, and a wall read by the environment's irradiance
+// at its normal took the open sky's bright horizon, unshaded, as a pale band along its foot seen
+// through the surface. A material that takes the volume by default weighs it out under the water,
+// to the environment's light (`UnderwaterModelOptions.ambient`).
+//
+// A stone under water reflects far less than in the air, the water's index standing close to its
+// own: the material gives that share (`UnderwaterOptions.specular`), for the key and the sky alike,
+// faded in over the first 10 cm. At the air's reflectance the sky lay over the sea floor and the
+// walls as an additive pale veil.
 //
 // A material calls `underwaterLight` with its own key above the water (the terrain's canopy shade;
 // nothing for a material that never reaches the surface) and installs `UnderwaterLightingModel` as
@@ -55,15 +63,20 @@ export interface UnderwaterLight {
 	sunView: V3;
 	// the ambient's multiplier, diffuse and specular: its attenuation down the column, 1 above the water
 	ambient: V3;
+	// the specular's multiplier: the material's share below the mean level, 1 above the water
+	specular: F;
 }
 
 export interface UnderwaterOptions {
 	// the key's multiplier above the water (the terrain's canopy shade); 1 without one
 	aboveSun?: V3;
+	// the specular's share below the surface, the material's reflectance against water over its
+	// reflectance against air; 1 without one
+	specular?: number;
 }
 
 /** The underwater light at `positionWorld` (see the header). */
-export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun }: UnderwaterOptions = {} ): UnderwaterLight {
+export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun, specular = 1 }: UnderwaterOptions = {} ): UnderwaterLight {
 
 	// the water above this point: the long waves' surface for the key, the mean level for the
 	// ambient (the wave maps; a level sea above the water's reach)
@@ -94,8 +107,9 @@ export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun 
 	} )();
 	const depth = dW.max( 0 );
 	const ambAtt = exp( sigT.negate().mul( depth ).mul( 1.2 ) ).mul( 0.85 ).toVar();
-	const ambient = mix( vec3( 1 ), ambAtt, smoothstep( 0, 0.1, depth ) );
-	return { under, depth: dW, sun, sunView: waterSunView, ambient };
+	const below = smoothstep( 0, 0.1, depth ).toVar();
+	const ambient = mix( vec3( 1 ), ambAtt, below );
+	return { under, depth: dW, sun, sunView: waterSunView, ambient, specular: mix( float( 1 ), float( specular ), below ) };
 
 }
 
@@ -105,10 +119,10 @@ export interface UnderwaterModelOptions {
 	// shadow map cannot shade). Off for a double-sided surface, whose geometric normal faces away
 	// on its inner side.
 	terminator?: boolean;
-	// How the part above the water reads the ambient volume (lighting/AmbientSample.ts; default
-	// degree 1); null keeps the environment's irradiance everywhere. The volume's share falls to
-	// nothing over the first 30 cm below the mean level (`AMBIENT_DEPTH`), where the environment's
-	// light carried down the column takes over.
+	// How the material reads the ambient volume (lighting/AmbientSample.ts), above and below the
+	// water alike; null keeps the environment's irradiance everywhere. Left out, the volume at
+	// degree 1 above the water, its share falling to nothing over the first 30 cm below the mean
+	// level (`AMBIENT_DEPTH`), where the environment's light carried down the column takes over.
 	ambient?: Omit<AmbientReceiver, 'weight'> | null;
 }
 
@@ -128,7 +142,7 @@ export class UnderwaterLightingModel extends GroundBounceLightingModel {
 		super();
 		this.light = light;
 		this.options = options;
-		this.ambient = options.ambient === null ? null : { bands: 1, ...options.ambient, weight: smoothstep( 0, AMBIENT_DEPTH, light.depth ).oneMinus() };
+		this.ambient = options.ambient === undefined ? { bands: 1, weight: smoothstep( 0, AMBIENT_DEPTH, light.depth ).oneMinus() } : options.ambient;
 
 	}
 
@@ -147,6 +161,7 @@ export class UnderwaterLightingModel extends GroundBounceLightingModel {
 		if ( this.options.terminator !== false ) lightColor = lightColor.mul( smoothstep( 0, 0.06, dot( normalViewGeometry, this.shadeDirection( lightDirection ) ) ) );
 		const color = lightColor.toVar();
 		super.direct( { ...input, lightDirection, lightColor: color }, builder );
+		( input.reflectedLight.directSpecular as V3 ).mulAssign( this.light.specular );
 
 	}
 
@@ -174,7 +189,7 @@ export class UnderwaterLightingModel extends GroundBounceLightingModel {
 		reflected.indirectDiffuse.mulAssign( this.light.ambient );
 		// the metering illuminance's ambient down the column, as the diffuse (lighting/MeterLight.ts)
 		meterAmbient.mulAssign( this.light.ambient );
-		reflected.indirectSpecular.mulAssign( this.light.ambient );
+		reflected.indirectSpecular.mulAssign( this.light.ambient.mul( this.light.specular ) );
 
 	}
 

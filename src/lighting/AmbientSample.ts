@@ -58,8 +58,8 @@ import { IRRADIANCE_SLABS, type AmbientVolume } from './AmbientVolume.ts';
 //   diffuse: GroundBounceLightingModel and every model built on it hand theirs to the ambient grade
 //   (AmbientGrade.ts `useAmbientGrade`), which replaces three's environment irradiance with
 //   `ambientEnvironment`'s; the islanders' own model reads `ambientField` (characters/
-//   CharacterMaterial.ts). Under the water the environment's light stays (lighting/Underwater.ts
-//   `weight`: the volume's share falls to nothing over the first 30 cm below the mean level). The
+//   CharacterMaterial.ts). The cliffs and the stones keep the volume under the water, carried down
+//   the column (lighting/Underwater.ts); the sea floor takes the environment's light. The
 //   flying fish (life/FishMaterial.ts) read the volume through UnderwaterLightingModel's default,
 //   degree 1 weighted by depth: in flight above the water they take the volume's light, under it the
 //   environment's carried down the water column.
