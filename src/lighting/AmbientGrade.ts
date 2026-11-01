@@ -161,9 +161,10 @@ export function evaluateAmbient( elevation: number, weights: readonly number[], 
 
 }
 
-/** A gain on the table's `sunBounce` at every hour and in every weather (fitted, 0.868): scales the
- * key's bounce throughout without reshaping the table. */
-const sunBounceGain = tune( 'lighting.grade.sunBounce', 0.868, { min: 0.25, max: 4, scale: 'log' } );
+/** A gain on the table's `sunBounce` at every hour and in every weather: scales the key's bounce
+ * throughout without reshaping the table. One now the near air no longer lifts the shade: the
+ * shade's level is the light the ground sends up. */
+const sunBounceGain = tune( 'lighting.grade.sunBounce', 1, { min: 0.25, max: 4, scale: 'log' } );
 
 /** The grade's uniforms, read by the lighting models. */
 export const ambient = {
