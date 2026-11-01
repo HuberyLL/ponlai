@@ -358,7 +358,12 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `@night`; the local gain's `post.localTone.hinge@high`, `high`, `low`, `width` alike), `post.tone.midGrey`,
   `post.tone.blackSlope`, `post.tone.white`; the shade's contrast `post.shade.pivot@day`, `slope`
   (`@golden`, `@day`, `@cloudy`, `@night`), the bloom's `post.bloom.strength` and the sun's glare
-  `post.glare`.
+  `post.glare`; the display's white `post.white.r@high` (`g`, `b`; `@day`, `@golden`, `@cloudy`,
+  `@night`), the sky's light `sky.light.r@high` (`g`, `b`; `@low`, `@golden`, `@night`), the key's
+  colour at a low sun `sky.key.hueDepth`, `reddens`, `yellows`, the near air
+  `sky.weather.nearDensity@clear` (`nearStart`, `nearEnd`; `@fair`, `@cloudy`, `@overcast`) and the
+  land's share of the sky's light `lighting.relight.skyGain@high` (`@low`, `@golden`, `@cloudy`,
+  `@night`).
 - The ambient grade (`src/lighting/AmbientGrade.ts`): `__PONLAI__.ambient.current` holds the five
   knobs the table gives for the sun and the weather now (also `D.ambient`), `table` the table's own
   output; `override = true` with `manual.<knob>` replaces it from the next frame (the GUI's Ambient

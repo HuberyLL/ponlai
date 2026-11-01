@@ -117,8 +117,10 @@ art decision changes; images from elsewhere stay out of the repository.
   dimmer, not a yellow-gold face under a pale sky); the deep night shows a
   moonlit grey card at a green code of about 0.1 to 0.2, and holds its exposure whatever the moon. A
   clouded sky is metered by the view's own light: in the view of the whole island the ground shows
-  about two stops under a clear day's sunlit ground at the same hour, on a cloudy and an overcast
-  day alike, and other views lie within about half a stop of that. A sun in the frame
+  about a stop under a clear day's sunlit ground at the same hour, on a cloudy and an overcast
+  day alike, and other views lie within about half a stop of that. Under cloud the land takes about
+  four times a clear day's share of the sky's light, so it stands in soft daylight under a pale sky
+  rather than as a dim island under a bright one, lit to shaded about 2 to 4. A sun in the frame
   may read a little brighter than its eye-adapting exposure would show it. The night keeps the
   moonlit island readable (see Night).
 - No lens effects a photograph of a real place would not have: no tilt-shift miniature blur, no
