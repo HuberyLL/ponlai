@@ -54,9 +54,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     scales the pixel's own Fresnel, so the waves the pixel does resolve keep their relief; the
 //     sky reflected along a direction the unresolved slopes lift toward the higher, darker sky,
 //     reflections below the horizon darkened toward the horizon's colour, the whole of it moved from
-//     the low band toward the sky's light by the view's elevation (`REFLECTION_BAND`: the sea's copper
-//     at a low sun, its level under cloud); both read the sea's slopes
-//     before the waves' damping, so a lee stands level with the sea round it, never a pale tongue
+//     the low band toward the sky's light by the view's elevation (`REFLECTION_BAND`: its colour with
+//     the sun up, its level under cloud); both read the sea's slopes before the waves' damping, so a lee stands level with the sea round it, never a pale tongue
 //     of a mirror's reflectance; the screen-space reflection of the cliffs and the islanders behind
 //     tidewater's gate (rays near the horizon, reflectance over 0.05)
 //   - the sun's specular: GGX of the base roughness and the slopes the pixel cannot resolve (Cox-
@@ -235,19 +234,20 @@ const REFLECTION_TILT = 0.35, BELOW_HORIZON = 0.6;
 // straight across, the band: at a low sun the pale half of the sky opposite the sun, under cloud the
 // bright strip low down. So the reflection is scaled in two ways, as factors, which keep the waves'
 // relief a proportion of it:
-// - its colour moves toward the whole sky's light by `hue` of the way, its luminance kept, which gives
-//   the sea the low sun's copper on the side away from the sun. It comes in with the view's elevation
-//   (`ramp`), so the far sea keeps the band and joins the sky, and it goes as the sun passes from 1 to
-//   3 degrees under the horizon (`dusk`, its height), where the sky's light holds the afterglow's red
-//   over a blue band and the sea would turn violet;
+// - its colour moves toward the whole sky's light by `hue` of the way, its luminance kept, which keeps
+//   the reflection from the band's own colour while the sun stands up. It comes in with the view's
+//   elevation (`ramp`), so the far sea keeps the band and joins the sky, and it goes as the sun falls
+//   from about 11 to 3 degrees (`lowSun`, its height): by then the sky's light is warm over a band
+//   that is not, and the factor reddened the mirror's own relief, which a far swell holds in patches;
 // - under cloud, the band's excess over the sky's light goes by ( light / band ) ^ `level`. The level is
 //   chosen, not the sky's light: it stands the clouded sea level between a view along the water and
 //   one from above, and takes the metallic relief off the swell, which is a share of that band. It
 //   rests where the band stands at or under the sky's light, so a steep view keeps its reflection. It
 //   fades away toward the sun (`sunward`, the cosine between the eye and the sun on the water's
-//   plane), where the band is brightest and the sea would go dark under a bright sky, and it goes
-//   with the hue at `dusk`: after sunset and by night the band is all the clouded sea's relief has.
-const REFLECTION_BAND = { ramp: 0.18, hue: 0.6, level: 2.2, dusk: [ - 0.05, - 0.015 ], sunward: [ - 0.7, 0.1 ] } as const;
+//   plane), where the band is brightest and the sea would go dark under a bright sky, and it goes as
+//   the sun passes from 1 to 3 degrees under the horizon (`dusk`, its height): after sunset and by
+//   night the band is all the clouded sea's relief has.
+const REFLECTION_BAND = { ramp: 0.18, hue: 0.6, level: 2.2, lowSun: [ 0.05, 0.2 ], dusk: [ - 0.05, - 0.015 ], sunward: [ - 0.7, 0.1 ] } as const;
 
 // The mean Fresnel over unresolved slopes: a facet's reflectance climbs so steeply at grazing that
 // the sheet reads as facets turned some two sigma toward the eye, the view's cosine to the mean
@@ -949,10 +949,9 @@ export class Water {
 			const bandRamp = smoothstep( 0, REFLECTION_BAND.ramp, V.y ).toVar();
 			const sunDir = sky.atmosphere.sunDir;
 			const hue = skyLight.div( max( horizon, vec3( 1e-8 ) ) ).div( max( skyOverBand, 1e-5 ) );
-			const duskFade = smoothstep( ...REFLECTION_BAND.dusk, sunDir.y ).toVar();
-			const hueShare = bandRamp.mul( REFLECTION_BAND.hue ).mul( duskFade );
+			const hueShare = bandRamp.mul( REFLECTION_BAND.hue ).mul( smoothstep( ...REFLECTION_BAND.lowSun, sunDir.y ) );
 			const level = pow( min( skyOverBand, 1 ), REFLECTION_BAND.level );
-			const levelShare = bandRamp.mul( shared.clouded ).mul( duskFade ).mul( smoothstep( ...REFLECTION_BAND.sunward, dot( normalize( V.xz.add( 1e-5 ) ), normalize( sunDir.xz.add( 1e-5 ) ) ) ) );
+			const levelShare = bandRamp.mul( shared.clouded ).mul( smoothstep( ...REFLECTION_BAND.dusk, sunDir.y ) ).mul( smoothstep( ...REFLECTION_BAND.sunward, dot( normalize( V.xz.add( 1e-5 ) ), normalize( sunDir.xz.add( 1e-5 ) ) ) ) );
 			const refl = mix( horizon.mul( BELOW_HORIZON ), skyReflection, horizonOcc )
 				.mul( mix( vec3( 1 ), hue, hueShare ) ).mul( mix( float( 1 ), level, levelShare ) ).toVar();
 			// The cliffs and the islanders from the screen: only rays near the horizon can meet them,
