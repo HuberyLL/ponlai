@@ -27,16 +27,14 @@ export const shared = {
 	rain: uniform( 0 ),
 	wetness: uniform( 0 ),
 	waterLevel: uniform( 0 ),
-	// Clear water with a little plankton and fine sand in it (art direction: teal water, jade over
-	// the shallows): red is absorbed within a couple of metres, green and blue over some 14 and 17 m
-	// (the e-folding of the absorption), so the sandy shelf reads through the water as a green
-	// turquoise and the basin deepens toward teal; a little scattering by suspended particles, most
-	// in the green and blue. tidewater's clear tropical water (blue absorbed over 30 m, 0.035, green
-	// scattering 0.018) deepened to a saturated navy and turned the shallows blue-cyan; a greener
-	// step (blue 0.085, green scattering 0.026) read as a lake beside the meadow. Shared with the
-	// light under the water (Underwater.ts) for both the sun and view paths (1 / m).
-	sigA: uniform( new THREE.Vector3( 0.42, 0.07, 0.06 ) ),
-	sigS: uniform( new THREE.Vector3( 0.012, 0.022, 0.024 ) ),
+	// Clear temperate water with a little plankton and fine sand in it: red is absorbed over some
+	// 8 m, green and blue over some 17 and 14 m (the e-folding of the absorption), so the floor reads
+	// through the shallows near its own colour, with no bright rim, and the deep water holds a grey
+	// green-blue; a little scattering by suspended particles, most in the blue, which keeps the open
+	// sea from teal. Shared with the light under the water (Underwater.ts) for both the sun and view
+	// paths (1 / m).
+	sigA: uniform( new THREE.Vector3( 0.12, 0.06, 0.07 ) ),
+	sigS: uniform( new THREE.Vector3( 0.02, 0.022, 0.03 ) ),
 	sunIntoWater: uniform( 1 ), // 1 - Fresnel of the sun at the surface
 	// Storm strength: whitecaps on breaking crests (0 calm).
 	storm: uniform( 0 ),

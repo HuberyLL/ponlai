@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { makeTerrainMaterial } from '../materials/TerrainMaterial.ts';
 import type { DetailTextures } from '../materials/ProceduralTextures.ts';
-import type { Caustics } from '../ocean/Caustics.ts';
+import type { WaveMaps } from '../ocean/WaveMaps.ts';
 import { refractedGroup, showUnderwater } from '../ocean/Refraction.ts';
 import type { Shared } from '../shared.ts';
 import { ISLAND_TOP } from './WorldShapes.ts';
@@ -52,12 +52,12 @@ export interface WorldMeshes {
 	grounds: GroundGrid[];
 }
 
-export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: Shared, caustics: Caustics, fields: WorldFields ): WorldMeshes {
+export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: Shared, waveMaps: WaveMaps, fields: WorldFields ): WorldMeshes {
 
 	const group = refractedGroup( shared.waterLevel.value );
 	group.name = 'world';
-	const cliffMat = makeTerrainMaterial( 'cliff', tex, shared, caustics, fields.shore, { topY: ISLAND_TOP, rimGround: fields.rim, rimGroundXform: fields.rimXform } );
-	const rockMat = makeTerrainMaterial( 'cliff', tex, shared, caustics, fields.shore, { vegetation: false } );
+	const cliffMat = makeTerrainMaterial( 'cliff', tex, shared, waveMaps, fields.shore, { topY: ISLAND_TOP, rimGround: fields.rim, rimGroundXform: fields.rimXform } );
+	const rockMat = makeTerrainMaterial( 'cliff', tex, shared, waveMaps, fields.shore, { vegetation: false } );
 	const island = new THREE.Group();
 	island.name = 'island';
 	for ( const part of data.islands ) island.add( islandMesh( part, cliffMat ) );
@@ -74,7 +74,7 @@ export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: 
 
 	// the sea floor: its near tiles and the far floor, one mesh (their normals come with them:
 	// the floor function's slopes, which agree along every tile's border)
-	const seabed = new THREE.Mesh( seabedGeometry( data ), makeTerrainMaterial( 'seabed', tex, shared, caustics, fields.shore ) );
+	const seabed = new THREE.Mesh( seabedGeometry( data ), makeTerrainMaterial( 'seabed', tex, shared, waveMaps, fields.shore ) );
 	seabed.name = 'seabed';
 	seabed.receiveShadow = true;
 	showUnderwater( seabed );

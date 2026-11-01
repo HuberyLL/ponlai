@@ -12,6 +12,7 @@ import {
 } from 'three/tsl';
 import { soilGroveSwell } from '../materials/Soil.ts';
 import { ISLAND_TOP } from '../world/WorldShapes.ts';
+import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
 import type { SunShadow } from './SunShadow.ts';
 import type { Shared } from '../shared.ts';
 import { useLightLayer } from '../debug/LightLayer.ts';
@@ -38,9 +39,9 @@ import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 // `seaRadiance`, where tidewater's environment has the atmosphere's dark ground), then blurred
 // (a binomial 5x5 of 1 m steps, as 3x3 bilinear lookups). Alpha: the height of the bouncing
 // surface (the plateau's top over its swells, or the sea level). It is drawn at 256 texels, blurred into the
-// caustics' array target (its last layer, Caustics `bounceLayer`): the materials lit under the
-// water already bind WebGPU's 16 sampled textures, and the caustics' map is one of them. Like the
-// caustics, it is drawn before the frame graph, after the sun's map. It is a function of the key's direction and colour, the sun's maps,
+// wave maps' array target (its last layer, WaveMaps `bounceLayer`), so the materials lit under the
+// water take no texture more for it. Like the wave maps, it is drawn before the frame graph, after
+// the sun's map. It is a function of the key's direction and colour, the sun's maps,
 // the sea's radiance and the world fields. It is drawn with the sun's map's steps (`steps`: a step
 // of the key's turn, SunShadow.ts, counted also while the swaying plants redraw that map every
 // frame), from that map alone and the key as it stands then, and
@@ -98,7 +99,7 @@ import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 
-// the bake's texels per side (the blurred map takes the caustics target's)
+// the bake's texels per side (the blurred map takes the wave maps' target's)
 const RAW = 256;
 // objects round the receiver shade part of the ground it sees (their shadows are not in the map)
 const SURROUND = 0.6;
@@ -110,9 +111,9 @@ const REACH = 1;
 // how far above the ground the bake takes the key's visibility (m): above the plateau's relief
 const SHADOW_LIFT = 0.2;
 // linear albedos: the plateau's turf (the islanders' former bounce, tidewater's grass), the rim's
-// stone, and the floor's (SeabedLook's means)
+// stone, and the floor's (its means at its gain: SeabedTile.ts FLOOR_ALBEDO)
 const TURF = vec3( 0.075, 0.11, 0.032 ), RIM = vec3( 0.08, 0.075, 0.065 );
-const SAND = vec3( 0.46, 0.435, 0.365 ), SEAGRASS = vec3( 0.095, 0.128, 0.065 ), RUBBLE = vec3( 0.29, 0.285, 0.25 );
+const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.gain ), SEAGRASS = vec3( 0.095, 0.128, 0.065 ).mul( FLOOR_ALBEDO.gain ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.gain );
 // the water's own backscatter seen from above (tidewater's)
 const WATER_BODY = vec3( 0.01, 0.025, 0.03 );
 
@@ -124,7 +125,7 @@ export interface GroundBounceInputs {
 	fields: { shore: THREE.TextureNode; floor: THREE.TextureNode; beds: THREE.TextureNode };
 	// the soil map (Soil.ts): the plateau's swell, the height of the land's bouncing surface
 	soil: THREE.Texture;
-	// the array target and layer the map is blurred into (Caustics `target`, `bounceLayer`)
+	// the array target and layer the map is blurred into (WaveMaps `target`, `bounceLayer`)
 	target: THREE.RenderTarget;
 	layer: number;
 	// the cloud shadow's visibility of the key at a world point
@@ -233,7 +234,7 @@ export class GroundBounce {
 
 	}
 
-	/** Once a frame, after the sun's map and the caustics: draws the map again at the sun's map's
+	/** Once a frame, after the sun's map and the wave maps: draws the map again at the sun's map's
 	 * steps and when the sea or the fields changed (see the header). `sea`: the environment's lower
 	 * half (Sky `seaRadiance`). */
 	update( sea: THREE.Color ): void {
@@ -251,12 +252,8 @@ export class GroundBounce {
 		const prev = r.getRenderTarget();
 		r.setRenderTarget( this.raw );
 		this.rawQuad.render( r );
-		// (read at level 0 only: the caustics' mip chain is made after their own layers)
-		const mips = target.texture.generateMipmaps;
-		target.texture.generateMipmaps = false;
 		r.setRenderTarget( target, layer );
 		this.blurQuad.render( r );
-		target.texture.generateMipmaps = mips;
 		r.setRenderTarget( prev );
 		this.ready.value = 1;
 		this.bakes ++;

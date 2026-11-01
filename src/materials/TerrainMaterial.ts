@@ -12,11 +12,12 @@ import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, SOIL_PALETTE, soilGroveSwell, soilUnifo
 import { RIM_FRINGE_FADE, RIM_INNER_LIMIT, RIM_MAX_DROP } from '../world/RimGround.ts';
 import { BARE_GROUND, GRASS_ROOTS, GRASS_SHADOW, meadowMean, rootsSky, meadowLayerDepth, meadowLayerLight } from '../world/Grass.ts';
 import { CROWN_SCALE, swardField } from '../world/SwardField.ts';
-import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
+import type { WaveMaps } from '../ocean/WaveMaps.ts';
 import { underwaterLight, UnderwaterLightingModel } from '../lighting/Underwater.ts';
 import { TURF_CANOPY_DEPTH, meadowCanopyLight, meadowGroundLight } from '../lighting/MeadowCanopy.ts';
 import { puddleField, puddleRipples } from '../weather/Puddles.ts';
 import { seabedAlbedo } from './SeabedLook.ts';
+import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
 import { DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness } from './Wetness.ts';
 import { hexReadScan, heightBlend, type HexScan } from './HexTiling.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -43,7 +44,7 @@ const GROUND_SHADE = MEADOW_SHADE && debugFlags.groundShade !== false;
 // PBR materials for the rock and the sea floor: MeshStandardNodeMaterial (lights, shadows, IBL)
 // with the surface built procedurally in world space (triplanar baked detail, moss, wet band,
 // algae, sediment) and the light below the water attenuated on its way down (sun path through
-// the water column, caustics, ambient) by a lighting model of its own, so the water shader only
+// the water column, ambient) by a lighting model of its own, so the water shader only
 // has to add the view path. Above the water its ambient diffuse is the ambient volume's
 // (lighting/AmbientSample.ts), whose probes see the groves and the cliffs, with the environment's
 // specular occluded by it.
@@ -866,7 +867,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 			? mix( float( 0.65 ), float( 0.24 ), deep ).mul( mix( float( 0.28 ), float( 1 ), colony ) )
 			: mix( float( 0.85 ), float( 0.5 ), deep ) );
 		albedo.assign( mix( albedo, algaeC.mul( H.r.mul( 0.6 ).add( 0.7 ) ), algaeCoverage ) );
-		albedo.assign( mix( albedo, vec3( 0.30, 0.26, 0.19 ), silt.mul( 0.7 ) ) );
+		albedo.assign( mix( albedo, vec3( 0.30, 0.26, 0.19 ).mul( FLOOR_ALBEDO.gain ), silt.mul( 0.7 ) ) );
 		// Below the tidal band the stone wears an olive-brown film of algae and diatoms on the faces
 		// that catch the light, in patches, so submerged stones and the underwater cliff separate
 		// from the pale sand by hue as well as value. Each stone also keeps more of its own shade.
@@ -1003,17 +1004,17 @@ function seabedSurface( { tex, shore, shared }: Ctx, shoreXform: THREE.Node<'vec
 }
 
 // The light below the surface is the shared underwater model (lighting/Underwater.ts): the sun
-// path through the water column (with caustics) and the dimmer, bluer ambient. Above the water the
-// terrain adds its own: the meadow's canopy shade on the key and a faint caustic shimmer reflected
-// onto the rock.
+// path through the water column and the dimmer ambient. Above the water the terrain adds its
+// own: the meadow's canopy shade on the key. The light the sea sends onto the rock above it is the
+// ground bounce's (lighting/GroundBounce.ts).
 
 type TerrainVariant = ( hex: boolean, from?: THREE.NodeMaterial ) => THREE.MeshStandardNodeMaterial;
 
-export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextures, shared: Shared, caustics: Caustics, shore: FieldTexture, { topY = 3.1, vegetation = true, rimGround, rimGroundXform, hex }: TerrainOptions = {} ): THREE.MeshStandardNodeMaterial {
+export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextures, shared: Shared, waveMaps: WaveMaps, shore: FieldTexture, { topY = 3.1, vegetation = true, rimGround, rimGroundXform, hex }: TerrainOptions = {} ): THREE.MeshStandardNodeMaterial {
 
 	const topYU = uniform( topY );
 	const ctx: Omit<Ctx, 'hex'> = { tex, shared, topY: topYU, vegetation, shore, rimGround, rimGroundXform: rimGroundXform ? uniform( rimGroundXform ) : undefined };
-	if ( kind === 'seabed' ) return buildTerrainMaterial( kind, { ...ctx, hex: false }, caustics );
+	if ( kind === 'seabed' ) return buildTerrainMaterial( kind, { ...ctx, hex: false }, waveMaps );
 	// For an A/B inside one page, each cliff material can hand over its other variant (built on
 	// first use, sharing the uniforms) with the nodes RefractedSun installed on it:
 	//   s.scene.traverse( ( o ) => { const v = o.material?.userData.terrainVariant; if ( v ) o.material = v( on, o.material ); } )
@@ -1023,7 +1024,7 @@ export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextur
 		let mat = variants.get( on );
 		if ( ! mat ) {
 
-			mat = buildTerrainMaterial( kind, { ...ctx, hex: on }, caustics );
+			mat = buildTerrainMaterial( kind, { ...ctx, hex: on }, waveMaps );
 			mat.userData.terrainVariant = variant;
 			variants.set( on, mat );
 
@@ -1044,7 +1045,7 @@ export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextur
 
 }
 
-function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, caustics: Caustics ): THREE.MeshStandardNodeMaterial {
+function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, waveMaps: WaveMaps ): THREE.MeshStandardNodeMaterial {
 
 	const { shared, vegetation } = ctx;
 	const topYU = ctx.topY;
@@ -1095,27 +1096,7 @@ function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, caustics: Cau
 
 	};
 
-	// The caustics' reflected shimmer is read only in the band above the water where it is seen,
-	// which has faded to nothing 1.2 m up; most of the island's rock lies above it.
-	const p = positionWorld;
-	const above = p.y.sub( shared.waterLevel );
-	// Reflected caustic sparkle is direct-light energy. It must not animate ambient light
-	// through the zero-energy sun/moon handoff or turn the moon into a daylight source.
-	const directGain = clamp( max( shared.sunColor.x, max( shared.sunColor.y, shared.sunColor.z ) ).mul( 3 ), 0, 1 );
-	const light = underwaterLight( shared, caustics, {
-		aboveSun: vec3( surf.get( 'canopy' ) ),
-		aboveAmbient: {
-			when: above.lessThan( 1.2 ),
-			// Light reflected up from the sea onto the rock just above it: a steady 28 % lift of
-			// the ambient with the moving caustic pattern (mean 1) on top.
-			value: () => {
-
-				const shimmer = causticsAt( caustics, p, above.mul( 0.6 ).add( 1.4 ) ).sub( 1 ).mul( 0.6 ).add( 0.28 ).mul( float( 1 ).sub( smoothstep( 0, 1.2, above ) ) );
-				return vec3( float( 1 ).add( shimmer.mul( directGain ) ) );
-
-			},
-		},
-	} );
+	const light = underwaterLight( shared, waveMaps, { aboveSun: vec3( surf.get( 'canopy' ) ) } );
 	// the ambient volume above the water (lighting/AmbientSample.ts): degree 2 on the plateau, the
 	// cliffs and the stones. At degree 1
 	// the volume's directionality boost turns the light the lit meadow bounces up against level

@@ -25,7 +25,7 @@ type M4 = THREE.Node<'mat4'>;
 // the world's workers (`setCasters`, ChunkDerived.ts).
 // A submerged receiver reads the air's map (the island's shadow) where its light entered the water:
 // up the sun ray refracted through the long waves' slope to their surface (`waveEntryNode`, from the
-// wave maps: Caustics.ts), as tidewater's hookShadowPosition finds it (`bindTerrain`).
+// wave maps: WaveMaps.ts), as tidewater's hookShadowPosition finds it (`bindTerrain`).
 
 const WATER_IOR = 1.333;
 // Turn of the key light below which a running clock keeps the drawn map (see RefractedSun.update).
@@ -360,7 +360,7 @@ export class RefractedSun {
 	}
 
 	/** Gives every refracted-sun receiver under `root` its submerged shadows: the air map read where
-	 * the light entered the water (the long waves' surface from `waves`, the wave maps: Caustics.ts;
+	 * the light entered the water (the long waves' surface from `waves`, the wave maps: WaveMaps.ts;
 	 * the mean level without), times this map. */
 	bindTerrain( root: THREE.Object3D, waves?: { wavesAt( point: V3 ): THREE.Node<'vec4'> } ): void {
 

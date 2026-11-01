@@ -49,7 +49,7 @@ type V3 = THREE.Node<'vec3'>;
 // shading and one level from dusk to dawn. Unlike the sun, the moon is also drawn there while it
 // is up (`moonDirection`), and the key's own direction is that one too (Sky.ts `keyDir`), so
 // everything that keeps the key's true direction above (the water's glint and so the moon's path
-// on the sea, the caustics, the refracted light under the water, the clouds, the haze) sees the
+// on the sea, the refracted light under the water, the clouds, the haze) sees the
 // moon where it is drawn: the disk, the glow of the air around it, its path on the water and the
 // island's shading and shadows stand in one place. Its phase keeps its angle to the orbit's sun
 // (Sky.ts `track`). Over the handoff (from 0.7 to 2.5 degrees under the horizon, through no key

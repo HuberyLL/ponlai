@@ -59,8 +59,7 @@ import { COX_MUNK, DEFAULT_SWELL, seaState, slopeVariance, waveSystemTerms, type
 // surface folded the floor seen through a metre or two of water into crumbs. The cascade's amplitude
 // is scaled (`fineScale`, never above 1) so that the four cascades and the near ripples together hold
 // Cox and Munk's slope for the wind: about 0.78 at the gentle wind, 0.5 at the light one, 1 from about
-// 6 m/s, where the spectrum falls short of their slope. The caustics' fine networks, which this
-// cascade focuses, soften with it, as a calmer surface's do.
+// 6 m/s, where the spectrum falls short of their slope.
 //
 // The spectrum follows the weather's wind as tidewater's sea states follow its wind (`setWind`: the
 // fetch, choppiness and the swell's scale of OceanSpectrum.ts `seaState` at that speed, and its
