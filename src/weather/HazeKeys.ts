@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { tuneObject, type TuneOptions } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
-import { KEPT_SKIES, WEATHER_PRESETS } from '../sky/Weather.ts';
+import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun } from '../sky/Weather.ts';
 
 // The haze's keys: what the air does by the hour and the weather, set as a few quantities one sees
 // (how far the light carries, the colour it loses, how bright and how coloured the air shows) at
@@ -43,14 +43,14 @@ import { KEPT_SKIES, WEATHER_PRESETS } from '../sky/Weather.ts';
 //     The overcast's are to be fitted toward grey.
 //   - desaturate: how far each of the haze's two shares of light (VolumetricHaze's header) turns
 //     toward its luminance: all of it by day (fitted: the day's air shows its sky's colour through
-//     the haze's sigma, not its own), half in the morning and after sunset, most of it by night,
-//     nearly all of it in the mist, which shows near neutral, and a third at the golden hour
-//     (fitted), whose air takes most of the sun's orange.
+//     the haze's sigma, not its own), half in the morning, after sunset and by night, nearly all
+//     of it in the mist, which shows near neutral, and a third at the golden hour (fitted), whose
+//     air takes most of the sun's orange.
 //   - gain: the haze's light over the day's (VolumetricHaze `gain`, which multiplies both shares):
 //     how bright the air shows against the day's, 1.2 - 1.7 before dawn, 1.7 in the mist, 1.5 in the
 //     morning and 2.5 after sunset, taken as one sees them; the day's 1.73, the golden hour's 1.43
-//     and the night's 2.01 were fitted (by night the haze's moonlit light is most of the low sky's,
-//     about a third of the shade's white near the horizon and a fifth at 10 degrees).
+//     and the night's 1.05 were fitted (by night the haze's moonlit light is most of the low sky's,
+//     so this sets how far the sky near the horizon stands over the sky above it).
 //   - mist: the morning mist in the sea fog's units (VolumetricHaze `fogExtinction`), which thickens
 //     the haze's ground layer, soft and low over the whole island, not a sheet on the sea.
 //     Calm, dry air cools overnight; the mist gathers as the sun comes up, thickest from 1 to 3
@@ -79,6 +79,11 @@ import { KEPT_SKIES, WEATHER_PRESETS } from '../sky/Weather.ts';
 // `nearEnd`; VolumetricHaze's header): the key's near factor, start and end are its presets'
 // blended by the sky's shares, each kept sky's tunable
 // (`sky.weather.nearDensity|nearStart|nearEnd@<clear|fair|cloudy|overcast>`).
+// A clouded sky's near density falls to 0.4 of its preset's as the sun climbs from 30 to 40 degrees
+// (Weather.ts `cloudedHighSun`): that high the sky's light turns the air bluer and a little brighter,
+// and with the sun behind the cloud the meter lifts the land and the air together, so the same near
+// air would lie over the land as a pale blue veil. What the near air loses the land keeps; the sea
+// past `nearEnd` and the sky keep their depth.
 
 export interface HazeKey {
 
@@ -124,7 +129,7 @@ const twilight = ( elevation: number ): Sigma => {
 	return [ at( 0 ), at( 1 ), at( 2 ) ] as const;
 
 };
-const NIGHT = { ...key( 2.5, NIGHT_SIGMA, 0.673, 2.01, 0, 1 ), rayleighWeight: 7.59, top: 47.6, width: 36.8, widthSlope: 0.65, aerosolShare: 0.003, skyDepth: 0 };
+const NIGHT = { ...key( 2.5, NIGHT_SIGMA, 0.55, 1.05, 0, 1 ), rayleighWeight: 7.59, top: 47.6, width: 36.8, widthSlope: 0.65, aerosolShare: 0.003, skyDepth: 0 };
 const BEFORE_DAWN = key( 0.48, twilight( - 3.5 ), 0.33, 1.45, 0, 1 );
 const MIST = key( 0.96, GOLDEN_SIGMA, 0.95, 1.7, 1.07, 1 );
 const MORNING = key( 0.96, DAY_SIGMA, 0.5, 1.5, 0, 1 );
@@ -194,6 +199,8 @@ for ( const [ s, name ] of [ [ 0, 'clear' ], [ 1, 'fair' ], [ 2, 'cloudy' ], [ 3
 		{ nearDensity: { min: 0.02, max: 1, scale: 'log', onChange: markSkyRetune }, nearStart: { min: 50, max: 800, onChange: markSkyRetune }, nearEnd: { min: 100, max: 1500, onChange: markSkyRetune } } );
 
 }
+// a clouded sky's near density at a high sun over its preset's (see the header)
+const HIGH_SUN_NEAR = 0.4;
 // per kept sky, the sun's share in the haze's Rayleigh light: off under a clear or fair sky, on
 // under cloud
 const SUN_RAYLEIGH = [ 0, 0, 1, 1 ];
@@ -247,6 +254,7 @@ export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly 
 	out.width *= width;
 	out.amount *= haze;
 	out.sunRayleigh = 1 - ( 1 - out.sunRayleigh ) * ( 1 - sunRayleigh );
+	out.nearDensity *= 1 + ( HIGH_SUN_NEAR - 1 ) * cloudedHighSun( elevation, skyMix );
 	out.mist *= ( 1 - THREE.MathUtils.smoothstep( wind, 3.5, 5 ) ) * ( 1 - rain );
 	return out;
 

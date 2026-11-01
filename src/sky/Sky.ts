@@ -23,7 +23,7 @@ import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
 import { DAY_EXPOSURE, type DayCycleSnapshot } from './DayCycle.ts';
-import { KEPT_SKIES, WEATHER_PRESETS, type WeatherFront, type WeatherState } from './Weather.ts';
+import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, type WeatherFront, type WeatherState } from './Weather.ts';
 import { keyed, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
@@ -63,7 +63,8 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // clouds' light see the moon where it is drawn; its phase keeps the orbit's
 // angle to the sun (`track`). The clouds take their own path between the two in the twilight, while
 // no light reaches them (CLOUD_TURN). After sunset the light
-// the sky lends the island takes a gain of its own (ISLAND_SKY), which the sky the eye sees, the
+// the sky lends the island takes a gain of its own (ISLAND_SKY), and under a clouded high sun a tint
+// of its own (CLOUD_LIGHT_TINT), which the sky the eye sees, the
 // sea's reflection of it and the sea's own body never take. The dome lays the air's haze over
 // itself (`fogDome`, VolumetricHaze.ts `skyHaze`): the clouds at the distance to their shell's middle
 // height, the sky behind them along the whole way; so the haze's composite leaves the sky's pixels.
@@ -213,6 +214,16 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 // before both were fitted (SKY_LIGHT, post/Exposure.ts), so the brightness each row gives is to be
 // measured again; the rows' shape, a lift through the afterglow easing to none by the night, holds.
 // The rows at 1, 0.5, 0, -3.3 and -5.3 degrees take the colour the rows around them gave there.
+// By day a clouded sky lends the island its own light: the sky's high key (SKY_LIGHT) gives the sky
+// its blue, which a deck of cloud does not pass on, so from 30 to 40 degrees the light lent to the
+// island is drawn most of the way to a warm grey (CLOUD_LIGHT_TINT, Weather.ts `cloudedHighSun`). The land
+// keeps its green under a high sun; the meter's level is the same, the tint keeping the luminance.
+const CLOUD_LIGHT_TINT = ( ( r: number, g: number, b: number, amount: number ) => {
+
+	const l = r * 0.2126 + g * 0.7152 + b * 0.0722;
+	return [ r / l, g / l, b / l, amount ] as const;
+
+} )( 1.2, 1, 0.5, 0.6 );
 interface IslandRow { at: number; tint?: readonly [ number, number, number ]; amount?: number; gain?: number }
 const ISLAND_SKY: readonly IslandRow[] = [
 	{ at: 2 },
@@ -524,9 +535,9 @@ const moonKeyGain = tune( 'lighting.moon.gain', 0.545, { min: 0.05, max: 4, scal
 // its level (the hue keeps MOON_KEY's luminance) and without the moonlit sky's, clouds' and haze's,
 // which keep MOON_KEY. At MOON_KEY's own (MOON_KEY_RED, MOON_KEY_BLUE) the hue is exactly white.
 // Through the night's white balance these leave moonlit rock a cool grey, the island's brightest
-// thing, with no more chroma than the sky over it, and the meadow nearly black with a hint of green.
-const moonKeyRed = tune( 'lighting.moon.red', 0.74, { min: 0.3, max: 1.2 } );
-const moonKeyBlue = tune( 'lighting.moon.blue', 2.37, { min: 0.8, max: 4 } );
+// thing, with no more chroma than the sky over it, and the meadow nearly black.
+const moonKeyRed = tune( 'lighting.moon.red', 1, { min: 0.3, max: 1.2 } );
+const moonKeyBlue = tune( 'lighting.moon.blue', 1.6, { min: 0.8, max: 4 } );
 const _moonKey = new THREE.Color();
 const _moonHue = new THREE.Color();
 
@@ -1284,6 +1295,8 @@ export class Sky {
 			}
 			if ( low > 0 ) tint.set( tint.x + ( LOW_SUN_TINT[ 0 ] - tint.x ) * low, tint.y + ( LOW_SUN_TINT[ 1 ] - tint.y ) * low,
 				tint.z + ( LOW_SUN_TINT[ 2 ] - tint.z ) * low, Math.max( tint.w, LOW_SUN.amount * low ) );
+			const clouded = skyMix ? cloudedHighSun( celestial.elevation, skyMix ) : 0;
+			if ( clouded > 0 ) tint.set( CLOUD_LIGHT_TINT[ 0 ], CLOUD_LIGHT_TINT[ 1 ], CLOUD_LIGHT_TINT[ 2 ], CLOUD_LIGHT_TINT[ 3 ] * clouded );
 
 		} else {
 

@@ -36,8 +36,8 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../wor
 //               degree 2 (p. 24), times the sky's scale (`skyScale`): the sky's fill (main.ts
 //               `skyFill`, the environment's intensity) times the probes' own sky gain (PROBE_SKY,
 //               keyed by the sun's own elevation, not the key's, so the moon's key at night does
-//               not move it: golden, low and high, a clouded day's keys over them, the night's by
-//               -6 degrees), which the seen sky never takes, so the ground's sky light can be set
+//               not move it: golden, low and high, a clouded day's held value over them, the
+//               night's by -6 degrees), which the seen sky never takes, so the ground's sky light can be set
 //               against the sun's and the sky's at every hour and under cloud; the grade adds no
 //               gain of its own here (AmbientGrade.ts);
 //     bounced   the probe's bounced sky visibility (the world lit by a uniform white sky, one
@@ -198,23 +198,20 @@ const SKY_VIEW = [ 0.282095, 2 / 3 * 0.488603, - 0.315392 / 4, - 0.546274 / 4 ];
 /** The key's bounce lobe's gain over a projected direction's (see the header). */
 const BOUNCE_GAIN = 9.4;
 /** The probes' own gain on the sky's light, a luminance by the sun's elevation (keyed as Sky.ts
- * `skyGain`: golden, low and high, and the night key, reached by -6 degrees). The seen sky
+ * `skyGain`: golden, low and high, a held value under cloud, and the night key, reached by -6
+ * degrees). The seen sky
  * keeps its gain; the ground's sky light takes this on top, so its ratio to the sun's light can be
  * set at every hour without changing the sky the eye sees. Set once the environment took the
  * haze's light, which lights the shade too: about 0.8 at the day's keys, the ground's sky light a
  * fifth under the seen sky's. About 5 at night: the clear night's sky is mostly the haze's moonlit
  * light over a nearly dark dome, of which the environment takes only a part, and the moonlit ground
- * keeps about eighteen times the sky's light on open ground (Sky.ts `moonKeyGain`). 3.5 under
- * cloud with the sun at 30 degrees or higher: the land under a deck stands against a bright dome, and
- * at the day's 0.8 a cliff's face reads a tenth of the sky's exposed luminance, a dim island under a
- * pale sky. The gain lifts the land and its shade (lit to shaded falls to about 2 to 4 in the frame)
- * and leaves the sky as drawn; the meter takes a part of it, about 0.2 stops per doubling in the view
- * of the whole island, so the exposure's clouded key sits higher with it (post/Exposure.ts). It lets
- * go with the sun: with no direct light on the land the meter's mean runs over the sea, which takes
- * no gain, and the land, which does, so the land stands about the gain's square root over the meter,
- * and a flat 3.5 left it brighter at 3 degrees than at 30. So under cloud it falls to 1.8 by 20
- * degrees, 1.6 at 3 and 1 at -1, and returns to 3.5 by -2.7, where the night's exposure has come in
- * whole (the blue hour's light is the night's sky's, which the day's keys do not touch). */
+ * keeps about eighteen times the sky's light on open ground (Sky.ts `moonKeyGain`). 1 under cloud,
+ * one value from -1 degrees up: the land under a deck keeps the sky's light near a clear day's share,
+ * so the land stays well under the pale sky and its shade stays deep, and the exposure's clouded key
+ * alone sets its level (post/Exposure.ts). A higher gain lifts the land over the sea, which takes no
+ * gain, and the meter, which sees both, then takes the sea and the far water down with it. It returns
+ * to 3.5 by -2.7, where the night's exposure has come in whole (the blue hour's light is the night's
+ * sky's, which the day's keys do not touch). */
 const PROBE_SKY: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight', {
 	day: [
 		{ at: 3, name: 'golden', values: { skyGain: 0.774 } },
@@ -223,10 +220,7 @@ const PROBE_SKY: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight', {
 	],
 	cloudy: [
 		{ at: - 2.7, name: 'cloudyBlue', values: { skyGain: 3.5 } },
-		{ at: - 1, name: 'cloudySunset', values: { skyGain: 1 } },
-		{ at: 3, name: 'cloudyGolden', values: { skyGain: 1.6 } },
-		{ at: 20, name: 'cloudyLow', values: { skyGain: 1.8 } },
-		{ at: 30, name: 'cloudy', values: { skyGain: 3.5 } },
+		{ at: - 1, name: 'cloudy', values: { skyGain: 1 } },
 	],
 	night: { skyGain: 5 },
 }, { skyGain: { min: 0.25, max: 8, scale: 'log' } } );

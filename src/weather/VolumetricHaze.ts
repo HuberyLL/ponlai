@@ -95,9 +95,14 @@ type V4 = THREE.Node<'vec4'>;
 //     turned toward its luminance by the key's `desaturate` after its phase:
 //       - Rayleigh: the table's Rayleigh share through the sky's Rayleigh phase (Atmosphere.ts
 //         `skyRayleighPhase`), lit by the open sky (its colour times the ambient visibility) and by
-//         the sun (its colour under the polariser, times the sun's visibility), times the earth's
-//         shadow at the froxel. By day under a clear or fair sky the sun's colour here is 0: the air's
-//         blue is sky light, and sunlit blue haze would glow.
+//         the sun (its colour under the polariser, times the sun's visibility). The earth's shadow
+//         at the froxel, 1 by day, over 1 toward a set sun and under 1 away from it, takes the sun's
+//         term whole, and the open sky's only where it lifts it: the air away from a set sun stays
+//         lit by the sky over it, the afterglow toward the sun keeps the lift, and no black belt
+//         lies round the horizon. This reaches everything the haze's sky feeds, the sky's fog colour
+//         and the environment bakes, so the panorama, and the sky's irradiance by about a percent at
+//         twilight. By day under a clear or fair sky the sun's colour here is 0: the air's blue is
+//         sky light, and sunlit blue haze would glow.
 //       - aerosol: the table's Mie share through the Cornette-Shanks lobe, times the sun's colour
 //         and visibility once the sun stands over the froxel's horizon (a smoothstep 3 degrees
 //         either side of it, the horizon dipping by sqrt( 2 h / R ) at the froxel's height): the warm
@@ -713,7 +718,7 @@ export class VolumetricHaze {
 				const shadow = atmosphere.earthShadowAt( height, direction, body.b );
 				const above = smoothstep( horizon.negate(), horizon, body.elevation.add( dip ) );
 				const rayleigh = grey( rows.rayleigh.mul( body.rayleighPhase ) )
-					.mul( this.ambientColour[ body.b ].mul( ambient ).add( body.direct.mul( sun ) ) ).mul( shadow );
+					.mul( this.ambientColour[ body.b ].mul( ambient ).mul( max( shadow, 1 ) ).add( body.direct.mul( sun ).mul( shadow ) ) );
 				const mie = grey( rows.mie.mul( body.miePhase ) ).mul( this.mieColour[ body.b ] ).mul( above.mul( sun ) );
 				scattered.addAssign( rayleigh.mul( this.weights.x ).add( mie.mul( this.weights.y ) ) );
 

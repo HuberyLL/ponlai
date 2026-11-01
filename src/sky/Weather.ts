@@ -49,6 +49,18 @@ export const PARKED_WEATHER: ReadonlyArray<WeatherName> = [ 'rain', 'storm', 'fo
 export const isParkedWeather = ( name: string ): boolean => ( PARKED_WEATHER as readonly string[] ).includes( name );
 /** The kept skies, in the order of `Weather.skyMix`. */
 export const KEPT_SKIES: ReadonlyArray<WeatherName> = [ 'clear', 'fair', 'cloudy', 'overcast' ];
+
+/** How far a clouded day's high sun has come in at the sun's `elevation` (degrees) under the
+ * weather's blend of the kept skies (`skyMix`): none under a clear or a fair sky, nor up to 30
+ * degrees, the sky's clouded share from 40 up, where the sky's light (Sky.ts SKY_LIGHT) has taken
+ * its full blue. The near air (HazeKeys.ts) and the light lent to the island (Sky.ts
+ * CLOUD_LIGHT_TINT) follow it, so a clouded noon's land stays as dark and green as its afternoon's. */
+export function cloudedHighSun( elevation: number, skyMix: readonly number[] ): number {
+
+	const t = Math.min( Math.max( ( elevation - 30 ) / 10, 0 ), 1 );
+	return ( ( skyMix[ 2 ] ?? 0 ) + ( skyMix[ 3 ] ?? 0 ) ) * t * t * ( 3 - 2 * t );
+
+}
 // a sky's share of each kept sky: its own, or overcast's for a parked one
 const skyShares = ( name: WeatherName ): number[] => {
 
@@ -88,8 +100,9 @@ export interface WeatherState {
 	// air while every ray past `nearEnd`, the horizon's and the sky's, keeps its depth; the parked
 	// skies keep 1 (the kept skies' are tunable, weather/HazeKeys.ts). A clear or fair sky's air is
 	// a fifth as dense as a clouded one's, so it gives its depth back over a short shell that the
-	// far sea starts in; a clouded sky's needs the long one, or that shell stands as a pale wall
-	// over the grown island's far half.
+	// far sea starts in. A clouded sky's shell ends between: shorter (380 m under the cloudy sky) it
+	// stands as a pale wall over the fully grown island's far half, longer the far sea falls dark
+	// under the sky's low band.
 	nearDensity: number;
 	nearStart: number;
 	nearEnd: number;
@@ -148,18 +161,17 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // still shows the groves' shadows faintly, at about 1.2 to 1.8 times lit to shaded. Overcast is a
 // dark grey sky with the sun still shining: the frame reads as a clear one about a stop darker,
 // the sun on the ground 0.5 to 0.85 of a clear day's at the same height with shadows as sharp as a
-// clear day's (`directVisibility` 0.7, `castShadow` 1) and lit to shaded about 2 in the frame, the
-// land's sky light being lifted under cloud while the sun stands at 30 degrees or more, and let go
-// toward sunset (lighting/AmbientRelight.ts PROBE_SKY). Its cloud shadow is cast at a share of the
-// deck's optical depth (`shadowDensity`), with no floor (`cloudFloor` 0): most of the time the sun
+// clear day's (`directVisibility` 0.7, `castShadow` 1), and the land's sky light near a clear
+// day's share at every height (lighting/AmbientRelight.ts PROBE_SKY). Its cloud shadow is cast at a
+// share of the deck's optical depth (`shadowDensity`), with no floor (`cloudFloor` 0): most of the time the sun
 // shines on the island, and the land darkens as the deck's thick parts drift over it, while the shadow
 // maps keep the island's own shadows. That share sets the land's illuminance against the sky's
 // luminance.
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
 	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, haze: 0.002, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
 	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, haze: 0.002, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
-	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, haze: 0.0106, nearDensity: 0.13, nearStart: 250, nearEnd: 600, rain: 0, fog: 0, storm: 0, cirrus: 0.15 },
-	overcast: { coverage: 0.94, density: 1.6, directVisibility: 0.7, cloudFloor: 0, castShadow: 1, shadowDensity: 0.03, glintSpread: 0, ambientGain: 0.76, haze: 0.00974, nearDensity: 0.09, nearStart: 250, nearEnd: 600, rain: 0, fog: 0.08, storm: 0, cirrus: 0 },
+	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, haze: 0.0106, nearDensity: 0.13, nearStart: 250, nearEnd: 430, rain: 0, fog: 0, storm: 0, cirrus: 0.15 },
+	overcast: { coverage: 0.94, density: 1.6, directVisibility: 0.7, cloudFloor: 0, castShadow: 1, shadowDensity: 0.03, glintSpread: 0, ambientGain: 0.76, haze: 0.00974, nearDensity: 0.08, nearStart: 250, nearEnd: 500, rain: 0, fog: 0.08, storm: 0, cirrus: 0 },
 	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, haze: 0.0095, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0.75, fog: 0.22, storm: 0, cirrus: 0 },
 	// A squall: the darkest deck, heavy rain, a strong wind (PRESET_WIND) and a rough, white-capped sea.
 	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, haze: 0.0135, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 1, fog: 0.3, storm: 1, cirrus: 0 },
