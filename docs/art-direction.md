@@ -118,12 +118,12 @@ art decision changes; images from elsewhere stay out of the repository.
   moonlit grey card at a green code of about 0.1 to 0.2, and holds its exposure whatever the moon. A
   clouded sky is metered by the view's own light: in the view of the whole island the ground shows
   about a stop under a clear day's sunlit ground at the same hour, on a cloudy and an overcast
-  day alike, and other views lie within about half a stop of that. Under cloud, with the sun at 30
-  degrees or higher, the land takes about four times a clear day's share of the sky's light, so it
-  stands in soft daylight under a pale sky rather than as a dim island under a bright one, lit to
-  shaded about 2 to 4. The share and the exposure let go together as the sun falls, so a clouded
-  evening comes on by degrees from about 20 degrees of sun: dark and quiet at sunset, neither black
-  nor lit yellow, and never brighter at a lower sun but where the cloud opens for a moment. A sun
+  day alike, and other views lie within about half a stop of that. Under cloud the land keeps
+  about a clear day's share of the sky's light at every height, so the meadow and the groves stand
+  dark and quiet under a pale sky, with the sea the lighter of the two. The exposure lets go as the
+  sun falls under about 6 degrees, so a clouded evening comes on by degrees: dark at sunset, neither
+  black nor lit yellow, the meadow never brighter at a lower sun but where the cloud opens for a
+  moment. A sun
   in the frame may read a little brighter than its eye-adapting exposure would show it. The night keeps the
   moonlit island readable (see Night).
 - No lens effects a photograph of a real place would not have: no tilt-shift miniature blur, no

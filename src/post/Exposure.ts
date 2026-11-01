@@ -94,21 +94,20 @@ export interface ExposureKey extends Record<string, number> {
 }
 
 /** The exposure's keys (DayKeys.ts): the golden hour (a sun at 3 degrees), a low sun (12), a high
- * one (40), a clouded day's by the sun's height and the night. They are fitted on the exposed white
+ * one (40), a clouded day's, held above 6 degrees, and the night. They are fitted on the exposed white
  * of a diffuser under the sun's direct light alone (by night the shaded one), seen toward and away
  * from the sun, with the sky's light as Sky.ts SKY_LIGHT sets it, together with the sky's light,
  * the haze and the grading. The highlight key is what darkens a view toward a low sun against one
  * away from it, the bright band about the sun capping the exposure. The golden key sits under the
  * low one, about half a stop under the meter and the highlights' guard close over it, so a sun at 3
  * degrees leaves a sunlit cliff orange and its shade deep. The high key's β runs to about 0.9,
- * where the sky nearly alone sets the exposure. The clouded key at 30 degrees was fitted on the
- * whites under the cloudy sky: its β went to 0, the meter alone, and its κ_H lies 2.3 stops over
- * its κ, so the guard holds a clouded view down only where its brightest few percent lie more than
- * 2.3 stops over its metered light (under a sky with no sun, rarely). A meter alone holds the
- * land level down to sunset, which reads as a lit afternoon under an evening sky, so κ falls with
- * the sun while β and κ_H stay: 0.48 from 20 degrees to 6, 0.1 at 3 and -0.12 at sunset, on the
- * land's sky gain's fall (lighting/AmbientRelight.ts PROBE_SKY). The land dims into the evening and
- * is never brighter at a lower sun, but for the cloud's own gaps, which pass at any height. The
+ * where the sky nearly alone sets the exposure. The clouded key was fitted on the whites under the
+ * cloudy sky: its β went to 0, the meter alone, and its κ_H lies 2.5 stops over its κ, so the guard
+ * holds a clouded view down only where its brightest few percent lie more than 2.5 stops over its
+ * metered light (under a sky with no sun, rarely). A meter alone holds the land level down to
+ * sunset, which reads as a lit afternoon under an evening sky, so κ falls with the sun while β and
+ * κ_H stay: 0.55 from noon down to 6 degrees, 0.1 at 3 and -0.12 at sunset. The meadow dims into the
+ * evening, but for the cloud's own gaps, which pass at any height. The
  * night has one white: β 0 (the meter alone), κ and κ_H fitted. The adaptation's time
  * constants are the same in every key (the header, Adaptation).
  * Tunable on debug pages (debug/Tune.ts): `post.exposure.<value>@<key>`. */
@@ -121,9 +120,7 @@ export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
 	cloudy: [
 		{ at: 0, name: 'cloudySunset', values: { key: - 0.12, highlight: 3.05, sky: 0, adaptUp: 0.05, adaptDown: 0.05 } },
 		{ at: 3, name: 'cloudyGolden', values: { key: 0.1, highlight: 3.05, sky: 0, adaptUp: 0.05, adaptDown: 0.05 } },
-		{ at: 6, name: 'cloudyDusk', values: { key: 0.48, highlight: 3.05, sky: 0, adaptUp: 0.05, adaptDown: 0.05 } },
-		{ at: 20, name: 'cloudyLow', values: { key: 0.48, highlight: 3.05, sky: 0, adaptUp: 0.05, adaptDown: 0.05 } },
-		{ at: 30, name: 'cloudy', values: { key: 0.75, highlight: 3.05, sky: 0, adaptUp: 0.05, adaptDown: 0.05 } },
+		{ at: 6, name: 'cloudy', values: { key: 0.55, highlight: 3.05, sky: 0, adaptUp: 0.05, adaptDown: 0.05 } },
 	],
 	night: { key: - 2.26, highlight: - 2.03, sky: 0, adaptUp: 0.05, adaptDown: 0.05 },
 }, { key: { min: - 6, max: 3 }, highlight: { min: - 3, max: 4 }, sky: { min: 0, max: 1 }, adaptUp: { min: 0.02, max: 4, scale: 'log' }, adaptDown: { min: 0.02, max: 4, scale: 'log' } } );
