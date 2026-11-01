@@ -524,9 +524,9 @@ const moonKeyGain = tune( 'lighting.moon.gain', 0.545, { min: 0.05, max: 4, scal
 // its level (the hue keeps MOON_KEY's luminance) and without the moonlit sky's, clouds' and haze's,
 // which keep MOON_KEY. At MOON_KEY's own (MOON_KEY_RED, MOON_KEY_BLUE) the hue is exactly white.
 // Through the night's white balance these leave moonlit rock a cool grey, the island's brightest
-// thing, with no more chroma than the sky over it, and the meadow nearly black with a hint of green.
-const moonKeyRed = tune( 'lighting.moon.red', 0.74, { min: 0.3, max: 1.2 } );
-const moonKeyBlue = tune( 'lighting.moon.blue', 2.37, { min: 0.8, max: 4 } );
+// thing, with no more chroma than the sky over it, and the meadow nearly black.
+const moonKeyRed = tune( 'lighting.moon.red', 1, { min: 0.3, max: 1.2 } );
+const moonKeyBlue = tune( 'lighting.moon.blue', 1.6, { min: 0.8, max: 4 } );
 const _moonKey = new THREE.Color();
 const _moonHue = new THREE.Color();
 

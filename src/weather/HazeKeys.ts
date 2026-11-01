@@ -43,14 +43,14 @@ import { KEPT_SKIES, WEATHER_PRESETS } from '../sky/Weather.ts';
 //     The overcast's are to be fitted toward grey.
 //   - desaturate: how far each of the haze's two shares of light (VolumetricHaze's header) turns
 //     toward its luminance: all of it by day (fitted: the day's air shows its sky's colour through
-//     the haze's sigma, not its own), half in the morning and after sunset, most of it by night,
-//     nearly all of it in the mist, which shows near neutral, and a third at the golden hour
-//     (fitted), whose air takes most of the sun's orange.
+//     the haze's sigma, not its own), half in the morning, after sunset and by night, nearly all
+//     of it in the mist, which shows near neutral, and a third at the golden hour (fitted), whose
+//     air takes most of the sun's orange.
 //   - gain: the haze's light over the day's (VolumetricHaze `gain`, which multiplies both shares):
 //     how bright the air shows against the day's, 1.2 - 1.7 before dawn, 1.7 in the mist, 1.5 in the
 //     morning and 2.5 after sunset, taken as one sees them; the day's 1.73, the golden hour's 1.43
-//     and the night's 2.01 were fitted (by night the haze's moonlit light is most of the low sky's,
-//     about a third of the shade's white near the horizon and a fifth at 10 degrees).
+//     and the night's 1.05 were fitted (by night the haze's moonlit light is most of the low sky's,
+//     so this sets how far the sky near the horizon stands over the sky above it).
 //   - mist: the morning mist in the sea fog's units (VolumetricHaze `fogExtinction`), which thickens
 //     the haze's ground layer, soft and low over the whole island, not a sheet on the sea.
 //     Calm, dry air cools overnight; the mist gathers as the sun comes up, thickest from 1 to 3
@@ -124,7 +124,7 @@ const twilight = ( elevation: number ): Sigma => {
 	return [ at( 0 ), at( 1 ), at( 2 ) ] as const;
 
 };
-const NIGHT = { ...key( 2.5, NIGHT_SIGMA, 0.673, 2.01, 0, 1 ), rayleighWeight: 7.59, top: 47.6, width: 36.8, widthSlope: 0.65, aerosolShare: 0.003, skyDepth: 0 };
+const NIGHT = { ...key( 2.5, NIGHT_SIGMA, 0.55, 1.05, 0, 1 ), rayleighWeight: 7.59, top: 47.6, width: 36.8, widthSlope: 0.65, aerosolShare: 0.003, skyDepth: 0 };
 const BEFORE_DAWN = key( 0.48, twilight( - 3.5 ), 0.33, 1.45, 0, 1 );
 const MIST = key( 0.96, GOLDEN_SIGMA, 0.95, 1.7, 1.07, 1 );
 const MORNING = key( 0.96, DAY_SIGMA, 0.5, 1.5, 0, 1 );
