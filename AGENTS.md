@@ -102,7 +102,7 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   illuminance every lit material writes beside its colour for the exposure (`MeterLight.ts`: a new
   lit material calls `writeMeter` and draws only in passes with an MRT).
 - `src/materials/`: procedural textures (the gravel bake and the scans' texture arrays:
-  `ProceduralTextures.ts`), the terrain (`TerrainMaterial.ts`, its ground scans hex-tiled), wet surfaces, the meadow's habitat and soil-depth fields (`Meadow.ts`).
+  `ProceduralTextures.ts`), the terrain (`TerrainMaterial.ts`, its ground scans hex-tiled), wet surfaces, the meadow's habitat and soil-depth fields (`Meadow.ts`), what a closed sky's light turns into in the sward (`SwardTint.ts`, shared by the blades and the turf).
 - `src/ocean/`: FFT ocean, shore waves, the share of each wave cascade a point of the sea keeps
   (`WaveDamping.ts`), the wave maps the light under the water reads (`WaveMaps.ts`),
   water shading (`Water.ts`), the sea's large-scale detail (`SeaDetail.ts`: gusts, slicks,

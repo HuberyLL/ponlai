@@ -43,6 +43,7 @@ import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';
 import { buildGrass, grassKind, plantGrass } from './world/Grass.ts';
 import { buildYunpeng, yunpengKind, yunpengNight } from './world/Yunpeng.ts';
 import { updateLeafLight } from './world/vegetation/LeafLight.ts';
+import { updateSwardTint } from './materials/SwardTint.ts';
 import { meadowCanopy } from './lighting/MeadowCanopy.ts';
 import { Pipeline, postOptionsFromURL, WHITE_BALANCE } from './post/Pipeline.ts';
 import { LOCAL_TONE } from './post/LocalTone.ts';
@@ -1835,6 +1836,8 @@ function tick( time: number ): void {
 	localLights.update( yunpengNight.value );
 	// what the crowns' leaves pass on of the key (world/vegetation/LeafLight.ts)
 	updateLeafLight( sky.elevation, yunpengNight.value, shared.clouded.value );
+	// what a closed sky's light turns into in the sward (materials/SwardTint.ts)
+	updateSwardTint( shared.swardTint.value, shared.clouded.value, yunpengNight.value );
 	prepareHaze( weather.state );
 	pipeline.air.keyDir.value.copy( sky.keyDir );
 	pipeline.air.keyColor.value.copy( sky.keyColor ).multiplyScalar( 1 - THREE.MathUtils.smoothstep( sky.clouds.coverage.value, 0.7, 0.97 ) );

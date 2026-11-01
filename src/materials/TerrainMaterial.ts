@@ -13,7 +13,7 @@ import { RIM_FRINGE_FADE, RIM_INNER_LIMIT, RIM_MAX_DROP } from '../world/RimGrou
 import { BARE_GROUND, GRASS_ROOTS, GRASS_SHADOW, meadowMean, rootsSky, meadowGroundRuns, meadowLayerLight } from '../world/Grass.ts';
 import { CROWN_SCALE, swardField } from '../world/SwardField.ts';
 import type { WaveMaps } from '../ocean/WaveMaps.ts';
-import { underwaterLight, UnderwaterLightingModel } from '../lighting/Underwater.ts';
+import { underwaterLight, UnderwaterLightingModel, type UnderwaterLight, type UnderwaterModelOptions } from '../lighting/Underwater.ts';
 import { TURF_CANOPY_DEPTH, meadowCanopyLight, meadowGroundLight } from '../lighting/MeadowCanopy.ts';
 import { puddleField, puddleRipples } from '../weather/Puddles.ts';
 import { seabedAlbedo } from './SeabedLook.ts';
@@ -157,8 +157,9 @@ const GROVE_SCAN_HUE = atUnitLuma( GROUND_SCANS.grove.mean );
 // water: share under a water film or standing water (water's specular reflectance)
 // puddle: share under standing water
 // flow: share under water running down a runnel now
-const Surface = struct( { albedo: 'vec3', normal: 'vec3', rough: 'float', ao: 'float', canopy: 'float', water: 'float', puddle: 'float', flow: 'float' } );
-interface SurfaceNode { get( name: 'albedo' | 'normal' ): V3; get( name: 'rough' | 'ao' | 'canopy' | 'water' | 'puddle' | 'flow' ): F }
+// sward: the turf's cover (0 on stone, the bare ground and the sea floor)
+const Surface = struct( { albedo: 'vec3', normal: 'vec3', rough: 'float', ao: 'float', canopy: 'float', water: 'float', puddle: 'float', flow: 'float', sward: 'float' } );
+interface SurfaceNode { get( name: 'albedo' | 'normal' ): V3; get( name: 'rough' | 'ao' | 'canopy' | 'water' | 'puddle' | 'flow' | 'sward' ): F }
 
 // Whiteout triplanar blend (after Ben Golus), with the projection handedness preserved.
 // A principal axis must retain the geometry normal's sign: abs() would turn every west- or
@@ -543,6 +544,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		const floorSlope = vec2( 0 ).toVar(), floorRough = float( 0.94 ).toVar(), floorShare = float( 0 ).toVar();
 		// how far the root layer's light holds (the blades' roots' key and sky, GRASS_ROOTS)
 		const rootLight = float( 0 ).toVar();
+		const swardCover = float( 0 ).toVar();
 		// 1 where the ground marched the screen-space shade itself (under the sward)
 		const marched = float( 0 ).toVar();
 		if ( vegetation ) {
@@ -641,6 +643,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 				floorRough.assign( mix( float( 0.94 ), clamp( scanR, 0.75, 1 ), floorShare ) );
 				// (none of the blades' light on the turf with `flags=bareGround`: bare ground's)
 				if ( ! BARE_GROUND ) rootLight.assign( turfCover.mul( shade ) );
+				swardCover.assign( turfCover );
 				mossC.assign( mix( mossC, ground, turfCover ) );
 				rimGrassC.assign( ground );
 				// The blades above shade the turf: by their layer's shade, the law their own blades
@@ -922,7 +925,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		const roots = mix( float( 1 ), rootsSky, rootLight );
 		const ao = floorOcclusion( ( vegetation ? mix( float( 1 ), clamp( vAO, 0, 1 ), float( 0.7 ).sub( pocket.mul( 0.3 ) ) ) : clamp( vAO, 0, 1 ) )
 			.mul( mix( float( 1 ), mix( float( 0.72 ), float( 0.88 ), pocket ), concave ) ).mul( runShade ).mul( GTAO ? min( roots, screenAOAt() ) : roots ) );
-		return Surface( albedo, nW, rough, ao, canopy, water, puddle, flow );
+		return Surface( albedo, nW, rough, ao, canopy, water, puddle, flow, swardCover );
 
 	} )();
 
@@ -1029,6 +1032,32 @@ function seabedSurface( { tex, shore, shared }: Ctx, shoreXform: THREE.Node<'vec
 // own: the meadow's canopy shade on the key. The light the sea sends onto the rock above it is the
 // ground bounce's (lighting/GroundBounce.ts).
 
+/** The land's model: the ambient diffuse takes the sward's tint (materials/SwardTint.ts) by the
+ * turf's cover, 1 + ( tint - 1 ) cover, exactly 1 at a white tint. The metering's ambient
+ * leaves it out. */
+class TurfLightingModel extends UnderwaterLightingModel {
+
+	tint: V3;
+	cover: F;
+
+	constructor( light: UnderwaterLight, options: UnderwaterModelOptions, tint: V3, cover: F ) {
+
+		super( light, options );
+		this.tint = tint;
+		this.cover = cover;
+
+	}
+
+	indirect( builder: THREE.NodeBuilder ): void {
+
+		super.indirect( builder );
+		const { reflectedLight } = builder.context as unknown as { reflectedLight: { indirectDiffuse: V3 } };
+		reflectedLight.indirectDiffuse.mulAssign( this.tint.sub( 1 ).mul( this.cover ).add( 1 ) );
+
+	}
+
+}
+
 type TerrainVariant = ( hex: boolean, from?: THREE.NodeMaterial ) => THREE.MeshStandardNodeMaterial;
 
 export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextures, shared: Shared, waveMaps: WaveMaps, shore: FieldTexture, { topY = 3.1, vegetation = true, rimGround, rimGroundXform, hex }: TerrainOptions = {} ): THREE.MeshStandardNodeMaterial {
@@ -1127,7 +1156,7 @@ function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, waveMaps: Wav
 	// light is read anyway (the volume's texture would take a binding of its fragment stage for the
 	// few points above it)
 	const ambient = kind === 'seabed' ? null : { bands: 2 as const, kind: ctx.vegetation ? 'terrain' : 'stones' };
-	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new UnderwaterLightingModel( light, { ambient } );
+	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => ( ambient?.kind === 'terrain' ? new TurfLightingModel( light, { ambient }, shared.swardTint, surf.get( 'sward' ) ) : new UnderwaterLightingModel( light, { ambient } ) );
 	writeMeter( mat );
 	mat.userData.refractedSolarReceiver = true;
 	mat.userData.refractedSolarFloor = kind === 'seabed';

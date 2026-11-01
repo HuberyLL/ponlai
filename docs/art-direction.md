@@ -233,7 +233,9 @@ art decision changes; images from elsewhere stay out of the repository.
   One grass colour, a bright, fresh, natural green, matte with only a faint gloss (no pale sheen
   over the blades, which reads as plastic): the gaps between blades a deep, cooler green (never
   near black) under tips that stand out lighter and yellow-green where the sun shines through
-  them; looking toward the sun the whole lawn glows, away from it it is plainer and greener; no
+  them; under a closed sky the lawn keeps its green, the sky's light having passed among the blades,
+  and does not turn yellow when the sun goes in; looking toward the sun the whole lawn glows, away
+  from it it is plainer and greener; no
   fields of tone, dryness or bare earth (they broke the lawn into what read from the overview as
   camouflage and dark blotches), and no pattern of dots on the blades. The island top is one
   sward, about 0.5 m, with no zones across it: tiers of height and tint by the soil (a short
