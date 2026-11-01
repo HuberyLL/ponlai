@@ -25,6 +25,7 @@ import { REFRACTION_GUARD } from './Refraction.ts';
 import { waveDamping } from './WaveDamping.ts';
 import type { Shared } from '../shared.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
+import { refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
 import { rainRippleGradient } from '../weather/Rain.ts';
 import { ISLAND_PEAK, LAND_REACH, type Bounds } from '../world/WorldShapes.ts';
 import { GROWTH } from '../world/IslandGrowth.ts';
@@ -64,8 +65,10 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     what swims in the water (Refraction.ts markSwimmer), in the opaque image straight behind,
 //     where its material places it as seen through the waves (swimmerSway)
 //   - the water body: Beer-Lambert absorption along that path, analytic single scattering of the sun
-//     and the sky (Henyey-Greenstein) and a multiple-scattering backscatter boost; the sun through the
-//     thin crests; whitecaps where the surface is compressed (tidewater's fresh foam, not its
+//     (the same sun the floor takes: the share that enters the water and the beam's change of area,
+//     so the body dims as the sun sinks) and of the sky (Henyey-Greenstein) and a multiple-scattering
+//     backscatter boost; the sun through the thin crests, which keeps the water's own colour and the
+//     sun's; whitecaps where the surface is compressed (tidewater's fresh foam, not its
 //     persistent foam, which integrates in time), lit as a bright diffuse scatterer
 // Drawn after the opaque pass into the same multisampled target, depth-tested per sample against
 // the opaque surfaces, reading a copy of that pass's resolved colour, its linear depth and the
@@ -1066,7 +1069,7 @@ export class Water {
 			const sigT = sigA.add( sigS ).toVar();
 			const Ls = refract( L.negate(), vec3( 0, 1, 0 ), 1 / IOR ).negate().toVar(); // toward the sun from under the water
 			const muS = max( Ls.y, 0.1 ), muV = max( Tv.y.negate(), 0.15 );
-			const sunIn = sunLight.mul( float( 1 ).sub( fresnelDielectric( max( L.y, 0.02 ), float( IOR ) ) ) );
+			const sunIn = sunLight.mul( float( 1 ).sub( fresnelDielectric( max( L.y, 0.02 ), float( IOR ) ) ) ).mul( refractedSunBeamScaleNode( L ) );
 			const kSun = sigT.mul( muV.div( muS ).add( 1 ) ).toVar();
 			const kAmb = sigT.mul( muV.div( 0.75 ).add( 1 ) ).toVar();
 			const ph = phaseHG( dot( Tv, Ls ), float( 0.86 ) ).mul( 0.7 ).add( 0.3 / ( 4 * PI ) );
@@ -1075,11 +1078,11 @@ export class Water {
 			const inSun = sunIn.mul( sigS.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) ).mul( float( 1 ).sub( exp( kSun.negate().mul( pathLen ) ) ) ).div( kSun );
 			const inAmb = shared.skyIrradianceSource.mul( sigS.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ).mul( float( 1 ).sub( exp( kAmb.negate().mul( pathLen ) ) ) ).div( kAmb );
 			// the sun through the thin crests: light entering a crest's top and back scatters out of its
-			// face over a broad lobe, so side-lit waves glow green too
+			// face over a broad lobe, down some 1.5 m of the water it crossed
 			const vH = normalize( V.xz.add( 1e-5 ) ), lH = normalize( L.xz.add( 1e-5 ) );
 			const back = pow( sat( dot( vH, lH.negate() ).mul( 0.6 ).add( 0.4 ) ), 2.5 );
 			const crest = sat( vWaveH.mul( 0.9 ).add( 0.1 ) ).mul( sat( float( 1 ).sub( N.y ).mul( 4 ) ).add( 0.25 ) );
-			const sss = sunLight.mul( vec3( 0.12 * 0.06, 0.55 * 0.06, 0.45 * 0.06 ) ).mul( back.mul( crest ).mul( u.sss ) ).mul( smoothstep( 0, 0.25, L.y ) );
+			const sss = sunLight.mul( exp( sigT.negate().mul( 1.5 ) ) ).mul( 0.033 ).mul( back.mul( crest ).mul( u.sss ) ).mul( smoothstep( 0, 0.25, L.y ) );
 			const transmitted = sceneCol.mul( exp( sigT.negate().mul( pathLen ) ) ).add( inSun ).add( inAmb ).add( sss );
 
 			// ---- foam: a bright diffuse scatterer (albedo 0.85) under the wrapped sun and the sky

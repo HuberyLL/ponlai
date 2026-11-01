@@ -1003,7 +1003,7 @@ function seabedSurface( { tex, shore, shared }: Ctx, shoreXform: THREE.Node<'vec
 }
 
 // The light below the surface is the shared underwater model (lighting/Underwater.ts): the sun
-// path through the water column and the dimmer, bluer ambient. Above the water the terrain adds its
+// path through the water column and the dimmer ambient. Above the water the terrain adds its
 // own: the meadow's canopy shade on the key and a lift of the light the sea reflects onto the rock.
 
 type TerrainVariant = ( hex: boolean, from?: THREE.NodeMaterial ) => THREE.MeshStandardNodeMaterial;

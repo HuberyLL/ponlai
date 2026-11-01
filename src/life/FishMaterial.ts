@@ -34,7 +34,7 @@ type V4 = THREE.Node<'vec4'>;
 // the back's colour with its markings over the silvery flank and the pale belly, the head, the
 // snout, a painted eye, and the fins darker toward their edge with their rays. The silvery flank
 // is a metal-like specular layer (guanine). It is lit as everything under the water is
-// (Underwater.ts: the key down the water column, the ambient dimmer and bluer
+// (Underwater.ts: the key down the water column, the ambient dimmer
 // with depth); above the water, as it flies, as in the air. Its ambient diffuse is the ambient
 // volume's (lighting/AmbientSample.ts) through the model's default, degree 1 weighted by depth: in
 // flight the volume's light where the fish is, under the water the environment's carried down the

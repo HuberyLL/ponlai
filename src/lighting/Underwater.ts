@@ -24,9 +24,8 @@ type B = THREE.Node<'bool'>;
 // sea floor, TerrainMaterial.ts), as tidewater's UnderwaterLighting (4811ba4) lights it: the key light refracted at the mean surface and carried
 // down the water column to the point under the long waves' surface (Beer-Lambert over the slant
 // path, the share that enters the water and the beam's change of area), faded in over the first
-// 8 cm; and the ambient and specular light under the mean level, dimmer and bluer with the depth
-// (Beer-Lambert over 1.2 times the depth, 85 % of it, with a little in-scattered blue), faded in
-// over the first 10 cm. The long waves and the mean level come from the wave maps baked once a
+// 8 cm; and the ambient and specular light under the mean level, dimmer with the depth
+// (Beer-Lambert over 1.2 times the depth, 85 % of it), faded in over the first 10 cm. The long waves and the mean level come from the wave maps baked once a
 // frame (WaveMaps.ts `wavesAt`), so the waterline on the rock rises and falls with the swell. The
 // water shader adds the view path from the point back to the eye, so a material lit
 // here must not. (tidewater leaves the key at its direction in the air with no share or beam
@@ -102,7 +101,7 @@ export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun,
 
 	} )();
 	const depth = dW.max( 0 );
-	const ambAtt = exp( sigT.negate().mul( depth ).mul( 1.2 ) ).mul( 0.85 ).add( vec3( 0, 0.02, 0.04 ).mul( exp( depth.mul( - 0.1 ) ) ) ).toVar();
+	const ambAtt = exp( sigT.negate().mul( depth ).mul( 1.2 ) ).mul( 0.85 ).toVar();
 	const water = mix( vec3( 1 ), ambAtt, smoothstep( 0, 0.1, depth ) );
 	// (the water's multiplier is 1 above the mean level; built outside any branch, see `sun`)
 	const ambient = Fn( () => {

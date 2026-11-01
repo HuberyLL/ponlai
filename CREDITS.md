@@ -38,7 +38,7 @@ packages, into `dist/licenses/`.
     WGSL to TSL.
   - `src/lighting/Underwater.ts`: the key light and ambient under the water of
     `UnderwaterLighting.js`'s direct and ambient hooks (the depth under the long waves, the
-    ambient's attenuation and blue); `src/lighting/RefractedSun.ts` reads the air's shadow map at
+    ambient's attenuation); `src/lighting/RefractedSun.ts` reads the air's shadow map at
     the entry point of its shadow position hook.
   - `src/lighting/GroundBounce.ts`: the ground bounce of `GroundBounce.js` (the map of the light
     the ground reflects, its land cover and sea seen through the water column, the environment's
