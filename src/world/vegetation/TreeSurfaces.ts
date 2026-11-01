@@ -25,8 +25,9 @@ import { writeMeter } from '../../lighting/MeterLight.ts';
 //   (vegetation/LeafTexture.ts); the id map a random per leaf (RG its facet's tilt, B its tone, A 1
 //   on a leaf), point-sampled, its mips point-decimated so a leaf keeps one value at every
 //   distance. `leafMaterial` puts the vegetation's material on it (vegetation/Material.ts: leaf
-//   family, alpha to coverage, the depth prepass, light through the leaves), each leaf toned by its
-//   id, the crown bending in the one wind and each card fluttering.
+//   family, alpha to coverage, the depth prepass, light through the leaves, a cuticle's low specular
+//   reflectance), each leaf toned by its id, the crown bending in the one wind and each card
+//   fluttering.
 // - Each plant's own tint (`plantTint`): its hash looks up a gradient of two or three colours about
 //   overlay's neutral grey, laid over the albedo where the plant has leaves, less the share it
 //   keeps, then a colour matrix of the material's (near the identity), so plants of one kind differ
