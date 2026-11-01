@@ -6,6 +6,7 @@ import { receiveScreenAO } from '../post/GTAO.ts';
 import { receiveScreenShadow, screenThickness } from '../post/MeadowShade.ts';
 import type { Shared } from '../shared.ts';
 import { mulberry32 } from './noise.ts';
+import { CULM, LEAF_COLOURS, LEAF_SHARE, LEAF_UNDER, PURPLE_CULMS } from './BambooColours.ts';
 import { GROVES } from './BambooGroves.ts';
 import { CROWN_DRAG, branchBend, mainBend } from './vegetation/Deform.ts';
 import { useSpecular, useVegetationMotion } from './vegetation/Material.ts';
@@ -24,7 +25,7 @@ import { tuneUniform } from '../debug/Tune.ts';
 // the age turns a dim dusty purple instead, the island's old lore on a few stems, at the same
 // lightness, so the grove stays one family of green. They are the plants' own colour: darker than
 // a lit crown, the same value old or young, stems that read dark against the light and lit where
-// the sun finds them, never the palest thing in a grove. Their specular is a little over a leaf's
+// the sun finds them, never the palest thing in a grove. Their specular is close to a leaf's
 // (`CULM_F0`), a smooth cuticle.
 // The sky reaches a culm's lower part only through its grove's canopy, so a grove is dark inside
 // and its culms light where the sun finds them: the ambient volume's irradiance
@@ -41,12 +42,6 @@ import { tuneUniform } from '../debug/Tune.ts';
 // The leaves the wind takes off the crowns (weather/FallingLeaves.ts) are one such leaf on a card
 // of its own (`singleLeaf`), tinted per leaf in the crowns' mix of colours (`LEAF_TINTS`).
 
-/** The culms' colours (linear albedo): new green, the age's end on most culms, its end on the
- * minority, the wax under the nodes. Green, dull and purple share an Oklab lightness of about 0.39.
- * world/AmbientProbes.ts keeps a copy of their mean (`CULM`). */
-const CULM = { green: [ 0.042, 0.07, 0.02 ], dull: [ 0.046, 0.066, 0.026 ], purple: [ 0.068, 0.054, 0.072 ], wax: [ 0.09, 0.09, 0.07 ] } as const;
-/** The share of the culms whose age ends in the dusty purple. */
-const PURPLE_CULMS = 0.2;
 /** The culms' specular reflectance (vegetation/Material.ts useSpecular). */
 const CULM_F0 = 0.016;
 
@@ -133,10 +128,7 @@ export function culmMaterial( shared: Shared, plants: PlantInstances ): THREE.Me
 
 // ----------------------------------------------------------------------------------------- leaves
 
-// sRGB leaf colours: a clear green, a deeper one, a lighter one, young leaves and a few old yellow
-// ones; the twigs purple-brown; the seeds pale and lustrous
-const LEAF_COLOURS = [ [ 62, 100, 36 ], [ 50, 84, 30 ], [ 76, 114, 42 ], [ 100, 132, 50 ], [ 150, 140, 66 ] ] as const;
-const LEAF_SHARE = [ 0.42, 0.27, 0.2, 0.08, 0.03 ];
+// the leaves' colours are in BambooColours.ts; the twigs purple-brown, the seeds pale and lustrous
 const TWIG = 'rgb(74,60,56)';
 const PEARL = [ 230, 224, 204 ] as const;
 // how far a leaf's facet tilt turns across its width (of the id map's 255)
@@ -182,7 +174,7 @@ function leafPath( length: number, width: number, bend: number ): Path2D {
 export function leafAtlas( size = 512 ): LeafAtlas {
 
 	const rng = mulberry32( 0xb3b0 );
-	const paint = new LeafPainter( size, rng, CURVE, 'rgb(56,90,38)' );
+	const paint = new LeafPainter( size, rng, CURVE, LEAF_UNDER );
 	const tile = size / 2;
 
 	const pick = () => {
@@ -319,7 +311,7 @@ function srgbToLinear( v: number ): number {
  * (LEAF_TINTS). */
 export function singleLeaf( size = 128 ): LeafAtlas {
 
-	const paint = new LeafPainter( size, mulberry32( 0x1eaf ), CURVE, 'rgb(56,90,38)' );
+	const paint = new LeafPainter( size, mulberry32( 0x1eaf ), CURVE, LEAF_UNDER );
 	const length = size * 0.9, width = length * 0.15, bend = length * 0.05;
 	const path = leafPath( length, width, bend );
 	const [ r, g, b ] = LEAF_COLOURS[ 0 ];

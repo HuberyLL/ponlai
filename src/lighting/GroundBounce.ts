@@ -13,6 +13,7 @@ import {
 import { soilGroveSwell } from '../materials/Soil.ts';
 import { ISLAND_TOP } from '../world/WorldShapes.ts';
 import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
+import { LAWN_COLOUR } from '../materials/Meadow.ts';
 import type { SunShadow } from './SunShadow.ts';
 import type { Shared } from '../shared.ts';
 import { useLightLayer } from '../debug/LightLayer.ts';
@@ -110,9 +111,10 @@ const BLUR_STEP = 1;
 const REACH = 1;
 // how far above the ground the bake takes the key's visibility (m): above the plateau's relief
 const SHADOW_LIFT = 0.2;
-// linear albedos: the plateau's turf (the islanders' former bounce, tidewater's grass), the rim's
-// stone, and the floor's (its means at its gain: SeabedTile.ts FLOOR_ALBEDO)
-const TURF = vec3( 0.075, 0.11, 0.032 ), RIM = vec3( 0.08, 0.075, 0.065 );
+// linear albedos: the plateau's lawn, which times shared.lawnGain is the blades' mean, as the
+// probes' bake sees it (AmbientProbes.ts LAWN_TOP), the rim's stone, and the floor's (its means at
+// its gain: SeabedTile.ts FLOOR_ALBEDO)
+const LAWN = vec3( ...LAWN_COLOUR ), RIM = vec3( 0.08, 0.075, 0.065 );
 const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.gain ), SEAGRASS = vec3( 0.095, 0.128, 0.065 ).mul( FLOOR_ALBEDO.gain ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.gain );
 // the water's own backscatter seen from above (tidewater's)
 const WATER_BODY = vec3( 0.01, 0.025, 0.03 );
@@ -165,7 +167,7 @@ export class GroundBounce {
 			const floorY = texture( fields.floor, at ).level( float( 0 ) ).r;
 			const beds = texture( fields.beds, at ).level( float( 0 ) ).rg;
 			const L = shared.sunDir;
-			const land = mix( TURF.mul( shared.lawnGain ), RIM, smoothstep( - 1.5, 0, sd ) );
+			const land = mix( LAWN.mul( shared.lawnGain ), RIM, smoothstep( - 1.5, 0, sd ) );
 			// the sea: the floor seen through the water column, down and back up
 			const depth = max( shared.waterLevel.sub( floorY ), 0 );
 			const floor = mix( mix( SAND, SEAGRASS, smoothstep( 0.3, 0.7, beds.x ) ), RUBBLE, smoothstep( 6.5, 0.5, sd ).mul( 0.5 ) );

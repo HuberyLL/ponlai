@@ -21,9 +21,9 @@ export const shared = {
 	// as it is, so the sea's shading keeps its own
 	rockGain: uniform( 1.6 ),
 	// the trees' leaves' albedo against their atlas (world/vegetation/TreeSurfaces.ts leafMaterial:
-	// the bamboo's crowns); 1 the atlas as it is. 0.9: the leaves about 1.2 times the meadow's
-	// albedo (about 0.1), so a crown parts from the sward under it under overcast and by night
-	leafGain: uniform( 0.9 ),
+	// the bamboo's crowns); 1 the atlas as it is: the leaves about 1.5 times the meadow's albedo
+	// (about 0.12), so a crown parts from the sward under it under overcast and by night
+	leafGain: uniform( 1 ),
 	rain: uniform( 0 ),
 	wetness: uniform( 0 ),
 	waterLevel: uniform( 0 ),

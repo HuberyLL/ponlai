@@ -44,11 +44,12 @@ type V3 = THREE.Node<'vec3'>;
 /** A leaf's specular reflectance, the sky's reflection and the key's glint alike: a waxy cuticle's,
  * as the meadow's blades take (Grass.ts SURFACE.f0). Under three's default 0.04 the rough leaf's
  * broad lobe outweighed its diffuse in blue, 2.1 times on a crown's lit half at noon and 2.9 on its
- * dark half, where the albedo holds almost no blue: a pale mint sheen. 0.01 takes the lit half's
- * hue about 9 degrees toward green and its linear B/G from 0.73 to 0.56, with L 0.05 lower. On the
- * family, so the crowns and the falling leaves take it alike, and any tree to come. Tunable on
- * debug pages (debug/Tune.ts: `vegetation.leaf.f0`). */
-export const LEAF_F0 = /*@__PURE__*/ tuneUniform( 'vegetation.leaf.f0', 0.01, { min: 0.008, max: 0.02 } );
+ * dark half, where the albedo holds almost no blue: a pale mint sheen. 0.02, twice the blades',
+ * keeps a soft sheen on the lit half and lifts the dark half without the mint: it pales and cools a
+ * crown a little, with the blue in the albedo set against it (BambooColours.ts). On the family, so
+ * the crowns and the falling leaves take it alike, and any tree to come. Tunable on debug pages
+ * (debug/Tune.ts: `vegetation.leaf.f0`). */
+export const LEAF_F0 = /*@__PURE__*/ tuneUniform( 'vegetation.leaf.f0', 0.02, { min: 0.008, max: 0.04 } );
 
 /** A surface's specular reflectance F0, for the sky's reflection and the key's glint alike. F0
  * alone: F90 follows it in the lighting model (GroundBounce.ts `start`, lighting/SurfaceBRDF.ts
