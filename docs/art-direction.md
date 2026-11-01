@@ -178,8 +178,9 @@ art decision changes; images from elsewhere stay out of the repository.
   shed them; elsewhere the shelf is mostly clear sand and platform, never stones sprinkled evenly
   round the coast.
 - The floor round the coast zones as a real rocky shore's: cobbles with an olive film close against
-  the cliff's foot, then a belt of clean sand whose ripples, a hand's width apart, run along the
-  coast, and seagrass only below the swell's reach (from about 3.5 m down), in meadows tens of
+  the cliff's foot, rounded stones in a low mottle a shade under the sand of their depth at every
+  hour, with silted sand between them and thinning out within a few metres, then a belt of clean
+  sand whose ripples, a hand's width apart, run along the coast, and seagrass only below the swell's reach (from about 3.5 m down), in meadows tens of
   metres across with sharp edges and sand holes. Nothing on the floor runs one way across the
   whole sea.
 - The cliffs read as natural rock, never masonry: no level courses or evenly spaced joints, no
