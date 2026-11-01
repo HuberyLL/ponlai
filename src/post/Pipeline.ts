@@ -546,19 +546,21 @@ export function vignetteFactor( at: V2, strength: F ): F {
 
 }
 // The white balance, as the colour white becomes (linear Rec.709), by the sun's elevation, under a
-// clouded sky and at night (DayKeys.ts), fitted with the light. A clear day pushes the display well
-// past neutral toward cool from noon down to a sun at 9 degrees (red at its bound, half of green,
-// blue 1.36), one look for the whole day as the other keyed knobs keep it: the noon sun's warmth on
-// the lit ground is held back and what the blue sky lights turns clearly cool. The golden hour warms
-// a little further (red 1.05, blue 0.9); the clouded skies take a cool white too (red 0.78, blue
-// 1.16), their grey light kept from reading warm. The night takes a cool white too (red 0.76, blue
-// 1.4), on top of the moon's light and the rods' (Purkinje.ts).
-// Tunable on debug pages (debug/Tune.ts): `post.white.<r|g|b>@golden`, `@day`, `@cloudy`, `@night`.
+// clouded sky and at night (DayKeys.ts), fitted with the light. A clear day pushes the display past
+// neutral toward cool, the sun's warmth on the lit ground held back: furthest at a sun of 9 degrees
+// (red half of green, blue 1.36), which keeps the low sun's rock and meadow, and less by 40 degrees
+// (red 0.59, blue 1.25, the `high` key), where the stronger cast would turn sunlit rock blue. The
+// high key moves with the sky's (Sky.ts SKY_LIGHT), which takes the inverse, so the sky holds its
+// colour. The golden hour warms a little further (red 1.05, blue 0.9); the clouded skies take a cool
+// white too (red 0.78, blue 1.16), their grey light kept from reading warm. The night takes a cool
+// white too (red 0.76, blue 1.4), on top of the moon's light and the rods' (Purkinje.ts).
+// Tunable on debug pages (debug/Tune.ts): `post.white.<r|g|b>@golden`, `@day`, `@high`, `@cloudy`,
+// `@night`.
 export const WHITE_BALANCE: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'post.white', {
-	day: [ { at: 4, name: 'golden', values: { r: 1.05, g: 1, b: 0.9 } }, { at: 9, name: 'day', values: { r: 0.5, g: 1, b: 1.36 } } ],
+	day: [ { at: 4, name: 'golden', values: { r: 1.05, g: 1, b: 0.9 } }, { at: 9, name: 'day', values: { r: 0.5, g: 1, b: 1.36 } }, { at: 40, name: 'high', values: { r: 0.593, g: 1, b: 1.248 } } ],
 	cloudy: { r: 0.775, g: 1, b: 1.16 },
 	night: { r: 0.764, g: 1, b: 1.4 },
-}, { r: { min: 0.5, max: 1.5 }, g: { min: 0.5, max: 1.5 }, b: { min: 0.5, max: 1.5 } } );
+}, { r: { min: 0.4, max: 1.5 }, g: { min: 0.5, max: 1.5 }, b: { min: 0.5, max: 1.5 } } );
 
 
 export class Pipeline {

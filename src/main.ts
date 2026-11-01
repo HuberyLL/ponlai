@@ -1388,10 +1388,10 @@ postF.add( S, 'exposureOffset', - 3, 3, 0.05 ).name( 'exposure offset (stops)' )
 postF.add( S, 'bloom', 0, 3, 0.05 ).name( 'bloom strength' );
 {
 
-	// the clear day's white balance, noon down to 9 degrees (Pipeline.ts WHITE_BALANCE)
+	// the high sun's white balance (Pipeline.ts WHITE_BALANCE)
 	const day = WHITE_BALANCE.day[ WHITE_BALANCE.day.length - 1 ].values;
-	postF.add( day, 'r', 0.5, 1.5, 0.005 ).name( 'white balance red (day)' );
-	postF.add( day, 'b', 0.5, 1.5, 0.005 ).name( 'white balance blue (day)' );
+	postF.add( day, 'r', 0.4, 1.5, 0.005 ).name( 'white balance red (high sun)' );
+	postF.add( day, 'b', 0.5, 1.5, 0.005 ).name( 'white balance blue (high sun)' );
 
 }
 {

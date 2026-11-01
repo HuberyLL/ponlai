@@ -28,8 +28,9 @@ art decision changes; images from elsewhere stay out of the repository.
   darks; its contrast, shoulder, white and toe adjustable; no saturation of its own, which the
   grade's hue bands set)
   whose working space keeps a low sun's reds from turning yellow; a white balance given as the colour white becomes, by the time and the weather (a clear
-  day cool from noon to a low sun, against the sun's slight warmth, so the lit ground reads a touch
-  cool and the shade, the sky and the sea clearly cool; the golden hour a little warm, the clouded
+  day cool from noon to a low sun, against the sun's warmth, so sunlit rock reads a pale neutral, the
+  meadow keeps its green and the sky and the sea stay blue, while the shade stays the colour of what
+  stands in it, never blue; the golden hour a little warm, the clouded
   skies and the night cool); a bloom only on what is truly bright (the sun's
   glints on the sea, the sun, a moonlit path), never a veil over the whole frame, and next to none
   under a clouded sky; a vignette that darkens only the corners, and no grain; and two grade

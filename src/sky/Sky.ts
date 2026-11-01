@@ -360,7 +360,7 @@ function clearShade( elevation: number, direct: number ): number {
 // to the sky's brightness and colour in bands of elevation and of angle from the sun, together with
 // the atmosphere's phase and aerosol and the haze's keys, once the environment's bake took the
 // haze's light: the golden key takes the sky warm (red over blue about 1.3), the low key near grey,
-// the high key blue (blue over red about 1.2), the atmosphere's own colour doing the rest, and the
+// the high key blue (blue over red about 1.5), the atmosphere's own colour doing the rest, and the
 // night key is about 0.01, its red about a third of its green: the clear night's dome is nearly
 // dark, its low sky the haze's moonlit light (HazeKeys.ts NIGHT) and its blue the moonlit
 // atmosphere's own.
@@ -369,7 +369,7 @@ const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'sky.l
 	day: [
 		{ at: 3, name: 'golden', values: { r: 0.216, g: 0.178, b: 0.162 } },
 		{ at: 12, name: 'low', values: { r: 0.221, g: 0.192, b: 0.194 } },
-		{ at: 40, name: 'high', values: { r: 0.288, g: 0.252, b: 0.350 } },
+		{ at: 40, name: 'high', values: { r: 0.235, g: 0.232, b: 0.346 } },
 	],
 	night: { r: 0.005, g: 0.0136, b: 0.0104 },
 }, { r: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune }, g: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune }, b: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune } } );
