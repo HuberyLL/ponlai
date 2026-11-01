@@ -10,7 +10,7 @@ import { GTAO, floorOcclusion, receiveScreenAO, screenAOAt } from '../post/GTAO.
 import { LAWN_GAIN, LAWN_TONE, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_MAX_DROP } from './Meadow.ts';
 import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, SOIL_PALETTE, soilGroveSwell, soilUniforms } from './Soil.ts';
 import { RIM_FRINGE_FADE, RIM_INNER_LIMIT, RIM_MAX_DROP } from '../world/RimGround.ts';
-import { BARE_GROUND, GRASS_ROOTS, GRASS_SHADOW, meadowMean, rootsSky, meadowLayerDepth, meadowLayerLight } from '../world/Grass.ts';
+import { BARE_GROUND, GRASS_ROOTS, GRASS_SHADOW, meadowMean, rootsSky, meadowGroundRuns, meadowLayerLight } from '../world/Grass.ts';
 import { CROWN_SCALE, swardField } from '../world/SwardField.ts';
 import type { WaveMaps } from '../ocean/WaveMaps.ts';
 import { underwaterLight, UnderwaterLightingModel } from '../lighting/Underwater.ts';
@@ -60,7 +60,8 @@ const GROUND_SHADE = MEADOW_SHADE && debugFlags.groundShade !== false;
 // The meadow's ground is a grass-coloured ground at every distance (GRASS_GROUND), grained by a CC0
 // scan of a forest floor (hex-tiled from above as the stone is), its soil showing only where the
 // sward parts; lit as the blades' roots are (Grass.ts GRASS_ROOTS) and shaded by the blades' layer
-// (Grass.ts `meadowLayerLight`; with it off, through their canopy, MeadowCanopy.ts). How deep the
+// (Grass.ts `meadowLayerLight`; with it off, through their canopy, MeadowCanopy.ts), as deep along
+// the rim as inland, though the blades shorten there (Grass.ts `meadowGroundRuns`). How deep the
 // sward over a point is, and whether any grows there, comes from its tussocks (the sward's fields,
 // SwardField.ts): the roots' light follows it, deep under the tall sward and opening under the
 // short turf and in the gaps, where one shade everywhere drew the low flowers' patches as dark
@@ -232,6 +233,9 @@ const STONE_UNDER_WATER = 0.09;
 interface Ctx {
 	tex: DetailTextures; shared: Shared; topY: F; vegetation: boolean; shore: FieldTexture;
 	rimGround?: FieldTexture; rimGroundXform?: THREE.Node<'vec4'>; hex: boolean;
+	/** The island's ground's runs under the meadow's layer, per vertex: x as everything but the turf
+	 * takes it, y as the turf does (Grass.ts `meadowGroundRuns`). */
+	meadowRun?: THREE.Node<'vec2'> | null;
 }
 // hex: hex-tiled stone and height-blended layers (the default; debugFlags.terrainHex = false
 // builds the plain tiling with smooth masks, as before)
@@ -239,7 +243,7 @@ interface Ctx {
 type FieldTexture = THREE.Texture | THREE.TextureNode;
 interface TerrainOptions { topY?: number; vegetation?: boolean; rimGround?: FieldTexture; rimGroundXform?: THREE.Vector4; hex?: boolean }
 
-function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGroundXform, hex }: Ctx ) {
+function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGroundXform, hex, meadowRun }: Ctx ) {
 
 	return Fn( () => {
 
@@ -640,11 +644,13 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 				mossC.assign( mix( mossC, ground, turfCover ) );
 				rimGrassC.assign( ground );
 				// The blades above shade the turf: by their layer's shade, the law their own blades
-				// take (Grass.ts `GRASS_SHADOW`, the material's `sunShade`); without it, through the crowns over it and
+				// take (Grass.ts `GRASS_SHADOW`, the material's `sunShade`, and here the rest of the
+				// turf's own run, past what every pixel of the ground takes there); without it, through the crowns over it and
 				// toward the light, so the clumps cast on the ground between them (the meadow map's B,
 				// MeadowCanopy.ts `meadowGroundLight`), or without the crowns' heights
 				// (`flags=groundCast:false`), through the canopy's depth there.
-				if ( BARE_GROUND || GRASS_SHADOW ) canopy.assign( 1 ); else if ( GROUND_CAST ) canopy.assign( meadowGroundLight( ( xz ) => texture( swardField, xz.div( MEADOW_EXTENT ).add( 0.5 ) ).level( float( 0 ) ).b.mul( CROWN_SCALE ), p, shared.sunDir ) );
+				if ( meadowRun ) canopy.assign( meadowLayerLight( meadowRun.y.sub( meadowRun.x ).mul( max( turfCover, turf ) ) ) );
+				else if ( BARE_GROUND ) canopy.assign( 1 ); else if ( GROUND_CAST ) canopy.assign( meadowGroundLight( ( xz ) => texture( swardField, xz.div( MEADOW_EXTENT ).add( 0.5 ) ).level( float( 0 ) ).b.mul( CROWN_SCALE ), p, shared.sunDir ) );
 				else canopy.assign( meadowCanopyLight( turfCover.mul( shade ).mul( TURF_CANOPY_DEPTH ), shared.sunDir ).mul( mix( float( 1 ), float( GRASS_ROOTS.key ), rootLight ) ) );
 				if ( GROUND_SHADE && ! BARE_GROUND ) {
 
@@ -1055,7 +1061,10 @@ function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, waveMaps: Wav
 	const { shared, vegetation } = ctx;
 	const topYU = ctx.topY;
 	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.85, metalness: 0 } );
-	const call = kind === 'seabed' ? seabedSurface( ctx, shared.shoreXform ) : cliffSurface( ctx );
+	// the island's ground's two runs under the meadow's layer (`sunShade` below, and the turf's in `cliffSurface`)
+	const key = liftKeyWorld( shared.sunDir );
+	const meadowRun = GRASS_SHADOW && kind !== 'seabed' && ctx.vegetation ? varying( meadowGroundRuns( positionWorld, key ), 'vMeadowLayer' ) : null;
+	const call = kind === 'seabed' ? seabedSurface( ctx, shared.shoreXform ) : cliffSurface( { ...ctx, meadowRun } );
 	const surf = ( call as unknown as { toVar( name: string ): SurfaceNode } ).toVar( 'surf' );
 	mat.colorNode = surf.get( 'albedo' );
 	mat.roughnessNode = surf.get( 'rough' );
@@ -1069,12 +1078,10 @@ function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, waveMaps: Wav
 	// the turf under the blades and the ground beside the meadow where the light comes over it (over
 	// a shadow filter's footprint) by the one law the blades take, at the run of their own ray under
 	// the layer's top, near the eye and far alike. Its run is worked out per vertex, as the fragment
-	// stage already samples WebGPU's sixteen textures.
-	if ( GRASS_SHADOW && kind !== 'seabed' && ctx.vegetation ) {
-
-		mat.userData.sunShade = meadowLayerLight( varying( meadowLayerDepth( positionWorld, liftKeyWorld( shared.sunDir ), true ), 'vMeadowLayer' ) );
-
-	}
+	// stage already samples WebGPU's sixteen textures. The turf's run differs only along the rim, and
+	// which pixels are turf is known in the fragment stage alone: every pixel takes the first run here
+	// and the turf the rest of its own in its canopy, so the stone beside it stays as it was.
+	if ( meadowRun ) mat.userData.sunShade = meadowLayerLight( meadowRun.x );
 	// A water film or puddle reflects with water's specular reflectance instead of the stone's.
 	const f0 = mix( float( DRY_F0 ), float( WATER_F0 ), surf.get( 'water' ) ).toVar();
 	// Seen from above, a puddle mirrors only 2 % of the sky, about as much light as the dark ground
