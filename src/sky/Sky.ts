@@ -405,17 +405,17 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 }
 const CIRRUS_SHARE = 0.75;
 
-// The low sun's key. Through twenty air masses and more the atmosphere's transmittance once left
-// the key too bright for the golden hour's lit ground, under the lifted shading
-// (lighting/KeyLift.ts), against a 50 degree sun's. The rows were set before the aerosol's density
-// was fitted (Atmosphere.ts), which dims the low sun's transmittance too (about half at the golden
-// hour), so they are to be checked again against the lit ground. The key (the island's and the
-// sea's sunlight) takes a gain under 6 degrees (degrees, descending; linear between rows, the
-// last row held down to the horizon); the disk and the sky's own sun are untouched.
+// The low sun's key. Through twenty air masses and more the atmosphere's transmittance (Atmosphere.ts,
+// its aerosol dimming the low sun by about half at the golden hour) still leaves the key too bright
+// under the lifted shading (lighting/KeyLift.ts): with the sun at 3 degrees the lit rock's whole face
+// goes to a pale gold and the land reads as a bright afternoon. The key (the island's and the sea's
+// sunlight) takes a gain under 6 degrees (degrees, descending; linear between rows, the last row
+// held down to the horizon), so that face stays a saturated orange under the sky. The shade, lit by
+// the sky, does not move; the disk and the sky's own sun are untouched.
 const LOW_KEY: readonly { at: number; gain: number }[] = [
 	{ at: 6, gain: 1 },
-	{ at: 4, gain: 0.83 },
-	{ at: 2.6, gain: 0.65 },
+	{ at: 4, gain: 0.78 },
+	{ at: 2.6, gain: 0.46 },
 ];
 
 // a gain by the sun's elevation from rows of descending elevation: linear between rows, the end
