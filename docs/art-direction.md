@@ -134,8 +134,10 @@ art decision changes; images from elsewhere stay out of the repository.
   tropical one, a temperate sea under green hills: a quiet slate blue in the open water, a dim muted
   green only where the floor falls away, never a teal, a turquoise, a saturated navy or a blue-cyan.
   Over the shallows it is the floor itself, near neutral, with no bright rim round the island, and
-  under cloud the sea holds a pale grey slate that meets its sky; at sunset it is a dim warm brown
-  that keeps its waves and lies darker than its shoals. A calm lee stands level with the sea round
+  under cloud the sea holds a pale grey slate that meets its sky, about as light seen along the water
+  as from above, with no metal on the swell, and brighter toward the sun; at sunset it takes the low
+  sky's copper on every side, keeps its waves and lies darker than its shoals, whose floor stays
+  near its own colour. A calm lee stands level with the sea round
   it. It stays clear to the floor in everyday weather: the stones and the seagrass's edges show
   through the water down to some 5 to 7 m, which wobbles them but never breaks them into crumbs,
   and the calm water carries no film of foam.

@@ -53,7 +53,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     mirror's grazing reflectance is too much for a sheet of small facets turned every way), which
 //     scales the pixel's own Fresnel, so the waves the pixel does resolve keep their relief; the
 //     sky reflected along a direction the unresolved slopes lift toward the higher, darker sky,
-//     reflections below the horizon darkened toward the horizon's colour; both read the sea's slopes
+//     reflections below the horizon darkened toward the horizon's colour, the whole of it moved from
+//     the low band toward the sky's light by the view's elevation (`REFLECTION_BAND`: the sea's copper
+//     at a low sun, its level under cloud); both read the sea's slopes
 //     before the waves' damping, so a lee stands level with the sea round it, never a pale tongue
 //     of a mirror's reflectance; the screen-space reflection of the cliffs and the islanders behind
 //     tidewater's gate (rays near the horizon, reflectance over 0.05)
@@ -219,6 +221,24 @@ const HORIZON_MIP = 5;
 // a reflection below the horizon keeps of the horizon's colour.
 const REFLECTION_TILT = 0.35, BELOW_HORIZON = 0.6;
 
+// What the reflection keeps of the low sky. A sea seen at a low angle mirrors one strip of sky
+// straight across, the band: at a low sun the pale half of the sky opposite the sun, under cloud the
+// bright strip low down. So the reflection is scaled in two ways, as factors, which keep the waves'
+// relief a proportion of it:
+// - its colour moves toward the whole sky's light by `hue` of the way, its luminance kept, which gives
+//   the sea the low sun's copper on the side away from the sun. It comes in with the view's elevation
+//   (`ramp`), so the far sea keeps the band and joins the sky, and it goes as the sun passes from 1 to
+//   3 degrees under the horizon (`dusk`, its height), where the sky's light holds the afterglow's red
+//   over a blue band and the sea would turn violet;
+// - under cloud, the band's excess over the sky's light goes by ( light / band ) ^ `level`. The level is
+//   chosen, not the sky's light: it stands the clouded sea level between a view along the water and
+//   one from above, and takes the metallic relief off the swell, which is a share of that band. It
+//   rests where the band stands at or under the sky's light, so a steep view keeps its reflection. It
+//   fades away toward the sun (`sunward`, the cosine between the eye and the sun on the water's
+//   plane), where the band is brightest and the sea would go dark under a bright sky, and it goes
+//   with the hue at `dusk`: after sunset and by night the band is all the clouded sea's relief has.
+const REFLECTION_BAND = { ramp: 0.18, hue: 0.6, level: 2.2, dusk: [ - 0.05, - 0.015 ], sunward: [ - 0.7, 0.1 ] } as const;
+
 // The mean Fresnel over unresolved slopes: a facet's reflectance climbs so steeply at grazing that
 // the sheet reads as facets turned some two sigma toward the eye, the view's cosine to the mean
 // surface at sqrt( cos^2 + k sigma^2 ) (k this). What that takes off the flat surface's Fresnel it
@@ -233,8 +253,10 @@ const SLOPE_FRESNEL = 5.4;
 // share), which the water carries, not in the red, which it takes in its first metres: a red sky
 // feeds it little, so the sea at sunset sinks below its shoals and its waves show. Its colour is the
 // sky's at `chroma` of its saturation, by the particles' `tint`: warm under a warm sky, a grey slate
-// under cloud. Its share is high under cloud and low at noon, when the sun's single scattering rules.
-const VEIL = { gain: 0.119, depth: 6, blue: 0.35, chroma: 0.68, tint: [ 0.77, 1, 0.58 ] } as const;
+// under cloud. The tint keeps most of the red, so the open sea takes a low sun's colour as the sky
+// does, and the slow fill keeps that colour off the shallows' floor. Its share is high under cloud
+// and low at noon, when the sun's single scattering rules.
+const VEIL = { gain: 0.119, depth: 12, blue: 0.35, chroma: 0.68, tint: [ 0.92, 1, 0.58 ] } as const;
 
 // The reflection's march stops this far along the ray (m); its hits fade out from 120 m (tidewater's).
 const SSR_FARTHEST = 260;
@@ -880,8 +902,19 @@ export class Water {
 				skyReflection.assign( sky.sample( R ) );
 
 			} );
-			const horizon = sky.sampleBackground( normalize( vec3( Rraw.x, 0, Rraw.z ).add( vec3( 1e-5, 0, 0 ) ) ), float( HORIZON_MIP ) );
-			const refl = mix( horizon.mul( BELOW_HORIZON ), skyReflection, horizonOcc ).toVar();
+			// (the band at the mirror's own elevation, what the flat sea here reflects)
+			const horizon = sky.sampleBackground( normalize( vec3( Rraw.x, V.y, Rraw.z ).add( vec3( 1e-5, 0, 0 ) ) ), float( HORIZON_MIP ) );
+			const skyLight = shared.skyIrradianceSource.toVar();
+			const skyOverBand = lum( skyLight ).div( max( lum( horizon ), 1e-8 ) ).toVar();
+			const bandRamp = smoothstep( 0, REFLECTION_BAND.ramp, V.y ).toVar();
+			const sunDir = sky.atmosphere.sunDir;
+			const hue = skyLight.div( max( horizon, vec3( 1e-8 ) ) ).div( max( skyOverBand, 1e-5 ) );
+			const duskFade = smoothstep( ...REFLECTION_BAND.dusk, sunDir.y ).toVar();
+			const hueShare = bandRamp.mul( REFLECTION_BAND.hue ).mul( duskFade );
+			const level = pow( min( skyOverBand, 1 ), REFLECTION_BAND.level );
+			const levelShare = bandRamp.mul( shared.clouded ).mul( duskFade ).mul( smoothstep( ...REFLECTION_BAND.sunward, dot( normalize( V.xz.add( 1e-5 ) ), normalize( sunDir.xz.add( 1e-5 ) ) ) ) );
+			const refl = mix( horizon.mul( BELOW_HORIZON ), skyReflection, horizonOcc )
+				.mul( mix( vec3( 1 ), hue, hueShare ) ).mul( mix( float( 1 ), level, levelShare ) ).toVar();
 			// The cliffs and the islanders from the screen: only rays near the horizon can meet them,
 			// and where the reflectance is small the reflection cannot be seen (tidewater's gate).
 			If( u.ssr.greaterThan( 0.5 ).and( Rraw.y.lessThan( 0.45 ) ).and( Fr.greaterThan( quality.ssrMinFresnel ) ), () => {
@@ -1120,7 +1153,6 @@ export class Water {
 			const back = pow( sat( dot( vH, lH.negate() ).mul( 0.6 ).add( 0.4 ) ), 2.5 );
 			const crest = sat( vWaveH.mul( 0.9 ).add( 0.1 ) ).mul( sat( float( 1 ).sub( N.y ).mul( 4 ) ).add( 0.25 ) );
 			const sss = sunLight.mul( exp( sigT.negate().mul( 1.5 ) ) ).mul( 0.033 ).mul( back.mul( crest ).mul( u.sss ) ).mul( smoothstep( 0, 0.25, L.y ) );
-			const skyLight = shared.skyIrradianceSource.toVar();
 			const veil = mix( vec3( 1 ), skyLight.div( max( lum( skyLight ), 1e-5 ) ), VEIL.chroma ).mul( vec3( ...VEIL.tint ) )
 				.mul( mix( skyLight.g, skyLight.b, VEIL.blue ) ).mul( VEIL.gain )
 				.mul( float( 1 ).sub( exp( pathLen.div( VEIL.depth ).negate() ) ) );
