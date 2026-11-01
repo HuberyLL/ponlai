@@ -5,7 +5,7 @@ import { translucentWrap, type AmbientReceiver } from '../lighting/AmbientSample
 import { meterAmbient } from '../lighting/MeterLight.ts';
 import { tuneApply } from '../debug/Tune.ts';
 import { OPAQUE_VEGETATION } from '../debug/LightLayer.ts';
-import { leafBack } from './vegetation/LeafLight.ts';
+import { leafBack, leafTint } from './vegetation/LeafLight.ts';
 import { shared } from '../shared.ts';
 
 type V3 = THREE.Node<'vec3'>;
@@ -66,7 +66,8 @@ type F = THREE.Node<'float'>;
 // diffuse takes (the wrapped Lambert and the light through, or a leaf's blend of the Lambert and
 // its thin layer) and the ambient by the
 // thin layer's blend and `scale`, as the colour does. A blade's ambient diffuse takes the sward's
-// tint under a closed sky (materials/SwardTint.ts), which the metering leaves out.
+// tint under a closed sky (materials/SwardTint.ts) and a leaf's the leaves' (vegetation/LeafLight.ts
+// `leafTint`), both of which the metering leaves out.
 
 /** The squared half-Lambert's scale that gives it the clamped cosine's integral over the sphere
  * (pi against 4 pi / 3). */
@@ -294,6 +295,7 @@ export class VegetationLighting extends GroundBounceLightingModel {
 			}
 			meterAmbient.assign( metered.add( meterAmbient.sub( metered ).mul( this.scale ) ) );
 			if ( family === 'blade' ) r.indirectDiffuse.mulAssign( shared.swardTint );
+			else if ( family === 'leaf' ) r.indirectDiffuse.mulAssign( leafTint );
 			diffuse.addAssign( r.indirectDiffuse.mul( this.scale ) );
 			specular.addAssign( r.indirectSpecular.mul( this.scale ) );
 			r.indirectDiffuse = diffuse;
