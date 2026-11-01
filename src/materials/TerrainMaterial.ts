@@ -444,7 +444,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		// hides the layers below it): the blend leaves the masks as they are there rather than
 		// reading the placeholder colour.
 		const hb = ( mask: F, height: F, width: number ): F => hex ? select( scanned!, heightBlend( mask, height, float( width ) ), mask ) : mask;
-		const rock = mix( vec3( 0.124, 0.13, 0.126 ), vec3( 0.188, 0.19, 0.176 ), vTint ).mul( mix( float( 1 ), shared.rockGain, smoothstep( - 0.5, 0.5, p.y ) ) ).toVar();
+		const rock = mix( vec3( 0.124, 0.13, 0.126 ), vec3( 0.188, 0.19, 0.176 ), vTint ).mul( mix( float( 0.7 ), shared.rockGain, smoothstep( - 0.5, 0.5, p.y ) ) ).toVar();
 		rock.mulAssign( mix( vec3( 0.97, 0.99, 1.03 ), vec3( 1.025, 1.0, 0.965 ), fract( vTint.mul( 7.31 ) ) ) );
 		// Desaturate the source to fit this limestone palette, but keep its correlated grain,
 		// mineral stains and roughness. Fine colour follows the same relief as the normal map.
@@ -870,7 +870,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 			? mix( float( 0.65 ), float( 0.24 ), deep ).mul( mix( float( 0.28 ), float( 1 ), colony ) )
 			: mix( float( 0.85 ), float( 0.5 ), deep ) );
 		albedo.assign( mix( albedo, algaeC.mul( H.r.mul( 0.6 ).add( 0.7 ) ), algaeCoverage ) );
-		albedo.assign( mix( albedo, vec3( 0.30, 0.26, 0.19 ).mul( FLOOR_ALBEDO.gain ), silt.mul( 0.7 ) ) );
+		albedo.assign( mix( albedo, vec3( 0.077, 0.067, 0.049 ).mul( FLOOR_ALBEDO.gain ), silt.mul( 0.7 ) ) );
 		// Below the tidal band the stone wears an olive-brown film of algae and diatoms on the faces
 		// that catch the light, in patches, so submerged stones and the underwater cliff separate
 		// from the pale sand by hue as well as value. Each stone also keeps more of its own shade.

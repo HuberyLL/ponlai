@@ -47,10 +47,14 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //   - the sun reaching the surface (`sunLight`): the key light through the sun shadow's maps (as
 //     tidewater's water reads its own: three's five-tap PCF at the surface point, the normal bias
 //     straight up) and the clouds; the glint, the water body and the foam all take this one light
-//   - exact dielectric Fresnel; the sky reflected along a direction the unresolved slopes lift
-//     toward the higher, darker sky, reflections below the horizon darkened toward the horizon's
-//     colour; the screen-space reflection of the cliffs and the islanders behind tidewater's gate
-//     (rays near the horizon, reflectance over 0.05)
+//   - exact dielectric Fresnel, its mean over the slopes no pixel resolves on the distant sea (a
+//     mirror's grazing reflectance is too much for a sheet of small facets turned every way), which
+//     scales the pixel's own Fresnel, so the waves the pixel does resolve keep their relief; the
+//     sky reflected along a direction the unresolved slopes lift toward the higher, darker sky,
+//     reflections below the horizon darkened toward the horizon's colour; both read the sea's slopes
+//     before the waves' damping, so a lee stands level with the sea round it, never a pale tongue
+//     of a mirror's reflectance; the screen-space reflection of the cliffs and the islanders behind
+//     tidewater's gate (rays near the horizon, reflectance over 0.05)
 //   - the sun's specular: GGX of the base roughness and the slopes the pixel cannot resolve (Cox-
 //     Munk's mean square slope for the wind, the share finer than the pixel)
 //   - refraction: the refracted view ray (through the surface without the near ripples) followed to
@@ -67,8 +71,10 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //   - the water body: Beer-Lambert absorption along that path, analytic single scattering of the sun
 //     (the same sun the floor takes: the share that enters the water and the beam's change of area,
 //     so the body dims as the sun sinks) and of the sky (Henyey-Greenstein) and a multiple-scattering
-//     backscatter boost; the sun through the thin crests, which keeps the water's own colour and the
-//     sun's; whitecaps where the surface is compressed (tidewater's fresh foam, not its
+//     backscatter boost; the veil, the sky light the fine particles under the surface send back
+//     (`VEIL`), which gives the deep water its quiet slate under cloud, takes the warm sky's colour
+//     with the sun low and stays off the shallows; the sun through the thin crests, which keeps the water's own colour and
+//     the sun's; whitecaps where the surface is compressed (tidewater's fresh foam, not its
 //     persistent foam, which integrates in time), lit as a bright diffuse scatterer
 // Drawn after the opaque pass into the same multisampled target, depth-tested per sample against
 // the opaque surfaces, reading a copy of that pass's resolved colour, its linear depth and the
@@ -202,6 +208,23 @@ const SHORE_FOAM_SCALE = 1;
 
 // The sky panorama's level the horizon's colour is read at (a band some 20 degrees high).
 const HORIZON_MIP = 5;
+
+// The mean Fresnel over unresolved slopes: a facet's reflectance climbs so steeply at grazing that
+// the sheet reads as facets turned some two sigma toward the eye, the view's cosine to the mean
+// surface at sqrt( cos^2 + k sigma^2 ) (k this). What that takes off the flat surface's Fresnel it
+// takes off the pixel's own, by their ratio: a lifted cosine in the pixel's Fresnel alone would
+// even the waves out. Sigma here is the sea's, before the waves' damping: the damped one falls away
+// where the fine waves do, and the lee stood out as a smooth pale tongue.
+const SLOPE_FRESNEL = 5.4;
+
+// The veil: the fine particles the waves keep stirred under the surface send back sky light. It
+// fills in with the view path (e-folding at `depth` metres), so the shallows stay as clear as their
+// path is short. Its amount is the sky's irradiance in the green and the blue (`blue` the blue's
+// share), which the water carries, not in the red, which it takes in its first metres: a red sky
+// feeds it little, so the sea at sunset sinks below its shoals and its waves show. Its colour is the
+// sky's at `chroma` of its saturation, by the particles' `tint`: warm under a warm sky, a grey slate
+// under cloud. Its share is high under cloud and low at noon, when the sun's single scattering rules.
+const VEIL = { gain: 0.119, depth: 6, blue: 0.35, chroma: 0.68, tint: [ 0.77, 1, 0.58 ] } as const;
 
 // The reflection's march stops this far along the ray (m); its hits fade out from 120 m (tidewater's).
 const SSR_FARTHEST = 260;
@@ -819,9 +842,12 @@ export class Water {
 			// slope 0.003 + 0.00512 U, the share finer than the pixel's wavenumber, scaled by the
 			// gusts and slicks) over the base
 			const mss = windSpeed.mul( COX_MUNK.perWind ).add( COX_MUNK.base );
-			const unresolved = sat( log2( footprint.mul( 110 / PI ) ).div( 9 ) ).mul( rough.mul( rough ) ).toVar();
+			const unresolvedShare = sat( log2( footprint.mul( 110 / PI ) ).div( 9 ) ).toVar();
+			const unresolved = unresolvedShare.mul( rough.mul( rough ) ).toVar();
 			const alpha2 = u.roughness.mul( u.roughness ).add( mss.mul( 2 ).mul( unresolved ) ).add( foam.mul( 0.2 ) ).toVar();
 			const sigmaUnresolved = sqrt( mss.mul( unresolved ) ).toVar();
+			// the mean surface's: the same share of the sea's slopes, before the waves' damping
+			const sigmaMean = sqrt( mss.mul( unresolvedShare ).mul( sea.x.mul( sea.x ) ) ).toVar();
 
 			const NdV = max( dot( N, V ), 1e-4 ).toVar();
 			const Fr = fresnelDielectric( NdV, float( IOR ) ).toVar();
@@ -1083,11 +1109,18 @@ export class Water {
 			const back = pow( sat( dot( vH, lH.negate() ).mul( 0.6 ).add( 0.4 ) ), 2.5 );
 			const crest = sat( vWaveH.mul( 0.9 ).add( 0.1 ) ).mul( sat( float( 1 ).sub( N.y ).mul( 4 ) ).add( 0.25 ) );
 			const sss = sunLight.mul( exp( sigT.negate().mul( 1.5 ) ) ).mul( 0.033 ).mul( back.mul( crest ).mul( u.sss ) ).mul( smoothstep( 0, 0.25, L.y ) );
-			const transmitted = sceneCol.mul( exp( sigT.negate().mul( pathLen ) ) ).add( inSun ).add( inAmb ).add( sss );
+			const skyLight = shared.skyIrradianceSource.toVar();
+			const veil = mix( vec3( 1 ), skyLight.div( max( lum( skyLight ), 1e-5 ) ), VEIL.chroma ).mul( vec3( ...VEIL.tint ) )
+				.mul( mix( skyLight.g, skyLight.b, VEIL.blue ) ).mul( VEIL.gain )
+				.mul( float( 1 ).sub( exp( pathLen.div( VEIL.depth ).negate() ) ) );
+			const transmitted = sceneCol.mul( exp( sigT.negate().mul( pathLen ) ) ).add( inSun ).add( inAmb ).add( veil ).add( sss );
 
 			// ---- foam: a bright diffuse scatterer (albedo 0.85) under the wrapped sun and the sky
 			const foamLit = sunLight.mul( max( dot( N, L ), 0 ).mul( 0.75 ).add( 0.25 ) ).div( PI ).add( shared.skyIrradianceSource.mul( 0.95 ) ).mul( 0.85 ).toVar();
-			const water = mix( transmitted, refl, Fr ).add( sunSpec );
+			const cosMean = max( V.y, 1e-4 ).toVar();
+			const slopeMean = sqrt( cosMean.mul( cosMean ).add( sigmaMean.mul( sigmaMean ).mul( SLOPE_FRESNEL ) ) );
+			const meanFresnel = Fr.mul( fresnelDielectric( slopeMean, float( IOR ) ).div( fresnelDielectric( cosMean, float( IOR ) ) ) ).toVar();
+			const water = mix( transmitted, refl, meanFresnel ).add( sunSpec );
 			const col = mix( water, foamLit.mul( u.foamIntensity ).add( sunSpec.mul( 0.05 ) ), sat( foam ) ).toVar();
 			// (temporal modes) the glints' reactive weight: their luminance against a white diffuse
 			// surface under the same sun and sky (the note at the top)
