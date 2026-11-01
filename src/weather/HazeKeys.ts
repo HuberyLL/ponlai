@@ -77,8 +77,8 @@ import { KEPT_SKIES, WEATHER_PRESETS } from '../sky/Weather.ts';
 // shows on the next frame (the weather's state copies its preset only as it is established).
 // The weather also thins the haze near the camera (Weather.ts `nearDensity`, `nearStart`,
 // `nearEnd`; VolumetricHaze's header): the key's near factor, start and end are its presets'
-// blended by the sky's shares, each kept sky's density tunable
-// (`sky.weather.nearDensity@<clear|fair|cloudy|overcast>`).
+// blended by the sky's shares, each kept sky's tunable
+// (`sky.weather.nearDensity|nearStart|nearEnd@<clear|fair|cloudy|overcast>`).
 
 export interface HazeKey {
 
@@ -190,7 +190,8 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 }
 for ( const [ s, name ] of [ [ 0, 'clear' ], [ 1, 'fair' ], [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 
-	tuneObject( SKY_SCALE[ s ], { nearDensity: `sky.weather.nearDensity@${ name }` }, { nearDensity: { min: 0.02, max: 1, scale: 'log', onChange: markSkyRetune } } );
+	tuneObject( SKY_SCALE[ s ], { nearDensity: `sky.weather.nearDensity@${ name }`, nearStart: `sky.weather.nearStart@${ name }`, nearEnd: `sky.weather.nearEnd@${ name }` },
+		{ nearDensity: { min: 0.02, max: 1, scale: 'log', onChange: markSkyRetune }, nearStart: { min: 50, max: 800, onChange: markSkyRetune }, nearEnd: { min: 100, max: 1500, onChange: markSkyRetune } } );
 
 }
 // per kept sky, the sun's share in the haze's Rayleigh light: off under a clear or fair sky, on
