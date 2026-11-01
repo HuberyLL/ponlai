@@ -11,7 +11,7 @@ art decision changes; images from elsewhere stay out of the repository.
   colour, and wide fields of grass and flowers that move together in the wind. The fantasy lives
   in the world (the island, its everlasting flowers, its creatures from the old texts, later the
   sea's glow at night) and in a light touch on the image, the airy feel of an immortals' island
-  (Penglai). Deep clear water over pale shallows with a sparkling glare toward the sun, chunky
+  (Penglai). Deep clear water over a quiet floor with a sparkling glare toward the sun, chunky
   chiselled stone, a lush meadow with wildflowers, and grass hanging over the rim. Keep the lower
   cliff stone exposed.
 - The light and the image are photographic, as real as tidewater's (its water, its light under
@@ -129,11 +129,14 @@ art decision changes; images from elsewhere stay out of the repository.
 - No lens effects a photograph of a real place would not have: no tilt-shift miniature blur, no
   lens flares forced into the frame.
 - The water is tidewater's physically based model with clear water a little less pure than its
-  tropical one: teal in the basin, a green turquoise (jade) over the sandy shallows, never a
-  saturated navy or a blue-cyan; greener still read as a lake beside the meadow. The shallows are
-  clear to the floor in everyday weather: the stones and the sunlight's network on the sand show
-  through the water, which wobbles them but never breaks them into crumbs, and the calm water
-  carries no film of foam.
+  tropical one, a temperate sea under green hills: a quiet slate blue in the open water, a dim muted
+  green only where the floor falls away, never a teal, a turquoise, a saturated navy or a blue-cyan.
+  Over the shallows it is the floor itself, near neutral, with no bright rim round the island, and
+  under cloud the sea holds a pale grey slate that meets its sky; at sunset it is a dim warm brown
+  that keeps its waves and lies darker than its shoals. A calm lee stands level with the sea round
+  it. It stays clear to the floor in everyday weather: the stones and the seagrass's edges show
+  through the water down to some 5 to 7 m, which wobbles them but never breaks them into crumbs,
+  and the calm water carries no film of foam.
 - The look is judged from the game's own view, the island camera zoomed out over the island, as
   well as close up. Light reads there through its direction and large-scale light and shade (lit
   and shaded slopes and cliffs, a glint or moon path on the sea, later warm lights and what stands
@@ -146,8 +149,9 @@ art decision changes; images from elsewhere stay out of the repository.
   ground in the frame but never a flat cream-white sheet. The stone is kept darker than real
   limestone so that the exposure set for the meadow leaves it below the curve's shoulder, but
   lighter than the meadow's albedo (about one and a half times it), so a face lit from the side
-  stands out from the grass as a pale cliff rather than a dark band. A wall
-  over bright shallows takes their teal light from below.
+  stands out from the grass as a pale cliff rather than a dark band. The wall's foot, in and under
+  the water, is a wall in shade: it keeps the island's shade down into the sea, and at a low sun or
+  under cloud nothing pale runs along it.
 
 ## Three layers in one world
 
@@ -405,7 +409,7 @@ art decision changes; images from elsewhere stay out of the repository.
   so it reads as the night's light source; it is no brighter per unit of sky for it, and the
   moonlight on the island keeps its level. The day cycle is authored, not astronomical.
 - The sunlit ground lights what stands over it from below, one bounce for every lit surface: the
-  shallows' sand the cliff's walls, the meadow the islanders' undersides; strongest around midday.
+  shallows the cliff's walls, faintly, the meadow the islanders' undersides; strongest around midday.
 - Bad weather dims and desaturates the existing light and thickens the air as its visibility
   falls; the haze it adds is the air's own, lit and shaded like the rest of the scene, never a grey
   screen veil, and it stays dimmer and greyer than a clear day. The haze starts at the camera, as
@@ -432,7 +436,8 @@ art decision changes; images from elsewhere stay out of the repository.
   from the cones, dark colours come up and turn blue (the Purkinje shift), but the blue belongs to
   the sky and the sea: the land under them goes dark and quiet, far less saturated than they are,
   the meadow nearly black with a hint of cool green, the rock a cool grey that catches the moon and
-  stands as the brightest thing on the island. Its exposure keeps the moonlit island readable and the moon's path on the sea crisp.
+  stands as the brightest thing on the island. Its exposure keeps the moonlit island readable and the moon's path on the sea crisp,
+  and that path is pale: the moon's blue stays in the water and the sky, level with each other, and never flashes off the glint.
   Every night has its moon, up from dusk to dawn: the phase shows only on the drawn moon and
   never darkens the night.
 - The island reads by moonlight and starlight; twilight is never darker than the night. The

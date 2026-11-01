@@ -1,12 +1,12 @@
 import { debugFlags } from '../debug/DebugFlags.ts';
 
 // Submit batching: the command buffers three hands to `queue.submit` are held for a moment and
-// submitted a few at a time, in the order given, so a frame reaches the GPU in about 16 submits
-// instead of 90.
+// submitted a few at a time, in the order given, so a frame reaches the GPU in a handful of
+// submits instead of one for each.
 //
 // three's WebGPU backend records every render pass, clear, copy, compute group and mipmap chain
-// on a command encoder of its own and submits it at once: about 90 submits a frame here (150
-// render passes, 80 of them mip levels of the ocean's maps). In Chrome on macOS
+// on a command encoder of its own and submits it at once: dozens of submits a frame here, many of
+// them mip levels of the ocean's maps. In Chrome on macOS
 // each submit becomes a Metal command buffer, and a Metal queue holds at most 64 uncompleted
 // ones: whenever the GPU ran a frame or so behind, the next submit waited for one to complete, in
 // the GPU process's main thread, which also presents the page. It stalled for 9-20 ms with almost

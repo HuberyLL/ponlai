@@ -338,8 +338,8 @@ export class RefractedSun {
 	}
 
 	/** The air map's lookup point for a submerged receiver, as tidewater's hookShadowPosition finds
-	 * it: back up the sun ray refracted through the long waves' slope above (`waves`, the wave maps'
-	 * A: height over the sea level, slope x and z) to their surface, where the light entered the
+	 * it: back up the sun ray refracted through the long waves' slope above (`waves`, the wave
+	 * maps: height over the sea level, slope x and z) to their surface, where the light entered the
 	 * water. The shadows of the cliffs then land where refraction puts them and sway with the swell.
 	 * (tidewater also jitters the point over a disk that grows with the depth, for the light's
 	 * forward scattering, and lets its temporal resolve average it; the sun shadow's filter here

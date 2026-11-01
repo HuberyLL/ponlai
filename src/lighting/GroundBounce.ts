@@ -26,8 +26,8 @@ import { environmentBRDF } from './EnvironmentBRDF.ts';
 import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 
 // Sunlight bounced off the ground, one diffuse bounce (tidewater's GroundBounce, 4811ba4): the
-// sunlit plateau lights the islanders' undersides and the grass from below, the bright shallows
-// light the cliff's walls over them.
+// sunlit plateau lights the islanders' undersides and the grass from below, the shallows light
+// the cliff's walls over them.
 //
 // The bake: a map over the world fields' bounds (the land's box and 32 m round it: shoreXform) of
 // the light the ground reflects per unit of the key's irradiance: its albedo (the plateau's turf,
@@ -70,7 +70,7 @@ import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 // The bounce takes the ambient grade's `sunBounce` where every material takes it
 // (`groundBounceLight`). Beside the ambient volume (lighting/AmbientSample.ts), whose relight
 // bounces the key off the land round each probe (AmbientRelight.ts), the bake keeps the sea's part
-// alone (the land's albedo 0): the bright shallows that light the cliff's walls, which the volume's
+// alone (the land's albedo 0): the shallows that light the cliff's walls, which the volume's
 // imaginary ground does not carry, so no material counts the land's bounce twice;
 // `flags=groundBounceLand` keeps it whole beside the volume, and `flags=ambientVolume:0` (no
 // volume) keeps it whole as before. The physical models extend `GroundBounceLightingModel`, which
@@ -115,7 +115,7 @@ const SHADOW_LIFT = 0.2;
 // probes' bake sees it (AmbientProbes.ts LAWN_TOP), the rim's stone, and the floor's (its means at
 // its gain: SeabedTile.ts FLOOR_ALBEDO)
 const LAWN = vec3( ...LAWN_COLOUR ), RIM = vec3( 0.08, 0.075, 0.065 );
-const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.gain ), SEAGRASS = vec3( 0.095, 0.128, 0.065 ).mul( FLOOR_ALBEDO.gain ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.gain );
+const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.gain ), SEAGRASS = vec3( 0.108, 0.146, 0.074 ).mul( FLOOR_ALBEDO.gain ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.gain );
 // the water's own backscatter seen from above (tidewater's)
 const WATER_BODY = vec3( 0.01, 0.025, 0.03 );
 

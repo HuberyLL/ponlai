@@ -225,6 +225,9 @@ const stoneSlope = Fn( ( [ v ]: [ THREE.Node<'vec4'> ] ) => {
 // darkening of the stone and their shade on its ambient light.
 const PUDDLE_F0 = 0.2, FLOW_F0 = 0.5, RING_GAIN = 5;
 const RUNNEL_DARKENING = 0.6, RUNNEL_SHADE = 0.7;
+// The reflectance of stone and sand under the water over theirs in the air: Fresnel's at normal
+// incidence, ( ( 1.5 - 1.33 ) / ( 1.5 + 1.33 ) )^2 against 0.04.
+const STONE_UNDER_WATER = 0.09;
 
 interface Ctx {
 	tex: DetailTextures; shared: Shared; topY: F; vegetation: boolean; shore: FieldTexture;
@@ -441,7 +444,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		// hides the layers below it): the blend leaves the masks as they are there rather than
 		// reading the placeholder colour.
 		const hb = ( mask: F, height: F, width: number ): F => hex ? select( scanned!, heightBlend( mask, height, float( width ) ), mask ) : mask;
-		const rock = mix( vec3( 0.124, 0.13, 0.126 ), vec3( 0.188, 0.19, 0.176 ), vTint ).mul( mix( float( 1 ), shared.rockGain, smoothstep( - 0.5, 0.5, p.y ) ) ).toVar();
+		const rock = mix( vec3( 0.124, 0.13, 0.126 ), vec3( 0.188, 0.19, 0.176 ), vTint ).mul( mix( float( 0.7 ), shared.rockGain, smoothstep( - 0.5, 0.5, p.y ) ) ).toVar();
 		rock.mulAssign( mix( vec3( 0.97, 0.99, 1.03 ), vec3( 1.025, 1.0, 0.965 ), fract( vTint.mul( 7.31 ) ) ) );
 		// Desaturate the source to fit this limestone palette, but keep its correlated grain,
 		// mineral stains and roughness. Fine colour follows the same relief as the normal map.
@@ -867,10 +870,10 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 			? mix( float( 0.65 ), float( 0.24 ), deep ).mul( mix( float( 0.28 ), float( 1 ), colony ) )
 			: mix( float( 0.85 ), float( 0.5 ), deep ) );
 		albedo.assign( mix( albedo, algaeC.mul( H.r.mul( 0.6 ).add( 0.7 ) ), algaeCoverage ) );
-		albedo.assign( mix( albedo, vec3( 0.30, 0.26, 0.19 ).mul( FLOOR_ALBEDO.gain ), silt.mul( 0.7 ) ) );
+		albedo.assign( mix( albedo, vec3( 0.077, 0.067, 0.049 ).mul( FLOOR_ALBEDO.gain ), silt.mul( 0.7 ) ) );
 		// Below the tidal band the stone wears an olive-brown film of algae and diatoms on the faces
 		// that catch the light, in patches, so submerged stones and the underwater cliff separate
-		// from the pale sand by hue as well as value. Each stone also keeps more of its own shade.
+		// from the sand by hue as well as value. Each stone also keeps more of its own shade.
 		const subtidal = smoothstep( - 0.3, - 0.8, p.y.sub( wl ) );
 		const film = subtidal.mul( smoothstep( 0.15, 0.7, up ) )
 			.mul( smoothstep( 0.3, 0.62, big2.mul( 0.55 ).add( Hg.mul( 0.3 ) ).add( vTint.mul( 0.25 ) ) ) );
@@ -893,9 +896,11 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		// The wave-washed band glistens on the walls. On a face that looks up at the sky (a sloping
 		// foot or ledge in a gully at the waterline) the same gloss mirrored the bright low sky as
 		// a pale sheet streaked by the stone's relief, which read from afar as water running down
-		// the gully, so it fades out on such faces; they keep the band's darker, damp albedo.
+		// the gully, so it fades out on such faces; they keep the band's darker, damp albedo. The
+		// wall's own gloss stays broad (0.5): sharper, at a grazing view it mirrored the environment's
+		// lower half as a thin blue line along the waterline.
 		const washed = wet.mul( float( 1 ).sub( deep ) ).mul( float( 1 ).sub( smoothstep( 0.2, 0.55, up ) ) );
-		rough.assign( mix( rough, float( 0.28 ), washed ) );
+		rough.assign( mix( rough, float( 0.5 ), washed ) );
 
 		// The island's jointed wall occludes much of its own sky; a share of that occlusion keeps
 		// the shadowed blocks airy while the crevices stay dark, though never black: the whole
@@ -1096,9 +1101,9 @@ function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, waveMaps: Wav
 
 	};
 
-	const light = underwaterLight( shared, waveMaps, { aboveSun: vec3( surf.get( 'canopy' ) ) } );
-	// the ambient volume above the water (lighting/AmbientSample.ts): degree 2 on the plateau, the
-	// cliffs and the stones. At degree 1
+	const light = underwaterLight( shared, waveMaps, { aboveSun: vec3( surf.get( 'canopy' ) ), specular: STONE_UNDER_WATER } );
+	// the ambient volume (lighting/AmbientSample.ts): degree 2 on the plateau, the cliffs and the
+	// stones, under the water too (lighting/Underwater.ts). At degree 1
 	// the volume's directionality boost turns the light the lit meadow bounces up against level
 	// ground in its shade, darkening it (AmbientRelight.ts, known limits); degree 2's quadratic band
 	// gives it back. None on the sea floor, which lies under the water, where the environment's
