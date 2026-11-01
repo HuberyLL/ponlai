@@ -110,9 +110,9 @@ export const PROBE_NEAR = 8;
 
 // ------------------------------------------------------------------ albedos (linear)
 
-// the meadow seen from above: the lawn's colour at its tone (Meadow.ts LAWN x LAWN_GAIN), the
-// blades' value (Grass.ts BLADE_COLOUR)
-const LAWN_TOP = [ 0.0632 * 0.926, 0.0984 * 0.926, 0.0359 * 0.926 ];
+// the meadow seen from above: the blades' mean albedo (Meadow.ts LAWN x LAWN_GAIN), their own,
+// whose blue is about a ninth of their green (Grass.ts meadowMean)
+const LAWN_TOP = [ 0.0700 * 0.926, 0.0978 * 0.926, 0.0109 * 0.926 ];
 // a grove's floor: its ground scan's mean as TerrainMaterial.ts shows it (GROUND_SCANS.grove:
 // saturation 0.8, gain 0.355)
 const GROVE_FLOOR = scanLook( [ 0.2918, 0.2482, 0.1198 ], 0.8, 0.355 );
