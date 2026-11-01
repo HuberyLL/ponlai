@@ -24,7 +24,8 @@
 // and projection, the scene clock, the render's and the output's sizes, the epoch, the resolve's live
 // settings and the page's own signature of the rest (main.ts: a forced lightning strike, which a
 // review sets while paused). The frame is not at rest while the page says it is unstable (a sky bake
-// in flight, a sky transition still running). Anything else that changes the image without changing
+// in flight, a sky transition still running, the haze's own rest not done: VolumetricHaze.ts).
+// Anything else that changes the image without changing
 // the key (a GUI control, a weather jump, a seek to the same time) bumps the epoch
 // (`restEpoch.bump( reason )`): the scene events (SceneEvents.ts `sceneEvent`) call it from every
 // site that changes the scene, `__PONLAI__.taa.restart()` among them.

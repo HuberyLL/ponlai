@@ -1735,7 +1735,8 @@ function temporalFrame( dt: number, step: number ): TemporalFrame | undefined {
 
 	if ( ! pipeline.resolver ) return undefined;
 	// (FSR 3's frame time: the scene clock's step, the pacer's nominal interval while paused)
-	return { signature: [ strikeSignature() ], stable: restStable(), dt, step, interval: pacer.target > 0 ? 1000 / pacer.target : 1000 / 60 };
+	// The temporal rest starts once the haze's has ended, so it averages frames of the finished haze.
+	return { signature: [ strikeSignature() ], stable: restStable() && ! pipeline.air.pending, dt, step, interval: pacer.target > 0 ? 1000 / pacer.target : 1000 / 60 };
 
 }
 // The haze's rest (weather/VolumetricHaze.ts): the temporal rest's signature and the sun maps' redraw
