@@ -106,8 +106,10 @@ export interface WeatherState {
 	// The haze near the camera: the optical depth from the camera out to a distance is `nearDensity`
 	// times the far medium's up to `nearStart` metres, eased back to 1 by `nearEnd` and 1 beyond
 	// (weather/VolumetricHaze.ts). Under the kept skies the island's views read through a thin near
-	// air while every ray past `nearEnd`, the horizon's and the sky's, keeps its depth; the parked
-	// skies keep 1 (the kept skies' are tunable, weather/HazeKeys.ts). A clear or fair sky's air is
+	// air while every ray past `nearEnd`, the horizon's and the sky's, keeps its depth (tunable,
+	// weather/HazeKeys.ts). A parked sky's `skyMix` is overcast's, so it takes overcast's values: the
+	// haze reads these three from the kept skies' presets only, and a parked preset holds them for
+	// the state's fields (`fields` below). A clear or fair sky's air is
 	// a fifth as dense as a clouded one's, so it gives its depth back over a short shell that the
 	// far sea starts in. A clouded sky's shell ends between: shorter (380 m under the cloudy sky) it
 	// stands as a pale wall over the fully grown island's far half, longer the far sea falls dark

@@ -62,11 +62,11 @@ type V4 = THREE.Node<'vec4'>;
 //     of f tau over it, which also weighs what the slice scatters (the light per opacity is
 //     unchanged), so the shadows and the grid stay as they were. Rays read from another height
 //     (`skyHaze`'s `from`, the probe's) count the distance from their own start. The kept skies
-//     thin it (k under 1, d0 200 m, d1 350 m under a clear or fair sky, 250 m and 600 m under a
-//     denser clouded one: the game's camera reaches at most about 240 m to the island's far
-//     side), so the island's views read through little air: the sky is many times
+//     thin it (k under 1, d0 200 m, d1 350 m under a clear or fair sky, 250 m and 430 m under the
+//     cloudy one, 250 m and 500 m under the overcast: the game's camera reaches at most about 240 m
+//     to the island's far side), so the island's views read through little air: the sky is many times
 //     as bright as the land's shade, and a few per cent of it over the land turns the shade blue
-//     and lifts the darks. The parked skies keep 1, which leaves every depth as it was. The near
+//     and lifts the darks. A parked sky takes overcast's values (Weather.ts `skyMix`). The near
 //     start is Unreal Engine's exponential height fog's Start Distance (its public documentation),
 //     here eased and given back beyond it.
 //     `nearHaze` off (the settings) takes the far density everywhere.
