@@ -213,11 +213,12 @@ art decision changes; images from elsewhere stay out of the repository.
   blade and clump its own value and height, which from the game's view grains the lawn into a
   scatter of tufts over dark ground.
   The materials keep albedos within real ones: the meadow's blades a sunlit leaf's
-  (about 0.08), the cliff's stone about twice the grass, the trees' leaves about a fifth lighter
-  than the grass as painted and a little darker than it as a crown draws them, its inner leaves
-  greyed, so a crown stands a little under the sward's value; the frame's brightness is the
-  exposure's, never albedos pushed past real ones. A tree's leaves are as matte as the blades:
-  no pale sheen over a crown, whose lit leaves stay a plain green and whose depth stays dark.
+  (about 0.08), the cliff's stone about twice the grass, the trees' leaves about half again as
+  light as the grass as painted, a cooler green with less red than the blades and some blue, and a
+  little darker than it as a crown draws them, its inner leaves greyed, so a crown stands a little
+  under the sward's value; the frame's brightness is the exposure's, never albedos pushed past real
+  ones. A tree's leaves are nearly as matte as the blades: no pale sheen over a crown, whose lit
+  leaves stay a plain green and whose depth stays dark.
   One grass colour, a bright, fresh, natural green, matte with only a faint gloss (no pale sheen
   over the blades, which reads as plastic): the gaps between blades a deep, cooler green (never
   near black) under tips that stand out lighter and yellow-green where the sun shines through

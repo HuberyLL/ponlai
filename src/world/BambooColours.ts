@@ -9,6 +9,11 @@ export const CULM = { green: [ 0.042, 0.07, 0.02 ], dull: [ 0.046, 0.066, 0.026 
 export const PURPLE_CULMS = 0.2;
 
 /** The leaves' colours (sRGB): a clear green, a deeper one, a lighter one, young leaves and a few
- * old yellow ones, and their shares of a crown. */
-export const LEAF_COLOURS = [ [ 62, 100, 36 ], [ 50, 84, 30 ], [ 76, 114, 42 ], [ 100, 132, 50 ], [ 150, 140, 66 ] ] as const;
+ * old yellow ones, and their shares of a crown. Their mean in linear (0.081, 0.137, 0.034), at
+ * shared.ts leafGain 1: red about 0.6 of green, below the blades' 0.7, so the crowns stay a little
+ * cooler than the meadow in every light, and blue about a quarter of it, which keeps their hue on a
+ * cool green under the sun where red alone would turn it toward the meadow's. */
+export const LEAF_COLOURS = [ [ 71, 100, 48 ], [ 57, 84, 41 ], [ 86, 114, 56 ], [ 113, 132, 66 ], [ 169, 140, 86 ] ] as const;
 export const LEAF_SHARE = [ 0.42, 0.27, 0.2, 0.08, 0.03 ] as const;
+/** A leaf's underside (sRGB): a little duller and darker than the clear green. */
+export const LEAF_UNDER = 'rgb(64,90,51)';

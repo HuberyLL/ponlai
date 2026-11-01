@@ -6,7 +6,7 @@ import { receiveScreenAO } from '../post/GTAO.ts';
 import { receiveScreenShadow, screenThickness } from '../post/MeadowShade.ts';
 import type { Shared } from '../shared.ts';
 import { mulberry32 } from './noise.ts';
-import { CULM, LEAF_COLOURS, LEAF_SHARE, PURPLE_CULMS } from './BambooColours.ts';
+import { CULM, LEAF_COLOURS, LEAF_SHARE, LEAF_UNDER, PURPLE_CULMS } from './BambooColours.ts';
 import { GROVES } from './BambooGroves.ts';
 import { CROWN_DRAG, branchBend, mainBend } from './vegetation/Deform.ts';
 import { useSpecular, useVegetationMotion } from './vegetation/Material.ts';
@@ -25,7 +25,7 @@ import { tuneUniform } from '../debug/Tune.ts';
 // the age turns a dim dusty purple instead, the island's old lore on a few stems, at the same
 // lightness, so the grove stays one family of green. They are the plants' own colour: darker than
 // a lit crown, the same value old or young, stems that read dark against the light and lit where
-// the sun finds them, never the palest thing in a grove. Their specular is a little over a leaf's
+// the sun finds them, never the palest thing in a grove. Their specular is close to a leaf's
 // (`CULM_F0`), a smooth cuticle.
 // The sky reaches a culm's lower part only through its grove's canopy, so a grove is dark inside
 // and its culms light where the sun finds them: the ambient volume's irradiance
@@ -174,7 +174,7 @@ function leafPath( length: number, width: number, bend: number ): Path2D {
 export function leafAtlas( size = 512 ): LeafAtlas {
 
 	const rng = mulberry32( 0xb3b0 );
-	const paint = new LeafPainter( size, rng, CURVE, 'rgb(56,90,38)' );
+	const paint = new LeafPainter( size, rng, CURVE, LEAF_UNDER );
 	const tile = size / 2;
 
 	const pick = () => {
@@ -311,7 +311,7 @@ function srgbToLinear( v: number ): number {
  * (LEAF_TINTS). */
 export function singleLeaf( size = 128 ): LeafAtlas {
 
-	const paint = new LeafPainter( size, mulberry32( 0x1eaf ), CURVE, 'rgb(56,90,38)' );
+	const paint = new LeafPainter( size, mulberry32( 0x1eaf ), CURVE, LEAF_UNDER );
 	const length = size * 0.9, width = length * 0.15, bend = length * 0.05;
 	const path = leafPath( length, width, bend );
 	const [ r, g, b ] = LEAF_COLOURS[ 0 ];
