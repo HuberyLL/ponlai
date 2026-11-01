@@ -23,8 +23,8 @@ import { keyed, type DayKeys } from '../../post/DayKeys.ts';
 // plainly off the albedo, a crown under cloud stood greyer than under the sun. So a leaf's ambient
 // diffuse (world/VegetationLighting.ts) is multiplied by this tint, about one more scatter off a
 // green leaf: blue falls with red, so the hue holds where red alone would turn it toward cyan, and
-// green rises just enough to keep the lightness. It takes only the ambient, so it weakens where a
-// gap lets the key in. Weighted by the cloud and by the sun's height: whole from 12 degrees up, gone
+// green rises just enough to keep the lightness. It takes the ambient and the local lights' diffuse gathered with it
+// (lighting/GroundBounce.ts), not the key, so it weakens where a gap lets the key in. Weighted by the cloud and by the sun's height: whole from 12 degrees up, gone
 // at 3, under which a clouded crown takes the low warm light's colour (with the tint it stood
 // emerald on a brown dusk), and so gone by night too. Exactly white under a clear or fair sky; the
 // metering illuminance (lighting/MeterLight.ts) leaves it out, so it moves no exposure. The falling

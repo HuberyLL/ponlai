@@ -7,7 +7,8 @@ import { tuneObject } from '../debug/Tune.ts';
 // blue: read plainly off the albedo, the sward under cloud stood yellower than under the sun. So the ambient
 // diffuse on the blades (world/VegetationLighting.ts) and on the turf under them
 // (TerrainMaterial.ts, by the turf's cover) is multiplied by this tint, weighted by the cloud and
-// gone by night. It stays near neutral in luminance, and the metering illuminance
+// gone by night. The local lights' diffuse, gathered with it (lighting/GroundBounce.ts), takes the
+// tint too. It stays near neutral in luminance, and the metering illuminance
 // (lighting/MeterLight.ts) leaves it out, so it moves no exposure. One tint for a cloudy and an
 // overcast sky.
 //
