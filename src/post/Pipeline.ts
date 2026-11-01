@@ -18,6 +18,7 @@ import { FSR } from './FSR.ts';
 import { PhysicalBloom } from './PhysicalBloom.ts';
 import { Metering } from './Metering.ts';
 import { PURKINJE, purkinjeScale, purkinjeShift } from './Purkinje.ts';
+import { cloudedShare } from '../sky/Weather.ts';
 import { AA_MODE, AFTER_RESOLVE, FSR3, RESOLVE, SCENE_SAMPLES, TEMPORAL } from './Antialiasing.ts';
 import { beginMotionFrame, METER_LIGHT, onTaaCut, overlayMRT, sceneMRT } from './Motion.ts';
 import { preExposed, preExposedRGBA, preExposure, sceneUnits } from './PreExposure.ts';
@@ -2332,7 +2333,7 @@ export class Pipeline {
 		u.vignette.value = S.vignette;
 		u.ditherOn.value = this.upscaling ? 0 : 1;
 		// the clouded day's share: the cloudy and overcast skies' (DayKeys.ts `cloudy`)
-		const cloud = S.skyMix[ 2 ] + S.skyMix[ 3 ];
+		const cloud = cloudedShare( S.skyMix );
 		this.localTone?.update( this.sky.elevation, S.night, cloud );
 		this.bloom.update( this.sky.elevation, S.night, cloud );
 		const ex = keyed( EXPOSURE_KEYS, this.sky.elevation, S.night, this.exposureKeys, cloud ), mu = this.metering.uniforms;

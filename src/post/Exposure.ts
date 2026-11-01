@@ -108,7 +108,9 @@ export interface ExposureKey extends Record<string, number> {
  * sunset, which reads as a lit afternoon under an evening sky, so κ falls with the sun while β and
  * κ_H stay: 0.55 from noon down to 6 degrees, 0.1 at 3 and -0.12 at sunset. The meadow dims into the
  * evening, but for the cloud's own gaps, which pass at any height. The
- * night has one white: β 0 (the meter alone), κ and κ_H fitted. The adaptation's time
+ * night has one white: β 0 (the meter alone), κ and κ_H a quarter of a stop apart and moved together,
+ * so the guard does not take back what the key gives: the moonlit land's shade stands a step over
+ * the curve's black, with the moon's path and the sky rising alongside it. The adaptation's time
  * constants are the same in every key (the header, Adaptation).
  * Tunable on debug pages (debug/Tune.ts): `post.exposure.<value>@<key>`. */
 export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
@@ -122,7 +124,7 @@ export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
 		{ at: 3, name: 'cloudyGolden', values: { key: 0.1, highlight: 3.05, sky: 0, adaptUp: 0.05, adaptDown: 0.05 } },
 		{ at: 6, name: 'cloudy', values: { key: 0.55, highlight: 3.05, sky: 0, adaptUp: 0.05, adaptDown: 0.05 } },
 	],
-	night: { key: - 2.26, highlight: - 2.03, sky: 0, adaptUp: 0.05, adaptDown: 0.05 },
+	night: { key: - 1.9, highlight: - 1.67, sky: 0, adaptUp: 0.05, adaptDown: 0.05 },
 }, { key: { min: - 6, max: 3 }, highlight: { min: - 3, max: 4 }, sky: { min: 0, max: 1 }, adaptUp: { min: 0.02, max: 4, scale: 'log' }, adaptDown: { min: 0.02, max: 4, scale: 'log' } } );
 
 /** How far under the meter's exposure e_m the highlight guard may pull the target, in stops (the

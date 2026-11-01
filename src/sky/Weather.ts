@@ -50,15 +50,24 @@ export const isParkedWeather = ( name: string ): boolean => ( PARKED_WEATHER as 
 /** The kept skies, in the order of `Weather.skyMix`. */
 export const KEPT_SKIES: ReadonlyArray<WeatherName> = [ 'clear', 'fair', 'cloudy', 'overcast' ];
 
-/** How far a clouded day's high sun has come in at the sun's `elevation` (degrees) under the
- * weather's blend of the kept skies (`skyMix`): none under a clear or a fair sky, nor up to 30
- * degrees, the sky's clouded share from 40 up, where the sky's light (Sky.ts SKY_LIGHT) has taken
- * its full blue. The near air (HazeKeys.ts) and the light lent to the island (Sky.ts
- * CLOUD_LIGHT_TINT) follow it, so a clouded noon's land stays as dark and green as its afternoon's. */
-export function cloudedHighSun( elevation: number, skyMix: readonly number[] ): number {
+/** The cloud in the weather's blend of the kept skies (`skyMix`): the cloudy sky's share and the
+ * overcast sky's, none under a clear or a fair sky. */
+export function cloudedShare( skyMix: readonly number[] ): number {
 
-	const t = Math.min( Math.max( ( elevation - 30 ) / 10, 0 ), 1 );
-	return ( ( skyMix[ 2 ] ?? 0 ) + ( skyMix[ 3 ] ?? 0 ) ) * t * t * ( 3 - 2 * t );
+	return ( skyMix[ 2 ] ?? 0 ) + ( skyMix[ 3 ] ?? 0 );
+
+}
+
+/** How far a clouded day's high sun has come in at the sun's `elevation` (degrees) under the
+ * weather's blend of the kept skies (`skyMix`): none under a clear or a fair sky, nor up to `low`
+ * degrees, the sky's clouded share from 40 up, where the sky's light (Sky.ts SKY_LIGHT) has reached
+ * its high key. The near air (HazeKeys.ts) follows it from 30, the light lent to the island (Sky.ts
+ * CLOUD_LIGHT_TINT) from 12, with the sky's light's own climb, so a clouded noon's land stays as
+ * dark and green as its afternoon's. */
+export function cloudedHighSun( elevation: number, skyMix: readonly number[], low = 30 ): number {
+
+	const t = Math.min( Math.max( ( elevation - low ) / ( 40 - low ), 0 ), 1 );
+	return cloudedShare( skyMix ) * t * t * ( 3 - 2 * t );
 
 }
 // a sky's share of each kept sky: its own, or overcast's for a parked one

@@ -121,8 +121,9 @@ art decision changes; images from elsewhere stay out of the repository.
   day alike, and other views lie within about half a stop of that. Under cloud the land keeps
   about a clear day's share of the sky's light at every height, so the meadow and the groves stand
   dark and quiet under a pale sky, with the sea the lighter of the two. That holds with the sun
-  high: from 30 to 40 degrees the near air thins and the light lent to the land stays a warm grey,
-  so no pale veil lies over a clouded noon and the crowns keep their green. The exposure lets go as the
+  high: the deck passes on little of a clear sky's blue, so the air stays near grey, the light lent
+  to the land a warm grey, and from 30 to 40 degrees the near air thins, so no pale veil lies over
+  a clouded noon and the crowns keep their green. The exposure lets go as the
   sun falls under about 6 degrees, so a clouded evening comes on by degrees: dark at sunset, neither
   black nor lit yellow, the meadow never brighter at a lower sun but where the cloud opens for a
   moment. A sun
