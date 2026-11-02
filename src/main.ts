@@ -14,7 +14,7 @@ import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, nightAmbientAt, sunRising, type DayPreset } from './sky/DayCycle.ts';
-import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, isParkedWeather, isWindLevel, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
+import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckRamp, isParkedWeather, isWindLevel, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
 import { Wind, weatherWind } from './weather/Wind.ts';
@@ -392,7 +392,8 @@ function prepareHaze( state: Readonly<WeatherState> ): void {
 	pipeline.air.haze.value = sky.weather.haze * hazeKey.amount;
 	pipeline.air.fog.value = Math.max( sky.weather.fog, hazeKey.mist );
 	pipeline.air.setLook( hazeKey );
-	pipeline.air.weatherLight.direct = state.directVisibility;
+	// the air's sunlit haze keeps the land's share of the key under a deck (Weather.ts `deckKey`)
+	pipeline.air.weatherLight.direct = state.directVisibility * THREE.MathUtils.lerp( 1, state.deckKey, deckRamp( sky.elevation ) );
 	pipeline.air.weatherLight.ambient = state.ambientGain;
 	pipeline.air.prepareMedium();
 
@@ -414,7 +415,10 @@ function prepareSkyState(): void {
 
 function publishLighting(): void {
 
-	sun.color.copy( sky.keyColor );
+	// the land's key: the key times the weather's share under a deck (Weather.ts `deckKey`); the sea
+	// takes the key whole (shared.sunColor)
+	sun.color.copy( sky.keyColor ).multiplyScalar( THREE.MathUtils.lerp( 1, weather.state.deckKey, deckRamp( sky.elevation ) ) );
+	shared.landKey.value.set( sun.color.r, sun.color.g, sun.color.b );
 	sun.intensity = 1;
 	sun.position.copy( sky.keyDir ).multiplyScalar( 120 ).add( sun.target.position );
 	shared.sunDir.value.copy( sky.keyDir );

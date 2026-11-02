@@ -631,7 +631,7 @@ export class AmbientRelight {
 			const lobe = toMat3( [ this.lobe[ 0 ].x, this.lobe[ 0 ].y, this.lobe[ 0 ].z, this.lobe[ 0 ].w, this.lobe[ 1 ].x, this.lobe[ 1 ].y, this.lobe[ 1 ].z, this.lobe[ 1 ].w, this.lobe[ 2 ].x ] ).toVar() as unknown as M3;
 			const skyScale = this.skyScale.toVar();
 			const bounceScale = average.mul( this.skyScale ).mul( ambient.skyBounce ).toVar();
-			const sunScale = vec3( shared.sunColor ).mul( shade ).mul( ambient.sunBounce ).div( Math.PI ).toVar();
+			const sunScale = vec3( shared.landKey ).mul( shade ).mul( ambient.sunBounce ).div( Math.PI ).toVar();
 			// the sea's radiance as a level bounce surface
 			const seaLight = this.seaRadiance( Array.from( { length: 9 }, ( _, n ) => S[ n ].xyz as V3 ), skyScale, shade );
 			// the share of its in-scatter the key's bounce keeps: the probe's sky toward the key, over open

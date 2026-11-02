@@ -58,6 +58,16 @@ export function cloudedShare( skyMix: readonly number[] ): number {
 
 }
 
+/** How far a clouded day's deck has taken over its own light at the sun's `elevation` (degrees): 0
+ * up to 3 degrees, 1 from 6, smooth between. Under it the land keeps the weather's `deckKey` of the
+ * key and the clouds' shadow its `deckFloor` (main.ts `publishLighting`, Sky.ts `keyCloudFloor`). */
+export function deckRamp( elevation: number ): number {
+
+	const t = Math.min( Math.max( ( elevation - 3 ) / 3, 0 ), 1 );
+	return t * t * ( 3 - 2 * t );
+
+}
+
 /** How far a clouded day's high sun has come in at the sun's `elevation` (degrees) under the
  * weather's blend of the kept skies (`skyMix`): none under a clear or a fair sky, nor up to `low`
  * degrees, the sky's clouded share from 40 up, where the sky's light (Sky.ts SKY_LIGHT) has reached
@@ -87,6 +97,13 @@ export interface WeatherState {
 	// clouds' shadow on the island (Sky.ts `keyCloudVisibility`). 1 takes the deck's shadow away,
 	// leaving `directVisibility` alone to set the land's direct light.
 	cloudFloor: number;
+	// By day under a deck (`deckRamp`): the share of the key the land keeps (the sun's light on the
+	// land, its bounce and the air's sunlit haze, not the sea's), and the clouds' shadow floor that
+	// takes over from `cloudFloor`. A cloudy sky keeps its key whole and lifts its floor to 0.36, so
+	// its gaps still read and its shade stays soft; overcast keeps 0.45 of the key, with no floor.
+	// The parked skies keep the key whole (1, floor 0): they have no cut of their own.
+	deckKey: number;
+	deckFloor: number;
 	// How much of the key's cast shadow (the sun's map: groves, cliffs, culms) the land shows, 1 all
 	// of it (lighting/SolarShadow.ts `installOpenShadow`).
 	castShadow: number;
@@ -179,15 +196,15 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // maps keep the island's own shadows. That share sets the land's illuminance against the sky's
 // luminance.
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
-	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, haze: 0.002, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
-	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, haze: 0.002, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
-	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, haze: 0.0106, nearDensity: 0.13, nearStart: 250, nearEnd: 430, rain: 0, fog: 0, storm: 0, cirrus: 0.15 },
-	overcast: { coverage: 0.94, density: 1.6, directVisibility: 0.7, cloudFloor: 0, castShadow: 1, shadowDensity: 0.03, glintSpread: 0, ambientGain: 0.76, haze: 0.00974, nearDensity: 0.08, nearStart: 250, nearEnd: 500, rain: 0, fog: 0.08, storm: 0, cirrus: 0 },
-	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, haze: 0.0095, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0.75, fog: 0.22, storm: 0, cirrus: 0 },
+	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckKey: 1, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, haze: 0.002, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
+	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckKey: 1, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, haze: 0.002, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
+	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckKey: 1, deckFloor: 0.36, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, haze: 0.0106, nearDensity: 0.13, nearStart: 250, nearEnd: 430, rain: 0, fog: 0, storm: 0, cirrus: 0.15 },
+	overcast: { coverage: 0.94, density: 1.6, directVisibility: 0.7, cloudFloor: 0, deckKey: 0.45, deckFloor: 0, castShadow: 1, shadowDensity: 0.03, glintSpread: 0, ambientGain: 0.76, haze: 0.00974, nearDensity: 0.08, nearStart: 250, nearEnd: 500, rain: 0, fog: 0.08, storm: 0, cirrus: 0 },
+	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckKey: 1, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, haze: 0.0095, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0.75, fog: 0.22, storm: 0, cirrus: 0 },
 	// A squall: the darkest deck, heavy rain, a strong wind (PRESET_WIND) and a rough, white-capped sea.
-	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, haze: 0.0135, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 1, fog: 0.3, storm: 1, cirrus: 0 },
+	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckKey: 1, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, haze: 0.0135, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 1, fog: 0.3, storm: 1, cirrus: 0 },
 	// Sea fog forms in calm, moist air under thin high cloud; the sun shows as a pale disk.
-	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, cloudFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, haze: 0.0046, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0, fog: 1, storm: 0, cirrus: 0.4 },
+	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, cloudFloor: 0, deckKey: 1, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, haze: 0.0046, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0, fog: 1, storm: 0, cirrus: 0.4 },
 };
 
 // Auto weather: from each state, the next one and its weight. The chain moves among the kept
