@@ -37,7 +37,10 @@
 // game needs them as pressure (docs/game-design.md) they are out of the rotation: the auto chain
 // never reaches them, the production page refuses them (main.ts falls back to fair) and the default
 // checks skip them. Their code stays and keeps compiling; debug builds (the dev server, `?debug`)
-// still reach every preset, so captures, probes and a later revival can use them.
+// still reach every preset, so captures, probes and a later revival can use them. Under a deck by day
+// they take what overcast's share takes, counting as overcast in `skyMix`: the level air and the sky
+// gain (DECK_SKY_GAIN), overcast's sky shape (weather/VolumetricHaze.ts) and the exposure by the
+// sky with overcast's key (post/Exposure.ts), but they keep the key whole (`deckKey` 1).
 //
 // Beside its fields the weather keeps the kept skies' shares in the sky as it stands (`skyMix`,
 // a parked sky counting as overcast), blended by a front as the fields are, for the lighting's

@@ -31,6 +31,10 @@ type V4 = THREE.Node<'vec4'>;
 
 // The sine of the elevation the sun's rows are read at under a deck (see the header)
 const DECK_ROW = 0.5;
+// Overcast's deck (see the header): its lobe toward the sun, the lobe's power and its share
+// (tunable: `haze.overcast.power`, `haze.overcast.share`)
+const OVERCAST_POWER = tuneUniform( 'haze.overcast.power', 16, { min: 1, max: 40, onChange: markSkyRetune } );
+const OVERCAST_SHARE = tuneUniform( 'haze.overcast.share', 0.85, { min: 0, max: 1, onChange: markSkyRetune } );
 
 // The air's haze and the sea's fog as one participating medium in a froxel volume, after Patry,
 // "Real-Time Samurai Cinema", SIGGRAPH 2021 (its volumetric haze, built on Wronski, SIGGRAPH 2014,
@@ -159,6 +163,18 @@ const DECK_ROW = 0.5;
 //     the froxels read the same rows, so the sky, its light on the land and the far haze move
 //     together; with a level band and the irradiance about unchanged the deck shows half a stop
 //     darker against the land.
+//     Overcast's deck is thick and dark (HazeKeys.ts `overcastDeck`, its share): the open sky's
+//     light in the sun's rows takes two factors by that share. One by the view's elevation h,
+//     ( 3 + 6 sin h ) / 7, the standard overcast sky's luminance law ( 1 + 2 sin h ) / 3 (the CIE
+//     standard overcast sky of Moon and Spencer, 1942, as given in ISO 15469:2004 /
+//     CIE S 011/E:2003), so the deck is three times as bright overhead as at the horizon. One by
+//     the angle to the sun, the lobe ( 1 - q + 2 q t^p ) / ( 1 - q + 2 q / ( p + 1 ) ),
+//     t = ( 1 + cos ) / 2, whose mean over the sphere is 1, so the power p and the share q change
+//     its shape and not the sky's light (OVERCAST_POWER 16, OVERCAST_SHARE 0.85): thick cloud is
+//     brightest about the sun's place and dim looking away, about five times the mean 20 degrees
+//     from the sun and 0.6 of it from some 70 degrees on. The sky's air then reads about L 0.75
+//     within 30 degrees of the sun, 0.5 at 30 - 60 and 0.3 beyond, under overcast's exposure key
+//     (post/Exposure.ts OVERCAST_KEY).
 //   - the ambient visibility (the open sky's share that reaches a froxel) is the visibility volume's
 //     second channel, sampled, filtered and held at rest with the key light's: 0 under the island's
 //     cover and 1 above it, rising over 1.5 m either side of the cover's top (the rain's collision
@@ -447,6 +463,8 @@ export class VolumetricHaze {
 	private readonly desaturate = uniform( 0.26 );
 	// the deck's share (HazeKeys.ts `deck`): the sun's rows read level under it (see the header)
 	private readonly deckShare = uniform( 0 );
+	// overcast's share of the deck (HazeKeys.ts `overcastDeck`): its sky's shape (see the header)
+	private readonly overcastShare = uniform( 0 );
 	// the light's colours per body (the sun's, the moon's: each one's illuminance the sky is drawn
 	// with, scaled): the Rayleigh share's lit by the open sky and by the body, the aerosol share's;
 	// and the shares' weights
@@ -714,8 +732,13 @@ export class VolumetricHaze {
 
 			const light = b === 0 ? atmosphere.sunDir : atmosphere.moonDir;
 			const nu = dot( direction, light ).toVar();
+			// (overcast's deck: by the view's elevation and its angle to the sun, see the header)
+			const lobe = mix( float( 1 ), max( nu.add( 1 ).mul( 0.5 ), 0 ).pow( OVERCAST_POWER ).mul( 2 ), OVERCAST_SHARE )
+				.div( float( 1 ).sub( OVERCAST_SHARE ).add( OVERCAST_SHARE.mul( 2 ).div( OVERCAST_POWER.add( 1 ) ) ) );
+			const overcast = b === 0 ? mix( float( 1 ), max( direction.y, 0 ).mul( 6 ).add( 3 ).div( 7 ), this.overcastShare )
+				.mul( mix( float( 1 ), lobe, this.overcastShare ) ).toVar() : float( 1 );
 			return {
-				b, light, rayleighPhase: skyRayleighPhase( nu, atmosphere.rayleighForward ).toVar(), miePhase: cornetteShanks( nu, b === 0 ? g : this.moonAnisotropy ).toVar(),
+				b, light, overcast, rayleighPhase: skyRayleighPhase( nu, atmosphere.rayleighForward ).toVar(), miePhase: cornetteShanks( nu, b === 0 ? g : this.moonAnisotropy ).toVar(),
 				direct: this.sunRayleighColour[ b ].mul( polariser( nu, atmosphere.polarisation ) ).toVar(), elevation: asin( clamp( light.y, - 1, 1 ) ).toVar(),
 			};
 
@@ -733,7 +756,7 @@ export class VolumetricHaze {
 				const shadow = atmosphere.earthShadowAt( height, direction, body.b );
 				const above = smoothstep( horizon.negate(), horizon, body.elevation.add( dip ) );
 				const rayleigh = grey( rows.rayleigh.mul( body.rayleighPhase ) )
-					.mul( this.ambientColour[ body.b ].mul( ambient ).mul( max( shadow, 1 ) ).add( body.direct.mul( sun ).mul( shadow ) ) );
+					.mul( this.ambientColour[ body.b ].mul( ambient ).mul( max( shadow, 1 ) ).mul( body.overcast ).add( body.direct.mul( sun ).mul( shadow ) ) );
 				const mie = grey( rows.mie.mul( body.miePhase ) ).mul( this.mieColour[ body.b ] ).mul( above.mul( sun ) );
 				scattered.addAssign( rayleigh.mul( this.weights.x ).add( mie.mul( this.weights.y ) ) );
 
@@ -1229,6 +1252,7 @@ export class VolumetricHaze {
 		const look = this.look;
 		look.sigma.set( key.sigmaRed, key.sigmaGreen, key.sigmaBlue );
 		this.deckShare.value = key.deck;
+		this.overcastShare.value = key.overcastDeck;
 		look.desaturate = key.desaturate;
 		look.gain = key.gain;
 		look.sunRayleigh = key.sunRayleigh;

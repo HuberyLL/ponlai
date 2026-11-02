@@ -47,7 +47,7 @@ import { TONE_CURVE, checkToneCurve, solveToneCurve, type ToneCurve } from './To
 import { BASE_GRADE, fillGradeLut, gradeOf, lutNodes, mergeGrade, sampleLut, type GradeChanges, type GradeParams } from './GradeLut.ts';
 import { LocalTone } from './LocalTone.ts';
 import { keyed, type DayKey, type DayKeys } from './DayKeys.ts';
-import { EXPOSURE_KEYS, type ExposureKey } from './Exposure.ts';
+import { EXPOSURE_KEYS, overcastKey, type ExposureKey } from './Exposure.ts';
 import { restEpoch, restKey } from './TemporalRest.ts';
 import { tuneCheck, tuneKeys, tuneObject, tuneUniform } from '../debug/Tune.ts';
 import { displacementField } from '../world/vegetation/Displacement.ts';
@@ -2377,7 +2377,7 @@ export class Pipeline {
 		this.localTone?.update( this.sky.elevation, S.night, cloud );
 		this.bloom.update( this.sky.elevation, S.night, cloud );
 		const ex = keyed( EXPOSURE_KEYS, this.sky.elevation, S.night, this.exposureKeys, cloud, this.sky.rising ), mu = this.metering.uniforms;
-		mu.key.value = ex.key; mu.highlight.value = ex.highlight; mu.skyShare.value = ex.sky; mu.offset.value = S.exposureOffset;
+		mu.key.value = ex.key + overcastKey( this.sky.elevation, S.skyMix[ 3 ] ?? 0 ); mu.highlight.value = ex.highlight; mu.skyShare.value = ex.sky; mu.offset.value = S.exposureOffset;
 		// the adaptation's step: the scene clock's, once per rendered frame; a paused clock (and the
 		// test mode, a paused page), a reset or a lost history take the target at once
 		const dt = this.exposureTime === null ? 0 : time - this.exposureTime;

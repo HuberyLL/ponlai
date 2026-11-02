@@ -1,7 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { Fn, If, abs, clamp, exp, exp2, float, log2, max, min, mix, select, vec3, vec4 } from 'three/tsl';
 import type { DayKey, DayKeys } from './DayKeys.ts';
-import { tuneKeys } from '../debug/Tune.ts';
+import { tune, tuneKeys } from '../debug/Tune.ts';
+import { deckRamp } from '../sky/Weather.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -101,13 +102,16 @@ export interface ExposureKey extends Record<string, number> {
  * away from it, the bright band about the sun capping the exposure. The golden key sits under the
  * low one, about half a stop under the meter and the highlights' guard close over it, so a sun at 3
  * degrees leaves a sunlit cliff orange and its shade deep. The high key's β runs to about 0.9,
- * where the sky nearly alone sets the exposure. The clouded key was set against the whites under the
- * cloudy sky: its β went to 0, the meter alone, and its κ_H lies 2.5 stops over its κ, so the guard
- * holds a clouded view down only where its brightest few percent lie more than 2.5 stops over its
- * metered light (under a sky with no sun, rarely). A meter alone holds the land level down to
- * sunset, which reads as a lit afternoon under an evening sky, so κ falls with the sun while β and
- * κ_H stay: 0.55 from noon down to 6 degrees, 0.1 at 3 and -0.12 at sunset. The meadow dims into the
- * evening, but for the cloud's own gaps, which pass at any height. The
+ * where the sky nearly alone sets the exposure. Under a clouded day's deck the sky alone sets it, β 1
+ * from 6 degrees up (cloudyLow, cloudy): the land under a deck is lit by that deck, so exposing by the
+ * sky keeps the sky over the meadow by the same stops at every height, and the land follows the
+ * sky's own fall into the evening with no step where the meter's reading would jump (a gap, a sun
+ * that drops through a cloud's edge). κ -0.5 at 6 degrees and -0.6 from 12 set the deck's sky at
+ * about L 0.7 - 0.76; overcast's darker deck takes OVERCAST_KEY on top, by its share, once. Under
+ * 3 degrees the deck's light hands over to the evening's: β 0, the meter alone, κ 0.1 at 3 and
+ * -0.12 at sunset. The clouded keys' κ_H lie well over their κ, so the guard holds a clouded view
+ * down only where its brightest few percent lie far over its metered light (under a sky with no
+ * sun, rarely). The
  * night has one white: β 0 (the meter alone), κ and κ_H a quarter of a stop apart and moved together,
  * so the guard does not take back what the key gives: the moonlit land's shade stands a step over
  * the curve's black, with the moon's path and the sky rising alongside it. The adaptation's time
@@ -135,10 +139,26 @@ export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
 	cloudy: [
 		{ at: 0, name: 'cloudySunset', values: { key: - 0.12, highlight: 3.05, sky: 0, adaptUp: 0.05, adaptDown: 0.05 } },
 		{ at: 3, name: 'cloudyGolden', values: { key: 0.1, highlight: 3.05, sky: 0, adaptUp: 0.05, adaptDown: 0.05 } },
-		{ at: 6, name: 'cloudy', values: { key: 0.55, highlight: 3.05, sky: 0, adaptUp: 0.05, adaptDown: 0.05 } },
+		{ at: 6, name: 'cloudyLow', values: { key: - 0.5, highlight: 3.05, sky: 1, adaptUp: 0.05, adaptDown: 0.05 } },
+		{ at: 12, name: 'cloudy', values: { key: - 0.6, highlight: 3.05, sky: 1, adaptUp: 0.05, adaptDown: 0.05 } },
 	],
 	night: { key: - 1.9, highlight: - 1.67, sky: 0, adaptUp: 0.05, adaptDown: 0.05 },
 }, { key: { min: - 6, max: 3 }, highlight: { min: - 3, max: 4 }, sky: { min: 0, max: 1 }, adaptUp: { min: 0.02, max: 4, scale: 'log' }, adaptDown: { min: 0.02, max: 4, scale: 'log' } } );
+
+/** Overcast's key on top of the clouded one, stops, by overcast's share of the sky (Weather.ts
+ * `skyMix`, a parked sky counting as overcast) under the deck (`deckRamp`): its deck is darker than a
+ * cloudy one's, brightest about the sun's place (weather/VolumetricHaze.ts, overcast's deck), and the
+ * sky sets the exposure, so its sky stands near L 0.75 within 30 degrees of the sun and 0.3 looking
+ * away from it. It enters here alone, never in the keys' own blend.
+ * Tunable: `post.exposure.overcastKey`. */
+const OVERCAST_KEY = tune( 'post.exposure.overcastKey', - 2.5, { min: - 4, max: 1 } );
+
+/** The key's offset for overcast's share of the sky `overcast` at the sun's `elevation` (degrees). */
+export function overcastKey( elevation: number, overcast: number ): number {
+
+	return OVERCAST_KEY() * overcast * deckRamp( elevation );
+
+}
 
 /** How far under the meter's exposure e_m the highlight guard may pull the target, in stops (the
  * bound's half width about e_m: see the header). */
