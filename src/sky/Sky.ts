@@ -65,8 +65,12 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // of its own (CLOUD_LIGHT_TINT), which the sky the eye sees, the
 // sea's reflection of it and the sea's own body never take. The dome lays the air's haze over
 // itself (`fogDome`, VolumetricHaze.ts `skyHaze`): the clouds at the distance to their shell's middle
-// height (the weather's shell: CLOUD_SHELL, low under cloudy and overcast skies), the sky behind them
-// along the whole way; so the haze's composite leaves the sky's pixels.
+// height (the weather's shell: CLOUD_SHELL, low under cloudy and overcast skies), under the low
+// deck's share at the march's own opacity-weighted depth (Clouds `sampleViewDepth`), the sky behind
+// them along the whole way; so the haze's composite leaves the sky's pixels. Measured on the horizon
+// views (paused, fresh loads): overcast's sky box spread .067 to .059, its gradient p99 .019 to .043
+// and its scale std under 3 degrees .0017 to .0030, the deck's rolls showing from about 8 degrees
+// up; cloudy's gradient p99 .042 to .071 and mass x 3.6 to 3.5 degrees.
 // The environment's bake lays the same haze over its source as the dome does (`fogEnvironment`,
 // VolumetricHaze.ts `openSky`, toward every direction from the sea's level, unshadowed): the environment and the dome
 // are one sky, its haze light included, so the ground's sky light takes the light the haze scatters
@@ -597,6 +601,9 @@ const CLOUD_MOON = [ - 7, - 3 ] as const;
 const CLOUD_TURN = [ - 3, - 2.5, - 2 ] as const;
 // The sine of the sun's elevation over which the clouds' shadow comes in as it rises.
 const CLOUD_SHADOW_SET = [ - 0.02, 0.02 ] as const;
+// The height over a low deck's base (metres) the bake fogs its clouds out to, where a closed deck's
+// march gathers most of its light (the dome reads the march's own depth: `domeColour`).
+const DECK_LIGHT_HEIGHT = 150;
 // The sine of the key's elevation over which the rays of the clouds' shadow gather from the height
 // of its disc to its centre as it climbs, from 8 to 11 degrees: from there up a cloud's own edge
 // takes longer to pass than the disc does (near 0.8 degree at 10 degrees, 0.15 at 4.7). The rays
@@ -1045,9 +1052,11 @@ export class Sky {
 			if ( haze ) {
 
 				// the clear sky through the haze along the whole way, the clouds through it out to the
-				// shell's middle height (from the sea: the distance to that sphere, as the dome takes it)
+				// shell's middle height (from the sea: the distance to that sphere, as the dome takes it),
+				// under the low deck's share to a little above its base instead, where a deck's light comes
+				// from (the dome takes the march's own depth there, which the panorama does not keep)
 				const sky = haze( up );
-				const middle = this.clouds.shellBottom.add( this.clouds.shellThickness.mul( 0.5 ) ).toVar();
+				const middle = mix( this.clouds.shellBottom.add( this.clouds.shellThickness.mul( 0.5 ) ), this.clouds.shellBottom.add( DECK_LIGHT_HEIGHT ), this.clouds.lowShare ).toVar();
 				const inside = middle.mul( middle.add( EARTH_RADIUS * 2 ) ), b = up.y.mul( EARTH_RADIUS );
 				const cloudHaze = haze( up, inside.div( sqrt( b.mul( b ).add( inside ) ).add( b ) ) );
 				const seen = sky.light.add( sky.transmittance.mul( clear ) ).mul( cloud.a )
@@ -1084,7 +1093,8 @@ export class Sky {
 	/** The dome's colour toward each pixel, seen through `haze` when given: a function of a view
 	 * direction and a distance along it (the sky's own by default) that returns the light the haze
 	 * adds and its transmittance (VolumetricHaze.ts `skyHaze`). The clouds are fogged at the
-	 * distance to the shell's middle height, the sky behind them along the whole way. */
+	 * distance to the shell's middle height, under the low deck's share at the march's depth, the
+	 * sky behind them along the whole way. */
 	private domeColour( haze?: SkyHaze ): V4 {
 
 		return Fn( () => {
@@ -1123,15 +1133,21 @@ export class Sky {
 			const sky = haze( d );
 			// The clouds through the haze out to the shell's middle height: its light over their
 			// opacity, their own (premultiplied) through its transmittance.
-			// (the camera held a metre under that height, as the march assumes a camera below the
-			// clouds: above it the root's argument would turn negative)
+			// (from the march's own camera height, held under the base (Clouds `camY`): the depths
+			// `sampleViewDepth` returns are measured from there, and above the middle the root's
+			// argument would turn negative)
 			const middle = this.clouds.shellBottom.add( this.clouds.shellThickness.mul( 0.5 ) ).toVar();
-			const camY = cameraPosition.y.min( middle.sub( 1 ) ).toVar();
+			const camY = this.clouds.camY;
 			const r0 = camY.add( EARTH_RADIUS ).toVar(), b = r0.mul( max( d.y, 0 ) ).toVar();
 			// (the distance to that sphere, written without a difference of near-equal terms)
 			const inside = middle.sub( camY ).mul( r0.add( middle.add( EARTH_RADIUS ) ) ).toVar();
-			const mid = inside.div( sqrt( b.mul( b ).add( inside ) ).add( b ) );
-			const cloudHaze = haze( d, mid );
+			const mid = inside.div( sqrt( b.mul( b ).add( inside ) ).add( b ) ).toVar();
+			// Under the low deck's share, out to the march's own opacity-weighted depth instead
+			// (Clouds `sampleViewDepth`): a closed deck's light comes from its lowest hundred metres,
+			// and at a low deck the middle lies some 2.5 times farther, which fogged the deck at 5 - 12
+			// degrees about twice as densely as its distance does.
+			const reach = mix( mid, this.clouds.sampleViewDepth( d, mid ), this.clouds.lowShare );
+			const cloudHaze = haze( d, reach );
 			const fogged = cloudHaze.light.mul( float( 1 ).sub( through ) ).add( cloudHaze.transmittance.mul( clouds ) );
 			return vec4( sky.light.add( sky.transmittance.mul( behind ) ).mul( through ).add( fogged ), 1 );
 

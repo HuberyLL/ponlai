@@ -86,8 +86,12 @@ type V4 = THREE.Node<'vec4'>;
 //     that cannot reach the ray's height are skipped.
 // The view is ray marched in screen space, one pixel of every 4 x 4 block per frame, accumulated
 // with reprojection (camera motion and wind drift), clamped to this frame's neighbourhood and
-// upsampled bicubically; a panorama of the upper sky serves reflections, the environment and the
-// sun's visibility; a shadow map holds the layer's transmittance along the key light, at the
+// upsampled bicubically. Beside the colour the view accumulates the cumulus's opacity-weighted
+// depth (`sampleViewDepth`), by the same reprojection and factors but unclamped, which the dome
+// fogs a low deck at (Sky.ts `domeColour`): a trace's own depth is a sixteenth of the pixels at a
+// new jitter each frame, which read directly would move the fog over the deck from frame to frame,
+// and at rest would print the last trace's 4 x 4 blocks. A panorama of the upper sky serves
+// reflections, the environment and the sun's visibility; a shadow map holds the layer's transmittance along the key light, at the
 // weather's share of the layer's optical depth (`shadowDensity`, Weather.ts), read with a
 // cubic B-spline built from four bilinear taps (`shadow`), with fades toward lit by the distance
 // from the island's centre and by the view's angle from a chosen direction (inert until set);
@@ -116,7 +120,7 @@ type V4 = THREE.Node<'vec4'>;
 // Rules: the view accumulates over frames, and a scene at rest (paused clock, still camera)
 // settles its clouds once and keeps them, so a paused frame is exactly repeatable. The march
 // assumes a camera below the cloud base: a free camera above the low deck sees it from 50 m
-// under its base. On high the view's resolution is a share of the display
+// under its base, and the dome fogs it from that same height (`camY`). On high the view's resolution is a share of the display
 // (0.45 of its ratio up to 1.5: 1152x648 at 2K output, under half the render's linear size there,
 // and 1296x729 at 4K output), not of the render, so the
 // dynamic render scale does not soften the clouds again. 0.45 is the knee of a sweep against
@@ -402,6 +406,8 @@ const weatherFbm = ( q: V2, profile: number[] ) => {
 interface ViewTextures {
 	trace: THREE.StorageTexture; depth: THREE.StorageTexture; high: THREE.StorageTexture; motion: THREE.StorageTexture; flash: THREE.StorageTexture;
 	boxMin: THREE.StorageTexture; boxMax: THREE.StorageTexture; history: THREE.StorageTexture[];
+	// the cumulus's depth beside the history, accumulated with it (`sampleViewDepth`)
+	depthHistory: THREE.StorageTexture[];
 }
 // a texture node of the view's kernels, and which of the view's textures it holds
 type ViewSlot = [ { value: THREE.Texture }, ( t: ViewTextures ) => THREE.StorageTexture ];
@@ -530,8 +536,11 @@ export class Clouds {
 	readonly flash = Array.from( { length: FLASH_SOURCES }, () => ( { source: uniform( new THREE.Vector4( 0, - 1e6, 0, 1 ) ), color: uniform( new THREE.Color( 0, 0, 0 ) ) } ) );
 	readonly flashOn = uniform( 0 );
 
-	// Camera-relative frame: the camera sits on the planet axis at `camY` (below the base).
-	private readonly camY = uniform( 15 );
+	// Camera-relative frame: the camera sits on the planet axis at `camY`, its height held between a
+	// metre and 50 m under the base (`update`), as every closed form under the shell assumes. The
+	// march and the dome that fogs it at the march's depth (Sky.ts `domeColour`) take this one
+	// height, so from a free camera inside or above the deck its depth and its fog agree.
+	readonly camY = uniform( 15 );
 	private readonly camXZ = uniform( new THREE.Vector2() );
 	private readonly windN = uniform( new THREE.Vector2( 1, 0 ) );
 	private readonly phase = uniform( new THREE.Vector2() );
@@ -587,6 +596,7 @@ export class Clouds {
 	private previousFlash = '';
 	private view: View | null = null;
 	private readonly viewNode = texture( new THREE.Texture() );
+	private readonly viewDepthNode = texture( new THREE.Texture() );
 	private marchView: ( ( rd: V3, jitter: F ) => { L: V3; F: V3; T: F; depth: F } ) | null = null;
 	// This frame's lightning in the view, traced at a quarter of its resolution.
 	private readonly flashNode = texture( new THREE.Texture() );
@@ -1472,11 +1482,12 @@ export class Clouds {
 		const flashTrace = make( tw, th, 'cloudFlashTrace' );
 		const motion = make( tw, th, 'cloudMotion' ), boxMin = make( tw, th, 'cloudBoxMin' ), boxMax = make( tw, th, 'cloudBoxMax' );
 		const history = [ make( width, height, 'cloudViewA' ), make( width, height, 'cloudViewB' ) ];
+		const depthHistory = [ make( width, height, 'cloudViewDepthA' ), make( width, height, 'cloudViewDepthB' ) ];
 		this.viewSize.value.set( width, height );
 		this.traceSize.value.set( tw, th );
 		this.traceWidth.value = tw;
 		this.viewWidth.value = width;
-		const textures: ViewTextures = { trace, depth, high, motion, flash: flashTrace, boxMin, boxMax, history };
+		const textures: ViewTextures = { trace, depth, high, motion, flash: flashTrace, boxMin, boxMax, history, depthHistory };
 		if ( kept ) {
 
 			for ( const [ node, pick ] of kept.slots ) node.value = pick( textures );
@@ -1537,7 +1548,13 @@ export class Clouds {
 			const traced = over( rain, vec4( m.L, m.T ) ).toVar();
 			textureStore( traceOut, tp, vec4( traced.rgb.mul( CLOUD_STORE ), traced.a ) );
 			textureStore( flashOut, tp, vec4( m.F.mul( rain.a ).add( rainSample.flash ), 1 ) );
-			textureStore( depthOut, tp, vec4( m.depth, float( 1 ).sub( m.T ), 0, 1 ) );
+			// The depth (m) under half float's largest value: an empty ray's depth, past the shell, passes
+			// 65 km toward the horizon, where the haze in front has closed, and an inf stored there turned
+			// the motion and the filters around it to NaN. Beside it the opacity and their product (the
+			// depth in km), which the resolve filters, so a cloud's edge averages its depth by opacity
+			// and not toward the empty texel's depth past it.
+			const depth = min( m.depth, 6.5e4 ).toVar(), opacity = float( 1 ).sub( m.T ).toVar();
+			textureStore( depthOut, tp, vec4( depth, opacity, depth.mul( opacity ).div( 1000 ), 1 ) );
 
 		} )().compute( tw * th, [ 64 ] ).setName( 'Clouds.ViewTrace' );
 
@@ -1614,12 +1631,18 @@ export class Clouds {
 		const resolve = ( src: number, dst: number ) => {
 
 			const srcNode = read( ( t ) => t.history[ src ] ), dstOut = stored( ( t ) => t.history[ dst ] );
+			const srcDepth = read( ( t ) => t.depthHistory[ src ] ), dstDepth = stored( ( t ) => t.depthHistory[ dst ] );
+			// A trace's depth as the depth history holds it: the cumulus's opacity times its depth (km),
+			// premultiplied in the trace, and that opacity, so the history and the upsampling's bilinear
+			// filter average the depth by opacity as they average the colour.
+			const weighted = ( dz: V4 ) => vec2( dz.z, dz.y );
 			return Fn( () => {
 
 				const p = ivec2( int( instanceIndex.mod( this.viewWidth ) ), int( instanceIndex.div( this.viewWidth ) ) ).toVar();
 				const uv = vec2( p ).add( 0.5 ).div( this.viewSize ).toVar();
 				const rd = viewDir( uv ).toVar();
 				const out = vec4( 0, 0, 0, 1 ).toVar();
+				const outDepth = vec2( 0 ).toVar();
 				If( rd.y.greaterThan( - 0.035 ), () => {
 
 					const tp = p.div( 4 ).toVar();
@@ -1636,6 +1659,7 @@ export class Clouds {
 					// This frame's samples upsampled (they sit at the slot of each block).
 					const suv = vec2( p ).sub( this.slot ).div( 4 ).add( 0.5 ).div( this.traceSize ).toVar();
 					const upsampled = over( traceNode.sample( suv ).level( float( 0 ) ), highNode.sample( suv ).level( float( 0 ) ) ).toVar();
+					const upsampledDepth = weighted( depthNode.sample( suv ).level( float( 0 ) ) ).toVar();
 					If( valid, () => {
 
 						// Reprojected history clamped to the range of this frame's samples around it (with
@@ -1647,10 +1671,13 @@ export class Clouds {
 						const clamped = clamp( vec4( h.rgb.add( sky.mul( h.a ) ), h.a ), lo.sub( pad ), hi.add( pad ) ).toVar();
 						const kept = vec4( max( clamped.rgb.sub( sky.mul( clamped.a ) ), vec3( 0 ) ), clamped.a );
 						out.assign( select( this.rebuildK.lessThan( 0 ).and( this.clampHistory.greaterThan( 0.5 ) ), kept, h ) );
+						// (the depth reprojected bilinearly, unclamped: no range of it shows)
+						outDepth.assign( srcDepth.sample( puv ).level( float( 0 ) ).xy );
 
 					} ).Else( () => {
 
 						out.assign( upsampled );
+						outDepth.assign( upsampledDepth );
 
 					} );
 					If( fresh, () => {
@@ -1661,6 +1688,8 @@ export class Clouds {
 						const motionPx = length( puv.sub( uv ).mul( this.viewSize ) );
 						const a = clamp( motionPx.mul( 0.1 ).add( this.minAlpha ), this.minAlpha, 0.35 );
 						out.assign( select( valid.and( this.rebuildK.lessThan( 0 ) ), mix( out, cur, a ), cur ) );
+						const curDepth = weighted( textureLoad( depthNode, tp ) );
+						outDepth.assign( select( valid.and( this.rebuildK.lessThan( 0 ) ), mix( outDepth, curDepth, a ), curDepth ) );
 
 					} ).ElseIf( this.rebuildK.greaterThanEqual( 0 ).and( valid ), () => {
 
@@ -1672,6 +1701,7 @@ export class Clouds {
 						If( rank.greaterThan( this.rebuildK ), () => {
 
 							out.assign( mix( out, upsampled, float( 1 ).div( this.rebuildK.add( 1 ) ) ) );
+							outDepth.assign( mix( outDepth, upsampledDepth, float( 1 ).div( this.rebuildK.add( 1 ) ) ) );
 
 						} );
 
@@ -1679,6 +1709,7 @@ export class Clouds {
 
 				} );
 				textureStore( dstOut, p, vec4( out.rgb, clamp( out.a, 0, 1 ) ) );
+				textureStore( dstDepth, p, vec4( outDepth, 0, 1 ) );
 
 			} )().compute( width * height, [ 64 ] ).setName( 'Clouds.ViewResolve' );
 
@@ -1695,6 +1726,7 @@ export class Clouds {
 
 		this.view = view;
 		this.viewNode.value = view.history[ 0 ];
+		this.viewDepthNode.value = view.depthHistory[ 0 ];
 		this.flashNode.value = view.flash;
 		this.viewValid.value = 0;
 		this.resetHistory();
@@ -1843,6 +1875,7 @@ export class Clouds {
 		renderer.compute( view.kernels.box );
 		renderer.compute( view.kernels.resolve[ this.pingPong ] );
 		this.viewNode.value = view.history[ this.pingPong ];
+		this.viewDepthNode.value = view.depthHistory[ this.pingPong ];
 		this.pingPong = 1 - this.pingPong;
 		this.historyValid.value = 1;
 		const C = this.cam, V = this.viewCam;
@@ -1963,7 +1996,12 @@ export class Clouds {
 		this.previousDisplacement.set( 0, 0 );
 		this.previousTime = 0;
 		this.previousFlash = '';
-		if ( this.view ) this.viewNode.value = this.view.history[ 0 ];
+		if ( this.view ) {
+
+			this.viewNode.value = this.view.history[ 0 ];
+			this.viewDepthNode.value = this.view.depthHistory[ 0 ];
+
+		}
 		this.viewValid.value = 0;
 		this.invalidate();
 
@@ -2049,6 +2087,31 @@ export class Clouds {
 			// are its taps and the lightning's light evaluated.
 			const panorama = this.sample( direction ).toVar();
 			result.assign( vec4( panorama.rgb.add( this.flashAt( direction, float( 1 ).sub( panorama.a ) ) ), panorama.a ) );
+
+		} );
+		return result;
+
+	}
+
+	/** The distance (metres) to the cumulus's light toward `direction` as the view holds it: the
+	 * march's opacity-weighted depth (`makeMarch`), accumulated beside the view's colour; `fallback`
+	 * outside the view, before it has data, or where it holds no cumulus. */
+	sampleViewDepth( direction: V3, fallback: F ): F {
+
+		const V = this.viewCam;
+		const result = fallback.toVar();
+		const z = dot( direction, V.fwd ).toVar();
+		const ndc = vec2( dot( direction, V.right ), dot( direction, V.up ) ).div( V.tan.mul( max( z, 1e-4 ) ) );
+		const uv = vec2( ndc.x.mul( 0.5 ).add( 0.5 ), float( 0.5 ).sub( ndc.y.mul( 0.5 ) ) ).toVar();
+		If( this.viewValid.greaterThan( 0.5 ).and( z.greaterThan( 0.01 ) ).and( uv.x.greaterThanEqual( 0 ) ).and( uv.x.lessThanEqual( 1 ) )
+			.and( uv.y.greaterThanEqual( 0 ) ).and( uv.y.lessThanEqual( 1 ) ), () => {
+
+			const held = this.viewDepthNode.sample( uv ).level( float( 0 ) ).toVar();
+			If( held.y.greaterThan( 1e-3 ), () => {
+
+				result.assign( held.x.div( held.y ).mul( 1000 ) );
+
+			} );
 
 		} );
 		return result;
@@ -2273,7 +2336,7 @@ export class Clouds {
 
 	private disposeViewTextures( view: ViewTextures ): void {
 
-		for ( const t of [ view.trace, view.depth, view.high, view.motion, view.flash, view.boxMin, view.boxMax, ...view.history ] ) t.dispose();
+		for ( const t of [ view.trace, view.depth, view.high, view.motion, view.flash, view.boxMin, view.boxMax, ...view.history, ...view.depthHistory ] ) t.dispose();
 
 	}
 
