@@ -13,7 +13,7 @@ import {
 import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE, SUN_ANGULAR_RADIUS, SUN_LIMB_U1, SUN_LIMB_U2 } from '../lighting/Radiometry.ts';
 import { SUN_DISC_RADIUS, SUN_DISC_SOLID_ANGLE, SUN_DISC_RADIANCE } from '../lighting/SunDisc.ts';
-import { Clouds, EARTH_RADIUS, EVOLVE_PERIOD, SHADOW_SLOPE_FLOOR, SHELL_BOTTOM, SHELL_THICKNESS, type CloudViewScale } from './Clouds.ts';
+import { Clouds, EARTH_RADIUS, SHADOW_SLOPE_FLOOR, SHELL_BOTTOM, SHELL_THICKNESS, type CloudViewScale } from './Clouds.ts';
 import { MOON_ANGULAR_RADIUS, NightSky } from './NightSky.ts';
 import { Lightning } from '../weather/Lightning.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -43,8 +43,6 @@ const DISC_SAMPLES = 32;
 // luminance whose log the mean takes (scene units: far below a moonless night's sky).
 const METER_SKY = 1;
 const METER_FLOOR = 2 ** - 40;
-// The cloud shell's middle height (m), where the dome fogs the clouds.
-const CLOUD_MIDDLE = SHELL_BOTTOM + SHELL_THICKNESS / 2;
 type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed' | 'windDirection'>;
 
 // The sky: atmosphere, clouds, night sky and the baked environment. One cloud field feeds the
@@ -67,7 +65,8 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // of its own (CLOUD_LIGHT_TINT), which the sky the eye sees, the
 // sea's reflection of it and the sea's own body never take. The dome lays the air's haze over
 // itself (`fogDome`, VolumetricHaze.ts `skyHaze`): the clouds at the distance to their shell's middle
-// height, the sky behind them along the whole way; so the haze's composite leaves the sky's pixels.
+// height (the weather's shell: CLOUD_SHELL, low under cloudy and overcast skies), the sky behind them
+// along the whole way; so the haze's composite leaves the sky's pixels.
 // The environment's bake lays the same haze over its source as the dome does (`fogEnvironment`,
 // VolumetricHaze.ts `openSky`, toward every direction from the sea's level, unshadowed): the environment and the dome
 // are one sky, its haze light included, so the ground's sky light takes the light the haze scatters
@@ -465,6 +464,18 @@ const SHADOW_DENSITY = KEPT_SKIES.map( ( name ) => ( { shadowDensity: WEATHER_PR
 for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 
 	tuneObject( SHADOW_DENSITY[ s ], { shadowDensity: `sky.weather.shadowDensity@${ name }` }, { shadowDensity: { min: 0.02, max: 1, scale: 'log', onChange: markSkyRetune } } );
+
+}
+// per kept sky, the cloud shell's base and top (m), blended by the weather's shares of the kept
+// skies (Clouds.ts `setDeck`): clear's and fair's cumulus stand high, cloudy's and overcast's deck
+// low and shallow, as a stratocumulus deck stands, its masses nearer and so larger in the sky; a
+// front between the two crosses both the shell and the noise's space by the shares. The parked
+// weathers count as overcast in those shares (Weather.ts), so they take overcast's deck. Tunable on
+// debug pages: `sky.clouds.base@<cloudy|overcast>`, `sky.clouds.top@<cloudy|overcast>`.
+const CLOUD_SHELL = KEPT_SKIES.map( ( name ) => name === 'cloudy' ? { base: 900, top: 3200 } : name === 'overcast' ? { base: 700, top: 3000 } : { base: SHELL_BOTTOM, top: SHELL_BOTTOM + SHELL_THICKNESS } );
+for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
+
+	tuneObject( CLOUD_SHELL[ s ], { base: `sky.clouds.base@${ name }`, top: `sky.clouds.top@${ name }` }, { base: { min: 300, max: 2000, onChange: markSkyRetune }, top: { min: 1500, max: 6000, onChange: markSkyRetune } } );
 
 }
 const CIRRUS_SHARE = 0.75;
@@ -980,7 +991,8 @@ export class Sky {
 				// the clear sky through the haze along the whole way, the clouds through it out to the
 				// shell's middle height (from the sea: the distance to that sphere, as the dome takes it)
 				const sky = haze( up );
-				const inside = float( CLOUD_MIDDLE ).mul( EARTH_RADIUS * 2 + CLOUD_MIDDLE ), b = up.y.mul( EARTH_RADIUS );
+				const middle = this.clouds.shellBottom.add( this.clouds.shellThickness.mul( 0.5 ) ).toVar();
+				const inside = middle.mul( middle.add( EARTH_RADIUS * 2 ) ), b = up.y.mul( EARTH_RADIUS );
 				const cloudHaze = haze( up, inside.div( sqrt( b.mul( b ).add( inside ) ).add( b ) ) );
 				const seen = sky.light.add( sky.transmittance.mul( clear ) ).mul( cloud.a )
 					.add( cloudHaze.light.mul( float( 1 ).sub( cloud.a ) ) ).add( cloudHaze.transmittance.mul( cloud.rgb ) );
@@ -1057,10 +1069,11 @@ export class Sky {
 			// opacity, their own (premultiplied) through its transmittance.
 			// (the camera held a metre under that height, as the march assumes a camera below the
 			// clouds: above it the root's argument would turn negative)
-			const camY = cameraPosition.y.min( CLOUD_MIDDLE - 1 ).toVar();
+			const middle = this.clouds.shellBottom.add( this.clouds.shellThickness.mul( 0.5 ) ).toVar();
+			const camY = cameraPosition.y.min( middle.sub( 1 ) ).toVar();
 			const r0 = camY.add( EARTH_RADIUS ).toVar(), b = r0.mul( max( d.y, 0 ) ).toVar();
 			// (the distance to that sphere, written without a difference of near-equal terms)
-			const inside = float( CLOUD_MIDDLE ).sub( camY ).mul( r0.add( EARTH_RADIUS + CLOUD_MIDDLE ) ).toVar();
+			const inside = middle.sub( camY ).mul( r0.add( middle.add( EARTH_RADIUS ) ) ).toVar();
 			const mid = inside.div( sqrt( b.mul( b ).add( inside ) ).add( b ) );
 			const cloudHaze = haze( d, mid );
 			const fogged = cloudHaze.light.mul( float( 1 ).sub( through ) ).add( cloudHaze.transmittance.mul( clouds ) );
@@ -1244,7 +1257,7 @@ export class Sky {
 		this.clouds.setDrift( shared.wind.displacement.value );
 		// The clouds' inner structure rises through them at 2.5 m/s, as a cumulus' turrets do
 		// (the rain curtains fall by the same clock).
-		this.clouds.evolve.value = ( time * 2.5 ) % EVOLVE_PERIOD;
+		this.clouds.setEvolution( time );
 		this.night.time.value = time;
 
 	}
@@ -1508,6 +1521,11 @@ export class Sky {
 		// own without them: a weather change or a retune rebakes the whole map (`bake`), a front
 		// refreshes it row by row as it does for the coverage.
 		clouds.shadowDensity.value = skyMix ? SHADOW_DENSITY.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k.shadowDensity, 0 ) : weather?.shadowDensity ?? 1;
+		// The shell by the same shares (the high one's without them): every reader follows its
+		// uniforms, the march, the shadow, the rain, the haze's shafts and the lightning.
+		const shell = ( key: 'base' | 'top' ) => skyMix ? CLOUD_SHELL.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k[ key ], 0 ) : CLOUD_SHELL[ 0 ][ key ];
+		const base = shell( 'base' );
+		clouds.setDeck( base, shell( 'top' ) - base, skyMix ? cloudedShare( skyMix ) : 0 );
 		clouds.coverageFrom.value = front ? front.from.coverage : coverage;
 		clouds.coverageTo.value = front ? front.to.coverage : coverage;
 		clouds.densityFrom.value = front ? front.from.density : clouds.density.value;
@@ -1523,15 +1541,17 @@ export class Sky {
 		clouds.rainFrom.value = front ? front.from.rain : weather?.rain ?? 0;
 		clouds.rainTo.value = front ? front.to.rain : weather?.rain ?? 0;
 		// Cloud tops a couple of kilometres up keep the sun a little after it has set below. The
-		// rising sun's reaches the shell where it stands (its middle, 6.6 km), so the clouds take
-		// the dawn's light from about -2.6 degrees, as the Earth's shadow sinks below them; the
+		// rising sun's reaches the shell where it stands (its middle, 6.6 km under the clear and
+		// fair skies' cumulus), so the clouds take the dawn's light from about -2.6 degrees, as the
+		// Earth's shadow sinks below them; the
 		// height goes back to the evening's from the sun's rise to 3 degrees, so the morning's
 		// higher sun lights them as the afternoon's does, and with a clouded share (Weather.ts
 		// `cloudedShare`).
 		const cloud = skyMix ? cloudedShare( skyMix ) : 0;
 		const rising = this.rising && cloud < 1;
 		const toEvening = Math.max( cloud, THREE.MathUtils.smoothstep( celestial?.elevation ?? 90, 0, 3 ) );
-		const sunHeight = rising ? 2 + ( CLOUD_MIDDLE / 1000 - 2 ) * ( 1 - toEvening ) : 2;
+		const middle = ( clouds.shellBottom.value + clouds.shellThickness.value / 2 ) / 1000;
+		const sunHeight = rising ? 2 + ( middle - 2 ) * ( 1 - toEvening ) : 2;
 		const sunAbove = this.atmosphere.sunlightAt( this.sunDir, sunHeight ).multiply( this.sunTint ).multiplyScalar( illuminance );
 		// Under a closed deck the sun reaches the deck as it reaches the island, scattered through
 		// the cloud: it keeps its luminance and loses its colour as the key does (track), so an

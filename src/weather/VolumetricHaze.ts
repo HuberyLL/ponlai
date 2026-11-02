@@ -12,7 +12,7 @@ import {
 	vec2, vec3, vec4, float, max, min, clamp, exp, exp2, log2, sqrt, mix, dot, normalize, select, fract, floor, varying, asin, smoothstep,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
-import { EARTH_RADIUS, SHELL_BOTTOM, SHELL_THICKNESS } from '../sky/Clouds.ts';
+import { EARTH_RADIUS } from '../sky/Clouds.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
 import { MIE_G, cornetteShanks, polariser, skyRayleighPhase, type Atmosphere } from '../sky/Atmosphere.ts';
 import { bandPush, bandToDisplay, bandToDisplayColor } from '../sky/BandMatrix.ts';
@@ -652,7 +652,7 @@ export class VolumetricHaze {
 		// the height above the sphere, from the shell's base (0) to its top (1)
 		const r = p.xz.sub( clouds.shadowCentre );
 		const height = p.y.add( dot( r, r ).div( 2 * EARTH_RADIUS ) );
-		const lift = clamp( height.sub( SHELL_BOTTOM ).div( SHELL_THICKNESS ), 0, 1 ).mul( float( 1 ).sub( sharp ) );
+		const lift = clamp( height.sub( clouds.shellBottom ).div( clouds.shellThickness ), 0, 1 ).mul( float( 1 ).sub( sharp ) );
 		const toward = clamp( dot( direction, s ), 0, 1 );
 		return max( C.y, sharp.add( lift ).sub( lift.mul( C.z ).mul( toward ) ) );
 

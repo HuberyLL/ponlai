@@ -720,11 +720,11 @@ export class Atmosphere {
 
 	/** The in-scatter table itself at `height` (km above the sea) for the view direction's `mu`, for
 	 * the sun's (0) or the moon's (1) muS: the clouds' rows at their shell's mean height (Clouds.ts),
-	 * which no slice holds. */
-	cloudRows( mu: F, height: number, body: 0 | 1 ): { rayleigh: V3; mie: V3 } {
+	 * which no slice holds, and which follows the weather (a node). */
+	cloudRows( mu: F, height: F | number, body: 0 | 1 ): { rayleigh: V3; mie: V3 } {
 
 		const muS = ( body === 0 ? this.sunDir : this.moonDir ).y;
-		const r = float( RG + height );
+		const r = typeof height === 'number' ? float( RG + height ) : float( RG ).add( height );
 		const a = this.tableSample( 0, muS, mu, r ).toVar(), c = this.tableSample( 1, muS, mu, r ).toVar();
 		return this.bodyGains( { rayleigh: a.rgb, mie: vec3( a.a, c.r, c.g ) }, body );
 

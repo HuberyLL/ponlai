@@ -447,6 +447,10 @@ art decision changes; images from elsewhere stay out of the repository.
 - Weather changes sweep the sky as a front from upwind. The clouds drift downwind with the wind
   aloft, faster than the surface wind (the cumulus about twice it, the cirrus about three times,
   along their fibres), so they never move against the grass and the sea.
+- The clouds stand where such clouds stand: the clear and fair skies' cumulus from about 4 km up,
+  cloudy's and overcast's deck low, its base under a kilometre and its tops near 3 km, so its
+  masses are near and wide overhead and close into a flat, packed floor toward the horizon, seen
+  through little of the air's haze; a front between the two moves the deck with the weather.
 - The sky's light takes a gain of its own by the sun's height, the rising sun's apart from the
   setting sun's. Through sunset it runs from the golden hour's warm key into a dusk key, more
   orange still, at a sun 1 degree under the horizon, then moves on to the night key by -6 degrees:

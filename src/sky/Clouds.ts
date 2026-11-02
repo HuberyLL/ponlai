@@ -36,7 +36,14 @@ type V4 = THREE.Node<'vec4'>;
 // Volumetric cumulus after tidewater's port of the Three.js Sky Pro clouds ("Partly cloudy"):
 //   - density: a cloud shell kilometres thick; a procedural weather map sets where cloud may
 //     stand, and a 64^3 Perlin-Worley shape noise dilates its tops into heaps and erodes their
-//     margins, more strongly higher up. Edges stay soft; bases rest on the richer weather.
+//     margins, more strongly higher up. Edges stay soft; bases rest on the richer weather. The
+//     shell is the weather's (`setDeck`, Sky.ts CLOUD_SHELL): the clear and fair skies' cumulus
+//     from 4 to 9.2 km, cloudy's and overcast's deck under a kilometre to about 3 km, as low decks
+//     stand, so a ray to the deck crosses far less of the haze below it; the low deck reads the
+//     noise in a space of its own, finer (LOW_FREQUENCY), and a front blends the two by the skies'
+//     shares. Every reader of the shell follows its uniforms: the march, the shadow, the rain,
+//     the dome's haze over the clouds (Sky.ts), the haze's shafts (VolumetricHaze.ts) and the
+//     lightning (Lightning.ts).
 //   - lighting: a light march toward the key light in segments that grow geometrically and span
 //     the shell's depth, with a tail on to its top (off for now), run however faint the light, since
 //     its depth shades the sky light too, and moving without a jump for the same reason (Sky.ts
@@ -98,7 +105,8 @@ type V4 = THREE.Node<'vec4'>;
 //
 // Rules: the view accumulates over frames, and a scene at rest (paused clock, still camera)
 // settles its clouds once and keeps them, so a paused frame is exactly repeatable. The march
-// assumes a camera below the cloud base. On high the view's resolution is a share of the display
+// assumes a camera below the cloud base: a free camera above the low deck sees it from 50 m
+// under its base. On high the view's resolution is a share of the display
 // (0.45 of its ratio up to 1.5: 1152x648 at 2K output, under half the render's linear size there,
 // and 1296x729 at 4K output), not of the render, so the
 // dynamic render scale does not soften the clouds again. 0.45 is the knee of a sweep against
@@ -114,6 +122,9 @@ type V4 = THREE.Node<'vec4'>;
 // then sets their drift, evolution and axes to the scene clock, for the bake that follows.
 
 export const EARTH_RADIUS = 6_360_000;
+// The high shell's base and thickness (m), the clear and fair skies' cumulus. The shell the march
+// reads is `shellBottom` and `shellThickness`, blended by the sky's shares (Sky.ts CLOUD_SHELL), so
+// cloudy and overcast take a deck of their own, lower (`setDeck`).
 export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
 // What the view's traces and history and the panorama store is the radiance times this: at night
 // and most before dawn, when the exposure stands near 2^16, the clouds' radiance lies under half
@@ -129,14 +140,27 @@ const TILE = WEATHER_SCALE;
 // on its vertical period. It drifts with the weather map: shifted horizontally it slid through the
 // weather on its own and, faster than the drift, carried the visible heaps upwind.
 export const EVOLVE_PERIOD = BASE_SCALE;
+// The low deck's space (cloudy's and overcast's): the same weather map, shape and erosion noise and
+// lean, read LOW_FREQUENCY times finer, since a deck a fifth as high is seen nearer and its masses
+// stand wider in the view. At 1.5 the deck's masses, unveiled (the haze over the sky off), measure
+// about as wide in a cloudy afternoon's horizon view as the high shell's did there (5.2 against 5.6
+// degrees); finer, they shrink further. Its offset and evolution wrap on its own periods (the low
+// weather map's, and its shape noise's vertical one), so its scales need not divide TILE. A sky
+// between the two (a front) reads both spaces and blends them by its share (`lowShare`), since a
+// frequency that moved with the share would zoom the whole field about the camera. Load-time:
+// `sky.clouds.lowFrequency`.
+const LOW_FREQUENCY = tune( 'sky.clouds.lowFrequency', 1.5, { min: 1, max: 3, load: true } )();
+const LOW_WEATHER_SCALE = WEATHER_SCALE / LOW_FREQUENCY, LOW_BASE_SCALE = BASE_SCALE / LOW_FREQUENCY, LOW_EROSION_SCALE = EROSION_SCALE / LOW_FREQUENCY;
 const WEATHER_RES = 1024, BOUNDS_RES = 64;
 const DENSITY = 0.019 / 0.9; // extinction (1/m) at a density of one; fair weather's 0.9 is the preset
 const BASE_STRENGTH = 0.69; // dilation of the tops by the shape noise
 const EDGE = 0.095; // soft margin, as a fraction of the shell
 const EROSION_BASE = 0.24, EROSION_PEAK = 2.15;
 const BASE_WEATHER = 0.54, BASE_WEATHER_END = 0.13; // bases need richer weather
-const SKEW = 1750; // metres the tops lean downwind
-const HORIZON_START = 20000, HORIZON_RAMP = 45000, HORIZON_AMOUNT = 0.12; // more cloud far out
+const SKEW = 1750; // metres the tops lean downwind (the low deck's: over LOW_FREQUENCY)
+// More cloud far out, from HORIZON_START over HORIZON_RAMP metres along the ray; the low deck's
+// ramp is nearer by its space's scale (`horizon`).
+const HORIZON_START = 20000, HORIZON_RAMP = 45000, HORIZON_AMOUNT = 0.12;
 const AMBIENT = 0.7 * ( 1 + 0.99 );
 const HORIZON_RING = 16; // azimuths in the half ring of horizon sky a cloud's base sees (see horizonRing)
 const STEP = 25; // metres: the finest step and the first light segment
@@ -153,8 +177,6 @@ const LOBE = {
 // The light march's segments grow by this factor, the first sized so that they span the shell's
 // depth together (updateLightTaps).
 const LIGHT_GROWTH = 2.25;
-// The shell's mean height (km), where the clouds read the atmosphere's in-scatter table.
-const CLOUD_HEIGHT_KM = ( SHELL_BOTTOM + SHELL_THICKNESS / 2 ) / 1000;
 // The most light march taps a tier may ask for (see setMarch); the uniforms hold this many.
 const MAX_LIGHT_TAPS = 6, FULL_LIGHTING_ALPHA = 0.5, LIGHT_REUSE_STEPS = 3;
 const AP_DIST = 30000; // aerial perspective scale toward the horizon
@@ -321,9 +343,6 @@ const sat = ( x: F ) => clamp( x, 0, 1 );
 const luminance = ( c: V3 ) => dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
 const desaturate = ( c: V3, k: F ) => mix( c, vec3( luminance( c ) ), k );
 const over = ( a: V4, b: V4 ) => vec4( a.rgb.add( b.rgb.mul( a.a ) ), a.a.mul( b.a ) );
-// Height in the shell (0 at the base, 1 at the top) of a camera-relative point; the parabolic
-// curvature term avoids subtracting two planet radii in float.
-const shellHeight = ( p: V3 ) => p.y.add( dot( p.xz, p.xz ).div( 2 * EARTH_RADIUS ) ).sub( SHELL_BOTTOM ).div( SHELL_THICKNESS );
 // Mip level of a noise of period `scale` for a footprint (m).
 const coneLod = ( footprint: F, scale: number ) => max( log2( max( footprint.mul( 64 / scale ), 1 ) ), 0 );
 
@@ -476,6 +495,18 @@ export class Clouds {
 	readonly shadowCentre = uniform( new THREE.Vector2( 0, 0 ) );
 	readonly shadowFadeDirection = uniform( new THREE.Vector3( 0, - 1, 0 ) );
 	readonly evolve = uniform( 0 );
+	// The shell the clouds stand in, its base and thickness (m), and the low deck's share of the
+	// noise's space (0 the high deck's, 1 the low deck's), each blended by the sky's shares (`setDeck`).
+	readonly shellBottom = uniform( SHELL_BOTTOM );
+	readonly shellThickness = uniform( SHELL_THICKNESS );
+	readonly lowShare = uniform( 0 );
+	// The shell's mean height (km), where the clouds read the atmosphere's in-scatter table.
+	private readonly cloudHeightKm = uniform( ( SHELL_BOTTOM + SHELL_THICKNESS / 2 ) / 1000 );
+	// The far ramp of the cover (HORIZON_START, its end), nearer in the low deck's space.
+	private readonly horizon = uniform( new THREE.Vector2( HORIZON_START, HORIZON_START + HORIZON_RAMP ) );
+	// The low deck's drift offset and evolution, each wrapped on the low space's own period.
+	private readonly lowOffset = uniform( new THREE.Vector2() );
+	private readonly lowEvolve = uniform( 0 );
 	readonly origin = uniform( new THREE.Vector3( 0, 15, 0 ) );
 	// The panorama; replaced when its size changes (setDome), so readers go through domeNode.
 	dome: THREE.StorageTexture;
@@ -491,9 +522,10 @@ export class Clouds {
 	private readonly windN = uniform( new THREE.Vector2( 1, 0 ) );
 	private readonly phase = uniform( new THREE.Vector2() );
 	private readonly shadowRow = uniform( 0 ); // which of every SHADOW_PHASES shadow rows to refresh
-	// Light march taps (offset, segment length) and their mip levels (shape, erosion).
+	// Light march taps (offset, segment length) and their mip levels (shape, erosion; the high
+	// space's, then the low one's).
 	private readonly lightTaps = Array.from( { length: MAX_LIGHT_TAPS }, () => uniform( new THREE.Vector4() ) );
-	private readonly lightLods = Array.from( { length: MAX_LIGHT_TAPS }, () => uniform( new THREE.Vector2() ) );
+	private readonly lightLods = Array.from( { length: MAX_LIGHT_TAPS }, () => uniform( new THREE.Vector4() ) );
 	// Tier knobs (setDome, setMarch, setShadowRefresh, setViewScale).
 	private domeSize: { width: number; height: number; strideX: number; strideY: number } = { ...DOME_DEFAULTS };
 	private domeOrder = ditherOrder( DOME_DEFAULTS.strideX, DOME_DEFAULTS.strideY );
@@ -662,29 +694,64 @@ export class Clouds {
 
 		};
 		// More cloud toward the horizon, by distance along the ray.
-		const horizonCoverage = ( t: F ) => smoothstep( HORIZON_START, HORIZON_START + HORIZON_RAMP, t ).mul( HORIZON_AMOUNT );
-		const weatherUV = ( pxz: V2 ) => pxz.add( this.camXZ ).add( this.windOffset ).div( WEATHER_SCALE );
+		const horizonCoverage = ( t: F ) => smoothstep( this.horizon.x, this.horizon.y, t ).mul( HORIZON_AMOUNT );
+		// Height in the shell (0 at the base, 1 at the top) of a camera-relative point; the parabolic
+		// curvature term avoids subtracting two planet radii in float.
+		const shellHeight = ( p: V3 ) => p.y.add( dot( p.xz, p.xz ).div( 2 * EARTH_RADIUS ) ).sub( this.shellBottom ).div( this.shellThickness );
+		// The noise's two spaces: the high deck's (0) and the low deck's (1, LOW_FREQUENCY times finer).
+		const spaces = [
+			{ offset: this.windOffset, evolve: this.evolve, weather: WEATHER_SCALE, base: BASE_SCALE, erosion: EROSION_SCALE, skew: SKEW },
+			{ offset: this.lowOffset, evolve: this.lowEvolve, weather: LOW_WEATHER_SCALE, base: LOW_BASE_SCALE, erosion: LOW_EROSION_SCALE, skew: SKEW / LOW_FREQUENCY },
+		] as const;
+		// A value read in the high deck's space and in the low one's, blended by the low deck's share:
+		// a sky at rest runs only its own space's read, a sky between the two (a front) both.
+		const bySpace = ( high: () => F, low: () => F ) => {
+
+			const value = float( 0 ).toVar();
+			If( this.lowShare.lessThan( 1 ), () => {
+
+				value.assign( high() );
+
+			} );
+			If( this.lowShare.greaterThan( 0 ), () => {
+
+				// (at a share of 1 the high read is skipped and the value is 0: the low read exactly)
+				value.assign( mix( value, low(), this.lowShare ) );
+
+			} );
+			return value;
+
+		};
+		const weatherUV = ( pxz: V2, k: 0 | 1 = 0 ) => pxz.add( this.camXZ ).add( spaces[ k ].offset ).div( spaces[ k ].weather );
+		const weatherAt = ( pxz: V2 ) => bySpace( () => weatherNode.sample( weatherUV( pxz, 0 ) ).level( float( 0 ) ).r, () => weatherNode.sample( weatherUV( pxz, 1 ) ).level( float( 0 ) ).r );
 
 		// Cloud presence at p without the erosion: a smooth bound of the cloud and what the eroded
-		// density needs. The tops: the weather plus the coverage, dilated by the shape noise.
-		const candidate = ( p: V3, coverage: F, lod: F ) => {
+		// density needs. The tops: the weather plus the coverage, dilated by the shape noise. `lods`:
+		// the shape's and the erosion's mip levels in the high space, then in the low one.
+		const candidate = ( p: V3, coverage: F, lods: V4 ) => {
 
 			const h = shellHeight( p ).toVar();
-			const c = { conservative: float( 0 ).toVar(), top: float( 0 ).toVar(), floorMask: float( 0 ).toVar(), h, coverage, position: vec3( 0 ).toVar() };
+			const c = { conservative: float( 0 ).toVar(), top: float( 0 ).toVar(), floorMask: float( 0 ).toVar(), h, coverage, lods, positions: [ vec3( 0 ).toVar(), vec3( 0 ).toVar() ] as const };
 			If( h.greaterThan( - 0.1 ).and( h.lessThan( 1.3 ) ).and( coverage.greaterThan( 0 ) ), () => {
 
-				const w = weatherNode.sample( weatherUV( p.xz ) ).level( float( 0 ) ).r.toVar();
+				const w = weatherAt( p.xz );
 				// An all-one noise sample bounds the dilation: a failed bound saves the volume fetch.
 				const maximumTop = w.add( coverage ).sub( 1 ).add( coverage.mul( 1.34 * BASE_STRENGTH ) );
 				const required = float( 1 ).sub( smoothstep( 0, BASE_WEATHER_END, h ) ).mul( BASE_WEATHER ).toVar();
 				c.floorMask.assign( smoothstep( required.sub( 0.1 ), required, w ) );
 				If( maximumTop.greaterThanEqual( h.sub( EDGE ) ).and( c.floorMask.greaterThan( 0 ) ), () => {
 
-					const world = p.xz.add( this.camXZ ).add( this.windOffset );
-					const lean = this.windN.mul( max( h, 0 ).mul( SKEW ) );
-					c.position.assign( vec3( world.x.sub( lean.x ), p.y.sub( this.evolve ), world.y.sub( lean.y ) ) );
-					const base = shapeNode.sample( c.position.div( BASE_SCALE ) ).level( lod ).rgb;
-					const dilation = dot( base, vec3( 0.7, 0.41, 0.23 ) ).mul( BASE_STRENGTH );
+					const dilationIn = ( k: 0 | 1 ) => {
+
+						const s = spaces[ k ];
+						const world = p.xz.add( this.camXZ ).add( s.offset );
+						const lean = this.windN.mul( max( h, 0 ).mul( s.skew ) );
+						c.positions[ k ].assign( vec3( world.x.sub( lean.x ), p.y.sub( s.evolve ), world.y.sub( lean.y ) ) );
+						const base = shapeNode.sample( c.positions[ k ].div( s.base ) ).level( k === 0 ? lods.x : lods.z ).rgb;
+						return dot( base, vec3( 0.7, 0.41, 0.23 ) ).mul( BASE_STRENGTH );
+
+					};
+					const dilation = bySpace( () => dilationIn( 0 ), () => dilationIn( 1 ) );
 					c.top.assign( w.add( coverage ).sub( 1 ).add( dilation.mul( coverage ) ) );
 					c.conservative.assign( smoothstep( - EDGE, EDGE, c.top.sub( h ) ).mul( smoothstep( - EDGE, EDGE, h ) ).mul( c.floorMask ) );
 
@@ -696,7 +763,7 @@ export class Clouds {
 		};
 		type Candidate = ReturnType<typeof candidate>;
 		// The cloud: its margins eroded by the shape noise at a finer scale, the more so higher up.
-		const erodedDensity = ( c: Candidate, lod: F ) => {
+		const erodedDensity = ( c: Candidate ) => {
 
 			const density = float( 0 ).toVar();
 			If( c.conservative.greaterThan( 0 ), () => {
@@ -706,8 +773,8 @@ export class Clouds {
 				density.assign( c.floorMask );
 				If( min( c.top.sub( c.h ), c.h ).lessThan( maximumErosion.add( EDGE ) ), () => {
 
-					const s = shapeNode.sample( c.position.div( EROSION_SCALE ) ).level( lod ).rgb;
-					const erosion = dot( s, vec3( 0.113, 0.04, 0.02 ) ).mul( strength ).mul( c.coverage ).toVar();
+					const erosionIn = ( k: 0 | 1 ) => dot( shapeNode.sample( c.positions[ k ].div( spaces[ k ].erosion ) ).level( k === 0 ? c.lods.y : c.lods.w ).rgb, vec3( 0.113, 0.04, 0.02 ) );
+					const erosion = bySpace( () => erosionIn( 0 ), () => erosionIn( 1 ) ).mul( strength ).mul( c.coverage ).toVar();
 					density.assign( smoothstep( - EDGE, EDGE, c.top.sub( erosion ).sub( c.h ) ).mul( smoothstep( - EDGE, EDGE, c.h.sub( erosion ) ) ).mul( c.floorMask ) );
 
 				} );
@@ -716,18 +783,31 @@ export class Clouds {
 			return density;
 
 		};
-		const lightDensity = ( p: V3, coverage: F, lods: V2, cheap: THREE.Node<'bool'> | boolean ) => {
+		const lightDensity = ( p: V3, coverage: F, lods: V4, cheap: THREE.Node<'bool'> | boolean ) => {
 
-			const c = candidate( p, coverage, lods.x );
+			const c = candidate( p, coverage, lods );
 			if ( cheap === true ) return c.conservative;
-			if ( cheap === false ) return erodedDensity( c, lods.y );
+			if ( cheap === false ) return erodedDensity( c );
 			const density = c.conservative.toVar();
 			If( not( cheap ), () => {
 
-				density.assign( erodedDensity( c, lods.y ) );
+				density.assign( erodedDensity( c ) );
 
 			} );
 			return density;
+
+		};
+		// The mip levels of the shape and erosion noise in each space for a footprint (m); the low
+		// space's only under a low deck's share, since a sky without one reads none of its noise.
+		const lodsFor = ( footprint: F ) => {
+
+			const lods = vec4( coneLod( footprint, BASE_SCALE ), coneLod( footprint, EROSION_SCALE ), 0, 0 ).toVar();
+			If( this.lowShare.greaterThan( 0 ), () => {
+
+				lods.assign( vec4( lods.xy, coneLod( footprint, LOW_BASE_SCALE ), coneLod( footprint, LOW_EROSION_SCALE ) ) );
+
+			} );
+			return lods;
 
 		};
 
@@ -753,21 +833,21 @@ export class Clouds {
 			return sum.mul( 1 / HORIZON_RING );
 
 		};
-		const heightAlongRay = ( t: F, rd: V3 ) => this.camY.add( rd.y.mul( t ) ).add( dot( rd.xz, rd.xz ).mul( t ).mul( t ).div( 2 * EARTH_RADIUS ) ).sub( SHELL_BOTTOM ).div( SHELL_THICKNESS );
+		const heightAlongRay = ( t: F, rd: V3 ) => this.camY.add( rd.y.mul( t ) ).add( dot( rd.xz, rd.xz ).mul( t ).mul( t ).div( 2 * EARTH_RADIUS ) ).sub( this.shellBottom ).div( this.shellThickness );
 
 		// Ray march the shell along rd (camera relative); `flash`
 		// adds the lightning inside the cloud.
 		const makeMarch = ( maxSteps: number, pixelCone: F, stepCone: F, flash = false ) => ( rd: V3, jitter: F ) => {
 
-			const start = layerDistance( this.camY, rd.y, float( SHELL_BOTTOM ) ).toVar();
-			const end = min( layerDistance( this.camY, rd.y, float( SHELL_BOTTOM + SHELL_THICKNESS ) ), FAR ).toVar();
+			const start = layerDistance( this.camY, rd.y, this.shellBottom ).toVar();
+			const end = min( layerDistance( this.camY, rd.y, this.shellBottom.add( this.shellThickness ) ), FAR ).toVar();
 			const color = vec3( 0 ).toVar(), flashColor = vec3( 0 ).toVar();
 			// the march's light factors: direct (phase included) and ambient, each per unit of its colour
 			const directLight = float( 0 ).toVar(), ambientLight = float( 0 ).toVar();
 			// The atmosphere's in-scatter at the shell's mean height toward rd, per unit of the sun's
 			// and of the moon's illuminance: it weighs their lobes and colours the factors.
 			const a = this.atmosphere;
-			const sunRows = a.cloudRows( rd.y, CLOUD_HEIGHT_KM, 0 ), moonRows = a.cloudRows( rd.y, CLOUD_HEIGHT_KM, 1 );
+			const sunRows = a.cloudRows( rd.y, this.cloudHeightKm, 0 ), moonRows = a.cloudRows( rd.y, this.cloudHeightKm, 1 );
 			const sunMie = desaturate( sunRows.mie, this.lightDesaturation ).toVar(), moonMie = desaturate( moonRows.mie, this.lightDesaturation ).toVar();
 			const transmission = float( 1 ).toVar(), weightedDepth = float( 0 ).toVar();
 			// The shell's coverage at its fullest here: the bound for skipping empty cells.
@@ -802,13 +882,36 @@ export class Clouds {
 						// Skip whole cells of the weather grid that cannot hold cloud at the ray's height.
 						If( t.greaterThanEqual( cellEnd ).or( t.lessThan( cellStart ) ), () => {
 
-							const grid = weatherUV( rd.xz.mul( t ) ).mul( BOUNDS_RES ).toVar();
-							maximumWeather.assign( textureLoad( boundsNode, ivec2( floor( grid ) ).mod( BOUNDS_RES ).add( BOUNDS_RES ).mod( BOUNDS_RES ) ).r );
-							const f = fract( grid ).toVar();
-							const ahead = vec2( select( rd.x.greaterThanEqual( 0 ), float( 1 ).sub( f.x ), f.x ), select( rd.z.greaterThanEqual( 0 ), float( 1 ).sub( f.y ), f.y ) )
-								.div( max( abs( rd.xz ).mul( BOUNDS_RES / WEATHER_SCALE ), vec2( 1e-7 ) ) );
+							// The cell's bound in each space the sky reads (both during a front: the
+							// blended weather is at most the larger bound), and the nearer cell's end.
+							const cellIn = ( k: 0 | 1 ) => {
+
+								const grid = weatherUV( rd.xz.mul( t ), k ).mul( BOUNDS_RES ).toVar();
+								const bound = textureLoad( boundsNode, ivec2( floor( grid ) ).mod( BOUNDS_RES ).add( BOUNDS_RES ).mod( BOUNDS_RES ) ).r;
+								const f = fract( grid ).toVar();
+								const ahead = vec2( select( rd.x.greaterThanEqual( 0 ), float( 1 ).sub( f.x ), f.x ), select( rd.z.greaterThanEqual( 0 ), float( 1 ).sub( f.y ), f.y ) )
+									.div( max( abs( rd.xz ).mul( BOUNDS_RES / spaces[ k ].weather ), vec2( 1e-7 ) ) );
+								return { bound, ahead: min( ahead.x, ahead.y ) };
+
+							};
+							const ahead = float( FAR ).toVar();
+							maximumWeather.assign( 0 );
+							If( this.lowShare.lessThan( 1 ), () => {
+
+								const cell = cellIn( 0 );
+								maximumWeather.assign( cell.bound );
+								ahead.assign( cell.ahead );
+
+							} );
+							If( this.lowShare.greaterThan( 0 ), () => {
+
+								const cell = cellIn( 1 );
+								maximumWeather.assign( max( maximumWeather, cell.bound ) );
+								ahead.assign( min( ahead, cell.ahead ) );
+
+							} );
 							cellStart.assign( t );
-							cellEnd.assign( min( end, t.add( max( min( ahead.x, ahead.y ), 0.05 ) ) ) );
+							cellEnd.assign( min( end, t.add( max( ahead, 0.05 ) ) ) );
 
 						} );
 						const turning = rd.y.negate().mul( EARTH_RADIUS ).div( max( dot( rd.xz, rd.xz ), 1e-6 ) );
@@ -830,9 +933,9 @@ export class Clouds {
 					const p = vec3( rd.x.mul( t ), this.camY.add( rd.y.mul( t ) ), rd.z.mul( t ) ).toVar();
 					const front = frontAt( p.xz ).toVar();
 					const coverage = front.x.add( horizonCoverage( t ) ).toVar();
-					const baseLod = coneLod( footprint, BASE_SCALE ).toVar(), erosionLod = coneLod( footprint, EROSION_SCALE ).toVar();
-					const c = candidate( p, coverage, baseLod );
-					const density = erodedDensity( c, erosionLod ).toVar();
+					const lods = lodsFor( footprint ).toVar();
+					const c = candidate( p, coverage, lods );
+					const density = erodedDensity( c ).toVar();
 					If( coarse.equal( 1 ), () => {
 
 						// Coarse steps until cloud is found, then back up and refine.
@@ -889,15 +992,14 @@ export class Clouds {
 					const reuse = min( fineStep.mul( LIGHT_REUSE_STEPS ), Math.max( 20, EROSION_SCALE * 0.03 ) );
 					If( abs( t.sub( shadowAt ) ).greaterThanEqual( reuse ).or( abs( density.sub( shadowDensity ) ).greaterThan( 0.08 ) ).or( select( cheap, int( 1 ), int( 0 ) ).notEqual( shadowCheap ) ), () => {
 
-						const lods = vec2( baseLod, erosionLod ).toVar();
 						const scale = front.y.mul( DENSITY );
 						// The light march: segments growing along a narrow cone toward the key light,
 						// spanning the shell's depth; past them a tail runs on to the shell's top at a
 						// constant density. It runs however faint the light: its depth also shades the
 						// sky light below, so a deck skipping it in the twilight, between the moon's
 						// light fading out and the sun's reaching it, came out eight times brighter.
-						const toTop = float( 1 ).sub( c.h ).mul( SHELL_THICKNESS ).div( max( L.y, 0.05 ) );
-						const tau = max( toTop.sub( SHELL_THICKNESS ), 0 ).mul( this.lightTail ).mul( scale ).toVar();
+						const toTop = float( 1 ).sub( c.h ).mul( this.shellThickness ).div( max( L.y, 0.05 ) );
+						const tau = max( toTop.sub( this.shellThickness ), 0 ).mul( this.lightTail ).mul( scale ).toVar();
 						for ( let i = 0; i < lightTaps; i ++ ) {
 
 							If( tau.lessThan( 32 ), () => {
@@ -959,7 +1061,7 @@ export class Clouds {
 				const lit = chroma( sunMie ).mul( this.sunLight ).add( chroma( moonMie ).mul( this.moonLight ) ).mul( directLight );
 				const skyOf = ( rows: { rayleigh: V3 }, body: 0 | 1, light: V3, illuminance: V3 ) => desaturate(
 					rows.rayleigh.mul( skyRayleighPhase( dot( rd, light ), a.rayleighForward ) ), this.ambientDesaturation )
-					.mul( a.earthShadowAt( float( CLOUD_HEIGHT_KM ), rd, body ) ).mul( illuminance );
+					.mul( a.earthShadowAt( this.cloudHeightKm, rd, body ) ).mul( illuminance );
 				const skyLight = skyOf( sunRows, 0, a.sunDir, a.sunIlluminance.rgb ).add( skyOf( moonRows, 1, a.moonDir, a.moonIlluminance.rgb ) )
 					.mul( this.ambientGain.mul( AMBIENT ) ).add( this.nightAmbient.rgb.mul( this.ambientGain.mul( AMBIENT ) ) );
 				const tinted = mix( vec3( ambientLight ), vec3( alpha ), this.ambientTint ).toVar();
@@ -996,7 +1098,7 @@ export class Clouds {
 		// through to the rain, or how thick the cloud a drop fell from is.
 		const cloudAbove = ( pxz: V2, h: number ) => {
 
-			const w = weatherNode.sample( weatherUV( pxz ) ).level( float( 0 ) ).r;
+			const w = weatherAt( pxz );
 			const coverage = frontAt( pxz ).x;
 			const top = w.add( coverage ).sub( 1 ).add( coverage.mul( 0.45 ) );
 			const required = ( 1 - Math.min( h / BASE_WEATHER_END, 1 ) ** 2 * ( 3 - 2 * Math.min( h / BASE_WEATHER_END, 1 ) ) ) * BASE_WEATHER;
@@ -1007,7 +1109,7 @@ export class Clouds {
 
 			const radiance = vec3( 0 ).toVar(), flash = vec3( 0 ).toVar();
 			const through = float( 1 ).toVar();
-			const end = min( layerDistance( this.camY, rd.y, float( SHELL_BOTTOM ) ), RAIN_FAR ).toVar();
+			const end = min( layerDistance( this.camY, rd.y, this.shellBottom ), RAIN_FAR ).toVar();
 			// Nothing to march without rain, lingering showers or a sky broken into heaps.
 			const raining = max( max( this.rainFrom, this.rainTo ), max( this.showers, max( this.coverageFrom, this.coverageTo ).sub( 0.5 ).mul( this.heapShowers ) ) );
 			If( end.greaterThan( RAIN_START * 2 ).and( rd.y.greaterThan( 0 ) ).and( raining.greaterThan( 0 ) ), () => {
@@ -1057,7 +1159,7 @@ export class Clouds {
 					const dt = float( i ).add( 1 ).div( rainSteps ).pow( 1.8 ).mul( span ).add( RAIN_START ).sub( t0 ).toVar();
 					const t = t0.add( dt.mul( jitter ) ).toVar();
 					const altitude = this.camY.add( rd.y.mul( t ) ).add( dot( rd.xz, rd.xz ).mul( t ).mul( t ).div( 2 * EARTH_RADIUS ) ).toVar();
-					const below = max( float( SHELL_BOTTOM ).sub( altitude ), 0 ).toVar();
+					const below = max( this.shellBottom.sub( altitude ), 0 ).toVar();
 					const pxz = rd.xz.mul( t ).toVar();
 					// Where the drop left the cloud base, and how much it rains there.
 					const source = pxz.sub( lean.mul( below ) ).toVar();
@@ -1092,7 +1194,7 @@ export class Clouds {
 						const lit = float( 0 ).toVar();
 						If( hasSun, () => {
 
-							const reachShell = ( h: number ) => pxz.add( L.xz.mul( below.add( h * SHELL_THICKNESS ).div( ly ) ) );
+							const reachShell = ( h: number ) => pxz.add( L.xz.mul( below.add( this.shellThickness.mul( h ) ).div( ly ) ) );
 							const tau = cloudAbove( reachShell( 0.02 ), 0.02 ).presence.add( cloudAbove( reachShell( 0.18 ), 0.18 ).presence )
 								.add( cloudAbove( reachShell( 0.4 ), 0.4 ).presence ).mul( 3 );
 							lit.assign( exp( tau.negate() ) );
@@ -1209,14 +1311,14 @@ export class Clouds {
 		const castRay = Fn( ( [ ground, ly ]: [ V2, F ] ) => {
 
 			const ray = vec3( this.lightDir.x, ly, this.lightDir.z ).toVar();
-			const t0 = float( SHELL_BOTTOM ).div( ly ).toVar(), dt = float( SHELL_THICKNESS / 16 ).div( ly ).toVar();
+			const t0 = this.shellBottom.div( ly ).toVar(), dt = this.shellThickness.div( 16 ).div( ly ).toVar();
 			// (the optical depth at the weather's share of the deck's: `shadowDensity`)
 			const tau = float( 0 ).toVar();
 			Loop( 16, ( { i } ) => {
 
 				const p = vec3( ground.x, 0, ground.y ).add( ray.mul( t0.add( float( i ).add( 0.5 ).mul( dt ) ) ) ).toVar();
 				const front = frontAt( p.xz ).toVar();
-				tau.addAssign( lightDensity( p, front.x, vec2( 2 ), false ).mul( front.y ).mul( DENSITY ).mul( this.shadowDensity ).mul( dt ) );
+				tau.addAssign( lightDensity( p, front.x, vec4( 2, 2, 2 + Math.log2( LOW_FREQUENCY ), 2 + Math.log2( LOW_FREQUENCY ) ), false ).mul( front.y ).mul( DENSITY ).mul( this.shadowDensity ).mul( dt ) );
 				If( tau.greaterThan( 12 ), () => {
 
 					Break();
@@ -1546,7 +1648,7 @@ export class Clouds {
 		const position = camera ? camera.position : this.origin.value;
 		this.origin.value.copy( position );
 		// The march assumes a camera below the cloud base.
-		this.camY.value = THREE.MathUtils.clamp( position.y, 1, SHELL_BOTTOM - 50 );
+		this.camY.value = THREE.MathUtils.clamp( position.y, 1, this.shellBottom.value - 50 );
 		this.camXZ.value.set( position.x, position.z );
 		this.windN.value.copy( this.cirrusAxis.value );
 		this.updateLightTaps();
@@ -1729,7 +1831,7 @@ export class Clouds {
 		tangent.normalize();
 		const bitangent = new THREE.Vector3().crossVectors( L, tangent );
 		const taps = this.march.lightTaps;
-		const first = SHELL_THICKNESS * ( LIGHT_GROWTH - 1 ) / ( LIGHT_GROWTH ** taps - 1 );
+		const first = this.shellThickness.value * ( LIGHT_GROWTH - 1 ) / ( LIGHT_GROWTH ** taps - 1 );
 		for ( let k = 0; k < taps; k ++ ) {
 
 			const length = first * LIGHT_GROWTH ** k, mid = first * ( LIGHT_GROWTH ** k - 1 ) / ( LIGHT_GROWTH - 1 ) + length * 0.5;
@@ -1739,7 +1841,8 @@ export class Clouds {
 				L.x * mid + tangent.x * u + bitangent.x * v, L.y * mid + tangent.y * u + bitangent.y * v,
 				L.z * mid + tangent.z * u + bitangent.z * v, length );
 			const footprint = mid * 0.1;
-			this.lightLods[ k ].value.set( Math.max( 0, Math.log2( footprint * 64 / BASE_SCALE ) ), Math.max( 0, Math.log2( footprint * 64 / EROSION_SCALE ) ) );
+			const lod = ( scale: number ) => Math.max( 0, Math.log2( footprint * 64 / scale ) );
+			this.lightLods[ k ].value.set( lod( BASE_SCALE ), lod( EROSION_SCALE ), lod( LOW_BASE_SCALE ), lod( LOW_EROSION_SCALE ) );
 
 		}
 
@@ -1771,6 +1874,7 @@ export class Clouds {
 	restart(): void {
 
 		this.evolve.value = 0;
+		this.lowEvolve.value = 0;
 		this.setDrift( new THREE.Vector2() );
 		this.frontAxis.value.set( 1, 0 );
 		this.cirrusAxis.value.set( 1, 0 );
@@ -1844,7 +1948,7 @@ export class Clouds {
 		If( this.flashOn.greaterThan( 0.5 ).and( direction.y.greaterThan( 0 ) ), () => {
 
 			// A little above the base, where the march gathers most of a thick deck's light.
-			const t = layerDistance( this.camY, direction.y, float( SHELL_BOTTOM + 150 ) ).toVar();
+			const t = layerDistance( this.camY, direction.y, this.shellBottom.add( 150 ) ).toVar();
 			const p = vec3( direction.x.mul( t ), this.camY.add( direction.y.mul( t ) ), direction.z.mul( t ) );
 			result.assign( this.flashLight( p ).mul( opacity ).mul( smoothstep( 0, 0.04, direction.y ) ) );
 
@@ -2015,6 +2119,29 @@ export class Clouds {
 
 	}
 
+	/** The shell the march reads: its base and thickness (m) and the low deck's share of the sky
+	 * (0 the high cumulus' space, 1 the low deck's, between them both, blended: a front). Sky.ts
+	 * blends the weathers' shells by their shares; the light taps follow at the next update. */
+	setDeck( bottom: number, thickness: number, lowShare: number ): void {
+
+		this.shellBottom.value = bottom;
+		this.shellThickness.value = thickness;
+		this.lowShare.value = lowShare;
+		this.cloudHeightKm.value = ( bottom + thickness / 2 ) / 1000;
+		const near = THREE.MathUtils.lerp( 1, 1 / LOW_FREQUENCY, lowShare );
+		this.horizon.value.set( HORIZON_START * near, ( HORIZON_START + HORIZON_RAMP ) * near );
+
+	}
+
+	/** The shape noise's rise at the scene clock `time` (s), in each space: the low deck's at the
+	 * same pace relative to its finer features. */
+	setEvolution( time: number ): void {
+
+		this.evolve.value = ( time * 2.5 ) % EVOLVE_PERIOD;
+		this.lowEvolve.value = ( time * 2.5 / LOW_FREQUENCY ) % LOW_BASE_SCALE;
+
+	}
+
 	/** Drift the clouds by the surface wind's integrated displacement (metres downwind; Wind.ts
 	 * `displacement`): a function of the wind's state alone, so a paused frame and a seek draw the
 	 * same sky. Set `cirrusAxis` first: the cirrus' shift is kept in its fibres' frame. */
@@ -2032,6 +2159,8 @@ export class Clouds {
 		const wrap = ( v: number, period: number ) => v - period * Math.round( v / period );
 		const low = driftOffset( displacement, LOW_DRIFT, LOW_VEER );
 		this.windOffset.value.set( wrap( low.x, TILE ), wrap( low.y, TILE ) );
+		// The low deck's space, wrapped on its own tile (the high tile is no whole number of it).
+		this.lowOffset.value.set( wrap( low.x, LOW_WEATHER_SCALE ), wrap( low.y, LOW_WEATHER_SCALE ) );
 		// The cirrus in the frame its shader samples in (toWind), wrapped per texture: the scales
 		// do not nest, and an offset wrapped on one period would jump the others.
 		const high = driftOffset( displacement, HIGH_DRIFT, UPPER_VEER );
