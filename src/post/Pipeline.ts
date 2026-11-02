@@ -2344,7 +2344,7 @@ export class Pipeline {
 		const cloud = cloudedShare( S.skyMix );
 		this.localTone?.update( this.sky.elevation, S.night, cloud );
 		this.bloom.update( this.sky.elevation, S.night, cloud );
-		const ex = keyed( EXPOSURE_KEYS, this.sky.elevation, S.night, this.exposureKeys, cloud ), mu = this.metering.uniforms;
+		const ex = keyed( EXPOSURE_KEYS, this.sky.elevation, S.night, this.exposureKeys, cloud, this.sky.rising ), mu = this.metering.uniforms;
 		mu.key.value = ex.key; mu.highlight.value = ex.highlight; mu.skyShare.value = ex.sky; mu.offset.value = S.exposureOffset;
 		// the adaptation's step: the scene clock's, once per rendered frame; a paused clock (and the
 		// test mode, a paused page), a reset or a lost history take the target at once

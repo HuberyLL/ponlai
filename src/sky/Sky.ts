@@ -217,7 +217,7 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 // before both were set (SKY_LIGHT, post/Exposure.ts), so the brightness each row gives is to be
 // measured again; the rows' shape, a lift through the afterglow easing to none by the night, holds.
 // The rows at 1, 0.5, 0, -3.3 and -5.3 degrees take the colour the rows around them gave there.
-// The rising sun keeps the gains and leaves the warm cast out (ISLAND_SKY_RISING).
+// The rising sun has rows of its own (ISLAND_SKY_RISING).
 // By day a clouded sky lends the island its own light: a deck of cloud passes on little of the blue
 // of the sky's high key (SKY_LIGHT), so from 12 to 40 degrees, as that key climbs, the light lent to
 // the island is drawn most of the way to a warm grey (CLOUD_LIGHT_TINT, Weather.ts `cloudedHighSun`). The land
@@ -243,13 +243,37 @@ const ISLAND_SKY: readonly IslandRow[] = [
 	{ at: - 13.2, tint: [ 0.45, 1, 3.6 ], amount: 0.6 },
 ];
 
-// The rising sun's: the same gains, none of the evening's warm cast, so the land keeps its hue
-// from the night's blue into the day. Only the deep blue of the night stays.
-const ISLAND_SKY_RISING = ISLAND_SKY.map( ( row ) => ( row.at > - 13 ? { at: row.at, gain: row.gain } : row ) );
+// The rising sun's: none of the evening's warm cast, only the night's deep blue below -10 degrees,
+// and gains of its own. A clear morning's day exposure is metered by the sky and the land together
+// (post/Exposure.ts, the `dawn` key), so the land's brightness is this light against the sky's: the
+// gains keep the land from about 0.55 at -8 degrees, where the sky's light is still deep, through a
+// lift of about 2 at -2.6, where the sky's has fallen behind the sun's coming, to none from 2 up.
+// A blue cast of its own (the night's, at 0.3) turned the rock's brightest tenth to C 0.08 to 0.09
+// at -6.5 degrees, against 0.07 to 0.08 without: the land takes the sky's own colour. A clouded
+// morning keeps these tints but takes the evening's gains back by its clouded share (`islandSky`):
+// its exposure stays on the clouded keys, which these gains were not set under.
+const ISLAND_SKY_RISING: readonly IslandRow[] = [
+	{ at: 2 },
+	{ at: 1, gain: 1.3 },
+	{ at: 0, gain: 1.6 },
+	{ at: - 1.3, gain: 2 },
+	{ at: - 2.6, gain: 2.2 },
+	{ at: - 3.3, gain: 2 },
+	{ at: - 4, gain: 1.8 },
+	{ at: - 5.3, gain: 1.3 },
+	{ at: - 6.5, gain: 0.9 },
+	{ at: - 8, gain: 0.55 },
+	{ at: - 8.6, gain: 0.6 },
+	{ at: - 10, gain: 0.8 },
+	ISLAND_SKY[ ISLAND_SKY.length - 1 ],
+];
 
 // ISLAND_SKY at `elevation`, on the rising or the setting sun's side: the tint (normalised to unit
-// luminance) and its amount into `tint`; returns the gain.
-function islandSky( elevation: number, rising: boolean, tint: THREE.Vector4 ): number {
+// luminance) and its amount into `tint`; returns the gain. The rising rows' tints hold under any
+// sky, but their gains were set on a clear morning's exposure (post/Exposure.ts, `dawn`), so a clouded share `cloud`
+// (Weather.ts `cloudedShare`) takes the evening's gain back, as the display's night weight does
+// (DayCycle.ts `displayNight`).
+function islandSky( elevation: number, rising: boolean, tint: THREE.Vector4, cloud: number ): number {
 
 	const at = ( row: IslandRow ) => {
 
@@ -257,15 +281,27 @@ function islandSky( elevation: number, rising: boolean, tint: THREE.Vector4 ): n
 		return [ r / l, g / l, b / l, row.amount ?? 0, row.gain ?? 1 ];
 
 	};
-	const rows = rising ? ISLAND_SKY_RISING : ISLAND_SKY;
-	let v = at( rows[ rows.length - 1 ] );
-	if ( elevation >= rows[ 0 ].at ) v = at( rows[ 0 ] );
-	else for ( let i = 1; i < rows.length; i ++ ) if ( elevation >= rows[ i ].at ) {
+	const along = ( rows: readonly IslandRow[] ) => {
 
-		const t = ( elevation - rows[ i ].at ) / ( rows[ i - 1 ].at - rows[ i ].at );
-		const a = at( rows[ i ] ), b = at( rows[ i - 1 ] );
-		v = a.map( ( x, c ) => x + ( b[ c ] - x ) * t );
-		break;
+		let v = at( rows[ rows.length - 1 ] );
+		if ( elevation >= rows[ 0 ].at ) v = at( rows[ 0 ] );
+		else for ( let i = 1; i < rows.length; i ++ ) if ( elevation >= rows[ i ].at ) {
+
+			const t = ( elevation - rows[ i ].at ) / ( rows[ i - 1 ].at - rows[ i ].at );
+			const a = at( rows[ i ] ), b = at( rows[ i - 1 ] );
+			v = a.map( ( x, c ) => x + ( b[ c ] - x ) * t );
+			break;
+
+		}
+		return v;
+
+	};
+	let v = along( ISLAND_SKY );
+	if ( rising ) {
+
+		const r = along( ISLAND_SKY_RISING );
+		if ( cloud > 0 ) r[ 4 ] += ( v[ 4 ] - r[ 4 ] ) * cloud;
+		v = r;
 
 	}
 	tint.set( v[ 0 ], v[ 1 ], v[ 2 ], v[ 3 ] );
@@ -1340,7 +1376,7 @@ export class Sky {
 			this.displayNightAmbient.value.setRGB( 0.001, 0.001625, 0.003125 ).multiplyScalar( illuminance * celestial.nightAmbient );
 			this.grade.exposure = celestial.exposure;
 			this.grade.daylight = celestial.daylight;
-			this.islandGain.value = islandSky( celestial.elevation, this.rising, this.islandTint.value );
+			this.islandGain.value = islandSky( celestial.elevation, this.rising, this.islandTint.value, cloud );
 			const direct = weather?.directVisibility ?? 1;
 			const shade = clearShade( celestial.elevation, direct ), low = lowSun( celestial.elevation, direct );
 			const tint = this.islandTint.value;

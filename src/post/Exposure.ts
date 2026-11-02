@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { Fn, If, abs, clamp, exp, exp2, float, log2, max, min, mix, select, vec3, vec4 } from 'three/tsl';
-import type { DayKeys } from './DayKeys.ts';
+import type { DayKey, DayKeys } from './DayKeys.ts';
 import { tuneKeys } from '../debug/Tune.ts';
 
 type F = THREE.Node<'float'>;
@@ -111,14 +111,27 @@ export interface ExposureKey extends Record<string, number> {
  * night has one white: β 0 (the meter alone), κ and κ_H a quarter of a stop apart and moved together,
  * so the guard does not take back what the key gives: the moonlit land's shade stands a step over
  * the curve's black, with the moon's path and the sky rising alongside it. The adaptation's time
- * constants are the same in every key (the header, Adaptation).
+ * constants are the same in every key (the header, Adaptation). A clear morning's day exposure
+ * comes in long before the sun (DayCycle.ts `displayNight`), and under the golden key's β 0.05 the
+ * meter held the land at its own level whatever the light it took, so the land read as bright as
+ * the sky lit it cyan, and the sea took the change. Metered by the sky alone, the exposure fell as
+ * the sky brightened toward the sun faster than the land's light (the probes' night key leaves it
+ * from -13 to -3 degrees: DayCycle.ts `skyNight`), and the whole frame, land and sea, sank by about
+ * three quarters of a stop from -7 to -3.5. The rising sun's `dawn` key, held from -2 degrees down,
+ * meters by both: β 0.6, κ -1.06, κ_H the golden key's own (shared, so tuning `@golden` moves both).
+ * On the island view the land's median lightness then stays within about 9 % of its peak from -10
+ * degrees to the sun's rise (Oklab L 0.166 to 0.182; metered by the sky alone, 0.150 to 0.210),
+ * and its brightness is still its light against the sky's (Sky.ts ISLAND_SKY_RISING); from -2 to 3 it passes
+ * into the golden key.
  * Tunable on debug pages (debug/Tune.ts): `post.exposure.<value>@<key>`. */
+const EXPOSURE_DAY: readonly DayKey<ExposureKey>[] = [
+	{ at: 3, name: 'golden', values: { key: - 0.38, highlight: 0.27, sky: 0.05, adaptUp: 0.05, adaptDown: 0.05 } },
+	{ at: 12, name: 'low', values: { key: 0.332, highlight: 0.52, sky: 0.441, adaptUp: 0.05, adaptDown: 0.05 } },
+	{ at: 40, name: 'high', values: { key: - 1.05, highlight: 1.44, sky: 0.92, adaptUp: 0.05, adaptDown: 0.05 } },
+];
 export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
-	day: [
-		{ at: 3, name: 'golden', values: { key: - 0.38, highlight: 0.27, sky: 0.05, adaptUp: 0.05, adaptDown: 0.05 } },
-		{ at: 12, name: 'low', values: { key: 0.332, highlight: 0.52, sky: 0.441, adaptUp: 0.05, adaptDown: 0.05 } },
-		{ at: 40, name: 'high', values: { key: - 1.05, highlight: 1.44, sky: 0.92, adaptUp: 0.05, adaptDown: 0.05 } },
-	],
+	day: EXPOSURE_DAY,
+	rising: [ { at: - 2, name: 'dawn', values: { key: - 1.06, get highlight() { return EXPOSURE_KEYS.day[ 0 ].values.highlight; }, sky: 0.6, adaptUp: 0.05, adaptDown: 0.05 } }, ...EXPOSURE_DAY ],
 	cloudy: [
 		{ at: 0, name: 'cloudySunset', values: { key: - 0.12, highlight: 3.05, sky: 0, adaptUp: 0.05, adaptDown: 0.05 } },
 		{ at: 3, name: 'cloudyGolden', values: { key: 0.1, highlight: 3.05, sky: 0, adaptUp: 0.05, adaptDown: 0.05 } },
