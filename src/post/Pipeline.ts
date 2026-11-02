@@ -49,7 +49,7 @@ import { LocalTone } from './LocalTone.ts';
 import { keyed, type DayKey, type DayKeys } from './DayKeys.ts';
 import { EXPOSURE_KEYS, type ExposureKey } from './Exposure.ts';
 import { restEpoch, restKey } from './TemporalRest.ts';
-import { tuneCheck, tuneKeys, tuneObject } from '../debug/Tune.ts';
+import { tuneCheck, tuneKeys, tuneObject, tuneUniform } from '../debug/Tune.ts';
 import { displacementField } from '../world/vegetation/Displacement.ts';
 import { leavesPass, type FallingLeaves } from '../weather/FallingLeaves.ts';
 import { localLightsPass } from '../lighting/LocalLights.ts';
@@ -481,13 +481,42 @@ export const SHADE_CONTRAST: DayKeys<{ pivot: number; slope: number }> = tuneKey
 // `amount` (0 keeps it, 1 grey), c + ( Y( c ) - c ) amount, keyed by the sun and the weather
 // (DayKeys.ts); below 0 it saturates. Keyed as the white balance is, so each key sets its own: the
 // golden hour saturates by a sixth, the day keeps its colours, the clouded sky fades them by a
-// twelfth, the night by about a half.
-// Tunable on debug pages (debug/Tune.ts): `post.desaturate.amount@golden`, `@day`, `@cloudy`, `@night`.
-export const DESATURATION: DayKeys<{ amount: number }> = tuneKeys( 'post.desaturate', {
-	day: [ { at: 4, name: 'golden', values: { amount: - 0.163 } }, { at: 9, name: 'day', values: { amount: 0.0122 } } ],
-	cloudy: { amount: 0.08 },
-	night: { amount: 0.481 },
-}, { amount: { min: - 0.5, max: 1 } } );
+// twelfth, the night by about a half. The rising sun's `dawn` key, held from -1 degree down,
+// fades the cool colours by 0.6 and passes into the golden key's by 1.5 (the golden key's own
+// values, shared): before the sun the clear morning's land, sea and sky took the dawn's white
+// (`dawn`, WHITE_BALANCE) on top of their own blue, and the upper sky and the far sea turned violet
+// (h 271 to 278 from -4 to 0 degrees). A fade of every colour brought them back to h 250 to 262,
+// but it took the warm colours with them: the rose band over the horizon (h 327 to 353, C 0.03 to
+// 0.05 from -8 to -1 degrees) went to a grey-blue band (h 263, the white's cast), and the meadow's
+// green, under it, to h 231 to 241. So the key's `cool` share of 1 fades only the colours that lie
+// toward blue once the white is applied (`coolShare`: blue over red as a share of the colour's
+// spread, 0 none to 0.6 all), and the warm band and the meadow keep their own colour under the same
+// white: the sky's top stays at h 248 to 257, the band at h 327 to 353, the meadow at h 214 to 226
+// from -7 to -4.5 degrees.
+// Tunable on debug pages (debug/Tune.ts): `post.desaturate.<amount|cool>@golden`, `@dawn`, `@day`,
+// `@cloudy`, `@night`; the cool share's edges `post.desaturate.coolFrom`, `post.desaturate.coolTo`.
+// amount: the fade (0 keeps the colour, 1 grey, below 0 saturates); cool: the share of the fade
+// that only cool colours take (`coolShare`)
+type DesaturationKey = { amount: number; cool: number };
+const DESATURATION_DAY: DayKey<DesaturationKey>[] = [ { at: 4, name: 'golden', values: { amount: - 0.163, cool: 0 } }, { at: 9, name: 'day', values: { amount: 0.0122, cool: 0 } } ];
+export const DESATURATION: DayKeys<DesaturationKey> = tuneKeys( 'post.desaturate', {
+	day: DESATURATION_DAY,
+	rising: [ { at: - 1, name: 'dawn', values: { amount: 0.6, cool: 1 } }, { at: 1.5, values: DESATURATION_DAY[ 0 ].values }, ...DESATURATION_DAY ],
+	cloudy: { amount: 0.08, cool: 0 },
+	night: { amount: 0.481, cool: 0 },
+}, { amount: { min: - 0.5, max: 1 }, cool: { min: 0, max: 1 } } );
+/** Where a colour counts as cool for the desaturation's `cool` share (DESATURATION): its blue less
+ * its red, as a share of its spread (max less min), from `COOL_FROM` (none of it cool) to `COOL_TO`
+ * (all of it), read through the white balance (`balance`). */
+const COOL_FROM = tuneUniform( 'post.desaturate.coolFrom', 0, { min: - 1, max: 1 } );
+const COOL_TO = tuneUniform( 'post.desaturate.coolTo', 0.6, { min: - 1, max: 1 } );
+/** How cool the colour `c` (white balanced) is, 0 to 1 (COOL_FROM, COOL_TO). */
+const coolShare = Fn( ( [ c ]: [ V3 ] ) => {
+
+	const spread = max( max( c.r, c.g ), c.b ).sub( min( min( c.r, c.g ), c.b ) );
+	return smoothstep( COOL_FROM, COOL_TO, c.b.sub( c.r ).div( max( spread, 1e-6 ) ) );
+
+} ).setLayout( { name: 'coolShare', type: 'float', inputs: [ { name: 'c', type: 'vec3' } ] } );
 
 // The night's grade (art direction: a film's night, day for night): the meadow's greens turned
 // toward blue-green, the frame a touch silver-blue, the bloom stronger so the moon, its clouds and
@@ -691,7 +720,7 @@ export class Pipeline {
 	readonly grade: GradeParams = gradeOf( {}, BASE_GRADE );
 	// the shade's contrast this frame (SHADE_CONTRAST)
 	private readonly shade = { pivot: 0, slope: 0 };
-	private readonly desaturation = { amount: 0 };
+	private readonly desaturation = { amount: 0, cool: 0 };
 	private readonly white = { r: 1, g: 1, b: 1 };
 	// the white the tone curve's input matrix was last built for
 	private toneWhite = [ NaN, NaN, NaN ];
@@ -704,7 +733,10 @@ export class Pipeline {
 		// the shade's contrast (SHADE_CONTRAST): its pivot as an exposed luminance, and its slope
 		shadePivot: uniform( 0.8 ), shadeSlope: uniform( 0 ),
 		// the desaturation before the local gain (DESATURATION)
-		desaturate: uniform( 0 ),
+		desaturate: uniform( 0 ), desaturateCool: uniform( 0 ),
+		// the white balance alone (WHITE_BALANCE), through which the desaturation's cool share reads
+		// its colours
+		balance: uniform( new THREE.Matrix3() ),
 		// the Purkinje shift's weight: the night's times its strength, and the key's share of the
 		// light its retinal scale is taken from (Purkinje.ts `purkinjeScale`)
 		purkinje: uniform( 0 ), purkinjeKey: uniform( 0 ),
@@ -1229,7 +1261,7 @@ export class Pipeline {
 
 			const c = lin.mul( exposure ).toVar();
 			// the desaturation (DESATURATION), before the local gain
-			c.addAssign( vec3( luminance( c ) ).sub( c ).mul( u.desaturate ) );
+			c.addAssign( vec3( luminance( c ) ).sub( c ).mul( u.desaturate.mul( mix( float( 1 ), coolShare( u.balance.mul( c ) ), u.desaturateCool ) ) ) );
 			if ( localTone && at ) c.assign( localTone.apply( c, at ) );
 			// the shade's contrast (SHADE_CONTRAST)
 			c.mulAssign( exp2( min( log2( max( luminance( c ), 1e-6 ) ).sub( log2( u.shadePivot ) ), 0 ).mul( u.shadeSlope ) ) );
@@ -2360,7 +2392,8 @@ export class Pipeline {
 		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + S.night * NIGHT.bloom );
 		const shade = keyed( SHADE_CONTRAST, this.sky.elevation, S.night, this.shade, cloud );
 		u.shadePivot.value = 0.18 * 2 ** shade.pivot; u.shadeSlope.value = shade.slope;
-		u.desaturate.value = keyed( DESATURATION, this.sky.elevation, S.night, this.desaturation, cloud ).amount;
+		const desaturation = keyed( DESATURATION, this.sky.elevation, S.night, this.desaturation, cloud, this.sky.rising );
+		u.desaturate.value = desaturation.amount; u.desaturateCool.value = desaturation.cool;
 		u.purkinje.value = S.night * PURKINJE.strength;
 		const keyColor = this.sky.keyColor;
 		u.purkinjeKey.value = ( 0.2126 * keyColor.r + 0.7152 * keyColor.g + 0.0722 * keyColor.b ) * liftedKeyHeight( this.sky.keyDir, this.sky.keyIsMoon ) / Math.PI;
@@ -2368,7 +2401,8 @@ export class Pipeline {
 		if ( r !== this.toneWhite[ 0 ] || g !== this.toneWhite[ 1 ] || b !== this.toneWhite[ 2 ] ) {
 
 			this.toneWhite = [ r, g, b ];
-			u.toneIn.value.copy( TONE_SPACE.input ).multiply( whiteBalance( [ r, g, b ] ) );
+			u.balance.value.copy( whiteBalance( [ r, g, b ] ) );
+			u.toneIn.value.copy( TONE_SPACE.input ).multiply( u.balance.value );
 
 		}
 		const C = S.curve;
