@@ -450,7 +450,11 @@ art decision changes; images from elsewhere stay out of the repository.
 - The clouds stand where such clouds stand: the clear and fair skies' cumulus from about 4 km up,
   cloudy's and overcast's deck low, its base under a kilometre and its tops near 3 km, so its
   masses are near and wide overhead and close into a flat, packed floor toward the horizon, seen
-  through little of the air's haze; a front between the two moves the deck with the weather.
+  through little of the air's haze; a front between the two moves the deck with the weather. The
+  deck's base is lit by what comes down through it, the light on its tops passed through the
+  cloud above, with no gain or tint of its own: thin parts show lighter than the thick masses
+  beside them, and the deck reads near grey. The air under it is lit by the deck and by the sea's
+  reflection of it rather than by a clear sky, so the haze in front of the clouds is their grey.
 - The sky's light takes a gain of its own by the sun's height, the rising sun's apart from the
   setting sun's. Through sunset it runs from the golden hour's warm key into a dusk key, more
   orange still, at a sun 1 degree under the horizon, then moves on to the night key by -6 degrees:
