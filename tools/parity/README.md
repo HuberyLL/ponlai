@@ -96,8 +96,8 @@ renders 2K's pixel count, 2388x1543, and FSR 1 brings it to 3456x2234. Placement
 bounds, the meadow's flowering plants and the tufts at the cliff's edge, the islander and the sun and moon,
 so they follow any tile layout.
 
-`parity` (the default group, 12 views): the profiler's scenes (`tools/profile-frame.mjs`),
-frozen, plus 5 more. The parked weathers' 5 views (marked *parked* below) are in the table but in
+`parity` (the default group, 14 views): the profiler's scenes (`tools/profile-frame.mjs`),
+frozen, plus 7 more. The parked weathers' 5 views (marked *parked* below) are in the table but in
 no group but `special` (see below).
 
 | view | query | camera |
@@ -114,10 +114,28 @@ no group but `special` (see below).
 | island-night-clear | weather=clear&preset=midnight | island |
 | meadow-close | weather=fair&preset=noon | free camera 1.6 m up inside the rim, looking out over the lip |
 | weather-change (*parked*) | weather=fair&preset=noon | island; a front to rain frozen half way, environment re-baked |
+| island-cloudy-low-sun | weather=cloudy&hour=6.36 | island; 4.8 degree sun |
+| island-cloudy-sun-rising | weather=cloudy&hour=6.4 | island; 5.3 degree sun |
+| island-cloudy-disc-fade | weather=cloudy&hour=6.7 | island; 9.3 degree sun |
 | water-skim-cliffs | weather=fair&preset=noon | free camera 1.4 m over the sea off the cliffs, along the coast |
 | island-from-sea | weather=fair&preset=noon | free camera 150 m out, 14 m up, looking back |
 | sunrise-long-shadows | weather=clear&preset=sunrise | orbit across the sun, long shadows over the meadow |
 | night-moon | weather=clear&hour=19.2&moon=0.5 | horizon view facing a full moon about 14 degrees up |
+
+The three `island-cloudy-*` views are the byte checks' reach into the clouds' shadow under a low sun
+(`src/sky/Sky.ts` SHADOW_DISC, SHADOW_AIR_NARROW). Their hours are chosen by what moves there, which
+depends on where the clouds sit at `t=12`: the same query at 6.42 or 6.8 stays almost unmoved. Share
+of the frame's pixels moved over one level when a uniform of `s.sky.clouds` is pinned and the map
+redrawn (`invalidate()`):
+
+| view | `shadowRays` 1 | `shadowAirNarrow` 0 | `shadowAirNarrow` 1 |
+|---|---|---|---|
+| island-cloudy-low-sun | 70 % | 0, the air's share is 0 there | 100 % |
+| island-cloudy-sun-rising | 97 % | 68 % | 61 % |
+| island-cloudy-disc-fade | 16 % | 14 % | 0, the air's share is 1 there |
+
+A change of these hours pins the uniforms again: a view that stays byte identical under the pins
+reaches nothing and does not stay.
 
 `taa` (6 views): close, thin and moving detail for temporal anti-aliasing.
 
@@ -134,7 +152,7 @@ no group but `special` (see below).
 marked `special: true`) holds the parked weathers (`src/sky/Weather.ts` `PARKED_WEATHER`: rain,
 storm, fog). No other group lists them, so every default set (`parity`, `all`, verify-scene-jump's,
 baseline.mjs's plan without `--views` / `--clips`) is the normal weathers' alone; `normal` is `all`
-(19 views), kept as a name. A parked view is reached by name or by `special` (`all,special` is
+(20 views), kept as a name. A parked view is reached by name or by `special` (`all,special` is
 every view), and so is a clip (clips.mjs: a clip is in its view's group; the parked ones are
 storm, rain, lightning, fog). Every tool that takes `--views` takes names and groups mixed
 (`normal,flowers-close`).
