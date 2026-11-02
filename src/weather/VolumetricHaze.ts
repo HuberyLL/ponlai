@@ -18,7 +18,7 @@ import { MIE_G, cornetteShanks, polariser, skyRayleighPhase, type Atmosphere } f
 import { bandPush, bandToDisplay, bandToDisplayColor } from '../sky/BandMatrix.ts';
 import { ISLAND_TOP } from '../world/WorldShapes.ts';
 import type { HazeKey } from './HazeKeys.ts';
-import { type HazeMedium, expShare, meanExtinction, nearFactor, nearLength } from './HazeDepth.ts';
+import { AEROSOL_OPEN, type HazeMedium, expShare, meanExtinction, nearFactor, nearLength } from './HazeDepth.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune, tuneObject, tuneUniform } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
@@ -57,7 +57,10 @@ const OVERCAST_SHARE = tuneUniform( 'haze.overcast.share', 0.85, { min: 0, max: 
 //     starting shape its step is 50 m wide, so the camera, 30 - 60 m up, stands in its upper half
 //     and the hills rise out of it, and it thins as the inverse square of the height far above, so
 //     the distant haze thins less with height than an exponential layer would. The weather's haze sets rho_f (and the deep
-//     layer's density, the key's share of it); its sea fog and the morning mist thicken it. An
+//     layer's density, the key's share of it); its sea fog and the morning mist thicken it. Under a
+//     low deck the aerosol layer ends at the deck's base (the key's `aerosolTop`: HazeKeys.ts), so
+//     the air thins to nothing between the base and the eye's view of the deck's gaps; without a
+//     deck it runs on over any height (HazeDepth.ts AEROSOL_OPEN) and every depth keeps its bits. An
 //     optical depth is a ray's length times the mean density over the heights it spans: the closed
 //     form along the ray, which holds its value on a level ray with no branch. Local variation
 //     (banks, wisps, ground fog) belongs to particles, not to the density. The closed form lives in
@@ -410,10 +413,10 @@ export class VolumetricHaze {
 	// the hour's and the weather's key (HazeKeys.ts, `setLook`): each band's sigma, the light's
 	// desaturation, the gain over `gain`, the sun's share in the Rayleigh light and the two shares'
 	// weights, the medium's shape (the ground layer's top over the island's level and its width,
-	// the aerosol layer's share and scale height, the dome's own depth per kilometre) and the near
-	// haze (its density factor, start, end)
+	// the aerosol layer's share, scale height and top, the dome's own depth per kilometre) and the
+	// near haze (its density factor, start, end)
 	readonly look = { sigma: new THREE.Vector3( 1, 1, 1 ), desaturate: 0.26, gain: 1, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
-		top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, skyDepth: 0, nearDensity: 1, nearStart: 250, nearEnd: 600 };
+		top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0, nearDensity: 1, nearStart: 250, nearEnd: 600 };
 	// the weather's share of the sun's direct light below the clouds and its diffuse gain
 	// (Weather.ts `directVisibility`, `ambientGain`), which scale the light's colours
 	readonly weatherLight = { direct: 1, ambient: 1 };
@@ -435,7 +438,7 @@ export class VolumetricHaze {
 	private readonly sunShadow: SunShadow;
 	// the medium: the exponential layer ( density at sea level, scale height ) and the ground layer
 	// ( rho_f, top, width ), from the weather and the settings, and each band's sigma
-	private readonly layer = uniform( new THREE.Vector2( 0, 1400 ) );
+	private readonly layer = uniform( new THREE.Vector3( 0, 1400, AEROSOL_OPEN ) );
 	private readonly ground = uniform( new THREE.Vector3( 0, 13, 50 ) );
 	// the ground layer's width at the sea and its growth with the start's height ( m, m per m ), for
 	// a ray from another height than the camera's (`groundFrom`)
@@ -1161,7 +1164,7 @@ export class VolumetricHaze {
 		const rho = this.haze.value / 2 + this.fog.value * S.fogExtinction / ( 2 * Math.max( look.sigma.y, 1e-6 ) );
 		this.widthRule.value.set( look.width, look.widthSlope );
 		this.ground.value.set( rho, ISLAND_TOP + look.top, this.widthAt( this.origin.value.y ) );
-		this.layer.value.set( rho * look.aerosolShare, look.aerosolHeight );
+		this.layer.value.set( rho * look.aerosolShare, look.aerosolHeight, Math.min( look.aerosolTop, AEROSOL_OPEN ) );
 		this.skyDepth.value = look.skyDepth / 1000 / Math.max( look.sigma.y, 1e-6 );
 		this.near.value.set( S.nearHaze ? look.nearDensity : 1, look.nearStart, Math.max( look.nearEnd, look.nearStart ) );
 		const copy = this.cloudMedium;
@@ -1300,6 +1303,7 @@ export class VolumetricHaze {
 		look.widthSlope = key.widthSlope;
 		look.aerosolShare = key.aerosolShare;
 		look.aerosolHeight = key.aerosolHeight;
+		look.aerosolTop = key.aerosolTop;
 		look.skyDepth = key.skyDepth;
 		look.nearDensity = key.nearDensity;
 		look.nearStart = key.nearStart;
@@ -1419,9 +1423,11 @@ export class VolumetricHaze {
 		const a = Math.max( Math.min( a0, b0 ), 0 ), b = Math.max( a0, b0, 0 ), span = b - a;
 		const share = ( x: number ) => x < 1e-3 ? 1 - x / 2 + x * x / 6 : ( 1 - Math.exp( - x ) ) / x;
 		const layer = this.layer.value, ground = this.ground.value;
+		const low = Math.min( a, layer.z ), under = Math.min( b, layer.z ) - low;
+		const density = b > layer.z ? layer.x * under / Math.max( span, 1e-30 ) : layer.x;
 		const ua = a - ground.y, ub = b - ground.y, w2 = width * width;
 		const r = Math.sqrt( ua * ua + w2 ) + Math.sqrt( ub * ub + w2 );
-		return layer.x * Math.exp( - a / layer.y ) * share( span / layer.y ) + ground.x * ( 1 - ( ua + ub ) / Math.max( r, 1e-6 ) );
+		return density * Math.exp( - low / layer.y ) * share( under / layer.y ) + ground.x * ( 1 - ( ua + ub ) / Math.max( r, 1e-6 ) );
 
 	}
 

@@ -485,6 +485,9 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 	tuneObject( CLOUD_SHELL[ s ], { base: `sky.clouds.base@${ name }`, top: `sky.clouds.top@${ name }` }, { base: { min: 300, max: 2000, onChange: markSkyRetune }, top: { min: 1500, max: 6000, onChange: markSkyRetune } } );
 
 }
+/** The cloud shell's base (m) under the kept sky `s` (Weather.ts KEPT_SKIES), as tuned: the haze's
+ * aerosol ends at a deck's base (weather/HazeKeys.ts `aerosolTop`). */
+export const cloudBase = ( s: number ): number => CLOUD_SHELL[ s ].base;
 // per kept sky, the cloud's form (Clouds.ts CLOUD_FORM, `setForm`): its soft margin, its
 // erosion's strength at the top (a share of the high cumulus') and the height over which its base
 // needs richer weather, blended by the weather's shares like the shell. Clear and fair keep the

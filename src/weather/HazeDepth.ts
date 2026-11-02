@@ -15,7 +15,6 @@ import * as THREE from 'three/webgpu';
 import { Fn, If, Loop, exp, float, log, max, min, select, smoothstep, sqrt, uniform } from 'three/tsl';
 
 type F = THREE.Node<'float'>;
-type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
 // (1 - e^-x) / x, the share of a slab of optical depth x that scatters, per unit of that depth, with
@@ -29,25 +28,34 @@ export const expShare = Fn( ( [ x ]: [ F ] ) => {
 
 // The medium's mean density (1/m, before each band's sigma) over the heights between a and b
 // (metres, either order; below the sea it holds its value at sea level, which only rays hidden
-// under the water reach): the exponential layer (density at sea level, scale height) and the ground
-// layer (rho_f, top, width). An optical depth is a ray's length times the mean over the heights it
-// spans.
-export const meanExtinction = Fn( ( [ a0, b0, layer, ground ]: [ F, F, V2, V3 ] ) => {
+// under the water reach): the exponential layer (density at sea level, scale height, top) and the
+// ground layer (rho_f, top, width). An optical depth is a ray's length times the mean over the
+// heights it spans. The exponential layer ends at its top (a low deck's base: HazeKeys.ts
+// `aerosolTop`; far above the atmosphere without one): its mean over the span's part under the top,
+// times that part's share of the span. A span wholly under the top keeps its depth to the bit, so a
+// sky without a deck does; a point (a level ray) over the top has none of it.
+export const meanExtinction = Fn( ( [ a0, b0, layer, ground ]: [ F, F, V3, V3 ] ) => {
 
 	const a = max( min( a0, b0 ), 0 ).toVar();
 	const b = max( max( a0, b0 ), 0 ).toVar();
 	const span = b.sub( a ).toVar();
-	const exponential = ( l: V2 ) => l.x.mul( exp( a.div( l.y ).negate() ) ).mul( expShare( span.div( l.y ) ) );
+	// the exponential layer over the span's part under the top, its density scaled by that part's
+	// share of the span where the span reaches over the top: below it the same operations on the
+	// same values as without a top, so they round alike
+	const low = min( a, layer.z ), high = min( b, layer.z );
+	const under = high.sub( low ).toVar();
+	const density = select( b.greaterThan( layer.z ), layer.x.mul( under.div( max( span, 1e-30 ) ) ), layer.x ).uniformFlow();
+	const exponential = density.mul( exp( low.div( layer.y ).negate() ) ).mul( expShare( under.div( layer.y ) ) );
 	// the ground layer's weight 1 - u / r integrates to u - r, r = sqrt( u^2 + w^2 ); its mean,
 	// written so that no difference cancels: 1 - ( ua + ub ) / ( ra + rb )
 	const ua = a.sub( ground.y ).toVar(), ub = b.sub( ground.y ).toVar();
 	const w2 = ground.z.mul( ground.z );
 	const r = sqrt( ua.mul( ua ).add( w2 ) ).add( sqrt( ub.mul( ub ).add( w2 ) ) );
 	const weight = float( 1 ).sub( ua.add( ub ).div( max( r, 1e-6 ) ) );
-	return exponential( layer ).add( ground.x.mul( weight ) );
+	return exponential.add( ground.x.mul( weight ) );
 
 } ).setLayout( { name: 'hazeMeanExtinction', type: 'float', inputs: [
-	{ name: 'a0', type: 'float' }, { name: 'b0', type: 'float' }, { name: 'layer', type: 'vec2' }, { name: 'ground', type: 'vec3' },
+	{ name: 'a0', type: 'float' }, { name: 'b0', type: 'float' }, { name: 'layer', type: 'vec3' }, { name: 'ground', type: 'vec3' },
 ] } );
 
 // The near haze's factor on the optical depth from the camera out to t metres ( k, d0, d1 ): k up
@@ -63,6 +71,9 @@ export const nearFactor = Fn( ( [ t, near ]: [ F, V3 ] ) => {
 // mean density over the heights it spans.
 export const nearLength = ( t: F, near: V3 ): F => t.mul( nearFactor( t, near ) );
 
+// The exponential layer's top where nothing ends it (no deck): over any height a ray reaches.
+export const AEROSOL_OPEN = 1e9;
+
 // The optical depth at which a ray lets 1/500 through.
 export const REACH_DEPTH = Math.log( 500 );
 
@@ -71,7 +82,7 @@ export const REACH_DEPTH = Math.log( 500 );
 // t1: t1 where it stays under it there, and about t0 where it is past it already. The depth grows along the ray, so a
 // bisection in the log of the distance finds it, 12 halvings to under 0.2 % of the distance between
 // 100 m and 250 km.
-export const hazeReach = Fn( ( [ dy, y, layer, ground, near, sigma, t0, t1 ]: [ F, F, V2, V3, V3, F, F, F ] ) => {
+export const hazeReach = Fn( ( [ dy, y, layer, ground, near, sigma, t0, t1 ]: [ F, F, V3, V3, V3, F, F, F ] ) => {
 
 	const depth = ( t: F ) => nearLength( t, near ).mul( meanExtinction( y, y.add( dy.mul( t ) ), layer, ground ) ).mul( sigma );
 	const reach = float( t1 ).toVar();
@@ -98,7 +109,7 @@ export const hazeReach = Fn( ( [ dy, y, layer, ground, near, sigma, t0, t1 ]: [ 
 	return reach;
 
 } ).setLayout( { name: 'hazeReach', type: 'float', inputs: [
-	{ name: 'dy', type: 'float' }, { name: 'y', type: 'float' }, { name: 'layer', type: 'vec2' }, { name: 'ground', type: 'vec3' },
+	{ name: 'dy', type: 'float' }, { name: 'y', type: 'float' }, { name: 'layer', type: 'vec3' }, { name: 'ground', type: 'vec3' },
 	{ name: 'near', type: 'vec3' }, { name: 'sigma', type: 'float' }, { name: 't0', type: 'float' }, { name: 't1', type: 'float' },
 ] } );
 
@@ -106,7 +117,7 @@ export const hazeReach = Fn( ( [ dy, y, layer, ground, near, sigma, t0, t1 ]: [ 
  * `prepareMedium`), and the reach along a ray in it. */
 export class HazeMedium {
 
-	readonly layer = uniform( new THREE.Vector2( 0, 1400 ) );
+	readonly layer = uniform( new THREE.Vector3( 0, 1400, AEROSOL_OPEN ) );
 	readonly ground = uniform( new THREE.Vector3( 0, 13, 50 ) );
 	readonly near = uniform( new THREE.Vector3( 1, 250, 600 ) );
 	// the least extinguished band's sigma, the last to close: 0 (no haze over the sky, or no haze
