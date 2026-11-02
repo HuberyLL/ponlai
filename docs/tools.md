@@ -1163,8 +1163,10 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
 - It plays a matrix of named scenes (`--list`: `island-fair-noon`, `island-clear-golden`,
   `horizon-fair-noon`, `sky-cloudy`, `island-overcast`, `island-night-clear`, `meadow-close` (over
   the meadow, placed on the camera's ground, `controls.ground`); the parked weathers' `island-rain`, `island-storm`, `horizon-storm`,
-  `island-fog-dawn` and `weather-change` (a front sweeping in) run only when `--scenes` names
-  them, and `--scenes` takes these ids), each with the clock running, fixed weather
+  `island-fog-dawn` and `weather-change` (a front sweeping in), and the clouded skies' other views
+  `island-cloudy`, `horizon-cloudy` and `horizon-overcast` (where the low deck's march costs) with
+  `horizon-clear-noon` (the same horizon without a deck), run
+  only when `--scenes` names them, and `--scenes` takes these ids), each with the clock running, fixed weather
   and a slow orbit, and writes `artifacts/perf/<label>/` (profile.json, summary.md): frame interval
   median, p95 and p99, GPU time per pass, the tick's JS time, hitches with their cause, and the
   startup.
