@@ -355,7 +355,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   writes it) and reports a combination the code cannot use (`invalid`), `tune.reset()` restores the
   defaults. At the defaults a paused frame is byte for byte the frame without them. Names:
   `post.exposure.key@high` (an exposure key per sun height, `@golden`, `@low`, `@high`, `@cloudy`,
-  `@cloudyGolden`, `@cloudySunset`, `@night`, and the rising sun's `@dawn`; the local gain's
+  `@cloudyGolden`, `@cloudySunset`, `@cloudyLow`, `@night`, and the rising sun's `@dawn`; overcast's
+  key over the clouded one `post.exposure.overcastKey`; the local gain's
   `post.localTone.hinge@high`, `high`, `low`, `width` alike), `post.tone.midGrey`,
   `post.tone.blackSlope`, `post.tone.white`; the desaturation's `post.desaturate.amount@golden`
   (`cool`; `@dawn`, `@day`, `@cloudy`, `@night`) and its cool share's `post.desaturate.coolFrom`,
@@ -367,9 +368,12 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   key's colour at a low sun `sky.key.hueDepth`, `reddens`, `yellows`, the near air
   `sky.weather.nearDensity@clear` (`nearStart`, `nearEnd`; `@fair`, `@cloudy`, `@overcast`) and the
   land's share of the sky's light `lighting.relight.skyGain@high` (`@low`, `@golden`, `@cloudy`,
-  `@cloudyBlue`, `@night`), and the key a tree's shaded leaves take through the leaves over them
-  `lighting.vegetation.leaf.through@high` (`@low`, `@golden`, `@cloudy`, `@night`) and what a leaf
-  sends on of the key on its far face, `lighting.vegetation.leaf.back@high` alike, the sward's tint under a closed sky
+  `@cloudyBlue`, `@night`) and its gain under overcast `lighting.relight.overcastLand`,
+  overcast's soft key `lighting.overcastSoftKey`, overcast's
+  sky about the sun `haze.overcast.power`, `haze.overcast.share`, and the key a tree's shaded leaves
+  take through the leaves over them `lighting.vegetation.leaf.through@high` (`@low`, `@golden`,
+  `@cloudy`, `@night`) and what a leaf sends on of the key on its far face,
+  `lighting.vegetation.leaf.back@high` alike, the sward's tint under a closed sky
   `lighting.sward.tint.r` (`g`, `b`) and the crowns', `lighting.vegetation.leaf.tint.r` (`g`, `b`).
 - The ambient grade (`src/lighting/AmbientGrade.ts`): `__PONLAI__.ambient.current` holds the five
   knobs the table gives for the sun and the weather now (also `D.ambient`), `table` the table's own

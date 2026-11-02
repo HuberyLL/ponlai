@@ -8,7 +8,7 @@ import { skyNight } from '../sky/DayCycle.ts';
 import { IRRADIANCE_SLABS, type AmbientVolume } from './AmbientVolume.ts';
 import { COSINE_LOBE, bounceLobe, coefficients, linearMaximum, shBasisAt, shConvolve, shDeringWindow, shProduct, shTowardDelta, shWindow, toMat3, type M3 } from './Harmonics.ts';
 import type { Shared } from '../shared.ts';
-import { deckSkyGain } from '../sky/Weather.ts';
+import { deckSkyGain, deckSkyGap, overcastDeckLight } from '../sky/Weather.ts';
 import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../world/AmbientProbes.ts';
 
 // The ambient light's relight: the probes' baked visibility (AmbientVolume.ts, world/AmbientProbes.ts)
@@ -48,9 +48,14 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../wor
 //               mean) times the scale and the grade's `skyBounce` (a style knob, 1); plus the sea's bounce: the probe's
 //               sea visibility (world/AmbientProbes.ts) times the radiance of a level diffuse
 //               surface at the sea's level, SEA_ALBEDO times the irradiance it takes over pi: the
-//               sky's harmonics convolved and evaluated straight up (times the scale, as the
-//               direct term), and the key's light on level ground (the same
-//               fade and lifted height as its bounce below) under the cloud shadow at the probe;
+//               sky's harmonics convolved and evaluated straight up (times the sea's scale,
+//               `seaScale`: the direct term's with the water's deck gain in place of the land's
+//               gains, less what a cloudy deck's gaps take back under the cloud shadow,
+//               `seaGapScale`), and the key's light on level ground (the same
+//               fade and lifted height as its bounce below) under the cloud shadow at the probe
+//               (the key's, with the weather's floor, Sky.ts `keyCloudVisibility`, for the gaps'
+//               share too: the water drawn takes the shadow without it, so under cloudy's deck the
+//               sea's bounce gives back about a third of the deck's gain that the sea shows);
 //               plus the sun's (or the moon's)
 //               bounce (pp. 32-33): the key reflected off an imaginary ground below and an
 //               imaginary wall facing it, the two directions its reflections come from
@@ -209,13 +214,13 @@ const BOUNCE_GAIN = 9.4;
  * fifth under the seen sky's. About 5 at night: the clear night's sky is mostly the haze's moonlit
  * light over a nearly dark dome, of which the environment takes only a part, and the moonlit ground
  * keeps about eighteen times the sky's light on open ground (Sky.ts `moonKeyGain`). 1 under cloud,
- * one value from -1 degrees up, and by day the deck's own sky gain over it (sky/Weather.ts
- * DECK_SKY_GAIN, from a sun of 3 degrees, whole by 6): the land under a deck keeps the sky's light near a clear day's share,
- * so the land stays well under the pale sky and its shade stays deep, and the exposure's clouded key
- * alone sets its level (post/Exposure.ts). A higher gain lifts the land over the sea, which takes no
- * gain, and the meter, which sees both, then takes the sea and the far water down with it. It returns
- * to 3.5 by -2.7, where the night's exposure has come in whole (the blue hour's light is the night's
- * sky's, which the day's keys do not touch). */
+ * one value from -1 degrees up, with the deck's gains over it (`update`): the deck's own, which the
+ * water takes too (sky/Weather.ts DECK_SKY_GAIN, by `deckLight`: a cloudy deck's from a sun of 3
+ * degrees, whole by 6, overcast's at every sun until the twilight), and overcast's land gain
+ * (OVERCAST_LAND). A clouded sky sets the exposure by its own light (post/Exposure.ts), so these
+ * set the land against the sky, and the deck's gain the water too. It returns to 3.5 by -2.7, where
+ * the night's exposure has come in whole (the blue hour's light is the night's sky's, which the
+ * day's keys do not touch). */
 const PROBE_SKY: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight', {
 	day: [
 		{ at: 3, name: 'golden', values: { skyGain: 0.774 } },
@@ -229,6 +234,21 @@ const PROBE_SKY: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight', {
 	night: { skyGain: 5 },
 }, { skyGain: { min: 0.25, max: 8, scale: 'log' } } );
 const _probeSky = { skyGain: 1 };
+/** The land's own sky gain under overcast's deck, over the deck's (sky/Weather.ts DECK_SKY_GAIN),
+ * by overcast's share and its deck's light (`overcastDeckLight`: at every sun by day). Overcast's
+ * sky is brightest about the sun's place and dim looking away (weather/VolumetricHaze.ts,
+ * overcast's deck), the exposure set by it, and the land under it takes its light as the sky's
+ * soft fill from every side, lifted by this, beside a soft key along the sun (Weather.ts
+ * overcast's `deckKey`, `landKeyShare`). The ground takes it whether or not water lies over it: where a material
+ * reads the environment's light in the volume's place (the sea floor, the walls under the water)
+ * the environment's diffuse takes the same gains (AmbientGrade.ts `landSky`). The water keeps the
+ * deck's gain alone, whichever reads it: the water drawn (ocean/Water.ts) and the sea's bounce
+ * onto the land (`seaScale`). With the soft key (Weather.ts OVERCAST_SOFT_KEY) it sets how the
+ * land's light parts between the two: at 2.35 the land's ambient irradiance on open level ground
+ * stands about 18 to 20 times the deck's sky light over pi, and the key's direct light there about
+ * 0.43 to 0.46 of the whole at every sun height; the overcast meadow then stands about a third of a stop
+ * under the deck's sky looking away from the sun. Tunable: `lighting.relight.overcastLand`. */
+const OVERCAST_LAND = tune( 'lighting.relight.overcastLand', 2.35, { min: 1, max: 8 } );
 /** The sea's diffuse albedo as a bounce surface: the order of water's volume-scattering albedo
  * (see the header). */
 const SEA_ALBEDO = tune( 'lighting.relight.seaAlbedo', 0.05, { min: 0.01, max: 0.2, scale: 'log', load: true } );
@@ -401,6 +421,9 @@ export interface AmbientRelightOptions {
 	/** The weather's cloud, 0 under a clear or fair sky and 1 under a cloudy or overcast one
 	 * (DayKeys.ts `keyed`), for the probes' sky gain. */
 	clouded: () => number;
+	/** Overcast's share of the sky (sky/Weather.ts `skyMix`, a parked sky counting as overcast), for
+	 * the land's own sky gain under its deck (OVERCAST_LAND). */
+	overcast: () => number;
 }
 
 export class AmbientRelight {
@@ -413,6 +436,7 @@ export class AmbientRelight {
 	private readonly sunElevation: () => number;
 	private readonly rising: () => boolean;
 	private readonly clouded: () => number;
+	private readonly overcast: () => number;
 	private readonly sky: AmbientSky;
 	private readonly slotA = uniform( 0, 'uint' );
 	private readonly slotB = uniform( 0, 'uint' );
@@ -427,6 +451,9 @@ export class AmbientRelight {
 	private readonly keyLevel = uniform( 0 );
 	// the sky's fill times the probes' sky gain (PROBE_SKY): the relight's scale on the sky's light
 	private readonly skyScale = uniform( 1 );
+	// the sea's bounce's sky scale: `skyScale` with the water's own deck gain (Weather.ts DECK_SKY_GAIN)
+	private readonly seaScale = uniform( 1 );
+	private readonly seaGapScale = uniform( 0 );
 	// where the open sea's probes take the cloud shadow
 	private readonly seaPoint = uniform( new THREE.Vector3() );
 	private readonly kernel: THREE.ComputeNode;
@@ -435,7 +462,7 @@ export class AmbientRelight {
 	 * shown or settled frame may light the island with it (main.ts's reveal and settled signal wait) */
 	ready = false;
 
-	constructor( { renderer, volume, shared, sky, weights, cloud, keyHeight, sunElevation, rising, clouded }: AmbientRelightOptions ) {
+	constructor( { renderer, volume, shared, sky, weights, cloud, keyHeight, sunElevation, rising, clouded, overcast }: AmbientRelightOptions ) {
 
 		this.renderer = renderer;
 		this.volume = volume;
@@ -446,6 +473,7 @@ export class AmbientRelight {
 		this.sunElevation = sunElevation;
 		this.rising = rising;
 		this.clouded = clouded;
+		this.overcast = overcast;
 		this.kernel = this.buildRelight( cloud );
 		volume.storageGain = () => this.storageGain();
 
@@ -480,8 +508,20 @@ export class AmbientRelight {
 		// the ground and off the wall come from, weighed by level ground's cosine of the key
 		const l = this.shared.sunDir.value, out = this.lobeValues;
 		const elevation = this.sunElevation();
-		const cloud = this.clouded();
-		this.skyScale.value = this.shared.skyFill.value * keyed( PROBE_SKY, elevation, skyNight( elevation, this.rising(), cloud ), _probeSky, cloud ).skyGain * deckSkyGain( elevation, cloud );
+		const clouded = this.clouded(), night = skyNight( elevation, this.rising(), clouded );
+		const overcast = this.overcast(), deckSky = deckSkyGain( elevation, clouded, overcast );
+		const landSky = deckSky * ( 1 + ( OVERCAST_LAND() - 1 ) * overcast * overcastDeckLight( elevation ) );
+		// the deck's gains lift the day's sky light, before the night's key comes in over it: they
+		// stand for the light the deck takes from the sun, which leaves with it
+		const day = keyed( PROBE_SKY, elevation, 0, _probeSky, clouded ).skyGain, toNight = PROBE_SKY.night.skyGain;
+		const gained = ( gain: number ) => day * gain + ( toNight - day * gain ) * night;
+		const probeSky = gained( 1 ), landGain = gained( landSky );
+		this.skyScale.value = this.shared.skyFill.value * landGain;
+		// the sea's bounce takes the water's gain, the deck's alone, as the water drawn does, less what a
+		// cloudy deck's gaps take back by the clouds' visibility (Weather.ts `deckSkyGap`)
+		this.seaScale.value = this.shared.skyFill.value * gained( deckSky );
+		this.seaGapScale.value = this.shared.skyFill.value * day * deckSkyGap( elevation, clouded, overcast ) * ( 1 - night );
+		ambient.landSky.value = landGain / probeSky;
 		out.fill( 0 );
 		const level = THREE.MathUtils.smoothstep( l.y, - 0.02, 0.05 ) * this.keyHeight();
 		this.keyLevel.value = level;
@@ -525,7 +565,7 @@ export class AmbientRelight {
 		const scale = this.skyScale.toVar();
 		const sky = Array.from( { length: 9 }, ( _, n ) => mix( slots.element( a.add( uint( n ) ) ), slots.element( b.add( uint( n ) ) ), this.blend ).xyz.toVar() as unknown as V3 );
 		// the open sea's bounce below the horizon (without the cloud shadow), as the volume's
-		const sea = this.seaRadiance( sky, scale, float( 1 ) );
+		const sea = this.seaRadiance( sky, this.seaScale.sub( this.seaGapScale ).toVar(), float( 1 ) );
 		const c = sky.map( ( s, n ) => s.mul( scale ).add( sea.mul( LOWER_HALF[ n ] ) ).mul( COSINE_LOBE[ n ] ).toVar() as unknown as V3 );
 		const slab = ( first: number, ch: 'x' | 'y' | 'z' ) => vec4( c[ first ][ ch ], c[ first + 1 ][ ch ], c[ first + 2 ][ ch ], c[ first + 3 ][ ch ] );
 		return [ slab( 0, 'x' ), slab( 0, 'y' ), slab( 0, 'z' ), slab( 4, 'x' ), slab( 4, 'y' ), slab( 4, 'z' ), vec4( c[ 8 ], 0 ) ];
@@ -635,7 +675,7 @@ export class AmbientRelight {
 			const bounceScale = average.mul( this.skyScale ).mul( ambient.skyBounce ).toVar();
 			const sunScale = vec3( shared.landKey ).mul( shade ).mul( ambient.sunBounce ).div( Math.PI ).toVar();
 			// the sea's radiance as a level bounce surface
-			const seaLight = this.seaRadiance( Array.from( { length: 9 }, ( _, n ) => S[ n ].xyz as V3 ), skyScale, shade );
+			const seaLight = this.seaRadiance( Array.from( { length: 9 }, ( _, n ) => S[ n ].xyz as V3 ), this.seaScale.sub( this.seaGapScale.mul( shade ) ).toVar(), shade );
 			// the share of its in-scatter the key's bounce keeps: the probe's sky toward the key, over open
 			// level ground's, through SCATTER_GATE
 			const seen = coefficients( visibility ).reduce( ( sum: F, c, n ) => sum.add( c.mul( this.toward[ n >> 2 ][ ( [ 'x', 'y', 'z', 'w' ] as const )[ n & 3 ] ] ) ), float( 0 ) );

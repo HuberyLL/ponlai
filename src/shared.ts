@@ -28,6 +28,9 @@ export const shared = {
 	clouded: uniform( 0 ),
 	// the sky's light in the water body under a deck, over the bake's (sky/Weather.ts `deckSkyGain`)
 	deckSky: uniform( 1 ),
+	// the part of `deckSky` a cloudy deck's gaps take back, by the clouds' visibility over the water
+	// (sky/Weather.ts `deckSkyGap`): in a gap the water takes the key itself
+	deckSkyGap: uniform( 0 ),
 	// what the sward's ambient diffuse is multiplied by (materials/SwardTint.ts); white under a clear
 	// or fair sky
 	swardTint: uniform( new THREE.Vector3( 1, 1, 1 ) ),

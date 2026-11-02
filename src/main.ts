@@ -14,7 +14,7 @@ import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, nightAmbientAt, sunRising, type DayPreset } from './sky/DayCycle.ts';
-import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckRamp, deckSkyGain, isParkedWeather, isWindLevel, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
+import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckSkyGain, deckSkyGap, deckTakeover, isParkedWeather, landKeyShare, OVERCAST_SOFT_KEY, isWindLevel, overcastDeckLight, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
 import { Wind, weatherWind } from './weather/Wind.ts';
@@ -82,7 +82,7 @@ import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
 import { TEST_MODE } from './debug/TestMode.ts';
-import { tuneApi } from './debug/Tune.ts';
+import { tune, tuneApi } from './debug/Tune.ts';
 import { skyRetune } from './sky/SkyRetune.ts';
 import { AA_MODE, AA_SOURCE, AFTER_RESOLVE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './post/Antialiasing.ts';
 import type { LatentRegistry } from './post/graph/FrameGraph.ts';
@@ -100,7 +100,7 @@ import { installVegetationPrepass, prepassScene } from './world/VegetationPrepas
 import { displacementField } from './world/vegetation/Displacement.ts';
 import { installOpaquePrepass, opaquePrepassScene } from './world/OpaquePrepass.ts';
 import { GTAO, gtaoUniforms } from './post/GTAO.ts';
-import { SS_SHADOW } from './post/MeadowShade.ts';
+import { SS_SHADOW, swardShadeRelease } from './post/MeadowShade.ts';
 import { Vegetation } from './world/vegetation/Registry.ts';
 import { installWindMotionFlag } from './world/WindMotion.ts';
 import { HANMING, HANMING_LOOKS, ISLANDER, ISLANDER_LOOKS } from './characters/looks.ts';
@@ -392,8 +392,10 @@ function prepareHaze( state: Readonly<WeatherState> ): void {
 	pipeline.air.haze.value = sky.weather.haze * hazeKey.amount;
 	pipeline.air.fog.value = Math.max( sky.weather.fog, hazeKey.mist );
 	pipeline.air.setLook( hazeKey );
-	// the air's sunlit haze keeps the land's share of the key under a deck (Weather.ts `deckKey`)
-	pipeline.air.weatherLight.direct = state.directVisibility * THREE.MathUtils.lerp( 1, state.deckKey, deckRamp( sky.elevation ) );
+	// the air's sunlit haze keeps the land's share of the key under a deck (Weather.ts `deckKey`),
+	// but not overcast's soft key (`landKeyShare`), which follows the sky's bake that lays this air
+	// over its source
+	pipeline.air.weatherLight.direct = state.directVisibility * THREE.MathUtils.lerp( 1, state.deckKey, deckTakeover( sky.elevation, cloudedShare( weather.skyMix ), weather.skyMix[ 3 ] ?? 0 ) );
 	pipeline.air.weatherLight.ambient = state.ambientGain;
 	pipeline.air.prepareMedium();
 
@@ -413,12 +415,24 @@ function prepareSkyState(): void {
 
 }
 
+// a linear colour's luminance (Rec. 709)
+const luma = ( c: THREE.Color ) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+// overcast's soft key (Weather.ts OVERCAST_SOFT_KEY), tunable (`lighting.overcastSoftKey`)
+const overcastSoftKey = tune( 'lighting.overcastSoftKey', OVERCAST_SOFT_KEY, { min: 1, max: 40 } );
+
 function publishLighting(): void {
 
-	// the land's key: the key times the weather's share under a deck (Weather.ts `deckKey`); the sea
-	// takes the key whole (shared.sunColor)
-	sun.color.copy( sky.keyColor ).multiplyScalar( THREE.MathUtils.lerp( 1, weather.state.deckKey, deckRamp( sky.elevation ) ) );
+	// the land's key: the key times the weather's share under a deck (Weather.ts `deckKey`), and under
+	// overcast's deck its soft key instead, by the sky's bake (`landKeyShare`); the sea takes the key
+	// whole (shared.sunColor)
+	const key = luma( sky.keyColor ), skyLight = luma( sky.skyIrradiance ) * lighting.skyFill;
+	const overcast = weather.skyMix[ 3 ] ?? 0;
+	sun.color.copy( sky.keyColor ).multiplyScalar( landKeyShare( sky.elevation, cloudedShare( weather.skyMix ), overcast, weather.state.deckKey, key, skyLight,
+		liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sky.keyIsMoon, overcastSoftKey() ) );
 	shared.landKey.value.set( sun.color.r, sun.color.g, sun.color.b );
+	// the sward's shade release: under overcast's soft key the sward's own shade in it is its canopy's
+	// (post/MeadowShade.ts `swardShadeRelease`)
+	swardShadeRelease.value = overcast * overcastDeckLight( sky.elevation );
 	sun.intensity = 1;
 	sun.position.copy( sky.keyDir ).multiplyScalar( 120 ).add( sun.target.position );
 	shared.sunDir.value.copy( sky.keyDir );
@@ -454,19 +468,36 @@ async function bakeEnvironment( first = false ): Promise<void> {
 
 }
 
+// An explicit bake (a jump of the hour, the weather or the whole scene, a seek, a retune of what the
+// bake depends on) shows at once, its sky's light read back before it publishes (Sky.ts `bake`).
+// The state it bakes changes before it is called and the readback takes a frame or two, so the loop
+// draws no frame from that change until the bake has published (`tick`): the frame on screen holds
+// the old state, and the first frame drawn after it shows the new weather or hour in its own light.
+// (a count: the requests queue on `sunUpdates`, and a scene jump holds from its first change.) A
+// held tick still advances three's frame count (`renderer.info.frame`, which probe.mjs `--frames`
+// counts as drawn frames), and the first frame drawn after a hold records the whole hold as one
+// interval in the frame statistics.
+let jumpsInFlight = 0;
+function bakeExplicitly( first = false ): Promise<void> {
+
+	jumpsInFlight ++;
+	sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( () => bakeEnvironment( first ) )
+		.finally( () => { jumpsInFlight --; } );
+	return sunUpdates;
+
+}
+
 function refreshEnvironment(): Promise<void> {
 
 	manualSun = false;
-	sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( () => bakeEnvironment() );
-	return sunUpdates;
+	return bakeExplicitly();
 
 }
 
 function applySun(): Promise<void> {
 
 	manualSun = true;
-	sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( () => bakeEnvironment() );
-	return sunUpdates;
+	return bakeExplicitly();
 
 }
 
@@ -703,7 +734,7 @@ showWindArrows();
 // show.
 const ambient = new AmbientVolume( renderer, data.ambient );
 installAmbientVolume( ambient );
-const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyCloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation, rising: () => sky.rising, clouded: () => cloudedShare( weather.skyMix ) } );
+const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyCloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation, rising: () => sky.rising, clouded: () => cloudedShare( weather.skyMix ), overcast: () => weather.skyMix[ 3 ] ?? 0 } );
 // the environment's own harmonics, which the specular's relight divides by (AmbientSample.ts)
 installEnvironmentHarmonics( ambientRelight );
 // the haze's shadow kernels read the probes' sky visibility, so they compile now (Pipeline.ts)
@@ -1758,6 +1789,7 @@ function settleFrame( bakeDue: boolean ): SettleFrame | undefined {
 	if ( ! DEBUG ) return undefined;
 	const pending: string[] = [];
 	if ( bakeDue ) pending.push( 'sky bake due' );
+	if ( sky.readbacks > 0 ) pending.push( 'sky irradiance' );
 	if ( refractedSun.pending ) pending.push( 'refracted sun' );
 	if ( framingGlide.running ) pending.push( 'camera glide' );
 	if ( sunShadow.pending ) pending.push( 'sun shadow' );
@@ -1775,6 +1807,8 @@ function tick( time: number ): void {
 	// the frame's own vblank time, not the moment the tick starts: the main thread reaches the tick a
 	// few milliseconds into the frame, by a varying amount, which made the scene's steps uneven
 	clock.update( time );
+	// a jump's explicit bake in flight: no frame, and the clock holds (`bakeExplicitly`)
+	if ( jumpsInFlight > 0 ) return;
 	frameStats.record( time, pacer.interval, pacer.period );
 	// The clock never runs backwards. Timer.reset() restarts it at performance.now(): `loop.start()`
 	// does so, and so does the timer itself when the page shows again (`connect( document )`). The
@@ -1835,7 +1869,8 @@ function tick( time: number ): void {
 	// the ambient grade by the sun and the weather's blend of the kept skies (lighting/AmbientGrade.ts)
 	ambientGrade.update( sky.elevation, weather.skyMix, sky.rising );
 	shared.clouded.value = cloudedShare( weather.skyMix );
-	shared.deckSky.value = deckSkyGain( sky.elevation, shared.clouded.value );
+	shared.deckSky.value = deckSkyGain( sky.elevation, shared.clouded.value, weather.skyMix[ 3 ] ?? 0 );
+	shared.deckSkyGap.value = deckSkyGap( sky.elevation, shared.clouded.value, weather.skyMix[ 3 ] ?? 0 );
 	updateShelfScatter( sky.keyColor, sky.keyIsMoon ? 0 : 1 - shared.clouded.value, sky.elevation );
 	// the yunpeng's glow and its local lights by the night's share (lighting/LocalLights.ts: its
 	// pass sorts the sources in view)
@@ -2194,7 +2229,23 @@ const setTime = ( t: number ) => {
 // captures a set in one page only where it is set (older builds' establishScene takes only the
 // options form and leaves state behind). Raise it if the contract changes in a way callers see.
 const SCENE_OPTIONS = [ 'weather', 'wind', 'windDir', 'preset', 'hour', 'moon', 't', 'dist', 'polar', 'az', 'camera', 'clouds', 'dayLength', 'paused', 'clock', 'approach' ];
-const establishScene = async ( scene: string | URLSearchParams | { weather?: WeatherName; preset?: DayPreset; hour?: number; time?: number } ): Promise<void> => {
+type SceneRequest = string | URLSearchParams | { weather?: WeatherName; preset?: DayPreset; hour?: number; time?: number };
+// (the loop draws no frame from its first change until its bake has published: `bakeExplicitly`)
+const establishScene = async ( scene: SceneRequest ): Promise<void> => {
+
+	jumpsInFlight ++;
+	try {
+
+		await changeScene( scene );
+
+	} finally {
+
+		jumpsInFlight --;
+
+	}
+
+};
+const changeScene = async ( scene: SceneRequest ): Promise<void> => {
 
 	const query = typeof scene === 'string' ? new URLSearchParams( scene ) : scene instanceof URLSearchParams ? scene : null;
 	if ( query ) {
@@ -2249,8 +2300,7 @@ const establishScene = async ( scene: string | URLSearchParams | { weather?: Wea
 	pacer.reset();
 	sceneEvent( 'establish scene' );
 	manualSun = false;
-	sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( () => bakeEnvironment( true ) );
-	await sunUpdates;
+	await bakeExplicitly( true );
 	// The underwater map at its constructed size, drawn now for the jump's light (published by the
 	// bake), as the load's `prepare` draws it before the first frame. Left to the loop's cadence
 	// (wall time) a capture ready within a few frames shot the cleared map: the sea without its
@@ -2335,10 +2385,10 @@ document.addEventListener( 'visibilitychange', () => {
 // - the clouds pick their trace slot and map refresh phase from the frames rendered since the load
 //   (Clouds.ts), and the periodic sky bake and the refracted sun's map count wall-clock seconds
 //   that grow while a paused page waits: all three restart with each call, as after a seek;
-// - a periodic bake reads its sky irradiance back from the GPU (`Sky.skyIrradiance`, which sets a
-//   lightning strike's fill light), at most every 2 s of wall clock and landing whenever the GPU
-//   answers: stepped, every bake reads it back and the next frame waits for the value, so it
-//   lands on the frame after the bake however long the frames took.
+// - a periodic bake reads its sky irradiance back from the GPU (`Sky.skyIrradiance`, which sets
+//   overcast's soft key and a lightning strike's fill light), landing whenever the GPU answers:
+//   stepped, the next frame waits for the value, so it lands on the frame after the bake however
+//   long the frames took.
 // - `converge( i )` (the temporal modes' ground truth, capture-clip.mjs --aa gt): after frame i's tick
 //   the scene is held still (the clock paused, nothing advancing with time: a delta of 0, the sky's
 //   transitions and wall-clock cadences included) and rendered again until the temporal rest has
@@ -2372,14 +2422,13 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 	const timer = clock as unknown as { update( time?: number ): unknown; getDelta(): number };
 	timer.update = () => timer;
 	timer.getDelta = () => dt;
-	const skyBake = sky as unknown as { slices: unknown[]; sliceTimer: ReturnType<typeof setTimeout> | null; pendingUpdate: Promise<void> | null;
-		diagnosticPending: boolean; lastDiagnosticMs: number };
-	// the sky irradiance readback in flight, if any, has landed (it resolves once the GPU answers;
-	// a map is not expected to take seconds, so a hang is reported rather than waited out)
+	const skyBake = sky as unknown as { slices: unknown[]; sliceTimer: ReturnType<typeof setTimeout> | null; pendingUpdate: Promise<void> | null };
+	// the sky irradiance readbacks in flight, if any, have landed (each resolves once the GPU
+	// answers; a map is not expected to take seconds, so a hang is reported rather than waited out)
 	const settleSkyReadback = async (): Promise<void> => {
 
 		const start = performance.now();
-		while ( skyBake.diagnosticPending ) {
+		while ( sky.readbacks > 0 ) {
 
 			if ( performance.now() - start > 10000 ) throw new Error( 'loop.step: the sky irradiance readback did not land within 10 s' );
 			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
@@ -2397,8 +2446,10 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 		// one tick of the loop at `time`, with the bookkeeping three's animation loop does around it
 		const tickAt = async ( time: number ): Promise<void> => {
 
-			// every bake this frame reads its irradiance back (no wall-clock throttle)
-			skyBake.lastDiagnosticMs = - Infinity;
+			// an explicit bake in flight holds the loop (`bakeExplicitly`), so its tick would draw
+			// nothing: wait for the bakes queued, and refuse a scene jump still on its way to one
+			await sunUpdates.catch( () => {} );
+			if ( jumpsInFlight > 0 ) throw new Error( 'loop.step: a scene jump is in flight; await establishScene before stepping' );
 			// three's Animation does this before each frame of its loop
 			if ( inspector.isRunning ) inspector.finish();
 			if ( renderer.info.autoReset ) renderer.info.reset();
@@ -2505,7 +2556,7 @@ if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { lan
 		if ( skyRetune.dirty ) {
 
 			skyRetune.dirty = false;
-			sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( () => bakeEnvironment( true ) );
+			void bakeExplicitly( true );
 
 		}
 

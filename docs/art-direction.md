@@ -115,19 +115,34 @@ art decision changes; images from elsewhere stay out of the repository.
   with deep brown shade, a stop or more under its light, and the sky over it a shade redder and
   dimmer, not a yellow-gold face under a pale sky); the deep night shows a
   moonlit grey card at a green code of about 0.1 to 0.2, and holds its exposure whatever the moon. A
-  clouded sky is metered by the view's own light: in the view of the whole island the ground shows
-  about a stop under a clear day's sunlit ground at the same hour, on a cloudy and an overcast
-  day alike, and other views lie within about half a stop of that. Under cloud the land keeps
-  about a clear day's share of the sky's light at every height, so the meadow and the groves stand
-  dark and quiet under a pale sky, with the sea the lighter of the two. That holds with the sun
-  high: the deck passes on little of a clear sky's blue, so the air stays near grey, the light lent
-  to the land a warm grey, and from 30 to 40 degrees the near air thins, so no pale veil lies over
-  a clouded noon and the crowns keep their green. The exposure lets go as the
-  sun falls under about 6 degrees, so a clouded evening comes on by degrees: dark at sunset, neither
-  black nor lit yellow, the meadow never brighter at a lower sun but where the cloud opens for a
-  moment. A sun
-  in the frame may read a little brighter than its eye-adapting exposure would show it. The night keeps the
-  moonlit island readable (see Night).
+  clouded sky is metered by the sky itself, with a key of its own: the land under a deck is lit by
+  that deck, so the sky over the meadow stands the same stops over it at every height, and the land
+  follows the sky's own fall into the evening with no step where a gap, or a sun dropping through a
+  cloud's edge, would move a meter's reading. Under a deck the land is lit by a softened key along
+  the sun and by the deck's sky light, under overcast a sky light of its own, stronger than the
+  sea's, so the meadow and the groves stand quiet under a pale sky. With the sun high the deck
+  passes on little of a clear sky's blue, so the air stays near grey, the light lent to the land a
+  warm grey, and from 30 to 40 degrees the near air thins, so no pale veil lies over a clouded noon
+  and the crowns keep their green. A cloudy sky's deck lets go as the sun falls under about 6
+  degrees: by 3 the low sun shines under the broken deck and the view's own light sets the exposure,
+  so a cloudy evening comes on by degrees: dark at sunset, neither black nor lit yellow, the meadow
+  never brighter at a lower sun but where the cloud opens for a moment. Overcast is a closed, dark
+  deck at every sun height, morning and evening alike: it does not break up at a low sun, and its
+  light leaves only with the sun's own, over the twilight. Its sky is brightest about the sun's
+  place and dim looking away, light near the sun and a dark grey away from it. The land under it is
+  lit soft: the deck's sky light from every side, lifted well over a cloudy day's, which the ground
+  keeps under the water too, so the shallows' floor keeps its light, beside a soft key along the
+  sun, tied to the deck's own light, that carries a little under half of the light on open level
+  ground and fades into the sun's own key over the last few degrees above the horizon, so the land
+  dims smoothly as the sun sets and the moon takes none of it. Its cosine still shows on the slopes, and it casts
+  the soft shadows of everything taller than the meadow, long toward a low sun, where the shaded
+  grass stands at about 0.85 of the lit; the meadow does not shade itself in it, as no light from a
+  broad part of the sky resolves the gaps between blades, so the sward's own shade is the one the
+  sky light finds under its canopy, while the bamboo, the stones and the bare ground keep their contact
+  shade. There is no clouds' shadow over the land. Through the twilight the land goes a little dark and hands
+  over to the moonlit night, the open sea darker than the land before the night lifts it. A sun in
+  the frame may read a little brighter than its eye-adapting exposure would show it. The night keeps
+  the moonlit island readable (see Night).
 - No lens effects a photograph of a real place would not have: no tilt-shift miniature blur, no
   lens flares forced into the frame.
 - The water is tidewater's physically based model with clear water a little less pure than its

@@ -81,7 +81,10 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     where its material places it as seen through the waves (swimmerSway)
 //   - the water body: Beer-Lambert absorption along that path, analytic single scattering of the sun
 //     (the same sun the floor takes: the share that enters the water and the beam's change of area,
-//     so the body dims as the sun sinks) and of the sky (Henyey-Greenstein) and a multiple-scattering
+//     so the body dims as the sun sinks) and of the sky (Henyey-Greenstein; under a deck the sky's
+//     light in the body takes the deck's gain, sky/Weather.ts DECK_SKY_GAIN by `deckLight`, as the
+//     sea's bounce onto the land does, AmbientRelight.ts `seaScale`, less what a cloudy deck's gaps
+//     take back where the key comes through, `deckSkyGap`) and a multiple-scattering
 //     backscatter boost, the sun's scattering limited in colour over a short path (`SHELF_SCATTER`),
 //     so a high sun does not lay blue over the shallows, and tinted over a long one (`OPEN_SCATTER`),
 //     where it would keep too much red and grey the open sea; the veil, the sky light the fine particles
@@ -931,7 +934,8 @@ export class Water {
 
 			// ---- the key reaching the surface: through the clouds, on every path, and by the shadow's
 			// soft read from the vertex stage, whole here (the terms' shares: SHADOW_SOFT_RADIUS)
-			const keyLight = shared.sunColor.mul( sky.cloudVisibility( wp ) ).toVar();
+			const cloudVisibility = sky.cloudVisibility( wp ).toVar();
+			const keyLight = shared.sunColor.mul( cloudVisibility ).toVar();
 			const sunLight = keyLight.mul( vKeyShadow ).toVar();
 			// the surface's metering illuminance (lighting/MeterLight.ts): the sky's upper hemisphere
 			// (its irradiance on level water over pi) and the key on level water, no reflection nor
@@ -1257,8 +1261,9 @@ export class Water {
 			const albedoMS = bb.mul( 0.33 * 4 ).div( sigA.add( bb ) ).toVar();
 			const shelfShare = exp( pathLen.mul( pathLen ).div( - SHELF_SCATTER.depth * SHELF_SCATTER.depth ) );
 			const inSun = sunIn.mul( mix( openTint, shelfTint, shelfShare ) ).mul( sigS.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) ).mul( float( 1 ).sub( exp( kSun.negate().mul( pathLen ) ) ) ).div( kSun );
-			// (under a deck the sky's light in the body takes the land's sky gain: sky/Weather.ts DECK_SKY_GAIN)
-			const inAmb = shared.skyIrradianceSource.mul( shared.deckSky ).mul( sigS.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ).mul( float( 1 ).sub( exp( kAmb.negate().mul( pathLen ) ) ) ).div( kAmb );
+			// (under a deck the sky's light in the body takes the deck's gain, sky/Weather.ts DECK_SKY_GAIN,
+			// less what a cloudy deck's gaps take back where the key comes through, `deckSkyGap`)
+			const inAmb = shared.skyIrradianceSource.mul( shared.deckSky.sub( shared.deckSkyGap.mul( cloudVisibility ) ) ).mul( sigS.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ).mul( float( 1 ).sub( exp( kAmb.negate().mul( pathLen ) ) ) ).div( kAmb );
 			// the sun through the thin crests: light entering a crest's top and back scatters out of its
 			// face over a broad lobe, down some 1.5 m of the water it crossed
 			const vH = normalize( V.xz.add( 1e-5 ) ), lH = normalize( L.xz.add( 1e-5 ) );
