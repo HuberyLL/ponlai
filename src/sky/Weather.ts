@@ -217,7 +217,8 @@ const WIND_ORDER: ReadonlyArray<WindLevel> = [ 'light', 'gentle', 'fresh', 'stro
 const WINDIER: Readonly<Record<WeatherName, number>> = { clear: 1, fair: 0.7, cloudy: 1.3, overcast: 1.6, rain: 1.6, storm: 2, fog: 0.3 };
 
 /** A weather change as it sweeps the sky: values at the start and end, and the linear
- * progress reached at the island. Places upwind are further along, places downwind behind. */
+ * progress reached at the island. Places upwind are further along, places downwind behind, by a
+ * lead that grows from nothing as the front sets out and closes as it ends (Sky.ts `frontLead`). */
 export interface WeatherFront {
 	from: Readonly<Preset>;
 	to: Readonly<Preset>;

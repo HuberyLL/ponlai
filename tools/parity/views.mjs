@@ -246,6 +246,14 @@ export const VIEWS = {
 	'weather-change': { special: true, q: 'weather=fair&preset=noon', eval: `await s.setWeather( 'rain', 6 ); s.weather.update( 3 ); await s.refreshEnvironment();`, crops: [ 'rain-streaks', 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },
 
 	// extra views
+	// the low suns whose clouds' shadow is cast over the sun's disc: 4.8 degrees, the air reading the
+	// whole disc; 5.3, halfway through the air's fade to the centre rays; 9.3, the disc fading to one
+	// ray. Their hours are chosen by what they reach, which depends on where the clouds sit at t=12:
+	// pinning `shadowRays` to 1, or `shadowAirNarrow` to its other end, must move each of them
+	// (tools/parity/README.md), and a view that stays byte identical under that does not belong here.
+	'island-cloudy-low-sun': { q: 'weather=cloudy&hour=6.36', crops: [ 'meadow-band-70m', 'rim-lip' ] },
+	'island-cloudy-sun-rising': { q: 'weather=cloudy&hour=6.4', crops: [ 'meadow-band-70m', 'rim-lip' ] },
+	'island-cloudy-disc-fade': { q: 'weather=cloudy&hour=6.7', crops: [ 'meadow-band-70m', 'rim-lip' ] },
 	// a low camera 1.4 m over the sea, just off the cliffs, looking along the coast (reflections of
 	// the cliff foot and the islanders, the island's edge against the sky)
 	'water-skim-cliffs': { q: 'weather=fair&preset=noon', eval: `const b = isl(); const a = 2.3, r = Math.max( b.rx, b.rz );
