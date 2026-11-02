@@ -217,6 +217,7 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 // before both were set (SKY_LIGHT, post/Exposure.ts), so the brightness each row gives is to be
 // measured again; the rows' shape, a lift through the afterglow easing to none by the night, holds.
 // The rows at 1, 0.5, 0, -3.3 and -5.3 degrees take the colour the rows around them gave there.
+// The rising sun keeps the gains and leaves the warm cast out (ISLAND_SKY_RISING).
 // By day a clouded sky lends the island its own light: a deck of cloud passes on little of the blue
 // of the sky's high key (SKY_LIGHT), so from 12 to 40 degrees, as that key climbs, the light lent to
 // the island is drawn most of the way to a warm grey (CLOUD_LIGHT_TINT, Weather.ts `cloudedHighSun`). The land
@@ -242,9 +243,13 @@ const ISLAND_SKY: readonly IslandRow[] = [
 	{ at: - 13.2, tint: [ 0.45, 1, 3.6 ], amount: 0.6 },
 ];
 
-// ISLAND_SKY at `elevation`: the tint (normalised to unit luminance) and its amount into `tint`;
-// returns the gain.
-function islandSky( elevation: number, tint: THREE.Vector4 ): number {
+// The rising sun's: the same gains, none of the evening's warm cast, so the land keeps its hue
+// from the night's blue into the day. Only the deep blue of the night stays.
+const ISLAND_SKY_RISING = ISLAND_SKY.map( ( row ) => ( row.at > - 13 ? { at: row.at, gain: row.gain } : row ) );
+
+// ISLAND_SKY at `elevation`, on the rising or the setting sun's side: the tint (normalised to unit
+// luminance) and its amount into `tint`; returns the gain.
+function islandSky( elevation: number, rising: boolean, tint: THREE.Vector4 ): number {
 
 	const at = ( row: IslandRow ) => {
 
@@ -252,7 +257,7 @@ function islandSky( elevation: number, tint: THREE.Vector4 ): number {
 		return [ r / l, g / l, b / l, row.amount ?? 0, row.gain ?? 1 ];
 
 	};
-	const rows = ISLAND_SKY;
+	const rows = rising ? ISLAND_SKY_RISING : ISLAND_SKY;
 	let v = at( rows[ rows.length - 1 ] );
 	if ( elevation >= rows[ 0 ].at ) v = at( rows[ 0 ] );
 	else for ( let i = 1; i < rows.length; i ++ ) if ( elevation >= rows[ i ].at ) {
@@ -1331,7 +1336,7 @@ export class Sky {
 			this.displayNightAmbient.value.setRGB( 0.001, 0.001625, 0.003125 ).multiplyScalar( illuminance * celestial.nightAmbient );
 			this.grade.exposure = celestial.exposure;
 			this.grade.daylight = celestial.daylight;
-			this.islandGain.value = islandSky( celestial.elevation, this.islandTint.value );
+			this.islandGain.value = islandSky( celestial.elevation, this.rising, this.islandTint.value );
 			const direct = weather?.directVisibility ?? 1;
 			const shade = clearShade( celestial.elevation, direct ), low = lowSun( celestial.elevation, direct );
 			const tint = this.islandTint.value;
