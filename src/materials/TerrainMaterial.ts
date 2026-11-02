@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, struct, texture, attribute, uniform, float, vec2, vec3, vec4, mat2, positionWorld, normalWorldGeometry, cameraViewMatrix,
+	Fn, If, struct, texture, attribute, uniform, float, vec2, vec3, vec4, mat2, positionWorld, normalWorldGeometry, normalGeometry, cameraViewMatrix,
 	cameraPosition, specularColor, specularColorBlended, specularF90,
 	normalize, abs, pow, sqrt, max, min, dot, sign, mix, smoothstep, clamp, fract, floor, sin, cos, exp, log2, select, dFdx, dFdy, length, varying,
 } from 'three/tsl';
@@ -1105,9 +1105,11 @@ function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, waveMaps: Wav
 	const { shared, vegetation } = ctx;
 	const topYU = ctx.topY;
 	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.85, metalness: 0 } );
-	// the island's ground's two runs under the meadow's layer (`sunShade` below, and the turf's in `cliffSurface`)
+	// the island's ground's two runs under the meadow's layer (`sunShade` below, and the turf's in
+	// `cliffSurface`), by the surface's normal's height as well (the land's chunks stand untransformed,
+	// so the geometry's normal is the world's)
 	const key = liftKeyWorld( shared.sunDir );
-	const meadowRun = GRASS_SHADOW && kind !== 'seabed' && ctx.vegetation ? varying( meadowGroundRuns( positionWorld, key ), 'vMeadowLayer' ) : null;
+	const meadowRun = GRASS_SHADOW && kind !== 'seabed' && ctx.vegetation ? varying( meadowGroundRuns( positionWorld, key, normalGeometry.y ), 'vMeadowLayer' ) : null;
 	const call = kind === 'seabed' ? seabedSurface( ctx, shared.shoreXform ) : cliffSurface( { ...ctx, meadowRun } );
 	const surf = ( call as unknown as { toVar( name: string ): SurfaceNode } ).toVar( 'surf' );
 	mat.colorNode = surf.get( 'albedo' );
@@ -1120,7 +1122,8 @@ function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, waveMaps: Wav
 	// the island's ground lies in the meadow's layer's shade on its lifted key, the sun's map's
 	// direction (Grass.ts `meadowLayerLight`, KeyLift.ts `liftKeyWorld`):
 	// the turf under the blades and the ground beside the meadow where the light comes over it (over
-	// a shadow filter's footprint) by the one law the blades take, at the run of their own ray under
+	// a shadow filter's footprint; a face under the meadow's lip whose light goes out over the sea
+	// takes none, `meadowGroundRuns`) by the one law the blades take, at the run of their own ray under
 	// the layer's top, near the eye and far alike. Its run is worked out per vertex, as the fragment
 	// stage already samples WebGPU's sixteen textures. The turf's run differs only along the rim, and
 	// which pixels are turf is known in the fragment stage alone: every pixel takes the first run here
