@@ -27,6 +27,7 @@ import { skyRayleighPhase, type Atmosphere } from './Atmosphere.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune, tuneUniform } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
+import { HazeMedium } from '../weather/HazeDepth.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -41,7 +42,11 @@ type V4 = THREE.Node<'vec4'>;
 //     from 4 to 9.2 km, cloudy's and overcast's deck under a kilometre to about 3 km, as low decks
 //     stand, so a ray to the deck crosses far less of the haze below it; the low deck reads the
 //     noise in a space of its own, finer (LOW_FREQUENCY), and a front blends the two by the skies'
-//     shares. Every reader of the shell follows its uniforms: the march, the shadow, the rain,
+//     shares. The parked weathers (rain, storm, fog) count as overcast in those shares, so they
+//     take its deck, its whole low share and the haze's end of the march: the rain's curtains hang
+//     from the deck's base, the march ends storm lightning past the haze's reach, and a bolt keeps
+//     the base it was described under through a front. Every reader of the shell follows its
+//     uniforms: the march, the shadow, the rain,
 //     the dome's haze over the clouds (Sky.ts), the haze's shafts (VolumetricHaze.ts) and the
 //     lightning (Lightning.ts). The form is the weather's too (`setForm`, Sky.ts CLOUD_FORM_BY_SKY):
 //     the soft margin, the erosion's strength at the top and the height over which a base needs
@@ -85,7 +90,14 @@ type V4 = THREE.Node<'vec4'>;
 //     share of it takes a gain (`cirrusNightAmbient`: `sky.night.cirrusAmbient`, 0 to 2, 1 as
 //     before). The cumulus' march takes the ambient ungained.
 //   - march: coarse steps until cloud is found, then fine ones; whole cells of the weather map
-//     that cannot reach the ray's height are skipped.
+//     that cannot reach the ray's height are skipped. Under a whole low deck the view's march ends
+//     where the haze lets 1/500 through (`haze`, the haze's medium: weather/HazeDepth.ts
+//     `hazeReach`), since the dome fogs that deck at the march's own depth: through a broken
+//     deck's gaps toward the horizon the rest of the shell lies tens of kilometres deep in haze.
+//     Ended there, the view's march at the cloudy noon horizon took about 4 % less GPU time (most
+//     rays close inside the deck first) and the frame moved one level at most
+//     (`debugFlags.cloudHazeEnd = false` marches the whole shell). The panorama keeps the whole
+//     shell: its clouds are fogged at one distance from the sea, and below the horizon read unfogged.
 // The view is ray marched in screen space, one pixel of every 4 x 4 block per frame, accumulated
 // with reprojection (camera motion and wind drift), clamped to this frame's neighbourhood and
 // upsampled bicubically. Beside the colour the view accumulates the cumulus's opacity-weighted
@@ -533,6 +545,9 @@ export class Clouds {
 	readonly edge = uniform( EDGE );
 	readonly erosionPeak = uniform( EROSION_PEAK );
 	readonly baseWeatherEnd = uniform( BASE_WEATHER_END );
+	// The haze's medium, which the haze writes (VolumetricHaze.ts `prepareMedium`, through
+	// Pipeline.ts): where it closes, the low deck's view march ends (`makeMarch`).
+	readonly haze = new HazeMedium();
 	// The shell's mean height (km), where the clouds read the atmosphere's in-scatter table.
 	private readonly cloudHeightKm = uniform( ( SHELL_BOTTOM + SHELL_THICKNESS / 2 ) / 1000 );
 	// The far ramp of the cover (HORIZON_START, its end), nearer in the low deck's space.
@@ -885,11 +900,23 @@ export class Clouds {
 		const heightAlongRay = ( t: F, rd: V3 ) => this.camY.add( rd.y.mul( t ) ).add( dot( rd.xz, rd.xz ).mul( t ).mul( t ).div( 2 * EARTH_RADIUS ) ).sub( this.shellBottom ).div( this.shellThickness );
 
 		// Ray march the shell along rd (camera relative); `flash`
-		// adds the lightning inside the cloud.
-		const makeMarch = ( maxSteps: number, pixelCone: F, stepCone: F, flash = false ) => ( rd: V3, jitter: F ) => {
+		// adds the lightning inside the cloud; `hazeEnd` ends a low deck's march where the haze closes.
+		const makeMarch = ( maxSteps: number, pixelCone: F, stepCone: F, flash = false, hazeEnd = false ) => ( rd: V3, jitter: F ) => {
 
 			const start = layerDistance( this.camY, rd.y, this.shellBottom ).toVar();
 			const end = min( layerDistance( this.camY, rd.y, this.shellBottom.add( this.shellThickness ) ), FAR ).toVar();
+			// Under a whole low deck the dome fogs the view's clouds at the march's own depth (Sky.ts
+			// `domeColour`), so past the distance at which the haze lets 1/500 through, 8-bit's floor,
+			// nothing the march would find shows: it ends there. Through a broken deck's gaps near the
+			// horizon that spares most of the march. The high cumulus and a front toward them are
+			// fogged at the shell's middle instead, which can lie nearer than their clouds, and the
+			// panorama at its own distance from the sea (Sky.ts `bakeColour`): those march the whole
+			// shell.
+			if ( hazeEnd ) If( this.lowShare.greaterThan( 0.999 ), () => {
+
+				end.assign( min( end, this.haze.reach( rd.y, this.camY, max( start, 100 ), end ) ) );
+
+			} );
 			const color = vec3( 0 ).toVar(), flashColor = vec3( 0 ).toVar();
 			// the march's light factors: direct (phase included) and ambient, each per unit of its colour
 			const directLight = float( 0 ).toVar(), ambientLight = float( 0 ).toVar();
@@ -1377,7 +1404,7 @@ export class Clouds {
 		// The panorama refreshes a fraction of its texels per frame and feeds bakes that cross-fade
 		// over seconds, too slow for a flash: only the view carries the lightning in its march;
 		// reflections take it from `flashAt`.
-		this.marchView = makeMarch( viewSteps, pixelCone, this.cam.tan.y.mul( 2 ).div( this.viewSize.y ), true );
+		this.marchView = makeMarch( viewSteps, pixelCone, this.cam.tan.y.mul( 2 ).div( this.viewSize.y ), true, true );
 		this.highAt = highAt;
 		this.rainAt = rainAt;
 

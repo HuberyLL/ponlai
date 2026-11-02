@@ -111,6 +111,9 @@
 // volumes as they last were).
 // `fallingLeaves = false` skips the falling leaves' pass and hides them (weather/FallingLeaves.ts),
 // read every frame, so --toggle "s.flags.fallingLeaves = on" times them.
+// `cloudHazeEnd = false` marches the low deck's view through its whole shell instead of ending where
+// the haze closes (sky/Clouds.ts `makeMarch`; the haze's copy of its medium, weather/VolumetricHaze.ts
+// `prepareMedium`), read every frame, so --toggle "s.flags.cloudHazeEnd = !on" times the end.
 export interface MotionSourceFlags { camera?: boolean; object?: boolean; skin?: boolean; wind?: boolean; sea?: boolean; foam?: boolean }
 export const debugFlags: Record<string, boolean | number | string | MotionSourceFlags | undefined> & { mv: MotionSourceFlags } = { mv: {} };
 

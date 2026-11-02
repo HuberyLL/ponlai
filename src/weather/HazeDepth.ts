@@ -1,13 +1,18 @@
-// The haze's medium in closed form, apart from the haze (VolumetricHaze.ts, whose header describes
-// the medium), so that a reader built before the haze can share it:
+// The haze's medium in closed form, shared by the haze (VolumetricHaze.ts, whose header describes
+// the medium) and the clouds' march (sky/Clouds.ts, which ends where the haze closes):
 //   - `meanExtinction`: the medium's mean density over a span of heights, so an optical depth is a
 //     ray's length times it;
-//   - `nearFactor` and `nearLength`: the weather's thinner near haze on a ray's depth.
+//   - `nearFactor` and `nearLength`: the weather's thinner near haze on a ray's depth;
+//   - `hazeReach`: the distance along a ray at which the haze lets less than 1/500 through
+//     (`REACH_DEPTH`), 8-bit's floor: past it nothing on the ray can show through the haze;
+//   - `HazeMedium`: the medium's uniforms a reader outside the haze holds (the clouds build their
+//     march before the haze exists), which the haze writes whenever it sets its own
+//     (VolumetricHaze.ts `prepareMedium`).
 // Rays here are straight and climb with the direction's y alone, as the haze's surfaces take them
 // (VolumetricHaze.ts `skyHaze`).
 
-import type * as THREE from 'three/webgpu';
-import { Fn, exp, float, max, min, select, smoothstep, sqrt } from 'three/tsl';
+import * as THREE from 'three/webgpu';
+import { Fn, If, Loop, exp, float, log, max, min, select, smoothstep, sqrt, uniform } from 'three/tsl';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -58,3 +63,61 @@ export const nearFactor = Fn( ( [ t, near ]: [ F, V3 ] ) => {
 // mean density over the heights it spans.
 export const nearLength = ( t: F, near: V3 ): F => t.mul( nearFactor( t, near ) );
 
+// The optical depth at which a ray lets 1/500 through.
+export const REACH_DEPTH = Math.log( 500 );
+
+// The distance (m) along a ray from height y (m) climbing dy a metre at which the medium's optical
+// depth, times `sigma` (the least extinguished band's), reaches REACH_DEPTH, searched between t0 and
+// t1: t1 where it stays under it there, and about t0 where it is past it already. The depth grows along the ray, so a
+// bisection in the log of the distance finds it, 12 halvings to under 0.2 % of the distance between
+// 100 m and 250 km.
+export const hazeReach = Fn( ( [ dy, y, layer, ground, near, sigma, t0, t1 ]: [ F, F, V2, V3, V3, F, F, F ] ) => {
+
+	const depth = ( t: F ) => nearLength( t, near ).mul( meanExtinction( y, y.add( dy.mul( t ) ), layer, ground ) ).mul( sigma );
+	const reach = float( t1 ).toVar();
+	If( depth( t1 ).greaterThan( REACH_DEPTH ), () => {
+
+		const low = log( max( t0, 1 ) ).toVar(), high = log( max( t1, 1 ) ).toVar();
+		Loop( 12, () => {
+
+			const middle = low.add( high ).mul( 0.5 ).toVar();
+			If( depth( exp( middle ) ).greaterThan( REACH_DEPTH ), () => {
+
+				high.assign( middle );
+
+			} ).Else( () => {
+
+				low.assign( middle );
+
+			} );
+
+		} );
+		reach.assign( exp( high ) );
+
+	} );
+	return reach;
+
+} ).setLayout( { name: 'hazeReach', type: 'float', inputs: [
+	{ name: 'dy', type: 'float' }, { name: 'y', type: 'float' }, { name: 'layer', type: 'vec2' }, { name: 'ground', type: 'vec3' },
+	{ name: 'near', type: 'vec3' }, { name: 'sigma', type: 'float' }, { name: 't0', type: 'float' }, { name: 't1', type: 'float' },
+] } );
+
+/** The haze's medium as uniforms of a reader's own, set from the haze's (VolumetricHaze.ts
+ * `prepareMedium`), and the reach along a ray in it. */
+export class HazeMedium {
+
+	readonly layer = uniform( new THREE.Vector2( 0, 1400 ) );
+	readonly ground = uniform( new THREE.Vector3( 0, 13, 50 ) );
+	readonly near = uniform( new THREE.Vector3( 1, 250, 600 ) );
+	// the least extinguished band's sigma, the last to close: 0 (no haze over the sky, or no haze
+	// yet) reaches every distance
+	readonly sigma = uniform( 0 );
+
+	/** `hazeReach` from height y (m) along a ray climbing dy a metre, searched between t0 and t1 (m). */
+	reach( dy: F, y: F, t0: F, t1: F ): F {
+
+		return hazeReach( dy, y, this.layer, this.ground, this.near, this.sigma, t0, t1 );
+
+	}
+
+}

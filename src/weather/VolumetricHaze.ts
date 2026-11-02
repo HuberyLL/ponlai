@@ -18,7 +18,7 @@ import { MIE_G, cornetteShanks, polariser, skyRayleighPhase, type Atmosphere } f
 import { bandPush, bandToDisplay, bandToDisplayColor } from '../sky/BandMatrix.ts';
 import { ISLAND_TOP } from '../world/WorldShapes.ts';
 import type { HazeKey } from './HazeKeys.ts';
-import { expShare, meanExtinction, nearFactor, nearLength } from './HazeDepth.ts';
+import { type HazeMedium, expShare, meanExtinction, nearFactor, nearLength } from './HazeDepth.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune, tuneObject, tuneUniform } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
@@ -61,7 +61,8 @@ const OVERCAST_SHARE = tuneUniform( 'haze.overcast.share', 0.85, { min: 0, max: 
 //     optical depth is a ray's length times the mean density over the heights it spans: the closed
 //     form along the ray, which holds its value on a level ray with no branch. Local variation
 //     (banks, wisps, ground fog) belongs to particles, not to the density. The closed form lives in
-//     HazeDepth.ts.
+//     HazeDepth.ts, which the clouds' march shares: `prepareMedium` writes the medium into the
+//     clouds' copy too (`cloudMedium`), and the low deck's view march ends where it closes.
 //   - the weather thins the haze near the camera (Weather.ts `nearDensity`, `nearStart`,
 //     `nearEnd`, through the haze's key): along each ray the optical depth from the camera out to
 //     t metres is f( t ) times the far medium's, f = k up to d0, a smoothstep back to 1 at d1, 1
@@ -350,7 +351,8 @@ const BAKE_SETTINGS = [ 'near', 'far', 'growth', 'fogExtinction', 'albedo', 'ani
 // expShare on each band
 const expShare3 = ( x: V3 ): V3 => vec3( expShare( x.x ), expShare( x.y ), expShare( x.z ) );
 
-// The medium's closed form (`meanExtinction`, `nearFactor`, `nearLength`) is HazeDepth.ts's.
+// The medium's closed form (`meanExtinction`, `nearFactor`, `nearLength`) is HazeDepth.ts's, which the
+// clouds' march shares to end where the haze closes.
 
 // Interleaved gradient noise (Jimenez, "Next Generation Post Processing in Call of Duty: Advanced
 // Warfare", SIGGRAPH 2014): a fixed offset per froxel, so the frames' common jitter sequence lands
@@ -444,6 +446,9 @@ export class VolumetricHaze {
 	private readonly skyDepth = uniform( 0 );
 	// the near haze: its density factor and where it eases back to 1 ( k, d0, d1 in m: `nearLength` )
 	private readonly near = uniform( new THREE.Vector3( 1, 250, 600 ) );
+	/** A copy of the medium a reader built before the haze holds (the clouds' `haze`, which ends
+	 * the low deck's march where this medium closes: Clouds.ts `makeMarch`), written with it. */
+	cloudMedium: HazeMedium | null = null;
 	// the light's settings: albedo, anisotropy, the gain, the horizon's half-width (radians)
 	private readonly lightSettings = uniform( new THREE.Vector4( 1, 0.76, 1, 0.05 ) );
 	// the light's colours toward their luminance (0 as given, 1 grey)
@@ -1159,6 +1164,18 @@ export class VolumetricHaze {
 		this.layer.value.set( rho * look.aerosolShare, look.aerosolHeight );
 		this.skyDepth.value = look.skyDepth / 1000 / Math.max( look.sigma.y, 1e-6 );
 		this.near.value.set( S.nearHaze ? look.nearDensity : 1, look.nearStart, Math.max( look.nearEnd, look.nearStart ) );
+		const copy = this.cloudMedium;
+		if ( copy ) {
+
+			copy.layer.value.copy( this.layer.value );
+			copy.ground.value.copy( this.ground.value );
+			copy.near.value.copy( this.near.value );
+			// the band that closes last; none without the haze over the sky, which leaves the clouds
+			// unfogged (nor with debugFlags.cloudHazeEnd = false, the whole march's A/B)
+			const sigma = this.sigma.value;
+			copy.sigma.value = S.sky && debugFlags.cloudHazeEnd !== false ? Math.min( sigma.x, sigma.y, sigma.z ) : 0;
+
+		}
 		this.desaturate.value = look.desaturate;
 		this.lightSettings.value.set( S.albedo, S.anisotropy, S.gain * look.gain, THREE.MathUtils.degToRad( S.horizon ) );
 		// the light's colours per body: its illuminance the sky is drawn with (Atmosphere
