@@ -7,9 +7,13 @@
 // hold at every sun, or keys by the elevation of their own, read as the day's are, where a flat set
 // would leave the land as bright at sunset as in the afternoon. Each look sets its own keys: the
 // shade's contrast holds one value from the noon down to a 9 degree sun, the exposure and the local
-// tone move between 40, 12 and 3 degrees. Read on the CPU once a frame into uniforms, so a value is
-// a function of the clock and the weather alone and a paused frame repeats. A key may carry a `name` (`golden`), which names its values as
-// tunables (debug/Tune.ts `tuneKeys`: `<prefix>.<value>@<name>`, else `@day<i>`, `@cloudy<i>`).
+// tone move between 40, 12 and 3 degrees. A look whose morning is not its evening has keys of its own
+// for the rising sun (`rising`), which take the place of the clear day's while the sun climbs, and
+// share the day's key objects from where the two sides of the day are one, so a key holds one value
+// there and the change of side at noon moves nothing. Read on the CPU once a frame into uniforms, so a
+// value is a function of the clock and the weather alone and a paused frame repeats. A key may carry
+// a `name` (`golden`), which names its values as tunables (debug/Tune.ts `tuneKeys`:
+// `<prefix>.<value>@<name>`, else `@day<i>`, `@cloudy<i>`, `@rising<i>`).
 
 export type KeyValues = Record<string, number>;
 export interface DayKey<T extends KeyValues> {
@@ -20,6 +24,8 @@ export interface DayKey<T extends KeyValues> {
 export interface DayKeys<T extends KeyValues> {
 	// ascending by elevation
 	readonly day: readonly DayKey<T>[];
+	// the clear day's while the sun rises, ascending by elevation (none: the day's)
+	readonly rising?: readonly DayKey<T>[];
 	// a cloudy or overcast day's: one set at every sun, or keys ascending by elevation (none: the
 	// clear day's)
 	readonly cloudy?: T | readonly DayKey<T>[];
@@ -47,10 +53,11 @@ function along<T extends KeyValues>( keys: readonly DayKey<T>[], elevation: numb
 }
 
 /** `keys`' values at the sun's `elevation` (degrees), the night's weight `night` and the weather's
- * cloud `cloud`, into `out`. */
-export function keyed<T extends KeyValues>( keys: DayKeys<T>, elevation: number, night: number, out: T, cloud = 0 ): T {
+ * cloud `cloud`, into `out`, the morning's where the sun is `rising` and the look has one. */
+export function keyed<T extends KeyValues>( keys: DayKeys<T>, elevation: number, night: number, out: T, cloud = 0, rising = false ): T {
 
-	const { day, cloudy } = keys;
+	const { cloudy } = keys;
+	const day = rising && keys.rising ? keys.rising : keys.day;
 	const o = out as KeyValues;
 	for ( const k in day[ 0 ].values ) {
 

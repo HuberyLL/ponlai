@@ -158,8 +158,12 @@ export function tuneUniform( name: string, value: number, options: TuneOptions =
 export function tuneKeys<T extends KeyValues>( prefix: string, keys: DayKeys<T>, options: Partial<Record<keyof T, TuneOptions>> = {} ): DayKeys<T> {
 
 	if ( ! TUNE_ON ) return keys;
+	// (a key the table's sides share is one key object, so one tunable: its values wrap once)
+	const wrapped = new Map<T, T>();
 	const wrap = ( values: T, key: string ): T => {
 
+		const held = wrapped.get( values );
+		if ( held ) return held;
 		const out = {} as KeyValues;
 		for ( const k of Object.keys( values ) ) {
 
@@ -168,12 +172,14 @@ export function tuneKeys<T extends KeyValues>( prefix: string, keys: DayKeys<T>,
 			Object.defineProperty( out, k, { enumerable: true, get: () => entry.info.value, set: ( v: number ) => assign( entry, v ) } );
 
 		}
+		wrapped.set( values, out as T );
 		return out as T;
 
 	};
 	const along = ( list: readonly DayKey<T>[], prefix: string ) => list.map( ( d, i ) => ( { ...d, values: wrap( d.values, d.name ?? `${ prefix }${ i }` ) } ) );
 	return {
 		day: along( keys.day, 'day' ),
+		...( keys.rising ? { rising: along( keys.rising, 'rising' ) } : {} ),
 		...( keys.cloudy ? { cloudy: hasKeys( keys.cloudy ) ? along( keys.cloudy, 'cloudy' ) : wrap( keys.cloudy, 'cloudy' ) } : {} ),
 		night: wrap( keys.night, 'night' ),
 	};
