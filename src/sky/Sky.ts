@@ -488,7 +488,13 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 // per kept sky, the cloud's form (Clouds.ts CLOUD_FORM, `setForm`): its soft margin, its
 // erosion's strength at the top (a share of the high cumulus') and the height over which its base
 // needs richer weather, blended by the weather's shares like the shell. Clear and fair keep the
-// high cumulus' form. Tunable on debug pages: `sky.clouds.edge|erosion|baseEnd@<cloudy|overcast>`.
+// high cumulus' form, and so do cloudy and overcast, as measured on the horizon views: the base's
+// height from 0.1 to 0.3 of the shell moves the overcast masses' height on screen from 1.6 to 1.2
+// degrees (lower as it grows) and their edges little; under cloudy a wider margin (0.1 to 0.2) or a
+// weaker erosion (0.4 to 1) only softens edges whose gradient the haze's veil over the deck
+// already holds low (p99 0.071 to 0.049-0.064), and half the margin with 1.2 times the erosion
+// sharpens them to 0.086 only. Tunable on debug pages:
+// `sky.clouds.edge|erosion|baseEnd@<cloudy|overcast>`.
 const CLOUD_FORM_BY_SKY = KEPT_SKIES.map( () => ( { ...CLOUD_FORM } ) );
 for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 
