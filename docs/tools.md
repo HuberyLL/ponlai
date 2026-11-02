@@ -649,7 +649,11 @@ change, bounding box, `--heat` map), `crop` (boxes or a capture's named anchors,
 (mean RGB, luma, percentiles per image or region; `--oklab` adds the Oklab lightness, chroma and
 hue medians, `--split` the means of the pixels under and over the region's own median L, a crown's dark
 and lit halves, and of its darkest 5 % and brightest 10 %, in Oklab and linear RGB, `--cover` the
-share of a mask capture's pixels painted flat red, as `grassMask:true` paints the blades) and `flicker` (a clip's consecutive whole
+share of a mask capture's pixels painted flat red, as `grassMask:true` paints the blades; `--deck`
+reads a cloud deck's structure on named sky regions instead, the horizon views' `h` and the view
+toward the sun's `sun`: the spread of its blocks of a degree, its structure about a broad trend, the
+std per band of size, the edges' gradient, the masses' size, and with `--deck-rows` the horizon's
+rows, the low sky against the sky over it and the far sea's fall a degree) and `flicker` (a clip's consecutive whole
 frames, capture-clip's `--full`: the temporal flicker per region, mean frame difference, temporal
 high-pass, one-frame flashes and a `--map` of where they fall) and `radial` (the median colour,
 luma and linear luma ring by ring around a point, such as the sun's place an `--eval-ready` step
@@ -1379,6 +1383,10 @@ what these do not give (automation, A/B statistics, pass names).
 What colour a surface shows on screen, by kind and by light (sunlit rock, shaded grass, the sky,
 the darkest land), the same cells before and after a change, or a box with its dark and lit halves:
 `tools/colour-rows.mjs` (Captures), not a hand-placed box over mixed light.
+
+How much structure a cloud deck shows on screen (its contrast, masses, the edges' hardness, the
+low band and the far sea's fall at the horizon): `uv run tools/img.py stats --deck` on the horizon
+views' captures, not a script of one's own.
 
 Whether a grown page draws what a fresh load of its land draws (views, chunk hashes, the rain
 map, the camera's ground, the ambient probes, pipelines and memory across swaps): `tools/verify-growth-swap.mjs`, not a
