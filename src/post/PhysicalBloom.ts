@@ -79,8 +79,12 @@ type V4 = THREE.Node<'vec4'>;
 // stay under its thresholds, and what glows glows as on a clear day: the sea's glints, a sun seen
 // through a gap), and every key's sky cap is the high sun's. By a high sun the land's threshold
 // sits over three stops above mid grey, so the lit ground stays out; in the golden hour and by night near mid grey, so a low sun's
-// whites and the sea's glitter glow, with a wider knee than the day's in the golden hour and
-// about the day's by night. The weights carry the strength: about 2.3 by a high sun; 1.25 in the
+// whites glow, with a wider knee than the day's in the golden hour and about the day's by night. By
+// night the land's share is small by choice (0.05, falling from the low sun's 0.2 as the night
+// comes in): at a threshold under the moon's glints a large share spread them over the wide levels
+// into a pale pedestal under the whole field, and the water between the glints stood lit. The sky
+// keeps its own share, so the moon's disc and the bright clouds glow as before.
+// The weights carry the strength: about 2.3 by a high sun; 1.25 in the
 // golden hour and by night, whose thresholds let far more in, toward the wide levels (a broad
 // soft glow about the moon and bright clouds). The high sun's weights rise and fall from level to
 // level, less at 1/16 and 1/128 than at the levels either side, which sets the halo's outer rings
@@ -126,7 +130,7 @@ export const BLOOM: DayKeys<BloomKey> = tuneKeys( 'post.bloom', {
 	],
 	cloudy: HIGH_SUN,
 	night: {
-		threshold: 0.18, knee: 0.6, share: 0.5, cap: 1,
+		threshold: 0.18, knee: 0.6, share: 0.05, cap: 1,
 		skyThreshold: 1, skyKnee: 0.4, skyShare: 0.5, skyCap: HIGH_SUN.skyCap,
 		...weights( 1.25, [ 0, 0.13, 0.34, 0.44, 0.58, 0.78, 0.94, 0.58 ] ),
 	},

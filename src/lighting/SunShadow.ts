@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { Fn, uniform, uniformArray, texture, vec4, int, float, clamp, floor, dot, max, select, mix, positionLocal, positionView, normalWorld, modelWorldMatrixInverse } from 'three/tsl';
 import { compileByRendering, compileLatentInto } from '../post/graph/Compile.ts';
-import { solarSteppedShadowVisibility, solarVolumeVisibility, solarPCFVisibility } from './SolarShadow.ts';
+import { solarSteppedShadowVisibility, solarVolumeVisibility, solarPCFVisibility, solarDiscVisibility } from './SolarShadow.ts';
 import { screenShadowAt } from '../post/MeadowShade.ts';
 import type { CasterColumns } from '../world/ChunkDerived.ts';
 import { shadowWindOn } from '../world/VegetationShadow.ts';
@@ -72,7 +72,8 @@ type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: 
 //
 // A receiver of the filter looks its shadow up a normal offset away (`offsetCoordinate`), in the
 // current map's texels and growing with view depth (NORMAL_OFFSET), the normal turned toward the
-// light on vegetation; three's own normal bias is 0. The water keeps a fixed offset of its own.
+// light on vegetation; three's own normal bias is 0. The sea reads the map apart from this path, in
+// its vertex stage over a disc metres wide (`discVisibility`, Water.ts), with a fixed offset of its own.
 //
 // The map's first redraw builds every caster's pass into it, and three builds the map itself only
 // with the first receiver, the throwaway one built just before the loop (graph/ThreePatches.ts
@@ -179,10 +180,10 @@ export class SunShadow {
 	// the direction the map is drawn along (world, toward the light), for the normal offset
 	readonly direction = uniform( new THREE.Vector3( 0, 1, 0 ) );
 	private readonly sun: THREE.DirectionalLight;
-	// Both maps share one array texture (previous, current), so a receiver binds one texture as
-	// before: the water already binds as many as WebGPU guarantees. three's own map is only the
-	// raster each step is drawn into. A render target owns the array, though nothing draws into
-	// it: a depth texture without one is taken for a multisampled attachment of the main pass.
+	// Both maps share one array texture (previous, current), so a receiver binds one texture.
+	// three's own map is only the raster each step is drawn into. A render target owns the array,
+	// though nothing draws into it: a depth texture without one is taken for a multisampled
+	// attachment of the main pass.
 	private readonly maps: THREE.RenderTarget;
 	private readonly depth: THREE.TextureNode;
 	private readonly casters = new THREE.Box3();
@@ -315,18 +316,19 @@ export class SunShadow {
 
 	}
 
-	/** The water's visibility (tidewater's: three's five-tap PCF, solarPCFVisibility) from its
-	 * coordinate in the current map, both stepped maps cross-faded. */
-	pcfVisibility( coordinate: V3 ): F {
+	/** A soft visibility over a disc of a level surface, in the vertex stage (the sea's,
+	 * solarDiscVisibility): `coordinate` is the disc's centre in the current map, `across` and `along`
+	 * its radii there. It reads the current map alone: the swaying redraw leaves no previous map, so
+	 * `weight` is 1 on every frame and that layer would be gathers for nothing. Under
+	 * `flags.shadowWind = false`, a debug flag, the sea's shadow steps with the redraws. */
+	discVisibility( coordinate: V3, across: V3, along: V3 ): F {
 
-		return mix(
-			solarPCFVisibility( this.depth, this.previousCoordinateNode( coordinate ), this.mapSize, this.weight.lessThan( 1 ), PREVIOUS ),
-			solarPCFVisibility( this.depth, coordinate, this.mapSize, this.ready.greaterThan( 0 ), CURRENT ),
-			this.weight );
+		return solarDiscVisibility( this.depth, coordinate, across, along, this.ready, CURRENT );
 
 	}
 
-	/** The same from the current map alone, for a bake drawn at the map's steps (GroundBounce.ts). */
+	/** Three's five-tap PCF (solarPCFVisibility) from the current map alone, for a bake drawn at the
+	 * map's steps (GroundBounce.ts). */
 	currentPCFVisibility( coordinate: V3 ): F {
 
 		return solarPCFVisibility( this.depth, coordinate, this.mapSize, this.ready.greaterThan( 0 ), CURRENT );

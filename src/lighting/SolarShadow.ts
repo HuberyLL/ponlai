@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, uniform, texture, textureLoad, reference, float, int, vec2, vec3, vec4, ivec2, uv,
-	min, max, abs, clamp, cos, sin, dot, select, dFdx, dFdy, floor, fract, mix, smoothstep, positionWorld,
+	min, max, abs, clamp, cos, sin, dot, select, dFdx, dFdy, floor, fract, mix, smoothstep, step, positionWorld,
 	interleavedGradientNoise, vogelDiskSample, screenCoordinate,
 } from 'three/tsl';
 
@@ -185,11 +185,10 @@ export function solarVolumeVisibility( depth: THREE.Texture | THREE.TextureNode,
 
 }
 
-// three's PCFShadowFilter, which tidewater's water takes (the waves break up any penumbra detail a
-// wider filter would add): five bilinear comparisons on a Vogel disk of one texel's
-// radius, the disk turned per pixel by interleaved gradient noise (fixed per pixel, so a paused
-// frame repeats). Each comparison gathers its footprint's comparisons (solarVolumeVisibility), so
-// it runs in any control flow.
+// three's PCFShadowFilter: five bilinear comparisons on a Vogel disk of one texel's radius, the disk
+// turned per pixel by interleaved gradient noise (fixed per pixel, so a paused frame repeats). Each
+// comparison gathers its footprint's comparisons (solarVolumeVisibility), so it runs in any control
+// flow.
 export function solarPCFVisibility( depth: THREE.Texture | THREE.TextureNode, coordinate: V3, mapSize: V2, active?: B, layer?: number ): F {
 
 	return Fn( () => {
@@ -207,6 +206,43 @@ export function solarPCFVisibility( depth: THREE.Texture | THREE.TextureNode, co
 		return sum.div( 5 );
 
 	} )();
+
+}
+
+// A soft read over a disc of the receiver's surface, metres wide, for the vertex stage: DISC_TAPS
+// gathers on a Vogel spiral at fixed angles, so every vertex takes the same disc and a still scene
+// repeats, each gather's four comparisons meaned (at this width a bilinear weight is nothing). A
+// point outside the map or the map's depth, or before the first map (`ready` 0), is lit: the far sea
+// lies beyond the map's depth range, where the comparison would read shadow and move the meter.
+// The bounds are the disc's, not each tap's: the map's rim is empty, so a tap past it reads lit.
+// Sixteen gathers, each some 8 cm wide, about 1.3 m apart: at eight, 1.9 m apart, the taps landed on
+// the leaves' dapple as noise, and the sea's long thin grid triangles combed it into streaks (the
+// streaks' peak to peak .025 of L at eight, .011 at sixteen and at thirty-two).
+// `across` and `along` are the disc's radii in the map's coordinate. Plain nodes on purpose, with
+// step() and max() for the bounds: an Fn or an If here, in the water's vertex path, comes out of the
+// r186 builder with unresolved uniform names (the shadow material, the vertex module).
+const DISC_TAPS = 16, GOLDEN_ANGLE = 2.39996323;
+const DISC = Array.from( { length: DISC_TAPS }, ( _, i ) => {
+
+	const radius = Math.sqrt( ( i + 0.5 ) / DISC_TAPS ), angle = i * GOLDEN_ANGLE;
+	return [ radius * Math.cos( angle ), radius * Math.sin( angle ) ];
+
+} );
+
+export function solarDiscVisibility( depth: THREE.Texture | THREE.TextureNode, coordinate: V3, across: V3, along: V3, ready: F, layer?: number ): F {
+
+	const sc = coordinate.toVar();
+	const within = ( x: F ) => step( 0, x ).mul( step( x, 1 ) );
+	const inside = within( sc.x ).mul( within( sc.y ) ).mul( within( sc.z ) ).mul( step( 0.5, ready ) );
+	let sum: F = float( 0 );
+	for ( const [ u, v ] of DISC ) {
+
+		const at = sc.add( across.mul( u ) ).add( along.mul( v ) ).toVar();
+		const taps = inLayer( texture( depth, at.xy ), layer ).gather().compare( at.z ) as unknown as THREE.Node<'vec4'>;
+		sum = sum.add( dot( taps, vec4( 0.25 ) ) );
+
+	}
+	return max( sum.div( DISC_TAPS ), float( 1 ).sub( inside ) );
 
 }
 

@@ -44,11 +44,13 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //   - the sea's large-scale detail in world space (SeaDetail): gusts roughen the short waves the
 //     pixel cannot resolve and the near ripples, slicks smooth them, gusts and windrows add whitecaps;
 //     around the island the gusts are the meadow's, read in the vertex stage
-//   - the sun reaching the surface (`sunLight`): the key light through the sun shadow's maps (as
-//     tidewater's water reads its own: three's five-tap PCF at the surface point, the normal bias
-//     straight up) and the clouds; the water body and the foam take this one light, and so does
-//     the glint, by day: the moon's glint is grey (`keyChroma`), so its path on the sea stays pale
-//     rather than a sheet of the moon's saturated blue, which the water body keeps
+//   - the key reaching the surface: the sun or the moon through the clouds, which every term takes
+//     whole, and through the sun shadow's maps, read once, in the vertex stage, over a disc some
+//     metres wide (`vKeyShadow`, SunShadow `discVisibility`), which each term takes by what it is
+//     (the constants at `SHADOW_SOFT_RADIUS`): the glint, the meter and a storm's foam whole
+//     (`sunLight`), the foam raised (`foamLight`), the water body in part (`bodyLight`), and the
+//     floor keeps its own sharp shadow; the moon's glint is grey (`keyChroma`), so its path on the
+//     sea stays pale rather than a sheet of the moon's saturated blue, which the water body keeps
 //   - exact dielectric Fresnel, its mean over the slopes no pixel resolves on the distant sea (a
 //     mirror's grazing reflectance is too much for a sheet of small facets turned every way), which
 //     scales the pixel's own Fresnel, so the waves the pixel does resolve keep their relief; the
@@ -58,10 +60,12 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     the sun up, its level under cloud); both read the sea's slopes before the waves' damping, so a lee stands level with the sea round it, never a pale tongue
 //     of a mirror's reflectance; the screen-space reflection of the cliffs and the islanders behind
 //     tidewater's gate (rays near the horizon, reflectance over 0.05)
-//   - the sun's specular: GGX of the base roughness and the slopes the pixel cannot resolve (Cox-
-//     Munk's mean square slope for the wind, the share finer than the pixel), under a soft ceiling
-//     that falls as the sun climbs (`GLINT_KNEE`), so a high sun's lobe does not blow whole swells
-//     white from above and a low sun keeps its road on the water; the moon's glint has none
+//   - the key's specular: the sun's GGX of the base roughness and the slopes the pixel cannot resolve
+//     (Cox-Munk's mean square slope for the wind, the share finer than the pixel), under a soft
+//     ceiling that falls as the sun climbs (`GLINT_KNEE`), so a high sun's lobe does not blow whole
+//     swells white from above and a low sun keeps its road on the water; the moon's, a Gaussian lobe
+//     without GGX's tail, of a smaller share of those slopes, under a fixed ceiling (`MOON_KNEE`), so
+//     its field stands broken on the dark sea
 //   - refraction: the refracted view ray (through the surface without the near ripples) followed to
 //     the floor's height field, its end projected
 //     into the refraction pass's image of the world under the sea (Refraction.ts, through its wider
@@ -98,8 +102,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //
 // Limits to keep in mind:
 // - WebGPU guarantees 16 sampled textures per stage (a texture past them fails pipeline creation),
-//   and the fragment stage samples 15: the FFT's fields are array textures, a layer per cascade,
-//   the sun's two shadow steps share one array texture, and the storm foam is a storage buffer.
+//   and the fragment stage samples 14: the FFT's fields are array textures, a layer per cascade, and
+//   the storm foam is a storage buffer. The sun's two shadow steps, one array texture, bind in the
+//   vertex stage.
 // - The reflection only finds what lies inside `reflectionBounds` (see below): anything opaque
 //   placed off the island or above 3 m (REFLECTOR_HEIGHT; a tree, a boat, a hut, a mast) must grow
 //   that box through `hold`, or the sea will not reflect it (the game's props and the plants'
@@ -187,6 +192,14 @@ const D_GGX = Fn( ( [ NdH, a2 ]: [ F, F ] ) => {
 
 } ).setLayout( { name: 'D_GGX', type: 'float', inputs: [ { name: 'NdH', type: 'float' }, { name: 'a2', type: 'float' } ] } );
 
+// the Gaussian (Beckmann) distribution of the same alpha^2 (the moon's lobe, MOON_UNRESOLVED)
+const D_Gaussian = Fn( ( [ NdH, a2 ]: [ F, F ] ) => {
+
+	const cos2 = max( NdH.mul( NdH ), 1e-6 ).toVar();
+	return exp( float( 1 ).sub( cos2 ).div( cos2.mul( a2 ) ).negate() ).div( a2.mul( cos2 ).mul( cos2 ).mul( PI ) );
+
+} ).setLayout( { name: 'D_Gaussian', type: 'float', inputs: [ { name: 'NdH', type: 'float' }, { name: 'a2', type: 'float' } ] } );
+
 // the height-correlated Smith visibility for GGX, V = G / ( 4 NdL NdV )
 const V_SmithGGX = Fn( ( [ NdL, NdV, a2 ]: [ F, F, F ] ) => {
 
@@ -222,6 +235,40 @@ export const keyChroma = uniform( 1 );
 // white. It rises with the square of the falling sun, so a low sun's road keeps its blaze. At y 0.77
 // it stands near half a sunlit white card.
 const GLINT_KNEE = 13.25;
+
+// The moon's glint. GGX's long tail is what a sun's lobe hides under the bright water body, but a moon
+// at a hundredth of its peak is still brighter than the whole moonlit sea: at the moon's height every
+// slope of the waves lies within about three alpha of the mirror, and the tail laid a lit sheet
+// between the glints. So under the moon the lobe is a Gaussian of the same alpha (Beckmann), the shape
+// the sea's near-Gaussian slopes give in any case (Cox-Munk), and between its glints the water falls
+// to the sea's own level. Narrowing GGX does not do it: the tail stays and the tops blow.
+// MOON_UNRESOLVED scales the slopes no pixel resolves in the moon's alpha alone, which sets the size
+// of the field, not the level between its glints: the part of the frame above L .6 goes about 2.5 %
+// at 1, 2.0 % at .7, 1.7 % at .5, and the field's median .57, .47, .39 with it.
+// MOON_KNEE is the moon's soft ceiling, the sun's form with a constant in place of its height: G / ( G
+// MOON_KNEE + 1 ) takes the hard top off the near-white core and leaves the broken field as it is (the
+// field's p99 .965 at 0, .907 at 1.5, .860 at 3).
+const MOON_UNRESOLVED = 0.7, MOON_KNEE = 1.5;
+
+// The key's shadow on the sea. Deep water has no surface to take a shadow on: a shadow shows there as
+// the glitter gone, a mirror's loss at the surface, and a slight, soft dimming, since light that enters
+// beside the shadow scatters in under it. The body is more than half of the lit sea, and one sharp
+// read of the map took the whole of it with a leaf's edge, as a dark stain on the water. Weakening
+// that read still left the leaves' outlines, so the softness comes first: the map is read at the
+// undisplaced grid point over a disc of SHADOW_SOFT_RADIUS metres (3 and 6 gave the same levels, and 3
+// keeps a shadow by its caster), SHADOW_LIFT metres over the sea (its offset out of the level
+// surface), and the varying's interpolation softens it on. Each term then takes the one soft value:
+// - the glint, the reactive weight, the meter and a storm's foam: whole;
+// - the foam: min( 1, FOAM_SHADOW_GAIN soft ). A tap of the disc that lands on rock or sand reads
+//   shadow, and foam stands exactly there, so the soft read alone dims the foam all along the shore;
+//   raised, the foam keeps its level there and still goes dark inside a whole shadow;
+// - the body: mix( 1, soft, share ). The share is SHADOW_BODY over deep water, where the shadow's
+//   drop follows it by about .08 of L per unit by day and .06 at night, and rises to 1 where the floor
+//   takes the light (over SHADOW_BODY_DEPTH metres of water): in the shallows the water deep inside
+//   a wide shadow stays as dark as the floor under it, which keeps its own sharp shadow.
+const SHADOW_SOFT_RADIUS = 3, SHADOW_LIFT = 0.012;
+const FOAM_SHADOW_GAIN = 2;
+const SHADOW_BODY = 0.5, SHADOW_BODY_DEPTH = [ 2, 8 ] as const;
 
 // The sky panorama's level the horizon's colour is read at (a band some 20 degrees high).
 const HORIZON_MIP = 5;
@@ -470,15 +517,8 @@ export class Water {
 		foamIntensity: uniform( 1 ),
 		foamCoverage: uniform( 1 ),
 		shoreFoam: uniform( 1 ), // the foam the waves leave at the rock (ShoreWaves)
-		shadowMatrix: uniform( new THREE.Matrix4() ),
-		shadowOn: uniform( 0 ),
 	};
 
-	private shadowBias = uniform( 0 );
-	// the level surface's normal offset into the sun's map (m): the receivers' former fixed offset,
-	// kept here since SunShadow's own follows a surface's normal and view depth
-	private shadowNormalBias = uniform( 0.012 );
-	private shadowIntensity = uniform( 1 );
 	private reflectorMin = uniform( new THREE.Vector3() );
 	private reflectorMax = uniform( new THREE.Vector3() );
 	private inputs: WaterInputs;
@@ -629,6 +669,13 @@ export class Water {
 		const vIslandGust = varying( detail.islandGust( xz ) );
 		// the surface's height over the mean sea (the waves and the rock's reflected wave): the crests
 		const vWaveH = varying( displaced.y.sub( shared.waterLevel ) );
+		// the key's soft shadow at the grid point (the constants at SHADOW_SOFT_RADIUS): the map's
+		// coordinate is an affine function of the world, so the disc's radii are its columns
+		const toMap = sunShadow.coordinate;
+		const vKeyShadow = varying( sunShadow.discVisibility(
+			toMap.mul( vec4( xz.x, shared.waterLevel.add( SHADOW_LIFT ), xz.y, 1 ) ).xyz,
+			toMap.mul( vec4( SHADOW_SOFT_RADIUS, 0, 0, 0 ) ).xyz,
+			toMap.mul( vec4( 0, 0, SHADOW_SOFT_RADIUS, 0 ) ).xyz ) );
 		const floorHeight = ( p: V2 ) => texture( seabedHeight, fieldUV( p ) ).level( float( 0 ) ).r;
 		// How much deeper the open sea is taken to be than its floor at xz (m): OPEN_DEEPENING.
 		// The depth grows as the light it lets through falls in a smoothstep (Beer-Lambert: the depth
@@ -860,17 +907,10 @@ export class Water {
 			const L = shared.sunDir;
 			const posV = cameraViewMatrix.mul( vec4( wp, 1 ) ).xyz.toVar();
 
-			// ---- the sun reaching the surface: the sun shadow's maps, read as tidewater's water reads
-			// its own (sunShadowPCF: three's five-tap PCF, the surface taken as level for the normal
-			// bias; the waves break up any penumbra detail the surfaces' wider disk would add), with
-			// the fade from the previous map (SunShadow), and the clouds
-			const sc = u.shadowMatrix.mul( vec4( wp.add( vec3( 0, this.shadowNormalBias, 0 ) ), 1 ) ).toVar();
-			const s3 = sc.xyz.div( max( sc.w, 1e-6 ) ).toVar();
-			const shadowCoord = vec3( s3.x, float( 1 ).sub( s3.y ), s3.z.add( this.shadowBias ) ).toVar();
-			const visibility = sunShadow.pcfVisibility( shadowCoord );
-			const shadow = mix( float( 1 ), visibility, this.shadowIntensity.mul( u.shadowOn ) ).toVar();
-			const cloudTransmission = sky.cloudVisibility( wp ).toVar();
-			const sunLight = shared.sunColor.mul( shadow ).mul( cloudTransmission ).toVar();
+			// ---- the key reaching the surface: through the clouds, on every path, and by the shadow's
+			// soft read from the vertex stage, whole here (the terms' shares: SHADOW_SOFT_RADIUS)
+			const keyLight = shared.sunColor.mul( sky.cloudVisibility( wp ) ).toVar();
+			const sunLight = keyLight.mul( vKeyShadow ).toVar();
 			// the surface's metering illuminance (lighting/MeterLight.ts): the sky's upper hemisphere
 			// (its irradiance on level water over pi) and the key on level water, no reflection nor
 			// light from within the water
@@ -916,7 +956,8 @@ export class Water {
 			const mss = windSpeed.mul( COX_MUNK.perWind ).add( COX_MUNK.base );
 			const unresolvedShare = sat( log2( footprint.mul( 110 / PI ) ).div( 9 ) ).toVar();
 			const unresolved = unresolvedShare.mul( rough.mul( rough ) ).toVar();
-			const alpha2 = u.roughness.mul( u.roughness ).add( mss.mul( 2 ).mul( unresolved ) ).add( foam.mul( 0.2 ) ).toVar();
+			// (the moon's alpha takes a smaller share of those slopes: MOON_UNRESOLVED)
+			const alpha2 = u.roughness.mul( u.roughness ).add( mss.mul( 2 ).mul( unresolved ).mul( mix( float( MOON_UNRESOLVED ), float( 1 ), keyChroma ) ) ).add( foam.mul( 0.2 ) ).toVar();
 			const sigmaUnresolved = sqrt( mss.mul( unresolved ) ).toVar();
 			// the mean surface's: the same share of the sea's slopes, before the waves' damping
 			const sigmaMean = sqrt( mss.mul( unresolvedShare ).mul( sea.x.mul( sea.x ) ) ).toVar();
@@ -998,15 +1039,18 @@ export class Water {
 			} );
 			refl.mulAssign( u.reflection );
 
-			// ---- the sun's specular (GGX), the shadowed sun light above
+			// ---- the key's specular: GGX under the sun, a Gaussian lobe under the moon
+			// (MOON_UNRESOLVED), the shadowed light above
 			const H = normalize( L.add( V ) );
 			const NdL = max( dot( N, L ), 0 ).toVar();
-			const spec = D_GGX( max( dot( N, H ), 0 ), alpha2 ).mul( V_SmithGGX( NdL, NdV, alpha2 ) )
+			const NdH = max( dot( N, H ), 0 ).toVar();
+			const spec = mix( D_Gaussian( NdH, alpha2 ), D_GGX( NdH, alpha2 ), keyChroma ).mul( V_SmithGGX( NdL, NdV, alpha2 ) )
 				.mul( fresnelDielectric( max( dot( V, H ), 0 ), float( IOR ) ) ).mul( NdL );
 			// (physically a glint is some 1e5 times the sky; held inside half float's range)
 			const glintLight = mix( vec3( luminance( sunLight ) ), sunLight, keyChroma ).toVar();
 			const glint = min( spec, 400 ).toVar();
-			const sunSpec = glintLight.mul( glint.div( glint.mul( L.y ).mul( L.y ).mul( GLINT_KNEE ).mul( keyChroma ).add( 1 ) ) ).toVar();
+			const knee = mix( float( MOON_KNEE ), L.y.mul( L.y ).mul( GLINT_KNEE ), keyChroma );
+			const sunSpec = glintLight.mul( glint.div( glint.mul( knee ).add( 1 ) ) ).toVar();
 
 			// ---- refraction: the refracted view ray (Snell; kept heading down where a coarse crest
 			// would turn it up) followed to the floor, two refinements on the floor's height, its end
@@ -1176,11 +1220,14 @@ export class Water {
 			// ---- the water body: Beer-Lambert absorption along the path, and the sun and the sky
 			// scattered into it analytically (single scattering, Henyey-Greenstein, and a multiple
 			// scattering backscatter boost after Gordon: R = 0.33 bb / ( a + bb ))
+			// (the body's light: its share of the shadow, SHADOW_BODY)
+			const bodyShare = mix( float( 1 ), float( SHADOW_BODY ), smoothstep( ...SHADOW_BODY_DEPTH, thickness ) );
+			const bodyLight = keyLight.mul( mix( float( 1 ), vKeyShadow, bodyShare ) ).toVar();
 			const sigA = shared.sigA, sigS = shared.sigS;
 			const sigT = sigA.add( sigS ).toVar();
 			const Ls = refract( L.negate(), vec3( 0, 1, 0 ), 1 / IOR ).negate().toVar(); // toward the sun from under the water
 			const muS = max( Ls.y, 0.1 ), muV = max( Tv.y.negate(), 0.15 );
-			const sunIn = sunLight.mul( float( 1 ).sub( fresnelDielectric( max( L.y, 0.02 ), float( IOR ) ) ) ).mul( refractedSunBeamScaleNode( L ) );
+			const sunIn = bodyLight.mul( float( 1 ).sub( fresnelDielectric( max( L.y, 0.02 ), float( IOR ) ) ) ).mul( refractedSunBeamScaleNode( L ) );
 			const kSun = sigT.mul( muV.div( muS ).add( 1 ) ).toVar();
 			const kAmb = sigT.mul( muV.div( 0.75 ).add( 1 ) ).toVar();
 			const ph = phaseHG( dot( Tv, Ls ), float( 0.86 ) ).mul( 0.7 ).add( 0.3 / ( 4 * PI ) );
@@ -1194,14 +1241,15 @@ export class Water {
 			const vH = normalize( V.xz.add( 1e-5 ) ), lH = normalize( L.xz.add( 1e-5 ) );
 			const back = pow( sat( dot( vH, lH.negate() ).mul( 0.6 ).add( 0.4 ) ), 2.5 );
 			const crest = sat( vWaveH.mul( 0.9 ).add( 0.1 ) ).mul( sat( float( 1 ).sub( N.y ).mul( 4 ) ).add( 0.25 ) );
-			const sss = sunLight.mul( exp( sigT.negate().mul( 1.5 ) ) ).mul( 0.033 ).mul( back.mul( crest ).mul( u.sss ) ).mul( smoothstep( 0, 0.25, L.y ) );
+			const sss = bodyLight.mul( exp( sigT.negate().mul( 1.5 ) ) ).mul( 0.033 ).mul( back.mul( crest ).mul( u.sss ) ).mul( smoothstep( 0, 0.25, L.y ) );
 			const veil = mix( vec3( 1 ), skyLight.div( max( lum( skyLight ), 1e-5 ) ), VEIL.chroma ).mul( vec3( ...VEIL.tint ) )
 				.mul( mix( skyLight.g, skyLight.b, VEIL.blue ) ).mul( VEIL.gain )
 				.mul( float( 1 ).sub( exp( pathLen.div( VEIL.depth ).negate() ) ) );
 			const transmitted = sceneCol.mul( exp( sigT.negate().mul( pathLen ) ) ).add( inSun ).add( inAmb ).add( veil ).add( sss );
 
 			// ---- foam: a bright diffuse scatterer (albedo 0.85) under the wrapped sun and the sky
-			const foamLit = sunLight.mul( max( dot( N, L ), 0 ).mul( 0.75 ).add( 0.25 ) ).div( PI ).add( shared.skyIrradianceSource.mul( 0.95 ) ).mul( 0.85 ).toVar();
+			const foamLight = keyLight.mul( min( vKeyShadow.mul( FOAM_SHADOW_GAIN ), 1 ) );
+			const foamLit = foamLight.mul( max( dot( N, L ), 0 ).mul( 0.75 ).add( 0.25 ) ).div( PI ).add( shared.skyIrradianceSource.mul( 0.95 ) ).mul( 0.85 ).toVar();
 			const cosMean = max( V.y, 1e-4 ).toVar();
 			const slopeMean = sqrt( cosMean.mul( cosMean ).add( sigmaMean.mul( sigmaMean ).mul( SLOPE_FRESNEL ) ) );
 			const meanFresnel = Fr.mul( fresnelDielectric( slopeMean, float( IOR ) ).div( fresnelDielectric( cosMean, float( IOR ) ) ) ).toVar();
@@ -1315,7 +1363,6 @@ export class Water {
 	// per frame, before the water draw
 	prepare( sun: THREE.DirectionalLight ): void {
 
-		const u = this.uniforms;
 		// the temporal modes' step of the clock, once per rendered frame (after Motion.ts began it)
 		if ( TEMPORAL && this.clock.frame !== motionState.frame ) {
 
@@ -1347,16 +1394,6 @@ export class Water {
 			this.checkReflectionBounds( sun.parent );
 
 		}
-		const map = sun.shadow.map as ( THREE.RenderTarget | null );
-		if ( sun.castShadow && map && map.depthTexture ) {
-
-			// the maps themselves are read through SunShadow
-			this.shadowBias.value = sun.shadow.bias;
-			this.shadowIntensity.value = sun.shadow.intensity;
-			u.shadowMatrix.value.copy( sun.shadow.matrix );
-			u.shadowOn.value = 1;
-
-		} else u.shadowOn.value = 0;
 
 	}
 
