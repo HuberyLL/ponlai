@@ -14,8 +14,8 @@ import { TemporalRest, restKey } from './TemporalRest.ts';
 // - stable: no sky bake in flight, no sky transition running (the temporal rest asks that too, and
 //   that the haze's rest has ended: main.ts `temporalFrame`);
 // - quiet: nothing that will change the frame without changing the key is pending (main.ts names
-//   them in `pending`: a periodic sky bake due, the refracted sun's map behind its light, a sun
-//   shadow redraw queued), and no render or compute pipeline is being compiled asynchronously
+//   them in `pending`: a periodic sky bake due, a periodic bake's irradiance still being read back
+//   after it has shown, the refracted sun's map behind its light, a sun shadow redraw queued), and no render or compute pipeline is being compiled asynchronously
 //   (`watchPipelines`, installed by main.ts before anything compiles, counts the device's
 //   `create*PipelineAsync` calls in flight: three skips a draw whose pipeline is not ready yet, so
 //   a frame drawn meanwhile lacks it);

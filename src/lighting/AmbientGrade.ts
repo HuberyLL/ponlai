@@ -197,6 +197,13 @@ export const ambient = {
 	sunBounce: uniform( 1 ),
 	directionality: uniform( D.directionality ),
 	aoStrength: uniform( 1 ),
+	/** The land's sky gains under a deck over the sky's bake (sky/Weather.ts `deckSkyGain`, the land's
+	 * own under overcast: AmbientRelight.ts OVERCAST_LAND), which the volume carries: the
+	 * environment's diffuse takes them where it stands in for the volume (a material built without a
+	 * receiver, which by default is the sea floor: materials/TerrainMaterial.ts; and the volume's
+	 * share under the water), so the ground under the water keeps the land's light. 1 under a clear
+	 * or fair sky. Written by AmbientRelight.ts. */
+	landSky: uniform( 1 ),
 };
 
 /** The grade's controller: the values it wrote last, and the GUI's override. */
@@ -286,7 +293,7 @@ export function useAmbientGrade( model: THREE.LightingModel, receiver: () => Amb
 			// the volume's irradiance in the environment's place (graded by the relight already),
 			// the environment's specular occluded by it (lighting/AmbientSample.ts)
 			const iblIrradiance = context.iblIrradiance, radiance = context.radiance;
-			const volume = ambientEnvironment( iblIrradiance, reads );
+			const volume = ambientEnvironment( iblIrradiance.mul( ambient.landSky ), reads );
 			context.iblIrradiance = volume.irradiance;
 			// a thin layer's light (AmbientSample.ts `thin`), for its model to read
 			context.thinIrradiance = volume.thin;
@@ -298,8 +305,13 @@ export function useAmbientGrade( model: THREE.LightingModel, receiver: () => Amb
 
 		} else {
 
+			// the environment in the volume's place, its diffuse with the land's sky gains the volume
+			// carries; its specular as in the volume's branch, without them
+			const iblIrradiance = context.iblIrradiance;
+			context.iblIrradiance = iblIrradiance.mul( ambient.landSky );
 			if ( wanted?.thin ) context.thinIrradiance = context.iblIrradiance;
 			indirectSpecular( builder );
+			context.iblIrradiance = iblIrradiance;
 			diffuse.addAssign( r.indirectDiffuse );
 
 		}

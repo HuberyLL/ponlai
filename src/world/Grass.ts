@@ -17,7 +17,7 @@ import { transmission, vegetationMaterial } from './vegetation/Material.ts';
 import { unjitteredPadded } from './vegetation/VegetationCull.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { MEADOW_SHADE, meadowShadeAt, meadowShadeFloor } from '../post/MeadowShade.ts';
+import { MEADOW_SHADE, meadowShadeAt, meadowShadeFloor, releaseSwardShade } from '../post/MeadowShade.ts';
 import { receiveScreenAO } from '../post/GTAO.ts';
 import { textureSteps } from './Upload.ts';
 import type { VegetationKind } from './vegetation/Registry.ts';
@@ -1369,7 +1369,9 @@ function grassMaterial( shared: Shared, blades: MeadowBlades, low = false ): THR
 	const shades: F[] = [];
 	if ( MEADOW_SHADE ) shades.push( max( meadowShadeAt(), meadowShadeFloor( translucency ) ) );
 	if ( GRASS_SHADOW ) shades.push( meadowLayerLight( meadowLayerDepth( positionWorld, liftKeyWorld( shared.sunDir ) ) ) );
-	if ( shades.length ) mat.userData.sunShade = shades.reduce( ( a, b ) => a.mul( b ) );
+	// under overcast's soft key both give way to the blade's own occlusion, the canopy's share of the
+	// light that its ambient takes too (post/MeadowShade.ts `swardShadeRelease`)
+	if ( shades.length ) mat.userData.sunShade = releaseSwardShade( shades.reduce( ( a, b ) => a.mul( b ) ), vN.w );
 	// `flags=grassSunMap:false`: the blades keep their own shades but read nothing from the sun's map
 	if ( debugFlags.grassSunMap === false ) mat.userData.sunVisibility = shades.length ? mat.userData.sunShade : float( 1 );
 	if ( GRASS_MASK_EXACT ) mat.outputNode = vec4( MASK_EXACT, 0, 0, 1 );
@@ -1579,7 +1581,8 @@ export function meadowGroundRuns( at: V3, key: V3 ): V2 {
 
 /** The share of the key light the meadow's layer lets through to a point whose ray toward it runs
  * `run` m under the layer's top (`meadowLayerDepth`): exp( -run / LAYER.mean ), for the blades, the
- * turf and the stones alike. */
+ * turf and the stones alike (under overcast's soft key its receivers give it over to the canopy's
+ * share: post/MeadowShade.ts `swardShadeRelease`). */
 export function meadowLayerLight( run: F ): F {
 
 	// held at 0: an interpolated run (the ground's, a varying) taken outside its triangle at a

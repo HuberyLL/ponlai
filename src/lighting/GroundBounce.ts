@@ -231,7 +231,7 @@ export class GroundBounce {
 			const L = shared.sunDir;
 			const Lh = L.xz.div( max( length( L.xz ), 1e-3 ) );
 			const selfShade = float( 1 ).sub( clamp( dot( N.xz, Lh ).negate(), 0, 1 ).mul( clamp( L.y.oneMinus(), 0, 1 ) ).mul( 0.6 ) );
-			E.assign( s.rgb.mul( shared.sunColor ).mul( this.inputs.cloud( P ) ).mul( view.mul( fade ).mul( selfShade ).mul( this.strength ).mul( SURROUND ) ) );
+			E.assign( s.rgb.mul( shared.landKey ).mul( this.inputs.cloud( P ) ).mul( view.mul( fade ).mul( selfShade ).mul( this.strength ).mul( SURROUND ) ) );
 
 		} );
 		return E;
@@ -250,7 +250,7 @@ export class GroundBounce {
 		if ( signature === this.signature ) return;
 		this.signature = signature;
 		// a face turned down receives pi times the lower half's radiance from the environment
-		const key = shared.sunColor.value;
+		const key = shared.landKey.value;
 		const per = ( radiance: number, k: number ) => Math.min( Math.PI * radiance * fill / Math.max( k, 1e-6 ), 1 );
 		this.envGround.value.set( per( sea.r, key.x ), per( sea.g, key.y ), per( sea.b, key.z ) );
 		const prev = r.getRenderTarget();

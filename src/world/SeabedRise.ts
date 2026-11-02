@@ -161,6 +161,16 @@ export class SeabedRise {
 
 	}
 
+	/** The next piece will not come (its generation failed): a snap waiting for its tiles resolves
+	 * now and leaves the floor where it is, so a scene jump that waits for it ends (main.ts
+	 * `establishScene` draws no frame until it has). */
+	abandon(): void {
+
+		this.snapping = false;
+		this.release();
+
+	}
+
 	private snapNow(): void {
 
 		this.snapping = false;

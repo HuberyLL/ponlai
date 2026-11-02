@@ -103,7 +103,7 @@ class CharacterLighting extends THREE.LightingModel {
 		const kind = this.shade.x;
 		const skin = is( kind, KIND_SKIN ), hair = is( kind, KIND_HAIR );
 		const shiny = is( kind, KIND_METAL ).add( is( kind, KIND_LEATHER ).mul( 0.25 ) );
-		const sun = this.shared.sunColor;
+		const sun = this.shared.landKey;
 		const look = characterLook;
 
 		const ndl = dot( N, L ).toVar();
@@ -179,7 +179,7 @@ class CharacterLighting extends THREE.LightingModel {
 		const fres = clamp( dot( normalView, positionViewDirection ), 0, 1 ).oneMinus();
 		const shaded = this.lit ? this.lit.oneMinus() : float( 1 );
 		const skyRim = smoothstep( 0.52, 0.78, fres ).mul( shaded ).mul( smoothstep( - 0.3, 0.5, up ) ).mul( look.skyRimGain );
-		const rimLight = sky.mul( 2.2 ).add( this.shared.sunColor.mul( 0.05 ) );
+		const rimLight = sky.mul( 2.2 ).add( this.shared.landKey.mul( 0.05 ) );
 		ctx.reflectedLight.indirectSpecular.addAssign( rimLight.mul( albedo.add( luminance( albedo ).mul( 0.5 ) ) ).mul( skyRim ).mul( ambient.skySpecular ) );
 
 	}

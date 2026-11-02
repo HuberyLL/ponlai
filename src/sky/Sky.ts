@@ -23,7 +23,7 @@ import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
 import { DAY_EXPOSURE, displayNight, moonAtDawn, skyNight, sunRising, type DayCycleSnapshot } from './DayCycle.ts';
-import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, type WeatherFront, type WeatherState } from './Weather.ts';
+import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckTakeover, type WeatherFront, type WeatherState } from './Weather.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
@@ -679,7 +679,11 @@ export class Sky {
 	solarIlluminance = new THREE.Color();
 	readonly grade = { exposure: DAY_EXPOSURE, daylight: 1, night: 0 };
 	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
-	skyIrradiance = new THREE.Color(); // E / PI over the upper hemisphere
+	// E / PI over the upper hemisphere, cross-faded between the bakes as the irradiance probe is:
+	// each bake's own, read back (an explicit bake's before it shows, a periodic one's a frame or
+	// two after its panoramas, while its environment is still being filtered: `readIrradiance`).
+	// The land's soft key under overcast follows it (main.ts `publishLighting`).
+	skyIrradiance = new THREE.Color();
 	seaColor = new THREE.Color( 0.0045, 0.0125, 0.0140 );
 	equirect: THREE.RenderTarget;
 	small: THREE.RenderTarget;
@@ -752,11 +756,8 @@ export class Sky {
 	private clearIrradianceA: THREE.TextureNode;
 	private clearIrradianceB: THREE.TextureNode;
 	private bakeVersion = 0;
-	private explicitVersion = 0;
-	private diagnosticVersion = 0;
-	private diagnosticPending = false;
-	private lastDiagnosticMs = - Infinity;
-	private liveDiagnostics = false;
+	// periodic bakes whose irradiance readback is still in flight (`readIrradiance`; `readbacks`)
+	private irradiancePending = 0;
 	private displaySunDir = uniform( new THREE.Vector3( 0, 1, 0 ) );
 	// The sky's constants texel (Pipeline.ts `skyConstants`): the mean cloud transmittance over the
 	// sun's disc (r) and the moon's (g), from `discCloudTransmittance`. The pipeline points it at
@@ -1104,6 +1105,11 @@ export class Sky {
 
 	}
 
+	/** Periodic bakes whose irradiance is still being read back: a paused page that starts one draws
+	 * frames while it is in flight, so the settled signal waits for it, and a stepped clip waits until
+	 * none is (main.ts `settleFrame`, `loop.step`). */
+	get readbacks(): number { return this.irradiancePending; }
+
 	get transitioning(): boolean { return this.transitionDuration > 0 && this.transitionElapsed < this.transitionDuration; }
 	get moonDir(): THREE.Vector3 { return this.night.moonDir.value; }
 	/** The distant sea's radiance, the environment's lower half, as the latest bake set it. */
@@ -1200,6 +1206,8 @@ export class Sky {
 	reset(): void {
 
 		if ( this.busy ) throw new Error( 'Sky.reset: a bake is in flight' );
+		// a periodic readback still in flight from before the jump lands nowhere (`readIrradiance`)
+		for ( const state of this.endpoints ) state.version = ++ this.bakeVersion;
 		this.initialized = false;
 		this.front = 0;
 		this.destination = 0;
@@ -1209,7 +1217,6 @@ export class Sky {
 		this.transitionDuration = 0;
 		this.transitionElapsed = 0;
 		this.blend.value = 0;
-		this.liveDiagnostics = false;
 		this.viewCamera = null;
 		this.viewWidth = 1;
 		this.viewHeight = 1;
@@ -1272,7 +1279,7 @@ export class Sky {
 	}
 
 	/** The sky's irradiance over pi as lent to the island (`islandIrradianceNode`) on the CPU, from
-	 * `skyIrradiance` (exact after an explicit bake, a diagnostic during a running cycle). */
+	 * `skyIrradiance`. */
 	islandSkyIrradiance( target = new THREE.Color() ): THREE.Color {
 
 		const light = this.skyIrradiance, tint = this.islandTint.value, gain = this.islandGain.value;
@@ -1442,7 +1449,9 @@ export class Sky {
 		this.displaySunDir.value.copy( this.sunDir );
 		this.displaySolarIlluminance.value.copy( this.solarIlluminance );
 		this.displayAmbientGain.value = ambientGain;
-		this.keyCloudFloor.value = weather?.cloudFloor ?? 0;
+		// the deck's floor takes over from the clouds' own under the deck (Weather.ts `deckFloor`,
+		// `deckTakeover`)
+		this.keyCloudFloor.value = THREE.MathUtils.lerp( weather?.cloudFloor ?? 0, weather?.deckFloor ?? 0, skyMix ? deckTakeover( this.elevation, cloudedShare( skyMix ), skyMix[ 3 ] ?? 0 ) : 0 );
 		this.castShadow.value = weather?.castShadow ?? 1;
 		// A front that has arrived is the sky at rest: its `from` is no longer in the sky, and the
 		// bounds that take the larger of the two would keep marching for it.
@@ -1592,7 +1601,6 @@ export class Sky {
 		const started = performance.now();
 		const version = ++ this.bakeVersion;
 		const readback = transitionSeconds === 0 || ! this.initialized;
-		if ( readback ) this.explicitVersion = version;
 		const celestial = this.celestial;
 		const weather = this.weatherState ? { ...this.weatherState } : null;
 		await this.renderer.init();
@@ -1628,7 +1636,7 @@ export class Sky {
 			}
 			bake.state.irradiance.setRGB( E[ 0 ] / Math.PI, E[ 1 ] / Math.PI, E[ 2 ] / Math.PI );
 
-		}
+		} else this.readIrradiance( bake.state, version );
 		if ( bake.environment !== null ) this.filterEnvironment( bake.environment );
 		if ( ! this.initialized ) {
 
@@ -1784,6 +1792,7 @@ export class Sky {
 		const weather = this.weatherState ? { ...this.weatherState } : null;
 		const bake = this.beginBake( ++ this.bakeVersion, false, transitionSeconds, this.celestial, weather );
 		this.renderPanoramas( bake );
+		this.readIrradiance( bake.state, bake.version );
 		this.slices = bake.environment === null ? [] : this.environmentSlices( bake.environment );
 		this.slices.push( { cost: 0, run: () => this.publishBake( bake ) } );
 		this.sliceMs = performance.now() - started;
@@ -1870,7 +1879,7 @@ export class Sky {
 	// Show a finished bake: an explicit one at once, a periodic one by cross-fading to it.
 	private publishBake( bake: Bake ): void {
 
-		const { state, readback, version, transitionSeconds } = bake;
+		const { state, transitionSeconds } = bake;
 		const r = this.renderer;
 		const previous = this.endpoints[ this.front ];
 		const displayedNext = this.initialized ? state : this.endpoints[ 1 ];
@@ -1927,10 +1936,8 @@ export class Sky {
 		this.blend.value = ! this.initialized || this.transitionDuration > 0 ? 0 : 1;
 		this.equirect = state.equirect;
 		this.initialized = true;
-		this.liveDiagnostics = ! readback;
 		this.publish( this.blend.value );
 		if ( this.transitionDuration === 0 ) this.front = this.destination;
-		if ( ! readback ) this.refreshDiagnosticIrradiance( state, version );
 
 	}
 
@@ -1958,9 +1965,7 @@ export class Sky {
 	private publish( amount: number ): void {
 
 		const a = this.endpoints[ this.front ], b = this.endpoints[ this.destination ];
-		// During a running cycle this CPU value is diagnostic only. Water and characters use
-		// irradianceNode, which blends the exact GPU integrals on the same frame as the sky.
-		if ( ! this.liveDiagnostics ) this.skyIrradiance.copy( a.irradiance ).lerp( b.irradiance, amount );
+		this.skyIrradiance.copy( a.irradiance ).lerp( b.irradiance, amount );
 		this.renderDisplayMaps();
 
 	}
@@ -1995,25 +2000,23 @@ export class Sky {
 
 	}
 
-	private refreshDiagnosticIrradiance( state: SkyEndpoint, version: number ): void {
+	// A periodic bake's irradiance, read back from its probe (one texel) into its endpoint as soon as
+	// the GPU answers, without waiting: it is asked for with the bake's panoramas and lands while the
+	// environment's filter steps still run, so normally before the bake shows; one that lands later
+	// changes the cross-fade only by the little it has run. A late answer never overwrites an
+	// endpoint a newer bake has taken.
+	private readIrradiance( state: SkyEndpoint, version: number ): void {
 
-		const now = performance.now();
-		if ( this.diagnosticPending || now - this.lastDiagnosticMs < 2000 ) return;
-		this.diagnosticPending = true;
-		this.lastDiagnosticMs = now;
+		this.irradiancePending ++;
 		void this.renderer.readRenderTargetPixelsAsync( state.irradianceMap, 0, 0, 1, 1 ).then( ( pixels ) => {
 
 			const p = pixels as Float32Array;
-			// A late readback must not overwrite an explicit preset or a reused endpoint.
-			if ( state.version === version ) state.irradiance.setRGB( p[ 0 ], p[ 1 ], p[ 2 ] );
-			if ( this.liveDiagnostics && version >= this.explicitVersion && version > this.diagnosticVersion ) {
+			if ( state.version !== version ) return;
+			state.irradiance.setRGB( p[ 0 ], p[ 1 ], p[ 2 ] );
+			const a = this.endpoints[ this.front ], b = this.endpoints[ this.destination ];
+			if ( state === a || state === b ) this.skyIrradiance.copy( a.irradiance ).lerp( b.irradiance, this.blend.value );
 
-				this.skyIrradiance.setRGB( p[ 0 ], p[ 1 ], p[ 2 ] );
-				this.diagnosticVersion = version;
-
-			}
-
-		} ).catch( ( error: unknown ) => console.error( error ) ).finally( () => { this.diagnosticPending = false; } );
+		} ).catch( ( error: unknown ) => console.error( error ) ).finally( () => { this.irradiancePending --; } );
 
 	}
 

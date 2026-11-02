@@ -26,6 +26,11 @@ export const shared = {
 	leafGain: uniform( 1 ),
 	// the weather's share of a cloudy or overcast sky: 0 under a clear or fair one, 1 under a closed one
 	clouded: uniform( 0 ),
+	// the sky's light in the water body under a deck, over the bake's (sky/Weather.ts `deckSkyGain`)
+	deckSky: uniform( 1 ),
+	// the part of `deckSky` a cloudy deck's gaps take back, by the clouds' visibility over the water
+	// (sky/Weather.ts `deckSkyGap`): in a gap the water takes the key itself
+	deckSkyGap: uniform( 0 ),
 	// what the sward's ambient diffuse is multiplied by (materials/SwardTint.ts); white under a clear
 	// or fair sky
 	swardTint: uniform( new THREE.Vector3( 1, 1, 1 ) ),
@@ -47,6 +52,8 @@ export const shared = {
 	shoreXform: uniform( new THREE.Vector4() ), // x0, z0, 1 / width, 1 / depth of the shoreline field
 	sunDir: uniform( new THREE.Vector3( 0, 1, 0 ) ),
 	sunColor: uniform( new THREE.Vector3() ), // linear rgb
+	// the key on the land: sunColor times the weather's deckKey under a deck (main.ts publishLighting)
+	landKey: uniform( new THREE.Vector3() ),
 	skyIrradiance: uniform( new THREE.Vector3() ), // linear rgb
 	// The live sky reduces hemispherical irradiance on the GPU, so shading never waits for
 	// a CPU readback. The uniform above remains a readback diagnostic for explicit snapshots.

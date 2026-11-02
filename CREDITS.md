@@ -486,6 +486,10 @@ comment where it is used.
   of Unreal Engine's landscape materials.
 - Whiteout triplanar normal blend: Ben Golus,
   [*Normal Mapping for a Triplanar Shader*](https://bgolus.medium.com/normal-mapping-for-a-triplanar-shader-10bf39dca05a) (2017).
+- Overcast sky's luminance by elevation, ( 1 + 2 sin h ) / 3 (`src/weather/VolumetricHaze.ts`, overcast's deck):
+  P. Moon and D. E. Spencer, *Illumination from a Non-Uniform Sky* (Illuminating Engineering 37,
+  1942): the CIE standard overcast sky, as given in ISO 15469:2004 / CIE S 011/E:2003,
+  *Spatial distribution of daylight - CIE standard general sky*.
 - Atmosphere LUTs and multiple scattering: Sébastien Hillaire,
   [*A Scalable and Production Ready Sky and Atmosphere Rendering Technique*](https://sebh.github.io/publications/egsr2020.pdf)
   (EGSR 2020), through the adapted tidewater source above.
