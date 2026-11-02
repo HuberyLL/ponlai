@@ -109,8 +109,9 @@ type V4 = THREE.Node<'vec4'>;
 // Lightning's light inside the
 // cloud stays out of the view's accumulated history, the bake and the panorama. The panorama and
 // the shadow map refresh in part each frame and whole on a jump and when a paused scene settles.
-// A scene jump (main.ts `establishScene`, through Sky.reset) restarts the clouds as they stand
-// before a page's first frame (`restart`), for the bake that follows it.
+// Every explicit bake (the load's, a scene jump's, a seek's, a retune's: main.ts `bakeEnvironment`,
+// through Sky.reset) restarts the clouds as they stand before a page's first frame (`restart`),
+// then sets their drift, evolution and axes to the scene clock, for the bake that follows.
 
 export const EARTH_RADIUS = 6_360_000;
 export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
@@ -1763,10 +1764,10 @@ export class Clouds {
 
 	}
 
-	/** Back to the state before the page's first frame (a scene jump, through Sky.reset): the wind's
-	 * offset, the evolution, the front's and cirrus' axes and the viewer as constructed, no view
-	 * history, the frame count at zero and a whole refresh due. The first bake of a page computes the
-	 * panorama in that state, and the bake products keep it while the clock is paused. */
+	/** Back to the state before the page's first frame (every explicit bake, through Sky.reset, which
+	 * then sets the wind's offset, the evolution and the axes to the scene clock): the wind's offset,
+	 * the evolution, the front's and cirrus' axes and the viewer as constructed, no view history, the
+	 * frame count at zero and a whole refresh due. */
 	restart(): void {
 
 		this.evolve.value = 0;

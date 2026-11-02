@@ -353,7 +353,10 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `tune.set( { name: value } )` sets them with no reload and no new pipeline (a load-time one needs
   `tune=<base64 JSON>` in the URL, which applies before the materials build; `tune.query( values )`
   writes it) and reports a combination the code cannot use (`invalid`), `tune.reset()` restores the
-  defaults. At the defaults a paused frame is byte for byte the frame without them. Names:
+  defaults. At the defaults a paused frame is byte for byte the frame without them. A value the
+  sky's bake reads (a sky or haze tunable, or a field of `pipeline.air.settings` the bake lays
+  over its source) rebakes it as the load bakes, whatever set it (the GUI, `tune`, a plain write:
+  `src/sky/SkyRetune.ts`), so the page draws what a fresh load with the value draws. Names:
   `post.exposure.key@high` (an exposure key per sun height, `@golden`, `@low`, `@high`, `@cloudy`,
   `@cloudyGolden`, `@cloudySunset`, `@cloudyLow`, `@night`, and the rising sun's `@dawn`; overcast's
   key over the clouded one `post.exposure.overcastKey`; the local gain's
@@ -1443,6 +1446,11 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   (repeatable) adds ad-hoc views with capture-set's syntax (`like=<view>` included), so a jump
   into a new scene option is checked as `--views island-fair-noon --view near:dist=40`; their fresh
   loads are stored with their definitions' hashes, so a changed query captures a new reference.
+  `--retune` rebakes the sky on every scene visited, after its eval, through every path a retune
+  takes (`refreshEnvironment()`, a tunable set and set back, the haze over the sky switched off and
+  on as the GUI does), and fails when the sky's irradiance does not come back bit for bit or the
+  switch leaves it as it was; `--check ... --retune` also checks that a retuned page draws the
+  fresh load.
 - `tools/verify-zoom-anchor.mjs [url] [--runs 24] [--out file.json]` checks the island camera's
   anchors in one probe page (with `cameraInput`): wheel zooms out with the cursor over the sea (`--runs` times) and
   over land, two pinches out, and a drag (the island view zooms out only, from its pose's distance); it fails on any zoom anchor that found no ground or a drift

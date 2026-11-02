@@ -2,7 +2,7 @@
 // a jump within one page must be the frame a fresh load of its query draws. It captures the views
 // both ways, in the layout of tools/parity/capture-set.mjs, so tools/parity/diff-set.py judges them:
 //
-//   node tools/verify-scene-jump.mjs <baseUrl> <outDir> [--fresh | --legacy] [--views parity|taa|all|normal|special|a,b,c]
+//   node tools/verify-scene-jump.mjs <baseUrl> <outDir> [--fresh | --legacy] [--retune] [--views parity|taa|all|normal|special|a,b,c]
 //       [--view "name:query[::js]"]...
 //       [--order list|reverse] [--from <view or query>]... [--between <view or query>]...
 //       [--suffix .repeat] [--quality high]
@@ -42,6 +42,14 @@
 // a frame rendered at the jump's camera, the view's eval, readiness, the shot.
 // --legacy jumps the way builds before the exact jump could: establishScene's options (weather,
 // preset or hour, time) and the camera reset to the island view (capture-tooling plan 3.2).
+// --retune rebakes the sky on every scene visited, after the view's eval, through each path a
+// retune takes, before readiness: `refreshEnvironment()` (a new hour's or a seek's bake), a tunable
+// the bake reads set and set back through `tune.set` (`haze.light.horizon`), and the haze over the
+// sky switched off and on as the GUI switches it (a plain write of `pipeline.air.settings.sky`, which
+// the frame loop finds: main.ts `retuneSky`), each bake awaited. The page must still draw the fresh
+// load's frame: every explicit bake starts from the state before a page's first (Sky.ts `reset`).
+// After each round trip the sky's irradiance must be the page's own bit for bit, and the switch must
+// change it (else the run fails, the readings in the shot's JSON as `ready.retune`).
 // Readiness is capture.mjs's by default (tools/capture-browser.mjs, "Readiness by stability"):
 // after the evals the floor's frames and the loading screen gone (waitForScene), a temporal page's
 // rest restarted and converged, then the image grabbed with the loop stopped until two grabs agree
@@ -73,7 +81,7 @@ import { VIEWS, viewEval } from './parity/views.mjs';
 import { selectViews, viewQuery } from './parity/adhoc.mjs';
 
 const argv = process.argv.slice( 2 );
-const flags = new Set( [ 'fresh', 'legacy' ] );
+const flags = new Set( [ 'fresh', 'legacy', 'retune' ] );
 const options = {}, positional = [], from = [], between = [], adhoc = [];
 for ( let i = 0; i < argv.length; i ++ ) {
 
@@ -86,7 +94,7 @@ for ( let i = 0; i < argv.length; i ++ ) {
 	else options[ k ] = argv[ ++ i ];
 
 }
-const known = [ 'fresh', 'legacy', 'check', 'views', 'order', 'suffix', 'quality', 'aa', 'q', 'size', 'frames', 'profile', 'timeout',
+const known = [ 'fresh', 'legacy', 'retune', 'check', 'views', 'order', 'suffix', 'quality', 'aa', 'q', 'size', 'frames', 'profile', 'timeout',
 	'stable-min', 'stable-every', 'stable-repeats', 'stable-tolerance', 'stable-patience', 'stable-cap' ];
 const unknown = Object.keys( options ).filter( ( k ) => ! known.includes( k ) );
 if ( positional.length !== 2 || unknown.length ) {
@@ -168,6 +176,7 @@ async function open( q ) {
 async function settle( page, js ) {
 
 	if ( js ) await page.evaluate( js );
+	const retuned = options.retune ? await retune( page ) : null;
 	await waitForScene( page, { frames: frames ?? stable.min, timeout } );
 	await page.evaluate( () => window.__PONLAI__.taa?.epoch.bump( 'capture' ) );
 	await page.waitForFunction( () => {
@@ -179,13 +188,60 @@ async function settle( page, js ) {
 	if ( frames !== null ) {
 
 		await stopLoop( page );
-		return { rule: 'frames', frames };
+		return { rule: 'frames', frames, ...( retuned ? { retune: retuned } : {} ) };
 
 	}
 	const settled = await waitForSettled( page, { timeout } );
 	const ready = await waitForStable( page, { ...stable, timeout } );
 	ready.settled = settled;
+	if ( retuned ) ready.retune = retuned;
 	return ready;
+
+}
+
+// --retune (see the header): every path that rebakes the sky, the last one through the frame loop.
+// The sky's irradiance (read back by every explicit bake) must come back to the page's own after each
+// round trip, bit for bit, and the switch of the haze over the sky must change it (a bake ran);
+// returns the readings and the failures, which fail the run.
+async function retune( page ) {
+
+	const record = await page.evaluate( async () => {
+
+		const p = window.__PONLAI__, H = p.pipeline.air.settings;
+		const frame = () => new Promise( ( resolve ) => requestAnimationFrame( () => resolve() ) );
+		// the frame loop starts the bake (`retuneSky`) and holds while it runs
+		const baked = async () => {
+
+			for ( let i = 0; i < 2; i ++ ) await frame();
+			while ( p.sky.busy ) await frame();
+			for ( let i = 0; i < 2; i ++ ) await frame();
+
+		};
+		const irradiance = () => { const c = p.sky.skyIrradiance; return [ c.r, c.g, c.b ]; };
+		const readings = { page: irradiance() }, failures = [];
+		const same = ( a, b ) => a.every( ( v, i ) => v === b[ i ] );
+		const back = ( name ) => { readings[ name ] = irradiance(); if ( ! same( readings[ name ], readings.page ) ) failures.push( `${ name }: the sky's irradiance ${ readings[ name ].join( ',' ) }, the page's ${ readings.page.join( ',' ) }` ); };
+		await p.refreshEnvironment();
+		back( 'refreshEnvironment' );
+		const horizon = p.tune.get( 'haze.light.horizon' );
+		p.tune.set( { 'haze.light.horizon': horizon + 0.5 } );
+		await baked();
+		p.tune.set( { 'haze.light.horizon': horizon } );
+		await baked();
+		back( 'tune.set' );
+		H.sky = ! H.sky;
+		await baked();
+		readings.switched = irradiance();
+		if ( same( readings.switched, readings.page ) ) failures.push( 'switching the haze over the sky left the sky\'s bake as it was' );
+		H.sky = ! H.sky;
+		await baked();
+		back( 'switched back' );
+		return { readings, failures };
+
+	} );
+	for ( const f of record.failures ) console.log( `retune: ${ f }` );
+	if ( record.failures.length ) failed ++;
+	return record;
 
 }
 
@@ -280,7 +336,7 @@ try {
 	releaseGpuLock();
 
 }
-console.log( `${ views.length } views in ${ ( ( Date.now() - started ) / 1000 ).toFixed( 1 ) } s (${ ( lockWaited / 1000 ).toFixed( 1 ) } s of it waiting for the GPU lock)${ failed ? `, ${ failed } with page errors` : '' }` );
+console.log( `${ views.length } views in ${ ( ( Date.now() - started ) / 1000 ).toFixed( 1 ) } s (${ ( lockWaited / 1000 ).toFixed( 1 ) } s of it waiting for the GPU lock)${ failed ? `, ${ failed } with page errors${ options.retune ? ' or a failed retune' : '' }` : '' }` );
 if ( failed ) process.exitCode = 1;
 
 // --check: the whole check in one command (see the header). The fresh side is the commit's stored
@@ -345,7 +401,7 @@ async function check() {
 
 	// the jump side: both orders at once
 	await mkdir( outDir, { recursive: true } );
-	const own = [ ...[ 'legacy' ].filter( ( k ) => options[ k ] ).map( ( k ) => `--${ k }` ), ...from.flatMap( ( v ) => [ '--from', v ] ),
+	const own = [ ...[ 'legacy', 'retune' ].filter( ( k ) => options[ k ] ).map( ( k ) => `--${ k }` ), ...from.flatMap( ( v ) => [ '--from', v ] ),
 		...between.flatMap( ( v ) => [ '--between', v ] ), ...( frames !== null ? [ '--frames', String( frames ) ] : [] ), ...stableArgs ];
 	const jumps = await Promise.all( [
 		run( 'list', [ here, base, outDir, ...common, ...own, '--profile', profile ] ),

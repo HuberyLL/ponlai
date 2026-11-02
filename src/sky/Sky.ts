@@ -90,9 +90,10 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // for it, then the environment's PMREM conversion and GGX filters at most four render passes a
 // frame, published (with the same products as a whole bake) a few frames later. Explicit bakes
 // (presets, seeks, weather jumps, the first bake) and any bake while the scene clock is paused run
-// whole, so paused frames stay exact. A paused page keeps its first bake's products, which a
-// first bake makes from the clouds as they stand before the first frame; a scene jump (`reset`)
-// returns the sky to that state, so its bake makes the same ones. A bake waits for the warm-up's
+// whole, so paused frames stay exact. A paused page keeps its last explicit bake's products, and
+// every explicit bake (the load's, a scene jump's, a seek's, a retune's) starts from the state
+// before a page's first bake, the clouds set to the scene clock (`reset`), so each makes the ones
+// a fresh load of its scene makes. A bake waits for the warm-up's
 // pipelines (`warm`) before it draws: three r186 skips a draw whose pipeline an asynchronous
 // compile is still creating, so a bake drawn meanwhile left its products empty (the irradiance
 // probe at 0: no sky light, and the exposure about five stops off at noon), and a paused page,
@@ -1199,11 +1200,16 @@ export class Sky {
 
 	/** Back to the state before the first bake, so the next `update` bakes as a page's first does: both
 	 * endpoints and both environment atlases from one bake, shown without a blend (no trace of the
-	 * bakes before), and the clouds as they stand before the first frame (no view yet, the wind's
-	 * offset and the evolution at zero, the viewer at its start: Clouds.restart). For a scene jump
-	 * (main.ts `establishScene`): a paused page keeps its first bake's products, so a jump must make
-	 * the same ones. Call it with no bake in flight. */
-	reset(): void {
+	 * bakes before), and the clouds with no view yet and the viewer at its start (Clouds.restart),
+	 * set to the scene clock `time` and the wind's heading `windDirection` as the frames set them
+	 * (`followClock`). Every explicit bake starts from it (main.ts `bakeEnvironment`): a paused page
+	 * keeps its last explicit bake's products, so the load, a scene jump, a seek and a retune must
+	 * make the same ones from the same state, whatever the frames or the bakes before left behind;
+	 * the clouds' drift, evolution and axes are the clock's, so the bake sees the clouds the frame
+	 * shows (taken at their constructed state instead, the load's bake of an afternoon's deck read
+	 * its sky light about half a stop above a bake of the same scene after a frame). Call it with no
+	 * bake in flight. */
+	reset( windDirection: THREE.Vector2, time: number ): void {
 
 		if ( this.busy ) throw new Error( 'Sky.reset: a bake is in flight' );
 		// a periodic readback still in flight from before the jump lands nowhere (`readIrradiance`)
@@ -1223,8 +1229,23 @@ export class Sky {
 		this.cloudTime = 0;
 		this.clockStill = false;
 		this.viewer.set( 0, 15, 0 );
-		this.night.time.value = 0;
 		this.clouds.restart();
+		this.followClock( windDirection, time );
+
+	}
+
+	// The clouds' and the night sky's state at the scene clock `time`, the wind from `windDirection`:
+	// a function of the clock, set by every frame (`updateClouds`) and by `reset` for a bake.
+	private followClock( windDirection: THREE.Vector2, time: number ): void {
+
+		// Weather arrives from upwind.
+		this.clouds.frontAxis.value.copy( windDirection ).negate().normalize();
+		this.clouds.cirrusAxis.value.copy( windDirection ).normalize();
+		this.clouds.setDrift( shared.wind.displacement.value );
+		// The clouds' inner structure rises through them at 2.5 m/s, as a cumulus' turrets do
+		// (the rain curtains fall by the same clock).
+		this.clouds.evolve.value = ( time * 2.5 ) % EVOLVE_PERIOD;
+		this.night.time.value = time;
 
 	}
 
@@ -1583,14 +1604,7 @@ export class Sky {
 		this.cloudTime = time;
 		const display = this.renderer.getSize( this.displaySize );
 		this.clouds.setDisplay( display.x, display.y, this.renderer.getPixelRatio() );
-		// Weather arrives from upwind.
-		this.clouds.frontAxis.value.copy( windDirection ).negate().normalize();
-		this.clouds.cirrusAxis.value.copy( windDirection ).normalize();
-		this.clouds.setDrift( shared.wind.displacement.value );
-		// The clouds' inner structure rises through them at 2.5 m/s, as a cumulus' turrets do
-		// (the rain curtains fall by the same clock).
-		this.clouds.evolve.value = ( time * 2.5 ) % EVOLVE_PERIOD;
-		this.night.time.value = time;
+		this.followClock( windDirection, time );
 		this.viewer.copy( camera.position );
 		this.clouds.update( this.renderer, camera, width, height, time );
 

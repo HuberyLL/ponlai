@@ -290,7 +290,8 @@ export const DEFAULT_HAZE_GRID: Readonly<HazeGrid> = { width: 160, height: 90, d
  * temporal filter and the composite's filters are the talk's, the slices fitted to the island's
  * camera (see the header; the medium's shape is the hour's key's, HazeKeys.ts), the phases from how
  * the air brightens toward the sun, the shares' weight and the gain by eye on a few points of the sky
- * and the island. */
+ * and the island. Those the environment's bake lays over its source (`openSky`: BAKE_SETTINGS)
+ * rebake it when they change, however they are set (`bakeStale`, main.ts `retuneSky`). */
 export const HAZE_DEFAULTS = {
 	// the slices: the grid's near and far view depth (metres) and each slice's depth over the last's
 	near: 10, far: 30000, growth: 1.15,
@@ -317,6 +318,10 @@ export const HAZE_DEFAULTS = {
 };
 
 export type HazeSettings = typeof HAZE_DEFAULTS;
+
+// The settings `openSky` reads (the slices, the fog's extinction, the light, the switch over the sky,
+// the near haze): the environment's bake holds them as they stood when it ran.
+const BAKE_SETTINGS = [ 'near', 'far', 'growth', 'fogExtinction', 'albedo', 'anisotropy', 'gain', 'horizon', 'sky', 'nearHaze' ] as const;
 
 // (1 - e^-x) / x, the share of a slab of optical depth x that scatters, per unit of that depth, with
 // its series near 0 (where the difference loses its digits)
@@ -437,8 +442,7 @@ export class VolumetricHaze {
 	// the sky's lobe, the moon's its own: `moonAnisotropy`, MOON_AEROSOL)
 	readonly settings: HazeSettings = tuneObject( { ...HAZE_DEFAULTS },
 		{ anisotropy: 'sky.atmosphere.mieG', horizon: 'haze.light.horizon', ambientFloor: 'haze.ambient.floor' },
-		{ anisotropy: { min: 0.5, max: 0.9, onChange: markSkyRetune },
-			horizon: { min: 0.5, max: 10, onChange: markSkyRetune }, ambientFloor: { min: 0, max: 0.2, onChange: markSkyRetune } } );
+		{ anisotropy: { min: 0.5, max: 0.9 }, horizon: { min: 0.5, max: 10 }, ambientFloor: { min: 0, max: 0.2 } } );
 	readonly grid: Readonly<HazeGrid>;
 	/** The shadow's rest (see the header); `pending` while it has not converged. */
 	readonly rest = new TemporalRest();
@@ -497,6 +501,8 @@ export class VolumetricHaze {
 	readonly cloudShafts = uniform( new THREE.Vector3( 10, 0, 0 ) );
 	// the ambient visibility's floor and the half-width of its rise (m)
 	private readonly ambientSettings = uniform( new THREE.Vector2() );
+	// BAKE_SETTINGS as the environment's last bake read them (`noteBake`)
+	private baked: HazeSettings | null = null;
 	private cover: HazeCover | null = null;
 	// the composite's switches: the haze over the sky, tricubic, density anti-aliasing, the debug view
 	private readonly switches = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
@@ -616,7 +622,7 @@ export class VolumetricHaze {
 		// it is compared at the far end.
 		const coordinate = this.sunShadow.coordinate.mul( vec4( p, 1 ) ).xyz.toVar();
 		const sun = this.sunShadow.volumeVisibility( vec3( coordinate.xy, min( coordinate.z, 0.99999 ) ) ).toVar();
-		const key = sun.mul( this.cloudShaft( p, sky ) );
+		const key = sun.mul( this.cloudShaft( p, normalize( p.sub( this.origin ) ), sky ) );
 		// the open sky's: dark under the cover's top, lit above it, rising over ± the softness, open
 		// wherever the top is the sea's, times the probes' sky visibility, never below the floor
 		const cover = this.cover, A = this.ambientSettings;
@@ -636,9 +642,9 @@ export class VolumetricHaze {
 	// the map clamps its own slope. The read is sharpened by an unsharp mask against its B-spline
 	// blur, since the map is coarse and the shafts would blur into a general dimming without it;
 	// lifted toward lit for a point above the shell's base (its height over the planet's curve,
-	// a point d metres from the island's centre d^2 / 2R lower), less so toward the key light
-	// (contrasty shafts against the sun), and floored.
-	private cloudShaft( p: V3, sky: Sky ): F {
+	// a point d metres from the island's centre d^2 / 2R lower), less so the nearer `direction` (the
+	// ray's that reaches p) lies to the key light (contrasty shafts against the sun), and floored.
+	private cloudShaft( p: V3, direction: V3, sky: Sky ): F {
 
 		const clouds = sky.clouds, s = this.keyDir, C = this.cloudShafts;
 		const read = clouds.shadowAlongBeam( p ).toVar();
@@ -647,7 +653,7 @@ export class VolumetricHaze {
 		const r = p.xz.sub( clouds.shadowCentre );
 		const height = p.y.add( dot( r, r ).div( 2 * EARTH_RADIUS ) );
 		const lift = clamp( height.sub( SHELL_BOTTOM ).div( SHELL_THICKNESS ), 0, 1 ).mul( float( 1 ).sub( sharp ) );
-		const toward = clamp( dot( normalize( p.sub( this.origin ) ), s ), 0, 1 );
+		const toward = clamp( dot( direction, s ), 0, 1 );
 		return max( C.y, sharp.add( lift ).sub( lift.mul( C.z ).mul( toward ) ) );
 
 	}
@@ -942,7 +948,8 @@ export class VolumetricHaze {
 		const f0 = nearFactor( t0, this.near ).toVar();
 		// the sun's visibility at a point t metres along d: the clouds' shadow, as the shadow kernel
 		// takes it (no caster of the island's: its maps reach no farther than the island)
-		const shaft = ( t: F ): F => this.cloudShaft( vec3( 0, y, 0 ).add( d.mul( t ) ), clouds );
+		// (along d from its own start, never the camera's: the bake holds no camera)
+		const shaft = ( t: F ): F => this.cloudShaft( vec3( 0, y, 0 ).add( d.mul( t ) ), d, clouds );
 		const first = scatter( y.add( y0 ).mul( 0.5 ), shaft( t0.mul( 0.5 ) ), float( 1 ) ).toVar();
 		Loop( D, ( { i } ) => {
 
@@ -1118,6 +1125,27 @@ export class VolumetricHaze {
 
 		} );
 		return [ light ];
+
+	}
+
+	/** Records the settings the environment's bake reads (BAKE_SETTINGS), as it bakes (main.ts
+	 * `bakeEnvironment`). */
+	noteBake(): void {
+
+		const S = this.settings, baked = this.baked ??= { ...S };
+		for ( const k of BAKE_SETTINGS ) ( baked as Record<string, number | boolean> )[ k ] = S[ k ];
+
+	}
+
+	/** Whether a setting the environment's bake reads has changed since it last baked (false before
+	 * the first `noteBake`): main.ts `retuneSky` rebakes it then, as a fresh load with the settings
+	 * would bake. */
+	get bakeStale(): boolean {
+
+		const S = this.settings, baked = this.baked;
+		if ( ! baked ) return false;
+		for ( const k of BAKE_SETTINGS ) if ( baked[ k ] !== S[ k ] ) return true;
+		return false;
 
 	}
 
