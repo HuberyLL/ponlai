@@ -253,7 +253,12 @@ export interface WeatherState {
 	// a fifth as dense as a clouded one's, so it gives its depth back over a short shell that the
 	// far sea starts in. A clouded sky's shell ends between: shorter (380 m under the cloudy sky) it
 	// stands as a pale wall over the fully grown island's far half, longer the far sea falls dark
-	// under the sky's low band.
+	// under the sky's low band. The cloudy sky's shell spans 100 to 700 m: from a horizon view (the
+	// eye about 12 m up) the far sea's first 5 degrees under the horizon then fall about 0.05 L a
+	// degree through the air given back (0.056 before, from 250 to 430 m, with a step of 0.13 L
+	// within a degree, now 0.07 to 0.085: a smoothstep in distance still gathers its catch-up a
+	// little, a shorter ramp steps more and a longer one moves the fall to the horizon's line), and
+	// the island's views move by a few levels at most.
 	nearDensity: number;
 	nearStart: number;
 	nearEnd: number;
@@ -325,7 +330,7 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
 	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckKey: 1, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, haze: 0.002, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
 	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckKey: 1, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, haze: 0.002, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
-	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckKey: 1, deckFloor: 0.36, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, haze: 0.0106, nearDensity: 0.13, nearStart: 250, nearEnd: 430, rain: 0, fog: 0, storm: 0, cirrus: 0.15 },
+	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckKey: 1, deckFloor: 0.36, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, haze: 0.0106, nearDensity: 0.13, nearStart: 100, nearEnd: 700, rain: 0, fog: 0, storm: 0, cirrus: 0.15 },
 	overcast: { coverage: 0.94, density: 1.6, directVisibility: 0.7, cloudFloor: 0, deckKey: 0.7, deckFloor: 1, castShadow: 1, shadowDensity: 0.03, glintSpread: 0, ambientGain: 0.76, haze: 0.00974, nearDensity: 0.08, nearStart: 250, nearEnd: 500, rain: 0, fog: 0.08, storm: 0, cirrus: 0 },
 	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckKey: 1, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, haze: 0.0095, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0.75, fog: 0.22, storm: 0, cirrus: 0 },
 	// A squall: the darkest deck, heavy rain, a strong wind (PRESET_WIND) and a rough, white-capped sea.

@@ -72,7 +72,7 @@ const OVERCAST_SHARE = tuneUniform( 'haze.overcast.share', 0.85, { min: 0, max: 
 //     of f tau over it, which also weighs what the slice scatters (the light per opacity is
 //     unchanged), so the shadows and the grid stay as they were. Rays read from another height
 //     (`skyHaze`'s `from`, the probe's) count the distance from their own start. The kept skies
-//     thin it (k under 1, d0 200 m, d1 350 m under a clear or fair sky, 250 m and 430 m under the
+//     thin it (k under 1, d0 200 m, d1 350 m under a clear or fair sky, 100 m and 700 m under the
 //     cloudy one, 250 m and 500 m under the overcast: the game's camera reaches at most about 240 m
 //     to the island's far side), so the island's views read through little air: the sky is many times
 //     as bright as the land's shade, and a few per cent of it over the land turns the shade blue
