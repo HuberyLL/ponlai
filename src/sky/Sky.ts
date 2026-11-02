@@ -1492,8 +1492,17 @@ export class Sky {
 		clouds.frontLead.value = front ? 4 * front.progress * ( 1 - front.progress ) : 0;
 		clouds.rainFrom.value = front ? front.from.rain : weather?.rain ?? 0;
 		clouds.rainTo.value = front ? front.to.rain : weather?.rain ?? 0;
-		// Cloud tops a couple of kilometres up keep the sun a little after it has set below.
-		const sunAbove = this.atmosphere.sunlightAt( this.sunDir, 2 ).multiply( this.sunTint ).multiplyScalar( illuminance );
+		// Cloud tops a couple of kilometres up keep the sun a little after it has set below. The
+		// rising sun's reaches the shell where it stands (its middle, 6.6 km), so the clouds take
+		// the dawn's light from about -2.6 degrees, as the Earth's shadow sinks below them; the
+		// height goes back to the evening's from the sun's rise to 3 degrees, so the morning's
+		// higher sun lights them as the afternoon's does, and with a clouded share (Weather.ts
+		// `cloudedShare`).
+		const cloud = skyMix ? cloudedShare( skyMix ) : 0;
+		const rising = this.rising && cloud < 1;
+		const toEvening = Math.max( cloud, THREE.MathUtils.smoothstep( celestial?.elevation ?? 90, 0, 3 ) );
+		const sunHeight = rising ? 2 + ( CLOUD_MIDDLE / 1000 - 2 ) * ( 1 - toEvening ) : 2;
+		const sunAbove = this.atmosphere.sunlightAt( this.sunDir, sunHeight ).multiply( this.sunTint ).multiplyScalar( illuminance );
 		// Under a closed deck the sun reaches the deck as it reaches the island, scattered through
 		// the cloud: it keeps its luminance and loses its colour as the key does (track), so an
 		// overcast evening's deck is not a sunset's.
@@ -1501,7 +1510,7 @@ export class Sky {
 		// The clouds belong to the seen sky: their moonlight keeps the night sky's own ramp
 		// (CLOUD_MOON), not the key's earlier one that keeps the island lit after sunset.
 		const moonGain = celestial ? ( 1 - THREE.MathUtils.smoothstep( celestial.elevation, CLOUD_MOON[ 0 ], CLOUD_MOON[ 1 ] ) ) * celestial.moonVisibility : 0;
-		const sunUp = ! celestial || celestial.elevation > - 2.5;
+		const sunUp = ! celestial || celestial.elevation > - 2.5 || rising;
 		// The march's depth shades the clouds' sky light as well as their direct light, and the same
 		// direction casts their shadow, so it moves without a jump even while no direct light reaches
 		// them: a jump there stepped the deck's brightness, half a stop on the meter under overcast.
