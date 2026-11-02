@@ -1829,7 +1829,7 @@ function tick( time: number ): void {
 	sky.advance( environmentDt );
 	publishLighting();
 	// the ambient grade by the sun and the weather's blend of the kept skies (lighting/AmbientGrade.ts)
-	ambientGrade.update( sky.elevation, weather.skyMix );
+	ambientGrade.update( sky.elevation, weather.skyMix, sky.rising );
 	shared.clouded.value = cloudedShare( weather.skyMix );
 	updateShelfScatter( sky.keyColor, sky.keyIsMoon ? 0 : 1 - shared.clouded.value, sky.elevation );
 	// the yunpeng's glow and its local lights by the night's share (lighting/LocalLights.ts: its
