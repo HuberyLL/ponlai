@@ -36,7 +36,8 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../wor
 //   coefficients until the convolution:
 //     direct    the sky's coefficients times the probe's sky visibility, their product truncated to
 //               degree 2 (p. 24), times the sky's scale (`skyScale`): the sky's fill (main.ts
-//               `skyFill`, the environment's intensity) times the probes' own sky gain (PROBE_SKY,
+//               `skyFill`, the environment's intensity) times a low sun's lift of the sky's light
+//               (`lowSunSkyLift`, below) times the probes' own sky gain (PROBE_SKY,
 //               keyed by the sun's own elevation, not the key's, so the moon's key at night does
 //               not move it: golden, low and high, a clouded day's held value over them, the
 //               night's as the sky's own, DayCycle.ts `skyNight`), which the seen sky never takes, so the ground's sky light can be set
@@ -234,6 +235,58 @@ const PROBE_SKY: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight', {
 	night: { skyGain: 5 },
 }, { skyGain: { min: 0.25, max: 8, scale: 'log' } } );
 const _probeSky = { skyGain: 1 };
+/** A low sun's lift of the sky's light on what it lights, main.ts writes it once a frame to shared.ts
+ * `skyLift`. The probes' sky (`skyScale`, the bounced sky and the sea's bounce with it) takes it, so
+ * does the sky's light on what reads it straight (shared.ts `skyIrradianceSource`: the water body,
+ * its foam and its metering light; the rain's light, the storm's spray and its whitecaps read it
+ * too, and take the lift only through a front from a clear or fair sky into rain or storm under a
+ * low sun, as those skies count as overcast) and the sea's reflection of the sky (ocean/Water.ts, by
+ * the view's elevation, so the far sea under the horizon keeps the band it mirrors and stays under
+ * the sky over it). The sky drawn, the environment's specular and the exposure's sky meter do not.
+ *
+ * Why: under the clear evening sky, the key's illuminance at normal incidence over the sky's light
+ * on level ground (the probes' gain in it) is 28 at 62 degrees, 30 at 50, 32 at 31, 35 at 17 and 31
+ * at 12: the sky falls faster than the key by about 0.2 stop at 31, 0.3 at 17 and 0.13 at 12,
+ * against noon, and the ratio is under noon's again below about 9 degrees. The excess is the sky
+ * overhead: at 17 degrees the sky above 60 has fallen 1.4 to 2.6 stops more than the key since noon,
+ * the sky from 30 to 60 about 0.3 to 0.7, while the low sky across and away from the sun keeps pace
+ * within about 0.3, so the far sea mirroring it needs no lift. The lift takes the excess
+ * back over 12 to 17 degrees and gives way above, to none by 35 (the noon-ward sky keeps its own).
+ * The morning's darker sky (sky/Sky.ts SKY_LIGHT's rising keys) is its own and takes the same lift by
+ * height. At the island view under a 12 degree sun the sky's light is about a quarter of the sea's
+ * and the crowns' light, so a stop of lift gives them about a third of a stop before the meter
+ * (measured: 0.34 the sea, 0.32 the crowns), and the meter, which sees the lifted sea, takes about
+ * 0.17 stop of it back.
+ *
+ * The lift: `size` stops from `floorFull` up to `from` degrees, falling along a smoothstep to none at
+ * `to` above and at `floor` below. It is 1 under cloud (by the clouded share, Weather.ts
+ * `cloudedShare`), where the key no longer outruns the sky. A function of the sun's height and the
+ * weather alone, so it is continuous along the day and a paused frame repeats; a uniform, so no
+ * pipeline. Tunable: `lighting.relight.lowSun` (the size, stops), `lowSunFloor`, `lowSunFloorFull`,
+ * `lowSunFrom`, `lowSunTo` (its heights). */
+const LOW_SUN_SKY = { size: 0.3, floor: 8, floorFull: 17, from: 20, to: 35 };
+const lowSunSize = tune( 'lighting.relight.lowSun', LOW_SUN_SKY.size, { min: 0, max: 3 } );
+const lowSunFloor = tune( 'lighting.relight.lowSunFloor', LOW_SUN_SKY.floor, { min: - 3, max: 12 } );
+const lowSunFloorFull = tune( 'lighting.relight.lowSunFloorFull', LOW_SUN_SKY.floorFull, { min: - 2, max: 20 } );
+const lowSunFrom = tune( 'lighting.relight.lowSunFrom', LOW_SUN_SKY.from, { min: 0, max: 40 } );
+const lowSunTo = tune( 'lighting.relight.lowSunTo', LOW_SUN_SKY.to, { min: 5, max: 60 } );
+const smooth01 = ( t: number ): number => {
+
+	const x = Math.min( Math.max( t, 0 ), 1 );
+	return x * x * ( 3 - 2 * x );
+
+};
+/** The lift (a gain, 1 for none) at the sun's `elevation` (degrees) under the weather's clouded
+ * share `clouded`. */
+export function lowSunSkyLift( elevation: number, clouded: number ): number {
+
+	const floor = lowSunFloor(), floorFull = Math.max( lowSunFloorFull(), floor + 1e-3 );
+	const from = lowSunFrom(), to = Math.max( lowSunTo(), from + 1e-3 );
+	const shape = smooth01( ( elevation - floor ) / ( floorFull - floor ) ) * ( 1 - smooth01( ( elevation - from ) / ( to - from ) ) );
+	const stops = lowSunSize() * shape * ( 1 - clouded );
+	return stops > 0 ? 2 ** stops : 1;
+
+}
 /** The land's own sky gain under overcast's deck, over the deck's (sky/Weather.ts DECK_SKY_GAIN),
  * by overcast's share and its deck's light (`overcastDeckLight`: at every sun by day). Overcast's
  * sky is brightest about the sun's place and dim looking away (weather/VolumetricHaze.ts,
@@ -516,11 +569,13 @@ export class AmbientRelight {
 		const day = keyed( PROBE_SKY, elevation, 0, _probeSky, clouded ).skyGain, toNight = PROBE_SKY.night.skyGain;
 		const gained = ( gain: number ) => day * gain + ( toNight - day * gain ) * night;
 		const probeSky = gained( 1 ), landGain = gained( landSky );
-		this.skyScale.value = this.shared.skyFill.value * landGain;
+		// a low sun's lift of the sky's light (`lowSunSkyLift`), on the land's sky and the sea's bounce
+		const fill = this.shared.skyFill.value * this.shared.skyLift.value;
+		this.skyScale.value = fill * landGain;
 		// the sea's bounce takes the water's gain, the deck's alone, as the water drawn does, less what a
 		// cloudy deck's gaps take back by the clouds' visibility (Weather.ts `deckSkyGap`)
-		this.seaScale.value = this.shared.skyFill.value * gained( deckSky );
-		this.seaGapScale.value = this.shared.skyFill.value * day * deckSkyGap( elevation, clouded, overcast ) * ( 1 - night );
+		this.seaScale.value = fill * gained( deckSky );
+		this.seaGapScale.value = fill * day * deckSkyGap( elevation, clouded, overcast ) * ( 1 - night );
 		ambient.landSky.value = landGain / probeSky;
 		out.fill( 0 );
 		const level = THREE.MathUtils.smoothstep( l.y, - 0.02, 0.05 ) * this.keyHeight();

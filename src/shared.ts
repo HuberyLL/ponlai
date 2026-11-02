@@ -58,6 +58,14 @@ export const shared = {
 	// The live sky reduces hemispherical irradiance on the GPU, so shading never waits for
 	// a CPU readback. The uniform above remains a readback diagnostic for explicit snapshots.
 	skyFill: uniform( 1 ),
+	// a low sun's lift of the sky's light on what it lights: the land's ambient, the sky's light in
+	// the water (`skyIrradianceSource`) and the sea's reflection of the sky, never the sky drawn or
+	// its meter (lighting/AmbientRelight.ts `lowSunSkyLift`); 1 from its top up and under cloud.
+	// Whatever else reads `skyIrradianceSource` takes it too: the rain's light (main.ts
+	// `rain.setLightNode`), the storm's spray (StormSea's `sky`) and its whitecaps (ocean/Water.ts).
+	// Those draw only under rain and storm, which count as overcast (1), so only through a front from
+	// a clear or fair sky into them under a low sun, by the share of the clear sky left
+	skyLift: uniform( 1 ),
 	skyIrradianceSource: vec3( 0 ) as THREE.Node<'vec3'>,
 	// The same as lent to the island after sunset (Sky.islandIrradianceNode): the islanders' fill.
 	islandIrradianceSource: vec3( 0 ) as THREE.Node<'vec3'>,

@@ -59,7 +59,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     sky reflected along a direction the unresolved slopes lift toward the higher, darker sky,
 //     reflections below the horizon darkened toward the horizon's colour, the whole of it moved from
 //     the low band toward the sky's light by the view's elevation (`REFLECTION_BAND`: its colour with
-//     the sun up, its level under cloud); both read the sea's slopes before the waves' damping, so a lee stands level with the sea round it, never a pale tongue
+//     the sun up, its level under cloud), and by the same ramp a low sun's lift of the sky's light
+//     (shared.ts `skyLift`), so the far sea keeps the band it mirrors, never brighter than the sky
+//     over the horizon; both read the sea's slopes before the waves' damping, so a lee stands level with the sea round it, never a pale tongue
 //     of a mirror's reflectance; the screen-space reflection of the cliffs and the islanders behind
 //     tidewater's gate (rays near the horizon, reflectance over 0.05)
 //   - the key's specular: the sun's GGX of the base roughness and the slopes the pixel cannot resolve
@@ -1011,7 +1013,8 @@ export class Water {
 			} );
 			// (the band at the mirror's own elevation, what the flat sea here reflects)
 			const horizon = sky.sampleBackground( normalize( vec3( Rraw.x, V.y, Rraw.z ).add( vec3( 1e-5, 0, 0 ) ) ), float( HORIZON_MIP ) );
-			const skyLight = shared.skyIrradianceSource.toVar();
+			// (the sky as drawn, without a low sun's lift: the band is set against the sky it stands in)
+			const skyLight = sky.irradianceNode.mul( shared.skyFill ).toVar();
 			const skyOverBand = lum( skyLight ).div( max( lum( horizon ), 1e-8 ) ).toVar();
 			const bandRamp = smoothstep( 0, REFLECTION_BAND.ramp, V.y ).toVar();
 			const sunDir = sky.atmosphere.sunDir;
@@ -1019,8 +1022,12 @@ export class Water {
 			const hueShare = bandRamp.mul( REFLECTION_BAND.hue ).mul( smoothstep( ...REFLECTION_BAND.lowSun, sunDir.y ) );
 			const level = pow( min( skyOverBand, 1 ), REFLECTION_BAND.level );
 			const levelShare = bandRamp.mul( shared.clouded ).mul( smoothstep( ...REFLECTION_BAND.dusk, sunDir.y ) ).mul( smoothstep( ...REFLECTION_BAND.sunward, dot( normalize( V.xz.add( 1e-5 ) ), normalize( sunDir.xz.add( 1e-5 ) ) ) ) );
+			// (a low sun's lift of the sky's light, shared.ts `skyLift`, by the band's ramp: the far sea
+			// keeps the band it mirrors and stays under the sky over the horizon; written 1 + ( lift - 1 )
+			// ramp, exactly 1 where there is no lift)
 			const refl = mix( horizon.mul( BELOW_HORIZON ), skyReflection, horizonOcc )
-				.mul( mix( vec3( 1 ), hue, hueShare ) ).mul( mix( float( 1 ), level, levelShare ) ).toVar();
+				.mul( mix( vec3( 1 ), hue, hueShare ) ).mul( mix( float( 1 ), level, levelShare ) )
+				.mul( shared.skyLift.sub( 1 ).mul( bandRamp ).add( 1 ) ).toVar();
 			// The cliffs and the islanders from the screen: only rays near the horizon can meet them,
 			// and where the reflectance is small the reflection cannot be seen (tidewater's gate).
 			If( u.ssr.greaterThan( 0.5 ).and( Rraw.y.lessThan( 0.45 ) ).and( Fr.greaterThan( quality.ssrMinFresnel ) ), () => {

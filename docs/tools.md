@@ -368,7 +368,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   key's colour at a low sun `sky.key.hueDepth`, `reddens`, `yellows`, the near air
   `sky.weather.nearDensity@clear` (`nearStart`, `nearEnd`; `@fair`, `@cloudy`, `@overcast`) and the
   land's share of the sky's light `lighting.relight.skyGain@high` (`@low`, `@golden`, `@cloudy`,
-  `@cloudyBlue`, `@night`) and its gain under overcast `lighting.relight.overcastLand`,
+  `@cloudyBlue`, `@night`) and its gain under overcast `lighting.relight.overcastLand`, a low
+  sun's lift of the sky's light on what it lights `lighting.relight.lowSun` (stops; `lowSunFloor`,
+  `lowSunFloorFull`, `lowSunFrom`, `lowSunTo` its sun heights: `src/lighting/AmbientRelight.ts`),
   overcast's soft key `lighting.overcastSoftKey`, overcast's
   sky about the sun `haze.overcast.power`, `haze.overcast.share`, and the key a tree's shaded leaves
   take through the leaves over them `lighting.vegetation.leaf.through@high` (`@low`, `@golden`,
