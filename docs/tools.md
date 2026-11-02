@@ -355,11 +355,15 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   writes it) and reports a combination the code cannot use (`invalid`), `tune.reset()` restores the
   defaults. At the defaults a paused frame is byte for byte the frame without them. Names:
   `post.exposure.key@high` (an exposure key per sun height, `@golden`, `@low`, `@high`, `@cloudy`,
-  `@cloudyGolden`, `@cloudySunset`, `@night`; the local gain's `post.localTone.hinge@high`, `high`, `low`, `width` alike), `post.tone.midGrey`,
-  `post.tone.blackSlope`, `post.tone.white`; the shade's contrast `post.shade.pivot@day`, `slope`
+  `@cloudyGolden`, `@cloudySunset`, `@night`, and the rising sun's `@dawn`; the local gain's
+  `post.localTone.hinge@high`, `high`, `low`, `width` alike), `post.tone.midGrey`,
+  `post.tone.blackSlope`, `post.tone.white`; the desaturation's `post.desaturate.amount@golden`
+  (`cool`; `@dawn`, `@day`, `@cloudy`, `@night`) and its cool share's `post.desaturate.coolFrom`,
+  `coolTo`; the shade's contrast `post.shade.pivot@day`, `slope`
   (`@golden`, `@day`, `@cloudy`, `@night`), the bloom's `post.bloom.strength` and the sun's glare
-  `post.glare`; the display's white `post.white.r@high` (`g`, `b`; `@day`, `@golden`, `@cloudy`,
-  `@night`), the sky's light `sky.light.r@high` (`g`, `b`; `@low`, `@golden`, `@cloudyHigh`, `@night`), the
+  `post.glare`; the display's white `post.white.r@high` (`g`, `b`; `@day`, `@golden`, `@dawn`, `@cloudy`,
+  `@night`), the sky's light `sky.light.r@high` (`g`, `b`; `@low`, `@golden`, `@dusk`, `@morning`, `@dawn`,
+  `@cloudyHigh`, `@night`), the
   key's colour at a low sun `sky.key.hueDepth`, `reddens`, `yellows`, the near air
   `sky.weather.nearDensity@clear` (`nearStart`, `nearEnd`; `@fair`, `@cloudy`, `@overcast`) and the
   land's share of the sky's light `lighting.relight.skyGain@high` (`@low`, `@golden`, `@cloudy`,

@@ -22,7 +22,7 @@ import { compileInto } from '../post/graph/Compile.ts';
 import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
-import { DAY_EXPOSURE, type DayCycleSnapshot } from './DayCycle.ts';
+import { DAY_EXPOSURE, displayNight, moonAtDawn, skyNight, sunRising, type DayCycleSnapshot } from './DayCycle.ts';
 import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, type WeatherFront, type WeatherState } from './Weather.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
@@ -217,6 +217,7 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 // before both were set (SKY_LIGHT, post/Exposure.ts), so the brightness each row gives is to be
 // measured again; the rows' shape, a lift through the afterglow easing to none by the night, holds.
 // The rows at 1, 0.5, 0, -3.3 and -5.3 degrees take the colour the rows around them gave there.
+// The rising sun has rows of its own (ISLAND_SKY_RISING).
 // By day a clouded sky lends the island its own light: a deck of cloud passes on little of the blue
 // of the sky's high key (SKY_LIGHT), so from 12 to 40 degrees, as that key climbs, the light lent to
 // the island is drawn most of the way to a warm grey (CLOUD_LIGHT_TINT, Weather.ts `cloudedHighSun`). The land
@@ -242,9 +243,37 @@ const ISLAND_SKY: readonly IslandRow[] = [
 	{ at: - 13.2, tint: [ 0.45, 1, 3.6 ], amount: 0.6 },
 ];
 
-// ISLAND_SKY at `elevation`: the tint (normalised to unit luminance) and its amount into `tint`;
-// returns the gain.
-function islandSky( elevation: number, tint: THREE.Vector4 ): number {
+// The rising sun's: none of the evening's warm cast, only the night's deep blue below -10 degrees,
+// and gains of its own. A clear morning's day exposure is metered by the sky and the land together
+// (post/Exposure.ts, the `dawn` key), so the land's brightness is this light against the sky's: the
+// gains keep the land from about 0.55 at -8 degrees, where the sky's light is still deep, through a
+// lift of about 2 at -2.6, where the sky's has fallen behind the sun's coming, to none from 2 up.
+// A blue cast of its own (the night's, at 0.3) turned the rock's brightest tenth to C 0.08 to 0.09
+// at -6.5 degrees, against 0.07 to 0.08 without: the land takes the sky's own colour. A clouded
+// morning keeps these tints but takes the evening's gains back by its clouded share (`islandSky`):
+// its exposure stays on the clouded keys, which these gains were not set under.
+const ISLAND_SKY_RISING: readonly IslandRow[] = [
+	{ at: 2 },
+	{ at: 1, gain: 1.3 },
+	{ at: 0, gain: 1.6 },
+	{ at: - 1.3, gain: 2 },
+	{ at: - 2.6, gain: 2.2 },
+	{ at: - 3.3, gain: 2 },
+	{ at: - 4, gain: 1.8 },
+	{ at: - 5.3, gain: 1.3 },
+	{ at: - 6.5, gain: 0.9 },
+	{ at: - 8, gain: 0.55 },
+	{ at: - 8.6, gain: 0.6 },
+	{ at: - 10, gain: 0.8 },
+	ISLAND_SKY[ ISLAND_SKY.length - 1 ],
+];
+
+// ISLAND_SKY at `elevation`, on the rising or the setting sun's side: the tint (normalised to unit
+// luminance) and its amount into `tint`; returns the gain. The rising rows' tints hold under any
+// sky, but their gains were set on a clear morning's exposure (post/Exposure.ts, `dawn`), so a clouded share `cloud`
+// (Weather.ts `cloudedShare`) takes the evening's gain back, as the display's night weight does
+// (DayCycle.ts `displayNight`).
+function islandSky( elevation: number, rising: boolean, tint: THREE.Vector4, cloud: number ): number {
 
 	const at = ( row: IslandRow ) => {
 
@@ -252,15 +281,27 @@ function islandSky( elevation: number, tint: THREE.Vector4 ): number {
 		return [ r / l, g / l, b / l, row.amount ?? 0, row.gain ?? 1 ];
 
 	};
-	const rows = ISLAND_SKY;
-	let v = at( rows[ rows.length - 1 ] );
-	if ( elevation >= rows[ 0 ].at ) v = at( rows[ 0 ] );
-	else for ( let i = 1; i < rows.length; i ++ ) if ( elevation >= rows[ i ].at ) {
+	const along = ( rows: readonly IslandRow[] ) => {
 
-		const t = ( elevation - rows[ i ].at ) / ( rows[ i - 1 ].at - rows[ i ].at );
-		const a = at( rows[ i ] ), b = at( rows[ i - 1 ] );
-		v = a.map( ( x, c ) => x + ( b[ c ] - x ) * t );
-		break;
+		let v = at( rows[ rows.length - 1 ] );
+		if ( elevation >= rows[ 0 ].at ) v = at( rows[ 0 ] );
+		else for ( let i = 1; i < rows.length; i ++ ) if ( elevation >= rows[ i ].at ) {
+
+			const t = ( elevation - rows[ i ].at ) / ( rows[ i - 1 ].at - rows[ i ].at );
+			const a = at( rows[ i ] ), b = at( rows[ i - 1 ] );
+			v = a.map( ( x, c ) => x + ( b[ c ] - x ) * t );
+			break;
+
+		}
+		return v;
+
+	};
+	let v = along( ISLAND_SKY );
+	if ( rising ) {
+
+		const r = along( ISLAND_SKY_RISING );
+		if ( cloud > 0 ) r[ 4 ] += ( v[ 4 ] - r[ 4 ] ) * cloud;
+		v = r;
 
 	}
 	tint.set( v[ 0 ], v[ 1 ], v[ 2 ], v[ 3 ] );
@@ -363,9 +404,9 @@ function clearShade( elevation: number, direct: number ): number {
 // (set when the noon shade's blue was tuned by eye, before the keys were set), and one gain on
 // both keeps that mix at every hour. How the sky's light falls with the sun is the atmosphere's
 // own (the aerosol's wide base and the multiple scattering that grows along long paths:
-// Atmosphere.ts), not rows by the sun's elevation. Below 2 degrees the gain moves from the golden
-// key to the night key by -6 degrees
-// under the horizon (a smoothstep), so the sky after sunset dims with the sun's light it lends
+// Atmosphere.ts), not rows by the sun's elevation. From 2 degrees the gain moves to the night key
+// by -6 degrees under the horizon (a smoothstep; a clear morning's from -3 to -13, DayCycle.ts
+// `skyNight`), so the sky after sunset dims with the sun's light it lends
 // without the jump to the atmosphere's own light that fading the gain to none gave (several times
 // brighter than the golden key, its blue more so). The sun's own light
 // (its transmittance, the disk) and the cumulus it lights are untouched. The night key is the moonlit
@@ -386,13 +427,32 @@ function clearShade( elevation: number, direct: number ): number {
 // (HazeKeys.ts). The twin stays near grey, blue over red about 1.1, at about the day's luminance, so
 // the air's hue moves and the land's level and the exposure do not. Its golden and low keys are the
 // day's own, so a clouded sky parts from a clear one only over 12 degrees.
-// Tunable on debug pages (debug/Tune.ts): `sky.light.<r|g|b>@<golden|low|high|cloudyHigh|night>`.
+// On a clear evening the sky takes a key below the golden one (`dusk`, at -1 degrees, not under
+// cloud): the glow low in the west after the sun has gone. It holds more red and half the blue of
+// the golden key, so the afterglow stays orange through the first degrees under the horizon, where
+// the night key's fall has begun to take it.
+// The morning is not the evening turned round. These keys hold in every direction, so a warm key
+// warms the whole picture: the golden key is the evening's, where the whole sky is alight, and the
+// clear morning has keys of its own (`dawn`, `morning`, read while the sun rises: DayKeys.ts
+// `rising`). At sunrise the air is already blue and the warm colour stays in the sun's road and the
+// low streaks, so `dawn` is near grey with no warm lean, and the display's dawn white balance (Pipeline.ts
+// WHITE_BALANCE) cools it from there; by 12 degrees the picture has gone cool and quiet, and `morning`
+// is the day's light at about two thirds of the low key, so the sea stands lighter under the same sky,
+// the meter holding the sky's level. Both are fits on our own views. From the `high` key up
+// the two sides are one. A clouded morning keeps the clouded keys.
+// Tunable on debug pages (debug/Tune.ts): `sky.light.<r|g|b>@<dawn|morning|dusk|golden|low|high|cloudyHigh|night>`.
 const SKY_LIGHT_LOW_SUN: readonly DayKey<{ r: number; g: number; b: number }>[] = [
 	{ at: 3, name: 'golden', values: { r: 0.3, g: 0.18, b: 0.12 } },
 	{ at: 12, name: 'low', values: { r: 0.221, g: 0.192, b: 0.194 } },
 ];
+const SKY_LIGHT_HIGH: DayKey<{ r: number; g: number; b: number }> = { at: 40, name: 'high', values: { r: 0.235, g: 0.232, b: 0.346 } };
 const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'sky.light', {
-	day: [ ...SKY_LIGHT_LOW_SUN, { at: 40, name: 'high', values: { r: 0.235, g: 0.232, b: 0.346 } } ],
+	day: [ { at: - 1, name: 'dusk', values: { r: 0.27, g: 0.2, b: 0.08 } }, ...SKY_LIGHT_LOW_SUN, SKY_LIGHT_HIGH ],
+	rising: [
+		{ at: 3, name: 'dawn', values: { r: 0.2, g: 0.18, b: 0.16 } },
+		{ at: 12, name: 'morning', values: { r: 0.15, g: 0.133, b: 0.138 } },
+		SKY_LIGHT_HIGH,
+	],
 	cloudy: [ ...SKY_LIGHT_LOW_SUN, { at: 40, name: 'cloudyHigh', values: { r: 0.25, g: 0.232, b: 0.28 } } ],
 	night: { r: 0.045, g: 0.023, b: 0.028 },
 }, { r: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune }, g: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune }, b: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune } } );
@@ -436,19 +496,17 @@ function byElevation<K extends string>( rows: readonly ( { at: number } & Record
 
 }
 
-// where the sun's gain on the sky reaches the night key, degrees
-const TWILIGHT_END = - 6;
 // (`flags=skyGain:false` leaves the sky as the atmosphere gives it, `lowKey:false` the key as its
 // transmittance gives it, for A/Bs)
-const skyGain = ( elevation: number, cloud: number, target: THREE.Color ) => {
+const skyGain = ( elevation: number, rising: boolean, cloud: number, target: THREE.Color ) => {
 
 	if ( debugFlags.skyGain === false ) return target.setScalar( 1 );
-	const { r, g, b } = keyed( SKY_LIGHT, elevation, 1 - THREE.MathUtils.smoothstep( elevation, TWILIGHT_END, 2 ), _skyLight, cloud );
+	const { r, g, b } = keyed( SKY_LIGHT, elevation, skyNight( elevation, rising, cloud ), _skyLight, cloud, rising );
 	return target.setRGB( r, g, b );
 
 };
 const _skyGain = new THREE.Color();
-const cirrusGain = ( elevation: number, cloud: number ) => ( debugFlags.skyGain === false ? 1 : luma( skyGain( elevation, cloud, _skyGain ) ) * CIRRUS_SHARE ) * ( typeof debugFlags.cirrusSky === 'number' ? debugFlags.cirrusSky : 1 );
+const cirrusGain = ( elevation: number, rising: boolean, cloud: number ) => ( debugFlags.skyGain === false ? 1 : luma( skyGain( elevation, rising, cloud, _skyGain ) ) * CIRRUS_SHARE ) * ( typeof debugFlags.cirrusSky === 'number' ? debugFlags.cirrusSky : 1 );
 const lowKey = ( elevation: number ) => debugFlags.lowKey === false ? 1 : byElevation( LOW_KEY, elevation, 'gain' );
 
 // A sky radiance or irradiance as lent to the island (ISLAND_SKY): drawn toward `tint.rgb` at its
@@ -596,6 +654,9 @@ export class Sky {
 	private readonly drawnMoonSunDir = new THREE.Vector3( 0, 1, 0 );
 	elevation: number;
 	azimuth: number;
+	// whether the sun climbs, from where `sunDir` stands on its path (DayCycle.ts `sunRising`): what
+	// tells the morning's keys from the evening's at one height
+	rising = false;
 	// A shared artistic solar tint affects both scattering and direct light.
 	sunTint = new THREE.Color( 1.0, 0.97, 0.9 );
 	sunDir = new THREE.Vector3();
@@ -616,7 +677,7 @@ export class Sky {
 	private viewHeight = 1;
 	private cloudTime = 0;
 	solarIlluminance = new THREE.Color();
-	readonly grade = { exposure: DAY_EXPOSURE, daylight: 1 };
+	readonly grade = { exposure: DAY_EXPOSURE, daylight: 1, night: 0 };
 	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
 	skyIrradiance = new THREE.Color(); // E / PI over the upper hemisphere
 	seaColor = new THREE.Color( 0.0045, 0.0125, 0.0140 );
@@ -1265,13 +1326,15 @@ export class Sky {
 		// The moonlit sky is drawn with the moon's key light (MOON_KEY), the island's at its own hue,
 		// times the sky's night gain (SKY_LIGHT's night key), which the key leaves out: the key takes
 		// the moon's own gain instead (`moonKeyGain`).
-		const moonKey = celestial ? illuminance * celestial.moonKeyGain : 0;
+		const cloud = skyMix ? cloudedShare( skyMix ) : 0;
+		this.rising = sunRising( this.sunDir );
+		const moonGain = celestial ? celestial.moonKeyGain * moonAtDawn( celestial.elevation, this.rising, cloud ) : 0;
+		const moonKey = illuminance * moonGain;
 		const moonSky = SKY_LIGHT.night;
 		this.moonKeyColor.setRGB( MOON_KEY[ 0 ] * moonKey, MOON_KEY[ 1 ] * moonKey, MOON_KEY[ 2 ] * moonKey );
 		this.atmosphere.moonIlluminance.value.setRGB( this.moonKeyColor.r * moonSky.r, this.moonKeyColor.g * moonSky.g, this.moonKeyColor.b * moonSky.b );
-		const cloud = skyMix ? cloudedShare( skyMix ) : 0;
-		this.atmosphere.sunIlluminance.value.copy( this.solarIlluminance ).multiply( skyGain( this.elevation, cloud, _skyGain ) );
-		this.clouds.cirrusSunGain.value = cirrusGain( this.elevation, cloud );
+		this.atmosphere.sunIlluminance.value.copy( this.solarIlluminance ).multiply( skyGain( this.elevation, this.rising, cloud, _skyGain ) );
+		this.clouds.cirrusSunGain.value = cirrusGain( this.elevation, this.rising, cloud );
 		this.atmosphere.updateSync();
 		// Cap the hue of the air's extinction first, then fade by the disk's visible share, so the
 		// setting disk only dims the key and does not bleach it.
@@ -1292,7 +1355,7 @@ export class Sky {
 			else this.keyDir.applyQuaternion( _keyStep.slerpQuaternions( _noTurn, _keyTurn, celestial.handoff ) );
 
 		}
-		this.keyIsMoon = ( celestial?.moonKeyGain ?? 0 ) > 0;
+		this.keyIsMoon = moonGain > 0;
 		this.keyColor.copy( this.sunColor ).multiplyScalar( lowKey( this.elevation ) );
 		const moonColor = this.night.moonColor.value;
 		if ( celestial ) {
@@ -1308,11 +1371,12 @@ export class Sky {
 			// The disk sits in the upper tones at night exposure so its maria stay visible, as to the
 			// eye; the moonlight on the island is the key light above, not this disk.
 			moonColor.setRGB( 0.04, 0.041, 0.043 ).multiplyScalar( 0.32 * celestial.moonVisibility * this.sunIlluminance / SUN_ILLUMINANCE );
-			this.night.starVisibility.value = celestial.nightVisibility * ( 1 - 0.22 * celestial.moonVisibility );
+			this.grade.night = displayNight( celestial.daylight, celestial.elevation, this.rising, cloud );
+			this.night.starVisibility.value = celestial.nightVisibility * this.grade.night * ( 1 - 0.22 * celestial.moonVisibility );
 			this.displayNightAmbient.value.setRGB( 0.001, 0.001625, 0.003125 ).multiplyScalar( illuminance * celestial.nightAmbient );
 			this.grade.exposure = celestial.exposure;
 			this.grade.daylight = celestial.daylight;
-			this.islandGain.value = islandSky( celestial.elevation, this.islandTint.value );
+			this.islandGain.value = islandSky( celestial.elevation, this.rising, this.islandTint.value, cloud );
 			const direct = weather?.directVisibility ?? 1;
 			const shade = clearShade( celestial.elevation, direct ), low = lowSun( celestial.elevation, direct );
 			const tint = this.islandTint.value;
@@ -1335,6 +1399,7 @@ export class Sky {
 			this.displayNightAmbient.value.setRGB( 0, 0, 0 );
 			this.grade.exposure = DAY_EXPOSURE;
 			this.grade.daylight = 1;
+			this.grade.night = 0;
 			this.islandTint.value.set( 1, 1, 1, 0 );
 			this.islandGain.value = 1;
 
@@ -1427,8 +1492,17 @@ export class Sky {
 		clouds.frontLead.value = front ? 4 * front.progress * ( 1 - front.progress ) : 0;
 		clouds.rainFrom.value = front ? front.from.rain : weather?.rain ?? 0;
 		clouds.rainTo.value = front ? front.to.rain : weather?.rain ?? 0;
-		// Cloud tops a couple of kilometres up keep the sun a little after it has set below.
-		const sunAbove = this.atmosphere.sunlightAt( this.sunDir, 2 ).multiply( this.sunTint ).multiplyScalar( illuminance );
+		// Cloud tops a couple of kilometres up keep the sun a little after it has set below. The
+		// rising sun's reaches the shell where it stands (its middle, 6.6 km), so the clouds take
+		// the dawn's light from about -2.6 degrees, as the Earth's shadow sinks below them; the
+		// height goes back to the evening's from the sun's rise to 3 degrees, so the morning's
+		// higher sun lights them as the afternoon's does, and with a clouded share (Weather.ts
+		// `cloudedShare`).
+		const cloud = skyMix ? cloudedShare( skyMix ) : 0;
+		const rising = this.rising && cloud < 1;
+		const toEvening = Math.max( cloud, THREE.MathUtils.smoothstep( celestial?.elevation ?? 90, 0, 3 ) );
+		const sunHeight = rising ? 2 + ( CLOUD_MIDDLE / 1000 - 2 ) * ( 1 - toEvening ) : 2;
+		const sunAbove = this.atmosphere.sunlightAt( this.sunDir, sunHeight ).multiply( this.sunTint ).multiplyScalar( illuminance );
 		// Under a closed deck the sun reaches the deck as it reaches the island, scattered through
 		// the cloud: it keeps its luminance and loses its colour as the key does (track), so an
 		// overcast evening's deck is not a sunset's.
@@ -1436,7 +1510,7 @@ export class Sky {
 		// The clouds belong to the seen sky: their moonlight keeps the night sky's own ramp
 		// (CLOUD_MOON), not the key's earlier one that keeps the island lit after sunset.
 		const moonGain = celestial ? ( 1 - THREE.MathUtils.smoothstep( celestial.elevation, CLOUD_MOON[ 0 ], CLOUD_MOON[ 1 ] ) ) * celestial.moonVisibility : 0;
-		const sunUp = ! celestial || celestial.elevation > - 2.5;
+		const sunUp = ! celestial || celestial.elevation > - 2.5 || rising;
 		// The march's depth shades the clouds' sky light as well as their direct light, and the same
 		// direction casts their shadow, so it moves without a jump even while no direct light reaches
 		// them: a jump there stepped the deck's brightness, half a stop on the meter under overcast.

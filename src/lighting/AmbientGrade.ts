@@ -30,7 +30,16 @@ import { tune } from '../debug/Tune.ts';
 // `meterLight`). The sky's reflection takes half from a sun at 5.5 degrees to one at -1.3
 // (`skySpecular`), under clear and fair skies alike, so a low sun's shade stands dark against the
 // lit rock and does not rise back through the sunset; the night's row returns it by -2.6 degrees,
-// under the night's exposure.
+// under the night's exposure. A clear morning takes the day's exposure long before the sun
+// (DayCycle.ts `displayNight`, post/Exposure.ts `dawn`), and under it the night's full reflection
+// of a bright, saturated sky lit the rock's ledges and the leaves cyan (at -8 degrees the cliff's
+// brightest tenth L 0.33, C 0.11 with it, 0.19, 0.03 without), so the rising sun's rows
+// (AMBIENT_GRADE_RISING) hold the clear and the fair sky's reflection at 0.1 from -2.6 down to
+// -12, where the display's night is whole again (DayCycle.ts `displayNight`), and give it back to
+// the night's by -13. A return from -7 still lit the rock's edges from -9 to -7 degrees (on the
+// island view their brightest tenth C 0.083 to 0.085 at -9 and -8, 0.066 or less held). What blue
+// they keep (C about a fifth of their L at -6.5 degrees, whether the reflection is 0.1 or none) is
+// the dawn's display white over a grey surface (post/Pipeline.ts WHITE_BALANCE), not this light.
 //
 // The sun's bounce is 4.5 by day under the clear and the fair sky down to 9 degrees, lets go along
 // a smooth step to 1.1 at 4 degrees and holds about 1 to its last light at -1.3; the moon's is 3.2
@@ -132,10 +141,24 @@ export const AMBIENT_GRADE: readonly AmbientRow[] = [
 	{ at: - 18, clear: { ...D, sunBounce: 3.2 }, fair: { ...D, sunBounce: 3.2 }, cloudy: { ...D, sunBounce: 1.7 }, overcast: { ...D, sunBounce: 1.7 } },
 ];
 
-/** The table at a sun elevation (degrees) and the weather's column weights, into `out`. */
-export function evaluateAmbient( elevation: number, weights: readonly number[], out: AmbientKnobs ): AmbientKnobs {
+// The rising sun's (the header): the clear and the fair sky's reflection at 0.1 from -2.6 to -12
+// degrees, the night's from -13 down; the clouded columns are the evening's.
+const DAWN_SPECULAR = 0.1;
+const dawn = ( row: AmbientRow, skySpecular: number ): AmbientRow => ( { ...row, at: row.at, clear: { ...row.clear, skySpecular }, fair: { ...row.fair, skySpecular } } );
+export const AMBIENT_GRADE_RISING: readonly AmbientRow[] = [
+	...AMBIENT_GRADE.filter( ( row ) => row.at > - 2.6 ),
+	dawn( AMBIENT_GRADE[ AMBIENT_GRADE.length - 3 ], DAWN_SPECULAR ),
+	dawn( AMBIENT_GRADE[ AMBIENT_GRADE.length - 2 ], DAWN_SPECULAR ),
+	dawn( { ...AMBIENT_GRADE[ AMBIENT_GRADE.length - 2 ], at: - 12 }, DAWN_SPECULAR ),
+	{ ...AMBIENT_GRADE[ AMBIENT_GRADE.length - 1 ], at: - 13 },
+	AMBIENT_GRADE[ AMBIENT_GRADE.length - 1 ],
+];
 
-	const rows = AMBIENT_GRADE;
+/** The table at a sun elevation (degrees), `rising` or setting, and the weather's column weights,
+ * into `out`. */
+export function evaluateAmbient( elevation: number, weights: readonly number[], out: AmbientKnobs, rising = false ): AmbientKnobs {
+
+	const rows = rising ? AMBIENT_GRADE_RISING : AMBIENT_GRADE;
 	let a = rows[ rows.length - 1 ], b = a, t = 0;
 	if ( elevation >= rows[ 0 ].at ) a = b = rows[ 0 ];
 	else for ( let i = 1; i < rows.length; i ++ ) if ( elevation >= rows[ i ].at ) {
@@ -186,9 +209,9 @@ export const ambientGrade = {
 	/** The table's output (whatever the override) at the last update. */
 	table: { ...D } as AmbientKnobs,
 	/** Once a frame: the sun's elevation (degrees) and the weather's column weights (Weather `skyMix`). */
-	update( elevation: number, weights: readonly number[] ): void {
+	update( elevation: number, weights: readonly number[], rising = false ): void {
 
-		evaluateAmbient( elevation, weights, this.table );
+		evaluateAmbient( elevation, weights, this.table, rising );
 		Object.assign( this.current, this.override ? this.manual : this.table );
 		for ( const key of AMBIENT_KNOBS ) ambient[ key ].value = this.current[ key ];
 		ambient.sunBounce.value *= sunBounceGain();

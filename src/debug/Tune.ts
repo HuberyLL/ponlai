@@ -16,8 +16,11 @@ import { hasKeys, type DayKey, type DayKeys, type KeyValues } from '../post/DayK
 //   registers each value of each key as `<prefix>.<value>@<key>`: the day's keys by their `name`,
 //   else `day<i>` in their order, and `cloudy` and `night` (`post.exposure.key@high`,
 //   `post.exposure.key@night`); a look's clouded keys by the elevation go by their `name`, else
-//   `cloudy<i>`; `keyed()` reads them through getters, so a set value is read on the next frame. `tuneObject` turns properties of an object the code already reads (a settings
-//   object the GUI edits too) into accessors of the registry.
+//   `cloudy<i>`; `keyed()` reads them through getters, so a set value is read on the next frame. A
+//   key's value written as a getter (`get highlight() { return KEYS.day[ 0 ].values.highlight; }`)
+//   shares another key's value: it registers no tunable of its own and follows the other's.
+//   `tuneObject` turns properties of an object the code already reads (a settings object the GUI
+//   edits too) into accessors of the registry.
 // - Options: `min` / `max`, the range a script may move the value in (a hint: nothing is clamped
 //   here, the script may give its own); `scale` 'linear' (the default) or 'log' (a script moves the
 //   value in log space); `load`, the value is read once as the page builds (an array length, a
@@ -158,22 +161,36 @@ export function tuneUniform( name: string, value: number, options: TuneOptions =
 export function tuneKeys<T extends KeyValues>( prefix: string, keys: DayKeys<T>, options: Partial<Record<keyof T, TuneOptions>> = {} ): DayKeys<T> {
 
 	if ( ! TUNE_ON ) return keys;
+	// (a key the table's sides share is one key object, so one tunable: its values wrap once)
+	const wrapped = new Map<T, T>();
 	const wrap = ( values: T, key: string ): T => {
 
+		const held = wrapped.get( values );
+		if ( held ) return held;
 		const out = {} as KeyValues;
 		for ( const k of Object.keys( values ) ) {
 
+			// a value given as a getter is another key's, shared: read through it, not a tunable
+			const shared = Object.getOwnPropertyDescriptor( values, k )?.get;
+			if ( shared ) {
+
+				Object.defineProperty( out, k, { enumerable: true, get: shared } );
+				continue;
+
+			}
 			// writes set the tunable too (a GUI slider on the table's values)
 			const entry = register( `${ prefix }.${ k }@${ key }`, values[ k ], options[ k as keyof T ] ?? {}, 'cpu' );
 			Object.defineProperty( out, k, { enumerable: true, get: () => entry.info.value, set: ( v: number ) => assign( entry, v ) } );
 
 		}
+		wrapped.set( values, out as T );
 		return out as T;
 
 	};
 	const along = ( list: readonly DayKey<T>[], prefix: string ) => list.map( ( d, i ) => ( { ...d, values: wrap( d.values, d.name ?? `${ prefix }${ i }` ) } ) );
 	return {
 		day: along( keys.day, 'day' ),
+		...( keys.rising ? { rising: along( keys.rising, 'rising' ) } : {} ),
 		...( keys.cloudy ? { cloudy: hasKeys( keys.cloudy ) ? along( keys.cloudy, 'cloudy' ) : wrap( keys.cloudy, 'cloudy' ) } : {} ),
 		night: wrap( keys.night, 'night' ),
 	};

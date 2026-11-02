@@ -699,7 +699,7 @@ showWindArrows();
 // show.
 const ambient = new AmbientVolume( renderer, data.ambient );
 installAmbientVolume( ambient );
-const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyCloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation, clouded: () => cloudedShare( weather.skyMix ) } );
+const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyCloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation, rising: () => sky.rising, clouded: () => cloudedShare( weather.skyMix ) } );
 // the environment's own harmonics, which the specular's relight divides by (AmbientSample.ts)
 installEnvironmentHarmonics( ambientRelight );
 // the haze's shadow kernels read the probes' sky visibility, so they compile now (Pipeline.ts)
@@ -1829,7 +1829,7 @@ function tick( time: number ): void {
 	sky.advance( environmentDt );
 	publishLighting();
 	// the ambient grade by the sun and the weather's blend of the kept skies (lighting/AmbientGrade.ts)
-	ambientGrade.update( sky.elevation, weather.skyMix );
+	ambientGrade.update( sky.elevation, weather.skyMix, sky.rising );
 	shared.clouded.value = cloudedShare( weather.skyMix );
 	updateShelfScatter( sky.keyColor, sky.keyIsMoon ? 0 : 1 - shared.clouded.value, sky.elevation );
 	// the yunpeng's glow and its local lights by the night's share (lighting/LocalLights.ts: its
@@ -1870,9 +1870,8 @@ function tick( time: number ): void {
 	if ( ! manualSun && environmentLook.exposure ) {
 
 		S.exposure = sky.grade.exposure;
-		// the night's grade (Pipeline NIGHT): none through the afterglow, all of it once the
-		// daylight has gone
-		S.night = 1 - THREE.MathUtils.smoothstep( sky.grade.daylight, 0.2, 0.45 );
+		// the night's grade (Pipeline NIGHT)
+		S.night = sky.grade.night;
 
 	}
 	// the weather's stops of the exposure and the clouded day's keys (Pipeline `skyMix`)
@@ -1907,7 +1906,7 @@ function tick( time: number ): void {
 	// Whitewater is disabled in this scene; leave its history idle.
 	waveMaps.update( camera );
 	// (their schools take flight more often by night)
-	wenyao.update( paused ? 0 : dt, 1 - THREE.MathUtils.smoothstep( sky.grade.daylight, 0.2, 0.45 ) );
+	wenyao.update( paused ? 0 : dt, sky.grade.night );
 	fallingLeaves?.update( simTime, freeControls.enabled ? camera.position : controls.target, camera.position );
 	groundBounce.update( sky.seaRadiance );
 	ambientRelight.update();

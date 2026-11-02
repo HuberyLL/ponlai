@@ -87,17 +87,16 @@ art decision changes; images from elsewhere stay out of the repository.
   haze: a milky band, brighter than the sky above it, closes over the horizon with no step or dark
   line where sea meets sky, and fades by 10 - 15 degrees up. Across from the sun
   the haze lifts the atmosphere's dim low sky (about twice); beside the sun it is flatter than the
-  atmosphere's own glow and dims it a little. The air follows the hour more than anything else: clear before dawn; on calm, dry
-  mornings a mist as the sun comes up, a soft low layer over the whole island that the camera
-  stands in (never a sheet on the sea), near neutral, its band over the horizon a few times as
-  bright as the lit grass in front of it, gone once the sun is 7 degrees up; coloured and even
-  through the day; thick and fully orange at the golden hour, yet paler than the lit ground;
+  atmosphere's own glow and dims it a little. The air follows the hour more than anything else: clear before dawn; as the sun comes
+  up thin and cold, a blue air over one thin pale rose band at the horizon, the sea under it blue
+  out to the end of it, with no gold in the picture and no mist in the morning; coloured and
+  even through the day; thick and fully orange at the golden hour, yet paler than the lit ground;
   thinner after sunset; a visible grey-blue layer by night. A cloudy day's air keeps less colour
   and shows brighter than a clear day's (about twice with the sun 25 degrees up). It lies over the
   land, the sea and the low sky alike; the light the sky lends the scene is the atmosphere's alone.
   Shafts show only where the
   air is thick enough and lit from the side or behind against darker ground, the haze's own
-  (strongest in the morning mist and at the golden hour, faint at a clear noon); no rays are
+  (strongest at the golden hour, faint at a clear noon); no rays are
   painted over the sky. The sun's disk is drawn larger than life (1.1 degrees), softly
   limb-darkened, its edge clean; round it a soft glow sized by the frame, not the field of view, near white at its core and fading
   as the square of the distance past half the frame, with no streaks, ghosts or rings. It weakens
@@ -417,7 +416,8 @@ art decision changes; images from elsewhere stay out of the repository.
   sun's light warms from about 20 degrees, turns orange by 10 and orange red near the horizon.
   After sunset the island stays readable: through the minutes between the sun's last light and the moon's, the meadow keeps its light (warm under the
   afterglow, then green), never dipping below its night brightness; the light that holds it up is
-  lent to the island alone. The
+  lent to the island alone, and only the evening's is warm: at dawn the land goes from the night's
+  blue into the day with no warm stretch. The
   sun is drawn at twice its true size, the moon at about five times (some 2.6 degrees across),
   so it reads as the night's light source; it is no brighter per unit of sky for it, and the
   moonlight on the island keeps its level. The day cycle is authored, not astronomical.
@@ -432,9 +432,15 @@ art decision changes; images from elsewhere stay out of the repository.
 - Weather changes sweep the sky as a front from upwind. The clouds drift downwind with the wind
   aloft, faster than the surface wind (the cumulus about twice it, the cirrus about three times,
   along their fibres), so they never move against the grass and the sea.
-- Through sunset the sky's light takes a gain of its own: the golden hour's warm one down to a sun
-  at 2 degrees, then a continuous move to the night key by -6 degrees. It sets the dusk's warm
-  light, and where it colours the sky it decides. Beyond it, no
+- The sky's light takes a gain of its own by the sun's height, the rising sun's apart from the
+  setting sun's. Through sunset it runs from the golden hour's warm key into a dusk key, more
+  orange still, at a sun 1 degree under the horizon, then moves on to the night key by -6 degrees:
+  the glow stands low in the west after the sun has gone and is the brightest thing in the picture.
+  The morning is not the evening turned round: its key is near grey, its display white cold, so
+  the sky, the water and the shaded rock are blue together at sunrise, and only a face turned to
+  the sun takes a warm colour, a pale one. On a clear morning the night goes early: with the sun
+  still 7 degrees under the horizon the air is already blue over one thin pink band, and the sea a
+  clear blue under it. Where the gain colours the sky it decides. Beyond it, no
   painted pink, magenta or deep-blue twilight, which dyes the sea one flat colour and reads as a
   filter; twilight's mood comes from the light on the island.
 - Rain is light streaks and ripples on the water. Wetness darkens rock and plants within small
