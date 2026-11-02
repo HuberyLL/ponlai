@@ -22,7 +22,7 @@ import { compileInto } from '../post/graph/Compile.ts';
 import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
-import { DAY_EXPOSURE, displayNight, sunRising, type DayCycleSnapshot } from './DayCycle.ts';
+import { DAY_EXPOSURE, displayNight, moonAtDawn, skyNight, sunRising, type DayCycleSnapshot } from './DayCycle.ts';
 import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, type WeatherFront, type WeatherState } from './Weather.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
@@ -369,7 +369,8 @@ function clearShade( elevation: number, direct: number ): number {
 // both keeps that mix at every hour. How the sky's light falls with the sun is the atmosphere's
 // own (the aerosol's wide base and the multiple scattering that grows along long paths:
 // Atmosphere.ts), not rows by the sun's elevation. From 2 degrees the gain moves to the night key
-// by -6 degrees under the horizon (a smoothstep), so the sky after sunset dims with the sun's light it lends
+// by -6 degrees under the horizon (a smoothstep; a clear morning's from -3 to -13, DayCycle.ts
+// `skyNight`), so the sky after sunset dims with the sun's light it lends
 // without the jump to the atmosphere's own light that fading the gain to none gave (several times
 // brighter than the golden key, its blue more so). The sun's own light
 // (its transmittance, the disk) and the cumulus it lights are untouched. The night key is the moonlit
@@ -459,14 +460,12 @@ function byElevation<K extends string>( rows: readonly ( { at: number } & Record
 
 }
 
-// where the sun's gain on the sky reaches the night key, degrees
-const TWILIGHT_END = - 6;
 // (`flags=skyGain:false` leaves the sky as the atmosphere gives it, `lowKey:false` the key as its
 // transmittance gives it, for A/Bs)
 const skyGain = ( elevation: number, rising: boolean, cloud: number, target: THREE.Color ) => {
 
 	if ( debugFlags.skyGain === false ) return target.setScalar( 1 );
-	const { r, g, b } = keyed( SKY_LIGHT, elevation, 1 - THREE.MathUtils.smoothstep( elevation, TWILIGHT_END, 2 ), _skyLight, cloud, rising );
+	const { r, g, b } = keyed( SKY_LIGHT, elevation, skyNight( elevation, rising, cloud ), _skyLight, cloud, rising );
 	return target.setRGB( r, g, b );
 
 };
@@ -1291,12 +1290,13 @@ export class Sky {
 		// The moonlit sky is drawn with the moon's key light (MOON_KEY), the island's at its own hue,
 		// times the sky's night gain (SKY_LIGHT's night key), which the key leaves out: the key takes
 		// the moon's own gain instead (`moonKeyGain`).
-		const moonKey = celestial ? illuminance * celestial.moonKeyGain : 0;
+		const cloud = skyMix ? cloudedShare( skyMix ) : 0;
+		this.rising = sunRising( this.sunDir );
+		const moonGain = celestial ? celestial.moonKeyGain * moonAtDawn( celestial.elevation, this.rising, cloud ) : 0;
+		const moonKey = illuminance * moonGain;
 		const moonSky = SKY_LIGHT.night;
 		this.moonKeyColor.setRGB( MOON_KEY[ 0 ] * moonKey, MOON_KEY[ 1 ] * moonKey, MOON_KEY[ 2 ] * moonKey );
 		this.atmosphere.moonIlluminance.value.setRGB( this.moonKeyColor.r * moonSky.r, this.moonKeyColor.g * moonSky.g, this.moonKeyColor.b * moonSky.b );
-		const cloud = skyMix ? cloudedShare( skyMix ) : 0;
-		this.rising = sunRising( this.sunDir );
 		this.atmosphere.sunIlluminance.value.copy( this.solarIlluminance ).multiply( skyGain( this.elevation, this.rising, cloud, _skyGain ) );
 		this.clouds.cirrusSunGain.value = cirrusGain( this.elevation, this.rising, cloud );
 		this.atmosphere.updateSync();
@@ -1319,7 +1319,7 @@ export class Sky {
 			else this.keyDir.applyQuaternion( _keyStep.slerpQuaternions( _noTurn, _keyTurn, celestial.handoff ) );
 
 		}
-		this.keyIsMoon = ( celestial?.moonKeyGain ?? 0 ) > 0;
+		this.keyIsMoon = moonGain > 0;
 		this.keyColor.copy( this.sunColor ).multiplyScalar( lowKey( this.elevation ) );
 		const moonColor = this.night.moonColor.value;
 		if ( celestial ) {
@@ -1335,7 +1335,7 @@ export class Sky {
 			// The disk sits in the upper tones at night exposure so its maria stay visible, as to the
 			// eye; the moonlight on the island is the key light above, not this disk.
 			moonColor.setRGB( 0.04, 0.041, 0.043 ).multiplyScalar( 0.32 * celestial.moonVisibility * this.sunIlluminance / SUN_ILLUMINANCE );
-			this.grade.night = displayNight( celestial.daylight );
+			this.grade.night = displayNight( celestial.daylight, celestial.elevation, this.rising, cloud );
 			this.night.starVisibility.value = celestial.nightVisibility * this.grade.night * ( 1 - 0.22 * celestial.moonVisibility );
 			this.displayNightAmbient.value.setRGB( 0.001, 0.001625, 0.003125 ).multiplyScalar( illuminance * celestial.nightAmbient );
 			this.grade.exposure = celestial.exposure;

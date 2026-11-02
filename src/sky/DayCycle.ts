@@ -1,4 +1,4 @@
-import { Matrix3, Vector3 } from 'three/webgpu';
+import { MathUtils, Matrix3, Vector3 } from 'three/webgpu';
 
 // The day cycle: authored, not astronomical. One dominant key light (the sun by day, the moon by
 // night) drives terrain, characters, water and every shadow map; a sun/moon handoff
@@ -21,6 +21,13 @@ import { Matrix3, Vector3 } from 'three/webgpu';
 // night; the night sky's own light (stars, the moon's disk and its in-scatter in the
 // sky, clouds) scales back to keep its tuned look in deep night (Sky.track). The night is
 // art-directed, not a simulation of the eye's night vision (docs/art-direction.md).
+// A clear morning is not that night run backwards: long before the sun comes the air is blue and
+// the sea a clear blue under it, lit by the sun's own light on the high air. So under a clear or
+// fair sky the rising sun takes the night away early, from the sun at about -12 degrees: the
+// display's night weight (`displayNight`), the sky's and the probes' night key (`skyNight`) and the
+// moon's key (`moonAtDawn`, which would lay a blue floor over the sea under a day's exposure). The
+// clouded share keeps the evening's timing, and a side's flip at noon or midnight moves nothing:
+// every weight here is 0 by day and 1 by night on both sides.
 //
 // The moon's orbit is authored too: not the sun's path but a great circle through the same east
 // and west points, tilted MOON_TILT toward the horizon about the east-west axis, so it culminates
@@ -122,9 +129,48 @@ export const NOON_SUN: Readonly<Vector3> = MERIDIAN.clone();
 /** Whether the sun at `dir` (unit, on its path) is rising: east of the meridian, before noon (the
  * haze's keys tell the morning from the evening by it: weather/HazeKeys.ts). */
 export const sunRising = ( dir: Readonly<Vector3> ): boolean => dir.dot( WEST ) < 0;
-/** The display's night weight (Pipeline NIGHT, the stars, the flying fish) at `daylight` (the
- * snapshot's): none through the afterglow, all of it once the daylight has gone. */
-export const displayNight = ( daylight: number ): number => 1 - smoothstep( 0.2, 0.45, daylight );
+// where a clear morning's display lets the night go, where its sky's and its probes' light leaves
+// the night key, and where its moon's key has gone, the sun's elevation (degrees): all of the
+// night under the first of each pair, none over the second
+const DAWN_NIGHT = [ - 12, - 7 ] as const;
+const DAWN_SKY = [ - 13, - 3 ] as const;
+const DAWN_MOON = [ - 13, - 7 ] as const;
+const DAWN_MOON_LEFT = 1 / 128;
+/** The display's night weight (Pipeline NIGHT, the stars, the flying fish), at `daylight` (the
+ * snapshot's) and the sun's `elevation` (degrees), `rising` or setting, under a clouded share
+ * `cloud` (Weather.ts `cloudedShare`). None through the afterglow, all of it once the daylight has
+ * gone; a clear morning lets the night go earlier (the header). */
+export function displayNight( daylight: number, elevation: number, rising: boolean, cloud: number ): number {
+
+	const night = 1 - smoothstep( 0.2, 0.45, daylight );
+	if ( ! rising ) return night;
+	const dawn = 1 - smoothstep( DAWN_NIGHT[ 0 ], DAWN_NIGHT[ 1 ], elevation );
+	return dawn + ( night - dawn ) * cloud;
+
+}
+/** The night key's share in the sky's light and the probes' (Sky.ts SKY_LIGHT, AmbientRelight.ts
+ * PROBE_SKY), at the sun's `elevation` (degrees), `rising` or setting, under a clouded share
+ * `cloud`: none from 2 degrees up, all of it by -6; a clear morning's leaves from -13 to -3 (the
+ * header). */
+export function skyNight( elevation: number, rising: boolean, cloud: number ): number {
+
+	const night = 1 - smoothstep( - 6, 2, elevation );
+	if ( ! rising ) return night;
+	const dawn = 1 - smoothstep( DAWN_SKY[ 0 ], DAWN_SKY[ 1 ], elevation );
+	return dawn + ( night - dawn ) * cloud;
+
+}
+/** What is left of the moon's key (the snapshot's `moonKeyGain`) on a clear morning (the header):
+ * all of it until the sun is at -13 degrees, none by -7, 1 on the setting side. It goes by even
+ * stops a degree, because the meter reads it in stops: a fade even in light keeps most of its
+ * stops for its last moments, and the picture's exposure leapt there, in seconds of a real dawn. */
+export function moonAtDawn( elevation: number, rising: boolean, cloud: number ): number {
+
+	if ( ! rising ) return 1;
+	const left = DAWN_MOON_LEFT ** MathUtils.clamp( ( elevation - DAWN_MOON[ 0 ] ) / ( DAWN_MOON[ 1 ] - DAWN_MOON[ 0 ] ), 0, 1 );
+	return cloud + ( 1 - cloud ) * ( left - DAWN_MOON_LEFT ) / ( 1 - DAWN_MOON_LEFT );
+
+}
 const NORTH_POLE = WEST.clone().cross( MERIDIAN ).normalize();
 // How far the moon's orbit is tilted from the sun's toward the horizon, about the east-west axis
 // (see the header): it culminates at 62 - 42 = 20 degrees.

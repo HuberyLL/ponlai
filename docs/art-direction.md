@@ -438,7 +438,9 @@ art decision changes; images from elsewhere stay out of the repository.
   the glow stands low in the west after the sun has gone and is the brightest thing in the picture.
   The morning is not the evening turned round: its key is near grey, its display white cold, so
   the sky, the water and the shaded rock are blue together at sunrise, and only a face turned to
-  the sun takes a warm colour, a pale one. Where the gain colours the sky it decides. Beyond it, no
+  the sun takes a warm colour, a pale one. On a clear morning the night goes early: with the sun
+  still 7 degrees under the horizon the air is already blue over one thin pink band, and the sea a
+  clear blue under it. Where the gain colours the sky it decides. Beyond it, no
   painted pink, magenta or deep-blue twilight, which dyes the sea one flat colour and reads as a
   filter; twilight's mood comes from the light on the island.
 - Rain is light streaks and ripples on the water. Wetness darkens rock and plants within small

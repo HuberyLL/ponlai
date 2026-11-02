@@ -4,6 +4,7 @@ import { ambient } from './AmbientGrade.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune, tuneKeys, tuneUniform } from '../debug/Tune.ts';
 import { keyed, type DayKeys } from '../post/DayKeys.ts';
+import { skyNight } from '../sky/DayCycle.ts';
 import { IRRADIANCE_SLABS, type AmbientVolume } from './AmbientVolume.ts';
 import { COSINE_LOBE, bounceLobe, coefficients, linearMaximum, shBasisAt, shConvolve, shDeringWindow, shProduct, shTowardDelta, shWindow, toMat3, type M3 } from './Harmonics.ts';
 import type { Shared } from '../shared.ts';
@@ -37,7 +38,7 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../wor
 //               `skyFill`, the environment's intensity) times the probes' own sky gain (PROBE_SKY,
 //               keyed by the sun's own elevation, not the key's, so the moon's key at night does
 //               not move it: golden, low and high, a clouded day's held value over them, the
-//               night's by -6 degrees), which the seen sky never takes, so the ground's sky light can be set
+//               night's as the sky's own, DayCycle.ts `skyNight`), which the seen sky never takes, so the ground's sky light can be set
 //               against the sun's and the sky's at every hour and under cloud; the grade adds no
 //               gain of its own here (AmbientGrade.ts);
 //     bounced   the probe's bounced sky visibility (the world lit by a uniform white sky, one
@@ -199,7 +200,8 @@ const SKY_VIEW = [ 0.282095, 2 / 3 * 0.488603, - 0.315392 / 4, - 0.546274 / 4 ];
 const BOUNCE_GAIN = 9.4;
 /** The probes' own gain on the sky's light, a luminance by the sun's elevation (keyed as Sky.ts
  * `skyGain`: golden, low and high, a held value under cloud, and the night key, reached by -6
- * degrees). The seen sky
+ * degrees; a clear morning's leaves it later, all of it at -13 degrees and none by -3: DayCycle.ts
+ * `skyNight`). The seen sky
  * keeps its gain; the ground's sky light takes this on top, so its ratio to the sun's light can be
  * set at every hour without changing the sky the eye sees. Set once the environment took the
  * haze's light, which lights the shade too: about 0.8 at the day's keys, the ground's sky light a
@@ -225,8 +227,6 @@ const PROBE_SKY: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight', {
 	night: { skyGain: 5 },
 }, { skyGain: { min: 0.25, max: 8, scale: 'log' } } );
 const _probeSky = { skyGain: 1 };
-// where the probes' sky gain reaches the night key, degrees (Sky.ts TWILIGHT_END)
-const PROBE_TWILIGHT_END = - 6;
 /** The sea's diffuse albedo as a bounce surface: the order of water's volume-scattering albedo
  * (see the header). */
 const SEA_ALBEDO = tune( 'lighting.relight.seaAlbedo', 0.05, { min: 0.01, max: 0.2, scale: 'log', load: true } );
@@ -394,6 +394,8 @@ export interface AmbientRelightOptions {
 	keyHeight: () => number;
 	/** the sun's own elevation, degrees (the key's direction is the moon's by night) */
 	sunElevation: () => number;
+	// whether the sun climbs (DayCycle.ts `sunRising`)
+	rising: () => boolean;
 	/** The weather's cloud, 0 under a clear or fair sky and 1 under a cloudy or overcast one
 	 * (DayKeys.ts `keyed`), for the probes' sky gain. */
 	clouded: () => number;
@@ -407,6 +409,7 @@ export class AmbientRelight {
 	private readonly weights: () => { a: number; b: number; blend: number };
 	private readonly keyHeight: () => number;
 	private readonly sunElevation: () => number;
+	private readonly rising: () => boolean;
 	private readonly clouded: () => number;
 	private readonly sky: AmbientSky;
 	private readonly slotA = uniform( 0, 'uint' );
@@ -430,7 +433,7 @@ export class AmbientRelight {
 	 * shown or settled frame may light the island with it (main.ts's reveal and settled signal wait) */
 	ready = false;
 
-	constructor( { renderer, volume, shared, sky, weights, cloud, keyHeight, sunElevation, clouded }: AmbientRelightOptions ) {
+	constructor( { renderer, volume, shared, sky, weights, cloud, keyHeight, sunElevation, rising, clouded }: AmbientRelightOptions ) {
 
 		this.renderer = renderer;
 		this.volume = volume;
@@ -439,6 +442,7 @@ export class AmbientRelight {
 		this.weights = weights;
 		this.keyHeight = keyHeight;
 		this.sunElevation = sunElevation;
+		this.rising = rising;
 		this.clouded = clouded;
 		this.kernel = this.buildRelight( cloud );
 		volume.storageGain = () => this.storageGain();
@@ -474,8 +478,8 @@ export class AmbientRelight {
 		// the ground and off the wall come from, weighed by level ground's cosine of the key
 		const l = this.shared.sunDir.value, out = this.lobeValues;
 		const elevation = this.sunElevation();
-		const night = 1 - THREE.MathUtils.smoothstep( elevation, PROBE_TWILIGHT_END, 2 );
-		this.skyScale.value = this.shared.skyFill.value * keyed( PROBE_SKY, elevation, night, _probeSky, this.clouded() ).skyGain;
+		const cloud = this.clouded();
+		this.skyScale.value = this.shared.skyFill.value * keyed( PROBE_SKY, elevation, skyNight( elevation, this.rising(), cloud ), _probeSky, cloud ).skyGain;
 		out.fill( 0 );
 		const level = THREE.MathUtils.smoothstep( l.y, - 0.02, 0.05 ) * this.keyHeight();
 		this.keyLevel.value = level;
