@@ -1870,9 +1870,8 @@ function tick( time: number ): void {
 	if ( ! manualSun && environmentLook.exposure ) {
 
 		S.exposure = sky.grade.exposure;
-		// the night's grade (Pipeline NIGHT): none through the afterglow, all of it once the
-		// daylight has gone
-		S.night = 1 - THREE.MathUtils.smoothstep( sky.grade.daylight, 0.2, 0.45 );
+		// the night's grade (Pipeline NIGHT)
+		S.night = sky.grade.night;
 
 	}
 	// the weather's stops of the exposure and the clouded day's keys (Pipeline `skyMix`)
@@ -1907,7 +1906,7 @@ function tick( time: number ): void {
 	// Whitewater is disabled in this scene; leave its history idle.
 	waveMaps.update( camera );
 	// (their schools take flight more often by night)
-	wenyao.update( paused ? 0 : dt, 1 - THREE.MathUtils.smoothstep( sky.grade.daylight, 0.2, 0.45 ) );
+	wenyao.update( paused ? 0 : dt, sky.grade.night );
 	fallingLeaves?.update( simTime, freeControls.enabled ? camera.position : controls.target, camera.position );
 	groundBounce.update( sky.seaRadiance );
 	ambientRelight.update();

@@ -122,6 +122,9 @@ export const NOON_SUN: Readonly<Vector3> = MERIDIAN.clone();
 /** Whether the sun at `dir` (unit, on its path) is rising: east of the meridian, before noon (the
  * haze's keys tell the morning from the evening by it: weather/HazeKeys.ts). */
 export const sunRising = ( dir: Readonly<Vector3> ): boolean => dir.dot( WEST ) < 0;
+/** The display's night weight (Pipeline NIGHT, the stars, the flying fish) at `daylight` (the
+ * snapshot's): none through the afterglow, all of it once the daylight has gone. */
+export const displayNight = ( daylight: number ): number => 1 - smoothstep( 0.2, 0.45, daylight );
 const NORTH_POLE = WEST.clone().cross( MERIDIAN ).normalize();
 // How far the moon's orbit is tilted from the sun's toward the horizon, about the east-west axis
 // (see the header): it culminates at 62 - 42 = 20 degrees.

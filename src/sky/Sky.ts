@@ -22,7 +22,7 @@ import { compileInto } from '../post/graph/Compile.ts';
 import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
-import { DAY_EXPOSURE, sunRising, type DayCycleSnapshot } from './DayCycle.ts';
+import { DAY_EXPOSURE, displayNight, sunRising, type DayCycleSnapshot } from './DayCycle.ts';
 import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, type WeatherFront, type WeatherState } from './Weather.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
@@ -642,7 +642,7 @@ export class Sky {
 	private viewHeight = 1;
 	private cloudTime = 0;
 	solarIlluminance = new THREE.Color();
-	readonly grade = { exposure: DAY_EXPOSURE, daylight: 1 };
+	readonly grade = { exposure: DAY_EXPOSURE, daylight: 1, night: 0 };
 	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
 	skyIrradiance = new THREE.Color(); // E / PI over the upper hemisphere
 	seaColor = new THREE.Color( 0.0045, 0.0125, 0.0140 );
@@ -1335,7 +1335,8 @@ export class Sky {
 			// The disk sits in the upper tones at night exposure so its maria stay visible, as to the
 			// eye; the moonlight on the island is the key light above, not this disk.
 			moonColor.setRGB( 0.04, 0.041, 0.043 ).multiplyScalar( 0.32 * celestial.moonVisibility * this.sunIlluminance / SUN_ILLUMINANCE );
-			this.night.starVisibility.value = celestial.nightVisibility * ( 1 - 0.22 * celestial.moonVisibility );
+			this.grade.night = displayNight( celestial.daylight );
+			this.night.starVisibility.value = celestial.nightVisibility * this.grade.night * ( 1 - 0.22 * celestial.moonVisibility );
 			this.displayNightAmbient.value.setRGB( 0.001, 0.001625, 0.003125 ).multiplyScalar( illuminance * celestial.nightAmbient );
 			this.grade.exposure = celestial.exposure;
 			this.grade.daylight = celestial.daylight;
@@ -1362,6 +1363,7 @@ export class Sky {
 			this.displayNightAmbient.value.setRGB( 0, 0, 0 );
 			this.grade.exposure = DAY_EXPOSURE;
 			this.grade.daylight = 1;
+			this.grade.night = 0;
 			this.islandTint.value.set( 1, 1, 1, 0 );
 			this.islandGain.value = 1;
 
