@@ -368,9 +368,8 @@ function clearShade( elevation: number, direct: number ): number {
 // (set when the noon shade's blue was tuned by eye, before the keys were set), and one gain on
 // both keeps that mix at every hour. How the sky's light falls with the sun is the atmosphere's
 // own (the aerosol's wide base and the multiple scattering that grows along long paths:
-// Atmosphere.ts), not rows by the sun's elevation. Below 2 degrees the gain moves from the golden
-// key to the night key by -6 degrees
-// under the horizon (a smoothstep), so the sky after sunset dims with the sun's light it lends
+// Atmosphere.ts), not rows by the sun's elevation. From 2 degrees the gain moves to the night key
+// by -6 degrees under the horizon (a smoothstep), so the sky after sunset dims with the sun's light it lends
 // without the jump to the atmosphere's own light that fading the gain to none gave (several times
 // brighter than the golden key, its blue more so). The sun's own light
 // (its transmittance, the disk) and the cumulus it lights are untouched. The night key is the moonlit
@@ -391,6 +390,10 @@ function clearShade( elevation: number, direct: number ): number {
 // (HazeKeys.ts). The twin stays near grey, blue over red about 1.1, at about the day's luminance, so
 // the air's hue moves and the land's level and the exposure do not. Its golden and low keys are the
 // day's own, so a clouded sky parts from a clear one only over 12 degrees.
+// On a clear evening the sky takes a key below the golden one (`dusk`, at -1 degrees, not under
+// cloud): the glow low in the west after the sun has gone. It holds more red and half the blue of
+// the golden key, so the afterglow stays orange through the first degrees under the horizon, where
+// the night key's fall has begun to take it.
 // The morning is not the evening turned round. These keys hold in every direction, so a warm key
 // warms the whole picture: the golden key is the evening's, where the whole sky is alight, and the
 // clear morning has keys of its own (`dawn`, `morning`, read while the sun rises: DayKeys.ts
@@ -400,14 +403,14 @@ function clearShade( elevation: number, direct: number ): number {
 // is the day's light at about two thirds of the low key, so the sea stands lighter under the same sky,
 // the meter holding the sky's level. Both are fits on our own views. From the `high` key up
 // the two sides are one. A clouded morning keeps the clouded keys.
-// Tunable on debug pages (debug/Tune.ts): `sky.light.<r|g|b>@<dawn|morning|golden|low|high|cloudyHigh|night>`.
+// Tunable on debug pages (debug/Tune.ts): `sky.light.<r|g|b>@<dawn|morning|dusk|golden|low|high|cloudyHigh|night>`.
 const SKY_LIGHT_LOW_SUN: readonly DayKey<{ r: number; g: number; b: number }>[] = [
 	{ at: 3, name: 'golden', values: { r: 0.3, g: 0.18, b: 0.12 } },
 	{ at: 12, name: 'low', values: { r: 0.221, g: 0.192, b: 0.194 } },
 ];
 const SKY_LIGHT_HIGH: DayKey<{ r: number; g: number; b: number }> = { at: 40, name: 'high', values: { r: 0.235, g: 0.232, b: 0.346 } };
 const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'sky.light', {
-	day: [ ...SKY_LIGHT_LOW_SUN, SKY_LIGHT_HIGH ],
+	day: [ { at: - 1, name: 'dusk', values: { r: 0.27, g: 0.2, b: 0.08 } }, ...SKY_LIGHT_LOW_SUN, SKY_LIGHT_HIGH ],
 	rising: [
 		{ at: 3, name: 'dawn', values: { r: 0.2, g: 0.18, b: 0.16 } },
 		{ at: 12, name: 'morning', values: { r: 0.15, g: 0.133, b: 0.138 } },

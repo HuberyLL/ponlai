@@ -12,8 +12,9 @@ import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun } from '../sky/Weather.ts';
 //
 // Each key holds:
 //   - amount: the weather's haze over its preset's: 0.66 by day and 0.61 at the golden hour,
-//     about half before dawn, 0.3 as the sun rises, near 1 in the morning, a fifth more after
-//     sunset, and two and a half times by night (a visible layer). How far the light carries at a height follows from it and the
+//     about half before dawn, 0.3 as the sun rises, near 1 in the morning, 0.45 after sunset, a
+//     thin air that leaves the glow over the horizon no dark band, and two and a half times by
+//     night (a visible layer). How far the light carries at a height follows from it and the
 //     medium's shape below.
 //   - the medium's shape (VolumetricHaze's header): `top`, the ground layer's top over the island's
 //     level (m), `width`, the width of its step (m), `aerosolShare`, the deep aerosol layer's density
@@ -45,8 +46,8 @@ import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun } from '../sky/Weather.ts';
 //     The overcast's are still to be set toward grey.
 //   - desaturate: how far each of the haze's two shares of light (VolumetricHaze's header) turns
 //     toward its luminance: all of it by day (the day's air shows its sky's colour through
-//     the haze's sigma, not its own), half in the morning, after sunset and by night, 0.72 as the
-//     sun rises, and a third at the golden hour, whose air takes most of the sun's orange. Under
+//     the haze's sigma, not its own), half in the morning and by night, 0.4 after sunset, 0.72 as
+//     the sun rises, and a third at the golden hour, whose air takes most of the sun's orange. Under
 //     the sunrise's cold light it decides where the air's own warmth shows: the haze's own rows
 //     are red toward a low sun, so what it leaves of them lands in the band over the horizon, the
 //     high air staying blue; a fast swing, the band from blue to rose within a tenth or two of it.
@@ -141,11 +142,11 @@ const MIST = { ...key( 0.3, GOLDEN_SIGMA, 0.72, 1.43, 0, 1 ), rayleighWeight: 3,
 const MORNING = { ...key( 0.96, DAY_SIGMA, 0.5, 1.5, 0, 1 ), rayleighWeight: 1.5, mieWeight: 0.35 };
 const DAY = { ...key( 0.659, DAY_SIGMA, 1, 1.73, 0, 0 ), rayleighWeight: 2.03, mieWeight: 0.345, top: 78.4, width: 54.9, aerosolShare: 0.06, aerosolHeight: 761 };
 const GOLDEN = { ...key( 0.606, GOLDEN_SIGMA, 0.331, 1.43, 0, 1 ), rayleighWeight: 0.217, mieWeight: 1.43, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010 };
-const AFTER_SUNSET = key( 1.23, twilight( - 2.5 ), 0.5, 2.5, 0, 1 );
+const AFTER_SUNSET = key( 0.45, twilight( - 2.5 ), 0.4, 2.5, 0, 1 );
 // the keys with a shape are tunable on debug pages (debug/Tune.ts):
 // `haze.key.<amount|sigmaRed|sigmaBlue|desaturate|gain|rayleighWeight|mieWeight|top|width|
 // aerosolShare|aerosolHeight|skyDepth>@<day|golden|night|mist>` (green is sigma's unit), the
-// morning its seven up to `mieWeight`
+// morning's and the afterglow's their seven up to `mieWeight` (`@morning`, `@afterSunset`)
 const TUNED = [ 'amount', 'sigmaRed', 'sigmaBlue', 'desaturate', 'gain', 'rayleighWeight', 'mieWeight', 'top', 'width', 'aerosolShare', 'aerosolHeight', 'skyDepth' ] as const;
 const TUNE_RANGE: Record<typeof TUNED[ number ], TuneOptions> = {
 	amount: { min: 0.1, max: 10, scale: 'log', onChange: markSkyRetune }, sigmaRed: { min: 0.05, max: 1.5, scale: 'log', onChange: markSkyRetune },
@@ -156,7 +157,7 @@ const TUNE_RANGE: Record<typeof TUNED[ number ], TuneOptions> = {
 	aerosolShare: { min: 0.003, max: 3, scale: 'log', onChange: markSkyRetune }, aerosolHeight: { min: 300, max: 8000, scale: 'log', onChange: markSkyRetune },
 	skyDepth: { min: 0, max: 0.5, onChange: markSkyRetune },
 };
-for ( const [ k, name, fields ] of [ [ DAY, 'day', TUNED ], [ GOLDEN, 'golden', TUNED ], [ NIGHT, 'night', TUNED ], [ MIST, 'mist', TUNED ], [ MORNING, 'morning', TUNED.slice( 0, 7 ) ] ] as const ) {
+for ( const [ k, name, fields ] of [ [ DAY, 'day', TUNED ], [ GOLDEN, 'golden', TUNED ], [ NIGHT, 'night', TUNED ], [ MIST, 'mist', TUNED ], [ MORNING, 'morning', TUNED.slice( 0, 7 ) ], [ AFTER_SUNSET, 'afterSunset', TUNED.slice( 0, 7 ) ] ] as const ) {
 
 	tuneObject( k, Object.fromEntries( fields.map( ( f ) => [ f, `haze.key.${ f }@${ name }` ] ) ), TUNE_RANGE );
 

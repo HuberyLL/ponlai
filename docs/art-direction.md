@@ -416,7 +416,8 @@ art decision changes; images from elsewhere stay out of the repository.
   sun's light warms from about 20 degrees, turns orange by 10 and orange red near the horizon.
   After sunset the island stays readable: through the minutes between the sun's last light and the moon's, the meadow keeps its light (warm under the
   afterglow, then green), never dipping below its night brightness; the light that holds it up is
-  lent to the island alone. The
+  lent to the island alone, and only the evening's is warm: at dawn the land goes from the night's
+  blue into the day with no warm stretch. The
   sun is drawn at twice its true size, the moon at about five times (some 2.6 degrees across),
   so it reads as the night's light source; it is no brighter per unit of sky for it, and the
   moonlight on the island keeps its level. The day cycle is authored, not astronomical.
@@ -431,9 +432,13 @@ art decision changes; images from elsewhere stay out of the repository.
 - Weather changes sweep the sky as a front from upwind. The clouds drift downwind with the wind
   aloft, faster than the surface wind (the cumulus about twice it, the cirrus about three times,
   along their fibres), so they never move against the grass and the sea.
-- Through sunset the sky's light takes a gain of its own: the golden hour's warm one down to a sun
-  at 2 degrees, then a continuous move to the night key by -6 degrees. It sets the dusk's warm
-  light, and where it colours the sky it decides. Beyond it, no
+- The sky's light takes a gain of its own by the sun's height, the rising sun's apart from the
+  setting sun's. Through sunset it runs from the golden hour's warm key into a dusk key, more
+  orange still, at a sun 1 degree under the horizon, then moves on to the night key by -6 degrees:
+  the glow stands low in the west after the sun has gone and is the brightest thing in the picture.
+  The morning is not the evening turned round: its key is near grey, its display white cold, so
+  the sky, the water and the shaded rock are blue together at sunrise, and only a face turned to
+  the sun takes a warm colour, a pale one. Where the gain colours the sky it decides. Beyond it, no
   painted pink, magenta or deep-blue twilight, which dyes the sea one flat colour and reads as a
   filter; twilight's mood comes from the light on the island.
 - Rain is light streaks and ripples on the water. Wetness darkens rock and plants within small
