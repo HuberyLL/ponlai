@@ -46,7 +46,7 @@ import { BLUE_NOISE, blueNoiseTexture } from './BlueNoise.ts';
 import { TONE_CURVE, checkToneCurve, solveToneCurve, type ToneCurve } from './ToneCurve.ts';
 import { BASE_GRADE, fillGradeLut, gradeOf, lutNodes, mergeGrade, sampleLut, type GradeChanges, type GradeParams } from './GradeLut.ts';
 import { LocalTone } from './LocalTone.ts';
-import { keyed, type DayKeys } from './DayKeys.ts';
+import { keyed, type DayKey, type DayKeys } from './DayKeys.ts';
 import { EXPOSURE_KEYS, type ExposureKey } from './Exposure.ts';
 import { restEpoch, restKey } from './TemporalRest.ts';
 import { tuneCheck, tuneKeys, tuneObject } from '../debug/Tune.ts';
@@ -556,13 +556,21 @@ export function vignetteFactor( at: V2, strength: F ): F {
 // colour. The golden hour warms a little further (red 1.05, blue 0.9); the clouded skies take a cool
 // white too (red 0.78, blue 1.16), their grey light kept from reading warm. The night takes a cool
 // white too (red 0.53, blue 1.2), on top of the moon's light and the rods' (Purkinje.ts).
-// Tunable on debug pages (debug/Tune.ts): `post.white.<r|g|b>@golden`, `@day`, `@high`, `@cloudy`,
-// `@night`.
+// The rising sun takes a cold white where the setting sun takes the warm one (`dawn`, in place of
+// the golden key while the sun climbs: DayKeys.ts `rising`; red 0.4, blue 2, a fit on our own
+// views): all that the sun does not reach at dawn is blue, sky, water and rock alike, and a face turned
+// to the sun takes a pale warm colour, far less orange than the same face at the same height in
+// the evening. It is what moves the rose band over the horizon, which the sky's own light
+// (Sky.ts SKY_LIGHT, its `dawn` key) cannot reach. The sides are one from the `day` key up.
+// Tunable on debug pages (debug/Tune.ts): `post.white.<r|g|b>@golden`, `@dawn`, `@day`, `@high`,
+// `@cloudy`, `@night`.
+const WHITE_FROM_DAY: DayKey<{ r: number; g: number; b: number }>[] = [ { at: 9, name: 'day', values: { r: 0.5, g: 1, b: 1.36 } }, { at: 40, name: 'high', values: { r: 0.593, g: 1, b: 1.248 } } ];
 export const WHITE_BALANCE: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'post.white', {
-	day: [ { at: 4, name: 'golden', values: { r: 1.05, g: 1, b: 0.9 } }, { at: 9, name: 'day', values: { r: 0.5, g: 1, b: 1.36 } }, { at: 40, name: 'high', values: { r: 0.593, g: 1, b: 1.248 } } ],
+	day: [ { at: 4, name: 'golden', values: { r: 1.05, g: 1, b: 0.9 } }, ...WHITE_FROM_DAY ],
+	rising: [ { at: 4, name: 'dawn', values: { r: 0.4, g: 1, b: 2.0 } }, ...WHITE_FROM_DAY ],
 	cloudy: { r: 0.775, g: 1, b: 1.16 },
 	night: { r: 0.527, g: 1, b: 1.2 },
-}, { r: { min: 0.4, max: 1.5 }, g: { min: 0.5, max: 1.5 }, b: { min: 0.5, max: 1.5 } } );
+}, { r: { min: 0.2, max: 1.5 }, g: { min: 0.5, max: 1.5 }, b: { min: 0.5, max: 3 } } );
 
 
 export class Pipeline {
@@ -2356,7 +2364,7 @@ export class Pipeline {
 		u.purkinje.value = S.night * PURKINJE.strength;
 		const keyColor = this.sky.keyColor;
 		u.purkinjeKey.value = ( 0.2126 * keyColor.r + 0.7152 * keyColor.g + 0.0722 * keyColor.b ) * liftedKeyHeight( this.sky.keyDir, this.sky.keyIsMoon ) / Math.PI;
-		const { r, g, b } = keyed( WHITE_BALANCE, this.sky.elevation, S.night, this.white, cloud );
+		const { r, g, b } = keyed( WHITE_BALANCE, this.sky.elevation, S.night, this.white, cloud, this.sky.rising );
 		if ( r !== this.toneWhite[ 0 ] || g !== this.toneWhite[ 1 ] || b !== this.toneWhite[ 2 ] ) {
 
 			this.toneWhite = [ r, g, b ];
