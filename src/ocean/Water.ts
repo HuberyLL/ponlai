@@ -31,6 +31,8 @@ import { ISLAND_PEAK, LAND_REACH, type Bounds } from '../world/WorldShapes.ts';
 import { GROWTH } from '../world/IslandGrowth.ts';
 import { FAR_HALF } from '../world/SeabedTile.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { tuneKeys } from '../debug/Tune.ts';
+import { keyed, type DayKeys } from '../post/DayKeys.ts';
 import { REFERENCE_SPEED } from '../weather/Wind.ts';
 import { motionNode, motionState, motionUniforms, outputStruct, reactiveUniforms } from '../post/Motion.ts';
 import { sceneUnits } from '../post/PreExposure.ts';
@@ -81,7 +83,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     (the same sun the floor takes: the share that enters the water and the beam's change of area,
 //     so the body dims as the sun sinks) and of the sky (Henyey-Greenstein) and a multiple-scattering
 //     backscatter boost, the sun's scattering limited in colour over a short path (`SHELF_SCATTER`),
-//     so a high sun does not lay blue over the shallows; the veil, the sky light the fine particles
+//     so a high sun does not lay blue over the shallows, and tinted over a long one (`OPEN_SCATTER`),
+//     where it would keep too much red and grey the open sea; the veil, the sky light the fine particles
 //     under the surface send back (`VEIL`), which gives the deep water its quiet slate under cloud, takes the warm sky's colour
 //     with the sun low and stays off the shallows; the sun through the thin crests, which keeps the water's own colour and
 //     the sun's; whitecaps where the surface is compressed (tidewater's fresh foam, not its
@@ -307,7 +310,7 @@ const SLOPE_FRESNEL = 5.4;
 // The colour of the sun's light scattered in the water over the shelf. Through the display's balance
 // a sun near white in the scene reads blue green, and in the shallows its scattered light is what lays
 // that over the floor as the sun climbs. So, by a path of about `depth` metres (a Gaussian, so the
-// open sea past it keeps its scattering whole), that light holds its blue to at most `blue` of its
+// open sea past it takes `OPEN_SCATTER`'s tint instead), that light holds its blue to at most `blue` of its
 // green and its red to at least `red` of its green, which keeps its brightness. The sun comes down
 // into these limits on its own by about 12 degrees, and from there down nothing here acts. The
 // ratio is the key's, worked once a frame (`updateShelfScatter`): a closed sky or the moon leaves the
@@ -315,9 +318,28 @@ const SLOPE_FRESNEL = 5.4;
 const SHELF_SCATTER = { depth: 8, blue: 0.53, red: 1.5 } as const;
 const shelfTint = uniform( new THREE.Vector3( 1, 1, 1 ) );
 
-/** Sets the shelf's scattered light's tint from the key's colour: `share` of the way to the limits
- * (`SHELF_SCATTER`), 0 leaving it white. Once a frame, beside the weather's clouded share. */
-export function updateShelfScatter( key: THREE.Color, share: number ): void {
+// The colour of the sun's light scattered in deep water, the other end of the shelf's mix. It corrects
+// that light, which keeps too much red over long paths (the water's scattering has more red than
+// green, and the sun is warm): left alone the open sea reads grey at a high sun. Not a mechanism of
+// its own, a tint on the scatter by the sun's elevation, red and blue against green; the shelf's mix
+// leaves the short paths alone, and a low sun, a closed sky and the moon keep the light as it is.
+const OPEN_SCATTER: DayKeys<{ r: number; b: number }> = tuneKeys( 'sea.openScatter', {
+	day: [
+		{ at: 5, name: 'golden', values: { r: 1, b: 1 } },
+		{ at: 12, name: 'open', values: { r: 0.6, b: 1.08 } },
+	],
+	night: { r: 1, b: 1 },
+}, { r: { min: 0.4, max: 1 }, b: { min: 1, max: 1.2 } } );
+const openTint = uniform( new THREE.Vector3( 1, 1, 1 ) );
+const _open = { r: 1, b: 1 };
+
+/** Sets the scattered light's tints: the deep water's from the sun's `elevation` (degrees,
+ * `OPEN_SCATTER`) and the shelf's from the key's colour (the limits of `SHELF_SCATTER`), each `share`
+ * of the way there, 0 leaving them white. Once a frame, beside the weather's clouded share. */
+export function updateShelfScatter( key: THREE.Color, share: number, elevation: number ): void {
+
+	keyed( OPEN_SCATTER, elevation, 0, _open );
+	openTint.value.set( 1 + share * ( _open.r - 1 ), 1, 1 + share * ( _open.b - 1 ) );
 
 	const { r, g, b } = key;
 	const tint = shelfTint.value;
@@ -1234,7 +1256,7 @@ export class Water {
 			const bb = sigS.mul( u.backscatter );
 			const albedoMS = bb.mul( 0.33 * 4 ).div( sigA.add( bb ) ).toVar();
 			const shelfShare = exp( pathLen.mul( pathLen ).div( - SHELF_SCATTER.depth * SHELF_SCATTER.depth ) );
-			const inSun = sunIn.mul( mix( vec3( 1 ), shelfTint, shelfShare ) ).mul( sigS.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) ).mul( float( 1 ).sub( exp( kSun.negate().mul( pathLen ) ) ) ).div( kSun );
+			const inSun = sunIn.mul( mix( openTint, shelfTint, shelfShare ) ).mul( sigS.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) ).mul( float( 1 ).sub( exp( kSun.negate().mul( pathLen ) ) ) ).div( kSun );
 			const inAmb = shared.skyIrradianceSource.mul( sigS.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ).mul( float( 1 ).sub( exp( kAmb.negate().mul( pathLen ) ) ) ).div( kAmb );
 			// the sun through the thin crests: light entering a crest's top and back scatters out of its
 			// face over a broad lobe, down some 1.5 m of the water it crossed
