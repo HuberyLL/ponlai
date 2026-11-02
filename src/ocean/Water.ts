@@ -58,10 +58,12 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     the sun up, its level under cloud); both read the sea's slopes before the waves' damping, so a lee stands level with the sea round it, never a pale tongue
 //     of a mirror's reflectance; the screen-space reflection of the cliffs and the islanders behind
 //     tidewater's gate (rays near the horizon, reflectance over 0.05)
-//   - the sun's specular: GGX of the base roughness and the slopes the pixel cannot resolve (Cox-
-//     Munk's mean square slope for the wind, the share finer than the pixel), under a soft ceiling
-//     that falls as the sun climbs (`GLINT_KNEE`), so a high sun's lobe does not blow whole swells
-//     white from above and a low sun keeps its road on the water; the moon's glint has none
+//   - the key's specular: the sun's GGX of the base roughness and the slopes the pixel cannot resolve
+//     (Cox-Munk's mean square slope for the wind, the share finer than the pixel), under a soft
+//     ceiling that falls as the sun climbs (`GLINT_KNEE`), so a high sun's lobe does not blow whole
+//     swells white from above and a low sun keeps its road on the water; the moon's, a Gaussian lobe
+//     without GGX's tail, of a smaller share of those slopes, under a fixed ceiling (`MOON_KNEE`), so
+//     its field stands broken on the dark sea
 //   - refraction: the refracted view ray (through the surface without the near ripples) followed to
 //     the floor's height field, its end projected
 //     into the refraction pass's image of the world under the sea (Refraction.ts, through its wider
@@ -187,6 +189,14 @@ const D_GGX = Fn( ( [ NdH, a2 ]: [ F, F ] ) => {
 
 } ).setLayout( { name: 'D_GGX', type: 'float', inputs: [ { name: 'NdH', type: 'float' }, { name: 'a2', type: 'float' } ] } );
 
+// the Gaussian (Beckmann) distribution of the same alpha^2 (the moon's lobe, MOON_UNRESOLVED)
+const D_Gaussian = Fn( ( [ NdH, a2 ]: [ F, F ] ) => {
+
+	const cos2 = max( NdH.mul( NdH ), 1e-6 ).toVar();
+	return exp( float( 1 ).sub( cos2 ).div( cos2.mul( a2 ) ).negate() ).div( a2.mul( cos2 ).mul( cos2 ).mul( PI ) );
+
+} ).setLayout( { name: 'D_Gaussian', type: 'float', inputs: [ { name: 'NdH', type: 'float' }, { name: 'a2', type: 'float' } ] } );
+
 // the height-correlated Smith visibility for GGX, V = G / ( 4 NdL NdV )
 const V_SmithGGX = Fn( ( [ NdL, NdV, a2 ]: [ F, F, F ] ) => {
 
@@ -222,6 +232,20 @@ export const keyChroma = uniform( 1 );
 // white. It rises with the square of the falling sun, so a low sun's road keeps its blaze. At y 0.77
 // it stands near half a sunlit white card.
 const GLINT_KNEE = 13.25;
+
+// The moon's glint. GGX's long tail is what a sun's lobe hides under the bright water body, but a moon
+// at a hundredth of its peak is still brighter than the whole moonlit sea: at the moon's height every
+// slope of the waves lies within about three alpha of the mirror, and the tail laid a lit sheet
+// between the glints. So under the moon the lobe is a Gaussian of the same alpha (Beckmann), the shape
+// the sea's near-Gaussian slopes give in any case (Cox-Munk), and between its glints the water falls
+// to the sea's own level. Narrowing GGX does not do it: the tail stays and the tops blow.
+// MOON_UNRESOLVED scales the slopes no pixel resolves in the moon's alpha alone, which sets the size
+// of the field, not the level between its glints: the part of the frame above L .6 goes about 2.5 %
+// at 1, 2.0 % at .7, 1.7 % at .5, and the field's median .57, .47, .39 with it.
+// MOON_KNEE is the moon's soft ceiling, the sun's form with a constant in place of its height: G / ( G
+// MOON_KNEE + 1 ) takes the hard top off the near-white core and leaves the broken field as it is (the
+// field's p99 .965 at 0, .907 at 1.5, .860 at 3).
+const MOON_UNRESOLVED = 0.7, MOON_KNEE = 1.5;
 
 // The sky panorama's level the horizon's colour is read at (a band some 20 degrees high).
 const HORIZON_MIP = 5;
@@ -916,7 +940,8 @@ export class Water {
 			const mss = windSpeed.mul( COX_MUNK.perWind ).add( COX_MUNK.base );
 			const unresolvedShare = sat( log2( footprint.mul( 110 / PI ) ).div( 9 ) ).toVar();
 			const unresolved = unresolvedShare.mul( rough.mul( rough ) ).toVar();
-			const alpha2 = u.roughness.mul( u.roughness ).add( mss.mul( 2 ).mul( unresolved ) ).add( foam.mul( 0.2 ) ).toVar();
+			// (the moon's alpha takes a smaller share of those slopes: MOON_UNRESOLVED)
+			const alpha2 = u.roughness.mul( u.roughness ).add( mss.mul( 2 ).mul( unresolved ).mul( mix( float( MOON_UNRESOLVED ), float( 1 ), keyChroma ) ) ).add( foam.mul( 0.2 ) ).toVar();
 			const sigmaUnresolved = sqrt( mss.mul( unresolved ) ).toVar();
 			// the mean surface's: the same share of the sea's slopes, before the waves' damping
 			const sigmaMean = sqrt( mss.mul( unresolvedShare ).mul( sea.x.mul( sea.x ) ) ).toVar();
@@ -998,15 +1023,18 @@ export class Water {
 			} );
 			refl.mulAssign( u.reflection );
 
-			// ---- the sun's specular (GGX), the shadowed sun light above
+			// ---- the key's specular: GGX under the sun, a Gaussian lobe under the moon
+			// (MOON_UNRESOLVED), the shadowed light above
 			const H = normalize( L.add( V ) );
 			const NdL = max( dot( N, L ), 0 ).toVar();
-			const spec = D_GGX( max( dot( N, H ), 0 ), alpha2 ).mul( V_SmithGGX( NdL, NdV, alpha2 ) )
+			const NdH = max( dot( N, H ), 0 ).toVar();
+			const spec = mix( D_Gaussian( NdH, alpha2 ), D_GGX( NdH, alpha2 ), keyChroma ).mul( V_SmithGGX( NdL, NdV, alpha2 ) )
 				.mul( fresnelDielectric( max( dot( V, H ), 0 ), float( IOR ) ) ).mul( NdL );
 			// (physically a glint is some 1e5 times the sky; held inside half float's range)
 			const glintLight = mix( vec3( luminance( sunLight ) ), sunLight, keyChroma ).toVar();
 			const glint = min( spec, 400 ).toVar();
-			const sunSpec = glintLight.mul( glint.div( glint.mul( L.y ).mul( L.y ).mul( GLINT_KNEE ).mul( keyChroma ).add( 1 ) ) ).toVar();
+			const knee = mix( float( MOON_KNEE ), L.y.mul( L.y ).mul( GLINT_KNEE ), keyChroma );
+			const sunSpec = glintLight.mul( glint.div( glint.mul( knee ).add( 1 ) ) ).toVar();
 
 			// ---- refraction: the refracted view ray (Snell; kept heading down where a coarse crest
 			// would turn it up) followed to the floor, two refinements on the floor's height, its end
