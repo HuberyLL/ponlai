@@ -543,7 +543,6 @@ export class Clouds {
 	private highAt: ( ( rd: V3, pxAngle: F ) => V4 ) | null = null;
 	private rainAt: ( ( rd: V3, pxAngle: F, jitter: F, withFlash?: boolean ) => { color: V4; flash: V3 } ) | null = null;
 	private rainbowTable: THREE.DataTexture | null = null;
-	private skyAt: ( ( rd: V3 ) => V3 ) | null = null;
 	private frame = 0;
 	private needsFull = true;
 	// View accumulation state.
@@ -1186,7 +1185,6 @@ export class Clouds {
 		this.marchView = makeMarch( viewSteps, pixelCone, this.cam.tan.y.mul( 2 ).div( this.viewSize.y ), true );
 		this.highAt = highAt;
 		this.rainAt = rainAt;
-		this.skyAt = skyAt;
 
 		// ---- panorama: a fixed per-texel offset breaks step banding; the tent filter averages it.
 		const columns = domeWidth / strideX;
@@ -1334,7 +1332,7 @@ export class Clouds {
 			return node;
 
 		};
-		const marchView = this.marchView!, highAt = this.highAt!, rainAt = this.rainAt!, skyAt = this.skyAt!;
+		const marchView = this.marchView!, highAt = this.highAt!, rainAt = this.rainAt!;
 		const C = this.cam, P = this.prev;
 
 		const viewDir = ( uv: V2 ) => {
@@ -1415,11 +1413,16 @@ export class Clouds {
 		const boxMinOut = stored( ( t ) => t.boxMin ), boxMaxOut = stored( ( t ) => t.boxMax );
 		// The range of this frame's samples is taken over the clouds composited onto the sky: a
 		// per-channel range of radiance and transmittance would pair the dark radiance of clear
-		// samples with the low transmittance of cloudy ones, an opaque black cloud.
+		// samples with the low transmittance of cloudy ones, an opaque black cloud. The sky is the
+		// one the dome lays the clouds over (Sky.ts `clearSky`: the atmosphere's, polarised, with
+		// no night ambient, which is the clouds' own light): a history clamped over another sky
+		// trades that sky's light for its own as its transmittance moves, and where the two skies
+		// part (most before sunrise, when the night ambient is at its full) it printed dark and
+		// light blocks that grew while the clock ran.
 		const boxKernel = Fn( () => {
 
 			const tp = tracePixel().toVar();
-			const sky = skyAt( viewDir( tracedAt( tp ).div( this.viewSize ) ) ).mul( CLOUD_STORE ).toVar();
+			const sky = this.atmosphere.skyRadiance( viewDir( tracedAt( tp ).div( this.viewSize ) ) ).mul( CLOUD_STORE ).toVar();
 			const tmax = this.traceSize.sub( 1 );
 			const lo = vec4( 1e4 ).toVar(), hi = vec4( - 1e4 ).toVar();
 			for ( let y = - 1; y <= 1; y ++ ) for ( let x = - 1; x <= 1; x ++ ) {
@@ -1470,7 +1473,7 @@ export class Clouds {
 						const h = max( catmullRom( srcNode, puv, this.viewSize ), vec4( 0 ) ).toVar();
 						const lo = textureLoad( boxMinNode, tp ), hi = textureLoad( boxMaxNode, tp );
 						const pad = hi.sub( lo ).mul( 0.25 ).add( vec4( vec3( 0.01 * CLOUD_STORE ), 0.01 ) );
-						const sky = skyAt( rd ).mul( CLOUD_STORE ).toVar();
+						const sky = this.atmosphere.skyRadiance( rd ).mul( CLOUD_STORE ).toVar();
 						const clamped = clamp( vec4( h.rgb.add( sky.mul( h.a ) ), h.a ), lo.sub( pad ), hi.add( pad ) ).toVar();
 						const kept = vec4( max( clamped.rgb.sub( sky.mul( clamped.a ) ), vec3( 0 ) ), clamped.a );
 						out.assign( select( this.rebuildK.lessThan( 0 ).and( this.clampHistory.greaterThan( 0.5 ) ), kept, h ) );
