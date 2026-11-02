@@ -8,6 +8,7 @@ import { skyNight } from '../sky/DayCycle.ts';
 import { IRRADIANCE_SLABS, type AmbientVolume } from './AmbientVolume.ts';
 import { COSINE_LOBE, bounceLobe, coefficients, linearMaximum, shBasisAt, shConvolve, shDeringWindow, shProduct, shTowardDelta, shWindow, toMat3, type M3 } from './Harmonics.ts';
 import type { Shared } from '../shared.ts';
+import { deckSkyGain } from '../sky/Weather.ts';
 import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../world/AmbientProbes.ts';
 
 // The ambient light's relight: the probes' baked visibility (AmbientVolume.ts, world/AmbientProbes.ts)
@@ -208,7 +209,8 @@ const BOUNCE_GAIN = 9.4;
  * fifth under the seen sky's. About 5 at night: the clear night's sky is mostly the haze's moonlit
  * light over a nearly dark dome, of which the environment takes only a part, and the moonlit ground
  * keeps about eighteen times the sky's light on open ground (Sky.ts `moonKeyGain`). 1 under cloud,
- * one value from -1 degrees up: the land under a deck keeps the sky's light near a clear day's share,
+ * one value from -1 degrees up, and by day the deck's own sky gain over it (sky/Weather.ts
+ * DECK_SKY_GAIN, from a sun of 3 degrees, whole by 6): the land under a deck keeps the sky's light near a clear day's share,
  * so the land stays well under the pale sky and its shade stays deep, and the exposure's clouded key
  * alone sets its level (post/Exposure.ts). A higher gain lifts the land over the sea, which takes no
  * gain, and the meter, which sees both, then takes the sea and the far water down with it. It returns
@@ -479,7 +481,7 @@ export class AmbientRelight {
 		const l = this.shared.sunDir.value, out = this.lobeValues;
 		const elevation = this.sunElevation();
 		const cloud = this.clouded();
-		this.skyScale.value = this.shared.skyFill.value * keyed( PROBE_SKY, elevation, skyNight( elevation, this.rising(), cloud ), _probeSky, cloud ).skyGain;
+		this.skyScale.value = this.shared.skyFill.value * keyed( PROBE_SKY, elevation, skyNight( elevation, this.rising(), cloud ), _probeSky, cloud ).skyGain * deckSkyGain( elevation, cloud );
 		out.fill( 0 );
 		const level = THREE.MathUtils.smoothstep( l.y, - 0.02, 0.05 ) * this.keyHeight();
 		this.keyLevel.value = level;

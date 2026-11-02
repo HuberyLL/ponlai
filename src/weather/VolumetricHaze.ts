@@ -29,6 +29,9 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// The sine of the elevation the sun's rows are read at under a deck (see the header)
+const DECK_ROW = 0.5;
+
 // The air's haze and the sea's fog as one participating medium in a froxel volume, after Patry,
 // "Real-Time Samurai Cinema", SIGGRAPH 2021 (its volumetric haze, built on Wronski, SIGGRAPH 2014,
 // and Drobot, Digital Dragons 2017):
@@ -146,6 +149,16 @@ type V4 = THREE.Node<'vec4'>;
 //     length (a lower moon's row is longer, so its haze brighter, where a real haze would dim as the
 //     moonlight crosses more air); the moon keeps one direction all night (KeyLift.ts), so the haze
 //     keeps one level from dusk to dawn, and the elevation is a tuning the haze's gain answers.
+//     Under a clouded day's deck (HazeKeys.ts `deck`) the sun's rows are read at one elevation,
+//     30 degrees (DECK_ROW), instead of along the view, by the deck's share: the air under a deck
+//     is lit by the deck over it alike in every direction, not by a clear sky, so it no longer
+//     brightens toward the horizon as a clear sky's long low rows do. Under cloud the sky the dome
+//     shows is nearly all this air laid over the clouds (Sky.ts `domeColour`: the clouds' own
+//     undersides stand 4 - 8 stops under it), so along the view the deck's low band stood .7 - 1.6
+//     stops over the sky's irradiance over pi, and read level .3 - .7. The bake, the reflection and
+//     the froxels read the same rows, so the sky, its light on the land and the far haze move
+//     together; with a level band and the irradiance about unchanged the deck shows half a stop
+//     darker against the land.
 //   - the ambient visibility (the open sky's share that reaches a froxel) is the visibility volume's
 //     second channel, sampled, filtered and held at rest with the key light's: 0 under the island's
 //     cover and 1 above it, rising over 1.5 m either side of the cover's top (the rain's collision
@@ -432,6 +445,8 @@ export class VolumetricHaze {
 	private readonly lightSettings = uniform( new THREE.Vector4( 1, 0.76, 1, 0.05 ) );
 	// the light's colours toward their luminance (0 as given, 1 grey)
 	private readonly desaturate = uniform( 0.26 );
+	// the deck's share (HazeKeys.ts `deck`): the sun's rows read level under it (see the header)
+	private readonly deckShare = uniform( 0 );
 	// the light's colours per body (the sun's, the moon's: each one's illuminance the sky is drawn
 	// with, scaled): the Rayleigh share's lit by the open sky and by the body, the aerosol share's;
 	// and the shares' weights
@@ -713,8 +728,8 @@ export class VolumetricHaze {
 			const scattered = vec3( 0 ).toVar();
 			for ( const body of bodies ) {
 
-				// (the sun's rows along the view, the moon's along the moon: see the header)
-				const rows = atmosphere.fogRows( body.b === 0 ? direction.y : body.light.y, height, body.b );
+				// (the sun's rows along the view, level under a deck, the moon's along the moon: see the header)
+				const rows = atmosphere.fogRows( body.b === 0 ? mix( direction.y, float( DECK_ROW ), this.deckShare ) : body.light.y, height, body.b );
 				const shadow = atmosphere.earthShadowAt( height, direction, body.b );
 				const above = smoothstep( horizon.negate(), horizon, body.elevation.add( dip ) );
 				const rayleigh = grey( rows.rayleigh.mul( body.rayleighPhase ) )
@@ -1213,6 +1228,7 @@ export class VolumetricHaze {
 
 		const look = this.look;
 		look.sigma.set( key.sigmaRed, key.sigmaGreen, key.sigmaBlue );
+		this.deckShare.value = key.deck;
 		look.desaturate = key.desaturate;
 		look.gain = key.gain;
 		look.sunRayleigh = key.sunRayleigh;

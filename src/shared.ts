@@ -26,6 +26,8 @@ export const shared = {
 	leafGain: uniform( 1 ),
 	// the weather's share of a cloudy or overcast sky: 0 under a clear or fair one, 1 under a closed one
 	clouded: uniform( 0 ),
+	// the sky's light in the water body under a deck, over the bake's (sky/Weather.ts `deckSkyGain`)
+	deckSky: uniform( 1 ),
 	// what the sward's ambient diffuse is multiplied by (materials/SwardTint.ts); white under a clear
 	// or fair sky
 	swardTint: uniform( new THREE.Vector3( 1, 1, 1 ) ),

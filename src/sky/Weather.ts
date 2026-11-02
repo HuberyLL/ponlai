@@ -68,6 +68,23 @@ export function deckRamp( elevation: number ): number {
 
 }
 
+/** The sky's light on the land and in the water under a closed deck, over the sky's irradiance bake
+ * (lighting/AmbientRelight.ts, the probes' sky; ocean/Water.ts, the body's in-scatter): one gain
+ * for both. It stands in for the soft key the land keeps under cloud: the light that comes
+ * through a deck from about the sun's place, broader than the sun's own key, which the bake's one
+ * panorama does not carry onto the land and the water body, so without it the land stood near four
+ * stops under the deck and the sea dark under it. 3 sets the sky about three stops over the meadow
+ * under a cloudy deck. It comes in with the deck (`deckRamp`). */
+export const DECK_SKY_GAIN = 3;
+
+/** The sky gain at the sun's `elevation` (degrees) under the weather's clouded share `clouded`
+ * (`cloudedShare`): 1 without a deck, DECK_SKY_GAIN under a closed one by day. */
+export function deckSkyGain( elevation: number, clouded: number ): number {
+
+	return 1 + ( DECK_SKY_GAIN - 1 ) * clouded * deckRamp( elevation );
+
+}
+
 /** How far a clouded day's high sun has come in at the sun's `elevation` (degrees) under the
  * weather's blend of the kept skies (`skyMix`): none under a clear or a fair sky, nor up to `low`
  * degrees, the sky's clouded share from 40 up, where the sky's light (Sky.ts SKY_LIGHT) has reached

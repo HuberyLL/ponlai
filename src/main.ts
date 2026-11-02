@@ -14,7 +14,7 @@ import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, nightAmbientAt, sunRising, type DayPreset } from './sky/DayCycle.ts';
-import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckRamp, isParkedWeather, isWindLevel, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
+import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckRamp, deckSkyGain, isParkedWeather, isWindLevel, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
 import { Wind, weatherWind } from './weather/Wind.ts';
@@ -1470,7 +1470,7 @@ postF.add( S, 'vignette', 0, 1, 0.01 );
 const hazeF = gui.addFolder( 'Haze' );
 const H = pipeline.air.settings;
 // the hour's and the weather's key, written each frame (weather/HazeKeys.ts)
-const hazeKey: HazeKey = { amount: 1, sigmaRed: 1, sigmaGreen: 1, sigmaBlue: 1, desaturate: 0, gain: 1, mist: 0, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
+const hazeKey: HazeKey = { deck: 0, amount: 1, sigmaRed: 1, sigmaGreen: 1, sigmaBlue: 1, desaturate: 0, gain: 1, mist: 0, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
 	top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, skyDepth: 0, nearDensity: 1, nearStart: 250, nearEnd: 600 };
 // the haze exists now: bake the environment again as a scene jump does, so it holds the haze a
 // jump's bake lays over it (Sky.ts `fogEnvironment`) and a fresh load equals a jump
@@ -1835,6 +1835,7 @@ function tick( time: number ): void {
 	// the ambient grade by the sun and the weather's blend of the kept skies (lighting/AmbientGrade.ts)
 	ambientGrade.update( sky.elevation, weather.skyMix, sky.rising );
 	shared.clouded.value = cloudedShare( weather.skyMix );
+	shared.deckSky.value = deckSkyGain( sky.elevation, shared.clouded.value );
 	updateShelfScatter( sky.keyColor, sky.keyIsMoon ? 0 : 1 - shared.clouded.value, sky.elevation );
 	// the yunpeng's glow and its local lights by the night's share (lighting/LocalLights.ts: its
 	// pass sorts the sources in view)

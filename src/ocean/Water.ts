@@ -1257,7 +1257,8 @@ export class Water {
 			const albedoMS = bb.mul( 0.33 * 4 ).div( sigA.add( bb ) ).toVar();
 			const shelfShare = exp( pathLen.mul( pathLen ).div( - SHELF_SCATTER.depth * SHELF_SCATTER.depth ) );
 			const inSun = sunIn.mul( mix( openTint, shelfTint, shelfShare ) ).mul( sigS.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) ).mul( float( 1 ).sub( exp( kSun.negate().mul( pathLen ) ) ) ).div( kSun );
-			const inAmb = shared.skyIrradianceSource.mul( sigS.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ).mul( float( 1 ).sub( exp( kAmb.negate().mul( pathLen ) ) ) ).div( kAmb );
+			// (under a deck the sky's light in the body takes the land's sky gain: sky/Weather.ts DECK_SKY_GAIN)
+			const inAmb = shared.skyIrradianceSource.mul( shared.deckSky ).mul( sigS.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ).mul( float( 1 ).sub( exp( kAmb.negate().mul( pathLen ) ) ) ).div( kAmb );
 			// the sun through the thin crests: light entering a crest's top and back scatters out of its
 			// face over a broad lobe, down some 1.5 m of the water it crossed
 			const vH = normalize( V.xz.add( 1e-5 ) ), lH = normalize( L.xz.add( 1e-5 ) );

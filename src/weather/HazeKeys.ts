@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { tuneObject, type TuneOptions } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
-import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun } from '../sky/Weather.ts';
+import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckRamp } from '../sky/Weather.ts';
 
 // The haze's keys: what the air does by the hour and the weather, set as a few quantities one sees
 // (how far the light carries, the colour it loses, how bright and how coloured the air shows) at
@@ -94,6 +94,9 @@ import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun } from '../sky/Weather.ts';
 
 export interface HazeKey {
 
+	// the clouded day's deck's share (Weather.ts `cloudedShare` by `deckRamp`): under it the air is lit
+	// level, not as a clear sky's (VolumetricHaze.ts)
+	deck: number;
 	amount: number;
 	sigmaRed: number;
 	sigmaGreen: number;
@@ -118,7 +121,7 @@ export interface HazeKey {
 
 type Sigma = readonly [ number, number, number ];
 const key = ( amount: number, [ sigmaRed, sigmaGreen, sigmaBlue ]: Sigma, desaturate: number, gain: number, mist: number, sunRayleigh: number ): HazeKey =>
-	( { amount, sigmaRed, sigmaGreen, sigmaBlue, desaturate, gain, mist, sunRayleigh, rayleighWeight: 1, mieWeight: 1, ...SHAPE, ...NEAR } );
+	( { deck: 0, amount, sigmaRed, sigmaGreen, sigmaBlue, desaturate, gain, mist, sunRayleigh, rayleighWeight: 1, mieWeight: 1, ...SHAPE, ...NEAR } );
 
 // the medium's shape every key starts from
 const SHAPE = { top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, skyDepth: 0 };
@@ -265,6 +268,7 @@ export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly 
 	out.sunRayleigh = 1 - ( 1 - out.sunRayleigh ) * ( 1 - sunRayleigh );
 	out.nearDensity *= 1 + ( HIGH_SUN_NEAR - 1 ) * cloudedHighSun( elevation, skyMix );
 	out.mist *= ( 1 - THREE.MathUtils.smoothstep( wind, 3.5, 5 ) ) * ( 1 - rain );
+	out.deck = cloudedShare( skyMix ) * deckRamp( elevation );
 	return out;
 
 }
