@@ -9,7 +9,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, uniform, texture, texture3D, textureLoad, textureStore, instanceIndex, instancedArray, uv, int, ivec2, ivec3,
-	vec2, vec3, vec4, float, max, min, clamp, exp, exp2, log2, sqrt, mix, dot, normalize, select, fract, floor, varying, asin, smoothstep,
+	vec2, vec3, vec4, float, max, min, clamp, exp2, log2, sqrt, mix, dot, normalize, select, fract, floor, varying, asin, smoothstep,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
 import { EARTH_RADIUS } from '../sky/Clouds.ts';
@@ -18,6 +18,7 @@ import { MIE_G, cornetteShanks, polariser, skyRayleighPhase, type Atmosphere } f
 import { bandPush, bandToDisplay, bandToDisplayColor } from '../sky/BandMatrix.ts';
 import { ISLAND_TOP } from '../world/WorldShapes.ts';
 import type { HazeKey } from './HazeKeys.ts';
+import { expShare, meanExtinction, nearFactor, nearLength } from './HazeDepth.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune, tuneObject, tuneUniform } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
@@ -59,7 +60,8 @@ const OVERCAST_SHARE = tuneUniform( 'haze.overcast.share', 0.85, { min: 0, max: 
 //     layer's density, the key's share of it); its sea fog and the morning mist thicken it. An
 //     optical depth is a ray's length times the mean density over the heights it spans: the closed
 //     form along the ray, which holds its value on a level ray with no branch. Local variation
-//     (banks, wisps, ground fog) belongs to particles, not to the density.
+//     (banks, wisps, ground fog) belongs to particles, not to the density. The closed form lives in
+//     HazeDepth.ts.
 //   - the weather thins the haze near the camera (Weather.ts `nearDensity`, `nearStart`,
 //     `nearEnd`, through the haze's key): along each ray the optical depth from the camera out to
 //     t metres is f( t ) times the far medium's, f = k up to d0, a smoothstep back to 1 at d1, 1
@@ -345,51 +347,10 @@ export type HazeSettings = typeof HAZE_DEFAULTS;
 // the near haze): the environment's bake holds them as they stood when it ran.
 const BAKE_SETTINGS = [ 'near', 'far', 'growth', 'fogExtinction', 'albedo', 'anisotropy', 'gain', 'horizon', 'sky', 'nearHaze' ] as const;
 
-// (1 - e^-x) / x, the share of a slab of optical depth x that scatters, per unit of that depth, with
-// its series near 0 (where the difference loses its digits)
-const expShare = Fn( ( [ x ]: [ F ] ) => {
-
-	const series = float( 1 ).sub( x.mul( 0.5 ) ).add( x.mul( x ).div( 6 ) );
-	return select( x.lessThan( 1e-3 ), series, float( 1 ).sub( exp( x.negate() ) ).div( max( x, 1e-30 ) ) );
-
-} ).setLayout( { name: 'hazeExpShare', type: 'float', inputs: [ { name: 'x', type: 'float' } ] } );
+// expShare on each band
 const expShare3 = ( x: V3 ): V3 => vec3( expShare( x.x ), expShare( x.y ), expShare( x.z ) );
 
-// The medium's mean density (1/m, before each band's sigma) over the heights between a and b
-// (metres, either order; below the sea it holds its value at sea level, which only rays hidden
-// under the water reach): the exponential layer (density at sea level, scale height) and the ground
-// layer (rho_f, top, width). An optical depth is a ray's length times the mean over the heights it
-// spans.
-const meanExtinction = Fn( ( [ a0, b0, layer, ground ]: [ F, F, V2, V3 ] ) => {
-
-	const a = max( min( a0, b0 ), 0 ).toVar();
-	const b = max( max( a0, b0 ), 0 ).toVar();
-	const span = b.sub( a ).toVar();
-	const exponential = ( l: V2 ) => l.x.mul( exp( a.div( l.y ).negate() ) ).mul( expShare( span.div( l.y ) ) );
-	// the ground layer's weight 1 - u / r integrates to u - r, r = sqrt( u^2 + w^2 ); its mean,
-	// written so that no difference cancels: 1 - ( ua + ub ) / ( ra + rb )
-	const ua = a.sub( ground.y ).toVar(), ub = b.sub( ground.y ).toVar();
-	const w2 = ground.z.mul( ground.z );
-	const r = sqrt( ua.mul( ua ).add( w2 ) ).add( sqrt( ub.mul( ub ).add( w2 ) ) );
-	const weight = float( 1 ).sub( ua.add( ub ).div( max( r, 1e-6 ) ) );
-	return exponential( layer ).add( ground.x.mul( weight ) );
-
-} ).setLayout( { name: 'hazeMeanExtinction', type: 'float', inputs: [
-	{ name: 'a0', type: 'float' }, { name: 'b0', type: 'float' }, { name: 'layer', type: 'vec2' }, { name: 'ground', type: 'vec3' },
-] } );
-
-// The near haze's factor on the optical depth from the camera out to t metres ( k, d0, d1 ): k up
-// to d0, a smoothstep back to 1 at d1, then 1. Written 1 - ( 1 - k )( 1 - s ), it is 1 exactly past d1
-// and with k = 1, so those rays keep their depth to the bit.
-const nearFactor = Fn( ( [ t, near ]: [ F, V3 ] ) => {
-
-	return float( 1 ).sub( float( 1 ).sub( near.x ).mul( float( 1 ).sub( smoothstep( near.y, max( near.z, near.y.add( 1e-3 ) ), t ) ) ) );
-
-} ).setLayout( { name: 'hazeNearFactor', type: 'float', inputs: [ { name: 't', type: 'float' }, { name: 'near', type: 'vec3' } ] } );
-
-// A whole ray's length out to t as the near haze weighs it: its optical depth is this times the far
-// mean density over the heights it spans.
-const nearLength = ( t: F, near: V3 ): F => t.mul( nearFactor( t, near ) );
+// The medium's closed form (`meanExtinction`, `nearFactor`, `nearLength`) is HazeDepth.ts's.
 
 // Interleaved gradient noise (Jimenez, "Next Generation Post Processing in Call of Duty: Advanced
 // Warfare", SIGGRAPH 2014): a fixed offset per froxel, so the frames' common jitter sequence lands
