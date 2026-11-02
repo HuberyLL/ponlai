@@ -57,8 +57,18 @@ type V4 = THREE.Node<'vec4'>;
 //     the moon's under its gains: Atmosphere.ts `moonRayleigh`, `moonMie`),
 //     in place of multiple-scattering octaves, a powder term and a base shadow; sky light full
 //     where the light's path is clear and falling toward a ramp up the shell where it is shadowed
-//     (dark bases, bright tops). The march sums these as two factors, direct and ambient, which
-//     take their colours once it ends, from the atmosphere's in-scatter table at the shell's mean
+//     (dark bases, bright tops). Under the low deck's share (`lowShare`) the shadowed part takes,
+//     in place of that ramp, the light that gets down through the column above the step: a
+//     conservative slab's diffuse transmission 1 / ( 1 + 0.75 ( 1 - g ) tau ), tau the column's
+//     optical depth from the step to the cloud's top less the erosion's mean depth there (measured
+//     from the shape noise at build: `erosionMean`), times the irradiance on the deck's top over
+//     pi, with no gain: thick masses dark, thin seams lighter, near grey, the level set by the
+//     deck's own density and thickness. That irradiance is the key's above the tops (`columnKey`:
+//     the sun's by day, by night the island's moonlight, not the clouds' own) and the drawn sky's
+//     over them (without the clouds' night glow), so the base and the land under it are lit by one
+//     key by day and by night. The march sums these as factors, direct, ambient and the
+//     column's; the column's takes the top's irradiance, the other two take their colours once it
+//     ends, from the atmosphere's in-scatter table at the shell's mean
 //     height toward the ray: the lit side the Mie share's colour times each body's light gain
 //     (Sky.ts trackClouds), the shaded side the Rayleigh share under its phase (no polariser),
 //     desaturated, times the earth's shadow there and each body's illuminance, its factor tinted
@@ -460,6 +470,10 @@ export class Clouds {
 	readonly shadowShare = uniform( 1 );
 	// Irradiance arriving at the cloud layer from the key light (scene units).
 	readonly lightColor = uniform( new THREE.Color( 0.5, 0.45, 0.38 ) );
+	// The key's irradiance on the low deck's tops, which its column passes down to the base (scene
+	// units, Sky.ts trackClouds): by day the sun's above the cloud, as `lightColor`; by night the
+	// island's own moon key, not the clouds' moonlight, so the base and the land under it take one moon.
+	readonly columnKey = uniform( new THREE.Color( 0, 0, 0 ) );
 	// Night sky glow and moonlit fill, added to the atmosphere's own sky light.
 	readonly nightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
 	// The gain on the night ambient the cirrus takes (its sky light at night comes almost all from
@@ -560,6 +574,9 @@ export class Clouds {
 	private readonly camDeltaHi = uniform( new THREE.Vector3() );
 
 	private shape: THREE.Data3DTexture | null = null;
+	// The erosion noise's mean over the shape texture (its weighted channels: erodedDensity), per
+	// unit of the erosion's strength and coverage: where the column light's slab ends under a top.
+	private erosionMean = 0.173 / 2;
 	private synoptic: THREE.StorageTexture | null = null;
 	private weather: THREE.StorageTexture | null = null;
 	private bounds: THREE.StorageTexture | null = null;
@@ -620,6 +637,10 @@ export class Clouds {
 	private build( renderer: THREE.WebGPURenderer, shape: THREE.Data3DTexture ): void {
 
 		this.shape = shape;
+		const texels = shape.image.data as Uint8Array;
+		let sum = 0;
+		for ( let i = 0; i < texels.length; i += 4 ) sum += 0.113 * texels[ i ] + 0.04 * texels[ i + 1 ] + 0.02 * texels[ i + 2 ];
+		this.erosionMean = sum / ( texels.length / 4 ) / 255;
 		this.synoptic = bakeSynoptic( renderer );
 		this.cirrusFibres = bakeCirrusFibres( renderer );
 		const storage = ( size: number, filter: THREE.MagnificationTextureFilter ) => {
@@ -676,6 +697,7 @@ export class Clouds {
 
 		const shape = this.shape!, weather = this.weather!, bounds = this.bounds!, synoptic = this.synoptic!;
 		const fibres = this.cirrusFibres!.texture;
+		const erosionMean = this.erosionMean;
 		const { viewSteps, panoramaSteps, lightTaps, rainSteps } = this.march;
 		const { width: domeWidth, height: domeHeight, strideX, strideY } = this.domeSize;
 		const domeTexelAngle = 2 * Math.PI / domeWidth;
@@ -812,6 +834,10 @@ export class Clouds {
 		};
 
 		const skyAt = ( rd: V3 ) => this.atmosphere.skyRadiance( rd, false ).add( this.nightAmbient.rgb );
+		// The horizontal unit vector toward the sun's azimuth, from which the rings of sky samples
+		// that turn with the sun are laid (the horizon's, the deck top's): the offset keeps a sun at
+		// the zenith off the zero vector.
+		const sunAzimuth = () => normalize( vec2( this.atmosphere.sunDir.x.add( 1e-5 ), this.atmosphere.sunDir.z ) ).toVar();
 		// The horizon sky a cloud's base sees is the whole ring round it, not the side toward the
 		// sun: a low sun's orange glow fills a short arc of that ring, so the ring's average is far
 		// paler, and the sun's own colour reaches the clouds through their direct light. The
@@ -820,8 +846,7 @@ export class Clouds {
 		// so the average moves smoothly with it.
 		const horizonRing = () => {
 
-			const s = this.atmosphere.sunDir;
-			const toward = normalize( vec2( s.x.add( 1e-5 ), s.z ) ).toVar();
+			const toward = sunAzimuth();
 			const sum = vec3( 0 ).toVar();
 			Loop( HORIZON_RING, ( { i } ) => {
 
@@ -844,6 +869,8 @@ export class Clouds {
 			const color = vec3( 0 ).toVar(), flashColor = vec3( 0 ).toVar();
 			// the march's light factors: direct (phase included) and ambient, each per unit of its colour
 			const directLight = float( 0 ).toVar(), ambientLight = float( 0 ).toVar();
+			// the low deck's column light, per unit of the top's irradiance over pi (see below)
+			const columnLight = float( 0 ).toVar();
 			// The atmosphere's in-scatter at the shell's mean height toward rd, per unit of the sun's
 			// and of the moon's illuminance: it weighs their lobes and colours the factors.
 			const a = this.atmosphere;
@@ -1027,9 +1054,25 @@ export class Clouds {
 					const phase = mix( forwardLobe, backLobe, backShare );
 					const alpha = transmission.mul( float( 1 ).sub( stepT ) ).toVar();
 					directLight.addAssign( alpha.mul( scaledT ).mul( phase ) );
-					// Sky light: full where the light's path is clear; where it is shadowed, falling to a
-					// ramp up the shell (dark bases, bright tops: full at the top).
-					ambientLight.addAssign( alpha.mul( height.mul( float( 1 ).sub( scaledT ) ).add( scaledT ) ) );
+					// Sky light: full where the light's path is clear; where it is shadowed, the high
+					// shell's falls to a ramp up the shell (dark bases, bright tops: full at the top).
+					// The low deck's shadowed steps take instead the light that gets down through the
+					// cloud above them: a conservative slab's diffuse transmission through the column
+					// up to the step's top (`candidate`'s, less the erosion's mean there, filled
+					// below it: the density's own form), of the irradiance on the deck's top (below).
+					// Thin parts of the deck pass more of it than thick ones, so the masses read
+					// darker than their seams, and the deck's level follows its own optical depth.
+					const shadowed = float( 1 ).sub( scaledT );
+					ambientLight.addAssign( alpha.mul( height.mul( shadowed ).mul( float( 1 ).sub( this.lowShare ) ).add( scaledT ) ) );
+					const columnTau = max( min( c.top, 1 ).sub( c.coverage.mul( EROSION_PEAK * erosionMean ) ).sub( c.h ), 0 ).mul( this.shellThickness ).mul( front.y.mul( DENSITY ) );
+					const columnT = float( 1 ).div( columnTau.mul( 0.75 * ( 1 - LOBE.forward ) ).add( 1 ) );
+					// (only under a low deck's share: a sky without one multiplies it away, and every
+					// sample of a clear or fair march paid for it)
+					If( this.lowShare.greaterThan( 0 ), () => {
+
+						columnLight.addAssign( alpha.mul( shadowed ).mul( columnT ) );
+
+					} );
 					if ( flash ) {
 
 						If( this.flashOn.greaterThan( 0.5 ), () => {
@@ -1054,8 +1097,14 @@ export class Clouds {
 			// light gain. Shaded: the ambient factor, tinted per channel toward the opacity and toned
 			// on its log luminance, x the Rayleigh in-scatter under its phase (desaturated) x the
 			// earth's shadow there x each body's illuminance x the ambient gain; plus the night's own
-			// glow. Both factors are sums over the march, already premultiplied by the opacity.
-			If( directLight.add( ambientLight ).greaterThan( 0 ), () => {
+			// glow. Under the low deck's share, the column light x the irradiance on the deck's top
+			// over pi, with no gain, tint or tone: the key's light above the tops (`columnKey`) times
+			// its cosine there, and the drawn sky's over the top (not the clouds' own night glow, which
+			// the drawn sky has none of), a coarse cosine-weighted mean of its radiance over the
+			// upper hemisphere (exact for a uniform sky): two rings, 30 and 60 degrees from the
+			// zenith, of four azimuths from the sun's, weighted alike. It is near grey: the shaded deck loses the
+			// Rayleigh sky's blue. The factors are sums over the march, premultiplied by the opacity.
+			If( directLight.add( ambientLight ).add( columnLight ).greaterThan( 0 ), () => {
 
 				const chroma = ( c: V3 ) => c.div( max( luminance( c ), 1e-20 ) );
 				const lit = chroma( sunMie ).mul( this.sunLight ).add( chroma( moonMie ).mul( this.moonLight ) ).mul( directLight );
@@ -1070,6 +1119,24 @@ export class Clouds {
 				const tone = this.ambientTone;
 				const shade = tinted.mul( y.sub( tone.x ).mul( tone.y.sub( 1 ) ).add( tone.z ).exp2() );
 				color.assign( lit.add( shade.mul( skyLight ) ) );
+				If( this.lowShare.greaterThan( 0 ), () => {
+
+					const toward = sunAzimuth();
+					const topSky = vec3( 0 ).toVar();
+					for ( const zenith of [ 30, 60 ] ) {
+
+						const up = Math.cos( zenith * Math.PI / 180 ), out = Math.sin( zenith * Math.PI / 180 );
+						for ( const [ c, n ] of [ [ 1, 0 ], [ 0, 1 ], [ - 1, 0 ], [ 0, - 1 ] ] ) {
+
+							topSky.addAssign( this.atmosphere.skyRadiance( vec3( toward.x.mul( c ).sub( toward.y.mul( n ) ).mul( out ), up, toward.x.mul( n ).add( toward.y.mul( c ) ).mul( out ) ), false ) );
+
+						}
+
+					}
+					const top = this.columnKey.rgb.mul( max( this.lightDir.y, 0 ) ).mul( 1 / Math.PI ).add( topSky.mul( 1 / 8 ) );
+					color.addAssign( top.mul( columnLight.mul( this.lowShare ) ) );
+
+				} );
 
 			} );
 			const depth = select( alpha.greaterThan( 1e-4 ), weightedDepth.div( max( alpha, 1e-4 ) ), start.add( 4000 ) ).toVar();

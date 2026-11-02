@@ -682,6 +682,9 @@ export class Sky {
 	keyIsMoon = false;
 	// The key light's colour before cloud and weather attenuation: what lights the cloud tops.
 	keyColorAboveClouds = new THREE.Color();
+	// The moon's share of the key before cloud and weather attenuation (the island's moonlight, at
+	// its level and hue), which a low deck's column passes down to its base (trackClouds).
+	private readonly moonKeyAbove = new THREE.Color();
 	// The viewer the cloud map is computed for; clouds are far, so only small moves matter.
 	viewer = new THREE.Vector3( 0, 15, 0 );
 	private viewCamera: THREE.PerspectiveCamera | null = null;
@@ -1404,7 +1407,8 @@ export class Sky {
 			// A modest art-directed moon remains orders darker than daylight on the island (MOON_KEY),
 			// in the island's own hue: only the moon's share of the key takes it, so over the handoff
 			// it grows with that share, and by day (no moon) the sun's key is untouched.
-			this.keyColor.add( _moonKey.copy( this.moonKeyColor ).multiply( moonHue( _moonHue ) ).multiplyScalar( moonKeyGain() ) );
+			this.moonKeyAbove.copy( this.moonKeyColor ).multiply( moonHue( _moonHue ) ).multiplyScalar( moonKeyGain() );
+			this.keyColor.add( this.moonKeyAbove );
 			this.night.moonDir.value.copy( this.drawnMoonDir );
 			this.night.frame.value.copy( celestial.starFrame );
 			// (the moon's light does not follow its phase: DayCycle's header)
@@ -1435,6 +1439,7 @@ export class Sky {
 		} else {
 
 			this.night.moonDir.value.copy( this.sunDir ).negate();
+			this.moonKeyAbove.setRGB( 0, 0, 0 );
 			moonColor.setRGB( 0, 0, 0 );
 			this.night.starVisibility.value = 0;
 			this.displayNightAmbient.value.setRGB( 0, 0, 0 );
@@ -1600,6 +1605,14 @@ export class Sky {
 		// The night ambient is the clouds' own (the clear sky draws none); the cirrus takes it under a
 		// gain of its own (Clouds.ts `cirrusNightAmbient`).
 		clouds.nightAmbient.value.copy( this.displayNightAmbient.value ).multiplyScalar( this.nightSkyLevel );
+		// A low deck's column passes down the key's light above its tops: by day the sun's above the
+		// cloud, by night the island's moonlight (`moonKeyAbove`), which keeps the island's level and
+		// hue, not the clouds' (their moonlight belongs to the seen sky), and loses its colour under a
+		// closed deck as the sun's does (above). The deck's base and the land under it then take one
+		// moon, as by day they take one sun.
+		const moonAbove = _moonKey.copy( this.moonKeyAbove );
+		const column = clouds.columnKey.value.copy( moonAbove.lerp( _white.setScalar( luma( moonAbove ) ), overcast ) );
+		if ( sunUp ) column.add( sunAbove );
 		// Low sun: lift the reddened beam, and the cool violet fill on the shaded sides with it. The
 		// lift fades as the sky closes: a fair sky's scattered cumulus keep their golden light, a
 		// cloudy sky's cover shows near neutral, and a closed deck, whose sunlight has lost its
