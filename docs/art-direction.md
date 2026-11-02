@@ -87,17 +87,16 @@ art decision changes; images from elsewhere stay out of the repository.
   haze: a milky band, brighter than the sky above it, closes over the horizon with no step or dark
   line where sea meets sky, and fades by 10 - 15 degrees up. Across from the sun
   the haze lifts the atmosphere's dim low sky (about twice); beside the sun it is flatter than the
-  atmosphere's own glow and dims it a little. The air follows the hour more than anything else: clear before dawn; on calm, dry
-  mornings a mist as the sun comes up, a soft low layer over the whole island that the camera
-  stands in (never a sheet on the sea), near neutral, its band over the horizon a few times as
-  bright as the lit grass in front of it, gone once the sun is 7 degrees up; coloured and even
-  through the day; thick and fully orange at the golden hour, yet paler than the lit ground;
+  atmosphere's own glow and dims it a little. The air follows the hour more than anything else: clear before dawn; as the sun comes
+  up thin and cold, a blue air over one thin pale rose band at the horizon, the sea under it blue
+  out to the end of it, with no gold in the picture and no mist in the morning; coloured and
+  even through the day; thick and fully orange at the golden hour, yet paler than the lit ground;
   thinner after sunset; a visible grey-blue layer by night. A cloudy day's air keeps less colour
   and shows brighter than a clear day's (about twice with the sun 25 degrees up). It lies over the
   land, the sea and the low sky alike; the light the sky lends the scene is the atmosphere's alone.
   Shafts show only where the
   air is thick enough and lit from the side or behind against darker ground, the haze's own
-  (strongest in the morning mist and at the golden hour, faint at a clear noon); no rays are
+  (strongest at the golden hour, faint at a clear noon); no rays are
   painted over the sky. The sun's disk is drawn larger than life (1.1 degrees), softly
   limb-darkened, its edge clean; round it a soft glow sized by the frame, not the field of view, near white at its core and fading
   as the square of the distance past half the frame, with no streaks, ghosts or rings. It weakens

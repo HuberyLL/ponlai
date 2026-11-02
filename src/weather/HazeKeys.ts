@@ -12,21 +12,23 @@ import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun } from '../sky/Weather.ts';
 //
 // Each key holds:
 //   - amount: the weather's haze over its preset's: 0.66 by day and 0.61 at the golden hour,
-//     about half before dawn, near 1 in the morning, a fifth more after sunset, and two and a half
-//     times by night (a visible layer). How far the light carries at a height follows from it and the
+//     about half before dawn, 0.3 as the sun rises, near 1 in the morning, a fifth more after
+//     sunset, and two and a half times by night (a visible layer). How far the light carries at a height follows from it and the
 //     medium's shape below.
 //   - the medium's shape (VolumetricHaze's header): `top`, the ground layer's top over the island's
 //     level (m), `width`, the width of its step (m), `aerosolShare`, the deep aerosol layer's density
 //     at sea level over the ground layer's, and `aerosolHeight`, its scale height (m). The day's
 //     are 78 m, 55 m, 0.06 and 0.76 km, the golden hour's 50 m, 43 m, 0.13 and 1.0 km
-//     (a deeper ground layer than the 10 m the other hours keep, with more aerosol over it); the
-//     day's, the golden hour's and the night's are tunable, and the other hours take the day's. `widthSlope` widens the step with the camera's height over
+//     (a deeper ground layer than the 10 m the other hours keep, with more aerosol over it), and
+//     the sunrise's are the golden hour's: a low sun's air, thin enough to leave no dark band over
+//     the horizon. The day's, the golden hour's, the sunrise's and the night's are tunable, and the
+//     other hours take the day's. `widthSlope` widens the step with the camera's height over
 //     the sea (m per m, 0 to start): by night the haze layer thickens as the camera climbs, so the
 //     night's haze still shows from high up (the night's tunable, `haze.key.widthSlope@night`).
 //     `skyDepth` is a thin haze that fills the air's whole height, uniform in height, which only
 //     the sky dome takes (VolumetricHaze `skyHaze`): green's optical depth per kilometre of a sky
-//     ray's length, 0 in every key until tuned (the day's, the golden hour's and the night's are
-//     tunable; the other hours keep 0). Over the island's distances, a few kilometres at most, its
+//     ray's length, 0 in every key until tuned (the keys with a shape of their own are tunable; the
+//     other hours keep 0). Over the island's distances, a few kilometres at most, its
 //     share is negligible, while the sky's rays (about 60 km straight up, 170 km at 20 degrees,
 //     300 km at 10) are long enough for it to close the dome: the moon's disc fades behind it and
 //     the low sky turns to the haze's own light, a fog night's look; the clear night keeps 0, its
@@ -43,26 +45,30 @@ import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun } from '../sky/Weather.ts';
 //     The overcast's are still to be set toward grey.
 //   - desaturate: how far each of the haze's two shares of light (VolumetricHaze's header) turns
 //     toward its luminance: all of it by day (the day's air shows its sky's colour through
-//     the haze's sigma, not its own), half in the morning, after sunset and by night, nearly all
-//     of it in the mist, which shows near neutral, and a third at the golden hour, whose
-//     air takes most of the sun's orange.
+//     the haze's sigma, not its own), half in the morning, after sunset and by night, 0.72 as the
+//     sun rises, and a third at the golden hour, whose air takes most of the sun's orange. Under
+//     the sunrise's cold light it decides where the air's own warmth shows: the haze's own rows
+//     are red toward a low sun, so what it leaves of them lands in the band over the horizon, the
+//     high air staying blue; a fast swing, the band from blue to rose within a tenth or two of it.
 //   - gain: the haze's light over the day's (VolumetricHaze `gain`, which multiplies both shares):
-//     how bright the air shows against the day's, 1.2 - 1.7 before dawn, 1.7 in the mist, 1.5 in the
-//     morning and 2.5 after sunset, taken as one sees them; the day's 1.73, the golden hour's 1.43
+//     how bright the air shows against the day's, 1.2 - 1.7 before dawn, 1.43 as the sun rises, 1.5
+//     in the morning and 2.5 after sunset, taken as one sees them; the day's 1.73, the golden hour's 1.43
 //     and the night's 1.05 were set with the sky's light (by night the haze's moonlit light is most of the low sky's,
 //     so this sets how far the sky near the horizon stands over the sky above it).
-//   - mist: the morning mist in the sea fog's units (VolumetricHaze `fogExtinction`), which thickens
-//     the haze's ground layer, soft and low over the whole island, not a sheet on the sea.
-//     Calm, dry air cools overnight; the mist gathers as the sun comes up, thickest from 1 to 3
-//     degrees (the light falls to half in about half a kilometre at the camera's height), and is
-//     gone by 7. It needs calm air and no rain.
+//   - mist: a morning mist in the sea fog's units (VolumetricHaze `fogExtinction`), which thickens
+//     the haze's ground layer, soft and low over the whole island, not a sheet on the sea. The
+//     clear morning has none: 0 in every key (`haze.key.mist@mist` brings one back), so the sea
+//     stays blue out to the horizon. It needs calm air and no rain.
 //   - sunRayleigh: the sun's share in the haze's Rayleigh light, beside the open sky's: 0 by day
 //     under a clear or fair sky, where the air's blue is sky light only and the sun reaches the
 //     haze through its aerosol share; 1 at a low sun, by night and under cloud. The moon's share
 //     takes the same value.
 //   - rayleighWeight, mieWeight: the two shares' weights, 1 until set. By day the Rayleigh share
 //     takes 2.03 and the aerosol's 0.35 (a blue air with a faint glow toward the sun); at the golden
-//     hour the Rayleigh share 0.22 and the aerosol's 1.43 (a warm glow round the low sun).
+//     hour the Rayleigh share 0.22 and the aerosol's 1.43 (a warm glow round the low sun). As the sun
+//     rises the Rayleigh share takes 3, which carries the blue of an air this thin, and the
+//     aerosol's 1.43, and in the morning 1.5 and 0.35: a glow as wide as the evening's would fill
+//     the frame's meter and hold the sea down.
 // The weather adds its own: under the cloudy and the overcast sky the air keeps about half the
 // clear day's colour (0.53 times) and shows twice as bright.
 // The overcast's is taken as the cloudy's, without a direct check. Each kept sky scales the hour's
@@ -131,14 +137,15 @@ const twilight = ( elevation: number ): Sigma => {
 };
 const NIGHT = { ...key( 2.5, NIGHT_SIGMA, 0.55, 1.05, 0, 1 ), rayleighWeight: 7.59, top: 47.6, width: 36.8, widthSlope: 0.65, aerosolShare: 0.003, skyDepth: 0 };
 const BEFORE_DAWN = key( 0.48, twilight( - 3.5 ), 0.33, 1.45, 0, 1 );
-const MIST = key( 0.96, GOLDEN_SIGMA, 0.95, 1.7, 1.07, 1 );
-const MORNING = key( 0.96, DAY_SIGMA, 0.5, 1.5, 0, 1 );
+const MIST = { ...key( 0.3, GOLDEN_SIGMA, 0.72, 1.43, 0, 1 ), rayleighWeight: 3, mieWeight: 1.43, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010 };
+const MORNING = { ...key( 0.96, DAY_SIGMA, 0.5, 1.5, 0, 1 ), rayleighWeight: 1.5, mieWeight: 0.35 };
 const DAY = { ...key( 0.659, DAY_SIGMA, 1, 1.73, 0, 0 ), rayleighWeight: 2.03, mieWeight: 0.345, top: 78.4, width: 54.9, aerosolShare: 0.06, aerosolHeight: 761 };
 const GOLDEN = { ...key( 0.606, GOLDEN_SIGMA, 0.331, 1.43, 0, 1 ), rayleighWeight: 0.217, mieWeight: 1.43, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010 };
 const AFTER_SUNSET = key( 1.23, twilight( - 2.5 ), 0.5, 2.5, 0, 1 );
-// the day's, the golden hour's and the night's keys are tunable on debug pages (debug/Tune.ts):
+// the keys with a shape are tunable on debug pages (debug/Tune.ts):
 // `haze.key.<amount|sigmaRed|sigmaBlue|desaturate|gain|rayleighWeight|mieWeight|top|width|
-// aerosolShare|aerosolHeight|skyDepth>@<day|golden|night>` (green is sigma's unit)
+// aerosolShare|aerosolHeight|skyDepth>@<day|golden|night|mist>` (green is sigma's unit), the
+// morning its seven up to `mieWeight`
 const TUNED = [ 'amount', 'sigmaRed', 'sigmaBlue', 'desaturate', 'gain', 'rayleighWeight', 'mieWeight', 'top', 'width', 'aerosolShare', 'aerosolHeight', 'skyDepth' ] as const;
 const TUNE_RANGE: Record<typeof TUNED[ number ], TuneOptions> = {
 	amount: { min: 0.1, max: 10, scale: 'log', onChange: markSkyRetune }, sigmaRed: { min: 0.05, max: 1.5, scale: 'log', onChange: markSkyRetune },
@@ -149,12 +156,13 @@ const TUNE_RANGE: Record<typeof TUNED[ number ], TuneOptions> = {
 	aerosolShare: { min: 0.003, max: 3, scale: 'log', onChange: markSkyRetune }, aerosolHeight: { min: 300, max: 8000, scale: 'log', onChange: markSkyRetune },
 	skyDepth: { min: 0, max: 0.5, onChange: markSkyRetune },
 };
-for ( const [ k, name ] of [ [ DAY, 'day' ], [ GOLDEN, 'golden' ], [ NIGHT, 'night' ] ] as const ) {
+for ( const [ k, name, fields ] of [ [ DAY, 'day', TUNED ], [ GOLDEN, 'golden', TUNED ], [ NIGHT, 'night', TUNED ], [ MIST, 'mist', TUNED ], [ MORNING, 'morning', TUNED.slice( 0, 7 ) ] ] as const ) {
 
-	tuneObject( k, Object.fromEntries( TUNED.map( ( f ) => [ f, `haze.key.${ f }@${ name }` ] ) ), TUNE_RANGE );
+	tuneObject( k, Object.fromEntries( fields.map( ( f ) => [ f, `haze.key.${ f }@${ name }` ] ) ), TUNE_RANGE );
 
 }
 tuneObject( NIGHT, { widthSlope: 'haze.key.widthSlope@night' }, { widthSlope: { min: 0, max: 1, onChange: markSkyRetune } } );
+tuneObject( MIST, { mist: 'haze.key.mist@mist' }, { mist: { min: 0, max: 2, onChange: markSkyRetune } } );
 
 // rows by the sun's elevation (degrees, ascending), eased between neighbours, the end rows held
 const RISING: ReadonlyArray<readonly [ number, HazeKey ]> = [
@@ -165,7 +173,7 @@ const SETTING: ReadonlyArray<readonly [ number, HazeKey ]> = [
 ];
 
 // the keys with a shape of their own; the others take the day's
-const SHAPED: ReadonlySet<HazeKey> = new Set( [ DAY, GOLDEN, NIGHT ] );
+const SHAPED: ReadonlySet<HazeKey> = new Set( [ DAY, GOLDEN, NIGHT, MIST ] );
 
 // per kept sky (Weather.ts KEPT_SKIES: clear, fair, cloudy, overcast): the share of the light's
 // colour kept over a clear day's and the gain over a clear day's
