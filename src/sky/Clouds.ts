@@ -74,11 +74,24 @@ type V4 = THREE.Node<'vec4'>;
 // weather's share of the layer's optical depth (`shadowDensity`, Weather.ts), read with a
 // cubic B-spline built from four bilinear taps (`shadow`), with fades toward lit by the distance
 // from the island's centre and by the view's angle from a chosen direction (inert until set);
-// a light on the horizon casts none, the map fading to lit as the light sets (`shadowShare`);
-// the haze reads it at each point's ground point along the same flat beam, with its B-spline blur
-// for sharpening (`shadowAlongBeam`).
+// a low light's map takes rays over the height of its disc (`shadowDisc`), as a sun takes
+// seconds to pass a cloud's edge: a single ray's edge is sharp, a grazing ray's depth along tens
+// of kilometres of shell closing it within a sliver of the deck's fringe, and the shadow slides
+// kilometres per degree; under a light whose whole disc is below the rays' floor
+// (SHADOW_SLOPE_FLOOR) one ray is left, held still; a light on the horizon casts none, the map
+// fading to lit as the light sets (`shadowShare`);
+// the map's red channel is the whole disc, which the ground reads; its green channel is what the
+// air reads, the mean of the two rays nearest the disc's centre, since the whole disc leaves the
+// haze no shaft at 6 degrees, and under about 5 degrees the whole disc again (`shadowAirNarrow`,
+// Sky.ts SHADOW_AIR_NARROW), since the sky's dome meters the air's light and the two rays alone
+// put half a stop per 0.02 degree back into the exposure looking toward the sun; with one ray the
+// channels are equal, so above 11 degrees the map holds what one ray cast;
+// the haze reads the green channel at each point's ground point along the same flat beam, with
+// its B-spline blur for sharpening (`shadowAlongBeam`).
 // This project keeps its own weather on top: coverage and density sweep in as a front from
-// upwind, rain hangs in curtains under raining cloud, and high cirrus (Cirrus.ts) lies above.
+// upwind, a place's distance counting toward its progress only mid-front and only up to half a
+// span (`frontLead`), rain hangs in curtains under raining cloud, and high cirrus (Cirrus.ts) lies
+// above.
 // Both layers drift downwind with the wind aloft, a multiple of the weather's surface wind veered
 // to its right (setDrift), while the cumulus' structure rises through them in place (`evolve`).
 // Everything returns vec4( in-scattered radiance, transmittance ).
@@ -141,6 +154,12 @@ const AP_DIST = 30000; // aerial perspective scale toward the horizon
 const FAR = 250000;
 // A weather change sweeps across this many metres of sky, arriving from upwind.
 const FRONT_SPAN = 25000;
+// The farthest a place's distance counts toward its lead, as a share of the span: at mid passage
+// everything that far upwind has arrived and everything that far downwind has not begun, and past
+// it a place keeps the pace of one this far out, three times the island's at most. The rays of a
+// low sun meet the shell tens of kilometres out: paced by their distance they crossed a whole front
+// in a tenth of its length.
+const FRONT_REACH = 0.5;
 const CIRRUS_ALTITUDE = 10000;
 const UPPER_VEER = 0.6; // radians the upper wind turns from the surface wind
 // The clouds drift with the wind aloft, derived from the surface wind's integrated displacement
@@ -159,8 +178,12 @@ const SYNOPTIC_SIZE = 409600;
 export const DOME_DEFAULTS = { width: 1024, height: 256, strideX: 4, strideY: 8 } as const;
 const SHADOW_SIZE = 256, SHADOW_SPAN = 12000;
 // The cloud shadow map refreshes one of every SHADOW_PHASES rows per pass (see setShadowRefresh);
-// cloud shadows drift across its 47 m texels far slower than a full refresh.
+// cloud shadows drift across its 47 m texels far slower than a full refresh, but under a low sun,
+// whose motion slides them a few texels in one.
 const SHADOW_PHASES = 8;
+// The least slope of the rays the map is cast along and read back by: under it a ray would run
+// farther through the shell than its steps can follow, about 4.6 degrees.
+export const SHADOW_SLOPE_FLOOR = 0.08;
 const SHADOW_ORDER = [ 0, 4, 2, 6, 1, 5, 3, 7 ];
 // Lightning inside the cloud: point sources lighting the march.
 export const FLASH_SOURCES = 4;
@@ -359,6 +382,14 @@ export class Clouds {
 	readonly density = uniform( 1 );
 	// the share of the layer's optical depth its shadow map is cast with (the weather's)
 	readonly shadowDensity = uniform( 1 );
+	// the sine of the angle over which the map's rays spread across the light's disc, and how many
+	// rays that takes (Sky.ts SHADOW_DISC): one, the disc's centre, under a light higher than that,
+	// and one, held still, under a light whose whole disc is below SHADOW_SLOPE_FLOOR
+	readonly shadowDisc = uniform( 0 );
+	readonly shadowRays = uniform( 1, 'int' );
+	// the share of the two centre rays in the channel the air reads, the rest the whole disc's
+	// (Sky.ts SHADOW_AIR_NARROW)
+	readonly shadowAirNarrow = uniform( 0 );
 	// The weather front: values before and after, the linear progress over the island and the
 	// unit horizontal direction the weather comes from.
 	readonly coverageFrom = uniform( 0.28 );
@@ -366,6 +397,12 @@ export class Clouds {
 	readonly densityFrom = uniform( 1 );
 	readonly densityTo = uniform( 1 );
 	readonly frontProgress = uniform( 1 );
+	// How much of a place's distance upwind or downwind of the island, up to FRONT_REACH, counts
+	// toward its progress (Sky.ts `frontLead`): none as a front sets out and none as it ends, so a
+	// front that sets out from a sky at rest moves no place in its first frame, and every place has
+	// arrived when the island has. A front replaced mid-way sets out from the island's values
+	// (Weather.ts `moveTo`): the places ahead of the island drop to them in that frame.
+	readonly frontLead = uniform( 0 );
 	readonly rainFrom = uniform( 0 );
 	readonly rainTo = uniform( 0 );
 	// Rain that fell recently (WeatherState.showers): it lingers in showers under the thicker cells.
@@ -608,10 +645,12 @@ export class Clouds {
 		this.shadowKernel?.dispose();
 		const shapeNode = texture3D( shape ), weatherNode = texture( weather ), boundsNode = texture( bounds ), synopticNode = texture( synoptic );
 
+		// How far the front has come at a camera-relative position (see `frontLead`).
+		const reachedAt = ( pxz: V2 ) => clamp( this.frontProgress.add( clamp( dot( pxz.add( this.camXZ ), this.frontAxis ).div( FRONT_SPAN ), - FRONT_REACH, FRONT_REACH ).mul( this.frontLead ) ), 0, 1 );
 		// The weather front at a camera-relative position: (coverage of the shell, density scale).
 		const frontAt = ( pxz: V2 ) => {
 
-			const reached = clamp( this.frontProgress.add( dot( pxz.add( this.camXZ ), this.frontAxis ).div( FRONT_SPAN ) ), 0, 1 ).toVar();
+			const reached = reachedAt( pxz ).toVar();
 			const sweep = reached.mul( reached ).mul( float( 3 ).sub( reached.mul( 2 ) ) );
 			return vec2( shellCoverage( clamp( mix( this.coverageFrom, this.coverageTo, sweep ), 0, 1 ) ), mix( this.densityFrom, this.densityTo, sweep ) );
 
@@ -1018,7 +1057,7 @@ export class Clouds {
 					const source = pxz.sub( lean.mul( below ) ).toVar();
 					// The base sits anywhere in the lowest part of the shell, lower under richer weather.
 					const above = cloudAbove( source, BASE_WEATHER_END );
-					const reached = clamp( this.frontProgress.add( dot( source.add( this.camXZ ), this.frontAxis ).div( FRONT_SPAN ) ), 0, 1 );
+					const reached = reachedAt( source );
 					const rain = mix( this.rainFrom, this.rainTo, reached.mul( reached ).mul( float( 3 ).sub( reached.mul( 2 ) ) ) ).toVar();
 					// A raining deck rains everywhere, hardest under the richest weather of its cells.
 					const core = smoothstep( 0.25, 0.45, above.w );
@@ -1161,38 +1200,67 @@ export class Clouds {
 
 		// ---- cloud shadow: transmittance of the shell along the key light around the island, one
 		// of every SHADOW_PHASES rows per pass.
+		// What gets through the shell to a ground point along a ray climbing `ly` per unit of `L.xz`.
+		const castRay = Fn( ( [ ground, ly ]: [ V2, F ] ) => {
+
+			const ray = vec3( this.lightDir.x, ly, this.lightDir.z ).toVar();
+			const t0 = float( SHELL_BOTTOM ).div( ly ).toVar(), dt = float( SHELL_THICKNESS / 16 ).div( ly ).toVar();
+			// (the optical depth at the weather's share of the deck's: `shadowDensity`)
+			const tau = float( 0 ).toVar();
+			Loop( 16, ( { i } ) => {
+
+				const p = vec3( ground.x, 0, ground.y ).add( ray.mul( t0.add( float( i ).add( 0.5 ).mul( dt ) ) ) ).toVar();
+				const front = frontAt( p.xz ).toVar();
+				tau.addAssign( lightDensity( p, front.x, vec2( 2 ), false ).mul( front.y ).mul( DENSITY ).mul( this.shadowDensity ).mul( dt ) );
+				If( tau.greaterThan( 12 ), () => {
+
+					Break();
+
+				} );
+
+			} );
+			// Multiple scattering lets a little light through even thick cloud.
+			return exp( tau.negate() ).mul( 0.8 ).add( exp( tau.mul( - 0.25 ) ).mul( 0.2 ) );
+
+		} ).setLayout( { name: 'cloudCastRay', type: 'float', inputs: [ { name: 'ground', type: 'vec2' }, { name: 'ly', type: 'float' } ] } );
 		this.shadowKernel = Fn( () => {
 
 			const n = uint( SHADOW_SIZE );
 			const x = instanceIndex.mod( n ), y = instanceIndex.div( n ).mul( uint( SHADOW_PHASES ) ).add( uint( this.shadowRow ) );
 			const ground = vec2( float( x ), float( y ) ).add( 0.5 ).div( SHADOW_SIZE ).sub( 0.5 ).mul( SHADOW_SPAN ).sub( this.camXZ ).toVar();
-			const L = this.lightDir;
-			const visibility = float( 1 ).toVar();
+			const visibility = float( 1 ).toVar(), sharp = float( 1 ).toVar();
 			If( this.shadowShare.greaterThan( 0 ), () => {
 
-				const ly = max( L.y, 0.08 );
-				const ray = vec3( L.x, ly, L.z ).toVar();
-				const t0 = float( SHELL_BOTTOM ).div( ly ), dt = float( SHELL_THICKNESS / 16 ).div( ly ).toVar();
-				// (the optical depth at the weather's share of the deck's: `shadowDensity`)
-				const tau = float( 0 ).toVar();
-				Loop( 16, ( { i } ) => {
+				// Rays spaced evenly over the height of the light's disc, each weighted by the disc's
+				// width there: its footprint on the ground runs kilometres along the light under a
+				// low sun, far beyond what the read's filter or a cloud's edge soften, and it takes
+				// the disc seconds to pass an edge. The heights alone: the footprint across the light
+				// is hundreds of metres, and the shadow slides along it.
+				const rays = float( this.shadowRays ).toVar();
+				const cast = float( 0 ).toVar(), total = float( 0 ).toVar();
+				const centre = float( 0 ).toVar(), centres = float( 0 ).toVar();
+				Loop( this.shadowRays, ( { i } ) => {
 
-					const p = vec3( ground.x, 0, ground.y ).add( ray.mul( t0.add( float( i ).add( 0.5 ).mul( dt ) ) ) ).toVar();
-					const front = frontAt( p.xz ).toVar();
-					tau.addAssign( lightDensity( p, front.x, vec2( 2 ), false ).mul( front.y ).mul( DENSITY ).mul( this.shadowDensity ).mul( dt ) );
-					If( tau.greaterThan( 12 ), () => {
+					const across = float( i ).add( 0.5 ).div( rays ).mul( 2 ).sub( 1 ).toVar();
+					const width = sqrt( float( 1 ).sub( across.mul( across ) ) ).toVar();
+					const ray = castRay( ground, max( this.lightDir.y.add( across.mul( this.shadowDisc ) ), SHADOW_SLOPE_FLOOR ) ).toVar();
+					cast.addAssign( ray.mul( width ) );
+					total.addAssign( width );
+					// the ray or two nearest the disc's centre: one ray stands for itself
+					If( abs( across ).mul( rays ).lessThan( 2 ), () => {
 
-						Break();
+						centre.addAssign( ray );
+						centres.addAssign( 1 );
 
 					} );
 
 				} );
-				// Multiple scattering lets a little light through even thick cloud.
-				const cast = exp( tau.negate() ).mul( 0.8 ).add( exp( tau.mul( - 0.25 ) ).mul( 0.2 ) );
-				visibility.assign( mix( float( 1 ), cast, this.shadowShare ) );
+				const disc = cast.div( total ).toVar();
+				visibility.assign( mix( float( 1 ), disc, this.shadowShare ) );
+				sharp.assign( mix( float( 1 ), mix( disc, centre.div( centres ), this.shadowAirNarrow ), this.shadowShare ) );
 
 			} );
-			textureStore( this.shadowMap, ivec2( int( x ), int( y ) ), vec4( visibility ) );
+			textureStore( this.shadowMap, ivec2( int( x ), int( y ) ), vec4( visibility, sharp, 0, 1 ) );
 
 		} )().compute( SHADOW_SIZE * SHADOW_SIZE / SHADOW_PHASES, [ 64 ] ).setName( 'Clouds.Shadow' );
 		// The view's kernels close over the march: rebuild them on the next update.
@@ -1873,9 +1941,11 @@ export class Clouds {
 	}
 
 	/** The shadow map read for the point `p` of the air (the haze's shafts, VolumetricHaze.ts): the
-	 * map holds each ground point's flat beam toward `lightDir`, its slope clamped at 0.08, so p is
-	 * taken down that same beam to its ground point, p.xz - L.xz p.y / max( L.y, 0.08 ). Returns
-	 * ( the map's bilinear sample, its bicubic B-spline blur ), both faded toward lit as `shadow()`
+	 * map holds each ground point's flat beam toward `lightDir` (under a low light the beams about
+	 * that one, the air's channel narrower than the ground's from about 5 degrees up), its slope
+	 * clamped at SHADOW_SLOPE_FLOOR, so p is taken down that same beam to its ground point,
+	 * p.xz - L.xz p.y / max( L.y, floor ). Returns ( the green channel's bilinear sample, its
+	 * bicubic B-spline blur ), both faded toward lit as `shadow()`
 	 * fades them for p (the edge of the map, the distance and direction fades). The blur takes four
 	 * bilinear taps (Sigg and Hadwiger, "Fast Third-Order Texture Filtering", GPU Gems 2, 2005); the
 	 * B-spline smooths rather than interpolates (it does not pass through the texels' values), as a
@@ -1883,10 +1953,10 @@ export class Clouds {
 	shadowAlongBeam( p: V3 ): V2 {
 
 		const L = this.lightDir, shadowed = p;
-		const ground = p.xz.sub( L.xz.mul( p.y.div( max( L.y, 0.08 ) ) ) );
+		const ground = p.xz.sub( L.xz.mul( p.y.div( max( L.y, SHADOW_SLOPE_FLOOR ) ) ) );
 		const q = ground.div( SHADOW_SPAN ).add( 0.5 ).toVar();
 		const map = this.shadowMap;
-		const point = texture( map, q ).level( float( 0 ) ).r;
+		const point = texture( map, q ).level( float( 0 ) ).g;
 		const coord = q.mul( SHADOW_SIZE ).sub( 0.5 ).toVar();
 		const index = floor( coord ).toVar();
 		const f = coord.sub( index ).toVar();
@@ -1898,7 +1968,7 @@ export class Clouds {
 		const g0 = w0.add( w1 ).toVar(), g1 = w2.add( w3 );
 		const h0 = index.sub( 0.5 ).add( w1.div( g0 ) ).div( SHADOW_SIZE ).toVar();
 		const h1 = index.add( 1.5 ).add( w3.div( g1 ) ).div( SHADOW_SIZE ).toVar();
-		const tap = ( a: V2, b: V2 ) => texture( map, vec2( a.x, b.y ) ).level( float( 0 ) ).r;
+		const tap = ( a: V2, b: V2 ) => texture( map, vec2( a.x, b.y ) ).level( float( 0 ) ).g;
 		const blur = mix( mix( tap( h1, h1 ), tap( h0, h1 ), g0.x ), mix( tap( h1, h0 ), tap( h0, h0 ), g0.x ), g0.y );
 		const lit = this.shadowFadeAt( q, shadowed );
 		return mix( vec2( point, blur ), vec2( 1 ), lit );
@@ -1928,7 +1998,7 @@ export class Clouds {
 	coverageAt( x: number, z: number ): number {
 
 		const axis = this.frontAxis.value;
-		const reached = THREE.MathUtils.clamp( this.frontProgress.value + ( x * axis.x + z * axis.y ) / FRONT_SPAN, 0, 1 );
+		const reached = THREE.MathUtils.clamp( this.frontProgress.value + THREE.MathUtils.clamp( ( x * axis.x + z * axis.y ) / FRONT_SPAN, - FRONT_REACH, FRONT_REACH ) * this.frontLead.value, 0, 1 );
 		const sweep = reached * reached * ( 3 - 2 * reached );
 		return THREE.MathUtils.lerp( this.coverageFrom.value, this.coverageTo.value, sweep );
 

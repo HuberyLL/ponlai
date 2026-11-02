@@ -11,9 +11,9 @@ import {
 	pmremTexture, textureLoad, Loop, cross, exp2, log2, positionView, fwidth, length, step,
 } from 'three/tsl';
 import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
-import { SCENE_RADIANCE_SCALE, SUN_LIMB_U1, SUN_LIMB_U2 } from '../lighting/Radiometry.ts';
+import { SCENE_RADIANCE_SCALE, SUN_ANGULAR_RADIUS, SUN_LIMB_U1, SUN_LIMB_U2 } from '../lighting/Radiometry.ts';
 import { SUN_DISC_RADIUS, SUN_DISC_SOLID_ANGLE, SUN_DISC_RADIANCE } from '../lighting/SunDisc.ts';
-import { Clouds, EARTH_RADIUS, EVOLVE_PERIOD, SHELL_BOTTOM, SHELL_THICKNESS, type CloudViewScale } from './Clouds.ts';
+import { Clouds, EARTH_RADIUS, EVOLVE_PERIOD, SHADOW_SLOPE_FLOOR, SHELL_BOTTOM, SHELL_THICKNESS, type CloudViewScale } from './Clouds.ts';
 import { MOON_ANGULAR_RADIUS, NightSky } from './NightSky.ts';
 import { Lightning } from '../weather/Lightning.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -76,6 +76,9 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // from the panorama into a texel ahead of the scene (`discCloudTransmittance`), and hidden by the
 // clouds' opacity once, in the composite. The key light's colour does not take that mean: the lit
 // surfaces already read the clouds' shadow map along the same ray, and both would darken it twice.
+// Under a low key that map's rays spread over the key's disc (SHADOW_DISC): whatever lights the
+// ground and feeds the meter from it reads the whole disc, the air's shafts its centre from about
+// 5 degrees up (SHADOW_AIR_NARROW).
 // The dome writes the exposure's metering illuminance (Motion.ts `meterOutput`): one value for all
 // its pixels, the sky's geometric-mean luminance exp( mean ln Y ) over the upper hemisphere by solid
 // angle, times METER_SKY. The irradiance probe's pass reduces it from the same panorama once per
@@ -521,6 +524,23 @@ const CLOUD_MOON = [ - 7, - 3 ] as const;
 const CLOUD_TURN = [ - 3, - 2.5, - 2 ] as const;
 // The sine of the sun's elevation over which the clouds' shadow comes in as it rises.
 const CLOUD_SHADOW_SET = [ - 0.02, 0.02 ] as const;
+// The sine of the key's elevation over which the rays of the clouds' shadow gather from the height
+// of its disc to its centre as it climbs, from 8 to 11 degrees: from there up a cloud's own edge
+// takes longer to pass than the disc does (near 0.8 degree at 10 degrees, 0.15 at 4.7). The rays
+// are as many as keep the disc from stepping: four, 0.135 degree apart, stepped the light by a
+// quarter of the sun; these are 0.045 degree apart.
+// Twelve cost about one percent of the frame's GPU time at their dearest, an overcast sky near
+// 11 degrees, and only from about 4.3 to 11 degrees: under that the rays are one ray.
+const SHADOW_DISC = [ 0.139, 0.191 ] as const;
+const SHADOW_DISC_RAYS = 12;
+// The key's elevations (degrees) over which the channel of the clouds' shadow the air reads narrows
+// from the whole disc to its two centre rays, a function of the elevation alone. At 6 degrees the
+// whole disc leaves the haze no shaft. Under the fade's foot the channel must be the whole disc:
+// the sky's dome meters the air's light, and as a gap in the deck left the sun near 4.7 degrees the
+// two rays stepped the exposure toward the sun by half a stop per 0.02 degree, the whole disc by a
+// seventh of one. Over the fade the band of haze steps less than one ray's does; in a front at 8 degrees
+// the air steps up to a third more than under the whole disc, under half a level in 255.
+const SHADOW_AIR_NARROW = [ 4.9, 5.6 ] as const;
 
 // The moon's key, a share of the sun's illuminance per channel: cool blue (red over green 0.8, blue
 // over green 1.4). Its level is the moonlit ground's relation to the night's other light; how bright
@@ -1359,7 +1379,9 @@ export class Sky {
 		this.displayAmbientGain.value = ambientGain;
 		this.keyCloudFloor.value = weather?.cloudFloor ?? 0;
 		this.castShadow.value = weather?.castShadow ?? 1;
-		this.trackClouds( celestial, weather, coverage, overcast, illuminance, coverageOverride === null ? front : null, skyMix );
+		// A front that has arrived is the sky at rest: its `from` is no longer in the sky, and the
+		// bounds that take the larger of the two would keep marching for it.
+		this.trackClouds( celestial, weather, coverage, overcast, illuminance, coverageOverride === null && front && front.progress < 1 ? front : null, skyMix );
 		this.clouds.cirrus.value = weather?.cirrus ?? 0;
 		// A rainbow needs falling rain and direct sun at once, the sun lower than 42 degrees behind
 		// the viewer: most often as a shower clears, while it is still raining a few kilometres off.
@@ -1396,6 +1418,13 @@ export class Sky {
 		clouds.densityFrom.value = front ? front.from.density : clouds.density.value;
 		clouds.densityTo.value = front ? front.to.density : clouds.density.value;
 		clouds.frontProgress.value = front ? front.progress : 1;
+		// At mid passage a place half a span upwind is half a front ahead of the island, and has
+		// arrived. The lead grows from nothing as the front sets out and closes to nothing as it
+		// ends, so a front that sets out from a sky at rest moves no place of the shell in its first
+		// frame, and none steps in its last. A low sun's rays meet the shell tens of kilometres
+		// out: a lead there from the first frame closed its shadow at once, and a place downwind
+		// held the old sky after the island had the new.
+		clouds.frontLead.value = front ? 4 * front.progress * ( 1 - front.progress ) : 0;
 		clouds.rainFrom.value = front ? front.from.rain : weather?.rain ?? 0;
 		clouds.rainTo.value = front ? front.to.rain : weather?.rain ?? 0;
 		// Cloud tops a couple of kilometres up keep the sun a little after it has set below.
@@ -1426,6 +1455,11 @@ export class Sky {
 			clouds.lightDir.value.set( across * Math.cos( azimuth ), y, across * Math.sin( azimuth ) );
 
 		}
+		const disc = 1 - THREE.MathUtils.smoothstep( clouds.lightDir.value.y, SHADOW_DISC[ 0 ], SHADOW_DISC[ 1 ] );
+		clouds.shadowDisc.value = disc * SUN_ANGULAR_RADIUS;
+		// With the whole disc under the floor the rays are one ray.
+		clouds.shadowRays.value = disc > 0 && clouds.lightDir.value.y + clouds.shadowDisc.value > SHADOW_SLOPE_FLOOR ? SHADOW_DISC_RAYS : 1;
+		clouds.shadowAirNarrow.value = THREE.MathUtils.smoothstep( THREE.MathUtils.radToDeg( Math.asin( clouds.lightDir.value.y ) ), SHADOW_AIR_NARROW[ 0 ], SHADOW_AIR_NARROW[ 1 ] );
 		clouds.lightColor.value.copy( sunUp ? sunAbove : new THREE.Color( 0, 0, 0 ) );
 		// The clouds belong to the night sky: their moonlight and night ambient keep its level.
 		const moonLight = illuminance * 0.04 * moonGain * this.nightSkyLevel;

@@ -163,7 +163,7 @@ type V4 = THREE.Node<'vec4'>;
 //     under the bamboo, the overhangs and in the island's hollows the haze darkens, the open haze
 //     is unchanged. The cover's redraws (a Grow's) restart the rest.
 //   - the shadow is the sun's stepped shadow maps (SunShadow.volumeVisibility) and the clouds'
-//     shadow along the key light (`cloudShaft`: the clouds' map read at the point's ground point
+//     shadow along the key light (`cloudShaft`: the clouds' map, its air's channel, read at the point's ground point
 //     along the clouds' own light, the flat beam the map was built along, sharpened against its blur
 //     so the gaps show as shafts, lifted above the shell's base and floored; the gain 10, no floor and no cut
 //     toward the light until set), sampled at four points of each froxel whenever it is recomputed
@@ -596,7 +596,8 @@ export class VolumetricHaze {
 
 	// The clouds' visibility along the key light from the point p of the air. The clouds' shadow map
 	// holds, for each ground point, the transmittance along a flat beam toward the clouds' light
-	// (Clouds.ts `shadowAlongBeam`), so the point is taken to its ground point along that same flat
+	// (Clouds.ts `shadowAlongBeam`, the channel the air reads, narrower than the ground's from about
+	// 5 degrees up), so the point is taken to its ground point along that same flat
 	// beam and that light: a beam followed over the planet's curve instead, or along the haze's key
 	// direction, meets the map a kilometre off at a low sun and leaves it below a sun of 0.08, where
 	// the map clamps its own slope. The read is sharpened by an unsharp mask against its B-spline
