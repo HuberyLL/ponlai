@@ -111,6 +111,8 @@ interface SkyEndpoint {
 	irradianceMap: THREE.RenderTarget;
 	// the cloudless sky's (Sky.clearIrradianceNode)
 	clearIrradianceMap: THREE.RenderTarget;
+	// the sky's without the haze over it, its clouds included (Sky.deckIrradianceNode)
+	deckIrradianceMap: THREE.RenderTarget;
 	version: number;
 	irradiance: THREE.Color;
 }
@@ -175,6 +177,7 @@ function makeEndpoint(): SkyEndpoint {
 		clouds,
 		irradianceMap: new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter } ),
 		clearIrradianceMap: new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter } ),
+		deckIrradianceMap: new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter } ),
 		version: 0,
 		irradiance: new THREE.Color( 0, 0, 0 ),
 	};
@@ -717,6 +720,13 @@ export class Sky {
 	// moonlit sky, under no clouds and none of the weather's dimming), baked and cross-faded with
 	// irradianceNode: the haze's sky light, which the weather scales instead (weather/HazeKeys.ts).
 	readonly clearIrradianceNode: V3;
+	// The sky's irradiance over pi with its clouds but without the haze over it (the clear sky in the
+	// gaps times their transmittance, plus the clouds' own light, at the weather's ambient gain),
+	// baked and cross-faded with irradianceNode: under a deck, the deck's mean base radiance, which
+	// lights the air under it (VolumetricHaze.ts `scatterToward`). `bakeDeckIrradianceNode` is the
+	// bake's own, for the haze the bake lays over its panoramas (VolumetricHaze.ts `openSky`).
+	readonly deckIrradianceNode: V3;
+	readonly bakeDeckIrradianceNode: V3;
 	busy = false;
 	/** Called after each bake renders the environment's source panorama (the starlit, island-lit
 	 * radiance without the sun's disk), with the atlases it will be filtered into: both on a first
@@ -770,6 +780,12 @@ export class Sky {
 	private clearIrradianceDisplay = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter } );
 	private clearIrradianceA: THREE.TextureNode;
 	private clearIrradianceB: THREE.TextureNode;
+	private deckIrradianceQuad: THREE.QuadMesh;
+	private deckIrradianceBlendQuad: THREE.QuadMesh;
+	private deckIrradianceDisplay = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter } );
+	private deckIrradianceA: THREE.TextureNode;
+	private deckIrradianceB: THREE.TextureNode;
+	private bakeDeckIrradiance: THREE.TextureNode;
 	private bakeVersion = 0;
 	// periodic bakes whose irradiance readback is still in flight (`readIrradiance`; `readbacks`)
 	private irradiancePending = 0;
@@ -850,6 +866,18 @@ export class Sky {
 			textureLoad( this.clearIrradianceB, ivec2( 0 ) ), this.blend );
 		this.clearIrradianceBlendQuad = new THREE.QuadMesh( clearBlendMat );
 		this.clearIrradianceNode = textureLoad( texture( this.clearIrradianceDisplay.texture ), ivec2( 0 ) ).rgb;
+		this.deckIrradianceA = texture( this.endpoints[ 0 ].deckIrradianceMap.texture );
+		this.deckIrradianceB = texture( this.endpoints[ 1 ].deckIrradianceMap.texture );
+		const deckBlendMat = new THREE.NodeMaterial();
+		deckBlendMat.depthTest = false;
+		deckBlendMat.depthWrite = false;
+		deckBlendMat.toneMapped = false;
+		deckBlendMat.fragmentNode = mix( textureLoad( this.deckIrradianceA, ivec2( 0 ) ),
+			textureLoad( this.deckIrradianceB, ivec2( 0 ) ), this.blend );
+		this.deckIrradianceBlendQuad = new THREE.QuadMesh( deckBlendMat );
+		this.deckIrradianceNode = textureLoad( texture( this.deckIrradianceDisplay.texture ), ivec2( 0 ) ).rgb;
+		this.bakeDeckIrradiance = texture( this.endpoints[ 0 ].deckIrradianceMap.texture );
+		this.bakeDeckIrradianceNode = textureLoad( this.bakeDeckIrradiance, ivec2( 0 ) ).rgb;
 		const irradianceMat = new THREE.NodeMaterial();
 		irradianceMat.depthTest = false;
 		irradianceMat.depthWrite = false;
@@ -904,6 +932,31 @@ export class Sky {
 
 		} )();
 		this.clearIrradianceQuad = new THREE.QuadMesh( clearIrradianceMat );
+		// The sky's irradiance with its clouds and without the haze over it, over the same directions:
+		// the cloud layer composed over the clear sky as the bake composes it (`bakeColour`), at the
+		// weather's ambient gain, once per bake, before the panoramas (whose haze reads it).
+		const deckIrradianceMat = new THREE.NodeMaterial();
+		deckIrradianceMat.depthTest = false;
+		deckIrradianceMat.depthWrite = false;
+		deckIrradianceMat.toneMapped = false;
+		deckIrradianceMat.fragmentNode = Fn( () => {
+
+			const sum = vec3( 0 ).toVar();
+			Loop( 32 * 16, ( { i } ) => {
+
+				const lon = float( i.mod( 32 ) ).add( 0.5 ).mul( 2 * Math.PI / 32 ).toVar();
+				const lat = float( i.div( 32 ) ).add( 0.5 ).mul( 0.5 * Math.PI / 16 ).toVar();
+				const d = vec3( cos( lat ).mul( cos( lon ) ), sin( lat ), cos( lat ).mul( sin( lon ) ) ).toVar();
+				const q = dirToEquirect( d ).toVar();
+				const cloud = this.cloudLayer.sample( vec2( q.x, q.y.sub( 0.5 ).mul( 2 ) ) ).level( float( 0 ) ).toVar();
+				const radiance = this.clearSky( d ).mul( cloud.a ).add( cloud.rgb );
+				sum.addAssign( radiance.mul( sin( lat ).mul( cos( lat ) ) ).mul( ( 0.5 * Math.PI / 16 ) * ( 2 * Math.PI / 32 ) / Math.PI ) );
+
+			} );
+			return vec4( sum.mul( this.ambientGain ), 1 );
+
+		} )();
+		this.deckIrradianceQuad = new THREE.QuadMesh( deckIrradianceMat );
 		this.pmrem = new THREE.PMREMGenerator( renderer );
 
 		const upperMat = new THREE.NodeMaterial();
@@ -1206,6 +1259,7 @@ export class Sky {
 			[ this.upperQuad, e.clouds ], [ this.quad, e.equirect ], [ this.quad, this.small ],
 			[ this.irradianceQuad, e.irradianceMap ], [ this.irradianceBlendQuad, this.irradianceDisplay ],
 			[ this.clearIrradianceQuad, e.clearIrradianceMap ], [ this.clearIrradianceBlendQuad, this.clearIrradianceDisplay ],
+			[ this.deckIrradianceQuad, e.deckIrradianceMap ], [ this.deckIrradianceBlendQuad, this.deckIrradianceDisplay ],
 		];
 		if ( this.environmentBlendQuad && this.envMap ) pairs.push( [ this.environmentBlendQuad, this.envMap ] );
 		const compiling = pairs.map( ( [ quad, target ] ) => compileInto( r, quad, quad.camera, target ) );
@@ -1737,6 +1791,15 @@ export class Sky {
 			r.setRenderTarget( state.clouds );
 			this.upperQuad.render( r );
 			this.cloudLayer.value = state.clouds.texture;
+			// the sky's light without its haze, which the panoramas' haze takes under a deck
+			// (VolumetricHaze.ts `openSky`)
+			for ( const deck of this.initialized ? [ state.deckIrradianceMap ] : [ state.deckIrradianceMap, this.endpoints[ 1 ].deckIrradianceMap ] ) {
+
+				r.setRenderTarget( deck );
+				this.deckIrradianceQuad.render( r );
+
+			}
+			this.bakeDeckIrradiance.value = state.deckIrradianceMap.texture;
 			// Both samplers must have distinct textures at the first material compilation:
 			// Three deduplicates texture uniforms by UUID, even for separate TextureNodes.
 			const panoramas = this.initialized ? [ state.equirect, this.reflectionSource, this.small ] :
@@ -1945,6 +2008,8 @@ export class Sky {
 		this.irradianceB.value = displayedNext.irradianceMap.texture;
 		this.clearIrradianceA.value = previous.clearIrradianceMap.texture;
 		this.clearIrradianceB.value = displayedNext.clearIrradianceMap.texture;
+		this.deckIrradianceA.value = previous.deckIrradianceMap.texture;
+		this.deckIrradianceB.value = displayedNext.deckIrradianceMap.texture;
 		// The environment cross-fades from the atlas shown to the one this bake filtered (the
 		// first bake filled both); a bake that kept it fades it to itself.
 		const shown = this.environments[ this.environmentFront ]!;
@@ -2038,6 +2103,8 @@ export class Sky {
 			this.irradianceBlendQuad.render( r );
 			r.setRenderTarget( this.clearIrradianceDisplay );
 			this.clearIrradianceBlendQuad.render( r );
+			r.setRenderTarget( this.deckIrradianceDisplay );
+			this.deckIrradianceBlendQuad.render( r );
 
 		} finally {
 
@@ -2125,17 +2192,21 @@ export class Sky {
 		this.envMap?.dispose();
 		this.irradianceDisplay.dispose();
 		this.clearIrradianceDisplay.dispose();
+		this.deckIrradianceDisplay.dispose();
 		( this.environmentBlendQuad?.material as THREE.Material | undefined )?.dispose();
 		( this.irradianceQuad.material as THREE.Material ).dispose();
 		( this.irradianceBlendQuad.material as THREE.Material ).dispose();
 		( this.clearIrradianceQuad.material as THREE.Material ).dispose();
 		( this.clearIrradianceBlendQuad.material as THREE.Material ).dispose();
+		( this.deckIrradianceQuad.material as THREE.Material ).dispose();
+		( this.deckIrradianceBlendQuad.material as THREE.Material ).dispose();
 		for ( const endpoint of this.endpoints ) {
 
 			endpoint.equirect.dispose();
 			endpoint.clouds.dispose();
 			endpoint.irradianceMap.dispose();
 			endpoint.clearIrradianceMap.dispose();
+			endpoint.deckIrradianceMap.dispose();
 
 		}
 		for ( const environment of this.environments ) environment?.dispose();

@@ -226,6 +226,14 @@ const HANDOFF_TOP = - 0.7;
 // handoff has just turned the key to the moon, so it turns through zero light (HANDOFF_TOP to here).
 const MOON_KEY_TOP = - 2.5;
 
+/** The moon's share of the key at a sun elevation (degrees), before its visibility (the snapshot's
+ * `moonKeyGain`): none above MOON_KEY_TOP, whole two degrees lower. */
+export function moonKeyShare( elevation: number ): number {
+
+	return 1 - smoothstep( MOON_KEY_TOP - 2, MOON_KEY_TOP, elevation );
+
+}
+
 /** The night's ambient share at a sun elevation (degrees): the sun's scattered skylight falls about
  * tenfold between the horizon and -4 degrees, and the night's ambient rises across the same band so
  * the two together never dip. The yunpeng's glow and light follow it too (world/Yunpeng.ts). */
@@ -425,7 +433,7 @@ export class DayCycle {
 			// The moon's key comes in as soon as the handoff has turned it (from MOON_KEY_TOP), not
 			// four degrees later: between the sun's last light and the night's ambient the meadow
 			// fell to about half its night brightness. It does not follow the phase.
-			moonKeyGain: ( 1 - smoothstep( MOON_KEY_TOP - 2, MOON_KEY_TOP, elevation ) ) * moonVisibility,
+			moonKeyGain: moonKeyShare( elevation ) * moonVisibility,
 			starFrame: equatorialFrame( MIDNIGHT_SIDEREAL + hourAngle + Math.PI + TAU * ( this.completedDays + this.currentHour / 24 ) / SIDEREAL_DAYS_PER_YEAR ),
 			daylight,
 			nightVisibility: 1 - smoothstep( - 15, - 3, elevation ),

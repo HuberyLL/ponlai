@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { tuneObject, type TuneOptions } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
+import { moonKeyShare } from '../sky/DayCycle.ts';
 import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckLight, overcastDeckLight } from '../sky/Weather.ts';
 
 // The haze's keys: what the air does by the hour and the weather, set as a few quantities one sees
@@ -93,13 +94,17 @@ import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckLight, o
 // past `nearEnd` and the sky keep their depth.
 // Under a clouded sky the key also carries the deck's share (`deck`, Weather.ts `deckLight`: a
 // cloudy deck's from a sun of 3 degrees, whole by 6, overcast's at every sun until the twilight),
-// under which the air is lit level, and overcast's part of it (`overcastDeck`, Weather.ts
-// `overcastDeckLight`), whose sky is darker away from the sun (VolumetricHaze's header).
+// under which the air is lit level by the deck, and overcast's part of it (`overcastDeck`, Weather.ts
+// `overcastDeckLight`), whose sky is darker away from the sun (VolumetricHaze's header). By night,
+// once the moon's key has come in (DayCycle.ts `moonKeyShare`), the share is the whole clouded
+// one: the deck's column then passes the island's moonlight down to its base (Clouds.ts
+// `columnKey`), as by day the sun's, so the air under it takes the deck's light by night as by day,
+// not the open moonlit sky's.
 
 export interface HazeKey {
 
-	// the clouded day's deck's share (Weather.ts `deckLight`): under it the air is lit
-	// level, not as a clear sky's (VolumetricHaze.ts)
+	// the deck's share (Weather.ts `deckLight` by day, the clouded share by night: the header):
+	// under it the air is lit level, not as a clear sky's (VolumetricHaze.ts)
 	deck: number;
 	// overcast's share of that deck (a parked sky counting as overcast): its sky darker away from the
 	// sun and toward the horizon (VolumetricHaze.ts)
@@ -275,7 +280,9 @@ export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly 
 	out.sunRayleigh = 1 - ( 1 - out.sunRayleigh ) * ( 1 - sunRayleigh );
 	out.nearDensity *= 1 + ( HIGH_SUN_NEAR - 1 ) * cloudedHighSun( elevation, skyMix );
 	out.mist *= ( 1 - THREE.MathUtils.smoothstep( wind, 3.5, 5 ) ) * ( 1 - rain );
-	out.deck = deckLight( elevation, cloudedShare( skyMix ), skyMix[ 3 ] ?? 0 );
+	// (by night the whole clouded share, once the moon's key has come in: see the header)
+	const clouded = cloudedShare( skyMix );
+	out.deck = Math.max( deckLight( elevation, clouded, skyMix[ 3 ] ?? 0 ), clouded * moonKeyShare( elevation ) );
 	out.overcastDeck = ( skyMix[ 3 ] ?? 0 ) * overcastDeckLight( elevation );
 	return out;
 
