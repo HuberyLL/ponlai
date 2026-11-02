@@ -67,7 +67,7 @@ import { liftedKeyDirection, liftedKeyHeight, updateKeyLift } from './lighting/K
 import { keyGlint } from './lighting/SurfaceBRDF.ts';
 import { AmbientVolume, type AmbientView } from './lighting/AmbientVolume.ts';
 import { installAmbientVolume, installEnvironmentHarmonics } from './lighting/AmbientSample.ts';
-import { AmbientRelight, AmbientSky } from './lighting/AmbientRelight.ts';
+import { AmbientRelight, AmbientSky, lowSunSkyLift } from './lighting/AmbientRelight.ts';
 import { islandSurfaceHeight, landBounds } from './world/WorldShapes.ts';
 import { LandLattice } from './world/IslandGrowth.ts';
 import { walkPoints } from './world/WalkPath.ts';
@@ -433,6 +433,9 @@ function publishLighting(): void {
 	// the sward's shade release: under overcast's soft key the sward's own shade in it is its canopy's
 	// (post/MeadowShade.ts `swardShadeRelease`)
 	swardShadeRelease.value = overcast * overcastDeckLight( sky.elevation );
+	// a low sun's lift of the sky's light on what it lights: the land's ambient, the water's sky
+	// light and the sea's reflection (lighting/AmbientRelight.ts `lowSunSkyLift`)
+	shared.skyLift.value = lowSunSkyLift( sky.elevation, cloudedShare( weather.skyMix ) );
 	sun.intensity = 1;
 	sun.position.copy( sky.keyDir ).multiplyScalar( 120 ).add( sun.target.position );
 	shared.sunDir.value.copy( sky.keyDir );
@@ -544,7 +547,9 @@ sky.onEnvironmentSource = ( source, atlases ) => ambientSky.project( source, atl
 setStatus( 'Lighting the sky…' );
 await refreshEnvironment();
 mark( 'sky' );
-shared.skyIrradianceSource = sky.irradianceNode.mul( shared.skyFill );
+// (the sky's light on what it lights takes a low sun's lift, shared.ts `skyLift`; the sky drawn and
+// its meter never do)
+shared.skyIrradianceSource = sky.irradianceNode.mul( shared.skyFill ).mul( shared.skyLift );
 shared.islandIrradianceSource = sky.islandIrradianceNode.mul( shared.skyFill );
 shared.skyMeterLog2 = sky.meterLog2Node;
 
