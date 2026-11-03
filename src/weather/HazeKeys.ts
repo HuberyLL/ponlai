@@ -67,7 +67,8 @@ import { cloudBase } from '../sky/Sky.ts';
 //     degrees up) runs about 0.7 within 30 degrees of the sun, 1.0 at 60 and 1.7 at 90: a haze
 //     darker than the sky it covers toward the sun, where the sky's aerosol glow is, and lighter
 //     where the clear sky is deepest. Fitted on the clear views: by day 1.04 and 0.4, in the
-//     morning (sun 12) 0.45 and 0.71, as the sun rises (sun 2) 0.42 and 0.76, and before dawn
+//     morning (sun 12) 0.45 and 0.71, as the sun rises (sun 2) 0.42 and 0.34 (its aerosol weight
+//     fitted with the sky's phases and the aerosol aloft: Atmosphere.ts), and before dawn
 //     0.39 and 1.6 (from sun 0, where it meets the sunrise's half and half); the keys with a
 //     low sun take the sun's Rayleigh light beside the open sky's (`sunRayleigh`), about twice
 //     the open sky's alone, hence their lower Rayleigh weight. The golden hour's (0.58 and 3.8),
@@ -174,7 +175,7 @@ const twilight = ( elevation: number ): Sigma => {
 };
 const NIGHT = { ...key( 2.5, NIGHT_SIGMA, 0.55, 0, 1 ), rayleighWeight: 14.9, mieWeight: 2, top: 47.6, width: 36.8, widthSlope: 0.65, aerosolShare: 0.003, skyDepth: 0 };
 const BEFORE_DAWN = { ...key( 0.6, twilight( - 3.5 ), 0.33, 0, 1 ), rayleighWeight: 0.39, mieWeight: 1.6, nearScale: 0.8 };
-const MIST = { ...key( 0.6, GOLDEN_SIGMA, 0.72, 0, 1 ), rayleighWeight: 0.42, mieWeight: 0.76, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010, nearScale: 0.5 };
+const MIST = { ...key( 0.6, GOLDEN_SIGMA, 0.72, 0, 1 ), rayleighWeight: 0.42, mieWeight: 0.34, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010, nearScale: 0.5 };
 const MORNING = { ...key( 0.96, DAY_SIGMA, 0.5, 0, 1 ), rayleighWeight: 0.45, mieWeight: 0.71 };
 const DAY = { ...key( 0.659, DAY_SIGMA, 1, 0, 0 ), rayleighWeight: 1.04, mieWeight: 0.4, top: 78.4, width: 54.9, aerosolShare: 0.06, aerosolHeight: 761 };
 const GOLDEN = { ...key( 0.606, GOLDEN_SIGMA, 0.331, 0, 1 ), rayleighWeight: 0.58, mieWeight: 3.8, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010 };

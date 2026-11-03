@@ -24,21 +24,20 @@ import { markSkyRetune } from './SkyRetune.ts';
 // The aerosol scatters through one Cornette-Shanks lobe of anisotropy MIE_G, nothing else: no
 // isotropic base and no extra gain along long paths. The soft wide glow round the sun is that lobe
 // seen through the haze in front of the sky (weather/VolumetricHaze.ts), whose forward lobe takes
-// the same anisotropy. The Rayleigh phase's forward lean and the polariser were set together with
-// the aerosol and the sky's gains (Sky.ts SKY_LIGHT). Left free, the polariser ran to full
-// strength, which blacks out the sky 90 degrees from the sun, so it was held at the value it had
-// before it ran there, 0.835, and the rest set around it.
+// the same anisotropy.
 // The aerosol's amount is `mieScale` (our clear sea air) times a density ρ_M (`aerosol`, a
 // tunable): one value for all weathers, applied wherever the medium is (the bakes and the sun's
-// transmittance), so a change rebakes the tables and the environment. The air aloft is clean, 1.75,
-// and the sun's aureole is carried by the lobe's anisotropy, 0.75, and by the haze's aerosol share
-// near the sea (HazeKeys.ts), not by the amount aloft. With four times as much aloft (6.89 at an
+// transmittance), so a change rebakes the tables and the environment. The air aloft is clean, 1.0,
+// and the sun's aureole is carried by the lobe's anisotropy, 0.76, and by the haze's aerosol share
+// near the sea (HazeKeys.ts), not by the amount aloft. With seven times as much aloft (6.89 at an
 // anisotropy of 0.63) the aerosol's extinction along the low sky's long rays darkened the sky's last
 // few degrees under the sky above them: on the horizon views the band over the horizon stood about
 // a quarter of the sky's lightness (Oklab L) under the sky 10 degrees up from sun -2 to 0, a dark
-// ribbon, and 0.06 - 0.08 over it at noon. At 1.75 the ribbon is gone, the low sky brightening to
-// the horizon, and the sun at the golden hour is less red. Over the sea the band is mostly the haze's light
-// (VolumetricHaze.ts), lit by these rows: its weights set how it stands against the sky above.
+// ribbon, and 0.06 - 0.08 over it at noon. At 1.75 the ribbon was gone, the low sky brightening to
+// the horizon, and the sun at the golden hour less red, but the glow over the horizon toward a low
+// sun stood too far over the band away from it; the amount is fitted with the phases below. Over
+// the sea the band is mostly the haze's light (VolumetricHaze.ts), lit by these rows: its weights
+// set how it stands against the sky above.
 //
 // The sky's in-scatter is one table without azimuth or phase (Elek 2009, "Rendering
 // parametrizable planetary atmospheres with multiple scattering in real-time"): single plus
@@ -70,18 +69,35 @@ import { markSkyRetune } from './SkyRetune.ts';
 // by little. Every read, of the table and of the slices, is a cubic B-spline built
 // from bilinear taps (Sigg and Hadwiger, "Fast Third-Order Texture Filtering", GPU Gems 2, 2005),
 // each tap held inside its half of mu (and its r slice in the atlas), so the ground-hitting and
-// the sky-hitting halves never blend. `skyRadiance` is the sky row times the phases, applied
-// where it is read: the Rayleigh share by half Rayleigh's phase and half a linear forward lobe
-// (`skyRayleighPhase`, k = 0.142), darkened by a polariser (`polariser`, p = 0.835: the deep band
-// 90 degrees from the sun that a polarising filter shows), the aerosol's by its Cornette-Shanks
-// lobe; the light the sky sheds on the clouds is read without the polariser. The table's in-scatter
-// already holds the planet's shadow, averaged over the azimuth with the rest; the earth's shadow
-// (`earthShadow`) turns that mean into this azimuth's, as the ratio of the view ray's lit share
-// toward the view (the share of its length in the air outside the planet's shadow, a cylinder
-// behind it along the light, its edge softened by the sun's angular radius) to that share's mean
-// over the azimuth (`shadowMean`, a small table cut with the slices). Averaged over the azimuth it
-// is 1, so the twilight keeps the table's total: brighter toward the set sun, darker opposite it,
-// where the shadow rises as a band from the horizon; by day it is 1. The moon lights the sky the
+// the sky-hitting halves never blend. `skyRadiance` is the sky row by the view's elevation times
+// the phases and the earth's shadow, applied per pixel where it is read, with no other axis of the
+// azimuth from the sun: the Rayleigh share by half Rayleigh's phase and half a linear forward lobe
+// (`skyRayleighPhase`, k = SKY_LEAN), darkened by a polariser (`polariser`, p = SKY_POLARISER: the
+// band 90 degrees from the sun that the sky's partial polarisation deepens, the aerosol and the
+// multiple scattering depolarising the rest), the aerosol's by its Cornette-Shanks lobe (MIE_G);
+// the light the sky sheds on the clouds is read without the polariser. The earth's shadow over the
+// seen sky (`skyShadow`) is a factor of its own that only takes light away: on the side away from
+// the light, by the cosine of the angle past 90 degrees from it (none at 90), falling off with the
+// elevation over the shadow's edge (the plane through the viewer that holds the light's direction,
+// square to the planet's radius toward it: the edge rises opposite a set sun and sinks under the
+// horizon as the sun climbs), so it lies on the low sky opposite a low sun and is gone by day.
+// The polariser, the lean, the aerosol aloft (`aerosol`) and the rising sun's haze aerosol weight
+// (HazeKeys.ts MIST) are one least-squares fit on the clear sky as the eye sees it (the haze over
+// it, no cirrus) at sun 0, 2, 12 and noon, with the noon sea's level held: the sky 130 degrees from
+// the sun stands at .86-.91 of the sky 60 degrees from it 5 - 20 degrees up from sun 0 to 12, the
+// sky opposite a sun at 0 at 1.34-1.53 times the sky 90 degrees from it 5 - 15 degrees up (1.23 at
+// 2), and on the horizon view at a rising sun of 2 - 2.7 degrees the band over the horizon 15 - 25
+// degrees from the sun 1.65-1.66 times (display, linear) the band 40 degrees from it, 2.5 before
+// the fit (polariser 0.35, lean 0.35, aerosol 1.75, the mist's weight 0.76). With the polariser
+// near full strength (0.835, as it was) the first two stood at 1.0-1.24 and about 7: the 90 degree
+// band was a deep trench. A march per azimuth (the table's at each of 32 azimuths, the planet's
+// shadow over each point's horizon) was
+// tried in place of the rows and left the side away from a low sun too bright.
+// The haze's froxels and the clouds' shell read the table at their own height, whose shadow is the
+// ratio form (`earthShadow`): the view ray's lit share toward the view (the share of its length in
+// the air outside the planet's shadow, a cylinder behind it along the light, its edge softened by
+// the sun's angular radius) over that share's mean over the azimuth (`shadowMean`, a small table
+// cut with the slices), 1 averaged over the azimuth and by day. The moon lights the sky the
 // same way, with its own row, direction and illuminance (`moonIlluminance`), added to the sun's: a
 // moonlit night's faint blue sky, brightest round the moon. Its Rayleigh rows and its aerosol's
 // rows each take a gain (`moonRayleigh`, `moonMie`: `sky.night.moonRayleigh`,
@@ -116,7 +132,14 @@ const _traced = new THREE.Vector3();
 
 export const SUN_ILLUMINANCE = 11;
 /** The aerosol's Cornette-Shanks anisotropy, the sky's and the haze's alike. */
-export const MIE_G = 0.75;
+export const MIE_G = 0.76;
+/** The sky's Rayleigh phase's forward lean (`skyRayleighPhase`'s k), the sky's and the haze's alike. */
+export const SKY_LEAN = 0.32;
+/** The polariser's strength on the seen sky's Rayleigh share (`polariser`'s p). */
+export const SKY_POLARISER = 0.26;
+/** The earth's shadow over the seen sky (`skyShadow`): the share it takes at most, straight away
+ * from the light on its edge, and the angle (degrees) over the edge in which it falls by e. */
+const SKY_SHADOW_DEPTH = 0.55, SKY_SHADOW_SOFTNESS = 3.2;
 export { SUN_ANGULAR_RADIUS } from '../lighting/Radiometry.ts';
 
 type F = THREE.Node<'float'>;
@@ -242,6 +265,22 @@ export const polariser = Fn( ( [ nu, p ]: [ F, F ] ) => {
 	return float( 1 ).sub( p.mul( float( 1 ).sub( nu2 ) ).div( nu2.add( 1 ) ) );
 
 } ).setLayout( { name: 'atmoPolariser', type: 'float', inputs: [ { name: 'nu', type: 'float' }, { name: 'p', type: 'float' } ] } );
+
+/** The earth's shadow over the seen sky toward `dir` for a light toward `light` (the module's
+ * header): 1 - depth max( 0, -nu ) exp( -e / softness ), nu the cosine between the two and e the
+ * sine of `dir`'s elevation over the shadow's edge (the plane that holds the light's direction,
+ * square to the vertical's part across it), held at 0 under the edge; `softness` a sine too. */
+export const skyShadow = Fn( ( [ dir, light, depth, softness ]: [ V3, V3, F, F ] ) => {
+
+	const across = vec3( 0, 1, 0 ).sub( light.mul( light.y ) ).toVar();
+	const edge = across.div( max( length( across ), 1e-6 ) );
+	const over = max( dot( dir, edge ), 0 );
+	const away = max( dot( dir, light ).negate(), 0 );
+	return float( 1 ).sub( depth.mul( away ).mul( exp( over.div( softness ).negate() ) ) );
+
+} ).setLayout( { name: 'atmoSkyShadow', type: 'float', inputs: [
+	{ name: 'dir', type: 'vec3' }, { name: 'light', type: 'vec3' }, { name: 'depth', type: 'float' }, { name: 'softness', type: 'float' },
+] } );
 
 /** The length of a view ray from height `h` (km above the ground) with elevation sine `mu`, out to
  * `T` km, that lies in the planet's shadow for a light whose elevation sine is `muL` and whose
@@ -390,13 +429,16 @@ export class Atmosphere {
 	 * (the absorption's share kept) in the bakes and the sun's transmittance, never as a gain on the
 	 * Mie row where it is read, which would leave out the extinction and over-brighten the horizon at
 	 * large scales */
-	readonly aerosol = tuneUniform( 'sky.atmosphere.aerosol', 1.75, { min: 0.5, max: 40, scale: 'log', onChange: markSkyRetune } );
+	readonly aerosol = tuneUniform( 'sky.atmosphere.aerosol', 1.0, { min: 0.5, max: 40, scale: 'log', onChange: markSkyRetune } );
 	private readonly mieDensity = this.mieScale.mul( this.aerosol );
 	readonly mieG = tuneUniform( 'sky.atmosphere.mieG', MIE_G, { min: 0.55, max: 0.9, onChange: markSkyRetune } );
 	/** the forward lean k of the sky's Rayleigh phase (`skyRayleighPhase`) */
-	readonly rayleighForward = tuneUniform( 'sky.atmosphere.rayleighForward', 0.142, { min: 0, max: 1, onChange: markSkyRetune } );
+	readonly rayleighForward = tuneUniform( 'sky.atmosphere.rayleighForward', SKY_LEAN, { min: 0, max: 1, onChange: markSkyRetune } );
 	/** the polariser's strength p on the sky's Rayleigh share (`polariser`) */
-	readonly polarisation = tuneUniform( 'sky.atmosphere.polarisation', 0.835, { min: 0, max: 1, onChange: markSkyRetune } );
+	readonly polarisation = tuneUniform( 'sky.atmosphere.polarisation', SKY_POLARISER, { min: 0, max: 1, onChange: markSkyRetune } );
+	/** the earth's shadow over the seen sky (`skyShadow`): its depth and its softness (degrees) */
+	readonly shadowDepth = tuneUniform( 'sky.atmosphere.shadowDepth', SKY_SHADOW_DEPTH, { min: 0, max: 1, onChange: markSkyRetune } );
+	readonly shadowSoftness = tuneUniform( 'sky.atmosphere.shadowSoftness', SKY_SHADOW_SOFTNESS, { min: 0.5, max: 15, onChange: markSkyRetune } );
 	readonly ozoneScale = uniform( 1 );
 	readonly groundAlbedo = uniform( new THREE.Color( 0.06, 0.08, 0.1 ) );
 	readonly viewHeight = uniform( RG + 0.002 );
@@ -749,7 +791,8 @@ export class Atmosphere {
 
 	/** The clear sky's radiance toward `dir`: the sun's sky row times the phases at use (the sky's
 	 * Rayleigh phase under the polariser, the aerosol's Cornette-Shanks lobe), times the earth's
-	 * shadow, times the sun's illuminance the sky is drawn with; plus the same for the moon, with its
+	 * shadow over the seen sky (`skyShadow`), times the sun's illuminance the sky is drawn with;
+	 * plus the same for the moon, with its
 	 * row, its direction and its illuminance. `polarised` false leaves the polariser out, for the sky
 	 * light that lights the clouds (a polariser darkens what the eye sees of the sky, not the
 	 * light the sky sheds on them). */
@@ -769,7 +812,15 @@ export class Atmosphere {
 		let rayleigh: F = skyRayleighPhase( nu, this.rayleighForward );
 		if ( polarised ) rayleigh = rayleigh.mul( polariser( nu, this.polarisation ) );
 		return row.rayleigh.mul( rayleigh ).add( row.mie.mul( cornetteShanks( nu, this.mieG ) ) )
-			.mul( this.earthShadowOf( dir, body ) ).mul( illuminance );
+			.mul( this.skyShadowOf( dir, light ) ).mul( illuminance );
+
+	}
+
+	/** The earth's shadow over the seen sky toward `dir` for a light toward `light` (`skyShadow`,
+	 * at this atmosphere's depth and softness). */
+	skyShadowOf( dir: V3, light: V3 ): F {
+
+		return skyShadow( dir, light, this.shadowDepth, this.shadowSoftness.mul( Math.PI / 180 ) );
 
 	}
 
@@ -802,14 +853,6 @@ export class Atmosphere {
 
 		const light = body === 0 ? this.sunDir : this.moonDir;
 		return litShare( height, dir, light ).add( SHADOW_FLOOR ).div( this.shadowMeanAt( height, dir.y, body ).add( SHADOW_FLOOR ) );
-
-	}
-
-	/** The earth's shadow toward `dir` from the camera for the body `body` (`earthShadow`, from the
-	 * slices' viewer height). */
-	earthShadowOf( dir: V3, body: 0 | 1 ): F {
-
-		return this.earthShadow( this.viewHeight.sub( RG ), dir, body );
 
 	}
 
