@@ -78,8 +78,11 @@ import { cloudBase } from '../sky/Sky.ts';
 //     degrees (the band at -6.5 within 0.08 of that sky; the Mie, 4.1, does not show there, the
 //     sun being under the horizon); the golden hour's 0.58 and 3.8 (its far sea over the sky held). The keys with a low sun take the sun's
 //     Rayleigh light beside the open sky's (`sunRayleigh`). The afterglow's (4.7 and 4.7) and the
-//     night's (14.9 and 2.0) are the gains and weights they were set with folded into one weight
-//     per share, not yet fitted.
+//     night's Mie (2.0) are the gains and weights they were set with folded into one weight per
+//     share, not yet fitted. The night's Rayleigh, 8, holds a clear night's low sky (1 - 4 degrees
+//     up) at about 2.5 - 3 times the bare one, 10 - 20 degrees up at about 2: at 14.9, as it was
+//     set, the haze laid 4.5 - 5.4 times the bare sky over the horizon and the night sky stood pale
+//     over the moonlit land.
 // The weather adds its own: under the cloudy and the overcast sky the air keeps about half the
 // clear day's colour (0.53 times) and shows twice as bright (the key's `gain`, which the keys
 // themselves leave at 1).
@@ -179,7 +182,7 @@ const twilight = ( elevation: number ): Sigma => {
 	return [ at( 0 ), at( 1 ), at( 2 ) ] as const;
 
 };
-const NIGHT = { ...key( 2.5, NIGHT_SIGMA, 0.55, 0, 1 ), rayleighWeight: 14.9, mieWeight: 2, top: 47.6, width: 36.8, widthSlope: 0.65, aerosolShare: 0.003, skyDepth: 0 };
+const NIGHT = { ...key( 2.5, NIGHT_SIGMA, 0.55, 0, 1 ), rayleighWeight: 8, mieWeight: 2, top: 47.6, width: 36.8, widthSlope: 0.65, aerosolShare: 0.003, skyDepth: 0 };
 const BEFORE_DAWN = { ...key( 0.6, twilight( - 3.5 ), 0.33, 0, 1 ), rayleighWeight: 1.9, mieWeight: 4.1, nearScale: 0.8 };
 // the deep twilight before dawn: the same air with less of the haze's light (see the header)
 const EARLY_DAWN = { ...BEFORE_DAWN, rayleighWeight: 1.4, mieWeight: 4.1 };
