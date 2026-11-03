@@ -38,13 +38,18 @@ type V4 = THREE.Node<'vec4'>;
 //     scene's share alone, never the sky's: the bright band about a low sun (the glitter on the sea,
 //     the glow) darkens what the land's light asks for, while the sky's part still follows the
 //     sky's own light, so the sky weighs the same in every view under one sky.
-//   - The bound: EV_t = clamp( e, e_S - 3, e_S + 5 ) plus the GUI's offset (stops), both bounds
+//   - The bound: EV_t = clamp( e, e_S - 4, e_S + 5 ) plus the GUI's offset (stops), both bounds
 //     offset too (EXPOSURE_UNDER, EXPOSURE_OVER): a window about the sky's exposure that the
 //     adaptation holds EV in (`exposureAdapt`). Across the kept weathers' views e lies from about
-//     2.9 stops under e_S (a low sun's glitter, guard-held) to a quarter of a stop over it (the
-//     land before sunrise): the land's illuminance, the sun's included, lies over the sky's own
-//     luminance by day and by night. The window keeps a frame of glare or of black from carrying
-//     the exposure past what the sky allows, and leaves every kept view free.
+//     3.4 stops under e_S to a quarter of a stop over it (the land before sunrise): the land's
+//     illuminance, the sun's included, lies over the sky's own luminance by day and by night. The
+//     lowest are a free camera low over the sea looking down a low sun's road (8 to 16 degrees,
+//     guard-held: the island views toward the sun lie 1.6 to 2.7 stops inside the window) and a
+//     grown island at -11 degrees on a clear evening, where the land has the night's light under
+//     a sky still darkening; under a lower edge 3 stops down both were held up to 0.4 stop
+//     brighter than the meter and its highlight guard asked. The window keeps a frame of glare or
+//     of black from carrying the exposure past what the sky allows, and leaves every kept view
+//     free, the nearest 0.6 stop inside it.
 // - No reading: where M's histogram holds less than a sample's weight (no metered material in
 //   view, or no material writing M at all), e_M is the sky's exposure e_S, so the scene's share is
 //   the sky's too, still held down by the highlight guard; where Y's holds none, the guard drops
@@ -183,7 +188,7 @@ export function exposureKeys( elevation: number, night: number, skyMix: readonly
 
 /** The window about the sky's exposure e_S the target is held in, stops under and over it (see the
  * header). */
-export const EXPOSURE_UNDER = 3;
+export const EXPOSURE_UNDER = 4;
 export const EXPOSURE_OVER = 5;
 /** The soft minimum's width k, in stops (see the header). */
 export const SOFT_MIN = 0.25;
