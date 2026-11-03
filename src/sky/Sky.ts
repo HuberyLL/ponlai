@@ -745,7 +745,6 @@ export class Sky {
 	// E / PI over the upper hemisphere, cross-faded between the bakes as the irradiance probe is:
 	// each bake's own, read back (an explicit bake's before it shows, a periodic one's a frame or
 	// two after its panoramas, while its environment is still being filtered: `readIrradiance`).
-	// The land's soft key under overcast follows it (main.ts `publishLighting`).
 	skyIrradiance = new THREE.Color();
 	seaColor = new THREE.Color( 0.0045, 0.0125, 0.0140 );
 	equirect: THREE.RenderTarget;

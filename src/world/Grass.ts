@@ -1369,7 +1369,7 @@ function grassMaterial( shared: Shared, blades: MeadowBlades, low = false ): THR
 	const shades: F[] = [];
 	if ( MEADOW_SHADE ) shades.push( max( meadowShadeAt(), meadowShadeFloor( translucency ) ) );
 	if ( GRASS_SHADOW ) shades.push( meadowLayerLight( meadowLayerDepth( positionWorld, liftKeyWorld( shared.sunDir ) ) ) );
-	// under overcast's soft key both give way to the blade's own occlusion, the canopy's share of the
+	// under overcast's deck both give way to the blade's own occlusion, the canopy's share of the
 	// light that its ambient takes too (post/MeadowShade.ts `swardShadeRelease`)
 	if ( shades.length ) mat.userData.sunShade = releaseSwardShade( shades.reduce( ( a, b ) => a.mul( b ) ), vN.w );
 	// `flags=grassSunMap:false`: the blades keep their own shades but read nothing from the sun's map
@@ -1626,7 +1626,7 @@ export function meadowGroundRuns( at: V3, key: V3, up: F ): V2 {
 
 /** The share of the key light the meadow's layer lets through to a point whose ray toward it runs
  * `run` m under the layer's top (`meadowLayerDepth`): exp( -run / LAYER.mean ), for the blades, the
- * turf and the stones alike (under overcast's soft key its receivers give it over to the canopy's
+ * turf and the stones alike (under overcast's deck its receivers give it over to the canopy's
  * share: post/MeadowShade.ts `swardShadeRelease`). */
 export function meadowLayerLight( run: F ): F {
 

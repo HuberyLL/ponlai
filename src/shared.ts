@@ -52,7 +52,8 @@ export const shared = {
 	shoreXform: uniform( new THREE.Vector4() ), // x0, z0, 1 / width, 1 / depth of the shoreline field
 	sunDir: uniform( new THREE.Vector3( 0, 1, 0 ) ),
 	sunColor: uniform( new THREE.Vector3() ), // linear rgb
-	// the key on the land: sunColor times the weather's deckKey under a deck (main.ts publishLighting)
+	// the key on the land (main.ts publishLighting): sunColor's in every weather, the clouds' shadow
+	// cutting it per point where it is read
 	landKey: uniform( new THREE.Vector3() ),
 	skyIrradiance: uniform( new THREE.Vector3() ), // linear rgb
 	// The live sky reduces hemispherical irradiance on the GPU, so shading never waits for

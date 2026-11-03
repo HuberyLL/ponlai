@@ -107,10 +107,10 @@ type V4 = THREE.Node<'vec4'>;
 //     light over the tops takes the diffuse part alone. Measured on overcast from 90 m, the
 //     composite's sky scene-linear in cells of a degree of angle from the key and of elevation,
 //     each ring's cells over the mean of the cells beyond 90 degrees from the key: under a sun of
-//     15 degrees about 34x at 3 - 7 degrees, 10x at 16, 4.1x at 27, 1.9x at 45, 1.0x at 70 - 90
-//     (under 22 and 30 degrees within 15 % of these but for 70 - 90 at 30, 1.2x); in the ring 12 - 20
-//     degrees from the key the cells 2 - 4 degrees up 0.9x those 15 - 25 up (the air's lobe there,
-//     VolumetricHaze.ts). The march sums these as factors, direct, ambient and the
+//     15 degrees about 50x at 3 - 7 degrees, 12x at 16, 4.2x at 27, 2.2x at 45, 1.1x at 70 - 90,
+//     under one of 22 about 33x, 10x, 4.2x, 2.2x and 1.1x; in the ring 12 - 20 degrees from the key
+//     the cells 2 - 4 degrees up 1.2x those 15 - 25 up under a sun of 15, 0.8x under one of 22 (the
+//     air's lobe there, VolumetricHaze.ts). The march sums these as factors, direct, ambient and the
 //     column's; the column's takes the top's irradiance, the other two take their colours once it
 //     ends, from the atmosphere's in-scatter table at the shell's mean
 //     height toward the ray: the lit side the Mie share's colour times each body's light gain

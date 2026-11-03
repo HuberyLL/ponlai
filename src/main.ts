@@ -14,7 +14,7 @@ import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, nightAmbientAt, sunRising, type DayPreset } from './sky/DayCycle.ts';
-import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckSkyGain, deckSkyGap, deckTakeover, isParkedWeather, landKeyShare, OVERCAST_SOFT_KEY, isWindLevel, overcastDeckLight, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
+import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, overcastDeckLight, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
 import { Wind, weatherWind } from './weather/Wind.ts';
@@ -82,7 +82,7 @@ import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
 import { TEST_MODE } from './debug/TestMode.ts';
-import { tune, tuneApi } from './debug/Tune.ts';
+import { tuneApi } from './debug/Tune.ts';
 import { markSkyRetune, skyRetune } from './sky/SkyRetune.ts';
 import { AA_MODE, AA_SOURCE, AFTER_RESOLVE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './post/Antialiasing.ts';
 import type { LatentRegistry } from './post/graph/FrameGraph.ts';
@@ -392,10 +392,8 @@ function prepareHaze( state: Readonly<WeatherState> ): void {
 	pipeline.air.haze.value = sky.weather.haze * hazeKey.amount;
 	pipeline.air.fog.value = Math.max( sky.weather.fog, hazeKey.mist );
 	pipeline.air.setLook( hazeKey );
-	// the air's sunlit haze keeps the land's share of the key under a deck (Weather.ts `deckKey`),
-	// but not overcast's soft key (`landKeyShare`), which follows the sky's bake that lays this air
-	// over its source
-	pipeline.air.weatherLight.direct = state.directVisibility * THREE.MathUtils.lerp( 1, state.deckKey, deckTakeover( sky.elevation, cloudedShare( weather.skyMix ), weather.skyMix[ 3 ] ?? 0 ) );
+	// the air's sunlit haze takes the key the land does, through the clouds' shadow (its own read)
+	pipeline.air.weatherLight.direct = state.directVisibility;
 	pipeline.air.weatherLight.ambient = state.ambientGain;
 	pipeline.air.prepareMedium();
 
@@ -415,23 +413,15 @@ function prepareSkyState(): void {
 
 }
 
-// a linear colour's luminance (Rec. 709)
-const luma = ( c: THREE.Color ) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
-// overcast's soft key (Weather.ts OVERCAST_SOFT_KEY), tunable (`lighting.overcastSoftKey`)
-const overcastSoftKey = tune( 'lighting.overcastSoftKey', OVERCAST_SOFT_KEY, { min: 1, max: 40 } );
-
 function publishLighting(): void {
 
-	// the land's key: the key times the weather's share under a deck (Weather.ts `deckKey`), and under
-	// overcast's deck its soft key instead, by the sky's bake (`landKeyShare`); the sea takes the key
-	// whole (shared.sunColor)
-	const key = luma( sky.keyColor ), skyLight = luma( sky.skyIrradiance ) * lighting.skyFill;
+	// the land's key: the key whole, which the clouds' shadow cuts per point (Sky.ts
+	// `keyCloudVisibility`), as the sea's (shared.sunColor)
 	const overcast = weather.skyMix[ 3 ] ?? 0;
-	sun.color.copy( sky.keyColor ).multiplyScalar( landKeyShare( sky.elevation, cloudedShare( weather.skyMix ), overcast, weather.state.deckKey, key, skyLight,
-		liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sky.keyIsMoon, overcastSoftKey() ) );
+	sun.color.copy( sky.keyColor );
 	shared.landKey.value.set( sun.color.r, sun.color.g, sun.color.b );
-	// the sward's shade release: under overcast's soft key the sward's own shade in it is its canopy's
-	// (post/MeadowShade.ts `swardShadeRelease`)
+	// the sward's shade release: under overcast's deck the sward's own shade in the key is its
+	// canopy's (post/MeadowShade.ts `swardShadeRelease`)
 	swardShadeRelease.value = overcast * overcastDeckLight( sky.elevation );
 	// a low sun's lift of the sky's light on what it lights: the land's ambient, the water's sky
 	// light and the sea's reflection (lighting/AmbientRelight.ts `lowSunSkyLift`)
@@ -2413,7 +2403,7 @@ document.addEventListener( 'visibilitychange', () => {
 //   (Clouds.ts), and the periodic sky bake and the refracted sun's map count wall-clock seconds
 //   that grow while a paused page waits: all three restart with each call, as after a seek;
 // - a periodic bake reads its sky irradiance back from the GPU (`Sky.skyIrradiance`, which sets
-//   overcast's soft key and a lightning strike's fill light), landing whenever the GPU answers:
+//   a lightning strike's fill light), landing whenever the GPU answers:
 //   stepped, the next frame waits for the value, so it lands on the frame after the bake however
 //   long the frames took.
 // - `converge( i )` (the temporal modes' ground truth, capture-clip.mjs --aa gt): after frame i's tick

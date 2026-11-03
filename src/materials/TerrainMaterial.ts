@@ -655,7 +655,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 				if ( meadowRun ) canopy.assign( meadowLayerLight( meadowRun.y.sub( meadowRun.x ).mul( max( turfCover, turf ) ) ) );
 				else if ( BARE_GROUND ) canopy.assign( 1 ); else if ( GROUND_CAST ) canopy.assign( meadowGroundLight( ( xz ) => texture( swardField, xz.div( MEADOW_EXTENT ).add( 0.5 ) ).level( float( 0 ) ).b.mul( CROWN_SCALE ), p, shared.sunDir ) );
 				else canopy.assign( meadowCanopyLight( turfCover.mul( shade ).mul( TURF_CANOPY_DEPTH ), shared.sunDir ).mul( mix( float( 1 ), float( GRASS_ROOTS.key ), rootLight ) ) );
-				// under overcast's soft key the turf's shade in the key is its canopy's, the roots' share of
+				// under overcast's deck the turf's shade in the key is its canopy's, the roots' share of
 				// the sky that its ambient takes too (`roots` below; post/MeadowShade.ts `swardShadeRelease`):
 				// the layer's shade gives way wherever the meadow's ground lies, the screen-space shade only
 				// where the sward stands, as the bare soil and the groves' litter keep it as their contact shade
@@ -1128,7 +1128,7 @@ function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, waveMaps: Wav
 	// stage already samples WebGPU's sixteen textures. The turf's run differs only along the rim, and
 	// which pixels are turf is known in the fragment stage alone: every pixel takes the first run here
 	// and the turf the rest of its own in its canopy, so the stone beside it stays as it was. Under
-	// overcast's soft key it lets go, and the turf takes its canopy's share instead (`cliffSurface`,
+	// overcast's deck it lets go, and the turf takes its canopy's share instead (`cliffSurface`,
 	// post/MeadowShade.ts `swardShadeRelease`).
 	if ( meadowRun ) mat.userData.sunShade = releaseSwardShade( meadowLayerLight( meadowRun.x ) );
 	// A water film or puddle reflects with water's specular reflectance instead of the stone's.

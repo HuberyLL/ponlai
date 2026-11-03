@@ -288,20 +288,23 @@ export function lowSunSkyLift( elevation: number, clouded: number ): number {
 
 }
 /** The land's own sky gain under overcast's deck, over the deck's (sky/Weather.ts DECK_SKY_GAIN),
- * by overcast's share and its deck's light (`overcastDeckLight`: at every sun by day). Overcast's
- * sky is brightest about the sun's place and dim looking away (weather/VolumetricHaze.ts,
- * overcast's deck), the exposure set by it, and the land under it takes its light as the sky's
- * soft fill from every side, lifted by this, beside a soft key along the sun (Weather.ts
- * overcast's `deckKey`, `landKeyShare`). The ground takes it whether or not water lies over it: where a material
- * reads the environment's light in the volume's place (the sea floor, the walls under the water)
- * the environment's diffuse takes the same gains (AmbientGrade.ts `landSky`). The water keeps the
- * deck's gain alone, whichever reads it: the water drawn (ocean/Water.ts) and the sea's bounce
- * onto the land (`seaScale`). With the soft key (Weather.ts OVERCAST_SOFT_KEY) it sets how the
- * land's light parts between the two: at 2.35 the land's ambient irradiance on open level ground
- * stands about 18 to 20 times the deck's sky light over pi, and the key's direct light there about
- * 0.43 to 0.46 of the whole at every sun height; the overcast meadow then stands about a third of a stop
- * under the deck's sky looking away from the sun. Tunable: `lighting.relight.overcastLand`. */
-const OVERCAST_LAND = tune( 'lighting.relight.overcastLand', 2.35, { min: 1, max: 8 } );
+ * by overcast's share and its deck's light (`overcastDeckLight`: at every sun by day). The land
+ * under the deck takes its light from the drawn sky's integral, the bake (its glow about the sun's
+ * place included, the clouds' forward lobe: sky/Clouds.ts FORWARD_WEIGHT), as the sky's soft fill
+ * from every side, lifted by this and the deck's gain; the sun adds only what gets through the deck
+ * (Weather.ts, overcast: Beer's law along the key, none under the rolls). The ground takes it
+ * whether or not water lies over it: where a material reads the environment's light in the volume's
+ * place (the sea floor, the walls under the water) the environment's diffuse takes the same gains
+ * (AmbientGrade.ts `landSky`). The water keeps the deck's gain alone, whichever reads it: the water
+ * drawn (ocean/Water.ts) and the sea's bounce onto the land (`seaScale`). With the deck's 3, at
+ * 4.8 the land's ambient irradiance on open level ground stands 11 to 13.5 times the drawn sky's
+ * irradiance over pi from a sun of 30 degrees to one of 15, the meadow about 1.1 times the sky
+ * 6 - 30 degrees up looking away from the sun in scene radiance, and in the island view the meadow
+ * and the crowns either side of 0.30 in Oklab L (0.28 - 0.29 and 0.31 - 0.32): the value that
+ * keeps both nearest it. The key through the deck adds little to it: the open key on level ground
+ * is about a sixth of that ambient, so where the deck lets half of it through the meadow gains a
+ * few per cent. Tunable: `lighting.relight.overcastLand`. */
+const OVERCAST_LAND = tune( 'lighting.relight.overcastLand', 4.8, { min: 1, max: 12 } );
 /** The sea's diffuse albedo as a bounce surface: the order of water's volume-scattering albedo
  * (see the header). */
 const SEA_ALBEDO = tune( 'lighting.relight.seaAlbedo', 0.05, { min: 0.01, max: 0.2, scale: 'log', load: true } );

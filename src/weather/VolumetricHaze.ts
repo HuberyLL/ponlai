@@ -221,9 +221,11 @@ const DECK_DIFFUSE = [
 //     where neither the deck's law nor its lobe points, and is SEA_DIFFUSE of the deck's light.
 //     Measured on overcast from 90 m: the rings about the key in Clouds.ts's header; the air's own
 //     level (its light over its opacity, from the haze's albedo at 1 and at 0 and the haze off the
-//     sky) is level in elevation away from the sun, about 0.65 - 0.75 of the bare deck 8 - 12
-//     degrees up and 1.0 - 1.3 of it 28 - 32 up (the bare deck's own, from 90 m, 1.55 times as bright
-//     at 10 degrees as at 30).
+//     sky) is level in elevation away from the sun: under a sun of 22 degrees about 1.0 - 1.1 of
+//     the bare deck 8 - 12 degrees up and 0.75 - 0.84 of it 28 - 32 up, under one of 15 about
+//     1.1 - 1.3 and 0.84 - 0.99 (the bare deck, the haze off the sky, from 90 m about 0.75 as
+//     bright at 10 degrees as at 30: its diffuse law). Of that level the deck's light alone is
+//     0.73 - 0.86 of the bare deck 30 degrees up.
 //   - the ambient visibility (the open sky's share that reaches a froxel) is the visibility volume's
 //     second channel, sampled, filtered and held at rest with the key light's: 0 under the island's
 //     cover and 1 above it, rising over 1.5 m either side of the cover's top (the rain's collision
