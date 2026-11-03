@@ -9,15 +9,16 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, uniform, texture, texture3D, textureLoad, textureStore, instanceIndex, instancedArray, uv, int, ivec2, ivec3,
-	vec2, vec3, vec4, float, max, min, clamp, exp, exp2, log2, sqrt, mix, dot, normalize, select, fract, floor, varying, asin, smoothstep,
+	vec2, vec3, vec4, float, max, min, clamp, exp2, log2, sqrt, mix, dot, normalize, select, fract, floor, varying, asin, smoothstep,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
-import { EARTH_RADIUS, SHELL_BOTTOM, SHELL_THICKNESS } from '../sky/Clouds.ts';
+import { EARTH_RADIUS, type Clouds } from '../sky/Clouds.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
 import { MIE_G, cornetteShanks, polariser, skyRayleighPhase, type Atmosphere } from '../sky/Atmosphere.ts';
 import { bandPush, bandToDisplay, bandToDisplayColor } from '../sky/BandMatrix.ts';
 import { ISLAND_TOP } from '../world/WorldShapes.ts';
 import type { HazeKey } from './HazeKeys.ts';
+import { AEROSOL_OPEN, type HazeMedium, expShare, meanExtinction, nearFactor, nearLength } from './HazeDepth.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune, tuneObject, tuneUniform } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
@@ -31,10 +32,22 @@ type V4 = THREE.Node<'vec4'>;
 
 // The sine of the elevation the sun's rows are read at under a deck (see the header)
 const DECK_ROW = 0.5;
-// Overcast's deck (see the header): its lobe toward the sun, the lobe's power and its share
-// (tunable: `haze.overcast.power`, `haze.overcast.share`)
-const OVERCAST_POWER = tuneUniform( 'haze.overcast.power', 16, { min: 1, max: 40, onChange: markSkyRetune } );
-const OVERCAST_SHARE = tuneUniform( 'haze.overcast.share', 0.85, { min: 0, max: 1, onChange: markSkyRetune } );
+// The sea's reflectance of a diffuse sky: Fresnel's for water (n 1.33) averaged over the
+// hemisphere with the cosine, about 0.066.
+const SEA_DIFFUSE = 0.066;
+// Overcast's deck (see the header): the deck's diffuse law ( 3 / 7 )( 1 + 2 mu ) seen through the
+// air's Cornette-Shanks phase, over an even deck's of the same irradiance, as a quartic in the
+// view's sine of elevation whose coefficients are quadratics in the phase's anisotropy g (rows
+// from mu^0 up, each from g^0 up): a least-squares fit to the quadrature over the anisotropy's
+// tunable range, 0.5 to 0.9, within 0.004 at MIE_G and 0.037 at 0.9 (at MIE_G 0.71 looking
+// level, 1.12 straight up). A single cubic fitted at MIE_G alone was 0.07 off at 0.76.
+const DECK_DIFFUSE = [
+	[ 0.8457, - 0.0508, - 0.2595 ],
+	[ - 0.0331, 0.3896, - 0.2483 ],
+	[ 0.3233, - 1.0249, 1.7246 ],
+	[ 0.0476, - 0.2387, 0.327 ],
+	[ - 0.3245, 1.3378, - 1.5456 ],
+];
 
 // The air's haze and the sea's fog as one participating medium in a froxel volume, after Patry,
 // "Real-Time Samurai Cinema", SIGGRAPH 2021 (its volumetric haze, built on Wronski, SIGGRAPH 2014,
@@ -53,10 +66,15 @@ const OVERCAST_SHARE = tuneUniform( 'haze.overcast.share', 0.85, { min: 0, max: 
 //     starting shape its step is 50 m wide, so the camera, 30 - 60 m up, stands in its upper half
 //     and the hills rise out of it, and it thins as the inverse square of the height far above, so
 //     the distant haze thins less with height than an exponential layer would. The weather's haze sets rho_f (and the deep
-//     layer's density, the key's share of it); its sea fog and the morning mist thicken it. An
+//     layer's density, the key's share of it); its sea fog and the morning mist thicken it. Under a
+//     low deck the aerosol layer ends at the deck's base (the key's `aerosolTop`: HazeKeys.ts), so
+//     the air thins to nothing between the base and the eye's view of the deck's gaps; without a
+//     deck it runs on over any height (HazeDepth.ts AEROSOL_OPEN) and every depth keeps its bits. An
 //     optical depth is a ray's length times the mean density over the heights it spans: the closed
 //     form along the ray, which holds its value on a level ray with no branch. Local variation
-//     (banks, wisps, ground fog) belongs to particles, not to the density.
+//     (banks, wisps, ground fog) belongs to particles, not to the density. The closed form lives in
+//     HazeDepth.ts, which the clouds' march shares: `prepareMedium` writes the medium into the
+//     clouds' copy too (`cloudMedium`), and the low deck's view march ends where it closes.
 //   - the weather thins the haze near the camera (Weather.ts `nearDensity`, `nearStart`,
 //     `nearEnd`, through the haze's key): along each ray the optical depth from the camera out to
 //     t metres is f( t ) times the far medium's, f = k up to d0, a smoothstep back to 1 at d1, 1
@@ -69,7 +87,7 @@ const OVERCAST_SHARE = tuneUniform( 'haze.overcast.share', 0.85, { min: 0, max: 
 //     of f tau over it, which also weighs what the slice scatters (the light per opacity is
 //     unchanged), so the shadows and the grid stay as they were. Rays read from another height
 //     (`skyHaze`'s `from`, the probe's) count the distance from their own start. The kept skies
-//     thin it (k under 1, d0 200 m, d1 350 m under a clear or fair sky, 250 m and 430 m under the
+//     thin it (k under 1, d0 200 m, d1 350 m under a clear or fair sky, 100 m and 700 m under the
 //     cloudy one, 250 m and 500 m under the overcast: the game's camera reaches at most about 240 m
 //     to the island's far side), so the island's views read through little air: the sky is many times
 //     as bright as the land's shade, and a few per cent of it over the land turns the shade blue
@@ -163,18 +181,51 @@ const OVERCAST_SHARE = tuneUniform( 'haze.overcast.share', 0.85, { min: 0, max: 
 //     the froxels read the same rows, so the sky, its light on the land and the far haze move
 //     together; with a level band and the irradiance about unchanged the deck shows half a stop
 //     darker against the land.
-//     Overcast's deck is thick and dark (HazeKeys.ts `overcastDeck`, its share): the open sky's
-//     light in the sun's rows takes two factors by that share. One by the view's elevation h,
-//     ( 3 + 6 sin h ) / 7, the standard overcast sky's luminance law ( 1 + 2 sin h ) / 3 (the CIE
+//     Under the deck's share the open sky's light in the sun's rows, and in the moon's, gives way
+//     to the deck's own (`scatterToward`): the air under a deck sees the deck over it and the sea
+//     under it, nothing else of the sky. Its light is the sky's irradiance over pi without the haze over it (Sky.ts
+//     `deckIrradianceNode`: the clear sky in the gaps times their transmittance plus the clouds'
+//     own light, at the weather's ambient gain, baked and cross-faded with the sky), scattered
+//     evenly by the air: half of it from the deck, half from the sea's reflection of it under
+//     (SEA_DIFFUSE), times the albedo and the open sky's visibility, with no gain, no grey and no
+//     row: the deck and the air are one scale by construction. The sun's own light (its rows
+//     through the clouds' shadow) stays as it was; the deck's share is cloudy's from a sun of 3
+//     degrees and overcast's until the twilight (Weather.ts `deckLight`), so a low sun's air and a
+//     fair or clear sky keep the open sky's light, and by night, once the moon's key has come in,
+//     the whole clouded share (HazeKeys.ts `deck`): the deck is then lit by the island's moonlight
+//     through its column (Clouds.ts `columnKey`), and the air under it by the deck, as by day.
+//     Measured on the overcast night's horizon view (paused): the sky .38 / .35 to .41 / .40
+//     (the boxes' L), its low band .38 / .34 to .41 / .40, the meadow .18 / .19 to .19 / .20. Measured on the horizon views (paused, fresh
+//     loads): overcast's sky about as bright as with the rows (box median L .30 to .32, its spread
+//     .08 to .07), cloudy's unchanged (.75), its chroma .022 to .010: the deck's light is mostly the
+//     clouds' own, a warm grey, the gaps' blue a small share of it.
+//     Overcast's deck is thick (HazeKeys.ts `overcastDeck`, its share), and its light leaves the
+//     base in the column's angular form (Clouds.ts, the column light): a diffuse part
+//     ( 3 / 7 )( 1 + 2 mu ), the standard overcast sky's luminance law ( 1 + 2 sin h ) / 3 (the CIE
 //     standard overcast sky of Moon and Spencer, 1942, as given in ISO 15469:2004 /
-//     CIE S 011/E:2003), so the deck is three times as bright overhead as at the horizon. One by
-//     the angle to the sun, the lobe ( 1 - q + 2 q t^p ) / ( 1 - q + 2 q / ( p + 1 ) ),
-//     t = ( 1 + cos ) / 2, whose mean over the sphere is 1, so the power p and the share q change
-//     its shape and not the sky's light (OVERCAST_POWER 16, OVERCAST_SHARE 0.85): thick cloud is
-//     brightest about the sun's place and dim looking away, about five times the mean 20 degrees
-//     from the sun and 0.6 of it from some 70 degrees on. The sky's air then reads about L 0.75
-//     within 30 degrees of the sun, 0.5 at 30 - 60 and 0.3 beyond, under overcast's exposure key
-//     (post/Exposure.ts OVERCAST_KEY).
+//     CIE S 011/E:2003), and over it, on the key's light alone, a forward Henyey-Greenstein lobe
+//     about the key (Clouds.ts `forwardWeight`, `forwardLobe`), light added to the deck's. By
+//     overcast's share the air takes it through its own phase: the diffuse part as the deck's law
+//     weighted by the aerosol's phase over an even deck's of the same irradiance, a quartic in the
+//     view's sine of elevation fitted in the anisotropy (DECK_DIFFUSE); the forward part as the
+//     deck's own lobe about the key, on the key's share alone (the lobe's light over the deck's
+//     level, `columnTop`'s key over its key and sky), the diffuse part taking the rest of the
+//     deck's irradiance. The lobe is the deck's, not the narrower product of the deck's and the
+//     air's anisotropies that one scattering of it would give: with that product (about 0.5) the
+//     air 2 - 4 degrees up in the ring 12 - 20 degrees from a sun of 15 read half the sky 15 - 25
+//     degrees up in that ring, with the deck's own 0.9 of it, and the air away from the sun a
+//     sixth darker (the lobe's tail behind the key 0.06 against 0.23). The open sky's light in the
+//     sun's rows takes the same by that share, the law by the view's elevation h,
+//     ( 3 + 6 sin h ) / 7, plus the forward part, so the glow round the sun's place is one form in
+//     the deck and in the air under it. The sea's half stays even: it reaches the air from below,
+//     where neither the deck's law nor its lobe points, and is SEA_DIFFUSE of the deck's light.
+//     Measured on overcast from 90 m: the rings about the key in Clouds.ts's header; the air's own
+//     level (its light over its opacity, from the haze's albedo at 1 and at 0 and the haze off the
+//     sky) is level in elevation away from the sun: under a sun of 22 degrees about 1.0 - 1.1 of
+//     the bare deck 8 - 12 degrees up and 0.75 - 0.84 of it 28 - 32 up, under one of 15 about
+//     1.1 - 1.3 and 0.84 - 0.99 (the bare deck, the haze off the sky, from 90 m about 0.75 as
+//     bright at 10 degrees as at 30: its diffuse law). Of that level the deck's light alone is
+//     0.73 - 0.86 of the bare deck 30 degrees up.
 //   - the ambient visibility (the open sky's share that reaches a froxel) is the visibility volume's
 //     second channel, sampled, filtered and held at rest with the key light's: 0 under the island's
 //     cover and 1 above it, rising over 1.5 m either side of the cover's top (the rain's collision
@@ -290,7 +341,8 @@ export const DEFAULT_HAZE_GRID: Readonly<HazeGrid> = { width: 160, height: 90, d
  * temporal filter and the composite's filters are the talk's, the slices fitted to the island's
  * camera (see the header; the medium's shape is the hour's key's, HazeKeys.ts), the phases from how
  * the air brightens toward the sun, the shares' weight and the gain by eye on a few points of the sky
- * and the island. */
+ * and the island. Those the environment's bake lays over its source (`openSky`: BAKE_SETTINGS)
+ * rebake it when they change, however they are set (`bakeStale`, main.ts `retuneSky`). */
 export const HAZE_DEFAULTS = {
 	// the slices: the grid's near and far view depth (metres) and each slice's depth over the last's
 	near: 10, far: 30000, growth: 1.15,
@@ -318,51 +370,15 @@ export const HAZE_DEFAULTS = {
 
 export type HazeSettings = typeof HAZE_DEFAULTS;
 
-// (1 - e^-x) / x, the share of a slab of optical depth x that scatters, per unit of that depth, with
-// its series near 0 (where the difference loses its digits)
-const expShare = Fn( ( [ x ]: [ F ] ) => {
+// The settings `openSky` reads (the slices, the fog's extinction, the light, the switch over the sky,
+// the near haze): the environment's bake holds them as they stood when it ran.
+const BAKE_SETTINGS = [ 'near', 'far', 'growth', 'fogExtinction', 'albedo', 'anisotropy', 'gain', 'horizon', 'sky', 'nearHaze' ] as const;
 
-	const series = float( 1 ).sub( x.mul( 0.5 ) ).add( x.mul( x ).div( 6 ) );
-	return select( x.lessThan( 1e-3 ), series, float( 1 ).sub( exp( x.negate() ) ).div( max( x, 1e-30 ) ) );
-
-} ).setLayout( { name: 'hazeExpShare', type: 'float', inputs: [ { name: 'x', type: 'float' } ] } );
+// expShare on each band
 const expShare3 = ( x: V3 ): V3 => vec3( expShare( x.x ), expShare( x.y ), expShare( x.z ) );
 
-// The medium's mean density (1/m, before each band's sigma) over the heights between a and b
-// (metres, either order; below the sea it holds its value at sea level, which only rays hidden
-// under the water reach): the exponential layer (density at sea level, scale height) and the ground
-// layer (rho_f, top, width). An optical depth is a ray's length times the mean over the heights it
-// spans.
-const meanExtinction = Fn( ( [ a0, b0, layer, ground ]: [ F, F, V2, V3 ] ) => {
-
-	const a = max( min( a0, b0 ), 0 ).toVar();
-	const b = max( max( a0, b0 ), 0 ).toVar();
-	const span = b.sub( a ).toVar();
-	const exponential = ( l: V2 ) => l.x.mul( exp( a.div( l.y ).negate() ) ).mul( expShare( span.div( l.y ) ) );
-	// the ground layer's weight 1 - u / r integrates to u - r, r = sqrt( u^2 + w^2 ); its mean,
-	// written so that no difference cancels: 1 - ( ua + ub ) / ( ra + rb )
-	const ua = a.sub( ground.y ).toVar(), ub = b.sub( ground.y ).toVar();
-	const w2 = ground.z.mul( ground.z );
-	const r = sqrt( ua.mul( ua ).add( w2 ) ).add( sqrt( ub.mul( ub ).add( w2 ) ) );
-	const weight = float( 1 ).sub( ua.add( ub ).div( max( r, 1e-6 ) ) );
-	return exponential( layer ).add( ground.x.mul( weight ) );
-
-} ).setLayout( { name: 'hazeMeanExtinction', type: 'float', inputs: [
-	{ name: 'a0', type: 'float' }, { name: 'b0', type: 'float' }, { name: 'layer', type: 'vec2' }, { name: 'ground', type: 'vec3' },
-] } );
-
-// The near haze's factor on the optical depth from the camera out to t metres ( k, d0, d1 ): k up
-// to d0, a smoothstep back to 1 at d1, then 1. Written 1 - ( 1 - k )( 1 - s ), it is 1 exactly past d1
-// and with k = 1, so those rays keep their depth to the bit.
-const nearFactor = Fn( ( [ t, near ]: [ F, V3 ] ) => {
-
-	return float( 1 ).sub( float( 1 ).sub( near.x ).mul( float( 1 ).sub( smoothstep( near.y, max( near.z, near.y.add( 1e-3 ) ), t ) ) ) );
-
-} ).setLayout( { name: 'hazeNearFactor', type: 'float', inputs: [ { name: 't', type: 'float' }, { name: 'near', type: 'vec3' } ] } );
-
-// A whole ray's length out to t as the near haze weighs it: its optical depth is this times the far
-// mean density over the heights it spans.
-const nearLength = ( t: F, near: V3 ): F => t.mul( nearFactor( t, near ) );
+// The medium's closed form (`meanExtinction`, `nearFactor`, `nearLength`) is HazeDepth.ts's, which the
+// clouds' march shares to end where the haze closes.
 
 // Interleaved gradient noise (Jimenez, "Next Generation Post Processing in Call of Duty: Advanced
 // Warfare", SIGGRAPH 2014): a fixed offset per froxel, so the frames' common jitter sequence lands
@@ -420,10 +436,10 @@ export class VolumetricHaze {
 	// the hour's and the weather's key (HazeKeys.ts, `setLook`): each band's sigma, the light's
 	// desaturation, the gain over `gain`, the sun's share in the Rayleigh light and the two shares'
 	// weights, the medium's shape (the ground layer's top over the island's level and its width,
-	// the aerosol layer's share and scale height, the dome's own depth per kilometre) and the near
-	// haze (its density factor, start, end)
+	// the aerosol layer's share, scale height and top, the dome's own depth per kilometre) and the
+	// near haze (its density factor, start, end)
 	readonly look = { sigma: new THREE.Vector3( 1, 1, 1 ), desaturate: 0.26, gain: 1, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
-		top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, skyDepth: 0, nearDensity: 1, nearStart: 250, nearEnd: 600 };
+		top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0, nearDensity: 1, nearStart: 250, nearEnd: 600 };
 	// the weather's share of the sun's direct light below the clouds and its diffuse gain
 	// (Weather.ts `directVisibility`, `ambientGain`), which scale the light's colours
 	readonly weatherLight = { direct: 1, ambient: 1 };
@@ -437,8 +453,7 @@ export class VolumetricHaze {
 	// the sky's lobe, the moon's its own: `moonAnisotropy`, MOON_AEROSOL)
 	readonly settings: HazeSettings = tuneObject( { ...HAZE_DEFAULTS },
 		{ anisotropy: 'sky.atmosphere.mieG', horizon: 'haze.light.horizon', ambientFloor: 'haze.ambient.floor' },
-		{ anisotropy: { min: 0.5, max: 0.9, onChange: markSkyRetune },
-			horizon: { min: 0.5, max: 10, onChange: markSkyRetune }, ambientFloor: { min: 0, max: 0.2, onChange: markSkyRetune } } );
+		{ anisotropy: { min: 0.5, max: 0.9 }, horizon: { min: 0.5, max: 10 }, ambientFloor: { min: 0, max: 0.2 } } );
 	readonly grid: Readonly<HazeGrid>;
 	/** The shadow's rest (see the header); `pending` while it has not converged. */
 	readonly rest = new TemporalRest();
@@ -446,7 +461,7 @@ export class VolumetricHaze {
 	private readonly sunShadow: SunShadow;
 	// the medium: the exponential layer ( density at sea level, scale height ) and the ground layer
 	// ( rho_f, top, width ), from the weather and the settings, and each band's sigma
-	private readonly layer = uniform( new THREE.Vector2( 0, 1400 ) );
+	private readonly layer = uniform( new THREE.Vector3( 0, 1400, AEROSOL_OPEN ) );
 	private readonly ground = uniform( new THREE.Vector3( 0, 13, 50 ) );
 	// the ground layer's width at the sea and its growth with the start's height ( m, m per m ), for
 	// a ray from another height than the camera's (`groundFrom`)
@@ -457,6 +472,9 @@ export class VolumetricHaze {
 	private readonly skyDepth = uniform( 0 );
 	// the near haze: its density factor and where it eases back to 1 ( k, d0, d1 in m: `nearLength` )
 	private readonly near = uniform( new THREE.Vector3( 1, 250, 600 ) );
+	/** A copy of the medium a reader built before the haze holds (the clouds' `haze`, which ends
+	 * the low deck's march where this medium closes: Clouds.ts `makeMarch`), written with it. */
+	cloudMedium: HazeMedium | null = null;
 	// the light's settings: albedo, anisotropy, the gain, the horizon's half-width (radians)
 	private readonly lightSettings = uniform( new THREE.Vector4( 1, 0.76, 1, 0.05 ) );
 	// the light's colours toward their luminance (0 as given, 1 grey)
@@ -497,6 +515,8 @@ export class VolumetricHaze {
 	readonly cloudShafts = uniform( new THREE.Vector3( 10, 0, 0 ) );
 	// the ambient visibility's floor and the half-width of its rise (m)
 	private readonly ambientSettings = uniform( new THREE.Vector2() );
+	// BAKE_SETTINGS as the environment's last bake read them (`noteBake`)
+	private baked: HazeSettings | null = null;
 	private cover: HazeCover | null = null;
 	// the composite's switches: the haze over the sky, tricubic, density anti-aliasing, the debug view
 	private readonly switches = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
@@ -616,7 +636,7 @@ export class VolumetricHaze {
 		// it is compared at the far end.
 		const coordinate = this.sunShadow.coordinate.mul( vec4( p, 1 ) ).xyz.toVar();
 		const sun = this.sunShadow.volumeVisibility( vec3( coordinate.xy, min( coordinate.z, 0.99999 ) ) ).toVar();
-		const key = sun.mul( this.cloudShaft( p, sky ) );
+		const key = sun.mul( this.cloudShaft( p, normalize( p.sub( this.origin ) ), sky ) );
 		// the open sky's: dark under the cover's top, lit above it, rising over ± the softness, open
 		// wherever the top is the sea's, times the probes' sky visibility, never below the floor
 		const cover = this.cover, A = this.ambientSettings;
@@ -636,9 +656,9 @@ export class VolumetricHaze {
 	// the map clamps its own slope. The read is sharpened by an unsharp mask against its B-spline
 	// blur, since the map is coarse and the shafts would blur into a general dimming without it;
 	// lifted toward lit for a point above the shell's base (its height over the planet's curve,
-	// a point d metres from the island's centre d^2 / 2R lower), less so toward the key light
-	// (contrasty shafts against the sun), and floored.
-	private cloudShaft( p: V3, sky: Sky ): F {
+	// a point d metres from the island's centre d^2 / 2R lower), less so the nearer `direction` (the
+	// ray's that reaches p) lies to the key light (contrasty shafts against the sun), and floored.
+	private cloudShaft( p: V3, direction: V3, sky: Sky ): F {
 
 		const clouds = sky.clouds, s = this.keyDir, C = this.cloudShafts;
 		const read = clouds.shadowAlongBeam( p ).toVar();
@@ -646,8 +666,8 @@ export class VolumetricHaze {
 		// the height above the sphere, from the shell's base (0) to its top (1)
 		const r = p.xz.sub( clouds.shadowCentre );
 		const height = p.y.add( dot( r, r ).div( 2 * EARTH_RADIUS ) );
-		const lift = clamp( height.sub( SHELL_BOTTOM ).div( SHELL_THICKNESS ), 0, 1 ).mul( float( 1 ).sub( sharp ) );
-		const toward = clamp( dot( normalize( p.sub( this.origin ) ), s ), 0, 1 );
+		const lift = clamp( height.sub( clouds.shellBottom ).div( clouds.shellThickness ), 0, 1 ).mul( float( 1 ).sub( sharp ) );
+		const toward = clamp( dot( direction, s ), 0, 1 );
 		return max( C.y, sharp.add( lift ).sub( lift.mul( C.z ).mul( toward ) ) );
 
 	}
@@ -717,9 +737,27 @@ export class VolumetricHaze {
 	// The light the air scatters toward the eye along `direction` (the light kernel's, per slice:
 	// see the header): a function of a point's height (metres) and of the sun's and the open sky's
 	// visibility there, its terms per body built once for the direction.
-	private scatterToward( direction: V3 ): ( y: F, sun: F, ambient: F ) => V3 {
+	// `deck` is the sky's irradiance over pi without its haze (Sky.ts `deckIrradianceNode`), which
+	// lights the air under a deck.
+	private scatterToward( direction: V3, deck: V3, clouds: Clouds ): ( y: F, sun: F, ambient: F ) => V3 {
 
 		const [ albedo, g, gain, horizon ] = [ this.lightSettings.x, this.lightSettings.y, this.lightSettings.z, this.lightSettings.w ];
+		// (overcast's deck: its light's form through the air's phase, see the header) the forward
+		// part, the deck's own Henyey-Greenstein lobe about the key over its mean over the sphere;
+		// the diffuse part, DECK_DIFFUSE at the air's anisotropy. Their shares follow the deck's top
+		// (Clouds.ts `columnTop`, worked out once a frame there): the lobe's light over an even
+		// deck's of the deck's irradiance and the diffuse part's share of that irradiance, so the
+		// lobe is the key's alone and leaves with it as the key sets.
+		const k = clouds.forwardLobe;
+		const forward = float( 1 ).sub( k.mul( k ) ).div( max( float( 1 ).add( k.mul( k ) ).sub( dot( direction, clouds.lightDir ).mul( k ).mul( 2 ) ), 1e-4 ).pow( 1.5 ) );
+		const mu = clamp( direction.y, - 1, 1 );
+		const inG = ( row: number[] ) => g.mul( row[ 2 ] ).add( row[ 1 ] ).mul( g ).add( row[ 0 ] );
+		let diffuse = inG( DECK_DIFFUSE[ 4 ] );
+		for ( let i = 3; i >= 0; i -- ) diffuse = diffuse.mul( mu ).add( inG( DECK_DIFFUSE[ i ] ) );
+		const top = clouds.columnTop();
+		const lobeShare = top.lobeShare.toVar(), diffuseShare = top.diffuseShare.toVar();
+		const formOf = ( law: F ) => mix( float( 1 ), law.mul( diffuseShare ).add( forward.mul( lobeShare ) ), this.overcastShare );
+		const deckForm = formOf( diffuse ).toVar();
 		// the sky's in-scatter along the column's direction at each froxel's altitude (the fog
 		// table), through the phases at use: the Rayleigh share lit by the open sky and by the sun
 		// (the latter under the polariser), the aerosol share by the sun once it stands over the
@@ -732,17 +770,21 @@ export class VolumetricHaze {
 
 			const light = b === 0 ? atmosphere.sunDir : atmosphere.moonDir;
 			const nu = dot( direction, light ).toVar();
-			// (overcast's deck: by the view's elevation and its angle to the sun, see the header)
-			const lobe = mix( float( 1 ), max( nu.add( 1 ).mul( 0.5 ), 0 ).pow( OVERCAST_POWER ).mul( 2 ), OVERCAST_SHARE )
-				.div( float( 1 ).sub( OVERCAST_SHARE ).add( OVERCAST_SHARE.mul( 2 ).div( OVERCAST_POWER.add( 1 ) ) ) );
-			const overcast = b === 0 ? mix( float( 1 ), max( direction.y, 0 ).mul( 6 ).add( 3 ).div( 7 ), this.overcastShare )
-				.mul( mix( float( 1 ), lobe, this.overcastShare ) ).toVar() : float( 1 );
+			// (overcast's open sky: by the view's elevation and its angle to the key, see the header)
+			const overcast = b === 0 ? formOf( max( direction.y, 0 ).mul( 6 ).add( 3 ).div( 7 ) ).toVar() : float( 1 );
+			// (under a deck each body's open sky gives way to the deck's light, by its share)
+			const open = float( 1 ).sub( this.deckShare ).toVar();
 			return {
-				b, light, overcast, rayleighPhase: skyRayleighPhase( nu, atmosphere.rayleighForward ).toVar(), miePhase: cornetteShanks( nu, b === 0 ? g : this.moonAnisotropy ).toVar(),
+				b, light, overcast, open, rayleighPhase: skyRayleighPhase( nu, atmosphere.rayleighForward ).toVar(), miePhase: cornetteShanks( nu, b === 0 ? g : this.moonAnisotropy ).toVar(),
 				direct: this.sunRayleighColour[ b ].mul( polariser( nu, atmosphere.polarisation ) ).toVar(), elevation: asin( clamp( light.y, - 1, 1 ) ).toVar(),
 			};
 
 		} );
+		// the deck's light on the air under it: the deck over it and the sea's reflection of the deck
+		// under it, scattered evenly (half the sphere each), overcast's deck in its form through the
+		// air's phase (see the header), the sea's even (it reaches the air from below, where neither
+		// the deck's law nor its lobe points)
+		const deckLight = deck.mul( deckForm.add( SEA_DIFFUSE ).mul( 0.5 ) ).mul( this.deckShare ).toVar();
 		return ( y, sun, ambient ) => {
 
 			// (the froxel's altitude, km; its geometric horizon dips by sqrt( 2 h / R ))
@@ -756,18 +798,18 @@ export class VolumetricHaze {
 				const shadow = atmosphere.earthShadowAt( height, direction, body.b );
 				const above = smoothstep( horizon.negate(), horizon, body.elevation.add( dip ) );
 				const rayleigh = grey( rows.rayleigh.mul( body.rayleighPhase ) )
-					.mul( this.ambientColour[ body.b ].mul( ambient ).mul( max( shadow, 1 ) ).mul( body.overcast ).add( body.direct.mul( sun ).mul( shadow ) ) );
+					.mul( this.ambientColour[ body.b ].mul( ambient ).mul( max( shadow, 1 ) ).mul( body.overcast ).mul( body.open ).add( body.direct.mul( sun ).mul( shadow ) ) );
 				const mie = grey( rows.mie.mul( body.miePhase ) ).mul( this.mieColour[ body.b ] ).mul( above.mul( sun ) );
 				scattered.addAssign( rayleigh.mul( this.weights.x ).add( mie.mul( this.weights.y ) ) );
 
 			}
-			return scattered.mul( gain.mul( albedo ) );
+			return scattered.mul( gain.mul( albedo ) ).add( deckLight.mul( ambient ).mul( albedo ) );
 
 		};
 
 	}
 
-	private buildLightKernel( r: number ): THREE.ComputeNode {
+	private buildLightKernel( r: number, deck: V3, clouds: Clouds ): THREE.ComputeNode {
 
 		const { width: W, height: H, depth: D } = this.grid;
 		const shade = texture3D( this.visibility[ r ] );
@@ -779,7 +821,7 @@ export class VolumetricHaze {
 				const x = int( instanceIndex.mod( W ) ).toVar(), y = int( instanceIndex.div( W ) ).toVar();
 				const { view, direction } = this.gridRay( vec2( float( x ).add( 0.5 ), float( y ).add( 0.5 ) ).div( vec2( W, H ) ) );
 				const forward = view.z.negate().toVar();
-				const scatter = this.scatterToward( direction );
+				const scatter = this.scatterToward( direction, deck, clouds );
 				// (alpha: the band opacity in front; shown: the display opacity, through the band-to-display
 				// matrix, which keeps 1 and so acts on an opacity as on a transmittance)
 				const sum = vec3( 0 ).toVar(), alpha = vec3( 0 ).toVar(), shown = vec3( 0 ).toVar();
@@ -933,7 +975,7 @@ export class VolumetricHaze {
 		const sky = select( d.y.lessThan( 0 ), y.div( max( d.y.negate(), 1e-6 ) ), top );
 		const whole = ( distance ? min( distance, sky ) : sky ).toVar();
 		const reach = min( whole, this.far ).toVar();
-		const scatter = this.scatterToward( d );
+		const scatter = this.scatterToward( d, clouds.bakeDeckIrradianceNode, clouds.clouds );
 		// the light kernel's march along d (its view depth per metre 1), each slice cut at reach
 		const sum = vec3( 0 ).toVar(), alpha = vec3( 0 ).toVar(), shown = vec3( 0 ).toVar();
 		const t0 = min( this.slices.x, reach ).toVar();
@@ -942,7 +984,8 @@ export class VolumetricHaze {
 		const f0 = nearFactor( t0, this.near ).toVar();
 		// the sun's visibility at a point t metres along d: the clouds' shadow, as the shadow kernel
 		// takes it (no caster of the island's: its maps reach no farther than the island)
-		const shaft = ( t: F ): F => this.cloudShaft( vec3( 0, y, 0 ).add( d.mul( t ) ), clouds );
+		// (along d from its own start, never the camera's: the bake holds no camera)
+		const shaft = ( t: F ): F => this.cloudShaft( vec3( 0, y, 0 ).add( d.mul( t ) ), d, clouds );
 		const first = scatter( y.add( y0 ).mul( 0.5 ), shaft( t0.mul( 0.5 ) ), float( 1 ) ).toVar();
 		Loop( D, ( { i } ) => {
 
@@ -1053,7 +1096,7 @@ export class VolumetricHaze {
 			light: graph.import( 'haze.light', this.light, fixed ),
 		};
 		this.visibilityKernels = [ this.buildVisibilityKernel( 0, sky ), this.buildVisibilityKernel( 1, sky ) ];
-		this.lightKernels = [ this.buildLightKernel( 0 ), this.buildLightKernel( 1 ) ];
+		this.lightKernels = [ this.buildLightKernel( 0, sky.deckIrradianceNode, sky.clouds ), this.buildLightKernel( 1, sky.deckIrradianceNode, sky.clouds ) ];
 		const sceneDepth = texture( depth );
 		return Fn( () => {
 
@@ -1121,6 +1164,27 @@ export class VolumetricHaze {
 
 	}
 
+	/** Records the settings the environment's bake reads (BAKE_SETTINGS), as it bakes (main.ts
+	 * `bakeEnvironment`). */
+	noteBake(): void {
+
+		const S = this.settings, baked = this.baked ??= { ...S };
+		for ( const k of BAKE_SETTINGS ) ( baked as Record<string, number | boolean> )[ k ] = S[ k ];
+
+	}
+
+	/** Whether a setting the environment's bake reads has changed since it last baked (false before
+	 * the first `noteBake`): main.ts `retuneSky` rebakes it then, as a fresh load with the settings
+	 * would bake. */
+	get bakeStale(): boolean {
+
+		const S = this.settings, baked = this.baked;
+		if ( ! baked ) return false;
+		for ( const k of BAKE_SETTINGS ) if ( baked[ k ] !== S[ k ] ) return true;
+		return false;
+
+	}
+
 	/** Sets the medium and its light from the look, the amounts and the weather's light (the
 	 * camera's height only for the ground layer's width at the camera): what `openSky` reads, so
 	 * the environment's bake calls it before it bakes (main.ts `prepareHaze`), and `update` every
@@ -1136,9 +1200,21 @@ export class VolumetricHaze {
 		const rho = this.haze.value / 2 + this.fog.value * S.fogExtinction / ( 2 * Math.max( look.sigma.y, 1e-6 ) );
 		this.widthRule.value.set( look.width, look.widthSlope );
 		this.ground.value.set( rho, ISLAND_TOP + look.top, this.widthAt( this.origin.value.y ) );
-		this.layer.value.set( rho * look.aerosolShare, look.aerosolHeight );
+		this.layer.value.set( rho * look.aerosolShare, look.aerosolHeight, Math.min( look.aerosolTop, AEROSOL_OPEN ) );
 		this.skyDepth.value = look.skyDepth / 1000 / Math.max( look.sigma.y, 1e-6 );
 		this.near.value.set( S.nearHaze ? look.nearDensity : 1, look.nearStart, Math.max( look.nearEnd, look.nearStart ) );
+		const copy = this.cloudMedium;
+		if ( copy ) {
+
+			copy.layer.value.copy( this.layer.value );
+			copy.ground.value.copy( this.ground.value );
+			copy.near.value.copy( this.near.value );
+			// the band that closes last; none without the haze over the sky, which leaves the clouds
+			// unfogged (nor with debugFlags.cloudHazeEnd = false, the whole march's A/B)
+			const sigma = this.sigma.value;
+			copy.sigma.value = S.sky && debugFlags.cloudHazeEnd !== false ? Math.min( sigma.x, sigma.y, sigma.z ) : 0;
+
+		}
 		this.desaturate.value = look.desaturate;
 		this.lightSettings.value.set( S.albedo, S.anisotropy, S.gain * look.gain, THREE.MathUtils.degToRad( S.horizon ) );
 		// the light's colours per body: its illuminance the sky is drawn with (Atmosphere
@@ -1263,6 +1339,7 @@ export class VolumetricHaze {
 		look.widthSlope = key.widthSlope;
 		look.aerosolShare = key.aerosolShare;
 		look.aerosolHeight = key.aerosolHeight;
+		look.aerosolTop = key.aerosolTop;
 		look.skyDepth = key.skyDepth;
 		look.nearDensity = key.nearDensity;
 		look.nearStart = key.nearStart;
@@ -1382,9 +1459,11 @@ export class VolumetricHaze {
 		const a = Math.max( Math.min( a0, b0 ), 0 ), b = Math.max( a0, b0, 0 ), span = b - a;
 		const share = ( x: number ) => x < 1e-3 ? 1 - x / 2 + x * x / 6 : ( 1 - Math.exp( - x ) ) / x;
 		const layer = this.layer.value, ground = this.ground.value;
+		const low = Math.min( a, layer.z ), under = Math.min( b, layer.z ) - low;
+		const density = b > layer.z ? layer.x * under / Math.max( span, 1e-30 ) : layer.x;
 		const ua = a - ground.y, ub = b - ground.y, w2 = width * width;
 		const r = Math.sqrt( ua * ua + w2 ) + Math.sqrt( ub * ub + w2 );
-		return layer.x * Math.exp( - a / layer.y ) * share( span / layer.y ) + ground.x * ( 1 - ( ua + ub ) / Math.max( r, 1e-6 ) );
+		return density * Math.exp( - low / layer.y ) * share( under / layer.y ) + ground.x * ( 1 - ( ua + ub ) / Math.max( r, 1e-6 ) );
 
 	}
 

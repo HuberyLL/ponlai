@@ -130,16 +130,14 @@ art decision changes; images from elsewhere stay out of the repository.
   deck at every sun height, morning and evening alike: it does not break up at a low sun, and its
   light leaves only with the sun's own, over the twilight. Its sky is brightest about the sun's
   place and dim looking away, light near the sun and a dark grey away from it. The land under it is
-  lit soft: the deck's sky light from every side, lifted well over a cloudy day's, which the ground
-  keeps under the water too, so the shallows' floor keeps its light, beside a soft key along the
-  sun, tied to the deck's own light, that carries a little under half of the light on open level
-  ground and fades into the sun's own key over the last few degrees above the horizon, so the land
-  dims smoothly as the sun sets and the moon takes none of it. Its cosine still shows on the slopes, and it casts
-  the soft shadows of everything taller than the meadow, long toward a low sun, where the shaded
-  grass stands at about 0.85 of the lit; the meadow does not shade itself in it, as no light from a
-  broad part of the sky resolves the gaps between blades, so the sward's own shade is the one the
-  sky light finds under its canopy, while the bamboo, the stones and the bare ground keep their contact
-  shade. There is no clouds' shadow over the land. Through the twilight the land goes a little dark and hands
+  lit soft: the deck's sky light from every side, its glow about the sun's place included, lifted
+  well over a cloudy day's, which the ground keeps under the water too, so the shallows' floor keeps
+  its light. The sun reaches it only through the deck: none under its rolls, and where a thinned
+  region of the deck lies along the sun, a share of it in large patches that move with the deck,
+  which adds a few per cent to the meadow and draws the faint shadows of everything taller than the
+  meadow; the meadow does not shade itself in it, so the sward's own shade is the one the sky light
+  finds under its canopy, while the bamboo, the stones and the bare ground keep their contact
+  shade. Through the twilight the land goes a little dark and hands
   over to the moonlit night, the open sea darker than the land before the night lifts it. A sun in
   the frame may read a little brighter than its eye-adapting exposure would show it. The night keeps
   the moonlit island readable (see Night).
@@ -447,6 +445,14 @@ art decision changes; images from elsewhere stay out of the repository.
 - Weather changes sweep the sky as a front from upwind. The clouds drift downwind with the wind
   aloft, faster than the surface wind (the cumulus about twice it, the cirrus about three times,
   along their fibres), so they never move against the grass and the sea.
+- The clouds stand where such clouds stand: the clear and fair skies' cumulus from about 4 km up,
+  cloudy's and overcast's deck low, its base under a kilometre and its tops near 3 km, so its
+  masses are near and wide overhead and close into a flat, packed floor toward the horizon, seen
+  through little of the air's haze; a front between the two moves the deck with the weather. The
+  deck's base is lit by what comes down through it, the light on its tops passed through the
+  cloud above, with no gain or tint of its own: thin parts show lighter than the thick masses
+  beside them, and the deck reads near grey. The air under it is lit by the deck and by the sea's
+  reflection of it rather than by a clear sky, so the haze in front of the clouds is their grey.
 - The sky's light takes a gain of its own by the sun's height, the rising sun's apart from the
   setting sun's. Through sunset it runs from the golden hour's warm key into a dusk key, more
   orange still, at a sun 1 degree under the horizon, then moves on to the night key by -6 degrees:

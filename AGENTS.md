@@ -112,7 +112,7 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 - `src/weather/`: wind (`Wind.ts`: the weather's one wind, which every part reads from it, and the
   one wind field all vegetation moves in), lightning, rain,
   puddles, the air's haze and sea fog as one froxel volume lit by the atmosphere and shadowed by
-  the sun's maps and the clouds (`VolumetricHaze.ts`, its keys by the hour and the weather in `HazeKeys.ts`), the bamboo leaves the wind takes off the
+  the sun's maps and the clouds (`VolumetricHaze.ts`, its keys by the hour and the weather in `HazeKeys.ts`, its medium's closed form in `HazeDepth.ts`), the bamboo leaves the wind takes off the
   island (`FallingLeaves.ts`: a fixed ring of leaves born round the view and stepped on the GPU by one
   compute pass).
 - `src/post/`: the frame's passes and tidewater's display chain (`Pipeline.ts`, its bloom in

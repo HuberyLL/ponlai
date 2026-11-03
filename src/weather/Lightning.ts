@@ -9,7 +9,7 @@
 import * as THREE from 'three/webgpu';
 import { attribute, cameraPosition, exp, float, length, max, min, mix, positionGeometry, smoothstep, step, uniform, vec4 } from 'three/tsl';
 import { LightningStrike } from './LightningStrike.ts';
-import { FLASH_SOURCES, SHELL_BOTTOM, SHELL_THICKNESS, type Clouds } from '../sky/Clouds.ts';
+import { FLASH_SOURCES, type Clouds } from '../sky/Clouds.ts';
 import { SUN_ILLUMINANCE } from '../sky/Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import type { LatentRegistry } from '../post/graph/FrameGraph.ts';
@@ -114,6 +114,7 @@ interface Bolt {
 	branches: THREE.UniformNode<'float', number>;
 	leader: THREE.UniformNode<'float', number>;
 	color: THREE.UniformNode<'color', THREE.Color>;
+	cloudBase: THREE.UniformNode<'float', number>; // the base of the cloud its strike leaves (m)
 }
 
 export class Lightning {
@@ -177,7 +178,7 @@ export class Lightning {
 		const active: { strike: Strike; age: number }[] = [];
 		if ( this.forced ) {
 
-			const strike = this.strikes.get( - 1 ) ?? this.describe( - 1, this.forced.start, this.forced.kind, this.forced.azimuth, this.forced.distance, this.forced.seed ?? 1 );
+			const strike = this.strikes.get( - 1 ) ?? this.describe( - 1, this.forced.start, this.forced.kind, this.forced.azimuth, this.forced.distance, this.forced.seed ?? 1, clouds );
 			this.strikes.set( - 1, strike );
 			const age = time - strike.start;
 			if ( age >= 0 && age < strike.duration ) active.push( { strike, age } );
@@ -198,7 +199,7 @@ export class Lightning {
 					// Area-weighted over a ring kilometres out: nearer is rarer.
 					const near = kind === 'bolt' ? 2500 : 3000, far = ( kind === 'bolt' ? 14000 : 18000 ) * ( 1.3 - 0.3 * storm );
 					const distance = Math.sqrt( THREE.MathUtils.lerp( near * near, far * far, hash( n, 5 ) ) );
-					strike = this.describe( n, start, kind, azimuth, distance, Math.floor( hash( n, 6 ) * 0x7fffffff ) );
+					strike = this.describe( n, start, kind, azimuth, distance, Math.floor( hash( n, 6 ) * 0x7fffffff ), clouds );
 					// Only under the storm's deck: a front sweeping in brings its lightning with it.
 					if ( clouds.coverageAt( strike.center.x, strike.center.z ) < 0.9 ) continue;
 					this.strikes.set( n, strike );
@@ -220,18 +221,20 @@ export class Lightning {
 
 	}
 
-	// One strike's profile, all of it from its seed.
-	private describe( id: number, start: number, kind: StrikeKind = 'bolt', azimuth: number, distance: number, seed: number ): Strike {
+	// One strike's profile, all of it from its seed, in the clouds' shell (the weather's: Clouds.ts
+	// `setDeck`) as it stands when the strike is first described.
+	private describe( id: number, start: number, kind: StrikeKind = 'bolt', azimuth: number, distance: number, seed: number, clouds: Clouds ): Strike {
 
 		const r = ( k: number ) => hash( seed, k + 16 );
 		const ground = new THREE.Vector3( Math.cos( azimuth ) * distance, - 1, Math.sin( azimuth ) * distance );
 		// A channel slants a little on its way down.
 		const lean = r( 0 ) * 2 * Math.PI, slant = 300 + 1200 * r( 1 );
-		const top = new THREE.Vector3( ground.x + Math.cos( lean ) * slant, SHELL_BOTTOM + 150, ground.z + Math.sin( lean ) * slant );
+		const bottom = clouds.shellBottom.value, thickness = clouds.shellThickness.value;
+		const top = new THREE.Vector3( ground.x + Math.cos( lean ) * slant, bottom + 150, ground.z + Math.sin( lean ) * slant );
 		// A stroke to the sea leaves the lower part of the cloud; sheet lightning can be anywhere
 		// in it (CloudLightning.NewStrike).
 		const depth = kind === 'bolt' ? THREE.MathUtils.lerp( 0.05, 0.25, r( 2 ) ) : THREE.MathUtils.lerp( 0.3, 0.7, r( 2 ) );
-		const center = new THREE.Vector3( top.x + ( r( 3 ) - 0.5 ) * 500, SHELL_BOTTOM + SHELL_THICKNESS * depth, top.z + ( r( 4 ) - 0.5 ) * 500 );
+		const center = new THREE.Vector3( top.x + ( r( 3 ) - 0.5 ) * 500, bottom + thickness * depth, top.z + ( r( 4 ) - 0.5 ) * 500 );
 		// Mostly blue-white, sometimes violet, now and then a warm white (Profile.RandomTint).
 		const roll = r( 5 ), v = r( 6 );
 		const tint = roll < 0.7 ? new THREE.Color( THREE.MathUtils.lerp( 0.72, 0.84, v ), THREE.MathUtils.lerp( 0.82, 0.9, v ), 1 )
@@ -410,6 +413,7 @@ export class Lightning {
 			bolt.branches.value = t0 < 0 ? 0 : strike.strokes[ 0 ].strength * Math.min( t0 / 0.006, 1 ) * Math.exp( - t0 / 0.07 ) * flicker;
 			bolt.leader.value = t0 < 0 ? 1 : 0;
 			bolt.color.value.copy( strike.tint ).multiplyScalar( strike.power * this.radiance * CHANNEL_RADIANCE );
+			bolt.cloudBase.value = strike.top.y - 150;
 			bolt.mesh.visible = true;
 
 		}
@@ -439,7 +443,7 @@ export class Lightning {
 
 		const geometry = new LightningStrike( 8, 6, 3 );
 		const age = uniform( 0 ), channel = uniform( 0 ), branches = uniform( 0 ), leader = uniform( 0 );
-		const color = uniform( new THREE.Color() );
+		const color = uniform( new THREE.Color() ), cloudBase = uniform( 0 );
 		const material = new THREE.MeshBasicNodeMaterial( { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide } );
 		material.fog = false;
 		material.toneMapped = false;
@@ -462,7 +466,7 @@ export class Lightning {
 		const tip = exp( age.sub( arrive ).div( - 0.015 ) ).mul( 0.1 ).add( 0.012 ).mul( leader );
 		const strength = max( mix( branches.mul( float( 1 ).sub( along.mul( 0.6 ) ) ), channel, trunk ), tip );
 		// The channel disappears into the cloud base.
-		const base = float( 1 ).sub( smoothstep( SHELL_BOTTOM - 600, SHELL_BOTTOM, height ) );
+		const base = float( 1 ).sub( smoothstep( cloudBase.sub( 600 ), cloudBase, height ) );
 		material.colorNode = color.mul( min( strength.mul( shown ).mul( thin ).mul( base ).mul( air ), 4 ) );
 		// Under the temporal modes the channel stays in the opaque pass (the water's reflection reads
 		// the opaque copy, and must still show it) and writes no motion and a reactive weight of 1:
@@ -472,7 +476,7 @@ export class Lightning {
 		mesh.visible = false;
 		mesh.castShadow = mesh.receiveShadow = false;
 		this.group.add( mesh );
-		return { mesh, geometry, strike: NaN, age, channel, branches, leader, color };
+		return { mesh, geometry, strike: NaN, age, channel, branches, leader, color, cloudBase };
 
 	}
 

@@ -353,7 +353,10 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `tune.set( { name: value } )` sets them with no reload and no new pipeline (a load-time one needs
   `tune=<base64 JSON>` in the URL, which applies before the materials build; `tune.query( values )`
   writes it) and reports a combination the code cannot use (`invalid`), `tune.reset()` restores the
-  defaults. At the defaults a paused frame is byte for byte the frame without them. Names:
+  defaults. At the defaults a paused frame is byte for byte the frame without them. A value the
+  sky's bake reads (a sky or haze tunable, or a field of `pipeline.air.settings` the bake lays
+  over its source) rebakes it as the load bakes, whatever set it (the GUI, `tune`, a plain write:
+  `src/sky/SkyRetune.ts`), so the page draws what a fresh load with the value draws. Names:
   `post.exposure.key@high` (an exposure key per sun height, `@golden`, `@low`, `@high`, `@cloudy`,
   `@cloudyGolden`, `@cloudySunset`, `@cloudyLow`, `@night`, and the rising sun's `@dawn`; overcast's
   key over the clouded one `post.exposure.overcastKey`; the local gain's
@@ -371,8 +374,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `@cloudyBlue`, `@night`) and its gain under overcast `lighting.relight.overcastLand`, a low
   sun's lift of the sky's light on what it lights `lighting.relight.lowSun` (stops; `lowSunFloor`,
   `lowSunFloorFull`, `lowSunFrom`, `lowSunTo` its sun heights: `src/lighting/AmbientRelight.ts`),
-  overcast's soft key `lighting.overcastSoftKey`, overcast's
-  sky about the sun `haze.overcast.power`, `haze.overcast.share`, and the key a tree's shaded leaves
+  overcast's
+  deck's glow about the sun (the forward lobe added to the light it lets through, in the deck and the
+  air under it: its weight and mean cosine) `sky.clouds.forwardWeight`, `sky.clouds.forwardLobe`, and the key a tree's shaded leaves
   take through the leaves over them `lighting.vegetation.leaf.through@high` (`@low`, `@golden`,
   `@cloudy`, `@night`) and what a leaf sends on of the key on its far face,
   `lighting.vegetation.leaf.back@high` alike, the sward's tint under a closed sky
@@ -646,7 +650,11 @@ change, bounding box, `--heat` map), `crop` (boxes or a capture's named anchors,
 (mean RGB, luma, percentiles per image or region; `--oklab` adds the Oklab lightness, chroma and
 hue medians, `--split` the means of the pixels under and over the region's own median L, a crown's dark
 and lit halves, and of its darkest 5 % and brightest 10 %, in Oklab and linear RGB, `--cover` the
-share of a mask capture's pixels painted flat red, as `grassMask:true` paints the blades) and `flicker` (a clip's consecutive whole
+share of a mask capture's pixels painted flat red, as `grassMask:true` paints the blades; `--deck`
+reads a cloud deck's structure on named sky regions instead, the horizon views' `h` and the view
+toward the sun's `sun`: the spread of its blocks of a degree, its structure about a broad trend, the
+std per band of size, the edges' gradient, the masses' size, and with `--deck-rows` the horizon's
+rows, the low sky against the sky over it and the far sea's fall a degree) and `flicker` (a clip's consecutive whole
 frames, capture-clip's `--full`: the temporal flicker per region, mean frame difference, temporal
 high-pass, one-frame flashes and a `--map` of where they fall) and `radial` (the median colour,
 luma and linear luma ring by ring around a point, such as the sun's place an `--eval-ready` step
@@ -1156,8 +1164,10 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
 - It plays a matrix of named scenes (`--list`: `island-fair-noon`, `island-clear-golden`,
   `horizon-fair-noon`, `sky-cloudy`, `island-overcast`, `island-night-clear`, `meadow-close` (over
   the meadow, placed on the camera's ground, `controls.ground`); the parked weathers' `island-rain`, `island-storm`, `horizon-storm`,
-  `island-fog-dawn` and `weather-change` (a front sweeping in) run only when `--scenes` names
-  them, and `--scenes` takes these ids), each with the clock running, fixed weather
+  `island-fog-dawn` and `weather-change` (a front sweeping in), and the clouded skies' other views
+  `island-cloudy`, `horizon-cloudy` and `horizon-overcast` (where the low deck's march costs) with
+  `horizon-clear-noon` (the same horizon without a deck), run
+  only when `--scenes` names them, and `--scenes` takes these ids), each with the clock running, fixed weather
   and a slow orbit, and writes `artifacts/perf/<label>/` (profile.json, summary.md): frame interval
   median, p95 and p99, GPU time per pass, the tick's JS time, hitches with their cause, and the
   startup.
@@ -1377,6 +1387,10 @@ What colour a surface shows on screen, by kind and by light (sunlit rock, shaded
 the darkest land), the same cells before and after a change, or a box with its dark and lit halves:
 `tools/colour-rows.mjs` (Captures), not a hand-placed box over mixed light.
 
+How much structure a cloud deck shows on screen (its contrast, masses, the edges' hardness, the
+low band and the far sea's fall at the horizon): `uv run tools/img.py stats --deck` on the horizon
+views' captures, not a script of one's own.
+
 Whether a grown page draws what a fresh load of its land draws (views, chunk hashes, the rain
 map, the camera's ground, the ambient probes, pipelines and memory across swaps): `tools/verify-growth-swap.mjs`, not a
 probe eval of one's own.
@@ -1443,6 +1457,11 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   (repeatable) adds ad-hoc views with capture-set's syntax (`like=<view>` included), so a jump
   into a new scene option is checked as `--views island-fair-noon --view near:dist=40`; their fresh
   loads are stored with their definitions' hashes, so a changed query captures a new reference.
+  `--retune` rebakes the sky on every scene visited, after its eval, through every path a retune
+  takes (`refreshEnvironment()`, a tunable set and set back, the haze over the sky switched off and
+  on as the GUI does), and fails when the sky's irradiance does not come back bit for bit or the
+  switch leaves it as it was; `--check ... --retune` also checks that a retuned page draws the
+  fresh load.
 - `tools/verify-zoom-anchor.mjs [url] [--runs 24] [--out file.json]` checks the island camera's
   anchors in one probe page (with `cameraInput`): wheel zooms out with the cursor over the sea (`--runs` times) and
   over land, two pinches out, and a drag (the island view zooms out only, from its pose's distance); it fails on any zoom anchor that found no ground or a drift

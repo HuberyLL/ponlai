@@ -108,8 +108,10 @@ const F0 = /*@__PURE__*/ tuneUniform( 'post.meadowShade.floor', 0.08, { min: 0, 
  * shade of its own, as without it) to 1 (none of them). 1 under overcast's closed deck (overcast's
  * share of the sky times `overcastDeckLight`, sky/Weather.ts) and 0 under a clear, fair or cloudy
  * sky for now; main.ts sets it every frame with the land's key, and a later setting by the sun's
- * height needs no new pipeline. A key from a broad bright part of the deck resolves no shadow as
- * small as the gaps between blades: released, the sward's own shade in the key is the canopy's, the
+ * height needs no new pipeline. Under the deck the key reaches the land only where a thinned region
+ * lets part of it through (sky/Weather.ts, overcast), a few per cent of the meadow's light beside
+ * the deck's: released, a patch of it passing over the meadow lifts the sward evenly rather than
+ * lighting the gaps between its blades, and the sward's own shade in the key is the canopy's, the
  * share of the sky the receiver sees through the sward that its ambient takes (the blades'
  * occlusion along the blade, the turf's roots' sky: world/Grass.ts, materials/TerrainMaterial.ts),
  * so the key and the ambient keep one ratio through the sward. Its sharp shades on the sward let

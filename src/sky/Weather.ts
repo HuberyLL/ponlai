@@ -41,7 +41,8 @@
 // they take what overcast's share takes, counting as overcast in `skyMix`: the level air and the sky
 // gain (DECK_SKY_GAIN), the land's own sky gain under overcast (lighting/AmbientRelight.ts
 // OVERCAST_LAND), overcast's sky shape (weather/VolumetricHaze.ts) and the exposure by the sky with
-// overcast's key (post/Exposure.ts), but they keep the key whole (`deckKey` 1).
+// overcast's key (post/Exposure.ts), and the land takes the key through their clouds' shadow as it
+// does under overcast.
 //
 // Beside its fields the weather keeps the kept skies' shares in the sky as it stands (`skyMix`,
 // a parked sky counting as overcast), blended by a front as the fields are, for the lighting's
@@ -98,65 +99,18 @@ export function deckLight( elevation: number, clouded: number, overcast: number 
 }
 
 /** How far the deck has taken over the weather's own fields at the sun's `elevation`: `deckLight`
- * over the clouded share. Under it the land keeps the weather's `deckKey` of the key and the
- * clouds' shadow its `deckFloor` (main.ts `publishLighting`, Sky.ts `keyCloudFloor`); a clear or a
- * fair sky has no deck fields of its own (`deckKey` 1, `deckFloor` its `cloudFloor`). */
+ * over the clouded share. Under it the clouds' shadow on the land keeps the weather's `deckFloor`
+ * of the key (Sky.ts `keyCloudFloor`); a clear or a fair sky has no deck fields of its own
+ * (`deckFloor` its `cloudFloor`). */
 export function deckTakeover( elevation: number, clouded: number, overcast: number ): number {
 
 	return clouded > 0 ? deckLight( elevation, clouded, overcast ) / clouded : 0;
 
 }
 
-/** Overcast's soft key on the land (the light its closed deck lets through from about the sun's
- * place), over the deck's sky irradiance over pi (Sky.ts `skyIrradiance`, times the sky's fill), by
- * luminance and on level ground (the key's luminance times its lifted height, KeyLift.ts): under the
- * closed deck the land's key is this times the sky's light at every sun height from
- * OVERCAST_SOFT_FADE degrees up (in place of the
- * weather's `deckKey` of the sun's), so it is a fixed part of the land's sky light, tied to the
- * deck's light rather than a dimmed sun. The land under the deck is lit well over the deck's own
- * light by its gain, so the sun's strength above the clouds bounds nothing there. With the land's own
- * sky gain (lighting/AmbientRelight.ts OVERCAST_LAND) it sets the share of the land's light the key
- * carries: the key's direct irradiance on open level ground over that plus the land's ambient
- * irradiance there, about 0.43 to 0.46 from 6 to 30 degrees, morning and evening alike. It lives
- * where the sun's own key does: it fades into the weather's share of the sun's key over the last
- * OVERCAST_SOFT_FADE degrees above the horizon, so the land's light stays continuous as the sun's
- * centre sets (where the sun's key ends) and through the moon's handoff, and a moon's key takes
- * none. The sky's light it reads is the last bake's: on a day much faster than the
- * default (`dayLength`) it lags the sun by a bake or two. Tunable: `lighting.overcastSoftKey`
- * (main.ts). */
-export const OVERCAST_SOFT_KEY = 15;
-/** The sun's heights (degrees) over which overcast's soft key fades out toward the horizon
- * (`overcastSoftKeyIn`): from 5 down to 0, below the 6 degrees from which its share holds. Over it
- * and through the twilight the island view's meadow and rock under the deck move by at most about
- * 0.006 in Oklab L per tenth of a degree. */
-export const OVERCAST_SOFT_FADE = 5;
-
-/** How far overcast's soft key holds at the sun's `elevation` (degrees): whole from
- * OVERCAST_SOFT_FADE up, none from the horizon down, smooth between. */
-export function overcastSoftKeyIn( elevation: number ): number {
-
-	return smooth01( elevation / OVERCAST_SOFT_FADE );
-
-}
-
-/** The share of the key `key` (its luminance) the land keeps at the sun's `elevation` under the
- * weather's cloud `clouded` (`cloudedShare`), of which overcast's share is `overcast`, with the
- * weather's `deckKey`: `deckKey` as the deck takes over (`deckTakeover`), and under overcast's deck,
- * while the sun's key holds it (`overcastSoftKeyIn`; none for a moon's key, `moon`), its soft key,
- * `cap` (OVERCAST_SOFT_KEY) times the deck's sky irradiance over pi `sky` (its luminance) on level
- * ground (the key's lifted height `height`). 1 under a clear or a fair sky. */
-export function landKeyShare( elevation: number, clouded: number, overcast: number, deckKey: number, key: number, sky: number, height: number, moon: boolean, cap = OVERCAST_SOFT_KEY ): number {
-
-	const share = 1 + ( deckKey - 1 ) * deckTakeover( elevation, clouded, overcast );
-	const held = moon ? 0 : overcast * overcastSoftKeyIn( elevation );
-	const soft = held > 0 && key > 0 && height > 0 ? cap * sky / ( key * height ) : share;
-	return share + ( soft - share ) * held;
-
-}
-
 /** The sky's light on the land and in the water under a closed deck, over the sky's irradiance bake
  * (lighting/AmbientRelight.ts, the probes' sky; ocean/Water.ts, the body's in-scatter): one gain
- * for both. It stands in for the soft key the land keeps under cloud: the light that comes
+ * for both. It stands in for the soft light the land keeps under cloud: the light that comes
  * through a deck from about the sun's place, broader than the sun's own key, which the bake's one
  * panorama does not carry onto the land and the water body, so without it the land stood near four
  * stops under the deck and the sea dark under it. 3 sets the sky about three stops over the meadow
@@ -175,10 +129,10 @@ export function deckSkyGain( elevation: number, clouded: number, overcast: numbe
 }
 
 /** The part of `deckSkyGain` a cloudy deck's gaps take back, times the clouds' visibility where
- * the water takes it (ocean/Water.ts): the deck's gain stands for the soft key through a closed
+ * the water takes it (ocean/Water.ts): the deck's gain stands for the soft light through a closed
  * deck, and in a gap the water takes the key itself, so a gap's sea stands under the land the sun
- * lights there. Overcast's closed deck has no gaps (its clouds' shadow is cast thin,
- * `shadowDensity`), so its gain stays whole. */
+ * lights there. Overcast's deck keeps its gain whole: its thinned regions still hold the deck's
+ * light over them. */
 export function deckSkyGap( elevation: number, clouded: number, overcast: number ): number {
 
 	return ( DECK_SKY_GAIN - 1 ) * ( clouded - overcast ) * deckRamp( elevation );
@@ -214,18 +168,10 @@ export interface WeatherState {
 	// clouds' shadow on the island (Sky.ts `keyCloudVisibility`). 1 takes the deck's shadow away,
 	// leaving `directVisibility` alone to set the land's direct light.
 	cloudFloor: number;
-	// Under a deck (`deckTakeover`): the share of the key the land keeps (the sun's light on the
-	// land, its bounce and the air's sunlit haze, not the sea's), and the clouds' shadow floor that
-	// takes over from `cloudFloor`. A cloudy sky keeps its key whole and lifts its floor to 0.36, so
-	// its gaps still read and its shade stays soft; overcast keeps 0.7 of the key where its deck
-	// takes over, and once it has, a soft light along the sun tied to the deck's light
-	// (`landKeyShare`), with no clouds' shadow (floor 1): the light a closed deck lets through from
-	// about the sun's place, whose cosine still shows on the slopes. It keeps the cast shadows of
-	// everything taller than the sward: with the key a little under half the land's light, a full
-	// shadow leaves the ground about 0.85 of the lit in lightness, nearly nothing looking away from
-	// the sun and long soft shadows toward it.
-	// The parked skies keep the key whole (1, floor 0): they have no cut of their own.
-	deckKey: number;
+	// The clouds' shadow floor that takes over from `cloudFloor` under a deck (`deckTakeover`). A
+	// cloudy sky lifts its floor to 0.36, so its gaps still read and its shade stays soft; overcast
+	// has none (0), as the parked skies: the key reaches its land only through the deck's own
+	// transmittance (`shadowDensity` 1).
 	deckFloor: number;
 	// How much of the key's cast shadow (the sun's map: groves, cliffs, culms) the land shows, 1 all
 	// of it (lighting/SolarShadow.ts `installOpenShadow`).
@@ -240,8 +186,10 @@ export interface WeatherState {
 	// The air's haze, per metre: the extinction, in the band whose spectral weight is 1 (blue on a
 	// clear day: the hour's key gives the bands' weights, weather/HazeKeys.ts), of the ground layer's
 	// deep part, under its soft top (the hour's key's shape: weather/HazeKeys.ts,
-	// weather/VolumetricHaze.ts). A clear or fair day's is 2e-3, a cloudy sky's 0.8 of
-	// it, an overcast sky's 1.43; rain and fog thicken it. The hour's key scales it.
+	// weather/VolumetricHaze.ts). A clear or fair day's is 2e-3; under a deck the air is dense near
+	// the sea and clear aloft (its shape per sky: weather/HazeKeys.ts), a cloudy sky's about the
+	// clear day's, an overcast sky's about five times it; rain and fog thicken it. The hour's key
+	// scales it.
 	haze: number;
 	// The haze near the camera: the optical depth from the camera out to a distance is `nearDensity`
 	// times the far medium's up to `nearStart` metres, eased back to 1 by `nearEnd` and 1 beyond
@@ -250,10 +198,16 @@ export interface WeatherState {
 	// weather/HazeKeys.ts). A parked sky's `skyMix` is overcast's, so it takes overcast's values: the
 	// haze reads these three from the kept skies' presets only, and a parked preset holds them for
 	// the state's fields (`fields` below). A clear or fair sky's air is
-	// a fifth as dense as a clouded one's, so it gives its depth back over a short shell that the
+	// a fifth as dense as an overcast one's, so it gives its depth back over a short shell that the
 	// far sea starts in. A clouded sky's shell ends between: shorter (380 m under the cloudy sky) it
 	// stands as a pale wall over the fully grown island's far half, longer the far sea falls dark
-	// under the sky's low band.
+	// under the sky's low band. The cloudy sky's shell spans 100 to 700 m: from a horizon view (the
+	// eye about 12 m up), in an air five times its present density, the far sea's first 5 degrees
+	// under the horizon fell about 0.05 L a degree through the air given back (0.056 from 250 to
+	// 430 m, with a step of 0.13 L within a degree, 0.07 to 0.085 from 100 to 700: a smoothstep in
+	// distance still gathers its catch-up a little, a shorter ramp steps more and a longer one moves
+	// the fall to the horizon's line). In the present air (weather/HazeKeys.ts) the fall is about
+	// 0.025 - 0.03 L a degree, with steps of 0.08 - 0.09 within a degree.
 	nearDensity: number;
 	nearStart: number;
 	nearEnd: number;
@@ -311,27 +265,25 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // gaps; at a low sun their shadow keeps about 8 % of it (`cloudFloor`), and once their deck has
 // taken over (from 6 degrees, `deckRamp`) 36 % (`deckFloor`), so the gaps still read and the shade
 // under the deck stays soft, its sky light lifted by the deck (DECK_SKY_GAIN). Overcast is a closed
-// dark deck at every sun height (`overcastDeckLight`): the key comes through at `directVisibility`
-// 0.7 (the sea takes that key whole), and the land takes it as a soft light along the sun tied to
-// the deck's own light down to the last few degrees above the horizon (`landKeyShare`,
-// OVERCAST_SOFT_KEY, OVERCAST_SOFT_FADE; its `deckKey` 0.7 counts only at the lowest sun and through
-// the twilight, and through a change of weather), with no clouds' shadow
-// (`deckFloor` 1) and the island's own cast shadows (`castShadow` 1) save the sward's on itself,
-// whose shade in that key is its canopy's (post/MeadowShade.ts `swardShadeRelease`), lit soft beneath the deck
-// by its sky light (DECK_SKY_GAIN, and the land's own gain, lighting/AmbientRelight.ts
-// OVERCAST_LAND) and exposed by the sky (post/Exposure.ts). Its
-// clouds' shadow is cast at a share of the deck's optical depth (`shadowDensity`), which the sea's
-// key and the moon's take; the land takes it only by night, when the deck's own light has left.
+// dark deck at every sun height (`overcastDeckLight`), lit from its sky (its glow about the sun's
+// place included: DECK_SKY_GAIN, and the land's own gain, lighting/AmbientRelight.ts OVERCAST_LAND)
+// and exposed by the sky (post/Exposure.ts). The sun reaches the land and the sea only through the
+// deck: the key whole (`directVisibility` 1) times the clouds' shadow, Beer's law along the key
+// through the deck's own optical depth (`shadowDensity` 1, no floor: `deckFloor` 0), read per point
+// from the shadow map, so the rolls take it all and the thinned regions let some through in patches
+// that move with the deck; under them the island's own cast shadows (`castShadow` 1) show, save
+// the sward's on itself, whose shade in the key is its canopy's (post/MeadowShade.ts
+// `swardShadeRelease`).
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
-	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckKey: 1, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, haze: 0.002, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
-	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckKey: 1, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, haze: 0.002, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
-	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckKey: 1, deckFloor: 0.36, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, haze: 0.0106, nearDensity: 0.13, nearStart: 250, nearEnd: 430, rain: 0, fog: 0, storm: 0, cirrus: 0.15 },
-	overcast: { coverage: 0.94, density: 1.6, directVisibility: 0.7, cloudFloor: 0, deckKey: 0.7, deckFloor: 1, castShadow: 1, shadowDensity: 0.03, glintSpread: 0, ambientGain: 0.76, haze: 0.00974, nearDensity: 0.08, nearStart: 250, nearEnd: 500, rain: 0, fog: 0.08, storm: 0, cirrus: 0 },
-	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckKey: 1, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, haze: 0.0095, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0.75, fog: 0.22, storm: 0, cirrus: 0 },
+	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, haze: 0.002, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
+	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, haze: 0.002, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
+	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0.36, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, haze: 0.0021, nearDensity: 0.13, nearStart: 100, nearEnd: 700, rain: 0, fog: 0, storm: 0, cirrus: 0.15 },
+	overcast: { coverage: 0.94, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, haze: 0.00974, nearDensity: 0.08, nearStart: 250, nearEnd: 500, rain: 0, fog: 0.08, storm: 0, cirrus: 0 },
+	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, haze: 0.0095, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0.75, fog: 0.22, storm: 0, cirrus: 0 },
 	// A squall: the darkest deck, heavy rain, a strong wind (PRESET_WIND) and a rough, white-capped sea.
-	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckKey: 1, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, haze: 0.0135, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 1, fog: 0.3, storm: 1, cirrus: 0 },
+	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, haze: 0.0135, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 1, fog: 0.3, storm: 1, cirrus: 0 },
 	// Sea fog forms in calm, moist air under thin high cloud; the sun shows as a pale disk.
-	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, cloudFloor: 0, deckKey: 1, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, haze: 0.0046, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0, fog: 1, storm: 0, cirrus: 0.4 },
+	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, haze: 0.0046, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0, fog: 1, storm: 0, cirrus: 0.4 },
 };
 
 // Auto weather: from each state, the next one and its weight. The chain moves among the kept

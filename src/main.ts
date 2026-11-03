@@ -14,7 +14,7 @@ import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, nightAmbientAt, sunRising, type DayPreset } from './sky/DayCycle.ts';
-import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckSkyGain, deckSkyGap, deckTakeover, isParkedWeather, landKeyShare, OVERCAST_SOFT_KEY, isWindLevel, overcastDeckLight, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
+import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, overcastDeckLight, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
 import { Wind, weatherWind } from './weather/Wind.ts';
@@ -82,8 +82,8 @@ import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
 import { TEST_MODE } from './debug/TestMode.ts';
-import { tune, tuneApi } from './debug/Tune.ts';
-import { skyRetune } from './sky/SkyRetune.ts';
+import { tuneApi } from './debug/Tune.ts';
+import { markSkyRetune, skyRetune } from './sky/SkyRetune.ts';
 import { AA_MODE, AA_SOURCE, AFTER_RESOLVE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './post/Antialiasing.ts';
 import type { LatentRegistry } from './post/graph/FrameGraph.ts';
 import { MOTION_CLASS, motionCheck, motionState, motionUniforms, onTaaCut, taaCut } from './post/Motion.ts';
@@ -392,10 +392,8 @@ function prepareHaze( state: Readonly<WeatherState> ): void {
 	pipeline.air.haze.value = sky.weather.haze * hazeKey.amount;
 	pipeline.air.fog.value = Math.max( sky.weather.fog, hazeKey.mist );
 	pipeline.air.setLook( hazeKey );
-	// the air's sunlit haze keeps the land's share of the key under a deck (Weather.ts `deckKey`),
-	// but not overcast's soft key (`landKeyShare`), which follows the sky's bake that lays this air
-	// over its source
-	pipeline.air.weatherLight.direct = state.directVisibility * THREE.MathUtils.lerp( 1, state.deckKey, deckTakeover( sky.elevation, cloudedShare( weather.skyMix ), weather.skyMix[ 3 ] ?? 0 ) );
+	// the air's sunlit haze takes the key the land does, through the clouds' shadow (its own read)
+	pipeline.air.weatherLight.direct = state.directVisibility;
 	pipeline.air.weatherLight.ambient = state.ambientGain;
 	pipeline.air.prepareMedium();
 
@@ -415,23 +413,15 @@ function prepareSkyState(): void {
 
 }
 
-// a linear colour's luminance (Rec. 709)
-const luma = ( c: THREE.Color ) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
-// overcast's soft key (Weather.ts OVERCAST_SOFT_KEY), tunable (`lighting.overcastSoftKey`)
-const overcastSoftKey = tune( 'lighting.overcastSoftKey', OVERCAST_SOFT_KEY, { min: 1, max: 40 } );
-
 function publishLighting(): void {
 
-	// the land's key: the key times the weather's share under a deck (Weather.ts `deckKey`), and under
-	// overcast's deck its soft key instead, by the sky's bake (`landKeyShare`); the sea takes the key
-	// whole (shared.sunColor)
-	const key = luma( sky.keyColor ), skyLight = luma( sky.skyIrradiance ) * lighting.skyFill;
+	// the land's key: the key whole, which the clouds' shadow cuts per point (Sky.ts
+	// `keyCloudVisibility`), as the sea's (shared.sunColor)
 	const overcast = weather.skyMix[ 3 ] ?? 0;
-	sun.color.copy( sky.keyColor ).multiplyScalar( landKeyShare( sky.elevation, cloudedShare( weather.skyMix ), overcast, weather.state.deckKey, key, skyLight,
-		liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sky.keyIsMoon, overcastSoftKey() ) );
+	sun.color.copy( sky.keyColor );
 	shared.landKey.value.set( sun.color.r, sun.color.g, sun.color.b );
-	// the sward's shade release: under overcast's soft key the sward's own shade in it is its canopy's
-	// (post/MeadowShade.ts `swardShadeRelease`)
+	// the sward's shade release: under overcast's deck the sward's own shade in the key is its
+	// canopy's (post/MeadowShade.ts `swardShadeRelease`)
 	swardShadeRelease.value = overcast * overcastDeckLight( sky.elevation );
 	// a low sun's lift of the sky's light on what it lights: the land's ambient, the water's sky
 	// light and the sea's reflection (lighting/AmbientRelight.ts `lowSunSkyLift`)
@@ -452,13 +442,18 @@ function publishLighting(): void {
 
 }
 
-async function bakeEnvironment( first = false ): Promise<void> {
+async function bakeEnvironment(): Promise<void> {
 
 	// Explicit preset changes settle any in-flight bake first. The running clock uses a single
 	// coalesced request below, never a growing async queue or a suspended animation loop.
 	if ( sky.busy ) await sky.update();
-	// a scene jump bakes as the page's first bake does (Sky.reset)
-	if ( first ) sky.reset();
+	// Every explicit bake bakes as the page's first does, the clouds at the scene clock (Sky.reset):
+	// a paused page keeps its products, so the load, a jump, a seek, a new hour or weather and a
+	// retune each make the ones a fresh load of the same scene makes, whatever the frames before
+	// left in the sky. It takes every value as it stands (`retuneSky`).
+	sky.reset( shared.wind.direction.value, simTime );
+	skyRetune.dirty = false;
+	if ( hazeReady ) pipeline.air.noteBake();
 	prepareSkyState();
 	await sky.update();
 	scene.environment = sky.envMap!.texture;
@@ -481,12 +476,28 @@ async function bakeEnvironment( first = false ): Promise<void> {
 // counts as drawn frames), and the first frame drawn after a hold records the whole hold as one
 // interval in the frame statistics.
 let jumpsInFlight = 0;
-function bakeExplicitly( first = false ): Promise<void> {
+function bakeExplicitly(): Promise<void> {
 
 	jumpsInFlight ++;
-	sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( () => bakeEnvironment( first ) )
+	sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( () => bakeEnvironment() )
 		.finally( () => { jumpsInFlight --; } );
 	return sunUpdates;
+
+}
+
+// A value the environment's bakes depend on has changed since they ran (sky/SkyRetune.ts: a
+// tunable's mark, or a haze setting the bake reads: VolumetricHaze.ts `bakeStale`): bake again
+// explicitly, as the load does, and raise the `retune` event. Run by the `tune` handle's `set` and
+// before each frame (`tick`, `loop.step`), so the GUI and scripts take the same path; true when it
+// started a bake.
+function retuneSky(): boolean {
+
+	if ( hazeReady && pipeline.air.bakeStale ) markSkyRetune();
+	if ( ! skyRetune.dirty ) return false;
+	skyRetune.dirty = false;
+	sceneEvent( 'retune' );
+	void bakeExplicitly();
+	return true;
 
 }
 
@@ -1507,11 +1518,11 @@ const hazeF = gui.addFolder( 'Haze' );
 const H = pipeline.air.settings;
 // the hour's and the weather's key, written each frame (weather/HazeKeys.ts)
 const hazeKey: HazeKey = { deck: 0, overcastDeck: 0, amount: 1, sigmaRed: 1, sigmaGreen: 1, sigmaBlue: 1, desaturate: 0, gain: 1, mist: 0, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
-	top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, skyDepth: 0, nearDensity: 1, nearStart: 250, nearEnd: 600 };
-// the haze exists now: bake the environment again as a scene jump does, so it holds the haze a
-// jump's bake lays over it (Sky.ts `fogEnvironment`) and a fresh load equals a jump
+	top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0, nearDensity: 1, nearStart: 250, nearEnd: 600 };
+// the haze exists now: bake the environment again, so it holds the haze every later bake lays over
+// it (Sky.ts `fogEnvironment`) and a fresh load equals a jump
 hazeReady = true;
-await bakeEnvironment( true );
+await bakeEnvironment();
 hazeF.add( H, 'near', 0.05, 20, 0.05 ).name( 'grid near (m)' );
 hazeF.add( H, 'far', 1000, 200000, 1000 ).name( 'grid far (m)' );
 hazeF.add( H, 'growth', 1.02, 1.4, 0.01 ).name( 'slice growth' );
@@ -1812,8 +1823,9 @@ function tick( time: number ): void {
 	// the frame's own vblank time, not the moment the tick starts: the main thread reaches the tick a
 	// few milliseconds into the frame, by a varying amount, which made the scene's steps uneven
 	clock.update( time );
-	// a jump's explicit bake in flight: no frame, and the clock holds (`bakeExplicitly`)
-	if ( jumpsInFlight > 0 ) return;
+	// a jump's explicit bake in flight: no frame, and the clock holds (`bakeExplicitly`); a retune
+	// starts one (`retuneSky`)
+	if ( jumpsInFlight > 0 || retuneSky() ) return;
 	frameStats.record( time, pacer.interval, pacer.period );
 	// The clock never runs backwards. Timer.reset() restarts it at performance.now(): `loop.start()`
 	// does so, and so does the timer itself when the page shows again (`connect( document )`). The
@@ -2305,7 +2317,7 @@ const changeScene = async ( scene: SceneRequest ): Promise<void> => {
 	pacer.reset();
 	sceneEvent( 'establish scene' );
 	manualSun = false;
-	await bakeExplicitly( true );
+	await bakeExplicitly();
 	// The underwater map at its constructed size, drawn now for the jump's light (published by the
 	// bake), as the load's `prepare` draws it before the first frame. Left to the loop's cadence
 	// (wall time) a capture ready within a few frames shot the cleared map: the sea without its
@@ -2391,7 +2403,7 @@ document.addEventListener( 'visibilitychange', () => {
 //   (Clouds.ts), and the periodic sky bake and the refracted sun's map count wall-clock seconds
 //   that grow while a paused page waits: all three restart with each call, as after a seek;
 // - a periodic bake reads its sky irradiance back from the GPU (`Sky.skyIrradiance`, which sets
-//   overcast's soft key and a lightning strike's fill light), landing whenever the GPU answers:
+//   a lightning strike's fill light), landing whenever the GPU answers:
 //   stepped, the next frame waits for the value, so it lands on the frame after the bake however
 //   long the frames took.
 // - `converge( i )` (the temporal modes' ground truth, capture-clip.mjs --aa gt): after frame i's tick
@@ -2452,7 +2464,9 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 		const tickAt = async ( time: number ): Promise<void> => {
 
 			// an explicit bake in flight holds the loop (`bakeExplicitly`), so its tick would draw
-			// nothing: wait for the bakes queued, and refuse a scene jump still on its way to one
+			// nothing: start a retune's (`retuneSky`), wait for the bakes queued, and refuse a scene
+			// jump still on its way to one
+			retuneSky();
 			await sunUpdates.catch( () => {} );
 			if ( jumpsInFlight > 0 ) throw new Error( 'loop.step: a scene jump is in flight; await establishScene before stepping' );
 			// three's Animation does this before each frame of its loop
@@ -2553,17 +2567,11 @@ if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { lan
 	setRockGain: ( gain: number ) => { shared.rockGain.value = gain; sceneEvent( 'retune' ); },
 	setLeafGain: ( gain: number ) => { shared.leafGain.value = gain; sceneEvent( 'retune' ); }, grass, wenyao, fallingLeaves, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the tunable parameters (debug/Tune.ts): set( { name: value } ), get, list, reset, query; a value
-	// the environment's bakes depend on rebakes them (sky/SkyRetune.ts) as a scene jump bakes (from
-	// Sky.reset: a regular bake carries the last bake's state and moved a noon frame by a few levels)
+	// the environment's bakes depend on rebakes them at once (`retuneSky`, sky/SkyRetune.ts), as the
+	// load bakes
 	tune: tuneApi( () => {
 
-		sceneEvent( 'retune' );
-		if ( skyRetune.dirty ) {
-
-			skyRetune.dirty = false;
-			void bakeExplicitly( true );
-
-		}
+		if ( ! retuneSky() ) sceneEvent( 'retune' );
 
 	} ),
 	// the scene's linear radiance over screen boxes (debug/Radiance.ts), loaded on first call
