@@ -36,11 +36,9 @@ import { markSkyRetune } from './SkyRetune.ts';
 // anisotropy of 0.63) the aerosol's extinction along the low sky's long rays darkened the sky's last
 // few degrees under the sky above them: on the horizon views the band over the horizon stood about
 // a quarter of the sky's lightness (Oklab L) under the sky 10 degrees up from sun -2 to 0, a dark
-// ribbon, and 0.06 - 0.08 over it at noon. At 1.75 the ribbon is gone: the band stands level with
-// the sky 10 degrees up at sun 0 and 0.1 - 0.15 over it from sun 2 up, the low sky brightening to
-// the horizon; the sun at the golden hour is less red. The band's level is the atmosphere's: the
-// haze over the horizon takes the horizon sky's colour (VolumetricHaze.ts), so its keys move the
-// band against the sky above it by a few hundredths at most.
+// ribbon, and 0.06 - 0.08 over it at noon. At 1.75 the ribbon is gone, the low sky brightening to
+// the horizon, and the sun at the golden hour is less red. Over the sea the band is mostly the haze's light
+// (VolumetricHaze.ts), lit by these rows: its weights set how it stands against the sky above.
 //
 // The sky's in-scatter is one table without azimuth or phase (Elek 2009, "Rendering
 // parametrizable planetary atmospheres with multiple scattering in real-time"): single plus
