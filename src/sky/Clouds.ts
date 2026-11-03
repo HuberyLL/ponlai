@@ -18,7 +18,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, Break, Continue, uniform, uv, texture, texture3D, storageTexture, textureStore, textureLoad, instanceIndex, uint, int, float,
 	vec2, vec3, vec4, ivec2, uvec3, fract, dot, mix, smoothstep, clamp, max, min, exp, log2, sqrt, select,
-	asin, acos, atan, cos, sin, normalize, floor, abs, length, not,
+	asin, acos, atan, cos, sin, normalize, floor, abs, length, not, pow,
 } from 'three/tsl';
 import { bakeSynoptic, loadCloudShape } from '../materials/CloudNoise.ts';
 import { bakeCirrusFibres, sampleCirrusFibres } from './Cirrus.ts';
@@ -49,8 +49,11 @@ type V4 = THREE.Node<'vec4'>;
 //     uniforms: the march, the shadow, the rain,
 //     the dome's haze over the clouds (Sky.ts), the haze's shafts (VolumetricHaze.ts) and the
 //     lightning (Lightning.ts). The form is the weather's too (`setForm`, Sky.ts CLOUD_FORM_BY_SKY):
-//     the soft margin, the erosion's strength at the top and the height over which a base needs
-//     the richer weather, the high cumulus' (CLOUD_FORM) under clear and fair skies.
+//     the soft margin, the erosion's strength at the top, the height over which a base needs
+//     the richer weather and the lanes, the high cumulus' (CLOUD_FORM) under clear and fair skies.
+//     A deck with lanes (overcast's) thins its whole column where a field of its own stays low (the
+//     weather map's second channel, WEATHER_LANES), to `lanes` of the density at the field's lowest,
+//     so it parts into thick rolls and thin lanes between them rather than into rolls and holes.
 //   - lighting: a light march toward the key light in segments that grow geometrically and span
 //     the shell's depth, with a tail on to its top (off for now), run however faint the light, since
 //     its depth shades the sky light too, and moving without a jump for the same reason (Sky.ts
@@ -187,8 +190,11 @@ const EROSION_BASE = 0.24, EROSION_PEAK = 2.15;
 const BASE_WEATHER = 0.54, BASE_WEATHER_END = 0.13; // bases need richer weather
 // The cloud's form the high cumulus takes (clear's and fair's), which a weather's own form scales
 // or replaces (`setForm`; Sky.ts CLOUD_FORM): the soft margin, the erosion's strength at the top
-// as a share of EROSION_PEAK, and the height over which the base needs richer weather.
-export const CLOUD_FORM = { edge: EDGE, erosion: 1, baseEnd: BASE_WEATHER_END } as const;
+// as a share of EROSION_PEAK, the height over which the base needs richer weather, and the lanes:
+// the density's share left where the lanes' field (WEATHER_LANES) stays under `laneSplit`, rising
+// as a power of it to the whole density over `laneSoftness` either side of it (1, none: the
+// cumulus' columns are its clouds and gaps).
+export const CLOUD_FORM = { edge: EDGE, erosion: 1, baseEnd: BASE_WEATHER_END, lanes: 1, laneSplit: 0.45, laneSoftness: 0.05 } as const;
 const SKEW = 1750; // metres the tops lean downwind (the low deck's: over LOW_FREQUENCY)
 // More cloud far out, from HORIZON_START over HORIZON_RAMP metres along the ray; the low deck's
 // ramp is nearer by its space's scale (`horizon`).
@@ -380,6 +386,13 @@ const coneLod = ( footprint: F, scale: number ) => max( log2( max( footprint.mul
 
 // The weather map: Sky Pro's fBm of hashed gradient noise, tileable.
 const WEATHER_MASS = [ 4, 5, 0, 1.32 ], WEATHER_DETAIL = [ 6, 6, 1, 0.13 ], WEATHER_COVERAGE = 0.26;
+// The lanes' field, in the weather map's second channel: an fbm of its own (base frequency per
+// tile, octaves, slice), its masses about 1.7 km apart in the low deck's space, where a deck with
+// lanes thins (CLOUD_FORM `lanes`). Its p25 is about 0.45, its median 0.5. Measured on the raised
+// overcast view over six cloud times: masses 3.8 km apart left most views with a lane in one of
+// its two sky boxes or none, 2.4 km and 1.7 km apart put lanes in both, the finer a little more
+// structure at every scale.
+const WEATHER_LANES = [ 11, 4, 3 ];
 const weatherGradient = ( cell: THREE.Node<'uvec3'>, offset: V3 ) => {
 
 	const seed = ( v: THREE.Node<'uint'> ) => v.mul( uint( 1664525 ) ).add( uint( 1013904223 ) ).toVar();
@@ -545,6 +558,11 @@ export class Clouds {
 	readonly edge = uniform( EDGE );
 	readonly erosionPeak = uniform( EROSION_PEAK );
 	readonly baseWeatherEnd = uniform( BASE_WEATHER_END );
+	// the lanes: the density's share left in a lane, the lanes' field's split between the lanes and
+	// the rolls and the half width of the step between them (CLOUD_FORM)
+	readonly lanes = uniform( 1 );
+	readonly laneSplit = uniform( 0.45 );
+	readonly laneSoftness = uniform( 0.05 );
 	// The haze's medium, which the haze writes (VolumetricHaze.ts `prepareMedium`, through
 	// Pipeline.ts): where it closes, the low deck's view march ends (`makeMarch`).
 	readonly haze = new HazeMedium();
@@ -700,7 +718,7 @@ export class Clouds {
 			const q = vec2( c ).div( WEATHER_RES ).toVar();
 			const mass = sat( weatherFbm( q, WEATHER_MASS ).sub( 0.5 ).mul( WEATHER_MASS[ 3 ] ).add( 0.5 ) );
 			const detail = weatherFbm( q, WEATHER_DETAIL ).mul( 2 ).sub( 1 ).mul( WEATHER_DETAIL[ 3 ] );
-			textureStore( weather, c, vec4( sat( mass.add( detail ).add( WEATHER_COVERAGE - 0.5 ) ), 0, 0, 1 ) );
+			textureStore( weather, c, vec4( sat( mass.add( detail ).add( WEATHER_COVERAGE - 0.5 ) ), sat( weatherFbm( q, WEATHER_LANES ) ), 0, 1 ) );
 
 		} )().compute( WEATHER_RES * WEATHER_RES, [ 64 ] ).setName( 'Clouds.Weather' );
 		// The most cloud-capable weather in each cell of a coarse grid, including the texels its
@@ -792,7 +810,7 @@ export class Clouds {
 		const candidate = ( p: V3, coverage: F, lods: V4 ) => {
 
 			const h = shellHeight( p ).toVar();
-			const c = { conservative: float( 0 ).toVar(), top: float( 0 ).toVar(), floorMask: float( 0 ).toVar(), h, coverage, lods, positions: [ vec3( 0 ).toVar(), vec3( 0 ).toVar() ] as const };
+			const c = { conservative: float( 0 ).toVar(), top: float( 0 ).toVar(), floorMask: float( 0 ).toVar(), lane: float( 1 ).toVar(), h, coverage, lods, positions: [ vec3( 0 ).toVar(), vec3( 0 ).toVar() ] as const };
 			If( h.greaterThan( - 0.1 ).and( h.lessThan( 1.3 ) ).and( coverage.greaterThan( 0 ) ), () => {
 
 				const w = weatherAt( p.xz );
@@ -814,6 +832,22 @@ export class Clouds {
 					};
 					const dilation = bySpace( () => dilationIn( 0 ), () => dilationIn( 1 ) );
 					c.top.assign( w.add( coverage ).sub( 1 ).add( dilation.mul( coverage ) ) );
+					// The lanes: where their field stays low the whole column keeps `lanes` of the
+					// density, so the deck parts into thick rolls and thin lanes between them rather
+					// than into rolls and holes. Lanes keyed on the tops' own height fell into the
+					// dilation's kilometre and its hard edges; a field of their own keeps them apart
+					// from it. Across the step the density's share rises as a power (its logarithm
+					// linear), not linearly: the light through a column falls with its optical depth's
+					// first few units, so a linear step brightened only the lane's core and drew a
+					// hard rim round it. A sky without lanes skips it and keeps its density to the bit.
+					If( this.lanes.lessThan( 1 ), () => {
+
+						const field = bySpace( () => weatherNode.sample( weatherUV( p.xz, 0 ) ).level( float( 0 ) ).g, () => weatherNode.sample( weatherUV( p.xz, 1 ) ).level( float( 0 ) ).g );
+						const step = smoothstep( this.laneSplit.sub( this.laneSoftness ), this.laneSplit.add( this.laneSoftness ), field );
+						c.lane.assign( pow( this.lanes, float( 1 ).sub( step ) ) );
+						c.floorMask.assign( c.floorMask.mul( c.lane ) );
+
+					} );
 					c.conservative.assign( smoothstep( edge.negate(), edge, c.top.sub( h ) ).mul( smoothstep( edge.negate(), edge, h ) ).mul( c.floorMask ) );
 
 				} );
@@ -1115,7 +1149,7 @@ export class Clouds {
 					// darker than their seams, and the deck's level follows its own optical depth.
 					const shadowed = float( 1 ).sub( scaledT );
 					ambientLight.addAssign( alpha.mul( height.mul( shadowed ).mul( float( 1 ).sub( this.lowShare ) ).add( scaledT ) ) );
-					const columnTau = max( min( c.top, 1 ).sub( c.coverage.mul( this.erosionPeak.mul( erosionMean ) ) ).sub( c.h ), 0 ).mul( this.shellThickness ).mul( front.y.mul( DENSITY ) );
+					const columnTau = max( min( c.top, 1 ).sub( c.coverage.mul( this.erosionPeak.mul( erosionMean ) ) ).sub( c.h ), 0 ).mul( c.lane ).mul( this.shellThickness ).mul( front.y.mul( DENSITY ) );
 					const columnT = float( 1 ).div( columnTau.mul( 0.75 * ( 1 - LOBE.forward ) ).add( 1 ) );
 					// (only under a low deck's share: a sky without one multiplies it away, and every
 					// sample of a clear or fair march paid for it)
@@ -2306,13 +2340,17 @@ export class Clouds {
 	}
 
 	/** The cloud's form (CLOUD_FORM's terms), which Sky.ts blends by the sky's shares: the soft
-	 * margin, the erosion's strength at the top as a share of the high cumulus', and the height over
-	 * which a base needs richer weather. */
-	setForm( edge: number, erosion: number, baseEnd: number ): void {
+	 * margin, the erosion's strength at the top as a share of the high cumulus', the height over
+	 * which a base needs richer weather, and the lanes (the density's share left in a lane, the
+	 * lanes' field's split, the step's half width). */
+	setForm( edge: number, erosion: number, baseEnd: number, lanes: number, laneSplit: number, laneSoftness: number ): void {
 
 		this.edge.value = edge;
 		this.erosionPeak.value = EROSION_PEAK * erosion;
 		this.baseWeatherEnd.value = baseEnd;
+		this.lanes.value = lanes;
+		this.laneSplit.value = laneSplit;
+		this.laneSoftness.value = laneSoftness;
 
 	}
 

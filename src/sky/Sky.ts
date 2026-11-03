@@ -489,20 +489,26 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
  * aerosol ends at a deck's base (weather/HazeKeys.ts `aerosolTop`). */
 export const cloudBase = ( s: number ): number => CLOUD_SHELL[ s ].base;
 // per kept sky, the cloud's form (Clouds.ts CLOUD_FORM, `setForm`): its soft margin, its
-// erosion's strength at the top (a share of the high cumulus') and the height over which its base
-// needs richer weather, blended by the weather's shares like the shell. Clear and fair keep the
-// high cumulus' form, and so do cloudy and overcast, as measured on the horizon views: the base's
-// height from 0.1 to 0.3 of the shell moves the overcast masses' height on screen from 1.6 to 1.2
-// degrees (lower as it grows) and their edges little; under cloudy a wider margin (0.1 to 0.2) or a
-// weaker erosion (0.4 to 1) only softens edges whose gradient the haze's veil over the deck
-// already holds low (p99 0.071 to 0.049-0.064), and half the margin with 1.2 times the erosion
-// sharpens them to 0.086 only. Tunable on debug pages:
-// `sky.clouds.edge|erosion|baseEnd@<cloudy|overcast>`.
-const CLOUD_FORM_BY_SKY = KEPT_SKIES.map( () => ( { ...CLOUD_FORM } ) );
+// erosion's strength at the top (a share of the high cumulus'), the height over which its base
+// needs richer weather and its lanes, blended by the weather's shares like the shell. Clear and
+// fair keep the high cumulus' form. The base's height from 0.1 to 0.3 of the shell moves the
+// overcast masses' height on screen from 1.6 to 1.2 degrees (lower as it grows) and their edges
+// little. Seen from 50-90 m up, through the clouded skies' own air (weather/HazeKeys.ts), the
+// deck's form shows: overcast's lanes keep a tenth or less of the density (0.08: the lanes'
+// optical depth about 1-3 under rolls of 15-30, a lane's column light about 3.5-4 times a roll's),
+// which on the raised view about doubles the sky's spread and its structure at every scale, the
+// lanes' field's p25 its split; cloudy's margin is half again the cumulus' (0.15), which brings
+// the broken cloud's spread from 0.25 to 0.18-0.21 and its gradient's p99 from 0.43 to 0.34. A
+// wider margin softens the edges further but eats the gaps with them (0.25: p99 0.21, spread
+// 0.10-0.12), since it spreads either side of a column's top. Tunable on debug pages:
+// `sky.clouds.edge|erosion|baseEnd|lanes|laneSplit|laneSoftness@<cloudy|overcast>`.
+const CLOUD_FORM_BY_SKY = KEPT_SKIES.map( ( name ) => name === 'overcast' ? { ...CLOUD_FORM, lanes: 0.08 } : name === 'cloudy' ? { ...CLOUD_FORM, edge: 0.15 } : { ...CLOUD_FORM } );
 for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 
-	tuneObject( CLOUD_FORM_BY_SKY[ s ], { edge: `sky.clouds.edge@${ name }`, erosion: `sky.clouds.erosion@${ name }`, baseEnd: `sky.clouds.baseEnd@${ name }` },
-		{ edge: { min: 0.05, max: 0.25, onChange: markSkyRetune }, erosion: { min: 0.3, max: 1.2, onChange: markSkyRetune }, baseEnd: { min: 0.05, max: 0.4, onChange: markSkyRetune } } );
+	tuneObject( CLOUD_FORM_BY_SKY[ s ], { edge: `sky.clouds.edge@${ name }`, erosion: `sky.clouds.erosion@${ name }`, baseEnd: `sky.clouds.baseEnd@${ name }`,
+		lanes: `sky.clouds.lanes@${ name }`, laneSplit: `sky.clouds.laneSplit@${ name }`, laneSoftness: `sky.clouds.laneSoftness@${ name }` },
+	{ edge: { min: 0.05, max: 0.25, onChange: markSkyRetune }, erosion: { min: 0.3, max: 1.2, onChange: markSkyRetune }, baseEnd: { min: 0.05, max: 0.4, onChange: markSkyRetune },
+		lanes: { min: 0.02, max: 1, onChange: markSkyRetune }, laneSplit: { min: 0.2, max: 0.9, onChange: markSkyRetune }, laneSoftness: { min: 0.005, max: 0.2, onChange: markSkyRetune } } );
 
 }
 const CIRRUS_SHARE = 0.75;
@@ -1622,7 +1628,7 @@ export class Sky {
 		const base = shell( 'base' );
 		clouds.setDeck( base, shell( 'top' ) - base, skyMix ? cloudedShare( skyMix ) : 0 );
 		const form = ( key: keyof typeof CLOUD_FORM ) => skyMix ? CLOUD_FORM_BY_SKY.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k[ key ], 0 ) : CLOUD_FORM[ key ];
-		clouds.setForm( form( 'edge' ), form( 'erosion' ), form( 'baseEnd' ) );
+		clouds.setForm( form( 'edge' ), form( 'erosion' ), form( 'baseEnd' ), form( 'lanes' ), form( 'laneSplit' ), form( 'laneSoftness' ) );
 		clouds.coverageFrom.value = front ? front.from.coverage : coverage;
 		clouds.coverageTo.value = front ? front.to.coverage : coverage;
 		clouds.densityFrom.value = front ? front.from.density : clouds.density.value;
