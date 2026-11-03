@@ -49,11 +49,13 @@ import { cloudBase } from '../sky/Sky.ts';
 //     The overcast's are still to be set toward grey.
 //   - desaturate: how far each of the haze's two shares of light (VolumetricHaze's header) turns
 //     toward its luminance: all of it by day (the day's air shows its sky's colour through
-//     the haze's sigma, not its own), half in the morning and by night, 0.4 after sunset, 0.72 as
+//     the haze's sigma, not its own), half in the morning and by night, 0.4 after sunset, 0.64 as
 //     the sun rises, and a third at the golden hour, whose air takes most of the sun's orange. Under
 //     the sunrise's cold light it decides where the air's own warmth shows: the haze's own rows
 //     are red toward a low sun, so what it leaves of them lands in the band over the horizon, the
-//     high air staying blue; a fast swing, the band from blue to rose within a tenth or two of it.
+//     high air staying blue; a fast swing, the band from blue to orange within a tenth or two of it.
+//     At 0.64 the air's warmth it leaves offsets the blue of the sky light's cool dawn key (Sky.ts
+//     SKY_LIGHT `dawn`) in the band, which stays a pale blue grey; 0.72 left the band too blue.
 //   - mist: a morning mist in the sea fog's units (VolumetricHaze `fogExtinction`), which thickens
 //     the haze's ground layer, soft and low over the whole island, not a sheet on the sea. The
 //     clear morning has none: 0 in every key (`haze.key.mist@mist` brings one back), so the sea
@@ -186,7 +188,7 @@ const NIGHT = { ...key( 2.5, NIGHT_SIGMA, 0.55, 0, 1 ), rayleighWeight: 8, mieWe
 const BEFORE_DAWN = { ...key( 0.6, twilight( - 3.5 ), 0.33, 0, 1 ), rayleighWeight: 1.9, mieWeight: 4.1, nearScale: 0.8 };
 // the deep twilight before dawn: the same air with less of the haze's light (see the header)
 const EARLY_DAWN = { ...BEFORE_DAWN, rayleighWeight: 1.4, mieWeight: 4.1 };
-const MIST = { ...key( 0.6, GOLDEN_SIGMA, 0.72, 0, 1 ), rayleighWeight: 0.5, mieWeight: 0.41, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010, nearScale: 0.5 };
+const MIST = { ...key( 0.6, GOLDEN_SIGMA, 0.64, 0, 1 ), rayleighWeight: 0.5, mieWeight: 0.41, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010, nearScale: 0.5 };
 const MORNING = { ...key( 0.96, DAY_SIGMA, 0.5, 0, 1 ), rayleighWeight: 0.33, mieWeight: 0.83 };
 const DAY = { ...key( 0.659, DAY_SIGMA, 1, 0, 0 ), rayleighWeight: 0.575, mieWeight: 0.79, top: 78.4, width: 54.9, aerosolShare: 0.06, aerosolHeight: 761 };
 const GOLDEN = { ...key( 0.606, GOLDEN_SIGMA, 0.331, 0, 1 ), rayleighWeight: 0.58, mieWeight: 3.8, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010 };

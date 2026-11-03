@@ -445,10 +445,13 @@ function clearShade( elevation: number, direct: number ): number {
 // warms the whole picture: the golden key is the evening's, where the whole sky is alight, and the
 // clear morning has keys of its own (`dawn`, `morning`, read while the sun rises: DayKeys.ts
 // `rising`). At sunrise the air is already blue and the warm colour stays in the sun's road and the
-// low streaks, so `dawn` is near grey with no warm lean, and the display's dawn white balance (Pipeline.ts
-// WHITE_BALANCE) cools it from there; by 12 degrees the picture has gone cool and quiet, and `morning`
-// is the day's light at about two thirds of the low key, so the sea stands lighter under the same sky,
-// the meter holding the sky's level. Both are fits on our own views. From the `high` key up
+// low streaks, so `dawn` is near grey with a slight cool lean (blue over red about 1.13), and the
+// display's dawn white balance (Pipeline.ts WHITE_BALANCE) cools it from there: the band over the
+// horizon, nearly all the haze's light, and the sea under it stay a quiet blue grey. By 12 degrees
+// the picture has gone cool and quiet, and `morning` is the day's light at about two thirds of the
+// low key with less green (red and blue equal, green three quarters of them), which turns the
+// morning's sky and sea from cyan to blue, so the sea stands lighter under the same sky, the meter
+// holding the sky's level. Both are fits on our own views, at the luminance they had. From the `high` key up
 // the two sides are one. A clouded morning keeps the clouded keys.
 // Tunable on debug pages (debug/Tune.ts): `sky.light.<r|g|b>@<dawn|morning|dusk|golden|low|high|cloudyHigh|night>`.
 const SKY_LIGHT_LOW_SUN: readonly DayKey<{ r: number; g: number; b: number }>[] = [
@@ -459,8 +462,8 @@ const SKY_LIGHT_HIGH: DayKey<{ r: number; g: number; b: number }> = { at: 40, na
 const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'sky.light', {
 	day: [ { at: - 1, name: 'dusk', values: { r: 0.27, g: 0.2, b: 0.08 } }, ...SKY_LIGHT_LOW_SUN, SKY_LIGHT_HIGH ],
 	rising: [
-		{ at: 3, name: 'dawn', values: { r: 0.2, g: 0.18, b: 0.16 } },
-		{ at: 12, name: 'morning', values: { r: 0.15, g: 0.133, b: 0.138 } },
+		{ at: 3, name: 'dawn', values: { r: 0.172, g: 0.185, b: 0.195 } },
+		{ at: 12, name: 'morning', values: { r: 0.1665, g: 0.1253, b: 0.1656 } },
 		SKY_LIGHT_HIGH,
 	],
 	cloudy: [ ...SKY_LIGHT_LOW_SUN, { at: 40, name: 'cloudyHigh', values: { r: 0.25, g: 0.232, b: 0.28 } } ],
