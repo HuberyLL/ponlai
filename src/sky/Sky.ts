@@ -427,12 +427,18 @@ function clearShade( elevation: number, direct: number ): number {
 // island's moonlight takes the key's level with a hue of its own (`moonHue`). The keys set
 // the sky's brightness and colour in bands of elevation and of angle from the sun, together with
 // the atmosphere's phase and aerosol and the haze's keys, once the environment's bake took the
-// haze's light: the golden key takes the sky warm (red over blue about 2.5), the low key near grey,
+// haze's light: the golden key takes the sky warm (red over blue about 2.9), the low key near grey,
 // the high key blue (blue over red about 1.5), the atmosphere's own colour doing the rest, and the
 // night key is about 0.03, its red about twice its green, which the night's white balance takes
 // back (Pipeline.ts WHITE_BALANCE): the land's dark colours stay near neutral under it, the clear
 // night's dome is dark, its low sky the haze's moonlit light (HazeKeys.ts NIGHT) and its blue the
 // moonlit atmosphere's own and the rods' (Purkinje.ts).
+// The golden, low and morning keys keep the colour they lent the sky before the ozone's absorption
+// was integrated over each channel's band (Atmosphere.ts): with it the bare sky lost red and blue
+// against green, by 0.75 and 0.88 times at a sun of 3 degrees, 0.89 and 0.95 at 12 and 0.97 and
+// 0.99 at noon, and these keys take the first two back at their luminance (the golden hour's sky,
+// far bay and meadow had turned yellow by 10 - 16 degrees of hue, the morning's sea toward cyan).
+// The high key, whose sky hardly moved, keeps its own.
 // Under cloud the high key has a twin (`cloudyHigh`, taken by the weather's clouded share, Weather.ts
 // `cloudedShare`): a deck of cloud gives the sky and the air no such blue, and the air over the land
 // takes this light whole (VolumetricHaze.ts), so at the day's blue the crowns under a clouded sky
@@ -452,21 +458,21 @@ function clearShade( elevation: number, direct: number ): number {
 // display's dawn white balance (Pipeline.ts WHITE_BALANCE) cools it from there: the band over the
 // horizon, nearly all the haze's light, and the sea under it stay a quiet blue grey. By 12 degrees
 // the picture has gone cool and quiet, and `morning` is the day's light at about two thirds of the
-// low key with less green (red and blue equal, green three quarters of them), which turns the
+// low key with less green (red a little over blue, green about 0.7 of them), which turns the
 // morning's sky and sea from cyan to blue, so the sea stands lighter under the same sky, the meter
 // holding the sky's level. Both are fits on our own views, at the luminance they had. From the `high` key up
 // the two sides are one. A clouded morning keeps the clouded keys.
 // Tunable on debug pages (debug/Tune.ts): `sky.light.<r|g|b>@<dawn|morning|dusk|golden|low|high|cloudyHigh|night>`.
 const SKY_LIGHT_LOW_SUN: readonly DayKey<{ r: number; g: number; b: number }>[] = [
-	{ at: 3, name: 'golden', values: { r: 0.3, g: 0.18, b: 0.12 } },
-	{ at: 12, name: 'low', values: { r: 0.221, g: 0.192, b: 0.194 } },
+	{ at: 3, name: 'golden', values: { r: 0.36, g: 0.162, b: 0.1227 } },
+	{ at: 12, name: 'low', values: { r: 0.2409, g: 0.1857, b: 0.1979 } },
 ];
 const SKY_LIGHT_HIGH: DayKey<{ r: number; g: number; b: number }> = { at: 40, name: 'high', values: { r: 0.235, g: 0.232, b: 0.346 } };
 const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'sky.light', {
 	day: [ { at: - 1, name: 'dusk', values: { r: 0.27, g: 0.2, b: 0.08 } }, ...SKY_LIGHT_LOW_SUN, SKY_LIGHT_HIGH ],
 	rising: [
 		{ at: 3, name: 'dawn', values: { r: 0.172, g: 0.185, b: 0.195 } },
-		{ at: 12, name: 'morning', values: { r: 0.1665, g: 0.1253, b: 0.1656 } },
+		{ at: 12, name: 'morning', values: { r: 0.1809, g: 0.1207, b: 0.1683 } },
 		SKY_LIGHT_HIGH,
 	],
 	cloudy: [ ...SKY_LIGHT_LOW_SUN, { at: 40, name: 'cloudyHigh', values: { r: 0.25, g: 0.232, b: 0.28 } } ],
@@ -651,25 +657,29 @@ const lendIsland = Fn( ( [ light, tint, gain ]: [ V3, V4, F ] ) => {
 // masses and its light turns an almost pure red (red/blue above 100 at one degree), which paints
 // the island like lava. The optical depth that sets the key's hue is capped softly past about
 // six degrees (`sky.key.hueDepth`), while its luminance keeps the full extinction: a low sun stays
-// orange red (red/green about 2.2 at six degrees, 2.6 at the golden hour and 2.4 at the horizon,
-// red/blue at most about 12) and still dims as it sets. The cap stands where it holds the golden
+// orange red (red/green about 1.85 at six degrees, 2.2 at the golden hour and 2.25 at the horizon,
+// red/blue at most about 13) and still dims as it sets. The cap stands where it holds the golden
 // hour's sunlit faces at a full orange without the extra chroma the clean air aloft gives the key
 // (Atmosphere.ts). The rising sun's cap is lower (`sky.key.dawnHueDepth`, binding from about ten
 // degrees down): the morning's warm colour lies in the sun's road and the low streaks, and a face
 // turned to the rising sun takes a pale warm light, far less orange than the evening's at the same
-// height (red/green at most about 1.75, red/blue about 4). Above that the key's hue is
+// height (red/green at most about 1.6, red/blue about 4). Above that the key's hue is
 // chosen rather than the air's own course, which reddens evenly with the air mass: a warm
 // white while the sun is high (KEY_WHITE: red/green 1.15, blue/green 0.95 at noon, 1.17 and 0.9
 // at 30 degrees) that loses its blue first (0.8 at 20 degrees, red/green 1.2) and turns orange
 // between 15 and 10 degrees (1.45 and 0.55 at 11.5). So each of the two ratios takes the air's
 // change of it in part, by the air's depth in green (`sky.key.reddens` for red/green, `.yellows` for
-// blue/green: about none at noon, two thirds at that depth, all of it past twice it). The sky and
+// blue/green: about none at noon, two thirds at that depth, all of it past twice it). The ozone's
+// absorption integrated over each channel's band (Atmosphere.ts) takes red off the air's
+// transmittance (red/green 1.45 to 1.29 at 12 degrees), so the red/green share's onset is 0.52
+// where it was 0.75, which brings the key back to about 1.45 at 12 degrees (0.75 left it at 1.29,
+// a lit face yellow green) and leaves the lower sun a little less red than before. The sky and
 // clouds keep their own colours, and the key's luminance is the sun tint's.
 const sunHueDepth = tune( 'sky.key.hueDepth', 1.6, { min: 1, max: 4, onChange: markSkyRetune } );
 const dawnHueDepth = tune( 'sky.key.dawnHueDepth', 0.8, { min: 0.3, max: 4, onChange: markSkyRetune } );
 // the key's white: linear red/green and blue/green while the sun is high
 const KEY_WHITE = [ 1.15, 0.96 ] as const;
-const keyReddens = tune( 'sky.key.reddens', 0.75, { min: 0.3, max: 1.5, onChange: markSkyRetune } );
+const keyReddens = tune( 'sky.key.reddens', 0.52, { min: 0.3, max: 1.5, onChange: markSkyRetune } );
 const keyYellows = tune( 'sky.key.yellows', 0.52, { min: 0.2, max: 1.2, onChange: markSkyRetune } );
 // The low sun's lift of the clouds' beam and fill (trackClouds), fading as the sky closes.
 const lowSunOf = ( elevation: number, coverage: number ) => THREE.MathUtils.smoothstep( elevation, - 4, 1 )
