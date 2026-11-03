@@ -16,7 +16,7 @@
 
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, Loop, Break, Continue, uniform, uv, texture, texture3D, storageTexture, textureStore, textureLoad, instanceIndex, uint, int, float,
+	Fn, If, Loop, Break, Continue, uniform, uv, texture, texture3D, storageTexture, textureStore, textureLoad, instanceIndex, instancedArray, storage, uint, int, float,
 	vec2, vec3, vec4, ivec2, uvec3, fract, dot, mix, smoothstep, clamp, max, min, exp, log2, sqrt, select,
 	asin, acos, atan, cos, sin, normalize, floor, abs, length, not, pow,
 } from 'three/tsl';
@@ -76,7 +76,35 @@ type V4 = THREE.Node<'vec4'>;
 //     deck's own density and thickness. That irradiance is the key's above the tops (`columnKey`:
 //     the sun's by day, by night the island's moonlight, not the clouds' own) and the drawn sky's
 //     over them (without the clouds' night glow), so the base and the land under it are lit by one
-//     key by day and by night. The march sums these as factors, direct, ambient and the
+//     key by day and by night. Uniforms and the atmosphere alone, it is worked out once a frame by
+//     one thread (`Clouds.ColumnTop`, a `renderer.compute` ahead of the other kernels in `update`,
+//     outside the frame graph as they are) with the shares of the air's light under the deck it
+//     sets, into a buffer the march, the panorama and the haze read; only under a low deck's
+//     share, since without one every term it feeds is multiplied away and its dispatch at the
+//     frame's head is not free. Under a deck it costs 1 to 3 % of the GPU's frame on the horizon
+//     views (nothing measurable on the island's): a pass of its own ahead of the frame, not the
+//     kernel's work. Two buffers alternated by the frame's parity, or a copy for the haze written
+//     just before its light, took none of it back, so the cost is kept. That light leaves the
+//     base with an angular form of its own: a
+//     diffuse part ( 3 / 7 )( 1 + 2 mu ), mu the view's cosine to the zenith, the escape function's
+//     diffusion approximation for a thick conservative layer (van de Hulst, "Multiple Light
+//     Scattering", 1980; Kokhanovsky, Earth-Science Reviews 64, 2004), the CIE standard overcast
+//     sky's law, three times as bright overhead as at the horizon, which gives a level surface the
+//     column's irradiance; and over it, on the key's light alone, a forward Henyey-Greenstein lobe
+//     about the key (FORWARD_LOBE, 0.8), its radiance FORWARD_WEIGHT (0.6) times the key's part over
+//     pi times the lobe over its mean over the sphere: the deck's round glow about the sun's place,
+//     light added to the deck's, so the side away from the sun keeps its whole diffuse level. The
+//     weight and the lobe are the form's own, not derived from the column's depth (a
+//     delta-Eddington share dies past an optical depth of about 2, which every roll exceeds); at
+//     0.6 the lobe gives 45 to 48 % of the deck's irradiance on level ground under a sun of 15 to 23
+//     degrees, 39 % at 8 (the deck's irradiance bake with the weight at 0 and at 1). The drawn sky's
+//     light over the tops takes the diffuse part alone. Measured on overcast from 90 m, the
+//     composite's sky scene-linear in cells of a degree of angle from the key and of elevation,
+//     each ring's cells over the mean of the cells beyond 90 degrees from the key: under a sun of
+//     15 degrees about 34x at 3 - 7 degrees, 10x at 16, 4.1x at 27, 1.9x at 45, 1.0x at 70 - 90
+//     (under 22 and 30 degrees within 15 % of these but for 70 - 90 at 30, 1.2x); in the ring 12 - 20
+//     degrees from the key the cells 2 - 4 degrees up 0.9x those 15 - 25 up (the air's lobe there,
+//     VolumetricHaze.ts). The march sums these as factors, direct, ambient and the
 //     column's; the column's takes the top's irradiance, the other two take their colours once it
 //     ends, from the atmosphere's in-scatter table at the shell's mean
 //     height toward the ray: the lit side the Mie share's colour times each body's light gain
@@ -377,6 +405,53 @@ const layerDistance = Fn( ( [ h, mu, a ]: [ F, F, F ] ) => {
 // Normalised Henyey-Greenstein phase.
 const henyeyGreenstein = ( cosTheta: F, g: number ) =>
 	float( 1 - g * g ).div( max( float( 1 + g * g ).sub( cosTheta.mul( 2 * g ) ), 1e-3 ).pow( 1.5 ).mul( 4 * Math.PI ) );
+
+// The light the low deck's column passes down, its angular form (makeMarch): a diffuse part, the
+// escape function's diffusion law ( 3 / 7 )( 1 + 2 mu ), over the key's light and the sky's, and a
+// forward part added over it on the key's light alone, a Henyey-Greenstein lobe toward the key
+// whose radiance is FORWARD_WEIGHT times the key's irradiance over pi times the lobe over its mean
+// over the sphere (about 45 at the key for a mean cosine of 0.8, 0.06 opposite it). Its weight and
+// mean cosine are the form's own (the deck's rolls are too thick for a forward share derived from
+// their depth: it dies past an optical depth of 2): 0.6 sets the lobe's share of the deck's
+// irradiance near half under a sun of 15 to 25 degrees, and the rings about the key from 90 m
+// read 1 + 0.85 times the lobe over the sky away from the key, within about 15 % (see the header).
+export const FORWARD_WEIGHT = 0.6, FORWARD_LOBE = 0.8;
+
+/** The forward lobe's light on level ground: the integral over the upper hemisphere of a
+ * Henyey-Greenstein lobe of mean cosine g about a key of height mu0 (its direction's y), each
+ * direction weighted by its cosine to the zenith, times 4: the irradiance over pi that the lobe
+ * over its mean over the sphere gives a level surface (the diffuse part's is 1), which the air
+ * under the deck weighs the lobe's light by (VolumetricHaze.ts `scatterToward`). Exact as a
+ * series: the lobe's Legendre moments are g^l and the clamped cosine's are known in closed form
+ * (Ramamoorthi and Hanrahan, "An Efficient Representation for Irradiance Environment Maps",
+ * SIGGRAPH 2001), so by the addition theorem the integral is sum_l a_l g^l P_l( mu0 ). 1 at
+ * g = 0. */
+export function forwardLevel( mu0: number, g: number ): number {
+
+	const x = THREE.MathUtils.clamp( mu0, - 1, 1 );
+	// a_0 = 1/4, a_1 = 1/2; odd l > 1 vanish; even l: ( 2l + 1 ) / 2 ( -1 )^( l/2 - 1 ) / ( ( l + 2 )( l - 1 ) )
+	// times binomial( l, l/2 ) / 2^l
+	let sum = 0.25 + 0.5 * g * x;
+	let previous = 1, current = x, power = g, central = 1;
+	for ( let l = 1; l < 160; l ++ ) {
+
+		const next = ( ( 2 * l + 1 ) * x * current - l * previous ) / ( l + 1 );
+		previous = current;
+		current = next;
+		power *= g;
+		const n = l + 1;
+		if ( n % 2 === 0 ) {
+
+			central *= ( n - 1 ) / n;
+			const a = ( 2 * n + 1 ) / 2 * ( ( n / 2 ) % 2 === 1 ? 1 : - 1 ) / ( ( n + 2 ) * ( n - 1 ) ) * central;
+			sum += a * power * current;
+
+		}
+
+	}
+	return 4 * Math.max( sum, 0 );
+
+}
 const sat = ( x: F ) => clamp( x, 0, 1 );
 const luminance = ( c: V3 ) => dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
 const desaturate = ( c: V3, k: F ) => mix( c, vec3( luminance( c ) ), k );
@@ -563,6 +638,13 @@ export class Clouds {
 	readonly lanes = uniform( 1 );
 	readonly laneSplit = uniform( 0.45 );
 	readonly laneSoftness = uniform( 0.05 );
+	// The angular form of the light the low deck's column passes down (makeMarch): the forward
+	// lobe's weight on the key's light and its mean cosine, and the lobe's light on level ground at
+	// the key's height, which Sky.ts trackClouds sets (`forwardLevel`) and the air under the deck
+	// reads. A change rebakes the panorama and the environment.
+	readonly forwardWeight = tuneUniform( 'sky.clouds.forwardWeight', FORWARD_WEIGHT, { min: 0, max: 3, onChange: markSkyRetune } );
+	readonly forwardLobe = tuneUniform( 'sky.clouds.forwardLobe', FORWARD_LOBE, { min: 0, max: 0.95, onChange: markSkyRetune } );
+	readonly forwardLevel = uniform( forwardLevel( 0.5, FORWARD_LOBE ) );
 	// The haze's medium, which the haze writes (VolumetricHaze.ts `prepareMedium`, through
 	// Pipeline.ts): where it closes, the low deck's view march ends (`makeMarch`).
 	readonly haze = new HazeMedium();
@@ -639,6 +721,15 @@ export class Clouds {
 	private loading: Promise<void> | null = null;
 	private partialKernel: THREE.ComputeNode | null = null;
 	private shadowKernel: THREE.ComputeNode | null = null;
+	// The light on the low deck's tops and the shares of the air's light under the deck it sets
+	// (`columnTop`): uniforms and the atmosphere alone, so one thread works them out once a frame
+	// (`Clouds.ColumnTop`, ahead of every kernel here, under a low deck's share only: `update`) into
+	// two texels the march, the panorama, the haze's light and the environment's haze read, instead
+	// of each pixel and froxel working out its eight sky samples. ( key, lobe share ), ( sky,
+	// diffuse share ).
+	private readonly columnStore = instancedArray( 2, 'vec4' ).setName( 'cloudColumnTop' );
+	private readonly columnRead = storage( this.columnStore.value, 'vec4', 2 ).toReadOnly().setName( 'cloudColumnTopRead' );
+	private columnKernel: THREE.ComputeNode | null = null;
 	private previousFlash = '';
 	private view: View | null = null;
 	private readonly viewNode = texture( new THREE.Texture() );
@@ -743,12 +834,69 @@ export class Clouds {
 		renderer.compute( weatherKernel );
 		renderer.compute( boundsKernel );
 		this.rainbowTable = makeRainbowTexture();
+		this.columnKernel = Fn( () => {
+
+			// the shares of the air's light under overcast's deck (VolumetricHaze.ts `scatterToward`):
+			// the forward lobe's light over an even deck's of the deck's irradiance (twice the lobe's
+			// radiance over the irradiance over pi, since an even deck fills half the sphere), on the
+			// key's light alone, and the diffuse part's share of that irradiance
+			const top = this.columnTopOf();
+			const keyTop = luminance( top.key ).toVar();
+			const level = keyTop.mul( this.forwardWeight.mul( this.forwardLevel ).add( 1 ) ).add( luminance( top.sky ) );
+			const lobeShare = keyTop.mul( this.forwardWeight ).mul( 2 ).div( max( level, 1e-20 ) ).toVar();
+			const diffuseShare = float( 1 ).sub( lobeShare.mul( this.forwardLevel ).mul( 0.5 ) );
+			this.columnStore.element( 0 ).assign( vec4( top.key, lobeShare ) );
+			this.columnStore.element( 1 ).assign( vec4( top.sky, diffuseShare ) );
+
+		} )().compute( 1, [ 1 ] ).setName( 'Clouds.ColumnTop' );
 		this.buildKernels();
 
 	}
 
 	/** Build the march and the panorama and shadow kernels for the current tier knobs; the view's
 	 * kernels follow on its next update. */
+	/** The horizontal unit vector toward the sun's azimuth, from which the rings of sky samples that
+	 * turn with the sun are laid (the horizon's and the deck top's, makeMarch and `columnTop`): the
+	 * offset keeps a sun at the zenith off the zero vector. */
+	private sunAzimuth(): V2 {
+
+		return normalize( vec2( this.atmosphere.sunDir.x.add( 1e-5 ), this.atmosphere.sunDir.z ) ).toVar();
+
+	}
+
+	/** The light on the low deck's tops over pi, which its column passes down (makeMarch), and the
+	 * shares of the air's light under the deck it sets (VolumetricHaze.ts `scatterToward`), as this
+	 * frame's `Clouds.ColumnTop` worked them out (`columnTopOf`). */
+	columnTop(): { key: V3; sky: V3; lobeShare: F; diffuseShare: F } {
+
+		const a = this.columnRead.element( 0 ), b = this.columnRead.element( 1 );
+		return { key: a.xyz, sky: b.xyz, lobeShare: a.w, diffuseShare: b.w };
+
+	}
+
+	/** The light on the low deck's tops over pi: the key's above the tops (`columnKey`) times its
+	 * height's cosine, and the drawn sky's over them (not the clouds' own night glow, which the
+	 * drawn sky has none of), a coarse cosine-weighted mean of its radiance over the upper
+	 * hemisphere (exact for a uniform sky): two rings, 30 and 60 degrees from the zenith, of four
+	 * azimuths from the sun's, weighted alike. */
+	private columnTopOf(): { key: V3; sky: V3 } {
+
+		const toward = this.sunAzimuth();
+		const sky = vec3( 0 ).toVar();
+		for ( const zenith of [ 30, 60 ] ) {
+
+			const up = Math.cos( zenith * Math.PI / 180 ), out = Math.sin( zenith * Math.PI / 180 );
+			for ( const [ c, n ] of [ [ 1, 0 ], [ 0, 1 ], [ - 1, 0 ], [ 0, - 1 ] ] ) {
+
+				sky.addAssign( this.atmosphere.skyRadiance( vec3( toward.x.mul( c ).sub( toward.y.mul( n ) ).mul( out ), up, toward.x.mul( n ).add( toward.y.mul( c ) ).mul( out ) ), false ) );
+
+			}
+
+		}
+		return { key: this.columnKey.rgb.mul( max( this.lightDir.y, 0 ) ).mul( 1 / Math.PI ), sky: sky.mul( 1 / 8 ) };
+
+	}
+
 	private buildKernels(): void {
 
 		const shape = this.shape!, weather = this.weather!, bounds = this.bounds!, synoptic = this.synoptic!;
@@ -907,10 +1055,6 @@ export class Clouds {
 		};
 
 		const skyAt = ( rd: V3 ) => this.atmosphere.skyRadiance( rd, false ).add( this.nightAmbient.rgb );
-		// The horizontal unit vector toward the sun's azimuth, from which the rings of sky samples
-		// that turn with the sun are laid (the horizon's, the deck top's): the offset keeps a sun at
-		// the zenith off the zero vector.
-		const sunAzimuth = () => normalize( vec2( this.atmosphere.sunDir.x.add( 1e-5 ), this.atmosphere.sunDir.z ) ).toVar();
 		// The horizon sky a cloud's base sees is the whole ring round it, not the side toward the
 		// sun: a low sun's orange glow fills a short arc of that ring, so the ring's average is far
 		// paler, and the sun's own colour reaches the clouds through their direct light. The
@@ -919,7 +1063,7 @@ export class Clouds {
 		// so the average moves smoothly with it.
 		const horizonRing = () => {
 
-			const toward = sunAzimuth();
+			const toward = this.sunAzimuth();
 			const sum = vec3( 0 ).toVar();
 			Loop( HORIZON_RING, ( { i } ) => {
 
@@ -1182,13 +1326,10 @@ export class Clouds {
 			// light gain. Shaded: the ambient factor, tinted per channel toward the opacity and toned
 			// on its log luminance, x the Rayleigh in-scatter under its phase (desaturated) x the
 			// earth's shadow there x each body's illuminance x the ambient gain; plus the night's own
-			// glow. Under the low deck's share, the column light x the irradiance on the deck's top
-			// over pi, with no gain, tint or tone: the key's light above the tops (`columnKey`) times
-			// its cosine there, and the drawn sky's over the top (not the clouds' own night glow, which
-			// the drawn sky has none of), a coarse cosine-weighted mean of its radiance over the
-			// upper hemisphere (exact for a uniform sky): two rings, 30 and 60 degrees from the
-			// zenith, of four azimuths from the sun's, weighted alike. It is near grey: the shaded deck loses the
-			// Rayleigh sky's blue. The factors are sums over the march, premultiplied by the opacity.
+			// glow. Under the low deck's share, the column light x the light on the deck's top over pi
+			// (`columnTop`: the key's and the drawn sky's), with no gain, tint or tone, in its angular
+			// form. It is near grey: the shaded deck loses the Rayleigh sky's blue. The factors are
+			// sums over the march, premultiplied by the opacity.
 			If( directLight.add( ambientLight ).add( columnLight ).greaterThan( 0 ), () => {
 
 				const chroma = ( c: V3 ) => c.div( max( luminance( c ), 1e-20 ) );
@@ -1206,20 +1347,16 @@ export class Clouds {
 				color.assign( lit.add( shade.mul( skyLight ) ) );
 				If( this.lowShare.greaterThan( 0 ), () => {
 
-					const toward = sunAzimuth();
-					const topSky = vec3( 0 ).toVar();
-					for ( const zenith of [ 30, 60 ] ) {
-
-						const up = Math.cos( zenith * Math.PI / 180 ), out = Math.sin( zenith * Math.PI / 180 );
-						for ( const [ c, n ] of [ [ 1, 0 ], [ 0, 1 ], [ - 1, 0 ], [ 0, - 1 ] ] ) {
-
-							topSky.addAssign( this.atmosphere.skyRadiance( vec3( toward.x.mul( c ).sub( toward.y.mul( n ) ).mul( out ), up, toward.x.mul( n ).add( toward.y.mul( c ) ).mul( out ) ), false ) );
-
-						}
-
-					}
-					const top = this.columnKey.rgb.mul( max( this.lightDir.y, 0 ) ).mul( 1 / Math.PI ).add( topSky.mul( 1 / 8 ) );
-					color.addAssign( top.mul( columnLight.mul( this.lowShare ) ) );
+					// the column's light over directions (see FORWARD_WEIGHT): the diffuse law over the
+					// key's light and the drawn sky's, and the forward lobe added on the key's alone (the
+					// sky's has no one direction)
+					const top = this.columnTop();
+					const key = top.key.toVar();
+					const diffuse = max( rd.y, 0 ).mul( 6 / 7 ).add( 3 / 7 ).toVar();
+					const k = this.forwardLobe;
+					const lobe = float( 1 ).sub( k.mul( k ) ).div( max( float( 1 ).add( k.mul( k ) ).sub( dot( rd, this.lightDir ).mul( k ).mul( 2 ) ), 1e-3 ).pow( 1.5 ) );
+					const light = key.add( top.sky ).mul( diffuse ).add( key.mul( lobe.mul( this.forwardWeight ) ) );
+					color.addAssign( light.mul( columnLight.mul( this.lowShare ) ) );
 
 				} );
 
@@ -1827,6 +1964,13 @@ export class Clouds {
 		this.camXZ.value.set( position.x, position.z );
 		this.windN.value.copy( this.cirrusAxis.value );
 		this.updateLightTaps();
+		// The deck top's light and shares only under a low deck's share: without one every term they
+		// feed is multiplied away (the march's and the panorama's reads sit in branches on lowShare,
+		// the haze's in a mix by overcast's share, 0 wherever lowShare is), and the dispatch at the
+		// frame's head costs 1 to 3 % of the GPU's frame on the horizon views. The share is set
+		// (`setDeck`) before this in every frame and bake, so a front or a jump into a clouded sky
+		// dispatches it in its first frame, before any reader.
+		if ( this.lowShare.value > 0 ) renderer.compute( this.columnKernel! );
 		// Panorama: an ordered pattern spreads each frame's texels over the map. A full refresh runs
 		// every phase through the same kernel, so a refreshed map matches a progressive one.
 		const full = this.needsFull;
@@ -2410,6 +2554,7 @@ export class Clouds {
 		this.cirrusFibres?.dispose();
 		this.partialKernel?.dispose();
 		this.shadowKernel?.dispose();
+		this.columnKernel?.dispose();
 		this.disposeView();
 
 	}
@@ -2527,7 +2672,7 @@ export class Clouds {
 
 		await this.init( renderer );
 		const view = this.view;
-		const kernels = [ this.partialKernel!, this.shadowKernel! ];
+		const kernels = [ this.columnKernel!, this.partialKernel!, this.shadowKernel! ];
 		if ( view ) kernels.push( view.kernels.trace, view.kernels.high, view.kernels.box, ...view.kernels.resolve );
 		await renderer.compileComputeAsync( kernels );
 
