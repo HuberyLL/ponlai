@@ -348,8 +348,9 @@ export interface MotionIssue { pass: string; object: string; material: string; i
  * scene it draws, and whether its MRT keeps the velocity, the overlay's) that would leave a wrong or
  * missing velocity:
  * - a fragmentNode without a velocity output (`outputStruct`), or a vertexNode without a velocity of
- *   its own (`velocityOutput`): under an MRT with a velocity its pipeline has an output too few, or
- *   its motion is not where its vertices are;
+ *   its own (`velocityOutput`, or a fragmentNode's `outputStruct` that writes it, as the water's
+ *   does): under an MRT with a velocity its pipeline has an output too few, or its motion is not
+ *   where its vertices are;
  * - an animated positionNode (`userData.motion = 'animated'`, or a wind displacement) without its
  *   previous position (`userData.previousPosition`): its own motion is missing, camera and object
  *   motion only;
@@ -371,9 +372,10 @@ export function motionCheck( passes: { pass: string; scene: THREE.Object3D; keep
 				const add = ( issue: string ) => issues.push( { pass, object: object.name || object.type, material: m.name || m.type, issue } );
 				const own = m.mrtNode?.has( 'velocity' ) === true;
 				const fragment = m.fragmentNode as ( THREE.Node & { isOutputStructNode?: boolean; members?: unknown[] } ) | null;
-				if ( fragment && ! ( fragment.isOutputStructNode && ( fragment.members?.length ?? 0 ) >= 2 ) ) add( 'fragmentNode without a velocity output' );
+				const writes = fragment?.isOutputStructNode === true && ( fragment.members?.length ?? 0 ) >= 2;
+				if ( fragment && ! writes ) add( 'fragmentNode without a velocity output' );
 				if ( keeps ) continue;
-				if ( m.vertexNode && ! own ) add( 'vertexNode without a velocity of its own' );
+				if ( m.vertexNode && ! own && ! writes ) add( 'vertexNode without a velocity of its own' );
 				if ( own || m.positionNode === null || m.userData.previousPosition === true ) continue;
 				const animated = m.userData.motion === 'animated' || m.userData.windDisplacement !== undefined;
 				if ( animated ) add( 'animated without a previous position: camera and object motion only' );

@@ -71,7 +71,9 @@ import { localLightsPass } from '../lighting/LocalLights.ts';
 //     half the render's pixel density (ocean/Refraction.ts; the water's refraction source where the
 //     opaque image does not hold the floor: behind what stands above the water, and off the screen)
 //   water ── back into sceneRT, depth-tested per sample against the opaque samples
-//   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included)
+//   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included: sample
+//     0's, or the nearest sample's where sample 0 sees the sky, so a pixel is sky only where all its
+//     samples are)
 //   rain ── into sceneRT (its multisampled colour and depth are then discarded: nothing reads them;
 //     without rain the water discards the colour and the surface resolve's read keeps the depth)
 //   haze (weather/VolumetricHaze.ts): its froxel grid's shadow kernel (skipped while a rest holds it)
@@ -222,7 +224,8 @@ import { localLightsPass } from '../lighting/LocalLights.ts';
 // - The water cannot sample the target it draws into: it reads `opaqueRT` and `depthRT` (sample 0,
 //   and the farthest sample for what lies behind the sea at an edge pixel), and the underwater
 //   pyramid (`textures.underwater`). Post passes read
-//   `surfaceRT`, the nearest surface's depth with the sea's included. Multisampled depth is read
+//   `surfaceRT`, the nearest surface's depth with the sea's included (sky only where every sample
+//   of the pixel is: the surface resolve). Multisampled depth is read
 //   with `textureLoad`, one sample at a time (the sample index in its level argument);
 //   single-sampled, that argument is a mip level, so load sample 0 only. View z below -9e4 is sky.
 // - In a full-screen pass the camera nodes are the pass's own camera: the scene camera's matrices
@@ -1126,9 +1129,23 @@ export class Pipeline {
 
 		} )();
 		this.refractionMaskQuad = new THREE.QuadMesh( maskMat );
-		// the nearest surface's view z
+		// The nearest surface's view z: sample 0's, but the nearest sample's where sample 0 sees the sky
+		// and another sample a surface, so a pixel is sky only where all its samples are. Such an edge
+		// pixel's colour holds the surface's samples unhazed (the haze composite fogs everything but
+		// the sky, which fogs itself): the composite fogs it at the surface's distance, and the sky's
+		// share then takes the air it already has once more, which leaves the hazy sky at the horizon
+		// nearly as it was. Read by sample 0 alone, the sea's far edge (MSAA's sample 0 lies near the
+		// pixel's top, in the sky) stayed unhazed along the horizon's row, a dark line.
 		const surfaceMat = new THREE.NodeMaterial();
-		surfaceMat.fragmentNode = Fn( () => vec4( viewZ( screenCoordinate.xy, depthSample( screenCoordinate.xy, 0 ) ) ) )();
+		surfaceMat.fragmentNode = Fn( () => {
+
+			const coord = screenCoordinate.xy;
+			const d0 = depthSample( coord, 0 ).toVar();
+			if ( SCENE_SAMPLES !== 4 ) return vec4( viewZ( coord, d0 ) );
+			const near = min( min( d0, depthSample( coord, 1 ) ), min( depthSample( coord, 2 ), depthSample( coord, 3 ) ) ).toVar();
+			return vec4( viewZ( coord, select( d0.lessThan( 0.999999 ), d0, near ) ) );
+
+		} )();
 		this.surfaceQuad = new THREE.QuadMesh( surfaceMat );
 
 		// ---- composite: the scene target holds the opaque image with the sea and the rain drawn over it

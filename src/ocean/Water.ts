@@ -11,7 +11,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld, positionPrevious,
-	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
+	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, modelViewMatrix, modelViewProjection, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
 	float, int, bool, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
 	abs, fwidth, reflect, refract, select, step, dFdx, dFdy, perspectiveDepthToViewZ, cameraNear, cameraFar, luminance, property,
 } from 'three/tsl';
@@ -105,8 +105,14 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 // lifted hit (traceSSR), the soft line where the surface cuts the rock, the motion vectors, the
 // rain's ripples and the storm's foam (parked weathers), and the open sea's deepening past the
 // shelf (OPEN_DEEPENING), which fades the floor's light out before the far floor's edge.
-// The sea continues to the horizon (a skirt around the wave grid, SKIRT_RADIUS); the camera's far
-// plane and the sky-depth thresholds (-9e4; the resolved sky is -1e5) stay beyond it.
+// The sea continues to the horizon: a skirt around the wave grid out to SKIRT_RADIUS, whose outer
+// ring stands at the eye's height (`onHorizon`), so from any height the sea's far edge meets the
+// sky at the eye's level, where the dome's horizon lies. Left flat, the ring stood a little under
+// it (from 190 m some 0.3 degrees, from 12 m a fraction of a pixel), and the dome's panorama under
+// the horizon showed between the two as a band with a step at the sea's edge. The camera's far
+// plane and the sky-depth thresholds (-9e4; the resolved sky is -1e5) stay beyond the skirt. The
+// pixel row the horizon crosses holds samples of both: the haze composite fogs it as the sea
+// (post/Pipeline.ts, the surface resolve), else that row kept the far sea unhazed, a dark line.
 //
 // Limits to keep in mind:
 // - WebGPU guarantees 16 sampled textures per stage (a texture past them fails pipeline creation),
@@ -222,6 +228,16 @@ const rotate = ( v: V2, angle: number ) => vec2( v.x.mul( Math.cos( angle ) ).su
 
 // The sea continues to this distance (metres), well past the horizon for any review camera.
 const SKIRT_RADIUS = 40000;
+// 1 on the skirt's outer ring (`xz` undisplaced), which stands at the eye's height (see the header),
+// 0 elsewhere. The vertex stage raises the ring in its clip position alone (`vertexNode`), built from
+// the grid point (the skirt carries no waves), and leaves the surface's position as it is: any second
+// use of the position, even one that left every other vertex's value unchanged, let the compiler
+// round the whole sea's positions another way, and the near sea's reflection march flipped at
+// scattered pixels. The ring's fragments shade the level sea under it, a fraction of a degree away
+// (the motion vectors take the raised ring). The last row of the skirt, some 34 to 40 km out, rises to
+// the eye; its rays reach the sea's far edge through less of the low haze than a level sea's would,
+// which from 190 m leaves its top rows a level or two darker than the rows under them.
+const onHorizon = ( xz: V2 ) => step( SKIRT_RADIUS * 0.999, max( abs( xz.x ), abs( xz.y ) ) );
 
 // The longest step of the scene clock between two rendered frames that is still motion; a longer
 // one (or a step back) is a seek, which has none (as StormSea's live step).
@@ -584,7 +600,8 @@ export class Water {
 
 		// A skirt continues the grid's outer edge to the horizon in widening rows. Without it the
 		// sea stopped a couple of degrees below the horizon and a band of the sky's lower panorama
-		// showed between them. Its inner row is the grid's boundary, so the seam is exact.
+		// showed between them. Its inner row is the grid's boundary, so the seam is exact; its outer
+		// row the vertex stage raises to the eye (`onHorizon`).
 		const ring: number[] = [];
 		for ( let i = 0; i < n; i ++ ) ring.push( i ); // z = -size / 2
 		for ( let j = 0; j < n; j ++ ) ring.push( j * ( n + 1 ) + n ); // x = +size / 2
@@ -662,6 +679,18 @@ export class Water {
 		const displaced = vec3( xz.x.add( d.x ), shared.waterLevel.add( d.y )
 			.add( shoreWaves.surfaceAt( xz.add( d.xz ), shared.time ).x ), xz.y.add( d.z ) ).toVar();
 		material.positionNode = displaced;
+		// the skirt's outer ring at the eye's height (`onHorizon`)
+		material.vertexNode = Fn( () => {
+
+			const clip = ( modelViewProjection as THREE.Node<'vec4'> ).toVar();
+			If( onHorizon( xz ).greaterThan( 0.5 ), () => {
+
+				clip.assign( cameraProjectionMatrix.mul( modelViewMatrix.mul( vec4( xz.x, cameraPosition.y, xz.y, 1 ) ) ) );
+
+			} );
+			return clip;
+
+		} )();
 		if ( TEMPORAL ) {
 
 			// (motion vectors: the note at the top) the vertex a step of the clock ago, seen from the
@@ -680,11 +709,14 @@ export class Water {
 			// (paused or across a cut the field baked before is not the previous frame's)
 			const shorePrevious = mix( shoreWaves.surfaceAt( shoreAt, shared.time ).x, shoreWaves.previousSurfaceAt( shoreAt ).x, this.shoreHistory );
 			const previous = vec3( xz.x.add( dp.x ), shared.waterLevel.add( dp.y ).add( shorePrevious ), xz.y.add( dp.z ) );
+			// (the skirt's outer ring at the eye's height then and now, as the clip position has it; the
+			// position stays the surface's, see `onHorizon`)
+			const raised = ( p: V3, eye: F ) => vec3( p.x, mix( p.y, eye, onHorizon( xz ) ), p.z );
 			// Weights of exactly 0 or 1, not select(): TSL turns a select of large operands into
 			// branches, and `displaced`, first built inside one, was then declared in it only.
 			material.positionNode = Fn( () => {
 
-				positionPrevious.assign( mix( displaced, previous, this.ownMotion ) );
+				positionPrevious.assign( mix( raised( displaced, cameraPosition.y ), raised( previous, motionUniforms.previousCameraPosition.y ), this.ownMotion ) );
 				return displaced;
 
 			} )();
