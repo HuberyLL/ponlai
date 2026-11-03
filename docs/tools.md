@@ -369,7 +369,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `@night`), the sky's light `sky.light.r@high` (`g`, `b`; `@low`, `@golden`, `@dusk`, `@morning`, `@dawn`,
   `@cloudyHigh`, `@night`) and the clear sky's gain over it `sky.clear.gain@high` (`@horizon`,
   `@golden`, `@late`, `@low`, the rising sun's `@dawn`, `@early`, `@morning`), the
-  key's colour at a low sun `sky.key.hueDepth`, `reddens`, `yellows`, the near air
+  key's colour at a low sun `sky.key.hueDepth` (the rising sun's `dawnHueDepth`), `reddens`,
+  `yellows`, the near air
   `sky.weather.nearDensity@clear` (`nearStart`, `nearEnd`; `@fair`, `@cloudy`, `@overcast`) and the
   land's share of the sky's light `lighting.relight.skyGain@high` (`@low`, `@golden`, `@cloudy`,
   `@cloudyBlue`, `@night`) and its gain under overcast `lighting.relight.overcastLand`, a low

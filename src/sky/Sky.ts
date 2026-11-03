@@ -640,9 +640,14 @@ const lendIsland = Fn( ( [ light, tint, gain ]: [ V3, V4, F ] ) => {
 // Art direction: within a few degrees of the horizon the sun shines through twenty to forty air
 // masses and its light turns an almost pure red (red/blue above 100 at one degree), which paints
 // the island like lava. The optical depth that sets the key's hue is capped softly past about
-// four degrees (`sky.key.hueDepth`), while its luminance keeps the full extinction: a low sun stays
-// orange red (red/green about 2.1 from six degrees to the golden hour and 1.8 at the horizon,
-// red/blue at most about 7) and still dims as it sets. Above that the key's hue is
+// six degrees (`sky.key.hueDepth`), while its luminance keeps the full extinction: a low sun stays
+// orange red (red/green about 2.2 at six degrees, 2.6 at the golden hour and 2.4 at the horizon,
+// red/blue at most about 12) and still dims as it sets. The cap stands where it holds the golden
+// hour's sunlit faces at a full orange without the extra chroma the clean air aloft gives the key
+// (Atmosphere.ts). The rising sun's cap is lower (`sky.key.dawnHueDepth`, binding from about ten
+// degrees down): the morning's warm colour lies in the sun's road and the low streaks, and a face
+// turned to the rising sun takes a pale warm light, far less orange than the evening's at the same
+// height (red/green at most about 1.75, red/blue about 4). Above that the key's hue is
 // chosen rather than the air's own course, which reddens evenly with the air mass: a warm
 // white while the sun is high (KEY_WHITE: red/green 1.15, blue/green 0.95 at noon, 1.17 and 0.9
 // at 30 degrees) that loses its blue first (0.8 at 20 degrees, red/green 1.2) and turns orange
@@ -650,7 +655,8 @@ const lendIsland = Fn( ( [ light, tint, gain ]: [ V3, V4, F ] ) => {
 // change of it in part, by the air's depth in green (`sky.key.reddens` for red/green, `.yellows` for
 // blue/green: about none at noon, two thirds at that depth, all of it past twice it). The sky and
 // clouds keep their own colours, and the key's luminance is the sun tint's.
-const sunHueDepth = tune( 'sky.key.hueDepth', 2.03, { min: 1, max: 4, onChange: markSkyRetune } );
+const sunHueDepth = tune( 'sky.key.hueDepth', 1.6, { min: 1, max: 4, onChange: markSkyRetune } );
+const dawnHueDepth = tune( 'sky.key.dawnHueDepth', 0.8, { min: 0.3, max: 4, onChange: markSkyRetune } );
 // the key's white: linear red/green and blue/green while the sun is high
 const KEY_WHITE = [ 1.15, 0.96 ] as const;
 const keyReddens = tune( 'sky.key.reddens', 0.75, { min: 0.3, max: 1.5, onChange: markSkyRetune } );
@@ -662,12 +668,12 @@ const luma = ( c: THREE.Color ) => c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722;
 // The key's colour per unit of the sun's illuminance, into `transmittance`: its hue KEY_WHITE
 // with the share of the air's change in each ratio its depth gives (the depth capped), its
 // luminance the air's full extinction of `tint`.
-function keyHue( transmittance: THREE.Color, tint: THREE.Color ): THREE.Color {
+function keyHue( transmittance: THREE.Color, tint: THREE.Color, rising: boolean ): THREE.Color {
 
 	const { r, g, b } = transmittance;
 	if ( g <= 0 ) return transmittance.setRGB( 0, 0, 0 );
 	const depth = - Math.log( g );
-	const scale = 1 / Math.pow( 1 + Math.pow( depth / sunHueDepth(), 6 ), 1 / 6 );
+	const scale = 1 / Math.pow( 1 + Math.pow( depth / ( rising ? dawnHueDepth() : sunHueDepth() ), 6 ), 1 / 6 );
 	const share = ( onset: number ) => scale * ( 1 - Math.exp( - Math.pow( depth / onset, 2.5 ) ) );
 	const before = luma( transmittance.clone().multiply( tint ) );
 	transmittance.setRGB( KEY_WHITE[ 0 ] * Math.pow( r / g, share( keyReddens() ) ), 1, KEY_WHITE[ 1 ] * Math.pow( b / g, share( keyYellows() ) ) );
@@ -1543,7 +1549,7 @@ export class Sky {
 		// Cap the hue of the air's extinction first, then fade by the disk's visible share, so the
 		// setting disk only dims the key and does not bleach it.
 		const sunVisible = this.atmosphere.sunVisibleShareToSun();
-		if ( sunVisible > 0 ) this.sunColor.copy( keyHue( this.atmosphere.transmittanceToSun(), this.sunTint ) ).multiplyScalar( sunVisible * illuminance );
+		if ( sunVisible > 0 ) this.sunColor.copy( keyHue( this.atmosphere.transmittanceToSun(), this.sunTint, this.rising ) ).multiplyScalar( sunVisible * illuminance );
 		else this.sunColor.setRGB( 0, 0, 0 );
 		// The key turns from the sun to the moon where it is drawn (KeyLift `moonDirection`): over
 		// the handoff its turn along the orbits gains, in step, the turn from the moon's orbit to
