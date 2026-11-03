@@ -864,7 +864,7 @@ def main():
     common(p)
     p.add_argument("--pct", default="1,5,50,95,99")
     p.add_argument("--oklab", action="store_true", help="the median Oklab L, C and hue")
-    p.add_argument("--split", action="store_true", help="the means under and over the median L, of the darkest 5 % and the brightest 10 %")
+    p.add_argument("--split", action="store_true", help="the means under and over the median L, of the darkest 5 %% and the brightest 10 %%")
     p.add_argument("--cover", action="store_true", help="the share of red pixels (a grassMask capture's blades)")
     p.add_argument("--deck", action="store_true", help="the cloud deck's measures on named sky regions and any --box")
     p.add_argument("--deck-boxes", default="auto", choices=["auto", "h", "sun", "none"], help="with --deck, the named regions (auto: by the file name, -h or -sun)")
