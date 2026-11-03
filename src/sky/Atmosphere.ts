@@ -11,7 +11,7 @@ import {
 } from 'three/tsl';
 import { SCENE_RADIANCE_SCALE, SUN_ANGULAR_RADIUS, SUN_SETTING_RADIUS } from '../lighting/Radiometry.ts';
 import { bandPush, bandToDisplay } from './BandMatrix.ts';
-import { tuneUniform } from '../debug/Tune.ts';
+import { tuneApply, tuneUniform } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 
 // Hillaire 2020, "A Scalable and Production Ready Sky and Atmosphere Rendering Technique":
@@ -443,7 +443,11 @@ export class Atmosphere {
 	/** the earth's shadow over the seen sky (`skyShadow`): its depth and its softness (degrees) */
 	readonly shadowDepth = tuneUniform( 'sky.atmosphere.shadowDepth', SKY_SHADOW_DEPTH, { min: 0, max: 1, onChange: markSkyRetune } );
 	readonly shadowSoftness = tuneUniform( 'sky.atmosphere.shadowSoftness', SKY_SHADOW_SOFTNESS, { min: 0.5, max: 15, onChange: markSkyRetune } );
-	readonly ozoneScale = uniform( 1 );
+	/** the ozone's absorption per band (per km at its density's peak, OZONE) and its column's scale:
+	 * tunable on debug pages (`sky.atmosphere.ozoneR`, `ozoneG`, `ozoneB`, `sky.atmosphere.ozone`),
+	 * each a change of the medium that rebakes the tables and the environment */
+	readonly ozone = uniform( new THREE.Vector3( ...OZONE ) );
+	readonly ozoneScale = tuneUniform( 'sky.atmosphere.ozone', 1, { min: 0, max: 4, onChange: markSkyRetune } );
 	readonly groundAlbedo = uniform( new THREE.Color( 0.06, 0.08, 0.1 ) );
 	readonly viewHeight = uniform( RG + 0.002 );
 	// the moon's direction, for the moon's slices of the in-scatter table
@@ -472,6 +476,14 @@ export class Atmosphere {
 
 	constructor( readonly renderer: THREE.WebGPURenderer ) {
 
+		for ( const [ c, band ] of [ 'R', 'G', 'B' ].entries() ) tuneApply( `sky.atmosphere.ozone${ band }`, OZONE[ c ], { min: 0, max: 0.01 }, ( value ) => {
+
+			if ( this.ozone.value.getComponent( c ) === value ) return;
+			this.ozone.value.setComponent( c, value );
+			markSkyRetune();
+
+		} );
+
 		// RGB is molecular scattering, A is aerosol scattering. Packing allows one function call
 		// per march sample without a custom shader struct or shader-language source strings.
 		const mediumScattering = Fn( ( [ h, rayleighScale, mieScale ]: [ F, F, F ] ) => {
@@ -484,14 +496,14 @@ export class Atmosphere {
 			{ name: 'h', type: 'float' }, { name: 'rayleighScale', type: 'float' }, { name: 'mieScale', type: 'float' },
 		] } );
 
-		const extinction = Fn( ( [ h, ray, mie, ozoneScale ]: [ F, V3, F, F ] ) => {
+		const extinction = Fn( ( [ h, ray, mie, ozoneBands, ozoneScale ]: [ F, V3, F, V3, F ] ) => {
 
 			const ozone = max( float( 1 ).sub( abs( h.sub( 25 ) ).div( 15 ) ), 0 );
-			return ray.add( mie.mul( 4.440 / 3.996 ) ).add( vec3( ...OZONE ).mul( ozone ).mul( ozoneScale ) );
+			return ray.add( mie.mul( 4.440 / 3.996 ) ).add( ozoneBands.mul( ozone ).mul( ozoneScale ) );
 
 		} ).setLayout( { name: 'atmoExtinction', type: 'vec3', inputs: [
 			{ name: 'h', type: 'float' }, { name: 'ray', type: 'vec3' }, { name: 'mie', type: 'float' },
-			{ name: 'ozoneScale', type: 'float' },
+			{ name: 'ozoneBands', type: 'vec3' }, { name: 'ozoneScale', type: 'float' },
 		] } );
 
 		// These JavaScript node factories inline texture accesses in the current material. The
@@ -525,7 +537,7 @@ export class Atmosphere {
 				const p = ro.add( rd.mul( float( i ).add( 0.5 ).mul( dt ) ) );
 				const h = length( p ).sub( RG ).toVar();
 				const m = mediumScattering( h, this.rayleighScale, this.mieDensity ).toVar();
-				od.addAssign( extinction( h, m.rgb, m.a, this.ozoneScale ).mul( dt ) );
+				od.addAssign( extinction( h, m.rgb, m.a, this.ozone, this.ozoneScale ).mul( dt ) );
 
 			} );
 			return vec4( exp( od.negate() ), 1 );
@@ -562,7 +574,7 @@ export class Atmosphere {
 				const p = ro.add( rd.mul( float( j ).add( 0.3 ).mul( dt ) ) ).toVar();
 				const pr = length( p ).toVar(), h = pr.sub( RG ).toVar();
 				const m = mediumScattering( h, this.rayleighScale, this.mieDensity ).toVar();
-				const ext = extinction( h, m.rgb, m.a, this.ozoneScale ).toVar();
+				const ext = extinction( h, m.rgb, m.a, this.ozone, this.ozoneScale ).toVar();
 				const scattering = m.rgb.add( m.a ).toVar();
 				const cosSunP = dot( p.div( pr ), sun ).toVar();
 				const TSun = sampleTransmittance( pr, cosSunP ).toVar();
@@ -624,7 +636,7 @@ export class Atmosphere {
 				const p = ro.add( rd.mul( mix( ta, tb, 0.3 ) ) ).toVar();
 				const pr = length( p ).toVar(), h = max( pr.sub( RG ), 0 ).toVar();
 				const m = mediumScattering( h, this.rayleighScale, this.mieDensity ).toVar();
-				const ext = extinction( h, m.rgb, m.a, this.ozoneScale ).toVar();
+				const ext = extinction( h, m.rgb, m.a, this.ozone, this.ozoneScale ).toVar();
 				// the azimuths over half a turn: the view lies in a vertical plane, so the other half
 				// mirrors them
 				const phi = float( j ).add( 0.5 ).mul( Math.PI / TABLE_AZIMUTHS );
@@ -967,7 +979,7 @@ export class Atmosphere {
 			const ray = Math.exp( - h / 8 ) * this.rayleighScale.value;
 			const mie = Math.exp( - h / 1.2 ) * this.mieScale.value * this.aerosol.value * 4.440e-3;
 			const ozone = Math.max( 0, 1 - Math.abs( h - 25 ) / 15 ) * this.ozoneScale.value;
-			for ( let c = 0; c < 3; c ++ ) opticalDepth[ c ] += ( RAYLEIGH[ c ] * ray + mie + OZONE[ c ] * ozone ) * dt;
+			for ( let c = 0; c < 3; c ++ ) opticalDepth[ c ] += ( RAYLEIGH[ c ] * ray + mie + this.ozone.value.getComponent( c ) * ozone ) * dt;
 
 		}
 		return new THREE.Color( Math.exp( - opticalDepth[ 0 ] ), Math.exp( - opticalDepth[ 1 ] ), Math.exp( - opticalDepth[ 2 ] ) );
@@ -987,7 +999,7 @@ export class Atmosphere {
 
 		const albedo = this.groundAlbedo.value;
 		const staticKey = [ this.rayleighScale.value, this.mieScale.value, this.aerosol.value, this.ozoneScale.value,
-			albedo.r, albedo.g, albedo.b ].join( ',' );
+			...this.ozone.value.toArray(), albedo.r, albedo.g, albedo.b ].join( ',' );
 		const cutKey = [ staticKey, this.sunDir.value.y, this.moonDir.value.y, this.viewHeight.value, this.fogReach.value ].join( ',' );
 		if ( cutKey === this.cutKey ) return;
 
