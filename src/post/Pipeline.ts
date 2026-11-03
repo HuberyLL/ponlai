@@ -510,13 +510,15 @@ export const DESATURATION: DayKeys<DesaturationKey> = tuneKeys( 'post.desaturate
  * (all of it), read through the white balance (`balance`). */
 const COOL_FROM = tuneUniform( 'post.desaturate.coolFrom', 0, { min: - 1, max: 1 } );
 const COOL_TO = tuneUniform( 'post.desaturate.coolTo', 0.6, { min: - 1, max: 1 } );
-/** How cool the colour `c` (white balanced) is, 0 to 1 (COOL_FROM, COOL_TO). */
-const coolShare = Fn( ( [ c ]: [ V3 ] ) => {
+/** How cool the colour `c` (white balanced) is, 0 to 1 (`coolFrom`, `coolTo`: COOL_FROM, COOL_TO). The
+ * edges come in as inputs: a laid-out helper that reads uniforms in its body can be emitted with
+ * another material's uniform names (r186), which broke the rain's materials under taa. */
+const coolShare = Fn( ( [ c, coolFrom, coolTo ]: [ V3, F, F ] ) => {
 
 	const spread = max( max( c.r, c.g ), c.b ).sub( min( min( c.r, c.g ), c.b ) );
-	return smoothstep( COOL_FROM, COOL_TO, c.b.sub( c.r ).div( max( spread, 1e-6 ) ) );
+	return smoothstep( coolFrom, coolTo, c.b.sub( c.r ).div( max( spread, 1e-6 ) ) );
 
-} ).setLayout( { name: 'coolShare', type: 'float', inputs: [ { name: 'c', type: 'vec3' } ] } );
+} ).setLayout( { name: 'coolShare', type: 'float', inputs: [ { name: 'c', type: 'vec3' }, { name: 'coolFrom', type: 'float' }, { name: 'coolTo', type: 'float' } ] } );
 
 // The night's grade (art direction: a film's night, day for night): the meadow's greens turned
 // toward blue-green, the frame a touch silver-blue, the bloom stronger so the moon, its clouds and
@@ -1264,7 +1266,7 @@ export class Pipeline {
 
 			const c = lin.mul( exposure ).toVar();
 			// the desaturation (DESATURATION), before the local gain
-			c.addAssign( vec3( luminance( c ) ).sub( c ).mul( u.desaturate.mul( mix( float( 1 ), coolShare( u.balance.mul( c ) ), u.desaturateCool ) ) ) );
+			c.addAssign( vec3( luminance( c ) ).sub( c ).mul( u.desaturate.mul( mix( float( 1 ), coolShare( u.balance.mul( c ), COOL_FROM, COOL_TO ), u.desaturateCool ) ) ) );
 			if ( localTone && at ) c.assign( localTone.apply( c, at ) );
 			// the shade's contrast (SHADE_CONTRAST)
 			c.mulAssign( exp2( min( log2( max( luminance( c ), 1e-6 ) ).sub( log2( u.shadePivot ) ), 0 ).mul( u.shadeSlope ) ) );
