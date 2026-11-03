@@ -380,7 +380,10 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   take through the leaves over them `lighting.vegetation.leaf.through@high` (`@low`, `@golden`,
   `@cloudy`, `@night`) and what a leaf sends on of the key on its far face,
   `lighting.vegetation.leaf.back@high` alike, the sward's tint under a closed sky
-  `lighting.sward.tint.r` (`g`, `b`) and the crowns', `lighting.vegetation.leaf.tint.r` (`g`, `b`).
+  `lighting.sward.tint.r` (`g`, `b`) and the crowns', `lighting.vegetation.leaf.tint.r` (`g`, `b`);
+  the sea's mean reflection over the slopes no pixel resolves, the spread of those slopes
+  `sea.reflection.slopeScale` and the lift of its sky lobe `sea.reflection.lobeLift`
+  (`src/ocean/Water.ts` `REFLECTION_LOBE`).
 - The ambient grade (`src/lighting/AmbientGrade.ts`): `__PONLAI__.ambient.current` holds the five
   knobs the table gives for the sun and the weather now (also `D.ambient`), `table` the table's own
   output; `override = true` with `manual.<knob>` replaces it from the next frame (the GUI's Ambient

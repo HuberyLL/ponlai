@@ -506,9 +506,14 @@ comment where it is used.
   with the [cosine-weighted hemisphere sampler in PBRT](https://pbr-book.org/4ed/Sampling_Algorithms/Sampling_Multidimensional_Functions).
 - Filtered wave-slope moments: Marc Olano and Dan Baker,
   [*LEAN Mapping*](https://userpages.cs.umbc.edu/olano/papers/lean/) (I3D 2010).
-- Microfacet masking: Eric Heitz,
+- The sea's mean reflection over the slopes no pixel resolves, in `src/ocean/Water.ts`: the
+  visible facets weighted by their projected area and Smith's shadowing of the reflected rays, from
+  Eric Heitz,
   [*Understanding the Masking-Shadowing Function in Microfacet-Based BRDFs*](https://jcgt.org/published/0003/02/03/)
-  (JCGT 2014); the error-function approximation is Abramowitz and Stegun, equation 7.1.26.
+  (JCGT 2014); Smith's G1 for Gaussian (Beckmann) slopes in the rational form of Bruce Walter,
+  Stephen R. Marschner, Hongsong Li and Kenneth E. Torrance,
+  [*Microfacet Models for Refraction through Rough Surfaces*](https://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf)
+  (EGSR 2007); the error-function approximation is Abramowitz and Stegun, equation 7.1.26.
 - The shared specular BRDF, in `src/lighting/SurfaceBRDF.ts` and `src/lighting/EnvironmentBRDF.ts`:
   Smith's visibility for GGX in Schlick's form with k = alpha / 2, and the environment's specular
   as the split sum, the prefiltered environment times the environment BRDF integrated for the
