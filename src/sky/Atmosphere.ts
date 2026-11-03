@@ -24,13 +24,23 @@ import { markSkyRetune } from './SkyRetune.ts';
 // The aerosol scatters through one Cornette-Shanks lobe of anisotropy MIE_G, nothing else: no
 // isotropic base and no extra gain along long paths. The soft wide glow round the sun is that lobe
 // seen through the haze in front of the sky (weather/VolumetricHaze.ts), whose forward lobe takes
-// the same anisotropy. The anisotropy (0.63), the Rayleigh phase's forward lean and the polariser
-// were set together with the aerosol and the sky's gains (Sky.ts SKY_LIGHT). Left free, the
-// polariser ran to full strength, which blacks out the sky 90 degrees from the sun, so it was held
-// at the value it had before it ran there, 0.835, and the rest set around it.
-// The aerosol's amount is `mieScale` (our clear sea air) times a density ρ_M (`aerosol`, a tunable
-// set by the brightness of the sky round the sun, 6.89): one value for all weathers, applied wherever the medium is
-// (the bakes and the sun's transmittance), so a change rebakes the tables and the environment.
+// the same anisotropy. The Rayleigh phase's forward lean and the polariser were set together with
+// the aerosol and the sky's gains (Sky.ts SKY_LIGHT). Left free, the polariser ran to full
+// strength, which blacks out the sky 90 degrees from the sun, so it was held at the value it had
+// before it ran there, 0.835, and the rest set around it.
+// The aerosol's amount is `mieScale` (our clear sea air) times a density ρ_M (`aerosol`, a
+// tunable): one value for all weathers, applied wherever the medium is (the bakes and the sun's
+// transmittance), so a change rebakes the tables and the environment. The air aloft is clean, 1.75,
+// and the sun's aureole is carried by the lobe's anisotropy, 0.75, and by the haze's aerosol share
+// near the sea (HazeKeys.ts), not by the amount aloft. With four times as much aloft (6.89 at an
+// anisotropy of 0.63) the aerosol's extinction along the low sky's long rays darkened the sky's last
+// few degrees under the sky above them: on the horizon views the band over the horizon stood about
+// a quarter of the sky's lightness (Oklab L) under the sky 10 degrees up from sun -2 to 0, a dark
+// ribbon, and 0.06 - 0.08 over it at noon. At 1.75 the ribbon is gone: the band stands level with
+// the sky 10 degrees up at sun 0 and 0.1 - 0.15 over it from sun 2 up, the low sky brightening to
+// the horizon; the sun at the golden hour is less red. The band's level is the atmosphere's: the
+// haze over the horizon takes the horizon sky's colour (VolumetricHaze.ts), so its keys move the
+// band against the sky above it by a few hundredths at most.
 //
 // The sky's in-scatter is one table without azimuth or phase (Elek 2009, "Rendering
 // parametrizable planetary atmospheres with multiple scattering in real-time"): single plus
@@ -108,7 +118,7 @@ const _traced = new THREE.Vector3();
 
 export const SUN_ILLUMINANCE = 11;
 /** The aerosol's Cornette-Shanks anisotropy, the sky's and the haze's alike. */
-export const MIE_G = 0.63;
+export const MIE_G = 0.75;
 export { SUN_ANGULAR_RADIUS } from '../lighting/Radiometry.ts';
 
 type F = THREE.Node<'float'>;
@@ -382,7 +392,7 @@ export class Atmosphere {
 	 * (the absorption's share kept) in the bakes and the sun's transmittance, never as a gain on the
 	 * Mie row where it is read, which would leave out the extinction and over-brighten the horizon at
 	 * large scales */
-	readonly aerosol = tuneUniform( 'sky.atmosphere.aerosol', 6.89, { min: 0.5, max: 40, scale: 'log', onChange: markSkyRetune } );
+	readonly aerosol = tuneUniform( 'sky.atmosphere.aerosol', 1.75, { min: 0.5, max: 40, scale: 'log', onChange: markSkyRetune } );
 	private readonly mieDensity = this.mieScale.mul( this.aerosol );
 	readonly mieG = tuneUniform( 'sky.atmosphere.mieG', MIE_G, { min: 0.55, max: 0.9, onChange: markSkyRetune } );
 	/** the forward lean k of the sky's Rayleigh phase (`skyRayleighPhase`) */

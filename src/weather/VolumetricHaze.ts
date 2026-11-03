@@ -350,8 +350,8 @@ export const HAZE_DEFAULTS = {
 	// weather's fog (1/m: one unit sees 1 km, the threshold of fog, Koschmieder's 3.912 / 1000)
 	fogExtinction: 3.912 / 1000,
 	// the light: the medium's single-scattering albedo, the aerosol share's phase (a Cornette-Shanks
-	// lobe of the sky's aerosol anisotropy, Atmosphere.ts MIE_G, half its peak about 13 degrees off
-	// the sun and a 1/280 of it behind), the gain over both shares, and the half-width of the sun's
+	// lobe of the sky's aerosol anisotropy, Atmosphere.ts MIE_G, half its peak about 12 degrees off
+	// the sun and a 1/340 of it behind), the gain over both shares, and the half-width of the sun's
 	// rise over a froxel's horizon (degrees)
 	albedo: 1, anisotropy: MIE_G, gain: 1.87, horizon: 3,
 	// the ambient visibility: its floor under cover, and the half-width (metres) of its rise
