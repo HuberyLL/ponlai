@@ -48,6 +48,8 @@
 // set) scales the cirrus' gain alone, read the same way.
 // `lowKey = false` leaves the low sun's key as its transmittance gives it (sky/Sky.ts LOW_KEY), read
 // whenever the sky tracks the clock.
+// `clearSky = false` leaves the clear day's sky light without its gain against the key (sky/Sky.ts
+// CLEAR_SKY), read whenever the sky tracks the clock (an environment bake later).
 // `lowSun` (a number, or `true` for 1; off unless set) scales the low sun's warm light and
 // blue-violet shade (sky/Sky.ts lowSun), read every frame (the shade's at the next environment bake).
 // `keyLift = false` keeps the direct light and the sun's shadows on the low key's own direction

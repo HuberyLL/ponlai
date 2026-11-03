@@ -52,7 +52,8 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // the sunlight the clouds scatter many times does (trackClouds). By day the sky's light, the
 // sun's in-scattered light and the cirrus' sunlight, takes one gain
 // against the sun's own (SKY_LIGHT, an illuminance colour), which everything that reads the sky
-// takes; a cloud deck does not mute the clear sky's colour behind it. At night the clear sky is the
+// takes, and under a clear or fair day's sun another that holds it against the key (CLEAR_SKY);
+// a cloud deck does not mute the clear sky's colour behind it. At night the clear sky is the
 // moon's in-scatter, drawn with the moon's key light (MOON_KEY), and the stars: no airglow and no
 // night floor of its own. The moon, while it is up, is drawn and lights the sky (and through the
 // atmosphere's `moonDir` the clouds and the haze) from the night key's fixed direction, where the
@@ -60,10 +61,9 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // (`keyDir`) turns there over the handoff and holds there all night, so the water's glint and the
 // clouds' light see the moon where it is drawn; its phase keeps the orbit's
 // angle to the sun (`track`). The clouds take their own path between the two in the twilight, while
-// no light reaches them (CLOUD_TURN). After sunset the light
-// the sky lends the island takes a gain of its own (ISLAND_SKY), and under a clouded high sun a tint
-// of its own (CLOUD_LIGHT_TINT), which the sky the eye sees, the
-// sea's reflection of it and the sea's own body never take. The dome lays the air's haze over
+// no light reaches them (CLOUD_TURN). After sunset the light the sky lends the island takes a gain
+// of its own (ISLAND_SKY), and under a clouded high sun a tint of its own (CLOUD_LIGHT_TINT), which
+// the sky the eye sees, the sea's reflection of it and the sea's own body never take. The dome lays the air's haze over
 // itself (`fogDome`, VolumetricHaze.ts `skyHaze`): the clouds at the distance to their shell's middle
 // height (the weather's shell: CLOUD_SHELL, low under cloudy and overcast skies), under the low
 // deck's share at the march's own opacity-weighted depth (Clouds `sampleViewDepth`), the sky behind
@@ -464,6 +464,43 @@ const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'sky.l
 	night: { r: 0.045, g: 0.023, b: 0.028 },
 }, { r: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune }, g: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune }, b: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune } } );
 const _skyLight = { r: 0, g: 0, b: 0 };
+// The clear day's sky against the key. With SKY_LIGHT alone the key's illuminance at normal
+// incidence stood 50 - 72 times the sky's irradiance on level ground (the irradiance probe's: the
+// environment's sky with its clouds and the haze over it, before any gain of the land's own) from
+// 50 down to 6 degrees in the evening, 68 - 91 from 26 down to 7 in the morning, 30 - 45 at 4 and
+// 20 - 24 at 3: the island's shade was nearly black against its lit side, and the sky stood dark
+// against the key. Under a clear or fair day's sun the sky's light takes a gain of its own over
+// SKY_LIGHT (CLEAR_SKY), keyed by the sun's elevation, on every path SKY_LIGHT reaches (`skyGain`):
+// the sky the eye sees and the cirrus, the sea's reflection and its body, the clouds' and the haze's
+// sky light, the land's (the environment's source: the probes' harmonics, the specular atlas, the
+// islanders' fill) and the exposure's sky meter. So the sky the eye sees stays the sky that lights
+// and that the exposure meters (post/Exposure.ts). The sky's irradiance takes the gain whole (the
+// sky's light, the sun's in-scattered light and the haze's are all SKY_LIGHT's), so the keys are
+// the ratio with no gain over the one they hold: 12.1 - 15 from 3 degrees up on either side of the
+// day. The smoothstep between keys (DayKeys.ts) puts the ratio's highs midway, at 3.7 and 21 degrees
+// in the evening. Under 3 degrees the key falls faster than the sky by itself (the ratio 12.4 at 1.6
+// degrees with no gain), so the gain eases to none at the horizon (`horizon`): the twilight and the
+// night keep SKY_LIGHT's light, the ratio falling to about 9.5 at 2 degrees on the way. The gain
+// leaves by the weather's clouded share (Weather.ts `cloudedShare`): a cloudy or overcast sky keeps
+// the light it had.
+// Tunable on debug pages: `sky.clear.gain@<horizon|dawn|early|morning|golden|late|low|high>`.
+const CLEAR_SKY_HORIZON: DayKey<{ gain: number }> = { at: 0, name: 'horizon', values: { gain: 1 } };
+const CLEAR_SKY_HIGH: DayKey<{ gain: number }> = { at: 40, name: 'high', values: { gain: 4.0 } };
+const CLEAR_SKY: DayKeys<{ gain: number }> = tuneKeys( 'sky.clear', {
+	day: [ CLEAR_SKY_HORIZON, { at: 3, name: 'golden', values: { gain: 1.65 } }, { at: 6, name: 'late', values: { gain: 3.8 } }, { at: 12, name: 'low', values: { gain: 5.1 } }, CLEAR_SKY_HIGH ],
+	rising: [ CLEAR_SKY_HORIZON, { at: 3, name: 'dawn', values: { gain: 2.0 } }, { at: 6, name: 'early', values: { gain: 4.6 } }, { at: 12, name: 'morning', values: { gain: 6.6 } }, CLEAR_SKY_HIGH ],
+	night: { gain: 1 },
+}, { gain: { min: 0.25, max: 8, scale: 'log', onChange: markSkyRetune } } );
+const _clearSky = { gain: 1 };
+// CLEAR_SKY's gain at `elevation` under a sky of clouded share `cloud`: exactly 1 with the sun at or
+// under the horizon and under a cloudy or overcast sky (`flags=clearSky:false` leaves it 1, for A/Bs)
+function clearSky( elevation: number, rising: boolean, cloud: number ): number {
+
+	if ( debugFlags.clearSky === false ) return 1;
+	const day = keyed( CLEAR_SKY, elevation, 0, _clearSky, 0, rising ).gain;
+	return 1 + ( day - 1 ) * ( 1 - cloud );
+
+}
 // per kept sky, the share of the deck's optical depth its shadow is cast with (Weather.ts
 // `shadowDensity`, its preset's until tuned), blended by the weather's shares of the kept skies;
 // tunable on debug pages: `sky.weather.shadowDensity@<cloudy|overcast>`
@@ -566,7 +603,7 @@ const skyGain = ( elevation: number, rising: boolean, cloud: number, target: THR
 
 	if ( debugFlags.skyGain === false ) return target.setScalar( 1 );
 	const { r, g, b } = keyed( SKY_LIGHT, elevation, skyNight( elevation, rising, cloud ), _skyLight, cloud, rising );
-	return target.setRGB( r, g, b );
+	return target.setRGB( r, g, b ).multiplyScalar( clearSky( elevation, rising, cloud ) );
 
 };
 const _skyGain = new THREE.Color();
