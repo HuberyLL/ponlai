@@ -134,7 +134,9 @@ type V4 = THREE.Node<'vec4'>;
 //     share of it takes a gain (`cirrusNightAmbient`: `sky.night.cirrusAmbient`, 0 to 2, 1 as
 //     before). The cumulus' march takes the ambient ungained.
 //   - march: coarse steps until cloud is found, then fine ones; whole cells of the weather map
-//     that cannot reach the ray's height are skipped. Under a whole low deck the view's march ends
+//     that cannot reach the ray's height are skipped, the march going on past them at the pixel's
+//     own offset into a step (resumed at the cell's edge, the steps fell in phase across the
+//     pixels and drew rows of bands on a sharp base). Under a whole low deck the view's march ends
 //     where the haze lets 1/500 through (`haze`, the haze's medium: weather/HazeDepth.ts
 //     `hazeReach`), since the dome fogs that deck at the march's own depth: through a broken
 //     deck's gaps toward the horizon the rest of the shell lies tens of kilometres deep in haze.
@@ -1231,7 +1233,11 @@ export class Clouds {
 						const required = float( 1 ).sub( smoothstep( 0, this.baseWeatherEnd, highest ) ).mul( BASE_WEATHER );
 						If( maximumTop.lessThan( lowest.sub( this.edge ).add( this.edgeIn ) ).or( maximumWeather.lessThanEqual( required.sub( 0.1 ) ) ), () => {
 
-							t.assign( cellEnd.add( 0.05 ) );
+							// The march goes on past the cell at the pixel's own offset into a step:
+							// resumed at the cell's edge itself, every ray through the cell restarted on
+							// the same plane, their steps fell in phase across the pixels, and a sharp
+							// base (the low deck's lifted one) showed the steps as rows of bands.
+							t.assign( cellEnd.add( max( float( STEP ), cellEnd.mul( stepCone ).mul( 1.5 ) ).mul( jitter ).add( 0.05 ) ) );
 							Continue();
 
 						} );
