@@ -502,19 +502,32 @@ export const cloudBase = ( s: number ): number => CLOUD_SHELL[ s ].base;
 // at 20-30 degrees and 0.92 km at 30-45 (medians; p90 1.1-1.16 km) from the shell's 600 m, its
 // masses about 5.3 by 1.8 degrees in the 20-30 degree band (the luminance's correlation widths)
 // and some 330 m in plan at the base (the correlation's half distance); a share of 0.45 tore dark
-// specks into the thinnest columns; cloudy's margin is half again the cumulus' (0.15), which brings
-// the broken cloud's spread from 0.25 to 0.18-0.21 and its gradient's p99 from 0.43 to 0.34. A
-// wider margin softens the edges further but eats the gaps with them (0.25: p99 0.21, spread
-// 0.10-0.12), since it spreads either side of a column's top. Tunable on debug pages:
-// `sky.clouds.edge|erosion|baseEnd|lanes|laneSplit|laneSoftness|baseLift@<cloudy|overcast>`.
-const CLOUD_FORM_BY_SKY = KEPT_SKIES.map( ( name ) => name === 'overcast' ? { ...CLOUD_FORM, lanes: 0.08, baseLift: 0.4 } : name === 'cloudy' ? { ...CLOUD_FORM, edge: 0.15 } : { ...CLOUD_FORM } );
+// specks into the thinnest columns. Cloudy's margin is 2.6 times the cumulus' (0.25) and lies
+// three quarters inside its columns (`inside` 0.5): spread either side of a column's top, as the
+// cumulus' is, a margin wide enough to soften the broken cloud's edges filled its gaps with thin
+// cloud (at 0.25 the luminance's spread 0.10-0.12), and at 0.15 the gaps 3 - 25 degrees up from
+// 50 m were a fifth of a percent of the sky, the rest thin cloud over them. Moved inward, the gaps
+// open and the columns thin, and the land under them takes more of the sun: wholly inside (1),
+// from 50 m toward the horizon 3 - 25 degrees up 15 % of the sky was clear (transmittance over
+// 0.9) and a quarter thick cloud (under 0.1), the edges about 1.4 - 2.2 degrees wide (the step's
+// contrast over the gradient's p99 and p95), but under a sun of 30 - 50 degrees the meadow rose
+// to 0.46 - 0.48 in Oklab L and the cliff's face to 0.63 - 0.76, from 0.33 - 0.34 and 0.52 - 0.55
+// with the margin either side; three quarters inside (0.75), 0.39 - 0.41 and 0.61 - 0.67. Half
+// inside, the meadow keeps 0.35 - 0.37 and the face 0.58 - 0.61, and the thin cloud reads as the
+// gaps: 1.4 % of the sky clear and 60 % thick cloud, the luminance's spread over the sky 0.16 -
+// 0.22 under a sun of 20 - 50 degrees (0.12 - 0.14 with the margin either side), the edges about
+// 0.9 - 1.7 degrees, the lit cloud and the clear sky 2.8 times apart in scene radiance. Tunable
+// on debug pages:
+// `sky.clouds.edge|erosion|baseEnd|lanes|laneSplit|laneSoftness|baseLift|inside@<cloudy|overcast>`.
+const CLOUD_FORM_BY_SKY = KEPT_SKIES.map( ( name ) => name === 'overcast' ? { ...CLOUD_FORM, lanes: 0.08, baseLift: 0.4 } : name === 'cloudy' ? { ...CLOUD_FORM, edge: 0.25, inside: 0.5 } : { ...CLOUD_FORM } );
 for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 
 	tuneObject( CLOUD_FORM_BY_SKY[ s ], { edge: `sky.clouds.edge@${ name }`, erosion: `sky.clouds.erosion@${ name }`, baseEnd: `sky.clouds.baseEnd@${ name }`,
-		lanes: `sky.clouds.lanes@${ name }`, laneSplit: `sky.clouds.laneSplit@${ name }`, laneSoftness: `sky.clouds.laneSoftness@${ name }`, baseLift: `sky.clouds.baseLift@${ name }` },
-	{ edge: { min: 0.05, max: 0.25, onChange: markSkyRetune }, erosion: { min: 0.3, max: 1.2, onChange: markSkyRetune }, baseEnd: { min: 0.05, max: 0.4, onChange: markSkyRetune },
+		lanes: `sky.clouds.lanes@${ name }`, laneSplit: `sky.clouds.laneSplit@${ name }`, laneSoftness: `sky.clouds.laneSoftness@${ name }`, baseLift: `sky.clouds.baseLift@${ name }`,
+		inside: `sky.clouds.inside@${ name }` },
+	{ edge: { min: 0.05, max: 0.4, onChange: markSkyRetune }, erosion: { min: 0.3, max: 1.2, onChange: markSkyRetune }, baseEnd: { min: 0.05, max: 0.4, onChange: markSkyRetune },
 		lanes: { min: 0.02, max: 1, onChange: markSkyRetune }, laneSplit: { min: 0.2, max: 0.9, onChange: markSkyRetune }, laneSoftness: { min: 0.005, max: 0.2, onChange: markSkyRetune },
-		baseLift: { min: 0, max: 0.8, onChange: markSkyRetune } } );
+		baseLift: { min: 0, max: 0.8, onChange: markSkyRetune }, inside: { min: 0, max: 1, onChange: markSkyRetune } } );
 
 }
 const CIRRUS_SHARE = 0.75;
@@ -1639,7 +1652,7 @@ export class Sky {
 		const base = shell( 'base' );
 		clouds.setDeck( base, shell( 'top' ) - base, skyMix ? cloudedShare( skyMix ) : 0 );
 		const form = ( key: keyof typeof CLOUD_FORM ) => skyMix ? CLOUD_FORM_BY_SKY.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k[ key ], 0 ) : CLOUD_FORM[ key ];
-		clouds.setForm( form( 'edge' ), form( 'erosion' ), form( 'baseEnd' ), form( 'lanes' ), form( 'laneSplit' ), form( 'laneSoftness' ), form( 'baseLift' ) );
+		clouds.setForm( form( 'edge' ), form( 'erosion' ), form( 'baseEnd' ), form( 'lanes' ), form( 'laneSplit' ), form( 'laneSoftness' ), form( 'baseLift' ), form( 'inside' ) );
 		clouds.coverageFrom.value = front ? front.from.coverage : coverage;
 		clouds.coverageTo.value = front ? front.to.coverage : coverage;
 		clouds.densityFrom.value = front ? front.from.density : clouds.density.value;

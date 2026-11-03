@@ -60,6 +60,13 @@ type V4 = THREE.Node<'vec4'>;
 //     The light march sees that rise only for a key above about 10 degrees (`keyLift`, Sky.ts
 //     KEY_LIFT): a lower key's taps stay under the base, in the gaps, while its real path crosses
 //     the masses for kilometres, and a full rise lit their undersides with the whole low sun.
+//     A broken sky's margin (cloudy's) lies mostly inside its columns (`inside`, `edgeIn`): the
+//     tops' soft step moves into the column by a share of its half width, so less of it spreads
+//     past the column's own top and a softer edge thins the cloud's rim instead of laying thin
+//     cloud over the gap beyond it, as a margin spread either side did. Moved wholly inside, the
+//     columns thin until the land under them takes much of the sun (Sky.ts CLOUD_FORM_BY_SKY).
+//     The conservative bounds stay valid: the step only moves inward, and the bounds on the tops
+//     (the candidate's and the march's empty cells) move in with it.
 //   - lighting: a light march toward the key light in segments that grow geometrically and span
 //     the shell's depth, with a tail on to its top (off for now), run however faint the light, since
 //     its depth shades the sky light too, and moving without a jump for the same reason (Sky.ts
@@ -227,9 +234,12 @@ const BASE_WEATHER = 0.54, BASE_WEATHER_END = 0.13; // bases need richer weather
 // as a share of EROSION_PEAK, the height over which the base needs richer weather, and the lanes:
 // the density's share left where the lanes' field (WEATHER_LANES) stays under `laneSplit`, rising
 // as a power of it to the whole density over `laneSoftness` either side of it (1, none: the
-// cumulus' columns are its clouds and gaps), and the base's masses: how far the base rises between
-// them, a share of the column under the top (`baseLift`, 0: a base resting on the weather alone).
-export const CLOUD_FORM = { edge: EDGE, erosion: 1, baseEnd: BASE_WEATHER_END, lanes: 1, laneSplit: 0.43, laneSoftness: 0.05, baseLift: 0 } as const;
+// cumulus' columns are its clouds and gaps), the base's masses: how far the base rises between
+// them, a share of the column under the top (`baseLift`, 0: a base resting on the weather alone),
+// and where the tops' margin lies: `inside` 0 spreads it either side of a column's top, 1 moves it
+// a margin's half width into the column, so the whole margin lies inside the cloud and the open
+// sky beyond the column keeps no cloud.
+export const CLOUD_FORM = { edge: EDGE, erosion: 1, baseEnd: BASE_WEATHER_END, lanes: 1, laneSplit: 0.43, laneSoftness: 0.05, baseLift: 0, inside: 0 } as const;
 // The base's masses: the base hangs from the shell's bottom by the shape noise's weighted channels
 // (the dilation's own sample, over BASE_STRENGTH), lowest where they reach MASS_HIGH (the noise's
 // p90) and risen by the whole `baseLift` where they fall to MASS_LOW (its p30), a smooth step
@@ -649,6 +659,9 @@ export class Clouds {
 	// the height over which a base needs richer weather (BASE_WEATHER_END), each a fraction of the
 	// shell.
 	readonly edge = uniform( EDGE );
+	// how far the tops' margin lies inside the column, a fraction of the shell (`edge` times the
+	// form's `inside`): 0 centres it on the top
+	readonly edgeIn = uniform( 0 );
 	readonly erosionPeak = uniform( EROSION_PEAK );
 	readonly baseWeatherEnd = uniform( BASE_WEATHER_END );
 	// the lanes: the density's share left in a lane, the lanes' field's split between the lanes and
@@ -993,7 +1006,7 @@ export class Clouds {
 				const maximumTop = w.add( coverage ).sub( 1 ).add( coverage.mul( 1.34 * BASE_STRENGTH ) );
 				const required = float( 1 ).sub( smoothstep( 0, this.baseWeatherEnd, h ) ).mul( BASE_WEATHER ).toVar();
 				c.floorMask.assign( smoothstep( required.sub( 0.1 ), required, w ) );
-				If( maximumTop.greaterThanEqual( h.sub( edge ) ).and( c.floorMask.greaterThan( 0 ) ), () => {
+				If( maximumTop.greaterThanEqual( h.sub( edge ).add( this.edgeIn ) ).and( c.floorMask.greaterThan( 0 ) ), () => {
 
 					const dilationIn = ( k: 0 | 1 ) => {
 
@@ -1036,7 +1049,7 @@ export class Clouds {
 						c.floorMask.assign( c.floorMask.mul( c.lane ) );
 
 					} );
-					c.conservative.assign( smoothstep( edge.negate(), edge, c.top.sub( h ) ).mul( smoothstep( edge.negate(), edge, h.sub( c.lift ) ) ).mul( c.floorMask ) );
+					c.conservative.assign( smoothstep( edge.negate(), edge, c.top.sub( this.edgeIn ).sub( h ) ).mul( smoothstep( edge.negate(), edge, h.sub( c.lift ) ) ).mul( c.floorMask ) );
 
 				} );
 
@@ -1054,11 +1067,11 @@ export class Clouds {
 				const strength = mix( float( EROSION_BASE ), this.erosionPeak, sat( c.h.div( max( c.top, 0.001 ) ) ) ).toVar();
 				const maximumErosion = strength.mul( c.coverage ).mul( 0.173 );
 				density.assign( c.floorMask );
-				If( min( c.top.sub( c.h ), c.h.sub( c.lift ) ).lessThan( maximumErosion.add( edge ) ), () => {
+				If( min( c.top.sub( this.edgeIn ).sub( c.h ), c.h.sub( c.lift ) ).lessThan( maximumErosion.add( edge ) ), () => {
 
 					const erosionIn = ( k: 0 | 1 ) => dot( shapeNode.sample( c.positions[ k ].div( spaces[ k ].erosion ) ).level( k === 0 ? c.lods.y : c.lods.w ).rgb, vec3( 0.113, 0.04, 0.02 ) );
 					const erosion = bySpace( () => erosionIn( 0 ), () => erosionIn( 1 ) ).mul( strength ).mul( c.coverage ).toVar();
-					density.assign( smoothstep( edge.negate(), edge, c.top.sub( erosion ).sub( c.h ) ).mul( smoothstep( edge.negate(), edge, c.h.sub( c.lift ).sub( erosion ) ) ).mul( c.floorMask ) );
+					density.assign( smoothstep( edge.negate(), edge, c.top.sub( this.edgeIn ).sub( erosion ).sub( c.h ) ).mul( smoothstep( edge.negate(), edge, c.h.sub( c.lift ).sub( erosion ) ) ).mul( c.floorMask ) );
 
 				} );
 
@@ -1216,7 +1229,7 @@ export class Clouds {
 						const coverage = coverageBound.add( horizonCoverage( cellEnd ) );
 						const maximumTop = maximumWeather.add( coverage ).sub( 1 ).add( coverage.mul( 1.34 * BASE_STRENGTH ) );
 						const required = float( 1 ).sub( smoothstep( 0, this.baseWeatherEnd, highest ) ).mul( BASE_WEATHER );
-						If( maximumTop.lessThan( lowest.sub( this.edge ) ).or( maximumWeather.lessThanEqual( required.sub( 0.1 ) ) ), () => {
+						If( maximumTop.lessThan( lowest.sub( this.edge ).add( this.edgeIn ) ).or( maximumWeather.lessThanEqual( required.sub( 0.1 ) ) ), () => {
 
 							t.assign( cellEnd.add( 0.05 ) );
 							Continue();
@@ -1432,7 +1445,7 @@ export class Clouds {
 			const coverage = frontAt( pxz ).x;
 			const top = w.add( coverage ).sub( 1 ).add( coverage.mul( 0.45 ) );
 			const required = float( 1 ).sub( smoothstep( 0, this.baseWeatherEnd, h ) ).mul( BASE_WEATHER );
-			return { w, top, coverage, presence: smoothstep( this.edge.negate(), this.edge, top.sub( h ) ).mul( smoothstep( required.sub( 0.1 ), required, w ) ) };
+			return { w, top, coverage, presence: smoothstep( this.edge.negate(), this.edge, top.sub( this.edgeIn ).sub( h ) ).mul( smoothstep( required.sub( 0.1 ), required, w ) ) };
 
 		};
 		const rainAt = ( rd: V3, pxAngle: F, jitter: F, withFlash = false ) => {
@@ -2526,10 +2539,12 @@ export class Clouds {
 	/** The cloud's form (CLOUD_FORM's terms), which Sky.ts blends by the sky's shares: the soft
 	 * margin, the erosion's strength at the top as a share of the high cumulus', the height over
 	 * which a base needs richer weather, the lanes (the density's share left in a lane, the
-	 * lanes' field's split, the step's half width) and the base's rise between its masses. */
-	setForm( edge: number, erosion: number, baseEnd: number, lanes: number, laneSplit: number, laneSoftness: number, baseLift: number ): void {
+	 * lanes' field's split, the step's half width), the base's rise between its masses and how far
+	 * the tops' margin lies inside the column (a share of its half width). */
+	setForm( edge: number, erosion: number, baseEnd: number, lanes: number, laneSplit: number, laneSoftness: number, baseLift: number, inside: number ): void {
 
 		this.edge.value = edge;
+		this.edgeIn.value = edge * inside;
 		this.erosionPeak.value = EROSION_PEAK * erosion;
 		this.baseWeatherEnd.value = baseEnd;
 		this.lanes.value = lanes;
