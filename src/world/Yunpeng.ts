@@ -92,7 +92,8 @@ export const YUNPENG = {
 	far: { sides: 4, ring: 0.4, leaves: 0.5 },
 };
 
-/** The night's share of the glow and the light (0 by day: DayCycle.ts `nightAmbientAt`), each frame. */
+/** The night's share of the glow and the light (0 by day: DayCycle.ts `nightAmbientShare`), each
+ * frame. */
 export const yunpengNight = uniform( 0 );
 /** The glow's strength, the flag's at load (`yunpengGlow`), else YUNPENG.glow. */
 const glowLevel = (): number => Number( debugFlags.yunpengGlow ?? YUNPENG.glow );

@@ -25,7 +25,9 @@ import { MathUtils, Matrix3, Vector3 } from 'three/webgpu';
 // holds low in the west under a blue sky for a long while, falling slowly to about -9 degrees,
 // and long before a clear sunrise the air is blue and the sea a clear blue under it, lit by the
 // sun's own light on the high air. So under a clear or fair sky the display's night weight
-// (`displayNight`), the sky's and the probes' night key (`skyNight`) and the moon's key
+// (`displayNight`), the sky's and the probes' night key (`skyNight`), the night's ambient and the
+// yunpeng's light (`nightAmbientShare`, which would glow at their brightest under a day's
+// exposure) and the moon's key
 // (`twilightMoon`, which would lay a blue floor over the sea under a day's exposure) come in only
 // from -7 to -11 degrees after sunset, and the rising sun takes them away early, from about -12
 // degrees. The evening's window ends where the atmosphere's own twilight does: the sun's light on
@@ -101,9 +103,6 @@ export interface DayCycleSnapshot {
 	daylight: number;
 	// The stars and the Milky Way: they come out late, as the sky darkens.
 	nightVisibility: number;
-	// The authored night ambient that lights the island: it takes over as the sun's own sky fades
-	// soon after sunset, so the blue hour reads blue and is never darker than the night.
-	nightAmbient: number;
 	exposure: number;
 	// Further exposure, as a fraction, under a fully closed deck after dark (see Sky.track).
 	overcastAdaptation: number;
@@ -253,6 +252,20 @@ export function moonKeyShare( elevation: number ): number {
 export function nightAmbientAt( elevation: number ): number {
 
 	return 1 - smoothstep( - 5, 1, elevation );
+
+}
+/** The night ambient's share under a clouded share `cloud` (the night sky's ambient in the
+ * clouds and the sea, the yunpeng's glow and light, the leaves' night key, and the night that
+ * takes the sward's tint under cloud away, materials/SwardTint.ts): under cloud
+ * `nightAmbientAt`'s, a clear sky's with the display's night (`displayNight`: in from -7 to -11
+ * degrees after sunset, out from -12 to -7 before sunrise). Through a clear twilight the frame
+ * keeps a day's exposure, five stops over the night's at -7 degrees: the clumps lit by -5 then
+ * glowed brightest in the twilight and dimmed as the night came in. */
+export function nightAmbientShare( elevation: number, rising: boolean, cloud: number ): number {
+
+	const [ from, to ] = rising ? DAWN_NIGHT : DUSK_NIGHT;
+	const clear = 1 - smoothstep( from, to, elevation );
+	return clear + ( nightAmbientAt( elevation ) - clear ) * cloud;
 
 }
 
@@ -450,7 +463,6 @@ export class DayCycle {
 			starFrame: equatorialFrame( MIDNIGHT_SIDEREAL + hourAngle + Math.PI + TAU * ( this.completedDays + this.currentHour / 24 ) / SIDEREAL_DAYS_PER_YEAR ),
 			daylight,
 			nightVisibility: 1 - smoothstep( - 15, - 3, elevation ),
-			nightAmbient: nightAmbientAt( elevation ),
 			// (the night sky stays dark through its own scaled light: see NIGHT_SKY_EXPOSURE)
 			exposure,
 			overcastAdaptation: ( deck + ( 5 - deck ) * dusk ) * ( 1 - daylight ),

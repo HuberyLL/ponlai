@@ -1,7 +1,7 @@
 // Pure CPU checks; Node 22.18+ strips the imported TypeScript without a build or browser.
 // Run: node tools/verify-day-cycle.mjs
 import assert from 'node:assert/strict';
-import { DayCycle, DAY_PRESETS, DAY_EXPOSURE, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE, exposureAt } from '../src/sky/DayCycle.ts';
+import { DayCycle, DAY_PRESETS, DAY_EXPOSURE, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE, exposureAt, nightAmbientAt } from '../src/sky/DayCycle.ts';
 
 const near = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
 const cycle = new DayCycle();
@@ -49,13 +49,14 @@ for ( let minute = 0; minute <= 1440; minute ++ ) {
 	near( s.sunDir.length(), 1 );
 	near( s.moonDir.length(), 1 );
 	near( s.keyDir.length(), 1 );
-	for ( const key of [ 'daylight', 'nightVisibility', 'nightAmbient', 'moonVisibility', 'moonIllumination', 'moonKeyGain' ] ) assert.ok( Number.isFinite( s[ key ] ) && s[ key ] >= 0 && s[ key ] <= 1, key );
+	for ( const key of [ 'daylight', 'nightVisibility', 'moonVisibility', 'moonIllumination', 'moonKeyGain' ] ) assert.ok( Number.isFinite( s[ key ] ) && s[ key ] >= 0 && s[ key ] <= 1, key );
 	assert.ok( s.exposure >= DAY_EXPOSURE - 1e-12 && s.exposure <= NIGHT_EXPOSURE + 1e-12 );
 	assert.equal( s.exposure, exposureAt( s.elevation ) );
 	// The night's ambient arrives before the stars, across the band where the sun's sky fades.
-	assert.ok( s.nightAmbient >= s.nightVisibility );
-	if ( s.elevation <= - 5 ) assert.equal( s.nightAmbient, 1 );
-	if ( s.elevation >= 1 ) assert.equal( s.nightAmbient, 0 );
+	const nightAmbient = nightAmbientAt( s.elevation );
+	assert.ok( nightAmbient >= 0 && nightAmbient <= 1 && nightAmbient >= s.nightVisibility );
+	if ( s.elevation <= - 5 ) assert.equal( nightAmbient, 1 );
+	if ( s.elevation >= 1 ) assert.equal( nightAmbient, 0 );
 	// Night holds one exposure, so moonlight does not dim as the evening goes on.
 	if ( s.elevation <= - 7 ) assert.equal( s.exposure, NIGHT_EXPOSURE );
 	// A closed deck at night keeps the exposure it was tuned with; above -1 degree its
@@ -88,7 +89,8 @@ for ( const hour of [ 0, 6, 12, 18, 24 ] ) {
 	assert.ok( before.sunDir.distanceTo( after.sunDir ) < 1e-6 );
 	assert.ok( before.moonDir.distanceTo( after.moonDir ) < 1e-6 );
 	assert.ok( before.keyDir.distanceTo( after.keyDir ) < 1e-6 );
-	for ( const key of [ 'daylight', 'nightVisibility', 'nightAmbient' ] ) near( before[ key ], after[ key ], 1e-5 );
+	for ( const key of [ 'daylight', 'nightVisibility' ] ) near( before[ key ], after[ key ], 1e-5 );
+	near( nightAmbientAt( before.elevation ), nightAmbientAt( after.elevation ), 1e-5 );
 	// (the exposure and the deck's adaptation are several units and steep at the horizon: the
 	// same relative step)
 	near( before.exposure, after.exposure, 1e-4 );
