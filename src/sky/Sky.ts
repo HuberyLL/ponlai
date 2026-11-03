@@ -479,7 +479,7 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 // front between the two crosses both the shell and the noise's space by the shares. The parked
 // weathers count as overcast in those shares (Weather.ts), so they take overcast's deck. Tunable on
 // debug pages: `sky.clouds.base@<cloudy|overcast>`, `sky.clouds.top@<cloudy|overcast>`.
-const CLOUD_SHELL = KEPT_SKIES.map( ( name ) => name === 'cloudy' ? { base: 900, top: 3200 } : name === 'overcast' ? { base: 700, top: 3000 } : { base: SHELL_BOTTOM, top: SHELL_BOTTOM + SHELL_THICKNESS } );
+const CLOUD_SHELL = KEPT_SKIES.map( ( name ) => name === 'cloudy' ? { base: 900, top: 3200 } : name === 'overcast' ? { base: 600, top: 3000 } : { base: SHELL_BOTTOM, top: SHELL_BOTTOM + SHELL_THICKNESS } );
 for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 
 	tuneObject( CLOUD_SHELL[ s ], { base: `sky.clouds.base@${ name }`, top: `sky.clouds.top@${ name }` }, { base: { min: 300, max: 2000, onChange: markSkyRetune }, top: { min: 1500, max: 6000, onChange: markSkyRetune } } );
@@ -490,25 +490,31 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 export const cloudBase = ( s: number ): number => CLOUD_SHELL[ s ].base;
 // per kept sky, the cloud's form (Clouds.ts CLOUD_FORM, `setForm`): its soft margin, its
 // erosion's strength at the top (a share of the high cumulus'), the height over which its base
-// needs richer weather and its lanes, blended by the weather's shares like the shell. Clear and
-// fair keep the high cumulus' form. The base's height from 0.1 to 0.3 of the shell moves the
-// overcast masses' height on screen from 1.6 to 1.2 degrees (lower as it grows) and their edges
-// little. Seen from 50-90 m up, through the clouded skies' own air (weather/HazeKeys.ts), the
+// needs richer weather, its lanes and its base's masses, blended by the weather's shares like the
+// shell. Clear and fair keep the high cumulus' form. The base's height from 0.1 to 0.3 of the shell
+// moves the overcast masses' height on screen from 1.6 to 1.2 degrees (lower as it grows) and their
+// edges little. Seen from 50-90 m up, through the clouded skies' own air (weather/HazeKeys.ts), the
 // deck's form shows: overcast's lanes keep a tenth or less of the density (0.08: the lanes'
 // optical depth about 1-3 under rolls of 15-30, a lane's column light about 3.5-4 times a roll's),
-// which on the raised view about doubles the sky's spread and its structure at every scale, the
-// lanes' field's p25 its split; cloudy's margin is half again the cumulus' (0.15), which brings
+// split at the lanes' field's p20, so a fifth of the deck stands thinned in regions of kilometres;
+// overcast's base rises between its masses by 0.4 of the column (Clouds.ts MASS_LOW), which from
+// 90 m over six cloud times puts the visible base (the march's opacity-weighted depth) at 0.88 km
+// at 20-30 degrees and 0.92 km at 30-45 (medians; p90 1.1-1.16 km) from the shell's 600 m, its
+// masses about 5.3 by 1.8 degrees in the 20-30 degree band (the luminance's correlation widths)
+// and some 330 m in plan at the base (the correlation's half distance); a share of 0.45 tore dark
+// specks into the thinnest columns; cloudy's margin is half again the cumulus' (0.15), which brings
 // the broken cloud's spread from 0.25 to 0.18-0.21 and its gradient's p99 from 0.43 to 0.34. A
 // wider margin softens the edges further but eats the gaps with them (0.25: p99 0.21, spread
 // 0.10-0.12), since it spreads either side of a column's top. Tunable on debug pages:
-// `sky.clouds.edge|erosion|baseEnd|lanes|laneSplit|laneSoftness@<cloudy|overcast>`.
-const CLOUD_FORM_BY_SKY = KEPT_SKIES.map( ( name ) => name === 'overcast' ? { ...CLOUD_FORM, lanes: 0.08 } : name === 'cloudy' ? { ...CLOUD_FORM, edge: 0.15 } : { ...CLOUD_FORM } );
+// `sky.clouds.edge|erosion|baseEnd|lanes|laneSplit|laneSoftness|baseLift@<cloudy|overcast>`.
+const CLOUD_FORM_BY_SKY = KEPT_SKIES.map( ( name ) => name === 'overcast' ? { ...CLOUD_FORM, lanes: 0.08, baseLift: 0.4 } : name === 'cloudy' ? { ...CLOUD_FORM, edge: 0.15 } : { ...CLOUD_FORM } );
 for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 
 	tuneObject( CLOUD_FORM_BY_SKY[ s ], { edge: `sky.clouds.edge@${ name }`, erosion: `sky.clouds.erosion@${ name }`, baseEnd: `sky.clouds.baseEnd@${ name }`,
-		lanes: `sky.clouds.lanes@${ name }`, laneSplit: `sky.clouds.laneSplit@${ name }`, laneSoftness: `sky.clouds.laneSoftness@${ name }` },
+		lanes: `sky.clouds.lanes@${ name }`, laneSplit: `sky.clouds.laneSplit@${ name }`, laneSoftness: `sky.clouds.laneSoftness@${ name }`, baseLift: `sky.clouds.baseLift@${ name }` },
 	{ edge: { min: 0.05, max: 0.25, onChange: markSkyRetune }, erosion: { min: 0.3, max: 1.2, onChange: markSkyRetune }, baseEnd: { min: 0.05, max: 0.4, onChange: markSkyRetune },
-		lanes: { min: 0.02, max: 1, onChange: markSkyRetune }, laneSplit: { min: 0.2, max: 0.9, onChange: markSkyRetune }, laneSoftness: { min: 0.005, max: 0.2, onChange: markSkyRetune } } );
+		lanes: { min: 0.02, max: 1, onChange: markSkyRetune }, laneSplit: { min: 0.2, max: 0.9, onChange: markSkyRetune }, laneSoftness: { min: 0.005, max: 0.2, onChange: markSkyRetune },
+		baseLift: { min: 0, max: 0.8, onChange: markSkyRetune } } );
 
 }
 const CIRRUS_SHARE = 0.75;
@@ -647,6 +653,12 @@ const SHADOW_DISC_RAYS = 12;
 // seventh of one. Over the fade the band of haze steps less than one ray's does; in a front at 8 degrees
 // the air steps up to a third more than under the whole disc, under half a level in 255.
 const SHADOW_AIR_NARROW = [ 4.9, 5.6 ] as const;
+// The key's elevations (degrees) over which the light march comes to see the low deck's lifted base
+// (Clouds.ts `keyLift`): its taps climb the shell's depth times the key's sine, under overcast's
+// 2.4 km about 130 m at 3 degrees and 420 m at 10, where the base rises some 300-500 m between the
+// masses (CLOUD_FORM_BY_SKY). Under the first they stay in the gaps under the deck; past the second
+// they climb into it.
+const KEY_LIFT = [ 3, 10 ] as const;
 
 // The moon's key, a share of the sun's illuminance per channel: cool blue (red over green 0.8, blue
 // over green 1.4). Its level is the moonlit ground's relation to the night's other light; how bright
@@ -1628,7 +1640,7 @@ export class Sky {
 		const base = shell( 'base' );
 		clouds.setDeck( base, shell( 'top' ) - base, skyMix ? cloudedShare( skyMix ) : 0 );
 		const form = ( key: keyof typeof CLOUD_FORM ) => skyMix ? CLOUD_FORM_BY_SKY.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k[ key ], 0 ) : CLOUD_FORM[ key ];
-		clouds.setForm( form( 'edge' ), form( 'erosion' ), form( 'baseEnd' ), form( 'lanes' ), form( 'laneSplit' ), form( 'laneSoftness' ) );
+		clouds.setForm( form( 'edge' ), form( 'erosion' ), form( 'baseEnd' ), form( 'lanes' ), form( 'laneSplit' ), form( 'laneSoftness' ), form( 'baseLift' ) );
 		clouds.coverageFrom.value = front ? front.from.coverage : coverage;
 		clouds.coverageTo.value = front ? front.to.coverage : coverage;
 		clouds.densityFrom.value = front ? front.from.density : clouds.density.value;
@@ -1688,7 +1700,9 @@ export class Sky {
 		clouds.shadowDisc.value = disc * SUN_ANGULAR_RADIUS;
 		// With the whole disc under the floor the rays are one ray.
 		clouds.shadowRays.value = disc > 0 && clouds.lightDir.value.y + clouds.shadowDisc.value > SHADOW_SLOPE_FLOOR ? SHADOW_DISC_RAYS : 1;
-		clouds.shadowAirNarrow.value = THREE.MathUtils.smoothstep( THREE.MathUtils.radToDeg( Math.asin( clouds.lightDir.value.y ) ), SHADOW_AIR_NARROW[ 0 ], SHADOW_AIR_NARROW[ 1 ] );
+		const keyElevation = THREE.MathUtils.radToDeg( Math.asin( clouds.lightDir.value.y ) );
+		clouds.shadowAirNarrow.value = THREE.MathUtils.smoothstep( keyElevation, SHADOW_AIR_NARROW[ 0 ], SHADOW_AIR_NARROW[ 1 ] );
+		clouds.keyLift.value = THREE.MathUtils.smoothstep( keyElevation, KEY_LIFT[ 0 ], KEY_LIFT[ 1 ] );
 		clouds.lightColor.value.copy( sunUp ? sunAbove : new THREE.Color( 0, 0, 0 ) );
 		// The clouds belong to the night sky: their moonlight and night ambient keep its level.
 		const moonLight = illuminance * 0.04 * moonGain * this.nightSkyLevel;
