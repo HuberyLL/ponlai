@@ -222,11 +222,23 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 // -7 degrees (post/Exposure.ts, DayCycle.ts `displayNight`), and the land keeps the probes' golden
 // gain on the sky's light (lighting/AmbientRelight.ts PROBE_SKY), both held from the golden hour
 // down; so past a lift of about 1.2 through the sunset itself, the light lent from -1.3 degrees
-// down stands under the sky's own (gains of 0.5 to 0.96), set on the meadow on the plateau in the
-// island view, which reads about L 0.22 at -3.3 and -5.3 degrees. The rows at -1.3, -2.6, -4 and
-// -8.6 take a scale between their neighbours', and the gains return to none as the night's
-// exposure comes in (by -13.2).
-// The rows at 1, 0.5, 0, -3.3 and -5.3 degrees take the colour the rows around them gave there.
+// down stands a little under the sky's own (gains of 0.85 to 0.96 down to -5.3 degrees), set on
+// the meadow on the plateau in the island view, which reads about L 0.2 at -3.3 and -5.3 degrees.
+// The rows at -1.3, -2.6 and -4 take a scale near their neighbours', the row at -8.6 keeps the
+// 0.76 it was set with, and the gains return to none as the night's exposure comes in (by -13.2).
+// The rows at 1, 0.5 and 0 degrees take the colour the rows around them gave there. From -2.6 to
+// -5.3 degrees the light is drawn 0.9 of the way to an orange (red over green about 1.95, blue
+// over green about 0.2), 0.7 of the way at -1.3: the afterglow's light on the land. The sky's own
+// light after sunset is near grey (red over green about 1.05, its dusk key near neutral:
+// SKY_LIGHT), and the air over the land, which had laid the glow's orange over the meadow, is thin
+// after sunset (HazeKeys.ts AFTER_SUNSET); under the sky's own light, or drawn half way to the
+// colour the warmer key gave, the meadow on the plateau read an olive green (Oklab hue 112 - 124
+// against about 82 here).
+// The afterglow is a clear sky's: under a deck there is no glow to lend the land its orange, and
+// these rows laid it on the cliffs of a cloudy or overcast evening as a warm brown under a blue
+// deck and sea (the rock at -5 degrees red over green 0.83, against 0.5 and a blue grey under the
+// rows before them). A clouded sky takes those rows (ISLAND_SKY_CLOUDED: a light warm cast, the
+// gains of 0.65 and 0.5 at -4 and -5.3 degrees) by its clouded share (`islandSky`).
 // The rising sun has rows of its own (ISLAND_SKY_RISING).
 // By day a clouded sky lends the island its own light: a deck of cloud passes on little of the blue
 // of the sky's high key (SKY_LIGHT), so from 12 to 40 degrees, as that key climbs, the light lent to
@@ -244,13 +256,22 @@ const ISLAND_SKY: readonly IslandRow[] = [
 	{ at: 1, tint: [ 1.085, 0.988, 0.872 ], amount: 0.15, gain: 1.16 },
 	{ at: 0.5, tint: [ 1.128, 0.982, 0.807 ], amount: 0.225, gain: 1.24 },
 	{ at: 0, tint: [ 1.17, 0.976, 0.743 ], amount: 0.3, gain: 1.16 },
+	{ at: - 1.3, tint: [ 1.66, 0.9, 0.09 ], amount: 0.7, gain: 0.89 },
+	{ at: - 2.6, tint: [ 1.78, 0.86, 0.08 ], amount: 0.9, gain: 0.96 },
+	{ at: - 3.3, tint: [ 1.78, 0.86, 0.08 ], amount: 0.9, gain: 0.85 },
+	{ at: - 4, tint: [ 1.78, 0.86, 0.08 ], amount: 0.9, gain: 0.87 },
+	{ at: - 5.3, tint: [ 1.78, 0.86, 0.08 ], amount: 0.9, gain: 0.92 },
+	{ at: - 8.6, gain: 0.76 },
+	{ at: - 13.2, tint: [ 0.45, 1, 3.6 ], amount: 0.6 },
+];
+const ISLAND_SKY_CLOUDED: readonly IslandRow[] = [
+	...ISLAND_SKY.slice( 0, 4 ),
 	{ at: - 1.3, tint: [ 1, 0.75, 0.45 ], amount: 0.5, gain: 0.89 },
 	{ at: - 2.6, tint: [ 0.95, 0.8, 0.58 ], amount: 0.5, gain: 0.96 },
 	{ at: - 3.3, tint: [ 1.11, 0.99, 0.767 ], amount: 0.5, gain: 0.85 },
 	{ at: - 4, tint: [ 0.9, 0.85, 0.7 ], amount: 0.5, gain: 0.65 },
 	{ at: - 5.3, tint: [ 1.04, 1, 0.874 ], amount: 0.36, gain: 0.5 },
-	{ at: - 8.6, gain: 0.76 },
-	{ at: - 13.2, tint: [ 0.45, 1, 3.6 ], amount: 0.6 },
+	...ISLAND_SKY.slice( 9 ),
 ];
 
 // The rising sun's: none of the evening's warm cast, only the night's deep blue below -10 degrees,
@@ -281,10 +302,11 @@ const ISLAND_SKY_RISING: readonly IslandRow[] = [
 ];
 
 // ISLAND_SKY at `elevation`, on the rising or the setting sun's side: the tint (normalised to unit
-// luminance) and its amount into `tint`; returns the gain. The rising rows' tints hold under any
-// sky, but their gains were set on a clear morning's exposure (post/Exposure.ts, `dawn`), so a clouded share `cloud`
-// (Weather.ts `cloudedShare`) takes the evening's gain back, as the display's night weight does
-// (DayCycle.ts `displayNight`).
+// luminance) and its amount into `tint`; returns the gain. A clouded share `cloud` (Weather.ts
+// `cloudedShare`) draws the setting rows to the clouded evening's (ISLAND_SKY_CLOUDED). The rising
+// rows' tints hold under any sky, but their gains were set on a clear morning's exposure
+// (post/Exposure.ts, `dawn`), so the clouded share takes the clouded evening's gain back, as the
+// display's night weight does (DayCycle.ts `displayNight`).
 function islandSky( elevation: number, rising: boolean, tint: THREE.Vector4, cloud: number ): number {
 
 	const at = ( row: IslandRow ) => {
@@ -309,6 +331,12 @@ function islandSky( elevation: number, rising: boolean, tint: THREE.Vector4, clo
 
 	};
 	let v = along( ISLAND_SKY );
+	if ( cloud > 0 ) {
+
+		const c = along( ISLAND_SKY_CLOUDED );
+		v = v.map( ( x, i ) => x + ( c[ i ] - x ) * cloud );
+
+	}
 	if ( rising ) {
 
 		const r = along( ISLAND_SKY_RISING );
