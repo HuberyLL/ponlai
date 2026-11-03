@@ -358,7 +358,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   over its source) rebakes it as the load bakes, whatever set it (the GUI, `tune`, a plain write:
   `src/sky/SkyRetune.ts`), so the page draws what a fresh load with the value draws. Names:
   `post.exposure.key@high` (an exposure key per sun height, `@golden`, `@low`, `@high`, `@cloudy`,
-  `@cloudyGolden`, `@cloudySunset`, `@cloudyLow`, `@night`, and the rising sun's `@dawn`; overcast's
+  `@cloudyGolden`, `@cloudySunset`, `@cloudyLow`, `@night`, and the rising sun's `@dawn`,
+  `@morningGolden`; overcast's
   key over the clouded one `post.exposure.overcastKey`; the local gain's
   `post.localTone.hinge@high`, `high`, `low`, `width` alike), `post.tone.midGrey`,
   `post.tone.blackSlope`, `post.tone.white`; the desaturation's `post.desaturate.amount@golden`
@@ -372,8 +373,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   key's colour at a low sun `sky.key.hueDepth` (the rising sun's `dawnHueDepth`), `reddens`,
   `yellows`, the near air
   `sky.weather.nearDensity@clear` (`nearStart`, `nearEnd`; `@fair`, `@cloudy`, `@overcast`) and the
-  land's share of the sky's light `lighting.relight.skyGain@high` (`@low`, `@golden`, `@cloudy`,
-  `@cloudyBlue`, `@night`) and its gain under overcast `lighting.relight.overcastLand`, a low
+  land's share of the sky's light `lighting.relight.skyGain@high` (`@low`, `@golden`, the rising
+  sun's `@dawn`, `@sunrise`, `@cloudy`, `@cloudyBlue`, `@night`) and its gain under overcast
+  `lighting.relight.overcastLand`, a low
   sun's lift of the sky's light on what it lights `lighting.relight.lowSun` (stops; `lowSunFloor`,
   `lowSunFloorFull`, `lowSunFrom`, `lowSunTo` its sun heights: `src/lighting/AmbientRelight.ts`),
   overcast's
