@@ -360,12 +360,14 @@ const REFLECTION_BAND = { ramp: 0.18, hue: 0.6, level: 2.2, lowSun: [ 0.05, 0.2 
 //   at the lobe's centre and its two edges, weighted 1/4, 1/2, 1/4.
 // - The reflected rays rise with the facets' tilt toward the eye: the lobe's centre stands `lift`
 //   times ( cosVisible - cos ) over the mirror (an elevation's sine), and it spreads 2 sigmaV either
-//   way. The pixel's own mirror rises by as much, so the waves it resolves keep their relief. The sky
+//   way. `lift` is 2, the geometry's own: a facet tilted toward the eye by a small angle raises the
+//   view's cosine on it by that angle times the grazing angle's cosine, and the reflected ray by
+//   twice the angle, so its sine by twice as much (1.5 left the far sea of a low sun too dark). The pixel's own mirror rises by as much, so the waves it resolves keep their relief. The sky
 //   is read there over the lobe's width (a level of the panorama, never wider than the lobe stands
 //   over the horizon), and the lobe's share under the horizon, a normal integral at least `edge`
 //   wide (the waves near the eye, which leave the lobe no width, keep a soft edge), takes the
 //   horizon's colour by BELOW_HORIZON.
-const REFLECTION_LOBE = { slopeScale: 1, lift: 1.5, edge: 0.05 } as const;
+const REFLECTION_LOBE = { slopeScale: 1, lift: 2, edge: 0.05 } as const;
 
 // The colour of the sun's light scattered in the water over the shelf. Through the display's balance
 // a sun near white in the scene reads blue green, and in the shallows its scattered light is what lays
