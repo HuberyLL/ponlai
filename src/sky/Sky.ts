@@ -216,15 +216,16 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 // interpolate linearly and the end rows hold beyond them. From 2 degrees up the light is the
 // atmosphere's alone; from -13.2 down it is drawn 0.6 of the way to a deep blue, so the moonlit
 // island's shade, lit by this sky alone, reads a deep blue rather than ink, bluer than the moonlit
-// ground and the moon's own key. The gains let the island's
-// exposed brightness (the top view's land, with the moon's key; the metering illuminance holds
-// this light too) fall steadily from the golden hour's to the night's, where without them it
-// sagged a little after the handoff (-2.6 degrees: the sun's skylight gone and the moon's key,
-// DayCycle MOON_KEY_TOP, only starting). They were set against the sky's light and the exposure
-// before both were set (SKY_LIGHT, post/Exposure.ts), and under the night's exposure from -2.7
-// degrees, which a clear evening now takes only from -7 (DayCycle.ts `displayNight`), so the
-// brightness each row gives is to be measured again; the rows' shape, a lift through the afterglow
-// easing to none by the night, holds.
+// ground and the moon's own key. The gains set the island's exposed brightness (the top view's
+// land, with the moon's key; the metering illuminance holds this light too) through the twilight.
+// A clear evening keeps its day exposure on the golden hour's key until the night's comes in from
+// -7 degrees (post/Exposure.ts, DayCycle.ts `displayNight`), and the land keeps the probes' golden
+// gain on the sky's light (lighting/AmbientRelight.ts PROBE_SKY), both held from the golden hour
+// down; so past a lift of about 1.2 through the sunset itself, the light lent from -1.3 degrees
+// down stands under the sky's own (gains of 0.5 to 0.96), set on the meadow on the plateau in the
+// island view, which reads about L 0.22 at -3.3 and -5.3 degrees. The rows at -1.3, -2.6, -4 and
+// -8.6 take a scale between their neighbours', and the gains return to none as the night's
+// exposure comes in (by -13.2).
 // The rows at 1, 0.5, 0, -3.3 and -5.3 degrees take the colour the rows around them gave there.
 // The rising sun has rows of its own (ISLAND_SKY_RISING).
 // By day a clouded sky lends the island its own light: a deck of cloud passes on little of the blue
@@ -243,12 +244,12 @@ const ISLAND_SKY: readonly IslandRow[] = [
 	{ at: 1, tint: [ 1.085, 0.988, 0.872 ], amount: 0.15, gain: 1.16 },
 	{ at: 0.5, tint: [ 1.128, 0.982, 0.807 ], amount: 0.225, gain: 1.24 },
 	{ at: 0, tint: [ 1.17, 0.976, 0.743 ], amount: 0.3, gain: 1.16 },
-	{ at: - 1.3, tint: [ 1, 0.75, 0.45 ], amount: 0.5, gain: 1.61 },
-	{ at: - 2.6, tint: [ 0.95, 0.8, 0.58 ], amount: 0.5, gain: 2.13 },
-	{ at: - 3.3, tint: [ 1.11, 0.99, 0.767 ], amount: 0.5, gain: 2.02 },
-	{ at: - 4, tint: [ 0.9, 0.85, 0.7 ], amount: 0.5, gain: 1.57 },
-	{ at: - 5.3, tint: [ 1.04, 1, 0.874 ], amount: 0.36, gain: 1.32 },
-	{ at: - 8.6, gain: 1.17 },
+	{ at: - 1.3, tint: [ 1, 0.75, 0.45 ], amount: 0.5, gain: 0.89 },
+	{ at: - 2.6, tint: [ 0.95, 0.8, 0.58 ], amount: 0.5, gain: 0.96 },
+	{ at: - 3.3, tint: [ 1.11, 0.99, 0.767 ], amount: 0.5, gain: 0.85 },
+	{ at: - 4, tint: [ 0.9, 0.85, 0.7 ], amount: 0.5, gain: 0.65 },
+	{ at: - 5.3, tint: [ 1.04, 1, 0.874 ], amount: 0.36, gain: 0.5 },
+	{ at: - 8.6, gain: 0.76 },
 	{ at: - 13.2, tint: [ 0.45, 1, 3.6 ], amount: 0.6 },
 ];
 
