@@ -447,14 +447,19 @@ function clearShade( elevation: number, direct: number ): number {
 // the air's hue moves and the land's level and the exposure do not. Its golden and low keys are the
 // day's own, so a clouded sky parts from a clear one only over 12 degrees.
 // On a clear evening the sky takes a key below the golden one (`dusk`, at -1 degrees, not under
-// cloud): the glow low in the west after the sun has gone. It holds more red and half the blue of
-// the golden key, so the afterglow stays orange through the twilight, until the night key takes it
-// from -7 degrees.
+// cloud), held through the twilight until the night key takes it from -7 degrees. It is a
+// near-neutral warm key at the twilight, at the luminance the warm key before it had: the
+// twilight sky's colour is the atmosphere's own (Atmosphere.ts), orange at the glow, yellow above
+// it and near grey from 20 degrees up. A warm key (blue under a third of red) laid one tint over
+// the whole dome, which turned the sky 20 degrees up magenta (red over green about 2.1, blue over
+// green 1.5, with the sun 5.6 degrees under the horizon). The land takes its twilight warmth from
+// the light lent to it (ISLAND_SKY).
 // The morning is not the evening turned round. These keys hold in every direction, so a warm key
 // warms the whole picture: the golden key is the evening's, where the whole sky is alight, and the
 // clear morning has keys of its own (`dawn`, `morning`, read while the sun rises: DayKeys.ts
 // `rising`). At sunrise the air is already blue and the warm colour stays in the sun's road and the
-// low streaks, so `dawn` is near grey with a slight cool lean (blue over red about 1.13), and the
+// low streaks, so `dawn` takes the twilight's near-neutral light (the dusk key's colour, at the
+// luminance the cooler key before it had: the sky before sunrise is the same atmosphere's), and the
 // display's dawn white balance (Pipeline.ts WHITE_BALANCE) cools it from there: the band over the
 // horizon, nearly all the haze's light, and the sea under it stay a quiet blue grey. By 12 degrees
 // the picture has gone cool and quiet, and `morning` is the day's light at about two thirds of the
@@ -469,9 +474,9 @@ const SKY_LIGHT_LOW_SUN: readonly DayKey<{ r: number; g: number; b: number }>[] 
 ];
 const SKY_LIGHT_HIGH: DayKey<{ r: number; g: number; b: number }> = { at: 40, name: 'high', values: { r: 0.235, g: 0.232, b: 0.346 } };
 const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'sky.light', {
-	day: [ { at: - 1, name: 'dusk', values: { r: 0.27, g: 0.2, b: 0.08 } }, ...SKY_LIGHT_LOW_SUN, SKY_LIGHT_HIGH ],
+	day: [ { at: - 1, name: 'dusk', values: { r: 0.2263, g: 0.2014, b: 0.1946 } }, ...SKY_LIGHT_LOW_SUN, SKY_LIGHT_HIGH ],
 	rising: [
-		{ at: 3, name: 'dawn', values: { r: 0.172, g: 0.185, b: 0.195 } },
+		{ at: 3, name: 'dawn', values: { r: 0.2008, g: 0.1787, b: 0.1727 } },
 		{ at: 12, name: 'morning', values: { r: 0.1809, g: 0.1207, b: 0.1683 } },
 		SKY_LIGHT_HIGH,
 	],
