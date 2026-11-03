@@ -22,7 +22,7 @@ import { compileInto } from '../post/graph/Compile.ts';
 import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
-import { DAY_EXPOSURE, displayNight, moonAtDawn, skyNight, sunRising, type DayCycleSnapshot } from './DayCycle.ts';
+import { DAY_EXPOSURE, displayNight, skyNight, sunRising, twilightMoon, type DayCycleSnapshot } from './DayCycle.ts';
 import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckTakeover, type WeatherFront, type WeatherState } from './Weather.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
@@ -221,8 +221,10 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 // this light too) fall steadily from the golden hour's to the night's, where without them it
 // sagged a little after the handoff (-2.6 degrees: the sun's skylight gone and the moon's key,
 // DayCycle MOON_KEY_TOP, only starting). They were set against the sky's light and the exposure
-// before both were set (SKY_LIGHT, post/Exposure.ts), so the brightness each row gives is to be
-// measured again; the rows' shape, a lift through the afterglow easing to none by the night, holds.
+// before both were set (SKY_LIGHT, post/Exposure.ts), and under the night's exposure from -2.7
+// degrees, which a clear evening now takes only from -7 (DayCycle.ts `displayNight`), so the
+// brightness each row gives is to be measured again; the rows' shape, a lift through the afterglow
+// easing to none by the night, holds.
 // The rows at 1, 0.5, 0, -3.3 and -5.3 degrees take the colour the rows around them gave there.
 // The rising sun has rows of its own (ISLAND_SKY_RISING).
 // By day a clouded sky lends the island its own light: a deck of cloud passes on little of the blue
@@ -411,8 +413,9 @@ function clearShade( elevation: number, direct: number ): number {
 // (set when the noon shade's blue was tuned by eye, before the keys were set), and one gain on
 // both keeps that mix at every hour. How the sky's light falls with the sun is the atmosphere's
 // own (the aerosol's wide base and the multiple scattering that grows along long paths:
-// Atmosphere.ts), not rows by the sun's elevation. From 2 degrees the gain moves to the night key
-// by -6 degrees under the horizon (a smoothstep; a clear morning's from -3 to -13, DayCycle.ts
+// Atmosphere.ts), not rows by the sun's elevation. Under cloud the gain moves to the night key from
+// 2 degrees to -6 under the horizon (a smoothstep); a clear sky's holds the day's keys through the
+// twilight and moves from -7 to -11 after sunset, from -13 to -3 before sunrise (DayCycle.ts
 // `skyNight`), so the sky after sunset dims with the sun's light it lends
 // without the jump to the atmosphere's own light that fading the gain to none gave (several times
 // brighter than the golden key, its blue more so). The sun's own light
@@ -436,8 +439,8 @@ function clearShade( elevation: number, direct: number ): number {
 // day's own, so a clouded sky parts from a clear one only over 12 degrees.
 // On a clear evening the sky takes a key below the golden one (`dusk`, at -1 degrees, not under
 // cloud): the glow low in the west after the sun has gone. It holds more red and half the blue of
-// the golden key, so the afterglow stays orange through the first degrees under the horizon, where
-// the night key's fall has begun to take it.
+// the golden key, so the afterglow stays orange through the twilight, until the night key takes it
+// from -7 degrees.
 // The morning is not the evening turned round. These keys hold in every direction, so a warm key
 // warms the whole picture: the golden key is the evening's, where the whole sky is alight, and the
 // clear morning has keys of its own (`dawn`, `morning`, read while the sun rises: DayKeys.ts
@@ -1529,7 +1532,7 @@ export class Sky {
 		// the moon's own gain instead (`moonKeyGain`).
 		const cloud = skyMix ? cloudedShare( skyMix ) : 0;
 		this.rising = sunRising( this.sunDir );
-		const moonGain = celestial ? celestial.moonKeyGain * moonAtDawn( celestial.elevation, this.rising, cloud ) : 0;
+		const moonGain = celestial ? celestial.moonKeyGain * twilightMoon( celestial.elevation, this.rising, cloud ) : 0;
 		const moonKey = illuminance * moonGain;
 		const moonSky = SKY_LIGHT.night;
 		this.moonKeyColor.setRGB( MOON_KEY[ 0 ] * moonKey, MOON_KEY[ 1 ] * moonKey, MOON_KEY[ 2 ] * moonKey );

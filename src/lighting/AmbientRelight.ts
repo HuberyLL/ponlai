@@ -207,8 +207,8 @@ const SKY_VIEW = [ 0.282095, 2 / 3 * 0.488603, - 0.315392 / 4, - 0.546274 / 4 ];
 const BOUNCE_GAIN = 9.4;
 /** The probes' own gain on the sky's light, a luminance by the sun's elevation (keyed as Sky.ts
  * `skyGain`: golden, low and high, a held value under cloud, and the night key, reached by -6
- * degrees; a clear morning's leaves it later, all of it at -13 degrees and none by -3: DayCycle.ts
- * `skyNight`). The seen sky
+ * degrees under cloud; a clear sky's comes in from -7 to -11 degrees after sunset and leaves from
+ * -13 to -3 before sunrise: DayCycle.ts `skyNight`). The seen sky
  * keeps its gain; the ground's sky light takes this on top, so its ratio to the sun's light can be
  * set at every hour without changing the sky the eye sees. Set once the environment took the
  * haze's light, which lights the shade too: about 0.8 at the day's keys, the ground's sky light a

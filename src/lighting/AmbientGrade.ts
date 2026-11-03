@@ -29,8 +29,11 @@ import { tune } from '../debug/Tune.ts';
 // illuminance takes the sky's light as it stands (it is the incident light: Pipeline.ts
 // `meterLight`). The sky's reflection takes half from a sun at 5.5 degrees to one at -1.3
 // (`skySpecular`), under clear and fair skies alike, so a low sun's shade stands dark against the
-// lit rock and does not rise back through the sunset; the night's row returns it by -2.6 degrees,
-// under the night's exposure. A clear morning takes the day's exposure long before the sun
+// lit rock and does not rise back through the sunset; the night's row returns it by -2.6 degrees.
+// A clear evening keeps the day's exposure to -7 degrees (DayCycle.ts `displayNight`), but its
+// reflection there is of a warm or a deep sky: on the island view the rock's mean C is 0.022 to
+// 0.028 from -7 to -10 degrees, under a clear morning's 0.035 to 0.042 at -8 and -9 with the
+// reflection held at 0.1. A clear morning takes the day's exposure long before the sun
 // (DayCycle.ts `displayNight`, post/Exposure.ts `dawn`), and under it the night's full reflection
 // of a bright, saturated sky lit the rock's ledges and the leaves cyan (at -8 degrees the cliff's
 // brightest tenth L 0.33, C 0.11 with it, 0.19, 0.03 without), so the rising sun's rows
