@@ -493,6 +493,13 @@ comment where it is used.
 - Atmosphere LUTs and multiple scattering: Sébastien Hillaire,
   [*A Scalable and Production Ready Sky and Atmosphere Rendering Technique*](https://sebh.github.io/publications/egsr2020.pdf)
   (EGSR 2020), through the adapted tidewater source above.
+- The ozone's absorption per display channel (`src/sky/Atmosphere.ts` OZONE), our integration over
+  each channel's band of the cross sections of A. Serdyuchenko, V. Gorshelev, M. Weber, W. Chehade
+  and J. P. Burrows,
+  [*High spectral resolution ozone absorption cross-sections – Part 2: Temperature dependence*](https://doi.org/10.5194/amt-7-625-2014)
+  (Atmospheric Measurement Techniques 7, 2014; data from IUP Bremen), through linear Rec. 709
+  responses from the CIE 1931 2° colour matching functions (CVRL, UCL). Only the three integrated
+  values are used; no data ships.
 - Solar radiance normalisation:
   [*Physically Based Rendering*, fourth edition](https://pbr-book.org/4ed/Radiometry,_Spectra,_and_Color/Working_with_Radiometric_Integrals),
   the projected-solid-angle irradiance integral.

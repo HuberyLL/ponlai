@@ -131,7 +131,33 @@ const TABLE_AZIMUTHS = 8, TABLE_STEPS = 32;
 const SHADOW_MU = 256, SHADOW_H = 32, SHADOW_AZIMUTHS = 16, SHADOW_FLOOR = 0.1;
 const H = Math.sqrt( RT * RT - RG * RG );
 const RAYLEIGH = [ 5.802e-3, 13.558e-3, 33.1e-3 ] as const;
-const OZONE = [ 0.650e-3, 1.881e-3, 0.085e-3 ] as const;
+// The ozone's absorption per band (per km at the tent's peak) is integrated over each display
+// channel's band, not sampled at one wavelength per band as the Rayleigh coefficients are. Its
+// Chappuis band is broad and peaks near 600 nm, between the red and the green samples, so point
+// samples near 680, 550 and 440 nm (the values it had, 0.65, 1.88, 0.085 e-3) gave the red about a
+// quarter of the absorption its channel takes over its band, and green more than its own: the
+// twilight sky, lit through hundreds of kilometres of the ozone layer, kept its red and lost its
+// green, a magenta red from 10 degrees up with the sun 5.6 under the horizon (red over green about
+// 2.1, blue over green 1.5 at 20 degrees). Each channel's coefficient here is the cross section
+// averaged over the channel's linear Rec. 709 response (from the CIE 1931 2-degree colour matching
+// functions, its negative lobes included, the linearisation of a display channel's absorption)
+// weighted by a 5778 K black body, at 223 K, for a column of 300 Dobson units over the tent's 15 km
+// equivalent width: 2.59, 1.66 and -0.08 e-3, the blue's slight negative taken as none (our
+// computation; the cross sections are Serdyuchenko, Gorshelev et al. 2014, "High spectral
+// resolution ozone absorption cross-sections - Part 2: Temperature dependence", Atmospheric
+// Measurement Techniques 7). Over grazing columns of 10 - 60 vertical ones the effective red rises
+// to 2.6 - 2.85 and the green falls to 1.65 - 1.58; a black body of 6504 K and a temperature of
+// 293 K move them less. The column (OZONE_COLUMN, `ozoneScale`, in units of 300 DU) sets the
+// twilight sky's hue by elevation, here under the twilight's near-neutral warm sky light (Sky.ts
+// SKY_LIGHT, `dusk`): at a column of 0.6 the bare sky with the sun 5.6 under the horizon goes
+// from orange at the glow (Oklab hue 59 at 1 degree) through yellow to near grey from 20 degrees
+// up (chroma under 0.007 to the zenith); at 1 it turned blue from 12 degrees up (chroma 0.031 at
+// 20 degrees), at 0.5 a yellow grey (0.010). The day's sky hardly moves (red over green 0.02 - 0.04
+// lower at noon); the low sun's transmittance loses red (red over green 3.06 to 2.34 at
+// 2.9 degrees, 1.45 to 1.29 at 12), and the golden hour's bare sky away from the sun turns from
+// orange toward yellow.
+const OZONE = [ 2.59e-3, 1.66e-3, 0 ] as const;
+const OZONE_COLUMN = 0.6;
 const _traced = new THREE.Vector3();
 
 export const SUN_ILLUMINANCE = 11;
@@ -447,7 +473,7 @@ export class Atmosphere {
 	 * tunable on debug pages (`sky.atmosphere.ozoneR`, `ozoneG`, `ozoneB`, `sky.atmosphere.ozone`),
 	 * each a change of the medium that rebakes the tables and the environment */
 	readonly ozone = uniform( new THREE.Vector3( ...OZONE ) );
-	readonly ozoneScale = tuneUniform( 'sky.atmosphere.ozone', 1, { min: 0, max: 4, onChange: markSkyRetune } );
+	readonly ozoneScale = tuneUniform( 'sky.atmosphere.ozone', OZONE_COLUMN, { min: 0, max: 4, onChange: markSkyRetune } );
 	readonly groundAlbedo = uniform( new THREE.Color( 0.06, 0.08, 0.1 ) );
 	readonly viewHeight = uniform( RG + 0.002 );
 	// the moon's direction, for the moon's slices of the in-scatter table
