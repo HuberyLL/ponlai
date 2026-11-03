@@ -83,18 +83,22 @@ import { markSkyRetune } from './SkyRetune.ts';
 // horizon as the sun climbs), so it lies on the low sky opposite a low sun and is gone by day.
 // The polariser, the lean, the aerosol aloft (`aerosol`) and the rising sun's haze aerosol weight
 // (HazeKeys.ts MIST) are one least-squares fit on the clear sky as the eye sees it (the haze over
-// it, no cirrus) at sun 0, 2, 12 and noon, with the noon sea's level held: the sky 130 degrees from
-// the sun stands at .86-.91 of the sky 60 degrees from it 5 - 20 degrees up from sun 0 to 12, the
-// sky opposite a sun at 0 at 1.34-1.53 times the sky 90 degrees from it 5 - 15 degrees up (1.23 at
-// 2), and on the horizon view at a rising sun of 2 - 2.7 degrees the band over the horizon 15 - 25
-// degrees from the sun 1.65-1.66 times (display, linear) the band 40 degrees from it, 2.5 before
-// the fit (polariser 0.35, lean 0.35, aerosol 1.75, the mist's weight 0.76). With the polariser
+// it, no cirrus) at sun 0, 2, 12 and noon, with the noon sea's level held; the haze's weights at a
+// low sun were refitted later with these rows held beside the haze's own (HazeKeys.ts). The sky
+// 130 degrees from the sun stands at .85-.91 of the sky 60 degrees from it 5 - 20 degrees up from
+// sun 0 to 12, the sky opposite a sun at 0 at 1.29-1.43 times the sky 90 degrees from it 5 - 15
+// degrees up (1.23 at 2; the haze before the dawn, its weight set by the band over the horizon,
+// flattens the lowest of these from about 1.34), and on the horizon view at a rising sun of 2 -
+// 2.7 degrees the band over the horizon 15 - 25 degrees from the sun 1.61-1.62 times (display,
+// linear) the band 40 degrees from it, 2.5 before the fit (polariser 0.35, lean 0.35, aerosol
+// 1.75, the mist's weight 0.76). With the polariser
 // near full strength (0.835, as it was) the first two stood at 1.0-1.24 and about 7: the 90 degree
 // band was a deep trench. A march per azimuth (the table's at each of 32 azimuths, the planet's
 // shadow over each point's horizon) was
 // tried in place of the rows and left the side away from a low sun too bright.
-// The haze's froxels and the clouds' shell read the table at their own height, whose shadow is the
-// ratio form (`earthShadow`): the view ray's lit share toward the view (the share of its length in
+// The haze takes `skyShadow` too, read 17 degrees or more over the horizon (VolumetricHaze.ts).
+// The clouds' shell reads the table at its own height, whose shadow is the ratio form
+// (`earthShadow`): the view ray's lit share toward the view (the share of its length in
 // the air outside the planet's shadow, a cylinder behind it along the light, its edge softened by
 // the sun's angular radius) over that share's mean over the azimuth (`shadowMean`, a small table
 // cut with the slices), 1 averaged over the azimuth and by day. The moon lights the sky the

@@ -9,12 +9,12 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, uniform, texture, texture3D, textureLoad, textureStore, instanceIndex, instancedArray, uv, int, ivec2, ivec3,
-	vec2, vec3, vec4, float, max, min, clamp, exp2, log2, sqrt, mix, dot, normalize, select, fract, floor, varying, asin, smoothstep,
+	vec2, vec3, vec4, float, max, min, clamp, exp2, log2, sqrt, mix, dot, normalize, select, fract, floor, varying, asin, smoothstep, length,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
 import { EARTH_RADIUS, type Clouds } from '../sky/Clouds.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
-import { MIE_G, cornetteShanks, polariser, skyRayleighPhase, type Atmosphere } from '../sky/Atmosphere.ts';
+import { MIE_G, cornetteShanks, skyRayleighPhase, type Atmosphere } from '../sky/Atmosphere.ts';
 import { bandPush, bandToDisplay, bandToDisplayColor } from '../sky/BandMatrix.ts';
 import { ISLAND_TOP } from '../world/WorldShapes.ts';
 import type { HazeKey } from './HazeKeys.ts';
@@ -32,6 +32,8 @@ type V4 = THREE.Node<'vec4'>;
 
 // The sine of the elevation the sun's rows are read at under a deck (see the header)
 const DECK_ROW = 0.5;
+// The elevation (17 degrees) under which the haze reads the earth's shadow as at it (see the header)
+const SHADOW_ELEVATION_SIN = Math.sin( THREE.MathUtils.degToRad( 17 ) ), SHADOW_ELEVATION_COS = Math.cos( THREE.MathUtils.degToRad( 17 ) );
 // The sea's reflectance of a diffuse sky: Fresnel's for water (n 1.33) averaged over the
 // hemisphere with the cosine, about 0.066.
 const SEA_DIFFUSE = 0.066;
@@ -118,27 +120,27 @@ const DECK_DIFFUSE = [
 //     is the horizon sky's colour, the same in-scatter seen through more medium, over the far sea
 //     as over the sky, and haze and sky meet without a seam at every hour. It comes in two shares, each
 //     turned toward its luminance by the key's `desaturate` after its phase:
-//       - Rayleigh: the table's Rayleigh share through the sky's Rayleigh phase (Atmosphere.ts
-//         `skyRayleighPhase`) under a polariser of the haze's own (`polarisation`, 0.65 against the
-//         clear sky's 0.835: the hazy air's light is less polarised than the clear sky's), lit by
-//         the open sky (its colour times the ambient visibility) and by the sun (its colour times
-//         the sun's visibility). Without the polariser the haze's Rayleigh light stood 6 times the
-//         sky's own 90 degrees from the sun, where the sky's is darkest, against 1 toward it, so it
-//         was the low sky's light wherever it lay over the sky. Measured over the bare dome on the
-//         clear views (sun 0, 2, 12 and noon, 4 - 30 degrees up, the haze's light per unit of its
-//         opacity over the sky behind it): with the sky's own 0.835 the ratio rose from 0.6 toward
-//         the sun to about 1.15 at 60 degrees from it and stayed there to 90 (the two polarised
-//         alike), and no pair of weights brought 90 degrees over 60; fitted at each view alone the
-//         haze's strength came out 0.62 - 0.67, and at 0.65 the ratio runs about 0.7 within 30
-//         degrees of the sun, 1.0 at 60 and 1.65 at 90 at every view, within 0.03 - 0.05 of that
-//         profile (HazeKeys.ts, the weights). The earth's shadow
-//         at the froxel, 1 by day, over 1 toward a set sun and under 1 away from it, takes the sun's
-//         term whole, and the open sky's only where it lifts it: the air away from a set sun stays
-//         lit by the sky over it, the afterglow toward the sun keeps the lift, and no black belt
-//         lies round the horizon. This reaches everything the haze's sky feeds, the sky's fog colour
-//         and the environment bakes, so the panorama, and the sky's irradiance by about a percent at
-//         twilight. By day under a clear or fair sky the sun's colour here is 0: the air's blue is
-//         sky light, and sunlit blue haze would glow.
+//       - Rayleigh: the table's Rayleigh share through the sky's Rayleigh phase with its forward
+//         lean (Atmosphere.ts `skyRayleighPhase`) and without the sky's polariser (the hazy air's
+//         light is not polarised as the clear sky's is), lit by the open sky (its colour times the
+//         ambient visibility) and by the sun (its colour times the sun's visibility), both under
+//         the earth's shadow over the seen sky (Atmosphere.ts `skyShadow`). The shadow is read with
+//         the column held 17 degrees or more over the horizon (SHADOW_ELEVATION): the air low over
+//         the horizon away from a set sun lies in front of the sky's own shadowed band, and takes
+//         the shadow only once its edge has risen past 17 degrees, so no dark belt lies round the
+//         horizon. Measured on the clear views (sun 0, 2, 3, 12 and noon, 1 - 20 degrees up), the
+//         haze's own light per unit of its opacity (its light over one minus its transmittance,
+//         the transmittance read with `gain` 0) runs at 90 degrees from the sun about 0.76 - 0.88
+//         of its value at 60 and at 170 about 0.93 - 1.1: the sky's lean alone, the side away
+//         from the sun not lifted by a polariser of the haze's own. Over the bare sky behind it
+//         that light stands at about 0.65 - 0.9 by day (sun 12 and noon, 60 - 90 degrees from the
+//         sun), so the hazed low sky 1 - 4 degrees up keeps about 0.76 - 0.81 of the bare one on
+//         the sun's half (HazeKeys.ts, the weights); at a low sun, the sky behind it darker, the
+//         haze is the lighter (60 - 90 degrees from the sun about 1.2 - 1.4 at sun 2, 1.5 - 1.7 at
+//         a setting sun of 3, 3.0 - 3.4 at the sunrise). This reaches everything the haze's sky
+//         feeds, the sky's fog colour and the environment bakes, so the panorama, and the sky's
+//         irradiance by about a percent at twilight. By day under a clear or fair sky the sun's colour here is
+//         0: the air's blue is sky light, and sunlit blue haze would glow.
 //       - aerosol: the table's Mie share through the Cornette-Shanks lobe, times the sun's colour
 //         and visibility once the sun stands over the froxel's horizon (a smoothstep 3 degrees
 //         either side of it, the horizon dipping by sqrt( 2 h / R ) at the froxel's height): the warm
@@ -148,12 +150,13 @@ const DECK_DIFFUSE = [
 //     colour is the aerosol's times the key's `sunRayleigh`. Each share has one weight, keyed
 //     (HazeKeys.ts), the weather's gain over both (2 under cloud) and `gain` (1, an A/B knob) over
 //     the sum; the rows, the phases and the colours being the sky's own, a weight is about the
-//     share's light per unit of opacity over the sky's (at noon the Rayleigh share's, at a weight
-//     of 1, 0.7 - 0.8 of the sky's 60 - 90 degrees from the sun). A gain over the keys' gains and
-//     weights (1.87 times 1.73 times 2.03 by day) had stacked to 6.6 on it. The moon lights the haze
+//     share's light per unit of opacity over the sky's (at noon and an evening sun of 12 the
+//     Rayleigh share's, at a weight of 1, about 1.0 - 1.3 of the sky's 60 - 90 degrees from the
+//     sun). A gain over the keys' gains and weights (1.87 times 1.73 times 2.03 by day) had
+//     stacked to 6.6 on it. The moon lights the haze
 //     the same way, its two shares added to the sun's:
 //     the moon's fog table (its shares under the moon's gains, Atmosphere.ts `moonRayleigh`,
-//     `moonMie`, as the sky's are), its direction (the night key's: Sky.ts `track`), phases, polariser and
+//     `moonMie`, as the sky's are), its direction (the night key's: Sky.ts `track`), phases and
 //     earth shadow, and its colours the sun's scaled by the moon key (Atmosphere `moonIlluminance`,
 //     the moon's sky), except for its aerosol share, whose light and lobe are its own
 //     (MOON_AEROSOL): a pale blue-green of the same luminance as the moon's sky light, times a gain,
@@ -180,8 +183,8 @@ const DECK_DIFFUSE = [
 //     than the high views'); facing away from the moon 0.77, 0.86, 0.99 and 1.01. The far sea
 //     still meets the horizon sky without a step (both are the haze's there). By day the moon's
 //     light is 0: a clear noon's and a golden hour's paused frames are unchanged byte for byte. The
-//     earth's shadow stays the view's: with the moon 10 to 40 degrees up (KeyLift.ts), over every
-//     froxel's horizon, it is about 1. The level follows the moon's elevation through its row's
+//     earth's shadow stays the view's (held at 17 degrees): with the moon 10 to 40 degrees up
+//     (KeyLift.ts) it is about 1. The level follows the moon's elevation through its row's
 //     length (a lower moon's row is longer, so its haze brighter, where a real haze would dim as the
 //     moonlight crosses more air); the moon keeps one direction all night (KeyLift.ts), so the haze
 //     keeps one level from dusk to dawn, and the elevation is a tuning the haze's gain answers.
@@ -463,8 +466,6 @@ export class VolumetricHaze {
 	readonly keyColor = uniform( new THREE.Color( 0, 0, 0 ) );
 	// the moon's aerosol lobe (MOON_AEROSOL)
 	private readonly moonAnisotropy = tuneUniform( 'haze.moon.mieG', MOON_AEROSOL.anisotropy, { min: 0.7, max: 0.82, onChange: markSkyRetune } );
-	// the polariser's strength on the haze's Rayleigh share (see the header)
-	private readonly polarisation = tuneUniform( 'haze.light.polarisation', 0.65, { min: 0, max: 1, onChange: markSkyRetune } );
 	// the medium's and the light's tunable knobs (debug/Tune.ts; the sun's aerosol share takes
 	// the sky's lobe, the moon's its own: `moonAnisotropy`, MOON_AEROSOL)
 	readonly settings: HazeSettings = tuneObject( { ...HAZE_DEFAULTS },
@@ -775,9 +776,10 @@ export class VolumetricHaze {
 		const formOf = ( law: F ) => mix( float( 1 ), law.mul( diffuseShare ).add( forward.mul( lobeShare ) ), this.overcastShare );
 		const deckForm = formOf( diffuse ).toVar();
 		// the sky's in-scatter along the column's direction at each froxel's altitude (the fog
-		// table), through the phases at use: the Rayleigh share under the haze's polariser, lit by
-		// the open sky and by the sun, the aerosol share by the sun once it stands over the
-		// froxel's horizon; each share's colour turned toward its luminance first
+		// table), through the phases at use: the Rayleigh share through the sky's phase without
+		// its polariser, lit by the open sky and by the sun under the earth's shadow, the aerosol
+		// share by the sun once it stands over the froxel's horizon; each share's colour turned
+		// toward its luminance first
 		const atmosphere = this.atmosphere;
 		const grey = ( colour: V3 ): V3 => mix( colour, vec3( dot( colour, LUMINANCE ) ), this.desaturate );
 		// per body (0 the sun, 1 the moon), what the column shares: its direction, the phases and
@@ -786,13 +788,20 @@ export class VolumetricHaze {
 
 			const light = b === 0 ? atmosphere.sunDir : atmosphere.moonDir;
 			const nu = dot( direction, light ).toVar();
+			// (the earth's shadow over the seen sky, read with the column held SHADOW_ELEVATION or
+			// more over the horizon: see the header)
+			const level = vec2( direction.x, direction.z ).toVar();
+			const across = level.div( max( length( level ), 1e-6 ) ).mul( SHADOW_ELEVATION_COS ).toVar();
+			const held = vec3( across.x, SHADOW_ELEVATION_SIN, across.y ).toVar();
+			const raised = select( direction.y.lessThan( SHADOW_ELEVATION_SIN ), held, direction );
+			const shadow = atmosphere.skyShadowOf( raised, light ).toVar();
 			// (overcast's open sky: by the view's elevation and its angle to the key, see the header)
 			const overcast = b === 0 ? formOf( max( direction.y, 0 ).mul( 6 ).add( 3 ).div( 7 ) ).toVar() : float( 1 );
 			// (under a deck each body's open sky gives way to the deck's light, by its share)
 			const open = float( 1 ).sub( this.deckShare ).toVar();
 			return {
 				b, light, overcast, open, miePhase: cornetteShanks( nu, b === 0 ? g : this.moonAnisotropy ).toVar(),
-				rayleighPhase: skyRayleighPhase( nu, atmosphere.rayleighForward ).mul( polariser( nu, this.polarisation ) ).toVar(),
+				rayleighPhase: skyRayleighPhase( nu, atmosphere.rayleighForward ).toVar(), shadow,
 				direct: this.sunRayleighColour[ b ], elevation: asin( clamp( light.y, - 1, 1 ) ).toVar(),
 			};
 
@@ -812,10 +821,9 @@ export class VolumetricHaze {
 
 				// (the sun's rows along the view, level under a deck, the moon's along the moon: see the header)
 				const rows = atmosphere.fogRows( body.b === 0 ? mix( direction.y, float( DECK_ROW ), this.deckShare ) : body.light.y, height, body.b );
-				const shadow = atmosphere.earthShadowAt( height, direction, body.b );
 				const above = smoothstep( horizon.negate(), horizon, body.elevation.add( dip ) );
 				const rayleigh = grey( rows.rayleigh.mul( body.rayleighPhase ) )
-					.mul( this.ambientColour[ body.b ].mul( ambient ).mul( max( shadow, 1 ) ).mul( body.overcast ).mul( body.open ).add( body.direct.mul( sun ).mul( shadow ) ) );
+					.mul( this.ambientColour[ body.b ].mul( ambient ).mul( body.overcast ).mul( body.open ).add( body.direct.mul( sun ) ) ).mul( body.shadow );
 				const mie = grey( rows.mie.mul( body.miePhase ) ).mul( this.mieColour[ body.b ] ).mul( above.mul( sun ) );
 				scattered.addAssign( rayleigh.mul( this.weights.x ).add( mie.mul( this.weights.y ) ) );
 
