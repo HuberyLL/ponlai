@@ -215,24 +215,24 @@ const BOUNCE_GAIN = 9.4;
  * Set once the environment took the haze's light, which lights the shade too: 1.04 at the low key
  * and 1.18 at the high one, the ground's sky light about the seen sky's own, so from 6 degrees up
  * the key stands about 10.5 - 11.5 times that irradiance, and the meadow's sunlit side reads about
- * 2.6 times its shade at 12 degrees and 3.1 - 3.7 from 30 up. At the golden hour (`golden`,
- * 1) the key stands about 6 times that irradiance at 3 degrees on either side of the day, with
- * Sky.ts CLEAR_SKY's gain over the sky's light (the land's shade a lit part of it against a low
- * sun, not nearly black), and about 9 times at 4.2 degrees in the evening, on the way to the
- * day's. The rising sun's sky takes less of CLEAR_SKY's gain at 3 degrees (2 against the
- * evening's 2.7: a brighter sky lifts the near sea in a view across the island toward the rising
- * sun), so the land takes the rest here (`dawn`, 1.58); from the sun's rise down (`sunrise`, 0
- * degrees) it keeps 0.77, the land's level before the sun being Sky.ts ISLAND_SKY_RISING's. About 5
- * at night: the clear night's sky is mostly the haze's moonlit light over a nearly dark dome, of
- * which the environment takes only a part, and the moonlit ground keeps about eighteen times the
- * sky's light on open ground (Sky.ts `moonKeyGain`). 1 under cloud, one value from -1 degrees up,
- * with the deck's gains over it (`update`): the deck's own, which the water takes too
- * (sky/Weather.ts DECK_SKY_GAIN, by `deckLight`: a cloudy deck's from a sun of 3 degrees, whole by
- * 6, overcast's at every sun until the twilight), and overcast's land gain (OVERCAST_LAND). A
- * clouded sky sets the exposure by its own light (post/Exposure.ts), so these set the land against
- * the sky, and the deck's gain the water too. It returns to 3.5 by -2.7, where the night's exposure
- * has come in whole (the blue hour's light is the night's sky's, which the day's keys do not
- * touch). */
+ * 2.6 times its shade at 12 degrees and 3.1 - 3.7 from 30 up. At the golden hour (`golden`, 1) the
+ * key stands about 6 times that irradiance at 3 degrees on either side of the day, with Sky.ts
+ * CLEAR_SKY's gain over the sky's light (the land's shade a lit part of it against a low sun, not
+ * nearly black), and about 9 times at 4.2 degrees in the evening, on the way to the day's. The
+ * rising sun's sky takes less of CLEAR_SKY's gain at 3 degrees (2 against the evening's 2.7: a
+ * brighter sky lifts the near sea in a view across the island toward the rising sun), so the land
+ * takes the rest here (`dawn`, 1.58); from the sun's rise down (`sunrise`, 0 degrees) it keeps
+ * 0.77, the land's level before the sun being Sky.ts ISLAND_SKY_RISING's. About 7.25 at night, one
+ * value under every night's sky: the clear night's sky is mostly the haze's moonlit light over a
+ * nearly dark dome, of which the environment takes only a part, and the moonlit ground keeps about
+ * fifteen times the sky's light on open ground (Sky.ts `moonKeyGain`). 1 under cloud, one value
+ * from -1 degrees up, with the deck's gains over it (`update`): the deck's own, which the water
+ * takes too (sky/Weather.ts DECK_SKY_GAIN, by `deckLight`: a cloudy deck's from a sun of 3 degrees,
+ * whole by 6, overcast's at every sun until the twilight), and overcast's land gain
+ * (OVERCAST_LAND). A clouded sky sets the exposure by its own light (post/Exposure.ts), so these
+ * set the land against the sky, and the deck's gain the water too. It returns to 3.5 by -2.7, where
+ * the night's exposure has come in whole (the blue hour's light is the night's sky's, which the
+ * day's keys do not touch). */
 const PROBE_SKY_LOW: DayKey<{ skyGain: number }> = { at: 12, name: 'low', values: { skyGain: 1.04 } };
 const PROBE_SKY_HIGH: DayKey<{ skyGain: number }> = { at: 40, name: 'high', values: { skyGain: 1.18 } };
 const PROBE_SKY: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight', {
@@ -247,7 +247,7 @@ const PROBE_SKY: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight', {
 		{ at: - 2.7, name: 'cloudyBlue', values: { skyGain: 3.5 } },
 		{ at: - 1, name: 'cloudy', values: { skyGain: 1 } },
 	],
-	night: { skyGain: 5 },
+	night: { skyGain: 7.25 },
 }, { skyGain: { min: 0.25, max: 8, scale: 'log' } } );
 const _probeSky = { skyGain: 1 };
 /** A low sun's lift of the sky's light on what it lights, main.ts writes it once a frame to shared.ts

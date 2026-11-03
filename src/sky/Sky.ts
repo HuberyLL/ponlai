@@ -256,8 +256,10 @@ const ISLAND_SKY: readonly IslandRow[] = [
 // The rising sun's: none of the evening's warm cast, only the night's deep blue below -10 degrees,
 // and gains of its own. A clear morning's day exposure is metered by the sky and the land together
 // (post/Exposure.ts, the `dawn` key), so the land's brightness is this light against the sky's: the
-// gains keep the land from about 0.55 at -8 degrees, where the sky's light is still deep, through a
-// lift of about 2 at -2.6, where the sky's has fallen behind the sun's coming, to none from 2 up.
+// gains keep the land from about 0.55 at -8 degrees, where the sky's light is still deep, and 0.66
+// at -6.5, where the land still takes part of the night's gain on its sky light (lighting/
+// AmbientRelight.ts PROBE_SKY: about a quarter of it there), through a lift of about 2 at -2.6,
+// where the sky's has fallen behind the sun's coming, to none from 2 up.
 // A blue cast of its own (the night's, at 0.3) turned the rock's brightest tenth to C 0.08 to 0.09
 // at -6.5 degrees, against 0.07 to 0.08 without: the land takes the sky's own colour. A clouded
 // morning keeps these tints but takes the evening's gains back by its clouded share (`islandSky`):
@@ -271,7 +273,7 @@ const ISLAND_SKY_RISING: readonly IslandRow[] = [
 	{ at: - 3.3, gain: 2 },
 	{ at: - 4, gain: 1.8 },
 	{ at: - 5.3, gain: 1.3 },
-	{ at: - 6.5, gain: 0.9 },
+	{ at: - 6.5, gain: 0.66 },
 	{ at: - 8, gain: 0.55 },
 	{ at: - 8.6, gain: 0.6 },
 	{ at: - 10, gain: 0.8 },
