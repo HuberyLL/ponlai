@@ -212,8 +212,10 @@ const BOUNCE_GAIN = 9.4;
  * keeps its gain; the ground's sky light takes this on top, so its ratio to the sun's light can be
  * set at every hour without changing the sky the eye sees. It sets the key's illuminance at normal
  * incidence against the ambient light's irradiance on open level ground (with the ground's bounce).
- * Set once the environment took the haze's light, which lights the shade too: about 0.8 at the low
- * and high keys, the ground's sky light a fifth under the seen sky's. At the golden hour (`golden`,
+ * Set once the environment took the haze's light, which lights the shade too: 1.04 at the low key
+ * and 1.18 at the high one, the ground's sky light about the seen sky's own, so from 6 degrees up
+ * the key stands about 10.5 - 11.5 times that irradiance, and the meadow's sunlit side reads about
+ * 2.6 times its shade at 12 degrees and 3.1 - 3.7 from 30 up. At the golden hour (`golden`,
  * 1) the key stands about 6 times that irradiance at 3 degrees on either side of the day, with
  * Sky.ts CLEAR_SKY's gain over the sky's light (the land's shade a lit part of it against a low
  * sun, not nearly black), and about 9 times at 4.2 degrees in the evening, on the way to the
@@ -231,8 +233,8 @@ const BOUNCE_GAIN = 9.4;
  * the sky, and the deck's gain the water too. It returns to 3.5 by -2.7, where the night's exposure
  * has come in whole (the blue hour's light is the night's sky's, which the day's keys do not
  * touch). */
-const PROBE_SKY_LOW: DayKey<{ skyGain: number }> = { at: 12, name: 'low', values: { skyGain: 0.834 } };
-const PROBE_SKY_HIGH: DayKey<{ skyGain: number }> = { at: 40, name: 'high', values: { skyGain: 0.78 } };
+const PROBE_SKY_LOW: DayKey<{ skyGain: number }> = { at: 12, name: 'low', values: { skyGain: 1.04 } };
+const PROBE_SKY_HIGH: DayKey<{ skyGain: number }> = { at: 40, name: 'high', values: { skyGain: 1.18 } };
 const PROBE_SKY: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight', {
 	day: [ { at: 3, name: 'golden', values: { skyGain: 1 } }, PROBE_SKY_LOW, PROBE_SKY_HIGH ],
 	rising: [
