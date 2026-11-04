@@ -50,8 +50,11 @@ pixels: `under` and `over` the region's own median L (a crown's dark and lit hal
 of pixels (%) whose red exceeds twice their green: the meadow's blades in a capture taken with
 `flags=grassMask` (src/world/Grass.ts), which paints them red over the green ground. --mask M reads
 a mask capture of the same view (a file, or a directory holding one of each image's name) and splits
-the region's pixels by it: `marked` where the mask's red exceeds twice its green and blue, `edge`
-where its green does, the `rest` the others; it gives the marked share (%) and, for the marked
+the region's pixels by it: `marked` where the mask differs from the image by more than 16 levels in a
+channel and its red is its largest, `edge` where it differs so and its green is, the `rest` the
+others (a bright paint leaves the display chain desaturated: about the sun a marked red came out
+salmon, its red under twice its green, and a test by that ratio found a sixth of the marked sky
+there); it gives the marked share (%) and, for the marked
 pixels and the rest of the image itself, the median Oklab L, C and hue with their 10th and 90th
 percentiles (the hue's about its circular mean), the marked median's dL and dC over the rest's, and
 each marked pixel's dL and dC against the rest round it (their Gaussian mean over the rest's pixels
@@ -463,14 +466,16 @@ def mask_of(f, mask):
 
 def mask_stats(R, M, bare=None):
     """The Oklab medians and 10-90 percentiles of a region's pixels split by a mask capture of the same
-    view: `marked` where the mask's red exceeds twice its green and blue, `edge` where its green
-    exceeds twice its red and blue, `rest` the others (the edge left out of both). With `bare`, the
-    same view without what the mask marks: the marked pixels' own differences in L and C from it."""
+    view: `marked` where the mask differs from the image by more than 16 levels in a channel and its
+    red is its largest, `edge` where it differs so and its green is, `rest` the others (the edge left
+    out of both). With `bare`, the same view without what the mask marks: the marked pixels' own
+    differences in L and C from it."""
     if M.shape != R.shape or (bare is not None and bare.shape != R.shape):
         return {"error": f"mask shape {list(M.shape)} against {list(R.shape)}"}
     c = M[..., :3].reshape(-1, 3).astype(np.int32)
-    marked = (c[:, 0] > 2 * c[:, 1]) & (c[:, 0] > 2 * c[:, 2])
-    edge = (c[:, 1] > 2 * c[:, 0]) & (c[:, 1] > 2 * c[:, 2])
+    painted = np.abs(c - R[..., :3].reshape(-1, 3).astype(np.int32)).max(axis=1) > 16
+    marked = painted & (c[:, 0] > c[:, 1]) & (c[:, 0] > c[:, 2])
+    edge = painted & (c[:, 1] > c[:, 0]) & (c[:, 1] > c[:, 2])
     rest = ~marked & ~edge
     _, L, A, B = oklab_pixels(R)
     C, H = np.hypot(A, B), np.degrees(np.arctan2(B, A)) % 360
