@@ -7,7 +7,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, uv, uniform, texture, positionWorld, cameraPosition, normalize, smoothstep, dot,
-	vec2, vec3, vec4, ivec2, float, sqrt, max, atan, asin, clamp, cos, sin, mix, abs, select,
+	vec2, vec3, vec4, ivec2, float, sqrt, max, min, atan, asin, clamp, cos, sin, mix, abs, select,
 	pmremTexture, textureLoad, Loop, cross, exp2, log2, positionView, fwidth, length, step,
 } from 'three/tsl';
 import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
@@ -74,7 +74,9 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // The environment's bake lays the same haze over its source as the dome does (`fogEnvironment`,
 // VolumetricHaze.ts `openSky`, toward every direction from the sea's level, unshadowed): the environment and the dome
 // are one sky, its haze light included, so the ground's sky light takes the light the haze scatters
-// and the sea reflects it (the seen panorama, above the horizon).
+// and the sea reflects it (the seen panorama, above the horizon). Under the horizon the environment is
+// the distant sea, its reflection of the sky over its body, which the light that reaches the sea
+// lights, the sky's and the sun's (SEA_KNEE).
 // The sun's disc and the moon's are dimmed by the clouds' mean transmittance over each disc, read
 // from the panorama into a texel ahead of the scene (`discCloudTransmittance`), and hidden by the
 // clouds' opacity once, in the composite. The key light's colour does not take that mean: the lit
@@ -119,6 +121,9 @@ interface SkyEndpoint {
 	deckIrradianceMap: THREE.RenderTarget;
 	version: number;
 	irradiance: THREE.Color;
+	// the distant sea's body as its bake lit it (SEA_KNEE): what the bake took and, read back with its
+	// deck irradiance, the radiance (`landSea`)
+	sea: { body: THREE.Color; night: THREE.Color; sun: number; knee: number; radiance: THREE.Color };
 }
 
 // One bake: its endpoint, whether it is explicit (reads its irradiance back and shows at once),
@@ -184,6 +189,7 @@ function makeEndpoint(): SkyEndpoint {
 		deckIrradianceMap: new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter } ),
 		version: 0,
 		irradiance: new THREE.Color( 0, 0, 0 ),
+		sea: { body: new THREE.Color(), night: new THREE.Color(), sun: 0, knee: 1, radiance: new THREE.Color() },
 	};
 
 }
@@ -672,9 +678,21 @@ const _skyGain = new THREE.Color();
 const cirrusGain = ( elevation: number, rising: boolean, cloud: number ) => ( debugFlags.skyGain === false ? 1 : luma( skyGain( elevation, rising, cloud, _skyGain ) ) * CIRRUS_SHARE ) * ( typeof debugFlags.cirrusSky === 'number' ? debugFlags.cirrusSky : 1 );
 const lowKey = ( elevation: number ) => debugFlags.lowKey === false ? 1 : byElevation( LOW_KEY, elevation, 'gain' );
 
-// A sky radiance or irradiance as lent to the island (ISLAND_SKY): drawn toward `tint.rgb` at its
-// own luminance by `tint.w`, times `gain`. Linear in the light, so the graded probe's integral is
-// the integral of the graded panorama.
+// The distant sea's body (the environment's lower half under its reflection, `seaPanorama`): its
+// colour's share of the light that reaches the sea, the sky's irradiance with its clouds (the bake's
+// deck irradiance) and the sun's direct light on the level water, in luminance, up to a knee at
+// SEA_KNEE times the sun's illuminance (scene units, both at the weather's ambient gain), where it is
+// the colour times that illuminance. The knee lies under every kept weather's noon (the light there
+// is 0.258 of the illuminance under a clear sky, 0.251 under a fair one), so a high sun's body is
+// what it was; under it the body falls with the light: to 0.57 of it at 30 degrees, 0.06 at 5, and
+// under a hundredth after sunset, where the sky alone lights it. It followed a smoothstep of the
+// sun's height from -7 to 8 degrees before, which held it 10 to 55 times the sky's E / pi through
+// the twilight (0.46 at noon); the water's horizon term reads this half at its mip 5, whose row under
+// the horizon takes 0.35 to 0.49 of the far sea's read, and the far sea stood grey over the glow it
+// mirrors. Tunable: `sky.sea.knee`.
+const SEA_KNEE = 0.24;
+const seaKnee = tune( 'sky.sea.knee', SEA_KNEE, { min: 0.05, max: 1, onChange: markSkyRetune } );
+
 // The finite wave grid ends before the geometric horizon. Continue it with the reflection
 // of a flat distant sea, approaching unit Fresnel at the horizon without a dark colour step.
 const seaPanorama = Fn( ( [ d, clearSky, sea ]: [ V3, V3, V3 ] ) => {
@@ -690,6 +708,9 @@ const seaPanorama = Fn( ( [ d, clearSky, sea ]: [ V3, V3, V3 ] ) => {
 	{ name: 'd', type: 'vec3' }, { name: 'clearSky', type: 'vec3' }, { name: 'sea', type: 'vec3' },
 ] } );
 
+// A sky radiance or irradiance as lent to the island (ISLAND_SKY): drawn toward `tint.rgb` at its
+// own luminance by `tint.w`, times `gain`. Linear in the light, so the graded probe's integral is
+// the integral of the graded panorama.
 const lendIsland = Fn( ( [ light, tint, gain ]: [ V3, V4, F ] ) => {
 
 	return mix( light, tint.rgb.mul( dot( light, vec3( 0.2126, 0.7152, 0.0722 ) ) ), tint.w ).mul( gain );
@@ -921,7 +942,6 @@ export class Sky {
 	private front = 0;
 	private destination = 0;
 	private initialized = false;
-	private celestial: DayCycleSnapshot | null = null;
 	private weatherState: WeatherState | null = null;
 	private pendingUpdate: Promise<void> | null = null;
 	// The warm-up's compiles (`warm`), which every bake waits for; a failed warm-up resolves here
@@ -972,7 +992,15 @@ export class Sky {
 	private quad: THREE.QuadMesh;
 	private reflectionSource: THREE.RenderTarget;
 	private upperQuad: THREE.QuadMesh;
-	private sea = uniform( new THREE.Color() );
+	// the distant sea's body as the bake takes it (SEA_KNEE, `seaNode`): the colour times the sun's
+	// illuminance, the night's share, the sun's direct light on the level water (E / pi, luminance) and
+	// the knee; and the latest bake's radiance, read back (`seaRadiance`), with that bake's version
+	private seaBody = uniform( new THREE.Color() );
+	private seaNight = uniform( new THREE.Color() );
+	private seaSun = uniform( 0 );
+	private seaKnee = uniform( 1 );
+	private seaLight = new THREE.Color();
+	private seaVersion = 0;
 	private ambientGain = uniform( 1 );
 	private irradiancePass = uniform( 0 );
 	private includeStars = uniform( 0 );
@@ -1192,6 +1220,17 @@ export class Sky {
 
 	}
 
+	/** The distant sea's body as the bake lights it (SEA_KNEE): the light that reaches the sea, the
+	 * deck irradiance of this bake (drawn before its panoramas) and the sun's on the level water, over
+	 * the knee and at most 1, times the colour; `landSea` is its CPU twin. At the knee and above it is
+	 * `seaBody` itself, bit for bit. */
+	private seaNode(): V3 {
+
+		const light = dot( this.bakeDeckIrradianceNode, vec3( 0.2126, 0.7152, 0.0722 ) ).add( this.seaSun );
+		return this.seaBody.mul( min( light.div( this.seaKnee ), 1 ) ).add( this.seaNight );
+
+	}
+
 	/** The environment's source toward each texel of the panorama: the sky over the island, its
 	 * clouds and their reflection in the distant sea, seen through `haze` when given (see
 	 * `fogEnvironment`). */
@@ -1228,7 +1267,7 @@ export class Sky {
 			}
 			const sky = lendIsland( fogged.mul( this.ambientGain ), this.bakeIslandTint, this.bakeIslandGain );
 			const stars = this.night.stars( up, this.starFootprint, this.bakeStarVisibility.mul( this.includeStars ) );
-			const radiance = seaPanorama( d, sky.add( stars.mul( cloud.a ) ), this.sea.rgb );
+			const radiance = seaPanorama( d, sky.add( stars.mul( cloud.a ) ), this.seaNode() );
 			return vec4( radiance, mix( cloud.a, d.y, this.irradiancePass ) );
 
 		} )();
@@ -1357,21 +1396,14 @@ export class Sky {
 
 	get transitioning(): boolean { return this.transitionDuration > 0 && this.transitionElapsed < this.transitionDuration; }
 	get moonDir(): THREE.Vector3 { return this.night.moonDir.value; }
-	/** The distant sea's radiance, the environment's lower half, as the latest bake set it. */
-	get seaRadiance(): THREE.Color { return this.sea.value; }
+	/** The distant sea's body radiance, the environment's lower half, as the latest bake lit it (read
+	 * back with its deck irradiance: `landSea`). */
+	get seaRadiance(): THREE.Color { return this.seaLight; }
 
 	get environmentNode(): V3 {
 
 		if ( ! this.environment ) throw new Error( 'The sky environment is available after the initial update' );
 		return this.environment;
-
-	}
-
-	setCelestial( snapshot: DayCycleSnapshot | null ): void {
-
-		// The caller may keep advancing its clock while GPU readback is pending. Each bake
-		// owns its requested directions and scalars, never a mutable controller snapshot.
-		this.celestial = snapshot ? { ...snapshot, sunDir: snapshot.sunDir.clone(), moonDir: snapshot.moonDir.clone(), moonSunDir: snapshot.moonSunDir.clone(), keyDir: snapshot.keyDir.clone() } : null;
 
 	}
 
@@ -1885,7 +1917,6 @@ export class Sky {
 		const started = performance.now();
 		const version = ++ this.bakeVersion;
 		const readback = transitionSeconds === 0 || ! this.initialized;
-		const celestial = this.celestial;
 		const weather = this.weatherState ? { ...this.weatherState } : null;
 		await this.renderer.init();
 		// the warm-up's pipelines first: r186 skips a draw whose pipeline is still being created
@@ -1901,7 +1932,7 @@ export class Sky {
 			this.clouds.update( this.renderer, this.viewCamera, this.viewWidth, this.viewHeight, this.cloudTime );
 
 		}
-		const bake = this.beginBake( version, readback, transitionSeconds, celestial, weather );
+		const bake = this.beginBake( version, readback, transitionSeconds, weather );
 		this.renderPanoramas( bake );
 		const r = this.renderer;
 		if ( readback ) {
@@ -1919,6 +1950,7 @@ export class Sky {
 
 			}
 			bake.state.irradiance.setRGB( E[ 0 ] / Math.PI, E[ 1 ] / Math.PI, E[ 2 ] / Math.PI );
+			this.landSea( bake.state, version, await r.readRenderTargetPixelsAsync( bake.state.deckIrradianceMap, 0, 0, 1, 1 ) as Float32Array );
 
 		} else this.readIrradiance( bake.state, version );
 		if ( bake.environment !== null ) this.filterEnvironment( bake.environment );
@@ -1936,8 +1968,8 @@ export class Sky {
 
 	// Pick the endpoint a bake writes and capture the state it bakes: the live state from
 	// track() (the atmosphere LUT, key light, clouds and stars already describe this frame's sun
-	// and moon) and the weather and day it was requested with.
-	private beginBake( version: number, readback: boolean, transitionSeconds: number, celestial: DayCycleSnapshot | null, weather: WeatherState | null ): Bake {
+	// and moon) and the weather it was requested with.
+	private beginBake( version: number, readback: boolean, transitionSeconds: number, weather: WeatherState | null ): Bake {
 
 		const illuminance = this.sunIlluminance * SCENE_RADIANCE_SCALE;
 		const next = this.initialized ? 1 - this.front : 0;
@@ -1945,9 +1977,17 @@ export class Sky {
 		state.version = version;
 		const ambientGain = weather?.ambientGain ?? 1;
 		this.ambientGain.value = ambientGain;
-		const daylight = celestial ? celestial.daylight : 1;
-		this.sea.value.copy( this.seaColor ).multiplyScalar( illuminance * daylight )
-			.add( this.displayNightAmbient.value.clone().multiplyScalar( 0.22 ) ).multiplyScalar( ambientGain );
+		// the distant sea's body (SEA_KNEE): the body is written as it stood before it followed the
+		// light, the colour times the illuminance times the gain, so a body at the knee is that value
+		const sea = state.sea;
+		sea.body.copy( this.seaColor ).multiplyScalar( illuminance ).multiplyScalar( ambientGain );
+		sea.night.copy( this.displayNightAmbient.value ).multiplyScalar( 0.22 ).multiplyScalar( ambientGain );
+		sea.sun = luma( this.sunColor ) * Math.max( this.sunDir.y, 0 ) / Math.PI * ambientGain;
+		sea.knee = seaKnee() * illuminance * ambientGain;
+		this.seaBody.value.copy( sea.body );
+		this.seaNight.value.copy( sea.night );
+		this.seaSun.value = sea.sun;
+		this.seaKnee.value = sea.knee;
 		this.bakeStarVisibility.value = this.night.starVisibility.value;
 		// The environment refreshes on explicit bakes and on every environmentEvery-th periodic one,
 		// into the atlas not shown.
@@ -2083,7 +2123,7 @@ export class Sky {
 
 		const started = performance.now();
 		const weather = this.weatherState ? { ...this.weatherState } : null;
-		const bake = this.beginBake( ++ this.bakeVersion, false, transitionSeconds, this.celestial, weather );
+		const bake = this.beginBake( ++ this.bakeVersion, false, transitionSeconds, weather );
 		this.renderPanoramas( bake );
 		this.readIrradiance( bake.state, bake.version );
 		this.slices = bake.environment === null ? [] : this.environmentSlices( bake.environment );
@@ -2314,6 +2354,27 @@ export class Sky {
 			if ( state === a || state === b ) this.skyIrradiance.copy( a.irradiance ).lerp( b.irradiance, this.blend.value );
 
 		} ).catch( ( error: unknown ) => console.error( error ) ).finally( () => { this.irradiancePending --; } );
+		// and its distant sea's body, from its deck irradiance (`landSea`)
+		this.irradiancePending ++;
+		void this.renderer.readRenderTargetPixelsAsync( state.deckIrradianceMap, 0, 0, 1, 1 )
+			.then( ( pixels ) => this.landSea( state, version, pixels as Float32Array ) )
+			.catch( ( error: unknown ) => console.error( error ) ).finally( () => { this.irradiancePending --; } );
+
+	}
+
+	// A bake's distant sea on the CPU (`seaNode`'s twin, SEA_KNEE), from its deck irradiance read back:
+	// the ground bounce takes it as the environment's lower half (`seaRadiance`). Only a newer bake's
+	// overwrites it, and an answer for an endpoint a newer bake has taken lands nowhere. At the knee and
+	// above it is the body the bake took, bit for bit.
+	private landSea( state: SkyEndpoint, version: number, deck: Float32Array ): void {
+
+		if ( state.version !== version ) return;
+		const { body, night, sun, knee, radiance } = state.sea;
+		const share = Math.min( ( 0.2126 * deck[ 0 ] + 0.7152 * deck[ 1 ] + 0.0722 * deck[ 2 ] + sun ) / knee, 1 );
+		radiance.copy( body ).multiplyScalar( share ).add( night );
+		if ( version < this.seaVersion ) return;
+		this.seaVersion = version;
+		this.seaLight.copy( radiance );
 
 	}
 

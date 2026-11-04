@@ -402,7 +402,6 @@ function prepareHaze( state: Readonly<WeatherState> ): void {
 function prepareSkyState(): void {
 
 	const celestial = manualSun ? null : dayCycle.snapshot();
-	sky.setCelestial( celestial );
 	const state = weather.snapshot();
 	if ( cloudOverride !== null ) state.coverage = cloudOverride;
 	sky.setWeather( state );
