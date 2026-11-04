@@ -443,8 +443,8 @@ art decision changes; images from elsewhere stay out of the repository.
   from 45 to 190 m). Sea fog is a low layer at the cliff's foot that may surround the island,
   never a uniform tint.
 - Weather changes sweep the sky as a front from upwind. The clouds drift downwind with the wind
-  aloft, faster than the surface wind (the cumulus about twice it, the cirrus about three times,
-  along their fibres), so they never move against the grass and the sea.
+  aloft, faster than the surface wind (the cumulus and the thin layer about twice it),
+  so they never move against the grass and the sea.
 - The clouds stand where such clouds stand: the clear and fair skies' cumulus from about 4 km up,
   cloudy's and overcast's deck low, its base under a kilometre and its tops near 3 km, so its
   masses are near and wide overhead and close into a flat, packed floor toward the horizon, seen
@@ -453,6 +453,18 @@ art decision changes; images from elsewhere stay out of the repository.
   cloud above, with no gain or tint of its own: thin parts show lighter than the thick masses
   beside them, and the deck reads near grey. The air under it is lit by the deck and by the sea's
   reflection of it rather than by a clear sky, so the haze in front of the clouds is their grey.
+- Clear and fair skies hold a thin layer of silky fibres about 8.5 km up, combed along the wind
+  aloft and gathered in patches with blue sky between them, closing up toward the horizon in
+  perspective. The fibres bend and hook, run thick and thin along their length and fray at their
+  ends, and lie at two scales turned against each other, so they are neither ruled lines nor
+  strokes of even width and no two run quite parallel. The patches stay apart: toward the horizon
+  the layer thins as its fibres blur together, so even toward a low sun the sky a few degrees over
+  the horizon stays clear, with no bright sheet round the sun. By day the layer is faint and white,
+  a little lighter than the sky round it (a few hundredths of Oklab lightness at most), never what
+  the eye goes to first; the cumulus is drawn over it, and cloudy and overcast skies have none.
+  Each part of it is lit by the sun as it stands over that part, so after sunset and before
+  sunrise the side away from the sun goes out first, with the sun about 1.5 degrees under the
+  horizon, and the side toward it last, near 3 degrees under, warmest just before it goes.
 - The sky's light takes a gain of its own by the sun's height, the rising sun's apart from the
   setting sun's. Through sunset it runs from the golden hour's warm key into a dusk key, more
   orange still, at a sun 1 degree under the horizon, then moves on to the night key by -6 degrees:

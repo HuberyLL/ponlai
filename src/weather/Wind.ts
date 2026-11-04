@@ -40,7 +40,7 @@ import { PREVAILING_HEADING, type WeatherState } from '../sky/Weather.ts';
 //   below, read by SeaDetail.ts, so a gust crosses from the water onto the meadow and off again
 //   as one patch, at the meadow's pace; farther out tidewater's octaves drift with `displacement`.
 // - the clouds: `displacement`, which Clouds.setDrift turns into each layer's drift aloft;
-//   `direction` for the fronts, the cirrus and the tops' lean (sky/Sky.ts, Clouds.ts).
+//   `direction` for the fronts, the thin layer's streaks and the tops' lean (sky/Sky.ts, Clouds.ts).
 // - the air: `displacement` (the clouds' drift), `velocity` (rain, the storm's spray),
 //   `direction` (the storm sea's foam).
 // - the falling leaves (FallingLeaves.ts), which take several fixed steps between two of the

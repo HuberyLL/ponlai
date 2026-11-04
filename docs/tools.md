@@ -414,7 +414,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   any radiance, so each pixel's cover is exact in the opaque colour, or `grassMask:albedo`, unlit in
   their own diffuse colour (both for `tools/meadow-light.mjs`); the look taken off
   comes back by `clearShade:true`, `lowSun:true`, `tone:0.5`, `filmNight:true`; `localTone:false`
-  builds the display chain without its local tone mapping. The metered exposure is shifted by the
+  builds the display chain without its local tone mapping; `streaks:<n>` scales the thin cloud
+  layer's amount (0 turns it off) and `streakMask:true` paints its pixels for `img.py stats --mask`
+  (`src/sky/Sky.ts`). The metered exposure is shifted by the
   GUI's `exposure offset (stops)` (Post folder); its keys are `src/post/Exposure.ts`
   `EXPOSURE_KEYS`, and `await __PONLAI__.pipeline.readExposure()` reads its state back from the GPU
   (the same fields as `radiance`'s `exposure`). The grade's
@@ -498,7 +500,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   neighbours' correlation, the gust field's size and travel, the sea's gusts against it around the
   island (`gust.sea`), the plants' wiring, their sway
   rates, and per weather where every part travels and how fast: the plants, the sea and its
-  swell, the open sea's gusts, the air's displacement (`fog`), the cumulus and the cirrus), through the probe as
+  swell, the open sea's gusts, the air's displacement (`fog`), the cumulus and the thin layer's streaks), through the probe as
   `--eval "return JSON.stringify( await P.windProbe() )"`.
 - The haze (`src/weather/VolumetricHaze.ts`): its knobs are the GUI's Haze folder and
   `__PONLAI__.pipeline.air.settings` (read every frame; a change of the slices, the jitter or the
@@ -667,7 +669,11 @@ change, bounding box, `--heat` map), `crop` (boxes or a capture's named anchors,
 (mean RGB, luma, percentiles per image or region; `--oklab` adds the Oklab lightness, chroma and
 hue medians, `--split` the means of the pixels under and over the region's own median L, a crown's dark
 and lit halves, and of its darkest 5 % and brightest 10 %, in Oklab and linear RGB, `--cover` the
-share of a mask capture's pixels painted flat red, as `grassMask:true` paints the blades; `--deck`
+share of a mask capture's pixels painted flat red, as `grassMask:true` paints the blades, `--mask M`
+the pixels a mask capture of the same view (a file, or a directory of them) paints in a red of
+their own luminance against the rest, as `streakMask:true` paints the thin cloud layer's: their
+share, the Oklab medians of both parts and of each marked pixel against the rest blurred round it
+(`near`), and with `--against B` against the same pixels of a capture without them; `--deck`
 reads a cloud deck's structure on named sky regions instead, the horizon views' `h` and the view
 toward the sun's `sun`: the spread of its blocks of a degree, its structure about a broad trend, the
 std per band of size, the edges' gradient, the masses' size, and with `--deck-rows` the horizon's

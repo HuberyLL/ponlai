@@ -59,8 +59,8 @@ import type { Bounds } from '../world/WorldShapes.ts';
 // prevailing heading plus its offset), the open sea's gusts (SeaDetail.ts: the air's displacement times
 // OPEN_DRIFT; around the island they are the meadow's, `gust.sea`), the air's displacement
 // (`fog`: what drifts with the surface wind), the cumulus (their weather map
-// and shape noise drift together; `evolve` moves the shape vertically, in place) and the cirrus,
-// each by minus the change of its sampling offset (Clouds.ts `layerOffsets`). The drifts are
+// and shape noise drift together; `evolve` moves the shape vertically, in place) and the thin
+// layer's streaks, each by minus the change of its sampling offset (Clouds.ts `layerOffsets`). The drifts are
 // read off the page across a seek of 1 s (`setTime`), so they are the page's own, and every gap is
 // to the vegetation's wind.
 
@@ -74,7 +74,7 @@ export interface WindProbeContext {
 	shared: Shared;
 	wind: Wind;
 	weather: { state: { windSpeed: number; windDirection: number; gustiness: number } };
-	sky: { clouds: { frontAxis?: { value: THREE.Vector2 }; cirrusAxis?: { value: THREE.Vector2 }; layerOffsets?: () => { cumulus: THREE.Vector2; cirrus: THREE.Vector2 } } };
+	sky: { clouds: { frontAxis?: { value: THREE.Vector2 }; windAxis?: { value: THREE.Vector2 }; layerOffsets?: () => { cumulus: THREE.Vector2; streaks: THREE.Vector2 } } };
 	fft: { params: { windDirection: number }; swellDirection: number };
 	establishScene: ( scene: never ) => Promise<unknown>; // main.ts's, with { weather, preset }
 	setTime: ( t: number ) => Promise<unknown>; // main.ts's seek of the scene clock
@@ -521,7 +521,7 @@ async function directions( ctx: WindProbeContext, o: Options ) {
 	// what moves the clouds and the fog, as the page drew its last frame
 	const read = () => {
 
-		const layers = clouds.layerOffsets?.() ?? { cumulus: new THREE.Vector2(), cirrus: new THREE.Vector2() };
+		const layers = clouds.layerOffsets?.() ?? { cumulus: new THREE.Vector2(), streaks: new THREE.Vector2() };
 		return { time: ctx.wind.time, ...layers, displacement: ctx.shared.wind.displacement.value.clone() };
 
 	};
@@ -538,7 +538,7 @@ async function directions( ctx: WindProbeContext, o: Options ) {
 		const b = read(), dt = b.time - a.time;
 		// each cloud layer is sampled at p + its offset: it drifts by minus the offset's change
 		const cumulus = a.cumulus.clone().sub( b.cumulus ).divideScalar( dt );
-		const cirrusDrift = a.cirrus.clone().sub( b.cirrus ).divideScalar( dt );
+		const streaks = a.streaks.clone().sub( b.streaks ).divideScalar( dt );
 		// the fog is sampled at p - displacement: it drifts by d( displacement ); the open sea's
 		// gusts at p - OPEN_DRIFT displacement
 		const fog = b.displacement.clone().sub( a.displacement ).divideScalar( dt );
@@ -548,13 +548,13 @@ async function directions( ctx: WindProbeContext, o: Options ) {
 		const sea = deg( { x: - Math.cos( h ), y: - Math.sin( h ) } ), swell = deg( { x: - Math.cos( hs ), y: - Math.sin( hs ) } );
 		const heading = ctx.weather.state.windDirection;
 		const weatherTravel = deg( { x: - Math.cos( heading * Math.PI / 180 ), y: - Math.sin( heading * Math.PI / 180 ) } );
-		const front = clouds.frontAxis?.value, cirrus = clouds.cirrusAxis?.value;
-		const travel = { vegetation, weather: weatherTravel, sea, swell, seaGusts: deg( seaGusts ), fog: deg( fog ), cumulus: deg( cumulus ), cirrus: deg( cirrusDrift ),
-			cloudFrontAxis: front ? deg( front ) : null, cirrusAxis: cirrus ? deg( cirrus ) : null };
+		const front = clouds.frontAxis?.value, windAxis = clouds.windAxis?.value;
+		const travel = { vegetation, weather: weatherTravel, sea, swell, seaGusts: deg( seaGusts ), fog: deg( fog ), cumulus: deg( cumulus ), streaks: deg( streaks ),
+			cloudFrontAxis: front ? deg( front ) : null, windAxis: windAxis ? deg( windAxis ) : null };
 		rows.push( {
 			weather, preset, weatherHeading: heading, fftHeading: ctx.fft.params.windDirection, swellHeading: ctx.fft.swellDirection,
 			windSpeed: ctx.weather.state.windSpeed, gustiness: ctx.weather.state.gustiness,
-			travel, speed: { seaGusts: r3( seaGusts.length() ), fog: r3( fog.length() ), cumulus: r3( cumulus.length() ), cirrus: r3( cirrusDrift.length() ) },
+			travel, speed: { seaGusts: r3( seaGusts.length() ), fog: r3( fog.length() ), cumulus: r3( cumulus.length() ), streaks: r3( streaks.length() ) },
 			gapToVegetation: Object.fromEntries( Object.entries( travel ).filter( ( [ k, v ] ) => k !== 'vegetation' && v !== null ).map( ( [ k, v ] ) => [ k, gap( v as number, vegetation ) ] ) ),
 		} );
 

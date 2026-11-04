@@ -1,7 +1,7 @@
 // tools/wgsl-build.mjs's entry for the volumetric clouds (src/sky/Clouds.ts): the deck top's light,
 // the panorama's march, the cloud shadow and the view's trace, high, box and resolve kernels at a 2K view, on the page's
 // atmosphere (whose earth shadow the march reads). The shape noise is an asset and the weather and
-// cirrus bakes run on the GPU: the entry stands in a 1 x 1 x 1 shape and skips the bakes' dispatches
+// streak bakes run on the GPU: the entry stands in a 1 x 1 x 1 shape and skips the bakes' dispatches
 // (the renderer here is never initialised), so the kernels build with the page's bindings and code.
 
 import * as THREE from 'three/webgpu';

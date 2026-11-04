@@ -94,10 +94,12 @@ packages, into `dist/licenses/`.
     the darker closed deck and the settled view of a paused scene are this project's (the rain
     curtains follow VolumetricCloudsCS1, below); the panorama map is this project's own, predating the port (`Clouds.js` has a
     similar one).
-  - `src/sky/Cirrus.ts` and the cirrus veil in `src/sky/Clouds.ts`: the cirrus fibre bake (a flow
-    field of sparse seeds and tufts drawn out by line integral convolution), its anisotropic,
-    footprint-filtered lookup and the veil's coverage, optical depth and ice-crystal lighting,
-    from the cirrus in `Clouds.js`, ported from WGSL to TSL.
+  - The thin cloud layer (`src/sky/Clouds.ts` `streaksAt`, `src/sky/Streaks.ts`): the fibre bake
+    (a flow field of sparse seeds and tufts drawn out by line integral convolution, hooked tails
+    downwind of tufts), the sheet's footprint on the curved Earth and its anisotropic,
+    footprint-filtered lookup, from the cirrus in `Clouds.js`, ported from WGSL to TSL. The fibres'
+    two turned scales, their silk, the patches' edge and thinning, and the layer's light are this
+    project's.
   - `src/materials/Wetness.ts` (`runnels`): the rain-streak stains of `terrainRockSurface` in
     `src/world/terrain/TerrainShading.js` (the variation stretched down the two vertical projection
     planes, weighted by how squarely each faces the surface, and its 40 % darkening), ported from
@@ -493,6 +495,9 @@ comment where it is used.
 - Atmosphere LUTs and multiple scattering: Sébastien Hillaire,
   [*A Scalable and Production Ready Sky and Atmosphere Rendering Technique*](https://sebh.github.io/publications/egsr2020.pdf)
   (EGSR 2020), through the adapted tidewater source above.
+- Line integral convolution, which draws the thin cloud layer's fibres out along a flow
+  (`src/sky/Streaks.ts`): Brian Cabral and Leith (Casey) Leedom, *Imaging Vector Fields Using
+  Line Integral Convolution* (SIGGRAPH 1993), through the adapted tidewater source above.
 - The ozone's absorption per display channel (`src/sky/Atmosphere.ts` OZONE), our integration over
   each channel's band of the cross sections of A. Serdyuchenko, V. Gorshelev, M. Weber, W. Chehade
   and J. P. Burrows,
@@ -745,6 +750,11 @@ comment where it is used.
   where the light gets through by the light's transmittance through each step
   (`src/sky/Clouds.ts`), after the same talk (Patry 2021, p. 97). Used as a technique only; the
   lobes are tidewater's droplet phase's first order (above).
+- The thin cloud layer's density lowered where its position on the layer moves fast with the
+  panorama's texture coordinate, so the far layer shows an even veil rather than sparkle
+  (`src/sky/Clouds.ts` `streaksAt`), after the same talk (Patry 2021, p. 94-96), and its two phase
+  lobes weighted by the light through the layer, after p. 97. Used as techniques only; the fade's
+  scale, the lobes' blend and the layer's gains are ours.
 - The Purkinje shift after the same talk (Patry 2021, p. 160-168: the rods' change to the cones'
   signals in an opponent colour space, with the constants and the shader's form it gives), in
   `src/post/Purkinje.ts`; the model is Dingcai Cao, Joel Pokorny, Vivianne C. Smith and Andrew J.

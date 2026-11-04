@@ -50,7 +50,7 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // light the shadows keep the weather's floor (`keyCloudVisibility`), and under a closed deck the key
 // and the clouds' sunlight lose their colour, not their luminance (Weather.ts), as from a cloudy sky on
 // the sunlight the clouds scatter many times does (trackClouds). By day the sky's light, the
-// sun's in-scattered light and the cirrus' sunlight, takes one gain
+// sun's in-scattered light, takes one gain
 // against the sun's own (SKY_LIGHT, an illuminance colour), which everything that reads the sky
 // takes, and under a clear or fair day's sun another that holds it against the key (CLEAR_SKY);
 // a cloud deck does not mute the clear sky's colour behind it. At night the clear sky is the
@@ -66,8 +66,8 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // the sky the eye sees, the sea's reflection of it and the sea's own body never take. The dome lays the air's haze over
 // itself (`fogDome`, VolumetricHaze.ts `skyHaze`): the clouds at the distance to their shell's middle
 // height (the weather's shell: CLOUD_SHELL, low under cloudy and overcast skies), under the low
-// deck's share at the march's own opacity-weighted depth (Clouds `sampleViewDepth`), the sky behind
-// them along the whole way; so the haze's composite leaves the sky's pixels. Measured on the horizon
+// deck's share at the march's own opacity-weighted depth, and under the thin layer's share of their
+// opacity at its own height (Clouds `sampleViewFog`), the sky behind them along the whole way; so the haze's composite leaves the sky's pixels. Measured on the horizon
 // views (paused, fresh loads): overcast's sky box spread .067 to .059, its gradient p99 .019 to .043
 // and its scale std under 3 degrees .0017 to .0030, the deck's rolls showing from about 8 degrees
 // up; cloudy's gradient p99 .042 to .071 and mass x 3.6 to 3.5 degrees.
@@ -441,17 +441,14 @@ function clearShade( elevation: number, direct: number ): number {
 
 }
 
-// The sky's light against the sun's. As the atmosphere's march and the cirrus gave it, the clear
-// day's sky lit level shade too brightly beside the sun. By day both take one constant gain
-// (SKY_LIGHT, an illuminance colour per channel, keyed by the sun's elevation: DayKeys.ts)
-// on the light the sun lends them: the atmosphere's in-scattered light (Atmosphere.ts `skyRadiance`)
-// and the cirrus' sunlight, at the colour's luminance (Clouds.ts `cirrusSunGain`, at CIRRUS_SHARE of the atmosphere's). So
-// everything that reads the sky takes it, the seen sky, the environment's bakes and the irradiance
-// probe that light the island, the sea's reflection and the clouds' and the haze's sky light, and
-// the sky the eye sees stays the sky that lights. The two light the shade in different colours, the
-// atmosphere's blue and the cirrus' warm; the cirrus takes three quarters of the atmosphere's gain
-// (set when the noon shade's blue was tuned by eye, before the keys were set), and one gain on
-// both keeps that mix at every hour. How the sky's light falls with the sun is the atmosphere's
+// The sky's light against the sun's. As the atmosphere's march gave it, the clear day's sky lit
+// level shade too brightly beside the sun. By day it takes one constant gain (SKY_LIGHT, an
+// illuminance colour per channel, keyed by the sun's elevation: DayKeys.ts) on the light the sun
+// lends it: the atmosphere's in-scattered light (Atmosphere.ts `skyRadiance`). So everything that
+// reads the sky takes it, the seen sky, the environment's bakes and the irradiance probe that light
+// the island, the sea's reflection and the clouds' and the haze's sky light, and the sky the eye
+// sees stays the sky that lights. The clouds' sunlight takes none: it is the sun's beam at their
+// height (Clouds.ts `sunLight`; the thin layer's at each of its points, `streakSunColour`). How the sky's light falls with the sun is the atmosphere's
 // own (the aerosol's wide base and the multiple scattering that grows along long paths:
 // Atmosphere.ts), not rows by the sun's elevation. Under cloud the gain moves to the night key from
 // 2 degrees to -6 under the horizon (a smoothstep); a clear sky's holds the day's keys through the
@@ -475,7 +472,9 @@ function clearShade( elevation: number, direct: number ): number {
 // against green, by 0.75 and 0.88 times at a sun of 3 degrees, 0.89 and 0.95 at 12 and 0.97 and
 // 0.99 at noon, and these keys take the first two back at their luminance (the golden hour's sky,
 // far bay and meadow had turned yellow by 10 - 16 degrees of hue, the morning's sea toward cyan).
-// The high key, whose sky hardly moved, keeps its own.
+// The high key, whose sky hardly moved, keeps its own, its red at 0.264, set in the least-squares
+// fit of the clear day's sky gains (CLEAR_SKY): against the 0.235 it had, it takes the sky over a
+// sun at 50 degrees, seen away from it, about 7 degrees of hue toward violet (Oklab hue 241 to 248).
 // Under cloud the high key has a twin (`cloudyHigh`, taken by the weather's clouded share, Weather.ts
 // `cloudedShare`): a deck of cloud gives the sky and the air no such blue, and the air over the land
 // takes this light whole (VolumetricHaze.ts), so at the day's blue the crowns under a clouded sky
@@ -517,7 +516,7 @@ const SKY_LIGHT_LOW_SUN: readonly DayKey<{ r: number; g: number; b: number }>[] 
 	{ at: 3, name: 'golden', values: { r: 0.36, g: 0.162, b: 0.1227 } },
 	{ at: 12, name: 'low', values: { r: 0.2409, g: 0.1857, b: 0.1979 } },
 ];
-const SKY_LIGHT_HIGH: DayKey<{ r: number; g: number; b: number }> = { at: 40, name: 'high', values: { r: 0.235, g: 0.232, b: 0.346 } };
+const SKY_LIGHT_HIGH: DayKey<{ r: number; g: number; b: number }> = { at: 40, name: 'high', values: { r: 0.264, g: 0.232, b: 0.346 } };
 const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'sky.light', {
 	day: [ { at: - 1, name: 'dusk', values: { r: 0.2263, g: 0.125, b: 0.0751 } }, ...SKY_LIGHT_LOW_SUN, SKY_LIGHT_HIGH ],
 	rising: [
@@ -536,30 +535,37 @@ const _skyLight = { r: 0, g: 0, b: 0 };
 // 20 - 24 at 3: the island's shade was nearly black against its lit side, and the sky stood dark
 // against the key. Under a clear or fair day's sun the sky's light takes a gain of its own over
 // SKY_LIGHT (CLEAR_SKY), keyed by the sun's elevation, on every path SKY_LIGHT reaches (`skyGain`):
-// the sky the eye sees and the cirrus, the sea's reflection and its body, the clouds' and the haze's
+// the sky the eye sees, the sea's reflection and its body, the clouds' and the haze's
 // sky light, the land's (the environment's source: the probes' harmonics, the specular atlas, the
 // islanders' fill) and the exposure's sky meter. So the sky the eye sees stays the sky that lights
 // and that the exposure meters (post/Exposure.ts). The sky's irradiance takes the gain whole (the
 // sky's light, the sun's in-scattered light and the haze's are all SKY_LIGHT's), so the keys are
-// the ratio with no gain over the one they hold: 12.1 - 15 from 6 degrees up on either side of the
-// day and at the morning's 3 degrees. At the evening's 3 degrees the sky stands brighter against
-// the key, about 7.4 - 8.9: it lights the land's shade and the far bay, as far as a view along the
-// horizon toward the sun holds the far sea and the sun's strip on the water (post/Exposure.ts, the
-// highlight key). The smoothstep between keys (DayKeys.ts) puts the ratio's day high midway, at 21
-// degrees in the evening. Under 3 degrees the key falls faster than the sky by itself (the ratio
-// 12.4 at 1.6 degrees with no gain), so the gain eases to none at the horizon (`horizon`): the
-// twilight and the night keep SKY_LIGHT's light, the ratio falling to about 6 at 2 degrees on the
-// way. The gains hold these ratios over the sky with its multiple scattering whole (Atmosphere.ts),
-// whose irradiance stands higher than when the multiple scattering stood at 1 / 4 pi of its
-// level: 0.85 - 0.89 times the gains that held them then, the exposure over the horizon within
-// 0.03 stops of the one it had on either side of the day. The gain
-// leaves by the weather's clouded share (Weather.ts `cloudedShare`): a cloudy or overcast sky keeps
-// the light it had.
+// the ratio with no gain over the one they hold, 12.1 - 15 from 6 degrees up on either side of the
+// day and at the morning's 3 degrees, but for the day side's low and high gains (3.51 and 2.48,
+// 0.78 and 0.73 of the ratio's 4.48 and 3.4) and SKY_LIGHT's high red: those are one least-squares
+// fit with the clear day's exposure keys (post/Exposure.ts) and haze (Weather.ts `haze`) on the
+// clear day's views from 6 degrees up, which the thin layer (Clouds.ts), faint by day, hardly
+// changes. At the ratio's gains the sky over a sun at 50 degrees, seen away from it, reads at Oklab
+// lightness 0.71 and chroma 0.099 and the far sea at 0.63 and 0.102, against 0.68 and 0.10 and 0.62
+// and 0.097 at the fit's, and the views from 6 degrees up that take the day side's gains stand
+// 0.16 - 0.33 stops darker. The rising side's own keys keep their gains (its high key is the
+// day's). At the evening's 3 degrees the sky stands brighter against the key, about 7.4 - 8.9: it
+// lights the land's shade and the far bay, as far as a view along the horizon toward the sun holds
+// the far sea and the sun's strip on the water (post/Exposure.ts, the highlight key). The
+// smoothstep between keys (DayKeys.ts) puts the ratio's day high midway, at 21 degrees in the
+// evening. Under 3 degrees the key falls faster than the sky by itself (the ratio 12.4 at 1.6
+// degrees with no gain), so the gain eases to none at the horizon (`horizon`): the twilight and the
+// night keep SKY_LIGHT's light, the ratio falling to about 6 at 2 degrees on the way. The gains
+// hold these ratios over the sky with its multiple scattering whole (Atmosphere.ts), whose
+// irradiance stands higher than when the multiple scattering stood at 1 / 4 pi of its level:
+// 0.85 - 0.89 times the gains that held them then, the exposure over the horizon within 0.03 stops
+// of the one it had on either side of the day. The gain leaves by the weather's clouded share
+// (Weather.ts `cloudedShare`): a cloudy or overcast sky keeps the light it had.
 // Tunable on debug pages: `sky.clear.gain@<horizon|dawn|early|morning|golden|late|low|high>`.
 const CLEAR_SKY_HORIZON: DayKey<{ gain: number }> = { at: 0, name: 'horizon', values: { gain: 1 } };
-const CLEAR_SKY_HIGH: DayKey<{ gain: number }> = { at: 40, name: 'high', values: { gain: 3.4 } };
+const CLEAR_SKY_HIGH: DayKey<{ gain: number }> = { at: 40, name: 'high', values: { gain: 2.48 } };
 const CLEAR_SKY: DayKeys<{ gain: number }> = tuneKeys( 'sky.clear', {
-	day: [ CLEAR_SKY_HORIZON, { at: 3, name: 'golden', values: { gain: 2.41 } }, { at: 6, name: 'late', values: { gain: 3.39 } }, { at: 12, name: 'low', values: { gain: 4.48 } }, CLEAR_SKY_HIGH ],
+	day: [ CLEAR_SKY_HORIZON, { at: 3, name: 'golden', values: { gain: 2.41 } }, { at: 6, name: 'late', values: { gain: 3.39 } }, { at: 12, name: 'low', values: { gain: 3.51 } }, CLEAR_SKY_HIGH ],
 	rising: [ CLEAR_SKY_HORIZON, { at: 3, name: 'dawn', values: { gain: 1.76 } }, { at: 6, name: 'early', values: { gain: 4.08 } }, { at: 12, name: 'morning', values: { gain: 5.83 } }, CLEAR_SKY_HIGH ],
 	night: { gain: 1 },
 }, { gain: { min: 0.25, max: 8, scale: 'log', onChange: markSkyRetune } } );
@@ -639,7 +645,6 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 		baseLift: { min: 0, max: 0.8, onChange: markSkyRetune }, inside: { min: 0, max: 1, onChange: markSkyRetune } } );
 
 }
-const CIRRUS_SHARE = 0.75;
 
 // The low sun's key. Through twenty air masses and more the atmosphere's transmittance (Atmosphere.ts,
 // its aerosol dimming the low sun by about half at the golden hour) still leaves the key too bright
@@ -679,7 +684,6 @@ const skyGain = ( elevation: number, rising: boolean, cloud: number, target: THR
 
 };
 const _skyGain = new THREE.Color();
-const cirrusGain = ( elevation: number, rising: boolean, cloud: number ) => ( debugFlags.skyGain === false ? 1 : luma( skyGain( elevation, rising, cloud, _skyGain ) ) * CIRRUS_SHARE ) * ( typeof debugFlags.cirrusSky === 'number' ? debugFlags.cirrusSky : 1 );
 const lowKey = ( elevation: number ) => debugFlags.lowKey === false ? 1 : byElevation( LOW_KEY, elevation, 'gain' );
 
 // The distant sea's body (the environment's lower half under its reflection, `seaPanorama`): its
@@ -776,17 +780,41 @@ const _moonSky = new THREE.Color();
 // leaves before sunrise, all of it under the first: in the evening the window of the night sky's
 // light and the moon's (DayCycle.ts DUSK_SKY, DUSK_MOON), by stops as they come in (DUSK_DEPTH
 // cloudMoon: faded evenly, the clouds' moonlight was the largest share of the step the sky's meter
-// made from -7 to -7.5, 0.7 of 1.6 stops). From -7 to -3 the moonlit cirrus came in
-// while the sky behind it was still the sun's afterglow: at -5.3 degrees it was about half the light
+// made from -7 to -7.5, 0.7 of 1.6 stops). From -7 to -3 the moonlit clouds came in
+// while the sky behind them was still the sun's afterglow: at -5.3 degrees they gave about half the light
 // of the sky 8 degrees up, which greyed the glow and the far sea under it. The morning keeps -7 to
-// -3, inside its night sky's window (DAWN_SKY, -13 to -3): there the moonlit cirrus is part of the
-// sky the dawn's exposure meters, and without it at -6.5 degrees the land and the low band over the
-// horizon rose by about 0.05 and 0.13 in Oklab L. Under cloud the evening keeps -7 to -3 too
-// (CLOUD_MOON), as every night layer keeps the daylight's timing there (DayCycle.ts: the clouded
-// sky's night is whole by -6): no afterglow lights the sky behind the deck, and taken in from -11
-// by stops, an overcast deck's moonlight was under a hundredth of this at -8 degrees.
+// -3, inside its night sky's window (DAWN_SKY, -13 to -3): there the moonlit clouds are part of the
+// sky the dawn's exposure meters (on a clear morning the thin layer's most), and without it the land
+// and the low band over the horizon at -6.5 degrees read lighter. Under cloud the evening keeps -7
+// to -3 too (CLOUD_MOON), as every night layer keeps the daylight's timing there (DayCycle.ts: the
+// clouded sky's night is whole by -6): no afterglow lights the sky behind the deck, and taken in
+// from -11 by stops, an overcast deck's moonlight was under a hundredth of this at -8 degrees.
 const CLOUD_MOON_DUSK = [ - 11, - 7 ] as const;
 const CLOUD_MOON = [ - 7, - 3 ] as const;
+// The overall colour on each of the thin layer's two shares (Clouds.ts `keyDirect`, `keyAmbient`),
+// by the sun's elevation, the morning's apart (DayKeys.ts `rising`), the night's coming in with
+// the clouds' moonlight (`moonShare`). Tunable on debug pages (debug/Tune.ts):
+// `sky.streaks.<keyDirect|keyAmbient>.<r|g|b>@<afterglow|golden|low|predawn|sunrise|morning|high|night>`.
+type Rgb = { r: number; g: number; b: number };
+const streakKeys = ( prefix: string, keys: { afterglow: Rgb; golden: Rgb; low: Rgb; predawn: Rgb; sunrise: Rgb; morning: Rgb; high: Rgb; night: Rgb } ): DayKeys<Rgb> => {
+
+	const range = { min: 0.01, max: 4, scale: 'log' as const, onChange: markSkyRetune };
+	const high: DayKey<Rgb> = { at: 30, name: 'high', values: keys.high };
+	return tuneKeys( prefix, {
+		day: [ { at: - 3, name: 'afterglow', values: keys.afterglow }, { at: 2, name: 'golden', values: keys.golden }, { at: 8, name: 'low', values: keys.low }, high ],
+		rising: [ { at: - 3, name: 'predawn', values: keys.predawn }, { at: 2, name: 'sunrise', values: keys.sunrise }, { at: 8, name: 'morning', values: keys.morning }, high ],
+		night: keys.night,
+	}, { r: range, g: range, b: range } );
+
+};
+const white = (): Rgb => ( { r: 1, g: 1, b: 1 } );
+const STREAK_DIRECT = streakKeys( 'sky.streaks.keyDirect', {
+	afterglow: white(), golden: white(), low: white(), predawn: white(), sunrise: white(), morning: white(), high: white(), night: white(),
+} );
+const STREAK_AMBIENT = streakKeys( 'sky.streaks.keyAmbient', {
+	afterglow: white(), golden: white(), low: white(), predawn: white(), sunrise: white(), morning: white(), high: white(), night: white(),
+} );
+const _streakKey = { r: 0, g: 0, b: 0 };
 // The sun's elevations (degrees) over which the light the clouds march toward sets from the moon's
 // key to the sun's height, then comes round to the sun's azimuth: where no moonlight reaches them
 // (CLOUD_MOON, CLOUD_MOON_DUSK) and before the sun's does (`sunlightAt` at 2 km, above about -2).
@@ -1308,8 +1336,9 @@ export class Sky {
 	/** The dome's colour toward each pixel, seen through `haze` when given: a function of a view
 	 * direction and a distance along it (the sky's own by default) that returns the light the haze
 	 * adds and its transmittance (VolumetricHaze.ts `skyHaze`). The clouds are fogged at the
-	 * distance to the shell's middle height, under the low deck's share at the march's depth, the
-	 * sky behind them along the whole way. */
+	 * distance to the shell's middle height, under the low deck's share at the march's depth, and
+	 * under the thin layer's share of their opacity at the distance to the layer, the sky behind
+	 * them along the whole way. */
 	private domeColour( haze?: SkyHaze ): V4 {
 
 		return Fn( () => {
@@ -1349,7 +1378,7 @@ export class Sky {
 			// The clouds through the haze out to the shell's middle height: its light over their
 			// opacity, their own (premultiplied) through its transmittance.
 			// (from the march's own camera height, held under the base (Clouds `camY`): the depths
-			// `sampleViewDepth` returns are measured from there, and above the middle the root's
+			// `sampleViewFog` returns are measured from there, and above the middle the root's
 			// argument would turn negative)
 			const middle = this.clouds.shellBottom.add( this.clouds.shellThickness.mul( 0.5 ) ).toVar();
 			const camY = this.clouds.camY;
@@ -1358,13 +1387,32 @@ export class Sky {
 			const inside = middle.sub( camY ).mul( r0.add( middle.add( EARTH_RADIUS ) ) ).toVar();
 			const mid = inside.div( sqrt( b.mul( b ).add( inside ) ).add( b ) ).toVar();
 			// Under the low deck's share, out to the march's own opacity-weighted depth instead
-			// (Clouds `sampleViewDepth`): a closed deck's light comes from its lowest hundred metres,
-			// and at a low deck the middle lies some 2.5 times farther, which fogged the deck at 5 - 12
-			// degrees about twice as densely as its distance does.
-			const reach = mix( mid, this.clouds.sampleViewDepth( d, mid ), this.clouds.lowShare );
-			const cloudHaze = haze( d, reach );
+			// (Clouds `sampleViewFog`, its `depth`): a closed deck's light comes from its lowest
+			// hundred metres, and at a low deck the middle lies some 2.5 times farther, which fogged
+			// the deck at 5 - 12 degrees about twice as densely as its distance does.
+			const fog = this.clouds.sampleViewFog( d, mid );
+			const reach = mix( mid, fog.depth, this.clouds.lowShare ).toVar();
+			// The thin layer lies above the cumulus' middle (the clear and fair skies' 6.6 km
+			// against its 8.5), so farther along a ray: where its fibres make the opacity, out to
+			// the layer instead, so the haze between fades them toward the horizon by their own
+			// distance. One distance per pixel, mixed by the layer's share of the opacity there:
+			// exact where no cumulus stands in front, and where one does it hides the layer. With
+			// no layer (cloudy and overcast skies) the share is none and the reach the cumulus'
+			// alone.
+			const thinShare = clamp( fog.thin.div( max( float( 1 ).sub( through ), 1e-4 ) ), 0, 1 );
+			const streakHeight = this.clouds.streakHeight;
+			const thinInside = max( streakHeight.sub( camY ).mul( r0.add( streakHeight.add( EARTH_RADIUS ) ) ), 0 ).toVar();
+			const thin = thinInside.div( sqrt( b.mul( b ).add( thinInside ) ).add( b ) );
+			const cloudHaze = haze( d, mix( reach, thin, thinShare ) );
 			const fogged = cloudHaze.light.mul( float( 1 ).sub( through ) ).add( cloudHaze.transmittance.mul( clouds ) );
-			return vec4( sky.light.add( sky.transmittance.mul( behind ) ).mul( through ).add( fogged ), 1 );
+			const result = sky.light.add( sky.transmittance.mul( behind ) ).mul( through ).add( fogged ).toVar();
+			if ( debugFlags.streakMask !== true ) return vec4( result, 1 );
+			// (`flags=streakMask`: the thin layer's pixels where its opacity as seen passes 0.1 in a
+			// red of the same luminance, those where it lies between 0.02 and 0.1 in such a green,
+			// for `img.py stats --mask`)
+			const luminance = dot( result, vec3( 0.2126, 0.7152, 0.0722 ) ).toVar();
+			const edge = select( fog.thin.greaterThan( 0.02 ).and( above ), vec3( 0, luminance.div( 0.7152 ), 0 ), result );
+			return vec4( select( fog.thin.greaterThan( 0.1 ).and( above ), vec3( luminance.div( 0.2126 ), 0, 0 ), edge ), 1 );
 
 		} )();
 
@@ -1534,7 +1582,7 @@ export class Sky {
 
 		// Weather arrives from upwind.
 		this.clouds.frontAxis.value.copy( windDirection ).negate().normalize();
-		this.clouds.cirrusAxis.value.copy( windDirection ).normalize();
+		this.clouds.windAxis.value.copy( windDirection ).normalize();
 		this.clouds.setDrift( shared.wind.displacement.value );
 		// The clouds' inner structure rises through them at 2.5 m/s, as a cumulus' turrets do
 		// (the rain curtains fall by the same clock).
@@ -1659,7 +1707,6 @@ export class Sky {
 		_moonSky.setRGB( MOON_KEY[ 0 ] * skyMoon, MOON_KEY[ 1 ] * skyMoon, MOON_KEY[ 2 ] * skyMoon );
 		this.atmosphere.moonIlluminance.value.setRGB( _moonSky.r * moonSky.r, _moonSky.g * moonSky.g, _moonSky.b * moonSky.b );
 		this.atmosphere.sunIlluminance.value.copy( this.solarIlluminance ).multiply( skyGain( this.elevation, this.rising, cloud, _skyGain ) );
-		this.clouds.cirrusSunGain.value = cirrusGain( this.elevation, this.rising, cloud );
 		this.atmosphere.updateSync();
 		// Cap the hue of the air's extinction first, then fade by the disk's visible share, so the
 		// setting disk only dims the key and does not bleach it.
@@ -1779,7 +1826,8 @@ export class Sky {
 		// A front that has arrived is the sky at rest: its `from` is no longer in the sky, and the
 		// bounds that take the larger of the two would keep marching for it.
 		this.trackClouds( celestial, weather, coverage, overcast, illuminance, coverageOverride === null && front && front.progress < 1 ? front : null, skyMix );
-		this.clouds.cirrus.value = weather?.cirrus ?? 0;
+		// (`flags=streaks:<n>` scales the thin layer's amount, 0 turns it off)
+		this.clouds.streaks.value = ( weather?.streaks ?? 0 ) * ( typeof debugFlags.streaks === 'number' ? debugFlags.streaks : 1 );
 		// A rainbow needs falling rain and direct sun at once, the sun lower than 42 degrees behind
 		// the viewer: most often as a shower clears, while it is still raining a few kilometres off.
 		// The clouds draw it in their sunlit rain curtains.
@@ -1894,9 +1942,17 @@ export class Sky {
 		// cloud tops and the moon's at its own, each lifted with the low sun's beam (directGain).
 		const beam = 1 + 0.7 * lowSunOf( this.elevation, coverage );
 		clouds.sunLight.value = ( sunUp ? luma( sunAbove ) : 0 ) * beam;
+		// The thin layer's before the air, lifted alike: each of its points takes it through the air
+		// toward the sun at the sun's elevation there, and loses it as the disc sinks under the
+		// layer's own horizon there (Clouds.ts `streaksAt`), so no one moment ends the whole layer's.
+		clouds.streakSunColour.value.copy( this.sunTint ).multiplyScalar( illuminance * beam );
+		const { r: dr, g: dg, b: db } = keyed( STREAK_DIRECT, elevation, moonShare, _streakKey, cloud, rising );
+		clouds.keyDirect.value.setRGB( dr, dg, db );
+		const { r: ar, g: ag, b: ab } = keyed( STREAK_AMBIENT, elevation, moonShare, _streakKey, cloud, rising );
+		clouds.keyAmbient.value.setRGB( ar, ag, ab );
 		clouds.moonLight.value = moonLight * ( 0.65 * 0.2126 + 0.76 * 0.7152 + 0.0722 ) * beam;
-		// The night ambient is the clouds' own (the clear sky draws none); the cirrus takes it under a
-		// gain of its own (Clouds.ts `cirrusNightAmbient`).
+		// The night ambient is the clouds' own (the clear sky draws none); the thin layer takes it
+		// under a gain of its own (Clouds.ts `streakNightAmbient`).
 		clouds.nightAmbient.value.copy( this.displayNightAmbient.value ).multiplyScalar( this.nightSkyLevel );
 		// A low deck's column passes down the key's light above its tops: by day the sun's above the
 		// cloud, by night the island's moonlight (`moonKeyAbove`), which keeps the island's level and

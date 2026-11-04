@@ -22,10 +22,11 @@ type V3 = THREE.Node<'vec3'>;
 // Tileable fields for the clouds:
 //   shape    64^3 RGB  Perlin-Worley shape noise at three frequencies, with its mip chain
 //            (`public/clouds/baseShape64.bin`, from tidewater's Sky Pro clouds)
-//   synoptic 256^2     R cirrus coverage  G broad streets along the upper wind  B patches
+//   synoptic 512^2     R the thin cloud layer's patches, over a few to twenty kilometres (Clouds.ts
+//                      `streaksAt`)
 // Every field repeats over [0, 1), so a wrapped wind offset never shows a seam.
 
-export const SYNOPTIC_RES = 256;
+export const SYNOPTIC_RES = 512;
 
 export const hash33 = Fn( ( [ p ]: [ V3 ] ) => {
 
@@ -81,7 +82,10 @@ const gradientFbm = ( p: V2, cx: number, cy: number, seed: number ) =>
 		.add( gradientNoise2( p.add( seed * 2.3 ), cx * 4, cy * 4 ).mul( 0.15 ) ).mul( 1.6 ).add( 0.5 );
 
 
-/** Bake the synoptic field (cirrus coverage and its streets). Needs an initialised renderer. */
+/** Bake the synoptic field (the thin layer's patches): two fractal noises of 20 x 28 and 56 x 80
+ * cells over the field (Clouds.ts SYNOPTIC_SIZE), weighted 0.7 and 0.3. At half those counts a
+ * low sun's view toward it held one patch across most of its sky, read as a single sheet; at these
+ * its patches stand apart with sky between them. Needs an initialised renderer. */
 export function bakeSynoptic( renderer: THREE.WebGPURenderer ): THREE.StorageTexture {
 
 	const synoptic = new THREE.StorageTexture( SYNOPTIC_RES, SYNOPTIC_RES );
@@ -94,10 +98,8 @@ export function bakeSynoptic( renderer: THREE.WebGPURenderer ): THREE.StorageTex
 		const n = uint( SYNOPTIC_RES );
 		const c = ivec2( int( instanceIndex.mod( n ) ), int( instanceIndex.div( n ) ) );
 		const p = vec2( c ).add( 0.5 ).div( SYNOPTIC_RES ).toVar();
-		const coverage = gradientFbm( p, 2, 3, 0.31 );
-		const streets = gradientFbm( p, 4, 14, 0.59 );
-		const patches = gradientFbm( p, 10, 14, 0.83 ).mul( 0.7 ).add( gradientFbm( p, 28, 40, 0.21 ).mul( 0.3 ) );
-		textureStore( synoptic, c, clamp( vec4( coverage, streets, patches, 1 ), 0, 1 ) );
+		const patches = gradientFbm( p, 20, 28, 0.83 ).mul( 0.7 ).add( gradientFbm( p, 56, 80, 0.21 ).mul( 0.3 ) );
+		textureStore( synoptic, c, vec4( clamp( patches, 0, 1 ), 0, 0, 1 ) );
 
 	} )().compute( SYNOPTIC_RES ** 2, [ 64 ] ).setName( 'Clouds.SynopticMap' );
 	renderer.compute( kernel );

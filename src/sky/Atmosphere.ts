@@ -99,7 +99,7 @@ import { markSkyRetune } from './SkyRetune.ts';
 // horizon as the sun climbs), so it lies on the low sky opposite a low sun and is gone by day.
 // The polariser, the lean, the aerosol aloft (`aerosol`) and the rising sun's haze aerosol weight
 // (HazeKeys.ts MIST) are one least-squares fit on the clear sky as the eye sees it (the haze over
-// it, no cirrus) at sun 0, 2, 12 and noon, with the noon sea's level held; the haze's weights at a
+// it, no clouds) at sun 0, 2, 12 and noon, with the noon sea's level held; the haze's weights at a
 // low sun were refitted later with these rows held beside the haze's own (HazeKeys.ts). The sky
 // 130 degrees from the sun stands at .85-.91 of the sky 60 degrees from it 5 - 20 degrees up from
 // sun 0 to 12, the sky opposite a sun at 0 at 1.29-1.43 times the sky 90 degrees from it 5 - 15
@@ -1009,6 +1009,18 @@ export class Atmosphere {
 
 		const q = transmittanceUV( this.viewHeight, dir.y );
 		return texture( this.transmittanceLUT.texture, q ).level( float( 0 ) ).rgb;
+
+	}
+
+	/** The transmittance from `heightKm` above the sea toward a direction of elevation sine `mu`,
+	 * read from the LUT, the ray held just above the ground's horizon as the CPU twin traces it
+	 * (`sunTransmittance`): the thin layer's sunlight at each of its points (Clouds.ts
+	 * `streaksAt`). */
+	transmittanceFrom( heightKm: F, mu: F ): V3 {
+
+		const r = float( RG ).add( heightKm ).toVar();
+		const horizon = sqrt( max( float( 1 ).sub( float( RG * RG ).div( r.mul( r ) ) ), 0 ) ).negate();
+		return texture( this.transmittanceLUT.texture, transmittanceUV( r, max( mu, horizon.add( 1e-4 ) ) ) ).level( float( 0 ) ).rgb;
 
 	}
 
