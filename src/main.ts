@@ -1529,7 +1529,6 @@ hazeF.add( H, 'growth', 1.02, 1.4, 0.01 ).name( 'slice growth' );
 hazeF.add( H, 'fogExtinction', 0, 0.05, 0.0001 ).name( 'fog extinction (1/m)' );
 hazeF.add( H, 'albedo', 0, 1, 0.01 );
 hazeF.add( H, 'anisotropy', - 0.5, 0.95, 0.01 ).name( 'phase anisotropy' );
-hazeF.add( H, 'horizon', 0.1, 10, 0.1 ).name( 'sun over horizon half-width (deg)' );
 hazeF.add( H, 'gain', 0, 4, 0.01 ).name( 'brightness gain' );
 hazeF.add( H, 'ambientFloor', 0, 1, 0.01 ).name( 'ambient floor under cover' );
 hazeF.add( H, 'ambientSoftness', 0.1, 10, 0.1 ).name( 'cover top half-width (m)' );

@@ -44,9 +44,10 @@
 // preset or hour, time) and the camera reset to the island view (capture-tooling plan 3.2).
 // --retune rebakes the sky on every scene visited, after the view's eval, through each path a
 // retune takes, before readiness: `refreshEnvironment()` (a new hour's or a seek's bake), a tunable
-// the bake reads set and set back through `tune.set` (`haze.light.horizon`), and the haze over the
-// sky switched off and on as the GUI switches it (a plain write of `pipeline.air.settings.sky`, which
-// the frame loop finds: main.ts `retuneSky`), each bake awaited. The page must still draw the fresh
+// the bake reads set and set back through `tune.set` (`sky.atmosphere.mieG`, the aerosol lobe the
+// sky and the haze share), and the haze over the sky switched off and on as the GUI switches it (a
+// plain write of `pipeline.air.settings.sky`, which the frame loop finds: main.ts `retuneSky`), each
+// bake awaited. The page must still draw the fresh
 // load's frame: every explicit bake starts from the state before a page's first (Sky.ts `reset`).
 // After each round trip the sky's irradiance must be the page's own bit for bit, and the switch must
 // change it (else the run fails, the readings in the shot's JSON as `ready.retune`).
@@ -223,10 +224,10 @@ async function retune( page ) {
 		const back = ( name ) => { readings[ name ] = irradiance(); if ( ! same( readings[ name ], readings.page ) ) failures.push( `${ name }: the sky's irradiance ${ readings[ name ].join( ',' ) }, the page's ${ readings.page.join( ',' ) }` ); };
 		await p.refreshEnvironment();
 		back( 'refreshEnvironment' );
-		const horizon = p.tune.get( 'haze.light.horizon' );
-		p.tune.set( { 'haze.light.horizon': horizon + 0.5 } );
+		const lobe = p.tune.get( 'sky.atmosphere.mieG' );
+		p.tune.set( { 'sky.atmosphere.mieG': lobe + 0.02 } );
 		await baked();
-		p.tune.set( { 'haze.light.horizon': horizon } );
+		p.tune.set( { 'sky.atmosphere.mieG': lobe } );
 		await baked();
 		back( 'tune.set' );
 		H.sky = ! H.sky;
