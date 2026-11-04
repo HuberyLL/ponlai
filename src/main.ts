@@ -13,7 +13,7 @@ import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraCont
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
 import { Sky } from './sky/Sky.ts';
-import { DayCycle, DAY_PRESETS, nightAmbientAt, sunRising, type DayPreset } from './sky/DayCycle.ts';
+import { DayCycle, DAY_PRESETS, nightAmbientShare, sunRising, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, overcastDeckLight, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
@@ -1518,7 +1518,7 @@ const hazeF = gui.addFolder( 'Haze' );
 const H = pipeline.air.settings;
 // the hour's and the weather's key, written each frame (weather/HazeKeys.ts)
 const hazeKey: HazeKey = { deck: 0, overcastDeck: 0, amount: 1, sigmaRed: 1, sigmaGreen: 1, sigmaBlue: 1, desaturate: 0, gain: 1, mist: 0, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
-	top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0, nearDensity: 1, nearStart: 250, nearEnd: 600 };
+	top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0, nearScale: 1, nearDensity: 1, nearStart: 250, nearEnd: 600 };
 // the haze exists now: bake the environment again, so it holds the haze every later bake lays over
 // it (Sky.ts `fogEnvironment`) and a fresh load equals a jump
 hazeReady = true;
@@ -1889,9 +1889,10 @@ function tick( time: number ): void {
 	shared.deckSky.value = deckSkyGain( sky.elevation, shared.clouded.value, weather.skyMix[ 3 ] ?? 0 );
 	shared.deckSkyGap.value = deckSkyGap( sky.elevation, shared.clouded.value, weather.skyMix[ 3 ] ?? 0 );
 	updateShelfScatter( sky.keyColor, sky.keyIsMoon ? 0 : 1 - shared.clouded.value, sky.elevation );
-	// the yunpeng's glow and its local lights by the night's share (lighting/LocalLights.ts: its
-	// pass sorts the sources in view)
-	yunpengNight.value = nightAmbientAt( sky.elevation );
+	// the yunpeng's glow and its local lights by the night's share, a clear twilight's with the
+	// display's night (sky/DayCycle.ts `nightAmbientShare`; lighting/LocalLights.ts: its pass sorts
+	// the sources in view)
+	yunpengNight.value = nightAmbientShare( sky.elevation, sky.rising, shared.clouded.value );
 	localLights.update( yunpengNight.value );
 	// what the crowns' leaves pass on of the key (world/vegetation/LeafLight.ts)
 	updateLeafLight( sky.elevation, yunpengNight.value, shared.clouded.value );

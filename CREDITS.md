@@ -493,6 +493,13 @@ comment where it is used.
 - Atmosphere LUTs and multiple scattering: Sébastien Hillaire,
   [*A Scalable and Production Ready Sky and Atmosphere Rendering Technique*](https://sebh.github.io/publications/egsr2020.pdf)
   (EGSR 2020), through the adapted tidewater source above.
+- The ozone's absorption per display channel (`src/sky/Atmosphere.ts` OZONE), our integration over
+  each channel's band of the cross sections of A. Serdyuchenko, V. Gorshelev, M. Weber, W. Chehade
+  and J. P. Burrows,
+  [*High spectral resolution ozone absorption cross-sections – Part 2: Temperature dependence*](https://doi.org/10.5194/amt-7-625-2014)
+  (Atmospheric Measurement Techniques 7, 2014; data from IUP Bremen), through linear Rec. 709
+  responses from the CIE 1931 2° colour matching functions (CVRL, UCL). Only the three integrated
+  values are used; no data ships.
 - Solar radiance normalisation:
   [*Physically Based Rendering*, fourth edition](https://pbr-book.org/4ed/Radiometry,_Spectra,_and_Color/Working_with_Radiometric_Integrals),
   the projected-solid-angle irradiance integral.
@@ -506,9 +513,14 @@ comment where it is used.
   with the [cosine-weighted hemisphere sampler in PBRT](https://pbr-book.org/4ed/Sampling_Algorithms/Sampling_Multidimensional_Functions).
 - Filtered wave-slope moments: Marc Olano and Dan Baker,
   [*LEAN Mapping*](https://userpages.cs.umbc.edu/olano/papers/lean/) (I3D 2010).
-- Microfacet masking: Eric Heitz,
+- The sea's mean reflection over the slopes no pixel resolves, in `src/ocean/Water.ts`: the
+  visible facets weighted by their projected area and Smith's shadowing of the reflected rays, from
+  Eric Heitz,
   [*Understanding the Masking-Shadowing Function in Microfacet-Based BRDFs*](https://jcgt.org/published/0003/02/03/)
-  (JCGT 2014); the error-function approximation is Abramowitz and Stegun, equation 7.1.26.
+  (JCGT 2014); Smith's G1 for Gaussian (Beckmann) slopes in the rational form of Bruce Walter,
+  Stephen R. Marschner, Hongsong Li and Kenneth E. Torrance,
+  [*Microfacet Models for Refraction through Rough Surfaces*](https://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf)
+  (EGSR 2007); the error-function approximation is Abramowitz and Stegun, equation 7.1.26.
 - The shared specular BRDF, in `src/lighting/SurfaceBRDF.ts` and `src/lighting/EnvironmentBRDF.ts`:
   Smith's visibility for GGX in Schlick's form with k = alpha / 2, and the environment's specular
   as the split sum, the prefiltered environment times the environment BRDF integrated for the

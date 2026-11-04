@@ -358,7 +358,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   over its source) rebakes it as the load bakes, whatever set it (the GUI, `tune`, a plain write:
   `src/sky/SkyRetune.ts`), so the page draws what a fresh load with the value draws. Names:
   `post.exposure.key@high` (an exposure key per sun height, `@golden`, `@low`, `@high`, `@cloudy`,
-  `@cloudyGolden`, `@cloudySunset`, `@cloudyLow`, `@night`, and the rising sun's `@dawn`; overcast's
+  `@cloudyGolden`, `@cloudySunset`, `@cloudyLow`, `@night`, and the rising sun's `@dawn`,
+  `@morningGolden`; overcast's
   key over the clouded one `post.exposure.overcastKey`; the local gain's
   `post.localTone.hinge@high`, `high`, `low`, `width` alike), `post.tone.midGrey`,
   `post.tone.blackSlope`, `post.tone.white`; the desaturation's `post.desaturate.amount@golden`
@@ -367,11 +368,16 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   (`@golden`, `@day`, `@cloudy`, `@night`), the bloom's `post.bloom.strength` and the sun's glare
   `post.glare`; the display's white `post.white.r@high` (`g`, `b`; `@day`, `@golden`, `@dawn`, `@cloudy`,
   `@night`), the sky's light `sky.light.r@high` (`g`, `b`; `@low`, `@golden`, `@dusk`, `@morning`, `@dawn`,
-  `@cloudyHigh`, `@night`), the
-  key's colour at a low sun `sky.key.hueDepth`, `reddens`, `yellows`, the near air
+  `@cloudyHigh`, `@night`) and the clear sky's gain over it `sky.clear.gain@high` (`@horizon`,
+  `@golden`, `@late`, `@low`, the rising sun's `@dawn`, `@early`, `@morning`), the
+  key's colour at a low sun `sky.key.hueDepth` (the rising sun's `dawnHueDepth`), `reddens`,
+  `yellows`, the ozone's absorption `sky.atmosphere.ozone` (its column; per band `ozoneR`,
+  `ozoneG`, `ozoneB`), the earth's shadow over the seen sky `sky.atmosphere.shadowDepth` (the share
+  it takes at most; `shadowSoftness`, the degrees over its edge in which it falls), the near air
   `sky.weather.nearDensity@clear` (`nearStart`, `nearEnd`; `@fair`, `@cloudy`, `@overcast`) and the
-  land's share of the sky's light `lighting.relight.skyGain@high` (`@low`, `@golden`, `@cloudy`,
-  `@cloudyBlue`, `@night`) and its gain under overcast `lighting.relight.overcastLand`, a low
+  land's share of the sky's light `lighting.relight.skyGain@high` (`@low`, `@golden`, the rising
+  sun's `@dawn`, `@sunrise`, `@cloudy`, `@cloudyBlue`, `@night`) and its gain under overcast
+  `lighting.relight.overcastLand`, a low
   sun's lift of the sky's light on what it lights `lighting.relight.lowSun` (stops; `lowSunFloor`,
   `lowSunFloorFull`, `lowSunFrom`, `lowSunTo` its sun heights: `src/lighting/AmbientRelight.ts`),
   overcast's
@@ -380,7 +386,10 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   take through the leaves over them `lighting.vegetation.leaf.through@high` (`@low`, `@golden`,
   `@cloudy`, `@night`) and what a leaf sends on of the key on its far face,
   `lighting.vegetation.leaf.back@high` alike, the sward's tint under a closed sky
-  `lighting.sward.tint.r` (`g`, `b`) and the crowns', `lighting.vegetation.leaf.tint.r` (`g`, `b`).
+  `lighting.sward.tint.r` (`g`, `b`) and the crowns', `lighting.vegetation.leaf.tint.r` (`g`, `b`);
+  the sea's mean reflection over the slopes no pixel resolves, the spread of those slopes
+  `sea.reflection.slopeScale` and the lift of its sky lobe `sea.reflection.lobeLift`
+  (`src/ocean/Water.ts` `REFLECTION_LOBE`).
 - The ambient grade (`src/lighting/AmbientGrade.ts`): `__PONLAI__.ambient.current` holds the five
   knobs the table gives for the sun and the weather now (also `D.ambient`), `table` the table's own
   output; `override = true` with `manual.<knob>` replaces it from the next frame (the GUI's Ambient

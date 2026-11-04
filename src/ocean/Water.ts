@@ -11,7 +11,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld, positionPrevious,
-	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
+	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, modelViewMatrix, modelViewProjection, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
 	float, int, bool, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
 	abs, fwidth, reflect, refract, select, step, dFdx, dFdy, perspectiveDepthToViewZ, cameraNear, cameraFar, luminance, property,
 } from 'three/tsl';
@@ -31,7 +31,7 @@ import { ISLAND_PEAK, LAND_REACH, type Bounds } from '../world/WorldShapes.ts';
 import { GROWTH } from '../world/IslandGrowth.ts';
 import { FAR_HALF } from '../world/SeabedTile.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { tuneKeys } from '../debug/Tune.ts';
+import { tuneKeys, tuneUniform } from '../debug/Tune.ts';
 import { keyed, type DayKeys } from '../post/DayKeys.ts';
 import { REFERENCE_SPEED } from '../weather/Wind.ts';
 import { motionNode, motionState, motionUniforms, outputStruct, reactiveUniforms } from '../post/Motion.ts';
@@ -54,11 +54,13 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     floor keeps its own sharp shadow; the moon's glint is grey (`keyChroma`), so its path on the
 //     sea stays pale rather than a sheet of the moon's saturated blue, which the water body keeps
 //   - exact dielectric Fresnel, its mean over the slopes no pixel resolves on the distant sea (a
-//     mirror's grazing reflectance is too much for a sheet of small facets turned every way), which
-//     scales the pixel's own Fresnel, so the waves the pixel does resolve keep their relief; the
-//     sky reflected along a direction the unresolved slopes lift toward the higher, darker sky,
-//     reflections below the horizon darkened toward the horizon's colour, the whole of it moved from
-//     the low band toward the sky's light by the view's elevation (`REFLECTION_BAND`: its colour with
+//     mirror's grazing reflectance is too much for a sheet of small facets turned every way): the
+//     facets the eye sees turn toward it, and other waves stop part of their reflected rays (Smith's
+//     shadowing), all from one spread of the slopes along the view (`REFLECTION_LOBE`); it scales
+//     the pixel's own Fresnel, so the waves the pixel does resolve keep their relief; the sky
+//     reflected over a lobe as wide as those slopes, lifted by the same facets' tilt toward the
+//     higher sky, its share under the horizon darkened toward the horizon's colour, the whole of
+//     it moved from the low band toward the sky's light by the view's elevation (`REFLECTION_BAND`: its colour with
 //     the sun up, its level under cloud), and by the same ramp a low sun's lift of the sky's light
 //     (shared.ts `skyLift`), so the far sea keeps the band it mirrors, never brighter than the sky
 //     over the horizon; both read the sea's slopes before the waves' damping, so a lee stands level with the sea round it, never a pale tongue
@@ -105,8 +107,14 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 // lifted hit (traceSSR), the soft line where the surface cuts the rock, the motion vectors, the
 // rain's ripples and the storm's foam (parked weathers), and the open sea's deepening past the
 // shelf (OPEN_DEEPENING), which fades the floor's light out before the far floor's edge.
-// The sea continues to the horizon (a skirt around the wave grid, SKIRT_RADIUS); the camera's far
-// plane and the sky-depth thresholds (-9e4; the resolved sky is -1e5) stay beyond it.
+// The sea continues to the horizon: a skirt around the wave grid out to SKIRT_RADIUS, whose outer
+// ring stands at the eye's height (`onHorizon`), so from any height the sea's far edge meets the
+// sky at the eye's level, where the dome's horizon lies. Left flat, the ring stood a little under
+// it (from 190 m some 0.3 degrees, from 12 m a fraction of a pixel), and the dome's panorama under
+// the horizon showed between the two as a band with a step at the sea's edge. The camera's far
+// plane and the sky-depth thresholds (-9e4; the resolved sky is -1e5) stay beyond the skirt. The
+// pixel row the horizon crosses holds samples of both: the haze composite fogs it as the sea
+// (post/Pipeline.ts, the surface resolve), else that row kept the far sea unhazed, a dark line.
 //
 // Limits to keep in mind:
 // - WebGPU guarantees 16 sampled textures per stage (a texture past them fails pipeline creation),
@@ -186,6 +194,30 @@ const fresnelDielectric = Fn( ( [ cosI, eta ]: [ F, F ] ) => {
 
 } ).setLayout( { name: 'fresnelDielectric', type: 'float', inputs: [ { name: 'cosI', type: 'float' }, { name: 'eta', type: 'float' } ] } );
 
+// the unit normal density, and its integral through erf by Abramowitz and Stegun's 7.1.26 (an
+// absolute error under 1.5e-7)
+const normalPdf = ( x: F ) => exp( x.mul( x ).mul( - 0.5 ) ).mul( 1 / Math.sqrt( 2 * PI ) );
+const normalCdf = Fn( ( [ x ]: [ F ] ) => {
+
+	const z = abs( x ).mul( Math.SQRT1_2 ).toVar();
+	const t = float( 1 ).div( z.mul( 0.3275911 ).add( 1 ) ).toVar();
+	const poly = t.mul( t.mul( t.mul( t.mul( t.mul( 1.061405429 ).add( - 1.453152027 ) ).add( 1.421413741 ) ).add( - 0.284496736 ) ).add( 0.254829592 ) );
+	const half = float( 1 ).sub( poly.mul( exp( z.mul( z ).negate() ) ) ).mul( 0.5 ).toVar();
+	return select( x.lessThan( 0 ), float( 0.5 ).sub( half ), float( 0.5 ).add( half ) );
+
+} ).setLayout( { name: 'normalCdf', type: 'float', inputs: [ { name: 'x', type: 'float' } ] } );
+
+// Smith's shadowing of a ray at elevation sine `y` over Gaussian slopes of spread `s` along its
+// azimuth (the Beckmann distribution's G1 in Walter et al.'s rational form), 0 at or under the horizon
+const smithG1 = Fn( ( [ y, s ]: [ F, F ] ) => {
+
+	const c = clamp( y, 0, 0.9999 ).toVar();
+	const a = c.div( sqrt( float( 1 ).sub( c.mul( c ) ) ).mul( s ).mul( Math.SQRT2 ) ).toVar();
+	const g = a.mul( 3.535 ).add( a.mul( a ).mul( 2.181 ) ).div( a.mul( 2.276 ).add( a.mul( a ).mul( 2.577 ) ).add( 1 ) ).toVar();
+	return select( a.lessThan( 1.6 ), g, float( 1 ) );
+
+} ).setLayout( { name: 'smithG1', type: 'float', inputs: [ { name: 'y', type: 'float' }, { name: 's', type: 'float' } ] } );
+
 const phaseHG = Fn( ( [ cosT, g ]: [ F, F ] ) => {
 
 	const g2 = g.mul( g );
@@ -222,6 +254,16 @@ const rotate = ( v: V2, angle: number ) => vec2( v.x.mul( Math.cos( angle ) ).su
 
 // The sea continues to this distance (metres), well past the horizon for any review camera.
 const SKIRT_RADIUS = 40000;
+// 1 on the skirt's outer ring (`xz` undisplaced), which stands at the eye's height (see the header),
+// 0 elsewhere. The vertex stage raises the ring in its clip position alone (`vertexNode`), built from
+// the grid point (the skirt carries no waves), and leaves the surface's position as it is: any second
+// use of the position, even one that left every other vertex's value unchanged, let the compiler
+// round the whole sea's positions another way, and the near sea's reflection march flipped at
+// scattered pixels. The ring's fragments shade the level sea under it, a fraction of a degree away
+// (the motion vectors take the raised ring). The last row of the skirt, some 34 to 40 km out, rises to
+// the eye; its rays reach the sea's far edge through less of the low haze than a level sea's would,
+// which from 190 m leaves its top rows a level or two darker than the rows under them.
+const onHorizon = ( xz: V2 ) => step( SKIRT_RADIUS * 0.999, max( abs( xz.x ), abs( xz.y ) ) );
 
 // The longest step of the scene clock between two rendered frames that is still motion; a longer
 // one (or a step back) is a seek, which has none (as StormSea's live step).
@@ -281,9 +323,8 @@ const SHADOW_BODY = 0.5, SHADOW_BODY_DEPTH = [ 2, 8 ] as const;
 // The sky panorama's level the horizon's colour is read at (a band some 20 degrees high).
 const HORIZON_MIP = 5;
 
-// How far the slopes no pixel resolves lift the mean reflection, in sigma of their slope, and what
-// a reflection below the horizon keeps of the horizon's colour.
-const REFLECTION_TILT = 0.35, BELOW_HORIZON = 0.6;
+// What a reflection below the horizon keeps of the horizon's colour (it meets other waves).
+const BELOW_HORIZON = 0.6;
 
 // What the reflection keeps of the low sky. A sea seen at a low angle mirrors one strip of sky
 // straight across, the band: at a low sun the pale half of the sky opposite the sun, under cloud the
@@ -304,13 +345,29 @@ const REFLECTION_TILT = 0.35, BELOW_HORIZON = 0.6;
 //   night the band is all the clouded sea's relief has.
 const REFLECTION_BAND = { ramp: 0.18, hue: 0.6, level: 2.2, lowSun: [ 0.05, 0.2 ], dusk: [ - 0.05, - 0.015 ], sunward: [ - 0.7, 0.1 ] } as const;
 
-// The mean Fresnel over unresolved slopes: a facet's reflectance climbs so steeply at grazing that
-// the sheet reads as facets turned some two sigma toward the eye, the view's cosine to the mean
-// surface at sqrt( cos^2 + k sigma^2 ) (k this). What that takes off the flat surface's Fresnel it
-// takes off the pixel's own, by their ratio: a lifted cosine in the pixel's Fresnel alone would
-// even the waves out. Sigma here is the sea's, before the waves' damping: the damped one falls away
-// where the fine waves do, and the lee stood out as a smooth pale tongue.
-const SLOPE_FRESNEL = 5.4;
+// The mean surface's reflection over the slopes no pixel resolves, all from one spread: the slopes
+// along the view a Gaussian of sigmaV = sqrt( sigma^2 / 2 ) x `slopeScale`, sigma^2 the mean square
+// slope over both axes of the sea's share finer than the pixel, before the waves' damping (the
+// damped one falls away where the fine waves do, and the lee stood out as a smooth pale tongue).
+// - The facets the eye sees, weighted by their projected area (the visible normals' distribution:
+//   Heitz 2014, "Understanding the Masking-Shadowing Function in Microfacet-Based BRDFs", JCGT),
+//   meet the view at a mean cosine cosVisible = E2 / E1 over the flat sea's cos
+//   (E1 = cos Phi( m ) + sigmaV phi( m ), E2 = ( cos^2 + sigmaV^2 ) Phi( m ) + cos sigmaV phi( m ),
+//   m = cos / sigmaV), and a facet's reflectance climbs so steeply at grazing that the sheet reflects
+//   as they do. The mean Fresnel is the pixel's own times
+//   F( cosVisible ) / F( cos ) (a lifted cosine in the pixel's Fresnel alone would even the waves out),
+//   times the share of the reflected rays no other wave stops: Smith's shadowing for those slopes,
+//   at the lobe's centre and its two edges, weighted 1/4, 1/2, 1/4.
+// - The reflected rays rise with the facets' tilt toward the eye: the lobe's centre stands `lift`
+//   times ( cosVisible - cos ) over the mirror (an elevation's sine), and it spreads 2 sigmaV either
+//   way. `lift` is 2, the geometry's own: a facet tilted toward the eye by a small angle raises the
+//   view's cosine on it by that angle times the grazing angle's cosine, and the reflected ray by
+//   twice the angle, so its sine by twice as much (1.5 left the far sea of a low sun too dark). The pixel's own mirror rises by as much, so the waves it resolves keep their relief. The sky
+//   is read there over the lobe's width (a level of the panorama, never wider than the lobe stands
+//   over the horizon), and the lobe's share under the horizon, a normal integral at least `edge`
+//   wide (the waves near the eye, which leave the lobe no width, keep a soft edge), takes the
+//   horizon's colour by BELOW_HORIZON.
+const REFLECTION_LOBE = { slopeScale: 1, lift: 2, edge: 0.05 } as const;
 
 // The colour of the sun's light scattered in the water over the shelf. Through the display's balance
 // a sun near white in the scene reads blue green, and in the shallows its scattered light is what lays
@@ -584,7 +641,8 @@ export class Water {
 
 		// A skirt continues the grid's outer edge to the horizon in widening rows. Without it the
 		// sea stopped a couple of degrees below the horizon and a band of the sky's lower panorama
-		// showed between them. Its inner row is the grid's boundary, so the seam is exact.
+		// showed between them. Its inner row is the grid's boundary, so the seam is exact; its outer
+		// row the vertex stage raises to the eye (`onHorizon`).
 		const ring: number[] = [];
 		for ( let i = 0; i < n; i ++ ) ring.push( i ); // z = -size / 2
 		for ( let j = 0; j < n; j ++ ) ring.push( j * ( n + 1 ) + n ); // x = +size / 2
@@ -639,6 +697,10 @@ export class Water {
 		const { fft, sky, shared, shore, seabedHeight, shoreWaves, sunShadow, storm, detail, sceneColor, linearDepth, underwater, refraction } = this.inputs;
 		const quality = this.quality;
 		const u = this.uniforms;
+		// (REFLECTION_LOBE's spread and lift, and the panorama's texel in radians)
+		const lobeSlopeScale = tuneUniform( 'sea.reflection.slopeScale', REFLECTION_LOBE.slopeScale, { min: 0.5, max: 1.5 } );
+		const lobeLift = tuneUniform( 'sea.reflection.lobeLift', REFLECTION_LOBE.lift, { min: 0, max: 3 } );
+		const panoramaTexel = PI / sky.equirect.height;
 		// A cascade's layer of an FFT field at an undisplaced xz.
 		const cascade = ( field: THREE.Texture, c: number, at: V2 ) => texture( field, at.div( fft.sizes[ c ] ) ).depth( int( c ) );
 
@@ -662,6 +724,18 @@ export class Water {
 		const displaced = vec3( xz.x.add( d.x ), shared.waterLevel.add( d.y )
 			.add( shoreWaves.surfaceAt( xz.add( d.xz ), shared.time ).x ), xz.y.add( d.z ) ).toVar();
 		material.positionNode = displaced;
+		// the skirt's outer ring at the eye's height (`onHorizon`)
+		material.vertexNode = Fn( () => {
+
+			const clip = ( modelViewProjection as THREE.Node<'vec4'> ).toVar();
+			If( onHorizon( xz ).greaterThan( 0.5 ), () => {
+
+				clip.assign( cameraProjectionMatrix.mul( modelViewMatrix.mul( vec4( xz.x, cameraPosition.y, xz.y, 1 ) ) ) );
+
+			} );
+			return clip;
+
+		} )();
 		if ( TEMPORAL ) {
 
 			// (motion vectors: the note at the top) the vertex a step of the clock ago, seen from the
@@ -680,11 +754,14 @@ export class Water {
 			// (paused or across a cut the field baked before is not the previous frame's)
 			const shorePrevious = mix( shoreWaves.surfaceAt( shoreAt, shared.time ).x, shoreWaves.previousSurfaceAt( shoreAt ).x, this.shoreHistory );
 			const previous = vec3( xz.x.add( dp.x ), shared.waterLevel.add( dp.y ).add( shorePrevious ), xz.y.add( dp.z ) );
+			// (the skirt's outer ring at the eye's height then and now, as the clip position has it; the
+			// position stays the surface's, see `onHorizon`)
+			const raised = ( p: V3, eye: F ) => vec3( p.x, mix( p.y, eye, onHorizon( xz ) ), p.z );
 			// Weights of exactly 0 or 1, not select(): TSL turns a select of large operands into
 			// branches, and `displaced`, first built inside one, was then declared in it only.
 			material.positionNode = Fn( () => {
 
-				positionPrevious.assign( mix( displaced, previous, this.ownMotion ) );
+				positionPrevious.assign( mix( raised( displaced, cameraPosition.y ), raised( previous, motionUniforms.previousCameraPosition.y ), this.ownMotion ) );
 				return displaced;
 
 			} )();
@@ -998,17 +1075,35 @@ export class Water {
 			// How the reflected direction turns across a quarter of the pixel, diagonally (taken here,
 			// while control flow is uniform): the screen-space reflection traces a ray on either side.
 			const reflectionJitter = dFdx( Rraw ).add( dFdy( Rraw ) ).mul( 0.25 ).toVar();
-			// Unresolved facets tilt the mean reflection toward the higher, darker sky, a little, so
-			// the far sea pales and joins the sky's lower band; reflections below the horizon meet
-			// other waves and fade toward the darkened horizon (and a sheet of water thinner than a
-			// quarter metre keeps the sky).
-			const R = normalize( vec3( Rraw.x, max( Rraw.y, 0.004 ).add( sigmaMean.mul( REFLECTION_TILT ).mul( float( 1 ).sub( max( Rraw.y, 0 ) ) ) ), Rraw.z ) );
+			// The mean surface's reflection over the slopes the pixel does not resolve (REFLECTION_LOBE):
+			// the slopes' spread along the view, the visible facets' mean cosine, the lobe's lift, width
+			// and shadowing (whose mean Fresnel the water's blend takes below).
+			const sigmaV = max( sigmaMean.mul( Math.SQRT1_2 ).mul( lobeSlopeScale ), 1e-5 ).toVar();
+			const cosMean = max( V.y, 1e-4 ).toVar();
+			const m = cosMean.div( sigmaV ).toVar();
+			const cdfM = normalCdf( m ).toVar(), pdfM = normalPdf( m ).toVar();
+			const e1 = cosMean.mul( cdfM ).add( sigmaV.mul( pdfM ) );
+			const e2 = cosMean.mul( cosMean ).add( sigmaV.mul( sigmaV ) ).mul( cdfM ).add( cosMean.mul( sigmaV ).mul( pdfM ) );
+			const cosVisible = min( e2.div( e1 ), 1 ).toVar();
+			const lift = cosVisible.sub( cosMean ).mul( lobeLift ).toVar();
+			const lobeY = min( cosMean.add( lift ), 1 ).toVar();
+			const lobeW = sigmaV.mul( 2 ).toVar();
+			const lobeShadow = smithG1( lobeY.sub( lobeW ), sigmaV ).mul( 0.25 ).add( smithG1( lobeY, sigmaV ).mul( 0.5 ) )
+				.add( smithG1( lobeY.add( lobeW ), sigmaV ).mul( 0.25 ) ).toVar();
+			// The pixel's own mirror, lifted as the mean surface's lobe is; its share over the horizon
+			// reads the sky over the lobe's width, the rest meets other waves and takes the darkened
+			// horizon (and a sheet of water thinner than a quarter metre keeps the sky).
+			const lobeUp = min( Rraw.y.add( lift ), 1 ).toVar();
 			const thickness = wp.y.sub( floorHeight( wp.xz ) ).toVar();
-			const horizonOcc = max( smoothstep( - 0.12, 0.08, Rraw.y ), smoothstep( 0.25, 0.06, thickness ) ).toVar();
+			const skyShare = max( normalCdf( lobeUp.div( max( lobeW, REFLECTION_LOBE.edge ) ) ), smoothstep( 0.25, 0.06, thickness ) ).toVar();
 			const skyReflection = vec3( 0 ).toVar();
-			If( horizonOcc.greaterThan( 0 ), () => {
+			// (a share under a thousandth reads no sky)
+			If( skyShare.greaterThan( 1e-3 ), () => {
 
-				skyReflection.assign( sky.sample( R ) );
+				const y = max( lobeUp, 0.004 ).toVar();
+				const across = normalize( Rraw.xz.add( vec2( 1e-5, 0 ) ) ).mul( sqrt( float( 1 ).sub( y.mul( y ) ) ) );
+				const mip = log2( max( min( lobeW, y ).div( panoramaTexel ), 1 ) );
+				skyReflection.assign( sky.sample( vec3( across.x, y, across.y ), mip ) );
 
 			} );
 			// (the band at the mirror's own elevation, what the flat sea here reflects)
@@ -1025,7 +1120,7 @@ export class Water {
 			// (a low sun's lift of the sky's light, shared.ts `skyLift`, by the band's ramp: the far sea
 			// keeps the band it mirrors and stays under the sky over the horizon; written 1 + ( lift - 1 )
 			// ramp, exactly 1 where there is no lift)
-			const refl = mix( horizon.mul( BELOW_HORIZON ), skyReflection, horizonOcc )
+			const refl = mix( horizon.mul( BELOW_HORIZON ), skyReflection, skyShare )
 				.mul( mix( vec3( 1 ), hue, hueShare ) ).mul( mix( float( 1 ), level, levelShare ) )
 				.mul( shared.skyLift.sub( 1 ).mul( bandRamp ).add( 1 ) ).toVar();
 			// The cliffs and the islanders from the screen: only rays near the horizon can meet them,
@@ -1285,9 +1380,8 @@ export class Water {
 			// ---- foam: a bright diffuse scatterer (albedo 0.85) under the wrapped sun and the sky
 			const foamLight = keyLight.mul( min( vKeyShadow.mul( FOAM_SHADOW_GAIN ), 1 ) );
 			const foamLit = foamLight.mul( max( dot( N, L ), 0 ).mul( 0.75 ).add( 0.25 ) ).div( PI ).add( shared.skyIrradianceSource.mul( 0.95 ) ).mul( 0.85 ).toVar();
-			const cosMean = max( V.y, 1e-4 ).toVar();
-			const slopeMean = sqrt( cosMean.mul( cosMean ).add( sigmaMean.mul( sigmaMean ).mul( SLOPE_FRESNEL ) ) );
-			const meanFresnel = Fr.mul( fresnelDielectric( slopeMean, float( IOR ) ).div( fresnelDielectric( cosMean, float( IOR ) ) ) ).toVar();
+			// (the mean Fresnel over the visible facets, shadowed: REFLECTION_LOBE)
+			const meanFresnel = Fr.mul( fresnelDielectric( cosVisible, float( IOR ) ).div( fresnelDielectric( cosMean, float( IOR ) ) ) ).mul( lobeShadow ).toVar();
 			const water = mix( transmitted, refl, meanFresnel ).add( sunSpec );
 			const col = mix( water, foamLit.mul( u.foamIntensity ).add( sunSpec.mul( 0.05 ) ), sat( foam ) ).toVar();
 			// (temporal modes) the glints' reactive weight: their luminance against a white diffuse
