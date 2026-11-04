@@ -107,8 +107,8 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   (`WaveDamping.ts`), the wave maps the light under the water reads (`WaveMaps.ts`),
   water shading (`Water.ts`), the sea's large-scale detail (`SeaDetail.ts`: gusts, slicks,
   windrows), the water's refraction source (`Refraction.ts`), the storm sea.
-- `src/sky/`: atmosphere, environment bakes (`Sky.ts`), volumetric clouds, cirrus, the day cycle
-  (`DayCycle.ts`), the night sky and its data (`NightSky.ts`, `StarCatalog.ts`), the weather: its sky presets, its wind's levels and heading and the auto chain (`Weather.ts`).
+- `src/sky/`: atmosphere, environment bakes (`Sky.ts`), volumetric clouds, the thin cloud layer's
+  fibres (`Streaks.ts`), the day cycle (`DayCycle.ts`), the night sky and its data (`NightSky.ts`, `StarCatalog.ts`), the weather: its sky presets, its wind's levels and heading and the auto chain (`Weather.ts`).
 - `src/weather/`: wind (`Wind.ts`: the weather's one wind, which every part reads from it, and the
   one wind field all vegetation moves in), lightning, rain,
   puddles, the air's haze and sea fog as one froxel volume lit by the atmosphere and shadowed by

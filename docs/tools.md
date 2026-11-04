@@ -414,7 +414,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   any radiance, so each pixel's cover is exact in the opaque colour, or `grassMask:albedo`, unlit in
   their own diffuse colour (both for `tools/meadow-light.mjs`); the look taken off
   comes back by `clearShade:true`, `lowSun:true`, `tone:0.5`, `filmNight:true`; `localTone:false`
-  builds the display chain without its local tone mapping. The metered exposure is shifted by the
+  builds the display chain without its local tone mapping; `streaks:<n>` scales the thin cloud
+  layer's amount (0 turns it off) and `streakMask:true` paints its pixels (`src/sky/Sky.ts`). The metered exposure is shifted by the
   GUI's `exposure offset (stops)` (Post folder); its keys are `src/post/Exposure.ts`
   `EXPOSURE_KEYS`, and `await __PONLAI__.pipeline.readExposure()` reads its state back from the GPU
   (the same fields as `radiance`'s `exposure`). The grade's
@@ -498,7 +499,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   neighbours' correlation, the gust field's size and travel, the sea's gusts against it around the
   island (`gust.sea`), the plants' wiring, their sway
   rates, and per weather where every part travels and how fast: the plants, the sea and its
-  swell, the open sea's gusts, the air's displacement (`fog`), the cumulus and the cirrus), through the probe as
+  swell, the open sea's gusts, the air's displacement (`fog`), the cumulus and the thin layer's streaks), through the probe as
   `--eval "return JSON.stringify( await P.windProbe() )"`.
 - The haze (`src/weather/VolumetricHaze.ts`): its knobs are the GUI's Haze folder and
   `__PONLAI__.pipeline.air.settings` (read every frame; a change of the slices, the jitter or the

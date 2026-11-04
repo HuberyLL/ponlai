@@ -28,7 +28,7 @@ try {
 		const s = window.__PONLAI__, r = s.renderer, sky = s.sky;
 		const animation = r.getAnimationLoop(), previous = r.getRenderTarget();
 		const original = { elevation: sky.elevation, illuminance: sky.sunIlluminance, weather: s.weather.target };
-		// The disk's integral equals the direct light only where no cloud covers it, cirrus included.
+		// The disk's integral equals the direct light only where no cloud covers it, the thin layer included.
 		await s.setWeather( 'clear', 0 );
 		await r.setAnimationLoop( null );
 		const scene = new s.scene.constructor(), dome = sky.dome.clone();
@@ -44,7 +44,7 @@ try {
 
 				sky.elevation = elevation; sky.sunIlluminance = illuminance;
 				await s.applySun();
-				sky.clouds.cirrus.value = 0;
+				sky.clouds.streaks.value = 0;
 				sky.clouds.invalidate();
 				sky.clouds.update( r, null, 1, 1, 0 );
 				camera.lookAt( camera.position.clone().addScaledVector( sky.sunDir, 100 ) ); camera.updateMatrixWorld();
