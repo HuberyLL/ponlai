@@ -767,12 +767,19 @@ function keyHue( transmittance: THREE.Color, tint: THREE.Color, rising: boolean 
 
 const NEUTRAL_TINT = new THREE.Vector4( 1, 1, 1, 0 );
 const _white = new THREE.Color();
-// The sun's elevations (degrees) over which the moon comes into the clouds' light, in full below the
-// first: the night sky's ramp, later than the moon's key (DayCycle MOON_KEY_TOP).
-const CLOUD_MOON = [ - 7, - 3 ] as const;
+// The sun's elevations (degrees) over which the moon's light on the clouds comes in after sunset and
+// leaves before sunrise, all of it under the first: in the evening the window of the night sky's
+// light and the moon's (DayCycle.ts DUSK_SKY, DUSK_MOON). From -7 to -3 the moonlit cirrus came in
+// while the sky behind it was still the sun's afterglow: at -5.3 degrees it was about half the light
+// of the sky 8 degrees up, which greyed the glow and the far sea under it. The morning keeps -7 to
+// -3, inside its night sky's window (DAWN_SKY, -13 to -3): there the moonlit cirrus is part of the
+// sky the dawn's exposure meters, and without it at -6.5 degrees the land and the low band over the
+// horizon rose by about 0.05 and 0.13 in Oklab L.
+const CLOUD_MOON_DUSK = [ - 11, - 7 ] as const;
+const CLOUD_MOON_DAWN = [ - 7, - 3 ] as const;
 // The sun's elevations (degrees) over which the light the clouds march toward sets from the moon's
-// key to the sun's height, then comes round to the sun's azimuth: after the moon's light on them has
-// gone (CLOUD_MOON) and before the sun's reaches them (`sunlightAt` at 2 km, above about -2).
+// key to the sun's height, then comes round to the sun's azimuth: where no moonlight reaches them
+// (CLOUD_MOON_DAWN, CLOUD_MOON_DUSK) and before the sun's does (`sunlightAt` at 2 km, above about -2).
 const CLOUD_TURN = [ - 3, - 2.5, - 2 ] as const;
 // The sine of the sun's elevation over which the clouds' shadow comes in as it rises.
 const CLOUD_SHADOW_SET = [ - 0.02, 0.02 ] as const;
@@ -1827,9 +1834,10 @@ export class Sky {
 		// the cloud: it keeps its luminance and loses its colour as the key does (track), so an
 		// overcast evening's deck is not a sunset's.
 		sunAbove.lerp( _white.setScalar( luma( sunAbove ) ), overcast );
-		// The clouds belong to the seen sky: their moonlight keeps the night sky's own ramp
-		// (CLOUD_MOON), not the key's earlier one that keeps the island lit after sunset.
-		const moonGain = celestial ? ( 1 - THREE.MathUtils.smoothstep( celestial.elevation, CLOUD_MOON[ 0 ], CLOUD_MOON[ 1 ] ) ) * celestial.moonVisibility : 0;
+		// The clouds belong to the seen sky: their moonlight comes in with the night sky's own light
+		// (CLOUD_MOON_DUSK), not before it while the afterglow still lights the sky behind them.
+		const [ moonFrom, moonTo ] = this.rising ? CLOUD_MOON_DAWN : CLOUD_MOON_DUSK;
+		const moonGain = celestial ? ( 1 - THREE.MathUtils.smoothstep( celestial.elevation, moonFrom, moonTo ) ) * celestial.moonVisibility : 0;
 		const sunUp = ! celestial || celestial.elevation > - 2.5 || rising;
 		// The march's depth shades the clouds' sky light as well as their direct light, and the same
 		// direction casts their shadow, so it moves without a jump even while no direct light reaches
