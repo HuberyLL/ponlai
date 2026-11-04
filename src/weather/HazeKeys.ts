@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { tuneObject, type TuneOptions } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
-import { moonKeyShare } from '../sky/DayCycle.ts';
+import { DUSK_DEPTH, duskIn, moonKeyShare } from '../sky/DayCycle.ts';
 import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckLight, overcastDeckLight } from '../sky/Weather.ts';
 import { cloudBase } from '../sky/Sky.ts';
 
@@ -102,7 +102,10 @@ import { cloudBase } from '../sky/Sky.ts';
 //     share the sky's with the haze less the sky without it, over the sky with it), the glow's
 //     orange showing through a thin air: 4.7 laid 0.9 of it, a pale veil over the glow. Its rows
 //     hold it from -1 down to -7 degrees and give way to the night's from -7 to -11, the window in
-//     which the sky's night comes in (DayCycle.ts `displayNight`, `skyNight`): the night's key,
+//     which the sky's night comes in, and as it does, by stops (DayCycle.ts `skyNight`, `duskIn`:
+//     from DUSK_DEPTH.haze, 6.75 stops under the night's key at -7, where the light it adds to the
+//     sky is 1.8 stops over the twilight's; evenly, it raised the meter's sky a seventh of a stop in
+//     the first half degree, a share of the step the night's layers made there): the night's key,
 //     taken from -4 to -12 before, already had a few percent of the night's Rayleigh (8) at -5.3,
 //     which kept the veil at two thirds, and taken from -11 to -14 it came in after the sky's night:
 //     the land in the island view swelled from L 0.243 at -10 to 0.266 at -11 and fell back to
@@ -322,7 +325,9 @@ function keyAlong( rows: ReadonlyArray<readonly [ number, HazeKey ]>, elevation:
 	let i = 0;
 	while ( i < rows.length - 2 && elevation > rows[ i + 1 ][ 0 ] ) i ++;
 	const [ e0, a ] = rows[ i ], [ e1, b ] = rows[ i + 1 ];
-	const t = THREE.MathUtils.smoothstep( elevation, e0, e1 );
+	// (a clear evening's night key comes in by stops, as the night's light does: DayCycle.ts
+	// DUSK_DEPTH)
+	const t = rows === SETTING && a === NIGHT ? 1 - duskIn( elevation, [ e0, e1 ], DUSK_DEPTH.haze ) : THREE.MathUtils.smoothstep( elevation, e0, e1 );
 	for ( const f of FIELDS ) out[ f ] = a[ f ] + ( b[ f ] - a[ f ] ) * t;
 	const sa = SHAPED.has( a ) ? a : DAY, sb = SHAPED.has( b ) ? b : DAY;
 	for ( const f of SHAPE_FIELDS ) out[ f ] = sa[ f ] + ( sb[ f ] - sa[ f ] ) * t;

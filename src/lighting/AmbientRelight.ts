@@ -208,7 +208,7 @@ const BOUNCE_GAIN = 9.4;
 /** The probes' own gain on the sky's light, a luminance by the sun's elevation (keyed as Sky.ts
  * `skyGain`: golden, low and high, the rising sun's keys of its own, a held value under cloud, and
  * the night key, reached by -6 degrees under cloud; a clear sky's comes in from -7 to -11 degrees
- * after sunset and leaves from -13 to -3 before sunrise: DayCycle.ts `skyNight`). The seen sky
+ * after sunset, by stops, and leaves from -13 to -3 before sunrise: DayCycle.ts `skyNight`). The seen sky
  * keeps its gain; the ground's sky light takes this on top, so its ratio to the sun's light can be
  * set at every hour without changing the sky the eye sees. It sets the key's illuminance at normal
  * incidence against the ambient light's irradiance on open level ground (with the ground's bounce).

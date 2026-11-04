@@ -22,7 +22,7 @@ import { compileInto } from '../post/graph/Compile.ts';
 import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
-import { DAY_EXPOSURE, displayNight, nightAmbientShare, skyNight, sunRising, twilightMoon, type DayCycleSnapshot } from './DayCycle.ts';
+import { DAY_EXPOSURE, DUSK_DEPTH, displayNight, duskIn, nightAmbientShare, skyNight, starNight, sunRising, twilightMoon, twilightMoonSky, type DayCycleSnapshot } from './DayCycle.ts';
 import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckTakeover, type WeatherFront, type WeatherState } from './Weather.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
@@ -455,8 +455,8 @@ function clearShade( elevation: number, direct: number ): number {
 // own (the aerosol's wide base and the multiple scattering that grows along long paths:
 // Atmosphere.ts), not rows by the sun's elevation. Under cloud the gain moves to the night key from
 // 2 degrees to -6 under the horizon (a smoothstep); a clear sky's holds the day's keys through the
-// twilight and moves from -7 to -11 after sunset, from -13 to -3 before sunrise (DayCycle.ts
-// `skyNight`), so the sky after sunset dims with the sun's light it lends
+// twilight and moves from -7 to -11 after sunset (by stops), from -13 to -3 before sunrise
+// (DayCycle.ts `skyNight`), so the sky after sunset dims with the sun's light it lends
 // without the jump to the atmosphere's own light that fading the gain to none gave (several times
 // brighter than the golden key, its blue more so). The sun's own light
 // (its transmittance, the disk) and the cumulus it lights are untouched. The night key is the moonlit
@@ -771,19 +771,25 @@ function keyHue( transmittance: THREE.Color, tint: THREE.Color, rising: boolean 
 
 const NEUTRAL_TINT = new THREE.Vector4( 1, 1, 1, 0 );
 const _white = new THREE.Color();
+const _moonSky = new THREE.Color();
 // The sun's elevations (degrees) over which the moon's light on the clouds comes in after sunset and
 // leaves before sunrise, all of it under the first: in the evening the window of the night sky's
-// light and the moon's (DayCycle.ts DUSK_SKY, DUSK_MOON). From -7 to -3 the moonlit cirrus came in
+// light and the moon's (DayCycle.ts DUSK_SKY, DUSK_MOON), by stops as they come in (DUSK_DEPTH
+// cloudMoon: faded evenly, the clouds' moonlight was the largest share of the step the sky's meter
+// made from -7 to -7.5, 0.7 of 1.6 stops). From -7 to -3 the moonlit cirrus came in
 // while the sky behind it was still the sun's afterglow: at -5.3 degrees it was about half the light
 // of the sky 8 degrees up, which greyed the glow and the far sea under it. The morning keeps -7 to
 // -3, inside its night sky's window (DAWN_SKY, -13 to -3): there the moonlit cirrus is part of the
 // sky the dawn's exposure meters, and without it at -6.5 degrees the land and the low band over the
-// horizon rose by about 0.05 and 0.13 in Oklab L.
+// horizon rose by about 0.05 and 0.13 in Oklab L. Under cloud the evening keeps -7 to -3 too
+// (CLOUD_MOON), as every night layer keeps the daylight's timing there (DayCycle.ts: the clouded
+// sky's night is whole by -6): no afterglow lights the sky behind the deck, and taken in from -11
+// by stops, an overcast deck's moonlight was under a hundredth of this at -8 degrees.
 const CLOUD_MOON_DUSK = [ - 11, - 7 ] as const;
-const CLOUD_MOON_DAWN = [ - 7, - 3 ] as const;
+const CLOUD_MOON = [ - 7, - 3 ] as const;
 // The sun's elevations (degrees) over which the light the clouds march toward sets from the moon's
 // key to the sun's height, then comes round to the sun's azimuth: where no moonlight reaches them
-// (CLOUD_MOON_DAWN, CLOUD_MOON_DUSK) and before the sun's does (`sunlightAt` at 2 km, above about -2).
+// (CLOUD_MOON, CLOUD_MOON_DUSK) and before the sun's does (`sunlightAt` at 2 km, above about -2).
 const CLOUD_TURN = [ - 3, - 2.5, - 2 ] as const;
 // The sine of the sun's elevation over which the clouds' shadow comes in as it rises.
 const CLOUD_SHADOW_SET = [ - 0.02, 0.02 ] as const;
@@ -1648,7 +1654,10 @@ export class Sky {
 		const moonKey = illuminance * moonGain;
 		const moonSky = SKY_LIGHT.night;
 		this.moonKeyColor.setRGB( MOON_KEY[ 0 ] * moonKey, MOON_KEY[ 1 ] * moonKey, MOON_KEY[ 2 ] * moonKey );
-		this.atmosphere.moonIlluminance.value.setRGB( this.moonKeyColor.r * moonSky.r, this.moonKeyColor.g * moonSky.g, this.moonKeyColor.b * moonSky.b );
+		// (after sunset the moonlit sky comes in from a depth of its own: DayCycle.ts `twilightMoonSky`)
+		const skyMoon = illuminance * ( celestial ? celestial.moonKeyGain * twilightMoonSky( celestial.elevation, this.rising, cloud ) : 0 );
+		_moonSky.setRGB( MOON_KEY[ 0 ] * skyMoon, MOON_KEY[ 1 ] * skyMoon, MOON_KEY[ 2 ] * skyMoon );
+		this.atmosphere.moonIlluminance.value.setRGB( _moonSky.r * moonSky.r, _moonSky.g * moonSky.g, _moonSky.b * moonSky.b );
 		this.atmosphere.sunIlluminance.value.copy( this.solarIlluminance ).multiply( skyGain( this.elevation, this.rising, cloud, _skyGain ) );
 		this.clouds.cirrusSunGain.value = cirrusGain( this.elevation, this.rising, cloud );
 		this.atmosphere.updateSync();
@@ -1689,7 +1698,8 @@ export class Sky {
 			// eye; the moonlight on the island is the key light above, not this disk.
 			moonColor.setRGB( 0.04, 0.041, 0.043 ).multiplyScalar( 0.32 * celestial.moonVisibility * this.sunIlluminance / SUN_ILLUMINANCE );
 			this.grade.night = displayNight( celestial.daylight, celestial.elevation, this.rising, cloud );
-			this.night.starVisibility.value = celestial.nightVisibility * this.grade.night * ( 1 - 0.22 * celestial.moonVisibility );
+			const stars = starNight( celestial.daylight, celestial.elevation, this.rising, cloud );
+			this.night.starVisibility.value = celestial.nightVisibility * stars * ( 1 - 0.22 * celestial.moonVisibility );
 			// the night sky's ambient, a clear twilight's with the display's night (DayCycle.ts
 			// `nightAmbientShare`)
 			this.displayNightAmbient.value.setRGB( 0.001, 0.001625, 0.003125 ).multiplyScalar( illuminance * nightAmbientShare( celestial.elevation, this.rising, cloud ) );
@@ -1839,9 +1849,11 @@ export class Sky {
 		// overcast evening's deck is not a sunset's.
 		sunAbove.lerp( _white.setScalar( luma( sunAbove ) ), overcast );
 		// The clouds belong to the seen sky: their moonlight comes in with the night sky's own light
-		// (CLOUD_MOON_DUSK), not before it while the afterglow still lights the sky behind them.
-		const [ moonFrom, moonTo ] = this.rising ? CLOUD_MOON_DAWN : CLOUD_MOON_DUSK;
-		const moonGain = celestial ? ( 1 - THREE.MathUtils.smoothstep( celestial.elevation, moonFrom, moonTo ) ) * celestial.moonVisibility : 0;
+		// (CLOUD_MOON_DUSK), not before it while the afterglow still lights the sky behind them; under
+		// cloud with the clouded night's (CLOUD_MOON), by the clouded share.
+		const moonClouded = celestial ? 1 - THREE.MathUtils.smoothstep( celestial.elevation, CLOUD_MOON[ 0 ], CLOUD_MOON[ 1 ] ) : 0;
+		const moonShare = ! celestial ? 0 : this.rising ? moonClouded : THREE.MathUtils.lerp( duskIn( celestial.elevation, CLOUD_MOON_DUSK, DUSK_DEPTH.cloudMoon ), moonClouded, cloud );
+		const moonGain = celestial ? moonShare * celestial.moonVisibility : 0;
 		const sunUp = ! celestial || celestial.elevation > - 2.5 || rising;
 		// The march's depth shades the clouds' sky light as well as their direct light, and the same
 		// direction casts their shadow, so it moves without a jump even while no direct light reaches
