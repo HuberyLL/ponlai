@@ -7,7 +7,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, uv, uniform, texture, vec2, vec3, vec4, float, int,
-	sqrt, max, min, pow, exp, log, length, abs, acos, clamp, cos, sin, dot, normalize, mix, select, floor, step,
+	sqrt, max, min, pow, exp, log, length, abs, acos, clamp, cos, sin, dot, normalize, mix, select, floor, step, sign,
 } from 'three/tsl';
 import { SCENE_RADIANCE_SCALE, SUN_ANGULAR_RADIUS, SUN_SETTING_RADIUS } from '../lighting/Radiometry.ts';
 import { bandPush, bandToDisplay } from './BandMatrix.ts';
@@ -15,8 +15,8 @@ import { tuneApply, tuneUniform } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 
 // Hillaire 2020, "A Scalable and Production Ready Sky and Atmosphere Rendering Technique":
-// tidewater's transmittance and multiple-scattering LUTs, ported to TSL fragment passes. Distances
-// are kilometres. This module contains clear-sky scattering only; the visible sun, environment
+// tidewater's transmittance and multiple-scattering LUTs, ported to TSL fragment passes, the latter's
+// sun axis denser near the horizon (`multipleScattering`). Distances are kilometres. This module contains clear-sky scattering only; the visible sun, environment
 // lighting and scene lights are composed by Sky from the same atmosphere.
 //
 // The planet: ground at 6360 km and the atmosphere's top 60 km above it (6420 km). The shell's
@@ -118,7 +118,10 @@ import { markSkyRetune } from './SkyRetune.ts';
 // flat, dark floor there, the Rayleigh share's gain apart from the aerosol's, whose rows also feed
 // the glow round the moon (the haze's moon lobe).
 const RG = 6360, RT = 6420;
-const T_W = 256, T_H = 64, MS_RES = 32;
+// the transmittance LUT; the multiple-scattering LUT, MS_SUN nodes over the sun's cosine c by MS_R
+// over the height (linear), its sun axis u = 0.5 + 0.5 sign( c ) sqrt( |c| ), dense near the
+// horizon (`multipleScattering`)
+const T_W = 256, T_H = 64, MS_SUN = 192, MS_R = 32;
 // the in-scatter table (muS, mu, r) and its atlas, the sky row, the fog table (mu, altitude); the
 // azimuths the table averages over, and its march's steps
 const TABLE_MUS = 64, TABLE_MU = 96, TABLE_R = 16, ATLAS_W = TABLE_MUS * TABLE_R;
@@ -497,7 +500,7 @@ export class Atmosphere {
 	// the highest altitude the fog table holds (km): the haze grid's far end
 	readonly fogReach = uniform( 30 );
 	readonly transmittanceLUT = makeLUT( T_W, T_H, 'atmoTransmittance' );
-	readonly multiScatLUT = makeLUT( MS_RES, MS_RES, 'atmoMultiScat' );
+	readonly multiScatLUT = makeLUT( MS_SUN, MS_R, 'atmoMultiScat' );
 	// The in-scatter table's atlas (Rayleigh RGB and Mie R; Mie GB), the sky row and the fog table cut
 	// from it, each in the same two parts: the sun's slice in the first row(s), the moon's after.
 	readonly table = [ makeLUT( ATLAS_W, TABLE_MU, 'atmoInScatter', THREE.RGBAFormat ), makeLUT( ATLAS_W, TABLE_MU, 'atmoInScatterMie', THREE.RGFormat ) ] as const;
@@ -582,8 +585,10 @@ export class Atmosphere {
 
 		const multiScatBake = Fn( () => {
 
-			const q = uv().sub( 0.5 / MS_RES ).mul( MS_RES / ( MS_RES - 1 ) ).toVar();
-			const cosSun = q.x.mul( 2 ).sub( 1 ).toVar();
+			// the texel's node: the sun's cosine from the axis' square root (`multipleScattering`)
+			const q = uv().sub( vec2( 0.5 / MS_SUN, 0.5 / MS_R ) ).mul( vec2( MS_SUN / ( MS_SUN - 1 ), MS_R / ( MS_R - 1 ) ) ).toVar();
+			const s = q.x.mul( 2 ).sub( 1 ).toVar();
+			const cosSun = s.mul( abs( s ) ).toVar();
 			const r = clamp( q.y, 0.001, 0.999 ).mul( RT - RG ).add( RG );
 			const sun = vec3( 0, cosSun, sqrt( max( float( 1 ).sub( cosSun.mul( cosSun ) ), 0 ) ).negate() ).toVar();
 			const ro = vec3( 0, r, 0 ).toVar(), Lsum = vec3( 0 ).toVar(), fmsSum = vec3( 0 ).toVar();
@@ -925,11 +930,17 @@ export class Atmosphere {
 	/** The multiple-scattering LUT at radius `r` (km from the planet's centre; `viewHeight` for the
 	 * camera's) for a sun of cosine `cosSun`: the light scattered more than once that a unit of
 	 * scattering takes there, per unit of the sun's illuminance (isotropic, 1/sr: Hillaire 2020's
-	 * Psi_ms). */
+	 * Psi_ms). The paper's sun axis is linear in the cosine; here it is linear in the cosine's
+	 * signed square root, its nodes dense near the horizon, where Psi_ms falls by orders of
+	 * magnitude over a few degrees of the sun's descent and a bilinear read between nodes far apart
+	 * follows the upper one. On 32 nodes linear in the cosine (3.7 degrees apart near the horizon)
+	 * the sky stood .15 stop over a read on nodes half a degree apart under the sun at -6 degrees
+	 * and .75 - 3.4 stops over it from -8 to -11.5; on these 192 (half a degree apart at -10, closer
+	 * toward the horizon) it stands within .07 stop of it. */
 	multipleScattering( r: F, cosSun: F ): V3 {
 
-		const q = vec2( cosSun.mul( 0.5 ).add( 0.5 ), r.sub( RG ).div( RT - RG ) );
-		return texture( this.multiScatLUT.texture, q.mul( ( MS_RES - 1 ) / MS_RES ).add( 0.5 / MS_RES ) ).level( float( 0 ) ).rgb;
+		const q = vec2( sign( cosSun ).mul( sqrt( abs( cosSun ) ) ).mul( 0.5 ).add( 0.5 ), r.sub( RG ).div( RT - RG ) );
+		return texture( this.multiScatLUT.texture, q.mul( vec2( ( MS_SUN - 1 ) / MS_SUN, ( MS_R - 1 ) / MS_R ) ).add( vec2( 0.5 / MS_SUN, 0.5 / MS_R ) ) ).level( float( 0 ) ).rgb;
 
 	}
 
