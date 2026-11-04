@@ -475,19 +475,26 @@ function clearShade( elevation: number, direct: number ): number {
 // the air's hue moves and the land's level and the exposure do not. Its golden and low keys are the
 // day's own, so a clouded sky parts from a clear one only over 12 degrees.
 // On a clear evening the sky takes a key below the golden one (`dusk`, at -1 degrees, not under
-// cloud), held through the twilight until the night key takes it from -7 degrees. It is a
-// near-neutral warm key at the twilight, at the luminance the warm key before it had: the
-// twilight sky's colour is the atmosphere's own (Atmosphere.ts), orange at the glow, yellow above
-// it and near grey from 20 degrees up. A warm key (blue under a third of red) laid one tint over
-// the whole dome, which turned the sky 20 degrees up magenta (red over green about 2.1, blue over
-// green 1.5, with the sun 5.6 degrees under the horizon). The land takes its twilight warmth from
-// the light lent to it (ISLAND_SKY).
+// cloud), held through the twilight until the night key takes it from -7 degrees, at the
+// luminance the warm key before it had. Its colour, green 0.55 and blue 0.33 of red, is a
+// least-squares fit with the afterglow's haze weight (HazeKeys.ts) on the twilight's sky toward
+// the glow at -3.3 and -5.3 degrees, over the atmosphere with its multiple scattering whole
+// (Atmosphere.ts): under the near-neutral key it had (0.89 and 0.86) that sky stood near grey
+// over the glow (Oklab chroma about 0.01 at -5.3), and the key takes it to orange from the glow to
+// the top of a view toward it (red over green about 1.7, blue over green 0.4 - 0.6). When the
+// multiple scattering stood at 1 / 4 pi of its level, a warm key (blue under a third of red)
+// turned the sky 20 degrees up magenta (red over green about 2.1, blue over green 1.5, with the
+// sun 5.6 degrees under the horizon). The sea under the glow takes less of the key's warmth than
+// the sky over it: it stays lighter and greyer, by the water's reflection, not the sky's light.
+// The land takes its twilight warmth from the light lent to it (ISLAND_SKY).
 // The morning is not the evening turned round. These keys hold in every direction, so a warm key
 // warms the whole picture: the golden key is the evening's, where the whole sky is alight, and the
 // clear morning has keys of its own (`dawn`, `morning`, read while the sun rises: DayKeys.ts
 // `rising`). At sunrise the air is already blue and the warm colour stays in the sun's road and the
-// low streaks, so `dawn` takes the twilight's near-neutral light (the dusk key's colour, at the
-// luminance the cooler key before it had: the sky before sunrise is the same atmosphere's), and the
+// low streaks, so `dawn` takes a near-neutral light at the luminance the cooler key before it had,
+// green 0.79 and blue 0.86 of red: a least-squares fit, with the dawn's haze weights
+// (HazeKeys.ts), on the dawn's horizon views from -8 to 3 degrees over the atmosphere with its
+// multiple scattering whole (it was the dusk key's near-neutral colour before, 0.89 and 0.86), and the
 // display's dawn white balance (Pipeline.ts WHITE_BALANCE) cools it from there: the band over the
 // horizon, nearly all the haze's light, and the sea under it stay a quiet blue grey. By 12 degrees
 // the picture has gone cool and quiet, and `morning` is the day's light at about two thirds of the
@@ -502,9 +509,9 @@ const SKY_LIGHT_LOW_SUN: readonly DayKey<{ r: number; g: number; b: number }>[] 
 ];
 const SKY_LIGHT_HIGH: DayKey<{ r: number; g: number; b: number }> = { at: 40, name: 'high', values: { r: 0.235, g: 0.232, b: 0.346 } };
 const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'sky.light', {
-	day: [ { at: - 1, name: 'dusk', values: { r: 0.2263, g: 0.2014, b: 0.1946 } }, ...SKY_LIGHT_LOW_SUN, SKY_LIGHT_HIGH ],
+	day: [ { at: - 1, name: 'dusk', values: { r: 0.2263, g: 0.125, b: 0.0751 } }, ...SKY_LIGHT_LOW_SUN, SKY_LIGHT_HIGH ],
 	rising: [
-		{ at: 3, name: 'dawn', values: { r: 0.2008, g: 0.1787, b: 0.1727 } },
+		{ at: 3, name: 'dawn', values: { r: 0.2008, g: 0.159, b: 0.1727 } },
 		{ at: 12, name: 'morning', values: { r: 0.1809, g: 0.1207, b: 0.1683 } },
 		SKY_LIGHT_HIGH,
 	],

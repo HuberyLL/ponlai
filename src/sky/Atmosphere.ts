@@ -107,7 +107,11 @@ import { markSkyRetune } from './SkyRetune.ts';
 // flattens the lowest of these from about 1.34), and on the horizon view at a rising sun of 2 -
 // 2.7 degrees the band over the horizon 15 - 25 degrees from the sun 1.61-1.62 times (display,
 // linear) the band 40 degrees from it, 2.5 before the fit (polariser 0.35, lean 0.35, aerosol
-// 1.75, the mist's weight 0.76). With the polariser
+// 1.75, the mist's weight 0.76). With the multiple scattering whole, the bare sky's
+// first two relations moved by under 1 % and the third fell by 7 % with the aerosol's share; a
+// refit of the lean, the polariser and the sky's shadow on the bare sky could not take it back
+// (their rms over the relations 0.018 to 0.017 in log), so they stay, and the mist's weights
+// were refitted with the dawn's rows (HazeKeys.ts). With the polariser
 // near full strength (0.835, as it was) the first two stood at 1.0-1.24 and about 7: the 90 degree
 // band was a deep trench. A march per azimuth (the table's at each of 32 azimuths, the planet's
 // shadow over each point's horizon) was

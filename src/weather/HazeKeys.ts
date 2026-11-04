@@ -73,13 +73,22 @@ import { cloudBase } from '../sky/Sky.ts';
 //     on screen, free of the exposure's level: the lowest band over the horizon level with the
 //     sky 10 degrees up or a little over it, the bands' ratio and the low sky over the high air,
 //     fitted together with the seen sky's rows by azimuth (Atmosphere.ts, its phases and the
-//     aerosol aloft), which the low keys move as well. As the sun rises (sun 2 and 3) 0.5 and
-//     0.41; before dawn two keys, the band taking more haze toward the sunrise than in the deep
+//     aerosol aloft), which the low keys move as well. As the sun rises (sun 2 and 3) 0.72 and
+//     0.83; before dawn two keys, the band taking more haze toward the sunrise than in the deep
 //     twilight: 1.9 and 4.1 at -1 degrees (to sun 0, where it meets the sunrise's half and half;
-//     the band about 0.01 - 0.02 L under the sky 10 degrees up at -2), and the Rayleigh 1.4 at -6
-//     degrees (the band at -6.5 within 0.08 of that sky; the Mie, 4.1, does not show there, the
-//     sun being under the horizon); the golden hour's 0.58 and 3.8 (its far sea over the sky held). The keys with a low sun take the sun's
-//     Rayleigh light beside the open sky's (`sunRayleigh`). The afterglow's Rayleigh, 0.13, leaves
+//     the band about 0.02 - 0.04 L over the sky 10 degrees up at -2), and the Rayleigh 0.965 at -6
+//     degrees (the band at -6.5 0.02 - 0.05 L over that sky; the Mie, 4.1, does not show there, the
+//     sun being under the horizon). The dawn's weights are a least-squares fit, with the dawn key's
+//     colour (Sky.ts), on the rows of the dawn's horizon views from -8 to 3 degrees (the band, the
+//     sky, the sea, the shade on the land) once the multiple scattering was whole (Atmosphere.ts),
+//     which lowered the aerosol's share of the bare sky over the band (0.15 to 0.12 at 3 degrees up,
+//     sun 2.4) and with it the band's forward peak (20 against 40 degrees from the sun, 1.98 to
+//     1.84 times): the sunrise's were 0.5 and 0.41 and the deep twilight's Rayleigh 1.4 before it,
+//     and the fit left 1.9 and 4.1 where they were. The golden hour's 0.58 and 3.8 (its far sea
+//     over the sky held). The keys with a low sun take the sun's
+//     Rayleigh light beside the open sky's (`sunRayleigh`). The afterglow's Rayleigh, 0.32, is a
+//     least-squares fit with the dusk key's colour (Sky.ts) on the twilight's sky rows toward the
+//     glow at -3.3 and -5.3 degrees. It was 0.13 before the multiple scattering was whole, which left
 //     the haze about a quarter of the sky 4 degrees up toward the glow (0.23 - 0.26 at sun -3.3, its
 //     share the sky's with the haze less the sky without it, over the sky with it), the glow's
 //     orange showing through a thin air: 4.7 laid 0.9 of it, a pale veil over the glow. Its rows
@@ -197,12 +206,12 @@ const twilight = ( elevation: number ): Sigma => {
 const NIGHT = { ...key( 2.5, NIGHT_SIGMA, 0.55, 0, 1 ), rayleighWeight: 8, mieWeight: 2, top: 47.6, width: 36.8, widthSlope: 0.65, aerosolShare: 0.003, skyDepth: 0 };
 const BEFORE_DAWN = { ...key( 0.6, twilight( - 3.5 ), 0.33, 0, 1 ), rayleighWeight: 1.9, mieWeight: 4.1, nearScale: 0.8 };
 // the deep twilight before dawn: the same air with less of the haze's light (see the header)
-const EARLY_DAWN = { ...BEFORE_DAWN, rayleighWeight: 1.4, mieWeight: 4.1 };
-const MIST = { ...key( 0.6, GOLDEN_SIGMA, 0.64, 0, 1 ), rayleighWeight: 0.5, mieWeight: 0.41, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010, nearScale: 0.5 };
+const EARLY_DAWN = { ...BEFORE_DAWN, rayleighWeight: 0.965, mieWeight: 4.1 };
+const MIST = { ...key( 0.6, GOLDEN_SIGMA, 0.64, 0, 1 ), rayleighWeight: 0.72, mieWeight: 0.83, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010, nearScale: 0.5 };
 const MORNING = { ...key( 0.96, DAY_SIGMA, 0.5, 0, 1 ), rayleighWeight: 0.33, mieWeight: 0.83 };
 const DAY = { ...key( 0.659, DAY_SIGMA, 1, 0, 0 ), rayleighWeight: 0.575, mieWeight: 0.79, top: 78.4, width: 54.9, aerosolShare: 0.06, aerosolHeight: 761 };
 const GOLDEN = { ...key( 0.606, GOLDEN_SIGMA, 0.331, 0, 1 ), rayleighWeight: 0.58, mieWeight: 3.8, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010 };
-const AFTER_SUNSET = { ...key( 0.45, twilight( - 2.5 ), 0.4, 0, 1 ), rayleighWeight: 0.13, mieWeight: 4.7 };
+const AFTER_SUNSET = { ...key( 0.45, twilight( - 2.5 ), 0.4, 0, 1 ), rayleighWeight: 0.32, mieWeight: 4.7 };
 // the afterglow's air under cloud (see the header)
 const AFTER_SUNSET_CLOUDED = { ...AFTER_SUNSET, rayleighWeight: 4.7 };
 // the keys with a shape are tunable on debug pages (debug/Tune.ts):
