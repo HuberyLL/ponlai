@@ -528,8 +528,10 @@ export class Atmosphere {
 	// the moon's illuminance the moonlit sky is drawn with (Sky.ts keys it)
 	readonly moonIlluminance = uniform( new THREE.Color( 0, 0, 0 ) );
 	/** gains on the moon's Rayleigh rows and on its aerosol's rows, as every reader takes them
-	 * (`bodyGains`: the sky's, the fog table's, the clouds'): 1, the atmosphere's own */
-	readonly moonRayleigh = tuneUniform( 'sky.night.moonRayleigh', 0.365, { min: 0, max: 2, onChange: markSkyRetune } );
+	 * (`bodyGains`: the sky's, the fog table's, the clouds'): 1, the atmosphere's own. The Rayleigh's,
+	 * 0.175, is a least-squares fit on the clear night's sky rows with the multiple scattering whole
+	 * (0.365 held them when it stood at 1 / 4 pi of its level) */
+	readonly moonRayleigh = tuneUniform( 'sky.night.moonRayleigh', 0.175, { min: 0, max: 2, onChange: markSkyRetune } );
 	readonly moonMie = tuneUniform( 'sky.night.moonMie', 1.3, { min: 0, max: 2, onChange: markSkyRetune } );
 	// the highest altitude the fog table holds (km): the haze grid's far end
 	readonly fogReach = uniform( 30 );
