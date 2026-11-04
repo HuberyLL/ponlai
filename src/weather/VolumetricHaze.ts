@@ -14,7 +14,7 @@ import {
 import type { Sky } from '../sky/Sky.ts';
 import { EARTH_RADIUS, type Clouds } from '../sky/Clouds.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
-import { MIE_G, cornetteShanks, skyRayleighPhase, type Atmosphere } from '../sky/Atmosphere.ts';
+import { ATMOSPHERE_RADIUS, MIE_G, PLANET_RADIUS, cornetteShanks, skyRayleighPhase, type Atmosphere } from '../sky/Atmosphere.ts';
 import { bandPush, bandToDisplay, bandToDisplayColor } from '../sky/BandMatrix.ts';
 import { ISLAND_TOP } from '../world/WorldShapes.ts';
 import type { HazeKey } from './HazeKeys.ts';
@@ -296,7 +296,7 @@ const DECK_DIFFUSE = [
 //     haze of its own to the medium's depth: uniform in height over the air's whole height, the
 //     key's `skyDepth` (green's optical depth per kilometre of the ray; HazeKeys.ts). Over the
 //     island's distances, a few kilometres, its share is negligible, while the sky's rays (about
-//     60 km straight up, 170 km at 20 degrees, 300 km at 10) are long enough for it to close the
+//     100 km straight up, 280 km at 20 degrees, 480 km at 10) are long enough for it to close the
 //     dome, so one depth separates the island's views from the sky by the length of their rays
 //     alone. Its light is the volume's light per opacity times the whole opacity, as the medium's:
 //     with a depth (a fog night's; every key keeps 0) the moon's disc fades behind it, the sky near
@@ -346,8 +346,8 @@ const MOON_AEROSOL = {
 	gain: tune( 'haze.moon.gain', 0.279, { min: 0.25, max: 4, scale: 'log', onChange: markSkyRetune } ),
 	anisotropy: 0.797,
 };
-// the planet's radius and the atmosphere's top (m from its centre: Atmosphere.ts RG, RT)
-const ATMOSPHERE_BOTTOM = 6360e3, ATMOSPHERE_TOP = 6420e3;
+// the planet's radius and the atmosphere's top (m from its centre)
+const ATMOSPHERE_BOTTOM = PLANET_RADIUS * 1e3, ATMOSPHERE_TOP = ATMOSPHERE_RADIUS * 1e3;
 
 /** The froxel grid's size, fixed when the page loads (the quality tier's `post.hazeGrid`). */
 export interface HazeGrid { width: number; height: number; depth: number }

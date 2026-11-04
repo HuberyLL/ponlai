@@ -15,12 +15,24 @@ import { tuneApply, tuneUniform } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 
 // Hillaire 2020, "A Scalable and Production Ready Sky and Atmosphere Rendering Technique":
-// tidewater's transmittance and multiple-scattering LUTs, ported to TSL fragment passes, the latter's
-// sun axis denser near the horizon (`multipleScattering`). Distances are kilometres. This module contains clear-sky scattering only; the visible sun, environment
-// lighting and scene lights are composed by Sky from the same atmosphere.
+// tidewater's transmittance and multiple-scattering LUTs, ported to TSL fragment passes, the
+// latter's sun axis denser near the horizon (`multipleScattering`). Distances are kilometres. This
+// module contains clear-sky scattering only; the visible sun, environment lighting and scene lights
+// are composed by Sky from the same atmosphere.
 //
-// The planet: ground at 6360 km and the atmosphere's top 60 km above it (6420 km). The shell's
-// thickness sets how fast the sky darkens toward the zenith and where the twilight wedge sits.
+// The planet: ground at 6360 km and the atmosphere's top 100 km above it (6460 km). The shell's
+// thickness sets how fast the sky darkens toward the zenith and where the twilight wedge sits. The
+// air over 60 km is thin (its Rayleigh share e^-7.5 of the sea's and less), but from the sun 8
+// degrees under the horizon down it is the only air over the viewer still in sunlight (the earth's
+// shadow over the zenith stands near 62 km at -8 degrees, 98 km at -10). With the top at 60 km the
+// deep twilight's sky was the multiple scattering alone: 20 degrees up it stood 1.7 stops under
+// this sky at -8, 4.1 at -10, 4.5 at -10.5 and 2.4 at -14 (.34 at -6, nothing by day), and the
+// zenith fell by about 3 stops a degree down to -10.25, then by under 1 from -10.75, a kink; now
+// it falls by 2.2 stops a degree at -8 and 1.5 at -11 to -12, smoothly. The march's steps hold at
+// this height (twice the table's or the multiple-scattering bake's steps change the sky by .03
+// stop or less). The in-scatter table's 21 r slices keep its lowest three near the heights over the
+// sea that 16 gave a 60 km shell (0.25, 1.01 and 2.27 km, then 0.27, 1.07 and 2.41), where the
+// clouds and the haze read it.
 // The aerosol scatters through one Cornette-Shanks lobe of anisotropy MIE_G, nothing else: no
 // isotropic base and no extra gain along long paths. The soft wide glow round the sun is that lobe
 // seen through the haze in front of the sky (weather/VolumetricHaze.ts), whose forward lobe takes
@@ -48,7 +60,7 @@ import { markSkyRetune } from './SkyRetune.ts';
 // (1 under the Rayleigh phase alone). The phase is applied where the
 // table is read, so the Mie peak round the sun needs no texels and each reader takes its own
 // phase; with the phase out, what is left depends only weakly on the azimuth between the view and
-// the sun, so the table holds its mean over the azimuth. It is 89 (muS) x 96 (mu) x 16 (r), baked
+// the sun, so the table holds its mean over the azimuth. It is 89 (muS) x 96 (mu) x 21 (r), baked
 // once per change of the medium (not when the sun moves: its elevation is an axis), as a 2D atlas
 // of the r slices side by side, 32-bit floats (as every table here: `makeLUT`): RGBA Rayleigh RGB
 // and Mie R, RG Mie GB. Its axes are
@@ -118,14 +130,16 @@ import { markSkyRetune } from './SkyRetune.ts';
 // not the view, so it does not: weather/VolumetricHaze.ts); the gains let it be pressed down to a
 // flat, dark floor there, the Rayleigh share's gain apart from the aerosol's, whose rows also feed
 // the glow round the moon (the haze's moon lobe).
-const RG = 6360, RT = 6420;
+const RG = 6360, RT = 6460;
+/** The planet's radius and the atmosphere's top, km from the planet's centre. */
+export const PLANET_RADIUS = RG, ATMOSPHERE_RADIUS = RT;
 // the transmittance LUT; the multiple-scattering LUT, MS_SUN nodes over the sun's cosine c by MS_R
 // over the height (linear), its sun axis u = 0.5 + 0.5 sign( c ) sqrt( |c| ), dense near the
 // horizon (`multipleScattering`)
 const T_W = 256, T_H = 64, MS_SUN = 192, MS_R = 32;
 // the in-scatter table (muS, mu, r) and its atlas, the sky row, the fog table (mu, altitude); the
 // azimuths the table averages over, and its march's steps
-const TABLE_MUS = 89, TABLE_MU = 96, TABLE_R = 16, ATLAS_W = TABLE_MUS * TABLE_R;
+const TABLE_MUS = 89, TABLE_MU = 96, TABLE_R = 21, ATLAS_W = TABLE_MUS * TABLE_R;
 const SKY_ROW = 512, FOG_MU = 128, FOG_H = 16;
 // the fog table's lowest altitude (km): 2 m over the sea, as the sky row's viewer, since a ray from
 // the ground itself has no length below the horizon

@@ -33,8 +33,8 @@ import { cloudBase } from '../sky/Sky.ts';
 //     the sky dome takes (VolumetricHaze `skyHaze`): green's optical depth per kilometre of a sky
 //     ray's length, 0 in every key until tuned (the keys with a shape of their own are tunable; the
 //     other hours keep 0). Over the island's distances, a few kilometres at most, its
-//     share is negligible, while the sky's rays (about 60 km straight up, 170 km at 20 degrees,
-//     300 km at 10) are long enough for it to close the dome: the moon's disc fades behind it and
+//     share is negligible, while the sky's rays (about 100 km straight up, 280 km at 20 degrees,
+//     480 km at 10) are long enough for it to close the dome: the moon's disc fades behind it and
 //     the low sky turns to the haze's own light, a fog night's look; the clear night keeps 0, its
 //     low sky lit by the haze layer itself. The weather's scales leave it as it is.
 //   - sigma: the medium's spectral extinction, each band's weight on the density (VolumetricHaze's
