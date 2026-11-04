@@ -49,8 +49,16 @@ import { cloudBase } from '../sky/Sky.ts';
 //     The overcast's are still to be set toward grey.
 //   - desaturate: how far each of the haze's two shares of light (VolumetricHaze's header) turns
 //     toward its luminance: all of it by day (the day's air shows its sky's colour through
-//     the haze's sigma, not its own), half in the morning and by night, 0.4 after sunset, 0.64 as
-//     the sun rises, and a third at the golden hour, whose air takes most of the sun's orange. Under
+//     the haze's sigma, not its own), half in the morning and by night, 0.75 just after sunset and
+//     none in the deep twilight, 0.64 as the sun rises, and a third at the golden hour, whose air
+//     takes most of the sun's orange. After sunset it sets the colour of the glow over the horizon
+//     toward the sun, whose chroma (Oklab) at -3.4 and -5.3 degrees rises about 0.0025 for each
+//     tenth less: one value over the whole afterglow (0.4) gave 0.128 at -3.4 and 0.105 at -5.3, the
+//     deeper glow the greyer, and the key's other knobs moved both the same
+//     way. So it falls with the sun, from 0.75 at -1 degrees to none at -7 (the deep twilight's key,
+//     `AFTER_SUNSET_DEEP`, the afterglow's air with the glow's colour kept, held to -11), which
+//     gives 0.125 at -3.4 and 0.112 at -5.3, the deeper glow keeping more of its colour (from 0.75
+//     to 0.85 at -1 degrees the two read the same). Under
 //     the sunrise's cold light it decides where the air's own warmth shows: the haze's own rows
 //     are red toward a low sun, so what it leaves of them lands in the band over the horizon, the
 //     high air staying blue; a fast swing, the band from blue to orange within a tenth or two of it.
@@ -211,15 +219,17 @@ const MIST = { ...key( 0.6, GOLDEN_SIGMA, 0.64, 0, 1 ), rayleighWeight: 0.72, mi
 const MORNING = { ...key( 0.96, DAY_SIGMA, 0.5, 0, 1 ), rayleighWeight: 0.33, mieWeight: 0.83 };
 const DAY = { ...key( 0.659, DAY_SIGMA, 1, 0, 0 ), rayleighWeight: 0.575, mieWeight: 0.79, top: 78.4, width: 54.9, aerosolShare: 0.06, aerosolHeight: 761 };
 const GOLDEN = { ...key( 0.606, GOLDEN_SIGMA, 0.331, 0, 1 ), rayleighWeight: 0.58, mieWeight: 3.8, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010 };
-const AFTER_SUNSET = { ...key( 0.45, twilight( - 2.5 ), 0.4, 0, 1 ), rayleighWeight: 0.32, mieWeight: 4.7 };
-// the afterglow's air under cloud (see the header)
-const AFTER_SUNSET_CLOUDED = { ...AFTER_SUNSET, rayleighWeight: 4.7 };
+const AFTER_SUNSET = { ...key( 0.45, twilight( - 2.5 ), 0.75, 0, 1 ), rayleighWeight: 0.32, mieWeight: 4.7 };
+// the deep twilight after sunset: the afterglow's air, its light keeping the glow's colour (see the header)
+const AFTER_SUNSET_DEEP = { ...AFTER_SUNSET, desaturate: 0 };
+// the afterglow's air under cloud (see the header), its light as the clear afterglow's was set
+const AFTER_SUNSET_CLOUDED = { ...AFTER_SUNSET, desaturate: 0.4, rayleighWeight: 4.7 };
 // the keys with a shape are tunable on debug pages (debug/Tune.ts):
 // `haze.key.<amount|sigmaRed|sigmaBlue|desaturate|rayleighWeight|mieWeight|top|width|
 // aerosolShare|aerosolHeight|skyDepth>@<day|golden|night|mist>` (green is sigma's unit), the
-// morning's, the twilight's before dawn (deep and late) and the afterglow's their six up to
-// `mieWeight` (`@morning`, `@earlyDawn`, `@beforeDawn`, `@afterSunset`, under cloud
-// `@afterSunsetClouded`)
+// morning's, the twilight's before dawn (deep and late) and after sunset (the afterglow and the
+// deep twilight) their six up to `mieWeight` (`@morning`, `@earlyDawn`, `@beforeDawn`,
+// `@afterSunset`, `@afterSunsetDeep`, under cloud `@afterSunsetClouded`)
 const TUNED = [ 'amount', 'sigmaRed', 'sigmaBlue', 'desaturate', 'rayleighWeight', 'mieWeight', 'top', 'width', 'aerosolShare', 'aerosolHeight', 'skyDepth' ] as const;
 const TUNE_RANGE: Record<typeof TUNED[ number ], TuneOptions> = {
 	amount: { min: 0.1, max: 10, scale: 'log', onChange: markSkyRetune }, sigmaRed: { min: 0.05, max: 1.5, scale: 'log', onChange: markSkyRetune },
@@ -229,7 +239,7 @@ const TUNE_RANGE: Record<typeof TUNED[ number ], TuneOptions> = {
 	aerosolShare: { min: 0.003, max: 3, scale: 'log', onChange: markSkyRetune }, aerosolHeight: { min: 300, max: 8000, scale: 'log', onChange: markSkyRetune },
 	skyDepth: { min: 0, max: 0.5, onChange: markSkyRetune },
 };
-for ( const [ k, name, fields ] of [ [ DAY, 'day', TUNED ], [ GOLDEN, 'golden', TUNED ], [ NIGHT, 'night', TUNED ], [ MIST, 'mist', TUNED ], [ MORNING, 'morning', TUNED.slice( 0, 6 ) ], [ EARLY_DAWN, 'earlyDawn', TUNED.slice( 0, 6 ) ], [ BEFORE_DAWN, 'beforeDawn', TUNED.slice( 0, 6 ) ], [ AFTER_SUNSET, 'afterSunset', TUNED.slice( 0, 6 ) ], [ AFTER_SUNSET_CLOUDED, 'afterSunsetClouded', TUNED.slice( 0, 6 ) ] ] as const ) {
+for ( const [ k, name, fields ] of [ [ DAY, 'day', TUNED ], [ GOLDEN, 'golden', TUNED ], [ NIGHT, 'night', TUNED ], [ MIST, 'mist', TUNED ], [ MORNING, 'morning', TUNED.slice( 0, 6 ) ], [ EARLY_DAWN, 'earlyDawn', TUNED.slice( 0, 6 ) ], [ BEFORE_DAWN, 'beforeDawn', TUNED.slice( 0, 6 ) ], [ AFTER_SUNSET, 'afterSunset', TUNED.slice( 0, 6 ) ], [ AFTER_SUNSET_DEEP, 'afterSunsetDeep', TUNED.slice( 0, 6 ) ], [ AFTER_SUNSET_CLOUDED, 'afterSunsetClouded', TUNED.slice( 0, 6 ) ] ] as const ) {
 
 	tuneObject( k, Object.fromEntries( fields.map( ( f ) => [ f, `haze.key.${ f }@${ name }` ] ) ), TUNE_RANGE );
 
@@ -242,7 +252,7 @@ const RISING: ReadonlyArray<readonly [ number, HazeKey ]> = [
 	[ - 12, NIGHT ], [ - 6, EARLY_DAWN ], [ - 1, BEFORE_DAWN ], [ 1, MIST ], [ 3, MIST ], [ 7, MORNING ], [ 14, MORNING ], [ 22, DAY ],
 ];
 const SETTING: ReadonlyArray<readonly [ number, HazeKey ]> = [
-	[ - 14, NIGHT ], [ - 11, AFTER_SUNSET ], [ - 1, AFTER_SUNSET ], [ 2, GOLDEN ], [ 4, GOLDEN ], [ 8, DAY ],
+	[ - 14, NIGHT ], [ - 11, AFTER_SUNSET_DEEP ], [ - 7, AFTER_SUNSET_DEEP ], [ - 1, AFTER_SUNSET ], [ 2, GOLDEN ], [ 4, GOLDEN ], [ 8, DAY ],
 ];
 // the setting sun's under cloud, which a clouded share draws the key to (see the header)
 const SETTING_CLOUDED: ReadonlyArray<readonly [ number, HazeKey ]> = [
