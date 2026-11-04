@@ -56,7 +56,8 @@ import { cloudBase } from '../sky/Sky.ts';
 //     tenth less: one value over the whole afterglow (0.4) gave 0.128 at -3.4 and 0.105 at -5.3, the
 //     deeper glow the greyer, and the key's other knobs moved both the same
 //     way. So it falls with the sun, from 0.75 at -1 degrees to none at -7 (the deep twilight's key,
-//     `AFTER_SUNSET_DEEP`, the afterglow's air with the glow's colour kept, held to -11), which
+//     `AFTER_SUNSET_DEEP`, the afterglow's air with the glow's colour kept, where the night's key
+//     comes in), which
 //     gives 0.125 at -3.4 and 0.112 at -5.3, the deeper glow keeping more of its colour (from 0.75
 //     to 0.85 at -1 degrees the two read the same). Under
 //     the sunrise's cold light it decides where the air's own warmth shows: the haze's own rows
@@ -100,9 +101,15 @@ import { cloudBase } from '../sky/Sky.ts';
 //     the haze about a quarter of the sky 4 degrees up toward the glow (0.23 - 0.26 at sun -3.3, its
 //     share the sky's with the haze less the sky without it, over the sky with it), the glow's
 //     orange showing through a thin air: 4.7 laid 0.9 of it, a pale veil over the glow. Its rows
-//     hold it from -1 down to -11 degrees and give way to the night's by -14: the night's key,
+//     hold it from -1 down to -7 degrees and give way to the night's from -7 to -11, the window in
+//     which the sky's night comes in (DayCycle.ts `displayNight`, `skyNight`): the night's key,
 //     taken from -4 to -12 before, already had a few percent of the night's Rayleigh (8) at -5.3,
-//     which kept the veil at two thirds. Under cloud there is no glow to show through, and at 0.13
+//     which kept the veil at two thirds, and taken from -11 to -14 it came in after the sky's night:
+//     the land in the island view swelled from L 0.243 at -10 to 0.266 at -11 and fell back to
+//     0.236 by -14, the frame's exposure reaching the night's only at -14, and the upper sky in the
+//     horizon view passed its lowest at -11.5 to climb half a stop by -14. In the sky's window the
+//     land holds 0.230 - 0.236 from -10 down, the exposure is the night's from -11, and the upper
+//     sky falls into the night without a turn. Under cloud there is no glow to show through, and at 0.13
 //     the low air over a clouded evening's horizon went dark under the deck (overcast, sun -3: the
 //     sky in the horizon view L 0.28, a deep blue, against 0.38 and a lilac grey at 4.7), so a
 //     clouded sky takes the afterglow's rows as they were (`SETTING_CLOUDED`: the Rayleigh 4.7,
@@ -252,7 +259,7 @@ const RISING: ReadonlyArray<readonly [ number, HazeKey ]> = [
 	[ - 12, NIGHT ], [ - 6, EARLY_DAWN ], [ - 1, BEFORE_DAWN ], [ 1, MIST ], [ 3, MIST ], [ 7, MORNING ], [ 14, MORNING ], [ 22, DAY ],
 ];
 const SETTING: ReadonlyArray<readonly [ number, HazeKey ]> = [
-	[ - 14, NIGHT ], [ - 11, AFTER_SUNSET_DEEP ], [ - 7, AFTER_SUNSET_DEEP ], [ - 1, AFTER_SUNSET ], [ 2, GOLDEN ], [ 4, GOLDEN ], [ 8, DAY ],
+	[ - 11, NIGHT ], [ - 7, AFTER_SUNSET_DEEP ], [ - 1, AFTER_SUNSET ], [ 2, GOLDEN ], [ 4, GOLDEN ], [ 8, DAY ],
 ];
 // the setting sun's under cloud, which a clouded share draws the key to (see the header)
 const SETTING_CLOUDED: ReadonlyArray<readonly [ number, HazeKey ]> = [
