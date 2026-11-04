@@ -8,7 +8,7 @@ around a point.
   uv run tools/img.py diff  A B            [region] [--thr 1,2,8,32] [--bbox-thr 0] [--heat P] [--gain 8] [--json]
   uv run tools/img.py crop  IMG|DIR...     region [--zoom N] --out DIR
   uv run tools/img.py sheet IMG|DIR...     [region] [--labels a,b] [--cols N] [--diff] [--zoom N | --scale F | --width W] --out FILE
-  uv run tools/img.py stats IMG|DIR...     [region] [--pct 1,5,50,95,99] [--oklab] [--split] [--cover] [--json]
+  uv run tools/img.py stats IMG|DIR...     [region] [--pct 1,5,50,95,99] [--oklab] [--split] [--cover] [--mask M] [--json]
   uv run tools/img.py stats IMG|DIR... --deck [--deck-boxes auto|h|sun|none] [region] [--deck-rows [--horizon x0,x1,y]]
                                          [--trend 15] [--px-per-deg 24] [--json]
   uv run tools/img.py flicker CLIP|DIR...  [region] [--frames a-b] [--spike 20,40] [--odd 2.5] [--drop-odd] [--map P] [--gain 8] [--json] [--save]
@@ -48,7 +48,18 @@ mean of the pixels' L, a and b, C and h taken from the mean a and b) and mean li
 pixels: `under` and `over` the region's own median L (a crown's dark and lit halves), `p5` the darkest
 5 % and `p90` the brightest 10 % (`medianL` and `parts` in --json); --cover adds the share
 of pixels (%) whose red exceeds twice their green: the meadow's blades in a capture taken with
-`flags=grassMask` (src/world/Grass.ts), which paints them red over the green ground.
+`flags=grassMask` (src/world/Grass.ts), which paints them red over the green ground. --mask M reads
+a mask capture of the same view (a file, or a directory holding one of each image's name) and splits
+the region's pixels by it: `marked` where the mask's red exceeds twice its green and blue, `edge`
+where its green does, the `rest` the others; it gives the marked share (%) and, for the marked
+pixels and the rest of the image itself, the median Oklab L, C and hue with their 10th and 90th
+percentiles (the hue's about its circular mean), the marked median's dL and dC over the rest's, and
+each marked pixel's dL and dC against the rest round it (their Gaussian mean over the rest's pixels
+only, a sigma of 1 % of the region's width: median and 10-90 percentiles), since the rest of a sky
+is lighter or darker by its elevation; --against B (a file, or a directory of the same names) gives
+them against the same pixels of the view without what the mask marks instead (which an exposure
+that meters the frame may have moved as a whole). `flags=streakMask` (src/sky/Sky.ts) marks
+the thin cloud layer's streaks, `flags=streaks:0` takes the layer away.
 
 stats --deck: the cloud deck's structure on a sky, in place of the metrics above, per region. Oklab L
 and C and linear luminance Y (Rec. 709) come from the sRGB code values. The regions are named
@@ -409,6 +420,9 @@ def cmd_stats(a):
             if a.cover:
                 rgb = R[..., :3].astype(np.int32)
                 m["cover"] = round(float(np.mean(rgb[..., 0] > 2 * rgb[..., 1])) * 100, 2)
+            if a.mask:
+                bare = cut(decode(mask_of(f, a.against)), box) if a.against else None
+                m["mask"] = mask_stats(R, cut(decode(mask_of(f, a.mask)), box), bare)
             res.append({"name": f.name, "region": label, "box": list(box)} | m)
     if a.json:
         print(json.dumps(res, indent=2))
@@ -426,6 +440,74 @@ def cmd_stats(a):
             print(f"  median L {r['split']['medianL']:.3f}")
             for part, p in r["split"]["parts"].items():
                 print(f"  {part:5} L {p['L']:.3f} C {p['C']:.3f} h {p['h']:5.1f}  rgb {','.join(f'{v:.4f}' for v in p['rgb'])}  ({p['px']} px)")
+        if "mask" in r:
+            k = r["mask"]
+            print(f"  marked {k['share']:.2f} %  edge {k['edgeShare']:.2f} %"
+                  + (f"  dL {k['dL']:+.4f} dC {k['dC']:+.4f}" if "dL" in k else ""))
+            for key, what in (("near", "against the rest round them"), ("against", "against the same pixels")):
+                if key in k:
+                    g = k[key]
+                    print(f"  {what}: dL {g['dL']:+.4f} [{g['dL10']:+.4f}, {g['dL90']:+.4f}]  dC {g['dC']:+.4f} [{g['dC10']:+.4f}, {g['dC90']:+.4f}]")
+            for part in ("marked", "rest"):
+                p = k.get(part)
+                if p:
+                    print(f"  {part:6} L {p['L']:.3f} [{p['L10']:.3f}, {p['L90']:.3f}]  C {p['C']:.3f} [{p['C10']:.3f}, {p['C90']:.3f}]"
+                          f"  h {p['h']:5.1f} [{p['h10']:5.1f}, {p['h90']:5.1f}]  ({p['px']} px)")
+
+
+def mask_of(f, mask):
+    """The mask capture of image f: --mask a file, or a directory holding one of f's name."""
+    m = Path(mask)
+    return m / Path(f).name if m.is_dir() else m
+
+
+def mask_stats(R, M, bare=None):
+    """The Oklab medians and 10-90 percentiles of a region's pixels split by a mask capture of the same
+    view: `marked` where the mask's red exceeds twice its green and blue, `edge` where its green
+    exceeds twice its red and blue, `rest` the others (the edge left out of both). With `bare`, the
+    same view without what the mask marks: the marked pixels' own differences in L and C from it."""
+    if M.shape != R.shape or (bare is not None and bare.shape != R.shape):
+        return {"error": f"mask shape {list(M.shape)} against {list(R.shape)}"}
+    c = M[..., :3].reshape(-1, 3).astype(np.int32)
+    marked = (c[:, 0] > 2 * c[:, 1]) & (c[:, 0] > 2 * c[:, 2])
+    edge = (c[:, 1] > 2 * c[:, 0]) & (c[:, 1] > 2 * c[:, 2])
+    rest = ~marked & ~edge
+    _, L, A, B = oklab_pixels(R)
+    C, H = np.hypot(A, B), np.degrees(np.arctan2(B, A)) % 360
+
+    def part(keep):
+        if not keep.any():
+            return None
+        h = H[keep]
+        # the hue's percentiles about its circular mean, so a spread across 0 / 360 reads as one
+        centre = np.degrees(np.arctan2(np.sin(np.radians(h)).mean(), np.cos(np.radians(h)).mean())) % 360
+        h = centre + (h - centre + 180) % 360 - 180
+        q = lambda v: [round(float(x), 4) for x in np.percentile(v, [10, 50, 90])]
+        (l10, l50, l90), (c10, c50, c90), (h10, h50, h90) = q(L[keep]), q(C[keep]), q(h)
+        return {"L": l50, "L10": l10, "L90": l90, "C": c50, "C10": c10, "C90": c90,
+                "h": round(h50 % 360, 1), "h10": round(h10 % 360, 1), "h90": round(h90 % 360, 1), "px": int(keep.sum())}
+
+    out = {"share": round(float(marked.mean()) * 100, 2), "edgeShare": round(float(edge.mean()) * 100, 2),
+           "marked": part(marked), "rest": part(rest)}
+    if out["marked"] and out["rest"]:
+        out["dL"] = round(out["marked"]["L"] - out["rest"]["L"], 4)
+        out["dC"] = round(out["marked"]["C"] - out["rest"]["C"], 4)
+    if marked.any() and rest.any():
+        # each marked pixel against the rest round it: their Gaussian mean (a sigma of 1 % of the
+        # region's width) over the rest's pixels only, so neither the marked nor the edge pull in
+        h, w = R.shape[:2]
+        sigma = max(4.0, 0.01 * w)
+        keep = rest.reshape(h, w).astype(np.float64)
+        dL = (L.reshape(h, w) - masked_blur(L.reshape(h, w), keep, sigma)).reshape(-1)[marked]
+        dC = (C.reshape(h, w) - masked_blur(C.reshape(h, w), keep, sigma)).reshape(-1)[marked]
+        (l10, l50, l90), (c10, c50, c90) = ([round(float(x), 4) for x in np.percentile(v, [10, 50, 90])] for v in (dL, dC))
+        out["near"] = {"dL": l50, "dL10": l10, "dL90": l90, "dC": c50, "dC10": c10, "dC90": c90}
+    if bare is not None and marked.any():
+        _, L0, A0, B0 = oklab_pixels(bare)
+        dL, dC = (L - L0)[marked], (C - np.hypot(A0, B0))[marked]
+        (l10, l50, l90), (c10, c50, c90) = ([round(float(x), 4) for x in np.percentile(v, [10, 50, 90])] for v in (dL, dC))
+        out["against"] = {"dL": l50, "dL10": l10, "dL90": l90, "dC": c50, "dC10": c10, "dC90": c90}
+    return out
 
 
 def oklab_pixels(R):
@@ -866,7 +948,9 @@ def main():
     p.add_argument("--oklab", action="store_true", help="the median Oklab L, C and hue")
     p.add_argument("--split", action="store_true", help="the means under and over the median L, of the darkest 5 %% and the brightest 10 %%")
     p.add_argument("--cover", action="store_true", help="the share of red pixels (a grassMask capture's blades)")
-    p.add_argument("--deck", action="store_true", help="the cloud deck's measures on named sky regions and any --box")
+    p.add_argument("--mask", help="a mask capture of the same view (a file, or a directory of the same names): Oklab medians of its marked pixels and the rest")
+    p.add_argument("--against", help="with --mask, the same view without what the mask marks (a file or a directory): the marked pixels' own dL and dC")
+    p.add_argument("--deck",action="store_true", help="the cloud deck's measures on named sky regions and any --box")
     p.add_argument("--deck-boxes", default="auto", choices=["auto", "h", "sun", "none"], help="with --deck, the named regions (auto: by the file name, -h or -sun)")
     p.add_argument("--deck-rows", action="store_true", help="with --deck, the horizon's rows (section 4 of the deck's rows)")
     p.add_argument("--horizon", help="with --deck-rows, x0,x1,horizonY in image pixels (default 0,800,528 at 2560 wide, scaled)")
