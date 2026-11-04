@@ -15,7 +15,9 @@ type V4 = THREE.Node<'vec4'>;
 // a primarily illuminance-based exposure).
 // - m_M: the mean of log2 M (the metering illuminance) over its histogram between the 10th and the
 //   90th percentile of the total weight, bins at their centres, a bin that straddles a percentile
-//   counted in part: a trimmed mean that ignores crevices and glints.
+//   counted in part: a trimmed mean that ignores crevices and glints. The histograms bin the values
+//   as stored, pre-exposed, so their range follows the exposure; the meter takes P back out of both
+//   means, which reach the target in scene units (Metering.ts, PreExposure.ts).
 // - m_H: the mean of log2 Y (hdr's luminance) between its 90th and 97th percentile: the
 //   brightness of the frame's brightest few percent.
 // - m_S: log2 of the sky's geometric-mean luminance exp( mean ln Y ) over the upper hemisphere

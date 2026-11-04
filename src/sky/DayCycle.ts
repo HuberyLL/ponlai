@@ -1,4 +1,6 @@
 import { MathUtils, Matrix3, Vector3 } from 'three/webgpu';
+import { tuneObject } from '../debug/Tune.ts';
+import { markSkyRetune } from './SkyRetune.ts';
 
 // The day cycle: authored, not astronomical. One dominant key light (the sun by day, the moon by
 // night) drives terrain, characters, water and every shadow map; a sun/moon handoff
@@ -33,7 +35,18 @@ import { MathUtils, Matrix3, Vector3 } from 'three/webgpu';
 // degrees. The evening's window ends where the atmosphere's own twilight does: the sun's light on
 // the high air above about 10 degrees falls by three orders of magnitude from -7 to -9 (its table
 // lights the multiple scattering only where the sun reaches), and a night that came in only from
-// -11 to -14 left the upper sky black at -9 to -11 under a day's exposure. The clouded share keeps
+// -11 to -14 left the upper sky black at -9 to -11 under a day's exposure. The night's layers
+// light the scene far brighter than the twilight they follow (art-directed: the moon's key alone
+// is 9.2 stops over the land's own light at -7), so through the evening's window each layer of
+// light comes in by stops (`duskIn`: the stars, the moonlit sky and the haze's and the clouds' own
+// moonlight too), from some stops under the twilight's own light it adds to (DUSK_DEPTH) to all of
+// it at -11, easing into it over the last three degrees (DUSK_EASE); the display's night weight,
+// which keys the exposure to that light, keeps an even fade. Faded evenly in light from -7, the
+// night's layers raised the land's light 2.5 stops in the first half degree: the land rose by 0.05
+// in Oklab L and the exposure fell 2.2 stops from -7 to -7.5 degrees, where the steps before it rose
+// 0.9. By stops, the clear evening's exposure turns at -7.5, falls 1.6 to 2.1 stops each half degree
+// from -8 to -10 and lands at -11 by 1.4 and 0.5, no step on the land rises by more than 0.01 in L,
+// and the sky's falls to the night's without turning. The clouded share keeps
 // the daylight's timing (the display's night whole by about -2.5 degrees, the sky's by -6), and a
 // side's flip at noon or midnight moves nothing: every weight here is 0 by day and 1 by night on
 // both sides.
@@ -144,13 +157,90 @@ const DAWN_MOON = [ - 13, - 7 ] as const;
 const DUSK_NIGHT = [ - 11, - 7 ] as const;
 const DUSK_SKY = [ - 11, - 7 ] as const;
 const DUSK_MOON = [ - 11, - 7 ] as const;
-// what is left of the moon's key at the day's end of its window
+// what is left of the moon's key at the day's end of the morning's window
 const MOON_LEFT = 1 / 128;
-/** The display's night weight (Pipeline NIGHT, the stars, the flying fish), at `daylight` (the
- * snapshot's) and the sun's `elevation` (degrees), `rising` or setting, under a clouded share
- * `cloud` (Weather.ts `cloudedShare`). Under cloud none through the afterglow, all of it once the
- * daylight has gone; a clear sky's comes in from -7 to -11 degrees after sunset and leaves from
- * -12 to -7 before sunrise (the header). */
+/** How deep under all of it (stops) each night layer comes in at the evening's window's day end
+ * (-7 degrees), rising by even stops a degree toward all of it at -11 (`duskIn`, which eases the
+ * last DUSK_EASE degrees; the header). Each starts under the twilight's own light it adds to: the
+ * depth is that layer's full light over the twilight's at -7 (measured, in the comments) and about
+ * five stops more. The moon's two were set on the clear evening's sweep (every half degree, island
+ * and horizon views) by even stops all the way to -11, where each layer came in fastest, an eighth
+ * of its depth each half degree: the key from 14.2 raised the land's L 0.010 from -10.5 to -11,
+ * from 13.5 0.008 there and 0.004 where it comes in (-7.5); the moonlit sky from deeper than 8.25
+ * came in late enough to brighten the sky toward -11 (0.015 in L from the key's depth), and from
+ * 6.75 it took the meter up early and the land rose 0.012 at -11. */
+export const DUSK_DEPTH = tuneObject( {
+	// the moon's key on the land: all of it is 9.2 stops over the land's own light at -7
+	moon: 13.75,
+	// the moon's light in the sky (the moonlit atmosphere, which the haze and the clouds take as
+	// their sky light: Sky.ts): 1.75 stops over the sky's light at -7
+	moonSky: 8.25,
+	// the night key in the sky's and the probes' light (`skyNight`): 1.35 over the land's
+	sky: 6.25,
+	// the night ambient and the yunpeng's glow and light (`nightAmbientShare`): 3.1 over the land's
+	ambient: 8,
+	// the stars (`starNight`): 2.3 over the sky's
+	stars: 7.25,
+	// the haze's night key (weather/HazeKeys.ts): 1.8 over the sky's
+	haze: 6.75,
+	// the clouds' own moonlight (Sky.ts CLOUD_MOON_DUSK): 3.9 over the sky's
+	cloudMoon: 9,
+}, {
+	moon: 'sky.twilight.depth.moon', moonSky: 'sky.twilight.depth.moonSky', sky: 'sky.twilight.depth.sky', ambient: 'sky.twilight.depth.ambient',
+	stars: 'sky.twilight.depth.stars', haze: 'sky.twilight.depth.haze', cloudMoon: 'sky.twilight.depth.cloudMoon',
+}, ( () => {
+
+	const options = { min: 1, max: 24, onChange: markSkyRetune };
+	return { moon: options, moonSky: options, sky: options, ambient: options, stars: options, haze: options, cloudMoon: options };
+
+} )() );
+/** Over how many degrees at the night's end of the evening's window (DUSK_NIGHT, DUSK_SKY,
+ * DUSK_MOON) its night layers ease into all of their light (`duskIn`). By even stops to the end,
+ * each came in fastest at -11 degrees, an eighth of its depth in the last half degree, and stopped
+ * there: the clear evening's exposure over the horizon fell 1.5 stops a half degree into -11 and
+ * not at all after it, and in that last step the sky over the horizon turned up by 0.005 to 0.007
+ * in Oklab L and the sea under it by 0.016. Eased over three degrees the exposure's last steps
+ * there are 1.8, 1.3 and 0.5 stops (the ones before them steeper, 2.1 at most), the sky turns by
+ * about 0.001, the sea's rise to the night's level is spread over three steps (0.008 at most), and
+ * the window's day end, where the depths are set, is as it was (every frame above -8 degrees
+ * unchanged); over two the last step was still 0.7 stops and the sea rose 0.0125 in one, over four
+ * the day end moved. */
+export const DUSK_EASE = tuneObject( { degrees: 3 }, { degrees: 'sky.twilight.ease' }, { degrees: { min: 0, max: 4, onChange: markSkyRetune } } );
+// how far the sun has come through a twilight's window (degrees: 0 at `from`, 1 at `to`)
+function across( elevation: number, [ from, to ]: readonly [ number, number ] ): number {
+
+	return MathUtils.clamp( ( elevation - from ) / ( to - from ), 0, 1 );
+
+}
+// a night layer's share at `t` through its twilight's window (`across`: all of it at 0, none at 1),
+// a clear sky's rising by even stops from `least` of all of it at 1, under a clouded share `cloud`
+// all of it
+function inStops( t: number, least: number, cloud = 0 ): number {
+
+	const left = least ** t;
+	return cloud + ( 1 - cloud ) * ( left - least ) / ( 1 - least );
+
+}
+/** A night layer's share through the evening's `window` (degrees: all of it under the first, none
+ * over the second), coming in from `depth` stops under all of it (DUSK_DEPTH), under a clouded
+ * share `cloud` all of it: exactly none and all at the window's ends, as the smoothstep it
+ * replaced, and over the night end's DUSK_EASE degrees its rate falls to none (a cubic in the
+ * window's place there, whose slope is the even stops' where it starts). */
+export function duskIn( elevation: number, window: readonly [ number, number ], depth: number, cloud = 0 ): number {
+
+	const t = across( elevation, window );
+	const ease = Math.min( DUSK_EASE.degrees / ( window[ 1 ] - window[ 0 ] ), 1 );
+	const x = t < ease ? t / ease : 1;
+	return inStops( t < ease ? ease * x * x * ( 2 - x ) : t, 2 ** - depth, cloud );
+
+}
+/** The display's night weight (the exposure's keys, Pipeline NIGHT, the flying fish), at
+ * `daylight` (the snapshot's) and the sun's `elevation` (degrees), `rising` or setting, under a
+ * clouded share `cloud` (Weather.ts `cloudedShare`). Under cloud none through the afterglow, all of
+ * it once the daylight has gone; a clear sky's comes in from -7 to -11 degrees after sunset and
+ * leaves from -12 to -7 before sunrise (the header), evenly (a smoothstep) on both sides: it keys
+ * the exposure to the light, and by stops it lagged the night's light through the evening's
+ * window, the land rising by 0.06 in Oklab L. */
 export function displayNight( daylight: number, elevation: number, rising: boolean, cloud: number ): number {
 
 	const night = 1 - smoothstep( 0.2, 0.45, daylight );
@@ -159,28 +249,49 @@ export function displayNight( daylight: number, elevation: number, rising: boole
 	return dawn + ( night - dawn ) * cloud;
 
 }
+/** The stars' share (Sky.ts `starVisibility`): the display's night (`displayNight`), but the
+ * evening's clear share by stops (DUSK_DEPTH.stars), as the stars are light the meter reads. */
+export function starNight( daylight: number, elevation: number, rising: boolean, cloud: number ): number {
+
+	if ( rising ) return displayNight( daylight, elevation, rising, cloud );
+	const night = 1 - smoothstep( 0.2, 0.45, daylight );
+	const dusk = duskIn( elevation, DUSK_NIGHT, DUSK_DEPTH.stars );
+	return dusk + ( night - dusk ) * cloud;
+
+}
 /** The night key's share in the sky's light and the probes' (Sky.ts SKY_LIGHT, AmbientRelight.ts
  * PROBE_SKY), at the sun's `elevation` (degrees), `rising` or setting, under a clouded share
  * `cloud`: under cloud none from 2 degrees up, all of it by -6; a clear sky's comes in from -7 to
- * -11 degrees after sunset and leaves from -13 to -3 before sunrise (the header). */
+ * -11 degrees after sunset by stops (DUSK_DEPTH.sky) and leaves from -13 to -3 before sunrise (the
+ * header). */
 export function skyNight( elevation: number, rising: boolean, cloud: number ): number {
 
 	const night = 1 - smoothstep( - 6, 2, elevation );
-	const [ from, to ] = rising ? DAWN_SKY : DUSK_SKY;
-	const dawn = 1 - smoothstep( from, to, elevation );
+	const dawn = rising ? 1 - smoothstep( DAWN_SKY[ 0 ], DAWN_SKY[ 1 ], elevation ) : duskIn( elevation, DUSK_SKY, DUSK_DEPTH.sky );
 	return dawn + ( night - dawn ) * cloud;
 
 }
 /** The share of the moon's key (the snapshot's `moonKeyGain`) through a clear twilight (the
  * header): none until the sun is at -7 degrees after sunset, all of it by -11; all of it until -13
  * before sunrise, none by -7; all of it under cloud. It moves by even stops a degree, because the
- * meter reads it in stops: a fade even in light keeps most of its stops for its last moments, and
- * the picture's exposure leapt there, in seconds of a real dawn. */
+ * meter reads it in stops (a fade even in light keeps most of its stops for its last moments, and
+ * the picture's exposure leapt there, in seconds of a real dawn), and it starts under the land's
+ * own light: in the morning from MOON_LEFT, seven stops down, in the evening from DUSK_DEPTH.moon,
+ * 13.75, all of it being 9.2 stops over the land's light at -7. From seven stops down the evening's
+ * key put about four times the land's light on it in the first half degree, two thirds of a step
+ * that raised the land by 0.05 in Oklab L and took the exposure 2.2 stops down. */
 export function twilightMoon( elevation: number, rising: boolean, cloud: number ): number {
 
-	const [ from, to ] = rising ? DAWN_MOON : DUSK_MOON;
-	const left = MOON_LEFT ** MathUtils.clamp( ( elevation - from ) / ( to - from ), 0, 1 );
-	return cloud + ( 1 - cloud ) * ( left - MOON_LEFT ) / ( 1 - MOON_LEFT );
+	return rising ? inStops( across( elevation, DAWN_MOON ), MOON_LEFT, cloud ) : duskIn( elevation, DUSK_MOON, DUSK_DEPTH.moon, cloud );
+
+}
+/** The share of the moon's light in the sky (Sky.ts: the moonlit atmosphere, which the haze and the
+ * clouds take as their sky light): `twilightMoon`'s, but the evening's from DUSK_DEPTH.moonSky, all
+ * of it being only 1.75 stops over the sky's own light at -7. From the key's depth the moonlit sky
+ * came in so late that the low sky brightened toward -11, by 0.015 in L. */
+export function twilightMoonSky( elevation: number, rising: boolean, cloud: number ): number {
+
+	return rising ? twilightMoon( elevation, rising, cloud ) : duskIn( elevation, DUSK_MOON, DUSK_DEPTH.moonSky, cloud );
 
 }
 const NORTH_POLE = WEST.clone().cross( MERIDIAN ).normalize();
@@ -257,14 +368,14 @@ export function nightAmbientAt( elevation: number ): number {
 /** The night ambient's share under a clouded share `cloud` (the night sky's ambient in the
  * clouds and the sea, the yunpeng's glow and light, the leaves' night key, and the night that
  * takes the sward's tint under cloud away, materials/SwardTint.ts): under cloud
- * `nightAmbientAt`'s, a clear sky's with the display's night (`displayNight`: in from -7 to -11
- * degrees after sunset, out from -12 to -7 before sunrise). Through a clear twilight the frame
+ * `nightAmbientAt`'s, a clear sky's in from -7 to -11 degrees after sunset by stops
+ * (DUSK_DEPTH.ambient) and out from -12 to -7 before sunrise with the display's night
+ * (`displayNight`). Through a clear twilight the frame
  * keeps a day's exposure, five stops over the night's at -7 degrees: the clumps lit by -5 then
  * glowed brightest in the twilight and dimmed as the night came in. */
 export function nightAmbientShare( elevation: number, rising: boolean, cloud: number ): number {
 
-	const [ from, to ] = rising ? DAWN_NIGHT : DUSK_NIGHT;
-	const clear = 1 - smoothstep( from, to, elevation );
+	const clear = rising ? 1 - smoothstep( DAWN_NIGHT[ 0 ], DAWN_NIGHT[ 1 ], elevation ) : duskIn( elevation, DUSK_NIGHT, DUSK_DEPTH.ambient );
 	return clear + ( nightAmbientAt( elevation ) - clear ) * cloud;
 
 }

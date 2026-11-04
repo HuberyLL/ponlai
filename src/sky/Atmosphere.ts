@@ -7,7 +7,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, uv, uniform, texture, vec2, vec3, vec4, float, int,
-	sqrt, max, min, pow, exp, log, length, abs, acos, clamp, cos, sin, dot, normalize, mix, select, floor, step,
+	sqrt, max, min, pow, exp, log, length, abs, acos, clamp, cos, sin, dot, normalize, mix, select, floor, step, sign,
 } from 'three/tsl';
 import { SCENE_RADIANCE_SCALE, SUN_ANGULAR_RADIUS, SUN_SETTING_RADIUS } from '../lighting/Radiometry.ts';
 import { bandPush, bandToDisplay } from './BandMatrix.ts';
@@ -15,12 +15,24 @@ import { tuneApply, tuneUniform } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 
 // Hillaire 2020, "A Scalable and Production Ready Sky and Atmosphere Rendering Technique":
-// tidewater's transmittance and multiple-scattering LUTs, ported to TSL fragment passes. Distances
-// are kilometres. This module contains clear-sky scattering only; the visible sun, environment
-// lighting and scene lights are composed by Sky from the same atmosphere.
+// tidewater's transmittance and multiple-scattering LUTs, ported to TSL fragment passes, the
+// latter's sun axis denser near the horizon (`multipleScattering`). Distances are kilometres. This
+// module contains clear-sky scattering only; the visible sun, environment lighting and scene lights
+// are composed by Sky from the same atmosphere.
 //
-// The planet: ground at 6360 km and the atmosphere's top 60 km above it (6420 km). The shell's
-// thickness sets how fast the sky darkens toward the zenith and where the twilight wedge sits.
+// The planet: ground at 6360 km and the atmosphere's top 100 km above it (6460 km). The shell's
+// thickness sets how fast the sky darkens toward the zenith and where the twilight wedge sits. The
+// air over 60 km is thin (its Rayleigh share e^-7.5 of the sea's and less), but from the sun 8
+// degrees under the horizon down it is the only air over the viewer still in sunlight (the earth's
+// shadow over the zenith stands near 62 km at -8 degrees, 98 km at -10). With the top at 60 km the
+// deep twilight's sky was the multiple scattering alone: 20 degrees up it stood 1.7 stops under
+// this sky at -8, 4.1 at -10, 4.5 at -10.5 and 2.4 at -14 (.34 at -6, nothing by day), and the
+// zenith fell by about 3 stops a degree down to -10.25, then by under 1 from -10.75, a kink; now
+// it falls by 2.2 stops a degree at -8 and 1.5 at -11 to -12, smoothly. The march's steps hold at
+// this height (twice the table's or the multiple-scattering bake's steps change the sky by .03
+// stop or less). The in-scatter table's 21 r slices keep its lowest three near the heights over the
+// sea that 16 gave a 60 km shell (0.25, 1.01 and 2.27 km, then 0.27, 1.07 and 2.41), where the
+// clouds and the haze read it.
 // The aerosol scatters through one Cornette-Shanks lobe of anisotropy MIE_G, nothing else: no
 // isotropic base and no extra gain along long paths. The soft wide glow round the sun is that lobe
 // seen through the haze in front of the sky (weather/VolumetricHaze.ts), whose forward lobe takes
@@ -43,18 +55,22 @@ import { markSkyRetune } from './SkyRetune.ts';
 // parametrizable planetary atmospheres with multiple scattering in real-time"): single plus
 // multiple scattering along a view ray, per unit of the sun's illuminance, over the sun's
 // elevation (cosine muS), the ray's (mu) and the viewer's radius r, Rayleigh RGB (the multiple
-// scattering, near isotropic, folded into it) and Mie RGB apart. The phase is applied where the
+// scattering, near isotropic, folded into it, times 4 pi: `tableBake`) and Mie RGB apart. Under the
+// seen sky's polariser the folded term's mean over the directions is 0.86 of the isotropic term's
+// (1 under the Rayleigh phase alone). The phase is applied where the
 // table is read, so the Mie peak round the sun needs no texels and each reader takes its own
 // phase; with the phase out, what is left depends only weakly on the azimuth between the view and
-// the sun, so the table holds its mean over the azimuth. It is 64 (muS) x 96 (mu) x 16 (r), baked
+// the sun, so the table holds its mean over the azimuth. It is 89 (muS) x 96 (mu) x 21 (r), baked
 // once per change of the medium (not when the sun moves: its elevation is an axis), as a 2D atlas
-// of the r slices side by side, half floats: RGBA Rayleigh RGB and Mie R, RG Mie GB. Its axes are
+// of the r slices side by side, 32-bit floats (as every table here: `makeLUT`): RGBA Rayleigh RGB
+// and Mie R, RG Mie GB. Its axes are
 // non-linear (Bruneton and Neyret 2008, Yusov 2013): r by the square root of the height's share
 // of the shell (the camera stays within about 200 m of the sea), mu split at the horizon of the
 // radius it is read at, each half by the square root of its distance from the horizon (more
 // texels near it), muS by Bruneton and Neyret's exponential, finer toward sunset (the day's
-// sunsets are long). A ray under the horizon of its radius ends on the ground, its length in closed
-// form (none from the ground itself). Each frame that the sun or the moon moves, two slices are
+// sunsets are long), from the sun 18 degrees under the horizon (`muSUnit`). A ray under the
+// horizon of its radius ends on the ground, its length in closed form (none from the ground
+// itself). Each frame that the sun or the moon moves, two slices are
 // cut from it for the sun's and for the moon's muS: a sky row at the viewer's height over mu (512
 // texels, which a cubic B-spline makes smooth on a 4K sky) and a fog table over mu and altitude
 // (128 x 16, the altitude spaced quadratically from 2 m up to `fogReach`, finer low down: the fog grid is
@@ -91,7 +107,11 @@ import { markSkyRetune } from './SkyRetune.ts';
 // flattens the lowest of these from about 1.34), and on the horizon view at a rising sun of 2 -
 // 2.7 degrees the band over the horizon 15 - 25 degrees from the sun 1.61-1.62 times (display,
 // linear) the band 40 degrees from it, 2.5 before the fit (polariser 0.35, lean 0.35, aerosol
-// 1.75, the mist's weight 0.76). With the polariser
+// 1.75, the mist's weight 0.76). With the multiple scattering whole, the bare sky's
+// first two relations moved by under 1 % and the third fell by 7 % with the aerosol's share; a
+// refit of the lean, the polariser and the sky's shadow on the bare sky could not take it back
+// (their rms over the relations 0.018 to 0.017 in log), so they stay, and the mist's weights
+// were refitted with the dawn's rows (HazeKeys.ts). With the polariser
 // near full strength (0.835, as it was) the first two stood at 1.0-1.24 and about 7: the 90 degree
 // band was a deep trench. A march per azimuth (the table's at each of 32 azimuths, the planet's
 // shadow over each point's horizon) was
@@ -114,11 +134,16 @@ import { markSkyRetune } from './SkyRetune.ts';
 // not the view, so it does not: weather/VolumetricHaze.ts); the gains let it be pressed down to a
 // flat, dark floor there, the Rayleigh share's gain apart from the aerosol's, whose rows also feed
 // the glow round the moon (the haze's moon lobe).
-const RG = 6360, RT = 6420;
-const T_W = 256, T_H = 64, MS_RES = 32;
+const RG = 6360, RT = 6460;
+/** The planet's radius and the atmosphere's top, km from the planet's centre. */
+export const PLANET_RADIUS = RG, ATMOSPHERE_RADIUS = RT;
+// the transmittance LUT; the multiple-scattering LUT, MS_SUN nodes over the sun's cosine c by MS_R
+// over the height (linear), its sun axis u = 0.5 + 0.5 sign( c ) sqrt( |c| ), dense near the
+// horizon (`multipleScattering`)
+const T_W = 256, T_H = 64, MS_SUN = 192, MS_R = 32;
 // the in-scatter table (muS, mu, r) and its atlas, the sky row, the fog table (mu, altitude); the
 // azimuths the table averages over, and its march's steps
-const TABLE_MUS = 64, TABLE_MU = 96, TABLE_R = 16, ATLAS_W = TABLE_MUS * TABLE_R;
+const TABLE_MUS = 89, TABLE_MU = 96, TABLE_R = 21, ATLAS_W = TABLE_MUS * TABLE_R;
 const SKY_ROW = 512, FOG_MU = 128, FOG_H = 16;
 // the fog table's lowest altitude (km): 2 m over the sea, as the sky row's viewer, since a ray from
 // the ground itself has no length below the horizon
@@ -128,7 +153,7 @@ const TABLE_AZIMUTHS = 8, TABLE_STEPS = 32;
 // (altitude) per body, each texel the mean of 16 azimuths over half a turn, the altitude by the
 // fourth power of its axis from 2 m up to `fogReach` (a grazing ray's share near the sea changes
 // fastest with it); and the floor added to both sides of the shadow's ratio (`earthShadow`)
-const SHADOW_MU = 256, SHADOW_H = 32, SHADOW_AZIMUTHS = 16, SHADOW_FLOOR = 0.1;
+const SHADOW_MU = 256, SHADOW_H = 32, SHADOW_AZIMUTHS = 16, SHADOW_FLOOR = 0.15;
 const H = Math.sqrt( RT * RT - RG * RG );
 const RAYLEIGH = [ 5.802e-3, 13.558e-3, 33.1e-3 ] as const;
 // The ozone's absorption per band (per km at the tent's peak) is integrated over each display
@@ -194,19 +219,38 @@ const raySphereNearest = Fn( ( [ ro, rd, radius ]: [ V3, V3, F ] ) => {
 	{ name: 'ro', type: 'vec3' }, { name: 'rd', type: 'vec3' }, { name: 'radius', type: 'float' },
 ] } );
 
+// A march step's in-scatter weight per unit of its length, ( 1 - exp( -x ) ) / x for the step's
+// optical depth x per channel, by its series under x = 0.01: in 32-bit floats 1 - exp( -x ) keeps
+// no digits under x of about 1e-7, a step's depth in the air some 80 km up. (The bakes divided
+// 1 - exp( -x ) by the extinction floored at 1e-6 per km, which lost most of the light that the air
+// above 69 km scatters in red, 76 in green and 83 in blue.)
+const stepShare = Fn( ( [ x ]: [ V3 ] ) => {
+
+	const series = vec3( 1 ).sub( x.mul( 0.5 ) ).add( x.mul( x ).div( 6 ) );
+	const exact = vec3( 1 ).sub( exp( x.negate() ) ).div( max( x, vec3( 1e-30 ) ) );
+	return mix( series, exact, step( vec3( 0.01 ), x ) );
+
+} ).setLayout( { name: 'atmoStepShare', type: 'vec3', inputs: [ { name: 'x', type: 'vec3' } ] } );
+
 // Only pure parameters enter a shared layout function. A closed-over UniformNode or TextureNode
 // would retain the first material's generated binding names when Three reuses the function.
 
-// The table's muS axis (Bruneton and Neyret 2008): 0 at muS = -0.2, 1 at the zenith, finer low down.
+// The table's muS axis, Bruneton and Neyret 2008's exponential 1 - exp( -3 muS - a ), finer low
+// down, 1 at the zenith and 0 at the sun 18 degrees under the horizon (MUS_LOW, the night's start),
+// where theirs, a = 0.6, ends at muS = -0.2 (11.5 degrees under): below its end a table's sky stops
+// falling with the sun and the deep twilight hangs at its last level. The offset only shifts the
+// exponential, so on TABLE_MUS = 89 texels the axis keeps the texels per unit of muS that 64 gave
+// theirs, within 0.07 % everywhere.
+const MUS_LOW = Math.sin( - 18 * Math.PI / 180 ), MUS_A = - 3 * MUS_LOW;
 const muSUnit = Fn( ( [ muS ]: [ F ] ) => {
 
-	return clamp( float( 1 ).sub( exp( muS.mul( - 3 ).sub( 0.6 ) ) ).div( 1 - Math.exp( - 3.6 ) ), 0, 1 );
+	return clamp( float( 1 ).sub( exp( muS.mul( - 3 ).sub( MUS_A ) ) ).div( 1 - Math.exp( - 3 - MUS_A ) ), 0, 1 );
 
 } ).setLayout( { name: 'atmoMuSUnit', type: 'float', inputs: [ { name: 'muS', type: 'float' } ] } );
 
 const unitMuS = Fn( ( [ u ]: [ F ] ) => {
 
-	return log( float( 1 ).sub( u.mul( 1 - Math.exp( - 3.6 ) ) ) ).negate().sub( 0.6 ).div( 3 );
+	return log( float( 1 ).sub( u.mul( 1 - Math.exp( - 3 - MUS_A ) ) ) ).negate().sub( MUS_A ).div( 3 );
 
 } ).setLayout( { name: 'atmoUnitMuS', type: 'float', inputs: [ { name: 'u', type: 'float' } ] } );
 
@@ -279,7 +323,8 @@ export const rayleighPhase = Fn( ( [ nu ]: [ F ] ) => {
 
 /** The sky's Rayleigh phase (1/sr): half Rayleigh's and half a linear forward lobe
  * (1 + k nu) / (4 pi), whose k leans the share round the sun brighter than the share away from it.
- * The multiple scattering folded into the table's Rayleigh part takes it too. */
+ * The multiple scattering folded into the table's Rayleigh part takes it too (baked times 4 pi,
+ * this phase's mean being 1 / ( 4 pi )). */
 export const skyRayleighPhase = Fn( ( [ nu, k ]: [ F, F ] ) => {
 
 	return nu.mul( nu ).add( 1 ).mul( 3 / ( 32 * Math.PI ) ).add( k.mul( nu ).add( 1 ).mul( 1 / ( 8 * Math.PI ) ) );
@@ -423,10 +468,16 @@ const transmittanceUV = Fn( ( [ r, mu ]: [ F, F ] ) => {
 	{ name: 'r', type: 'float' }, { name: 'mu', type: 'float' },
 ] } );
 
+// The tables are 32-bit floats, filtered (WebGPU's float32-filterable, which three requests when
+// the adapter has it). Per unit of the sun's illuminance the twilight's in-scatter spans some 30
+// stops from noon to the sun 18 degrees down, more than half floats hold: in them (steps of
+// 6e-8 under 6e-5) the sky 20 degrees up and at the zenith read 0 from the sun at -10 degrees,
+// and at -9 its channels stood up to a quarter off, while at noon and -6 the same sky agreed with
+// a double-precision march of this model within 1 %.
 function makeLUT( width: number, height: number, name: string, format: THREE.PixelFormat = THREE.RGBAFormat ): THREE.RenderTarget {
 
 	const target = new THREE.RenderTarget( width, height, {
-		type: THREE.HalfFloatType, format, depthBuffer: false, generateMipmaps: false,
+		type: THREE.FloatType, format, depthBuffer: false, generateMipmaps: false,
 		minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
 		wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping,
 	} );
@@ -469,6 +520,8 @@ export class Atmosphere {
 	/** the earth's shadow over the seen sky (`skyShadow`): its depth and its softness (degrees) */
 	readonly shadowDepth = tuneUniform( 'sky.atmosphere.shadowDepth', SKY_SHADOW_DEPTH, { min: 0, max: 1, onChange: markSkyRetune } );
 	readonly shadowSoftness = tuneUniform( 'sky.atmosphere.shadowSoftness', SKY_SHADOW_SOFTNESS, { min: 0.5, max: 15, onChange: markSkyRetune } );
+	/** the floor added to both sides of the clouds' shadow ratio (`earthShadow`) */
+	readonly shadowFloor = tuneUniform( 'sky.atmosphere.shadowFloor', SHADOW_FLOOR, { min: 0, max: 1, onChange: markSkyRetune } );
 	/** the ozone's absorption per band (per km at its density's peak, OZONE) and its column's scale:
 	 * tunable on debug pages (`sky.atmosphere.ozoneR`, `ozoneG`, `ozoneB`, `sky.atmosphere.ozone`),
 	 * each a change of the medium that rebakes the tables and the environment */
@@ -481,13 +534,15 @@ export class Atmosphere {
 	// the moon's illuminance the moonlit sky is drawn with (Sky.ts keys it)
 	readonly moonIlluminance = uniform( new THREE.Color( 0, 0, 0 ) );
 	/** gains on the moon's Rayleigh rows and on its aerosol's rows, as every reader takes them
-	 * (`bodyGains`: the sky's, the fog table's, the clouds'): 1, the atmosphere's own */
-	readonly moonRayleigh = tuneUniform( 'sky.night.moonRayleigh', 0.365, { min: 0, max: 2, onChange: markSkyRetune } );
+	 * (`bodyGains`: the sky's, the fog table's, the clouds'): 1, the atmosphere's own. The Rayleigh's,
+	 * 0.175, is a least-squares fit on the clear night's sky rows with the multiple scattering whole
+	 * (0.365 held them when it stood at 1 / 4 pi of its level) */
+	readonly moonRayleigh = tuneUniform( 'sky.night.moonRayleigh', 0.175, { min: 0, max: 2, onChange: markSkyRetune } );
 	readonly moonMie = tuneUniform( 'sky.night.moonMie', 1.3, { min: 0, max: 2, onChange: markSkyRetune } );
 	// the highest altitude the fog table holds (km): the haze grid's far end
 	readonly fogReach = uniform( 30 );
 	readonly transmittanceLUT = makeLUT( T_W, T_H, 'atmoTransmittance' );
-	readonly multiScatLUT = makeLUT( MS_RES, MS_RES, 'atmoMultiScat' );
+	readonly multiScatLUT = makeLUT( MS_SUN, MS_R, 'atmoMultiScat' );
 	// The in-scatter table's atlas (Rayleigh RGB and Mie R; Mie GB), the sky row and the fog table cut
 	// from it, each in the same two parts: the sun's slice in the first row(s), the moon's after.
 	readonly table = [ makeLUT( ATLAS_W, TABLE_MU, 'atmoInScatter', THREE.RGBAFormat ), makeLUT( ATLAS_W, TABLE_MU, 'atmoInScatterMie', THREE.RGFormat ) ] as const;
@@ -572,8 +627,10 @@ export class Atmosphere {
 
 		const multiScatBake = Fn( () => {
 
-			const q = uv().sub( 0.5 / MS_RES ).mul( MS_RES / ( MS_RES - 1 ) ).toVar();
-			const cosSun = q.x.mul( 2 ).sub( 1 ).toVar();
+			// the texel's node: the sun's cosine from the axis' square root (`multipleScattering`)
+			const q = uv().sub( vec2( 0.5 / MS_SUN, 0.5 / MS_R ) ).mul( vec2( MS_SUN / ( MS_SUN - 1 ), MS_R / ( MS_R - 1 ) ) ).toVar();
+			const s = q.x.mul( 2 ).sub( 1 ).toVar();
+			const cosSun = s.mul( abs( s ) ).toVar();
 			const r = clamp( q.y, 0.001, 0.999 ).mul( RT - RG ).add( RG );
 			const sun = vec3( 0, cosSun, sqrt( max( float( 1 ).sub( cosSun.mul( cosSun ) ), 0 ) ).negate() ).toVar();
 			const ro = vec3( 0, r, 0 ).toVar(), Lsum = vec3( 0 ).toVar(), fmsSum = vec3( 0 ).toVar();
@@ -607,7 +664,7 @@ export class Atmosphere {
 				const shadow = select( raySphereNearest( p, sun, float( RG ) ).greaterThan( 0 ), 0, 1 );
 				const S = TSun.mul( shadow ).mul( scattering ).mul( 1 / ( 4 * Math.PI ) ).toVar();
 				const TStep = exp( ext.mul( dt ).negate() ).toVar();
-				const integral = throughput.mul( vec3( 1 ).sub( TStep ) ).div( max( ext, vec3( 1e-6 ) ) ).toVar();
+				const integral = throughput.mul( dt ).mul( stepShare( ext.mul( dt ) ) ).toVar();
 				L.addAssign( S.mul( integral ) );
 				fms.addAssign( scattering.mul( integral ) );
 				throughput.mulAssign( TStep );
@@ -636,7 +693,13 @@ export class Atmosphere {
 		// view ray (to the ground or the atmosphere's top), per unit of the sun's illuminance and
 		// without the phase, its mean over TABLE_AZIMUTHS azimuths of the sun about the vertical:
 		// Rayleigh RGB with the multiple scattering of both media (Hillaire 2020's Psi_ms times their
-		// scattering, isotropic) and Mie RGB.
+		// scattering, isotropic) and Mie RGB. Psi_ms is added with no phase (the paper's equation 11:
+		// the single scattering takes the phase, Psi_ms, in 1/sr, the scattering alone); folded into
+		// the Rayleigh slot it takes the Rayleigh phase where the slot is read (`skyRayleighPhase`,
+		// whose mean over the sphere is 1 / ( 4 pi )), so it is baked times 4 pi: averaged over the
+		// directions it then reaches the sky as the isotropic term does. Without the factor the
+		// twilight under the sun at -8 degrees and below, nearly all multiple scattering, stood 3.65
+		// stops under that (noon 0.35 - 0.43).
 		const tableBake = ( mie: boolean ) => Fn( () => {
 
 			const pixel = floor( uv().mul( vec2( ATLAS_W, TABLE_MU ) ) ).toVar();
@@ -669,9 +732,9 @@ export class Atmosphere {
 				const sun = vec3( sinS.mul( cos( phi ) ), muS, sinS.mul( sin( phi ) ) ).toVar();
 				const cosSun = dot( p.div( pr ), sun ).toVar();
 				const TSun = sampleTransmittance( pr, cosSun ).mul( select( raySphereNearest( p, sun, float( RG ) ).greaterThan( 0 ), 0, 1 ) ).toVar();
-				const ms = sampleMultiScat( pr, cosSun );
+				const ms = sampleMultiScat( pr, cosSun ).mul( 4 * Math.PI );
 				const TStep = exp( ext.mul( dt ).negate() ).toVar();
-				const integral = throughput.mul( vec3( 1 ).sub( TStep ) ).div( max( ext, vec3( 1e-6 ) ) ).mul( 1 / TABLE_AZIMUTHS ).toVar();
+				const integral = throughput.mul( dt ).mul( stepShare( ext.mul( dt ) ) ).mul( 1 / TABLE_AZIMUTHS ).toVar();
 				rayleigh.addAssign( TSun.mul( m.rgb ).add( ms.mul( m.rgb.add( m.a ) ) ).mul( integral ) );
 				aerosol.addAssign( TSun.mul( m.a ).mul( integral ) );
 				If( j.equal( TABLE_AZIMUTHS - 1 ), () => {
@@ -888,13 +951,19 @@ export class Atmosphere {
 	 * table's, not dimmed a second time); toward the light it rises above 1, opposite it falls
 	 * below, and the shadow rises opposite the setting sun as a band from the horizon. By day both
 	 * shares are 1 and so is the factor. The floor stands for the light the table holds that no
-	 * shadow takes (the multiple scattering), taken as a tenth of a fully lit ray's single
-	 * scattering: where the whole ray lies in the shadow at every azimuth the factor goes to 1 (the
-	 * table's value kept), and it never exceeds ( 1 + floor ) / floor = 11. */
+	 * shadow takes (the multiple scattering), taken as a share of a fully lit ray's single
+	 * scattering: 0.15, the multiple scattering's share of the in-scatter at the clouds' shell (6.6 km
+	 * up) with the sun 0 - 6 degrees up, 0.12 - 0.18 in luminance (it was 0.1 when the multiple
+	 * scattering stood at 1 / 4 pi of its level, and its share there 0.015 - 0.022). Where the whole ray lies in
+	 * the shadow at every azimuth the factor goes to 1 (the table's value kept), and it never
+	 * exceeds ( 1 + floor ) / floor, about 7.7. Tunable: `sky.atmosphere.shadowFloor`. The divisor is
+	 * held at 1e-6 or more, a no-op at any floor above that: at a floor of 0 a ray in the shadow at
+	 * every azimuth (any at night) would divide 0 by 0, and a NaN in the clouds' sky light spreads
+	 * through the bloom and the meter over the whole frame; it takes 0 instead. */
 	private earthShadow( height: F, dir: V3, body: 0 | 1 ): F {
 
 		const light = body === 0 ? this.sunDir : this.moonDir;
-		return litShare( height, dir, light ).add( SHADOW_FLOOR ).div( this.shadowMeanAt( height, dir.y, body ).add( SHADOW_FLOOR ) );
+		return litShare( height, dir, light ).add( this.shadowFloor ).div( max( this.shadowMeanAt( height, dir.y, body ).add( this.shadowFloor ), 1e-6 ) );
 
 	}
 
@@ -909,11 +978,17 @@ export class Atmosphere {
 	/** The multiple-scattering LUT at radius `r` (km from the planet's centre; `viewHeight` for the
 	 * camera's) for a sun of cosine `cosSun`: the light scattered more than once that a unit of
 	 * scattering takes there, per unit of the sun's illuminance (isotropic, 1/sr: Hillaire 2020's
-	 * Psi_ms). */
+	 * Psi_ms). The paper's sun axis is linear in the cosine; here it is linear in the cosine's
+	 * signed square root, its nodes dense near the horizon, where Psi_ms falls by orders of
+	 * magnitude over a few degrees of the sun's descent and a bilinear read between nodes far apart
+	 * follows the upper one. On 32 nodes linear in the cosine (3.7 degrees apart near the horizon)
+	 * the sky stood .15 stop over a read on nodes half a degree apart under the sun at -6 degrees
+	 * and .75 - 3.4 stops over it from -8 to -11.5; on these 192 (half a degree apart at -10, closer
+	 * toward the horizon) it stands within .07 stop of it. */
 	multipleScattering( r: F, cosSun: F ): V3 {
 
-		const q = vec2( cosSun.mul( 0.5 ).add( 0.5 ), r.sub( RG ).div( RT - RG ) );
-		return texture( this.multiScatLUT.texture, q.mul( ( MS_RES - 1 ) / MS_RES ).add( 0.5 / MS_RES ) ).level( float( 0 ) ).rgb;
+		const q = vec2( sign( cosSun ).mul( sqrt( abs( cosSun ) ) ).mul( 0.5 ).add( 0.5 ), r.sub( RG ).div( RT - RG ) );
+		return texture( this.multiScatLUT.texture, q.mul( vec2( ( MS_SUN - 1 ) / MS_SUN, ( MS_R - 1 ) / MS_R ) ).add( vec2( 0.5 / MS_SUN, 0.5 / MS_R ) ) ).level( float( 0 ) ).rgb;
 
 	}
 
