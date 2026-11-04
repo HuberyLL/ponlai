@@ -43,7 +43,9 @@ import { markSkyRetune } from './SkyRetune.ts';
 // parametrizable planetary atmospheres with multiple scattering in real-time"): single plus
 // multiple scattering along a view ray, per unit of the sun's illuminance, over the sun's
 // elevation (cosine muS), the ray's (mu) and the viewer's radius r, Rayleigh RGB (the multiple
-// scattering, near isotropic, folded into it) and Mie RGB apart. The phase is applied where the
+// scattering, near isotropic, folded into it, times 4 pi: `tableBake`) and Mie RGB apart. Under the
+// seen sky's polariser the folded term's mean over the directions is 0.86 of the isotropic term's
+// (1 under the Rayleigh phase alone). The phase is applied where the
 // table is read, so the Mie peak round the sun needs no texels and each reader takes its own
 // phase; with the phase out, what is left depends only weakly on the azimuth between the view and
 // the sun, so the table holds its mean over the azimuth. It is 64 (muS) x 96 (mu) x 16 (r), baked
@@ -280,7 +282,8 @@ export const rayleighPhase = Fn( ( [ nu ]: [ F ] ) => {
 
 /** The sky's Rayleigh phase (1/sr): half Rayleigh's and half a linear forward lobe
  * (1 + k nu) / (4 pi), whose k leans the share round the sun brighter than the share away from it.
- * The multiple scattering folded into the table's Rayleigh part takes it too. */
+ * The multiple scattering folded into the table's Rayleigh part takes it too (baked times 4 pi,
+ * this phase's mean being 1 / ( 4 pi )). */
 export const skyRayleighPhase = Fn( ( [ nu, k ]: [ F, F ] ) => {
 
 	return nu.mul( nu ).add( 1 ).mul( 3 / ( 32 * Math.PI ) ).add( k.mul( nu ).add( 1 ).mul( 1 / ( 8 * Math.PI ) ) );
@@ -643,7 +646,13 @@ export class Atmosphere {
 		// view ray (to the ground or the atmosphere's top), per unit of the sun's illuminance and
 		// without the phase, its mean over TABLE_AZIMUTHS azimuths of the sun about the vertical:
 		// Rayleigh RGB with the multiple scattering of both media (Hillaire 2020's Psi_ms times their
-		// scattering, isotropic) and Mie RGB.
+		// scattering, isotropic) and Mie RGB. Psi_ms is added with no phase (the paper's equation 11:
+		// the single scattering takes the phase, Psi_ms, in 1/sr, the scattering alone); folded into
+		// the Rayleigh slot it takes the Rayleigh phase where the slot is read (`skyRayleighPhase`,
+		// whose mean over the sphere is 1 / ( 4 pi )), so it is baked times 4 pi: averaged over the
+		// directions it then reaches the sky as the isotropic term does. Without the factor the
+		// twilight under the sun at -8 degrees and below, nearly all multiple scattering, stood 3.65
+		// stops under that (noon 0.35 - 0.43).
 		const tableBake = ( mie: boolean ) => Fn( () => {
 
 			const pixel = floor( uv().mul( vec2( ATLAS_W, TABLE_MU ) ) ).toVar();
@@ -676,7 +685,7 @@ export class Atmosphere {
 				const sun = vec3( sinS.mul( cos( phi ) ), muS, sinS.mul( sin( phi ) ) ).toVar();
 				const cosSun = dot( p.div( pr ), sun ).toVar();
 				const TSun = sampleTransmittance( pr, cosSun ).mul( select( raySphereNearest( p, sun, float( RG ) ).greaterThan( 0 ), 0, 1 ) ).toVar();
-				const ms = sampleMultiScat( pr, cosSun );
+				const ms = sampleMultiScat( pr, cosSun ).mul( 4 * Math.PI );
 				const TStep = exp( ext.mul( dt ).negate() ).toVar();
 				const integral = throughput.mul( vec3( 1 ).sub( TStep ) ).div( max( ext, vec3( 1e-6 ) ) ).mul( 1 / TABLE_AZIMUTHS ).toVar();
 				rayleigh.addAssign( TSun.mul( m.rgb ).add( ms.mul( m.rgb.add( m.a ) ) ).mul( integral ) );
