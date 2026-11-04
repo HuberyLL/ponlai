@@ -48,7 +48,8 @@ import { markSkyRetune } from './SkyRetune.ts';
 // phase; with the phase out, what is left depends only weakly on the azimuth between the view and
 // the sun, so the table holds its mean over the azimuth. It is 64 (muS) x 96 (mu) x 16 (r), baked
 // once per change of the medium (not when the sun moves: its elevation is an axis), as a 2D atlas
-// of the r slices side by side, half floats: RGBA Rayleigh RGB and Mie R, RG Mie GB. Its axes are
+// of the r slices side by side, 32-bit floats (as every table here: `makeLUT`): RGBA Rayleigh RGB
+// and Mie R, RG Mie GB. Its axes are
 // non-linear (Bruneton and Neyret 2008, Yusov 2013): r by the square root of the height's share
 // of the shell (the camera stays within about 200 m of the sea), mu split at the horizon of the
 // radius it is read at, each half by the square root of its distance from the horizon (more
@@ -423,10 +424,16 @@ const transmittanceUV = Fn( ( [ r, mu ]: [ F, F ] ) => {
 	{ name: 'r', type: 'float' }, { name: 'mu', type: 'float' },
 ] } );
 
+// The tables are 32-bit floats, filtered (WebGPU's float32-filterable, which three requests when
+// the adapter has it). Per unit of the sun's illuminance the twilight's in-scatter spans some 30
+// stops from noon to the sun 18 degrees down, more than half floats hold: in them (steps of
+// 6e-8 under 6e-5) the sky 20 degrees up and at the zenith read 0 from the sun at -10 degrees,
+// and at -9 its channels stood up to a quarter off, while at noon and -6 the same sky agreed with
+// a double-precision march of this model within 1 %.
 function makeLUT( width: number, height: number, name: string, format: THREE.PixelFormat = THREE.RGBAFormat ): THREE.RenderTarget {
 
 	const target = new THREE.RenderTarget( width, height, {
-		type: THREE.HalfFloatType, format, depthBuffer: false, generateMipmaps: false,
+		type: THREE.FloatType, format, depthBuffer: false, generateMipmaps: false,
 		minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
 		wrapS: THREE.ClampToEdgeWrapping, wrapT: THREE.ClampToEdgeWrapping,
 	} );
