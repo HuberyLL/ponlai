@@ -201,6 +201,19 @@ const raySphereNearest = Fn( ( [ ro, rd, radius ]: [ V3, V3, F ] ) => {
 	{ name: 'ro', type: 'vec3' }, { name: 'rd', type: 'vec3' }, { name: 'radius', type: 'float' },
 ] } );
 
+// A march step's in-scatter weight per unit of its length, ( 1 - exp( -x ) ) / x for the step's
+// optical depth x per channel, by its series under x = 0.01: in 32-bit floats 1 - exp( -x ) keeps
+// no digits under x of about 1e-7, a step's depth in the air some 80 km up. (The bakes divided
+// 1 - exp( -x ) by the extinction floored at 1e-6 per km, which lost most of the light that the air
+// above 69 km scatters in red, 76 in green and 83 in blue.)
+const stepShare = Fn( ( [ x ]: [ V3 ] ) => {
+
+	const series = vec3( 1 ).sub( x.mul( 0.5 ) ).add( x.mul( x ).div( 6 ) );
+	const exact = vec3( 1 ).sub( exp( x.negate() ) ).div( max( x, vec3( 1e-30 ) ) );
+	return mix( series, exact, step( vec3( 0.01 ), x ) );
+
+} ).setLayout( { name: 'atmoStepShare', type: 'vec3', inputs: [ { name: 'x', type: 'vec3' } ] } );
+
 // Only pure parameters enter a shared layout function. A closed-over UniformNode or TextureNode
 // would retain the first material's generated binding names when Three reuses the function.
 
@@ -629,7 +642,7 @@ export class Atmosphere {
 				const shadow = select( raySphereNearest( p, sun, float( RG ) ).greaterThan( 0 ), 0, 1 );
 				const S = TSun.mul( shadow ).mul( scattering ).mul( 1 / ( 4 * Math.PI ) ).toVar();
 				const TStep = exp( ext.mul( dt ).negate() ).toVar();
-				const integral = throughput.mul( vec3( 1 ).sub( TStep ) ).div( max( ext, vec3( 1e-6 ) ) ).toVar();
+				const integral = throughput.mul( dt ).mul( stepShare( ext.mul( dt ) ) ).toVar();
 				L.addAssign( S.mul( integral ) );
 				fms.addAssign( scattering.mul( integral ) );
 				throughput.mulAssign( TStep );
@@ -699,7 +712,7 @@ export class Atmosphere {
 				const TSun = sampleTransmittance( pr, cosSun ).mul( select( raySphereNearest( p, sun, float( RG ) ).greaterThan( 0 ), 0, 1 ) ).toVar();
 				const ms = sampleMultiScat( pr, cosSun ).mul( 4 * Math.PI );
 				const TStep = exp( ext.mul( dt ).negate() ).toVar();
-				const integral = throughput.mul( vec3( 1 ).sub( TStep ) ).div( max( ext, vec3( 1e-6 ) ) ).mul( 1 / TABLE_AZIMUTHS ).toVar();
+				const integral = throughput.mul( dt ).mul( stepShare( ext.mul( dt ) ) ).mul( 1 / TABLE_AZIMUTHS ).toVar();
 				rayleigh.addAssign( TSun.mul( m.rgb ).add( ms.mul( m.rgb.add( m.a ) ) ).mul( integral ) );
 				aerosol.addAssign( TSun.mul( m.a ).mul( integral ) );
 				If( j.equal( TABLE_AZIMUTHS - 1 ), () => {
