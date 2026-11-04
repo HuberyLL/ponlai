@@ -59,23 +59,28 @@ type V3 = THREE.Node<'vec3'>;
 //   (the epoch bump then restarts the rest, and the signal turns false).
 // - The settled P is then a function of the view as long as the EV a frame meters does not depend
 //   on the P it was drawn at. It does only at half float's edges (a value that is subnormal or
-//   flushed to 0 at one P and not the other, the HALF_MAX clamp): the bias keeps every non-sky
-//   value of the views measured above off them at the neighbouring P too, and the sun's disc falls
-//   in the meter's top bin at any P. A view with values there would meter neighbouring P apart by
-//   those values alone, and an EV within that distance of a half stop then has no single P. At the
-//   subnormal edge a higher P keeps more of the dark values, meters brighter and asks for a lower
-//   P: the two P ask for each other, P alternates and the page never settles. At the HALF_MAX
-//   clamp a higher P clips more of the bright values, meters darker and asks for a higher P: each P
-//   asks for itself, and the page settles on whichever it reached first.
+//   flushed to 0 at one P and not the other, the HALF_MAX clamp; the metering histograms' ends lie
+//   at those edges too, Metering.ts): the bias keeps every non-sky value of the views measured
+//   above off them at the neighbouring P too, and the sun's disc falls in the meter's top bin at
+//   any P. A view with values there would
+//   meter neighbouring P apart by those values alone, and an EV within that distance of a half stop
+//   then has no single P. At the subnormal edge a higher P keeps more of the dark values, meters
+//   brighter and asks for a lower P: the two P ask for each other, P alternates and the page never
+//   settles. At the HALF_MAX clamp a higher P clips more of the bright values, meters darker and
+//   asks for a higher P: each P asks for itself, and the page settles on whichever it reached
+//   first.
 // - Without the settled signal's inputs (production builds) no frame counts as quiet: P follows the
 //   readings as above and `pending` stays true, which nothing reads there.
 // - Readers that work in scene units divide it out (`inverse`): the water's reads of the opaque
 //   image, the underwater pyramid and the refraction image (Water.ts), the composite (Pipeline.ts:
-//   the haze, the shafts and the rods' colour work in scene units, its output is scaled again), the
-//   metering histograms (Metering.ts), FSR 3's reactive generator (Fsr3Upscaler.ts). The display
-//   chain's exposure is relative, 2^( EV - P ), so the bloom, the local tone and the grade see the
-//   exposed image they saw before; FSR 3 takes 2^P as its pre-exposure (its history follows a new P
-//   by the ratio).
+//   the haze, the shafts and the rods' colour work in scene units, its output is scaled again),
+//   FSR 3's reactive generator (Fsr3Upscaler.ts). The metering histograms instead bin the values as
+//   stored, so their range follows P as the stored values do, and the meter takes P back out of
+//   their means in stops (`log2Scale`, Metering.ts): with a range fixed in scene units, a dark
+//   twilight's values fell under its floor while the targets still held them at full precision. The
+//   display chain's exposure is relative, 2^( EV - P ), so the bloom, the local tone and the grade
+//   see the exposed image they saw before; FSR 3 takes 2^P as its pre-exposure (its history
+//   follows a new P by the ratio).
 // - The writers: the scene passes' MRTs (Motion.ts `sceneMRT`, `overlayMRT`), a fragmentNode's
 //   `outputStruct` and a lit material's `meterOutput` (Motion.ts), the refraction pass's MRT, the
 //   composite and what the post chain adds in hdr's units (the sun's flare, the rain veil:
@@ -108,6 +113,8 @@ class PreExposure {
 	/** 2^P and 2^-P for the frame being rendered. */
 	readonly scale = uniform( 1 );
 	readonly inverse = uniform( 1 );
+	/** P itself, log2 of `scale`, for the frame being rendered: for readers that work in stops. */
+	readonly log2Scale = uniform( 0 );
 	/** P of the frame being rendered. */
 	stops = 0;
 	/** The P the last reading asks for, applied at the next frame's start. */
@@ -147,6 +154,7 @@ class PreExposure {
 		this.stops = this.next;
 		this.scale.value = 2 ** this.stops;
 		this.inverse.value = 2 ** - this.stops;
+		this.log2Scale.value = this.stops;
 		this.changes ++;
 		restEpoch.bump( 'pre-exposure', false );
 
