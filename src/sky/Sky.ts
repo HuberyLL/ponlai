@@ -472,7 +472,9 @@ function clearShade( elevation: number, direct: number ): number {
 // against green, by 0.75 and 0.88 times at a sun of 3 degrees, 0.89 and 0.95 at 12 and 0.97 and
 // 0.99 at noon, and these keys take the first two back at their luminance (the golden hour's sky,
 // far bay and meadow had turned yellow by 10 - 16 degrees of hue, the morning's sea toward cyan).
-// The high key, whose sky hardly moved, keeps its own.
+// The high key, whose sky hardly moved, keeps its own, its red at 0.264, set in the least-squares
+// fit of the clear day's sky gains (CLEAR_SKY): against the 0.235 it had, it takes the sky over a
+// sun at 50 degrees, seen away from it, about 7 degrees of hue toward violet (Oklab hue 241 to 248).
 // Under cloud the high key has a twin (`cloudyHigh`, taken by the weather's clouded share, Weather.ts
 // `cloudedShare`): a deck of cloud gives the sky and the air no such blue, and the air over the land
 // takes this light whole (VolumetricHaze.ts), so at the day's blue the crowns under a clouded sky
@@ -514,7 +516,7 @@ const SKY_LIGHT_LOW_SUN: readonly DayKey<{ r: number; g: number; b: number }>[] 
 	{ at: 3, name: 'golden', values: { r: 0.36, g: 0.162, b: 0.1227 } },
 	{ at: 12, name: 'low', values: { r: 0.2409, g: 0.1857, b: 0.1979 } },
 ];
-const SKY_LIGHT_HIGH: DayKey<{ r: number; g: number; b: number }> = { at: 40, name: 'high', values: { r: 0.235, g: 0.232, b: 0.346 } };
+const SKY_LIGHT_HIGH: DayKey<{ r: number; g: number; b: number }> = { at: 40, name: 'high', values: { r: 0.264, g: 0.232, b: 0.346 } };
 const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'sky.light', {
 	day: [ { at: - 1, name: 'dusk', values: { r: 0.2263, g: 0.125, b: 0.0751 } }, ...SKY_LIGHT_LOW_SUN, SKY_LIGHT_HIGH ],
 	rising: [
@@ -538,25 +540,32 @@ const _skyLight = { r: 0, g: 0, b: 0 };
 // islanders' fill) and the exposure's sky meter. So the sky the eye sees stays the sky that lights
 // and that the exposure meters (post/Exposure.ts). The sky's irradiance takes the gain whole (the
 // sky's light, the sun's in-scattered light and the haze's are all SKY_LIGHT's), so the keys are
-// the ratio with no gain over the one they hold: 12.1 - 15 from 6 degrees up on either side of the
-// day and at the morning's 3 degrees. At the evening's 3 degrees the sky stands brighter against
-// the key, about 7.4 - 8.9: it lights the land's shade and the far bay, as far as a view along the
-// horizon toward the sun holds the far sea and the sun's strip on the water (post/Exposure.ts, the
-// highlight key). The smoothstep between keys (DayKeys.ts) puts the ratio's day high midway, at 21
-// degrees in the evening. Under 3 degrees the key falls faster than the sky by itself (the ratio
-// 12.4 at 1.6 degrees with no gain), so the gain eases to none at the horizon (`horizon`): the
-// twilight and the night keep SKY_LIGHT's light, the ratio falling to about 6 at 2 degrees on the
-// way. The gains hold these ratios over the sky with its multiple scattering whole (Atmosphere.ts),
-// whose irradiance stands higher than when the multiple scattering stood at 1 / 4 pi of its
-// level: 0.85 - 0.89 times the gains that held them then, the exposure over the horizon within
-// 0.03 stops of the one it had on either side of the day. The gain
-// leaves by the weather's clouded share (Weather.ts `cloudedShare`): a cloudy or overcast sky keeps
-// the light it had.
+// the ratio with no gain over the one they hold, 12.1 - 15 from 6 degrees up on either side of the
+// day and at the morning's 3 degrees, but for the day side's low and high gains (3.51 and 2.48,
+// 0.78 and 0.73 of the ratio's 4.48 and 3.4) and SKY_LIGHT's high red: those are one least-squares
+// fit with the clear day's exposure keys (post/Exposure.ts) and haze (Weather.ts `haze`) on the
+// clear day's views from 6 degrees up, which the thin layer (Clouds.ts), faint by day, hardly
+// changes. At the ratio's gains the sky over a sun at 50 degrees, seen away from it, reads at Oklab
+// lightness 0.71 and chroma 0.099 and the far sea at 0.63 and 0.102, against 0.68 and 0.10 and 0.62
+// and 0.097 at the fit's, and the views from 6 degrees up that take the day side's gains stand
+// 0.16 - 0.33 stops darker. The rising side's own keys keep their gains (its high key is the
+// day's). At the evening's 3 degrees the sky stands brighter against the key, about 7.4 - 8.9: it
+// lights the land's shade and the far bay, as far as a view along the horizon toward the sun holds
+// the far sea and the sun's strip on the water (post/Exposure.ts, the highlight key). The
+// smoothstep between keys (DayKeys.ts) puts the ratio's day high midway, at 21 degrees in the
+// evening. Under 3 degrees the key falls faster than the sky by itself (the ratio 12.4 at 1.6
+// degrees with no gain), so the gain eases to none at the horizon (`horizon`): the twilight and the
+// night keep SKY_LIGHT's light, the ratio falling to about 6 at 2 degrees on the way. The gains
+// hold these ratios over the sky with its multiple scattering whole (Atmosphere.ts), whose
+// irradiance stands higher than when the multiple scattering stood at 1 / 4 pi of its level:
+// 0.85 - 0.89 times the gains that held them then, the exposure over the horizon within 0.03 stops
+// of the one it had on either side of the day. The gain leaves by the weather's clouded share
+// (Weather.ts `cloudedShare`): a cloudy or overcast sky keeps the light it had.
 // Tunable on debug pages: `sky.clear.gain@<horizon|dawn|early|morning|golden|late|low|high>`.
 const CLEAR_SKY_HORIZON: DayKey<{ gain: number }> = { at: 0, name: 'horizon', values: { gain: 1 } };
-const CLEAR_SKY_HIGH: DayKey<{ gain: number }> = { at: 40, name: 'high', values: { gain: 3.4 } };
+const CLEAR_SKY_HIGH: DayKey<{ gain: number }> = { at: 40, name: 'high', values: { gain: 2.48 } };
 const CLEAR_SKY: DayKeys<{ gain: number }> = tuneKeys( 'sky.clear', {
-	day: [ CLEAR_SKY_HORIZON, { at: 3, name: 'golden', values: { gain: 2.41 } }, { at: 6, name: 'late', values: { gain: 3.39 } }, { at: 12, name: 'low', values: { gain: 4.48 } }, CLEAR_SKY_HIGH ],
+	day: [ CLEAR_SKY_HORIZON, { at: 3, name: 'golden', values: { gain: 2.41 } }, { at: 6, name: 'late', values: { gain: 3.39 } }, { at: 12, name: 'low', values: { gain: 3.51 } }, CLEAR_SKY_HIGH ],
 	rising: [ CLEAR_SKY_HORIZON, { at: 3, name: 'dawn', values: { gain: 1.76 } }, { at: 6, name: 'early', values: { gain: 4.08 } }, { at: 12, name: 'morning', values: { gain: 5.83 } }, CLEAR_SKY_HIGH ],
 	night: { gain: 1 },
 }, { gain: { min: 0.25, max: 8, scale: 'log', onChange: markSkyRetune } } );

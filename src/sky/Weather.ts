@@ -186,10 +186,12 @@ export interface WeatherState {
 	// The air's haze, per metre: the extinction, in the band whose spectral weight is 1 (blue on a
 	// clear day: the hour's key gives the bands' weights, weather/HazeKeys.ts), of the ground layer's
 	// deep part, under its soft top (the hour's key's shape: weather/HazeKeys.ts,
-	// weather/VolumetricHaze.ts). A clear or fair day's is 2e-3; under a deck the air is dense near
-	// the sea and clear aloft (its shape per sky: weather/HazeKeys.ts), a cloudy sky's about the
-	// clear day's, an overcast sky's about five times it; rain and fog thicken it. The hour's key
-	// scales it.
+	// weather/VolumetricHaze.ts). A clear or fair day's is 3e-3, fitted together with the clear
+	// day's sky gains and exposure keys (Sky.ts CLEAR_SKY): at 2e-3 the far sea and the sky over a
+	// sun at 50 degrees, seen away from it, read more saturated (Oklab chroma higher by 0.004 and
+	// 0.007). Under a deck the air is dense near the sea and clear aloft (its shape per sky:
+	// weather/HazeKeys.ts), a cloudy sky's about two thirds of the clear day's, an overcast sky's
+	// about three times it; rain and fog thicken it. The hour's key scales it.
 	haze: number;
 	// The haze near the camera: the optical depth from the camera out to a distance is `nearDensity`
 	// times the far medium's up to `nearStart` metres, eased back to 1 by `nearEnd` and 1 beyond
@@ -276,8 +278,8 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // the sward's on itself, whose shade in the key is its canopy's (post/MeadowShade.ts
 // `swardShadeRelease`).
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
-	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, haze: 0.002, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
-	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, haze: 0.002, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
+	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
+	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
 	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0.36, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, haze: 0.0021, nearDensity: 0.13, nearStart: 100, nearEnd: 700, rain: 0, fog: 0, storm: 0, streaks: 0 },
 	overcast: { coverage: 0.94, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, haze: 0.00974, nearDensity: 0.08, nearStart: 250, nearEnd: 500, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
 	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, haze: 0.0095, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },

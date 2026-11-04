@@ -110,33 +110,38 @@ export interface ExposureKey extends Record<string, number> {
  * day's (0, 3, 6 and 12) and the night. They are set against the exposed white of a diffuser under
  * the sun's direct light alone (by night the shaded one), seen toward and away from the sun, with
  * the sky's light as Sky.ts SKY_LIGHT and CLEAR_SKY set it, together with the haze and the grading.
- * The sky's share β is 0.4 under a clear day's keys, the dawn's and the night's, 0.2 under the
- * golden hours' and the clouded ones: the land's light sets most of a view's exposure, the sky's
- * own enough that a view follows the sky's light through the day. The highlight key holds a view
- * toward a low sun under one away from it on the scene's share: the low key's κ_H lies 1.7 stops
- * under its κ, so the sea's glitter toward a sun at 12 degrees holds that share down by about 4
- * stops (about 2.4 in e); the golden key's lies about a stop over its κ: it holds a view along the
- * horizon toward a sun at 3 degrees down by about 0.2 stops, and one into the glow after sunset by
- * nearly 2. The rising sun's keys share it (shared, so tuning `@golden` moves them all). The
- * clouded keys' κ_H lie well over their κ, so the guard holds a clouded view down only where its
- * brightest few percent lie far over its metered light (under a sky with no sun, rarely). A clouded
- * day stands under the clear one by the light its deck takes (about 0.8 stops at 12 degrees, 1 at
- * 40), overcast's deck a further OVERCAST_KEY by its share. One night key serves every night's sky:
- * a clouded night reads darker by the moonlight its deck takes. The rising sun's dawn key meters
- * the morning's land before the sun by both the sky and its own light, so the land keeps its level
- * while the sky brightens toward the sun (a morning's day exposure comes in long before the sun:
- * DayCycle.ts `displayNight`), and from -2 to 3 degrees it passes into the morning's golden key,
- * about half a stop under the evening's: at 3 degrees the island view meters mostly the sea on
- * either side of the day (about seven tenths of its metered cells), but in the morning its land
- * lies nearly all in shade (about a tenth of it sunlit, against four tenths in the evening), and
- * the evening's key lifts the near sea in a view across the island toward the rising sun over its
- * level. Under cloud the clouded keys take over from it by the cloud's share, as from the day's.
- * The adaptation's time constants are the same in every key (the header, Adaptation). Tunable on
- * debug pages (debug/Tune.ts): `post.exposure.<value>@<key>`. */
+ * The low and high keys' κ (0.44 and 0.56) are one least-squares fit with the clear sky's low and
+ * high gains, SKY_LIGHT's high red and the clear day's haze (Weather.ts `haze`) on the clear day's
+ * views from 6 degrees up, which the thin layer (Clouds.ts), faint by day, hardly changes. At a κ
+ * of 0.7 and 0.84 those views stand 0.24 - 0.28 stops brighter; the views toward the sun, held by
+ * the highlight key, stand 0.10 - 0.12 brighter, a little under half as much. The sky's share β is
+ * 0.4 under a clear day's keys, the dawn's and the night's, 0.2 under the golden hours' and the
+ * clouded ones: the land's light sets most of a view's exposure, the sky's own enough that a view
+ * follows the sky's light through the day. The highlight key holds a view toward a low sun under
+ * one away from it on the scene's share: the low key's κ_H lies 1.7 stops under its κ, so the sea's
+ * glitter toward a sun at 12 degrees holds that share down by about 4 stops (about 2.4 in e); the
+ * golden key's lies about a stop over its κ: it holds a view along the horizon toward a sun at 3
+ * degrees down by about 0.2 stops, and one into the glow after sunset by nearly 2. The rising sun's
+ * keys share it (shared, so tuning `@golden` moves them all). The clouded keys' κ_H lie well over
+ * their κ, so the guard holds a clouded view down only where its brightest few percent lie far over
+ * its metered light (under a sky with no sun, rarely). A clouded day stands under the clear one by
+ * the light its deck takes (about 0.8 stops at 12 degrees, 1 at 40), overcast's deck a further
+ * OVERCAST_KEY by its share. One night key serves every night's sky: a clouded night reads darker
+ * by the moonlight its deck takes. The rising sun's dawn key meters the morning's land before the
+ * sun by both the sky and its own light, so the land keeps its level while the sky brightens toward
+ * the sun (a morning's day exposure comes in long before the sun: DayCycle.ts `displayNight`), and
+ * from -2 to 3 degrees it passes into the morning's golden key, about half a stop under the
+ * evening's: at 3 degrees the island view meters mostly the sea on either side of the day (about
+ * seven tenths of its metered cells), but in the morning its land lies nearly all in shade (about a
+ * tenth of it sunlit, against four tenths in the evening), and the evening's key lifts the near sea
+ * in a view across the island toward the rising sun over its level. Under cloud the clouded keys
+ * take over from it by the cloud's share, as from the day's. The adaptation's time constants are
+ * the same in every key (the header, Adaptation). Tunable on debug pages (debug/Tune.ts):
+ * `post.exposure.<value>@<key>`. */
 const EXPOSURE_DAY: readonly DayKey<ExposureKey>[] = [
 	{ at: 3, name: 'golden', values: { key: - 0.6, highlight: 0.45, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
-	{ at: 12, name: 'low', values: { key: 0.7, highlight: - 0.97, sky: 0.4, adaptUp: 0.05, adaptDown: 0.05 } },
-	{ at: 40, name: 'high', values: { key: 0.84, highlight: 0.11, sky: 0.4, adaptUp: 0.05, adaptDown: 0.05 } },
+	{ at: 12, name: 'low', values: { key: 0.44, highlight: - 0.97, sky: 0.4, adaptUp: 0.05, adaptDown: 0.05 } },
+	{ at: 40, name: 'high', values: { key: 0.56, highlight: 0.11, sky: 0.4, adaptUp: 0.05, adaptDown: 0.05 } },
 ];
 export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
 	day: EXPOSURE_DAY,
