@@ -212,18 +212,19 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 
 // Art direction: the island stays readable after sunset. Through the minutes after it the sun's
 // skylight has faded while the moon's key and the night ambient are not yet in, which left the
-// meadow at about half its night brightness. The light the sky lends the island takes a gain and
-// a warm cast per sun elevation, ISLAND_SKY: the environment's source panorama, which lights the
-// terrain and plants, in its bake, and the islanders' sky fill (`islandIrradianceNode`, the
-// irradiance probe graded the same way). The seen sky, the panorama the sea reflects and the
-// irradiance probe itself, which lights the sea's body, keep the atmosphere's own, so the evening's
-// sky and sea look as they did. Each row is an elevation (degrees, descending): the colour the
-// light is drawn toward (linear, at the light's own luminance), how far, and the gain; rows
-// interpolate linearly and the end rows hold beyond them. From 2 degrees up the light is the
-// atmosphere's alone; from -13.2 down it is drawn 0.6 of the way to a deep blue, so the moonlit
-// island's shade, lit by this sky alone, reads a deep blue rather than ink, bluer than the moonlit
-// ground and the moon's own key. The gains set the island's exposed brightness (the top view's
-// land, with the moon's key; the metering illuminance holds this light too) through the twilight.
+// meadow at about half its night brightness. The light the sky lends the island takes a gain per
+// sun elevation, and a cast about the sunset and in the night, ISLAND_SKY: the environment's
+// source panorama, which lights the terrain and plants, in its bake, and the islanders' sky fill
+// (`islandIrradianceNode`, the irradiance probe graded the same way). The seen sky, the panorama
+// the sea reflects and the irradiance probe itself, which lights the sea's body, keep the
+// atmosphere's own, so the evening's sky and sea look as they did. Each row is an elevation
+// (degrees, descending): the colour the light is drawn toward (linear, at the light's own
+// luminance), how far, and the gain; rows interpolate linearly and the end rows hold beyond them.
+// From 2 degrees up the light is the atmosphere's alone; from -13.2 down it is drawn 0.6 of the
+// way to a deep blue, so the moonlit island's shade, lit by this sky alone, reads a deep blue
+// rather than ink, bluer than the moonlit ground and the moon's own key. The gains set the
+// island's exposed brightness (the top view's land, with the moon's key; the metering illuminance
+// holds this light too) through the twilight.
 // A clear evening keeps its day exposure on the golden hour's key until the night's comes in from
 // -7 degrees (post/Exposure.ts, DayCycle.ts `displayNight`), and the land keeps the probes' golden
 // gain on the sky's light (lighting/AmbientRelight.ts PROBE_SKY), both held from the golden hour
@@ -232,19 +233,21 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 // the meadow on the plateau in the island view, which reads about L 0.2 at -3.3 and -5.3 degrees.
 // The rows at -1.3, -2.6 and -4 take a scale near their neighbours', the row at -8.6 keeps the
 // 0.76 it was set with, and the gains return to none as the night's exposure comes in (by -13.2).
-// The rows at 1, 0.5 and 0 degrees take the colour the rows around them gave there. From -2.6 to
-// -5.3 degrees the light is drawn 0.9 of the way to an orange (red over green about 1.95, blue
-// over green about 0.2), 0.7 of the way at -1.3: the afterglow's light on the land. The sky's own
-// light after sunset is near grey (red over green about 1.05, its dusk key near neutral:
-// SKY_LIGHT), and the air over the land, which had laid the glow's orange over the meadow, is thin
-// after sunset (HazeKeys.ts AFTER_SUNSET); under the sky's own light, or drawn half way to the
-// colour the warmer key gave, the meadow on the plateau read an olive green (Oklab hue 112 - 124
-// against about 82 here).
-// The afterglow is a clear sky's: under a deck there is no glow to lend the land its orange, and
-// these rows laid it on the cliffs of a cloudy or overcast evening as a warm brown under a blue
-// deck and sea (the rock at -5 degrees red over green 0.83, against 0.5 and a blue grey under the
-// rows before them). A clouded sky takes those rows (ISLAND_SKY_CLOUDED: a light warm cast, the
-// gains of 0.65 and 0.5 at -4 and -5.3 degrees) by its clouded share (`islandSky`).
+// The rows at 1, 0.5 and 0 degrees take the colour the rows around them gave there. Below the
+// horizon the setting side's rows hold gains only, so the land takes the colour of the sky's own
+// light: the dusk key (SKY_LIGHT) warms it (its irradiance red over green about 1.6 at -3 degrees
+// and 1.45 at -5, blue over green 0.7 and 0.8), and the afterglow's air over the land keeps the
+// glow's colour (HazeKeys.ts AFTER_SUNSET). The meadow on the plateau in the island view reads
+// Oklab hue 75 - 83 and chroma 0.029 - 0.034 from -3 to -5.3 degrees, the cliffs chroma 0.045 -
+// 0.047. Drawn most of the way to an orange as well (red over green about 2, blue over green 0.1),
+// the land took that warmth twice: the meadow at hue 67 - 74 and chroma 0.037 - 0.042, the cliffs
+// at chroma 0.06. With the dusk key's colour kept from the land as well, the lent light near
+// grey, the meadow turned an olive green (hue 105 - 112): its warmth after sunset is the sky's.
+// The afterglow is a clear sky's: under a deck there is no glow, and an orange cast laid on the
+// cliffs of a cloudy or overcast evening read a warm brown under a blue deck and sea (the rock at
+// -5 degrees red over green 0.83, against 0.5 and a blue grey under the clouded rows). A clouded
+// sky takes rows of its own (ISLAND_SKY_CLOUDED: a light warm cast, the gains of 0.65 and 0.5 at
+// -4 and -5.3 degrees) by its clouded share (`islandSky`).
 // The rising sun has rows of its own (ISLAND_SKY_RISING).
 // By day a clouded sky lends the island its own light: a deck of cloud passes on little of the blue
 // of the sky's high key (SKY_LIGHT), so from 12 to 40 degrees, as that key climbs, the light lent to
@@ -262,11 +265,11 @@ const ISLAND_SKY: readonly IslandRow[] = [
 	{ at: 1, tint: [ 1.085, 0.988, 0.872 ], amount: 0.15, gain: 1.16 },
 	{ at: 0.5, tint: [ 1.128, 0.982, 0.807 ], amount: 0.225, gain: 1.24 },
 	{ at: 0, tint: [ 1.17, 0.976, 0.743 ], amount: 0.3, gain: 1.16 },
-	{ at: - 1.3, tint: [ 1.66, 0.9, 0.09 ], amount: 0.7, gain: 0.89 },
-	{ at: - 2.6, tint: [ 1.78, 0.86, 0.08 ], amount: 0.9, gain: 0.96 },
-	{ at: - 3.3, tint: [ 1.78, 0.86, 0.08 ], amount: 0.9, gain: 0.85 },
-	{ at: - 4, tint: [ 1.78, 0.86, 0.08 ], amount: 0.9, gain: 0.87 },
-	{ at: - 5.3, tint: [ 1.78, 0.86, 0.08 ], amount: 0.9, gain: 0.92 },
+	{ at: - 1.3, gain: 0.89 },
+	{ at: - 2.6, gain: 0.96 },
+	{ at: - 3.3, gain: 0.85 },
+	{ at: - 4, gain: 0.87 },
+	{ at: - 5.3, gain: 0.92 },
 	{ at: - 8.6, gain: 0.76 },
 	{ at: - 13.2, tint: [ 0.45, 1, 3.6 ], amount: 0.6 },
 ];
@@ -492,7 +495,8 @@ function clearShade( elevation: number, direct: number ): number {
 // turned the sky 20 degrees up magenta (red over green about 2.1, blue over green 1.5, with the
 // sun 5.6 degrees under the horizon). The sea under the glow takes less of the key's warmth than
 // the sky over it: it stays lighter and greyer, by the water's reflection, not the sky's light.
-// The land takes its twilight warmth from the light lent to it (ISLAND_SKY).
+// The land takes its twilight warmth from this key as well: below the horizon the light lent to it
+// (ISLAND_SKY) keeps the sky's colour and takes only a gain.
 // The morning is not the evening turned round. These keys hold in every direction, so a warm key
 // warms the whole picture: the golden key is the evening's, where the whole sky is alight, and the
 // clear morning has keys of its own (`dawn`, `morning`, read while the sun rises: DayKeys.ts

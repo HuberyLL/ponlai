@@ -429,7 +429,7 @@ art decision changes; images from elsewhere stay out of the repository.
   sun's light warms from about 20 degrees, turns orange by 10 and orange red near the horizon.
   After sunset the island stays readable: through the minutes between the sun's last light and the moon's, the meadow keeps its light (warm under the
   afterglow, then green), never dipping below its night brightness; the light that holds it up is
-  lent to the island alone, and only the evening's is warm: at dawn the land goes from the night's
+  the sky's own, raised for the island alone, and only the evening's is warm: at dawn the land goes from the night's
   blue into the day with no warm stretch. The
   sun is drawn at twice its true size, the moon at about five times (some 2.6 degrees across),
   so it reads as the night's light source; it is no brighter per unit of sky for it, and the
