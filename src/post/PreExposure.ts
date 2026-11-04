@@ -89,8 +89,10 @@ type V3 = THREE.Node<'vec3'>;
 
 /** Stops below the exposure the scene is stored at (see the header). */
 export const PRE_EXPOSURE_BIAS = 3;
-/** The stops P may take: far wider than any scene's exposure, a guard against a broken reading. */
-export const PRE_EXPOSURE_RANGE = [ - 8, 16 ] as const;
+/** The stops P may take, a guard against a broken reading. The darkest scene asks for 18: a clear
+ * evening's island view with the sun near -7 degrees, before the night's layers come in. Clamped at
+ * 16 there, its darkest values went subnormal and a few thousand pixels came out a level dark. */
+export const PRE_EXPOSURE_RANGE = [ - 8, 22 ] as const;
 /** Half float's largest value: what a pre-exposed writer stores at most. */
 export const HALF_MAX = 65504;
 
