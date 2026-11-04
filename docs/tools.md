@@ -373,7 +373,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   key's colour at a low sun `sky.key.hueDepth` (the rising sun's `dawnHueDepth`), `reddens`,
   `yellows`, the ozone's absorption `sky.atmosphere.ozone` (its column; per band `ozoneR`,
   `ozoneG`, `ozoneB`), the earth's shadow over the seen sky `sky.atmosphere.shadowDepth` (the share
-  it takes at most; `shadowSoftness`, the degrees over its edge in which it falls), the near air
+  it takes at most; `shadowSoftness`, the degrees over its edge in which it falls) and the floor
+  of the clouds' shadow ratio `sky.atmosphere.shadowFloor` (the multiple scattering's share no
+  shadow takes), the near air
   `sky.weather.nearDensity@clear` (`nearStart`, `nearEnd`; `@fair`, `@cloudy`, `@overcast`) and the
   land's share of the sky's light `lighting.relight.skyGain@high` (`@low`, `@golden`, the rising
   sun's `@dawn`, `@sunrise`, `@cloudy`, `@cloudyBlue`, `@night`) and its gain under overcast

@@ -149,7 +149,7 @@ const TABLE_AZIMUTHS = 8, TABLE_STEPS = 32;
 // (altitude) per body, each texel the mean of 16 azimuths over half a turn, the altitude by the
 // fourth power of its axis from 2 m up to `fogReach` (a grazing ray's share near the sea changes
 // fastest with it); and the floor added to both sides of the shadow's ratio (`earthShadow`)
-const SHADOW_MU = 256, SHADOW_H = 32, SHADOW_AZIMUTHS = 16, SHADOW_FLOOR = 0.1;
+const SHADOW_MU = 256, SHADOW_H = 32, SHADOW_AZIMUTHS = 16, SHADOW_FLOOR = 0.15;
 const H = Math.sqrt( RT * RT - RG * RG );
 const RAYLEIGH = [ 5.802e-3, 13.558e-3, 33.1e-3 ] as const;
 // The ozone's absorption per band (per km at the tent's peak) is integrated over each display
@@ -516,6 +516,8 @@ export class Atmosphere {
 	/** the earth's shadow over the seen sky (`skyShadow`): its depth and its softness (degrees) */
 	readonly shadowDepth = tuneUniform( 'sky.atmosphere.shadowDepth', SKY_SHADOW_DEPTH, { min: 0, max: 1, onChange: markSkyRetune } );
 	readonly shadowSoftness = tuneUniform( 'sky.atmosphere.shadowSoftness', SKY_SHADOW_SOFTNESS, { min: 0.5, max: 15, onChange: markSkyRetune } );
+	/** the floor added to both sides of the clouds' shadow ratio (`earthShadow`) */
+	readonly shadowFloor = tuneUniform( 'sky.atmosphere.shadowFloor', SHADOW_FLOOR, { min: 0, max: 1, onChange: markSkyRetune } );
 	/** the ozone's absorption per band (per km at its density's peak, OZONE) and its column's scale:
 	 * tunable on debug pages (`sky.atmosphere.ozoneR`, `ozoneG`, `ozoneB`, `sky.atmosphere.ozone`),
 	 * each a change of the medium that rebakes the tables and the environment */
@@ -945,13 +947,19 @@ export class Atmosphere {
 	 * table's, not dimmed a second time); toward the light it rises above 1, opposite it falls
 	 * below, and the shadow rises opposite the setting sun as a band from the horizon. By day both
 	 * shares are 1 and so is the factor. The floor stands for the light the table holds that no
-	 * shadow takes (the multiple scattering), taken as a tenth of a fully lit ray's single
-	 * scattering: where the whole ray lies in the shadow at every azimuth the factor goes to 1 (the
-	 * table's value kept), and it never exceeds ( 1 + floor ) / floor = 11. */
+	 * shadow takes (the multiple scattering), taken as a share of a fully lit ray's single
+	 * scattering: 0.15, the multiple scattering's share of the in-scatter at the clouds' shell (6.6 km
+	 * up) with the sun 0 - 6 degrees up, 0.12 - 0.18 in luminance (it was 0.1 when the multiple
+	 * scattering stood at 1 / 4 pi of its level, and its share there 0.015 - 0.022). Where the whole ray lies in
+	 * the shadow at every azimuth the factor goes to 1 (the table's value kept), and it never
+	 * exceeds ( 1 + floor ) / floor, about 7.7. Tunable: `sky.atmosphere.shadowFloor`. The divisor is
+	 * held at 1e-6 or more, a no-op at any floor above that: at a floor of 0 a ray in the shadow at
+	 * every azimuth (any at night) would divide 0 by 0, and a NaN in the clouds' sky light spreads
+	 * through the bloom and the meter over the whole frame; it takes 0 instead. */
 	private earthShadow( height: F, dir: V3, body: 0 | 1 ): F {
 
 		const light = body === 0 ? this.sunDir : this.moonDir;
-		return litShare( height, dir, light ).add( SHADOW_FLOOR ).div( this.shadowMeanAt( height, dir.y, body ).add( SHADOW_FLOOR ) );
+		return litShare( height, dir, light ).add( this.shadowFloor ).div( max( this.shadowMeanAt( height, dir.y, body ).add( this.shadowFloor ), 1e-6 ) );
 
 	}
 
