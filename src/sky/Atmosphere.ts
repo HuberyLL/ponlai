@@ -48,7 +48,7 @@ import { markSkyRetune } from './SkyRetune.ts';
 // (1 under the Rayleigh phase alone). The phase is applied where the
 // table is read, so the Mie peak round the sun needs no texels and each reader takes its own
 // phase; with the phase out, what is left depends only weakly on the azimuth between the view and
-// the sun, so the table holds its mean over the azimuth. It is 64 (muS) x 96 (mu) x 16 (r), baked
+// the sun, so the table holds its mean over the azimuth. It is 89 (muS) x 96 (mu) x 16 (r), baked
 // once per change of the medium (not when the sun moves: its elevation is an axis), as a 2D atlas
 // of the r slices side by side, 32-bit floats (as every table here: `makeLUT`): RGBA Rayleigh RGB
 // and Mie R, RG Mie GB. Its axes are
@@ -56,8 +56,9 @@ import { markSkyRetune } from './SkyRetune.ts';
 // of the shell (the camera stays within about 200 m of the sea), mu split at the horizon of the
 // radius it is read at, each half by the square root of its distance from the horizon (more
 // texels near it), muS by Bruneton and Neyret's exponential, finer toward sunset (the day's
-// sunsets are long). A ray under the horizon of its radius ends on the ground, its length in closed
-// form (none from the ground itself). Each frame that the sun or the moon moves, two slices are
+// sunsets are long), from the sun 18 degrees under the horizon (`muSUnit`). A ray under the
+// horizon of its radius ends on the ground, its length in closed form (none from the ground
+// itself). Each frame that the sun or the moon moves, two slices are
 // cut from it for the sun's and for the moon's muS: a sky row at the viewer's height over mu (512
 // texels, which a cubic B-spline makes smooth on a 4K sky) and a fog table over mu and altitude
 // (128 x 16, the altitude spaced quadratically from 2 m up to `fogReach`, finer low down: the fog grid is
@@ -124,7 +125,7 @@ const RG = 6360, RT = 6420;
 const T_W = 256, T_H = 64, MS_SUN = 192, MS_R = 32;
 // the in-scatter table (muS, mu, r) and its atlas, the sky row, the fog table (mu, altitude); the
 // azimuths the table averages over, and its march's steps
-const TABLE_MUS = 64, TABLE_MU = 96, TABLE_R = 16, ATLAS_W = TABLE_MUS * TABLE_R;
+const TABLE_MUS = 89, TABLE_MU = 96, TABLE_R = 16, ATLAS_W = TABLE_MUS * TABLE_R;
 const SKY_ROW = 512, FOG_MU = 128, FOG_H = 16;
 // the fog table's lowest altitude (km): 2 m over the sea, as the sky row's viewer, since a ray from
 // the ground itself has no length below the horizon
@@ -203,16 +204,22 @@ const raySphereNearest = Fn( ( [ ro, rd, radius ]: [ V3, V3, F ] ) => {
 // Only pure parameters enter a shared layout function. A closed-over UniformNode or TextureNode
 // would retain the first material's generated binding names when Three reuses the function.
 
-// The table's muS axis (Bruneton and Neyret 2008): 0 at muS = -0.2, 1 at the zenith, finer low down.
+// The table's muS axis, Bruneton and Neyret 2008's exponential 1 - exp( -3 muS - a ), finer low
+// down, 1 at the zenith and 0 at the sun 18 degrees under the horizon (MUS_LOW, the night's start),
+// where theirs, a = 0.6, ends at muS = -0.2 (11.5 degrees under): below its end a table's sky stops
+// falling with the sun and the deep twilight hangs at its last level. The offset only shifts the
+// exponential, so on TABLE_MUS = 89 texels the axis keeps the texels per unit of muS that 64 gave
+// theirs, within 0.07 % everywhere.
+const MUS_LOW = Math.sin( - 18 * Math.PI / 180 ), MUS_A = - 3 * MUS_LOW;
 const muSUnit = Fn( ( [ muS ]: [ F ] ) => {
 
-	return clamp( float( 1 ).sub( exp( muS.mul( - 3 ).sub( 0.6 ) ) ).div( 1 - Math.exp( - 3.6 ) ), 0, 1 );
+	return clamp( float( 1 ).sub( exp( muS.mul( - 3 ).sub( MUS_A ) ) ).div( 1 - Math.exp( - 3 - MUS_A ) ), 0, 1 );
 
 } ).setLayout( { name: 'atmoMuSUnit', type: 'float', inputs: [ { name: 'muS', type: 'float' } ] } );
 
 const unitMuS = Fn( ( [ u ]: [ F ] ) => {
 
-	return log( float( 1 ).sub( u.mul( 1 - Math.exp( - 3.6 ) ) ) ).negate().sub( 0.6 ).div( 3 );
+	return log( float( 1 ).sub( u.mul( 1 - Math.exp( - 3 - MUS_A ) ) ) ).negate().sub( MUS_A ).div( 3 );
 
 } ).setLayout( { name: 'atmoUnitMuS', type: 'float', inputs: [ { name: 'u', type: 'float' } ] } );
 
