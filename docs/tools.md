@@ -382,7 +382,11 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `stars`; `haze`; `cloudMoon`, the clouds' own moonlight: `src/sky/DayCycle.ts` DUSK_DEPTH) and the
   degrees at the night's end of that window over which they ease into all of it `sky.twilight.ease`
   (DUSK_EASE; 0 takes them in by even stops to the end), the near air
-  `sky.weather.nearDensity@clear` (`nearStart`, `nearEnd`; `@fair`, `@cloudy`, `@overcast`) and the
+  `sky.weather.nearDensity@clear` (`nearStart`, `nearEnd`; `@fair`, `@cloudy`, `@overcast`), a
+  clouded sky's floor of the key on the land under its deck `sky.deckFloor@overcast` (`@cloudy`)
+  and its day sky, the level of the whole sky's light by day at a sun 18 degrees up and how it
+  goes with the sun's height, `sky.daySky@overcast`, `sky.daySkyExponent@overcast` (`@cloudy`:
+  `src/sky/Weather.ts` `skyAmbientGain`), and the
   land's share of the sky's light `lighting.relight.skyGain@high` (`@low`, `@golden`, the rising
   sun's `@dawn`, `@sunrise`, `@cloudy`, `@cloudyBlue`, `@night`) and its gain under overcast
   `lighting.relight.overcastLand`, a low

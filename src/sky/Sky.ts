@@ -23,7 +23,7 @@ import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
 import { DAY_EXPOSURE, DUSK_DEPTH, displayNight, duskIn, nightAmbientShare, skyNight, starNight, sunRising, twilightMoon, twilightMoonSky, type DayCycleSnapshot } from './DayCycle.ts';
-import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckRamp, deckTakeover, overcastDeckLight, type WeatherFront, type WeatherState } from './Weather.ts';
+import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckRamp, deckTakeover, overcastDeckLight, skyAmbientGain, type WeatherFront, type WeatherState } from './Weather.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
@@ -977,6 +977,9 @@ export class Sky {
 	// whether the sun climbs, from where `sunDir` stands on its path (DayCycle.ts `sunRising`): what
 	// tells the morning's keys from the evening's at one height
 	rising = false;
+	// the weather's clouded share as `track` last took it (Weather.ts `cloudedShare`), for the bake's
+	// sky light
+	private clouded = 0;
 	// A shared artistic solar tint affects both scattering and direct light.
 	sunTint = new THREE.Color( 1.0, 0.97, 0.9 );
 	sunDir = new THREE.Vector3();
@@ -1861,7 +1864,9 @@ export class Sky {
 		const sunShare = ! this.keyIsMoon ? 1 : keyY > 0 ? Math.min( luma( this.sunColor ) * lowKey( this.elevation ) / keyY, 1 ) : 0;
 		const coverage = coverageOverride ?? weather?.coverage ?? 0;
 		const overcast = weather ? THREE.MathUtils.smoothstep( coverage, 0.65, 0.98 ) : 0;
-		const ambientGain = weather?.ambientGain ?? 1;
+		// the weather's sky light, its day sky at this sun (Weather.ts `skyAmbientGain`)
+		this.clouded = cloud;
+		const ambientGain = weather ? skyAmbientGain( weather, this.elevation, this.rising, cloud ) : 1;
 		const directVisibility = weather?.directVisibility ?? 1;
 		// The reference exposure (the frame's is metered from the light: post/Exposure.ts; this one
 		// is what the night sky's own light is tuned against) adapts to the dimmer diffuse daylight
@@ -2164,7 +2169,8 @@ export class Sky {
 		const next = this.initialized ? 1 - this.front : 0;
 		const state = this.endpoints[ next ];
 		state.version = version;
-		const ambientGain = weather?.ambientGain ?? 1;
+		// (the weather's sky light at the bake's sun: Weather.ts `skyAmbientGain`)
+		const ambientGain = weather ? skyAmbientGain( weather, this.elevation, this.rising, this.clouded ) : 1;
 		this.ambientGain.value = ambientGain;
 		// the distant sea's body (SEA_KNEE): the body is written as it stood before it followed the
 		// light, the colour times the illuminance times the gain, so a body at the knee is that value

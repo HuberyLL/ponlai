@@ -14,7 +14,7 @@ import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, nightAmbientShare, sunRising, type DayPreset } from './sky/DayCycle.ts';
-import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckLight, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
+import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckLight, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, skyAmbientGain, type TunedField, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
 import { keyDeckShare } from './lighting/KeyCloud.ts';
@@ -83,7 +83,7 @@ import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
 import { TEST_MODE } from './debug/TestMode.ts';
-import { tune, tuneApi } from './debug/Tune.ts';
+import { tune, tuneApi, type TuneOptions } from './debug/Tune.ts';
 import { markSkyRetune, skyRetune } from './sky/SkyRetune.ts';
 import { AA_MODE, AA_SOURCE, AFTER_RESOLVE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './post/Antialiasing.ts';
 import type { LatentRegistry } from './post/graph/FrameGraph.ts';
@@ -287,18 +287,24 @@ const dayCycle = new DayCycle( loaded.day );
 const weather = new Weather( loaded.weather, loaded.wind );
 const weatherEffects = { rain: true, wetness: true };
 weather.auto = loaded.autoWeather;
-// The land's floor under a deck per clouded sky (Weather.ts `deckFloor`), tunable on debug pages
-// without a reload: the presets the weather moves between take it, and the state that stands on
-// that sky follows (`setDeckFloor`). A `?tune=` value is the start, applied here as a load would.
-for ( const name of [ 'cloudy', 'overcast' ] as const ) {
+// The land's floor under a deck and the day sky's level and exponent per clouded sky (Weather.ts
+// `deckFloor`, `daySky`, `daySkyExponent`), tunable on debug pages without a reload: the presets
+// the weather moves between take them, and the state that stands on that sky follows
+// (`setPresetValue`); the sky rebakes. A `?tune=` value is the start, applied here as a load would.
+const PRESET_TUNABLES: ReadonlyArray<readonly [ TunedField, TuneOptions ]> = [
+	[ 'deckFloor', { min: 0, max: 1 } ],
+	[ 'daySky', { min: 0.02, max: 2, scale: 'log' } ],
+	[ 'daySkyExponent', { min: 0, max: 3 } ],
+];
+for ( const name of [ 'cloudy', 'overcast' ] as const ) for ( const [ field, range ] of PRESET_TUNABLES ) {
 
-	const floor = tune( `sky.deckFloor@${ name }`, WEATHER_PRESETS[ name ].deckFloor, { min: 0, max: 1, onChange: ( value ) => {
+	const value = tune( `sky.${ field }@${ name }`, WEATHER_PRESETS[ name ][ field ], { ...range, onChange: ( next ) => {
 
-		weather.setDeckFloor( name, value );
+		weather.setPresetValue( name, field, next );
 		markSkyRetune();
 
 	} } );
-	weather.setDeckFloor( name, floor() );
+	weather.setPresetValue( name, field, value() );
 
 }
 const requestedPreset = params.get( 'preset' );
@@ -403,13 +409,15 @@ let hazeReady = false;
 function prepareHaze( state: Readonly<WeatherState> ): void {
 
 	if ( ! hazeReady ) return;
-	hazeKeyAt( sky.elevation, sunRising( sky.sunDir ), weather.skyMix, sky.weather.windSpeed, sky.weather.rain, hazeKey );
+	const rising = sunRising( sky.sunDir );
+	hazeKeyAt( sky.elevation, rising, weather.skyMix, sky.weather.windSpeed, sky.weather.rain, hazeKey );
 	pipeline.air.haze.value = sky.weather.haze * hazeKey.amount;
 	pipeline.air.fog.value = Math.max( sky.weather.fog, hazeKey.mist );
 	pipeline.air.setLook( hazeKey );
-	// the air's sunlit haze takes the key the land does, through the clouds' shadow (its own read)
+	// the air's sunlit haze takes the key the land does, through the clouds' shadow (its own read),
+	// and its sky light the weather's sky as the sky takes it (Weather.ts `skyAmbientGain`)
 	pipeline.air.weatherLight.direct = state.directVisibility;
-	pipeline.air.weatherLight.ambient = state.ambientGain;
+	pipeline.air.weatherLight.ambient = skyAmbientGain( state, sky.elevation, rising, cloudedShare( weather.skyMix ) );
 	pipeline.air.prepareMedium();
 
 }
@@ -423,7 +431,7 @@ function prepareSkyState(): void {
 	keyGlint.spread.value = state.glintSpread ?? 0;
 	sky.track( celestial, state, cloudOverride, weather.front, weather.skyMix );
 	prepareHaze( state );
-	lastWeatherSignature = `${ state.coverage },${ state.density },${ state.directVisibility },${ state.ambientGain },${ state.haze }`;
+	lastWeatherSignature = `${ state.coverage },${ state.density },${ state.directVisibility },${ state.ambientGain },${ state.daySky },${ state.daySkyExponent },${ state.haze }`;
 
 }
 
@@ -1953,7 +1961,7 @@ function tick( time: number ): void {
 	skyElapsed += environmentDt;
 	const skyInterval = runtimeQuality.skyUpdateInterval;
 	const ws = weather.state;
-	const weatherSignature = `${ cloudOverride ?? ws.coverage },${ ws.density },${ ws.directVisibility },${ ws.ambientGain },${ ws.haze }`;
+	const weatherSignature = `${ cloudOverride ?? ws.coverage },${ ws.density },${ ws.directVisibility },${ ws.ambientGain },${ ws.daySky },${ ws.daySkyExponent },${ ws.haze }`;
 	if ( ! sky.busy && ! sky.transitioning && skyElapsed >= skyInterval &&
 		( simTime !== lastSkyTime || weatherSignature !== lastWeatherSignature || ( ! manualSun && dayCycle.hour !== lastSkyHour ) ) ) {
 

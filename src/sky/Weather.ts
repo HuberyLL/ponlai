@@ -1,3 +1,5 @@
+import { skyNight } from './DayCycle.ts';
+
 // Weather presets, their blending and the auto-weather chain. Bad weather dims and desaturates the
 // existing light; it never adds a grey screen veil (docs/art-direction.md). A weather change sweeps
 // the sky as a front from upwind, and the island's lighting follows the front's progress over the
@@ -151,6 +153,33 @@ export function cloudedHighSun( elevation: number, skyMix: readonly number[], lo
 	return cloudedShare( skyMix ) * t * t * ( 3 - 2 * t );
 
 }
+const SIN_12 = Math.sin( 12 * Math.PI / 180 );
+const SIN_18 = Math.sin( 18 * Math.PI / 180 );
+
+/** The weather's day sky at the sun's `elevation` (degrees), from its level at 18 degrees
+ * (`daySky`) and its exponent (`daySkyExponent`): the level times the sine of the sun's height over
+ * 18 degrees' to the power -`exponent`, held at its 12-degree value under 12 degrees, so a
+ * positive exponent lifts a low sun's sky and lowers a high one's. 1 at every height for a level of
+ * 1 and an exponent of 0. */
+export function daySkyAt( level: number, exponent: number, elevation: number ): number {
+
+	return level * ( Math.max( Math.sin( elevation * Math.PI / 180 ), SIN_12 ) / SIN_18 ) ** - exponent;
+
+}
+
+/** The weather's ambient gain as every reader of it takes it (Sky.ts: the drawn sky and its clouds,
+ * the stars, the environment's bake and the sea's body at the bake's sun; main.ts: the air's sky
+ * light): the state's `ambientGain` times its day sky (`daySkyAt`), which fades back to 1 as the
+ * night key comes into the sky's light (DayCycle.ts `skyNight`, at the sun's `elevation` in
+ * degrees, `rising` or setting, under the weather's clouded share `clouded`): under cloud from 2
+ * degrees down to -6, so the night's sky keeps the light it had. A state whose day sky is 1 keeps
+ * its `ambientGain` exactly. */
+export function skyAmbientGain( state: Readonly<Pick<WeatherState, 'ambientGain' | 'daySky' | 'daySkyExponent'>>, elevation: number, rising: boolean, clouded: number ): number {
+
+	const day = 1 - skyNight( elevation, rising, clouded );
+	return state.ambientGain * ( 1 + ( daySkyAt( state.daySky, state.daySkyExponent, elevation ) - 1 ) * day );
+
+}
 // a sky's share of each kept sky: its own, or overcast's for a parked one
 const skyShares = ( name: WeatherName ): number[] => {
 
@@ -187,7 +216,20 @@ export interface WeatherState {
 	// How far the key's glint widens toward a rough lobe (lighting/SurfaceBRDF.ts `keyGlint`): 0
 	// keeps the disk's representative point as it is, in every weather so far; a knob for wet ones.
 	glintSpread: number;
+	// The sky's own light in the weather, a share of what the atmosphere and the clouds give: the
+	// drawn sky and its clouds, the environment's bake (the land's and the water's sky light), the
+	// sea's body, the air's sky light and the stars all take it (`skyAmbientGain`).
 	ambientGain: number;
+	// The weather's day sky over that: by day the whole sky's light is scaled by `daySky` at a sun
+	// 18 degrees up, and by the sine of the sun's height over 18 degrees' to the power
+	// -`daySkyExponent` at other heights (held at its 12-degree value under 12 degrees), fading back
+	// to 1 as the sky's night comes in (`skyAmbientGain`). 1 and 0 leave the day's sky as the
+	// atmosphere and the clouds give it, in every weather so far. `daySky` sets how bright the
+	// weather's sky and the land under it stand by day; `daySkyExponent` how much of the sky's own
+	// climb with the sun the day keeps (a larger one flattens it). Tunable per clouded sky on debug
+	// pages (`sky.daySky@cloudy|overcast`, `sky.daySkyExponent@...`), which rebakes the sky.
+	daySky: number;
+	daySkyExponent: number;
 	// The air's haze, per metre: the extinction, in the band whose spectral weight is 1 (blue on a
 	// clear day: the hour's key gives the bands' weights, weather/HazeKeys.ts), of the ground layer's
 	// deep part, under its soft top (the hour's key's shape: weather/HazeKeys.ts,
@@ -280,17 +322,20 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // enough that its disc does not show (Sky.ts `domeColour`): the land under it is even, its sky the
 // deck's own glow about the sun's place, which the land takes with the rest of the sky
 // (lighting/AmbientRelight.ts OVERCAST_LAND, CLOUDY_LAND) and the water by DECK_SKY_GAIN; exposed
-// by the sky (post/Exposure.ts).
+// by the sky (post/Exposure.ts). A sky's own light by day may stand at a level of the weather's
+// (`daySky`, `daySkyExponent`), which every reader of the sky's light takes with the weather's
+// `ambientGain` and which fades out as the night comes into the sky (`skyAmbientGain`); every
+// weather so far keeps the day's sky as the atmosphere and the clouds give it.
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
-	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
-	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
-	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, haze: 0.0021, nearDensity: 0.13, nearStart: 100, nearEnd: 700, rain: 0, fog: 0, storm: 0, streaks: 0 },
-	overcast: { coverage: 0.94, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0.3, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, haze: 0.00974, nearDensity: 0.08, nearStart: 250, nearEnd: 500, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
-	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, haze: 0.0095, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
+	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, daySky: 1, daySkyExponent: 0, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
+	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, daySky: 1, daySkyExponent: 0, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
+	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, daySky: 1, daySkyExponent: 0, haze: 0.0021, nearDensity: 0.13, nearStart: 100, nearEnd: 700, rain: 0, fog: 0, storm: 0, streaks: 0 },
+	overcast: { coverage: 0.94, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0.3, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, daySky: 1, daySkyExponent: 0, haze: 0.00974, nearDensity: 0.08, nearStart: 250, nearEnd: 500, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
+	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, daySky: 1, daySkyExponent: 0, haze: 0.0095, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
 	// A squall: the darkest deck, heavy rain, a strong wind (PRESET_WIND) and a rough, white-capped sea.
-	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, haze: 0.0135, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 1, fog: 0.3, storm: 1, streaks: 0 },
+	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, daySky: 1, daySkyExponent: 0, haze: 0.0135, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 1, fog: 0.3, storm: 1, streaks: 0 },
 	// Sea fog forms in calm, moist air under thin high cloud; the sun shows as a pale disk.
-	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, haze: 0.0046, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0, fog: 1, storm: 0, streaks: 0.4 },
+	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, daySky: 1, daySkyExponent: 0, haze: 0.0046, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0, fog: 1, storm: 0, streaks: 0.4 },
 };
 
 // Auto weather: from each state, the next one and its weight. The chain moves among the kept
@@ -372,9 +417,12 @@ const smoothIntegral = ( t: number ) => t * t * t * ( 1 - 0.5 * t );
 const headingDelta = ( from: number, to: number ) => ( ( ( to - from ) % 360 ) + 540 ) % 360 - 180;
 const wrapHeading = ( heading: number ) => ( ( heading % 360 ) + 360 ) % 360;
 
-// The presets the weather moves between: a working copy of WEATHER_PRESETS whose `deckFloor` a
-// debug page may tune (`Weather.setDeckFloor`), so a load, a jump and a front all take the tuned
-// value, as a page loaded with it would. Every other reader keeps WEATHER_PRESETS.
+// The presets the weather moves between: a working copy of WEATHER_PRESETS whose `deckFloor`,
+// `daySky` and `daySkyExponent` a debug page may tune (`Weather.setPresetValue`), so a load, a
+// jump and a front all take the tuned value, as a page loaded with it would. Every other reader
+// keeps WEATHER_PRESETS.
+/** The preset fields a debug page may tune (`Weather.setPresetValue`). */
+export type TunedField = 'deckFloor' | 'daySky' | 'daySkyExponent';
 const WORKING_PRESETS = Object.fromEntries( Object.entries( WEATHER_PRESETS ).map( ( [ name, preset ] ) => [ name, { ...preset } ] ) ) as Record<WeatherName, SkyPreset>;
 
 function presetFor( name: WeatherName ): Readonly<SkyPreset> {
@@ -484,20 +532,20 @@ export class Weather {
 
 	snapshot(): WeatherState { return { ...this.current }; }
 
-	/** Sets the land's floor under a deck for the sky `name` (its preset's `deckFloor`; main.ts
-	 * tunes it on debug pages): every later load, jump and front takes it, and the state as it
-	 * stands follows as a page loaded with it would hold it. Resting on that sky, the state and both
-	 * ends of its front take it; on a front toward it, only the end it moves to (the start is a
-	 * snapshot of the sky it left). */
-	setDeckFloor( name: WeatherName, deckFloor: number ): void {
+	/** Sets a tunable field of the sky `name`'s preset (`TunedField`: the land's floor under a deck,
+	 * the day sky's level and exponent; main.ts tunes them on debug pages): every later load, jump
+	 * and front takes it, and the state as it stands follows as a page loaded with it would hold it.
+	 * Resting on that sky, the state and both ends of its front take it; on a front toward it, only
+	 * the end it moves to (the start is a snapshot of the sky it left). */
+	setPresetValue( name: WeatherName, field: TunedField, value: number ): void {
 
 		presetFor( name );
-		WORKING_PRESETS[ name ].deckFloor = deckFloor;
+		WORKING_PRESETS[ name ][ field ] = value;
 		if ( this.targetName !== name ) return;
-		this.destination = { ...this.destination, deckFloor };
+		this.destination = { ...this.destination, [ field ]: value };
 		if ( this.duration > this.elapsed ) return;
-		this.from.deckFloor = deckFloor;
-		this.current.deckFloor = deckFloor;
+		this.from[ field ] = value;
+		this.current[ field ] = value;
 
 	}
 
