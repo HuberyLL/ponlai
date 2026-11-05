@@ -111,6 +111,28 @@ export function deckTakeover( elevation: number, clouded: number, overcast: numb
 
 }
 
+/** How far the deck's floor of the key has taken over under the weather's cloud `clouded`, of which
+ * overcast's share is `overcast`, at the sun's `elevation` (degrees), for the floor the air under
+ * the deck keeps (Sky.ts `deckKeyFloor`): `deckTakeover` with overcast's share whole at every sun.
+ * The floor is the light the closed deck passes down in place of the key it hides, so it stays
+ * while any key lights the deck, the sun by day, the moon by night, and the key's own light sets
+ * its level. Equal to `deckTakeover` by day (`overcastDeckLight` is exactly 1 there). */
+export function deckFloorTakeover( elevation: number, clouded: number, overcast: number ): number {
+
+	return clouded > 0 ? ( ( clouded - overcast ) * deckRamp( elevation ) + overcast ) / clouded : 0;
+
+}
+
+/** The key's gain on the deck's floor for the air under it (Sky.ts `deckKeyFloor`): overcast's
+ * gain `overcastKey` by its share `overcast` at every sun (`deckFloorTakeover`), a cloudy deck's
+ * `cloudyKey` by its share `cloudy` and `deckRamp`. Equal by day to the land's gain, whose overcast
+ * part fades with `overcastDeckLight` (Sky.ts `keyCloudFloor`). */
+export function floorKeyGain( elevation: number, overcast: number, cloudy: number, overcastKey: number, cloudyKey: number ): number {
+
+	return 1 + ( overcastKey - 1 ) * overcast + ( cloudyKey - 1 ) * cloudy * deckRamp( elevation );
+
+}
+
 /** The sky's light on the land and in the water under a closed deck, over the sky's irradiance bake
  * (lighting/AmbientRelight.ts, the probes' sky; ocean/Water.ts, the body's in-scatter): one gain
  * for both. It stands in for the soft light the land keeps under cloud: the light that comes

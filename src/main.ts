@@ -418,6 +418,9 @@ function prepareHaze( state: Readonly<WeatherState> ): void {
 	// and its sky light the weather's sky as the sky takes it (Weather.ts `skyAmbientGain`)
 	pipeline.air.weatherLight.direct = state.directVisibility;
 	pipeline.air.weatherLight.ambient = skyAmbientGain( state, sky.elevation, rising, cloudedShare( weather.skyMix ) );
+	// the floor of the key under a closed deck (Sky.ts `deckKeyFloor`), which the seen panorama's
+	// bake reads as the frame's air does: set with the medium, so a bake takes its own scene's
+	pipeline.air.keyFloor.value = sky.deckKeyFloor;
 	pipeline.air.prepareMedium();
 
 }

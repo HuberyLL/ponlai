@@ -312,7 +312,10 @@ const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
 //     shadow along the key light (`cloudShaft`: the clouds' map, its air's channel, read at the point's ground point
 //     along the clouds' own light, the flat beam the map was built along, sharpened against its blur
 //     so the gaps show as shafts, lifted above the shell's base and floored; the gain 10, no floor and no cut
-//     toward the light until set), sampled at four points of each froxel whenever it is recomputed
+//     toward the light until set), never below the floor a closed deck keeps (`keyFloor`, Sky.ts
+//     `deckKeyFloor`: the light the deck passes down in place of the key it hides, so the air under
+//     the deck's glow lights toward the sun by day and the moon by night through its own phase;
+//     0 under every other sky), sampled at four points of each froxel whenever it is recomputed
 //     (the frame's jittered point and three more the R3 sequence's steps from it, averaged, so the
 //     history converges to the cell's mean) and filtered over frames, the history weighing 0.95
 //     (the ambient visibility with it): what any caster or cloud cuts out of the lit air shows as shafts, whether or not the
@@ -514,6 +517,12 @@ export class VolumetricHaze {
 	// deck leaves no beam to scatter).
 	readonly keyDir = uniform( new THREE.Vector3( 0, 1, 0 ) );
 	readonly keyColor = uniform( new THREE.Color( 0, 0, 0 ) );
+	// The floor of the key's visibility through the clouds under a closed deck (Sky.ts
+	// `deckKeyFloor`, set with the medium each frame and before each bake: main.ts `prepareHaze`):
+	// the light the deck passes down in place of the key it hides, which the air takes through its
+	// own phase toward the key, so the air under the deck's glow brightens with it. The dome's air and the seen panorama's take it, the lighting's sources
+	// never (`openSky`, Sky.ts `bakeGlow`).
+	readonly keyFloor = uniform( 0 );
 	// the moon's aerosol lobe (MOON_AEROSOL)
 	private readonly moonAnisotropy = tuneUniform( 'haze.moon.mieG', MOON_AEROSOL.anisotropy, { min: 0.7, max: 0.82, onChange: markSkyRetune } );
 	// the medium's and the light's tunable knobs (debug/Tune.ts; the sun's aerosol share takes
@@ -704,7 +713,7 @@ export class VolumetricHaze {
 		// it is compared at the far end.
 		const coordinate = this.sunShadow.coordinate.mul( vec4( p, 1 ) ).xyz.toVar();
 		const sun = this.sunShadow.volumeVisibility( vec3( coordinate.xy, min( coordinate.z, 0.99999 ) ) ).toVar();
-		const key = sun.mul( this.cloudShaft( p, normalize( p.sub( this.origin ) ), sky ) );
+		const key = sun.mul( max( this.cloudShaft( p, normalize( p.sub( this.origin ) ), sky ), this.keyFloor ) );
 		// the open sky's: dark under the cover's top, lit above it, rising over ± the softness, open
 		// wherever the top is the sea's, times the probes' sky visibility, never below the floor
 		const cover = this.cover, A = this.ambientSettings;
@@ -1079,8 +1088,10 @@ export class VolumetricHaze {
 		const f0 = nearFactor( t0, this.near ).toVar();
 		// the sun's visibility at a point t metres along d: the clouds' shadow, as the shadow kernel
 		// takes it (no caster of the island's: its maps reach no farther than the island)
-		// (along d from its own start, never the camera's: the bake holds no camera)
-		const shaft = ( t: F ): F => this.cloudShaft( vec3( 0, y, 0 ).add( d.mul( t ) ), d, clouds );
+		// (along d from its own start, never the camera's: the bake holds no camera; the floor
+		// under a closed deck, `keyFloor`, in the seen panorama only, as the dome's air takes it)
+		const floor = this.keyFloor.mul( clouds.bakeGlow ).toVar();
+		const shaft = ( t: F ): F => max( this.cloudShaft( vec3( 0, y, 0 ).add( d.mul( t ) ), d, clouds ), floor );
 		const first = scatter( y.add( y0 ).mul( 0.5 ), shaft( t0.mul( 0.5 ) ), float( 1 ) ).toVar();
 		Loop( D, ( { i } ) => {
 
@@ -1360,7 +1371,7 @@ export class VolumetricHaze {
 		const key = this.key;
 		key.length = 0;
 		key.push( ...camera.matrixWorld.elements, ...projection.elements, frame.time, width, height, outputWidth, outputHeight, restEpoch.scene,
-			...frame.signature, ...this.keyDir.value.toArray(), this.keyColor.value.r, this.keyColor.value.g, this.keyColor.value.b,
+			...frame.signature, ...this.keyDir.value.toArray(), this.keyColor.value.r, this.keyColor.value.g, this.keyColor.value.b, this.keyFloor.value,
 			...this.ground.value.toArray(), ...this.layer.value.toArray(), ...this.sigma.value.toArray(), ...this.near.value.toArray(),
 			S.ambientFloor, S.ambientSoftness, this.cover?.version ?? 0,
 			S.near, S.far, S.growth, S.restFrames, S.jitter ? 1 : 0 );

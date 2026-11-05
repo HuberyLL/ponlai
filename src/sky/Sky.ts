@@ -23,7 +23,7 @@ import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
 import { DAY_EXPOSURE, DUSK_DEPTH, displayNight, duskIn, nightAmbientShare, skyNight, starNight, sunRising, twilightMoon, twilightMoonSky, type DayCycleSnapshot } from './DayCycle.ts';
-import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckRamp, deckTakeover, overcastDeckLight, skyAmbientGain, type WeatherFront, type WeatherState } from './Weather.ts';
+import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckFloorTakeover, deckRamp, deckTakeover, floorKeyGain, overcastDeckLight, skyAmbientGain, type WeatherFront, type WeatherState } from './Weather.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
@@ -77,8 +77,9 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // VolumetricHaze.ts `openSky`, toward every direction from the sea's level, unshadowed): the
 // environment and the dome are one sky, its haze light included, so the ground's sky light takes the
 // light the haze scatters and the sea reflects it (the seen panorama, above the horizon); one sky but
-// for the closed deck's glow about the key light (`deckGlow`), which only the dome and the seen
-// panorama draw (`bakeGlow`), so the sea reflects it and no light source takes it. Under the horizon the environment is
+// for the closed deck's glow about the key light (`deckGlow`) and the air's floor of the key under
+// the deck (VolumetricHaze.ts `keyFloor`), which only the dome and the seen panorama take
+// (`bakeGlow`), so the sea reflects them and no light source takes them. Under the horizon the environment is
 // the distant sea, its reflection of the sky over its body, which the light that reaches the sea
 // lights, the sky's and the sun's (SEA_KNEE).
 // The sun's disc and the moon's take the clouds' transmittance once, per pixel, in the composite
@@ -1160,8 +1161,10 @@ export class Sky {
 	// fogs what it shows of it under the horizon itself
 	private bakeHaze = uniform( 0 );
 	// 1 while the bake draws the seen panorama, which draws the closed deck's glow as the dome does
-	// (`deckGlow`), so the sea reflects it; the lighting's sources take none
-	private bakeGlow = uniform( 0 );
+	// (`deckGlow`) and the air's floor of the key under the deck (VolumetricHaze.ts `keyFloor`), so
+	// the sea reflects them; the lighting's sources take neither
+	readonly bakeGlow = uniform( 0 );
+	private keyFloorUnderDeck = 0;
 	private starFootprint = uniform( 1 );
 
 	constructor( renderer: THREE.WebGPURenderer, { sunIlluminance = SUN_ILLUMINANCE, elevation = 32, azimuth = - 8 } = {} ) {
@@ -1578,6 +1581,13 @@ export class Sky {
 
 	get transitioning(): boolean { return this.transitionDuration > 0 && this.transitionElapsed < this.transitionDuration; }
 	get moonDir(): THREE.Vector3 { return this.night.moonDir.value; }
+	/** The floor of the key's visibility the air under a closed deck keeps (VolumetricHaze.ts
+	 * `keyFloor`), this frame's: the weather's `deckFloor` times the key's gain under the deck, at
+	 * most 1, by how far the deck's floor has taken over (Weather.ts `deckFloorTakeover`,
+	 * `floorKeyGain`). It follows the key by day, at dusk and by night, so the air toward the sun or
+	 * the moon keeps the light the deck passes down in place of the key it hides; 0 under clear,
+	 * fair and cloudy skies (their `deckFloor`). */
+	get deckKeyFloor(): number { return this.keyFloorUnderDeck; }
 	/** The distant sea's body radiance, the environment's lower half, as the latest bake lit it (read
 	 * back with its deck irradiance: `landSea`). */
 	get seaRadiance(): THREE.Color { return this.seaLight; }
@@ -1952,6 +1962,11 @@ export class Sky {
 		const cloudyShare = skyMix ? cloudedShare( skyMix ) - overcastShare : 0;
 		const deckKeyGain = 1 + ( OVERCAST_KEY_GAIN() - 1 ) * overcastShare * overcastDeckLight( this.elevation ) + ( CLOUDY_KEY_GAIN() - 1 ) * cloudyShare * deckRamp( this.elevation );
 		this.keyCloudFloor.value = THREE.MathUtils.lerp( weather?.cloudFloor ?? 0, Math.min( ( weather?.deckFloor ?? 0 ) * deckKeyGain, 1 ) * sunShare, skyMix ? deckTakeover( this.elevation, cloudedShare( skyMix ), skyMix[ 3 ] ?? 0 ) : 0 );
+		// the air's floor of the key under the deck (`deckKeyFloor`): the same floor and gain, with
+		// overcast's share whole at every sun and no sun's share, so it rides on whichever light keys
+		// the scene (equal to the land's by day)
+		const floorGain = floorKeyGain( this.elevation, overcastShare, cloudyShare, OVERCAST_KEY_GAIN(), CLOUDY_KEY_GAIN() );
+		this.keyFloorUnderDeck = Math.min( ( weather?.deckFloor ?? 0 ) * floorGain, 1 ) * ( skyMix ? deckFloorTakeover( this.elevation, cloudedShare( skyMix ), overcastShare ) : 0 );
 		this.castShadow.value = weather?.castShadow ?? 1;
 		// A front that has arrived is the sky at rest: its `from` is no longer in the sky, and the
 		// bounds that take the larger of the two would keep marching for it.
