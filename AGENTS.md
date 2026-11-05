@@ -171,7 +171,8 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 - `tools/`: captures, profiling, the GPU lock and the probes (`docs/tools.md`); the WGSL build
   (`wgsl-build.mjs`, its entries in `wgsl-build/`); the world's chunk checks
   (`verify-world-chunks.mjs`) and statistics (`verify-world-stats.mjs`), on the node helpers in
-  `world-node.mjs`.
+  `world-node.mjs`; the game played headless for days, with a transcript, a timeline and a summary
+  of what the islanders did, for a designer or a brain judged offline (`play-game.mjs`).
 
 ## Rules for every change
 

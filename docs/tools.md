@@ -1361,6 +1361,10 @@ the shaded ones are, how much of the lawn they cover and what colour the lit law
 Which assets a commit runs with, whether `public/` matches them, and how to publish a change to
 them: `tools/assets.mjs` (Assets), never a file committed to git.
 
+What the islanders do over days of play, how the needs and the stock run, and how a brain plays
+from what it perceives: `tools/play-game.mjs` (Other tools), not a loop over the simulation of
+one's own.
+
 What WGSL a TSL kernel, pass or material compiles to, which bindings and uniforms each stage
 declares, and whether one exceeds WebGPU's default limits, without a GPU: `tools/wgsl-build.mjs`
 with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script of one's own.
@@ -1424,6 +1428,26 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   (`src/game/save.ts`: the simulation and the record read back as written and played on the same,
   a version-17 save carried over, saves no step reaches refused) and the island's growth; its island is in
   `tools/game-fixture.mjs`.
+- `tools/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow] [--population 0]
+  [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>] [--latency 90] [--out dir]`
+  (plain `node`) plays the game headless, as the page runs it (a tick at a time, the record looking
+  after each, the leader's lines and the growth between ticks), and writes what happened to
+  `artifacts/play/<stamp>/` (`--out`): `transcript.md` (day by day, the record's entries, the
+  islanders' actions with their outcomes, consecutive alike ones merged, their words, needs every
+  six game hours and a table per day), `timeline.json` (every islander each game hour: position,
+  needs, bag, action), `summary.json` (per islander the share of time by activity, satiety's
+  minimum and mean, the fish caught, eaten, given and stored; the dead, the buildings and when
+  they were built, the stock) and `record.json`, with a short summary on stdout. `--place` puts
+  blueprints down at the start (at the first ground that takes one without a point), `--population`
+  adds islanders, `--grow` adds the next piece when the population reaches a step, and `--script`
+  has the leader speak at given times (`[ { "at": "d1 08:30", "to": "all" | [ "v1" ], "words": "..." } ]`),
+  as the speak bar does (`Game.speak`, mirrored). `--brain` takes a module whose `createBrain` (or
+  default export) receives `{ heard, takeHeard, hasHeard, islander, note, options }` and returns a
+  Brain; an asynchronous one's answers land `--latency` game seconds after each thought is asked
+  (90: three real seconds at the default day clock), the run waiting for an answer that takes longer,
+  so the timing never depends on the wall clock. With the stand-in the same options write the same
+  files byte for byte. Five game days of the stand-in take about two seconds; a run with a
+  language-model brain goes through `tools/job.mjs`. The options and guarantees are in its header.
 - `tools/verify-i18n.mjs [--strict] [--list]` (plain `node`) checks the game interface's words:
   it fails on Chinese written in `src/` outside the catalogues (`src/game/ui/i18n/`; the content
   it allows, the islanders' names and the debug panel's placeholder lines, is listed in the tool)
