@@ -55,7 +55,8 @@
 // `options` (this run's). A brain that keeps failing (MAX_FAILURES answers rejected in a row) ends
 // the run with exit 1, its outputs written.
 //
-// Outputs, in the --out folder: transcript.md (day by day: the record's entries, the islanders'
+// Outputs, in the --out folder: transcript.md (day by day: the record's entries in the words of
+// the record page, src/game/ui/data/record.ts, the building one is about by its id; the islanders'
 // actions with their outcomes, consecutive alike ones merged, what they said, the brain's thoughts
 // when it is asynchronous, needs every six game hours, and a table per day), timeline.json (each
 // game hour, every islander's position, needs, bag and action), summary.json (per islander the
@@ -67,12 +68,13 @@
 // through, 1 when it failed (a brain that kept failing, an error), 2 for a bad option. A long run
 // (many days, a language-model brain) goes through tools/job.mjs.
 //
-// Generic: no need, item, option or building is named here. The needs are the body's own keys,
-// the activities the calls under way, an item's flows the bag's changes put down to the call that
-// made them, the buildings and the stock the state's: a new rule shows in the outputs without a
-// change to the tool.
+// Generic: no need, item, option, building or kind of record entry is named here. The needs are
+// the body's own keys, the activities the calls under way, an item's flows the bag's changes put
+// down to the call that made them, the buildings and the stock the state's, the record's lines its
+// kinds' rows: a new rule shows in the outputs without a change to the tool.
 import './qos.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { registerHooks } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { newGame } from '../src/game/sim/Sim.ts';
@@ -84,6 +86,19 @@ import { dayOf, minuteOf } from '../src/game/sim/clock.ts';
 import { ageOf } from '../src/game/sim/life.ts';
 import { SECONDS_PER_GAME_DAY } from '../src/game/sim/types.ts';
 import { inputAt } from './game-fixture.mjs';
+
+// The record's lines in the interface's words (src/game/ui/data/record.ts, its catalogue
+// i18n/zh-CN.json): the page's bundler imports a catalogue as JSON, node as a module whose default
+// export it is.
+registerHooks( { load( url, context, next ) {
+
+	if ( ! url.endsWith( '.json' ) || ! url.includes( '/src/game/ui/i18n/' ) ) return next( url, context );
+	return { format: 'module', shortCircuit: true, source: `export default ${ readFileSync( new URL( url ), 'utf8' ) };` };
+
+} } );
+const { RECORD_KINDS } = await import( '../src/game/ui/data/record.ts' );
+const { BUILDINGS } = await import( '../src/game/ui/data/buildings.ts' );
+const { t } = await import( '../src/game/ui/i18n/i18n.ts' );
 
 const HOUR = 3600;
 // rejected answers in a row that end the run
@@ -580,24 +595,28 @@ function round( x, digits ) {
 
 }
 
-/** The record's new entries as transcript lines (an islander's words come from its `say`). */
+// the record's namer, as the interface's (ui/Shared.ts): islanders by name, buildings by the
+// build bar's row for their kind
+const naming = { person: label, building: ( kind ) => BUILDINGS.find( ( r ) => r.kind === kind )?.name ?? kind };
+
+/** The record's new entries as transcript lines, each as the record's page writes it (the kind's
+ * row in ui/data/record.ts, a kind without one as its JSON); the building an entry is about by its
+ * id. Words: the player's to whom (ui/Record.ts), an islander's come from its `say`. */
 function readRecord() {
 
 	for ( ; recorded < record.entries.length; recorded ++ ) {
 
-		const e = record.entries[ recorded ];
+		const e = record.entries[ recorded ], row = RECORD_KINDS[ e.kind ];
 		const tick = ( ( e.day - 1 ) * 24 - options.hour ) * HOUR + e.minute * 60;
-		const who = e.who === 'player' ? 'the player' : e.who === 'island' ? 'the island' : label( e.who );
-		const to = e.to === 'all' ? 'everyone' : e.to?.map( label ).join( ', ' );
-		const text = {
-			landed: () => `${ who } landed`,
-			died: () => `${ who } died at ${ e.text }`,
-			said: () => e.who === 'player' ? `the player said to ${ to }: ${ e.text }` : null,
-			gave: () => `${ who } gave ${ to } ${ e.count } ${ e.text }`,
-			placed: () => `the player placed a ${ e.text } (${ e.subject })`,
-			built: () => `${ e.subject } (${ e.text }) was built`,
-			need: () => `${ who }'s ${ e.text } turned critical`,
-		}[ e.kind ]?.() ?? ( e.kind === 'said' ? null : `${ e.kind } ${ JSON.stringify( e ) }` );
+		let text;
+		if ( ! row ) text = `${ e.kind } ${ JSON.stringify( e ) }`;
+		else if ( ! row.words ) text = row.deed( e, naming, false ) + ( e.subject ? ` (${ e.subject })` : '' );
+		else if ( e.who === 'player' ) {
+
+			const to = e.to === 'all' ? t( 'record.toAll' ) : t( 'record.toSome', { names: e.to.map( label ).join( t( 'list.and' ) ) } );
+			text = `${ t( 'record.you', { to } ) }: ${ e.text }`;
+
+		}
 		if ( text ) push( Math.max( tick, 0 ), `${ String( Math.floor( e.minute / 60 ) ).padStart( 2, '0' ) }:${ String( e.minute % 60 ).padStart( 2, '0' ) } [record] ${ text }` );
 
 	}

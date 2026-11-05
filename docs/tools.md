@@ -1436,8 +1436,9 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   (plain `node`) plays the game headless in the page's own session (`src/game/Session.ts`, nothing
   copied from the page: a frame of one tick at a time, a growth due asked for before it, the record
   looking after each, the leader's lines between them), and writes what happened to
-  `artifacts/play/<stamp>/` (`--out`): `transcript.md` (day by day, the record's entries, the
-  islanders' actions with their outcomes, consecutive alike ones merged, their words, needs every
+  `artifacts/play/<stamp>/` (`--out`): `transcript.md` (day by day, the record's entries in the
+  record page's words, `src/game/ui/data/record.ts` and its catalogue, so a new kind of entry needs
+  no change to the tool; the islanders' actions with their outcomes, consecutive alike ones merged, their words, needs every
   six game hours and a table per day), `timeline.json` (every islander each game hour: position,
   needs, bag, action), `summary.json` (per islander the share of time by activity, each need's
   lowest, mean and highest, each item's flows by the call that moved it, so a new need, item or
