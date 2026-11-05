@@ -310,8 +310,8 @@ export function lowSunSkyLift( elevation: number, clouded: number ): number {
  * deck's light (`overcastDeckLight`: at every sun by day, gone by -6 degrees). The land under the
  * deck takes its light from the drawn sky's integral, the bake (its glow about the sun's place
  * included, the clouds' forward lobe: sky/Clouds.ts FORWARD_WEIGHT), as the sky's soft fill from
- * every side, times this; the sun adds only what gets through the deck (Weather.ts, overcast:
- * Beer's law along the key, none under the rolls). The ground takes it whether or not water lies
+ * every side, times this; the key adds the weather's floor of it through the sun's map (sky/
+ * Weather.ts `deckFloor`, Sky.ts `keyDirectVisibility`). The ground takes it whether or not water lies
  * over it: where a material reads the environment's light in the volume's place (the sea floor, the
  * walls under the water) the environment's diffuse takes the same gain (AmbientGrade.ts `landSky`).
  * The water keeps the deck's gain alone, whichever reads it: the water drawn (ocean/Water.ts) and
@@ -319,8 +319,8 @@ export function lowSunSkyLift( elevation: number, clouded: number ): number {
  * Per unit of gain the ambient irradiance on open level ground stands under the bake's (the sky's
  * dering window takes part of it: see the header). The value sets the land's light against the
  * deck's: a unit moves the meadow and the crowns against the sky over them alike, so it sets the
- * two together, with the lit patches the key's gain adds (main.ts OVERCAST_KEY_GAIN), and leaves
- * the crowns' balance against the meadow to the vegetation. Tunable:
+ * two together, with the key's floor setting the direct share of the light on the faces turned to
+ * the sun, and leaves the crowns' balance against the meadow to the vegetation. Tunable:
  * `lighting.relight.overcastLand`. */
 const OVERCAST_LAND = tune( 'lighting.relight.overcastLand', 6.3, { min: 1, max: 24 } );
 /** The land's sky gain under a cloudy deck, in place of the deck's (sky/Weather.ts DECK_SKY_GAIN,

@@ -7,11 +7,15 @@ import { keyCloudReaders } from './KeyCloud.ts';
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 
-// The key's gain under a deck, per point. The gain (main.ts OVERCAST_KEY_GAIN, CLOUDY_KEY_GAIN)
-// stands for the deck's forward light the key's direction carries through a thin part of the deck,
-// which the sky's one key does not: it belongs to the key's path through cloud, so it is gated by
-// the clouds' transmittance T along that path at the point (Clouds.ts `shadow`, the T the clouds'
-// shadow and the deck's lit patches take). Where the deck lets T 0.6 or less through, the key takes
+// The key's gain under a deck, per point. Both gains (main.ts OVERCAST_KEY_GAIN, CLOUDY_KEY_GAIN)
+// start at 1, where nothing here is built: under a deck the land's directional light is the
+// weather's floor of the key through the sun's map (sky/Weather.ts `deckFloor`), and the wider
+// forward light the deck scatters about the sun's place is drawn in the sky, which the land's
+// ambient light takes (lighting/AmbientRelight.ts OVERCAST_LAND, CLOUDY_LAND). A gain over 1
+// stands for more of the deck's forward light the key's direction carries through a thin part of
+// the deck, which the sky's one key does not: it belongs to the key's path through cloud, so it is
+// gated by the clouds' transmittance T along that path at the point (Clouds.ts `shadow`, the T the
+// clouds' shadow takes). Where the deck lets T 0.6 or less through, the key takes
 // the weather's whole gain; from 0.6 to 1 its share falls to none on a smoothstep, so in a gap,
 // where the sun reaches the ground through no cloud, the key is the sky's own and a gap's lit
 // ground stands as a clear day's under the same sun but for the sky's light. The curve is
@@ -51,8 +55,8 @@ type V3 = THREE.Node<'vec3'>;
 //   relation: van de Hulst, "Multiple Light Scattering", 1980). Our approximation built on it takes
 //   the share of the lobe still turned to the key as exp( - ( 1 - g ) tau ) = T^( 1 - g ),
 //   T = exp( - tau ) the deck's
-//   transmittance along the key at the point (the clouds' shadow is the deck's own optical depth by
-//   Beer's law: Weather.ts `deckFloor`), and the rest is turned to the zenith: the axis is
+//   transmittance along the key at the point (the clouds' shadow: Beer's law over the deck's own
+//   optical depth, Clouds.ts `shadow`), and the rest is turned to the zenith: the axis is
 //   A = w L + ( 1 - w ) up, w = T^0.15 (0.9 at T 0.5, 0.5 at T 0.01, about the least T the map
 //   stores: its march stops past tau 12, where the multiple-scattering share it keeps,
 //   0.2 e^( - tau / 4 ), is 0.01). The two lobes mix linearly, so the irradiance is the form above
@@ -66,10 +70,10 @@ type V3 = THREE.Node<'vec3'>;
 //   the sky's key through the clouds' own transmittance, and under a deck the sea's soft sheen
 //   toward the sun is the sky's reflection. Wherever the gain is 1 (a clear or fair sky, by night)
 //   the lobe is not built at run time (a branch on the gain) and the direct key is the sky's key.
-// - Why 0.6: overcast's lit patches (sky/Sky.ts, its cloud form) peak about there, so a patch keeps
-//   the gain over most of its area and gives part of it back only at its clearest; a cloudy deck's
-//   thin parts reach past it toward its gaps, which keep none of it, so a gap's lit ground stands as
-//   a clear day's under the same sun but for the sky's light, not times the gain.
+// - Why 0.6: overcast's closed deck lets far less through everywhere (sky/Clouds.ts), so under it a
+//   gain is whole; a cloudy deck's thin parts reach past 0.6 toward its gaps, which keep none of it,
+//   so a gap's lit ground stands as a clear day's under the same sun but for the sky's light, not
+//   times the gain.
 
 /** The weather's key gain under its deck (main.ts publishLighting), 1 without a deck. */
 export const keyDeckGain = uniform( 1 );
