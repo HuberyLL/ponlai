@@ -635,7 +635,8 @@ not a polling loop. Each eval's value lands in the capture's JSON as `evals: [ {
 `--eval` runs before readiness, on a fresh load before the sun's map has even drawn (receivers
 read lit until it has), so it sets the view up; a reading of the frame that is shot goes in
 `--eval-ready`, which runs once the page is ready, with the loop stopped on that frame (JSON
-`readyEvals`). capture-set passes both through after its `--`.
+`readyEvals`). capture-set passes both through after its `--`, and then takes a page per view (a
+scene jump does not undo what they change).
 
 Captures and clips run in "fast mode" (`tools/capture-browser.mjs`): the browser runs in a
 persistent profile slot, `artifacts/.capture-profiles/<browser build>/<n>` of the main checkout
@@ -746,7 +747,11 @@ shifts, and one recapture before a failure counts; thresholds in `tools/parity/t
 capture-set opens one page per set (one per `--jobs` worker) and reaches every view after the
 first by the exact scene jump (`__PONLAI__.establishScene( <the view's query> )`, then the view's eval
 and the usual readiness): only load-time options (quality, aa, size and dpr, debug switches) need a
-new page, and a set shares them. Views need not be views.mjs's: `--view "name:query[::js]"`,
+new page, and a set shares them. The jump does not undo what an eval changed outside the scene's
+options and camera (GUI settings, Tune, debug flags), so the view after one with an eval of its own
+(an ad-hoc view's js, anything but exactly a views.mjs view's eval) loads a fresh page, and an
+`--eval` or `--eval-ready` passed through after `--` takes a page per view: every view is the frame
+its own fresh load draws. Views need not be views.mjs's: `--view "name:query[::js]"`,
 `--views-file f.json` and `--sweep "key=a,b,c"` (each view per value, e.g. `--sweep
 weather=fair,rain --sweep hour=7,12,17`) capture ad-hoc views through the same pages, jump and
 readiness (and `--quick`, `--reference`, `--check`); use them instead of a script that loops

@@ -29,7 +29,15 @@
 //   page (capture.mjs --worker), loads the first view it is given and reaches each later one by
 //   `__PONLAI__.establishScene( <the view's query> )` (src/main.ts: the frame then equals a fresh
 //   load's, byte for byte wherever the fresh load repeats), then the view's eval and the usual
-//   readiness and shot. A view's JSON says how it was reached (`page`: visit, load or jump, the view
+//   readiness and shot. The jump resets the scene's options and camera, not what an eval changed
+//   besides (GUI settings, Tune, debug flags, a uniform), so that holds only after views whose evals
+//   it covers: none, or exactly a views.mjs view's (camera placement, a weather change, which
+//   tools/verify-scene-jump.mjs checks from other scenes). After a view with an eval of its own
+//   (`--view ...::js`, a views-file `eval`, a `like=` view's js, a sweep over such a view;
+//   adhoc.mjs `jumpClean`) the page ends and the next view loads fresh; an `--eval` or
+//   `--eval-ready` after `--` (run on every view) gives a page per view. A first view that set an
+//   exposure offset used to shift every later view's frame by a stop. A view's JSON says how it was
+//   reached (`page`: visit, load or jump, the view
 //   before, the page's memory). The views are handed out one at a time from one queue, so --jobs
 //   balances itself. Builds whose page does not mark the exact jump (`__PONLAI__.sceneJump`; older
 //   commits) get a page per view, as before, said once; --page-per-view forces that. A stored
@@ -86,7 +94,8 @@
 //   commit (--store) on those crops; a short table per variant.
 // Options after `--` pass through to capture.mjs (e.g. `-- --wait-for "expr" --frames 4 --every 5`;
 // an `--eval` there runs after the view's own, before readiness, and an `--eval-ready` once the
-// view is ready, on the frame shot: a reading of the frame belongs there).
+// view is ready, on the frame shot: a reading of the frame belongs there; either one takes a page
+// per view, see above).
 // Production builds need `?debug` (added here) and the islanders' assets linked into the build's
 // output; see tools/parity/README.md.
 // The set and its capture.mjs workers run with the application scheduling policy on macOS
@@ -98,7 +107,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { viewEval } from './views.mjs';
-import { selectViews, viewQuery, loadSignature, viewDefs, describeViews } from './adhoc.mjs';
+import { selectViews, viewQuery, loadSignature, viewDefs, describeViews, jumpClean } from './adhoc.mjs';
 import { gpuUtilisation } from '../gpu-lock.mjs';
 import { samePixels } from '../capture-browser.mjs';
 import { ensureReference, setKey, resolveRefDir, checkServed } from './reference.mjs';
@@ -247,7 +256,8 @@ async function captureGroup( url, dir, list ) {
 				if ( ! current ) { child.send( { type: 'done' }, () => {} ); return; }
 				const item = current;
 				// (a page that died meanwhile never got it: back in line, no attempt counted)
-				child.send( { type: 'view', view: { key: item.key, query: viewQuery( item.view, common ), evals: [ viewEval( item.view ) ], out: path.join( dir, item.key ) } },
+				// (`last`: an eval the jump does not undo, so the page ends after this view: see the header)
+				child.send( { type: 'view', view: { key: item.key, query: viewQuery( item.view, common ), evals: [ viewEval( item.view ) ], last: ! jumpClean( item.view ), out: path.join( dir, item.key ) } },
 					( error ) => { if ( error && current === item ) { current = null; queue.unshift( item ); } } );
 
 			} else if ( m.type === 'locked' ) {
