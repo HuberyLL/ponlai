@@ -22,7 +22,8 @@ import type { BuildingState, SimState, Vec2 } from './types.ts';
 // may build one site, each adding their work. When the work is done the site is the finished
 // building: its own options and what shows on it. `build` stays on it closed (not offered, refused
 // when called), so whoever else was building it ends at once on their next tick, with the
-// building done as their outcome, instead of standing out the time they had planned. Its stage is a function of its progress alone (stageOf): planned (no work yet), being
+// building done as their outcome, instead of standing out the time they had planned; the work's
+// end is an event (events.ts `built`). Its stage is a function of its progress alone (stageOf): planned (no work yet), being
 // built, built; perception shows how far along it is in whole percent (siteShows), a number like
 // every state that decides outcomes. No materials yet (nothing on the island gives wood or stone): building costs time
 // only. Cancelling a site is not designed yet.
@@ -161,11 +162,13 @@ function buildOption( b: BuildingState, kind: BuildingKind ): PlaceOption {
 	return {
 		open: () => b.worked < kind.work,
 		start: () => b.worked < kind.work ? { ok: true, seconds: kind.work - b.worked } : { ok: false, reason: `${ b.id } is built` },
-		during: () => {
+		during: ( sim ) => {
 
 			if ( b.worked >= kind.work ) return { ok: true, value: `${ b.id } is built` };
 			b.worked ++;
-			return b.worked >= kind.work ? { ok: true, value: `built ${ b.id }` } : null;
+			if ( b.worked < kind.work ) return null;
+			sim.emit( { kind: 'built', tick: sim.state.tick, building: b.id, of: b.kind } );
+			return { ok: true, value: `built ${ b.id }` };
 
 		},
 	};

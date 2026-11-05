@@ -17,9 +17,10 @@ import type { Notice, Vec2, Villager } from './types.ts';
 //   words reach another; nothing here needs the other's consent.
 // - `give` ( { item, count = 1 } ), instant: the giver gives only what it carries, and a bag
 //   without room for all of it refuses the whole gift (nothing moves). The one given to notices
-//   it; the giver's Villager.gave keeps the hand-over for the record.
-// - `follow`, timed without end: it runs until a new action replaces it or the one followed is
-//   gone. A walking follower walks on until its own cell is beside them (PERSON_REACH), so it
+//   it, and the hand-over is an event (events.ts `gave`) for the record.
+// - `follow`, timed without end: it runs until a new action replaces it, or ends interrupted once
+//   the one followed is gone (dead: their place is gone, actions.ts `holds`); it holds wherever
+//   the follower stands, beside them or not. A walking follower walks on until its own cell is beside them (PERSON_REACH), so it
 //   comes to rest with them at hand and can give without a `go`; a standing one stays put while
 //   within FOLLOW_GAP of them, and steps beside them again once they stand. It finds its way
 //   again only when it has no way or its way no longer ends beside them, so it re-plans as the
@@ -90,7 +91,7 @@ function giveOption( person: Villager ): PlaceOption {
 			removeItems( body.bag, what.item, what.n );
 			addItems( person.bag, what.item, what.n );
 			notify( person, { who: body.id, tick, gave: { [ what.item ]: what.n } } );
-			body.gave = { to: person.id, item: what.item, count: what.n, tick };
+			sim.emit( { kind: 'gave', tick, who: body.id, to: person.id, item: what.item, count: what.n } );
 			return { ok: true, value: `gave ${ what.n } ${ what.item } to ${ person.id }` };
 
 		},
@@ -103,11 +104,12 @@ function followOption( person: Villager ): PlaceOption {
 	return {
 		open: () => true,
 		start: () => ( { ok: true, seconds: null } ),
+		// the place's being there is the condition (the one followed alive), checked before this
+		// option's place is built each tick, so `person` is the living islander
+		holds: () => null,
 		during: ( sim, body ) => {
 
-			// the person a place was built for may have died since: look them up by id
-			const leader = sim.villager( person.id );
-			if ( ! leader ) return { ok: false, reason: `${ person.id } is gone` };
+			const leader = person;
 			const place = personPlace( sim, leader );
 			const beside = place.reaches( sim.grid.indexAt( body.pos.x, body.pos.z ) );
 			const gap = distance( body.pos, leader.pos );

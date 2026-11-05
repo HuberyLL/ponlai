@@ -4,35 +4,50 @@ import type { RecordSave } from './Chronicle.ts';
 import { readSave, writeSave } from './save.ts';
 import { loadGame } from './sim/Sim.ts';
 import type { Sim } from './sim/Sim.ts';
-import { actionTools } from './sim/actions.ts';
-import type { Brain, ToolRegistry } from './sim/agent.ts';
+import { act } from './sim/agent.ts';
+import type { Brain, ToolResult } from './sim/agent.ts';
+import type { SimEvent } from './sim/events.ts';
+import { checkArgs } from './sim/schema.ts';
 import { StandInBrain } from './sim/standin.ts';
 import type { EntityId, IslandInput } from './sim/types.ts';
 
 // The game around its simulation, without the page: the simulation installed (sim/Sim.ts) and its
-// record (Chronicle.ts), the brain in the islanders' slot and the tools it acts through, the
-// leader's words as each listener hears them, the island's growth asked of a host, and the save of
-// the simulation with its record (save.ts). The page's game (Game.ts) hosts it beside the view, the
+// record (Chronicle.ts), the brain in the islanders' slot, the stream of what happened handed to
+// its listeners, the player's commands checked at the entrance, the leader's words as each
+// listener hears them, the island's growth asked of a host, and the save of the simulation with its
+// record (save.ts). The page's game (Game.ts) hosts it beside the view, the
 // interface, the scene events and the autosave; tools/play-game.mjs hosts it headless, so a run in
 // node plays the game the page plays, with nothing copied. No three.js or DOM: node runs it by
 // stripping types, as it runs sim/.
 //
+// What happened is one stream (sim/events.ts): the rules emit events at the tick they happen, and
+// the session takes them from the simulation and hands each, in order, to its listeners (`listen`):
+// the record first (Chronicle.note), then the page's interface and the play tool. It hands them on
+// after every call that can make them (`install`, `advance`, `look`, `speak`, `act`, `place`,
+// `setIsland`, `save`), so a listener hears what a call did before the call returns; a late
+// brain's answer (Sim.think) comes between calls, and its events go with the next one, as do those
+// of a host's own calls on the simulation (the debug panel's: an islander added, a walk, a need
+// set). Events carry their own tick, so when they are handed on changes nothing they say.
+//
 // A frame: `advance` asks for a growth that is due, runs the simulation's ticks (Sim.advance) and
 // tells the host how near the next step is; the host shows the frame (on the page the day clock and
-// the weather step by the seconds `advance` returns), and then the record looks at it (`look`) with
-// the sky shown over its ticks. The look is a call of its own because the sky it notes is the one
-// shown after the weather's step. What the host does between frames comes in at the next frame:
-// the leader's words (`speak`), a blueprint placed (the record's next look notes it as the
-// player's, Chronicle.ts), an islander added (a growth it makes due is asked for at the next
-// `advance`).
+// the weather step by the seconds `advance` returns), and then `look` notes the sky shown over its
+// ticks in the record. The look is a call of its own because the sky it notes is the one shown
+// after the weather's step. What the host does between frames comes in through the session's
+// calls: the leader's words (`speak`), a blueprint placed (`place`), an islander added (a growth it
+// makes due is asked for at the next `advance`).
 //
-// Installing a simulation (`install`: a new game, a load) hands it the tools and the brain, and the
-// coming piece once the host has it; the record starts over (or takes a saved one back), the words
-// no thought has taken are forgotten, and the record's first look, before any tick, lands a new
-// game's islanders at its start. So a host adds the islanders a game starts with before installing
-// it.
+// The player's commands are outside input, checked once at the entrance as a brain's calls are
+// (sim/schema.ts; sim/agent.ts `act`): `speak` and `place` refuse what does not match, with the
+// reason, before any rule runs.
 //
-// The leader's words (`speak`) go into the record as the player's; for a brain that hears
+// Installing a simulation (`install`: a new game, a load) hands it the brain, and the coming piece
+// once the host has it; the record starts over (or takes a saved one back), the words no thought
+// has taken are forgotten, and what the simulation emitted before it was installed is handed on: a
+// new game's islanders landing at its start (a loaded one has emitted nothing). So a host adds the
+// islanders a game starts with before installing it.
+//
+// The leader's words (`speak`) are an event as the player's; for a brain that hears
 // (Brain.hears) each listener keeps them until a thought takes them (`takeHeard`, `hasHeard`), and
 // is asked for one at once (Sim.think: not while one is in flight; the words then wait for the next).
 //
@@ -59,14 +74,18 @@ export interface SessionHost {
 	approach?( p: number ): void;
 }
 
+// the player's commands' arguments (sim/schema.ts)
+const SPEAK = { words: { type: 'text' }, to: { type: 'audience' } } as const;
+const PLACE = { kind: { type: 'text' }, x: { type: 'number' }, z: { type: 'number' } } as const;
+
 export class Session {
 
 	/** the simulation installed (set by the first `install`) */
 	sim!: Sim;
 	/** the island's record (沧海录): what happened since the simulation was installed (Chronicle.ts) */
 	readonly record = new Chronicle();
-	/** the tools a brain acts through, by name (sim/agent.ts): the five actions, kept across an install */
-	readonly tools: ToolRegistry = actionTools();
+	// who hears the simulation's events, in order: the record first
+	private readonly listeners: ( ( event: SimEvent ) => void )[] = [];
 	// the brain in the islanders' slot, kept across an install (setBrain)
 	private brain: Brain | null;
 	// the leader's words each islander has heard and no thought has taken yet (takeHeard)
@@ -86,6 +105,28 @@ export class Session {
 		this.input = input;
 		this.host = host;
 		this.brain = brain;
+		this.listen( ( event ) => this.record.note( event ) );
+
+	}
+
+	/** Hear the simulation's events (sim/events.ts), in order, after the record, for as long as the
+	 * session lives, across installs; returns the call that stops it. */
+	listen( listener: ( event: SimEvent ) => void ): () => void {
+
+		this.listeners.push( listener );
+		return () => {
+
+			const i = this.listeners.indexOf( listener );
+			if ( i >= 0 ) this.listeners.splice( i, 1 );
+
+		};
+
+	}
+
+	// what the simulation emitted since, to the listeners
+	private dispatch(): void {
+
+		for ( const event of this.sim.take() ) for ( const listener of this.listeners ) listener( event );
 
 	}
 
@@ -96,43 +137,44 @@ export class Session {
 
 	}
 
-	/** Install a simulation (a new game, a load), and its record for a saved game: its tools and
-	 * brain, the coming piece, the record started over or taken back, the words no thought has
-	 * taken forgotten, and the record's first look. */
+	/** Install a simulation (a new game, a load), and its record for a saved game: its brain, the
+	 * coming piece, the record started over or taken back, the words no thought has taken
+	 * forgotten, and what it emitted before (a new game's landings) handed on. */
 	install( sim: Sim, record?: RecordSave ): void {
 
-		sim.tools = this.tools;
 		sim.brain = this.brain;
 		if ( this.coming ) sim.setComing( this.coming );
 		this.sim = sim;
-		this.record.reset();
+		this.record.reset( sim.state.startHour );
 		if ( record ) this.record.restore( record );
 		this.heard.clear();
 		this.ticks = 0;
-		// the record's first look, before any tick: a new game's islanders land at its start
-		this.look( null );
+		this.dispatch();
 
 	}
 
 	/** A frame: a growth due is asked for, the simulation runs forward by real seconds at the day
 	 * clock's rate (Sim.advance: nothing while paused), and the host hears how near the next step
-	 * is. Returns the ticks run; the record looks at them once the host has shown them (`look`). */
+	 * is. Returns the ticks run, whose events the listeners have heard; the record notes the sky
+	 * over them once the host has shown them (`look`). */
 	advance( realSeconds: number, secondsPerDay: number ): number {
 
 		this.grow();
 		const ticks = this.sim.advance( realSeconds, secondsPerDay );
 		this.ticks += ticks;
 		this.host.approach?.( this.sim.approach() );
+		this.dispatch();
 		return ticks;
 
 	}
 
-	/** The record looks at what happened since its last look (Chronicle.observe): once a frame,
-	 * after the host has shown the frame's ticks, with the sky shown over them (null: none is shown,
+	/** Once a frame, after the host has shown the frame's ticks: what happened since is handed on,
+	 * and the record notes the sky shown over the ticks since the last look (null: none is shown,
 	 * as headless, and none is noted). */
 	look( sky: WeatherName | null ): void {
 
-		this.record.observe( this.sim, sky, this.ticks / 3600 );
+		this.dispatch();
+		if ( sky !== null && this.ticks > 0 ) this.record.addSky( this.sim.day() + 1, sky, this.ticks / 3600 );
 		this.ticks = 0;
 
 	}
@@ -164,6 +206,7 @@ export class Session {
 		this.input = input;
 		this.coming = null;
 		this.sim.addPiece( input );
+		this.dispatch();
 
 	}
 
@@ -193,16 +236,19 @@ export class Session {
 
 	}
 
-	/** The leader speaks: words to some islanders (their ids) or to everyone. They go into the
-	 * record; for a brain that hears, each listener keeps them until a thought takes them
-	 * (takeHeard), and is asked for one now. */
-	speak( words: string, to: EntityId[] | 'all' ): void {
+	/** The leader speaks: words to some islanders (their ids, each on the island) or to everyone.
+	 * They are an event; for a brain that hears, each listener keeps them until a thought takes
+	 * them (takeHeard), and is asked for one now. Null when they are said, else why not. */
+	speak( words: unknown, to: unknown ): string | null {
 
-		const text = words.trim();
-		if ( ! text ) return;
-		this.record.add( this.sim, { kind: 'said', who: 'player', to, text } );
-		if ( ! this.brain?.hears ) return;
-		const listeners = to === 'all' ? this.sim.state.villagers.map( ( v ) => v.id ) : to;
+		const checked = checkArgs( 'speak', SPEAK, { words, to } );
+		if ( ! checked.ok ) return checked.reason;
+		const sim = this.sim, text = checked.args.words, audience = checked.args.to;
+		if ( audience !== 'all' ) for ( const id of audience ) if ( ! sim.villager( id ) ) return `${ id } is not on the island`;
+		sim.emit( { kind: 'said', tick: sim.state.tick, who: 'player', words: text, to: audience } );
+		this.dispatch();
+		if ( ! this.brain?.hears ) return null;
+		const listeners = audience === 'all' ? sim.state.villagers.map( ( v ) => v.id ) : audience;
 		for ( const id of listeners ) {
 
 			let lines = this.heard.get( id );
@@ -211,7 +257,32 @@ export class Session {
 
 		}
 		// (Sim.think: not while a thought is in flight; the words then wait for the next)
-		for ( const id of listeners ) this.sim.think( id );
+		for ( const id of listeners ) sim.think( id );
+		// a brain that answers at once acts within the call
+		this.dispatch();
+		return null;
+
+	}
+
+	/** Tool calls for an islander, from outside a thought (the debug panel's, the console's), through
+	 * the entrance a brain's answer takes (sim/agent.ts `act`); what they did is handed on. */
+	act( who: EntityId, calls: unknown ): ToolResult[] {
+
+		const results = act( this.sim, who, calls );
+		this.dispatch();
+		return results;
+
+	}
+
+	/** The player places a building of a kind (sim/buildings.ts) at a point of the ground (world
+	 * metres): null when it stands there, else why not (Sim.placeBlueprint). */
+	place( kind: unknown, x: unknown, z: unknown ): string | null {
+
+		const checked = checkArgs( 'place', PLACE, { kind, x, z } );
+		if ( ! checked.ok ) return checked.reason;
+		const refused = this.sim.placeBlueprint( checked.args.kind, checked.args.x, checked.args.z );
+		this.dispatch();
+		return refused;
 
 	}
 
@@ -233,8 +304,8 @@ export class Session {
 	}
 
 	/** The game as a save's JSON (save.ts): the simulation's state and the record, once the record
-	 * has looked at what happened since its last look (a save comes between frames), with the sky
-	 * shown. */
+	 * has heard what happened since the last call and noted the sky shown (a save comes between
+	 * frames). */
 	save( sky: WeatherName | null ): string {
 
 		this.look( sky );

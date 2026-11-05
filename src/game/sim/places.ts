@@ -20,7 +20,10 @@ import type { ActionResult, Vec2, Villager } from './types.ts';
 // perception shows beside the id so that several of a kind read as such.
 //
 // Standing at a place means standing on one of its cells (`reaches`): walking to it (`go`) ends on
-// the nearest such cell. Reaches may overlap; a body then stands at both places, and `do` runs the
+// the nearest such cell. A timed option goes on only while its condition holds (`holds`: by default
+// while the body stands at the place), checked every tick before its `during` (actions.ts); the
+// option's own rules need not check it again. Items move between bags in an option's `start` (an
+// instant option) or `finish`, never in its `during`, so an outcome can say what moved. Reaches may overlap; a body then stands at both places, and `do` runs the
 // option of the place it names, else of the first that offers it, in PLACE_KINDS' order. A body is
 // never a place to itself: it neither stands at nor sees its own person (`placesFor`).
 //
@@ -31,8 +34,9 @@ import type { ActionResult, Vec2, Villager } from './types.ts';
 export const FISH_SECONDS = 20 * 60;
 export const FISH_CHANCE = 0.5;
 
-/** A `do` option's arguments (put, take and give name an item and a count). */
-export interface DoArgs { action: string; place: string; item?: unknown; count?: unknown }
+/** A `do` option's arguments, checked at the entrance (put, take and give name an item and a
+ * count), with the place it runs at. */
+export interface DoArgs { action: string; place: string; item?: string; count?: number }
 
 /** How an option begins: refused, done at once, or running for a while and then `finish`
  * (seconds null: until a new action replaces it, or its `during` ends it: `follow`). */
@@ -42,7 +46,11 @@ export interface PlaceOption {
 	/** whether the place offers it now, from the place's own state (listed at hand) */
 	open( sim: Sim ): boolean;
 	start( sim: Sim, body: Villager, args: DoArgs ): Start;
-	/** each tick a timed option runs (its first one after it began): a result ends it there, early */
+	/** whether a timed option can go on, each tick before its `during`: null, or why not (it then
+	 * ends interrupted). Without it, while the body stands at the place. */
+	holds?( sim: Sim, body: Villager, args: DoArgs ): string | null;
+	/** each tick a timed option runs (its first one after it began), once its condition held: a
+	 * result ends it there, early */
 	during?( sim: Sim, body: Villager, args: DoArgs ): ActionResult | null;
 	/** when a timed option's seconds are up */
 	finish?( sim: Sim, body: Villager, args: DoArgs ): ActionResult;

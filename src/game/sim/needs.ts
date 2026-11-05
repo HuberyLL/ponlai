@@ -3,6 +3,10 @@ import type { Needs } from './types.ts';
 
 // An islander's needs: satiety and hydration, 0..100, falling every tick and raised by eating and
 // drinking (items.ts). They clamp at 0 with no consequence yet (docs/game-design.md, "Next").
+// A need that falls to CRITICAL_NEED is an event (events.ts `need`), at the tick it crossed the
+// line from above, which the record notes; it is noted again only once the need has risen above the
+// line (eating raises it well past) and fallen back. The interface's alert is what is true now, a
+// need at or below the line, and samples the numbers.
 //
 // Thirst is off until the island has a water source of its own: hydration holds where it starts
 // (HYDRATION_PER_DAY is 0) and nothing raises it. The HUD still shows it.
@@ -27,11 +31,23 @@ export const START_NEEDS: Readonly<Needs> = { satiety: 80, hydration: 80 };
 const HYDRATION_PER_TICK = HYDRATION_PER_DAY / SECONDS_PER_GAME_DAY;
 const SATIETY_PER_TICK = SATIETY_PER_DAY / SECONDS_PER_GAME_DAY;
 
-/** One game second of the needs falling. */
-export function fallNeeds( n: Needs ): void {
+/** Whether a need went from above the critical line to on or below it. */
+export function fellCritical( was: number, now: number ): boolean {
 
-	n.hydration = Math.max( 0, n.hydration - HYDRATION_PER_TICK );
-	n.satiety = Math.max( 0, n.satiety - SATIETY_PER_TICK );
+	return was > CRITICAL_NEED && now <= CRITICAL_NEED;
+
+}
+
+/** One game second of the needs falling; the needs that fell to the critical line, or null. */
+export function fallNeeds( n: Needs ): ( keyof Needs )[] | null {
+
+	const satiety = n.satiety, hydration = n.hydration;
+	n.hydration = Math.max( 0, hydration - HYDRATION_PER_TICK );
+	n.satiety = Math.max( 0, satiety - SATIETY_PER_TICK );
+	let fell: ( keyof Needs )[] | null = null;
+	if ( fellCritical( satiety, n.satiety ) ) ( fell ??= [] ).push( 'satiety' );
+	if ( fellCritical( hydration, n.hydration ) ) ( fell ??= [] ).push( 'hydration' );
+	return fell;
 
 }
 

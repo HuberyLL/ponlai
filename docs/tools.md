@@ -523,14 +523,16 @@ Game:
   days in the record), "hearing brain" (hears the player, thinks a few seconds with the heard
   words circling, answers a placeholder line), a line said by the inspected islander, their
   needs low or critical, and the language (reloads the page with `lang`). The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
-  by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `.tools` (the five
-  actions), `setBrain( brain )` (kept across a load; `null` leaves the islander idle),
+  by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `act( id, calls )` (tool
+  calls for an islander, `[ { tool, args } ]`: the five actions, through the entrance a brain's
+  answer takes), `listen( fn )` (the simulation's events as they come), `setBrain( brain )` (kept across a load; `null` leaves the islander idle),
   `think( id )`, `walkTo( id, x, z )`, `placeBlueprint( kind, x, z )` (a building of a kind,
   `'chest'`, any number, each with an id like `chest1`; returns why not, or null), `focus( id )`, `setPaused`, `togglePause`,
   `addIslander()`, `save` and `load` (a save of another piece count loads only with the page),
   `startOver()` (a new game on the island shown), `autosave()` (the page's save: skipped when
   nothing changed), `.keeps` and `.savedAt`,
-  `speak( words, ids | 'all' )` (the player's words: into the record, and to a brain that hears),
+  `speak( words, ids | 'all' )` (the player's words: into the record, and to a brain that hears;
+  returns why not, or null),
   `say( id, words )`, `setNeed( id, need, value )`, `forecast( hours )` (the weather's turns, in
   game hours), `.record` (the record's entries) and `.ui` (`setMany( true )`);
   `.sim.comingLand` holds the next piece's cells once the page has it.
@@ -1426,10 +1428,13 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   first prototype's rules (needs, thirst off, the bag, fishing, the chest placed as a blueprint and
   built, several chests with stable ids, two builders on one site, the actions, the perception, the stand-in brain over a few game days, a save mid-action), the save file
   (`src/game/save.ts`: the simulation and the record read back as written and played on the same,
-  a version-17 save carried over, saves no step reaches refused), the island's growth and the
-  session the page and the play tool run the game in (`src/game/Session.ts`: the record's first
-  look, the skies of its frames, the leader's words heard, a save read into another session, the
-  growth asked of its host); its island is in `tools/game-fixture.mjs`.
+  saves of another version and saves no step reaches refused), the island's growth, the session
+  the page and the play tool run the game in (`src/game/Session.ts`: the landings handed on as a
+  game is installed, the player's commands checked at the entrance, the skies of its frames, the
+  leader's words heard, a save read into another session, the growth asked of its host), the
+  islanders among themselves, and the rules' structure (an action's condition held every tick, a
+  late answer for an islander who died refused, the entrance's refusals, what happened recorded
+  once at its tick); its island is in `tools/game-fixture.mjs`.
 - `tools/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow] [--population 0]
   [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>] [--latency 90] [--thoughts]
   [--out dir]`
@@ -1438,7 +1443,8 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   looking after each, the leader's lines between them), and writes what happened to
   `artifacts/play/<stamp>/` (`--out`): `transcript.md` (day by day, the record's entries in the
   record page's words, `src/game/ui/data/record.ts` and its catalogue, so a new kind of entry needs
-  no change to the tool; the islanders' actions with their outcomes, consecutive alike ones merged, their words, needs every
+  no change to the tool; the islanders' actions with their outcomes as the session's events tell
+  them (done, failed, interrupted with the reason, refused), consecutive alike ones merged, their words, needs every
   six game hours and a table per day), `timeline.json` (every islander each game hour: position,
   needs, bag, action), `summary.json` (per islander the share of time by activity, each need's
   lowest, mean and highest, each item's flows by the call that moved it, so a new need, item or

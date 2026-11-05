@@ -29,7 +29,8 @@ import { Space } from './Space.ts';
 //   circle the head, at most six at a time, the whole line taking turns as each passes behind the
 //   head; words heard meanwhile wait for the next thought. Only a brain that hears keeps the
 //   characters that land (Game.hears): the stand-in's islanders hear none.
-// - Speaking (Villager.said changed): the characters pop out of the mouth one at a time, each
+// - Speaking (an islander's `said` event, sim/events.ts, heard through Game.listen: the latest
+//   line each islander said, never the state polled): the characters pop out of the mouth one at a time, each
 //   swinging open to face the viewer, sized by the figure's size on screen; the line holds 2.5 s
 //   and 0.3 s a character, then melts away one by one, each turning aside as it rises. A line still
 //   showing melts first (MELT), and the new one comes out as it goes; a line said before the new one
@@ -93,8 +94,8 @@ interface Mark {
 	talk: Talk | null;
 	/** the line before it, melting until the new one comes out */
 	leaving: Talk | null;
-	/** the line last shown (Villager.said: each line said is a new object, whatever the tick) */
-	said: Villager[ 'said' ];
+	/** the line last shown, by its number (`lines`; 0: none) */
+	said: number;
 	/** characters heard (landed from the speak bar), each with the line it came in */
 	heard: { c: string; line: number }[];
 	/** the thought in flight: the last line said before it began (it thinks over the lines up to
@@ -126,6 +127,10 @@ export class People {
 	private readonly shared: UiShared;
 	private readonly world: HTMLElement;
 	private readonly marks = new Map<EntityId, Mark>();
+	// each islander's latest line said (its `said` events), numbered as heard, so a mark shows a line
+	// once, and two lines said within a frame show as the newer
+	private readonly lines = new Map<EntityId, { words: string; n: number }>();
+	private heardLines = 0;
 	private readonly svg: SVGSVGElement;
 	private readonly ringInk: InkPath;
 	private readonly goldInk: InkPath;
@@ -150,6 +155,11 @@ export class People {
 		this.tag = new Tag( this.root, shared );
 		canvas.addEventListener( 'pointerdown', this.onDown );
 		canvas.addEventListener( 'pointerup', this.onUp );
+		shared.game.listen( ( e ) => {
+
+			if ( e.kind === 'said' && e.who !== 'player' ) this.lines.set( e.who, { words: e.words, n: ++ this.heardLines } );
+
+		} );
 
 	}
 
@@ -158,6 +168,7 @@ export class People {
 
 		for ( const m of this.marks.values() ) this.drop( m );
 		this.marks.clear();
+		this.lines.clear();
 		this.select( null );
 
 	}
@@ -256,7 +267,7 @@ export class People {
 		const thinkChars: HTMLSpanElement[] = [];
 		for ( let i = 0; i < THINK_SLOTS; i ++ ) thinkChars.push( el( 'span', 'pl-glyph', think ) );
 		const talkBox = el( 'div', 'pl-talk', this.world );
-		return { id: v.id, root, alerts, alertIcons, think, thinkChars, talkBox, talk: null, leaving: null, said: v.said, heard: [], thought: null,
+		return { id: v.id, root, alerts, alertIcons, think, thinkChars, talkBox, talk: null, leaving: null, said: this.lines.get( v.id )?.n ?? 0, heard: [], thought: null,
 			shown: false, x: 0, y: 0, size: 0, head: new THREE.Vector3(), depth: 0, across: 1, upright: 1, seen: 0 };
 
 	}
@@ -446,10 +457,10 @@ export class People {
 	// has not come out yet gives way to a newer one, which comes out when it would have.
 	private talking( m: Mark, v: Villager ): void {
 
-		const now = this.shared.now;
-		if ( v.said !== m.said && v.said ) {
+		const now = this.shared.now, line = this.lines.get( v.id );
+		if ( line && line.n !== m.said ) {
 
-			m.said = v.said;
+			m.said = line.n;
 			const old = m.talk;
 			let start = now;
 			if ( old && now < old.start ) {
@@ -469,7 +480,7 @@ export class People {
 				m.leaving = old;
 
 			}
-			const chars = Array.from( v.said.words );
+			const chars = Array.from( line.words );
 			m.talk = { chars: chars.map( ( c ) => el( 'span', 'pl-glyph', m.talkBox, c ) ), start, until: start + ( chars.length - 1 ) * POP_EVERY + HOLD + HOLD_PER_CHAR * chars.length, out: false, melted: 0, gone: 0 };
 
 		}
