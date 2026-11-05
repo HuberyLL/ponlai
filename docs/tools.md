@@ -347,7 +347,14 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   per cell, instead of the radiance, the view depth with the sky's and the sea's shares, the world
   normal, the screen-space occlusion or the kind (`src/debug/RadianceAov.ts`); `rings: { sun, step,
   count, sky }` the luminance in rings of angle around the sun before and after the bloom, and over
-  the sky's band 30 to 60 degrees from it.
+  the sky's band 30 to 60 degrees from it, with each ring's count of sky texels (`skyCounts`); any
+  light's direction serves as `sun` (the moon's by night). `sector: [ from, to ]` keeps the texels
+  in a sector about the light (degrees, 0 straight below it, 90 to its right as seen facing it, 180
+  above; from over to wraps through 0), `elevation: [ lo, hi ]` those whose ray's elevation lies in
+  the range, and `elevationStep: s` adds `table`, the composite's (hdr) luminance summed over the
+  sky's texels of each ring and band of s degrees of elevation ( [ ring, band, sum, count ], band b
+  from b s - 90 degrees), from which a script takes each ring's excess over a background that varies
+  with elevation, texel by texel, without reading the texels.
 - Tunable parameters (`src/debug/Tune.ts`, debug pages): `__PONLAI__.tune.list()` names every
   registered number (its value, default, range, scale, and whether it is read at load),
   `tune.set( { name: value } )` sets them with no reload and no new pipeline (a load-time one needs
