@@ -39,8 +39,7 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../wor
 //   coefficients until the convolution:
 //     direct    the sky's coefficients times the probe's sky visibility, their product truncated to
 //               degree 2 (p. 24), times the sky's scale (`skyScale`): the sky's fill (main.ts
-//               `skyFill`, the environment's intensity) times a low sun's lift of the sky's light
-//               (`lowSunSkyLift`, below) times the probes' own sky gain (PROBE_SKY,
+//               `skyFill`, the environment's intensity) times the probes' own sky gain (PROBE_SKY,
 //               keyed by the sun's own elevation, not the key's, so the moon's key at night does
 //               not move it: golden, low and high, a clouded day's held value over them, the
 //               night's as the sky's own, DayCycle.ts `skyNight`), which the seen sky never takes, so the ground's sky light can be set
@@ -54,8 +53,9 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../wor
 //               surface at the sea's level, SEA_ALBEDO times the irradiance it takes over pi: the
 //               sky's harmonics convolved and evaluated straight up (times the sea's scale,
 //               `seaScale`: the direct term's with the water's deck gain in place of the land's
-//               gains, less what a cloudy deck's gaps take back under the cloud shadow,
-//               `seaGapScale`), and the key's light on level ground (the same
+//               gains and a low sun's lift of the sky's light, which the water takes and the land
+//               does not, `lowSunSkyLift` below, less what a cloudy deck's gaps take back under the
+//               cloud shadow, `seaGapScale`), and the key's light on level ground (the same
 //               fade and lifted height as its bounce below) under the clouds' own transmittance at
 //               the probe (Sky.ts `cloudVisibility`, for the gaps' share too: without the land's
 //               floor or a deck's gain, as the water drawn takes it, so the sea the probes see and
@@ -74,13 +74,13 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../wor
 //               BOUNCE_GAIN, our normalisation of the pair: on the island's most open level ground
 //               (0.3 m over it, where the bake sees 0.7 to 0.85 of the sky), read at degree 2 as the
 //               island's receivers read it (AmbientSample.ts), the key's bounce on a face turned up
-//               is 0.45 to 0.61 % of level ground's direct light per unit of `sunBounce` from 62 to
-//               4 degrees, least at 50 and most from 13 down (2 to 2.7 % at the day's 4.5). There it
-//               makes 19 % of the ground's light in shade at 62 degrees, 16 % at 50, 13 % at 30, 10 %
-//               at 20, 8 % at 13 and 10 (the lift's floor) and 2.5 % at 4 (where `sunBounce` is 1.1);
-//               by the lit meadow, 0.3 m over the ground, the light from below is 2.5 to 3 times the
-//               light from above by a grove's edge at 50 to 62 degrees, 1.8 at 30, 1.35 at 20, 1.1 at
-//               13 and 10 and 0.5 at 4.
+//               is 0.79 % of level ground's direct light per unit of `sunBounce` at 62 degrees, 0.74 %
+//               at 50, 0.67 % at 30, 0.63 % at 18 to 20, 0.60 to 0.61 % at 13 and 10 (the lift's
+//               floor) and 0.57 % at 4. At the day's `sunBounce` of 1 it makes 14 % of the ground's
+//               light in shade at 62 degrees, 12 % at 50, 8 % at 30, 5 % at 20, 3 % at 13 and 10 and
+//               1.6 % at 4; with `sunBounce` at 4.5, by the lit meadow, 0.3 m over the ground, the
+//               light from below was 2.5 to 3 times the light from above by a grove's edge at 50 to
+//               62 degrees, 1.8 at 30, 1.35 at 20 and 1.1 at 13 and 10.
 //   The groves' in-scatter (the light their leaves and culms scatter toward the probe, a part of
 //   the bounced visibility the bake keeps apart: world/AmbientProbes.ts) is baked under the sky
 //   over the crowns, which lights the shade a grove casts as it lights its sunward side; the key
@@ -88,13 +88,13 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../wor
 //   of the sky toward the key the probe sees (`seen`: its sky visibility at the key's true
 //   direction, over open level ground's there, 0.5 + 0.75 ly): all of it from SCATTER_GATE's upper
 //   end up, none from its lower end down, a smoothstep between. The sky's bounce keeps all of it.
-//   Under the clear sky without the gate, the key's bounce made 22 to 33 % of the light in a grove
-//   edge's shade at 50 degrees, more than its 19.5 % in the open meadow's shade, and 11 to 18 % at
-//   20 (10 % in the open); with it, 5 to 10 % at 50 (13.6 % in the open) and 4 to 6 % at 20 (8 %),
-//   and that shade's colour lies 0.005 to 0.009 from the sky's light alone (Oklab a b) at 50
-//   degrees, 0.021 to 0.030 without it. A grove's floor 2 to 6 m in from its edge takes 0.43 to
-//   0.46 of the light in the shade outside that edge at 50 degrees (0.67 to 0.73 without the gate)
-//   and 0.40 to 0.44 at 20 (0.52 to 0.58).
+//   With `sunBounce` at 4.5 under the clear sky, without the gate the key's bounce made 22 to 33 %
+//   of the light in a grove edge's shade at 50 degrees, more than its 19.5 % in the open meadow's
+//   shade, and 11 to 18 % at 20 (10 % in the open); with it, 5 to 10 % at 50 (13.6 % in the open)
+//   and 4 to 6 % at 20 (8 %), and that shade's colour lies 0.005 to 0.009 from the sky's light
+//   alone (Oklab a b) at 50 degrees, 0.021 to 0.030 without it. A grove's floor 2 to 6 m in from
+//   its edge takes 0.43 to 0.46 of the light in the shade outside that edge at 50 degrees (0.67 to
+//   0.73 without the gate) and 0.40 to 0.44 at 20 (0.52 to 0.58).
 //   The key's bounce fades out as it sets (GroundBounce.ts's fade) and takes the key's irradiance
 //   on level ground, the key's light times the sine of the elevation level ground takes its diffuse
 //   from (the lifted one: KeyLift.ts `liftedKeyHeight`), the cloud shadow at the probe (at the box's
@@ -102,10 +102,11 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../wor
 //   is the light the ground round the probe takes, which falls with the sun, while the lobes keep
 //   the key's true direction. The direct and the bounced parts are each boosted toward their own
 //   linear band's maximum by `directionality` (p. 43). In that shade by the meadow the boost makes
-//   part of the balance: without it the light from below is 2.3 to 3 times the light from above by
-//   a grove's edge at 50 to 62 degrees and 1.3 at 20. At degree 2 the boost moves the quadratic band
-//   toward the delta's as well, which lights a face turned toward the part's maximum more and one
-//   turned across it less: under the clear sky the open level ground in shade reads 1.8 to 2.1
+//   part of the balance: with `sunBounce` at 4.5, without it the light from below is 2.3 to 3 times
+//   the light from above by a grove's edge at 50 to 62 degrees and 1.3 at 20. At degree 2 the boost
+//   moves the quadratic band toward the delta's as well, which lights a face turned toward the part's
+//   maximum more and one turned across it less: with `sunBounce` at 4.5 under the clear sky the open
+//   level ground in shade reads 1.8 to 2.1
 //   times its degree 1 light at 50 to 62 degrees and 1.2 at 20, and a face turned level there 1.2
 //   times one turned up at 50 to 62 degrees, 0.9 at 20. Their sum is convolved with the cosine lobe
 //   (Ramamoorthi and Hanrahan 2001) and deringed (p. 46) by the window that leaves its luminance
@@ -150,10 +151,10 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../wor
 //   - the boost moves a part's linear band toward a delta's, whose degree 1 irradiance is negative
 //     on the side turned from it: where the bounced part comes nearly all from below (open level
 //     ground by the lit meadow), a receiver reading degree 1 takes less with the bounces than
-//     without them (under the clear sky they darken that shade by about 31 % at 62 degrees, 26 % at
-//     50, 10 % at 30, 5 % at 20, 3 % at 13 and 10 and 1 % at 4); at degree 2, the island's
-//     receivers' read, the quadratic band gives it back (the bounces then make 20 % of that shade's
-//     light at 62 degrees, 17 % at 50, 14 % at 30, 11 % at 20, 9 % at 13 and 10 and 3.5 % at 4);
+//     without them (with `sunBounce` at 4.5 under the clear sky they darken that shade by about 31 %
+//     at 62 degrees, 26 % at 50, 10 % at 30, 5 % at 20, 3 % at 13 and 10 and 1 % at 4); at degree 2,
+//     the island's receivers' read, the quadratic band gives it back (the shares in the bounce's
+//     calibration above);
 //   - the probes take the key's bounce from the grade's `sunBounce` beside GroundBounce.ts's own
 //     bounce of it: where materials read the volume, the ground bounce keeps its sea alone
 //     (GroundBounce.ts), or the key's bounce off the land would count twice.
@@ -215,10 +216,14 @@ const BOUNCE_GAIN = 9.4;
  * keeps its gain; the ground's sky light takes this on top, so its ratio to the sun's light can be
  * set at every hour without changing the sky the eye sees. It sets the key's illuminance at normal
  * incidence against the ambient light's irradiance on open level ground (with the ground's bounce).
- * Set once the environment took the haze's light, which lights the shade too: 1.04 at the low key
- * and 1.18 at the high one, the ground's sky light about the seen sky's own, so from 6 degrees up
- * the key stands about 10.5 - 11.5 times that irradiance, and the meadow's sunlit side reads about
- * 2.6 times its shade at 12 degrees and 3.1 - 3.7 from 30 up. At the golden hour (`golden`, 1) the
+ * Set once the environment took the haze's light, which lights the shade too, with the key's bounce
+ * at 1 by day (AmbientGrade.ts): 0.92 at the low key and at the high one, so the land's sky light
+ * per unit of the probe's sky visibility is 0.90 of the seen sky's at 18 degrees, 0.86 at 26 and
+ * 0.85 at 30 (the land takes no low sun's lift, `lowSunSkyLift`), the key stands about 23 times
+ * that irradiance on open level ground from 18 to 30 degrees (21 at 50 to 62, 20 at 10), the key's
+ * direct light makes about 0.82 of the lit ground's light on the island view at 18 degrees (the
+ * meadow 0.83) and 0.89 at 30, and the lit ground reads about 2.5 stops over its shade at 18
+ * degrees (the meadow 2.6) and 2.8 at 30 (3.2). At the golden hour (`golden`, 1) the
  * key stands about 6 times that irradiance at 3 degrees on either side of the day, with Sky.ts
  * CLEAR_SKY's gain over the sky's light (the land's shade a lit part of it against a low sun, not
  * nearly black), and about 9 times at 4.2 degrees in the evening, on the way to the day's. The
@@ -237,8 +242,8 @@ const BOUNCE_GAIN = 9.4;
  * water too. It returns to 3.5 by -2.7, where
  * the night's exposure has come in whole (the blue hour's light is the night's sky's, which the
  * day's keys do not touch). */
-const PROBE_SKY_LOW: DayKey<{ skyGain: number }> = { at: 12, name: 'low', values: { skyGain: 1.04 } };
-const PROBE_SKY_HIGH: DayKey<{ skyGain: number }> = { at: 40, name: 'high', values: { skyGain: 1.18 } };
+const PROBE_SKY_LOW: DayKey<{ skyGain: number }> = { at: 12, name: 'low', values: { skyGain: 0.92 } };
+const PROBE_SKY_HIGH: DayKey<{ skyGain: number }> = { at: 40, name: 'high', values: { skyGain: 0.92 } };
 const PROBE_SKY: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight', {
 	day: [ { at: 3, name: 'golden', values: { skyGain: 1 } }, PROBE_SKY_LOW, PROBE_SKY_HIGH ],
 	rising: [
@@ -254,28 +259,28 @@ const PROBE_SKY: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight', {
 	night: { skyGain: 7.25 },
 }, { skyGain: { min: 0.25, max: 8, scale: 'log' } } );
 const _probeSky = { skyGain: 1 };
-/** A low sun's lift of the sky's light on what it lights, main.ts writes it once a frame to shared.ts
- * `skyLift`. The probes' sky (`skyScale`, the bounced sky and the sea's bounce with it) takes it, so
+/** A low sun's lift of the sky's light on the water, main.ts writes it once a frame to shared.ts
+ * `skyLift`. The sea's bounce in the probes (`seaScale`) takes it, as the water drawn does, so
  * does the sky's light on what reads it straight (shared.ts `skyIrradianceSource`: the water body,
  * its foam and its metering light; the rain's light, the storm's spray and its whitecaps read it
  * too, and take the lift only through a front from a clear or fair sky into rain or storm under a
  * low sun, as those skies count as overcast) and the sea's reflection of the sky (ocean/Water.ts, by
  * the view's elevation, so the far sea under the horizon keeps the band it mirrors and stays under
- * the sky over it). The sky drawn, the environment's specular and the exposure's sky meter do not.
+ * the sky over it). The land's own sky light (`skyScale`: the probes' gain, PROBE_SKY, sets it), the
+ * sky drawn, the environment's specular and the exposure's sky meter do not.
  *
  * Why: under the clear evening sky, the key's illuminance at normal incidence over the sky's light
- * on level ground (the probes' gain in it) is 28 at 62 degrees, 30 at 50, 32 at 31, 35 at 17 and 31
- * at 12: the sky falls faster than the key by about 0.2 stop at 31, 0.3 at 17 and 0.13 at 12,
- * against noon, and the ratio is under noon's again below about 9 degrees. The excess is the sky
+ * on level ground (the probes' gain in it, then 1.04 at 12 degrees and 1.18 from 40 up) is 28 at 62
+ * degrees, 30 at 50, 32 at 31, 35 at 17 and 31 at 12: the sky falls faster than the key by about
+ * 0.2 stop at 31, 0.3 at 17 and 0.13 at 12, against noon, and the ratio is under noon's again below
+ * about 9 degrees. The excess is the sky
  * overhead: at 17 degrees the sky above 60 has fallen 1.4 to 2.6 stops more than the key since noon,
  * the sky from 30 to 60 about 0.3 to 0.7, while the low sky across and away from the sun keeps pace
  * within about 0.3, so the far sea mirroring it needs no lift. The lift takes the excess
  * back over 12 to 17 degrees and gives way above, to none by 35 (the noon-ward sky keeps its own).
  * The morning's darker sky (sky/Sky.ts SKY_LIGHT's rising keys) is its own and takes the same lift by
  * height. At the island view under a 12 degree sun the sky's light is about a quarter of the sea's
- * and the crowns' light, so a stop of lift gives them about a third of a stop before the meter
- * (measured: 0.34 the sea, 0.32 the crowns), and the meter, which sees the lifted sea, takes about
- * 0.17 stop of it back.
+ * light, so a stop of lift gives it about a third of a stop before the meter (0.34 measured).
  *
  * The lift: `size` stops from `floorFull` up to `from` degrees, falling along a smoothstep to none at
  * `to` above and at `floor` below. It is 1 under cloud (by the clouded share, Weather.ts
@@ -309,8 +314,7 @@ export function lowSunSkyLift( elevation: number, clouded: number ): number {
 /** The land's sky gain under overcast's deck per unit of the weather's (AmbientGrade.ts
  * OVERCAST_LAND, its gain on all of the land's ambient light): what makes the land under the deck
  * take, per unit of the bake's sky light, what a clear day's land takes in the same place, the
- * structure of the two skies' light being otherwise unlike (a low sun's lift of the sky's light,
- * which the land under cloud does not take, `lowSunSkyLift`; the sky's harmonics' window, which
+ * structure of the two skies' light being otherwise unlike (the sky's harmonics' window, which
  * takes another share of a deck's light off level ground than of a clear sky's; the sky's
  * visibility from the ground). It is not a choice of the weather's and is not tuned. The land's sky
  * light under overcast takes it times the weather's gain on the sky's light (the bake: the probes'
@@ -546,6 +550,7 @@ export class AmbientRelight {
 	// the sky's fill times the probes' sky gain (PROBE_SKY): the relight's scale on the sky's light
 	private readonly skyScale = uniform( 1 );
 	// the sea's bounce's sky scale: `skyScale` with the water's own deck gain (Weather.ts DECK_SKY_GAIN)
+	// and a low sun's lift (`lowSunSkyLift`), as the water drawn takes them
 	private readonly seaScale = uniform( 1 );
 	private readonly seaGapScale = uniform( 0 );
 	// where the open sea's probes take the cloud shadow
@@ -613,13 +618,14 @@ export class AmbientRelight {
 		const day = keyed( PROBE_SKY, elevation, 0, _probeSky, clouded, this.rising() ).skyGain, toNight = PROBE_SKY.night.skyGain;
 		const gained = ( gain: number ) => day * gain + ( toNight - day * gain ) * night;
 		const probeSky = gained( 1 ), landGain = gained( landSky );
-		// a low sun's lift of the sky's light (`lowSunSkyLift`), on the land's sky and the sea's bounce
-		const fill = this.shared.skyFill.value * this.shared.skyLift.value;
+		// the land takes the sky's light as the sky gives it; a low sun's lift of it (`lowSunSkyLift`)
+		// goes to the water alone, here to the sea's bounce, as the water drawn takes it
+		const fill = this.shared.skyFill.value, seaFill = fill * this.shared.skyLift.value;
 		this.skyScale.value = fill * landGain;
 		// the sea's bounce takes the water's gain, the deck's alone, as the water drawn does, less what a
 		// cloudy deck's gaps take back by the clouds' visibility (Weather.ts `deckSkyGap`)
-		this.seaScale.value = fill * gained( deckSky );
-		this.seaGapScale.value = fill * day * deckSkyGap( elevation, clouded, overcast ) * ( 1 - night );
+		this.seaScale.value = seaFill * gained( deckSky );
+		this.seaGapScale.value = seaFill * day * deckSkyGap( elevation, clouded, overcast ) * ( 1 - night );
 		ambient.landSky.value = landGain / probeSky;
 		out.fill( 0 );
 		const level = THREE.MathUtils.smoothstep( l.y, - 0.02, 0.05 ) * this.keyHeight();

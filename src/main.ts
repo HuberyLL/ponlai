@@ -450,8 +450,8 @@ function publishLighting(): void {
 	// shadow against it (lighting/KeyCloud.ts `keyDeckShare`)
 	keyDeckShare.value = deckLight( sky.elevation, cloudedShare( weather.skyMix ), overcast );
 	shared.landKey.value.set( sun.color.r, sun.color.g, sun.color.b );
-	// a low sun's lift of the sky's light on what it lights: the land's ambient, the water's sky
-	// light and the sea's reflection (lighting/AmbientRelight.ts `lowSunSkyLift`)
+	// a low sun's lift of the sky's light on the water: the sea's bounce onto the land, the water's
+	// sky light and the sea's reflection (lighting/AmbientRelight.ts `lowSunSkyLift`)
 	shared.skyLift.value = lowSunSkyLift( sky.elevation, cloudedShare( weather.skyMix ) );
 	sun.intensity = 1;
 	sun.position.copy( sky.keyDir ).multiplyScalar( 120 ).add( sun.target.position );
