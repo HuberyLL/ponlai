@@ -28,8 +28,9 @@ import { SeabedRise } from './SeabedRise.ts';
 // - When: the game (`start()` once the page shows) generates the next piece at once, as it will
 //   need it; any other page only from its first `grow()`, so a page that never grows spends no
 //   worker time on it. From then on one piece is kept ahead: the next is asked for (in idle time)
-//   once a swap's frames are done. The game's population sets when (Game.ts): it is told the
-//   pending piece once it is ready (`game.setComing`), and asks for the grow once a step is due.
+//   once a swap's frames are done. The game's population sets when (Game.ts, its session in
+//   Session.ts): it is told the pending piece once it is ready (`game.setComing`), and asks for
+//   the grow once a step is due.
 // - Versions: a version is a land step and its chunks (WorldChunks.ts `VersionChunks`). The shown
 //   one is the page's; the next step is generated as the pending one, on at most two workers (the
 //   shown one's own chunks are taken over wherever the growth steps in a chunk's window are the

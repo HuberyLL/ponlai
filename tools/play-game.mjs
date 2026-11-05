@@ -11,13 +11,14 @@
 //   --hour H        the whole hour the game starts at (default 8, the page's)
 //   --pieces P      the island grown by P pieces (tools/game-fixture.mjs `inputAt`, land seed 1)
 //   --grow          when the population reaches a step (Sim.growthDue), the next piece arrives at
-//                   once, as the page's swap hands it back (Sim.addPiece of `inputAt( pieces + 1 )`)
+//                   once, as the page's swap hands it back (Session.setIsland of
+//                   `inputAt( pieces + 1 )`)
 //   --population N  N islanders more than the starting three (Sim.addIslander: drawn sex and age)
 //   --place K[@x,z] a blueprint of kind K placed at the start (repeatable), at world metres x, z;
 //                   without a point at the first open ground that takes it, outward from the
 //                   island's middle (as verify-game's chests)
 //   --script F      the leader's lines, JSON: [ { "at": "d1 08:30", "to": "all" | [ "v1" ],
-//                   "words": "..." } ], said as Game.speak says them (below)
+//                   "words": "..." } ], said as the speak bar says them (Session.speak)
 //   --brain B       `standin` (sim/standin.ts, the default), or a module's path: its `createBrain`
 //                   or default export is called with the context below and returns a Brain (or a
 //                   Promise of one)
@@ -28,11 +29,18 @@
 //                   brain's answer (calls, or why it failed), for judging a brain offline
 //   --out DIR       where the outputs go (default artifacts/play/<UTC stamp>/, git-ignored)
 //
-// What it guarantees. The simulation runs as the page runs it (Game.update, Game.render): a tick
-// at a time, the record (Chronicle.ts) looking once after every tick as the page's does once a
-// frame, the leader's lines and the growth between ticks. With a brain that answers at once (the
-// stand-in) the run is the simulation's own deterministic game: the same options write the same
-// files byte for byte (nothing in them depends on the wall clock or the output folder). An
+// What it guarantees. The game runs as the page runs it: in the page's own session around the
+// simulation (src/game/Session.ts, which Game.ts hosts beside the view), a frame of one tick at a
+// time (Session.advance, a growth due asked for before the tick, so none after the last), the
+// record (Chronicle.ts) looking after every tick as the page's does once a frame (Session.look),
+// the leader's lines between ticks (Session.speak: a line of spaces alone says nothing, as on the
+// speak bar), and the starting islanders (--population's with them) landing at the record's first
+// look, blueprints placed after it noted as the player's. So what the page's game does around the
+// simulation (feeding the record, hearing, growing) is the session's, never copied here. The record
+// notes no skies: the weather is the page's own and nothing in the simulation depends on it. With a
+// brain that answers at once (the stand-in) the run is the simulation's own deterministic game: the
+// same options write the same files byte for byte (nothing in them depends on the wall clock or the
+// output folder). An
 // asynchronous brain (a `think` that returns a Promise) never holds up the page's world, so
 // headless the world runs on for --latency game seconds after a thought is asked and only then
 // waits, however long the answer takes in real time, before it applies the answer and steps on:
@@ -40,22 +48,12 @@
 // function of its perceptions plays a repeatable game too. An answer that comes sooner in real time
 // still lands at its tick.
 //
-// Mirrored from Game.ts, which is not reachable headless (it builds the view and the interface):
-// `speak` (the line goes into the record as the player's; for a brain that `hears`, each listener
-// keeps it until its next thought takes it, and is asked for a thought at once, which Sim.think
-// refuses while one is in flight), `takeHeard` / `hasHeard`, the record's first look before any
-// tick (the starting islanders land; --population's land with them), blueprints placed after it
-// (the record notes them as the player's, as from the build bar) and the growth. The record
-// notes no skies: the weather is the page's own and nothing in the simulation depends on it. A
-// change to how Game.ts feeds the record, hears or grows changes this copy too, until both take
-// those parts from one headless module (a refactor to do: Game.ts holds them beside the view).
-//
-// The brain module's context: `heard( id )` and its Game name `takeHeard( id )` (the leader's
-// words the islander heard since the last call, oldest first), `hasHeard( id )`, `islander( id )`
-// (name, sex and age in years: perception never names the one it is for), `note( id, text )` (a
-// line of the brain's own in the transcript, e.g. its reasoning) and `options` (this run's). A
-// brain that keeps failing (MAX_FAILURES answers rejected in a row) ends the run with exit 1, its
-// outputs written.
+// The brain module's context: `heard( id )` and its session name `takeHeard( id )` (the leader's
+// words the islander heard since the last call, oldest first: Session.takeHeard), `hasHeard( id )`,
+// `islander( id )` (name, sex and age in years: perception never names the one it is for),
+// `note( id, text )` (a line of the brain's own in the transcript, e.g. its reasoning) and
+// `options` (this run's). A brain that keeps failing (MAX_FAILURES answers rejected in a row) ends
+// the run with exit 1, its outputs written.
 //
 // Outputs, in the --out folder: transcript.md (day by day: the record's entries, the islanders'
 // actions with their outcomes, consecutive alike ones merged, what they said, the brain's thoughts
@@ -72,8 +70,7 @@
 // Generic: no need, item, option or building is named here. The needs are the body's own keys,
 // the activities the calls under way, an item's flows the bag's changes put down to the call that
 // made them, the buildings and the stock the state's: a new rule shows in the outputs without a
-// change to the tool. Only what Game.ts does around the simulation is mirrored (above), and
-// follows Game.ts.
+// change to the tool.
 import './qos.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -81,7 +78,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { newGame } from '../src/game/sim/Sim.ts';
 import { StandInBrain } from '../src/game/sim/standin.ts';
 import { BUILDING_KINDS } from '../src/game/sim/buildings.ts';
-import { Chronicle } from '../src/game/Chronicle.ts';
+import { Session } from '../src/game/Session.ts';
 import { stockOf } from '../src/game/sim/stock.ts';
 import { dayOf, minuteOf } from '../src/game/sim/clock.ts';
 import { ageOf } from '../src/game/sim/life.ts';
@@ -89,8 +86,6 @@ import { SECONDS_PER_GAME_DAY } from '../src/game/sim/types.ts';
 import { inputAt } from './game-fixture.mjs';
 
 const HOUR = 3600;
-// a sky for the record's look: with no game hours passed it notes none (see the header)
-const SKY = 'fair';
 // rejected answers in a row that end the run
 const MAX_FAILURES = 10;
 const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
@@ -187,11 +182,21 @@ const realStart = performance.now();
 
 // ------------------------------------------------------------------ the game
 
-const sim = newGame( inputAt( options.pieces ), { seed: options.seed, startHour: options.hour, pieces: options.pieces } );
+// the page's session (Game.ts) without the page: --grow's host hands the next piece back at once
+const growth = [];
+const session = new Session( inputAt( options.pieces ), { grow: () => {
+
+	if ( ! options.grow ) return;
+	session.setIsland( inputAt( sim.state.pieces + 1 ) );
+	growth.push( { tick: sim.state.tick, at: when( sim.state.tick ), pieces: sim.state.pieces, population: sim.population() } );
+	push( sim.state.tick, `${ clockOf( sim.state.tick ) } [island] the island grew by a piece: ${ sim.state.pieces } now, for ${ sim.population() } islanders` );
+
+} } );
+const sim = newGame( session.island, { seed: options.seed, startHour: options.hour, pieces: options.pieces } );
 for ( let n = 0; n < options.population; n ++ ) sim.addIslander();
-const record = new Chronicle();
-// the record's first look, before any tick (Game.begin): the islanders land at the start
-record.observe( sim, SKY, 0 );
+// installed with its islanders: the record's first look lands them at the start
+session.install( sim );
+const record = session.record;
 
 const clockOf = ( tick ) => {
 
@@ -353,11 +358,10 @@ function settle( v ) {
 
 }
 
-// the tools wrapped, to see each call as it is made (Game.ts hands the simulation the same five)
-const tools = new Map();
-for ( const [ name, handler ] of sim.tools ) {
+// the session's tools wrapped where they stand, to see each call as it is made
+for ( const [ name, handler ] of [ ...session.tools ] ) {
 
-	tools.set( name, ( body, args, s ) => {
+	session.tools.set( name, ( body, args, s ) => {
 
 		const tick = s.state.tick;
 		if ( name === 'say' ) {
@@ -404,23 +408,14 @@ for ( const [ name, handler ] of sim.tools ) {
 	} );
 
 }
-sim.tools = tools;
 
 // ------------------------------------------------------------------ the brain
 
-// the leader's words each islander heard and no thought has taken yet (Game.ts `heard`)
-const heard = new Map();
-const takeHeard = ( id ) => {
-
-	const words = heard.get( id ) ?? [];
-	heard.delete( id );
-	return words;
-
-};
+const takeHeard = ( id ) => session.takeHeard( id );
 const context = {
 	heard: takeHeard,
 	takeHeard,
-	hasHeard: ( id ) => ( heard.get( id )?.length ?? 0 ) > 0,
+	hasHeard: ( id ) => session.hasHeard( id ),
 	islander: ( id ) => {
 
 		const v = sim.villager( id );
@@ -494,7 +489,7 @@ const brain = {
 
 	},
 };
-sim.brain = brain;
+session.setBrain( brain );
 
 /** The thoughts due by now: wait for each answer, then let it act on the body at this tick. */
 async function answerDue() {
@@ -528,24 +523,6 @@ async function answerDue() {
 
 }
 
-/** The leader speaks (Game.speak): the record notes it; a brain that hears gets the words for each
- * listener's next thought, and is asked for one now. */
-function speak( words, to ) {
-
-	const text = words.trim();
-	record.add( sim, { kind: 'said', who: 'player', to, text } );
-	if ( ! brain.hears ) return;
-	const listeners = to === 'all' ? sim.state.villagers.map( ( v ) => v.id ) : to;
-	for ( const id of listeners ) {
-
-		if ( ! heard.has( id ) ) heard.set( id, [] );
-		heard.get( id ).push( text );
-
-	}
-	for ( const id of listeners ) sim.think( id );
-
-}
-
 // ------------------------------------------------------------------ the start
 
 for ( const spec of options.place ) {
@@ -556,8 +533,9 @@ for ( const spec of options.place ) {
 	push( 0, `${ clockOf( 0 ) } [start] ${ b.id } placed at ${ b.x.toFixed( 2 ) }, ${ b.z.toFixed( 2 ) }` );
 
 }
-// blueprints placed after the first look: the player's, as from the build bar
-record.observe( sim, SKY, 0 );
+// the record looks again: blueprints placed after its first look are the player's, as from the
+// build bar
+session.look( null );
 
 /** A blueprint at the first open ground that takes it, outward from the island's middle; null when
  * placed, else why not. */
@@ -574,7 +552,6 @@ function placeAnywhere( kind ) {
 // ------------------------------------------------------------------ the run
 
 const timeline = [];
-const growth = [];
 const end = Math.round( options.days * SECONDS_PER_GAME_DAY );
 let line = 0, recorded = 0, gone = 0, ok = true;
 
@@ -632,8 +609,8 @@ sample();
 let lastDay = dayAt( 0 );
 for ( ;; ) {
 
-	// between frames: the leader's lines due, the answers due, a growth due (Game.update)
-	while ( line < script.length && script[ line ].tick <= sim.state.tick ) speak( script[ line ].words, script[ line ++ ].to );
+	// between frames: the leader's lines due, the answers due
+	while ( line < script.length && script[ line ].tick <= sim.state.tick ) session.speak( script[ line ].words, script[ line ++ ].to );
 	readRecord();
 	if ( pending.length ) await answerDue();
 	if ( failures >= MAX_FAILURES ) {
@@ -643,17 +620,11 @@ for ( ;; ) {
 		break;
 
 	}
-	if ( options.grow && sim.growthDue() ) {
-
-		sim.addPiece( inputAt( sim.state.pieces + 1 ) );
-		growth.push( { tick: sim.state.tick, at: when( sim.state.tick ), pieces: sim.state.pieces, population: sim.population() } );
-		push( sim.state.tick, `${ clockOf( sim.state.tick ) } [island] the island grew by a piece: ${ sim.state.pieces } now, for ${ sim.population() } islanders` );
-
-	}
 	if ( sim.state.tick >= end ) break;
-	sim.step( 1 );
+	// a frame of one tick (a real second at a day of as many): a growth due, the tick, the look
+	session.advance( 1, SECONDS_PER_GAME_DAY );
+	session.look( null );
 	const tick = sim.state.tick;
-	record.observe( sim, SKY, 0 );
 	meet();
 	for ( ; gone < sim.state.dead.length; gone ++ ) {
 

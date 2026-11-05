@@ -8,35 +8,40 @@ import type { LookColours } from '../characters/looks.ts';
 import { parseBodies, type Body } from '../characters/Ages.ts';
 import type { LandLattice } from '../world/IslandGrowth.ts';
 import { GameUi } from './ui/GameUi.ts';
-import { newGame, loadGame } from './sim/Sim.ts';
-import { SAVE_KEY, UNREAD_KEY, keepsSave, readSave, readSlot, resumesSave, savedPieces, writeSave } from './save.ts';
+import { newGame } from './sim/Sim.ts';
+import { SAVE_KEY, UNREAD_KEY, keepsSave, readSlot, resumesSave, savedPieces } from './save.ts';
 import type { Sim } from './sim/Sim.ts';
-import { actionTools } from './sim/actions.ts';
-import type { Brain, ToolRegistry, ToolResult } from './sim/agent.ts';
-import { StandInBrain } from './sim/standin.ts';
+import type { Brain, ToolResult } from './sim/agent.ts';
 import { GameView, propSamples } from './view/GameView.ts';
 import { SECONDS_PER_GAME_DAY } from './sim/types.ts';
 import type { TrampleWalker } from '../world/vegetation/Trample.ts';
 import type { Weather, WeatherName } from '../sky/Weather.ts';
-import { Chronicle } from './Chronicle.ts';
-import type { RecordSave } from './Chronicle.ts';
+import type { Chronicle, RecordSave } from './Chronicle.ts';
+import { Session } from './Session.ts';
 import { stockOf } from './sim/stock.ts';
 import type { EntityId, IslandInput, Items } from './sim/types.ts';
 
-// The island as a game (?game): the simulation (src/game/sim) runs the islanders' bodies, their
-// needs and the places they act at, a brain in its slot thinks for them (the stand-in of plain
-// rules by default, sim/standin.ts) and GameView draws them and the chest into the scene.
+// The island as a game (?game): the game around its simulation runs headless in a session
+// (Session.ts: the simulation of src/game/sim, which runs the islanders' bodies, their needs and the
+// places they act at; its record, Chronicle.ts; the brain in its slot, the stand-in of plain rules by
+// default, sim/standin.ts; the leader's words; the save's contents; the island's growth), and the
+// page hosts it here: GameView draws the islanders and the chest into the scene.
 // The player's interface is 蜃光 (ui/GameUi.ts, docs/ui.md): the top row (day and time, pause and play,
 // the weather and its forecast, the island's stock, the record), the islanders' tags and marks, the
 // speak bar, the build bar (which hands a building the simulation knows to the placement in the
-// scene, Placement.ts) and the record (沧海录), whose history the game keeps (Chronicle.ts). The debug panel's Game folder (GameDebug.ts) and
+// scene, Placement.ts) and the record (沧海录), whose history the session keeps. The debug panel's Game folder (GameDebug.ts) and
 // the methods below, reached from the console as window.__PONLAI__.game, drive the rest. The
 // simulation's clock sets the time of day; the page's sky follows it, so pausing the game stops the
 // sky with it. The weather is the page's own, as without ?game, running on the day
 // clock, and its auto chain read ahead is the game's forecast (`forecast`, in game hours). Waves,
-// wind and rain keep real time. The player speaks to the islanders through `speak`: the words go
-// into the record and, for a brain that hears, wait per listener for its next thought
-// (`takeHeard`); the stand-in does not hear.
+// wind and rain keep real time. The player speaks to the islanders through `speak` (Session.speak:
+// the words go into the record and, for a brain that hears, wait per listener for its next
+// thought); the stand-in does not hear.
+//
+// A frame: `update` advances the session (a growth due asked for, the ticks, how near the next step
+// is: Session.advance) and returns the day clock's seconds the page steps the sky and the weather
+// by; `render` draws the islanders, and the record looks with the sky the weather then shows
+// (Session.look).
 //
 // URL options: hour (start hour, default 8), paused (start paused), load (resume the saved game),
 // new (start a new game), autosave (on, off), dayLength (real seconds per game day at 1x); see
@@ -51,8 +56,8 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // it is, the simulation asks whenever an islander has nothing under way (sim/Sim.ts), and the
 // console may ask with `think`. Walking is the body's motor, reached by the `go` action (walkTo is
 // the debug panel's). The save is the simulation's state and the record as JSON with a version
-// number, in one slot (save.ts, which says what is saved and how a save carries over to the next
-// build). Where the page keeps it (`keepsSave`: not in an automated browser) the game resumes it at
+// number, in one slot (Session.save, save.ts, which says what is saved and how a save carries over
+// to the next build). Where the page keeps it (`keepsSave`: not in an automated browser) the game resumes it at
 // start and saves every AUTOSAVE_SECONDS while the page shows (only when something changed), and
 // when the page is hidden or left; a save it cannot read is copied aside before the first save
 // over it. The debug panel and the console save, load and start over by hand anywhere. The ground
@@ -62,12 +67,12 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // pointer moves) tells the page through the context's `sceneEvent` (post/SceneEvents.ts), so the
 // temporal anti-aliasing cuts its history or converges a paused frame again.
 //
-// The island grows with the population (docs/game-design.md, "How the island grows"): each frame
-// `update` tells the page's island how near the next step is (`island.approach`, the sea floor's
-// rise over the coming piece) and, once a step is due and nothing is growing, asks it to grow
-// (`island.grow`, world/Growth.ts's instant swap). The swap hands the new land to `setIsland`,
-// which is the simulation's `addPiece`: the piece is counted there, whoever asked for the growth,
-// so the simulation's piece count is always the land step shown. The pending piece's land comes to
+// The island grows with the population (docs/game-design.md, "How the island grows"; Session.ts):
+// the session asks the page's island to grow once a step is due (`island.grow`, world/Growth.ts's
+// instant swap) and tells it each frame how near the next step is (`island.approach`, the sea
+// floor's rise over the coming piece). The swap hands the new land to `setIsland`, which is the
+// session's (the simulation's `addPiece`: the piece is counted there, whoever asked for the growth,
+// so the simulation's piece count is always the land step shown). The pending piece's land comes to
 // `setComing` once the page has it, and the simulation exposes its cells (Sim.comingLand). A save
 // keeps the piece count, and the page loads its world at it (world/WorldStart.ts; the `grow` URL
 // option wins), so a game resumes on its own island; one loaded from the panel must stand on the
@@ -126,7 +131,7 @@ export class Game {
 		const game = new Game( context );
 		// a new game starts at the page's hour (the `hour` URL option), on the island loaded
 		const saved = resumesSave( context.params ) ? game.savedGame( game.keeps ) : null;
-		const sim = saved?.sim ?? newGame( game.input, { startHour: game.startHour, pieces: context.pieces, bodies: game.bodies } );
+		const sim = saved?.sim ?? newGame( game.session.island, { startHour: game.startHour, pieces: context.pieces, bodies: game.bodies } );
 		// (a save stands on the world loaded for it, unless the `grow` URL option chose another)
 		sim.state.pieces = context.pieces;
 		if ( context.params.has( 'paused' ) ) sim.paused = true;
@@ -146,26 +151,16 @@ export class Game {
 
 	}
 
-	sim!: Sim;
+	/** the game around the simulation, headless (Session.ts): the simulation, its record, the brain,
+	 * the leader's words, the island's growth */
+	readonly session: Session;
 	private view: GameView | null = null;
 	private readonly context: GameContext;
-	private input: IslandInput;
 	private debug: { update(): void; reset(): void } | null = null;
 	/** the player's interface (null until the first simulation is installed) */
 	ui: GameUi | null = null;
-	/** the island's record (沧海录): what happened since the game was installed (Chronicle.ts) */
-	readonly record = new Chronicle();
-	// the player's words each islander has heard and no thought has taken yet (takeHeard)
-	private readonly heard = new Map<EntityId, string[]>();
-	/** the tools a brain acts through, by name (sim/agent.ts): the five actions, kept across a load */
-	readonly tools: ToolRegistry = actionTools();
-	// the brain in the islanders' slot, kept across a load (setBrain)
-	private brain: Brain | null = new StandInBrain();
+	// the ticks the last frame ran
 	private gameDt = 0;
-	// a grow asked of the page and not yet in
-	private growing = false;
-	// the pending piece's island, kept for a simulation installed later (a load)
-	private coming: IslandInput | null = null;
 	// frames rendered so far, and whether the props' pipelines are compiling (render)
 	private framesDrawn = 0;
 	private compiling = false;
@@ -188,28 +183,39 @@ export class Game {
 	private constructor( context: GameContext ) {
 
 		this.context = context;
-		this.input = islandInput( context.land, context.top );
+		this.session = new Session( islandInput( context.land, context.top ), { grow: () => context.island.grow(), approach: ( p ) => context.island.approach( p ) } );
 		this.keeps = keepsSave( context.params );
 		this.startHour = context.dayCycle.hour;
 		this.bodies = parseBodies( context.params.get( 'bodies' ) );
 
 	}
 
-	/** The island grew by a piece (Growth.ts's swap): the simulation's ground follows the new land,
-	 * its top, and counts the piece (Sim.addPiece); a saved game loads onto it. */
-	setIsland( land: LandLattice, top?: Uint8Array ): void {
+	/** The simulation installed (Session.sim). */
+	get sim(): Sim {
 
-		this.input = islandInput( land, top );
-		this.coming = null;
-		this.sim.addPiece( this.input );
+		return this.session.sim;
 
 	}
 
-	/** The next piece is ready on the page (Growth.ts): the simulation sees its cells (Sim.comingLand). */
+	/** The island's record (沧海录): what happened since the simulation was installed (Chronicle.ts). */
+	get record(): Chronicle {
+
+		return this.session.record;
+
+	}
+
+	/** The island grew by a piece (Growth.ts's swap): the simulation's ground follows the new land,
+	 * its top, and counts the piece (Session.setIsland); a saved game loads onto it. */
+	setIsland( land: LandLattice, top?: Uint8Array ): void {
+
+		this.session.setIsland( islandInput( land, top ) );
+
+	}
+
+	/** The next piece is ready on the page (Growth.ts): the simulation sees its cells (Session.setComing). */
 	setComing( land: LandLattice, top?: Uint8Array ): void {
 
-		this.coming = islandInput( land, top );
-		this.sim.setComing( this.coming );
+		this.session.setComing( islandInput( land, top ) );
 
 	}
 
@@ -228,10 +234,10 @@ export class Game {
 
 		const json = readSlot();
 		if ( json === null ) return null;
-		const save = readSave( json );
 		try {
 
-			if ( save ) return { sim: loadGame( save.sim, this.input ), record: save.record };
+			const saved = this.session.read( json );
+			if ( saved ) return saved;
 
 		} catch ( error ) {
 
@@ -252,26 +258,19 @@ export class Game {
 
 	}
 
-	/** Install a simulation (and its record, for a saved game): its tools and brain, a fresh view,
-	 * and the day clock set to its hour at once. */
+	/** Install a simulation (and its record, for a saved game) in the session (Session.install: its
+	 * tools and brain, the record's first look), a fresh view, and the day clock set to its hour at
+	 * once. */
 	private async begin( sim: Sim, record?: RecordSave ): Promise<void> {
 
 		const c = this.context;
-		sim.tools = this.tools;
-		sim.brain = this.brain;
-		if ( this.coming ) sim.setComing( this.coming );
+		this.session.install( sim, record );
 		this.view?.dispose();
 		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, holdOpaque: c.holdOpaque, loadLook: c.loadLook, lookColours: c.lookColours,
 			body: ( v ) => ( { sex: v.sex, age: sim.age( v ) } ),
 			ticksPerSecond: () => SECONDS_PER_GAME_DAY / c.dayCycle.dayLength } );
-		this.sim = sim;
-		this.record.reset();
-		if ( record ) this.record.restore( record );
-		this.heard.clear();
 		this.lastSaved = '';
 		this.nextSave = performance.now() + AUTOSAVE_SECONDS * 1000;
-		// the record's first look, before any tick: a new game's islanders land at its start
-		this.record.observe( sim, this.weatherNow().shown, 0 );
 		c.sceneEvent( 'game begin' );
 		this.debug?.reset();
 		if ( this.ui ) this.ui.reset();
@@ -286,31 +285,13 @@ export class Game {
 
 	}
 
-	/** Advance the simulation; returns the day clock's seconds to advance the sky and the page's weather by. */
+	/** Advance the session by a frame (Session.advance: the island's growth, the simulation); returns
+	 * the day clock's seconds to advance the sky and the page's weather by. */
 	update( rawDt: number ): number {
 
 		const secondsPerDay = this.context.dayCycle.dayLength;
-		this.gameDt = this.sim.advance( Math.min( Math.max( rawDt, 0 ), MAX_FRAME ), secondsPerDay );
-		this.grow();
+		this.gameDt = this.session.advance( Math.min( Math.max( rawDt, 0 ), MAX_FRAME ), secondsPerDay );
 		return this.gameDt * secondsPerDay / SECONDS_PER_GAME_DAY;
-
-	}
-
-	// The island follows the population: how near the next step is, and a grow once one is due and
-	// none is under way. A grow that brought no piece (the growth horizon, a failed generation) is
-	// not asked again.
-	private grow(): void {
-
-		const sim = this.sim, island = this.context.island;
-		island.approach( sim.approach() );
-		if ( this.growing || ! sim.growthDue() ) return;
-		this.growing = true;
-		const before = sim.state.pieces;
-		island.grow().then( () => {
-
-			if ( this.sim.state.pieces > before ) this.growing = false;
-
-		} );
 
 	}
 
@@ -328,7 +309,8 @@ export class Game {
 
 	}
 
-	/** After the scene's own updates: the islanders, their shadow, the HUD and the debug panel. */
+	/** After the scene's own updates: the islanders, their shadow, the record's look at the frame
+	 * with the sky now shown, the HUD and the debug panel. */
 	render( renderer: THREE.WebGPURenderer, sun: THREE.DirectionalLight, rawDt: number ): void {
 
 		this.view?.update( renderer, sun, rawDt, this.gameDt );
@@ -342,7 +324,7 @@ export class Game {
 			this.context.compileDraws( [ ...propSamples(), ...this.ui!.samples() ] ).catch( ( error: unknown ) => console.error( 'Could not compile the game\'s props', error ) );
 
 		}
-		this.record.observe( this.sim, this.weatherNow().shown, this.gameDt / 3600 );
+		this.session.look( this.weatherNow().shown );
 		this.ui?.update();
 		this.debug?.update();
 		if ( this.keeps && performance.now() >= this.nextSave ) this.autosave();
@@ -367,13 +349,12 @@ export class Game {
 	save(): string {
 
 		// what happened since the frame's look goes in too (the panel's click comes between frames)
-		this.record.observe( this.sim, this.weatherNow().shown, 0 );
-		const sim = this.sim.state, record = this.record.save();
+		const json = this.session.save( this.weatherNow().shown );
 		try {
 
-			localStorage.setItem( SAVE_KEY, writeSave( sim, record ) );
+			localStorage.setItem( SAVE_KEY, json );
 			this.savedAt = Date.now();
-			this.lastSaved = JSON.stringify( { sim, record } );
+			this.lastSaved = this.contents();
 			this.saveFailed = false;
 			return 'Saved';
 
@@ -392,8 +373,15 @@ export class Game {
 	autosave(): void {
 
 		this.nextSave = performance.now() + AUTOSAVE_SECONDS * 1000;
-		this.record.observe( this.sim, this.weatherNow().shown, 0 );
-		if ( JSON.stringify( { sim: this.sim.state, record: this.record.save() } ) !== this.lastSaved ) this.save();
+		this.session.look( this.weatherNow().shown );
+		if ( this.contents() !== this.lastSaved ) this.save();
+
+	}
+
+	// what a save holds, without the time it was written: equal when nothing changed since
+	private contents(): string {
+
+		return JSON.stringify( { sim: this.sim.state, record: this.record.save() } );
 
 	}
 
@@ -414,7 +402,7 @@ export class Game {
 	 * replaces the saved game at once. */
 	async startOver(): Promise<string> {
 
-		await this.begin( newGame( this.input, { startHour: this.startHour, pieces: this.sim.state.pieces, bodies: this.bodies } ) );
+		await this.begin( newGame( this.session.island, { startHour: this.startHour, pieces: this.sim.state.pieces, bodies: this.bodies } ) );
 		if ( this.keeps ) this.autosave();
 		return this.keeps ? 'New game, saved over the old one' : 'New game';
 
@@ -424,16 +412,15 @@ export class Game {
 	 * the characters that land for its next thought only then. */
 	hears(): boolean {
 
-		return this.brain?.hears ?? false;
+		return this.session.hears();
 
 	}
 
-	/** The brain that thinks for the islanders (sim/agent.ts Brain; null: none), kept across a load. */
+	/** The brain that thinks for the islanders (sim/agent.ts Brain; null: none), kept across a load
+	 * (Session.setBrain). */
 	setBrain( brain: Brain | null ): void {
 
-		this.brain = brain;
-		this.heard.clear();
-		this.sim.brain = brain;
+		this.session.setBrain( brain );
 
 	}
 
@@ -487,25 +474,11 @@ export class Game {
 
 	}
 
-	/** The player speaks: words to some islanders (their ids) or to everyone. They go into the
-	 * record; for a brain that hears, each listener keeps them until a thought takes them
-	 * (takeHeard), and is asked for one now. */
+	/** The player speaks: words to some islanders (their ids) or to everyone (Session.speak: into
+	 * the record, and for a brain that hears to each listener's next thought, asked for now). */
 	speak( words: string, to: EntityId[] | 'all' ): void {
 
-		const text = words.trim();
-		if ( ! text ) return;
-		this.record.add( this.sim, { kind: 'said', who: 'player', to, text } );
-		if ( ! this.brain?.hears ) return;
-		const listeners = to === 'all' ? this.sim.state.villagers.map( ( v ) => v.id ) : to;
-		for ( const id of listeners ) {
-
-			let lines = this.heard.get( id );
-			if ( ! lines ) this.heard.set( id, lines = [] );
-			lines.push( text );
-
-		}
-		// (Sim.think: not while a thought is in flight; the words then wait for the next)
-		for ( const id of listeners ) this.sim.think( id );
+		this.session.speak( words, to );
 
 	}
 
@@ -513,7 +486,7 @@ export class Game {
 	 * console's; a brain says through its tools). Null when said, else why not. */
 	say( id: EntityId, words: string ): string | null {
 
-		const v = this.sim.villager( id ), say = this.tools.get( 'say' );
+		const v = this.sim.villager( id ), say = this.session.tools.get( 'say' );
 		if ( ! v || ! say ) return 'No such islander';
 		const result = say( v, { words }, this.sim );
 		return result.ok ? null : result.reason;
@@ -528,20 +501,18 @@ export class Game {
 
 	}
 
-	/** The player's words an islander has heard since the last call for it, oldest first (for a
-	 * brain that hears: hearing the leader is designed with the language model). */
+	/** The player's words an islander has heard since the last call for it, oldest first
+	 * (Session.takeHeard). */
 	takeHeard( id: EntityId ): string[] {
 
-		const lines = this.heard.get( id ) ?? [];
-		this.heard.delete( id );
-		return lines;
+		return this.session.takeHeard( id );
 
 	}
 
-	/** Whether the player's words wait for an islander's next thought. */
+	/** Whether the player's words wait for an islander's next thought (Session.hasHeard). */
 	hasHeard( id: EntityId ): boolean {
 
-		return ( this.heard.get( id )?.length ?? 0 ) > 0;
+		return this.session.hasHeard( id );
 
 	}
 

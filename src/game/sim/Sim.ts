@@ -32,10 +32,10 @@ import type { Body, Sex } from '../../characters/Ages.ts';
 // The island grows with the population (docs/game-design.md, "How the island grows"): the
 // population is the islanders' count, and each step of GROWTH_STEPS (types.ts) is one piece. The
 // simulation only says when growth is due (`growthDue`) and how near the next step is
-// (`approach`); the page grows the island (Game.ts `island`, world/Growth.ts), and the swap hands
-// the new land back as `addPiece`, which opens its cells and counts the piece (SimState.pieces: the
-// land step the game stands on, so a save loads its world at it). The piece to come is known ahead:
-// its cells are `comingLand` from the moment the page has it, for planning.
+// (`approach`); the session's host grows the island (../Session.ts; on the page world/Growth.ts)
+// and hands the new land back as `addPiece`, which opens its cells and counts the piece
+// (SimState.pieces: the land step the game stands on, so a save loads its world at it). The piece
+// to come is known ahead: its cells are `comingLand` from the moment the page has it, for planning.
 //
 // A new game starts with three grown islanders: a man, a woman and one of either, each 20 to 35
 // years old, from the seed. An islander who dies leaves the roll for the list of the dead
