@@ -446,6 +446,14 @@ const OVERCAST_KEY_GAIN = tune( 'lighting.overcastKey', 1, { min: 1, max: 8 } );
  * the land under a cloudy deck takes its sky (lighting/AmbientRelight.ts CLOUDY_LAND) and the key
  * the clouds' shadow lets through. Tunable: `lighting.cloudyKey`. */
 const CLOUDY_KEY_GAIN = tune( 'lighting.cloudyKey', 1, { min: 1, max: 8 } );
+/** How far the sward lets go of its own sharp shade in the key under overcast's deck (post/
+ * MeadowShade.ts `swardShadeRelease`), by overcast's share and its deck's light: 0 keeps the
+ * sward's shade between its blades as under a clear sky, so the floor's light under the deck
+ * (sky/Weather.ts `deckFloor`) lights the blades' sunward sides and leaves the gaps between them
+ * dark; 1 lifts the sward evenly, its shade in the key its canopy's. Raise it if the sward under
+ * the deck reads speckled with small sharp shade; lower it if the meadow reads flat. Tunable:
+ * `lighting.swardRelease`. */
+const SWARD_RELEASE = tune( 'lighting.swardRelease', 0, { min: 0, max: 1, onChange: () => sceneEvent( 'retune' ) } );
 
 function publishLighting(): void {
 
@@ -463,9 +471,9 @@ function publishLighting(): void {
 	// shadow against it (lighting/KeyCloud.ts `keyDeckShare`)
 	keyDeckShare.value = deckLight( sky.elevation, cloudedShare( weather.skyMix ), overcast );
 	shared.landKey.value.set( sun.color.r * keyGain, sun.color.g * keyGain, sun.color.b * keyGain );
-	// the sward's shade release: under overcast's deck the sward's own shade in the key is its
-	// canopy's (post/MeadowShade.ts `swardShadeRelease`)
-	swardShadeRelease.value = overcast * overcastDeckLight( sky.elevation );
+	// the sward's shade release under overcast's deck (SWARD_RELEASE, post/MeadowShade.ts
+	// `swardShadeRelease`)
+	swardShadeRelease.value = SWARD_RELEASE() * overcast * overcastDeckLight( sky.elevation );
 	// a low sun's lift of the sky's light on what it lights: the land's ambient, the water's sky
 	// light and the sea's reflection (lighting/AmbientRelight.ts `lowSunSkyLift`)
 	shared.skyLift.value = lowSunSkyLift( sky.elevation, cloudedShare( weather.skyMix ) );

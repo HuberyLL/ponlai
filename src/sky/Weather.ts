@@ -275,13 +275,12 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // keeps the weather's `deckFloor` on the land (Sky.ts `keyDirectVisibility`), through the sun's map:
 // it is the direct key, so it takes the sun's map, the meadow's screen-space shade and the canopy's
 // light, and the island's cast shadows show under the deck (`castShadow` 1), soft because the sky's
-// light is the larger share, save the sward's on itself, whose shade in the key is its canopy's
-// (post/MeadowShade.ts `swardShadeRelease`). The floor fades with the sun's share of the key, so
-// the moon takes none. The water and the air take the clouds' own transmittance. Overcast is a
-// closed deck deep enough that its disc does not show (Sky.ts `domeColour`): the land under it is
-// even, its sky the deck's own glow about the sun's place, which
-// the land takes with the rest of the sky (lighting/AmbientRelight.ts OVERCAST_LAND, CLOUDY_LAND) and
-// the water by DECK_SKY_GAIN; exposed by the sky (post/Exposure.ts).
+// light is the larger share. The floor fades with the sun's share of the key, so the moon takes
+// none. The water and the air take the clouds' own transmittance. Overcast is a closed deck deep
+// enough that its disc does not show (Sky.ts `domeColour`): the land under it is even, its sky the
+// deck's own glow about the sun's place, which the land takes with the rest of the sky
+// (lighting/AmbientRelight.ts OVERCAST_LAND, CLOUDY_LAND) and the water by DECK_SKY_GAIN; exposed
+// by the sky (post/Exposure.ts).
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
 	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
 	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
