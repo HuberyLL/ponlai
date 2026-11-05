@@ -101,32 +101,23 @@ export function deckLight( elevation: number, clouded: number, overcast: number 
 
 }
 
-/** How far the deck has taken over the weather's own fields at the sun's `elevation`: `deckLight`
- * over the clouded share. Under it the clouds' shadow on the land keeps the weather's `deckFloor`
- * of the key (Sky.ts `keyCloudFloor`); a clear or a fair sky has no deck fields of its own
- * (`deckFloor` its `cloudFloor`). */
-export function deckTakeover( elevation: number, clouded: number, overcast: number ): number {
-
-	return clouded > 0 ? deckLight( elevation, clouded, overcast ) / clouded : 0;
-
-}
-
-/** How far the deck's floor of the key has taken over under the weather's cloud `clouded`, of which
- * overcast's share is `overcast`, at the sun's `elevation` (degrees), for the floor the air under
- * the deck keeps (Sky.ts `deckKeyFloor`): `deckTakeover` with overcast's share whole at every sun.
- * The floor is the light the closed deck passes down in place of the key it hides, so it stays
- * while any key lights the deck, the sun by day, the moon by night, and the key's own light sets
- * its level. Equal to `deckTakeover` by day (`overcastDeckLight` is exactly 1 there). */
+/** How far the deck's floor of the key has taken over the weather's own fields under its cloud
+ * `clouded`, of which overcast's share is `overcast`, at the sun's `elevation` (degrees): a cloudy
+ * deck's share as its own light holds (`deckRamp`), overcast's whole at every sun, over the clouded
+ * share. Under it the land's key and the air under the deck keep the weather's `deckFloor` (Sky.ts
+ * `keyCloudFloor`, `deckKeyFloor`); a clear or a fair sky has no deck fields of its own (`deckFloor`
+ * its `cloudFloor`). The floor is the light the closed deck passes down in place of the key it
+ * hides, so it stays while any key lights the deck, the sun by day, the moon by night, and the
+ * key's own light sets its level. */
 export function deckFloorTakeover( elevation: number, clouded: number, overcast: number ): number {
 
 	return clouded > 0 ? ( ( clouded - overcast ) * deckRamp( elevation ) + overcast ) / clouded : 0;
 
 }
 
-/** The key's gain on the deck's floor for the air under it (Sky.ts `deckKeyFloor`): overcast's
- * gain `overcastKey` by its share `overcast` at every sun (`deckFloorTakeover`), a cloudy deck's
- * `cloudyKey` by its share `cloudy` and `deckRamp`. Equal by day to the land's gain, whose overcast
- * part fades with `overcastDeckLight` (Sky.ts `keyCloudFloor`). */
+/** The key's gain on the deck's floor (Sky.ts `keyCloudFloor`, `deckKeyFloor`): overcast's gain
+ * `overcastKey` by its share `overcast` at every sun (`deckFloorTakeover`), a cloudy deck's
+ * `cloudyKey` by its share `cloudy` and `deckRamp`. */
 export function floorKeyGain( elevation: number, overcast: number, cloudy: number, overcastKey: number, cloudyKey: number ): number {
 
 	return 1 + ( overcastKey - 1 ) * overcast + ( cloudyKey - 1 ) * cloudy * deckRamp( elevation );
@@ -221,12 +212,13 @@ export interface WeatherState {
 	// The share of the key's direct light the land keeps under the thickest cloud: the floor of the
 	// clouds' shadow on the island (Sky.ts `keyDirectVisibility`). 1 takes the
 	// deck's shadow away, leaving `directVisibility` alone to set the land's direct light. By day
-	// under a cloudy deck it gives way to `deckFloor` (`deckTakeover`).
+	// under a cloudy deck it gives way to `deckFloor` (`deckFloorTakeover`).
 	cloudFloor: number;
-	// The clouds' shadow floor that takes over from `cloudFloor` under a deck (`deckTakeover`): under
-	// a deck the land's key keeps this share whatever the deck's depth (Sky.ts `keyDirectVisibility`),
-	// through the sun's map, so the island's cast shadows show under it; it fades with the sun's
-	// share of the key (Sky.ts `track`), so the moon takes none. Overcast has one; clear and
+	// The clouds' shadow floor that takes over from `cloudFloor` under a deck (`deckFloorTakeover`):
+	// under a deck the land's key keeps this share whatever the deck's depth (Sky.ts
+	// `keyDirectVisibility`), through the key's map, so the island's cast shadows show under it; under
+	// overcast it rides on whichever light keys the scene, the moon's by night as the sun's by day
+	// (Sky.ts `track`), and the air under the deck keeps it too. Overcast has one; clear and
 	// fair none (a floor there would show the takeover's step when a deck comes in); cloudy none so
 	// far; the parked skies none, their key reaching the land only through the deck's own
 	// transmittance. Raise it for a stronger directional light and darker cast shadows under the
@@ -338,12 +330,13 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // the camera looks through, not a tint over the frame.
 // The island's direct light under cloud: a cloudy sky's cumulus pass the full sun through their
 // gaps; at a low sun their shadow keeps about 8 % of it (`cloudFloor`). Once a deck has taken over
-// (cloudy's from 6 degrees, `deckRamp`; overcast's at every sun by day, `overcastDeckLight`) the key
+// (cloudy's from 6 degrees, `deckRamp`; overcast's at every sun, `deckFloorTakeover`) the key
 // keeps the weather's `deckFloor` on the land (Sky.ts `keyDirectVisibility`), through the sun's map:
 // it is the direct key, so it takes the sun's map, the meadow's screen-space shade and the canopy's
 // light, and the island's cast shadows show under the deck (`castShadow` 1), soft because the sky's
-// light is the larger share. The floor fades with the sun's share of the key, so the moon takes
-// none. The water and the air take the clouds' own transmittance. Overcast is a closed deck deep
+// light is the larger share. Under overcast the floor rides on the moon's light by night as on the
+// sun's by day, and the air under the deck keeps it too (Sky.ts `deckKeyFloor`); the water takes the
+// clouds' own transmittance. Overcast is a closed deck deep
 // enough that its disc does not show (Sky.ts `domeColour`): the land under it is even, its sky the
 // deck's own glow about the sun's place, which the land takes with the rest of the sky
 // (lighting/AmbientRelight.ts OVERCAST_LAND_UNIT, CLOUDY_LAND; under overcast its sun's bounce

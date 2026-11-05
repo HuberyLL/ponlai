@@ -7,10 +7,11 @@ type V3 = THREE.Node<'vec3'>;
 // The key's visibility under cloud, for the lit code that has no sky of its own to ask. The sky
 // (Sky.ts) hands over the clouds' transmittance along the key at a world position (Clouds.ts
 // `shadow`, V) and the land's floor under a deck (Sky.ts `keyCloudFloor`, the weather's `deckFloor`
-// once a deck has taken over, faded with the key's sun share by night). The land's key keeps
-// K = mix( floor, 1, V ) (Sky.ts `keyDirectVisibility`, three's sun through `installOpenShadow`);
-// the sea, what lies under it and the air keep V alone, so the water drawn, the seabed seen through
-// it and the light under it are lit by the same key.
+// once a deck has taken over, on the moon's light by night as on the sun's by day). The land's key
+// keeps K = mix( floor, 1, V ) (Sky.ts `keyDirectVisibility`, three's sun through
+// `installOpenShadow`); the sea and what lies under it keep V alone, so the water drawn, the seabed
+// seen through it and the light under it are lit by the same key (the air under a deck keeps the
+// same floor of its own: Sky.ts `deckKeyFloor`, VolumetricHaze.ts `keyFloor`).
 // - The islanders (characters/CharacterMaterial.ts) read their cast shadow as the ratio of the key
 //   their shadow maps let through to the key in the open. Under a deck the open key is the land's
 //   K, so a figure under the floor's light reads lit and its cast shadow as a shadow: the open key
