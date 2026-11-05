@@ -1,5 +1,6 @@
-// Checks of the game's simulation, asserted: the clock and its ticks, the ground grid and a path
-// over it, a body that walks to a point and stops there, a save that loads back as it was, a brain
+// Checks of the game's simulation, asserted: the clock and its ticks (a minute's first second that
+// minute), the ground grid and a path over it, a body that walks to a point and stops there, a save
+// that loads back as it was, a brain
 // whose late answer is applied while the world ran on; then the first prototype's rules: needs that
 // fall and rise (thirst off: hydration holds), fishing by the seeded generator and the bag's capacity,
 // the chest placed as a blueprint and built, several of a kind with ids of their own, two
@@ -32,7 +33,7 @@ import { FISH_SECONDS, placesAt } from '../src/game/sim/places.ts';
 import { CHEST_WORK, progressOf, stageOf } from '../src/game/sim/buildings.ts';
 import { GROWTH_STEPS, POPULATION_START, SECONDS_PER_GAME_DAY, SECONDS_PER_YEAR, WALK_SPEED, piecesFor } from '../src/game/sim/types.ts';
 import { ageOf, drawLifespan } from '../src/game/sim/life.ts';
-import { hourOf } from '../src/game/sim/clock.ts';
+import { minuteOf } from '../src/game/sim/clock.ts';
 import { SAVE_VERSION, readSave, savedPieces, writeSave } from '../src/game/save.ts';
 import { Chronicle } from '../src/game/Chronicle.ts';
 import { shortfall, stockOf } from '../src/game/sim/stock.ts';
@@ -82,7 +83,19 @@ function farthestOpen( grid, p ) {
 	assert.equal( sim.day(), 1, 'the day turns at midnight' );
 	const a = newGame( input, { seed: 7 } ), b = newGame( input, { seed: 7 } );
 	assert.deepEqual( [ a.random(), a.random() ], [ b.random(), b.random() ], 'one seed, one sequence' );
-	console.log( 'clock: ticks, pause, day and the seeded generator' );
+	// the minute of the day counts whole seconds: a minute's first second is that minute, as the
+	// islanders perceive it and the record notes it (( 8 + 60 / 3600 ) * 60 floors to 480)
+	for ( const startHour of [ 8, 7.5, 0 ] ) for ( let tick = 0; tick < 2 * SECONDS_PER_GAME_DAY; tick += 60 ) {
+
+		assert.equal( minuteOf( { tick, startHour } ), ( startHour * 60 + tick / 60 ) % 1440, `the minute at ${ tick } s from ${ startHour } h` );
+
+	}
+	const early = newGame( input, { startHour: 8 } ), book = new Chronicle();
+	early.step( 60 );
+	assert.deepEqual( perceive( early, early.state.villagers[ 0 ] ).time, { day: 1, hour: 8, minute: 1 }, 'a minute after 8:00 is perceived as 8:01' );
+	book.add( early, { kind: 'said', who: 'player', to: 'all', text: 'now' } );
+	assert.equal( book.entries[ 0 ].minute, 481, 'and noted at it' );
+	console.log( 'clock: ticks, pause, day, the minute of the day and the seeded generator' );
 
 }
 
@@ -607,7 +620,7 @@ function buildChest( sim ) {
 	assert.equal( noted.length, 1, 'the record notes the death once' );
 	assert.equal( noted[ 0 ].who, dying.id );
 	assert.equal( noted[ 0 ].text, String( Math.floor( dying.lifespan ) ) );
-	assert.equal( noted[ 0 ].minute, Math.floor( hourOf( { tick: dead.died, startHour: sim.state.startHour } ) * 60 ), 'at the minute it died' );
+	assert.equal( noted[ 0 ].minute, minuteOf( { tick: dead.died, startHour: sim.state.startHour } ), 'at the minute it died' );
 	const id = sim.addIslander();
 	assert.ok( id !== dying.id && ! sim.state.villagers.slice( 0, - 1 ).some( ( u ) => u.id === id ), 'a newcomer takes an id never used' );
 	const loaded = loadGame( sim.save(), input );

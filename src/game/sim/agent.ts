@@ -1,4 +1,4 @@
-import { dayOf, hourOf } from './clock.ts';
+import { dayOf, minuteOf } from './clock.ts';
 import { placesAt, placesFor } from './places.ts';
 import type { Sim } from './Sim.ts';
 import type { ActionCall, ActionOutcome, ActionResult, EntityId, Items, Villager } from './types.ts';
@@ -90,7 +90,7 @@ export function perceive( sim: Sim, body: Villager ): Perception {
 	const startHour = sim.state.startHour;
 	const timeOf = ( tick: number ): PerceivedTime => {
 
-		const at = { tick, startHour }, minutes = Math.floor( hourOf( at ) * 60 );
+		const at = { tick, startHour }, minutes = minuteOf( at );
 		return { day: dayOf( at ) + 1, hour: Math.floor( minutes / 60 ), minute: minutes % 60 };
 
 	};

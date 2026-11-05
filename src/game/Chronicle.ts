@@ -1,7 +1,7 @@
 import type { WeatherName } from '../sky/Weather.ts';
 import { stageOf } from './sim/buildings.ts';
 import { CRITICAL_NEED } from './sim/needs.ts';
-import { dayOf, hourOf } from './sim/clock.ts';
+import { dayOf, minuteOf } from './sim/clock.ts';
 import type { Sim } from './sim/Sim.ts';
 import { SECONDS_PER_YEAR } from './sim/types.ts';
 import type { EntityId, Needs, Villager } from './sim/types.ts';
@@ -114,7 +114,7 @@ export class Chronicle {
 	 * placeholders); a landing is the day the islander's page starts. */
 	add( sim: Sim, entry: Omit<RecordEntry, 'day' | 'minute'> & Partial<Pick<RecordEntry, 'day' | 'minute'>> ): void {
 
-		const e = { day: sim.day() + 1, minute: Math.floor( sim.hour() * 60 ), ...entry };
+		const e = { day: sim.day() + 1, minute: minuteOf( sim.state ), ...entry };
 		this.entries.push( e );
 		if ( e.kind === 'landed' && ! this.landed.has( e.who ) ) this.landed.set( e.who, e.day );
 		this.version ++;
@@ -178,7 +178,7 @@ export class Chronicle {
 			this.gave.delete( d.id );
 			for ( const need of [ 'satiety', 'hydration' ] ) this.alerted.delete( `${ d.id }:${ need }` );
 			const at = { tick: d.died, startHour: state.startHour };
-			this.add( sim, { kind: 'died', who: d.id, text: String( Math.floor( ( d.died - d.born ) / SECONDS_PER_YEAR ) ), day: dayOf( at ) + 1, minute: Math.floor( hourOf( at ) * 60 ) } );
+			this.add( sim, { kind: 'died', who: d.id, text: String( Math.floor( ( d.died - d.born ) / SECONDS_PER_YEAR ) ), day: dayOf( at ) + 1, minute: minuteOf( at ) } );
 
 		}
 		for ( const b of state.buildings ) {
