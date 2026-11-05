@@ -39,7 +39,7 @@
 // checks skip them. Their code stays and keeps compiling; debug builds (the dev server, `?debug`)
 // still reach every preset, so captures, probes and a later revival can use them. Under their deck
 // they take what overcast's share takes, counting as overcast in `skyMix`: the level air and the sky
-// gain (DECK_SKY_GAIN), the land's own sky gain under overcast (lighting/AmbientRelight.ts
+// gain (DECK_SKY_GAIN, the water's), the land's own sky gain under overcast (lighting/AmbientRelight.ts
 // OVERCAST_LAND), overcast's sky shape (weather/VolumetricHaze.ts) and the exposure by the sky with
 // overcast's key (post/Exposure.ts), and the land takes the key through their clouds' shadow as it
 // does under overcast.
@@ -113,9 +113,9 @@ export function deckTakeover( elevation: number, clouded: number, overcast: numb
  * for both. It stands in for the soft light the land keeps under cloud: the light that comes
  * through a deck from about the sun's place, broader than the sun's own key, which the bake's one
  * panorama does not carry onto the land and the water body, so without it the land stood near four
- * stops under the deck and the sea dark under it. 3 sets the sky about three stops over the meadow
- * under a cloudy deck. It comes in with the deck's light (`deckLight`). Under overcast the land's
- * sky light takes a gain of its own over it (lighting/AmbientRelight.ts OVERCAST_LAND); the water
+ * stops under the deck and the sea dark under it. It comes in with the deck's light (`deckLight`).
+ * It is the water's alone: under either deck the land's sky light takes a gain of its own in its
+ * place, by the deck's light (lighting/AmbientRelight.ts OVERCAST_LAND, CLOUDY_LAND), and the water
  * keeps this, whichever reads it (the water drawn, the sea's bounce onto the land). */
 export const DECK_SKY_GAIN = 3;
 
@@ -165,13 +165,13 @@ export interface WeatherState {
 	density: number;
 	directVisibility: number;
 	// The share of the key's direct light the land keeps under the thickest cloud: the floor of the
-	// clouds' shadow on the island (Sky.ts `keyCloudVisibility`). 1 takes the deck's shadow away,
-	// leaving `directVisibility` alone to set the land's direct light.
+	// clouds' shadow on the island (Sky.ts `keyDirectVisibility`, `keyCloudVisibility`). 1 takes the
+	// deck's shadow away, leaving `directVisibility` alone to set the land's direct light.
 	cloudFloor: number;
-	// The clouds' shadow floor that takes over from `cloudFloor` under a deck (`deckTakeover`). A
-	// cloudy sky lifts its floor to 0.36, so its gaps still read and its shade stays soft; overcast
-	// has none (0), as the parked skies: the key reaches its land only through the deck's own
-	// transmittance (`shadowDensity` 1).
+	// The clouds' shadow floor that takes over from `cloudFloor` under a deck (`deckTakeover`). The
+	// kept skies have none (0), as the parked skies: the key reaches their land only through the
+	// deck's own transmittance (`shadowDensity` 1), per point by Beer's law, so a thin part of the
+	// deck lets the key through in patches and a thick one keeps it out.
 	deckFloor: number;
 	// How much of the key's cast shadow (the sun's map: groves, cliffs, culms) the land shows, 1 all
 	// of it (lighting/SolarShadow.ts `installOpenShadow`).
@@ -266,10 +266,13 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // the camera looks through, not a tint over the frame.
 // The island's direct light under cloud: a cloudy sky's cumulus pass the full sun through their
 // gaps; at a low sun their shadow keeps about 8 % of it (`cloudFloor`), and once their deck has
-// taken over (from 6 degrees, `deckRamp`) 36 % (`deckFloor`), so the gaps still read and the shade
-// under the deck stays soft, its sky light lifted by the deck (DECK_SKY_GAIN). Overcast is a closed
+// taken over (from 6 degrees, `deckRamp`) none (`deckFloor` 0): under the deck the key comes through
+// per point by its transmittance, times the deck's key gain where the deck is thin
+// (lighting/KeyGain.ts), and the land's sky light takes a gain of its own (lighting/AmbientRelight.ts
+// CLOUDY_LAND), the water's the deck's (DECK_SKY_GAIN). Overcast is a closed
 // dark deck at every sun height (`overcastDeckLight`), lit from its sky (its glow about the sun's
-// place included: DECK_SKY_GAIN, and the land's own gain, lighting/AmbientRelight.ts OVERCAST_LAND)
+// place included: the land by its own gain, lighting/AmbientRelight.ts OVERCAST_LAND, the water by
+// DECK_SKY_GAIN)
 // and exposed by the sky (post/Exposure.ts). The sun reaches the land and the sea only through the
 // deck: the key whole (`directVisibility` 1) times the clouds' shadow, Beer's law along the key
 // through the deck's own optical depth (`shadowDensity` 1, no floor: `deckFloor` 0), read per point
@@ -280,7 +283,7 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
 	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
 	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
-	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0.36, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, haze: 0.0021, nearDensity: 0.13, nearStart: 100, nearEnd: 700, rain: 0, fog: 0, storm: 0, streaks: 0 },
+	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, haze: 0.0021, nearDensity: 0.13, nearStart: 100, nearEnd: 700, rain: 0, fog: 0, storm: 0, streaks: 0 },
 	overcast: { coverage: 0.94, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, haze: 0.00974, nearDensity: 0.08, nearStart: 250, nearEnd: 500, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
 	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, haze: 0.0095, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
 	// A squall: the darkest deck, heavy rain, a strong wind (PRESET_WIND) and a rough, white-capped sea.
