@@ -72,7 +72,7 @@
 //   changes (src/main.ts), so a view whose message says `last` (capture-set: an eval of its own
 //   that is not a views.mjs view's) ends its page after its shot, and the next view loads fresh.
 //   --eval and --eval-ready run on every view and may leave such changes too: with either, a page
-//   per view. Otherwise a view after an exposure offset set by the one before was shot a stop off.
+//   per view.
 // - The GPU lock's slot is leased (gpu-lock.mjs `leaseGpuLock`): the worker keeps it from one view
 //   to the next, and gives it up before a view only when it has held it for --lease seconds (20) and
 //   a request ranked before its next one waits for it (an exclusive request, or a shared one when
