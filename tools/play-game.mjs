@@ -83,7 +83,7 @@ import { StandInBrain } from '../src/game/sim/standin.ts';
 import { BUILDING_KINDS } from '../src/game/sim/buildings.ts';
 import { Chronicle } from '../src/game/Chronicle.ts';
 import { stockOf } from '../src/game/sim/stock.ts';
-import { dayOf, hourOf } from '../src/game/sim/clock.ts';
+import { dayOf, minuteOf } from '../src/game/sim/clock.ts';
 import { ageOf } from '../src/game/sim/life.ts';
 import { SECONDS_PER_GAME_DAY } from '../src/game/sim/types.ts';
 import { inputAt } from './game-fixture.mjs';
@@ -195,7 +195,8 @@ record.observe( sim, SKY, 0 );
 
 const clockOf = ( tick ) => {
 
-	const minutes = Math.floor( hourOf( { tick, startHour: options.hour } ) * 60 );
+	// the minute as the perception and the record count it, from whole seconds (clock.ts minuteOf)
+	const minutes = minuteOf( { tick, startHour: options.hour } );
 	return `${ String( Math.floor( minutes / 60 ) ).padStart( 2, '0' ) }:${ String( minutes % 60 ).padStart( 2, '0' ) }`;
 
 };
