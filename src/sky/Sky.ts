@@ -1986,6 +1986,7 @@ export class Sky {
 		const lowSun = lowSunOf( this.elevation, coverage );
 		clouds.directGain.value = 1 + 0.7 * lowSun;
 		clouds.ambientGain.value = 1 + 0.35 * lowSun;
+		clouds.openSkyGain.value = this.gapGain.value;
 
 	}
 

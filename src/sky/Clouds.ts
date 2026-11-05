@@ -124,7 +124,12 @@ type V4 = THREE.Node<'vec4'>;
 //     height toward the ray: the lit side the Mie share's colour times each body's light gain
 //     (Sky.ts trackClouds), the shaded side the Rayleigh share under its phase (no polariser),
 //     desaturated, times the earth's shadow there and each body's illuminance, its factor tinted
-//     toward the opacity and toned on its log luminance (both neutral until set). The march adds
+//     toward the opacity and toned on its log luminance (both neutral until set). Under the low
+//     deck's share the shaded side's sky is instead the sky over the deck's tops (`columnTop`, the
+//     open sky's mean radiance over the upper hemisphere, with the clear day's gain: Sky.ts
+//     CLEAR_SKY): a cloud under a deck is lit by the sky above it, not by the sky along the view it
+//     is seen against. Taken along the view, the shaded side would take the dim sky near the
+//     horizon, and turn warm with a low sun, as the horizon's sky does. The march adds
 //     no air of its own, nor does the thin layer: the dome lays the haze over both, the cumulus at
 //     their distance and the layer at its own (Sky.ts domeColour). Rain, the thin layer and the
 //     view's clamp share the targets as colours, so the factors are coloured in the march, not
@@ -688,6 +693,9 @@ export class Clouds {
 	// units, Sky.ts trackClouds): by day the sun's above the cloud, as `lightColor`; by night the
 	// island's own moon key, not the clouds' moonlight, so the base and the land under it take one moon.
 	readonly columnKey = uniform( new THREE.Color( 0, 0, 0 ) );
+	// The gain the open sky over the low deck's tops takes back (Sky.ts CLEAR_SKY, `gapSky`): the
+	// clear day's sky gain over the clouded sky's, read by the column's kernel alone (`columnTopOf`).
+	readonly openSkyGain = uniform( 1 );
 	// Night sky glow and moonlit fill, added to the atmosphere's own sky light.
 	readonly nightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
 	// The gain on the night ambient the thin layer takes (its light at night comes almost all from
@@ -993,7 +1001,8 @@ export class Clouds {
 	 * height's cosine, and the drawn sky's over them (not the clouds' own night glow, which the
 	 * drawn sky has none of), a coarse cosine-weighted mean of its radiance over the upper
 	 * hemisphere (exact for a uniform sky): two rings, 30 and 60 degrees from the zenith, of four
-	 * azimuths from the sun's, weighted alike. */
+	 * azimuths from the sun's, weighted alike. The sky over the tops is the open sky, the clear
+	 * day's, so it takes the clear day's gain back (`openSkyGain`). */
 	private columnTopOf(): { key: V3; sky: V3 } {
 
 		const toward = this.sunAzimuth();
@@ -1008,7 +1017,7 @@ export class Clouds {
 			}
 
 		}
-		return { key: this.columnKey.rgb.mul( max( this.lightDir.y, 0 ) ).mul( 1 / Math.PI ), sky: sky.mul( 1 / 8 ) };
+		return { key: this.columnKey.rgb.mul( max( this.lightDir.y, 0 ) ).mul( 1 / Math.PI ), sky: sky.mul( this.openSkyGain.mul( 1 / 8 ) ) };
 
 	}
 
@@ -1495,6 +1504,11 @@ export class Clouds {
 					const lobe = float( 1 ).sub( k.mul( k ) ).div( max( float( 1 ).add( k.mul( k ) ).sub( dot( rd, this.lightDir ).mul( k ).mul( 2 ) ), 1e-3 ).pow( 1.5 ) );
 					const light = key.add( top.sky ).mul( diffuse ).add( key.mul( lobe.mul( this.forwardWeight ) ) );
 					color.addAssign( light.mul( columnLight.mul( this.lowShare ) ) );
+					// the parts the sky reaches take the sky over the deck's tops (`columnTop`, the open
+					// sky's mean radiance over the upper hemisphere) in place of the sky along the view
+					// (the sky along the view built again here, so a sky without a deck keeps its code)
+					const daySky = skyOf( sunRows, 0, a.sunDir, a.sunIlluminance.rgb ).add( skyOf( moonRows, 1, a.moonDir, a.moonIlluminance.rgb ) );
+					color.addAssign( shade.mul( top.sky.sub( daySky ) ).mul( this.ambientGain.mul( AMBIENT ).mul( this.lowShare ) ) );
 
 				} );
 
