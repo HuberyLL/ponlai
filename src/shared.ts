@@ -54,9 +54,9 @@ export const shared = {
 	// the sky's key, linear rgb (main.ts publishLighting): the sea's and the water's, which the
 	// clouds' own transmittance cuts per point where it is read
 	sunColor: uniform( new THREE.Vector3() ),
-	// the key on the land (main.ts publishLighting): sunColor times the deck's gain (1 unless tuned:
-	// lighting/KeyGain.ts), the clouds' shadow over the land's floor cutting it per point where it is
-	// read
+	// the key on the land (main.ts publishLighting): sunColor, the clouds' shadow over the land's
+	// floor (Sky.ts `keyDirectVisibility`, the deck's key gain on that floor) cutting it per point
+	// where it is read
 	landKey: uniform( new THREE.Vector3() ),
 	skyIrradiance: uniform( new THREE.Vector3() ), // linear rgb
 	// The live sky reduces hemispherical irradiance on the GPU, so shading never waits for

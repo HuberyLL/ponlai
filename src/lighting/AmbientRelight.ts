@@ -492,7 +492,7 @@ export interface AmbientRelightOptions {
 	/** the displayed environment's cross-fade (Sky.ts `environmentWeights`) */
 	weights: () => { a: number; b: number; blend: number };
 	/** the land's cloud shadow on the key at a world point, over the weather's floor (Sky.ts
-	 * `keyCloudVisibility`), for the key's bounce off the land */
+	 * `keyDirectVisibility`), for the key's bounce off the land */
 	cloud: ( position: V3 ) => F;
 	/** the clouds' own transmittance of the key at a world point (Sky.ts `cloudVisibility`), for the
 	 * sea's bounce, as the water drawn takes it */

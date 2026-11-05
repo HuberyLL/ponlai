@@ -24,7 +24,6 @@ import { liftKey } from './KeyLift.ts';
 import { glossAlpha, specularGGX, fresnel90, keyGlint, glintDirection, glintNormalisation } from './SurfaceBRDF.ts';
 import { environmentBRDF } from './EnvironmentBRDF.ts';
 import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
-import { keyDeckGain, keyLobeLight } from './KeyGain.ts';
 
 // Sunlight bounced off the ground, one diffuse bounce (tidewater's GroundBounce, 4811ba4): the
 // sunlit plateau lights the islanders' undersides and the grass from below, the shallows light
@@ -56,7 +55,7 @@ import { keyDeckGain, keyLobeLight } from './KeyGain.ts';
 // does (a jump redraws the sun's map from scratch, and this map with it).
 //
 // The shading: irradiance = the key's colour x the cloud shadow (the land's key over the land's
-// floor, Sky.ts `keyCloudVisibility`; where the map holds the sea, the sea's key through the
+// floor, Sky.ts `keyDirectVisibility`; where the map holds the sea, the sea's key through the
 // clouds' own transmittance, as the water drawn takes it) x the map x the lower hemisphere's
 // view factor of the normal ( ( 1 - N.y ) / 2 ) x a fade with the height over the bouncing surface
 // (none from a surface above the receiver: under the water the sea is above) x the self-shading of
@@ -66,10 +65,6 @@ import { keyDeckGain, keyLobeLight } from './KeyGain.ts';
 // texels is the same ground, but a cliff's wall stands on the line between the plateau and the sea
 // and sees the sea in front of it. One lookup at level 0, only for faces turned down or sideways
 // above the sea.
-//
-// The physical models add the deck's lobe toward the key (lighting/KeyGain.ts `keyLobeLight`, the
-// part of a deck's key gain over the direct key) to the irradiance beside it, before the ambient
-// scale, so the lobe takes what the ambient takes and none of the key's bounds.
 //
 // Every lit material adds it to its irradiance, so its diffuse albedo, its occlusion and its own
 // ambient scale apply as to the sky's (tidewater adds it to the indirect diffuse light): a physical
@@ -140,7 +135,7 @@ export interface GroundBounceInputs {
 	target: THREE.RenderTarget;
 	layer: number;
 	// the land's cloud shadow on the key at a world point, over the weather's floor (Sky.ts
-	// `keyCloudVisibility`)
+	// `keyDirectVisibility`)
 	cloud: ( position: V3 ) => F;
 	// the clouds' own transmittance of the key at a world point (Sky.ts `cloudVisibility`), for the
 	// sea's share of the map
@@ -244,12 +239,12 @@ export class GroundBounce {
 			const selfShade = float( 1 ).sub( clamp( dot( N.xz, Lh ).negate(), 0, 1 ).mul( clamp( L.y.oneMinus(), 0, 1 ) ).mul( 0.6 ) );
 			// the key on the bouncing surface: the land's, or on the sea (the floor seen through the water,
 			// its surface at the sea's level) the sea's through the clouds' own transmittance, as the
-			// water drawn takes it, without the land's floor and gain. Written as the land's times a
+			// water drawn takes it, without the land's floor. Written as the land's times a
 			// factor that is exactly 1 where the two keys are one (a clear or a fair sky), never as a
 			// difference of the two, whose products a compiler may fuse into a rounding residue
 			const K = this.inputs.cloud( P ).toVar();
 			const V = this.inputs.seaCloud( P ).toVar();
-			const seaOverLand = select( K.equal( V ).and( keyDeckGain.equal( 1 ) ), float( 1 ), V.div( max( K, 1e-4 ) ).div( keyDeckGain ) );
+			const seaOverLand = select( K.equal( V ), float( 1 ), V.div( max( K, 1e-4 ) ) );
 			const seaShare = float( 1 ).sub( smoothstep( shared.waterLevel, shared.waterLevel.add( 0.1 ), s.w ) );
 			const key = float( 1 ).add( seaOverLand.sub( 1 ).mul( seaShare ) );
 			E.assign( s.rgb.mul( shared.landKey ).mul( K ).mul( key ).mul( view.mul( fade ).mul( selfShade ).mul( this.strength ).mul( SURROUND ) ) );
@@ -478,9 +473,6 @@ export class GroundBounceLightingModel extends THREE.PhysicalLightingModel {
 	indirect( builder: THREE.NodeBuilder ): void {
 
 		addGroundBounce( builder );
-		// the deck's lobe toward the key, the part of the deck's key gain over the direct key
-		// (lighting/KeyGain.ts): ambient light, under what dims the irradiance from here on
-		( builder.context as unknown as { irradiance: V3 } ).irradiance.addAssign( keyLobeLight( positionWorld, normalWorld ) );
 		const scale = this.ambientScale();
 		if ( scale ) ( builder.context as unknown as { irradiance: V3 } ).irradiance.mulAssign( scale );
 		// the local lights' diffuse (lighting/LocalLights.ts), once per material: shaded as the key's

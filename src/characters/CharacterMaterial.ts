@@ -13,7 +13,6 @@ import { ambient, gradeOcclusion } from '../lighting/AmbientGrade.ts';
 import { addLocalLights } from '../lighting/LocalLights.ts';
 import { ambientField, ambientPoint, ambientVolumeOn } from '../lighting/AmbientSample.ts';
 import { liftKey } from '../lighting/KeyLift.ts';
-import { keyDeckGain, keyLobeLight } from '../lighting/KeyGain.ts';
 import { keyDeckShare, keyLandVisibility } from '../lighting/KeyCloud.ts';
 import type { Shared } from '../shared.ts';
 import { meterAmbient, meterKey, meterStart, writeMeter } from '../lighting/MeterLight.ts';
@@ -111,12 +110,11 @@ class CharacterLighting extends THREE.LightingModel {
 		const kind = this.shade.x;
 		const skin = is( kind, KIND_SKIN ), hair = is( kind, KIND_HAIR );
 		const shiny = is( kind, KIND_METAL ).add( is( kind, KIND_LEATHER ).mul( 0.25 ) );
-		// the open key the shadow maps are read against: three's sun, the land's key without the
-		// deck's gain (whose part over it is the deck's lobe in the fill: lighting/KeyGain.ts), and
-		// under a deck the key the land keeps in the open there, its floor through the clouds' shadow
-		// (lighting/KeyCloud.ts `keyDeckShare`), so a figure under the deck's light reads lit and its
-		// cast shadow as a shadow
-		const sun = this.shared.landKey.div( keyDeckGain ).mul( mix( float( 1 ), keyLandVisibility( positionWorld ), keyDeckShare ) ).toVar();
+		// the open key the shadow maps are read against: three's sun, the land's key, and under a deck
+		// the key the land keeps in the open there, its floor (the deck's key gain on it) through the
+		// clouds' shadow (lighting/KeyCloud.ts `keyDeckShare`), so a figure under the deck's light
+		// reads lit and its cast shadow as a shadow
+		const sun = this.shared.landKey.mul( mix( float( 1 ), keyLandVisibility( positionWorld ), keyDeckShare ) ).toVar();
 		this.sun = sun;
 		const look = characterLook;
 
@@ -169,15 +167,13 @@ class CharacterLighting extends THREE.LightingModel {
 		// the sunlit ground below throws its light up into the shade (lighting/GroundBounce.ts), E / pi
 		// as the sky's
 		const bounce = groundBounceLight().mul( 1 / Math.PI );
-		// the deck's lobe toward the key (lighting/KeyGain.ts), E / pi as the sky's
-		const lobe = keyLobeLight( positionWorld, normalWorld ).mul( 1 / Math.PI );
 		const ao = gradeOcclusion( this.shade.y ).toVar();
 		const albedo = diffuseColor.rgb;
 		// painted shade keeps (and slightly deepens) the colour instead of greying it
 		const shadeAlbedo = max( mix( vec3( luminance( albedo ) ), albedo, look.shadowSaturation ), vec3( 0 ) );
 		const skin = is( this.shade.x, KIND_SKIN );
 		const warm = mix( vec3( 1 ), vec3( 1.1, 0.93, 0.88 ), skin );
-		const fill = skyFill.add( bounce ).add( lobe ).mul( ao ).mul( look.fillGain ).toVar();
+		const fill = skyFill.add( bounce ).mul( ao ).mul( look.fillGain ).toVar();
 		ctx.reflectedLight.indirectDiffuse.addAssign( shadeAlbedo.mul( warm ).mul( fill ) );
 		// the fill's metering illuminance (E, from its E / pi: lighting/MeterLight.ts)
 		meterAmbient.addAssign( fill.mul( Math.PI ) );
@@ -195,7 +191,7 @@ class CharacterLighting extends THREE.LightingModel {
 		const fres = clamp( dot( normalView, positionViewDirection ), 0, 1 ).oneMinus();
 		const shaded = this.lit ? this.lit.oneMinus() : float( 1 );
 		const skyRim = smoothstep( 0.52, 0.78, fres ).mul( shaded ).mul( smoothstep( - 0.3, 0.5, up ) ).mul( look.skyRimGain );
-		const open = this.sun ?? this.shared.landKey.div( keyDeckGain );
+		const open = this.sun ?? vec3( this.shared.landKey );
 		const rimLight = sky.mul( 2.2 ).add( open.mul( 0.05 ) );
 		ctx.reflectedLight.indirectSpecular.addAssign( rimLight.mul( albedo.add( luminance( albedo ).mul( 0.5 ) ) ).mul( skyRim ).mul( ambient.skySpecular ) );
 

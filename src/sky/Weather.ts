@@ -165,7 +165,7 @@ export interface WeatherState {
 	density: number;
 	directVisibility: number;
 	// The share of the key's direct light the land keeps under the thickest cloud: the floor of the
-	// clouds' shadow on the island (Sky.ts `keyDirectVisibility`, `keyCloudVisibility`). 1 takes the
+	// clouds' shadow on the island (Sky.ts `keyDirectVisibility`). 1 takes the
 	// deck's shadow away, leaving `directVisibility` alone to set the land's direct light. By day
 	// under a cloudy deck it gives way to `deckFloor` (`deckTakeover`).
 	cloudFloor: number;

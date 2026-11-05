@@ -28,7 +28,6 @@ import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 import { moonDirection } from '../lighting/KeyLift.ts';
-import { keyDeckGain, keyGainShare } from '../lighting/KeyGain.ts';
 import { setKeyCloud } from '../lighting/KeyCloud.ts';
 
 type F = THREE.Node<'float'>;
@@ -2613,28 +2612,16 @@ export class Sky {
 
 	}
 
-	/** The clouds' shadow on the island's direct key, three's sun (main.ts publishLighting, which
-	 * carries no deck gain): the clouds' own over the weather's floor (Weather.ts `cloudFloor`; under
-	 * a deck its `deckFloor`, faded with the key's sun share by night: `track`), so the land keeps a
-	 * directional light through the sun's map under the thickest deck. The sea's and the air's are
-	 * the clouds' own (`cloudVisibility`); the lit code without a sky reads both through
-	 * lighting/KeyCloud.ts. A deck gain tuned over 1 is ambient light (lighting/KeyGain.ts
-	 * `keyLobeLight`). */
+	/** The clouds' shadow on the island's key, three's sun and the light the land bounces of it (the
+	 * ground's bounce, the ambient light's bounce lobe): the clouds' own over the land's floor
+	 * (Weather.ts `cloudFloor`; under a deck its `deckFloor` times the deck's key gain, at most 1,
+	 * faded with the key's sun share by night: `track`, OVERCAST_KEY_GAIN), so the land keeps a
+	 * directional light through the sun's map under the thickest deck, and in a gap, where the
+	 * clouds' own is 1, the sky's own key. The sea's and the air's are the clouds' own
+	 * (`cloudVisibility`); the lit code without a sky reads both through lighting/KeyCloud.ts. */
 	keyDirectVisibility( worldPosition: V3 ): F {
 
 		return mix( this.keyCloudFloor, float( 1 ), this.clouds.shadow( worldPosition ) );
-
-	}
-
-	/** The clouds' shadow on the whole key the island's ground takes, beam and lobe (the ground's
-	 * bounce, the ambient light's bounce lobe, on the land's key, which carries the deck's gain):
-	 * the clouds' own over the weather's floor (as `keyDirectVisibility`), times the share of the
-	 * deck's key gain the point keeps (lighting/KeyGain.ts; 1 at a gain of 1). The sea's glitter
-	 * and the air's sunlit haze take the clouds' own. */
-	keyCloudVisibility( worldPosition: V3 ): F {
-
-		const t = this.clouds.shadow( worldPosition ).toVar();
-		return mix( this.keyCloudFloor, float( 1 ), t ).mul( keyGainShare( t, keyDeckGain ) );
 
 	}
 

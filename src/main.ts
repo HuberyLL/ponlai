@@ -14,7 +14,7 @@ import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, nightAmbientShare, sunRising, type DayPreset } from './sky/DayCycle.ts';
-import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckLight, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, overcastDeckLight, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
+import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckLight, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
 import { keyDeckShare } from './lighting/KeyCloud.ts';
@@ -101,7 +101,7 @@ import { installVegetationPrepass, prepassScene } from './world/VegetationPrepas
 import { displacementField } from './world/vegetation/Displacement.ts';
 import { installOpaquePrepass, opaquePrepassScene } from './world/OpaquePrepass.ts';
 import { GTAO, gtaoUniforms } from './post/GTAO.ts';
-import { SS_SHADOW, swardShadeRelease } from './post/MeadowShade.ts';
+import { SS_SHADOW } from './post/MeadowShade.ts';
 import { Vegetation } from './world/vegetation/Registry.ts';
 import { installWindMotionFlag } from './world/WindMotion.ts';
 import { HANMING, HANMING_LOOKS, ISLANDER, ISLANDER_LOOKS } from './characters/looks.ts';
@@ -427,15 +427,6 @@ function prepareSkyState(): void {
 
 }
 
-/** How far the sward lets go of its own sharp shade in the key under overcast's deck (post/
- * MeadowShade.ts `swardShadeRelease`), by overcast's share and its deck's light: 0 keeps the
- * sward's shade between its blades as under a clear sky, so the floor's light under the deck
- * (sky/Weather.ts `deckFloor`) lights the blades' sunward sides and leaves the gaps between them
- * dark; 1 lifts the sward evenly, its shade in the key its canopy's. Raise it if the sward under
- * the deck reads speckled with small sharp shade; lower it if the meadow reads flat. Tunable:
- * `lighting.swardRelease`. */
-const SWARD_RELEASE = tune( 'lighting.swardRelease', 0, { min: 0, max: 1, onChange: () => sceneEvent( 'retune' ) } );
-
 function publishLighting(): void {
 
 	// three's sun: the direct key, the sky's, which the clouds' shadow cuts per point over the land's
@@ -448,9 +439,6 @@ function publishLighting(): void {
 	// shadow against it (lighting/KeyCloud.ts `keyDeckShare`)
 	keyDeckShare.value = deckLight( sky.elevation, cloudedShare( weather.skyMix ), overcast );
 	shared.landKey.value.set( sun.color.r, sun.color.g, sun.color.b );
-	// the sward's shade release under overcast's deck (SWARD_RELEASE, post/MeadowShade.ts
-	// `swardShadeRelease`)
-	swardShadeRelease.value = SWARD_RELEASE() * overcast * overcastDeckLight( sky.elevation );
 	// a low sun's lift of the sky's light on what it lights: the land's ambient, the water's sky
 	// light and the sea's reflection (lighting/AmbientRelight.ts `lowSunSkyLift`)
 	shared.skyLift.value = lowSunSkyLift( sky.elevation, cloudedShare( weather.skyMix ) );
@@ -730,7 +718,7 @@ setLand( land, landOptions.step );
 const fields = new WorldFields( data, shared.shoreXform.value );
 // the sunlight the ground bounces up (lighting/GroundBounce.ts), which every lit material adds: so
 // installed before any of them builds; its map shares the wave maps' target
-const groundBounce = new GroundBounce( { renderer, shared, sunShadow, fields, soil: textures.soil, target: waveMaps.target, layer: waveMaps.bounceLayer, cloud: ( position ) => sky.keyCloudVisibility( position ), seaCloud: ( position ) => sky.cloudVisibility( position ) } );
+const groundBounce = new GroundBounce( { renderer, shared, sunShadow, fields, soil: textures.soil, target: waveMaps.target, layer: waveMaps.bounceLayer, cloud: ( position ) => sky.keyDirectVisibility( position ), seaCloud: ( position ) => sky.cloudVisibility( position ) } );
 installGroundBounce( groundBounce );
 const shoreWaves = new ShoreWaves( renderer, data, shared, fields.shore, fft, fields.floor );
 const walk = walkPoints( data.walk );
@@ -778,7 +766,7 @@ showWindArrows();
 // show.
 const ambient = new AmbientVolume( renderer, data.ambient );
 installAmbientVolume( ambient );
-const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyCloudVisibility( position ), seaCloud: ( position ) => sky.cloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation, rising: () => sky.rising, clouded: () => cloudedShare( weather.skyMix ), overcast: () => weather.skyMix[ 3 ] ?? 0 } );
+const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyDirectVisibility( position ), seaCloud: ( position ) => sky.cloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation, rising: () => sky.rising, clouded: () => cloudedShare( weather.skyMix ), overcast: () => weather.skyMix[ 3 ] ?? 0 } );
 // the environment's own harmonics, which the specular's relight divides by (AmbientSample.ts)
 installEnvironmentHarmonics( ambientRelight );
 // the haze's shadow kernels read the probes' sky visibility, so they compile now (Pipeline.ts)
