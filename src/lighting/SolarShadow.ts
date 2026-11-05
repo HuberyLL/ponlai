@@ -361,9 +361,10 @@ type FrustumShadowFilter = ( builder: THREE.NodeBuilder, inputs: ShadowFilterInp
 // derivatives are undefined for a quad that straddles the test (the refracted entry points at the
 // waterline jump in and out of the map): such pixels read whatever the neighbouring lanes left and
 // changed with any edit to the shader. The filter is evaluated first, in uniform control flow (it
-// returns lit outside the map itself), and only its result is selected. `strength` fades the map's
-// shadow (a closed deck's soft light shows no cast shadow: Weather.ts `castShadow`); the clouds' is
-// the visibility's own.
+// returns lit outside the map itself), and only its result is selected. `strength` is the weather's
+// share of the map's shadow (Weather.ts `castShadow`, 1 in every sky now); how deep the cast shadows
+// read under cloud is the key's visibility's (under a deck the land's floor, Weather.ts `deckFloor`),
+// which multiplies the result.
 export function installOpenShadow( sun: THREE.DirectionalLight, visibility: ( position: V3 ) => F, strength: F ): void {
 
 	const node = new THREE.ShadowNode( sun, null ) as unknown as { setupShadowFilter: FrustumShadowFilter };
