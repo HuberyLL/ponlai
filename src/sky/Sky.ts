@@ -66,7 +66,7 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // of its own (ISLAND_SKY), and under a clouded high sun a tint of its own (CLOUD_LIGHT_TINT), which
 // the sky the eye sees, the sea's reflection of it and the sea's own body never take. The dome lays the air's haze over
 // itself (`fogDome`, VolumetricHaze.ts `skyHaze`): the clouds at the distance to their shell's middle
-// height (the weather's shell: CLOUD_SHELL, low under cloudy and overcast skies), under the low
+// height (the weather's shell: CLOUD_SKIES, low under cloudy and overcast skies), under the low
 // deck's share at the march's own opacity-weighted depth, and under the thin layer's share of their
 // opacity at its own height (Clouds `sampleViewFog`), the sky behind them along the whole way; so the haze's composite leaves the sky's pixels. Measured on the horizon
 // views (paused, fresh loads): overcast's sky box spread .067 to .059, its gradient p99 .019 to .043
@@ -595,22 +595,22 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 	tuneObject( SHADOW_DENSITY[ s ], { shadowDensity: `sky.weather.shadowDensity@${ name }` }, { shadowDensity: { min: 0.02, max: 1, scale: 'log', onChange: markSkyRetune } } );
 
 }
-// per kept sky, the cloud shell's base and top (m), blended by the weather's shares of the kept
-// skies (Clouds.ts `setDeck`): clear's and fair's cumulus stand high, cloudy's and overcast's deck
+// The clouds' values that belong to a kind of sky rather than to the weather's state: one row per
+// kept sky (CLOUD_SKIES, in KEPT_SKIES' order), blended each frame by the weather's shares of the
+// kept skies (`trackClouds`), so a front between two skies crosses them by those shares. The
+// parked weathers count as overcast in those shares (Weather.ts), so they take overcast's row. What
+// a front sweeps across the shell (the coverage, the density) and the land's floor under a deck
+// (`deckFloor`) are the weather state's (Weather.ts WEATHER_PRESETS), interpolated by the front's
+// progress; nothing here points into the presets, whose fields the weather interpolates as numbers.
+//
+// The cloud shell's base and top (m), blended by the weather's shares of the kept skies
+// (Clouds.ts `setDeck`): clear's and fair's cumulus stand high, cloudy's and overcast's deck
 // low and shallow, as a stratocumulus deck stands, its masses nearer and so larger in the sky; a
 // front between the two crosses both the shell and the noise's space by the shares. The parked
 // weathers count as overcast in those shares (Weather.ts), so they take overcast's deck. Tunable on
 // debug pages: `sky.clouds.base@<cloudy|overcast>`, `sky.clouds.top@<cloudy|overcast>`.
-const CLOUD_SHELL = KEPT_SKIES.map( ( name ) => name === 'cloudy' ? { base: 900, top: 3200 } : name === 'overcast' ? { base: 600, top: 3000 } : { base: SHELL_BOTTOM, top: SHELL_BOTTOM + SHELL_THICKNESS } );
-for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
-
-	tuneObject( CLOUD_SHELL[ s ], { base: `sky.clouds.base@${ name }`, top: `sky.clouds.top@${ name }` }, { base: { min: 300, max: 2000, onChange: markSkyRetune }, top: { min: 1500, max: 6000, onChange: markSkyRetune } } );
-
-}
-/** The cloud shell's base (m) under the kept sky `s` (Weather.ts KEPT_SKIES), as tuned: the haze's
- * aerosol ends at a deck's base (weather/HazeKeys.ts `aerosolTop`). */
-export const cloudBase = ( s: number ): number => CLOUD_SHELL[ s ].base;
-// per kept sky, the cloud's form (Clouds.ts CLOUD_FORM, `setForm`): its soft margin, its
+//
+// The cloud's form (Clouds.ts CLOUD_FORM, `setForm`): its soft margin, its
 // erosion's strength at the top (a share of the high cumulus'), the height over which its base
 // needs richer weather, its lanes and its base's masses, blended by the weather's shares like the
 // shell. Clear and fair keep the high cumulus' form. The base's height from 0.1 to 0.3 of the shell
@@ -646,10 +646,51 @@ export const cloudBase = ( s: number ): number => CLOUD_SHELL[ s ].base;
 // 0.9 - 1.7 degrees, the lit cloud and the clear sky 2.8 times apart in scene radiance. Tunable
 // on debug pages:
 // `sky.clouds.edge|erosion|baseEnd|lanes|laneSplit|laneSoftness|laneTop|baseLift|inside@<cloudy|overcast>`.
-const CLOUD_FORM_BY_SKY = KEPT_SKIES.map( ( name ) => name === 'overcast' ? { ...CLOUD_FORM, lanes: 0.08, laneSplit: 0.55, laneTop: 0.85, baseLift: 0.4 } : name === 'cloudy' ? { ...CLOUD_FORM, edge: 0.25, inside: 0.5 } : { ...CLOUD_FORM } );
+//
+// The phase of the cloud's light (`phaseForward`, `phaseBack`: the two lobes' asymmetries;
+// `phaseBackWeight`, the back lobe's multiple; `phaseBackShare`, its share where the light still gets
+// through) and the share of the clear sky's gain the gaps take back (`gapClear`) are held per sky
+// here and not read yet: the march's lobes are still the load-time LOBE (Clouds.ts). A heavier back
+// lobe lights the flanks facing the viewer with the sun behind him (cloudy's multiple about 2.16:
+// Patry 2021, p. 97).
+//
+// The low deck's own values (`low`: cloudy's and overcast's; clear and fair keep the high cumulus
+// and have none) are held here and not read yet. They blend between the two clouded skies alone,
+// by their shares over the two shares' sum, so a front from fair to cloudy never blends them with a
+// sky that has none. `large`, `medium` and `detail` weigh the noise's scales in the deck's density
+// (the large one sets where masses and gaps gather, the detail only the margins' fine tears);
+// `rise` is the margin's width in the noise sum's deviations (narrow: a crisp edge; wide: a gentle
+// slope over the rolls); `baseBand` and `topBand` (m) round the density off over the shell's base
+// and top (a narrow base band: a flat, steep base); `fadeFrom` (degrees up the sky) is where the
+// masses start to fade toward the horizon, `nearFull` and `nearNone` (degrees) where the margins'
+// detail is whole and gone, each taken as the distance along a ray at that elevation to the
+// shell's middle height, so they follow the shell; `farCover` is the cover added far out;
+// `ambientRamp` (m) the height over which the sky's light into the deck rises from its base (0:
+// whole everywhere); `deckAmbient` the deck's ambient gain.
+type LowCloud = { large: number; medium: number; detail: number; rise: number; baseBand: number; topBand: number; fadeFrom: number; nearFull: number; nearNone: number; farCover: number; ambientRamp: number; deckAmbient: number };
+type CloudSky = { base: number; top: number } & { -readonly [ K in keyof typeof CLOUD_FORM ]: number } & {
+	phaseForward: number; phaseBack: number; phaseBackWeight: number; phaseBackShare: number; gapClear: number; low: LowCloud | null;
+};
+const HIGH_SHELL = { base: SHELL_BOTTOM, top: SHELL_BOTTOM + SHELL_THICKNESS };
+const PHASE = { phaseForward: 0.8, phaseBack: - 0.2, phaseBackWeight: 1, phaseBackShare: 0.2, gapClear: 1 };
+const CLOUD_SKIES: CloudSky[] = KEPT_SKIES.map( ( name ): CloudSky => name === 'cloudy' ? {
+	base: 900, top: 3200, ...CLOUD_FORM, edge: 0.25, inside: 0.5, ...PHASE, phaseBackWeight: 2.16,
+	low: { large: 2, medium: 1, detail: 0.125, rise: 0.5, baseBand: 50, topBand: 575, fadeFrom: 10, nearFull: 10, nearNone: 5, farCover: 0, ambientRamp: 0, deckAmbient: 1 },
+} : name === 'overcast' ? {
+	base: 600, top: 3000, ...CLOUD_FORM, lanes: 0.08, laneSplit: 0.55, laneTop: 0.85, baseLift: 0.4, ...PHASE,
+	low: { large: 2, medium: 1, detail: 1, rise: 4, baseBand: 600, topBand: 600, fadeFrom: 5, nearFull: 10, nearNone: 5, farCover: 0.12, ambientRamp: 600, deckAmbient: 1 },
+} : { ...HIGH_SHELL, ...CLOUD_FORM, ...PHASE, low: null } );
 for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 
-	tuneObject( CLOUD_FORM_BY_SKY[ s ], { edge: `sky.clouds.edge@${ name }`, erosion: `sky.clouds.erosion@${ name }`, baseEnd: `sky.clouds.baseEnd@${ name }`,
+	tuneObject( CLOUD_SKIES[ s ], { base: `sky.clouds.base@${ name }`, top: `sky.clouds.top@${ name }` }, { base: { min: 300, max: 2000, onChange: markSkyRetune }, top: { min: 1500, max: 6000, onChange: markSkyRetune } } );
+
+}
+/** The cloud shell's base (m) under the kept sky `s` (Weather.ts KEPT_SKIES), as tuned: the haze's
+ * aerosol ends at a deck's base (weather/HazeKeys.ts `aerosolTop`). */
+export const cloudBase = ( s: number ): number => CLOUD_SKIES[ s ].base;
+for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
+
+	tuneObject( CLOUD_SKIES[ s ], { edge: `sky.clouds.edge@${ name }`, erosion: `sky.clouds.erosion@${ name }`, baseEnd: `sky.clouds.baseEnd@${ name }`,
 		lanes: `sky.clouds.lanes@${ name }`, laneSplit: `sky.clouds.laneSplit@${ name }`, laneSoftness: `sky.clouds.laneSoftness@${ name }`, laneTop: `sky.clouds.laneTop@${ name }`, baseLift: `sky.clouds.baseLift@${ name }`,
 		inside: `sky.clouds.inside@${ name }` },
 	{ edge: { min: 0.05, max: 0.4, onChange: markSkyRetune }, erosion: { min: 0.3, max: 1.2, onChange: markSkyRetune }, baseEnd: { min: 0.05, max: 0.4, onChange: markSkyRetune },
@@ -857,7 +898,7 @@ const SHADOW_AIR_NARROW = [ 4.9, 5.6 ] as const;
 // The key's elevations (degrees) over which the light march comes to see the low deck's lifted base
 // (Clouds.ts `keyLift`): its taps climb the shell's depth times the key's sine, under overcast's
 // 2.4 km about 130 m at 3 degrees and 420 m at 10, where the base rises some 300-500 m between the
-// masses (CLOUD_FORM_BY_SKY). Under the first they stay in the gaps under the deck; past the second
+// masses (CLOUD_SKIES). Under the first they stay in the gaps under the deck; past the second
 // they climb into it.
 const KEY_LIFT = [ 3, 10 ] as const;
 
@@ -1878,10 +1919,10 @@ export class Sky {
 		clouds.shadowDensity.value = skyMix ? SHADOW_DENSITY.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k.shadowDensity, 0 ) : weather?.shadowDensity ?? 1;
 		// The shell by the same shares (the high one's without them): every reader follows its
 		// uniforms, the march, the shadow, the rain, the haze's shafts and the lightning.
-		const shell = ( key: 'base' | 'top' ) => skyMix ? CLOUD_SHELL.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k[ key ], 0 ) : CLOUD_SHELL[ 0 ][ key ];
+		const shell = ( key: 'base' | 'top' ) => skyMix ? CLOUD_SKIES.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k[ key ], 0 ) : CLOUD_SKIES[ 0 ][ key ];
 		const base = shell( 'base' );
 		clouds.setDeck( base, shell( 'top' ) - base, skyMix ? cloudedShare( skyMix ) : 0 );
-		const form = ( key: keyof typeof CLOUD_FORM ) => skyMix ? CLOUD_FORM_BY_SKY.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k[ key ], 0 ) : CLOUD_FORM[ key ];
+		const form = ( key: keyof typeof CLOUD_FORM ) => skyMix ? CLOUD_SKIES.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k[ key ], 0 ) : CLOUD_FORM[ key ];
 		clouds.setForm( form( 'edge' ), form( 'erosion' ), form( 'baseEnd' ), form( 'lanes' ), form( 'laneSplit' ), form( 'laneSoftness' ), form( 'laneTop' ), form( 'baseLift' ), form( 'inside' ) );
 		clouds.coverageFrom.value = front ? front.from.coverage : coverage;
 		clouds.coverageTo.value = front ? front.to.coverage : coverage;

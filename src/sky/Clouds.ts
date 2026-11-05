@@ -39,7 +39,7 @@ type V4 = THREE.Node<'vec4'>;
 //   - density: a cloud shell kilometres thick; a procedural weather map sets where cloud may
 //     stand, and a 64^3 Perlin-Worley shape noise dilates its tops into heaps and erodes their
 //     margins, more strongly higher up. Edges stay soft; bases rest on the richer weather. The
-//     shell is the weather's (`setDeck`, Sky.ts CLOUD_SHELL): the clear and fair skies' cumulus
+//     shell is the weather's (`setDeck`, Sky.ts CLOUD_SKIES): the clear and fair skies' cumulus
 //     from 4 to 9.2 km, cloudy's and overcast's deck under a kilometre to about 3 km, as low decks
 //     stand, so a ray to the deck crosses far less of the haze below it; the low deck reads the
 //     noise in a space of its own, finer (LOW_FREQUENCY), and a front blends the two by the skies'
@@ -49,7 +49,7 @@ type V4 = THREE.Node<'vec4'>;
 //     the base it was described under through a front. Every reader of the shell follows its
 //     uniforms: the march, the shadow, the rain,
 //     the dome's haze over the clouds (Sky.ts), the haze's shafts (VolumetricHaze.ts) and the
-//     lightning (Lightning.ts). The form is the weather's too (`setForm`, Sky.ts CLOUD_FORM_BY_SKY):
+//     lightning (Lightning.ts). The form is the weather's too (`setForm`, Sky.ts CLOUD_SKIES):
 //     the soft margin, the erosion's strength at the top, the height over which a base needs
 //     the richer weather, the lanes and the base's masses, the high cumulus' (CLOUD_FORM) under
 //     clear and fair skies. A deck with lanes (overcast's) thins its whole column where a field of
@@ -65,7 +65,7 @@ type V4 = THREE.Node<'vec4'>;
 //     tops' soft step moves into the column by a share of its half width, so less of it spreads
 //     past the column's own top and a softer edge thins the cloud's rim instead of laying thin
 //     cloud over the gap beyond it, as a margin spread either side did. Moved wholly inside, the
-//     columns thin until the land under them takes much of the sun (Sky.ts CLOUD_FORM_BY_SKY).
+//     columns thin until the land under them takes much of the sun (Sky.ts CLOUD_SKIES).
 //     The conservative bounds stay valid: the step only moves inward, and the bounds on the tops
 //     (the candidate's and the march's empty cells) move in with it.
 //   - lighting: a light march toward the key light in segments that grow geometrically and span
@@ -232,7 +232,7 @@ type V4 = THREE.Node<'vec4'>;
 
 export const EARTH_RADIUS = 6_360_000;
 // The high shell's base and thickness (m), the clear and fair skies' cumulus. The shell the march
-// reads is `shellBottom` and `shellThickness`, blended by the sky's shares (Sky.ts CLOUD_SHELL), so
+// reads is `shellBottom` and `shellThickness`, blended by the sky's shares (Sky.ts CLOUD_SKIES), so
 // cloudy and overcast take a deck of their own, lower (`setDeck`).
 export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
 // What the view's traces and history and the panorama store is the radiance times this: at night
