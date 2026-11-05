@@ -337,7 +337,9 @@ export function lowSunSkyLift( elevation: number, clouded: number ): number {
  * the sun's map (sky/Weather.ts `deckFloor`, Sky.ts `keyDirectVisibility`). The ground takes it
  * whether or not water lies over it: where a material reads the environment's light in the
  * volume's place (the sea floor, the walls under the water) the environment's diffuse takes the
- * same gain (AmbientGrade.ts `landSky`). The water keeps the deck's gain alone, whichever reads it:
+ * same gain (AmbientGrade.ts `landSky`), save the ambient diffuse below the water under overcast's
+ * deck, which takes the sea's gain in the land's on its share (AmbientGrade.ts `seaSky`,
+ * lighting/Underwater.ts). The water keeps the deck's gain alone, whichever reads it:
  * the water drawn (ocean/Water.ts) and the sea's bounce onto the land (`seaScale`). A cloudy deck's
  * land takes its own (CLOUDY_LAND). Its value, 1.55, is measured with the sun at 18 degrees on
  * the lit open ground of six views 4 to 40 m deep, 40 to 130 degrees either side of the sun, with
@@ -646,6 +648,10 @@ export class AmbientRelight {
 		this.seaScale.value = seaFill * gained( deckSky );
 		this.seaGapScale.value = seaFill * day * deckSkyGap( elevation, clouded, overcast ) * ( 1 - night );
 		ambient.landSky.value = landGain / probeSky;
+		// the ambient under the water takes the sea's gain in the land's place, on overcast's share
+		// (lighting/Underwater.ts)
+		const seaOverLand = this.skyScale.value > 0 ? this.seaScale.value / this.skyScale.value : 1;
+		ambient.seaSky.value = 1 + ( seaOverLand - 1 ) * overcast;
 		out.fill( 0 );
 		const level = THREE.MathUtils.smoothstep( l.y, - 0.02, 0.05 ) * this.keyHeight();
 		this.keyLevel.value = level;

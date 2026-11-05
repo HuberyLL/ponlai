@@ -237,9 +237,16 @@ export const ambient = {
 	 * own under overcast: AmbientRelight.ts OVERCAST_LAND_UNIT times OVERCAST_LAND), which the volume
 	 * carries: the environment's diffuse takes them where it stands in for the volume (a material
 	 * built without a receiver, which by default is the sea floor: materials/TerrainMaterial.ts; and
-	 * the volume's share under the water), so the ground under the water keeps the land's light. 1
-	 * under a clear or fair sky. Written by AmbientRelight.ts. */
+	 * the volume's share under the water), so the ground under the water keeps the land's light (its
+	 * ambient diffuse below the water under overcast takes the sea's, `seaSky`). 1 under a clear or
+	 * fair sky. Written by AmbientRelight.ts. */
 	landSky: uniform( 1 ),
+	/** The sea's sky gain over the land's under overcast's deck, on its share (AmbientRelight.ts
+	 * `seaScale` over `skyScale`: the water's deck gain, sky/Weather.ts DECK_SKY_GAIN, and its low
+	 * sun's lift, over the land's gain), which the ambient diffuse under the water takes
+	 * (lighting/Underwater.ts): the light down there is the light going down through the sea. 1
+	 * under every other sky. Written by AmbientRelight.ts. */
+	seaSky: uniform( 1 ),
 };
 
 /** The grade's controller: the values it wrote last, and the GUI's override. */
