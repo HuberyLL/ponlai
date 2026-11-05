@@ -233,7 +233,9 @@ const DECK_DIFFUSE = [
 //     overcast's share the air takes it through its own phase: the diffuse part as the deck's law
 //     weighted by the aerosol's phase over an even deck's of the same irradiance, a quartic in the
 //     view's sine of elevation fitted in the anisotropy (DECK_DIFFUSE); the forward part as the
-//     deck's own lobe about the key, on the key's share alone (the lobe's light over the deck's
+//     deck's own lobe about the key (by overcast's share its broad part alone, Clouds.ts
+//     OVERCAST_BROAD: the air takes the whole deck's light, most of which has lost the narrow
+//     core), on the key's share alone (the lobe's light over the deck's
 //     level, `columnTop`'s key over its key and sky), the diffuse part taking the rest of the
 //     deck's irradiance. The lobe is the deck's, not the narrower product of the deck's and the
 //     air's anisotropies that one scattering of it would give: with that product (about 0.5) the
@@ -773,8 +775,11 @@ export class VolumetricHaze {
 		// (Clouds.ts `columnTop`, worked out once a frame there): the lobe's light over an even
 		// deck's of the deck's irradiance and the diffuse part's share of that irradiance, so the
 		// lobe is the key's alone and leaves with it as the key sets.
-		const k = clouds.forwardLobe;
-		const forward = float( 1 ).sub( k.mul( k ) ).div( max( float( 1 ).add( k.mul( k ) ).sub( dot( direction, clouds.lightDir ).mul( k ).mul( 2 ) ), 1e-4 ).pow( 1.5 ) );
+		const nu = dot( direction, clouds.lightDir ).toVar();
+		const lobeOf = ( k: F ) => float( 1 ).sub( k.mul( k ) ).div( max( float( 1 ).add( k.mul( k ) ).sub( nu.mul( k ).mul( 2 ) ), 1e-4 ).pow( 1.5 ) );
+		// (under overcast's share the deck's lobe as the air takes it from the whole deck, its broad
+		// part alone: Clouds.ts OVERCAST_BROAD)
+		const forward = mix( lobeOf( clouds.lobe ), lobeOf( clouds.overcastBroad ), clouds.broadShare );
 		const mu = clamp( direction.y, - 1, 1 );
 		const inG = ( row: number[] ) => g.mul( row[ 2 ] ).add( row[ 1 ] ).mul( g ).add( row[ 0 ] );
 		let diffuse = inG( DECK_DIFFUSE[ 4 ] );

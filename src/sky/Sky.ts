@@ -787,6 +787,7 @@ function keyHue( transmittance: THREE.Color, tint: THREE.Color, rising: boolean 
 
 const NEUTRAL_TINT = new THREE.Vector4( 1, 1, 1, 0 );
 const _white = new THREE.Color();
+const _zenith = new THREE.Vector3( 0, 1, 0 );
 const _moonSky = new THREE.Color();
 // The sun's elevations (degrees) over which the moon's light on the clouds comes in after sunset and
 // leaves before sunrise, all of it under the first: in the evening the window of the night sky's
@@ -1911,8 +1912,25 @@ export class Sky {
 		const sunAbove = this.atmosphere.sunlightAt( this.sunDir, sunHeight ).multiply( this.sunTint ).multiplyScalar( illuminance );
 		// Under a closed deck the sun reaches the deck as it reaches the island, scattered through
 		// the cloud: it keeps its luminance and loses its colour as the key does (track), so an
-		// overcast evening's deck is not a sunset's.
-		sunAbove.lerp( _white.setScalar( luma( sunAbove ) ), overcast );
+		// overcast evening's deck is not a sunset's, but for the glow about the sun's place:
+		// overcast's deck's forward lobe keeps the colour of the sun above the tops (Clouds.ts
+		// `lobeTint`): per channel the colour over the grey's, c / ( c + ( 1 - c ) overcast ), by
+		// overcast's share of the sky (1 under the other skies, and without the sun: below). Its
+		// colour is the sun's from overhead, not along the sun's own path: taken along it, a low
+		// sun's reddening would come back whole and the glow about a low sun read orange, a sunset's
+		// under the deck.
+		const overcastShare = skyMix ? skyMix[ 3 ] ?? 0 : 0;
+		const sunY = luma( sunAbove );
+		const tint = clouds.lobeTint.value.setRGB( 1, 1, 1 );
+		const above = overcastShare > 0 ? this.atmosphere.transmittanceAt( _zenith, sunHeight ).multiply( this.sunTint ) : null;
+		const aboveY = above ? luma( above ) : 0;
+		if ( above && sunY > 0 && aboveY > 0 ) for ( const c of [ 'r', 'g', 'b' ] as const ) {
+
+			const chroma = above[ c ] / aboveY;
+			tint[ c ] = THREE.MathUtils.lerp( 1, chroma / ( chroma + ( 1 - chroma ) * overcast ), overcastShare );
+
+		}
+		sunAbove.lerp( _white.setScalar( sunY ), overcast );
 		// The clouds belong to the seen sky: their moonlight comes in with the night sky's own light
 		// (CLOUD_MOON_DUSK), not before it while the afterglow still lights the sky behind them; under
 		// cloud with the clouded night's (CLOUD_MOON), by the clouded share.
@@ -1939,7 +1957,14 @@ export class Sky {
 
 		}
 		// the low deck's forward lobe's light on level ground at the key's height (Clouds.ts forwardLevel)
-		clouds.forwardLevel.value = forwardLevel( clouds.lightDir.value.y, clouds.forwardLobe.value );
+		// (under overcast's share the air's lobe is the broad one: VolumetricHaze.ts `scatterToward`)
+		clouds.lobe.value = THREE.MathUtils.lerp( clouds.forwardLobe.value, clouds.overcastLobe.value, overcastShare );
+		clouds.broadShare.value = overcastShare;
+		clouds.weight.value = THREE.MathUtils.lerp( clouds.forwardWeight.value, clouds.overcastWeight.value, overcastShare );
+		const keyY = clouds.lightDir.value.y;
+		clouds.forwardLevel.value = overcastShare > 0
+			? THREE.MathUtils.lerp( forwardLevel( keyY, clouds.lobe.value ), forwardLevel( keyY, clouds.overcastBroad.value ), overcastShare )
+			: forwardLevel( keyY, clouds.lobe.value );
 		const disc = 1 - THREE.MathUtils.smoothstep( clouds.lightDir.value.y, SHADOW_DISC[ 0 ], SHADOW_DISC[ 1 ] );
 		clouds.shadowDisc.value = disc * SUN_ANGULAR_RADIUS;
 		// With the whole disc under the floor the rays are one ray.
@@ -1979,6 +2004,7 @@ export class Sky {
 		const moonAbove = _moonKey.copy( this.moonKeyAbove );
 		const column = clouds.columnKey.value.copy( moonAbove.lerp( _white.setScalar( luma( moonAbove ) ), overcast ) );
 		if ( sunUp ) column.add( sunAbove );
+		else tint.setRGB( 1, 1, 1 );
 		// Low sun: lift the reddened beam, and the cool violet fill on the shaded sides with it. The
 		// lift fades as the sky closes: a fair sky's scattered cumulus keep their golden light, a
 		// cloudy sky's cover shows near neutral, and a closed deck, whose sunlight has lost its
