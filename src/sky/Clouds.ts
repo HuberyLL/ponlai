@@ -249,12 +249,13 @@ const BASE_WEATHER = 0.54, BASE_WEATHER_END = 0.13; // bases need richer weather
 // as a share of EROSION_PEAK, the height over which the base needs richer weather, and the lanes:
 // the density's share left where the lanes' field (WEATHER_LANES) stays under `laneSplit`, rising
 // as a power of it to the whole density over `laneSoftness` either side of it (1, none: the
-// cumulus' columns are its clouds and gaps), the base's masses: how far the base rises between
+// cumulus' columns are its clouds and gaps), and the share of the column under the top a lane
+// keeps (`laneTop`, 1: the lane as deep as the rolls), the base's masses: how far the base rises between
 // them, a share of the column under the top (`baseLift`, 0: a base resting on the weather alone),
 // and where the tops' margin lies: `inside` 0 spreads it either side of a column's top, 1 moves it
 // a margin's half width into the column, so the whole margin lies inside the cloud and the open
 // sky beyond the column keeps no cloud.
-export const CLOUD_FORM = { edge: EDGE, erosion: 1, baseEnd: BASE_WEATHER_END, lanes: 1, laneSplit: 0.43, laneSoftness: 0.05, baseLift: 0, inside: 0 } as const;
+export const CLOUD_FORM = { edge: EDGE, erosion: 1, baseEnd: BASE_WEATHER_END, lanes: 1, laneSplit: 0.43, laneSoftness: 0.05, laneTop: 1, baseLift: 0, inside: 0 } as const;
 // The base's masses: the base hangs from the shell's bottom by the shape noise's weighted channels
 // (the dilation's own sample, over BASE_STRENGTH), lowest where they reach MASS_HIGH (the noise's
 // p90) and risen by the whole `baseLift` where they fall to MASS_LOW (its p30), a smooth step
@@ -742,6 +743,8 @@ export class Clouds {
 	readonly lanes = uniform( 1 );
 	readonly laneSplit = uniform( 0.43 );
 	readonly laneSoftness = uniform( 0.05 );
+	// the share of the column (over the base's rise) a lane keeps under its top (CLOUD_FORM `laneTop`)
+	readonly laneTop = uniform( 1 );
 	// the base's rise between its masses, a share of the column (CLOUD_FORM `baseLift`, MASS_LOW)
 	readonly baseLift = uniform( 0 );
 	// The share of that rise the light march sees (Sky.ts trackClouds, from the key's elevation).
@@ -1119,6 +1122,12 @@ export class Clouds {
 						const step = smoothstep( this.laneSplit.sub( this.laneSoftness ), this.laneSplit.add( this.laneSoftness ), field );
 						c.lane.assign( pow( this.lanes, float( 1 ).sub( step ) ) );
 						c.floorMask.assign( c.floorMask.mul( c.lane ) );
+						// A lane is shallower as well as thinner: its top comes down toward the base's
+						// rise to `laneTop` of the column, across the same step. The key's slant through
+						// the deck spans kilometres along the sun's bearing, so through a lane as deep as
+						// the rolls it runs through roll on either side and smears the lane's light along
+						// that bearing; a shallow lane's slant stays in the lane.
+						c.top.assign( c.lift.add( c.top.sub( c.lift ).mul( mix( this.laneTop, float( 1 ), step ) ) ) );
 
 					} );
 					c.conservative.assign( smoothstep( edge.negate(), edge, c.top.sub( this.edgeIn ).sub( h ) ).mul( smoothstep( edge.negate(), edge, h.sub( c.lift ) ) ).mul( c.floorMask ) );
@@ -2669,9 +2678,9 @@ export class Clouds {
 	/** The cloud's form (CLOUD_FORM's terms), which Sky.ts blends by the sky's shares: the soft
 	 * margin, the erosion's strength at the top as a share of the high cumulus', the height over
 	 * which a base needs richer weather, the lanes (the density's share left in a lane, the
-	 * lanes' field's split, the step's half width), the base's rise between its masses and how far
+	 * lanes' field's split, the step's half width, the column's share under a lane's top), the base's rise between its masses and how far
 	 * the tops' margin lies inside the column (a share of its half width). */
-	setForm( edge: number, erosion: number, baseEnd: number, lanes: number, laneSplit: number, laneSoftness: number, baseLift: number, inside: number ): void {
+	setForm( edge: number, erosion: number, baseEnd: number, lanes: number, laneSplit: number, laneSoftness: number, laneTop: number, baseLift: number, inside: number ): void {
 
 		this.edge.value = edge;
 		this.edgeIn.value = edge * inside;
@@ -2680,6 +2689,7 @@ export class Clouds {
 		this.lanes.value = lanes;
 		this.laneSplit.value = laneSplit;
 		this.laneSoftness.value = laneSoftness;
+		this.laneTop.value = laneTop;
 		this.baseLift.value = baseLift;
 
 	}
