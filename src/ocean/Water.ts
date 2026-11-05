@@ -47,7 +47,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     pixel cannot resolve and the near ripples, slicks smooth them, gusts and windrows add whitecaps;
 //     around the island the gusts are the meadow's, read in the vertex stage
 //   - the key reaching the surface: the sun or the moon through the clouds, which every term takes
-//     whole, and through the sun shadow's maps, read once, in the vertex stage, over a disc some
+//     whole (the glint only the direct beam, without the light the cloud scatters on through, which is
+//     diffuse and makes no mirror image of the key: Sky.ts `cloudDirectVisibility`), and through the
+//     sun shadow's maps, read once, in the vertex stage, over a disc some
 //     metres wide (`vKeyShadow`, SunShadow `discVisibility`), which each term takes by what it is
 //     (the constants at `SHADOW_SOFT_RADIUS`): the glint, the meter and a storm's foam whole
 //     (`sunLight`), the foam raised (`foamLight`), the water body in part (`bodyLight`), and the
@@ -56,8 +58,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     The sea's key is the sky's (shared.sunColor) through the clouds' own transmittance, without
 //     the land's floor under a deck or a deck's gain (lighting/KeyCloud.ts), so the water drawn,
 //     the floor seen through it and the sea the ambient light bounces are lit by one key; under a
-//     deck that lets little of the sun through, the soft sheen toward the sun is the sky's
-//     reflection (the deck's glow about the sun's place is drawn in the sky), not a glitter road
+//     deck that lets almost none of the direct beam through, the soft sheen toward the sun is the
+//     sky's reflection (the deck's glow about the sun's place is drawn in the sky), not a glitter road
 //   - exact dielectric Fresnel, its mean over the slopes no pixel resolves on the distant sea (a
 //     mirror's grazing reflectance is too much for a sheet of small facets turned every way): the
 //     facets the eye sees turn toward it, and other waves stop part of their reflected rays (Smith's
@@ -1021,6 +1023,9 @@ export class Water {
 			const cloudVisibility = sky.cloudVisibility( wp ).toVar();
 			const keyLight = shared.sunColor.mul( cloudVisibility ).toVar();
 			const sunLight = keyLight.mul( vKeyShadow ).toVar();
+			// the glint's: the key's direct beam alone, the light the cloud scatters on through being
+			// diffuse (Sky.ts `cloudDirectVisibility`)
+			const glintKey = shared.sunColor.mul( sky.cloudDirectVisibility( wp ) ).mul( vKeyShadow ).toVar();
 			// the surface's metering illuminance (lighting/MeterLight.ts): the sky's upper hemisphere
 			// (its irradiance on level water over pi) and the key on level water, no reflection nor
 			// light from within the water
@@ -1180,7 +1185,7 @@ export class Water {
 			const spec = mix( D_Gaussian( NdH, alpha2 ), D_GGX( NdH, alpha2 ), keyChroma ).mul( V_SmithGGX( NdL, NdV, alpha2 ) )
 				.mul( fresnelDielectric( max( dot( V, H ), 0 ), float( IOR ) ) ).mul( NdL );
 			// (physically a glint is some 1e5 times the sky; held inside half float's range)
-			const glintLight = mix( vec3( luminance( sunLight ) ), sunLight, keyChroma ).toVar();
+			const glintLight = mix( vec3( luminance( glintKey ) ), glintKey, keyChroma ).toVar();
 			const glint = min( spec, 400 ).toVar();
 			const knee = mix( float( MOON_KNEE ), L.y.mul( L.y ).mul( GLINT_KNEE ), keyChroma );
 			const sunSpec = glintLight.mul( glint.div( glint.mul( knee ).add( 1 ) ) ).toVar();

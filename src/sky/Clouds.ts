@@ -190,7 +190,9 @@ type V4 = THREE.Node<'vec4'>;
 // haze no shaft at 6 degrees, and under about 5 degrees the whole disc again (`shadowAirNarrow`,
 // Sky.ts SHADOW_AIR_NARROW), since the sky's dome meters the air's light and the two rays alone
 // put half a stop per 0.02 degree back into the exposure looking toward the sun; with one ray the
-// channels are equal, so above 11 degrees the map holds what one ray cast;
+// channels are equal, so above 11 degrees the map holds what one ray cast; its blue channel is the
+// whole disc's direct beam alone, without the light the cloud scatters on through (`directShadow`),
+// which only the sea's glint reads: that light is diffuse and makes no mirror image of the sun;
 // the haze reads the green channel at each point's ground point along the same flat beam, with
 // its B-spline blur for sharpening (`shadowAlongBeam`).
 // This project keeps its own weather on top: coverage and density sweep in as a front from
@@ -1820,7 +1822,8 @@ export class Clouds {
 
 		// ---- cloud shadow: transmittance of the shell along the key light around the island, one
 		// of every SHADOW_PHASES rows per pass.
-		// What gets through the shell to a ground point along a ray climbing `ly` per unit of `L.xz`.
+		// What gets through the shell to a ground point along a ray climbing `ly` per unit of `L.xz`:
+		// ( the direct beam, the direct beam with the light scattered on through ).
 		const castRay = Fn( ( [ ground, ly ]: [ V2, F ] ) => {
 
 			const ray = vec3( this.lightDir.x, ly, this.lightDir.z ).toVar();
@@ -1840,15 +1843,16 @@ export class Clouds {
 
 			} );
 			// Multiple scattering lets a little light through even thick cloud.
-			return exp( tau.negate() ).mul( 0.8 ).add( exp( tau.mul( - 0.25 ) ).mul( 0.2 ) );
+			const direct = exp( tau.negate() ).toVar();
+			return vec2( direct, direct.mul( 0.8 ).add( exp( tau.mul( - 0.25 ) ).mul( 0.2 ) ) );
 
-		} ).setLayout( { name: 'cloudCastRay', type: 'float', inputs: [ { name: 'ground', type: 'vec2' }, { name: 'ly', type: 'float' } ] } );
+		} ).setLayout( { name: 'cloudCastRay', type: 'vec2', inputs: [ { name: 'ground', type: 'vec2' }, { name: 'ly', type: 'float' } ] } );
 		this.shadowKernel = Fn( () => {
 
 			const n = uint( SHADOW_SIZE );
 			const x = instanceIndex.mod( n ), y = instanceIndex.div( n ).mul( uint( SHADOW_PHASES ) ).add( uint( this.shadowRow ) );
 			const ground = vec2( float( x ), float( y ) ).add( 0.5 ).div( SHADOW_SIZE ).sub( 0.5 ).mul( SHADOW_SPAN ).sub( this.camXZ ).toVar();
-			const visibility = float( 1 ).toVar(), sharp = float( 1 ).toVar();
+			const visibility = float( 1 ).toVar(), sharp = float( 1 ).toVar(), direct = float( 1 ).toVar();
 			If( this.shadowShare.greaterThan( 0 ), () => {
 
 				// Rays spaced evenly over the height of the light's disc, each weighted by the disc's
@@ -1857,14 +1861,16 @@ export class Clouds {
 				// the disc seconds to pass an edge. The heights alone: the footprint across the light
 				// is hundreds of metres, and the shadow slides along it.
 				const rays = float( this.shadowRays ).toVar();
-				const cast = float( 0 ).toVar(), total = float( 0 ).toVar();
+				const cast = float( 0 ).toVar(), castDirect = float( 0 ).toVar(), total = float( 0 ).toVar();
 				const centre = float( 0 ).toVar(), centres = float( 0 ).toVar();
 				Loop( this.shadowRays, ( { i } ) => {
 
 					const across = float( i ).add( 0.5 ).div( rays ).mul( 2 ).sub( 1 ).toVar();
 					const width = sqrt( float( 1 ).sub( across.mul( across ) ) ).toVar();
-					const ray = castRay( ground, max( this.lightDir.y.add( across.mul( this.shadowDisc ) ), SHADOW_SLOPE_FLOOR ) ).toVar();
+					const beam = castRay( ground, max( this.lightDir.y.add( across.mul( this.shadowDisc ) ), SHADOW_SLOPE_FLOOR ) ).toVar();
+					const ray = beam.y;
 					cast.addAssign( ray.mul( width ) );
+					castDirect.addAssign( beam.x.mul( width ) );
 					total.addAssign( width );
 					// the ray or two nearest the disc's centre: one ray stands for itself
 					If( abs( across ).mul( rays ).lessThan( 2 ), () => {
@@ -1878,9 +1884,10 @@ export class Clouds {
 				const disc = cast.div( total ).toVar();
 				visibility.assign( mix( float( 1 ), disc, this.shadowShare ) );
 				sharp.assign( mix( float( 1 ), mix( disc, centre.div( centres ), this.shadowAirNarrow ), this.shadowShare ) );
+				direct.assign( mix( float( 1 ), castDirect.div( total ), this.shadowShare ) );
 
 			} );
-			textureStore( this.shadowMap, ivec2( int( x ), int( y ) ), vec4( visibility, sharp, 0, 1 ) );
+			textureStore( this.shadowMap, ivec2( int( x ), int( y ) ), vec4( visibility, sharp, direct, 1 ) );
 
 		} )().compute( SHADOW_SIZE * SHADOW_SIZE / SHADOW_PHASES, [ 64 ] ).setName( 'Clouds.Shadow' );
 		// The view's kernels close over the march: rebuild them on the next update.
@@ -2608,6 +2615,22 @@ export class Clouds {
 	/** Direct-light visibility under the clouds at a world position. */
 	shadow( worldPosition: V3 ): F {
 
+		return this.readShadow( worldPosition, 'r' );
+
+	}
+
+	/** The direct beam alone under the clouds at a world position, without the light the cloud
+	 * scatters on through (the map's blue channel), for the sea's glint: under a closed deck that
+	 * light is diffuse and makes no mirror image of the sun. Equal to `shadow` where no cloud lies
+	 * along the key. */
+	directShadow( worldPosition: V3 ): F {
+
+		return this.readShadow( worldPosition, 'b' );
+
+	}
+
+	private readShadow( worldPosition: V3, channel: 'r' | 'b' ): F {
+
 		const q = worldPosition.xz.div( SHADOW_SPAN ).add( 0.5 ).toVar();
 		// a cubic B-spline over the map's 47 m texels, from four bilinear taps (Sigg and Hadwiger,
 		// "Fast Third-Order Texture Filtering", GPU Gems 2, ch. 20): the shadow's edges stay round
@@ -2623,15 +2646,14 @@ export class Clouds {
 		// the taps' texel centres, i + 0.5 moved by h0 = w1 / g0 - 1 and h1 = w3 / g1 + 1
 		const p0 = i.add( 0.5 ).add( w1.div( g0 ).sub( 1 ) ).div( SHADOW_SIZE ).toVar();
 		const p1 = i.add( 0.5 ).add( w3.div( max( g1, 1e-6 ) ).add( 1 ) ).div( SHADOW_SIZE ).toVar();
-		const tap = ( x: F, y: F ): F => texture( this.shadowMap, vec2( x, y ) ).level( float( 0 ) ).r;
+		const tap = ( x: F, y: F ): F => texture( this.shadowMap, vec2( x, y ) ).level( float( 0 ) )[ channel ];
 		const s = mix(
 			mix( tap( p0.x, p0.y ), tap( p1.x, p0.y ), g1.x ),
 			mix( tap( p0.x, p1.y ), tap( p1.x, p1.y ), g1.x ),
 			g1.y,
 		);
-		// The direct beam takes the full transmittance: the sky light already fills a cloud's shadow,
-		// and even a sixth of the sun left on the water glitters through a closed deck. The map holds
-		// no data beyond its edge, so the shadow fades out toward it (shadowFadeAt).
+		// The direct beam takes the full transmittance: the sky light already fills a cloud's shadow.
+		// The map holds no data beyond its edge, so the shadow fades out toward it (shadowFadeAt).
 		return mix( s, float( 1 ), this.shadowFadeAt( q, worldPosition ) );
 
 	}

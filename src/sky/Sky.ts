@@ -2677,6 +2677,15 @@ export class Sky {
 
 	}
 
+	/** The key's direct beam through the clouds at a world position, without the light the cloud
+	 * scatters on through (Clouds.ts `directShadow`): the sea's glint, a mirror image of the key,
+	 * takes only this; the water's other key light takes `cloudVisibility`. */
+	cloudDirectVisibility( worldPosition: V3 ): F {
+
+		return this.clouds.directShadow( worldPosition );
+
+	}
+
 	/** The clouds' shadow on the island's key, three's sun and the light the land bounces of it (the
 	 * ground's bounce, the ambient light's bounce lobe): the clouds' own over the land's floor
 	 * (Weather.ts `cloudFloor`; under a deck its `deckFloor` times the deck's key gain, at most 1, on
