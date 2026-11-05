@@ -75,32 +75,30 @@
 // Generic: no need, item, option, building or kind of record entry is named here. The needs are
 // the body's own keys, the activities the calls under way, an item's flows what each call's
 // outcome moved between bags, the buildings and the stock the state's, the record's lines its
-// kinds' rows: a new rule shows in the outputs without a change to the tool.
+// kinds' rows (a kind without one, the record's default row), and an event of a kind that neither
+// the record notes nor this tool has a line for a line of its own (`[event]`, its kind and what it
+// holds): a new rule shows in the outputs without a change to the tool.
 import './qos.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { registerHooks } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { newGame } from '../src/game/sim/Sim.ts';
 import { StandInBrain } from '../src/game/sim/standin.ts';
-import { BUILDING_KINDS } from '../src/game/sim/buildings.ts';
+import { progressOf } from '../src/game/sim/buildings.ts';
+import { buildingKind, buildingKinds } from '../src/game/sim/registry.ts';
 import { Session } from '../src/game/Session.ts';
+import { RECORDED } from '../src/game/Chronicle.ts';
 import { stockOf } from '../src/game/sim/stock.ts';
 import { clockText, tickAt, timeOf } from '../src/game/sim/clock.ts';
 import { ageOf } from '../src/game/sim/life.ts';
 import { SECONDS_PER_GAME_DAY } from '../src/game/sim/types.ts';
-import { inputAt } from './game-fixture.mjs';
+import { importCatalogues, inputAt } from './game-fixture.mjs';
 
 // The record's lines in the interface's words (src/game/ui/data/record.ts, its catalogue
 // i18n/zh-CN.json): the page's bundler imports a catalogue as JSON, node as a module whose default
 // export it is.
-registerHooks( { load( url, context, next ) {
-
-	if ( ! url.endsWith( '.json' ) || ! url.includes( '/src/game/ui/i18n/' ) ) return next( url, context );
-	return { format: 'module', shortCircuit: true, source: `export default ${ readFileSync( new URL( url ), 'utf8' ) };` };
-
-} } );
-const { RECORD_KINDS } = await import( '../src/game/ui/data/record.ts' );
+importCatalogues();
+const { recordKind } = await import( '../src/game/ui/data/record.ts' );
 const { BUILDINGS } = await import( '../src/game/ui/data/buildings.ts' );
 const { t } = await import( '../src/game/ui/i18n/i18n.ts' );
 
@@ -148,7 +146,7 @@ function parseOptions( argv ) {
 				const text = value() ?? '';
 				const m = /^([a-z]+)(?:@(-?[\d.]+),(-?[\d.]+))?$/.exec( text );
 				if ( ! m ) fail( `bad value for --place: ${ text } (kind or kind@x,z)` );
-				if ( ! Object.hasOwn( BUILDING_KINDS, m[ 1 ] ) ) fail( `there is no building called ${ m[ 1 ] } (${ Object.keys( BUILDING_KINDS ).join( ', ' ) })` );
+				if ( ! buildingKind( m[ 1 ] ) ) fail( `there is no building called ${ m[ 1 ] } (${ buildingKinds().map( ( k ) => k.id ).join( ', ' ) })` );
 				o.place.push( { text, kind: m[ 1 ], at: m[ 2 ] === undefined ? null : { x: number( '--place x', m[ 2 ], () => true ), z: number( '--place z', m[ 3 ], () => true ) } } );
 				break;
 
@@ -367,6 +365,13 @@ function onEvent( e ) {
 		case 'began': open( e.who, e.call, e.tick, false ); break;
 		case 'outcome': ended( e ); break;
 		case 'died': flush( e.who ); break;
+		default: {
+
+			// a kind with no line here, which the record does not note either: as it is
+			const { kind, tick, ...rest } = e;
+			if ( ! RECORDED.has( kind ) ) push( tick, `${ clockOf( tick ) } [event] ${ kind } ${ JSON.stringify( rest ) }` );
+
+		}
 
 	}
 
@@ -573,16 +578,15 @@ function round( x, digits ) {
 const naming = { person: label, building: ( kind ) => BUILDINGS.find( ( r ) => r.kind === kind )?.name ?? kind };
 
 /** The record's new entries as transcript lines, each as the record's page writes it (the kind's
- * row in ui/data/record.ts, a kind without one as its JSON); the building an entry is about by its
+ * row in ui/data/record.ts, a kind without one its default row); the building an entry is about by its
  * id. Words: the player's to whom (ui/Record.ts), an islander's come from its `say`. */
 function readRecord() {
 
 	for ( ; recorded < record.entries.length; recorded ++ ) {
 
-		const e = record.entries[ recorded ], row = RECORD_KINDS[ e.kind ];
+		const e = record.entries[ recorded ], row = recordKind( e.kind );
 		let text;
-		if ( ! row ) text = `${ e.kind } ${ JSON.stringify( e ) }`;
-		else if ( ! row.words ) text = row.deed( e, naming, false ) + ( e.subject ? ` (${ e.subject })` : '' );
+		if ( ! row.words ) text = row.deed( e, naming, false ) + ( e.subject ? ` (${ e.subject })` : '' );
 		else if ( e.who === 'player' ) {
 
 			const to = e.to === 'all' ? t( 'record.toAll' ) : t( 'record.toSome', { names: e.to.map( label ).join( t( 'list.and' ) ) } );
@@ -692,7 +696,7 @@ const islanders = [ ...people.values() ].map( ( p ) => {
 	};
 
 } );
-const buildings = sim.state.buildings.map( ( b ) => ( { id: b.id, kind: b.kind, x: round( b.x, 2 ), z: round( b.z, 2 ), placed: entryAt( 'placed', b.id ), built: entryAt( 'built', b.id ), progress: round( Math.min( 1, b.worked / BUILDING_KINDS[ b.kind ].work ), 3 ), items: { ...b.items } } ) );
+const buildings = sim.state.buildings.map( ( b ) => ( { id: b.id, kind: b.kind, x: round( b.x, 2 ), z: round( b.z, 2 ), placed: entryAt( 'placed', b.id ), built: entryAt( 'built', b.id ), progress: round( progressOf( b ), 3 ), items: { ...b.items } } ) );
 const summary = {
 	options: context.options,
 	end: when( sim.state.tick ),

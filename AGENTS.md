@@ -153,9 +153,12 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   node runs it by stripping types; the five actions, each with its arguments and the condition it
   holds by every tick, in `sim/actions.ts`; the entrance that checks a brain's calls in
   `sim/agent.ts` `act`, against the schemas of `sim/schema.ts`; what happened as events in
-  `sim/events.ts`; a tick's time of day only in `sim/clock.ts`; the other islanders as places,
-  hearing, giving and following, in `sim/people.ts`; only exact operations in the rules, the few
-  functions they need in `sim/maths.ts`), `save.ts` is the save (one slot: the simulation's state and the
+  `sim/events.ts`; a tick's time of day only in `sim/clock.ts`; the other islanders as places and
+  what they heard and were given in `sim/people.ts`; the game's content (needs, items and their
+  uses, kinds of place and of building, the options at them) as definitions registered in
+  `sim/registry.ts` by the modules of `sim/content/` (the core names none: ARCHITECTURE.md, Adding
+  content); only exact operations in the rules, the few functions they need in `sim/maths.ts`),
+  `save.ts` is the save (one slot: the simulation's state and the
   record, versioned: a save of another version is set aside and a new game started; the world's
   start reads its piece count),
   `view/`
@@ -164,9 +167,9 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   `Placement.ts` places a building chosen in the build bar. `ui/` is the player's interface
   (`GameUi.ts`, spec `docs/ui.md`): its parts (`TopRow.ts`, `Forecast.ts`, `ResourceRow.ts`,
   `People.ts`, `SpeakBar.ts`, `BuildBar.ts`, `Record.ts`), the lists it shows as data with
-  placeholder rows (`data/`: buildings, resources, weather kinds, the record's kinds, the words for
-  the simulation's states), its words in i18next catalogues (`i18n/`: `zh-CN.json` the source,
-  `en.json` an unmaintained snapshot; no player-facing string is written in code,
+  placeholder rows and the defaults for content without its own (`data/`: buildings, resources,
+  the needs' looks, weather kinds, the record's kinds, the words for the simulation's states), its
+  words in i18next catalogues (`i18n/`: `zh-CN.json` the source, `en.json` an unmaintained snapshot; no player-facing string is written in code,
   `tools/verify-i18n.mjs`), the brush icons (`Icons.ts`), strokes (`Brush.ts`) and the ink of the
   long ones (`Ink.ts`, drawn by `InkPath.ts`, `tools/verify-ink.mjs`), what it lays into the
   scene in the camera's perspective (`Space.ts`: the words over the islanders and in flight),

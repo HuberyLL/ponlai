@@ -441,7 +441,7 @@ export class Game {
 
 	}
 
-	/** Place a building of a kind (sim/buildings.ts: 'chest') at a point of the ground (world metres): null when it stands there, else why not. */
+	/** Place a building of a kind (sim/registry.ts BuildingDef: today's chest in sim/content/chest.ts) at a point of the ground (world metres): null when it stands there, else why not. */
 	placeBlueprint( kind: string, x: number, z: number ): string | null {
 
 		const refusal = this.session.place( kind, x, z );
@@ -511,7 +511,7 @@ export class Game {
 	}
 
 	/** Set an islander's need by hand (the debug panel's: to see the interface's ramps and alerts). */
-	setNeed( id: EntityId, need: 'satiety' | 'hydration', value: number ): void {
+	setNeed( id: EntityId, need: string, value: number ): void {
 
 		this.sim.setNeed( id, need, value );
 

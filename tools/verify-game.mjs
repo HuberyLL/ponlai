@@ -27,8 +27,12 @@
 // interrupted with its reason), a brain's late answer for an islander who died refused, the entrance
 // refusing what a tool does not take (a NaN or null count, `__proto__`, stray, missing and mistyped
 // arguments, answers that are not lists) and changing nothing, and two lines said in one frame both
-// recorded at their tick; last, the rules' maths: no function in src/game/sim whose result differs
-// between engines, and its own exp and log against Math's.
+// recorded at their tick; then content added by this check alone (a need, an item with a use, a
+// kind of place with an option, a kind of building with a store and an option), played, perceived,
+// recorded, saved and loaded, shown in the interface's default words and looks, and taken away, and
+// the core naming none of the content's ids; last, the rules' maths: no function in src/game/sim
+// (its content included) whose result differs between engines, and its own exp and log against
+// Math's.
 // Pure CPU; Node 22.18+ strips the imported TypeScript.
 // Run: node tools/verify-game.mjs
 import assert from 'node:assert/strict';
@@ -36,11 +40,16 @@ import { newGame, loadGame } from '../src/game/sim/Sim.ts';
 import { findPath, goalAt, lineClear } from '../src/game/sim/path.ts';
 import { act, perceive } from '../src/game/sim/agent.ts';
 import { HUNGRY_WORDS, StandInBrain, THANKS_WORDS } from '../src/game/sim/standin.ts';
-import { EARSHOT, FOLLOW_GAP, NOTICED_KEPT, PERSON_REACH } from '../src/game/sim/people.ts';
-import { BAG_CAPACITY, FISH_SATIETY } from '../src/game/sim/items.ts';
-import { HYDRATION_PER_DAY, SATIETY_PER_DAY, START_NEEDS } from '../src/game/sim/needs.ts';
-import { FISH_SECONDS, placesAt } from '../src/game/sim/places.ts';
-import { CHEST_WORK, progressOf, stageOf } from '../src/game/sim/buildings.ts';
+import { EARSHOT, NOTICED_KEPT, PERSON_REACH } from '../src/game/sim/people.ts';
+import { BAG_CAPACITY, bagOf, bring, count, room, transfer } from '../src/game/sim/items.ts';
+import { raiseNeed, startNeeds } from '../src/game/sim/needs.ts';
+import { placesAt } from '../src/game/sim/places.ts';
+import { progressOf, stageOf, storeOf } from '../src/game/sim/buildings.ts';
+import { optionsAt, register } from '../src/game/sim/registry.ts';
+import { FISH_SATIETY, FISH_SECONDS, SATIETY_PER_DAY } from '../src/game/sim/content/food.ts';
+import { HYDRATION_PER_DAY } from '../src/game/sim/content/water.ts';
+import { CHEST_WORK } from '../src/game/sim/content/chest.ts';
+import { FOLLOW_GAP } from '../src/game/sim/content/person.ts';
 import { GROWTH_STEPS, POPULATION_START, SECONDS_PER_GAME_DAY, SECONDS_PER_YEAR, WALK_SPEED, piecesFor } from '../src/game/sim/types.ts';
 import { ageOf, drawLifespan } from '../src/game/sim/life.ts';
 import { clockText, minuteOf, tickAt, timeOf } from '../src/game/sim/clock.ts';
@@ -49,11 +58,11 @@ import { SAVE_VERSION, readSave, savedPieces, writeSave } from '../src/game/save
 import { Chronicle } from '../src/game/Chronicle.ts';
 import { Session } from '../src/game/Session.ts';
 import { shortfall, stockOf } from '../src/game/sim/stock.ts';
-import { shoreMask } from '../src/game/sim/ground.ts';
-import { exp, log } from '../src/game/sim/maths.ts';
+import { cellsWithin, shoreMask } from '../src/game/sim/ground.ts';
+import { exp, log, planar } from '../src/game/sim/maths.ts';
 import { readdirSync, readFileSync } from 'node:fs';
 import ts from 'typescript';
-import { input, inputAt } from './game-fixture.mjs';
+import { importCatalogues, input, inputAt } from './game-fixture.mjs';
 
 const HOUR = 3600;
 
@@ -238,22 +247,23 @@ function run( sim, call, limit = 86400 ) {
 
 }
 
-/** a chest placed at the first open ground that takes it, outward from the island's middle: its point and id */
-function placeChest( sim ) {
+/** a building of a kind (a chest unless named) placed at the first open ground that takes it,
+ * outward from the island's middle: its point and id */
+function placeFirst( sim, kind = 'chest' ) {
 
 	const grid = sim.grid;
 	const cells = [];
 	for ( let k = 0; k < grid.open.length; k ++ ) if ( grid.region[ k ] === grid.main ) cells.push( k );
 	cells.sort( ( a, b ) => Math.hypot( grid.centreX( a ), grid.centreZ( a ) ) - Math.hypot( grid.centreX( b ), grid.centreZ( b ) ) || a - b );
-	for ( const k of cells ) if ( sim.placeBlueprint( 'chest', grid.centreX( k ), grid.centreZ( k ) ) === null ) return { ...grid.centreOf( k ), id: sim.state.buildings.at( - 1 ).id };
-	throw new Error( 'no ground took the chest' );
+	for ( const k of cells ) if ( sim.placeBlueprint( kind, grid.centreX( k ), grid.centreZ( k ) ) === null ) return { ...grid.centreOf( k ), id: sim.state.buildings.at( - 1 ).id };
+	throw new Error( `no ground took the ${ kind }` );
 
 }
 
 /** the chest placed and built by the islander, who stands at it after */
 function buildChest( sim ) {
 
-	const at = placeChest( sim );
+	const at = placeFirst( sim );
 	assert.equal( run( sim, { tool: 'go', args: { place: at.id } } ).ok, true );
 	assert.deepEqual( run( sim, { tool: 'do', args: { action: 'build' } } ), { ok: true, value: `built ${ at.id }` } );
 	return at;
@@ -271,7 +281,7 @@ function buildChest( sim ) {
 	assert.equal( v.needs.hydration, before.hydration, 'hydration holds' );
 	assert.ok( Math.abs( before.satiety - v.needs.satiety - SATIETY_PER_DAY / 24 ) < 1e-9, 'satiety falls by its hourly rate' );
 	sim.step( 2 * 24 * HOUR );
-	assert.deepEqual( v.needs, { satiety: 0, hydration: START_NEEDS.hydration }, 'satiety clamps at 0' );
+	assert.deepEqual( v.needs, { satiety: 0, hydration: startNeeds().hydration }, 'satiety clamps at 0' );
 	v.bag = { fish: 2 };
 	assert.equal( run( sim, { tool: 'use', args: { item: 'fish' } } ).ok, true );
 	assert.equal( v.needs.satiety, FISH_SATIETY, 'a fish raises satiety' );
@@ -357,7 +367,7 @@ function buildChest( sim ) {
 
 	const sim = newGame( input, { seed: 3 } );
 	const v = sim.state.villagers[ 0 ];
-	const at = placeChest( sim );
+	const at = placeFirst( sim );
 	const site = sim.state.buildings[ 0 ];
 	assert.deepEqual( site, { id: 'chest1', kind: 'chest', x: at.x, z: at.z, worked: 0, items: {} } );
 	assert.equal( stageOf( site ), 'planned' );
@@ -412,7 +422,7 @@ function buildChest( sim ) {
 
 	const sim = newGame( input, { seed: 5 } );
 	const v = sim.state.villagers[ 0 ];
-	const first = buildChest( sim ), second = placeChest( sim );
+	const first = buildChest( sim ), second = placeFirst( sim );
 	assert.deepEqual( [ first.id, second.id ], [ 'chest1', 'chest2' ], 'ids: the kind and its count' );
 	assert.equal( stageOf( sim.state.buildings[ 1 ] ), 'planned', 'the second is a site of its own' );
 	assert.deepEqual( perceive( sim, v ).seen.filter( ( s ) => s.kind === 'chest' ).map( ( s ) => s.place ), [ 'chest1', 'chest2' ] );
@@ -441,7 +451,7 @@ function buildChest( sim ) {
 	// a save keeps the ids and the count: the next chest is chest3
 	const loaded = loadGame( sim.save(), input );
 	assert.deepEqual( loaded.state.buildings.map( ( b ) => b.id ), [ 'chest1', 'chest2' ], 'ids stable across a save' );
-	assert.equal( placeChest( loaded ).id, 'chest3' );
+	assert.equal( placeFirst( loaded ).id, 'chest3' );
 	assert.equal( new Set( loaded.state.buildings.map( ( b ) => b.id ) ).size, 3, 'ids unique' );
 	console.log( `many: ${ loaded.state.buildings.map( ( b ) => b.id ).join( ', ' ) }; two builders finished a chest in ${ sim.state.tick - tick } s, both ended` );
 
@@ -480,7 +490,7 @@ function buildChest( sim ) {
 
 	const sim = newGame( input );
 	const v = sim.state.villagers[ 0 ];
-	placeChest( sim );
+	placeFirst( sim );
 	run( sim, { tool: 'go', args: { place: 'chest1' } } );
 	const p = perceive( sim, v );
 	const banned = new Set( [ 'x', 'z', 'pos', 'prev', 'path', 'heading', 'distance', 'cells' ] );
@@ -516,7 +526,7 @@ function buildChest( sim ) {
 
 		const sim = newGame( input, { seed } );
 		sim.brain = new StandInBrain();
-		for ( let n = 0; n < store; n ++ ) placeChest( sim );
+		for ( let n = 0; n < store; n ++ ) placeFirst( sim );
 		const v = sim.state.villagers[ 0 ];
 		let low = 100, built = - 1;
 		for ( let t = 0; t < days * 24 * HOUR; t ++ ) {
@@ -676,7 +686,7 @@ function buildChest( sim ) {
 	const sim = newGame( input, { seed: 2 } );
 	const session = new Session( input, host, new StandInBrain() ), record = session.record;
 	session.install( sim );
-	placeChest( sim );
+	placeFirst( sim );
 	watch( session, 30 * HOUR );
 	assert.equal( session.speak( 'words', 'all' ), null );
 	const hungry = sim.state.villagers[ 0 ].id;
@@ -776,7 +786,7 @@ function buildChest( sim ) {
 	const shore0 = shoreMask( grid ).slice();
 	const kai = sim.state.villagers[ 0 ], kaiCell = grid.indexAt( kai.pos.x, kai.pos.z );
 	// a chest's cell, as indexed before the growth
-	const chest = placeChest( sim ), chestCell = grid.indexAt( chest.x, chest.z );
+	const chest = placeFirst( sim ), chestCell = grid.indexAt( chest.x, chest.z );
 	assert.ok( ! grid.open[ chestCell ], 'the chest blocks its ground' );
 
 	// the population approaches the step: 3 islanders are at the start; 4 halfway; 5 due
@@ -920,7 +930,7 @@ function buildChest( sim ) {
 	session.install( sim );
 	const record = session.record;
 	assert.deepEqual( record.entries.map( ( e ) => [ e.kind, e.who, e.tick, clockText( record.timeOf( e.tick ) ) ] ), sim.state.villagers.map( ( v ) => [ 'landed', v.id, 0, '08:00' ] ), 'a new game\'s islanders land at its start' );
-	const chest = placeChest( sim );
+	const chest = placeFirst( sim );
 	session.look( null );
 	assert.deepEqual( record.entries.at( - 1 ), { kind: 'placed', tick: 0, who: 'player', text: 'chest', subject: chest.id }, 'a blueprint placed is the player\'s, at its tick' );
 	// the player's placing, checked at the entrance before any rule: a point that is not one, a
@@ -1452,14 +1462,244 @@ function buildChest( sim ) {
 
 }
 
+// ------------------------------------------------------------------ content added without a change to the core
+
+// A piece of content the game does not have, registered by this check alone as sim/content/
+// registers the game's own (sim/registry.ts): a need (warmth, falling), an item with a use (an
+// ember, which warms), a kind of place with an option (the hearth, on the open ground farthest from
+// the island's middle, where kindling brings an ember), and a kind of building with a store (a
+// rack, built by the work every building offers) with an option of its own (hanging an ember on
+// it). Nothing outside this check changes for it: it plays, is perceived, noted in the record,
+// saved and loaded as the game's own content is, and the interface's words and looks show it with
+// their defaults; then it is taken away again. Last, the core names no content: none of the ids
+// sim/content/ registers is written as a string in the rules outside it (the stand-in brain plays
+// the content, as any brain does, and may).
+importCatalogues();
+const { recordKind } = await import( '../src/game/ui/data/record.ts' );
+const { needLook, needName } = await import( '../src/game/ui/data/needs.ts' );
+const { RESOURCES, withItems } = await import( '../src/game/ui/data/resources.ts' );
+const { doingWords } = await import( '../src/game/ui/data/words.ts' );
+const { t } = await import( '../src/game/ui/i18n/i18n.ts' );
+{
+
+	const WARMTH_PER_DAY = 48, EMBER_WARMTH = 30, KINDLE_SECONDS = 600, HEARTH_REACH = 1.5;
+	// the hearth's point, per ground (worked out once: farthestOpen walks every cell)
+	const hearthPoints = new WeakMap();
+	const hearth = ( sim ) => {
+
+		const grid = sim.grid;
+		let p = hearthPoints.get( grid );
+		if ( ! p ) hearthPoints.set( grid, p = farthestOpen( grid, { x: 0, z: 0 } ) );
+		return {
+			id: 'hearth',
+			kind: 'hearth',
+			reaches: ( k ) => k >= 0 && planar( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) <= HEARTH_REACH,
+			near: () => cellsWithin( grid, p, HEARTH_REACH ),
+			distance: ( q ) => planar( q.x - p.x, q.z - p.z ),
+			shows: () => null,
+			options: optionsAt( 'hearth', null ),
+		};
+
+	};
+	const undo = register( {
+		needs: [ { id: 'warmth', start: 60, perDay: WARMTH_PER_DAY } ],
+		items: [ { id: 'ember', uses: { warm: ( body ) => {
+
+			raiseNeed( body.needs, 'warmth', EMBER_WARMTH );
+			return { ok: true, value: 'warmed by an ember' };
+
+		} } } ],
+		places: [ { id: 'hearth', all: ( sim ) => [ hearth( sim ) ], byId: ( sim, id ) => id === 'hearth' ? hearth( sim ) : null } ],
+		buildings: [ { id: 'rack', radius: 0.5, work: 600, capacity: 6 } ],
+		options: [
+			{ id: 'kindle', at: 'hearth', make: () => ( {
+				open: () => true,
+				start: ( _sim, body ) => room( bagOf( body ) ) < 1 ? { ok: false, reason: 'the bag is full' } : { ok: true, seconds: KINDLE_SECONDS },
+				finish: ( sim, body ) => {
+
+					const bag = bagOf( body );
+					if ( room( bag ) < 1 ) return { ok: false, reason: 'the bag is full' };
+					bring( sim, bag, 'ember' );
+					return { ok: true, value: 'kindled an ember' };
+
+				},
+			} ) },
+			{ id: 'hang', at: 'rack', make: ( rack ) => ( {
+				open: () => true,
+				start: ( sim, body ) => {
+
+					const bag = bagOf( body ), store = storeOf( rack );
+					if ( count( bag.items, 'ember' ) < 1 ) return { ok: false, reason: 'no ember to hang' };
+					if ( room( store ) < 1 ) return { ok: false, reason: 'the rack is full' };
+					transfer( sim, bag, store, 'ember', 1 );
+					return { ok: true, value: `hung an ember on ${ rack.id }` };
+
+				},
+			} ) },
+		],
+	} );
+	try {
+
+		const session = new Session( input, { grow: () => {} }, null ), record = session.record, told = [];
+		session.listen( ( e ) => told.push( e ) );
+		const sim = newGame( input, { seed: 9 } );
+		session.install( sim );
+		const v = sim.state.villagers[ 0 ];
+
+		// the need: every islander has it from the start, it falls by its rate, and the perception
+		// shows it after the game's own, in the order registered
+		assert.ok( sim.state.villagers.every( ( u ) => u.needs.warmth === 60 ), 'a registered need starts where its definition says' );
+		assert.deepEqual( Object.keys( perceive( sim, v ).body ), [ 'satiety', 'hydration', 'warmth', 'bag', 'doing' ] );
+		sim.step( HOUR );
+		assert.ok( Math.abs( 60 - v.needs.warmth - WARMTH_PER_DAY / 24 ) < 1e-9, 'and falls by its rate' );
+
+		// the place: gone to by its id, seen, its option at hand and played; the item kindled is
+		// what the outcome moved, perceived in the bag, and used
+		assert.equal( run( sim, { tool: 'go', args: { place: 'hearth' } } ).ok, true, 'a registered kind of place is gone to by its id' );
+		let p = perceive( sim, v );
+		assert.ok( p.seen.some( ( s ) => s.place === 'hearth' && s.kind === 'hearth' ), 'it is seen' );
+		assert.ok( p.atHand.some( ( h ) => h.place === 'hearth' && h.options.includes( 'kindle' ) ), 'and its option is at hand' );
+		act( sim, v.id, [ { tool: 'do', args: { action: 'kindle' } } ] );
+		assert.equal( doingWords( sim, v, ( kind ) => kind ), 'kindle', 'an option without words of its own reads as its id' );
+		for ( let k = 0; v.action && k < KINDLE_SECONDS + 1; k ++ ) sim.step( 1 );
+		assert.deepEqual( v.last.result, { ok: true, value: 'kindled an ember' } );
+		assert.deepEqual( run( sim, { tool: 'do', args: { action: 'kindle', place: 'hearth' } } ), { ok: true, value: 'kindled an ember' } );
+		session.look( null );
+		const kindled = told.filter( ( e ) => e.kind === 'outcome' && e.call.tool === 'do' );
+		assert.deepEqual( kindled.map( ( e ) => e.moved ), [ { [ v.id ]: { ember: 1 } }, { [ v.id ]: { ember: 1 } } ], 'each outcome says what it moved' );
+		p = perceive( sim, v );
+		assert.deepEqual( p.body.bag, { ember: 2 }, 'the bag shows the new item' );
+		const warmth = v.needs.warmth;
+		assert.deepEqual( run( sim, { tool: 'use', args: { item: 'ember' } } ), { ok: true, value: 'warmed by an ember' }, 'its use runs through `use`' );
+		assert.equal( v.needs.warmth, Math.min( 100, warmth + EMBER_WARMTH ), 'and answers the need' );
+		assert.deepEqual( v.bag, { ember: 1 }, 'spending the item' );
+
+		// the building: placed, built by the work every building offers, its store shown to someone
+		// at it, its own option once built, the island's stock counting what it holds
+		const rack = placeFirst( sim, 'rack' );
+		assert.equal( run( sim, { tool: 'go', args: { place: rack.id } } ).ok, true );
+		assert.deepEqual( perceive( sim, v ).atHand.find( ( h ) => h.place === rack.id ).options, [ 'build' ], 'a site offers the work alone' );
+		assert.deepEqual( run( sim, { tool: 'do', args: { action: 'build' } } ), { ok: true, value: `built ${ rack.id }` } );
+		assert.equal( stageOf( sim.state.buildings.at( - 1 ) ), 'built' );
+		p = perceive( sim, v );
+		assert.deepEqual( p.atHand.find( ( h ) => h.place === rack.id ).options, [ 'hang' ], 'built, its kind\'s own option' );
+		assert.deepEqual( p.seen.find( ( s ) => s.place === rack.id ).shows, { items: {} }, 'its store shows to someone at it' );
+		assert.deepEqual( run( sim, { tool: 'do', args: { action: 'hang' } } ), { ok: true, value: `hung an ember on ${ rack.id }` } );
+		assert.deepEqual( stockOf( sim.state ), { ember: 1 }, 'the stock counts its store' );
+
+		// the record: the need falling to its line is noted as any need's, the building as any
+		// building's
+		sim.setNeed( v.id, 'warmth', 21 );
+		sim.step( HOUR );
+		session.look( null );
+		const need = record.entries.find( ( e ) => e.kind === 'need' );
+		assert.deepEqual( need, { kind: 'need', tick: need.tick, who: v.id, text: 'warmth' }, 'the record notes the need' );
+		assert.ok( record.entries.some( ( e ) => e.kind === 'placed' && e.text === 'rack' ) && record.entries.some( ( e ) => e.kind === 'built' && e.subject === rack.id ) );
+
+		// the interface's defaults: a need without a look, its name, the record's words for it; a
+		// kind of entry without a row; an item without a row in the top row
+		assert.equal( needLook( 'warmth' ).icon, null, 'a need without a look draws the default glyph' );
+		assert.equal( needName( 'warmth' ), 'warmth', 'and is named by its id' );
+		const names = { person: ( id ) => id, building: ( kind ) => kind };
+		assert.equal( recordKind( 'need' ).deed( need, names, false ), t( 'record.deed.need', { who: v.id, need: t( 'record.need.other' ) } ), 'the record says it in the default words' );
+		assert.equal( recordKind( 'kindled' ).id, 'other', 'a kind of entry without a row reads as the default one' );
+		const rows = withItems( RESOURCES );
+		assert.deepEqual( rows.filter( ( r ) => r.item === 'ember' ).map( ( r ) => [ r.id, r.icon, r.group ] ), [ [ 'ember', null, 'material' ] ], 'an item without a row shows in the top row with the default one' );
+		assert.equal( rows.filter( ( r ) => r.item === 'fish' ).length, 1, 'an item with a row keeps it alone' );
+
+		// the save: the simulation and its record read back and play on the same
+		const json = session.save( null );
+		const other = new Session( input, { grow: () => {} }, null );
+		const saved = other.read( json );
+		other.install( saved.sim, saved.record );
+		assert.equal( other.sim.save(), sim.save(), 'the new content saves and loads' );
+		assert.deepEqual( other.sim.villager( v.id ).needs.warmth, v.needs.warmth );
+		run( sim, { tool: 'do', args: { action: 'hang' } } );
+		run( other.sim, { tool: 'do', args: { action: 'hang' } } );
+		sim.step( HOUR );
+		other.sim.step( HOUR );
+		assert.equal( other.sim.save(), sim.save(), 'and plays on as the original' );
+		assert.equal( JSON.stringify( other.record.save() ), JSON.stringify( record.save() ) );
+
+	} finally {
+
+		undo();
+
+	}
+	assert.deepEqual( Object.keys( newGame( input ).state.villagers[ 0 ].needs ), [ 'satiety', 'hydration' ], 'taken away, a new game has the game\'s own needs alone' );
+	assert.equal( act( newGame( input ), 'v1', [ { tool: 'go', args: { place: 'hearth' } } ] )[ 0 ].ok, false, 'and no hearth' );
+
+	// the core names no content: the ids registered in sim/content/ (each definition's `id`, and an
+	// item's use names) are no string, no word of a template, no property's name and no key in the
+	// rules, the session, the save or the record. A core method that shares a word with an option
+	// (Sim's `take` of its events, an option `take` at the chest) is a name of its own, listed in
+	// METHODS: only a property access calling it may use the word.
+	const literals = ( file, keep ) => {
+
+		const found = [];
+		const source = ts.createSourceFile( file, readFileSync( new URL( `../${ file }`, import.meta.url ), 'utf8' ), ts.ScriptTarget.ESNext, true );
+		const visit = ( node ) => {
+
+			if ( keep( node ) ) found.push( keep( node ) );
+			ts.forEachChild( node, visit );
+
+		};
+		visit( source );
+		return found;
+
+	};
+	const contentFiles = readdirSync( new URL( '../src/game/sim/content/', import.meta.url ) ).filter( ( f ) => f.endsWith( '.ts' ) ).map( ( f ) => `src/game/sim/content/${ f }` );
+	const ids = new Set( contentFiles.flatMap( ( f ) => literals( f, ( n ) => {
+
+		if ( ts.isPropertyAssignment( n ) && n.name.getText() === 'id' && ts.isStringLiteral( n.initializer ) ) return n.initializer.text;
+		// an item's uses, by name: `uses: { eat: ... }`
+		if ( ts.isPropertyAssignment( n ) && ts.isObjectLiteralExpression( n.parent ) && ts.isPropertyAssignment( n.parent.parent ) && n.parent.parent.name.getText() === 'uses' ) return n.name.getText();
+		return false;
+
+	} ) ) );
+	assert.ok( [ 'satiety', 'fish', 'eat', 'shore', 'chest', 'give' ].every( ( id ) => ids.has( id ) ), 'the content\'s ids are found' );
+	const METHODS = new Set( [ 'take' ] );
+	const words = ( text ) => text.split( /[^A-Za-z0-9_]+/ ).filter( ( w ) => ids.has( w ) );
+	const core = readdirSync( new URL( '../src/game/sim/', import.meta.url ) ).filter( ( f ) => f.endsWith( '.ts' ) && f !== 'standin.ts' ).map( ( f ) => `src/game/sim/${ f }` )
+		.concat( 'src/game/Session.ts', 'src/game/save.ts', 'src/game/Chronicle.ts' );
+	for ( const file of core ) {
+
+		const named = literals( file, ( n ) => {
+
+			if ( ts.isStringLiteral( n ) || ts.isNoSubstitutionTemplateLiteral( n ) ) return ids.has( n.text ) && n.text;
+			if ( ts.isTemplateHead( n ) || ts.isTemplateMiddle( n ) || ts.isTemplateTail( n ) ) return words( n.text ).join( ', ' );
+			if ( ts.isPropertyAccessExpression( n ) ) {
+
+				const name = n.name.getText();
+				return ids.has( name ) && ! ( METHODS.has( name ) && ts.isCallExpression( n.parent ) && n.parent.expression === n ) && name;
+
+			}
+			if ( ( ts.isPropertyAssignment( n ) || ts.isShorthandPropertyAssignment( n ) || ts.isMethodDeclaration( n ) || ts.isPropertySignature( n ) ) && ! ts.isComputedPropertyName( n.name ) ) {
+
+				const name = ts.isStringLiteral( n.name ) ? n.name.text : n.name.getText();
+				return ids.has( name ) && ! ( METHODS.has( name ) && ts.isMethodDeclaration( n ) ) && name;
+
+			}
+			return false;
+
+		} );
+		assert.deepEqual( named, [], `${ file } names content (${ named.join( ', ' ) })` );
+
+	}
+	console.log( `content: a need, an item, a kind of place and one of building with their options, registered by the check, played, perceived, recorded, saved and shown with the defaults; the core (${ core.length } files) names none of the ${ ids.size } content ids` );
+
+}
+
 // ------------------------------------------------------------------ the rules' maths
 
 {
 
-	// exact operations only (sim/maths.ts), in the rules and in what they call (Ages.ts): any use of
+	// exact operations only (sim/maths.ts), in the rules, their content (sim/content/) and in what
+	// they call (Ages.ts): any use of
 	// Math but a listed exact function, and any ** (TypeScript strips the comments and types first,
 	// so a // inside a string or a type cannot hide or fake one)
-	const files = readdirSync( new URL( '../src/game/sim/', import.meta.url ) ).filter( ( f ) => f.endsWith( '.ts' ) ).map( ( f ) => `src/game/sim/${ f }` ).concat( 'src/characters/Ages.ts' );
+	const ts_ = ( dir ) => readdirSync( new URL( `../${ dir }`, import.meta.url ) ).filter( ( f ) => f.endsWith( '.ts' ) ).map( ( f ) => `${ dir }${ f }` );
+	const files = ts_( 'src/game/sim/' ).concat( ts_( 'src/game/sim/content/' ), 'src/characters/Ages.ts' );
 	const exact = /\bMath\b(?!\.(?:sqrt|floor|ceil|round|trunc|abs|min|max|sign|fround|imul|clz32|PI|SQRT2|SQRT1_2)\b)/;
 	for ( const file of files ) {
 

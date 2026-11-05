@@ -4,25 +4,30 @@ import type { Brain, ToolResult } from './agent.ts';
 import { dayOf, hourOf } from './clock.ts';
 import type { SimEvent } from './events.ts';
 import { Grid, topOf } from './grid.ts';
-import { NEED_MAX, fallNeeds, fellCritical, START_NEEDS } from './needs.ts';
+import { fallNeeds, setNeed, startNeeds } from './needs.ts';
 import { findPath, goalAt } from './path.ts';
-import { BUILDING_KINDS, blueprintRefusal, newBuilding } from './buildings.ts';
+import { placeBuilding } from './buildings.ts';
 import { direction, planar } from './maths.ts';
+import { notice } from './people.ts';
 import { obstructPlaces } from './places.ts';
 import { random } from './rng.ts';
 import { ageOf, drawLifespan, paceOf } from './life.ts';
 import { SAVE_VERSION } from '../save.ts';
 import { GROWTH_STEPS, POPULATION_START, SECONDS_PER_GAME_DAY, SECONDS_PER_YEAR, WALK_SPEED, piecesFor } from './types.ts';
-import type { EntityId, IslandInput, Needs, SimState, Vec2, Villager } from './types.ts';
+import type { EntityId, IslandInput, SimState, Vec2, Villager } from './types.ts';
 import type { Body, Sex } from '../../characters/Ages.ts';
+// the game's content: it registers its definitions, which the simulation reads (registry.ts)
+import './content/index.ts';
 
 // The island simulation: a fixed step of one game second, with every change kept in SimState, so
 // a save is the state itself. One seeded generator (SimState.rng) is its only source of chance.
 // The islanders are bodies on the ground grid with needs that fall (needs.ts), a bag (items.ts) and
 // an action under way (actions.ts), and are places to one another (people.ts: they hear each other,
-// give and follow); the places they act at (places.ts) keep their own state here too (the
-// buildings). A brain may think for them (agent.ts) beside the world, never holding up a tick.
-// The weather is the page's own: nothing in the simulation depends on it.
+// and act on each other by the options registered at a person); the places they act at
+// (places.ts) keep their own state here too (the buildings). The core here names no piece of
+// content: the needs, items, kinds of place and of building are read from registry.ts. A brain
+// may think for them (agent.ts) beside the world, never holding up a tick. The weather is the
+// page's own: nothing in the simulation depends on it.
 //
 // What happens is emitted as events (events.ts), at the tick it happens, by the rule that makes
 // it: here a landing, a death, a need falling critical, a blueprint placed and the island grown;
@@ -160,7 +165,7 @@ export class Sim {
 		state.villagers.push( {
 			id, name, look: count, sex, born: state.tick - Math.round( age * SECONDS_PER_YEAR ), lifespan: drawLifespan( state, sex, age ),
 			pos: { ...p }, prev: { ...p }, facing: direction( - p.x, - p.z ) ?? { x: 0, z: 1 }, path: null,
-			needs: { ...START_NEEDS }, bag: {}, action: null, last: null, noticed: [],
+			needs: startNeeds(), bag: {}, action: null, last: null, noticed: [],
 		} );
 		this.emit( { kind: 'landed', tick: state.tick, who: id } );
 		return id;
@@ -257,10 +262,12 @@ export class Sim {
 
 	// ------------------------------------------------------------------ events
 
-	/** Something happened (events.ts): kept until the session takes it. */
+	/** Something happened (events.ts): kept until the session takes it, and heard by the systems
+	 * that keep something of it (the people system: what islanders notice, people.ts `notice`). */
 	emit( event: SimEvent ): void {
 
 		this.events.push( event );
+		notice( this, event );
 
 	}
 
@@ -305,31 +312,25 @@ export class Sim {
 
 	}
 
-	/** Set an islander's need (the debug panel's), within 0..NEED_MAX; a fall to the critical line
-	 * is an event, as when it falls by itself. */
-	setNeed( id: EntityId, need: keyof Needs, value: number ): void {
+	/** Set an islander's need (the debug panel's), within 0..NEED_MAX (needs.ts); a fall to the
+	 * critical line is an event, as when it falls by itself. */
+	setNeed( id: EntityId, need: string, value: number ): void {
 
 		const v = this.villager( id );
-		if ( ! v || ! Number.isFinite( value ) ) return;
-		const was = v.needs[ need ];
-		v.needs[ need ] = Math.min( Math.max( value, 0 ), NEED_MAX );
-		if ( fellCritical( was, v.needs[ need ] ) ) this.emit( { kind: 'need', tick: this.state.tick, who: id, need } );
+		if ( v && setNeed( v.needs, need, value ) ) this.emit( { kind: 'need', tick: this.state.tick, who: id, need } );
 
 	}
 
 	// ------------------------------------------------------------------ the player
 
 	/** Place a building of a kind (buildings.ts) at a point of the ground (world metres): null
-	 * when it stands there, else why not (blueprintRefusal). */
+	 * when it stands there, else why not (blueprintRefusal); every walk under way finds its way
+	 * round it. */
 	placeBlueprint( kind: string, x: number, z: number ): string | null {
 
-		const reason = blueprintRefusal( this, kind, { x, z } );
+		const reason = placeBuilding( this, kind, { x, z } );
 		if ( reason ) return reason;
-		const building = newBuilding( this.state, kind, x, z );
-		this.state.buildings.push( building );
-		this.grid.obstruct( x, z, BUILDING_KINDS[ kind ].radius );
 		findWaysAgain( this );
-		this.emit( { kind: 'placed', tick: this.state.tick, building: building.id, of: kind } );
 		return null;
 
 	}

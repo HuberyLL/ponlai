@@ -1,12 +1,15 @@
 import * as THREE from 'three/webgpu';
-import { BUILDING_KINDS, progressOf } from '../sim/buildings.ts';
+import { progressOf } from '../sim/buildings.ts';
+import { buildingKind } from '../sim/registry.ts';
+import type { BuildingDef } from '../sim/registry.ts';
 import type { BuildingState } from '../sim/types.ts';
 import { BOX, LOG, PropBuilder, at, buildingMaterial, hashAt } from './Props.ts';
 import type { RGB } from './Props.ts';
 
 // A building's construction site (sim/buildings.ts) until it is built, as a real site rather than a
 // ghost of the finished building: the same stages for every kind, shaped by its footprint radius
-// alone, so a new kind needs only its finished model (GameView).
+// alone, so a new kind needs no art of its own to be built; its site, finished, stands for its
+// model until art gives it one (GameView `modelOf`).
 //
 // - planned (no work yet): the ground marked out, a square of turned soil inscribed in the
 //   footprint's disc, a stake just outside each corner and a cord strung between them.
@@ -64,7 +67,7 @@ const v = ( x: number, y: number, z: number ) => new THREE.Vector3( x, y, z );
 /** Everything a site of a radius can show, in the order it is built, and the marks of the plan. */
 function sitePlan( site: BuildingState ): { marks: Piece[]; pieces: Piece[]; pile: Piece[] } {
 
-	const r = BUILDING_KINDS[ site.kind ].radius;
+	const r = ( buildingKind( site.kind ) as BuildingDef ).radius;
 	const hash = ( k: number ) => hashAt( site.x, site.z, k );
 	const tone = ( c: RGB, k: number ): RGB => {
 

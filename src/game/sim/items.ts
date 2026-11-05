@@ -1,39 +1,44 @@
-import { raiseNeed } from './needs.ts';
-import type { ActionResult, Items, Villager } from './types.ts';
+import { itemKind } from './registry.ts';
+import type { Sim } from './Sim.ts';
+import type { EntityId, Items, Villager } from './types.ts';
 
-// The items an islander carries and what using one does. Items are content: each kind registers
-// its uses here, and `use( item )` (actions.ts) runs one, so a new item adds an entry, never a new
+// The items system: what holds items (an islander's bag, a building's store) and every change to
+// what they hold. The kinds of item and their uses are content (registry.ts ItemDef; today's in
+// content/), which `use( item )` (actions.ts) runs, so a new item is a definition, never a new
 // action. Using is instant and spends the item.
 //
-// Rules: a bag holds a few items in all (BAG_CAPACITY), items of a kind stack, and a full bag
-// refuses more with a reason. A collection (a bag, the chest) is an item-to-count record that
-// holds a kind only while its count is above zero, so its JSON says exactly what is there.
+// Rules: a bag holds a few items in all (BAG_CAPACITY), a store what its kind says
+// (buildings.ts `storeOf`); items of a kind stack. A collection is an item-to-count record that
+// holds a kind only while its count is above zero, so its JSON says exactly what is there. What a
+// holder holds changes only here, by `transfer`, `bring` and `spend`, whose callers check first
+// that the items are there and that there is room, and say why not in their own words. So this
+// system can tell what moved between bags: while a step is watched (`watchMoves`, an instant
+// action or a timed one's finish: actions.ts) each change to a bag is kept, and `takeMoves` hands
+// the step's outcome what moved, by islander in the roll's order, never by comparing the bags.
+// Watched steps never nest: a rule acts only for the islander whose step it is, never through
+// another's action (a nested watch would start the ledger afresh).
 
 /** items a bag holds in all */
 export const BAG_CAPACITY = 4;
-/** satiety a fish gives (needs.ts: about one every 12 game hours) */
-export const FISH_SATIETY = 36;
 
-/** A use of an item: acts on the body using it; the item is spent when it succeeds. */
-export type ItemUse = ( body: Villager ) => ActionResult;
-
-export interface ItemKind {
-	/** use name to what it does; `use( item )` runs the first unless one is named */
-	uses: Record<string, ItemUse>;
+/** What holds items: a bag (whose it is: `owner`) or a building's store, with the room it has in
+ * all. */
+export interface Holder {
+	readonly items: Items;
+	readonly capacity: number;
+	readonly owner?: EntityId;
 }
 
-export const ITEMS: Readonly<Record<string, ItemKind>> = {
-	fish: { uses: { eat: ( body ) => {
+/** An islander's bag as a holder. */
+export function bagOf( v: Villager ): Holder {
 
-		raiseNeed( body.needs, 'satiety', FISH_SATIETY );
-		return { ok: true, value: 'ate a fish' };
+	return { items: v.bag, capacity: BAG_CAPACITY, owner: v.id };
 
-	} } },
-};
+}
 
 export function isItem( kind: unknown ): kind is string {
 
-	return typeof kind === 'string' && Object.hasOwn( ITEMS, kind );
+	return itemKind( kind ) !== undefined;
 
 }
 
@@ -52,18 +57,10 @@ export function count( items: Items, kind: string ): number {
 
 }
 
-export function addItems( items: Items, kind: string, n: number ): void {
+/** The places a holder has left. */
+export function room( h: Holder ): number {
 
-	items[ kind ] = count( items, kind ) + n;
-
-}
-
-/** Remove n of a kind (the caller checked there are as many). */
-export function removeItems( items: Items, kind: string, n: number ): void {
-
-	const left = count( items, kind ) - n;
-	if ( left > 0 ) items[ kind ] = left;
-	else delete items[ kind ];
+	return h.capacity - total( h.items );
 
 }
 
@@ -77,11 +74,68 @@ export function itemCount( args: { item?: string; count?: number } ): { item: st
 
 }
 
-/** One item into a bag, or why not. */
-export function intoBag( body: Villager, kind: string ): string | null {
+/** n of a kind from one holder to another (the caller checked the one holds them, the other has
+ * room). */
+export function transfer( sim: Sim, from: Holder, to: Holder, kind: string, n: number ): void {
 
-	if ( total( body.bag ) >= BAG_CAPACITY ) return 'the bag is full';
-	addItems( body.bag, kind, 1 );
-	return null;
+	change( sim, from, kind, - n );
+	change( sim, to, kind, n );
+
+}
+
+/** n of a kind into a holder from the world (a catch; the caller checked there is room). */
+export function bring( sim: Sim, to: Holder, kind: string, n = 1 ): void {
+
+	change( sim, to, kind, n );
+
+}
+
+/** n of a kind out of a holder, gone (an item used; the caller checked it holds them). */
+export function spend( sim: Sim, from: Holder, kind: string, n = 1 ): void {
+
+	change( sim, from, kind, - n );
+
+}
+
+// ------------------------------------------------------------------ what moved
+
+// per simulation, while a step is watched: each islander's changes, by item (signed counts)
+const ledgers = new WeakMap<Sim, Map<EntityId, Items>>();
+
+/** Keep what moves between bags from now until `takeMoves`. */
+export function watchMoves( sim: Sim ): void {
+
+	ledgers.set( sim, new Map() );
+
+}
+
+/** What moved between bags since `watchMoves`, by islander in the roll's order (signed counts, a
+ * kind whose changes cancel out left out); undefined when nothing moved. The watch ends. */
+export function takeMoves( sim: Sim ): Record<EntityId, Items> | undefined {
+
+	const ledger = ledgers.get( sim );
+	ledgers.delete( sim );
+	if ( ! ledger || ledger.size === 0 ) return undefined;
+	let moved: Record<EntityId, Items> | undefined;
+	for ( const v of sim.state.villagers ) {
+
+		const changes = ledger.get( v.id );
+		if ( changes ) for ( const kind in changes ) if ( changes[ kind ] !== 0 ) ( ( moved ??= {} )[ v.id ] ??= {} )[ kind ] = changes[ kind ];
+
+	}
+	return moved;
+
+}
+
+function change( sim: Sim, h: Holder, kind: string, n: number ): void {
+
+	const left = count( h.items, kind ) + n;
+	if ( left > 0 ) h.items[ kind ] = left;
+	else delete h.items[ kind ];
+	const ledger = h.owner === undefined ? undefined : ledgers.get( sim );
+	if ( ! ledger ) return;
+	let changes = ledger.get( h.owner as EntityId );
+	if ( ! changes ) ledger.set( h.owner as EntityId, changes = {} );
+	changes[ kind ] = count( changes, kind ) + n;
 
 }

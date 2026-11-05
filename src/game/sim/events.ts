@@ -1,4 +1,4 @@
-import type { ActionCall, ActionResult, EntityId, Items, Needs, Outcome } from './types.ts';
+import type { ActionCall, ActionResult, EntityId, Items, Outcome } from './types.ts';
 
 // What happened, said once: the rule that makes a change others show or keep emits it as an event,
 // at the tick it happened (Sim.emit), and nothing else writes it down. The session takes the events
@@ -6,7 +6,11 @@ import type { ActionCall, ActionResult, EntityId, Items, Needs, Outcome } from '
 // record (../Chronicle.ts), the interface's speech (../ui/People.ts) and the play tool
 // (tools/play-game.mjs) read this one stream, never the state, for what happened (they may still
 // sample the state for what is, as the needs' bars do). So a second line said within a frame is a
-// second event, and every event carries its own tick, not the time someone looked.
+// second event, and every event carries its own tick, not the time someone looked. The
+// simulation's own systems take what concerns them as it is emitted: the people system keeps what
+// an islander heard and was given (people.ts `notice`), so the rule that said or gave writes only
+// its own part of the state. Each kind shows with a default where a presentation has no form of its
+// own for it (the record's default row, ui/data/record.ts `recordKind`; the play tool's line).
 //
 // An event holds what it is about by value (ids, words, counts), so it reads the same once the
 // state has moved on (the one who said it died, the chest was emptied). Events are not saved: the
@@ -40,14 +44,15 @@ export type SimEvent =
 	/** words said: an islander's `say` (heard within earshot, people.ts), or the player's to some
 	 * islanders or to everyone (Session.speak) */
 	| { kind: 'said'; tick: number; who: EntityId | 'player'; words: string; to?: EntityId[] | 'all' }
-	/** a hand-over (people.ts `give`) */
+	/** a hand-over (content/person.ts `give`; noticed by the one given to: people.ts `notice`) */
 	| { kind: 'gave'; tick: number; who: EntityId; to: EntityId; item: string; count: number }
-	/** the player placed a building's blueprint (Sim.placeBlueprint) */
+	/** the player placed a building's blueprint (buildings.ts `placeBuilding`, called by
+	 * Sim.placeBlueprint) */
 	| { kind: 'placed'; tick: number; building: string; of: string }
-	/** a building's work is done (buildings.ts `build`) */
+	/** a building's work is done (buildings.ts `work`) */
 	| { kind: 'built'; tick: number; building: string; of: string }
 	/** a need fell to CRITICAL_NEED (needs.ts) */
-	| { kind: 'need'; tick: number; who: EntityId; need: keyof Needs }
+	| { kind: 'need'; tick: number; who: EntityId; need: string }
 	/** the island grew by a piece (Sim.addPiece): the pieces now, for the population then */
 	| { kind: 'grew'; tick: number; pieces: number; population: number }
 	/** an action with duration began (an instant one has only its outcome) */

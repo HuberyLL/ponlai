@@ -66,7 +66,7 @@ export class StandInBrain implements Brain {
 		const call = this.respond( p );
 		if ( call ) return [ call ];
 		// hungry, with nothing to eat at hand: off to fish, saying so
-		if ( p.body.satiety < HUNGRY ) return at( p, 'shore' ) ? [ doAt( 'fish' ) ] : [ say( HUNGRY_WORDS ), go( 'shore' ) ];
+		if ( number( p.body.satiety ) < HUNGRY ) return at( p, 'shore' ) ? [ doAt( 'fish' ) ] : [ say( HUNGRY_WORDS ), go( 'shore' ) ];
 		return [ this.work( p ) ];
 
 	}
@@ -75,7 +75,7 @@ export class StandInBrain implements Brain {
 	private respond( p: Perception ): ToolCall | null {
 
 		const fish = p.body.bag.fish ?? 0;
-		if ( p.body.satiety < HUNGRY ) {
+		if ( number( p.body.satiety ) < HUNGRY ) {
 
 			if ( fish > 0 ) return use( 'fish' );
 			const chest = p.seen.find( ( s ) => s.kind === 'chest' && at( p, s.place ) && number( ( s.shows?.items as Record<string, unknown> | undefined )?.fish ) > 0 );

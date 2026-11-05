@@ -61,7 +61,7 @@ export interface Villager {
 	facing: Vec2;
 	/** waypoints still ahead while walking; null while standing */
 	path: Vec2[] | null;
-	/** 0..100 each (needs.ts) */
+	/** 0..NEED_MAX each, by need (needs.ts) */
 	needs: Needs;
 	/** what the islander carries (items.ts) */
 	bag: Items;
@@ -88,7 +88,8 @@ export interface Departed {
 	died: number;
 }
 
-export interface Needs { satiety: number; hydration: number }
+/** need id to its level, the needs registered in their order (registry.ts, needs.ts) */
+export type Needs = Record<string, number>;
 
 /** item kind to count; a kind is present only while its count is above zero */
 export type Items = Record<string, number>;
@@ -124,7 +125,7 @@ export interface BuildingState {
 	z: number;
 	/** game seconds of work done on it: built once this reaches its kind's work */
 	worked: number;
-	/** what it holds (the chest's store; empty for a kind that holds nothing) */
+	/** what its store holds (empty for a kind without one: registry.ts BuildingDef `capacity`) */
 	items: Items;
 }
 

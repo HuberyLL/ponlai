@@ -1,7 +1,9 @@
 import { count } from '../../sim/items.ts';
+import { itemKinds } from '../../sim/registry.ts';
 import type { Items } from '../../sim/types.ts';
 import { t } from '../i18n/i18n.ts';
 import type { Catalogue } from '../i18n/i18n.ts';
+import { itemName } from './words.ts';
 
 // The island's resources as the top row shows them (docs/ui.md, Resources): one row per kind, in
 // groups (materials, food, water), each with its icon and its count. A kind the simulation has as an
@@ -9,7 +11,10 @@ import type { Catalogue } from '../i18n/i18n.ts';
 // have yet shows its placeholder count, so the row and the build bar's costs can be seen at work
 // before the materials exist (docs/game-design.md: no materials yet). The rows are placeholders
 // too: the game's resources are not settled, and a new kind is a new row here with its name in the
-// catalogue (i18n/zh-CN.json `resource`, by id), resolved when the table loads.
+// catalogue (i18n/zh-CN.json `resource`, by id), resolved when the table loads. An item the
+// simulation has (sim/registry.ts) that no row counts shows all the same, with the default row
+// (`withItems`): its item's name, the 未绘 glyph, among the materials, out of view when the row is
+// full, until it is given a row of its own.
 //
 // With more than ROW_MAX kinds the row keeps the common ones in view and merges the rest of each
 // group into one mark that opens on hover (ResourceRow.ts); MORE_RESOURCES are placeholder kinds
@@ -57,6 +62,16 @@ export const MORE_RESOURCES: readonly ResourceRow[] = [
 	row( 'fruit', 'food', null, 5, false ),
 	row( 'salt', 'food', null, 2, false ),
 ];
+
+/** The rows with a default one after them for each item the simulation has that none counts. */
+export function withItems( rows: readonly ResourceRow[] ): ResourceRow[] {
+
+	const counted = new Set( rows.map( ( r ) => r.item ) );
+	const extra = itemKinds().filter( ( k ) => ! counted.has( k.id ) )
+		.map( ( k ): ResourceRow => ( { id: k.id, name: itemName( k.id ), group: 'material', icon: null, item: k.id, placeholder: 0, common: false } ) );
+	return [ ...rows, ...extra ];
+
+}
 
 /** the most kinds the row shows whole */
 export const ROW_MAX = 8;

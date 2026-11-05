@@ -2,11 +2,13 @@ import * as THREE from 'three/webgpu';
 import { CLICK_SLOP } from '../../camera/IslandCameraControls.ts';
 import { BAG_CAPACITY, total } from '../sim/items.ts';
 import { CRITICAL_NEED, LOW_NEED } from '../sim/needs.ts';
+import { needs as needKinds } from '../sim/registry.ts';
 import type { EntityId, Needs, Villager } from '../sim/types.ts';
 import { cubic, levelStroke, ringStroke, stroke } from './Brush.ts';
 import type { Stroke } from './Brush.ts';
 import { iconSvg, setIcon } from './Icons.ts';
 import { PALETTE, mix } from './Palette.ts';
+import { needLook, needName } from './data/needs.ts';
 import { doingWords, itemName } from './data/words.ts';
 import { attr, css, el, flag, svgEl, text, under } from './dom.ts';
 import { InkPath } from './InkPath.ts';
@@ -19,12 +21,14 @@ import { Space } from './Space.ts';
 // - Selected (a click on an islander, again or on open ground to let go): a ring at the feet, thick
 //   in front and thin behind, with one 金 stroke beneath its front, and the tag beside them (人旁
 //   浮签), joined to the shoulder by a short brush leader: the name in calligraphy, what they are
-//   doing (缟, faint), satiety and hydration as thin bars with their numbers (琥珀 and 天水碧, each
-//   blending to 朱 from LOW_NEED down to CRITICAL_NEED, where the icon and number turn 朱 too), and
-//   the bag as slots (a kind and its count, then a faint ring for each free place; a click marks
-//   one with a 金 stroke, which does nothing more yet).
+//   doing (缟, faint), each need registered (sim/registry.ts) as a thin bar with its number, in the
+//   order registered (its icon and colour from data/needs.ts, satiety's 琥珀 and hydration's 天水碧,
+//   a need without a look of its own the default; each blending to 朱 from LOW_NEED down to
+//   CRITICAL_NEED, where the icon and number turn 朱 too), and the bag as slots (a kind and its
+//   count, then a faint ring for each free place; a click marks one with a 金 stroke, which does
+//   nothing more yet).
 // - An unselected islander with a critical need: its icon in 朱 over the head, no ring, no backing;
-//   both side by side, satiety on the left.
+//   several side by side in the needs' order (satiety on the left).
 // - Thinking (a thought in flight, Sim.thinking, after hearing the player): the characters heard
 //   circle the head, at most six at a time, the whole line taking turns as each passes behind the
 //   head; words heard meanwhile wait for the next thought. Only a brain that hears keeps the
@@ -261,7 +265,7 @@ export class People {
 
 		const root = el( 'div', 'pl-person', this.root );
 		const alerts = el( 'div', 'pl-alerts pl-sh', root );
-		const alertIcons = [ iconSvg( 'satiety', 20 ), iconSvg( 'drop', 20 ) ];
+		const alertIcons = needKinds().map( ( need ) => iconSvg( needLook( need.id ).icon, 20 ) );
 		for ( const icon of alertIcons ) alerts.appendChild( icon );
 		const think = el( 'div', 'pl-think', this.world );
 		const thinkChars: HTMLSpanElement[] = [];
@@ -365,10 +369,16 @@ export class People {
 
 	private alerts( m: Mark, needs: Needs, selected: boolean ): void {
 
-		const hungry = needs.satiety <= CRITICAL_NEED, thirsty = needs.hydration <= CRITICAL_NEED;
-		css( m.alertIcons[ 0 ], 'display', hungry ? '' : 'none' );
-		css( m.alertIcons[ 1 ], 'display', thirsty ? '' : 'none' );
-		css( m.alerts, 'opacity', ! selected && ( hungry || thirsty ) ? '1' : '0' );
+		const kinds = needKinds();
+		let any = false;
+		for ( let i = 0; i < kinds.length; i ++ ) {
+
+			const critical = needs[ kinds[ i ].id ] <= CRITICAL_NEED;
+			css( m.alertIcons[ i ], 'display', critical ? '' : 'none' );
+			any ||= critical;
+
+		}
+		css( m.alerts, 'opacity', ! selected && any ? '1' : '0' );
 		// over the thinking ring's room
 		css( m.alerts, 'bottom', `${ ( this.ringRoom( m ) + 4 ).toFixed( 1 ) }px` );
 
@@ -627,7 +637,7 @@ class Tag {
 	private readonly root: HTMLElement;
 	private readonly name: HTMLElement;
 	private readonly doing: HTMLElement;
-	private readonly needs: { key: keyof Needs; colour: string; icon: SVGSVGElement; fill: InkPath; num: HTMLElement; shown: number }[] = [];
+	private readonly needs: { key: string; colour: string; icon: SVGSVGElement; fill: InkPath; num: HTMLElement; shown: number }[] = [];
 	private readonly bag: HTMLElement;
 	private readonly slots: { box: HTMLButtonElement; icon: SVGSVGElement; count: HTMLElement; label: string }[] = [];
 	private chosenSlot = - 1;
@@ -644,17 +654,19 @@ class Tag {
 		this.name = el( 'div', 'name pl-title pl-xb', head );
 		this.doing = el( 'div', 'doing pl-mist', head );
 		const track = levelStroke( 1, 129, 4, 2.6, 0.4, { entry: 0.06, exit: 0.2, start: 0.4, end: 0.3, swell: 0 } );
-		for ( const [ key, icon, colour, label ] of [ [ 'satiety', 'satiety', PALETTE.hupo, t( 'tag.satiety' ) ], [ 'hydration', 'drop', PALETTE.tianshuibi, t( 'tag.hydration' ) ] ] as const ) {
+		for ( const [ i, need ] of needKinds().entries() ) {
 
+			const key = need.id, { icon, colour } = needLook( key );
 			const row = el( 'div', 'need', root );
 			const svg = row.appendChild( iconSvg( icon, 18, 'pl-sh' ) );
 			svg.setAttribute( 'role', 'img' );
-			svg.setAttribute( 'aria-label', label );
+			svg.setAttribute( 'aria-label', needName( key ) );
 			svg.removeAttribute( 'aria-hidden' );
 			const bar = svgEl( 'svg', { class: 'pl-sh', width: 130, height: 8, viewBox: '0 0 130 8', 'aria-hidden': 'true' }, row );
-			// (a gauge: its ends say the value and the whole, so it does not dry out)
-			new InkPath( bar, { colour: PALETTE.gao, opacity: 0.2 }, key === 'satiety' ? 64 : 66, 0 ).set( track );
-			const fill = new InkPath( bar, { colour }, key === 'satiety' ? 65 : 67, 0 );
+			// (a gauge: its ends say the value and the whole, so it does not dry out; each need's
+			// strokes their own seeds, so the bars differ as hand-drawn ones do)
+			new InkPath( bar, { colour: PALETTE.gao, opacity: 0.2 }, 64 + 2 * i, 0 ).set( track );
+			const fill = new InkPath( bar, { colour }, 65 + 2 * i, 0 );
 			this.needs.push( { key, colour, icon: svg, fill, num: el( 'span', 'pl-num pl-mist', row ), shown: - 1 } );
 
 		}
@@ -738,7 +750,8 @@ class Tag {
 
 		}
 		// beside the islander, kept inside the interface
-		const key = `${ v.name }|${ doing }|${ Math.round( v.needs.satiety ) }|${ Math.round( v.needs.hydration ) }|${ kinds.length + free }`;
+		let key = `${ v.name }|${ doing }|${ kinds.length + free }`;
+		for ( const n of this.needs ) key += `|${ n.shown }`;
 		if ( key !== this.size.key ) this.size = { key, w: this.root.offsetWidth, h: this.root.offsetHeight };
 		const tw = this.size.w, th = this.size.h;
 		const left = Math.min( Math.max( x, 8 ), w - tw - 8 ), top = Math.min( Math.max( y - th, 90 ), h - th - 110 );

@@ -2,6 +2,7 @@ import { ACTIONS, refuse, run } from './actions.ts';
 import { timeOf } from './clock.ts';
 import type { GameTime } from './clock.ts';
 import { placesAt, placesFor } from './places.ts';
+import { needs } from './registry.ts';
 import { checkArgs } from './schema.ts';
 import type { Sim } from './Sim.ts';
 import type { ActionCall, ActionOutcome, ActionResult, EntityId, Items, Villager } from './types.ts';
@@ -58,12 +59,11 @@ export interface Perception {
 	atHand: { place: string; options: string[] }[];
 	/** what others did to it since its last thought, oldest first */
 	noticed: NoticedEvent[];
+	/** the needs by id, 0..100 in whole numbers, in the order registered (registry.ts), then the
+	 * bag and the action under way (null: none); no need is called `bag` or `doing` */
 	body: {
-		/** 0..100, whole numbers */
-		satiety: number;
-		hydration: number;
+		[ need: string ]: unknown;
 		bag: Items;
-		/** the action under way, or null */
 		doing: ActionCall | null;
 	};
 	/** how the last action ended; null before the first */
@@ -104,14 +104,18 @@ export function perceive( sim: Sim, body: Villager ): Perception {
 		seen,
 		atHand: here.map( ( p ) => ( { place: p.id, options: Object.keys( p.options ).filter( ( o ) => p.options[ o ].open( sim ) ) } ) ),
 		noticed,
-		body: {
-			satiety: Math.round( body.needs.satiety ),
-			hydration: Math.round( body.needs.hydration ),
-			bag: body.bag,
-			doing: body.action?.call ?? null,
-		},
+		body: { ...perceivedNeeds( body ), bag: body.bag, doing: body.action?.call ?? null },
 		last: body.last,
 	} );
+
+}
+
+// the body's needs as numbers a person would feel them by: whole, by id
+function perceivedNeeds( body: Villager ): Record<string, number> {
+
+	const felt: Record<string, number> = {};
+	for ( const need of needs() ) felt[ need.id ] = Math.round( body.needs[ need.id ] );
+	return felt;
 
 }
 
