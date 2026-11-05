@@ -78,10 +78,12 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // and the sea reflects it (the seen panorama, above the horizon). Under the horizon the environment is
 // the distant sea, its reflection of the sky over its body, which the light that reaches the sea
 // lights, the sky's and the sun's (SEA_KNEE).
-// The sun's disc and the moon's are dimmed by the clouds' mean transmittance over each disc, read
-// from the panorama into a texel ahead of the scene (`discCloudTransmittance`), and hidden by the
-// clouds' opacity once, in the composite. The key light's colour does not take that mean: the lit
-// surfaces already read the clouds' shadow map along the same ray, and both would darken it twice.
+// The sun's disc and the moon's take the clouds' transmittance once, per pixel, in the composite
+// (`domeColour`); the march stores none once less than 0.003 gets through (Clouds.ts `makeMarch`),
+// so a deck some 6 deep along the view hides the disc whole. The mean over each disc, read from the
+// panorama into a texel ahead of the scene (`discCloudTransmittance`), is left only for the light
+// shafts (post/LightShafts.ts) and the sun's flare. The key light's colour does not take that mean
+// either: the lit surfaces already read the clouds' shadow map along the same ray.
 // Under a low key that map's rays spread over the key's disc (SHADOW_DISC): whatever lights the
 // ground and feeds the meter from it reads the whole disc, the air's shafts its centre from about
 // 5 degrees up (SHADOW_AIR_NARROW).
@@ -1075,10 +1077,6 @@ export class Sky {
 	// periodic bakes whose irradiance readback is still in flight (`readIrradiance`; `readbacks`)
 	private irradiancePending = 0;
 	private displaySunDir = uniform( new THREE.Vector3( 0, 1, 0 ) );
-	// The sky's constants texel (Pipeline.ts `skyConstants`): the mean cloud transmittance over the
-	// sun's disc (r) and the moon's (g), from `discCloudTransmittance`. The pipeline points it at
-	// the frame graph's texel before the first frame.
-	readonly discCloudTexture = texture( new THREE.DataTexture( new Float32Array( [ 1, 1, 1, 1 ] ), 1, 1, THREE.RGBAFormat, THREE.FloatType ) );
 	private displaySolarIlluminance = uniform( new THREE.Color( 0, 0, 0 ) );
 	// Live clear-sky terms for the dome; the bake keeps its own copies below.
 	private displayNightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
@@ -1414,10 +1412,9 @@ export class Sky {
 			// (lighting/SunDisc.ts SUN_DISC_RADIANCE). A shared scene unit
 			// scale keeps the normalised disk finite in fp16 without dimming it independently. Its
 			// colour is the air's analytic transmittance toward it (Atmosphere.ts discTransmittance).
-			// The clouds dim it by their mean transmittance over the disc (`discCloudTransmittance`),
-			// smoothly as an edge crosses it, and hide it by their opacity in the composite below.
-			const discClouds = textureLoad( this.discCloudTexture, ivec2( 0 ) ).toVar();
-			const disk = this.atmosphere.discTransmittance( d ).mul( this.displaySolarIlluminance ).mul( discClouds.r )
+			// The clouds hide it by their transmittance once, per pixel, in the composite below: an
+			// edge crossing the disc dims it as smoothly as the march's opacity changes.
+			const disk = this.atmosphere.discTransmittance( d ).mul( this.displaySolarIlluminance )
 				.mul( mask ).mul( limb ).div( SUN_DISC_SOLID_ANGLE / SUN_DISC_RADIANCE ).mul( smoothstep( 0, 0.001, d.y ) );
 			// Above the horizon the clear sky and the clouds are both live. Below, the baked distant-sea reflection continues the waves.
 			const lower = this.samplePanorama( d, float( 0 ) ).toVar();
@@ -1425,10 +1422,10 @@ export class Sky {
 			const above = d.y.greaterThanEqual( 0 ).toVar();
 			const stars = this.night.stars( d ).mul( this.night.moonOcclusion( d ) );
 			// What the clouds hide: the clear sky, the discs and the stars (below the horizon, the
-			// reflection with its own clouds), seen through the haze along the whole way; the disc is
-			// hidden by the clouds' opacity once, here.
+			// reflection with its own clouds), seen through the haze along the whole way; the discs
+			// take the clouds' transmittance once, here, and nowhere else.
 			const behind = select( above, this.gapSky( vec3( d.x, max( d.y, 0 ), d.z ) ).mul( this.displayAmbientGain ), lower.rgb )
-				.add( disk.add( this.night.moon( d ).mul( discClouds.g ) ).add( stars ).mul( select( above, float( 1 ), lower.a ) ) );
+				.add( disk.add( this.night.moon( d ) ).add( stars ).mul( select( above, float( 1 ), lower.a ) ) );
 			const through = select( above, cloud.a, float( 1 ) ).toVar();
 			const clouds = select( above, cloud.rgb.mul( this.displayAmbientGain ), vec3( 0 ) ).toVar();
 			if ( ! haze ) return vec4( behind.mul( through ).add( clouds ), 1 );
@@ -1478,8 +1475,9 @@ export class Sky {
 
 	/** The mean cloud transmittance over the sun's disc (r) and over the moon's (g): DISC_SAMPLES
 	 * directions spread over each disc (a Vogel spiral, uniform by area) read from the clouds'
-	 * panorama, for the sky's constants texel (Pipeline.ts `skyConstants`). One ray would switch the
-	 * disc on and off as a cloud's edge crosses it. */
+	 * panorama, for the sky's constants texel (Pipeline.ts `skyConstants`), which the sun's flare and
+	 * the light shafts read; the dome's discs do not. One ray would switch the flare on and off as a
+	 * cloud's edge crosses the disc. */
 	discCloudTransmittance(): V4 {
 
 		const mean = ( centre: V3, radius: number ) => {
