@@ -24,6 +24,7 @@ import { liftKey } from './KeyLift.ts';
 import { glossAlpha, specularGGX, fresnel90, keyGlint, glintDirection, glintNormalisation } from './SurfaceBRDF.ts';
 import { environmentBRDF } from './EnvironmentBRDF.ts';
 import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
+import { keyLobeLight } from './KeyGain.ts';
 
 // Sunlight bounced off the ground, one diffuse bounce (tidewater's GroundBounce, 4811ba4): the
 // sunlit plateau lights the islanders' undersides and the grass from below, the shallows light
@@ -63,6 +64,10 @@ import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 // texels is the same ground, but a cliff's wall stands on the line between the plateau and the sea
 // and sees the sea in front of it. One lookup at level 0, only for faces turned down or sideways
 // above the sea.
+//
+// The physical models add the deck's lobe toward the key (lighting/KeyGain.ts `keyLobeLight`, the
+// part of a deck's key gain over the direct key) to the irradiance beside it, before the ambient
+// scale, so the lobe takes what the ambient takes and none of the key's bounds.
 //
 // Every lit material adds it to its irradiance, so its diffuse albedo, its occlusion and its own
 // ambient scale apply as to the sky's (tidewater adds it to the indirect diffuse light): a physical
@@ -457,6 +462,9 @@ export class GroundBounceLightingModel extends THREE.PhysicalLightingModel {
 	indirect( builder: THREE.NodeBuilder ): void {
 
 		addGroundBounce( builder );
+		// the deck's lobe toward the key, the part of the deck's key gain over the direct key
+		// (lighting/KeyGain.ts): ambient light, under what dims the irradiance from here on
+		( builder.context as unknown as { irradiance: V3 } ).irradiance.addAssign( keyLobeLight( positionWorld, normalWorld ) );
 		const scale = this.ambientScale();
 		if ( scale ) ( builder.context as unknown as { irradiance: V3 } ).irradiance.mulAssign( scale );
 		// the local lights' diffuse (lighting/LocalLights.ts), once per material: shaded as the key's

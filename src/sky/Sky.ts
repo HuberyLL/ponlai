@@ -28,6 +28,7 @@ import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 import { moonDirection } from '../lighting/KeyLift.ts';
+import { keyDeckGain, keyGainShare, setKeyCloud } from '../lighting/KeyGain.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -47,7 +48,7 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 
 // The sky: atmosphere, clouds, night sky and the baked environment. One cloud field feeds the
 // visible sky, water reflections, environment lighting and cloud shadows; on the island's direct
-// light the shadows keep the weather's floor (`keyCloudVisibility`), and under a closed deck the key
+// light the shadows keep the weather's floor (`keyDirectVisibility`), and under a closed deck the key
 // and the clouds' sunlight lose their colour, not their luminance (Weather.ts), as from a cloudy sky on
 // the sunlight the clouds scatter many times does (trackClouds). By day the sky's light, the
 // sun's in-scattered light, takes one gain
@@ -1079,6 +1080,7 @@ export class Sky {
 		this.atmosphere = new Atmosphere( renderer );
 		this.equirect = this.endpoints[ 0 ].equirect;
 		this.clouds = new Clouds( this.atmosphere );
+		setKeyCloud( ( position ) => this.clouds.shadow( position ), this.keyCloudFloor );
 		this.cloudLayer = texture( this.endpoints[ 0 ].clouds.texture );
 		// Only the environment source contains filtered stars. The displayed panoramas stay
 		// star-free so the dome and water can evaluate sharp/rough stars without double counting.
@@ -2501,11 +2503,24 @@ export class Sky {
 
 	}
 
-	/** The clouds' shadow on the island's direct light: the clouds' own over the weather's floor
-	 * (Weather.ts `cloudFloor`). The sea's glitter and the air's sunlit haze take the clouds' own. */
-	keyCloudVisibility( worldPosition: V3 ): F {
+	/** The clouds' shadow on the island's direct key, three's sun (main.ts publishLighting, which
+	 * carries no deck gain): the clouds' own over the weather's floor (Weather.ts `cloudFloor`).
+	 * The deck's gain is ambient light (lighting/KeyGain.ts `keyLobeLight`). */
+	keyDirectVisibility( worldPosition: V3 ): F {
 
 		return mix( this.keyCloudFloor, float( 1 ), this.clouds.shadow( worldPosition ) );
+
+	}
+
+	/** The clouds' shadow on the whole key the island's ground takes, beam and lobe (the ground's
+	 * bounce, the ambient light's bounce lobe, on the land's key, which carries the deck's gain):
+	 * the clouds' own over the weather's floor (Weather.ts `cloudFloor`), times the share of the
+	 * deck's key gain the point keeps (lighting/KeyGain.ts). The sea's glitter and the air's sunlit
+	 * haze take the clouds' own. */
+	keyCloudVisibility( worldPosition: V3 ): F {
+
+		const t = this.clouds.shadow( worldPosition ).toVar();
+		return mix( this.keyCloudFloor, float( 1 ), t ).mul( keyGainShare( t, keyDeckGain ) );
 
 	}
 
