@@ -1434,7 +1434,11 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   leader's words heard, a save read into another session, the growth asked of its host), the
   islanders among themselves, and the rules' structure (an action's condition held every tick, a
   late answer for an islander who died refused, the entrance's refusals, what happened recorded
-  once at its tick); its island is in `tools/game-fixture.mjs`.
+  once at its tick, content added with no change to the core: a need, an item with a use, a kind
+  of place and of building with their options, registered by the check alone, played, perceived,
+  recorded, saved and shown with the presentation's defaults, then taken away, and no content id
+  written as a string in the core: ARCHITECTURE.md, Adding content); its island is in
+  `tools/game-fixture.mjs`.
 - `tools/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow] [--population 0]
   [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>] [--latency 90] [--thoughts]
   [--out dir]`
@@ -1443,7 +1447,8 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   looking after each, the leader's lines between them), and writes what happened to
   `artifacts/play/<stamp>/` (`--out`): `transcript.md` (day by day, the record's entries in the
   record page's words, `src/game/ui/data/record.ts` and its catalogue, so a new kind of entry needs
-  no change to the tool; the islanders' actions with their outcomes as the session's events tell
+  no change to the tool, and an event kind that neither its lines nor the record show prints as an
+  `[event]` line; the islanders' actions with their outcomes as the session's events tell
   them (done, failed, interrupted with the reason, refused), consecutive alike ones merged, their words, needs every
   six game hours and a table per day), `timeline.json` (every islander each game hour: position,
   needs, bag, action), `summary.json` (per islander the share of time by activity, each need's

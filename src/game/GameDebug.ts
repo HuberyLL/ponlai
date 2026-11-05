@@ -6,6 +6,7 @@ import type { Game } from './Game.ts';
 import { groundPoint, pointerRay } from './pick.ts';
 import { describeCall } from './sim/actions.ts';
 import { tickAt } from './sim/clock.ts';
+import { needs } from './sim/registry.ts';
 import type { Brain, Perception, ToolCall } from './sim/agent.ts';
 import { StandInBrain } from './sim/standin.ts';
 import { GROWTH_STEPS } from './sim/types.ts';
@@ -117,18 +118,10 @@ export class GameDebug {
 		ui.add( { hearing: false }, 'hearing' ).name( 'hearing brain' ).onChange( ( on: boolean ) => game.setBrain( on ? new HearingBrain( game ) : new StandInBrain() ) );
 		let line = 0;
 		ui.add( { say: () => this.say( game.say( f.islander, REPLIES[ line ++ % REPLIES.length ] ) ?? 'Said' ) }, 'say' ).name( 'inspected islander says a line' );
-		ui.add( { low: () => {
-
-			game.setNeed( f.islander, 'satiety', 38 );
-			game.setNeed( f.islander, 'hydration', 12 );
-
-		} }, 'low' ).name( 'needs low (38, 12)' );
-		ui.add( { critical: () => {
-
-			game.setNeed( f.islander, 'satiety', 14 );
-			game.setNeed( f.islander, 'hydration', 9 );
-
-		} }, 'critical' ).name( 'needs critical (14, 9)' );
+		// the registered needs in turn to these values: one low and one critical, both critical
+		const setNeeds = ( values: number[] ) => needs().forEach( ( need, i ) => game.setNeed( f.islander, need.id, values[ i % values.length ] ) );
+		ui.add( { low: () => setNeeds( [ 38, 12 ] ) }, 'low' ).name( 'needs low (38, 12)' );
+		ui.add( { critical: () => setNeeds( [ 14, 9 ] ) }, 'critical' ).name( 'needs critical (14, 9)' );
 		ui.add( { lang: locale }, 'lang', LOCALES ).name( 'language (reloads)' ).onChange( ( lang: string ) => {
 
 			const url = new URL( location.href );

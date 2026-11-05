@@ -11,7 +11,8 @@ import type { EntityId } from './sim/types.ts';
 // (src/game/ui/data/record.ts), so a new kind of entry is a new row there.
 //
 // Rules: it is the first listener of the simulation's events (sim/events.ts, Session.listen), and
-// notes an entry for each event of the kinds above (`note`), with the tick the event happened at;
+// notes an entry for each event of the kinds above (`note`, RECORDED), with the tick the event
+// happened at;
 // it never reads or changes the simulation's state. So it keeps every line said, two in one frame
 // included, and keeps no copy of what the simulation decides (a need's line is the simulation's:
 // sim/needs.ts). An entry keeps its tick, and its day and time of day are derived from it
@@ -34,14 +35,18 @@ export interface RecordEntry {
 	who: RecordWho;
 	/** whom words were said to (the islanders' ids, or everyone), or whom something was given to */
 	to?: EntityId[] | 'all';
-	/** the words said; the item given; a building's kind; a need's name (satiety, hydration); the
-	 * age one died at */
+	/** the words said; the item given; a building's kind; a need's id (sim/registry.ts); the age
+	 * one died at */
 	text?: string;
 	/** how many were given */
 	count?: number;
 	/** the building an entry is about (its id) */
 	subject?: string;
 }
+
+/** The kinds of the simulation's events the record notes (`note`), each as an entry of the same
+ * kind; a presentation that shows the others (tools/play-game.mjs) shows these through the record. */
+export const RECORDED: ReadonlySet<SimEvent[ 'kind' ]> = new Set( [ 'landed', 'died', 'said', 'gave', 'placed', 'built', 'need' ] );
 
 /** The record as a save holds it (plain JSON). */
 export interface RecordSave {

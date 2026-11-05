@@ -3,7 +3,7 @@ import { shortfall } from '../sim/stock.ts';
 import type { EntityId, Items } from '../sim/types.ts';
 import { BUILDINGS } from './data/buildings.ts';
 import type { BuildingRow } from './data/buildings.ts';
-import { RESOURCES, resourceStock } from './data/resources.ts';
+import { RESOURCES, resourceStock, withItems } from './data/resources.ts';
 import type { ResourceRow } from './data/resources.ts';
 
 // What the interface's parts share: the game, the islander selected, the building chosen in the
@@ -19,7 +19,7 @@ export class UiShared {
 	 * row's counts it lacks turn 朱 */
 	shown: BuildingRow | null = null;
 	/** the lists in use: the data's rows (the debug panel's "many" rows add placeholders) */
-	resources: ResourceRow[] = [ ...RESOURCES ];
+	resources: ResourceRow[] = withItems( RESOURCES );
 	roster: BuildingRow[] = [ ...BUILDINGS ];
 	/** bumped when a list changes, so the parts that draw it rebuild */
 	lists = 0;

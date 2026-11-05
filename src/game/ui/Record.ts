@@ -6,7 +6,7 @@ import { cubic, lensFrame, stroke, uprightStroke } from './Brush.ts';
 import type { Point } from './Brush.ts';
 import { iconSvg, setIcon } from './Icons.ts';
 import { PALETTE } from './Palette.ts';
-import { LANDINGS, RECORD_KINDS, dayName } from './data/record.ts';
+import { LANDINGS, dayName, recordKind } from './data/record.ts';
 import type { RecordNames } from './data/record.ts';
 import { WEATHER_KINDS, weatherKind } from './data/weather.ts';
 import type { WeatherKind } from './data/weather.ts';
@@ -339,8 +339,7 @@ export class Record {
 		const entries = record.entries.filter( ( e ) => this.dayOf( e.tick ) === this.day && this.mine( e ) ).sort( ( a, b ) => a.tick - b.tick );
 		for ( const e of entries ) {
 
-			const kind = RECORD_KINDS[ e.kind ];
-			if ( ! kind ) continue;
+			const kind = recordKind( e.kind );
 			const row = el( 'div', 'entry', box );
 			el( 'span', 't pl-num', row, clockText( record.timeOf( e.tick ) ) );
 			if ( kind.words ) {
@@ -359,13 +358,13 @@ export class Record {
 	}
 
 	// The day's notable happening on this page: the most notable kind's mark, and how many more.
-	private notable( day: number ): { icon: string; text: string; alarm: boolean } | null {
+	private notable( day: number ): { icon: string | null; text: string; alarm: boolean } | null {
 
-		const marks = this.shared.game.record.entries.filter( ( e ) => this.dayOf( e.tick ) === day && this.mine( e ) && RECORD_KINDS[ e.kind ]?.mark && ( e.kind !== 'landed' || this.who === 'all' || e.who === this.who ) )
-			.sort( ( a, b ) => RECORD_KINDS[ a.kind ].rank - RECORD_KINDS[ b.kind ].rank );
+		const marks = this.shared.game.record.entries.filter( ( e ) => this.dayOf( e.tick ) === day && this.mine( e ) && recordKind( e.kind ).mark && ( e.kind !== 'landed' || this.who === 'all' || e.who === this.who ) )
+			.sort( ( a, b ) => recordKind( a.kind ).rank - recordKind( b.kind ).rank );
 		const top = marks[ 0 ];
 		if ( ! top ) return null;
-		const kind = RECORD_KINDS[ top.kind ], own = this.who !== 'all';
+		const kind = recordKind( top.kind ), own = this.who !== 'all';
 		const landings = top.kind === 'landed' && ! own ? marks.filter( ( e ) => e.kind === 'landed' ).length : 1;
 		const words = top.kind === 'landed' && ! own && landings > 1 ? LANDINGS( landings ) : kind.deed( top, this.naming, own && top.who === this.who );
 		const more = marks.length - landings;

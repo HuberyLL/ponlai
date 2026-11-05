@@ -45,6 +45,10 @@
 	"unit": {
 		"fish": "条"
 	},
+	"need": {
+		"satiety": "饱食",
+		"hydration": "水分"
+	},
 	"place": {
 		"shore": "海边"
 	},
@@ -64,8 +68,6 @@
 		}
 	},
 	"tag": {
-		"satiety": "饱食",
-		"hydration": "水分",
 		"bag": "行囊",
 		"slot": "{{name}} {{count}}",
 		"empty": "空"
@@ -160,7 +162,9 @@
 			"need_own": "{{need}}",
 			"placed": "{{building}}定址",
 			"gave": "{{who}}　给{{to}} {{count}} {{unit}}{{item}}",
-			"gave_own": "给{{to}} {{count}} {{unit}}{{item}}"
+			"gave_own": "给{{to}} {{count}} {{unit}}{{item}}",
+			"other": "{{who}}　{{what}}",
+			"other_own": "{{what}}"
 		},
 		"need": {
 			"satiety": "饥饿",

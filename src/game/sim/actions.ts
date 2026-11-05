@@ -1,8 +1,8 @@
-import { ITEMS, count, isItem, removeItems } from './items.ts';
+import { bagOf, count, spend, takeMoves, watchMoves } from './items.ts';
 import { findPath, goalAt, placeGoal } from './path.ts';
-import { PERSON_REACH, hear } from './people.ts';
 import { placeById, placesAt } from './places.ts';
 import type { DoArgs, Place, Start } from './places.ts';
+import { itemKind } from './registry.ts';
 import type { ArgsOf, Schema } from './schema.ts';
 import type { Sim } from './Sim.ts';
 import type { ActionCall, ActionResult, ActionState, EntityId, Items, Outcome, Vec2, Villager } from './types.ts';
@@ -17,8 +17,10 @@ import type { ActionCall, ActionResult, ActionState, EntityId, Items, Outcome, V
 //                        body is doing
 //   wait( { seconds } )  stand for a while
 //   do( { action, place?, item?, count? } ) run an option of a place the islander stands at
-//                        (places.ts): the one `place` names, else the first that offers it
-//   use( { item, use? } ) run a use of a carried item (items.ts); the first unless one is named
+//                        (places.ts; the options registered at its kind: registry.ts): the one
+//                        `place` names, else the first that offers it
+//   use( { item, use? } ) run a use of a carried item (its kind's uses: registry.ts ItemDef); the
+//                        first unless one is named
 //
 // Rules: a new action replaces the one under way (a refused one replaces nothing); stopping is not
 // an action. Saying is the exception: speech comes from the mind, not the body (`mind`), so it
@@ -107,38 +109,6 @@ export function interruptAction( sim: Sim, body: Villager, reason: string ): voi
 
 }
 
-// ------------------------------------------------------------------ what moved
-
-// Each islander's bag before a step that may move items: an instant action, a timed one's finish.
-// What an option brings or spends it moves there (an option's `during` works on its place or moves
-// the body, places.ts), so the outcome can say what moved without the bags being watched.
-function bagsOf( sim: Sim ): Map<EntityId, Items> {
-
-	const bags = new Map<EntityId, Items>();
-	for ( const v of sim.state.villagers ) bags.set( v.id, { ...v.bag } );
-	return bags;
-
-}
-
-// The bags' changes since `bagsOf`, by islander (signed counts); undefined when nothing moved.
-function movedSince( sim: Sim, before: Map<EntityId, Items> ): Record<EntityId, Items> | undefined {
-
-	let moved: Record<EntityId, Items> | undefined;
-	for ( const v of sim.state.villagers ) {
-
-		const was = before.get( v.id ) ?? {};
-		for ( const item of new Set( [ ...Object.keys( was ), ...Object.keys( v.bag ) ] ) ) {
-
-			const delta = count( v.bag, item ) - count( was, item );
-			if ( delta !== 0 ) ( ( moved ??= {} )[ v.id ] ??= {} )[ item ] = delta;
-
-		}
-
-	}
-	return moved;
-
-}
-
 // ------------------------------------------------------------------ the five actions
 
 const GO = { place: { type: 'text' } } as const;
@@ -165,11 +135,11 @@ const go: Tool<typeof GO> = {
 
 		// there: `holds` found it this tick
 		const place = placeById( sim, body, args.place ) as Place;
-		if ( place.kind === 'person' ) {
+		if ( place.moves !== undefined ) {
 
-			// a person moves: find the way again whenever it no longer ends beside them
+			// a place that moves (a person): find the way again whenever it no longer ends at it
 			const tail = body.path?.[ body.path.length - 1 ];
-			if ( tail ? place.distance( tail ) > PERSON_REACH : ! place.reaches( sim.grid.indexAt( body.pos.x, body.pos.z ) ) ) {
+			if ( tail ? place.distance( tail ) > place.moves : ! place.reaches( sim.grid.indexAt( body.pos.x, body.pos.z ) ) ) {
 
 				const goal = placeGoal( sim.grid, place );
 				const path = goal && findPath( sim.grid, body.pos, goal );
@@ -191,8 +161,8 @@ const say: Tool<typeof SAY> = {
 	mind: true,
 	start: ( sim, body, args ) => {
 
+		// heard by those within earshot: the people system hears the event (people.ts `notice`)
 		sim.emit( { kind: 'said', tick: sim.state.tick, who: body.id, words: args.words } );
-		hear( sim, body, args.words );
 		return { ok: true, value: 'said it' };
 
 	},
@@ -206,16 +176,17 @@ const wait: Tool<typeof WAIT> = {
 
 const use: Tool<typeof USE> = {
 	args: USE,
-	start: ( _sim, body, args ) => {
+	start: ( sim, body, args ) => {
 
-		if ( ! isItem( args.item ) ) return { ok: false, reason: `there is no item called ${ args.item }` };
+		const kind = itemKind( args.item );
+		if ( ! kind ) return { ok: false, reason: `there is no item called ${ args.item }` };
 		if ( count( body.bag, args.item ) === 0 ) return { ok: false, reason: `no ${ args.item } in the bag` };
-		const uses = ITEMS[ args.item ].uses;
+		const uses = kind.uses;
 		const how = args.use ?? Object.keys( uses )[ 0 ];
 		if ( ! Object.hasOwn( uses, how ) ) return { ok: false, reason: `a ${ args.item } is not for ${ how }` };
 		// a use that fails changes nothing, and is refused like any call that does not begin
 		const result = uses[ how ]( body );
-		if ( result.ok ) removeItems( body.bag, args.item, 1 );
+		if ( result.ok ) spend( sim, bagOf( body ), args.item, 1 );
 		return result;
 
 	},
@@ -225,8 +196,8 @@ const offers = ( p: Place, action: string ) => Object.hasOwn( p.options, action 
 
 const doAction: Tool<typeof DO> = {
 	args: DO,
-	// the place named, else one stood at that offers it now, first: a built site keeps `build`
-	// closed (buildings.ts), so it does not take the place of a chest's own options
+	// the place named, else one stood at that offers it now, first: a built building keeps the
+	// work on it closed (content/build.ts), so that does not take the place of its kind's options
 	complete: ( sim, body, args ) => {
 
 		if ( args.place !== undefined ) return args;
@@ -287,12 +258,14 @@ export function run( sim: Sim, body: Villager, name: string, tool: Tool, given: 
 
 	const args = tool.complete ? tool.complete( sim, body, given ) : given;
 	const call: ActionCall = { tool: name, args };
-	const before = tool.mind ? null : bagsOf( sim );
+	// what an instant action moves between bags is its outcome's (items.ts)
+	if ( ! tool.mind ) watchMoves( sim );
 	const begun = tool.start( sim, body, args );
+	const moved = tool.mind ? undefined : takeMoves( sim );
 	if ( ! begun.ok ) return refuse( sim, body, body.id, call, begun.reason, tool.mind );
 	if ( tool.mind ) return begun;
 	stopAction( sim, body );
-	if ( ! ( 'seconds' in begun ) ) return end( sim, body, call, 'done', begun, before ? movedSince( sim, before ) : undefined );
+	if ( ! ( 'seconds' in begun ) ) return end( sim, body, call, 'done', begun, moved );
 	body.path = 'path' in begun ? begun.path : null;
 	body.action = { call, until: begun.seconds === null ? null : sim.state.tick + begun.seconds };
 	sim.emit( { kind: 'began', tick: sim.state.tick, who: body.id, call } );
@@ -319,10 +292,12 @@ export function advanceAction( sim: Sim, body: Villager ): void {
 	const action = body.action;
 	if ( ! action ) return;
 	const call = action.call, tool = toolOf( call.tool ), args = call.args as ArgsOf<Schema>;
-	// what a finish brings or spends (a catch) is the outcome's: the bags before it
-	const before = action.until !== null && sim.state.tick >= action.until ? bagsOf( sim ) : null;
+	// what a finish brings or spends (a catch) is the outcome's (items.ts)
+	const finishing = action.until !== null && sim.state.tick >= action.until;
+	if ( finishing ) watchMoves( sim );
 	const result = tool.step?.( sim, body, args, action ) ?? null;
-	if ( result ) end( sim, body, call, result.ok ? 'done' : 'failed', result, before ? movedSince( sim, before ) : undefined );
+	const moved = finishing ? takeMoves( sim ) : undefined;
+	if ( result ) end( sim, body, call, result.ok ? 'done' : 'failed', result, moved );
 
 }
 

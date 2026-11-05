@@ -30,10 +30,16 @@ From the bottom up:
 1. **The rules** ([src/game/sim/](src/game/sim/)). The simulation, in plain TypeScript with no
    three.js or DOM; node runs it by stripping types. One tick is one game second, the state is the
    save, and one seeded generator draws every chance. It owns the islanders (bodies, needs, bags,
-   ages, the action under way), the places they act at (the shore, the buildings, each other), the
-   ground and its paths, the five actions as tools (each with the arguments it takes and the
-   condition it holds by), the perception a brain is handed, and the events it emits. The stand-in
-   brain, plain rules, lives here; a language-model brain fills the same slot.
+   ages, the action under way), the places they act at (the buildings, each other, the kinds of
+   place registered), the ground and its paths, the five actions as tools (each with the arguments
+   it takes and the condition it holds by), the perception a brain is handed, and the events it
+   emits. Its core is generic: the game's content (the needs, the items and their uses, the kinds of
+   place and of building, the options they offer) is definitions in
+   [sim/content/](src/game/sim/content/), registered in [registry.ts](src/game/sim/registry.ts),
+   which the core reads by id and in order. Today that is satiety and hydration (thirst off), the
+   fish and fishing at the shore, the chest with putting in and taking out, the work on every
+   building, and giving to and following someone. The stand-in brain, plain rules that play that
+   content, lives here; a language-model brain fills the same slot.
 2. **The session** ([src/game/Session.ts](src/game/Session.ts)). Runs the rules as a game without a
    page: it installs a simulation (new or loaded) with its record
    ([Chronicle.ts](src/game/Chronicle.ts)) and its brain, advances it frame by frame, hands the
@@ -83,17 +89,19 @@ nothing below a host reads the page or the wall clock (the save's timestamp asid
   later. The world runs on meanwhile; a late answer passes the entrance when it arrives, so one for
   an islander who has died since is refused.
 - **Ticks.** A host's frame advances the session by real seconds at the day clock's rate. Each tick
-  moves the needs, the walks and the actions under way (each checking its condition before it
-  advances), and the lives.
-- **Events.** Every change worth showing or keeping is emitted once, at the tick it happens. The
-  session hands the events on, in order, after each call that can make them. The record turns them
-  into entries; the interface's speech reads what was said; the play tool builds its transcript
-  from them. The view and the interface's bars sample the state for what is now, never for what
-  happened.
+  moves the needs (each registered need by its own rate), the walks and the actions under way (each
+  checking its condition before it advances), and the lives.
+- **Events.** Every change worth showing or keeping is emitted once, at the tick it happens. A
+  system of the rules that keeps something of it takes it as it is emitted (the people system notes
+  what each islander heard and was given). The session hands the events on, in order, after each
+  call that can make them. The record turns them into entries; the interface's speech reads what
+  was said; the play tool builds its transcript from them. The view and the interface's bars sample
+  the state for what is now, never for what happened.
 - **Outcomes.** Every call of an action ends in one of a few outcomes: done, failed, interrupted
   (a condition stopped holding, with the reason), refused (it never began), or replaced (another
-  action took over). The interface and the play tool show an end by its category without knowing
-  the action.
+  action took over). An outcome carries what the call moved between bags, from the items system's
+  own account of the call. The interface and the play tool show an end by its category without
+  knowing the action.
 - **Save.** The simulation's state and the record, versioned, in one slot. Events are handed on
   before a save and are not saved, so a loaded game tells nothing twice; a save of another version
   is set aside and a new game started.
@@ -168,3 +176,92 @@ nothing below a host reads the page or the wall clock (the save's timestamp asid
    the page only hosts them. *Why:* the same game runs in the page, in the play tool and in the
    checks, with nothing copied between them, and a brain can be judged offline against what the page
    would have played.
+7. **Content is registered definitions; the core names none.** A need, an item and its uses, a
+   kind of place, an option at a place and a kind of building are each one definition, registered
+   once in [registry.ts](src/game/sim/registry.ts) by its module in
+   [sim/content/](src/game/sim/content/). A definition declares what it offers, its condition (the
+   `holds` of rule 1, where standing at the place is not enough), its effects and its numbers. The
+   core reads the definitions by id or in the order registered, and never names one of them: Sim's
+   tick, the five actions, the perception, the needs', items', places' and buildings' systems, the
+   people system, the events, the schemas and the session. The stand-in brain is a player of the
+   content and may name it. Adding water is adding an item, an option at a place and a need, with no
+   change to the core. *Why:* the design adds content as places and items, never as new actions
+   ([docs/game-design.md](docs/game-design.md), Actions). With content written into the core, each
+   new resource touched the tick, the perception, the bag rules and the interface, and every later
+   system would have multiplied that work. [tools/verify-game.mjs](tools/verify-game.mjs) keeps the
+   rule: it registers content of its own, plays it with no change elsewhere, and fails on a content
+   id written in the core as a string, a word of a template, a property's name or a key.
+8. **Systems talk through events and the state they own.** Each system changes only its own part of
+   the state:
+   - the items system what a bag or a store holds (`transfer`, `bring`, `spend`);
+   - the needs' rule the needs (an item's use raises one through `raiseNeed`);
+   - the buildings system the sites and the work on them;
+   - the people system what an islander heard and was given.
+
+   A rule that needs another system's change calls that system's operation, or emits an event that
+   the system takes as it is emitted. A `said` or a `gave` is noticed by the people system
+   (`notice`); the action does not write the hearer's memory. What a call moved between bags is the
+   items system's own account of the call, never a comparison of the bags before and after. *Why:*
+   a rule that writes into another system's state copies that system's rule, and two writers of one
+   fact drift apart. The dependency it hides breaks under the next rule that changes that state.
+9. **Presentation by outcome and event category, with a default.** The interface, the record and
+   the play tool show what happened by its category: an action's end by its outcome (done, failed,
+   interrupted, refused, replaced), an event by its kind (landed, said, gave, placed, built, need,
+   and the others). Each category has a default form. A definition may give its own words, as
+   catalogue keys by its id (`item.<id>`, `need.<id>`, `doing.do.<option>`, `record.need.<id>`).
+   It may also give its own look: a need's icon and colour in
+   [ui/data/needs.ts](src/game/ui/data/needs.ts), an item's row in the top row, a building's model.
+   A new piece of content shows with the defaults until art gives it its own. The defaults are:
+   - its id as its name;
+   - the 未绘 glyph for its icon and 缟 for its bar;
+   - a building's finished site in place of a model;
+   - the record's default row, for a kind of entry without one;
+   - a default resource in the top row, for an item without one;
+   - the play tool's `[event]` line, for an event kind nothing else shows.
+
+   Player-facing words stay in the catalogues ([tools/verify-i18n.mjs](tools/verify-i18n.mjs)).
+   *Why:* a presentation written per piece of content needs a change in every part for every new
+   resource. One written per category shows anything the rules can make on the day it is added,
+   and art then replaces the defaults one at a time.
+
+## Adding content
+
+A piece of content (a resource and what answers it, a kind of place, a building) is a module in
+[src/game/sim/content/](src/game/sim/content/). It registers its definitions with `register`
+([registry.ts](src/game/sim/registry.ts)) and is imported, in order, by
+[content/index.ts](src/game/sim/content/index.ts). Its numbers and their reasons go in the
+module's header.
+
+1. **Its definitions.** Write the ones it needs:
+   - a need (`NeedDef`: where it starts, how much it falls a game day);
+   - an item with its uses (`ItemDef`);
+   - a kind of place (`PlaceKindDef`, derived from the ground and the land: rule 5);
+   - an option at a kind of place (`OptionDef`, with `open`, `start`, `holds` when standing at the
+     place is not enough, `during` and `finish`);
+   - a kind of building (`BuildingDef`: its footprint, its work, its store).
+
+   It changes items only through the items system (`transfer`, `bring`, `spend`), checking counts
+   and room first and refusing in its own words. It changes needs through `raiseNeed`. Anything
+   others show or keep is an event of [events.ts](src/game/sim/events.ts).
+2. **Its words and looks, where the defaults are not enough.**
+   - Words: keys by its id in [zh-CN.json](src/game/ui/i18n/zh-CN.json) (`item`, `unit`, `need`,
+     `place`, `doing.do`, `record.need`).
+   - A need's icon and colour: [ui/data/needs.ts](src/game/ui/data/needs.ts).
+   - An item's row in the top row: [ui/data/resources.ts](src/game/ui/data/resources.ts).
+   - A building's model: [view/GameView.ts](src/game/view/GameView.ts).
+   - A building the player places also needs its row in the build bar
+     ([ui/data/buildings.ts](src/game/ui/data/buildings.ts)). Where it stands there and what it
+     costs are the design's, so a kind without a row has no default and cannot be chosen.
+3. **The save.** A change to what is saved bumps `SAVE_VERSION` ([save.ts](src/game/save.ts)). A
+   new need is in every body, and a new kind of building is in the buildings' state.
+4. **The checks.**
+   - `node tools/verify-game.mjs`: the rules, with the new content's asserts beside today's; its
+     own content check, with the core naming none; and the exact maths of the rules and the content.
+   - `node tools/verify-i18n.mjs` and `npm run typecheck`.
+   - A run of `tools/play-game.mjs` with the stand-in brain. Its transcript, timeline and summary
+     show the content played, moved between bags and noted, with nothing in the tool named for it.
+     A change that should leave today's game as it was compares the tool's outputs before and
+     after, byte for byte.
+
+   The stand-in brain plays only the content it is written for. A brain that reads its perception
+   (the needs, the bag, the options at hand) meets new content there with no change to it.
