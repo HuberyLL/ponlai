@@ -7,11 +7,12 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, attribute, float, vec2, vec3, color, sin, cos, mix, smoothstep, floor, fract, abs, sign, select, length,
-	normalize, cross, positionGeometry, normalGeometry, normalLocal, positionPrevious,
+	normalize, cross, positionGeometry, normalGeometry, normalLocal, positionPrevious, positionWorld,
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
 import type { WaveMaps } from '../ocean/WaveMaps.ts';
 import { underwaterLight, UnderwaterLightingModel } from '../lighting/Underwater.ts';
+import { keySeaShare } from '../lighting/KeyCloud.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { PART, type Anatomy } from './FishGeometry.ts';
 import { writeMeter } from '../lighting/MeterLight.ts';
@@ -145,7 +146,7 @@ export function makeFishMaterial( S: Anatomy, skin: Skin, shared: Shared, waveMa
 	mat.metalnessNode = select( body, silver.mul( 0.55 ), float( 0 ) );
 	mat.roughnessNode = select( body, mix( float( 0.42 ), float( 0.26 ), silver ), float( 0.5 ) );
 
-	const light = underwaterLight( shared, waveMaps );
+	const light = underwaterLight( shared, waveMaps, { seaKey: keySeaShare( positionWorld ) } );
 	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new UnderwaterLightingModel( light, { terminator: false } );
 	writeMeter( mat );
 	return mat;

@@ -431,7 +431,7 @@ function prepareSkyState(): void {
 /** The key's gain under overcast's deck, by overcast's share and its deck's light (sky/Weather.ts
  * `overcastDeckLight`: at every sun by day, gone by -6 degrees), on the land's key (shared.ts
  * `landKey`: the lit materials and the figures, the ground's bounce, the ambient light's bounce
- * lobe) and the sea's (shared.ts `sunColor`). It starts at 1, which leaves the deck's lobe out
+ * lobe), never the sea's (shared.ts `sunColor`). It starts at 1, which leaves the deck's lobe out
  * (lighting/KeyGain.ts): under the deck the land's directional light is the weather's floor of the
  * key through the sun's map (sky/Weather.ts `deckFloor`, Sky.ts `keyDirectVisibility`), and the
  * wider forward light the deck scatters about the sun's place is drawn in the sky, which the land's
@@ -450,9 +450,10 @@ const CLOUDY_KEY_GAIN = tune( 'lighting.cloudyKey', 1, { min: 1, max: 8 } );
 function publishLighting(): void {
 
 	// three's sun: the direct key, the sky's, which the clouds' shadow cuts per point (Sky.ts
-	// `keyDirectVisibility`); the land's key and the sea's (shared.sunColor): it times the deck's
-	// gain (1 unless tuned), which each point keeps by its clouds' transmittance, the part over the
-	// direct key the deck's lobe in the ambient (lighting/KeyGain.ts)
+	// `keyDirectVisibility`); the land's key (shared.landKey): it times the deck's gain (1 unless
+	// tuned), which each point keeps by its clouds' transmittance, the part over the direct key the
+	// deck's lobe in the ambient (lighting/KeyGain.ts); the sea's (shared.sunColor): the sky's key
+	// without the gain, which the clouds' own transmittance cuts (lighting/KeyCloud.ts)
 	const overcast = weather.skyMix[ 3 ] ?? 0;
 	const cloudy = cloudedShare( weather.skyMix ) - overcast;
 	const keyGain = 1 + ( OVERCAST_KEY_GAIN() - 1 ) * overcast * overcastDeckLight( sky.elevation ) + ( CLOUDY_KEY_GAIN() - 1 ) * cloudy * deckRamp( sky.elevation );
@@ -474,7 +475,7 @@ function publishLighting(): void {
 	updateKeyLift( sky.keyDir, sky.keyIsMoon );
 	keyGlint.radius.value = sky.keyIsMoon ? MOON_GLINT_RADIUS : SUN_GLINT_DISC;
 	liftedKeyDirection( sky.keyDir, sky.keyIsMoon, shadowDirection );
-	shared.sunColor.value.copy( shared.landKey.value );
+	shared.sunColor.value.set( sun.color.r, sun.color.g, sun.color.b );
 	keyChroma.value = sky.keyIsMoon ? 0 : 1;
 	const cosI = Math.max( sky.keyDir.y, 0 );
 	shared.sunIntoWater.value = sky.keyDir.y > 0 ? 1 - fresnel( cosI, 1.333 ) : 0;
@@ -744,7 +745,7 @@ setLand( land, landOptions.step );
 const fields = new WorldFields( data, shared.shoreXform.value );
 // the sunlight the ground bounces up (lighting/GroundBounce.ts), which every lit material adds: so
 // installed before any of them builds; its map shares the wave maps' target
-const groundBounce = new GroundBounce( { renderer, shared, sunShadow, fields, soil: textures.soil, target: waveMaps.target, layer: waveMaps.bounceLayer, cloud: ( position ) => sky.keyCloudVisibility( position ) } );
+const groundBounce = new GroundBounce( { renderer, shared, sunShadow, fields, soil: textures.soil, target: waveMaps.target, layer: waveMaps.bounceLayer, cloud: ( position ) => sky.keyCloudVisibility( position ), seaCloud: ( position ) => sky.cloudVisibility( position ) } );
 installGroundBounce( groundBounce );
 const shoreWaves = new ShoreWaves( renderer, data, shared, fields.shore, fft, fields.floor );
 const walk = walkPoints( data.walk );
@@ -792,7 +793,7 @@ showWindArrows();
 // show.
 const ambient = new AmbientVolume( renderer, data.ambient );
 installAmbientVolume( ambient );
-const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyCloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation, rising: () => sky.rising, clouded: () => cloudedShare( weather.skyMix ), overcast: () => weather.skyMix[ 3 ] ?? 0 } );
+const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyCloudVisibility( position ), seaCloud: ( position ) => sky.cloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation, rising: () => sky.rising, clouded: () => cloudedShare( weather.skyMix ), overcast: () => weather.skyMix[ 3 ] ?? 0 } );
 // the environment's own harmonics, which the specular's relight divides by (AmbientSample.ts)
 installEnvironmentHarmonics( ambientRelight );
 // the haze's shadow kernels read the probes' sky visibility, so they compile now (Pipeline.ts)

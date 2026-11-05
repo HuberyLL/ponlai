@@ -38,7 +38,7 @@ export default async function ( { renderer } ) {
 		const { AmbientRelight, AmbientSky } = await import( '../../src/lighting/AmbientRelight.ts' );
 		const sky = new AmbientSky( renderer );
 		sample.installEnvironmentHarmonics( new AmbientRelight( {
-			renderer, volume, shared, sky, weights: () => ( { a: 0, b: 1, blend: 0 } ), cloud: () => float( 1 ), keyHeight: () => 1,
+			renderer, volume, shared, sky, weights: () => ( { a: 0, b: 1, blend: 0 } ), cloud: () => float( 1 ), seaCloud: () => float( 1 ), keyHeight: () => 1,
 		} ) );
 
 	}

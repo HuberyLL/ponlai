@@ -49,7 +49,7 @@ export default function ( { renderer } ) {
 	installAmbientVolume( volume );
 	// the specular's relight over a sky that has projected nothing (as ambient-materials builds it)
 	installEnvironmentHarmonics( new AmbientRelight( {
-		renderer, volume, shared, sky: new AmbientSky( renderer ), weights: () => ( { a: 0, b: 1, blend: 0 } ), cloud: () => float( 1 ), keyHeight: () => 1,
+		renderer, volume, shared, sky: new AmbientSky( renderer ), weights: () => ( { a: 0, b: 1, blend: 0 } ), cloud: () => float( 1 ), seaCloud: () => float( 1 ), keyHeight: () => 1,
 	} ) );
 	const detail = array( 'detail', 4 );
 	const layer = ( i ) => texture( detail ).depth( int( i ) );

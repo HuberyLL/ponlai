@@ -60,15 +60,12 @@ type V3 = THREE.Node<'vec3'>;
 //   takes x L.y exactly, whatever the axis.
 //   The ground's bounce (lighting/GroundBounce.ts) and the ambient volume's bounce lobe
 //   (lighting/AmbientRelight.ts), the light the ground sends back up, keep the gained key under
-//   `keyCloudVisibility` (the whole key the ground takes, beam and lobe), as does the water's
-//   light into its body, its foam and its meter (ocean/Water.ts). The sea's glint is the beam's
-//   alone, the key without the gain through T: a mirror shows a source's angular extent, and the
-//   gained key drawn as the sun's disc would lay a glitter road under a deck that lets almost none
-//   of the sun through. What the gain adds over the beam the sea mirrors as the lobe's radiance
-//   (`keyLobeRadiance`), as wide as the land takes it: under overcast a soft sheen toward the sun,
-//   while a cloudy deck's gaps, where the gain is gone, keep their glints. Wherever the gain is 1 (a
-//   clear or fair sky, by night) the lobe is not built at run time (a branch on the gain) and the
-//   direct key is the sky's key.
+//   `keyCloudVisibility` (the whole key the ground takes, beam and lobe) where the ground is land.
+//   The sea takes no gain (lighting/KeyCloud.ts): the water drawn (ocean/Water.ts), the floor seen
+//   through it, the sea's share of the ground's bounce and the sea the ambient volume sees take
+//   the sky's key through the clouds' own transmittance, and under a deck the sea's soft sheen
+//   toward the sun is the sky's reflection. Wherever the gain is 1 (a clear or fair sky, by night)
+//   the lobe is not built at run time (a branch on the gain) and the direct key is the sky's key.
 // - Why 0.6: overcast's lit patches (sky/Sky.ts, its cloud form) peak about there, so a patch keeps
 //   the gain over most of its area and gives part of it back only at its clearest; a cloudy deck's
 //   thin parts reach past it toward its gaps, which keep none of it, so a gap's lit ground stands as
@@ -112,20 +109,6 @@ export const keyLobeIrradiance = Fn( ( [ N, L, t ]: [ V3, V3, F ] ) => {
 	return up.mul( dot( N, A ).mul( 2 / 3 ).add( 1 ) ).mul( N.y.mul( 0.5 ).add( 0.5 ) ).div( A.y.mul( 2 / 3 ).add( 1 ) );
 
 } ).setLayout( { name: 'keyLobeIrradiance', type: 'float', inputs: [ { name: 'N', type: 'vec3' }, { name: 'L', type: 'vec3' }, { name: 't', type: 'float' } ] } );
-
-/** The lobe's radiance in the sky direction `R` (its height taken at 0 or more) per unit of the
- * key's irradiance on level ground, for the key's world shading direction `L` and the clouds'
- * transmittance `t` along it (see the header): the c ( 1 + R.A ) whose irradiance on level ground
- * is that unit, L.y ( 1 + R.A ) / ( pi ( 1 + 2/3 A.y ) ), A as in `keyLobeIrradiance`. */
-export const keyLobeRadiance = Fn( ( [ R, L, t ]: [ V3, V3, F ] ) => {
-
-	const up = max( L.y, 0 );
-	const w = pow( max( t, 1e-6 ), 1 - DROPLET_G );
-	const A = mix( vec3( 0, 1, 0 ), L, w );
-	const sky = vec3( R.x, max( R.y, 0 ), R.z ).normalize();
-	return up.mul( dot( sky, A ).add( 1 ) ).div( A.y.mul( 2 / 3 ).add( 1 ).mul( Math.PI ) );
-
-} ).setLayout( { name: 'keyLobeRadiance', type: 'float', inputs: [ { name: 'R', type: 'vec3' }, { name: 'L', type: 'vec3' }, { name: 't', type: 'float' } ] } );
 
 /** The lobe's irradiance at world position `P` and world normal `N` (see the header): none where
  * the gain is 1, or before the sky has set the clouds. */

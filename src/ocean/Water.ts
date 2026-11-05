@@ -37,8 +37,6 @@ import { REFERENCE_SPEED } from '../weather/Wind.ts';
 import { motionNode, motionState, motionUniforms, outputStruct, reactiveUniforms } from '../post/Motion.ts';
 import { sceneUnits } from '../post/PreExposure.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
-import { keyDeckGain, keyGainShare, keyLobeRadiance } from '../lighting/KeyGain.ts';
-import { liftKeyWorld } from '../lighting/KeyLift.ts';
 
 // The sea surface: an FFT-displaced grid shaded as tidewater's WaterMaterial (4811ba4, its above-water
 // branch; the camera never goes under the sea):
@@ -55,10 +53,11 @@ import { liftKeyWorld } from '../lighting/KeyLift.ts';
 //     (`sunLight`), the foam raised (`foamLight`), the water body in part (`bodyLight`), and the
 //     floor keeps its own sharp shadow; the moon's glint is grey (`keyChroma`), so its path on the
 //     sea stays pale rather than a sheet of the moon's saturated blue, which the water body keeps.
-//     Under a deck the key carries the deck's gain (lighting/KeyGain.ts): the glint takes the beam
-//     alone (`glintLight`), the key without the gain through the clouds, and what the gain adds is
-//     the deck's wide lobe, which the reflection mirrors with the sky (`keyLobeRadiance`), so a
-//     deck that lets little of the sun through shows a soft sheen toward it, not a glitter road
+//     The sea's key is the sky's (shared.sunColor) through the clouds' own transmittance, without
+//     the land's floor under a deck or a deck's gain (lighting/KeyCloud.ts), so the water drawn,
+//     the floor seen through it and the sea the ambient light bounces are lit by one key; under a
+//     deck that lets little of the sun through, the soft sheen toward the sun is the sky's
+//     reflection (the deck's glow about the sun's place is drawn in the sky), not a glitter road
 //   - exact dielectric Fresnel, its mean over the slopes no pixel resolves on the distant sea (a
 //     mirror's grazing reflectance is too much for a sheet of small facets turned every way): the
 //     facets the eye sees turn toward it, and other waves stop part of their reflected rays (Smith's
@@ -1020,10 +1019,8 @@ export class Water {
 			// ---- the key reaching the surface: through the clouds, on every path, and by the shadow's
 			// soft read from the vertex stage, whole here (the terms' shares: SHADOW_SOFT_RADIUS)
 			const cloudVisibility = sky.cloudVisibility( wp ).toVar();
-			const keyLight = shared.sunColor.mul( cloudVisibility ).mul( keyGainShare( cloudVisibility, keyDeckGain ) ).toVar();
+			const keyLight = shared.sunColor.mul( cloudVisibility ).toVar();
 			const sunLight = keyLight.mul( vKeyShadow ).toVar();
-			// (the beam: the key without the deck's gain, exactly the key where the gain is 1)
-			const beamLight = shared.sunColor.div( keyDeckGain ).mul( cloudVisibility ).toVar();
 			// the surface's metering illuminance (lighting/MeterLight.ts): the sky's upper hemisphere
 			// (its irradiance on level water over pi) and the key on level water, no reflection nor
 			// light from within the water
@@ -1131,13 +1128,6 @@ export class Water {
 			const refl = mix( horizon.mul( BELOW_HORIZON ), skyReflection, skyShare )
 				.mul( mix( vec3( 1 ), hue, hueShare ) ).mul( mix( float( 1 ), level, levelShare ) )
 				.mul( shared.skyLift.sub( 1 ).mul( bandRamp ).add( 1 ) ).toVar();
-			// The deck's lobe (lighting/KeyGain.ts): what the deck's gain adds to the key over the beam is
-			// the sky's light in a wide lobe toward the key, mirrored as the sky is (none without a gain)
-			If( keyDeckGain.greaterThan( 1 ), () => {
-
-				refl.addAssign( keyLight.sub( beamLight ).mul( keyLobeRadiance( Rraw, liftKeyWorld( shared.sunDir ), cloudVisibility ) ).mul( skyShare ) );
-
-			} );
 			// The cliffs and the islanders from the screen: only rays near the horizon can meet them,
 			// and where the reflectance is small the reflection cannot be seen (tidewater's gate).
 			If( u.ssr.greaterThan( 0.5 ).and( Rraw.y.lessThan( 0.45 ) ).and( Fr.greaterThan( quality.ssrMinFresnel ) ), () => {
@@ -1190,8 +1180,7 @@ export class Water {
 			const spec = mix( D_Gaussian( NdH, alpha2 ), D_GGX( NdH, alpha2 ), keyChroma ).mul( V_SmithGGX( NdL, NdV, alpha2 ) )
 				.mul( fresnelDielectric( max( dot( V, H ), 0 ), float( IOR ) ) ).mul( NdL );
 			// (physically a glint is some 1e5 times the sky; held inside half float's range)
-			const glintBeam = beamLight.mul( vKeyShadow );
-			const glintLight = mix( vec3( luminance( glintBeam ) ), glintBeam, keyChroma ).toVar();
+			const glintLight = mix( vec3( luminance( sunLight ) ), sunLight, keyChroma ).toVar();
 			const glint = min( spec, 400 ).toVar();
 			const knee = mix( float( MOON_KNEE ), L.y.mul( L.y ).mul( GLINT_KNEE ), keyChroma );
 			const sunSpec = glintLight.mul( glint.div( glint.mul( knee ).add( 1 ) ) ).toVar();

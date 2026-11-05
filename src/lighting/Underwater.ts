@@ -44,8 +44,17 @@ type B = THREE.Node<'bool'>;
 // faded in over the first 10 cm. At the air's reflectance the sky lay over the sea floor and the
 // walls as an additive pale veil.
 //
+// Under a deck the land's key keeps the weather's floor through the clouds (Sky.ts
+// `keyDirectVisibility`, three's sun, which every receiver takes), the sea's the clouds' own
+// transmittance alone (lighting/KeyCloud.ts). A point under the long waves' surface takes the
+// sea's: its key's path down the column times the share of the land's visibility the sea keeps
+// (`UnderwaterOptions.seaKey`, KeyCloud.ts `keySeaShare`), faded in with the column as the path
+// is. So the floor seen through the water is lit by the key the water drawn over it takes, and the
+// line between the two follows the swell: the wet rock a trough bares keeps the land's.
+//
 // A material calls `underwaterLight` with its own key above the water (the terrain's canopy shade;
-// nothing for a material that never reaches the surface) and installs `UnderwaterLightingModel` as
+// nothing for a material that never reaches the surface) and the sea's share of the key, and
+// installs `UnderwaterLightingModel` as
 // its lighting model; it also sets `userData.refractedSolarReceiver`,
 // so RefractedSun.bindTerrain gives it the refracted sun's shadow map.
 //
@@ -73,10 +82,13 @@ export interface UnderwaterOptions {
 	// the specular's share below the surface, the material's reflectance against water over its
 	// reflectance against air; 1 without one
 	specular?: number;
+	// the share of the land's key visibility the sea keeps at the point (lighting/KeyCloud.ts
+	// `keySeaShare`), on the key under the water; 1 without one
+	seaKey?: F;
 }
 
 /** The underwater light at `positionWorld` (see the header). */
-export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun, specular = 1 }: UnderwaterOptions = {} ): UnderwaterLight {
+export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun, specular = 1, seaKey }: UnderwaterOptions = {} ): UnderwaterLight {
 
 	// the water above this point: the long waves' surface for the key, the mean level for the
 	// ambient (the wave maps; a level sea above the water's reach)
@@ -96,10 +108,15 @@ export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun,
 	const sun = Fn( () => {
 
 		const att = ( aboveSun ?? vec3( float( 1 ) ) ).toVar();
+		// (the sea's share reads the clouds' shadow map, so it is taken before the branch)
+		const sea = seaKey ? seaKey.toVar() : null;
 		If( under, () => {
 
+			// (the sea's share heads the beam's product, so a share of exactly 1 leaves every later step
+			// as it was)
 			const path = exp( sigT.negate().mul( dSun ).div( max( waterSun.y, 0.15 ) ) );
-			att.assign( mix( att, path.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) ), smoothstep( 0, 0.08, dSun ) ) );
+			const beam = ( sea ? path.mul( sea ) : path ).mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) );
+			att.assign( mix( att, beam, smoothstep( 0, 0.08, dSun ) ) );
 
 		} );
 		return att;

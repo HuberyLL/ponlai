@@ -56,10 +56,10 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../wor
 //               `seaScale`: the direct term's with the water's deck gain in place of the land's
 //               gains, less what a cloudy deck's gaps take back under the cloud shadow,
 //               `seaGapScale`), and the key's light on level ground (the same
-//               fade and lifted height as its bounce below) under the cloud shadow at the probe
-//               (the key's, with the weather's floor, Sky.ts `keyCloudVisibility`, for the gaps'
-//               share too: the water drawn takes the shadow without it, so under cloudy's deck the
-//               sea's bounce gives back about a third of the deck's gain that the sea shows);
+//               fade and lifted height as its bounce below) under the clouds' own transmittance at
+//               the probe (Sky.ts `cloudVisibility`, for the gaps' share too: without the land's
+//               floor or a deck's gain, as the water drawn takes it, so the sea the probes see and
+//               the sea drawn are lit by one key);
 //               plus the sun's (or the moon's)
 //               bounce (pp. 32-33): the key reflected off an imaginary ground below and an
 //               imaginary wall facing it, the two directions its reflections come from
@@ -491,8 +491,12 @@ export interface AmbientRelightOptions {
 	sky: AmbientSky;
 	/** the displayed environment's cross-fade (Sky.ts `environmentWeights`) */
 	weights: () => { a: number; b: number; blend: number };
-	/** the cloud shadow's visibility of the key at a world point (Sky.ts `cloudVisibility`) */
+	/** the land's cloud shadow on the key at a world point, over the weather's floor (Sky.ts
+	 * `keyCloudVisibility`), for the key's bounce off the land */
 	cloud: ( position: V3 ) => F;
+	/** the clouds' own transmittance of the key at a world point (Sky.ts `cloudVisibility`), for the
+	 * sea's bounce, as the water drawn takes it */
+	seaCloud: ( position: V3 ) => F;
 	/** the sine of the elevation level ground takes the key's diffuse from (KeyLift.ts
 	 * `liftedKeyHeight`) */
 	keyHeight: () => number;
@@ -544,7 +548,7 @@ export class AmbientRelight {
 	 * shown or settled frame may light the island with it (main.ts's reveal and settled signal wait) */
 	ready = false;
 
-	constructor( { renderer, volume, shared, sky, weights, cloud, keyHeight, sunElevation, rising, clouded, overcast }: AmbientRelightOptions ) {
+	constructor( { renderer, volume, shared, sky, weights, cloud, seaCloud, keyHeight, sunElevation, rising, clouded, overcast }: AmbientRelightOptions ) {
 
 		this.renderer = renderer;
 		this.volume = volume;
@@ -556,7 +560,7 @@ export class AmbientRelight {
 		this.rising = rising;
 		this.clouded = clouded;
 		this.overcast = overcast;
-		this.kernel = this.buildRelight( cloud );
+		this.kernel = this.buildRelight( cloud, seaCloud );
 		volume.storageGain = () => this.storageGain();
 
 	}
@@ -720,7 +724,7 @@ export class AmbientRelight {
 	}
 
 	// The relight's kernel (see the header).
-	private buildRelight( cloud: ( position: V3 ) => F ): THREE.ComputeNode {
+	private buildRelight( cloud: ( position: V3 ) => F, seaCloud: ( position: V3 ) => F ): THREE.ComputeNode {
 
 		const v = this.volume, shared = this.shared;
 		const slots = storage( this.sky.slots, 'vec4', 2 * SKY_VEC4S ).toReadOnly();
@@ -747,10 +751,13 @@ export class AmbientRelight {
 			const scatter = [ 0, 1, 2 ].map( ( c ) => toMat3( Array.from( { length: 9 }, ( _, i ) => packed( i * 3 + c ) ) ).toVar() as unknown as M3 );
 			// the sea's visibility
 			const seaVisibility = toMat3( Array.from( { length: 9 }, ( _, i ) => P[ SEA_VEC4 + ( i >> 2 ) ][ ( [ 'x', 'y', 'z', 'w' ] as const )[ i & 3 ] ] as F ) ).toVar() as unknown as M3;
-			// the cloud shadow where the probe was baked (the open sea's at the box's centre)
+			// the cloud shadow where the probe was baked (the open sea's at the box's centre): the land's
+			// for the key's bounce, the sea's own for the sea's
 			const lattice = vec3( float( i ), float( j ), float( k ) ).mul( v.spacing ).add( v.origin ).add( P[ META_VEC4 ].xyz ).toVar();
 			const centre = vec3( this.seaPoint ).toVar();
-			const shade = cloud( select( inBox, lattice, centre ) ).toVar();
+			const at = select( inBox, lattice, centre ).toVar();
+			const shade = cloud( at ).toVar();
+			const seaShade = seaCloud( at ).toVar();
 			// the sky between the displayed environment's two slots
 			const a = this.slotA.mul( uint( SKY_VEC4S ) ).toVar(), b = this.slotB.mul( uint( SKY_VEC4S ) ).toVar();
 			const S = Array.from( { length: SKY_VEC4S }, ( _, n ) => mix( slots.element( a.add( uint( n ) ) ), slots.element( b.add( uint( n ) ) ), this.blend ).toVar() as unknown as V4 );
@@ -761,7 +768,7 @@ export class AmbientRelight {
 			const bounceScale = average.mul( this.skyScale ).mul( ambient.skyBounce ).toVar();
 			const sunScale = vec3( shared.landKey ).mul( shade ).mul( ambient.sunBounce ).div( Math.PI ).toVar();
 			// the sea's radiance as a level bounce surface
-			const seaLight = this.seaRadiance( Array.from( { length: 9 }, ( _, n ) => S[ n ].xyz as V3 ), this.seaScale.sub( this.seaGapScale.mul( shade ) ).toVar(), shade );
+			const seaLight = this.seaRadiance( Array.from( { length: 9 }, ( _, n ) => S[ n ].xyz as V3 ), this.seaScale.sub( this.seaGapScale.mul( seaShade ) ).toVar(), seaShade );
 			// the share of its in-scatter the key's bounce keeps: the probe's sky toward the key, over open
 			// level ground's, through SCATTER_GATE
 			const seen = coefficients( visibility ).reduce( ( sum: F, c, n ) => sum.add( c.mul( this.toward[ n >> 2 ][ ( [ 'x', 'y', 'z', 'w' ] as const )[ n & 3 ] ] ) ), float( 0 ) );

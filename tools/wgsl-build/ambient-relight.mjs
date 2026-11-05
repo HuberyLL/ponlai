@@ -29,7 +29,7 @@ export default function ( { renderer } ) {
 	source.minFilter = source.magFilter = THREE.LinearFilter;
 	const sky = new AmbientSky( renderer );
 	const { rows, groups, finish } = sky.build( source );
-	const relight = new AmbientRelight( { renderer, volume, shared, sky, weights: () => ( { a: 0, b: 1, blend: 0 } ), cloud: () => float( 1 ) } );
+	const relight = new AmbientRelight( { renderer, volume, shared, sky, weights: () => ( { a: 0, b: 1, blend: 0 } ), cloud: () => float( 1 ), seaCloud: () => float( 1 ) } );
 	const view = volume.buildView();
 	return [
 		[ 'AmbientSky.Rows', rows ],
