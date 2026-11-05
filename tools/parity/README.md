@@ -209,7 +209,11 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
   full query> )`, a frame at the jump's camera, then the view's eval, readiness and shot as after a
   load. Its contract (`src/main.ts`): the frame equals a fresh load's, byte for byte wherever the
   fresh load repeats. Only load-time options (quality, aa, size and dpr, the debug switches) need a
-  new page, and a set shares them. Each view's JSON has `page`: its visit on the page, `load` or
+  new page, and a set shares them. The jump undoes the scene's options and camera, not GUI or
+  console changes, so it covers views without an eval or with exactly a views.mjs view's eval
+  (`verify-scene-jump.mjs` checks those); after a view with an eval of its own (an ad-hoc view's
+  js: `adhoc.mjs` `jumpClean`) the page ends and the next view loads fresh, and an `--eval` or
+  `--eval-ready` passed through after `--` takes a page per view. Each view's JSON has `page`: its visit on the page, `load` or
   `jump`, the view before, the GPU lock wait and the capture's own time (ms), the page's memory then
   (JS heap, DOM nodes, listeners, renderer.info's geometries and textures).
 - Capability: a page marks the jump with `__PONLAI__.sceneJump` (the contract's version, 1).

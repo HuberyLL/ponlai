@@ -42,7 +42,7 @@
 // JSON records them as `readyEvals` (stdout as `eval-ready`), a throw failing the shot as above.
 // Under --frames n they run once, before the first frame.
 // tools/parity's capture-set runs the view's own eval first (same forms, not recorded: a throw
-// fails the view), then any given after its `--`.
+// fails the view), then any given after its `--` (which then take a page per view: Worker, below).
 // The GPU lock is taken once the page has its world (see "The slot after the world" below; the
 // load's goto waits for the DOM, not the load event, which waits for the gate).
 // A paused capture takes the GPU lock shared (its pixels do not depend on what else renders);
@@ -68,6 +68,11 @@
 //   older builds have an `establishScene` that takes only an options form and leaves state behind,
 //   so on them (and with --page-per-view) the worker stops after its first view, and capture-set
 //   starts a fresh worker per view: a page per view, as before.
+// - Evals the jump does not undo: the jump resets the scene's options and camera, not GUI or console
+//   changes (src/main.ts), so a view whose message says `last` (capture-set: an eval of its own
+//   that is not a views.mjs view's) ends its page after its shot, and the next view loads fresh.
+//   --eval and --eval-ready run on every view and may leave such changes too: with either, a page
+//   per view. Otherwise a view after an exposure offset set by the one before was shot a stop off.
 // - The GPU lock's slot is leased (gpu-lock.mjs `leaseGpuLock`): the worker keeps it from one view
 //   to the next, and gives it up before a view only when it has held it for --lease seconds (20) and
 //   a request ranked before its next one waits for it (an exclusive request, or a shared one when
@@ -411,7 +416,8 @@ if ( ! worker ) {
 	} );
 	// (capture-set gone: no orphaned browser; Playwright closes it on exit)
 	process.on( 'disconnect', () => process.exit( 1 ) );
-	const onePerPage = args.includes( '--page-per-view' );
+	// (--eval and --eval-ready run on every view and no jump undoes them: a page per view, see the header)
+	const onePerPage = args.includes( '--page-per-view' ) || argEvals.length > 0 || readyEvals.length > 0;
 	const viewDeadline = timeout * 3 + 60000;
 	const lease = Number( opt( 'lease', LEASE ) ) * 1000;
 	const session = await openPage( { viewport: { width: W, height: H }, deviceScaleFactor: Number( opt( 'scale', 1 ) ) } );
@@ -422,7 +428,7 @@ if ( ! worker ) {
 
 			const message = await next();
 			if ( message.type !== 'view' ) { releaseGpuLock(); break; }
-			const { key, query, evals, out } = message.view;
+			const { key, query, evals, out, last = false } = message.view;
 			const mode = index === 0 ? 'load' : 'jump';
 			const url = `${ baseUrl }?${ query }`;
 			const started = Date.now();
@@ -472,8 +478,9 @@ if ( ! worker ) {
 
 			}
 			await send( { type: 'shot', key, mode, from: previous, seconds: ( Date.now() - started - worldMs - lockMs ) / 1000, lockSeconds: lockMs / 1000, worldSeconds: worldMs / 1000, ...result } );
-			// a failed view leaves a page not to be trusted; without the jump, a page per view
-			if ( ! result.ok || ! jump || onePerPage ) { releaseGpuLock(); break; }
+			// a failed view leaves a page not to be trusted; without the jump, a page per view; after a
+			// view whose evals the jump does not undo (`last`), a fresh page for the next
+			if ( ! result.ok || ! jump || onePerPage || last ) { releaseGpuLock(); break; }
 			previous = key;
 
 		}
