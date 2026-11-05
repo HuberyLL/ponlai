@@ -614,19 +614,19 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 //
 // The cloud's form (Clouds.ts CLOUD_FORM, `setForm`): its soft margin, its
 // erosion's strength at the top (a share of the high cumulus'), the height over which its base
-// needs richer weather, its lanes and its base's masses, blended by the weather's shares like the
-// shell. Clear and fair keep the high cumulus' form. The base's height from 0.1 to 0.3 of the shell
-// moves the overcast masses' height on screen from 1.6 to 1.2 degrees (lower as it grows) and their
+// needs richer weather and its base's masses, blended by the weather's shares like the shell.
+// Clear and fair keep the high cumulus' form. The base's height from 0.1 to 0.3 of the shell moves
+// the overcast masses' height on screen from 1.6 to 1.2 degrees (lower as it grows) and their
 // edges little. Seen from 50-90 m up, through the clouded skies' own air (weather/HazeKeys.ts), the
-// deck's form shows: overcast's lanes keep a tenth or less of the density (0.08), split at the
-// lanes' field's median (0.55), so half the deck stands thinned in regions of kilometres, and a
-// lane's top comes down to 0.85 of the column (`laneTop`). The key's slant through the deck runs
-// kilometres along the sun's bearing: through lanes as deep as the rolls it crosses rolls on either
-// side, and the key's shadow keeps only small, faint patches drawn out along that bearing; through
-// shallower lanes the slant stays in the lane, and the key reaches the land in broad patches that
-// light the whole island at some cloud times and none of it at others. A lower top opens holes
-// through the deck;
-// overcast's base rises between its masses by 0.4 of the column (Clouds.ts MASS_LOW), which from
+// deck's form shows. Overcast's deck is closed: it keeps its whole density over the whole sky, its
+// column some tens deep in optical depth, so the sun's disc stays hidden behind it at any height of
+// the sun (the march stores no transmittance once under 0.003, some 6 deep along the view) and the
+// deck looks the same at every height of the sun. The light the land takes from the sun's side under
+// it is the weather's `deckFloor` (Weather.ts), whatever the deck's depth, through the sun's shadow
+// map; the sea and the air take the deck's own transmittance. A thinner deck shows the disc first
+// where its column is shallowest (the views with the sun in the middle of the frame, over several
+// cloud times); the land's light under it is tuned by `sky.deckFloor@overcast`, not by the deck.
+// Overcast's base rises between its masses by 0.4 of the column (Clouds.ts MASS_LOW), which from
 // 90 m over six cloud times puts the visible base (the march's opacity-weighted depth) at 0.88 km
 // at 20-30 degrees and 0.92 km at 30-45 (medians; p90 1.1-1.16 km) from the shell's 600 m, its
 // masses about 5.3 by 1.8 degrees in the 20-30 degree band (the luminance's correlation widths)
@@ -647,7 +647,7 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 // 0.22 under a sun of 20 - 50 degrees (0.12 - 0.14 with the margin either side), the edges about
 // 0.9 - 1.7 degrees, the lit cloud and the clear sky 2.8 times apart in scene radiance. Tunable
 // on debug pages:
-// `sky.clouds.edge|erosion|baseEnd|lanes|laneSplit|laneSoftness|laneTop|baseLift|inside@<cloudy|overcast>`.
+// `sky.clouds.edge|erosion|baseEnd|baseLift|inside@<cloudy|overcast>`.
 //
 // The phase of the cloud's light (`phaseForward`, `phaseBack`: the two lobes' asymmetries;
 // `phaseBackWeight`, the back lobe's multiple; `phaseBackShare`, its share where the light still gets
@@ -679,7 +679,7 @@ const CLOUD_SKIES: CloudSky[] = KEPT_SKIES.map( ( name ): CloudSky => name === '
 	base: 900, top: 3200, ...CLOUD_FORM, edge: 0.25, inside: 0.5, ...PHASE, phaseBackWeight: 2.16,
 	low: { large: 2, medium: 1, detail: 0.125, rise: 0.5, baseBand: 50, topBand: 575, fadeFrom: 10, nearFull: 10, nearNone: 5, farCover: 0, ambientRamp: 0, deckAmbient: 1 },
 } : name === 'overcast' ? {
-	base: 600, top: 3000, ...CLOUD_FORM, lanes: 0.08, laneSplit: 0.55, laneTop: 0.85, baseLift: 0.4, ...PHASE,
+	base: 600, top: 3000, ...CLOUD_FORM, baseLift: 0.4, ...PHASE,
 	low: { large: 2, medium: 1, detail: 1, rise: 4, baseBand: 600, topBand: 600, fadeFrom: 5, nearFull: 10, nearNone: 5, farCover: 0.12, ambientRamp: 600, deckAmbient: 1 },
 } : { ...HIGH_SHELL, ...CLOUD_FORM, ...PHASE, low: null } );
 for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
@@ -693,10 +693,8 @@ export const cloudBase = ( s: number ): number => CLOUD_SKIES[ s ].base;
 for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 
 	tuneObject( CLOUD_SKIES[ s ], { edge: `sky.clouds.edge@${ name }`, erosion: `sky.clouds.erosion@${ name }`, baseEnd: `sky.clouds.baseEnd@${ name }`,
-		lanes: `sky.clouds.lanes@${ name }`, laneSplit: `sky.clouds.laneSplit@${ name }`, laneSoftness: `sky.clouds.laneSoftness@${ name }`, laneTop: `sky.clouds.laneTop@${ name }`, baseLift: `sky.clouds.baseLift@${ name }`,
-		inside: `sky.clouds.inside@${ name }` },
+		baseLift: `sky.clouds.baseLift@${ name }`, inside: `sky.clouds.inside@${ name }` },
 	{ edge: { min: 0.05, max: 0.4, onChange: markSkyRetune }, erosion: { min: 0.3, max: 1.2, onChange: markSkyRetune }, baseEnd: { min: 0.05, max: 0.4, onChange: markSkyRetune },
-		lanes: { min: 0.02, max: 1, onChange: markSkyRetune }, laneSplit: { min: 0.2, max: 0.9, onChange: markSkyRetune }, laneSoftness: { min: 0.005, max: 0.2, onChange: markSkyRetune }, laneTop: { min: 0.1, max: 1, onChange: markSkyRetune },
 		baseLift: { min: 0, max: 0.8, onChange: markSkyRetune }, inside: { min: 0, max: 1, onChange: markSkyRetune } } );
 
 }
@@ -1921,7 +1919,7 @@ export class Sky {
 		const base = shell( 'base' );
 		clouds.setDeck( base, shell( 'top' ) - base, skyMix ? cloudedShare( skyMix ) : 0 );
 		const form = ( key: keyof typeof CLOUD_FORM ) => skyMix ? CLOUD_SKIES.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k[ key ], 0 ) : CLOUD_FORM[ key ];
-		clouds.setForm( form( 'edge' ), form( 'erosion' ), form( 'baseEnd' ), form( 'lanes' ), form( 'laneSplit' ), form( 'laneSoftness' ), form( 'laneTop' ), form( 'baseLift' ), form( 'inside' ) );
+		clouds.setForm( form( 'edge' ), form( 'erosion' ), form( 'baseEnd' ), form( 'baseLift' ), form( 'inside' ) );
 		clouds.coverageFrom.value = front ? front.from.coverage : coverage;
 		clouds.coverageTo.value = front ? front.to.coverage : coverage;
 		clouds.densityFrom.value = front ? front.from.density : clouds.density.value;

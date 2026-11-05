@@ -18,7 +18,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, Break, Continue, uniform, uv, texture, texture3D, storageTexture, textureStore, textureLoad, instanceIndex, instancedArray, storage, uint, int, float,
 	vec2, vec3, vec4, ivec2, uvec3, fract, dot, mix, smoothstep, clamp, max, min, exp, log2, sqrt, select,
-	asin, acos, atan, cos, sin, normalize, floor, abs, length, not, pow,
+	asin, acos, atan, cos, sin, normalize, floor, abs, length, not,
 } from 'three/tsl';
 import { bakeSynoptic, loadCloudShape } from '../materials/CloudNoise.ts';
 import { bakeStreaks, sampleStreaks } from './Streaks.ts';
@@ -51,11 +51,9 @@ type V4 = THREE.Node<'vec4'>;
 //     the dome's haze over the clouds (Sky.ts), the haze's shafts (VolumetricHaze.ts) and the
 //     lightning (Lightning.ts). The form is the weather's too (`setForm`, Sky.ts CLOUD_SKIES):
 //     the soft margin, the erosion's strength at the top, the height over which a base needs
-//     the richer weather, the lanes and the base's masses, the high cumulus' (CLOUD_FORM) under
-//     clear and fair skies. A deck with lanes (overcast's) thins its whole column where a field of
-//     its own stays low (the weather map's second channel, WEATHER_LANES), to `lanes` of the
-//     density at the field's lowest, so it parts into kilometres of thick deck and thinned regions
-//     between them rather than into rolls and holes. A deck with masses (overcast's) hangs its base
+//     the richer weather and the base's masses, the high cumulus' (CLOUD_FORM) under clear and
+//     fair skies. Overcast's deck is closed and keeps its whole density everywhere, so its disc
+//     never shows through it (Sky.ts CLOUD_SKIES). A deck with masses (overcast's) hangs its base
 //     from the shell's bottom where the shape noise stands high and raises it between (MASS_LOW,
 //     MASS_HIGH, `baseLift`), so its base parts into round masses under a higher, eroded floor.
 //     The light march sees that rise only for a key above about 10 degrees (`keyLift`, Sky.ts
@@ -121,7 +119,7 @@ type V4 = THREE.Node<'vec4'>;
 //     brightening toward the sun's place. Under overcast's share (`broadShare`) the march keeps for
 //     each step the core's share by the key's transmittance there (`columnCore`) and gives the rest
 //     a broad lobe (OVERCAST_BROAD, 0.5: about four scatterings), the whole lobe weighted
-//     OVERCAST_WEIGHT (1); the air under the deck, which takes the whole deck's light, takes the
+//     OVERCAST_WEIGHT (2.4); the air under the deck, which takes the whole deck's light, takes the
 //     broad lobe alone. In a deck of finite depth the
 //     light that has been scattered many times still leans forward, the less the deeper it went, so
 //     the broad lobe keeps a forward mean cosine rather than the diffusion limit's none, and the
@@ -129,7 +127,11 @@ type V4 = THREE.Node<'vec4'>;
 //     fitted by least squares, with the exposure's key, on the sky toward a sun of 18 degrees from
 //     90 m together with the deck away from the sun and the meadow and crowns at eye height: the
 //     width sets how far the glow spreads into the deck round the sun's place, the weight the sky
-//     toward the sun against the deck away from it. The narrow core alone puts most of its light
+//     toward the sun against the deck away from it. On the closed deck the weight is set again by
+//     the sky toward the sun alone: the median scene luminance of the sky toward a sun of 30 degrees
+//     (an island view) and of 18 degrees (from 90 m) keeps the fit's within 6 %, the closed deck
+//     leaving the narrow core almost nothing; the deck away from the sun then reads about a third
+//     darker than in the fit, which the deck's own form sets, not the lobe. The narrow core alone puts most of its light
 //     within 15 degrees of the key (0 : 15 : 30 : 45 degrees about 110 : 16 : 3 : 1), the broad
 //     lobe about 3.2 : 2.6 : 1.7 : 1. The glow takes the sun's colour above the tops, which keeps
 //     it near grey under a low sun as under a high one. The weight and the lobe are the form's own,
@@ -268,16 +270,12 @@ const EROSION_BASE = 0.24, EROSION_PEAK = 2.15;
 const BASE_WEATHER = 0.54, BASE_WEATHER_END = 0.13; // bases need richer weather
 // The cloud's form the high cumulus takes (clear's and fair's), which a weather's own form scales
 // or replaces (`setForm`; Sky.ts CLOUD_FORM): the soft margin, the erosion's strength at the top
-// as a share of EROSION_PEAK, the height over which the base needs richer weather, and the lanes:
-// the density's share left where the lanes' field (WEATHER_LANES) stays under `laneSplit`, rising
-// as a power of it to the whole density over `laneSoftness` either side of it (1, none: the
-// cumulus' columns are its clouds and gaps), and the share of the column under the top a lane
-// keeps (`laneTop`, 1: the lane as deep as the rolls), the base's masses: how far the base rises between
-// them, a share of the column under the top (`baseLift`, 0: a base resting on the weather alone),
-// and where the tops' margin lies: `inside` 0 spreads it either side of a column's top, 1 moves it
-// a margin's half width into the column, so the whole margin lies inside the cloud and the open
-// sky beyond the column keeps no cloud.
-export const CLOUD_FORM = { edge: EDGE, erosion: 1, baseEnd: BASE_WEATHER_END, lanes: 1, laneSplit: 0.43, laneSoftness: 0.05, laneTop: 1, baseLift: 0, inside: 0 } as const;
+// as a share of EROSION_PEAK, the height over which the base needs richer weather, the base's
+// masses: how far the base rises between them, a share of the column under the top (`baseLift`,
+// 0: a base resting on the weather alone), and where the tops' margin lies: `inside` 0 spreads it
+// either side of a column's top, 1 moves it a margin's half width into the column, so the whole
+// margin lies inside the cloud and the open sky beyond the column keeps no cloud.
+export const CLOUD_FORM = { edge: EDGE, erosion: 1, baseEnd: BASE_WEATHER_END, baseLift: 0, inside: 0 } as const;
 // The base's masses: the base hangs from the shell's bottom by the shape noise's weighted channels
 // (the dilation's own sample, over BASE_STRENGTH), lowest where they reach MASS_HIGH (the noise's
 // p90) and risen by the whole `baseLift` where they fall to MASS_LOW (its p30), a smooth step
@@ -515,9 +513,10 @@ export const OVERCAST_LOBE = 0.85;
 // Under overcast's share the lobe spreads with the deck's depth (see the header): the share of it
 // still in the narrow core is the key's transmittance to the step to the power ( 1 - g ), g the
 // core's mean cosine, and the rest takes a broad lobe of mean cosine OVERCAST_BROAD; the whole
-// lobe's weight is OVERCAST_WEIGHT. Both fitted on the overcast sky toward a sun of 18 degrees
+// lobe's weight is OVERCAST_WEIGHT, which sets how bright the deck glows toward the sun's place:
+// fitted on the overcast sky toward a sun of 18 degrees, the weight set again on the closed deck
 // (see the header).
-export const OVERCAST_BROAD = 0.5, OVERCAST_WEIGHT = 1;
+export const OVERCAST_BROAD = 0.5, OVERCAST_WEIGHT = 2.4;
 
 /** The forward lobe's light on level ground: the integral over the upper hemisphere of a
  * Henyey-Greenstein lobe of mean cosine g about a key of height mu0 (its direction's y), each
@@ -563,15 +562,6 @@ const coneLod = ( footprint: F, scale: number ) => max( log2( max( footprint.mul
 
 // The weather map: Sky Pro's fBm of hashed gradient noise, tileable.
 const WEATHER_MASS = [ 4, 5, 0, 1.32 ], WEATHER_DETAIL = [ 6, 6, 1, 0.13 ], WEATHER_COVERAGE = 0.26;
-// The lanes' field, in the weather map's second channel: an fbm of its own (base frequency per
-// tile, octaves, slice), its masses about 3.2 km apart in the low deck's space, where a deck with
-// lanes thins (CLOUD_FORM `lanes`). Its p20 is 0.43 (CLOUD_FORM `laneSplit`), its median 0.5;
-// measured on the map, the parts under the p20 are a fifth of the plane in regions of 2 to 6 km
-// (the area's quartiles), the field crossing 0.1 about them over some 760 m, so a region's edge
-// is a soft slope through the column, not a wall. Masses 1.7 km apart thinned the deck in lanes
-// finer than its own masses, whose edges, a column high, read far off as boxes with straight
-// sides.
-const WEATHER_LANES = [ 6, 4, 3 ];
 const weatherGradient = ( cell: THREE.Node<'uvec3'>, offset: V3 ) => {
 
 	const seed = ( v: THREE.Node<'uint'> ) => v.mul( uint( 1664525 ) ).add( uint( 1013904223 ) ).toVar();
@@ -771,13 +761,6 @@ export class Clouds {
 	readonly edgeIn = uniform( 0 );
 	readonly erosionPeak = uniform( EROSION_PEAK );
 	readonly baseWeatherEnd = uniform( BASE_WEATHER_END );
-	// the lanes: the density's share left in a lane, the lanes' field's split between the lanes and
-	// the rolls and the half width of the step between them (CLOUD_FORM)
-	readonly lanes = uniform( 1 );
-	readonly laneSplit = uniform( 0.43 );
-	readonly laneSoftness = uniform( 0.05 );
-	// the share of the column (over the base's rise) a lane keeps under its top (CLOUD_FORM `laneTop`)
-	readonly laneTop = uniform( 1 );
 	// the base's rise between its masses, a share of the column (CLOUD_FORM `baseLift`, MASS_LOW)
 	readonly baseLift = uniform( 0 );
 	// The share of that rise the light march sees (Sky.ts trackClouds, from the key's elevation).
@@ -970,7 +953,8 @@ export class Clouds {
 			const q = vec2( c ).div( WEATHER_RES ).toVar();
 			const mass = sat( weatherFbm( q, WEATHER_MASS ).sub( 0.5 ).mul( WEATHER_MASS[ 3 ] ).add( 0.5 ) );
 			const detail = weatherFbm( q, WEATHER_DETAIL ).mul( 2 ).sub( 1 ).mul( WEATHER_DETAIL[ 3 ] );
-			textureStore( weather, c, vec4( sat( mass.add( detail ).add( WEATHER_COVERAGE - 0.5 ) ), sat( weatherFbm( q, WEATHER_LANES ) ), 0, 1 ) );
+			// (the second channel is free: nothing reads it)
+			textureStore( weather, c, vec4( sat( mass.add( detail ).add( WEATHER_COVERAGE - 0.5 ) ), 0, 0, 1 ) );
 
 		} )().compute( WEATHER_RES * WEATHER_RES, [ 64 ] ).setName( 'Clouds.Weather' );
 		// The most cloud-capable weather in each cell of a coarse grid, including the texels its
@@ -1120,7 +1104,7 @@ export class Clouds {
 		const candidate = ( p: V3, coverage: F, lods: V4, lift: F = this.baseLift ) => {
 
 			const h = shellHeight( p ).toVar();
-			const c = { conservative: float( 0 ).toVar(), top: float( 0 ).toVar(), floorMask: float( 0 ).toVar(), lane: float( 1 ).toVar(), lift: float( 0 ).toVar(), h, coverage, lods, positions: [ vec3( 0 ).toVar(), vec3( 0 ).toVar() ] as const };
+			const c = { conservative: float( 0 ).toVar(), top: float( 0 ).toVar(), floorMask: float( 0 ).toVar(), lift: float( 0 ).toVar(), h, coverage, lods, positions: [ vec3( 0 ).toVar(), vec3( 0 ).toVar() ] as const };
 			If( h.greaterThan( - 0.1 ).and( h.lessThan( 1.3 ) ).and( coverage.greaterThan( 0 ) ), () => {
 
 				const w = weatherAt( p.xz );
@@ -1153,28 +1137,6 @@ export class Clouds {
 
 						const mass = smoothstep( MASS_LOW, MASS_HIGH, dilation.div( BASE_STRENGTH ) );
 						c.lift.assign( lift.mul( float( 1 ).sub( mass ) ).mul( max( c.top, 0 ) ) );
-
-					} );
-					// The lanes: where their field stays low the whole column keeps `lanes` of the
-					// density, so the deck parts into thick rolls and thin lanes between them rather
-					// than into rolls and holes. Lanes keyed on the tops' own height fell into the
-					// dilation's kilometre and its hard edges; a field of their own keeps them apart
-					// from it. Across the step the density's share rises as a power (its logarithm
-					// linear), not linearly: the light through a column falls with its optical depth's
-					// first few units, so a linear step brightened only the lane's core and drew a
-					// hard rim round it. A sky without lanes skips it and keeps its density to the bit.
-					If( this.lanes.lessThan( 1 ), () => {
-
-						const field = bySpace( () => weatherNode.sample( weatherUV( p.xz, 0 ) ).level( float( 0 ) ).g, () => weatherNode.sample( weatherUV( p.xz, 1 ) ).level( float( 0 ) ).g );
-						const step = smoothstep( this.laneSplit.sub( this.laneSoftness ), this.laneSplit.add( this.laneSoftness ), field );
-						c.lane.assign( pow( this.lanes, float( 1 ).sub( step ) ) );
-						c.floorMask.assign( c.floorMask.mul( c.lane ) );
-						// A lane is shallower as well as thinner: its top comes down toward the base's
-						// rise to `laneTop` of the column, across the same step. The key's slant through
-						// the deck spans kilometres along the sun's bearing, so through a lane as deep as
-						// the rolls it runs through roll on either side and smears the lane's light along
-						// that bearing; a shallow lane's slant stays in the lane.
-						c.top.assign( c.lift.add( c.top.sub( c.lift ).mul( mix( this.laneTop, float( 1 ), step ) ) ) );
 
 					} );
 					c.conservative.assign( smoothstep( edge.negate(), edge, c.top.sub( this.edgeIn ).sub( h ) ).mul( smoothstep( edge.negate(), edge, h.sub( c.lift ) ) ).mul( c.floorMask ) );
@@ -1480,7 +1442,7 @@ export class Clouds {
 					// darker than their seams, and the deck's level follows its own optical depth.
 					const shadowed = float( 1 ).sub( scaledT );
 					ambientLight.addAssign( alpha.mul( height.mul( shadowed ).mul( float( 1 ).sub( this.lowShare ) ).add( scaledT ) ) );
-					const columnTau = max( min( c.top, 1 ).sub( c.coverage.mul( this.erosionPeak.mul( erosionMean ) ) ).sub( c.h ), 0 ).mul( c.lane ).mul( this.shellThickness ).mul( front.y.mul( DENSITY ) );
+					const columnTau = max( min( c.top, 1 ).sub( c.coverage.mul( this.erosionPeak.mul( erosionMean ) ) ).sub( c.h ), 0 ).mul( this.shellThickness ).mul( front.y.mul( DENSITY ) );
 					const columnT = float( 1 ).div( columnTau.mul( 0.75 * ( 1 - LOBE.forward ) ).add( 1 ) );
 					// (only under a low deck's share: a sky without one multiplies it away, and every
 					// sample of a clear or fair march paid for it)
@@ -2737,19 +2699,14 @@ export class Clouds {
 
 	/** The cloud's form (CLOUD_FORM's terms), which Sky.ts blends by the sky's shares: the soft
 	 * margin, the erosion's strength at the top as a share of the high cumulus', the height over
-	 * which a base needs richer weather, the lanes (the density's share left in a lane, the
-	 * lanes' field's split, the step's half width, the column's share under a lane's top), the base's rise between its masses and how far
-	 * the tops' margin lies inside the column (a share of its half width). */
-	setForm( edge: number, erosion: number, baseEnd: number, lanes: number, laneSplit: number, laneSoftness: number, laneTop: number, baseLift: number, inside: number ): void {
+	 * which a base needs richer weather, the base's rise between its masses and how far the tops'
+	 * margin lies inside the column (a share of its half width). */
+	setForm( edge: number, erosion: number, baseEnd: number, baseLift: number, inside: number ): void {
 
 		this.edge.value = edge;
 		this.edgeIn.value = edge * inside;
 		this.erosionPeak.value = EROSION_PEAK * erosion;
 		this.baseWeatherEnd.value = baseEnd;
-		this.lanes.value = lanes;
-		this.laneSplit.value = laneSplit;
-		this.laneSoftness.value = laneSoftness;
-		this.laneTop.value = laneTop;
 		this.baseLift.value = baseLift;
 
 	}
