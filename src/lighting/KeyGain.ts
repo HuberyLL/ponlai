@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { Fn, If, dot, float, max, mix, pow, smoothstep, uniform, vec3 } from 'three/tsl';
 import { shared } from '../shared.ts';
 import { liftKeyWorld } from './KeyLift.ts';
+import { keyCloudReaders } from './KeyCloud.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -126,24 +127,14 @@ export const keyLobeRadiance = Fn( ( [ R, L, t ]: [ V3, V3, F ] ) => {
 
 } ).setLayout( { name: 'keyLobeRadiance', type: 'float', inputs: [ { name: 'R', type: 'vec3' }, { name: 'L', type: 'vec3' }, { name: 't', type: 'float' } ] } );
 
-/** The clouds' transmittance along the key at a world position and the weather's floor under it,
- * set by the sky (Sky.ts). */
-let keyCloud: ( ( position: V3 ) => F ) | null = null;
-let keyFloor: F | null = null;
-export function setKeyCloud( cloud: ( position: V3 ) => F, floor: F ): void {
-
-	keyCloud = cloud;
-	keyFloor = floor;
-
-}
-
 /** The lobe's irradiance at world position `P` and world normal `N` (see the header): none where
  * the gain is 1, or before the sky has set the clouds. */
 export function keyLobeLight( P: V3, N: V3 ): V3 {
 
 	const E = vec3( 0 ).toVar();
-	const cloud = keyCloud, floor = keyFloor;
-	if ( ! cloud || ! floor ) return E;
+	const readers = keyCloudReaders();
+	if ( ! readers ) return E;
+	const { cloud, floor } = readers;
 	If( keyDeckGain.greaterThan( 1 ), () => {
 
 		const t = cloud( P ).toVar();

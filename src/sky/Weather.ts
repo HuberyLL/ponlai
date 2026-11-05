@@ -171,7 +171,8 @@ export interface WeatherState {
 	cloudFloor: number;
 	// The clouds' shadow floor that takes over from `cloudFloor` under a deck (`deckTakeover`): under
 	// a deck the land's key keeps this share whatever the deck's depth (Sky.ts `keyDirectVisibility`),
-	// through the sun's map, so the island's cast shadows show under it. Overcast has one; clear and
+	// through the sun's map, so the island's cast shadows show under it; it fades with the sun's
+	// share of the key (Sky.ts `track`), so the moon takes none. Overcast has one; clear and
 	// fair none (a floor there would show the takeover's step when a deck comes in); cloudy none so
 	// far; the parked skies none, their key reaching the land only through the deck's own
 	// transmittance. Raise it for a stronger directional light and darker cast shadows under the
@@ -275,9 +276,10 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // it is the direct key, so it takes the sun's map, the meadow's screen-space shade and the canopy's
 // light, and the island's cast shadows show under the deck (`castShadow` 1), soft because the sky's
 // light is the larger share, save the sward's on itself, whose shade in the key is its canopy's
-// (post/MeadowShade.ts `swardShadeRelease`). The water and the air take the clouds' own
-// transmittance. Overcast is a closed deck deep enough that its disc does not show (Sky.ts
-// `domeColour`): the land under it is even, its sky the deck's own glow about the sun's place, which
+// (post/MeadowShade.ts `swardShadeRelease`). The floor fades with the sun's share of the key, so
+// the moon takes none. The water and the air take the clouds' own transmittance. Overcast is a
+// closed deck deep enough that its disc does not show (Sky.ts `domeColour`): the land under it is
+// even, its sky the deck's own glow about the sun's place, which
 // the land takes with the rest of the sky (lighting/AmbientRelight.ts OVERCAST_LAND, CLOUDY_LAND) and
 // the water by DECK_SKY_GAIN; exposed by the sky (post/Exposure.ts).
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {

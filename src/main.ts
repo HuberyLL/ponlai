@@ -14,10 +14,11 @@ import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, nightAmbientShare, sunRising, type DayPreset } from './sky/DayCycle.ts';
-import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckRamp, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, overcastDeckLight, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
+import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckLight, deckRamp, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, overcastDeckLight, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
 import { keyDeckGain } from './lighting/KeyGain.ts';
+import { keyDeckShare } from './lighting/KeyCloud.ts';
 import { Wind, weatherWind } from './weather/Wind.ts';
 import { Rain, setRainShading } from './weather/Rain.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
@@ -457,6 +458,9 @@ function publishLighting(): void {
 	const keyGain = 1 + ( OVERCAST_KEY_GAIN() - 1 ) * overcast * overcastDeckLight( sky.elevation ) + ( CLOUDY_KEY_GAIN() - 1 ) * cloudy * deckRamp( sky.elevation );
 	sun.color.copy( sky.keyColor );
 	keyDeckGain.value = keyGain;
+	// how far the open key on the land is its floor's under a deck: the islanders read their cast
+	// shadow against it (lighting/KeyCloud.ts `keyDeckShare`)
+	keyDeckShare.value = deckLight( sky.elevation, cloudedShare( weather.skyMix ), overcast );
 	shared.landKey.value.set( sun.color.r * keyGain, sun.color.g * keyGain, sun.color.b * keyGain );
 	// the sward's shade release: under overcast's deck the sward's own shade in the key is its
 	// canopy's (post/MeadowShade.ts `swardShadeRelease`)
