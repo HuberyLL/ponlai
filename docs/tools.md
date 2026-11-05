@@ -1426,15 +1426,19 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   first prototype's rules (needs, thirst off, the bag, fishing, the chest placed as a blueprint and
   built, several chests with stable ids, two builders on one site, the actions, the perception, the stand-in brain over a few game days, a save mid-action), the save file
   (`src/game/save.ts`: the simulation and the record read back as written and played on the same,
-  a version-17 save carried over, saves no step reaches refused) and the island's growth; its island is in
-  `tools/game-fixture.mjs`.
+  a version-17 save carried over, saves no step reaches refused), the island's growth and the
+  session the page and the play tool run the game in (`src/game/Session.ts`: the record's first
+  look, the skies of its frames, the leader's words heard, a save read into another session, the
+  growth asked of its host); its island is in `tools/game-fixture.mjs`.
 - `tools/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow] [--population 0]
   [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>] [--latency 90] [--thoughts]
   [--out dir]`
-  (plain `node`) plays the game headless, as the page runs it (a tick at a time, the record looking
-  after each, the leader's lines and the growth between ticks), and writes what happened to
-  `artifacts/play/<stamp>/` (`--out`): `transcript.md` (day by day, the record's entries, the
-  islanders' actions with their outcomes, consecutive alike ones merged, their words, needs every
+  (plain `node`) plays the game headless in the page's own session (`src/game/Session.ts`, nothing
+  copied from the page: a frame of one tick at a time, a growth due asked for before it, the record
+  looking after each, the leader's lines between them), and writes what happened to
+  `artifacts/play/<stamp>/` (`--out`): `transcript.md` (day by day, the record's entries in the
+  record page's words, `src/game/ui/data/record.ts` and its catalogue, so a new kind of entry needs
+  no change to the tool; the islanders' actions with their outcomes, consecutive alike ones merged, their words, needs every
   six game hours and a table per day), `timeline.json` (every islander each game hour: position,
   needs, bag, action), `summary.json` (per islander the share of time by activity, each need's
   lowest, mean and highest, each item's flows by the call that moved it, so a new need, item or
@@ -1445,7 +1449,7 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   blueprints down at the start (at the first ground that takes one without a point), `--population`
   adds islanders, `--grow` adds the next piece when the population reaches a step, and `--script`
   has the leader speak at given times (`[ { "at": "d1 08:30", "to": "all" | [ "v1" ], "words": "..." } ]`),
-  as the speak bar does (`Game.speak`, mirrored). `--brain` takes a module whose `createBrain` (or
+  as the speak bar does (`Session.speak`). `--brain` takes a module whose `createBrain` (or
   default export) receives `{ heard, takeHeard, hasHeard, islander, note, options }` and returns a
   Brain; an asynchronous one's answers land `--latency` game seconds after each thought is asked
   (90: three real seconds at the default day clock), the run waiting for an answer that takes longer,

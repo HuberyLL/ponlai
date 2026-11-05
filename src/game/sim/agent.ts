@@ -70,7 +70,7 @@ export interface Perception {
 export interface Brain {
 	think( perception: Perception, who: EntityId ): ToolCall[] | Promise<ToolCall[]>;
 	/** whether it hears the player's words: the game asks it for a thought as they are said
-	 * (Game.speak, Game.takeHeard); the stand-in does not */
+	 * (Session.speak, Session.takeHeard); the stand-in does not */
 	readonly hears?: boolean;
 }
 

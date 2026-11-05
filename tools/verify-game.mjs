@@ -13,7 +13,11 @@
 // entries the original keeps, a game resumed at its start included); then the island's growth: a land grown by IslandGrowth, the population steps, the
 // coming piece's cells, a step crossed adding exactly one piece, the grid opening cells without
 // reindexing, islanders walking onto the new piece, the shore moving to the new coast as on a
-// fresh load, and a save that keeps its piece count; then the islanders among themselves: words
+// fresh load, and a save that keeps its piece count; then the session the page and the play tool
+// run the game in (src/game/Session.ts): the islanders landing at the record's first look and a
+// blueprint placed after it noted as the player's, the sky noted over the ticks since the last look,
+// the leader's words heard by a brain that hears, a save read back into another session, and a
+// growth asked once while its piece is on the way and not again when none came; then the islanders among themselves: words
 // heard within earshot and noticed until the next thought, the others in sight by name, age and
 // what they do, `do` naming its place, giving (and its refusals and record entry), going to someone
 // who walks away, following until replaced or the one followed dies, the stand-in asking for food
@@ -36,6 +40,7 @@ import { ageOf, drawLifespan } from '../src/game/sim/life.ts';
 import { minuteOf } from '../src/game/sim/clock.ts';
 import { SAVE_VERSION, readSave, savedPieces, writeSave } from '../src/game/save.ts';
 import { Chronicle } from '../src/game/Chronicle.ts';
+import { Session } from '../src/game/Session.ts';
 import { shortfall, stockOf } from '../src/game/sim/stock.ts';
 import { shoreMask } from '../src/game/sim/ground.ts';
 import { exp, log } from '../src/game/sim/maths.ts';
@@ -776,22 +781,19 @@ function buildChest( sim ) {
 	sim.walkTo( kai.id, far );
 	const planned = kai.path.map( ( p ) => grid.indexAt( p.x, p.z ) );
 
-	// a population crossing the step: the page's loop (Game.update) grows once while due, and the
-	// swap hands the land back as addPiece; then nothing more is due
+	// a population crossing the step: the session's frames (Session.advance) ask the host to grow
+	// once while due, and the host hands the land back (the page's swap); then nothing more is due
+	let grows = 0;
+	const session = new Session( input, { grow: () => {
+
+		grows ++;
+		session.setIsland( next );
+
+	} }, null );
+	session.install( sim );
 	sim.addIslander();
 	assert.equal( sim.approach(), 1 );
-	let grows = 0;
-	for ( let frame = 0; frame < 120; frame ++ ) {
-
-		if ( sim.growthDue() ) {
-
-			grows ++;
-			sim.addPiece( next );
-
-		}
-		sim.step( 10 );
-
-	}
+	for ( let frame = 0; frame < 120; frame ++ ) session.advance( 10, SECONDS_PER_GAME_DAY );
 	assert.equal( grows, 1, 'a step crossed grows exactly one piece' );
 	assert.equal( sim.state.pieces, 1 );
 	assert.equal( sim.approach(), 0, '5 islanders: the start of the next step' );
@@ -872,6 +874,135 @@ function buildChest( sim ) {
 	// a new game on a grown island starts at its piece count
 	assert.equal( newGame( next, { pieces: 1 } ).state.pieces, 1 );
 	console.log( `growth: ${ ( gained * 0.0625 ).toFixed( 0 ) } m^2 of land, ${ comingCells } coming cells opened at 5 islanders, one piece, ${ sim.population() } islanders walked onto it; the shore moved (${ newShore } cells on the piece, ${ inland } inland); saved at 1 piece and loaded back` );
+
+}
+
+// ------------------------------------------------------------------ the session
+
+// the game around the simulation (Session.ts), as the page and the play tool host it: the record's
+// first look lands a new game's islanders and notes a blueprint placed after it as the player's; the
+// ticks of frames wait for the record's look, which notes the sky shown over them; the leader's
+// words reach a brain that hears; a growth is asked once while due, its piece coming at once, later
+// or never; a save reads back into another session as written
+{
+
+	const frames = ( session, n ) => {
+
+		for ( let k = 0; k < n; k ++ ) session.advance( 1, SECONDS_PER_GAME_DAY );
+
+	};
+	const session = new Session( input, { grow: () => {} }, null );
+	const sim = newGame( input, { seed: 5 } );
+	session.install( sim );
+	const record = session.record;
+	assert.deepEqual( record.entries.map( ( e ) => [ e.kind, e.who, e.day, e.minute ] ), sim.state.villagers.map( ( v ) => [ 'landed', v.id, 1, 480 ] ), 'a new game\'s islanders land at its start' );
+	const chest = placeChest( sim );
+	session.look( null );
+	assert.deepEqual( record.entries.at( - 1 ), { kind: 'placed', who: 'player', text: 'chest', subject: chest.id, day: 1, minute: 480 }, 'a blueprint placed after the first look is the player\'s' );
+
+	// a frame of a real second at a day of as many real seconds runs a tick
+	assert.equal( session.advance( 1, SECONDS_PER_GAME_DAY ), 1 );
+	frames( session, HOUR - 1 );
+	session.look( 'fair' );
+	frames( session, HOUR / 2 );
+	session.look( null );
+	frames( session, HOUR / 2 );
+	session.look( 'cloudy' );
+	assert.deepEqual( record.save().skies, { 1: { fair: 1, cloudy: 0.5 } }, 'the record notes the sky shown over the ticks since its last look, none headless' );
+
+	// the leader's words go into the record; a brain that hears keeps them for each listener's next
+	// thought and is asked for one now
+	const [ a, b, c ] = sim.state.villagers.map( ( v ) => v.id ), asked = [];
+	session.speak( '  words  ', 'all' );
+	assert.deepEqual( record.entries.at( - 1 ), { kind: 'said', who: 'player', to: 'all', text: 'words', day: 1, minute: 600 } );
+	assert.equal( session.hears(), false );
+	assert.equal( session.hasHeard( a ), false, 'no brain that hears: no words wait' );
+	const hearing = { hears: true, think: ( perception, id ) => {
+
+		asked.push( id );
+		return [];
+
+	} };
+	session.setBrain( hearing );
+	assert.equal( session.hears(), true );
+	session.speak( 'come', [ a, b ] );
+	session.speak( 'eat', 'all' );
+	assert.deepEqual( asked, [ a, b, a, b, c ], 'each listener is asked for a thought as the words are said' );
+	assert.deepEqual( session.takeHeard( a ), [ 'come', 'eat' ], 'oldest first' );
+	assert.deepEqual( session.takeHeard( a ), [], 'taken once' );
+	assert.equal( session.hasHeard( c ), true );
+	const said = record.entries.length;
+	session.speak( '   ', 'all' );
+	assert.equal( record.entries.length, said, 'no words, nothing said' );
+	session.setBrain( null );
+	assert.equal( session.hasHeard( c ), false, 'another brain hears none of the old words' );
+
+	// a save reads back into another session: the simulation and the record as written, and both
+	// play on the same
+	const json = session.save( 'fair' );
+	const other = new Session( input, { grow: () => {} }, null );
+	const saved = other.read( json );
+	other.install( saved.sim, saved.record );
+	assert.equal( other.sim.save(), sim.save(), 'the simulation reads back' );
+	assert.equal( JSON.stringify( other.record.save() ), JSON.stringify( record.save() ), 'the record reads back, and its first look notes nothing again' );
+	frames( session, HOUR );
+	session.look( 'fair' );
+	frames( other, HOUR );
+	other.look( 'fair' );
+	assert.equal( other.sim.save(), sim.save(), 'and plays on as the original' );
+	assert.equal( JSON.stringify( other.record.save() ), JSON.stringify( record.save() ), 'its record too' );
+	assert.equal( other.read( null ), null, 'no save' );
+	assert.equal( other.read( JSON.stringify( { ...JSON.parse( json ), version: SAVE_VERSION + 1 } ) ), null, 'another version\'s save' );
+
+	// the growth: asked of the host once a step is due and none is under way; a piece that comes
+	// later (the page's swap) is waited for, a grow that brought none is not asked again
+	const grown = ( host ) => {
+
+		const game = newGame( input, { seed: 5 } ), s = new Session( input, host, null );
+		game.addIslander();
+		game.addIslander();
+		s.install( game );
+		return s;
+
+	};
+	let asks = 0, arrive = null;
+	const swap = grown( { grow: () => {
+
+		asks ++;
+		return new Promise( ( resolve ) => {
+
+			arrive = () => {
+
+				swap.setIsland( inputAt( swap.sim.state.pieces + 1 ) );
+				resolve();
+
+			};
+
+		} );
+
+	} } );
+	frames( swap, 600 );
+	assert.equal( asks, 1, 'asked once while its piece is on the way' );
+	assert.equal( swap.sim.state.pieces, 0 );
+	arrive();
+	await Promise.resolve();
+	assert.equal( swap.sim.state.pieces, 1, 'the piece arrives' );
+	assert.deepEqual( swap.read( swap.save( null ) ).sim.grid.open, swap.sim.grid.open, 'and a game read back stands on it' );
+	frames( swap, 600 );
+	assert.equal( asks, 1, 'nothing more is due' );
+	swap.sim.addIslander();
+	swap.sim.addIslander();
+	frames( swap, 1 );
+	assert.equal( asks, 2, 'the next step asks again' );
+	let idle = 0;
+	const still = grown( { grow: () => {
+
+		idle ++;
+
+	} } );
+	frames( still, 600 );
+	assert.equal( idle, 1, 'a grow that brought no piece is not asked again' );
+	console.log( `session: ${ record.entries.length } record entries (the landings, the chest, the leader's words), the skies of its frames, words heard by a brain that hears, a save read back into another session and played on the same; a growth asked once while its piece is on the way, and not again when none came` );
 
 }
 

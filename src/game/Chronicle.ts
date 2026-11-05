@@ -12,8 +12,8 @@ import type { EntityId, Needs, Villager } from './sim/types.ts';
 // each day. The interface reads it (src/game/ui/Record.ts) and turns each entry into words and a
 // mark by its kind's row (src/game/ui/data/record.ts), so a new kind of entry is a new row there.
 //
-// Rules: it watches the simulation once a frame (Game.render) and never changes it; the player's
-// words come through Game.speak. It is part of the save (save.ts): `save` gives its entries, the
+// Rules: it watches the simulation once a frame (Session.look) and never changes it; the player's
+// words come through Session.speak. It is part of the save (save.ts): `save` gives its entries, the
 // skies of each day and the critical needs it has noted (so a need is not noted twice across a
 // load), and `restore` takes them back into a record just reset, whose first look at the loaded
 // simulation then notes nothing that happened before the save. A record restored and watching the
@@ -130,8 +130,9 @@ export class Chronicle {
 
 	}
 
-	/** Once a frame: note what changed in the simulation, and the sky shown over `hours` game hours. */
-	observe( sim: Sim, sky: WeatherName, hours: number ): void {
+	/** Once a frame: note what changed in the simulation, and the sky shown over `hours` game hours
+	 * (null: none is shown, as headless, and none is noted). */
+	observe( sim: Sim, sky: WeatherName | null, hours: number ): void {
 
 		const state = sim.state, fresh = ! this.watching;
 		this.watching = true;
@@ -191,7 +192,7 @@ export class Chronicle {
 			if ( done ) this.add( sim, { kind: 'built', who: 'island', text: b.kind, subject: b.id } );
 
 		}
-		if ( hours > 0 ) this.addSky( sim.day() + 1, sky, hours );
+		if ( sky !== null && hours > 0 ) this.addSky( sim.day() + 1, sky, hours );
 
 	}
 

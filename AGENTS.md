@@ -142,8 +142,10 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 - `src/life/`: the island's creatures (`docs/art-direction.md`, Life), simulated per frame on the
   rendering side: the wenyao's schools of flying fish (`Wenyao.ts`), the fish's mesh and material
   (`FishGeometry.ts`, `FishMaterial.ts`).
-- `src/game/`: the game behind `?game` (`Game.ts`, which also drives the island's growth by the
-  population through `world/Growth.ts`): `sim/` is the headless simulation (no three.js or DOM;
+- `src/game/`: the game behind `?game` (`Game.ts`, the page's host of the game's session:
+  `Session.ts`, headless, runs the simulation with its record, the leader's words as heard, the
+  save, and the island's growth by the population, which it asks of the page's `world/Growth.ts`;
+  `tools/play-game.mjs` runs the same session in node): `sim/` is the headless simulation (no three.js or DOM;
   node runs it by stripping types; the other islanders as places, hearing, giving and following,
   in `sim/people.ts`; only exact operations in the rules, the few functions they need in
   `sim/maths.ts`), `save.ts` is the save (one slot: the simulation's state and the
