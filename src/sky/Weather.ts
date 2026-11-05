@@ -1,5 +1,3 @@
-import { skyNight } from './DayCycle.ts';
-
 // Weather presets, their blending and the auto-weather chain. Bad weather dims and desaturates the
 // existing light; it never adds a grey screen veil (docs/art-direction.md). A weather change sweeps
 // the sky as a front from upwind, and the island's lighting follows the front's progress over the
@@ -176,24 +174,13 @@ const SIN_18 = Math.sin( 18 * Math.PI / 180 );
  * (`daySky`) and its exponent (`daySkyExponent`): the level times the sine of the sun's height over
  * 18 degrees' to the power -`exponent`, held at its 12-degree value under 12 degrees, so a
  * positive exponent lifts a low sun's sky and lowers a high one's. 1 at every height for a level of
- * 1 and an exponent of 0. */
+ * 1 and an exponent of 0. Every reader takes it once, on the light the sun gives the sky alone
+ * (sky/Sky.ts: the sky's day key, the clouds' sunlight, the sun's light on the distant sea), never on
+ * the night's sources (the night key, the moon, the night's own ambient), so as the sun's light goes
+ * from the sky at dusk the sky falls back to the night's light as it was. */
 export function daySkyAt( level: number, exponent: number, elevation: number ): number {
 
 	return level * ( Math.max( Math.sin( elevation * Math.PI / 180 ), SIN_12 ) / SIN_18 ) ** - exponent;
-
-}
-
-/** The weather's ambient gain as every reader of it takes it (Sky.ts: the drawn sky and its clouds,
- * the stars, the environment's bake and the sea's body at the bake's sun; main.ts: the air's sky
- * light): the state's `ambientGain` times its day sky (`daySkyAt`), which fades back to 1 as the
- * night key comes into the sky's light (DayCycle.ts `skyNight`, at the sun's `elevation` in
- * degrees, `rising` or setting, under the weather's clouded share `clouded`): under cloud from 2
- * degrees down to -6, so the night's sky keeps the light it had. A state whose day sky is 1 keeps
- * its `ambientGain` exactly. */
-export function skyAmbientGain( state: Readonly<Pick<WeatherState, 'ambientGain' | 'daySky' | 'daySkyExponent'>>, elevation: number, rising: boolean, clouded: number ): number {
-
-	const day = 1 - skyNight( elevation, rising, clouded );
-	return state.ambientGain * ( 1 + ( daySkyAt( state.daySky, state.daySkyExponent, elevation ) - 1 ) * day );
 
 }
 // a sky's share of each kept sky: its own, or overcast's for a parked one
@@ -235,16 +222,18 @@ export interface WeatherState {
 	glintSpread: number;
 	// The sky's own light in the weather, a share of what the atmosphere and the clouds give: the
 	// drawn sky and its clouds, the environment's bake (the land's and the water's sky light), the
-	// sea's body, the air's sky light and the stars all take it (`skyAmbientGain`).
+	// sea's body, the air's sky light and the stars all take it.
 	ambientGain: number;
-	// The weather's day sky over that: by day the whole sky's light is scaled by `daySky` at a sun
-	// 18 degrees up, and by the sine of the sun's height over 18 degrees' to the power
-	// -`daySkyExponent` at other heights (held at its 12-degree value under 12 degrees), fading back
-	// to 1 as the sky's night comes in (`skyAmbientGain`). 1 and 0 leave the day's sky as the
-	// atmosphere and the clouds give it, in every weather so far. `daySky` sets how bright the
-	// weather's sky and the land under it stand by day; `daySkyExponent` how much of the sky's own
-	// climb with the sun the day keeps (a larger one flattens it). Tunable per clouded sky on debug
-	// pages (`sky.daySky@cloudy|overcast`, `sky.daySkyExponent@...`), which rebakes the sky.
+	// The weather's day sky over that: by day the light the sun gives the sky is scaled by `daySky`
+	// at a sun 18 degrees up, and by the sine of the sun's height over 18 degrees' to the power
+	// -`daySkyExponent` at other heights (held at its 12-degree value under 12 degrees: `daySkyAt`):
+	// the sky's day key (Sky.ts SKY_LIGHT, so the drawn sky, the bake and the air's light from the
+	// sun), the clouds' sunlight and the sun's light on the distant sea. The night's sources keep
+	// their light, so it leaves the sky as the sun's own light does. 1 and 0 leave the day's sky as
+	// the atmosphere and the clouds give it. `daySky` sets how bright the weather's sky and the land
+	// under it stand by day; `daySkyExponent` how much of the sky's own climb with the sun the day
+	// keeps (a larger one flattens it). Tunable per clouded sky on debug pages
+	// (`sky.daySky@cloudy|overcast`, `sky.daySkyExponent@...`), which rebakes the sky.
 	daySky: number;
 	daySkyExponent: number;
 	// The air's haze, per metre: the extinction, in the band whose spectral weight is 1 (blue on a
@@ -342,15 +331,18 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // (lighting/AmbientRelight.ts OVERCAST_LAND_UNIT, CLOUDY_LAND; under overcast its sun's bounce
 // takes the weather's gain too, lighting/AmbientGrade.ts OVERCAST_LAND) and the water by
 // DECK_SKY_GAIN; exposed by the sky (post/Exposure.ts). A sky's own light by day may stand at a
-// level of the weather's (`daySky`, `daySkyExponent`), which every reader of the sky's light takes
-// with the weather's `ambientGain` and which fades out as the night comes into the sky
-// (`skyAmbientGain`); every weather so far keeps the day's sky as the atmosphere and the clouds
-// give it.
+// level of the weather's (`daySky`, `daySkyExponent`), on the light the sun gives the sky alone
+// (`daySkyAt`). Overcast's stands at 0.173 at 18 degrees, where its bake's sky irradiance on level
+// ground is then 0.80 of the clear day's, with an exponent of 1.24, which holds that ratio at 0.79
+// to 0.80 from 12 to 30 degrees (0.75 at 45, 0.73 with the sun at 62): under its deck the sky's
+// light climbs with the sun much faster than the clear day's (the deck passes down the sun its tops
+// take, which grows with the sun's sine and its forward scatter), and the exponent flattens it to
+// the clear day's. The other weathers keep the day's sky as the atmosphere and the clouds give it.
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
 	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, daySky: 1, daySkyExponent: 0, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
 	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, daySky: 1, daySkyExponent: 0, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
 	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, daySky: 1, daySkyExponent: 0, haze: 0.0021, nearDensity: 0.13, nearStart: 100, nearEnd: 700, rain: 0, fog: 0, storm: 0, streaks: 0 },
-	overcast: { coverage: 0.94, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0.3, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, daySky: 1, daySkyExponent: 0, haze: 0.00974, nearDensity: 0.08, nearStart: 250, nearEnd: 500, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
+	overcast: { coverage: 0.94, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0.3, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, daySky: 0.173, daySkyExponent: 1.24, haze: 0.00974, nearDensity: 0.08, nearStart: 250, nearEnd: 500, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
 	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, daySky: 1, daySkyExponent: 0, haze: 0.0095, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
 	// A squall: the darkest deck, heavy rain, a strong wind (PRESET_WIND) and a rough, white-capped sea.
 	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, daySky: 1, daySkyExponent: 0, haze: 0.0135, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 1, fog: 0.3, storm: 1, streaks: 0 },

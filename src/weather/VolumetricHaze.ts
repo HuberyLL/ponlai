@@ -509,9 +509,9 @@ export class VolumetricHaze {
 	// near haze (its density factor, start, end)
 	readonly look = { sigma: new THREE.Vector3( 1, 1, 1 ), desaturate: 0.26, gain: 1, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
 		top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0, nearDensity: 1, nearStart: 250, nearEnd: 600 };
-	// the weather's share of the sun's direct light below the clouds and its diffuse gain at the
-	// sun as it stands (Weather.ts `directVisibility`, `skyAmbientGain`), which scale the light's
-	// colours
+	// the weather's share of the sun's direct light below the clouds and its diffuse gain
+	// (Weather.ts `directVisibility`, `ambientGain`), which scale the light's colours; its day sky
+	// comes with the light the atmosphere lends (Sky.ts `skyGain`)
 	readonly weatherLight = { direct: 1, ambient: 1 };
 	// The key light the air scatters: its direction and its irradiance below the clouds (a closed
 	// deck leaves no beam to scatter).

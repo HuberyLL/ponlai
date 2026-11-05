@@ -14,7 +14,7 @@ import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, nightAmbientShare, sunRising, type DayPreset } from './sky/DayCycle.ts';
-import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckLight, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, skyAmbientGain, type TunedField, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
+import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckLight, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, type TunedField, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
 import { keyDeckShare } from './lighting/KeyCloud.ts';
@@ -415,9 +415,10 @@ function prepareHaze( state: Readonly<WeatherState> ): void {
 	pipeline.air.fog.value = Math.max( sky.weather.fog, hazeKey.mist );
 	pipeline.air.setLook( hazeKey );
 	// the air's sunlit haze takes the key the land does, through the clouds' shadow (its own read),
-	// and its sky light the weather's sky as the sky takes it (Weather.ts `skyAmbientGain`)
+	// and its sky light the weather's sky as the sky takes it; the weather's day sky comes in with
+	// the sun's light the sky lends the air (Sky.ts `skyGain`)
 	pipeline.air.weatherLight.direct = state.directVisibility;
-	pipeline.air.weatherLight.ambient = skyAmbientGain( state, sky.elevation, rising, cloudedShare( weather.skyMix ) );
+	pipeline.air.weatherLight.ambient = state.ambientGain;
 	// the floor of the key under a closed deck (Sky.ts `deckKeyFloor`), which the seen panorama's
 	// bake reads as the frame's air does: set with the medium, so a bake takes its own scene's
 	pipeline.air.keyFloor.value = sky.deckKeyFloor;

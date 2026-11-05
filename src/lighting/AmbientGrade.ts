@@ -206,8 +206,14 @@ const sunBounceGain = tune( 'lighting.grade.sunBounce', 1, { min: 0.25, max: 4, 
  * the table's (`update`), by overcast's share and its deck's light (`overcastLandWeight`). It is
  * not the land's whole ambient light under the deck over a clear day's: that ratio also holds the
  * bake's ratio of the two skies and the sun's bounce's share of the light. 1 leaves the land as the
- * sky and the table give it. Tunable: `lighting.relight.overcastLand`. */
-export const OVERCAST_LAND = tune( 'lighting.relight.overcastLand', 1, { min: 1, max: 2 } );
+ * sky and the table give it; it stands at 1.75, set with the key's gain under the deck (sky/Sky.ts
+ * OVERCAST_KEY_GAIN) and the day sky (sky/Weather.ts `daySky`) on the lit open ground of seven
+ * eye-height views of the overcast island: with the sun 14.5, 18 and 21 degrees up that ground's
+ * ambient light reads 1.17 times a clear day's in the same place (1.14 to 1.25 over the views),
+ * the meadow's 0.95 to 1.01 (the views' median): the meadow's clear day holds a larger share of the
+ * sun's bounce, which the deck takes away, and the gain is one for all of the land. Tunable:
+ * `lighting.relight.overcastLand`. */
+export const OVERCAST_LAND = tune( 'lighting.relight.overcastLand', 1.75, { min: 1, max: 2 } );
 
 /** The weight of the weather's land gain under overcast (OVERCAST_LAND) at the sun's `elevation`
  * (degrees), of which overcast's share is `overcast` (sky/Weather.ts `skyMix`, a parked sky

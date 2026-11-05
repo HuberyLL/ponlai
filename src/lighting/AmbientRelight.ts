@@ -328,10 +328,13 @@ export function lowSunSkyLift( elevation: number, clouded: number ): number {
  * volume's place (the sea floor, the walls under the water) the environment's diffuse takes the
  * same gain (AmbientGrade.ts `landSky`). The water keeps the deck's gain alone, whichever reads it:
  * the water drawn (ocean/Water.ts) and the sea's bounce onto the land (`seaScale`). A cloudy deck's
- * land takes its own (CLOUDY_LAND). Its value, 6.3 with the weather's gain at 1, is the whole gain
- * the land had under overcast while the two were one number, which set the meadow and the crowns
- * against the sky over them alike. */
-const OVERCAST_LAND_UNIT = 6.3;
+ * land takes its own (CLOUDY_LAND). Its value, 1.55, is measured with the sun at 18 degrees on
+ * the lit open ground of six views 4 to 40 m deep, 40 to 130 degrees either side of the sun, with
+ * the sun's bounce off under both skies: the overcast land's sky light per unit of its bake over
+ * the clear day's in the same cells, read at two gains, is a line in the gain whose part that does
+ * not follow it (the sea's bounce, the groves' in-scatter) is 0.16, and it crosses 1 at 1.55. The
+ * meadow's crossing lies at 1.75. */
+const OVERCAST_LAND_UNIT = 1.55;
 /** The land's sky gain under a cloudy deck, in place of the deck's (sky/Weather.ts DECK_SKY_GAIN,
  * which the water keeps), by cloudy's share and its deck's light (sky/Weather.ts `deckRamp`, whole
  * from 6 degrees): on the sky's light only, the sun's bounce under a cloudy deck taking no weather
