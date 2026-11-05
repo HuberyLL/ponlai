@@ -41,10 +41,11 @@ import { skyNight } from './DayCycle.ts';
 // checks skip them. Their code stays and keeps compiling; debug builds (the dev server, `?debug`)
 // still reach every preset, so captures, probes and a later revival can use them. Under their deck
 // they take what overcast's share takes, counting as overcast in `skyMix`: the level air and the sky
-// gain (DECK_SKY_GAIN, the water's), the land's own sky gain under overcast (lighting/AmbientRelight.ts
-// OVERCAST_LAND), overcast's sky shape (weather/VolumetricHaze.ts) and the exposure by the sky with
-// overcast's key (post/Exposure.ts), and the land takes the key through their clouds' shadow as it
-// does under overcast.
+// gain (DECK_SKY_GAIN, the water's), the land's own gains under overcast
+// (lighting/AmbientRelight.ts OVERCAST_LAND_UNIT, lighting/AmbientGrade.ts OVERCAST_LAND),
+// overcast's sky shape (weather/VolumetricHaze.ts) and the exposure by the sky with overcast's key
+// (post/Exposure.ts), and the land takes the key through their clouds' shadow as it does under
+// overcast.
 //
 // Beside its fields the weather keeps the kept skies' shares in the sky as it stands (`skyMix`,
 // a parked sky counting as overcast), blended by a front as the fields are, for the lighting's
@@ -117,8 +118,10 @@ export function deckTakeover( elevation: number, clouded: number, overcast: numb
  * panorama does not carry onto the land and the water body, so without it the land stood near four
  * stops under the deck and the sea dark under it. It comes in with the deck's light (`deckLight`).
  * It is the water's alone: under either deck the land's sky light takes a gain of its own in its
- * place, by the deck's light (lighting/AmbientRelight.ts OVERCAST_LAND, CLOUDY_LAND), and the water
- * keeps this, whichever reads it (the water drawn, the sea's bounce onto the land). */
+ * place, by the deck's light (under overcast lighting/AmbientRelight.ts OVERCAST_LAND_UNIT times the
+ * weather's gain on all of the land's ambient light, lighting/AmbientGrade.ts OVERCAST_LAND; under
+ * a cloudy deck AmbientRelight.ts CLOUDY_LAND), and the water keeps this, whichever reads it (the
+ * water drawn, the sea's bounce onto the land). */
 export const DECK_SKY_GAIN = 3;
 
 /** The sky gain at the sun's `elevation` (degrees) under the weather's cloud `clouded`
@@ -321,11 +324,13 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // none. The water and the air take the clouds' own transmittance. Overcast is a closed deck deep
 // enough that its disc does not show (Sky.ts `domeColour`): the land under it is even, its sky the
 // deck's own glow about the sun's place, which the land takes with the rest of the sky
-// (lighting/AmbientRelight.ts OVERCAST_LAND, CLOUDY_LAND) and the water by DECK_SKY_GAIN; exposed
-// by the sky (post/Exposure.ts). A sky's own light by day may stand at a level of the weather's
-// (`daySky`, `daySkyExponent`), which every reader of the sky's light takes with the weather's
-// `ambientGain` and which fades out as the night comes into the sky (`skyAmbientGain`); every
-// weather so far keeps the day's sky as the atmosphere and the clouds give it.
+// (lighting/AmbientRelight.ts OVERCAST_LAND_UNIT, CLOUDY_LAND; under overcast its sun's bounce
+// takes the weather's gain too, lighting/AmbientGrade.ts OVERCAST_LAND) and the water by
+// DECK_SKY_GAIN; exposed by the sky (post/Exposure.ts). A sky's own light by day may stand at a
+// level of the weather's (`daySky`, `daySkyExponent`), which every reader of the sky's light takes
+// with the weather's `ambientGain` and which fades out as the night comes into the sky
+// (`skyAmbientGain`); every weather so far keeps the day's sky as the atmosphere and the clouds
+// give it.
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
 	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, daySky: 1, daySkyExponent: 0, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
 	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, daySky: 1, daySkyExponent: 0, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },

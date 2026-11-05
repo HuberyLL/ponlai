@@ -388,8 +388,10 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   goes with the sun's height, `sky.daySky@overcast`, `sky.daySkyExponent@overcast` (`@cloudy`:
   `src/sky/Weather.ts` `skyAmbientGain`), and the
   land's share of the sky's light `lighting.relight.skyGain@high` (`@low`, `@golden`, the rising
-  sun's `@dawn`, `@sunrise`, `@cloudy`, `@cloudyBlue`, `@night`) and its gain under overcast
-  `lighting.relight.overcastLand`, a low
+  sun's `@dawn`, `@sunrise`, `@cloudy`, `@cloudyBlue`, `@night`), the weather's gain under
+  overcast's deck on all of the land's ambient light, its sky light and its sun's bounce alike
+  (per unit, not the land's whole light over a clear day's: `src/lighting/AmbientGrade.ts`
+  OVERCAST_LAND) `lighting.relight.overcastLand`, a low
   sun's lift of the sky's light on what it lights `lighting.relight.lowSun` (stops; `lowSunFloor`,
   `lowSunFloorFull`, `lowSunFrom`, `lowSunTo` its sun heights: `src/lighting/AmbientRelight.ts`),
   overcast's
