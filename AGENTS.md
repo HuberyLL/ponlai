@@ -14,6 +14,9 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 - A change to a module's behaviour updates that module's header comment. AGENTS.md is updated when
   a cross-cutting rule or the map below changes (no size limit, but module-specific detail stays in
   the module). Art decisions go to `docs/art-direction.md`, tool manuals to `docs/tools.md`.
+- The project's structure (its layers, what each owns, how data flows between them, the rules
+  across them and why) is `ARCHITECTURE.md`: read it before a structural change, and update it
+  when a change adds a layer, moves what one owns or changes a flow.
 
 ## Stack and commands
 
