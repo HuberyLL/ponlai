@@ -2067,10 +2067,14 @@ export class Sky {
 		// direction casts their shadow, so it moves without a jump even while no direct light reaches
 		// them: a jump there stepped the deck's brightness, half a stop on the meter under overcast.
 		// It sets first, its shadow fading out on the way down, so its turn round to the sun, under
-		// the horizon, sweeps no shadow across the island.
+		// the horizon, sweeps no shadow across the island. Under a closed deck, on overcast's share,
+		// it fades to the deck's mean transmittance instead (Clouds.ts `deckShadowShare`): faded to
+		// lit, the haze under the deck took the sun the deck still hid, and the sky's light rose by
+		// up to two thirds as the sun set.
 		const elevation = celestial?.elevation ?? 90;
 		const setting = THREE.MathUtils.smoothstep( elevation, CLOUD_TURN[ 0 ], CLOUD_TURN[ 1 ] ), round = THREE.MathUtils.smoothstep( elevation, CLOUD_TURN[ 1 ], CLOUD_TURN[ 2 ] );
 		clouds.shadowShare.value = elevation < CLOUD_TURN[ 1 ] ? 1 - setting : THREE.MathUtils.smoothstep( this.sunDir.y, CLOUD_SHADOW_SET[ 0 ], CLOUD_SHADOW_SET[ 1 ] );
+		clouds.deckShadowShare.value = overcastShare;
 		clouds.lightDir.value.copy( setting === 0 ? this.keyDir : this.sunDir );
 		if ( celestial && setting > 0 && round < 1 ) {
 

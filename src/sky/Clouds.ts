@@ -184,7 +184,9 @@ type V4 = THREE.Node<'vec4'>;
 // of kilometres of shell closing it within a sliver of the deck's fringe, and the shadow slides
 // kilometres per degree; under a light whose whole disc is below the rays' floor
 // (SHADOW_SLOPE_FLOOR) one ray is left, held still; a light on the horizon casts none, the map
-// fading to lit as the light sets (`shadowShare`);
+// fading to lit as the light sets (`shadowShare`), or under a closed deck, on overcast's share, to the
+// deck's mean transmittance along the light (`deckShadowShare`): the haze under the deck, lit
+// along the sun the deck still hides, lifted the sky's light as the sun set;
 // the map's red channel is the whole disc, which the ground reads; its green channel is what the
 // air reads, the mean of the two rays nearest the disc's centre, since the whole disc leaves the
 // haze no shaft at 6 degrees, and under about 5 degrees the whole disc again (`shadowAirNarrow`,
@@ -361,6 +363,10 @@ const SHADOW_PHASES = 8;
 // farther through the shell than its steps can follow, about 4.6 degrees.
 export const SHADOW_SLOPE_FLOOR = 0.08;
 const SHADOW_ORDER = [ 0, 4, 2, 6, 1, 5, 3, 7 ];
+// The closed deck's mean transmittance along the light, which the map fades to under overcast's
+// share as the light sets (`deckShadowShare`): rays from a world-anchored grid of DECK_MEAN_GRID
+// squared points over the middle DECK_MEAN_SPAN metres of the map, the island's.
+const DECK_MEAN_GRID = 8, DECK_MEAN_SPAN = 6000, DECK_MEAN_RAYS = DECK_MEAN_GRID * DECK_MEAN_GRID;
 // Lightning inside the cloud: point sources lighting the march.
 export const FLASH_SOURCES = 4;
 // Rain curtains: marched from RAIN_START (nearer rain is the streaks of weather/Rain.ts) to the
@@ -702,6 +708,9 @@ export class Clouds {
 	// fades it, since a step there showed on the meter through the haze's light even with no direct
 	// light on the island.
 	readonly shadowShare = uniform( 1 );
+	// Overcast's share of the sky (Sky.ts): as the map fades, on this share it fades to the closed
+	// deck's mean transmittance along the light (`Clouds.DeckMean`), not to lit.
+	readonly deckShadowShare = uniform( 0 );
 	// Irradiance arriving at the cloud layer from the key light (scene units).
 	readonly lightColor = uniform( new THREE.Color( 0.5, 0.45, 0.38 ) );
 	// The key's irradiance on the low deck's tops, which its column passes down to the base (scene
@@ -884,6 +893,13 @@ export class Clouds {
 	private readonly columnStore = instancedArray( 3, 'vec4' ).setName( 'cloudColumnTop' );
 	private readonly columnRead = storage( this.columnStore.value, 'vec4', 3 ).toReadOnly().setName( 'cloudColumnTopRead' );
 	private columnKernel: THREE.ComputeNode | null = null;
+	// The closed deck's mean transmittance along the light, ( with the light scattered on through,
+	// the direct beam alone ): DECK_MEAN_RAYS rays (`Clouds.DeckMean`), then their mean in the last
+	// element (`Clouds.DeckMeanSum`), dispatched only while the shadow map fades under a deck.
+	private readonly deckMeanStore = instancedArray( DECK_MEAN_RAYS + 1, 'vec2' ).setName( 'cloudDeckMean' );
+	private readonly deckMeanRead = storage( this.deckMeanStore.value, 'vec2', DECK_MEAN_RAYS + 1 ).toReadOnly().setName( 'cloudDeckMeanRead' );
+	private deckMeanKernel: THREE.ComputeNode | null = null;
+	private deckMeanSumKernel: THREE.ComputeNode | null = null;
 	private previousFlash = '';
 	private view: View | null = null;
 	private readonly viewNode = texture( new THREE.Texture() );
@@ -1077,6 +1093,8 @@ export class Clouds {
 		const domeTexelAngle = 2 * Math.PI / domeWidth;
 		this.partialKernel?.dispose();
 		this.shadowKernel?.dispose();
+		this.deckMeanKernel?.dispose();
+		this.deckMeanSumKernel?.dispose();
 		const shapeNode = texture3D( shape ), weatherNode = texture( weather ), boundsNode = texture( bounds ), synopticNode = texture( synoptic );
 
 		// How far the front has come at a camera-relative position (see `frontLead`).
@@ -1823,8 +1841,9 @@ export class Clouds {
 		// ---- cloud shadow: transmittance of the shell along the key light around the island, one
 		// of every SHADOW_PHASES rows per pass.
 		// What gets through the shell to a ground point along a ray climbing `ly` per unit of `L.xz`:
-		// ( the direct beam, the direct beam with the light scattered on through ).
-		const castRay = Fn( ( [ ground, ly ]: [ V2, F ] ) => {
+		// ( the direct beam, the direct beam with the light scattered on through ). One function per
+		// kernel: a helper reading uniforms can be emitted with another kernel's uniform names (r186).
+		const makeCastRay = ( name: string ) => Fn( ( [ ground, ly ]: [ V2, F ] ) => {
 
 			const ray = vec3( this.lightDir.x, ly, this.lightDir.z ).toVar();
 			const t0 = this.shellBottom.div( ly ).toVar(), dt = this.shellThickness.div( 16 ).div( ly ).toVar();
@@ -1846,7 +1865,28 @@ export class Clouds {
 			const direct = exp( tau.negate() ).toVar();
 			return vec2( direct, direct.mul( 0.8 ).add( exp( tau.mul( - 0.25 ) ).mul( 0.2 ) ) );
 
-		} ).setLayout( { name: 'cloudCastRay', type: 'vec2', inputs: [ { name: 'ground', type: 'vec2' }, { name: 'ly', type: 'float' } ] } );
+		} ).setLayout( { name, type: 'vec2', inputs: [ { name: 'ground', type: 'vec2' }, { name: 'ly', type: 'float' } ] } );
+		const castRay = makeCastRay( 'cloudCastRay' ), castMeanRay = makeCastRay( 'cloudDeckMeanRay' );
+		const meanCells = uint( DECK_MEAN_GRID );
+		this.deckMeanKernel = Fn( () => {
+
+			const cell = vec2( float( instanceIndex.mod( meanCells ) ), float( instanceIndex.div( meanCells ) ) );
+			const ground = cell.add( 0.5 ).div( DECK_MEAN_GRID ).sub( 0.5 ).mul( DECK_MEAN_SPAN ).sub( this.camXZ ).toVar();
+			const beam = castMeanRay( ground, max( this.lightDir.y, SHADOW_SLOPE_FLOOR ) );
+			this.deckMeanStore.element( instanceIndex ).assign( vec2( beam.y, beam.x ) );
+
+		} )().compute( DECK_MEAN_RAYS, [ 64 ] ).setName( 'Clouds.DeckMean' );
+		this.deckMeanSumKernel = Fn( () => {
+
+			const sum = vec2( 0 ).toVar();
+			Loop( DECK_MEAN_RAYS, ( { i } ) => {
+
+				sum.addAssign( this.deckMeanStore.element( i ) );
+
+			} );
+			this.deckMeanStore.element( DECK_MEAN_RAYS ).assign( sum.div( DECK_MEAN_RAYS ) );
+
+		} )().compute( 1, [ 1 ] ).setName( 'Clouds.DeckMeanSum' );
 		this.shadowKernel = Fn( () => {
 
 			const n = uint( SHADOW_SIZE );
@@ -1887,6 +1927,13 @@ export class Clouds {
 				direct.assign( mix( float( 1 ), castDirect.div( total ), this.shadowShare ) );
 
 			} );
+			// Under a closed deck the fade goes to the deck's mean, not to lit: mix( mix( 1, mean,
+			// deck ), map, share ), an exact no-op off overcast and with the map whole.
+			const toMean = float( 1 ).sub( this.shadowShare ).mul( this.deckShadowShare ).toVar();
+			const deckMean = this.deckMeanRead.element( DECK_MEAN_RAYS ).toVar();
+			visibility.addAssign( toMean.mul( deckMean.x.sub( 1 ) ) );
+			sharp.addAssign( toMean.mul( deckMean.x.sub( 1 ) ) );
+			direct.addAssign( toMean.mul( deckMean.y.sub( 1 ) ) );
 			textureStore( this.shadowMap, ivec2( int( x ), int( y ) ), vec4( visibility, sharp, direct, 1 ) );
 
 		} )().compute( SHADOW_SIZE * SHADOW_SIZE / SHADOW_PHASES, [ 64 ] ).setName( 'Clouds.Shadow' );
@@ -2208,6 +2255,13 @@ export class Clouds {
 		// (`setDeck`) before this in every frame and bake, so a front or a jump into a clouded sky
 		// dispatches it in its first frame, before any reader.
 		if ( this.lowShare.value > 0 ) renderer.compute( this.columnKernel! );
+		// The deck's mean transmittance, which the shadow map's rows take while it fades under a deck.
+		if ( this.deckShadowShare.value > 0 && this.shadowShare.value < 1 ) {
+
+			renderer.compute( this.deckMeanKernel! );
+			renderer.compute( this.deckMeanSumKernel! );
+
+		}
 		// Panorama: an ordered pattern spreads each frame's texels over the map. A full refresh runs
 		// every phase through the same kernel, so a refreshed map matches a progressive one.
 		const full = this.needsFull;
@@ -2807,6 +2861,8 @@ export class Clouds {
 		this.streakCover?.dispose();
 		this.partialKernel?.dispose();
 		this.shadowKernel?.dispose();
+		this.deckMeanKernel?.dispose();
+		this.deckMeanSumKernel?.dispose();
 		this.columnKernel?.dispose();
 		this.disposeView();
 
@@ -2925,7 +2981,7 @@ export class Clouds {
 
 		await this.init( renderer );
 		const view = this.view;
-		const kernels = [ this.columnKernel!, this.partialKernel!, this.shadowKernel! ];
+		const kernels = [ this.columnKernel!, this.partialKernel!, this.shadowKernel!, this.deckMeanKernel!, this.deckMeanSumKernel! ];
 		if ( view ) kernels.push( view.kernels.trace, view.kernels.high, view.kernels.box, ...view.kernels.resolve );
 		await renderer.compileComputeAsync( kernels );
 
