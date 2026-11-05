@@ -245,11 +245,11 @@ const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
 //     overcast's share the air takes it through its own phase: the diffuse part as the deck's law
 //     weighted by the aerosol's phase over an even deck's of the same irradiance, a quartic in the
 //     view's sine of elevation fitted in the anisotropy (DECK_DIFFUSE); the forward part as the
-//     deck's own lobe about the key (by overcast's share its broad part alone, Clouds.ts
-//     OVERCAST_BROAD: the air takes the whole deck's light, most of which has lost the narrow
-//     core), on the key's share alone (the lobe's light over the deck's
-//     level, `columnTop`'s key over its key and sky), the diffuse part taking the rest of the
-//     deck's irradiance. The lobe is the deck's, not the product of the deck's and the air's
+//     deck's own lobe about the key, on the key's share alone (the lobe's light over the deck's
+//     level, `columnTop`'s key over its key and sky; under overcast's share the deck spreads its
+//     forward light by the diffusion law, Clouds.ts OVERCAST_BROAD, so it comes in the diffuse part
+//     and the lobe's share is the rest's alone), the diffuse part taking the rest of the deck's
+//     irradiance. The lobe is the deck's, not the product of the deck's and the air's
 //     anisotropies that one scattering of it would give: that product, a smaller mean cosine, would
 //     dim the low air round the sun's place against the deck behind it. The open sky's light in the
 //     sun's rows takes the same by that share, the law by the view's elevation h,
@@ -261,8 +261,8 @@ const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
 //     sun's side, would reach the views away from the sun as fully as those toward it, and the air
 //     there would stand brighter than the deck behind it under a high sun. At night HazeKeys.ts
 //     gives the whole clouded share to `deck` and none to `overcastDeck`, so a night's deck,
-//     overcast's too, lights its air by this path: in the deck's form about the moon, with
-//     overcast's broad lobe by the clouds' share of it (Clouds.ts OVERCAST_BROAD), by the share of
+//     overcast's too, lights its air by this path: in the deck's form about the moon, overcast's
+//     forward light spread by the clouds' share of it (Clouds.ts OVERCAST_BROAD), by the share of
 //     its form each column keeps (below).
 //     Along a long near-level ray the light the eye takes in has crossed a column of air several
 //     optical depths deep, and light that crosses such a column is scattered on the way: our
@@ -820,9 +820,10 @@ export class VolumetricHaze {
 		// lobe is the key's alone and leaves with it as the key sets.
 		const nu = dot( direction, clouds.lightDir ).toVar();
 		const lobeOf = ( k: F ) => float( 1 ).sub( k.mul( k ) ).div( max( float( 1 ).add( k.mul( k ) ).sub( nu.mul( k ).mul( 2 ) ), 1e-4 ).pow( 1.5 ) );
-		// (under overcast's share the deck's lobe as the air takes it from the whole deck, its broad
-		// part alone: Clouds.ts OVERCAST_BROAD)
-		const forward = mix( lobeOf( clouds.lobe ), lobeOf( clouds.overcastBroad ), clouds.broadShare );
+		// (under overcast's share the deck's forward light is spread by the diffusion law, Clouds.ts
+		// OVERCAST_BROAD: it reaches the air in the diffuse part, and the lobe's share is the rest's,
+		// `columnTop`)
+		const forward = lobeOf( clouds.lobe );
 		const mu = clamp( direction.y, - 1, 1 );
 		const inG = ( row: number[] ) => g.mul( row[ 2 ] ).add( row[ 1 ] ).mul( g ).add( row[ 0 ] );
 		let diffuse = inG( DECK_DIFFUSE[ 4 ] );

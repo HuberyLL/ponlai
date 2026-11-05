@@ -401,9 +401,12 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   OVERCAST_LAND) `lighting.relight.overcastLand`, a low
   sun's lift of the sky's light on what it lights `lighting.relight.lowSun` (stops; `lowSunFloor`,
   `lowSunFloorFull`, `lowSunFrom`, `lowSunTo` its sun heights: `src/lighting/AmbientRelight.ts`),
-  overcast's
-  deck's glow about the sun (the forward lobe added to the light it lets through, in the deck and the
-  air under it: its weight and mean cosine) `sky.clouds.forwardWeight`, `sky.clouds.forwardLobe`, and the key a tree's shaded leaves
+  a deck's
+  glow about the sun (the forward lobe added to the light it lets through, in the deck and the air
+  under it: its weight and mean cosine) `sky.clouds.forwardWeight`, `sky.clouds.forwardLobe`, the
+  amount of forward light the closed deck passes down, spread over it by the diffusion law (a lobe's
+  weight and mean cosine whose light on level ground it takes) `sky.clouds.overcastWeight`,
+  `sky.clouds.overcastBroad`, and the key a tree's shaded leaves
   take through the leaves over them `lighting.vegetation.leaf.through@high` (`@low`, `@golden`,
   `@cloudy`, `@night`) and what a leaf sends on of the key on its far face,
   `lighting.vegetation.leaf.back@high` alike, the sward's tint under a closed sky

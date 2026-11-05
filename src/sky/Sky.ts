@@ -2026,15 +2026,18 @@ export class Sky {
 			clouds.lightDir.value.set( across * Math.cos( azimuth ), y, across * Math.sin( azimuth ) );
 
 		}
-		// the low deck's forward lobe's light on level ground at the key's height (Clouds.ts forwardLevel)
-		// (under overcast's share the air's lobe is the broad one: VolumetricHaze.ts `scatterToward`)
-		clouds.lobe.value = THREE.MathUtils.lerp( clouds.forwardLobe.value, clouds.overcastLobe.value, overcastShare );
+		// the low deck's forward light on level ground at the key's height (Clouds.ts forwardLevel): the
+		// narrow lobe's, the light overcast's share spreads by the diffusion law (a lobe of mean cosine
+		// `overcastBroad`'s), and the two by that share, the deck's level
+		clouds.lobe.value = clouds.forwardLobe.value;
 		clouds.broadShare.value = overcastShare;
 		clouds.weight.value = THREE.MathUtils.lerp( clouds.forwardWeight.value, clouds.overcastWeight.value, overcastShare );
 		const keyY = clouds.lightDir.value.y;
+		clouds.narrowLevel.value = forwardLevel( keyY, clouds.lobe.value );
+		clouds.broadLevel.value = forwardLevel( keyY, clouds.overcastBroad.value );
 		clouds.forwardLevel.value = overcastShare > 0
-			? THREE.MathUtils.lerp( forwardLevel( keyY, clouds.lobe.value ), forwardLevel( keyY, clouds.overcastBroad.value ), overcastShare )
-			: forwardLevel( keyY, clouds.lobe.value );
+			? THREE.MathUtils.lerp( clouds.narrowLevel.value, clouds.broadLevel.value, overcastShare )
+			: clouds.narrowLevel.value;
 		const disc = 1 - THREE.MathUtils.smoothstep( clouds.lightDir.value.y, SHADOW_DISC[ 0 ], SHADOW_DISC[ 1 ] );
 		clouds.shadowDisc.value = disc * SUN_ANGULAR_RADIUS;
 		// With the whole disc under the floor the rays are one ray.

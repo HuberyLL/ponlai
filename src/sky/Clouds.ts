@@ -106,41 +106,26 @@ type V4 = THREE.Node<'vec4'>;
 //     about the key (FORWARD_LOBE, 0.8), its radiance FORWARD_WEIGHT (0.6) times the key's part over
 //     pi times the lobe over its mean over the sphere: the deck's round glow about the sun's place,
 //     light added to the deck's, so the side away from the sun keeps its whole diffuse light.
-//     Under overcast's share of the sky (`lobe`, `lobeTint`, set by Sky.ts trackClouds) the lobe
-//     takes a mean cosine of its own (OVERCAST_LOBE, 0.85) and the colour of the sun overhead above
-//     the tops, which the closed deck's key otherwise loses (Sky.ts): the light that comes through
-//     forward has been scattered least. The forward light spreads with the deck's depth: a droplet's
-//     phase is narrow (mean cosine about 0.85), so after n scatterings the light keeps a mean cosine
-//     of about 0.85^n, and our approximation built on the similarity relation (van de Hulst,
-//     "Multiple Light Scattering", 1980) takes the share still in the narrow core after the optical
-//     depth tau along the key as exp( - ( 1 - g ) tau ) = T^( 1 - g ). Multiple scattering makes
-//     the sky under a thick cloud evenly bright: under a deck several optical depths thick the
-//     disc and the narrow aureole are gone, and what the forward light leaves is a broad
-//     brightening toward the sun's place. Under overcast's share (`broadShare`) the march keeps for
-//     each step the core's share by the key's transmittance there (`columnCore`) and gives the rest
-//     a broad lobe (OVERCAST_BROAD, 0.5: about four scatterings), the whole lobe weighted
-//     OVERCAST_WEIGHT (2.4); the air under the deck, which takes the whole deck's light, takes the
-//     broad lobe alone. In a deck of finite depth the
-//     light that has been scattered many times still leans forward, the less the deeper it went, so
-//     the broad lobe keeps a forward mean cosine rather than the diffusion limit's none, and the
-//     sky toward the sun stands clearly over the deck away from it. The width and the weight are
-//     fitted by least squares, with the exposure's key, on the sky toward a sun of 18 degrees from
-//     90 m together with the deck away from the sun and the meadow and crowns at eye height: the
-//     width sets how far the glow spreads into the deck round the sun's place, the weight the sky
-//     toward the sun against the deck away from it. On the closed deck the weight is set again by
-//     the sky toward the sun alone: the median scene luminance of the sky toward a sun of 30 degrees
-//     (an island view) and of 18 degrees (from 90 m) keeps the fit's within 6 %, the closed deck
-//     leaving the narrow core almost nothing; the deck away from the sun then reads about a third
-//     darker than in the fit, which the deck's own form sets, not the lobe. The narrow core alone puts most of its light
-//     within 15 degrees of the key (0 : 15 : 30 : 45 degrees about 110 : 16 : 3 : 1), the broad
-//     lobe about 3.2 : 2.6 : 1.7 : 1. The glow takes the sun's colour above the tops, which keeps
-//     it near grey under a low sun as under a high one. The weight and the lobe are the form's own,
-//     not derived from the column's depth (a delta-Eddington share dies past an optical depth of
-//     about 2, which every roll exceeds). The drawn sky's light over the tops takes the diffuse
-//     part alone. The march sums these as factors, direct, ambient and the
-//     column's; the column's takes the top's irradiance, the other two take their colours once it
-//     ends, from the atmosphere's in-scatter table at the shell's mean
-//     height toward the ray: the lit side the Mie share's colour times each body's light gain
+//     Under overcast's share of the sky (`broadShare`, set by Sky.ts trackClouds) the forward light
+//     is not drawn as a lobe: it spreads over the deck by the diffusion law, its amount on level
+//     ground the one a lobe of mean cosine OVERCAST_BROAD (0.5) weighted OVERCAST_WEIGHT (2.4) would
+//     give (`forwardLevel` of that lobe, `broadLevel`). Multiple scattering makes the sky under a
+//     thick cloud evenly bright: a droplet's phase is narrow (mean cosine about 0.85), so after n
+//     scatterings the light keeps a mean cosine of about 0.85^n, and under a deck several optical
+//     depths thick the forward light has lost its direction; spread this way it still lights the
+//     deck and the ground below as it did, without brightening the half of the sky toward the sun,
+//     which the environment's bake and the ambient light would take up. Under the rest of the sky
+//     the narrow lobe stays as it was, by ( 1 - the share ). OVERCAST_BROAD and OVERCAST_WEIGHT
+//     together set how much forward light the closed deck passes down, the light of the deck and of
+//     the ground under it; they were fitted when this light was drawn as a broad lobe toward the
+//     sun, and spread it keeps the same amount. The forward light takes the sun's colour above the
+//     tops (`lobeTint`, Sky.ts trackClouds), which keeps it near grey under a low sun as under a
+//     high one. The weight and the lobe are the form's own, not derived from the column's depth
+//     (a delta-Eddington share dies past an optical depth of about 2, which every roll exceeds).
+//     The drawn sky's light over the tops takes the diffuse part alone. The march sums these as
+//     factors, direct, ambient and the column's; the column's takes the top's irradiance, the other
+//     two take their colours once it ends, from the atmosphere's in-scatter table at the shell's
+//     mean height toward the ray: the lit side the Mie share's colour times each body's light gain
 //     (Sky.ts trackClouds), the shaded side the Rayleigh share under its phase (no polariser),
 //     desaturated, times the earth's shadow there and each body's illuminance, its factor tinted
 //     toward the opacity and toned on its log luminance (both neutral until set). Under the low
@@ -507,15 +492,11 @@ const henyeyGreenstein = ( cosTheta: F, g: number ) =>
 // their depth: it dies past an optical depth of 2): the weight sets the glow about the sun's place
 // against the deck away from it, the mean cosine how far the glow spreads.
 export const FORWARD_WEIGHT = 0.6, FORWARD_LOBE = 0.8;
-// Overcast's own mean cosine for the lobe (Sky.ts trackClouds blends it in by overcast's share,
-// `lobe`): see the header.
-export const OVERCAST_LOBE = 0.85;
-// Under overcast's share the lobe spreads with the deck's depth (see the header): the share of it
-// still in the narrow core is the key's transmittance to the step to the power ( 1 - g ), g the
-// core's mean cosine, and the rest takes a broad lobe of mean cosine OVERCAST_BROAD; the whole
-// lobe's weight is OVERCAST_WEIGHT, which sets how bright the deck glows toward the sun's place:
-// fitted on the overcast sky toward a sun of 18 degrees, the weight set again on the closed deck
-// (see the header).
+// The forward light under overcast's share, spread over the deck by the diffusion law (see the
+// header): its amount on level ground is a lobe's of mean cosine OVERCAST_BROAD weighted
+// OVERCAST_WEIGHT (`forwardLevel`), so the two together set how much forward light the closed deck
+// passes down; raise either for a brighter deck and ground under it, with no change of the sky's
+// form.
 export const OVERCAST_BROAD = 0.5, OVERCAST_WEIGHT = 2.4;
 
 /** The forward lobe's light on level ground: the integral over the upper hemisphere of a
@@ -771,25 +752,29 @@ export class Clouds {
 	// down to the shell's bottom across the taps, and their depth is the deck's.
 	readonly keyLift = uniform( 1 );
 	// The angular form of the light the low deck's column passes down (makeMarch): the forward
-	// lobe's weight on the key's light and its mean cosine, and the lobe's light on level ground at
-	// the key's height, which Sky.ts trackClouds sets (`forwardLevel`) and the air under the deck
-	// reads. A change rebakes the panorama and the environment.
+	// lobe's weight on the key's light and its mean cosine, and under overcast's share the amount of
+	// forward light the closed deck spreads by the diffusion law, as a lobe's weight and mean cosine
+	// whose light on level ground it takes (OVERCAST_BROAD). A change rebakes the panorama and the
+	// environment.
 	readonly forwardWeight = tuneUniform( 'sky.clouds.forwardWeight', FORWARD_WEIGHT, { min: 0, max: 3, onChange: markSkyRetune } );
 	readonly forwardLobe = tuneUniform( 'sky.clouds.forwardLobe', FORWARD_LOBE, { min: 0, max: 0.95, onChange: markSkyRetune } );
-	readonly overcastLobe = tuneUniform( 'sky.clouds.overcastLobe', OVERCAST_LOBE, { min: 0, max: 0.95, onChange: markSkyRetune } );
 	readonly overcastBroad = tuneUniform( 'sky.clouds.overcastBroad', OVERCAST_BROAD, { min: 0, max: 0.95, onChange: markSkyRetune } );
 	readonly overcastWeight = tuneUniform( 'sky.clouds.overcastWeight', OVERCAST_WEIGHT, { min: 0, max: 3, onChange: markSkyRetune } );
-	// The share of the lobe that may spread (overcast's share of the sky) and the lobe's weight in
-	// use, `forwardWeight` moved to `overcastWeight` by that share (Sky.ts trackClouds).
+	// The share of the forward light spread by the diffusion law (overcast's share of the sky) and
+	// the weight in use, `forwardWeight` moved to `overcastWeight` by that share (Sky.ts trackClouds).
 	readonly broadShare = uniform( 0 );
 	readonly weight = uniform( FORWARD_WEIGHT );
-	// The mean cosine in use: `forwardLobe`, moved to `overcastLobe` by overcast's share (Sky.ts
-	// trackClouds), what the march, the air under the deck and `forwardLevel` read.
+	// The narrow lobe's mean cosine (`forwardLobe`), what the march and the air under the deck read.
 	readonly lobe = uniform( FORWARD_LOBE );
 	// The lobe's colour over the column key's: the sun's colour above the tops over the colour the
 	// closed deck leaves the key (Sky.ts trackClouds), white without overcast's share or a sun.
 	readonly lobeTint = uniform( new THREE.Color( 1, 1, 1 ) );
+	// The forward light on level ground at the key's height (Clouds.ts forwardLevel), set by Sky.ts
+	// trackClouds: the narrow lobe's (`narrowLevel`), the spread light's (`broadLevel`, the lobe of
+	// mean cosine `overcastBroad`) and the two by overcast's share (`forwardLevel`, the deck's level).
 	readonly forwardLevel = uniform( forwardLevel( 0.5, FORWARD_LOBE ) );
+	readonly narrowLevel = uniform( forwardLevel( 0.5, FORWARD_LOBE ) );
+	readonly broadLevel = uniform( forwardLevel( 0.5, OVERCAST_BROAD ) );
 	// The haze's medium, which the haze writes (VolumetricHaze.ts `prepareMedium`, through
 	// Pipeline.ts): where it closes, the low deck's view march ends (`makeMarch`).
 	readonly haze = new HazeMedium();
@@ -982,14 +967,16 @@ export class Clouds {
 		this.columnKernel = Fn( () => {
 
 			// the shares of the air's light under overcast's deck (VolumetricHaze.ts `scatterToward`):
-			// the forward lobe's light over an even deck's of the deck's irradiance (twice the lobe's
+			// the narrow lobe's light over an even deck's of the deck's irradiance (twice the lobe's
 			// radiance over the irradiance over pi, since an even deck fills half the sphere), on the
-			// key's light alone, and the diffuse part's share of that irradiance
+			// key's light alone and by the share of it still a lobe ( 1 - `broadShare` ), and the
+			// diffuse part's share of that irradiance, the spread forward light's included (the deck's
+			// level keeps it: `forwardLevel`)
 			const top = this.columnTopOf();
 			const keyTop = luminance( top.key ).toVar();
 			const level = keyTop.mul( this.weight.mul( this.forwardLevel ).add( 1 ) ).add( luminance( top.sky ) );
-			const lobeShare = keyTop.mul( this.weight ).mul( 2 ).div( max( level, 1e-20 ) ).toVar();
-			const diffuseShare = float( 1 ).sub( lobeShare.mul( this.forwardLevel ).mul( 0.5 ) );
+			const lobeShare = keyTop.mul( this.weight ).mul( 2 ).div( max( level, 1e-20 ) ).mul( float( 1 ).sub( this.broadShare ) ).toVar();
+			const diffuseShare = float( 1 ).sub( lobeShare.mul( this.narrowLevel ).mul( 0.5 ) );
 			this.columnStore.element( 0 ).assign( vec4( top.key, lobeShare ) );
 			this.columnStore.element( 1 ).assign( vec4( top.sky, diffuseShare ) );
 
@@ -1243,8 +1230,6 @@ export class Clouds {
 			const directLight = float( 0 ).toVar(), ambientLight = float( 0 ).toVar();
 			// the low deck's column light, per unit of the top's irradiance over pi (see below)
 			const columnLight = float( 0 ).toVar();
-			// the part of it whose forward light is still in the lobe's narrow core (see OVERCAST_BROAD)
-			const columnCore = float( 0 ).toVar();
 			// The atmosphere's in-scatter at the shell's mean height toward rd, per unit of the sun's
 			// and of the moon's illuminance: it weighs their lobes and colours the factors.
 			const a = this.atmosphere;
@@ -1448,9 +1433,7 @@ export class Clouds {
 					// sample of a clear or fair march paid for it)
 					If( this.lowShare.greaterThan( 0 ), () => {
 
-						const column = alpha.mul( shadowed ).mul( columnT ).toVar();
-						columnLight.addAssign( column );
-						columnCore.addAssign( column.mul( exp( shadowTau.mul( this.lobe.sub( 1 ) ) ) ) );
+						columnLight.addAssign( alpha.mul( shadowed ).mul( columnT ) );
 
 					} );
 					if ( flash ) {
@@ -1499,18 +1482,17 @@ export class Clouds {
 				If( this.lowShare.greaterThan( 0 ), () => {
 
 					// the column's light over directions (see FORWARD_WEIGHT): the diffuse law over the
-					// key's light and the drawn sky's, and the forward lobe added on the key's alone (the
-					// sky's has no one direction)
+					// key's light and the drawn sky's, and the forward light added on the key's alone (the
+					// sky's has no one direction): a narrow lobe by ( 1 - overcast's share ), and by the
+					// share the same amount on level ground spread by the diffusion law (OVERCAST_BROAD)
 					const top = this.columnTop();
 					const key = top.key.toVar();
 					const diffuse = max( rd.y, 0 ).mul( 6 / 7 ).add( 3 / 7 ).toVar();
 					const nu = dot( rd, this.lightDir ).toVar();
 					const lobeOf = ( k: F ) => float( 1 ).sub( k.mul( k ) ).div( max( float( 1 ).add( k.mul( k ) ).sub( nu.mul( k ).mul( 2 ) ), 1e-3 ).pow( 1.5 ) );
-					// under overcast's share the core keeps only what came through with its direction
-					// (`columnCore`), the rest spreads into the broad lobe (OVERCAST_BROAD)
-					const core = mix( columnLight, columnCore, this.broadShare );
-					const lobe = lobeOf( this.lobe ).mul( core ).add( lobeOf( this.overcastBroad ).mul( columnLight.sub( core ) ) );
-					const light = key.add( top.sky ).mul( diffuse.mul( columnLight ) ).add( key.mul( this.lobeTint ).mul( lobe.mul( this.weight ) ) );
+					const lobe = lobeOf( this.lobe ).mul( columnLight ).mul( float( 1 ).sub( this.broadShare ) );
+					const folded = diffuse.mul( columnLight ).mul( this.broadLevel ).mul( this.broadShare );
+					const light = key.add( top.sky ).mul( diffuse.mul( columnLight ) ).add( key.mul( this.lobeTint ).mul( lobe.add( folded ).mul( this.weight ) ) );
 					color.addAssign( light.mul( this.lowShare ) );
 					// the parts the sky reaches take the sky over the deck's tops (`columnTop`, the open
 					// sky's mean radiance over the upper hemisphere) in place of the sky along the view
