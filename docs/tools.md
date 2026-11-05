@@ -758,7 +758,10 @@ readiness (and `--quick`, `--reference`, `--check`); use them instead of a scrip
 capture.mjs over views, which loads a cold page per view (`tools/parity/adhoc.mjs`, the README's
 capture-set). Builds without the jump's marker (`__PONLAI__.sceneJump`, older
 commits) get a page per view, as `--page-per-view` forces; a failed view or a lost page is retried
-and the rest of the set goes on in a fresh page. `--repeat` takes the repeats on other pages, in
+and the rest of the set goes on in a fresh page. A page that ends before it asks for a view (the
+browser did not start) is tried again the same way; when more than `--retries` starts in a row
+fail, the run ends with exit 1, naming the page's exit code and the last lines of its stderr.
+`--repeat` takes the repeats on other pages, in
 reverse order.
 `tools/capture-clip.mjs` captures a named clip (`tools/parity/clips.mjs`: a parity view set in
 motion, its camera path a function of the frame index) frame by frame with the page's stepper, as

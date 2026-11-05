@@ -223,7 +223,9 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
   (`--retries`, default 1) and the views still to come go on in a fresh page, whose first view is a
   fresh load. A page silent for three times `--timeout` plus two minutes, counted from the moment
   its view holds the GPU slot (the wait for the lock is not silence), is killed and treated the
-  same way. So one crash or a stuck page does not lose the set.
+  same way. So one crash or a stuck page does not lose the set. A page that ends before it asks
+  for a view (the browser did not start) is started again; more than `--retries` such starts in a
+  row end the run with exit 1, naming the page's exit code and the last lines of its stderr.
 - `--repeat`: each view twice (`<view>.repeat.png`), then a pixel comparison per view (decoded);
   exit 1 if any differ (or any capture failed). The repeats run after all the first captures, on
   other pages than the first captures and in reverse order: a view's repeat is reached from another
