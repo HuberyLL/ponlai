@@ -516,13 +516,15 @@ export const OVERCAST_BROAD = 0.5, OVERCAST_WEIGHT = 2.4;
 // from the light; raise the core for a wider plateau, the mean cosine for a tighter glow, the
 // weight for a brighter one. Fitted on the overcast sky with the sun at 18 degrees, over nine
 // pairs of mean cosine (0.75 to 0.85) and plateau (4 to 8 degrees), the weight for each set so its
-// plateau stands about 35 times the deck beside it: at these values the glow falls to half its
-// plateau's excess over the deck about 11.6 degrees from the light, to a quarter at 17 and a tenth
-// at 30, the plateau holds within 7 % of its level out to 7 degrees, and the plateau reads about 35
-// times the deck beside it at the light's elevation. A plateau of 5 degrees or less sags by more
-// than 10 % at 7; a mean cosine of 0.75 puts the half-power radius past 13 degrees, one of 0.85
-// near 10.
-export const DECK_GLOW = 1.33, DECK_GLOW_LOBE = 0.8, DECK_GLOW_CORE = 6;
+// plateau stands about 35 times the deck beside it, and solved again once the air under the deck
+// took the key's floor and gain (Sky.ts OVERCAST_KEY_GAIN), which brightens the deck beside the
+// light as seen through it (the glow is linear in the weight): at these values the glow falls to
+// half its plateau's excess over the deck about 11.7 degrees from the light, to a quarter at 17 and
+// a tenth at 30, the plateau holds within 7 % of its level out to 7 degrees, and the plateau reads
+// about 35 times the deck beside it at the light's elevation (33 with the sun at 30 degrees, 35 at
+// noon). A plateau of 5 degrees or less sags by more than 10 % at 7; a mean cosine of 0.75 puts the
+// half-power radius past 13 degrees, one of 0.85 near 10.
+export const DECK_GLOW = 1.65, DECK_GLOW_LOBE = 0.8, DECK_GLOW_CORE = 6;
 
 /** The forward lobe's light on level ground: the integral over the upper hemisphere of a
  * Henyey-Greenstein lobe of mean cosine g about a key of height mu0 (its direction's y), each
