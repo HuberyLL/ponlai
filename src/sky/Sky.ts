@@ -23,7 +23,7 @@ import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
 import { DAY_EXPOSURE, DUSK_DEPTH, displayNight, duskIn, nightAmbientShare, skyNight, starNight, sunRising, twilightMoon, twilightMoonSky, type DayCycleSnapshot } from './DayCycle.ts';
-import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckTakeover, type WeatherFront, type WeatherState } from './Weather.ts';
+import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckRamp, deckTakeover, overcastDeckLight, type WeatherFront, type WeatherState } from './Weather.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
@@ -930,6 +930,23 @@ const moonKeyRed = tune( 'lighting.moon.red', 1, { min: 0.3, max: 1.2 } );
 const moonKeyBlue = tune( 'lighting.moon.blue', 1.6, { min: 0.8, max: 4 } );
 const _moonKey = new THREE.Color();
 const _moonHue = new THREE.Color();
+// The key's gain under overcast's deck, on the land's floor of the key there (Weather.ts
+// `deckFloor`, `keyCloudFloor` below), by overcast's share and its deck's light (Weather.ts
+// `overcastDeckLight`: at every sun by day, gone by -6 degrees). Under the closed deck the land's
+// directional light is that floor through the sun's map, so the gain brightens the land's key and
+// the shadows the bamboo and the islanders cast with it; it stops where the floor times the gain
+// reaches 1, and where the clouds thin to a gap the key goes back to the sky's own
+// (`keyDirectVisibility`: mix( floor, 1, T )), so a gap's lit ground is never brighter than a clear
+// day's under the same sun. The sea, the water and the air read the clouds' own shadow, not the
+// floor, and take none of it (lighting/KeyCloud.ts). At 1 the floor is the weather's own. Raise it
+// if the land under the deck lacks the light from the sun's side and its cast shadows; lower it if
+// the shadows read as a clear day's. Tunable: `lighting.overcastKey`.
+const OVERCAST_KEY_GAIN = tune( 'lighting.overcastKey', 1, { min: 1, max: 3, onChange: markSkyRetune } );
+// The key's gain under a cloudy deck, on its floor, by cloudy's share and its deck's light
+// (Weather.ts `deckRamp`, whole from 6 degrees), as overcast's. A cloudy deck's floor is 0 (its
+// light comes through its gaps), so the gain does nothing there until the floor is given a value.
+// Tunable: `lighting.cloudyKey`.
+const CLOUDY_KEY_GAIN = tune( 'lighting.cloudyKey', 1, { min: 1, max: 3, onChange: markSkyRetune } );
 
 /** The factor per channel that turns MOON_KEY into the tuned hue at MOON_KEY's luminance. */
 function moonHue( target: THREE.Color ): THREE.Color {
@@ -1881,10 +1898,14 @@ export class Sky {
 		this.displaySolarIlluminance.value.copy( this.solarIlluminance );
 		this.displayAmbientGain.value = ambientGain;
 		// the deck's floor takes over from the clouds' own under the deck (Weather.ts `deckFloor`,
-		// `deckTakeover`), times the sun's share of the key: the floor is the sun's light under the
-		// deck, so it fades over the handoff and the moon takes none (`cloudFloor`, the cumulus'
+		// `deckTakeover`), times the key's gain under the deck (OVERCAST_KEY_GAIN, CLOUDY_KEY_GAIN: a
+		// visibility, so at most 1) and the sun's share of the key: the floor is the sun's light under
+		// the deck, so it fades over the handoff and the moon takes none (`cloudFloor`, the cumulus'
 		// shadow, is the key's whoever gives it)
-		this.keyCloudFloor.value = THREE.MathUtils.lerp( weather?.cloudFloor ?? 0, ( weather?.deckFloor ?? 0 ) * sunShare, skyMix ? deckTakeover( this.elevation, cloudedShare( skyMix ), skyMix[ 3 ] ?? 0 ) : 0 );
+		const overcastShare = skyMix ? skyMix[ 3 ] ?? 0 : 0;
+		const cloudyShare = skyMix ? cloudedShare( skyMix ) - overcastShare : 0;
+		const deckKeyGain = 1 + ( OVERCAST_KEY_GAIN() - 1 ) * overcastShare * overcastDeckLight( this.elevation ) + ( CLOUDY_KEY_GAIN() - 1 ) * cloudyShare * deckRamp( this.elevation );
+		this.keyCloudFloor.value = THREE.MathUtils.lerp( weather?.cloudFloor ?? 0, Math.min( ( weather?.deckFloor ?? 0 ) * deckKeyGain, 1 ) * sunShare, skyMix ? deckTakeover( this.elevation, cloudedShare( skyMix ), skyMix[ 3 ] ?? 0 ) : 0 );
 		this.castShadow.value = weather?.castShadow ?? 1;
 		// A front that has arrived is the sky at rest: its `from` is no longer in the sky, and the
 		// bounds that take the larger of the two would keep marching for it.

@@ -328,7 +328,7 @@ const OVERCAST_LAND = tune( 'lighting.relight.overcastLand', 6.3, { min: 1, max:
  * from 6 degrees). It sets the land's light against the sky's: a higher gain lifts the meadow and,
  * through the exposure that meters both, darkens the sky over it in the frame; and it sets a gap's
  * lit meadow against a clear day's under the same sun. It is set together with the cloudy deck's
- * key gain (main.ts CLOUDY_KEY_GAIN) and the cloudy exposure key (post/Exposure.ts `cloudy`).
+ * key gain (sky/Sky.ts CLOUDY_KEY_GAIN) and the cloudy exposure key (post/Exposure.ts `cloudy`).
  * Tunable: `lighting.relight.cloudyLand`. */
 const CLOUDY_LAND = tune( 'lighting.relight.cloudyLand', 1.45, { min: 1, max: 24 } );
 /** The sea's diffuse albedo as a bounce surface: the order of water's volume-scattering albedo

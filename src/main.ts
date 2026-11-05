@@ -14,10 +14,9 @@ import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, nightAmbientShare, sunRising, type DayPreset } from './sky/DayCycle.ts';
-import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckLight, deckRamp, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, overcastDeckLight, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
+import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckLight, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, overcastDeckLight, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
-import { keyDeckGain } from './lighting/KeyGain.ts';
 import { keyDeckShare } from './lighting/KeyCloud.ts';
 import { Wind, weatherWind } from './weather/Wind.ts';
 import { Rain, setRainShading } from './weather/Rain.ts';
@@ -428,24 +427,6 @@ function prepareSkyState(): void {
 
 }
 
-/** The key's gain under overcast's deck, by overcast's share and its deck's light (sky/Weather.ts
- * `overcastDeckLight`: at every sun by day, gone by -6 degrees), on the land's key (shared.ts
- * `landKey`: the lit materials and the figures, the ground's bounce, the ambient light's bounce
- * lobe), never the sea's (shared.ts `sunColor`). It starts at 1, which leaves the deck's lobe out
- * (lighting/KeyGain.ts): under the deck the land's directional light is the weather's floor of the
- * key through the sun's map (sky/Weather.ts `deckFloor`, Sky.ts `keyDirectVisibility`), and the
- * wider forward light the deck scatters about the sun's place is drawn in the sky, which the land's
- * ambient light takes with the rest of it (lighting/AmbientRelight.ts OVERCAST_LAND); a lobe on top
- * would count that light twice. A gain over 1 adds a lobe toward the key in the ambient, taken back
- * per point by the clouds' transmittance along the key (whole under 0.6, none in a gap): raise it
- * only if the faces turned from the sun under the deck lack a light leaning toward it that the
- * land's gain cannot give. Tunable: `lighting.overcastKey`. */
-const OVERCAST_KEY_GAIN = tune( 'lighting.overcastKey', 1, { min: 1, max: 8 } );
-/** The key's gain under a cloudy deck, by cloudy's share and its deck's light (sky/Weather.ts
- * `deckRamp`, whole from 6 degrees), as overcast's: it starts at 1, the deck's lobe left out, so
- * the land under a cloudy deck takes its sky (lighting/AmbientRelight.ts CLOUDY_LAND) and the key
- * the clouds' shadow lets through. Tunable: `lighting.cloudyKey`. */
-const CLOUDY_KEY_GAIN = tune( 'lighting.cloudyKey', 1, { min: 1, max: 8 } );
 /** How far the sward lets go of its own sharp shade in the key under overcast's deck (post/
  * MeadowShade.ts `swardShadeRelease`), by overcast's share and its deck's light: 0 keeps the
  * sward's shade between its blades as under a clear sky, so the floor's light under the deck
@@ -457,20 +438,16 @@ const SWARD_RELEASE = tune( 'lighting.swardRelease', 0, { min: 0, max: 1, onChan
 
 function publishLighting(): void {
 
-	// three's sun: the direct key, the sky's, which the clouds' shadow cuts per point (Sky.ts
-	// `keyDirectVisibility`); the land's key (shared.landKey): it times the deck's gain (1 unless
-	// tuned), which each point keeps by its clouds' transmittance, the part over the direct key the
-	// deck's lobe in the ambient (lighting/KeyGain.ts); the sea's (shared.sunColor): the sky's key
-	// without the gain, which the clouds' own transmittance cuts (lighting/KeyCloud.ts)
+	// three's sun: the direct key, the sky's, which the clouds' shadow cuts per point over the land's
+	// floor, the deck's key gain on that floor (Sky.ts `keyDirectVisibility`, OVERCAST_KEY_GAIN); the
+	// land's key (shared.landKey) and the sea's (shared.sunColor): both the sky's key, the sea's cut
+	// by the clouds' own transmittance (lighting/KeyCloud.ts)
 	const overcast = weather.skyMix[ 3 ] ?? 0;
-	const cloudy = cloudedShare( weather.skyMix ) - overcast;
-	const keyGain = 1 + ( OVERCAST_KEY_GAIN() - 1 ) * overcast * overcastDeckLight( sky.elevation ) + ( CLOUDY_KEY_GAIN() - 1 ) * cloudy * deckRamp( sky.elevation );
 	sun.color.copy( sky.keyColor );
-	keyDeckGain.value = keyGain;
 	// how far the open key on the land is its floor's under a deck: the islanders read their cast
 	// shadow against it (lighting/KeyCloud.ts `keyDeckShare`)
 	keyDeckShare.value = deckLight( sky.elevation, cloudedShare( weather.skyMix ), overcast );
-	shared.landKey.value.set( sun.color.r * keyGain, sun.color.g * keyGain, sun.color.b * keyGain );
+	shared.landKey.value.set( sun.color.r, sun.color.g, sun.color.b );
 	// the sward's shade release under overcast's deck (SWARD_RELEASE, post/MeadowShade.ts
 	// `swardShadeRelease`)
 	swardShadeRelease.value = SWARD_RELEASE() * overcast * overcastDeckLight( sky.elevation );

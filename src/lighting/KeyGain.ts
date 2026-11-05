@@ -7,7 +7,7 @@ import { keyCloudReaders } from './KeyCloud.ts';
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 
-// The key's gain under a deck, per point. Both gains (main.ts OVERCAST_KEY_GAIN, CLOUDY_KEY_GAIN)
+// The key's gain under a deck, per point. Both gains (sky/Sky.ts OVERCAST_KEY_GAIN, CLOUDY_KEY_GAIN)
 // start at 1, where nothing here is built: under a deck the land's directional light is the
 // weather's floor of the key through the sun's map (sky/Weather.ts `deckFloor`), and the wider
 // forward light the deck scatters about the sun's place is drawn in the sky, which the land's
@@ -75,7 +75,7 @@ type V3 = THREE.Node<'vec3'>;
 //   so a gap's lit ground stands as a clear day's under the same sun but for the sky's light, not
 //   times the gain.
 
-/** The weather's key gain under its deck (main.ts publishLighting), 1 without a deck. */
+/** 1: the deck's key gain is on the land's floor of the key (sky/Sky.ts OVERCAST_KEY_GAIN), so nothing here is built. */
 export const keyDeckGain = uniform( 1 );
 
 /** Where the key's gain starts to fall with the clouds' transmittance, and where it is gone. */
