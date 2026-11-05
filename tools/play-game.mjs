@@ -4,7 +4,7 @@
 //
 //   node tools/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow]
 //     [--population 0] [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>]
-//     [--latency 90] [--out dir]
+//     [--latency 90] [--thoughts] [--out dir]
 //
 //   --days N        game days to play (default 5; a fraction plays part of one)
 //   --seed S        the game's seed (SimState.seed: the islanders, their lifespans, the catches)
@@ -24,6 +24,8 @@
 //   --latency G     the game seconds an asynchronous thought takes (default 90: three real
 //                   seconds at the day clock's default 2880 s a game day, where a real second is
 //                   30 game seconds)
+//   --thoughts      also write thoughts.jsonl: every thought, what the islander perceived and the
+//                   brain's answer (calls, or why it failed), for judging a brain offline
 //   --out DIR       where the outputs go (default artifacts/play/<UTC stamp>/, git-ignored)
 //
 // What it guarantees. The simulation runs as the page runs it (Game.update, Game.render): a tick
@@ -61,8 +63,9 @@
 // game hour, every islander's position, needs, bag and action), summary.json (per islander the
 // share of time by activity, satiety's minimum and mean, fish caught, eaten, given, received, put
 // and taken, thoughts; the dead, the buildings and when they were placed and built, the island's
-// stock, the growth, the record's entries by kind) and record.json (the record as a save holds
-// it). On stdout a short summary. Exit 0 when the run played through, 1 when it failed (a
+// stock, the growth, the record's entries by kind), record.json (the record as a save holds it)
+// and, with --thoughts, thoughts.jsonl (a line per thought: who, when it was asked and answered,
+// the perception and the calls). On stdout a short summary. Exit 0 when the run played through, 1 when it failed (a
 // brain that kept failing, an error), 2 for a bad option. A long run (many days, a language-model
 // brain) goes through tools/job.mjs.
 import './qos.mjs';
@@ -85,7 +88,7 @@ const SKY = 'fair';
 // rejected answers in a row that end the run
 const MAX_FAILURES = 10;
 const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
-const USAGE = 'usage: node tools/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow] [--population 0] [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>] [--latency 90] [--out dir] (see the header)';
+const USAGE = 'usage: node tools/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow] [--population 0] [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>] [--latency 90] [--thoughts] [--out dir] (see the header)';
 
 function fail( message ) {
 
@@ -98,7 +101,7 @@ function fail( message ) {
 
 function parseOptions( argv ) {
 
-	const o = { days: 5, seed: 1, hour: 8, pieces: 0, grow: false, population: 0, place: [], script: null, brain: 'standin', latency: 90, out: null };
+	const o = { days: 5, seed: 1, hour: 8, pieces: 0, grow: false, population: 0, place: [], script: null, brain: 'standin', latency: 90, thoughts: false, out: null };
 	const number = ( name, text, ok ) => {
 
 		const x = Number( text );
@@ -119,6 +122,7 @@ function parseOptions( argv ) {
 			case '--population': o.population = number( arg, value(), whole ); break;
 			case '--latency': o.latency = number( arg, value(), whole ); break;
 			case '--grow': o.grow = true; break;
+			case '--thoughts': o.thoughts = true; break;
 			case '--place': {
 
 				const text = value() ?? '';
@@ -212,7 +216,9 @@ meet();
 function describe( call ) {
 
 	const args = call.args && typeof call.args === 'object' ? call.args : {};
-	const values = Object.values( args ).filter( ( x ) => x !== undefined ).map( ( x ) => people.has( x ) ? label( x ) : typeof x === 'object' ? JSON.stringify( x ) : String( x ) );
+	// a `do` reads as its option and place first: "do put chest1 fish 1"
+	const keys = call.tool === 'do' ? [ 'action', 'place', ...Object.keys( args ).filter( ( k ) => k !== 'action' && k !== 'place' ) ] : Object.keys( args );
+	const values = keys.map( ( k ) => args[ k ] ).filter( ( x ) => x !== undefined ).map( ( x ) => people.has( x ) ? label( x ) : typeof x === 'object' ? JSON.stringify( x ) : String( x ) );
 	return [ call.tool, ...values ].join( ' ' );
 
 }
@@ -428,8 +434,9 @@ process.on( 'unhandledRejection', ( reason ) => {
 } );
 
 const inner = await loadBrain( options.brain );
-// thoughts in flight, in the order asked (so in the order due: the latency is one for all)
-const pending = [];
+// thoughts in flight, in the order asked (so in the order due: the latency is one for all), and
+// every thought with what it perceived and answered (--thoughts)
+const pending = [], thoughts = [];
 let asked = 0, answered = 0, failed = 0, failures = 0;
 // the brain in the islanders' slot: the inner brain's answers, an asynchronous one held to its tick
 const brain = {
@@ -439,8 +446,13 @@ const brain = {
 		asked ++;
 		bump( who, 'thoughts' );
 		const answer = inner.think( perception, who );
-		if ( ! ( answer instanceof Promise ) ) return answer;
-		const entry = { who, asked: sim.state.tick, due: sim.state.tick + options.latency, answer };
+		if ( ! ( answer instanceof Promise ) ) {
+
+			if ( options.thoughts ) thoughts.push( { who, asked: when( sim.state.tick ), perception, calls: answer } );
+			return answer;
+
+		}
+		const entry = { who, asked: sim.state.tick, due: sim.state.tick + options.latency, answer, perception };
 		// settled meanwhile (in real time) without counting as unhandled
 		answer.catch( () => {} );
 		const gate = new Promise( ( resolve, reject ) => {
@@ -465,9 +477,11 @@ async function answerDue() {
 		try {
 
 			const calls = await entry.answer;
+			if ( ! Array.isArray( calls ) ) throw new Error( `the answer is not a list of tool calls: ${ JSON.stringify( calls ) }` );
 			answered ++;
 			failures = 0;
 			push( entry.asked, `${ span } ${ label( entry.who ) } thought → ${ calls.length ? calls.map( describe ).join( '; ' ) : 'nothing' }` );
+			if ( options.thoughts ) thoughts.push( { who: entry.who, asked: when( entry.asked ), answered: when( tick ), perception: entry.perception, calls } );
 			entry.resolve( calls );
 
 		} catch ( error ) {
@@ -475,6 +489,7 @@ async function answerDue() {
 			failed ++;
 			failures ++;
 			push( entry.asked, `${ span } ${ label( entry.who ) } thought, and failed: ${ error?.message ?? error }` );
+			if ( options.thoughts ) thoughts.push( { who: entry.who, asked: when( entry.asked ), answered: when( tick ), perception: entry.perception, failed: String( error?.message ?? error ) } );
 			entry.reject( new BrainFailure( String( error?.message ?? error ) ) );
 
 		}
@@ -533,7 +548,7 @@ function placeAnywhere( kind ) {
 const timeline = [];
 const growth = [];
 const end = Math.round( options.days * SECONDS_PER_GAME_DAY );
-let line = 0, recorded = 0, ok = true;
+let line = 0, recorded = 0, gone = 0, ok = true;
 
 /** Every hour: each islander's state (timeline.json); every six, their needs in the transcript. */
 function sample() {
@@ -612,6 +627,13 @@ for ( ;; ) {
 	const tick = sim.state.tick;
 	record.observe( sim, SKY, 0 );
 	meet();
+	for ( ; gone < sim.state.dead.length; gone ++ ) {
+
+		const id = sim.state.dead[ gone ].id;
+		close( id, 'died', tick );
+		flush( id );
+
+	}
 	for ( const v of sim.state.villagers ) {
 
 		settle( v );
@@ -637,7 +659,13 @@ for ( ;; ) {
 	}
 
 }
-for ( const id of [ ...spells.keys() ] ) flush( id );
+// what is under way at the end runs to the end
+for ( const [ id, s ] of [ ...spells ] ) {
+
+	if ( s.open ) s.end = sim.state.tick;
+	flush( id );
+
+}
 readRecord();
 
 // ------------------------------------------------------------------ outputs
@@ -692,6 +720,7 @@ const summary = {
 writeFileSync( path.join( out, 'summary.json' ), JSON.stringify( summary, null, '\t' ) + '\n' );
 writeFileSync( path.join( out, 'timeline.json' ), JSON.stringify( { start: { seed: options.seed, hour: options.hour, pieces: options.pieces }, hours: timeline } ) + '\n' );
 writeFileSync( path.join( out, 'record.json' ), JSON.stringify( record.save(), null, '\t' ) + '\n' );
+if ( options.thoughts ) writeFileSync( path.join( out, 'thoughts.jsonl' ), thoughts.map( ( t ) => JSON.stringify( t ) + '\n' ).join( '' ) );
 
 // the transcript, day by day
 const command = [ 'node tools/play-game.mjs', `--days ${ options.days }`, `--seed ${ options.seed }`, `--hour ${ options.hour }`, `--pieces ${ options.pieces }`,

@@ -1429,7 +1429,8 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   a version-17 save carried over, saves no step reaches refused) and the island's growth; its island is in
   `tools/game-fixture.mjs`.
 - `tools/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow] [--population 0]
-  [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>] [--latency 90] [--out dir]`
+  [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>] [--latency 90] [--thoughts]
+  [--out dir]`
   (plain `node`) plays the game headless, as the page runs it (a tick at a time, the record looking
   after each, the leader's lines and the growth between ticks), and writes what happened to
   `artifacts/play/<stamp>/` (`--out`): `transcript.md` (day by day, the record's entries, the
@@ -1437,7 +1438,9 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   six game hours and a table per day), `timeline.json` (every islander each game hour: position,
   needs, bag, action), `summary.json` (per islander the share of time by activity, satiety's
   minimum and mean, the fish caught, eaten, given and stored; the dead, the buildings and when
-  they were built, the stock) and `record.json`, with a short summary on stdout. `--place` puts
+  they were built, the stock), `record.json` and, with `--thoughts`, `thoughts.jsonl` (a line per
+  thought: what the islander perceived and the brain's answer, for judging a brain offline; about
+  1 MB for four islanders over five days), with a short summary on stdout. `--place` puts
   blueprints down at the start (at the first ground that takes one without a point), `--population`
   adds islanders, `--grow` adds the next piece when the population reaches a step, and `--script`
   has the leader speak at given times (`[ { "at": "d1 08:30", "to": "all" | [ "v1" ], "words": "..." } ]`),
