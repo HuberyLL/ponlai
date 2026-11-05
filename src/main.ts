@@ -415,39 +415,29 @@ function prepareSkyState(): void {
 
 /** The key's gain under overcast's deck, by overcast's share and its deck's light (sky/Weather.ts
  * `overcastDeckLight`: at every sun by day, gone by -6 degrees), on the land's key (shared.ts
- * `landKey`: the deck's lobe the lit materials and the figures take, the ground's bounce, the
- * ambient light's bounce lobe) and the sea's (shared.ts `sunColor`: the water's direct light, the
- * sea's bounce onto the land). Not on three's sun, the direct key on the land, the vegetation and
- * the rock: what the gain adds over it is the deck's diffuse light, a wide lobe toward the key in
- * the ambient (lighting/KeyGain.ts). Not on the clouds, the sky's bakes or the air
- * (`pipeline.air.keyColor`), which take the sky's own key. Under the deck the land takes its
- * light from the sky's integral (lighting/AmbientRelight.ts OVERCAST_LAND) and the key only where
- * the clouds' shadow lets it through (Beer's law along it through the deck), so the sky's key
- * alone, the sun's light under the deck's own optical depth, lifts the ground under a thin region
- * too little against the ambient light for the region to read as a lit patch. The gain stands for
- * the deck's forward light the key's direction carries into a thin region, which the sky's one key
- * does not. Every term it multiplies is cut by the clouds' shadow at the point (the sea's bounce
- * and the ambient bounce lobe by the probe's shade), which also takes the gain back where the
- * transmittance rises over 0.6 (lighting/KeyGain.ts). It sets a lit patch of meadow against the
- * meadow under the thick deck, scene linear, and a lit sea or land in view meters the frame down
- * with it. Tunable: `lighting.overcastKey`. */
-const OVERCAST_KEY_GAIN = tune( 'lighting.overcastKey', 4, { min: 1, max: 8 } );
+ * `landKey`: the lit materials and the figures, the ground's bounce, the ambient light's bounce
+ * lobe) and the sea's (shared.ts `sunColor`). It starts at 1, which leaves the deck's lobe out
+ * (lighting/KeyGain.ts): under the deck the land's directional light is the weather's floor of the
+ * key through the sun's map (sky/Weather.ts `deckFloor`, Sky.ts `keyDirectVisibility`), and the
+ * wider forward light the deck scatters about the sun's place is drawn in the sky, which the land's
+ * ambient light takes with the rest of it (lighting/AmbientRelight.ts OVERCAST_LAND); a lobe on top
+ * would count that light twice. A gain over 1 adds a lobe toward the key in the ambient, taken back
+ * per point by the clouds' transmittance along the key (whole under 0.6, none in a gap): raise it
+ * only if the faces turned from the sun under the deck lack a light leaning toward it that the
+ * land's gain cannot give. Tunable: `lighting.overcastKey`. */
+const OVERCAST_KEY_GAIN = tune( 'lighting.overcastKey', 1, { min: 1, max: 8 } );
 /** The key's gain under a cloudy deck, by cloudy's share and its deck's light (sky/Weather.ts
- * `deckRamp`, whole from 6 degrees), for the same forward light as overcast's. Both gains are
- * set per weather here and taken back per point by the clouds' transmittance along the key
- * (lighting/KeyGain.ts): whole under a transmittance of 0.6 or less, none in a gap. A cloudy deck's
- * key moves the land's lightness in the frame little: it sets the meadow under the deck's thin parts
- * against the meadow under its thick ones, scene linear. It is set together with the land's gain
- * under the deck (lighting/AmbientRelight.ts CLOUDY_LAND) and the cloudy exposure key
- * (post/Exposure.ts). Tunable: `lighting.cloudyKey`. */
-const CLOUDY_KEY_GAIN = tune( 'lighting.cloudyKey', 3, { min: 1, max: 8 } );
+ * `deckRamp`, whole from 6 degrees), as overcast's: it starts at 1, the deck's lobe left out, so
+ * the land under a cloudy deck takes its sky (lighting/AmbientRelight.ts CLOUDY_LAND) and the key
+ * the clouds' shadow lets through. Tunable: `lighting.cloudyKey`. */
+const CLOUDY_KEY_GAIN = tune( 'lighting.cloudyKey', 1, { min: 1, max: 8 } );
 
 function publishLighting(): void {
 
 	// three's sun: the direct key, the sky's, which the clouds' shadow cuts per point (Sky.ts
 	// `keyDirectVisibility`); the land's key and the sea's (shared.sunColor): it times the deck's
-	// gain, which each point keeps by its clouds' transmittance, the part over the direct key the
-	// deck's lobe in the ambient (lighting/KeyGain.ts)
+	// gain (1 unless tuned), which each point keeps by its clouds' transmittance, the part over the
+	// direct key the deck's lobe in the ambient (lighting/KeyGain.ts)
 	const overcast = weather.skyMix[ 3 ] ?? 0;
 	const cloudy = cloudedShare( weather.skyMix ) - overcast;
 	const keyGain = 1 + ( OVERCAST_KEY_GAIN() - 1 ) * overcast * overcastDeckLight( sky.elevation ) + ( CLOUDY_KEY_GAIN() - 1 ) * cloudy * deckRamp( sky.elevation );
