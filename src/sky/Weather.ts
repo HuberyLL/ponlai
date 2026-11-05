@@ -166,12 +166,16 @@ export interface WeatherState {
 	directVisibility: number;
 	// The share of the key's direct light the land keeps under the thickest cloud: the floor of the
 	// clouds' shadow on the island (Sky.ts `keyDirectVisibility`, `keyCloudVisibility`). 1 takes the
-	// deck's shadow away, leaving `directVisibility` alone to set the land's direct light.
+	// deck's shadow away, leaving `directVisibility` alone to set the land's direct light. By day
+	// under a cloudy deck it gives way to `deckFloor` (`deckTakeover`).
 	cloudFloor: number;
-	// The clouds' shadow floor that takes over from `cloudFloor` under a deck (`deckTakeover`). The
-	// kept skies have none (0), as the parked skies: the key reaches their land only through the
-	// deck's own transmittance (`shadowDensity` 1), per point by Beer's law, so a thin part of the
-	// deck lets the key through in patches and a thick one keeps it out.
+	// The clouds' shadow floor that takes over from `cloudFloor` under a deck (`deckTakeover`): under
+	// a deck the land's key keeps this share whatever the deck's depth (Sky.ts `keyDirectVisibility`),
+	// through the sun's map, so the island's cast shadows show under it. Overcast has one; clear and
+	// fair none (a floor there would show the takeover's step when a deck comes in); cloudy none so
+	// far; the parked skies none, their key reaching the land only through the deck's own
+	// transmittance. Raise it for a stronger directional light and darker cast shadows under the
+	// deck; a debug page tunes it per sky without a reload (`sky.deckFloor@cloudy|overcast`).
 	deckFloor: number;
 	// How much of the key's cast shadow (the sun's map: groves, cliffs, culms) the land shows, 1 all
 	// of it (lighting/SolarShadow.ts `installOpenShadow`).
@@ -265,26 +269,22 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // together; none of these presets adds a grey screen veil. Fog is a low layer over the sea that
 // the camera looks through, not a tint over the frame.
 // The island's direct light under cloud: a cloudy sky's cumulus pass the full sun through their
-// gaps; at a low sun their shadow keeps about 8 % of it (`cloudFloor`), and once their deck has
-// taken over (from 6 degrees, `deckRamp`) none (`deckFloor` 0): under the deck the key comes through
-// per point by its transmittance, times the deck's key gain where the deck is thin
-// (lighting/KeyGain.ts), and the land's sky light takes a gain of its own (lighting/AmbientRelight.ts
-// CLOUDY_LAND), the water's the deck's (DECK_SKY_GAIN). Overcast is a closed
-// dark deck at every sun height (`overcastDeckLight`), lit from its sky (its glow about the sun's
-// place included: the land by its own gain, lighting/AmbientRelight.ts OVERCAST_LAND, the water by
-// DECK_SKY_GAIN)
-// and exposed by the sky (post/Exposure.ts). The sun reaches the land and the sea only through the
-// deck: the key whole (`directVisibility` 1) times the clouds' shadow, Beer's law along the key
-// through the deck's own optical depth (`shadowDensity` 1, no floor: `deckFloor` 0), read per point
-// from the shadow map, so the rolls take it all and the thinned regions let some through in patches
-// that move with the deck; under them the island's own cast shadows (`castShadow` 1) show, save
-// the sward's on itself, whose shade in the key is its canopy's (post/MeadowShade.ts
-// `swardShadeRelease`).
+// gaps; at a low sun their shadow keeps about 8 % of it (`cloudFloor`). Once a deck has taken over
+// (cloudy's from 6 degrees, `deckRamp`; overcast's at every sun by day, `overcastDeckLight`) the key
+// keeps the weather's `deckFloor` on the land (Sky.ts `keyDirectVisibility`), through the sun's map:
+// it is the direct key, so it takes the sun's map, the meadow's screen-space shade and the canopy's
+// light, and the island's cast shadows show under the deck (`castShadow` 1), soft because the sky's
+// light is the larger share, save the sward's on itself, whose shade in the key is its canopy's
+// (post/MeadowShade.ts `swardShadeRelease`). The water and the air take the clouds' own
+// transmittance. Overcast is a closed deck deep enough that its disc does not show (Sky.ts
+// `domeColour`): the land under it is even, its sky the deck's own glow about the sun's place, which
+// the land takes with the rest of the sky (lighting/AmbientRelight.ts OVERCAST_LAND, CLOUDY_LAND) and
+// the water by DECK_SKY_GAIN; exposed by the sky (post/Exposure.ts).
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
 	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
 	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
 	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, haze: 0.0021, nearDensity: 0.13, nearStart: 100, nearEnd: 700, rain: 0, fog: 0, storm: 0, streaks: 0 },
-	overcast: { coverage: 0.94, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, haze: 0.00974, nearDensity: 0.08, nearStart: 250, nearEnd: 500, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
+	overcast: { coverage: 0.94, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0.3, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, haze: 0.00974, nearDensity: 0.08, nearStart: 250, nearEnd: 500, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
 	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, haze: 0.0095, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
 	// A squall: the darkest deck, heavy rain, a strong wind (PRESET_WIND) and a rough, white-capped sea.
 	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, haze: 0.0135, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 1, fog: 0.3, storm: 1, streaks: 0 },
@@ -371,10 +371,15 @@ const smoothIntegral = ( t: number ) => t * t * t * ( 1 - 0.5 * t );
 const headingDelta = ( from: number, to: number ) => ( ( ( to - from ) % 360 ) + 540 ) % 360 - 180;
 const wrapHeading = ( heading: number ) => ( ( heading % 360 ) + 360 ) % 360;
 
+// The presets the weather moves between: a working copy of WEATHER_PRESETS whose `deckFloor` a
+// debug page may tune (`Weather.setDeckFloor`), so a load, a jump and a front all take the tuned
+// value, as a page loaded with it would. Every other reader keeps WEATHER_PRESETS.
+const WORKING_PRESETS = Object.fromEntries( Object.entries( WEATHER_PRESETS ).map( ( [ name, preset ] ) => [ name, { ...preset } ] ) ) as Record<WeatherName, SkyPreset>;
+
 function presetFor( name: WeatherName ): Readonly<SkyPreset> {
 
-	if ( ! Object.hasOwn( WEATHER_PRESETS, name ) ) throw new RangeError( `Unknown weather preset: ${ String( name ) }` );
-	return WEATHER_PRESETS[ name ];
+	if ( ! Object.hasOwn( WORKING_PRESETS, name ) ) throw new RangeError( `Unknown weather preset: ${ String( name ) }` );
+	return WORKING_PRESETS[ name ];
 
 }
 
@@ -477,6 +482,24 @@ export class Weather {
 	get front(): WeatherFront { return { from: this.from, to: this.destination, progress: this.progress }; }
 
 	snapshot(): WeatherState { return { ...this.current }; }
+
+	/** Sets the land's floor under a deck for the sky `name` (its preset's `deckFloor`; main.ts
+	 * tunes it on debug pages): every later load, jump and front takes it, and the state as it
+	 * stands follows as a page loaded with it would hold it. Resting on that sky, the state and both
+	 * ends of its front take it; on a front toward it, only the end it moves to (the start is a
+	 * snapshot of the sky it left). */
+	setDeckFloor( name: WeatherName, deckFloor: number ): void {
+
+		presetFor( name );
+		WORKING_PRESETS[ name ].deckFloor = deckFloor;
+		if ( this.targetName !== name ) return;
+		this.destination = { ...this.destination, deckFloor };
+		if ( this.duration > this.elapsed ) return;
+		this.from.deckFloor = deckFloor;
+		this.current.deckFloor = deckFloor;
+
+	}
+
 	/** The kept skies' shares in the sky as it stands (KEPT_SKIES' order, summing to 1): a front
 	 * moves them from where they stood to its target's as it moves the state's fields; a parked sky
 	 * counts as overcast. The lighting's per-weather knobs weight their columns by it

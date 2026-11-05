@@ -287,6 +287,20 @@ const dayCycle = new DayCycle( loaded.day );
 const weather = new Weather( loaded.weather, loaded.wind );
 const weatherEffects = { rain: true, wetness: true };
 weather.auto = loaded.autoWeather;
+// The land's floor under a deck per clouded sky (Weather.ts `deckFloor`), tunable on debug pages
+// without a reload: the presets the weather moves between take it, and the state that stands on
+// that sky follows (`setDeckFloor`). A `?tune=` value is the start, applied here as a load would.
+for ( const name of [ 'cloudy', 'overcast' ] as const ) {
+
+	const floor = tune( `sky.deckFloor@${ name }`, WEATHER_PRESETS[ name ].deckFloor, { min: 0, max: 1, onChange: ( value ) => {
+
+		weather.setDeckFloor( name, value );
+		markSkyRetune();
+
+	} } );
+	weather.setDeckFloor( name, floor() );
+
+}
 const requestedPreset = params.get( 'preset' );
 if ( loaded.preset ) dayCycle.setPreset( loaded.preset );
 let manualSun = false;
