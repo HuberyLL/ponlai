@@ -168,7 +168,8 @@ const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
 //     The colours are the sky's illuminance colour (Atmosphere `sunIlluminance`), the open sky's
 //     times the weather's diffuse gain and the sun's times its direct share, the sun's before the
 //     weather's day sky (Sky.ts `sunBeamIlluminance`: the day sky lowers the sky's own light the
-//     sun gives, not the beam through the air below it, which the land's key keeps too); the sun's Rayleigh
+//     sun gives, not the beam through the air below it, which the land's key keeps too; under
+//     overcast's closed deck it sets with the land's key, by the disk's visible share); the sun's Rayleigh
 //     colour is the aerosol's times the key's `sunRayleigh`. Each share has one weight, keyed
 //     (HazeKeys.ts), the weather's gain over both (2 under cloud) and `gain` (1, an A/B knob) over
 //     the sum; the rows, the phases and the colours being the sky's own, a weight is about the

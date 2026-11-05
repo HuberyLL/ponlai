@@ -1039,7 +1039,14 @@ export class Sky {
 	// the sun's light the sky lends without the weather's day sky (`skyGain` at a day sky of 1): the
 	// beam the air under the sky scatters (weather/VolumetricHaze.ts `mieColour`), which the day sky
 	// leaves as it leaves the land's key, since it lowers the sky's own light the sun gives, not the
-	// sun's light through the air below it; `atmosphere.sunIlluminance` where the day sky is 1
+	// sun's light through the air below it; `atmosphere.sunIlluminance` where the day sky is 1. Under
+	// overcast's closed deck, on its share, the beam fades as the land's key does, by the setting
+	// disk's visible share (Atmosphere `sunVisibleShareToSun`), and is gone with it a degree under the
+	// horizon: the air under the deck and the land take the same sunlight through it. The sky's own
+	// twilight beam outlasted the key there, and the air under the deck's floor (`deckKeyFloor`) went
+	// on scattering it after the land's key had set: at -1 degree a pink veil over the whole island,
+	// the display 3.4 stops brighter. The other skies keep the twilight's beam (their air is lit
+	// from above the clouds' gaps, which the earth's shadow in the haze's rows already holds).
 	readonly sunBeamIlluminance = new THREE.Color();
 	// A shared artistic solar tint affects both scattering and direct light.
 	sunTint = new THREE.Color( 1.0, 0.97, 0.9 );
@@ -1876,7 +1883,10 @@ export class Sky {
 		// (`skyGain`), the clouds' sunlight (`trackClouds`) and the distant sea's (`beginBake`)
 		this.daySky = weather ? daySkyAt( weather.daySky, weather.daySkyExponent, this.elevation ) : 1;
 		this.atmosphere.sunIlluminance.value.copy( this.solarIlluminance ).multiply( skyGain( this.elevation, this.rising, cloud, this.daySky, _skyGain ) );
-		this.sunBeamIlluminance.copy( this.solarIlluminance ).multiply( skyGain( this.elevation, this.rising, cloud, 1, _skyBeam ) );
+		// (on overcast's share it fades with the setting disk's visible share, as the land's key does:
+		// see `sunBeamIlluminance`)
+		const beamFade = 1 + ( this.atmosphere.sunVisibleShareToSun() - 1 ) * ( skyMix ? skyMix[ 3 ] ?? 0 : 0 );
+		this.sunBeamIlluminance.copy( this.solarIlluminance ).multiply( skyGain( this.elevation, this.rising, cloud, 1, _skyBeam ) ).multiplyScalar( beamFade );
 		this.gapGain.value = debugFlags.skyGain === false ? 1 : clearSky( this.elevation, this.rising, 0 ) / clearSky( this.elevation, this.rising, cloud );
 		this.atmosphere.updateSync();
 		// Cap the hue of the air's extinction first, then fade by the disk's visible share, so the
