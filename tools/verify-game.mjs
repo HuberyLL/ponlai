@@ -14,21 +14,27 @@
 // coming piece's cells, a step crossed adding exactly one piece, the grid opening cells without
 // reindexing, islanders walking onto the new piece, the shore moving to the new coast as on a
 // fresh load, and a save that keeps its piece count; then the session the page and the play tool
-// run the game in (src/game/Session.ts): the islanders landing at the record's first look and a
-// blueprint placed after it noted as the player's, the sky noted over the ticks since the last look,
-// the leader's words heard by a brain that hears, a save read back into another session, and a
-// growth asked once while its piece is on the way and not again when none came; then the islanders among themselves: words
-// heard within earshot and noticed until the next thought, the others in sight by name, age and
-// what they do, `do` naming its place, giving (and its refusals and record entry), going to someone
-// who walks away, following until replaced or the one followed dies, the stand-in asking for food
-// and being given it, and a save mid-follow that plays on the same; last, the rules' maths: no
-// function in src/game/sim whose result differs between engines, and its own exp and log against Math's.
+// run the game in (src/game/Session.ts): a new game's islanders landing as it is installed, a
+// blueprint placed noted as the player's at its tick, the player's commands checked at the entrance,
+// the sky noted over the ticks since the last look, the leader's words heard by a brain that hears, a
+// save read back into another session, and a growth asked once while its piece is on the way and not
+// again when none came; then the islanders among themselves: words heard within earshot and noticed
+// until the next thought, the others in sight by name, age and what they do, `do` naming its place,
+// giving (its refusals, its events and its record entry), going to someone who walks away, following
+// until replaced or the one followed dies, the stand-in asking for food and being given it, and a
+// save mid-follow that plays on the same; then the rules' structure: an action's condition held every
+// tick (going to someone who died, dying mid-action, fishing on a coast a growth turned inland: each
+// interrupted with its reason), a brain's late answer for an islander who died refused, the entrance
+// refusing what a tool does not take (a NaN or null count, `__proto__`, stray, missing and mistyped
+// arguments, answers that are not lists) and changing nothing, and two lines said in one frame both
+// recorded at their tick; last, the rules' maths: no function in src/game/sim whose result differs
+// between engines, and its own exp and log against Math's.
 // Pure CPU; Node 22.18+ strips the imported TypeScript.
 // Run: node tools/verify-game.mjs
 import assert from 'node:assert/strict';
 import { newGame, loadGame } from '../src/game/sim/Sim.ts';
 import { findPath, goalAt, lineClear } from '../src/game/sim/path.ts';
-import { perceive } from '../src/game/sim/agent.ts';
+import { act, perceive } from '../src/game/sim/agent.ts';
 import { HUNGRY_WORDS, StandInBrain, THANKS_WORDS } from '../src/game/sim/standin.ts';
 import { EARSHOT, FOLLOW_GAP, NOTICED_KEPT, PERSON_REACH } from '../src/game/sim/people.ts';
 import { BAG_CAPACITY, FISH_SATIETY } from '../src/game/sim/items.ts';
@@ -37,7 +43,8 @@ import { FISH_SECONDS, placesAt } from '../src/game/sim/places.ts';
 import { CHEST_WORK, progressOf, stageOf } from '../src/game/sim/buildings.ts';
 import { GROWTH_STEPS, POPULATION_START, SECONDS_PER_GAME_DAY, SECONDS_PER_YEAR, WALK_SPEED, piecesFor } from '../src/game/sim/types.ts';
 import { ageOf, drawLifespan } from '../src/game/sim/life.ts';
-import { minuteOf } from '../src/game/sim/clock.ts';
+import { clockText, minuteOf, tickAt, timeOf } from '../src/game/sim/clock.ts';
+import { ACTIONS } from '../src/game/sim/actions.ts';
 import { SAVE_VERSION, readSave, savedPieces, writeSave } from '../src/game/save.ts';
 import { Chronicle } from '../src/game/Chronicle.ts';
 import { Session } from '../src/game/Session.ts';
@@ -98,8 +105,16 @@ function farthestOpen( grid, p ) {
 	const early = newGame( input, { startHour: 8 } ), book = new Chronicle();
 	early.step( 60 );
 	assert.deepEqual( perceive( early, early.state.villagers[ 0 ] ).time, { day: 1, hour: 8, minute: 1 }, 'a minute after 8:00 is perceived as 8:01' );
-	book.add( early, { kind: 'said', who: 'player', to: 'all', text: 'now' } );
-	assert.equal( book.entries[ 0 ].minute, 481, 'and noted at it' );
+	book.reset( 8 );
+	book.add( { kind: 'said', tick: early.state.tick, who: 'player', to: 'all', text: 'now' } );
+	assert.deepEqual( book.timeOf( book.entries[ 0 ].tick ), { day: 1, hour: 8, minute: 1 }, 'and the record tells its tick the same' );
+	// one function tells a tick as a time and reads one back
+	for ( const startHour of [ 8, 7.5, 0 ] ) for ( let tick = 0; tick < 2 * SECONDS_PER_GAME_DAY; tick += 60 ) {
+
+		const t = timeOf( tick, startHour );
+		assert.equal( tickAt( t.day, t.hour * 60 + t.minute, startHour ), tick, `the tick of ${ clockText( t ) } on day ${ t.day } from ${ startHour } h` );
+
+	}
 	console.log( 'clock: ticks, pause, day, the minute of the day and the seeded generator' );
 
 }
@@ -215,7 +230,7 @@ function farthestOpen( grid, p ) {
 function run( sim, call, limit = 86400 ) {
 
 	const v = sim.state.villagers[ 0 ];
-	const begun = sim.tools.get( call.tool )( v, call.args, sim );
+	const [ begun ] = act( sim, v.id, [ call ] );
 	if ( ! begun.ok ) return begun;
 	for ( let t = 0; ( v.action || v.path ) && t < limit; t ++ ) sim.step( 1 );
 	assert.equal( v.action, null, `${ call.tool } ends` );
@@ -355,17 +370,17 @@ function buildChest( sim ) {
 
 	// work for a while, then a new action interrupts: the work done stays
 	const part = 1000;
-	assert.equal( sim.tools.get( 'do' )( v, { action: 'build' }, sim ).ok, true );
+	assert.equal( act( sim, v.id, [ { tool: 'do', args: { action: 'build' } } ] )[ 0 ].ok, true );
 	sim.step( part );
 	assert.equal( site.worked, part, 'a second of work a tick' );
 	assert.equal( stageOf( site ), 'building' );
-	assert.equal( sim.tools.get( 'wait' )( v, { seconds: 60 }, sim ).ok, true );
+	assert.equal( act( sim, v.id, [ { tool: 'wait', args: { seconds: 60 } } ] )[ 0 ].ok, true );
 	sim.step( 60 );
 	assert.equal( site.worked, part, 'the work done stays when the building stops' );
 	assert.deepEqual( perceive( sim, v ).seen.find( ( s ) => s.place === 'chest1' ).shows, { construction: Math.floor( part / CHEST_WORK * 100 ) }, 'how far along, in percent' );
 
 	// a save mid-build plays on as the original
-	assert.equal( sim.tools.get( 'do' )( v, { action: 'build' }, sim ).ok, true );
+	assert.equal( act( sim, v.id, [ { tool: 'do', args: { action: 'build' } } ] )[ 0 ].ok, true );
 	sim.step( 30 );
 	const loaded = loadGame( sim.save(), input );
 	assert.equal( loaded.save(), sim.save() );
@@ -404,14 +419,13 @@ function buildChest( sim ) {
 
 	// a second islander, standing where the first does
 	const other = structuredClone( v );
-	other.id = 'v2';
+	other.id = 'v9';
 	sim.state.villagers.push( other );
 	assert.equal( run( sim, { tool: 'go', args: { place: second.id } } ).ok, true );
 	other.pos = { ...v.pos };
 	other.prev = { ...v.pos };
-	const tools = sim.tools;
-	assert.equal( tools.get( 'do' )( v, { action: 'build' }, sim ).ok, true );
-	assert.equal( tools.get( 'do' )( other, { action: 'build' }, sim ).ok, true );
+	assert.equal( act( sim, v.id, [ { tool: 'do', args: { action: 'build' } } ] )[ 0 ].ok, true );
+	assert.equal( act( sim, other.id, [ { tool: 'do', args: { action: 'build' } } ] )[ 0 ].ok, true );
 	const tick = sim.state.tick;
 	while ( v.action || other.action ) {
 
@@ -438,21 +452,26 @@ function buildChest( sim ) {
 
 	const sim = newGame( input );
 	const v = sim.state.villagers[ 0 ];
-	const tools = sim.tools;
-	assert.deepEqual( [ ...tools.keys() ].sort(), [ 'do', 'go', 'say', 'use', 'wait' ], 'exactly five actions' );
-	assert.equal( tools.get( 'go' )( v, { place: 'shore' }, sim ).ok, true );
+	const one = ( tool, args ) => act( sim, v.id, [ { tool, args } ] )[ 0 ];
+	assert.deepEqual( [ ...ACTIONS.keys() ].sort(), [ 'do', 'go', 'say', 'use', 'wait' ], 'exactly five actions' );
+	sim.take();
+	assert.equal( one( 'go', { place: 'shore' } ).ok, true );
 	assert.ok( v.path, 'walking' );
-	assert.equal( tools.get( 'go' )( v, { place: 'moon' }, sim ).ok, false );
+	assert.equal( one( 'go', { place: 'moon' } ).ok, false );
 	assert.ok( v.path && v.action.call.args.place === 'shore', 'a refused action leaves the walk under way' );
-	assert.equal( v.last.result.ok, false, 'but its refusal is perceived' );
-	assert.equal( tools.get( 'wait' )( v, { seconds: 60 }, sim ).ok, true );
+	assert.deepEqual( [ v.last.outcome, v.last.result.ok ], [ 'refused', false ], 'but its refusal is perceived' );
+	assert.equal( one( 'wait', { seconds: 60 } ).ok, true );
 	assert.equal( v.path, null, 'a new action replaces the walk' );
 	assert.equal( v.action.call.tool, 'wait' );
-	assert.equal( tools.get( 'say' )( v, { words: 'Hello' }, sim ).ok, true );
+	assert.equal( one( 'say', { words: 'Hello' } ).ok, true );
 	assert.equal( v.action.call.tool, 'wait', 'saying goes alongside the action under way' );
-	assert.equal( v.last.result.ok, false, 'and leaves the last outcome as it was' );
-	assert.deepEqual( v.said, { words: 'Hello', tick: sim.state.tick } );
-	console.log( 'actions: five, a new one replaces the one under way, saying goes alongside' );
+	assert.equal( v.last.outcome, 'refused', 'and leaves the last outcome as it was' );
+	assert.deepEqual( one( 'say', { words: ' ' } ), { ok: false, reason: 'words must be a text that is not blank' }, 'blank words are refused' );
+	assert.equal( v.last.call.tool, 'go', 'and their refusal is not the body\'s outcome either' );
+	const told = sim.take().map( ( e ) => e.kind === 'outcome' ? `${ e.outcome } ${ e.call.tool }` : e.kind === 'said' ? `said ${ e.words }` : `${ e.kind } ${ e.call.tool }` );
+	assert.deepEqual( told, [ 'began go', 'refused go', 'replaced go', 'began wait', 'said Hello', 'refused say' ], 'each told once, as it happened' );
+	assert.deepEqual( sim.take(), [], 'and taken once' );
+	console.log( 'actions: five, a new one replaces the one under way, saying goes alongside, each told as an event' );
 
 }
 
@@ -539,7 +558,7 @@ function buildChest( sim ) {
 		const v = sim.state.villagers[ 0 ];
 		if ( what === 'fishing' ) run( sim, { tool: 'go', args: { place: 'shore' } } );
 		sim.brain = new StandInBrain();
-		assert.equal( sim.tools.get( call.tool )( v, call.args, sim ).ok, true );
+		assert.equal( act( sim, v.id, [ call ] )[ 0 ].ok, true );
 		sim.step( 30 );
 		assert.deepEqual( v.action.call.args, { ...call.args, ...( what === 'fishing' ? { place: 'shore' } : {} ) }, `mid-${ what }` );
 		const loaded = loadGame( sim.save(), input );
@@ -605,14 +624,14 @@ function buildChest( sim ) {
 
 	// a death: the islander leaves the roll for the list of the dead at its lifespan, the record
 	// notes it at the tick it died at and names it, and a newcomer takes a new id
-	const record = new Chronicle();
-	record.observe( sim, 'fair', 0 );
+	const session = new Session( input, { grow() {} }, null ), record = session.record;
+	session.install( sim );
 	const dying = sim.state.villagers[ 1 ];
 	dying.lifespan = sim.age( dying ) + 0.5;
 	for ( let t = 0; t < 2; t ++ ) {
 
 		sim.step( 12 * HOUR );
-		record.observe( sim, 'fair', 0 );
+		session.look( null );
 
 	}
 	assert.equal( sim.villager( dying.id ), undefined, 'the dead leave the roll' );
@@ -625,7 +644,7 @@ function buildChest( sim ) {
 	assert.equal( noted.length, 1, 'the record notes the death once' );
 	assert.equal( noted[ 0 ].who, dying.id );
 	assert.equal( noted[ 0 ].text, String( Math.floor( dying.lifespan ) ) );
-	assert.equal( noted[ 0 ].minute, minuteOf( { tick: dead.died, startHour: sim.state.startHour } ), 'at the minute it died' );
+	assert.equal( noted[ 0 ].tick, dead.died, 'at the tick it died' );
 	const id = sim.addIslander();
 	assert.ok( id !== dying.id && ! sim.state.villagers.slice( 0, - 1 ).some( ( u ) => u.id === id ), 'a newcomer takes an id never used' );
 	const loaded = loadGame( sim.save(), input );
@@ -637,79 +656,83 @@ function buildChest( sim ) {
 }
 
 // the save file: the simulation and its record (Chronicle) read back as written; a record restored
-// and watching the same ticks keeps the entries the original keeps, a need noted before the save not
-// noted again, a landing not noted again on a game resumed at its start; a save of another version
-// refused
+// and hearing the same events keeps the entries the original keeps, a loaded game noting nothing
+// again (it has emitted nothing yet) and a landing not noted again on a game resumed at its start; a
+// save of another version refused
 {
 
-	// the page's frames: the simulation runs a minute, then the record looks (the sky by the day)
-	const watch = ( sim, record, seconds ) => {
+	// the page's frames: the session runs a minute, then the record looks (the sky by the day)
+	const watch = ( session, seconds ) => {
 
 		for ( let t = 0; t < seconds; t += 60 ) {
 
-			sim.step( 60 );
-			record.observe( sim, sim.day() % 2 ? 'cloudy' : 'fair', 60 / HOUR );
+			assert.equal( session.advance( 1, 1440 ), 60 );
+			session.look( session.sim.day() % 2 ? 'cloudy' : 'fair' );
 
 		}
 
 	};
+	const host = { grow() {} };
 	const sim = newGame( input, { seed: 2 } );
-	sim.brain = new StandInBrain();
-	const record = new Chronicle();
-	record.observe( sim, 'fair', 0 );
+	const session = new Session( input, host, new StandInBrain() ), record = session.record;
+	session.install( sim );
 	placeChest( sim );
-	watch( sim, record, 30 * HOUR );
-	record.add( sim, { kind: 'said', who: 'player', to: 'all', text: 'words' } );
-	sim.state.villagers[ 0 ].needs.satiety = 5;
-	watch( sim, record, 60 );
+	watch( session, 30 * HOUR );
+	assert.equal( session.speak( 'words', 'all' ), null );
+	const hungry = sim.state.villagers[ 0 ].id;
+	sim.setNeed( hungry, 'satiety', 5 );
+	watch( session, 60 );
 	const kinds = new Set( record.entries.map( ( e ) => e.kind ) );
 	for ( const kind of [ 'landed', 'placed', 'built', 'said', 'need' ] ) assert.ok( kinds.has( kind ), `the record holds a ${ kind } entry` );
-	assert.deepEqual( record.save().alerted, [ `${ sim.state.villagers[ 0 ].id }:satiety` ], 'and the need it noted' );
-	// saved between the line and its re-arm: noted already, as the save must say
-	sim.state.villagers[ 0 ].needs.satiety = 25;
-	record.observe( sim, 'cloudy', 0 );
+	assert.ok( record.entries.some( ( e ) => e.kind === 'need' && e.who === hungry && e.text === 'satiety' ), 'and the need it noted' );
 
-	const json = writeSave( sim.state, record.save() );
+	const json = session.save( 'cloudy' );
 	const save = readSave( json );
 	assert.equal( save.version, SAVE_VERSION );
 	assert.equal( JSON.stringify( save.sim ), sim.save(), 'the save holds the simulation\'s state' );
 	assert.equal( JSON.stringify( save.record ), JSON.stringify( record.save() ), 'and the record' );
 	assert.equal( savedPieces( json ), 0 );
-	const loaded = loadGame( save.sim, input );
-	loaded.brain = new StandInBrain();
-	const restored = new Chronicle();
-	restored.restore( save.record );
-	restored.observe( loaded, 'cloudy', 0 );
-	assert.equal( JSON.stringify( restored.save() ), JSON.stringify( record.save() ), 'the first look at the loaded game notes nothing again' );
-	assert.deepEqual( [ ...restored.landed ], [ ...record.landed ], 'the landings come back' );
-	for ( const [ game, book ] of [ [ sim, record ], [ loaded, restored ] ] ) {
+	const again = new Session( input, host, new StandInBrain() );
+	const file = again.read( json );
+	again.install( file.sim, file.record );
+	again.look( 'cloudy' );
+	assert.equal( JSON.stringify( again.record.save() ), JSON.stringify( record.save() ), 'the first look at the loaded game notes nothing again' );
+	assert.deepEqual( [ ...again.record.landed ], [ ...record.landed ], 'the landings come back' );
+	// a need that falls past its line on both: noted on both, once
+	const needs = () => record.entries.filter( ( e ) => e.kind === 'need' ).length, before = needs();
+	for ( const s of [ session, again ] ) {
 
-		game.state.villagers[ 0 ].needs.satiety = 10;
-		book.observe( game, 'cloudy', 0 );
+		s.sim.setNeed( hungry, 'satiety', 30 );
+		s.sim.setNeed( hungry, 'satiety', 10 );
+		s.sim.setNeed( hungry, 'satiety', 5 );
+		s.look( 'cloudy' );
 
 	}
-	assert.equal( JSON.stringify( restored.save() ), JSON.stringify( record.save() ), 'a need noted before the save is not noted again' );
-	watch( sim, record, 2 * 24 * HOUR );
-	watch( loaded, restored, 2 * 24 * HOUR );
-	assert.equal( loaded.save(), sim.save() );
-	assert.equal( JSON.stringify( restored.save() ), JSON.stringify( record.save() ), 'a restored record keeps the entries the original keeps' );
+	assert.equal( needs(), before + 1, 'noted on the crossing, not again below it' );
+	assert.equal( JSON.stringify( again.record.save() ), JSON.stringify( record.save() ), 'a need crossing its line is noted alike on both' );
+	watch( session, 2 * 24 * HOUR );
+	watch( again, 2 * 24 * HOUR );
+	assert.equal( again.sim.save(), sim.save() );
+	assert.equal( JSON.stringify( again.record.save() ), JSON.stringify( record.save() ), 'a restored record keeps the entries the original keeps' );
 
 	// a game saved before its first tick (?game&paused) and resumed again and again: each islander
 	// landed once
 	{
 
 		const fresh = newGame( input, { seed: 5 } );
-		let book = new Chronicle(), file;
-		book.observe( fresh, 'fair', 0 );
+		let book = new Session( input, host, null );
+		book.install( fresh );
+		let saved = book.save( 'fair' );
 		for ( let load = 0; load < 3; load ++ ) {
 
-			file = readSave( writeSave( fresh.state, book.save() ) );
-			book = new Chronicle();
-			book.restore( file.record );
-			book.observe( loadGame( file.sim, input ), 'fair', 0 );
+			book = new Session( input, host, null );
+			const back = book.read( saved );
+			book.install( back.sim, back.record );
+			book.look( 'fair' );
+			saved = book.save( 'fair' );
 
 		}
-		assert.equal( book.entries.filter( ( e ) => e.kind === 'landed' ).length, fresh.population(), 'a game resumed at its start keeps one landing per islander' );
+		assert.equal( book.record.entries.filter( ( e ) => e.kind === 'landed' ).length, fresh.population(), 'a game resumed at its start keeps one landing per islander' );
 
 	}
 
@@ -879,11 +902,12 @@ function buildChest( sim ) {
 
 // ------------------------------------------------------------------ the session
 
-// the game around the simulation (Session.ts), as the page and the play tool host it: the record's
-// first look lands a new game's islanders and notes a blueprint placed after it as the player's; the
-// ticks of frames wait for the record's look, which notes the sky shown over them; the leader's
-// words reach a brain that hears; a growth is asked once while due, its piece coming at once, later
-// or never; a save reads back into another session as written
+// the game around the simulation (Session.ts), as the page and the play tool host it: installing a
+// new game hands on its islanders' landing and the record notes them at the start; a blueprint placed
+// is the player's, at its tick, and the player's commands are checked at the entrance; the ticks of
+// frames wait for the record's look, which notes the sky shown over them; the leader's words reach a
+// brain that hears; a growth is asked once while due, its piece coming at once, later or never; a
+// save reads back into another session as written
 {
 
 	const frames = ( session, n ) => {
@@ -895,10 +919,18 @@ function buildChest( sim ) {
 	const sim = newGame( input, { seed: 5 } );
 	session.install( sim );
 	const record = session.record;
-	assert.deepEqual( record.entries.map( ( e ) => [ e.kind, e.who, e.day, e.minute ] ), sim.state.villagers.map( ( v ) => [ 'landed', v.id, 1, 480 ] ), 'a new game\'s islanders land at its start' );
+	assert.deepEqual( record.entries.map( ( e ) => [ e.kind, e.who, e.tick, clockText( record.timeOf( e.tick ) ) ] ), sim.state.villagers.map( ( v ) => [ 'landed', v.id, 0, '08:00' ] ), 'a new game\'s islanders land at its start' );
 	const chest = placeChest( sim );
 	session.look( null );
-	assert.deepEqual( record.entries.at( - 1 ), { kind: 'placed', who: 'player', text: 'chest', subject: chest.id, day: 1, minute: 480 }, 'a blueprint placed after the first look is the player\'s' );
+	assert.deepEqual( record.entries.at( - 1 ), { kind: 'placed', tick: 0, who: 'player', text: 'chest', subject: chest.id }, 'a blueprint placed is the player\'s, at its tick' );
+	// the player's placing, checked at the entrance before any rule: a point that is not one, a
+	// kind not named, an argument of its own
+	assert.equal( session.place( 'chest', Number.NaN, 0 ), 'x must be a number' );
+	assert.equal( session.place( 'chest', 0, null ), 'z must be a number', 'null is not a point' );
+	assert.equal( session.place( 'chest', 0 ), 'place needs z' );
+	assert.equal( session.place( '', 0, 0 ), 'kind must be a text that is not blank' );
+	assert.equal( session.place( 'tower', 0, 0 ), 'There is no building called tower', 'a kind the rules do not know: theirs to refuse' );
+	assert.equal( record.entries.at( - 1 ).subject, chest.id, 'nothing refused is noted' );
 
 	// a frame of a real second at a day of as many real seconds runs a tick
 	assert.equal( session.advance( 1, SECONDS_PER_GAME_DAY ), 1 );
@@ -914,7 +946,8 @@ function buildChest( sim ) {
 	// thought and is asked for one now
 	const [ a, b, c ] = sim.state.villagers.map( ( v ) => v.id ), asked = [];
 	session.speak( '  words  ', 'all' );
-	assert.deepEqual( record.entries.at( - 1 ), { kind: 'said', who: 'player', to: 'all', text: 'words', day: 1, minute: 600 } );
+	assert.deepEqual( record.entries.at( - 1 ), { kind: 'said', tick: 2 * HOUR, who: 'player', to: 'all', text: 'words' } );
+	assert.equal( clockText( record.timeOf( record.entries.at( - 1 ).tick ) ), '10:00' );
 	assert.equal( session.hears(), false );
 	assert.equal( session.hasHeard( a ), false, 'no brain that hears: no words wait' );
 	const hearing = { hears: true, think: ( perception, id ) => {
@@ -932,8 +965,16 @@ function buildChest( sim ) {
 	assert.deepEqual( session.takeHeard( a ), [], 'taken once' );
 	assert.equal( session.hasHeard( c ), true );
 	const said = record.entries.length;
-	session.speak( '   ', 'all' );
-	assert.equal( record.entries.length, said, 'no words, nothing said' );
+	// the player's words, checked at the entrance: none, to no one, to someone not on the island
+	assert.equal( session.speak( '   ', 'all' ), 'words must be a text that is not blank', 'no words, nothing said' );
+	assert.equal( session.speak( 'come', [] ), 'to must be "all" or a list of islanders\' ids, each once' );
+	assert.equal( session.speak( 'come', 'everyone' ), 'to must be "all" or a list of islanders\' ids, each once' );
+	assert.equal( session.speak( 'come', [ a, a ] ), 'to must be "all" or a list of islanders\' ids, each once', 'an islander named twice' );
+	assert.equal( session.speak( 'come', [ a, 'v99' ] ), 'v99 is not on the island' );
+	assert.equal( session.speak( 7, 'all' ), 'words must be a text that is not blank' );
+	assert.equal( record.entries.length, said, 'nothing refused is said' );
+	assert.equal( session.hasHeard( b ), true );
+	assert.deepEqual( session.takeHeard( b ), [ 'come', 'eat' ], 'nor heard' );
 	session.setBrain( null );
 	assert.equal( session.hasHeard( c ), false, 'another brain hears none of the old words' );
 
@@ -1012,7 +1053,7 @@ function buildChest( sim ) {
 
 	const adults = [ { sex: 'male', age: 30 }, { sex: 'female', age: 30 }, { sex: 'male', age: 30 } ];
 	const dist = ( p, q ) => Math.hypot( p.x - q.x, p.z - q.z );
-	const act = ( sim, v, tool, args ) => sim.tools.get( tool )( v, args, sim );
+	const does = ( sim, v, tool, args ) => act( sim, v.id, [ { tool, args } ] )[ 0 ];
 	/** stand a body on the centre of the open main cell whose centre lies nearest d metres from p */
 	const standAt = ( sim, v, p, d ) => {
 
@@ -1053,7 +1094,7 @@ function buildChest( sim ) {
 		standAt( sim, c, a.pos, EARSHOT + 5 );
 		assert.ok( dist( a.pos, c.pos ) > EARSHOT && dist( a.pos, b.pos ) < EARSHOT );
 		sim.step( 10 );
-		assert.equal( act( sim, a, 'say', { words: 'hello' } ).ok, true );
+		assert.equal( does( sim, a, 'say', { words: 'hello' } ).ok, true );
 		assert.deepEqual( b.noticed, [ { who: a.id, tick: sim.state.tick, said: 'hello' } ], 'heard within earshot' );
 		assert.deepEqual( a.noticed, [], 'not by the speaker' );
 		assert.deepEqual( c.noticed, [], 'not by one out of earshot' );
@@ -1061,18 +1102,18 @@ function buildChest( sim ) {
 		assert.deepEqual( perceived( sim, b ).noticed, [ { who: a.id, name: a.name, time: { day: 1, hour: Math.floor( minutes / 60 ), minute: minutes % 60 }, said: 'hello' } ], 'perceived with the speaker\'s name and the time' );
 		assert.deepEqual( b.noticed, [], 'and gone once perceived' );
 		assert.deepEqual( perceived( sim, b ).noticed, [], 'the next thought hears nothing again' );
-		for ( let n = 0; n < NOTICED_KEPT + 2; n ++ ) act( sim, a, 'say', { words: `w${ n }` } );
+		for ( let n = 0; n < NOTICED_KEPT + 2; n ++ ) does( sim, a, 'say', { words: `w${ n }` } );
 		assert.deepEqual( b.noticed.map( ( x ) => x.said ), Array.from( { length: NOTICED_KEPT }, ( _, n ) => `w${ n + 2 }` ), `at most ${ NOTICED_KEPT } kept, the oldest forgotten` );
 		// a thought in flight is not saved: what it perceived stays noticed until its answer is acted
 		// on, so a game saved meanwhile and loaded perceives it again; what came meanwhile stays after
 		perceived( sim, b );
-		act( sim, a, 'say', { words: 'one' } );
+		does( sim, a, 'say', { words: 'one' } );
 		let answer = null, slow = null;
 		sim.brain = { think: ( p ) => { slow = p; return new Promise( ( resolve ) => { answer = resolve; } ); } };
 		const thought = sim.think( b.id );
 		sim.brain = null;
 		assert.deepEqual( slow.noticed.map( ( x ) => x.said ), [ 'one' ] );
-		act( sim, a, 'say', { words: 'two' } );
+		does( sim, a, 'say', { words: 'two' } );
 		const loaded = loadGame( sim.save(), input );
 		const lb = loaded.villager( b.id );
 		assert.deepEqual( lb.noticed.map( ( x ) => x.said ), [ 'one', 'two' ], 'saved with a thought in flight: still noticed' );
@@ -1092,24 +1133,24 @@ function buildChest( sim ) {
 		const chest = buildChest( sim );
 		run( sim, { tool: 'go', args: { place: 'shore' } } );
 		standAt( sim, b, a.pos, 1 );
-		act( sim, b, 'wait', { seconds: 600 } );
+		does( sim, b, 'wait', { seconds: 600 } );
 		const p = perceive( sim, a );
 		assert.deepEqual( p.seen.find( ( s ) => s.place === b.id ), { place: b.id, kind: 'person', shows: { name: b.name, age: Math.floor( sim.age( b ) ), doing: 'wait' } }, 'a person shows name, age and doing' );
 		assert.ok( ! p.seen.some( ( s ) => s.place === a.id ) && ! p.atHand.some( ( h ) => h.place === a.id ), 'never oneself' );
 		assert.equal( p.seen.find( ( s ) => s.place === chest.id ).shows, undefined, 'a chest\'s contents not from afar' );
 		assert.deepEqual( p.atHand.find( ( h ) => h.place === b.id ).options, [ 'give', 'follow' ], 'beside someone: give and follow' );
 		standAt( sim, b, a.pos, 6 );
-		assert.deepEqual( act( sim, b, 'go', { place: chest.id } ), { ok: true, value: 'under way' } );
+		assert.deepEqual( does( sim, b, 'go', { place: chest.id } ), { ok: true, value: 'under way' } );
 		assert.equal( perceive( sim, a ).seen.find( ( s ) => s.place === b.id ).shows.doing, 'go' );
 		sim.walkTo( b.id, a.pos );
 		assert.equal( perceive( sim, a ).seen.find( ( s ) => s.place === b.id ).shows.doing, 'walk', 'a walk without an action' );
 		standAt( sim, b, a.pos, 1 );
 		a.bag = { fish: 1 };
-		assert.deepEqual( act( sim, a, 'do', { action: 'give', place: chest.id, item: 'fish' } ), { ok: false, reason: `not at ${ chest.id }` }, 'a place not at hand is refused' );
-		assert.deepEqual( act( sim, a, 'do', { action: 'fish', place: b.id } ), { ok: false, reason: `${ b.id } does not offer fish` } );
-		assert.equal( act( sim, a, 'do', { action: 'fish', place: 'shore' } ).ok, true, 'a place at hand runs it' );
+		assert.deepEqual( does( sim, a, 'do', { action: 'give', place: chest.id, item: 'fish' } ), { ok: false, reason: `not at ${ chest.id }` }, 'a place not at hand is refused' );
+		assert.deepEqual( does( sim, a, 'do', { action: 'fish', place: b.id } ), { ok: false, reason: `${ b.id } does not offer fish` } );
+		assert.equal( does( sim, a, 'do', { action: 'fish', place: 'shore' } ).ok, true, 'a place at hand runs it' );
 		assert.equal( a.action.call.args.place, 'shore' );
-		assert.deepEqual( act( sim, a, 'do', { action: 'give', place: b.id, item: 'fish' } ), { ok: true, value: `gave 1 fish to ${ b.id }` } );
+		assert.deepEqual( does( sim, a, 'do', { action: 'give', place: b.id, item: 'fish' } ), { ok: true, value: `gave 1 fish to ${ b.id }` } );
 		console.log( 'people: seen by name, age and doing, never oneself; do runs at the place it names' );
 
 	}
@@ -1120,29 +1161,36 @@ function buildChest( sim ) {
 		const sim = newGame( input, { seed: 4, bodies: adults } );
 		const [ a, b ] = sim.state.villagers;
 		standAt( sim, b, a.pos, 1 );
-		const record = new Chronicle();
-		record.observe( sim, 'fair', 0 );
+		const session = new Session( input, { grow() {} }, null ), record = session.record, heard = [];
+		session.install( sim );
+		session.listen( ( e ) => heard.push( e ) );
+		const give = ( args ) => session.act( a.id, [ { tool: 'do', args: { action: 'give', ...args } } ] )[ 0 ];
 		a.bag = { fish: 3 };
 		b.bag = { fish: BAG_CAPACITY - 1 };
-		assert.deepEqual( act( sim, a, 'do', { action: 'give', place: b.id, item: 'fish', count: 2 } ), { ok: false, reason: `${ b.id }'s bag has no room for that` } );
-		assert.deepEqual( [ a.bag, b.bag, a.gave ], [ { fish: 3 }, { fish: BAG_CAPACITY - 1 }, null ], 'nothing moves' );
+		assert.deepEqual( give( { place: b.id, item: 'fish', count: 2 } ), { ok: false, reason: `${ b.id }'s bag has no room for that` } );
+		assert.deepEqual( [ a.bag, b.bag, heard.map( ( e ) => [ e.kind, e.outcome ] ) ], [ { fish: 3 }, { fish: BAG_CAPACITY - 1 }, [ [ 'outcome', 'refused' ] ] ], 'nothing moves, refused' );
 		b.bag = {};
-		assert.deepEqual( act( sim, a, 'do', { action: 'give', item: 'fish', count: 2 } ), { ok: true, value: `gave 2 fish to ${ b.id }` }, 'unnamed: the person at hand' );
+		heard.length = 0;
+		assert.deepEqual( give( { item: 'fish', count: 2 } ), { ok: true, value: `gave 2 fish to ${ b.id }` }, 'unnamed: the person at hand' );
 		assert.deepEqual( [ a.bag, b.bag ], [ { fish: 1 }, { fish: 2 } ], 'the items move' );
 		assert.deepEqual( b.noticed, [ { who: a.id, tick: sim.state.tick, gave: { fish: 2 } } ], 'the receiver notices the gift' );
-		assert.deepEqual( a.gave, { to: b.id, item: 'fish', count: 2, tick: sim.state.tick } );
-		assert.deepEqual( act( sim, a, 'do', { action: 'give', place: b.id, item: 'fish', count: 2 } ), { ok: false, reason: 'the bag holds 1 fish' }, 'a giver gives only what it carries' );
+		const tick = sim.state.tick;
+		assert.deepEqual( heard, [
+			{ kind: 'gave', tick, who: a.id, to: b.id, item: 'fish', count: 2 },
+			{ kind: 'outcome', tick, who: a.id, call: { tool: 'do', args: { action: 'give', place: b.id, item: 'fish', count: 2 } }, outcome: 'done', result: { ok: true, value: `gave 2 fish to ${ b.id }` }, moved: { [ a.id ]: { fish: - 2 }, [ b.id ]: { fish: 2 } } },
+		], 'told once: the gift, and the outcome with what it moved between the bags' );
+		assert.deepEqual( give( { place: b.id, item: 'fish', count: 2 } ), { ok: false, reason: 'the bag holds 1 fish' }, 'a giver gives only what it carries' );
 		assert.deepEqual( [ a.bag, b.bag ], [ { fish: 1 }, { fish: 2 } ] );
-		record.observe( sim, 'fair', 0 );
-		record.observe( sim, 'fair', 0 );
+		session.look( 'fair' );
+		session.look( 'fair' );
 		const gifts = record.entries.filter( ( e ) => e.kind === 'gave' );
 		assert.equal( gifts.length, 1, 'one record entry' );
-		assert.deepEqual( [ gifts[ 0 ].who, gifts[ 0 ].to, gifts[ 0 ].text, gifts[ 0 ].count ], [ a.id, [ b.id ], 'fish', 2 ] );
-		const again = new Chronicle();
-		again.restore( record.save() );
-		again.observe( loadGame( sim.save(), input ), 'fair', 0 );
-		assert.equal( again.entries.filter( ( e ) => e.kind === 'gave' ).length, 1, 'a load notes nothing old' );
-		console.log( 'give: items moved and noticed, refused whole for a full bag or a short one, recorded once' );
+		assert.deepEqual( [ gifts[ 0 ].who, gifts[ 0 ].to, gifts[ 0 ].text, gifts[ 0 ].count, gifts[ 0 ].tick ], [ a.id, [ b.id ], 'fish', 2, tick ] );
+		const again = new Session( input, { grow() {} }, null ), back = again.read( session.save( 'fair' ) );
+		again.install( back.sim, back.record );
+		again.look( 'fair' );
+		assert.equal( again.record.entries.filter( ( e ) => e.kind === 'gave' ).length, 1, 'a load notes nothing old' );
+		console.log( 'give: items moved and noticed, refused whole for a full bag or a short one, told and recorded once' );
 
 	}
 
@@ -1153,13 +1201,13 @@ function buildChest( sim ) {
 		const [ a, b ] = sim.state.villagers;
 		standAt( sim, b, a.pos, 6 );
 		assert.equal( sim.walkTo( b.id, farthestOpen( sim.grid, a.pos ) ), null );
-		assert.equal( act( sim, a, 'go', { place: b.id } ).ok, true );
+		assert.equal( does( sim, a, 'go', { place: b.id } ).ok, true );
 		let ticks = 0;
 		while ( a.action && ticks < 2 * HOUR ) { sim.step( 1 ); ticks ++; }
 		assert.deepEqual( a.last.result, { ok: true, value: `arrived at the ${ b.id }` } );
 		assert.ok( dist( a.pos, b.pos ) <= PERSON_REACH + 0.4, `beside them (${ dist( a.pos, b.pos ).toFixed( 2 ) } m)` );
 		assert.equal( b.path, null, 'once they stopped' );
-		assert.deepEqual( act( sim, a, 'go', { place: a.id } ), { ok: false, reason: `there is no place called ${ a.id }` }, 'never to oneself' );
+		assert.deepEqual( does( sim, a, 'go', { place: a.id } ), { ok: false, reason: `there is no place called ${ a.id }` }, 'never to oneself' );
 		console.log( `go: caught up with a walker in ${ ticks } s` );
 
 	}
@@ -1179,12 +1227,12 @@ function buildChest( sim ) {
 
 		};
 		standAt( sim, a, b.pos, 1 );
-		assert.equal( act( sim, a, 'do', { action: 'follow', place: b.id } ).ok, true );
+		assert.equal( does( sim, a, 'do', { action: 'follow', place: b.id } ).ok, true );
 		assert.equal( a.action.until, null, 'without an end' );
 		const far = farthestOpen( sim.grid, b.pos );
 		assert.equal( sim.walkTo( b.id, far ), null );
 		let gap = 0, ticks = 0, stops = 0, apart = 0, walking = a.path !== null;
-		act( sim, b, 'say', { words: 'this way' } );
+		does( sim, b, 'say', { words: 'this way' } );
 		sim.step( 30 );
 		const loaded = loadGame( sim.save(), input );
 		assert.equal( loaded.save(), sim.save() );
@@ -1215,13 +1263,13 @@ function buildChest( sim ) {
 		assert.ok( apart <= 2, `with both standing, the leader at hand (apart ${ apart } s)` );
 		assert.equal( a.action.call.args.action, 'follow', 'still following once the leader stopped' );
 		assert.ok( beside(), `at rest beside the leader (${ dist( a.pos, b.pos ).toFixed( 2 ) } m)` );
-		assert.equal( act( sim, a, 'wait', { seconds: 60 } ).ok, true );
+		assert.equal( does( sim, a, 'wait', { seconds: 60 } ).ok, true );
 		assert.equal( a.action.call.tool, 'wait', 'a new action replaces it' );
-		assert.equal( act( sim, a, 'do', { action: 'follow', place: b.id } ).ok, true, 'following again from where it rests, without a go' );
+		assert.equal( does( sim, a, 'do', { action: 'follow', place: b.id } ).ok, true, 'following again from where it rests, without a go' );
 		b.lifespan = sim.age( b ) + 10 / SECONDS_PER_YEAR;
 		sim.step( 20 );
 		assert.equal( sim.villager( b.id ), undefined );
-		assert.deepEqual( [ a.action, a.last.result ], [ null, { ok: false, reason: `${ b.id } is gone` } ], 'it ends when the one followed dies' );
+		assert.deepEqual( [ a.action, a.last.outcome, a.last.result ], [ null, 'interrupted', { ok: false, reason: `${ b.id } is gone` } ], 'it ends interrupted when the one followed dies' );
 		console.log( `follow: ${ walked } s behind a walker, never more than ${ gap.toFixed( 2 ) } m away, stopped ${ stops } times, each beside them; both standing apart ${ apart } s; at rest beside them; replaced, followed again without a go, then ended by a death; saved and loaded mid-follow` );
 
 	}
@@ -1239,13 +1287,17 @@ function buildChest( sim ) {
 			b.bag = { fish: 1 };
 			sim.brain = new StandInBrain();
 			const events = [];
-			let said = null, gave = null, went = false;
-			for ( let t = 0; t < 2 * HOUR && ! ( said && said.words === THANKS_WORDS ); t ++ ) {
+			let thanked = false, went = false;
+			for ( let t = 0; t < 2 * HOUR && ! thanked; t ++ ) {
 
 				sim.step( 1 );
-				if ( a.said !== said ) events.push( `${ a.id } says ${ ( said = a.said ).words }` );
-				if ( ! went && b.action?.call.tool === 'go' && b.action.call.args.place === a.id ) events.push( `${ b.id } goes to ${ a.id }` ), went = true;
-				if ( b.gave !== gave ) events.push( `${ ( gave = b.gave ).to } given ${ gave.count } ${ gave.item }` );
+				for ( const e of sim.take() ) {
+
+					if ( e.kind === 'said' && e.who === a.id ) events.push( `${ a.id } says ${ e.words }` ), thanked = e.words === THANKS_WORDS;
+					if ( ! went && e.kind === 'began' && e.who === b.id && e.call.tool === 'go' && e.call.args.place === a.id ) events.push( `${ b.id } goes to ${ a.id }` ), went = true;
+					if ( e.kind === 'gave' && e.who === b.id ) events.push( `${ e.to } given ${ e.count } ${ e.item }` );
+
+				}
 
 			}
 			return { sim, a, b, events };
@@ -1256,6 +1308,145 @@ function buildChest( sim ) {
 		assert.ok( a.needs.satiety > 60, `and the hungry one ate (satiety ${ a.needs.satiety.toFixed( 1 ) })` );
 		assert.equal( play().sim.save(), sim.save(), 'deterministic' );
 		console.log( `stand-in: ${ events.join( ', ' ) } by ${ ( sim.state.tick / 60 ).toFixed( 0 ) } min; ${ b.name } gave, ${ a.name } ate` );
+
+	}
+
+	// an action's condition holds every tick, checked in one place (actions.ts `holds`): going to
+	// someone who dies, fishing on a shore a growth turned inland, an islander who dies mid-action;
+	// each ends interrupted with the reason, told once
+	{
+
+		const sim = newGame( input, { seed: 5, bodies: adults } );
+		const [ a, b, c ] = sim.state.villagers;
+		standAt( sim, b, a.pos, 30 );
+		assert.equal( does( sim, a, 'go', { place: b.id } ).ok, true );
+		assert.equal( does( sim, c, 'wait', { seconds: 600 } ).ok, true );
+		sim.take();
+		b.lifespan = sim.age( b ) + 2 / SECONDS_PER_YEAR;
+		c.lifespan = sim.age( c ) + 10 / SECONDS_PER_YEAR;
+		const events = [];
+		let stood = null;
+		for ( let t = 0; t < 15; t ++ ) {
+
+			sim.step( 1 );
+			for ( const e of sim.take() ) {
+
+				events.push( e );
+				if ( e.kind === 'outcome' && e.who === a.id ) stood = a.pos.x === a.prev.x && a.pos.z === a.prev.z;
+
+			}
+
+		}
+		assert.equal( sim.villager( b.id ), undefined );
+		assert.deepEqual( [ a.action, a.path, a.last.outcome, a.last.result ], [ null, null, 'interrupted', { ok: false, reason: `${ b.id } is gone` } ], 'going to someone who died ends interrupted' );
+		assert.equal( stood, true, 'checked before the body walks: no step taken on the tick it fails' );
+		const told = events.map( ( e ) => e.kind === 'outcome' ? `${ e.who } ${ e.outcome } ${ e.call.tool }: ${ e.result.reason }` : `${ e.who } ${ e.kind }` );
+		assert.deepEqual( told, [ `${ b.id } died`, `${ a.id } interrupted go: ${ b.id } is gone`, `${ c.id } interrupted wait: died`, `${ c.id } died` ], 'the one going to someone who died interrupted after them; one who dies mid-action, its own' );
+
+		// fishing on a cell of the shore that the next piece turns inland: interrupted once it grows
+		const grown = shoreMask( newGame( inputAt( 1 ), { pieces: 1 } ).grid ), was = shoreMask( sim.grid ), grid = sim.grid;
+		let cell = - 1;
+		for ( let k = 0; k < grid.open.length && cell < 0; k ++ ) if ( was[ k ] && ! grown[ k ] && grid.open[ k ] && grid.region[ k ] === grid.main ) cell = k;
+		assert.ok( cell >= 0, 'the next piece turns some of the shore inland' );
+		const fisher = sim.villager( a.id );
+		fisher.pos = grid.centreOf( cell );
+		fisher.prev = grid.centreOf( cell );
+		assert.equal( does( sim, fisher, 'do', { action: 'fish' } ).ok, true, 'fishing on the old coast' );
+		sim.step( 10 );
+		assert.equal( fisher.action?.call.args.action, 'fish', 'and it goes on while the coast is there' );
+		sim.take();
+		sim.setComing( inputAt( 1 ) );
+		sim.addPiece( inputAt( 1 ) );
+		sim.step( 1 );
+		assert.deepEqual( [ fisher.action, fisher.last.outcome, fisher.last.result ], [ null, 'interrupted', { ok: false, reason: 'no longer at shore' } ], 'the coast turned inland ends it interrupted' );
+		assert.deepEqual( sim.take().map( ( e ) => e.kind === 'outcome' ? `${ e.outcome } ${ e.result.reason }` : e.kind ), [ 'grew', 'interrupted no longer at shore' ] );
+		console.log( 'conditions: going to one who died, an islander dying mid-wait and fishing on a coast a growth turned inland, each interrupted with its reason' );
+
+	}
+
+	// a brain's late answer for an islander who died meanwhile: refused at the entrance, nothing done
+	{
+
+		const sim = newGame( input, { seed: 7, bodies: adults } );
+		const [ a ] = sim.state.villagers;
+		let answer = null;
+		sim.brain = { think: () => new Promise( ( resolve ) => { answer = resolve; } ) };
+		const thought = sim.think( a.id );
+		sim.brain = null;
+		a.lifespan = sim.age( a ) + 2 / SECONDS_PER_YEAR;
+		sim.step( 5 );
+		assert.equal( sim.villager( a.id ), undefined );
+		sim.take();
+		const before = sim.save();
+		answer( [ { tool: 'go', args: { place: 'shore' } }, { tool: 'say', args: { words: 'late' } } ] );
+		const late = `${ a.id } is not on the island`;
+		assert.deepEqual( await thought, [ { ok: false, reason: late }, { ok: false, reason: late } ], 'each call refused' );
+		assert.deepEqual( sim.take().map( ( e ) => [ e.kind, e.who, e.outcome, e.call.tool ] ), [ [ 'outcome', a.id, 'refused', 'go' ], [ 'outcome', a.id, 'refused', 'say' ] ], 'told as refused, and nothing said' );
+		assert.equal( sim.save(), before, 'and the state as it was' );
+		console.log( 'late answer: refused for an islander who died while it was thought' );
+
+	}
+
+	// outside input checked once, at the entrance (agent.ts `act`, schema.ts): what a tool does not
+	// take is refused with the reason before any rule runs, kept with its tool alone, and changes
+	// nothing else
+	{
+
+		const sim = newGame( input, { seed: 3, bodies: adults } );
+		const [ a ] = sim.state.villagers;
+		a.bag = { fish: 2 };
+		assert.equal( does( sim, a, 'wait', { seconds: 600 } ).ok, true );
+		const action = a.action, bag = { ...a.bag };
+		const refused = ( calls, reason, what ) => {
+
+			assert.deepEqual( act( sim, a.id, calls ), [ { ok: false, reason } ], what );
+			assert.equal( a.action, action, `${ what }: the action under way goes on` );
+			assert.deepEqual( a.bag, bag );
+
+		};
+		for ( const count of [ Number.NaN, null, 0, - 1, 1.5, '2', Infinity ] ) refused( [ { tool: 'do', args: { action: 'take', item: 'fish', count } } ], 'count must be a whole number from 1', `a count of ${ count } is none, never 1` );
+		refused( JSON.parse( '[ { "tool": "go", "args": { "place": "shore", "__proto__": { "polluted": true } } } ]' ), 'go takes no __proto__ (place)', 'an argument named __proto__' );
+		assert.equal( {}.polluted, undefined, 'and nothing polluted' );
+		refused( [ { tool: 'go', args: { place: 'shore', speed: 9 } } ], 'go takes no speed (place)', 'an argument the tool does not take' );
+		refused( [ { tool: 'go', args: [ 'shore' ] } ], 'go takes its arguments as an object', 'arguments as a list' );
+		refused( [ { tool: 'go', args: null } ], 'go takes its arguments as an object', 'null arguments' );
+		refused( [ { tool: 'go' } ], 'go needs place', 'an argument left out' );
+		refused( [ { tool: 'go', args: { place: '' } } ], 'place must be a text that is not blank', 'a blank place' );
+		refused( [ { tool: 'wait', args: { seconds: Infinity } } ], 'seconds must be a number above 0', 'forever' );
+		refused( [ { tool: 'wait', args: { seconds: 0 } } ], 'seconds must be a number above 0', 'no while' );
+		refused( { tool: 'go', args: { place: 'shore' } }, 'an answer is a list of tool calls', 'a call alone' );
+		refused( [ null ], 'a call names its tool', 'no call' );
+		refused( [ , ], 'a call names its tool', 'a gap in the list' );
+		refused( [ { tool: 7 } ], 'a call names its tool', 'a tool that is not a name' );
+		refused( [ { tool: 'fly' } ], 'there is no tool called fly', 'a tool that does not exist' );
+		refused( [ { tool: 'toString' } ], 'there is no tool called toString', 'a name of the registry\'s own' );
+		assert.deepEqual( a.last, { call: { tool: 'toString' }, outcome: 'refused', result: { ok: false, reason: 'there is no tool called toString' } }, 'the last refusal perceived, kept with its tool alone' );
+		assert.ok( ! sim.save().includes( 'polluted' ) && ! sim.save().includes( 'speed' ), 'nothing refused reaches the save' );
+		// what passes comes in clean: a fresh object of the schema's names alone
+		const given = { seconds: 60 };
+		assert.equal( act( sim, a.id, [ { tool: 'wait', args: given } ] )[ 0 ].ok, true );
+		assert.ok( a.action.call.args !== given && a.action.call.args.seconds === 60, 'and what passes comes in as a fresh copy' );
+		assert.equal( act( sim, a.id, [ { tool: 'say', args: { words: '  hello  ' } } ] )[ 0 ].ok, true );
+		assert.equal( sim.take().find( ( e ) => e.kind === 'said' )?.words, 'hello', 'texts come in trimmed, an islander\'s words as the player\'s' );
+		console.log( 'entrance: counts that are none, __proto__, stray, missing and mistyped arguments, answers that are not lists, unknown tools: each refused with its reason, changing nothing' );
+
+	}
+
+	// what happened is told once, as events at their tick: two lines said within one frame are two
+	// entries in the record, at the tick they were said
+	{
+
+		const sim = newGame( input, { seed: 3, bodies: adults } );
+		const [ a ] = sim.state.villagers;
+		const session = new Session( input, { grow() {} }, null );
+		session.install( sim );
+		session.advance( 30, SECONDS_PER_GAME_DAY );
+		session.act( a.id, [ { tool: 'say', args: { words: 'one' } }, { tool: 'say', args: { words: 'two' } } ] );
+		const tick = sim.state.tick;
+		session.advance( 600, SECONDS_PER_GAME_DAY );
+		session.look( 'fair' );
+		assert.deepEqual( session.record.entries.filter( ( e ) => e.kind === 'said' ).map( ( e ) => [ e.who, e.text, e.tick ] ), [ [ a.id, 'one', tick ], [ a.id, 'two', tick ] ], 'both lines kept, at the tick they were said, not when the record looked' );
+		console.log( 'events: two lines in one frame, both recorded at their tick' );
 
 	}
 

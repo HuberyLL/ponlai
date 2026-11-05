@@ -32,12 +32,15 @@
 // What it guarantees. The game runs as the page runs it: in the page's own session around the
 // simulation (src/game/Session.ts, which Game.ts hosts beside the view), a frame of one tick at a
 // time (Session.advance, a growth due asked for before the tick, so none after the last), the
-// record (Chronicle.ts) looking after every tick as the page's does once a frame (Session.look),
-// the leader's lines between ticks (Session.speak: a line of spaces alone says nothing, as on the
-// speak bar), and the starting islanders (--population's with them) landing at the record's first
-// look, blueprints placed after it noted as the player's. So what the page's game does around the
-// simulation (feeding the record, hearing, growing) is the session's, never copied here. The record
-// notes no skies: the weather is the page's own and nothing in the simulation depends on it. With a
+// leader's lines between ticks (Session.speak, checked as the speak bar's), the starting islanders
+// (--population's with them) landing at the start and the blueprints placed as the player's
+// (Session.place). What happened it reads from the one stream the page's record and interface read
+// (Session.listen, src/game/sim/events.ts): the record's entries, the islanders' words, each
+// action's start and outcome (done, failed, interrupted, refused, replaced) and what it moved
+// between bags, each at the tick it happened; it never watches the state for changes. So what the
+// page's game does around the simulation (feeding the record, hearing, growing) is the session's,
+// never copied here. The record notes no skies: the weather is the page's own and nothing in the
+// simulation depends on it. With a
 // brain that answers at once (the stand-in) the run is the simulation's own deterministic game: the
 // same options write the same files byte for byte (nothing in them depends on the wall clock or the
 // output folder). An
@@ -57,7 +60,8 @@
 //
 // Outputs, in the --out folder: transcript.md (day by day: the record's entries in the words of
 // the record page, src/game/ui/data/record.ts, the building one is about by its id; the islanders'
-// actions with their outcomes, consecutive alike ones merged, what they said, the brain's thoughts
+// actions with their outcomes (an interrupted one as `interrupted: <reason>`), consecutive alike
+// ones merged, what they said, the brain's thoughts
 // when it is asynchronous, needs every six game hours, and a table per day), timeline.json (each
 // game hour, every islander's position, needs, bag and action), summary.json (per islander the
 // share of time by activity, each need's lowest, mean and highest, each item's flows by the call
@@ -69,8 +73,8 @@
 // (many days, a language-model brain) goes through tools/job.mjs.
 //
 // Generic: no need, item, option, building or kind of record entry is named here. The needs are
-// the body's own keys, the activities the calls under way, an item's flows the bag's changes put
-// down to the call that made them, the buildings and the stock the state's, the record's lines its
+// the body's own keys, the activities the calls under way, an item's flows what each call's
+// outcome moved between bags, the buildings and the stock the state's, the record's lines its
 // kinds' rows: a new rule shows in the outputs without a change to the tool.
 import './qos.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -82,7 +86,7 @@ import { StandInBrain } from '../src/game/sim/standin.ts';
 import { BUILDING_KINDS } from '../src/game/sim/buildings.ts';
 import { Session } from '../src/game/Session.ts';
 import { stockOf } from '../src/game/sim/stock.ts';
-import { dayOf, minuteOf } from '../src/game/sim/clock.ts';
+import { clockText, tickAt, timeOf } from '../src/game/sim/clock.ts';
 import { ageOf } from '../src/game/sim/life.ts';
 import { SECONDS_PER_GAME_DAY } from '../src/game/sim/types.ts';
 import { inputAt } from './game-fixture.mjs';
@@ -180,7 +184,7 @@ function readScript( file, startHour ) {
 
 		const m = /^d(\d+) (\d{1,2}):(\d{2})$/.exec( String( line?.at ) );
 		if ( ! m || Number( m[ 2 ] ) > 23 || Number( m[ 3 ] ) > 59 ) fail( `script line ${ n + 1 }: "at" is "d<day> HH:MM"` );
-		const tick = ( ( Number( m[ 1 ] ) - 1 ) * 24 + Number( m[ 2 ] ) - startHour ) * HOUR + Number( m[ 3 ] ) * 60;
+		const tick = tickAt( Number( m[ 1 ] ), Number( m[ 2 ] ) * 60 + Number( m[ 3 ] ), startHour );
 		if ( tick < 0 ) fail( `script line ${ n + 1 }: ${ line.at } is before the game starts` );
 		const to = line.to ?? 'all';
 		if ( to !== 'all' && ! ( Array.isArray( to ) && to.length > 0 && to.every( ( id ) => typeof id === 'string' ) ) ) fail( `script line ${ n + 1 }: "to" is "all" or a list of ids` );
@@ -198,29 +202,20 @@ const realStart = performance.now();
 // ------------------------------------------------------------------ the game
 
 // the page's session (Game.ts) without the page: --grow's host hands the next piece back at once
+// (installed below, once what hears its events is ready)
 const growth = [];
 const session = new Session( inputAt( options.pieces ), { grow: () => {
 
-	if ( ! options.grow ) return;
-	session.setIsland( inputAt( sim.state.pieces + 1 ) );
-	growth.push( { tick: sim.state.tick, at: when( sim.state.tick ), pieces: sim.state.pieces, population: sim.population() } );
-	push( sim.state.tick, `${ clockOf( sim.state.tick ) } [island] the island grew by a piece: ${ sim.state.pieces } now, for ${ sim.population() } islanders` );
+	if ( options.grow ) session.setIsland( inputAt( sim.state.pieces + 1 ) );
 
 } } );
 const sim = newGame( session.island, { seed: options.seed, startHour: options.hour, pieces: options.pieces } );
 for ( let n = 0; n < options.population; n ++ ) sim.addIslander();
-// installed with its islanders: the record's first look lands them at the start
-session.install( sim );
 const record = session.record;
 
-const clockOf = ( tick ) => {
-
-	// the minute as the perception and the record count it, from whole seconds (clock.ts minuteOf)
-	const minutes = minuteOf( { tick, startHour: options.hour } );
-	return `${ String( Math.floor( minutes / 60 ) ).padStart( 2, '0' ) }:${ String( minutes % 60 ).padStart( 2, '0' ) }`;
-
-};
-const dayAt = ( tick ) => dayOf( { tick, startHour: options.hour } ) + 1;
+// the time of a tick as the perception and the record tell it (clock.ts)
+const clockOf = ( tick ) => clockText( timeOf( tick, options.hour ) );
+const dayAt = ( tick ) => timeOf( tick, options.hour ).day;
 const when = ( tick ) => `d${ dayAt( tick ) } ${ clockOf( tick ) }`;
 
 // what the islanders are called in the outputs: by name, with the id where a name repeats
@@ -232,12 +227,6 @@ const label = ( id ) => {
 	return [ ...people.values() ].some( ( o ) => o !== v && o.name === v.name ) ? `${ v.name } (${ id })` : v.name;
 
 };
-const meet = () => {
-
-	for ( const v of sim.state.villagers ) if ( ! people.has( v.id ) ) people.set( v.id, { id: v.id, name: v.name, sex: v.sex, age: Math.floor( ageOf( v, sim.state.tick ) ) } );
-
-};
-meet();
 
 /** A call in a few words, people by name: "go shore", "do give 小禾 fish 1". */
 function describe( call ) {
@@ -259,9 +248,6 @@ const push = ( tick, text ) => lines.push( { tick, seq: seq ++, text } );
 // each islander's current run of alike actions: consecutive calls of the same words (a fishing
 // spell, a night of waits, a refusal repeated) make one line with their outcomes tallied
 const spells = new Map();
-// the outcome each islander's last action left (Villager.last), as last logged: a new one that no
-// tool call made is an action that ended
-const lastSeen = new Map();
 
 function flush( id ) {
 
@@ -305,9 +291,10 @@ function close( id, outcome, tick ) {
 // ------------------------------------------------------------------ statistics
 
 // Nothing below names a need, an item, an option or a building: the needs are the body's own keys,
-// the activities the calls under way, and an item's flows are the bag's changes, each put down to
-// the call that made it (its tool, and a do's option: "do fish", "use", "do give") or, for what
-// another's call brought, `received`; so new rules show here without a change to the tool.
+// the activities the calls under way, and an item's flows are what each outcome moved between bags
+// (events.ts `moved`), put down to the call that moved it (its tool, and a do's option: "do fish",
+// "use", "do give") or, for what another's call brought, `received`; so new rules show here without
+// a change to the tool.
 const blank = () => ( { ticks: {}, needs: {}, samples: 0, items: {}, refused: 0, thoughts: 0 } );
 const totals = new Map(), days = new Map();
 function statsOf( id, day ) {
@@ -319,25 +306,21 @@ function statsOf( id, day ) {
 	return [ totals.get( id ), today.get( id ) ];
 
 }
-const bump = ( id, key, n = 1 ) => {
+const bump = ( id, key, tick ) => {
 
-	for ( const s of statsOf( id, dayAt( sim.state.tick ) ) ) s[ key ] += n;
+	for ( const s of statsOf( id, dayAt( tick ) ) ) s[ key ] ++;
 
 };
 
 /** What a call is called in the item flows: its tool, and a do's option. */
 const flowOf = ( call ) => call?.tool === 'do' ? `do ${ String( call.args?.action ) }` : String( call?.tool ?? 'other' );
 
-// each islander's bag as last accounted: a change since is put down to the call that made it
-const bags = new Map();
-function account( v, flow ) {
+/** What a call moved into or out of an islander's bag (signed counts), put down to a flow. */
+function account( id, moved, flow, tick ) {
 
-	const before = bags.get( v.id ) ?? {}, now = v.bag;
-	for ( const item of new Set( [ ...Object.keys( before ), ...Object.keys( now ) ] ) ) {
+	for ( const [ item, delta ] of Object.entries( moved ) ) {
 
-		const delta = ( now[ item ] ?? 0 ) - ( before[ item ] ?? 0 );
-		if ( delta === 0 ) continue;
-		for ( const s of statsOf( v.id, dayAt( sim.state.tick ) ) ) {
+		for ( const s of statsOf( id, dayAt( tick ) ) ) {
 
 			const flows = s.items[ item ] ??= {};
 			flows[ flow ] = ( flows[ flow ] ?? 0 ) + delta;
@@ -345,7 +328,6 @@ function account( v, flow ) {
 		}
 
 	}
-	bags.set( v.id, { ...now } );
 
 }
 
@@ -362,65 +344,55 @@ function activity( v ) {
 
 const outcomeOf = ( result ) => result.ok ? result.value ?? 'done' : result.reason;
 
-/** An action the tick ended (Villager.last changed outside a tool call): its outcome. */
-function settle( v ) {
+/** What happened, as the session hands it on (src/game/sim/events.ts), into the transcript and the
+ * statistics; the record's own entries come through `readRecord`. */
+function onEvent( e ) {
 
-	if ( v.last === ( lastSeen.get( v.id ) ?? null ) ) return;
-	lastSeen.set( v.id, v.last );
-	const { call, result } = v.last;
-	close( v.id, outcomeOf( result ), sim.state.tick );
-	account( v, flowOf( call ) );
+	switch ( e.kind ) {
+
+		case 'landed': {
+
+			const v = sim.villager( e.who );
+			people.set( e.who, { id: e.who, name: v.name, sex: v.sex, age: Math.floor( ageOf( v, e.tick ) ) } );
+			break;
+
+		}
+		case 'said':
+			if ( e.who !== 'player' ) push( e.tick, `${ clockOf( e.tick ) } ${ label( e.who ) } says: ${ e.words }` );
+			break;
+		case 'grew':
+			growth.push( { tick: e.tick, at: when( e.tick ), pieces: e.pieces, population: e.population } );
+			push( e.tick, `${ clockOf( e.tick ) } [island] the island grew by a piece: ${ e.pieces } now, for ${ e.population } islanders` );
+			break;
+		case 'began': open( e.who, e.call, e.tick, false ); break;
+		case 'outcome': ended( e ); break;
+		case 'died': flush( e.who ); break;
+
+	}
 
 }
 
-// the session's tools wrapped where they stand, to see each call as it is made
-for ( const [ name, handler ] of [ ...session.tools ] ) {
+/** A call's outcome: it closes the action's line (an instant one opens and closes it at once), and
+ * what it moved between bags is accounted. A refused call replaces nothing: beside an action under
+ * way it is a line of its own. */
+function ended( { who, tick, call, outcome, result, moved } ) {
 
-	session.tools.set( name, ( body, args, s ) => {
+	if ( outcome === 'refused' ) {
 
-		const tick = s.state.tick;
-		if ( name === 'say' ) {
+		bump( who, 'refused', tick );
+		if ( spells.get( who )?.open ) push( tick, `${ clockOf( tick ) } ${ label( who ) }: ${ describe( call ) } refused: ${ result.reason }` );
+		else {
 
-			const result = handler( body, args, s );
-			if ( result.ok ) push( tick, `${ clockOf( tick ) } ${ label( body.id ) } says: ${ args.words }` );
-			return result;
-
-		}
-		settle( body );
-		const before = body.action;
-		const result = handler( body, args, s );
-		lastSeen.set( body.id, body.last );
-		if ( ! result.ok ) {
-
-			bump( body.id, 'refused' );
-			// a refused call replaces nothing: beside an action under way it is a line of its own
-			if ( before ) push( tick, `${ clockOf( tick ) } ${ label( body.id ) }: ${ describe( body.last.call ) } refused: ${ result.reason }` );
-			else {
-
-				open( body.id, body.last.call, tick, true );
-				close( body.id, result.reason, tick );
-
-			}
-			return result;
+			open( who, call, tick, true );
+			close( who, result.reason, tick );
 
 		}
-		if ( before ) close( body.id, 'replaced', tick );
-		if ( body.action && body.action !== before ) {
+		return;
 
-			open( body.id, body.action.call, tick, false );
-			return result;
-
-		}
-		// done at once (use, put, take, give, a go already there): what it moved is its own, and what
-		// reached another's bag they received
-		const call = body.last.call;
-		open( body.id, call, tick, false );
-		close( body.id, outcomeOf( result ), tick );
-		account( body, flowOf( call ) );
-		for ( const o of s.state.villagers ) if ( o !== body ) account( o, 'received' );
-		return result;
-
-	} );
+	}
+	if ( ! spells.get( who )?.open ) open( who, call, tick, false );
+	close( who, outcome === 'interrupted' ? `interrupted: ${ result.reason }` : outcome === 'replaced' ? 'replaced' : outcomeOf( result ), tick );
+	if ( moved ) for ( const [ id, items ] of Object.entries( moved ) ) account( id, items, id === who ? flowOf( call ) : 'received', tick );
 
 }
 
@@ -482,7 +454,7 @@ const brain = {
 	think( perception, who ) {
 
 		asked ++;
-		bump( who, 'thoughts' );
+		bump( who, 'thoughts', sim.state.tick );
 		const answer = inner.think( perception, who );
 		if ( ! ( answer instanceof Promise ) ) {
 
@@ -504,6 +476,9 @@ const brain = {
 
 	},
 };
+// what happened, heard from the start: the islanders the game starts with land as it is installed
+session.listen( onEvent );
+session.install( sim );
 session.setBrain( brain );
 
 /** The thoughts due by now: wait for each answer, then let it act on the body at this tick. */
@@ -540,17 +515,15 @@ async function answerDue() {
 
 // ------------------------------------------------------------------ the start
 
+// the player's, as from the build bar (Session.place)
 for ( const spec of options.place ) {
 
-	const refusal = spec.at ? sim.placeBlueprint( spec.kind, spec.at.x, spec.at.z ) : placeAnywhere( spec.kind );
+	const refusal = spec.at ? session.place( spec.kind, spec.at.x, spec.at.z ) : placeAnywhere( spec.kind );
 	if ( refusal ) fail( `--place ${ spec.text }: ${ refusal }` );
 	const b = sim.state.buildings.at( - 1 );
 	push( 0, `${ clockOf( 0 ) } [start] ${ b.id } placed at ${ b.x.toFixed( 2 ) }, ${ b.z.toFixed( 2 ) }` );
 
 }
-// the record looks again: blueprints placed after its first look are the player's, as from the
-// build bar
-session.look( null );
 
 /** A blueprint at the first open ground that takes it, outward from the island's middle; null when
  * placed, else why not. */
@@ -559,7 +532,7 @@ function placeAnywhere( kind ) {
 	const grid = sim.grid, cells = [];
 	for ( let k = 0; k < grid.open.length; k ++ ) if ( grid.region[ k ] === grid.main ) cells.push( k );
 	cells.sort( ( a, b ) => Math.hypot( grid.centreX( a ), grid.centreZ( a ) ) - Math.hypot( grid.centreX( b ), grid.centreZ( b ) ) || a - b );
-	for ( const k of cells ) if ( sim.placeBlueprint( kind, grid.centreX( k ), grid.centreZ( k ) ) === null ) return null;
+	for ( const k of cells ) if ( session.place( kind, grid.centreX( k ), grid.centreZ( k ) ) === null ) return null;
 	return `no open ground takes a ${ kind }`;
 
 }
@@ -568,7 +541,7 @@ function placeAnywhere( kind ) {
 
 const timeline = [];
 const end = Math.round( options.days * SECONDS_PER_GAME_DAY );
-let line = 0, recorded = 0, gone = 0, ok = true;
+let line = 0, recorded = 0, ok = true;
 
 /** Every hour: each islander's state (timeline.json); every six, their needs in the transcript. */
 function sample() {
@@ -607,7 +580,6 @@ function readRecord() {
 	for ( ; recorded < record.entries.length; recorded ++ ) {
 
 		const e = record.entries[ recorded ], row = RECORD_KINDS[ e.kind ];
-		const tick = ( ( e.day - 1 ) * 24 - options.hour ) * HOUR + e.minute * 60;
 		let text;
 		if ( ! row ) text = `${ e.kind } ${ JSON.stringify( e ) }`;
 		else if ( ! row.words ) text = row.deed( e, naming, false ) + ( e.subject ? ` (${ e.subject })` : '' );
@@ -617,7 +589,7 @@ function readRecord() {
 			text = `${ t( 'record.you', { to } ) }: ${ e.text }`;
 
 		}
-		if ( text ) push( Math.max( tick, 0 ), `${ String( Math.floor( e.minute / 60 ) ).padStart( 2, '0' ) }:${ String( e.minute % 60 ).padStart( 2, '0' ) } [record] ${ text }` );
+		if ( text ) push( e.tick, `${ clockOf( e.tick ) } [record] ${ text }` );
 
 	}
 
@@ -644,17 +616,8 @@ for ( ;; ) {
 	session.advance( 1, SECONDS_PER_GAME_DAY );
 	session.look( null );
 	const tick = sim.state.tick;
-	meet();
-	for ( ; gone < sim.state.dead.length; gone ++ ) {
-
-		const id = sim.state.dead[ gone ].id;
-		close( id, 'died', tick );
-		flush( id );
-
-	}
 	for ( const v of sim.state.villagers ) {
 
-		settle( v );
 		const kind = activity( v );
 		for ( const s of statsOf( v.id, dayAt( tick ) ) ) {
 
@@ -710,7 +673,7 @@ const flowsText = ( s ) => Object.entries( s.items ).map( ( [ item, flows ] ) =>
 const entryAt = ( kind, subject ) => {
 
 	const e = record.entries.find( ( r ) => r.kind === kind && r.subject === subject );
-	return e ? `d${ e.day } ${ String( Math.floor( e.minute / 60 ) ).padStart( 2, '0' ) }:${ String( e.minute % 60 ).padStart( 2, '0' ) }` : null;
+	return e ? when( e.tick ) : null;
 
 };
 const kinds = {};

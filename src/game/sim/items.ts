@@ -67,14 +67,13 @@ export function removeItems( items: Items, kind: string, n: number ): void {
 
 }
 
-/** The item and count an option names (put, take, give: `{ item, count = 1 }`), or why they are
- * not one. */
-export function itemCount( args: { item?: unknown; count?: unknown } ): { item: string; n: number } | string {
+/** The item and count an option names (put, take, give: `{ item, count = 1 }`, the count checked
+ * at the entrance: schema.ts), or why they are not one. */
+export function itemCount( args: { item?: string; count?: number } ): { item: string; n: number } | string {
 
-	if ( ! isItem( args.item ) ) return `there is no item called ${ String( args.item ) }`;
-	const n = args.count ?? 1;
-	if ( typeof n !== 'number' || ! Number.isInteger( n ) || n < 1 ) return 'the count must be a whole number from 1';
-	return { item: args.item, n };
+	if ( args.item === undefined ) return 'no item named';
+	if ( ! isItem( args.item ) ) return `there is no item called ${ args.item }`;
+	return { item: args.item, n: args.count ?? 1 };
 
 }
 

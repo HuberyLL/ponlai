@@ -5,6 +5,7 @@ import { CLICK_SLOP } from '../camera/IslandCameraControls.ts';
 import type { Game } from './Game.ts';
 import { groundPoint, pointerRay } from './pick.ts';
 import { describeCall } from './sim/actions.ts';
+import { tickAt } from './sim/clock.ts';
 import type { Brain, Perception, ToolCall } from './sim/agent.ts';
 import { StandInBrain } from './sim/standin.ts';
 import { GROWTH_STEPS } from './sim/types.ts';
@@ -186,13 +187,13 @@ export class GameDebug {
 	// them, placeholder names for the rest.
 	private placeholderDays(): void {
 
-		const game = this.game, ids = game.sim.state.villagers.map( ( v ) => v.id );
+		const game = this.game, ids = game.sim.state.villagers.map( ( v ) => v.id ), startHour = game.sim.state.startHour;
 		const who = ( n: number | 'player' | 'island' ) => typeof n === 'number' ? ids[ n ] ?? `~${ PLACEHOLDER_NAMES[ n ] }` : n;
-		for ( const e of PLACEHOLDER_DAYS ) {
+		for ( const { day, minute, ...e } of PLACEHOLDER_DAYS ) {
 
 			// an islander the record saw land keeps that landing
 			if ( e.kind === 'landed' && game.record.landed.has( who( e.who ) ) ) continue;
-			game.record.add( game.sim, { ...e, who: who( e.who ), to: Array.isArray( e.to ) ? e.to.map( who ) : e.to } );
+			game.record.add( { ...e, tick: tickAt( day, minute, startHour ), who: who( e.who ), to: Array.isArray( e.to ) ? e.to.map( who ) : e.to } );
 
 		}
 		PLACEHOLDER_SKIES.forEach( ( sky, i ) => game.record.addSky( i + 1, sky, 24 ) );

@@ -12,6 +12,7 @@ import { newGame } from './sim/Sim.ts';
 import { SAVE_KEY, UNREAD_KEY, keepsSave, readSlot, resumesSave, savedPieces } from './save.ts';
 import type { Sim } from './sim/Sim.ts';
 import type { Brain, ToolResult } from './sim/agent.ts';
+import type { SimEvent } from './sim/events.ts';
 import { GameView, propSamples } from './view/GameView.ts';
 import { SECONDS_PER_GAME_DAY } from './sim/types.ts';
 import type { TrampleWalker } from '../world/vegetation/Trample.ts';
@@ -36,11 +37,13 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // clock, and its auto chain read ahead is the game's forecast (`forecast`, in game hours). Waves,
 // wind and rain keep real time. The player speaks to the islanders through `speak` (Session.speak:
 // the words go into the record and, for a brain that hears, wait per listener for its next
-// thought); the stand-in does not hear.
+// thought); the stand-in does not hear. What happened reaches the interface as the simulation's
+// events, which the session hands to whoever listens (`listen`, Session.listen; sim/events.ts),
+// never by watching the state for changes.
 //
 // A frame: `update` advances the session (a growth due asked for, the ticks, how near the next step
 // is: Session.advance) and returns the day clock's seconds the page steps the sky and the weather
-// by; `render` draws the islanders, and the record looks with the sky the weather then shows
+// by; `render` draws the islanders, and the record notes the sky the weather then shows
 // (Session.look).
 //
 // URL options: hour (start hour, default 8), paused (start paused), load (resume the saved game),
@@ -259,7 +262,7 @@ export class Game {
 	}
 
 	/** Install a simulation (and its record, for a saved game) in the session (Session.install: its
-	 * tools and brain, the record's first look), a fresh view, and the day clock set to its hour at
+	 * brain, the record, its events so far), a fresh view, and the day clock set to its hour at
 	 * once. */
 	private async begin( sim: Sim, record?: RecordSave ): Promise<void> {
 
@@ -441,7 +444,7 @@ export class Game {
 	/** Place a building of a kind (sim/buildings.ts: 'chest') at a point of the ground (world metres): null when it stands there, else why not. */
 	placeBlueprint( kind: string, x: number, z: number ): string | null {
 
-		const refusal = this.sim.placeBlueprint( kind, x, z );
+		const refusal = this.session.place( kind, x, z );
 		if ( refusal === null ) this.context.sceneEvent( 'game order' );
 		return refusal;
 
@@ -474,21 +477,35 @@ export class Game {
 
 	}
 
-	/** The player speaks: words to some islanders (their ids) or to everyone (Session.speak: into
-	 * the record, and for a brain that hears to each listener's next thought, asked for now). */
-	speak( words: string, to: EntityId[] | 'all' ): void {
+	/** The player speaks: words to some islanders (their ids) or to everyone (Session.speak: an
+	 * event, and for a brain that hears to each listener's next thought, asked for now). Null when
+	 * said, else why not. */
+	speak( words: string, to: EntityId[] | 'all' ): string | null {
 
-		this.session.speak( words, to );
+		return this.session.speak( words, to );
 
 	}
 
-	/** An islander says something (the `say` action on their body: the debug panel's and the
-	 * console's; a brain says through its tools). Null when said, else why not. */
+	/** Hear the simulation's events, in order (Session.listen); returns the call that stops it. */
+	listen( listener: ( event: SimEvent ) => void ): () => void {
+
+		return this.session.listen( listener );
+
+	}
+
+	/** Tool calls for an islander, `[ { tool, args } ]` (the five actions, sim/actions.ts: the
+	 * console's), through the entrance a brain's answer takes (Session.act): each call's result. */
+	act( id: EntityId, calls: unknown ): ToolResult[] {
+
+		return this.session.act( id, calls );
+
+	}
+
+	/** An islander says something (the `say` action, through the entrance a brain's calls take:
+	 * the debug panel's and the console's). Null when said, else why not. */
 	say( id: EntityId, words: string ): string | null {
 
-		const v = this.sim.villager( id ), say = this.session.tools.get( 'say' );
-		if ( ! v || ! say ) return 'No such islander';
-		const result = say( v, { words }, this.sim );
+		const [ result ] = this.session.act( id, [ { tool: 'say', args: { words } } ] );
 		return result.ok ? null : result.reason;
 
 	}
@@ -496,8 +513,7 @@ export class Game {
 	/** Set an islander's need by hand (the debug panel's: to see the interface's ramps and alerts). */
 	setNeed( id: EntityId, need: 'satiety' | 'hydration', value: number ): void {
 
-		const v = this.sim.villager( id );
-		if ( v ) v.needs[ need ] = Math.min( Math.max( value, 0 ), 100 );
+		this.sim.setNeed( id, need, value );
 
 	}
 

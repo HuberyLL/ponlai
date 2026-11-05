@@ -1,10 +1,21 @@
-import { dayOf, minuteOf } from './clock.ts';
+import { ACTIONS, refuse, run } from './actions.ts';
+import { timeOf } from './clock.ts';
+import type { GameTime } from './clock.ts';
 import { placesAt, placesFor } from './places.ts';
+import { checkArgs } from './schema.ts';
 import type { Sim } from './Sim.ts';
 import type { ActionCall, ActionOutcome, ActionResult, EntityId, Items, Villager } from './types.ts';
 
 // The agent loop's frame: a brain thinks from what an islander perceives and answers with tool
 // calls, which run on the islander's body. The tools are the five actions (actions.ts).
+//
+// The answer is outside input, and `act` is its one entrance: whatever a brain (or the game's own
+// controls) hands it, a list of calls each naming a tool of ACTIONS with arguments its schema
+// takes (schema.ts), it checks here before any rule runs, and refuses the rest with the reason
+// (events.ts: refused). It checks the islander too, when the answer comes: a brain may answer late
+// (Sim.think), and an islander who died meanwhile is no longer on the island, so the answer is
+// refused for them rather than acted on. A refused call is kept with its tool alone, never with
+// arguments it was refused for, so nothing unchecked reaches the state or the save.
 //
 // Perception is what a person would perceive, never the world's state (docs/game-design.md,
 // "Perception"): the time; the places and people in sight (within SIGHT, no occlusion yet), each
@@ -22,12 +33,6 @@ export const SIGHT = 20;
 /** What a tool did: its result, or why it could not. */
 export type ToolResult = ActionResult;
 
-/** A tool: acts on an islander's body (and through it on the world). */
-export type ToolHandler = ( body: Villager, args: unknown, sim: Sim ) => ToolResult;
-
-/** Tool name to handler (Sim.tools). */
-export type ToolRegistry = Map<string, ToolHandler>;
-
 export type ToolCall = ActionCall;
 
 /** A place in sight, by its id and kind, and what shows on it (a site's progress; inside a chest,
@@ -39,7 +44,7 @@ export interface SeenPlace {
 }
 
 /** The game's time of a tick: the day counted from 1, and the time of day to the minute. */
-export interface PerceivedTime { day: number; hour: number; minute: number }
+export type PerceivedTime = GameTime;
 
 /** Something another islander did to one, by who it was: words heard, or items handed over. */
 export type NoticedEvent = { who: EntityId; name: string; time: PerceivedTime; said: string } | { who: EntityId; name: string; time: PerceivedTime; gave: Items };
@@ -88,20 +93,14 @@ export function perceive( sim: Sim, body: Villager ): Perception {
 
 	}
 	const startHour = sim.state.startHour;
-	const timeOf = ( tick: number ): PerceivedTime => {
-
-		const at = { tick, startHour }, minutes = minuteOf( at );
-		return { day: dayOf( at ) + 1, hour: Math.floor( minutes / 60 ), minute: minutes % 60 };
-
-	};
 	const noticed = body.noticed.map( ( n ): NoticedEvent => {
 
-		const by = { who: n.who, name: sim.nameOf( n.who ) ?? n.who, time: timeOf( n.tick ) };
+		const by = { who: n.who, name: sim.nameOf( n.who ) ?? n.who, time: timeOf( n.tick, startHour ) };
 		return 'said' in n ? { ...by, said: n.said } : { ...by, gave: n.gave };
 
 	} );
 	return structuredClone( {
-		time: timeOf( sim.state.tick ),
+		time: timeOf( sim.state.tick, startHour ),
 		seen,
 		atHand: here.map( ( p ) => ( { place: p.id, options: Object.keys( p.options ).filter( ( o ) => p.options[ o ].open( sim ) ) } ) ),
 		noticed,
@@ -116,14 +115,32 @@ export function perceive( sim: Sim, body: Villager ): Perception {
 
 }
 
-/** Run tool calls on a body, in order. */
-export function act( sim: Sim, body: Villager, calls: readonly ToolCall[] ): ToolResult[] {
+/** The entrance: a brain's answer for an islander (by id), checked and run call by call, in
+ * order; each refused call gets its reason. */
+export function act( sim: Sim, who: EntityId, calls: unknown ): ToolResult[] {
 
-	return calls.map( ( call ) => {
+	if ( ! Array.isArray( calls ) ) return [ refuseFor( sim, who, { tool: '' }, 'an answer is a list of tool calls' ) ];
+	// every entry gets its result, in order (Array.from: a gap is a call that names no tool)
+	return Array.from( calls, ( given: unknown ) => {
 
-		const tool = sim.tools.get( call.tool );
-		return tool ? tool( body, call.args, sim ) : { ok: false, reason: `No tool named ${ call.tool }` };
+		const call: { tool?: unknown; args?: unknown } = typeof given === 'object' && given !== null ? given : {};
+		const name = call.tool;
+		if ( typeof name !== 'string' || name === '' ) return refuseFor( sim, who, { tool: '' }, 'a call names its tool' );
+		const tool = ACTIONS.get( name );
+		if ( ! tool ) return refuseFor( sim, who, { tool: name }, `there is no tool called ${ name }` );
+		const body = sim.villager( who );
+		if ( ! body ) return refuse( sim, null, who, { tool: name }, `${ who } is not on the island`, tool.mind );
+		const checked = checkArgs( name, tool.args, call.args );
+		if ( ! checked.ok ) return refuse( sim, body, who, { tool: name }, checked.reason, tool.mind );
+		return run( sim, body, name, tool, checked.args );
 
 	} );
+
+}
+
+// a call refused before its tool is known: perceived by the islander when they are on the island
+function refuseFor( sim: Sim, who: EntityId, call: ActionCall, reason: string ): ToolResult {
+
+	return refuse( sim, sim.villager( who ) ?? null, who, call, reason );
 
 }

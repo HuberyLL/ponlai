@@ -67,13 +67,9 @@ export interface Villager {
 	bag: Items;
 	/** the action under way (actions.ts); null: nothing */
 	action: ActionState | null;
-	/** how the last action ended, for the next thought; null before the first */
+	/** how the last action ended, for the next thought; null before the first (what was said and
+	 * given is not kept here: the events say it, events.ts) */
 	last: ActionOutcome | null;
-	/** the last words said, and the tick they were said at */
-	said: { words: string; tick: number } | null;
-	/** the last hand-over (people.ts `give`): to whom, what and when; null before the first. Each
-	 * one is a new object, which the record watches as it watches `said` */
-	gave: { to: EntityId; item: string; count: number; tick: number } | null;
 	/** what others did to the islander since its last thought, oldest first, at most NOTICED_KEPT
 	 * (people.ts): Sim.think drops what a thought perceived once its answer is acted on */
 	noticed: Notice[];
@@ -111,7 +107,13 @@ export interface ActionState {
 /** What an action did: its result, or why it could not. */
 export type ActionResult = { ok: true; value?: string } | { ok: false; reason: string };
 
-export interface ActionOutcome { call: ActionCall; result: ActionResult }
+/** How a call ended, whatever the action (events.ts says when each one comes): done, failed,
+ * interrupted, refused, or replaced by the islander's next action. */
+export type Outcome = 'done' | 'failed' | 'interrupted' | 'refused' | 'replaced';
+
+/** How the last action ended, as the next thought perceives it (never `replaced`: the action that
+ * replaced it has an outcome of its own). */
+export interface ActionOutcome { call: ActionCall; outcome: Exclude<Outcome, 'replaced'>; result: ActionResult }
 
 /** A building the player placed (buildings.ts): its kind, where it stands, the work done on it, what it holds. */
 export interface BuildingState {

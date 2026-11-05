@@ -1,25 +1,27 @@
 import type { WeatherName } from '../sky/Weather.ts';
-import { stageOf } from './sim/buildings.ts';
-import { CRITICAL_NEED } from './sim/needs.ts';
-import { dayOf, minuteOf } from './sim/clock.ts';
-import type { Sim } from './sim/Sim.ts';
-import { SECONDS_PER_YEAR } from './sim/types.ts';
-import type { EntityId, Needs, Villager } from './sim/types.ts';
+import { timeOf } from './sim/clock.ts';
+import type { GameTime } from './sim/clock.ts';
+import type { SimEvent } from './sim/events.ts';
+import type { EntityId } from './sim/types.ts';
 
-// The island's record (沧海录, docs/ui.md): what happened, day by day, as the game sees it happen.
-// Islanders landing and dying, the player's words and the islanders', what one islander handed
-// another, buildings set out and finished, a need turning critical, and how long each sky held on
-// each day. The interface reads it (src/game/ui/Record.ts) and turns each entry into words and a
-// mark by its kind's row (src/game/ui/data/record.ts), so a new kind of entry is a new row there.
+// The island's record (沧海录, docs/ui.md): what happened, day by day. Islanders landing and dying,
+// the player's words and the islanders', what one islander handed another, buildings set out and
+// finished, a need turning critical, and how long each sky held on each day. The interface reads it
+// (src/game/ui/Record.ts) and turns each entry into words and a mark by its kind's row
+// (src/game/ui/data/record.ts), so a new kind of entry is a new row there.
 //
-// Rules: it watches the simulation once a frame (Session.look) and never changes it; the player's
-// words come through Session.speak. It is part of the save (save.ts): `save` gives its entries, the
-// skies of each day and the critical needs it has noted (so a need is not noted twice across a
-// load), and `restore` takes them back into a record just reset, whose first look at the loaded
-// simulation then notes nothing that happened before the save. A record restored and watching the
-// same ticks keeps the entries the original keeps (tools/verify-game.mjs). A day is the game's day
-// counted from 1, a time the minute of that day; entries are kept in the order they happened. `version` counts the changes, so a reader redraws only when
-// it moved.
+// Rules: it is the first listener of the simulation's events (sim/events.ts, Session.listen), and
+// notes an entry for each event of the kinds above (`note`), with the tick the event happened at;
+// it never reads or changes the simulation's state. So it keeps every line said, two in one frame
+// included, and keeps no copy of what the simulation decides (a need's line is the simulation's:
+// sim/needs.ts). An entry keeps its tick, and its day and time of day are derived from it
+// (`timeOf`, sim/clock.ts), never stored beside it. It is part of the save (save.ts): `save` gives
+// its entries and the skies of each day, and `restore` takes them back into a record just reset; a
+// loaded game's simulation has emitted nothing yet, so the record notes nothing twice. A record
+// restored and hearing the same events keeps the entries the original keeps
+// (tools/verify-game.mjs). Entries are kept in the order they happened (the debug panel's
+// placeholders aside: readers sort by tick). `version` counts the changes, so a reader redraws only
+// when it moved.
 
 /** who an entry is about: an islander, the player, or the island as a whole (a building finished) */
 export type RecordWho = EntityId | 'player' | 'island';
@@ -27,8 +29,8 @@ export type RecordWho = EntityId | 'player' | 'island';
 export interface RecordEntry {
 	/** its kind (src/game/ui/data/record.ts): landed, died, said, gave, placed, built, need */
 	kind: string;
-	day: number;
-	minute: number;
+	/** the tick it happened at (its day and time: Chronicle.timeOf) */
+	tick: number;
 	who: RecordWho;
 	/** whom words were said to (the islanders' ids, or everyone), or whom something was given to */
 	to?: EntityId[] | 'all';
@@ -46,42 +48,35 @@ export interface RecordSave {
 	entries: RecordEntry[];
 	/** game hours each sky held, by day */
 	skies: Record<string, Partial<Record<WeatherName, number>>>;
-	/** the critical needs noted and not yet risen back (`id:need`) */
-	alerted: string[];
 }
-
-// a critical need is noted again only after it has risen this far above the line
-const REARM = 10;
 
 export class Chronicle {
 
 	readonly entries: RecordEntry[] = [];
 	/** game hours each sky held, by day */
 	readonly skies = new Map<number, Map<WeatherName, number>>();
-	/** the day each islander landed on, where the record saw it */
+	/** the tick each islander landed at, where the record has it */
 	readonly landed = new Map<EntityId, number>();
 	/** changes so far */
 	version = 0;
-	private watching = false;
-	// the line each islander said last and its last hand-over (each a new object, whatever the tick)
-	private readonly said = new Map<EntityId, Villager[ 'said' ]>();
-	private readonly gave = new Map<EntityId, Villager[ 'gave' ]>();
-	private readonly built = new Map<string, boolean>();
-	private readonly alerted = new Set<string>();
+	// the game's start hour, which a tick's time of day counts from
+	private startHour = 0;
 
-	/** A new simulation is installed (start, load): the record starts over. A new game's first
-	 * islanders land at its start; a loaded game's were there before the record. */
-	reset(): void {
+	/** A new simulation is installed (start, load), starting at an hour: the record starts over. */
+	reset( startHour: number ): void {
 
 		this.entries.length = 0;
 		this.skies.clear();
 		this.landed.clear();
-		this.said.clear();
-		this.gave.clear();
-		this.built.clear();
-		this.alerted.clear();
-		this.watching = false;
+		this.startHour = startHour;
 		this.version ++;
+
+	}
+
+	/** The day (from 1) and time of day of a tick. */
+	timeOf( tick: number ): GameTime {
+
+		return timeOf( tick, this.startHour );
 
 	}
 
@@ -90,34 +85,42 @@ export class Chronicle {
 
 		const skies: RecordSave[ 'skies' ] = {};
 		for ( const [ day, tally ] of this.skies ) skies[ day ] = Object.fromEntries( tally );
-		return { entries: this.entries, skies, alerted: [ ...this.alerted ] };
+		return { entries: this.entries, skies };
 
 	}
 
-	/** Take a saved record back, into a record just reset (before its first look at the loaded
-	 * simulation). */
+	/** Take a saved record back, into a record just reset. */
 	restore( saved: RecordSave ): void {
 
-		for ( const e of saved.entries ) {
-
-			this.entries.push( e );
-			if ( e.kind === 'landed' && ! this.landed.has( e.who ) ) this.landed.set( e.who, e.day );
-
-		}
+		for ( const e of saved.entries ) this.keep( e );
 		for ( const [ day, tally ] of Object.entries( saved.skies ) ) this.skies.set( Number( day ), new Map( Object.entries( tally ) as [ WeatherName, number ][] ) );
-		for ( const key of saved.alerted ?? [] ) this.alerted.add( key );
 		this.version ++;
 
 	}
 
-	/** Add an entry, at the game's time now unless it names its own (the debug panel's
-	 * placeholders); a landing is the day the islander's page starts. */
-	add( sim: Sim, entry: Omit<RecordEntry, 'day' | 'minute'> & Partial<Pick<RecordEntry, 'day' | 'minute'>> ): void {
+	/** An entry (the debug panel's placeholders; the events' through `note`). */
+	add( entry: RecordEntry ): void {
 
-		const e = { day: sim.day() + 1, minute: minuteOf( sim.state ), ...entry };
-		this.entries.push( e );
-		if ( e.kind === 'landed' && ! this.landed.has( e.who ) ) this.landed.set( e.who, e.day );
+		this.keep( entry );
 		this.version ++;
+
+	}
+
+	/** An event of the simulation's: an entry for the kinds the record keeps. */
+	note( e: SimEvent ): void {
+
+		const tick = e.tick;
+		switch ( e.kind ) {
+
+			case 'landed': this.add( { kind: 'landed', tick, who: e.who } ); break;
+			case 'died': this.add( { kind: 'died', tick, who: e.who, text: String( e.age ) } ); break;
+			case 'said': this.add( e.to ? { kind: 'said', tick, who: e.who, to: e.to, text: e.words } : { kind: 'said', tick, who: e.who, text: e.words } ); break;
+			case 'gave': this.add( { kind: 'gave', tick, who: e.who, to: [ e.to ], text: e.item, count: e.count } ); break;
+			case 'placed': this.add( { kind: 'placed', tick, who: 'player', text: e.of, subject: e.building } ); break;
+			case 'built': this.add( { kind: 'built', tick, who: 'island', text: e.of, subject: e.building } ); break;
+			case 'need': this.add( { kind: 'need', tick, who: e.who, text: e.need } ); break;
+
+		}
 
 	}
 
@@ -130,69 +133,10 @@ export class Chronicle {
 
 	}
 
-	/** Once a frame: note what changed in the simulation, and the sky shown over `hours` game hours
-	 * (null: none is shown, as headless, and none is noted). */
-	observe( sim: Sim, sky: WeatherName | null, hours: number ): void {
+	private keep( e: RecordEntry ): void {
 
-		const state = sim.state, fresh = ! this.watching;
-		this.watching = true;
-		for ( const v of state.villagers ) {
-
-			if ( ! this.said.has( v.id ) ) {
-
-				// a new game's islanders land at its start; a loaded game's came before the record, or are
-				// in it already (a game saved before its first tick, ?game&paused)
-				if ( ( ! fresh || state.tick === 0 ) && ! this.landed.has( v.id ) ) this.add( sim, { kind: 'landed', who: v.id } );
-				this.said.set( v.id, v.said );
-				this.gave.set( v.id, v.gave );
-
-			}
-			if ( v.said && v.said !== this.said.get( v.id ) ) {
-
-				this.said.set( v.id, v.said );
-				this.add( sim, { kind: 'said', who: v.id, text: v.said.words } );
-
-			}
-			if ( v.gave && v.gave !== this.gave.get( v.id ) ) {
-
-				this.gave.set( v.id, v.gave );
-				this.add( sim, { kind: 'gave', who: v.id, to: [ v.gave.to ], text: v.gave.item, count: v.gave.count } );
-
-			}
-			for ( const need of Object.keys( v.needs ) as ( keyof Needs )[] ) {
-
-				const key = `${ v.id }:${ need }`, value = v.needs[ need ];
-				if ( value <= CRITICAL_NEED && ! this.alerted.has( key ) ) {
-
-					this.alerted.add( key );
-					if ( ! fresh ) this.add( sim, { kind: 'need', who: v.id, text: need } );
-
-				} else if ( value > CRITICAL_NEED + REARM ) this.alerted.delete( key );
-
-			}
-
-		}
-		// those seen before and gone from the roll died (at the tick the list of the dead keeps)
-		if ( this.said.size > state.villagers.length ) for ( const d of state.dead ) {
-
-			if ( ! this.said.delete( d.id ) ) continue;
-			this.gave.delete( d.id );
-			for ( const need of [ 'satiety', 'hydration' ] ) this.alerted.delete( `${ d.id }:${ need }` );
-			const at = { tick: d.died, startHour: state.startHour };
-			this.add( sim, { kind: 'died', who: d.id, text: String( Math.floor( ( d.died - d.born ) / SECONDS_PER_YEAR ) ), day: dayOf( at ) + 1, minute: minuteOf( at ) } );
-
-		}
-		for ( const b of state.buildings ) {
-
-			const done = stageOf( b ) === 'built', was = this.built.get( b.id );
-			if ( was === done ) continue;
-			this.built.set( b.id, done );
-			if ( fresh ) continue;
-			if ( was === undefined ) this.add( sim, { kind: 'placed', who: 'player', text: b.kind, subject: b.id } );
-			if ( done ) this.add( sim, { kind: 'built', who: 'island', text: b.kind, subject: b.id } );
-
-		}
-		if ( sky !== null && hours > 0 ) this.addSky( sim.day() + 1, sky, hours );
+		this.entries.push( e );
+		if ( e.kind === 'landed' && ! this.landed.has( e.who ) ) this.landed.set( e.who, e.tick );
 
 	}
 
