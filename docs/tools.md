@@ -1436,8 +1436,9 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   `artifacts/play/<stamp>/` (`--out`): `transcript.md` (day by day, the record's entries, the
   islanders' actions with their outcomes, consecutive alike ones merged, their words, needs every
   six game hours and a table per day), `timeline.json` (every islander each game hour: position,
-  needs, bag, action), `summary.json` (per islander the share of time by activity, satiety's
-  minimum and mean, the fish caught, eaten, given and stored; the dead, the buildings and when
+  needs, bag, action), `summary.json` (per islander the share of time by activity, each need's
+  lowest, mean and highest, each item's flows by the call that moved it, so a new need, item or
+  option shows without a change to the tool; the dead, the buildings and when
   they were built, the stock), `record.json` and, with `--thoughts`, `thoughts.jsonl` (a line per
   thought: what the islander perceived and the brain's answer, for judging a brain offline; about
   1 MB for four islanders over five days), with a short summary on stdout. `--place` puts

@@ -61,13 +61,19 @@
 // actions with their outcomes, consecutive alike ones merged, what they said, the brain's thoughts
 // when it is asynchronous, needs every six game hours, and a table per day), timeline.json (each
 // game hour, every islander's position, needs, bag and action), summary.json (per islander the
-// share of time by activity, satiety's minimum and mean, fish caught, eaten, given, received, put
-// and taken, thoughts; the dead, the buildings and when they were placed and built, the island's
-// stock, the growth, the record's entries by kind), record.json (the record as a save holds it)
-// and, with --thoughts, thoughts.jsonl (a line per thought: who, when it was asked and answered,
-// the perception and the calls). On stdout a short summary. Exit 0 when the run played through, 1 when it failed (a
-// brain that kept failing, an error), 2 for a bad option. A long run (many days, a language-model
-// brain) goes through tools/job.mjs.
+// share of time by activity, each need's lowest, mean and highest, each item's flows by the call
+// that moved it, thoughts; the dead, the buildings and when they were placed and built, the
+// island's stock, the growth, the record's entries by kind), record.json (the record as a save
+// holds it) and, with --thoughts, thoughts.jsonl (a line per thought: who, when it was asked and
+// answered, the perception and the calls). On stdout a short summary. Exit 0 when the run played
+// through, 1 when it failed (a brain that kept failing, an error), 2 for a bad option. A long run
+// (many days, a language-model brain) goes through tools/job.mjs.
+//
+// Generic: no need, item, option or building is named here. The needs are the body's own keys,
+// the activities the calls under way, an item's flows the bag's changes put down to the call that
+// made them, the buildings and the stock the state's: a new rule shows in the outputs without a
+// change to the tool. Only what Game.ts does around the simulation is mirrored (above), and
+// follows Game.ts.
 import './qos.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -277,8 +283,11 @@ function close( id, outcome, tick ) {
 
 // ------------------------------------------------------------------ statistics
 
-const ACTIVITIES = [ 'fish', 'build', 'go', 'walk', 'follow', 'wait', 'thinking', 'idle' ];
-const blank = () => ( { ticks: {}, satietyMin: Infinity, satietyMax: - Infinity, satietySum: 0, samples: 0, caught: 0, eaten: 0, given: 0, received: 0, put: 0, taken: 0, refused: 0, thoughts: 0 } );
+// Nothing below names a need, an item, an option or a building: the needs are the body's own keys,
+// the activities the calls under way, and an item's flows are the bag's changes, each put down to
+// the call that made it (its tool, and a do's option: "do fish", "use", "do give") or, for what
+// another's call brought, `received`; so new rules show here without a change to the tool.
+const blank = () => ( { ticks: {}, needs: {}, samples: 0, items: {}, refused: 0, thoughts: 0 } );
 const totals = new Map(), days = new Map();
 function statsOf( id, day ) {
 
@@ -294,6 +303,30 @@ const bump = ( id, key, n = 1 ) => {
 	for ( const s of statsOf( id, dayAt( sim.state.tick ) ) ) s[ key ] += n;
 
 };
+
+/** What a call is called in the item flows: its tool, and a do's option. */
+const flowOf = ( call ) => call?.tool === 'do' ? `do ${ String( call.args?.action ) }` : String( call?.tool ?? 'other' );
+
+// each islander's bag as last accounted: a change since is put down to the call that made it
+const bags = new Map();
+function account( v, flow ) {
+
+	const before = bags.get( v.id ) ?? {}, now = v.bag;
+	for ( const item of new Set( [ ...Object.keys( before ), ...Object.keys( now ) ] ) ) {
+
+		const delta = ( now[ item ] ?? 0 ) - ( before[ item ] ?? 0 );
+		if ( delta === 0 ) continue;
+		for ( const s of statsOf( v.id, dayAt( sim.state.tick ) ) ) {
+
+			const flows = s.items[ item ] ??= {};
+			flows[ flow ] = ( flows[ flow ] ?? 0 ) + delta;
+
+		}
+
+	}
+	bags.set( v.id, { ...now } );
+
+}
 
 /** What the body does this tick, for the share of time. */
 function activity( v ) {
@@ -315,7 +348,7 @@ function settle( v ) {
 	lastSeen.set( v.id, v.last );
 	const { call, result } = v.last;
 	close( v.id, outcomeOf( result ), sim.state.tick );
-	if ( call.tool === 'do' && call.args.action === 'fish' && result.ok && result.value === 'caught a fish' ) bump( v.id, 'caught' );
+	account( v, flowOf( call ) );
 
 }
 
@@ -358,19 +391,13 @@ for ( const [ name, handler ] of sim.tools ) {
 			return result;
 
 		}
-		// done at once (use, put, take, give, a go already there)
-		const call = body.last.call, n = call.args?.count ?? 1;
+		// done at once (use, put, take, give, a go already there): what it moved is its own, and what
+		// reached another's bag they received
+		const call = body.last.call;
 		open( body.id, call, tick, false );
 		close( body.id, outcomeOf( result ), tick );
-		if ( call.tool === 'use' && call.args.item === 'fish' ) bump( body.id, 'eaten' );
-		if ( call.tool === 'do' && call.args.action === 'give' ) {
-
-			bump( body.id, 'given', n );
-			bump( call.args.place, 'received', n );
-
-		}
-		if ( call.tool === 'do' && call.args.action === 'put' ) bump( body.id, 'put', n );
-		if ( call.tool === 'do' && call.args.action === 'take' ) bump( body.id, 'taken', n );
+		account( body, flowOf( call ) );
+		for ( const o of s.state.villagers ) if ( o !== body ) account( o, 'received' );
 		return result;
 
 	} );
@@ -555,14 +582,14 @@ function sample() {
 
 	const tick = sim.state.tick;
 	timeline.push( { tick, day: dayAt( tick ), time: clockOf( tick ), islanders: sim.state.villagers.map( ( v ) => ( {
-		id: v.id, x: round( v.pos.x, 2 ), z: round( v.pos.z, 2 ), satiety: round( v.needs.satiety, 1 ), hydration: round( v.needs.hydration, 1 ),
+		id: v.id, x: round( v.pos.x, 2 ), z: round( v.pos.z, 2 ), needs: Object.fromEntries( Object.entries( v.needs ).map( ( [ k, x ] ) => [ k, round( x, 1 ) ] ) ),
 		bag: { ...v.bag }, doing: v.action ? describe( v.action.call ) : v.path ? 'walk' : sim.thinking( v.id ) ? 'thinking' : null,
 	} ) ) } );
 	if ( ( options.hour * HOUR + tick ) % ( 6 * HOUR ) !== 0 ) return;
 	const needs = sim.state.villagers.map( ( v ) => {
 
 		const bag = Object.entries( v.bag ).map( ( [ item, n ] ) => `${ item } ${ n }` ).join( ', ' );
-		return `${ label( v.id ) } ${ Math.round( v.needs.satiety ) }/${ Math.round( v.needs.hydration ) }${ bag ? ` (${ bag })` : '' }`;
+		return `${ label( v.id ) } ${ Object.entries( v.needs ).map( ( [ k, x ] ) => `${ k } ${ Math.round( x ) }` ).join( ', ' ) }${ bag ? ` (${ bag })` : '' }`;
 
 	} );
 	push( tick, `${ clockOf( tick ) } [needs] ${ needs.join( ' · ' ) }` );
@@ -641,9 +668,14 @@ for ( ;; ) {
 		for ( const s of statsOf( v.id, dayAt( tick ) ) ) {
 
 			s.ticks[ kind ] = ( s.ticks[ kind ] ?? 0 ) + 1;
-			s.satietyMin = Math.min( s.satietyMin, v.needs.satiety );
-			s.satietyMax = Math.max( s.satietyMax, v.needs.satiety );
-			s.satietySum += v.needs.satiety;
+			for ( const [ need, value ] of Object.entries( v.needs ) ) {
+
+				const n = s.needs[ need ] ??= { min: Infinity, max: - Infinity, sum: 0 };
+				n.min = Math.min( n.min, value );
+				n.max = Math.max( n.max, value );
+				n.sum += value;
+
+			}
 			s.samples ++;
 
 		}
@@ -676,10 +708,14 @@ mkdirSync( out, { recursive: true } );
 const share = ( s ) => {
 
 	const all = Object.values( s.ticks ).reduce( ( a, b ) => a + b, 0 ) || 1;
-	return Object.fromEntries( Object.entries( s.ticks ).sort( ( a, b ) => b[ 1 ] - a[ 1 ] || ACTIVITIES.indexOf( a[ 0 ] ) - ACTIVITIES.indexOf( b[ 0 ] ) ).map( ( [ k, n ] ) => [ k, round( n / all, 3 ) ] ) );
+	return Object.fromEntries( Object.entries( s.ticks ).sort( ( a, b ) => b[ 1 ] - a[ 1 ] || ( a[ 0 ] < b[ 0 ] ? - 1 : 1 ) ).map( ( [ k, n ] ) => [ k, round( n / all, 3 ) ] ) );
 
 };
 const shareText = ( s ) => Object.entries( share( s ) ).filter( ( [ , x ] ) => x >= 0.01 ).map( ( [ k, x ] ) => `${ k } ${ Math.round( x * 100 ) } %` ).join( ', ' );
+// each need's lowest, mean and highest; each item's flows by call, gains first
+const needsOf = ( s ) => Object.fromEntries( Object.entries( s.needs ).map( ( [ k, n ] ) => [ k, { min: round( n.min, 1 ), mean: round( n.sum / s.samples, 1 ), max: round( n.max, 1 ) } ] ) );
+const needsText = ( s, mean = false ) => Object.entries( s.needs ).map( ( [ k, n ] ) => `${ k } ${ Math.round( n.min ) }–${ Math.round( n.max ) }${ mean ? ` (mean ${ Math.round( n.sum / s.samples ) })` : '' }` ).join( ', ' );
+const flowsText = ( s ) => Object.entries( s.items ).map( ( [ item, flows ] ) => `${ item } ${ Object.entries( flows ).sort( ( a, b ) => b[ 1 ] - a[ 1 ] ).map( ( [ f, n ] ) => `${ n > 0 ? '+' : '' }${ n } ${ f }` ).join( ', ' ) }` ).join( '; ' ) || 'no items';
 const entryAt = ( kind, subject ) => {
 
 	const e = record.entries.find( ( r ) => r.kind === kind && r.subject === subject );
@@ -695,8 +731,8 @@ const islanders = [ ...people.values() ].map( ( p ) => {
 		id: p.id, name: p.name, sex: p.sex, ageAtStart: p.age, alive: Boolean( v ),
 		died: dead ? when( dead.died ) : null,
 		time: share( s ),
-		satiety: { min: s.samples ? round( s.satietyMin, 1 ) : null, mean: s.samples ? round( s.satietySum / s.samples, 1 ) : null, end: v ? round( v.needs.satiety, 1 ) : null },
-		fish: { caught: s.caught, eaten: s.eaten, given: s.given, received: s.received, put: s.put, taken: s.taken },
+		needs: needsOf( s ),
+		items: s.items,
 		bag: v ? { ...v.bag } : null,
 		thoughts: s.thoughts, refused: s.refused,
 	};
@@ -733,11 +769,11 @@ const md = [
 	'',
 	`Islanders: ${ [ ...people.values() ].map( ( p ) => `${ label( p.id ) } (${ p.id }, ${ p.sex === 'male' ? 'man' : 'woman' }, ${ p.age })` ).join( ', ' ) }.`,
 	'',
-	'Lines: `[record]` the record\'s entries (沧海录); `[needs]` every six game hours, satiety/hydration and the bag; the other lines are the islanders\' actions from start to end, consecutive alike ones merged (×n) with their outcomes, their words (`says`) and, for an asynchronous brain, its thoughts from asked to answered.',
+	'Lines: `[record]` the record\'s entries (沧海录); `[needs]` every six game hours, each need and the bag; the other lines are the islanders\' actions from start to end, consecutive alike ones merged (×n) with their outcomes, their words (`says`) and, for an asynchronous brain, its thoughts from asked to answered.',
 ];
 lines.sort( ( a, b ) => a.tick - b.tick || a.seq - b.seq );
 const lastShown = Math.max( dayAt( Math.max( sim.state.tick - 1, 0 ) ), lines.length ? dayAt( lines.at( - 1 ).tick ) : 0 );
-const dayRow = ( id, s ) => `| ${ label( id ) } | ${ Math.round( s.satietyMin ) }–${ Math.round( s.satietyMax ) } | ${ s.caught } / ${ s.eaten } / ${ s.given } / ${ s.received } | ${ s.put } / ${ s.taken } | ${ shareText( s ) } |`;
+const dayRow = ( id, s ) => `| ${ label( id ) } | ${ needsText( s ) } | ${ flowsText( s ) } | ${ shareText( s ) } |`;
 let at = 0;
 for ( let day = dayAt( 0 ); day <= lastShown; day ++ ) {
 
@@ -745,7 +781,7 @@ for ( let day = dayAt( 0 ); day <= lastShown; day ++ ) {
 	for ( ; at < lines.length && dayAt( lines[ at ].tick ) <= day; at ++ ) md.push( `- ${ lines[ at ].text }` );
 	const today = days.get( day );
 	if ( ! today ) continue;
-	md.push( '', '| islander | satiety min–max | fish caught / eaten / given / received | put / taken | time |', '|---|---|---|---|---|' );
+	md.push( '', '| islander | needs, lowest–highest | items, by the call that moved them | time |', '|---|---|---|---|' );
 	for ( const id of people.keys() ) if ( today.has( id ) ) md.push( dayRow( id, today.get( id ) ) );
 
 }
@@ -760,7 +796,7 @@ console.log( `play-game: ${ summary.end }, ${ sim.population() } islanders, ${ s
 for ( const p of islanders ) {
 
 	const s = totals.get( p.id ) ?? blank();
-	console.log( `  ${ label( p.id ) } ${ p.id }${ p.alive ? '' : ` (died ${ p.died })` }: ${ shareText( s ) }; satiety min ${ Math.round( p.satiety.min ) } mean ${ Math.round( p.satiety.mean ) }; fish caught ${ p.fish.caught }, eaten ${ p.fish.eaten }, given ${ p.fish.given }` );
+	console.log( `  ${ label( p.id ) } ${ p.id }${ p.alive ? '' : ` (died ${ p.died })` }: ${ shareText( s ) }; ${ needsText( s, true ) }; ${ flowsText( s ) }` );
 
 }
 console.log( `  deaths: ${ summary.deaths.length ? summary.deaths.map( ( d ) => `${ d.name } ${ d.at }` ).join( ', ' ) : 'none' }; stock ${ JSON.stringify( summary.stock ) }; buildings: ${ buildings.length ? buildings.map( ( b ) => `${ b.id } ${ b.built ? `built ${ b.built }` : `${ Math.round( b.progress * 100 ) } %` }` ).join( ', ' ) : 'none' }${ growth.length ? `; grew ${ growth.length } piece(s)` : '' }${ asked && pending.length + answered + failed ? `; thoughts answered ${ answered }, failed ${ failed }` : '' }` );
