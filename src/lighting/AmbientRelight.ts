@@ -4,7 +4,7 @@ import { OVERCAST_LAND, ambient, overcastLandWeight } from './AmbientGrade.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune, tuneKeys, tuneUniform } from '../debug/Tune.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
-import { skyNight } from '../sky/DayCycle.ts';
+import { moonKeyShare, skyNight } from '../sky/DayCycle.ts';
 import { IRRADIANCE_SLABS, type AmbientVolume } from './AmbientVolume.ts';
 import { COSINE_LOBE, bounceLobe, coefficients, linearMaximum, shBasisAt, shConvolve, shDeringWindow, shProduct, shTowardDelta, shWindow, toMat3, type M3 } from './Harmonics.ts';
 import type { Shared } from '../shared.ts';
@@ -42,7 +42,8 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../wor
 //               `skyFill`, the environment's intensity) times the probes' own sky gain (PROBE_SKY,
 //               keyed by the sun's own elevation, not the key's, so the moon's key at night does
 //               not move it: golden, low and high, a clouded day's held value over them, the
-//               night's as the sky's own, DayCycle.ts `skyNight`), which the seen sky never takes, so the ground's sky light can be set
+//               night's as the sky's own, DayCycle.ts `skyNight`, under overcast's deck the land's
+//               with the moon's key), which the seen sky never takes, so the ground's sky light can be set
 //               against the sun's and the sky's at every hour and under cloud; the grade adds no
 //               gain of its own here (AmbientGrade.ts);
 //     bounced   the probe's bounced sky visibility (the world lit by a uniform white sky, one
@@ -241,7 +242,17 @@ const BOUNCE_GAIN = 9.4;
  * its own light (post/Exposure.ts), so these set the land against the sky, and the deck's gain the
  * water too. It returns to 3.5 by -2.7, where
  * the night's exposure has come in whole (the blue hour's light is the night's sky's, which the
- * day's keys do not touch). */
+ * day's keys do not touch). Under overcast's closed deck, on its share, the land's gain takes neither
+ * that return nor the clouded night's ramp (`skyNight`, from 2 degrees): it goes from the deck's
+ * gain on the day's keys, which leaves with the sun over the civil twilight, to the night's as the
+ * moon's key comes in (DayCycle.ts `moonKeyShare`, from -2.5 degrees, whole by -4.5), when the
+ * deck's column passes the moon down to its base, as the haze under the deck takes it
+ * (weather/HazeKeys.ts `deck`). Below the golden key (3 degrees) the deck's gain takes the day's
+ * keys at their value there; from 3 degrees up it takes them as they stand, as the other shares do.
+ * The sky's light under the deck no longer falls through the twilight, its deck lit as long as the
+ * sun's light leaves (Weather.ts `overcastDeckLight`), within 15 % a half degree from -0.5 to -2:
+ * the twilight's keys over the deck's gain raised the land's sky light 1.9 times from -1 to -2.5
+ * degrees, so the land brightened as the sun set. The water keeps them (`seaScale`). */
 const PROBE_SKY_LOW: DayKey<{ skyGain: number }> = { at: 12, name: 'low', values: { skyGain: 0.92 } };
 const PROBE_SKY_HIGH: DayKey<{ skyGain: number }> = { at: 40, name: 'high', values: { skyGain: 0.92 } };
 const PROBE_SKY: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight', {
@@ -258,7 +269,7 @@ const PROBE_SKY: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight', {
 	],
 	night: { skyGain: 7.25 },
 }, { skyGain: { min: 0.25, max: 8, scale: 'log' } } );
-const _probeSky = { skyGain: 1 };
+const _probeSky = { skyGain: 1 }, _probeDeck = { skyGain: 1 };
 /** A low sun's lift of the sky's light on the water, main.ts writes it once a frame to shared.ts
  * `skyLift`. The sea's bounce in the probes (`seaScale`) takes it, as the water drawn does, so
  * does the sky's light on what reads it straight (shared.ts `skyIrradianceSource`: the water body,
@@ -620,7 +631,12 @@ export class AmbientRelight {
 		// stand for the light the deck takes from the sun, which leaves with it
 		const day = keyed( PROBE_SKY, elevation, 0, _probeSky, clouded, this.rising() ).skyGain, toNight = PROBE_SKY.night.skyGain;
 		const gained = ( gain: number ) => day * gain + ( toNight - day * gain ) * night;
-		const probeSky = gained( 1 ), landGain = gained( landSky );
+		// (under overcast's closed deck, on its share, the land's goes from the deck's gain on the
+		// day's keys, held below the golden key at its value, to the night's with the moon's key
+		// instead, without the twilight's keys: see PROBE_SKY)
+		const deckDay = keyed( PROBE_SKY, Math.max( elevation, PROBE_SKY.day[ 0 ].at ), 0, _probeDeck, clouded, this.rising() ).skyGain * landSky;
+		const clouds = gained( landSky ), underDeck = deckDay + ( toNight - deckDay ) * moonKeyShare( elevation );
+		const probeSky = gained( 1 ), landGain = clouds + ( underDeck - clouds ) * overcast;
 		// the land takes the sky's light as the sky gives it; a low sun's lift of it (`lowSunSkyLift`)
 		// goes to the water alone, here to the sea's bounce, as the water drawn takes it
 		const fill = this.shared.skyFill.value, seaFill = fill * this.shared.skyLift.value;
