@@ -114,11 +114,13 @@ export function deckFloorTakeover( elevation: number, clouded: number, overcast:
 }
 
 /** The key's gain on the deck's floor (Sky.ts `keyCloudFloor`, `deckKeyFloor`): overcast's gain
- * `overcastKey` by its share `overcast` at every sun (`deckFloorTakeover`), a cloudy deck's
- * `cloudyKey` by its share `cloudy` and `deckRamp`. */
+ * `overcastKey` by its share `overcast` and `overcastDeckLight`, so it leaves with the sun's own
+ * light over the civil twilight on the same slope as the land's sky light under the deck
+ * (lighting/AmbientGrade.ts `overcastLandWeight`) and the moon's floor keeps the deck's own share
+ * (`deckFloor`) by night; a cloudy deck's `cloudyKey` by its share `cloudy` and `deckRamp`. */
 export function floorKeyGain( elevation: number, overcast: number, cloudy: number, overcastKey: number, cloudyKey: number ): number {
 
-	return 1 + ( overcastKey - 1 ) * overcast + ( cloudyKey - 1 ) * cloudy * deckRamp( elevation );
+	return 1 + ( overcastKey - 1 ) * overcast * overcastDeckLight( elevation ) + ( cloudyKey - 1 ) * cloudy * deckRamp( elevation );
 
 }
 
