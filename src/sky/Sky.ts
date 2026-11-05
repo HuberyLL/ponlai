@@ -457,8 +457,9 @@ function clearShade( elevation: number, direct: number ): number {
 // sees stays the sky that lights. The clouds' sunlight takes none: it is the sun's beam at their
 // height (Clouds.ts `sunLight`; the thin layer's at each of its points, `streakSunColour`). A
 // weather's day sky (Weather.ts `daySkyAt`) scales the day keys' share and the clouds' sunlight
-// alike (`skyGain`, `trackClouds`), so the sky, the clouds and the air it lends light to keep their
-// balance. How the sky's light falls with the sun is the atmosphere's
+// alike (`skyGain`, `trackClouds`), so the sky, the clouds and the air it lends sky light to keep
+// their balance; the sun's beam the air scatters keeps the keys' light without it
+// (`sunBeamIlluminance`), as the land's key does. How the sky's light falls with the sun is the atmosphere's
 // own (the aerosol's wide base and the multiple scattering that grows along long paths:
 // Atmosphere.ts), not rows by the sun's elevation. Under cloud the gain moves to the night key from
 // 2 degrees to -6 under the horizon (a smoothstep); a clear sky's holds the day's keys through the
@@ -766,7 +767,7 @@ const skyGain = ( elevation: number, rising: boolean, cloud: number, daySky: num
 	return off ? target : target.multiplyScalar( clearSky( elevation, rising, cloud ) );
 
 };
-const _skyGain = new THREE.Color(), _skyDay = { r: 0, g: 0, b: 0 };
+const _skyGain = new THREE.Color(), _skyBeam = new THREE.Color(), _skyDay = { r: 0, g: 0, b: 0 };
 const lowKey = ( elevation: number ) => debugFlags.lowKey === false ? 1 : byElevation( LOW_KEY, elevation, 'gain' );
 
 // The distant sea's body (the environment's lower half under its reflection, `seaPanorama`): its
@@ -1033,6 +1034,11 @@ export class Sky {
 	rising = false;
 	// the weather's day sky as `track` last took it (Weather.ts `daySkyAt`), for the bake's sea
 	private daySky = 1;
+	// the sun's light the sky lends without the weather's day sky (`skyGain` at a day sky of 1): the
+	// beam the air under the sky scatters (weather/VolumetricHaze.ts `mieColour`), which the day sky
+	// leaves as it leaves the land's key, since it lowers the sky's own light the sun gives, not the
+	// sun's light through the air below it; `atmosphere.sunIlluminance` where the day sky is 1
+	readonly sunBeamIlluminance = new THREE.Color();
 	// A shared artistic solar tint affects both scattering and direct light.
 	sunTint = new THREE.Color( 1.0, 0.97, 0.9 );
 	sunDir = new THREE.Vector3();
@@ -1868,6 +1874,7 @@ export class Sky {
 		// (`skyGain`), the clouds' sunlight (`trackClouds`) and the distant sea's (`beginBake`)
 		this.daySky = weather ? daySkyAt( weather.daySky, weather.daySkyExponent, this.elevation ) : 1;
 		this.atmosphere.sunIlluminance.value.copy( this.solarIlluminance ).multiply( skyGain( this.elevation, this.rising, cloud, this.daySky, _skyGain ) );
+		this.sunBeamIlluminance.copy( this.solarIlluminance ).multiply( skyGain( this.elevation, this.rising, cloud, 1, _skyBeam ) );
 		this.gapGain.value = debugFlags.skyGain === false ? 1 : clearSky( this.elevation, this.rising, 0 ) / clearSky( this.elevation, this.rising, cloud );
 		this.atmosphere.updateSync();
 		// Cap the hue of the air's extinction first, then fade by the disk's visible share, so the

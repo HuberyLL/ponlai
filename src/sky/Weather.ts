@@ -227,8 +227,9 @@ export interface WeatherState {
 	// The weather's day sky over that: by day the light the sun gives the sky is scaled by `daySky`
 	// at a sun 18 degrees up, and by the sine of the sun's height over 18 degrees' to the power
 	// -`daySkyExponent` at other heights (held at its 12-degree value under 12 degrees: `daySkyAt`):
-	// the sky's day key (Sky.ts SKY_LIGHT, so the drawn sky, the bake and the air's light from the
-	// sun), the clouds' sunlight and the sun's light on the distant sea. The night's sources keep
+	// the sky's day key (Sky.ts SKY_LIGHT, so the drawn sky, the bake and the air's sky light; the
+	// sun's beam the air scatters keeps the key's light without it, as the land's key does: Sky.ts
+	// `sunBeamIlluminance`), the clouds' sunlight and the sun's light on the distant sea. The night's sources keep
 	// their light, so it leaves the sky as the sun's own light does. 1 and 0 leave the day's sky as
 	// the atmosphere and the clouds give it. `daySky` sets how bright the weather's sky and the land
 	// under it stand by day; `daySkyExponent` how much of the sky's own climb with the sun the day

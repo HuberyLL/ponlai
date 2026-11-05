@@ -166,7 +166,9 @@ const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
 //         low band's red over green at -3 degrees 2.8 to 5.3; at -5 degrees and lower, and at 90
 //         and 180 degrees from the sun, within 0.02.
 //     The colours are the sky's illuminance colour (Atmosphere `sunIlluminance`), the open sky's
-//     times the weather's diffuse gain and the sun's times its direct share; the sun's Rayleigh
+//     times the weather's diffuse gain and the sun's times its direct share, the sun's before the
+//     weather's day sky (Sky.ts `sunBeamIlluminance`: the day sky lowers the sky's own light the
+//     sun gives, not the beam through the air below it, which the land's key keeps too); the sun's Rayleigh
 //     colour is the aerosol's times the key's `sunRayleigh`. Each share has one weight, keyed
 //     (HazeKeys.ts), the weather's gain over both (2 under cloud) and `gain` (1, an A/B knob) over
 //     the sum; the rows, the phases and the colours being the sky's own, a weight is about the
@@ -511,7 +513,8 @@ export class VolumetricHaze {
 		top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0, nearDensity: 1, nearStart: 250, nearEnd: 600 };
 	// the weather's share of the sun's direct light below the clouds and its diffuse gain
 	// (Weather.ts `directVisibility`, `ambientGain`), which scale the light's colours; its day sky
-	// comes with the light the atmosphere lends (Sky.ts `skyGain`)
+	// comes with the open sky's light the atmosphere lends (Sky.ts `skyGain`), not with the sun's beam
+	// (`sunBeam`)
 	readonly weatherLight = { direct: 1, ambient: 1 };
 	// The key light the air scatters: its direction and its irradiance below the clouds (a closed
 	// deck leaves no beam to scatter).
@@ -568,6 +571,7 @@ export class VolumetricHaze {
 	private readonly mieColour = [ uniform( new THREE.Color( 0, 0, 0 ) ), uniform( new THREE.Color( 0, 0, 0 ) ) ] as const;
 	private readonly weights = uniform( new THREE.Vector2( 1, 1 ) );
 	private readonly atmosphere: Atmosphere;
+	private readonly sunBeam: THREE.Color;
 	// the slices: near, the first slice's depth, the growth and its log2
 	private readonly slices = uniform( new THREE.Vector4( 10, 0.6, 1.15, Math.log2( 1.15 ) ) );
 	private readonly far = uniform( 100000 );
@@ -627,10 +631,13 @@ export class VolumetricHaze {
 	private readonly quaternion = new THREE.Quaternion();
 	private readonly scale = new THREE.Vector3();
 
-	constructor( sunShadow: SunShadow, atmosphere: Atmosphere, grid: Partial<HazeGrid> = {} ) {
+	// `sunBeam`: the sun's illuminance the beam takes (Sky.ts `sunBeamIlluminance`), the sky's own
+	// (`atmosphere.sunIlluminance`) where none is given (the WGSL build)
+	constructor( sunShadow: SunShadow, atmosphere: Atmosphere, grid: Partial<HazeGrid> = {}, sunBeam: THREE.Color = atmosphere.sunIlluminance.value ) {
 
 		this.sunShadow = sunShadow;
 		this.atmosphere = atmosphere;
+		this.sunBeam = sunBeam;
 		this.grid = { ...DEFAULT_HAZE_GRID, ...grid };
 		const { width, height, depth } = this.grid;
 		const volume = ( name: string ) => {
@@ -1325,13 +1332,14 @@ export class VolumetricHaze {
 		this.lightSettings.value.set( S.albedo, S.anisotropy, S.gain * look.gain );
 		// the light's colours per body: its illuminance the sky is drawn with (Atmosphere
 		// `sunIlluminance`, `moonIlluminance`: the moon key), the open sky's by the weather's diffuse
-		// gain, the body's by its direct share, and its Rayleigh light the key's share of the aerosol's;
-		// the moon's aerosol light then takes its own colour at the same luminance, times its gain
+		// gain, the body's by its direct share (the sun's before the weather's day sky, `sunBeam`), and
+		// its Rayleigh light the key's share of the aerosol's; the moon's aerosol light then takes its
+		// own colour at the same luminance, times its gain
 		const weather = this.weatherLight;
 		[ this.atmosphere.sunIlluminance.value, this.atmosphere.moonIlluminance.value ].forEach( ( illuminance, b ) => {
 
 			this.ambientColour[ b ].value.copy( illuminance ).multiplyScalar( weather.ambient );
-			this.mieColour[ b ].value.copy( illuminance ).multiplyScalar( weather.direct );
+			this.mieColour[ b ].value.copy( b === 0 ? this.sunBeam : illuminance ).multiplyScalar( weather.direct );
 			this.sunRayleighColour[ b ].value.copy( this.mieColour[ b ].value ).multiplyScalar( look.sunRayleigh );
 
 		} );
