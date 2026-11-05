@@ -74,9 +74,11 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // and its scale std under 3 degrees .0017 to .0030, the deck's rolls showing from about 8 degrees
 // up; cloudy's gradient p99 .042 to .071 and mass x 3.6 to 3.5 degrees.
 // The environment's bake lays the same haze over its source as the dome does (`fogEnvironment`,
-// VolumetricHaze.ts `openSky`, toward every direction from the sea's level, unshadowed): the environment and the dome
-// are one sky, its haze light included, so the ground's sky light takes the light the haze scatters
-// and the sea reflects it (the seen panorama, above the horizon). Under the horizon the environment is
+// VolumetricHaze.ts `openSky`, toward every direction from the sea's level, unshadowed): the
+// environment and the dome are one sky, its haze light included, so the ground's sky light takes the
+// light the haze scatters and the sea reflects it (the seen panorama, above the horizon); one sky but
+// for the closed deck's glow about the key light (`deckGlow`), which only the dome and the seen
+// panorama draw (`bakeGlow`), so the sea reflects it and no light source takes it. Under the horizon the environment is
 // the distant sea, its reflection of the sky over its body, which the light that reaches the sea
 // lights, the sky's and the sun's (SEA_KNEE).
 // The sun's disc and the moon's take the clouds' transmittance once, per pixel, in the composite
@@ -779,6 +781,26 @@ const lendIsland = Fn( ( [ light, tint, gain ]: [ V3, V4, F ] ) => {
 
 } ).setLayout( { name: 'lendIsland', type: 'vec3', inputs: [ { name: 'light', type: 'vec3' }, { name: 'tint', type: 'vec4' }, { name: 'gain', type: 'float' } ] } );
 
+// The closed deck's glow about the key light toward `d` (Clouds.ts DECK_GLOW), drawn where the sky is
+// composed, not marched: smooth and round whatever the deck's depth and its rolls, and outside the
+// lighting, whose sources never compose through it. The deck's mean radiance `deck` times the key's
+// share of the light on its tops, a forward lobe toward the sun and one toward the moon mixed by
+// the sun's share (each a Henyey-Greenstein lobe of mean 1 over the sphere, held at its value at the
+// plateau's radius inside it; the sun's tinted as the deck's tops take its light), the clouds'
+// opacity toward `d` and the deck's share of the sky. `shares` = ( the key's share, the sun's
+// share, the deck's share, the weight ), `form` = ( the mean cosine, the plateau radius's cosine ).
+const deckGlow = Fn( ( [ d, deck, opacity, sunDir, moonDir, tint, shares, form ]: [ V3, V3, F, V3, V3, V3, V4, V2 ] ) => {
+
+	const g = form.x;
+	const lobe = ( nu: F ) => float( 1 ).sub( g.mul( g ) ).div( max( float( 1 ).add( g.mul( g ) ).sub( min( nu, form.y ).mul( g ).mul( 2 ) ), 1e-4 ).pow( 1.5 ) );
+	const forward = mix( vec3( lobe( dot( d, moonDir ) ) ), tint.mul( lobe( dot( d, sunDir ) ) ), shares.y );
+	return deck.mul( forward ).mul( shares.x.mul( shares.z ).mul( shares.w ).mul( opacity ) );
+
+} ).setLayout( { name: 'deckGlow', type: 'vec3', inputs: [
+	{ name: 'd', type: 'vec3' }, { name: 'deck', type: 'vec3' }, { name: 'opacity', type: 'float' }, { name: 'sunDir', type: 'vec3' },
+	{ name: 'moonDir', type: 'vec3' }, { name: 'tint', type: 'vec3' }, { name: 'shares', type: 'vec4' }, { name: 'form', type: 'vec2' },
+] } );
+
 // Art direction: within a few degrees of the horizon the sun shines through twenty to forty air
 // masses and its light turns an almost pure red (red/blue above 100 at one degree), which paints
 // the island like lava. The optical depth that sets the key's hue is capped softly past about
@@ -1137,6 +1159,9 @@ export class Sky {
 	// all round (`fogEnvironment`); the seen panorama takes it above the horizon only, as the dome
 	// fogs what it shows of it under the horizon itself
 	private bakeHaze = uniform( 0 );
+	// 1 while the bake draws the seen panorama, which draws the closed deck's glow as the dome does
+	// (`deckGlow`), so the sea reflects it; the lighting's sources take none
+	private bakeGlow = uniform( 0 );
 	private starFootprint = uniform( 1 );
 
 	constructor( renderer: THREE.WebGPURenderer, { sunIlluminance = SUN_ILLUMINANCE, elevation = 32, azimuth = - 8 } = {} ) {
@@ -1365,7 +1390,10 @@ export class Sky {
 			// (the environment's source takes the light lent to the island: ISLAND_SKY; the haze as the
 			// dome lays it, from the sea's level: see `fogEnvironment`)
 			const clear = this.gapSky( up ).toVar();
-			const air = clear.mul( cloud.a ).add( cloud.rgb ).toVar();
+			// the closed deck's glow over the clouds, in the seen panorama only (`bakeGlow`); its deck
+			// level without the weather's gain, which the source takes below
+			const lit = cloud.rgb.add( this.glowToward( up, this.bakeDeckIrradianceNode.div( max( this.ambientGain, 1e-6 ) ), cloud.a ).mul( this.bakeGlow ) ).toVar();
+			const air = clear.mul( cloud.a ).add( lit ).toVar();
 			let fogged: V3 = air;
 			if ( haze ) {
 
@@ -1378,7 +1406,7 @@ export class Sky {
 				const inside = middle.mul( middle.add( EARTH_RADIUS * 2 ) ), b = up.y.mul( EARTH_RADIUS );
 				const cloudHaze = haze( up, inside.div( sqrt( b.mul( b ).add( inside ) ).add( b ) ) );
 				const seen = sky.light.add( sky.transmittance.mul( clear ) ).mul( cloud.a )
-					.add( cloudHaze.light.mul( float( 1 ).sub( cloud.a ) ) ).add( cloudHaze.transmittance.mul( cloud.rgb ) );
+					.add( cloudHaze.light.mul( float( 1 ).sub( cloud.a ) ) ).add( cloudHaze.transmittance.mul( lit ) );
 				// (the seen panorama only above the horizon, where the water reads it: what the sea
 				// reflects is the sky the dome draws, and under cloud the haze's light is nearly all of
 				// that; below the horizon the dome fogs it itself)
@@ -1446,7 +1474,10 @@ export class Sky {
 			const behind = select( above, this.gapSky( vec3( d.x, max( d.y, 0 ), d.z ) ).mul( this.displayAmbientGain ), lower.rgb )
 				.add( disk.add( this.night.moon( d ) ).add( stars ).mul( select( above, float( 1 ), lower.a ) ) );
 			const through = select( above, cloud.a, float( 1 ) ).toVar();
-			const clouds = select( above, cloud.rgb.mul( this.displayAmbientGain ), vec3( 0 ) ).toVar();
+			// the closed deck's glow over the clouds above the horizon (`deckGlow`), before the haze,
+			// which hides it with the clouds by their distance
+			const glow = this.glowToward( d, this.deckIrradianceNode, cloud.a ).toVar();
+			const clouds = select( above, cloud.rgb.mul( this.displayAmbientGain ), vec3( 0 ) ).add( glow.mul( step( 0, d.y ) ) ).toVar();
 			if ( ! haze ) return vec4( behind.mul( through ).add( clouds ), 1 );
 			const sky = haze( d );
 			// The clouds through the haze out to the shell's middle height: its light over their
@@ -1489,6 +1520,17 @@ export class Sky {
 			return vec4( select( fog.thin.greaterThan( 0.1 ).and( above ), vec3( luminance.div( 0.2126 ), 0, 0 ), edge ), 1 );
 
 		} )();
+
+	}
+
+	/** The closed deck's glow toward `d` (`deckGlow`) over a deck of mean radiance `deck`, through
+	 * clouds of transmittance `transmittance` there, with this frame's shares (Clouds `columnTop`). */
+	private glowToward( d: V3, deck: V3, transmittance: F ): V3 {
+
+		const top = this.clouds.columnTop();
+		const c = this.clouds;
+		return deckGlow( d, deck, float( 1 ).sub( transmittance ), this.atmosphere.sunDir, this.atmosphere.moonDir, c.lobeTint.rgb,
+			vec4( top.keyShare, top.sunShare, c.broadShare, c.deckGlow ), vec2( c.deckGlowLobe, cos( c.deckGlowCore.mul( Math.PI / 180 ) ) ) );
 
 	}
 
@@ -2234,6 +2276,7 @@ export class Sky {
 				this.bakeIslandTint.value.copy( lends ? this.islandTint.value : NEUTRAL_TINT );
 				this.bakeIslandGain.value = lends ? this.islandGain.value : 1;
 				this.bakeHaze.value = lends || rt === this.small ? 1 : 0;
+				this.bakeGlow.value = lends || rt === this.small ? 0 : 1;
 				this.starFootprint.value = Math.SQRT2 * Math.PI / rt.height;
 				r.setRenderTarget( rt );
 				this.quad.render( r );

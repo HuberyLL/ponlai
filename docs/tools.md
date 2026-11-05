@@ -406,7 +406,10 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   under it: its weight and mean cosine) `sky.clouds.forwardWeight`, `sky.clouds.forwardLobe`, the
   amount of forward light the closed deck passes down, spread over it by the diffusion law (a lobe's
   weight and mean cosine whose light on level ground it takes) `sky.clouds.overcastWeight`,
-  `sky.clouds.overcastBroad`, and the key a tree's shaded leaves
+  `sky.clouds.overcastBroad`, the closed deck's glow about the key light drawn on the sky and its
+  seen panorama (its height in the deck's mean radiance, its mean cosine, its flat plateau's radius
+  in degrees: `src/sky/Sky.ts` `deckGlow`) `sky.clouds.deckGlow`, `sky.clouds.deckGlowLobe`,
+  `sky.clouds.deckGlowCore`, and the key a tree's shaded leaves
   take through the leaves over them `lighting.vegetation.leaf.through@high` (`@low`, `@golden`,
   `@cloudy`, `@night`) and what a leaf sends on of the key on its far face,
   `lighting.vegetation.leaf.back@high` alike, the sward's tint under a closed sky

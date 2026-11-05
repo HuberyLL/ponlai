@@ -114,7 +114,9 @@ type V4 = THREE.Node<'vec4'>;
 //     scatterings the light keeps a mean cosine of about 0.85^n, and under a deck several optical
 //     depths thick the forward light has lost its direction; spread this way it still lights the
 //     deck and the ground below as it did, without brightening the half of the sky toward the sun,
-//     which the environment's bake and the ambient light would take up. Under the rest of the sky
+//     which the environment's bake and the ambient light would take up. The closed deck's round glow
+//     about the key's place is drawn where the sky is composed instead (Sky.ts `deckGlow`,
+//     DECK_GLOW), on the frame's shares `Clouds.ColumnTop` works out. Under the rest of the sky
 //     the narrow lobe stays as it was, by ( 1 - the share ). OVERCAST_BROAD and OVERCAST_WEIGHT
 //     together set how much forward light the closed deck passes down, the light of the deck and of
 //     the ground under it; they were fitted when this light was drawn as a broad lobe toward the
@@ -498,6 +500,21 @@ export const FORWARD_WEIGHT = 0.6, FORWARD_LOBE = 0.8;
 // passes down; raise either for a brighter deck and ground under it, with no change of the sky's
 // form.
 export const OVERCAST_BROAD = 0.5, OVERCAST_WEIGHT = 2.4;
+// The closed deck's glow about the key light, drawn where the sky is composed (Sky.ts `deckGlow`):
+// a Henyey-Greenstein lobe of mean cosine DECK_GLOW_LOBE held at its value DECK_GLOW_CORE degrees
+// from the light inside that radius, its mean over the sphere DECK_GLOW times the deck's mean
+// radiance. The core sets the flat white plateau round the light's place, the mean cosine how fast
+// the glow falls off past it (its half-power radius), the weight its height over the deck away
+// from the light; raise the core for a wider plateau, the mean cosine for a tighter glow, the
+// weight for a brighter one. Fitted on the overcast sky with the sun at 18 degrees, over nine
+// pairs of mean cosine (0.75 to 0.85) and plateau (4 to 8 degrees), the weight for each set so its
+// plateau stands about 35 times the deck beside it: at these values the glow falls to half its
+// plateau's excess over the deck about 11.6 degrees from the light, to a quarter at 17 and a tenth
+// at 30, the plateau holds within 7 % of its level out to 7 degrees, and the plateau reads about 35
+// times the deck beside it at the light's elevation. A plateau of 5 degrees or less sags by more
+// than 10 % at 7; a mean cosine of 0.75 puts the half-power radius past 13 degrees, one of 0.85
+// near 10.
+export const DECK_GLOW = 1.33, DECK_GLOW_LOBE = 0.8, DECK_GLOW_CORE = 6;
 
 /** The forward lobe's light on level ground: the integral over the upper hemisphere of a
  * Henyey-Greenstein lobe of mean cosine g about a key of height mu0 (its direction's y), each
@@ -760,6 +777,11 @@ export class Clouds {
 	readonly forwardLobe = tuneUniform( 'sky.clouds.forwardLobe', FORWARD_LOBE, { min: 0, max: 0.95, onChange: markSkyRetune } );
 	readonly overcastBroad = tuneUniform( 'sky.clouds.overcastBroad', OVERCAST_BROAD, { min: 0, max: 0.95, onChange: markSkyRetune } );
 	readonly overcastWeight = tuneUniform( 'sky.clouds.overcastWeight', OVERCAST_WEIGHT, { min: 0, max: 3, onChange: markSkyRetune } );
+	// The closed deck's glow about the key light (DECK_GLOW, Sky.ts `deckGlow`): its weight, mean
+	// cosine and plateau's radius (degrees). The seen panorama draws it too, so a change rebakes.
+	readonly deckGlow = tuneUniform( 'sky.clouds.deckGlow', DECK_GLOW, { min: 0, max: 3, onChange: markSkyRetune } );
+	readonly deckGlowLobe = tuneUniform( 'sky.clouds.deckGlowLobe', DECK_GLOW_LOBE, { min: 0.5, max: 0.95, onChange: markSkyRetune } );
+	readonly deckGlowCore = tuneUniform( 'sky.clouds.deckGlowCore', DECK_GLOW_CORE, { min: 0, max: 12, onChange: markSkyRetune } );
 	// The share of the forward light spread by the diffusion law (overcast's share of the sky) and
 	// the weight in use, `forwardWeight` moved to `overcastWeight` by that share (Sky.ts trackClouds).
 	readonly broadShare = uniform( 0 );
@@ -855,9 +877,10 @@ export class Clouds {
 	// (`Clouds.ColumnTop`, ahead of every kernel here, under a low deck's share only: `update`) into
 	// two texels the march, the panorama, the haze's light and the environment's haze read, instead
 	// of each pixel and froxel working out its eight sky samples. ( key, lobe share ), ( sky,
-	// diffuse share ).
-	private readonly columnStore = instancedArray( 2, 'vec4' ).setName( 'cloudColumnTop' );
-	private readonly columnRead = storage( this.columnStore.value, 'vec4', 2 ).toReadOnly().setName( 'cloudColumnTopRead' );
+	// diffuse share ), ( the key's share of the tops' light, the sun's share of the glow's lobe,
+	// 0, 0 ) for the deck's glow (Sky.ts `deckGlow`).
+	private readonly columnStore = instancedArray( 3, 'vec4' ).setName( 'cloudColumnTop' );
+	private readonly columnRead = storage( this.columnStore.value, 'vec4', 3 ).toReadOnly().setName( 'cloudColumnTopRead' );
 	private columnKernel: THREE.ComputeNode | null = null;
 	private previousFlash = '';
 	private view: View | null = null;
@@ -977,8 +1000,19 @@ export class Clouds {
 			const level = keyTop.mul( this.weight.mul( this.forwardLevel ).add( 1 ) ).add( luminance( top.sky ) );
 			const lobeShare = keyTop.mul( this.weight ).mul( 2 ).div( max( level, 1e-20 ) ).mul( float( 1 ).sub( this.broadShare ) ).toVar();
 			const diffuseShare = float( 1 ).sub( lobeShare.mul( this.narrowLevel ).mul( 0.5 ) );
+			// the deck's glow (Sky.ts `deckGlow`): the key's share of the light on the tops, its
+			// illuminance along its own direction (not its level ground's, which goes at the
+			// horizon while the light still reaches the deck) against the sky's over them; and the
+			// sun's share of the lobe, as the march mixes its lobes, toward the zenith
+			const keyAlong = luminance( this.columnKey.rgb ).mul( 1 / Math.PI ).toVar();
+			const keyShare = keyAlong.div( max( keyAlong.add( luminance( top.sky ) ), 1e-20 ) );
+			const a = this.atmosphere;
+			const sunY = luminance( a.cloudRows( float( 1 ), this.cloudHeightKm, 0 ).mie ).mul( luminance( a.sunIlluminance.rgb ) );
+			const moonY = luminance( a.cloudRows( float( 1 ), this.cloudHeightKm, 1 ).mie ).mul( luminance( a.moonIlluminance.rgb ) );
+			const sunShare = smoothstep( 0, 1, sunY.div( max( sunY.add( moonY ), 1e-20 ) ) );
 			this.columnStore.element( 0 ).assign( vec4( top.key, lobeShare ) );
 			this.columnStore.element( 1 ).assign( vec4( top.sky, diffuseShare ) );
+			this.columnStore.element( 2 ).assign( vec4( keyShare, sunShare, 0, 0 ) );
 
 		} )().compute( 1, [ 1 ] ).setName( 'Clouds.ColumnTop' );
 		this.buildKernels();
@@ -996,13 +1030,14 @@ export class Clouds {
 
 	}
 
-	/** The light on the low deck's tops over pi, which its column passes down (makeMarch), and the
-	 * shares of the air's light under the deck it sets (VolumetricHaze.ts `scatterToward`), as this
-	 * frame's `Clouds.ColumnTop` worked them out (`columnTopOf`). */
-	columnTop(): { key: V3; sky: V3; lobeShare: F; diffuseShare: F } {
+	/** The light on the low deck's tops over pi, which its column passes down (makeMarch), the
+	 * shares of the air's light under the deck it sets (VolumetricHaze.ts `scatterToward`) and the
+	 * deck's glow's (Sky.ts `deckGlow`: the key's share of the tops' light, the sun's share of the
+	 * lobe), as this frame's `Clouds.ColumnTop` worked them out (`columnTopOf`). */
+	columnTop(): { key: V3; sky: V3; lobeShare: F; diffuseShare: F; keyShare: F; sunShare: F } {
 
-		const a = this.columnRead.element( 0 ), b = this.columnRead.element( 1 );
-		return { key: a.xyz, sky: b.xyz, lobeShare: a.w, diffuseShare: b.w };
+		const a = this.columnRead.element( 0 ), b = this.columnRead.element( 1 ), c = this.columnRead.element( 2 );
+		return { key: a.xyz, sky: b.xyz, lobeShare: a.w, diffuseShare: b.w, keyShare: c.x, sunShare: c.y };
 
 	}
 
