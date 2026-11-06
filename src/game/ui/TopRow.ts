@@ -77,10 +77,12 @@ export class TopRow {
 	update(): void {
 
 		const game = this.shared.game, sim = game.sim;
-		// game hours since day one's midnight, between ticks
+		// game hours since day one's midnight, between ticks; the day and the minute in whole seconds,
+		// as the simulation counts them (sim/clock.ts), so a minute's first second shows that minute
 		const hour = sim.state.startHour + ( sim.state.tick + sim.alpha ) / 3600;
-		const minutes = Math.floor( hour * 60 ) % ( 24 * 60 );
-		const day = Math.floor( hour / 24 ) + 1;
+		const seconds = Math.round( sim.state.startHour * 3600 ) + sim.state.tick + sim.alpha;
+		const minutes = Math.floor( seconds / 60 ) % ( 24 * 60 );
+		const day = Math.floor( seconds / 86400 ) + 1;
 		if ( day !== this.dayShown ) text( this.day, dayName( this.dayShown = day ) );
 		text( this.clock, `${ String( Math.floor( minutes / 60 ) ).padStart( 2, '0' ) }:${ String( minutes % 60 ).padStart( 2, '0' ) }` );
 		for ( let i = 0; i < CLOCK.length; i ++ ) {

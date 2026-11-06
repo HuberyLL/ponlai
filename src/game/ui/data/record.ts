@@ -1,13 +1,17 @@
 import type { WeatherName } from '../../../sky/Weather.ts';
 import type { RecordEntry } from '../../Chronicle.ts';
 import { lookup, t } from '../i18n/i18n.ts';
+import { needLook } from './needs.ts';
 import { itemName } from './words.ts';
 
 // The kinds of entry the record (沧海录) shows (docs/ui.md, 沧海录): how each reads as a row of the
 // day's log, and the mark it puts over its day on the river. The game keeps the entries
 // (src/game/Chronicle.ts); a new kind of entry is a row here, and the record's components never
-// change for it. `rank` orders the marks: over a day the most notable stands, with how many more
-// (+N); a kind without a mark only logs.
+// change for it; a kind without a row reads as the default one (`recordKind`: who, and what), and
+// logs. `rank` orders the marks: over a day the most notable stands, with how many more (+N); a
+// kind without a mark only logs. What an entry names reads by its own words where the catalogue
+// has them, else the default: a need by `record.need`, else 告急, its mark by its look
+// (data/needs.ts); an item by its name (`item`), else its id.
 //
 // Words are the player's (精白) or an islander's (缟) and read as a speaker and their line; every
 // other entry is a deed, one line. `deed` writes it from the entry, the namer of islanders and
@@ -23,8 +27,8 @@ export interface RecordNames {
 
 export interface RecordKind {
 	id: string;
-	/** the river's mark: its icon, and 朱 for an alarm */
-	mark?: { icon: ( e: RecordEntry ) => string; alarm?: boolean };
+	/** the river's mark: its icon (null: the 未绘 glyph, Icons.ts), and 朱 for an alarm */
+	mark?: { icon: ( e: RecordEntry ) => string | null; alarm?: boolean };
 	rank: number;
 	/** words: shown as a speaker and a line, not a deed */
 	words?: true;
@@ -32,8 +36,6 @@ export interface RecordKind {
 	deed( e: RecordEntry, names: RecordNames, own: boolean ): string;
 }
 
-/** a need's icon on the river (the words: `record.need`) */
-const NEED_ICONS: Readonly<Record<string, string>> = { satiety: 'satiety', hydration: 'drop' };
 const needWords = ( need: string ) => lookup( `record.need.${ need }`, t( 'record.need.other' ) );
 const own = ( yes: boolean ) => ( yes ? { context: 'own' } : {} );
 
@@ -42,7 +44,7 @@ export const RECORD_KINDS: Readonly<Record<string, RecordKind>> = {
 	// (no mark of its own yet: it logs)
 	died: { id: 'died', rank: 9, deed: ( e, n, mine ) => t( 'record.deed.died', { who: n.person( e.who ), age: e.text ?? '', ...own( mine ) } ) },
 	built: { id: 'built', rank: 1, mark: { icon: () => 'build' }, deed: ( e, n ) => t( 'record.deed.built', { building: n.building( e.text ?? '' ) } ) },
-	need: { id: 'need', rank: 2, mark: { icon: ( e ) => NEED_ICONS[ e.text ?? '' ] ?? 'satiety', alarm: true },
+	need: { id: 'need', rank: 2, mark: { icon: ( e ) => needLook( e.text ?? '' ).icon, alarm: true },
 		deed: ( e, n, mine ) => t( 'record.deed.need', { who: n.person( e.who ), need: needWords( e.text ?? '' ), ...own( mine ) } ) },
 	placed: { id: 'placed', rank: 9, deed: ( e, n ) => t( 'record.deed.placed', { building: n.building( e.text ?? '' ) } ) },
 	said: { id: 'said', rank: 9, words: true, deed: ( e ) => e.text ?? '' },
@@ -52,6 +54,12 @@ export const RECORD_KINDS: Readonly<Record<string, RecordKind>> = {
 		unit: lookup( `unit.${ e.text ?? '' }`, '' ), item: itemName( e.text ?? '' ), ...own( mine ),
 	} ) },
 };
+
+// an entry of a kind without a row: who, and what it names (or its kind)
+const OTHER: RecordKind = { id: 'other', rank: 9, deed: ( e, n, mine ) => t( 'record.deed.other', { who: n.person( e.who ), what: e.text ?? e.kind, ...own( mine ) } ) };
+
+/** How an entry of a kind reads: its kind's row, or the default. */
+export const recordKind = ( kind: string ): RecordKind => ( Object.hasOwn( RECORD_KINDS, kind ) ? RECORD_KINDS[ kind ] : OTHER );
 
 /** Several landings on one day read as one mark over it on the island's page: N人登岛. */
 export const LANDINGS = ( n: number ) => t( 'record.landings', { count: n } );

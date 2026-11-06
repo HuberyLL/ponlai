@@ -6,9 +6,11 @@ import type { Catalogue } from '../i18n/i18n.ts';
 // the names, costs and hours follow the design canvas's example of scale, without the coconut
 // grove (the coconut went with the palm). They cover every state the bar draws: buildable,
 // not yet buildable (faint, unclickable), short of a material against the stock (朱), and without
-// an icon (the 未绘 glyph). A row whose `kind` names one of the simulation's buildings
-// (sim/buildings.ts BUILDING_KINDS: the chest) hands over to the placement in the scene when
-// chosen; the others show what they would cost until the simulation knows them.
+// an icon (the 未绘 glyph). A row whose `kind` names one of the simulation's building kinds
+// (sim/registry.ts BuildingDef; today the chest, sim/content/chest.ts) hands over to the placement
+// in the scene when chosen; the others show what they would cost until the simulation knows them.
+// A kind the player can place is a row here: where it stands in the bar and what it costs are the
+// design's, so a kind without one has no default row.
 //
 // A new building is one more row here and its words in the catalogue (i18n/zh-CN.json `building`:
 // name, use and search words, by the row's id; the type check fails on a row without them); a new
@@ -49,7 +51,7 @@ export interface BuildingRow {
 	words: readonly string[];
 	/** false: not yet buildable (shown faint, not chosen) */
 	buildable: boolean;
-	/** the simulation's building kind it places (sim/buildings.ts), when there is one */
+	/** the simulation's building kind it places (sim/registry.ts), when there is one */
 	kind?: string;
 }
 

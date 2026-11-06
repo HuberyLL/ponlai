@@ -56,7 +56,9 @@ import type * as THREE from 'three/webgpu';
 // (4 s) dropped every pass of every frame once a frame took much over 33 ms (46 ms in the A/B
 // runs), since 120 of them then took longer than that to drain.
 // Holding the tick until fewer frames are queued was tried and dropped: Chrome reports finished
-// work in batches, which bunched the ticks and made the intervals jitter.
+// work in batches, which bunched the ticks and made the intervals jitter. (A paused page holds its
+// ticks so, at two frames: post/FramePacer.ts, "A paused page's queue"; profiled scenes run their
+// clocks and are not held.)
 //
 // Work issued outside the tick (the sky's bakes resume in microtasks after a GPU read-back) is
 // timed apart: the JS time of its render and compute calls, and the gap between two ticks.

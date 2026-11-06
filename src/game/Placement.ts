@@ -3,6 +3,7 @@ import { CLICK_SLOP } from '../camera/IslandCameraControls.ts';
 import type { Game } from './Game.ts';
 import { groundPoint, pointerRay } from './pick.ts';
 import { blueprintRefusal } from './sim/buildings.ts';
+import { buildingKind } from './sim/registry.ts';
 import type { Vec2 } from './sim/types.ts';
 import type { PlacementHandle } from './ui/BuildBar.ts';
 import type { UiContext } from './ui/GameUi.ts';
@@ -108,7 +109,8 @@ export class BlueprintPlacement implements PlacementHandle {
 
 	private ring( p: Vec2 | null, ok: boolean ): void {
 
-		if ( this.preview.show( p, ok, this.game.sim.grid ) ) this.context.sceneEvent( 'game input' );
+		const radius = buildingKind( this.armed )?.radius ?? 0;
+		if ( this.preview.show( p, radius, ok, this.game.sim.grid ) ) this.context.sceneEvent( 'game input' );
 
 	}
 

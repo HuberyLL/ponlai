@@ -158,8 +158,13 @@ art decision changes; images from elsewhere stay out of the repository.
   well as close up. Light reads there through its direction and large-scale light and shade (lit
   and shaded slopes and cliffs, a glint or moon path on the sea, later warm lights and what stands
   on the island), not through fine detail or post effects, which vanish at that distance.
-- The island view's default direction is fixed and looks a little east of the meridian the sun and
-  moon culminate on: the full moon's path is in the frame through the evening and at midnight, and
+- The sun keeps a mid-latitude equinox's path, 52 degrees up at noon, rising due east at 6 and
+  setting due west at 18: high enough at noon to read as a bright day, low enough that slopes keep
+  a lit and a shaded side in the island view, and slow near the horizon (11.8 degrees an hour), so
+  the low sun's light lasts. A higher noon is a subtropical light, at odds with the island's
+  temperate bamboo and meadow (`src/sky/DayCycle.ts` NOON_ELEVATION).
+- The island view's default direction is fixed and looks a little east of the noon meridian, where
+  the sun culminates and the moon stands: the full moon's path is in the frame through the evening and at midnight, and
   by day the sun lights the cliffs from the side (a lit and a shaded side) without filling the
   frame with glare. It never follows the clock, so returning to the view never jumps.
 - Sunlit stone keeps its grain and its grey: a cliff face turned to the sun is the brightest
@@ -494,18 +499,20 @@ art decision changes; images from elsewhere stay out of the repository.
   never darkens the night.
 - The island reads by moonlight and starlight; twilight is never darker than the night. The
   moon takes over the key soon after the sun has gone.
-- The moon keeps a lower orbit than the sun (it culminates at 20 degrees, not 62), rising due
-  east at sunset and setting due west at sunrise, so seen from the game's overview its light
-  comes in at a slant: slopes show a lit and a shaded side and the sea carries a moon path, where
-  a moon near the zenith lit the island flat. The moon path and the moonlit meadow glow softly in
-  that view too. While it is up the moon is drawn where the island takes its light from (one fixed
-  place all night, a little above its orbit's culmination), and the glow of the air around it
-  comes from there too, so the disk, its glow and the light on the land stand together.
+- The moon stands fixed in the sky, 20 degrees up on the noon meridian, all night and every night
+  (`src/sky/DayCycle.ts` MOON). Seen from the game's overview its light comes in at a slant: slopes
+  show a lit and a shaded side, its shadows run long and the sea carries a moon path, where a moon
+  near the zenith lit the island flat. The moon path and the moonlit meadow glow softly in that
+  view too. It neither rises nor sets, so the night's composition holds while the game is played.
+  The moon is drawn where the island takes its light from, and the glow of the air around it comes
+  from there too, so the disk, its glow and the light on the land stand together.
 - The night meadow is a dark, quiet green with a hint of cool under the moon (not black); stone,
   sand and skin stay apart from it and from each other in tone.
-- The stars and Milky Way are the real sky as seen near 38 degrees south, points with a natural
-  spread of brightness, below white except the brightest few; only those near the horizon
-  scintillate.
+- The stars and Milky Way are the real sky as seen from 38 degrees south (the latitude the sun's
+  path is set at) at a sidereal time of 14h, fixed: they neither turn through the night nor drift
+  over the year, so the night's composition holds, with the Milky Way rising out of the sea in the
+  horizon view (`src/sky/DayCycle.ts` STARS). They are points with a natural spread of brightness,
+  below white except the brightest few; only those near the horizon scintillate.
 
 ## Islanders
 

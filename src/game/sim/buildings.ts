@@ -1,37 +1,34 @@
 import { CLEAR_RING, cellsWithin, clearAround } from './ground.ts';
-import { BAG_CAPACITY, addItems, count, itemCount, removeItems, total } from './items.ts';
-import type { Place, PlaceOption } from './places.ts';
+import type { Holder } from './items.ts';
+import type { Place } from './places.ts';
+import { buildingKind, optionsAt } from './registry.ts';
+import type { BuildingDef } from './registry.ts';
 import type { Sim } from './Sim.ts';
 import { planar } from './maths.ts';
 import type { BuildingState, SimState, Vec2 } from './types.ts';
 
-// The buildings the player places: registered kinds, each a footprint, the work it takes and the
-// options the finished place offers. Placing is generic (Sim.placeBlueprint, refused by
-// blueprintRefusal): a building needs open main ground with a clear ring round its footprint
-// (CLEAR_RING, so it can never cut the main ground in two) and no body standing on
-// it; any number of a kind may stand. Each building's id is its kind's name and a count of that
-// kind ever placed (SimState.placed): chest1, chest2. An id is never reused, so it stays the same
-// across saves and the brain names the place by it (`go`, `do`). A new kind is one more entry in
-// BUILDING_KINDS.
+// The buildings system: what the player places, of the kinds registered (registry.ts BuildingDef:
+// a footprint, the work it takes, the room of its store; today's in content/). This module names
+// no kind. Placing is generic (`placeBuilding`, refused by `blueprintRefusal`): a building needs
+// open main ground with a clear ring round its footprint (CLEAR_RING, so it can never cut the main
+// ground in two) and no body standing on it; any number of a kind may stand. Each building's id is
+// its kind's name and a count of that kind ever placed (SimState.placed): chest1, chest2. An id is
+// never reused, so it stays the same across saves and the brain names the place by it (`go`,
+// `do`).
 //
 // The player plans, the islanders build (docs/game-design.md, "Building"). A placed building is a
 // blueprint: a construction site, the place with its id, which blocks its footprint from the
-// moment it is placed (the islander works beside it, within REACH) and whose only option is
-// `build`. `do( 'build' )` works on it for the work still left, a game second of work a tick
-// (BuildingState.worked); a new action interrupts it and the work done stays. Several islanders
-// may build one site, each adding their work. When the work is done the site is the finished
-// building: its own options and what shows on it. `build` stays on it closed (not offered, refused
-// when called), so whoever else was building it ends at once on their next tick, with the
-// building done as their outcome, instead of standing out the time they had planned. Its stage is a function of its progress alone (stageOf): planned (no work yet), being
-// built, built; perception shows how far along it is in whole percent (siteShows), a number like
-// every state that decides outcomes. No materials yet (nothing on the island gives wood or stone): building costs time
-// only. Cancelling a site is not designed yet.
+// moment it is placed (the islander works beside it, within REACH). Every building, at every
+// stage, offers the options registered at `building` (the work on it: content/build.ts); once
+// built it offers its kind's own options too, before those, and shows what its kind shows. The
+// work is this system's (`work`, a game second of it, BuildingState.worked), and its end is an
+// event (events.ts `built`). Its stage is a function of its progress alone (stageOf): planned (no
+// work yet), being built, built; perception shows how far along it is in whole percent
+// (siteShows), a number like every state that decides outcomes. No materials yet (nothing on the
+// island gives wood or stone): building costs time only. Cancelling a site is not designed yet.
 //
-// - chest: a wooden chest that holds CHEST_CAPACITY items. `put` and `take` ( { item, count } )
-//   are instant; what is inside shows only to someone standing at it. CHEST_WORK is about a game
-//   hour: a few planks and a lid knocked together by one person, which at the game's day (24 real
-//   minutes at 1x) is a minute to watch the site rise, and costs the islander about 4 of
-//   hydration and 3 of satiety (needs.ts), so building it never crowds out drinking and eating.
+// A built building with a store (its kind's `capacity`) is a holder of items (`storeOf`, items.ts),
+// whose contents show only to someone standing at it; a kind without one shows nothing.
 
 /** standing within this distance (m) of a building's footprint is standing at it */
 const REACH = 0.9;
@@ -39,69 +36,13 @@ const REACH = 0.9;
 /** a building's stage, from its progress */
 export type Stage = 'planned' | 'building' | 'built';
 
-export interface BuildingKind {
-	/** the disc it blocks (m, radius) */
-	radius: number;
-	/** the work it takes, game seconds of one islander's building */
-	work: number;
-	/** what shows on the finished building, to someone who sees it or stands at it */
-	shows( building: BuildingState, at: boolean ): Record<string, unknown> | null;
-	/** the options the finished building offers */
-	options( building: BuildingState ): Record<string, PlaceOption>;
+// a placed building's kind: placed only of a kind there is (a save of another version is never
+// loaded: ../save.ts)
+function kindOf( b: BuildingState ): BuildingDef {
+
+	return buildingKind( b.kind ) as BuildingDef;
+
 }
-
-// ------------------------------------------------------------------ chest
-
-/** the chest blocks a disc this wide (m, radius): its 0.9 x 0.55 m lid's half diagonal */
-export const CHEST_RADIUS = 0.55;
-/** A chest holds five bags' worth: ten days of one islander's fish (two a day, needs.ts), a
- * store against a poor day's fishing, not a granary. */
-export const CHEST_CAPACITY = 20;
-/** the chest's work (game seconds): see the header */
-export const CHEST_WORK = 3600;
-
-const chest: BuildingKind = {
-	radius: CHEST_RADIUS,
-	work: CHEST_WORK,
-	shows: ( box, at ) => at ? { items: { ...box.items } } : null,
-	options: ( box ) => ( {
-		put: {
-			open: () => true,
-			start: ( _sim, body, args ) => {
-
-				const what = itemCount( args );
-				if ( typeof what === 'string' ) return { ok: false, reason: what };
-				const carried = count( body.bag, what.item );
-				if ( carried < what.n ) return { ok: false, reason: `the bag holds ${ carried } ${ what.item }` };
-				if ( total( box.items ) + what.n > CHEST_CAPACITY ) return { ok: false, reason: 'the chest is full' };
-				removeItems( body.bag, what.item, what.n );
-				addItems( box.items, what.item, what.n );
-				return { ok: true, value: `put ${ what.n } ${ what.item } in the chest` };
-
-			},
-		},
-		take: {
-			open: () => total( box.items ) > 0,
-			start: ( _sim, body, args ) => {
-
-				const what = itemCount( args );
-				if ( typeof what === 'string' ) return { ok: false, reason: what };
-				const stored = count( box.items, what.item );
-				if ( stored < what.n ) return { ok: false, reason: `the chest holds ${ stored } ${ what.item }` };
-				if ( total( body.bag ) + what.n > BAG_CAPACITY ) return { ok: false, reason: 'the bag has no room for that' };
-				removeItems( box.items, what.item, what.n );
-				addItems( body.bag, what.item, what.n );
-				return { ok: true, value: `took ${ what.n } ${ what.item } from the chest` };
-
-			},
-		},
-	} ),
-};
-
-// ------------------------------------------------------------------ the registry
-
-/** every kind of building, by name */
-export const BUILDING_KINDS: Readonly<Record<string, BuildingKind>> = { chest };
 
 /** The building with an id, or undefined. */
 export function buildingOf( state: SimState, id: string ): BuildingState | undefined {
@@ -113,10 +54,10 @@ export function buildingOf( state: SimState, id: string ): BuildingState | undef
 /** Why a building of a kind cannot go at a point, or null when it can. */
 export function blueprintRefusal( sim: Sim, kind: string, p: Vec2 ): string | null {
 
-	if ( ! Object.hasOwn( BUILDING_KINDS, kind ) ) return `There is no building called ${ kind }`;
-	const r = BUILDING_KINDS[ kind ].radius;
-	if ( ! clearAround( sim.grid, p, r + CLEAR_RING ) ) return 'Not enough open ground there';
-	const covered = cellsWithin( sim.grid, p, r );
+	const def = buildingKind( kind );
+	if ( ! def ) return `There is no building called ${ kind }`;
+	if ( ! clearAround( sim.grid, p, def.radius + CLEAR_RING ) ) return 'Not enough open ground there';
+	const covered = cellsWithin( sim.grid, p, def.radius );
 	if ( sim.state.villagers.some( ( v ) => covered.includes( sim.grid.indexAt( v.pos.x, v.pos.z ) ) ) ) return 'Someone stands there';
 	return null;
 
@@ -131,10 +72,24 @@ export function newBuilding( state: SimState, kind: string, x: number, z: number
 
 }
 
+/** Place a building's blueprint of a kind at a point: it blocks its ground from now on, and the
+ * placing is an event (events.ts `placed`). Null when it stands there, else why not. */
+export function placeBuilding( sim: Sim, kind: string, p: Vec2 ): string | null {
+
+	const reason = blueprintRefusal( sim, kind, p );
+	if ( reason ) return reason;
+	const building = newBuilding( sim.state, kind, p.x, p.z );
+	sim.state.buildings.push( building );
+	sim.grid.obstruct( p.x, p.z, kindOf( building ).radius );
+	sim.emit( { kind: 'placed', tick: sim.state.tick, building: building.id, of: kind } );
+	return null;
+
+}
+
 /** How far a building has come, 0 (planned) to 1 (built). */
 export function progressOf( b: BuildingState ): number {
 
-	return Math.min( 1, b.worked / BUILDING_KINDS[ b.kind ].work );
+	return Math.min( 1, b.worked / kindOf( b ).work );
 
 }
 
@@ -146,6 +101,38 @@ export function stageOf( b: BuildingState ): Stage {
 
 }
 
+/** Whether its work is done. */
+export function isBuilt( b: BuildingState ): boolean {
+
+	return b.worked >= kindOf( b ).work;
+
+}
+
+/** The game seconds of work still left on it. */
+export function workLeft( b: BuildingState ): number {
+
+	return kindOf( b ).work - b.worked;
+
+}
+
+/** A game second of work on an unbuilt building: whether that finished it (its end an event,
+ * events.ts `built`). */
+export function work( sim: Sim, b: BuildingState ): boolean {
+
+	b.worked ++;
+	if ( b.worked < kindOf( b ).work ) return false;
+	sim.emit( { kind: 'built', tick: sim.state.tick, building: b.id, of: b.kind } );
+	return true;
+
+}
+
+/** A building's store as a holder (items.ts), the room its kind gives (none without a store). */
+export function storeOf( b: BuildingState ): Holder {
+
+	return { items: b.items, capacity: kindOf( b ).capacity ?? 0 };
+
+}
+
 /** How an unbuilt site looks to someone who sees it: how far along, in whole percent (0: marked
  * out, not begun). A number, like every other state the islander perceives. */
 function siteShows( b: BuildingState ): Record<string, unknown> {
@@ -154,41 +141,30 @@ function siteShows( b: BuildingState ): Record<string, unknown> {
 
 }
 
-/** The site's one option: work on it until it is built. Closed once built: a builder still on
- * it (someone else finished it) ends at its next tick. */
-function buildOption( b: BuildingState, kind: BuildingKind ): PlaceOption {
+/** How a built building looks: what its store holds, to someone standing at it. */
+function builtShows( b: BuildingState, at: boolean ): Record<string, unknown> | null {
 
-	return {
-		open: () => b.worked < kind.work,
-		start: () => b.worked < kind.work ? { ok: true, seconds: kind.work - b.worked } : { ok: false, reason: `${ b.id } is built` },
-		during: () => {
-
-			if ( b.worked >= kind.work ) return { ok: true, value: `${ b.id } is built` };
-			b.worked ++;
-			return b.worked >= kind.work ? { ok: true, value: `built ${ b.id }` } : null;
-
-		},
-	};
+	return at && kindOf( b ).capacity ? { items: { ...b.items } } : null;
 
 }
 
 function buildingPlace( sim: Sim, b: BuildingState ): Place {
 
-	const grid = sim.grid, kind = BUILDING_KINDS[ b.kind ], p = { x: b.x, z: b.z };
-	const reach = kind.radius + REACH, built = stageOf( b ) === 'built';
+	const grid = sim.grid, p = { x: b.x, z: b.z };
+	const reach = kindOf( b ).radius + REACH, built = stageOf( b ) === 'built';
 	return {
 		id: b.id,
 		kind: b.kind,
 		reaches: ( k ) => k >= 0 && planar( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) <= reach,
 		near: () => cellsWithin( grid, p, reach ),
 		distance: ( q ) => planar( q.x - p.x, q.z - p.z ),
-		shows: ( at ) => built ? kind.shows( b, at ) : siteShows( b ),
-		options: built ? { ...kind.options( b ), build: buildOption( b, kind ) } : { build: buildOption( b, kind ) },
+		shows: ( at ) => built ? builtShows( b, at ) : siteShows( b ),
+		options: built ? { ...optionsAt( b.kind, b ), ...optionsAt( 'building', b ) } : optionsAt( 'building', b ),
 	};
 
 }
 
-/** The buildings as places (places.ts PLACE_KINDS). */
+/** The buildings as places (places.ts). */
 export function buildings( sim: Sim ): Place[] {
 
 	return sim.state.buildings.map( ( b ) => buildingPlace( sim, b ) );
@@ -206,6 +182,6 @@ export function buildingById( sim: Sim, id: string ): Place | null {
 /** Block the ground the buildings stand on. */
 export function obstructBuildings( sim: Sim ): void {
 
-	for ( const b of sim.state.buildings ) sim.grid.obstruct( b.x, b.z, BUILDING_KINDS[ b.kind ].radius );
+	for ( const b of sim.state.buildings ) sim.grid.obstruct( b.x, b.z, kindOf( b ).radius );
 
 }

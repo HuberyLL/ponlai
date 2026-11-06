@@ -119,12 +119,15 @@
 // depend on the encoder but its pixels do not: every comparison in the tools decodes (samePixels,
 // diff-set.py), and references written with either encoder stay comparable.
 //
-// Stopping the loop. Headless, nothing back-pressures the page: the frame pacer meets 60 fps on the
-// JS side while the GPU completes far fewer, so seconds of work pile up in the queue and a
-// screenshot waits for the compositor frame behind them. `stopLoop` stops the frame loop
-// (`__PONLAI__.loop.stop()`: no more frames, then the queue drained) before the shot; the pixels
-// are the same frame's, the shot no longer waits 4-11 s for queued frames, and the GPU is free for
-// other captures meanwhile. Builds without `loop` are shot with the loop running.
+// Stopping the loop. Headless, Chrome itself back-pressures the page only once seconds of frames
+// are queued (no vsync, no frame-rate limit), so a paused page in the test mode bounds its own queue
+// to two frames (src/post/FramePacer.ts, "A paused page's queue"): before that, two pages at once
+// each queued hundreds of frames of work, and every read-back and screenshot waited behind it. A
+// running page is not bounded. `stopLoop` stops the frame loop (`__PONLAI__.loop.stop()`: no more
+// frames, then the queue drained) before the shot; the pixels are the same frame's, the shot waits
+// for no queued frames (on an unbounded queue it waited for every frame queued), and the GPU is free
+// for other captures
+// meanwhile. Builds without `loop` are shot with the loop running.
 //
 // Importing this module raises the process to the application scheduling policy on macOS
 // (tools/qos.mjs): the PNG decode and frame compare of readiness run in this process while it holds

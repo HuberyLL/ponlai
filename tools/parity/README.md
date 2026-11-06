@@ -136,6 +136,12 @@ redrawn (`invalidate()`):
 | island-cloudy-sun-rising | 78 % | 0.006 % (430 pixels) | 0.004 % (340 pixels) |
 | island-cloudy-disc-fade | 0.13 % (9700 pixels) | 0.002 % (150 pixels) | 0, the air's share is 1 there |
 
+On the 52 degree path these views barely guard two of the pins. `shadowAirNarrow` moves at most 690
+pixels in any of them (150 to 690, 0.002 to 0.009 % of the frame), so it has next to no byte guard,
+and `shadowRays` is guarded by `island-cloudy-sun-rising` alone (78 %; 3290 and 9700 pixels, 0.043
+and 0.13 %, in the other two). Elevations at which each pin moves about 1 % of the frame are still
+to be chosen.
+
 A change of these elevations, or of the sun's path, pins the uniforms again: a view that stays byte
 identical under the pins reaches nothing and does not stay.
 

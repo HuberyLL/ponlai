@@ -3,11 +3,11 @@ import type { BuildingState } from '../sim/types.ts';
 import { BOX, PropBuilder, at, buildingMaterial, hashAt } from './Props.ts';
 import type { RGB } from './Props.ts';
 
-// The chest (sim/buildings.ts) once the player has set it down: a stand-in wooden chest built in code, in
+// The chest (sim/content/chest.ts) once the player has set it down: a stand-in wooden chest built in code, in
 // the props' faceted style (Props.ts), as the art direction's things people make are, handmade and
 // a little chunky: a body of horizontal planks on two skids, darker corner posts, a lid of planks
 // with a rim, two dark bands over body and lid and a clasp at the front. About 0.9 x 0.55 m and
-// 0.6 m tall, so the disc it blocks (CHEST_RADIUS) is its lid's half diagonal: what is drawn is
+// 0.6 m tall, so the disc it blocks (its kind's radius) is its lid's half diagonal: what is drawn is
 // what the islanders walk round. Its front faces the island's middle (the world origin), so a
 // loaded game draws it the same; its planks vary by a hash of where it stands. It shares one
 // material with every building and site (Props.ts buildingMaterial), the sample the game compiles

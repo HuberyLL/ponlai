@@ -6,7 +6,8 @@ import type { LookColours } from '../../characters/looks.ts';
 import { ISLAND_TOP } from '../../world/WorldShapes.ts';
 import type { EntityId } from '../sim/types.ts';
 import type { Sim } from '../sim/Sim.ts';
-import { BUILDING_KINDS, stageOf } from '../sim/buildings.ts';
+import { stageOf } from '../sim/buildings.ts';
+import { buildingKinds } from '../sim/registry.ts';
 import type { BuildingState, Villager } from '../sim/types.ts';
 import { standIn } from './StandIn.ts';
 import { ChestView } from './ChestView.ts';
@@ -15,9 +16,9 @@ import { VillagerView, disposeFigure } from './VillagerView.ts';
 
 // The game drawn into the island scene: its islanders and its buildings, each a construction site
 // (SiteView, the same stages for every kind) until it is built and then its kind's own model
-// (MODELS: ChestView). Each frame it diffs the simulation's islanders and buildings by id (create,
-// update, remove) and keeps every view in place between frames, so a steady scene allocates
-// nothing. The buildings cast into the sun's shadow map, which is redrawn only as the sun turns
+// (MODELS: ChestView), or, for a kind art has not drawn yet, its site finished (`modelOf`). Each
+// frame it diffs the simulation's islanders and buildings by id (create, update, remove) and keeps
+// every view in place between frames, so a steady scene allocates nothing. The buildings cast into the sun's shadow map, which is redrawn only as the sun turns
 // (SunShadow.ts): whatever changes their shape (a site set down or grown by a piece, a building
 // finished) asks for a redraw. A prop may rise above everything the island grows, so each prop's
 // box grows the sun map's casters and the sea's reflection box (GameViewOptions.holdOpaque).
@@ -77,12 +78,12 @@ export function propSamples(): THREE.Object3D[] {
 
 	if ( samples ) return samples;
 	samples = [];
-	for ( const kind of Object.keys( MODELS ) ) {
+	for ( const { id: kind, work } of buildingKinds() ) {
 
 		const sample = ( worked: number ): BuildingState => ( { id: kind, kind, x: 0, z: 0, worked, items: {} } );
-		samples.push( MODELS[ kind ]( sample( BUILDING_KINDS[ kind ].work ), 0 ).mesh );
+		samples.push( modelOf( sample( work ), 0 ).mesh );
 		// its site half built (the marks, the frame, the pile)
-		samples.push( new SiteView( sample( BUILDING_KINDS[ kind ].work / 2 ), 0 ).mesh );
+		samples.push( new SiteView( sample( work / 2 ), 0 ).mesh );
 
 	}
 	return samples;
@@ -92,10 +93,17 @@ export function propSamples(): THREE.Object3D[] {
 /** A built building's model. */
 interface BuildingModel { readonly mesh: THREE.Mesh; dispose(): void }
 
-/** Each kind's finished model, by kind (sim/buildings.ts BUILDING_KINDS). */
+/** The finished models art has drawn, by building kind (sim/registry.ts BuildingDef). */
 const MODELS: Readonly<Record<string, ( b: BuildingState, ground: number ) => BuildingModel>> = {
 	chest: ( b, ground ) => new ChestView( b, ground ),
 };
+
+/** A built building's model: its kind's own, else its site finished (the frame standing whole). */
+function modelOf( b: BuildingState, ground: number ): BuildingModel {
+
+	return Object.hasOwn( MODELS, b.kind ) ? MODELS[ b.kind ]( b, ground ) : new SiteView( b, ground );
+
+}
 
 /** A building as drawn: its site until it is built, then its model. */
 interface BuildingDraw { x: number; z: number; site: SiteView | null; model: BuildingModel | null; stamp: number }
@@ -259,7 +267,7 @@ export class GameView {
 				if ( draw.model ) continue;
 				draw.site?.dispose();
 				draw.site = null;
-				draw.model = MODELS[ b.kind ]( b, ground );
+				draw.model = modelOf( b, ground );
 				this.add( draw.model.mesh );
 				changed = true;
 

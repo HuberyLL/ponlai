@@ -21,7 +21,7 @@
 // (pid, host, start, key, what it will cover), under a short mutex (`.<name>.mutex` beside the
 // directory); a process that finds a live claim waits (polling every 5 s, a line a minute) and then
 // uses the result, first freeing the GPU slot a `gpu-lock.mjs run --shared` wrapper above it holds
-// (yieldAncestorSlot: an idle wait must not keep one of the 3 slots); a claim whose process is
+// (yieldAncestorSlot: an idle wait must not keep one of the slots); a claim whose process is
 // gone is stale and taken over (the partial captures are discarded, or kept when a manifest already
 // vouches for them and the claim only extended it).
 // So two tasks that need the same reference at once capture it once.

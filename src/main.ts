@@ -53,7 +53,7 @@ import { hazeKeyAt, type HazeKey } from './weather/HazeKeys.ts';
 import type { GradeChanges } from './post/GradeLut.ts';
 import { renderPixelRatio, dynamicRange, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
-import { FramePacer } from './post/FramePacer.ts';
+import { FramePacer, PAUSED_QUEUE } from './post/FramePacer.ts';
 import { SubmitBatch } from './post/SubmitBatch.ts';
 import { installBindingPatches, installCacheKeyPatches, primeSharedNodes } from './post/graph/ThreePatches.ts';
 import { FrameStats } from './debug/FrameStats.ts';
@@ -244,10 +244,10 @@ const numberParam = ( name: string, fallback: number, options = params ) => {
 // The scene a query's options set: the weather (held when one is asked for, else evolving on its
 // own), the day clock and its preset, the scene clock and the cloud override. The load reads its
 // own query with it, and a scene jump (`establishScene`) the query it is given, so the two agree.
-// A 48-minute day, as in many open-world games: slow enough to watch the light and the stars
-// turn. The game's day is 24 minutes at 1x, so a day's work and its evening fit one sitting.
-// The default first-quarter moon lights the evening and sets at midnight, leaving the small
-// hours dark enough for the Milky Way. The game starts at 8 (see Game.ts), so the sky is lit
+// A 48-minute day, as in many open-world games: slow enough to watch the light change. The game's
+// day is 24 minutes at 1x, so a day's work and its evening fit one sitting. The moon (a full one
+// by default) and the stars stand fixed in the sky (DayCycle.ts MOON, STARS); the phase shapes only
+// the drawn moon. The game starts at 8 (see Game.ts), so the sky is lit
 // once for that hour. A parked weather (Weather.ts `PARKED_WEATHER`) is refused outside a debug
 // build and falls back to fair; the load and a scene jump read it here alike, and so does ?game,
 // whose weather is the page's. The wind (Weather.ts) takes `wind` (a level) and `windDir` (a
@@ -1063,8 +1063,8 @@ const viewDirection = new THREE.Vector3();
 // culminates on and the moon stands on) is fixed, never following the clock, so the R key always
 // returns to the same view. It was 318, looking away from the meridian: the morning sun lit the
 // island flat from behind the camera and the moon path never entered the frame. From 180 the moon's
-// path is in view all night (the moon is fixed on the meridian: sky/DayCycle.ts MOON), while the sun lights the cliffs from the side at 9:00
-// and 16:00 (a lit and a shaded side) and its glints at noon keep to a corner of the frame.
+// path is in view all night (the moon is fixed on the meridian: sky/DayCycle.ts MOON), while the sun lights the cliffs from the side in the
+// morning and the afternoon (a lit and a shaded side) and its glints at noon keep to a corner of the frame.
 function placeOrbit( on: THREE.PerspectiveCamera, orbit: IslandCameraControls, options: URLSearchParams, turn = 0, zoom = 0 ): void {
 
 	const polar = THREE.MathUtils.degToRad( Number( options.get( 'polar' ) ?? 40 ) ), azimuth = THREE.MathUtils.degToRad( Number( options.get( 'az' ) ?? 180 ) ) + turn;
@@ -1616,6 +1616,8 @@ const dynamicResolution = dynamicRule ? new DynamicResolution( { ...dynamicRange
 // sets the rate through the pacer (`choices()`, `setRate()`, `mode`, `fps`): `__PONLAI__.pacer` in
 // debug builds; a production `?game` menu needs the game to be handed the pacer (not wired yet).
 const frameRateParam = params.get( 'frameRate' );
+// (the queue whose completed work bounds a paused page's frames in flight)
+const gpuQueue = ( renderer.backend as unknown as { device: { queue: { onSubmittedWorkDone(): Promise<void> } } } ).device.queue;
 const pacer = new FramePacer( quality.frameRate, {
 	rate: frameRateParam === null || frameRateParam === 'auto' ? 'auto' : Number( frameRateParam ),
 	allowFallback: params.get( 'frameFallback' ) !== '0',
@@ -1661,9 +1663,8 @@ if ( dynamicResolution ) {
 // time from the timer above, or times frames on an idle queue where there is none.
 if ( qualityChoice.source === 'detect' ) {
 
-	const queue = ( renderer.backend as unknown as { device: { queue: { onSubmittedWorkDone(): Promise<void> } } } ).device.queue;
 	const view = () => ( { paused, hidden: document.hidden, scale: renderScale, interval: pacer.rate > 0 ? pacer.interval : 1000 / 60, width: innerWidth, height: innerHeight, cap: DPR_CAP } );
-	detector = new QualityDetector( qualityChoice, view, gpuTimer !== null || profiler?.timestamps === true, () => queue.onSubmittedWorkDone(), () => renderer.info.frame );
+	detector = new QualityDetector( qualityChoice, view, gpuTimer !== null || profiler?.timestamps === true, () => gpuQueue.onSubmittedWorkDone(), () => renderer.info.frame );
 	if ( dynamicResolution ) dynamicResolution.enabled = false;
 
 }
@@ -2010,6 +2011,11 @@ function tick( time: number ): void {
 	pipeline.render( { scene, prepassScene, opaquePrepassScene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, afterScene: after ? afterScene : undefined, camera, water: water!, sun, keyDirection: shadowDirection, time: simTime, temporal: temporalFrame( rawDt, paused ? 0 : dt ), settle: settleFrame( bakeDue ), haze: hazeFrame() } );
 	steerRenderScale( rawDt );
 	submitBatch.flush();
+	// a paused page in the test mode keeps at most PAUSED_QUEUE frames queued on the GPU
+	// (FramePacer.ts, "A paused page's queue")
+	const bounded = paused && TEST_MODE;
+	pacer.queueLimit = bounded ? PAUSED_QUEUE : 0;
+	if ( bounded ) pacer.submitted( gpuQueue.onSubmittedWorkDone() );
 	frame ++;
 	diagnostics();
 
@@ -2116,7 +2122,7 @@ function diagnostics( now = false ): void {
 		dpr: + ( pipeline.width / innerWidth ).toFixed( 4 ), // the render's pixel ratio
 		renderScale,
 		dynamicResolution: dynamicResolution ? { scale: dynamicResolution.scale, source: dynamicResolution.source, changes: dynamicResolution.changes.length } : null,
-		pacing: { target: pacer.target, rate: pacer.rate, mode: pacer.mode, refreshMs: + pacer.period.toFixed( 3 ), divisor: pacer.divisor, base: pacer.base, fallback: pacer.fallen, falls: pacer.falls, returns: pacer.returns, rendered: pacer.rendered, skipped: pacer.skipped },
+		pacing: { target: pacer.target, rate: pacer.rate, mode: pacer.mode, refreshMs: + pacer.period.toFixed( 3 ), divisor: pacer.divisor, base: pacer.base, fallback: pacer.fallen, falls: pacer.falls, returns: pacer.returns, rendered: pacer.rendered, skipped: pacer.skipped, held: pacer.held, queued: pacer.queued, queueLimit: pacer.queueLimit },
 		submits: { ...submitBatch.stats, why: { ...submitBatch.stats.why } },
 		canvasDpr: renderer.getPixelRatio(),
 		worldTriangles: worldInfo.worldTriangles,
@@ -2375,7 +2381,7 @@ const loop = {
 		animation.stop();
 		const until = performance.now() + 2000;
 		while ( sky.busy && performance.now() < until ) await new Promise( ( resolve ) => setTimeout( resolve, 10 ) );
-		await ( renderer.backend as unknown as { device: { queue: { onSubmittedWorkDone(): Promise<void> } } } ).device.queue.onSubmittedWorkDone();
+		await gpuQueue.onSubmittedWorkDone();
 
 	},
 	start(): void {
