@@ -1,5 +1,9 @@
 // Compare production URLs in one browser/page, alternating A/B/B/A to reduce clock drift.
 // Usage: node tools/benchmark-lighting.mjs <before URL> <after URL>
+// Its pages are paused in the test mode, which bound their GPU queue to two frames
+// (src/post/FramePacer.ts, "A paused page's queue"): a build from before that bound queues without
+// limit, so between builds on either side of it the paused pages' back-pressure differs, and so may
+// their frame times.
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';

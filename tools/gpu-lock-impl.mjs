@@ -8,7 +8,8 @@
 //     2), none while an exclusive holder runs. Captures are GPU-bound: two pages at once give about
 //     1.6 times one page's throughput, a third adds none and doubles each view's time, more lose
 //     throughput (measured on 24 paused views, the frames identical at every count), and probes
-//     that sweep many points already lose it at two; past that each page's loads time out too, so
+//     that sweep many points gain about 1.45 times at two (a paused page bounds its GPU queue:
+//     src/post/FramePacer.ts); past that each page's loads time out too, so
 //     the rest queue (below). A slot is held per capture (capture-clip.mjs around its clip),
 //     not per set or page, so a long set and a one-view probe interleave; capture.mjs's worker leases
 //     its slot over the views of a set (leaseGpuLock): it keeps it from view to view and gives it up
