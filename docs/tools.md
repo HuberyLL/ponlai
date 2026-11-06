@@ -275,7 +275,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   debug page, `__PONLAI__.pacer.choices()` lists the display's even rates, `setRate( fps | 'auto' )`
   sets one, `mode` and `rate` read the choice and `fps` the rate held now (a production `?game`
   settings menu needs the game to be handed the pacer: not wired yet); the diagnostics' `pacing`
-  block shows `mode`, `fallback`, `falls` and `returns`.
+  block shows `mode`, `fallback`, `falls` and `returns`, and for the test mode's paused pages
+  `queueLimit` (the frames they may keep queued on the GPU), `queued` (how many are now) and `held`
+  (how many due frames waited for the queue).
 - `submits=each` (three's own submit per pass, without the submit batching; at runtime
   `flags.batchSubmits`; its tracking wrappers stay installed, so compare against `main` for their
   JS cost) and `submitBatch=hold,wait,idle` (its policy, see `SubmitBatch.ts`).
@@ -567,6 +569,13 @@ within a tolerance; the test mode keeps the byte-for-byte checks valid.
   does too while they have not stepped, so the pause itself freezes them and they need no switch.
   The falling leaves (`src/weather/FallingLeaves.ts`) are history-dependent and off under the
   test mode's switch (below): not made, so `settled` never waits for them.
+- The test mode's paused pages keep at most two rendered frames queued on the GPU
+  (`src/post/FramePacer.ts`, "A paused page's queue"): the tools' headless browser has no vsync and
+  no frame-rate limit, so without the bound two pages sharing the GPU each queued hundreds of frames
+  of work, and every read-back (the pre-exposure's, a probe's radiance) and screenshot waited behind
+  it. The bound changes how many frames a second a paused page draws, never what it draws: the
+  parity views and the probe readings are the same bytes with and without it. A running page, and a
+  paused one with `testMode=0` (capture-clip's), is not bounded.
 - A new history-dependent effect:
   - `establishScene` (`src/main.ts`) clears its history; `tools/verify-scene-jump.mjs` checks it;
   - it reports itself to `settled` (main.ts `pending`, or the rest's signature) until it has
@@ -782,7 +791,13 @@ from `P`); `--init js` hooks the page before its scripts run. A production previ
 `debug` in the query. A long eval that waits on CPU work (worker generation, a grown page) stops
 the loop (`await P.loop.stop()`) and waits with `until` or `sleep`: while the loop stands the probe
 gives its shared slot up to a request ranked before it and takes it back before the helper resolves
-(each give-up on stderr, the step's `gaveUpMs`). Common questions:
+(each give-up on stderr, the step's `gaveUpMs`). Probes share the GPU as capture pages do: two
+probes sweeping six points of a paused, grown island at 4K each took about 1.4 times one probe's
+time (1.45 times its throughput), and a probe beside a capture-set page 1.1 times its time alone,
+with readings identical to a probe alone. Sweeping 21 points, two probes gave about 1.35 times one
+probe's throughput and three about 1.4 times, but at three one or two of the probes in a run read a
+value that differed from a probe alone's in the last digit. (A paused page bounds its GPU queue,
+Test mode above; before that bound two six-point probes each ran 12 times as long as one alone.) Common questions:
 `--load` loads every query after the first in a page of its own instead of jumping to it: the
 scene-jump contract covers the image, not the world's generation path, so use it to compare two
 freshly loaded pages (a grown page against a fresh `grow=1` page) in one call.
@@ -890,10 +905,11 @@ Everything that renders the scene in a browser (captures, profiles, GPU probes) 
 machine-wide GPU lock in `tools/gpu-lock.mjs`: timing runs (profiles, benchmarks, running captures)
 hold it alone; paused captures and the verify probes share it with each other, since their pixels
 do not depend on the load. Shared holders take one of `PONLAI_GPU_SLOTS` slots (default 2) and the
-rest queue: captures are GPU-bound, so two pages at once give about 1.6 times one page's
-throughput, a third adds none and doubles each view's time, and more lose throughput (24 paused
-views, the frames identical at every count); probes that sweep many points already lose throughput
-at two. A capture-set page leases its slot (capture.mjs's worker, `leaseGpuLock`): it keeps
+rest queue: captures are GPU-bound, so two pages at once give about 1.75 times one page's
+throughput, a third about 2 times with the slowest views taking twice as long as at two, and a
+fourth hardly more (21 paused views, the frames identical at every count); probes that sweep many
+points gain about 1.35 times at two and 1.4 at three, where their readings lose the last digit now
+and then (Probes, above). Two slots take most of the gain with the readings exact. A capture-set page leases its slot (capture.mjs's worker, `leaseGpuLock`): it keeps
 it from view to view and gives it up between views only when a request ranked before its next one
 waits for it (an exclusive request, or a shared one when every slot is taken) and it has held it
 for its lease, 20 s (capture.mjs `--lease`, after capture-set's `--`; 0 frees it after every view),

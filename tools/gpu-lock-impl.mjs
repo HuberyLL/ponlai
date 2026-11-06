@@ -6,10 +6,12 @@
 //   - exclusive (the default, every timing run): one holder, nothing else rendering;
 //   - shared (deterministic captures and probes): up to PONLAI_GPU_SLOTS holders together (default
 //     2), none while an exclusive holder runs. Captures are GPU-bound: two pages at once give about
-//     1.6 times one page's throughput, a third adds none and doubles each view's time, more lose
-//     throughput (measured on 24 paused views, the frames identical at every count), and probes
-//     that sweep many points already lose it at two; past that each page's loads time out too, so
-//     the rest queue (below). A slot is held per capture (capture-clip.mjs around its clip),
+//     1.75 times one page's throughput, a third about 2 times with the slowest views taking twice
+//     as long as at two, a fourth hardly more (measured on 21 paused views, the frames identical
+//     at every count); probes that sweep many points gain about 1.35 times at two and 1.4 at
+//     three, where a probe's readings now and then differed from one alone's in the last digit (a
+//     paused page bounds its GPU queue: src/post/FramePacer.ts). Two slots take most of that gain
+//     with the readings exact, so the rest queue (below). A slot is held per capture (capture-clip.mjs around its clip),
 //     not per set or page, so a long set and a one-view probe interleave; capture.mjs's worker leases
 //     its slot over the views of a set (leaseGpuLock): it keeps it from view to view and gives it up
 //     for a waiter ranked before it that it blocks once it has held it for its lease (20 s), so a waiter's extra delay is bounded by
