@@ -644,7 +644,8 @@ within a tolerance; the test mode keeps the byte-for-byte checks valid.
   of work, and every read-back (the pre-exposure's, a probe's radiance) and screenshot waited behind
   it. The bound changes how many frames a second a paused page draws, never what it draws: the
   parity views and the probe readings are the same bytes with and without it. A running page, and a
-  paused one with `testMode=0` (capture-clip's), is not bounded.
+  paused one with `testMode=0` (capture-clip's), is not bounded. A held frame is an animation frame
+  on which the page does not tick (Writing a tool, on waiting for rendered frames).
 - A new history-dependent effect:
   - `establishScene` (`src/main.ts`) clears its history; `tools/verify-scene-jump.mjs` checks it;
   - it reports itself to `settled` (main.ts `pending`, or the rest's signature) until it has
@@ -1517,6 +1518,14 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   running) and `waitForStable`, in that order. A fixed 40-frame wait passed or failed by chance on
   a busy GPU. A reading of the frame is taken once it is ready, not right after the load: a fresh
   load's first frames are drawn before the sun's map, with every receiver lit.
+- A step that sets a state (a clock, a camera, a uniform) and reads the frame that follows waits
+  for the page's rendered frames, counted by `renderer.info.frame`: page-eval's `frames( n )` in an
+  eval, `renderedFrames( page, n )` (`tools/page-eval.mjs`, "Rendered frames") from a Playwright page
+  of one's own, never a count of animation frames: the frame pacer skips the refreshes between its
+  frames, and a paused page in the test mode holds a due frame while two are still queued on the GPU
+  (Test mode), so the read saw the frame before whenever the page did not tick after the state was
+  set. Rendered frames wait for the state the next tick applies; a still, converged image is still
+  waited for by `settled` (the Readiness rule above), never by a count of frames of either kind.
 - Expensive results that depend only on the commit, the tool and the browser are stored and
   reused through `parity/reference.mjs`; record in the key everything that changes them.
 - CPU-heavy node tools import `qos.mjs` first. Python tools declare their dependencies inline (PEP

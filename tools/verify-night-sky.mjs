@@ -1,11 +1,13 @@
 // GPU checks and fixed evidence for moon phases, stable stars, and the daylight fade.
 // Run after the stage-three Sky hooks are installed; keep other GPU tabs closed:
 //   node tools/verify-night-sky.mjs http://127.0.0.1:5190
+// Its steps wait for the page's rendered frames (tools/page-eval.mjs, "Rendered frames").
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
 import { eveningHour } from '../src/sky/DayCycle.ts';
+import { renderedFrames } from './page-eval.mjs';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/night-sky';
@@ -54,7 +56,8 @@ try {
 		// The narrow moon evidence tests actual geometry, without a defocused camera lens.
 		s.pipeline.settings.dof = 0;
 	} );
-	const frames = () => page.evaluate( () => new Promise( ( resolve ) => requestAnimationFrame( () => requestAnimationFrame( resolve ) ) ) );
+	// two of the page's rendered frames (tools/page-eval.mjs, "Rendered frames")
+	const frames = () => renderedFrames( page, 2 );
 	const setState = ( phase, hour ) => page.evaluate( async ( { phase, hour } ) => {
 		const s = window.__PONLAI__;
 		s.dayCycle.moonPhase = phase;
