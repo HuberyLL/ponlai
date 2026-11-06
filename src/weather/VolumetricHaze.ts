@@ -25,6 +25,7 @@ import { duskForce } from '../sky/DayCycle.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
 import type { FrameGraph, GraphResources, ResourceHandle, SizeClass } from '../post/graph/FrameGraph.ts';
 import { TemporalRest, restEpoch } from '../post/TemporalRest.ts';
+import { preExposed, sceneUnits } from '../post/PreExposure.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -373,7 +374,13 @@ const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
 // however it was reached, and `pending` holds the page's settled signal until it has converged.
 // The light kernel runs every frame. Local lights, when there
 // are any, add to the light the integration takes per froxel; the talk filters theirs in a volume of
-// their own.
+// their own. The light volume holds the light pre-exposed (PreExposure.ts: times the frame's 2^P,
+// held at half float's largest), as the scene's colour does: unscaled, its light reaches near 2^0
+// toward a low sun and lies under 2^-17 at a clear midnight (its first percentile), a span no fixed
+// scale keeps at half float's full precision with room to spare. The kernel
+// is a pass of the frame graph, after the frame's `beginFrame`, so its readers (`fogOver`: the
+// composite, the dome, `probe`) divide out the same P. It keeps no history: the rest above is the
+// shadow's, whose visibility no P scales.
 
 // the shadow's sub-samples per froxel and recompute
 const SUB_SAMPLES = 4;
@@ -967,7 +974,7 @@ export class VolumetricHaze {
 					// (the debug view: the visibility as a grey card in the key light, so the display's
 					// exposure shows 1 as mid grey)
 					const out = select( this.switches.w.greaterThan( 0.5 ), vec3( fraction.r.mul( dot( this.keyColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) ) ).mul( 0.18 / Math.PI ) ), mean );
-					textureStore( target, ivec3( x, y, i ), vec4( out, alpha.y ) );
+					textureStore( target, ivec3( x, y, i ), vec4( preExposed( out ), alpha.y ) );
 					t0.assign( t1 );
 					y0.assign( y1 );
 
@@ -1018,11 +1025,13 @@ export class VolumetricHaze {
 		const at = min( reach.mul( forward ), this.far );
 		const uvw = vec3( q, this.sliceCoordinate( at ).sub( 0.5 ).div( D ) );
 		const light = this.sampleLight( uvw ).toVar();
+		// (the volume holds the light pre-exposed: see the header)
+		const lit = sceneUnits( light.rgb ).toVar();
 		// (the grid holds green's band opacity: each channel's transmittance is green's to the power
 		// of its sigma over green's, then through the band-to-display matrix)
 		const held = bandToDisplay( vec3( 1 ).sub( exp2( this.sigma.div( this.sigma.y ).mul( log2( max( float( 1 ).sub( light.a ), 1e-30 ) ) ) ) ), bandPush ).toVar();
 		const opacity = select( this.switches.z.greaterThan( 0.5 ), exact, held ).toVar();
-		const result = select( this.switches.w.greaterThan( 0.5 ), light.rgb, mix( colour, light.rgb, opacity ) );
+		const result = select( this.switches.w.greaterThan( 0.5 ), lit, mix( colour, lit, opacity ) );
 		return { result, opacity };
 
 	}

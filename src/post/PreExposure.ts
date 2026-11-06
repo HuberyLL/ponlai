@@ -32,8 +32,9 @@ type V3 = THREE.Node<'vec3'>;
 //   range, so a P a few frames old is harmless; P moves when the EV crosses a half stop.
 // - A scene event that cuts (but a loop restart or the page shown again, which keep the scene)
 //   resets P to the fresh load's, 0: a scene jump then takes the path of a fresh load. A new P bumps
-//   the rest's epoch (TemporalRest.ts), not counted as a change of the scene (the haze's rest, in
-//   scene units, keeps going), so the temporal rests restart on frames of one P.
+//   the rest's epoch (TemporalRest.ts), not counted as a change of the scene (the haze's rest holds
+//   the sun's visibility, which no P scales, and keeps going), so the temporal rests restart on
+//   frames of one P.
 // - `pending` holds the settled signal until the P a frame used is the one its own exposure asks
 //   for, read from a frame of the settled view: one drawn at least the tier's settle frames
 //   (`restSettle`, Settled.ts) into a run of frames that share the view (`viewFrame`: the rest's
@@ -74,10 +75,11 @@ type V3 = THREE.Node<'vec3'>;
 // - Readers that work in scene units divide it out (`inverse`): the water's reads of the opaque
 //   image, the underwater pyramid and the refraction image (Water.ts), the composite (Pipeline.ts:
 //   the haze, the shafts and the rods' colour work in scene units, its output is scaled again),
-//   FSR 3's reactive generator (Fsr3Upscaler.ts), and the clouds' view, by the scale it was written
-//   at (Clouds.ts `sampleView`: the clouds update before `beginFrame`, so a frame whose P changes
-//   draws them at the last frame's). The metering histograms instead bin the values as
-//   stored, so their range follows P as the stored values do, and the meter takes P back out of
+//   FSR 3's reactive generator (Fsr3Upscaler.ts), the haze's light volume (VolumetricHaze.ts
+//   `fogOver`), and the clouds' view, by the scale it was written at (Clouds.ts `sampleView`: the
+//   clouds update before `beginFrame`, so a frame whose P changes draws them at the last frame's).
+//   The metering histograms instead bin the values as stored, so their range follows P as the
+//   stored values do, and the meter takes P back out of
 //   their means in stops (`log2Scale`, Metering.ts): with a range fixed in scene units, a dark
 //   twilight's values fell under its floor while the targets still held them at full precision. The
 //   display chain's exposure is relative, 2^( EV - P ), so the bloom, the local tone and the grade
@@ -88,8 +90,8 @@ type V3 = THREE.Node<'vec3'>;
 //   composite and what the post chain adds in hdr's units (the sun's flare, the rain veil:
 //   Pipeline.ts), the rain overlay after the resolve (AfterResolve.ts `afterMRT`), the clouds'
 //   view kernels (Clouds.ts: its traces, range boxes and history, whose history follows a new P by
-//   the ratio). Each also holds its value at or below half float's largest (`preExposed`), so the
-//   sun's disc stays finite.
+//   the ratio), the haze's light kernel (VolumetricHaze.ts). Each also holds its value at or below
+//   half float's largest (`preExposed`), so the sun's disc stays finite.
 
 /** Stops below the exposure the scene is stored at (see the header). */
 export const PRE_EXPOSURE_BIAS = 3;
