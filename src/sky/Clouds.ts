@@ -222,14 +222,13 @@ type V4 = THREE.Node<'vec4'>;
 // the shadow map refresh in part each frame and whole on a jump and when a paused scene settles.
 // The view's traces, their range boxes and its history hold the radiance pre-exposed, times the
 // scale its kernels were dispatched at (PreExposure.ts `preExposure.scale`, held at half float's
-// largest), as the scene's colour does, so they keep the scene's range from noon to a moonless
-// night. The clouds update ahead of the frame's `beginFrame`, so a frame whose P changes draws the
+// largest) and VIEW_HEADROOM, so they keep the scene's range from noon to a moonless night. The
+// clouds update ahead of the frame's `beginFrame`, so a frame whose P changes draws the
 // clouds at the last one's: each history buffer keeps the scale it was written at
 // (`historyScale`), `sampleView` divides by the shown one's, and the next resolve takes the
 // reprojected history to its own scale by their ratio (a power of two: the bits of what lay in
 // range stay). A view kept at rest holds the scale it settled at: a new P settles it again, so a
-// paused frame takes the clouds at its own P (after a jump P starts from 0, where a night's
-// clouds would have settled into half float's subnormals).
+// paused frame takes the clouds at its own P, never at the 0 a jump starts P from.
 // Every explicit bake (the load's, a scene jump's, a seek's, a retune's: main.ts `bakeEnvironment`,
 // through Sky.reset) restarts the clouds as they stand before a page's first frame (`restart`),
 // then sets their drift, evolution and axes to the scene clock, for the bake that follows.
@@ -249,6 +248,12 @@ export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
 // third of a stop under. Lightning's light is stored apart and bare (its reach is far above this
 // range's top).
 const DOME_STORE = 2 ** 15;
+// What the view stores over the pre-exposed radiance: by day P runs 1 to 3, and at that scale the
+// faint edges of thin cloud low over the sea fell under half float's 2^-14 (a low view across
+// the water lost a few dozen pixels a level or more, up to 54). Seven stops keep them at the 2^8
+// the view held under a fixed scale, a night (P 5 to 9) at 2^12 or more, and the brightest a
+// dusk shows (P 13) about three stops under STORE_CEILING.
+const VIEW_HEADROOM = 2 ** 7;
 // The preset's scales, rounded so they nest: the wrapped wind offset (TILE) holds a whole
 // number of periods of the weather map, the shape noise and the erosion noise.
 const WEATHER_SCALE = 28672, BASE_SCALE = 7168, EROSION_SCALE = BASE_SCALE / 8;
@@ -894,8 +899,8 @@ export class Clouds {
 	private shownScale = 1;
 	private readonly viewUnscale = uniform( 1 );
 	private readonly historyGain = uniform( 1 );
-	// The scale the view's kernels write at: the pre-exposure's (times the debug press,
-	// PreExposure.ts `storePress`), set before they are dispatched.
+	// The scale the view's kernels write at: the pre-exposure's times VIEW_HEADROOM (and the debug
+	// press, PreExposure.ts `storePress`), set before they are dispatched.
 	private readonly writeScale = uniform( 1 );
 	private readonly camDelta = uniform( new THREE.Vector3() );
 
@@ -2405,7 +2410,7 @@ export class Clouds {
 	// The scale the view's kernels write at now (`writeScale`).
 	private storeScale(): number {
 
-		return preExposure.scale.value * storePress.store.value;
+		return preExposure.scale.value * VIEW_HEADROOM * storePress.store.value;
 
 	}
 
