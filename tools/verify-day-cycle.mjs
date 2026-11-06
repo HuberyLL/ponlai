@@ -222,6 +222,23 @@ for ( let minute = 0; minute < 1440; minute ++ ) {
 	if ( s.elevation <= - 5 ) assert.equal( s.moonVisibility, 1 );
 
 }
+// The stars' sky is fixed (STARS): one frame at every hour of the night, on the first day and a
+// hundred days on.
+const starClock = new DayCycle( { hour: 0 } );
+const starFrame = starClock.snapshot().starFrame.elements.slice();
+for ( const days of [ 0, 100 ] ) {
+
+	starClock.setHour( 0 );
+	if ( days ) starClock.advance( days * starClock.dayLength );
+	assert.equal( starClock.day, days );
+	for ( const hour of [ 19, 0, 4 ] ) {
+
+		starClock.setHour( hour );
+		starClock.snapshot().starFrame.elements.forEach( ( v, i ) => assert.ok( Object.is( v, starFrame[ i ] ), `the stars moved at ${ hour }h on day ${ days }` ) );
+
+	}
+
+}
 cycle.moonPhase = - 0.25;
 near( cycle.moonPhase, 0.75 );
 cycle.moonPhase = 0.5;
@@ -264,4 +281,4 @@ for ( const invalid of [ 0, - 1 ] ) {
 }
 assert.throws( () => cycle.advance( - 1 ), RangeError );
 assert.throws( () => cycle.setPreset( 'missing' ), RangeError );
-console.log( 'Day cycle: wrapping, presets, speed, pause, rollover, the hours of elevations, continuous directions and grade, phase geometry, isolation and validation passed.' );
+console.log( 'Day cycle: wrapping, presets, speed, pause, rollover, the hours of elevations, continuous directions and grade, phase geometry, fixed stars, isolation and validation passed.' );

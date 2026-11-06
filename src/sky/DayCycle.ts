@@ -109,7 +109,7 @@ export interface DayCycleSnapshot {
 	moonVisibility: number;
 	moonKeyGain: number;
 	// World to equatorial (J2000) frame: x toward right ascension 0h, z toward the north
-	// celestial pole. The stars turn with the sun about the pole of its path.
+	// celestial pole. The same at every hour and day (STARS).
 	starFrame: Matrix3;
 	daylight: number;
 	// The stars and the Milky Way: they come out late, as the sky darkens.
@@ -138,9 +138,9 @@ const COS_NOON_AZIMUTH = Math.cos( NOON_AZIMUTH );
 // direction(a) = cos(a) N + sin(a) WEST, N the noon sun ( COS_INCLINATION COS_NOON_AZIMUTH,
 // SIN_INCLINATION, COS_INCLINATION SIN_NOON_AZIMUTH ): a rotation by a about N x WEST.
 // The sun stands at the celestial equator (an equinox, every day): at noon it marks where the
-// equator crosses the meridian and at 18:00 the west point. Its path is tilted 62 degrees, so
-// the elevated pole is 28 degrees up. Seen from above, the sun turns anticlockwise, so that pole
-// is the south celestial pole and the island lies near 28 degrees south, like Rapa Nui.
+// equator crosses the meridian and at 18:00 the west point. Its path is tilted NOON_ELEVATION
+// degrees from the horizon, so its elevated pole stands 90 - NOON_ELEVATION degrees up; seen from
+// above, the sun turns anticlockwise, so that pole is the south celestial pole.
 const WEST = new Vector3( SIN_NOON_AZIMUTH, 0, - COS_NOON_AZIMUTH );
 /** The sun's elevation (degrees) at `hour` on its path. */
 export function sunElevationAt( hour: number ): number {
@@ -320,12 +320,18 @@ export function twilightMoonSky( elevation: number, rising: boolean, cloud: numb
 	return rising ? twilightMoon( elevation, rising, cloud ) : duskIn( elevation, DUSK_MOON, DUSK_DEPTH.moonSky, cloud );
 
 }
-// The stars' equatorial frame: the latitude it is seen from (degrees south), the point where its
-// equator crosses the noon meridian, 90 - STAR_LATITUDE degrees up, and its north pole.
-const STAR_LATITUDE = 28;
-const STAR_ELEVATION = ( 90 - STAR_LATITUDE ) / DEG;
-const STAR_MERIDIAN = new Vector3( Math.cos( STAR_ELEVATION ) * COS_NOON_AZIMUTH, Math.sin( STAR_ELEVATION ), Math.cos( STAR_ELEVATION ) * SIN_NOON_AZIMUTH );
-const NORTH_POLE = WEST.clone().cross( STAR_MERIDIAN ).normalize();
+/** The stars' sky: a real sky, the one seen from `latitude` degrees south at the local sidereal
+ * time `sidereal` (hours), fixed. It neither turns through the night nor drifts over the year, so
+ * the night's composition holds while the game is played, and its constellations stand upright as
+ * seen from that latitude. 28 degrees south at 14h puts Scorpius high in the east with the Milky
+ * Way's core below it, Crux and Alpha Centauri high in the south, and the band through Aquila,
+ * split by the Great Rift, rising out of the sea in the horizon view. The latitude is the stars'
+ * own: their pole is not the sun's path's. Tunable on debug pages (debug/Tune.ts):
+ * `sky.stars.latitude`, `sky.stars.sidereal`. */
+export const STARS = tuneObject( { latitude: 28, sidereal: 14 }, { latitude: 'sky.stars.latitude', sidereal: 'sky.stars.sidereal' }, {
+	latitude: { min: 0, max: 90, onChange: placeStars },
+	sidereal: { min: 0, max: 24, onChange: placeStars },
+} );
 /** Where the moon stands (the header): `elevation` degrees up, at the noon meridian's azimuth
  * turned `turn` degrees (0 the noon side, 180 the pole's side, positive toward the west). At least
  * 15 degrees up: from there down the low key's floor (lighting/KeyLift.ts) would hold the shading
@@ -335,12 +341,6 @@ export const MOON = tuneObject( { elevation: 20, turn: 0 }, { elevation: 'sky.mo
 	elevation: { min: 15, max: 40, onChange: markSkyRetune },
 	turn: { min: - 180, max: 180, onChange: markSkyRetune },
 } );
-// Local sidereal time at midnight (radians): 14h puts Scorpius high in the east with the Milky
-// Way's core below it, Crux and Alpha Centauri high in the south, and the band through Aquila,
-// split by the Great Rift, rising out of the sea in the horizon view. The sky gains a turn a year
-// on the sun, so each authored day starts a little further on.
-const MIDNIGHT_SIDEREAL = 14 / 24 * TAU;
-const SIDEREAL_DAYS_PER_YEAR = 365.2422;
 // The exposure by the sun's elevation (degrees): [ elevation, exposure ], interpolated in log
 // exposure and held beyond the ends. With the sun up, tidewater's auto exposure brings its frames to
 // one metered level (its meter's centre-weighted log average: about 0.15 of its curve's input by day,
@@ -445,15 +445,28 @@ function smoothstep( low: number, high: number, value: number ): number {
 
 }
 
-// World to equatorial frame at a local sidereal time: a star at right ascension a and
-// declination d lies at hour angle (time - a), cos(H) STAR_MERIDIAN + sin(H) WEST, raised by d.
-function equatorialFrame( sidereal: number ): Matrix3 {
+// World to equatorial frame of STARS' sky: a star at right ascension a and declination d lies at
+// hour angle H = (sidereal - a), cos(H) meridian + sin(H) WEST, raised by d toward the north pole;
+// the meridian point is where the equator crosses the noon meridian, 90 - latitude degrees up.
+function equatorialFrame(): Matrix3 {
 
+	const elevation = ( 90 - STARS.latitude ) / DEG;
+	const meridian = new Vector3( Math.cos( elevation ) * COS_NOON_AZIMUTH, Math.sin( elevation ), Math.cos( elevation ) * SIN_NOON_AZIMUTH );
+	const pole = WEST.clone().cross( meridian ).normalize();
+	const sidereal = STARS.sidereal / 24 * TAU;
 	const c = Math.cos( sidereal ), s = Math.sin( sidereal );
-	const x = STAR_MERIDIAN.clone().multiplyScalar( c ).addScaledVector( WEST, s );
-	const y = STAR_MERIDIAN.clone().multiplyScalar( s ).addScaledVector( WEST, - c );
-	const z = NORTH_POLE;
-	return new Matrix3().set( x.x, x.y, x.z, y.x, y.y, y.z, z.x, z.y, z.z );
+	const x = meridian.clone().multiplyScalar( c ).addScaledVector( WEST, s );
+	const y = meridian.clone().multiplyScalar( s ).addScaledVector( WEST, - c );
+	return new Matrix3().set( x.x, x.y, x.z, y.x, y.y, y.z, pole.x, pole.y, pole.z );
+
+}
+
+// the stars' frame, worked out at load and again when STARS changes
+let starFrame = equatorialFrame();
+function placeStars(): void {
+
+	starFrame = equatorialFrame();
+	markSkyRetune();
 
 }
 
@@ -591,7 +604,7 @@ export class DayCycle {
 			// four degrees later: between the sun's last light and the night's ambient the meadow
 			// fell to about half its night brightness. It does not follow the phase.
 			moonKeyGain: moonKeyShare( elevation ) * moonVisibility,
-			starFrame: equatorialFrame( MIDNIGHT_SIDEREAL + hourAngle + Math.PI + TAU * ( this.completedDays + this.currentHour / 24 ) / SIDEREAL_DAYS_PER_YEAR ),
+			starFrame: starFrame.clone(),
 			daylight,
 			nightVisibility: 1 - smoothstep( - 15, - 3, elevation ),
 			// (the night sky stays dark through its own scaled light: see NIGHT_SKY_EXPOSURE)
