@@ -270,7 +270,7 @@ function sceneOptions( options: URLSearchParams ) {
 			heading: options.has( 'windDir' ) && Number.isFinite( Number( options.get( 'windDir' ) ) ) ? Number( options.get( 'windDir' ) ) : undefined,
 		},
 		autoWeather: ! options.has( 'weather' ) && ! options.has( 'wind' ) && ! options.has( 'windDir' ),
-		day: { hour: numberParam( 'hour', params.has( 'game' ) ? 8 : 16, options ),
+		day: { hour: numberParam( 'hour', params.has( 'game' ) ? 8 : DAY_PRESETS[ 'golden-hour' ], options ),
 			dayLength: Math.max( 30, numberParam( 'dayLength', params.has( 'game' ) ? 1440 : 2880, options ) ),
 			paused: options.has( 'paused' ) || options.get( 'clock' ) === 'paused', moonPhase: numberParam( 'moon', 0.5, options ) },
 		preset: preset && Object.hasOwn( DAY_PRESETS, preset ) ? preset as DayPreset : null,

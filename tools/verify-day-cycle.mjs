@@ -5,8 +5,10 @@ import { DayCycle, DAY_PRESETS, DAY_EXPOSURE, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAI
 
 const near = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
 const cycle = new DayCycle();
-near( cycle.hour, 16 );
-near( cycle.snapshot().azimuth, - 8 );
+// The clock starts at the golden hour, its sun 26.2 degrees up in the afternoon.
+near( cycle.hour, DAY_PRESETS[ 'golden-hour' ] );
+near( cycle.snapshot().elevation, 26.2, 1e-9 );
+assert.ok( cycle.hour > 12 );
 for ( const [ input, expected ] of [ [ 24, 0 ], [ 49, 1 ], [ - 1, 23 ], [ - 48, 0 ] ] ) {
 
 	cycle.setHour( input );
@@ -36,7 +38,7 @@ cycle.dayLength = 120;
 cycle.advance( 5 );
 near( cycle.hour, 2 );
 
-for ( const [ hour, elevation ] of [ [ 0, - 62 ], [ 6, 0 ], [ 12, 62 ], [ 18, 0 ] ] ) {
+for ( const [ hour, elevation ] of [ [ 0, - NOON_ELEVATION ], [ 6, 0 ], [ 12, NOON_ELEVATION ], [ 18, 0 ] ] ) {
 
 	cycle.setHour( hour );
 	near( cycle.snapshot().elevation, elevation );
@@ -52,6 +54,15 @@ for ( let hour = 0; hour < 24; hour ++ ) {
 	near( cycle.snapshot().elevation, elevation, 1e-9 );
 
 }
+// Each preset is the hour its sun stands at its elevation, on its side of noon.
+for ( const [ preset, elevation, morning ] of [ [ 'dawn', - 8.6, true ], [ 'sunrise', 2, true ], [ 'golden-hour', 26.2, false ], [ 'sunset', 2, false ], [ 'dusk', - 8.6, false ] ] ) {
+
+	near( sunElevationAt( DAY_PRESETS[ preset ] ), elevation, 1e-9 );
+	assert.equal( DAY_PRESETS[ preset ] < 12, morning, `${ preset } is on the wrong side of noon` );
+
+}
+assert.equal( DAY_PRESETS.noon, 12 );
+assert.equal( DAY_PRESETS.midnight, 0 );
 near( morningHour( NOON_ELEVATION ), 12, 1e-9 );
 near( eveningHour( NOON_ELEVATION ), 12, 1e-9 );
 near( morningHour( - NOON_ELEVATION ), 0, 1e-9 );
@@ -181,8 +192,7 @@ for ( const phase of [ 0, 0.125, 0.25, 0.499999, 0.5, 0.500001, 0.75, 0.875, 0.9
 	cycle.moonPhase = phase;
 	for ( const elevation of [ - 7, - 3.01, - 3, - 2.5, - 1.6, - 0.7, - 0.25, 0, 0.5 ] ) {
 
-		const sunsetHour = 12 + Math.acos( Math.sin( elevation * Math.PI / 180 ) / Math.sin( 62 * Math.PI / 180 ) ) * 12 / Math.PI;
-		for ( const hour of [ sunsetHour, 24 - sunsetHour ] ) {
+		for ( const hour of [ eveningHour( elevation ), morningHour( elevation ) ] ) {
 
 			cycle.setHour( hour );
 			const state = cycle.snapshot();

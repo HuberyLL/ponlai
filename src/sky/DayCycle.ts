@@ -67,16 +67,6 @@ import { markSkyRetune } from './SkyRetune.ts';
 // it (the key, the night sky's moonlit wash, the clouds' moonlight), so advancing it never darkens a
 // night.
 
-export const DAY_PRESETS = {
-	'dawn': 5.35,
-	'sunrise': 6.15,
-	'noon': 12,
-	'golden-hour': 16,
-	'sunset': 17.85,
-	'dusk': 18.65,
-	'midnight': 0,
-} as const;
-
 export type DayPreset = keyof typeof DAY_PRESETS;
 
 export interface DayCycleOptions {
@@ -171,6 +161,19 @@ export function eveningHour( elevation: number ): number {
 	return 12 + hoursFromNoon( elevation );
 
 }
+/** The day's presets (hours): each the hour its sun stands at its elevation, the morning's or the
+ * evening's, so a preset keeps its light whatever the path's tilt (dawn and dusk 8.6 degrees under
+ * the horizon, sunrise and sunset 2 up, the golden hour 26.2 up in the afternoon); noon and
+ * midnight are 12 and 0. The clock starts at the golden hour. */
+export const DAY_PRESETS = {
+	'dawn': morningHour( - 8.6 ),
+	'sunrise': morningHour( 2 ),
+	'noon': 12,
+	'golden-hour': eveningHour( 26.2 ),
+	'sunset': eveningHour( 2 ),
+	'dusk': eveningHour( - 8.6 ),
+	'midnight': 0,
+} as const;
 /** Whether the sun at `dir` (unit, on its path) is rising: east of the meridian, before noon (the
  * haze's keys tell the morning from the evening by it: weather/HazeKeys.ts). */
 export const sunRising = ( dir: Readonly<Vector3> ): boolean => dir.dot( WEST ) < 0;
@@ -498,7 +501,7 @@ export class DayCycle {
 
 	paused: boolean;
 	advanceMoonPhase: boolean;
-	private currentHour = 16;
+	private currentHour: number = DAY_PRESETS[ 'golden-hour' ];
 	private secondsPerDay = 2880;
 	private phase = 0.5;
 	private lunarDays = 29.53;
@@ -515,7 +518,7 @@ export class DayCycle {
 	/** The clock as the constructor sets it from `options` (a scene jump: no days completed). */
 	reset( options: DayCycleOptions = {} ): void {
 
-		this.hour = options.hour ?? 16;
+		this.hour = options.hour ?? DAY_PRESETS[ 'golden-hour' ];
 		this.dayLength = options.dayLength ?? 2880;
 		this.moonPhase = options.moonPhase ?? 0.5;
 		this.lunarPeriodDays = options.lunarPeriodDays ?? 29.53;

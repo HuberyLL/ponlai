@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
+import { DAY_PRESETS } from '../src/sky/DayCycle.ts';
 
 const base = process.argv.slice( 2 ).find( ( arg ) => ! arg.startsWith( '--' ) ) || 'http://127.0.0.1:5190';
 const coupling = process.argv.includes( '--coupling' );
@@ -37,7 +38,7 @@ try {
 	page.on( 'response', ( response ) => { if ( response.status() >= 400 ) report.failures.push( `${ response.status() } ${ response.url() }` ); } );
 	page.on( 'requestfailed', ( request ) => report.failures.push( `${ request.failure()?.errorText } ${ request.url() }` ) );
 	const url = new URL( base );
-	for ( const [ key, value ] of Object.entries( { debug: '', paused: '', hour: '16', t: '12', dpr: '1', weather: 'clear', dist: '58', polar: '50', az: '318' } ) ) url.searchParams.set( key, value );
+	for ( const [ key, value ] of Object.entries( { debug: '', paused: '', preset: 'golden-hour', t: '12', dpr: '1', weather: 'clear', dist: '58', polar: '50', az: '318' } ) ) url.searchParams.set( key, value );
 	await page.goto( url.href );
 	await page.waitForFunction( () => window.__PONLAI__?.weather && typeof window.__PONLAI__.setWeather === 'function' &&
 		window.__PONLAI__.pipeline.air && window.__THREE_GAME_DIAGNOSTICS__?.frame > 60 &&
@@ -48,7 +49,7 @@ try {
 		s.dayCycle.moonPhase = 0.5;
 		s.dayCycle.advanceMoonPhase = false;
 		s.controls.enableDamping = false;
-		await s.setHour( 16 );
+		await s.setPreset( 'golden-hour' );
 	} );
 	const frames = () => page.evaluate( () => new Promise( ( resolve ) => requestAnimationFrame( () => requestAnimationFrame( resolve ) ) ) );
 	const camera = async ( view ) => {
@@ -195,7 +196,7 @@ try {
 		const state = { name, ...await snapshot(), screenshots: await screenshots( name ) };
 		report.presets.push( state );
 		validate( state, name );
-		near( state.hour, 16, 1e-8, `${ name }: fixed hour` );
+		near( state.hour, DAY_PRESETS[ 'golden-hour' ], 1e-8, `${ name }: fixed hour` );
 		near( state.progress, 1, 1e-8, `${ name }: instant preset completed` );
 	}
 	const clear = report.presets[ 0 ], overcast = report.presets[ 3 ], rain = report.presets[ 4 ];
@@ -208,7 +209,7 @@ try {
 	// Isolate aerial perspective from the already baked rainy sky and lighting. The sky reads
 	// the weather state every frame; a paused clock leaves that state alone between frames.
 	const savedHaze = await page.evaluate( () => window.__PONLAI__.weather.state.haze );
-	report.fog = { hour: 16, weather: 'rain', restoredHaze: savedHaze, units: 'absolute display RGB/luma differences, 0..255' };
+	report.fog = { hour: DAY_PRESETS[ 'golden-hour' ], weather: 'rain', restoredHaze: savedHaze, units: 'absolute display RGB/luma differences, 0..255' };
 	try {
 		await page.evaluate( () => { window.__PONLAI__.weather.state.haze = 0; } );
 		await frames();
@@ -266,7 +267,7 @@ try {
 	// evolving while the requested afternoon lighting time stays fixed.
 	await camera( 'overview' );
 	await page.keyboard.press( 'Space' );
-	await page.evaluate( async () => { const s = window.__PONLAI__; s.dayCycle.paused = true; await s.setHour( 16 ); await s.setWeather( 'clear', 0 ); } );
+	await page.evaluate( async () => { const s = window.__PONLAI__; s.dayCycle.paused = true; await s.setPreset( 'golden-hour' ); await s.setWeather( 'clear', 0 ); } );
 	report.transition = await page.evaluate( async () => {
 		const s = window.__PONLAI__;
 		const take = () => ( { elapsed: performance.now(), hour: s.dayCycle.hour, weather: s.weather.snapshot(),
@@ -293,7 +294,7 @@ try {
 	for ( const samples of [ transition.towardRain, transition.towardClear ] ) {
 		for ( let i = 0; i < samples.length; i ++ ) {
 			const current = samples[ i ];
-			near( current.hour, 16, 1e-8, 'Weather transition must respect paused celestial clock' );
+			near( current.hour, DAY_PRESETS[ 'golden-hour' ], 1e-8, 'Weather transition must respect paused celestial clock' );
 			assert.ok( Object.values( current.weather ).every( Number.isFinite ) && current.keyColor.every( ( value ) => Number.isFinite( value ) && value >= 0 ), 'Live state must stay finite' );
 			if ( i === 0 ) continue;
 			const previous = samples[ i - 1 ], dt = ( current.elapsed - previous.elapsed ) / 1000;

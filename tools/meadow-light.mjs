@@ -130,6 +130,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { NOON_ELEVATION, morningHour, eveningHour } from '../src/sky/DayCycle.ts';
 
 const usage = 'usage: node tools/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]... [--target x,z] [--views-file f [--views a,b]] [--side afternoon|morning] [--weather clear] [--flags a,b] [--q extra] [--w --h --scale] [--timeout ms] [--out dir] [--pages a,b|none] [--save dir] [--reuse dir] (see the file header)';
 const argv = process.argv.slice( 2 );
@@ -177,13 +178,12 @@ const frames = viewSpecs.map( ( spec ) => {
 	return { name, tilt, dist, fov };
 
 } );
-if ( ! elevations.length || ! elevations.every( ( e ) => e > 0 && e < 62 ) ) { console.error( '--elev: degrees above 0 and below 62 (the noon sun)' ); process.exit( 2 ); }
+if ( ! elevations.length || ! elevations.every( ( e ) => e > 0 && e < NOON_ELEVATION ) ) { console.error( `--elev: degrees above 0 and below ${ NOON_ELEVATION } (the noon sun)` ); process.exit( 2 ); }
 if ( target.length !== 2 || ! target.every( Number.isFinite ) ) { console.error( '--target x,z' ); process.exit( 2 ); }
 if ( options.side !== 'afternoon' && options.side !== 'morning' ) { console.error( '--side afternoon or morning' ); process.exit( 2 ); }
 
-// The afternoon's (or the morning's) hour whose sun stands `elevation` degrees up: the sun's path is
-// tilted 62 degrees, its height sin 62 cos( hour angle ) (src/sky/DayCycle.ts)
-const hourFor = ( elevation ) => 12 + ( options.side === 'morning' ? - 1 : 1 ) * Math.acos( Math.sin( elevation * Math.PI / 180 ) / Math.sin( 62 * Math.PI / 180 ) ) * 12 / Math.PI;
+// The afternoon's (or the morning's) hour whose sun stands `elevation` degrees up (src/sky/DayCycle.ts)
+const hourFor = ( elevation ) => options.side === 'morning' ? morningHour( elevation ) : eveningHour( elevation );
 
 const repo = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const stamp = new Date().toISOString().replace( /[:.]/g, '-' ).slice( 0, 19 );

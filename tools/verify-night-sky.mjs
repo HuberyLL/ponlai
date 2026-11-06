@@ -5,9 +5,13 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
+import { eveningHour } from '../src/sky/DayCycle.ts';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/night-sky';
+// the evening's fade of the stars, by the sun's elevation: noon, 2 degrees up, then 3.3, 8.6, 13.9 and
+// 26.2 under the horizon, and midnight
+const fadeHours = [ 12, ...[ 2, - 3.3, - 8.6, - 13.9, - 26.2 ].map( eveningHour ), 0 ];
 const phases = [
 	// (the moon is fixed in the sky, at every hour and phase: DayCycle.ts)
 	{ name: 'new', phase: 0, hour: 0 },
@@ -96,7 +100,7 @@ try {
 
 	// Render the real dome material to float targets. Difference against the same render with
 	// the moon/star uniform disabled isolates those contributions from the changing atmosphere.
-	report.gpu = await page.evaluate( async ( phases ) => {
+	report.gpu = await page.evaluate( async ( { phases, fadeHours } ) => {
 		const s = window.__PONLAI__, r = s.renderer, sky = s.sky;
 		const animation = r.getAnimationLoop(), previousTarget = r.getRenderTarget();
 		const scene = new s.scene.constructor();
@@ -170,7 +174,7 @@ try {
 			}
 
 			s.dayCycle.moonPhase = 0.5;
-			for ( const hour of [ 12, 17.85, 18.25, 18.65, 19.05, 20, 0 ] ) {
+			for ( const hour of fadeHours ) {
 				await s.setHour( hour );
 				result.fade.push( { hour, elevation: s.dayCycle.snapshot().elevation, visibility: sky.night.starVisibility.value } );
 			}
@@ -203,7 +207,7 @@ try {
 			// The clone shares the live geometry; its lifetime belongs to Sky.
 			try { await s.setHour( 0 ); } finally { await r.setAnimationLoop( animation ); }
 		}
-	}, phases );
+	}, { phases, fadeHours } );
 
 	const moon = Object.fromEntries( report.gpu.moons.map( ( entry ) => [ entry.name, entry ] ) );
 	for ( const entry of report.gpu.moons ) {

@@ -7,10 +7,11 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
+import { DAY_PRESETS } from '../src/sky/DayCycle.ts';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/weather-effects';
-const report = { base, time: 12, hour: 16, weather: 'rain', captures: {}, comparisons: {}, quality: {}, checks: [], errors: [], warnings: [], failures: [] };
+const report = { base, time: 12, hour: DAY_PRESETS[ 'golden-hour' ], weather: 'rain', captures: {}, comparisons: {}, quality: {}, checks: [], errors: [], warnings: [], failures: [] };
 const regions = {
 	overview: {
 		meadow: [ 0.28708, 0.25505, 0.66388, 0.59511 ], cliff: [ 0.19139, 0.63762, 0.65789, 0.83953 ],
@@ -52,7 +53,7 @@ try {
 	const load = async ( quality ) => {
 		const url = new URL( base );
 		url.search = '';
-		for ( const [ key, value ] of Object.entries( { debug: '', paused: '', hour: '16', t: '12', dpr: '1', weather: 'rain', quality, dist: '58', polar: '50', az: '318' } ) ) url.searchParams.set( key, value );
+		for ( const [ key, value ] of Object.entries( { debug: '', paused: '', preset: 'golden-hour', t: '12', dpr: '1', weather: 'rain', quality, dist: '58', polar: '50', az: '318' } ) ) url.searchParams.set( key, value );
 		await page.goto( url.href );
 		await page.waitForFunction( () => {
 			const s = window.__PONLAI__, loading = document.getElementById( 'loading' );
