@@ -56,8 +56,8 @@ import { overcastDeckLight } from '../sky/Weather.ts';
 // face as far as bounced light reaches it from any side: it lights what faces lit ground or a lit
 // crown (a blade's underside, a culm's sides, the leaves, the islanders). Read at degree 2, the
 // island's receivers' read, under the clear sky the bounces (the sky's and the key's) make 16 % of
-// open level ground's light in shade at 62 degrees, 13 % at 50, 9 % at 30, 6 % at 20, 4.5 % at 13
-// and 10 and 3 % at 4. With the day's bounce at 4.5, at 20 degrees bare ground in a grove's shadow
+// open level ground's light in shade at 62 degrees (the noon of the sun's earlier, higher path),
+// 13 % at 50, 9 % at 30, 6 % at 20, 4.5 % at 13 and 10 and 3 % at 4. With the day's bounce at 4.5, at 20 degrees bare ground in a grove's shadow
 // at its edge took 13 to 22 % of its shade from the key's bounce and a grove's floor 2 to 4 m in 33
 // to 37 % (reading 0.61 to 0.63 of the edge's shade); a culm at the edge read on its side toward
 // the open 0.85 to 1.2 times the open shade beside it (the volume does not know the sun's shadow:

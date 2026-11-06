@@ -360,7 +360,8 @@ export class NightSky {
 	// Full illuminated disk radiance in scene units. Phase comes only from the directions.
 	readonly moonColor = uniform( new THREE.Color( 0.035, 0.04, 0.0475 ) );
 	readonly starVisibility = uniform( 0 );
-	// World to celestial frame: the stars turn about the pole of the sun's own path.
+	// World to celestial frame: fixed, the pole STARS.latitude up on the side away from noon
+	// (sky/DayCycle.ts STARS).
 	readonly frame = uniform( new THREE.Matrix3() );
 	readonly time = uniform( 0 );
 	// A bright moon's scattered light washes out the Milky Way and the faintest stars.

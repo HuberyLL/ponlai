@@ -76,8 +76,8 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../wor
 //               BOUNCE_GAIN, our normalisation of the pair: on the island's most open level ground
 //               (0.3 m over it, where the bake sees 0.7 to 0.85 of the sky), read at degree 2 as the
 //               island's receivers read it (AmbientSample.ts), the key's bounce on a face turned up
-//               is 0.79 % of level ground's direct light per unit of `sunBounce` at 62 degrees, 0.74 %
-//               at 50, 0.67 % at 30, 0.63 % at 18 to 20, 0.60 to 0.61 % at 13 and 10 (the lift's
+//               is 0.79 % of level ground's direct light per unit of `sunBounce` at 62 degrees (the
+//               noon of the sun's earlier, higher path; it now culminates at 52), 0.74 % at 50, 0.67 % at 30, 0.63 % at 18 to 20, 0.60 to 0.61 % at 13 and 10 (the lift's
 //               floor) and 0.57 % at 4. At the day's `sunBounce` of 1 it makes 14 % of the ground's
 //               light in shade at 62 degrees, 12 % at 50, 8 % at 30, 5 % at 20, 3 % at 13 and 10 and
 //               1.6 % at 4; with `sunBounce` at 4.5, by the lit meadow, 0.3 m over the ground, the
@@ -154,7 +154,8 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../wor
 //     on the side turned from it: where the bounced part comes nearly all from below (open level
 //     ground by the lit meadow), a receiver reading degree 1 takes less with the bounces than
 //     without them (with `sunBounce` at 4.5 under the clear sky they darken that shade by about 31 %
-//     at 62 degrees, 26 % at 50, 10 % at 30, 5 % at 20, 3 % at 13 and 10 and 1 % at 4); at degree 2,
+//     at 62 degrees, the earlier noon, 26 % at 50, 10 % at 30, 5 % at 20, 3 % at 13 and 10 and 1 %
+//     at 4); at degree 2,
 //     the island's receivers' read, the quadratic band gives it back (the shares in the bounce's
 //     calibration above);
 //   - the probes take the key's bounce from the grade's `sunBounce` beside GroundBounce.ts's own
@@ -222,7 +223,8 @@ const BOUNCE_GAIN = 9.4;
  * at 1 by day (AmbientGrade.ts): 0.92 at the low key and at the high one, so the land's sky light
  * per unit of the probe's sky visibility is 0.90 of the seen sky's at 18 degrees, 0.86 at 26 and
  * 0.85 at 30 (the land takes no low sun's lift, `lowSunSkyLift`), the key stands about 23 times
- * that irradiance on open level ground from 18 to 30 degrees (21 at 50 to 62, 20 at 10), the key's
+ * that irradiance on open level ground from 18 to 30 degrees (21 at 50 to 62, the noon of the sun's
+ * earlier, higher path; 20 at 10), the key's
  * direct light makes about 0.82 of the lit ground's light on the island view at 18 degrees (the
  * meadow 0.83) and 0.89 at 30, and the lit ground reads about 2.5 stops over its shade at 18
  * degrees (the meadow 2.6) and 2.8 at 30 (3.2). At the golden hour (`golden`, 1) the
@@ -283,8 +285,9 @@ const _probeSky = { skyGain: 1 }, _probeDeck = { skyGain: 1 };
  *
  * Why: under the clear evening sky, the key's illuminance at normal incidence over the sky's light
  * on level ground (the probes' gain in it, then 1.04 at 12 degrees and 1.18 from 40 up) is 28 at 62
- * degrees, 30 at 50, 32 at 31, 35 at 17 and 31 at 12: the sky falls faster than the key by about
- * 0.2 stop at 31, 0.3 at 17 and 0.13 at 12, against noon, and the ratio is under noon's again below
+ * degrees (the noon of the sun's earlier, higher path, where these were measured), 30 at 50, 32 at
+ * 31, 35 at 17 and 31 at 12: the sky falls faster than the key by about 0.2 stop at 31, 0.3 at 17
+ * and 0.13 at 12, against that noon, and the ratio is under noon's again below
  * about 9 degrees. The excess is the sky
  * overhead: at 17 degrees the sky above 60 has fallen 1.4 to 2.6 stops more than the key since noon,
  * the sky from 30 to 60 about 0.3 to 0.7, while the low sky across and away from the sun keeps pace

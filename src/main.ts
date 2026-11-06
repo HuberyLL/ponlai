@@ -1061,8 +1061,8 @@ const viewDirection = new THREE.Vector3();
 // culminates on and the moon stands on) is fixed, never following the clock, so the R key always
 // returns to the same view. It was 318, looking away from the meridian: the morning sun lit the
 // island flat from behind the camera and the moon path never entered the frame. From 180 the moon's
-// path is in view all night (the moon is fixed on the meridian: sky/DayCycle.ts MOON), while the sun lights the cliffs from the side at 9:00
-// and 16:00 (a lit and a shaded side) and its glints at noon keep to a corner of the frame.
+// path is in view all night (the moon is fixed on the meridian: sky/DayCycle.ts MOON), while the sun lights the cliffs from the side in the
+// morning and the afternoon (a lit and a shaded side) and its glints at noon keep to a corner of the frame.
 function placeOrbit( on: THREE.PerspectiveCamera, orbit: IslandCameraControls, options: URLSearchParams, turn = 0, zoom = 0 ): void {
 
 	const polar = THREE.MathUtils.degToRad( Number( options.get( 'polar' ) ?? 40 ) ), azimuth = THREE.MathUtils.degToRad( Number( options.get( 'az' ) ?? 180 ) ) + turn;
