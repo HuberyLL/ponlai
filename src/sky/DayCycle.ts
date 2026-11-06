@@ -51,10 +51,10 @@ import { markSkyRetune } from './SkyRetune.ts';
 // side's flip at noon or midnight moves nothing: every weight here is 0 by day and 1 by night on
 // both sides.
 //
-// The moon is fixed in the sky (MOON, `moonDirection`): 20 degrees up on the noon meridian, where
-// it stands all night, every night. The default island view's sea carries its path, and its light
-// comes in at a slant, so slopes have a lit and a shaded side and the moon's shadows run long; it
-// neither rises nor sets, so the night's composition holds while the game is played. It is the
+// The moon is fixed in the sky (MOON, `moonDirection`): 20 degrees up on the noon meridian unless
+// set, where it stands all night, every night. The default island view's sea carries its path, and
+// its light comes in at a slant, so slopes have a lit and a shaded side and the moon's shadows run
+// long; it neither rises nor sets, so the night's composition holds while the game is played. It is the
 // night's one cool key: lighting/KeyLift.ts shades from its direction for as long as it is the
 // key, so the night keeps one shading and one level; the moon is drawn there, the sky's and the
 // haze's moonlight come from there, and the key's direction turns there over the handoff, along
@@ -326,15 +326,15 @@ const STAR_LATITUDE = 28;
 const STAR_ELEVATION = ( 90 - STAR_LATITUDE ) / DEG;
 const STAR_MERIDIAN = new Vector3( Math.cos( STAR_ELEVATION ) * COS_NOON_AZIMUTH, Math.sin( STAR_ELEVATION ), Math.cos( STAR_ELEVATION ) * SIN_NOON_AZIMUTH );
 const NORTH_POLE = WEST.clone().cross( STAR_MERIDIAN ).normalize();
-/** Where the moon stands (the header): `elevation` degrees up on the noon meridian. At least 15:
- * from there down the low key's floor (lighting/KeyLift.ts) would hold the shading up to the end of
- * the handoff, a small turn at no light. Tunable on debug pages (debug/Tune.ts):
- * `sky.moon.elevation`. */
-export const MOON = tuneObject( { elevation: 20 }, { elevation: 'sky.moon.elevation' }, { elevation: { min: 15, max: 40, onChange: markSkyRetune } } );
-// The meridian point of an orbit through the east and west points tilted 42 degrees from the sun's
-// toward the horizon (MOON_CULMINATION), whose azimuth `moonDirection` takes: the arithmetic the
-// night's fixed shading direction was built by before the moon was fixed, kept for its bits.
-const MOON_TILT = 42 / DEG;
+/** Where the moon stands (the header): `elevation` degrees up, at the noon meridian's azimuth
+ * turned `turn` degrees (0 the noon side, 180 the pole's side, positive toward the west). At least
+ * 15 degrees up: from there down the low key's floor (lighting/KeyLift.ts) would hold the shading
+ * up to the end of the handoff, a small turn at no light. Tunable on debug pages (debug/Tune.ts):
+ * `sky.moon.elevation`, `sky.moon.turn`. */
+export const MOON = tuneObject( { elevation: 20, turn: 0 }, { elevation: 'sky.moon.elevation', turn: 'sky.moon.turn' }, {
+	elevation: { min: 15, max: 40, onChange: markSkyRetune },
+	turn: { min: - 180, max: 180, onChange: markSkyRetune },
+} );
 // Local sidereal time at midnight (radians): 14h puts Scorpius high in the east with the Milky
 // Way's core below it, Crux and Alpha Centauri high in the south, and the band through Aquila,
 // split by the Great Rift, rising out of the sea in the horizon view. The sky gains a turn a year
@@ -468,23 +468,12 @@ function direction( angle: number ): Vector3 {
 
 }
 
-// The meridian point of an orbit through the east and west points, tilted `tilt` (radians) from
-// the sun's toward the horizon: the noon sun turned about WEST.
-function orbitMeridian( tilt: number ): Vector3 {
-
-	const elevation = INCLINATION - tilt;
-	return new Vector3( Math.cos( elevation ) * COS_NOON_AZIMUTH, Math.sin( elevation ), Math.cos( elevation ) * SIN_NOON_AZIMUTH );
-
-}
-
-const MOON_CULMINATION = orbitMeridian( MOON_TILT );
-/** The moon's fixed direction (unit, world: MOON's elevation on the noon meridian), into `target`.
- * The low key's lift (lighting/KeyLift.ts) reads it at every publish of the lighting. */
+/** The moon's fixed direction (unit, world: MOON's elevation and azimuth), into `target`. The low
+ * key's lift (lighting/KeyLift.ts) reads it at every publish of the lighting. */
 export function moonDirection( target: Vector3 ): Vector3 {
 
-	const across = Math.hypot( MOON_CULMINATION.x, MOON_CULMINATION.z ), e = MathUtils.degToRad( MOON.elevation );
-	const k = Math.cos( e ) / across;
-	return target.set( MOON_CULMINATION.x * k, Math.sin( e ), MOON_CULMINATION.z * k );
+	const azimuth = NOON_AZIMUTH - MOON.turn / DEG, e = MathUtils.degToRad( MOON.elevation );
+	return target.set( Math.cos( e ) * Math.cos( azimuth ), Math.sin( e ), Math.cos( e ) * Math.sin( azimuth ) );
 
 }
 const _noTurn = new Quaternion(), _turn = new Quaternion(), _keyTurn = new Quaternion();

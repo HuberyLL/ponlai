@@ -1,7 +1,7 @@
 // Pure CPU checks; Node 22.18+ strips the imported TypeScript without a build or browser.
 // Run: node tools/verify-day-cycle.mjs
 import assert from 'node:assert/strict';
-import { DayCycle, DAY_PRESETS, DAY_EXPOSURE, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE, NOON_ELEVATION, exposureAt, nightAmbientAt, sunElevationAt, morningHour, eveningHour } from '../src/sky/DayCycle.ts';
+import { DayCycle, DAY_PRESETS, DAY_EXPOSURE, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE, NOON_ELEVATION, MOON, exposureAt, moonDirection, nightAmbientAt, sunElevationAt, morningHour, eveningHour } from '../src/sky/DayCycle.ts';
 
 const near = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
 const cycle = new DayCycle();
@@ -117,14 +117,40 @@ for ( const hour of [ 0, 6, 12, 18, 24 ] ) {
 	near( before.overcastAdaptation, after.overcastAdaptation, 1e-4 );
 
 }
-// The moon stands fixed in the sky at every hour and phase. Its direction keeps the bits of the
-// night's shading direction before the moon was fixed (lighting/KeyLift.ts MOON_SHADE then, printed
-// with String()), so the night's paused frames kept theirs.
+// The moon stands fixed in the sky at every hour and phase. By default its direction is, to its
+// last bits, the night's shading direction before the moon was fixed (lighting/KeyLift.ts
+// MOON_SHADE then, printed with String()).
 const FIXED_MOON = [ 0.3696658004048259, 0.3420201433256687, 0.8639267431736032 ];
 cycle.setHour( 0 );
 cycle.moonPhase = 0.5;
 const moon = cycle.snapshot().moonDir.clone();
-moon.toArray().forEach( ( v, i ) => assert.ok( Object.is( v, FIXED_MOON[ i ] ), `moon ${ i }: ${ v } != ${ FIXED_MOON[ i ] }` ) );
+moon.toArray().forEach( ( v, i ) => near( v, FIXED_MOON[ i ], 1e-12 ) );
+// MOON's turn moves it round from the noon meridian (positive toward the west) at its elevation;
+// the disk's light at the first quarter (the west made square to the moon) stays square to it.
+const noonSide = Math.atan2( moon.z, moon.x );
+const horizontal = ( v ) => v.clone().setY( 0 ).normalize();
+for ( const turn of [ 0, 90, 180 ] ) {
+
+	MOON.turn = turn;
+	const m = moonDirection( moon.clone() );
+	near( m.length(), 1, 1e-12 );
+	near( Math.asin( m.y ) * 180 / Math.PI, MOON.elevation, 1e-9 );
+	const off = Math.atan2( m.z, m.x ) - ( noonSide - turn * Math.PI / 180 );
+	near( Math.atan2( Math.sin( off ), Math.cos( off ) ), 0, 1e-12 );
+	cycle.setHour( 18 );
+	const west = horizontal( cycle.snapshot().sunDir );
+	if ( turn === 90 ) assert.ok( horizontal( m ).distanceTo( west ) < 1e-12 );
+	if ( turn === 180 ) assert.ok( horizontal( m ).distanceTo( horizontal( moon ).negate() ) < 1e-12 );
+	cycle.setHour( 0 );
+	cycle.moonPhase = 0.25;
+	const s = cycle.snapshot();
+	assert.ok( s.moonDir.distanceTo( m ) < 1e-15, `the snapshot's moon is not moonDirection's at a turn of ${ turn }` );
+	near( s.moonSunDir.length(), 1, 1e-12 );
+	near( s.moonSunDir.dot( s.moonDir ), 0, 1e-12 );
+	cycle.moonPhase = 0.5;
+
+}
+MOON.turn = 0;
 cycle.setHour( 18 );
 const west = cycle.snapshot().sunDir.clone();
 const moonWest = west.clone().addScaledVector( moon, - west.dot( moon ) ).normalize();
