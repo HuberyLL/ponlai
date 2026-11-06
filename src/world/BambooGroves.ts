@@ -132,7 +132,9 @@ export function groveAt( x: number, z: number ): number {
  * `shade`), the open meadow under the whole sky. The world's sky visibility takes it (the
  * island's ground and the meadow's tufts, Chunks.ts), and the culms by their height (Bamboo.ts),
  * where the materials do not read the ambient volume, whose probes see the canopy themselves
- * (lighting/AmbientSample.ts CANOPY_SHADE). */
+ * (lighting/AmbientSample.ts CANOPY_SHADE). Beside the volume only the meadow's blades keep the
+ * canopy, relative to their tips (Grass.ts `aoCanopy`, `grass.ao.canopy`, by GROVES `shade`
+ * from the soil map's density). */
 export function groveSky( x: number, z: number ): number {
 
 	return 1 - GROVES.shade * groveAt( x, z );
