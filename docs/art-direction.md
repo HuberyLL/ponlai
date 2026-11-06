@@ -503,7 +503,7 @@ art decision changes; images from elsewhere stay out of the repository.
   comes from there too, so the disk, its glow and the light on the land stand together.
 - The night meadow is a dark, quiet green with a hint of cool under the moon (not black); stone,
   sand and skin stay apart from it and from each other in tone.
-- The stars and Milky Way are the real sky as seen near 28 degrees south, points with a natural
+- The stars and Milky Way are the real sky as seen near 38 degrees south, points with a natural
   spread of brightness, below white except the brightest few; only those near the horizon
   scintillate.
 

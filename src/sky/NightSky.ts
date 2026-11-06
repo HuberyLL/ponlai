@@ -28,7 +28,7 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
 // The night sky: stars, Milky Way and moon. The stars and Milky Way are a real sky, the one seen
-// from 28 degrees south at a local sidereal time of 14h (DayCycle.ts STARS), fixed: they neither
+// from 38 degrees south at a local sidereal time of 14h (DayCycle.ts STARS), fixed: they neither
 // turn through the night nor drift over the year; procedural grain and faint stars only add detail
 // below the catalogue and the map. Stars are points with a natural spread of brightness, kept below
 // white except the brightest few; only those near the horizon scintillate. The night is

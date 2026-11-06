@@ -323,12 +323,13 @@ export function twilightMoonSky( elevation: number, rising: boolean, cloud: numb
 /** The stars' sky: a real sky, the one seen from `latitude` degrees south at the local sidereal
  * time `sidereal` (hours), fixed. It neither turns through the night nor drifts over the year, so
  * the night's composition holds while the game is played, and its constellations stand upright as
- * seen from that latitude. 28 degrees south at 14h puts Scorpius high in the east with the Milky
- * Way's core below it, Crux and Alpha Centauri high in the south, and the band through Aquila,
- * split by the Great Rift, rising out of the sea in the horizon view. The latitude is the stars'
- * own: their pole is not the sun's path's. Tunable on debug pages (debug/Tune.ts):
- * `sky.stars.latitude`, `sky.stars.sidereal`. */
-export const STARS = tuneObject( { latitude: 28, sidereal: 14 }, { latitude: 'sky.stars.latitude', sidereal: 'sky.stars.sidereal' }, {
+ * seen from that latitude. 38 degrees south at 14h raises the Milky Way out of the sea in the
+ * horizon view, split by the Great Rift, up to its core 43 degrees high in the east below Scorpius,
+ * with Crux and Alpha Centauri high in the south, and sets the moon (MOON) on a dark part of the
+ * sky, 81 degrees from the core, with no star brighter than the second magnitude within 8 degrees
+ * of it. The latitude is the stars' own: their pole is not the sun's path's. Tunable on debug pages
+ * (debug/Tune.ts): `sky.stars.latitude`, `sky.stars.sidereal`. */
+export const STARS = tuneObject( { latitude: 38, sidereal: 14 }, { latitude: 'sky.stars.latitude', sidereal: 'sky.stars.sidereal' }, {
 	latitude: { min: 0, max: 90, onChange: placeStars },
 	sidereal: { min: 0, max: 24, onChange: placeStars },
 } );
