@@ -3,10 +3,12 @@
 //   node tools/verify-weather-effects.mjs http://127.0.0.1:5190
 // Parked with the rain (src/sky/Weather.ts PARKED_WEATHER): out of the default checks until the
 // parked weathers are revived; it still runs against a debug build (the dev server or ?debug).
+// Its steps wait for the page's rendered frames (tools/page-eval.mjs, "Rendered frames").
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
+import { renderedFrames } from './page-eval.mjs';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/weather-effects';
@@ -48,7 +50,8 @@ try {
 	} );
 	page.on( 'response', ( response ) => { if ( response.status() >= 400 ) report.failures.push( `${ response.status() } ${ response.url() }` ); } );
 	page.on( 'requestfailed', ( request ) => report.failures.push( `${ request.failure()?.errorText } ${ request.url() }` ) );
-	const frames = () => page.evaluate( () => new Promise( ( resolve ) => requestAnimationFrame( () => requestAnimationFrame( resolve ) ) ) );
+	// two of the page's rendered frames (tools/page-eval.mjs, "Rendered frames")
+	const frames = () => renderedFrames( page, 2 );
 	const load = async ( quality ) => {
 		const url = new URL( base );
 		url.search = '';

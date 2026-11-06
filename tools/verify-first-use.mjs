@@ -342,7 +342,20 @@ async function apply( page, step, notes ) {
 			const done = await page.evaluate( async () => {
 
 				const s = window.__PONLAI__, p = s.pipeline, S = p.settings;
-				const wait = ( n ) => new Promise( ( resolve ) => { const end = s.renderer.info.frame + n; const tick = () => s.renderer.info.frame >= end ? resolve() : requestAnimationFrame( tick ); tick(); } );
+				// n of the page's rendered frames (tools/page-eval.mjs, "Rendered frames")
+				const wait = ( n ) => new Promise( ( resolve, reject ) => {
+
+					const end = s.renderer.info.frame + n, deadline = performance.now() + 60000;
+					const tick = () => {
+
+						if ( s.renderer.info.frame >= end ) resolve();
+						else if ( performance.now() > deadline ) reject( new Error( `no frame ${ end } within 60000 ms (at ${ s.renderer.info.frame }, loop.running ${ s.loop?.running })` ) );
+						else requestAnimationFrame( tick );
+
+					};
+					tick();
+
+				} );
 				const offset = S.exposureOffset;
 				S.exposureOffset = offset + 1; await wait( 3 ); S.exposureOffset = offset;
 				return true;

@@ -1,10 +1,12 @@
 // Integrated day/night checks and fixed-camera evidence. One WebGPU page stays open throughout.
 // Run after the dynamic-sky debug API is installed:
 //   node tools/verify-dynamic-sky.mjs http://127.0.0.1:5190
+// Its steps wait for the page's rendered frames (tools/page-eval.mjs, "Rendered frames").
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
+import { renderedFrames } from './page-eval.mjs';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/dynamic-sky';
@@ -52,7 +54,8 @@ try {
 
 	// Two successive presentations separate each pair. The animation clock remains frozen,
 	// making unexpected changes visible without conflating them with moving water or grass.
-	const twoFrames = () => page.evaluate( () => new Promise( ( resolve ) => requestAnimationFrame( () => requestAnimationFrame( resolve ) ) ) );
+	// two of the page's rendered frames (tools/page-eval.mjs, "Rendered frames")
+	const twoFrames = () => renderedFrames( page, 2 );
 	const camera = async ( horizon ) => {
 		await page.evaluate( ( horizon ) => {
 			const s = window.__PONLAI__;

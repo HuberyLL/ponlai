@@ -1,6 +1,7 @@
 // Regression for the sun/moon key light handoff. The key light, grade and sky follow the clock
 // every frame, so a sweep through the handoff band must carry zero direct energy while the
 // key turns from one body to the other, and every frame must match the clock's own state.
+// Each sample is read after a rendered frame of its clock (tools/page-eval.mjs, "Rendered frames").
 // Run against the dev server: node tools/verify-celestial-handoff.mjs http://127.0.0.1:5190
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
@@ -34,7 +35,20 @@ try {
 		s.dayCycle.paused = true;
 		s.dayCycle.moonPhase = 0.5;
 		await s.setWeather( 'clear', 0 );
-		const frame = () => new Promise( ( resolve ) => requestAnimationFrame( resolve ) );
+		// the page's next rendered frame (tools/page-eval.mjs, "Rendered frames")
+		const frame = () => new Promise( ( resolve, reject ) => {
+
+			const end = s.renderer.info.frame + 1, deadline = performance.now() + 60000;
+			const tick = () => {
+
+				if ( s.renderer.info.frame >= end ) resolve();
+				else if ( performance.now() > deadline ) reject( new Error( `no frame ${ end } within 60000 ms (at ${ s.renderer.info.frame }, loop.running ${ s.loop?.running })` ) );
+				else requestAnimationFrame( tick );
+
+			};
+			tick();
+
+		} );
 		const read = () => {
 
 			const clock = s.dayCycle.snapshot();
