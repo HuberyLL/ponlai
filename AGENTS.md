@@ -81,8 +81,9 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   a stipple between them in `PlantInstances.ts`, what a tree's leaves pass on of the key in `LeafLight.ts`) and the islanders' trail through the meadow (`Trample.ts`, drawn as sprites
   into the displacement field the blades read, `Displacement.ts`, a frame-graph pass).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
-  the key's gain under a deck, kept per point by the clouds' transmittance along the key
-  (`KeyGain.ts`: a new term that cuts the key by the clouds' shadow takes `keyGainShare`),
+  the key's visibility under cloud for the lit code without a sky (`KeyCloud.ts`: the land's floor
+  under a deck, which the islanders read; the sea takes the same floor from the sky, `Sky.ts`
+  `seaKeyFloor`),
   the refracted sun under water, the light every submerged material shares (`Underwater.ts`: a new
   underwater material lights with it, as the terrain does), the air/water interface, sky occlusion,
   the meadow's canopy light and its crowns' shade (`MeadowCanopy.ts`), the ambient light's probes

@@ -37,8 +37,6 @@ import { REFERENCE_SPEED } from '../weather/Wind.ts';
 import { motionNode, motionState, motionUniforms, outputStruct, reactiveUniforms } from '../post/Motion.ts';
 import { sceneUnits } from '../post/PreExposure.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
-import { keyDeckGain, keyGainShare, keyLobeRadiance } from '../lighting/KeyGain.ts';
-import { liftKeyWorld } from '../lighting/KeyLift.ts';
 
 // The sea surface: an FFT-displaced grid shaded as tidewater's WaterMaterial (4811ba4, its above-water
 // branch; the camera never goes under the sea):
@@ -49,16 +47,29 @@ import { liftKeyWorld } from '../lighting/KeyLift.ts';
 //     pixel cannot resolve and the near ripples, slicks smooth them, gusts and windrows add whitecaps;
 //     around the island the gusts are the meadow's, read in the vertex stage
 //   - the key reaching the surface: the sun or the moon through the clouds, which every term takes
-//     whole, and through the sun shadow's maps, read once, in the vertex stage, over a disc some
+//     whole (the glint only the direct beam, without the light the cloud scatters on through, which is
+//     diffuse and makes no mirror image of the key: Sky.ts `cloudDirectVisibility`), and through the
+//     sun shadow's maps, read once, in the vertex stage, over a disc some
 //     metres wide (`vKeyShadow`, SunShadow `discVisibility`), which each term takes by what it is
 //     (the constants at `SHADOW_SOFT_RADIUS`): the glint, the meter and a storm's foam whole
 //     (`sunLight`), the foam raised (`foamLight`), the water body in part (`bodyLight`), and the
 //     floor keeps its own sharp shadow; the moon's glint is grey (`keyChroma`), so its path on the
 //     sea stays pale rather than a sheet of the moon's saturated blue, which the water body keeps.
-//     Under a deck the key carries the deck's gain (lighting/KeyGain.ts): the glint takes the beam
-//     alone (`glintLight`), the key without the gain through the clouds, and what the gain adds is
-//     the deck's wide lobe, which the reflection mirrors with the sky (`keyLobeRadiance`), so a
-//     deck that lets little of the sun through shows a soft sheen toward it, not a glitter road
+//     The sea's key is the land's (Sky.ts `seaKeyVisibility`, lighting/KeyCloud.ts): the sky's
+//     (shared.sunColor) through the clouds' own transmittance over the land's floor, the cumulus'
+//     and under a closed deck the deck's floor with its gain, the air's. The sunlight the deck
+//     passes down reaches the sea's surface as it reaches the land, so the water body, its
+//     foam, the floor seen through it (the light under the water) and the sea the ambient light
+//     bounces are lit by one key, and the floor enters ahead of the surface, taking the key's share
+//     into the water, its refraction and its path down the column as the key does. The glint keeps
+//     the direct beam alone: under a deck that lets almost none of it through, the soft sheen
+//     toward the sun is the sky's reflection (the deck's glow about the sun's place is drawn in the
+//     sky), not a glitter road. The surface's metering illuminance keeps the clouds' own
+//     transmittance without the floor (`meterSun`): open level water under the floor meters as
+//     open level ground, brighter than the land a view holds, and the exposure, metered from the
+//     image, fell with the sea's share of the frame (the overcast island views 1.7 to 2.2 stops
+//     darker, below the eye-height views over land, the sea drawn darker than before the floor);
+//     a meter by the lighting state rather than the image would take the sea's key instead
 //   - exact dielectric Fresnel, its mean over the slopes no pixel resolves on the distant sea (a
 //     mirror's grazing reflectance is too much for a sheet of small facets turned every way): the
 //     facets the eye sees turn toward it, and other waves stop part of their reflected rays (Smith's
@@ -1020,14 +1031,19 @@ export class Water {
 			// ---- the key reaching the surface: through the clouds, on every path, and by the shadow's
 			// soft read from the vertex stage, whole here (the terms' shares: SHADOW_SOFT_RADIUS)
 			const cloudVisibility = sky.cloudVisibility( wp ).toVar();
-			const keyLight = shared.sunColor.mul( cloudVisibility ).mul( keyGainShare( cloudVisibility, keyDeckGain ) ).toVar();
+			// the sea's key: the clouds' own over the land's floor (Sky.ts `seaKeyVisibility`, from the same
+			// read); the clouds' own alone is what the deck's gaps let through of the sky (`inAmb`)
+			const keyLight = shared.sunColor.mul( mix( sky.seaKeyFloor, float( 1 ), cloudVisibility ) ).toVar();
 			const sunLight = keyLight.mul( vKeyShadow ).toVar();
-			// (the beam: the key without the deck's gain, exactly the key where the gain is 1)
-			const beamLight = shared.sunColor.div( keyDeckGain ).mul( cloudVisibility ).toVar();
+			// the glint's: the key's direct beam alone, the light the cloud scatters on through being
+			// diffuse (Sky.ts `cloudDirectVisibility`)
+			const glintKey = shared.sunColor.mul( sky.cloudDirectVisibility( wp ) ).mul( vKeyShadow ).toVar();
 			// the surface's metering illuminance (lighting/MeterLight.ts): the sky's upper hemisphere
 			// (its irradiance on level water over pi) and the key on level water, no reflection nor
-			// light from within the water
-			meter.assign( luminance( shared.skyIrradianceSource ).add( luminance( sunLight ).mul( max( L.y, 0 ) ).mul( 1 / Math.PI ) ) );
+			// light from within the water; its key the clouds' own without the floor, so a view
+			// full of sea keeps the exposure of the land beside it (the header's key)
+			const meterSun = shared.sunColor.mul( cloudVisibility ).mul( vKeyShadow );
+			meter.assign( luminance( shared.skyIrradianceSource ).add( luminance( meterSun ).mul( max( L.y, 0 ) ).mul( 1 / Math.PI ) ) );
 
 			// ---- what lies straight behind this pixel (linear depth: view-space z, < -9e4 = sky)
 			const z0 = behindViewZ.toVar();
@@ -1131,13 +1147,6 @@ export class Water {
 			const refl = mix( horizon.mul( BELOW_HORIZON ), skyReflection, skyShare )
 				.mul( mix( vec3( 1 ), hue, hueShare ) ).mul( mix( float( 1 ), level, levelShare ) )
 				.mul( shared.skyLift.sub( 1 ).mul( bandRamp ).add( 1 ) ).toVar();
-			// The deck's lobe (lighting/KeyGain.ts): what the deck's gain adds to the key over the beam is
-			// the sky's light in a wide lobe toward the key, mirrored as the sky is (none without a gain)
-			If( keyDeckGain.greaterThan( 1 ), () => {
-
-				refl.addAssign( keyLight.sub( beamLight ).mul( keyLobeRadiance( Rraw, liftKeyWorld( shared.sunDir ), cloudVisibility ) ).mul( skyShare ) );
-
-			} );
 			// The cliffs and the islanders from the screen: only rays near the horizon can meet them,
 			// and where the reflectance is small the reflection cannot be seen (tidewater's gate).
 			If( u.ssr.greaterThan( 0.5 ).and( Rraw.y.lessThan( 0.45 ) ).and( Fr.greaterThan( quality.ssrMinFresnel ) ), () => {
@@ -1190,8 +1199,7 @@ export class Water {
 			const spec = mix( D_Gaussian( NdH, alpha2 ), D_GGX( NdH, alpha2 ), keyChroma ).mul( V_SmithGGX( NdL, NdV, alpha2 ) )
 				.mul( fresnelDielectric( max( dot( V, H ), 0 ), float( IOR ) ) ).mul( NdL );
 			// (physically a glint is some 1e5 times the sky; held inside half float's range)
-			const glintBeam = beamLight.mul( vKeyShadow );
-			const glintLight = mix( vec3( luminance( glintBeam ) ), glintBeam, keyChroma ).toVar();
+			const glintLight = mix( vec3( luminance( glintKey ) ), glintKey, keyChroma ).toVar();
 			const glint = min( spec, 400 ).toVar();
 			const knee = mix( float( MOON_KNEE ), L.y.mul( L.y ).mul( GLINT_KNEE ), keyChroma );
 			const sunSpec = glintLight.mul( glint.div( glint.mul( knee ).add( 1 ) ) ).toVar();

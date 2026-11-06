@@ -104,38 +104,6 @@ const MARCH: MarchTerms = { steps: STEPS, reach: REACH, thick: THICK };
 // (`post.meadowShade.floor`), a uniform.
 const F0 = /*@__PURE__*/ tuneUniform( 'post.meadowShade.floor', 0.08, { min: 0, max: 0.5 } );
 
-/** The sward's shade release: how far the sward ignores its own occluders in the key, 0 (every
- * shade of its own, as without it) to 1 (none of them). 1 under overcast's closed deck (overcast's
- * share of the sky times `overcastDeckLight`, sky/Weather.ts) and 0 under a clear, fair or cloudy
- * sky for now; main.ts sets it every frame with the land's key, and a later setting by the sun's
- * height needs no new pipeline. Under the deck the key reaches the land only where a thinned region
- * lets part of it through (sky/Weather.ts, overcast), a few per cent of the meadow's light beside
- * the deck's: released, a patch of it passing over the meadow lifts the sward evenly rather than
- * lighting the gaps between its blades, and the sward's own shade in the key is the canopy's, the
- * share of the sky the receiver sees through the sward that its ambient takes (the blades'
- * occlusion along the blade, the turf's roots' sky: world/Grass.ts, materials/TerrainMaterial.ts),
- * so the key and the ambient keep one ratio through the sward. Its sharp shades on the sward let
- * go: on the blades and on the turf under them, the blades' march here, the ground's and the whole
- * scene's (they reach no higher than the sward's own height: REACH, GROUND.reach, under half a
- * metre over the receiver at a sun of 30 degrees) and the meadow's layer (Grass.ts
- * `meadowLayerLight`, which the sun's filter takes). Only the sward's: everything else keeps its
- * screen-space shade as its contact shade (the bamboo, the yunpeng, rock and stones, and on the
- * meadow's ground the bare soil and the groves' litter, TerrainMaterial.ts), and taller casters
- * (crowns, culms, rock, islanders, props) keep their soft shadows in the sun's map
- * (lighting/SunShadow.ts). A
- * uniform, so a change of weather builds nothing and moves smoothly through a transition; at 0
- * every shade is exactly as without it. */
-export const swardShadeRelease = uniform( 0 );
-
-/** A shade `shade` (1 lit) given over to `open` (1 by default: let go) by the sward's shade release
- * (`swardShadeRelease`), on a receiver `sward` of the sward (1 by default; 0 none, as on bare
- * ground). */
-export function releaseSwardShade( shade: F, open: F = float( 1 ), sward: F = float( 1 ) ): F {
-
-	return mix( shade, open, swardShadeRelease.mul( sward ) );
-
-}
-
 /** The base node the blades load the shade through, at their pixel: the frame graph's texture
  * (Pipeline.ts sets it); over the whole scene its second and third channels hold the resolved
  * view z and thickness the ground marches over. */

@@ -14,10 +14,10 @@ import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, nightAmbientShare, sunRising, type DayPreset } from './sky/DayCycle.ts';
-import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckRamp, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, overcastDeckLight, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
+import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckLight, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, type TunedField, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
-import { keyDeckGain } from './lighting/KeyGain.ts';
+import { keyDeckShare } from './lighting/KeyCloud.ts';
 import { Wind, weatherWind } from './weather/Wind.ts';
 import { Rain, setRainShading } from './weather/Rain.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
@@ -83,7 +83,7 @@ import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
 import { TEST_MODE } from './debug/TestMode.ts';
-import { tune, tuneApi } from './debug/Tune.ts';
+import { tune, tuneApi, type TuneOptions } from './debug/Tune.ts';
 import { markSkyRetune, skyRetune } from './sky/SkyRetune.ts';
 import { AA_MODE, AA_SOURCE, AFTER_RESOLVE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './post/Antialiasing.ts';
 import type { LatentRegistry } from './post/graph/FrameGraph.ts';
@@ -101,7 +101,7 @@ import { installVegetationPrepass, prepassScene } from './world/VegetationPrepas
 import { displacementField } from './world/vegetation/Displacement.ts';
 import { installOpaquePrepass, opaquePrepassScene } from './world/OpaquePrepass.ts';
 import { GTAO, gtaoUniforms } from './post/GTAO.ts';
-import { SS_SHADOW, swardShadeRelease } from './post/MeadowShade.ts';
+import { SS_SHADOW } from './post/MeadowShade.ts';
 import { Vegetation } from './world/vegetation/Registry.ts';
 import { installWindMotionFlag } from './world/WindMotion.ts';
 import { HANMING, HANMING_LOOKS, ISLANDER, ISLANDER_LOOKS } from './characters/looks.ts';
@@ -287,6 +287,26 @@ const dayCycle = new DayCycle( loaded.day );
 const weather = new Weather( loaded.weather, loaded.wind );
 const weatherEffects = { rain: true, wetness: true };
 weather.auto = loaded.autoWeather;
+// The land's floor under a deck and the day sky's level and exponent per clouded sky (Weather.ts
+// `deckFloor`, `daySky`, `daySkyExponent`), tunable on debug pages without a reload: the presets
+// the weather moves between take them, and the state that stands on that sky follows
+// (`setPresetValue`); the sky rebakes. A `?tune=` value is the start, applied here as a load would.
+const PRESET_TUNABLES: ReadonlyArray<readonly [ TunedField, TuneOptions ]> = [
+	[ 'deckFloor', { min: 0, max: 1 } ],
+	[ 'daySky', { min: 0.02, max: 2, scale: 'log' } ],
+	[ 'daySkyExponent', { min: 0, max: 3 } ],
+];
+for ( const name of [ 'cloudy', 'overcast' ] as const ) for ( const [ field, range ] of PRESET_TUNABLES ) {
+
+	const value = tune( `sky.${ field }@${ name }`, WEATHER_PRESETS[ name ][ field ], { ...range, onChange: ( next ) => {
+
+		weather.setPresetValue( name, field, next );
+		markSkyRetune();
+
+	} } );
+	weather.setPresetValue( name, field, value() );
+
+}
 const requestedPreset = params.get( 'preset' );
 if ( loaded.preset ) dayCycle.setPreset( loaded.preset );
 let manualSun = false;
@@ -389,13 +409,19 @@ let hazeReady = false;
 function prepareHaze( state: Readonly<WeatherState> ): void {
 
 	if ( ! hazeReady ) return;
-	hazeKeyAt( sky.elevation, sunRising( sky.sunDir ), weather.skyMix, sky.weather.windSpeed, sky.weather.rain, hazeKey );
+	const rising = sunRising( sky.sunDir );
+	hazeKeyAt( sky.elevation, rising, weather.skyMix, sky.weather.windSpeed, sky.weather.rain, hazeKey );
 	pipeline.air.haze.value = sky.weather.haze * hazeKey.amount;
 	pipeline.air.fog.value = Math.max( sky.weather.fog, hazeKey.mist );
 	pipeline.air.setLook( hazeKey );
-	// the air's sunlit haze takes the key the land does, through the clouds' shadow (its own read)
+	// the air's sunlit haze takes the key the land does, through the clouds' shadow (its own read),
+	// and its sky light the weather's sky as the sky takes it; the weather's day sky comes in with
+	// the sun's light the sky lends the air (Sky.ts `skyGain`)
 	pipeline.air.weatherLight.direct = state.directVisibility;
 	pipeline.air.weatherLight.ambient = state.ambientGain;
+	// the floor of the key under a closed deck (Sky.ts `deckKeyFloor`), which the seen panorama's
+	// bake reads as the frame's air does: set with the medium, so a bake takes its own scene's
+	pipeline.air.keyFloor.value = sky.deckKeyFloor;
 	pipeline.air.prepareMedium();
 
 }
@@ -409,56 +435,25 @@ function prepareSkyState(): void {
 	keyGlint.spread.value = state.glintSpread ?? 0;
 	sky.track( celestial, state, cloudOverride, weather.front, weather.skyMix );
 	prepareHaze( state );
-	lastWeatherSignature = `${ state.coverage },${ state.density },${ state.directVisibility },${ state.ambientGain },${ state.haze }`;
+	lastWeatherSignature = `${ state.coverage },${ state.density },${ state.directVisibility },${ state.ambientGain },${ state.daySky },${ state.daySkyExponent },${ state.haze }`;
 
 }
 
-/** The key's gain under overcast's deck, by overcast's share and its deck's light (sky/Weather.ts
- * `overcastDeckLight`: at every sun by day, gone by -6 degrees), on the land's key (shared.ts
- * `landKey`: the deck's lobe the lit materials and the figures take, the ground's bounce, the
- * ambient light's bounce lobe) and the sea's (shared.ts `sunColor`: the water's direct light, the
- * sea's bounce onto the land). Not on three's sun, the direct key on the land, the vegetation and
- * the rock: what the gain adds over it is the deck's diffuse light, a wide lobe toward the key in
- * the ambient (lighting/KeyGain.ts). Not on the clouds, the sky's bakes or the air
- * (`pipeline.air.keyColor`), which take the sky's own key. Under the deck the land takes its
- * light from the sky's integral (lighting/AmbientRelight.ts OVERCAST_LAND) and the key only where
- * the clouds' shadow lets it through (Beer's law along it through the deck), so the sky's key
- * alone, the sun's light under the deck's own optical depth, lifts the ground under a thin region
- * too little against the ambient light for the region to read as a lit patch. The gain stands for
- * the deck's forward light the key's direction carries into a thin region, which the sky's one key
- * does not. Every term it multiplies is cut by the clouds' shadow at the point (the sea's bounce
- * and the ambient bounce lobe by the probe's shade), which also takes the gain back where the
- * transmittance rises over 0.6 (lighting/KeyGain.ts). It sets a lit patch of meadow against the
- * meadow under the thick deck, scene linear, and a lit sea or land in view meters the frame down
- * with it. Tunable: `lighting.overcastKey`. */
-const OVERCAST_KEY_GAIN = tune( 'lighting.overcastKey', 4, { min: 1, max: 8 } );
-/** The key's gain under a cloudy deck, by cloudy's share and its deck's light (sky/Weather.ts
- * `deckRamp`, whole from 6 degrees), for the same forward light as overcast's. Both gains are
- * set per weather here and taken back per point by the clouds' transmittance along the key
- * (lighting/KeyGain.ts): whole under a transmittance of 0.6 or less, none in a gap. A cloudy deck's
- * key moves the land's lightness in the frame little: it sets the meadow under the deck's thin parts
- * against the meadow under its thick ones, scene linear. It is set together with the land's gain
- * under the deck (lighting/AmbientRelight.ts CLOUDY_LAND) and the cloudy exposure key
- * (post/Exposure.ts). Tunable: `lighting.cloudyKey`. */
-const CLOUDY_KEY_GAIN = tune( 'lighting.cloudyKey', 3, { min: 1, max: 8 } );
-
 function publishLighting(): void {
 
-	// three's sun: the direct key, the sky's, which the clouds' shadow cuts per point (Sky.ts
-	// `keyDirectVisibility`); the land's key and the sea's (shared.sunColor): it times the deck's
-	// gain, which each point keeps by its clouds' transmittance, the part over the direct key the
-	// deck's lobe in the ambient (lighting/KeyGain.ts)
+	// three's sun: the direct key, the sky's, which the clouds' shadow cuts per point over the land's
+	// floor, the deck's key gain on that floor (Sky.ts `keyDirectVisibility`, OVERCAST_KEY_GAIN); the
+	// land's key (shared.landKey) and the sea's (shared.sunColor): both the sky's key, the sea's cut
+	// by the clouds' own transmittance over the land's floor (Sky.ts `seaKeyVisibility`,
+	// lighting/KeyCloud.ts)
 	const overcast = weather.skyMix[ 3 ] ?? 0;
-	const cloudy = cloudedShare( weather.skyMix ) - overcast;
-	const keyGain = 1 + ( OVERCAST_KEY_GAIN() - 1 ) * overcast * overcastDeckLight( sky.elevation ) + ( CLOUDY_KEY_GAIN() - 1 ) * cloudy * deckRamp( sky.elevation );
 	sun.color.copy( sky.keyColor );
-	keyDeckGain.value = keyGain;
-	shared.landKey.value.set( sun.color.r * keyGain, sun.color.g * keyGain, sun.color.b * keyGain );
-	// the sward's shade release: under overcast's deck the sward's own shade in the key is its
-	// canopy's (post/MeadowShade.ts `swardShadeRelease`)
-	swardShadeRelease.value = overcast * overcastDeckLight( sky.elevation );
-	// a low sun's lift of the sky's light on what it lights: the land's ambient, the water's sky
-	// light and the sea's reflection (lighting/AmbientRelight.ts `lowSunSkyLift`)
+	// how far the open key on the land is its floor's under a deck: the islanders read their cast
+	// shadow against it (lighting/KeyCloud.ts `keyDeckShare`)
+	keyDeckShare.value = deckLight( sky.elevation, cloudedShare( weather.skyMix ), overcast );
+	shared.landKey.value.set( sun.color.r, sun.color.g, sun.color.b );
+	// a low sun's lift of the sky's light on the water: the sea's bounce onto the land, the water's
+	// sky light and the sea's reflection (lighting/AmbientRelight.ts `lowSunSkyLift`)
 	shared.skyLift.value = lowSunSkyLift( sky.elevation, cloudedShare( weather.skyMix ) );
 	sun.intensity = 1;
 	sun.position.copy( sky.keyDir ).multiplyScalar( 120 ).add( sun.target.position );
@@ -466,7 +461,7 @@ function publishLighting(): void {
 	updateKeyLift( sky.keyDir, sky.keyIsMoon );
 	keyGlint.radius.value = sky.keyIsMoon ? MOON_GLINT_RADIUS : SUN_GLINT_DISC;
 	liftedKeyDirection( sky.keyDir, sky.keyIsMoon, shadowDirection );
-	shared.sunColor.value.copy( shared.landKey.value );
+	shared.sunColor.value.set( sun.color.r, sun.color.g, sun.color.b );
 	keyChroma.value = sky.keyIsMoon ? 0 : 1;
 	const cosI = Math.max( sky.keyDir.y, 0 );
 	shared.sunIntoWater.value = sky.keyDir.y > 0 ? 1 - fresnel( cosI, 1.333 ) : 0;
@@ -736,7 +731,7 @@ setLand( land, landOptions.step );
 const fields = new WorldFields( data, shared.shoreXform.value );
 // the sunlight the ground bounces up (lighting/GroundBounce.ts), which every lit material adds: so
 // installed before any of them builds; its map shares the wave maps' target
-const groundBounce = new GroundBounce( { renderer, shared, sunShadow, fields, soil: textures.soil, target: waveMaps.target, layer: waveMaps.bounceLayer, cloud: ( position ) => sky.keyCloudVisibility( position ) } );
+const groundBounce = new GroundBounce( { renderer, shared, sunShadow, fields, soil: textures.soil, target: waveMaps.target, layer: waveMaps.bounceLayer, cloud: ( position ) => sky.keyDirectVisibility( position ) } );
 installGroundBounce( groundBounce );
 const shoreWaves = new ShoreWaves( renderer, data, shared, fields.shore, fft, fields.floor );
 const walk = walkPoints( data.walk );
@@ -784,7 +779,7 @@ showWindArrows();
 // show.
 const ambient = new AmbientVolume( renderer, data.ambient );
 installAmbientVolume( ambient );
-const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyCloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation, rising: () => sky.rising, clouded: () => cloudedShare( weather.skyMix ), overcast: () => weather.skyMix[ 3 ] ?? 0 } );
+const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyDirectVisibility( position ), seaCloud: ( position ) => sky.cloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation, rising: () => sky.rising, clouded: () => cloudedShare( weather.skyMix ), overcast: () => weather.skyMix[ 3 ] ?? 0 } );
 // the environment's own harmonics, which the specular's relight divides by (AmbientSample.ts)
 installEnvironmentHarmonics( ambientRelight );
 // the haze's shadow kernels read the probes' sky visibility, so they compile now (Pipeline.ts)
@@ -958,7 +953,7 @@ const stormSea = new StormSea( renderer, fft, shared, fields.shore, shoreWaves, 
 	sunDir: shared.sunDir, sunColor: shared.sunColor,
 	sky: shared.skyIrradianceSource.div( shared.skyFill.max( 1 ).sqrt() ),
 	// (after the resolve the spray tests the nearest surface, the sea's included: it has no depth buffer)
-	sunVisibility: ( p ) => sky.cloudVisibility( p ), opaqueDepth: AFTER_RESOLVE ? pipeline.surfaceRT.texture : pipeline.depthRT.texture,
+	sunVisibility: ( p ) => sky.seaKeyVisibility( p ), opaqueDepth: AFTER_RESOLVE ? pipeline.surfaceRT.texture : pipeline.depthRT.texture,
 } );
 water = new Water( {
 	fft, sky, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves,
@@ -1971,7 +1966,7 @@ function tick( time: number ): void {
 	skyElapsed += environmentDt;
 	const skyInterval = runtimeQuality.skyUpdateInterval;
 	const ws = weather.state;
-	const weatherSignature = `${ cloudOverride ?? ws.coverage },${ ws.density },${ ws.directVisibility },${ ws.ambientGain },${ ws.haze }`;
+	const weatherSignature = `${ cloudOverride ?? ws.coverage },${ ws.density },${ ws.directVisibility },${ ws.ambientGain },${ ws.daySky },${ ws.daySkyExponent },${ ws.haze }`;
 	if ( ! sky.busy && ! sky.transitioning && skyElapsed >= skyInterval &&
 		( simTime !== lastSkyTime || weatherSignature !== lastWeatherSignature || ( ! manualSun && dayCycle.hour !== lastSkyHour ) ) ) {
 

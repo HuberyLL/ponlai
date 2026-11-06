@@ -347,7 +347,14 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   per cell, instead of the radiance, the view depth with the sky's and the sea's shares, the world
   normal, the screen-space occlusion or the kind (`src/debug/RadianceAov.ts`); `rings: { sun, step,
   count, sky }` the luminance in rings of angle around the sun before and after the bloom, and over
-  the sky's band 30 to 60 degrees from it.
+  the sky's band 30 to 60 degrees from it, with each ring's count of sky texels (`skyCounts`); any
+  light's direction serves as `sun` (the moon's by night). `sector: [ from, to ]` keeps the texels
+  in a sector about the light (degrees, 0 straight below it, 90 to its right as seen facing it, 180
+  above; from over to wraps through 0), `elevation: [ lo, hi ]` those whose ray's elevation lies in
+  the range, and `elevationStep: s` adds `table`, the composite's (hdr) luminance summed over the
+  sky's texels of each ring and band of s degrees of elevation ( [ ring, band, sum, count ], band b
+  from b s - 90 degrees), from which a script takes each ring's excess over a background that varies
+  with elevation, texel by texel, without reading the texels.
 - Tunable parameters (`src/debug/Tune.ts`, debug pages): `__PONLAI__.tune.list()` names every
   registered number (its value, default, range, scale, and whether it is read at load),
   `tune.set( { name: value } )` sets them with no reload and no new pipeline (a load-time one needs
@@ -382,15 +389,29 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `stars`; `haze`; `cloudMoon`, the clouds' own moonlight: `src/sky/DayCycle.ts` DUSK_DEPTH) and the
   degrees at the night's end of that window over which they ease into all of it `sky.twilight.ease`
   (DUSK_EASE; 0 takes them in by even stops to the end), the near air
-  `sky.weather.nearDensity@clear` (`nearStart`, `nearEnd`; `@fair`, `@cloudy`, `@overcast`) and the
+  `sky.weather.nearDensity@clear` (`nearStart`, `nearEnd`; `@fair`, `@cloudy`, `@overcast`), a
+  clouded sky's floor of the key on the land under its deck `sky.deckFloor@overcast` (`@cloudy`)
+  and its day sky, the level of the whole sky's light by day at a sun 18 degrees up and how it
+  goes with the sun's height, `sky.daySky@overcast`, `sky.daySkyExponent@overcast` (`@cloudy`:
+  `src/sky/Weather.ts` `daySkyAt`), the key's gain on that floor under overcast's deck
+  `lighting.overcastKey` (under a cloudy deck's, `lighting.cloudyKey`: `src/sky/Sky.ts`
+  OVERCAST_KEY_GAIN), and the
   land's share of the sky's light `lighting.relight.skyGain@high` (`@low`, `@golden`, the rising
-  sun's `@dawn`, `@sunrise`, `@cloudy`, `@cloudyBlue`, `@night`) and its gain under overcast
-  `lighting.relight.overcastLand`, a low
+  sun's `@dawn`, `@sunrise`, `@cloudy`, `@cloudyBlue`, `@night`), the weather's gain under
+  overcast's deck on all of the land's ambient light, its sky light and its sun's bounce alike
+  (per unit, not the land's whole light over a clear day's: `src/lighting/AmbientGrade.ts`
+  OVERCAST_LAND) `lighting.relight.overcastLand`, a low
   sun's lift of the sky's light on what it lights `lighting.relight.lowSun` (stops; `lowSunFloor`,
   `lowSunFloorFull`, `lowSunFrom`, `lowSunTo` its sun heights: `src/lighting/AmbientRelight.ts`),
-  overcast's
-  deck's glow about the sun (the forward lobe added to the light it lets through, in the deck and the
-  air under it: its weight and mean cosine) `sky.clouds.forwardWeight`, `sky.clouds.forwardLobe`, and the key a tree's shaded leaves
+  a deck's
+  glow about the sun (the forward lobe added to the light it lets through, in the deck and the air
+  under it: its weight and mean cosine) `sky.clouds.forwardWeight`, `sky.clouds.forwardLobe`, the
+  amount of forward light the closed deck passes down, spread over it by the diffusion law (a lobe's
+  weight and mean cosine whose light on level ground it takes) `sky.clouds.overcastWeight`,
+  `sky.clouds.overcastBroad`, the closed deck's glow about the key light drawn on the sky and its
+  seen panorama (its height in the deck's mean radiance, its mean cosine, its flat plateau's radius
+  in degrees: `src/sky/Sky.ts` `deckGlow`) `sky.clouds.deckGlow`, `sky.clouds.deckGlowLobe`,
+  `sky.clouds.deckGlowCore`, and the key a tree's shaded leaves
   take through the leaves over them `lighting.vegetation.leaf.through@high` (`@low`, `@golden`,
   `@cloudy`, `@night`) and what a leaf sends on of the key on its far face,
   `lighting.vegetation.leaf.back@high` alike, the sward's tint under a closed sky

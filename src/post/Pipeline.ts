@@ -79,7 +79,8 @@ import { localLightsPass } from '../lighting/LocalLights.ts';
 //   haze (weather/VolumetricHaze.ts): its froxel grid's shadow kernel (skipped while a rest holds it)
 //   and its light kernel, which integrates each column into the light volume
 //   sky constants: the clouds' mean transmittance over the sun's and the moon's discs, which the
-//   dome reads (Sky.ts discCloudTransmittance), evaluated once into a texel ahead of the scene
+//   flare's visibility reads (Sky.ts discCloudTransmittance, LightShafts.ts `occlusion`), evaluated
+//   once into a texel ahead of the scene
 //   falling leaves: the leaves' births and fixed steps (weather/FallingLeaves.ts: one compute pass
 //   over its fixed ring, its own buffers only; a reset's frame prewarms it instead), ahead of the
 //   opaque scene, which draws them; absent in the test mode
@@ -776,7 +777,7 @@ export class Pipeline {
 		this.options = { ...DEFAULT_POST_OPTIONS, ...options };
 		this.settled.settle = ( temporal ?? QUALITY.high.taa ).restSettle;
 		const O = this.options;
-		this.air = new VolumetricHaze( sunShadow, sky.atmosphere, O.hazeGrid );
+		this.air = new VolumetricHaze( sunShadow, sky.atmosphere, O.hazeGrid, sky.sunBeamIlluminance );
 		// the clouds' march ends where this haze closes (Clouds.ts `makeMarch`): it reads the medium
 		// from uniforms of its own, built before the haze, which the haze writes with its own
 		this.air.cloudMedium = sky.clouds.haze;
@@ -1166,10 +1167,10 @@ export class Pipeline {
 		// (in scene units: the haze, the shafts and the rods' colour are; hdr is pre-exposed again)
 		const aired = this.air.apply( sceneUnits( sceneTex.rgb ), tSurfaceDepth, sky, g, rainAir ? ( _d, _distance, background, transmittance ) => vec4( background, transmittance ) : veil );
 		const shafts = this.shafts.build( tSurfaceDepth, sky, g );
-		// The sky's own per-frame constants, ahead of the scene whose dome reads them: the mean cloud
-		// transmittance over the sun's disc and over the moon's (Sky.ts `discCloudTransmittance`).
+		// The sky's own per-frame constants, which the flare's visibility reads (the post constants
+		// below): the mean cloud transmittance over the sun's disc and over the moon's (Sky.ts
+		// `discCloudTransmittance`). The dome's discs take the clouds' transmittance per pixel instead.
 		this.skyConstants.output = g.color( 'skyConstants', { size: { of: 'fixed', width: 1, height: 1 }, format: THREE.RGBAFormat, type: THREE.FloatType } );
-		sky.discCloudTexture.value = g.texture( this.skyConstants.output );
 		const skyConstantsMat = new THREE.NodeMaterial();
 		skyConstantsMat.name = 'Sky.Constants';
 		skyConstantsMat.fragmentNode = sky.discCloudTransmittance();
@@ -1610,7 +1611,7 @@ export class Pipeline {
 		// `fogDome`): its shadow (skipped while a rest holds it) and its light volume; they read the
 		// sun's maps, the clouds' shadow and the camera, never the scene's depth
 		const hazeReads = this.air.passes( g );
-		// then the sky's constants, which the dome reads too (Sky.ts `discCloudTransmittance`)
+		// then the sky's constants, which the flare's visibility reads (Sky.ts `discCloudTransmittance`)
 		let skyConstants = this.skyConstants.output;
 		const skyConstantsQuad = this.skyConstants.quad;
 		g.addPass( 'skyConstants', 'quad', ( b ) => {
@@ -1619,7 +1620,6 @@ export class Pipeline {
 			return { label: 'sky constants', quad: skyConstantsQuad };
 
 		} );
-		hazeReads.push( skyConstants );
 		// the displacement field, which the passes that draw the meadow read
 		// (world/vegetation/Displacement.ts)
 		this.displacement = displacementField ? displacementField.declare( g ) : null;
@@ -2047,7 +2047,7 @@ export class Pipeline {
 		let velocity = this.resources.velocity!;
 		g.addPass( 'opaque', 'scene', ( b ) => {
 
-			// (the sky dome reads the haze's light volume and the sky's constants)
+			// (the sky dome reads the haze's light volume)
 			for ( const h of hazeReads ) b.read( h );
 			this.readDisplacement( b );
 			sceneColor = b.write( sceneColor, { clear: true } );

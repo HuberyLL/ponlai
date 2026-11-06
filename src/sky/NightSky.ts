@@ -42,8 +42,8 @@ type V3 = THREE.Node<'vec3'>;
 // its radiance is per unit solid angle and stays as it was, and the moonlight's level is the key's
 // own (Sky.ts MOON_KEY), never this disk's solid angle. What follows the radius: the ray/sphere
 // normal, the limb's chord (MOON_CHORD), the map footprint's cap (per radius), the stars it hides
-// (`moonOcclusion`), the clouds' mean over the disk (Sky.ts `discCloudTransmittance`) and the fade
-// below the horizon (`lunarDisk`).
+// (`moonOcclusion`), the clouds' mean over the disk for the flare (Sky.ts `discCloudTransmittance`)
+// and the fade below the horizon (`lunarDisk`).
 export const MOON_ANGULAR_RADIUS = 5 * MOON_GLINT_RADIUS;
 
 const nightHash = Fn( ( [ p ]: [ V2 ] ) => {

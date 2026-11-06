@@ -166,7 +166,10 @@ const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
 //         low band's red over green at -3 degrees 2.8 to 5.3; at -5 degrees and lower, and at 90
 //         and 180 degrees from the sun, within 0.02.
 //     The colours are the sky's illuminance colour (Atmosphere `sunIlluminance`), the open sky's
-//     times the weather's diffuse gain and the sun's times its direct share; the sun's Rayleigh
+//     times the weather's diffuse gain and the sun's times its direct share, the sun's before the
+//     weather's day sky (Sky.ts `sunBeamIlluminance`: the day sky lowers the sky's own light the
+//     sun gives, not the beam through the air below it, which the land's key keeps too; under
+//     overcast's closed deck it sets with the land's key, by the disk's visible share); the sun's Rayleigh
 //     colour is the aerosol's times the key's `sunRayleigh`. Each share has one weight, keyed
 //     (HazeKeys.ts), the weather's gain over both (2 under cloud) and `gain` (1, an A/B knob) over
 //     the sum; the rows, the phases and the colours being the sky's own, a weight is about the
@@ -245,11 +248,11 @@ const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
 //     overcast's share the air takes it through its own phase: the diffuse part as the deck's law
 //     weighted by the aerosol's phase over an even deck's of the same irradiance, a quartic in the
 //     view's sine of elevation fitted in the anisotropy (DECK_DIFFUSE); the forward part as the
-//     deck's own lobe about the key (by overcast's share its broad part alone, Clouds.ts
-//     OVERCAST_BROAD: the air takes the whole deck's light, most of which has lost the narrow
-//     core), on the key's share alone (the lobe's light over the deck's
-//     level, `columnTop`'s key over its key and sky), the diffuse part taking the rest of the
-//     deck's irradiance. The lobe is the deck's, not the product of the deck's and the air's
+//     deck's own lobe about the key, on the key's share alone (the lobe's light over the deck's
+//     level, `columnTop`'s key over its key and sky; under overcast's share the deck spreads its
+//     forward light by the diffusion law, Clouds.ts OVERCAST_BROAD, so it comes in the diffuse part
+//     and the lobe's share is the rest's alone), the diffuse part taking the rest of the deck's
+//     irradiance. The lobe is the deck's, not the product of the deck's and the air's
 //     anisotropies that one scattering of it would give: that product, a smaller mean cosine, would
 //     dim the low air round the sun's place against the deck behind it. The open sky's light in the
 //     sun's rows takes the same by that share, the law by the view's elevation h,
@@ -261,8 +264,8 @@ const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
 //     sun's side, would reach the views away from the sun as fully as those toward it, and the air
 //     there would stand brighter than the deck behind it under a high sun. At night HazeKeys.ts
 //     gives the whole clouded share to `deck` and none to `overcastDeck`, so a night's deck,
-//     overcast's too, lights its air by this path: in the deck's form about the moon, with
-//     overcast's broad lobe by the clouds' share of it (Clouds.ts OVERCAST_BROAD), by the share of
+//     overcast's too, lights its air by this path: in the deck's form about the moon, overcast's
+//     forward light spread by the clouds' share of it (Clouds.ts OVERCAST_BROAD), by the share of
 //     its form each column keeps (below).
 //     Along a long near-level ray the light the eye takes in has crossed a column of air several
 //     optical depths deep, and light that crosses such a column is scattered on the way: our
@@ -312,7 +315,10 @@ const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
 //     shadow along the key light (`cloudShaft`: the clouds' map, its air's channel, read at the point's ground point
 //     along the clouds' own light, the flat beam the map was built along, sharpened against its blur
 //     so the gaps show as shafts, lifted above the shell's base and floored; the gain 10, no floor and no cut
-//     toward the light until set), sampled at four points of each froxel whenever it is recomputed
+//     toward the light until set), never below the floor a closed deck keeps (`keyFloor`, Sky.ts
+//     `deckKeyFloor`: the light the deck passes down in place of the key it hides, so the air under
+//     the deck's glow lights toward the sun by day and the moon by night through its own phase;
+//     0 under every other sky), sampled at four points of each froxel whenever it is recomputed
 //     (the frame's jittered point and three more the R3 sequence's steps from it, averaged, so the
 //     history converges to the cell's mean) and filtered over frames, the history weighing 0.95
 //     (the ambient visibility with it): what any caster or cloud cuts out of the lit air shows as shafts, whether or not the
@@ -507,12 +513,20 @@ export class VolumetricHaze {
 	readonly look = { sigma: new THREE.Vector3( 1, 1, 1 ), desaturate: 0.26, gain: 1, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
 		top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0, nearDensity: 1, nearStart: 250, nearEnd: 600 };
 	// the weather's share of the sun's direct light below the clouds and its diffuse gain
-	// (Weather.ts `directVisibility`, `ambientGain`), which scale the light's colours
+	// (Weather.ts `directVisibility`, `ambientGain`), which scale the light's colours; its day sky
+	// comes with the open sky's light the atmosphere lends (Sky.ts `skyGain`), not with the sun's beam
+	// (`sunBeam`)
 	readonly weatherLight = { direct: 1, ambient: 1 };
 	// The key light the air scatters: its direction and its irradiance below the clouds (a closed
 	// deck leaves no beam to scatter).
 	readonly keyDir = uniform( new THREE.Vector3( 0, 1, 0 ) );
 	readonly keyColor = uniform( new THREE.Color( 0, 0, 0 ) );
+	// The floor of the key's visibility through the clouds under a closed deck (Sky.ts
+	// `deckKeyFloor`, set with the medium each frame and before each bake: main.ts `prepareHaze`):
+	// the light the deck passes down in place of the key it hides, which the air takes through its
+	// own phase toward the key, so the air under the deck's glow brightens with it. The dome's air and the seen panorama's take it, the lighting's sources
+	// never (`openSky`, Sky.ts `bakeGlow`).
+	readonly keyFloor = uniform( 0 );
 	// the moon's aerosol lobe (MOON_AEROSOL)
 	private readonly moonAnisotropy = tuneUniform( 'haze.moon.mieG', MOON_AEROSOL.anisotropy, { min: 0.7, max: 0.82, onChange: markSkyRetune } );
 	// the medium's and the light's tunable knobs (debug/Tune.ts; the sun's aerosol share takes
@@ -558,6 +572,7 @@ export class VolumetricHaze {
 	private readonly mieColour = [ uniform( new THREE.Color( 0, 0, 0 ) ), uniform( new THREE.Color( 0, 0, 0 ) ) ] as const;
 	private readonly weights = uniform( new THREE.Vector2( 1, 1 ) );
 	private readonly atmosphere: Atmosphere;
+	private readonly sunBeam: THREE.Color;
 	// the slices: near, the first slice's depth, the growth and its log2
 	private readonly slices = uniform( new THREE.Vector4( 10, 0.6, 1.15, Math.log2( 1.15 ) ) );
 	private readonly far = uniform( 100000 );
@@ -617,10 +632,13 @@ export class VolumetricHaze {
 	private readonly quaternion = new THREE.Quaternion();
 	private readonly scale = new THREE.Vector3();
 
-	constructor( sunShadow: SunShadow, atmosphere: Atmosphere, grid: Partial<HazeGrid> = {} ) {
+	// `sunBeam`: the sun's illuminance the beam takes (Sky.ts `sunBeamIlluminance`), the sky's own
+	// (`atmosphere.sunIlluminance`) where none is given (the WGSL build)
+	constructor( sunShadow: SunShadow, atmosphere: Atmosphere, grid: Partial<HazeGrid> = {}, sunBeam: THREE.Color = atmosphere.sunIlluminance.value ) {
 
 		this.sunShadow = sunShadow;
 		this.atmosphere = atmosphere;
+		this.sunBeam = sunBeam;
 		this.grid = { ...DEFAULT_HAZE_GRID, ...grid };
 		const { width, height, depth } = this.grid;
 		const volume = ( name: string ) => {
@@ -703,7 +721,7 @@ export class VolumetricHaze {
 		// it is compared at the far end.
 		const coordinate = this.sunShadow.coordinate.mul( vec4( p, 1 ) ).xyz.toVar();
 		const sun = this.sunShadow.volumeVisibility( vec3( coordinate.xy, min( coordinate.z, 0.99999 ) ) ).toVar();
-		const key = sun.mul( this.cloudShaft( p, normalize( p.sub( this.origin ) ), sky ) );
+		const key = sun.mul( max( this.cloudShaft( p, normalize( p.sub( this.origin ) ), sky ), this.keyFloor ) );
 		// the open sky's: dark under the cover's top, lit above it, rising over ± the softness, open
 		// wherever the top is the sea's, times the probes' sky visibility, never below the floor
 		const cover = this.cover, A = this.ambientSettings;
@@ -819,9 +837,10 @@ export class VolumetricHaze {
 		// lobe is the key's alone and leaves with it as the key sets.
 		const nu = dot( direction, clouds.lightDir ).toVar();
 		const lobeOf = ( k: F ) => float( 1 ).sub( k.mul( k ) ).div( max( float( 1 ).add( k.mul( k ) ).sub( nu.mul( k ).mul( 2 ) ), 1e-4 ).pow( 1.5 ) );
-		// (under overcast's share the deck's lobe as the air takes it from the whole deck, its broad
-		// part alone: Clouds.ts OVERCAST_BROAD)
-		const forward = mix( lobeOf( clouds.lobe ), lobeOf( clouds.overcastBroad ), clouds.broadShare );
+		// (under overcast's share the deck's forward light is spread by the diffusion law, Clouds.ts
+		// OVERCAST_BROAD: it reaches the air in the diffuse part, and the lobe's share is the rest's,
+		// `columnTop`)
+		const forward = lobeOf( clouds.lobe );
 		const mu = clamp( direction.y, - 1, 1 );
 		const inG = ( row: number[] ) => g.mul( row[ 2 ] ).add( row[ 1 ] ).mul( g ).add( row[ 0 ] );
 		let diffuse = inG( DECK_DIFFUSE[ 4 ] );
@@ -1077,8 +1096,10 @@ export class VolumetricHaze {
 		const f0 = nearFactor( t0, this.near ).toVar();
 		// the sun's visibility at a point t metres along d: the clouds' shadow, as the shadow kernel
 		// takes it (no caster of the island's: its maps reach no farther than the island)
-		// (along d from its own start, never the camera's: the bake holds no camera)
-		const shaft = ( t: F ): F => this.cloudShaft( vec3( 0, y, 0 ).add( d.mul( t ) ), d, clouds );
+		// (along d from its own start, never the camera's: the bake holds no camera; the floor
+		// under a closed deck, `keyFloor`, in the seen panorama only, as the dome's air takes it)
+		const floor = this.keyFloor.mul( clouds.bakeGlow ).toVar();
+		const shaft = ( t: F ): F => max( this.cloudShaft( vec3( 0, y, 0 ).add( d.mul( t ) ), d, clouds ), floor );
 		const first = scatter( y.add( y0 ).mul( 0.5 ), shaft( t0.mul( 0.5 ) ), float( 1 ) ).toVar();
 		Loop( D, ( { i } ) => {
 
@@ -1312,13 +1333,14 @@ export class VolumetricHaze {
 		this.lightSettings.value.set( S.albedo, S.anisotropy, S.gain * look.gain );
 		// the light's colours per body: its illuminance the sky is drawn with (Atmosphere
 		// `sunIlluminance`, `moonIlluminance`: the moon key), the open sky's by the weather's diffuse
-		// gain, the body's by its direct share, and its Rayleigh light the key's share of the aerosol's;
-		// the moon's aerosol light then takes its own colour at the same luminance, times its gain
+		// gain, the body's by its direct share (the sun's before the weather's day sky, `sunBeam`), and
+		// its Rayleigh light the key's share of the aerosol's; the moon's aerosol light then takes its
+		// own colour at the same luminance, times its gain
 		const weather = this.weatherLight;
 		[ this.atmosphere.sunIlluminance.value, this.atmosphere.moonIlluminance.value ].forEach( ( illuminance, b ) => {
 
 			this.ambientColour[ b ].value.copy( illuminance ).multiplyScalar( weather.ambient );
-			this.mieColour[ b ].value.copy( illuminance ).multiplyScalar( weather.direct );
+			this.mieColour[ b ].value.copy( b === 0 ? this.sunBeam : illuminance ).multiplyScalar( weather.direct );
 			this.sunRayleighColour[ b ].value.copy( this.mieColour[ b ].value ).multiplyScalar( look.sunRayleigh );
 
 		} );
@@ -1358,7 +1380,7 @@ export class VolumetricHaze {
 		const key = this.key;
 		key.length = 0;
 		key.push( ...camera.matrixWorld.elements, ...projection.elements, frame.time, width, height, outputWidth, outputHeight, restEpoch.scene,
-			...frame.signature, ...this.keyDir.value.toArray(), this.keyColor.value.r, this.keyColor.value.g, this.keyColor.value.b,
+			...frame.signature, ...this.keyDir.value.toArray(), this.keyColor.value.r, this.keyColor.value.g, this.keyColor.value.b, this.keyFloor.value,
 			...this.ground.value.toArray(), ...this.layer.value.toArray(), ...this.sigma.value.toArray(), ...this.near.value.toArray(),
 			S.ambientFloor, S.ambientSoftness, this.cover?.version ?? 0,
 			S.near, S.far, S.growth, S.restFrames, S.jitter ? 1 : 0 );

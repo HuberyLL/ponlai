@@ -170,16 +170,14 @@ export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
  * the civil twilight (sky/Weather.ts `overcastDeckLight`, whole at the horizon, gone by -6): its deck
  * is darker than a cloudy one's, brightest about the sun's place
  * (weather/VolumetricHaze.ts, overcast's deck), and the key takes the frame down with it. It enters
- * here alone, never in the keys' own blend. The metered frame changes with the clouds' time, as
- * the deck's lit patches (Clouds.ts) pass over the sea and the land in view, so the key is set for
- * the median over many cloud times, patches in view and none, not for one time. It is fitted by
+ * here alone, never in the keys' own blend. The key is set for the median over many cloud times,
+ * not for one time. It is fitted by
  * least squares on the display lightness of the sky toward the sun (the glow about the sun's place
- * and the deck round it: sky/Clouds.ts OVERCAST_BROAD), the meadow, the rock and the deck's base at
- * eye height, the lesser quantities at half weight. At this key the meadow and the rock read dark
- * and the deck's base away from the sun bright, so the two pull the key in opposite directions;
- * the sky toward the sun and the crowns do too, and the fit takes the compromise. A tighter forward
- * lobe (Clouds.ts OVERCAST_LOBE) moves only the sky near the sun, not the deck away from it; the
- * crowns' lightness under a deck is left to the vegetation, not to the key. Tunable:
+ * and the deck round it), the meadow, the rock and the deck's base at eye height, the lesser
+ * quantities at half weight. At this key the meadow and the rock read dark and the deck's base away
+ * from the sun bright, so the two pull the key in opposite directions; the sky toward the sun and
+ * the crowns do too, and the fit takes the compromise. The crowns' lightness under a deck is left
+ * to the vegetation, not to the key. Tunable:
  * `post.exposure.overcastKey`. */
 const OVERCAST_KEY = tune( 'post.exposure.overcastKey', - 1.2, { min: - 4, max: 1 } );
 /** Where overcast holds the clouded keys from, degrees (`cloudyLow`): its closed deck does not

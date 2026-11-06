@@ -51,17 +51,22 @@ export const shared = {
 	muSun: uniform( 1 ), // cosine of the refracted sun below the surface
 	shoreXform: uniform( new THREE.Vector4() ), // x0, z0, 1 / width, 1 / depth of the shoreline field
 	sunDir: uniform( new THREE.Vector3( 0, 1, 0 ) ),
-	sunColor: uniform( new THREE.Vector3() ), // linear rgb
-	// the key on the land (main.ts publishLighting): sunColor's in every weather, the clouds' shadow
-	// cutting it per point where it is read
+	// the sky's key, linear rgb (main.ts publishLighting): the sea's and the water's, which the
+	// clouds' own transmittance over the land's floor (Sky.ts `seaKeyVisibility`) cuts per point
+	// where it is read
+	sunColor: uniform( new THREE.Vector3() ),
+	// the key on the land (main.ts publishLighting): sunColor, the clouds' shadow over the land's
+	// floor (Sky.ts `keyDirectVisibility`, the deck's key gain on that floor) cutting it per point
+	// where it is read
 	landKey: uniform( new THREE.Vector3() ),
 	skyIrradiance: uniform( new THREE.Vector3() ), // linear rgb
 	// The live sky reduces hemispherical irradiance on the GPU, so shading never waits for
 	// a CPU readback. The uniform above remains a readback diagnostic for explicit snapshots.
 	skyFill: uniform( 1 ),
-	// a low sun's lift of the sky's light on what it lights: the land's ambient, the sky's light in
-	// the water (`skyIrradianceSource`) and the sea's reflection of the sky, never the sky drawn or
-	// its meter (lighting/AmbientRelight.ts `lowSunSkyLift`); 1 from its top up and under cloud.
+	// a low sun's lift of the sky's light on the water: the sea's bounce onto the land (the probes'
+	// `seaScale`), the sky's light in the water (`skyIrradianceSource`) and the sea's reflection of the
+	// sky, never the land's own sky light, the sky drawn or its meter (lighting/AmbientRelight.ts
+	// `lowSunSkyLift`); 1 from its top up and under cloud.
 	// Whatever else reads `skyIrradianceSource` takes it too: the rain's light (main.ts
 	// `rain.setLightNode`), the storm's spray (StormSea's `sky`) and its whitecaps (ocean/Water.ts).
 	// Those draw only under rain and storm, which count as overcast (1), so only through a front from

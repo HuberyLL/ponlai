@@ -4,6 +4,7 @@ import { floorOcclusion, screenAOAt } from '../post/GTAO.ts';
 import { ambientEnvironment, ambientVolumeOn, specularOcclusion, type AmbientReceiver } from './AmbientSample.ts';
 import { meterAmbient } from './MeterLight.ts';
 import { tune } from '../debug/Tune.ts';
+import { overcastDeckLight } from '../sky/Weather.ts';
 
 // The ambient grade: one table of knobs on the island's ambient light, per sun elevation and per
 // weather, so the art direction can depart from the physically lit result by the hour and the sky
@@ -44,29 +45,31 @@ import { tune } from '../debug/Tune.ts';
 // they keep (C about a fifth of their L at -6.5 degrees, whether the reflection is 0.1 or none) is
 // the dawn's display white over a grey surface (post/Pipeline.ts WHITE_BALANCE), not this light.
 //
-// The sun's bounce is 4.5 by day under the clear and the fair sky down to 9 degrees, lets go along
-// a smooth step to 1.1 at 4 degrees and holds about 1 to its last light at -1.3; the moon's is 3.2
-// from -2.6 degrees down, where its key comes in. Under the cloudy sky every row takes about half
-// of clear's, 0.52 to 0.6 (2.4 by day, 1.7 by night); under overcast the day's rows take a third
-// (1.5) and the night's half, as under cloudy. The volume bounces the key
-// as an even lobe over the whole bounced visibility, weighed by level ground's cosine of the key
-// (AmbientRelight.ts), so it falls with the sun as the light on the ground does and reaches a face as
-// far as bounced light reaches it from any side: it lights what faces lit ground or a lit crown (a
-// blade's underside, a culm's sides, the leaves, the islanders). Read at degree 2, the island's
-// receivers' read, under the clear sky the bounces (the sky's and the key's) make 25 % of open
-// level ground's light in shade at 62 degrees, 23 % at 50, 17 % at 30, 14 % at 20, 9 to 10 % at 13
-// to 10 and 4 % at 4. At 20 degrees bare ground in a grove's shadow at its edge takes 13 to 22 % of
-// its shade from the key's bounce and a grove's floor 2 to 4 m in 33 to 37 % (reading 0.61 to 0.63
-// of the edge's shade); a culm at the edge reads on its side toward the open 0.85 to 1.2 times the
-// open shade beside it (the volume does not know the sun's shadow: AmbientRelight.ts), a culm's two
-// sides in the grove's shade read 1.25 to 1.4 apart at its heart and about 1.65 at its edge, and a
-// culm's side in the grove 1.1 to 1.35 times its floor; the meadow's blades in the umbra (their
-// ambient then read from both faces at 0.75: world/Grass.ts) read about 1.8 times bare ground in the same
-// shade at 50 degrees and 1.2 to 1.3 at 20. It also scales the sea's bounce onto the cliffs
-// (GroundBounce.ts) and the islanders' bounce.
+// The sun's bounce is 1 under the clear and the fair sky from the high sun to its last light at
+// -1.3 degrees, set with the probes' sky gain (AmbientRelight.ts PROBE_SKY) by the lit ground's
+// share of the key's direct light and the shade's depth under it (there); the moon's is 3.2 from
+// -2.6 degrees down, where its key comes in. Under the cloudy sky every row takes about half of
+// clear's (8 / 15 to the sun's last light, 1.7 by night); under overcast the day's rows take a
+// third (0.33 from 2 degrees down) and the night's half, as under cloudy. The volume bounces the
+// key as an even lobe over the whole bounced visibility, weighed by level ground's cosine of the
+// key (AmbientRelight.ts), so it falls with the sun as the light on the ground does and reaches a
+// face as far as bounced light reaches it from any side: it lights what faces lit ground or a lit
+// crown (a blade's underside, a culm's sides, the leaves, the islanders). Read at degree 2, the
+// island's receivers' read, under the clear sky the bounces (the sky's and the key's) make 16 % of
+// open level ground's light in shade at 62 degrees, 13 % at 50, 9 % at 30, 6 % at 20, 4.5 % at 13
+// and 10 and 3 % at 4. With the day's bounce at 4.5, at 20 degrees bare ground in a grove's shadow
+// at its edge took 13 to 22 % of its shade from the key's bounce and a grove's floor 2 to 4 m in 33
+// to 37 % (reading 0.61 to 0.63 of the edge's shade); a culm at the edge read on its side toward
+// the open 0.85 to 1.2 times the open shade beside it (the volume does not know the sun's shadow:
+// AmbientRelight.ts), a culm's two sides in the grove's shade read 1.25 to 1.4 apart at its heart
+// and about 1.65 at its edge, and a culm's side in the grove 1.1 to 1.35 times its floor; the
+// meadow's blades in the umbra (their ambient then read from both faces at 0.75: world/Grass.ts)
+// read about 1.8 times bare ground in the same shade at 50 degrees and 1.2 to 1.3 at 20. It also
+// scales the sea's bounce onto the cliffs (GroundBounce.ts) and the islanders' bounce.
 //
 // Overcast is a dark grey sky with the sun still shining (Weather.ts): its sun's bounce takes a
-// third of clear's.
+// third of clear's, times the weather's gain on all of the land's ambient light under its deck
+// (OVERCAST_LAND, which its sky light takes too: AmbientRelight.ts).
 // Under a cloud's shadow the open ground beside a grove reads 1.2 to 1.8 times its shade inside the
 // grove's shadow; under overcast a grove's floor reads about 0.6 to 0.7 of the open ground.
 //
@@ -122,23 +125,27 @@ type AmbientRow = { at: number } & Record<Column, Readonly<AmbientKnobs>>;
 
 const D: Readonly<AmbientKnobs> = { skySpecular: 1, skyBounce: 1, sunBounce: 1, directionality: 0.25, aoStrength: 1 };
 
-// the high sun, the afternoon, the low sun, the lift letting go (13 and 10 degrees), the sun's
-// bounce letting go (9 to 5.5 degrees), golden hour,
+// The key's bounce by day under the clouded skies, in clear's unit (`D`, 1): the cloudy sky's about
+// half (8 / 15), overcast's a third (the header). Overcast's keeps 0.33 from 2 degrees down.
+const CLOUDY_BOUNCE = 8 / 15, OVERCAST_BOUNCE = 1 / 3;
+
+// the high sun, the afternoon, the low sun (13 to 7 degrees), the sky's reflection letting go (5.5
+// to 4 degrees), golden hour,
 // where the sky's gain starts toward the night key (2 degrees), sunset, the afterglow (-1.3 and -2.6 degrees), the
 // blue hour, the night
 export const AMBIENT_GRADE: readonly AmbientRow[] = [
-	{ at: 60, clear: { ...D, sunBounce: 4.5 }, fair: { ...D, sunBounce: 4.5 }, cloudy: { ...D, sunBounce: 2.4 }, overcast: { ...D, sunBounce: 1.5 } },
-	{ at: 30, clear: { ...D, sunBounce: 4.5 }, fair: { ...D, sunBounce: 4.5 }, cloudy: { ...D, sunBounce: 2.4 }, overcast: { ...D, sunBounce: 1.5 } },
-	{ at: 20, clear: { ...D, sunBounce: 4.5 }, fair: { ...D, sunBounce: 4.5 }, cloudy: { ...D, sunBounce: 2.4 }, overcast: { ...D, sunBounce: 1.5 } },
-	{ at: 13, clear: { ...D, sunBounce: 4.5 }, fair: { ...D, sunBounce: 4.5 }, cloudy: { ...D, sunBounce: 2.4 }, overcast: { ...D, sunBounce: 1.5 } },
-	{ at: 10, clear: { ...D, sunBounce: 4.5 }, fair: { ...D, sunBounce: 4.5 }, cloudy: { ...D, sunBounce: 2.4 }, overcast: { ...D, sunBounce: 1.5 } },
-	{ at: 9, clear: { ...D, sunBounce: 4.5 }, fair: { ...D, sunBounce: 4.5 }, cloudy: { ...D, sunBounce: 2.4 }, overcast: { ...D, sunBounce: 1.5 } },
-	{ at: 7, clear: { ...D, sunBounce: 3.45 }, fair: { ...D, sunBounce: 3.45 }, cloudy: { ...D, sunBounce: 1.85 }, overcast: { ...D, sunBounce: 1.15 } },
-	{ at: 5.5, clear: { ...D, skySpecular: 0.5, sunBounce: 2.05 }, fair: { ...D, skySpecular: 0.5, sunBounce: 2.05 }, cloudy: { ...D, sunBounce: 1.1 }, overcast: { ...D, sunBounce: 0.68 } },
-	{ at: 4, clear: { ...D, skySpecular: 0.5, sunBounce: 1.1 }, fair: { ...D, skySpecular: 0.5, sunBounce: 1.1 }, cloudy: { ...D, sunBounce: 0.6 }, overcast: { ...D, sunBounce: 0.37 } },
-	{ at: 2, clear: { ...D, skySpecular: 0.5 }, fair: { ...D, skySpecular: 0.5 }, cloudy: { ...D, sunBounce: 0.6 }, overcast: { ...D, sunBounce: 0.33 } },
-	{ at: 0, clear: { ...D, skySpecular: 0.5 }, fair: { ...D, skySpecular: 0.5 }, cloudy: { ...D, sunBounce: 0.6 }, overcast: { ...D, sunBounce: 0.33 } },
-	{ at: - 1.3, clear: { ...D, skySpecular: 0.5 }, fair: { ...D, skySpecular: 0.5 }, cloudy: { ...D, sunBounce: 0.6 }, overcast: { ...D, sunBounce: 0.33 } },
+	{ at: 60, clear: { ...D }, fair: { ...D }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: OVERCAST_BOUNCE } },
+	{ at: 30, clear: { ...D }, fair: { ...D }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: OVERCAST_BOUNCE } },
+	{ at: 20, clear: { ...D }, fair: { ...D }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: OVERCAST_BOUNCE } },
+	{ at: 13, clear: { ...D }, fair: { ...D }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: OVERCAST_BOUNCE } },
+	{ at: 10, clear: { ...D }, fair: { ...D }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: OVERCAST_BOUNCE } },
+	{ at: 9, clear: { ...D }, fair: { ...D }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: OVERCAST_BOUNCE } },
+	{ at: 7, clear: { ...D }, fair: { ...D }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: OVERCAST_BOUNCE } },
+	{ at: 5.5, clear: { ...D, skySpecular: 0.5 }, fair: { ...D, skySpecular: 0.5 }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: OVERCAST_BOUNCE } },
+	{ at: 4, clear: { ...D, skySpecular: 0.5 }, fair: { ...D, skySpecular: 0.5 }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: OVERCAST_BOUNCE } },
+	{ at: 2, clear: { ...D, skySpecular: 0.5 }, fair: { ...D, skySpecular: 0.5 }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: 0.33 } },
+	{ at: 0, clear: { ...D, skySpecular: 0.5 }, fair: { ...D, skySpecular: 0.5 }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: 0.33 } },
+	{ at: - 1.3, clear: { ...D, skySpecular: 0.5 }, fair: { ...D, skySpecular: 0.5 }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: 0.33 } },
 	{ at: - 2.6, clear: { ...D, sunBounce: 3.2 }, fair: { ...D, sunBounce: 3.2 }, cloudy: { ...D, sunBounce: 1.7 }, overcast: { ...D, sunBounce: 1.7 } },
 	{ at: - 4, clear: { ...D, sunBounce: 3.2 }, fair: { ...D, sunBounce: 3.2 }, cloudy: { ...D, sunBounce: 1.7 }, overcast: { ...D, sunBounce: 1.7 } },
 	{ at: - 18, clear: { ...D, sunBounce: 3.2 }, fair: { ...D, sunBounce: 3.2 }, cloudy: { ...D, sunBounce: 1.7 }, overcast: { ...D, sunBounce: 1.7 } },
@@ -193,6 +200,32 @@ export function evaluateAmbient( elevation: number, weights: readonly number[], 
  * shade's level is the light the ground sends up. */
 const sunBounceGain = tune( 'lighting.grade.sunBounce', 1, { min: 0.25, max: 4, scale: 'log' } );
 
+/** The weather's gain under overcast's deck, per unit, on all of the land's ambient light: on the
+ * sky's light per unit of the bake (after the unit that makes it a clear day's in the same place:
+ * AmbientRelight.ts OVERCAST_LAND_UNIT), its bounce with it, and on the sun's bounce per unit of
+ * the table's (`update`), by overcast's share and its deck's light (`overcastLandWeight`). It is
+ * not the land's whole ambient light under the deck over a clear day's: that ratio also holds the
+ * bake's ratio of the two skies and the sun's bounce's share of the light. 1 leaves the land as the
+ * sky and the table give it; it stands at 1.75, set with the key's gain under the deck (sky/Sky.ts
+ * OVERCAST_KEY_GAIN) and the day sky (sky/Weather.ts `daySky`) on the lit open ground of seven
+ * eye-height views of the overcast island: with the sun 14.5, 18 and 21 degrees up that ground's
+ * ambient light reads 1.18 to 1.20 times a clear day's in the same place (the views' median; 1.15
+ * to 1.26 over the views), the meadow's 0.97 to 1.03 (the views' median): the meadow's clear day
+ * holds a larger share of the sun's bounce, which the deck takes away, and the gain is one for all
+ * of the land. Tunable: `lighting.relight.overcastLand`. */
+export const OVERCAST_LAND = tune( 'lighting.relight.overcastLand', 1.75, { min: 1, max: 2 } );
+
+/** The weight of the weather's land gain under overcast (OVERCAST_LAND) at the sun's `elevation`
+ * (degrees), of which overcast's share is `overcast` (sky/Weather.ts `skyMix`, a parked sky
+ * counting as overcast): the share times its deck's light (sky/Weather.ts `overcastDeckLight`: at
+ * every sun by day, gone by -6 degrees), one weight for the land's sky light (AmbientRelight.ts) and
+ * its sun's bounce (`update`). */
+export function overcastLandWeight( elevation: number, overcast: number ): number {
+
+	return overcast * overcastDeckLight( elevation );
+
+}
+
 /** The grade's uniforms, read by the lighting models. */
 export const ambient = {
 	skySpecular: uniform( 1 ),
@@ -201,12 +234,19 @@ export const ambient = {
 	directionality: uniform( D.directionality ),
 	aoStrength: uniform( 1 ),
 	/** The land's sky gains under a deck over the sky's bake (sky/Weather.ts `deckSkyGain`, the land's
-	 * own under overcast: AmbientRelight.ts OVERCAST_LAND), which the volume carries: the
-	 * environment's diffuse takes them where it stands in for the volume (a material built without a
-	 * receiver, which by default is the sea floor: materials/TerrainMaterial.ts; and the volume's
-	 * share under the water), so the ground under the water keeps the land's light. 1 under a clear
-	 * or fair sky. Written by AmbientRelight.ts. */
+	 * own under overcast: AmbientRelight.ts OVERCAST_LAND_UNIT times OVERCAST_LAND), which the volume
+	 * carries: the environment's diffuse takes them where it stands in for the volume (a material
+	 * built without a receiver, which by default is the sea floor: materials/TerrainMaterial.ts; and
+	 * the volume's share under the water), so the ground under the water keeps the land's light (its
+	 * ambient diffuse below the water under overcast takes the sea's, `seaSky`). 1 under a clear or
+	 * fair sky. Written by AmbientRelight.ts. */
 	landSky: uniform( 1 ),
+	/** The sea's sky gain over the land's under overcast's deck, on its share (AmbientRelight.ts
+	 * `seaScale` over `skyScale`: the water's deck gain, sky/Weather.ts DECK_SKY_GAIN, and its low
+	 * sun's lift, over the land's gain), which the ambient diffuse under the water takes
+	 * (lighting/Underwater.ts): the light down there is the light going down through the sea. 1
+	 * under every other sky. Written by AmbientRelight.ts. */
+	seaSky: uniform( 1 ),
 };
 
 /** The grade's controller: the values it wrote last, and the GUI's override. */
@@ -225,6 +265,8 @@ export const ambientGrade = {
 		Object.assign( this.current, this.override ? this.manual : this.table );
 		for ( const key of AMBIENT_KNOBS ) ambient[ key ].value = this.current[ key ];
 		ambient.sunBounce.value *= sunBounceGain();
+		// the weather's land gain under overcast's deck (OVERCAST_LAND), the override's value too
+		ambient.sunBounce.value *= 1 + ( OVERCAST_LAND() - 1 ) * overcastLandWeight( elevation, weights[ 3 ] ?? 0 );
 
 	},
 };
