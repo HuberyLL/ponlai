@@ -265,8 +265,12 @@ export const VIEWS = {
 		free( [ b.cx + Math.cos( a ) * 150, 14, b.cz + Math.sin( a ) * 150 ], [ b.cx, 3, b.cz ], 35 );`, crops: [ 'cliff-edge-sea', 'rim-lip', 'horizon-line' ] },
 	// sunrise, the orbit turned across the sun so the long shadows run sideways over the meadow
 	'sunrise-long-shadows': { q: 'weather=clear&preset=sunrise', eval: 'orbitAround( s.sky.sunDir.z, - s.sky.sunDir.x );', crops: [ 'meadow-band-70m', 'rim-lip' ] },
-	// a full moon about 14 degrees up, the low horizon orbit facing it over the island
-	'night-moon': { q: 'weather=clear&hour=19.2&moon=0.5', eval: `s.setCameraView( 'horizon' ); orbitAround( - s.sky.moonDir.x, - s.sky.moonDir.z );`, crops: [ 'moon-limb', 'stars', 'sea-glints', 'horizon-line' ] },
+	// a full moon 20 degrees up, from the low horizon orbit's place facing it over the island, the
+	// line of sight raised to 8 degrees up so the frame (from about 35 degrees up to 20 down) holds
+	// the moon in its upper third and the sea's horizon low
+	'night-moon': { q: 'weather=clear&hour=19.2&moon=0.5', eval: `s.setCameraView( 'horizon' ); orbitAround( - s.sky.moonDir.x, - s.sky.moonDir.z );
+		const c = s.camera.position.clone(), m = s.sky.moonDir, l = Math.hypot( m.x, m.z ) || 1, e = 8 * Math.PI / 180;
+		free( [ c.x, c.y, c.z ], [ c.x + m.x / l * Math.cos( e ) * 5000, c.y + Math.sin( e ) * 5000, c.z + m.z / l * Math.cos( e ) * 5000 ], 55 );`, crops: [ 'moon-limb', 'stars', 'sea-glints', 'horizon-line' ] },
 
 	// temporal anti-aliasing views: thin, high-contrast and moving detail up close
 	// the orbit at 24 m, 60 degrees from the zenith: the meadow's near bands and its flowers

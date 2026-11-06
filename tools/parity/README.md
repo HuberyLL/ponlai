@@ -120,7 +120,7 @@ no group but `special` (see below).
 | water-skim-cliffs | weather=fair&preset=noon | free camera 1.4 m over the sea off the cliffs, along the coast |
 | island-from-sea | weather=fair&preset=noon | free camera 150 m out, 14 m up, looking back |
 | sunrise-long-shadows | weather=clear&preset=sunrise | orbit across the sun, long shadows over the meadow |
-| night-moon | weather=clear&hour=19.2&moon=0.5 | horizon view facing a full moon about 14 degrees up |
+| night-moon | weather=clear&hour=19.2&moon=0.5 | horizon view facing a full moon 20 degrees up, its line of sight raised to 8 degrees up |
 
 The three `island-cloudy-*` views are the byte checks' reach into the clouds' shadow under a low sun
 (`src/sky/Sky.ts` SHADOW_DISC, SHADOW_AIR_NARROW). Their hours are chosen by what moves there, which
