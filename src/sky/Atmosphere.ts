@@ -125,15 +125,20 @@ import { markSkyRetune } from './SkyRetune.ts';
 // same way, with its own row, direction and illuminance (`moonIlluminance`), added to the sun's: a
 // moonlit night's faint blue sky, brightest round the moon. Its Rayleigh rows and its aerosol's
 // rows each take a gain (`moonRayleigh`, `moonMie`: `sky.night.moonRayleigh`,
-// `sky.night.moonMie`, 0 to 2, 1 the atmosphere's own), applied where the rows are read
+// `sky.night.moonMie`, 1 the atmosphere's own; their ratio the night sky's structure and one
+// level over both its light, MOON_SKY_LEVEL), applied where the rows are read
 // (`bodyGains`, in `skyRows`, `fogRows` and `cloudRows`), so every reader follows: the seen sky,
 // the environment's bakes and the light they lend, the haze's light and the far sea it fades
 // into the horizon's colour, and the clouds' sky light and march, which keep agreeing with the
 // sky behind them. The moon's in-scatter grows toward the horizon with the path's length, so the
 // night sky away from the moon brightens low down (the haze reads the moon's rows along the moon,
-// not the view, so it does not: weather/VolumetricHaze.ts); the gains let it be pressed down to a
-// flat, dark floor there, the Rayleigh share's gain apart from the aerosol's, whose rows also feed
-// the glow round the moon (the haze's moon lobe).
+// not the view, so it does not: weather/VolumetricHaze.ts); the Rayleigh share's gain under the
+// aerosol's presses the dome down to a dark floor there, the aerosol's rows also feeding the glow
+// round the moon (the haze's moon lobe).
+// The level both moon row gains take over their ratio (`moonRayleigh`, `moonMie`): measured on the
+// clear night's environment harmonics with the moon at its default height, 2.4 stops brings the
+// whole moonlit sky's irradiance on level ground to that of both gains at 1.
+const MOON_SKY_LEVEL = 2 ** 2.4;
 const RG = 6360, RT = 6460;
 /** The planet's radius and the atmosphere's top, km from the planet's centre. */
 export const PLANET_RADIUS = RG, ATMOSPHERE_RADIUS = RT;
@@ -534,11 +539,15 @@ export class Atmosphere {
 	// the moon's illuminance the moonlit sky is drawn with (Sky.ts keys it)
 	readonly moonIlluminance = uniform( new THREE.Color( 0, 0, 0 ) );
 	/** gains on the moon's Rayleigh rows and on its aerosol's rows, as every reader takes them
-	 * (`bodyGains`: the sky's, the fog table's, the clouds'): 1, the atmosphere's own. The Rayleigh's,
-	 * 0.175, is a least-squares fit on the clear night's sky rows with the multiple scattering whole
-	 * (0.365 held them when it stood at 1 / 4 pi of its level) */
-	readonly moonRayleigh = tuneUniform( 'sky.night.moonRayleigh', 0.175, { min: 0, max: 2, onChange: markSkyRetune } );
-	readonly moonMie = tuneUniform( 'sky.night.moonMie', 1.3, { min: 0, max: 2, onChange: markSkyRetune } );
+	 * (`bodyGains`: the sky's, the fog table's, the clouds'): 1, the atmosphere's own. Their ratio is
+	 * the clear night sky's structure, a dark dome under the haze's moonlit light: the Rayleigh's
+	 * 0.175 against the aerosol's 1.3, a least-squares fit on the clear night's sky rows with the
+	 * multiple scattering whole. Both then take one level, MOON_SKY_LEVEL, so the whole moonlit sky
+	 * (the dome, the haze and the clouds, which read these rows alike) gives level ground the
+	 * cosine-weighted irradiance it gives at gains of 1, the atmosphere's own: the land takes the
+	 * moonlit sky's light as the sun's sky lends it, and the sky's look keeps its ratio. */
+	readonly moonRayleigh = tuneUniform( 'sky.night.moonRayleigh', 0.175 * MOON_SKY_LEVEL, { min: 0, max: 8, onChange: markSkyRetune } );
+	readonly moonMie = tuneUniform( 'sky.night.moonMie', 1.3 * MOON_SKY_LEVEL, { min: 0, max: 16, onChange: markSkyRetune } );
 	// the highest altitude the fog table holds (km): the haze grid's far end
 	readonly fogReach = uniform( 30 );
 	readonly transmittanceLUT = makeLUT( T_W, T_H, 'atmoTransmittance' );
@@ -1033,6 +1042,25 @@ export class Atmosphere {
 		return this.sunTransmittance( this.sunDir.value, this.viewHeight.value - RG );
 
 	}
+
+	/** The moon's light transmittance from the view height, by its elevation alone (`sunTransmittance`
+	 * toward `moonDir`): the key's extinction on the way down, which the moonlit sky, the haze and
+	 * the clouds integrate themselves (Sky.ts `track`). */
+	transmittanceToMoon(): THREE.Color {
+
+		const y = this.moonDir.value.y, height = this.viewHeight.value;
+		if ( y !== this.moonTransmittanceKey[ 0 ] || height !== this.moonTransmittanceKey[ 1 ] ) {
+
+			this.moonTransmittance.copy( this.sunTransmittance( this.moonDir.value, height - RG ) );
+			this.moonTransmittanceKey[ 0 ] = y;
+			this.moonTransmittanceKey[ 1 ] = height;
+
+		}
+		return this.moonTransmittance;
+
+	}
+	private readonly moonTransmittance = new THREE.Color();
+	private readonly moonTransmittanceKey = [ NaN, NaN ];
 
 	/** The share above the horizon of the setting sun's fading disk (SUN_SETTING_RADIUS) seen from the
 	 * view height. */

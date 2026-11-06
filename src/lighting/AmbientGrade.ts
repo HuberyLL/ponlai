@@ -4,7 +4,7 @@ import { floorOcclusion, screenAOAt } from '../post/GTAO.ts';
 import { ambientEnvironment, ambientVolumeOn, specularOcclusion, type AmbientReceiver } from './AmbientSample.ts';
 import { meterAmbient } from './MeterLight.ts';
 import { tune } from '../debug/Tune.ts';
-import { overcastDeckLight } from '../sky/Weather.ts';
+import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
 
 // The ambient grade: one table of knobs on the island's ambient light, per sun elevation and per
 // weather, so the art direction can depart from the physically lit result by the hour and the sky
@@ -47,10 +47,12 @@ import { overcastDeckLight } from '../sky/Weather.ts';
 //
 // The sun's bounce is 1 under the clear and the fair sky from the high sun to its last light at
 // -1.3 degrees, set with the probes' sky gain (AmbientRelight.ts PROBE_SKY) by the lit ground's
-// share of the key's direct light and the shade's depth under it (there); the moon's is 3.2 from
-// -2.6 degrees down, where its key comes in. Under the cloudy sky every row takes about half of
-// clear's (8 / 15 to the sun's last light, 1.7 by night); under overcast the day's rows take a
-// third (0.33 from 2 degrees down) and the night's half, as under cloudy. The volume bounces the
+// share of the key's direct light and the shade's depth under it (there). Under the cloudy sky
+// every row takes about half of clear's (8 / 15), under overcast a third (0.33 from 2 degrees
+// down). The moon's key bounces as the sun's does: its part takes the rows at the moon's height
+// (the evening's), by its share of the key (Sky.ts `moonKeyShare`, `update`), so the night's
+// bounce is the day's at that height (1 under the clear and the fair sky, 8 / 15 under cloudy, a
+// third under overcast). The night's rows are the sun's last, for the sun's part. The volume bounces the
 // key as an even lobe over the whole bounced visibility, weighed by level ground's cosine of the
 // key (AmbientRelight.ts), so it falls with the sun as the light on the ground does and reaches a
 // face as far as bounced light reaches it from any side: it lights what faces lit ground or a lit
@@ -146,9 +148,9 @@ export const AMBIENT_GRADE: readonly AmbientRow[] = [
 	{ at: 2, clear: { ...D, skySpecular: 0.5 }, fair: { ...D, skySpecular: 0.5 }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: 0.33 } },
 	{ at: 0, clear: { ...D, skySpecular: 0.5 }, fair: { ...D, skySpecular: 0.5 }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: 0.33 } },
 	{ at: - 1.3, clear: { ...D, skySpecular: 0.5 }, fair: { ...D, skySpecular: 0.5 }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: 0.33 } },
-	{ at: - 2.6, clear: { ...D, sunBounce: 3.2 }, fair: { ...D, sunBounce: 3.2 }, cloudy: { ...D, sunBounce: 1.7 }, overcast: { ...D, sunBounce: 1.7 } },
-	{ at: - 4, clear: { ...D, sunBounce: 3.2 }, fair: { ...D, sunBounce: 3.2 }, cloudy: { ...D, sunBounce: 1.7 }, overcast: { ...D, sunBounce: 1.7 } },
-	{ at: - 18, clear: { ...D, sunBounce: 3.2 }, fair: { ...D, sunBounce: 3.2 }, cloudy: { ...D, sunBounce: 1.7 }, overcast: { ...D, sunBounce: 1.7 } },
+	{ at: - 2.6, clear: { ...D }, fair: { ...D }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: 0.33 } },
+	{ at: - 4, clear: { ...D }, fair: { ...D }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: 0.33 } },
+	{ at: - 18, clear: { ...D }, fair: { ...D }, cloudy: { ...D, sunBounce: CLOUDY_BOUNCE }, overcast: { ...D, sunBounce: 0.33 } },
 ];
 
 // The rising sun's (the header): the clear and the fair sky's reflection at 0.1 from -2.6 to -12
@@ -249,6 +251,8 @@ export const ambient = {
 	seaSky: uniform( 1 ),
 };
 
+const _moonRow = { ...D } as AmbientKnobs;
+
 /** The grade's controller: the values it wrote last, and the GUI's override. */
 export const ambientGrade = {
 	/** The values in the uniforms. */
@@ -258,10 +262,14 @@ export const ambientGrade = {
 	manual: { ...D } as AmbientKnobs,
 	/** The table's output (whatever the override) at the last update. */
 	table: { ...D } as AmbientKnobs,
-	/** Once a frame: the sun's elevation (degrees) and the weather's column weights (Weather `skyMix`). */
-	update( elevation: number, weights: readonly number[], rising = false ): void {
+	/** Once a frame: the sun's elevation (degrees), the weather's column weights (Weather `skyMix`),
+	 * whether the sun is rising, and the moon's elevation (degrees) and its share of the key (Sky.ts
+	 * `moonElevation`, `moonKeyShare`). */
+	update( elevation: number, weights: readonly number[], rising: boolean, moonElevation: number, moonShare: number ): void {
 
 		evaluateAmbient( elevation, weights, this.table, rising );
+		// the key's bounce: the moon's part takes the rows at the moon's height, on the evening's side
+		this.table.sunBounce = withMoon( this.table.sunBounce, evaluateAmbient( moonElevation, weights, _moonRow ).sunBounce, moonShare );
 		Object.assign( this.current, this.override ? this.manual : this.table );
 		for ( const key of AMBIENT_KNOBS ) ambient[ key ].value = this.current[ key ];
 		ambient.sunBounce.value *= sunBounceGain();

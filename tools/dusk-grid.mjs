@@ -51,7 +51,7 @@
 //   deckKeyFloor, landKeyFloor = keyCloudFloor x keyColour, airKey = deckKeyFloor x keyColour,
 //   skyScale, landA = skyScale x E, landSky, sunBounce, daySky, displayAmbientGain, nightSkyLevel,
 //   moonVisibility, leafThrough, leafBack, swardTint (luminance of the tint), yunpengNight; sky4,
-//   the ring of the environment's baked source (the sky with its haze and stars) 4 degrees up, its
+//   the ring of the environment's baked source (the sky with its haze) 4 degrees up, its
 //   mean luminance over every azimuth, and sky4sun / sky4away over the halves within and beyond 90
 //   degrees of the sun's azimuth; skyLow4, the same ring 4 degrees down (the sea's half).
 //   Per view, on a 256 x 144 grid of cells (3 x 3 texels each; land = cells with no sky and no sea):
@@ -541,7 +541,7 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 		const AG = await load( '/src/lighting/AmbientGrade.ts' ), LL = await load( '/src/world/vegetation/LeafLight.ts' ), YP = await load( '/src/world/Yunpeng.ts' );
 		const DC = await load( '/src/sky/DayCycle.ts' ), W = await load( '/src/sky/Weather.ts' );
 		const px = async ( rt ) => Array.from( await s.renderer.readRenderTargetPixelsAsync( rt, 0, 0, 1, 1 ) );
-		// a ring of the environment's source (the baked sky with its haze and stars, in half floats)
+		// a ring of the environment's source (the baked sky with its haze, in half floats)
 		// at deg degrees: its mean luminance over every azimuth and over the halves toward and away
 		// from the sun (the sun's azimuth within 90 degrees or beyond)
 		const ring = async ( deg ) => {

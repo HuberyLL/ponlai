@@ -791,7 +791,7 @@ showWindArrows();
 // show.
 const ambient = new AmbientVolume( renderer, data.ambient );
 installAmbientVolume( ambient );
-const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyDirectVisibility( position ), seaCloud: ( position ) => sky.cloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation, rising: () => sky.rising, clouded: () => cloudedShare( weather.skyMix ), overcast: () => weather.skyMix[ 3 ] ?? 0 } );
+const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyDirectVisibility( position ), seaCloud: ( position ) => sky.cloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation, rising: () => sky.rising, clouded: () => cloudedShare( weather.skyMix ), overcast: () => weather.skyMix[ 3 ] ?? 0, moon: () => ( { elevation: sky.moonElevation, skyShare: sky.moonSkyShare } ) } );
 // the environment's own harmonics, which the specular's relight divides by (AmbientSample.ts)
 installEnvironmentHarmonics( ambientRelight );
 // the haze's shadow kernels read the probes' sky visibility, so they compile now (Pipeline.ts)
@@ -1925,7 +1925,7 @@ function tick( time: number ): void {
 	sky.advance( environmentDt );
 	publishLighting();
 	// the ambient grade by the sun and the weather's blend of the kept skies (lighting/AmbientGrade.ts)
-	ambientGrade.update( sky.elevation, weather.skyMix, sky.rising );
+	ambientGrade.update( sky.elevation, weather.skyMix, sky.rising, sky.moonElevation, sky.moonKeyShare );
 	shared.clouded.value = cloudedShare( weather.skyMix );
 	shared.deckSky.value = deckSkyGain( sky.elevation, shared.clouded.value, weather.skyMix[ 3 ] ?? 0 );
 	shared.deckSkyGap.value = deckSkyGap( sky.elevation, shared.clouded.value, weather.skyMix[ 3 ] ?? 0 );

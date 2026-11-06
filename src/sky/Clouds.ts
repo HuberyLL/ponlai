@@ -151,11 +151,9 @@ type V4 = THREE.Node<'vec4'>;
 //     sun's elevation there (`streakSunColour`, `streakLitRadius`), so the side away from the sun
 //     goes out first and the side toward it reddens last, each
 //     share under an overall colour by the sun's elevation (`keyDirect`, `keyAmbient`: Sky.ts
-//     STREAK_DIRECT, STREAK_AMBIENT), plus the night ambient (`nightAmbient`, Sky.ts
-//     trackClouds), a fixed light of its own which neither the sky's night gain nor the moon's
-//     gains reach, and which on a clear night sets nearly all of its brightness, under a gain
-//     (`streakNightAmbient`: `sky.night.streakAmbient`). The cumulus' march takes the ambient
-//     ungained.
+//     STREAK_DIRECT, STREAK_AMBIENT), the night's faint ambient (`nightAmbient`, Sky.ts
+//     trackClouds) taken with the sky's light under the same gains. The cumulus' march takes the
+//     ambient as its sky light too.
 //   - march: coarse steps until cloud is found, then fine ones; whole cells of the weather map
 //     that cannot reach the ray's height are skipped, the march going on past them at the pixel's
 //     own offset into a step (resumed at the cell's edge, the steps fell in phase across the
@@ -755,11 +753,9 @@ export class Clouds {
 	// The gain the open sky over the low deck's tops takes back (Sky.ts CLEAR_SKY, `gapSky`): the
 	// clear day's sky gain over the clouded sky's, read by the column's kernel alone (`columnTopOf`).
 	readonly openSkyGain = uniform( 1 );
-	// Night sky glow and moonlit fill, added to the atmosphere's own sky light.
+	// The night's faint ambient (Sky.ts `displayNightAmbient`), added to the atmosphere's own sky
+	// light wherever the clouds take it.
 	readonly nightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
-	// The gain on the night ambient the thin layer takes (its light at night comes almost all from
-	// it, and no other night tunable reaches it); a change rebakes the panorama and the environment.
-	readonly streakNightAmbient = tuneUniform( 'sky.night.streakAmbient', 0.0425, { min: 0, max: 2, onChange: markSkyRetune } );
 	// Art balance of beam to sky light inside the clouds. A low sun's beam is already reddened
 	// by the atmosphere; favouring it keeps sunset clouds glowing instead of muddy.
 	readonly directGain = uniform( 1 );
@@ -1800,7 +1796,7 @@ export class Clouds {
 		// the smoothstep on the weight is ours), the forward lobe held at its value
 		// `streakForwardCap` from the sun; the sky's share the Rayleigh in-scatter there under its
 		// phase, desaturated, times the earth's shadow at the layer and each body's illuminance, at
-		// `streakAmbient` per unit of opacity; plus the night ambient at a gain of its own. Each
+		// `streakAmbient` per unit of opacity, the night's ambient with it. Each
 		// share takes an overall colour (`keyDirect`, `keyAmbient`). No air of its own here: the
 		// dome fogs it at its own distance (Sky.ts domeColour, `sampleViewFog`).
 		const streaksAt = ( rd: V3, pxAngle: F ) => {
@@ -1865,8 +1861,8 @@ export class Clouds {
 					rows.rayleigh.mul( skyRayleighPhase( dot( rd, light ), A.rayleighForward ) ), this.ambientDesaturation )
 					.mul( A.earthShadowAt( heightKm, rd, body ) ).mul( illuminance );
 				const sky = skyOf( sunRows, 0, A.sunDir, A.sunIlluminance.rgb ).add( skyOf( moonRows, 1, A.moonDir, A.moonIlluminance.rgb ) )
-					.mul( this.streakAmbient.mul( this.ambientGain ) );
-				const lit = direct.mul( this.keyDirect ).add( sky.mul( this.keyAmbient ) ).add( this.nightAmbient.rgb.mul( this.streakNightAmbient ) );
+					.add( this.nightAmbient.rgb ).mul( this.streakAmbient.mul( this.ambientGain ) );
+				const lit = direct.mul( this.keyDirect ).add( sky.mul( this.keyAmbient ) );
 				result.assign( vec4( lit.mul( float( 1 ).sub( own ) ), own ) );
 
 			} );

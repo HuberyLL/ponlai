@@ -431,8 +431,9 @@ export function nightAmbientShare( elevation: number, rising: boolean, cloud: nu
 /** The dusk's shares a script can force on a debug page, to take the light of the twilight and of
  * the night apart (tools/dusk-grid.mjs `--split`, `--night-split`), in the order that tool puts them
  * back one at a time. The night's: `moonKey`, the moon's share of the key (Sky.ts `moonGain`);
- * `moonSky`, of the moonlit sky (Sky.ts `skyMoon`); `skyNight`, the sky's and the probes' night key
- * (`skyNight`); `nightAmbient`, the night's ambient in the sky, the clouds and the sea, the leaves'
+ * `moonSky`, of the moonlit sky (Sky.ts `moonSkyShare`, which the probes' sky gain mixes its moon's
+ * part by: lighting/AmbientRelight.ts); `skyNight`, the sky's twilight night key and the sea's
+ * bounce's (`skyNight`); `nightAmbient`, the night's ambient in the sky, the clouds and the sea, the leaves'
  * night key and the sward's (`nightAmbientShare`); `landNight`, the moon's share of the land's gain
  * under overcast's deck (lighting/AmbientRelight.ts `underDeck`); `hazeNight`, the night key's
  * weight in the haze's (weather/HazeKeys.ts `keyAlong`); `cloudMoon`, the clouds' moonlight (Sky.ts
@@ -440,8 +441,8 @@ export function nightAmbientShare( elevation: number, rising: boolean, cloud: nu
  * night weight the exposure's keys take, and `displayNight`, the one the tone, the grade and the
  * bloom take (post/Pipeline.ts `updateDisplay`); `yunpeng`, the yunpeng's glow and its lights'
  * share, and `localLights`, the local lights' strength (main.ts); `stars`, the stars' share in the
- * drawn and the baked sky (Sky.ts `starVisibility`: `nightVisibility` times `starNight`), which the
- * land takes through the baked sky. The twilight's, each a weight on
+ * drawn sky (Sky.ts `starVisibility`: `nightVisibility` times `starNight`; no bake holds them, so
+ * the land takes none of their light). The twilight's, each a weight on
  * the sun's light (1 when not forced): `sun`, the sun's part of the key (Sky.ts `keyColor`);
  * `hazeSun`, the haze's sunlight; `hazeSky`, the haze's skylight from the sun's sky
  * (weather/VolumetricHaze.ts). */

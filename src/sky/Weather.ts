@@ -71,6 +71,17 @@ const smooth01 = ( t: number ) => {
 
 };
 
+/** A gain on light that holds the sun's part and the moon's (the probes' sky gain, the key's bounce):
+ * the sun's part takes it at the sun's elevation (`sun`), the moon's at the moon's own (`moon`), by
+ * the moon's `share` of that light. A closed deck and the day's keys take the moon's light as they
+ * take the sun's, so a deep night's gain is the day's at the moon's height. Written so that a share
+ * of 0 gives `sun` and a share of 1 `moon` exactly (tools/verify-weather-state.mjs). */
+export function withMoon( sun: number, moon: number, share: number ): number {
+
+	return sun * ( 1 - share ) + moon * share;
+
+}
+
 /** How far a cloudy sky's deck has taken over its own light at the sun's `elevation` (degrees): 0
  * up to 3 degrees, 1 from 6, smooth between. Below it a low sun shines under the broken deck and the
  * evening's light takes over (post/Exposure.ts, the clouded keys under 6 degrees). */
@@ -176,10 +187,11 @@ const SIN_18 = Math.sin( 18 * Math.PI / 180 );
  * (`daySky`) and its exponent (`daySkyExponent`): the level times the sine of the sun's height over
  * 18 degrees' to the power -`exponent`, held at its 12-degree value under 12 degrees, so a
  * positive exponent lifts a low sun's sky and lowers a high one's. 1 at every height for a level of
- * 1 and an exponent of 0. Every reader takes it once, on the light the sun gives the sky alone
- * (sky/Sky.ts: the sky's day key, the clouds' sunlight, the sun's light on the distant sea), never on
- * the night's sources (the night key, the moon, the night's own ambient), so as the sun's light goes
- * from the sky at dusk the sky falls back to the night's light as it was. */
+ * 1 and an exponent of 0. Every reader takes it once, on the light a body gives the sky alone
+ * (sky/Sky.ts: the sky's day key, the clouds' sunlight, the sun's light on the distant sea), and the
+ * moon's light at the moon's own height as the sun's (the moonlit sky, the clouds' moonlight): a
+ * closed deck passes the moon's light as it passes the sun's. Never on the sun's night key or the
+ * night's own ambient. */
 export function daySkyAt( level: number, exponent: number, elevation: number ): number {
 
 	return level * ( Math.max( Math.sin( elevation * Math.PI / 180 ), SIN_12 ) / SIN_18 ) ** - exponent;
