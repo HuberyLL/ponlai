@@ -29,7 +29,7 @@ import { tune, tuneUniform } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 import { HazeMedium } from '../weather/HazeDepth.ts';
 import { SUN_SETTING_RADIUS } from '../lighting/Radiometry.ts';
-import { HALF_MAX, STORE_CEILING, preExposure, storePress } from '../post/PreExposure.ts';
+import { HALF_MAX, STORE_CEILING, preExposure, storePress, storeStops } from '../post/PreExposure.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -238,16 +238,18 @@ export const EARTH_RADIUS = 6_360_000;
 // reads is `shellBottom` and `shellThickness`, blended by the sky's shares (Sky.ts CLOUD_SKIES), so
 // cloudy and overcast take a deck of their own, lower (`setDeck`).
 export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
-// What the panorama stores is the radiance times this: at night the clouds' radiance lies under
-// half float's 2^-14 (unscaled, a clear midnight's panorama has its first percentile near 2^-21,
-// 2^-16 over the texels at least a tenth covered), where its steps are wide enough to show as dark
-// flecks once exposed. A power of two, so what lay in range keeps its bits. The panorama is
-// refreshed a share per frame and kept for the frames between, so its scale is fixed and not the
-// frame's pre-exposure (the view takes that: see the rules above); its writes are held at
-// STORE_CEILING, which the brightest of the day (a low sun's lit edges, facing it) stays about a
-// third of a stop under. Lightning's light is stored apart and bare (its reach is far above this
-// range's top).
-const DOME_STORE = 2 ** 15;
+// What the panorama stores is the radiance times a power of two that follows the clouds' light
+// (`storeLight`, PreExposure.ts `storeStops`: 2^11 at noon, 2^18 on a moonlit night): unscaled, a
+// clear midnight's panorama has its first percentile near 2^-21 (2^-16 over the texels at least a
+// tenth covered), under half float's 2^-14, where its steps are wide enough to show as dark flecks
+// once exposed, and no one fixed scale keeps a cloudy noon's brightest and a darker night's
+// thinnest both in range. A power of two, so what lay in range keeps its bits. The panorama is
+// refreshed a share per frame and kept for the frames between, so its scale is the light's and not
+// the frame's pre-exposure (the view takes that: see the rules above), and when the light's power
+// of two changes, the whole panorama is written again under the new one in that frame, ahead of
+// its readers (`domeStops`: about once a stop through a dusk). Its writes are held at
+// STORE_CEILING. Lightning's light is stored apart and bare (its reach is far above this range's
+// top).
 // What the view stores over the pre-exposed radiance: by day P runs 1 to 3, and at that scale the
 // faint edges of thin cloud low over the sea fell under half float's 2^-14 (a low view across
 // the water lost a few dozen pixels a level or more, up to 54). Seven stops keep them at the 2^8
@@ -896,6 +898,13 @@ export class Clouds {
 	// `sampleView` takes) and the ratio the resolve takes the reprojected history by: this
 	// dispatch's scale over the scale of the history it reads (see the rules in the header).
 	private readonly historyScale = [ 1, 1 ];
+	/** The luminance of the light the clouds take, for the stores' powers of two (Sky.ts
+	 * trackClouds; PreExposure.ts `storeStops`). */
+	storeLight = 0;
+	// The panorama's power of two (stops) and its scale, written and read back (`sample`).
+	private domeStops = Number.NaN;
+	private readonly domeStore = uniform( 1 );
+	private readonly domeRead = uniform( 1 );
 	private shownScale = 1;
 	private readonly viewUnscale = uniform( 1 );
 	private readonly historyGain = uniform( 1 );
@@ -1866,7 +1875,7 @@ export class Clouds {
 			const rd = domeToDirection( q ).toVar();
 			const m = marchPano( rd, jitter );
 			const result = over( rainAt( rd, float( domeTexelAngle ), jitter ).color, over( vec4( m.L, m.T ), streaksAt( rd, float( domeTexelAngle ) ) ) );
-			textureStore( dome, ivec2( int( x ), int( y ) ), vec4( min( result.rgb.mul( DOME_STORE ).mul( storePress.store ), vec3( STORE_CEILING ) ), result.a ) );
+			textureStore( dome, ivec2( int( x ), int( y ) ), vec4( min( result.rgb.mul( this.domeStore ).mul( storePress.store ), vec3( STORE_CEILING ) ), result.a ) );
 
 		} )().compute( domeWidth * domeHeight / ( strideX * strideY ), [ 64 ] ).setName( 'Clouds.Panorama' );
 
@@ -2297,11 +2306,23 @@ export class Clouds {
 			renderer.compute( this.deckMeanSumKernel! );
 
 		}
+		// The panorama's power of two for the clouds' light now: a new one writes every phase again
+		// in this frame (the view and the shadow map keep their own), so its texels and its readers
+		// always share one.
+		const stops = storeStops( this.storeLight );
+		const restore = stops !== this.domeStops;
+		if ( restore ) {
+
+			this.domeStops = stops;
+			this.domeStore.value = 2 ** stops;
+			this.domeRead.value = 2 ** - stops;
+
+		}
 		// Panorama: an ordered pattern spreads each frame's texels over the map. A full refresh runs
 		// every phase through the same kernel, so a refreshed map matches a progressive one.
 		const full = this.needsFull;
 		this.needsFull = false;
-		this.refreshMaps( renderer, full, shadowRows );
+		this.refreshMaps( renderer, full, shadowRows, full || restore );
 
 		if ( ! camera ) return;
 		// ---- view
@@ -2386,11 +2407,12 @@ export class Clouds {
 	}
 
 	// Refresh the panorama and the cloud shadow map: whole, or this frame's share (one phase of the
-	// panorama's pattern, `shadowRows` of the shadow map's rows).
-	private refreshMaps( renderer: THREE.WebGPURenderer, full: boolean, shadowRows: number ): void {
+	// panorama's pattern, `shadowRows` of the shadow map's rows); `dome` refreshes the whole panorama
+	// alone.
+	private refreshMaps( renderer: THREE.WebGPURenderer, full: boolean, shadowRows: number, dome = full ): void {
 
 		const order = this.domeOrder;
-		for ( const [ x, y ] of full ? order : [ order[ this.frame % order.length ] ] ) {
+		for ( const [ x, y ] of dome ? order : [ order[ this.frame % order.length ] ] ) {
 
 			this.phase.value.set( x, y );
 			renderer.compute( this.partialKernel! );
@@ -2585,7 +2607,7 @@ export class Clouds {
 		// The map holds the upper sky only: below the horizon the clouds fade out instead of
 		// repeating the horizon's row.
 		const below = smoothstep( - 0.04, 0, direction.y );
-		return vec4( s.rgb.div( DOME_STORE ).mul( storePress.read ).mul( below ), mix( float( 1 ), s.a, below ) );
+		return vec4( s.rgb.mul( this.domeRead ).mul( storePress.read ).mul( below ), mix( float( 1 ), s.a, below ) );
 
 	}
 

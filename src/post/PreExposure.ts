@@ -103,10 +103,33 @@ export const PRE_EXPOSURE_RANGE = [ - 8, 22 ] as const;
 /** Half float's largest value: what a pre-exposed writer stores at most. */
 export const HALF_MAX = 65504;
 
-/** What a writer at a fixed power-of-two scale stores at most (the sky's bakes, Sky.ts
- * `PANORAMA_STORE`; the clouds' panorama, Clouds.ts `DOME_STORE`): a stop under half float's
- * largest, so a value a little over its scale's range stays finite and keeps the stop below it. */
+/** What a writer at a power of two of its own stores at most (the sky's bakes and the clouds'
+ * panorama, at `storeStops`): a stop under half float's largest, so a value a little over its
+ * scale's range stays finite and keeps the stop below it. */
 export const STORE_CEILING = 2 ** 15;
+
+/** Where the light that lights a bake is stored (stops), and the most a bake's power of two goes to
+ * (`storeStops`). */
+const STORE_LEVEL = 10, STORE_STOPS_MAX = 18;
+
+/** The power of two (stops) the sky's bakes and the clouds' panorama store their radiance at, for
+ * `light`, the luminance of the light the clouds take (Sky.ts trackClouds: the sun's above their
+ * tops while it lights them, and their moonlight with its gains): the light itself is stored near
+ * 2^STORE_LEVEL, so what a bake holds keeps its place in half float from a cloudy noon (2^11) to a
+ * moonless night. Without that light (after sunset, while only the afterglow lights the sky, until
+ * the moon's light comes in) it stays at STORE_STOPS_MAX, a moonlit night's. Over the kept
+ * weathers and every hour a bake's brightest then stays under 2^13 and its first percentile over
+ * 2^-10, and at night, pressed 12 stops darker, over half float's 2^-14: a stop or more over it,
+ * but for a fair night's thinnest cloud edges in the clouds' panorama, half a stop over it, and
+ * the panoramas at -12 degrees before dawn, a third of a stop. The light is the same in every
+ * weather at night, so one power of two serves a cloudy night's brightest and a fair night's
+ * thinnest. A function of the scene's state alone: never of the exposure, or of what a store held
+ * before. */
+export function storeStops( light: number ): number {
+
+	return light > 0 ? Math.min( STORE_STOPS_MAX, Math.round( STORE_LEVEL - Math.log2( light ) ) ) : STORE_STOPS_MAX;
+
+}
 
 /** A debug press of the stored skies (debug/Tune.ts `post.store.press`, in stops, 0 by default):
  * the sky's bakes, the clouds' panorama and view and the haze's light volume store their radiance

@@ -2156,6 +2156,10 @@ export class Sky {
 		clouds.lightColor.value.copy( sunUp ? sunAbove : new THREE.Color( 0, 0, 0 ) );
 		// The clouds belong to the night sky: their moonlight and night ambient keep its level.
 		const moonLight = illuminance * 0.04 * moonGain * this.nightSkyLevel;
+		// The luminance of that light, for the stores' powers of two (PreExposure.ts `storeStops`),
+		// the sun's before the day sky's gain: under a closed deck what a bake holds brightest is the
+		// deck's base, which takes the sun through the cloud, not the day sky's share of it.
+		clouds.storeLight = ( sunUp ? sunY : 0 ) + moonLight * ( 0.65 * 0.2126 + 0.76 * 0.7152 + 0.0722 );
 		const light = clouds.lightColor.value;
 		light.r += 0.65 * moonLight;
 		light.g += 0.76 * moonLight;
