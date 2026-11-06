@@ -15,10 +15,12 @@ import { markSkyRetune } from './SkyRetune.ts';
 // the clock every frame. `reset` sets the clock as the constructor does (a scene jump).
 //
 // The reference exposure follows the sun's elevation (EXPOSURE_KEYS), set once under an
-// earlier display chain: it only rises from afternoon into night and holds
-// from about -6 degrees on. It does not set the frame's exposure, which the display chain meters
-// from the light (post/Exposure.ts): it is the reference the night sky's own light is tuned
-// against (`nightSkyLevel`).
+// earlier display chain: it only rises from afternoon into night. It does not set the frame's
+// exposure, which the display chain meters from the light (post/Exposure.ts): it is the reference
+// the night sky's own lights, the stars and the moon's disk, are tuned against (`nightSkyLevel`),
+// and nothing they light reads it. So it follows the metered exposure: under the twilight it holds
+// from -6 to -7 degrees, and below it climbs with the meter as the night falls to the moon's light,
+// NIGHT_METER_LIFT stops by about -12 degrees, so the stars and the disk keep their display.
 // The night ambient rises as the sun's skylight fades after sunset, and the moon's key comes in
 // once the handoff has turned it (MOON_KEY_TOP), so twilight is never darker than the
 // night; the night sky's own light (stars, the moon's disk and its in-scatter in the
@@ -358,10 +360,20 @@ export const MOON = tuneObject( { elevation: 20, turn: 0 }, { elevation: 'sky.mo
 // falling through the low sun to about 0.03 at the horizon), and these bring the island views
 // (toward and away from the sun, clear weather, the log mean of the two) to the same level at the
 // same sun heights. After sunset tidewater's frame falls to near black, lit by its village; the
-// night here keeps the brightness the island showed under the earlier grade, readable against the
-// sea by moonlight, from about -6 degrees on (NIGHT_EXPOSURE).
+// twilight here keeps the brightness the island showed under the earlier grade (25 from -6 to -7
+// degrees). Below -7 degrees the keys follow the metered exposure down to the night: each is 25
+// times 2 to the stops the clear evening's island view meters at that height above its meter under
+// the night these keys were first set for (log interpolated between them: within about half a stop of the
+// metered curve), the full NIGHT_METER_LIFT by -12 degrees (NIGHT_EXPOSURE).
+const TWILIGHT_EXPOSURE = 25;
+const nightKey = ( elevation: number, stops: number ) => [ elevation, TWILIGHT_EXPOSURE * 2 ** stops ] as const;
+/** The stops a clear night's metered exposure lies above the twilight's reference (25): the
+ * moon's light at its magnitude against the sun's. The yunpeng's glow and every local light are
+ * scaled by 2 to minus this, so a lamp keeps its display at night whatever the hour. */
+export const NIGHT_METER_LIFT = 10.7;
 const EXPOSURE_KEYS: readonly ( readonly [ number, number ] )[] = [
-	[ - 6, 25 ], [ - 2.65, 19 ], [ 0, 11 ], [ 2, 10 ], [ 6.6, 5.5 ], [ 13.2, 3.4 ], [ 16.5, 2.85 ],
+	nightKey( - 12, NIGHT_METER_LIFT ), nightKey( - 11, 10.6 ), nightKey( - 10, 10 ), nightKey( - 9, 6.8 ), nightKey( - 8, 2.1 ),
+	[ - 7, TWILIGHT_EXPOSURE ], [ - 6, TWILIGHT_EXPOSURE ], [ - 2.65, 19 ], [ 0, 11 ], [ 2, 10 ], [ 6.6, 5.5 ], [ 13.2, 3.4 ], [ 16.5, 2.85 ],
 	[ 19.75, 2.4 ], [ 26.2, 1.82 ], [ 32.5, 1.48 ], [ 50, 1.19 ],
 ];
 export const NIGHT_EXPOSURE = EXPOSURE_KEYS[ 0 ][ 1 ];

@@ -90,11 +90,10 @@ for ( let minute = 0; minute <= 1440; minute ++ ) {
 	assert.ok( nightAmbient >= 0 && nightAmbient <= 1 && nightAmbient >= s.nightVisibility );
 	if ( s.elevation <= - 5 ) assert.equal( nightAmbient, 1 );
 	if ( s.elevation >= 1 ) assert.equal( nightAmbient, 0 );
-	// Night holds one exposure, so moonlight does not dim as the evening goes on.
-	if ( s.elevation <= - 7 ) assert.equal( s.exposure, NIGHT_EXPOSURE );
-	// A closed deck at night keeps the exposure it was tuned with; above -1 degree its
-	// adaptation is unchanged.
-	if ( s.elevation <= - 7 ) near( s.exposure * ( 1 + s.overcastAdaptation ), NIGHT_EXPOSURE * 3, 1e-9 );
+	// The deep night holds one exposure, so moonlight does not dim as the evening goes on.
+	if ( s.elevation <= - 12 ) assert.equal( s.exposure, NIGHT_EXPOSURE );
+	// A closed deck after dark triples the exposure; above -1 degree its adaptation is unchanged.
+	if ( s.elevation <= - 7 ) near( s.exposure * ( 1 + s.overcastAdaptation ), s.exposure * 3, 1e-9 );
 	if ( s.elevation >= - 1 ) near( s.overcastAdaptation, 5 * ( 1 - s.daylight ), 1e-12 );
 	// The night sky's own light keeps its tuned brightness (times the night's gain): it scales back
 	// as the exposure rises.

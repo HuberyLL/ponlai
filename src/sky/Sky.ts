@@ -1014,11 +1014,11 @@ const SHADOW_AIR_NARROW = [ 4.9, 5.6 ] as const;
 // they climb into it.
 const KEY_LIFT = [ 3, 10 ] as const;
 
-// The moon's key, a share of the sun's illuminance per channel: cool blue (red over green 0.8, blue
-// over green 1.4). Its level is the moonlit ground's relation to the night's other light; how bright
-// the night shows is the exposure's night key (post/Exposure.ts).
-// The island's moonlight takes its level and a hue of its own (`moonHue`); the moonlit sky, clouds
-// and haze take the moon's light above the air (`moonAboveAir`) at their own hue (MOON_SKY_HUE).
+// The moon's key's colour: cool blue (red over green 0.8, blue over green 1.4), its level the
+// moon's light above the air through the air toward the moon (`moonAboveAir`), as the sun's key is
+// the sun's through the air toward the sun; how bright the night shows is the exposure's (post/Exposure.ts).
+// The island's moonlight takes a hue of its own (`moonHue`); the moonlit sky, clouds and haze take
+// the moon's light above the air at their own hue (MOON_SKY_HUE).
 const MOON_KEY = [ 0.0108, 0.0135, 0.0189 ] as const;
 // MOON_KEY's red and blue over green, as written (the quotients of its channels differ by an ulp),
 // so the default hue below is exactly one, and its Rec. 709 luminance, the level the hue keeps
@@ -1030,25 +1030,28 @@ const MOON_KEY_LUMINANCE = luminance709( MOON_KEY[ 0 ], MOON_KEY[ 1 ], MOON_KEY[
 // the haze's moonlight and the clouds' sky light keep it; their level is the sun's sky at the moon's
 // height (`track`). The sky's night key itself stays the sun's deep twilight key.
 const MOON_SKY_HUE = [ 1.3366, 0.8540, 1.4554 ] as const;
-// The moon's light above the air, a share of the sun's illuminance (luminance): for now the share
-// that leaves the island's moonlight (`moonKeyAbove`: MOON_KEY's luminance times `moonKeyGain`)
-// where it is, through the air's transmittance toward the moon (Atmosphere `transmittanceToMoon`),
-// so the key keeps every byte while the moonlit sky, the haze and the clouds take the light above
-// the air as the sun's do. A passing value: the full moon's light by the two bodies' magnitudes
-// replaces it, with the key's level.
-const moonAboveAir = ( transmittance: THREE.Color ) => MOON_KEY_LUMINANCE * moonKeyGain() / luminance709( transmittance.r, transmittance.g, transmittance.b );
+// The moon's light above the air, a share of the sun's illuminance (luminance): the full moon's over
+// the sun's by the two bodies' apparent magnitudes at their mean distances (the full moon's -12.7,
+// the sun's -26.7), 10^( -0.4 ( m_moon - m_sun ) ), about 2.5e-6 or 18.6 stops under the sun, times
+// the debug gain (`moonKeyGain`, 1). The sky, the haze and the clouds take it and lose it along their
+// own paths through the air, as they do the sun's; the key takes it through the air toward the moon
+// (Atmosphere `transmittanceToMoon`), as the sun's key does the sun's.
+const MOON_MAGNITUDE = - 12.7, SUN_MAGNITUDE = - 26.7;
+const MOON_OVER_SUN = Math.pow( 10, - 0.4 * ( MOON_MAGNITUDE - SUN_MAGNITUDE ) );
+const moonAboveAir = () => MOON_OVER_SUN * moonKeyGain();
 // The clouds' moonlight's colour at unit luminance (`trackClouds`), as it was.
 const CLOUD_MOON_HUE = [ 0.8621, 1.0080, 1.3264 ] as const;
 // The night's ambient's colour at unit luminance (`displayNightAmbient`), as it was.
 const NIGHT_AMBIENT_HUE = [ 0.6248, 1.0154, 1.9526 ] as const;
 // The night's ambient in the clouds and the distant sea (`displayNightAmbient`), a radiance: a
-// uniform sky giving level ground a fiftieth of the moon's key on it. Starlight and the airglow give
-// level ground a few thousandths of a lux, the full moon some hundredths at its height.
+// uniform sky giving level ground a fiftieth of the moon's key on it (its light through the air at
+// normal incidence). Starlight and the airglow give level ground a few thousandths of a lux, the
+// full moon some hundredths at its height.
 const NIGHT_AMBIENT_SHARE = 1 / 50;
-// a gain on the moon's key light (keyColor: the land, the sea's glitter, the haze's scatter of the
-// key), and through `moonAboveAir` on the moon's light above the air the sky, the clouds and the
-// haze take. It is the island's moonlight's level; `moonHue` its colour.
-const moonKeyGain = tune( 'lighting.moon.gain', 0.545, { min: 0.05, max: 4, scale: 'log' } );
+// a gain on the moon's light above the air (`moonAboveAir`), so on both of its paths: the key
+// (keyColor: the land, the sea's glitter, the haze's scatter of the key) and the sky, the clouds
+// and the haze. A debug knob, not the look's: 1 is the physical full moon, and so it stays.
+const moonKeyGain = tune( 'lighting.moon.gain', 1, { min: 0.05, max: 4, scale: 'log' } );
 // The island's moonlight's red and blue over green. They move the moonlit ground's colour without
 // its level (the hue keeps MOON_KEY's luminance) and without the moonlit sky's, clouds' and haze's,
 // which keep theirs. At MOON_KEY's own (MOON_KEY_RED, MOON_KEY_BLUE) the hue is exactly white.
@@ -1134,6 +1137,9 @@ export class Sky {
 	moonKeyShare = 0;
 	moonSkyShare = 0;
 	moonAbove = 0;
+	// the moon's key's luminance at normal incidence before its share: `moonAbove` through the air
+	// toward the moon
+	private moonKeyLevel = 0;
 	private daySkyMoon = 1;
 	// A shared artistic solar tint affects both scattering and direct light.
 	sunTint = new THREE.Color( 1.0, 0.97, 0.9 );
@@ -1983,13 +1989,17 @@ export class Sky {
 		const cloud = skyMix ? cloudedShare( skyMix ) : 0;
 		this.rising = sunRising( this.sunDir );
 		const moonGain = celestial ? duskForce( 'moonKey', celestial.moonKeyGain * twilightMoon( celestial.elevation, this.rising, cloud ) ) : 0;
-		const moonKey = illuminance * moonGain;
-		this.moonKeyColor.setRGB( MOON_KEY[ 0 ] * moonKey, MOON_KEY[ 1 ] * moonKey, MOON_KEY[ 2 ] * moonKey );
 		const moonSkyShare = celestial ? duskForce( 'moonSky', celestial.moonKeyGain * twilightMoonSky( celestial.elevation, this.rising, cloud ) ) : 0;
 		this.moonElevation = celestial ? celestial.moonElevation : MOON.elevation;
 		this.moonKeyShare = moonGain;
 		this.moonSkyShare = moonSkyShare;
-		this.moonAbove = celestial ? illuminance * moonAboveAir( this.atmosphere.transmittanceToMoon() ) : 0;
+		this.moonAbove = celestial ? illuminance * moonAboveAir() : 0;
+		// the key: the light above the air through the air toward the moon (its luminance), at the
+		// key's hue (MOON_KEY at unit luminance)
+		const toMoon = this.atmosphere.transmittanceToMoon();
+		this.moonKeyLevel = this.moonAbove * luminance709( toMoon.r, toMoon.g, toMoon.b );
+		const moonKey = this.moonKeyLevel * moonGain / MOON_KEY_LUMINANCE;
+		this.moonKeyColor.setRGB( MOON_KEY[ 0 ] * moonKey, MOON_KEY[ 1 ] * moonKey, MOON_KEY[ 2 ] * moonKey );
 		this.daySkyMoon = weather ? daySkyAt( weather.daySky, weather.daySkyExponent, this.moonElevation ) : 1;
 		const moonSky = moonSkyShare * this.moonAbove * luma( skyGain( this.moonElevation, false, cloud, this.daySkyMoon, _skyMoon ) );
 		this.atmosphere.moonIlluminance.value.setRGB( MOON_SKY_HUE[ 0 ] * moonSky, MOON_SKY_HUE[ 1 ] * moonSky, MOON_SKY_HUE[ 2 ] * moonSky );
@@ -2022,10 +2032,10 @@ export class Sky {
 		const moonColor = this.night.moonColor.value;
 		if ( celestial ) {
 
-			// A modest art-directed moon remains orders darker than daylight on the island (MOON_KEY),
-			// in the island's own hue: only the moon's share of the key takes it, so over the handoff
+			// The full moon's key, some 19 stops under a high sun's, in the island's own hue: only the
+			// moon's share of the key takes it, so over the handoff
 			// it grows with that share, and by day (no moon) the sun's key is untouched.
-			this.moonKeyAbove.copy( this.moonKeyColor ).multiply( moonHue( _moonHue ) ).multiplyScalar( moonKeyGain() );
+			this.moonKeyAbove.copy( this.moonKeyColor ).multiply( moonHue( _moonHue ) );
 			this.keyColor.add( this.moonKeyAbove );
 			this.night.moonDir.value.copy( celestial.moonDir );
 			this.night.frame.value.copy( celestial.starFrame );
@@ -2040,8 +2050,7 @@ export class Sky {
 			// the night's ambient in the clouds and the distant sea: a uniform sky's radiance that gives
 			// level ground NIGHT_AMBIENT_SHARE of the moon's key on it (the key's light at normal
 			// incidence, the moon's sine), by its share (DayCycle.ts `nightAmbientShare`)
-			const keyLevel = illuminance * MOON_KEY_LUMINANCE * moonKeyGain();
-			const floor = keyLevel * Math.sin( THREE.MathUtils.degToRad( this.moonElevation ) ) * NIGHT_AMBIENT_SHARE / Math.PI
+			const floor = this.moonKeyLevel * Math.sin( THREE.MathUtils.degToRad( this.moonElevation ) ) * NIGHT_AMBIENT_SHARE / Math.PI
 				* duskForce( 'nightAmbient', nightAmbientShare( celestial.elevation, this.rising, cloud ) );
 			this.displayNightAmbient.value.setRGB( NIGHT_AMBIENT_HUE[ 0 ] * floor, NIGHT_AMBIENT_HUE[ 1 ] * floor, NIGHT_AMBIENT_HUE[ 2 ] * floor );
 			this.grade.exposure = celestial.exposure;
