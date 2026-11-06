@@ -17,7 +17,7 @@ import { cloudBase } from '../sky/Sky.ts';
 //     0.6 before dawn and as the sun rises, a surface layer whose green optical depth reaches 1
 //     within about 1.6 km at the sea (where the air aloft is clean, Atmosphere.ts `aerosol`, the
 //     dawn's density lies in it), near 1 in the morning, 0.45 after sunset, a thin air that leaves
-//     the glow over the horizon no dark band, and two and a half times by night (a visible layer).
+//     the glow over the horizon no dark band, and by night the day's (see the night's Rayleigh).
 //     How far the light carries at a height follows from it and the medium's shape below.
 //   - the medium's shape (VolumetricHaze's header): `top`, the ground layer's top over the island's
 //     level (m), `width`, the width of its step (m), `aerosolShare`, the deep aerosol layer's density
@@ -118,10 +118,14 @@ import { cloudBase } from '../sky/Sky.ts';
 //     clouded sky takes the afterglow's rows as they were (`SETTING_CLOUDED`: the Rayleigh 4.7,
 //     from -1 to -4 degrees, giving way to the night's by -12) by its clouded share. Its Mie, 4.7, does not show
 //     with the sun under the horizon, and the night's Mie (2.0) is the gain and weight it was set
-//     with folded into one weight, not yet fitted. The night's Rayleigh, 8, holds a clear night's low sky (1 - 4 degrees
-//     up) at about 2.5 - 3 times the bare one, 10 - 20 degrees up at about 2: at 14.9, as it was
-//     set, the haze laid 4.5 - 5.4 times the bare sky over the horizon and the night sky stood pale
-//     over the moonlit land.
+//     with folded into one weight, not yet fitted. The night's amount and Rayleigh are the day's
+//     (0.66 and 0.575, the weather's own amount on top as by day): the night's air is the day's
+//     medium, lit by the moon above the air as the day's is by the sun (VolumetricHaze's moon
+//     beam), with no brightness of its own. A night key of its own (two and a half times the haze,
+//     a Rayleigh of 8, a visible layer) gave the haze about three quarters of a clear night's sky
+//     light: the land's ambient over the moon's key rose to about three and a half times the day's
+//     over the sun's, the grass in the moon a stop and four fifths under the day's against the sky
+//     band and the rock's shade two stops over its own against the lit rock.
 // The weather adds its own: under the cloudy and the overcast sky the air keeps about half the
 // clear day's colour (0.53 times) and shows twice as bright (the key's `gain`, which the keys
 // themselves leave at 1).
@@ -221,13 +225,13 @@ const twilight = ( elevation: number ): Sigma => {
 	return [ at( 0 ), at( 1 ), at( 2 ) ] as const;
 
 };
-const NIGHT = { ...key( 2.5, NIGHT_SIGMA, 0.55, 0, 1 ), rayleighWeight: 8, mieWeight: 2, top: 47.6, width: 36.8, widthSlope: 0.65, aerosolShare: 0.003, skyDepth: 0 };
 const BEFORE_DAWN = { ...key( 0.6, twilight( - 3.5 ), 0.33, 0, 1 ), rayleighWeight: 1.9, mieWeight: 4.1, nearScale: 0.8 };
 // the deep twilight before dawn: the same air with less of the haze's light (see the header)
 const EARLY_DAWN = { ...BEFORE_DAWN, rayleighWeight: 0.965, mieWeight: 4.1 };
 const MIST = { ...key( 0.6, GOLDEN_SIGMA, 0.64, 0, 1 ), rayleighWeight: 0.72, mieWeight: 0.83, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010, nearScale: 0.5 };
 const MORNING = { ...key( 0.96, DAY_SIGMA, 0.5, 0, 1 ), rayleighWeight: 0.33, mieWeight: 0.83 };
 const DAY = { ...key( 0.659, DAY_SIGMA, 1, 0, 0 ), rayleighWeight: 0.575, mieWeight: 0.79, top: 78.4, width: 54.9, aerosolShare: 0.06, aerosolHeight: 761 };
+const NIGHT = { ...key( DAY.amount, NIGHT_SIGMA, 0.55, 0, 1 ), rayleighWeight: DAY.rayleighWeight, mieWeight: 2, top: 47.6, width: 36.8, widthSlope: 0.65, aerosolShare: 0.003, skyDepth: 0 };
 const GOLDEN = { ...key( 0.606, GOLDEN_SIGMA, 0.331, 0, 1 ), rayleighWeight: 0.58, mieWeight: 3.8, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010 };
 const AFTER_SUNSET = { ...key( 0.45, twilight( - 2.5 ), 0.75, 0, 1 ), rayleighWeight: 0.32, mieWeight: 4.7 };
 // the deep twilight after sunset: the afterglow's air, its light keeping the glow's colour (see the header)
