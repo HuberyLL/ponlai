@@ -418,7 +418,11 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `lighting.sward.tint.r` (`g`, `b`) and the crowns', `lighting.vegetation.leaf.tint.r` (`g`, `b`);
   the sea's mean reflection over the slopes no pixel resolves, the spread of those slopes
   `sea.reflection.slopeScale` and the lift of its sky lobe `sea.reflection.lobeLift`
-  (`src/ocean/Water.ts` `REFLECTION_LOBE`).
+  (`src/ocean/Water.ts` `REFLECTION_LOBE`); and the dusk's shares, forced to take the twilight's
+  light and the night's apart, `sky.dusk.force.<name>` (-1, the default, leaves a share as the code
+  makes it, 0 to 1 forces it to that value; the twilight's are weights on the sun's light; the names
+  and what each one forces: `src/sky/DayCycle.ts` DUSK_FORCES, the values the code gave them since
+  a script cleared it: `duskShares`; `tools/dusk-grid.mjs` sets and reads them).
 - The ambient grade (`src/lighting/AmbientGrade.ts`): `__PONLAI__.ambient.current` holds the five
   knobs the table gives for the sun and the weather now (also `D.ambient`), `table` the table's own
   output; `override = true` with `manual.<knob>` replaces it from the next frame (the GUI's Ambient

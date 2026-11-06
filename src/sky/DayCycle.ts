@@ -1,5 +1,5 @@
 import { MathUtils, Matrix3, Quaternion, Vector3 } from 'three/webgpu';
-import { tuneObject } from '../debug/Tune.ts';
+import { tune, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 
 // The day cycle: authored, not astronomical. One dominant key light (the sun by day, the moon by
@@ -297,12 +297,12 @@ export function starNight( daylight: number, elevation: number, rising: boolean,
  * PROBE_SKY), at the sun's `elevation` (degrees), `rising` or setting, under a clouded share
  * `cloud`: under cloud none from 2 degrees up, all of it by -6; a clear sky's comes in from -7 to
  * -11 degrees after sunset by stops (DUSK_DEPTH.sky) and leaves from -13 to -3 before sunrise (the
- * header). */
+ * header). A debug page can force it (`duskForce`). */
 export function skyNight( elevation: number, rising: boolean, cloud: number ): number {
 
 	const night = 1 - smoothstep( - 6, 2, elevation );
 	const dawn = rising ? 1 - smoothstep( DAWN_SKY[ 0 ], DAWN_SKY[ 1 ], elevation ) : duskIn( elevation, DUSK_SKY, DUSK_DEPTH.sky );
-	return dawn + ( night - dawn ) * cloud;
+	return duskForce( 'skyNight', dawn + ( night - dawn ) * cloud );
 
 }
 /** The share of the moon's key (the snapshot's `moonKeyGain`) through a clear twilight (the
@@ -424,6 +424,56 @@ export function nightAmbientShare( elevation: number, rising: boolean, cloud: nu
 
 	const clear = rising ? 1 - smoothstep( DAWN_NIGHT[ 0 ], DAWN_NIGHT[ 1 ], elevation ) : duskIn( elevation, DUSK_NIGHT, DUSK_DEPTH.ambient );
 	return clear + ( nightAmbientAt( elevation ) - clear ) * cloud;
+
+}
+
+/** The dusk's shares a script can force on a debug page, to take the light of the twilight and of
+ * the night apart (tools/dusk-grid.mjs `--split`, `--night-split`), in the order that tool puts them
+ * back one at a time. The night's: `moonKey`, the moon's share of the key (Sky.ts `moonGain`);
+ * `moonSky`, of the moonlit sky (Sky.ts `skyMoon`); `skyNight`, the sky's and the probes' night key
+ * (`skyNight`); `nightAmbient`, the night's ambient in the sky, the clouds and the sea, the leaves'
+ * night key and the sward's (`nightAmbientShare`); `landNight`, the moon's share of the land's gain
+ * under overcast's deck (lighting/AmbientRelight.ts `underDeck`); `hazeNight`, the night key's
+ * weight in the haze's (weather/HazeKeys.ts `keyAlong`); `cloudMoon`, the clouds' moonlight (Sky.ts
+ * `moonShare`); `deck`, the deck's light in the haze (HazeKeys.ts `deck`); `exposureNight`, the
+ * night weight the exposure's keys take, and `displayNight`, the one the tone, the grade and the
+ * bloom take (post/Pipeline.ts `updateDisplay`); `yunpeng`, the yunpeng's glow and its lights'
+ * share, and `localLights`, the local lights' strength (main.ts). The twilight's, each a weight on
+ * the sun's light (1 when not forced): `sun`, the sun's part of the key (Sky.ts `keyColor`);
+ * `hazeSun`, the haze's sunlight; `hazeSky`, the haze's skylight from the sun's sky
+ * (weather/VolumetricHaze.ts). */
+export const DUSK_FORCES = [ 'moonKey', 'moonSky', 'skyNight', 'nightAmbient', 'landNight', 'hazeNight', 'cloudMoon', 'deck', 'exposureNight', 'displayNight', 'yunpeng', 'localLights', 'sun', 'hazeSun', 'hazeSky' ] as const;
+export type DuskForce = typeof DUSK_FORCES[ number ];
+// `sky.dusk.force.<name>` (debug/Tune.ts): -1, the default, leaves the share as the code makes it,
+// 0 to 1 forces it to that value; the sky is baked again on a change
+const duskForces = Object.fromEntries( DUSK_FORCES.map( ( name ) => [ name, tune( `sky.dusk.force.${ name }`, - 1, { min: - 1, max: 1, onChange: markSkyRetune } ) ] ) ) as Record<DuskForce, () => number>;
+
+/** The value the share `name` is forced to on a debug page (DUSK_FORCES), or null when it is not. */
+export function duskForced( name: DuskForce ): number | null {
+
+	const value = duskForces[ name ]();
+	return value < 0 ? null : value;
+
+}
+
+/** The values each share took as the code made it, forced or not, since a script last cleared the
+ * map: [ least, greatest ] over every call (a share some frames or readers take at other values
+ * shows the range). tools/dusk-grid.mjs reads it to report the shares and to skip forcing a share
+ * to the value it already has. `hazeNight` has no value of its own here (`duskForced`). */
+export const duskShares = new Map<DuskForce, [ number, number ]>();
+
+/** The share `name` (DUSK_FORCES): `value` itself unless it is forced. */
+export function duskForce( name: DuskForce, value: number ): number {
+
+	const range = duskShares.get( name );
+	if ( range === undefined ) duskShares.set( name, [ value, value ] );
+	else {
+
+		range[ 0 ] = Math.min( range[ 0 ], value );
+		range[ 1 ] = Math.max( range[ 1 ], value );
+
+	}
+	return duskForced( name ) ?? value;
 
 }
 

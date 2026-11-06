@@ -13,7 +13,7 @@ import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraCont
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
 import { Sky } from './sky/Sky.ts';
-import { DayCycle, DAY_PRESETS, nightAmbientShare, sunRising, type DayPreset } from './sky/DayCycle.ts';
+import { DayCycle, DAY_PRESETS, duskForce, nightAmbientShare, sunRising, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckLight, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, type TunedField, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
@@ -1919,13 +1919,14 @@ function tick( time: number ): void {
 	updateShelfScatter( sky.keyColor, sky.keyIsMoon ? 0 : 1 - shared.clouded.value, sky.elevation );
 	// the yunpeng's glow and its local lights by the night's share, a clear twilight's with the
 	// display's night (sky/DayCycle.ts `nightAmbientShare`; lighting/LocalLights.ts: its pass sorts
-	// the sources in view)
-	yunpengNight.value = nightAmbientShare( sky.elevation, sky.rising, shared.clouded.value );
-	localLights.update( yunpengNight.value );
+	// the sources in view); a debug page may force each reader's (DayCycle.ts `duskForce`)
+	const nightAmbient = nightAmbientShare( sky.elevation, sky.rising, shared.clouded.value );
+	yunpengNight.value = duskForce( 'yunpeng', nightAmbient );
+	localLights.update( duskForce( 'localLights', yunpengNight.value ) );
 	// what the crowns' leaves pass on of the key (world/vegetation/LeafLight.ts)
-	updateLeafLight( sky.elevation, yunpengNight.value, shared.clouded.value );
+	updateLeafLight( sky.elevation, duskForce( 'nightAmbient', nightAmbient ), shared.clouded.value );
 	// what a closed sky's light turns into in the sward (materials/SwardTint.ts)
-	updateSwardTint( shared.swardTint.value, shared.clouded.value, yunpengNight.value );
+	updateSwardTint( shared.swardTint.value, shared.clouded.value, duskForce( 'nightAmbient', nightAmbient ) );
 	prepareHaze( weather.state );
 	pipeline.air.keyDir.value.copy( sky.keyDir );
 	pipeline.air.keyColor.value.copy( sky.keyColor ).multiplyScalar( 1 - THREE.MathUtils.smoothstep( sky.clouds.coverage.value, 0.7, 0.97 ) );

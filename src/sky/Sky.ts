@@ -22,7 +22,7 @@ import { compileInto } from '../post/graph/Compile.ts';
 import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
-import { DAY_EXPOSURE, DUSK_DEPTH, displayNight, duskIn, nightAmbientShare, skyNight, starNight, sunRising, twilightMoon, twilightMoonSky, type DayCycleSnapshot } from './DayCycle.ts';
+import { DAY_EXPOSURE, DUSK_DEPTH, displayNight, duskForce, duskIn, nightAmbientShare, skyNight, starNight, sunRising, twilightMoon, twilightMoonSky, type DayCycleSnapshot } from './DayCycle.ts';
 import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckFloorTakeover, floorKeyGain, daySkyAt, type WeatherFront, type WeatherState } from './Weather.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
@@ -1854,12 +1854,12 @@ export class Sky {
 		// the moon's own gain instead (`moonKeyGain`).
 		const cloud = skyMix ? cloudedShare( skyMix ) : 0;
 		this.rising = sunRising( this.sunDir );
-		const moonGain = celestial ? celestial.moonKeyGain * twilightMoon( celestial.elevation, this.rising, cloud ) : 0;
+		const moonGain = celestial ? duskForce( 'moonKey', celestial.moonKeyGain * twilightMoon( celestial.elevation, this.rising, cloud ) ) : 0;
 		const moonKey = illuminance * moonGain;
 		const moonSky = SKY_LIGHT.night;
 		this.moonKeyColor.setRGB( MOON_KEY[ 0 ] * moonKey, MOON_KEY[ 1 ] * moonKey, MOON_KEY[ 2 ] * moonKey );
 		// (after sunset the moonlit sky comes in from a depth of its own: DayCycle.ts `twilightMoonSky`)
-		const skyMoon = illuminance * ( celestial ? celestial.moonKeyGain * twilightMoonSky( celestial.elevation, this.rising, cloud ) : 0 );
+		const skyMoon = illuminance * ( celestial ? duskForce( 'moonSky', celestial.moonKeyGain * twilightMoonSky( celestial.elevation, this.rising, cloud ) ) : 0 );
 		_moonSky.setRGB( MOON_KEY[ 0 ] * skyMoon, MOON_KEY[ 1 ] * skyMoon, MOON_KEY[ 2 ] * skyMoon );
 		this.atmosphere.moonIlluminance.value.setRGB( _moonSky.r * moonSky.r, _moonSky.g * moonSky.g, _moonSky.b * moonSky.b );
 		// the weather's day sky at this sun (Weather.ts `daySkyAt`), on the sun's light the sky takes
@@ -1883,7 +1883,7 @@ export class Sky {
 		// (no handoff) the key is the sun's direction itself.
 		this.keyDir.copy( celestial?.keyDir ?? this.sunDir );
 		this.keyIsMoon = moonGain > 0;
-		this.keyColor.copy( this.sunColor ).multiplyScalar( lowKey( this.elevation ) );
+		this.keyColor.copy( this.sunColor ).multiplyScalar( lowKey( this.elevation ) * duskForce( 'sun', 1 ) );
 		const moonColor = this.night.moonColor.value;
 		if ( celestial ) {
 
@@ -1904,7 +1904,7 @@ export class Sky {
 			this.night.starVisibility.value = celestial.nightVisibility * stars * ( 1 - 0.22 * celestial.moonVisibility );
 			// the night sky's ambient, a clear twilight's with the display's night (DayCycle.ts
 			// `nightAmbientShare`)
-			this.displayNightAmbient.value.setRGB( 0.001, 0.001625, 0.003125 ).multiplyScalar( illuminance * nightAmbientShare( celestial.elevation, this.rising, cloud ) );
+			this.displayNightAmbient.value.setRGB( 0.001, 0.001625, 0.003125 ).multiplyScalar( illuminance * duskForce( 'nightAmbient', nightAmbientShare( celestial.elevation, this.rising, cloud ) ) );
 			this.grade.exposure = celestial.exposure;
 			this.grade.daylight = celestial.daylight;
 			this.islandGain.value = islandSky( celestial.elevation, this.rising, this.islandTint.value, cloud );
@@ -2089,7 +2089,7 @@ export class Sky {
 		// (CLOUD_MOON_DUSK), not before it while the afterglow still lights the sky behind them; under
 		// cloud with the clouded night's (CLOUD_MOON), by the clouded share.
 		const moonClouded = celestial ? 1 - THREE.MathUtils.smoothstep( celestial.elevation, CLOUD_MOON[ 0 ], CLOUD_MOON[ 1 ] ) : 0;
-		const moonShare = ! celestial ? 0 : this.rising ? moonClouded : THREE.MathUtils.lerp( duskIn( celestial.elevation, CLOUD_MOON_DUSK, DUSK_DEPTH.cloudMoon ), moonClouded, cloud );
+		const moonShare = ! celestial ? 0 : duskForce( 'cloudMoon', this.rising ? moonClouded : THREE.MathUtils.lerp( duskIn( celestial.elevation, CLOUD_MOON_DUSK, DUSK_DEPTH.cloudMoon ), moonClouded, cloud ) );
 		const moonGain = celestial ? moonShare * celestial.moonVisibility : 0;
 		const sunUp = ! celestial || celestial.elevation > - 2.5 || rising;
 		// The march's depth shades the clouds' sky light as well as their direct light, and the same

@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { tuneObject, type TuneOptions } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
-import { DUSK_DEPTH, duskIn, moonKeyShare } from '../sky/DayCycle.ts';
+import { DUSK_DEPTH, duskForce, duskForced, duskIn, moonKeyShare } from '../sky/DayCycle.ts';
 import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckLight, overcastDeckLight } from '../sky/Weather.ts';
 import { cloudBase } from '../sky/Sky.ts';
 
@@ -327,10 +327,16 @@ function keyAlong( rows: ReadonlyArray<readonly [ number, HazeKey ]>, elevation:
 	const [ e0, a ] = rows[ i ], [ e1, b ] = rows[ i + 1 ];
 	// (a clear evening's night key comes in by stops, as the night's light does: DayCycle.ts
 	// DUSK_DEPTH)
-	const t = rows === SETTING && a === NIGHT ? 1 - duskIn( elevation, [ e0, e1 ], DUSK_DEPTH.haze ) : THREE.MathUtils.smoothstep( elevation, e0, e1 );
+	// (a debug page may force the night key's weight, DayCycle.ts `duskForce`: its segment's ease,
+	// and above it a blend toward it)
+	const night = duskForced( 'hazeNight' );
+	const t = night !== null && a === NIGHT ? 1 - night : rows === SETTING && a === NIGHT ? 1 - duskIn( elevation, [ e0, e1 ], DUSK_DEPTH.haze ) : THREE.MathUtils.smoothstep( elevation, e0, e1 );
 	for ( const f of FIELDS ) out[ f ] = a[ f ] + ( b[ f ] - a[ f ] ) * t;
 	const sa = SHAPED.has( a ) ? a : DAY, sb = SHAPED.has( b ) ? b : DAY;
 	for ( const f of SHAPE_FIELDS ) out[ f ] = sa[ f ] + ( sb[ f ] - sa[ f ] ) * t;
+	if ( night === null || a === NIGHT ) return;
+	for ( const f of FIELDS ) out[ f ] += ( NIGHT[ f ] - out[ f ] ) * night;
+	for ( const f of SHAPE_FIELDS ) out[ f ] += ( NIGHT[ f ] - out[ f ] ) * night;
 
 }
 const _cloudedKey = key( 0, DAY_SIGMA, 0, 0, 0 );
@@ -386,7 +392,7 @@ export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly 
 	out.nearDensity *= out.nearScale * ( 1 + ( HIGH_SUN_NEAR - 1 ) * cloudedHighSun( elevation, skyMix ) );
 	out.mist *= ( 1 - THREE.MathUtils.smoothstep( wind, 3.5, 5 ) ) * ( 1 - rain );
 	// (by night the whole clouded share, once the moon's key has come in: see the header)
-	out.deck = Math.max( deckLight( elevation, clouded, skyMix[ 3 ] ?? 0 ), clouded * moonKeyShare( elevation ) );
+	out.deck = duskForce( 'deck', Math.max( deckLight( elevation, clouded, skyMix[ 3 ] ?? 0 ), clouded * moonKeyShare( elevation ) ) );
 	out.overcastDeck = ( skyMix[ 3 ] ?? 0 ) * overcastDeckLight( elevation );
 	return out;
 

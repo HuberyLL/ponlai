@@ -4,7 +4,7 @@ import { OVERCAST_LAND, ambient, overcastLandWeight } from './AmbientGrade.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune, tuneKeys, tuneUniform } from '../debug/Tune.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
-import { moonKeyShare, skyNight } from '../sky/DayCycle.ts';
+import { duskForce, moonKeyShare, skyNight } from '../sky/DayCycle.ts';
 import { IRRADIANCE_SLABS, type AmbientVolume } from './AmbientVolume.ts';
 import { COSINE_LOBE, bounceLobe, coefficients, linearMaximum, shBasisAt, shConvolve, shDeringWindow, shProduct, shTowardDelta, shWindow, toMat3, type M3 } from './Harmonics.ts';
 import type { Shared } from '../shared.ts';
@@ -638,7 +638,7 @@ export class AmbientRelight {
 		// day's keys, held below the golden key at its value, to the night's with the moon's key
 		// instead, without the twilight's keys: see PROBE_SKY)
 		const deckDay = keyed( PROBE_SKY, Math.max( elevation, PROBE_SKY.day[ 0 ].at ), 0, _probeDeck, clouded, this.rising() ).skyGain * landSky;
-		const clouds = gained( landSky ), underDeck = deckDay + ( toNight - deckDay ) * moonKeyShare( elevation );
+		const clouds = gained( landSky ), underDeck = deckDay + ( toNight - deckDay ) * duskForce( 'landNight', moonKeyShare( elevation ) );
 		const probeSky = gained( 1 ), landGain = clouds + ( underDeck - clouds ) * overcast;
 		// the land takes the sky's light as the sky gives it; a low sun's lift of it (`lowSunSkyLift`)
 		// goes to the water alone, here to the sea's bounce, as the water drawn takes it

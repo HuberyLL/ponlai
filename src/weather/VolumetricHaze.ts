@@ -21,6 +21,7 @@ import type { HazeKey } from './HazeKeys.ts';
 import { AEROSOL_OPEN, type HazeMedium, expShare, meanExtinction, nearFactor, nearLength } from './HazeDepth.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune, tuneObject, tuneUniform } from '../debug/Tune.ts';
+import { duskForce } from '../sky/DayCycle.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
 import type { FrameGraph, GraphResources, ResourceHandle, SizeClass } from '../post/graph/FrameGraph.ts';
 import { TemporalRest, restEpoch } from '../post/TemporalRest.ts';
@@ -1337,10 +1338,12 @@ export class VolumetricHaze {
 		// its Rayleigh light the key's share of the aerosol's; the moon's aerosol light then takes its
 		// own colour at the same luminance, times its gain
 		const weather = this.weatherLight;
+		// (a debug page may weigh the sun's, sky/DayCycle.ts `duskForce`)
+		const sunSky = duskForce( 'hazeSky', 1 ), sunLight = duskForce( 'hazeSun', 1 );
 		[ this.atmosphere.sunIlluminance.value, this.atmosphere.moonIlluminance.value ].forEach( ( illuminance, b ) => {
 
-			this.ambientColour[ b ].value.copy( illuminance ).multiplyScalar( weather.ambient );
-			this.mieColour[ b ].value.copy( b === 0 ? this.sunBeam : illuminance ).multiplyScalar( weather.direct );
+			this.ambientColour[ b ].value.copy( illuminance ).multiplyScalar( b === 0 ? weather.ambient * sunSky : weather.ambient );
+			this.mieColour[ b ].value.copy( b === 0 ? this.sunBeam : illuminance ).multiplyScalar( b === 0 ? weather.direct * sunLight : weather.direct );
 			this.sunRayleighColour[ b ].value.copy( this.mieColour[ b ].value ).multiplyScalar( look.sunRayleigh );
 
 		} );
