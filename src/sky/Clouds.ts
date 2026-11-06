@@ -29,6 +29,7 @@ import { tune, tuneUniform } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 import { HazeMedium } from '../weather/HazeDepth.ts';
 import { SUN_SETTING_RADIUS } from '../lighting/Radiometry.ts';
+import { HALF_MAX, preExposedRGBA, preExposure } from '../post/PreExposure.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -219,6 +220,16 @@ type V4 = THREE.Node<'vec4'>;
 // Lightning's light inside the
 // cloud stays out of the view's accumulated history, the bake and the panorama. The panorama and
 // the shadow map refresh in part each frame and whole on a jump and when a paused scene settles.
+// The view's traces, their range boxes and its history hold the radiance pre-exposed, times the
+// scale its kernels were dispatched at (PreExposure.ts `preExposure.scale`, held at half float's
+// largest), as the scene's colour does, so they keep the scene's range from noon to a moonless
+// night. The clouds update ahead of the frame's `beginFrame`, so a frame whose P changes draws the
+// clouds at the last one's: each history buffer keeps the scale it was written at
+// (`historyScale`), `sampleView` divides by the shown one's, and the next resolve takes the
+// reprojected history to its own scale by their ratio (a power of two: the bits of what lay in
+// range stay). A view kept at rest holds the scale it settled at: a new P settles it again, so a
+// paused frame takes the clouds at its own P (after a jump P starts from 0, where a night's
+// clouds would have settled into half float's subnormals).
 // Every explicit bake (the load's, a scene jump's, a seek's, a retune's: main.ts `bakeEnvironment`,
 // through Sky.reset) restarts the clouds as they stand before a page's first frame (`restart`),
 // then sets their drift, evolution and axes to the scene clock, for the bake that follows.
@@ -228,11 +239,11 @@ export const EARTH_RADIUS = 6_360_000;
 // reads is `shellBottom` and `shellThickness`, blended by the sky's shares (Sky.ts CLOUD_SKIES), so
 // cloudy and overcast take a deck of their own, lower (`setDeck`).
 export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
-// What the view's traces and history and the panorama store is the radiance times this: at night
-// and most before dawn, when the exposure stands near 2^16, the clouds' radiance lies under half
-// float's 2^-14, where its steps are wide enough to show as dark flecks once exposed. A power of
-// two, so what lay in range keeps its bits. Lightning's light is stored apart and bare (its reach
-// is far above this range's top).
+// What the panorama stores is the radiance times this: at night and most before dawn, when the
+// exposure stands near 2^16, the clouds' radiance lies under half float's 2^-14, where its steps are
+// wide enough to show as dark flecks once exposed. A power of two, so what lay in range keeps its
+// bits. (The view takes the pre-exposure instead: see the rules above.) Lightning's light is stored
+// apart and bare (its reach is far above this range's top).
 const CLOUD_STORE = 256;
 // The preset's scales, rounded so they nest: the wrapped wind offset (TILE) holds a whole
 // number of periods of the weather map, the shape noise and the erosion noise.
@@ -872,6 +883,13 @@ export class Clouds {
 	private readonly historyValid = uniform( 0 );
 	// 0 while a scene at rest settles: nothing moves, so the history needs no clamp to stay clean.
 	private readonly clampHistory = uniform( 1 );
+	// The pre-exposure's scale each history buffer was written at, the shown one's (whose inverse
+	// `sampleView` takes) and the ratio the resolve takes the reprojected history by: this
+	// dispatch's scale over the scale of the history it reads (see the rules in the header).
+	private readonly historyScale = [ 1, 1 ];
+	private shownScale = 1;
+	private readonly viewUnscale = uniform( 1 );
+	private readonly historyGain = uniform( 1 );
 	private readonly camDelta = uniform( new THREE.Vector3() );
 
 	private shape: THREE.Data3DTexture | null = null;
@@ -2038,7 +2056,7 @@ export class Clouds {
 			const rainSample = rainAt( rd, C.tan.y.mul( 2 ).div( this.displayHeight ), jitter, true );
 			const rain = rainSample.color.toVar();
 			const traced = over( rain, vec4( m.L, m.T ) ).toVar();
-			textureStore( traceOut, tp, vec4( traced.rgb.mul( CLOUD_STORE ), traced.a ) );
+			textureStore( traceOut, tp, preExposedRGBA( traced ) );
 			textureStore( flashOut, tp, vec4( m.F.mul( rain.a ).add( rainSample.flash ), 1 ) );
 			// The depth (m) under half float's largest value: an empty ray's depth, past the shell, passes
 			// 65 km toward the horizon, where the haze in front has closed, and an inf stored there turned
@@ -2062,7 +2080,7 @@ export class Clouds {
 				hi.assign( streaksAt( rd, C.tan.y.mul( 2 ).div( this.viewSize.y ) ) );
 
 			} );
-			textureStore( highOut, tp, vec4( hi.rgb.mul( CLOUD_STORE ), hi.a ) );
+			textureStore( highOut, tp, preExposedRGBA( hi ) );
 			// Motion for the resolve: the closest cumulus sample around this block (like the closest
 			// depth dilation of TAA), so a cloud's edges move with it and the foreground wins.
 			const best = vec3( 1e9, 0, 0 ).toVar();
@@ -2101,20 +2119,21 @@ export class Clouds {
 		const boxKernel = Fn( () => {
 
 			const tp = tracePixel().toVar();
-			const sky = this.atmosphere.skyRadiance( viewDir( tracedAt( tp ).div( this.viewSize ) ) ).mul( CLOUD_STORE ).toVar();
+			const sky = this.atmosphere.skyRadiance( viewDir( tracedAt( tp ).div( this.viewSize ) ) ).mul( preExposure.scale ).toVar();
 			const tmax = this.traceSize.sub( 1 );
-			const lo = vec4( 1e4 ).toVar(), hi = vec4( - 1e4 ).toVar();
+			// (the range starts at the first sample, so it holds at any scale)
+			const lo = vec4( 0 ).toVar(), hi = vec4( 0 ).toVar();
 			for ( let y = - 1; y <= 1; y ++ ) for ( let x = - 1; x <= 1; x ++ ) {
 
 				const q = ivec2( clamp( vec2( tp ).add( vec2( x, y ) ), vec2( 0 ), tmax ) );
 				const c = over( textureLoad( traceNode, q ), textureLoad( highNode, q ) ).toVar();
 				const composite = vec4( c.rgb.add( sky.mul( c.a ) ), c.a );
-				lo.assign( min( lo, composite ) );
-				hi.assign( max( hi, composite ) );
+				lo.assign( x === - 1 && y === - 1 ? composite : min( lo, composite ) );
+				hi.assign( x === - 1 && y === - 1 ? composite : max( hi, composite ) );
 
 			}
-			textureStore( boxMinOut, tp, lo );
-			textureStore( boxMaxOut, tp, hi );
+			textureStore( boxMinOut, tp, vec4( min( lo.rgb, vec3( HALF_MAX ) ), lo.a ) );
+			textureStore( boxMaxOut, tp, vec4( min( hi.rgb, vec3( HALF_MAX ) ), hi.a ) );
 
 		} )().compute( tw * th, [ 64 ] ).setName( 'Clouds.ViewBox' );
 
@@ -2162,10 +2181,12 @@ export class Clouds {
 
 						// Reprojected history clamped to the range of this frame's samples around it (with
 						// a margin): real changes cannot leave ghosts, so samples average over many frames.
-						const h = max( catmullRom( srcNode, puv, this.viewSize ), vec4( 0 ) ).toVar();
+						// (taken to this dispatch's scale: `historyGain`)
+						const reprojected = max( catmullRom( srcNode, puv, this.viewSize ), vec4( 0 ) ).toVar();
+						const h = vec4( reprojected.rgb.mul( this.historyGain ), reprojected.a ).toVar();
 						const lo = textureLoad( boxMinNode, tp ), hi = textureLoad( boxMaxNode, tp );
-						const pad = hi.sub( lo ).mul( 0.25 ).add( vec4( vec3( 0.01 * CLOUD_STORE ), 0.01 ) );
-						const sky = this.atmosphere.skyRadiance( rd ).mul( CLOUD_STORE ).toVar();
+						const pad = hi.sub( lo ).mul( 0.25 ).add( vec4( vec3( 0.01 ).mul( preExposure.scale ), 0.01 ) );
+						const sky = this.atmosphere.skyRadiance( rd ).mul( preExposure.scale ).toVar();
 						const clamped = clamp( vec4( h.rgb.add( sky.mul( h.a ) ), h.a ), lo.sub( pad ), hi.add( pad ) ).toVar();
 						const kept = vec4( max( clamped.rgb.sub( sky.mul( clamped.a ) ), vec3( 0 ) ), clamped.a );
 						out.assign( select( this.rebuildK.lessThan( 0 ).and( this.clampHistory.greaterThan( 0.5 ) ), kept, h ) );
@@ -2207,7 +2228,7 @@ export class Clouds {
 					} );
 
 				} );
-				textureStore( dstOut, p, vec4( out.rgb, clamp( out.a, 0, 1 ) ) );
+				textureStore( dstOut, p, vec4( min( out.rgb, vec3( HALF_MAX ) ), clamp( out.a, 0, 1 ) ) );
 				textureStore( dstDepth, p, vec4( outDepth, 1 ) );
 
 			} )().compute( width * height, [ 64 ] ).setName( 'Clouds.ViewResolve' );
@@ -2307,12 +2328,15 @@ export class Clouds {
 		this.previousTime = time;
 		this.hasPrevious = true;
 
-		if ( resting && ( ! this.settled || full ) ) {
+		// (a view kept at rest under another P than now: see the rules in the header)
+		const rescaled = this.settled && this.shownScale !== preExposure.scale.value;
+		if ( resting && ( ! this.settled || full || rescaled ) ) {
 
-			// The scene has come to rest: settle the view once, from scratch, then keep it. Depending
-			// only on the scene, a paused frame is exactly repeatable. The panorama and the shadow map
-			// (camera-relative, refreshed a share per frame) are brought up to date with it, so a
-			// paused frame does not wait out their refresh cycles after a camera move.
+			// The scene has come to rest: settle the view once, from scratch, then keep it (or settle it
+			// again at a new P). Depending only on the scene and P, a paused frame is exactly
+			// repeatable. The panorama and the shadow map (camera-relative, refreshed a share per
+			// frame) are brought up to date with it, so a paused frame does not wait out their refresh
+			// cycles after a camera move.
 			if ( ! full ) this.refreshMaps( renderer, true, 1 );
 			this.settle( renderer );
 
@@ -2385,7 +2409,14 @@ export class Clouds {
 		renderer.compute( view.kernels.trace );
 		renderer.compute( view.kernels.high );
 		renderer.compute( view.kernels.box );
+		// (the kernels run at the pre-exposure's scale as it stands now; the resolve reads the other
+		// history buffer and writes this one)
+		const scale = preExposure.scale.value;
+		this.historyGain.value = scale / this.historyScale[ 1 - this.pingPong ];
 		renderer.compute( view.kernels.resolve[ this.pingPong ] );
+		this.historyScale[ this.pingPong ] = scale;
+		this.shownScale = scale;
+		this.viewUnscale.value = 1 / scale;
 		this.viewNode.value = view.history[ this.pingPong ];
 		this.viewDepthNode.value = view.depthHistory[ this.pingPong ];
 		this.pingPong = 1 - this.pingPong;
@@ -2499,6 +2530,10 @@ export class Clouds {
 		this.flashOn.value = 0;
 		this.frame = 0;
 		this.pingPong = 0;
+		this.historyScale.fill( 1 );
+		this.shownScale = 1;
+		this.viewUnscale.value = 1;
+		this.historyGain.value = 1;
 		this.traces = 0;
 		this.turned = 0;
 		this.hasPrevious = false;
@@ -2590,7 +2625,7 @@ export class Clouds {
 			const fuv = uv.mul( this.viewSize ).sub( this.slot ).sub( this.subPixel ).sub( 0.5 ).div( 4 ).add( 0.5 ).div( this.traceSize );
 			const flash = this.flashNode.sample( fuv ).level( float( 0 ) ).rgb.mul( this.flashOn );
 			const above = smoothstep( - 0.05, - 0.03, direction.y );
-			result.assign( vec4( v.rgb.div( CLOUD_STORE ).add( flash ).mul( above ), mix( float( 1 ), min( v.a, 1 ), above ) ) );
+			result.assign( vec4( v.rgb.mul( this.viewUnscale ).add( flash ).mul( above ), mix( float( 1 ), min( v.a, 1 ), above ) ) );
 
 		} ).Else( () => {
 

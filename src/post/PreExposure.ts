@@ -74,7 +74,9 @@ type V3 = THREE.Node<'vec3'>;
 // - Readers that work in scene units divide it out (`inverse`): the water's reads of the opaque
 //   image, the underwater pyramid and the refraction image (Water.ts), the composite (Pipeline.ts:
 //   the haze, the shafts and the rods' colour work in scene units, its output is scaled again),
-//   FSR 3's reactive generator (Fsr3Upscaler.ts). The metering histograms instead bin the values as
+//   FSR 3's reactive generator (Fsr3Upscaler.ts), and the clouds' view, by the scale it was written
+//   at (Clouds.ts `sampleView`: the clouds update before `beginFrame`, so a frame whose P changes
+//   draws them at the last frame's). The metering histograms instead bin the values as
 //   stored, so their range follows P as the stored values do, and the meter takes P back out of
 //   their means in stops (`log2Scale`, Metering.ts): with a range fixed in scene units, a dark
 //   twilight's values fell under its floor while the targets still held them at full precision. The
@@ -84,8 +86,10 @@ type V3 = THREE.Node<'vec3'>;
 // - The writers: the scene passes' MRTs (Motion.ts `sceneMRT`, `overlayMRT`), a fragmentNode's
 //   `outputStruct` and a lit material's `meterOutput` (Motion.ts), the refraction pass's MRT, the
 //   composite and what the post chain adds in hdr's units (the sun's flare, the rain veil:
-//   Pipeline.ts), the rain overlay after the resolve (AfterResolve.ts `afterMRT`). Each also holds
-//   its value at or below half float's largest (`preExposed`), so the sun's disc stays finite.
+//   Pipeline.ts), the rain overlay after the resolve (AfterResolve.ts `afterMRT`), the clouds'
+//   view kernels (Clouds.ts: its traces, range boxes and history, whose history follows a new P by
+//   the ratio). Each also holds its value at or below half float's largest (`preExposed`), so the
+//   sun's disc stays finite.
 
 /** Stops below the exposure the scene is stored at (see the header). */
 export const PRE_EXPOSURE_BIAS = 3;
