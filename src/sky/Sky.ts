@@ -54,6 +54,11 @@ const METER_FLOOR = 2 ** - 40;
  * is stored about 1.5 stops under STORE_CEILING, where every write of it is held. The irradiance
  * probe's panorama (`small`, single float) stores the radiance as it is. */
 export const PANORAMA_STORE = 2 ** 14;
+/** What the bakes' cloud layer (`upperMat`, read by `layerAt`) stores: its radiance times this.
+ * The clouds' light at night lies lower than the sky's: unscaled, a clear midnight's layer has its
+ * first percentile near 2^-21 (2^-16 over the texels at least a tenth covered). The brightest of
+ * the day (a low sun's lit edges) is stored about a quarter stop under STORE_CEILING. */
+const LAYER_STORE = 2 ** 16;
 type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed' | 'windDirection'>;
 
 // The sky: atmosphere, clouds, night sky and the baked environment. One cloud field feeds the
@@ -1342,7 +1347,7 @@ export class Sky {
 				const lat = float( i.div( 32 ) ).add( 0.5 ).mul( 0.5 * Math.PI / 16 ).toVar();
 				const d = vec3( cos( lat ).mul( cos( lon ) ), sin( lat ), cos( lat ).mul( sin( lon ) ) ).toVar();
 				const q = dirToEquirect( d ).toVar();
-				const cloud = this.cloudLayer.sample( vec2( q.x, q.y.sub( 0.5 ).mul( 2 ) ) ).level( float( 0 ) ).toVar();
+				const cloud = this.layerAt( vec2( q.x, q.y.sub( 0.5 ).mul( 2 ) ) ).toVar();
 				const radiance = this.gapSky( d ).mul( cloud.a ).add( cloud.rgb );
 				sum.addAssign( radiance.mul( sin( lat ).mul( cos( lat ) ) ).mul( ( 0.5 * Math.PI / 16 ) * ( 2 * Math.PI / 32 ) / Math.PI ) );
 
@@ -1367,7 +1372,8 @@ export class Sky {
 				sum.addAssign( this.clouds.sample( equirectToDir( vec2( q.x, clamp( q.y, 0, 1 ).mul( 0.5 ).add( 0.5 ) ) ) ) );
 
 			}
-			return sum.mul( 0.25 );
+			// (stored times LAYER_STORE, held at STORE_CEILING)
+			return vec4( min( sum.rgb.mul( 0.25 * LAYER_STORE ), vec3( STORE_CEILING ) ), sum.a.mul( 0.25 ) );
 
 		} )();
 		this.upperQuad = new THREE.QuadMesh( upperMat );
@@ -1440,7 +1446,7 @@ export class Sky {
 
 			const q = uv();
 			const d = equirectToDir( q ).toVar();
-			const cloud = this.cloudLayer.sample( vec2( q.x, abs( q.y.sub( 0.5 ) ).mul( 2 ) ) ).level( float( 0 ) ).toVar();
+			const cloud = this.layerAt( vec2( q.x, abs( q.y.sub( 0.5 ) ).mul( 2 ) ) ).toVar();
 			const up = vec3( d.x, abs( d.y ), d.z );
 			// (the environment's source takes the light lent to the island: ISLAND_SKY; the haze as the
 			// dome lays it, from the sea's level: see `fogEnvironment`)
@@ -2687,6 +2693,15 @@ export class Sky {
 		if ( version < this.seaVersion ) return;
 		this.seaVersion = version;
 		this.seaLight.copy( radiance );
+
+	}
+
+	// The bake's cloud layer at `q` (the upper hemisphere's equirect), its radiance in scene units
+	// (LAYER_STORE divided out).
+	private layerAt( q: V2 ): V4 {
+
+		const stored = this.cloudLayer.sample( q ).level( float( 0 ) ).toVar();
+		return vec4( stored.rgb.mul( 1 / LAYER_STORE ), stored.a );
 
 	}
 
