@@ -1901,7 +1901,7 @@ export class Sky {
 			moonColor.setRGB( 0.04, 0.041, 0.043 ).multiplyScalar( 0.32 * celestial.moonVisibility * this.sunIlluminance / SUN_ILLUMINANCE );
 			this.grade.night = displayNight( celestial.daylight, celestial.elevation, this.rising, cloud );
 			const stars = starNight( celestial.daylight, celestial.elevation, this.rising, cloud );
-			this.night.starVisibility.value = celestial.nightVisibility * stars * ( 1 - 0.22 * celestial.moonVisibility );
+			this.night.starVisibility.value = duskForce( 'stars', celestial.nightVisibility * stars ) * ( 1 - 0.22 * celestial.moonVisibility );
 			// the night sky's ambient, a clear twilight's with the display's night (DayCycle.ts
 			// `nightAmbientShare`)
 			this.displayNightAmbient.value.setRGB( 0.001, 0.001625, 0.003125 ).multiplyScalar( illuminance * duskForce( 'nightAmbient', nightAmbientShare( celestial.elevation, this.rising, cloud ) ) );

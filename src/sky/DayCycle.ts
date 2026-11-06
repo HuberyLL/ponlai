@@ -438,11 +438,13 @@ export function nightAmbientShare( elevation: number, rising: boolean, cloud: nu
  * `moonShare`); `deck`, the deck's light in the haze (HazeKeys.ts `deck`); `exposureNight`, the
  * night weight the exposure's keys take, and `displayNight`, the one the tone, the grade and the
  * bloom take (post/Pipeline.ts `updateDisplay`); `yunpeng`, the yunpeng's glow and its lights'
- * share, and `localLights`, the local lights' strength (main.ts). The twilight's, each a weight on
+ * share, and `localLights`, the local lights' strength (main.ts); `stars`, the stars' share in the
+ * drawn and the baked sky (Sky.ts `starVisibility`: `nightVisibility` times `starNight`), which the
+ * land takes through the baked sky. The twilight's, each a weight on
  * the sun's light (1 when not forced): `sun`, the sun's part of the key (Sky.ts `keyColor`);
  * `hazeSun`, the haze's sunlight; `hazeSky`, the haze's skylight from the sun's sky
  * (weather/VolumetricHaze.ts). */
-export const DUSK_FORCES = [ 'moonKey', 'moonSky', 'skyNight', 'nightAmbient', 'landNight', 'hazeNight', 'cloudMoon', 'deck', 'exposureNight', 'displayNight', 'yunpeng', 'localLights', 'sun', 'hazeSun', 'hazeSky' ] as const;
+export const DUSK_FORCES = [ 'moonKey', 'moonSky', 'skyNight', 'nightAmbient', 'landNight', 'hazeNight', 'cloudMoon', 'deck', 'exposureNight', 'displayNight', 'yunpeng', 'localLights', 'stars', 'sun', 'hazeSun', 'hazeSky' ] as const;
 export type DuskForce = typeof DUSK_FORCES[ number ];
 // `sky.dusk.force.<name>` (debug/Tune.ts): -1, the default, leaves the share as the code makes it,
 // 0 to 1 forces it to that value; the sky is baked again on a change
