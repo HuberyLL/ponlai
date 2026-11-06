@@ -3,11 +3,13 @@
 //   node tools/verify-weather.mjs http://127.0.0.1:5190 [--coupling]
 // Its rain preset and the rain parts are parked with the rain (src/sky/Weather.ts PARKED_WEATHER):
 // out of the default checks until the parked weathers are revived; it still runs on a debug build.
+// Its steps wait for the page's rendered frames (tools/page-eval.mjs, "Rendered frames").
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
 import { DAY_PRESETS } from '../src/sky/DayCycle.ts';
+import { renderedFrames } from './page-eval.mjs';
 
 const base = process.argv.slice( 2 ).find( ( arg ) => ! arg.startsWith( '--' ) ) || 'http://127.0.0.1:5190';
 const coupling = process.argv.includes( '--coupling' );
@@ -51,7 +53,8 @@ try {
 		s.controls.enableDamping = false;
 		await s.setPreset( 'golden-hour' );
 	} );
-	const frames = () => page.evaluate( () => new Promise( ( resolve ) => requestAnimationFrame( () => requestAnimationFrame( resolve ) ) ) );
+	// two of the page's rendered frames (tools/page-eval.mjs, "Rendered frames")
+	const frames = () => renderedFrames( page, 2 );
 	const camera = async ( view ) => {
 		await page.evaluate( ( view ) => {
 			const s = window.__PONLAI__;

@@ -3,6 +3,7 @@
 // key turns from one body to the other, and every frame must show the clock's own state: by day
 // the key is the sun's direction, by night it holds where the moon stands (DayCycle.ts MOON), and
 // over the handoff it turns from the one to the other (DayCycle `keyDir`, which Sky.ts takes).
+// Each sample is read after a rendered frame of its clock (tools/page-eval.mjs, "Rendered frames").
 // Run against the dev server:
 // node tools/verify-celestial-handoff.mjs http://127.0.0.1:5190
 import assert from 'node:assert/strict';
@@ -37,7 +38,20 @@ try {
 		s.dayCycle.paused = true;
 		s.dayCycle.moonPhase = 0.5;
 		await s.setWeather( 'clear', 0 );
-		const frame = () => new Promise( ( resolve ) => requestAnimationFrame( resolve ) );
+		// the page's next rendered frame (tools/page-eval.mjs, "Rendered frames")
+		const frame = () => new Promise( ( resolve, reject ) => {
+
+			const end = s.renderer.info.frame + 1, deadline = performance.now() + 60000;
+			const tick = () => {
+
+				if ( s.renderer.info.frame >= end ) resolve();
+				else if ( performance.now() > deadline ) reject( new Error( `no frame ${ end } within 60000 ms (at ${ s.renderer.info.frame }, loop.running ${ s.loop?.running })` ) );
+				else requestAnimationFrame( tick );
+
+			};
+			tick();
+
+		} );
 		// the key's direction at this clock, as Sky.ts takes it from the same snapshot
 		const clockKey = ( clock ) => clock.keyDir;
 		const read = () => {
