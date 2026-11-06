@@ -195,6 +195,11 @@ const DAWN_MOON = [ - 13, - 7 ] as const;
 const DUSK_NIGHT = [ - 11, - 7 ] as const;
 const DUSK_SKY = [ - 11, - 7 ] as const;
 const DUSK_MOON = [ - 11, - 7 ] as const;
+// where a clear twilight's exposure takes the night's keys (`exposureNight`), the morning's and the
+// evening's: its own windows, apart from the display's so the meter's handover can be fitted to the
+// light without moving the tone, the grade or the bloom; they start at the display's
+const EXPOSURE_DAWN_NIGHT = [ - 12, - 7 ] as const;
+const EXPOSURE_DUSK_NIGHT = [ - 11, - 7 ] as const;
 // what is left of the moon's key at the day's end of the morning's window
 const MOON_LEFT = 1 / 128;
 /** How deep under all of it (stops) each night layer comes in at the evening's window's day end
@@ -272,7 +277,7 @@ export function duskIn( elevation: number, window: readonly [ number, number ], 
 	return inStops( t < ease ? ease * x * x * ( 2 - x ) : t, 2 ** - depth, cloud );
 
 }
-/** The display's night weight (the exposure's keys, Pipeline NIGHT, the flying fish), at
+/** The display's night weight (Pipeline NIGHT: the tone, the grade, the bloom; the flying fish), at
  * `daylight` (the snapshot's) and the sun's `elevation` (degrees), `rising` or setting, under a
  * clouded share `cloud` (Weather.ts `cloudedShare`). Under cloud none through the afterglow, all of
  * it once the daylight has gone; a clear sky's comes in from -7 to -11 degrees after sunset and
@@ -283,6 +288,18 @@ export function displayNight( daylight: number, elevation: number, rising: boole
 
 	const night = 1 - smoothstep( 0.2, 0.45, daylight );
 	const [ from, to ] = rising ? DAWN_NIGHT : DUSK_NIGHT;
+	const dawn = 1 - smoothstep( from, to, elevation );
+	return dawn + ( night - dawn ) * cloud;
+
+}
+/** The exposure's night weight (post/Exposure.ts `exposureKeys`: the night key's share, and the
+ * overcast night's offset by it), as `displayNight` is taken but over its own windows
+ * (EXPOSURE_DAWN_NIGHT, EXPOSURE_DUSK_NIGHT): the meter's handover to the night key is a question
+ * of the light it reads, the display's of how the night looks, so each is set apart. */
+export function exposureNight( daylight: number, elevation: number, rising: boolean, cloud: number ): number {
+
+	const night = 1 - smoothstep( 0.2, 0.45, daylight );
+	const [ from, to ] = rising ? EXPOSURE_DAWN_NIGHT : EXPOSURE_DUSK_NIGHT;
 	const dawn = 1 - smoothstep( from, to, elevation );
 	return dawn + ( night - dawn ) * cloud;
 
@@ -448,8 +465,8 @@ export function nightAmbientShare( elevation: number, rising: boolean, cloud: nu
  * under overcast's deck (lighting/AmbientRelight.ts `underDeck`); `hazeNight`, the night key's
  * weight in the haze's (weather/HazeKeys.ts `keyAlong`); `cloudMoon`, the clouds' moonlight (Sky.ts
  * `moonShare`); `deck`, the deck's light in the haze (HazeKeys.ts `deck`); `exposureNight`, the
- * night weight the exposure's keys take, and `displayNight`, the one the tone, the grade and the
- * bloom take (post/Pipeline.ts `updateDisplay`); `yunpeng`, the yunpeng's glow and its lights'
+ * night weight the exposure's keys take (`exposureNight`), and `displayNight`, the one the tone,
+ * the grade and the bloom take (`displayNight`; both read in post/Pipeline.ts `updateDisplay`); `yunpeng`, the yunpeng's glow and its lights'
  * share, and `localLights`, the local lights' strength (main.ts); `stars`, the stars' share in the
  * drawn sky (Sky.ts `starVisibility`: `nightVisibility` times `starNight`; no bake holds them, so
  * the land takes none of their light). The twilight's, each a weight on

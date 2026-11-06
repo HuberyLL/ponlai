@@ -1972,6 +1972,8 @@ function tick( time: number ): void {
 		S.exposure = sky.grade.exposure;
 		// the night's grade (Pipeline NIGHT)
 		S.night = sky.grade.night;
+		// the exposure's own night weight (its keys: post/Exposure.ts)
+		S.exposureNight = sky.grade.exposureNight;
 
 	}
 	// the weather's stops of the exposure and the clouded day's keys (Pipeline `skyMix`)

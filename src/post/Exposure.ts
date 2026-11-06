@@ -57,6 +57,8 @@ type V4 = THREE.Node<'vec4'>;
 //   the sky's too, still held down by the highlight guard; where Y's holds none, the guard drops
 //   out and the scene's share is e_M alone.
 // - The night's darkness is the night key's job: the meter reads night light as it reads the day's.
+//   The night key comes in by the exposure's own night weight (sky/DayCycle.ts `exposureNight`),
+//   not the display's: where the meter hands over to it is set by the light, apart from the grade.
 // - Adaptation (`exposureAdapt`): the exposure EV follows its target EV_t as a critically damped
 //   second-order filter on EV, EV'' = -2 ω EV' - ω^2 ( EV - EV_t ), ω = 1 / τ (Lowe, "Critically
 //   Damped Ease-In/Ease-Out Smoothing", Game Programming Gems 4, 2004): it starts with no kink;
@@ -187,7 +189,9 @@ const OVERCAST_KEY = tune( 'post.exposure.overcastKey', - 1.2, { min: - 4, max: 
 const OVERCAST_HELD = 6;
 const _held = { key: 0, highlight: 0, sky: 0, adaptUp: 0, adaptDown: 0 };
 
-/** The exposure's keys at the sun's `elevation` (degrees), the night's weight `night` and the
+/** The exposure's keys at the sun's `elevation` (degrees), the exposure's own night weight `night`
+ * (sky/DayCycle.ts `exposureNight`, set apart from the display's so the meter's handover to the
+ * night key can follow the light while the tone, the grade and the bloom keep theirs) and the
  * weather's blend of the kept skies `skyMix`, into `out`, the morning's where the sun is `rising`:
  * the day's (or the rising sun's) and the clouded keys (DayKeys.ts `keyed`), overcast's share holding the clouded keys at OVERCAST_HELD below it, and OVERCAST_KEY
  * by overcast's share and the deck's light. */

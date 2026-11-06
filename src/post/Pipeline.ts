@@ -444,6 +444,9 @@ export interface PipelineSettings {
 	tone: number;
 	// 0 by day, 1 at night (from the clock, main.ts): how far the night's grade has come in (NIGHT)
 	night: number;
+	// 0 by day, 1 at night: how far the exposure's night key has come in (sky/DayCycle.ts
+	// `exposureNight`, apart from the display's)
+	exposureNight: number;
 	// the kept skies' shares in the sky as it stands (Weather.ts `skyMix`, main.ts): the clouded
 	// day's keys (DayKeys.ts `cloudy`, the cloudy and overcast skies' share)
 	skyMix: number[];
@@ -620,7 +623,7 @@ export class Pipeline {
 		// (tunable on debug pages, debug/Tune.ts: `post.tone.blackSlope`, `midGrey`, `white`)
 		curve: tuneObject( { ...TONE_CURVE }, { toe: 'post.tone.blackSlope', mid: 'post.tone.midGrey', white: 'post.tone.white' },
 			{ toe: { min: 1.5, max: 3 }, mid: { min: 0.12, max: 0.22 }, white: { min: 8, max: 32, scale: 'log' } } ),
-		lut: 0, ...TIDEWATER_GRADE, tone: TONE, night: 0, skyMix: [ 0, 1, 0, 0 ],
+		lut: 0, ...TIDEWATER_GRADE, tone: TONE, night: 0, exposureNight: 0, skyMix: [ 0, 1, 0, 0 ],
 	} as PipelineSettings, { bloom: 'post.bloom.strength', vignette: 'post.vignette.strength' },
 	{ bloom: { min: 0, max: 2 }, vignette: { min: 0, max: 1.5 } } );
 
@@ -2391,9 +2394,10 @@ export class Pipeline {
 
 		const S = this.settings;
 		const u = this.u;
-		// the night's weight for the display and for the exposure's keys, which a debug page may
-		// force apart (sky/DayCycle.ts `duskForce`)
-		const night = duskForce( 'displayNight', S.night ), exposureNight = duskForce( 'exposureNight', S.night );
+		// the night's weight for the display (the tone, the grade, the bloom) and the exposure's own
+		// for its keys (sky/DayCycle.ts `displayNight`, `exposureNight`), each of which a debug page
+		// may force (`duskForce`)
+		const night = duskForce( 'displayNight', S.night ), exposureNight = duskForce( 'exposureNight', S.exposureNight );
 		u.tone.value = S.tone; u.night.value = night; u.lut.value = S.lut;
 		u.vignette.value = S.vignette;
 		u.ditherOn.value = this.upscaling ? 0 : 1;

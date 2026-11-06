@@ -23,7 +23,7 @@ import { STORE_CEILING, storePress, storeStops } from '../post/PreExposure.ts';
 import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
-import { DAY_EXPOSURE, DUSK_DEPTH, MOON, displayNight, duskForce, duskIn, nightAmbientShare, skyNight, starNight, sunRising, twilightMoon, twilightMoonSky, type DayCycleSnapshot } from './DayCycle.ts';
+import { DAY_EXPOSURE, DUSK_DEPTH, MOON, displayNight, duskForce, exposureNight, duskIn, nightAmbientShare, skyNight, starNight, sunRising, twilightMoon, twilightMoonSky, type DayCycleSnapshot } from './DayCycle.ts';
 import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckFloorTakeover, floorKeyGain, daySkyAt, type WeatherFront, type WeatherState } from './Weather.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
@@ -1166,7 +1166,7 @@ export class Sky {
 	private viewHeight = 1;
 	private cloudTime = 0;
 	solarIlluminance = new THREE.Color();
-	readonly grade = { exposure: DAY_EXPOSURE, daylight: 1, night: 0 };
+	readonly grade = { exposure: DAY_EXPOSURE, daylight: 1, night: 0, exposureNight: 0 };
 	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
 	// E / PI over the upper hemisphere, cross-faded between the bakes as the irradiance probe is:
 	// each bake's own, read back (an explicit bake's before it shows, a periodic one's a frame or
@@ -2052,6 +2052,7 @@ export class Sky {
 			// eye; the moonlight on the island is the key light above, not this disk.
 			moonColor.setRGB( 0.04, 0.041, 0.043 ).multiplyScalar( 0.32 * celestial.moonVisibility * this.sunIlluminance / SUN_ILLUMINANCE );
 			this.grade.night = displayNight( celestial.daylight, celestial.elevation, this.rising, cloud );
+			this.grade.exposureNight = exposureNight( celestial.daylight, celestial.elevation, this.rising, cloud );
 			const stars = starNight( celestial.daylight, celestial.elevation, this.rising, cloud );
 			this.night.starVisibility.value = duskForce( 'stars', celestial.nightVisibility * stars ) * ( 1 - 0.22 * celestial.moonVisibility );
 			// the night's ambient in the clouds and the distant sea: a uniform sky's radiance that gives
@@ -2087,6 +2088,7 @@ export class Sky {
 			this.grade.exposure = DAY_EXPOSURE;
 			this.grade.daylight = 1;
 			this.grade.night = 0;
+			this.grade.exposureNight = 0;
 			this.islandTint.value.set( 1, 1, 1, 0 );
 			this.islandGain.value = 1;
 
