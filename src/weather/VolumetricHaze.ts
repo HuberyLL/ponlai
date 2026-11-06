@@ -25,7 +25,7 @@ import { duskForce } from '../sky/DayCycle.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
 import type { FrameGraph, GraphResources, ResourceHandle, SizeClass } from '../post/graph/FrameGraph.ts';
 import { TemporalRest, restEpoch } from '../post/TemporalRest.ts';
-import { preExposed, sceneUnits } from '../post/PreExposure.ts';
+import { preExposed, sceneUnits, storePress } from '../post/PreExposure.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -974,7 +974,7 @@ export class VolumetricHaze {
 					// (the debug view: the visibility as a grey card in the key light, so the display's
 					// exposure shows 1 as mid grey)
 					const out = select( this.switches.w.greaterThan( 0.5 ), vec3( fraction.r.mul( dot( this.keyColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) ) ).mul( 0.18 / Math.PI ) ), mean );
-					textureStore( target, ivec3( x, y, i ), vec4( preExposed( out ), alpha.y ) );
+					textureStore( target, ivec3( x, y, i ), vec4( preExposed( out.mul( storePress.store ) ), alpha.y ) );
 					t0.assign( t1 );
 					y0.assign( y1 );
 
@@ -1025,8 +1025,9 @@ export class VolumetricHaze {
 		const at = min( reach.mul( forward ), this.far );
 		const uvw = vec3( q, this.sliceCoordinate( at ).sub( 0.5 ).div( D ) );
 		const light = this.sampleLight( uvw ).toVar();
-		// (the volume holds the light pre-exposed: see the header)
-		const lit = sceneUnits( light.rgb ).toVar();
+		// (the volume holds the light pre-exposed, under the debug press PreExposure.ts `storePress`:
+		// see the header)
+		const lit = sceneUnits( light.rgb ).mul( storePress.read ).toVar();
 		// (the grid holds green's band opacity: each channel's transmittance is green's to the power
 		// of its sigma over green's, then through the band-to-display matrix)
 		const held = bandToDisplay( vec3( 1 ).sub( exp2( this.sigma.div( this.sigma.y ).mul( log2( max( float( 1 ).sub( light.a ), 1e-30 ) ) ) ) ), bandPush ).toVar();

@@ -19,7 +19,7 @@ import { Lightning } from '../weather/Lightning.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { shared } from '../shared.ts';
 import { compileInto } from '../post/graph/Compile.ts';
-import { STORE_CEILING } from '../post/PreExposure.ts';
+import { STORE_CEILING, storePress } from '../post/PreExposure.ts';
 import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
@@ -1201,7 +1201,8 @@ export class Sky {
 	private ambientGain = uniform( 1 );
 	private irradiancePass = uniform( 0 );
 	private includeStars = uniform( 0 );
-	// the bake's store toward its target (PANORAMA_STORE, 1 for the irradiance probe's panorama)
+	// the bake's store toward its target (PANORAMA_STORE, under the debug press PreExposure.ts
+	// `storePress`; 1 for the irradiance probe's panorama)
 	private bakeStore = uniform( PANORAMA_STORE );
 	// The night sky's own light at this frame's exposure (DayCycleSnapshot.nightSkyLevel).
 	private nightSkyLevel = 1;
@@ -1373,7 +1374,7 @@ export class Sky {
 
 			}
 			// (stored times LAYER_STORE, held at STORE_CEILING)
-			return vec4( min( sum.rgb.mul( 0.25 * LAYER_STORE ), vec3( STORE_CEILING ) ), sum.a.mul( 0.25 ) );
+			return vec4( min( sum.rgb.mul( 0.25 * LAYER_STORE ).mul( storePress.store ), vec3( STORE_CEILING ) ), sum.a.mul( 0.25 ) );
 
 		} )();
 		this.upperQuad = new THREE.QuadMesh( upperMat );
@@ -2339,7 +2340,7 @@ export class Sky {
 			for ( const rt of panoramas ) {
 
 				this.irradiancePass.value = rt === this.small ? 1 : 0;
-				this.bakeStore.value = rt === this.small ? 1 : PANORAMA_STORE;
+				this.bakeStore.value = rt === this.small ? 1 : PANORAMA_STORE * storePress.store.value;
 				this.includeStars.value = rt === this.small || rt === this.reflectionSource ? 1 : 0;
 				// Only the environment's source takes the island's light after sunset (ISLAND_SKY).
 				const lends = rt === this.reflectionSource;
@@ -2697,20 +2698,21 @@ export class Sky {
 	}
 
 	// The bake's cloud layer at `q` (the upper hemisphere's equirect), its radiance in scene units
-	// (LAYER_STORE divided out).
+	// (LAYER_STORE and the debug press divided out).
 	private layerAt( q: V2 ): V4 {
 
 		const stored = this.cloudLayer.sample( q ).level( float( 0 ) ).toVar();
-		return vec4( stored.rgb.mul( 1 / LAYER_STORE ), stored.a );
+		return vec4( stored.rgb.mul( 1 / LAYER_STORE ).mul( storePress.read ), stored.a );
 
 	}
 
-	// The seen panorama toward `direction`, its radiance in scene units (PANORAMA_STORE divided out).
+	// The seen panorama toward `direction`, its radiance in scene units (PANORAMA_STORE and the debug
+	// press divided out).
 	private samplePanorama( direction: V3, mip: F ): V4 {
 
 		const q = dirToEquirect( direction );
 		const stored = mix( this.panoramaA.sample( q ).level( mip ), this.panoramaB.sample( q ).level( mip ), this.blend ).toVar();
-		return vec4( stored.rgb.mul( 1 / PANORAMA_STORE ), stored.a );
+		return vec4( stored.rgb.mul( 1 / PANORAMA_STORE ).mul( storePress.read ), stored.a );
 
 	}
 

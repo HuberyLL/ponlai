@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { min, uniform, vec3, vec4 } from 'three/tsl';
 import { restEpoch } from './TemporalRest.ts';
+import { tuneApply } from '../debug/Tune.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -106,6 +107,20 @@ export const HALF_MAX = 65504;
  * `PANORAMA_STORE`; the clouds' panorama, Clouds.ts `DOME_STORE`): a stop under half float's
  * largest, so a value a little over its scale's range stays finite and keeps the stop below it. */
 export const STORE_CEILING = 2 ** 15;
+
+/** A debug press of the stored skies (debug/Tune.ts `post.store.press`, in stops, 0 by default):
+ * the sky's bakes, the clouds' panorama and view and the haze's light volume store their radiance
+ * times `store` (2^-press) and their readers multiply by `read` (2^press), so the page draws the
+ * image it drew while those buffers hold values as many stops darker: how a darker night would sit
+ * in half float. A load-time value (`?tune=`), so every bake and history starts pressed. At 0 both
+ * are 1 and change nothing. */
+export const storePress = { store: uniform( 1 ), read: uniform( 1 ) };
+tuneApply( 'post.store.press', 0, { min: 0, max: 16, load: true }, ( stops ) => {
+
+	storePress.store.value = 2 ** - stops;
+	storePress.read.value = 2 ** stops;
+
+} );
 
 /** P for an exposure of `ev` stops. */
 export function preExposureStops( ev: number ): number {

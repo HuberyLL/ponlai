@@ -29,7 +29,7 @@ import { tune, tuneUniform } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 import { HazeMedium } from '../weather/HazeDepth.ts';
 import { SUN_SETTING_RADIUS } from '../lighting/Radiometry.ts';
-import { HALF_MAX, STORE_CEILING, preExposedRGBA, preExposure } from '../post/PreExposure.ts';
+import { HALF_MAX, STORE_CEILING, preExposure, storePress } from '../post/PreExposure.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -894,6 +894,9 @@ export class Clouds {
 	private shownScale = 1;
 	private readonly viewUnscale = uniform( 1 );
 	private readonly historyGain = uniform( 1 );
+	// The scale the view's kernels write at: the pre-exposure's (times the debug press,
+	// PreExposure.ts `storePress`), set before they are dispatched.
+	private readonly writeScale = uniform( 1 );
 	private readonly camDelta = uniform( new THREE.Vector3() );
 
 	private shape: THREE.Data3DTexture | null = null;
@@ -1858,7 +1861,7 @@ export class Clouds {
 			const rd = domeToDirection( q ).toVar();
 			const m = marchPano( rd, jitter );
 			const result = over( rainAt( rd, float( domeTexelAngle ), jitter ).color, over( vec4( m.L, m.T ), streaksAt( rd, float( domeTexelAngle ) ) ) );
-			textureStore( dome, ivec2( int( x ), int( y ) ), vec4( min( result.rgb.mul( DOME_STORE ), vec3( STORE_CEILING ) ), result.a ) );
+			textureStore( dome, ivec2( int( x ), int( y ) ), vec4( min( result.rgb.mul( DOME_STORE ).mul( storePress.store ), vec3( STORE_CEILING ) ), result.a ) );
 
 		} )().compute( domeWidth * domeHeight / ( strideX * strideY ), [ 64 ] ).setName( 'Clouds.Panorama' );
 
@@ -2060,7 +2063,7 @@ export class Clouds {
 			const rainSample = rainAt( rd, C.tan.y.mul( 2 ).div( this.displayHeight ), jitter, true );
 			const rain = rainSample.color.toVar();
 			const traced = over( rain, vec4( m.L, m.T ) ).toVar();
-			textureStore( traceOut, tp, preExposedRGBA( traced ) );
+			textureStore( traceOut, tp, vec4( min( traced.rgb.mul( this.writeScale ), vec3( HALF_MAX ) ), traced.a ) );
 			textureStore( flashOut, tp, vec4( m.F.mul( rain.a ).add( rainSample.flash ), 1 ) );
 			// The depth (m) under half float's largest value: an empty ray's depth, past the shell, passes
 			// 65 km toward the horizon, where the haze in front has closed, and an inf stored there turned
@@ -2084,7 +2087,7 @@ export class Clouds {
 				hi.assign( streaksAt( rd, C.tan.y.mul( 2 ).div( this.viewSize.y ) ) );
 
 			} );
-			textureStore( highOut, tp, preExposedRGBA( hi ) );
+			textureStore( highOut, tp, vec4( min( hi.rgb.mul( this.writeScale ), vec3( HALF_MAX ) ), hi.a ) );
 			// Motion for the resolve: the closest cumulus sample around this block (like the closest
 			// depth dilation of TAA), so a cloud's edges move with it and the foreground wins.
 			const best = vec3( 1e9, 0, 0 ).toVar();
@@ -2123,7 +2126,7 @@ export class Clouds {
 		const boxKernel = Fn( () => {
 
 			const tp = tracePixel().toVar();
-			const sky = this.atmosphere.skyRadiance( viewDir( tracedAt( tp ).div( this.viewSize ) ) ).mul( preExposure.scale ).toVar();
+			const sky = this.atmosphere.skyRadiance( viewDir( tracedAt( tp ).div( this.viewSize ) ) ).mul( this.writeScale ).toVar();
 			const tmax = this.traceSize.sub( 1 );
 			// (the range starts at the first sample, so it holds at any scale)
 			const lo = vec4( 0 ).toVar(), hi = vec4( 0 ).toVar();
@@ -2189,8 +2192,8 @@ export class Clouds {
 						const reprojected = max( catmullRom( srcNode, puv, this.viewSize ), vec4( 0 ) ).toVar();
 						const h = vec4( reprojected.rgb.mul( this.historyGain ), reprojected.a ).toVar();
 						const lo = textureLoad( boxMinNode, tp ), hi = textureLoad( boxMaxNode, tp );
-						const pad = hi.sub( lo ).mul( 0.25 ).add( vec4( vec3( 0.01 ).mul( preExposure.scale ), 0.01 ) );
-						const sky = this.atmosphere.skyRadiance( rd ).mul( preExposure.scale ).toVar();
+						const pad = hi.sub( lo ).mul( 0.25 ).add( vec4( vec3( 0.01 ).mul( this.writeScale ), 0.01 ) );
+						const sky = this.atmosphere.skyRadiance( rd ).mul( this.writeScale ).toVar();
 						const clamped = clamp( vec4( h.rgb.add( sky.mul( h.a ) ), h.a ), lo.sub( pad ), hi.add( pad ) ).toVar();
 						const kept = vec4( max( clamped.rgb.sub( sky.mul( clamped.a ) ), vec3( 0 ) ), clamped.a );
 						out.assign( select( this.rebuildK.lessThan( 0 ).and( this.clampHistory.greaterThan( 0.5 ) ), kept, h ) );
@@ -2333,7 +2336,7 @@ export class Clouds {
 		this.hasPrevious = true;
 
 		// (a view kept at rest under another P than now: see the rules in the header)
-		const rescaled = this.settled && this.shownScale !== preExposure.scale.value;
+		const rescaled = this.settled && this.shownScale !== this.storeScale();
 		if ( resting && ( ! this.settled || full || rescaled ) ) {
 
 			// The scene has come to rest: settle the view once, from scratch, then keep it (or settle it
@@ -2399,6 +2402,13 @@ export class Clouds {
 
 	}
 
+	// The scale the view's kernels write at now (`writeScale`).
+	private storeScale(): number {
+
+		return preExposure.scale.value * storePress.store.value;
+
+	}
+
 	// Trace one slot of every 4 x 4 block and resolve it into the history.
 	private trace( renderer: THREE.WebGPURenderer, order: number ): void {
 
@@ -2410,12 +2420,13 @@ export class Clouds {
 		this.subPixel.value.set( ( ( 0.5 + n * 0.7548776662 ) % 1 ) - 0.5, ( ( 0.5 + n * 0.5698402910 ) % 1 ) - 0.5 ).multiplyScalar( 0.25 );
 		this.frameNoise.value = ( n * 0.6180339887 ) % 1;
 		this.traces ++;
+		// (the kernels run at the pre-exposure's scale as it stands now; the resolve reads the other
+		// history buffer and writes this one)
+		const scale = this.storeScale();
+		this.writeScale.value = scale;
 		renderer.compute( view.kernels.trace );
 		renderer.compute( view.kernels.high );
 		renderer.compute( view.kernels.box );
-		// (the kernels run at the pre-exposure's scale as it stands now; the resolve reads the other
-		// history buffer and writes this one)
-		const scale = preExposure.scale.value;
 		this.historyGain.value = scale / this.historyScale[ 1 - this.pingPong ];
 		renderer.compute( view.kernels.resolve[ this.pingPong ] );
 		this.historyScale[ this.pingPong ] = scale;
@@ -2569,7 +2580,7 @@ export class Clouds {
 		// The map holds the upper sky only: below the horizon the clouds fade out instead of
 		// repeating the horizon's row.
 		const below = smoothstep( - 0.04, 0, direction.y );
-		return vec4( s.rgb.div( DOME_STORE ).mul( below ), mix( float( 1 ), s.a, below ) );
+		return vec4( s.rgb.div( DOME_STORE ).mul( storePress.read ).mul( below ), mix( float( 1 ), s.a, below ) );
 
 	}
 

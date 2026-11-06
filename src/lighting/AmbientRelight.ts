@@ -11,6 +11,7 @@ import type { Shared } from '../shared.ts';
 import { deckRamp, deckSkyGain, deckSkyGap } from '../sky/Weather.ts';
 import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../world/AmbientProbes.ts';
 import { PANORAMA_STORE } from '../sky/Sky.ts';
+import { storePress } from '../post/PreExposure.ts';
 
 // The ambient light's relight: the probes' baked visibility (AmbientVolume.ts, world/AmbientProbes.ts)
 // lit by the sky and the key as they stand, into the probes' irradiance, a 3D texture the island's
@@ -456,8 +457,8 @@ export class AmbientSky {
 				const x = x0.add( uint( i ) );
 				const azimuth = float( x ).add( 0.5 ).div( W ).sub( 0.5 ).mul( 2 * Math.PI ).toVar();
 				const d = vec3( across.mul( cos( azimuth ) ), up, across.mul( sin( azimuth ) ) ).toVar();
-				// (the source stores the radiance times PANORAMA_STORE)
-				const radiance = ( textureLoad( map, ivec2( int( x ), int( y ) ) ) as unknown as V4 ).rgb.mul( 1 / PANORAMA_STORE ).toVar();
+				// (the source stores the radiance times PANORAMA_STORE, under the debug press `storePress`)
+				const radiance = ( textureLoad( map, ivec2( int( x ), int( y ) ) ) as unknown as V4 ).rgb.mul( 1 / PANORAMA_STORE ).mul( storePress.read ).toVar();
 				const L = radiance.mul( solidAngle ).toVar();
 				const Y = coefficients( shBasisAt( d ).toVar() as unknown as M3 );
 				sums.forEach( ( sum, n ) => sum.addAssign( L.mul( Y[ n ] ) ) );

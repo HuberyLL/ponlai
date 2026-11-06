@@ -90,7 +90,7 @@ import type { LatentRegistry } from './post/graph/FrameGraph.ts';
 import { MOTION_CLASS, motionCheck, motionState, motionUniforms, onTaaCut, taaCut } from './post/Motion.ts';
 import { jitter } from './post/Jitter.ts';
 import { restEpoch } from './post/TemporalRest.ts';
-import { PRE_EXPOSURE_PENDING, preExposure } from './post/PreExposure.ts';
+import { PRE_EXPOSURE_PENDING, preExposure, storePress } from './post/PreExposure.ts';
 import { sceneEvent } from './post/SceneEvents.ts';
 import { TemporalAA, type TemporalFrame } from './post/TemporalAA.ts';
 import { watchPipelines, type SettleFrame } from './post/Settled.ts';
@@ -358,9 +358,9 @@ function reloadWithQuality( tier: QualityTier | null ): void {
 }
 applySkyQuality();
 scene.add( sky.dome, sky.lightning.group );
-// (the environment's atlases store the sky's radiance times PANORAMA_STORE: its intensity divides
-// it back out, so a fill of 1 lights as the sky stands)
-scene.environmentIntensity = 1 / PANORAMA_STORE;
+// (the environment's atlases store the sky's radiance times PANORAMA_STORE, under the debug press
+// `storePress`: its intensity divides it back out, so a fill of 1 lights as the sky stands)
+scene.environmentIntensity = storePress.read.value / PANORAMA_STORE;
 const lighting = { skyFill: 1 };
 
 const sun = new THREE.DirectionalLight( 0xffffff, 1 );
@@ -572,7 +572,7 @@ const setWind = async ( choice: WindChoice, seconds = 20 ) => {
 function applySkyFill(): void {
 
 	// One artistic fill gain drives PBR ambient, water scattering and sky reflections alike.
-	scene.environmentIntensity = lighting.skyFill / PANORAMA_STORE;
+	scene.environmentIntensity = lighting.skyFill * storePress.read.value / PANORAMA_STORE;
 	shared.skyFill.value = lighting.skyFill;
 	shared.skyIrradiance.value.set( sky.skyIrradiance.r, sky.skyIrradiance.g, sky.skyIrradiance.b ).multiplyScalar( lighting.skyFill );
 	if ( water ) water.uniforms.reflection.value = lighting.skyFill;
@@ -1946,7 +1946,7 @@ function tick( time: number ): void {
 	// radiance to the sky's, so a flash that barely shows by day floods a dark night.
 	const skyLuma = sky.skyIrradiance.r * 0.2126 + sky.skyIrradiance.g * 0.7152 + sky.skyIrradiance.b * 0.0722;
 	const strikeFill = lighting.skyFill * Math.min( 1 + sky.lightning.fill / Math.max( skyLuma, 1e-5 ), 60 );
-	scene.environmentIntensity = strikeFill / PANORAMA_STORE;
+	scene.environmentIntensity = strikeFill * storePress.read.value / PANORAMA_STORE;
 	shared.skyFill.value = strikeFill;
 	shared.skyIrradiance.value.set( sky.skyIrradiance.r, sky.skyIrradiance.g, sky.skyIrradiance.b ).multiplyScalar( strikeFill );
 	// the page's own wetness, in the game too (soaking and drying on the day clock)
