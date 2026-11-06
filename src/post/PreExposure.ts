@@ -112,10 +112,11 @@ export const STORE_CEILING = 2 ** 15;
  * the sky's bakes, the clouds' panorama and view and the haze's light volume store their radiance
  * times `store` (2^-press) and their readers multiply by `read` (2^press), so the page draws the
  * image it drew while those buffers hold values as many stops darker: how a darker night would sit
- * in half float. A load-time value (`?tune=`), so every bake and history starts pressed. At 0 both
- * are 1 and change nothing. */
+ * in half float. Negative, they hold values that many stops brighter: a frame that comes out the
+ * same at -2, 0 and +2 holds nothing at half float's edges. A load-time value (`?tune=`), so
+ * every bake and history starts pressed. At 0 both are 1 and change nothing. */
 export const storePress = { store: uniform( 1 ), read: uniform( 1 ) };
-tuneApply( 'post.store.press', 0, { min: 0, max: 16, load: true }, ( stops ) => {
+tuneApply( 'post.store.press', 0, { min: - 8, max: 16, load: true }, ( stops ) => {
 
 	storePress.store.value = 2 ** - stops;
 	storePress.read.value = 2 ** stops;
