@@ -1,43 +1,69 @@
+import { isNeed, needs } from './registry.ts';
 import { SECONDS_PER_GAME_DAY } from './types.ts';
 import type { Needs } from './types.ts';
 
-// An islander's needs: satiety and hydration, 0..100, falling every tick and raised by eating and
-// drinking (items.ts). They clamp at 0 with no consequence yet (docs/game-design.md, "Next").
+// An islander's needs, 0..NEED_MAX each: the needs registered (registry.ts; today's in content/),
+// in the order registered, each starting where its definition says and falling every tick by its
+// rate a day, raised by what answers it (an item's use: registry.ts ItemDef, `raiseNeed`). They
+// clamp at 0 with no consequence yet (docs/game-design.md, "Next"). This module names no need: it
+// is the rule every need follows.
 //
-// Thirst is off until the island has a water source of its own: hydration holds where it starts
-// (HYDRATION_PER_DAY is 0) and nothing raises it. The HUD still shows it.
-//
-// The rates come from the game's day, so a day of play has a person's rhythm: someone eats about
-// every 12 hours. Satiety falls 72 a day (3 an hour) and a fish gives 36: one every 12 game hours,
-// two a day. It runs from full to empty in a day and a third, so a missed meal shows in the numbers
-// within hours but nothing is lost to one mistake. With thirst on, hydration fell 96 a day (4 an
-// hour, a drink of 32 every 8 game hours), faster than hunger, as for a person.
+// A need that falls to CRITICAL_NEED is an event (events.ts `need`), at the tick it crossed the
+// line from above, which the record notes; it is noted again only once the need has risen above the
+// line and fallen back. The interface's alert is what is true now, a need at or below the line, and
+// samples the numbers.
 
 export const NEED_MAX = 100;
 /** a need at or below this is critical: the interface raises its alert and the record notes it
  * (docs/ui.md, Islanders), and below LOW_NEED its bar turns toward the alert's colour */
 export const CRITICAL_NEED = 20;
 export const LOW_NEED = 50;
-/** 0: thirst is off (see the header); 96 with a water source */
-export const HYDRATION_PER_DAY = 0;
-export const SATIETY_PER_DAY = 72;
-/** a new islander's needs: fed and watered, not full */
-export const START_NEEDS: Readonly<Needs> = { satiety: 80, hydration: 80 };
 
-const HYDRATION_PER_TICK = HYDRATION_PER_DAY / SECONDS_PER_GAME_DAY;
-const SATIETY_PER_TICK = SATIETY_PER_DAY / SECONDS_PER_GAME_DAY;
+/** A new islander's needs, each where its definition starts it. */
+export function startNeeds(): Needs {
 
-/** One game second of the needs falling. */
-export function fallNeeds( n: Needs ): void {
-
-	n.hydration = Math.max( 0, n.hydration - HYDRATION_PER_TICK );
-	n.satiety = Math.max( 0, n.satiety - SATIETY_PER_TICK );
+	const n: Needs = {};
+	for ( const need of needs() ) n[ need.id ] = need.start;
+	return n;
 
 }
 
-/** Raise a need by an amount, up to the full 100. */
-export function raiseNeed( n: Needs, need: keyof Needs, amount: number ): void {
+/** Whether a need went from above the critical line to on or below it. */
+export function fellCritical( was: number, now: number ): boolean {
+
+	return was > CRITICAL_NEED && now <= CRITICAL_NEED;
+
+}
+
+/** One game second of the needs falling; the needs that fell to the critical line, or null. */
+export function fallNeeds( n: Needs ): string[] | null {
+
+	let fell: string[] | null = null;
+	for ( const need of needs() ) {
+
+		const was = n[ need.id ];
+		n[ need.id ] = Math.max( 0, was - need.perDay / SECONDS_PER_GAME_DAY );
+		if ( fellCritical( was, n[ need.id ] ) ) ( fell ??= [] ).push( need.id );
+
+	}
+	return fell;
+
+}
+
+/** Raise a need by an amount, up to NEED_MAX. */
+export function raiseNeed( n: Needs, need: string, amount: number ): void {
 
 	n[ need ] = Math.min( NEED_MAX, n[ need ] + amount );
+
+}
+
+/** Set a need (the debug panel's), within 0..NEED_MAX: whether it fell to the critical line, as
+ * when it falls by itself; false for a need there is not. */
+export function setNeed( n: Needs, need: string, value: number ): boolean {
+
+	if ( ! isNeed( need ) || ! Number.isFinite( value ) ) return false;
+	const was = n[ need ];
+	n[ need ] = Math.min( Math.max( value, 0 ), NEED_MAX );
+	return fellCritical( was, n[ need ] );
 
 }

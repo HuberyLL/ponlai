@@ -6,7 +6,7 @@ import type { Game } from '../Game.ts';
 import { BlueprintPlacement } from '../Placement.ts';
 import { BuildBar } from './BuildBar.ts';
 import { BUILDINGS, rosterTimes } from './data/buildings.ts';
-import { MORE_RESOURCES, RESOURCES } from './data/resources.ts';
+import { MORE_RESOURCES, RESOURCES, withItems } from './data/resources.ts';
 import { dayName } from './data/record.ts';
 import { el, flag } from './dom.ts';
 import { setInkUnit } from './InkPath.ts';
@@ -162,7 +162,7 @@ export class GameUi {
 
 		const shared = this.shared;
 		shared.roster = many ? rosterTimes( 3 ) : [ ...BUILDINGS ];
-		shared.resources = many ? [ ...RESOURCES, ...MORE_RESOURCES ] : [ ...RESOURCES ];
+		shared.resources = withItems( many ? [ ...RESOURCES, ...MORE_RESOURCES ] : RESOURCES );
 		shared.lists ++;
 
 	}

@@ -256,7 +256,7 @@ from a board, it is said here.
   The bag shows a slot per kind with its count, then a faint ring per free place; a click marks a
   slot 金 and does nothing more yet.
 - **Speaking**: the words go into the record; for a brain that hears (`Brain.hears`) they wait for
-  each listener's next thought (`Game.takeHeard`), and it is asked for one as they are said.
+  each listener's next thought (`Session.takeHeard`), and it is asked for one as they are said.
   The stand-in does not hear, so its islanders never think aloud; the debug panel's hearing brain
   shows the whole loop (words landing, the thinking ring, an answer).
 - **Build bar**: only a building the simulation knows (its row's `kind`: the chest) hands over to

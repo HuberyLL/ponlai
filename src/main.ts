@@ -53,7 +53,7 @@ import { hazeKeyAt, type HazeKey } from './weather/HazeKeys.ts';
 import type { GradeChanges } from './post/GradeLut.ts';
 import { renderPixelRatio, dynamicRange, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
-import { FramePacer } from './post/FramePacer.ts';
+import { FramePacer, PAUSED_QUEUE } from './post/FramePacer.ts';
 import { SubmitBatch } from './post/SubmitBatch.ts';
 import { installBindingPatches, installCacheKeyPatches, primeSharedNodes } from './post/graph/ThreePatches.ts';
 import { FrameStats } from './debug/FrameStats.ts';
@@ -1614,6 +1614,8 @@ const dynamicResolution = dynamicRule ? new DynamicResolution( { ...dynamicRange
 // sets the rate through the pacer (`choices()`, `setRate()`, `mode`, `fps`): `__PONLAI__.pacer` in
 // debug builds; a production `?game` menu needs the game to be handed the pacer (not wired yet).
 const frameRateParam = params.get( 'frameRate' );
+// (the queue whose completed work bounds a paused page's frames in flight)
+const gpuQueue = ( renderer.backend as unknown as { device: { queue: { onSubmittedWorkDone(): Promise<void> } } } ).device.queue;
 const pacer = new FramePacer( quality.frameRate, {
 	rate: frameRateParam === null || frameRateParam === 'auto' ? 'auto' : Number( frameRateParam ),
 	allowFallback: params.get( 'frameFallback' ) !== '0',
@@ -1659,9 +1661,8 @@ if ( dynamicResolution ) {
 // time from the timer above, or times frames on an idle queue where there is none.
 if ( qualityChoice.source === 'detect' ) {
 
-	const queue = ( renderer.backend as unknown as { device: { queue: { onSubmittedWorkDone(): Promise<void> } } } ).device.queue;
 	const view = () => ( { paused, hidden: document.hidden, scale: renderScale, interval: pacer.rate > 0 ? pacer.interval : 1000 / 60, width: innerWidth, height: innerHeight, cap: DPR_CAP } );
-	detector = new QualityDetector( qualityChoice, view, gpuTimer !== null || profiler?.timestamps === true, () => queue.onSubmittedWorkDone(), () => renderer.info.frame );
+	detector = new QualityDetector( qualityChoice, view, gpuTimer !== null || profiler?.timestamps === true, () => gpuQueue.onSubmittedWorkDone(), () => renderer.info.frame );
 	if ( dynamicResolution ) dynamicResolution.enabled = false;
 
 }
@@ -2007,6 +2008,11 @@ function tick( time: number ): void {
 	pipeline.render( { scene, prepassScene, opaquePrepassScene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, afterScene: after ? afterScene : undefined, camera, water: water!, sun, keyDirection: shadowDirection, time: simTime, temporal: temporalFrame( rawDt, paused ? 0 : dt ), settle: settleFrame( bakeDue ), haze: hazeFrame() } );
 	steerRenderScale( rawDt );
 	submitBatch.flush();
+	// a paused page in the test mode keeps at most PAUSED_QUEUE frames queued on the GPU
+	// (FramePacer.ts, "A paused page's queue")
+	const bounded = paused && TEST_MODE;
+	pacer.queueLimit = bounded ? PAUSED_QUEUE : 0;
+	if ( bounded ) pacer.submitted( gpuQueue.onSubmittedWorkDone() );
 	frame ++;
 	diagnostics();
 
@@ -2113,7 +2119,7 @@ function diagnostics( now = false ): void {
 		dpr: + ( pipeline.width / innerWidth ).toFixed( 4 ), // the render's pixel ratio
 		renderScale,
 		dynamicResolution: dynamicResolution ? { scale: dynamicResolution.scale, source: dynamicResolution.source, changes: dynamicResolution.changes.length } : null,
-		pacing: { target: pacer.target, rate: pacer.rate, mode: pacer.mode, refreshMs: + pacer.period.toFixed( 3 ), divisor: pacer.divisor, base: pacer.base, fallback: pacer.fallen, falls: pacer.falls, returns: pacer.returns, rendered: pacer.rendered, skipped: pacer.skipped },
+		pacing: { target: pacer.target, rate: pacer.rate, mode: pacer.mode, refreshMs: + pacer.period.toFixed( 3 ), divisor: pacer.divisor, base: pacer.base, fallback: pacer.fallen, falls: pacer.falls, returns: pacer.returns, rendered: pacer.rendered, skipped: pacer.skipped, held: pacer.held, queued: pacer.queued, queueLimit: pacer.queueLimit },
 		submits: { ...submitBatch.stats, why: { ...submitBatch.stats.why } },
 		canvasDpr: renderer.getPixelRatio(),
 		worldTriangles: worldInfo.worldTriangles,
@@ -2372,7 +2378,7 @@ const loop = {
 		animation.stop();
 		const until = performance.now() + 2000;
 		while ( sky.busy && performance.now() < until ) await new Promise( ( resolve ) => setTimeout( resolve, 10 ) );
-		await ( renderer.backend as unknown as { device: { queue: { onSubmittedWorkDone(): Promise<void> } } } ).device.queue.onSubmittedWorkDone();
+		await gpuQueue.onSubmittedWorkDone();
 
 	},
 	start(): void {

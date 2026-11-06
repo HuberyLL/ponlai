@@ -3,15 +3,15 @@ import type { SimState } from './sim/types.ts';
 
 // The game's save: one slot in this browser's storage (localStorage) holding the game as JSON with
 // a version number: the simulation's state (sim/Sim.ts, where every change of the world is kept)
-// and the record (沧海录, Chronicle.ts: its entries, the skies of each day and which critical needs
-// it has noted). Kept apart from Game.ts so the world's start (world/WorldStart.ts) can read the
+// and the record (沧海录, Chronicle.ts: its entries, each at its tick, and the skies of each day). Kept apart from Game.ts so the world's start (world/WorldStart.ts) can read the
 // saved piece count as the page loads, before the world is asked for, without the game's code; and
 // plain TypeScript, so node's checks read saves (tools/verify-game.mjs).
 //
 // What is not saved: what the page holds rather than the game (the weather, the camera, which page
 // of the record is open), a brain's thought in flight (the islander is asked again once it has
 // nothing under way, and still holds what it noticed, which only an answer acted on takes) and the
-// player's words no thought has taken yet.
+// player's words no thought has taken yet. Events (sim/events.ts) are not saved: the session hands
+// them on before it saves.
 //
 // The page keeps the slot itself (`keepsSave`): it resumes the saved game as it loads, and saves it
 // every minute while it runs and when the page is hidden or left (Game.ts). It does not in an
@@ -29,7 +29,7 @@ export const SAVE_KEY = 'ponlai.game';
 export const UNREAD_KEY = 'ponlai.game.unread';
 
 /** the save's shape this build writes */
-export const SAVE_VERSION = 21;
+export const SAVE_VERSION = 22;
 
 export interface SaveFile {
 	version: number;

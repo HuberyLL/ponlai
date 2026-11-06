@@ -278,7 +278,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   debug page, `__PONLAI__.pacer.choices()` lists the display's even rates, `setRate( fps | 'auto' )`
   sets one, `mode` and `rate` read the choice and `fps` the rate held now (a production `?game`
   settings menu needs the game to be handed the pacer: not wired yet); the diagnostics' `pacing`
-  block shows `mode`, `fallback`, `falls` and `returns`.
+  block shows `mode`, `fallback`, `falls` and `returns`, and for the test mode's paused pages
+  `queueLimit` (the frames they may keep queued on the GPU), `queued` (how many are now) and `held`
+  (how many due frames waited for the queue).
 - `submits=each` (three's own submit per pass, without the submit batching; at runtime
   `flags.batchSubmits`; its tracking wrappers stay installed, so compare against `main` for their
   JS cost) and `submitBatch=hold,wait,idle` (its policy, see `SubmitBatch.ts`).
@@ -592,14 +594,16 @@ Game:
   days in the record), "hearing brain" (hears the player, thinks a few seconds with the heard
   words circling, answers a placeholder line), a line said by the inspected islander, their
   needs low or critical, and the language (reloads the page with `lang`). The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
-  by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `.tools` (the five
-  actions), `setBrain( brain )` (kept across a load; `null` leaves the islander idle),
+  by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `act( id, calls )` (tool
+  calls for an islander, `[ { tool, args } ]`: the five actions, through the entrance a brain's
+  answer takes), `listen( fn )` (the simulation's events as they come), `setBrain( brain )` (kept across a load; `null` leaves the islander idle),
   `think( id )`, `walkTo( id, x, z )`, `placeBlueprint( kind, x, z )` (a building of a kind,
   `'chest'`, any number, each with an id like `chest1`; returns why not, or null), `focus( id )`, `setPaused`, `togglePause`,
   `addIslander()`, `save` and `load` (a save of another piece count loads only with the page),
   `startOver()` (a new game on the island shown), `autosave()` (the page's save: skipped when
   nothing changed), `.keeps` and `.savedAt`,
-  `speak( words, ids | 'all' )` (the player's words: into the record, and to a brain that hears),
+  `speak( words, ids | 'all' )` (the player's words: into the record, and to a brain that hears;
+  returns why not, or null),
   `say( id, words )`, `setNeed( id, need, value )`, `forecast( hours )` (the weather's turns, in
   game hours), `.record` (the record's entries) and `.ui` (`setMany( true )`);
   `.sim.comingLand` holds the next piece's cells once the page has it.
@@ -634,6 +638,13 @@ within a tolerance; the test mode keeps the byte-for-byte checks valid.
   does too while they have not stepped, so the pause itself freezes them and they need no switch.
   The falling leaves (`src/weather/FallingLeaves.ts`) are history-dependent and off under the
   test mode's switch (below): not made, so `settled` never waits for them.
+- The test mode's paused pages keep at most two rendered frames queued on the GPU
+  (`src/post/FramePacer.ts`, "A paused page's queue"): the tools' headless browser has no vsync and
+  no frame-rate limit, so without the bound two pages sharing the GPU each queued hundreds of frames
+  of work, and every read-back (the pre-exposure's, a probe's radiance) and screenshot waited behind
+  it. The bound changes how many frames a second a paused page draws, never what it draws: the
+  parity views and the probe readings are the same bytes with and without it. A running page, and a
+  paused one with `testMode=0` (capture-clip's), is not bounded.
 - A new history-dependent effect:
   - `establishScene` (`src/main.ts`) clears its history; `tools/verify-scene-jump.mjs` checks it;
   - it reports itself to `settled` (main.ts `pending`, or the rest's signature) until it has
@@ -877,7 +888,13 @@ from `P`); `--init js` hooks the page before its scripts run. A production previ
 `debug` in the query. A long eval that waits on CPU work (worker generation, a grown page) stops
 the loop (`await P.loop.stop()`) and waits with `until` or `sleep`: while the loop stands the probe
 gives its shared slot up to a request ranked before it and takes it back before the helper resolves
-(each give-up on stderr, the step's `gaveUpMs`). Common questions:
+(each give-up on stderr, the step's `gaveUpMs`). Probes share the GPU as capture pages do: two
+probes sweeping six points of a paused, grown island at 4K each took about 1.4 times one probe's
+time (1.45 times its throughput), and a probe beside a capture-set page 1.1 times its time alone,
+with readings identical to a probe alone. Sweeping 21 points, two probes gave about 1.35 times one
+probe's throughput and three about 1.4 times, but at three one or two of the probes in a run read a
+value that differed from a probe alone's in the last digit. (A paused page bounds its GPU queue,
+Test mode above; before that bound two six-point probes each ran 12 times as long as one alone.) Common questions:
 `--load` loads every query after the first in a page of its own instead of jumping to it: the
 scene-jump contract covers the image, not the world's generation path, so use it to compare two
 freshly loaded pages (a grown page against a fresh `grow=1` page) in one call.
@@ -984,9 +1001,12 @@ and the limits), while a module's or a pipeline's creation is still proven on th
 Everything that renders the scene in a browser (captures, profiles, GPU probes) takes the
 machine-wide GPU lock in `tools/gpu-lock.mjs`: timing runs (profiles, benchmarks, running captures)
 hold it alone; paused captures and the verify probes share it with each other, since their pixels
-do not depend on the load. Shared holders take one of `PONLAI_GPU_SLOTS` slots (default 3) and the
-rest queue: captures are GPU-bound, so past 2-3 pages at once only each page's
-latency grows. A capture-set page leases its slot (capture.mjs's worker, `leaseGpuLock`): it keeps
+do not depend on the load. Shared holders take one of `PONLAI_GPU_SLOTS` slots (default 2) and the
+rest queue: captures are GPU-bound, so two pages at once give about 1.75 times one page's
+throughput, a third about 2 times with the slowest views taking twice as long as at two, and a
+fourth hardly more (21 paused views, the frames identical at every count); probes that sweep many
+points gain about 1.35 times at two and 1.4 at three, where their readings lose the last digit now
+and then (Probes, above). Two slots take most of the gain with the readings exact. A capture-set page leases its slot (capture.mjs's worker, `leaseGpuLock`): it keeps
 it from view to view and gives it up between views only when a request ranked before its next one
 waits for it (an exclusive request, or a shared one when every slot is taken) and it has held it
 for its lease, 20 s (capture.mjs `--lease`, after capture-set's `--`; 0 frees it after every view),
@@ -1468,6 +1488,10 @@ the shaded ones are, how much of the lawn they cover and what colour the lit law
 Which assets a commit runs with, whether `public/` matches them, and how to publish a change to
 them: `tools/assets.mjs` (Assets), never a file committed to git.
 
+What the islanders do over days of play, how the needs and the stock run, and how a brain plays
+from what it perceives: `tools/play-game.mjs` (Other tools), not a loop over the simulation of
+one's own.
+
 What WGSL a TSL kernel, pass or material compiles to, which bindings and uniforms each stage
 declares, and whether one exceeds WebGPU's default limits, without a GPU: `tools/wgsl-build.mjs`
 with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script of one's own.
@@ -1534,8 +1558,45 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   first prototype's rules (needs, thirst off, the bag, fishing, the chest placed as a blueprint and
   built, several chests with stable ids, two builders on one site, the actions, the perception, the stand-in brain over a few game days, a save mid-action), the save file
   (`src/game/save.ts`: the simulation and the record read back as written and played on the same,
-  a version-17 save carried over, saves no step reaches refused) and the island's growth; its island is in
+  saves of another version and saves no step reaches refused), the island's growth, the session
+  the page and the play tool run the game in (`src/game/Session.ts`: the landings handed on as a
+  game is installed, the player's commands checked at the entrance, the skies of its frames, the
+  leader's words heard, a save read into another session, the growth asked of its host), the
+  islanders among themselves, and the rules' structure (an action's condition held every tick, a
+  late answer for an islander who died refused, the entrance's refusals, what happened recorded
+  once at its tick, content added with no change to the core: a need, an item with a use, a kind
+  of place and of building with their options, registered by the check alone, played, perceived,
+  recorded, saved and shown with the presentation's defaults, then taken away, and no content id
+  written as a string in the core: ARCHITECTURE.md, Adding content); its island is in
   `tools/game-fixture.mjs`.
+- `tools/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow] [--population 0]
+  [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>] [--latency 90] [--thoughts]
+  [--out dir]`
+  (plain `node`) plays the game headless in the page's own session (`src/game/Session.ts`, nothing
+  copied from the page: a frame of one tick at a time, a growth due asked for before it, the record
+  looking after each, the leader's lines between them), and writes what happened to
+  `artifacts/play/<stamp>/` (`--out`): `transcript.md` (day by day, the record's entries in the
+  record page's words, `src/game/ui/data/record.ts` and its catalogue, so a new kind of entry needs
+  no change to the tool, and an event kind that neither its lines nor the record show prints as an
+  `[event]` line; the islanders' actions with their outcomes as the session's events tell
+  them (done, failed, interrupted with the reason, refused), consecutive alike ones merged, their words, needs every
+  six game hours and a table per day), `timeline.json` (every islander each game hour: position,
+  needs, bag, action), `summary.json` (per islander the share of time by activity, each need's
+  lowest, mean and highest, each item's flows by the call that moved it, so a new need, item or
+  option shows without a change to the tool; the dead, the buildings and when
+  they were built, the stock), `record.json` and, with `--thoughts`, `thoughts.jsonl` (a line per
+  thought: what the islander perceived and the brain's answer, for judging a brain offline; about
+  1 MB for four islanders over five days), with a short summary on stdout. `--place` puts
+  blueprints down at the start (at the first ground that takes one without a point), `--population`
+  adds islanders, `--grow` adds the next piece when the population reaches a step, and `--script`
+  has the leader speak at given times (`[ { "at": "d1 08:30", "to": "all" | [ "v1" ], "words": "..." } ]`),
+  as the speak bar does (`Session.speak`). `--brain` takes a module whose `createBrain` (or
+  default export) receives `{ heard, takeHeard, hasHeard, islander, note, options }` and returns a
+  Brain; an asynchronous one's answers land `--latency` game seconds after each thought is asked
+  (90: three real seconds at the default day clock), the run waiting for an answer that takes longer,
+  so the timing never depends on the wall clock. With the stand-in the same options write the same
+  files byte for byte. Five game days of the stand-in take about two seconds; a run with a
+  language-model brain goes through `tools/job.mjs`. The options and guarantees are in its header.
 - `tools/verify-i18n.mjs [--strict] [--list]` (plain `node`) checks the game interface's words:
   it fails on Chinese written in `src/` outside the catalogues (`src/game/ui/i18n/`; the content
   it allows, the islanders' names and the debug panel's placeholder lines, is listed in the tool)

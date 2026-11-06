@@ -55,6 +55,27 @@
 // the rate held now, `setRate()` sets it at any time between frames. The pacer counts its own
 // changes (`generation`: a new rate, a new divisor from the refresh, a reset), so the dynamic scale
 // drops what it measured at the old pace; `falls` and `returns` count only the scale's decisions.
+//
+// A paused page's queue. A paused page in the test mode (debug/TestMode.ts) keeps at most
+// PAUSED_QUEUE (2) rendered frames outstanding on the GPU: main.ts hands each such frame's
+// `queue.onSubmittedWorkDone()` to `submitted()` and sets `queueLimit`, and a due frame waits
+// (`held`) while that many have not completed. Nothing else bounds the queue in the tools' headless
+// browser (no vsync, no frame-rate limit): Chrome's own back-pressure sets in only seconds of frames
+// later. One page alone kept the GPU up with it (less than a frame of work queued); two such pages
+// asked more of the GPU than it has, and each page's queue grew to a few hundred times what one page
+// alone kept queued. Every read-back then waited behind it (the pre-exposure's readings, the sky's,
+// a probe's radiance), so a page took up to ten times as many frames to settle (60-300 instead of
+// 31), a radiance read took 30 to 100 times as long, and two probes sweeping six points each ran 12
+// times as long as one (a sixth of one probe's throughput), a probe beside a capture page 4 times.
+// Bounded, the queue holds four to five times one page's alone with two pages (about two frames of
+// work), a page settles in 31-33 frames, and two probes take about 1.4 times one probe's time for
+// twice the points (1.45 times its throughput), a probe beside a capture page 1.1 times its time
+// alone; one page alone is unchanged, and paused frames and readings are the same bytes (only how
+// many frames a second the page draws changes, and a paused frame does not depend on it). A running
+// page, and a paused one outside the test mode (capture-clip's stepped clips), is left alone:
+// holding a running page's ticks until the GPU caught up bunched them and made the frame intervals
+// jitter (debug/FrameProfiler.ts), since Chrome reports finished work in batches, and a player's
+// browser has its vsync to bound the queue.
 
 // callbacks in the window the refresh period is taken from, and its quantile (low, as a callback
 // delayed by the main thread or a skipped vblank only lengthens an interval)
@@ -66,6 +87,8 @@ export const MIN_FALLBACK_FPS = 40;
 const MIN_CHOICE_FPS = 30;
 // how far (share of the period) the refresh's estimate must pass a divisor's boundary to change it
 const BOUNDARY = 0.01;
+// the frames a paused page may keep queued on the GPU (see the header, "A paused page's queue")
+export const PAUSED_QUEUE = 2;
 
 /** 'auto': the tier's rate with the automatic fallback; 'fixed': a rate held as it is. */
 export type FrameRateMode = 'auto' | 'fixed';
@@ -92,6 +115,12 @@ export class FramePacer {
 	/** Animation frames the pacer let through and skipped (for diagnostics). */
 	rendered = 0;
 	skipped = 0;
+	/** The queue's bound (see the header, "A paused page's queue"): the most rendered frames whose
+	 * GPU work may be outstanding before a due frame waits (0: unbounded, the browser's own
+	 * backpressure alone); the frames outstanding now; the animation frames held for them. */
+	queueLimit = 0;
+	queued = 0;
+	held = 0;
 	/** A `requestAnimationFrame` context for three's animation loop (`Animation.setContext`): the
 	 * callback runs only on the refreshes the pacer renders. */
 	readonly context: { requestAnimationFrame( callback: FrameRequestCallback ): number; cancelAnimationFrame( id: number ): void };
@@ -244,6 +273,16 @@ export class FramePacer {
 
 	}
 
+	/** Counts a rendered frame as outstanding until `done` (the queue's `onSubmittedWorkDone` after
+	 * its last submit) settles. */
+	submitted( done: Promise<unknown> ): void {
+
+		this.queued ++;
+		const settle = () => { this.queued --; };
+		done.then( settle, settle );
+
+	}
+
 	/** Whether the animation frame at `time` (its rAF timestamp, ms) renders. */
 	frame( time: number ): boolean {
 
@@ -266,6 +305,14 @@ export class FramePacer {
 		if ( time - this.last < this.interval - this.period * 0.5 ) {
 
 			this.skipped ++;
+			return false;
+
+		}
+		// a due frame waits while the GPU is the bound's frames behind (the count restarts from the
+		// frame that renders once it has caught up)
+		if ( this.queueLimit > 0 && this.queued >= this.queueLimit ) {
+
+			this.held ++;
 			return false;
 
 		}

@@ -42,6 +42,10 @@
 	"item": {
 		"fish": "Fish"
 	},
+	"need": {
+		"satiety": "Satiety",
+		"hydration": "Hydration"
+	},
 	"place": {
 		"shore": "the shore"
 	},
@@ -59,8 +63,6 @@
 		}
 	},
 	"tag": {
-		"satiety": "Satiety",
-		"hydration": "Hydration",
 		"bag": "Bag",
 		"slot": "{{name}} {{count}}",
 		"empty": "Empty"
@@ -152,7 +154,9 @@
 			"built": "{{building}} built",
 			"need": "{{who}}: {{need}}",
 			"need_own": "{{need}}",
-			"placed": "{{building}} sited"
+			"placed": "{{building}} sited",
+			"other": "{{who}}: {{what}}",
+			"other_own": "{{what}}"
 		},
 		"need": {
 			"satiety": "hungry",
