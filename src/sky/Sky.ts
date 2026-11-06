@@ -597,7 +597,8 @@ const _skyLight = { r: 0, g: 0, b: 0 };
 // through a deck's gaps is the clear day's sky all the same (most of the air's Rayleigh scattering
 // lies above a deck of 1 - 3 km), so where the dome, the environment and the deck's irradiance see
 // it past the clouds, by their transmittance, it takes the clear day's gain back (`gapSky`: the
-// clear day's gain over the clouded sky's, exactly 1 under a clear or fair sky). Without it the
+// clear day's gain over the clouded sky's, exactly 1 under a clear or fair sky; each body's share of
+// the sky takes it at that body's height, the moon's at the moon's). Without it the
 // sky behind a cloudy deck's gaps would stand at the clouded sky's lower radiance, and the gaps would
 // show the air in front of them rather than their blue.
 // Tunable on debug pages: `sky.clear.gain@<horizon|dawn|early|morning|golden|late|low|high>`.
@@ -1276,8 +1277,9 @@ export class Sky {
 	private displayNightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
 	private displayAmbientGain = uniform( 1 );
 	// the clear day's sky gain over the clouded sky's, which the open sky behind the clouds takes
-	// (CLEAR_SKY, `gapSky`); live, as the atmosphere's own uniforms are, and read by the bakes too
-	private gapGain = uniform( 1 );
+	// (CLEAR_SKY, `gapSky`), on the sun's share of the sky at the sun's height and on the moon's at the
+	// moon's; live, as the atmosphere's own uniforms are, and read by the bakes too
+	private gapGain = { sun: uniform( 1 ), moon: uniform( 1 ) };
 	// the weather's cloud shadow floor and cast shadow on the island (Weather.ts `cloudFloor`, `castShadow`)
 	// (the sea's floor too: `seaKeyFloor`)
 	private keyCloudFloor = uniform( 0 );
@@ -2016,7 +2018,11 @@ export class Sky {
 		// see `sunBeamIlluminance`)
 		const beamFade = 1 + ( this.atmosphere.sunVisibleShareToSun() - 1 ) * ( skyMix ? skyMix[ 3 ] ?? 0 : 0 );
 		this.sunBeamIlluminance.copy( this.solarIlluminance ).multiply( skyGain( this.elevation, this.rising, cloud, 1, _skyBeam ) ).multiplyScalar( beamFade );
-		this.gapGain.value = debugFlags.skyGain === false ? 1 : clearSky( this.elevation, this.rising, 0 ) / clearSky( this.elevation, this.rising, cloud );
+		// the open sky's gain behind the clouds, on each body's share of the sky: the sun's at the
+		// sun's height, the moon's at the moon's, as each body's sky light takes its gain (`skyGain`)
+		const off = debugFlags.skyGain === false;
+		this.gapGain.sun.value = off ? 1 : clearSky( this.elevation, this.rising, 0 ) / clearSky( this.elevation, this.rising, cloud );
+		this.gapGain.moon.value = off ? 1 : clearSky( this.moonElevation, false, 0 ) / clearSky( this.moonElevation, false, cloud );
 		this.atmosphere.updateSync();
 		// Cap the hue of the air's extinction first, then fade by the disk's visible share, so the
 		// setting disk only dims the key and does not bleach it.
@@ -2336,7 +2342,8 @@ export class Sky {
 		const lowSun = lowSunOf( this.elevation, coverage );
 		clouds.directGain.value = 1 + 0.7 * lowSun;
 		clouds.ambientGain.value = 1 + 0.35 * lowSun;
-		clouds.openSkyGain.value = this.gapGain.value;
+		clouds.openSkyGain.sun.value = this.gapGain.sun.value;
+		clouds.openSkyGain.moon.value = this.gapGain.moon.value;
 
 	}
 
@@ -2791,7 +2798,7 @@ export class Sky {
 	// The open sky behind the clouds, where it shows through them (CLEAR_SKY): the clear day's.
 	private gapSky( direction: V3 ): V3 {
 
-		return this.clearSky( direction ).mul( this.gapGain );
+		return this.atmosphere.skyRadiance( direction, true, this.gapGain );
 
 	}
 

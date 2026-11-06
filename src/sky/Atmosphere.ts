@@ -909,11 +909,13 @@ export class Atmosphere {
 	 * plus the same for the moon, with its
 	 * row, its direction and its illuminance. `polarised` false leaves the polariser out, for the sky
 	 * light that lights the clouds (a polariser darkens what the eye sees of the sky, not the
-	 * light the sky sheds on them). */
-	skyRadiance( dir: V3, polarised = true ): V3 {
+	 * light the sky sheds on them). `gains` scales each body's share on its own (the open sky's gain
+	 * behind the clouds, Sky.ts `gapSky`, which each body takes at its own height). */
+	skyRadiance( dir: V3, polarised = true, gains?: { sun: F; moon: F } ): V3 {
 
-		return this.bodySky( dir, 0, this.sunDir, this.sunIlluminance, polarised )
-			.add( this.bodySky( dir, 1, this.moonDir, this.moonIlluminance, polarised ) );
+		const sun = this.bodySky( dir, 0, this.sunDir, this.sunIlluminance, polarised );
+		const moon = this.bodySky( dir, 1, this.moonDir, this.moonIlluminance, polarised );
+		return gains ? sun.mul( gains.sun ).add( moon.mul( gains.moon ) ) : sun.add( moon );
 
 	}
 

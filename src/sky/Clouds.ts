@@ -134,8 +134,8 @@ type V4 = THREE.Node<'vec4'>;
 //     desaturated, times the earth's shadow there and each body's illuminance, its factor tinted
 //     toward the opacity and toned on its log luminance (both neutral until set). Under the low
 //     deck's share the shaded side's sky is instead the sky over the deck's tops (`columnTop`, the
-//     open sky's mean radiance over the upper hemisphere, with the clear day's gain: Sky.ts
-//     CLEAR_SKY): a cloud under a deck is lit by the sky above it, not by the sky along the view it
+//     open sky's mean radiance over the upper hemisphere, with the clear day's gain on each body's share
+//     at its own height: Sky.ts CLEAR_SKY): a cloud under a deck is lit by the sky above it, not by the sky along the view it
 //     is seen against. Taken along the view, the shaded side would take the dim sky near the
 //     horizon, and turn warm with a low sun, as the horizon's sky does. The march adds
 //     no air of its own, nor does the thin layer: the dome lays the haze over both, the cumulus at
@@ -753,8 +753,9 @@ export class Clouds {
 	// each times the weather's day sky at its own height (Sky.ts `daySkyMoon`).
 	readonly columnKey = uniform( new THREE.Color( 0, 0, 0 ) );
 	// The gain the open sky over the low deck's tops takes back (Sky.ts CLEAR_SKY, `gapSky`): the
-	// clear day's sky gain over the clouded sky's, read by the column's kernel alone (`columnTopOf`).
-	readonly openSkyGain = uniform( 1 );
+	// clear day's sky gain over the clouded sky's, on each body's share of the sky at its own height
+	// (Sky.ts `gapGain`), read by the column's kernel alone (`columnTopOf`).
+	readonly openSkyGain = { sun: uniform( 1 ), moon: uniform( 1 ) };
 	// The night's faint ambient (Sky.ts `displayNightAmbient`), added to the atmosphere's own sky
 	// light wherever the clouds take it.
 	readonly nightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
@@ -1133,12 +1134,12 @@ export class Clouds {
 			const up = Math.cos( zenith * Math.PI / 180 ), out = Math.sin( zenith * Math.PI / 180 );
 			for ( const [ c, n ] of [ [ 1, 0 ], [ 0, 1 ], [ - 1, 0 ], [ 0, - 1 ] ] ) {
 
-				sky.addAssign( this.atmosphere.skyRadiance( vec3( toward.x.mul( c ).sub( toward.y.mul( n ) ).mul( out ), up, toward.x.mul( n ).add( toward.y.mul( c ) ).mul( out ) ), false ) );
+				sky.addAssign( this.atmosphere.skyRadiance( vec3( toward.x.mul( c ).sub( toward.y.mul( n ) ).mul( out ), up, toward.x.mul( n ).add( toward.y.mul( c ) ).mul( out ) ), false, this.openSkyGain ) );
 
 			}
 
 		}
-		return { key: this.columnKey.rgb.mul( max( this.lightDir.y, 0 ) ).mul( 1 / Math.PI ), sky: sky.mul( this.openSkyGain.mul( 1 / 8 ) ) };
+		return { key: this.columnKey.rgb.mul( max( this.lightDir.y, 0 ) ).mul( 1 / Math.PI ), sky: sky.mul( 1 / 8 ) };
 
 	}
 
