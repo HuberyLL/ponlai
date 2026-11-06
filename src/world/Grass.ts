@@ -11,7 +11,9 @@ import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { RESPONSE, displacementAt } from './vegetation/Displacement.ts';
 import { noise3, smoothstep as smoothstepNumber } from './noise.ts';
 import { runSteps } from './Steps.ts';
-import { grassOnLitter } from './BambooGroves.ts';
+import { GROVES, grassOnLitter } from './BambooGroves.ts';
+import { soilGroveAt } from '../materials/Soil.ts';
+import { CANOPY_SHADE } from '../lighting/AmbientSample.ts';
 import { canopySteps, crownSteps, setCanopyTop, setSwardField, swardSteps } from './SwardField.ts';
 import { transmission, vegetationMaterial } from './vegetation/Material.ts';
 import { unjitteredPadded } from './vegetation/VegetationCull.ts';
@@ -1180,7 +1182,15 @@ function bladeVertex( reads: ReturnType<MeadowBlades[ 'reads' ]>, wind: WindStat
 	const deep = mix( float( AO.short ), float( AO.tall ), smoothstep( AO.lengths[ 0 ], AO.lengths[ 1 ], A.w ) );
 	const rise = min( t.add( aoRise ), 1 );
 	const height = mix( deep.add( deep.oneMinus().mul( rise.mul( rise ) ) ), deep.add( deep.oneMinus().mul( 0.75 ) ), D.z );
-	const ao = height.mul( D.x.add( D.x.oneMinus().mul( t.mul( t ).mul( aoTipLift ) ) ) );
+	const tipward = t.mul( t ).mul( aoTipLift );
+	let ao: F = height.mul( D.x.add( D.x.oneMinus().mul( tipward ) ) );
+	if ( ! CANOPY_SHADE ) {
+
+		// the grove's canopy over the root, taken relative to the tip (`aoCanopy`): 1 on the open meadow
+		const g = float( 1 ).sub( aoCanopy.mul( soilGroveAt( root.xz ) ) ).toVar();
+		ao = ao.mul( g.add( g.oneMinus().mul( tipward ) ).div( g.add( g.oneMinus().mul( aoTipLift ) ) ) );
+
+	}
 	const normal = normalize( face.add( wide.mul( side.mul( SURFACE.round ) ) ) );
 	// the first leaf of a folded blade runs from its tip to the root on the strip, so its triangles
 	// wind the other way: -1 there (0 on the shared root's row, which only the sign of its
@@ -1253,12 +1263,25 @@ tuneApply( 'grass.columnB.blue', COLUMN_B.blue, { min: 0.7, max: 1.1 }, ( b ) =>
  * `lengths[ 1 ]` m, rising to none by seven tenths of the length (the top third unoccluded); s
  * the sky its anchors see, raised toward the tip, which stands above its neighbours. (Occlusion
  * and light through the blade given as values along its length, the occlusion dark at the base
- * where other blades hide the light: Wohllaib 16:13.) */
+ * where other blades hide the light: Wohllaib 16:13.) Under a grove, times the canopy's share
+ * (`aoCanopy`, `grass.ao.canopy`). */
 const AO = { short: 0.6, tall: 0.35, lengths: [ 0.2, 0.8 ] };
 /** The occlusion's rise along the blade and the tip's lift, the two 0.3 of AO's law, tunable
  * (`grass.ao.rise`, `grass.ao.tipLift`), uniforms. */
 const aoRise = /*@__PURE__*/ tuneUniform( 'grass.ao.rise', 0.3, { min: 0, max: 0.7 } );
 const aoTipLift = /*@__PURE__*/ tuneUniform( 'grass.ao.tipLift', 0.3, { min: 0, max: 1 } );
+/** Under a grove the sward is shaded from root to tip by the canopy as well. Where the
+ * materials read the ambient volume (lighting/AmbientSample.ts CANOPY_SHADE false) the anchors' sky
+ * s leaves the canopy out, since the probe a blade reads already sees it, at about the tips'
+ * height: so the canopy's share g = 1 - u d (d the groves' density at the root, the soil map's
+ * second layer: materials/Soil.ts; u `grass.ao.canopy`, the share a full grove hides, GROVES
+ * `shade` by default, as `groveSky` gives) is a factor of its own, raised toward the tip as s is,
+ * and divided by its value at the tip, [ g + ( 1 - g ) 0.3 t^2 ] / [ g + ( 1 - g ) 0.3 ]: the
+ * factor is 1 at the tip, which keeps the volume's light alone, and about 0.56 at a root under a
+ * full grove (0.8 stop below a root on the open meadow against its tip), the canopy not counted
+ * twice. On the open meadow (d 0), or at u 0, g is exactly 1 and the occlusion the same number
+ * as without it. Under CANOPY_SHADE s holds the canopy already and this is left out. */
+const aoCanopy = /*@__PURE__*/ tuneUniform( 'grass.ao.canopy', GROVES.shade, { min: 0, max: 0.95 } );
 /** The light through a blade: its translucency t (VegetationLighting's) is `mask` ( `root` +
  * ( `tip` - `root` ) h ), a straight line in the position along the blade h (0 root, 1 tip; far off
  * flattened to its value at 0.6 of the way, as the colours are), so the tip lets through 1.5 times

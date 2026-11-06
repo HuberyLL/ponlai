@@ -17,7 +17,9 @@ import { GROVES, groveAt, litterAt, litterGateDensity, shootClusters } from '../
 // (WorldShapes.ts `islandSwell`, over +-SWELL_RANGE, in 16 bits: G the high byte, B the low, which
 // linear filtering recombines) for the meadow's top (both TerrainMaterial.ts): functions of the
 // world alone, never of the land, so a grown island keeps them. One array of the two keeps
-// the terrain's fragment stage within WebGPU's 16 sampled textures.
+// the terrain's fragment stage within WebGPU's 16 sampled textures. The meadow's blades read the
+// groves' density too, at their roots (world/Grass.ts `aoCanopy`, `grass.ao.canopy`), through a
+// base node the map is set on when it is made (`soilGroveAt`).
 export const SOIL_EXTENT = 2 * GROWTH.half;
 export const SOIL_HEIGHT_RANGE = 0.5;
 const SOIL_SIZE = SOIL_EXTENT * 4;
@@ -30,6 +32,30 @@ export function soilGroveSwell( map: THREE.Texture, xz: THREE.Node<'vec2'> ): { 
 
 	const s = texture( map, xz.div( SOIL_EXTENT ).add( 0.5 ) ).depth( float( 1 ) ).level( float( 0 ) ).toVar();
 	return { grove: s.r, litter: s.a, swell: s.g.mul( 65280 / 65535 ).add( s.b.mul( 255 / 65535 ) ).mul( 2 ).sub( 1 ).mul( SWELL_RANGE ) };
+
+}
+
+/** The base node the grass samples the map's second layer through (`soilGroveAt`): a placeholder of
+ * the same kind until the map is made (`createSoilTexture` sets it). */
+const soilBase = /*@__PURE__*/ texture( placeholder() );
+
+function placeholder(): THREE.DataArrayTexture {
+
+	const t = new THREE.DataArrayTexture( new Uint8Array( 4 * 2 ), 1, 1, 2 );
+	t.colorSpace = THREE.NoColorSpace;
+	t.magFilter = THREE.LinearFilter;
+	t.minFilter = THREE.LinearFilter;
+	t.generateMipmaps = false;
+	t.needsUpdate = true;
+	return t;
+
+}
+
+/** The bamboo groves' density at world `xz` (a node, any stage: sampled at level 0), from the map's
+ * second layer through its base node. */
+export function soilGroveAt( xz: THREE.Node<'vec2'> ): THREE.Node<'float'> {
+
+	return soilBase.sample( xz.div( SOIL_EXTENT ).add( 0.5 ) ).depth( float( 1 ) ).level( float( 0 ) ).r;
 
 }
 
@@ -142,6 +168,7 @@ export function createSoilTexture(): THREE.DataArrayTexture {
 	texture.generateMipmaps = false;
 	texture.needsUpdate = true;
 	texture.name = 'soil-support';
+	soilBase.value = texture;
 	return texture;
 
 }
