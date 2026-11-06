@@ -246,11 +246,21 @@ export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
 // once exposed, and no one fixed scale keeps a cloudy noon's brightest and a darker night's
 // thinnest both in range. A power of two, so what lay in range keeps its bits. The panorama is
 // refreshed a share per frame and kept for the frames between, so its scale is the light's and not
-// the frame's pre-exposure (the view takes that: see the rules above), and when the light's power
-// of two changes, the whole panorama is written again under the new one in that frame, ahead of
-// its readers (`domeStops`: twelve to seventeen times through a dusk, by the weather). Its writes are held at
-// STORE_CEILING. Lightning's light is stored apart and bare (its reach is far above this range's
-// top).
+// the frame's pre-exposure (the view takes that: see the rules above). When the light's power of
+// two changes (`domeStops`: twelve to seventeen times through a dusk, by the weather), the texels
+// the panorama holds are taken to the new one by the ratio of the two in that frame, ahead of
+// the frame's phase and of every reader (`rescaleKernels`: through a scratch of the panorama's
+// size, since a half-float texture cannot be read and written in one dispatch): marching every
+// phase again there doubled a cloudy frame's GPU time. A power of two scales a half float exactly
+// where it lies in range, and the power keeps the texels a margin clear of the subnormals and of
+// the ceiling (Sky.ts STORE_RANGE); a texel outside it carries its old rounding until its phase
+// comes round. The progressive refresh already keeps texels written frames apart, so this adds
+// no history of its own: once every phase has come round after a change, the panorama equals the
+// whole rewrite's bit for bit (measured through a cloudy dusk), a jump writes it whole
+// (`invalidate`), and a paused page settles it whole. Like the march, the rescale runs in
+// `update`, ahead of the frame graph: it must fall between the texels it scales and this frame's
+// phase. Its writes are held at STORE_CEILING. Lightning's light is stored apart and
+// bare (its reach is far above this range's top).
 // What the view stores over the pre-exposed radiance: by day P runs 1 to 3, and at that scale the
 // faint edges of thin cloud low over the sea fell under half float's 2^-14 (a low view across
 // the water lost a few dozen pixels a level or more, up to 54). Seven stops keep them at the 2^8
@@ -846,6 +856,9 @@ export class Clouds {
 	readonly origin = uniform( new THREE.Vector3( 0, 15, 0 ) );
 	// The panorama; replaced when its size changes (setDome), so readers go through domeNode.
 	dome: THREE.StorageTexture;
+	// Where a change of the panorama's power of two takes its texels to the new one and back (a
+	// half-float texture cannot be read and written in one dispatch), at the panorama's size.
+	private domeScratch: THREE.StorageTexture;
 	readonly shadowMap: THREE.StorageTexture;
 	// Lightning (weather/Lightning.ts): each source's world position (m) and reach (m) in xyzw,
 	// and its radiance this frame; `flashOn` is 1 while any of them is lit.
@@ -926,6 +939,9 @@ export class Clouds {
 	private streakCover: THREE.RenderTarget | null = null;
 	private loading: Promise<void> | null = null;
 	private partialKernel: THREE.ComputeNode | null = null;
+	// The panorama's texels times `domeRescale` into the scratch, and back (`update`).
+	private rescaleKernels: [ THREE.ComputeNode, THREE.ComputeNode ] | null = null;
+	private readonly domeRescale = uniform( 1 );
 	private shadowKernel: THREE.ComputeNode | null = null;
 	// The light on the low deck's tops and the shares of the air's light under the deck it sets
 	// (`columnTop`): uniforms and the atmosphere alone, so one thread works them out once a frame
@@ -976,6 +992,7 @@ export class Clouds {
 
 		this.dome = makeDome( DOME_DEFAULTS.width, DOME_DEFAULTS.height );
 		this.domeNode = texture( this.dome );
+		this.domeScratch = makeDome( DOME_DEFAULTS.width, DOME_DEFAULTS.height, 'cloudDomeRescale' );
 		this.shadowMap = new THREE.StorageTexture( SHADOW_SIZE, SHADOW_SIZE );
 		this.shadowMap.type = THREE.UnsignedByteType;
 		this.shadowMap.minFilter = this.shadowMap.magFilter = THREE.LinearFilter;
@@ -1136,6 +1153,7 @@ export class Clouds {
 		const { width: domeWidth, height: domeHeight, strideX, strideY } = this.domeSize;
 		const domeTexelAngle = 2 * Math.PI / domeWidth;
 		this.partialKernel?.dispose();
+		for ( const kernel of this.rescaleKernels ?? [] ) kernel.dispose();
 		this.shadowKernel?.dispose();
 		this.deckMeanKernel?.dispose();
 		this.deckMeanSumKernel?.dispose();
@@ -1881,6 +1899,25 @@ export class Clouds {
 			textureStore( dome, ivec2( int( x ), int( y ) ), vec4( min( result.rgb.mul( this.domeStore ).mul( storePress.store ), vec3( STORE_CEILING ) ), result.a ) );
 
 		} )().compute( domeWidth * domeHeight / ( strideX * strideY ), [ 64 ] ).setName( 'Clouds.Panorama' );
+		// A new power of two: every texel times the ratio of the new power to the old into the
+		// scratch, held at the march's ceiling, then copied back.
+		const scratch = this.domeScratch, domeIn = texture( dome ), scratchIn = texture( scratch );
+		const texelAt = () => ivec2( int( instanceIndex.mod( uint( domeWidth ) ) ), int( instanceIndex.div( uint( domeWidth ) ) ) );
+		this.rescaleKernels = [
+			Fn( () => {
+
+				const p = texelAt().toVar();
+				const s = textureLoad( domeIn, p ).toVar();
+				textureStore( scratch, p, vec4( min( s.rgb.mul( this.domeRescale ), vec3( STORE_CEILING ) ), s.a ) );
+
+			} )().compute( domeWidth * domeHeight, [ 64 ] ).setName( 'Clouds.PanoramaRescale' ),
+			Fn( () => {
+
+				const p = texelAt().toVar();
+				textureStore( dome, p, textureLoad( scratchIn, p ) );
+
+			} )().compute( domeWidth * domeHeight, [ 64 ] ).setName( 'Clouds.PanoramaRescale' ),
+		];
 
 		// ---- cloud shadow: transmittance of the shell along the key light around the island, one
 		// of every SHADOW_PHASES rows per pass.
@@ -2309,13 +2346,16 @@ export class Clouds {
 			renderer.compute( this.deckMeanSumKernel! );
 
 		}
-		// The panorama's power of two for the clouds' light now: a new one writes every phase again
-		// in this frame (the view and the shadow map keep their own), so its texels and its readers
-		// always share one.
+		// The panorama's power of two for the clouds' light now: a new one takes the texels it holds
+		// to it in this frame, ahead of this frame's phase and of every reader (the view and the
+		// shadow map keep their own), so its texels and its readers always share one. Only the
+		// first, with nothing held yet, writes every phase.
 		const stops = this.storeStops;
 		const restore = stops !== this.domeStops;
+		const rescale = restore && Number.isFinite( this.domeStops );
 		if ( restore ) {
 
+			this.domeRescale.value = rescale ? 2 ** ( stops - this.domeStops ) : 1;
 			this.domeStops = stops;
 			this.domeStore.value = 2 ** stops;
 			this.domeRead.value = 2 ** - stops;
@@ -2325,7 +2365,8 @@ export class Clouds {
 		// every phase through the same kernel, so a refreshed map matches a progressive one.
 		const full = this.needsFull;
 		this.needsFull = false;
-		this.refreshMaps( renderer, full, shadowRows, full || restore );
+		if ( rescale && ! full ) for ( const kernel of this.rescaleKernels! ) renderer.compute( kernel );
+		this.refreshMaps( renderer, full, shadowRows, full || ( restore && ! rescale ) );
 
 		if ( ! camera ) return;
 		// ---- view
@@ -2938,10 +2979,12 @@ export class Clouds {
 	dispose(): void {
 
 		this.dome.dispose();
+		this.domeScratch.dispose();
 		this.shadowMap.dispose();
 		for ( const t of [ this.shape, this.synoptic, this.weather, this.bounds, this.rainbowTable ] ) t?.dispose();
 		this.streakCover?.dispose();
 		this.partialKernel?.dispose();
+		for ( const kernel of this.rescaleKernels ?? [] ) kernel.dispose();
 		this.shadowKernel?.dispose();
 		this.deckMeanKernel?.dispose();
 		this.deckMeanSumKernel?.dispose();
@@ -3028,6 +3071,8 @@ export class Clouds {
 			this.domeNode.value = this.dome;
 			this.domeTexel.value.set( 0.5 / width, 0.5 / height );
 			previous.dispose();
+			this.domeScratch.dispose();
+			this.domeScratch = makeDome( width, height, 'cloudDomeRescale' );
 
 		}
 		if ( this.partialKernel ) this.buildKernels();
@@ -3063,7 +3108,7 @@ export class Clouds {
 
 		await this.init( renderer );
 		const view = this.view;
-		const kernels = [ this.columnKernel!, this.partialKernel!, this.shadowKernel!, this.deckMeanKernel!, this.deckMeanSumKernel! ];
+		const kernels = [ this.columnKernel!, this.partialKernel!, ...this.rescaleKernels!, this.shadowKernel!, this.deckMeanKernel!, this.deckMeanSumKernel! ];
 		if ( view ) kernels.push( view.kernels.trace, view.kernels.high, view.kernels.box, ...view.kernels.resolve );
 		await renderer.compileComputeAsync( kernels );
 
@@ -3071,7 +3116,7 @@ export class Clouds {
 
 }
 
-function makeDome( width: number, height: number ): THREE.StorageTexture {
+function makeDome( width: number, height: number, name = 'cloudDome' ): THREE.StorageTexture {
 
 	const dome = new THREE.StorageTexture( width, height );
 	dome.type = THREE.HalfFloatType;
@@ -3079,7 +3124,7 @@ function makeDome( width: number, height: number ): THREE.StorageTexture {
 	dome.wrapT = THREE.ClampToEdgeWrapping;
 	dome.minFilter = dome.magFilter = THREE.LinearFilter;
 	dome.generateMipmaps = false;
-	dome.name = 'cloudDome';
+	dome.name = name;
 	return dome;
 
 }
