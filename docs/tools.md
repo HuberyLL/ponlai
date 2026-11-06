@@ -905,12 +905,12 @@ Steps, scope, the value's serialisation and the exit code are in the file's head
 `node tools/dusk-grid.mjs [url] [--weathers clear,fair,cloudy,overcast] [--sides evening,morning]
 [--from 2 --to -8 --step 0.5] [--midnight] [--split] [--night-split] [--compare dir]` reads the scene's
 light in scene units at a grid of sun elevations through the dusk and the dawn (the sky's and the
-deck's irradiance, the sky's metering, the land's ambient, the far sea, the air, the key's floors,
-and per view the exposure with its keys and meters, the metering illuminance over the land and the
-radiance over the land, the sky, the sea and the yunpeng's cells), each point a scene jump with an
-explicit bake, its hour solved from `src/sky/DayCycle.ts` in node, and judges that a lower sun
-never makes the judged quantities brighter (each step, the largest rise down to midnight, the
-exposure's direction). `--split` forces each of the dusk's shares (`sky.dusk.force.*`, URL options,
+deck's irradiance, the sky's metering, the baked sky's ring 4 degrees up, the land's ambient, the
+far sea, the air, the key's floors, and per view the exposure with its keys and meters, the
+metering illuminance over the land and the radiance over the land, the sky, the sea and the
+yunpeng's cells), each point a scene jump with an explicit bake, its hour solved from
+`src/sky/DayCycle.ts` in node, and judges that a lower sun never makes the judged quantities
+brighter (each step, the largest rise down to midnight, the exposure's direction). `--split` forces each of the dusk's shares (`sky.dusk.force.*`, URL options,
 Tune) to 0 and to 1 and puts the night's back one at a time from the twilight alone, for each
 share's term; `--night-split` reads the night's terms alone. It takes the GPU lock itself (shared,
 leased per point; run it unwrapped), writes a JSON per weather and side with `summary.txt`,

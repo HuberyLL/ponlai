@@ -49,7 +49,10 @@
 //   airAmb0 / airAmb1 / airMie0 / airDeckShare / airKeyFloor, keyIsMoon, keyColour, keyCloudFloor,
 //   deckKeyFloor, landKeyFloor = keyCloudFloor x keyColour, airKey = deckKeyFloor x keyColour,
 //   skyScale, landA = skyScale x E, landSky, sunBounce, daySky, displayAmbientGain, nightSkyLevel,
-//   moonVisibility, leafThrough, leafBack, swardTint (luminance of the tint), yunpengNight.
+//   moonVisibility, leafThrough, leafBack, swardTint (luminance of the tint), yunpengNight; sky4,
+//   the ring of the environment's baked source (the sky with its haze and stars) 4 degrees up, its
+//   mean luminance over every azimuth, and sky4sun / sky4away over the halves within and beyond 90
+//   degrees of the sun's azimuth; skyLow4, the same ring 4 degrees down (the sea's half).
 //   Per view, on a 256 x 144 grid of cells (3 x 3 texels each; land = cells with no sky and no sea):
 //   <view>.EV, .EVt (the exposure, and the value it adapts toward, `exposure.target`), .kappa,
 //   .kappaH, .beta (the exposure's keys), .mM and .mH (the meter's trimmed means, computed from
@@ -91,7 +94,7 @@
 //     night less EV at the range's top is reported.
 //   - Fine (each --fine series): a rise between adjacent points of at most judge x step / 0.5.
 //   Reported, not judged: M, Yland, landKeyFloor, airKey, airMie0, the yunpeng's cells, leafThrough,
-//   leafBack, swardTint, the hdr luminances.
+//   leafBack, swardTint, sky4, sky4sun, sky4away, the hdr luminances.
 //
 // Output (--out, default artifacts/dusk-grid/<time>; frames there too, never in git)
 //   <weather>-<side>.json: { version: 1, sha (--src's HEAD), base, query, weather, side, weathers,
@@ -144,7 +147,7 @@ const TWILIGHT = [ 'sun', 'hazeSun', 'hazeSky' ];
 const FORCE = 'sky.dusk.force.';
 const JUDGED = [ 'E', 'Edeck', 'mS2', 'landA', 'seaRadiance', 'airAmb0' ];
 const JUDGED_VIEW = [ 'Mfar' ];
-const REPORTED = [ 'landKeyFloor', 'airKey', 'airMie0', 'leafThrough', 'leafBack', 'swardTint' ];
+const REPORTED = [ 'landKeyFloor', 'airKey', 'airMie0', 'leafThrough', 'leafBack', 'swardTint', 'sky4', 'sky4sun', 'sky4away' ];
 const REPORTED_VIEW = [ 'M', 'Yland', 'yunInner', 'yunRing', 'yunMInner', 'yunMRing', 'hYland', 'hYsky', 'hYsea', 'EV' ];
 const WINDOW = [ 2.5, 4 ];
 const HDR_READS = [ 'hYland', 'hYsky', 'hYsea', 'mH' ];
@@ -444,6 +447,30 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 		const AG = await load( '/src/lighting/AmbientGrade.ts' ), LL = await load( '/src/world/vegetation/LeafLight.ts' ), YP = await load( '/src/world/Yunpeng.ts' );
 		const DC = await load( '/src/sky/DayCycle.ts' ), W = await load( '/src/sky/Weather.ts' );
 		const px = async ( rt ) => Array.from( await s.renderer.readRenderTargetPixelsAsync( rt, 0, 0, 1, 1 ) );
+		// a ring of the environment's source (the baked sky with its haze and stars, in half floats)
+		// at deg degrees: its mean luminance over every azimuth and over the halves toward and away
+		// from the sun (the sun's azimuth within 90 degrees or beyond)
+		const ring = async ( deg ) => {
+
+			const t = sky.reflectionSource?.texture, b = t && s.renderer.backend.get( t );
+			if ( ! b?.texture || b.textureDescriptorGPU.format !== 'rgba16float' ) return null;
+			const W = t.image.width, H = t.image.height, y = ( deg / 180 + 0.5 ) * H - 0.5, y0 = Math.floor( y ), f = y - y0;
+			const half = await s.renderer.backend.textureUtils.copyTextureToBuffer( t, 0, y0, W, 2, 0 ), row = Math.ceil( W * 8 / 256 ) * 128;
+			const h = ( i ) => { const e = ( i >> 10 ) & 31, m = i & 1023; return ( i >> 15 ? - 1 : 1 ) * ( e === 0 ? m * 2 ** - 24 : ( 1 + m / 1024 ) * 2 ** ( e - 15 ) ); };
+			const sun = Math.atan2( sky.sunDir.z, sky.sunDir.x );
+			let all = 0, near = 0, far = 0, nNear = 0;
+			for ( let x = 0; x < W; x ++ ) {
+
+				const c = ( k ) => ( 1 - f ) * h( half[ x * 4 + k ] ) + f * h( half[ row + x * 4 + k ] );
+				const L = lum( [ c( 0 ), c( 1 ), c( 2 ) ] );
+				all += L;
+				if ( Math.cos( ( ( x + 0.5 ) / W - 0.5 ) * 2 * Math.PI - sun ) >= 0 ) { near += L; nNear ++; } else far += L;
+
+			}
+			return { all: all / W, near: nNear ? near / nNear : null, far: nNear < W ? far / ( W - nNear ) : null };
+
+		};
+		const sky4 = await ring( 4 ), skyLow4 = await ring( - 4 );
 		const deck = lum( await px( sky.deckIrradianceDisplay ) ), disp = await px( sky.irradianceDisplay );
 		const st = sky.endpoints?.[ sky.front ]?.sea, kc = lum( sky.keyColor.toArray() ), E = Math.PI * lum( sky.skyIrradiance.toArray() );
 		const v = ( x ) => x === undefined ? null : typeof x === 'boolean' ? ( x ? 1 : 0 ) : x;
@@ -458,6 +485,7 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 			daySky: v( sky.daySky ), displayAmbientGain: v( sky.displayAmbientGain?.value ), nightSkyLevel: v( snap.nightSkyLevel ), moonVisibility: v( snap.moonVisibility ),
 			leafThrough: v( LL.leafThrough?.value ), leafBack: v( LL.leafBack?.value ), swardTint: s.shared?.swardTint ? lum( s.shared.swardTint.value.toArray() ) : null,
 			yunpengNight: v( YP.yunpengNight?.value ),
+			sky4: sky4?.all ?? null, sky4sun: sky4?.near ?? null, sky4away: sky4?.far ?? null, skyLow4: skyLow4?.all ?? null,
 		} );
 		const e = sky.elevation, rising = sky.rising, cloud = W.cloudedShare ? W.cloudedShare( s.weather.skyMix ) : null;
 		const w = { moonKeyGain: v( snap.moonKeyGain ), handoff: v( snap.handoff ), daylight: v( snap.daylight ), nightVisibility: v( snap.nightVisibility ),
@@ -702,7 +730,9 @@ async function measure( point, query, how ) {
 
 			} );
 			if ( drift > 0 ) point.hdrDrift = drift;
-			if ( off.length ) point.void = `the last cumulative state differs from the point in ${ off.length } values (${ off.slice( 0, 4 ).join( ', ' ) })`;
+			// (with each value's relative difference, so a void point tells a frame read's noise from a lost term)
+			const rel = ( k ) => { const a = prev.values[ k ], b = q.values[ k ]; return typeof a === 'number' && typeof b === 'number' && b !== 0 ? ` ${ ( a / b - 1 ).toExponential( 1 ) }` : ''; };
+			if ( off.length ) point.void = `the last cumulative state differs from the point in ${ off.length } values (${ off.slice( 0, 4 ).map( ( k ) => k + rel( k ) ).join( ', ' ) })`;
 			point.residual = {};
 			for ( const k of Object.keys( q.values ) ) {
 
