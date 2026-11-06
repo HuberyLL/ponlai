@@ -18,7 +18,8 @@
 //   normal    the frame itself: the PNG, the exposure, the depth's sky and sea shares
 //   light     flags=lightOnly:2,grey:1: every lit surface a white card, specular off
 //   ambient   the same with ambientOnly: the key light taken out
-//   classes   flags=classes&aa=off: each cell's kind (src/debug/Classes.ts)
+//   classes   flags=classes&aa=off: each cell's kind (src/debug/Classes.ts; its codes stored at
+//             most 2^15, so a page pre-exposed past half float, a deep overcast night, decodes)
 //
 // The sort. The frame is cut into a grid of NX by NY cells, each read over the CELL by CELL pixels
 // at its centre, the same pixels on every page (src/debug/RadianceAov.ts `forCellTexels`):

@@ -326,7 +326,10 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   figure, other: `src/debug/Classes.ts`), which `radiance`'s `aov: 'class'` decodes per cell; the
   sky and the sea are told by depth. Emissive surfaces (the yunpeng's glow) spoil their codes and
   read as no kind, and so does a pixel whose samples blend two kinds: load the page with `aa=off`
-  (the cut-out leaves cover half the island's pixels in part under MSAA).
+  (the cut-out leaves cover half the island's pixels in part under MSAA). The codes are stored at
+  the pre-exposure's scale but never above 2^15, so a page pre-exposed past half float's range (a
+  deep overcast night) still decodes; past 2^15 the haze and emission over the codes keep the
+  pre-exposure's scale, 2^( P - 15 ) times larger beside them, so more hazy cells read as no kind.
 - The scene's linear radiance over boxes, as numbers (`src/debug/Radiance.ts`): `await
   __PONLAI__.radiance( { boxes: { lit: [ x, y, w, h ], ... }, image: [ 3456, 2234 ], grid: [ nx, ny ],
   source: 'opaque' } )`. Boxes are fractions of the frame from its top-left, or pixels of an image
