@@ -8,6 +8,8 @@ const cycle = new DayCycle();
 // The clock starts at the golden hour, its sun 26.2 degrees up in the afternoon.
 near( cycle.hour, DAY_PRESETS[ 'golden-hour' ] );
 near( cycle.snapshot().elevation, 26.2, 1e-9 );
+// (its azimuth follows from the noon meridian's: a change there or to the west's sign shows here)
+near( cycle.snapshot().azimuth, - 0.5566173487906707, 1e-9 );
 assert.ok( cycle.hour > 12 );
 for ( const [ input, expected ] of [ [ 24, 0 ], [ 49, 1 ], [ - 1, 23 ], [ - 48, 0 ] ] ) {
 
@@ -128,8 +130,8 @@ for ( const hour of [ 0, 6, 12, 18, 24 ] ) {
 	near( before.overcastAdaptation, after.overcastAdaptation, 1e-4 );
 
 }
-// The moon stands fixed in the sky at every hour and phase. By default its direction is, to its
-// last bits, the night's shading direction before the moon was fixed (lighting/KeyLift.ts
+// The moon stands fixed in the sky at every hour and phase. By default its direction is, to within
+// rounding, the night's shading direction before the moon was fixed (lighting/KeyLift.ts
 // MOON_SHADE then, printed with String()).
 const FIXED_MOON = [ 0.3696658004048259, 0.3420201433256687, 0.8639267431736032 ];
 cycle.setHour( 0 );
@@ -168,11 +170,16 @@ const moonWest = west.clone().addScaledVector( moon, - west.dot( moon ) ).normal
 for ( let minute = 0; minute < 1440; minute += 7 ) {
 
 	cycle.setHour( minute / 60 );
+	cycle.moonPhase = 0.5;
+	const full = cycle.snapshot();
 	for ( const phase of [ 0, 0.125, 0.25, 0.5, 0.75, 0.875, 1 ] ) {
 
 		cycle.moonPhase = phase;
 		const s = cycle.snapshot();
 		assert.ok( s.moonDir.equals( moon ), `the moon moved at minute ${ minute }` );
+		// The phase lights only the disk: the key and its gain are the same at every phase.
+		assert.ok( s.keyDir.distanceTo( full.keyDir ) < 1e-12, `the key follows the phase at minute ${ minute }` );
+		near( s.moonKeyGain, full.moonKeyGain );
 		near( s.moonElevation, 20 );
 		near( s.moonSunDir.dot( s.moonDir ), Math.cos( 2 * Math.PI * phase ) );
 		near( s.moonIllumination, ( 1 - Math.cos( 2 * Math.PI * phase ) ) / 2 );
