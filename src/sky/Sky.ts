@@ -19,7 +19,7 @@ import { Lightning } from '../weather/Lightning.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { shared } from '../shared.ts';
 import { compileInto } from '../post/graph/Compile.ts';
-import { STORE_CEILING, storePress } from '../post/PreExposure.ts';
+import { STORE_CEILING, storePress, storeStops } from '../post/PreExposure.ts';
 import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
@@ -54,11 +54,16 @@ const METER_FLOOR = 2 ** - 40;
  * is stored about 1.5 stops under STORE_CEILING, where every write of it is held. The irradiance
  * probe's panorama (`small`, single float) stores the radiance as it is. */
 export const PANORAMA_STORE = 2 ** 14;
-/** What the bakes' cloud layer (`upperMat`, read by `layerAt`) stores: its radiance times this.
- * The clouds' light at night lies lower than the sky's: unscaled, a clear midnight's layer has its
- * first percentile near 2^-21 (2^-16 over the texels at least a tenth covered). The brightest of
- * the day (a low sun's lit edges) is stored about a quarter stop under STORE_CEILING. */
-const LAYER_STORE = 2 ** 16;
+// What the bakes' cloud layer (`upperMat`, read by `layerAt`) stores: its radiance times a power
+// of two that each bake takes from the light on the clouds at its moment, the cloud dome's own
+// (Clouds.ts `storeLight`, PreExposure.ts `storeStops`: 2^11 at noon, 2^18 on a moonlit night),
+// set with its inverse for the bake that writes and reads it. The clouds' light at night lies
+// lower than the sky's: unscaled, a clear midnight's layer has its first percentile near 2^-21
+// (2^-16 over the texels at least a tenth covered), under half float's 2^-14, and one fixed power
+// of two that lifts it and keeps a low sun's lit edges under STORE_CEILING leaves too little room
+// for a night pressed darker (the debug press, PreExposure.ts `storePress`). It is worked out from
+// the scene's state, never read back and never from the frame's pre-exposure.
+
 type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed' | 'windDirection'>;
 
 // The sky: atmosphere, clouds, night sky and the baked environment. One cloud field feeds the
@@ -1204,6 +1209,10 @@ export class Sky {
 	// the bake's store toward its target (PANORAMA_STORE, under the debug press PreExposure.ts
 	// `storePress`; 1 for the irradiance probe's panorama)
 	private bakeStore = uniform( PANORAMA_STORE );
+	// the bake's cloud layer's store and its inverse, set together for the bake that writes and
+	// reads it (see the layer's store above)
+	private layerStore = uniform( 1 );
+	private layerRead = uniform( 1 );
 	// The night sky's own light at this frame's exposure (DayCycleSnapshot.nightSkyLevel).
 	private nightSkyLevel = 1;
 	private bakeStarVisibility = uniform( 0 );
@@ -1373,8 +1382,8 @@ export class Sky {
 				sum.addAssign( this.clouds.sample( equirectToDir( vec2( q.x, clamp( q.y, 0, 1 ).mul( 0.5 ).add( 0.5 ) ) ) ) );
 
 			}
-			// (stored times LAYER_STORE, held at STORE_CEILING)
-			return vec4( min( sum.rgb.mul( 0.25 * LAYER_STORE ).mul( storePress.store ), vec3( STORE_CEILING ) ), sum.a.mul( 0.25 ) );
+			// (stored at the bake's power of two, held at STORE_CEILING)
+			return vec4( min( sum.rgb.mul( 0.25 ).mul( this.layerStore ), vec3( STORE_CEILING ) ), sum.a.mul( 0.25 ) );
 
 		} )();
 		this.upperQuad = new THREE.QuadMesh( upperMat );
@@ -2322,6 +2331,11 @@ export class Sky {
 	private renderPanoramas( bake: Bake ): void {
 
 		const { state } = bake;
+		// The bake's power of two, the cloud dome's at this moment: the layer is written and read
+		// within the bake.
+		const stops = storeStops( this.clouds.storeLight );
+		this.layerStore.value = 2 ** stops * storePress.store.value;
+		this.layerRead.value = 2 ** - stops * storePress.read.value;
 		const r = this.renderer, prev = r.getRenderTarget();
 		try {
 
@@ -2702,11 +2716,11 @@ export class Sky {
 	}
 
 	// The bake's cloud layer at `q` (the upper hemisphere's equirect), its radiance in scene units
-	// (LAYER_STORE and the debug press divided out).
+	// (the bake's power of two and the debug press divided out).
 	private layerAt( q: V2 ): V4 {
 
 		const stored = this.cloudLayer.sample( q ).level( float( 0 ) ).toVar();
-		return vec4( stored.rgb.mul( 1 / LAYER_STORE ).mul( storePress.read ), stored.a );
+		return vec4( stored.rgb.mul( this.layerRead ), stored.a );
 
 	}
 
