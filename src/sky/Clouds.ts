@@ -87,7 +87,8 @@ type V4 = THREE.Node<'vec4'>;
 //     from the shape noise at build: `erosionMean`), times the irradiance on the deck's top over
 //     pi, with no gain: thick masses dark, thin seams lighter, near grey, the level set by the
 //     deck's own density and thickness. That irradiance is the key's above the tops (`columnKey`:
-//     the sun's by day, by night the island's moonlight, not the clouds' own) and the drawn sky's
+//     the sun's by day, by night the island's moonlight, not the clouds' own, each under the
+//     weather's day sky at its own height) and the drawn sky's
 //     over them (without the clouds' night glow), so the base and the land under it are lit by one
 //     key by day and by night. Uniforms and the atmosphere alone, it is worked out once a frame by
 //     one thread (`Clouds.ColumnTop`, a `renderer.compute` ahead of the other kernels in `update`,
@@ -748,7 +749,8 @@ export class Clouds {
 	readonly lightColor = uniform( new THREE.Color( 0.5, 0.45, 0.38 ) );
 	// The key's irradiance on the low deck's tops, which its column passes down to the base (scene
 	// units, Sky.ts trackClouds): by day the sun's above the cloud, as `lightColor`; by night the
-	// island's own moon key, not the clouds' moonlight, so the base and the land under it take one moon.
+	// island's own moon key, not the clouds' moonlight, so the base and the land under it take one moon;
+	// each times the weather's day sky at its own height (Sky.ts `daySkyMoon`).
 	readonly columnKey = uniform( new THREE.Color( 0, 0, 0 ) );
 	// The gain the open sky over the low deck's tops takes back (Sky.ts CLEAR_SKY, `gapSky`): the
 	// clear day's sky gain over the clouded sky's, read by the column's kernel alone (`columnTopOf`).

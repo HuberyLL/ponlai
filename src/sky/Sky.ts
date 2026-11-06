@@ -1063,9 +1063,10 @@ const _moonKey = new THREE.Color();
 const _moonHue = new THREE.Color();
 // The key's gain under overcast's deck, on the floor of the key there (Weather.ts `deckFloor`,
 // `keyCloudFloor` and `deckKeyFloor` below), by overcast's share and its deck's light (Weather.ts
-// `floorKeyGain`, `overcastDeckLight`): whole at every sun by day, gone by -6 degrees on the slope
-// the land's sky light under the deck leaves on (lighting/AmbientGrade.ts `overcastLandWeight`), so
-// by night the moon's floor is the deck's own. Under the closed deck the
+// `floorKeyGain`, `overcastDeckWeight`): whole at every sun by day, its sun's part gone by -6
+// degrees on the slope the land's sky light under the deck leaves on (lighting/AmbientGrade.ts
+// `overcastLandWeight`), its moon's part the same gain at the moon's height, by the moon's share of
+// the key, so by night the moon's floor takes the gain the sun's takes there. Under the closed deck the
 // land's directional light is that floor through the key's map, so the gain brightens the land's key
 // and the shadows the bamboo and the islanders cast with it; it stops where the floor times the gain
 // reaches 1, and where the clouds thin to a gap the key goes back to the sky's own
@@ -2096,15 +2097,15 @@ export class Sky {
 		// target only partly (by the ratio's 0.8th power), 4.7 times under a closed deck; less so in
 		// rain.
 		this.grade.exposure *= 1 + 3.7 * overcast * this.grade.daylight * ( 1 - 0.7 * ( weather?.rain ?? 0 ) );
-		// After dark a closed deck hides the moon and stars; the eye adapts further so a rainy
-		// dusk or night stays readable, still darker than a clear moonlit night.
+		// Through the blue hour a closed deck's adaptation goes on rising as the light goes (DayCycle
+		// `overcastAdaptation`, none from -6 degrees down): the night under the deck takes no gain of
+		// its own, being lit by the moon through the deck as the day is by the sun.
 		this.grade.exposure *= 1 + overcast * ( celestial?.overcastAdaptation ?? 0 );
 		// The night sky's own lights, the stars and the moon's disk (nothing they light), keep the
-		// brightness they were tuned at, under the exposure the night had then (with a closed deck's
-		// adaptation fivefold), but for the night's own gain (DayCycle NIGHT_EXPOSURE_GAIN), which
-		// brightens them with the island.
-		const nightSkyLevel = celestial ? Math.min( 1, celestial.nightSkyLevel
-			* ( 1 + 5 * overcast * ( 1 - celestial.daylight ) ) / ( 1 + overcast * celestial.overcastAdaptation ) ) : 1;
+		// brightness they were tuned at, under the exposure the night had then, but for the night's
+		// own gain (DayCycle NIGHT_EXPOSURE_GAIN), which brightens them with the island; under a deck
+		// the clouds drawn over them hide them.
+		const nightSkyLevel = celestial ? Math.min( 1, celestial.nightSkyLevel ) : 1;
 		this.night.starVisibility.value *= nightSkyLevel;
 		moonColor.multiplyScalar( nightSkyLevel );
 		this.sunColor.multiplyScalar( directVisibility );
@@ -2129,13 +2130,13 @@ export class Sky {
 		// the deck has taken over from the clouds' own (`deckFloorTakeover`): the light the closed
 		// deck passes down in place of the key it hides, so overcast's floor rides on whichever light
 		// keys the scene, the sun by day and the moon by night, whose own light sets its level, and its
-		// gain leaves with the sun's light over the civil twilight (`overcastDeckLight`; a cloudy
-		// deck's share fades with its own light, `deckRamp`). The land and the sea keep it over the
+		// gain is the one each takes at its own height, mixed by the moon's share of the key
+		// (`overcastDeckWeight`; a cloudy deck's by its own light, `cloudyDeckWeight`). The land and the sea keep it over the
 		// cumulus' shadow (`cloudFloor`, the key's whoever gives it); the air under the deck keeps the
 		// floor alone (`deckKeyFloor`), equal bit for bit to the land's where no cumulus' floor is left.
 		const overcastShare = skyMix ? skyMix[ 3 ] ?? 0 : 0;
 		const cloudyShare = skyMix ? cloudedShare( skyMix ) - overcastShare : 0;
-		const floorGain = floorKeyGain( this.elevation, overcastShare, cloudyShare, OVERCAST_KEY_GAIN(), CLOUDY_KEY_GAIN() );
+		const floorGain = floorKeyGain( this.elevation, overcastShare, cloudyShare, OVERCAST_KEY_GAIN(), CLOUDY_KEY_GAIN(), this.moonElevation, this.moonKeyShare );
 		const deckFloor = Math.min( ( weather?.deckFloor ?? 0 ) * floorGain, 1 );
 		const takeover = skyMix ? deckFloorTakeover( this.elevation, cloudedShare( skyMix ), overcastShare ) : 0;
 		this.keyCloudFloor.value = THREE.MathUtils.lerp( weather?.cloudFloor ?? 0, deckFloor, takeover );
@@ -2321,10 +2322,11 @@ export class Sky {
 		// A low deck's column passes down the key's light above its tops: by day the sun's above the
 		// cloud, by night the island's moonlight (`moonKeyAbove`), which keeps the island's level and
 		// hue, not the clouds' (their moonlight belongs to the seen sky), and loses its colour under a
-		// closed deck as the sun's does (above). The deck's base and the land under it then take one
-		// moon, as by day they take one sun.
+		// closed deck as the sun's does (above), and takes the weather's day sky at the moon's height
+		// as the sun's takes it at the sun's (`daySkyMoon`; 1 but under overcast). The deck's base and
+		// the land under it then take one moon, as by day they take one sun.
 		const moonAbove = _moonKey.copy( this.moonKeyAbove );
-		const column = clouds.columnKey.value.copy( moonAbove.lerp( _white.setScalar( luma( moonAbove ) ), overcast ) );
+		const column = clouds.columnKey.value.copy( moonAbove.lerp( _white.setScalar( luma( moonAbove ) ), overcast ).multiplyScalar( this.daySkyMoon ) );
 		if ( sunUp ) column.add( sunAbove );
 		else tint.setRGB( 1, 1, 1 );
 		// Low sun: lift the reddened beam, and the cool violet fill on the shaded sides with it. The

@@ -108,7 +108,8 @@ export interface DayCycleSnapshot {
 	// The stars and the Milky Way: they come out late, as the sky darkens.
 	nightVisibility: number;
 	exposure: number;
-	// Further exposure, as a fraction, under a fully closed deck after dark (see Sky.track).
+	// Further exposure, as a fraction, under a fully closed deck through the twilight, none from -6
+	// degrees down (see Sky.track).
 	overcastAdaptation: number;
 	// Scale on the night sky's own light (stars, the moon's disk and its in-scatter in the sky,
 	// clouds): it was tuned at a night exposure of NIGHT_SKY_EXPOSURE and keeps that look, brighter
@@ -398,9 +399,6 @@ export function exposureAt( elevation: number ): number {
 // displayed brightness whatever the frame's exposure (see Sky.track).
 export const NIGHT_EXPOSURE_GAIN = 1.25;
 export const NIGHT_SKY_EXPOSURE = 4.4;
-// A closed deck after dark: the eye adapts further so a rainy dusk or night stays readable, still
-// darker than a clear moonlit night: three times the clear night's exposure, as it was tuned.
-const DECK_NIGHT_GAIN = 3;
 // Highest elevation (degrees) at which the key may turn from the sun toward the moon: below the
 // end of the sun's fade as its disk sinks into the sea (Radiometry.ts SUN_SETTING_RADIUS,
 // Atmosphere.sunlightAt).
@@ -648,9 +646,9 @@ export class DayCycle {
 		// The night sky was tuned under a low-sun adaptation that faded out over -5 to -14 degrees.
 		const skyAdaptation = 1 + 0.6 * smoothstep( - 14, - 5, elevation ) * ( 1 - smoothstep( 4, 18, elevation ) );
 		const exposure = exposureAt( elevation );
-		// A closed deck hides the moon and stars (see DECK_NIGHT_GAIN); from the end of the blue
-		// hour up its adaptation rises to five.
-		const deck = DECK_NIGHT_GAIN - 1;
+		// A closed deck's further adaptation (Sky.track): from the end of the civil twilight up it
+		// rises to five, as the deck's own light leaves with the sun's; the night takes none, the
+		// moon lighting the deck as the sun does.
 		const dusk = smoothstep( - 6, - 1, elevation );
 		const moonIllumination = ( 1 - Math.cos( TAU * this.phase ) ) * 0.5;
 		// over the sun's first five degrees under the horizon (the header)
@@ -686,7 +684,7 @@ export class DayCycle {
 			nightVisibility: 1 - smoothstep( - 15, - 3, elevation ),
 			// (the night sky stays dark through its own scaled light: see NIGHT_SKY_EXPOSURE)
 			exposure,
-			overcastAdaptation: ( deck + ( 5 - deck ) * dusk ) * ( 1 - daylight ),
+			overcastAdaptation: 5 * dusk * ( 1 - daylight ),
 			nightSkyLevel: Math.min( 1, NIGHT_SKY_EXPOSURE * NIGHT_EXPOSURE_GAIN * skyAdaptation / exposure ),
 		};
 

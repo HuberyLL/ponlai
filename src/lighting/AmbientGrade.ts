@@ -4,7 +4,7 @@ import { floorOcclusion, screenAOAt } from '../post/GTAO.ts';
 import { ambientEnvironment, ambientVolumeOn, specularOcclusion, type AmbientReceiver } from './AmbientSample.ts';
 import { meterAmbient } from './MeterLight.ts';
 import { tune } from '../debug/Tune.ts';
-import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
+import { overcastDeckLight, overcastDeckWeight, withMoon } from '../sky/Weather.ts';
 
 // The ambient grade: one table of knobs on the island's ambient light, per sun elevation and per
 // weather, so the art direction can depart from the physically lit result by the hour and the sky
@@ -71,7 +71,8 @@ import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
 //
 // Overcast is a dark grey sky with the sun still shining (Weather.ts): its sun's bounce takes a
 // third of clear's, times the weather's gain on all of the land's ambient light under its deck
-// (OVERCAST_LAND, which its sky light takes too: AmbientRelight.ts).
+// (OVERCAST_LAND, which its sky light takes too: AmbientRelight.ts); the moon's key takes that gain
+// as the sun's does, at its own height, so the night's bounce under the deck takes it whole.
 // Under a cloud's shadow the open ground beside a grove reads 1.2 to 1.8 times its shade inside the
 // grove's shadow; under overcast a grove's floor reads about 0.6 to 0.7 of the open ground.
 //
@@ -204,8 +205,10 @@ const sunBounceGain = tune( 'lighting.grade.sunBounce', 1, { min: 0.25, max: 4, 
 
 /** The weather's gain under overcast's deck, per unit, on all of the land's ambient light: on the
  * sky's light per unit of the bake (after the unit that makes it a clear day's in the same place:
- * AmbientRelight.ts OVERCAST_LAND_UNIT), its bounce with it, and on the sun's bounce per unit of
- * the table's (`update`), by overcast's share and its deck's light (`overcastLandWeight`). It is
+ * AmbientRelight.ts OVERCAST_LAND_UNIT), its bounce with it, by overcast's share and its deck's light
+ * (`overcastLandWeight`), and on the key's bounce per unit of the table's (`update`), by overcast's
+ * share and the deck's weight on the key's light, the sun's and the moon's at their own heights
+ * (sky/Weather.ts `overcastDeckWeight`). It is
  * not the land's whole ambient light under the deck over a clear day's: that ratio also holds the
  * bake's ratio of the two skies and the sun's bounce's share of the light. 1 leaves the land as the
  * sky and the table give it; it stands at 1.75, set with the key's gain under the deck (sky/Sky.ts
@@ -217,11 +220,12 @@ const sunBounceGain = tune( 'lighting.grade.sunBounce', 1, { min: 0.25, max: 4, 
  * of the land. Tunable: `lighting.relight.overcastLand`. */
 export const OVERCAST_LAND = tune( 'lighting.relight.overcastLand', 1.75, { min: 1, max: 2 } );
 
-/** The weight of the weather's land gain under overcast (OVERCAST_LAND) at the sun's `elevation`
- * (degrees), of which overcast's share is `overcast` (sky/Weather.ts `skyMix`, a parked sky
- * counting as overcast): the share times its deck's light (sky/Weather.ts `overcastDeckLight`: at
- * every sun by day, gone by -6 degrees), one weight for the land's sky light (AmbientRelight.ts) and
- * its sun's bounce (`update`). */
+/** The weight of the weather's land gain under overcast (OVERCAST_LAND) on the land's sky light
+ * (AmbientRelight.ts) at a light's `elevation` (degrees), of which overcast's share is `overcast`
+ * (sky/Weather.ts `skyMix`, a parked sky counting as overcast): the share times its deck's light
+ * (sky/Weather.ts `overcastDeckLight`: at every sun by day, gone by -6 degrees), taken at the sun's
+ * height and at the moon's for their parts of the sky's light. The key's bounce takes the same at
+ * the key's two heights (`update`, sky/Weather.ts `overcastDeckWeight`). */
 export function overcastLandWeight( elevation: number, overcast: number ): number {
 
 	return overcast * overcastDeckLight( elevation );
@@ -273,8 +277,9 @@ export const ambientGrade = {
 		Object.assign( this.current, this.override ? this.manual : this.table );
 		for ( const key of AMBIENT_KNOBS ) ambient[ key ].value = this.current[ key ];
 		ambient.sunBounce.value *= sunBounceGain();
-		// the weather's land gain under overcast's deck (OVERCAST_LAND), the override's value too
-		ambient.sunBounce.value *= 1 + ( OVERCAST_LAND() - 1 ) * overcastLandWeight( elevation, weights[ 3 ] ?? 0 );
+		// the weather's land gain under overcast's deck (OVERCAST_LAND), the override's value too: the
+		// moon's part of the key at the moon's height, as the bounce's rows above
+		ambient.sunBounce.value *= 1 + ( OVERCAST_LAND() - 1 ) * ( ( weights[ 3 ] ?? 0 ) * overcastDeckWeight( elevation, moonElevation, moonShare ) );
 
 	},
 };

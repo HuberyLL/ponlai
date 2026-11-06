@@ -124,14 +124,40 @@ export function deckFloorTakeover( elevation: number, clouded: number, overcast:
 
 }
 
-/** The key's gain on the deck's floor (Sky.ts `keyCloudFloor`, `deckKeyFloor`): overcast's gain
- * `overcastKey` by its share `overcast` and `overcastDeckLight`, so it leaves with the sun's own
- * light over the civil twilight on the same slope as the land's sky light under the deck
- * (lighting/AmbientGrade.ts `overcastLandWeight`) and the moon's floor keeps the deck's own share
- * (`deckFloor`) by night; a cloudy deck's `cloudyKey` by its share `cloudy` and `deckRamp`. */
-export function floorKeyGain( elevation: number, overcast: number, cloudy: number, overcastKey: number, cloudyKey: number ): number {
+/** The weight of overcast's deck gains on light the moon's key gives a part of (the key's floor
+ * gain, `floorKeyGain`; the key's bounce, lighting/AmbientGrade.ts), at the sun's `elevation` and the
+ * moon's `moonElevation` (degrees), by the moon's `moonShare` of the key (Sky.ts `moonKeyShare`):
+ * the sun's part takes overcast's deck light at the sun's height, which leaves with the sun's own
+ * light over the civil twilight, and the moon's part the same at the moon's, as a closed deck
+ * passes the moon's light down as it passes the sun's (`withMoon`). So the weight is the sun's by
+ * day, overcastDeckLight( e ) + ( 1 - overcastDeckLight( e ) ) * share with the moon at its default
+ * 20 degrees, within 0 and 1, and whole all night (tools/verify-weather-state.mjs). */
+export function overcastDeckWeight( elevation: number, moonElevation: number, moonShare: number ): number {
 
-	return 1 + ( overcastKey - 1 ) * overcast * overcastDeckLight( elevation ) + ( cloudyKey - 1 ) * cloudy * deckRamp( elevation );
+	return withMoon( overcastDeckLight( elevation ), overcastDeckLight( moonElevation ), moonShare );
+
+}
+
+/** `overcastDeckWeight` for a cloudy deck: its own light (`deckRamp`, from a sun of 3 degrees) at
+ * the sun's height and at the moon's, by the moon's share of the key. Between 3 degrees and the
+ * moon's key coming in (from -2.5) the weight is the sun's alone, 0 below 3. */
+export function cloudyDeckWeight( elevation: number, moonElevation: number, moonShare: number ): number {
+
+	return withMoon( deckRamp( elevation ), deckRamp( moonElevation ), moonShare );
+
+}
+
+/** The key's gain on the deck's floor (Sky.ts `keyCloudFloor`, `deckKeyFloor`): overcast's gain
+ * `overcastKey` by its share `overcast` and `overcastDeckWeight`, a cloudy deck's `cloudyKey` by its
+ * share `cloudy` and `cloudyDeckWeight`, at the sun's `elevation` and the moon's `moonElevation`
+ * (degrees) by the moon's `moonShare` of the key: the floor stands for the light the deck passes
+ * down in place of the key it hides, the sun's by day and the moon's by night, so the moon's key
+ * takes the gain the sun's takes at the moon's height. By day its weight is the deck's light at the
+ * sun's height, on the slope the land's sky light under the deck takes (lighting/AmbientGrade.ts
+ * `overcastLandWeight`). */
+export function floorKeyGain( elevation: number, overcast: number, cloudy: number, overcastKey: number, cloudyKey: number, moonElevation: number, moonShare: number ): number {
+
+	return 1 + ( overcastKey - 1 ) * overcast * overcastDeckWeight( elevation, moonElevation, moonShare ) + ( cloudyKey - 1 ) * cloudy * cloudyDeckWeight( elevation, moonElevation, moonShare );
 
 }
 
