@@ -849,10 +849,9 @@ comment where it is used.
 - The screen-space ambient occlusion, in `src/post/GTAO.ts`: Jorge Jimenez, Xian-Chun Wu, Angelo
   Pesce and Adrian Jarabo, *Practical Realtime Strategies for Accurate Indirect Occlusion*
   (Activision technical memo ATVI-TR-16-01, 2016): horizon search per slice and the cosine-weighted
-  visible arc against the slice's projected normal in closed form. Its practical shape (the
-  horizons' distance falloff, the low starting horizons, the projected normal's length as the
-  slice's weight, and the thin-occluder heuristic that stretches a sample's distance along the
-  view) follows Intel's [XeGTAO](https://github.com/GameTechDev/XeGTAO) (MIT). Used as techniques
+  visible arc against the slice's projected normal in closed form. Its practical shape (the low
+  starting horizons, the projected normal's length as the slice's weight) follows Intel's
+  [XeGTAO](https://github.com/GameTechDev/XeGTAO) (MIT). Used as techniques
   only; the code is our own.
 - The exposure's adaptation, a critically damped second-order filter on the EV: Thomas Lowe,
   *Critically Damped Ease-In/Ease-Out Smoothing* (Game Programming Gems 4, 2004), in
