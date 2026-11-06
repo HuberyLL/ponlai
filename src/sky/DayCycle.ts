@@ -116,7 +116,7 @@ export interface DayCycleSnapshot {
 const TAU = 2 * Math.PI;
 const DEG = 180 / Math.PI;
 /** The sun's elevation at noon (degrees): its path is tilted this far from the horizon. */
-export const NOON_ELEVATION = 62;
+export const NOON_ELEVATION = 52;
 const INCLINATION = NOON_ELEVATION / DEG;
 const SIN_INCLINATION = Math.sin( INCLINATION );
 const COS_INCLINATION = Math.cos( INCLINATION );
@@ -130,7 +130,12 @@ const COS_NOON_AZIMUTH = Math.cos( NOON_AZIMUTH );
 // The sun stands at the celestial equator (an equinox, every day): at noon it marks where the
 // equator crosses the meridian and at 18:00 the west point. Its path is tilted NOON_ELEVATION
 // degrees from the horizon, so its elevated pole stands 90 - NOON_ELEVATION degrees up; seen from
-// above, the sun turns anticlockwise, so that pole is the south celestial pole.
+// above, the sun turns anticlockwise, so that pole is the south celestial pole. A 52 degree noon is
+// a mid-latitude equinox's daylight: high enough to read as a bright day, low enough that slopes
+// keep a lit and a shaded side from the island view, which looks 50 degrees down. Near the horizon
+// the sun climbs or sinks 11.8 degrees an hour, so the low sun lingers: 3.4 hours a day under 20
+// degrees and 1.7 under 10, about a tenth longer than under a 62 degree noon. A noon that high is a
+// subtropical light, at odds with the island's temperate bamboo and meadow.
 const WEST = new Vector3( SIN_NOON_AZIMUTH, 0, - COS_NOON_AZIMUTH );
 /** The sun's elevation (degrees) at `hour` on its path. */
 export function sunElevationAt( hour: number ): number {
@@ -330,8 +335,9 @@ export function twilightMoonSky( elevation: number, rising: boolean, cloud: numb
  * horizon view, split by the Great Rift, up to its core 43 degrees high in the east below Scorpius,
  * with Crux and Alpha Centauri high in the south, and sets the moon (MOON) on a dark part of the
  * sky, 81 degrees from the core, with no star brighter than the second magnitude within 8 degrees
- * of it. The latitude is the stars' own: their pole is not the sun's path's. Tunable on debug pages
- * (debug/Tune.ts): `sky.stars.latitude`, `sky.stars.sidereal`. */
+ * of it. 38 degrees south is the latitude we set the island at: the stars' sky and the sun's path
+ * (NOON_ELEVATION, 90 less it) share one pole, 38 degrees up on the side away from noon. Tunable on
+ * debug pages (debug/Tune.ts): `sky.stars.latitude`, `sky.stars.sidereal`. */
 export const STARS = tuneObject( { latitude: 38, sidereal: 14 }, { latitude: 'sky.stars.latitude', sidereal: 'sky.stars.sidereal' }, {
 	latitude: { min: 0, max: 90, onChange: placeStars },
 	sidereal: { min: 0, max: 24, onChange: placeStars },

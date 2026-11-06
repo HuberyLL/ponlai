@@ -124,20 +124,20 @@ no group but `special` (see below).
 
 The three `island-cloudy-*` views are the byte checks' reach into the clouds' shadow under a low sun
 (`src/sky/Sky.ts` SHADOW_DISC, SHADOW_AIR_NARROW). Their elevations are chosen by what moves there,
-which depends on where the clouds sit at `t=12`: the same query with the sun 5.6 or 10.6 degrees up
-stays almost unmoved. A view's hour is the one at which its sun stands at its elevation
-(`src/sky/DayCycle.ts` `morningHour`, `eveningHour`), written into the query to four decimals. Share
+which depends on where the clouds sit at `t=12` and on where the sun stands along its path. A view's
+hour is the one at which its sun stands at its elevation (`src/sky/DayCycle.ts` `morningHour`,
+`eveningHour`, on the 52 degree path), written into the query to four decimals. Share
 of the frame's pixels moved over one level when a uniform of `s.sky.clouds` is pinned and the map
 redrawn (`invalidate()`):
 
 | view | `shadowRays` 1 | `shadowAirNarrow` 0 | `shadowAirNarrow` 1 |
 |---|---|---|---|
-| island-cloudy-low-sun | 28 % | 0, the air's share is 0 there | 0.007 % (540 pixels) |
-| island-cloudy-sun-rising | 16 % | 0.007 % (550 pixels) | 0.007 % (540 pixels) |
-| island-cloudy-disc-fade | 0.012 % (920 pixels) | 0.0004 % (31 pixels) | 0, the air's share is 1 there |
+| island-cloudy-low-sun | 0.043 % (3290 pixels) | 0, the air's share is 0 there | 0.009 % (690 pixels) |
+| island-cloudy-sun-rising | 78 % | 0.006 % (430 pixels) | 0.004 % (340 pixels) |
+| island-cloudy-disc-fade | 0.13 % (9700 pixels) | 0.002 % (150 pixels) | 0, the air's share is 1 there |
 
-A change of these elevations, or of the sun's path, pins the uniforms again: a view that stays byte identical under the pins
-reaches nothing and does not stay.
+A change of these elevations, or of the sun's path, pins the uniforms again: a view that stays byte
+identical under the pins reaches nothing and does not stay.
 
 `taa` (6 views): close, thin and moving detail for temporal anti-aliasing.
 
