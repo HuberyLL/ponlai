@@ -19,6 +19,7 @@ import { Lightning } from '../weather/Lightning.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { shared } from '../shared.ts';
 import { compileInto } from '../post/graph/Compile.ts';
+import { STORE_CEILING } from '../post/PreExposure.ts';
 import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
@@ -43,6 +44,16 @@ const DISC_SAMPLES = 32;
 // luminance whose log the mean takes (scene units: far below a moonless night's sky).
 const METER_SKY = 1;
 const METER_FLOOR = 2 ** - 40;
+/** What the seen panoramas and the environment's source (and so the environment's PMREM atlases,
+ * filtered from it) store: the radiance times this. Unscaled, a clear midnight's sky lay near
+ * 2^-18 (its first percentile), under half float's 2^-14, where the steps are coarse. A power of
+ * two, so what lay in range keeps its bits, and every reader divides it back out
+ * (`samplePanorama`, the environment's intensity in main.ts, AmbientRelight.ts's projection). These
+ * are baked, so the scale is fixed and not the frame's pre-exposure (PreExposure.ts), which would
+ * ask for a rebake at every change of the exposure. The brightest of the day (an overcast noon's)
+ * is stored about 1.5 stops under STORE_CEILING, where every write of it is held. The irradiance
+ * probe's panorama (`small`, single float) stores the radiance as it is. */
+export const PANORAMA_STORE = 2 ** 14;
 type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed' | 'windDirection'>;
 
 // The sky: atmosphere, clouds, night sky and the baked environment. One cloud field feeds the
@@ -1185,6 +1196,8 @@ export class Sky {
 	private ambientGain = uniform( 1 );
 	private irradiancePass = uniform( 0 );
 	private includeStars = uniform( 0 );
+	// the bake's store toward its target (PANORAMA_STORE, 1 for the irradiance probe's panorama)
+	private bakeStore = uniform( PANORAMA_STORE );
 	// The night sky's own light at this frame's exposure (DayCycleSnapshot.nightSkyLevel).
 	private nightSkyLevel = 1;
 	private bakeStarVisibility = uniform( 0 );
@@ -1458,7 +1471,7 @@ export class Sky {
 			const sky = lendIsland( fogged.mul( this.ambientGain ), this.bakeIslandTint, this.bakeIslandGain );
 			const stars = this.night.stars( up, this.starFootprint, this.bakeStarVisibility.mul( this.includeStars ) );
 			const radiance = seaPanorama( d, sky.add( stars.mul( cloud.a ) ), this.seaNode() );
-			return vec4( radiance, mix( cloud.a, d.y, this.irradiancePass ) );
+			return vec4( min( radiance.mul( this.bakeStore ), vec3( STORE_CEILING ) ), mix( cloud.a, d.y, this.irradiancePass ) );
 
 		} )();
 
@@ -2320,6 +2333,7 @@ export class Sky {
 			for ( const rt of panoramas ) {
 
 				this.irradiancePass.value = rt === this.small ? 1 : 0;
+				this.bakeStore.value = rt === this.small ? 1 : PANORAMA_STORE;
 				this.includeStars.value = rt === this.small || rt === this.reflectionSource ? 1 : 0;
 				// Only the environment's source takes the island's light after sunset (ISLAND_SKY).
 				const lends = rt === this.reflectionSource;
@@ -2676,10 +2690,12 @@ export class Sky {
 
 	}
 
+	// The seen panorama toward `direction`, its radiance in scene units (PANORAMA_STORE divided out).
 	private samplePanorama( direction: V3, mip: F ): V4 {
 
 		const q = dirToEquirect( direction );
-		return mix( this.panoramaA.sample( q ).level( mip ), this.panoramaB.sample( q ).level( mip ), this.blend );
+		const stored = mix( this.panoramaA.sample( q ).level( mip ), this.panoramaB.sample( q ).level( mip ), this.blend ).toVar();
+		return vec4( stored.rgb.mul( 1 / PANORAMA_STORE ), stored.a );
 
 	}
 

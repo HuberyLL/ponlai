@@ -462,6 +462,8 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 
 			const t = sky.reflectionSource?.texture, b = t && s.renderer.backend.get( t );
 			if ( ! b?.texture || b.textureDescriptorGPU.format !== 'rgba16float' ) return null;
+			// (the source stores the radiance times PANORAMA_STORE)
+			const store = ( await load( '/src/sky/Sky.ts' ) ).PANORAMA_STORE ?? 1;
 			const W = t.image.width, H = t.image.height, y = ( deg / 180 + 0.5 ) * H - 0.5, y0 = Math.floor( y ), f = y - y0;
 			const half = await s.renderer.backend.textureUtils.copyTextureToBuffer( t, 0, y0, W, 2, 0 ), row = Math.ceil( W * 8 / 256 ) * 128;
 			const h = ( i ) => { const e = ( i >> 10 ) & 31, m = i & 1023; return ( i >> 15 ? - 1 : 1 ) * ( e === 0 ? m * 2 ** - 24 : ( 1 + m / 1024 ) * 2 ** ( e - 15 ) ); };
@@ -469,7 +471,7 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 			let all = 0, near = 0, far = 0, nNear = 0;
 			for ( let x = 0; x < W; x ++ ) {
 
-				const c = ( k ) => ( 1 - f ) * h( half[ x * 4 + k ] ) + f * h( half[ row + x * 4 + k ] );
+				const c = ( k ) => ( ( 1 - f ) * h( half[ x * 4 + k ] ) + f * h( half[ row + x * 4 + k ] ) ) / store;
 				const L = lum( [ c( 0 ), c( 1 ), c( 2 ) ] );
 				all += L;
 				if ( Math.cos( ( ( x + 0.5 ) / W - 0.5 ) * 2 * Math.PI - sun ) >= 0 ) { near += L; nNear ++; } else far += L;

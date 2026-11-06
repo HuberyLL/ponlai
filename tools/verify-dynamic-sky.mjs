@@ -77,6 +77,8 @@ try {
 	};
 	const snapshot = () => page.evaluate( async () => {
 		const s = window.__PONLAI__, sky = s.sky;
+		// (the environment's atlases store the radiance times PANORAMA_STORE, which its intensity divides out)
+		const { PANORAMA_STORE } = await import( '/src/sky/Sky.ts' );
 		const pixels = await s.renderer.readRenderTargetPixelsAsync( sky.small, 0, 0, sky.small.width, sky.small.height );
 		const gpuIrradiance = await s.renderer.readRenderTargetPixelsAsync( sky.irradianceDisplay, 0, 0, 1, 1 );
 		let minimum = Infinity, maximum = - Infinity, finite = true, samples = 0;
@@ -104,7 +106,7 @@ try {
 			gpuIrradiance: Array.from( gpuIrradiance.slice( 0, 3 ) ),
 			sunIntoWater: s.shared.sunIntoWater.value, muSun: s.shared.muSun.value,
 			exposure: s.pipeline.settings.exposure,
-			environmentIntensity: s.scene.environmentIntensity,
+			environmentFill: s.scene.environmentIntensity * PANORAMA_STORE,
 			environmentMatches: Boolean( sky.envMap && s.scene.environment === sky.envMap.texture ),
 			radiance: { finite, minimum, maximum, samples, mean: mean.map( ( value ) => value / Math.max( samples, 1 ) ) },
 			memory: { ...s.renderer.info.memory },
@@ -121,7 +123,7 @@ try {
 		sameVector( state.sharedDir, state.keyDir, `${ label } water key direction` );
 		sameVector( state.lightColor, state.keyColor, `${ label } scene key colour` );
 		sameVector( state.sharedColor, state.keyColor, `${ label } water key colour` );
-		sameVector( state.sharedIrradiance, state.skyIrradiance.map( ( value ) => value * state.environmentIntensity ), `${ label } shared environment irradiance` );
+		sameVector( state.sharedIrradiance, state.skyIrradiance.map( ( value ) => value * state.environmentFill ), `${ label } shared environment irradiance` );
 		sameVector( state.gpuIrradiance, state.skyIrradiance, `${ label } GPU hemisphere integral agrees with CPU reference` );
 		assert.ok( state.environmentMatches, `${ label } environment must publish the completed sky` );
 		assert.ok( state.radiance.finite && state.radiance.minimum >= 0 && state.radiance.samples > 0, `${ label } sky radiance must be finite and non-negative` );
