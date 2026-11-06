@@ -889,9 +889,11 @@ and the limits), while a module's or a pipeline's creation is still proven on th
 Everything that renders the scene in a browser (captures, profiles, GPU probes) takes the
 machine-wide GPU lock in `tools/gpu-lock.mjs`: timing runs (profiles, benchmarks, running captures)
 hold it alone; paused captures and the verify probes share it with each other, since their pixels
-do not depend on the load. Shared holders take one of `PONLAI_GPU_SLOTS` slots (default 3) and the
-rest queue: captures are GPU-bound, so past 2-3 pages at once only each page's
-latency grows. A capture-set page leases its slot (capture.mjs's worker, `leaseGpuLock`): it keeps
+do not depend on the load. Shared holders take one of `PONLAI_GPU_SLOTS` slots (default 2) and the
+rest queue: captures are GPU-bound, so two pages at once give about 1.6 times one page's
+throughput, a third adds none and doubles each view's time, and more lose throughput (24 paused
+views, the frames identical at every count); probes that sweep many points already lose throughput
+at two. A capture-set page leases its slot (capture.mjs's worker, `leaseGpuLock`): it keeps
 it from view to view and gives it up between views only when a request ranked before its next one
 waits for it (an exclusive request, or a shared one when every slot is taken) and it has held it
 for its lease, 20 s (capture.mjs `--lease`, after capture-set's `--`; 0 frees it after every view),

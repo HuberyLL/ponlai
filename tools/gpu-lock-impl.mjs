@@ -5,9 +5,11 @@
 // So the lock has two modes:
 //   - exclusive (the default, every timing run): one holder, nothing else rendering;
 //   - shared (deterministic captures and probes): up to PONLAI_GPU_SLOTS holders together (default
-//     3), none while an exclusive holder runs. Captures are GPU-bound: past 2-3 pages at once the
-//     throughput stays flat and only each page's latency grows (and its loads time out), so the
-//     rest queue (below). A slot is held per capture (capture-clip.mjs around its clip),
+//     2), none while an exclusive holder runs. Captures are GPU-bound: two pages at once give about
+//     1.6 times one page's throughput, a third adds none and doubles each view's time, more lose
+//     throughput (measured on 24 paused views, the frames identical at every count), and probes
+//     that sweep many points already lose it at two; past that each page's loads time out too, so
+//     the rest queue (below). A slot is held per capture (capture-clip.mjs around its clip),
 //     not per set or page, so a long set and a one-view probe interleave; capture.mjs's worker leases
 //     its slot over the views of a set (leaseGpuLock): it keeps it from view to view and gives it up
 //     for a waiter ranked before it that it blocks once it has held it for its lease (20 s), so a waiter's extra delay is bounded by
@@ -183,8 +185,8 @@
 // a shared holder, the first descendant that asks for a shared slot takes its ancestor's slot over:
 // the ancestor (a `run --shared` around capture-set or baseline.mjs, an inner `run` per shot) is an
 // orchestrator from then on and holds nothing, and its other children queue like anyone else. So
-// an orchestrator never holds a slot its children wait for (with 3 slots, three wrapped sets would
-// otherwise hold all three while their captures wait), and an exclusive waiter gets in between the
+// an orchestrator never holds a slot its children wait for (with 2 slots, two wrapped sets would
+// otherwise hold both while their captures wait), and an exclusive waiter gets in between the
 // captures of a set rather than after the whole set. A descendant about to wait for something else
 // (yieldAncestorSlot: a reference another process is capturing) frees that slot the same way.
 // PONLAI_GPU_LOCK_DIR moves the lock.
@@ -234,7 +236,7 @@ export const TABLE = `${ LOCK_DIR }.priorities.json`;
 const LOG_CAP = 4 << 20; // ~20k events, days of busy use
 const POLL_MS = 500;
 /** How many shared holders may render at once (each requester reads its own environment). */
-export const SLOTS = Math.max( 1, Math.floor( Number( process.env.PONLAI_GPU_SLOTS ) ) || 3 );
+export const SLOTS = Math.max( 1, Math.floor( Number( process.env.PONLAI_GPU_SLOTS ) ) || 2 );
 /** The levels, highest first (see the header); 0-3 name them too. */
 export const LEVELS = [ 'urgent', 'high', 'normal', 'low' ];
 /** A level from its name or number, or null. */
