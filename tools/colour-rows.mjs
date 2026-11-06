@@ -31,11 +31,15 @@
 // `<base>` in the --sort directory (default <dir>), or its own name if that holds it. A variant's
 // frames therefore need only the normal page (`shoot --pages normal`).
 //
-// The rows (rows.json, `views.<view>.rows`), each { n, L, C, h, rgb }: `<kind> sun`, `<kind> shade`
-// and `<kind>` over all its cells for each kind that shows; `land`, `sky`, `sea`; `floor`, the darkest
-// 5 % of the frame's own land cells by luminance. rgb is the row's mean linear pixel and L, C, h are
-// the Oklab of that mean, so a row's hue is the hue of its average colour, steady where single
-// pixels are near neutral. A row of fewer than MIN_CELLS cells keeps its n and has null values.
+// The rows (rows.json, `views.<view>.rows`), each { n, L, C, h, rgb, card }: `<kind> sun`, `<kind>
+// shade` and `<kind>` over all its cells for each kind that shows; `land sun` and `land shade`, the
+// union of the kinds' sun and shade cells; `land`, `sky`, `sea`; `floor`, the darkest 5 % of the
+// frame's own land cells by luminance. rgb is the row's mean linear pixel and L, C, h are the Oklab
+// of that mean, so a row's hue is the hue of its average colour, steady where single pixels are near
+// neutral. card is the mean luminance of the same cells on the view's own light page (scene units:
+// the light a white card takes there), so `land sun` over `land shade` reads the contrast of the
+// light where the rows' rgb read it in the frame; null when the view has no light page. A row of
+// fewer than MIN_CELLS cells keeps its n and has null values.
 //
 // The boxes (`--boxes`, `views.<view>.boxes`): { "<base view>": { "<name>": [ x, y, w, h ] } } in pixels
 // of the PNG, each read over every pixel: L, C, h the medians of the pixels' values (as `img.py stats
@@ -44,7 +48,8 @@
 // and `lit`, the row of the pixels under and over the box's median L (the two halves of a crown).
 //
 // Each view's record also holds `ev` and `exposure` (the frame's, src/post/Exposure.ts), the key
-// light's `key` { colour, dir }, the sun's `elevation` (degrees), the land's `p95` of d, and `note`,
+// light's `key` { colour, dir }, the sun's `elevation` (degrees), the land's `p95` of d, `shares`
+// { sun, shade, penumbra }, the land cells' shares in the sort's sun, shade and neither, and `note`,
 // whatever the view's eval left in `__PONLAI__.colourNote` (a script reads tune.set's report that way).
 //
 // Output: `<dir>/rows.json` (or --out) and a table on stdout, or the JSON with --json.
@@ -244,27 +249,47 @@ function sortOf( dir, view ) {
 
 		const kind = KINDS[ cls[ c ] ];
 		add( kind, c );
-		if ( d[ c ] >= 0.7 * p95 ) add( `${ kind } sun`, c );
-		else if ( d[ c ] <= 0.2 * p95 ) add( `${ kind } shade`, c );
+		if ( d[ c ] >= 0.7 * p95 ) {
+
+			add( `${ kind } sun`, c );
+			add( 'land sun', c );
+
+		} else if ( d[ c ] <= 0.2 * p95 ) {
+
+			add( `${ kind } shade`, c );
+			add( 'land shade', c );
+
+		}
 
 	}
-	return { land, cells, p95 };
+	const share = ( row ) => land.length ? round( ( cells[ row ]?.length ?? 0 ) / land.length ) : 0;
+	const split = { sun: share( 'land sun' ), shade: share( 'land shade' ) };
+	split.penumbra = round( land.length ? 1 - split.sun - split.shade : 0 );
+	return { land, cells, p95, shares: split };
 
 }
 
-// a row over some cells of the frame
-function cellsRow( colours, list ) {
+// a row over some cells of the frame, with its card from the light page's cells (`light`, or null)
+function cellsRow( colours, list, light ) {
 
-	if ( list.length < MIN_CELLS ) return { n: list.length, L: null, C: null, h: null, rgb: null };
-	let r = 0, g = 0, b = 0;
+	if ( list.length < MIN_CELLS ) return { n: list.length, L: null, C: null, h: null, rgb: null, card: null };
+	let r = 0, g = 0, b = 0, card = 0, cards = 0;
 	for ( const c of list ) {
 
 		r += colours[ c * 3 ];
 		g += colours[ c * 3 + 1 ];
 		b += colours[ c * 3 + 2 ];
+		// (a cell the page stored as not finite is null in the JSON: left out of the card)
+		const l = light ? luminance( light[ c * 3 ] ?? NaN, light[ c * 3 + 1 ] ?? NaN, light[ c * 3 + 2 ] ?? NaN ) : NaN;
+		if ( Number.isFinite( l ) ) {
+
+			card += l;
+			cards ++;
+
+		}
 
 	}
-	return rowOf( list.length, r / list.length, g / list.length, b / list.length );
+	return { ...rowOf( list.length, r / list.length, g / list.length, b / list.length ), card: cards ? Number( ( card / cards ).toPrecision( 4 ) ) : null };
 
 }
 
@@ -320,18 +345,19 @@ function rows( list ) {
 		if ( ! sorts.has( base ) ) sorts.set( base, sortOf( sortDir, base ) );
 		const sort = sorts.get( base );
 		const read = pageValue( dir, 'normal', view ), pixels = framePixels( dir, view ), colours = cellColours( pixels );
+		const light = existsSync( path.join( dir, 'light', `${ view }.json` ) ) ? pageValue( dir, 'light', view ).opaque : null;
 		const out = {};
-		for ( const row of Object.keys( sort.cells ).sort() ) out[ row ] = cellsRow( colours, sort.cells[ row ] );
+		for ( const row of Object.keys( sort.cells ).sort() ) out[ row ] = cellsRow( colours, sort.cells[ row ], light );
 		// the darkest of this frame's own land, whichever cells those are now
 		const dark = sort.land.map( ( c ) => [ luminance( colours[ c * 3 ], colours[ c * 3 + 1 ], colours[ c * 3 + 2 ] ), c ] ).sort( ( a, b ) => a[ 0 ] - b[ 0 ] );
 		if ( dark.length ) {
 
 			const edge = rank( Float64Array.from( dark, ( e ) => e[ 0 ] ), 0.05 );
-			out.floor = cellsRow( colours, dark.filter( ( e ) => e[ 0 ] <= edge ).map( ( e ) => e[ 1 ] ) );
+			out.floor = cellsRow( colours, dark.filter( ( e ) => e[ 0 ] <= edge ).map( ( e ) => e[ 1 ] ), light );
 
 		}
 		const own = Object.entries( boxes[ base ] ?? {} ).map( ( [ name, box ] ) => [ name, boxRow( pixels, box ) ] );
-		views[ view ] = { sort: base, ev: read.exposure.ev, exposure: read.exposure.exposure, elevation: read.elevation, key: read.key, p95: round( sort.p95 ), note: read.note, rows: out, ...( own.length ? { boxes: Object.fromEntries( own ) } : {} ) };
+		views[ view ] = { sort: base, ev: read.exposure.ev, exposure: read.exposure.exposure, elevation: read.elevation, key: read.key, p95: round( sort.p95 ), shares: sort.shares, note: read.note, rows: out, ...( own.length ? { boxes: Object.fromEntries( own ) } : {} ) };
 
 	}
 	const result = { grid: [ NX, NY ], cell: CELL, sort: sortDir, views };
@@ -342,10 +368,11 @@ function rows( list ) {
 		return 0;
 
 	}
-	const line = ( name, r ) => `  ${ name.padEnd( 16 ) } ${ String( r.n ).padStart( 6 ) }  ${ r.L === null ? '-' : `${ r.L.toFixed( 2 ) } ${ r.C.toFixed( 3 ) } ${ r.h.toFixed( 0 ).padStart( 3 ) }` }`;
+	const line = ( name, r ) => `  ${ name.padEnd( 16 ) } ${ String( r.n ).padStart( 6 ) }  ${ r.L === null ? '-' : `${ r.L.toFixed( 2 ) } ${ r.C.toFixed( 3 ) } ${ r.h.toFixed( 0 ).padStart( 3 ) }` }${ r.card == null ? '' : `  card ${ r.card.toPrecision( 3 ) }` }`;
 	for ( const [ view, v ] of Object.entries( views ) ) {
 
-		console.log( `${ view }  EV ${ v.ev.toFixed( 2 ) }  sun ${ v.elevation.toFixed( 1 ) } deg  (sort ${ v.sort }, p95 ${ v.p95.toFixed( 2 ) })` );
+		const { sun, shade, penumbra } = v.shares;
+		console.log( `${ view }  EV ${ v.ev.toFixed( 2 ) }  sun ${ v.elevation.toFixed( 1 ) } deg  (sort ${ v.sort }, p95 ${ v.p95.toFixed( 2 ) }; land in sun ${ sun.toFixed( 2 ) }, shade ${ shade.toFixed( 2 ) }, penumbra ${ penumbra.toFixed( 2 ) })` );
 		for ( const [ name, r ] of Object.entries( v.rows ) ) console.log( line( name, r ) );
 		for ( const [ name, b ] of Object.entries( v.boxes ?? {} ) ) {
 

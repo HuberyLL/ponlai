@@ -715,8 +715,10 @@ by pixel difference.
 takes a views file's frames on one page per flag set, under the shared GPU lock, and `node
 tools/colour-rows.mjs rows <dir> [--sort <dir>] [--boxes f.json] [--views a,b] [--out f.json] [--json]`,
 plain node, reads them: final-pixel Oklab L, C and h per view, per kind of surface and per kind of
-light (sun and shade by the cell's direct share), with the sky, the sea, the darkest 5 % of the land
-and any boxes, into `<dir>/rows.json` and a table. A view `<base>--<variant>` is read through the
+light (sun and shade by the cell's direct share, and `land sun` and `land shade` over every kind),
+with the sky, the sea, the darkest 5 % of the land and any boxes, into `<dir>/rows.json` and a table.
+Each row also gives `card`, the mean luminance of the same cells on the light page in scene units, and
+each view the land's shares in sun, shade and penumbra. A view `<base>--<variant>` is read through the
 sort of `<base>`, so its rows are the same cells; variants need only `--pages normal`. It prints what
 the frames hold and judges nothing. Its header has the sort.
 
