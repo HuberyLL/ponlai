@@ -127,24 +127,52 @@ export interface DayCycleSnapshot {
 
 const TAU = 2 * Math.PI;
 const DEG = 180 / Math.PI;
-const INCLINATION = 62 / DEG;
+/** The sun's elevation at noon (degrees): its path is tilted this far from the horizon. */
+export const NOON_ELEVATION = 62;
+const INCLINATION = NOON_ELEVATION / DEG;
 const SIN_INCLINATION = Math.sin( INCLINATION );
 const COS_INCLINATION = Math.cos( INCLINATION );
-// Rotate one orthonormal orbital plane to keep the established afternoon light direction.
-// At 16:00 its hour angle is pi/3 and its horizontal azimuth must be -8 degrees.
-const NOON_AZIMUTH = - 8 / DEG + Math.atan2( Math.sin( Math.PI / 3 ), COS_INCLINATION * Math.cos( Math.PI / 3 ) );
+// The noon meridian's azimuth in the world (radians, about 66.8 degrees), fixed whatever the
+// path's tilt: the default island view looks 23 degrees east of it.
+const NOON_AZIMUTH = 1.166480189932717;
 const SIN_NOON_AZIMUTH = Math.sin( NOON_AZIMUTH );
 const COS_NOON_AZIMUTH = Math.cos( NOON_AZIMUTH );
-// direction(a) = cos(a) MERIDIAN + sin(a) WEST: a rotation by a about MERIDIAN x WEST.
+// direction(a) = cos(a) N + sin(a) WEST, N the noon sun ( COS_INCLINATION COS_NOON_AZIMUTH,
+// SIN_INCLINATION, COS_INCLINATION SIN_NOON_AZIMUTH ): a rotation by a about N x WEST.
 // The sun stands at the celestial equator (an equinox, every day): at noon it marks where the
 // equator crosses the meridian and at 18:00 the west point. Its path is tilted 62 degrees, so
 // the elevated pole is 28 degrees up. Seen from above, the sun turns anticlockwise, so that pole
 // is the south celestial pole and the island lies near 28 degrees south, like Rapa Nui.
-const MERIDIAN = new Vector3( COS_INCLINATION * COS_NOON_AZIMUTH, SIN_INCLINATION, COS_INCLINATION * SIN_NOON_AZIMUTH );
 const WEST = new Vector3( SIN_NOON_AZIMUTH, 0, - COS_NOON_AZIMUTH );
-/** The direction toward the sun at noon (unit): where the island's shade falls at midday is away
- * from it (the meadow's flowers keep out of the bamboo's, world/Grass.ts). */
-export const NOON_SUN: Readonly<Vector3> = MERIDIAN.clone();
+/** The sun's elevation (degrees) at `hour` on its path. */
+export function sunElevationAt( hour: number ): number {
+
+	return Math.asin( SIN_INCLINATION * Math.cos( ( hour - 12 ) / 24 * TAU ) ) * DEG;
+
+}
+// the hour angle (hours from noon, 0 to 12) at which the sun stands at `elevation` (degrees)
+function hoursFromNoon( elevation: number ): number {
+
+	finite( elevation, 'elevation' );
+	if ( Math.abs( elevation ) > NOON_ELEVATION ) throw new RangeError( `elevation must lie within ${ NOON_ELEVATION } degrees of the horizon` );
+	const c = Math.max( - 1, Math.min( 1, Math.sin( elevation / DEG ) / SIN_INCLINATION ) );
+	return Math.acos( c ) / TAU * 24;
+
+}
+/** The hour (0 to 12) at which the morning sun stands at `elevation` (degrees): the inverse of
+ * `sunElevationAt` before noon. */
+export function morningHour( elevation: number ): number {
+
+	return 12 - hoursFromNoon( elevation );
+
+}
+/** The hour (12 to 24) at which the evening sun stands at `elevation` (degrees): the inverse of
+ * `sunElevationAt` after noon. */
+export function eveningHour( elevation: number ): number {
+
+	return 12 + hoursFromNoon( elevation );
+
+}
 /** Whether the sun at `dir` (unit, on its path) is rising: east of the meridian, before noon (the
  * haze's keys tell the morning from the evening by it: weather/HazeKeys.ts). */
 export const sunRising = ( dir: Readonly<Vector3> ): boolean => dir.dot( WEST ) < 0;
@@ -294,7 +322,12 @@ export function twilightMoonSky( elevation: number, rising: boolean, cloud: numb
 	return rising ? twilightMoon( elevation, rising, cloud ) : duskIn( elevation, DUSK_MOON, DUSK_DEPTH.moonSky, cloud );
 
 }
-const NORTH_POLE = WEST.clone().cross( MERIDIAN ).normalize();
+// The stars' equatorial frame: the latitude it is seen from (degrees south), the point where its
+// equator crosses the noon meridian, 90 - STAR_LATITUDE degrees up, and its north pole.
+const STAR_LATITUDE = 28;
+const STAR_ELEVATION = ( 90 - STAR_LATITUDE ) / DEG;
+const STAR_MERIDIAN = new Vector3( Math.cos( STAR_ELEVATION ) * COS_NOON_AZIMUTH, Math.sin( STAR_ELEVATION ), Math.cos( STAR_ELEVATION ) * SIN_NOON_AZIMUTH );
+const NORTH_POLE = WEST.clone().cross( STAR_MERIDIAN ).normalize();
 // How far the moon's orbit is tilted from the sun's toward the horizon, about the east-west axis
 // (see the header): it culminates at 62 - 42 = 20 degrees.
 const MOON_TILT = 42 / DEG;
@@ -409,12 +442,12 @@ function smoothstep( low: number, high: number, value: number ): number {
 }
 
 // World to equatorial frame at a local sidereal time: a star at right ascension a and
-// declination d lies at hour angle (time - a), cos(H) MERIDIAN + sin(H) WEST, raised by d.
+// declination d lies at hour angle (time - a), cos(H) STAR_MERIDIAN + sin(H) WEST, raised by d.
 function equatorialFrame( sidereal: number ): Matrix3 {
 
 	const c = Math.cos( sidereal ), s = Math.sin( sidereal );
-	const x = MERIDIAN.clone().multiplyScalar( c ).addScaledVector( WEST, s );
-	const y = MERIDIAN.clone().multiplyScalar( s ).addScaledVector( WEST, - c );
+	const x = STAR_MERIDIAN.clone().multiplyScalar( c ).addScaledVector( WEST, s );
+	const y = STAR_MERIDIAN.clone().multiplyScalar( s ).addScaledVector( WEST, - c );
 	const z = NORTH_POLE;
 	return new Matrix3().set( x.x, x.y, x.z, y.x, y.y, y.z, z.x, z.y, z.z );
 
@@ -432,7 +465,7 @@ function direction( angle: number ): Vector3 {
 }
 
 // The meridian point of an orbit through the east and west points, tilted `tilt` (radians) from
-// the sun's toward the horizon: MERIDIAN turned about WEST.
+// the sun's toward the horizon: the noon sun turned about WEST.
 function orbitMeridian( tilt: number ): Vector3 {
 
 	const elevation = INCLINATION - tilt;

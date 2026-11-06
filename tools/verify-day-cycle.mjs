@@ -1,7 +1,7 @@
 // Pure CPU checks; Node 22.18+ strips the imported TypeScript without a build or browser.
 // Run: node tools/verify-day-cycle.mjs
 import assert from 'node:assert/strict';
-import { DayCycle, DAY_PRESETS, DAY_EXPOSURE, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE, exposureAt, nightAmbientAt } from '../src/sky/DayCycle.ts';
+import { DayCycle, DAY_PRESETS, DAY_EXPOSURE, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE, NOON_ELEVATION, exposureAt, nightAmbientAt, sunElevationAt, morningHour, eveningHour } from '../src/sky/DayCycle.ts';
 
 const near = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
 const cycle = new DayCycle();
@@ -40,6 +40,26 @@ for ( const [ hour, elevation ] of [ [ 0, - 62 ], [ 6, 0 ], [ 12, 62 ], [ 18, 0 
 
 	cycle.setHour( hour );
 	near( cycle.snapshot().elevation, elevation );
+
+}
+// The hour of an elevation is the inverse of the elevation of an hour, on either side of noon, and
+// the sun's path agrees with the clock's sun.
+for ( let hour = 0; hour < 24; hour ++ ) {
+
+	const elevation = sunElevationAt( hour );
+	near( hour <= 12 ? morningHour( elevation ) : eveningHour( elevation ), hour, 1e-9 );
+	cycle.setHour( hour );
+	near( cycle.snapshot().elevation, elevation, 1e-9 );
+
+}
+near( morningHour( NOON_ELEVATION ), 12, 1e-9 );
+near( eveningHour( NOON_ELEVATION ), 12, 1e-9 );
+near( morningHour( - NOON_ELEVATION ), 0, 1e-9 );
+near( eveningHour( - NOON_ELEVATION ), 24, 1e-9 );
+for ( const invalid of [ NOON_ELEVATION + 1e-6, - NOON_ELEVATION - 1e-6, NaN ] ) {
+
+	assert.throws( () => morningHour( invalid ), RangeError );
+	assert.throws( () => eveningHour( invalid ), RangeError );
 
 }
 for ( let minute = 0; minute <= 1440; minute ++ ) {
@@ -225,4 +245,4 @@ for ( const invalid of [ 0, - 1 ] ) {
 }
 assert.throws( () => cycle.advance( - 1 ), RangeError );
 assert.throws( () => cycle.setPreset( 'missing' ), RangeError );
-console.log( 'Day cycle: wrapping, presets, speed, pause, rollover, continuous directions and grade, phase geometry, isolation and validation passed.' );
+console.log( 'Day cycle: wrapping, presets, speed, pause, rollover, the hours of elevations, continuous directions and grade, phase geometry, isolation and validation passed.' );
