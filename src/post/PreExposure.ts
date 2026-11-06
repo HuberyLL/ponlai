@@ -101,8 +101,8 @@ export const PRE_EXPOSURE_RANGE = [ - 8, 22 ] as const;
 export const HALF_MAX = 65504;
 
 /** What a writer at a fixed power-of-two scale stores at most (the sky's bakes, Sky.ts
- * `PANORAMA_STORE`): a stop under half float's largest, so a value a little over its scale's
- * range stays finite and keeps the stop below it. */
+ * `PANORAMA_STORE`; the clouds' panorama, Clouds.ts `DOME_STORE`): a stop under half float's
+ * largest, so a value a little over its scale's range stays finite and keeps the stop below it. */
 export const STORE_CEILING = 2 ** 15;
 
 /** P for an exposure of `ev` stops. */

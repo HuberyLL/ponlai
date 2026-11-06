@@ -29,7 +29,7 @@ import { tune, tuneUniform } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 import { HazeMedium } from '../weather/HazeDepth.ts';
 import { SUN_SETTING_RADIUS } from '../lighting/Radiometry.ts';
-import { HALF_MAX, preExposedRGBA, preExposure } from '../post/PreExposure.ts';
+import { HALF_MAX, STORE_CEILING, preExposedRGBA, preExposure } from '../post/PreExposure.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -239,12 +239,16 @@ export const EARTH_RADIUS = 6_360_000;
 // reads is `shellBottom` and `shellThickness`, blended by the sky's shares (Sky.ts CLOUD_SKIES), so
 // cloudy and overcast take a deck of their own, lower (`setDeck`).
 export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
-// What the panorama stores is the radiance times this: at night and most before dawn, when the
-// exposure stands near 2^16, the clouds' radiance lies under half float's 2^-14, where its steps are
-// wide enough to show as dark flecks once exposed. A power of two, so what lay in range keeps its
-// bits. (The view takes the pre-exposure instead: see the rules above.) Lightning's light is stored
-// apart and bare (its reach is far above this range's top).
-const CLOUD_STORE = 256;
+// What the panorama stores is the radiance times this: at night the clouds' radiance lies under
+// half float's 2^-14 (unscaled, a clear midnight's panorama has its first percentile near 2^-21,
+// 2^-16 over the texels at least a tenth covered), where its steps are wide enough to show as dark
+// flecks once exposed. A power of two, so what lay in range keeps its bits. The panorama is
+// refreshed a share per frame and kept for the frames between, so its scale is fixed and not the
+// frame's pre-exposure (the view takes that: see the rules above); its writes are held at
+// STORE_CEILING, which the brightest of the day (a low sun's lit edges, facing it) stays about a
+// third of a stop under. Lightning's light is stored apart and bare (its reach is far above this
+// range's top).
+const DOME_STORE = 2 ** 15;
 // The preset's scales, rounded so they nest: the wrapped wind offset (TILE) holds a whole
 // number of periods of the weather map, the shape noise and the erosion noise.
 const WEATHER_SCALE = 28672, BASE_SCALE = 7168, EROSION_SCALE = BASE_SCALE / 8;
@@ -1854,7 +1858,7 @@ export class Clouds {
 			const rd = domeToDirection( q ).toVar();
 			const m = marchPano( rd, jitter );
 			const result = over( rainAt( rd, float( domeTexelAngle ), jitter ).color, over( vec4( m.L, m.T ), streaksAt( rd, float( domeTexelAngle ) ) ) );
-			textureStore( dome, ivec2( int( x ), int( y ) ), vec4( result.rgb.mul( CLOUD_STORE ), result.a ) );
+			textureStore( dome, ivec2( int( x ), int( y ) ), vec4( min( result.rgb.mul( DOME_STORE ), vec3( STORE_CEILING ) ), result.a ) );
 
 		} )().compute( domeWidth * domeHeight / ( strideX * strideY ), [ 64 ] ).setName( 'Clouds.Panorama' );
 
@@ -2565,7 +2569,7 @@ export class Clouds {
 		// The map holds the upper sky only: below the horizon the clouds fade out instead of
 		// repeating the horizon's row.
 		const below = smoothstep( - 0.04, 0, direction.y );
-		return vec4( s.rgb.div( CLOUD_STORE ).mul( below ), mix( float( 1 ), s.a, below ) );
+		return vec4( s.rgb.div( DOME_STORE ).mul( below ), mix( float( 1 ), s.a, below ) );
 
 	}
 
