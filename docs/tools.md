@@ -185,8 +185,11 @@ The island:
 
 Sky and weather:
 
-- `hour`, `preset` (dawn, sunrise, noon, golden-hour, sunset, dusk, midnight), `dayLength`
-  (seconds), `moon` (phase: 0.5, a full moon, by default; it shapes only the drawn moon),
+- `hour`, `preset` (each the hour its sun stands at its elevation, on the 52 degree path: dawn,
+  -8.6 degrees in the morning; sunrise, 2; noon, 52 at 12; golden-hour, 26.2 in the afternoon, the
+  default; sunset, 2; dusk, -8.6; midnight, -52 at 0: `src/sky/DayCycle.ts` DAY_PRESETS),
+  `dayLength` (seconds), `moon` (phase: 0.5, a full moon, by default; it shapes only the drawn
+  moon, which stands fixed in the sky),
   `clock=paused` (freezes only the day clock; `paused` freezes it with the scene).
 - `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load as established,
   already wet; without it, `wind` and `windDir` the weather and its wind evolve on their own, among
@@ -388,7 +391,11 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   moon's key; `moonSky`, the moonlit sky; `sky`, the sky's and the probes' night key; `ambient`;
   `stars`; `haze`; `cloudMoon`, the clouds' own moonlight: `src/sky/DayCycle.ts` DUSK_DEPTH) and the
   degrees at the night's end of that window over which they ease into all of it `sky.twilight.ease`
-  (DUSK_EASE; 0 takes them in by even stops to the end), the near air
+  (DUSK_EASE; 0 takes them in by even stops to the end), where the moon stands
+  `sky.moon.elevation` (degrees up, 15 to 40) and `sky.moon.turn` (degrees from the noon meridian:
+  0 its noon side, 180 the pole's, positive toward the west), and the stars' sky, the one seen
+  from `sky.stars.latitude` degrees south at the sidereal time `sky.stars.sidereal` (hours:
+  `src/sky/DayCycle.ts` MOON, STARS), the near air
   `sky.weather.nearDensity@clear` (`nearStart`, `nearEnd`; `@fair`, `@cloudy`, `@overcast`), a
   clouded sky's floor of the key on the land under its deck `sky.deckFloor@overcast` (`@cloudy`)
   and its day sky, the level of the whole sky's light by day at a sun 18 degrees up and how it
@@ -715,8 +722,10 @@ by pixel difference.
 takes a views file's frames on one page per flag set, under the shared GPU lock, and `node
 tools/colour-rows.mjs rows <dir> [--sort <dir>] [--boxes f.json] [--views a,b] [--out f.json] [--json]`,
 plain node, reads them: final-pixel Oklab L, C and h per view, per kind of surface and per kind of
-light (sun and shade by the cell's direct share), with the sky, the sea, the darkest 5 % of the land
-and any boxes, into `<dir>/rows.json` and a table. A view `<base>--<variant>` is read through the
+light (sun and shade by the cell's direct share, and `land sun` and `land shade` over every kind),
+with the sky, the sea, the darkest 5 % of the land and any boxes, into `<dir>/rows.json` and a table.
+Each row also gives `card`, the mean luminance of the same cells on the light page in scene units, and
+each view the land's shares in sun, shade and penumbra. A view `<base>--<variant>` is read through the
 sort of `<base>`, so its rows are the same cells; variants need only `--pages normal`. It prints what
 the frames hold and judges nothing. Its header has the sort.
 

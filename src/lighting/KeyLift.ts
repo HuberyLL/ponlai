@@ -1,9 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { cameraViewMatrix, uniform, vec3, vec4 } from 'three/tsl';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { MOON_CULMINATION } from '../sky/DayCycle.ts';
-import { tuneObject } from '../debug/Tune.ts';
-import { markSkyRetune } from '../sky/SkyRetune.ts';
+import { MOON, moonDirection } from '../sky/DayCycle.ts';
 
 type V3 = THREE.Node<'vec3'>;
 
@@ -42,44 +40,34 @@ type V3 = THREE.Node<'vec3'>;
 // haze's shadow is the sun's map, so its shafts follow the lifted shadows. Nothing else brightens
 // the dusk: the rest is the exposure's. The metering illuminance a lit material writes
 // (Pipeline.ts `meterLight`) is its incident light, the lifted cosine included.
-// The moon, the night's key, shades from one fixed world direction for as long as it is the key:
-// `moon` degrees up (20, its orbit's culmination: sky/DayCycle.ts) at the azimuth of
-// its culmination (DayCycle `MOON_CULMINATION`, the middle of its night, as its orbit runs east,
-// up to the meridian and west), whatever its own height and azimuth, so the night keeps one
-// shading and one level from dusk to dawn. Unlike the sun, the moon is also drawn there while it
-// is up (`moonDirection`), and the key's own direction is that one too (Sky.ts `keyDir`), so
-// everything that keeps the key's true direction above (the water's glint and so the moon's path
-// on the sea, the refracted light under the water, the clouds, the haze) sees the
-// moon where it is drawn: the disk, the glow of the air around it, its path on the water and the
-// island's shading and shadows stand in one place. Its phase keeps its angle to the orbit's sun
-// (Sky.ts `track`). Over the handoff (from 0.7 to 2.5 degrees under the horizon, through no key
-// light) the key turns from the sun to that direction, and arrives there as the moon becomes the
-// key: a key above the lift's floor shades from its own direction, so with `moon` above 15 the
-// shading and the shadows turn with it and nothing jumps when the moon takes over (below 15 the
-// floor holds the shading up to the last moment, a small turn at no light).
+// The moon, the night's key, stands fixed in the sky (sky/DayCycle.ts MOON, `moonDirection`) and
+// shades from its own direction for as long as it is the key, so the night keeps one shading and
+// one level from dusk to dawn. It is drawn there, and the key's own direction is that one too
+// (DayCycle `keyDir`), so everything that keeps the key's true direction above (the water's glint
+// and so the moon's path on the sea, the refracted light under the water, the clouds, the haze)
+// sees the moon where it is drawn: the disk, the glow of the air around it, its path on the water
+// and the island's shading and shadows stand in one place. Over the handoff (from 0.7 to 2.5
+// degrees under the horizon, through no key light) the key turns from the sun to that direction,
+// and arrives there as the moon becomes the key: a key above the lift's floor shades from its own
+// direction, so with the moon above 15 degrees (MOON's least) the shading and the shadows turn with
+// it and nothing jumps when the moon takes over.
 // The lifted direction is the key's L scale + U up + W side, U the world's up and W the moon's
-// fixed direction in view space, with `scale`, `up` and `side` set on the CPU from the key
-// (`updateKeyLift`, every publish of the lighting): with no lift they are 1, 0 and 0, and the
-// lifted direction is the key's bit for bit; under a sun key side is 0, under the moon scale and up
-// are 0 and side 1. The shadow's is `liftedKeyDirection`, the same direction in world space.
-// Off with `flags=keyLift:false` (at run time from the next publish of the lighting). Ours.
+// direction in view space, with `scale`, `up` and `side` set on the CPU from the key
+// (`updateKeyLift`, every publish of the lighting, which reads the moon's direction from DayCycle
+// first): with no lift they are 1, 0 and 0, and the lifted direction is the key's bit for bit;
+// under a sun key side is 0, under the moon scale and up are 0 and side 1. The shadow's is
+// `liftedKeyDirection`, the same direction in world space.
+// Off with `flags=keyLift:false` (at run time from the next publish of the lighting): the sun's
+// lift only, the moon stays where it stands. Ours.
 
 /** The elevations (degrees): the shading direction's at the sun key's (`at`, ascending), held below
  * the first row; from the last row's on, the shading holds at the last row's `shading` until the
- * key's own elevation passes it, the corner rounded over `join` degrees either side; a moon key
- * shades from `moon` at the azimuth of its culmination, where the moon is drawn too
- * (`moonDirection`): 20, the elevation its orbit culminates at (sky/DayCycle.ts MOON_TILT).
- * Tunable on debug pages (debug/Tune.ts): `lighting.moon.elevation`. */
-export const KEY_LIFT = tuneObject( {
+ * key's own elevation passes it, the corner rounded over `join` degrees either side. A moon key
+ * shades from the moon's own direction (sky/DayCycle.ts MOON). */
+export const KEY_LIFT = {
 	rows: [ { at: 0, shading: 18 }, { at: 5, shading: 18 }, { at: 6, shading: 14 } ],
 	join: 1,
-	moon: 20,
-}, { moon: 'lighting.moon.elevation' }, { moon: { min: 10, max: 40, onChange: () => {
-
-	placeMoonShade();
-	markSkyRetune();
-
-} } } );
+};
 
 // The rows' slopes (shading per degree of the key): Fritsch and Carlson's monotone cubic
 // ("Monotone Piecewise Cubic Interpolation", SIAM J. Numer. Anal. 1980), flat at both ends, so the
@@ -114,28 +102,19 @@ function shading( elevation: number ): number {
 }
 
 const scale = uniform( 1 ), up = uniform( 0 ), side = uniform( 0 );
-// the moon's fixed shading direction (world, unit): `moon` degrees up at its culmination's azimuth,
-// on the CPU and for the shaders, placed again when `moon` is set
-const MOON_SHADE = new THREE.Vector3();
-const moonShade = uniform( new THREE.Vector3() );
-function placeMoonShade(): void {
-
-	const across = Math.hypot( MOON_CULMINATION.x, MOON_CULMINATION.z ), e = THREE.MathUtils.degToRad( KEY_LIFT.moon );
-	const k = Math.cos( e ) / across;
-	MOON_SHADE.set( MOON_CULMINATION.x * k, Math.sin( e ), MOON_CULMINATION.z * k );
-	moonShade.value.copy( MOON_SHADE );
-
-}
-placeMoonShade();
+// the moon's direction (world, unit; DayCycle `moonDirection`), on the CPU and for the shaders,
+// read again at every `updateKeyLift`
+const MOON_SHADE = moonDirection( new THREE.Vector3() );
+const moonShade = uniform( MOON_SHADE.clone() );
 
 // how the key's world direction is lifted: under the sun its elevation and the lifted one (radians);
-// under the moon the fixed direction (`moon`); neither where nothing lifts it
+// under the moon its own direction (MOON_SHADE); neither where nothing lifts it
 function lifted( key: THREE.Vector3, moon: boolean ): { elevation: number; lifted: number; lift: boolean; moon: boolean } {
 
 	const across = Math.hypot( key.x, key.z );
 	const elevation = THREE.MathUtils.radToDeg( Math.atan2( key.y, across ) );
 	const off = debugFlags.keyLift === false;
-	if ( moon && ! off ) return { elevation: THREE.MathUtils.degToRad( elevation ), lifted: THREE.MathUtils.degToRad( KEY_LIFT.moon ), lift: true, moon: true };
+	if ( moon && ! off ) return { elevation: THREE.MathUtils.degToRad( elevation ), lifted: THREE.MathUtils.degToRad( MOON.elevation ), lift: true, moon: true };
 	const shade = off || across === 0 ? elevation : shading( elevation );
 	return { elevation: THREE.MathUtils.degToRad( elevation ), lifted: THREE.MathUtils.degToRad( shade ), lift: shade !== elevation, moon: false };
 
@@ -164,20 +143,10 @@ export function liftedKeyDirection( key: THREE.Vector3, moon: boolean, target: T
 
 }
 
-/** The direction the moon stands in, drawn and lighting the sky and the haze, while it is up
- * (Sky.ts `track`): the night key's fixed shading direction, so the moon the eye sees, the light
- * in the air around it and the shading and shadows it casts on the island come from one place,
- * and the key's direction by night (Sky.ts `keyDir`); its orbit's own direction `orbit` with the
- * lift off (`flags=keyLift:false`), where the key keeps its orbit's direction too. Into `target`. */
-export function moonDirection( orbit: THREE.Vector3, target: THREE.Vector3 ): THREE.Vector3 {
-
-	return target.copy( debugFlags.keyLift === false ? orbit : MOON_SHADE );
-
-}
-
 /** Sets the lift for the key's world direction, the moon's if `moon` (main.ts `publishLighting`). */
 export function updateKeyLift( key: THREE.Vector3, moon = false ): void {
 
+	moonShade.value.copy( moonDirection( MOON_SHADE ) );
 	const { elevation: e, lifted: l, lift, moon: fixed } = lifted( key, moon );
 	if ( fixed ) {
 

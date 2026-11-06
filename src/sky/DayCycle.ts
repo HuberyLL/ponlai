@@ -1,12 +1,13 @@
-import { MathUtils, Matrix3, Vector3 } from 'three/webgpu';
+import { MathUtils, Matrix3, Quaternion, Vector3 } from 'three/webgpu';
 import { tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 
-// The day cycle: authored, not astronomical. One dominant key light (the sun by day, the moon by
+// The day cycle: an equinox day at a fixed latitude, its stars a fixed real sky; the moon is
+// placed, not orbited. One dominant key light (the sun by day, the moon by
 // night) drives terrain, characters, water and every shadow map; a sun/moon handoff
 // passes through zero direct light: the sun's key fades as its drawn disk sinks below the horizon,
-// and only then turns toward the moon (HANDOFF_TOP; `keyDir` turns along the orbits, and Sky.ts
-// `track` bends its moon end to where the moon is drawn). The sun is drawn at twice its true
+// and only then turns toward the moon (HANDOFF_TOP; `keyDir` turns along the great circle from the
+// sun to the moon). The sun is drawn at twice its true
 // size and the moon larger (NightSky.ts `MOON_ANGULAR_RADIUS`); shadows and glints use the true sun. A low sun's key stays
 // orange red: the optical depth that sets its hue is capped (and a high sun's key is a warm white
 // of its own, taking the air's reddening only as the sun sinks), while its brightness still follows
@@ -51,33 +52,21 @@ import { markSkyRetune } from './SkyRetune.ts';
 // side's flip at noon or midnight moves nothing: every weight here is 0 by day and 1 by night on
 // both sides.
 //
-// The moon's orbit is authored too: not the sun's path but a great circle through the same east
-// and west points, tilted MOON_TILT toward the horizon about the east-west axis, so it culminates
-// at 20 degrees instead of the sun's 62. It keeps a full moon's hours at every phase: it rises due
-// east at 18:00, culminates at midnight and sets due west at 6:00, so every night has one cool key
-// near 20 degrees from dusk to dawn (lighting/KeyLift.ts shades its light from one fixed direction,
-// its culmination's, 20 degrees up, `MOON_CULMINATION`, for as long as it is the key, so the night
-// keeps one shading and one level; the moon is drawn there while it is up, the sky's and the
-// haze's moonlight come from there, and the key's direction turns there over the handoff and holds
-// there all night: Sky.ts `track`). The orbit sets when the
-// moon rises and sets, how bright its light is and the angle its phase is lit from. Seen from the
-// game's overview camera the moonlight comes in at a slant, so slopes have a lit and a shaded side
-// and the sea carries a moon path, where a moon near the zenith lit the island flat. Its visibility (and so the key's moonlight) rises along the orbit
-// as on the sun's path, so the evening handoff keeps its timing although the lower orbit climbs out
-// of the sea more slowly. The sun and the stars keep their paths.
-// The phase (a full moon unless set) shapes only the drawn moon: its disk is lit from where the sun
-// would stand on the moon's orbit at that phase (`moonSunDir`), and nothing else follows it (the
-// key, the night sky's moonlit wash, the clouds' moonlight), so advancing it never darkens a night.
-
-export const DAY_PRESETS = {
-	'dawn': 5.35,
-	'sunrise': 6.15,
-	'noon': 12,
-	'golden-hour': 16,
-	'sunset': 17.85,
-	'dusk': 18.65,
-	'midnight': 0,
-} as const;
+// The moon is fixed in the sky (MOON, `moonDirection`): 20 degrees up on the noon meridian unless
+// set, where it stands all night, every night. The default island view's sea carries its path, and
+// its light comes in at a slant, so slopes have a lit and a shaded side and the moon's shadows run
+// long; it neither rises nor sets, so the night's composition holds while the game is played. It is the
+// night's one cool key: lighting/KeyLift.ts shades from its direction for as long as it is the
+// key, so the night keeps one shading and one level; the moon is drawn there, the sky's and the
+// haze's moonlight come from there, and the key's direction turns there over the handoff, along
+// the great circle from the sun, and holds there all night. It shows as the sun's light leaves:
+// its visibility (and so the key's moonlight) rises over the sun's first five degrees under the
+// horizon.
+// The phase (a full moon unless set) shapes only the drawn moon: its disk is lit from the phase's
+// angle round from the moon's own direction toward the west (`moonSunDir`: from behind it at a new
+// moon, from the west at the first quarter, from the front at the full), and nothing else follows
+// it (the key, the night sky's moonlit wash, the clouds' moonlight), so advancing it never darkens a
+// night.
 
 export type DayPreset = keyof typeof DAY_PRESETS;
 
@@ -95,10 +84,10 @@ export interface DayCycleSnapshot {
 	day: number;
 	sunDir: Vector3;
 	moonDir: Vector3;
-	// where the sun would stand on the moon's orbit at the phase: the drawn disk's light
+	// the direction the drawn disk is lit from at the phase
 	moonSunDir: Vector3;
-	// the key's direction along the orbits: the sun's, turned toward the moon's over the handoff
-	// (Sky.ts `track` turns its moon end to where the moon is drawn)
+	// the key's direction: the sun's, turned toward the moon's along the great circle between them
+	// over the handoff
 	keyDir: Vector3;
 	// how far the key has turned from the sun toward the moon, 0 to 1
 	handoff: number;
@@ -111,7 +100,7 @@ export interface DayCycleSnapshot {
 	moonVisibility: number;
 	moonKeyGain: number;
 	// World to equatorial (J2000) frame: x toward right ascension 0h, z toward the north
-	// celestial pole. The stars turn with the sun about the pole of its path.
+	// celestial pole. The same at every hour and day (STARS).
 	starFrame: Matrix3;
 	daylight: number;
 	// The stars and the Milky Way: they come out late, as the sky darkens.
@@ -127,24 +116,70 @@ export interface DayCycleSnapshot {
 
 const TAU = 2 * Math.PI;
 const DEG = 180 / Math.PI;
-const INCLINATION = 62 / DEG;
+/** The sun's elevation at noon (degrees): its path is tilted this far from the horizon. */
+export const NOON_ELEVATION = 52;
+const INCLINATION = NOON_ELEVATION / DEG;
 const SIN_INCLINATION = Math.sin( INCLINATION );
 const COS_INCLINATION = Math.cos( INCLINATION );
-// Rotate one orthonormal orbital plane to keep the established afternoon light direction.
-// At 16:00 its hour angle is pi/3 and its horizontal azimuth must be -8 degrees.
-const NOON_AZIMUTH = - 8 / DEG + Math.atan2( Math.sin( Math.PI / 3 ), COS_INCLINATION * Math.cos( Math.PI / 3 ) );
+// The noon meridian's azimuth in the world (radians, about 66.8 degrees), fixed whatever the
+// path's tilt: the default island view looks 23 degrees east of it.
+const NOON_AZIMUTH = 1.166480189932717;
 const SIN_NOON_AZIMUTH = Math.sin( NOON_AZIMUTH );
 const COS_NOON_AZIMUTH = Math.cos( NOON_AZIMUTH );
-// direction(a) = cos(a) MERIDIAN + sin(a) WEST: a rotation by a about MERIDIAN x WEST.
+// direction(a) = cos(a) N + sin(a) WEST, N the noon sun ( COS_INCLINATION COS_NOON_AZIMUTH,
+// SIN_INCLINATION, COS_INCLINATION SIN_NOON_AZIMUTH ): a rotation by a about N x WEST.
 // The sun stands at the celestial equator (an equinox, every day): at noon it marks where the
-// equator crosses the meridian and at 18:00 the west point. Its path is tilted 62 degrees, so
-// the elevated pole is 28 degrees up. Seen from above, the sun turns anticlockwise, so that pole
-// is the south celestial pole and the island lies near 28 degrees south, like Rapa Nui.
-const MERIDIAN = new Vector3( COS_INCLINATION * COS_NOON_AZIMUTH, SIN_INCLINATION, COS_INCLINATION * SIN_NOON_AZIMUTH );
+// equator crosses the meridian and at 18:00 the west point. Its path is tilted NOON_ELEVATION
+// degrees from the horizon, so its elevated pole stands 90 - NOON_ELEVATION degrees up; seen from
+// above, the sun turns anticlockwise, so that pole is the south celestial pole. A 52 degree noon is
+// a mid-latitude equinox's daylight: high enough to read as a bright day, low enough that slopes
+// keep a lit and a shaded side from the island view, which looks 50 degrees down. Near the horizon
+// the sun climbs or sinks 11.8 degrees an hour, so the low sun lingers: 3.4 hours a day under 20
+// degrees and 1.7 under 10, about a tenth longer than under a 62 degree noon. A noon that high is a
+// subtropical light, at odds with the island's temperate bamboo and meadow.
 const WEST = new Vector3( SIN_NOON_AZIMUTH, 0, - COS_NOON_AZIMUTH );
-/** The direction toward the sun at noon (unit): where the island's shade falls at midday is away
- * from it (the meadow's flowers keep out of the bamboo's, world/Grass.ts). */
-export const NOON_SUN: Readonly<Vector3> = MERIDIAN.clone();
+/** The sun's elevation (degrees) at `hour` on its path. */
+export function sunElevationAt( hour: number ): number {
+
+	return Math.asin( SIN_INCLINATION * Math.cos( ( hour - 12 ) / 24 * TAU ) ) * DEG;
+
+}
+// the hour angle (hours from noon, 0 to 12) at which the sun stands at `elevation` (degrees)
+function hoursFromNoon( elevation: number ): number {
+
+	finite( elevation, 'elevation' );
+	if ( Math.abs( elevation ) > NOON_ELEVATION ) throw new RangeError( `elevation must lie within ${ NOON_ELEVATION } degrees of the horizon` );
+	const c = Math.max( - 1, Math.min( 1, Math.sin( elevation / DEG ) / SIN_INCLINATION ) );
+	return Math.acos( c ) / TAU * 24;
+
+}
+/** The hour (0 to 12) at which the morning sun stands at `elevation` (degrees): the inverse of
+ * `sunElevationAt` before noon. */
+export function morningHour( elevation: number ): number {
+
+	return 12 - hoursFromNoon( elevation );
+
+}
+/** The hour (12 to 24) at which the evening sun stands at `elevation` (degrees): the inverse of
+ * `sunElevationAt` after noon. */
+export function eveningHour( elevation: number ): number {
+
+	return 12 + hoursFromNoon( elevation );
+
+}
+/** The day's presets (hours): each the hour its sun stands at its elevation, the morning's or the
+ * evening's, so a preset keeps its light whatever the path's tilt (dawn and dusk 8.6 degrees under
+ * the horizon, sunrise and sunset 2 up, the golden hour 26.2 up in the afternoon); noon and
+ * midnight are 12 and 0. The clock starts at the golden hour. */
+export const DAY_PRESETS = {
+	'dawn': morningHour( - 8.6 ),
+	'sunrise': morningHour( 2 ),
+	'noon': 12,
+	'golden-hour': eveningHour( 26.2 ),
+	'sunset': eveningHour( 2 ),
+	'dusk': eveningHour( - 8.6 ),
+	'midnight': 0,
+} as const;
 /** Whether the sun at `dir` (unit, on its path) is rising: east of the meridian, before noon (the
  * haze's keys tell the morning from the evening by it: weather/HazeKeys.ts). */
 export const sunRising = ( dir: Readonly<Vector3> ): boolean => dir.dot( WEST ) < 0;
@@ -294,16 +329,29 @@ export function twilightMoonSky( elevation: number, rising: boolean, cloud: numb
 	return rising ? twilightMoon( elevation, rising, cloud ) : duskIn( elevation, DUSK_MOON, DUSK_DEPTH.moonSky, cloud );
 
 }
-const NORTH_POLE = WEST.clone().cross( MERIDIAN ).normalize();
-// How far the moon's orbit is tilted from the sun's toward the horizon, about the east-west axis
-// (see the header): it culminates at 62 - 42 = 20 degrees.
-const MOON_TILT = 42 / DEG;
-// Local sidereal time at midnight (radians): 14h puts Scorpius high in the east with the Milky
-// Way's core below it, Crux and Alpha Centauri high in the south, and the band through Aquila,
-// split by the Great Rift, rising out of the sea in the horizon view. The sky gains a turn a year
-// on the sun, so each authored day starts a little further on.
-const MIDNIGHT_SIDEREAL = 14 / 24 * TAU;
-const SIDEREAL_DAYS_PER_YEAR = 365.2422;
+/** The stars' sky: a real sky, the one seen from `latitude` degrees south at the local sidereal
+ * time `sidereal` (hours), fixed. It neither turns through the night nor drifts over the year, so
+ * the night's composition holds while the game is played, and its constellations stand upright as
+ * seen from that latitude. 38 degrees south at 14h raises the Milky Way out of the sea in the
+ * horizon view, split by the Great Rift, up to its core 43 degrees high in the east below Scorpius,
+ * with Crux and Alpha Centauri high in the south, and sets the moon (MOON) on a dark part of the
+ * sky, 81 degrees from the core, with no star brighter than the second magnitude within 8 degrees
+ * of it. 38 degrees south is the latitude we set the island at: the stars' sky and the sun's path
+ * (NOON_ELEVATION, 90 less it) share one pole, 38 degrees up on the side away from noon. Tunable on
+ * debug pages (debug/Tune.ts): `sky.stars.latitude`, `sky.stars.sidereal`. */
+export const STARS = tuneObject( { latitude: 38, sidereal: 14 }, { latitude: 'sky.stars.latitude', sidereal: 'sky.stars.sidereal' }, {
+	latitude: { min: 0, max: 90, onChange: placeStars },
+	sidereal: { min: 0, max: 24, onChange: placeStars },
+} );
+/** Where the moon stands (the header): `elevation` degrees up, at the noon meridian's azimuth
+ * turned `turn` degrees (0 the noon side, 180 the pole's side, positive toward the west). At least
+ * 15 degrees up: from there down the low key's floor (lighting/KeyLift.ts) would hold the shading
+ * up to the end of the handoff, a small turn at no light. Tunable on debug pages (debug/Tune.ts):
+ * `sky.moon.elevation`, `sky.moon.turn`. */
+export const MOON = tuneObject( { elevation: 20, turn: 0 }, { elevation: 'sky.moon.elevation', turn: 'sky.moon.turn' }, {
+	elevation: { min: 15, max: 40, onChange: markSkyRetune },
+	turn: { min: - 180, max: 180, onChange: markSkyRetune },
+} );
 // The exposure by the sun's elevation (degrees): [ elevation, exposure ], interpolated in log
 // exposure and held beyond the ends. With the sun up, tidewater's auto exposure brings its frames to
 // one metered level (its meter's centre-weighted log average: about 0.15 of its curve's input by day,
@@ -408,15 +456,28 @@ function smoothstep( low: number, high: number, value: number ): number {
 
 }
 
-// World to equatorial frame at a local sidereal time: a star at right ascension a and
-// declination d lies at hour angle (time - a), cos(H) MERIDIAN + sin(H) WEST, raised by d.
-function equatorialFrame( sidereal: number ): Matrix3 {
+// World to equatorial frame of STARS' sky: a star at right ascension a and declination d lies at
+// hour angle H = (sidereal - a), cos(H) meridian + sin(H) WEST, raised by d toward the north pole;
+// the meridian point is where the equator crosses the noon meridian, 90 - latitude degrees up.
+function equatorialFrame(): Matrix3 {
 
+	const elevation = ( 90 - STARS.latitude ) / DEG;
+	const meridian = new Vector3( Math.cos( elevation ) * COS_NOON_AZIMUTH, Math.sin( elevation ), Math.cos( elevation ) * SIN_NOON_AZIMUTH );
+	const pole = WEST.clone().cross( meridian ).normalize();
+	const sidereal = STARS.sidereal / 24 * TAU;
 	const c = Math.cos( sidereal ), s = Math.sin( sidereal );
-	const x = MERIDIAN.clone().multiplyScalar( c ).addScaledVector( WEST, s );
-	const y = MERIDIAN.clone().multiplyScalar( s ).addScaledVector( WEST, - c );
-	const z = NORTH_POLE;
-	return new Matrix3().set( x.x, x.y, x.z, y.x, y.y, y.z, z.x, z.y, z.z );
+	const x = meridian.clone().multiplyScalar( c ).addScaledVector( WEST, s );
+	const y = meridian.clone().multiplyScalar( s ).addScaledVector( WEST, - c );
+	return new Matrix3().set( x.x, x.y, x.z, y.x, y.y, y.z, pole.x, pole.y, pole.z );
+
+}
+
+// the stars' frame, worked out at load and again when STARS changes
+let starFrame = equatorialFrame();
+function placeStars(): void {
+
+	starFrame = equatorialFrame();
+	markSkyRetune();
 
 }
 
@@ -431,26 +492,15 @@ function direction( angle: number ): Vector3 {
 
 }
 
-// The meridian point of an orbit through the east and west points, tilted `tilt` (radians) from
-// the sun's toward the horizon: MERIDIAN turned about WEST.
-function orbitMeridian( tilt: number ): Vector3 {
+/** The moon's fixed direction (unit, world: MOON's elevation and azimuth), into `target`. The low
+ * key's lift (lighting/KeyLift.ts) reads it at every publish of the lighting. */
+export function moonDirection( target: Vector3 ): Vector3 {
 
-	const elevation = INCLINATION - tilt;
-	return new Vector3( Math.cos( elevation ) * COS_NOON_AZIMUTH, Math.sin( elevation ), Math.cos( elevation ) * SIN_NOON_AZIMUTH );
-
-}
-
-const MOON_MERIDIAN = orbitMeridian( MOON_TILT );
-/** The direction toward the moon at its culmination (unit; midnight, its orbit's highest point):
- * the middle of its night, whose azimuth the night's shading takes (lighting/KeyLift.ts). */
-export const MOON_CULMINATION: Readonly<Vector3> = MOON_MERIDIAN.clone();
-
-// cos(a) meridian + sin(a) WEST: a point of the orbit through `meridian` at angle a past it.
-function orbitDirection( angle: number, meridian: Vector3 ): Vector3 {
-
-	return meridian.clone().multiplyScalar( Math.cos( angle ) ).addScaledVector( WEST, Math.sin( angle ) ).normalize();
+	const azimuth = NOON_AZIMUTH - MOON.turn / DEG, e = MathUtils.degToRad( MOON.elevation );
+	return target.set( Math.cos( e ) * Math.cos( azimuth ), Math.sin( e ), Math.cos( e ) * Math.sin( azimuth ) );
 
 }
+const _noTurn = new Quaternion(), _turn = new Quaternion(), _keyTurn = new Quaternion();
 
 /** A deterministic art-directed celestial clock. Hours and moon phase are independent of the
  * wave/vegetation animation clock, so lighting presets do not jump existing scene animation. */
@@ -458,7 +508,7 @@ export class DayCycle {
 
 	paused: boolean;
 	advanceMoonPhase: boolean;
-	private currentHour = 16;
+	private currentHour: number = DAY_PRESETS[ 'golden-hour' ];
 	private secondsPerDay = 2880;
 	private phase = 0.5;
 	private lunarDays = 29.53;
@@ -475,7 +525,7 @@ export class DayCycle {
 	/** The clock as the constructor sets it from `options` (a scene jump: no days completed). */
 	reset( options: DayCycleOptions = {} ): void {
 
-		this.hour = options.hour ?? 16;
+		this.hour = options.hour ?? DAY_PRESETS[ 'golden-hour' ];
 		this.dayLength = options.dayLength ?? 2880;
 		this.moonPhase = options.moonPhase ?? 0.5;
 		this.lunarPeriodDays = options.lunarPeriodDays ?? 29.53;
@@ -522,18 +572,13 @@ export class DayCycle {
 
 		const hourAngle = ( this.currentHour - 12 ) / 24 * TAU;
 		const sunDir = direction( hourAngle );
-		// The moon keeps a full moon's place at every phase, half a turn behind the sun along its
-		// own, lower orbit (see the header): both orbits share the east and west points, so it
-		// rises where the sun set. Its disk is lit from where the sun would stand on that orbit at
-		// the phase, so the drawn phase separates them by the phase's angle.
-		const moonAngle = hourAngle - Math.PI;
-		const moonDir = orbitDirection( moonAngle, MOON_MERIDIAN );
-		const moonSunDir = orbitDirection( moonAngle + this.phase * TAU, MOON_MERIDIAN );
+		// The moon stands where MOON puts it at every hour and phase (the header). Its disk is lit
+		// from the phase's angle round from its own direction toward the west: WEST made square to
+		// the moon's direction.
+		const moonDir = moonDirection( new Vector3() );
+		const moonWest = WEST.clone().addScaledVector( moonDir, - WEST.dot( moonDir ) ).normalize();
+		const moonSunDir = moonDir.clone().multiplyScalar( Math.cos( TAU * this.phase ) ).addScaledVector( moonWest, Math.sin( TAU * this.phase ) );
 		const elevation = Math.asin( Math.max( - 1, Math.min( 1, sunDir.y ) ) ) * DEG;
-		const moonElevation = Math.asin( Math.max( - 1, Math.min( 1, moonDir.y ) ) ) * DEG;
-		// The elevation the moon would have on the sun's path at the same point of its orbit: the
-		// same sign as its own, and what its visibility rises with.
-		const moonOrbitElevation = Math.asin( Math.max( - 1, Math.min( 1, Math.cos( moonAngle ) * SIN_INCLINATION ) ) ) * DEG;
 		const daylight = smoothstep( - 7, 8, elevation );
 		// The night sky was tuned under a low-sun adaptation that faded out over -5 to -14 degrees.
 		const skyAdaptation = 1 + 0.6 * smoothstep( - 14, - 5, elevation ) * ( 1 - smoothstep( 4, 18, elevation ) );
@@ -543,15 +588,15 @@ export class DayCycle {
 		const deck = DECK_NIGHT_GAIN - 1;
 		const dusk = smoothstep( - 6, - 1, elevation );
 		const moonIllumination = ( 1 - Math.cos( TAU * this.phase ) ) * 0.5;
-		// Over the first five degrees of the sun's path, measured along the moon's orbit: on the
-		// lower orbit the same rise climbs about 2 degrees, and the evening's moonlight (the key's
-		// gain below) keeps the timing it had when the moon shared the sun's path.
-		const moonVisibility = smoothstep( 0, 5, moonOrbitElevation );
-		// Rotate along the orbit, its tilt following, only after the sun is blocked and before the
-		// moon's key light fades in. Opposing full-moon vectors never cancel as in a lerp.
+		// over the sun's first five degrees under the horizon (the header)
+		const moonVisibility = smoothstep( 0, 5, - elevation );
+		// Turn along the great circle from the sun to the moon only after the sun is blocked and
+		// before the moon's key light fades in. Through the handoff the sun stands near the east or
+		// west point; at the default turn the moon stands on the meridian, about a right angle away,
+		// and at no turn opposed (the moon stands above the horizon).
 		const handoff = 1 - smoothstep( - 2.5, HANDOFF_TOP, elevation );
 		const keyDir = handoff === 0 ? sunDir.clone() : handoff === 1 ? moonDir.clone() :
-			orbitDirection( hourAngle - Math.PI * handoff, orbitMeridian( MOON_TILT * handoff ) );
+			sunDir.clone().applyQuaternion( _keyTurn.slerpQuaternions( _noTurn, _turn.setFromUnitVectors( sunDir, moonDir ), handoff ) );
 		return {
 			hour: this.currentHour,
 			day: this.completedDays,
@@ -562,7 +607,7 @@ export class DayCycle {
 			handoff,
 			elevation,
 			azimuth: Math.atan2( sunDir.z, sunDir.x ) * DEG,
-			moonElevation,
+			moonElevation: MOON.elevation,
 			moonAzimuth: Math.atan2( moonDir.z, moonDir.x ) * DEG,
 			moonPhase: this.phase,
 			moonIllumination,
@@ -571,7 +616,7 @@ export class DayCycle {
 			// four degrees later: between the sun's last light and the night's ambient the meadow
 			// fell to about half its night brightness. It does not follow the phase.
 			moonKeyGain: moonKeyShare( elevation ) * moonVisibility,
-			starFrame: equatorialFrame( MIDNIGHT_SIDEREAL + hourAngle + Math.PI + TAU * ( this.completedDays + this.currentHour / 24 ) / SIDEREAL_DAYS_PER_YEAR ),
+			starFrame: starFrame.clone(),
 			daylight,
 			nightVisibility: 1 - smoothstep( - 15, - 3, elevation ),
 			// (the night sky stays dark through its own scaled light: see NIGHT_SKY_EXPOSURE)

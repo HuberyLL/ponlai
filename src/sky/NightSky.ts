@@ -27,9 +27,9 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
-// The night sky: stars, Milky Way and moon. The stars and Milky Way are the real sky as
-// seen near 28 degrees south (the sun's authored path fixes the latitude, DayCycle.ts), turning
-// with the clock about the south celestial pole; procedural grain and faint stars only add detail
+// The night sky: stars, Milky Way and moon. The stars and Milky Way are a real sky, the one seen
+// from 38 degrees south at a local sidereal time of 14h (DayCycle.ts STARS), fixed: they neither
+// turn through the night nor drift over the year; procedural grain and faint stars only add detail
 // below the catalogue and the map. Stars are points with a natural spread of brightness, kept below
 // white except the brightest few; only those near the horizon scintillate. The night is
 // art-directed (docs/art-direction.md): the sky's colours are drawn as authored, and any
@@ -353,14 +353,15 @@ const nightMoonGlow = Fn( ( [ direction, sunDir, moonDir, moonColor ]: [ V3, V3,
 
 export class NightSky {
 
-	// the sunlight on the drawn moon: where the sun stands on the moon's orbit at its phase
-	// (DayCycle `moonSunDir`), so the disk shows the phase whatever the hour
+	// the sunlight on the drawn moon: the direction its phase lights it from (DayCycle
+	// `moonSunDir`), so the disk shows the phase whatever the hour
 	readonly sunDir = uniform( new THREE.Vector3( 1, 0, 0 ) );
 	readonly moonDir = uniform( new THREE.Vector3( - 1, 0, 0 ) );
 	// Full illuminated disk radiance in scene units. Phase comes only from the directions.
 	readonly moonColor = uniform( new THREE.Color( 0.035, 0.04, 0.0475 ) );
 	readonly starVisibility = uniform( 0 );
-	// World to celestial frame: the stars turn about the pole of the sun's own path.
+	// World to celestial frame: fixed, the pole STARS.latitude up on the side away from noon
+	// (sky/DayCycle.ts STARS).
 	readonly frame = uniform( new THREE.Matrix3() );
 	readonly time = uniform( 0 );
 	// A bright moon's scattered light washes out the Milky Way and the faintest stars.

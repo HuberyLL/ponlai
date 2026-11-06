@@ -1,9 +1,9 @@
 // Regression for the sun/moon key light handoff. The key light, grade and sky follow the clock
 // every frame, so a sweep through the handoff band must carry zero direct energy while the
 // key turns from one body to the other, and every frame must show the clock's own state: by day
-// the key is the sun's direction, by night it holds where the moon is drawn (KeyLift.ts
-// `moonDirection`), and over the handoff it turns from the one to the other (Sky.ts `keyDir`).
-// Run against the dev server, whose modules it imports for the moon's direction:
+// the key is the sun's direction, by night it holds where the moon stands (DayCycle.ts MOON), and
+// over the handoff it turns from the one to the other (DayCycle `keyDir`, which Sky.ts takes).
+// Run against the dev server:
 // node tools/verify-celestial-handoff.mjs http://127.0.0.1:5190
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
@@ -38,18 +38,8 @@ try {
 		s.dayCycle.moonPhase = 0.5;
 		await s.setWeather( 'clear', 0 );
 		const frame = () => new Promise( ( resolve ) => requestAnimationFrame( resolve ) );
-		const { moonDirection } = await import( '/src/lighting/KeyLift.ts' );
-		const Quaternion = s.camera.quaternion.constructor;
-		// the key's direction at this clock, as Sky.ts sets it from the same snapshot
-		const clockKey = ( clock ) => {
-
-			if ( clock.handoff === 0 ) return clock.keyDir;
-			const drawn = moonDirection( clock.moonDir, clock.moonDir.clone() );
-			if ( clock.handoff === 1 ) return drawn;
-			const turn = new Quaternion().setFromUnitVectors( clock.moonDir, drawn );
-			return clock.keyDir.clone().applyQuaternion( new Quaternion().slerpQuaternions( new Quaternion(), turn, clock.handoff ) );
-
-		};
+		// the key's direction at this clock, as Sky.ts takes it from the same snapshot
+		const clockKey = ( clock ) => clock.keyDir;
 		const read = () => {
 
 			const clock = s.dayCycle.snapshot();

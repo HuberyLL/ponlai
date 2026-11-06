@@ -5,11 +5,11 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
+import { DAY_PRESETS } from '../src/sky/DayCycle.ts';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/dynamic-sky';
-const hours = [ [ 'dawn', 5.35 ], [ 'sunrise', 6.15 ], [ 'noon', 12 ], [ 'golden-hour', 16 ],
-	[ 'sunset', 17.85 ], [ 'dusk', 18.65 ], [ 'midnight', 0 ] ];
+const hours = Object.entries( DAY_PRESETS );
 const report = { base, hours: [], phases: {}, clock: {}, resources: {}, checks: [], errors: [], failures: [] };
 await mkdir( out, { recursive: true } );
 // shared with other probes (their pixels do not depend on the GPU load), never during a timing
@@ -165,7 +165,7 @@ try {
 	assert.ok( energy( report.phases.newMoon ) > energy( report.phases.fullMoon ) * 0.95, 'The phase must not darken the night' );
 	report.checks.push( 'Moon phase leaves the night lighting as it is' );
 	await page.evaluate( () => window.__PONLAI__.setPreset( 'golden-hour' ) );
-	near( await page.evaluate( () => window.__PONLAI__.dayCycle.hour ), 16, 1e-8, 'Golden-hour preset' );
+	near( await page.evaluate( () => window.__PONLAI__.dayCycle.hour ), DAY_PRESETS[ 'golden-hour' ], 1e-8, 'Golden-hour preset' );
 
 	// Warm both day and night paths before counting retained resources. A small allowance
 	// accommodates renderer-internal pooling; an allocation retained on each bake must fail.
@@ -174,7 +174,7 @@ try {
 	report.resources.baseline = await page.evaluate( () => ( { ...window.__PONLAI__.renderer.info.memory } ) );
 	report.resources.samples = [];
 	for ( let i = 0; i < 12; i ++ ) {
-		await page.evaluate( ( hour ) => window.__PONLAI__.setHour( hour ), [ 5.35, 12, 17.85, 0 ][ i % 4 ] );
+		await page.evaluate( ( hour ) => window.__PONLAI__.setHour( hour ), [ DAY_PRESETS.dawn, DAY_PRESETS.noon, DAY_PRESETS.sunset, DAY_PRESETS.midnight ][ i % 4 ] );
 		await twoFrames();
 		report.resources.samples.push( await page.evaluate( () => ( { ...window.__PONLAI__.renderer.info.memory } ) ) );
 	}

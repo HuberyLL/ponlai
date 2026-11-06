@@ -244,10 +244,10 @@ const numberParam = ( name: string, fallback: number, options = params ) => {
 // The scene a query's options set: the weather (held when one is asked for, else evolving on its
 // own), the day clock and its preset, the scene clock and the cloud override. The load reads its
 // own query with it, and a scene jump (`establishScene`) the query it is given, so the two agree.
-// A 48-minute day, as in many open-world games: slow enough to watch the light and the stars
-// turn. The game's day is 24 minutes at 1x, so a day's work and its evening fit one sitting.
-// The default first-quarter moon lights the evening and sets at midnight, leaving the small
-// hours dark enough for the Milky Way. The game starts at 8 (see Game.ts), so the sky is lit
+// A 48-minute day, as in many open-world games: slow enough to watch the light change. The game's
+// day is 24 minutes at 1x, so a day's work and its evening fit one sitting. The moon (a full one
+// by default) and the stars stand fixed in the sky (DayCycle.ts MOON, STARS); the phase shapes only
+// the drawn moon. The game starts at 8 (see Game.ts), so the sky is lit
 // once for that hour. A parked weather (Weather.ts `PARKED_WEATHER`) is refused outside a debug
 // build and falls back to fair; the load and a scene jump read it here alike, and so does ?game,
 // whose weather is the page's. The wind (Weather.ts) takes `wind` (a level) and `windDir` (a
@@ -270,7 +270,7 @@ function sceneOptions( options: URLSearchParams ) {
 			heading: options.has( 'windDir' ) && Number.isFinite( Number( options.get( 'windDir' ) ) ) ? Number( options.get( 'windDir' ) ) : undefined,
 		},
 		autoWeather: ! options.has( 'weather' ) && ! options.has( 'wind' ) && ! options.has( 'windDir' ),
-		day: { hour: numberParam( 'hour', params.has( 'game' ) ? 8 : 16, options ),
+		day: { hour: numberParam( 'hour', params.has( 'game' ) ? 8 : DAY_PRESETS[ 'golden-hour' ], options ),
 			dayLength: Math.max( 30, numberParam( 'dayLength', params.has( 'game' ) ? 1440 : 2880, options ) ),
 			paused: options.has( 'paused' ) || options.get( 'clock' ) === 'paused', moonPhase: numberParam( 'moon', 0.5, options ) },
 		preset: preset && Object.hasOwn( DAY_PRESETS, preset ) ? preset as DayPreset : null,
@@ -1058,11 +1058,11 @@ const viewDirection = new THREE.Vector3();
 // limits, so a scene jump (`establishScene`) repeats it on a camera and controls of its own with the
 // page's limits, and its pose is the load's to the bit.
 // The default azimuth (180: the view looks along +z, about 23 degrees east of the meridian the sun
-// and the full moon culminate on) is fixed, never following the clock, so the R key always returns
-// to the same view. It was 318, looking away from the meridian: the morning sun lit the island
-// flat from behind the camera and the moon path never entered the frame. From 180 the moon's path
-// is in view all night (the moon stands at its culmination's azimuth: lighting/KeyLift.ts), while the sun lights the cliffs from the side at 9:00
-// and 16:00 (a lit and a shaded side) and its glints at noon keep to a corner of the frame.
+// culminates on and the moon stands on) is fixed, never following the clock, so the R key always
+// returns to the same view. It was 318, looking away from the meridian: the morning sun lit the
+// island flat from behind the camera and the moon path never entered the frame. From 180 the moon's
+// path is in view all night (the moon is fixed on the meridian: sky/DayCycle.ts MOON), while the sun lights the cliffs from the side in the
+// morning and the afternoon (a lit and a shaded side) and its glints at noon keep to a corner of the frame.
 function placeOrbit( on: THREE.PerspectiveCamera, orbit: IslandCameraControls, options: URLSearchParams, turn = 0, zoom = 0 ): void {
 
 	const polar = THREE.MathUtils.degToRad( Number( options.get( 'polar' ) ?? 40 ) ), azimuth = THREE.MathUtils.degToRad( Number( options.get( 'az' ) ?? 180 ) ) + turn;
