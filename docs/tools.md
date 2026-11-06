@@ -794,8 +794,10 @@ gives its shared slot up to a request ranked before it and takes it back before 
 (each give-up on stderr, the step's `gaveUpMs`). Probes share the GPU as capture pages do: two
 probes sweeping six points of a paused, grown island at 4K each took about 1.4 times one probe's
 time (1.45 times its throughput), and a probe beside a capture-set page 1.1 times its time alone,
-with readings identical to a probe alone. (A paused page bounds its GPU queue, Test mode above;
-before that bound two such probes each ran 12 times as long as one alone.) Common questions:
+with readings identical to a probe alone. Sweeping 21 points, two probes gave about 1.35 times one
+probe's throughput and three about 1.4 times, but at three one or two of the probes in a run read a
+value that differed from a probe alone's in the last digit. (A paused page bounds its GPU queue,
+Test mode above; before that bound two six-point probes each ran 12 times as long as one alone.) Common questions:
 `--load` loads every query after the first in a page of its own instead of jumping to it: the
 scene-jump contract covers the image, not the world's generation path, so use it to compare two
 freshly loaded pages (a grown page against a fresh `grow=1` page) in one call.
@@ -903,10 +905,11 @@ Everything that renders the scene in a browser (captures, profiles, GPU probes) 
 machine-wide GPU lock in `tools/gpu-lock.mjs`: timing runs (profiles, benchmarks, running captures)
 hold it alone; paused captures and the verify probes share it with each other, since their pixels
 do not depend on the load. Shared holders take one of `PONLAI_GPU_SLOTS` slots (default 2) and the
-rest queue: captures are GPU-bound, so two pages at once give about 1.6 times one page's
-throughput, a third adds none and doubles each view's time, and more lose throughput (24 paused
-views, the frames identical at every count); probes that sweep many points gain about 1.45 times at
-two (Probes, above). A capture-set page leases its slot (capture.mjs's worker, `leaseGpuLock`): it keeps
+rest queue: captures are GPU-bound, so two pages at once give about 1.75 times one page's
+throughput, a third about 2 times with the slowest views taking twice as long as at two, and a
+fourth hardly more (21 paused views, the frames identical at every count); probes that sweep many
+points gain about 1.35 times at two and 1.4 at three, where their readings lose the last digit now
+and then (Probes, above). Two slots take most of the gain with the readings exact. A capture-set page leases its slot (capture.mjs's worker, `leaseGpuLock`): it keeps
 it from view to view and gives it up between views only when a request ranked before its next one
 waits for it (an exclusive request, or a shared one when every slot is taken) and it has held it
 for its lease, 20 s (capture.mjs `--lease`, after capture-set's `--`; 0 frees it after every view),
