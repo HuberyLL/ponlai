@@ -9,6 +9,7 @@
 //       [--from 2 --to -8 --step 0.5] [--midnight] [--at e1,e2,...] [--hours h1,h2,...]
 //       [--fine e1:e2:step]... [--views island[,<parity view>...]] [--split [name,...]] [--night-split] [--twilight]
 //       [--compare dir [--compare-tolerance 1e-4]] [--judge 0.02] [--judge-range 2:-8] [--judge-weathers ...] [--overall-weathers ...]
+//       [--haze [--haze-sky 3,5,10,20] [--haze-distances 300,1000]]
 //       [--frames] [--walk] [--q "grow=36"] [--src dir] [--out dir] [--timeout ms] [--lock-timeout s]
 //
 // base: the page's server (default http://127.0.0.1:5190/), a dev server: the reads import the
@@ -67,6 +68,26 @@
 //   starNight at this sun; and `share.<name>`, each forced share's value as the code made it
 //   (DayCycle.ts `duskShares`: a number, or [ least, greatest ] when its readers took several).
 //
+// --haze: at each point, after the point's own state, the haze in a view of its own (`haze-rows`:
+// 65 m over the sea at the land box's +x edge, its back to the island, facing the open sea, pitched
+// 10 degrees up with a vertical field of 30; one pose everywhere, since the ground layer's width
+// follows the camera's height), once the page has settled there:
+//   - hazeMedium: every item of the haze's key as the frame set it (main.ts `hazeKey`, `key.*`), the
+//     haze's copy of it (`look.*`), its medium's uniforms (`air.*`: the weather's haze and fog, the
+//     layers, the ground layer's width rule, sigma, the dome's own depth, the near haze), the
+//     clouds' copy of the medium (`clouds.*`), the moon's aerosol keys (`moon.*`, Tune
+//     `haze.moon.*`) and the settings (`settings.*`); vectors flattened (`.0`, `.1`, ...), non-finite
+//     numbers as text. The light's colours are not in it.
+//   - hazeOpacity: 1 - T per display channel and the light at full opacity (VolumetricHaze.probe,
+//     the composite's own nodes on the GPU) along the view's azimuth: `sky <e>` at each --haze-sky
+//     elevation (the medium to the atmosphere's top, without the dome's own thin haze) and
+//     `level <d> m` at the camera's height over a surface at each --haze-distances (the composite's
+//     fog over it, the volume and the rest beyond it). A ray outside the view's frustum is not read
+//     (null, and `hazeOutside`).
+// Then the point's view is placed again for the states that follow. summary.txt lists the opacity;
+// --compare judges hazeMedium bit for bit at every point both runs hold (the deck's shares
+// `key.deck`, `key.overcastDeck` listed, not judged), the differing items by name.
+//
 // --split [names] (default every DUSK_FORCES name; the twilight's are sun, hazeSun, hazeSky)
 //   - Per name, states with the share forced to 0 (q0) and to 1 (q1); the point itself is q. A
 //     twilight's share is a weight that is 1 unforced, so its q1 is q. A forced value equal to the
@@ -104,7 +125,8 @@
 //   <weather>-<side>.json: { version: 1, sha (--src's HEAD), base, query, weather, side, weathers,
 //     sides, grid, views, split, points: [ { key, e, at, hour, elevation, values, weights, shares?:
 //     { <name>: { w, q0, q1, inc } } (q is the point's `values`), cumulative?: { T }, residual?,
-//     void?, night?, noLights?, frame?, error?, warnings? } ] }, written after every point;
+//     void?, night?, noLights?, hazeMedium?, hazeOpacity?, hazePose?, hazeOutside?, frame?, error?,
+//     warnings? } ] }, written after every point;
 //   summary.txt: the values per point, then per weather and side the steps (%), the overall rises,
 //     the exposure's steps, the fine series, the residuals, the void points and errors;
 //   handoff.txt (with --split and midnight): per weather e_d (the highest point whose key has
@@ -123,7 +145,9 @@
 //     the air) a few 1e-8 apart at a point in ten, and an opaque cell can land a unit apart in its
 //     fourth significant digit (Radiance.ts rounds each cell to four), while one page reaching a
 //     point twice by the jump reads it again bit for bit; the largest view difference is in
-//     compare.txt. A difference past the tolerance is a violation.
+//     compare.txt. A difference past the tolerance is a violation. With --haze in both runs, the
+//     haze's medium is judged bit for bit at every point (above); each point it differs at is a
+//     violation, and the opacity's largest difference is reported.
 //
 // Exit codes: 0 every judged rule held; 1 a rule was broken, a point is void, or --compare found a
 // difference in [+2.5, +4]; 2 an option or the page went wrong (an unknown option, a page error,
@@ -144,7 +168,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
-const USAGE = 'usage: node tools/dusk-grid.mjs [base] [--weathers ...] [--sides ...] [--from 2 --to -8 --step 0.5] [--midnight] [--at ...] [--hours ...] [--fine e1:e2:step]... [--views ...] [--split [names]] [--night-split] [--twilight] [--compare dir [--compare-tolerance 1e-4]] [--judge 0.02] [--judge-range 2:-8] [--judge-weathers ...] [--overall-weathers ...] [--frames] [--walk] [--q query] [--src dir] [--out dir] [--timeout ms] [--lock-timeout s] (see the file header)';
+const USAGE = 'usage: node tools/dusk-grid.mjs [base] [--weathers ...] [--sides ...] [--from 2 --to -8 --step 0.5] [--midnight] [--at ...] [--hours ...] [--fine e1:e2:step]... [--views ...] [--split [names]] [--night-split] [--twilight] [--compare dir [--compare-tolerance 1e-4]] [--judge 0.02] [--judge-range 2:-8] [--judge-weathers ...] [--overall-weathers ...] [--haze [--haze-sky 3,5,10,20] [--haze-distances 300,1000]] [--frames] [--walk] [--q query] [--src dir] [--out dir] [--timeout ms] [--lock-timeout s] (see the file header)';
 const WEATHERS = [ 'clear', 'fair', 'cloudy', 'overcast', 'rain', 'storm', 'fog' ];
 const SIDES = [ 'evening', 'morning' ];
 const TWILIGHT = [ 'sun', 'hazeSun', 'hazeSky' ];
@@ -162,10 +186,11 @@ const fail = ( message ) => { throw new ArgError( message ); };
 // ---- options
 const argv = process.argv.slice( 2 );
 const o = { weathers: 'clear,fair,cloudy,overcast', sides: 'evening,morning', from: '2', to: '-8', step: '0.5', views: 'island',
-	judge: '0.02', 'judge-range': '2:-8', 'compare-tolerance': '1e-4', q: 'grow=36', timeout: '120000', 'lock-timeout': '0', fine: [] };
+	judge: '0.02', 'judge-range': '2:-8', 'compare-tolerance': '1e-4', q: 'grow=36', timeout: '120000', 'lock-timeout': '0', fine: [],
+	'haze-sky': '3,5,10,20', 'haze-distances': '300,1000' };
 let base = 'http://127.0.0.1:5190/';
-const FLAGS = [ 'midnight', 'night-split', 'twilight', 'frames', 'walk' ];
-const VALUED = [ 'weathers', 'sides', 'from', 'to', 'step', 'at', 'hours', 'views', 'compare', 'compare-tolerance', 'judge', 'judge-range', 'judge-weathers', 'overall-weathers', 'q', 'src', 'out', 'timeout', 'lock-timeout' ];
+const FLAGS = [ 'midnight', 'night-split', 'twilight', 'frames', 'walk', 'haze' ];
+const VALUED = [ 'weathers', 'sides', 'from', 'to', 'step', 'at', 'hours', 'views', 'compare', 'compare-tolerance', 'judge', 'judge-range', 'judge-weathers', 'overall-weathers', 'q', 'src', 'out', 'timeout', 'lock-timeout', 'haze-sky', 'haze-distances' ];
 let options;
 try {
 
@@ -242,6 +267,11 @@ function parseOptions( o ) {
 	const hours = o.hours !== undefined ? list( o.hours, null, '--hours' ).map( ( x ) => num( x, '--hours' ) ) : null;
 	if ( at && hours ) fail( '--at and --hours: give one' );
 	const judge = num( o.judge, '--judge' );
+	const hazeSky = list( o[ 'haze-sky' ], null, '--haze-sky' ).map( ( x ) => num( x, '--haze-sky' ) );
+	const hazeDistances = list( o[ 'haze-distances' ], null, '--haze-distances' ).map( ( x ) => num( x, '--haze-distances' ) );
+	if ( hazeSky.some( ( e ) => e <= 0 || e >= 90 ) ) fail( '--haze-sky: elevations between 0 and 90 degrees' );
+	if ( hazeDistances.some( ( d ) => d <= 0 ) ) fail( '--haze-distances: positive distances in metres' );
+	if ( hazeSky.length + hazeDistances.length > 64 ) fail( '--haze-sky, --haze-distances: at most 64 rays in all (VolumetricHaze.probe)' );
 	const src = path.resolve( o.src ?? ROOT );
 	if ( ! existsSync( path.join( src, 'src/sky/DayCycle.ts' ) ) ) fail( `--src ${ src }: no src/sky/DayCycle.ts there` );
 	return {
@@ -250,6 +280,7 @@ function parseOptions( o ) {
 		judgeWeathers: o[ 'judge-weathers' ] ? list( o[ 'judge-weathers' ], WEATHERS, '--judge-weathers' ) : weathers,
 		overallWeathers: o[ 'overall-weathers' ] ? list( o[ 'overall-weathers' ], WEATHERS, '--overall-weathers' ) : weathers,
 		split: o.split, nightSplit: o[ 'night-split' ] === true, twilight: o.twilight === true, frames: o.frames === true, walk: o.walk === true,
+		haze: o.haze === true, hazeSky, hazeDistances,
 		compare: o.compare ? path.resolve( o.compare ) : null, compareTolerance: num( o[ 'compare-tolerance' ], '--compare-tolerance' ), q: o.q, src, timeout, lockTimeout,
 		out: path.resolve( o.out ?? path.join( ROOT, 'artifacts/dusk-grid', new Date().toISOString().replace( /[:.]/g, '-' ).slice( 0, 19 ) ) ),
 	};
@@ -401,6 +432,61 @@ const applyJs = ( forces ) => `async () => { ${ PAGE }
 
 const ISLAND_VIEW = `(() => { const s = window.__PONLAI__; s.setCameraMode( 'orbit' ); s.setCameraView( 'island' ); })()`;
 const viewJs = ( view ) => view === 'island' ? ISLAND_VIEW : viewEval( view, [] );
+
+// --haze: the haze's own view, one pose at every point (the ground layer's width follows the
+// camera's height, so the height is fixed): 65 m over the sea at the land box's +x edge, its back to
+// the island, facing the open sea along +x, pitched 10 degrees up with a vertical field of 30, so
+// the horizon and the sky up to 25 degrees are in the frame
+const HAZE_HEIGHT = 65, HAZE_PITCH = 10, HAZE_FOV = 30;
+const HAZE_VIEW = `(() => { const s = window.__PONLAI__, b = s.controls.ground.bounds, cz = ( b.min.z + b.max.z ) / 2, e = ${ HAZE_PITCH } * Math.PI / 180;
+	s.setCameraView?.( 'island' ); s.setCameraMode( 'free' ); s.camera.position.set( b.max.x, ${ HAZE_HEIGHT }, cz );
+	s.camera.lookAt( b.max.x + Math.cos( e ) * 1000, ${ HAZE_HEIGHT } + Math.sin( e ) * 1000, cz ); s.camera.fov = ${ HAZE_FOV }; s.camera.updateProjectionMatrix(); })()`;
+
+// The haze's medium as the frame holds it (every item of main.ts's HazeKey, the haze's own medium
+// uniforms and key copy, the clouds' copy of the medium, the moon's aerosol keys, the settings;
+// vectors flattened, non-finite numbers as text so the JSON keeps them), and its opacity over the
+// view's azimuth: sky rays at each --haze-sky elevation (the medium to the atmosphere's top, without
+// the dome's own haze) and level rays at the camera's height over a surface at each --haze-distances
+// (the composite's fog over it), read on the GPU by VolumetricHaze.probe. A ray outside the view's
+// frustum (the probe takes the composite's grid projection) is not read: null, listed.
+const hazeReadJs = () => `async () => { ${ PAGE }
+	const air = s.pipeline.air, cam = s.camera, medium = {};
+	const put = ( name, v ) => {
+
+		if ( v && typeof v.toArray === 'function' ) v = v.toArray();
+		if ( Array.isArray( v ) ) { v.forEach( ( x, i ) => put( name + '.' + i, x ) ); return; }
+		medium[ name ] = typeof v === 'number' && ! Number.isFinite( v ) ? String( v ) : v;
+
+	};
+	for ( const [ k, v ] of Object.entries( s.hazeKey ) ) put( 'key.' + k, v );
+	for ( const [ k, v ] of Object.entries( air.look ) ) put( 'look.' + k, v );
+	for ( const k of [ 'haze', 'fog', 'layer', 'ground', 'widthRule', 'sigma', 'skyDepth', 'near' ] ) put( 'air.' + k, air[ k ].value );
+	const clouds = air.cloudMedium ?? sky.clouds?.haze;
+	if ( clouds ) for ( const k of [ 'layer', 'ground', 'near', 'sigma' ] ) put( 'clouds.' + k, clouds[ k ].value );
+	for ( const k of [ 'red', 'blue', 'gain', 'mieG' ] ) put( 'moon.' + k, s.tune.get( 'haze.moon.' + k ) );
+	for ( const [ k, v ] of Object.entries( air.settings ) ) put( 'settings.' + k, v );
+	cam.updateMatrixWorld();
+	const f = cam.getWorldDirection( cam.position.clone() ), len = Math.hypot( f.x, f.z ), fx = f.x / len, fz = f.z / len;
+	const rays = [], names = [], outside = [];
+	const add = ( name, elevation, distance ) => {
+
+		const e = elevation * DEG, d = { x: Math.cos( e ) * fx, y: Math.sin( e ), z: Math.cos( e ) * fz };
+		// in the frame: in front of the camera and inside its projection (unjittered under MSAA)
+		const v = cam.position.clone().set( d.x, d.y, d.z ).transformDirection( cam.matrixWorldInverse );
+		const p = cam.position.clone().set( d.x, d.y, d.z ).multiplyScalar( 1000 ).add( cam.position ).project( cam );
+		if ( ! ( v.z < 0 && Math.abs( p.x ) <= 1 && Math.abs( p.y ) <= 1 ) ) { outside.push( name ); return; }
+		rays.push( distance === undefined ? { direction: d } : { direction: d, distance } );
+		names.push( name );
+
+	};
+	for ( const e of ${ JSON.stringify( options.hazeSky ) } ) add( 'sky ' + e, e );
+	for ( const m of ${ JSON.stringify( options.hazeDistances ) } ) add( 'level ' + m + ' m', 0, m );
+	const read = rays.length ? await air.probe( s.renderer, rays ) : [];
+	const opacity = {};
+	for ( const n of outside ) opacity[ n ] = null;
+	names.forEach( ( n, i ) => { opacity[ n ] = { opacity: read[ i ].opacity, light: read[ i ].light }; } );
+	return { medium, opacity, outside, pose: { position: cam.position.toArray(), forward: [ fx, 0, fz ], pitch: ${ HAZE_PITCH }, fov: cam.fov, aspect: cam.aspect } };
+}`;
 
 const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 	const out = {}, view = ${ JSON.stringify( view ) };
@@ -694,6 +780,21 @@ async function measure( point, query, how ) {
 		point.frame = path.relative( options.out, file );
 
 	}
+	if ( options.haze ) {
+
+		// the haze's view, its reads, then the point's own view back for the states after it
+		await run( HAZE_VIEW );
+		const ready = await waitForSettled( page, { timeout: options.timeout } );
+		if ( ready.signal !== false && ! ready.settled ) warnings.push( 'not settled in the haze view' );
+		const h = await run( hazeReadJs() );
+		point.hazeMedium = h.medium;
+		point.hazeOpacity = h.opacity;
+		point.hazePose = h.pose;
+		if ( h.outside.length ) point.hazeOutside = h.outside;
+		await run( viewJs( options.views[ 0 ] ) );
+		await waitForSettled( page, { timeout: options.timeout } );
+
+	}
 	// a share the code already makes exactly 0 or 1 everywhere needs no state of its own
 	const natural = ( n ) => n === 'hazeNight' ? undefined : q.weights?.[ `share.${ n }` ];
 	const is = ( n, x ) => natural( n ) === x;
@@ -781,6 +882,7 @@ const fileOf = ( weather, side ) => files[ `${ weather }-${ side }` ] ??= {
 	version: 1, tool: 'dusk-grid', sha, src: options.src, base, query: options.q, weather, side, weathers: options.weathers, sides: options.sides,
 	grid: { from: options.from, to: options.to, step: options.step, midnight: options.midnight, fine: options.fine, at: options.at, hours: options.hours, walk: options.walk },
 	views: options.views, split: splitNames, nightSplit: options.nightSplit, twilight: twilightNames, browser: capture.version, points: [],
+	...( options.haze ? { haze: { sky: options.hazeSky, distances: options.hazeDistances, height: HAZE_HEIGHT, pitch: HAZE_PITCH, fov: HAZE_FOV } } : {} ),
 };
 const save = ( weather, side ) => writeFileSync( path.join( options.out, `${ weather }-${ side }.json` ), JSON.stringify( fileOf( weather, side ), null, 1 ) );
 
@@ -982,6 +1084,21 @@ for ( const { weather, side } of plan ) {
 		}
 
 	} );
+	if ( options.haze ) {
+
+		// the haze's opacity, 1 - T per display channel: green, then red and blue
+		const rays = [ ...options.hazeSky.map( ( e ) => `sky ${ e }` ), ...options.hazeDistances.map( ( m ) => `level ${ m } m` ) ];
+		say( `haze opacity (1 - T, green; red / blue), the haze view at ${ HAZE_HEIGHT } m, pitch ${ HAZE_PITCH }, fov ${ HAZE_FOV }; medium items per point` );
+		say( `${ pad( 'e', 9 ) } ${ rays.map( ( r ) => pad( r, 19 ) ).join( ' ' ) } ${ pad( 'medium', 7 ) }` );
+		for ( const p of points ) {
+
+			if ( ! p.hazeOpacity ) continue;
+			const cell = ( r ) => { const x = p.hazeOpacity[ r ]; return x ? `${ x.opacity[ 1 ].toFixed( 4 ) } (${ x.opacity[ 0 ].toFixed( 3 ) }/${ x.opacity[ 2 ].toFixed( 3 ) })` : 'outside'; };
+			say( `${ pad( label_( p ), 9 ) } ${ rays.map( ( r ) => pad( cell( r ), 19 ) ).join( ' ' ) } ${ pad( Object.keys( p.hazeMedium ?? {} ).length, 7 ) }` );
+
+		}
+
+	}
 	for ( const p of points ) {
 
 		if ( p.void ) voids.push( `${ weather } ${ side } ${ label_( p ) }: ${ p.void }` );
@@ -1067,6 +1184,10 @@ if ( options.compare ) {
 	const tol = options.compareTolerance;
 	const c = [ `dusk-grid compare: ${ options.out } against ${ options.compare }; in [${ WINDOW.join( ', ' ) }] the CPU values and the weights must be bit for bit the same, the views' reads within ${ tol } relative` ];
 	let points = 0, identical = 0, windowOff = 0, viewNoise = 0;
+	// --haze: the medium bit for bit at every point both runs read it (the deck's two shares are
+	// listed, not judged: they are the light's), and the opacity's largest difference
+	const hazeUnjudged = [ 'key.deck', 'key.overcastDeck' ];
+	let hazePoints = 0, hazeOff = 0, hazeOpacity = { d: 0 };
 	for ( const f of Object.values( files ) ) {
 
 		const other = path.join( options.compare, `${ f.weather }-${ f.side }.json` );
@@ -1078,6 +1199,22 @@ if ( options.compare ) {
 			const q = them.get( p.key );
 			if ( ! q ) continue;
 			points ++;
+			if ( p.hazeMedium && q.hazeMedium ) {
+
+				hazePoints ++;
+				const keys = [ ...new Set( [ ...Object.keys( p.hazeMedium ), ...Object.keys( q.hazeMedium ) ] ) ];
+				const differ = keys.filter( ( k ) => JSON.stringify( p.hazeMedium[ k ] ) !== JSON.stringify( q.hazeMedium[ k ] ) );
+				const judged = differ.filter( ( k ) => ! hazeUnjudged.includes( k ) );
+				if ( judged.length ) hazeOff ++;
+				for ( const r of Object.keys( p.hazeOpacity ?? {} ) ) {
+
+					const a = p.hazeOpacity[ r ]?.opacity, b = q.hazeOpacity?.[ r ]?.opacity;
+					if ( a && b ) a.forEach( ( x, i ) => { if ( Math.abs( x - b[ i ] ) > hazeOpacity.d ) hazeOpacity = { d: Math.abs( x - b[ i ] ), at: `${ f.weather } ${ f.side } ${ label_( p ) } ${ r } ${ 'rgb'[ i ] }` }; } );
+
+				}
+				if ( differ.length ) c.push( `  ${ label_( p ) } haze medium: ${ differ.length } items differ${ judged.length ? ` (${ judged.length } judged: a violation)` : ' (the deck\'s shares only, not judged)' }: ${ differ.map( ( k ) => `${ k } ${ JSON.stringify( p.hazeMedium[ k ] ) } vs ${ JSON.stringify( q.hazeMedium[ k ] ) }` ).join( '; ' ) }` );
+
+			}
 			const off = [];
 			for ( const [ group, a, b ] of [ [ '', p.values, q.values ], [ 'w.', p.weights ?? {}, q.weights ?? {} ] ] ) for ( const k of Object.keys( a ) ) {
 
@@ -1102,11 +1239,12 @@ if ( options.compare ) {
 
 	}
 	c.push( `${ identical } of ${ points } points identical; ${ windowOff } differ in the window; the views' reads differ by at most ${ viewNoise.toExponential( 2 ) } relative` );
+	if ( hazePoints ) c.push( `haze medium: ${ hazePoints - hazeOff } of ${ hazePoints } points bit for bit the same (the deck's shares aside); the opacity differs by at most ${ hazeOpacity.d.toExponential( 2 ) }${ hazeOpacity.at ? ` (${ hazeOpacity.at })` : '' }` );
 	writeFileSync( path.join( options.out, 'compare.txt' ), c.join( '\n' ) + '\n' );
-	violations += windowOff;
-	compareFound = { points, identical, windowOff };
+	violations += windowOff + hazeOff;
+	compareFound = { points, identical, windowOff, hazePoints, hazeOff };
 
 }
 
-console.log( `dusk-grid: ${ done } points in ${ options.out } (lock waits ${ ( lockWaitMs / 1000 ).toFixed( 0 ) } s); ${ violations } violations (summary.txt), ${ voids.length } void, ${ pagesErrors.length } errors, ${ unsettled.length } unsettled${ compareFound ? `; compare: ${ compareFound.identical } of ${ compareFound.points } identical, ${ compareFound.windowOff } differ in [${ WINDOW.join( ', ' ) }]` : '' }` );
+console.log( `dusk-grid: ${ done } points in ${ options.out } (lock waits ${ ( lockWaitMs / 1000 ).toFixed( 0 ) } s); ${ violations } violations (summary.txt), ${ voids.length } void, ${ pagesErrors.length } errors, ${ unsettled.length } unsettled${ compareFound ? `; compare: ${ compareFound.identical } of ${ compareFound.points } identical, ${ compareFound.windowOff } differ in [${ WINDOW.join( ', ' ) }]${ compareFound.hazePoints ? `, haze medium differs at ${ compareFound.hazeOff } of ${ compareFound.hazePoints }` : '' }` : '' }` );
 process.exit( pagesErrors.length || unsettled.length ? 2 : violations ? 1 : 0 );

@@ -2643,6 +2643,9 @@ if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { lan
 	},
 	// where the yunpeng's clumps stand on the current land ( x, z, size per clump) and their lights
 	yunpengSites: () => ( { clumps: yunpeng.sites().flatMap( ( c ) => [ c.x, c.z, c.size ] ), lights: yunpeng.lights().map( ( l ) => ( { position: l.position.toArray(), intensity: l.intensity.toArray(), range: l.range } ) ) } ),
+	// the haze's key as the last frame set it (weather/HazeKeys.ts `hazeKeyAt`, `prepareHaze`): the
+	// medium's amount and shape, the light's weights, the deck's shares; read, never written
+	hazeKey,
 	// the ambient light's irradiance on open level ground, from the probes (debug/AmbientProbe.ts)
 	ambientProbe: async ( options?: Record<string, number> ) => ( await import( './debug/AmbientProbe.ts' ) ).ambientProbe( { renderer, heightAt: ( x, z ) => controls.ground.heightAt( x, z ), land: landBox }, options ),
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
