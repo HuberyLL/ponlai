@@ -444,7 +444,8 @@ function publishLighting(): void {
 	// three's sun: the direct key, the sky's, which the clouds' shadow cuts per point over the land's
 	// floor, the deck's key gain on that floor (Sky.ts `keyDirectVisibility`, OVERCAST_KEY_GAIN); the
 	// land's key (shared.landKey) and the sea's (shared.sunColor): both the sky's key, the sea's cut
-	// by the clouds' own transmittance (lighting/KeyCloud.ts)
+	// by the clouds' own transmittance over the land's floor (Sky.ts `seaKeyVisibility`,
+	// lighting/KeyCloud.ts)
 	const overcast = weather.skyMix[ 3 ] ?? 0;
 	sun.color.copy( sky.keyColor );
 	// how far the open key on the land is its floor's under a deck: the islanders read their cast
@@ -730,7 +731,7 @@ setLand( land, landOptions.step );
 const fields = new WorldFields( data, shared.shoreXform.value );
 // the sunlight the ground bounces up (lighting/GroundBounce.ts), which every lit material adds: so
 // installed before any of them builds; its map shares the wave maps' target
-const groundBounce = new GroundBounce( { renderer, shared, sunShadow, fields, soil: textures.soil, target: waveMaps.target, layer: waveMaps.bounceLayer, cloud: ( position ) => sky.keyDirectVisibility( position ), seaCloud: ( position ) => sky.cloudVisibility( position ) } );
+const groundBounce = new GroundBounce( { renderer, shared, sunShadow, fields, soil: textures.soil, target: waveMaps.target, layer: waveMaps.bounceLayer, cloud: ( position ) => sky.keyDirectVisibility( position ) } );
 installGroundBounce( groundBounce );
 const shoreWaves = new ShoreWaves( renderer, data, shared, fields.shore, fft, fields.floor );
 const walk = walkPoints( data.walk );
@@ -952,7 +953,7 @@ const stormSea = new StormSea( renderer, fft, shared, fields.shore, shoreWaves, 
 	sunDir: shared.sunDir, sunColor: shared.sunColor,
 	sky: shared.skyIrradianceSource.div( shared.skyFill.max( 1 ).sqrt() ),
 	// (after the resolve the spray tests the nearest surface, the sea's included: it has no depth buffer)
-	sunVisibility: ( p ) => sky.cloudVisibility( p ), opaqueDepth: AFTER_RESOLVE ? pipeline.surfaceRT.texture : pipeline.depthRT.texture,
+	sunVisibility: ( p ) => sky.seaKeyVisibility( p ), opaqueDepth: AFTER_RESOLVE ? pipeline.surfaceRT.texture : pipeline.depthRT.texture,
 } );
 water = new Water( {
 	fft, sky, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves,

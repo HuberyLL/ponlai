@@ -82,7 +82,8 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   into the displacement field the blades read, `Displacement.ts`, a frame-graph pass).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the key's visibility under cloud for the lit code without a sky (`KeyCloud.ts`: the land's floor
-  under a deck, the sea's own transmittance; the islanders and the light under the water read it),
+  under a deck, which the islanders read; the sea takes the same floor from the sky, `Sky.ts`
+  `seaKeyFloor`),
   the refracted sun under water, the light every submerged material shares (`Underwater.ts`: a new
   underwater material lights with it, as the terrain does), the air/water interface, sky occlusion,
   the meadow's canopy light and its crowns' shade (`MeadowCanopy.ts`), the ambient light's probes

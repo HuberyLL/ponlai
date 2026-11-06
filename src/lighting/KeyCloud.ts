@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { float, mix, select, uniform } from 'three/tsl';
+import { float, mix, uniform } from 'three/tsl';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -9,17 +9,16 @@ type V3 = THREE.Node<'vec3'>;
 // `shadow`, V) and the land's floor under a deck (Sky.ts `keyCloudFloor`, the weather's `deckFloor`
 // once a deck has taken over, on the moon's light by night as on the sun's by day). The land's key
 // keeps K = mix( floor, 1, V ) (Sky.ts `keyDirectVisibility`, three's sun through
-// `installOpenShadow`); the sea and what lies under it keep V alone, so the water drawn, the seabed
-// seen through it and the light under it are lit by the same key (the air under a deck keeps the
-// same floor of its own: Sky.ts `deckKeyFloor`, VolumetricHaze.ts `keyFloor`).
+// `installOpenShadow`), and the sea and what lies under it keep K too (Sky.ts `seaKeyVisibility`):
+// the sunlight a closed deck passes down and what a cumulus' shadow keeps of the key (Weather.ts
+// `cloudFloor`) reach the sea's surface as they reach the land, so the water drawn, the seabed seen
+// through it and the light under it (lighting/Underwater.ts, through three's sun) are lit by the
+// land's key (the air under a deck keeps the deck's floor alone: Sky.ts `deckKeyFloor`).
 // - The islanders (characters/CharacterMaterial.ts) read their cast shadow as the ratio of the key
 //   their shadow maps let through to the key in the open. Under a deck the open key is the land's
 //   K, so a figure under the floor's light reads lit and its cast shadow as a shadow: the open key
 //   moves from the sky's key to it by the deck's light (`keyDeckShare`, main.ts publishLighting:
 //   Weather.ts `deckLight`, 0 under a clear or a fair sky, whole under a deck by day).
-// - Under the water (lighting/Underwater.ts) the refracted key takes V in place of K
-//   (`keySeaShare`), so a submerged point keeps the sea's own visibility while the wet rock a trough
-//   bares keeps the land's.
 
 let keyCloud: ( ( position: V3 ) => F ) | null = null;
 let keyFloor: F | null = null;
@@ -51,16 +50,5 @@ export function keyLandVisibility( P: V3 ): F {
 
 	const readers = keyCloudReaders();
 	return readers ? mix( readers.floor, float( 1 ), readers.cloud( P ) ) : float( 1 );
-
-}
-
-/** The share of the land's key visibility the sea keeps at world position `P`: V / K, the
- * clouds' own transmittance over the land's (1 without a floor, where the two are one). */
-export function keySeaShare( P: V3 ): F {
-
-	const readers = keyCloudReaders();
-	if ( ! readers ) return float( 1 );
-	const V = readers.cloud( P ).toVar();
-	return select( readers.floor.greaterThan( 0 ), V.div( mix( readers.floor, float( 1 ), V ) ), float( 1 ) );
 
 }

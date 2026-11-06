@@ -327,8 +327,8 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // it is the direct key, so it takes the sun's map, the meadow's screen-space shade and the canopy's
 // light, and the island's cast shadows show under the deck (`castShadow` 1), soft because the sky's
 // light is the larger share. Under overcast the floor rides on the moon's light by night as on the
-// sun's by day, and the air under the deck keeps it too (Sky.ts `deckKeyFloor`); the water takes the
-// clouds' own transmittance. Overcast is a closed deck deep
+// sun's by day, and the air and the sea under the deck keep it too (Sky.ts `deckKeyFloor`,
+// `seaKeyVisibility`), the sea's glint only the direct beam. Overcast is a closed deck deep
 // enough that its disc does not show (Sky.ts `domeColour`): the land under it is even, its sky the
 // deck's own glow about the sun's place, which the land takes with the rest of the sky
 // (lighting/AmbientRelight.ts OVERCAST_LAND_UNIT, CLOUDY_LAND; under overcast its sun's bounce

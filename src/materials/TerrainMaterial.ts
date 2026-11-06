@@ -14,7 +14,6 @@ import { BARE_GROUND, GRASS_ROOTS, GRASS_SHADOW, meadowMean, rootsSky, meadowGro
 import { CROWN_SCALE, swardField } from '../world/SwardField.ts';
 import type { WaveMaps } from '../ocean/WaveMaps.ts';
 import { underwaterLight, UnderwaterLightingModel, type UnderwaterLight, type UnderwaterModelOptions } from '../lighting/Underwater.ts';
-import { keySeaShare } from '../lighting/KeyCloud.ts';
 import { TURF_CANOPY_DEPTH, meadowCanopyLight, meadowGroundLight } from '../lighting/MeadowCanopy.ts';
 import { puddleField, puddleRipples } from '../weather/Puddles.ts';
 import { seabedAlbedo } from './SeabedLook.ts';
@@ -1151,7 +1150,7 @@ function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, waveMaps: Wav
 
 	};
 
-	const light = underwaterLight( shared, waveMaps, { aboveSun: vec3( surf.get( 'canopy' ) ), specular: STONE_UNDER_WATER, seaKey: keySeaShare( positionWorld ) } );
+	const light = underwaterLight( shared, waveMaps, { aboveSun: vec3( surf.get( 'canopy' ) ), specular: STONE_UNDER_WATER } );
 	// the ambient volume (lighting/AmbientSample.ts): degree 2 on the plateau, the cliffs and the
 	// stones, under the water too (lighting/Underwater.ts). At degree 1
 	// the volume's directionality boost turns the light the lit meadow bounces up against level

@@ -55,8 +55,8 @@ import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 // does (a jump redraws the sun's map from scratch, and this map with it).
 //
 // The shading: irradiance = the key's colour x the cloud shadow (the land's key over the land's
-// floor, Sky.ts `keyDirectVisibility`; where the map holds the sea, the sea's key through the
-// clouds' own transmittance, as the water drawn takes it) x the map x the lower hemisphere's
+// floor, Sky.ts `keyDirectVisibility`, which the sea in the map takes too, as the water drawn does:
+// Sky.ts `seaKeyVisibility`) x the map x the lower hemisphere's
 // view factor of the normal ( ( 1 - N.y ) / 2 ) x a fade with the height over the bouncing surface
 // (none from a surface above the receiver: under the water the sea is above) x the self-shading of
 // a face turned away from a low key (it sees the ground its own object shades) x SURROUND (objects
@@ -135,11 +135,8 @@ export interface GroundBounceInputs {
 	target: THREE.RenderTarget;
 	layer: number;
 	// the land's cloud shadow on the key at a world point, over the weather's floor (Sky.ts
-	// `keyDirectVisibility`)
+	// `keyDirectVisibility`), the sea's too
 	cloud: ( position: V3 ) => F;
-	// the clouds' own transmittance of the key at a world point (Sky.ts `cloudVisibility`), for the
-	// sea's share of the map
-	seaCloud: ( position: V3 ) => F;
 }
 
 export class GroundBounce {
@@ -237,17 +234,7 @@ export class GroundBounce {
 			const L = shared.sunDir;
 			const Lh = L.xz.div( max( length( L.xz ), 1e-3 ) );
 			const selfShade = float( 1 ).sub( clamp( dot( N.xz, Lh ).negate(), 0, 1 ).mul( clamp( L.y.oneMinus(), 0, 1 ) ).mul( 0.6 ) );
-			// the key on the bouncing surface: the land's, or on the sea (the floor seen through the water,
-			// its surface at the sea's level) the sea's through the clouds' own transmittance, as the
-			// water drawn takes it, without the land's floor. Written as the land's times a
-			// factor that is exactly 1 where the two keys are one (a clear or a fair sky), never as a
-			// difference of the two, whose products a compiler may fuse into a rounding residue
-			const K = this.inputs.cloud( P ).toVar();
-			const V = this.inputs.seaCloud( P ).toVar();
-			const seaOverLand = select( K.equal( V ), float( 1 ), V.div( max( K, 1e-4 ) ) );
-			const seaShare = float( 1 ).sub( smoothstep( shared.waterLevel, shared.waterLevel.add( 0.1 ), s.w ) );
-			const key = float( 1 ).add( seaOverLand.sub( 1 ).mul( seaShare ) );
-			E.assign( s.rgb.mul( shared.landKey ).mul( K ).mul( key ).mul( view.mul( fade ).mul( selfShade ).mul( this.strength ).mul( SURROUND ) ) );
+			E.assign( s.rgb.mul( shared.landKey ).mul( this.inputs.cloud( P ) ).mul( view.mul( fade ).mul( selfShade ).mul( this.strength ).mul( SURROUND ) ) );
 
 		} );
 		return E;

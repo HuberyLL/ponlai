@@ -55,11 +55,15 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     (`sunLight`), the foam raised (`foamLight`), the water body in part (`bodyLight`), and the
 //     floor keeps its own sharp shadow; the moon's glint is grey (`keyChroma`), so its path on the
 //     sea stays pale rather than a sheet of the moon's saturated blue, which the water body keeps.
-//     The sea's key is the sky's (shared.sunColor) through the clouds' own transmittance, without
-//     the land's floor under a deck or a deck's gain (lighting/KeyCloud.ts), so the water drawn,
-//     the floor seen through it and the sea the ambient light bounces are lit by one key; under a
-//     deck that lets almost none of the direct beam through, the soft sheen toward the sun is the
-//     sky's reflection (the deck's glow about the sun's place is drawn in the sky), not a glitter road
+//     The sea's key is the land's (Sky.ts `seaKeyVisibility`, lighting/KeyCloud.ts): the sky's
+//     (shared.sunColor) through the clouds' own transmittance over the land's floor, the cumulus'
+//     and under a closed deck the deck's floor with its gain, the air's. The sunlight the deck
+//     passes down reaches the sea's surface as it reaches the land, so the water drawn, the
+//     floor seen through it and the sea the ambient light bounces are lit by one key, and the floor
+//     enters ahead of the surface, taking the key's share into the water, its refraction and its
+//     path down the column as the key does. The glint keeps the direct beam alone: under a deck
+//     that lets almost none of it through, the soft sheen toward the sun is the sky's reflection
+//     (the deck's glow about the sun's place is drawn in the sky), not a glitter road
 //   - exact dielectric Fresnel, its mean over the slopes no pixel resolves on the distant sea (a
 //     mirror's grazing reflectance is too much for a sheet of small facets turned every way): the
 //     facets the eye sees turn toward it, and other waves stop part of their reflected rays (Smith's
@@ -1021,7 +1025,9 @@ export class Water {
 			// ---- the key reaching the surface: through the clouds, on every path, and by the shadow's
 			// soft read from the vertex stage, whole here (the terms' shares: SHADOW_SOFT_RADIUS)
 			const cloudVisibility = sky.cloudVisibility( wp ).toVar();
-			const keyLight = shared.sunColor.mul( cloudVisibility ).toVar();
+			// the sea's key: the clouds' own over the land's floor (Sky.ts `seaKeyVisibility`, from the same
+			// read); the clouds' own alone is what the deck's gaps let through of the sky (`inAmb`)
+			const keyLight = shared.sunColor.mul( mix( sky.seaKeyFloor, float( 1 ), cloudVisibility ) ).toVar();
 			const sunLight = keyLight.mul( vKeyShadow ).toVar();
 			// the glint's: the key's direct beam alone, the light the cloud scatters on through being
 			// diffuse (Sky.ts `cloudDirectVisibility`)
