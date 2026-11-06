@@ -46,13 +46,14 @@ const METER_SKY = 1;
 const METER_FLOOR = 2 ** - 40;
 // What the bakes store, the cloud layer (`upperMat`, read by `layerAt`), the seen panoramas and the
 // environment's source (and so the environment's PMREM atlases, filtered from it): the radiance
-// times a power of two that each bake takes from the light on the clouds at its moment, the cloud
-// dome's own (Clouds.ts `storeLight`, PreExposure.ts `storeStops`: 2^11 at noon, 2^18 on a
-// moonlit night). Unscaled, a clear midnight's sky lay near 2^-18 (its first percentile) and its
-// layer near 2^-21, under half float's 2^-14, where the steps are coarse, and one fixed power of
-// two that lifts them and keeps a day's brightest under STORE_CEILING leaves too little room for a
-// night pressed darker (the debug press, PreExposure.ts `storePress`). A power of two, so
-// what lay in range keeps its bits, and every reader multiplies by its inverse, set with the store
+// times a power of two that each bake takes from the light on the clouds and the weather's skies at
+// its moment, worked out as the cloud dome's is (Clouds.ts `storeLight`, PreExposure.ts
+// `storeStops`, STORE_RANGE: the layer's `layerStops`, the panoramas' `panoramaStops`). Unscaled,
+// a clear midnight's sky lay near 2^-18 (its first percentile) and its layer near 2^-21, under
+// half float's 2^-14, where the steps are coarse, and one fixed power of two that lifts them and
+// keeps a day's brightest under STORE_CEILING leaves too little room for a night pressed darker
+// (the debug press, PreExposure.ts `storePress`). A power of two, so what lay in range keeps its
+// bits, and every reader multiplies by its inverse, set with the store
 // (`layerRead`, the panoramas' two sides in `samplePanorama`, the displayed environment's blend and
 // `environmentRead`, the source's for AmbientRelight.ts: `onEnvironmentSource`). It is worked out
 // from the scene's state, never read back and never from the frame's pre-exposure
@@ -146,7 +147,7 @@ interface SkyEndpoint {
 	// the distant sea's body as its bake lit it (SEA_KNEE): what the bake took and, read back with its
 	// deck irradiance, the radiance (`landSea`)
 	sea: { body: THREE.Color; night: THREE.Color; sun: number; knee: number; radiance: THREE.Color };
-	// the power of two its panorama is stored at (the bake's `storeStops`)
+	// the power of two its panorama is stored at (the bake's `panoramaStops`)
 	stops: number;
 }
 
@@ -725,6 +726,46 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 
 }
 
+// The range each store holds under the moon, per kept sky (KEPT_SKIES' order), in stops over the
+// luminance of the moonlight on the clouds (`storeLight`): the brightest value and the first
+// percentile (the cloud dome's and the layer's over the texels at least a tenth covered), as
+// measured over the kept weathers' nights at the defaults. Under the moon alone every store's
+// radiance follows the moonlight, so the range over it is the clouds' own: coverage and density
+// do not order it alone, the clouds' form does as much. A fair sky has the darkest thin edges (its
+// small heaps under the high shell); a cloudy sky the brightest moonlit sides (its large low
+// heaps); overcast's closed deck shows its dark base, the narrowest range. The panoramas' group
+// (the seen panoramas, the environment's source and its atlases) takes the sky's light too, its
+// darkest the open sky low down. A weather between skies takes the rows by its shares of them,
+// as its shell and form do (CLOUD_SKIES).
+const STORE_RANGE: Record<'dome' | 'layer' | 'panorama', readonly ( readonly [ number, number ] )[]> = {
+	dome: [ [ - 1.7, - 8.5 ], [ 0.2, - 11.8 ], [ 2.1, - 6.2 ], [ - 1.7, - 6.5 ] ],
+	layer: [ [ - 1.7, - 8.5 ], [ - 1.0, - 10.5 ], [ 2.1, - 6.3 ], [ - 1.8, - 6.2 ] ],
+	panorama: [ [ - 1.2, - 12.0 ], [ - 1.1, - 12.0 ], [ 2.4, - 8.0 ], [ 0.1, - 6.7 ] ],
+};
+// What a night's store must keep, stored (stops): its brightest under 2^13 (two stops under
+// STORE_CEILING), and its first percentile, were the night pressed 12 stops darker (the debug
+// press, PreExposure.ts `storePress`), over 2^-13, a stop over half float's 2^-14.
+const NIGHT_TOP = 13, NIGHT_FLOOR = - 13 + 12;
+
+/** Where the store `group`'s range sits best under the moon (stops over the light, PreExposure.ts
+ * `storeStops`): its estimated brightest and first percentile (STORE_RANGE, by the weather's
+ * shares of the kept skies) centred between NIGHT_FLOOR and NIGHT_TOP, so both keep the same
+ * margin. */
+function storeNight( group: keyof typeof STORE_RANGE, skyMix: readonly number[] | null ): number {
+
+	const rows = STORE_RANGE[ group ];
+	let top = 0, floor = 0;
+	for ( let s = 0; s < rows.length; s ++ ) {
+
+		const share = skyMix ? skyMix[ s ] ?? 0 : s === 0 ? 1 : 0;
+		top += share * rows[ s ][ 0 ];
+		floor += share * rows[ s ][ 1 ];
+
+	}
+	return ( NIGHT_TOP + NIGHT_FLOOR - top - floor ) / 2;
+
+}
+
 // The low sun's key. Through twenty air masses and more the atmosphere's transmittance (Atmosphere.ts,
 // its aerosol dimming the low sun by about half at the golden hour) still leaves the key too bright
 // under the lifted shading (lighting/KeyLift.ts): with the sun at 3 degrees the lit rock's whole face
@@ -1130,6 +1171,11 @@ export class Sky {
 	/** The power of two the environment's source is stored at, as its latest bake wrote it (for the
 	 * tools that read the source's texels). */
 	sourceStops = 0;
+	/** The powers of two the bakes' cloud layer and the panoramas (with the environment's source)
+	 * are stored at, set with the dome's by the clouds' light and the weather's skies
+	 * (trackClouds). */
+	layerStops = 18;
+	panoramaStops = 18;
 
 	private endpoints = [ makeEndpoint(), makeEndpoint() ];
 	// The environment's PMREM atlases: the one shown (environmentFront) and the next one.
@@ -2188,8 +2234,14 @@ export class Sky {
 		const moonLight = illuminance * 0.04 * moonGain * this.nightSkyLevel;
 		// The luminance of that light, for the stores' powers of two (PreExposure.ts `storeStops`),
 		// the sun's before the day sky's gain: under a closed deck what a bake holds brightest is the
-		// deck's base, which takes the sun through the cloud, not the day sky's share of it.
-		clouds.storeLight = ( sunUp ? sunY : 0 ) + moonLight * ( 0.65 * 0.2126 + 0.76 * 0.7152 + 0.0722 );
+		// deck's base, which takes the sun through the cloud, not the day sky's share of it. Under
+		// the moon each store's range follows the weather's clouds (`storeNight`).
+		const moonY = moonLight * ( 0.65 * 0.2126 + 0.76 * 0.7152 + 0.0722 );
+		clouds.storeLight = ( sunUp ? sunY : 0 ) + moonY;
+		const moonPart = clouds.storeLight > 0 ? moonY / clouds.storeLight : 0;
+		clouds.storeStops = storeStops( clouds.storeLight, moonPart, storeNight( 'dome', skyMix ) );
+		this.layerStops = storeStops( clouds.storeLight, moonPart, storeNight( 'layer', skyMix ) );
+		this.panoramaStops = storeStops( clouds.storeLight, moonPart, storeNight( 'panorama', skyMix ) );
 		const light = clouds.lightColor.value;
 		light.r += 0.65 * moonLight;
 		light.g += 0.76 * moonLight;
@@ -2352,11 +2404,12 @@ export class Sky {
 	private renderPanoramas( bake: Bake ): void {
 
 		const { state } = bake;
-		// The bake's power of two, the cloud dome's at this moment (see the stores above): the
-		// layer is written and read within the bake, the panoramas keep theirs with them.
-		const stops = storeStops( this.clouds.storeLight );
-		this.layerStore.value = 2 ** stops * storePress.store.value;
-		this.layerRead.value = 2 ** - stops * storePress.read.value;
+		// The bake's powers of two, the layer's and the panoramas' at this moment (trackClouds, see
+		// the stores above): the layer is written and read within the bake, the panoramas keep
+		// theirs with them.
+		const layer = this.layerStops, stops = this.panoramaStops;
+		this.layerStore.value = 2 ** layer * storePress.store.value;
+		this.layerRead.value = 2 ** - layer * storePress.read.value;
 		state.stops = stops;
 		if ( ! this.initialized ) this.endpoints[ 1 ].stops = stops;
 		this.sourceStops = stops;

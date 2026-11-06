@@ -29,7 +29,7 @@ import { tune, tuneUniform } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 import { HazeMedium } from '../weather/HazeDepth.ts';
 import { SUN_SETTING_RADIUS } from '../lighting/Radiometry.ts';
-import { HALF_MAX, STORE_CEILING, preExposure, storePress, storeStops } from '../post/PreExposure.ts';
+import { HALF_MAX, STORE_CEILING, preExposure, storePress } from '../post/PreExposure.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -239,15 +239,16 @@ export const EARTH_RADIUS = 6_360_000;
 // cloudy and overcast take a deck of their own, lower (`setDeck`).
 export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
 // What the panorama stores is the radiance times a power of two that follows the clouds' light
-// (`storeLight`, PreExposure.ts `storeStops`: 2^11 at noon, 2^18 on a moonlit night): unscaled, a
-// clear midnight's panorama has its first percentile near 2^-21 (2^-16 over the texels at least a
-// tenth covered), under half float's 2^-14, where its steps are wide enough to show as dark flecks
+// and the weather's skies (`storeStops`, set by Sky.ts trackClouds: 2^11 at noon, 2^16 to 2^20 on
+// a moonlit night, by how far the weather's clouds spread the night's range; PreExposure.ts
+// `storeStops`, Sky.ts STORE_RANGE): unscaled, a clear midnight's panorama has its first
+// percentile near 2^-21 (2^-16 over the texels at least a tenth covered), under half float's 2^-14, where its steps are wide enough to show as dark flecks
 // once exposed, and no one fixed scale keeps a cloudy noon's brightest and a darker night's
 // thinnest both in range. A power of two, so what lay in range keeps its bits. The panorama is
 // refreshed a share per frame and kept for the frames between, so its scale is the light's and not
 // the frame's pre-exposure (the view takes that: see the rules above), and when the light's power
 // of two changes, the whole panorama is written again under the new one in that frame, ahead of
-// its readers (`domeStops`: about once a stop through a dusk). Its writes are held at
+// its readers (`domeStops`: twelve to seventeen times through a dusk, by the weather). Its writes are held at
 // STORE_CEILING. Lightning's light is stored apart and bare (its reach is far above this range's
 // top).
 // What the view stores over the pre-exposed radiance: by day P runs 1 to 3, and at that scale the
@@ -898,9 +899,11 @@ export class Clouds {
 	// `sampleView` takes) and the ratio the resolve takes the reprojected history by: this
 	// dispatch's scale over the scale of the history it reads (see the rules in the header).
 	private readonly historyScale = [ 1, 1 ];
-	/** The luminance of the light the clouds take, for the stores' powers of two (Sky.ts
-	 * trackClouds; PreExposure.ts `storeStops`). */
+	/** The luminance of the light the clouds take, for the stores' powers of two, and the
+	 * panorama's power of two for that light and the weather's skies (Sky.ts trackClouds;
+	 * PreExposure.ts `storeStops`). */
 	storeLight = 0;
+	storeStops = 18;
 	// The panorama's power of two (stops) and its scale, written and read back (`sample`).
 	private domeStops = Number.NaN;
 	private readonly domeStore = uniform( 1 );
@@ -2309,7 +2312,7 @@ export class Clouds {
 		// The panorama's power of two for the clouds' light now: a new one writes every phase again
 		// in this frame (the view and the shadow map keep their own), so its texels and its readers
 		// always share one.
-		const stops = storeStops( this.storeLight );
+		const stops = this.storeStops;
 		const restore = stops !== this.domeStops;
 		if ( restore ) {
 

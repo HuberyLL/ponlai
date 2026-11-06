@@ -108,26 +108,31 @@ export const HALF_MAX = 65504;
  * scale's range stays finite and keeps the stop below it. */
 export const STORE_CEILING = 2 ** 15;
 
-/** Where the light that lights a bake is stored (stops), and the most a bake's power of two goes to
- * (`storeStops`). */
-const STORE_LEVEL = 10, STORE_STOPS_MAX = 18;
+/** Where the sun's light on the clouds is stored (stops). */
+const STORE_LEVEL = 10;
+/** A store's power of two without a light on the clouds (after sunset, while only the afterglow
+ * lights them, until the moon's light comes in), and the most it takes under a light (as the
+ * moon's comes in, its light is still far under a night's). The afterglow keeps its brightest
+ * under 2^13 at either: under the first as the sun's light leaves the clouds, under the second as
+ * the moon's reaches them, the afterglow by then faded a few stops more. */
+const STORE_STOPS_DARK = 18, STORE_STOPS_MAX = 20;
 
-/** The power of two (stops) the sky's bakes and the clouds' panorama store their radiance at, for
- * `light`, the luminance of the light the clouds take (Sky.ts trackClouds: the sun's above their
- * tops while it lights them, and their moonlight with its gains): the light itself is stored near
- * 2^STORE_LEVEL, so what a bake holds keeps its place in half float from a cloudy noon (2^11) to a
- * moonless night. Without that light (after sunset, while only the afterglow lights the sky, until
- * the moon's light comes in) it stays at STORE_STOPS_MAX, a moonlit night's. Over the kept
- * weathers and every hour a bake's brightest then stays under 2^13 and its first percentile over
- * 2^-10, and at night, pressed 12 stops darker, over half float's 2^-14: a stop or more over it,
- * but for a fair night's thinnest cloud edges in the clouds' panorama, half a stop over it, and
- * the panoramas at -12 degrees before dawn, a third of a stop. The light is the same in every
- * weather at night, so one power of two serves a cloudy night's brightest and a fair night's
- * thinnest. A function of the scene's state alone: never of the exposure, or of what a store held
- * before. */
-export function storeStops( light: number ): number {
+/** The power of two (stops) a store of the sky's bakes or the clouds' panorama holds its radiance
+ * at (Sky.ts trackClouds), for `light`, the luminance of the light the clouds take (the sun's above
+ * their tops while it lights them, and their moonlight with its gains), `moonShare`, the moon's
+ * share of it, and `night`, where that store's range sits best under the moon (stops over the
+ * light: Sky.ts `storeNight`, from the weather's clouds). By day the light itself is stored near
+ * 2^STORE_LEVEL, which keeps the brightest a day holds (a cloudy noon's cumulus) under 2^13; under
+ * the moon the store's range is centred in what a night must keep, by the moon's share between the
+ * two. Over the kept weathers and every hour a store's brightest then stays under 2^13 and its
+ * first percentile over 2^-8, and at night (the fronts between the kept skies' nights too),
+ * pressed 12 stops darker, over 2^-13, a stop over half float's 2^-14. A function of the scene's state alone: never of the exposure, or of what a store
+ * held before. */
+export function storeStops( light: number, moonShare: number, night: number ): number {
 
-	return light > 0 ? Math.min( STORE_STOPS_MAX, Math.round( STORE_LEVEL - Math.log2( light ) ) ) : STORE_STOPS_MAX;
+	if ( ! ( light > 0 ) ) return STORE_STOPS_DARK;
+	const level = STORE_LEVEL + ( night - STORE_LEVEL ) * moonShare;
+	return Math.min( STORE_STOPS_MAX, Math.round( level - Math.log2( light ) ) );
 
 }
 
