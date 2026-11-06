@@ -2751,10 +2751,12 @@ export class Sky {
 
 	/** The key's visibility on the sea at a world position: the land's (`keyDirectVisibility`), the
 	 * clouds' own over the land's floor (`seaKeyFloor`). The sunlight a closed deck passes down and
-	 * what a cumulus' shadow keeps of the key reach the sea's surface as they reach the land: the
-	 * water body, its foam and its meter take it, and the light under the water and the sea the
-	 * ground's bounce and the probes see take the land's own, which it is. Where the land has no
-	 * floor (a clear or a fair sky, a cloudy one by day) it is `cloudVisibility`. */
+	 * what a cumulus' shadow keeps of the key reach the sea's surface as they reach the land. The
+	 * storm sea calls it; the water body and its foam build the same value from `seaKeyFloor` and
+	 * keep `cloudVisibility` for their metering illuminance (ocean/Water.ts); the light under the
+	 * water and the sea the ground's bounce and the probes see take the land's own, which it is.
+	 * Where the land has no floor (a clear or a fair sky, a cloudy one by day) it is
+	 * `cloudVisibility`. */
 	seaKeyVisibility( worldPosition: V3 ): F {
 
 		return this.keyDirectVisibility( worldPosition );
