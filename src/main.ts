@@ -244,10 +244,10 @@ const numberParam = ( name: string, fallback: number, options = params ) => {
 // The scene a query's options set: the weather (held when one is asked for, else evolving on its
 // own), the day clock and its preset, the scene clock and the cloud override. The load reads its
 // own query with it, and a scene jump (`establishScene`) the query it is given, so the two agree.
-// A 48-minute day, as in many open-world games: slow enough to watch the light and the stars
-// turn. The game's day is 24 minutes at 1x, so a day's work and its evening fit one sitting.
-// The default first-quarter moon lights the evening and sets at midnight, leaving the small
-// hours dark enough for the Milky Way. The game starts at 8 (see Game.ts), so the sky is lit
+// A 48-minute day, as in many open-world games: slow enough to watch the light change. The game's
+// day is 24 minutes at 1x, so a day's work and its evening fit one sitting. The moon (a full one
+// by default) and the stars stand fixed in the sky (DayCycle.ts MOON, STARS); the phase shapes only
+// the drawn moon. The game starts at 8 (see Game.ts), so the sky is lit
 // once for that hour. A parked weather (Weather.ts `PARKED_WEATHER`) is refused outside a debug
 // build and falls back to fair; the load and a scene jump read it here alike, and so does ?game,
 // whose weather is the page's. The wind (Weather.ts) takes `wind` (a level) and `windDir` (a
