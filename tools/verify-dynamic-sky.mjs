@@ -77,8 +77,6 @@ try {
 	};
 	const snapshot = () => page.evaluate( async () => {
 		const s = window.__PONLAI__, sky = s.sky;
-		// (the environment's atlases store the radiance times PANORAMA_STORE, which its intensity divides out)
-		const { PANORAMA_STORE } = await import( '/src/sky/Sky.ts' );
 		const pixels = await s.renderer.readRenderTargetPixelsAsync( sky.small, 0, 0, sky.small.width, sky.small.height );
 		const gpuIrradiance = await s.renderer.readRenderTargetPixelsAsync( sky.irradianceDisplay, 0, 0, 1, 1 );
 		let minimum = Infinity, maximum = - Infinity, finite = true, samples = 0;
@@ -106,7 +104,9 @@ try {
 			gpuIrradiance: Array.from( gpuIrradiance.slice( 0, 3 ) ),
 			sunIntoWater: s.shared.sunIntoWater.value, muSun: s.shared.muSun.value,
 			exposure: s.pipeline.settings.exposure,
-			environmentFill: s.scene.environmentIntensity * PANORAMA_STORE,
+			// (the environment's atlases store the radiance at a power of two, which its intensity
+			// divides out with the fill: Sky.ts `environmentRead`)
+			environmentFill: s.scene.environmentIntensity / sky.environmentRead,
 			environmentMatches: Boolean( sky.envMap && s.scene.environment === sky.envMap.texture ),
 			radiance: { finite, minimum, maximum, samples, mean: mean.map( ( value ) => value / Math.max( samples, 1 ) ) },
 			memory: { ...s.renderer.info.memory },

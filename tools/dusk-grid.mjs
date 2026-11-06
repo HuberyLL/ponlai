@@ -462,8 +462,9 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 
 			const t = sky.reflectionSource?.texture, b = t && s.renderer.backend.get( t );
 			if ( ! b?.texture || b.textureDescriptorGPU.format !== 'rgba16float' ) return null;
-			// (the source stores the radiance times PANORAMA_STORE)
-			const store = ( await load( '/src/sky/Sky.ts' ) ).PANORAMA_STORE ?? 1;
+			// (the source stores the radiance times its bake's power of two, an older page's times
+			// PANORAMA_STORE)
+			const store = sky.sourceStops !== undefined ? 2 ** sky.sourceStops : ( await load( '/src/sky/Sky.ts' ) ).PANORAMA_STORE ?? 1;
 			const W = t.image.width, H = t.image.height, y = ( deg / 180 + 0.5 ) * H - 0.5, y0 = Math.floor( y ), f = y - y0;
 			const half = await s.renderer.backend.textureUtils.copyTextureToBuffer( t, 0, y0, W, 2, 0 ), row = Math.ceil( W * 8 / 256 ) * 128;
 			const h = ( i ) => { const e = ( i >> 10 ) & 31, m = i & 1023; return ( i >> 15 ? - 1 : 1 ) * ( e === 0 ? m * 2 ** - 24 : ( 1 + m / 1024 ) * 2 ** ( e - 15 ) ); };

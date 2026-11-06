@@ -12,7 +12,7 @@ import GUI from 'lil-gui';
 import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraControls.ts';
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
-import { PANORAMA_STORE, Sky } from './sky/Sky.ts';
+import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, duskForce, nightAmbientShare, sunRising, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckLight, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, type TunedField, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
@@ -90,7 +90,7 @@ import type { LatentRegistry } from './post/graph/FrameGraph.ts';
 import { MOTION_CLASS, motionCheck, motionState, motionUniforms, onTaaCut, taaCut } from './post/Motion.ts';
 import { jitter } from './post/Jitter.ts';
 import { restEpoch } from './post/TemporalRest.ts';
-import { PRE_EXPOSURE_PENDING, preExposure, storePress } from './post/PreExposure.ts';
+import { PRE_EXPOSURE_PENDING, preExposure } from './post/PreExposure.ts';
 import { sceneEvent } from './post/SceneEvents.ts';
 import { TemporalAA, type TemporalFrame } from './post/TemporalAA.ts';
 import { watchPipelines, type SettleFrame } from './post/Settled.ts';
@@ -358,10 +358,20 @@ function reloadWithQuality( tier: QualityTier | null ): void {
 }
 applySkyQuality();
 scene.add( sky.dome, sky.lightning.group );
-// (the environment's atlases store the sky's radiance times PANORAMA_STORE, under the debug press
-// `storePress`: its intensity divides it back out, so a fill of 1 lights as the sky stands)
-scene.environmentIntensity = storePress.read.value / PANORAMA_STORE;
 const lighting = { skyFill: 1 };
+// The environment's intensity: the fill times what takes the displayed environment's texels to
+// scene units (its atlases store the sky's radiance at a power of two, under the debug press:
+// Sky.ts `environmentRead`), so a fill of 1 lights as the sky stands. A bake that publishes after
+// the frame set it sets it again, before the frame renders (`onEnvironmentStore`).
+let environmentFill = 1;
+function applyEnvironmentFill( fill: number ): void {
+
+	environmentFill = fill;
+	scene.environmentIntensity = fill * sky.environmentRead;
+
+}
+applyEnvironmentFill( 1 );
+sky.onEnvironmentStore = () => applyEnvironmentFill( environmentFill );
 
 const sun = new THREE.DirectionalLight( 0xffffff, 1 );
 sun.castShadow = true;
@@ -572,7 +582,7 @@ const setWind = async ( choice: WindChoice, seconds = 20 ) => {
 function applySkyFill(): void {
 
 	// One artistic fill gain drives PBR ambient, water scattering and sky reflections alike.
-	scene.environmentIntensity = lighting.skyFill * storePress.read.value / PANORAMA_STORE;
+	applyEnvironmentFill( lighting.skyFill );
 	shared.skyFill.value = lighting.skyFill;
 	shared.skyIrradiance.value.set( sky.skyIrradiance.r, sky.skyIrradiance.g, sky.skyIrradiance.b ).multiplyScalar( lighting.skyFill );
 	if ( water ) water.uniforms.reflection.value = lighting.skyFill;
@@ -584,7 +594,7 @@ let water: Water | undefined;
 // the sky's harmonics for the ambient light's relight (lighting/AmbientRelight.ts), projected from
 // every bake's environment source from the first on
 const ambientSky = new AmbientSky( renderer );
-sky.onEnvironmentSource = ( source, atlases ) => ambientSky.project( source, atlases );
+sky.onEnvironmentSource = ( source, atlases, read ) => ambientSky.project( source, atlases, read );
 
 setStatus( 'Lighting the sky…' );
 await refreshEnvironment();
@@ -1947,7 +1957,7 @@ function tick( time: number ): void {
 	// radiance to the sky's, so a flash that barely shows by day floods a dark night.
 	const skyLuma = sky.skyIrradiance.r * 0.2126 + sky.skyIrradiance.g * 0.7152 + sky.skyIrradiance.b * 0.0722;
 	const strikeFill = lighting.skyFill * Math.min( 1 + sky.lightning.fill / Math.max( skyLuma, 1e-5 ), 60 );
-	scene.environmentIntensity = strikeFill * storePress.read.value / PANORAMA_STORE;
+	applyEnvironmentFill( strikeFill );
 	shared.skyFill.value = strikeFill;
 	shared.skyIrradiance.value.set( sky.skyIrradiance.r, sky.skyIrradiance.g, sky.skyIrradiance.b ).multiplyScalar( strikeFill );
 	// the page's own wetness, in the game too (soaking and drying on the day clock)

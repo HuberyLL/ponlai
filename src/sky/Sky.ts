@@ -44,25 +44,21 @@ const DISC_SAMPLES = 32;
 // luminance whose log the mean takes (scene units: far below a moonless night's sky).
 const METER_SKY = 1;
 const METER_FLOOR = 2 ** - 40;
-/** What the seen panoramas and the environment's source (and so the environment's PMREM atlases,
- * filtered from it) store: the radiance times this. Unscaled, a clear midnight's sky lay near
- * 2^-18 (its first percentile), under half float's 2^-14, where the steps are coarse. A power of
- * two, so what lay in range keeps its bits, and every reader divides it back out
- * (`samplePanorama`, the environment's intensity in main.ts, AmbientRelight.ts's projection). These
- * are baked, so the scale is fixed and not the frame's pre-exposure (PreExposure.ts), which would
- * ask for a rebake at every change of the exposure. The brightest of the day (an overcast noon's)
- * is stored about 1.5 stops under STORE_CEILING, where every write of it is held. The irradiance
- * probe's panorama (`small`, single float) stores the radiance as it is. */
-export const PANORAMA_STORE = 2 ** 14;
-// What the bakes' cloud layer (`upperMat`, read by `layerAt`) stores: its radiance times a power
-// of two that each bake takes from the light on the clouds at its moment, the cloud dome's own
-// (Clouds.ts `storeLight`, PreExposure.ts `storeStops`: 2^11 at noon, 2^18 on a moonlit night),
-// set with its inverse for the bake that writes and reads it. The clouds' light at night lies
-// lower than the sky's: unscaled, a clear midnight's layer has its first percentile near 2^-21
-// (2^-16 over the texels at least a tenth covered), under half float's 2^-14, and one fixed power
-// of two that lifts it and keeps a low sun's lit edges under STORE_CEILING leaves too little room
-// for a night pressed darker (the debug press, PreExposure.ts `storePress`). It is worked out from
-// the scene's state, never read back and never from the frame's pre-exposure.
+// What the bakes store, the cloud layer (`upperMat`, read by `layerAt`), the seen panoramas and the
+// environment's source (and so the environment's PMREM atlases, filtered from it): the radiance
+// times a power of two that each bake takes from the light on the clouds at its moment, the cloud
+// dome's own (Clouds.ts `storeLight`, PreExposure.ts `storeStops`: 2^11 at noon, 2^18 on a
+// moonlit night). Unscaled, a clear midnight's sky lay near 2^-18 (its first percentile) and its
+// layer near 2^-21, under half float's 2^-14, where the steps are coarse, and one fixed power of
+// two that lifts them and keeps a day's brightest under STORE_CEILING leaves too little room for a
+// night pressed darker (the debug press, PreExposure.ts `storePress`). A power of two, so
+// what lay in range keeps its bits, and every reader multiplies by its inverse, set with the store
+// (`layerRead`, the panoramas' two sides in `samplePanorama`, the displayed environment's blend and
+// `environmentRead`, the source's for AmbientRelight.ts: `onEnvironmentSource`). It is worked out
+// from the scene's state, never read back and never from the frame's pre-exposure
+// (PreExposure.ts), which would ask for a rebake at every change of the exposure; a scene's bake
+// takes the same power whatever came before it. The irradiance probe's panorama (`small`, single
+// float) stores the radiance as it is.
 
 type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed' | 'windDirection'>;
 
@@ -150,6 +146,8 @@ interface SkyEndpoint {
 	// the distant sea's body as its bake lit it (SEA_KNEE): what the bake took and, read back with its
 	// deck irradiance, the radiance (`landSea`)
 	sea: { body: THREE.Color; night: THREE.Color; sun: number; knee: number; radiance: THREE.Color };
+	// the power of two its panorama is stored at (the bake's `storeStops`)
+	stops: number;
 }
 
 // One bake: its endpoint, whether it is explicit (reads its irradiance back and shows at once),
@@ -216,6 +214,7 @@ function makeEndpoint(): SkyEndpoint {
 		version: 0,
 		irradiance: new THREE.Color( 0, 0, 0 ),
 		sea: { body: new THREE.Color(), night: new THREE.Color(), sun: 0, knee: 1, radiance: new THREE.Color() },
+		stops: 0,
 	};
 
 }
@@ -1121,8 +1120,16 @@ export class Sky {
 	 * radiance without the sun's disk), with the atlases it will be filtered into: both on a first
 	 * bake, the one not shown on a bake that refreshes the environment, none otherwise. An atlas
 	 * written is at weight 0 in the cross-fade until the bake publishes. For the ambient light's
-	 * relight (lighting/AmbientRelight.ts), which keeps its own copy of each atlas's sky. */
-	onEnvironmentSource: ( ( source: THREE.Texture, atlases: readonly number[] ) => void ) | null = null;
+	 * relight (lighting/AmbientRelight.ts), which keeps its own copy of each atlas's sky. `read`
+	 * takes the source's texels to scene units (its store's power of two and the debug press
+	 * divided out). */
+	onEnvironmentSource: ( ( source: THREE.Texture, atlases: readonly number[], read: number ) => void ) | null = null;
+	/** Called when a bake publishes, when `environmentRead` may have changed: the environment's
+	 * intensity takes it in the same frame as the displayed environment it reads. */
+	onEnvironmentStore: ( () => void ) | null = null;
+	/** The power of two the environment's source is stored at, as its latest bake wrote it (for the
+	 * tools that read the source's texels). */
+	sourceStops = 0;
 
 	private endpoints = [ makeEndpoint(), makeEndpoint() ];
 	// The environment's PMREM atlases: the one shown (environmentFront) and the next one.
@@ -1206,13 +1213,23 @@ export class Sky {
 	private ambientGain = uniform( 1 );
 	private irradiancePass = uniform( 0 );
 	private includeStars = uniform( 0 );
-	// the bake's store toward its target (PANORAMA_STORE, under the debug press PreExposure.ts
+	// the bake's store toward its target (its power of two, under the debug press PreExposure.ts
 	// `storePress`; 1 for the irradiance probe's panorama)
-	private bakeStore = uniform( PANORAMA_STORE );
+	private bakeStore = uniform( 1 );
 	// the bake's cloud layer's store and its inverse, set together for the bake that writes and
-	// reads it (see the layer's store above)
+	// reads it (see the stores above)
 	private layerStore = uniform( 1 );
 	private layerRead = uniform( 1 );
+	// the inverse stores of the seen panoramas' two sides (`samplePanorama`), set with their
+	// textures (publishBake)
+	private panoramaReadA = uniform( 1 );
+	private panoramaReadB = uniform( 1 );
+	// The powers of two of the environment's two atlases, as filtered from the source, and the
+	// displayed environment's gain on its first atlas, which takes it to the second's store
+	// (publishBake: the displayed environment is stored at the second's power, `environmentRead`).
+	private environmentStops: [ number, number ] = [ 0, 0 ];
+	private environmentGainA = uniform( 1 );
+	private environmentReadValue = 1;
 	// The night sky's own light at this frame's exposure (DayCycleSnapshot.nightSkyLevel).
 	private nightSkyLevel = 1;
 	private bakeStarVisibility = uniform( 0 );
@@ -1663,6 +1680,10 @@ export class Sky {
 	/** The distant sea's body radiance, the environment's lower half, as the latest bake lit it (read
 	 * back with its deck irradiance: `landSea`). */
 	get seaRadiance(): THREE.Color { return this.seaLight; }
+
+	/** What the displayed environment's texels take to scene units, for the environment's
+	 * intensity (its store's power of two and the debug press divided out; `onEnvironmentStore`). */
+	get environmentRead(): number { return this.environmentReadValue; }
 
 	get environmentNode(): V3 {
 
@@ -2331,11 +2352,15 @@ export class Sky {
 	private renderPanoramas( bake: Bake ): void {
 
 		const { state } = bake;
-		// The bake's power of two, the cloud dome's at this moment: the layer is written and read
-		// within the bake.
+		// The bake's power of two, the cloud dome's at this moment (see the stores above): the
+		// layer is written and read within the bake, the panoramas keep theirs with them.
 		const stops = storeStops( this.clouds.storeLight );
 		this.layerStore.value = 2 ** stops * storePress.store.value;
 		this.layerRead.value = 2 ** - stops * storePress.read.value;
+		state.stops = stops;
+		if ( ! this.initialized ) this.endpoints[ 1 ].stops = stops;
+		this.sourceStops = stops;
+		for ( const atlas of this.initialized ? bake.environment !== null ? [ bake.environment ] : [] : [ 0, 1 ] ) this.environmentStops[ atlas ] = stops;
 		const r = this.renderer, prev = r.getRenderTarget();
 		try {
 
@@ -2358,7 +2383,7 @@ export class Sky {
 			for ( const rt of panoramas ) {
 
 				this.irradiancePass.value = rt === this.small ? 1 : 0;
-				this.bakeStore.value = rt === this.small ? 1 : PANORAMA_STORE * storePress.store.value;
+				this.bakeStore.value = rt === this.small ? 1 : 2 ** stops * storePress.store.value;
 				this.includeStars.value = rt === this.small || rt === this.reflectionSource ? 1 : 0;
 				// Only the environment's source takes the island's light after sunset (ISLAND_SKY).
 				const lends = rt === this.reflectionSource;
@@ -2390,7 +2415,7 @@ export class Sky {
 			r.setRenderTarget( prev );
 
 		}
-		this.onEnvironmentSource?.( this.reflectionSource.texture, this.initialized ? bake.environment !== null ? [ bake.environment ] : [] : [ 0, 1 ] );
+		this.onEnvironmentSource?.( this.reflectionSource.texture, this.initialized ? bake.environment !== null ? [ bake.environment ] : [] : [ 0, 1 ], 2 ** - stops * storePress.read.value );
 
 	}
 
@@ -2557,6 +2582,8 @@ export class Sky {
 		}
 		this.panoramaA.value = previous.equirect.texture;
 		this.panoramaB.value = displayedNext.equirect.texture;
+		this.panoramaReadA.value = 2 ** - previous.stops * storePress.read.value;
+		this.panoramaReadB.value = 2 ** - displayedNext.stops * storePress.read.value;
 		this.irradianceA.value = previous.irradianceMap.texture;
 		this.irradianceB.value = displayedNext.irradianceMap.texture;
 		this.clearIrradianceA.value = previous.clearIrradianceMap.texture;
@@ -2568,6 +2595,13 @@ export class Sky {
 		const shown = this.environments[ this.environmentFront ]!;
 		const nextEnvironment = ! this.initialized ? this.environments[ 1 ]! : bake.environment !== null ? this.environments[ bake.environment ]! : shown;
 		this.environmentPair = [ this.environmentFront, ! this.initialized ? 1 : bake.environment ?? this.environmentFront ];
+		// the displayed environment at the second atlas's power of two (measured at most two stops
+		// over the first, in a front between the kept skies through the twilight, and never apart
+		// over a jump of the clock from noon to midnight: so a store's brightest, under 2^13, stays
+		// in half float through the fade)
+		const [ stopsA, stopsB ] = this.environmentPair.map( ( atlas ) => this.environmentStops[ atlas ] );
+		this.environmentGainA.value = 2 ** ( stopsB - stopsA );
+		this.environmentReadValue = 2 ** - stopsB * storePress.read.value;
 		if ( this.initialized && bake.environment !== null ) this.environmentFront = bake.environment;
 		if ( ! this.environmentA || ! this.environmentB ) {
 
@@ -2583,9 +2617,11 @@ export class Sky {
 			blendMat.depthWrite = false;
 			blendMat.toneMapped = false;
 			// Convolution is linear. Blending the already filtered atlases once keeps terrain
-			// within WebGPU's portable 16-texture limit instead of doubling every IBL sample.
-			blendMat.fragmentNode = mix( this.environmentA.sample( uv() ).level( float( 0 ) ),
-				this.environmentB.sample( uv() ).level( float( 0 ) ), this.blend );
+			// within WebGPU's portable 16-texture limit instead of doubling every IBL sample. (The
+			// first atlas taken to the second's power of two first: both stored as powers of two,
+			// the gain loses no bits.)
+			const a = this.environmentA.sample( uv() ).level( float( 0 ) ), b = this.environmentB.sample( uv() ).level( float( 0 ) );
+			blendMat.fragmentNode = vec4( mix( a.rgb.mul( this.environmentGainA ), b.rgb, this.blend ), mix( a.a, b.a, this.blend ) );
 			this.environmentBlendQuad = new THREE.QuadMesh( blendMat );
 			this.environment = pmremTexture( this.envMap.texture );
 
@@ -2603,6 +2639,7 @@ export class Sky {
 		this.initialized = true;
 		this.publish( this.blend.value );
 		if ( this.transitionDuration === 0 ) this.front = this.destination;
+		this.onEnvironmentStore?.();
 
 	}
 
@@ -2724,13 +2761,13 @@ export class Sky {
 
 	}
 
-	// The seen panorama toward `direction`, its radiance in scene units (PANORAMA_STORE and the debug
-	// press divided out).
+	// The seen panorama toward `direction`, its radiance in scene units (each side's power of two and
+	// the debug press divided out before the cross-fade: two bakes may store at two powers).
 	private samplePanorama( direction: V3, mip: F ): V4 {
 
 		const q = dirToEquirect( direction );
-		const stored = mix( this.panoramaA.sample( q ).level( mip ), this.panoramaB.sample( q ).level( mip ), this.blend ).toVar();
-		return vec4( stored.rgb.mul( 1 / PANORAMA_STORE ).mul( storePress.read ), stored.a );
+		const a = this.panoramaA.sample( q ).level( mip ).toVar(), b = this.panoramaB.sample( q ).level( mip ).toVar();
+		return vec4( mix( a.rgb.mul( this.panoramaReadA ), b.rgb.mul( this.panoramaReadB ), this.blend ), mix( a.a, b.a, this.blend ) );
 
 	}
 

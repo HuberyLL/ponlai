@@ -10,8 +10,6 @@ import { COSINE_LOBE, bounceLobe, coefficients, linearMaximum, shBasisAt, shConv
 import type { Shared } from '../shared.ts';
 import { deckRamp, deckSkyGain, deckSkyGap } from '../sky/Weather.ts';
 import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../world/AmbientProbes.ts';
-import { PANORAMA_STORE } from '../sky/Sky.ts';
-import { storePress } from '../post/PreExposure.ts';
 
 // The ambient light's relight: the probes' baked visibility (AmbientVolume.ts, world/AmbientProbes.ts)
 // lit by the sky and the key as they stand, into the probes' irradiance, a 3D texture the island's
@@ -404,6 +402,8 @@ export class AmbientSky {
 	projected = false;
 	private readonly renderer: THREE.WebGPURenderer;
 	private readonly writeSlot = uniform( 0, 'uint' );
+	// what takes the source's texels to scene units (Sky.ts `onEnvironmentSource`)
+	private readonly sourceRead = uniform( 1 );
 	private projection: Projection | null = null;
 
 	constructor( renderer: THREE.WebGPURenderer ) {
@@ -413,10 +413,12 @@ export class AmbientSky {
 
 	}
 
-	/** Projects an environment source onto the slots of `atlases` (Sky.ts `onEnvironmentSource`). */
-	project( source: THREE.Texture, atlases: readonly number[] ): void {
+	/** Projects an environment source onto the slots of `atlases` (Sky.ts `onEnvironmentSource`),
+	 * its texels times `read` in scene units. */
+	project( source: THREE.Texture, atlases: readonly number[], read: number ): void {
 
 		if ( atlases.length === 0 ) return;
+		this.sourceRead.value = read;
 		this.projection ??= this.build( source );
 		const { rows, groups, finish } = this.projection;
 		this.renderer.compute( [ rows, groups ] );
@@ -460,8 +462,8 @@ export class AmbientSky {
 				const x = x0.add( uint( i ) );
 				const azimuth = float( x ).add( 0.5 ).div( W ).sub( 0.5 ).mul( 2 * Math.PI ).toVar();
 				const d = vec3( across.mul( cos( azimuth ) ), up, across.mul( sin( azimuth ) ) ).toVar();
-				// (the source stores the radiance times PANORAMA_STORE, under the debug press `storePress`)
-				const radiance = ( textureLoad( map, ivec2( int( x ), int( y ) ) ) as unknown as V4 ).rgb.mul( 1 / PANORAMA_STORE ).mul( storePress.read ).toVar();
+				// (the source stores the radiance at its bake's power of two, under the debug press)
+				const radiance = ( textureLoad( map, ivec2( int( x ), int( y ) ) ) as unknown as V4 ).rgb.mul( this.sourceRead ).toVar();
 				const L = radiance.mul( solidAngle ).toVar();
 				const Y = coefficients( shBasisAt( d ).toVar() as unknown as M3 );
 				sums.forEach( ( sum, n ) => sum.addAssign( L.mul( Y[ n ] ) ) );
