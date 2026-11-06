@@ -101,6 +101,10 @@ try {
 		const animation = r.getAnimationLoop(), previousTarget = r.getRenderTarget();
 		const scene = new s.scene.constructor();
 		const dome = sky.dome.clone();
+		// The dome writes its metering light to the scene pass's MRT (Motion.ts `meterOutput`); this
+		// target has none, so the copy drawn here writes its colour alone.
+		dome.material = sky.dome.material.clone();
+		dome.material.mrtNode = null;
 		dome.onBeforeRender = ( _renderer, _scene, camera ) => {
 			dome.position.copy( camera.position );
 			dome.updateMatrixWorld();
@@ -195,7 +199,8 @@ try {
 			r.setRenderTarget( previousTarget );
 			target.dispose();
 			scene.remove( dome );
-			// The clone shares the live material/geometry; their lifetime belongs to Sky.
+			dome.material.dispose();
+			// The clone shares the live geometry; its lifetime belongs to Sky.
 			try { await s.setHour( 0 ); } finally { await r.setAnimationLoop( animation ); }
 		}
 	}, phases );
