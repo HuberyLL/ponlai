@@ -7,7 +7,7 @@
 //
 //   node tools/dusk-grid.mjs [base] [--weathers clear,fair,cloudy,overcast] [--sides evening,morning]
 //       [--from 2 --to -8 --step 0.5] [--midnight] [--at e1,e2,...] [--hours h1,h2,...]
-//       [--fine e1:e2:step]... [--views island[,<parity view>...]] [--split [name,...]] [--night-split]
+//       [--fine e1:e2:step]... [--views island[,<parity view>...]] [--split [name,...]] [--night-split] [--twilight]
 //       [--compare dir [--compare-tolerance 1e-4]] [--judge 0.02] [--judge-range 2:-8] [--judge-weathers ...] [--overall-weathers ...]
 //       [--frames] [--walk] [--q "grow=36"] [--src dir] [--out dir] [--timeout ms] [--lock-timeout s]
 //
@@ -81,6 +81,10 @@
 //     listed in summary.txt (terms that act on each other: a product of shares).
 // --night-split: the twilight forced to 0 (sun, hazeSun, hazeSky): the night's terms alone
 //   (`night`), and the local lights forced off alone (`noLights`).
+// --twilight: the twilight alone, every night name of DUSK_FORCES forced to 0 (the split's T, as
+//   `cumulative.T`), without the split's other states: where the twilight and the night cross,
+//   read against the night of another point (midnight), at a few seconds a point. Not with --split,
+//   which takes T itself.
 //
 // The rules (summary.txt; violations exit 1)
 //   - Step: on the grid's adjacent points within --judge-range (default +2 to -8), q( lower ) <=
@@ -110,7 +114,7 @@
 //     `floor <weather> landKeyFloor(night)/M(night) = x.xx %` (landKeyFloor / pi over M, M being
 //     lum( E ) / pi; < 5 %: move-to-ambient, >= 5 %: keep, report), with the key's measured share
 //     of M at night beside it;
-//   terms.txt (with --split or --night-split): per quantity and point, q, T, each night name's inc,
+//   terms.txt (with --split, --night-split or --twilight): per quantity and point, q, T, each night name's inc,
 //     the residual, `night` and `noLights`;
 //   compare.txt (--compare dir): every point both runs hold, value by value. In [+2.5, +4] the CPU
 //     values and the weights must be bit for bit the same, and the views' reads (GPU reads) within
@@ -140,7 +144,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
-const USAGE = 'usage: node tools/dusk-grid.mjs [base] [--weathers ...] [--sides ...] [--from 2 --to -8 --step 0.5] [--midnight] [--at ...] [--hours ...] [--fine e1:e2:step]... [--views ...] [--split [names]] [--night-split] [--compare dir [--compare-tolerance 1e-4]] [--judge 0.02] [--judge-range 2:-8] [--judge-weathers ...] [--overall-weathers ...] [--frames] [--walk] [--q query] [--src dir] [--out dir] [--timeout ms] [--lock-timeout s] (see the file header)';
+const USAGE = 'usage: node tools/dusk-grid.mjs [base] [--weathers ...] [--sides ...] [--from 2 --to -8 --step 0.5] [--midnight] [--at ...] [--hours ...] [--fine e1:e2:step]... [--views ...] [--split [names]] [--night-split] [--twilight] [--compare dir [--compare-tolerance 1e-4]] [--judge 0.02] [--judge-range 2:-8] [--judge-weathers ...] [--overall-weathers ...] [--frames] [--walk] [--q query] [--src dir] [--out dir] [--timeout ms] [--lock-timeout s] (see the file header)';
 const WEATHERS = [ 'clear', 'fair', 'cloudy', 'overcast', 'rain', 'storm', 'fog' ];
 const SIDES = [ 'evening', 'morning' ];
 const TWILIGHT = [ 'sun', 'hazeSun', 'hazeSky' ];
@@ -160,7 +164,7 @@ const argv = process.argv.slice( 2 );
 const o = { weathers: 'clear,fair,cloudy,overcast', sides: 'evening,morning', from: '2', to: '-8', step: '0.5', views: 'island',
 	judge: '0.02', 'judge-range': '2:-8', 'compare-tolerance': '1e-4', q: 'grow=36', timeout: '120000', 'lock-timeout': '0', fine: [] };
 let base = 'http://127.0.0.1:5190/';
-const FLAGS = [ 'midnight', 'night-split', 'frames', 'walk' ];
+const FLAGS = [ 'midnight', 'night-split', 'twilight', 'frames', 'walk' ];
 const VALUED = [ 'weathers', 'sides', 'from', 'to', 'step', 'at', 'hours', 'views', 'compare', 'compare-tolerance', 'judge', 'judge-range', 'judge-weathers', 'overall-weathers', 'q', 'src', 'out', 'timeout', 'lock-timeout' ];
 let options;
 try {
@@ -245,7 +249,7 @@ function parseOptions( o ) {
 		judgeRange: [ Math.max( jHi, jLo ), Math.min( jHi, jLo ) ],
 		judgeWeathers: o[ 'judge-weathers' ] ? list( o[ 'judge-weathers' ], WEATHERS, '--judge-weathers' ) : weathers,
 		overallWeathers: o[ 'overall-weathers' ] ? list( o[ 'overall-weathers' ], WEATHERS, '--overall-weathers' ) : weathers,
-		split: o.split, nightSplit: o[ 'night-split' ] === true, frames: o.frames === true, walk: o.walk === true,
+		split: o.split, nightSplit: o[ 'night-split' ] === true, twilight: o.twilight === true, frames: o.frames === true, walk: o.walk === true,
 		compare: o.compare ? path.resolve( o.compare ) : null, compareTolerance: num( o[ 'compare-tolerance' ], '--compare-tolerance' ), q: o.q, src, timeout, lockTimeout,
 		out: path.resolve( o.out ?? path.join( ROOT, 'artifacts/dusk-grid', new Date().toISOString().replace( /[:.]/g, '-' ).slice( 0, 19 ) ) ),
 	};
@@ -266,6 +270,8 @@ try {
 
 	}
 	if ( options.nightSplit && ! TWILIGHT.every( ( n ) => FORCES.includes( n ) ) ) fail( `--night-split: ${ options.src } has no twilight forces` );
+	if ( options.twilight && options.split !== undefined ) fail( '--twilight: --split takes T itself' );
+	if ( options.twilight && ! FORCES.length ) fail( `--twilight: ${ options.src } has no DUSK_FORCES` );
 
 } catch ( error ) {
 
@@ -275,6 +281,8 @@ try {
 
 }
 const nightNames = splitNames.filter( ( n ) => ! TWILIGHT.includes( n ) );
+// (--twilight's: every night name the page can force)
+const twilightNames = options.twilight ? FORCES.filter( ( n ) => ! TWILIGHT.includes( n ) ) : [];
 let hourCheck = 0;
 
 /** The hour on `side` at which the sun of --src stands `e` degrees up (see the header). */
@@ -652,7 +660,7 @@ async function measure( point, query, how ) {
 	}
 	await waitForScene( page, { frames: 1, timeout: options.timeout } );
 	const prep = await run( prepareJs() );
-	const want = [ ...splitNames, ...( options.nightSplit ? [ ...TWILIGHT, 'localLights' ] : [] ) ];
+	const want = [ ...splitNames, ...twilightNames, ...( options.nightSplit ? [ ...TWILIGHT, 'localLights' ] : [] ) ];
 	const missing = want.filter( ( n ) => ! prep.forces.includes( n ) );
 	if ( missing.length ) throw new ArgError( `the page has no sky.dusk.force.${ missing.join( ', ' ) }` );
 	point.elevation = prep.elevation;
@@ -747,6 +755,12 @@ async function measure( point, query, how ) {
 		}
 
 	}
+	if ( twilightNames.length ) {
+
+		const forced = Object.fromEntries( twilightNames.map( ( n ) => [ n, 0 ] ) );
+		point.cumulative = { T: ( twilightNames.every( ( n ) => is( n, 0 ) ) ? q : await taken( forced ) ).values };
+
+	}
 	if ( options.nightSplit ) {
 
 		point.night = ( await taken( Object.fromEntries( TWILIGHT.map( ( n ) => [ n, 0 ] ) ) ) ).values;
@@ -763,7 +777,7 @@ const files = {};
 const fileOf = ( weather, side ) => files[ `${ weather }-${ side }` ] ??= {
 	version: 1, tool: 'dusk-grid', sha, src: options.src, base, query: options.q, weather, side, weathers: options.weathers, sides: options.sides,
 	grid: { from: options.from, to: options.to, step: options.step, midnight: options.midnight, fine: options.fine, at: options.at, hours: options.hours, walk: options.walk },
-	views: options.views, split: splitNames, nightSplit: options.nightSplit, browser: capture.version, points: [],
+	views: options.views, split: splitNames, nightSplit: options.nightSplit, twilight: twilightNames, browser: capture.version, points: [],
 };
 const save = ( weather, side ) => writeFileSync( path.join( options.out, `${ weather }-${ side }.json` ), JSON.stringify( fileOf( weather, side ), null, 1 ) );
 
@@ -990,7 +1004,7 @@ for ( const e of [ ...pagesErrors, ...unsettled ] ) say( `  ${ e }` );
 writeFileSync( path.join( options.out, 'summary.txt' ), lines.join( '\n' ) + '\n' );
 
 // ---- the terms and the handoff
-if ( splitNames.length || options.nightSplit ) {
+if ( splitNames.length || options.nightSplit || twilightNames.length ) {
 
 	const t = [];
 	for ( const f of Object.values( files ) ) {
