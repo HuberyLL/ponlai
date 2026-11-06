@@ -27,7 +27,6 @@ import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckFloorTak
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
-import { moonDirection } from '../lighting/KeyLift.ts';
 import { setKeyCloud } from '../lighting/KeyCloud.ts';
 
 type F = THREE.Node<'float'>;
@@ -57,13 +56,12 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // takes, and under a clear or fair day's sun another that holds it against the key (CLEAR_SKY);
 // a cloud deck does not mute the clear sky's colour behind it. At night the clear sky is the
 // moon's in-scatter, drawn with the moon's key light (MOON_KEY), and the stars: no airglow and no
-// night floor of its own. The moon, while it is up, is drawn and lights the sky (and through the
-// atmosphere's `moonDir` the clouds and the haze) from the night key's fixed direction, where the
-// island takes its light from (lighting/KeyLift.ts `moonDirection`), and the key's direction
-// (`keyDir`) turns there over the handoff and holds there all night, so the water's glint and the
-// clouds' light see the moon where it is drawn; its phase keeps the orbit's
-// angle to the sun (`track`). The clouds take their own path between the two in the twilight, while
-// no light reaches them (CLOUD_TURN). After sunset the light the sky lends the island takes a gain
+// night floor of its own. The moon stands fixed in the sky (DayCycle.ts MOON): it is drawn and
+// lights the sky (and through the atmosphere's `moonDir` the clouds and the haze) from there, the
+// island takes its light from there (lighting/KeyLift.ts), and the key's direction (`keyDir`)
+// turns there over the handoff and holds there all night, so the water's glint and the clouds'
+// light see the moon where it is drawn. The clouds take their own path between the two in the
+// twilight, while no light reaches them (CLOUD_TURN). After sunset the light the sky lends the island takes a gain
 // of its own (ISLAND_SKY), and under a clouded high sun a tint of its own (CLOUD_LIGHT_TINT), which
 // the sky the eye sees, the sea's reflection of it and the sea's own body never take. The dome lays the air's haze over
 // itself (`fogDome`, VolumetricHaze.ts `skyHaze`): the clouds at the distance to their shell's middle
@@ -1013,8 +1011,6 @@ function moonHue( target: THREE.Color ): THREE.Color {
 	return target.setRGB( r * level, level, b * level );
 
 }
-const _moonTurn = new THREE.Quaternion();
-const _keyTurn = new THREE.Quaternion(), _keyStep = new THREE.Quaternion(), _noTurn = new THREE.Quaternion(), _keyTo = new THREE.Vector3();
 
 export class Sky {
 
@@ -1026,10 +1022,6 @@ export class Sky {
 	sunIlluminance: number;
 	// the moon's key light (MOON_KEY), before the sky's night gain
 	private readonly moonKeyColor = new THREE.Color();
-	// where the moon is drawn and lights the sky from, and where its disk's phase is lit from
-	// (`track`)
-	private readonly drawnMoonDir = new THREE.Vector3( 0, - 1, 0 );
-	private readonly drawnMoonSunDir = new THREE.Vector3( 0, 1, 0 );
 	elevation: number;
 	azimuth: number;
 	// whether the sun climbs, from where `sunDir` stands on its path (DayCycle.ts `sunRising`): what
@@ -1853,23 +1845,9 @@ export class Sky {
 		this.solarIlluminance.copy( this.sunTint ).multiplyScalar( illuminance );
 		// The atmosphere's slices are cut again only when the sun or the moon has moved.
 		this.atmosphere.sunDir.value.copy( this.sunDir );
-		// While it is up the moon stands in the night key's fixed direction (KeyLift
-		// `moonDirection`): drawn there, lighting the sky and the haze from there, as it shades the
-		// island. Its phase turns with it, keeping its angle to the orbit's sun. Below the horizon
-		// (by day) it keeps its orbit's direction.
-		if ( celestial && celestial.moonVisibility > 0 ) {
-
-			moonDirection( celestial.moonDir, this.drawnMoonDir );
-			_moonTurn.setFromUnitVectors( celestial.moonDir, this.drawnMoonDir );
-			this.drawnMoonSunDir.copy( celestial.moonSunDir ).applyQuaternion( _moonTurn );
-
-		} else if ( celestial ) {
-
-			this.drawnMoonDir.copy( celestial.moonDir );
-			this.drawnMoonSunDir.copy( celestial.moonSunDir );
-
-		}
-		if ( celestial ) this.atmosphere.moonDir.value.copy( this.drawnMoonDir );
+		// The moon stands where the clock puts it (DayCycle.ts MOON): drawn there, lighting the sky
+		// and the haze from there, as it shades the island.
+		if ( celestial ) this.atmosphere.moonDir.value.copy( celestial.moonDir );
 		else this.atmosphere.moonDir.value.copy( this.sunDir ).negate();
 		// The moonlit sky is drawn with the moon's key light (MOON_KEY), the island's at its own hue,
 		// times the sky's night gain (SKY_LIGHT's night key), which the key leaves out: the key takes
@@ -1899,20 +1877,11 @@ export class Sky {
 		const sunVisible = this.atmosphere.sunVisibleShareToSun();
 		if ( sunVisible > 0 ) this.sunColor.copy( keyHue( this.atmosphere.transmittanceToSun(), this.sunTint, this.rising ) ).multiplyScalar( sunVisible * illuminance );
 		else this.sunColor.setRGB( 0, 0, 0 );
-		// The key turns from the sun to the moon where it is drawn (KeyLift `moonDirection`): over
-		// the handoff its turn along the orbits gains, in step, the turn from the moon's orbit to
-		// that direction, so it arrives there without a jump and holds there all night. Everything
-		// that reads the key's direction (the water's glint, the refracted light
-		// under the water, the clouds, the haze) then sees the moon where it is drawn. By day
+		// The key turns from the sun to the moon over the handoff (DayCycle `keyDir`) and holds there
+		// all night: everything that reads the key's direction (the water's glint, the refracted
+		// light under the water, the clouds, the haze) then sees the moon where it is drawn. By day
 		// (no handoff) the key is the sun's direction itself.
 		this.keyDir.copy( celestial?.keyDir ?? this.sunDir );
-		if ( celestial && celestial.handoff > 0 ) {
-
-			_keyTurn.setFromUnitVectors( celestial.moonDir, moonDirection( celestial.moonDir, _keyTo ) );
-			if ( celestial.handoff === 1 ) this.keyDir.copy( _keyTo );
-			else this.keyDir.applyQuaternion( _keyStep.slerpQuaternions( _noTurn, _keyTurn, celestial.handoff ) );
-
-		}
 		this.keyIsMoon = moonGain > 0;
 		this.keyColor.copy( this.sunColor ).multiplyScalar( lowKey( this.elevation ) );
 		const moonColor = this.night.moonColor.value;
@@ -1923,7 +1892,7 @@ export class Sky {
 			// it grows with that share, and by day (no moon) the sun's key is untouched.
 			this.moonKeyAbove.copy( this.moonKeyColor ).multiply( moonHue( _moonHue ) ).multiplyScalar( moonKeyGain() );
 			this.keyColor.add( this.moonKeyAbove );
-			this.night.moonDir.value.copy( this.drawnMoonDir );
+			this.night.moonDir.value.copy( celestial.moonDir );
 			this.night.frame.value.copy( celestial.starFrame );
 			// (the moon's light does not follow its phase: DayCycle's header)
 			this.night.moonWash.value = celestial.moonVisibility;
@@ -2001,8 +1970,8 @@ export class Sky {
 		this.solarIlluminance.multiplyScalar( directVisibility );
 		moonColor.multiplyScalar( directVisibility );
 		this.night.starVisibility.value *= ambientGain;
-		// the drawn moon's disk takes its phase's light (DayCycle `moonSunDir`, turned with the disk)
-		this.night.sunDir.value.copy( celestial ? this.drawnMoonSunDir : this.sunDir );
+		// the drawn moon's disk takes its phase's light (DayCycle `moonSunDir`)
+		this.night.sunDir.value.copy( celestial ? celestial.moonSunDir : this.sunDir );
 		this.displaySunDir.value.copy( this.sunDir );
 		this.displaySolarIlluminance.value.copy( this.solarIlluminance );
 		this.displayAmbientGain.value = ambientGain;
@@ -2138,7 +2107,7 @@ export class Sky {
 		clouds.lightDir.value.copy( setting === 0 ? this.keyDir : this.sunDir );
 		if ( celestial && setting > 0 && round < 1 ) {
 
-			const from = moonDirection( celestial.moonDir, _keyTo );
+			const from = celestial.moonDir;
 			const y = THREE.MathUtils.lerp( from.y, this.sunDir.y, setting ), start = Math.atan2( from.z, from.x );
 			const turn = Math.atan2( this.sunDir.z, this.sunDir.x ) - start;
 			const azimuth = start + Math.atan2( Math.sin( turn ), Math.cos( turn ) ) * round, across = Math.sqrt( 1 - y * y );

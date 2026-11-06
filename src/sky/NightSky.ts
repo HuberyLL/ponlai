@@ -353,8 +353,8 @@ const nightMoonGlow = Fn( ( [ direction, sunDir, moonDir, moonColor ]: [ V3, V3,
 
 export class NightSky {
 
-	// the sunlight on the drawn moon: where the sun stands on the moon's orbit at its phase
-	// (DayCycle `moonSunDir`), so the disk shows the phase whatever the hour
+	// the sunlight on the drawn moon: the direction its phase lights it from (DayCycle
+	// `moonSunDir`), so the disk shows the phase whatever the hour
 	readonly sunDir = uniform( new THREE.Vector3( 1, 0, 0 ) );
 	readonly moonDir = uniform( new THREE.Vector3( - 1, 0, 0 ) );
 	// Full illuminated disk radiance in scene units. Phase comes only from the directions.

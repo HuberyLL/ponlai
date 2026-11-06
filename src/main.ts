@@ -1058,10 +1058,10 @@ const viewDirection = new THREE.Vector3();
 // limits, so a scene jump (`establishScene`) repeats it on a camera and controls of its own with the
 // page's limits, and its pose is the load's to the bit.
 // The default azimuth (180: the view looks along +z, about 23 degrees east of the meridian the sun
-// and the full moon culminate on) is fixed, never following the clock, so the R key always returns
-// to the same view. It was 318, looking away from the meridian: the morning sun lit the island
-// flat from behind the camera and the moon path never entered the frame. From 180 the moon's path
-// is in view all night (the moon stands at its culmination's azimuth: lighting/KeyLift.ts), while the sun lights the cliffs from the side at 9:00
+// culminates on and the moon stands on) is fixed, never following the clock, so the R key always
+// returns to the same view. It was 318, looking away from the meridian: the morning sun lit the
+// island flat from behind the camera and the moon path never entered the frame. From 180 the moon's
+// path is in view all night (the moon is fixed on the meridian: sky/DayCycle.ts MOON), while the sun lights the cliffs from the side at 9:00
 // and 16:00 (a lit and a shaded side) and its glints at noon keep to a corner of the frame.
 function placeOrbit( on: THREE.PerspectiveCamera, orbit: IslandCameraControls, options: URLSearchParams, turn = 0, zoom = 0 ): void {
 

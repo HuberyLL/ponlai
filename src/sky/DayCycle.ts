@@ -1,12 +1,12 @@
-import { MathUtils, Matrix3, Vector3 } from 'three/webgpu';
+import { MathUtils, Matrix3, Quaternion, Vector3 } from 'three/webgpu';
 import { tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 
 // The day cycle: authored, not astronomical. One dominant key light (the sun by day, the moon by
 // night) drives terrain, characters, water and every shadow map; a sun/moon handoff
 // passes through zero direct light: the sun's key fades as its drawn disk sinks below the horizon,
-// and only then turns toward the moon (HANDOFF_TOP; `keyDir` turns along the orbits, and Sky.ts
-// `track` bends its moon end to where the moon is drawn). The sun is drawn at twice its true
+// and only then turns toward the moon (HANDOFF_TOP; `keyDir` turns along the great circle from the
+// sun to the moon). The sun is drawn at twice its true
 // size and the moon larger (NightSky.ts `MOON_ANGULAR_RADIUS`); shadows and glints use the true sun. A low sun's key stays
 // orange red: the optical depth that sets its hue is capped (and a high sun's key is a warm white
 // of its own, taking the air's reddening only as the sun sinks), while its brightness still follows
@@ -51,23 +51,21 @@ import { markSkyRetune } from './SkyRetune.ts';
 // side's flip at noon or midnight moves nothing: every weight here is 0 by day and 1 by night on
 // both sides.
 //
-// The moon's orbit is authored too: not the sun's path but a great circle through the same east
-// and west points, tilted MOON_TILT toward the horizon about the east-west axis, so it culminates
-// at 20 degrees instead of the sun's 62. It keeps a full moon's hours at every phase: it rises due
-// east at 18:00, culminates at midnight and sets due west at 6:00, so every night has one cool key
-// near 20 degrees from dusk to dawn (lighting/KeyLift.ts shades its light from one fixed direction,
-// its culmination's, 20 degrees up, `MOON_CULMINATION`, for as long as it is the key, so the night
-// keeps one shading and one level; the moon is drawn there while it is up, the sky's and the
-// haze's moonlight come from there, and the key's direction turns there over the handoff and holds
-// there all night: Sky.ts `track`). The orbit sets when the
-// moon rises and sets, how bright its light is and the angle its phase is lit from. Seen from the
-// game's overview camera the moonlight comes in at a slant, so slopes have a lit and a shaded side
-// and the sea carries a moon path, where a moon near the zenith lit the island flat. Its visibility (and so the key's moonlight) rises along the orbit
-// as on the sun's path, so the evening handoff keeps its timing although the lower orbit climbs out
-// of the sea more slowly. The sun and the stars keep their paths.
-// The phase (a full moon unless set) shapes only the drawn moon: its disk is lit from where the sun
-// would stand on the moon's orbit at that phase (`moonSunDir`), and nothing else follows it (the
-// key, the night sky's moonlit wash, the clouds' moonlight), so advancing it never darkens a night.
+// The moon is fixed in the sky (MOON, `moonDirection`): 20 degrees up on the noon meridian, where
+// it stands all night, every night. The default island view's sea carries its path, and its light
+// comes in at a slant, so slopes have a lit and a shaded side and the moon's shadows run long; it
+// neither rises nor sets, so the night's composition holds while the game is played. It is the
+// night's one cool key: lighting/KeyLift.ts shades from its direction for as long as it is the
+// key, so the night keeps one shading and one level; the moon is drawn there, the sky's and the
+// haze's moonlight come from there, and the key's direction turns there over the handoff, along
+// the great circle from the sun, and holds there all night. It shows as the sun's light leaves:
+// its visibility (and so the key's moonlight) rises over the sun's first five degrees under the
+// horizon.
+// The phase (a full moon unless set) shapes only the drawn moon: its disk is lit from the phase's
+// angle round from the moon's own direction toward the west (`moonSunDir`: from behind it at a new
+// moon, from the west at the first quarter, from the front at the full), and nothing else follows
+// it (the key, the night sky's moonlit wash, the clouds' moonlight), so advancing it never darkens a
+// night.
 
 export const DAY_PRESETS = {
 	'dawn': 5.35,
@@ -95,10 +93,10 @@ export interface DayCycleSnapshot {
 	day: number;
 	sunDir: Vector3;
 	moonDir: Vector3;
-	// where the sun would stand on the moon's orbit at the phase: the drawn disk's light
+	// the direction the drawn disk is lit from at the phase
 	moonSunDir: Vector3;
-	// the key's direction along the orbits: the sun's, turned toward the moon's over the handoff
-	// (Sky.ts `track` turns its moon end to where the moon is drawn)
+	// the key's direction: the sun's, turned toward the moon's along the great circle between them
+	// over the handoff
 	keyDir: Vector3;
 	// how far the key has turned from the sun toward the moon, 0 to 1
 	handoff: number;
@@ -328,8 +326,14 @@ const STAR_LATITUDE = 28;
 const STAR_ELEVATION = ( 90 - STAR_LATITUDE ) / DEG;
 const STAR_MERIDIAN = new Vector3( Math.cos( STAR_ELEVATION ) * COS_NOON_AZIMUTH, Math.sin( STAR_ELEVATION ), Math.cos( STAR_ELEVATION ) * SIN_NOON_AZIMUTH );
 const NORTH_POLE = WEST.clone().cross( STAR_MERIDIAN ).normalize();
-// How far the moon's orbit is tilted from the sun's toward the horizon, about the east-west axis
-// (see the header): it culminates at 62 - 42 = 20 degrees.
+/** Where the moon stands (the header): `elevation` degrees up on the noon meridian. At least 15:
+ * from there down the low key's floor (lighting/KeyLift.ts) would hold the shading up to the end of
+ * the handoff, a small turn at no light. Tunable on debug pages (debug/Tune.ts):
+ * `sky.moon.elevation`. */
+export const MOON = tuneObject( { elevation: 20 }, { elevation: 'sky.moon.elevation' }, { elevation: { min: 15, max: 40, onChange: markSkyRetune } } );
+// The meridian point of an orbit through the east and west points tilted 42 degrees from the sun's
+// toward the horizon (MOON_CULMINATION), whose azimuth `moonDirection` takes: the arithmetic the
+// night's fixed shading direction was built by before the moon was fixed, kept for its bits.
 const MOON_TILT = 42 / DEG;
 // Local sidereal time at midnight (radians): 14h puts Scorpius high in the east with the Milky
 // Way's core below it, Crux and Alpha Centauri high in the south, and the band through Aquila,
@@ -473,17 +477,17 @@ function orbitMeridian( tilt: number ): Vector3 {
 
 }
 
-const MOON_MERIDIAN = orbitMeridian( MOON_TILT );
-/** The direction toward the moon at its culmination (unit; midnight, its orbit's highest point):
- * the middle of its night, whose azimuth the night's shading takes (lighting/KeyLift.ts). */
-export const MOON_CULMINATION: Readonly<Vector3> = MOON_MERIDIAN.clone();
+const MOON_CULMINATION = orbitMeridian( MOON_TILT );
+/** The moon's fixed direction (unit, world: MOON's elevation on the noon meridian), into `target`.
+ * The low key's lift (lighting/KeyLift.ts) reads it at every publish of the lighting. */
+export function moonDirection( target: Vector3 ): Vector3 {
 
-// cos(a) meridian + sin(a) WEST: a point of the orbit through `meridian` at angle a past it.
-function orbitDirection( angle: number, meridian: Vector3 ): Vector3 {
-
-	return meridian.clone().multiplyScalar( Math.cos( angle ) ).addScaledVector( WEST, Math.sin( angle ) ).normalize();
+	const across = Math.hypot( MOON_CULMINATION.x, MOON_CULMINATION.z ), e = MathUtils.degToRad( MOON.elevation );
+	const k = Math.cos( e ) / across;
+	return target.set( MOON_CULMINATION.x * k, Math.sin( e ), MOON_CULMINATION.z * k );
 
 }
+const _noTurn = new Quaternion(), _turn = new Quaternion(), _keyTurn = new Quaternion();
 
 /** A deterministic art-directed celestial clock. Hours and moon phase are independent of the
  * wave/vegetation animation clock, so lighting presets do not jump existing scene animation. */
@@ -555,18 +559,13 @@ export class DayCycle {
 
 		const hourAngle = ( this.currentHour - 12 ) / 24 * TAU;
 		const sunDir = direction( hourAngle );
-		// The moon keeps a full moon's place at every phase, half a turn behind the sun along its
-		// own, lower orbit (see the header): both orbits share the east and west points, so it
-		// rises where the sun set. Its disk is lit from where the sun would stand on that orbit at
-		// the phase, so the drawn phase separates them by the phase's angle.
-		const moonAngle = hourAngle - Math.PI;
-		const moonDir = orbitDirection( moonAngle, MOON_MERIDIAN );
-		const moonSunDir = orbitDirection( moonAngle + this.phase * TAU, MOON_MERIDIAN );
+		// The moon stands where MOON puts it at every hour and phase (the header). Its disk is lit
+		// from the phase's angle round from its own direction toward the west: WEST made square to
+		// the moon's direction.
+		const moonDir = moonDirection( new Vector3() );
+		const moonWest = WEST.clone().addScaledVector( moonDir, - WEST.dot( moonDir ) ).normalize();
+		const moonSunDir = moonDir.clone().multiplyScalar( Math.cos( TAU * this.phase ) ).addScaledVector( moonWest, Math.sin( TAU * this.phase ) );
 		const elevation = Math.asin( Math.max( - 1, Math.min( 1, sunDir.y ) ) ) * DEG;
-		const moonElevation = Math.asin( Math.max( - 1, Math.min( 1, moonDir.y ) ) ) * DEG;
-		// The elevation the moon would have on the sun's path at the same point of its orbit: the
-		// same sign as its own, and what its visibility rises with.
-		const moonOrbitElevation = Math.asin( Math.max( - 1, Math.min( 1, Math.cos( moonAngle ) * SIN_INCLINATION ) ) ) * DEG;
 		const daylight = smoothstep( - 7, 8, elevation );
 		// The night sky was tuned under a low-sun adaptation that faded out over -5 to -14 degrees.
 		const skyAdaptation = 1 + 0.6 * smoothstep( - 14, - 5, elevation ) * ( 1 - smoothstep( 4, 18, elevation ) );
@@ -576,15 +575,14 @@ export class DayCycle {
 		const deck = DECK_NIGHT_GAIN - 1;
 		const dusk = smoothstep( - 6, - 1, elevation );
 		const moonIllumination = ( 1 - Math.cos( TAU * this.phase ) ) * 0.5;
-		// Over the first five degrees of the sun's path, measured along the moon's orbit: on the
-		// lower orbit the same rise climbs about 2 degrees, and the evening's moonlight (the key's
-		// gain below) keeps the timing it had when the moon shared the sun's path.
-		const moonVisibility = smoothstep( 0, 5, moonOrbitElevation );
-		// Rotate along the orbit, its tilt following, only after the sun is blocked and before the
-		// moon's key light fades in. Opposing full-moon vectors never cancel as in a lerp.
+		// over the sun's first five degrees under the horizon (the header)
+		const moonVisibility = smoothstep( 0, 5, - elevation );
+		// Turn along the great circle from the sun to the moon only after the sun is blocked and
+		// before the moon's key light fades in. Through the handoff the sun stands near the east or
+		// west point and the moon on the meridian, about a right angle apart, never opposed.
 		const handoff = 1 - smoothstep( - 2.5, HANDOFF_TOP, elevation );
 		const keyDir = handoff === 0 ? sunDir.clone() : handoff === 1 ? moonDir.clone() :
-			orbitDirection( hourAngle - Math.PI * handoff, orbitMeridian( MOON_TILT * handoff ) );
+			sunDir.clone().applyQuaternion( _keyTurn.slerpQuaternions( _noTurn, _turn.setFromUnitVectors( sunDir, moonDir ), handoff ) );
 		return {
 			hour: this.currentHour,
 			day: this.completedDays,
@@ -595,7 +593,7 @@ export class DayCycle {
 			handoff,
 			elevation,
 			azimuth: Math.atan2( sunDir.z, sunDir.x ) * DEG,
-			moonElevation,
+			moonElevation: MOON.elevation,
 			moonAzimuth: Math.atan2( moonDir.z, moonDir.x ) * DEG,
 			moonPhase: this.phase,
 			moonIllumination,

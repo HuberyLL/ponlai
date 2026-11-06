@@ -9,7 +9,7 @@ import { acquireGpuLock } from './gpu-lock.mjs';
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/night-sky';
 const phases = [
-	// (the moon keeps a full moon's hours at every phase, culminating at midnight: DayCycle.ts)
+	// (the moon is fixed in the sky, at every hour and phase: DayCycle.ts)
 	{ name: 'new', phase: 0, hour: 0 },
 	{ name: 'crescent', phase: 0.125, hour: 0 },
 	{ name: 'quarter', phase: 0.25, hour: 0 },
@@ -160,7 +160,7 @@ try {
 				sky.night.moonColor.value.copy( color );
 				const repeat = await render();
 				sky.night.glow.value = 1;
-				// (a quarter of the full disk's peak: the moon culminates at 20 degrees, behind about
+				// (a quarter of the full disk's peak: the moon stands 20 degrees up, behind about
 				// three air masses, so the disk's darker terminator side still counts)
 				result.moons.push( { name: phase.name, ...compare( on, off, 0.0004 ), determinism: difference( on, repeat ) } );
 			}
