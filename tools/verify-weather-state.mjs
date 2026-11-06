@@ -1,7 +1,7 @@
 // CPU-only transition contracts; Node's native TypeScript stripping needs no browser/GPU.
 // Run: node --experimental-strip-types tools/verify-weather-state.mjs
 import assert from 'node:assert/strict';
-import { Weather, WEATHER_PRESETS, WIND_LEVELS, PREVAILING_HEADING, PARKED_WEATHER } from '../src/sky/Weather.ts';
+import { Weather, WEATHER_PRESETS, WIND_LEVELS, PREVAILING_HEADING, PARKED_WEATHER, deckRamp, floorKeyGain, overcastDeckLight } from '../src/sky/Weather.ts';
 import { QUALITY } from '../src/Quality.ts';
 
 const close = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
@@ -241,6 +241,15 @@ for ( const invalid of [ 'hail', '__proto__', '', null ] ) {
 	clearing.update( 600 );
 	assert.ok( clearing.state.showers < 0.01, 'showers must clear within minutes' );
 }
+// The deck's gains leave with the sun's light: at and below -6 degrees the key's floor gain
+// (`floorKeyGain`, overcast's and cloudy's), the land's weather gain under the deck
+// (lighting/AmbientGrade.ts `overcastLandWeight`, overcast times `overcastDeckLight`) and the
+// exposure's overcast key (post/Exposure.ts, by `overcastDeckLight`) are exactly neutral.
+for ( let elevation = - 6; elevation >= - 90; elevation -= 0.25 ) {
+	assert.equal( overcastDeckLight( elevation ), 0, `overcast's deck light at ${ elevation }` );
+	assert.equal( deckRamp( elevation ), 0, `cloudy's deck light at ${ elevation }` );
+	for ( const [ overcast, cloudy ] of [ [ 1, 0 ], [ 0, 1 ], [ 0.4, 0.6 ] ] ) assert.equal( floorKeyGain( elevation, overcast, cloudy, 2.4, 1.6 ), 1, `the key's floor gain at ${ elevation }` );
+}
 assert.ok( QUALITY.low.cloudMarch.viewSteps < QUALITY.high.cloudMarch.viewSteps );
 assert.ok( QUALITY.low.rainDrops < QUALITY.high.rainDrops );
-console.log( 'weather state: transition, interruption, pause, presets, heading wrap, wind levels and headings with any sky, auto chain and its wind, the forecast read ahead, moisture, parked weathers out of the chain, lingering showers, ranges and validation passed' );
+console.log( 'weather state: transition, interruption, pause, presets, heading wrap, wind levels and headings with any sky, auto chain and its wind, the forecast read ahead, moisture, parked weathers out of the chain, lingering showers, the deck gains neutral by night, ranges and validation passed' );
