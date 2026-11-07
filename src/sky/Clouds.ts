@@ -88,10 +88,12 @@ type V4 = THREE.Node<'vec4'>;
 //     pi, with no gain: thick masses dark, thin seams lighter, near grey, the level set by the
 //     deck's own density and thickness. That irradiance is the key's above the tops (`columnKey`:
 //     the sun's by day, by night the island's moonlight, not the clouds' own, each under the
-//     weather's day sky at its own height) and the drawn sky's
-//     over them (without the clouds' night glow), so the base and the land under it are lit by one
-//     key by day and by night. Uniforms and the atmosphere alone, it is worked out once a frame by
-//     one thread (`Clouds.ColumnTop`, a `renderer.compute` ahead of the other kernels in `update`,
+//     weather's day sky at its own height) and the drawn sky's over them (without the clouds' night
+//     glow), so the base and the land under it are lit by one key by day and by night. Under
+//     overcast the column's depth in this light alone is scaled by the base's masses (`relief`,
+//     MASS_MEDIAN: deeper in a mass, shallower in a seam, about the masses' median), so the base's
+//     light follows its masses rather than its height alone. A function of uniforms and the
+//     atmosphere alone, the irradiance on the tops is worked out once a frame by one thread (`Clouds.ColumnTop`, a `renderer.compute` ahead of the other kernels in `update`,
 //     outside the frame graph as they are) with the shares of the air's light under the deck it
 //     sets, into a buffer the march, the panorama and the haze read; only under a low deck's
 //     share, since without one every term it feeds is multiplied away and its dispatch at the
@@ -118,7 +120,8 @@ type V4 = THREE.Node<'vec4'>;
 //     deck and the ground below as it did, without brightening the half of the sky toward the sun,
 //     which the environment's bake and the ambient light would take up. The closed deck's round glow
 //     about the key's place is drawn where the sky is composed instead (Sky.ts `deckGlow`,
-//     DECK_GLOW), on the frame's shares `Clouds.ColumnTop` works out. Under the rest of the sky
+//     DECK_GLOW: a narrow lobe for its peak and a broad one for its tail, following the base's
+//     own pattern), on the frame's shares `Clouds.ColumnTop` works out. Under the rest of the sky
 //     the narrow lobe stays as it was, by ( 1 - the share ). OVERCAST_BROAD and OVERCAST_WEIGHT
 //     together set how much forward light the closed deck passes down, the light of the deck and of
 //     the ground under it; they were fitted when this light was drawn as a broad lobe toward the
@@ -298,7 +301,7 @@ const BASE_WEATHER = 0.54, BASE_WEATHER_END = 0.13; // bases need richer weather
 // 0: a base resting on the weather alone), and where the tops' margin lies: `inside` 0 spreads it
 // either side of a column's top, 1 moves it a margin's half width into the column, so the whole
 // margin lies inside the cloud and the open sky beyond the column keeps no cloud.
-export const CLOUD_FORM = { edge: EDGE, erosion: 1, baseEnd: BASE_WEATHER_END, baseLift: 0, inside: 0 } as const;
+export const CLOUD_FORM = { edge: EDGE, erosion: 1, baseEnd: BASE_WEATHER_END, baseLift: 0, inside: 0, relief: 0 } as const;
 // The base's masses: the base hangs from the shell's bottom by the shape noise's weighted channels
 // (the dilation's own sample, over BASE_STRENGTH), lowest where they reach MASS_HIGH (the noise's
 // p90) and risen by the whole `baseLift` where they fall to MASS_LOW (its p30), a smooth step
@@ -308,6 +311,21 @@ export const CLOUD_FORM = { edge: EDGE, erosion: 1, baseEnd: BASE_WEATHER_END, b
 // vertical walls, which the march cut into sharp wedges and, leaned by SKEW, into slanted streaks
 // near the horizon.
 const MASS_LOW = 0.575, MASS_HIGH = 0.8;
+// The base's light by its masses (`relief`, makeMarch): the column's optical depth under the masses'
+// share scaled by 1 + 2 relief ( mass - MASS_MEDIAN ), mass the smooth step above (1 in a mass, 0 in
+// a seam), MASS_MEDIAN the mass where the scale is 1: the median of the mass over the shape noise's
+// texels, so half the base deepens and half thins. Seen from the island the base shows mostly
+// through its masses, so the deck's median falls: at `relief` 0.6 (baseLift 0.3) the deck with its
+// glow off reads about half a stop darker than without the relief, a level its exposure takes up.
+// The scaled depth is never below RELIEF_FLOOR, or the column's own depth where that is less: a
+// seam passes no more of the light than a column 10 deep would (0.4 of the irradiance on the deck's
+// top), so it reads as a thin part of a closed deck, not a hole, and a column thinner than 10 is
+// never thinned. It scales the diffuse light alone: the march's density, its transmittance (which
+// alone hides the key's disc) and the shadow do not change. More relief darkens the masses (the
+// base's p10 over its median falls) more than it lights the seams, whose depth the floor holds. The
+// mass is taken only where `baseLift` is above 0: with relief and no lift the scale is the same
+// everywhere and the whole deck only thins (no kept sky has relief without lift).
+const MASS_MEDIAN = 0.2, RELIEF_FLOOR = 10;
 const SKEW = 1750; // metres the tops lean downwind (the low deck's: over LOW_FREQUENCY)
 // More cloud far out, from HORIZON_START over HORIZON_RAMP metres along the ray; the low deck's
 // ramp is nearer by its space's scale (`horizon`).
@@ -541,22 +559,25 @@ export const FORWARD_WEIGHT = 0.6, FORWARD_LOBE = 0.8;
 // form.
 export const OVERCAST_BROAD = 0.5, OVERCAST_WEIGHT = 2.4;
 // The closed deck's glow about the key light, drawn where the sky is composed (Sky.ts `deckGlow`):
-// a Henyey-Greenstein lobe of mean cosine DECK_GLOW_LOBE held at its value DECK_GLOW_CORE degrees
-// from the light inside that radius, its mean over the sphere DECK_GLOW times the deck's mean
-// radiance. The core sets the flat white plateau round the light's place, the mean cosine how fast
-// the glow falls off past it (its half-power radius), the weight its height over the deck away
-// from the light; raise the core for a wider plateau, the mean cosine for a tighter glow, the
-// weight for a brighter one. Fitted on the overcast sky with the sun at 18 degrees, over nine
-// pairs of mean cosine (0.75 to 0.85) and plateau (4 to 8 degrees), the weight for each set so its
-// plateau stands about 35 times the deck beside it, and solved again once the air under the deck
-// took the key's floor and gain (Sky.ts OVERCAST_KEY_GAIN), which brightens the deck beside the
-// light as seen through it (the glow is linear in the weight): at these values the glow falls to
-// half its plateau's excess over the deck about 11.7 degrees from the light, to a quarter at 17 and
-// a tenth at 30, the plateau holds within 7 % of its level out to 7 degrees, and the plateau reads
-// about 35 times the deck beside it at the light's elevation (33 with the sun at 30 degrees, 35 at
-// noon). A plateau of 5 degrees or less sags by more than 10 % at 7; a mean cosine of 0.75 puts the
-// half-power radius past 13 degrees, one of 0.85 near 10.
-export const DECK_GLOW = 1.65, DECK_GLOW_LOBE = 0.8, DECK_GLOW_CORE = 6;
+// two Henyey-Greenstein lobes, each of mean 1 over the sphere, times the deck's mean radiance: a
+// narrow one (mean cosine DECK_GLOW_LOBE, weight DECK_GLOW) that makes the glow's peak and sets its
+// half-power radius, and a broad one (DECK_GLOW_BROAD_LOBE, weight DECK_GLOW_BROAD) that makes its
+// long tail, 35 - 90 degrees out. A single lobe could not do both: one narrow enough for the
+// half-power radius left no tail past 35 degrees, and one weighted for the tail stood too high at
+// the light's place. Raise the narrow
+// weight for a brighter peak, its mean cosine for a tighter one; the broad weight for a brighter
+// tail, which also lifts the deck far from the light (a weight of 1 is about 1.2 times the deck's
+// own level there). The glow follows the deck's own pattern (DECK_GLOW_TEXTURE, Sky.ts `deckGlow`):
+// it is multiplied by m^k, m the base's local radiance over the deck's mean (its diffuse law
+// divided out), so it brightens the thin parts of the base and leaves its dark masses showing
+// rather than laying a flat sheet of light over them. k is small: near the light m holds the thin
+// parts' own forward light, and at k = 1 they stood out as hot spots twice the glow round them.
+// At these values, overcast at a sun of 15 and 22 degrees, the glow over the deck away from the
+// light is about 45 - 53 within 3 degrees of the key, 17 - 18 at 10, 5 at 22, 2.5 at 35, about 1
+// opposite it; it falls to half its excess over the deck at 7 - 8 degrees and to a tenth at 19 - 21;
+// the base's pattern inside it, 3 - 15 degrees out, spans about 0.4 - 0.5 stop (p10 - p90). The
+// broad lobe lifts the deck away from the light by about 0.4 of its own level.
+export const DECK_GLOW = 0.45, DECK_GLOW_LOBE = 0.85, DECK_GLOW_BROAD = 0.48, DECK_GLOW_BROAD_LOBE = 0.3, DECK_GLOW_TEXTURE = 0.2;
 
 /** The forward lobe's light on level ground: the integral over the upper hemisphere of a
  * Henyey-Greenstein lobe of mean cosine g about a key of height mu0 (its direction's y), each
@@ -806,6 +827,10 @@ export class Clouds {
 	readonly baseWeatherEnd = uniform( BASE_WEATHER_END );
 	// the base's rise between its masses, a share of the column (CLOUD_FORM `baseLift`, MASS_LOW)
 	readonly baseLift = uniform( 0 );
+	// how far the base's light follows its masses' optical depth (CLOUD_FORM `relief`), and the
+	// masses' share at which its scale is 1 (MASS_MEDIAN)
+	readonly relief = uniform( 0 );
+	readonly reliefMedian = tuneUniform( 'sky.clouds.reliefMedian', MASS_MEDIAN, { min: 0, max: 1, onChange: markSkyRetune } );
 	// The share of that rise the light march sees (Sky.ts trackClouds, from the key's elevation).
 	// Its taps span the shell's depth along the key: a key a few degrees up keeps them under the
 	// base, in the gaps between the masses, while the light's own path runs on for kilometres
@@ -822,11 +847,14 @@ export class Clouds {
 	readonly forwardLobe = tuneUniform( 'sky.clouds.forwardLobe', FORWARD_LOBE, { min: 0, max: 0.95, onChange: markSkyRetune } );
 	readonly overcastBroad = tuneUniform( 'sky.clouds.overcastBroad', OVERCAST_BROAD, { min: 0, max: 0.95, onChange: markSkyRetune } );
 	readonly overcastWeight = tuneUniform( 'sky.clouds.overcastWeight', OVERCAST_WEIGHT, { min: 0, max: 3, onChange: markSkyRetune } );
-	// The closed deck's glow about the key light (DECK_GLOW, Sky.ts `deckGlow`): its weight, mean
-	// cosine and plateau's radius (degrees). The seen panorama draws it too, so a change rebakes.
+	// The closed deck's glow about the key light (DECK_GLOW, Sky.ts `deckGlow`): the narrow lobe's
+	// weight and mean cosine, the broad lobe's, and the power of the base's own pattern it follows.
+	// The seen panorama draws it too, so a change rebakes.
 	readonly deckGlow = tuneUniform( 'sky.clouds.deckGlow', DECK_GLOW, { min: 0, max: 3, onChange: markSkyRetune } );
 	readonly deckGlowLobe = tuneUniform( 'sky.clouds.deckGlowLobe', DECK_GLOW_LOBE, { min: 0.5, max: 0.95, onChange: markSkyRetune } );
-	readonly deckGlowCore = tuneUniform( 'sky.clouds.deckGlowCore', DECK_GLOW_CORE, { min: 0, max: 12, onChange: markSkyRetune } );
+	readonly deckGlowBroad = tuneUniform( 'sky.clouds.deckGlowBroad', DECK_GLOW_BROAD, { min: 0, max: 3, onChange: markSkyRetune } );
+	readonly deckGlowBroadLobe = tuneUniform( 'sky.clouds.deckGlowBroadLobe', DECK_GLOW_BROAD_LOBE, { min: 0, max: 0.9, onChange: markSkyRetune } );
+	readonly deckGlowTexture = tuneUniform( 'sky.clouds.deckGlowTexture', DECK_GLOW_TEXTURE, { min: 0, max: 1.5, onChange: markSkyRetune } );
 	// The share of the forward light spread by the diffusion law (overcast's share of the sky) and
 	// the weight in use, `forwardWeight` moved to `overcastWeight` by that share (Sky.ts trackClouds).
 	readonly broadShare = uniform( 0 );
@@ -1207,7 +1235,7 @@ export class Clouds {
 		const candidate = ( p: V3, coverage: F, lods: V4, lift: F = this.baseLift ) => {
 
 			const h = shellHeight( p ).toVar();
-			const c = { conservative: float( 0 ).toVar(), top: float( 0 ).toVar(), floorMask: float( 0 ).toVar(), lift: float( 0 ).toVar(), h, coverage, lods, positions: [ vec3( 0 ).toVar(), vec3( 0 ).toVar() ] as const };
+			const c = { conservative: float( 0 ).toVar(), top: float( 0 ).toVar(), floorMask: float( 0 ).toVar(), lift: float( 0 ).toVar(), mass: float( 0 ).toVar(), h, coverage, lods, positions: [ vec3( 0 ).toVar(), vec3( 0 ).toVar() ] as const };
 			If( h.greaterThan( - 0.1 ).and( h.lessThan( 1.3 ) ).and( coverage.greaterThan( 0 ) ), () => {
 
 				const w = weatherAt( p.xz );
@@ -1238,8 +1266,8 @@ export class Clouds {
 					// that showed the dim dome over the deck. A base without masses skips it.
 					If( this.baseLift.greaterThan( 0 ), () => {
 
-						const mass = smoothstep( MASS_LOW, MASS_HIGH, dilation.div( BASE_STRENGTH ) );
-						c.lift.assign( lift.mul( float( 1 ).sub( mass ) ).mul( max( c.top, 0 ) ) );
+						c.mass.assign( smoothstep( MASS_LOW, MASS_HIGH, dilation.div( BASE_STRENGTH ) ) );
+						c.lift.assign( lift.mul( float( 1 ).sub( c.mass ) ).mul( max( c.top, 0 ) ) );
 
 					} );
 					c.conservative.assign( smoothstep( edge.negate(), edge, c.top.sub( this.edgeIn ).sub( h ) ).mul( smoothstep( edge.negate(), edge, h.sub( c.lift ) ) ).mul( c.floorMask ) );
@@ -1549,7 +1577,21 @@ export class Clouds {
 					// sample of a clear or fair march paid for it)
 					If( this.lowShare.greaterThan( 0 ), () => {
 
-						columnLight.addAssign( alpha.mul( shadowed ).mul( columnT ) );
+						// The masses thicker and the seams thinner in optical depth (`relief`,
+						// MASS_MEDIAN), held at RELIEF_FLOOR or above; the light alone, not the density
+						// the march and the shadow see. A branch on the uniform rather than a scale of 1:
+						// with the scale in the expression the compiler's arithmetic moved a few pixels of
+						// the cloudy sky (no relief) by up to four levels.
+						If( this.relief.greaterThan( 0 ), () => {
+
+							const relieved = max( columnTau.mul( c.mass.sub( this.reliefMedian ).mul( this.relief.mul( 2 ) ).add( 1 ) ), min( columnTau, RELIEF_FLOOR ) );
+							columnLight.addAssign( alpha.mul( shadowed ).div( relieved.mul( 0.75 * ( 1 - LOBE.forward ) ).add( 1 ) ) );
+
+						} ).Else( () => {
+
+							columnLight.addAssign( alpha.mul( shadowed ).mul( columnT ) );
+
+						} );
 
 					} );
 					if ( flash ) {
@@ -2914,15 +2956,17 @@ export class Clouds {
 
 	/** The cloud's form (CLOUD_FORM's terms), which Sky.ts blends by the sky's shares: the soft
 	 * margin, the erosion's strength at the top as a share of the high cumulus', the height over
-	 * which a base needs richer weather, the base's rise between its masses and how far the tops'
-	 * margin lies inside the column (a share of its half width). */
-	setForm( edge: number, erosion: number, baseEnd: number, baseLift: number, inside: number ): void {
+	 * which a base needs richer weather, the base's rise between its masses, how far the tops'
+	 * margin lies inside the column (a share of its half width) and how far the base's light follows
+	 * its masses' optical depth (`relief`). */
+	setForm( edge: number, erosion: number, baseEnd: number, baseLift: number, inside: number, relief: number ): void {
 
 		this.edge.value = edge;
 		this.edgeIn.value = edge * inside;
 		this.erosionPeak.value = EROSION_PEAK * erosion;
 		this.baseWeatherEnd.value = baseEnd;
 		this.baseLift.value = baseLift;
+		this.relief.value = relief;
 
 	}
 
