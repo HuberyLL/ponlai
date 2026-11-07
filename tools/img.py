@@ -8,6 +8,7 @@ around a point.
   uv run tools/img.py diff  A B            [region] [--thr 1,2,8,32] [--bbox-thr 0] [--heat P] [--gain 8] [--json]
   uv run tools/img.py crop  IMG|DIR...     region [--zoom N] --out DIR
   uv run tools/img.py sheet IMG|DIR...     [region] [--labels a,b] [--cols N] [--diff] [--zoom N | --scale F | --width W] --out FILE
+  uv run tools/img.py thumb IMG|DIR...     [--short 360] [--quality 88] --out DIR
   uv run tools/img.py stats IMG|DIR...     [region] [--pct 1,5,50,95,99] [--oklab] [--split] [--cover] [--mask M] [--json]
   uv run tools/img.py stats IMG|DIR... --deck [--deck-boxes auto|h|sun|none] [region] [--deck-rows [--horizon x0,x1,y]]
                                          [--trend 15] [--px-per-deg 24] [--json]
@@ -38,6 +39,9 @@ with the same box from every column (an anchor's box comes from the first column
 that names it). --diff adds a column after two inputs: their difference x --gain. Tiles are
 1:1 unless --zoom (nearest, integer), --scale (box filter) or --width (box filter to that width)
 is given; a full frame wider than 1280 px is scaled down to 1280 by default.
+
+thumb: each image (or directory's PNGs) scaled by a box filter to --short pixels on its short side and
+saved as <out>/<name>.jpg at --quality: a frame kept to be recognised, not measured.
 
 stats: per image and region, compare-captures.py's metrics (mean RGB, luma mean and standard
 deviation, the mean luma difference of adjacent pixels, the share of pixels with luma over 245)
@@ -314,6 +318,21 @@ def cmd_crop(a):
             p = out / f"{f.stem}.{label}.png"
             Image.fromarray(zoomed(cut(X, box), a.zoom)).save(p)
             print(p)
+
+
+# --------------------------------------------------------------------------------------------- thumb
+
+def cmd_thumb(a):
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    for f in expand(a.images, a.match):
+        im = Image.fromarray(decode(f))
+        k = a.short / min(im.size)
+        if k < 1:
+            im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.BOX)
+        p = out / f"{f.stem}.jpg"
+        im.save(p, quality=a.quality)
+        print(p)
 
 
 # --------------------------------------------------------------------------------------------- sheet
@@ -945,6 +964,14 @@ def main():
     p.add_argument("--width", type=int)
     p.add_argument("--out", required=True)
     p.set_defaults(fn=cmd_sheet)
+
+    p = sub.add_parser("thumb", help="small JPEGs of images")
+    p.add_argument("images", nargs="+")
+    p.add_argument("--match", default="*.png", help="the files a directory stands for")
+    p.add_argument("--short", type=int, default=360)
+    p.add_argument("--quality", type=int, default=88)
+    p.add_argument("--out", required=True)
+    p.set_defaults(fn=cmd_thumb)
 
     p = sub.add_parser("stats", help="mean, luma, percentiles per image or region")
     p.add_argument("images", nargs="+")
