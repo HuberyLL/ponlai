@@ -324,11 +324,11 @@ export function displayNight( daylight: number, elevation: number, rising: boole
  * clouded share `cloud` (Weather.ts `cloudedShare`), over its own windows (DUSK_WINDOWS.exposure):
  * the meter's handover to the night key is a question of the light it reads, the display's of how
  * the night looks, so each is set apart. A clear sky's comes in as the display's does; a clouded
- * one's from the horizon to -5 degrees, evenly by elevation, as the deck's twilight goes (the
- * clouded ambient's window, DUSK_WINDOWS.ambient.clouded). Taken by the daylight, as the
- * display's is, it came in from the horizon to about -3 degrees, and the night key, two stops
- * under a deck's day key, fell up to half a stop each half degree there, faster than the metered
- * light: the exposure fell while the land under the deck grew darker. */
+ * one's from the horizon to -5 degrees, a smoothstep by elevation, as the deck's twilight goes
+ * (its own window, DUSK_WINDOWS.exposure.clouded). Taken by the daylight, as the display's is, it
+ * came in from the horizon to about -3 degrees, and the handover from the deck's dusk keys
+ * (post/Exposure.ts `cloudySunset` -2.5, `cloudyDusk` -2.9) to the night key (-2.57) came too
+ * early for the metered light: the exposure fell while the land under the deck grew darker. */
 export function exposureNight( elevation: number, rising: boolean, cloud: number ): number {
 
 	const night = rampIn( elevation, DUSK_WINDOWS.exposure.clouded );
