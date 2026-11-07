@@ -133,7 +133,9 @@ export interface ExposureKey extends Record<string, number> {
  * bright cloud, and the clouds' own contrast widens a little as the frame darkens, which no key
  * mends; the land under the deck goes down with the sky. `cloudyLow` sets a low sun's frame: at 8
  * degrees the meadow under the deck and the sea beside it pull the key in opposite directions, so
- * the cloudy fit leaves it unchanged. One night key serves every night's sky; the meter would take
+ * the cloudy fit leaves it unchanged. One night key serves every night's sky. It lies about 3.3
+ * stops under the day's: the moonlit open sky is the brightest large thing in a night's frame, so
+ * the key is set as low as it goes before it puts the lit land under its own night levels. The meter would take
  * back the moonlight a deck takes, so overcast's night keeps a share of that darkness on screen
  * (OVERCAST_NIGHT). The rising sun's dawn key meters the morning's land before the
  * sun by both the sky and its own light, so the land keeps its level while the sky brightens toward
@@ -164,7 +166,7 @@ export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
 		{ at: 6, name: 'cloudyLow', values: { key: - 0.99, highlight: 3.05, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
 		{ at: 12, name: 'cloudy', values: { key: - 0.11, highlight: 3.05, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
 	],
-	night: { key: - 3.1, highlight: - 1.32, sky: 0.4, adaptUp: 0.05, adaptDown: 0.05 },
+	night: { key: - 2.81, highlight: - 1.32, sky: 0.4, adaptUp: 0.05, adaptDown: 0.05 },
 }, { key: { min: - 6, max: 3 }, highlight: { min: - 3, max: 4 }, sky: { min: 0, max: 1 }, adaptUp: { min: 0.02, max: 4, scale: 'log' }, adaptDown: { min: 0.02, max: 4, scale: 'log' } } );
 
 /** Overcast's key on top of the clouded one, stops, by overcast's share of the sky (Weather.ts
