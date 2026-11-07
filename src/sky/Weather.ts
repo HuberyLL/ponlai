@@ -281,9 +281,9 @@ export interface WeatherState {
 	// clear day: the hour's key gives the bands' weights, weather/HazeKeys.ts), of the ground layer's
 	// deep part, under its soft top (the hour's key's shape: weather/HazeKeys.ts,
 	// weather/VolumetricHaze.ts). A clear or fair day's is 3e-3, fitted together with the clear
-	// day's sky gains and exposure keys (Sky.ts CLEAR_SKY): at 2e-3 the far sea and the sky over a
-	// sun at 50 degrees, seen away from it, read more saturated (Oklab chroma higher by 0.004 and
-	// 0.007). Under a deck the air is dense near the sea and clear aloft (its shape per sky:
+	// day's sky gains (Sky.ts CLEAR_SKY), under the exposure keys of the time: at 2e-3 the far sea
+	// and the sky over a sun at 50 degrees, seen away from it, read more saturated (Oklab chroma
+	// higher by 0.004 and 0.007). Under a deck the air is dense near the sea and clear aloft (its shape per sky:
 	// weather/HazeKeys.ts), a cloudy sky's about two thirds of the clear day's, an overcast sky's
 	// about three times it; rain and fog thicken it. The hour's key scales it.
 	haze: number;
