@@ -592,8 +592,14 @@ export function vignetteFactor( at: V2, strength: F ): F {
 // (red 0.59, blue 1.25, the `high` key), where the stronger cast would turn sunlit rock blue. The
 // high key moves with the sky's (Sky.ts SKY_LIGHT), which takes the inverse, so the sky holds its
 // colour. The golden hour warms a little further (red 1.05, blue 0.9); the clouded skies take a cool
-// white too (red 0.78, blue 1.16), their grey light kept from reading warm. The night takes a cool
-// white too (red 0.53, blue 1.2), on top of the moon's light and the rods' (Purkinje.ts).
+// white too (red 0.78, blue 1.16), their grey light kept from reading warm. Overcast takes a cooler
+// white of its own (red 0.49, blue 1.14, WHITE_OVERCAST): under the clouded key its slightly warm
+// grey deck read as a neutral grey and the meadow under it as yellow-green (hue 120); its own key
+// brings the deck to a blue-green grey (OKLab a -0.022, b -0.008) and the meadow to green (hue
+// 132), the lightness all but unchanged. It comes in over the clouded day's white by overcast's share in
+// the sky, before the night's, so an overcast night takes the night's white as any other.
+// The night takes a cool white too (red 0.53, blue 1.2), on top of the moon's light and the rods'
+// (Purkinje.ts).
 // The rising sun takes a cold white where the setting sun takes the warm one (`dawn`, in place of
 // the golden key while the sun climbs: DayKeys.ts `rising`; red 0.4, blue 2, a fit on our own
 // views): all that the sun does not reach at dawn is blue, sky, water and rock alike, and a face turned
@@ -601,14 +607,18 @@ export function vignetteFactor( at: V2, strength: F ): F {
 // the evening. It is what moves the rose band over the horizon, which the sky's own light
 // (Sky.ts SKY_LIGHT, its `dawn` key) cannot reach. The sides are one from the `day` key up.
 // Tunable on debug pages (debug/Tune.ts): `post.white.<r|g|b>@golden`, `@dawn`, `@day`, `@high`,
-// `@cloudy`, `@night`.
+// `@cloudy`, `@overcast`, `@night`.
+const WHITE_RANGE = { r: { min: 0.2, max: 1.5 }, g: { min: 0.5, max: 1.5 }, b: { min: 0.5, max: 3 } };
 const WHITE_FROM_DAY: DayKey<{ r: number; g: number; b: number }>[] = [ { at: 9, name: 'day', values: { r: 0.5, g: 1, b: 1.36 } }, { at: 40, name: 'high', values: { r: 0.593, g: 1, b: 1.248 } } ];
 export const WHITE_BALANCE: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'post.white', {
 	day: [ { at: 4, name: 'golden', values: { r: 1.05, g: 1, b: 0.9 } }, ...WHITE_FROM_DAY ],
 	rising: [ { at: 4, name: 'dawn', values: { r: 0.4, g: 1, b: 2.0 } }, ...WHITE_FROM_DAY ],
 	cloudy: { r: 0.775, g: 1, b: 1.16 },
 	night: { r: 0.527, g: 1, b: 1.2 },
-}, { r: { min: 0.2, max: 1.5 }, g: { min: 0.5, max: 1.5 }, b: { min: 0.5, max: 3 } } );
+}, WHITE_RANGE );
+// overcast's own white (WHITE_BALANCE's header), over the clouded day's by overcast's share
+const WHITE_OVERCAST = tuneObject( { r: 0.49, g: 1, b: 1.14 },
+	{ r: 'post.white.r@overcast', g: 'post.white.g@overcast', b: 'post.white.b@overcast' }, WHITE_RANGE );
 
 
 export class Pipeline {
@@ -2426,7 +2436,18 @@ export class Pipeline {
 		u.purkinje.value = night * PURKINJE.strength;
 		const keyColor = this.sky.keyColor;
 		u.purkinjeKey.value = ( 0.2126 * keyColor.r + 0.7152 * keyColor.g + 0.0722 * keyColor.b ) * liftedKeyHeight( this.sky.keyDir, this.sky.keyIsMoon ) / Math.PI;
-		const { r, g, b } = keyed( WHITE_BALANCE, this.sky.elevation, night, this.white, cloud, this.sky.rising );
+		// the day's and the clouded white (DayKeys.ts `keyed`, without the night), overcast's
+		// (WHITE_OVERCAST) over them by overcast's share, then the night's over all by the night's
+		// weight, as `keyed` blends it: under no overcast the white is `keyed`'s to the bit
+		const white = keyed( WHITE_BALANCE, this.sky.elevation, 0, this.white, cloud, this.sky.rising );
+		const overcast = S.skyMix[ 3 ] ?? 0, atNight = WHITE_BALANCE.night!;
+		for ( const k of [ 'r', 'g', 'b' ] as const ) {
+
+			const v = white[ k ] + ( WHITE_OVERCAST[ k ] - white[ k ] ) * overcast;
+			white[ k ] = v + ( atNight[ k ] - v ) * night;
+
+		}
+		const { r, g, b } = white;
 		if ( r !== this.toneWhite[ 0 ] || g !== this.toneWhite[ 1 ] || b !== this.toneWhite[ 2 ] ) {
 
 			this.toneWhite = [ r, g, b ];
