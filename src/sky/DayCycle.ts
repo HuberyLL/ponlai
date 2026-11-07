@@ -1,5 +1,5 @@
 import { MathUtils, Matrix3, Quaternion, Vector3 } from 'three/webgpu';
-import { tune, tuneObject } from '../debug/Tune.ts';
+import { TUNE_ON, tune, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 
 // The day cycle: an equinox day at a fixed latitude, its stars a fixed real sky; the moon is
@@ -458,13 +458,16 @@ export function duskForced( name: DuskForce ): number | null {
 
 /** The values each share took as the code made it, forced or not, since a script last cleared the
  * map: [ least, greatest ] over every call (a share some frames or readers take at other values
- * shows the range). tools/dusk-grid.mjs reads it to report the shares and to skip forcing a share
- * to the value it already has. `hazeNight` has no value of its own here (`duskForced`). */
+ * shows the range). Kept on debug pages only (`TUNE_ON`, where `__PONLAI__` exists to read it):
+ * elsewhere it stays empty and a call costs nothing. tools/dusk-grid.mjs reads it to report the
+ * shares and to skip forcing a share to the value it already has. `hazeNight` has no value of its
+ * own here (`duskForced`). */
 export const duskShares = new Map<DuskForce, [ number, number ]>();
 
 /** The share `name` (DUSK_FORCES): `value` itself unless it is forced. */
 export function duskForce( name: DuskForce, value: number ): number {
 
+	if ( ! TUNE_ON ) return value;
 	const range = duskShares.get( name );
 	if ( range === undefined ) duskShares.set( name, [ value, value ] );
 	else {
