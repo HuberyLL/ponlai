@@ -713,8 +713,10 @@ needed): `diff` (two images or two directories: max, mean, pixels over levels, s
 change, bounding box, `--heat` map), `crop` (boxes or a capture's named anchors, `--zoom`),
 `sheet` (a labelled grid of images, directories or crops, `--diff` for A | B | diff) and `stats`
 (mean RGB, luma, percentiles per image or region; `--oklab` adds the Oklab lightness, chroma and
-hue medians, `--split` the means of the pixels under and over the region's own median L, a crown's dark
-and lit halves, and of its darkest 5 % and brightest 10 %, in Oklab and linear RGB, `--cover` the
+hue medians, `--linear` the mean linear luminance Y (sRGB decoded, Rec. 709), its `--pct`
+percentiles and the Oklab L, a, b of the mean linear colour, for light compared in stops (log2 of
+a ratio of Y) and colour as an Oklab distance, `--split` the means of the pixels under and over
+the region's own median L, a crown's dark and lit halves, and of its darkest 5 % and brightest 10 %, in Oklab and linear RGB, `--cover` the
 share of a mask capture's pixels painted flat red, as `grassMask:true` paints the blades, `--mask M`
 the pixels a mask capture of the same view (a file, or a directory of them) paints in a red of
 their own luminance against the rest, as `streakMask:true` paints the thin cloud layer's: their
