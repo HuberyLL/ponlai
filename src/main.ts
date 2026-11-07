@@ -28,7 +28,7 @@ import { SeaDetail } from './ocean/SeaDetail.ts';
 import { showUnderwater } from './ocean/Refraction.ts';
 import { Wenyao } from './life/Wenyao.ts';
 import { FallingLeaves } from './weather/FallingLeaves.ts';
-import { Water, keyChroma, updateShelfScatter } from './ocean/Water.ts';
+import { Water, keyChroma } from './ocean/Water.ts';
 import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
@@ -1926,7 +1926,6 @@ function tick( time: number ): void {
 	shared.clouded.value = cloudedShare( weather.skyMix );
 	shared.deckSky.value = deckSkyGain( sky.elevation, shared.clouded.value, weather.skyMix[ 3 ] ?? 0 );
 	shared.deckSkyGap.value = deckSkyGap( sky.elevation, shared.clouded.value, weather.skyMix[ 3 ] ?? 0 );
-	updateShelfScatter( sky.keyColor, sky.keyIsMoon ? 0 : 1 - shared.clouded.value, sky.elevation );
 	// the yunpeng's glow and its local lights by the night's share, a clear twilight's with the
 	// display's night (sky/DayCycle.ts `nightAmbientShare`; lighting/LocalLights.ts: its pass sorts
 	// the sources in view); a debug page may force each reader's (DayCycle.ts `duskForce`)

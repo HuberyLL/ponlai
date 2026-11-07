@@ -33,8 +33,7 @@ import { GROWTH } from '../world/IslandGrowth.ts';
 import { FAR_HALF } from '../world/SeabedTile.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { AMBIENT_ONLY } from '../debug/LightLayer.ts';
-import { tuneKeys, tuneUniform } from '../debug/Tune.ts';
-import { keyed, type DayKeys } from '../post/DayKeys.ts';
+import { tuneUniform } from '../debug/Tune.ts';
 import { REFERENCE_SPEED } from '../weather/Wind.ts';
 import { motionNode, motionState, motionUniforms, outputStruct, reactiveUniforms } from '../post/Motion.ts';
 import { sceneUnits } from '../post/PreExposure.ts';
@@ -105,19 +104,16 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     opaque image, as before; a thin sheet of water takes the opaque image of the rock under it;
 //     what swims in the water (Refraction.ts markSwimmer), in the opaque image straight behind,
 //     where its material places it as seen through the waves (swimmerSway)
-//   - the water body: Beer-Lambert absorption along that path, analytic single scattering of the sun
-//     (the same sun the floor takes: the share that enters the water and the beam's change of area,
-//     so the body dims as the sun sinks) and of the sky (Henyey-Greenstein; under a deck the sky's
-//     light in the body takes the deck's gain, sky/Weather.ts DECK_SKY_GAIN by `deckLight`, as the
-//     sea's bounce onto the land does, AmbientRelight.ts `seaScale`, less what a cloudy deck's gaps
-//     take back where the key comes through, `deckSkyGap`) and a multiple-scattering
-//     backscatter boost, the sun's scattering limited in colour over a short path (`SHELF_SCATTER`),
-//     so a high sun does not lay blue over the shallows, and tinted over a long one (`OPEN_SCATTER`),
-//     where it would keep too much red and grey the open sea; the veil, the sky light the fine particles
-//     under the surface send back (`VEIL`), which gives the deep water its quiet slate under cloud, takes the warm sky's colour
-//     with the sun low and stays off the shallows; the sun through the thin crests, which keeps the water's own colour and
-//     the sun's; whitecaps where the surface is compressed (tidewater's fresh foam, not its
-//     persistent foam, which integrates in time), lit as a bright diffuse scatterer
+//   - the water body: Lee et al.'s semi-analytic shallow-water model along that path (`WATER_BODY`),
+//     for Case 1 water's absorption and backscattering (shared.ts `sigA`, `bb`): the floor seen
+//     through the column, and the deep water's reflectance under the sun (the same sun the floor
+//     takes: the share that enters the water and the beam's change of area, so the body dims as the
+//     sun sinks) and under the sky (through the surface at the sky's diffuse transmittance; under a
+//     deck the sky's light in the body takes the deck's gain, sky/Weather.ts DECK_SKY_GAIN by
+//     `deckLight`, as the sea's bounce onto the land does, AmbientRelight.ts `seaScale`, less what a
+//     cloudy deck's gaps take back where the key comes through, `deckSkyGap`), each filling in as
+//     the column deepens, the whole leaving the water at 1 / n^2; whitecaps where the surface is compressed
+//     (tidewater's fresh foam, not its persistent foam, which integrates in time), lit as a bright diffuse scatterer
 // Drawn after the opaque pass into the same multisampled target, depth-tested per sample against
 // the opaque surfaces, reading a copy of that pass's resolved colour, its linear depth and the
 // underwater pyramid, and the refraction pass's colour and depth. Those images hold radiance
@@ -239,13 +235,6 @@ const smithG1 = Fn( ( [ y, s ]: [ F, F ] ) => {
 	return select( a.lessThan( 1.6 ), g, float( 1 ) );
 
 } ).setLayout( { name: 'smithG1', type: 'float', inputs: [ { name: 'y', type: 'float' }, { name: 's', type: 'float' } ] } );
-
-const phaseHG = Fn( ( [ cosT, g ]: [ F, F ] ) => {
-
-	const g2 = g.mul( g );
-	return float( 1 ).sub( g2 ).div( 4 * PI ).div( pow( max( g2.add( 1 ).sub( g.mul( cosT ).mul( 2 ) ), 1e-4 ), 1.5 ) );
-
-} ).setLayout( { name: 'phaseHG', type: 'float', inputs: [ { name: 'cosT', type: 'float' }, { name: 'g', type: 'float' } ] } );
 
 const D_GGX = Fn( ( [ NdH, a2 ]: [ F, F ] ) => {
 
@@ -391,65 +380,30 @@ const REFLECTION_BAND = { ramp: 0.18, hue: 0.6, level: 2.2, lowSun: [ 0.05, 0.2 
 //   horizon's colour by BELOW_HORIZON.
 const REFLECTION_LOBE = { slopeScale: 1, lift: 2, edge: 0.05 } as const;
 
-// The colour of the sun's light scattered in the water over the shelf. Through the display's balance
-// a sun near white in the scene reads blue green, and in the shallows its scattered light is what lays
-// that over the floor as the sun climbs. So, by a path of about `depth` metres (a Gaussian, so the
-// open sea past it takes `OPEN_SCATTER`'s tint instead), that light holds its blue to at most `blue` of its
-// green and its red to at least `red` of its green, which keeps its brightness. The sun comes down
-// into these limits on its own by about 12 degrees, and from there down nothing here acts. The
-// ratio is the key's, worked once a frame (`updateShelfScatter`): a closed sky or the moon leaves the
-// colour alone.
-const SHELF_SCATTER = { depth: 8, blue: 0.53, red: 1.5 } as const;
-const shelfTint = uniform( new THREE.Vector3( 1, 1, 1 ) );
-
-// The colour of the sun's light scattered in deep water, the other end of the shelf's mix. It corrects
-// that light, which keeps too much red over long paths (the water's scattering has more red than
-// green, and the sun is warm): left alone the open sea reads grey at a high sun. Not a mechanism of
-// its own, a tint on the scatter by the sun's elevation, red and blue against green; the shelf's mix
-// leaves the short paths alone, and a low sun, a closed sky and the moon keep the light as it is.
-const OPEN_SCATTER: DayKeys<{ r: number; b: number }> = tuneKeys( 'sea.openScatter', {
-	day: [
-		{ at: 5, name: 'golden', values: { r: 1, b: 1 } },
-		{ at: 12, name: 'open', values: { r: 0.6, b: 1.08 } },
-	],
-	night: { r: 1, b: 1 },
-}, { r: { min: 0.4, max: 1 }, b: { min: 1, max: 1.2 } } );
-const openTint = uniform( new THREE.Vector3( 1, 1, 1 ) );
-const _open = { r: 1, b: 1 };
-
-/** Sets the scattered light's tints: the deep water's from the sun's `elevation` (degrees,
- * `OPEN_SCATTER`) and the shelf's from the key's colour (the limits of `SHELF_SCATTER`), each `share`
- * of the way there, 0 leaving them white. Once a frame, beside the weather's clouded share. */
-export function updateShelfScatter( key: THREE.Color, share: number, elevation: number ): void {
-
-	keyed( OPEN_SCATTER, elevation, 0, _open );
-	openTint.value.set( 1 + share * ( _open.r - 1 ), 1, 1 + share * ( _open.b - 1 ) );
-
-	const { r, g, b } = key;
-	const tint = shelfTint.value;
-	if ( ! ( g > 0 ) ) {
-
-		tint.set( 1, 1, 1 );
-		return;
-
-	}
-
-	tint.x = 1 + share * ( r > 0 ? Math.max( SHELF_SCATTER.red * g / r, 1 ) - 1 : 0 );
-	tint.y = 1;
-	tint.z = 1 + share * ( b > 0 ? Math.min( SHELF_SCATTER.blue * g / b, 1 ) - 1 : 0 );
-
-}
-
-// The veil: the fine particles the waves keep stirred under the surface send back sky light. It
-// fills in with the view path (e-folding at `depth` metres), so the shallows stay as clear as their
-// path is short. Its amount is the sky's irradiance in the green and the blue (`blue` the blue's
-// share), which the water carries, not in the red, which it takes in its first metres: a red sky
-// feeds it little, so the sea at sunset sinks below its shoals and its waves show. Its colour is the
-// sky's at `chroma` of its saturation, by the particles' `tint`: warm under a warm sky, a grey slate
-// under cloud. The tint keeps most of the red, so the open sea takes a low sun's colour as the sky
-// does, and the slow fill keeps that colour off the shallows' floor. Its share is high under cloud
-// and low at noon, when the sun's single scattering rules.
-const VEIL = { gain: 0.119, depth: 12, blue: 0.35, chroma: 0.68, tint: [ 0.92, 1, 0.58 ] } as const;
+// The water body: Lee, Carder, Mobley, Steward & Patch 1999, "Hyperspectral remote sensing for
+// shallow waters: 2. Deriving bottom depths and water properties by optimization" (Appl. Opt.
+// 38:3831), the semi-analytic model of the light a shallow column sends up, in its off-nadir form
+// (their equation 9). With kappa = a + bb and u = bb / kappa (shared.ts `sigA`, `bb`):
+//   rrs_deep = ( 0.084 + 0.170 u ) u, the deep water's below-surface remote-sensing reflectance
+//   Du_C = 1.03 sqrt( 1 + 2.4 u ), Du_B = 1.04 sqrt( 1 + 5.4 u ), the column's and the floor's
+//     upwelling distribution factors
+//   floor  = the floor's radiance x exp( - kappa Du_B L )
+//   column = E_d( 0- ) rrs_deep ( 1 - exp( - kappa ( H / mu_d + Du_C L ) ) )
+// for each of the sun (mu_d the refracted sun's cosine) and the sky (1 / mu_d = SKY_PATH), L the
+// slant path along the refracted view and H = L mu_v the water's depth along it. The floor's radiance
+// is the opaque pass's, lit through the column by Underwater.ts at the same kappa, which is the
+// model's downward leg. The model was fitted to views within 30 degrees of the nadir under the
+// water (its mean error about 6 %, at most about 15 %); most of the sea in the island view is seen
+// past that, and takes it with a larger error, though the lower the view the more the reflection
+// rules the sea. Their angular correction of bb (equations 10 and 11) is left out, as small within
+// that range. Their denominator ( 1 - 1.5 rrs ) is left out too: 1.5 rrs is about 0.1 to 1.6 % over
+// deep water (red to blue) and up to about 4 % over shallow sand, under the model's own error. The
+// radiance under the surface leaves it at 1 / n^2 (the change of the beam's solid angle); the
+// surface's own transmittance 1 - F is the blend with the reflection.
+const WATER_BODY = { rrs: [ 0.084, 0.170 ], column: [ 1.03, 2.4 ], floor: [ 1.04, 5.4 ] } as const;
+// the diffuse Fresnel transmittance of a uniform sky from air into water at n = 1.333, and the path
+// factor of its light down the column, about 1 / mu_d (Underwater.ts)
+const SKY_INTO_WATER = 0.934, SKY_PATH = 1.2;
 
 // The reflection's march stops this far along the ray (m); its hits fade out from 120 m (tidewater's).
 const SSR_FARTHEST = 260;
@@ -797,8 +751,6 @@ export class Water {
 		const vLag = varying( xz ), vWeights = varying( weights );
 		// the meadow's gust at the grid point (SeaDetail.ts: its map read here, in the vertex stage)
 		const vIslandGust = varying( detail.islandGust( xz ) );
-		// the surface's height over the mean sea (the waves and the rock's reflected wave): the crests
-		const vWaveH = varying( displaced.y.sub( shared.waterLevel ) );
 		// the key's soft shadow at the grid point (the constants at SHADOW_SOFT_RADIUS): the map's
 		// coordinate is an affine function of the world, so the disc's radii are its columns
 		const toMap = sunShadow.coordinate;
@@ -1379,36 +1331,33 @@ export class Water {
 			const deepening = openDeepening( wp.xz.add( Tv.xz.mul( Lend ) ) ).div( tDown );
 			const pathLen = clamp( min( Lter, length( rayF.mul( zF.div( rayF.z ) ).sub( posV ) ) ).add( deepening ), 0, 400 ).toVar();
 
-			// ---- the water body: Beer-Lambert absorption along the path, and the sun and the sky
-			// scattered into it analytically (single scattering, Henyey-Greenstein, and a multiple
-			// scattering backscatter boost after Gordon: R = 0.33 bb / ( a + bb ))
+			// ---- the water body: Lee et al.'s shallow-water model along the refracted view (WATER_BODY)
 			// (the body's light: its share of the shadow, SHADOW_BODY)
 			const bodyShare = mix( float( 1 ), float( SHADOW_BODY ), smoothstep( ...SHADOW_BODY_DEPTH, thickness ) );
 			const bodyLight = keyLight.mul( mix( float( 1 ), vKeyShadow, bodyShare ) ).toVar();
-			const sigA = shared.sigA, bb = shared.bb;
-			const sigT = sigA.add( bb ).toVar();
+			const kappa = shared.sigA.add( shared.bb ).toVar();
+			const ub = shared.bb.div( kappa ).toVar();
+			const rrsDeep = ub.mul( WATER_BODY.rrs[ 1 ] ).add( WATER_BODY.rrs[ 0 ] ).mul( ub ).toVar();
+			const duColumn = sqrt( ub.mul( WATER_BODY.column[ 1 ] ).add( 1 ) ).mul( WATER_BODY.column[ 0 ] ).toVar();
+			const duFloor = sqrt( ub.mul( WATER_BODY.floor[ 1 ] ).add( 1 ) ).mul( WATER_BODY.floor[ 0 ] ).toVar();
 			const Ls = refract( L.negate(), vec3( 0, 1, 0 ), 1 / IOR ).negate().toVar(); // toward the sun from under the water
-			const muS = max( Ls.y, 0.1 ), muV = max( Tv.y.negate(), 0.15 );
+			const muS = max( Ls.y, 0.1 ).toVar(), muV = max( Tv.y.negate(), 0.15 ).toVar();
+			const depthV = pathLen.mul( muV ).toVar(); // the water's depth under the surface along the view
+			// the sun's light into the water: the key's share through a level surface (1 - F times the
+			// refracted beam's cosine over its area); times the refracted sun's cosine, the irradiance just
+			// under the surface, E_d( 0- )
 			const sunIn = bodyLight.mul( float( 1 ).sub( fresnelDielectric( max( L.y, 0.02 ), float( IOR ) ) ) ).mul( refractedSunBeamScaleNode( L ) );
-			const kSun = sigT.mul( muV.div( muS ).add( 1 ) ).toVar();
-			const kAmb = sigT.mul( muV.div( 0.75 ).add( 1 ) ).toVar();
-			const ph = phaseHG( dot( Tv, Ls ), float( 0.86 ) ).mul( 0.7 ).add( 0.3 / ( 4 * PI ) );
-			const albedoMS = bb.mul( 0.33 * 4 ).div( sigA.add( bb ) ).toVar();
-			const shelfShare = exp( pathLen.mul( pathLen ).div( - SHELF_SCATTER.depth * SHELF_SCATTER.depth ) );
-			const inSun = sunIn.mul( mix( openTint, shelfTint, shelfShare ) ).mul( bb.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) ).mul( float( 1 ).sub( exp( kSun.negate().mul( pathLen ) ) ) ).div( kSun );
-			// (under a deck the sky's light in the body takes the deck's gain, sky/Weather.ts DECK_SKY_GAIN,
-			// less what a cloudy deck's gaps take back where the key comes through, `deckSkyGap`)
-			const inAmb = shared.skyIrradianceSource.mul( shared.deckSky.sub( shared.deckSkyGap.mul( cloudVisibility ) ) ).mul( bb.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ).mul( float( 1 ).sub( exp( kAmb.negate().mul( pathLen ) ) ) ).div( kAmb );
-			// the sun through the thin crests: light entering a crest's top and back scatters out of its
-			// face over a broad lobe, down some 1.5 m of the water it crossed
-			const vH = normalize( V.xz.add( 1e-5 ) ), lH = normalize( L.xz.add( 1e-5 ) );
-			const back = pow( sat( dot( vH, lH.negate() ).mul( 0.6 ).add( 0.4 ) ), 2.5 );
-			const crest = sat( vWaveH.mul( 0.9 ).add( 0.1 ) ).mul( sat( float( 1 ).sub( N.y ).mul( 4 ) ).add( 0.25 ) );
-			const sss = bodyLight.mul( exp( sigT.negate().mul( 1.5 ) ) ).mul( 0.033 ).mul( back.mul( crest ) ).mul( smoothstep( 0, 0.25, L.y ) );
-			const veil = mix( vec3( 1 ), skyLight.div( max( lum( skyLight ), 1e-5 ) ), VEIL.chroma ).mul( vec3( ...VEIL.tint ) )
-				.mul( mix( skyLight.g, skyLight.b, VEIL.blue ) ).mul( VEIL.gain )
-				.mul( float( 1 ).sub( exp( pathLen.div( VEIL.depth ).negate() ) ) );
-			const transmitted = sceneCol.mul( exp( sigT.negate().mul( pathLen ) ) ).add( inSun ).add( inAmb ).add( veil ).add( sss );
+			const edSun = sunIn.mul( muS ).toVar();
+			// the sky's, pi times its radiance's mean (`skyIrradianceSource` is E / pi), through the
+			// surface at its diffuse transmittance (SKY_INTO_WATER); under a deck the sky's light in the
+			// body takes the deck's gain, sky/Weather.ts DECK_SKY_GAIN, less what a cloudy deck's gaps
+			// take back where the key comes through, `deckSkyGap`
+			const edSky = shared.skyIrradianceSource.mul( shared.deckSky.sub( shared.deckSkyGap.mul( cloudVisibility ) ) ).mul( PI * SKY_INTO_WATER ).toVar();
+			const floorSeen = sceneCol.mul( exp( kappa.mul( duFloor ).mul( pathLen ).negate() ) ).toVar();
+			const bodySun = edSun.mul( rrsDeep ).mul( float( 1 ).sub( exp( kappa.mul( depthV.div( muS ).add( duColumn.mul( pathLen ) ) ).negate() ) ) ).toVar();
+			const bodySky = edSky.mul( rrsDeep ).mul( float( 1 ).sub( exp( kappa.mul( depthV.mul( SKY_PATH ).add( duColumn.mul( pathLen ) ) ).negate() ) ) ).toVar();
+			// (the radiance under the surface leaves it at 1 / n^2; the surface's 1 - F is the blend's below)
+			const transmitted = floorSeen.add( bodySun ).add( bodySky ).mul( 1 / ( IOR * IOR ) ).toVar();
 
 			// ---- foam: a bright diffuse scatterer (albedo 0.85) under the wrapped sun and the sky
 			const foamLight = keyLight.mul( min( vKeyShadow.mul( FOAM_SHADOW_GAIN ), 1 ) );
