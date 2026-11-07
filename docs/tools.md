@@ -386,7 +386,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `coolTo`; the shade's contrast `post.shade.pivot@day`, `slope`
   (`@golden`, `@day`, `@cloudy`, `@night`), the bloom's `post.bloom.strength` and the sun's glare
   `post.glare`; the display's white `post.white.r@high` (`g`, `b`; `@day`, `@golden`, `@dawn`, `@cloudy`,
-  `@overcast`, `@night`), the sky's light `sky.light.r@high` (`g`, `b`; `@low`, `@golden`, `@dusk`, `@morning`, `@dawn`,
+  `@overcast`, `@night`), overcast's highlights toward grey `post.highlight.amount` (`from`, `to`),
+  the sky's light `sky.light.r@high` (`g`, `b`; `@low`, `@golden`, `@dusk`, `@morning`, `@dawn`,
   `@cloudyHigh`, `@night`) and the clear sky's gain over it `sky.clear.gain@high` (`@horizon`,
   `@golden`, `@late`, `@low`, the rising sun's `@dawn`, `@early`, `@morning`), the
   key's colour at a low sun `sky.key.hueDepth` (the rising sun's `dawnHueDepth`), `reddens`,

@@ -110,7 +110,8 @@ import { localLightsPass } from '../lighting/LocalLights.ts';
 //   blurred across (localTone.grid, gridX, gridXY: LocalTone.ts), at fixed sizes
 //   display: the exposure, the local tone mapping, tidewater's grade (the night's grade, the
 //   tone, the vignette), the white balance and the tone curve in their
-//   curve space (ToneSpace.ts), the grade's two tables (GradeLut.ts, indexed by the square root of linear light), the BT.709 OETF, dither ── displayRT
+//   curve space (ToneSpace.ts), the grade's two tables (GradeLut.ts, indexed by the square root of linear light),
+//   overcast's highlights toward grey (HIGHLIGHT_GREY), the BT.709 OETF, dither ── displayRT
 //   ── copied to the screen
 // Under the temporal modes (Antialiasing.ts: aa=taa|taau) the scene half is single-sampled and
 // jittered, and writes the motion vectors beside the colour:
@@ -266,7 +267,8 @@ import { localLightsPass } from '../lighting/LocalLights.ts';
 //   (LocalTone.ts: a function of the frame, nothing kept between frames), one
 //   curve and grade (the shade's contrast, SHADE_CONTRAST; the tone, TONE, and the night's grade, NIGHT, over it are off by default), then
 //   the grade's tables (GradeLut.ts, indexed by the square root of the curve's linear output: the first generated from the grade's parameters, `grade` and
-//   `setGrade`, the second the identity). The curve maps each channel in the
+//   `setGrade`, the second the identity), then overcast's highlights toward grey (HIGHLIGHT_GREY).
+//   The curve maps each channel in the
 //   space of ToneSpace.ts, AP1 with its red primary moved out, and the white balance is folded
 //   into its input matrix (WHITE_BALANCE, keyed by the sun and the weather; rebuilt only when it changes). The exposure is metered
 //   from the frame by the meter pass (Metering.ts, Exposure.ts: the metering illuminance's and the
@@ -395,7 +397,7 @@ type PassBuilder = Parameters<Parameters<FrameGraph<PipelineFrame>[ 'addPass' ]>
 // and contrast left for the grade table's hue bands, GradeLut.ts BASE_GRADE, and the shade's
 // contrast, SHADE_CONTRAST); our tone curve (ToneCurve.ts) on the exposed colour, in the curve
 // space of ToneSpace.ts with the white balance folded into its input matrix; the grade's tables;
-// the BT.709 OETF shown as sRGB, and a blue-noise dither (BlueNoise.ts; its luminance-weighted grain is gone).
+// overcast's highlights toward grey (HIGHLIGHT_GREY); the BT.709 OETF shown as sRGB, and a blue-noise dither (BlueNoise.ts; its luminance-weighted grain is gone).
 // tidewater meters its frame's luminance and scales it by an auto exposure before the grade; here
 // the meter reads the light on the scene (Metering.ts, Exposure.ts).
 
@@ -517,6 +519,25 @@ export const DESATURATION: DayKeys<DesaturationKey> = tuneKeys( 'post.desaturate
  * (all of it), read through the white balance (`balance`). */
 const COOL_FROM = tuneUniform( 'post.desaturate.coolFrom', 0, { min: - 1, max: 1 } );
 const COOL_TO = tuneUniform( 'post.desaturate.coolTo', 0.6, { min: - 1, max: 1 } );
+// Overcast's highlights toward grey: the grade's tables' linear output c becomes
+// c + ( Y( c ) - c ) amount smoothstep( from, to, Y( c ) ) share, `share` overcast's share in the sky
+// times one less the night's weight (as its white, WHITE_OVERCAST: none at night, and nothing at all
+// where the sky holds no overcast). Overcast's white, which turns the deck away from the sun
+// blue-green grey and the meadow green, turned the bright sky about the sun cyan too (OKLab a -0.033
+// at a lightness of 0.74, 10 to 30 degrees from it), and a warmer white turns the deck and the
+// meadow back. The deck lies under `from` (a display lightness of about 0.35, the deck about 0.32)
+// and keeps its colour; the meadow straddles it: its hue stays, its median chroma falls by about a
+// fifth (0.083 to 0.065), and the lit grass above a lightness of 0.55 keeps under half its chroma.
+// `from` and `to` are linear luminances of the tables' output (display lightness about 0.35 and
+// 0.70); amount 0.58 brings the sky 10 to 30 degrees from the sun to a -0.014 and 30 to 60 degrees
+// to about a -0.024 (-0.024 at a sun of 22 degrees, -0.025 at 15), and the glow within 10 degrees
+// of it to a chroma under 0.01.
+// Tunable on debug pages (debug/Tune.ts): `post.highlight.amount`, `from`, `to`.
+const HIGHLIGHT_GREY = {
+	amount: tuneUniform( 'post.highlight.amount', 0.58, { min: 0, max: 1 } ),
+	from: tuneUniform( 'post.highlight.from', 0.067, { min: 0, max: 1 } ),
+	to: tuneUniform( 'post.highlight.to', 0.4, { min: 0, max: 1 } ),
+};
 /** How cool the colour `c` (white balanced) is, 0 to 1 (`coolFrom`, `coolTo`: COOL_FROM, COOL_TO). The
  * edges come in as inputs: a laid-out helper that reads uniforms in its body can be emitted with
  * another material's uniform names (r186), which broke the rain's materials under taa. */
@@ -753,6 +774,8 @@ export class Pipeline {
 		shadePivot: uniform( 0.8 ), shadeSlope: uniform( 0 ),
 		// the desaturation before the local gain (DESATURATION)
 		desaturate: uniform( 0 ), desaturateCool: uniform( 0 ),
+		// overcast's highlights toward grey (HIGHLIGHT_GREY): overcast's share by day
+		highlightShare: uniform( 0 ),
 		// the white balance alone (WHITE_BALANCE), through which the desaturation's cool share reads
 		// its colours
 		balance: uniform( new THREE.Matrix3() ),
@@ -1283,7 +1306,8 @@ export class Pipeline {
 
 		// ---- tidewater's grade, to display values: the scene at the exposure, the vignette (the
 		// resolve leaves it to the canvas pass, after the accumulation), the tone curve with the
-		// white balance, the grade's tables and the BT.709 OETF (its saturation and contrast are the
+		// white balance, the grade's tables, overcast's highlights toward grey (HIGHLIGHT_GREY) and the
+		// BT.709 OETF (its saturation and contrast are the
 		// table's, GradeLut.ts) (`encode` false: the output code's sRGB decode). `at`: the
 		// screen uv whose local tone mapping it takes (none for the grade's table).
 		// the vignette's factor at the pixel being drawn (VIGNETTE): round in the frame's own uv, the
@@ -1321,7 +1345,11 @@ export class Pipeline {
 			// the output transfer: the tables' linear output (the square of what they hold) encoded by
 			// the BT.709 OETF, a code the canvas shows as sRGB (`encode` false: that code's sRGB decode,
 			// so the temporal canvas pass's sRGB encode gives the code back)
-			const v = ( bt709( clamp( looked.mul( looked ), 0, 1 ) as V3 ) as V3 ).toVar();
+			const graded = looked.mul( looked ).toVar();
+			// overcast's highlights toward grey (HIGHLIGHT_GREY): a weight of 0 adds nothing
+			const y = luminance( graded );
+			graded.addAssign( vec3( y ).sub( graded ).mul( HIGHLIGHT_GREY.amount.mul( smoothstep( HIGHLIGHT_GREY.from, HIGHLIGHT_GREY.to, y ) ).mul( u.highlightShare ) ) );
+			const v = ( bt709( clamp( graded, 0, 1 ) as V3 ) as V3 ).toVar();
 			return encode ? v : sRGBTransferEOTF( v ) as V3;
 
 		};
@@ -2447,6 +2475,7 @@ export class Pipeline {
 			white[ k ] = v + ( atNight[ k ] - v ) * night;
 
 		}
+		u.highlightShare.value = overcast * ( 1 - night );
 		const { r, g, b } = white;
 		if ( r !== this.toneWhite[ 0 ] || g !== this.toneWhite[ 1 ] || b !== this.toneWhite[ 2 ] ) {
 
