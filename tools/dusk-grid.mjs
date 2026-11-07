@@ -76,12 +76,11 @@
 //
 // --haze: at each point, after the point's own state, the haze in a view of its own (`haze-rows`:
 // 65 m over the sea at the land box's +x edge, its back to the island, facing the open sea, pitched
-// 10 degrees up with a vertical field of 30; one pose everywhere, since the ground layer's width
-// follows the camera's height), once the page has settled there:
+// 10 degrees up with a vertical field of 30; one pose everywhere, so the points read alike and
+// compare), once the page has settled there:
 //   - hazeMedium: every item of the haze's key as the frame set it (main.ts `hazeKey`, `key.*`), the
 //     haze's copy of it (`look.*`), its medium's uniforms (`air.*`: the weather's haze and fog, the
-//     layers, the ground layer's width rule, sigma, the dome's own depth), the
-//     clouds' copy of the medium (`clouds.*`), the moon's aerosol keys (`moon.*`, Tune
+//     layers, sigma, the dome's own depth), the clouds' copy of the medium (`clouds.*`), the moon's aerosol keys (`moon.*`, Tune
 //     `haze.moon.*`) and the settings (`settings.*`); vectors flattened (`.0`, `.1`, ...), non-finite
 //     numbers as text. The light's colours are not in it.
 //   - hazeOpacity: 1 - T per display channel and the light at full opacity (VolumetricHaze.probe,
@@ -448,10 +447,10 @@ const applyJs = ( forces ) => `async () => { ${ PAGE }
 const ISLAND_VIEW = `(() => { const s = window.__PONLAI__; s.setCameraMode( 'orbit' ); s.setCameraView( 'island' ); })()`;
 const viewJs = ( view ) => view === 'island' ? ISLAND_VIEW : viewEval( view, [] );
 
-// --haze: the haze's own view, one pose at every point (the ground layer's width follows the
-// camera's height, so the height is fixed): 65 m over the sea at the land box's +x edge, its back to
-// the island, facing the open sea along +x, pitched 10 degrees up with a vertical field of 30, so
-// the horizon and the sky up to 25 degrees are in the frame
+// --haze: the haze's own view, one pose at every point, so the points read alike and compare:
+// 65 m over the sea at the land box's +x edge, its back to the island, facing the open sea along
+// +x, pitched 10 degrees up with a vertical field of 30, so the horizon and the sky up to 25
+// degrees are in the frame
 const HAZE_HEIGHT = 65, HAZE_PITCH = 10, HAZE_FOV = 30;
 const HAZE_VIEW = `(() => { const s = window.__PONLAI__, b = s.controls.ground.bounds, cz = ( b.min.z + b.max.z ) / 2, e = ${ HAZE_PITCH } * Math.PI / 180;
 	s.setCameraView?.( 'island' ); s.setCameraMode( 'free' ); s.camera.position.set( b.max.x, ${ HAZE_HEIGHT }, cz );
@@ -475,7 +474,7 @@ const hazeReadJs = () => `async () => { ${ PAGE }
 	};
 	for ( const [ k, v ] of Object.entries( s.hazeKey ) ) put( 'key.' + k, v );
 	for ( const [ k, v ] of Object.entries( air.look ) ) put( 'look.' + k, v );
-	for ( const k of [ 'haze', 'fog', 'layer', 'ground', 'widthRule', 'sigma', 'skyDepth' ] ) put( 'air.' + k, air[ k ].value );
+	for ( const k of [ 'haze', 'fog', 'layer', 'ground', 'sigma', 'skyDepth' ] ) put( 'air.' + k, air[ k ].value );
 	const clouds = air.cloudMedium ?? sky.clouds?.haze;
 	if ( clouds ) for ( const k of [ 'layer', 'ground', 'sigma' ] ) put( 'clouds.' + k, clouds[ k ].value );
 	for ( const k of [ 'red', 'blue', 'gain', 'mieG' ] ) put( 'moon.' + k, s.tune.get( 'haze.moon.' + k ) );

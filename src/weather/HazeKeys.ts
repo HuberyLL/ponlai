@@ -26,9 +26,7 @@ import { cloudBase } from '../sky/Sky.ts';
 //     (a deeper ground layer than the 10 m the other hours keep, with more aerosol over it), and
 //     the sunrise's are the golden hour's: a low sun's air, thin enough to leave no dark band over
 //     the horizon. The day's, the golden hour's, the sunrise's and the night's are tunable, and the
-//     other hours take the day's. `widthSlope` widens the step with the camera's height over
-//     the sea (m per m, 0 to start): by night the haze layer thickens as the camera climbs, so the
-//     night's haze still shows from high up (the night's tunable, `haze.key.widthSlope@night`).
+//     other hours take the day's.
 //     `skyDepth` is a thin haze that fills the air's whole height, uniform in height, which only
 //     the sky dome takes (VolumetricHaze `skyHaze`): green's optical depth per kilometre of a sky
 //     ray's length, 0 in every key until tuned (the keys with a shape of their own are tunable; the
@@ -179,7 +177,6 @@ export interface HazeKey {
 	mieWeight: number;
 	top: number;
 	width: number;
-	widthSlope: number;
 	aerosolShare: number;
 	aerosolHeight: number;
 	// the aerosol layer's top (m; Infinity for none): a low deck's base (see the header)
@@ -193,7 +190,7 @@ const key = ( amount: number, [ sigmaRed, sigmaGreen, sigmaBlue ]: Sigma, desatu
 	( { deck: 0, overcastDeck: 0, amount, sigmaRed, sigmaGreen, sigmaBlue, desaturate, gain: 1, mist, sunRayleigh, rayleighWeight: 1, mieWeight: 1, ...SHAPE } );
 
 // the medium's shape every key starts from
-const SHAPE = { top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0 };
+const SHAPE = { top: 10, width: 50, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0 };
 // the three keys' spectral extinction, and the hours between's from them by the sun's elevation
 // (see the header): the night's at -12 degrees, the golden hour's at 2
 const NIGHT_SIGMA: Sigma = [ 0.463, 0.53, 0.694 ];
@@ -212,7 +209,7 @@ const EARLY_DAWN = { ...BEFORE_DAWN, rayleighWeight: 0.965, mieWeight: 4.1 };
 const MIST = { ...key( 0.6, GOLDEN_SIGMA, 0.64, 0, 1 ), rayleighWeight: 0.72, mieWeight: 0.83, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010 };
 const MORNING = { ...key( 0.96, DAY_SIGMA, 0.5, 0, 1 ), rayleighWeight: 0.33, mieWeight: 0.83 };
 const DAY = { ...key( 0.659, DAY_SIGMA, 1, 0, 0 ), rayleighWeight: 0.575, mieWeight: 0.79, top: 78.4, width: 54.9, aerosolShare: 0.06, aerosolHeight: 761 };
-const NIGHT = { ...key( DAY.amount, NIGHT_SIGMA, 0.55, 0, 1 ), rayleighWeight: DAY.rayleighWeight, mieWeight: 2, top: 47.6, width: 36.8, widthSlope: 0.65, aerosolShare: 0.003, skyDepth: 0 };
+const NIGHT = { ...key( DAY.amount, NIGHT_SIGMA, 0.55, 0, 1 ), rayleighWeight: DAY.rayleighWeight, mieWeight: 2, top: 47.6, width: 36.8, aerosolShare: 0.003, skyDepth: 0 };
 const GOLDEN = { ...key( 0.606, GOLDEN_SIGMA, 0.331, 0, 1 ), rayleighWeight: 0.58, mieWeight: 3.8, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010 };
 const AFTER_SUNSET = { ...key( 0.45, twilight( - 2.5 ), 0.75, 0, 1 ), rayleighWeight: 0.32, mieWeight: 4.7 };
 // the deep twilight after sunset: the afterglow's air, its light keeping the glow's colour (see the header)
@@ -239,7 +236,6 @@ for ( const [ k, name, fields ] of [ [ DAY, 'day', TUNED ], [ GOLDEN, 'golden', 
 	tuneObject( k, Object.fromEntries( fields.map( ( f ) => [ f, `haze.key.${ f }@${ name }` ] ) ), TUNE_RANGE );
 
 }
-tuneObject( NIGHT, { widthSlope: 'haze.key.widthSlope@night' }, { widthSlope: { min: 0, max: 1, onChange: markSkyRetune } } );
 tuneObject( MIST, { mist: 'haze.key.mist@mist' }, { mist: { min: 0, max: 2, onChange: markSkyRetune } } );
 
 // rows by the sun's elevation (degrees, ascending), eased between neighbours, the end rows held
@@ -293,7 +289,7 @@ const SUN_RAYLEIGH = [ 0, 0, 1, 1 ];
 // (`skyDepth` is eased from each key's own value: the keys without a shape of their own keep
 // SHAPE's 0 rather than taking the day's)
 const FIELDS = [ 'amount', 'sigmaRed', 'sigmaGreen', 'sigmaBlue', 'desaturate', 'mist', 'sunRayleigh', 'rayleighWeight', 'mieWeight', 'skyDepth' ] as const;
-const SHAPE_FIELDS = [ 'top', 'width', 'widthSlope', 'aerosolShare', 'aerosolHeight' ] as const;
+const SHAPE_FIELDS = [ 'top', 'width', 'aerosolShare', 'aerosolHeight' ] as const;
 
 // the key of `rows` at `elevation`, its fields and its shape, into `out`
 function keyAlong( rows: ReadonlyArray<readonly [ number, HazeKey ]>, elevation: number, out: HazeKey ): void {

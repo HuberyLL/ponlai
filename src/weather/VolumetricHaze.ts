@@ -71,11 +71,9 @@ const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
 //   - the medium's density is analytic and integrable along any ray: a ground layer, the talk's
 //     sigmoidal layer, dense below a soft top and thinning above it, and a deep exponential aerosol
 //     layer. Their shape is the hour's key's (HazeKeys.ts: the layer's top over the island and its
-//     width, the aerosol's share and scale height), from 10 m, 50 m, 0.035 and 1.4 km. The width
-//     grows with the camera's height over the sea by the key's `widthSlope` (by night the layer
-//     thickens as the camera climbs, so the night's haze still shows from high up): set each frame
-//     from the camera, one width for the volume, the sky and the CPU's readings, and a ray read from
-//     another height (`skyHaze`'s `from`, the probe's rays, `transmittance`) takes its start's. The talk's slide prints the layer as
+//     width, the aerosol's share and scale height), from 10 m, 50 m, 0.035 and 1.4 km, the same
+//     whatever the camera's height: one medium for the volume, the sky, the probe's rays and the
+//     CPU's readings, from any start. The talk's slide prints the layer as
 //     lerp( d0, d1, 1/2 z^2 / ( z^2 + k_s^2 ) + 1/2 ), whose weight is even in z and no step; this is
 //     the algebraic sigmoid we take it to stand for, rho_f ( 1 - u / sqrt( w^2 + u^2 ) ) with u the
 //     height over the layer's top, whose mean over any span of heights has a closed form. At the
@@ -498,7 +496,7 @@ export class VolumetricHaze {
 	// weights, the medium's shape (the ground layer's top over the island's level and its width,
 	// the aerosol layer's share, scale height and top, the dome's own depth per kilometre)
 	readonly look = { sigma: new THREE.Vector3( 1, 1, 1 ), desaturate: 0.26, gain: 1, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
-		top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0 };
+		top: 10, width: 50, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0 };
 	// the weather's share of the sun's direct light below the clouds and its diffuse gain
 	// (Weather.ts `directVisibility`, `ambientGain`), which scale the light's colours; its day sky
 	// comes with the open sky's light the atmosphere lends (Sky.ts `skyGain`), not with the sun's beam
@@ -530,9 +528,6 @@ export class VolumetricHaze {
 	// ( rho_f, top, width ), from the weather and the settings, and each band's sigma
 	private readonly layer = uniform( new THREE.Vector3( 0, 1400, AEROSOL_OPEN ) );
 	private readonly ground = uniform( new THREE.Vector3( 0, 13, 50 ) );
-	// the ground layer's width at the sea and its growth with the start's height ( m, m per m ), for
-	// a ray from another height than the camera's (`groundFrom`)
-	private readonly widthRule = uniform( new THREE.Vector2( 50, 0 ) );
 	private readonly sigma = uniform( new THREE.Vector3( 1, 1, 1 ) );
 	// the dome's own thin haze (the key's `skyDepth`), in the medium's depth per metre before each
 	// band's sigma: green's optical depth per metre over green's sigma (`skyHaze` with `dome`)
@@ -1040,7 +1035,7 @@ export class VolumetricHaze {
 		// (Two parts, the far one from the height the curve lifts the ray to, took about half a degree's
 		// worth of air too little there: 1 - T in green 0.873 against 0.913 straight, a bent ray
 		// integrated in steps 0.889, in the same medium; above 3 degrees the three differ by 0.02 or less.)
-		const medium = length.mul( meanExtinction( y(), y().add( d.y.mul( length ) ), this.layer, from ? this.groundFrom( from ) : this.ground ) );
+		const medium = length.mul( meanExtinction( y(), y().add( d.y.mul( length ) ), this.layer, this.ground ) );
 		// the dome's own thin haze, uniform in height over its whole length (below the horizon too,
 		// to the sea), in the medium's units: green's transmittance gains exp( - skyDepth L_km ), the
 		// other bands follow through sigma (0 by default adds exactly nothing)
@@ -1062,7 +1057,7 @@ export class VolumetricHaze {
 
 		const { depth: D } = this.grid;
 		const y = float( height );
-		const ground = this.groundFrom( y );
+		const ground = this.ground;
 		const r = y.add( ATMOSPHERE_BOTTOM ).toVar();
 		const top = r.mul( d.y ).negate().add( sqrt( r.mul( r ).mul( d.y.mul( d.y ) ).add( float( ATMOSPHERE_TOP ).sub( r ).mul( r.add( ATMOSPHERE_TOP ) ) ) ) );
 		const sky = select( d.y.lessThan( 0 ), y.div( max( d.y.negate(), 1e-6 ) ), top );
@@ -1134,7 +1129,7 @@ export class VolumetricHaze {
 				const clip = this.gridProjection.mul( vec4( view, 1 ) ).toVar();
 				const q = vec2( clip.x.div( clip.w ).mul( 0.5 ).add( 0.5 ), float( 0.5 ).sub( clip.y.div( clip.w ).mul( 0.5 ) ) );
 				const distance = max( ray.w, 0 ).toVar();
-				const surface = this.fogOver( vec3( 0 ), q, view.z.negate(), distance, distance.mul( meanExtinction( from, from.add( d.y.mul( distance ) ), this.layer, this.groundFrom( from ) ) ) );
+				const surface = this.fogOver( vec3( 0 ), q, view.z.negate(), distance, distance.mul( meanExtinction( from, from.add( d.y.mul( distance ) ), this.layer, this.ground ) ) );
 				const onSky = ray.w.lessThan( 0 ).toVar();
 				const opacity = select( onSky, vec3( 1 ).sub( sky.transmittance ), surface.opacity ).toVar();
 				const added = select( onSky, sky.light, surface.result ).toVar();
@@ -1275,8 +1270,8 @@ export class VolumetricHaze {
 
 	}
 
-	/** Sets the medium and its light from the look, the amounts and the weather's light (the
-	 * camera's height only for the ground layer's width at the camera): what `openSky` reads, so
+	/** Sets the medium and its light from the look, the amounts and the weather's light (none of
+	 * it from the camera): what `openSky` reads, so
 	 * the environment's bake calls it before it bakes (main.ts `prepareHaze`), and `update` every
 	 * frame. */
 	prepareMedium(): void {
@@ -1288,8 +1283,7 @@ export class VolumetricHaze {
 		const look = this.look;
 		this.sigma.value.copy( look.sigma );
 		const rho = this.haze.value / 2 + this.fog.value * S.fogExtinction / ( 2 * Math.max( look.sigma.y, 1e-6 ) );
-		this.widthRule.value.set( look.width, look.widthSlope );
-		this.ground.value.set( rho, ISLAND_TOP + look.top, this.widthAt( this.origin.value.y ) );
+		this.ground.value.set( rho, ISLAND_TOP + look.top, look.width );
 		this.layer.value.set( rho * look.aerosolShare, look.aerosolHeight, Math.min( look.aerosolTop, AEROSOL_OPEN ) );
 		this.skyDepth.value = look.skyDepth / 1000 / Math.max( look.sigma.y, 1e-6 );
 		const copy = this.cloudMedium;
@@ -1428,7 +1422,6 @@ export class VolumetricHaze {
 		look.mieWeight = key.mieWeight;
 		look.top = key.top;
 		look.width = key.width;
-		look.widthSlope = key.widthSlope;
 		look.aerosolShare = key.aerosolShare;
 		look.aerosolHeight = key.aerosolHeight;
 		look.aerosolTop = key.aerosolTop;
@@ -1465,7 +1458,7 @@ export class VolumetricHaze {
 		// (as `skyHaze` takes it: along the whole way to the atmosphere's top, on a straight ray)
 		const dy = Math.max( direction.y, 1e-4 ), r = height + ATMOSPHERE_BOTTOM;
 		const length = - r * dy + Math.sqrt( r * r * dy * dy + ( ATMOSPHERE_TOP - r ) * ( ATMOSPHERE_TOP + r ) );
-		const tau = length * this.meanExtinctionAt( height, height + dy * length, this.widthAt( height ) );
+		const tau = length * this.meanExtinctionAt( height, height + dy * length );
 		const sigma = this.sigma.value;
 		bandToDisplayColor( rgb.setRGB( Math.exp( - tau * sigma.x ), Math.exp( - tau * sigma.y ), Math.exp( - tau * sigma.z ) ) );
 		return 0.2126 * rgb.r + 0.7152 * rgb.g + 0.0722 * rgb.b;
@@ -1516,30 +1509,15 @@ export class VolumetricHaze {
 
 	}
 
-	// the ground layer's width for a start at `height` over the sea (m)
-	private widthAt( height: number ): number {
-
-		return this.look.width + this.look.widthSlope * Math.max( height, 0 );
-
-	}
-
-	// the ground layer for a ray that starts at `from` (m) instead of the camera's height
-	private groundFrom( from: F ): V3 {
-
-		return vec3( this.ground.x, this.ground.y, this.widthRule.x.add( this.widthRule.y.mul( max( from, 0 ) ) ) );
-
-	}
-
-	// meanExtinction on the CPU (the density, over heights a to b, the ground layer `width` wide),
-	// from the layers `update` set
-	private meanExtinctionAt( a0: number, b0: number, width = this.ground.value.z ): number {
+	// meanExtinction on the CPU (the density, over heights a to b), from the layers `update` set
+	private meanExtinctionAt( a0: number, b0: number ): number {
 
 		const a = Math.max( Math.min( a0, b0 ), 0 ), b = Math.max( a0, b0, 0 ), span = b - a;
 		const share = ( x: number ) => x < 1e-3 ? 1 - x / 2 + x * x / 6 : ( 1 - Math.exp( - x ) ) / x;
 		const layer = this.layer.value, ground = this.ground.value;
 		const low = Math.min( a, layer.z ), under = Math.min( b, layer.z ) - low;
 		const density = b > layer.z ? layer.x * under / Math.max( span, 1e-30 ) : layer.x;
-		const ua = a - ground.y, ub = b - ground.y, w2 = width * width;
+		const ua = a - ground.y, ub = b - ground.y, w2 = ground.z * ground.z;
 		const r = Math.sqrt( ua * ua + w2 ) + Math.sqrt( ub * ub + w2 );
 		return density * Math.exp( - low / layer.y ) * share( under / layer.y ) + ground.x * ( 1 - ( ua + ub ) / Math.max( r, 1e-6 ) );
 
