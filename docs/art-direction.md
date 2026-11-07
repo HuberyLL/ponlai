@@ -97,11 +97,15 @@ art decision changes; images from elsewhere stay out of the repository.
   moonlit grey card on level ground at a green code of about 0.17 to 0.23 (0.12 to 0.16 on the
   slopes the moon grazes), and holds its exposure whatever the moon. A
   clouded sky is metered by the sky itself, with a key of its own: the land under a deck is lit by
-  that deck, so the sky over the meadow stands the same stops over it at every height, and the land
+  that deck, so the sky keeps the same relation to the meadow at every height, and the land
   follows the sky's own fall into the evening with no step where a gap, or a sun dropping through a
   cloud's edge, would move a meter's reading. Under a deck the land is lit by a softened key along
   the sun and by the deck's sky light, under overcast a sky light of its own, stronger than the
-  sea's, so the meadow and the groves stand quiet under a pale sky. With the sun high the deck
+  sea's. Under overcast the closed deck itself is dark, about as light as the meadow or a little
+  under it (a display lightness of about 0.31 to 0.33 behind a meadow of 0.34 to 0.39); what reads
+  bright in it is the lit cloud about the sun's place. The land stands brighter than the sky over
+  it, and the sky's lightness changes little between a sun at 15 degrees and one at 22. With the
+  sun high the deck
   passes on little of a clear sky's blue, so the light lent to the land is a warm grey. A cloudy sky's deck lets go as the sun falls under about 6
   degrees: by 3 the low sun shines under the broken deck and the view's own light sets the exposure,
   so a cloudy evening comes on by degrees: dark at sunset, neither black nor lit yellow, the meadow

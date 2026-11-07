@@ -231,10 +231,10 @@ const SIN_18 = Math.sin( 18 * Math.PI / 180 );
  * 18 degrees' to the power -`exponent`, held at its 12-degree value under 12 degrees, so a
  * positive exponent lifts a low sun's sky and lowers a high one's. 1 at every height for a level of
  * 1 and an exponent of 0. Every reader takes it once, on the light a body gives the sky alone
- * (sky/Sky.ts: the sky's day key, the clouds' sunlight, the sun's light on the distant sea), and the
- * moon's light at the moon's own height as the sun's (the moonlit sky, the clouds' moonlight): a
- * closed deck passes the moon's light as it passes the sun's. Never on the sun's night key or the
- * night's own ambient. */
+ * (sky/Sky.ts: the sky's day key, the clouds' sunlight, the sun's light on the distant sea), and,
+ * with the weather's own `moonSky` and `moonSkyExponent`, the moon's light at the moon's own height
+ * (the moonlit sky, the clouds' moonlight). Never on the sun's night key or the night's own
+ * ambient. */
 export function daySkyAt( level: number, exponent: number, elevation: number ): number {
 
 	return level * ( Math.max( Math.sin( elevation * Math.PI / 180 ), SIN_12 ) / SIN_18 ) ** - exponent;
@@ -294,6 +294,16 @@ export interface WeatherState {
 	// (`sky.daySky@cloudy|overcast`, `sky.daySkyExponent@...`), which rebakes the sky.
 	daySky: number;
 	daySkyExponent: number;
+	// The same level and exponent on the moon's light the sky and the clouds take, at the moon's
+	// own height (`daySkyAt`; Sky.ts `daySkyMoon`): the moonlit sky, the clouds' moonlight and the
+	// deck's column key by night. Apart from `daySky` because the night's lightness was set on the
+	// level a weather's day sky stood at then, and overcast's day sky has since been lowered for the
+	// relation of its land and its sky by day: lowered with the day sky, the moonlit land rose by up
+	// to 0.8 stops, since the night's meter weighs the sky (a share of 0.4) while the moon's direct
+	// light does not follow the deck. The night keeps its own level until it is looked at again as a
+	// whole. Equal to `daySky` and `daySkyExponent` in every weather but overcast.
+	moonSky: number;
+	moonSkyExponent: number;
 	// The air's haze, per metre: the extinction, in the band whose spectral weight is 1 (blue on a
 	// clear day: the hour's key gives the bands' weights, weather/HazeKeys.ts), of the ground layer's
 	// deep part, under its soft top (the hour's key's shape: weather/HazeKeys.ts,
@@ -370,22 +380,26 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // takes the weather's gain too, lighting/AmbientGrade.ts OVERCAST_LAND) and the water by
 // DECK_SKY_GAIN; exposed by the sky (post/Exposure.ts). A sky's own light by day may stand at a
 // level of the weather's (`daySky`, `daySkyExponent`), on the light the sun gives the sky alone
-// (`daySkyAt`). Overcast's stands at 0.173 at 18 degrees, where its bake's sky irradiance on level
-// ground is then 0.80 of the clear day's, with an exponent of 1.24, which holds that ratio at 0.79
-// to 0.80 from 12 to 30 degrees (0.75 at 45, 0.73 with the sun at 62): under its deck the sky's
-// light climbs with the sun much faster than the clear day's (the deck passes down the sun its tops
-// take, which grows with the sun's sine and its forward scatter), and the exponent flattens it to
-// the clear day's. The other weathers keep the day's sky as the atmosphere and the clouds give it.
+// (`daySkyAt`). Overcast's stands at 0.0195 at 18 degrees with an exponent of 0.84. At the level
+// that once held its bake's sky irradiance on level ground at 0.8 of the clear day's (0.173,
+// exponent 1.24) the deck behind the land read at a display lightness of about 0.6, near twice the
+// meadow's; at this level the closed deck reads at or a little under the meadow's lightness: the
+// background sky away from and beside the sun about 0.31 to 0.33 and the meadow 0.34 to 0.39, from
+// 15 to 22 degrees, with the exposure set with it (post/Exposure.ts OVERCAST_KEY). The weaker
+// exponent keeps the lower sun's sky within about 0.02 in lightness of the higher's in those
+// frames. Its moonlit sky keeps the earlier level and exponent (`moonSky`, `moonSkyExponent`), on
+// which the night was set. The other weathers keep the day's sky as the atmosphere and the clouds
+// give it.
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
-	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, daySky: 1, daySkyExponent: 0, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
-	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, daySky: 1, daySkyExponent: 0, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
-	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, daySky: 1, daySkyExponent: 0, haze: 0.0021, rain: 0, fog: 0, storm: 0, streaks: 0 },
-	overcast: { coverage: 0.94, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0.3, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, daySky: 0.173, daySkyExponent: 1.24, haze: 0.00974, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
-	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, daySky: 1, daySkyExponent: 0, haze: 0.0095, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
+	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
+	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
+	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0021, rain: 0, fog: 0, storm: 0, streaks: 0 },
+	overcast: { coverage: 0.94, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0.3, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, daySky: 0.0195, daySkyExponent: 0.84, moonSky: 0.173, moonSkyExponent: 1.24, haze: 0.00974, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
+	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0095, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
 	// A squall: the darkest deck, heavy rain, a strong wind (PRESET_WIND) and a rough, white-capped sea.
-	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, daySky: 1, daySkyExponent: 0, haze: 0.0135, rain: 1, fog: 0.3, storm: 1, streaks: 0 },
+	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0135, rain: 1, fog: 0.3, storm: 1, streaks: 0 },
 	// Sea fog forms in calm, moist air under thin high cloud; the sun shows as a pale disk.
-	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, daySky: 1, daySkyExponent: 0, haze: 0.0046, rain: 0, fog: 1, storm: 0, streaks: 0.4 },
+	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0046, rain: 0, fog: 1, storm: 0, streaks: 0.4 },
 };
 
 // Auto weather: from each state, the next one and its weight. The chain moves among the kept
