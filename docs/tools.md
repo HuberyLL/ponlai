@@ -933,7 +933,7 @@ freshly loaded pages (a grown page against a fresh `grow=1` page) in one call.
 Steps, scope, the value's serialisation and the exit code are in the file's header.
 
 `node tools/dusk-grid.mjs [url] [--weathers clear,fair,cloudy,overcast] [--sides evening,morning]
-[--from 2 --to -8 --step 0.5] [--midnight] [--split] [--night-split] [--twilight] [--haze] [--compare dir]` reads the scene's
+[--from 2 --to -8 --step 0.5] [--midnight] [--split [--fit]] [--night-split] [--twilight] [--haze] [--compare dir]` reads the scene's
 light in scene units at a grid of sun elevations through the dusk and the dawn (the sky's and the
 deck's irradiance, the sky's metering, the baked sky's ring 4 degrees up, the land's ambient, the
 far sea, the air, the key's floors, and per view the exposure with its keys and meters, the
@@ -942,14 +942,17 @@ yunpeng's cells), each point a scene jump with an explicit bake, its hour solved
 `src/sky/DayCycle.ts` in node, and judges that a lower sun never makes the judged quantities
 brighter (each step, the largest rise down to midnight, the exposure's direction). `--split` forces each of the dusk's shares (`sky.dusk.force.*`, URL options,
 Tune) to 0 and to 1 and puts the night's back one at a time from the twilight alone, for each
-share's term; `--night-split` reads the night's terms alone, `--twilight` the twilight alone (every
+share's term, and `--fit` solves each night share's slope from it (`tools/dusk-fit.mjs`, which also
+fits a run already made: `node tools/dusk-fit.mjs <out>`, no GPU) so that every step holds at half
+the judge's margin, the slope no steeper than the twilight's fall, into `fit.txt`; `--night-split` reads the night's terms alone, `--twilight` the twilight alone (every
 night share forced to 0, without the split's other states). `--haze` also reads, in a fixed view of
 its own (65 m over the sea, facing the open sea, pitched 10 degrees up), the haze's whole medium
 (`hazeMedium`: the haze's key, its medium's uniforms, the clouds' copy, the moon's aerosol keys) and
 its opacity on sky rays at a few elevations and level rays over a surface at a few distances
 (`hazeOpacity`, `VolumetricHaze.probe`); `--compare` judges the medium bit for bit. It takes the GPU lock itself (shared,
 leased per point; run it unwrapped), writes a JSON per weather and side with `summary.txt`,
-`handoff.txt`, `terms.txt` and `compare.txt`, and exits 1 on a broken rule. A point takes about a
+`handoff.txt`, `terms.txt`, `fit.txt` and `compare.txt` (with `--night-split` in both runs, the
+lamps-off exposure's lift over the other run and, at midnight, its distance from `NIGHT_METER_LIFT`), and exits 1 on a broken rule. A point takes about a
 second, a few tens with `--split`. Its options, reads and rules are in the file's header.
 
 `node tools/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]...

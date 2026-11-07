@@ -7,7 +7,7 @@
 //
 //   node tools/dusk-grid.mjs [base] [--weathers clear,fair,cloudy,overcast] [--sides evening,morning]
 //       [--from 2 --to -8 --step 0.5] [--midnight] [--at e1,e2,...] [--hours h1,h2,...]
-//       [--fine e1:e2:step]... [--views island[,<parity view>...]] [--split [name,...]] [--night-split] [--twilight]
+//       [--fine e1:e2:step]... [--views island[,<parity view>...]] [--split [name,...] [--fit]] [--night-split] [--twilight]
 //       [--compare dir [--compare-tolerance 1e-4]] [--judge 0.02] [--judge-range 2:-8] [--judge-weathers ...] [--overall-weathers ...]
 //       [--haze [--haze-sky 3,5,10,20] [--haze-distances 300,1000]]
 //       [--frames] [--walk] [--q "grow=36"] [--src dir] [--out dir] [--timeout ms] [--lock-timeout s]
@@ -105,6 +105,8 @@
 //     other states puts a cell's fourth digit a unit apart now and then (its largest: `hdrDrift`).
 //   - Residual: T + sum over the night names of ( q - q0 ) - q, per quantity; over 1 % of q it is
 //     listed in summary.txt (terms that act on each other: a product of shares).
+// --fit (with --split): each night share's slope solved from the split (tools/dusk-fit.mjs, whose
+//   header has the method), into fit.txt; `node tools/dusk-fit.mjs <out>` fits a run already made.
 // --night-split: the twilight forced to 0 (sun, hazeSun, hazeSky): the night's terms alone
 //   (`night`), and the local lights forced off alone (`noLights`).
 // --twilight: the twilight alone, every night name of DUSK_FORCES forced to 0 (the split's T, as
@@ -141,6 +143,8 @@
 //     `floor <weather> landKeyFloor(night)/M(night) = x.xx %` (landKeyFloor / pi over M, M being
 //     lum( E ) / pi; marked under or over 5 %), with the key's measured share
 //     of M at night beside it;
+//   fit.txt (with --fit): per weather and side each share's solved endpoints, the width's k, the
+//     margin and the overall condition, then every share placed at once (tools/dusk-fit.mjs);
 //   terms.txt (with --split, --night-split or --twilight): per quantity and point, q, T, each night name's inc,
 //     the residual, `night` and `noLights`;
 //   compare.txt (--compare dir): every point both runs hold, value by value. In [+2.5, +4] the CPU
@@ -171,13 +175,14 @@ import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
 import { launchCapture, pngShooter, stopLoop, waitForScene, waitForSettled } from './capture-browser.mjs';
 import { WAIT_FRAMES, runInPage } from './page-eval.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
+import { fitDusk } from './dusk-fit.mjs';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
-const USAGE = 'usage: node tools/dusk-grid.mjs [base] [--weathers ...] [--sides ...] [--from 2 --to -8 --step 0.5] [--midnight] [--at ...] [--hours ...] [--fine e1:e2:step]... [--views ...] [--split [names]] [--night-split] [--twilight] [--compare dir [--compare-tolerance 1e-4]] [--judge 0.02] [--judge-range 2:-8] [--judge-weathers ...] [--overall-weathers ...] [--haze [--haze-sky 3,5,10,20] [--haze-distances 300,1000]] [--frames] [--walk] [--q query] [--src dir] [--out dir] [--timeout ms] [--lock-timeout s] (see the file header)';
+const USAGE = 'usage: node tools/dusk-grid.mjs [base] [--weathers ...] [--sides ...] [--from 2 --to -8 --step 0.5] [--midnight] [--at ...] [--hours ...] [--fine e1:e2:step]... [--views ...] [--split [names] [--fit]] [--night-split] [--twilight] [--compare dir [--compare-tolerance 1e-4]] [--judge 0.02] [--judge-range 2:-8] [--judge-weathers ...] [--overall-weathers ...] [--haze [--haze-sky 3,5,10,20] [--haze-distances 300,1000]] [--frames] [--walk] [--q query] [--src dir] [--out dir] [--timeout ms] [--lock-timeout s] (see the file header)';
 const WEATHERS = [ 'clear', 'fair', 'cloudy', 'overcast', 'rain', 'storm', 'fog' ];
 const SIDES = [ 'evening', 'morning' ];
 const TWILIGHT = [ 'sun', 'hazeSun', 'hazeSky' ];
@@ -198,7 +203,7 @@ const o = { weathers: 'clear,fair,cloudy,overcast', sides: 'evening,morning', fr
 	judge: '0.02', 'judge-range': '2:-8', 'compare-tolerance': '1e-4', q: 'grow=36', timeout: '120000', 'lock-timeout': '0', fine: [],
 	'haze-sky': '3,5,10,20', 'haze-distances': '300,1000' };
 let base = 'http://127.0.0.1:5190/';
-const FLAGS = [ 'midnight', 'night-split', 'twilight', 'frames', 'walk', 'haze' ];
+const FLAGS = [ 'midnight', 'night-split', 'twilight', 'frames', 'walk', 'haze', 'fit' ];
 const VALUED = [ 'weathers', 'sides', 'from', 'to', 'step', 'at', 'hours', 'views', 'compare', 'compare-tolerance', 'judge', 'judge-range', 'judge-weathers', 'overall-weathers', 'q', 'src', 'out', 'timeout', 'lock-timeout', 'haze-sky', 'haze-distances' ];
 let options;
 try {
@@ -288,7 +293,7 @@ function parseOptions( o ) {
 		judgeRange: [ Math.max( jHi, jLo ), Math.min( jHi, jLo ) ],
 		judgeWeathers: o[ 'judge-weathers' ] ? list( o[ 'judge-weathers' ], WEATHERS, '--judge-weathers' ) : weathers,
 		overallWeathers: o[ 'overall-weathers' ] ? list( o[ 'overall-weathers' ], WEATHERS, '--overall-weathers' ) : weathers,
-		split: o.split, nightSplit: o[ 'night-split' ] === true, twilight: o.twilight === true, frames: o.frames === true, walk: o.walk === true,
+		split: o.split, fit: o.fit === true, nightSplit: o[ 'night-split' ] === true, twilight: o.twilight === true, frames: o.frames === true, walk: o.walk === true,
 		haze: o.haze === true, hazeSky, hazeDistances,
 		compare: o.compare ? path.resolve( o.compare ) : null, compareTolerance: num( o[ 'compare-tolerance' ], '--compare-tolerance' ), q: o.q, src, timeout, lockTimeout,
 		out: path.resolve( o.out ?? path.join( ROOT, 'artifacts/dusk-grid', new Date().toISOString().replace( /[:.]/g, '-' ).slice( 0, 19 ) ) ),
@@ -311,6 +316,7 @@ try {
 	}
 	if ( options.nightSplit && ! TWILIGHT.every( ( n ) => FORCES.includes( n ) ) ) fail( `--night-split: ${ options.src } has no twilight forces` );
 	if ( options.twilight && options.split !== undefined ) fail( '--twilight: --split takes T itself' );
+	if ( options.fit && options.split === undefined ) fail( '--fit: needs --split' );
 	if ( options.twilight && ! FORCES.length ) fail( `--twilight: ${ options.src } has no DUSK_FORCES` );
 
 } catch ( error ) {
@@ -1199,6 +1205,8 @@ if ( splitNames.includes( 'moonKey' ) && nightNames.length ) {
 	writeFileSync( path.join( options.out, 'handoff.txt' ), h.join( '\n' ) );
 
 }
+
+if ( options.fit ) writeFileSync( path.join( options.out, 'fit.txt' ), fitDusk( Object.values( files ), { judge: options.judge, views: options.views } ).join( '\n' ) + '\n' );
 
 // ---- the comparison
 let compareFound = null;
