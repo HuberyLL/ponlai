@@ -57,7 +57,11 @@
 //   Per view, on a 256 x 144 grid of cells (3 x 3 texels each; land = cells with no sky and no sea):
 //   <view>.EV, .EVt (the exposure, and the value it adapts toward, `exposure.target`), .kappa,
 //   .kappaH, .beta (the exposure's keys), .mM and .mH (the meter's trimmed means, computed from
-//   its histograms as Metering.ts does, P taken out), .M and .Mfar (the metering illuminance
+//   its histograms as Metering.ts does, P taken out), .mS (the sky's log, the term the meter reads
+//   beside them), .eM, .eH, .eS, .eG (the target's terms as Exposure.ts takes them: the scene's,
+//   the highlight's, the sky's and the guarded scene's) with .highlightDecides (1 where e_H lies
+//   under e_M, so the soft minimum follows it) and .EVt2 (the target recomputed from them, to check
+//   against .EVt), .M and .Mfar (the metering illuminance
 //   over the land, and over the land outside the yunpeng's lights' reach), .Yland, .Yfar, .Ysky,
 //   .Ysea (the opaque source), .hYland, .hYsky, .hYsea (hdr: with the sea and the air),
 //   .yunInner, .yunRing, .yunMInner, .yunMRing (the cells a clump covers, and the ring to three
@@ -624,9 +628,25 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 
 	};
 	const u = meter?.uniforms;
+	// the target's terms as Exposure.ts \`exposureTarget\` takes them: the sky's log ( m_S, the
+	// irradiance texel's alpha, shared.ts \`skyMeterLog2\` ), e_M, e_H, e_S, the guarded scene's
+	// exposure and the target recomputed from them (EVt2, to check against EVt)
+	const mM = trimmed( 0, 0.1, 0.9 ), mH = trimmed( BINS, 0.9, 0.97 );
+	const EX = await load( '/src/post/Exposure.ts' ), K0 = EX.SOFT_MIN ?? 0.25;
+	const mS = sky.irradianceDisplay ? ( await s.renderer.readRenderTargetPixelsAsync( sky.irradianceDisplay, 0, 0, 1, 1 ) )[ 3 ] : null;
+	let terms = {};
+	if ( u && mS !== null ) {
+
+		const kappa = u.key.value, eS = kappa - mS, eM = mM === null ? eS : kappa - mM, eH = mH === null ? null : u.highlight.value - mH;
+		const guarded = eH === null ? eM : Math.min( eM, eH ) - Math.log2( 2 ** ( Math.abs( eM - eH ) / - K0 ) + 1 ) * K0;
+		const e = guarded + ( eS - guarded ) * u.skyShare.value + u.offset.value;
+		const lo = eS - ( EX.EXPOSURE_UNDER ?? 4 ) + u.offset.value, hi = eS + ( EX.EXPOSURE_OVER ?? 5 ) + u.offset.value;
+		terms = { mS, eM, eH, eS, eG: guarded, EVt2: Math.min( Math.max( e, lo ), hi ), highlightDecides: eH !== null && eH < eM ? 1 : 0, offset: u.offset.value };
+
+	}
 	const V = {
 		EV: r.exposure.ev, EVt: r.exposure.target, kappa: u ? u.key.value : null, kappaH: u ? u.highlight.value : null, beta: u ? u.skyShare.value : null,
-		mM: trimmed( 0, 0.1, 0.9 ), mH: trimmed( BINS, 0.9, 0.97 ), P: r.preExposure,
+		mM, mH, ...terms, P: r.preExposure,
 		M: mean( mm, ( c ) => K.land[ c ] ), Mfar: mean( mm, ( c ) => K.land[ c ] && ! K.near[ c ] ),
 		Yland: mean( y, ( c ) => K.land[ c ] ), Yfar: mean( y, ( c ) => K.land[ c ] && ! K.near[ c ] ),
 		Ysky: mean( y, ( c ) => K.skyM[ c ] ), Ysea: mean( y, ( c ) => K.seaM[ c ] ),
