@@ -15,17 +15,12 @@ import { contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclu
 export const SEABED_TILE = 16;
 // The sea floor's albedo: the means of its pale sand and its rubble at gain 1, and the gain all that
 // lies on the floor takes (SeabedLook.ts its sand, seagrass and rubble, TerrainMaterial.ts the silt on
-// the submerged stones), so that what the ambient probes see of it (AmbientProbes.ts) stays the floor
-// the eye sees. Its parts keep their order: the pale sand about 0.09, the stones and the rest under
-// it. `rubble` is what the probes and the bounce take for the stones' apron at its share of the floor,
-// and it stands over the apron's own mean, about ( 0.3, 0.285, 0.24 ) with the sand between: the
-// cliffs' shaded walls take most of their light off this floor, and they keep it. `bounce` is the
-// gain of what the floor throws up at the cliffs (GroundBounce.ts), higher than the floor seen:
-// `gain` sets how dark the shallows look, while most of the light on those walls comes off the
-// shallows, the one light there with green over red and little blue. At the floor's seen gain the
-// walls keep only the sky and read a purple grey. It lives here because SeabedLook.ts imports three
-// and the probes are built in the chunk workers.
-export const FLOOR_ALBEDO = { sand: [ 0.46, 0.435, 0.365 ], rubble: [ 0.37, 0.36, 0.315 ], gain: 0.194, bounce: 0.36 } as const;
+// the submerged stones), so that what the ambient probes (AmbientProbes.ts) and the ground bounce
+// (GroundBounce.ts) see of it is the floor the eye sees. The sand is the clean sand's mean, about
+// ( 0.093, 0.079, 0.063 ), a temperate mineral sand (SeabedLook.ts); the rubble the stones' apron as
+// drawn, about 0.1. It lives here because SeabedLook.ts imports three and the probes are built in the
+// chunk workers.
+export const FLOOR_ALBEDO = { sand: [ 0.479, 0.407, 0.325 ], rubble: [ 0.52, 0.49, 0.43 ], gain: 0.194 } as const;
 // vertices along a tile's side
 export const TILE_SIDE = SEABED_TILE / FLOOR_STEP + 1;
 // A cell gets a tile (and a chunk exists, Chunks.ts) when land lies this close to it (m):
