@@ -243,8 +243,7 @@ for ( const invalid of [ 'hail', '__proto__', '', null ] ) {
 	assert.ok( clearing.state.showers < 0.01, 'showers must clear within minutes' );
 }
 // The deck's own light leaves with the sun's: at and below -6 degrees overcast's and cloudy's deck
-// light are exactly 0, so the sun's part of the deck's gains and the exposure's overcast key
-// (post/Exposure.ts, by `overcastDeckLight`) are exactly neutral.
+// light are exactly 0, so the sun's part of the deck's gains is exactly neutral.
 for ( let elevation = - 6; elevation >= - 90; elevation -= 0.25 ) {
 	assert.equal( overcastDeckLight( elevation ), 0, `overcast's deck light at ${ elevation }` );
 	assert.equal( deckRamp( elevation ), 0, `cloudy's deck light at ${ elevation }` );

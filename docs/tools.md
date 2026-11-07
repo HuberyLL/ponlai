@@ -376,10 +376,10 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   sky's bake reads (a sky or haze tunable, or a field of `pipeline.air.settings` the bake lays
   over its source) rebakes it as the load bakes, whatever set it (the GUI, `tune`, a plain write:
   `src/sky/SkyRetune.ts`), so the page draws what a fresh load with the value draws. Names:
-  `post.exposure.key@high` (an exposure key per sun height, `@golden`, `@low`, `@high`, `@cloudy`,
-  `@cloudyGolden`, `@cloudySunset`, `@cloudyLow`, `@night`, and the rising sun's `@dawn`,
-  `@morningGolden`; overcast's
-  key over the clouded one `post.exposure.overcastKey`; the local gain's
+  `post.exposure.key@high` (an exposure key per sun height, `@dusk`, `@golden`, `@low`, `@high`,
+  `@cloudy`, `@cloudyGolden`, `@cloudySunset`, `@cloudyDusk`, `@cloudyLow`, `@night`, and the
+  rising sun's `@dawn`, `@morningGolden`; `@sunset` shares `@golden`'s; overcast's key over the
+  clouded one `post.exposure.overcastKey`, toward a low sun `post.exposure.overcastKeyLow`; the local gain's
   `post.localTone.hinge@high`, `high`, `low`, `width` alike), `post.tone.midGrey`,
   `post.tone.blackSlope`, `post.tone.white`; the desaturation's `post.desaturate.amount@golden`
   (`cool`; `@dawn`, `@day`, `@cloudy`, `@night`) and its cool share's `post.desaturate.coolFrom`,

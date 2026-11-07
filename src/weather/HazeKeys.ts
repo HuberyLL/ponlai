@@ -150,8 +150,11 @@ import { FOG_NOISE } from './FogNoise.ts';
 //     sky falls into the night without a turn. Under cloud there is no glow to show through, and at 0.13
 //     the low air over a clouded evening's horizon went dark under the deck (overcast, sun -3: the
 //     sky in the horizon view L 0.28, a deep blue, against 0.38 and a lilac grey at 4.7), so a
-//     clouded sky takes the afterglow's rows as they were (`SETTING_CLOUDED`: the Rayleigh 4.7,
-//     from -1 to -4 degrees, giving way to the night's by -12) by its clouded share. Its Mie, 4.7, does not show
+//     clouded sky takes rows of its own (`SETTING_CLOUDED`, from -1 to -4 degrees, giving way to the
+//     night's by -12) by its clouded share. Their Rayleigh is the golden hour's, which the night's
+//     equals within a hundredth, so it holds from the golden hour into the night: a Rayleigh of 4.7
+//     there, eight times the golden hour's, lifted the air's Rayleigh light under cloud from -1 to
+//     -4 degrees and let it fall again toward the night's, a rise as the sun went down. Its Mie, 4.7, does not show
 //     with the sun under the horizon, and the night's Mie (2.0) is the gain and weight it was set
 //     with folded into one weight, not yet fitted. The night's amount and Rayleigh are the day's
 //     (0.66 and 0.575, the weather's own amount on top as by day): the night's air is the day's
@@ -273,7 +276,7 @@ const AFTER_SUNSET = { ...key( 0.45, twilight( - 2.5 ), 0.75, 0, 1 ), rayleighWe
 // the deep twilight after sunset: the afterglow's air, its light keeping the glow's colour (see the header)
 const AFTER_SUNSET_DEEP = { ...AFTER_SUNSET, desaturate: 0 };
 // the afterglow's air under cloud (see the header), its light as the clear afterglow's was set
-const AFTER_SUNSET_CLOUDED = { ...AFTER_SUNSET, desaturate: 0.4, rayleighWeight: 4.7 };
+const AFTER_SUNSET_CLOUDED = { ...AFTER_SUNSET, desaturate: 0.4, rayleighWeight: GOLDEN.rayleighWeight };
 // the keys with a shape are tunable on debug pages (debug/Tune.ts):
 // `haze.key.<amount|sigmaRed|sigmaBlue|desaturate|rayleighWeight|mieWeight|top|width|
 // aerosolShare|aerosolHeight|skyDepth>@<day|golden|night|mist>` (green is sigma's unit), the

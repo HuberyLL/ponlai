@@ -4,7 +4,7 @@ import { OVERCAST_LAND, ambient, overcastLandWeight } from './AmbientGrade.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune, tuneKeys, tuneUniform } from '../debug/Tune.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
-import { duskForce, moonKeyShare } from '../sky/DayCycle.ts';
+import { DUSK_WINDOWS, duskForce, moonKeyShare } from '../sky/DayCycle.ts';
 import { IRRADIANCE_SLABS, type AmbientVolume } from './AmbientVolume.ts';
 import { COSINE_LOBE, bounceLobe, coefficients, linearMaximum, shBasisAt, shConvolve, shDeringWindow, shProduct, shTowardDelta, shWindow, toMat3, type M3 } from './Harmonics.ts';
 import type { Shared } from '../shared.ts';
@@ -244,9 +244,11 @@ const BOUNCE_GAIN = 9.4;
  * whole by 6, overcast's at every sun until the twilight), or under overcast the land's gain in its
  * place (OVERCAST_LAND_UNIT times AmbientGrade.ts OVERCAST_LAND). A clouded sky sets the exposure by
  * its own light (post/Exposure.ts), so these set the land against the sky, and the deck's gain the
- * water too. It returns to 3.5 by -2.7, where
- * the night's exposure has come in whole (the blue hour's light is the night's sky's, which the
- * day's keys do not touch). Under overcast's closed deck, on its share, the land's gain does not take
+ * water too. It returns to 3.5 over the clouded sky's window of the night (DayCycle.ts
+ * DUSK_WINDOWS.sky.clouded, from 2 degrees down to -6), on the slope the sky's light under cloud
+ * passes to the night's by (the blue hour's light is the night's sky's, which the day's keys do
+ * not touch): two keys between -1 and -2.7 degrees lifted the land's sky light 3.5 times within
+ * 1.7 degrees, a rise of the land under cloud as the sun went down. Under overcast's closed deck, on its share, the land's gain does not take
  * that return: it goes from the deck's
  * gain on the day's keys, which leaves with the sun over the civil twilight, to the same gains at
  * the moon's height as the moon's key comes in (DayCycle.ts `moonKeyShare`, from -2.5 degrees, whole by -4.5), when the
@@ -268,8 +270,8 @@ const PROBE_SKY: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight', {
 		PROBE_SKY_HIGH,
 	],
 	cloudy: [
-		{ at: - 2.7, name: 'cloudyBlue', values: { skyGain: 3.5 } },
-		{ at: - 1, name: 'cloudy', values: { skyGain: 1 } },
+		{ at: DUSK_WINDOWS.sky.clouded[ 0 ], name: 'cloudyBlue', values: { skyGain: 3.5 } },
+		{ at: DUSK_WINDOWS.sky.clouded[ 1 ], name: 'cloudy', values: { skyGain: 1 } },
 	],
 }, { skyGain: { min: 0.25, max: 8, scale: 'log' } } );
 const _probeSky = { skyGain: 1 }, _probeDeck = { skyGain: 1 }, _probeMoon = { skyGain: 1 };

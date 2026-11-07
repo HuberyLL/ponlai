@@ -94,7 +94,8 @@ art decision changes; images from elsewhere stay out of the repository.
   sun reads as a low sun (in the golden hour, with the sun at 3 degrees, a sunlit cliff is orange
   with deep brown shade, a stop or more under its light, and the sky over it a shade redder and
   dimmer, not a yellow-gold face under a pale sky); the deep night shows a
-  moonlit grey card at a green code of about 0.1 to 0.2, and holds its exposure whatever the moon. A
+  moonlit grey card on level ground at a green code of about 0.17 to 0.23 (0.12 to 0.16 on the
+  slopes the moon grazes), and holds its exposure whatever the moon. A
   clouded sky is metered by the sky itself, with a key of its own: the land under a deck is lit by
   that deck, so the sky over the meadow stands the same stops over it at every height, and the land
   follows the sky's own fall into the evening with no step where a gap, or a sun dropping through a
@@ -106,7 +107,9 @@ art decision changes; images from elsewhere stay out of the repository.
   so a cloudy evening comes on by degrees: dark at sunset, neither black nor lit yellow, the meadow
   never brighter at a lower sun but where the cloud opens for a moment. Overcast is a closed, dark
   deck at every sun height, morning and evening alike: it does not break up at a low sun, and its
-  light leaves only with the sun's own, over the twilight. Its sky is brightest about the sun's
+  light leaves only with the sun's own, over the twilight: the land under it keeps the deck's soft
+  light through sunset, with no flash of the setting beam on the slopes toward it, and goes down
+  into the night as the deck's light does. Its sky is brightest about the sun's
   place and dim looking away, light near the sun and a dark grey away from it. The land under it is
   lit soft: the deck's sky light from every side, its glow about the sun's place included, lifted
   well over a cloudy day's. Under the water the floor takes that light as the water column passes it
@@ -414,9 +417,11 @@ art decision changes; images from elsewhere stay out of the repository.
 - One dominant key light, sun by day and moon by night. By day the sun is near white and the air
   hazy: the horizon reads milky white rather than a cyan band, brightest toward the sun. The
   sun's light warms from about 20 degrees, turns orange by 10 and orange red near the horizon.
-  After sunset the island stays readable: through the minutes between the sun's last light and the moon's, the meadow keeps its light (warm under the
-  afterglow, then green), never dipping below its night brightness; the light that holds it up is
-  the sky's own, raised for the island alone, and only the evening's is warm: at dawn the land goes from the night's
+  After sunset the island stays readable: through the minutes between the sun's last light and the moon's, the meadow goes down
+  with the light (warm under the afterglow, then green) and settles into the night without a dip
+  or a lift: it is never brighter at a lower sun, and the night's light comes in only
+  as fast as the twilight's leaves, so the night is the twilight's end. The light that holds it up
+  is the sky's own, raised for the island alone, and only the evening's is warm: at dawn the land goes from the night's
   blue into the day with no warm stretch. The
   sun is drawn at twice its true size, the moon at about five times (some 2.6 degrees across),
   so it reads as the night's light source; it is no brighter per unit of sky for it, and the
@@ -475,8 +480,8 @@ art decision changes; images from elsewhere stay out of the repository.
   and that path is pale: the moon's blue stays in the water and the sky, level with each other, and never flashes off the glint.
   Every night has its moon, up from dusk to dawn: the phase shows only on the drawn moon and
   never darkens the night.
-- The island reads by moonlight and starlight; twilight is never darker than the night. The
-  moon takes over the key soon after the sun has gone.
+- The island reads by moonlight and starlight; the twilight falls into the night with no step
+  back up, under every sky. The moon takes over the key soon after the sun has gone.
 - The moon stands fixed in the sky, 20 degrees up on the noon meridian, all night and every night
   (`src/sky/DayCycle.ts` MOON). Seen from the game's overview its light comes in at a slant: slopes
   show a lit and a shaded side, its shadows run long and the sea carries a moon path, where a moon

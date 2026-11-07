@@ -605,7 +605,7 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 		if ( DC.moonKeyShare ) w.moonKeyShare = DC.moonKeyShare( e );
 		if ( DC.nightAmbientShare ) w.nightAmbientShare = DC.nightAmbientShare( e, rising, cloud );
 		if ( DC.displayNight ) w.displayNight = DC.displayNight( snap.daylight, e, rising, cloud );
-		if ( DC.exposureNight ) w.exposureNight = DC.exposureNight( snap.daylight, e, rising, cloud );
+		if ( DC.exposureNight ) w.exposureNight = DC.exposureNight.length === 3 ? DC.exposureNight( e, rising, cloud ) : DC.exposureNight( snap.daylight, e, rising, cloud );
 		if ( DC.starNight ) w.starNight = DC.starNight( snap.daylight, e, rising, cloud );
 		for ( const [ n, [ lo, hi ] ] of DC.duskShares ?? [] ) w[ 'share.' + n ] = lo === hi ? lo : [ lo, hi ];
 		out.__weights = w;
