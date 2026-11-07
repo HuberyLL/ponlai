@@ -57,6 +57,8 @@ type V4 = THREE.Node<'vec4'>;
 //   the sky's too, still held down by the highlight guard; where Y's holds none, the guard drops
 //   out and the scene's share is e_M alone.
 // - The night's darkness is the night key's job: the meter reads night light as it reads the day's.
+//   The night key comes in by the exposure's own night weight (sky/DayCycle.ts `exposureNight`),
+//   not the display's: where the meter hands over to it is set by the light, apart from the grade.
 // - Adaptation (`exposureAdapt`): the exposure EV follows its target EV_t as a critically damped
 //   second-order filter on EV, EV'' = -2 ω EV' - ω^2 ( EV - EV_t ), ω = 1 / τ (Lowe, "Critically
 //   Damped Ease-In/Ease-Out Smoothing", Game Programming Gems 4, 2004): it starts with no kink;
@@ -131,9 +133,11 @@ export interface ExposureKey extends Record<string, number> {
  * bright cloud, and the clouds' own contrast widens a little as the frame darkens, which no key
  * mends; the land under the deck goes down with the sky. `cloudyLow` sets a low sun's frame: at 8
  * degrees the meadow under the deck and the sea beside it pull the key in opposite directions, so
- * the cloudy fit leaves it unchanged. One night key serves every
- * night's sky: a clouded night reads darker
- * by the moonlight its deck takes. The rising sun's dawn key meters the morning's land before the
+ * the cloudy fit leaves it unchanged. One night key serves every night's sky. It lies about 3.3
+ * stops under the day's: the moonlit open sky is the brightest large thing in a night's frame, so
+ * the key is set as low as it goes before it puts the lit land under its own night levels. The meter would take
+ * back the moonlight a deck takes, so overcast's night keeps a share of that darkness on screen
+ * (OVERCAST_NIGHT). The rising sun's dawn key meters the morning's land before the
  * sun by both the sky and its own light, so the land keeps its level while the sky brightens toward
  * the sun (a morning's day exposure comes in long before the sun: DayCycle.ts `displayNight`), and
  * from -2 to 3 degrees it passes into the morning's golden key, about half a stop under the
@@ -162,7 +166,7 @@ export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
 		{ at: 6, name: 'cloudyLow', values: { key: - 0.99, highlight: 3.05, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
 		{ at: 12, name: 'cloudy', values: { key: - 0.11, highlight: 3.05, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
 	],
-	night: { key: - 3.1, highlight: - 1.32, sky: 0.4, adaptUp: 0.05, adaptDown: 0.05 },
+	night: { key: - 2.81, highlight: - 1.32, sky: 0.4, adaptUp: 0.05, adaptDown: 0.05 },
 }, { key: { min: - 6, max: 3 }, highlight: { min: - 3, max: 4 }, sky: { min: 0, max: 1 }, adaptUp: { min: 0.02, max: 4, scale: 'log' }, adaptDown: { min: 0.02, max: 4, scale: 'log' } } );
 
 /** Overcast's key on top of the clouded one, stops, by overcast's share of the sky (Weather.ts
@@ -180,6 +184,17 @@ export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
  * to the vegetation, not to the key. Tunable:
  * `post.exposure.overcastKey`. */
 const OVERCAST_KEY = tune( 'post.exposure.overcastKey', - 1.2, { min: - 4, max: 1 } );
+/** The share of a clear sky's light the overcast deck lets through onto the land: the open land's
+ * illuminance under overcast against a clear sky's, by day at the moon's height (the sun there
+ * standing in for the moon), measured on our island. The night's light passes the same deck, so in
+ * scene units an overcast night lies log2( 1 / 0.72 ), about 0.47 stops, under a clear one. */
+const DECK_LAND_THROUGH = 0.72;
+/** Overcast night's share f of that darkness the display keeps: the night key goes down by f times
+ * it, so the meter takes back only 1 - f of it and an overcast night reads darker than a clear one
+ * on screen, not only in scene units. f is a choice of the look (0: the meter takes it all back,
+ * 1: none). It comes in by overcast's share and the exposure's night weight, a function of the
+ * clock and the weather alone. Tunable: `post.exposure.overcastNight`. */
+const OVERCAST_NIGHT = tune( 'post.exposure.overcastNight', 0.5, { min: 0, max: 1 } );
 /** Where overcast holds the clouded keys from, degrees (`cloudyLow`): its closed deck does not
  * break up at a low sun (sky/Weather.ts `overcastDeckLight`), so below it overcast keeps that key,
  * handing over only to the night's, while a cloudy sky's keys go on to the evening's under 6
@@ -187,10 +202,13 @@ const OVERCAST_KEY = tune( 'post.exposure.overcastKey', - 1.2, { min: - 4, max: 
 const OVERCAST_HELD = 6;
 const _held = { key: 0, highlight: 0, sky: 0, adaptUp: 0, adaptDown: 0 };
 
-/** The exposure's keys at the sun's `elevation` (degrees), the night's weight `night` and the
+/** The exposure's keys at the sun's `elevation` (degrees), the exposure's own night weight `night`
+ * (sky/DayCycle.ts `exposureNight`, set apart from the display's so the meter's handover to the
+ * night key can follow the light while the tone, the grade and the bloom keep theirs) and the
  * weather's blend of the kept skies `skyMix`, into `out`, the morning's where the sun is `rising`:
- * the day's (or the rising sun's) and the clouded keys (DayKeys.ts `keyed`), overcast's share holding the clouded keys at OVERCAST_HELD below it, and OVERCAST_KEY
- * by overcast's share and the deck's light. */
+ * the day's (or the rising sun's) and the clouded keys (DayKeys.ts `keyed`), overcast's share holding the clouded keys at OVERCAST_HELD below it, OVERCAST_KEY
+ * by overcast's share and the deck's light, and overcast's night (OVERCAST_NIGHT) by overcast's
+ * share and the night weight. */
 export function exposureKeys( elevation: number, night: number, skyMix: readonly number[], out: ExposureKey, rising = false ): ExposureKey {
 
 	const clouded = cloudedShare( skyMix ), overcast = skyMix[ 3 ] ?? 0;
@@ -200,6 +218,7 @@ export function exposureKeys( elevation: number, night: number, skyMix: readonly
 		keyed( EXPOSURE_KEYS, Math.max( elevation, OVERCAST_HELD ), night, _held, 1 );
 		for ( const k in out ) out[ k ] += ( _held[ k as keyof typeof _held ] - out[ k ] ) * overcast;
 		out.key += OVERCAST_KEY() * overcast * overcastDeckLight( elevation );
+		out.key -= OVERCAST_NIGHT() * Math.log2( 1 / DECK_LAND_THROUGH ) * overcast * night;
 
 	}
 	return out;

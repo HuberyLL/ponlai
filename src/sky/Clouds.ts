@@ -29,6 +29,7 @@ import { tune, tuneUniform } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 import { HazeMedium } from '../weather/HazeDepth.ts';
 import { SUN_SETTING_RADIUS } from '../lighting/Radiometry.ts';
+import { HALF_MAX, STORE_CEILING, preExposure, storePress } from '../post/PreExposure.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -86,7 +87,8 @@ type V4 = THREE.Node<'vec4'>;
 //     from the shape noise at build: `erosionMean`), times the irradiance on the deck's top over
 //     pi, with no gain: thick masses dark, thin seams lighter, near grey, the level set by the
 //     deck's own density and thickness. That irradiance is the key's above the tops (`columnKey`:
-//     the sun's by day, by night the island's moonlight, not the clouds' own) and the drawn sky's
+//     the sun's by day, by night the island's moonlight, not the clouds' own, each under the
+//     weather's day sky at its own height) and the drawn sky's
 //     over them (without the clouds' night glow), so the base and the land under it are lit by one
 //     key by day and by night. Uniforms and the atmosphere alone, it is worked out once a frame by
 //     one thread (`Clouds.ColumnTop`, a `renderer.compute` ahead of the other kernels in `update`,
@@ -132,8 +134,8 @@ type V4 = THREE.Node<'vec4'>;
 //     desaturated, times the earth's shadow there and each body's illuminance, its factor tinted
 //     toward the opacity and toned on its log luminance (both neutral until set). Under the low
 //     deck's share the shaded side's sky is instead the sky over the deck's tops (`columnTop`, the
-//     open sky's mean radiance over the upper hemisphere, with the clear day's gain: Sky.ts
-//     CLEAR_SKY): a cloud under a deck is lit by the sky above it, not by the sky along the view it
+//     open sky's mean radiance over the upper hemisphere, with the clear day's gain on each body's share
+//     at its own height: Sky.ts CLEAR_SKY): a cloud under a deck is lit by the sky above it, not by the sky along the view it
 //     is seen against. Taken along the view, the shaded side would take the dim sky near the
 //     horizon, and turn warm with a low sun, as the horizon's sky does. The march adds
 //     no air of its own, nor does the thin layer: the dome lays the haze over both, the cumulus at
@@ -150,11 +152,9 @@ type V4 = THREE.Node<'vec4'>;
 //     sun's elevation there (`streakSunColour`, `streakLitRadius`), so the side away from the sun
 //     goes out first and the side toward it reddens last, each
 //     share under an overall colour by the sun's elevation (`keyDirect`, `keyAmbient`: Sky.ts
-//     STREAK_DIRECT, STREAK_AMBIENT), plus the night ambient (`nightAmbient`, Sky.ts
-//     trackClouds), a fixed light of its own which neither the sky's night gain nor the moon's
-//     gains reach, and which on a clear night sets nearly all of its brightness, under a gain
-//     (`streakNightAmbient`: `sky.night.streakAmbient`). The cumulus' march takes the ambient
-//     ungained.
+//     STREAK_DIRECT, STREAK_AMBIENT), the night's faint ambient (`nightAmbient`, Sky.ts
+//     trackClouds) taken with the sky's light under the same gains. The cumulus' march takes the
+//     ambient as its sky light too.
 //   - march: coarse steps until cloud is found, then fine ones; whole cells of the weather map
 //     that cannot reach the ray's height are skipped, the march going on past them at the pixel's
 //     own offset into a step (resumed at the cell's edge, the steps fell in phase across the
@@ -219,6 +219,15 @@ type V4 = THREE.Node<'vec4'>;
 // Lightning's light inside the
 // cloud stays out of the view's accumulated history, the bake and the panorama. The panorama and
 // the shadow map refresh in part each frame and whole on a jump and when a paused scene settles.
+// The view's traces, their range boxes and its history hold the radiance pre-exposed, times the
+// scale its kernels were dispatched at (PreExposure.ts `preExposure.scale`, held at half float's
+// largest) and VIEW_HEADROOM, so they keep the scene's range from noon to a moonless night. The
+// clouds update ahead of the frame's `beginFrame`, so a frame whose P changes draws the
+// clouds at the last one's: each history buffer keeps the scale it was written at
+// (`historyScale`), `sampleView` divides by the shown one's, and the next resolve takes the
+// reprojected history to its own scale by their ratio (a power of two: the bits of what lay in
+// range stay). A view kept at rest holds the scale it settled at: a new P settles it again, so a
+// paused frame takes the clouds at its own P, never at the 0 a jump starts P from.
 // Every explicit bake (the load's, a scene jump's, a seek's, a retune's: main.ts `bakeEnvironment`,
 // through Sky.reset) restarts the clouds as they stand before a page's first frame (`restart`),
 // then sets their drift, evolution and axes to the scene clock, for the bake that follows.
@@ -228,12 +237,35 @@ export const EARTH_RADIUS = 6_360_000;
 // reads is `shellBottom` and `shellThickness`, blended by the sky's shares (Sky.ts CLOUD_SKIES), so
 // cloudy and overcast take a deck of their own, lower (`setDeck`).
 export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
-// What the view's traces and history and the panorama store is the radiance times this: at night
-// and most before dawn, when the exposure stands near 2^16, the clouds' radiance lies under half
-// float's 2^-14, where its steps are wide enough to show as dark flecks once exposed. A power of
-// two, so what lay in range keeps its bits. Lightning's light is stored apart and bare (its reach
-// is far above this range's top).
-const CLOUD_STORE = 256;
+// What the panorama stores is the radiance times a power of two that follows the clouds' light
+// and the weather's skies (`storeStops`, set by Sky.ts trackClouds: 2^11 at noon, 2^16 to 2^20 on
+// a moonlit night, by how far the weather's clouds spread the night's range; PreExposure.ts
+// `storeStops`, Sky.ts STORE_RANGE): unscaled, a clear midnight's panorama has its first
+// percentile near 2^-21 (2^-16 over the texels at least a tenth covered), under half float's 2^-14, where its steps are wide enough to show as dark flecks
+// once exposed, and no one fixed scale keeps a cloudy noon's brightest and a darker night's
+// thinnest both in range. A power of two, so what lay in range keeps its bits. The panorama is
+// refreshed a share per frame and kept for the frames between, so its scale is the light's and not
+// the frame's pre-exposure (the view takes that: see the rules above). When the light's power of
+// two changes (`domeStops`: twelve to seventeen times through a dusk, by the weather), the texels
+// the panorama holds are taken to the new one by the ratio of the two in that frame, ahead of
+// the frame's phase and of every reader (`rescaleKernels`: through a scratch of the panorama's
+// size, since a half-float texture cannot be read and written in one dispatch): marching every
+// phase again there doubled a cloudy frame's GPU time. A power of two scales a half float exactly
+// where it lies in range, and the power keeps the texels a margin clear of the subnormals and of
+// the ceiling (Sky.ts STORE_RANGE); a texel outside it carries its old rounding until its phase
+// comes round. The progressive refresh already keeps texels written frames apart, so this adds
+// no history of its own: once every phase has come round after a change, the panorama equals the
+// whole rewrite's bit for bit (measured through a cloudy dusk), a jump writes it whole
+// (`invalidate`), and a paused page settles it whole. Like the march, the rescale runs in
+// `update`, ahead of the frame graph: it must fall between the texels it scales and this frame's
+// phase. Its writes are held at STORE_CEILING. Lightning's light is stored apart and
+// bare (its reach is far above this range's top).
+// What the view stores over the pre-exposed radiance: by day P runs 1 to 3, and at that scale the
+// faint edges of thin cloud low over the sea fell under half float's 2^-14 (a low view across
+// the water lost a few dozen pixels a level or more, up to 54). Seven stops keep them at the 2^8
+// the view held under a fixed scale, a night (P 5 to 9) at 2^12 or more, and the brightest a
+// dusk shows (P 13) about three stops under STORE_CEILING.
+const VIEW_HEADROOM = 2 ** 7;
 // The preset's scales, rounded so they nest: the wrapped wind offset (TILE) holds a whole
 // number of periods of the weather map, the shape noise and the erosion noise.
 const WEATHER_SCALE = 28672, BASE_SCALE = 7168, EROSION_SCALE = BASE_SCALE / 8;
@@ -717,16 +749,16 @@ export class Clouds {
 	readonly lightColor = uniform( new THREE.Color( 0.5, 0.45, 0.38 ) );
 	// The key's irradiance on the low deck's tops, which its column passes down to the base (scene
 	// units, Sky.ts trackClouds): by day the sun's above the cloud, as `lightColor`; by night the
-	// island's own moon key, not the clouds' moonlight, so the base and the land under it take one moon.
+	// island's own moon key, not the clouds' moonlight, so the base and the land under it take one moon;
+	// each times the weather's day sky at its own height (Sky.ts `daySkyMoon`).
 	readonly columnKey = uniform( new THREE.Color( 0, 0, 0 ) );
 	// The gain the open sky over the low deck's tops takes back (Sky.ts CLEAR_SKY, `gapSky`): the
-	// clear day's sky gain over the clouded sky's, read by the column's kernel alone (`columnTopOf`).
-	readonly openSkyGain = uniform( 1 );
-	// Night sky glow and moonlit fill, added to the atmosphere's own sky light.
+	// clear day's sky gain over the clouded sky's, on each body's share of the sky at its own height
+	// (Sky.ts `gapGain`), read by the column's kernel alone (`columnTopOf`).
+	readonly openSkyGain = { sun: uniform( 1 ), moon: uniform( 1 ) };
+	// The night's faint ambient (Sky.ts `displayNightAmbient`), added to the atmosphere's own sky
+	// light wherever the clouds take it.
 	readonly nightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
-	// The gain on the night ambient the thin layer takes (its light at night comes almost all from
-	// it, and no other night tunable reaches it); a change rebakes the panorama and the environment.
-	readonly streakNightAmbient = tuneUniform( 'sky.night.streakAmbient', 0.0425, { min: 0, max: 2, onChange: markSkyRetune } );
 	// Art balance of beam to sky light inside the clouds. A low sun's beam is already reddened
 	// by the atmosphere; favouring it keeps sunset clouds glowing instead of muddy.
 	readonly directGain = uniform( 1 );
@@ -823,6 +855,9 @@ export class Clouds {
 	readonly origin = uniform( new THREE.Vector3( 0, 15, 0 ) );
 	// The panorama; replaced when its size changes (setDome), so readers go through domeNode.
 	dome: THREE.StorageTexture;
+	// Where a change of the panorama's power of two takes its texels to the new one and back (a
+	// half-float texture cannot be read and written in one dispatch), at the panorama's size.
+	private domeScratch: THREE.StorageTexture;
 	readonly shadowMap: THREE.StorageTexture;
 	// Lightning (weather/Lightning.ts): each source's world position (m) and reach (m) in xyzw,
 	// and its radiance this frame; `flashOn` is 1 while any of them is lit.
@@ -872,6 +907,25 @@ export class Clouds {
 	private readonly historyValid = uniform( 0 );
 	// 0 while a scene at rest settles: nothing moves, so the history needs no clamp to stay clean.
 	private readonly clampHistory = uniform( 1 );
+	// The pre-exposure's scale each history buffer was written at, the shown one's (whose inverse
+	// `sampleView` takes) and the ratio the resolve takes the reprojected history by: this
+	// dispatch's scale over the scale of the history it reads (see the rules in the header).
+	private readonly historyScale = [ 1, 1 ];
+	/** The luminance of the light the clouds take, for the stores' powers of two, and the
+	 * panorama's power of two for that light and the weather's skies (Sky.ts trackClouds;
+	 * PreExposure.ts `storeStops`). */
+	storeLight = 0;
+	storeStops = 18;
+	// The panorama's power of two (stops) and its scale, written and read back (`sample`).
+	private domeStops = Number.NaN;
+	private readonly domeStore = uniform( 1 );
+	private readonly domeRead = uniform( 1 );
+	private shownScale = 1;
+	private readonly viewUnscale = uniform( 1 );
+	private readonly historyGain = uniform( 1 );
+	// The scale the view's kernels write at: the pre-exposure's times VIEW_HEADROOM (and the debug
+	// press, PreExposure.ts `storePress`), set before they are dispatched.
+	private readonly writeScale = uniform( 1 );
 	private readonly camDelta = uniform( new THREE.Vector3() );
 
 	private shape: THREE.Data3DTexture | null = null;
@@ -884,6 +938,9 @@ export class Clouds {
 	private streakCover: THREE.RenderTarget | null = null;
 	private loading: Promise<void> | null = null;
 	private partialKernel: THREE.ComputeNode | null = null;
+	// The panorama's texels times `domeRescale` into the scratch, and back (`update`).
+	private rescaleKernels: [ THREE.ComputeNode, THREE.ComputeNode ] | null = null;
+	private readonly domeRescale = uniform( 1 );
 	private shadowKernel: THREE.ComputeNode | null = null;
 	// The light on the low deck's tops and the shares of the air's light under the deck it sets
 	// (`columnTop`): uniforms and the atmosphere alone, so one thread works them out once a frame
@@ -934,6 +991,7 @@ export class Clouds {
 
 		this.dome = makeDome( DOME_DEFAULTS.width, DOME_DEFAULTS.height );
 		this.domeNode = texture( this.dome );
+		this.domeScratch = makeDome( DOME_DEFAULTS.width, DOME_DEFAULTS.height, 'cloudDomeRescale' );
 		this.shadowMap = new THREE.StorageTexture( SHADOW_SIZE, SHADOW_SIZE );
 		this.shadowMap.type = THREE.UnsignedByteType;
 		this.shadowMap.minFilter = this.shadowMap.magFilter = THREE.LinearFilter;
@@ -1076,12 +1134,12 @@ export class Clouds {
 			const up = Math.cos( zenith * Math.PI / 180 ), out = Math.sin( zenith * Math.PI / 180 );
 			for ( const [ c, n ] of [ [ 1, 0 ], [ 0, 1 ], [ - 1, 0 ], [ 0, - 1 ] ] ) {
 
-				sky.addAssign( this.atmosphere.skyRadiance( vec3( toward.x.mul( c ).sub( toward.y.mul( n ) ).mul( out ), up, toward.x.mul( n ).add( toward.y.mul( c ) ).mul( out ) ), false ) );
+				sky.addAssign( this.atmosphere.skyRadiance( vec3( toward.x.mul( c ).sub( toward.y.mul( n ) ).mul( out ), up, toward.x.mul( n ).add( toward.y.mul( c ) ).mul( out ) ), false, this.openSkyGain ) );
 
 			}
 
 		}
-		return { key: this.columnKey.rgb.mul( max( this.lightDir.y, 0 ) ).mul( 1 / Math.PI ), sky: sky.mul( this.openSkyGain.mul( 1 / 8 ) ) };
+		return { key: this.columnKey.rgb.mul( max( this.lightDir.y, 0 ) ).mul( 1 / Math.PI ), sky: sky.mul( 1 / 8 ) };
 
 	}
 
@@ -1094,6 +1152,7 @@ export class Clouds {
 		const { width: domeWidth, height: domeHeight, strideX, strideY } = this.domeSize;
 		const domeTexelAngle = 2 * Math.PI / domeWidth;
 		this.partialKernel?.dispose();
+		for ( const kernel of this.rescaleKernels ?? [] ) kernel.dispose();
 		this.shadowKernel?.dispose();
 		this.deckMeanKernel?.dispose();
 		this.deckMeanSumKernel?.dispose();
@@ -1740,7 +1799,7 @@ export class Clouds {
 		// the smoothstep on the weight is ours), the forward lobe held at its value
 		// `streakForwardCap` from the sun; the sky's share the Rayleigh in-scatter there under its
 		// phase, desaturated, times the earth's shadow at the layer and each body's illuminance, at
-		// `streakAmbient` per unit of opacity; plus the night ambient at a gain of its own. Each
+		// `streakAmbient` per unit of opacity, the night's ambient with it. Each
 		// share takes an overall colour (`keyDirect`, `keyAmbient`). No air of its own here: the
 		// dome fogs it at its own distance (Sky.ts domeColour, `sampleViewFog`).
 		const streaksAt = ( rd: V3, pxAngle: F ) => {
@@ -1805,8 +1864,8 @@ export class Clouds {
 					rows.rayleigh.mul( skyRayleighPhase( dot( rd, light ), A.rayleighForward ) ), this.ambientDesaturation )
 					.mul( A.earthShadowAt( heightKm, rd, body ) ).mul( illuminance );
 				const sky = skyOf( sunRows, 0, A.sunDir, A.sunIlluminance.rgb ).add( skyOf( moonRows, 1, A.moonDir, A.moonIlluminance.rgb ) )
-					.mul( this.streakAmbient.mul( this.ambientGain ) );
-				const lit = direct.mul( this.keyDirect ).add( sky.mul( this.keyAmbient ) ).add( this.nightAmbient.rgb.mul( this.streakNightAmbient ) );
+					.add( this.nightAmbient.rgb ).mul( this.streakAmbient.mul( this.ambientGain ) );
+				const lit = direct.mul( this.keyDirect ).add( sky.mul( this.keyAmbient ) );
 				result.assign( vec4( lit.mul( float( 1 ).sub( own ) ), own ) );
 
 			} );
@@ -1836,9 +1895,28 @@ export class Clouds {
 			const rd = domeToDirection( q ).toVar();
 			const m = marchPano( rd, jitter );
 			const result = over( rainAt( rd, float( domeTexelAngle ), jitter ).color, over( vec4( m.L, m.T ), streaksAt( rd, float( domeTexelAngle ) ) ) );
-			textureStore( dome, ivec2( int( x ), int( y ) ), vec4( result.rgb.mul( CLOUD_STORE ), result.a ) );
+			textureStore( dome, ivec2( int( x ), int( y ) ), vec4( min( result.rgb.mul( this.domeStore ).mul( storePress.store ), vec3( STORE_CEILING ) ), result.a ) );
 
 		} )().compute( domeWidth * domeHeight / ( strideX * strideY ), [ 64 ] ).setName( 'Clouds.Panorama' );
+		// A new power of two: every texel times the ratio of the new power to the old into the
+		// scratch, held at the march's ceiling, then copied back.
+		const scratch = this.domeScratch, domeIn = texture( dome ), scratchIn = texture( scratch );
+		const texelAt = () => ivec2( int( instanceIndex.mod( uint( domeWidth ) ) ), int( instanceIndex.div( uint( domeWidth ) ) ) );
+		this.rescaleKernels = [
+			Fn( () => {
+
+				const p = texelAt().toVar();
+				const s = textureLoad( domeIn, p ).toVar();
+				textureStore( scratch, p, vec4( min( s.rgb.mul( this.domeRescale ), vec3( STORE_CEILING ) ), s.a ) );
+
+			} )().compute( domeWidth * domeHeight, [ 64 ] ).setName( 'Clouds.PanoramaRescale' ),
+			Fn( () => {
+
+				const p = texelAt().toVar();
+				textureStore( dome, p, textureLoad( scratchIn, p ) );
+
+			} )().compute( domeWidth * domeHeight, [ 64 ] ).setName( 'Clouds.PanoramaRescale' ),
+		];
 
 		// ---- cloud shadow: transmittance of the shell along the key light around the island, one
 		// of every SHADOW_PHASES rows per pass.
@@ -2038,7 +2116,7 @@ export class Clouds {
 			const rainSample = rainAt( rd, C.tan.y.mul( 2 ).div( this.displayHeight ), jitter, true );
 			const rain = rainSample.color.toVar();
 			const traced = over( rain, vec4( m.L, m.T ) ).toVar();
-			textureStore( traceOut, tp, vec4( traced.rgb.mul( CLOUD_STORE ), traced.a ) );
+			textureStore( traceOut, tp, vec4( min( traced.rgb.mul( this.writeScale ), vec3( HALF_MAX ) ), traced.a ) );
 			textureStore( flashOut, tp, vec4( m.F.mul( rain.a ).add( rainSample.flash ), 1 ) );
 			// The depth (m) under half float's largest value: an empty ray's depth, past the shell, passes
 			// 65 km toward the horizon, where the haze in front has closed, and an inf stored there turned
@@ -2062,7 +2140,7 @@ export class Clouds {
 				hi.assign( streaksAt( rd, C.tan.y.mul( 2 ).div( this.viewSize.y ) ) );
 
 			} );
-			textureStore( highOut, tp, vec4( hi.rgb.mul( CLOUD_STORE ), hi.a ) );
+			textureStore( highOut, tp, vec4( min( hi.rgb.mul( this.writeScale ), vec3( HALF_MAX ) ), hi.a ) );
 			// Motion for the resolve: the closest cumulus sample around this block (like the closest
 			// depth dilation of TAA), so a cloud's edges move with it and the foreground wins.
 			const best = vec3( 1e9, 0, 0 ).toVar();
@@ -2101,20 +2179,21 @@ export class Clouds {
 		const boxKernel = Fn( () => {
 
 			const tp = tracePixel().toVar();
-			const sky = this.atmosphere.skyRadiance( viewDir( tracedAt( tp ).div( this.viewSize ) ) ).mul( CLOUD_STORE ).toVar();
+			const sky = this.atmosphere.skyRadiance( viewDir( tracedAt( tp ).div( this.viewSize ) ) ).mul( this.writeScale ).toVar();
 			const tmax = this.traceSize.sub( 1 );
-			const lo = vec4( 1e4 ).toVar(), hi = vec4( - 1e4 ).toVar();
+			// (the range starts at the first sample, so it holds at any scale)
+			const lo = vec4( 0 ).toVar(), hi = vec4( 0 ).toVar();
 			for ( let y = - 1; y <= 1; y ++ ) for ( let x = - 1; x <= 1; x ++ ) {
 
 				const q = ivec2( clamp( vec2( tp ).add( vec2( x, y ) ), vec2( 0 ), tmax ) );
 				const c = over( textureLoad( traceNode, q ), textureLoad( highNode, q ) ).toVar();
 				const composite = vec4( c.rgb.add( sky.mul( c.a ) ), c.a );
-				lo.assign( min( lo, composite ) );
-				hi.assign( max( hi, composite ) );
+				lo.assign( x === - 1 && y === - 1 ? composite : min( lo, composite ) );
+				hi.assign( x === - 1 && y === - 1 ? composite : max( hi, composite ) );
 
 			}
-			textureStore( boxMinOut, tp, lo );
-			textureStore( boxMaxOut, tp, hi );
+			textureStore( boxMinOut, tp, vec4( min( lo.rgb, vec3( HALF_MAX ) ), lo.a ) );
+			textureStore( boxMaxOut, tp, vec4( min( hi.rgb, vec3( HALF_MAX ) ), hi.a ) );
 
 		} )().compute( tw * th, [ 64 ] ).setName( 'Clouds.ViewBox' );
 
@@ -2162,10 +2241,12 @@ export class Clouds {
 
 						// Reprojected history clamped to the range of this frame's samples around it (with
 						// a margin): real changes cannot leave ghosts, so samples average over many frames.
-						const h = max( catmullRom( srcNode, puv, this.viewSize ), vec4( 0 ) ).toVar();
+						// (taken to this dispatch's scale: `historyGain`)
+						const reprojected = max( catmullRom( srcNode, puv, this.viewSize ), vec4( 0 ) ).toVar();
+						const h = vec4( reprojected.rgb.mul( this.historyGain ), reprojected.a ).toVar();
 						const lo = textureLoad( boxMinNode, tp ), hi = textureLoad( boxMaxNode, tp );
-						const pad = hi.sub( lo ).mul( 0.25 ).add( vec4( vec3( 0.01 * CLOUD_STORE ), 0.01 ) );
-						const sky = this.atmosphere.skyRadiance( rd ).mul( CLOUD_STORE ).toVar();
+						const pad = hi.sub( lo ).mul( 0.25 ).add( vec4( vec3( 0.01 ).mul( this.writeScale ), 0.01 ) );
+						const sky = this.atmosphere.skyRadiance( rd ).mul( this.writeScale ).toVar();
 						const clamped = clamp( vec4( h.rgb.add( sky.mul( h.a ) ), h.a ), lo.sub( pad ), hi.add( pad ) ).toVar();
 						const kept = vec4( max( clamped.rgb.sub( sky.mul( clamped.a ) ), vec3( 0 ) ), clamped.a );
 						out.assign( select( this.rebuildK.lessThan( 0 ).and( this.clampHistory.greaterThan( 0.5 ) ), kept, h ) );
@@ -2207,7 +2288,7 @@ export class Clouds {
 					} );
 
 				} );
-				textureStore( dstOut, p, vec4( out.rgb, clamp( out.a, 0, 1 ) ) );
+				textureStore( dstOut, p, vec4( min( out.rgb, vec3( HALF_MAX ) ), clamp( out.a, 0, 1 ) ) );
 				textureStore( dstDepth, p, vec4( outDepth, 1 ) );
 
 			} )().compute( width * height, [ 64 ] ).setName( 'Clouds.ViewResolve' );
@@ -2264,11 +2345,27 @@ export class Clouds {
 			renderer.compute( this.deckMeanSumKernel! );
 
 		}
+		// The panorama's power of two for the clouds' light now: a new one takes the texels it holds
+		// to it in this frame, ahead of this frame's phase and of every reader (the view and the
+		// shadow map keep their own), so its texels and its readers always share one. Only the
+		// first, with nothing held yet, writes every phase.
+		const stops = this.storeStops;
+		const restore = stops !== this.domeStops;
+		const rescale = restore && Number.isFinite( this.domeStops );
+		if ( restore ) {
+
+			this.domeRescale.value = rescale ? 2 ** ( stops - this.domeStops ) : 1;
+			this.domeStops = stops;
+			this.domeStore.value = 2 ** stops;
+			this.domeRead.value = 2 ** - stops;
+
+		}
 		// Panorama: an ordered pattern spreads each frame's texels over the map. A full refresh runs
 		// every phase through the same kernel, so a refreshed map matches a progressive one.
 		const full = this.needsFull;
 		this.needsFull = false;
-		this.refreshMaps( renderer, full, shadowRows );
+		if ( rescale && ! full ) for ( const kernel of this.rescaleKernels! ) renderer.compute( kernel );
+		this.refreshMaps( renderer, full, shadowRows, full || ( restore && ! rescale ) );
 
 		if ( ! camera ) return;
 		// ---- view
@@ -2307,12 +2404,15 @@ export class Clouds {
 		this.previousTime = time;
 		this.hasPrevious = true;
 
-		if ( resting && ( ! this.settled || full ) ) {
+		// (a view kept at rest under another P than now: see the rules in the header)
+		const rescaled = this.settled && this.shownScale !== this.storeScale();
+		if ( resting && ( ! this.settled || full || rescaled ) ) {
 
-			// The scene has come to rest: settle the view once, from scratch, then keep it. Depending
-			// only on the scene, a paused frame is exactly repeatable. The panorama and the shadow map
-			// (camera-relative, refreshed a share per frame) are brought up to date with it, so a
-			// paused frame does not wait out their refresh cycles after a camera move.
+			// The scene has come to rest: settle the view once, from scratch, then keep it (or settle it
+			// again at a new P). Depending only on the scene and P, a paused frame is exactly
+			// repeatable. The panorama and the shadow map (camera-relative, refreshed a share per
+			// frame) are brought up to date with it, so a paused frame does not wait out their refresh
+			// cycles after a camera move.
 			if ( ! full ) this.refreshMaps( renderer, true, 1 );
 			this.settle( renderer );
 
@@ -2350,11 +2450,12 @@ export class Clouds {
 	}
 
 	// Refresh the panorama and the cloud shadow map: whole, or this frame's share (one phase of the
-	// panorama's pattern, `shadowRows` of the shadow map's rows).
-	private refreshMaps( renderer: THREE.WebGPURenderer, full: boolean, shadowRows: number ): void {
+	// panorama's pattern, `shadowRows` of the shadow map's rows); `dome` refreshes the whole panorama
+	// alone.
+	private refreshMaps( renderer: THREE.WebGPURenderer, full: boolean, shadowRows: number, dome = full ): void {
 
 		const order = this.domeOrder;
-		for ( const [ x, y ] of full ? order : [ order[ this.frame % order.length ] ] ) {
+		for ( const [ x, y ] of dome ? order : [ order[ this.frame % order.length ] ] ) {
 
 			this.phase.value.set( x, y );
 			renderer.compute( this.partialKernel! );
@@ -2371,6 +2472,13 @@ export class Clouds {
 
 	}
 
+	// The scale the view's kernels write at now (`writeScale`).
+	private storeScale(): number {
+
+		return preExposure.scale.value * VIEW_HEADROOM * storePress.store.value;
+
+	}
+
 	// Trace one slot of every 4 x 4 block and resolve it into the history.
 	private trace( renderer: THREE.WebGPURenderer, order: number ): void {
 
@@ -2382,10 +2490,18 @@ export class Clouds {
 		this.subPixel.value.set( ( ( 0.5 + n * 0.7548776662 ) % 1 ) - 0.5, ( ( 0.5 + n * 0.5698402910 ) % 1 ) - 0.5 ).multiplyScalar( 0.25 );
 		this.frameNoise.value = ( n * 0.6180339887 ) % 1;
 		this.traces ++;
+		// (the kernels run at the pre-exposure's scale as it stands now; the resolve reads the other
+		// history buffer and writes this one)
+		const scale = this.storeScale();
+		this.writeScale.value = scale;
 		renderer.compute( view.kernels.trace );
 		renderer.compute( view.kernels.high );
 		renderer.compute( view.kernels.box );
+		this.historyGain.value = scale / this.historyScale[ 1 - this.pingPong ];
 		renderer.compute( view.kernels.resolve[ this.pingPong ] );
+		this.historyScale[ this.pingPong ] = scale;
+		this.shownScale = scale;
+		this.viewUnscale.value = 1 / scale;
 		this.viewNode.value = view.history[ this.pingPong ];
 		this.viewDepthNode.value = view.depthHistory[ this.pingPong ];
 		this.pingPong = 1 - this.pingPong;
@@ -2499,6 +2615,10 @@ export class Clouds {
 		this.flashOn.value = 0;
 		this.frame = 0;
 		this.pingPong = 0;
+		this.historyScale.fill( 1 );
+		this.shownScale = 1;
+		this.viewUnscale.value = 1;
+		this.historyGain.value = 1;
 		this.traces = 0;
 		this.turned = 0;
 		this.hasPrevious = false;
@@ -2530,7 +2650,7 @@ export class Clouds {
 		// The map holds the upper sky only: below the horizon the clouds fade out instead of
 		// repeating the horizon's row.
 		const below = smoothstep( - 0.04, 0, direction.y );
-		return vec4( s.rgb.div( CLOUD_STORE ).mul( below ), mix( float( 1 ), s.a, below ) );
+		return vec4( s.rgb.mul( this.domeRead ).mul( storePress.read ).mul( below ), mix( float( 1 ), s.a, below ) );
 
 	}
 
@@ -2590,7 +2710,7 @@ export class Clouds {
 			const fuv = uv.mul( this.viewSize ).sub( this.slot ).sub( this.subPixel ).sub( 0.5 ).div( 4 ).add( 0.5 ).div( this.traceSize );
 			const flash = this.flashNode.sample( fuv ).level( float( 0 ) ).rgb.mul( this.flashOn );
 			const above = smoothstep( - 0.05, - 0.03, direction.y );
-			result.assign( vec4( v.rgb.div( CLOUD_STORE ).add( flash ).mul( above ), mix( float( 1 ), min( v.a, 1 ), above ) ) );
+			result.assign( vec4( v.rgb.mul( this.viewUnscale ).add( flash ).mul( above ), mix( float( 1 ), min( v.a, 1 ), above ) ) );
 
 		} ).Else( () => {
 
@@ -2858,10 +2978,12 @@ export class Clouds {
 	dispose(): void {
 
 		this.dome.dispose();
+		this.domeScratch.dispose();
 		this.shadowMap.dispose();
 		for ( const t of [ this.shape, this.synoptic, this.weather, this.bounds, this.rainbowTable ] ) t?.dispose();
 		this.streakCover?.dispose();
 		this.partialKernel?.dispose();
+		for ( const kernel of this.rescaleKernels ?? [] ) kernel.dispose();
 		this.shadowKernel?.dispose();
 		this.deckMeanKernel?.dispose();
 		this.deckMeanSumKernel?.dispose();
@@ -2948,6 +3070,8 @@ export class Clouds {
 			this.domeNode.value = this.dome;
 			this.domeTexel.value.set( 0.5 / width, 0.5 / height );
 			previous.dispose();
+			this.domeScratch.dispose();
+			this.domeScratch = makeDome( width, height, 'cloudDomeRescale' );
 
 		}
 		if ( this.partialKernel ) this.buildKernels();
@@ -2983,7 +3107,7 @@ export class Clouds {
 
 		await this.init( renderer );
 		const view = this.view;
-		const kernels = [ this.columnKernel!, this.partialKernel!, this.shadowKernel!, this.deckMeanKernel!, this.deckMeanSumKernel! ];
+		const kernels = [ this.columnKernel!, this.partialKernel!, ...this.rescaleKernels!, this.shadowKernel!, this.deckMeanKernel!, this.deckMeanSumKernel! ];
 		if ( view ) kernels.push( view.kernels.trace, view.kernels.high, view.kernels.box, ...view.kernels.resolve );
 		await renderer.compileComputeAsync( kernels );
 
@@ -2991,7 +3115,7 @@ export class Clouds {
 
 }
 
-function makeDome( width: number, height: number ): THREE.StorageTexture {
+function makeDome( width: number, height: number, name = 'cloudDome' ): THREE.StorageTexture {
 
 	const dome = new THREE.StorageTexture( width, height );
 	dome.type = THREE.HalfFloatType;
@@ -2999,7 +3123,7 @@ function makeDome( width: number, height: number ): THREE.StorageTexture {
 	dome.wrapT = THREE.ClampToEdgeWrapping;
 	dome.minFilter = dome.magFilter = THREE.LinearFilter;
 	dome.generateMipmaps = false;
-	dome.name = 'cloudDome';
+	dome.name = name;
 	return dome;
 
 }

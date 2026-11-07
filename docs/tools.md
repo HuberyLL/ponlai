@@ -326,7 +326,10 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   figure, other: `src/debug/Classes.ts`), which `radiance`'s `aov: 'class'` decodes per cell; the
   sky and the sea are told by depth. Emissive surfaces (the yunpeng's glow) spoil their codes and
   read as no kind, and so does a pixel whose samples blend two kinds: load the page with `aa=off`
-  (the cut-out leaves cover half the island's pixels in part under MSAA).
+  (the cut-out leaves cover half the island's pixels in part under MSAA). The codes are stored at
+  the pre-exposure's scale but never above 2^15, so a page pre-exposed past half float's range (a
+  deep overcast night) still decodes; past 2^15 the haze and emission over the codes keep the
+  pre-exposure's scale, 2^( P - 15 ) times larger beside them, so more hazy cells read as no kind.
 - The scene's linear radiance over boxes, as numbers (`src/debug/Radiance.ts`): `await
   __PONLAI__.radiance( { boxes: { lit: [ x, y, w, h ], ... }, image: [ 3456, 2234 ], grid: [ nx, ny ],
   source: 'opaque' } )`. Boxes are fractions of the frame from its top-left, or pixels of an image
@@ -389,8 +392,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   of the clouds' shadow ratio `sky.atmosphere.shadowFloor` (the multiple scattering's share no
   shadow takes), the distant sea's knee `sky.sea.knee` (the light that reaches the sea, as a share
   of the sun's illuminance, above which its body is lit fully), the stops under all of it each
-  night layer comes in from at -7 degrees after a clear sunset `sky.twilight.depth.moon` (the
-  moon's key; `moonSky`, the moonlit sky; `sky`, the sky's and the probes' night key; `ambient`;
+  night layer comes in from at -7 degrees after a clear sunset `sky.twilight.depth.sky` (the
+  sky's night key; `ambient`;
   `stars`; `haze`; `cloudMoon`, the clouds' own moonlight: `src/sky/DayCycle.ts` DUSK_DEPTH) and the
   degrees at the night's end of that window over which they ease into all of it `sky.twilight.ease`
   (DUSK_EASE; 0 takes them in by even stops to the end), where the moon stands
@@ -427,7 +430,11 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `lighting.sward.tint.r` (`g`, `b`) and the crowns', `lighting.vegetation.leaf.tint.r` (`g`, `b`);
   the sea's mean reflection over the slopes no pixel resolves, the spread of those slopes
   `sea.reflection.slopeScale` and the lift of its sky lobe `sea.reflection.lobeLift`
-  (`src/ocean/Water.ts` `REFLECTION_LOBE`).
+  (`src/ocean/Water.ts` `REFLECTION_LOBE`); and the dusk's shares, forced to take the twilight's
+  light and the night's apart, `sky.dusk.force.<name>` (-1, the default, leaves a share as the code
+  makes it, 0 to 1 forces it to that value; the twilight's are weights on the sun's light; the names
+  and what each one forces: `src/sky/DayCycle.ts` DUSK_FORCES, the values the code gave them since
+  a script cleared it, on debug pages only: `duskShares`; `tools/dusk-grid.mjs` sets and reads them).
 - The ambient grade (`src/lighting/AmbientGrade.ts`): `__PONLAI__.ambient.current` holds the five
   knobs the table gives for the sun and the weather now (also `D.ambient`), `table` the table's own
   output; `override = true` with `manual.<knob>` replaces it from the next frame (the GUI's Ambient
@@ -730,15 +737,22 @@ captures (`uv run --with numpy --with pillow`). Where shapes differ (growth step
 regenerated island), judge the look by eye and region statistics (`tools/capture-growth.mjs`), not
 by pixel difference.
 
-`node tools/colour-rows.mjs shoot <url> <dir> --views-file f.json [--pages normal,light,ambient,classes]`
+`node tools/colour-rows.mjs shoot <url> <dir> --views-file f.json [--pages normal,light,ambient,classes] [--warm] [--jobs N] [--scene]`
 takes a views file's frames on one page per flag set, under the shared GPU lock, and `node
-tools/colour-rows.mjs rows <dir> [--sort <dir>] [--boxes f.json] [--views a,b] [--out f.json] [--json]`,
+tools/colour-rows.mjs rows <dir> [--sort <dir> | --own [--sky-mask-deg N]] [--boxes f.json] [--views a,b] [--sky-bands 0,5,15,30] [--out f.json] [--json]`,
 plain node, reads them: final-pixel Oklab L, C and h per view, per kind of surface and per kind of
 light (sun and shade by the cell's direct share, and `land sun` and `land shade` over every kind),
 with the sky, the sea, the darkest 5 % of the land and any boxes, into `<dir>/rows.json` and a table.
 Each row also gives `card`, the mean luminance of the same cells on the light page in scene units, and
 each view the land's shares in sun, shade and penumbra. A view `<base>--<variant>` is read through the
-sort of `<base>`, so its rows are the same cells; variants need only `--pages normal`. It prints what
+sort of `<base>`, so its rows are the same cells; variants need only `--pages normal`. `--scene` also
+reads each row's radiance in scene units (`scene`: the opaque source's mean and median, the hdr's
+mean) and adds the rows a ratio of the scene's light needs: `sky band` (4 to 15 degrees up, turned
+from the key light), `sea away` (just under the horizon on that side), `<kind> flat` and `<kind> sun
+flat` (facing up, and lit), with the sky's irradiance `E` per view. `--sky-bands e0,e1,...` (frames
+shot with `--scene`) adds a row `sky <a>-<b>` per pair of edges: the sky cells turned from the key
+light whose centre's ray stands in [a, b) degrees up, read over at least 64 cells (else null, `too
+few cells`; not with `--own`). It prints what
 the frames hold and judges nothing. Its header has the sort. `shoot --warm` lets the views of a page
 reach each other by the scene jump (a fraction of a page load, with the same frames and readings
 byte for byte, as checked on four views both ways): its read only reads, which `capture.mjs --ready-reads` tells the worker; an
@@ -959,6 +973,29 @@ freshly loaded pages (a grown page against a fresh `grow=1` page) in one call.
   layer).
 
 Steps, scope, the value's serialisation and the exit code are in the file's header.
+
+`node tools/dusk-grid.mjs [url] [--weathers clear,fair,cloudy,overcast] [--sides evening,morning]
+[--from 2 --to -8 --step 0.5] [--midnight] [--split [--fit]] [--night-split] [--twilight] [--haze] [--compare dir]` reads the scene's
+light in scene units at a grid of sun elevations through the dusk and the dawn (the sky's and the
+deck's irradiance, the sky's metering, the baked sky's ring 4 degrees up, the land's ambient, the
+far sea, the air, the key's floors, and per view the exposure with its keys and meters, the
+metering illuminance over the land and the radiance over the land, the sky, the sea and the
+yunpeng's cells), each point a scene jump with an explicit bake, its hour solved from
+`src/sky/DayCycle.ts` in node, and judges that a lower sun never makes the judged quantities
+brighter (each step, the largest rise down to midnight, the exposure's direction). `--split` forces each of the dusk's shares (`sky.dusk.force.*`, URL options,
+Tune) to 0 and to 1 and puts the night's back one at a time from the twilight alone, for each
+share's term, and `--fit` solves each night share's slope from it (`tools/dusk-fit.mjs`, which also
+fits a run already made: `node tools/dusk-fit.mjs <out>`, no GPU) so that every step holds at half
+the judge's margin, the slope no steeper than the twilight's fall, into `fit.txt`; `--night-split` reads the night's terms alone, `--twilight` the twilight alone (every
+night share forced to 0, without the split's other states). `--haze` also reads, in a fixed view of
+its own (65 m over the sea, facing the open sea, pitched 10 degrees up), the haze's whole medium
+(`hazeMedium`: the haze's key, its medium's uniforms, the clouds' copy, the moon's aerosol keys) and
+its opacity on sky rays at a few elevations and level rays over a surface at a few distances
+(`hazeOpacity`, `VolumetricHaze.probe`); `--compare` judges the medium bit for bit. It takes the GPU lock itself (shared,
+leased per point; run it unwrapped), writes a JSON per weather and side with `summary.txt`,
+`handoff.txt`, `terms.txt`, `fit.txt` and `compare.txt` (with `--night-split` in both runs, the
+lamps-off exposure's lift over the other run and, at midnight, its distance from `NIGHT_METER_LIFT`), and exits 1 on a broken rule. A point takes about a
+second, a few tens with `--split`. Its options, reads and rules are in the file's header.
 
 `node tools/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]...
 [--views-file f.json [--views a,b]]` measures the meadow's light on its leaf pixels in linear
@@ -1523,6 +1560,10 @@ Whether a grown page draws what a fresh load of its land draws (views, chunk has
 map, the camera's ground, the ambient probes, pipelines and memory across swaps): `tools/verify-growth-swap.mjs`, not a
 probe eval of one's own.
 
+Whether the land, the sky, the sea or the air brightens anywhere as the sun goes down or comes up,
+by how much, and which of the dusk's shares does it, over a grid of sun elevations each reached by
+the scene jump: `tools/dusk-grid.mjs` (Probes), not a probe that walks the clock with `setHour`.
+
 How much light reaches a surface, its colour, and how much of it is the sun's, apart from the
 albedos and the display chain: `flags=lightOnly` (and `ambientOnly`) with `__PONLAI__.radiance`
 (URL options), not a PNG's pixel values, which have been through exposure, the tone curve, the
@@ -1567,7 +1608,9 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
 - A step that sets a state (a clock, a camera, a uniform) and reads the frame that follows waits
   for the page's rendered frames, counted by `renderer.info.frame`: page-eval's `frames( n )` in an
   eval, `renderedFrames( page, n )` (`tools/page-eval.mjs`, "Rendered frames") from a Playwright page
-  of one's own, never a count of animation frames: the frame pacer skips the refreshes between its
+  of one's own, `window.__waitFrames( n )` (`installWaitFrames`) inside that page's own evaluate and
+  `WAIT_FRAMES` spliced into page code written as a string: one wait, which fails at once while the
+  page's loop is stopped. Never a count of animation frames: the frame pacer skips the refreshes between its
   frames, and a paused page in the test mode holds a due frame while two are still queued on the GPU
   (Test mode), so the read saw the frame before whenever the page did not tick after the state was
   set. Rendered frames wait for the state the next tick applies; a still, converged image is still

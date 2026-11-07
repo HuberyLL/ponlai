@@ -3,12 +3,13 @@
 // sky in this view, before and after a change", where a hand-placed box mixes sun and shade.
 //
 //   node tools/colour-rows.mjs shoot <url> <dir> --views-file f.json [--pages normal,light,ambient,classes]
-//       [--size 2560x1440@1] [--q "extra&query"] [--warm] [--jobs 1]
-//   node tools/colour-rows.mjs rows <dir> [--sort <dir> | --own [--sky-mask-deg N]] [--boxes f.json] [--views a,b] [--out f.json] [--json]
+//       [--size 2560x1440@1] [--q "extra&query"] [--warm] [--jobs 1] [--scene]
+//   node tools/colour-rows.mjs rows <dir> [--sort <dir> | --own [--sky-mask-deg N]] [--boxes f.json] [--views a,b]
+//       [--sky-bands 0,5,15,30] [--out f.json] [--json]
 //
 // shoot takes the frames: one tools/parity/capture-set.mjs run per page below, on one warm page
 // each, under the shared GPU lock, into `<dir>/<page>/`. The views file is capture-set's (a view's
-// `eval` sets its variant up). Each view ends with this tool's read of the page (PAGE_READ).
+// `eval` sets its variant up). Each view ends with this tool's read of the page (pageRead).
 // A page of a set takes one page per view, since an --eval-ready runs on every view and capture-set
 // cannot tell it only reads. --warm says so (capture.mjs --ready-reads: the page's read only reads
 // the frame back, which a scene jump leaves as it found it): the views of a page then reach each
@@ -22,7 +23,8 @@
 //   normal    the frame itself: the PNG, the exposure, the depth's sky and sea shares
 //   light     flags=lightOnly:2,grey:1: every lit surface a white card, specular off
 //   ambient   the same with ambientOnly: the key light taken out
-//   classes   flags=classes&aa=off: each cell's kind (src/debug/Classes.ts)
+//   classes   flags=classes&aa=off: each cell's kind (src/debug/Classes.ts; its codes stored at
+//             most 2^15, so a page pre-exposed past half float, a deep overcast night, decodes)
 //
 // The sort. The frame is cut into a grid of NX by NY cells, each read over the CELL by CELL pixels
 // at its centre, the same pixels on every page (src/debug/RadianceAov.ts `forCellTexels`):
@@ -38,8 +40,8 @@
 //
 // --own sorts each view by its own frame instead: sky, sea and land by the depth read of the view's
 // normal page alone (a cell more than 0.99 sky or sea; land, a cell with no sky and no sea texel
-// at all), with the floor of the land, and no kinds, light or card, so it needs neither a base view
-// nor the other pages. --sky-mask-deg N leaves the cells within N degrees of the sun or the moon out
+// at all), with the floor of the land, and no kinds, light, card, p95 or shares (null), so it needs
+// neither a base view nor the other pages, and takes no --sky-bands. --sky-mask-deg N leaves the cells within N degrees of the sun or the moon out
 // of `sky` (the page's own read of the lights and the camera, so by angle, not by pixels; a light
 // more than a degree under the horizon has no disc to leave out). For views that do not share a camera (a camera turned at each frame, where
 // a cell that was land in one frame is sea in the next, and a base's cells would read sea as land).
@@ -60,6 +62,30 @@
 // linear colour, which a box of mixed light reads quite otherwise than by its medians), and `dark`
 // and `lit`, the row of the pixels under and over the box's median L (the two halves of a crown).
 //
+// The scene (shoot --scene): the normal page also reads the frame's own radiance in scene units on
+// the same cells, before the display chain (src/debug/Radiance.ts: `opaque`, the lit surfaces and the
+// sky before the sea and the air, and `hdr`, the composite with them), each cell's world normal
+// (RadianceAov.ts `normal`), the camera's matrices and the sky's irradiance, so a ratio of the scene's
+// light (lit grass over the sky, shade over sun, one weather over another) is read where the rows'
+// rgb read the display. rows then adds to every row `scene` { Y, med, hdr }: the mean and the median
+// of the cells' luminance in the opaque source and the mean in hdr; and the rows that need the
+// cells' direction: `sky band`, the sky cells whose ray stands 4 to 15 degrees up and turns more than
+// 90 degrees in azimuth from the key light's (the sun's, by night the moon's), `sea away`, the sea
+// cells whose ray lies 0 to 5 degrees under the horizon on that side, and `<kind> flat`, `<kind> sun
+// flat`, `land flat` and `land sun flat`, the cells whose normal stands within about 25 degrees of
+// straight up (a flat open card's light, under a sky alone, is read against `E` below). A view
+// read through another's sort takes these rows from the base's normals and camera. The view's
+// record adds `E`, pi times the sky's irradiance (Sky.ts `skyIrradiance`, luminance), against which
+// a flat open card's light is read, and `preExposure`, the frame's P in stops (post/PreExposure.ts).
+//
+// The sky's bands (rows --sky-bands e0,e1,...: frames shot with --scene): a row `sky <a>-<b>` per pair
+// of neighbouring edges, the sky cells whose ray stands at least a and under b degrees up (half open,
+// [a, b)) and turns more than 90 degrees in azimuth from the key light's, as `sky band` takes them;
+// each cell's elevation is its centre's ray through the camera's matrices as the scene page read
+// them, between frames: unjittered (the temporal modes jitter the scene passes' projection only, and
+// MSAA has no jitter). A band of fewer than SKY_BAND_CELLS cells keeps its n and has null values,
+// with `note: 'too few cells'`. These are not `sky band` (4 to 15 degrees), which stays as it is.
+//
 // Each view's record also holds `ev` and `exposure` (the frame's, src/post/Exposure.ts), the key
 // light's `key` { colour, dir }, the sun's `elevation` (degrees), the land's `p95` of d, `shares`
 // { sun, shade, penumbra }, the land cells' shares in the sort's sun, shade and neither, and `note`,
@@ -76,6 +102,8 @@ import { decodePng } from './capture-browser.mjs';
 const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const NX = 256, NY = 144, CELL = 3;
 const MIN_CELLS = 8;
+// the least cells a --sky-bands row is read over
+const SKY_BAND_CELLS = 64;
 const KINDS = [ 'sky', 'sea', 'ground', 'rock', 'grass', 'leaves', 'wood', 'figure', 'other' ]; // src/debug/Classes.ts
 const FIRST_LAND = KINDS.indexOf( 'ground' );
 const PAGES = {
@@ -86,7 +114,8 @@ const PAGES = {
 };
 
 // what each page's view hands back, as a capture's --eval-ready: its value lands in the view's JSON
-const PAGE_READ = `async () => {
+// (`scene`: the normal page also reads the scene's radiance, the normals and the camera)
+const pageRead = ( scene ) => `async () => {
 
 	const cells = { grid: [ ${ NX }, ${ NY } ], cell: ${ CELL }, boxes: {} };
 	const short = ( values ) => values.map( ( v ) => Number( v.toPrecision( 4 ) ) );
@@ -94,7 +123,7 @@ const PAGE_READ = `async () => {
 	if ( P.flags.lightOnly ) return { opaque: short( ( await P.radiance( { ...cells, source: 'opaque' } ) ).grid.rgb ) };
 	const { r, g, b } = P.sky.keyColor;
 	const matrix = ( m ) => Array.from( m.elements, ( v ) => Number( v.toPrecision( 8 ) ) );
-	return {
+	const out = {
 		exposure: await P.pipeline.readExposure(),
 		depth: short( ( await P.radiance( { ...cells, aov: 'depth' } ) ).values ),
 		key: { colour: [ r, g, b ], dir: P.sky.keyDir.toArray() },
@@ -103,6 +132,21 @@ const PAGE_READ = `async () => {
 		elevation: P.sky.elevation,
 		note: P.colourNote ?? null,
 	};
+	if ( ${ scene } ) {
+
+		const c = P.camera, i = P.sky.skyIrradiance, opaque = await P.radiance( { ...cells, source: 'opaque' } );
+		c.updateMatrixWorld();
+		Object.assign( out, {
+			preExposure: opaque.preExposure,
+			opaque: short( opaque.grid.rgb ),
+			hdr: short( ( await P.radiance( { ...cells, source: 'hdr' } ) ).grid.rgb ),
+			normal: short( ( await P.radiance( { ...cells, aov: 'normal' } ) ).values ),
+			camera: { position: c.position.toArray(), world: c.matrixWorld.toArray(), projectionInverse: c.projectionMatrixInverse.toArray() },
+			E: Math.PI * ( 0.2126 * i.r + 0.7152 * i.g + 0.0722 * i.b ),
+		} );
+
+	}
+	return out;
 
 }`;
 
@@ -123,7 +167,7 @@ function parse( list, known ) {
 		if ( ! a.startsWith( '--' ) ) { positional.push( a ); continue; }
 		const k = a.slice( 2 );
 		if ( ! known.includes( k ) ) usage( `unknown option ${ a }` );
-		if ( k === 'json' || k === 'warm' || k === 'own' ) options[ k ] = true;
+		if ( k === 'json' || k === 'warm' || k === 'own' || k === 'scene' ) options[ k ] = true;
 		else if ( list[ i + 1 ] === undefined ) usage( `${ a } needs a value` );
 		else options[ k ] = list[ ++ i ];
 
@@ -154,7 +198,7 @@ function runChild( file, args ) {
 
 async function shoot( list ) {
 
-	const { positional, options } = parse( list, [ 'views-file', 'pages', 'size', 'q', 'jobs', 'warm' ] );
+	const { positional, options } = parse( list, [ 'views-file', 'pages', 'size', 'q', 'jobs', 'warm', 'scene' ] );
 	if ( positional.length !== 2 || ! options[ 'views-file' ] ) usage( 'shoot needs <url> <dir> --views-file f.json' );
 	const url = positional[ 0 ], dir = path.resolve( positional[ 1 ] ), viewsFile = path.resolve( options[ 'views-file' ] );
 	const pages = ( options.pages ?? Object.keys( PAGES ).join( ',' ) ).split( ',' );
@@ -165,7 +209,7 @@ async function shoot( list ) {
 		console.log( `colour-rows: page ${ page }` );
 		const status = await runChild( 'tools/gpu-lock.mjs', [ 'run', '--shared', '--',
 			process.execPath, 'tools/parity/capture-set.mjs', url, path.join( dir, page ), '--size', options.size ?? '2560x1440@1', '--jobs', options.jobs ?? '1',
-			'--views-file', viewsFile, ...( q ? [ '--q', q ] : [] ), '--', ...( options.warm ? [ '--ready-reads' ] : [] ), '--eval-ready', PAGE_READ ] );
+			'--views-file', viewsFile, ...( q ? [ '--q', q ] : [] ), '--', ...( options.warm ? [ '--ready-reads' ] : [] ), '--eval-ready', pageRead( options.scene === true ) ] );
 		if ( status !== 0 ) {
 
 			console.error( `colour-rows: page ${ page } failed` );
@@ -255,8 +299,30 @@ function cellColours( { width, height, data } ) {
 
 }
 
+// a 4 x 4 matrix (column major, as three's toArray) times ( x, y, z, w )
+const transform = ( m, x, y, z, w ) => [ 0, 1, 2, 3 ].map( ( k ) => m[ k ] * x + m[ 4 + k ] * y + m[ 8 + k ] * z + m[ 12 + k ] * w );
+
+// each cell's ray from the camera (a unit world direction, three per cell), through the centre of
+// the cell's pixels (the camera's matrices as the scene page read them)
+function cellRays( camera ) {
+
+	const rays = new Float64Array( NX * NY * 3 ), [ px, py, pz ] = camera.position;
+	for ( let j = 0, c = 0; j < NY; j ++ ) for ( let i = 0; i < NX; i ++, c ++ ) {
+
+		const v = transform( camera.projectionInverse, ( i + 0.5 ) / NX * 2 - 1, 1 - ( j + 0.5 ) / NY * 2, 0.5, 1 );
+		const [ x, y, z ] = transform( camera.world, v[ 0 ] / v[ 3 ], v[ 1 ] / v[ 3 ], v[ 2 ] / v[ 3 ], 1 );
+		const dx = x - px, dy = y - py, dz = z - pz, l = Math.hypot( dx, dy, dz ) || 1;
+		rays.set( [ dx / l, dy / l, dz / l ], c * 3 );
+
+	}
+	return rays;
+
+}
+
+const skyBandRow = ( a, b ) => `sky ${ a }-${ b }`;
+
 // the sort of a view (see the header): { land, cells: { row: [ cell indices ] }, p95 }
-function sortOf( dir, view ) {
+function sortOf( dir, view, skyBands = [] ) {
 
 	const normal = pageValue( dir, 'normal', view ), light = pageValue( dir, 'light', view ).opaque;
 	const ambient = pageValue( dir, 'ambient', view ).opaque, cls = pageValue( dir, 'classes', view ).cls;
@@ -298,6 +364,29 @@ function sortOf( dir, view ) {
 		}
 
 	}
+	// the rows that need each cell's direction (the scene's read: see the header)
+	if ( skyBands.length && ! normal.camera ) throw new Error( `${ view }: --sky-bands needs frames shot with --scene` );
+	if ( normal.camera && normal.normal ) {
+
+		const rays = cellRays( normal.camera ), [ kx, , kz ] = normal.key.dir, DEG = Math.PI / 180;
+		const away = ( c ) => rays[ c * 3 ] * kx + rays[ c * 3 + 2 ] * kz < 0;
+		const up = ( c ) => Math.asin( Math.max( - 1, Math.min( 1, rays[ c * 3 + 1 ] ) ) ) / DEG;
+		for ( const c of cells.sky ?? [] ) if ( away( c ) && up( c ) >= 4 && up( c ) <= 15 ) add( 'sky band', c );
+		for ( let k = 0; k + 1 < skyBands.length; k ++ ) {
+
+			const [ a, b ] = [ skyBands[ k ], skyBands[ k + 1 ] ], row = skyBandRow( a, b );
+			cells[ row ] ??= [];
+			for ( const c of cells.sky ?? [] ) if ( away( c ) && up( c ) >= a && up( c ) < b ) add( row, c );
+
+		}
+		for ( const c of cells.sea ?? [] ) if ( away( c ) && up( c ) >= - 5 && up( c ) < 0 ) add( 'sea away', c );
+		for ( const row of Object.keys( cells ).filter( ( r ) => r.endsWith( ' sun' ) || KINDS.indexOf( r ) >= FIRST_LAND || r === 'land' ) ) {
+
+			for ( const c of cells[ row ] ) if ( ( normal.normal[ c * 3 + 1 ] ?? 0 ) >= 0.9 ) add( `${ row } flat`, c );
+
+		}
+
+	}
 	const share = ( row ) => land.length ? round( ( cells[ row ]?.length ?? 0 ) / land.length ) : 0;
 	const split = { sun: share( 'land sun' ), shade: share( 'land shade' ) };
 	split.penumbra = round( land.length ? 1 - split.sun - split.shade : 0 );
@@ -306,9 +395,11 @@ function sortOf( dir, view ) {
 }
 
 // a row over some cells of the frame, with its card from the light page's cells (`light`, or null)
-function cellsRow( colours, list, light ) {
+// and, from the scene's read (`scene`: the normal page's `opaque` and `hdr` grids, or null), its
+// radiance in scene units
+function cellsRow( colours, list, light, scene ) {
 
-	if ( list.length < MIN_CELLS ) return { n: list.length, L: null, C: null, h: null, rgb: null, card: null };
+	if ( list.length < MIN_CELLS ) return { n: list.length, L: null, C: null, h: null, rgb: null, card: null, ...( scene ? { scene: null } : {} ) };
 	let r = 0, g = 0, b = 0, card = 0, cards = 0;
 	for ( const c of list ) {
 
@@ -325,7 +416,16 @@ function cellsRow( colours, list, light ) {
 		}
 
 	}
-	return { ...rowOf( list.length, r / list.length, g / list.length, b / list.length ), card: cards ? Number( ( card / cards ).toPrecision( 4 ) ) : null };
+	const row = { ...rowOf( list.length, r / list.length, g / list.length, b / list.length ), card: cards ? Number( ( card / cards ).toPrecision( 4 ) ) : null };
+	if ( scene ) {
+
+		const of = ( grid ) => list.map( ( c ) => luminance( grid[ c * 3 ] ?? NaN, grid[ c * 3 + 1 ] ?? NaN, grid[ c * 3 + 2 ] ?? NaN ) ).filter( Number.isFinite );
+		const opaque = of( scene.opaque ), hdr = of( scene.hdr );
+		const mean = ( v ) => v.length ? Number( ( v.reduce( ( t, x ) => t + x, 0 ) / v.length ).toPrecision( 4 ) ) : null;
+		row.scene = { Y: mean( opaque ), med: opaque.length ? Number( median( opaque ).toPrecision( 4 ) ) : null, hdr: mean( hdr ) };
+
+	}
+	return row;
 
 }
 
@@ -409,12 +509,16 @@ function ownSortOf( read, maskDeg ) {
 
 function rows( list ) {
 
-	const { positional, options } = parse( list, [ 'sort', 'own', 'sky-mask-deg', 'boxes', 'views', 'out', 'json' ] );
+	const { positional, options } = parse( list, [ 'sort', 'own', 'sky-mask-deg', 'boxes', 'views', 'out', 'json', 'sky-bands' ] );
 	if ( options.own && options.sort ) usage( '--own and --sort do not mix' );
 	if ( options[ 'sky-mask-deg' ] !== undefined && ! options.own ) usage( '--sky-mask-deg goes with --own' );
+	if ( options[ 'sky-bands' ] !== undefined && options.own ) usage( '--sky-bands goes with the classes page\'s sort, not --own' );
 	const maskDeg = Number( options[ 'sky-mask-deg' ] ?? 0 );
 	if ( ! ( maskDeg >= 0 ) ) usage( `bad --sky-mask-deg ${ options[ 'sky-mask-deg' ] }` );
 	if ( positional.length !== 1 ) usage( 'rows needs <dir>' );
+	const skyBands = options[ 'sky-bands' ] ? options[ 'sky-bands' ].split( ',' ).map( Number ) : [];
+	if ( skyBands.some( ( e ) => ! Number.isFinite( e ) ) || skyBands.some( ( e, k ) => k && e <= skyBands[ k - 1 ] ) || skyBands.length === 1 ) usage( '--sky-bands: rising elevations in degrees, at least two' );
+	const bandRows = new Set( skyBands.slice( 1 ).map( ( b, k ) => skyBandRow( skyBands[ k ], b ) ) );
 	const dir = positional[ 0 ], sortDir = options.sort ?? dir;
 	const boxes = options.boxes ? JSON.parse( readFileSync( options.boxes, 'utf8' ) ) : {};
 	const normal = path.join( dir, 'normal' );
@@ -427,21 +531,28 @@ function rows( list ) {
 
 		const base = options.own ? view : existsSync( path.join( sortDir, 'classes', `${ view }.json` ) ) ? view : view.split( '--' )[ 0 ];
 		const read = pageValue( dir, 'normal', view ), pixels = framePixels( dir, view ), colours = cellColours( pixels );
-		if ( ! options.own && ! sorts.has( base ) ) sorts.set( base, sortOf( sortDir, base ) );
+		if ( ! options.own && ! sorts.has( base ) ) sorts.set( base, sortOf( sortDir, base, skyBands ) );
 		const sort = options.own ? ownSortOf( read, maskDeg ) : sorts.get( base );
 		const light = ! options.own && existsSync( path.join( dir, 'light', `${ view }.json` ) ) ? pageValue( dir, 'light', view ).opaque : null;
+		const scene = read.opaque && read.hdr ? { opaque: read.opaque, hdr: read.hdr } : null;
 		const out = {};
-		for ( const row of Object.keys( sort.cells ).sort() ) out[ row ] = cellsRow( colours, sort.cells[ row ], light );
+		for ( const row of Object.keys( sort.cells ).sort() ) {
+
+			const few = bandRows.has( row ) && sort.cells[ row ].length < SKY_BAND_CELLS;
+			out[ row ] = few ? { ...cellsRow( colours, [], light, scene ), n: sort.cells[ row ].length, note: 'too few cells' } : cellsRow( colours, sort.cells[ row ], light, scene );
+
+		}
 		// the darkest of this frame's own land, whichever cells those are now
 		const dark = sort.land.map( ( c ) => [ luminance( colours[ c * 3 ], colours[ c * 3 + 1 ], colours[ c * 3 + 2 ] ), c ] ).sort( ( a, b ) => a[ 0 ] - b[ 0 ] );
 		if ( dark.length ) {
 
 			const edge = rank( Float64Array.from( dark, ( e ) => e[ 0 ] ), 0.05 );
-			out.floor = cellsRow( colours, dark.filter( ( e ) => e[ 0 ] <= edge ).map( ( e ) => e[ 1 ] ), light );
+			out.floor = cellsRow( colours, dark.filter( ( e ) => e[ 0 ] <= edge ).map( ( e ) => e[ 1 ] ), light, scene );
 
 		}
 		const own = Object.entries( boxes[ base ] ?? {} ).map( ( [ name, box ] ) => [ name, boxRow( pixels, box ) ] );
-		views[ view ] = { sort: base, ev: read.exposure.ev, exposure: read.exposure.exposure, elevation: read.elevation, key: read.key, p95: sort.p95 === null ? null : round( sort.p95 ), shares: sort.shares, ...( options.own ? { skyMasked: sort.masked } : {} ), note: read.note, rows: out, ...( own.length ? { boxes: Object.fromEntries( own ) } : {} ) };
+		views[ view ] = { sort: base, ev: read.exposure.ev, exposure: read.exposure.exposure, elevation: read.elevation, key: read.key, p95: sort.p95 === null ? null : round( sort.p95 ), shares: sort.shares, ...( options.own ? { skyMasked: sort.masked } : {} ), note: read.note,
+			...( read.E === undefined ? {} : { E: Number( read.E.toPrecision( 4 ) ), preExposure: read.preExposure } ), rows: out, ...( own.length ? { boxes: Object.fromEntries( own ) } : {} ) };
 
 	}
 	const result = { grid: [ NX, NY ], cell: CELL, sort: options.own ? 'own' : sortDir, ...( options.own ? { skyMaskDeg: maskDeg } : {} ), views };
@@ -452,15 +563,16 @@ function rows( list ) {
 		return 0;
 
 	}
-	const line = ( name, r ) => `  ${ name.padEnd( 16 ) } ${ String( r.n ).padStart( 6 ) }  ${ r.L === null ? '-' : `${ r.L.toFixed( 2 ) } ${ r.C.toFixed( 3 ) } ${ r.h.toFixed( 0 ).padStart( 3 ) }` }${ r.card == null ? '' : `  card ${ r.card.toPrecision( 3 ) }` }`;
+	const line = ( name, r ) => `  ${ name.padEnd( 16 ) } ${ String( r.n ).padStart( 6 ) }  ${ r.L === null ? ( r.note ?? '-' ) : `${ r.L.toFixed( 2 ) } ${ r.C.toFixed( 3 ) } ${ r.h.toFixed( 0 ).padStart( 3 ) }` }${ r.card == null ? '' : `  card ${ r.card.toPrecision( 3 ) }` }${ r.scene?.Y == null ? '' : `  scene ${ r.scene.Y.toPrecision( 3 ) } (median ${ r.scene.med.toPrecision( 3 ) }, hdr ${ r.scene.hdr.toPrecision( 3 ) })` }`;
 	for ( const [ view, v ] of Object.entries( views ) ) {
 
+		const E = v.E === undefined ? '' : `  E ${ v.E.toPrecision( 4 ) }`;
 		if ( v.shares ) {
 
 			const { sun, shade, penumbra } = v.shares;
-			console.log( `${ view }  EV ${ v.ev.toFixed( 2 ) }  sun ${ v.elevation.toFixed( 1 ) } deg  (sort ${ v.sort }, p95 ${ v.p95.toFixed( 2 ) }; land in sun ${ sun.toFixed( 2 ) }, shade ${ shade.toFixed( 2 ) }, penumbra ${ penumbra.toFixed( 2 ) })` );
+			console.log( `${ view }  EV ${ v.ev.toFixed( 2 ) }  sun ${ v.elevation.toFixed( 1 ) } deg  (sort ${ v.sort }, p95 ${ v.p95.toFixed( 2 ) }; land in sun ${ sun.toFixed( 2 ) }, shade ${ shade.toFixed( 2 ) }, penumbra ${ penumbra.toFixed( 2 ) })${ E }` );
 
-		} else console.log( `${ view }  EV ${ v.ev.toFixed( 2 ) }  sun ${ v.elevation.toFixed( 1 ) } deg  (own sort)` );
+		} else console.log( `${ view }  EV ${ v.ev.toFixed( 2 ) }  sun ${ v.elevation.toFixed( 1 ) } deg  (own sort)${ E }` );
 		for ( const [ name, r ] of Object.entries( v.rows ) ) console.log( line( name, r ) );
 		for ( const [ name, b ] of Object.entries( v.boxes ?? {} ) ) {
 

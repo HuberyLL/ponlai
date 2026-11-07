@@ -13,7 +13,7 @@ import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraCont
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
 import { Sky } from './sky/Sky.ts';
-import { DayCycle, DAY_PRESETS, nightAmbientShare, sunRising, type DayPreset } from './sky/DayCycle.ts';
+import { DayCycle, DAY_PRESETS, duskForce, nightAmbientShare, sunRising, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckLight, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, type TunedField, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
@@ -358,8 +358,20 @@ function reloadWithQuality( tier: QualityTier | null ): void {
 }
 applySkyQuality();
 scene.add( sky.dome, sky.lightning.group );
-scene.environmentIntensity = 1;
 const lighting = { skyFill: 1 };
+// The environment's intensity: the fill times what takes the displayed environment's texels to
+// scene units (its atlases store the sky's radiance at a power of two, under the debug press:
+// Sky.ts `environmentRead`), so a fill of 1 lights as the sky stands. A bake that publishes after
+// the frame set it sets it again, before the frame renders (`onEnvironmentStore`).
+let environmentFill = 1;
+function applyEnvironmentFill( fill: number ): void {
+
+	environmentFill = fill;
+	scene.environmentIntensity = fill * sky.environmentRead;
+
+}
+applyEnvironmentFill( 1 );
+sky.onEnvironmentStore = () => applyEnvironmentFill( environmentFill );
 
 const sun = new THREE.DirectionalLight( 0xffffff, 1 );
 sun.castShadow = true;
@@ -570,7 +582,7 @@ const setWind = async ( choice: WindChoice, seconds = 20 ) => {
 function applySkyFill(): void {
 
 	// One artistic fill gain drives PBR ambient, water scattering and sky reflections alike.
-	scene.environmentIntensity = lighting.skyFill;
+	applyEnvironmentFill( lighting.skyFill );
 	shared.skyFill.value = lighting.skyFill;
 	shared.skyIrradiance.value.set( sky.skyIrradiance.r, sky.skyIrradiance.g, sky.skyIrradiance.b ).multiplyScalar( lighting.skyFill );
 	if ( water ) water.uniforms.reflection.value = lighting.skyFill;
@@ -582,7 +594,7 @@ let water: Water | undefined;
 // the sky's harmonics for the ambient light's relight (lighting/AmbientRelight.ts), projected from
 // every bake's environment source from the first on
 const ambientSky = new AmbientSky( renderer );
-sky.onEnvironmentSource = ( source, atlases ) => ambientSky.project( source, atlases );
+sky.onEnvironmentSource = ( source, atlases, read ) => ambientSky.project( source, atlases, read );
 
 setStatus( 'Lighting the sky…' );
 await refreshEnvironment();
@@ -779,7 +791,7 @@ showWindArrows();
 // show.
 const ambient = new AmbientVolume( renderer, data.ambient );
 installAmbientVolume( ambient );
-const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyDirectVisibility( position ), seaCloud: ( position ) => sky.cloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation, rising: () => sky.rising, clouded: () => cloudedShare( weather.skyMix ), overcast: () => weather.skyMix[ 3 ] ?? 0 } );
+const ambientRelight = new AmbientRelight( { renderer, volume: ambient, shared, sky: ambientSky, weights: () => sky.environmentWeights(), cloud: ( position ) => sky.keyDirectVisibility( position ), seaCloud: ( position ) => sky.cloudVisibility( position ), keyHeight: () => liftedKeyHeight( sky.keyDir, sky.keyIsMoon ), sunElevation: () => sky.elevation, rising: () => sky.rising, clouded: () => cloudedShare( weather.skyMix ), overcast: () => weather.skyMix[ 3 ] ?? 0, moon: () => ( { elevation: sky.moonElevation, skyShare: sky.moonSkyShare } ) } );
 // the environment's own harmonics, which the specular's relight divides by (AmbientSample.ts)
 installEnvironmentHarmonics( ambientRelight );
 // the haze's shadow kernels read the probes' sky visibility, so they compile now (Pipeline.ts)
@@ -1913,20 +1925,21 @@ function tick( time: number ): void {
 	sky.advance( environmentDt );
 	publishLighting();
 	// the ambient grade by the sun and the weather's blend of the kept skies (lighting/AmbientGrade.ts)
-	ambientGrade.update( sky.elevation, weather.skyMix, sky.rising );
+	ambientGrade.update( sky.elevation, weather.skyMix, sky.rising, sky.moonElevation, sky.moonKeyShare );
 	shared.clouded.value = cloudedShare( weather.skyMix );
 	shared.deckSky.value = deckSkyGain( sky.elevation, shared.clouded.value, weather.skyMix[ 3 ] ?? 0 );
 	shared.deckSkyGap.value = deckSkyGap( sky.elevation, shared.clouded.value, weather.skyMix[ 3 ] ?? 0 );
 	updateShelfScatter( sky.keyColor, sky.keyIsMoon ? 0 : 1 - shared.clouded.value, sky.elevation );
 	// the yunpeng's glow and its local lights by the night's share, a clear twilight's with the
 	// display's night (sky/DayCycle.ts `nightAmbientShare`; lighting/LocalLights.ts: its pass sorts
-	// the sources in view)
-	yunpengNight.value = nightAmbientShare( sky.elevation, sky.rising, shared.clouded.value );
-	localLights.update( yunpengNight.value );
+	// the sources in view); a debug page may force each reader's (DayCycle.ts `duskForce`)
+	const nightAmbient = nightAmbientShare( sky.elevation, sky.rising, shared.clouded.value );
+	yunpengNight.value = duskForce( 'yunpeng', nightAmbient );
+	localLights.update( duskForce( 'localLights', yunpengNight.value ) );
 	// what the crowns' leaves pass on of the key (world/vegetation/LeafLight.ts)
-	updateLeafLight( sky.elevation, yunpengNight.value, shared.clouded.value );
+	updateLeafLight( sky.elevation, duskForce( 'nightAmbient', nightAmbient ), shared.clouded.value );
 	// what a closed sky's light turns into in the sward (materials/SwardTint.ts)
-	updateSwardTint( shared.swardTint.value, shared.clouded.value, yunpengNight.value );
+	updateSwardTint( shared.swardTint.value, shared.clouded.value, duskForce( 'nightAmbient', nightAmbient ) );
 	prepareHaze( weather.state );
 	pipeline.air.keyDir.value.copy( sky.keyDir );
 	pipeline.air.keyColor.value.copy( sky.keyColor ).multiplyScalar( 1 - THREE.MathUtils.smoothstep( sky.clouds.coverage.value, 0.7, 0.97 ) );
@@ -1944,7 +1957,7 @@ function tick( time: number ): void {
 	// radiance to the sky's, so a flash that barely shows by day floods a dark night.
 	const skyLuma = sky.skyIrradiance.r * 0.2126 + sky.skyIrradiance.g * 0.7152 + sky.skyIrradiance.b * 0.0722;
 	const strikeFill = lighting.skyFill * Math.min( 1 + sky.lightning.fill / Math.max( skyLuma, 1e-5 ), 60 );
-	scene.environmentIntensity = strikeFill;
+	applyEnvironmentFill( strikeFill );
 	shared.skyFill.value = strikeFill;
 	shared.skyIrradiance.value.set( sky.skyIrradiance.r, sky.skyIrradiance.g, sky.skyIrradiance.b ).multiplyScalar( strikeFill );
 	// the page's own wetness, in the game too (soaking and drying on the day clock)
@@ -1959,6 +1972,8 @@ function tick( time: number ): void {
 		S.exposure = sky.grade.exposure;
 		// the night's grade (Pipeline NIGHT)
 		S.night = sky.grade.night;
+		// the exposure's own night weight (its keys: post/Exposure.ts)
+		S.exposureNight = sky.grade.exposureNight;
 
 	}
 	// the weather's stops of the exposure and the clouded day's keys (Pipeline `skyMix`)
@@ -2630,6 +2645,9 @@ if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { lan
 	},
 	// where the yunpeng's clumps stand on the current land ( x, z, size per clump) and their lights
 	yunpengSites: () => ( { clumps: yunpeng.sites().flatMap( ( c ) => [ c.x, c.z, c.size ] ), lights: yunpeng.lights().map( ( l ) => ( { position: l.position.toArray(), intensity: l.intensity.toArray(), range: l.range } ) ) } ),
+	// the haze's key as the last frame set it (weather/HazeKeys.ts `hazeKeyAt`, `prepareHaze`): the
+	// medium's amount and shape, the light's weights, the deck's shares; read, never written
+	hazeKey,
 	// the ambient light's irradiance on open level ground, from the probes (debug/AmbientProbe.ts)
 	ambientProbe: async ( options?: Record<string, number> ) => ( await import( './debug/AmbientProbe.ts' ) ).ambientProbe( { renderer, heightAt: ( x, z ) => controls.ground.heightAt( x, z ), land: landBox }, options ),
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call

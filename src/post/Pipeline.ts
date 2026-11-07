@@ -37,7 +37,7 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 import { ambientSkyVisibility } from '../lighting/AmbientSample.ts';
 import { liftedKeyHeight } from '../lighting/KeyLift.ts';
 import { shared } from '../shared.ts';
-import { DAY_EXPOSURE } from '../sky/DayCycle.ts';
+import { DAY_EXPOSURE, duskForce } from '../sky/DayCycle.ts';
 import type { Rain } from '../weather/Rain.ts';
 import { CLIP_MARGIN, RefractionView, REFRACTION_GUARD, REFRACTION_SIZE } from '../ocean/Refraction.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -444,6 +444,9 @@ export interface PipelineSettings {
 	tone: number;
 	// 0 by day, 1 at night (from the clock, main.ts): how far the night's grade has come in (NIGHT)
 	night: number;
+	// 0 by day, 1 at night: how far the exposure's night key has come in (sky/DayCycle.ts
+	// `exposureNight`, apart from the display's)
+	exposureNight: number;
 	// the kept skies' shares in the sky as it stands (Weather.ts `skyMix`, main.ts): the clouded
 	// day's keys (DayKeys.ts `cloudy`, the cloudy and overcast skies' share)
 	skyMix: number[];
@@ -620,7 +623,7 @@ export class Pipeline {
 		// (tunable on debug pages, debug/Tune.ts: `post.tone.blackSlope`, `midGrey`, `white`)
 		curve: tuneObject( { ...TONE_CURVE }, { toe: 'post.tone.blackSlope', mid: 'post.tone.midGrey', white: 'post.tone.white' },
 			{ toe: { min: 1.5, max: 3 }, mid: { min: 0.12, max: 0.22 }, white: { min: 8, max: 32, scale: 'log' } } ),
-		lut: 0, ...TIDEWATER_GRADE, tone: TONE, night: 0, skyMix: [ 0, 1, 0, 0 ],
+		lut: 0, ...TIDEWATER_GRADE, tone: TONE, night: 0, exposureNight: 0, skyMix: [ 0, 1, 0, 0 ],
 	} as PipelineSettings, { bloom: 'post.bloom.strength', vignette: 'post.vignette.strength' },
 	{ bloom: { min: 0, max: 2 }, vignette: { min: 0, max: 1.5 } } );
 
@@ -777,7 +780,7 @@ export class Pipeline {
 		this.options = { ...DEFAULT_POST_OPTIONS, ...options };
 		this.settled.settle = ( temporal ?? QUALITY.high.taa ).restSettle;
 		const O = this.options;
-		this.air = new VolumetricHaze( sunShadow, sky.atmosphere, O.hazeGrid, sky.sunBeamIlluminance );
+		this.air = new VolumetricHaze( sunShadow, sky.atmosphere, O.hazeGrid, sky.sunBeamIlluminance, sky.moonBeamIlluminance );
 		// the clouds' march ends where this haze closes (Clouds.ts `makeMarch`): it reads the medium
 		// from uniforms of its own, built before the haze, which the haze writes with its own
 		this.air.cloudMedium = sky.clouds.haze;
@@ -2391,14 +2394,18 @@ export class Pipeline {
 
 		const S = this.settings;
 		const u = this.u;
-		u.tone.value = S.tone; u.night.value = S.night; u.lut.value = S.lut;
+		// the night's weight for the display (the tone, the grade, the bloom) and the exposure's own
+		// for its keys (sky/DayCycle.ts `displayNight`, `exposureNight`), each of which a debug page
+		// may force (`duskForce`)
+		const night = duskForce( 'displayNight', S.night ), exposureNight = duskForce( 'exposureNight', S.exposureNight );
+		u.tone.value = S.tone; u.night.value = night; u.lut.value = S.lut;
 		u.vignette.value = S.vignette;
 		u.ditherOn.value = this.upscaling ? 0 : 1;
 		// the clouded day's share: the cloudy and overcast skies' (DayKeys.ts `cloudy`)
 		const cloud = cloudedShare( S.skyMix );
-		this.localTone?.update( this.sky.elevation, S.night, cloud );
-		this.bloom.update( this.sky.elevation, S.night, cloud );
-		const ex = exposureKeys( this.sky.elevation, S.night, S.skyMix, this.exposureKeys, this.sky.rising ), mu = this.metering.uniforms;
+		this.localTone?.update( this.sky.elevation, night, cloud );
+		this.bloom.update( this.sky.elevation, night, cloud );
+		const ex = exposureKeys( this.sky.elevation, exposureNight, S.skyMix, this.exposureKeys, this.sky.rising ), mu = this.metering.uniforms;
 		mu.key.value = ex.key; mu.highlight.value = ex.highlight; mu.skyShare.value = ex.sky; mu.offset.value = S.exposureOffset;
 		// the adaptation's step: the scene clock's, once per rendered frame; a paused clock (and the
 		// test mode, a paused page), a reset or a lost history take the target at once
@@ -2411,15 +2418,15 @@ export class Pipeline {
 		mu.snap.value = reset ? 1 : 0;
 		mu.dt.value = reset ? 0 : dt;
 		mu.up.value = ex.adaptUp; mu.down.value = ex.adaptDown;
-		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + S.night * NIGHT.bloom );
-		const shade = keyed( SHADE_CONTRAST, this.sky.elevation, S.night, this.shade, cloud );
+		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + night * NIGHT.bloom );
+		const shade = keyed( SHADE_CONTRAST, this.sky.elevation, night, this.shade, cloud );
 		u.shadePivot.value = 0.18 * 2 ** shade.pivot; u.shadeSlope.value = shade.slope;
-		const desaturation = keyed( DESATURATION, this.sky.elevation, S.night, this.desaturation, cloud, this.sky.rising );
+		const desaturation = keyed( DESATURATION, this.sky.elevation, night, this.desaturation, cloud, this.sky.rising );
 		u.desaturate.value = desaturation.amount; u.desaturateCool.value = desaturation.cool;
-		u.purkinje.value = S.night * PURKINJE.strength;
+		u.purkinje.value = night * PURKINJE.strength;
 		const keyColor = this.sky.keyColor;
 		u.purkinjeKey.value = ( 0.2126 * keyColor.r + 0.7152 * keyColor.g + 0.0722 * keyColor.b ) * liftedKeyHeight( this.sky.keyDir, this.sky.keyIsMoon ) / Math.PI;
-		const { r, g, b } = keyed( WHITE_BALANCE, this.sky.elevation, S.night, this.white, cloud, this.sky.rising );
+		const { r, g, b } = keyed( WHITE_BALANCE, this.sky.elevation, night, this.white, cloud, this.sky.rising );
 		if ( r !== this.toneWhite[ 0 ] || g !== this.toneWhite[ 1 ] || b !== this.toneWhite[ 2 ] ) {
 
 			this.toneWhite = [ r, g, b ];

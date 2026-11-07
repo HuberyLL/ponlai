@@ -21,9 +21,11 @@ import type { HazeKey } from './HazeKeys.ts';
 import { AEROSOL_OPEN, type HazeMedium, expShare, meanExtinction, nearFactor, nearLength } from './HazeDepth.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune, tuneObject, tuneUniform } from '../debug/Tune.ts';
+import { duskForce } from '../sky/DayCycle.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
 import type { FrameGraph, GraphResources, ResourceHandle, SizeClass } from '../post/graph/FrameGraph.ts';
 import { TemporalRest, restEpoch } from '../post/TemporalRest.ts';
+import { preExposed, sceneUnits, storePress } from '../post/PreExposure.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -180,8 +182,9 @@ const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
 //     the same way, its two shares added to the sun's:
 //     the moon's fog table (its shares under the moon's gains, Atmosphere.ts `moonRayleigh`,
 //     `moonMie`, as the sky's are), its direction (the night key's: Sky.ts `track`), phases and
-//     earth shadow, and its colours the sun's scaled by the moon key (Atmosphere `moonIlluminance`,
-//     the moon's sky), except for its aerosol share, whose light and lobe are its own
+//     earth shadow, and its colours the sun's form on the moon's light (Atmosphere `moonIlluminance`,
+//     the moon's sky, for its sky share; Sky.ts `moonBeamIlluminance`, the moon's beam before the
+//     weather's day sky, for its direct share), except for its aerosol share, whose light and lobe are its own
 //     (MOON_AEROSOL): a pale blue-green of the same luminance as the moon's sky light, times a gain,
 //     through a Cornette-Shanks lobe of its own anisotropy, so the glow of the air around the moon is
 //     tuned apart from the sun's while the day keeps the sky's lobe. Both bodies take the key light's
@@ -372,7 +375,13 @@ const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
 // however it was reached, and `pending` holds the page's settled signal until it has converged.
 // The light kernel runs every frame. Local lights, when there
 // are any, add to the light the integration takes per froxel; the talk filters theirs in a volume of
-// their own.
+// their own. The light volume holds the light pre-exposed (PreExposure.ts: times the frame's 2^P,
+// held at half float's largest), as the scene's colour does: unscaled, its light reaches near 2^0
+// toward a low sun and lies under 2^-17 at a clear midnight (its first percentile), a span no fixed
+// scale keeps at half float's full precision with room to spare. The kernel
+// is a pass of the frame graph, after the frame's `beginFrame`, so its readers (`fogOver`: the
+// composite, the dome, `probe`) divide out the same P. It keeps no history: the rest above is the
+// shadow's, whose visibility no P scales.
 
 // the shadow's sub-samples per froxel and recompute
 const SUB_SAMPLES = 4;
@@ -390,7 +399,7 @@ const LUMINANCE = vec3( 0.2126, 0.7152, 0.0722 );
 const luminance = ( c: THREE.Color ): number => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
 
 // The moon's aerosol light in the haze: its colour as red and blue over green, scaled to the
-// Rec. 709 luminance of the moon's sky light there (Atmosphere `moonIlluminance` times the weather's
+// Rec. 709 luminance of the moon's beam there (Sky.ts `moonBeamIlluminance` times the weather's
 // direct share), so a new colour moves the hue and not the level, times a gain; and the anisotropy of
 // its Cornette-Shanks lobe. A pale blue-green under a lobe a little tighter than the sky's: the air
 // around the moon glows cool rather than in the moon key's own blue, over a few degrees.
@@ -573,6 +582,7 @@ export class VolumetricHaze {
 	private readonly weights = uniform( new THREE.Vector2( 1, 1 ) );
 	private readonly atmosphere: Atmosphere;
 	private readonly sunBeam: THREE.Color;
+	private readonly moonBeam: THREE.Color;
 	// the slices: near, the first slice's depth, the growth and its log2
 	private readonly slices = uniform( new THREE.Vector4( 10, 0.6, 1.15, Math.log2( 1.15 ) ) );
 	private readonly far = uniform( 100000 );
@@ -632,13 +642,15 @@ export class VolumetricHaze {
 	private readonly quaternion = new THREE.Quaternion();
 	private readonly scale = new THREE.Vector3();
 
-	// `sunBeam`: the sun's illuminance the beam takes (Sky.ts `sunBeamIlluminance`), the sky's own
-	// (`atmosphere.sunIlluminance`) where none is given (the WGSL build)
-	constructor( sunShadow: SunShadow, atmosphere: Atmosphere, grid: Partial<HazeGrid> = {}, sunBeam: THREE.Color = atmosphere.sunIlluminance.value ) {
+	// `sunBeam`, `moonBeam`: the sun's and the moon's illuminance the beam takes (Sky.ts
+	// `sunBeamIlluminance`, `moonBeamIlluminance`), the sky's own (`atmosphere.sunIlluminance`,
+	// `moonIlluminance`) where none is given (the WGSL build)
+	constructor( sunShadow: SunShadow, atmosphere: Atmosphere, grid: Partial<HazeGrid> = {}, sunBeam: THREE.Color = atmosphere.sunIlluminance.value, moonBeam: THREE.Color = atmosphere.moonIlluminance.value ) {
 
 		this.sunShadow = sunShadow;
 		this.atmosphere = atmosphere;
 		this.sunBeam = sunBeam;
+		this.moonBeam = moonBeam;
 		this.grid = { ...DEFAULT_HAZE_GRID, ...grid };
 		const { width, height, depth } = this.grid;
 		const volume = ( name: string ) => {
@@ -966,7 +978,7 @@ export class VolumetricHaze {
 					// (the debug view: the visibility as a grey card in the key light, so the display's
 					// exposure shows 1 as mid grey)
 					const out = select( this.switches.w.greaterThan( 0.5 ), vec3( fraction.r.mul( dot( this.keyColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) ) ).mul( 0.18 / Math.PI ) ), mean );
-					textureStore( target, ivec3( x, y, i ), vec4( out, alpha.y ) );
+					textureStore( target, ivec3( x, y, i ), vec4( preExposed( out.mul( storePress.store ) ), alpha.y ) );
 					t0.assign( t1 );
 					y0.assign( y1 );
 
@@ -1017,11 +1029,14 @@ export class VolumetricHaze {
 		const at = min( reach.mul( forward ), this.far );
 		const uvw = vec3( q, this.sliceCoordinate( at ).sub( 0.5 ).div( D ) );
 		const light = this.sampleLight( uvw ).toVar();
+		// (the volume holds the light pre-exposed, under the debug press PreExposure.ts `storePress`:
+		// see the header)
+		const lit = sceneUnits( light.rgb ).mul( storePress.read ).toVar();
 		// (the grid holds green's band opacity: each channel's transmittance is green's to the power
 		// of its sigma over green's, then through the band-to-display matrix)
 		const held = bandToDisplay( vec3( 1 ).sub( exp2( this.sigma.div( this.sigma.y ).mul( log2( max( float( 1 ).sub( light.a ), 1e-30 ) ) ) ) ), bandPush ).toVar();
 		const opacity = select( this.switches.z.greaterThan( 0.5 ), exact, held ).toVar();
-		const result = select( this.switches.w.greaterThan( 0.5 ), light.rgb, mix( colour, light.rgb, opacity ) );
+		const result = select( this.switches.w.greaterThan( 0.5 ), lit, mix( colour, lit, opacity ) );
 		return { result, opacity };
 
 	}
@@ -1333,14 +1348,17 @@ export class VolumetricHaze {
 		this.lightSettings.value.set( S.albedo, S.anisotropy, S.gain * look.gain );
 		// the light's colours per body: its illuminance the sky is drawn with (Atmosphere
 		// `sunIlluminance`, `moonIlluminance`: the moon key), the open sky's by the weather's diffuse
-		// gain, the body's by its direct share (the sun's before the weather's day sky, `sunBeam`), and
+		// gain, the body's by its direct share (each body's before the weather's day sky, `sunBeam`,
+		// `moonBeam`), and
 		// its Rayleigh light the key's share of the aerosol's; the moon's aerosol light then takes its
 		// own colour at the same luminance, times its gain
 		const weather = this.weatherLight;
+		// (a debug page may weigh the sun's, sky/DayCycle.ts `duskForce`)
+		const sunSky = duskForce( 'hazeSky', 1 ), sunLight = duskForce( 'hazeSun', 1 );
 		[ this.atmosphere.sunIlluminance.value, this.atmosphere.moonIlluminance.value ].forEach( ( illuminance, b ) => {
 
-			this.ambientColour[ b ].value.copy( illuminance ).multiplyScalar( weather.ambient );
-			this.mieColour[ b ].value.copy( b === 0 ? this.sunBeam : illuminance ).multiplyScalar( weather.direct );
+			this.ambientColour[ b ].value.copy( illuminance ).multiplyScalar( b === 0 ? weather.ambient * sunSky : weather.ambient );
+			this.mieColour[ b ].value.copy( b === 0 ? this.sunBeam : this.moonBeam ).multiplyScalar( b === 0 ? weather.direct * sunLight : weather.direct );
 			this.sunRayleighColour[ b ].value.copy( this.mieColour[ b ].value ).multiplyScalar( look.sunRayleigh );
 
 		} );

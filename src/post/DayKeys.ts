@@ -2,8 +2,8 @@
 // reached at its elevation and blended between neighbouring keys by a smoothstep (so a value rests
 // at each key and moves between them), held beyond the first and the last; a clouded day's values,
 // where a look has them, come in over them by the weather's cloud (Pipeline.ts `cloud`: 0 under a
-// clear or fair sky, 1 under a cloudy or overcast one), and the night's over both by the night's
-// weight (Pipeline.ts `night`, from the daylight). A look's clouded values are one set where they
+// clear or fair sky, 1 under a cloudy or overcast one), and the night's, where a look has them,
+// over both by the night's weight (Pipeline.ts `night`, from the daylight). A look's clouded values are one set where they
 // hold at every sun, or keys by the elevation of their own, read as the day's are, where a flat set
 // would leave the land as bright at sunset as in the afternoon. Each look sets its own keys: the
 // shade's contrast holds one value from the noon down to a 9 degree sun, the exposure and the local
@@ -29,7 +29,8 @@ export interface DayKeys<T extends KeyValues> {
 	// a cloudy or overcast day's: one set at every sun, or keys ascending by elevation (none: the
 	// clear day's)
 	readonly cloudy?: T | readonly DayKey<T>[];
-	readonly night: T;
+	// the night's (none: the day's, as for a look whose night is lit as its day, by the moon)
+	readonly night?: T;
 }
 
 const smooth = ( t: number ) => t * t * ( 3 - 2 * t );
@@ -56,14 +57,14 @@ function along<T extends KeyValues>( keys: readonly DayKey<T>[], elevation: numb
  * cloud `cloud`, into `out`, the morning's where the sun is `rising` and the look has one. */
 export function keyed<T extends KeyValues>( keys: DayKeys<T>, elevation: number, night: number, out: T, cloud = 0, rising = false ): T {
 
-	const { cloudy } = keys;
+	const { cloudy, night: atNight } = keys;
 	const day = rising && keys.rising ? keys.rising : keys.day;
 	const o = out as KeyValues;
 	for ( const k in day[ 0 ].values ) {
 
 		let v = along( day, elevation, k );
 		if ( cloudy ) v += ( ( hasKeys( cloudy ) ? along( cloudy, elevation, k ) : cloudy[ k ] ) - v ) * cloud;
-		o[ k ] = v + ( keys.night[ k ] - v ) * night;
+		o[ k ] = atNight ? v + ( atNight[ k ] - v ) * night : v;
 
 	}
 	return out;

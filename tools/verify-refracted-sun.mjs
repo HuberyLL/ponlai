@@ -6,6 +6,7 @@
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
 import { requireDevServer } from './dev-server.mjs';
+import { installWaitFrames } from './page-eval.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 
@@ -21,6 +22,7 @@ const browser = await chromium.launch( {
 } );
 try {
 	const page = await browser.newPage( { viewport: { width: 1672, height: 941 } } );
+	await installWaitFrames( page );
 	page.on( 'pageerror', e => errors.push( e.message ) );
 	page.on( 'console', m => { if ( m.type() === 'error' ) errors.push( m.text() ); } );
 	await page.goto( `${ process.argv[ 2 ] || 'http://127.0.0.1:5190' }/?paused&t=12&dpr=1` );
@@ -47,16 +49,11 @@ try {
 		const before = map.lastSun.clone();
 		await s.setHour( s.dayCycle.hour + 0.001 );
 		const sun = s.shared.sunDir.value;
-		// polled on the page's rendered frames (tools/page-eval.mjs, "Rendered frames") until the map
-		// is drawn at the light, or 10 s: it redraws on its interval's update, a number of frames that
+		// polled on the page's rendered frames (tools/page-eval.mjs WAIT_FRAMES) until the map is
+		// drawn at the light, or 10 s: it redraws on its interval's update, a number of frames that
 		// depends on their pace
 		const from = s.renderer.info.frame, deadline = performance.now() + 10000;
-		await new Promise( ( resolve ) => {
-
-			const tick = () => map.lastSun.equals( sun ) || performance.now() > deadline ? resolve() : requestAnimationFrame( tick );
-			tick();
-
-		} );
+		while ( ! map.lastSun.equals( sun ) && performance.now() < deadline ) await window.__waitFrames( 1, 10000 );
 		return { turnDegrees: before.angleTo( sun ) * 180 / Math.PI, gateDegrees: map.angleGate * 180 / Math.PI,
 			drawnExactly: map.lastSun.equals( sun ), frames: s.renderer.info.frame - from };
 

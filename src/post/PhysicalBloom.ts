@@ -159,7 +159,7 @@ export class PhysicalBloom {
 		skyThreshold: uniform( HIGH_SUN.skyThreshold ), skyKnee: uniform( HIGH_SUN.skyKnee ), skyShare: uniform( HIGH_SUN.skyShare ), skyCap: uniform( HIGH_SUN.skyCap ),
 		weights: Array.from( { length: LEVELS }, () => uniform( 0.5 ) ),
 	};
-	private readonly keyedValues = { ...BLOOM.night };
+	private readonly keyedValues = { ...BLOOM.day[ 0 ].values };
 
 	/** The weights' sum: what a smooth term added to level 0 comes out times (see the header). */
 	readonly strength: F;

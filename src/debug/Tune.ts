@@ -192,7 +192,7 @@ export function tuneKeys<T extends KeyValues>( prefix: string, keys: DayKeys<T>,
 		day: along( keys.day, 'day' ),
 		...( keys.rising ? { rising: along( keys.rising, 'rising' ) } : {} ),
 		...( keys.cloudy ? { cloudy: hasKeys( keys.cloudy ) ? along( keys.cloudy, 'cloudy' ) : wrap( keys.cloudy, 'cloudy' ) } : {} ),
-		night: wrap( keys.night, 'night' ),
+		...( keys.night ? { night: wrap( keys.night, 'night' ) } : {} ),
 	};
 
 }

@@ -426,8 +426,11 @@ export class NightSky {
 		const footprint = max( angularFootprint ?? length( fwidth( direction ) ), 1e-5 ).toVar();
 		const conserve = angularFootprint !== undefined;
 		const radiance = vec3( 0 ).toVar();
+		// (the visibility carries the night sky's level, which scales inversely to the night's
+		// exposure, so a deep night's stars draw at a visibility of about 1e-4: only a sky without
+		// stars, the day's, skips them)
 		const v = clamp( visibility, 0, 1 ).toVar();
-		If( v.greaterThan( 0.0001 ), () => {
+		If( v.greaterThan( 0 ), () => {
 
 			const c = normalize( this.frame.mul( direction ) ).toVar();
 			const band = milkyWay( c, milkyWayMaskAt( c ), float( conserve ? 0 : 1 ) ).toVar();

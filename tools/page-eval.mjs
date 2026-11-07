@@ -46,26 +46,39 @@ const TRACE = installScript();
 /** An `--eval` argument's js: `@file` reads the file, anything else is the js itself. */
 export const evalSource = ( text ) => text.startsWith( '@' ) ? readFileSync( text.slice( 1 ), 'utf8' ) : text;
 
-/** Resolves once the page has rendered `n` more frames (see the header, "Rendered frames"): what a
- * state set before the call looks like on the page's next frames. Rejects at once while the page's
- * loop is stopped (`__PONLAI__.loop.running` false: no frame will come), and after `timeout` ms. */
+/** The page's wait for `n` more rendered frames, as the source of a function `( n, timeout ) =>
+ * Promise` (see the header, "Rendered frames"): it resolves once `renderer.info.frame` has risen by
+ * `n`, rejects at once while the page's loop is stopped (`__PONLAI__.loop.running` false: no frame
+ * will come) and after `timeout` ms. Every tool that waits for frames in the page runs this one:
+ * `renderedFrames` from node, `installWaitFrames` as `window.__waitFrames` inside a page's own
+ * evaluate, and a tool whose page code is a string splices it in (`( ${ WAIT_FRAMES } )( n, ms )`). */
+export const WAIT_FRAMES = `( n, timeout = 60000 ) => new Promise( ( resolve, reject ) => {
+	const s = window.__PONLAI__, count = () => s.renderer.info.frame;
+	const end = count() + n, deadline = performance.now() + timeout;
+	const tick = () => {
+		if ( count() >= end ) resolve();
+		else if ( s.loop?.running === false ) reject( new Error( 'waitFrames: the loop is stopped, no frame ' + end + ' will come (at ' + count() + ')' ) );
+		else if ( performance.now() > deadline ) reject( new Error( 'waitFrames: no frame ' + end + ' within ' + timeout + ' ms (at ' + count() + ', loop.running ' + s.loop?.running + ')' ) );
+		else requestAnimationFrame( tick );
+	};
+	tick();
+} )`;
+
+/** Resolves once the page has rendered `n` more frames (WAIT_FRAMES): what a state set before the
+ * call looks like on the page's next frames. */
 export function renderedFrames( page, n = 1, { timeout = 60000 } = {} ) {
 
-	return page.evaluate( ( { n, timeout } ) => new Promise( ( resolve, reject ) => {
+	return page.evaluate( `( ${ WAIT_FRAMES } )( ${ n }, ${ timeout } )` );
 
-		const s = window.__PONLAI__, count = () => s.renderer.info.frame;
-		const end = count() + n, deadline = performance.now() + timeout;
-		const tick = () => {
+}
 
-			if ( count() >= end ) resolve();
-			else if ( s.loop?.running === false ) reject( new Error( `renderedFrames: the loop is stopped, no frame ${ end } will come (at ${ count() })` ) );
-			else if ( performance.now() > deadline ) reject( new Error( `renderedFrames: no frame ${ end } within ${ timeout } ms (at ${ count() }, loop.running ${ s.loop?.running })` ) );
-			else requestAnimationFrame( tick );
+/** Gives the page `window.__waitFrames( n, timeout )` (WAIT_FRAMES), now and on every load after,
+ * for waits inside a tool's own `page.evaluate` closures. */
+export async function installWaitFrames( page ) {
 
-		};
-		tick();
-
-	} ), { n, timeout } );
+	const js = `window.__waitFrames = ${ WAIT_FRAMES };`;
+	await page.addInitScript( js );
+	await page.evaluate( js );
 
 }
 
