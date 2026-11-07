@@ -114,8 +114,9 @@ art decision changes; images from elsewhere stay out of the repository.
   light leaves only with the sun's own, over the twilight: the land under it keeps the deck's soft
   light through sunset, with no flash of the setting beam on the slopes toward it, and goes down
   into the night as the deck's light does. Its sky is brightest about the sun's
-  place and dim looking away, light near the sun and a dark grey away from it. The land under it is
-  lit soft: the deck's sky light from every side, its glow about the sun's place included, lifted
+  place and dim looking away, light near the sun, a near-neutral pale grey there, and a dark
+  blue-green grey away from it; the meadow under it a quieter green, its most brightly lit grass
+  muted toward grey. The land under it is lit soft: the deck's sky light from every side, its glow about the sun's place included, lifted
   well over a cloudy day's. Under the water the floor takes that light as the water column passes it
   down, so the shallows' floor is lit by the same deck, dimmed by the water above it the deeper it
   lies. The sun reaches it only through the deck: none under its rolls, and where a thinned
