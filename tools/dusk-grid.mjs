@@ -152,7 +152,11 @@
 //     point twice by the jump reads it again bit for bit; the largest view difference is in
 //     compare.txt. A difference past the tolerance is a violation. With --haze in both runs, the
 //     haze's medium is judged bit for bit at every point (above); each point it differs at is a
-//     violation, and the opacity's largest difference is reported.
+//     violation, and the opacity's largest difference is reported. With --night-split in both runs
+//     it lists the lift, the island view's metered EV with the lamps off less the other run's at
+//     each point both hold, and at midnight that lift less NIGHT_METER_LIFT (DayCycle.ts): run
+//     against a page of the night those keys were set over, it says how far the night keys and the
+//     constant lie from what the meter now gives (DayCycle.ts EXPOSURE_KEYS).
 //
 // Exit codes: 0 every judged rule held; 1 a rule was broken, a point is void, or --compare found a
 // difference in [+2.5, +4]; 2 an option or the page went wrong (an unknown option, a page error,
@@ -1258,6 +1262,26 @@ if ( options.compare ) {
 
 	}
 	c.push( `${ identical } of ${ points } points identical; ${ windowOff } differ in the window; the views' reads differ by at most ${ viewNoise.toExponential( 2 ) } relative` );
+	// the night's lift: the metered EV with the lamps off (noLights, --night-split in both runs) less
+	// the other run's, per point both hold; at midnight less NIGHT_METER_LIFT too, which a run against
+	// a page of the night before the moon's magnitude reads as how far the constant has drifted
+	const lift = [];
+	for ( const f of Object.values( files ) ) {
+
+		const other = path.join( options.compare, `${ f.weather }-${ f.side }.json` );
+		if ( ! existsSync( other ) ) continue;
+		const them = new Map( JSON.parse( readFileSync( other, 'utf8' ) ).points.filter( ( p ) => p.noLights ).map( ( p ) => [ p.key, p ] ) );
+		for ( const v of options.views ) for ( const p of f.points.filter( ( x ) => x.noLights ) ) {
+
+			const q = them.get( p.key ), a = p.noLights[ `${ v }.EV` ], b = q?.noLights[ `${ v }.EV` ];
+			if ( typeof a !== 'number' || typeof b !== 'number' ) continue;
+			const tail = p.at === 'midnight' && typeof DC.NIGHT_METER_LIFT === 'number' ? `   less NIGHT_METER_LIFT ${ DC.NIGHT_METER_LIFT }: ${ ( a - b - DC.NIGHT_METER_LIFT ).toFixed( 3 ) }` : '';
+			lift.push( `  ${ f.weather } ${ f.side } ${ v } ${ pad( label_( p ), 9 ) } EV ${ a.toFixed( 3 ) } - ${ b.toFixed( 3 ) } = ${ ( a - b ).toFixed( 3 ) } stops${ tail }` );
+
+		}
+
+	}
+	if ( lift.length ) c.push( 'the lift, EV less the other run\'s with the lamps off (noLights)', ...lift );
 	if ( hazePoints ) c.push( `haze medium: ${ hazePoints - hazeOff } of ${ hazePoints } points bit for bit the same (the deck's shares aside); the opacity differs by at most ${ hazeOpacity.d.toExponential( 2 ) }${ hazeOpacity.at ? ` (${ hazeOpacity.at })` : '' }` );
 	writeFileSync( path.join( options.out, 'compare.txt' ), c.join( '\n' ) + '\n' );
 	violations += windowOff + hazeOff;
