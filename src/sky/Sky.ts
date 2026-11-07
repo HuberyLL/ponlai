@@ -2011,7 +2011,8 @@ export class Sky {
 		this.moonKeyLevel = this.moonAbove * luminance709( toMoon.r, toMoon.g, toMoon.b );
 		const moonKey = this.moonKeyLevel * moonGain / MOON_KEY_LUMINANCE;
 		this.moonKeyColor.setRGB( MOON_KEY[ 0 ] * moonKey, MOON_KEY[ 1 ] * moonKey, MOON_KEY[ 2 ] * moonKey );
-		this.daySkyMoon = weather ? daySkyAt( weather.daySky, weather.daySkyExponent, this.moonElevation ) : 1;
+		// the weather's moonlit sky at the moon's height, on its own level (Weather.ts `moonSky`)
+		this.daySkyMoon = weather ? daySkyAt( weather.moonSky, weather.moonSkyExponent, this.moonElevation ) : 1;
 		const moonSky = moonSkyShare * this.moonAbove * luma( skyGain( this.moonElevation, false, cloud, this.daySkyMoon, _skyMoon ) );
 		this.atmosphere.moonIlluminance.value.setRGB( MOON_SKY_HUE[ 0 ] * moonSky, MOON_SKY_HUE[ 1 ] * moonSky, MOON_SKY_HUE[ 2 ] * moonSky );
 		// the moon's beam the air scatters, as the sun's (`sunBeamIlluminance`): the sky's gain at a

@@ -296,7 +296,7 @@ weather.auto = loaded.autoWeather;
 // (`setPresetValue`); the sky rebakes. A `?tune=` value is the start, applied here as a load would.
 const PRESET_TUNABLES: ReadonlyArray<readonly [ TunedField, TuneOptions ]> = [
 	[ 'deckFloor', { min: 0, max: 1 } ],
-	[ 'daySky', { min: 0.02, max: 2, scale: 'log' } ],
+	[ 'daySky', { min: 0.005, max: 2, scale: 'log' } ],
 	[ 'daySkyExponent', { min: 0, max: 3 } ],
 ];
 for ( const name of [ 'cloudy', 'overcast' ] as const ) for ( const [ field, range ] of PRESET_TUNABLES ) {
