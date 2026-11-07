@@ -82,6 +82,23 @@ export function withMoon( sun: number, moon: number, share: number ): number {
 
 }
 
+/** How much of the sun's part of the key's floor under overcast's closed deck (Sky.ts
+ * `keyCloudFloor`) is left at the sun's `elevation` (degrees): whole from a sun of 2.5 degrees up,
+ * none from the horizon down, smooth between. The floor stands for the deck's light from the sun's
+ * side, which the deck passes down as the sun lights its top: that light falls with the sun's
+ * height and is gone when the sun lies level with the deck, so the floor goes before the disk sets
+ * rather than with the disk's beam in the half degree it takes to set. Through it a slope facing
+ * the setting sun under the deck lit in the beam's red and then fell dark within half a degree,
+ * while the sky and the sea, which the frame's exposure meters, kept their light: the land flashed
+ * at the horizon and then dropped. Below it the land under the deck keeps the deck's diffuse light
+ * alone (the sky's light on it, lighting/AmbientGrade.ts OVERCAST_LAND), which does not break at
+ * the horizon. The moon's part of the floor keeps its own (`withMoon`). */
+export function overcastFloorSun( elevation: number ): number {
+
+	return smooth01( elevation / 2.5 );
+
+}
+
 /** How far a cloudy sky's deck has taken over its own light at the sun's `elevation` (degrees): 0
  * up to 3 degrees, 1 from 6, smooth between. Below it a low sun shines under the broken deck and the
  * evening's light takes over (post/Exposure.ts, the clouded keys under 6 degrees). */
