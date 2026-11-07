@@ -12,7 +12,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld, positionPrevious,
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, modelViewMatrix, modelViewProjection, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
-	float, int, bool, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
+	float, int, bool, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, sqrt, exp, log2,
 	abs, fwidth, reflect, refract, select, step, dFdx, dFdy, perspectiveDepthToViewZ, cameraNear, cameraFar, luminance, property,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
@@ -80,11 +80,11 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     shadowing), all from one spread of the slopes along the view (`REFLECTION_LOBE`); it scales
 //     the pixel's own Fresnel, so the waves the pixel does resolve keep their relief; the sky
 //     reflected over a lobe as wide as those slopes, lifted by the same facets' tilt toward the
-//     higher sky, its share under the horizon darkened toward the horizon's colour, the whole of
-//     it moved from the low band toward the sky's light by the view's elevation (`REFLECTION_BAND`: its colour with
-//     the sun up, its level under cloud), and by the same ramp a low sun's lift of the sky's light
-//     (shared.ts `skyLift`), so the far sea keeps the band it mirrors, never brighter than the sky
-//     over the horizon; both read the sea's slopes before the waves' damping, so a lee stands level with the sea round it, never a pale tongue
+//     higher sky, its share under the horizon darkened toward the horizon's colour, and by the
+//     view's elevation (`REFLECTION_BAND`) a low sun's lift of the sky's light (shared.ts
+//     `skyLift`), so the far sea keeps the band it mirrors, never brighter than the sky over the
+//     horizon (the lobe, the horizon's level and its darkening are means over what no pixel
+//     resolves, the slopes and the waves' occlusion, not a grade of the sky's colour); both read the sea's slopes before the waves' damping, so a lee stands level with the sea round it, never a pale tongue
 //     of a mirror's reflectance; the screen-space reflection of the cliffs and the islanders behind
 //     tidewater's gate (rays near the horizon, reflectance over 0.05)
 //   - the key's specular: the sun's GGX of the base roughness and the slopes the pixel cannot resolve
@@ -182,6 +182,8 @@ type B = THREE.Node<'bool'>;
 // opaque image holds the floor as the eye sees it straight, without refraction, and a floor that
 // fell away faster than the view's slant left no image of itself behind the shelf's lip, so the
 // refracted lookups found nothing there and drew the lip as a hard line instead.
+// (A mean over the geometry the drawn floor leaves out, the open sea's depth past the shelf, kept
+// for the floor's resolution.)
 const OPEN_DEEPENING = {
 	from: GROWTH.half * Math.SQRT2 ** 0.5 + LAND_REACH, // the lattice's corner: ( 2 ** 0.25 ) * half
 	to: FAR_HALF - 16,
@@ -331,30 +333,19 @@ const SHADOW_SOFT_RADIUS = 3, SHADOW_LIFT = 0.012;
 const FOAM_SHADOW_GAIN = 2;
 const SHADOW_BODY = 0.5, SHADOW_BODY_DEPTH = [ 2, 8 ] as const;
 
-// The sky panorama's level the horizon's colour is read at (a band some 20 degrees high).
+// The sky panorama's level the horizon's colour is read at (a band some 20 degrees high): a mean over
+// the band, as wide as the reflection's lobe stands at the horizon, not a sharp line.
 const HORIZON_MIP = 5;
 
-// What a reflection below the horizon keeps of the horizon's colour (it meets other waves).
+// What a reflection below the horizon keeps of the horizon's colour (it meets other waves). It stands
+// for a mean over occlusion finer than the pixel: a ray turned down meets the next wave and takes what
+// that wave's face reflects, which no pixel resolves.
 const BELOW_HORIZON = 0.6;
 
-// What the reflection keeps of the low sky. A sea seen at a low angle mirrors one strip of sky
-// straight across, the band: at a low sun the pale half of the sky opposite the sun, under cloud the
-// bright strip low down. So the reflection is scaled in two ways, as factors, which keep the waves'
-// relief a proportion of it:
-// - its colour moves toward the whole sky's light by `hue` of the way, its luminance kept, which keeps
-//   the reflection from the band's own colour while the sun stands up. It comes in with the view's
-//   elevation (`ramp`), so the far sea keeps the band and joins the sky, and it goes as the sun falls
-//   from about 11 to 3 degrees (`lowSun`, its height): by then the sky's light is warm over a band
-//   that is not, and the factor reddened the mirror's own relief, which a far swell holds in patches;
-// - under cloud, the band's excess over the sky's light goes by ( light / band ) ^ `level`. The level is
-//   chosen, not the sky's light: it stands the clouded sea level between a view along the water and
-//   one from above, and takes the metallic relief off the swell, which is a share of that band. It
-//   rests where the band stands at or under the sky's light, so a steep view keeps its reflection. It
-//   fades away toward the sun (`sunward`, the cosine between the eye and the sun on the water's
-//   plane), where the band is brightest and the sea would go dark under a bright sky, and it goes as
-//   the sun passes from 1 to 3 degrees under the horizon (`dusk`, its height): after sunset and by
-//   night the band is all the clouded sea's relief has.
-const REFLECTION_BAND = { ramp: 0.18, hue: 0.6, level: 2.2, lowSun: [ 0.05, 0.2 ], dusk: [ - 0.05, - 0.015 ], sunward: [ - 0.7, 0.1 ] } as const;
+// The view's elevation (its sine) over which a low sun's lift of the sky's light (shared.ts `skyLift`)
+// comes into the reflection: the far sea mirrors the low band of the sky straight across, which the
+// lift does not raise, and stays under the sky over the horizon.
+const REFLECTION_BAND = { ramp: 0.18 } as const;
 
 // The mean surface's reflection over the slopes no pixel resolves, all from one spread: the slopes
 // along the view a Gaussian of sigmaV = sqrt( sigma^2 / 2 ) x `slopeScale`, sigma^2 the mean square
@@ -378,6 +369,7 @@ const REFLECTION_BAND = { ramp: 0.18, hue: 0.6, level: 2.2, lowSun: [ 0.05, 0.2 
 //   over the horizon), and the lobe's share under the horizon, a normal integral at least `edge`
 //   wide (the waves near the eye, which leave the lobe no width, keep a soft edge), takes the
 //   horizon's colour by BELOW_HORIZON.
+// (A mean over the slopes finer than the pixel: what the pixel would show if it resolved them.)
 const REFLECTION_LOBE = { slopeScale: 1, lift: 2, edge: 0.05 } as const;
 
 // The water body: Lee, Carder, Mobley, Steward & Patch 1999, "Hyperspectral remote sensing for
@@ -1094,20 +1086,11 @@ export class Water {
 			} );
 			// (the band at the mirror's own elevation, what the flat sea here reflects)
 			const horizon = sky.sampleBackground( normalize( vec3( Rraw.x, V.y, Rraw.z ).add( vec3( 1e-5, 0, 0 ) ) ), float( HORIZON_MIP ) );
-			// (the sky as drawn, without a low sun's lift: the band is set against the sky it stands in)
-			const skyLight = sky.irradianceNode.mul( shared.skyFill ).toVar();
-			const skyOverBand = lum( skyLight ).div( max( lum( horizon ), 1e-8 ) ).toVar();
 			const bandRamp = smoothstep( 0, REFLECTION_BAND.ramp, V.y ).toVar();
-			const sunDir = sky.atmosphere.sunDir;
-			const hue = skyLight.div( max( horizon, vec3( 1e-8 ) ) ).div( max( skyOverBand, 1e-5 ) );
-			const hueShare = bandRamp.mul( REFLECTION_BAND.hue ).mul( smoothstep( ...REFLECTION_BAND.lowSun, sunDir.y ) );
-			const level = pow( min( skyOverBand, 1 ), REFLECTION_BAND.level );
-			const levelShare = bandRamp.mul( shared.clouded ).mul( smoothstep( ...REFLECTION_BAND.dusk, sunDir.y ) ).mul( smoothstep( ...REFLECTION_BAND.sunward, dot( normalize( V.xz.add( 1e-5 ) ), normalize( sunDir.xz.add( 1e-5 ) ) ) ) );
 			// (a low sun's lift of the sky's light, shared.ts `skyLift`, by the band's ramp: the far sea
 			// keeps the band it mirrors and stays under the sky over the horizon; written 1 + ( lift - 1 )
 			// ramp, exactly 1 where there is no lift)
 			const refl = mix( horizon.mul( BELOW_HORIZON ), skyReflection, skyShare )
-				.mul( mix( vec3( 1 ), hue, hueShare ) ).mul( mix( float( 1 ), level, levelShare ) )
 				.mul( shared.skyLift.sub( 1 ).mul( bandRamp ).add( 1 ) ).toVar();
 			// The cliffs and the islanders from the screen: only rays near the horizon can meet them,
 			// and where the reflectance is small the reflection cannot be seen (tidewater's gate).
