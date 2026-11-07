@@ -115,7 +115,7 @@ for ( let minute = 0; minute <= 1440; minute ++ ) {
 	};
 	const shares = {
 		display: ( e, rising, cloud ) => displayNight( daylightAt( e, rising ), e, rising, cloud ),
-		exposure: ( e, rising, cloud ) => exposureNight( daylightAt( e, rising ), e, rising, cloud ),
+		exposure: exposureNight,
 		stars: ( e, rising, cloud ) => starNight( daylightAt( e, rising ), e, rising, cloud ),
 		sky: skyNight, ambient: nightAmbientShare, yunpeng: yunpengNightShare, cloudMoon: cloudMoonShare,
 		moonKey: ( e ) => moonKeyShare( e ),

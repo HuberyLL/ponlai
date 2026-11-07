@@ -206,11 +206,12 @@ export const MOON_KEY_TOP = - 2.5;
  * the display's, `starNight`), `sky` the sky's night key, `ambient` the night's
  * ambient (and the leaves' night key and the sward's), `yunpeng` the yunpeng's glow and the local
  * lights, `cloudMoon` the clouds' own moonlight, `moonKey` the moon's key and its sky, `handoff`
- * the key's turn from the sun to the moon. A clouded sky's display, exposure and stars follow the
- * daylight instead (`fromDaylight`). Every share is 0 at +2.5 degrees and over. */
+ * the key's turn from the sun to the moon. A clouded sky's display and stars follow the daylight
+ * instead (`fromDaylight`); its exposure takes its own window by elevation (`exposure.clouded`).
+ * Every share is 0 at +2.5 degrees and over. */
 export const DUSK_WINDOWS = {
 	display: { evening: [ - 11, - 7 ], morning: [ - 12, - 7 ] },
-	exposure: { evening: [ - 11, - 7 ], morning: [ - 12, - 7 ] },
+	exposure: { evening: [ - 11, - 7 ], morning: [ - 12, - 7 ], clouded: [ - 5, 0 ] },
 	stars: { evening: [ - 11, - 7 ] },
 	sky: { evening: [ - 11, - 7 ], morning: [ - 13, - 3 ], clouded: [ - 6, 2 ] },
 	ambient: { evening: [ - 11, - 7 ], morning: [ - 12, - 7 ], clouded: [ - 5, 1 ] },
@@ -220,7 +221,7 @@ export const DUSK_WINDOWS = {
 	handoff: [ MOON_KEY_TOP, HANDOFF_TOP ],
 } as const satisfies Record<string, Span | { evening: Span, morning?: Span, clouded?: Span }>;
 type Span = readonly [ number, number ];
-// the daylight's window in which a clouded sky's display, exposure and stars take the night (the
+// the daylight's window in which a clouded sky's display and stars take the night (the
 // snapshot's `daylight`, which falls from 8 to -7 degrees): all of it under the first, none over
 // the second
 const CLOUDED_DAYLIGHT: Span = [ 0.2, 0.45 ];
@@ -319,12 +320,18 @@ export function displayNight( daylight: number, elevation: number, rising: boole
 
 }
 /** The exposure's night weight (post/Exposure.ts `exposureKeys`: the night key's share, and the
- * overcast night's offset by it), as `displayNight` is taken but over its own windows
- * (DUSK_WINDOWS.exposure): the meter's handover to the night key is a question
- * of the light it reads, the display's of how the night looks, so each is set apart. */
-export function exposureNight( daylight: number, elevation: number, rising: boolean, cloud: number ): number {
+ * overcast night's offset by it) at the sun's `elevation` (degrees), `rising` or setting, under a
+ * clouded share `cloud` (Weather.ts `cloudedShare`), over its own windows (DUSK_WINDOWS.exposure):
+ * the meter's handover to the night key is a question of the light it reads, the display's of how
+ * the night looks, so each is set apart. A clear sky's comes in as the display's does; a clouded
+ * one's from the horizon to -5 degrees, evenly by elevation, as the deck's twilight goes (the
+ * clouded ambient's window, DUSK_WINDOWS.ambient.clouded). Taken by the daylight, as the
+ * display's is, it came in from the horizon to about -3 degrees, and the night key, two stops
+ * under a deck's day key, fell up to half a stop each half degree there, faster than the metered
+ * light: the exposure fell while the land under the deck grew darker. */
+export function exposureNight( elevation: number, rising: boolean, cloud: number ): number {
 
-	const night = fromDaylight( daylight );
+	const night = rampIn( elevation, DUSK_WINDOWS.exposure.clouded );
 	const dawn = rampIn( elevation, rising ? DUSK_WINDOWS.exposure.morning : DUSK_WINDOWS.exposure.evening );
 	return dawn + ( night - dawn ) * cloud;
 
