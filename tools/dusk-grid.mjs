@@ -165,7 +165,7 @@
 import './qos.mjs'; // first: the summary's CPU work runs with the application policy
 import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
 import { launchCapture, pngShooter, stopLoop, waitForScene, waitForSettled } from './capture-browser.mjs';
-import { runInPage } from './page-eval.mjs';
+import { WAIT_FRAMES, runInPage } from './page-eval.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -430,8 +430,7 @@ const applyJs = ( forces ) => `async () => { ${ PAGE }
 	await waitFor( () => sky.bakeVersion > v0, ${ options.timeout }, 'the bake' );
 	// a few frames of the new state before the settled signal is asked: tune.set bakes at once, and
 	// the diagnostics' signal is still the last frame's (the state before) until a frame has run
-	const f0 = s.renderer.info.frame;
-	await waitFor( () => s.renderer.info.frame >= f0 + 3, ${ options.timeout }, 'three frames' );
+	await ( ${ WAIT_FRAMES } )( 3, ${ options.timeout } );
 	return applied.length;
 }`;
 

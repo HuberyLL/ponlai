@@ -9,6 +9,7 @@
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
+import { installWaitFrames } from './page-eval.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
@@ -26,6 +27,7 @@ const browser = await chromium.launch( {
 try {
 
 	const page = await browser.newPage( { viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 } );
+	await installWaitFrames( page );
 	page.on( 'pageerror', ( error ) => errors.push( error.message ) );
 	page.on( 'console', ( message ) => { if ( message.type() === 'error' ) errors.push( message.text() ); } );
 	const url = new URL( base );
@@ -38,20 +40,8 @@ try {
 		s.dayCycle.paused = true;
 		s.dayCycle.moonPhase = 0.5;
 		await s.setWeather( 'clear', 0 );
-		// the page's next rendered frame (tools/page-eval.mjs, "Rendered frames")
-		const frame = () => new Promise( ( resolve, reject ) => {
-
-			const end = s.renderer.info.frame + 1, deadline = performance.now() + 60000;
-			const tick = () => {
-
-				if ( s.renderer.info.frame >= end ) resolve();
-				else if ( performance.now() > deadline ) reject( new Error( `no frame ${ end } within 60000 ms (at ${ s.renderer.info.frame }, loop.running ${ s.loop?.running })` ) );
-				else requestAnimationFrame( tick );
-
-			};
-			tick();
-
-		} );
+		// the page's next rendered frame (tools/page-eval.mjs WAIT_FRAMES)
+		const frame = () => window.__waitFrames( 1 );
 		// the key's direction at this clock, as Sky.ts takes it from the same snapshot
 		const clockKey = ( clock ) => clock.keyDir;
 		const read = () => {

@@ -1558,7 +1558,9 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
 - A step that sets a state (a clock, a camera, a uniform) and reads the frame that follows waits
   for the page's rendered frames, counted by `renderer.info.frame`: page-eval's `frames( n )` in an
   eval, `renderedFrames( page, n )` (`tools/page-eval.mjs`, "Rendered frames") from a Playwright page
-  of one's own, never a count of animation frames: the frame pacer skips the refreshes between its
+  of one's own, `window.__waitFrames( n )` (`installWaitFrames`) inside that page's own evaluate and
+  `WAIT_FRAMES` spliced into page code written as a string: one wait, which fails at once while the
+  page's loop is stopped. Never a count of animation frames: the frame pacer skips the refreshes between its
   frames, and a paused page in the test mode holds a due frame while two are still queued on the GPU
   (Test mode), so the read saw the frame before whenever the page did not tick after the state was
   set. Rendered frames wait for the state the next tick applies; a still, converged image is still
