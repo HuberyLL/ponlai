@@ -3,6 +3,7 @@ import { float, uniform, vec3 } from 'three/tsl';
 import { createWindUniforms } from './weather/Wind.ts';
 import { displacementUniforms } from './world/vegetation/Displacement.ts';
 import { LAWN_GAIN } from './materials/Meadow.ts';
+import { ABSORPTION, BACKSCATTER } from './ocean/SeaOptics.ts';
 
 // Uniforms shared by the water, the terrain and the vegetation (one node each, read by every
 // material that uses it).
@@ -17,8 +18,8 @@ export const shared = {
 	// it. LAWN_GAIN: the blades' albedo on load (Grass.ts)
 	lawnGain: uniform( LAWN_GAIN ),
 	// the cliff's albedo above the water against its stone (TerrainMaterial.ts `rock`); 1 the stone as
-	// it is. 1.6: the stone at about twice the meadow's albedo (about 0.18); under the water it takes
-	// 0.7 (TerrainMaterial.ts), so a stone parts from the sand round it
+	// it is. 1.6: the stone at about twice the meadow's albedo (about 0.18); under the water it keeps
+	// SUBMERGED_ROCK of it (TerrainMaterial.ts), darker only by the water round it
 	rockGain: uniform( 1.6 ),
 	// the trees' leaves' albedo against their atlas (world/vegetation/TreeSurfaces.ts leafMaterial:
 	// the bamboo's crowns); 1 the atlas as it is: the leaves about 1.5 times the meadow's albedo
@@ -37,14 +38,12 @@ export const shared = {
 	rain: uniform( 0 ),
 	wetness: uniform( 0 ),
 	waterLevel: uniform( 0 ),
-	// Clear temperate water with a little plankton and fine sand in it: red is absorbed over some
-	// 9 m, green and blue over some 16 and 13.5 m (the e-folding of the absorption), so the floor
-	// reads through the shallows near its own colour, with no bright rim, and the deep water holds a
-	// grey green-blue; a little scattering by suspended particles, near grey and most in the blue,
-	// which keeps the open sea slate rather than teal. Shared with the light under the water
-	// (Underwater.ts) for both the sun and view paths (1 / m).
-	sigA: uniform( new THREE.Vector3( 0.108, 0.062, 0.074 ) ),
-	sigS: uniform( new THREE.Vector3( 0.027, 0.0236, 0.033 ) ),
+	// The sea's inherent optical properties, per channel (1 / m), from ocean/SeaOptics.ts (its
+	// sources there): the absorption `sigA` and the backscattering coefficient `bb`. The same
+	// coefficients serve the light under the water (Underwater.ts), the water body (ocean/Water.ts),
+	// the floor's bounce (GroundBounce.ts) and the ambient probes (world/AmbientProbes.ts).
+	sigA: uniform( new THREE.Vector3( ...ABSORPTION ) ),
+	bb: uniform( new THREE.Vector3( ...BACKSCATTER ) ),
 	sunIntoWater: uniform( 1 ), // 1 - Fresnel of the sun at the surface
 	// Storm strength: whitecaps on breaking crests (0 calm).
 	storm: uniform( 0 ),

@@ -25,8 +25,15 @@ type B = THREE.Node<'bool'>;
 // sea floor, TerrainMaterial.ts), as tidewater's UnderwaterLighting (4811ba4) lights it: the key light refracted at the mean surface and carried
 // down the water column to the point under the long waves' surface (Beer-Lambert over the slant
 // path, the share that enters the water and the beam's change of area), faded in over the first
-// 8 cm; and the ambient and specular light under the mean level, dimmer with the depth
-// (Beer-Lambert over 1.2 times the depth, 85 % of it), faded in over the first 10 cm. The long waves and the mean level come from the wave maps baked once a
+// 8 cm; and the ambient and specular light under the mean level, dimmer with the depth, faded in
+// over the first 10 cm. Both paths attenuate by kappa = a + bb (shared.ts `sigA`, `bb`): the light
+// scattered forward stays in the downwelling stream, so only absorption and backscattering take
+// it away (Lee et al. 1999, Appl. Opt. 38:3831). The ambient light goes by Beer-Lambert over
+// 1.2 times the depth, 1.2 being about 1 / mu_d, the inverse mean cosine of a uniform sky refracted
+// into the water: mu_d = ( 1 + cos theta_c ) / 2 = 0.83, theta_c the critical angle, 48.6 degrees at
+// n = 1.333. It enters the water at 0.934, the diffuse Fresnel transmittance of a uniform sky from
+// air into water at n = 1.333 (the cosine-weighted mean of 1 - F over the hemisphere), which the
+// environment's specular, the local lights and the ambient diffuse under the water all take. The long waves and the mean level come from the wave maps baked once a
 // frame (WaveMaps.ts `wavesAt`), so the waterline on the rock rises and falls with the swell. The
 // water shader adds the view path from the point back to the eye, so a material lit
 // here must not. (tidewater leaves the key at its direction in the air with no share or beam
@@ -105,7 +112,7 @@ export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun,
 	// the water above this point: the long waves' surface for the key, the mean level for the
 	// ambient (the wave maps; a level sea above the water's reach)
 	const p = positionWorld;
-	const sigT = shared.sigA.add( shared.sigS );
+	const sigT = shared.sigA.add( shared.bb ); // kappa = a + bb
 	const waves = waveMaps.wavesAt( p ).toVar();
 	const dSun = shared.waterLevel.add( waves.x ).sub( p.y ).toVar();
 	const dW = shared.waterLevel.add( waves.w ).sub( p.y ).toVar();
@@ -131,7 +138,8 @@ export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun,
 
 	} )();
 	const depth = dW.max( 0 );
-	const ambAtt = exp( sigT.negate().mul( depth ).mul( 1.2 ) ).mul( 0.85 ).toVar();
+	// (1.2 ~ 1 / mu_d, 0.934 the sky's diffuse transmittance into the water: the header)
+	const ambAtt = exp( sigT.negate().mul( depth ).mul( 1.2 ) ).mul( 0.934 ).toVar();
 	const below = smoothstep( 0, 0.1, depth ).toVar();
 	const ambient = mix( vec3( 1 ), ambAtt, below );
 	const diffuse = mix( vec3( 1 ), ambAtt.mul( grade.seaSky ), below );

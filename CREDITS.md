@@ -49,8 +49,7 @@ packages, into `dist/licenses/`.
     Jacobian folds, exponential decay), here on one world-space grid of the summed cascades.
   - `src/ocean/Water.ts`: the above-water shading of `WaterMaterial.js` (Fresnel, the sky
     reflection lifted by the unresolved slopes and darkened below the horizon, the reflection's
-    gate, the GGX glint with Cox-Munk roughness, the refracted ray traced to the floor, the
-    analytic water body, the crests' translucency and the lit foam), the normal, near-field
+    gate, the refracted ray traced to the floor and the lit foam), the normal, near-field
     ripples and whitecap compositing of `WaterSurface.js` (fresh foam on the Jacobian, a foam
     pattern thresholded by the coverage, at a distance the coverage itself), ported from WGSL to
     TSL.
@@ -525,7 +524,53 @@ comment where it is used.
   (JCGT 2014); Smith's G1 for Gaussian (Beckmann) slopes in the rational form of Bruce Walter,
   Stephen R. Marschner, Hongsong Li and Kenneth E. Torrance,
   [*Microfacet Models for Refraction through Rough Surfaces*](https://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf)
-  (EGSR 2007); the error-function approximation is Abramowitz and Stegun, equation 7.1.26.
+  (EGSR 2007), whose rational form is also the shadowing of the sun's glint (below); the
+  error-function approximation is Abramowitz and Stegun, equation 7.1.26.
+- The sea's slopes and the sun's glint, in `src/ocean/Water.ts`: the slopes' mean square by the wind
+  of C. Cox and W. Munk, *Measurement of the Roughness of the Sea Surface from Photographs of the
+  Sun's Glitter* (J. Opt. Soc. Am. 44:838, 1954), taken as the variance of a Beckmann (Gaussian)
+  slope distribution; the glint is Beckmann's lobe of those slopes with the separable Smith
+  shadowing in the rational form of Walter et al. (EGSR 2007, above).
+- The sea's inherent optical properties, in `src/ocean/SeaOptics.ts`: pure water's absorption from R. M. Pope
+  and E. S. Fry, *Absorption spectrum (380-700 nm) of pure water. II* (Appl. Opt. 36:8710, 1997)
+  and R. C. Smith and K. S. Baker, *Optical properties of the clearest natural waters (200-800 nm)*
+  (Appl. Opt. 20:177, 1981); the particles' absorption by chlorophyll from A. Bricaud et al.,
+  *Variations of light absorption by suspended particles with chlorophyll a concentration in
+  oceanic (case 1) waters* (J. Geophys. Res. 103:31033, 1998); pure sea water's backscattering
+  from A. Morel, *Optical properties of pure water and pure sea water* (in *Optical Aspects of
+  Oceanography*, 1974); the particles' backscattering by chlorophyll from H. R. Gordon and A. Morel,
+  *Remote Assessment of Ocean Color for Interpretation of Satellite Visible Imagery* (Springer,
+  1983) and O. Ulloa, S. Sathyendranath and T. Platt, *Effect of the particle-size distribution on
+  the backscattering ratio in seawater* (Appl. Opt. 33:7070, 1994). The bands are weighed into RGB
+  by the colour matching functions in the analytic fit of C. Wyman, P.-P. Sloan and P. Shirley,
+  [*Simple Analytic Approximations to the CIE XYZ Color Matching Functions*](https://jcgt.org/published/0002/02/01/)
+  (JCGT 2013). Adding coloured dissolved matter in proportion to the chlorophyll, and reading
+  0.5 mg m^-3 of it as Jerlov's type II, are our own assumptions from what Case 1 water is.
+- The water body and the floor seen through it, in `src/ocean/Water.ts` and
+  `src/lighting/Underwater.ts`: the shallow-water remote-sensing reflectance of Z. Lee, K. L. Carder,
+  C. D. Mobley, R. G. Steward and J. S. Patch, *Hyperspectral remote sensing for shallow waters:
+  2. Deriving bottom depths and water properties by optimization* (Appl. Opt. 38:3831, 1999),
+  equation 9 and its off-nadir path factors, with attenuation by a + bb.
+- The deep water's irradiance reflectance under its surface, in `src/ocean/SeaOptics.ts` (read by
+  `src/lighting/GroundBounce.ts` and `src/world/AmbientProbes.ts`): R ≈ 0.33 bb / ( a + bb ), the
+  common first-order form of the relation H. R. Gordon, O. B. Brown and M. M. Jacobs fitted to Monte
+  Carlo runs, *Computed relationships between the inherent and apparent optical properties of a
+  flat homogeneous ocean* (Appl. Opt. 14:417, 1975).
+- The sea floor's reflectances, in `src/materials/SeabedLook.ts`, `src/world/SeabedTile.ts` and
+  `src/lighting/GroundBounce.ts`: our own linear sRGB readings of the sand, silt and seagrass
+  reflectances measured by P. J. Werdell and C. S. Roesler, *Remote assessment of benthic substrate
+  composition in shallow waters using multispectral reflectance* (Limnol. Oceanogr. 48:557, 2003),
+  and of the brown algae's measured by S. Maritorena, A. Morel and B. Gentili, *Diffuse reflectance
+  of oceanic shallow waters: Influence of water depth and bottom albedo* (Limnol. Oceanogr. 39:1689,
+  1994), for the algae's film on the submerged rock (`src/materials/TerrainMaterial.ts`).
+- The light a wet stone's film of water traps, in `src/materials/TerrainMaterial.ts` (why the damp
+  band's darkening stops under the waterline), and the internal reflection of the light leaving the
+  water, in `src/lighting/GroundBounce.ts`: the mechanism of J. Lekner and M. C. Dorf, *Why some
+  things are darker when wet* (Appl. Opt. 27:1278, 1988), light totally reflected at the water's
+  surface back onto the absorbing surface beneath. Water's diffuse internal reflectance (0.475) is
+  our own figure from Fresnel's equations. The share of its dry albedo a submerged stone keeps
+  (about 0.94), for the forward scattering of grains whose relative index is smaller under water, is
+  our own figure too.
 - The shared specular BRDF, in `src/lighting/SurfaceBRDF.ts` and `src/lighting/EnvironmentBRDF.ts`:
   Smith's visibility for GGX in Schlick's form with k = alpha / 2, and the environment's specular
   as the split sum, the prefiltered environment times the environment BRDF integrated for the
@@ -575,11 +620,6 @@ comment where it is used.
   [*Water drop 2b – Dynamic rain and its effects*](https://seblagarde.wordpress.com/2013/01/03/water-drop-2b-dynamic-rain-and-its-effects/)
   (2013), its ripple texture's terms computed analytically per cell. In `src/materials/Wetness.ts`
   and `src/weather/Puddles.ts`.
-- Depth-dependent water shadows: the volume-lighting integral described in
-  [*Physically Based Rendering*, third edition](https://pbr-book.org/3ed-2018/Light_Transport_II_Volume_Rendering/Volumetric_Light_Transport),
-  independently implemented in TSL with exponential depth strata, exact per-channel attenuation
-  weights and separate air/submerged visibility along each scattering point's refracted solar path.
-  No source code is copied; the retained multiple-scattering boost is empirical.
 - Coverage-preserving alpha mips for the leaves: Ignacio Castano,
   [*Computing Alpha Mipmaps*](http://the-witness.net/news/2010/09/computing-alpha-mipmaps/) (2010):
   each mip keeps the full-size leaf's share above the alpha-test cutoff, remapped through a steep

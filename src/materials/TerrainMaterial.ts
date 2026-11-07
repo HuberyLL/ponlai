@@ -78,6 +78,16 @@ type V3 = THREE.Node<'vec3'>;
 type V2 = THREE.Node<'vec2'>;
 type F = THREE.Node<'float'>;
 
+// The cliff's stone under the water against the same stone dry: under water its grains' index of
+// refraction relative to what surrounds them is smaller, so each grain scatters the light more
+// forward, the light goes deeper into the stone before it comes back out, and more of it is
+// absorbed on the way. Our own figure for that, for the stone's albedo near 0.25: about 0.94 of its
+// dry albedo (0.90 to 0.95). The rest of a wet stone's darkening in air, the light the film of water
+// on it traps by total reflection at the film's surface and returns to the stone to be absorbed
+// (Lekner & Dorf 1988, "Why some things are darker when wet", Appl. Opt. 27:1278), is under the
+// sea the surface's own, which the water's shading takes (the damp band fades out under the
+// waterline).
+const SUBMERGED_ROCK = 0.94;
 // The rim's turf wraps the lip's bevel where a broad field along the coast (gravel's
 // low-frequency channel at LIP_WRAP_RATE per metre, a few metres a stretch) clears LIP_WRAP; the
 // stone left between is darkened by LIP_SKIN (linear multiplier) on its upward faces.
@@ -449,7 +459,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		// hides the layers below it): the blend leaves the masks as they are there rather than
 		// reading the placeholder colour.
 		const hb = ( mask: F, height: F, width: number ): F => hex ? select( scanned!, heightBlend( mask, height, float( width ) ), mask ) : mask;
-		const rock = mix( vec3( 0.124, 0.13, 0.126 ), vec3( 0.188, 0.19, 0.176 ), vTint ).mul( mix( float( 0.7 ), shared.rockGain, smoothstep( - 0.5, 0.5, p.y ) ) ).toVar();
+		const rock = mix( vec3( 0.124, 0.13, 0.126 ), vec3( 0.188, 0.19, 0.176 ), vTint ).mul( mix( shared.rockGain.mul( SUBMERGED_ROCK ), shared.rockGain, smoothstep( - 0.5, 0.5, p.y ) ) ).toVar();
 		rock.mulAssign( mix( vec3( 0.97, 0.99, 1.03 ), vec3( 1.025, 1.0, 0.965 ), fract( vTint.mul( 7.31 ) ) ) );
 		// Desaturate the source to fit this limestone palette, but keep its correlated grain,
 		// mineral stains and roughness. Fine colour follows the same relief as the normal map.
@@ -867,6 +877,10 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		const wl = shared.waterLevel.add( sin( shared.time.mul( 0.9 ).add( p.x.mul( 0.4 ) ).add( p.z.mul( 0.3 ) ) ).mul( 0.08 ) );
 		const wet = float( 1 ).sub( smoothstep( 0, 0.32, p.y.sub( wl ).sub( 0.06 ).sub( H.r.sub( 0.5 ).mul( 0.25 ) ) ) );
 		const algae = float( 1 ).sub( smoothstep( - 0.05, 0.35, p.y.sub( wl ).add( Hg.sub( 0.5 ).mul( 0.5 ) ) ) );
+		// 0 at the waterline, 1 from 0.3 m under it: a wet stone's darkening in air (the film of water
+		// on it traps light) is under the water the sea surface's own, which the water's shading
+		// already takes, so the damp band's darkening fades out below it (SUBMERGED_ROCK)
+		const submerged = float( 1 ).sub( smoothstep( - 0.3, 0, p.y.sub( wl ) ) );
 		const deep = vegetation ? smoothstep( 0.35, 1.65, wl.sub( p.y ) ) : smoothstep( - 0.6, - 2.5, p.y );
 		const algaeC = mix( vec3( 0.035, 0.05, 0.02 ), vec3( 0.09, 0.085, 0.045 ), deep );
 		const silt = smoothstep( 0.35, 0.8, up ).mul( smoothstep( - 0.4, - 1.2, p.y ) );
@@ -879,14 +893,18 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 			? mix( float( 0.65 ), float( 0.24 ), deep ).mul( mix( float( 0.28 ), float( 1 ), colony ) )
 			: mix( float( 0.85 ), float( 0.5 ), deep ) );
 		albedo.assign( mix( albedo, algaeC.mul( H.r.mul( 0.6 ).add( 0.7 ) ), algaeCoverage ) );
-		albedo.assign( mix( albedo, vec3( 0.077, 0.067, 0.049 ).mul( FLOOR_ALBEDO.gain ), silt.mul( 0.7 ) ) );
+		// (the silt on the ledges about 0.05, our reading of the silt and clay measured in Werdell &
+		// Roesler 2003, at the floor's gain)
+		albedo.assign( mix( albedo, vec3( 0.273, 0.258, 0.242 ).mul( FLOOR_ALBEDO.gain ), silt.mul( 0.7 ) ) );
 		// Below the tidal band the stone wears an olive-brown film of algae and diatoms on the faces
 		// that catch the light, in patches, so submerged stones and the underwater cliff separate
-		// from the sand by hue as well as value. Each stone also keeps more of its own shade.
+		// from the sand by hue as well as value: half the way to an absolute albedo for brown algae,
+		// our own linear sRGB reading of the brown algae's bottom reflectance measured in Maritorena,
+		// Morel & Gentili 1994 (Limnol. Oceanogr. 39:1689). Each stone also keeps more of its own shade.
 		const subtidal = smoothstep( - 0.3, - 0.8, p.y.sub( wl ) );
 		const film = subtidal.mul( smoothstep( 0.15, 0.7, up ) )
 			.mul( smoothstep( 0.3, 0.62, big2.mul( 0.55 ).add( Hg.mul( 0.3 ) ).add( vTint.mul( 0.25 ) ) ) );
-		albedo.mulAssign( mix( vec3( 1 ), vec3( 0.84, 0.74, 0.46 ), film ) );
+		albedo.assign( mix( albedo, vec3( 0.078, 0.054, 0.025 ), film.mul( 0.5 ) ) );
 		if ( ! vegetation ) albedo.mulAssign( mix( vec3( 0.8, 0.83, 0.86 ), vec3( 1.18, 1.12, 1.0 ), vTint ) );
 		if ( vegetation ) {
 
@@ -898,10 +916,10 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 			const crust = mix( float( 0.55 ), float( 1 ), smoothstep( 0.35, 0.75, H.g.mul( 0.6 ).add( big.mul( 0.4 ) ) ) );
 			albedo.mulAssign( mix( vec3( 1 ), vec3( 0.62, 0.63, 0.6 ), spray.mul( crust ).mul( float( 1 ).sub( wet ) ) ) );
 			// The notch's floor and the ledges in the spray hold water, weed and grit: darker still.
-			albedo.mulAssign( mix( float( 1 ), float( 0.68 ), max( spray, wet ).mul( smoothstep( 0.3, 0.75, up ) ) ) );
+			albedo.mulAssign( mix( float( 1 ), float( 0.68 ), max( spray, wet ).mul( smoothstep( 0.3, 0.75, up ) ).mul( float( 1 ).sub( submerged ) ) ) );
 
 		}
-		albedo.mulAssign( mix( float( 1 ), float( vegetation ? 0.66 : 0.5 ), wet.mul( float( 1 ).sub( algae.mul( 0.5 ) ) ) ) );
+		albedo.mulAssign( mix( float( 1 ), float( vegetation ? 0.66 : 0.5 ), wet.mul( float( 1 ).sub( algae.mul( 0.5 ) ) ).mul( float( 1 ).sub( submerged ) ) ) );
 		// The wave-washed band glistens on the walls. On a face that looks up at the sky (a sloping
 		// foot or ledge in a gully at the waterline) the same gloss mirrored the bright low sky as
 		// a pale sheet streaked by the stone's relief, which read from afar as water running down

@@ -13,6 +13,7 @@ import {
 import { soilGroveSwell } from '../materials/Soil.ts';
 import { ISLAND_TOP } from '../world/WorldShapes.ts';
 import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
+import { BODY_REFLECTANCE } from '../ocean/SeaOptics.ts';
 import { LAWN_COLOUR } from '../materials/Meadow.ts';
 import type { SunShadow } from './SunShadow.ts';
 import type { Shared } from '../shared.ts';
@@ -33,8 +34,8 @@ import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 // the light the ground reflects per unit of the key's irradiance: its albedo (the plateau's turf,
 // stone over the rim's last metre and a half; over the sea the floor's sand, seagrass and the
 // cliff foot's rubble seen through the water column, down and back up, as tidewater's sea, at the
-// floor's bounce gain and not the gain it is seen at: the cliffs' shaded walls are lit mostly by
-// these shallows, and at the seen gain they read a purple grey, SeabedTile.ts FLOOR_ALBEDO) times
+// gain the floor is seen at, SeabedTile.ts FLOOR_ALBEDO, and the water body's own reflectance under
+// the surface, both through the surface at its diffuse transmittances) times
 // the cosine of the key on the level ground times the key's visibility there (the sun's shadow map,
 // a little above the ground so the plateau's relief stays under the lookup; tidewater takes its
 // heightfield's shadow, which the island's own shadow map already holds here), minus what the
@@ -117,11 +118,19 @@ const REACH = 1;
 const SHADOW_LIFT = 0.2;
 // linear albedos: the plateau's lawn, which times shared.lawnGain is the blades' mean, as the
 // probes' bake sees it (AmbientProbes.ts LAWN_TOP), the rim's stone, and the floor's (its means at
-// its bounce gain: SeabedTile.ts FLOOR_ALBEDO)
+// the gain it is seen at: SeabedTile.ts FLOOR_ALBEDO; the seagrass SeabedLook.ts's mean)
 const LAWN = vec3( ...LAWN_COLOUR ), RIM = vec3( 0.08, 0.075, 0.065 );
-const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.bounce ), SEAGRASS = vec3( 0.108, 0.146, 0.074 ).mul( FLOOR_ALBEDO.bounce ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.bounce );
-// the water's own backscatter seen from above (tidewater's)
-const WATER_BODY = vec3( 0.01, 0.025, 0.03 );
+const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.gain ), SEAGRASS = vec3( 0.2475, 0.304, 0.124 ).mul( FLOOR_ALBEDO.gain ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.gain );
+// the floor's light through the surface, down and back up: the sky's diffuse transmittance into the
+// water (0.934) times the upwelling light's out of it, 1 - 0.475. Both are Fresnel's reflectance of
+// water (n = 1.333) integrated over a uniform hemisphere, our own figures: 0.475 the mean internal
+// reflectance for light from under the surface, most of it totally reflected past the critical
+// angle, the mechanism Lekner & Dorf 1988 build their model on
+const FLOOR_THROUGH = 0.934 * 0.525;
+// the floor's light crosses the column twice: down as the sky's diffuse light, whose mean cosine
+// under the surface is about 0.83 (1.2 times the depth, as Underwater.ts), and back up from a
+// Lambertian floor, whose mean cosine is 0.5 (2 times the depth)
+const FLOOR_PATH = 1.2 + 2.0;
 
 export interface GroundBounceInputs {
 	renderer: THREE.WebGPURenderer;
@@ -173,10 +182,18 @@ export class GroundBounce {
 			const beds = texture( fields.beds, at ).level( float( 0 ) ).rg;
 			const L = shared.sunDir;
 			const land = mix( LAWN.mul( shared.lawnGain ), RIM, smoothstep( - 1.5, 0, sd ) );
-			// the sea: the floor seen through the water column, down and back up
+			// the sea: the floor seen through the water column, down and back up (at a + bb, over
+			// FLOOR_PATH times the depth), and the water body's own irradiance reflectance under its
+			// surface, the deep water's R( 0- ) = BODY_REFLECTANCE bb / ( a + bb ) (ocean/SeaOptics.ts,
+			// as the probes take it) times the share of it a column of this depth holds, 1 less the
+			// floor's transmittance (the shallow-water form Water.ts takes from Lee et al. 1999), both
+			// through the surface (FLOOR_THROUGH)
 			const depth = max( shared.waterLevel.sub( floorY ), 0 );
+			const kappa = shared.sigA.add( shared.bb );
+			const body = shared.bb.mul( BODY_REFLECTANCE ).div( kappa );
 			const floor = mix( mix( SAND, SEAGRASS, smoothstep( 0.3, 0.7, beds.x ) ), RUBBLE, smoothstep( 6.5, 0.5, sd ).mul( 0.5 ) );
-			const sea = floor.mul( exp( shared.sigA.add( shared.sigS ).mul( depth ).mul( - 2.4 ) ) ).mul( 0.9 ).add( WATER_BODY );
+			const column = exp( kappa.mul( depth ).mul( - FLOOR_PATH ) );
+			const sea = mix( body, floor, column ).mul( FLOOR_THROUGH );
 			const wet = smoothstep( - 0.25, 0.25, sd ).toVar();
 			// (the land's bounce is the ambient volume's where materials read it: see the header)
 			const albedo = GROUND_BOUNCE_LAND ? mix( land, sea, wet ) : sea.mul( wet );
