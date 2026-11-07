@@ -30,7 +30,7 @@ import { markSkyRetune } from './SkyRetune.ts';
 // holds low in the west under a blue sky for a long while, falling slowly to about -9 degrees,
 // and long before a clear sunrise the air is blue and the sea a clear blue under it, lit by the
 // sun's own light on the high air. So under a clear or fair sky the display's night weight
-// (`displayNight`), the sky's and the probes' night key (`skyNight`), the night's ambient and the
+// (`displayNight`), the sky's night key (`skyNight`), the night's ambient and the
 // yunpeng's light (`nightAmbientShare`, which would glow at their brightest under a day's
 // exposure) come in only from -7 to -11 degrees after sunset, and the rising sun takes them away
 // early, from about -12 degrees. The moon's key and its sky take no window: at the moon's
@@ -209,7 +209,7 @@ const EXPOSURE_DUSK_NIGHT = [ - 11, - 7 ] as const;
  * five stops more. (The moon's key and its sky take none: they lie under the twilight's light
  * already, the header.) */
 export const DUSK_DEPTH = tuneObject( {
-	// the night key in the sky's and the probes' light (`skyNight`): 1.35 over the land's
+	// the night key in the sky's light (`skyNight`): 1.35 over the land's
 	sky: 6.25,
 	// the night ambient and the yunpeng's glow and light (`nightAmbientShare`): 3.1 over the land's
 	ambient: 8,
@@ -305,11 +305,11 @@ export function starNight( daylight: number, elevation: number, rising: boolean,
 	return dusk + ( night - dusk ) * cloud;
 
 }
-/** The night key's share in the sky's light and the probes' (Sky.ts SKY_LIGHT, AmbientRelight.ts
- * PROBE_SKY), at the sun's `elevation` (degrees), `rising` or setting, under a clouded share
- * `cloud`: under cloud none from 2 degrees up, all of it by -6; a clear sky's comes in from -7 to
- * -11 degrees after sunset by stops (DUSK_DEPTH.sky) and leaves from -13 to -3 before sunrise (the
- * header). A debug page can force it (`duskForce`). */
+/** The night key's share in the sky's light (Sky.ts SKY_LIGHT, its one reader), at the sun's
+ * `elevation` (degrees), `rising` or setting, under a clouded share `cloud`: under cloud none from
+ * 2 degrees up, all of it by -6; a clear sky's comes in from -7 to -11 degrees after sunset by
+ * stops (DUSK_DEPTH.sky) and leaves from -13 to -3 before sunrise (the header). A debug page can
+ * force it (`duskForce`). */
 export function skyNight( elevation: number, rising: boolean, cloud: number ): number {
 
 	const night = 1 - smoothstep( - 6, 2, elevation );
@@ -428,8 +428,8 @@ export function nightAmbientShare( elevation: number, rising: boolean, cloud: nu
  * the night apart (tools/dusk-grid.mjs `--split`, `--night-split`), in the order that tool puts them
  * back one at a time. The night's: `moonKey`, the moon's share of the key (Sky.ts `moonGain`);
  * `moonSky`, of the moonlit sky (Sky.ts `moonSkyShare`, which the probes' sky gain mixes its moon's
- * part by: lighting/AmbientRelight.ts); `skyNight`, the sky's twilight night key and the sea's
- * bounce's (`skyNight`); `nightAmbient`, the night's ambient in the sky, the clouds and the sea, the leaves'
+ * part by: lighting/AmbientRelight.ts); `skyNight`, the sky's twilight night key (`skyNight`);
+ * `nightAmbient`, the night's ambient in the sky, the clouds and the sea, the leaves'
  * night key and the sward's (`nightAmbientShare`); `landNight`, the moon's share of the land's gain
  * under overcast's deck (lighting/AmbientRelight.ts `underDeck`); `hazeNight`, the night key's
  * weight in the haze's (weather/HazeKeys.ts `keyAlong`); `cloudMoon`, the clouds' moonlight (Sky.ts
