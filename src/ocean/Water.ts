@@ -182,8 +182,10 @@ type B = THREE.Node<'bool'>;
 // this much depth to its path to the floor, over a rounded square round the world's centre (a
 // 4-norm, so its contours have no straight runs): none out to the land lattice's corner and
 // LAND_REACH past it, where no grown island's shelf reaches, and the full depth from 16 m inside the
-// far floor's edge, where the floor's light is absorbed all but entirely, so the edge no longer
-// shows, and the shallows fade into deep water in between. The floor's mesh is not lowered: the
+// far floor's edge, where the added depth, crossed down and back, leaves some 7 % of the floor's
+// blue light and 2 % of its green (red none): too little beside the water body's own light for the
+// edge to show in the frame, at noon clear or cloudy, from the island view or low over the sea. The
+// shallows fade into deep water in between. The floor's mesh is not lowered: the
 // opaque image holds the floor as the eye sees it straight, without refraction, and a floor that
 // fell away faster than the view's slant left no image of itself behind the shelf's lip, so the
 // refracted lookups found nothing there and drew the lip as a hard line instead.
