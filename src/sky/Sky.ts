@@ -1108,10 +1108,12 @@ const _cloudMoon = new THREE.Color();
 // lighting/KeyCloud.ts). At 1 the floor is the weather's own; at
 // its 2.4 the land under the deck keeps 0.72 of the key. Set with the land's gain under the deck
 // (lighting/AmbientGrade.ts OVERCAST_LAND) on the lit open ground of seven eye-height views of the
-// overcast island: with the sun 14.5, 18 and 21 degrees up the key makes 0.70, 0.74 and 0.76 of
-// that ground's light (the views' median; 0.60 to 0.84 over the views), and the key's light there
-// is 0.72 of a clear day's in the same place. Raise it if the land under the deck lacks the light
-// from the sun's side and its cast shadows; lower it if the shadows read as a clear day's.
+// overcast island. With the deck's sky as it now stands and the sun 15 and 22 degrees up, the key
+// makes 0.95 of the light on the ground's brighter half (the ground and meadow within 40 m lit over
+// the frame's median, on three eye-height views toward, beside and away from the sun; 0.95 to 0.96
+// over the views and both suns), and the key's light there is 0.72 of a clear day's in the same
+// place. Raise it if the land under the deck lacks the light from the sun's side and its cast
+// shadows; lower it if the shadows read as a clear day's.
 // Tunable: `lighting.overcastKey`.
 const OVERCAST_KEY_GAIN = tune( 'lighting.overcastKey', 2.4, { min: 1, max: 3, onChange: markSkyRetune } );
 // The key's gain under a cloudy deck, on its floor, by cloudy's share and its deck's light
