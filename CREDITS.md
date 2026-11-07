@@ -943,3 +943,7 @@ bodies' curves take a few rounded key values off theirs).
   reed Arundo donax* (Philosophical Transactions of the Royal Society B 352, 1997), as Coppolino
   reports them; the wind's log law over
   EN 1991-1-4's terrain category 0, as given in Marković, Dobrić and Gluhović (above).
+- The haze's density at the sea against a clean sea air (`src/weather/HazeKeys.ts`): M. Hess,
+  P. Koepke and I. Schult, *Optical Properties of Aerosols and Clouds: The Software Package OPAC*
+  (Bulletin of the American Meteorological Society 79 (5), 831–844, 1998), Table 3: the maritime
+  clean aerosol's extinction at 550 nm and 80 % relative humidity, 0.090 /km.

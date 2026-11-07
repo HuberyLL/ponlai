@@ -19,14 +19,21 @@ import { cloudBase } from '../sky/Sky.ts';
 //     dawn's density lies in it), near 1 in the morning, 0.45 after sunset, a thin air that leaves
 //     the glow over the horizon no dark band, and by night the day's (see the night's Rayleigh).
 //     How far the light carries at a height follows from it and the medium's shape below.
-//   - the medium's shape (VolumetricHaze's header): `top`, the ground layer's top over the island's
-//     level (m), `width`, the width of its step (m), `aerosolShare`, the deep aerosol layer's density
-//     at sea level over the ground layer's, and `aerosolHeight`, its scale height (m). The day's
-//     are 78 m, 55 m, 0.06 and 0.76 km, the golden hour's 50 m, 43 m, 0.13 and 1.0 km
-//     (a deeper ground layer than the 10 m the other hours keep, with more aerosol over it), and
-//     the sunrise's are the golden hour's: a low sun's air, thin enough to leave no dark band over
-//     the horizon. The day's, the golden hour's, the sunrise's and the night's are tunable, and the
-//     other hours take the day's.
+//   - the medium's shape (VolumetricHaze's header): `top`, the ground layer's top over the sea (m),
+//     `width`, the width of its step (m), `aerosolShare`, the deep aerosol layer's density at sea
+//     level over the ground layer's, and `aerosolHeight`, its scale height (m). Every key's top is
+//     14 m, a thin layer on the sea: the day's width 9.4 m, the golden hour's 11.2 m and the
+//     night's 10.2 m, each keeping its key's ratio of width to top, so the density at the sea
+//     does not depend on the top's height; the day's aerosol 0.06 and 0.76 km, the
+//     golden hour's 0.13 and 1.0 km (more aerosol over a low sun's air), and the sunrise's are the
+//     golden hour's: thin enough to leave no dark band over the horizon. On a clear day green's
+//     extinction is about 1e-3 /m at the sea (Koschmieder's visibility 4 km), half that at the top,
+//     a tenth of it at 30 m and under 4e-5 /m from 68 m, the game camera's height, up: about eleven
+//     times a clean maritime air at the sea (OPAC's maritime clean at 80 % relative humidity, 0.090
+//     /km at 550 nm) and thinner than it above the layer, so the island seen from above stays
+//     clear and the far sea and the horizon, whose rays run long through the layer, are hazed. The
+//     day's, the golden hour's, the sunrise's and the night's are tunable, and the other hours take
+//     the day's.
 //     `skyDepth` is a thin haze that fills the air's whole height, uniform in height, which only
 //     the sky dome takes (VolumetricHaze `skyHaze`): green's optical depth per kilometre of a sky
 //     ray's length, 0 in every key until tuned (the keys with a shape of their own are tunable; the
@@ -136,17 +143,18 @@ import { cloudBase } from '../sky/Sky.ts';
 // base (`aerosolTop`, Sky.ts `cloudBase`, blended by the clouded skies' shares as its inverse; clear
 // and fair have none): the air between the eye and the base is what veils the deck's structure, and
 // the aerosol that went on over the base laid a second veil over the deck's gaps. Each clouded sky
-// keeps an air of its own, set from the visibility one reads under such a deck (green, 3.912 over
-// the extinction) and the slant transmittance from 100 m up to the base: overcast sees about
-// 1.25 km at the surface and 4.3 km at 100 m, thin above 150 m, 0.55 / 0.74 / 0.81 to the base at
-// 10 / 20 / 30 degrees (its ground layer two thirds of the day's height and a fifth wider, its
-// aerosol 0.82 of the day's share); cloudy is lighter, about 5 km and 20 km, 0.67 at 10 degrees
-// (its ground layer 0.8 of the day's height and 0.6 of its width, a fifth of overcast's haze, its
-// aerosol 4.6 of the day's share). Both keep the aerosol's scale height (3.1 times the day's),
-// which under a top of 700 - 900 m hardly matters. The weather's amount is its own field (Weather.ts `haze`),
-// the cloudy's and the overcast's tunable here (`sky.weather.haze@<cloudy|overcast>`): the key's
-// amount takes the tuned value over the preset's, blended by the sky's shares, so a value set
-// shows on the next frame (the weather's state copies its preset only as it is established).
+// keeps an air of its own, read as the visibility under such a deck (green, 3.912 over the
+// extinction) and the slant transmittance from 100 m up to the base: overcast sees about 1.25 km
+// at the surface, 2 km at the layer's top and 38 km at 100 m, 0.79 / 0.89 / 0.92 to the base at
+// 10 / 20 / 30 degrees (its ground layer two thirds of the day's height, 9.2 m, and 1.2 times its
+// width, its aerosol 0.82 of the day's share); cloudy is lighter, about 5 km at the surface and
+// 40 km at 100 m, 0.69 at 10 degrees (its ground layer 0.8 of the day's height and 0.6 of its
+// width, a fifth of overcast's haze, its aerosol 4.6 of the day's share). Both keep the aerosol's
+// scale height (3.1 times the day's), which under a top of 700 - 900 m hardly matters. The
+// weather's amount is its own field (Weather.ts `haze`), the cloudy's and the overcast's tunable
+// here (`sky.weather.haze@<cloudy|overcast>`): the key's amount takes the tuned value over the
+// preset's, blended by the sky's shares, so a value set shows on the next frame (the weather's
+// state copies its preset only as it is established).
 // Under a clouded sky the key also carries the deck's share (`deck`, Weather.ts `deckLight`: a
 // cloudy deck's from a sun of 3 degrees, whole by 6, overcast's at every sun until the twilight),
 // under which the air is lit level by the deck, and overcast's part of it (`overcastDeck`, Weather.ts
@@ -206,11 +214,11 @@ const twilight = ( elevation: number ): Sigma => {
 const BEFORE_DAWN = { ...key( 0.6, twilight( - 3.5 ), 0.33, 0, 1 ), rayleighWeight: 1.9, mieWeight: 4.1 };
 // the deep twilight before dawn: the same air with less of the haze's light (see the header)
 const EARLY_DAWN = { ...BEFORE_DAWN, rayleighWeight: 0.965, mieWeight: 4.1 };
-const MIST = { ...key( 0.6, GOLDEN_SIGMA, 0.64, 0, 1 ), rayleighWeight: 0.72, mieWeight: 0.83, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010 };
+const MIST = { ...key( 0.6, GOLDEN_SIGMA, 0.64, 0, 1 ), rayleighWeight: 0.72, mieWeight: 0.83, top: 14, width: 11.242, aerosolShare: 0.127, aerosolHeight: 1010 };
 const MORNING = { ...key( 0.96, DAY_SIGMA, 0.5, 0, 1 ), rayleighWeight: 0.33, mieWeight: 0.83 };
-const DAY = { ...key( 0.659, DAY_SIGMA, 1, 0, 0 ), rayleighWeight: 0.575, mieWeight: 0.79, top: 78.4, width: 54.9, aerosolShare: 0.06, aerosolHeight: 761 };
-const NIGHT = { ...key( DAY.amount, NIGHT_SIGMA, 0.55, 0, 1 ), rayleighWeight: DAY.rayleighWeight, mieWeight: 2, top: 47.6, width: 36.8, aerosolShare: 0.003, skyDepth: 0 };
-const GOLDEN = { ...key( 0.606, GOLDEN_SIGMA, 0.331, 0, 1 ), rayleighWeight: 0.58, mieWeight: 3.8, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010 };
+const DAY = { ...key( 0.659, DAY_SIGMA, 1, 0, 0 ), rayleighWeight: 0.575, mieWeight: 0.79, top: 14, width: 9.431, aerosolShare: 0.06, aerosolHeight: 761 };
+const NIGHT = { ...key( DAY.amount, NIGHT_SIGMA, 0.55, 0, 1 ), rayleighWeight: DAY.rayleighWeight, mieWeight: 2, top: 14, width: 10.162, aerosolShare: 0.003, skyDepth: 0 };
+const GOLDEN = { ...key( 0.606, GOLDEN_SIGMA, 0.331, 0, 1 ), rayleighWeight: 0.58, mieWeight: 3.8, top: 14, width: 11.242, aerosolShare: 0.127, aerosolHeight: 1010 };
 const AFTER_SUNSET = { ...key( 0.45, twilight( - 2.5 ), 0.75, 0, 1 ), rayleighWeight: 0.32, mieWeight: 4.7 };
 // the deep twilight after sunset: the afterglow's air, its light keeping the glow's colour (see the header)
 const AFTER_SUNSET_DEEP = { ...AFTER_SUNSET, desaturate: 0 };
@@ -227,7 +235,7 @@ const TUNE_RANGE: Record<typeof TUNED[ number ], TuneOptions> = {
 	amount: { min: 0.1, max: 10, scale: 'log', onChange: markSkyRetune }, sigmaRed: { min: 0.05, max: 1.5, scale: 'log', onChange: markSkyRetune },
 	sigmaBlue: { min: 0.3, max: 3, scale: 'log', onChange: markSkyRetune }, desaturate: { min: 0, max: 1, onChange: markSkyRetune },
 	rayleighWeight: { min: 0.05, max: 40, scale: 'log', onChange: markSkyRetune }, mieWeight: { min: 0.05, max: 50, scale: 'log', onChange: markSkyRetune },
-	top: { min: 0, max: 200, onChange: markSkyRetune }, width: { min: 5, max: 300, scale: 'log', onChange: markSkyRetune },
+	top: { min: 0, max: 60, onChange: markSkyRetune }, width: { min: 5, max: 300, scale: 'log', onChange: markSkyRetune },
 	aerosolShare: { min: 0.003, max: 3, scale: 'log', onChange: markSkyRetune }, aerosolHeight: { min: 300, max: 8000, scale: 'log', onChange: markSkyRetune },
 	skyDepth: { min: 0, max: 0.5, onChange: markSkyRetune },
 };

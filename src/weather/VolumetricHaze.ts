@@ -16,7 +16,6 @@ import { EARTH_RADIUS, type Clouds } from '../sky/Clouds.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
 import { ATMOSPHERE_RADIUS, MIE_G, PLANET_RADIUS, cornetteShanks, skyRayleighPhase, type Atmosphere } from '../sky/Atmosphere.ts';
 import { bandPush, bandToDisplay, bandToDisplayColor } from '../sky/BandMatrix.ts';
-import { ISLAND_TOP } from '../world/WorldShapes.ts';
 import type { HazeKey } from './HazeKeys.ts';
 import { AEROSOL_OPEN, type HazeMedium, expShare, meanExtinction } from './HazeDepth.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -70,16 +69,19 @@ const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
 // and Drobot, Digital Dragons 2017):
 //   - the medium's density is analytic and integrable along any ray: a ground layer, the talk's
 //     sigmoidal layer, dense below a soft top and thinning above it, and a deep exponential aerosol
-//     layer. Their shape is the hour's key's (HazeKeys.ts: the layer's top over the island and its
-//     width, the aerosol's share and scale height), from 10 m, 50 m, 0.035 and 1.4 km, the same
-//     whatever the camera's height: one medium for the volume, the sky, the probe's rays and the
-//     CPU's readings, from any start. The talk's slide prints the layer as
-//     lerp( d0, d1, 1/2 z^2 / ( z^2 + k_s^2 ) + 1/2 ), whose weight is even in z and no step; this is
-//     the algebraic sigmoid we take it to stand for, rho_f ( 1 - u / sqrt( w^2 + u^2 ) ) with u the
-//     height over the layer's top, whose mean over any span of heights has a closed form. At the
-//     starting shape its step is 50 m wide, so the camera, 30 - 60 m up, stands in its upper half
-//     and the hills rise out of it, and it thins as the inverse square of the height far above, so
-//     the distant haze thins less with height than an exponential layer would. The weather's haze sets rho_f (and the deep
+//     layer. The ground layer is measured from the sea and the haze varies with height alone,
+//     never with the camera: one medium for the volume, the sky, the probe's rays and the CPU's
+//     readings, from any start. Its shape is the hour's key's (HazeKeys.ts: the layer's top over
+//     the sea and its width, the aerosol's share and scale height). The talk's slide prints the
+//     layer as lerp( d0, d1, 1/2 z^2 / ( z^2 + k_s^2 ) + 1/2 ), whose weight is even in z and no
+//     step; this is the algebraic sigmoid we take it to stand for, rho_f ( 1 - u / sqrt( w^2 + u^2 ) ) with u the
+//     height over the layer's top, whose mean over any span of heights has a closed form. The keys
+//     lay it thin on the sea (a 14 m top, a step about 10 m wide), so the island's camera, 68 m up,
+//     looks down through clear air and only the last metres of its rays cross the dense part,
+//     while the far sea's, the horizon's and the low sky's rays run long through it and are hazed;
+//     a camera lowered into the layer sees its near land through it too. Far above the top it thins
+//     as the inverse square of the height, so the distant haze thins less with height than an
+//     exponential layer would. The weather's haze sets rho_f (and the deep
 //     layer's density, the key's share of it); its sea fog and the morning mist thicken it. Under a
 //     low deck the aerosol layer ends at the deck's base (the key's `aerosolTop`: HazeKeys.ts), so
 //     the air thins to nothing between the base and the eye's view of the deck's gaps; without a
@@ -120,16 +122,12 @@ const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
 //         the column held 17 degrees or more over the horizon (SHADOW_ELEVATION): the air low over
 //         the horizon away from a set sun lies in front of the sky's own shadowed band, and takes
 //         the shadow only once its edge has risen past 17 degrees, so no dark belt lies round the
-//         horizon. Measured on the clear views (sun 0, 2, 3, 12 and noon, 1 - 20 degrees up), the
-//         haze's own light per unit of its opacity (its light over one minus its transmittance,
-//         the transmittance read with `gain` 0) runs at 90 degrees from the sun about 0.76 - 0.88
-//         of its value at 60 and at 170 about 0.93 - 1.1: the sky's lean alone, the side away
-//         from the sun not lifted by a polariser of the haze's own. Over the bare sky behind it
-//         that light stands at about 0.65 - 0.9 by day (sun 12 and noon, 60 - 90 degrees from the
-//         sun), so the hazed low sky 1 - 4 degrees up keeps about 0.76 - 0.81 of the bare one on
-//         the sun's half (HazeKeys.ts, the weights); at a low sun, the sky behind it darker, the
-//         haze is the lighter (60 - 90 degrees from the sun about 1.2 - 1.4 at sun 2, 1.5 - 1.7 at
-//         a setting sun of 3, 3.0 - 3.4 at the sunrise). This reaches everything the haze's sky
+//         horizon. The haze's own light per unit of its opacity (its light over one minus its
+//         transmittance) falls from 60 degrees from the sun to 90 and rises again toward 170: the
+//         sky's lean alone, the side away from the sun not lifted by a polariser of the haze's own.
+//         By day that light stands under the bare sky's behind it, so the hazed low sky is a little
+//         darker than the bare one on the sun's half (HazeKeys.ts, the weights); at a low sun, the
+//         sky behind it darker, the haze is the lighter. This reaches everything the haze's sky
 //         feeds, the sky's fog colour and the environment bakes, so the panorama, and the sky's
 //         irradiance by about a percent at twilight. By day under a clear or fair sky the sun's colour here is
 //         0: the air's blue is sky light, and sunlit blue haze would glow.
@@ -139,12 +137,8 @@ const hazeFormKeep = Fn( ( [ depth, g ]: [ F, F ] ) => {
 //         leaves the sun in view), so it takes no gate of its own at the froxel's horizon. Such a
 //         gate (a smoothstep 3 degrees either side of the sun's rise over the froxel's horizon, the
 //         horizon dipping by sqrt( 2 h / R )) took the shadow a second time, and with the haze all
-//         but opaque under about 0.6 degrees up the low sky toward a set sun fell into a band under
-//         the sky over it. Measured from the horizon view's height over the open sea (clear,
-//         paused), the sky 0.05 degrees up over the sky 4 degrees up toward the sun: with the gate
-//         1.64 / 0.72 / 0.42 at a sun of 0 / -1 / -3 degrees, without it 2.36 / 1.50 / 0.80, the
-//         low band's red over green at -3 degrees 2.8 to 5.3; at -5 degrees and lower, and at 90
-//         and 180 degrees from the sun, within 0.02.
+//         but opaque just over the horizon the low sky toward a set sun fell into a dark band
+//         under the sky over it.
 //     The colours are the sky's illuminance colour (Atmosphere `sunIlluminance`), the open sky's
 //     times the weather's diffuse gain and the sun's times its direct share, the sun's before the
 //     weather's day sky (Sky.ts `sunBeamIlluminance`: the day sky lowers the sky's own light the
@@ -493,7 +487,7 @@ export class VolumetricHaze {
 	readonly fog = uniform( 0 );
 	// the hour's and the weather's key (HazeKeys.ts, `setLook`): each band's sigma, the light's
 	// desaturation, the weather's gain over `gain`, the sun's share in the Rayleigh light and the two shares'
-	// weights, the medium's shape (the ground layer's top over the island's level and its width,
+	// weights, the medium's shape (the ground layer's top over the sea and its width,
 	// the aerosol layer's share, scale height and top, the dome's own depth per kilometre)
 	readonly look = { sigma: new THREE.Vector3( 1, 1, 1 ), desaturate: 0.26, gain: 1, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
 		top: 10, width: 50, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0 };
@@ -527,7 +521,7 @@ export class VolumetricHaze {
 	// the medium: the exponential layer ( density at sea level, scale height ) and the ground layer
 	// ( rho_f, top, width ), from the weather and the settings, and each band's sigma
 	private readonly layer = uniform( new THREE.Vector3( 0, 1400, AEROSOL_OPEN ) );
-	private readonly ground = uniform( new THREE.Vector3( 0, 13, 50 ) );
+	private readonly ground = uniform( new THREE.Vector3( 0, 14, 9.431 ) );
 	private readonly sigma = uniform( new THREE.Vector3( 1, 1, 1 ) );
 	// the dome's own thin haze (the key's `skyDepth`), in the medium's depth per metre before each
 	// band's sigma: green's optical depth per metre over green's sigma (`skyHaze` with `dome`)
@@ -1283,7 +1277,7 @@ export class VolumetricHaze {
 		const look = this.look;
 		this.sigma.value.copy( look.sigma );
 		const rho = this.haze.value / 2 + this.fog.value * S.fogExtinction / ( 2 * Math.max( look.sigma.y, 1e-6 ) );
-		this.ground.value.set( rho, ISLAND_TOP + look.top, look.width );
+		this.ground.value.set( rho, look.top, look.width );
 		this.layer.value.set( rho * look.aerosolShare, look.aerosolHeight, Math.min( look.aerosolTop, AEROSOL_OPEN ) );
 		this.skyDepth.value = look.skyDepth / 1000 / Math.max( look.sigma.y, 1e-6 );
 		const copy = this.cloudMedium;
@@ -1465,8 +1459,11 @@ export class VolumetricHaze {
 
 	}
 
-	/** Green's extinction at sea level (1/m), as the last `update` set it: how hazy the air is, for
-	 * the screen-space rays (LightShafts.ts), which stay near the camera. */
+	/** Green's extinction at sea level (1/m), as the last `update` set it, which the screen-space
+	 * rays (LightShafts.ts, off by default) read as how hazy the air is: under a clear or fair sky
+	 * about five times what they read when the air near the camera was thinned (more under cloud).
+	 * It is the sea's, not the camera's: on a clear day the air at the island camera's 68 m holds
+	 * about 1/27 of it. */
 	get seaLevelExtinction(): number {
 
 		return this.sigma.value.y * this.meanExtinctionAt( 0, 0 );

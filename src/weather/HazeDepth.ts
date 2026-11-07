@@ -104,7 +104,7 @@ export const hazeReach = Fn( ( [ dy, y, layer, ground, sigma, t0, t1 ]: [ F, F, 
 export class HazeMedium {
 
 	readonly layer = uniform( new THREE.Vector3( 0, 1400, AEROSOL_OPEN ) );
-	readonly ground = uniform( new THREE.Vector3( 0, 13, 50 ) );
+	readonly ground = uniform( new THREE.Vector3( 0, 14, 9.431 ) );
 	// the least extinguished band's sigma, the last to close: 0 (no haze over the sky, or no haze
 	// yet) reaches every distance
 	readonly sigma = uniform( 0 );
