@@ -365,9 +365,9 @@ const nightKey = ( elevation: number, stops: number ) => [ elevation, TWILIGHT_E
  * again", the parent of "feat(sky): light the night by the moon as the sun lights the day"): its
  * compare.txt lists the lift at each point, the night keys' stops, and at midnight the lift less
  * this constant, which should stay within a few hundredths of a stop. */
-export const NIGHT_METER_LIFT = 11.34;
+export const NIGHT_METER_LIFT = 12.44;
 const EXPOSURE_KEYS: readonly ( readonly [ number, number ] )[] = [
-	nightKey( - 12, NIGHT_METER_LIFT ), nightKey( - 11, 11.28 ), nightKey( - 10, 9.37 ), nightKey( - 9, 5.40 ), nightKey( - 8, 1.53 ),
+	nightKey( - 12, NIGHT_METER_LIFT ), nightKey( - 11, 12.37 ), nightKey( - 10, 10.38 ), nightKey( - 9, 6.27 ), nightKey( - 8, 2.26 ),
 	[ - 7, TWILIGHT_EXPOSURE ], [ - 6, TWILIGHT_EXPOSURE ], [ - 2.65, 19 ], [ 0, 11 ], [ 2, 10 ], [ 6.6, 5.5 ], [ 13.2, 3.4 ], [ 16.5, 2.85 ],
 	[ 19.75, 2.4 ], [ 26.2, 1.82 ], [ 32.5, 1.48 ], [ 50, 1.19 ],
 ];
