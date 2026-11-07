@@ -211,12 +211,16 @@ const sunBounceGain = tune( 'lighting.grade.sunBounce', 1, { min: 0.25, max: 4, 
  * not the land's whole ambient light under the deck over a clear day's: that ratio also holds the
  * bake's ratio of the two skies and the sun's bounce's share of the light. 1 leaves the land as the
  * sky and the table give it; it stands at 1.75, set with the key's gain under the deck (sky/Sky.ts
- * OVERCAST_KEY_GAIN) and the day sky (sky/Weather.ts `daySky`) on the lit open ground of seven
- * eye-height views of the overcast island: with the sun 14.5, 18 and 21 degrees up that ground's
- * ambient light reads 1.18 to 1.20 times a clear day's in the same place (the views' median; 1.15
- * to 1.26 over the views), the meadow's 0.97 to 1.03 (the views' median): the meadow's clear day
- * holds a larger share of the sun's bounce, which the deck takes away, and the gain is one for all
- * of the land. Tunable: `lighting.relight.overcastLand`. */
+ * OVERCAST_KEY_GAIN) and the day sky (sky/Weather.ts `daySky`). Read on three eye-height views 4 to
+ * 40 m deep (the sun to one side, behind and ahead, the camera 11 to 20 degrees down) with the sun
+ * 22 and 15 degrees up: on the ground and the meadow lit above their frame's median (a grey card's
+ * light, the lighting layer's light-only view, by cells), the direct light over the ambient light
+ * (the light-only view less the ambient-only view, over the ambient-only view, the cells' median)
+ * reads 18 to 20 at 22 degrees and 17 to 19 at 15; at 1.4 it read 22 to 24 and 20 to 23, at 1 29
+ * to 31 and 26 to 31, with little change in the whole frame. The gain leaves the meadow's spread of
+ * light (its 85th over its 15th percentile, 2.7 to 4.2) and a grove's floor's nearly as they are:
+ * they come from the shadows' shapes, not from this balance. Tunable:
+ * `lighting.relight.overcastLand`. */
 export const OVERCAST_LAND = tune( 'lighting.relight.overcastLand', 1.75, { min: 1, max: 2 } );
 
 /** The weight of the weather's land gain under overcast (OVERCAST_LAND) on the land's sky light
