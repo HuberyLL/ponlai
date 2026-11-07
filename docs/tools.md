@@ -739,7 +739,14 @@ with the sky, the sea, the darkest 5 % of the land and any boxes, into `<dir>/ro
 Each row also gives `card`, the mean luminance of the same cells on the light page in scene units, and
 each view the land's shares in sun, shade and penumbra. A view `<base>--<variant>` is read through the
 sort of `<base>`, so its rows are the same cells; variants need only `--pages normal`. It prints what
-the frames hold and judges nothing. Its header has the sort.
+the frames hold and judges nothing. Its header has the sort. `shoot --warm` lets the views of a page
+reach each other by the scene jump (a fraction of a page load, with the same frames and readings
+byte for byte, as checked on four views both ways): its read only reads, which `capture.mjs --ready-reads` tells the worker; an
+`--eval-ready` without it takes a page per view. `--jobs` is capture-set's page count. `rows --own`
+sorts each view by its own depth read (sky, sea, the land between them and the land's darkest 5 %),
+for views that share no camera, such as a camera turned at each frame; it needs only the normal
+page, and `--sky-mask-deg N` leaves the cells within N degrees of the sun or the moon out of the sky
+(by angle, from the page's read of the lights and the camera).
 
 `node tools/verify-growth-swap.mjs <base url> [--steps 6] [--views island,cliffs,meadow] [--q
 "query"] [--fresh-grow M] [--out dir]` checks the growth in place: a page loaded at `grow=0` and
@@ -792,7 +799,8 @@ and the usual readiness): only load-time options (quality, aa, size and dpr, deb
 new page, and a set shares them. The jump does not undo what an eval changed outside the scene's
 options and camera (GUI settings, Tune, debug flags), so the view after one with an eval of its own
 (an ad-hoc view's js, anything but exactly a views.mjs view's eval) loads a fresh page, and an
-`--eval` or `--eval-ready` passed through after `--` takes a page per view: every view is the frame
+`--eval` or `--eval-ready` passed through after `--` takes a page per view (an `--eval-ready` that
+`--ready-reads` declares read-only keeps the one page): every view is the frame
 its own fresh load draws. Views need not be views.mjs's: `--view "name:query[::js]"`,
 `--views-file f.json` and `--sweep "key=a,b,c"` (each view per value, e.g. `--sweep
 weather=fair,rain --sweep hour=7,12,17`) capture ad-hoc views through the same pages, jump and

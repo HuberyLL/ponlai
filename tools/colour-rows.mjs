@@ -3,12 +3,17 @@
 // sky in this view, before and after a change", where a hand-placed box mixes sun and shade.
 //
 //   node tools/colour-rows.mjs shoot <url> <dir> --views-file f.json [--pages normal,light,ambient,classes]
-//       [--size 2560x1440@1] [--q "extra&query"]
-//   node tools/colour-rows.mjs rows <dir> [--sort <dir>] [--boxes f.json] [--views a,b] [--out f.json] [--json]
+//       [--size 2560x1440@1] [--q "extra&query"] [--warm] [--jobs 1]
+//   node tools/colour-rows.mjs rows <dir> [--sort <dir> | --own [--sky-mask-deg N]] [--boxes f.json] [--views a,b] [--out f.json] [--json]
 //
 // shoot takes the frames: one tools/parity/capture-set.mjs run per page below, on one warm page
 // each, under the shared GPU lock, into `<dir>/<page>/`. The views file is capture-set's (a view's
 // `eval` sets its variant up). Each view ends with this tool's read of the page (PAGE_READ).
+// A page of a set takes one page per view, since an --eval-ready runs on every view and capture-set
+// cannot tell it only reads. --warm says so (capture.mjs --ready-reads: the page's read only reads
+// the frame back, which a scene jump leaves as it found it): the views of a page then reach each
+// other by the scene jump, a view as a jump instead of a load. A view with an eval of
+// its own still ends its page. --jobs is capture-set's page count (one by default).
 // Paths are taken from the cwd the tool is called in, wherever that is; the runs start in the repo.
 // rows is plain node over that output: no browser and no GPU. It prints what the frames hold and
 // nothing else: it knows no ranges and judges nothing. Exit 0, or 1 when a page or a view is missing.
@@ -30,6 +35,14 @@
 // a change, whatever the change does to the light. A view `<base>--<variant>` takes the sort of
 // `<base>` in the --sort directory (default <dir>), or its own name if that holds it. A variant's
 // frames therefore need only the normal page (`shoot --pages normal`).
+//
+// --own sorts each view by its own frame instead: sky, sea and land by the depth read of the view's
+// normal page alone (a cell more than 0.99 sky or sea; land, a cell with no sky and no sea texel
+// at all), with the floor of the land, and no kinds, light or card, so it needs neither a base view
+// nor the other pages. --sky-mask-deg N leaves the cells within N degrees of the sun or the moon out
+// of `sky` (the page's own read of the lights and the camera, so by angle, not by pixels; a light
+// more than a degree under the horizon has no disc to leave out). For views that do not share a camera (a camera turned at each frame, where
+// a cell that was land in one frame is sea in the next, and a base's cells would read sea as land).
 //
 // The rows (rows.json, `views.<view>.rows`), each { n, L, C, h, rgb, card }: `<kind> sun`, `<kind>
 // shade` and `<kind>` over all its cells for each kind that shows; `land sun` and `land shade`, the
@@ -54,7 +67,7 @@
 //
 // Output: `<dir>/rows.json` (or --out) and a table on stdout, or the JSON with --json.
 import './qos.mjs'; // first: the PNG decodes run with the application policy
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -80,10 +93,13 @@ const PAGE_READ = `async () => {
 	if ( P.flags.classes ) return { cls: ( await P.radiance( { ...cells, aov: 'class' } ) ).values };
 	if ( P.flags.lightOnly ) return { opaque: short( ( await P.radiance( { ...cells, source: 'opaque' } ) ).grid.rgb ) };
 	const { r, g, b } = P.sky.keyColor;
+	const matrix = ( m ) => Array.from( m.elements, ( v ) => Number( v.toPrecision( 8 ) ) );
 	return {
 		exposure: await P.pipeline.readExposure(),
 		depth: short( ( await P.radiance( { ...cells, aov: 'depth' } ) ).values ),
 		key: { colour: [ r, g, b ], dir: P.sky.keyDir.toArray() },
+		lights: { sun: P.sky.sunDir.toArray(), moon: P.sky.moonDir.toArray() },
+		view: { world: matrix( P.camera.matrixWorldInverse ), proj: matrix( P.camera.projectionMatrix ) },
 		elevation: P.sky.elevation,
 		note: P.colourNote ?? null,
 	};
@@ -107,7 +123,7 @@ function parse( list, known ) {
 		if ( ! a.startsWith( '--' ) ) { positional.push( a ); continue; }
 		const k = a.slice( 2 );
 		if ( ! known.includes( k ) ) usage( `unknown option ${ a }` );
-		if ( k === 'json' ) options.json = true;
+		if ( k === 'json' || k === 'warm' || k === 'own' ) options[ k ] = true;
 		else if ( list[ i + 1 ] === undefined ) usage( `${ a } needs a value` );
 		else options[ k ] = list[ ++ i ];
 
@@ -116,9 +132,29 @@ function parse( list, known ) {
 
 }
 
-function shoot( list ) {
+// runs a command with the output on ours; a SIGTERM or SIGINT to this process goes on to it (the
+// GPU lock's run forwards it to the capture below, which closes its browser)
+function runChild( file, args ) {
 
-	const { positional, options } = parse( list, [ 'views-file', 'pages', 'size', 'q' ] );
+	return new Promise( ( resolve ) => {
+
+		const child = spawn( process.execPath, [ file, ...args ], { cwd: REPO, stdio: 'inherit' } );
+		const handlers = [ 'SIGTERM', 'SIGINT' ].map( ( signal ) => [ signal, () => child.kill( signal ) ] );
+		for ( const [ signal, handler ] of handlers ) process.on( signal, handler );
+		child.on( 'close', ( code ) => {
+
+			for ( const [ signal, handler ] of handlers ) process.off( signal, handler );
+			resolve( code ?? 1 );
+
+		} );
+
+	} );
+
+}
+
+async function shoot( list ) {
+
+	const { positional, options } = parse( list, [ 'views-file', 'pages', 'size', 'q', 'jobs', 'warm' ] );
 	if ( positional.length !== 2 || ! options[ 'views-file' ] ) usage( 'shoot needs <url> <dir> --views-file f.json' );
 	const url = positional[ 0 ], dir = path.resolve( positional[ 1 ] ), viewsFile = path.resolve( options[ 'views-file' ] );
 	const pages = ( options.pages ?? Object.keys( PAGES ).join( ',' ) ).split( ',' );
@@ -127,10 +163,10 @@ function shoot( list ) {
 
 		const q = [ PAGES[ page ], options.q ].filter( Boolean ).join( '&' );
 		console.log( `colour-rows: page ${ page }` );
-		const run = spawnSync( process.execPath, [ 'tools/gpu-lock.mjs', 'run', '--shared', '--',
-			process.execPath, 'tools/parity/capture-set.mjs', url, path.join( dir, page ), '--size', options.size ?? '2560x1440@1', '--jobs', '1',
-			'--views-file', viewsFile, ...( q ? [ '--q', q ] : [] ), '--', '--eval-ready', PAGE_READ ], { cwd: REPO, stdio: 'inherit' } );
-		if ( run.status !== 0 ) {
+		const status = await runChild( 'tools/gpu-lock.mjs', [ 'run', '--shared', '--',
+			process.execPath, 'tools/parity/capture-set.mjs', url, path.join( dir, page ), '--size', options.size ?? '2560x1440@1', '--jobs', options.jobs ?? '1',
+			'--views-file', viewsFile, ...( q ? [ '--q', q ] : [] ), '--', ...( options.warm ? [ '--ready-reads' ] : [] ), '--eval-ready', PAGE_READ ] );
+		if ( status !== 0 ) {
 
 			console.error( `colour-rows: page ${ page } failed` );
 			return 1;
@@ -327,9 +363,57 @@ function boxRow( { width, height, data }, [ x0, y0, w, h ] ) {
 
 }
 
+// whether a cell lies within `deg` degrees of the sun or the moon, as the page read them (--own
+// --sky-mask-deg): each cell's ray from the camera's projection, each light's direction in the
+// camera's frame. A light more than a degree under the horizon has no disc to see, only the glow
+// that the sky is.
+function nearLight( read, deg ) {
+
+	if ( ! read.view || ! read.lights ) throw new Error( 'the pages hold no read of the lights and the camera (shot by an older colour-rows): shoot again' );
+	const { world: e, proj } = read.view;
+	const lights = Object.values( read.lights ).filter( ( d ) => d[ 1 ] > - Math.sin( Math.PI / 180 ) )
+		.map( ( d ) => [ e[ 0 ] * d[ 0 ] + e[ 4 ] * d[ 1 ] + e[ 8 ] * d[ 2 ], e[ 1 ] * d[ 0 ] + e[ 5 ] * d[ 1 ] + e[ 9 ] * d[ 2 ], e[ 2 ] * d[ 0 ] + e[ 6 ] * d[ 1 ] + e[ 10 ] * d[ 2 ] ] );
+	const cos = Math.cos( deg * Math.PI / 180 );
+	return ( c ) => {
+
+		const x = ( ( c % NX + 0.5 ) / NX * 2 - 1 ) / proj[ 0 ], y = ( 1 - ( Math.floor( c / NX ) + 0.5 ) / NY * 2 ) / proj[ 5 ], length = Math.hypot( x, y, 1 );
+		return lights.some( ( l ) => ( x * l[ 0 ] + y * l[ 1 ] - l[ 2 ] ) / length > cos );
+
+	};
+
+}
+
+// the sort of a view by its own depth read (--own): sky and sea cells, and the land between them
+function ownSortOf( read, maskDeg ) {
+
+	const depth = read.depth, near = maskDeg > 0 ? nearLight( read, maskDeg ) : () => false;
+	const cells = {}, land = [];
+	let masked = 0;
+	for ( let c = 0; c < NX * NY; c ++ ) {
+
+		const sky = depth[ c * 3 + 1 ], sea = depth[ c * 3 + 2 ];
+		if ( sky > 0.99 ) {
+
+			if ( near( c ) ) masked ++;
+			else ( cells.sky ??= [] ).push( c );
+
+		}
+		if ( sea > 0.99 ) ( cells.sea ??= [] ).push( c );
+		if ( sky === 0 && sea === 0 ) land.push( c );
+
+	}
+	cells.land = land;
+	return { land, cells, p95: null, shares: null, masked };
+
+}
+
 function rows( list ) {
 
-	const { positional, options } = parse( list, [ 'sort', 'boxes', 'views', 'out', 'json' ] );
+	const { positional, options } = parse( list, [ 'sort', 'own', 'sky-mask-deg', 'boxes', 'views', 'out', 'json' ] );
+	if ( options.own && options.sort ) usage( '--own and --sort do not mix' );
+	if ( options[ 'sky-mask-deg' ] !== undefined && ! options.own ) usage( '--sky-mask-deg goes with --own' );
+	const maskDeg = Number( options[ 'sky-mask-deg' ] ?? 0 );
+	if ( ! ( maskDeg >= 0 ) ) usage( `bad --sky-mask-deg ${ options[ 'sky-mask-deg' ] }` );
 	if ( positional.length !== 1 ) usage( 'rows needs <dir>' );
 	const dir = positional[ 0 ], sortDir = options.sort ?? dir;
 	const boxes = options.boxes ? JSON.parse( readFileSync( options.boxes, 'utf8' ) ) : {};
@@ -341,11 +425,11 @@ function rows( list ) {
 	const sorts = new Map(), views = {};
 	for ( const view of names ) {
 
-		const base = existsSync( path.join( sortDir, 'classes', `${ view }.json` ) ) ? view : view.split( '--' )[ 0 ];
-		if ( ! sorts.has( base ) ) sorts.set( base, sortOf( sortDir, base ) );
-		const sort = sorts.get( base );
+		const base = options.own ? view : existsSync( path.join( sortDir, 'classes', `${ view }.json` ) ) ? view : view.split( '--' )[ 0 ];
 		const read = pageValue( dir, 'normal', view ), pixels = framePixels( dir, view ), colours = cellColours( pixels );
-		const light = existsSync( path.join( dir, 'light', `${ view }.json` ) ) ? pageValue( dir, 'light', view ).opaque : null;
+		if ( ! options.own && ! sorts.has( base ) ) sorts.set( base, sortOf( sortDir, base ) );
+		const sort = options.own ? ownSortOf( read, maskDeg ) : sorts.get( base );
+		const light = ! options.own && existsSync( path.join( dir, 'light', `${ view }.json` ) ) ? pageValue( dir, 'light', view ).opaque : null;
 		const out = {};
 		for ( const row of Object.keys( sort.cells ).sort() ) out[ row ] = cellsRow( colours, sort.cells[ row ], light );
 		// the darkest of this frame's own land, whichever cells those are now
@@ -357,10 +441,10 @@ function rows( list ) {
 
 		}
 		const own = Object.entries( boxes[ base ] ?? {} ).map( ( [ name, box ] ) => [ name, boxRow( pixels, box ) ] );
-		views[ view ] = { sort: base, ev: read.exposure.ev, exposure: read.exposure.exposure, elevation: read.elevation, key: read.key, p95: round( sort.p95 ), shares: sort.shares, note: read.note, rows: out, ...( own.length ? { boxes: Object.fromEntries( own ) } : {} ) };
+		views[ view ] = { sort: base, ev: read.exposure.ev, exposure: read.exposure.exposure, elevation: read.elevation, key: read.key, p95: sort.p95 === null ? null : round( sort.p95 ), shares: sort.shares, ...( options.own ? { skyMasked: sort.masked } : {} ), note: read.note, rows: out, ...( own.length ? { boxes: Object.fromEntries( own ) } : {} ) };
 
 	}
-	const result = { grid: [ NX, NY ], cell: CELL, sort: sortDir, views };
+	const result = { grid: [ NX, NY ], cell: CELL, sort: options.own ? 'own' : sortDir, ...( options.own ? { skyMaskDeg: maskDeg } : {} ), views };
 	writeFileSync( options.out ?? path.join( dir, 'rows.json' ), JSON.stringify( result, null, '\t' ) );
 	if ( options.json ) {
 
@@ -371,8 +455,12 @@ function rows( list ) {
 	const line = ( name, r ) => `  ${ name.padEnd( 16 ) } ${ String( r.n ).padStart( 6 ) }  ${ r.L === null ? '-' : `${ r.L.toFixed( 2 ) } ${ r.C.toFixed( 3 ) } ${ r.h.toFixed( 0 ).padStart( 3 ) }` }${ r.card == null ? '' : `  card ${ r.card.toPrecision( 3 ) }` }`;
 	for ( const [ view, v ] of Object.entries( views ) ) {
 
-		const { sun, shade, penumbra } = v.shares;
-		console.log( `${ view }  EV ${ v.ev.toFixed( 2 ) }  sun ${ v.elevation.toFixed( 1 ) } deg  (sort ${ v.sort }, p95 ${ v.p95.toFixed( 2 ) }; land in sun ${ sun.toFixed( 2 ) }, shade ${ shade.toFixed( 2 ) }, penumbra ${ penumbra.toFixed( 2 ) })` );
+		if ( v.shares ) {
+
+			const { sun, shade, penumbra } = v.shares;
+			console.log( `${ view }  EV ${ v.ev.toFixed( 2 ) }  sun ${ v.elevation.toFixed( 1 ) } deg  (sort ${ v.sort }, p95 ${ v.p95.toFixed( 2 ) }; land in sun ${ sun.toFixed( 2 ) }, shade ${ shade.toFixed( 2 ) }, penumbra ${ penumbra.toFixed( 2 ) })` );
+
+		} else console.log( `${ view }  EV ${ v.ev.toFixed( 2 ) }  sun ${ v.elevation.toFixed( 1 ) } deg  (own sort)` );
 		for ( const [ name, r ] of Object.entries( v.rows ) ) console.log( line( name, r ) );
 		for ( const [ name, b ] of Object.entries( v.boxes ?? {} ) ) {
 
@@ -390,7 +478,7 @@ const [ command, ...rest ] = process.argv.slice( 2 );
 if ( command !== 'shoot' && command !== 'rows' ) usage( `no command ${ command ?? '' }` );
 try {
 
-	process.exit( command === 'shoot' ? shoot( rest ) : rows( rest ) );
+	process.exit( command === 'shoot' ? await shoot( rest ) : rows( rest ) );
 
 } catch ( error ) {
 

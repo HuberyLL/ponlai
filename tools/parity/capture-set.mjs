@@ -35,7 +35,8 @@
 //   tools/verify-scene-jump.mjs checks from other scenes). After a view with an eval of its own
 //   (`--view ...::js`, a views-file `eval`, a `like=` view's js, a sweep over such a view;
 //   adhoc.mjs `jumpClean`) the page ends and the next view loads fresh; an `--eval` or
-//   `--eval-ready` after `--` (run on every view) gives a page per view. A view's JSON says how it
+//   `--eval-ready` after `--` (run on every view) gives a page per view, except an `--eval-ready` that
+//   `--ready-reads` (also after `--`) declares read-only: its views keep the one page. A view's JSON says how it
 //   was reached (`page`: visit, load or jump, the view before, the page's memory). The views are handed out one at a time from one queue, so --jobs
 //   balances itself. Builds whose page does not mark the exact jump (`__PONLAI__.sceneJump`; older
 //   commits) get a page per view, as before, said once; --page-per-view forces that. A stored
