@@ -18,8 +18,8 @@ export const shared = {
 	// it. LAWN_GAIN: the blades' albedo on load (Grass.ts)
 	lawnGain: uniform( LAWN_GAIN ),
 	// the cliff's albedo above the water against its stone (TerrainMaterial.ts `rock`); 1 the stone as
-	// it is. 1.6: the stone at about twice the meadow's albedo (about 0.18); under the water it takes
-	// 0.7 (TerrainMaterial.ts), so a stone parts from the sand round it
+	// it is. 1.6: the stone at about twice the meadow's albedo (about 0.18); under the water it keeps
+	// SUBMERGED_ROCK of it (TerrainMaterial.ts), darker only by the water round it
 	rockGain: uniform( 1.6 ),
 	// the trees' leaves' albedo against their atlas (world/vegetation/TreeSurfaces.ts leafMaterial:
 	// the bamboo's crowns); 1 the atlas as it is: the leaves about 1.5 times the meadow's albedo
