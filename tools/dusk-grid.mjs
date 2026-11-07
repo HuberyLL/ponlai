@@ -44,7 +44,7 @@
 // settled signal (tools/capture-browser.mjs `waitForSettled`) and the reads. The frame loop is
 // stopped between points, when the lock may be given up.
 //
-// The reads (the names of the round they come from; scene units, luminance)
+// The reads (scene units, luminance)
 //   CPU: E (pi times the sky's irradiance), Edeck (the deck's, read back), mS (the sky's metering
 //   log2) and mS2 = 2^mS, the far sea's seaBody / seaRadiance / seaNight / seaSun, the air's
 //   airAmb0 / airAmb1 / airMie0 / airDeckShare / airKeyFloor, keyIsMoon, keyColour, keyCloudFloor,
@@ -139,7 +139,7 @@
 //     the T state), the moon's key at night K = q - q0( moonKey ) at midnight, and the condition
 //     T( e_d ) - T( night ) >= K (pass / fail) with T( e_d ) / K; then the line
 //     `floor <weather> landKeyFloor(night)/M(night) = x.xx %` (landKeyFloor / pi over M, M being
-//     lum( E ) / pi; < 5 %: move-to-ambient, >= 5 %: keep, report), with the key's measured share
+//     lum( E ) / pi; marked under or over 5 %), with the key's measured share
 //     of M at night beside it;
 //   terms.txt (with --split, --night-split or --twilight): per quantity and point, q, T, each night name's inc,
 //     the residual, `night` and `noLights`;
@@ -1186,7 +1186,7 @@ if ( splitNames.includes( 'moonKey' ) && nightNames.length ) {
 
 			const M = night.values[ `${ v }.M` ], floor = night.values.landKeyFloor / Math.PI / M;
 			const key = night.shares?.moonKey ? ( M - night.shares.moonKey.q0[ `${ v }.M` ] ) / M : null;
-			h.push( `floor  ${ weather }  landKeyFloor(night)/M(night) = ${ ( floor * 100 ).toFixed( 2 ) } %   ${ floor < 0.05 ? '< 5 %: move-to-ambient' : '>= 5 %: keep, report' }   (the key's measured share of M at night: ${ key === null ? '-' : `${ ( key * 100 ).toFixed( 2 ) } %` })` );
+			h.push( `floor  ${ weather }  landKeyFloor(night)/M(night) = ${ ( floor * 100 ).toFixed( 2 ) } %   ${ floor < 0.05 ? '< 5 %' : '>= 5 %' }   (the key's measured share of M at night: ${ key === null ? '-' : `${ ( key * 100 ).toFixed( 2 ) } %` })` );
 
 		}
 		h.push( '' );
