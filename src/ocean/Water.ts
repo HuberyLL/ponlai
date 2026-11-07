@@ -39,8 +39,10 @@ import { motionNode, motionState, motionUniforms, outputStruct, reactiveUniforms
 import { sceneUnits } from '../post/PreExposure.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 
-// The sea surface: an FFT-displaced grid shaded as tidewater's WaterMaterial (4811ba4, its above-water
-// branch; the camera never goes under the sea):
+// The sea surface: an FFT-displaced grid whose shading takes tidewater's WaterMaterial (4811ba4, its
+// above-water branch: the normal, the Fresnel and the sky's reflection, its gate, the refracted ray to
+// the floor, the foam) with the water body and the sun's glint our own (below; the camera never goes
+// under the sea):
 //   - the normal from the cascades' slopes over their horizontal stretch (WaterSurface), with
 //     near-field capillary ripples (in the reflection and the glint, not the refraction), the rocky
 //     shore's reflected wave and the rain's rings
@@ -87,12 +89,13 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     resolves, the slopes and the waves' occlusion, not a grade of the sky's colour); both read the sea's slopes before the waves' damping, so a lee stands level with the sea round it, never a pale tongue
 //     of a mirror's reflectance; the screen-space reflection of the cliffs and the islanders behind
 //     tidewater's gate (rays near the horizon, reflectance over 0.05)
-//   - the key's specular: the sun's GGX of the base roughness and the slopes the pixel cannot resolve
-//     (Cox-Munk's mean square slope for the wind, the share finer than the pixel), under a soft
-//     ceiling that falls as the sun climbs (`GLINT_KNEE`), so a high sun's lobe does not blow whole
-//     swells white from above and a low sun keeps its road on the water; the moon's, a Gaussian lobe
-//     without GGX's tail, of a smaller share of those slopes, under a fixed ceiling (`MOON_KNEE`), so
-//     its field stands broken on the dark sea
+//   - the key's specular: the sun's Beckmann lobe of the base roughness and the slopes the pixel
+//     cannot resolve (Cox & Munk 1954's mean square slope for the wind, J. Opt. Soc. Am. 44:838, the
+//     share finer than the pixel), which is the distribution's alpha^2 itself, with Beckmann's Smith
+//     shadowing (Walter et al. 2007's rational form), and no ceiling but half float's: a glint is
+//     some 1e5 times the sky, and the display chain takes it from there; the moon's, the same
+//     Gaussian lobe of twice a smaller share of those slopes, with GGX's visibility, under a fixed
+//     ceiling (`MOON_KNEE`), so its field stands broken on the dark sea (values set for the moon)
 //   - refraction: the refracted view ray (through the surface without the near ripples) followed to
 //     the floor's height field, its end projected
 //     into the refraction pass's image of the world under the sea (Refraction.ts, through its wider
@@ -123,8 +126,10 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 // Kept of our own: the grid and its skirt, the waves' damping by the shore (the vertex stage), the
 // rocky shore's reflected wave and the foam the waves leave on it (ShoreWaves), the reflection march with its box and the cliff foot's
 // lifted hit (traceSSR), the soft line where the surface cuts the rock, the motion vectors, the
-// rain's ripples and the storm's foam (parked weathers), and the open sea's deepening past the
-// shelf (OPEN_DEEPENING), which fades the floor's light out before the far floor's edge.
+// rain's ripples and the storm's foam (parked weathers), the open sea's deepening past the
+// shelf (OPEN_DEEPENING), which fades the floor's light out before the far floor's edge, the water
+// body, Lee et al. 1999's shallow-water reflectance of the sea's measured optics (WATER_BODY), and
+// the sun's glint, Beckmann's lobe of Cox & Munk's slopes (`D_Gaussian`, `smithG1`).
 // The sea continues to the horizon: a skirt around the wave grid out to SKIRT_RADIUS, whose outer
 // ring stands at the eye's height (`onHorizon`), so from any height the sea's far edge meets the
 // sky at the eye's level, where the dome's horizon lies. Left flat, the ring stood a little under
@@ -228,7 +233,8 @@ const normalCdf = Fn( ( [ x ]: [ F ] ) => {
 } ).setLayout( { name: 'normalCdf', type: 'float', inputs: [ { name: 'x', type: 'float' } ] } );
 
 // Smith's shadowing of a ray at elevation sine `y` over Gaussian slopes of spread `s` along its
-// azimuth (the Beckmann distribution's G1 in Walter et al.'s rational form), 0 at or under the horizon
+// azimuth (the Beckmann distribution's G1 in the rational form of Walter, Marschner, Li & Torrance
+// 2007, "Microfacet Models for Refraction through Rough Surfaces", EGSR), 0 at or under the horizon
 const smithG1 = Fn( ( [ y, s ]: [ F, F ] ) => {
 
 	const c = clamp( y, 0, 0.9999 ).toVar();
@@ -238,14 +244,8 @@ const smithG1 = Fn( ( [ y, s ]: [ F, F ] ) => {
 
 } ).setLayout( { name: 'smithG1', type: 'float', inputs: [ { name: 'y', type: 'float' }, { name: 's', type: 'float' } ] } );
 
-const D_GGX = Fn( ( [ NdH, a2 ]: [ F, F ] ) => {
-
-	const d = NdH.mul( NdH ).mul( a2.sub( 1 ) ).add( 1 );
-	return a2.div( d.mul( d ).mul( PI ) );
-
-} ).setLayout( { name: 'D_GGX', type: 'float', inputs: [ { name: 'NdH', type: 'float' }, { name: 'a2', type: 'float' } ] } );
-
-// the Gaussian (Beckmann) distribution of the same alpha^2 (the moon's lobe, MOON_UNRESOLVED)
+// the Gaussian (Beckmann) distribution of slopes of mean square alpha^2 over both axes (the glint's,
+// the sun's and the moon's)
 const D_Gaussian = Fn( ( [ NdH, a2 ]: [ F, F ] ) => {
 
 	const cos2 = max( NdH.mul( NdH ), 1e-6 ).toVar();
@@ -292,25 +292,22 @@ const SHORE_FOAM_SCALE = 1;
 // At the handover between them the key has no energy, so the step is not seen.
 export const keyChroma = uniform( 1 );
 
-// The glint's soft ceiling: the specular S eases toward S / ( 1 + GLINT_KNEE S y^2 ), y the sine of the
-// sun's height. Seen from above at a high sun the eye stands inside the lobe with the waves' slopes
-// unresolved, and the lobe drew swell-sized blobs of pure white; the ceiling stands the sparkle under
-// white. It rises with the square of the falling sun, so a low sun's road keeps its blaze. At y 0.77
-// it stands near half a sunlit white card.
-const GLINT_KNEE = 13.25;
-
-// The moon's glint. GGX's long tail is what a sun's lobe hides under the bright water body, but a moon
-// at a hundredth of its peak is still brighter than the whole moonlit sea: at the moon's height every
-// slope of the waves lies within about three alpha of the mirror, and the tail laid a lit sheet
-// between the glints. So under the moon the lobe is a Gaussian of the same alpha (Beckmann), the shape
-// the sea's near-Gaussian slopes give in any case (Cox-Munk), and between its glints the water falls
-// to the sea's own level. Narrowing GGX does not do it: the tail stays and the tops blow.
+// The moon's glint. The sun's and the moon's glints share Beckmann's lobe (`D_Gaussian`), the shape the
+// sea's near-Gaussian slopes give (Cox-Munk); a long-tailed lobe such as GGX's would lay a lit sheet
+// between the moon's glints, since a moon at a hundredth of its peak is still brighter than the whole
+// moonlit sea and at its height every slope lies within about three alpha of the mirror. The two
+// differ only in what the night keeps as it was tuned: under the moon the glint's visibility is
+// still GGX's height-correlated Smith term (`V_SmithGGX`) and its alpha and ceiling are the moon's
+// own (below), where the sun takes Beckmann's own separable Smith shadowing and no ceiling. The
+// glint mixes the two by `keyChroma`, exactly 0 under the moon, so the night draws as it did before
+// the sun's lobe became physical.
 // MOON_UNRESOLVED scales the slopes no pixel resolves in the moon's alpha alone, which sets the size
 // of the field, not the level between its glints: the part of the frame above L .6 goes about 2.5 %
 // at 1, 2.0 % at .7, 1.7 % at .5, and the field's median .57, .47, .39 with it.
-// MOON_KNEE is the moon's soft ceiling, the sun's form with a constant in place of its height: G / ( G
-// MOON_KNEE + 1 ) takes the hard top off the near-white core and leaves the broken field as it is (the
-// field's p99 .965 at 0, .907 at 1.5, .860 at 3).
+// MOON_KNEE is the moon's soft ceiling: G / ( G MOON_KNEE + 1 ) takes the hard top off the near-white
+// core and leaves the broken field as it is (the field's p99 .965 at 0, .907 at 1.5, .860 at 3). The moon's alpha^2 takes twice the slopes' mean square
+// and its lobe GGX's visibility: values set for the moon, which the sun's physical lobe leaves as they
+// are (the glint's `keyChroma` mix is exactly 0 under the moon).
 const MOON_UNRESOLVED = 0.7, MOON_KNEE = 1.5;
 
 // The key's shadow on the sea. Deep water has no surface to take a shadow on: a shadow shows there as
@@ -561,7 +558,9 @@ export class Water {
 	readonly reflectionBounds: THREE.Box3;
 	// tidewater's water material's settings
 	uniforms = {
-		roughness: uniform( 0.035 ), // GGX alpha of the surface the slopes do not describe
+		// the alpha of the slopes the cascades do not describe: Beckmann's for the sun's glint, GGX's
+		// for the moon's
+		roughness: uniform( 0.035 ),
 		ssr: uniform( 1 ),
 		reflection: uniform( 1 ),
 		foamIntensity: uniform( 1 ),
@@ -1039,8 +1038,9 @@ export class Water {
 			const mss = windSpeed.mul( COX_MUNK.perWind ).add( COX_MUNK.base );
 			const unresolvedShare = sat( log2( footprint.mul( 110 / PI ) ).div( 9 ) ).toVar();
 			const unresolved = unresolvedShare.mul( rough.mul( rough ) ).toVar();
-			// (the moon's alpha takes a smaller share of those slopes: MOON_UNRESOLVED)
-			const alpha2 = u.roughness.mul( u.roughness ).add( mss.mul( 2 ).mul( unresolved ).mul( mix( float( MOON_UNRESOLVED ), float( 1 ), keyChroma ) ) ).add( foam.mul( 0.2 ) ).toVar();
+			// (Cox-Munk's mean square slope over both axes is Beckmann's alpha^2 itself; the moon's alpha
+			// takes twice it, of a smaller share of those slopes: MOON_UNRESOLVED)
+			const alpha2 = u.roughness.mul( u.roughness ).add( mss.mul( mix( float( 2 ), float( 1 ), keyChroma ) ).mul( unresolved ).mul( mix( float( MOON_UNRESOLVED ), float( 1 ), keyChroma ) ) ).add( foam.mul( 0.2 ) ).toVar();
 			const sigmaUnresolved = sqrt( mss.mul( unresolved ) ).toVar();
 			// the mean surface's: the same share of the sea's slopes, before the waves' damping
 			const sigmaMean = sqrt( mss.mul( unresolvedShare ).mul( sea.x.mul( sea.x ) ) ).toVar();
@@ -1136,17 +1136,21 @@ export class Water {
 			} );
 			refl.mulAssign( u.reflection );
 
-			// ---- the key's specular: GGX under the sun, a Gaussian lobe under the moon
-			// (MOON_UNRESOLVED), the shadowed light above
+			// ---- the key's specular: Beckmann's (Gaussian) distribution of the slopes' alpha^2 under
+			// the sun and the moon; under the sun with Beckmann's own Smith shadowing (smithG1 per axis
+			// of spread sqrt( alpha^2 / 2 ), separable), under the moon with GGX's visibility and a soft
+			// ceiling, the values set for the moon (MOON_UNRESOLVED, MOON_KNEE); the shadowed light above
 			const H = normalize( L.add( V ) );
 			const NdL = max( dot( N, L ), 0 ).toVar();
 			const NdH = max( dot( N, H ), 0 ).toVar();
-			const spec = mix( D_Gaussian( NdH, alpha2 ), D_GGX( NdH, alpha2 ), keyChroma ).mul( V_SmithGGX( NdL, NdV, alpha2 ) )
+			const sBeckmann = sqrt( alpha2.mul( 0.5 ) ).toVar();
+			const vBeckmann = smithG1( NdL, sBeckmann ).mul( smithG1( NdV, sBeckmann ) ).div( max( NdL.mul( NdV ).mul( 4 ), 1e-5 ) );
+			const spec = D_Gaussian( NdH, alpha2 ).mul( mix( V_SmithGGX( NdL, NdV, alpha2 ), vBeckmann, keyChroma ) )
 				.mul( fresnelDielectric( max( dot( V, H ), 0 ), float( IOR ) ) ).mul( NdL );
 			// (physically a glint is some 1e5 times the sky; held inside half float's range)
 			const glintLight = mix( vec3( luminance( glintKey ) ), glintKey, keyChroma ).toVar();
 			const glint = min( spec, 400 ).toVar();
-			const knee = mix( float( MOON_KNEE ), L.y.mul( L.y ).mul( GLINT_KNEE ), keyChroma );
+			const knee = mix( float( MOON_KNEE ), float( 0 ), keyChroma );
 			const sunSpec = glintLight.mul( glint.div( glint.mul( knee ).add( 1 ) ) ).toVar();
 
 			// ---- refraction: the refracted view ray (Snell; kept heading down where a coarse crest
