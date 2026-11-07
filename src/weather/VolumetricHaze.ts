@@ -110,13 +110,14 @@ const LIGHT_DEBUG = {
 	sun: tuneUniform( 'haze.debug.sun', 1, { min: 0, max: 1 } ),
 	noShadow: tuneUniform( 'haze.debug.noShadow', 0, { min: 0, max: 1 } ),
 };
+// the points along the sun's ray at which the banks' own shade is taken (metres from the froxel)
+// and the stretch of the ray each stands for
+const BANK_SHADE = [ [ 4, 8 ], [ 14, 12 ] ] as const;
 // the ground layer alone, for HazeDepth.ts `meanExtinction`: the exponential layer empty
 const GROUND_ONLY = vec3( 0, 1000, AEROSOL_OPEN );
 // how far above the fog layer's top, in its widths, the drift is taken (the layer's density there
 // is under 1/16 of its deep part's)
 const DRIFT_REACH = 8;
-// the rays across the view the drift's mean is taken along (an 8 x 8 grid: `driftKernel`)
-const DRIFT_SIDE = 8, DRIFT_RAYS = DRIFT_SIDE * DRIFT_SIDE;
 
 // The air's haze and the sea's fog as one participating medium in a froxel volume, after Patry,
 // "Real-Time Samurai Cinema", SIGGRAPH 2021 (its volumetric haze, built on Wronski, SIGGRAPH 2014,
@@ -142,8 +143,8 @@ const DRIFT_SIDE = 8, DRIFT_RAYS = DRIFT_SIDE * DRIFT_SIDE;
 //     deck it runs on over any height (HazeDepth.ts AEROSOL_OPEN) and every depth keeps its bits. An
 //     optical depth is a ray's length times the mean density over the heights it spans: the closed
 //     form along the ray, which holds its value on a level ray with no branch. The only local
-//     variation in the density is the fog layer's drift (below, The fog layer); banks and wisps
-//     belong to particles. The closed form lives in
+//     variation in the density is the fog layer's banks (below, The fog layer). The closed form
+//     lives in
 //     HazeDepth.ts, which the clouds' march shares: `prepareMedium` writes the medium into the
 //     clouds' copy too (`cloudMedium`), and the low deck's view march ends where it closes.
 //   - the extinction is spectral: each band's is the density times the band's weight sigma, keyed
@@ -346,19 +347,22 @@ const DRIFT_SIDE = 8, DRIFT_RAYS = DRIFT_SIDE * DRIFT_SIDE;
 //     bring the lit fog's level up, the island's and the clouds' shadows still cut it. The dome,
 //     the environment's bake (`openSky`) and the probe take the same light by the ground layer's
 //     share of the mean density along their rays, without the drift.
-//     The fog's density drifts (FogNoise.ts): the fog's part of each froxel's density, up to
-//     DRIFT_REACH of the layer's widths over its top, is multiplied by a noise of mean about 1 that
-//     the wind carries and that slowly reshapes, so the fog thins and thickens in patches about the
-//     size of the island. A drift kernel (`driftKernel`, DRIFT_RAYS rays over the view, each ending
-//     at the sea, whose heights the closed form clamps to its densest) takes the noise's mean over
-//     the view, weighted by the share of each slice's fog that reaches the eye, and the light
-//     kernel divides by it, so the frame's mean opacity holds as the patches pass. The light kernel
-//     stores in the volume's alpha the ratio of the drifted optical depth to the undrifted one,
-//     each summed from the eye to the slice, and the composite multiplies the exact depth it
-//     recomputes by it (`fogOver`'s `drifted`): the density anti-aliasing keeps its smooth depth
-//     and shows the patches at the grid's resolution. The drift is a function of the wind's
-//     integrated travel and the gusts' time, so a paused frame holds it. The clouded share
-//     (HazeKeys.ts) turns the layer back into the hour's thin haze, and the night has none.
+//     The fog gathers into banks that drift (FogNoise.ts): the fog's part of each froxel's density,
+//     up to DRIFT_REACH of the layer's widths over its top, is multiplied by a factor of mean 1 that
+//     the wind carries and that slowly reshapes, so the fog thins and thickens across the sea and
+//     over the island while the layer's height profile stays its mean. Its mean is 1 by
+//     construction, everywhere and at every threshold, so the frame's mean opacity holds as the
+//     banks pass and needs no measure of its own. A bank shades itself: the sun's optical depth
+//     through the droplets (`dropletToward`) adds the banks' excess density, their factor less 1,
+//     at BANK_SHADE's two points along the sun's ray, each over its stretch of the ray, so a
+//     bank's sunward side is lit and its far side and the fog under it go grey, the way a cloud's
+//     do. The light kernel stores in the volume's alpha the ratio of the drifted optical depth to
+//     the undrifted one, each summed from the eye to the slice, and the composite multiplies the
+//     exact depth it recomputes by it (`fogOver`'s `drifted`): the density anti-aliasing keeps its
+//     smooth depth and shows the banks at the grid's resolution. The banks are a function of the
+//     wind's integrated travel and the gusts' time, so a paused frame holds them. The clouded
+//     share (HazeKeys.ts) turns the layer back into the hour's thin haze, except overcast's own sea
+//     fog, and the night has none.
 //   - the ambient visibility (the open sky's share that reaches a froxel) is the visibility volume's
 //     second channel, sampled, filtered and held at rest with the key light's: 0 under the island's
 //     cover and 1 above it, rising over 1.5 m either side of the cover's top (the rain's collision
@@ -643,15 +647,16 @@ export class VolumetricHaze {
 	private readonly weights = uniform( new THREE.Vector2( 1, 1 ) );
 	// the fog layer's light (see the header, The fog layer): the droplets' share of the ground
 	// layer's light, their lobes ( forward g, backward g, backward share ) and Wrenninge's octaves
-	// ( a, b, c ); its drift: the cell's size (m) and the amplitude
+	// ( a, b, c ); its banks (FogNoise.ts `fogDrift`): the detail's cell (m), the amplitude, the
+	// cells' height over their width and the regions' cell (m); the threshold at the sea and at the
+	// ramp's top, the ramp's height (m) and the regions' share of the variance; the detail's
+	// roughness and its warp (cells)
 	private readonly dropletShare = uniform( 0 );
 	private readonly dropletLobes = uniform( new THREE.Vector3( 0.8, - 0.3, 0.3 ) );
 	private readonly dropletOctaves = uniform( new THREE.Vector3( 0.3, 0.5, 0.5 ) );
-	private readonly fogNoise = uniform( new THREE.Vector2( 100, 0 ) );
-	// the drift's mean over the view, per ray of `driftKernel`: ( the sum of weight x factor, the
-	// sum of weight ), which the light kernel divides the factor by
-	private readonly driftMean = instancedArray( DRIFT_RAYS, 'vec2' );
-	private driftKernel: THREE.ComputeNode | null = null;
+	private readonly fogNoise = uniform( new THREE.Vector4( 100, 0, 1, 0 ) );
+	private readonly fogCover = uniform( new THREE.Vector4( 0, 0, 1, 0.5 ) );
+	private readonly fogShape = uniform( new THREE.Vector4( 0.6, 0.3, 0, 0 ) );
 	private readonly atmosphere: Atmosphere;
 	private readonly sunBeam: THREE.Color;
 	private readonly moonBeam: THREE.Color;
@@ -1007,7 +1012,7 @@ export class VolumetricHaze {
 	// layer's depth above the point toward the sun, and the open sky's light (`deck`, its irradiance
 	// over pi) scattered evenly, the sky over the upper half of the sphere and the sea's reflection
 	// of it under the lower, as the deck's light on the air is taken (`scatterToward`).
-	private dropletToward( direction: V3, deck: V3 ): ( y: F, sun: F, ambient: F ) => V3 {
+	private dropletToward( direction: V3, deck: V3, banks = true ): ( p: V3, sun: F, ambient: F ) => V3 {
 
 		const sunDir = this.atmosphere.sunDir;
 		const nu = dot( direction, sunDir ).toVar();
@@ -1015,57 +1020,32 @@ export class VolumetricHaze {
 		// (the layer's top: its density there 1/800 of the deep part's)
 		const top = this.ground.y.add( this.ground.z.mul( 20 ) ).toVar();
 		const sky = deck.mul( ( 1 + SEA_DIFFUSE ) * 0.5 ).toVar();
-		return ( y, sun, ambient ) => {
+		// (the banks' own shade toward the sun: the banks' factor less its mean at BANK_SHADE's
+		// points along the sun's ray, each over its stretch of the ray; taken where the light kernel
+		// takes the banks, under the drift's reach while they are on)
+		const lift = sunDir.toVar();
+		const reach = this.ground.y.add( this.ground.z.mul( DRIFT_REACH ) ).toVar();
+		return ( p, sun, ambient ) => {
 
+			const y = p.y;
 			const above = max( top.sub( y ), 1 );
-			const tau = this.sigma.y.mul( above ).mul( meanExtinction( y, top, GROUND_ONLY, this.ground ) ).div( rise );
+			const shade = float( 0 ).toVar();
+			if ( banks ) If( this.fogNoise.y.greaterThan( 0 ).and( y.lessThan( reach ) ), () => {
+
+				for ( const [ at, stretch ] of BANK_SHADE ) {
+
+					const q = p.add( lift.mul( at ) ).toVar();
+					const factor = fogDrift( q, float( 0 ), this.fogNoise, this.fogCover, this.fogShape, shared.wind );
+					shade.addAssign( meanExtinction( q.y, q.y, GROUND_ONLY, this.ground ).mul( factor.sub( 1 ) ).mul( stretch ) );
+
+				}
+
+			} );
+			const tau = max( this.sigma.y.mul( above ).mul( meanExtinction( y, top, GROUND_ONLY, this.ground ) ).div( rise ).add( this.sigma.y.mul( shade ) ), 0 );
 			const phase = dropletPhase( nu, tau, this.dropletLobes, this.dropletOctaves );
 			return this.mieColour[ 0 ].mul( sun.mul( phase ) ).add( sky.mul( ambient ) ).mul( this.lightSettings.x );
 
 		};
-
-	}
-
-	// The drift's mean over the view (see the header, The fog layer): DRIFT_RAYS threads, each a ray
-	// of an even grid over the grid's camera marched through the light kernel's slices, summing the
-	// drift's factor weighted by the share of each slice's fog that reaches the eye through the
-	// medium's mean.
-	private buildDriftKernel(): THREE.ComputeNode {
-
-		const { depth: D } = this.grid;
-		return Fn( () => {
-
-			const k = instanceIndex.toVar();
-			const q = vec2( float( k.mod( DRIFT_SIDE ) ).add( 0.5 ), float( k.div( DRIFT_SIDE ) ).add( 0.5 ) ).div( DRIFT_SIDE );
-			const { view, direction } = this.gridRay( q );
-			const forward = view.z.negate().toVar();
-			const sum = vec2( 0 ).toVar(), depth = float( 0 ).toVar();
-			const t0 = this.slices.x.div( forward ).toVar();
-			const y0 = this.origin.y.add( direction.y.mul( t0 ) ).toVar();
-			const reach = this.ground.y.add( this.ground.z.mul( DRIFT_REACH ) ).toVar();
-			// (the ray ends at the sea, the surface most of the view's fog lies over)
-			const sea = select( direction.y.lessThan( - 1e-4 ), this.origin.y.div( max( direction.y.negate(), 1e-4 ) ), float( 1e9 ) ).toVar();
-			Loop( D, ( { i } ) => {
-
-				const t1 = min( this.sliceDepth( float( i ).add( 1 ) ).div( forward ), max( sea, t0 ) ).toVar();
-				const y1 = this.origin.y.add( direction.y.mul( t1 ) ).toVar();
-				const span = t1.sub( t0 ).toVar();
-				const fog = span.mul( meanExtinction( y0, y1, GROUND_ONLY, this.ground ) ).mul( this.sigma.y ).toVar();
-				const weight = exp( depth.mul( this.sigma.y ).negate() ).mul( float( 1 ).sub( exp( fog.negate() ) ) ).toVar();
-				If( weight.greaterThan( 1e-6 ).and( min( y0, y1 ).lessThan( reach ) ), () => {
-
-					const factor = fogDrift( this.origin.add( direction.mul( t0.add( t1 ).mul( 0.5 ) ) ), span, this.fogNoise, shared.wind );
-					sum.addAssign( vec2( weight.mul( factor ), weight ) );
-
-				} );
-				depth.addAssign( span.mul( meanExtinction( y0, y1, this.layer, this.ground ) ) );
-				t0.assign( t1 );
-				y0.assign( y1 );
-
-			} );
-			this.driftMean.element( k ).assign( sum );
-
-		} )().compute( DRIFT_RAYS, [ DRIFT_RAYS ] ).setName( 'Haze.Drift' );
 
 	}
 
@@ -1086,14 +1066,6 @@ export class VolumetricHaze {
 				const keep = hazeFormKeep( this.sigma.y.mul( tEnd.mul( meanExtinction( this.origin.y, this.origin.y.add( direction.y.mul( tEnd ) ), this.layer, this.ground ) ) ), this.lightSettings.y );
 				const scatter = this.scatterToward( direction, deck, clouds, keep );
 				const droplet = this.dropletToward( direction, deck );
-				// (the drift's mean over the view, `driftKernel`: 1 where no ray met the fog)
-				const drift = vec2( 0 ).toVar();
-				Loop( DRIFT_RAYS, ( { i } ) => {
-
-					drift.addAssign( this.driftMean.element( i ) );
-
-				} );
-				const driftMean = select( drift.y.greaterThan( 1e-20 ), drift.x.div( max( drift.y, 1e-20 ) ), float( 1 ) ).toVar();
 				const reach = this.ground.y.add( this.ground.z.mul( DRIFT_REACH ) ).toVar();
 				// (alpha: the band opacity in front; shown: the display opacity, through the band-to-display
 				// matrix, which keeps 1 and so acts on an opacity as on a transmittance; the medium's depth
@@ -1112,9 +1084,10 @@ export class VolumetricHaze {
 					const mean = meanExtinction( y0, y1, this.layer, this.ground ).toVar();
 					const fog = meanExtinction( y0, y1, GROUND_ONLY, this.ground ).toVar();
 					const factor = float( 1 ).toVar();
+					const middle = this.origin.add( direction.mul( t0.add( t1 ).mul( 0.5 ) ) ).toVar();
 					If( this.fogNoise.y.greaterThan( 0 ).and( min( y0, y1 ).lessThan( reach ) ), () => {
 
-						factor.assign( fogDrift( this.origin.add( direction.mul( t0.add( t1 ).mul( 0.5 ) ) ), span, this.fogNoise, shared.wind ).div( driftMean ) );
+						factor.assign( fogDrift( middle, span, this.fogNoise, this.fogCover, this.fogShape, shared.wind ) );
 
 					} );
 					const density = max( mean.add( fog.mul( factor.sub( 1 ) ) ), 0 ).toVar();
@@ -1132,7 +1105,7 @@ export class VolumetricHaze {
 					// (clamped: high over the layers both means are rounding noise, under a deck's top the
 					// aerosol layer's none)
 					const share = this.dropletShare.mul( clamp( fog.mul( factor ).div( max( density, 1e-30 ) ), 0, 1 ) );
-					const scattered = mix( scatter( height, sun, fraction.g ), droplet( height, sun, fraction.g ), share ).toVar();
+					const scattered = mix( scatter( height, sun, fraction.g ), droplet( middle, sun, fraction.g ), share ).toVar();
 					alpha.addAssign( w );
 					const next = bandToDisplay( alpha, bandPush ).toVar();
 					sum.addAssign( scattered.mul( next.sub( shown ) ) );
@@ -1279,14 +1252,14 @@ export class VolumetricHaze {
 		const reach = min( whole, this.far ).toVar();
 		const keep = hazeFormKeep( this.sigma.y.mul( reach.mul( meanExtinction( y, y.add( d.y.mul( reach ) ), this.layer, ground ) ) ), this.lightSettings.y );
 		const air = this.scatterToward( d, clouds.bakeDeckIrradianceNode, clouds.clouds, keep );
-		const droplet = this.dropletToward( d, clouds.bakeDeckIrradianceNode );
+		const droplet = this.dropletToward( d, clouds.bakeDeckIrradianceNode, false );
 		// (the air's light and the fog layer's droplets', by the fog layer's share of the mean density
 		// over the heights from a to b, as the light kernel takes them without the drift)
 		const scatter = ( a: F, b: F, sun: F ): V3 => {
 
 			const share = this.dropletShare.mul( clamp( meanExtinction( a, b, GROUND_ONLY, ground ).div( max( meanExtinction( a, b, this.layer, ground ), 1e-30 ) ), 0, 1 ) );
 			const height = a.add( b ).mul( 0.5 ).toVar();
-			return mix( air( height, sun, float( 1 ) ), droplet( height, sun, float( 1 ) ), share );
+			return mix( air( height, sun, float( 1 ) ), droplet( vec3( 0, height, 0 ), sun, float( 1 ) ), share );
 
 		};
 		// the light kernel's march along d (its view depth per metre 1), each slice cut at reach
@@ -1406,7 +1379,6 @@ export class VolumetricHaze {
 		};
 		this.visibilityKernels = [ this.buildVisibilityKernel( 0, sky ), this.buildVisibilityKernel( 1, sky ) ];
 		this.lightKernels = [ this.buildLightKernel( 0, sky.deckIrradianceNode, sky.clouds ), this.buildLightKernel( 1, sky.deckIrradianceNode, sky.clouds ) ];
-		this.driftKernel = this.buildDriftKernel();
 		const sceneDepth = texture( depth );
 		return Fn( () => {
 
@@ -1461,13 +1433,11 @@ export class VolumetricHaze {
 			b.readOptional( visibility );
 			light = b.storage( light );
 			return {
-				label: LABEL, size, compute: [ this.driftKernel!, ...this.lightKernels ], run: ( _f, g ) => {
+				label: LABEL, size, compute: this.lightKernels, run: ( _f, g ) => {
 
 					// (`flags.hazeKernels = false` skips the kernels, for timing them: the composite
-					// then reads the volumes as they last were; the drift's mean first, which the light
-					// kernel reads)
+					// then reads the volumes as they last were)
 					if ( debugFlags.hazeKernels === false ) return;
-					g.renderer.compute( this.driftKernel! );
 					g.renderer.compute( this.lightKernels[ this.written ] );
 
 				},
@@ -1527,7 +1497,9 @@ export class VolumetricHaze {
 		this.dropletShare.value = look.droplet;
 		this.dropletLobes.value.set( DROPLET.forward(), DROPLET.backward(), DROPLET.backShare() );
 		this.dropletOctaves.value.set( look.scatter, DROPLET.octaveExtinction(), DROPLET.octaveAnisotropy() );
-		this.fogNoise.value.set( FOG_NOISE.scale(), FOG_NOISE.amplitude() * look.fogLayer );
+		this.fogNoise.value.set( FOG_NOISE.scale(), FOG_NOISE.amplitude() * look.fogLayer, FOG_NOISE.squash(), FOG_NOISE.region() );
+		this.fogCover.value.set( FOG_NOISE.low(), FOG_NOISE.high(), look.top + look.width, FOG_NOISE.regionShare() );
+		this.fogShape.value.set( FOG_NOISE.rough(), FOG_NOISE.warp(), 0, 0 );
 		this.skyDepth.value = look.skyDepth / 1000 / Math.max( look.sigma.y, 1e-6 );
 		const copy = this.cloudMedium;
 		if ( copy ) {
@@ -1596,7 +1568,7 @@ export class VolumetricHaze {
 		key.push( ...camera.matrixWorld.elements, ...projection.elements, frame.time, width, height, outputWidth, outputHeight, restEpoch.scene,
 			...frame.signature, ...this.keyDir.value.toArray(), this.keyColor.value.r, this.keyColor.value.g, this.keyColor.value.b, this.keyFloor.value,
 			...this.ground.value.toArray(), ...this.layer.value.toArray(), ...this.sigma.value.toArray(),
-			this.dropletShare.value, ...this.dropletLobes.value.toArray(), ...this.dropletOctaves.value.toArray(), ...this.fogNoise.value.toArray(),
+			this.dropletShare.value, ...this.dropletLobes.value.toArray(), ...this.dropletOctaves.value.toArray(), ...this.fogNoise.value.toArray(), ...this.fogCover.value.toArray(), ...this.fogShape.value.toArray(),
 			LIGHT_DEBUG.sun.value, LIGHT_DEBUG.noShadow.value,
 			S.ambientFloor, S.ambientSoftness, this.cover?.version ?? 0,
 			S.near, S.far, S.growth, S.restFrames, S.jitter ? 1 : 0 );
