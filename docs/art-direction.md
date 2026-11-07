@@ -71,38 +71,13 @@ art decision changes; images from elsewhere stay out of the repository.
   culm's sides a little, lit surfaces not at all. The ambient light is set for the shade with
   that loss in it, never pressed down once more for it, and a loss two terms estimate counts
   once (the turf takes the stronger of the two).
-- The air is a lit medium, a volumetric haze: haze and mist are one volume
-  of air, lit by the sun and the sky and cut by every shadow, thin and layered by height, never a
-  flat tint laid over the frame for an airy feel (that reads as smog). Its density follows what the
-  weather lets one see, and it is coloured: a clear day's air is a blue layer whose light falls to
-  half in about 2 km at the game's camera height, the blue lost first (within a kilometre less than
-  half of it gets through, three kilometres off almost none), so far sea and land turn blue-grey and
-  the low sun's light reddens; a cloudy sky's air is grey and about as thick. It lies as a ground
-  layer with a soft top tens of metres up: the hills rise out of it, the camera stands in its upper
-  half, and the distant haze thins slowly with height. From the game's
-  views the island keeps its colour (at least nine tenths of its light reaches the camera by day,
-  the air of the first few hundred metres thin under every kept sky, so the shade stays the land's
-  own colour and no veil of the sky's light lies over the island)
-  and the haze gathers with distance toward the horizon. The far sea and the low sky end in the same
-  haze: a milky band, brighter than the sky above it, closes over the horizon with no step or dark
-  line where sea meets sky, and fades by 10 - 15 degrees up. Across from the sun
-  the haze lifts the atmosphere's dim low sky (about twice); beside the sun it is flatter than the
-  atmosphere's own glow and dims it a little. The air follows the hour more than anything else: clear before dawn; as the sun comes
-  up thin and cold, a blue air over one thin pale rose band at the horizon, the sea under it blue
-  out to the end of it, with no gold in the picture and no mist in the morning; coloured and
-  even through the day; thick and fully orange at the golden hour, yet paler than the lit ground;
-  thinner after sunset; a visible grey-blue layer by night. A cloudy day's air keeps less colour
-  and shows brighter than a clear day's (about twice with the sun 25 degrees up). It lies over the
-  land, the sea and the low sky alike; the light the sky lends the scene is the atmosphere's alone.
-  Shafts show only where the
-  air is thick enough and lit from the side or behind against darker ground, the haze's own
-  (strongest at the golden hour, faint at a clear noon); no rays are
-  painted over the sky. The sun's disk is drawn larger than life (1.1 degrees), softly
-  limb-darkened, its edge clean; round it a soft glow sized by the frame, not the field of view, near white at its core and fading
+- The air (haze, mist and the shafts light cuts through them) is being decided afresh: no rule
+  here limits it, and the volumetric haze keeps its present look until its new direction is written.
+- The sun's disk is drawn larger than life (1.1 degrees), softly limb-darkened, its edge clean;
+  round it a soft glow sized by the frame, not the field of view, near white at its core and fading
   as the square of the distance past half the frame, with no streaks, ghosts or rings. It weakens
   with the share of the disk left uncovered yet stays wide through a gap in leaves, goes with the
-  disk when the sun leaves the frame, and is weaker against the bright sky round a low sun. Mist also gathers in bright banks and
-  wisps round the island and the cliff's foot (not drawn yet).
+  disk when the sun leaves the frame, and is weaker against the bright sky round a low sun.
 - Real phenomena are not exaggerated; no glow round every highlight, and no hue turned further
   than a few degrees (the grade turns no hue more than 7 degrees).
 - The exposure is metered from the light falling on what the frame shows, not the light leaving it,
@@ -121,9 +96,7 @@ art decision changes; images from elsewhere stay out of the repository.
   cloud's edge, would move a meter's reading. Under a deck the land is lit by a softened key along
   the sun and by the deck's sky light, under overcast a sky light of its own, stronger than the
   sea's, so the meadow and the groves stand quiet under a pale sky. With the sun high the deck
-  passes on little of a clear sky's blue, so the air stays near grey, the light lent to the land a
-  warm grey, and from 30 to 40 degrees the near air thins, so no pale veil lies over a clouded noon
-  and the crowns keep their green. A cloudy sky's deck lets go as the sun falls under about 6
+  passes on little of a clear sky's blue, so the light lent to the land is a warm grey. A cloudy sky's deck lets go as the sun falls under about 6
   degrees: by 3 the low sun shines under the broken deck and the view's own light sets the exposure,
   so a cloudy evening comes on by degrees: dark at sunset, neither black nor lit yellow, the meadow
   never brighter at a lower sun but where the cloud opens for a moment. Overcast is a closed, dark
@@ -442,11 +415,7 @@ art decision changes; images from elsewhere stay out of the repository.
 - The sunlit ground lights what stands over it from below, one bounce for every lit surface: the
   shallows the cliff's walls, faintly, the meadow the islanders' undersides; strongest around midday.
 - Bad weather dims and desaturates the existing light and thickens the air as its visibility
-  falls; the haze it adds is the air's own, lit and shaded like the rest of the scene, never a grey
-  screen veil, and it stays dimmer and greyer than a clear day. The haze starts at the camera, as
-  air does, yet from the game's views the island's foreground stays clear (a few percent of veil
-  from 45 to 190 m). Sea fog is a low layer at the cliff's foot that may surround the island,
-  never a uniform tint.
+  falls, and it stays dimmer and greyer than a clear day.
 - Weather changes sweep the sky as a front from upwind. The clouds drift downwind with the wind
   aloft, faster than the surface wind (the cumulus and the thin layer about twice it),
   so they never move against the grass and the sea.
