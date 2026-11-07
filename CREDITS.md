@@ -494,6 +494,17 @@ comment where it is used.
 - Atmosphere LUTs and multiple scattering: Sébastien Hillaire,
   [*A Scalable and Production Ready Sky and Atmosphere Rendering Technique*](https://sebh.github.io/publications/egsr2020.pdf)
   (EGSR 2020), through the adapted tidewater source above.
+- The fog layer's droplet light (`src/weather/VolumetricHaze.ts`, The fog layer): multiple
+  scattering approximated by octaves of scaled scattering, extinction and anisotropy, Magnus
+  Wrenninge, *Oz: The Great and Volumetric* (SIGGRAPH 2013 talk), as used for participating media
+  with a two-lobe Henyey-Greenstein phase in Sébastien Hillaire, *Physically Based Sky, Atmosphere
+  and Cloud Rendering in Frostbite* (SIGGRAPH 2016 course, Physically Based Shading in Theory and
+  Practice). Its density from the visibility by Koschmieder's relation, 3.912 / V. Its banks
+  (`src/weather/FogNoise.ts`): Ken Perlin's improved gradient noise (*Improving Noise*, SIGGRAPH
+  2002), its coordinates displaced by more of it after Inigo Quilez,
+  [*Domain warping*](https://iquilezles.org/articles/warp/), and cut at a threshold that rises with
+  height; used as techniques only, the scales, the threshold and the normalisation to a mean of 1
+  are our own.
 - Line integral convolution, which draws the thin cloud layer's fibres out along a flow
   (`src/sky/Streaks.ts`): Brian Cabral and Leith (Casey) Leedom, *Imaging Vector Fields Using
   Line Integral Convolution* (SIGGRAPH 1993), through the adapted tidewater source above.

@@ -4,6 +4,7 @@ import { markSkyRetune } from '../sky/SkyRetune.ts';
 import { DUSK_DEPTH, duskForce, duskForced, duskIn, moonKeyShare } from '../sky/DayCycle.ts';
 import { KEPT_SKIES, WEATHER_PRESETS, cloudedShare, deckLight, overcastDeckLight } from '../sky/Weather.ts';
 import { cloudBase } from '../sky/Sky.ts';
+import { FOG_NOISE } from './FogNoise.ts';
 
 // The haze's keys: what the air does by the hour and the weather, set as a few quantities one sees
 // (how far the light carries, the colour it loses, how bright and how coloured the air shows) at
@@ -26,7 +27,9 @@ import { cloudBase } from '../sky/Sky.ts';
 //     night's 10.2 m, each keeping its key's ratio of width to top, so the density at the sea
 //     does not depend on the top's height; the day's aerosol 0.06 and 0.76 km, the
 //     golden hour's 0.13 and 1.0 km (more aerosol over a low sun's air), and the sunrise's are the
-//     golden hour's: thin enough to leave no dark band over the horizon. On a clear day green's
+//     golden hour's: thin enough to leave no dark band over the horizon. These shapes are the
+//     haze's without the fog layer (below), which takes the ground layer's place by day under a
+//     clear or fair sky and keeps them under cloud and by night. Without it, on a clear day green's
 //     extinction is about 1e-3 /m at the sea (Koschmieder's visibility 4 km), half that at the top,
 //     a tenth of it at 30 m and under 4e-5 /m from 68 m, the game camera's height, up: about eleven
 //     times a clean maritime air at the sea (OPAC's maritime clean at 80 % relative humidity, 0.090
@@ -74,6 +77,33 @@ import { cloudBase } from '../sky/Sky.ts';
 //     the haze's ground layer, soft and low over the whole island, not a sheet on the sea. The
 //     clear morning has none: 0 in every key (`haze.key.mist@mist` brings one back), so the sea
 //     stays blue out to the horizon. It needs calm air and no rain.
+//   - the fog layer (VolumetricHaze's header, The fog layer): by day under a clear or fair sky the
+//     ground layer is a fog layer over the whole island, the clear day's density the same at every
+//     hour of it. `fogLayer` its share (1 in the day's, the golden hour's and the mist's keys, the
+//     morning taking the mist's; 0 by night and in the twilights), `fogTop` its top over the sea
+//     (12 m, 12 - 40: below the bamboo's crowns, the island view well above it), `fogWidth` the
+//     width of its edge (2 m, 2 - 15), `visibility` the Koschmieder visibility it gives at the
+//     sea (km: 0.22 by day and in the morning, 0.2 - 1.5 and 0.2 - 2; 0.29 at the golden hour,
+//     about a fifth thinner by the sea's mean opacity, 0.3 - 2.5), `neutral` how far its extinction turns grey (1)
+//     and `scatter` its droplets' multiple scattering, Wrenninge's a (0.3 by day, 0.2 at the golden
+//     hour and in the morning; 0 - 0.4), which brings the sunlit fog's level up against its shade.
+//     The island view at noon sees the sea through about a quarter of the fog's opacity (mean
+//     0.26) and the crowns through 0.02; a top above the crowns, or a wider edge, fogs the crowns
+//     too, the camera then near or inside the layer. An edge of 2 m shows as a hard line where the
+//     layer meets the sky at the horizon; one of 5 m or more does not. The clouded share turns it back into the key's own thin
+//     haze (`clouded` below): cloudy keeps its shape. Tunable as
+//     `haze.fog.<top|width|visibility|neutral|scatter>@<day|golden|mist>`.
+//     A deep sea fog (SEA_FOG) is a switch beside the weather (main.ts `?seaFog`, the GUI's
+//     `sea fog`), by its share at every hour and under any sky: its top 35 m over the sea and its edge 25 m
+//     wide, so its density falls off through the island view's height rather than ending at a
+//     line; 0.5 km at the sea, grey (`neutral` 1), with a = 0.5; and its banks break up higher
+//     than the day layer's (`coverHigh` 1.2, the threshold at its top: FogNoise.ts). The distance
+//     it fades over is what layers the frame: the island view looks down through its upper part
+//     and sees the land below it through about 0.4 of optical depth (0.7 at its far side), while
+//     the sea a few hundred metres out is gone (3 at 400 m along the water); by the boat, 25 m
+//     stays clear (0.2) and 200 m is a silhouette (1.5). The banks' drift (VolumetricHaze.ts,
+//     FogNoise.ts) moves through it. Its fields blend with the open sky's layer by the two
+//     shares. Tunable as `haze.fog.<field>@sea`.
 //   - sunRayleigh: the sun's share in the haze's Rayleigh light, beside the open sky's: 0 by day
 //     under a clear or fair sky, where the air's blue is sky light only and the sun reaches the
 //     haze through its aerosol share; 1 at a low sun, by night and under cloud. The moon's share
@@ -190,15 +220,32 @@ export interface HazeKey {
 	// the aerosol layer's top (m; Infinity for none): a low deck's base (see the header)
 	aerosolTop: number;
 	skyDepth: number;
+	// the fog layer (see the header), optional so a key written elsewhere without them holds none:
+	// the share of the ground layer that is the fog layer (its density from `visibility`, its top
+	// `fogTop` and the width of its edge `fogWidth`), the share of the ground layer's light that is the droplets' (VolumetricHaze.ts), how
+	// far the extinction turns neutral, the droplets' multiple scattering (Wrenninge's a), the
+	// visibility at the sea (km) and the banks' threshold at the layer's top (FogNoise.ts `high`)
+	fogLayer?: number;
+	droplet?: number;
+	neutral?: number;
+	scatter?: number;
+	fogTop?: number;
+	fogWidth?: number;
+	visibility?: number;
+	fogCoverHigh?: number;
 
 }
 
 type Sigma = readonly [ number, number, number ];
-const key = ( amount: number, [ sigmaRed, sigmaGreen, sigmaBlue ]: Sigma, desaturate: number, mist: number, sunRayleigh: number ): HazeKey =>
-	( { deck: 0, overcastDeck: 0, amount, sigmaRed, sigmaGreen, sigmaBlue, desaturate, gain: 1, mist, sunRayleigh, rayleighWeight: 1, mieWeight: 1, ...SHAPE } );
+type FullKey = Required<HazeKey>;
+const key = ( amount: number, [ sigmaRed, sigmaGreen, sigmaBlue ]: Sigma, desaturate: number, mist: number, sunRayleigh: number ): FullKey =>
+	( { deck: 0, overcastDeck: 0, amount, sigmaRed, sigmaGreen, sigmaBlue, desaturate, gain: 1, mist, sunRayleigh, rayleighWeight: 1, mieWeight: 1, ...SHAPE, ...NO_FOG, droplet: 0, fogCoverHigh: 0 } );
 
 // the medium's shape every key starts from
 const SHAPE = { top: 10, width: 50, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0 };
+// the fog layer's fields (see the header), none by default: the hours without a fog of their own
+// (the night and the twilights) hold this
+const NO_FOG = { fogLayer: 0, neutral: 0, scatter: 0, fogTop: 12, fogWidth: 2, visibility: 2 };
 // the three keys' spectral extinction, and the hours between's from them by the sun's elevation
 // (see the header): the night's at -12 degrees, the golden hour's at 2
 const NIGHT_SIGMA: Sigma = [ 0.463, 0.53, 0.694 ];
@@ -214,11 +261,14 @@ const twilight = ( elevation: number ): Sigma => {
 const BEFORE_DAWN = { ...key( 0.6, twilight( - 3.5 ), 0.33, 0, 1 ), rayleighWeight: 1.9, mieWeight: 4.1 };
 // the deep twilight before dawn: the same air with less of the haze's light (see the header)
 const EARLY_DAWN = { ...BEFORE_DAWN, rayleighWeight: 0.965, mieWeight: 4.1 };
-const MIST = { ...key( 0.6, GOLDEN_SIGMA, 0.64, 0, 1 ), rayleighWeight: 0.72, mieWeight: 0.83, top: 14, width: 11.242, aerosolShare: 0.127, aerosolHeight: 1010 };
+const MIST = { ...key( 0.6, GOLDEN_SIGMA, 0.64, 0, 1 ), rayleighWeight: 0.72, mieWeight: 0.83, top: 14, width: 11.242, aerosolShare: 0.127, aerosolHeight: 1010,
+	fogLayer: 1, neutral: 1, scatter: 0.2, fogTop: 12, fogWidth: 2, visibility: 0.22 };
 const MORNING = { ...key( 0.96, DAY_SIGMA, 0.5, 0, 1 ), rayleighWeight: 0.33, mieWeight: 0.83 };
-const DAY = { ...key( 0.659, DAY_SIGMA, 1, 0, 0 ), rayleighWeight: 0.575, mieWeight: 0.79, top: 14, width: 9.431, aerosolShare: 0.06, aerosolHeight: 761 };
+const DAY = { ...key( 0.659, DAY_SIGMA, 1, 0, 0 ), rayleighWeight: 0.575, mieWeight: 0.79, top: 14, width: 9.431, aerosolShare: 0.06, aerosolHeight: 761,
+	fogLayer: 1, neutral: 1, scatter: 0.3, fogTop: 12, fogWidth: 2, visibility: 0.22 };
 const NIGHT = { ...key( DAY.amount, NIGHT_SIGMA, 0.55, 0, 1 ), rayleighWeight: DAY.rayleighWeight, mieWeight: 2, top: 14, width: 10.162, aerosolShare: 0.003, skyDepth: 0 };
-const GOLDEN = { ...key( 0.606, GOLDEN_SIGMA, 0.331, 0, 1 ), rayleighWeight: 0.58, mieWeight: 3.8, top: 14, width: 11.242, aerosolShare: 0.127, aerosolHeight: 1010 };
+const GOLDEN = { ...key( 0.606, GOLDEN_SIGMA, 0.331, 0, 1 ), rayleighWeight: 0.58, mieWeight: 3.8, top: 14, width: 11.242, aerosolShare: 0.127, aerosolHeight: 1010,
+	fogLayer: 1, neutral: 1, scatter: 0.2, fogTop: 12, fogWidth: 2, visibility: 0.29 };
 const AFTER_SUNSET = { ...key( 0.45, twilight( - 2.5 ), 0.75, 0, 1 ), rayleighWeight: 0.32, mieWeight: 4.7 };
 // the deep twilight after sunset: the afterglow's air, its light keeping the glow's colour (see the header)
 const AFTER_SUNSET_DEEP = { ...AFTER_SUNSET, desaturate: 0 };
@@ -245,21 +295,48 @@ for ( const [ k, name, fields ] of [ [ DAY, 'day', TUNED ], [ GOLDEN, 'golden', 
 
 }
 tuneObject( MIST, { mist: 'haze.key.mist@mist' }, { mist: { min: 0, max: 2, onChange: markSkyRetune } } );
+// the fog layer's knobs on the keys that hold one:
+// `haze.fog.<top|width|visibility|neutral|scatter>@<day|golden|mist>`, the visibility's range the key's
+for ( const [ k, name, low, high ] of [ [ DAY, 'day', 0.2, 1.5 ], [ GOLDEN, 'golden', 0.3, 2.5 ], [ MIST, 'mist', 0.2, 2 ] ] as const ) {
+
+	const range: Record<'fogTop' | 'fogWidth' | 'visibility' | 'neutral' | 'scatter', TuneOptions> = {
+		fogTop: { min: 12, max: 40, onChange: markSkyRetune }, fogWidth: { min: 2, max: 15, onChange: markSkyRetune },
+		visibility: { min: low, max: high, scale: 'log', onChange: markSkyRetune },
+		neutral: { min: 0, max: 1, onChange: markSkyRetune }, scatter: { min: 0, max: 0.4, onChange: markSkyRetune },
+	};
+	tuneObject( k, { fogTop: `haze.fog.top@${ name }`, fogWidth: `haze.fog.width@${ name }`, visibility: `haze.fog.visibility@${ name }`,
+		neutral: `haze.fog.neutral@${ name }`, scatter: `haze.fog.scatter@${ name }` }, range );
+
+}
 
 // rows by the sun's elevation (degrees, ascending), eased between neighbours, the end rows held
-const RISING: ReadonlyArray<readonly [ number, HazeKey ]> = [
+const RISING: ReadonlyArray<readonly [ number, FullKey ]> = [
 	[ - 12, NIGHT ], [ - 6, EARLY_DAWN ], [ - 1, BEFORE_DAWN ], [ 1, MIST ], [ 3, MIST ], [ 7, MORNING ], [ 14, MORNING ], [ 22, DAY ],
 ];
-const SETTING: ReadonlyArray<readonly [ number, HazeKey ]> = [
+const SETTING: ReadonlyArray<readonly [ number, FullKey ]> = [
 	[ - 11, NIGHT ], [ - 7, AFTER_SUNSET_DEEP ], [ - 1, AFTER_SUNSET ], [ 2, GOLDEN ], [ 4, GOLDEN ], [ 8, DAY ],
 ];
 // the setting sun's under cloud, which a clouded share draws the key to (see the header)
-const SETTING_CLOUDED: ReadonlyArray<readonly [ number, HazeKey ]> = [
+const SETTING_CLOUDED: ReadonlyArray<readonly [ number, FullKey ]> = [
 	[ - 12, NIGHT ], [ - 4, AFTER_SUNSET_CLOUDED ], [ - 1, AFTER_SUNSET_CLOUDED ], [ 2, GOLDEN ], [ 4, GOLDEN ], [ 8, DAY ],
 ];
 
 // the keys with a shape of their own; the others take the day's
-const SHAPED: ReadonlySet<HazeKey> = new Set( [ DAY, GOLDEN, NIGHT, MIST ] );
+const SHAPED: ReadonlySet<FullKey> = new Set( [ DAY, GOLDEN, NIGHT, MIST ] );
+// the keys with a fog layer of their own; the morning takes the mist's, the others (the night and
+// the twilights) none
+const FOGGED: ReadonlySet<FullKey> = new Set( [ DAY, GOLDEN, MIST ] );
+const fogOf = ( k: FullKey ): FullKey => FOGGED.has( k ) ? k : k === MORNING ? MIST : NIGHT;
+// the sea fog (see the header): a deep layer with a soft top, held at every hour while its switch
+// is on; tunable as `haze.fog.<field>@sea`
+const SEA_FOG = { neutral: 1, scatter: 0.5, fogTop: 35, fogWidth: 25, visibility: 0.5, coverHigh: 1.2 };
+tuneObject( SEA_FOG, { fogTop: 'haze.fog.top@sea', fogWidth: 'haze.fog.width@sea', visibility: 'haze.fog.visibility@sea',
+	neutral: 'haze.fog.neutral@sea', scatter: 'haze.fog.scatter@sea', coverHigh: 'haze.fog.coverHigh@sea' }, {
+	fogTop: { min: 0, max: 150, onChange: markSkyRetune }, fogWidth: { min: 2, max: 100, onChange: markSkyRetune },
+	coverHigh: { min: - 1, max: 2.5, onChange: markSkyRetune },
+	visibility: { min: 0.08, max: 2, scale: 'log', onChange: markSkyRetune },
+	neutral: { min: 0, max: 1, onChange: markSkyRetune }, scatter: { min: 0, max: 0.6, onChange: markSkyRetune },
+} );
 
 // per kept sky (Weather.ts KEPT_SKIES: clear, fair, cloudy, overcast): the share of the light's
 // colour kept over a clear day's and the gain over a clear day's
@@ -298,9 +375,10 @@ const SUN_RAYLEIGH = [ 0, 0, 1, 1 ];
 // SHAPE's 0 rather than taking the day's)
 const FIELDS = [ 'amount', 'sigmaRed', 'sigmaGreen', 'sigmaBlue', 'desaturate', 'mist', 'sunRayleigh', 'rayleighWeight', 'mieWeight', 'skyDepth' ] as const;
 const SHAPE_FIELDS = [ 'top', 'width', 'aerosolShare', 'aerosolHeight' ] as const;
+const FOG_FIELDS = [ 'fogLayer', 'neutral', 'scatter', 'fogTop', 'fogWidth', 'visibility' ] as const;
 
-// the key of `rows` at `elevation`, its fields and its shape, into `out`
-function keyAlong( rows: ReadonlyArray<readonly [ number, HazeKey ]>, elevation: number, out: HazeKey ): void {
+// the key of `rows` at `elevation`, its fields, its shape and its fog layer, into `out`
+function keyAlong( rows: ReadonlyArray<readonly [ number, FullKey ]>, elevation: number, out: FullKey ): void {
 
 	let i = 0;
 	while ( i < rows.length - 2 && elevation > rows[ i + 1 ][ 0 ] ) i ++;
@@ -314,17 +392,24 @@ function keyAlong( rows: ReadonlyArray<readonly [ number, HazeKey ]>, elevation:
 	for ( const f of FIELDS ) out[ f ] = a[ f ] + ( b[ f ] - a[ f ] ) * t;
 	const sa = SHAPED.has( a ) ? a : DAY, sb = SHAPED.has( b ) ? b : DAY;
 	for ( const f of SHAPE_FIELDS ) out[ f ] = sa[ f ] + ( sb[ f ] - sa[ f ] ) * t;
+	const fa = fogOf( a ), fb = fogOf( b );
+	for ( const f of FOG_FIELDS ) out[ f ] = fa[ f ] + ( fb[ f ] - fa[ f ] ) * t;
 	if ( night === null || a === NIGHT ) return;
 	for ( const f of FIELDS ) out[ f ] += ( NIGHT[ f ] - out[ f ] ) * night;
 	for ( const f of SHAPE_FIELDS ) out[ f ] += ( NIGHT[ f ] - out[ f ] ) * night;
+	for ( const f of FOG_FIELDS ) out[ f ] += ( NIGHT[ f ] - out[ f ] ) * night;
 
 }
 const _cloudedKey = key( 0, DAY_SIGMA, 0, 0, 0 );
+const _key = key( 0, DAY_SIGMA, 0, 0, 0 );
 
 /** The haze's key at the sun's `elevation` (degrees), `rising` or setting, under the weather's
- * blend of the kept skies, its wind (m/s) and its rain (0 - 1). Writes into `out`. */
-export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly number[], wind: number, rain: number, out: HazeKey ): HazeKey {
+ * blend of the kept skies, its wind (m/s), its rain (0 - 1) and the sea fog's share (0 - 1,
+ * its switch).
+ * Writes into `out`. */
+export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly number[], wind: number, rain: number, seaFog: number, target: HazeKey ): HazeKey {
 
+	const out = _key;
 	keyAlong( rising ? RISING : SETTING, elevation, out );
 	// a clouded evening's afterglow (see the header)
 	const clouded = cloudedShare( skyMix );
@@ -333,6 +418,7 @@ export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly 
 		keyAlong( SETTING_CLOUDED, elevation, _cloudedKey );
 		for ( const f of FIELDS ) out[ f ] += ( _cloudedKey[ f ] - out[ f ] ) * clouded;
 		for ( const f of SHAPE_FIELDS ) out[ f ] += ( _cloudedKey[ f ] - out[ f ] ) * clouded;
+		for ( const f of FOG_FIELDS ) out[ f ] += ( _cloudedKey[ f ] - out[ f ] ) * clouded;
 
 	}
 	let keep = 0, gain = 0, red = 0, green = 0, blue = 0, aerosol = 0, height = 0, top = 0, width = 0, haze = 0, sunRayleigh = 0, inverseTop = 0;
@@ -360,8 +446,23 @@ export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly 
 	out.sigmaBlue *= blue;
 	out.aerosolShare *= aerosol;
 	out.aerosolHeight *= height;
-	out.top *= top;
-	out.width *= width;
+	// the fog layer under a clear or a fair sky, by its share, and the sea fog by its switch at
+	// every hour, which takes the open sky's layer's place: the ground layer takes its top and its
+	// edge's width; without it cloudy and overcast keep their own air (see the header)
+	const sea = seaFog, open = out.fogLayer * ( 1 - clouded ) * ( 1 - sea );
+	const fog = open + sea;
+	out.neutral *= 1 - clouded;
+	out.fogCoverHigh = FOG_NOISE.high();
+	if ( sea > 0 ) {
+
+		for ( const f of [ 'neutral', 'scatter', 'fogTop', 'fogWidth', 'visibility' ] as const ) out[ f ] = ( out[ f ] * open + SEA_FOG[ f ] * sea ) / fog;
+		out.fogCoverHigh = ( out.fogCoverHigh * open + SEA_FOG.coverHigh * sea ) / fog;
+
+	}
+	out.droplet = out.fogLayer + ( 1 - out.fogLayer ) * sea;
+	out.fogLayer = fog;
+	out.top = out.top * top * ( 1 - fog ) + out.fogTop * fog;
+	out.width = out.width * width * ( 1 - fog ) + out.fogWidth * fog;
 	out.aerosolTop = inverseTop > 0 ? 1 / inverseTop : Infinity;
 	out.amount *= haze;
 	out.sunRayleigh = 1 - ( 1 - out.sunRayleigh ) * ( 1 - sunRayleigh );
@@ -369,6 +470,6 @@ export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly 
 	// (by night the whole clouded share, once the moon's key has come in: see the header)
 	out.deck = duskForce( 'deck', Math.max( deckLight( elevation, clouded, skyMix[ 3 ] ?? 0 ), clouded * moonKeyShare( elevation ) ) );
 	out.overcastDeck = ( skyMix[ 3 ] ?? 0 ) * overcastDeckLight( elevation );
-	return out;
+	return Object.assign( target, out );
 
 }

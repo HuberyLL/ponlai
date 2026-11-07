@@ -286,6 +286,9 @@ const loaded = sceneOptions( params );
 const dayCycle = new DayCycle( loaded.day );
 const weather = new Weather( loaded.weather, loaded.wind );
 const weatherEffects = { rain: true, wetness: true };
+// The deep sea fog (weather/HazeKeys.ts SEA_FOG): a switch beside the weather, off unless `?seaFog`
+// or the GUI turns it on, whatever the sky.
+const seaFogView = { on: params.has( 'seaFog' ) };
 weather.auto = loaded.autoWeather;
 // The land's floor under a deck and the day sky's level and exponent per clouded sky (Weather.ts
 // `deckFloor`, `daySky`, `daySkyExponent`), tunable on debug pages without a reload: the presets
@@ -422,7 +425,7 @@ function prepareHaze( state: Readonly<WeatherState> ): void {
 
 	if ( ! hazeReady ) return;
 	const rising = sunRising( sky.sunDir );
-	hazeKeyAt( sky.elevation, rising, weather.skyMix, sky.weather.windSpeed, sky.weather.rain, hazeKey );
+	hazeKeyAt( sky.elevation, rising, weather.skyMix, sky.weather.windSpeed, sky.weather.rain, seaFogView.on ? 1 : 0, hazeKey );
 	pipeline.air.haze.value = sky.weather.haze * hazeKey.amount;
 	pipeline.air.fog.value = Math.max( sky.weather.fog, hazeKey.mist );
 	pipeline.air.setLook( hazeKey );
@@ -1400,6 +1403,7 @@ weatherF.add( windView, 'heading', 0, 360, 1 ).name( 'wind heading' ).listen().o
 weatherF.add( weather, 'auto' ).name( 'auto weather' ).listen();
 weatherF.add( weatherEffects, 'rain' ).name( 'rain & ripples' );
 weatherF.add( weatherEffects, 'wetness' ).name( 'wet surfaces' );
+weatherF.add( seaFogView, 'on' ).name( 'sea fog' ).onChange( () => markSkyRetune() );
 const timeF = gui.addFolder( 'Time & moon' );
 const timeView = { preset: requestedPreset ?? 'golden-hour' };
 timeF.add( dayCycle, 'hour', 0, 24, 0.01 ).name( 'hour' ).listen().onFinishChange( refreshEnvironment );
