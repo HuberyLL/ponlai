@@ -123,7 +123,7 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   compute pass).
 - `src/post/`: the frame's passes and tidewater's display chain (`Pipeline.ts`, its bloom in
   `PhysicalBloom.ts`, the colour the rods lend low light in `Purkinje.ts`), the pre-exposure every writer of the scene's colour and metering light
-  multiplies by and every scene-unit reader divides out (`PreExposure.ts`), the key's screen-space shade over the vegetation's and the opaque scene's depth (`MeadowShade.ts`),
+  multiplies by and every scene-unit reader divides out (`PreExposure.ts`; the sky's bakes and the clouds' panorama store at a power of two of their own instead, `storeStops`, and their readers multiply by their read gain, Sky.ts `environmentRead` and the like), the key's screen-space shade over the vegetation's and the opaque scene's depth (`MeadowShade.ts`),
   the screen-space ambient occlusion the ambient light takes (`GTAO.ts`, on in high),
   the sun's flare (added to the bloom, `PhysicalBloom.ts`) and the screen-space light shafts, off by default (`LightShafts.ts`), FSR 1, render scale and dynamic resolution (`RenderScale.ts`,
   `DynamicResolution.ts`), the frame pacer, the submit batching, the signal that a paused frame is
