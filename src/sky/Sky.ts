@@ -2106,10 +2106,10 @@ export class Sky {
 		// the weather's sky light (its day sky is on the sun's light alone: `skyGain`, `trackClouds`)
 		const ambientGain = weather?.ambientGain ?? 1;
 		const directVisibility = weather?.directVisibility ?? 1;
-		// The reference exposure (the frame's is metered from the light: post/Exposure.ts; this one
-		// is what the night sky's own light is tuned against) adapts to the dimmer diffuse daylight
+		// The base exposure (the frame's is metered from the light: post/Exposure.ts; this one is
+		// what the night sky's own light is tuned against) adapts to the dimmer diffuse daylight
 		// under a closed deck, as tidewater's auto exposure would: it lifts a frame darker than its
-		// target only partly (by the ratio's 0.8th power), 4.7 times under a closed deck; less so in
+		// metered level only partly (by the ratio's 0.8th power), 4.7 times under a closed deck; less so in
 		// rain.
 		this.grade.exposure *= 1 + 3.7 * overcast * this.grade.daylight * ( 1 - 0.7 * ( weather?.rain ?? 0 ) );
 		// Through the blue hour a closed deck's adaptation goes on rising as the light goes (DayCycle

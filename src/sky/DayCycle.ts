@@ -14,10 +14,10 @@ import { markSkyRetune } from './SkyRetune.ts';
 // the full extinction (Sky.ts `keyHue`). The sky, sun, moon, stars, key light and grade follow
 // the clock every frame. `reset` sets the clock as the constructor does (a scene jump).
 //
-// The reference exposure follows the sun's elevation (EXPOSURE_KEYS), set once under an
-// earlier display chain: it only rises from afternoon into night. It does not set the frame's
-// exposure, which the display chain meters from the light (post/Exposure.ts): it is the reference
-// the night sky's own lights, the stars and the moon's disk, are tuned against (`nightSkyLevel`),
+// The base exposure follows the sun's elevation (EXPOSURE_KEYS), set once under an earlier
+// display chain: it only rises from afternoon into night. It does not set the frame's exposure,
+// which the display chain meters from the light (post/Exposure.ts): it is the exposure the night
+// sky's own lights, the stars and the moon's disk, are tuned against (`nightSkyLevel`),
 // and nothing they light reads it. So it follows the metered exposure: under the twilight it holds
 // from -6 to -7 degrees, and below it climbs with the meter as the night falls to the moon's light,
 // NIGHT_METER_LIFT stops by about -12 degrees, so the stars and the disk keep their display.
@@ -353,7 +353,7 @@ export const MOON = tuneObject( { elevation: 20, turn: 0 }, { elevation: 'sky.mo
 // metered curve), the full NIGHT_METER_LIFT by -12 degrees (NIGHT_EXPOSURE).
 const TWILIGHT_EXPOSURE = 25;
 const nightKey = ( elevation: number, stops: number ) => [ elevation, TWILIGHT_EXPOSURE * 2 ** stops ] as const;
-/** The stops a clear night's metered exposure lies above the twilight's reference (25): the
+/** The stops a clear night's metered exposure lies above the twilight's exposure (25): the
  * moon's light at its magnitude against the sun's, metered under the night key (post/Exposure.ts),
  * measured on the clear midnight's island view with the lamps off. The yunpeng's glow and every local light are
  * scaled by 2 to minus this, so a lamp keeps its display at night whatever the hour. */
