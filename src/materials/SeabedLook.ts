@@ -2,14 +2,28 @@ import type * as THREE from 'three/webgpu';
 import { If, float, vec3, mix, smoothstep } from 'three/tsl';
 import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
 
+// The rubble's tones against the gravel's: RUBBLE_TONE only carries the dry rock's tone onto the
+// floor. The island's rock, about 0.25 dry, 0.94 of it under the water (TerrainMaterial.ts
+// SUBMERGED_ROCK, which is where the submerged stone darkens), under a film of algae near 0.06 over
+// about three quarters of it, comes to about 0.10 on average, three times the gravel's tones at the
+// floor's gain (2.2 to 4.4 for a cover of 0.9 to 0.5).
+const RUBBLE_TONE = 3.0;
+
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 type F = THREE.Node<'float'>;
 
 // The sea floor's colour, for its material (TerrainMaterial's seabed). The sand, the seagrass and
-// the rubble take FLOOR_ALBEDO's gain alike, so they keep their order, the rubble a shade under the
-// sand of its depth at every hour; the ground bounce and the ambient probes read it too.
+// the rubble take FLOOR_ALBEDO's gain alike, so they keep their order at every hour; the ground
+// bounce and the ambient probes read it too. Each is a measured reflectance worked into linear sRGB:
+// - the sand a temperate mineral sand (quartz, feldspar and mica, from the island's rock and not a
+//   reef's carbonate), about 8 % on average, its red near twice its blue in the spectrum (about 1.5
+//   times in linear sRGB), and silt and clay at about 5 %, 0.63 of it: our own readings of the sand
+//   and the silt measured in Werdell & Roesler 2003 (Limnol. Oceanogr. 48:557);
+// - the seagrass our reading of the eelgrass measured in the same paper;
+// - the rubble the island's rock under the water (its tone by RUBBLE_TONE, its darkening under the
+//   water TerrainMaterial.ts SUBMERGED_ROCK's) mostly under a film of algae.
 //   bed:      seagrass cover and pale-sand share, baked per vertex (Bathymetry's seabedBeds)
 //   broad:    the sand's broad variation (the detail textures' normalsB alpha, some 77 m a tile)
 //   detail:   the tiled detail heights (r rock, g moss cushions, b sand ripples), or their means
@@ -23,16 +37,16 @@ type F = THREE.Node<'float'>;
 export function seabedAlbedo( bed: V2, broad: F, detail: V3, shore: F, wander: F, gravelAt: ( rate: number, c: number, sn: number, at: number ) => V4 ): { albedo: V3; grass: F; rubble: F; relief: F } {
 
 	// Broad sand colour carries the shallows; low-relief ripples stay subordinate so the
-	// ocean does not look like a transparent lid over an engraved, striped floor. This is wet sand,
-	// about 0.09 for the clean sand washed off the island and 0.06 for the basin's silted sand, near
-	// neutral, and the shallows are this floor seen through the water, dim and quiet, so a stone reads
-	// on it and the sea deepens in colour away from the island with no bright rim.
-	const sand = mix( vec3( 0.36, 0.34, 0.28 ), vec3( 0.56, 0.53, 0.45 ), smoothstep( 0.1, 0.9, detail.z.mul( 0.23 ).add( broad.mul( 0.87 ) ) ) )
-		.mul( detail.y.mul( 0.1 ).add( 0.95 ) ).mul( mix( float( 0.68 ), float( 1 ), bed.y ) ).mul( FLOOR_ALBEDO.gain );
+	// ocean does not look like a transparent lid over an engraved, striped floor. The clean sand
+	// washed off the island averages ( 0.093, 0.079, 0.063 ) over its spread (its high end about 1.55
+	// times its low), the basin's silted sand 0.63 of it (see the header).
+	const sand = mix( vec3( 0.376, 0.319, 0.255 ), vec3( 0.582, 0.495, 0.395 ), smoothstep( 0.1, 0.9, detail.z.mul( 0.23 ).add( broad.mul( 0.87 ) ) ) )
+		.mul( detail.y.mul( 0.1 ).add( 0.95 ) ).mul( mix( float( 0.63 ), float( 1 ), bed.y ) ).mul( FLOOR_ALBEDO.gain );
 	// seagrass and algae beds: dark olive meadows whose edges fray over a few decimetres (a
-	// meadow's edge is a sharp step from leaves to bare sand, not a gradient)
+	// meadow's edge is a sharp step from leaves to bare sand, not a gradient), about ( 0.048, 0.059,
+	// 0.024 ) on average, eelgrass's (see the header)
 	const grass = smoothstep( 0.4, 0.6, bed.x.add( detail.x.sub( 0.5 ).mul( 0.35 ) ) );
-	const grassC = mix( vec3( 0.068, 0.097, 0.051 ), vec3( 0.148, 0.194, 0.097 ), detail.y ).mul( FLOOR_ALBEDO.gain );
+	const grassC = mix( vec3( 0.198, 0.243, 0.099 ), vec3( 0.297, 0.365, 0.149 ), detail.y ).mul( FLOOR_ALBEDO.gain );
 	const albedo = mix( sand, grassC, grass ).toVar();
 	const relief = float( 0 ).toVar();
 	// rubble shed from the cliffs: an apron of stones round the foot, gone by 2 to 4 m from the shore
@@ -59,7 +73,7 @@ export function seabedAlbedo( bed: V2, broad: F, detail: V3, shore: F, wander: F
 		const crown = smoothstep( level, level.add( 0.5 ), height ).mul( 0.3 ).add( 0.7 );
 		const value = tone.mul( detail.x.sub( 0.5 ).mul( 0.4 ).add( 1 ) ).mul( crown );
 		const film = mix( vec3( 1 ), vec3( 0.84, 0.74, 0.46 ), smoothstep( 0.45, 0.75, detail.y ).mul( 0.4 ) );
-		const stone = vec3( 1, 0.95, 0.84 ).mul( value ).mul( film ).mul( FLOOR_ALBEDO.gain );
+		const stone = vec3( 1, 0.95, 0.84 ).mul( value ).mul( film ).mul( RUBBLE_TONE * FLOOR_ALBEDO.gain );
 		albedo.assign( mix( albedo.mul( mix( float( 1 ), float( 0.85 ), apron ) ), stone, smoothstep( level, level.add( 0.45 ), height ) ) );
 		relief.assign( height.sub( level ).max( 0 ) );
 
