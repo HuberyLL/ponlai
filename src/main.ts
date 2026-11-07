@@ -1432,19 +1432,17 @@ localLightsF.add( localLights, 'gain', 0, 16, 0.1 ).name( 'gain' ).onChange( ret
 localLightsF.close();
 const waterF = gui.addFolder( 'Water' );
 const optics = { clarity: 1.0, turbidity: 1.0 };
-const baseA = shared.sigA.value.clone(), baseS = shared.sigS.value.clone();
+const baseA = shared.sigA.value.clone(), baseB = shared.bb.value.clone();
 const setOptics = () => {
 
 	shared.sigA.value.copy( baseA ).multiplyScalar( 1 / optics.clarity );
-	shared.sigS.value.copy( baseS ).multiplyScalar( optics.turbidity / optics.clarity );
+	shared.bb.value.copy( baseB ).multiplyScalar( optics.turbidity / optics.clarity );
 
 };
 
 waterF.add( optics, 'clarity', 0.3, 3, 0.01 ).onChange( setOptics );
 waterF.add( optics, 'turbidity', 0.1, 4, 0.01 ).onChange( setOptics );
-waterF.add( W.backscatter, 'value', 0, 0.2, 0.001 ).name( 'backscatter' );
 waterF.add( W.roughness, 'value', 0.005, 0.2, 0.001 ).name( 'roughness' );
-waterF.add( W.sss, 'value', 0, 3, 0.01 ).name( 'crest translucency' );
 waterF.add( W.foamIntensity, 'value', 0, 2, 0.01 ).name( 'foam' );
 waterF.add( W.ssr, 'value', 0, 1, 1 ).name( 'SSR' );
 const waveF = gui.addFolder( 'Waves' );

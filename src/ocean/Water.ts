@@ -615,11 +615,9 @@ export class Water {
 	readonly reflectionBounds: THREE.Box3;
 	// tidewater's water material's settings
 	uniforms = {
-		backscatter: uniform( 0.035 ),
 		roughness: uniform( 0.035 ), // GGX alpha of the surface the slopes do not describe
 		ssr: uniform( 1 ),
 		reflection: uniform( 1 ),
-		sss: uniform( 1 ), // the crests' translucency
 		foamIntensity: uniform( 1 ),
 		foamCoverage: uniform( 1 ),
 		shoreFoam: uniform( 1 ), // the foam the waves leave at the rock (ShoreWaves)
@@ -1387,27 +1385,26 @@ export class Water {
 			// (the body's light: its share of the shadow, SHADOW_BODY)
 			const bodyShare = mix( float( 1 ), float( SHADOW_BODY ), smoothstep( ...SHADOW_BODY_DEPTH, thickness ) );
 			const bodyLight = keyLight.mul( mix( float( 1 ), vKeyShadow, bodyShare ) ).toVar();
-			const sigA = shared.sigA, sigS = shared.sigS;
-			const sigT = sigA.add( sigS ).toVar();
+			const sigA = shared.sigA, bb = shared.bb;
+			const sigT = sigA.add( bb ).toVar();
 			const Ls = refract( L.negate(), vec3( 0, 1, 0 ), 1 / IOR ).negate().toVar(); // toward the sun from under the water
 			const muS = max( Ls.y, 0.1 ), muV = max( Tv.y.negate(), 0.15 );
 			const sunIn = bodyLight.mul( float( 1 ).sub( fresnelDielectric( max( L.y, 0.02 ), float( IOR ) ) ) ).mul( refractedSunBeamScaleNode( L ) );
 			const kSun = sigT.mul( muV.div( muS ).add( 1 ) ).toVar();
 			const kAmb = sigT.mul( muV.div( 0.75 ).add( 1 ) ).toVar();
 			const ph = phaseHG( dot( Tv, Ls ), float( 0.86 ) ).mul( 0.7 ).add( 0.3 / ( 4 * PI ) );
-			const bb = sigS.mul( u.backscatter );
 			const albedoMS = bb.mul( 0.33 * 4 ).div( sigA.add( bb ) ).toVar();
 			const shelfShare = exp( pathLen.mul( pathLen ).div( - SHELF_SCATTER.depth * SHELF_SCATTER.depth ) );
-			const inSun = sunIn.mul( mix( openTint, shelfTint, shelfShare ) ).mul( sigS.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) ).mul( float( 1 ).sub( exp( kSun.negate().mul( pathLen ) ) ) ).div( kSun );
+			const inSun = sunIn.mul( mix( openTint, shelfTint, shelfShare ) ).mul( bb.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) ).mul( float( 1 ).sub( exp( kSun.negate().mul( pathLen ) ) ) ).div( kSun );
 			// (under a deck the sky's light in the body takes the deck's gain, sky/Weather.ts DECK_SKY_GAIN,
 			// less what a cloudy deck's gaps take back where the key comes through, `deckSkyGap`)
-			const inAmb = shared.skyIrradianceSource.mul( shared.deckSky.sub( shared.deckSkyGap.mul( cloudVisibility ) ) ).mul( sigS.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ).mul( float( 1 ).sub( exp( kAmb.negate().mul( pathLen ) ) ) ).div( kAmb );
+			const inAmb = shared.skyIrradianceSource.mul( shared.deckSky.sub( shared.deckSkyGap.mul( cloudVisibility ) ) ).mul( bb.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ).mul( float( 1 ).sub( exp( kAmb.negate().mul( pathLen ) ) ) ).div( kAmb );
 			// the sun through the thin crests: light entering a crest's top and back scatters out of its
 			// face over a broad lobe, down some 1.5 m of the water it crossed
 			const vH = normalize( V.xz.add( 1e-5 ) ), lH = normalize( L.xz.add( 1e-5 ) );
 			const back = pow( sat( dot( vH, lH.negate() ).mul( 0.6 ).add( 0.4 ) ), 2.5 );
 			const crest = sat( vWaveH.mul( 0.9 ).add( 0.1 ) ).mul( sat( float( 1 ).sub( N.y ).mul( 4 ) ).add( 0.25 ) );
-			const sss = bodyLight.mul( exp( sigT.negate().mul( 1.5 ) ) ).mul( 0.033 ).mul( back.mul( crest ).mul( u.sss ) ).mul( smoothstep( 0, 0.25, L.y ) );
+			const sss = bodyLight.mul( exp( sigT.negate().mul( 1.5 ) ) ).mul( 0.033 ).mul( back.mul( crest ) ).mul( smoothstep( 0, 0.25, L.y ) );
 			const veil = mix( vec3( 1 ), skyLight.div( max( lum( skyLight ), 1e-5 ) ), VEIL.chroma ).mul( vec3( ...VEIL.tint ) )
 				.mul( mix( skyLight.g, skyLight.b, VEIL.blue ) ).mul( VEIL.gain )
 				.mul( float( 1 ).sub( exp( pathLen.div( VEIL.depth ).negate() ) ) );

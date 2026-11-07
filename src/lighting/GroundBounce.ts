@@ -176,7 +176,7 @@ export class GroundBounce {
 			// the sea: the floor seen through the water column, down and back up
 			const depth = max( shared.waterLevel.sub( floorY ), 0 );
 			const floor = mix( mix( SAND, SEAGRASS, smoothstep( 0.3, 0.7, beds.x ) ), RUBBLE, smoothstep( 6.5, 0.5, sd ).mul( 0.5 ) );
-			const sea = floor.mul( exp( shared.sigA.add( shared.sigS ).mul( depth ).mul( - 2.4 ) ) ).mul( 0.9 ).add( WATER_BODY );
+			const sea = floor.mul( exp( shared.sigA.add( shared.bb ).mul( depth ).mul( - 2.4 ) ) ).mul( 0.9 ).add( WATER_BODY );
 			const wet = smoothstep( - 0.25, 0.25, sd ).toVar();
 			// (the land's bounce is the ambient volume's where materials read it: see the header)
 			const albedo = GROUND_BOUNCE_LAND ? mix( land, sea, wet ) : sea.mul( wet );

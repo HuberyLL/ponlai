@@ -105,7 +105,7 @@ export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun,
 	// the water above this point: the long waves' surface for the key, the mean level for the
 	// ambient (the wave maps; a level sea above the water's reach)
 	const p = positionWorld;
-	const sigT = shared.sigA.add( shared.sigS );
+	const sigT = shared.sigA.add( shared.bb );
 	const waves = waveMaps.wavesAt( p ).toVar();
 	const dSun = shared.waterLevel.add( waves.x ).sub( p.y ).toVar();
 	const dW = shared.waterLevel.add( waves.w ).sub( p.y ).toVar();
