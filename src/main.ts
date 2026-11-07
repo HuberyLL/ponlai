@@ -426,7 +426,8 @@ function prepareHaze( state: Readonly<WeatherState> ): void {
 	if ( ! hazeReady ) return;
 	const rising = sunRising( sky.sunDir );
 	// the parked fog weather's share of the sky, by the front's smoothstep as `skyMix` blends: exact
-	// at rest and, for the sun's Rayleigh beam, on a front between the fog and the overcast sky
+	// at rest and, for the sun's Rayleigh beam, on a front between the fog and the overcast sky, for
+	// the fog layer's droplets on one between the fog and the cloudy or overcast sky
 	// (weather/HazeKeys.ts `hazeKeyAt`)
 	const progress = weather.progress, blend = progress * progress * ( 3 - 2 * progress );
 	const fogWeather = ( weather.origin === 'fog' ? 1 - blend : 0 ) + ( weather.target === 'fog' ? blend : 0 );
