@@ -14,8 +14,9 @@ art decision changes; images from elsewhere stay out of the repository.
   (Penglai). Deep clear water over a quiet floor with a sparkling glare toward the sun, chunky
   chiselled stone, a lush meadow with wildflowers, and grass hanging over the rim. Keep the lower
   cliff stone exposed.
-- The light and the image are photographic, as real as tidewater's (its water, its light under
-  the water): the scene is lit by the sun or moon, the sky and the sunlight the ground bounces up.
+- The light and the image are photographic: the scene is lit by the sun or moon, the sky and the
+  sunlight the ground bounces up, and the sea takes that light as sea water does (see the water
+  below).
   The frame is developed in stages: a local tone mapping keeps a bright
   sea, glare or sky from burning out and greying while the land keeps its level (by day only what
   lies well over the lit ground is drawn toward it; under a low sun the land is drawn up as well,
@@ -108,8 +109,9 @@ art decision changes; images from elsewhere stay out of the repository.
   light leaves only with the sun's own, over the twilight. Its sky is brightest about the sun's
   place and dim looking away, light near the sun and a dark grey away from it. The land under it is
   lit soft: the deck's sky light from every side, its glow about the sun's place included, lifted
-  well over a cloudy day's, which the ground keeps under the water too, so the shallows' floor keeps
-  its light. The sun reaches it only through the deck: none under its rolls, and where a thinned
+  well over a cloudy day's. Under the water the floor takes that light as the water column passes it
+  down, so the shallows' floor is lit by the same deck, dimmed by the water above it the deeper it
+  lies. The sun reaches it only through the deck: none under its rolls, and where a thinned
   region of the deck lies along the sun, a share of it in large patches that move with the deck,
   which adds a few per cent to the meadow and draws the faint shadows of everything taller than the
   meadow; the meadow does not shade itself in it, so the sward's own shade is the one the sky light
@@ -120,15 +122,17 @@ art decision changes; images from elsewhere stay out of the repository.
   the moonlit island readable (see Night).
 - No lens effects a photograph of a real place would not have: no tilt-shift miniature blur, no
   lens flares forced into the frame.
-- The water is tidewater's physically based model with clear water a little less pure than its
-  tropical one, a temperate sea under green hills: a quiet slate blue in the open water, a dim muted
-  green only where the floor falls away, never a teal, a turquoise, a saturated navy or a blue-cyan.
-  Over the shallows it is the floor itself, near neutral, with no bright rim round the island, and
-  under cloud the sea holds a pale grey slate that meets its sky, about as light seen along the water
-  as from above, with no metal on the swell, and brighter toward the sun; at sunset it takes the low
-  sky's copper on every side, keeps its waves and lies darker than its shoals, whose floor stays
-  near its own colour. A calm lee stands level with the sea round
-  it. It stays clear to the floor in everyday weather: the stones and the seagrass's edges show
+- The water is sea water with measured optics: clear open-ocean water with a little
+  phytoplankton (about 0.5 mg of chlorophyll a cubic metre), which takes the red out within a few
+  metres and the green and blue over tens. Its colour follows from that and the light on it, with
+  no colour of its own laid on: the open, deep water is a deep blue, the light its body scatters
+  back under the reflection of the sky; over the shallows the floor shows through, its sand,
+  seagrass and stone dimmed and turned bluer by the water over it, the more the deeper it lies, with
+  no bright rim round the island. Under cloud the sea reflects the deck's grey and its body dims
+  with the deck's light; where a gap in the cloud lets the sun through, its glint on the waves lies
+  on the sea as a silver sheen, the same reflection of the sun as on a clear day, spread by the
+  waves' slopes. At sunset the reflection takes the low sky's colour. A calm lee stands level with
+  the sea round it. It stays clear to the floor in everyday weather: the stones and the seagrass's edges show
   through the water down to some 5 to 7 m, which wobbles them but never breaks them into crumbs,
   and the calm water carries no film of foam.
 - The look is judged from the game's own view, the island camera zoomed out over the island, as
@@ -149,8 +153,9 @@ art decision changes; images from elsewhere stay out of the repository.
   limestone so that the exposure set for the meadow leaves it below the curve's shoulder, but
   lighter than the meadow's albedo (about one and a half times it), so a face lit from the side
   stands out from the grass as a pale cliff rather than a dark band. The wall's foot, in and under
-  the water, is a wall in shade: it keeps the island's shade down into the sea, and at a low sun or
-  under cloud nothing pale runs along it.
+  the water, is the same stone wet: under the water it keeps nearly all of its dry albedo, and it
+  darkens only as the water over it dims and colours the floor beside it, so nothing pale runs
+  along it at a low sun or under cloud.
 
 ## Three layers in one world
 
@@ -177,9 +182,9 @@ art decision changes; images from elsewhere stay out of the repository.
   shed them; elsewhere the shelf is mostly clear sand and platform, never stones sprinkled evenly
   round the coast.
 - The floor round the coast zones as a real rocky shore's: cobbles with an olive film close against
-  the cliff's foot, rounded stones in a low mottle a shade under the sand of their depth at every
-  hour, with silted sand between them and thinning out within a few metres, then a belt of clean
-  sand whose ripples, a hand's width apart, run along the coast, and seagrass only below the swell's reach (from about 3.5 m down), in meadows tens of
+  the cliff's foot, rounded stones in a low mottle close to the sand of their depth and a little
+  greyer at every hour, with silted sand between them and thinning out within a few metres, then a
+  belt of clean sand whose ripples, a hand's width apart, run along the coast, and seagrass only below the swell's reach (from about 3.5 m down), in meadows tens of
   metres across with sharp edges and sand holes. Nothing on the floor runs one way across the
   whole sea.
 - The cliffs read as natural rock, never masonry: no level courses or evenly spaced joints, no
