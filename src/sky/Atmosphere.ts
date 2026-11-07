@@ -135,10 +135,16 @@ import { markSkyRetune } from './SkyRetune.ts';
 // not the view, so it does not: weather/VolumetricHaze.ts); the Rayleigh share's gain under the
 // aerosol's presses the dome down to a dark floor there, the aerosol's rows also feeding the glow
 // round the moon (the haze's moon lobe).
-// The level both moon row gains take over their ratio (`moonRayleigh`, `moonMie`): measured on the
-// clear night's environment harmonics with the moon at its default height, 2.4 stops brings the
-// whole moonlit sky's irradiance on level ground to that of both gains at 1.
-const MOON_SKY_LEVEL = 2 ** 2.4;
+// The level both moon row gains take over their ratio (`moonRayleigh`, `moonMie`). Its definition:
+// the whole moonlit sky (the dome, the haze and the clouds) gives level ground the cosine-weighted
+// irradiance (Sky.ts `skyIrradiance`, from the environment's harmonics) it gives with both gains at
+// 1, on the clear midnight with the moon at its default height. It is a measured value, so it is
+// measured again whenever what reads the moon's rows changes: the 2.4 stops measured first had come
+// to give 0.58 stop over the gains at 1, and the land's sky light as much over the light the sun's
+// sky lends it at the same height. 1.65 stops gives that irradiance within 0.1 %; the
+// irradiance is linear in the level, its part outside the rows (the clouds' direct moonlight, the
+// stars, the night's ambient) a constant.
+const MOON_SKY_LEVEL = 2 ** 1.65;
 const RG = 6360, RT = 6460;
 /** The planet's radius and the atmosphere's top, km from the planet's centre. */
 export const PLANET_RADIUS = RG, ATMOSPHERE_RADIUS = RT;
