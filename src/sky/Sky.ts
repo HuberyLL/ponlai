@@ -1072,7 +1072,10 @@ const _cloudMoon = new THREE.Color();
 // `floorKeyGain`, `overcastDeckWeight`): whole at every sun by day, its sun's part gone by -6
 // degrees on the slope the land's sky light under the deck leaves on (lighting/AmbientGrade.ts
 // `overcastLandWeight`), its moon's part the same gain at the moon's height, by the moon's share of
-// the key, so by night the moon's floor takes the gain the sun's takes there. Under the closed deck the
+// the key, so by night the moon's floor takes the gain the sun's takes there. The sun's part of the
+// floor itself leaves over the last 2.5 degrees before the horizon (Weather.ts `overcastFloorSun`),
+// so under the closed deck the land keeps the deck's diffuse light through sunset, with no flash
+// of the setting beam. Under the closed deck the
 // land's directional light is that floor through the key's map, so the gain brightens the land's key
 // and the shadows the bamboo and the islanders cast with it; it stops where the floor times the gain
 // reaches 1, and where the clouds thin to a gap the key goes back to the sky's own

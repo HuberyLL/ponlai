@@ -22,8 +22,18 @@ import { markSkyRetune } from './SkyRetune.ts';
 // from -6 to -7 degrees, and below it climbs with the meter as the night falls to the moon's light,
 // NIGHT_METER_LIFT stops by about -12 degrees, so the stars and the disk keep their display.
 // The night ambient rises as the sun's skylight fades after sunset, and the moon's key comes in
-// once the handoff has turned it (MOON_KEY_TOP), so twilight is never darker than the
-// night; the night sky's own light (stars, the moon's disk and its in-scatter in the
+// once the handoff has turned it (MOON_KEY_TOP). Each night share comes in over a window placed
+// so that what it adds in half a degree is no more than what the twilight loses in it. The aim:
+// every light the dusk is judged by (the land's, the sea's, the sky's, the haze's) falls as the
+// sun sinks, rising by no more than 2 % of itself in any half degree (tools/dusk-grid.mjs, its
+// step-wise check, from +2 down to -8 degrees) and never climbing more than 2 % over the level it
+// held at any higher sun down to midnight (its overall check); and the exposure, in stops of
+// gain, never falls as the sun sinks to -8 degrees (its exposure check). Known exceptions to the
+// overall check, as the moon's light takes over toward midnight: the sea's radiance under a clear
+// or fair evening climbs back about twofold, the far meadow's under cloudy and overcast skies
+// about 10 to 27 %, and the land's light and its illuminance 2 to 4 %; and the step-wise check
+// stops at -8 degrees.
+// So the night is the twilight's end, not a lift after a dip; the night sky's own light (stars, the moon's disk and its in-scatter in the
 // sky, clouds) scales back to keep its tuned look in deep night (Sky.track). The night is
 // art-directed, not a simulation of the eye's night vision (docs/art-direction.md).
 // A clear twilight is not yet the night, on either side of it. After a clear sunset the glow
@@ -54,7 +64,8 @@ import { markSkyRetune } from './SkyRetune.ts';
 // 0.9. By stops, the clear evening's exposure turns at -7.5, falls 1.6 to 2.1 stops each half degree
 // from -8 to -10 and lands at -11 by 1.4 and 0.5, no step on the land rises by more than 0.01 in L,
 // and the sky's falls to the night's without turning. The clouded share keeps
-// the daylight's timing (the display's night whole by about -2.5 degrees, the sky's by -6), and a
+// the daylight's timing for the display (its night whole by about -2.5 degrees); the exposure's
+// night comes in from the horizon to -5 and the sky's by -6 (DUSK_WINDOWS), and a
 // side's flip at noon or midnight moves nothing: every weight here is 0 by day and 1 by night on
 // both sides.
 //
