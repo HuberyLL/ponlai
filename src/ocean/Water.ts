@@ -25,12 +25,14 @@ import { REFRACTION_GUARD } from './Refraction.ts';
 import { waveDamping } from './WaveDamping.ts';
 import type { Shared } from '../shared.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
+import { liftKeyWorld } from '../lighting/KeyLift.ts';
 import { refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
 import { rainRippleGradient } from '../weather/Rain.ts';
 import { ISLAND_PEAK, LAND_REACH, type Bounds } from '../world/WorldShapes.ts';
 import { GROWTH } from '../world/IslandGrowth.ts';
 import { FAR_HALF } from '../world/SeabedTile.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { AMBIENT_ONLY } from '../debug/LightLayer.ts';
 import { tuneKeys, tuneUniform } from '../debug/Tune.ts';
 import { keyed, type DayKeys } from '../post/DayKeys.ts';
 import { REFERENCE_SPEED } from '../weather/Wind.ts';
@@ -64,12 +66,15 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     into the water, its refraction and its path down the column as the key does. The glint keeps
 //     the direct beam alone: under a deck that lets almost none of it through, the soft sheen
 //     toward the sun is the sky's reflection (the deck's glow about the sun's place is drawn in the
-//     sky), not a glitter road. The surface's metering illuminance keeps the clouds' own
-//     transmittance without the floor (`meterSun`): open level water under the floor meters as
-//     open level ground, brighter than the land a view holds, and the exposure, metered from the
-//     image, fell with the sea's share of the frame (the overcast island views 1.7 to 2.2 stops
-//     darker, below the eye-height views over land, the sea drawn darker than before the floor);
-//     a meter by the lighting state rather than the image would take the sea's key instead
+//     sky), not a glitter road. The surface's metering illuminance is a share of what a white card
+//     laid level at the point would meter (the sky's upper hemisphere and the key by its shadow and
+//     clouds, no reflection, refraction, body nor foam): clear water sends back little diffuse
+//     light, and yet it is read as bright water, not a black hole, in the exposure's image. The
+//     key's cosine in it is the one level ground takes (the lifted key's: KeyLift.ts), so under one
+//     key the sea's sunlit term and the ground's are metered alike, and a low sun's sea is not a
+//     dark hole in the meter at dusk and dawn; reflection and refraction enter the colour only. The
+//     meter follows the lighting state: the sea's share of a frame moves the exposure the same way
+//     under every sky, and by less than when the sea metered as open ground
 //   - exact dielectric Fresnel, its mean over the slopes no pixel resolves on the distant sea (a
 //     mirror's grazing reflectance is too much for a sheet of small facets turned every way): the
 //     facets the eye sees turn toward it, and other waves stop part of their reflected rays (Smith's
@@ -718,6 +723,12 @@ export class Water {
 		const lobeSlopeScale = tuneUniform( 'sea.reflection.slopeScale', REFLECTION_LOBE.slopeScale, { min: 0.5, max: 1.5 } );
 		const lobeLift = tuneUniform( 'sea.reflection.lobeLift', REFLECTION_LOBE.lift, { min: 0, max: 3 } );
 		const panoramaTexel = PI / sky.equirect.height;
+		// the sea's metering illuminance: a share of the white card's. A quarter puts the sea two stops
+		// under sunlit bare ground in the island views of a clear sky, a closed deck and a cloudy
+		// deck, within a fifth of a stop; a fifth leaves three of those four views outside it and
+		// three tenths all four (one by a hundredth of a stop), and the views keep their look best at
+		// a quarter (three tenths loses the most)
+		const meterShare = tuneUniform( 'sea.meter.share', 0.25, { min: 0, max: 1 } );
 		// A cascade's layer of an FFT field at an undisplaced xz.
 		const cascade = ( field: THREE.Texture, c: number, at: V2 ) => texture( field, at.div( fft.sizes[ c ] ) ).depth( int( c ) );
 
@@ -1038,12 +1049,13 @@ export class Water {
 			// the glint's: the key's direct beam alone, the light the cloud scatters on through being
 			// diffuse (Sky.ts `cloudDirectVisibility`)
 			const glintKey = shared.sunColor.mul( sky.cloudDirectVisibility( wp ) ).mul( vKeyShadow ).toVar();
-			// the surface's metering illuminance (lighting/MeterLight.ts): the sky's upper hemisphere
-			// (its irradiance on level water over pi) and the key on level water, no reflection nor
-			// light from within the water; its key the clouds' own without the floor, so a view
-			// full of sea keeps the exposure of the land beside it (the header's key)
-			const meterSun = shared.sunColor.mul( cloudVisibility ).mul( vKeyShadow );
-			meter.assign( luminance( shared.skyIrradianceSource ).add( luminance( meterSun ).mul( max( L.y, 0 ) ).mul( 1 / Math.PI ) ) );
+			// the surface's metering illuminance (lighting/MeterLight.ts): a share of what a white card
+			// laid level at the point would meter, the sky's upper hemisphere (its irradiance over pi)
+			// and the key by the cosine level ground takes it by (the lifted key's, KeyLift.ts); no
+			// reflection, no light from within the water. The key is the colour's (the clouds and the
+			// sun's shadow in it). Zero in the ambient-only view, which reads the two terms apart.
+			const meterSunTerm = AMBIENT_ONLY ? float( 0 ) : lum( sunLight ).mul( max( liftKeyWorld( L ).y, 0 ) ).mul( 1 / Math.PI );
+			meter.assign( meterShare.mul( luminance( shared.skyIrradianceSource ).add( meterSunTerm ) ) );
 
 			// ---- what lies straight behind this pixel (linear depth: view-space z, < -9e4 = sky)
 			const z0 = behindViewZ.toVar();

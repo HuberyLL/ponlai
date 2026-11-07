@@ -39,7 +39,8 @@ type V3 = THREE.Node<'vec3'>;
 // weighs its bounce by the lifted cosine, the light level ground takes (AmbientRelight.ts). The
 // haze's shadow is the sun's map, so its shafts follow the lifted shadows. Nothing else brightens
 // the dusk: the rest is the exposure's. The metering illuminance a lit material writes
-// (Pipeline.ts `meterLight`) is its incident light, the lifted cosine included.
+// (Pipeline.ts `meterLight`) is its incident light, the lifted cosine included, and the sea's
+// takes the same cosine for its key term (ocean/Water.ts).
 // The moon, the night's key, stands fixed in the sky (sky/DayCycle.ts MOON, `moonDirection`) and
 // shades from its own direction for as long as it is the key, so the night keeps one shading and
 // one level from dusk to dawn. It is drawn there, and the key's own direction is that one too
@@ -171,7 +172,8 @@ export function updateKeyLift( key: THREE.Vector3, moon = false ): void {
 }
 
 /** The key's world direction L lifted: `liftedKeyDirection` on the GPU, the direction the sun's
- * map is drawn along (the meadow's layer shade, Grass.ts `meadowLayerDepth`, takes it). */
+ * map is drawn along (the meadow's layer shade, Grass.ts `meadowLayerDepth`, takes it, and the
+ * sea's metering illuminance, ocean/Water.ts, takes its level-ground cosine from it). */
 export function liftKeyWorld( L: V3 ): V3 {
 
 	return L.mul( scale ).add( vec3( 0, up, 0 ) ).add( moonShade.mul( side ) );

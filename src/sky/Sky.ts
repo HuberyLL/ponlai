@@ -577,9 +577,9 @@ const _skyLight = { r: 0, g: 0, b: 0 };
 // sky's light, the sun's in-scattered light and the haze's are all SKY_LIGHT's), so the keys are
 // the ratio with no gain over the one they hold, 12.1 - 15 from 6 degrees up on either side of the
 // day and at the morning's 3 degrees, but for the day side's low and high gains (3.51 and 2.48,
-// 0.78 and 0.73 of the ratio's 4.48 and 3.4) and SKY_LIGHT's high red: those are one least-squares
-// fit with the clear day's exposure keys (post/Exposure.ts) and haze (Weather.ts `haze`) on the
-// clear day's views from 6 degrees up, which the thin layer (Clouds.ts), faint by day, hardly
+// 0.78 and 0.73 of the ratio's 4.48 and 3.4) and SKY_LIGHT's high red: those are set on the clear
+// day's views from 6 degrees up, together with the haze (Weather.ts `haze`) and under the exposure
+// keys of the time (post/Exposure.ts), which the thin layer (Clouds.ts), faint by day, hardly
 // changes. At the ratio's gains the sky over a sun at 50 degrees, seen away from it, reads at Oklab
 // lightness 0.71 and chroma 0.099 and the far sea at 0.63 and 0.102, against 0.68 and 0.10 and 0.62
 // and 0.097 at the fit's, and the views from 6 degrees up that take the day side's gains stand

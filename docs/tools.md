@@ -309,7 +309,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   (`grey:0.18`: an 18 % grey card everywhere, whose screen code values set the exposure and the
   tone curve); `ambientOnly` takes the key light (the
   sun or the moon, with the vegetation's and the feathers' light through them) out of the lit
-  materials, leaving the sky's light and the ground's bounce. They combine: one minus the radiance under
+  materials, leaving the sky's light and the ground's bounce, and writes the sea's metering
+  illuminance without its key term (the sea's colour is left as it is). They combine: one minus the radiance under
   `lightOnly,ambientOnly` over that under `lightOnly` is a point's share of direct light.
   `opaqueVegetation` lights the vegetation as opaque surfaces (no light through a leaf or blade,
   no wrap, its ambient unweighted by its translucency), so a plant takes only the diffuse light an
@@ -428,7 +429,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `lighting.sward.tint.r` (`g`, `b`) and the crowns', `lighting.vegetation.leaf.tint.r` (`g`, `b`);
   the sea's mean reflection over the slopes no pixel resolves, the spread of those slopes
   `sea.reflection.slopeScale` and the lift of its sky lobe `sea.reflection.lobeLift`
-  (`src/ocean/Water.ts` `REFLECTION_LOBE`); and the dusk's shares, forced to take the twilight's
+  (`src/ocean/Water.ts` `REFLECTION_LOBE`), and the share of a white card's light the sea writes
+  into the exposure's meter, `sea.meter.share`; and the dusk's shares, forced to take the twilight's
   light and the night's apart, `sky.dusk.force.<name>` (-1, the default, leaves a share as the code
   makes it, 0 to 1 forces it to that value; the twilight's are weights on the sun's light; the names
   and what each one forces: `src/sky/DayCycle.ts` DUSK_FORCES, the values the code gave them since
