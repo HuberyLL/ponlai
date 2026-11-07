@@ -1559,7 +1559,7 @@ const hazeF = gui.addFolder( 'Haze' );
 const H = pipeline.air.settings;
 // the hour's and the weather's key, written each frame (weather/HazeKeys.ts)
 const hazeKey: HazeKey = { deck: 0, overcastDeck: 0, amount: 1, sigmaRed: 1, sigmaGreen: 1, sigmaBlue: 1, desaturate: 0, gain: 1, mist: 0, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
-	top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0, nearScale: 1, nearDensity: 1, nearStart: 250, nearEnd: 600 };
+	top: 10, width: 50, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0 };
 // the haze exists now: bake the environment again, so it holds the haze every later bake lays over
 // it (Sky.ts `fogEnvironment`) and a fresh load equals a jump
 hazeReady = true;
@@ -1579,7 +1579,6 @@ hazeF.add( H, 'jitter' );
 hazeF.add( H, 'tricubic' );
 hazeF.add( H, 'densityAA' ).name( 'density AA' );
 hazeF.add( H, 'sky' ).name( 'haze over the sky' );
-hazeF.add( H, 'nearHaze' ).name( 'thinner near haze' );
 hazeF.add( H, 'debug', { off: 0, 'key light visibility': 1 } ).name( 'debug view' );
 // the screen-space rays (off by default: the haze shows the shafts) and the sun's flare, for A/Bs
 hazeF.add( pipeline.shafts.strength, 'value', 0, 2, 0.01 ).name( 'screen-space rays' ).onChange( () => sceneEvent( 'retune' ) );

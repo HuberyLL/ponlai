@@ -46,7 +46,10 @@ saved as <out>/<name>.jpg at --quality: a frame kept to be recognised, not measu
 stats: per image and region, compare-captures.py's metrics (mean RGB, luma mean and standard
 deviation, the mean luma difference of adjacent pixels, the share of pixels with luma over 245)
 and the luma percentiles of --pct. --oklab adds the median Oklab lightness, chroma and hue (degrees)
-of the region's pixels (sRGB decoded), the screen colour a look is judged by; --split sorts the
+of the region's pixels (sRGB decoded), the screen colour a look is judged by; --linear adds the region's
+mean linear luminance Y (sRGB decoded, Rec. 709 weights), the --pct percentiles of Y and the Oklab
+L, a and b of its mean linear colour (`linear` in --json: a light level compared in stops, log2 of a
+ratio of Y, and a colour difference as the Oklab distance of the means); --split sorts the
 region's pixels by their Oklab L and gives four parts of it, each the mean Oklab L, C and hue (the
 mean of the pixels' L, a and b, C and h taken from the mean a and b) and mean linear RGB of its
 pixels: `under` and `over` the region's own median L (a crown's dark and lit halves), `p5` the darkest
@@ -439,6 +442,8 @@ def cmd_stats(a):
                 m["oklab"] = oklab_median(R)
             if a.split:
                 m["split"] = oklab_split(R)
+            if a.linear:
+                m["linear"] = linear_stats(R, pct)
             if a.cover:
                 rgb = R[..., :3].astype(np.int32)
                 m["cover"] = round(float(np.mean(rgb[..., 0] > 2 * rgb[..., 1])) * 100, 2)
@@ -458,6 +463,10 @@ def cmd_stats(a):
               + " ".join(f"{v:7.2f}" for v in r["lumaPercentiles"].values())
               + (f"  oklab L {r['oklab']['L']:.3f} C {r['oklab']['C']:.3f} h {r['oklab']['h']:.1f}" if "oklab" in r else "")
               + (f"  cover {r['cover']:.1f}%" if "cover" in r else ""))
+        if "linear" in r:
+            k = r["linear"]
+            print(f"  linear Y {k['Y']:.5f}  " + " ".join(f"p{p} {v:.5f}" for p, v in k["percentiles"].items())
+                  + f"  oklab L {k['L']:.4f} a {k['a']:+.4f} b {k['b']:+.4f}")
         if "split" in r:
             print(f"  median L {r['split']['medianL']:.3f}")
             for part, p in r["split"]["parts"].items():
@@ -534,18 +543,34 @@ def mask_stats(R, M, bare=None):
     return out
 
 
-def oklab_pixels(R):
-    """The linear RGB (n, 3) and the Oklab L, a and b (each n) of 8-bit sRGB pixels (Björn Ottosson's Oklab)."""
-    c = R[..., :3].reshape(-1, 3).astype(np.float64) / 255
-    lin = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+def oklab_of_linear(lin):
+    """The Oklab L, a and b of linear sRGB colours (..., 3) (Björn Ottosson's Oklab)."""
     lms = lin @ np.array([[0.4122214708, 0.2119034982, 0.0883024619],
                           [0.5363325363, 0.6806995451, 0.2817188376],
                           [0.0514459929, 0.1073969566, 0.6299787005]])
-    l_, m_, s_ = np.cbrt(lms).T
+    l_, m_, s_ = np.moveaxis(np.cbrt(lms), -1, 0)
     L = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_
     A = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_
     B = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_
+    return L, A, B
+
+
+def oklab_pixels(R):
+    """The linear RGB (n, 3) and the Oklab L, a and b (each n) of 8-bit sRGB pixels."""
+    c = R[..., :3].reshape(-1, 3).astype(np.float64) / 255
+    lin = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+    L, A, B = oklab_of_linear(lin)
     return lin, L, A, B
+
+
+def linear_stats(R, pct):
+    """The mean linear luminance Y (sRGB decoded, Rec. 709 weights), its percentiles, and the Oklab L, a, b of the mean linear colour."""
+    lin, _, _, _ = oklab_pixels(R)
+    y = lin @ np.array([0.2126, 0.7152, 0.0722])
+    L, A, B = oklab_of_linear(lin.mean(axis=0))
+    return {"Y": round(float(y.mean()), 6),
+            "percentiles": {f"{p:g}": round(float(v), 6) for p, v in zip(pct, np.percentile(y, pct))},
+            "L": round(float(L), 5), "a": round(float(A), 5), "b": round(float(B), 5)}
 
 
 def oklab_median(R):
@@ -978,6 +1003,7 @@ def main():
     common(p)
     p.add_argument("--pct", default="1,5,50,95,99")
     p.add_argument("--oklab", action="store_true", help="the median Oklab L, C and hue")
+    p.add_argument("--linear", action="store_true", help="the mean linear luminance Y, its --pct percentiles and the Oklab L, a, b of the mean linear colour")
     p.add_argument("--split", action="store_true", help="the means under and over the median L, of the darkest 5 %% and the brightest 10 %%")
     p.add_argument("--cover", action="store_true", help="the share of red pixels (a grassMask capture's blades)")
     p.add_argument("--mask", help="a mask capture of the same view (a file, or a directory of the same names): Oklab medians of its marked pixels and the rest")

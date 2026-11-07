@@ -71,8 +71,12 @@ art decision changes; images from elsewhere stay out of the repository.
   culm's sides a little, lit surfaces not at all. The ambient light is set for the shade with
   that loss in it, never pressed down once more for it, and a loss two terms estimate counts
   once (the turf takes the stronger of the two).
-- The air (haze, mist and the shafts light cuts through them) is being decided afresh: no rule
-  here limits it, and the volumetric haze keeps its present look until its new direction is written.
+- The air always carries a visible haze: it is part of this world, the sea's island seen through
+  it. Its shape is physical: the density varies with height alone, a thin ground layer lying on the
+  sea, much denser than a clean sea air near the water and clean above the layer. It answers to
+  neither the camera nor the island, so the island seen from above is clear, while the far sea and
+  the horizon, whose lines of sight run long and low through the layer, are hazed. Where the haze
+  is thick, the player draws in closer to see.
 - The sun's disk is drawn larger than life (1.1 degrees), softly limb-darkened, its edge clean;
   round it a soft glow sized by the frame, not the field of view, near white at its core and fading
   as the square of the distance past half the frame, with no streaks, ghosts or rings. It weakens
