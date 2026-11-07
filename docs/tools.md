@@ -739,7 +739,44 @@ with the sky, the sea, the darkest 5 % of the land and any boxes, into `<dir>/ro
 Each row also gives `card`, the mean luminance of the same cells on the light page in scene units, and
 each view the land's shares in sun, shade and penumbra. A view `<base>--<variant>` is read through the
 sort of `<base>`, so its rows are the same cells; variants need only `--pages normal`. It prints what
-the frames hold and judges nothing. Its header has the sort.
+the frames hold and judges nothing. Its header has the sort. `shoot --warm` lets the views of a page
+reach each other by the scene jump (a fraction of a page load, with the same frames and readings
+byte for byte, as checked on four views both ways): its read only reads, which `capture.mjs --ready-reads` tells the worker; an
+`--eval-ready` without it takes a page per view. `--jobs` is capture-set's page count. `rows --own`
+sorts each view by its own depth read (sky, sea, the land between them and the land's darkest 5 %),
+for views that share no camera, such as a camera turned at each frame; it needs only the normal
+page, and `--sky-mask-deg N` leaves the cells within N degrees of the sun or the moon out of the sky
+(by angle, from the page's read of the lights and the camera).
+
+`node tools/job.mjs start -- node tools/day-sweep.mjs <url> <outDir> [--scope routine|full]
+[--views name,...] [--times ...] [--weathers ...] [--compare <dir>] [--transitions]
+[--keep-frames]` sweeps the island view through the day under the kept weathers: a frame every
+hour, every half hour from 08:00 to 16:00 and every 10 minutes round sunrise and sunset, in three
+cameras (the game's default view; the same pose turned at each frame to look toward the light, the
+sun down to -12 degrees and the moon after; and that at the lowest pitch the game's camera allows,
+read from the page, which is the one with sky in it), as a contact sheet a camera and weather
+(`sheet-<camera>-<weather>.png`, labelled with the time and the sun's elevation), an overview of
+twelve key moments by the four weathers, the sky's, the sea's, the land's and the land's darkest 5 %
+log2 luminance and Oklab C and h with the sun's elevation and the exposure over the day
+(`curves-*.png`, `rows.json`) and `jumps-<camera>.txt`: every pair of neighbouring frames whose change
+holds a step beyond what its neighbours' slope predicts, of more than 1/3 stop or Oklab (a, b)
+distance .03, by size; a pair over which the camera turned more than 15 degrees is listed as "camera
+turned" instead of scanned. The land is read whole and by rank per frame (colour-rows's `land` and
+`floor` rows), not by a sun and shade sort fixed at noon, whose cells jumped three stops where
+noon's shadow stood. Run it before handing back a change to anything keyed by the sun's elevation or
+the weather; a routine run is hundreds of scene jumps, so through `job.mjs start` and `job.mjs wait`,
+into a new directory. A run is 732 PNG frames (about 6 GB); once the steps are found, the frames no
+line names are kept as 360 px thumbnails (`img.py thumb`) and the flagged ones, the sheets and the
+curves keep their size (`--keep-frames` keeps all; a thinned run's `report` redoes the numbers only).
+`--compare <earlier output>` gives a before and after sheet a camera and weather and the frames
+whose regions changed beyond those thresholds, between runs of the same sort, mask and size and for
+frames with the same pose (the others are listed, not subtracted); `--transitions` freezes each
+adjacent pair of weathers half way through a front at four moments and reports how far the middle
+frame lies from its endpoints; `report <outDir>` repeats the report on frames already shot. It is
+colour-rows (shoot --warm and rows), capture-set, `img.py sheet` and `thumb` and
+`tools/day-sweep-plot.py` combined, not a renderer of its own. The default and key views look 50
+degrees down and hold no sky. Its header has the cameras, the times, the regions and the
+thresholds' source.
 
 `node tools/verify-growth-swap.mjs <base url> [--steps 6] [--views island,cliffs,meadow] [--q
 "query"] [--fresh-grow M] [--out dir]` checks the growth in place: a page loaded at `grow=0` and
@@ -792,7 +829,8 @@ and the usual readiness): only load-time options (quality, aa, size and dpr, deb
 new page, and a set shares them. The jump does not undo what an eval changed outside the scene's
 options and camera (GUI settings, Tune, debug flags), so the view after one with an eval of its own
 (an ad-hoc view's js, anything but exactly a views.mjs view's eval) loads a fresh page, and an
-`--eval` or `--eval-ready` passed through after `--` takes a page per view: every view is the frame
+`--eval` or `--eval-ready` passed through after `--` takes a page per view (an `--eval-ready` that
+`--ready-reads` declares read-only keeps the one page): every view is the frame
 its own fresh load draws. Views need not be views.mjs's: `--view "name:query[::js]"`,
 `--views-file f.json` and `--sweep "key=a,b,c"` (each view per value, e.g. `--sweep
 weather=fair,rain --sweep hour=7,12,17`) capture ad-hoc views through the same pages, jump and
@@ -1468,6 +1506,11 @@ what these do not give (automation, A/B statistics, pass names).
 What colour a surface shows on screen, by kind and by light (sunlit rock, shaded grass, the sky,
 the darkest land), the same cells before and after a change, or a box with its dark and lit halves:
 `tools/colour-rows.mjs` (Captures), not a hand-placed box over mixed light.
+
+How the island's light, colour and exposure run through the day under each kept weather, and
+whether anything jumps at one hour (a system tuned by the sun's elevation and the weather): a
+change to such a system is checked with `tools/day-sweep.mjs` (Captures), before and after with
+`--compare`, not by the few frames a tuning session looks at.
 
 How much structure a cloud deck shows on screen (its contrast, masses, the edges' hardness, the
 low band and the far sea's fall at the horizon): `uv run tools/img.py stats --deck` on the horizon

@@ -3,7 +3,7 @@
 //                          [--wait-for "js expression"] [--frames n --every k] [--timeout 60000]
 //                          [--stable-min 1] [--stable-every 2] [--stable-repeats 1] [--stable-tolerance 0:5000|exact]
 //                          [--stable-patience 40] [--stable-cap 120] [--stable-trace] [--ready-frames n] [--wait ms] [--settle ms]
-//   node tools/capture.mjs --worker --url <base> [--w --h --scale --timeout, the options above] [--page-per-view] [--lease 20]
+//   node tools/capture.mjs --worker --url <base> [--w --h --scale --timeout, the options above] [--page-per-view] [--ready-reads] [--lease 20]
 // Writes artifacts/captures/<name>.png and prints the page's console errors and diagnostics.
 // The browser runs in a persistent profile slot and a paused capture (MSAA or off) is taken once its
 // image has stopped changing (tools/capture-browser.mjs, "readiness by stability"): after the evals, the
@@ -72,7 +72,9 @@
 //   changes (src/main.ts), so a view whose message says `last` (capture-set: an eval of its own
 //   that is not a views.mjs view's) ends its page after its shot, and the next view loads fresh.
 //   --eval and --eval-ready run on every view and may leave such changes too: with either, a page
-//   per view.
+//   per view, unless `--ready-reads` says the --eval-ready steps only read the frame (a render
+//   target read back, the diagnostics: tools/colour-rows.mjs `shoot --warm`), which leaves the
+//   page as the jump found it; --eval still takes a page per view.
 // - The GPU lock's slot is leased (gpu-lock.mjs `leaseGpuLock`): the worker keeps it from one view
 //   to the next, and gives it up before a view only when it has held it for --lease seconds (20) and
 //   a request ranked before its next one waits for it (an exclusive request, or a shared one when
@@ -416,8 +418,9 @@ if ( ! worker ) {
 	} );
 	// (capture-set gone: no orphaned browser; Playwright closes it on exit)
 	process.on( 'disconnect', () => process.exit( 1 ) );
-	// (--eval and --eval-ready run on every view and no jump undoes them: a page per view, see the header)
-	const onePerPage = args.includes( '--page-per-view' ) || argEvals.length > 0 || readyEvals.length > 0;
+	// (--eval and --eval-ready run on every view and no jump undoes them: a page per view, unless
+	// --ready-reads says the --eval-ready steps only read; see the header)
+	const onePerPage = args.includes( '--page-per-view' ) || argEvals.length > 0 || ( readyEvals.length > 0 && ! args.includes( '--ready-reads' ) );
 	const viewDeadline = timeout * 3 + 60000;
 	const lease = Number( opt( 'lease', LEASE ) ) * 1000;
 	const session = await openPage( { viewport: { width: W, height: H }, deviceScaleFactor: Number( opt( 'scale', 1 ) ) } );
