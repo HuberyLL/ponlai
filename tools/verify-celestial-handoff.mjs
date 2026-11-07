@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
 import { installWaitFrames } from './page-eval.mjs';
+import { HANDOFF_TOP, MOON_KEY_TOP } from '../src/sky/DayCycle.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
@@ -96,9 +97,10 @@ try {
 
 			}
 			assert.ok( Math.abs( sample.exposure - sample.grade.exposure ) < 1e-8, 'Main exposure must use the displayed sky grade' );
-			// The band runs from just above the sun's last light (DayCycle HANDOFF_TOP, -0.7) down to
-			// where the key has turned to the moon and the moon's key starts to rise (MOON_KEY_TOP).
-			if ( sample.elevation < - 0.6 && sample.elevation > - 2.5 ) {
+			// The band runs from just above the sun's last light (a tenth of a degree over DayCycle's
+			// HANDOFF_TOP) down to where the key has turned to the moon and the moon's key starts to
+			// rise (MOON_KEY_TOP).
+			if ( sample.elevation < HANDOFF_TOP + 0.1 && sample.elevation > MOON_KEY_TOP ) {
 
 				assert.deepEqual( sample.color, [ 0, 0, 0 ], 'The handoff band must carry zero direct energy' );
 

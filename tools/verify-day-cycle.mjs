@@ -1,7 +1,7 @@
 // Pure CPU checks; Node 22.18+ strips the imported TypeScript without a build or browser.
 // Run: node tools/verify-day-cycle.mjs
 import assert from 'node:assert/strict';
-import { DayCycle, DAY_PRESETS, DAY_EXPOSURE, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE, NOON_ELEVATION, MOON, exposureAt, moonDirection, nightAmbientAt, sunElevationAt, morningHour, eveningHour } from '../src/sky/DayCycle.ts';
+import { DayCycle, DAY_PRESETS, DAY_EXPOSURE, DUSK_WINDOWS, HANDOFF_TOP, MOON_KEY_TOP, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE, NOON_ELEVATION, MOON, cloudMoonShare, displayNight, exposureAt, exposureNight, moonDirection, moonKeyShare, nightAmbientAt, nightAmbientShare, skyNight, starNight, sunElevationAt, morningHour, eveningHour, yunpengNightShare } from '../src/sky/DayCycle.ts';
 
 const near = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
 const cycle = new DayCycle();
@@ -88,8 +88,8 @@ for ( let minute = 0; minute <= 1440; minute ++ ) {
 	// The night's ambient arrives before the stars, across the band where the sun's sky fades.
 	const nightAmbient = nightAmbientAt( s.elevation );
 	assert.ok( nightAmbient >= 0 && nightAmbient <= 1 && nightAmbient >= s.nightVisibility );
-	if ( s.elevation <= - 5 ) assert.equal( nightAmbient, 1 );
-	if ( s.elevation >= 1 ) assert.equal( nightAmbient, 0 );
+	if ( s.elevation <= DUSK_WINDOWS.ambient.clouded[ 0 ] ) assert.equal( nightAmbient, 1 );
+	if ( s.elevation >= DUSK_WINDOWS.ambient.clouded[ 1 ] ) assert.equal( nightAmbient, 0 );
 	// The deep night holds one exposure, so moonlight does not dim as the evening goes on.
 	if ( s.elevation <= - 12 ) assert.equal( s.exposure, NIGHT_EXPOSURE );
 	// A closed deck's night takes no adaptation of its own; above -1 degree its adaptation is unchanged.
@@ -100,6 +100,39 @@ for ( let minute = 0; minute <= 1440; minute ++ ) {
 	assert.ok( s.nightSkyLevel > 0 && s.nightSkyLevel <= 1 );
 	if ( s.elevation >= 8 ) assert.equal( s.nightSkyLevel, 1 );
 	if ( s.elevation <= - 14 ) near( s.exposure * s.nightSkyLevel, NIGHT_SKY_EXPOSURE * NIGHT_EXPOSURE_GAIN, 1e-9 );
+
+}
+// Every dusk share only grows as the sun sinks, on both sides of the day and under a clear and a
+// clouded sky, from +2 to -14 degrees in steps of 0.05, and is exactly 0 from +2.5 degrees up (the
+// shares' own shape, DayCycle.ts DUSK_WINDOWS; no GPU).
+{
+
+	const daylightAt = ( elevation, rising ) => {
+
+		cycle.setHour( rising ? morningHour( elevation ) : eveningHour( elevation ) );
+		return cycle.snapshot().daylight;
+
+	};
+	const shares = {
+		display: ( e, rising, cloud ) => displayNight( daylightAt( e, rising ), e, rising, cloud ),
+		exposure: ( e, rising, cloud ) => exposureNight( daylightAt( e, rising ), e, rising, cloud ),
+		stars: ( e, rising, cloud ) => starNight( daylightAt( e, rising ), e, rising, cloud ),
+		sky: skyNight, ambient: nightAmbientShare, yunpeng: yunpengNightShare, cloudMoon: cloudMoonShare,
+		moonKey: ( e ) => moonKeyShare( e ),
+	};
+	for ( const [ name, share ] of Object.entries( shares ) ) for ( const rising of [ false, true ] ) for ( const cloud of [ 0, 1 ] ) {
+
+		for ( const e of [ 2.5, 3, 4, 6, 10 ] ) assert.equal( share( e, rising, cloud ), 0, `${ name } at ${ e } degrees` );
+		let previous = share( 2, rising, cloud );
+		for ( let i = 1; i <= 320; i ++ ) {
+
+			const e = 2 - i * 0.05, value = share( e, rising, cloud );
+			assert.ok( value >= previous - 1e-12, `${ name } (${ rising ? 'morning' : 'evening' }, cloud ${ cloud }) falls at ${ e.toFixed( 2 ) } degrees` );
+			previous = value;
+
+		}
+
+	}
 
 }
 // Through the afternoon and evening the exposure only rises: no hump at twilight.
@@ -204,11 +237,11 @@ for ( const phase of [ 0, 0.125, 0.25, 0.499999, 0.5, 0.500001, 0.75, 0.875, 0.9
 			const state = cycle.snapshot();
 			near( state.keyDir.length(), 1 );
 			assert.ok( state.keyDir.toArray().every( Number.isFinite ) );
-			// (the moon's key rises from the end of the handoff, -2.5 degrees)
-			if ( elevation >= - 2.5 ) near( state.moonKeyGain, 0 );
+			// (the moon's key rises from the end of the handoff, MOON_KEY_TOP)
+			if ( elevation >= MOON_KEY_TOP ) near( state.moonKeyGain, 0 );
 			if ( elevation >= 0 ) assert.equal( state.moonVisibility, 0 );
-			if ( elevation >= - 0.7 ) assert.ok( state.keyDir.distanceTo( state.sunDir ) < 1e-10 );
-			if ( elevation <= - 2.5 ) assert.ok( state.keyDir.distanceTo( state.moonDir ) < 1e-10 );
+			if ( elevation >= HANDOFF_TOP ) assert.ok( state.keyDir.distanceTo( state.sunDir ) < 1e-10 );
+			if ( elevation <= MOON_KEY_TOP ) assert.ok( state.keyDir.distanceTo( state.moonDir ) < 1e-10 );
 			// Between them the key lies on the great circle from the sun to the moon.
 			near( state.keyDir.angleTo( state.sunDir ) + state.keyDir.angleTo( state.moonDir ), state.sunDir.angleTo( state.moonDir ), 1e-9 );
 			cycle.setHour( hour - 1e-7 );

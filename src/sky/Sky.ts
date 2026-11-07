@@ -23,7 +23,7 @@ import { STORE_CEILING, storePress, storeStops } from '../post/PreExposure.ts';
 import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
-import { DAY_EXPOSURE, DUSK_DEPTH, MOON, displayNight, duskForce, exposureNight, duskIn, nightAmbientShare, skyNight, starNight, sunRising, type DayCycleSnapshot } from './DayCycle.ts';
+import { DAY_EXPOSURE, MOON, cloudMoonShare, displayNight, duskForce, exposureNight, nightAmbientShare, skyNight, starNight, sunRising, type DayCycleSnapshot } from './DayCycle.ts';
 import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckFloorTakeover, floorKeyGain, daySkyAt, type WeatherFront, type WeatherState } from './Weather.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
@@ -945,21 +945,19 @@ function keyHue( transmittance: THREE.Color, tint: THREE.Color, rising: boolean 
 const NEUTRAL_TINT = new THREE.Vector4( 1, 1, 1, 0 );
 const _white = new THREE.Color();
 const _zenith = new THREE.Vector3( 0, 1, 0 );
-// The sun's elevations (degrees) over which the moon's light on the clouds comes in after sunset and
-// leaves before sunrise, all of it under the first: in the evening the window of the night sky's
-// light (DayCycle.ts DUSK_SKY), by stops as they come in (DUSK_DEPTH
+// The clouds' own moonlight (DayCycle.ts `cloudMoonShare`, its windows DUSK_WINDOWS.cloudMoon) comes
+// in after sunset and leaves before sunrise: in the evening over the window of the night sky's
+// light (DUSK_WINDOWS.sky), by stops as they come in (DUSK_DEPTH
 // cloudMoon: faded evenly, the clouds' moonlight was the largest share of the step the sky's meter
 // made from -7 to -7.5, 0.7 of 1.6 stops). From -7 to -3 the moonlit clouds came in
 // while the sky behind them was still the sun's afterglow: at -5.3 degrees they gave about half the light
 // of the sky 8 degrees up, which greyed the glow and the far sea under it. The morning keeps -7 to
-// -3, inside its night sky's window (DAWN_SKY, -13 to -3): there the moonlit clouds are part of the
+// -3, inside its night sky's window (-13 to -3): there the moonlit clouds are part of the
 // sky the dawn's exposure meters (on a clear morning the thin layer's most), and without it the land
 // and the low band over the horizon at -6.5 degrees read lighter. Under cloud the evening keeps -7
-// to -3 too (CLOUD_MOON), as every night layer keeps the daylight's timing there (DayCycle.ts: the
+// to -3 too, as every night layer keeps the daylight's timing there (DayCycle.ts: the
 // clouded sky's night is whole by -6): no afterglow lights the sky behind the deck, and taken in
 // from -11 by stops, an overcast deck's moonlight was under a hundredth of this at -8 degrees.
-const CLOUD_MOON_DUSK = [ - 11, - 7 ] as const;
-const CLOUD_MOON = [ - 7, - 3 ] as const;
 // The overall colour on each of the thin layer's two shares (Clouds.ts `keyDirect`, `keyAmbient`),
 // by the sun's elevation, the morning's apart (DayKeys.ts `rising`), the night's coming in with
 // the clouds' moonlight (`moonShare`). Tunable on debug pages (debug/Tune.ts):
@@ -986,7 +984,7 @@ const STREAK_AMBIENT = streakKeys( 'sky.streaks.keyAmbient', {
 const _streakKey = { r: 0, g: 0, b: 0 };
 // The sun's elevations (degrees) over which the light the clouds march toward sets from the moon's
 // key to the sun's height, then comes round to the sun's azimuth: where no moonlight reaches them
-// (CLOUD_MOON, CLOUD_MOON_DUSK) and before the sun's does (`sunlightAt` at 2 km, above about -2).
+// (DayCycle.ts DUSK_WINDOWS.cloudMoon) and before the sun's does (`sunlightAt` at 2 km, above about -2).
 const CLOUD_TURN = [ - 3, - 2.5, - 2 ] as const;
 // The sine of the sun's elevation over which the clouds' shadow comes in as it rises.
 const CLOUD_SHADOW_SET = [ - 0.02, 0.02 ] as const;
@@ -2251,10 +2249,9 @@ export class Sky {
 		// a deck's base and the land's sky under it, is the sky's light from the sun (`skyGain`)
 		sunAbove.multiplyScalar( this.daySky );
 		// The clouds belong to the seen sky: their moonlight comes in with the night sky's own light
-		// (CLOUD_MOON_DUSK), not before it while the afterglow still lights the sky behind them; under
-		// cloud with the clouded night's (CLOUD_MOON), by the clouded share.
-		const moonClouded = celestial ? 1 - THREE.MathUtils.smoothstep( celestial.elevation, CLOUD_MOON[ 0 ], CLOUD_MOON[ 1 ] ) : 0;
-		const moonShare = ! celestial ? 0 : duskForce( 'cloudMoon', this.rising ? moonClouded : THREE.MathUtils.lerp( duskIn( celestial.elevation, CLOUD_MOON_DUSK, DUSK_DEPTH.cloudMoon ), moonClouded, cloud ) );
+		// (DayCycle.ts `cloudMoonShare`), not before it while the afterglow still lights the sky behind
+		// them; under cloud with the clouded night's, by the clouded share.
+		const moonShare = ! celestial ? 0 : duskForce( 'cloudMoon', cloudMoonShare( celestial.elevation, this.rising, cloud ) );
 		const moonGain = celestial ? moonShare * celestial.moonVisibility : 0;
 		const sunUp = ! celestial || celestial.elevation > - 2.5 || rising;
 		// The march's depth shades the clouds' sky light as well as their direct light, and the same

@@ -30,8 +30,8 @@ import { markSkyRetune } from './SkyRetune.ts';
 // holds low in the west under a blue sky for a long while, falling slowly to about -9 degrees,
 // and long before a clear sunrise the air is blue and the sea a clear blue under it, lit by the
 // sun's own light on the high air. So under a clear or fair sky the display's night weight
-// (`displayNight`), the sky's night key (`skyNight`), the night's ambient and the
-// yunpeng's light (`nightAmbientShare`, which would glow at their brightest under a day's
+// (`displayNight`), the sky's night key (`skyNight`), the night's ambient (`nightAmbientShare`)
+// and the yunpeng's light (`yunpengNightShare`, which would glow at their brightest under a day's
 // exposure) come in only from -7 to -11 degrees after sunset, and the rising sun takes them away
 // early, from about -12 degrees. The moon's key and its sky take no window: at the moon's
 // magnitude (Sky.ts MOON_OVER_SUN) the key's whole light on the land is 2.9 stops under the
@@ -190,18 +190,53 @@ export const DAY_PRESETS = {
 /** Whether the sun at `dir` (unit, on its path) is rising: east of the meridian, before noon (the
  * haze's keys tell the morning from the evening by it: weather/HazeKeys.ts). */
 export const sunRising = ( dir: Readonly<Vector3> ): boolean => dir.dot( WEST ) < 0;
-// where a clear twilight's display holds the night and its sky's light the night key, the sun's
-// elevation (degrees), the morning's and the evening's: all of the
-// night under the first of each pair, none over the second (the header)
-const DAWN_NIGHT = [ - 12, - 7 ] as const;
-const DAWN_SKY = [ - 13, - 3 ] as const;
-const DUSK_NIGHT = [ - 11, - 7 ] as const;
-const DUSK_SKY = [ - 11, - 7 ] as const;
-// where a clear twilight's exposure takes the night's keys (`exposureNight`), the morning's and the
-// evening's: its own windows, apart from the display's so the meter's handover can be fitted to the
-// light without moving the tone, the grade or the bloom; they start at the display's
-const EXPOSURE_DAWN_NIGHT = [ - 12, - 7 ] as const;
-const EXPOSURE_DUSK_NIGHT = [ - 11, - 7 ] as const;
+// Highest elevation (degrees) at which the key may turn from the sun toward the moon: below the
+// end of the sun's fade as its disk sinks into the sea (Radiometry.ts SUN_SETTING_RADIUS,
+// Atmosphere.sunlightAt).
+export const HANDOFF_TOP = - 0.7;
+// Elevation (degrees) at which the moon's key starts to rise, in full two degrees lower: the
+// handoff has just turned the key to the moon, so it turns through zero light (HANDOFF_TOP to here).
+export const MOON_KEY_TOP = - 2.5;
+/** Where each of the dusk's shares comes in, the sun's elevation (degrees): [ whole, none ], all of
+ * the share at or under the first, none at or over the second (`rampIn`, or `duskIn` by stops for
+ * a clear evening's), the clear evening's and morning's and the clouded sky's apart. A clouded
+ * sky's share is the clear one's moved toward the clouded one by the clouded share (Weather.ts
+ * `cloudedShare`). `display` is the display's night (tone, grade, bloom), `exposure` the exposure's
+ * own night weight, `stars` the drawn stars' clear evening (their morning and a clouded sky's are
+ * the display's, `starNight`), `sky` the sky's night key, `ambient` the night's
+ * ambient (and the leaves' night key and the sward's), `yunpeng` the yunpeng's glow and the local
+ * lights, `cloudMoon` the clouds' own moonlight, `moonKey` the moon's key and its sky, `handoff`
+ * the key's turn from the sun to the moon. A clouded sky's display, exposure and stars follow the
+ * daylight instead (`fromDaylight`). Every share is 0 at +2.5 degrees and over. */
+export const DUSK_WINDOWS = {
+	display: { evening: [ - 11, - 7 ], morning: [ - 12, - 7 ] },
+	exposure: { evening: [ - 11, - 7 ], morning: [ - 12, - 7 ] },
+	stars: { evening: [ - 11, - 7 ] },
+	sky: { evening: [ - 11, - 7 ], morning: [ - 13, - 3 ], clouded: [ - 6, 2 ] },
+	ambient: { evening: [ - 11, - 7 ], morning: [ - 12, - 7 ], clouded: [ - 5, 1 ] },
+	yunpeng: { evening: [ - 11, - 7 ], morning: [ - 12, - 7 ], clouded: [ - 5, 1 ] },
+	cloudMoon: { evening: [ - 11, - 7 ], morning: [ - 7, - 3 ], clouded: [ - 7, - 3 ] },
+	moonKey: [ MOON_KEY_TOP - 2, MOON_KEY_TOP ],
+	handoff: [ MOON_KEY_TOP, HANDOFF_TOP ],
+} as const satisfies Record<string, Span | { evening: Span, morning?: Span, clouded?: Span }>;
+type Span = readonly [ number, number ];
+// the daylight's window in which a clouded sky's display, exposure and stars take the night (the
+// snapshot's `daylight`, which falls from 8 to -7 degrees): all of it under the first, none over
+// the second
+const CLOUDED_DAYLIGHT: Span = [ 0.2, 0.45 ];
+/** A share that comes in as the sun sinks through `window` ( [ whole, none ], degrees): a
+ * smoothstep, exactly 0 and 1 at the ends. */
+export function rampIn( elevation: number, [ whole, none ]: Span ): number {
+
+	return 1 - smoothstep( whole, none, elevation );
+
+}
+// a clouded sky's night by the daylight (CLOUDED_DAYLIGHT)
+function fromDaylight( daylight: number ): number {
+
+	return 1 - smoothstep( CLOUDED_DAYLIGHT[ 0 ], CLOUDED_DAYLIGHT[ 1 ], daylight );
+
+}
 /** How deep under all of it (stops) each night layer comes in at the evening's window's day end
  * (-7 degrees), rising by even stops a degree toward all of it at -11 (`duskIn`, which eases the
  * last DUSK_EASE degrees; the header). Each starts under the twilight's own light it adds to: the
@@ -211,13 +246,14 @@ const EXPOSURE_DUSK_NIGHT = [ - 11, - 7 ] as const;
 export const DUSK_DEPTH = tuneObject( {
 	// the night key in the sky's light (`skyNight`): 1.35 over the land's
 	sky: 6.25,
-	// the night ambient and the yunpeng's glow and light (`nightAmbientShare`): 3.1 over the land's
+	// the night ambient (`nightAmbientShare`) and the yunpeng's glow and light (`yunpengNightShare`),
+	// which share this depth: 3.1 over the land's
 	ambient: 8,
 	// the stars (`starNight`): 2.3 over the sky's
 	stars: 7.25,
 	// the haze's night key (weather/HazeKeys.ts): 1.8 over the sky's
 	haze: 6.75,
-	// the clouds' own moonlight (Sky.ts CLOUD_MOON_DUSK): 3.9 over the sky's
+	// the clouds' own moonlight (`cloudMoonShare`): 3.9 over the sky's
 	cloudMoon: 9,
 }, {
 	sky: 'sky.twilight.depth.sky', ambient: 'sky.twilight.depth.ambient',
@@ -228,7 +264,7 @@ export const DUSK_DEPTH = tuneObject( {
 	return { sky: options, ambient: options, stars: options, haze: options, cloudMoon: options };
 
 } )() );
-/** Over how many degrees at the night's end of the evening's window (DUSK_NIGHT, DUSK_SKY)
+/** Over how many degrees at the night's end of the evening's window (DUSK_WINDOWS' evening windows)
  * its night layers ease into all of their light (`duskIn`). By even stops to the end,
  * each came in fastest at -11 degrees, an eighth of its depth in the last half degree, and stopped
  * there: the clear evening's exposure over the horizon fell 1.5 stops a half degree into -11 and
@@ -277,21 +313,19 @@ export function duskIn( elevation: number, window: readonly [ number, number ], 
  * window, the land rising by 0.06 in Oklab L. */
 export function displayNight( daylight: number, elevation: number, rising: boolean, cloud: number ): number {
 
-	const night = 1 - smoothstep( 0.2, 0.45, daylight );
-	const [ from, to ] = rising ? DAWN_NIGHT : DUSK_NIGHT;
-	const dawn = 1 - smoothstep( from, to, elevation );
+	const night = fromDaylight( daylight );
+	const dawn = rampIn( elevation, rising ? DUSK_WINDOWS.display.morning : DUSK_WINDOWS.display.evening );
 	return dawn + ( night - dawn ) * cloud;
 
 }
 /** The exposure's night weight (post/Exposure.ts `exposureKeys`: the night key's share, and the
  * overcast night's offset by it), as `displayNight` is taken but over its own windows
- * (EXPOSURE_DAWN_NIGHT, EXPOSURE_DUSK_NIGHT): the meter's handover to the night key is a question
+ * (DUSK_WINDOWS.exposure): the meter's handover to the night key is a question
  * of the light it reads, the display's of how the night looks, so each is set apart. */
 export function exposureNight( daylight: number, elevation: number, rising: boolean, cloud: number ): number {
 
-	const night = 1 - smoothstep( 0.2, 0.45, daylight );
-	const [ from, to ] = rising ? EXPOSURE_DAWN_NIGHT : EXPOSURE_DUSK_NIGHT;
-	const dawn = 1 - smoothstep( from, to, elevation );
+	const night = fromDaylight( daylight );
+	const dawn = rampIn( elevation, rising ? DUSK_WINDOWS.exposure.morning : DUSK_WINDOWS.exposure.evening );
 	return dawn + ( night - dawn ) * cloud;
 
 }
@@ -300,8 +334,8 @@ export function exposureNight( daylight: number, elevation: number, rising: bool
 export function starNight( daylight: number, elevation: number, rising: boolean, cloud: number ): number {
 
 	if ( rising ) return displayNight( daylight, elevation, rising, cloud );
-	const night = 1 - smoothstep( 0.2, 0.45, daylight );
-	const dusk = duskIn( elevation, DUSK_NIGHT, DUSK_DEPTH.stars );
+	const night = fromDaylight( daylight );
+	const dusk = duskIn( elevation, DUSK_WINDOWS.stars.evening, DUSK_DEPTH.stars );
 	return dusk + ( night - dusk ) * cloud;
 
 }
@@ -312,8 +346,8 @@ export function starNight( daylight: number, elevation: number, rising: boolean,
  * force it (`duskForce`). */
 export function skyNight( elevation: number, rising: boolean, cloud: number ): number {
 
-	const night = 1 - smoothstep( - 6, 2, elevation );
-	const dawn = rising ? 1 - smoothstep( DAWN_SKY[ 0 ], DAWN_SKY[ 1 ], elevation ) : duskIn( elevation, DUSK_SKY, DUSK_DEPTH.sky );
+	const night = rampIn( elevation, DUSK_WINDOWS.sky.clouded );
+	const dawn = rising ? rampIn( elevation, DUSK_WINDOWS.sky.morning ) : duskIn( elevation, DUSK_WINDOWS.sky.evening, DUSK_DEPTH.sky );
 	return duskForce( 'skyNight', dawn + ( night - dawn ) * cloud );
 
 }
@@ -393,32 +427,24 @@ export function exposureAt( elevation: number ): number {
 // displayed brightness whatever the frame's exposure (see Sky.track).
 export const NIGHT_EXPOSURE_GAIN = 1.25;
 export const NIGHT_SKY_EXPOSURE = 4.4;
-// Highest elevation (degrees) at which the key may turn from the sun toward the moon: below the
-// end of the sun's fade as its disk sinks into the sea (Radiometry.ts SUN_SETTING_RADIUS,
-// Atmosphere.sunlightAt).
-const HANDOFF_TOP = - 0.7;
-// Elevation (degrees) at which the moon's key starts to rise, in full two degrees lower: the
-// handoff has just turned the key to the moon, so it turns through zero light (HANDOFF_TOP to here).
-const MOON_KEY_TOP = - 2.5;
-
 /** The moon's share of the key at a sun elevation (degrees), before its visibility (the snapshot's
  * `moonKeyGain`): none above MOON_KEY_TOP, whole two degrees lower. */
 export function moonKeyShare( elevation: number ): number {
 
-	return 1 - smoothstep( MOON_KEY_TOP - 2, MOON_KEY_TOP, elevation );
+	return rampIn( elevation, DUSK_WINDOWS.moonKey );
 
 }
 
 /** The night's ambient share at a sun elevation (degrees): the sun's scattered skylight falls about
  * tenfold between the horizon and -4 degrees, and the night's ambient rises across the same band so
- * the two together never dip. The yunpeng's glow and light follow it too (world/Yunpeng.ts). */
+ * the two together never dip. */
 export function nightAmbientAt( elevation: number ): number {
 
-	return 1 - smoothstep( - 5, 1, elevation );
+	return rampIn( elevation, DUSK_WINDOWS.ambient.clouded );
 
 }
 /** The night ambient's share under a clouded share `cloud` (the night sky's ambient in the
- * clouds and the sea, the yunpeng's glow and light, the leaves' night key, and the night that
+ * clouds and the sea, the leaves' night key, and the night that
  * takes the sward's tint under cloud away, materials/SwardTint.ts): under cloud
  * `nightAmbientAt`'s, a clear sky's in from -7 to -11 degrees after sunset by stops
  * (DUSK_DEPTH.ambient) and out from -12 to -7 before sunrise with the display's night
@@ -427,8 +453,30 @@ export function nightAmbientAt( elevation: number ): number {
  * glowed brightest in the twilight and dimmed as the night came in. */
 export function nightAmbientShare( elevation: number, rising: boolean, cloud: number ): number {
 
-	const clear = rising ? 1 - smoothstep( DAWN_NIGHT[ 0 ], DAWN_NIGHT[ 1 ], elevation ) : duskIn( elevation, DUSK_NIGHT, DUSK_DEPTH.ambient );
+	const clear = rising ? rampIn( elevation, DUSK_WINDOWS.ambient.morning ) : duskIn( elevation, DUSK_WINDOWS.ambient.evening, DUSK_DEPTH.ambient );
 	return clear + ( nightAmbientAt( elevation ) - clear ) * cloud;
+
+}
+/** The yunpeng's share of the night (their glow and the local lights: main.ts), at the sun's
+ * `elevation` (degrees), `rising` or setting, under a clouded share `cloud`: the night ambient's
+ * own form (`nightAmbientShare`) over windows of its own (DUSK_WINDOWS.yunpeng), so the lamps keep
+ * their coming in whatever the ambient's windows become. */
+export function yunpengNightShare( elevation: number, rising: boolean, cloud: number ): number {
+
+	const windows = DUSK_WINDOWS.yunpeng;
+	const clear = rising ? rampIn( elevation, windows.morning ) : duskIn( elevation, windows.evening, DUSK_DEPTH.ambient );
+	return clear + ( rampIn( elevation, windows.clouded ) - clear ) * cloud;
+
+}
+/** The clouds' own moonlight's share (Sky.ts, the clouds' `moonShare`), at the sun's `elevation`
+ * (degrees), `rising` or setting, under a clouded share `cloud`: a clear evening's with the night
+ * sky's own light, by stops (DUSK_DEPTH.cloudMoon), the morning's and a clouded sky's over their
+ * own windows (DUSK_WINDOWS.cloudMoon). */
+export function cloudMoonShare( elevation: number, rising: boolean, cloud: number ): number {
+
+	const windows = DUSK_WINDOWS.cloudMoon;
+	const clouded = rampIn( elevation, windows.clouded );
+	return rising ? rampIn( elevation, windows.morning ) : MathUtils.lerp( duskIn( elevation, windows.evening, DUSK_DEPTH.cloudMoon ), clouded, cloud );
 
 }
 
@@ -654,7 +702,7 @@ export class DayCycle {
 		// before the moon's key light fades in. Through the handoff the sun stands near the east or
 		// west point; at the default turn the moon stands on the meridian, about a right angle away,
 		// and at no turn opposed (the moon stands above the horizon).
-		const handoff = 1 - smoothstep( - 2.5, HANDOFF_TOP, elevation );
+		const handoff = rampIn( elevation, DUSK_WINDOWS.handoff );
 		const keyDir = handoff === 0 ? sunDir.clone() : handoff === 1 ? moonDir.clone() :
 			sunDir.clone().applyQuaternion( _keyTurn.slerpQuaternions( _noTurn, _turn.setFromUnitVectors( sunDir, moonDir ), handoff ) );
 		return {

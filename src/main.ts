@@ -13,7 +13,7 @@ import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraCont
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landFitDistance, landOutline } from './camera/IslandFraming.ts';
 import { Sky } from './sky/Sky.ts';
-import { DayCycle, DAY_PRESETS, duskForce, nightAmbientShare, sunRising, type DayPreset } from './sky/DayCycle.ts';
+import { DayCycle, DAY_PRESETS, duskForce, nightAmbientShare, sunRising, yunpengNightShare, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, WIND_LEVELS, cloudedShare, deckLight, deckSkyGain, deckSkyGap, isParkedWeather, isWindLevel, type TunedField, type WeatherName, type WeatherState, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
@@ -1926,11 +1926,12 @@ function tick( time: number ): void {
 	shared.clouded.value = cloudedShare( weather.skyMix );
 	shared.deckSky.value = deckSkyGain( sky.elevation, shared.clouded.value, weather.skyMix[ 3 ] ?? 0 );
 	shared.deckSkyGap.value = deckSkyGap( sky.elevation, shared.clouded.value, weather.skyMix[ 3 ] ?? 0 );
-	// the yunpeng's glow and its local lights by the night's share, a clear twilight's with the
-	// display's night (sky/DayCycle.ts `nightAmbientShare`; lighting/LocalLights.ts: its pass sorts
-	// the sources in view); a debug page may force each reader's (DayCycle.ts `duskForce`)
+	// the yunpeng's glow and its local lights by their own share of the night (sky/DayCycle.ts
+	// `yunpengNightShare`; lighting/LocalLights.ts: its pass sorts the sources in view), the leaves'
+	// night key and the sward's by the night ambient's (`nightAmbientShare`); a debug page may force
+	// each reader's (DayCycle.ts `duskForce`)
 	const nightAmbient = nightAmbientShare( sky.elevation, sky.rising, shared.clouded.value );
-	yunpengNight.value = duskForce( 'yunpeng', nightAmbient );
+	yunpengNight.value = duskForce( 'yunpeng', yunpengNightShare( sky.elevation, sky.rising, shared.clouded.value ) );
 	localLights.update( duskForce( 'localLights', yunpengNight.value ) );
 	// what the crowns' leaves pass on of the key (world/vegetation/LeafLight.ts)
 	updateLeafLight( sky.elevation, duskForce( 'nightAmbient', nightAmbient ), shared.clouded.value );
