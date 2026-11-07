@@ -90,8 +90,15 @@ import { FOG_NOISE } from './FogNoise.ts';
 //     The island view at noon sees the sea through about a quarter of the fog's opacity (mean
 //     0.26) and the crowns through 0.02; a top above the crowns, or a wider edge, fogs the crowns
 //     too, the camera then near or inside the layer. An edge of 2 m shows as a hard line where the
-//     layer meets the sky at the horizon; one of 5 m or more does not. The clouded share turns it back into the key's own thin
-//     haze (`clouded` below): cloudy keeps its shape. Tunable as
+//     layer meets the sky at the horizon; one of 5 m or more does not. The clouded share turns it
+//     back into the key's own thin haze (`clouded` below), its droplets' share of the ground
+//     layer's light (`droplet`) with it: cloudy keeps its shape, and the air under a deck scatters
+//     as the air does, not as fog (the droplets' share left at the key's under cloud lifted the
+//     low air over overcast's horizon, away from the sun, about a stop and a third over the air's
+//     own, measured with the sun's Rayleigh beam already gone). The parked rain and storm count as
+//     clouded and lose their droplets with it; the parked fog weather counts as clouded too but
+//     keeps its droplets by its share (`hazeKeyAt`'s `fogWeather`: exact at rest and on a front
+//     between the fog and the cloudy or overcast sky). Tunable as
 //     `haze.fog.<top|width|visibility|neutral|scatter>@<day|golden|mist>`.
 //     A deep sea fog (SEA_FOG) is a switch beside the weather (main.ts `?seaFog`, the GUI's
 //     `sea fog`), by its share at every hour and under any sky: its top 35 m over the sea and its edge 25 m
@@ -106,8 +113,21 @@ import { FOG_NOISE } from './FogNoise.ts';
 //     shares. Tunable as `haze.fog.<field>@sea`.
 //   - sunRayleigh: the sun's share in the haze's Rayleigh light, beside the open sky's: 0 by day
 //     under a clear or fair sky, where the air's blue is sky light only and the sun reaches the
-//     haze through its aerosol share; 1 at a low sun, by night and under cloud. The moon's share
-//     takes the same value.
+//     haze through its aerosol share; 1 at a low sun, by night and under a cloudy sky's broken
+//     deck. Under overcast's closed deck no beam reaches the air, which takes only the light the
+//     deck lets down: the key's value, the hour's and the sky's together, goes by overcast's share
+//     of the deck (`overcastDeck` below), so at every hour of the day, morning and a low sun
+//     included, and fully once the deck is whole (with the beam the low air 0.5 - 4 degrees up
+//     away from the sun stood about 1.03 times the background sky, without it about 0.8). The
+//     deck's shading of the Rayleigh share follows the split after Patry, "Real-Time Samurai
+//     Cinema" (SIGGRAPH 2021 Advances in Real-Time Rendering, p. 83): the Rayleigh in-scattering
+//     takes the sky's occlusion, the Mie the sun's shadow; the Mie share keeps its light and
+//     weight here. The parked rain and storm count as overcast and follow it; the parked fog,
+//     which counts as overcast too, is left out by its share (`hazeKeyAt`'s `fogWeather`: exact at
+//     rest and on a front between the fog and the overcast sky; not on one between the fog and a
+//     clear, fair or cloudy sky) and keeps the beam. The moon's share takes the same value, so it
+//     goes under the deck as well (from a sun 6 degrees under the horizon, where `overcastDeck` is
+//     0, the night keeps it whole).
 //   - rayleighWeight, mieWeight: the two shares' weights (VolumetricHaze's header), fitted by
 //     least squares on the clear views. From a sun of 12 degrees up they set the haze's level
 //     over the sky it covers: the hazed low sky (1 - 4 degrees up) on the sun's half at about
@@ -191,7 +211,9 @@ import { FOG_NOISE } from './FogNoise.ts';
 // Under a clouded sky the key also carries the deck's share (`deck`, Weather.ts `deckLight`: a
 // cloudy deck's from a sun of 3 degrees, whole by 6, overcast's at every sun until the twilight),
 // under which the air is lit level by the deck, and overcast's part of it (`overcastDeck`, Weather.ts
-// `overcastDeckLight`), whose sky is darker away from the sun (VolumetricHaze's header). By night,
+// `overcastDeckLight`), whose sky is darker away from the sun (VolumetricHaze's header) and whose
+// closed deck takes the sun's beam out of the air's Rayleigh light (`sunRayleigh` above; the
+// parked fog's share excepted, the parked rain and storm following). By night,
 // once the moon's key has come in (DayCycle.ts `moonKeyShare`), the share is the whole clouded
 // one: the deck's column then passes the island's moonlight down to its base (Clouds.ts
 // `columnKey`), as by day the sun's, so the air under it takes the deck's light by night as by day,
@@ -407,10 +429,18 @@ const _cloudedKey = key( 0, DAY_SIGMA, 0, 0, 0 );
 const _key = key( 0, DAY_SIGMA, 0, 0, 0 );
 
 /** The haze's key at the sun's `elevation` (degrees), `rising` or setting, under the weather's
- * blend of the kept skies, its wind (m/s), its rain (0 - 1) and the sea fog's share (0 - 1,
- * its switch).
+ * blend of the kept skies, its wind (m/s), its rain (0 - 1), the sea fog's share (0 - 1,
+ * its switch) and the parked fog weather's share of the sky (0 - 1: Weather.ts `origin` and
+ * `target` by the front's progress). The fog weather counts as overcast in `skyMix`, but its air
+ * keeps the sun's Rayleigh light the closed deck takes from overcast's and the fog layer's droplets
+ * the clouded share takes back (see the header): the fog is parked and stays as it stands. The
+ * share is taken out by a product. For the droplets, which go by the cloudy and overcast columns
+ * together, it is exact at rest and on a front between the fog and the cloudy or overcast sky,
+ * not on one between the fog and a clear or fair sky. For the sun's Rayleigh beam, which goes by
+ * overcast's column alone, it is exact at rest and on a front between the fog and the overcast
+ * sky, not on one between the fog and a clear, fair or cloudy sky.
  * Writes into `out`. */
-export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly number[], wind: number, rain: number, seaFog: number, target: HazeKey ): HazeKey {
+export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly number[], wind: number, rain: number, seaFog: number, fogWeather: number, target: HazeKey ): HazeKey {
 
 	const out = _key;
 	keyAlong( rising ? RISING : SETTING, elevation, out );
@@ -462,7 +492,13 @@ export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly 
 		out.fogCoverHigh = ( out.fogCoverHigh * open + SEA_FOG.coverHigh * sea ) / fog;
 
 	}
-	out.droplet = out.fogLayer + ( 1 - out.fogLayer ) * sea;
+	// the droplets' share of the ground layer's light follows the fog layer's own share, the
+	// clouded share taking it back with the layer (the sea fog's kept); the parked fog weather, which
+	// counts as clouded, keeps the key's whole (exact at rest and on a front between the fog and the
+	// cloudy or overcast sky: see the header). (Written so that with no cloud, or under the fog
+	// weather alone, the key's share passes through unchanged to the bit.)
+	const dropletLayer = out.fogLayer * ( 1 - clouded * ( 1 - fogWeather ) );
+	out.droplet = dropletLayer + ( 1 - dropletLayer ) * sea;
 	out.fogLayer = fog;
 	out.top = out.top * top * ( 1 - fog ) + out.fogTop * fog;
 	out.width = out.width * width * ( 1 - fog ) + out.fogWidth * fog;
@@ -473,6 +509,9 @@ export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly 
 	// (by night the whole clouded share, once the moon's key has come in: see the header)
 	out.deck = duskForce( 'deck', Math.max( deckLight( elevation, clouded, skyMix[ 3 ] ?? 0 ), clouded * moonKeyShare( elevation ) ) );
 	out.overcastDeck = ( skyMix[ 3 ] ?? 0 ) * overcastDeckLight( elevation );
+	// no beam under overcast's closed deck: its share of the sun's Rayleigh light goes, the parked
+	// fog's kept (exact at rest and on a front between the fog and the overcast sky: see the header)
+	out.sunRayleigh *= 1 - out.overcastDeck * ( 1 - fogWeather );
 	return Object.assign( target, out );
 
 }

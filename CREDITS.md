@@ -863,6 +863,8 @@ comment where it is used.
   by the shadow and the rest by an ambient occlusion, the in-scattered light stored divided by its
   opacity with the opacity recomputed exactly per pixel (density anti-aliasing), and a tricubic
   B-spline lookup. Used as techniques only; the densities and the light's balance are our own.
+  By the same split, the closed overcast deck takes the sun's beam out of the haze's Rayleigh
+  light and leaves its Mie light to the shadow (`src/weather/HazeKeys.ts`, `sunRayleigh`).
   The froxel volume itself: Bartlomiej Wronski, *Volumetric Fog: Unified Compute Shader-Based
   Solution to Atmospheric Scattering* (SIGGRAPH 2014 Advances in Real-Time Rendering course), and
   Michal Drobot, *Rendering of Call of Duty: Infinite Warfare* (Digital Dragons 2017).
