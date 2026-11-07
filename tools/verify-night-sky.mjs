@@ -9,6 +9,10 @@
 // and above 0, with no GPU error), the disk is whole (its pixels above 5 % of its own peak cover
 // pi R^2 of the target, R the moon's angular radius in the target's pixels), and the disk shows
 // against the sky behind it (on/off luminance over its bright core).
+// The stars' checks read what the screen shows: their radiance and visibility over the night sky's
+// level (the snapshot's `nightSkyLevel`). The stars scale with it, inversely to the night's
+// exposure, so the screen shows them alike whatever the exposure, while their scene-linear values
+// move by stops with every change to it; a bound on those would test the exposure, not the stars.
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
@@ -240,7 +244,10 @@ try {
 			s.dayCycle.moonPhase = 0.5;
 			for ( const hour of fadeHours ) {
 				await s.setHour( hour );
-				result.fade.push( { hour, elevation: s.dayCycle.snapshot().elevation, visibility: sky.night.starVisibility.value } );
+				const snapshot = s.dayCycle.snapshot();
+				// (the share the screen shows: the visibility over the night sky's level)
+				result.fade.push( { hour, elevation: snapshot.elevation, visibility: sky.night.starVisibility.value,
+					level: snapshot.nightSkyLevel, shown: sky.night.starVisibility.value / snapshot.nightSkyLevel } );
 			}
 			const visibility = sky.night.starVisibility.value;
 			sky.night.moonColor.value.setRGB( 0, 0, 0 );
@@ -255,7 +262,10 @@ try {
 			await render();
 			aim( direction, 70 );
 			const returned = await render();
-			result.stars = { ...compare( on, off ), determinism: difference( on, repeat ), returnToView: difference( on, returned ) };
+			// On screen: the radiance over the night sky's level, which the exposure divides back out.
+			const level = s.dayCycle.snapshot().nightSkyLevel;
+			const shown = ( image ) => image.map( ( value, i ) => ( i & 3 ) === 3 ? value : value / level );
+			result.stars = { level, ...compare( shown( on ), shown( off ), 1e-3 ), determinism: difference( shown( on ), shown( repeat ) ), returnToView: difference( shown( on ), shown( returned ) ) };
 			await s.setHour( 12 );
 			aim( direction, 70 );
 			const daylight = await render();
@@ -294,13 +304,15 @@ try {
 	assert.ok( Math.abs( moon.quarter.lit - illumination( 'quarter' ) ) < 0.05, 'Quarter moon must illuminate roughly half the resolved disk' );
 	assert.ok( Math.abs( moon.crescent.lit - illumination( 'crescent' ) ) < 0.05 && moon.crescent.lit < moon.quarter.lit, 'Crescent must illuminate a smaller curved fraction' );
 	report.checks.push( 'New, crescent, quarter, full disks use geometric phases and deterministic scene-linear radiance' );
-	assert.ok( report.gpu.stars.finite && report.gpu.stars.count > 12 && report.gpu.stars.maximum > 1e-4, 'Night must show resolved analytic stars' );
+	// (on screen at midnight about 1000 pixels show more than 1e-3 and the brightest 0.066: the
+	// bounds leave a few times that, and a sky without resolved stars far below them)
+	assert.ok( report.gpu.stars.finite && report.gpu.stars.count > 200 && report.gpu.stars.maximum > 0.01, 'Night must show resolved analytic stars' );
 	assert.ok( report.gpu.stars.determinism.maximum <= 1e-7 && report.gpu.stars.returnToView.maximum <= 1e-7, 'Stars must remain stable after repeated rendering and camera rotation back to the same view' );
 	assert.ok( report.gpu.daylightStars.maximum <= 1e-7, 'Stars must add no radiance in daylight' );
-	// (the moon is up all night and dims the stars a little: Sky.ts `starVisibility`)
-	assert.ok( report.gpu.fade[ 0 ].visibility === 0 && report.gpu.fade.at( - 1 ).visibility > 0.15, 'Night fade must be driven by the celestial state' );
+	// (the moon is up all night and dims the stars a little, to 0.78: Sky.ts `starVisibility`)
+	assert.ok( report.gpu.fade[ 0 ].shown === 0 && report.gpu.fade.at( - 1 ).shown > 0.5, 'Night fade must be driven by the celestial state' );
 	for ( let i = 1; i < report.gpu.fade.length; i ++ ) {
-		assert.ok( report.gpu.fade[ i ].visibility >= report.gpu.fade[ i - 1 ].visibility - 1e-8 && report.gpu.fade[ i ].visibility <= 1, 'Stars must fade in monotonically through evening' );
+		assert.ok( report.gpu.fade[ i ].shown >= report.gpu.fade[ i - 1 ].shown - 1e-8 && report.gpu.fade[ i ].shown <= 1, 'Stars must fade in monotonically through evening' );
 	}
 	report.checks.push( 'Analytic stars are visible at night, absent in daylight, and stable under camera changes' );
 	await setState( 0.5, 0 );
