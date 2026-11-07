@@ -1061,9 +1061,11 @@ const moonKeyGain = tune( 'lighting.moon.gain', 1, { min: 0.05, max: 4, scale: '
 // The moonlight itself is near neutral, a touch cool: the night's blue on the display is the eye's
 // (post/Purkinje.ts), given once, so a blue key under it blued the land twice, in the sky's own hue.
 // Under it moonlit rock reads a cool grey, the island's brightest thing, and the meadow nearly
-// black. The clouds take the same moonlight (`trackClouds`).
-const moonKeyRed = tune( 'lighting.moon.red', 0.97, { min: 0.3, max: 1.2 } );
-const moonKeyBlue = tune( 'lighting.moon.blue', 1.05, { min: 0.8, max: 4 } );
+// black. The clouds take the same moonlight (`trackClouds`). The two were set once on the clear
+// night's views: moonlit rock's chroma rose by about .004 in Oklab between (.97, 1.05) and these,
+// its hue a few degrees toward blue, the meadow's by under a thousandth (its chroma is its albedo's).
+const moonKeyRed = tune( 'lighting.moon.red', 0.93, { min: 0.3, max: 1.2 } );
+const moonKeyBlue = tune( 'lighting.moon.blue', 1.16, { min: 0.8, max: 4 } );
 const _moonKey = new THREE.Color();
 const _moonHue = new THREE.Color();
 const _cloudMoon = new THREE.Color();
