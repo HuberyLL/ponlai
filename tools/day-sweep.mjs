@@ -116,16 +116,25 @@
 // already made. A thinned run cannot read its pixels again: `report` on it redoes the numbers from
 // colour/rows.json (jumps, curves, compare.txt and compare.json, transitions.txt) and leaves the
 // pictures as they are, so a step found only under a new threshold has no full-size frame; the
-// sheets, overviews, compare/ pictures and sheet-transitions.png need the whole frames.
+// sheets, overviews and sheet-transitions.png need the whole frames. The compare/ pictures do not
+// (below).
 //
 // --compare <earlier outDir>: the same cameras, weathers and times of an earlier run, one sheet a
-// camera and weather (compare/<camera>-<weather>.png: before, after and, between two full-size
-// frames, their difference x8; the frames that changed and the key moments) and compare.txt, the
-// frames whose regions changed beyond the thresholds (log2 luminance, and the Oklab (a, b)
-// distance), from the two runs' colour/rows.json. It compares like with like or not at all: an
-// earlier run read by another sort (colour-rows --sort, or another --sky-mask-deg) or at another
-// size is refused, and a frame is subtracted only where both runs hold it with the same query (the
-// same pose, hour and weather); the rest are listed as only in one run or as posed differently.
+// camera and weather (compare/<camera>-<weather>.png: before, after and their difference x8; the
+// frames that changed and the key moments) and compare.txt, the frames whose regions changed beyond
+// the thresholds (log2 luminance, and the Oklab (a, b) distance). The readings come from the two
+// runs' colour/rows.json, never from the pixels, so either run may be thinned. The sheet takes each
+// side's full-size frame where both runs kept them all; otherwise every full-size frame of it is
+// shrunk to the thinned run's thumbnail size first and the difference is between thumbnails (JPEG,
+// so a few levels of it are the compression's), which compare.txt says per sheet ("sheet's
+// difference from 360 px thumbnails"). It compares like with like or not at all: an earlier run
+// read by another sort (colour-rows --sort), at another size or with no camera in common is refused,
+// and checked before anything is shot or read (exit 2: a mismatch found at the report would have
+// cost the whole shoot). A sky masked by another --sky-mask-deg (a run made before the mask has
+// none: 0) is not refused but left out: its rows can be read again only from full-size frames, so
+// compare.txt and compare.json (`notCompared`) mark the sky not compared and the other regions are.
+// A frame is subtracted only where both runs hold it with the same query (the same pose, hour and
+// weather); the rest are listed as only in one run or as posed differently.
 //
 // --transitions: the weather between two kept weathers, each adjacent pair at the sunrise, noon,
 // the golden hour and sunset, frozen half way through a front's six seconds (views.mjs's
@@ -140,7 +149,9 @@
 // holds, per part, its wall time, the time its views waited for the GPU lock and the time they
 // were busy (from the views' own records), so a run beside other pages is told from an idle one.
 // A SIGTERM (job.mjs stop) goes on to the tools below it. Exit 0; 1 when a shoot, a picture or a
-// thumbnail failed, or a frame has no row; 2 on bad usage. A frame whose region has too few cells
+// thumbnail failed, or a frame has no row; 2 on bad usage, an earlier run that cannot be compared,
+// or a src/sky/Weather.ts without the exports the weathers' names are read from (WEATHER_PRESETS,
+// KEPT_SKIES). A frame whose region has too few cells
 // is a gap in its curve and a line in gaps.txt, not a failure.
 import './qos.mjs'; // first: the PNG work and the helpers run with the application policy
 import { spawn, spawnSync } from 'node:child_process';
@@ -149,12 +160,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DAY_PRESETS, DayCycle, eveningHour, morningHour } from '../src/sky/DayCycle.ts';
 
+import * as WeatherModule from '../src/sky/Weather.ts';
+
 const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
-// the weathers' names from src/sky/Weather.ts: every name loads, the kept skies are the default
-const WEATHER_SOURCE = readFileSync( path.join( REPO, 'src/sky/Weather.ts' ), 'utf8' );
-const quoted = ( text ) => [ ...text.matchAll( /'([a-z]+)'/g ) ].map( ( m ) => m[ 1 ] );
-const WEATHER_NAMES = quoted( WEATHER_SOURCE.match( /export type WeatherName = ([^;]+);/ )[ 1 ] );
-const WEATHERS = quoted( WEATHER_SOURCE.match( /KEPT_SKIES: ReadonlyArray<WeatherName> = \[([^\]]*)\]/ )[ 1 ] );
+// the weathers' names, from the module's own exports (node strips its types): every name loads
+// (WEATHER_PRESETS holds one preset per WeatherName), the kept skies are the default
+const WEATHER_NAMES = Object.keys( WeatherModule.WEATHER_PRESETS ?? {} );
+const WEATHERS = [ ...( WeatherModule.KEPT_SKIES ?? [] ) ];
+if ( ! WEATHER_NAMES.length ) { console.error( 'day-sweep: src/sky/Weather.ts exports no WEATHER_PRESETS (a record by weather name), where the weathers\' names are read' ); process.exit( 2 ); }
+if ( ! WEATHERS.length || WEATHERS.some( ( w ) => ! WEATHER_NAMES.includes( w ) ) ) { console.error( `day-sweep: src/sky/Weather.ts's KEPT_SKIES (${ JSON.stringify( WeatherModule.KEPT_SKIES ) }) is not a list of names WEATHER_PRESETS holds` ); process.exit( 2 ); }
 const REGIONS = [ 'sky', 'sea', 'land', 'floor' ];
 const THR_STOPS = 1 / 3, THR_DE = 0.03, TURN_DEG = 15, SKY_MASK_DEG = 5;
 // the sun leads a camera down to here, the moon after (the light changes slowly there)
@@ -390,6 +404,9 @@ async function planOf( options, url ) {
 	const weathers = ( options.weathers ?? WEATHERS.join( ',' ) ).split( ',' ).filter( Boolean );
 	for ( const w of weathers ) if ( ! WEATHER_NAMES.includes( w ) ) usage( `no weather ${ w } (${ WEATHER_NAMES.join( ', ' ) })` );
 	const size = options.size ?? '2560x1440@1';
+	// an earlier run this one cannot be compared with stops it here, before a frame is shot
+	const earlier = options.compare ? earlierRun( options.compare, size, options.skyMaskDeg, [ ...names, ...options.view.map( ( t ) => t.slice( 0, t.indexOf( ':' ) ) ) ] ) : null;
+	if ( earlier && ! earlier.skyComparable ) notes.push( `--compare: ${ earlier.skyNote }` );
 	const everyTimes = timesOf( options.times ?? 'all' ), keyTimes = timesOf( options.times ?? 'key' );
 	const needsPose = names.some( ( n ) => [ 'key', 'low', 'back' ].includes( n ) );
 	const pose = needsPose ? await probePose( url, size, options.q ) : null;
@@ -689,8 +706,11 @@ function report( out, options, thinNow ) {
 	const thr = options.thr;
 	// a thinned run has no pixels to read again: its numbers come from the rows it wrote
 	const thinned = existsSync( path.join( out, 'colour', 'thinned.json' ) );
+	const kept = thinned ? JSON.parse( readFileSync( path.join( out, 'colour', 'rows.json' ), 'utf8' ) ) : null;
+	// the earlier run is checked before the frames are read
+	const earlier = options.compare ? earlierRun( options.compare, plan.size, thinned ? kept.skyMaskDeg : options.skyMaskDeg, plan.cameras.map( ( c ) => c.name ) ) : null;
 	console.log( thinned ? 'day-sweep: thinned run: the numbers only, from colour/rows.json' : 'day-sweep: reading the frames' );
-	const doc = thinned ? JSON.parse( readFileSync( path.join( out, 'colour', 'rows.json' ), 'utf8' ) ) : readRows( out, plan, options.skyMaskDeg );
+	const doc = thinned ? kept : readRows( out, plan, options.skyMaskDeg );
 	const views = doc.views;
 	const present = Object.fromEntries( plan.cameras.map( ( c ) => [ c.name, shown( plan, c.name, views ) ] ) );
 	const { cameras, missing, gaps } = seriesOf( plan, views, present );
@@ -801,7 +821,7 @@ function report( out, options, thinNow ) {
 	// the frames a line names stay whole: both frames of each step, and the comparison's
 	const keep = new Set( all.flatMap( ( l ) => [ viewName( l.camera, l.weather, l.s.from.minute ), viewName( l.camera, l.weather, l.s.to.minute ) ] ) );
 	if ( plan.transitions?.length ) transitions( plan, views, cameras, out, thr, ! thinned );
-	if ( options.compare ) compare( plan, doc, cameras, out, path.resolve( options.compare ), thr, keep, ! thinned );
+	if ( earlier ) compare( plan, doc, cameras, out, earlier, thr, keep );
 	if ( thinNow && ! thinned && ! thin( plan, out, keep ) ) failed.push( 'thinning' );
 	console.log( `day-sweep: ${ plan.frames.length } frames; steps ${ plan.cameras.map( ( c ) => `${ c.name } ${ all.filter( ( l ) => l.camera === c.name ).length }` ).join( ', ' ) } (jumps.txt)` );
 
@@ -847,20 +867,37 @@ function transitions( plan, views, cameras, out, thr, pictures ) {
 
 // ------------------------------------------------------------------ comparison with an earlier run
 
-function compare( plan, doc, cameras, out, before, thr, keep, pictures ) {
+// An earlier run to compare with, checked before anything is shot or read: the same sort of cells
+// and the same size, or a refusal (exit 2); a camera in common. A sky masked otherwise is not
+// refused: its rows can only be read again from the full-size frames, which a thinned run no longer
+// holds, so the sky is left out of the comparison and the others are compared.
+function earlierRun( dir, size, skyMaskDeg, cameraNames ) {
 
+	const before = path.resolve( dir );
 	const refuse = ( why ) => { console.error( `day-sweep: --compare ${ path.basename( before ) }: ${ why }` ); process.exit( 2 ); };
 	const planFile = path.join( before, 'plan.json' ), rowsFile = path.join( before, 'colour', 'rows.json' );
 	if ( ! existsSync( planFile ) || ! existsSync( rowsFile ) ) refuse( 'no plan.json and colour/rows.json: not a day-sweep output' );
-	const oldPlan = JSON.parse( readFileSync( planFile, 'utf8' ) ), oldDoc = JSON.parse( readFileSync( rowsFile, 'utf8' ) );
-	// like with like: the same sort of cells, the same sky mask, the same size
-	if ( oldDoc.sort !== 'own' ) refuse( `its rows were read by another sort (${ oldDoc.sort }), not each frame's own: that run is out of date, run the sweep again` );
-	if ( oldDoc.skyMaskDeg !== doc.skyMaskDeg ) refuse( `its sky was masked ${ oldDoc.skyMaskDeg ?? 'not' } deg round the lights, this run's ${ doc.skyMaskDeg } deg` );
-	if ( oldPlan.size !== plan.size ) refuse( `its frames are ${ oldPlan.size }, this run's ${ plan.size }` );
+	const plan = JSON.parse( readFileSync( planFile, 'utf8' ) ), doc = JSON.parse( readFileSync( rowsFile, 'utf8' ) );
+	if ( doc.sort !== 'own' ) refuse( `its rows were read by another sort (${ doc.sort }), not each frame's own: that run is out of date, run the sweep again` );
+	if ( plan.size !== size ) refuse( `its frames are ${ plan.size }, this run's ${ size }` );
+	if ( ! cameraNames.some( ( n ) => plan.cameras.some( ( o ) => o.name === n ) ) ) refuse( `it shares no camera with this run (it has ${ plan.cameras.map( ( c ) => c.name ).join( ', ' ) })` );
+	// (a run read before the sky had a mask has none)
+	const oldMask = doc.skyMaskDeg ?? 0, newMask = skyMaskDeg ?? 0;
+	const skyComparable = oldMask === newMask;
+	const skyNote = skyComparable ? '' : `sky not compared: its sky was masked ${ oldMask } deg round the lights, this run's ${ newMask } deg, and a sky's rows are read again only from full-size frames`;
+	const thinned = path.join( before, 'colour', 'thinned.json' );
+	const thumbShortSide = existsSync( thinned ) ? JSON.parse( readFileSync( thinned, 'utf8' ) ).thumbShortSide ?? THUMB : THUMB;
+	return { before, plan, doc, skyComparable, skyNote, thumbShortSide };
+
+}
+
+function compare( plan, doc, cameras, out, earlier, thr, keep ) {
+
+	const { before, plan: oldPlan, doc: oldDoc, skyComparable, skyNote, thumbShortSide } = earlier;
+	const regions = skyComparable ? REGIONS : REGIONS.filter( ( r ) => r !== 'sky' );
 	const oldViews = oldDoc.views, newViews = doc.views;
 	const oldFrames = new Map( oldPlan.frames.map( ( f ) => [ f.view, f ] ) ), newFrames = new Map( plan.frames.map( ( f ) => [ f.view, f ] ) );
 	const sharedCameras = plan.cameras.map( ( c ) => c.name ).filter( ( n ) => oldPlan.cameras.some( ( o ) => o.name === n ) );
-	if ( ! sharedCameras.length ) refuse( 'it shares no camera with this run' );
 	const mine = plan.frames.filter( ( f ) => sharedCameras.includes( f.camera ) );
 	const onlyNew = mine.filter( ( f ) => ! oldFrames.has( f.view ) );
 	const onlyOld = oldPlan.frames.filter( ( f ) => sharedCameras.includes( f.camera ) && ! newFrames.has( f.view ) );
@@ -868,12 +905,13 @@ function compare( plan, doc, cameras, out, before, thr, keep, pictures ) {
 	const posed = mine.filter( ( f ) => oldFrames.has( f.view ) && oldFrames.get( f.view ).q !== f.q );
 	const shared = mine.filter( ( f ) => oldFrames.has( f.view ) && oldFrames.get( f.view ).q === f.q && oldViews[ f.view ] && newViews[ f.view ] );
 	const list = ( frames ) => frames.length ? `${ frames.slice( 0, 24 ).map( ( f ) => f.view ).join( ' ' ) }${ frames.length > 24 ? ` and ${ frames.length - 24 } more` : '' }` : '';
-	const lines = [ `# frames whose regions changed since ${ path.basename( before ) } beyond log2 luminance ${ thr.stops.toFixed( 3 ) } stops or Oklab (a, b) distance ${ thr.de } (each frame sorted by its own depth read)` ];
+	const lines = [ `# frames whose regions changed since ${ path.basename( before ) } beyond log2 luminance ${ thr.stops.toFixed( 3 ) } stops or Oklab (a, b) distance ${ thr.de } (each frame sorted by its own depth read; the readings from both runs' colour/rows.json)` ];
 	const summary = [ `compared ${ shared.length } frames; only in the earlier run: ${ onlyOld.length }; only in this run: ${ onlyNew.length }; posed or timed differently (not subtracted): ${ posed.length }` ];
+	if ( ! skyComparable ) summary.push( skyNote );
 	if ( onlyOld.length ) summary.push( `only in the earlier run: ${ list( onlyOld ) }` );
 	if ( onlyNew.length ) summary.push( `only in this run: ${ list( onlyNew ) }` );
 	if ( posed.length ) summary.push( `posed differently: ${ list( posed ) }` );
-	const result = [];
+	const result = [], sheets = {};
 	mkdirSync( path.join( out, 'compare' ), { recursive: true } );
 	for ( const camera of sharedCameras ) for ( const weather of plan.weathers ) {
 
@@ -885,7 +923,7 @@ function compare( plan, doc, cameras, out, before, thr, keep, pictures ) {
 
 			const now = pointOf( f, newViews[ f.view ] ), was = pointOf( f, oldViews[ f.view ] );
 			const changes = [];
-			for ( const region of REGIONS ) {
+			for ( const region of regions ) {
 
 				const [ p, q ] = [ was.regions[ region ], now.regions[ region ] ];
 				if ( ! p || ! q ) continue;
@@ -909,48 +947,41 @@ function compare( plan, doc, cameras, out, before, thr, keep, pictures ) {
 			}
 
 		}
-		summary.push( `${ camera.padEnd( 8 ) } ${ weather.padEnd( 8 ) } ${ String( flagged.length ).padStart( 3 ) } of ${ frames.length } frames changed; largest ${ maxStops.toFixed( 3 ) } stops, Oklab (a, b) ${ maxColour.toFixed( 4 ) }` );
-		if ( ! pictures ) continue;
-		// the sheet: the frames that changed and the key moments, before | after | difference
+		// the sheet: the frames that changed and the key moments, before | after | difference x8
 		const pick = new Set( flagged.map( ( x ) => x.f.minute ) );
 		for ( const [ , minute ] of KEY_MOMENTS ) pick.add( frames.reduce( ( best, f ) => Math.abs( f.minute - minute ) < Math.abs( best.minute - minute ) ? f : best ).minute );
-		const dir = path.join( out, 'compare', `${ camera }-${ weather }` );
-		rmSync( dir, { recursive: true, force: true } );
-		for ( const side of [ 'before', 'after', 'from', 'to' ] ) mkdirSync( path.join( dir, side ), { recursive: true } );
-		// the earlier frames, full size or the thumbnail a thinned run kept
-		const picks = frames.filter( ( x ) => pick.has( x.minute ) ).map( ( f ) => ( { f, was: framePicture( before, f ), name: `${ hhmm( f.minute ).replace( /^(\d\d)/, '$1h' ) }_sun${ degrees( pointOf( f, newViews[ f.view ] ).elevation ) }deg` } ) ).filter( ( x ) => x.was );
-		const full = picks.every( ( x ) => x.was.endsWith( '.png' ) );
-		for ( const x of picks ) {
+		// each side's picture: the full-size frame, or the thumbnail a thinned run kept
+		const picks = frames.filter( ( x ) => pick.has( x.minute ) ).map( ( f ) => ( { f, was: framePicture( before, f ), now: framePicture( out, f ), name: `${ hhmm( f.minute ).replace( /^(\d\d)/, '$1h' ) }_sun${ degrees( pointOf( f, newViews[ f.view ] ).elevation ) }deg` } ) ).filter( ( x ) => x.was && x.now );
+		const full = picks.every( ( x ) => x.was.endsWith( '.png' ) && x.now.endsWith( '.png' ) );
+		let from = full ? 'full-size frames' : `${ thumbShortSide } px thumbnails`;
+		if ( picks.length ) {
 
-			const now = path.join( out, 'colour', 'normal', `${ x.f.view }.png` );
-			if ( full ) {
+			const dir = path.join( out, 'compare', `${ camera }-${ weather }` );
+			rmSync( dir, { recursive: true, force: true } );
+			for ( const side of [ 'before', 'after', 'png-before', 'png-after' ] ) mkdirSync( path.join( dir, side ), { recursive: true } );
+			for ( const x of picks ) for ( const [ side, file ] of [ [ 'before', x.was ], [ 'after', x.now ] ] ) {
 
-				link( x.was, path.join( dir, 'before', `${ x.name }.png` ) );
-				link( now, path.join( dir, 'after', `${ x.name }.png` ) );
-
-			} else {
-
-				// (a thumbnail on one side: both sides as thumbnails of one size, no difference column)
-				if ( x.was.endsWith( '.jpg' ) ) link( x.was, path.join( dir, 'before', `${ x.name }.jpg` ) );
-				else link( x.was, path.join( dir, 'from', `${ x.name }.png` ) );
-				link( now, path.join( dir, 'to', `${ x.name }.png` ) );
+				// (a thumbnail on either side: every full-size frame is shrunk the way the thinning
+				// shrank the other's, so the difference is taken between pictures of one size)
+				if ( full || file.endsWith( '.jpg' ) ) link( file, path.join( dir, side, `${ x.name }${ path.extname( file ) }` ) );
+				else link( file, path.join( dir, `png-${ side }`, `${ x.name }.png` ) );
 
 			}
+			if ( ! full ) for ( const side of [ 'before', 'after' ] ) {
 
-		}
-		if ( ! full ) {
+				if ( readdirSync( path.join( dir, `png-${ side }` ) ).length ) uv( [ 'tools/img.py', 'thumb', path.join( dir, `png-${ side }` ), '--short', String( thumbShortSide ), '--out', path.join( dir, side ) ], 'compare thumbnails', true );
 
-			uv( [ 'tools/img.py', 'thumb', path.join( dir, 'to' ), '--short', String( THUMB ), '--out', path.join( dir, 'after' ) ], 'compare thumbnails', true );
-			uv( [ 'tools/img.py', 'thumb', path.join( dir, 'from' ), '--short', String( THUMB ), '--out', path.join( dir, 'before' ) ], 'compare thumbnails', true );
+			}
+			if ( ! uv( [ 'tools/img.py', 'sheet', path.join( dir, 'before' ), path.join( dir, 'after' ), '--diff', ...( full ? [] : [ '--match', '*.jpg' ] ), '--width', '480', '--out', path.join( out, 'compare', `${ camera }-${ weather }.png` ) ], `compare sheet ${ camera }-${ weather }` ) ) from = 'failed';
+			rmSync( dir, { recursive: true, force: true } );
 
-		}
-		uv( [ 'tools/img.py', 'sheet', path.join( dir, 'before' ), path.join( dir, 'after' ), ...( full ? [ '--diff' ] : [ '--match', '*.jpg' ] ), '--width', '480', '--out', path.join( out, 'compare', `${ camera }-${ weather }.png` ) ], `compare sheet ${ camera }-${ weather }` );
-		rmSync( dir, { recursive: true, force: true } );
+		} else from = 'no frame pictured on both sides';
+		sheets[ `${ camera }-${ weather }` ] = from;
+		summary.push( `${ camera.padEnd( 8 ) } ${ weather.padEnd( 8 ) } ${ String( flagged.length ).padStart( 3 ) } of ${ frames.length } frames changed; largest ${ maxStops.toFixed( 3 ) } stops, Oklab (a, b) ${ maxColour.toFixed( 4 ) }; sheet's difference from ${ from }` );
 
 	}
-	if ( ! pictures ) summary.push( 'this run is thinned: no compare/ pictures' );
 	writeFileSync( path.join( out, 'compare.txt' ), [ ...summary.map( ( s ) => `# ${ s }` ), ...lines ].join( '\n' ) + '\n' );
-	writeFileSync( path.join( out, 'compare.json' ), JSON.stringify( { before, thresholds: thr, onlyEarlier: onlyOld.map( ( f ) => f.view ), onlyThis: onlyNew.map( ( f ) => f.view ), posedDifferently: posed.map( ( f ) => f.view ), changed: result }, null, '\t' ) );
+	writeFileSync( path.join( out, 'compare.json' ), JSON.stringify( { before, thresholds: thr, notCompared: skyComparable ? [] : [ { region: 'sky', why: skyNote } ], sheets, onlyEarlier: onlyOld.map( ( f ) => f.view ), onlyThis: onlyNew.map( ( f ) => f.view ), posedDifferently: posed.map( ( f ) => f.view ), changed: result }, null, '\t' ) );
 	console.log( `day-sweep: compare with ${ path.basename( before ) }:\n  ${ summary.join( '\n  ' ) }` );
 
 }

@@ -769,8 +769,11 @@ into a new directory. A run is 732 PNG frames (about 6 GB); once the steps are f
 line names are kept as 360 px thumbnails (`img.py thumb`) and the flagged ones, the sheets and the
 curves keep their size (`--keep-frames` keeps all; a thinned run's `report` redoes the numbers only).
 `--compare <earlier output>` gives a before and after sheet a camera and weather and the frames
-whose regions changed beyond those thresholds, between runs of the same sort, mask and size and for
-frames with the same pose (the others are listed, not subtracted); `--transitions` freezes each
+whose regions changed beyond those thresholds, between runs of the same sort and size and for
+frames with the same pose (the others are listed, not subtracted), refused before anything is shot
+when the runs do not match. The readings come from both runs' rows, so a thinned run compares too:
+its sheets' differences are then taken between thumbnails (the full-size side shrunk to match), as
+`compare.txt` says, and a sky masked otherwise is marked not compared rather than refused; `--transitions` freezes each
 adjacent pair of weathers half way through a front at four moments and reports how far the middle
 frame lies from its endpoints; `report <outDir>` repeats the report on frames already shot. It is
 colour-rows (shoot --warm and rows), capture-set, `img.py sheet` and `thumb` and
