@@ -27,7 +27,7 @@ type F = THREE.Node<'float'>;
 // over the scene pass's (post/Motion.ts `meterOutput`), whatever MRT node it is given later (its
 // velocity under the temporal modes). It is drawn only in passes with an MRT (the scene's and the
 // refraction's, which drops the names its target lacks), as Motion.ts's note asks. The water writes
-// its own (ocean/Water.ts: a share of the white card's, the key by the sea's softer cosine) and the
+// its own (ocean/Water.ts: a share of the white card's, the key by level ground's lifted cosine) and the
 // sky dome is the fog and sky's.
 
 /** The key's and the local lights' irradiance on the point (rgb, scene units). */

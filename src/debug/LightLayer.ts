@@ -44,7 +44,9 @@ import { diffuseOcclusion } from '../lighting/AmbientGrade.ts';
 // The water, the sky, the clouds and the haze are left as they are (they are not lit by these
 // models), and so is what a material draws as emission (the yunpeng's glow). What a material folds
 // into its albedo goes with it (the meadow's darkening toward its roots, a wet surface's darkening):
-// those are surface colour, not light.
+// those are surface colour, not light. The one exception is the sea's metering illuminance
+// (ocean/Water.ts): `ambientOnly` writes it without its key term, so the meter's two terms read
+// apart; the sea's colour is left as it is.
 //
 // One hook, `useLightLayer`, run by the constructors of the two lighting model roots every lit
 // material builds on (GroundBounceLightingModel, which the terrain's, the vegetation's and the
