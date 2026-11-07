@@ -386,11 +386,12 @@ export const MOON = tuneObject( { elevation: 20, turn: 0 }, { elevation: 'sky.mo
 const TWILIGHT_EXPOSURE = 25;
 const nightKey = ( elevation: number, stops: number ) => [ elevation, TWILIGHT_EXPOSURE * 2 ** stops ] as const;
 /** The stops a clear night's metered exposure lies above the twilight's reference (25): the
- * moon's light at its magnitude against the sun's. The yunpeng's glow and every local light are
+ * moon's light at its magnitude against the sun's, metered under the night key (post/Exposure.ts),
+ * measured on the clear midnight's island view with the lamps off. The yunpeng's glow and every local light are
  * scaled by 2 to minus this, so a lamp keeps its display at night whatever the hour. */
-export const NIGHT_METER_LIFT = 10.7;
+export const NIGHT_METER_LIFT = 11.34;
 const EXPOSURE_KEYS: readonly ( readonly [ number, number ] )[] = [
-	nightKey( - 12, NIGHT_METER_LIFT ), nightKey( - 11, 10.6 ), nightKey( - 10, 10 ), nightKey( - 9, 6.8 ), nightKey( - 8, 2.1 ),
+	nightKey( - 12, NIGHT_METER_LIFT ), nightKey( - 11, 11.28 ), nightKey( - 10, 10.49 ), nightKey( - 9, 6.94 ), nightKey( - 8, 2.12 ),
 	[ - 7, TWILIGHT_EXPOSURE ], [ - 6, TWILIGHT_EXPOSURE ], [ - 2.65, 19 ], [ 0, 11 ], [ 2, 10 ], [ 6.6, 5.5 ], [ 13.2, 3.4 ], [ 16.5, 2.85 ],
 	[ 19.75, 2.4 ], [ 26.2, 1.82 ], [ 32.5, 1.48 ], [ 50, 1.19 ],
 ];
