@@ -197,10 +197,10 @@ export function deckSkyGap( elevation: number, clouded: number, overcast: number
 /** How far a clouded day's high sun has come in at the sun's `elevation` (degrees) under the
  * weather's blend of the kept skies (`skyMix`): none under a clear or a fair sky, nor up to `low`
  * degrees, the sky's clouded share from 40 up, where the sky's light (Sky.ts SKY_LIGHT) has reached
- * its high key. The near air (HazeKeys.ts) follows it from 30, the light lent to the island (Sky.ts
- * CLOUD_LIGHT_TINT) from 12, with the sky's light's own climb, so a clouded noon's land stays as
- * dark and green as its afternoon's. */
-export function cloudedHighSun( elevation: number, skyMix: readonly number[], low = 30 ): number {
+ * its high key. The light lent to the island (Sky.ts CLOUD_LIGHT_TINT) follows it from 12, with
+ * the sky's light's own climb, so a clouded noon's land stays as dark and green as its
+ * afternoon's. */
+export function cloudedHighSun( elevation: number, skyMix: readonly number[], low: number ): number {
 
 	const t = Math.min( Math.max( ( elevation - low ) / ( 40 - low ), 0 ), 1 );
 	return cloudedShare( skyMix ) * t * t * ( 3 - 2 * t );
@@ -287,26 +287,6 @@ export interface WeatherState {
 	// weather/HazeKeys.ts), a cloudy sky's about two thirds of the clear day's, an overcast sky's
 	// about three times it; rain and fog thicken it. The hour's key scales it.
 	haze: number;
-	// The haze near the camera: the optical depth from the camera out to a distance is `nearDensity`
-	// times the far medium's up to `nearStart` metres, eased back to 1 by `nearEnd` and 1 beyond
-	// (weather/VolumetricHaze.ts). Under the kept skies the island's views read through a thin near
-	// air while every ray past `nearEnd`, the horizon's and the sky's, keeps its depth (tunable,
-	// weather/HazeKeys.ts). A parked sky's `skyMix` is overcast's, so it takes overcast's values: the
-	// haze reads these three from the kept skies' presets only, and a parked preset holds them for
-	// the state's fields (`fields` below). A clear or fair sky's air is
-	// a fifth as dense as an overcast one's, so it gives its depth back over a short shell that the
-	// far sea starts in. A clouded sky's shell ends between: shorter (380 m under the cloudy sky) it
-	// stands as a pale wall over the fully grown island's far half, longer the far sea falls dark
-	// under the sky's low band. The cloudy sky's shell spans 100 to 700 m: from a horizon view (the
-	// eye about 12 m up), in an air five times its present density, the far sea's first 5 degrees
-	// under the horizon fell about 0.05 L a degree through the air given back (0.056 from 250 to
-	// 430 m, with a step of 0.13 L within a degree, 0.07 to 0.085 from 100 to 700: a smoothstep in
-	// distance still gathers its catch-up a little, a shorter ramp steps more and a longer one moves
-	// the fall to the horizon's line). In the present air (weather/HazeKeys.ts) the fall is about
-	// 0.025 - 0.03 L a degree, with steps of 0.08 - 0.09 within a degree.
-	nearDensity: number;
-	nearStart: number;
-	nearEnd: number;
 	// The weather's one wind, which every part of the scene takes from weather/Wind.ts. The mean
 	// wind 10 m up (U10), m/s: its level's (`WIND_LEVELS`).
 	windSpeed: number;
@@ -380,15 +360,15 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // take, which grows with the sun's sine and its forward scatter), and the exponent flattens it to
 // the clear day's. The other weathers keep the day's sky as the atmosphere and the clouds give it.
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
-	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, daySky: 1, daySkyExponent: 0, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
-	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, daySky: 1, daySkyExponent: 0, haze: 0.003, nearDensity: 0.2, nearStart: 200, nearEnd: 350, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
-	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, daySky: 1, daySkyExponent: 0, haze: 0.0021, nearDensity: 0.13, nearStart: 100, nearEnd: 700, rain: 0, fog: 0, storm: 0, streaks: 0 },
-	overcast: { coverage: 0.94, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0.3, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, daySky: 0.173, daySkyExponent: 1.24, haze: 0.00974, nearDensity: 0.08, nearStart: 250, nearEnd: 500, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
-	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, daySky: 1, daySkyExponent: 0, haze: 0.0095, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
+	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, daySky: 1, daySkyExponent: 0, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
+	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, daySky: 1, daySkyExponent: 0, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
+	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, daySky: 1, daySkyExponent: 0, haze: 0.0021, rain: 0, fog: 0, storm: 0, streaks: 0 },
+	overcast: { coverage: 0.94, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0.3, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, daySky: 0.173, daySkyExponent: 1.24, haze: 0.00974, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
+	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, daySky: 1, daySkyExponent: 0, haze: 0.0095, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
 	// A squall: the darkest deck, heavy rain, a strong wind (PRESET_WIND) and a rough, white-capped sea.
-	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, daySky: 1, daySkyExponent: 0, haze: 0.0135, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 1, fog: 0.3, storm: 1, streaks: 0 },
+	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, daySky: 1, daySkyExponent: 0, haze: 0.0135, rain: 1, fog: 0.3, storm: 1, streaks: 0 },
 	// Sea fog forms in calm, moist air under thin high cloud; the sun shows as a pale disk.
-	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, daySky: 1, daySkyExponent: 0, haze: 0.0046, nearDensity: 1, nearStart: 250, nearEnd: 600, rain: 0, fog: 1, storm: 0, streaks: 0.4 },
+	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, daySky: 1, daySkyExponent: 0, haze: 0.0046, rain: 0, fog: 1, storm: 0, streaks: 0.4 },
 };
 
 // Auto weather: from each state, the next one and its weight. The chain moves among the kept

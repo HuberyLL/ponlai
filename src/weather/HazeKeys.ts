@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { tuneObject, type TuneOptions } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
 import { DUSK_DEPTH, duskForce, duskForced, duskIn, moonKeyShare } from '../sky/DayCycle.ts';
-import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckLight, overcastDeckLight } from '../sky/Weather.ts';
+import { KEPT_SKIES, WEATHER_PRESETS, cloudedShare, deckLight, overcastDeckLight } from '../sky/Weather.ts';
 import { cloudBase } from '../sky/Sky.ts';
 
 // The haze's keys: what the air does by the hour and the weather, set as a few quantities one sees
@@ -149,18 +149,6 @@ import { cloudBase } from '../sky/Sky.ts';
 // the cloudy's and the overcast's tunable here (`sky.weather.haze@<cloudy|overcast>`): the key's
 // amount takes the tuned value over the preset's, blended by the sky's shares, so a value set
 // shows on the next frame (the weather's state copies its preset only as it is established).
-// The weather also thins the haze near the camera (Weather.ts `nearDensity`, `nearStart`,
-// `nearEnd`; VolumetricHaze's header): the key's near factor, start and end are its presets'
-// blended by the sky's shares, each kept sky's tunable
-// (`sky.weather.nearDensity|nearStart|nearEnd@<clear|fair|cloudy|overcast>`).
-// The key scales that near factor by its own (`nearScale`, 1 until set): 0.8 before dawn and 0.5
-// as the sun rises, whose denser air is a layer seen over the sea, so the air within 240 m of the
-// game camera (22 - 190 m up) gains at most 0.01 of opacity over the thinner dawn air's.
-// A clouded sky's near density falls to 0.4 of its preset's as the sun climbs from 30 to 40 degrees
-// (Weather.ts `cloudedHighSun`): that high the sky's light turns the air a little brighter, and with
-// the sun behind the cloud the meter lifts the land and the air together, so the same near air
-// would lie over the land as a pale veil. What the near air loses the land keeps; the sea
-// past `nearEnd` and the sky keep their depth.
 // Under a clouded sky the key also carries the deck's share (`deck`, Weather.ts `deckLight`: a
 // cloudy deck's from a sun of 3 degrees, whole by 6, overcast's at every sun until the twilight),
 // under which the air is lit level by the deck, and overcast's part of it (`overcastDeck`, Weather.ts
@@ -197,22 +185,15 @@ export interface HazeKey {
 	// the aerosol layer's top (m; Infinity for none): a low deck's base (see the header)
 	aerosolTop: number;
 	skyDepth: number;
-	// the key's own scale of the weather's near density (1 until set: see the header)
-	nearScale: number;
-	nearDensity: number;
-	nearStart: number;
-	nearEnd: number;
 
 }
 
 type Sigma = readonly [ number, number, number ];
 const key = ( amount: number, [ sigmaRed, sigmaGreen, sigmaBlue ]: Sigma, desaturate: number, mist: number, sunRayleigh: number ): HazeKey =>
-	( { deck: 0, overcastDeck: 0, amount, sigmaRed, sigmaGreen, sigmaBlue, desaturate, gain: 1, mist, sunRayleigh, rayleighWeight: 1, mieWeight: 1, ...SHAPE, ...NEAR } );
+	( { deck: 0, overcastDeck: 0, amount, sigmaRed, sigmaGreen, sigmaBlue, desaturate, gain: 1, mist, sunRayleigh, rayleighWeight: 1, mieWeight: 1, ...SHAPE } );
 
 // the medium's shape every key starts from
 const SHAPE = { top: 10, width: 50, widthSlope: 0, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0 };
-// the near haze every key starts from (the weather's replaces it)
-const NEAR = { nearScale: 1, nearDensity: 1, nearStart: 250, nearEnd: 600 };
 // the three keys' spectral extinction, and the hours between's from them by the sun's elevation
 // (see the header): the night's at -12 degrees, the golden hour's at 2
 const NIGHT_SIGMA: Sigma = [ 0.463, 0.53, 0.694 ];
@@ -225,10 +206,10 @@ const twilight = ( elevation: number ): Sigma => {
 	return [ at( 0 ), at( 1 ), at( 2 ) ] as const;
 
 };
-const BEFORE_DAWN = { ...key( 0.6, twilight( - 3.5 ), 0.33, 0, 1 ), rayleighWeight: 1.9, mieWeight: 4.1, nearScale: 0.8 };
+const BEFORE_DAWN = { ...key( 0.6, twilight( - 3.5 ), 0.33, 0, 1 ), rayleighWeight: 1.9, mieWeight: 4.1 };
 // the deep twilight before dawn: the same air with less of the haze's light (see the header)
 const EARLY_DAWN = { ...BEFORE_DAWN, rayleighWeight: 0.965, mieWeight: 4.1 };
-const MIST = { ...key( 0.6, GOLDEN_SIGMA, 0.64, 0, 1 ), rayleighWeight: 0.72, mieWeight: 0.83, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010, nearScale: 0.5 };
+const MIST = { ...key( 0.6, GOLDEN_SIGMA, 0.64, 0, 1 ), rayleighWeight: 0.72, mieWeight: 0.83, top: 50.2, width: 42.8, aerosolShare: 0.127, aerosolHeight: 1010 };
 const MORNING = { ...key( 0.96, DAY_SIGMA, 0.5, 0, 1 ), rayleighWeight: 0.33, mieWeight: 0.83 };
 const DAY = { ...key( 0.659, DAY_SIGMA, 1, 0, 0 ), rayleighWeight: 0.575, mieWeight: 0.79, top: 78.4, width: 54.9, aerosolShare: 0.06, aerosolHeight: 761 };
 const NIGHT = { ...key( DAY.amount, NIGHT_SIGMA, 0.55, 0, 1 ), rayleighWeight: DAY.rayleighWeight, mieWeight: 2, top: 47.6, width: 36.8, widthSlope: 0.65, aerosolShare: 0.003, skyDepth: 0 };
@@ -281,8 +262,7 @@ const SHAPED: ReadonlySet<HazeKey> = new Set( [ DAY, GOLDEN, NIGHT, MIST ] );
 const KEEP = [ 1, 1, 0.53, 0.53 ];
 const GAIN = [ 1, 1, 2, 2 ];
 // per kept sky, the scale of each band's sigma, of the aerosol layer's share and of its scale
-// height, of the ground layer's top and width, the
-// weather's haze and its near haze (its preset's until tuned)
+// height, of the ground layer's top and width, and the weather's haze (its preset's until tuned)
 const CLOUD_SIGMA = { sigmaRed: 1.42, sigmaGreen: 1, sigmaBlue: 0.555 };
 const CLEAR_SCALE = { sigmaRed: 1, sigmaGreen: 1, sigmaBlue: 1, aerosolScale: 1, aerosolHeight: 1, topScale: 1, widthScale: 1 };
 const SCALES = [ CLEAR_SCALE, CLEAR_SCALE,
@@ -292,8 +272,8 @@ const SCALES = [ CLEAR_SCALE, CLEAR_SCALE,
 const DECKED = [ false, false, true, true ];
 const SKY_SCALE = KEPT_SKIES.map( ( name, s ) => {
 
-	const { haze, nearDensity, nearStart, nearEnd } = WEATHER_PRESETS[ name ];
-	return { ...SCALES[ s ], haze, nearDensity, nearStart, nearEnd };
+	const { haze } = WEATHER_PRESETS[ name ];
+	return { ...SCALES[ s ], haze };
 
 } );
 for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
@@ -306,21 +286,13 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 		{ topScale: { min: 0.1, max: 5, scale: 'log', onChange: markSkyRetune }, widthScale: { min: 0.2, max: 5, scale: 'log', onChange: markSkyRetune } } );
 
 }
-for ( const [ s, name ] of [ [ 0, 'clear' ], [ 1, 'fair' ], [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
-
-	tuneObject( SKY_SCALE[ s ], { nearDensity: `sky.weather.nearDensity@${ name }`, nearStart: `sky.weather.nearStart@${ name }`, nearEnd: `sky.weather.nearEnd@${ name }` },
-		{ nearDensity: { min: 0.02, max: 1, scale: 'log', onChange: markSkyRetune }, nearStart: { min: 50, max: 800, onChange: markSkyRetune }, nearEnd: { min: 100, max: 1500, onChange: markSkyRetune } } );
-
-}
-// a clouded sky's near density at a high sun over its preset's (see the header)
-const HIGH_SUN_NEAR = 0.4;
 // per kept sky, the sun's share in the haze's Rayleigh light: off under a clear or fair sky, on
 // under cloud
 const SUN_RAYLEIGH = [ 0, 0, 1, 1 ];
 
 // (`skyDepth` is eased from each key's own value: the keys without a shape of their own keep
 // SHAPE's 0 rather than taking the day's)
-const FIELDS = [ 'amount', 'sigmaRed', 'sigmaGreen', 'sigmaBlue', 'desaturate', 'mist', 'sunRayleigh', 'rayleighWeight', 'mieWeight', 'skyDepth', 'nearScale' ] as const;
+const FIELDS = [ 'amount', 'sigmaRed', 'sigmaGreen', 'sigmaBlue', 'desaturate', 'mist', 'sunRayleigh', 'rayleighWeight', 'mieWeight', 'skyDepth' ] as const;
 const SHAPE_FIELDS = [ 'top', 'width', 'widthSlope', 'aerosolShare', 'aerosolHeight' ] as const;
 
 // the key of `rows` at `elevation`, its fields and its shape, into `out`
@@ -360,7 +332,6 @@ export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly 
 
 	}
 	let keep = 0, gain = 0, red = 0, green = 0, blue = 0, aerosol = 0, height = 0, top = 0, width = 0, haze = 0, sunRayleigh = 0, inverseTop = 0;
-	out.nearDensity = out.nearStart = out.nearEnd = 0;
 	for ( let s = 0; s < KEEP.length; s ++ ) {
 
 		const w = skyMix[ s ] ?? 0;
@@ -376,9 +347,6 @@ export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly 
 		haze += w * SKY_SCALE[ s ].haze / WEATHER_PRESETS[ KEPT_SKIES[ s ] ].haze;
 		sunRayleigh += w * SUN_RAYLEIGH[ s ];
 		if ( DECKED[ s ] ) inverseTop += w / cloudBase( s );
-		out.nearDensity += w * SKY_SCALE[ s ].nearDensity;
-		out.nearStart += w * SKY_SCALE[ s ].nearStart;
-		out.nearEnd += w * SKY_SCALE[ s ].nearEnd;
 
 	}
 	out.desaturate = 1 - ( 1 - out.desaturate ) * keep;
@@ -393,7 +361,6 @@ export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly 
 	out.aerosolTop = inverseTop > 0 ? 1 / inverseTop : Infinity;
 	out.amount *= haze;
 	out.sunRayleigh = 1 - ( 1 - out.sunRayleigh ) * ( 1 - sunRayleigh );
-	out.nearDensity *= out.nearScale * ( 1 + ( HIGH_SUN_NEAR - 1 ) * cloudedHighSun( elevation, skyMix ) );
 	out.mist *= ( 1 - THREE.MathUtils.smoothstep( wind, 3.5, 5 ) ) * ( 1 - rain );
 	// (by night the whole clouded share, once the moon's key has come in: see the header)
 	out.deck = duskForce( 'deck', Math.max( deckLight( elevation, clouded, skyMix[ 3 ] ?? 0 ), clouded * moonKeyShare( elevation ) ) );

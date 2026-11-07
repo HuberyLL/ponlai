@@ -513,10 +513,10 @@ function clearShade( elevation: number, direct: number ): number {
 // Under cloud the high key has a twin (`cloudyHigh`, taken by the weather's clouded share, Weather.ts
 // `cloudedShare`): a deck of cloud gives the sky and the air no such blue, and the air over the land
 // takes this light whole (VolumetricHaze.ts), so at the day's blue the crowns under a clouded sky
-// turned blue grey, most of all at 30 degrees, where that blue meets the near air's full density
-// (HazeKeys.ts). The twin stays near grey, blue over red about 1.1, at about the day's luminance, so
-// the air's hue moves and the land's level and the exposure do not. Its golden and low keys are the
-// day's own, so a clouded sky parts from a clear one only over 12 degrees.
+// turned blue grey, most of all at 30 degrees. The twin stays near grey, blue over red about 1.1,
+// at about the day's luminance, so the air's hue moves and the land's level and the exposure do
+// not. Its golden and low keys are the day's own, so a clouded sky parts from a clear one only
+// over 12 degrees.
 // On a clear evening the sky takes a key below the golden one (`dusk`, at -1 degrees, not under
 // cloud), held through the twilight until the night key takes it from -7 degrees, at the
 // luminance the warm key before it had. Its colour, green 0.55 and blue 0.33 of red, is a

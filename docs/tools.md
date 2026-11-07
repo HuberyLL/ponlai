@@ -400,10 +400,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `sky.moon.elevation` (degrees up, 15 to 40) and `sky.moon.turn` (degrees from the noon meridian:
   0 its noon side, 180 the pole's, positive toward the west), and the stars' sky, the one seen
   from `sky.stars.latitude` degrees south at the sidereal time `sky.stars.sidereal` (hours:
-  `src/sky/DayCycle.ts` MOON, STARS), the near air
-  `sky.weather.nearDensity@clear` (`nearStart`, `nearEnd`; `@fair`, `@cloudy`, `@overcast`), a
-  clouded sky's floor of the key on the land under its deck `sky.deckFloor@overcast` (`@cloudy`)
-  and its day sky, the level of the whole sky's light by day at a sun 18 degrees up and how it
+  `src/sky/DayCycle.ts` MOON, STARS), a clouded sky's floor of the key on the land under its deck
+  `sky.deckFloor@overcast` (`@cloudy`) and its day sky, the level of the whole sky's light by day at a sun 18 degrees up and how it
   goes with the sun's height, `sky.daySky@overcast`, `sky.daySkyExponent@overcast` (`@cloudy`:
   `src/sky/Weather.ts` `daySkyAt`), the key's gain on that floor under overcast's deck
   `lighting.overcastKey` (under a cloudy deck's, `lighting.cloudyKey`: `src/sky/Sky.ts`

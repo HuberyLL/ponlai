@@ -199,8 +199,7 @@ export function evaluateAmbient( elevation: number, weights: readonly number[], 
 }
 
 /** A gain on the table's `sunBounce` at every hour and in every weather: scales the key's bounce
- * throughout without reshaping the table. One now the near air no longer lifts the shade: the
- * shade's level is the light the ground sends up. */
+ * throughout without reshaping the table: the shade's level is the light the ground sends up. */
 const sunBounceGain = tune( 'lighting.grade.sunBounce', 1, { min: 0.25, max: 4, scale: 'log' } );
 
 /** The weather's gain under overcast's deck, per unit, on all of the land's ambient light: on the

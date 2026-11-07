@@ -41,8 +41,9 @@
 // A state (the point as it is, or with some shares forced) is taken as: the forces set through the
 // page's Tune handle (`sky.dusk.force.<name>`: DayCycle.ts DUSK_FORCES), an explicit bake of the
 // environment (sky/SkyRetune.ts, read back as `sky.bakeVersion` rising), then per view the page's
-// settled signal (tools/capture-browser.mjs `waitForSettled`) and the reads. The frame loop is
-// stopped between points, when the lock may be given up.
+// settled signal (tools/capture-browser.mjs `waitForSettled`, after a few frames of the view's pose
+// when the camera moved: the signal and the uniforms are the last rendered frame's) and the reads.
+// The frame loop is stopped between points, when the lock may be given up.
 //
 // The reads (scene units, luminance)
 //   CPU: E (pi times the sky's irradiance), Edeck (the deck's, read back), mS (the sky's metering
@@ -79,7 +80,7 @@
 // follows the camera's height), once the page has settled there:
 //   - hazeMedium: every item of the haze's key as the frame set it (main.ts `hazeKey`, `key.*`), the
 //     haze's copy of it (`look.*`), its medium's uniforms (`air.*`: the weather's haze and fog, the
-//     layers, the ground layer's width rule, sigma, the dome's own depth, the near haze), the
+//     layers, the ground layer's width rule, sigma, the dome's own depth), the
 //     clouds' copy of the medium (`clouds.*`), the moon's aerosol keys (`moon.*`, Tune
 //     `haze.moon.*`) and the settings (`settings.*`); vectors flattened (`.0`, `.1`, ...), non-finite
 //     numbers as text. The light's colours are not in it.
@@ -474,9 +475,9 @@ const hazeReadJs = () => `async () => { ${ PAGE }
 	};
 	for ( const [ k, v ] of Object.entries( s.hazeKey ) ) put( 'key.' + k, v );
 	for ( const [ k, v ] of Object.entries( air.look ) ) put( 'look.' + k, v );
-	for ( const k of [ 'haze', 'fog', 'layer', 'ground', 'widthRule', 'sigma', 'skyDepth', 'near' ] ) put( 'air.' + k, air[ k ].value );
+	for ( const k of [ 'haze', 'fog', 'layer', 'ground', 'widthRule', 'sigma', 'skyDepth' ] ) put( 'air.' + k, air[ k ].value );
 	const clouds = air.cloudMedium ?? sky.clouds?.haze;
-	if ( clouds ) for ( const k of [ 'layer', 'ground', 'near', 'sigma' ] ) put( 'clouds.' + k, clouds[ k ].value );
+	if ( clouds ) for ( const k of [ 'layer', 'ground', 'sigma' ] ) put( 'clouds.' + k, clouds[ k ].value );
 	for ( const k of [ 'red', 'blue', 'gain', 'mieG' ] ) put( 'moon.' + k, s.tune.get( 'haze.moon.' + k ) );
 	for ( const [ k, v ] of Object.entries( air.settings ) ) put( 'settings.' + k, v );
 	cam.updateMatrixWorld();
@@ -730,6 +731,17 @@ async function jump( query ) {
 
 const run = ( js ) => runInPage( page, js, { timeout: options.timeout } );
 
+// A move of the camera (a view, the haze's view) then the settled signal: the signal and the
+// uniforms read after it are the last rendered frame's, the pose before the move until a frame has
+// run, so a few frames of the new pose come first (as `applyJs` waits after a state's forces).
+async function moveAndSettle( js ) {
+
+	await run( js );
+	await run( `async () => { await ( ${ WAIT_FRAMES } )( 3, ${ options.timeout } ); }` );
+	return waitForSettled( page, { timeout: options.timeout } );
+
+}
+
 /** One state of the current point: the forces set, the bake, then per view the settled signal and
  * the reads. Returns { values, weights, unsettled }. */
 async function state( forces ) {
@@ -739,8 +751,7 @@ async function state( forces ) {
 	let weights = null, unsettled = false;
 	for ( const [ i, view ] of options.views.entries() ) {
 
-		if ( options.views.length > 1 ) await run( viewJs( view ) );
-		const ready = await waitForSettled( page, { timeout: options.timeout } );
+		const ready = options.views.length > 1 ? await moveAndSettle( viewJs( view ) ) : await waitForSettled( page, { timeout: options.timeout } );
 		if ( ready.signal !== false && ! ready.settled ) unsettled = true;
 		const read = await run( readJs( view, i === 0 ) );
 		if ( read.__weights ) {
@@ -784,9 +795,9 @@ async function measure( point, query, how ) {
 	point.elevation = prep.elevation;
 	const expected = DC.sunElevationAt( Number( point.hourText ) );
 	if ( Math.abs( prep.elevation - expected ) > 1e-3 ) throw new ArgError( `the page's sun stands at ${ prep.elevation } at hour ${ point.hourText }, --src's at ${ expected }: give the served checkout as --src` );
-	if ( options.views.length === 1 ) await run( viewJs( options.views[ 0 ] ) );
 	// the jump's own bakes done before the first state asks for its own
-	await waitForSettled( page, { timeout: options.timeout } );
+	if ( options.views.length === 1 ) await moveAndSettle( viewJs( options.views[ 0 ] ) );
+	else await waitForSettled( page, { timeout: options.timeout } );
 	const warnings = [];
 	const take = async ( forces ) => {
 
@@ -812,16 +823,14 @@ async function measure( point, query, how ) {
 	if ( options.haze ) {
 
 		// the haze's view, its reads, then the point's own view back for the states after it
-		await run( HAZE_VIEW );
-		const ready = await waitForSettled( page, { timeout: options.timeout } );
+		const ready = await moveAndSettle( HAZE_VIEW );
 		if ( ready.signal !== false && ! ready.settled ) warnings.push( 'not settled in the haze view' );
 		const h = await run( hazeReadJs() );
 		point.hazeMedium = h.medium;
 		point.hazeOpacity = h.opacity;
 		point.hazePose = h.pose;
 		if ( h.outside.length ) point.hazeOutside = h.outside;
-		await run( viewJs( options.views[ 0 ] ) );
-		await waitForSettled( page, { timeout: options.timeout } );
+		await moveAndSettle( viewJs( options.views[ 0 ] ) );
 
 	}
 	// a share the code already makes exactly 0 or 1 everywhere needs no state of its own

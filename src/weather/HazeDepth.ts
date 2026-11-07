@@ -2,7 +2,6 @@
 // the medium) and the clouds' march (sky/Clouds.ts, which ends where the haze closes):
 //   - `meanExtinction`: the medium's mean density over a span of heights, so an optical depth is a
 //     ray's length times it;
-//   - `nearFactor` and `nearLength`: the weather's thinner near haze on a ray's depth;
 //   - `hazeReach`: the distance along a ray at which the haze lets less than 1/500 through
 //     (`REACH_DEPTH`), 8-bit's floor: past it nothing on the ray can show through the haze;
 //   - `HazeMedium`: the medium's uniforms a reader outside the haze holds (the clouds build their
@@ -12,7 +11,7 @@
 // (VolumetricHaze.ts `skyHaze`).
 
 import * as THREE from 'three/webgpu';
-import { Fn, If, Loop, exp, float, log, max, min, select, smoothstep, sqrt, uniform } from 'three/tsl';
+import { Fn, If, Loop, exp, float, log, max, min, select, sqrt, uniform } from 'three/tsl';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -58,19 +57,6 @@ export const meanExtinction = Fn( ( [ a0, b0, layer, ground ]: [ F, F, V3, V3 ] 
 	{ name: 'a0', type: 'float' }, { name: 'b0', type: 'float' }, { name: 'layer', type: 'vec3' }, { name: 'ground', type: 'vec3' },
 ] } );
 
-// The near haze's factor on the optical depth from the camera out to t metres ( k, d0, d1 ): k up
-// to d0, a smoothstep back to 1 at d1, then 1. Written 1 - ( 1 - k )( 1 - s ), it is 1 exactly past d1
-// and with k = 1, so those rays keep their depth to the bit.
-export const nearFactor = Fn( ( [ t, near ]: [ F, V3 ] ) => {
-
-	return float( 1 ).sub( float( 1 ).sub( near.x ).mul( float( 1 ).sub( smoothstep( near.y, max( near.z, near.y.add( 1e-3 ) ), t ) ) ) );
-
-} ).setLayout( { name: 'hazeNearFactor', type: 'float', inputs: [ { name: 't', type: 'float' }, { name: 'near', type: 'vec3' } ] } );
-
-// A whole ray's length out to t as the near haze weighs it: its optical depth is this times the far
-// mean density over the heights it spans.
-export const nearLength = ( t: F, near: V3 ): F => t.mul( nearFactor( t, near ) );
-
 // The exponential layer's top where nothing ends it (no deck): over any height a ray reaches.
 export const AEROSOL_OPEN = 1e9;
 
@@ -82,9 +68,9 @@ export const REACH_DEPTH = Math.log( 500 );
 // t1: t1 where it stays under it there, and about t0 where it is past it already. The depth grows along the ray, so a
 // bisection in the log of the distance finds it, 12 halvings to under 0.2 % of the distance between
 // 100 m and 250 km.
-export const hazeReach = Fn( ( [ dy, y, layer, ground, near, sigma, t0, t1 ]: [ F, F, V3, V3, V3, F, F, F ] ) => {
+export const hazeReach = Fn( ( [ dy, y, layer, ground, sigma, t0, t1 ]: [ F, F, V3, V3, F, F, F ] ) => {
 
-	const depth = ( t: F ) => nearLength( t, near ).mul( meanExtinction( y, y.add( dy.mul( t ) ), layer, ground ) ).mul( sigma );
+	const depth = ( t: F ) => t.mul( meanExtinction( y, y.add( dy.mul( t ) ), layer, ground ) ).mul( sigma );
 	const reach = float( t1 ).toVar();
 	If( depth( t1 ).greaterThan( REACH_DEPTH ), () => {
 
@@ -110,7 +96,7 @@ export const hazeReach = Fn( ( [ dy, y, layer, ground, near, sigma, t0, t1 ]: [ 
 
 } ).setLayout( { name: 'hazeReach', type: 'float', inputs: [
 	{ name: 'dy', type: 'float' }, { name: 'y', type: 'float' }, { name: 'layer', type: 'vec3' }, { name: 'ground', type: 'vec3' },
-	{ name: 'near', type: 'vec3' }, { name: 'sigma', type: 'float' }, { name: 't0', type: 'float' }, { name: 't1', type: 'float' },
+	{ name: 'sigma', type: 'float' }, { name: 't0', type: 'float' }, { name: 't1', type: 'float' },
 ] } );
 
 /** The haze's medium as uniforms of a reader's own, set from the haze's (VolumetricHaze.ts
@@ -119,7 +105,6 @@ export class HazeMedium {
 
 	readonly layer = uniform( new THREE.Vector3( 0, 1400, AEROSOL_OPEN ) );
 	readonly ground = uniform( new THREE.Vector3( 0, 13, 50 ) );
-	readonly near = uniform( new THREE.Vector3( 1, 250, 600 ) );
 	// the least extinguished band's sigma, the last to close: 0 (no haze over the sky, or no haze
 	// yet) reaches every distance
 	readonly sigma = uniform( 0 );
@@ -127,7 +112,7 @@ export class HazeMedium {
 	/** `hazeReach` from height y (m) along a ray climbing dy a metre, searched between t0 and t1 (m). */
 	reach( dy: F, y: F, t0: F, t1: F ): F {
 
-		return hazeReach( dy, y, this.layer, this.ground, this.near, this.sigma, t0, t1 );
+		return hazeReach( dy, y, this.layer, this.ground, this.sigma, t0, t1 );
 
 	}
 
