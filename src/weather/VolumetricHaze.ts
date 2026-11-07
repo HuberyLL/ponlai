@@ -586,11 +586,11 @@ export class VolumetricHaze {
 	// weights, the medium's shape (the ground layer's top over the sea and its width,
 	// the aerosol layer's share, scale height and top, the dome's own depth per kilometre)
 	// and the fog layer's (HazeKeys.ts, see the header, The fog layer): its share of the ground
-	// layer, the droplets' share of its light, the extinction's neutral share, Wrenninge's a and the
-	// visibility at the sea (km)
+	// layer, the droplets' share of its light, the extinction's neutral share, Wrenninge's a, the
+	// visibility at the sea (km) and the banks' threshold at its top (FogNoise.ts)
 	readonly look = { sigma: new THREE.Vector3( 1, 1, 1 ), desaturate: 0.26, gain: 1, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
 		top: 10, width: 50, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0,
-		fogLayer: 0, droplet: 0, neutral: 0, scatter: 0, visibility: 2 };
+		fogLayer: 0, droplet: 0, neutral: 0, scatter: 0, visibility: 2, coverHigh: FOG_NOISE.high() };
 	// the weather's share of the sun's direct light below the clouds and its diffuse gain
 	// (Weather.ts `directVisibility`, `ambientGain`), which scale the light's colours; its day sky
 	// comes with the open sky's light the atmosphere lends (Sky.ts `skyGain`), not with the sun's beam
@@ -1498,7 +1498,7 @@ export class VolumetricHaze {
 		this.dropletLobes.value.set( DROPLET.forward(), DROPLET.backward(), DROPLET.backShare() );
 		this.dropletOctaves.value.set( look.scatter, DROPLET.octaveExtinction(), DROPLET.octaveAnisotropy() );
 		this.fogNoise.value.set( FOG_NOISE.scale(), FOG_NOISE.amplitude() * look.fogLayer, FOG_NOISE.squash(), FOG_NOISE.region() );
-		this.fogCover.value.set( FOG_NOISE.low(), FOG_NOISE.high(), look.top + look.width, FOG_NOISE.regionShare() );
+		this.fogCover.value.set( FOG_NOISE.low(), look.coverHigh, look.top + look.width, FOG_NOISE.regionShare() );
 		this.fogShape.value.set( FOG_NOISE.rough(), FOG_NOISE.warp(), 0, 0 );
 		this.skyDepth.value = look.skyDepth / 1000 / Math.max( look.sigma.y, 1e-6 );
 		const copy = this.cloudMedium;
@@ -1649,6 +1649,7 @@ export class VolumetricHaze {
 		look.neutral = key.neutral ?? 0;
 		look.scatter = key.scatter ?? 0;
 		look.visibility = key.visibility ?? 2;
+		look.coverHigh = key.fogCoverHigh ?? FOG_NOISE.high();
 
 	}
 

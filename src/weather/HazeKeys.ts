@@ -4,6 +4,7 @@ import { markSkyRetune } from '../sky/SkyRetune.ts';
 import { DUSK_DEPTH, duskForce, duskForced, duskIn, moonKeyShare } from '../sky/DayCycle.ts';
 import { KEPT_SKIES, WEATHER_PRESETS, cloudedShare, deckLight, overcastDeckLight } from '../sky/Weather.ts';
 import { cloudBase } from '../sky/Sky.ts';
+import { FOG_NOISE } from './FogNoise.ts';
 
 // The haze's keys: what the air does by the hour and the weather, set as a few quantities one sees
 // (how far the light carries, the colour it loses, how bright and how coloured the air shows) at
@@ -92,13 +93,17 @@ import { cloudBase } from '../sky/Sky.ts';
 //     layer meets the sky at the horizon; one of 5 m or more does not. The clouded share turns it back into the key's own thin
 //     haze (`clouded` below): cloudy keeps its shape. Tunable as
 //     `haze.fog.<top|width|visibility|neutral|scatter>@<day|golden|mist>`.
-//     Overcast holds a sea fog of its own instead (OVERCAST_FOG), by overcast's share wherever the
-//     hour's key holds a fog layer: a deep layer, its top 80 m over the sea and its edge 60 m wide
-//     (so its density falls off through the island view's height rather than ending at a line),
-//     0.35 km at the sea, grey (`neutral` 1), with a = 0.5. Under it the island view sees the land
-//     through a white veil that thickens with distance and toward the sun, the banks' drift
-//     (VolumetricHaze.ts FogNoise.ts) moving through it. Its fields blend with the open sky's
-//     layer by the two shares. Tunable as `haze.fog.<field>@overcast`.
+//     A deep sea fog (SEA_FOG) is a switch beside the weather (main.ts `?seaFog`, the GUI's
+//     `sea fog`), by its share at every hour and under any sky: its top 35 m over the sea and its edge 25 m
+//     wide, so its density falls off through the island view's height rather than ending at a
+//     line; 0.5 km at the sea, grey (`neutral` 1), with a = 0.5; and its banks break up higher
+//     than the day layer's (`coverHigh` 1.2, the threshold at its top: FogNoise.ts). The distance
+//     it fades over is what layers the frame: the island view looks down through its upper part
+//     and sees the land below it through about 0.4 of optical depth (0.7 at its far side), while
+//     the sea a few hundred metres out is gone (3 at 400 m along the water); by the boat, 25 m
+//     stays clear (0.2) and 200 m is a silhouette (1.5). The banks' drift (VolumetricHaze.ts,
+//     FogNoise.ts) moves through it. Its fields blend with the open sky's layer by the two
+//     shares. Tunable as `haze.fog.<field>@sea`.
 //   - sunRayleigh: the sun's share in the haze's Rayleigh light, beside the open sky's: 0 by day
 //     under a clear or fair sky, where the air's blue is sky light only and the sun reaches the
 //     haze through its aerosol share; 1 at a low sun, by night and under cloud. The moon's share
@@ -218,8 +223,8 @@ export interface HazeKey {
 	// the fog layer (see the header), optional so a key written elsewhere without them holds none:
 	// the share of the ground layer that is the fog layer (its density from `visibility`, its top
 	// `fogTop` and the width of its edge `fogWidth`), the share of the ground layer's light that is the droplets' (VolumetricHaze.ts), how
-	// far the extinction turns neutral, the droplets' multiple scattering (Wrenninge's a) and the
-	// visibility at the sea (km)
+	// far the extinction turns neutral, the droplets' multiple scattering (Wrenninge's a), the
+	// visibility at the sea (km) and the banks' threshold at the layer's top (FogNoise.ts `high`)
 	fogLayer?: number;
 	droplet?: number;
 	neutral?: number;
@@ -227,13 +232,14 @@ export interface HazeKey {
 	fogTop?: number;
 	fogWidth?: number;
 	visibility?: number;
+	fogCoverHigh?: number;
 
 }
 
 type Sigma = readonly [ number, number, number ];
 type FullKey = Required<HazeKey>;
 const key = ( amount: number, [ sigmaRed, sigmaGreen, sigmaBlue ]: Sigma, desaturate: number, mist: number, sunRayleigh: number ): FullKey =>
-	( { deck: 0, overcastDeck: 0, amount, sigmaRed, sigmaGreen, sigmaBlue, desaturate, gain: 1, mist, sunRayleigh, rayleighWeight: 1, mieWeight: 1, ...SHAPE, ...NO_FOG, droplet: 0 } );
+	( { deck: 0, overcastDeck: 0, amount, sigmaRed, sigmaGreen, sigmaBlue, desaturate, gain: 1, mist, sunRayleigh, rayleighWeight: 1, mieWeight: 1, ...SHAPE, ...NO_FOG, droplet: 0, fogCoverHigh: 0 } );
 
 // the medium's shape every key starts from
 const SHAPE = { top: 10, width: 50, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0 };
@@ -321,12 +327,13 @@ const SHAPED: ReadonlySet<FullKey> = new Set( [ DAY, GOLDEN, NIGHT, MIST ] );
 // the twilights) none
 const FOGGED: ReadonlySet<FullKey> = new Set( [ DAY, GOLDEN, MIST ] );
 const fogOf = ( k: FullKey ): FullKey => FOGGED.has( k ) ? k : k === MORNING ? MIST : NIGHT;
-// the overcast sea fog (see the header): a deep layer with a soft top, which the overcast sky
-// holds wherever the hour's key holds a fog layer; tunable as `haze.fog.<field>@overcast`
-const OVERCAST_FOG = { neutral: 1, scatter: 0.5, fogTop: 80, fogWidth: 60, visibility: 0.35 };
-tuneObject( OVERCAST_FOG, { fogTop: 'haze.fog.top@overcast', fogWidth: 'haze.fog.width@overcast', visibility: 'haze.fog.visibility@overcast',
-	neutral: 'haze.fog.neutral@overcast', scatter: 'haze.fog.scatter@overcast' }, {
+// the sea fog (see the header): a deep layer with a soft top, held at every hour while its switch
+// is on; tunable as `haze.fog.<field>@sea`
+const SEA_FOG = { neutral: 1, scatter: 0.5, fogTop: 35, fogWidth: 25, visibility: 0.5, coverHigh: 1.2 };
+tuneObject( SEA_FOG, { fogTop: 'haze.fog.top@sea', fogWidth: 'haze.fog.width@sea', visibility: 'haze.fog.visibility@sea',
+	neutral: 'haze.fog.neutral@sea', scatter: 'haze.fog.scatter@sea', coverHigh: 'haze.fog.coverHigh@sea' }, {
 	fogTop: { min: 0, max: 150, onChange: markSkyRetune }, fogWidth: { min: 2, max: 100, onChange: markSkyRetune },
+	coverHigh: { min: - 1, max: 2.5, onChange: markSkyRetune },
 	visibility: { min: 0.08, max: 2, scale: 'log', onChange: markSkyRetune },
 	neutral: { min: 0, max: 1, onChange: markSkyRetune }, scatter: { min: 0, max: 0.6, onChange: markSkyRetune },
 } );
@@ -397,8 +404,10 @@ const _cloudedKey = key( 0, DAY_SIGMA, 0, 0, 0 );
 const _key = key( 0, DAY_SIGMA, 0, 0, 0 );
 
 /** The haze's key at the sun's `elevation` (degrees), `rising` or setting, under the weather's
- * blend of the kept skies, its wind (m/s) and its rain (0 - 1). Writes into `out`. */
-export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly number[], wind: number, rain: number, target: HazeKey ): HazeKey {
+ * blend of the kept skies, its wind (m/s), its rain (0 - 1) and the sea fog's share (0 - 1,
+ * its switch).
+ * Writes into `out`. */
+export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly number[], wind: number, rain: number, seaFog: number, target: HazeKey ): HazeKey {
 
 	const out = _key;
 	keyAlong( rising ? RISING : SETTING, elevation, out );
@@ -437,14 +446,21 @@ export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly 
 	out.sigmaBlue *= blue;
 	out.aerosolShare *= aerosol;
 	out.aerosolHeight *= height;
-	// the fog layer under a clear or a fair sky, by its share, and overcast's sea fog by overcast's:
-	// the ground layer takes its top and its edge's width; cloudy keeps its own air (see the header)
-	const open = out.fogLayer * ( 1 - clouded ), sea = out.fogLayer * ( skyMix[ 3 ] ?? 0 );
+	// the fog layer under a clear or a fair sky, by its share, and the sea fog by its switch at
+	// every hour, which takes the open sky's layer's place: the ground layer takes its top and its
+	// edge's width; without it cloudy and overcast keep their own air (see the header)
+	const sea = seaFog, open = out.fogLayer * ( 1 - clouded ) * ( 1 - sea );
 	const fog = open + sea;
-	if ( sea > 0 ) for ( const f of [ 'scatter', 'fogTop', 'fogWidth', 'visibility' ] as const ) out[ f ] = ( out[ f ] * open + OVERCAST_FOG[ f ] * sea ) / fog;
-	out.droplet = out.fogLayer;
+	out.neutral *= 1 - clouded;
+	out.fogCoverHigh = FOG_NOISE.high();
+	if ( sea > 0 ) {
+
+		for ( const f of [ 'neutral', 'scatter', 'fogTop', 'fogWidth', 'visibility' ] as const ) out[ f ] = ( out[ f ] * open + SEA_FOG[ f ] * sea ) / fog;
+		out.fogCoverHigh = ( out.fogCoverHigh * open + SEA_FOG.coverHigh * sea ) / fog;
+
+	}
+	out.droplet = out.fogLayer + ( 1 - out.fogLayer ) * sea;
 	out.fogLayer = fog;
-	out.neutral *= 1 - clouded + ( skyMix[ 3 ] ?? 0 ) * OVERCAST_FOG.neutral;
 	out.top = out.top * top * ( 1 - fog ) + out.fogTop * fog;
 	out.width = out.width * width * ( 1 - fog ) + out.fogWidth * fog;
 	out.aerosolTop = inverseTop > 0 ? 1 / inverseTop : Infinity;

@@ -194,6 +194,9 @@ Sky and weather:
 - `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load as established,
   already wet; without it, `wind` and `windDir` the weather and its wind evolve on their own, among
   the kept presets), `clouds` (coverage override).
+- `seaFog`: the deep sea fog, a switch beside the weather under any sky and at any hour (off by
+  default; the GUI's Weather folder, `sea fog`). Its fields tune as `haze.fog.<field>@sea`
+  (`src/weather/HazeKeys.ts` SEA_FOG).
 - `wind` (light, gentle, fresh, strong: the wind's level, a mean wind 10 m up of 1.5, 3.8, 7 and
   11 m/s) and `windDir` (its heading in degrees: where the wind comes from, in the sea spectrum's
   convention, atan2( z, x ) in the world's x-z plane; 40 is the prevailing wind, which the
