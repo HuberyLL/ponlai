@@ -69,7 +69,7 @@
 //   Weights (reported, never judged): the snapshot's moonKeyGain, handoff, daylight,
 //   nightVisibility, nightSkyLevel, moonVisibility, overcastAdaptation; gradeNight (the display's
 //   night) and gradeExposureNight (the exposure's: the `exposureNight` force sets the weight the
-//   exposure's keys take, apart from the display's); moonKeyShare, twilightMoon, twilightMoonSky,
+//   exposure's keys take, apart from the display's); moonKeyShare,
 //   nightAmbientShare, displayNight, exposureNight, starNight at this sun; and `share.<name>`, each forced share's value as the code made it
 //   (DayCycle.ts `duskShares`: a number, or [ least, greatest ] when its readers took several).
 //
@@ -594,8 +594,6 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 			nightSkyLevel: v( snap.nightSkyLevel ), moonVisibility: v( snap.moonVisibility ), overcastAdaptation: v( snap.overcastAdaptation ),
 			gradeNight: v( s.pipeline.settings.night ), gradeExposureNight: v( s.pipeline.settings.exposureNight ), cloud, rising: v( rising ) };
 		if ( DC.moonKeyShare ) w.moonKeyShare = DC.moonKeyShare( e );
-		if ( DC.twilightMoon ) w.twilightMoon = DC.twilightMoon( e, rising, cloud );
-		if ( DC.twilightMoonSky ) w.twilightMoonSky = DC.twilightMoonSky( e, rising, cloud );
 		if ( DC.nightAmbientShare ) w.nightAmbientShare = DC.nightAmbientShare( e, rising, cloud );
 		if ( DC.displayNight ) w.displayNight = DC.displayNight( snap.daylight, e, rising, cloud );
 		if ( DC.exposureNight ) w.exposureNight = DC.exposureNight( snap.daylight, e, rising, cloud );

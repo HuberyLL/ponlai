@@ -392,8 +392,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   of the clouds' shadow ratio `sky.atmosphere.shadowFloor` (the multiple scattering's share no
   shadow takes), the distant sea's knee `sky.sea.knee` (the light that reaches the sea, as a share
   of the sun's illuminance, above which its body is lit fully), the stops under all of it each
-  night layer comes in from at -7 degrees after a clear sunset `sky.twilight.depth.moon` (the
-  moon's key; `moonSky`, the moonlit sky; `sky`, the sky's and the probes' night key; `ambient`;
+  night layer comes in from at -7 degrees after a clear sunset `sky.twilight.depth.sky` (the
+  sky's night key; `ambient`;
   `stars`; `haze`; `cloudMoon`, the clouds' own moonlight: `src/sky/DayCycle.ts` DUSK_DEPTH) and the
   degrees at the night's end of that window over which they ease into all of it `sky.twilight.ease`
   (DUSK_EASE; 0 takes them in by even stops to the end), where the moon stands

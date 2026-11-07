@@ -23,7 +23,7 @@ import { STORE_CEILING, storePress, storeStops } from '../post/PreExposure.ts';
 import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
-import { DAY_EXPOSURE, DUSK_DEPTH, MOON, displayNight, duskForce, exposureNight, duskIn, nightAmbientShare, skyNight, starNight, sunRising, twilightMoon, twilightMoonSky, type DayCycleSnapshot } from './DayCycle.ts';
+import { DAY_EXPOSURE, DUSK_DEPTH, MOON, displayNight, duskForce, exposureNight, duskIn, nightAmbientShare, skyNight, starNight, sunRising, type DayCycleSnapshot } from './DayCycle.ts';
 import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckFloorTakeover, floorKeyGain, daySkyAt, type WeatherFront, type WeatherState } from './Weather.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
@@ -947,7 +947,7 @@ const _white = new THREE.Color();
 const _zenith = new THREE.Vector3( 0, 1, 0 );
 // The sun's elevations (degrees) over which the moon's light on the clouds comes in after sunset and
 // leaves before sunrise, all of it under the first: in the evening the window of the night sky's
-// light and the moon's (DayCycle.ts DUSK_SKY, DUSK_MOON), by stops as they come in (DUSK_DEPTH
+// light (DayCycle.ts DUSK_SKY), by stops as they come in (DUSK_DEPTH
 // cloudMoon: faded evenly, the clouds' moonlight was the largest share of the step the sky's meter
 // made from -7 to -7.5, 0.7 of 1.6 stops). From -7 to -3 the moonlit clouds came in
 // while the sky behind them was still the sun's afterglow: at -5.3 degrees they gave about half the light
@@ -1991,13 +1991,13 @@ export class Sky {
 		// The moon lights the sky as the sun does: its light above the air (`moonAboveAir`) times the
 		// sky's gain the sun's light takes at the moon's height (`skyGain` on the evening's keys, with
 		// the weather's day sky there), at the moonlit sky's own hue (MOON_SKY_HUE) and the moonlit
-		// sky's share (DayCycle.ts `twilightMoonSky`: after sunset the moonlit sky comes in from a
-		// depth of its own). The key takes the moon's share of the key and its own gain
-		// (`moonKeyGain`).
+		// sky's share (the snapshot's `moonKeyGain`, as the key's: at its magnitude the moon's light
+		// lies under the twilight's, so it takes no window of its own, DayCycle.ts). The key takes the
+		// moon's share of the key and its own gain (`moonKeyGain`).
 		const cloud = skyMix ? cloudedShare( skyMix ) : 0;
 		this.rising = sunRising( this.sunDir );
-		const moonGain = celestial ? duskForce( 'moonKey', celestial.moonKeyGain * twilightMoon( celestial.elevation, this.rising, cloud ) ) : 0;
-		const moonSkyShare = celestial ? duskForce( 'moonSky', celestial.moonKeyGain * twilightMoonSky( celestial.elevation, this.rising, cloud ) ) : 0;
+		const moonGain = celestial ? duskForce( 'moonKey', celestial.moonKeyGain ) : 0;
+		const moonSkyShare = celestial ? duskForce( 'moonSky', celestial.moonKeyGain ) : 0;
 		this.moonElevation = celestial ? celestial.moonElevation : MOON.elevation;
 		this.moonKeyShare = moonGain;
 		this.moonSkyShare = moonSkyShare;
