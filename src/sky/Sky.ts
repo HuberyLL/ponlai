@@ -96,9 +96,12 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // VolumetricHaze.ts `openSky`, toward every direction from the sea's level, unshadowed): the
 // environment and the dome are one sky, its haze light included, so the ground's sky light takes the
 // light the haze scatters and the sea reflects it (the seen panorama, above the horizon); one sky but
-// for the closed deck's glow about the key light (`deckGlow`) and the air's floor of the key under
-// the deck (VolumetricHaze.ts `keyFloor`), which only the dome and the seen panorama take
-// (`bakeGlow`), so the sea reflects them and no light source takes them. Under the horizon the environment is
+// for the closed deck's glow (`deckGlow`: a narrow peak about the key light and a broad tail that
+// lifts the whole drawn deck, the sky away from the sun about 1.5 times its level without the glow)
+// and the air's floor of the key under the deck (VolumetricHaze.ts `keyFloor`), which only the
+// dome and the seen panorama take (`bakeGlow`), so the sea reflects them and no light source takes
+// them: under overcast the drawn sky reads about 0.6 stop brighter than the sky that lights the
+// land and meters the exposure. Under the horizon the environment is
 // the distant sea, its reflection of the sky over its body, which the light that reaches the sea
 // lights, the sky's and the sun's (SEA_KNEE).
 // The sun's disc and the moon's take the clouds' transmittance once, per pixel, in the composite
@@ -659,14 +662,16 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 // map; the sea and the air take the deck's own transmittance. A thinner deck shows the disc first
 // where its column is shallowest (the views with the sun in the middle of the frame, over several
 // cloud times); the land's light under it is tuned by `sky.deckFloor@overcast`, not by the deck.
-// Overcast's base rises between its masses by 0.4 of the column (Clouds.ts MASS_LOW), which from
-// 90 m over six cloud times puts the visible base (the march's opacity-weighted depth) at 0.88 km
-// at 20-30 degrees and 0.92 km at 30-45 (medians; p90 1.1-1.16 km) from the shell's 600 m, its
-// masses about 5.3 by 1.8 degrees in the 20-30 degree band (the luminance's correlation widths)
-// and some 330 m in plan at the base (the correlation's half distance); a share of 0.45 tore dark
-// specks into the thinnest columns. Cloudy's margin is 2.6 times the cumulus' (0.25) and lies
-// three quarters inside its columns (`inside` 0.5): spread either side of a column's top, as the
-// cumulus' is, a margin wide enough to soften the broken cloud's edges filled its gaps with thin
+// Overcast's base rises between its masses by 0.3 of the column (Clouds.ts MASS_LOW), and its light
+// follows the masses' optical depth (`relief` 0.6, Clouds.ts MASS_MEDIAN): the masses darker, the
+// seams lighter, so the base's relief reads from its shading as well as its height. At 0.4 the
+// masses stood as long rolls (aspect about 2.1); at 0.3, from 1.7 m over the island at a sun of 15
+// and 22 degrees, they are about 0.25 by 0.15 of the base's height across (the luminance's
+// correlation lengths on the base's plane), aspect about 1.8, the base's p10 about 0.57 of its
+// median and its p95 about twice it, some 4 % of the base over twice its median: lit seams between
+// dark masses; a share of 0.45 tore dark specks into the thinnest columns. Cloudy's margin is 2.6
+// times the cumulus' (0.25) and lies three quarters inside its columns (`inside` 0.5): spread
+// either side of a column's top, as the cumulus' is, a margin wide enough to soften the broken cloud's edges filled its gaps with thin
 // cloud (at 0.25 the luminance's spread 0.10-0.12), and at 0.15 the gaps 3 - 25 degrees up from
 // 50 m were a fifth of a percent of the sky, the rest thin cloud over them. Moved inward, the gaps
 // open and the columns thin, and the land under them takes more of the sun: wholly inside (1),
@@ -680,7 +685,8 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 // 0.22 under a sun of 20 - 50 degrees (0.12 - 0.14 with the margin either side), the edges about
 // 0.9 - 1.7 degrees, the lit cloud and the clear sky 2.8 times apart in scene radiance. Tunable
 // on debug pages:
-// `sky.clouds.edge|erosion|baseEnd|baseLift|inside@<cloudy|overcast>`.
+// `sky.clouds.edge|erosion|baseEnd|baseLift|inside|relief@<cloudy|overcast>`,
+// `sky.clouds.reliefMedian`.
 //
 // The phase of the cloud's light (`phaseForward`, `phaseBack`: the two lobes' asymmetries;
 // `phaseBackWeight`, the back lobe's multiple; `phaseBackShare`, its share where the light still gets
@@ -712,7 +718,7 @@ const CLOUD_SKIES: CloudSky[] = KEPT_SKIES.map( ( name ): CloudSky => name === '
 	base: 900, top: 3200, ...CLOUD_FORM, edge: 0.25, inside: 0.5, ...PHASE, phaseBackWeight: 2.16,
 	low: { large: 2, medium: 1, detail: 0.125, rise: 0.5, baseBand: 50, topBand: 575, fadeFrom: 10, nearFull: 10, nearNone: 5, farCover: 0, ambientRamp: 0, deckAmbient: 1 },
 } : name === 'overcast' ? {
-	base: 600, top: 3000, ...CLOUD_FORM, baseLift: 0.4, ...PHASE,
+	base: 600, top: 3000, ...CLOUD_FORM, baseLift: 0.3, relief: 0.6, ...PHASE,
 	low: { large: 2, medium: 1, detail: 1, rise: 4, baseBand: 600, topBand: 600, fadeFrom: 5, nearFull: 10, nearNone: 5, farCover: 0.12, ambientRamp: 600, deckAmbient: 1 },
 } : { ...HIGH_SHELL, ...CLOUD_FORM, ...PHASE, low: null } );
 for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
@@ -726,9 +732,9 @@ export const cloudBase = ( s: number ): number => CLOUD_SKIES[ s ].base;
 for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 
 	tuneObject( CLOUD_SKIES[ s ], { edge: `sky.clouds.edge@${ name }`, erosion: `sky.clouds.erosion@${ name }`, baseEnd: `sky.clouds.baseEnd@${ name }`,
-		baseLift: `sky.clouds.baseLift@${ name }`, inside: `sky.clouds.inside@${ name }` },
+		baseLift: `sky.clouds.baseLift@${ name }`, inside: `sky.clouds.inside@${ name }`, relief: `sky.clouds.relief@${ name }` },
 	{ edge: { min: 0.05, max: 0.4, onChange: markSkyRetune }, erosion: { min: 0.3, max: 1.2, onChange: markSkyRetune }, baseEnd: { min: 0.05, max: 0.4, onChange: markSkyRetune },
-		baseLift: { min: 0, max: 0.8, onChange: markSkyRetune }, inside: { min: 0, max: 1, onChange: markSkyRetune } } );
+		baseLift: { min: 0, max: 0.8, onChange: markSkyRetune }, inside: { min: 0, max: 1, onChange: markSkyRetune }, relief: { min: 0, max: 1, onChange: markSkyRetune } } );
 
 }
 
@@ -877,22 +883,39 @@ const lendIsland = Fn( ( [ light, tint, gain ]: [ V3, V4, F ] ) => {
 // The closed deck's glow about the key light toward `d` (Clouds.ts DECK_GLOW), drawn where the sky is
 // composed, not marched: smooth and round whatever the deck's depth and its rolls, and outside the
 // lighting, whose sources never compose through it. The deck's mean radiance `deck` times the key's
-// share of the light on its tops, a forward lobe toward the sun and one toward the moon mixed by
-// the sun's share (each a Henyey-Greenstein lobe of mean 1 over the sphere, held at its value at the
-// plateau's radius inside it; the sun's tinted as the deck's tops take its light), the clouds'
-// opacity toward `d` and the deck's share of the sky. `shares` = ( the key's share, the sun's
-// share, the deck's share, the weight ), `form` = ( the mean cosine, the plateau radius's cosine ).
-const deckGlow = Fn( ( [ d, deck, opacity, sunDir, moonDir, tint, shares, form ]: [ V3, V3, F, V3, V3, V3, V4, V2 ] ) => {
+// share of the light on its tops, two forward lobes toward the sun and the same two toward the moon
+// mixed by the sun's share (each a Henyey-Greenstein lobe of mean 1 over the sphere, a narrow one
+// for the peak and a broad one for the tail; the sun's tinted as the deck's tops take its light),
+// the clouds' opacity toward `d`, the deck's share of the sky, and `pattern` to the power k: the
+// base's local radiance over the deck's mean as its diffuse law gives it there (`deckPattern`), so
+// the glow follows the base's own pattern, brightening its thin parts and leaving its dark masses
+// dark (at k = 0 a smooth glow). `shares` = ( the key's share, the sun's share, the deck's share,
+// k ), `form` = ( the narrow lobe's mean cosine, its weight, the broad lobe's mean cosine, its
+// weight ).
+const deckGlow = Fn( ( [ d, deck, opacity, sunDir, moonDir, tint, shares, form, pattern ]: [ V3, V3, F, V3, V3, V3, V4, V4, F ] ) => {
 
-	const g = form.x;
-	const lobe = ( nu: F ) => float( 1 ).sub( g.mul( g ) ).div( max( float( 1 ).add( g.mul( g ) ).sub( min( nu, form.y ).mul( g ).mul( 2 ) ), 1e-4 ).pow( 1.5 ) );
-	const forward = mix( vec3( lobe( dot( d, moonDir ) ) ), tint.mul( lobe( dot( d, sunDir ) ) ), shares.y );
-	return deck.mul( forward ).mul( shares.x.mul( shares.z ).mul( shares.w ).mul( opacity ) );
+	const hg = ( g: F, nu: F ) => float( 1 ).sub( g.mul( g ) ).div( max( float( 1 ).add( g.mul( g ) ).sub( nu.mul( g ).mul( 2 ) ), 1e-4 ).pow( 1.5 ) );
+	const lobes = ( nu: F ) => hg( form.x, nu ).mul( form.y ).add( hg( form.z, nu ).mul( form.w ) );
+	const forward = mix( vec3( lobes( dot( d, moonDir ) ) ), tint.mul( lobes( dot( d, sunDir ) ) ), shares.y );
+	return deck.mul( forward ).mul( shares.x.mul( shares.z ).mul( opacity ).mul( pattern.pow( shares.w ) ) );
 
 } ).setLayout( { name: 'deckGlow', type: 'vec3', inputs: [
 	{ name: 'd', type: 'vec3' }, { name: 'deck', type: 'vec3' }, { name: 'opacity', type: 'float' }, { name: 'sunDir', type: 'vec3' },
-	{ name: 'moonDir', type: 'vec3' }, { name: 'tint', type: 'vec3' }, { name: 'shares', type: 'vec4' }, { name: 'form', type: 'vec2' },
+	{ name: 'moonDir', type: 'vec3' }, { name: 'tint', type: 'vec3' }, { name: 'shares', type: 'vec4' }, { name: 'form', type: 'vec4' },
+	{ name: 'pattern', type: 'float' },
 ] } );
+
+// The base's local radiance toward `d` over the deck's mean as the column's diffuse law gives it
+// there, ( 3 / 7 )( 1 + 2 mu ) times the deck's mean radiance (Clouds.ts makeMarch: its mean over
+// level ground is the deck's), so it has no trend with elevation and averages about 1 over the
+// deck: what the glow follows (`deckGlow`). Held in [ 1e-6, 4 ], so its power is finite at any k
+// and a lone bright seam cannot flare.
+const deckPattern = Fn( ( [ d, local, deck ]: [ V3, V3, V3 ] ) => {
+
+	const mean = dot( deck, vec3( 0.2126, 0.7152, 0.0722 ) ).mul( max( d.y, 0 ).mul( 6 / 7 ).add( 3 / 7 ) );
+	return clamp( dot( local, vec3( 0.2126, 0.7152, 0.0722 ) ).div( max( mean, 1e-20 ) ), 1e-6, 4 );
+
+} ).setLayout( { name: 'deckPattern', type: 'float', inputs: [ { name: 'd', type: 'vec3' }, { name: 'local', type: 'vec3' }, { name: 'deck', type: 'vec3' } ] } );
 
 // Art direction: within a few degrees of the horizon the sun shines through twenty to forty air
 // masses and its light turns an almost pure red (red/blue above 100 at one degree), which paints
@@ -1571,7 +1594,9 @@ export class Sky {
 			const clear = this.gapSky( up ).toVar();
 			// the closed deck's glow over the clouds, in the seen panorama only (`bakeGlow`); its deck
 			// level without the weather's gain, which the source takes below
-			const lit = cloud.rgb.add( this.glowToward( up, this.bakeDeckIrradianceNode.div( max( this.ambientGain, 1e-6 ) ), cloud.a ).mul( this.bakeGlow ) ).toVar();
+			const bakeDeck = this.bakeDeckIrradianceNode.div( max( this.ambientGain, 1e-6 ) ).toVar();
+			const pattern = deckPattern( up, cloud.rgb, bakeDeck ).toVar();
+			const lit = cloud.rgb.add( this.glowToward( up, bakeDeck, cloud.a, pattern ).mul( this.bakeGlow ) ).toVar();
 			const air = clear.mul( cloud.a ).add( lit ).toVar();
 			let fogged: V3 = air;
 			if ( haze ) {
@@ -1656,7 +1681,8 @@ export class Sky {
 			const through = select( above, cloud.a, float( 1 ) ).toVar();
 			// the closed deck's glow over the clouds above the horizon (`deckGlow`), before the haze,
 			// which hides it with the clouds by their distance
-			const glow = this.glowToward( d, this.deckIrradianceNode, cloud.a ).toVar();
+			const pattern = deckPattern( d, cloud.rgb.mul( this.displayAmbientGain ), this.deckIrradianceNode ).toVar();
+			const glow = this.glowToward( d, this.deckIrradianceNode, cloud.a, pattern ).toVar();
 			const clouds = select( above, cloud.rgb.mul( this.displayAmbientGain ), vec3( 0 ) ).add( glow.mul( step( 0, d.y ) ) ).toVar();
 			if ( ! haze ) return vec4( behind.mul( through ).add( clouds ), 1 );
 			const sky = haze( d );
@@ -1704,13 +1730,14 @@ export class Sky {
 	}
 
 	/** The closed deck's glow toward `d` (`deckGlow`) over a deck of mean radiance `deck`, through
-	 * clouds of transmittance `transmittance` there, with this frame's shares (Clouds `columnTop`). */
-	private glowToward( d: V3, deck: V3, transmittance: F ): V3 {
+	 * clouds of transmittance `transmittance` there, following the base's local radiance over its
+	 * mean `pattern` (`deckPattern`), with this frame's shares (Clouds `columnTop`). */
+	private glowToward( d: V3, deck: V3, transmittance: F, pattern: F ): V3 {
 
 		const top = this.clouds.columnTop();
 		const c = this.clouds;
 		return deckGlow( d, deck, float( 1 ).sub( transmittance ), this.atmosphere.sunDir, this.atmosphere.moonDir, c.lobeTint.rgb,
-			vec4( top.keyShare, top.sunShare, c.broadShare, c.deckGlow ), vec2( c.deckGlowLobe, cos( c.deckGlowCore.mul( Math.PI / 180 ) ) ) );
+			vec4( top.keyShare, top.sunShare, c.broadShare, c.deckGlowTexture ), vec4( c.deckGlowLobe, c.deckGlow, c.deckGlowBroadLobe, c.deckGlowBroad ), pattern );
 
 	}
 
@@ -2207,7 +2234,7 @@ export class Sky {
 		const base = shell( 'base' );
 		clouds.setDeck( base, shell( 'top' ) - base, skyMix ? cloudedShare( skyMix ) : 0 );
 		const form = ( key: keyof typeof CLOUD_FORM ) => skyMix ? CLOUD_SKIES.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k[ key ], 0 ) : CLOUD_FORM[ key ];
-		clouds.setForm( form( 'edge' ), form( 'erosion' ), form( 'baseEnd' ), form( 'baseLift' ), form( 'inside' ) );
+		clouds.setForm( form( 'edge' ), form( 'erosion' ), form( 'baseEnd' ), form( 'baseLift' ), form( 'inside' ), form( 'relief' ) );
 		clouds.coverageFrom.value = front ? front.from.coverage : coverage;
 		clouds.coverageTo.value = front ? front.to.coverage : coverage;
 		clouds.densityFrom.value = front ? front.from.density : clouds.density.value;
