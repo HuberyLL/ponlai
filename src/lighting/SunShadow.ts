@@ -47,12 +47,13 @@ type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: 
 // a share of the sun to the leaves under them. The floor is a uniform stand-in for that light, on the
 // receivers alone; a caster that let part of the sun through would change the shade on the grove's
 // ground too and cost a map of its own. The clouds' shadow multiplies it as it does the map.
-// Receivers read the maps through SolarShadow's disk filter (a fixed radius of two texels; see its
-// rules on sampler types and derivatives). The caster-depth grid
-// (`nearestCasterDepth`) lets a march through the water skip the 2x2 volume lookups where nothing
-// casts, never the surface filter's disk. It projects world-space columns of the casters,
-// walked from their vertices, or for meshes made in the world's workers folded in from the columns
-// they came with (`setCasters`, ChunkDerived.ts), so the main thread does not walk those.
+// Receivers read the maps through SolarShadow's disk filter (a fixed radius of POISSON_RADIUS
+// texels, so its penumbra does not widen with the caster's distance; see its rules on sampler types
+// and derivatives). The caster-depth grid (`nearestCasterDepth`) lets a march through the water
+// skip the 2x2 volume lookups where nothing casts, never the surface filter's disk. It projects
+// world-space columns of the casters, walked from their vertices, or for meshes made in the world's
+// workers folded in from the columns they came with (`setCasters`, ChunkDerived.ts), so the main
+// thread does not walk those.
 //
 // Closed solids (the island's terrain, `castFrontFaces`) cast their front faces into this map,
 // not the back faces three casts for a FrontSide material. At the cliff's creases, scar-notch
@@ -340,7 +341,8 @@ export class SunShadow {
 	 * `previous`; 2 where nothing casts, 0 before the grid's first projection. A point of that
 	 * map no deeper than it is lit by the 2x2 bilinear lookups (volumeVisibility, the water
 	 * column), whose footprint the cells already include, so a march may skip those lookups. It
-	 * does not bound the surface filter's disk, which reaches two texels further and compares along
+	 * does not bound the surface filter's disk, which reaches SolarShadow's
+	 * POISSON_RADIUS texels further and compares along
 	 * the receiver's plane: never skip surfaceVisibility on its word. The grid comes from the casters' geometry at rest,
 	 * padded for wind and the rim's lean, and is re-projected at each step. */
 	nearestCasterDepth( coordinate: V3, previous = false ): F {

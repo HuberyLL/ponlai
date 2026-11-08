@@ -310,7 +310,8 @@ export class RefractedSun {
 		const texel = max( this.worldSpan.x.div( this.mapSize.x ), this.worldSpan.y.div( this.mapSize.y ) );
 		const receiver = normal ? point.add( normal.mul( texel.mul( NORMAL_OFFSET.near ) ) ) : point;
 		const coordinate = shadowCoordinate( receiver, this.matrix, this.contactBias.div( this.depthRange ) );
-		// the air's disk filter, two of this map's texels wide
+		// the air's disk filter (SolarShadow's POISSON_RADIUS, in this map's texels: on its coarser
+		// texels the same disk draws a wider penumbra)
 		return solarShadowVisibility( this.target.depthTexture!, coordinate, { mapSize: this.mapSize, active } );
 
 	}

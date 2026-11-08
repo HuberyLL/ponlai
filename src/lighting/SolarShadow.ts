@@ -10,7 +10,7 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type B = THREE.Node<'bool'>;
 
-// The sun's soft shadow: a Poisson disk of POISSON_POINTS points, POISSON_RADIUS map texels wide,
+// The sun's soft shadow: a Poisson disk of POISSON_POINTS points of POISSON_RADIUS map texels' radius,
 // turned per screen pixel by a fixed hash (the same every frame, so a paused frame repeats), each
 // point one hardware comparison sample (a 2x2 bilinear comparison) whose comparison depth is the
 // receiver's moved along its plane to the point (the depth slope from the coordinate's screen
@@ -31,9 +31,19 @@ type B = THREE.Node<'bool'>;
 // Filters that take `dFdx` / `dFdy` stay out of `select()` / `If` branches (`installOpenShadow`).
 
 // The disk: POISSON_POINTS points in the unit disk whose least distance apart is the largest
-// found, from a fixed seed (`poissonDisk`), scaled to POISSON_RADIUS texels: on a 2048 map of the
-// island about a grass blade's width; a wider disk shows its screen-fixed pattern.
-const POISSON_POINTS = 8, POISSON_RADIUS = 2;
+// found, from a fixed seed (`poissonDisk`), scaled to POISSON_RADIUS texels. The disk with its
+// points' bilinear footprints spans 2 ( POISSON_RADIUS + 1 ) texels, about 3.5 (some 10 cm on a
+// 2048 map of today's island, whose texels are about 3 cm across the sun at 15-22 degrees); its
+// 10-90 % edge, the bilinear comparison's one-texel ramp included, is about 1.5 texels, some
+// 4-5 cm, under a bamboo culm's width (5-17 cm), so a culm's shadow keeps a dark core metres from
+// its foot. At a radius of 2 that edge was about 3.4 texels, some 10 cm. Measured on a lone culm's
+// shadow over bare ground, 0.6-3.2 m from its foot, per pixel at 4K, averaged along the shadow:
+// with a radius of 2 the key's least visibility across it was 0.45-0.46 (lit / shadow 2.2) and
+// its 10-90 % edge 0.22 and 0.12 m at 22 and 15 degrees; with 1, 0.36 at 22 degrees; with 0.75,
+// 0.31 and 0.20 (lit / shadow 3.2 and 4.9), edges 0.13 and 0.07 m. In stepped wind clips of the
+// island's view the frames' temporal high-pass rose 2-10 % with the regions' contrast, its ratio
+// to their temporal deviation unchanged. A wider disk shows its screen-fixed pattern.
+const POISSON_POINTS = 8, POISSON_RADIUS = 0.75;
 
 function poissonDisk( count: number, seed: number ): [ number, number ][] {
 
@@ -504,7 +514,20 @@ export async function verifySolarShadow( renderer: THREE.WebGPURenderer ) {
 			maximumDifference = Math.max( maximumDifference, Math.abs( pixels[ k * 4 ] - pixels[ k * 4 + 1 ] ) );
 
 		}
-		const widths = profiles.map( ( p ) => p.filter( ( v ) => v > 0.1 && v < 0.9 ).length );
+		// the 10-90 % width of each profile's edge in texels (one sample per texel), from the crossings
+		// interpolated between samples, over the interior only: a disk point beyond the map's border
+		// reads lit, which is no penumbra
+		const crossing = ( p: number[], level: number ) => {
+
+			for ( let x = width / 4 + 1; x < width * 3 / 4; x ++ ) {
+
+				if ( p[ x ] >= level ) return x - 1 + ( level - p[ x - 1 ] ) / Math.max( p[ x ] - p[ x - 1 ], 1e-9 );
+
+			}
+			return NaN;
+
+		};
+		const widths = profiles.map( ( p ) => crossing( p, 0.9 ) - crossing( p, 0.1 ) );
 		const profileChecks = profiles.map( ( p ) => ( {
 			minimum: Math.min( ...p ), maximum: Math.max( ...p ), first: p[ 0 ], last: p[ width - 1 ],
 			center: p.slice( width / 2 - 4, width / 2 + 4 ),
@@ -522,9 +545,16 @@ export async function verifySolarShadow( renderer: THREE.WebGPURenderer ) {
 			}
 
 		}
-		// the disk's penumbra: as wide for a caster at the contact as for one 10 m away, within the
-		// disk and its bilinear footprints, and wider than the bilinear comparison alone
-		if ( widths[ 0 ] < 2 || widths[ 0 ] > 2 * ( POISSON_RADIUS + 1 ) || Math.abs( widths[ 2 ] - widths[ 0 ] ) > 1 || widths[ 3 ] > 2 ) throw new Error( `Solar disk filter width failed: ${ JSON.stringify( diagnostics ) }` );
+		// the disk's penumbra: as wide for a caster at the contact as for one 10 m away (within a tenth
+		// of a texel, so a contact edge hardened to half fails), no wider than the disk and its
+		// bilinear ramp ( 1 + 2 POISSON_RADIUS texels), and at least a quarter texel wider than the
+		// bilinear comparison alone, whose ramp is at most a texel
+		if ( ! widths.every( Number.isFinite ) || widths[ 3 ] > 1 || widths[ 0 ] < widths[ 3 ] + 0.25 ||
+			widths[ 0 ] > 1 + 2 * POISSON_RADIUS || Math.abs( widths[ 2 ] - widths[ 0 ] ) > 0.1 ) {
+
+			throw new Error( `Solar disk filter width failed: ${ JSON.stringify( diagnostics ) }` );
+
+		}
 		if ( maximumDifference > 0.01 ) throw new Error( `Colour-depth and standard shadow samplers disagree by ${ maximumDifference }` );
 		for ( const profile of profiles ) {
 
