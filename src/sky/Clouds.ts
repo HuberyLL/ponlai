@@ -640,6 +640,13 @@ const coneLod = ( footprint: F, scale: number ) => max( log2( max( footprint.mul
 
 // The weather map: Sky Pro's fBm of hashed gradient noise, tileable.
 const WEATHER_MASS = [ 4, 5, 0, 1.32 ], WEATHER_DETAIL = [ 6, 6, 1, 0.13 ], WEATHER_COVERAGE = 0.26;
+// The weather map's second channel: a large-scale field the overcast deck's density reads in the
+// low space (`deckDensity`), where the shape noise alone repeats every LOW_BASE_SCALE. The fBm's
+// lowest frequency, octaves and seed: 2 cells a tile (9.6 km cells, the field repeating with the
+// low weather map every 19.1 km), one octave. One cell a tile is degenerate: the period-1 lattice
+// gives its four corners one gradient. Its seed puts the lattice's z cells apart from the first
+// channel's.
+const WEATHER_LARGE = [ 2, 1, 2 ];
 const weatherGradient = ( cell: THREE.Node<'uvec3'>, offset: V3 ) => {
 
 	const seed = ( v: THREE.Node<'uint'> ) => v.mul( uint( 1664525 ) ).add( uint( 1013904223 ) ).toVar();
@@ -1097,12 +1104,13 @@ export class Clouds {
 			const q = vec2( c ).div( WEATHER_RES ).toVar();
 			const mass = sat( weatherFbm( q, WEATHER_MASS ).sub( 0.5 ).mul( WEATHER_MASS[ 3 ] ).add( 0.5 ) );
 			const detail = weatherFbm( q, WEATHER_DETAIL ).mul( 2 ).sub( 1 ).mul( WEATHER_DETAIL[ 3 ] );
-			// (the second channel is free: nothing reads it)
-			textureStore( weather, c, vec4( sat( mass.add( detail ).add( WEATHER_COVERAGE - 0.5 ) ), 0, 0, 1 ) );
+			// the second channel: the large-scale field (WEATHER_LARGE)
+			textureStore( weather, c, vec4( sat( mass.add( detail ).add( WEATHER_COVERAGE - 0.5 ) ), sat( weatherFbm( q, WEATHER_LARGE ) ), 0, 1 ) );
 
 		} )().compute( WEATHER_RES * WEATHER_RES, [ 64 ] ).setName( 'Clouds.Weather' );
 		// The most cloud-capable weather in each cell of a coarse grid, including the texels its
-		// bilinear lookups reach across the cell's edges (and the wrap).
+		// bilinear lookups reach across the cell's edges (and the wrap), and in `.g` the largest of the
+		// second channel's field there.
 		const weatherLoad = texture( weather );
 		const boundsKernel = Fn( () => {
 
@@ -1110,14 +1118,14 @@ export class Clouds {
 			const c = ivec2( int( instanceIndex.mod( n ) ), int( instanceIndex.div( n ) ) );
 			const k = WEATHER_RES / BOUNDS_RES;
 			const lo = ivec2( vec2( c ).mul( k ).sub( 1 ) );
-			const highest = float( 0 ).toVar();
+			const highest = vec2( 0 ).toVar();
 			Loop( { start: 0, end: k + 2, type: 'int' }, { start: 0, end: k + 2, type: 'int' }, ( { i, j } ) => {
 
 				const p = lo.add( ivec2( int( i ), int( j ) ) ).add( WEATHER_RES ).mod( WEATHER_RES );
-				highest.assign( max( highest, textureLoad( weatherLoad, p ).r ) );
+				highest.assign( max( highest, textureLoad( weatherLoad, p ).rg ) );
 
 			} );
-			textureStore( bounds, c, vec4( min( highest.add( 1 / 255 ), 1 ), 0, 0, 1 ) );
+			textureStore( bounds, c, vec4( min( highest.add( 1 / 255 ), vec2( 1 ) ), 0, 1 ) );
 
 		} )().compute( BOUNDS_RES * BOUNDS_RES, [ 64 ] ).setName( 'Clouds.WeatherBounds' );
 		renderer.compute( weatherKernel );
