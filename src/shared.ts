@@ -72,7 +72,10 @@ export const shared = {
 	// a clear or fair sky into them under a low sun, by the share of the clear sky left
 	skyLift: uniform( 1 ),
 	skyIrradianceSource: vec3( 0 ) as THREE.Node<'vec3'>,
-	// The same as lent to the island after sunset (Sky.islandIrradianceNode): the islanders' fill.
+	// The same as lent to the island after sunset (Sky.islandIrradianceNode): the islanders' fill
+	// under `flags=ambientVolume:0` only (the ambient volume lights them otherwise). It is the probe's
+	// panorama, which takes the fog layer's haze as the dome does, not the land's source, which
+	// leaves the fog layer out (Sky.ts `fogEnvironment`).
 	islandIrradianceSource: vec3( 0 ) as THREE.Node<'vec3'>,
 	// log2 of the sky's geometric-mean luminance (Sky.meterLog2Node, scene units): the exposure's
 	// sky term, the dome's metering illuminance being this luminance's

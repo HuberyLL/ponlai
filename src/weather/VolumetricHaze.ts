@@ -347,8 +347,11 @@ const DRIFT_REACH = 8;
 //     takes the air's light and the droplets' by the fog's share of its density, so the sun's side
 //     of a lit fog is white and the shade under the island and the bamboo stays dark: the octaves
 //     bring the lit fog's level up, the island's and the clouds' shadows still cut it. The dome,
-//     the environment's bake (`openSky`) and the probe take the same light by the ground layer's
-//     share of the mean density along their rays, without the drift.
+//     the seen panorama and the probe's (`openSky`) take the same light by the ground layer's
+//     share of the mean density along their rays, without the drift. The land's sky light (the
+//     environment's source, Sky.ts `fogEnvironment`) takes the ground layer without the fog layer
+//     and no droplets' light: the land's key loses nothing to the fog layer, so its sky light takes
+//     nothing from it either.
 //     The fog gathers into banks that drift (FogNoise.ts): the fog's part of each froxel's density,
 //     up to DRIFT_REACH of the layer's widths over its top, is multiplied by a factor of mean 1 that
 //     the wind carries and that slowly reshapes, so the fog thins and thickens across the sea and
@@ -624,6 +627,9 @@ export class VolumetricHaze {
 	// ( rho_f, top, width ), from the weather and the settings, and each band's sigma
 	private readonly layer = uniform( new THREE.Vector3( 0, 1400, AEROSOL_OPEN ) );
 	private readonly ground = uniform( new THREE.Vector3( 0, 14, 9.431 ) );
+	// the ground layer without the fog layer ( rho, top, width ): the density the air alone gives
+	// it, in the layer's shape as it stands, for the land's sky light (`openSky` without `fogLayer`)
+	private readonly groundClear = uniform( new THREE.Vector3( 0, 14, 9.431 ) );
 	private readonly sigma = uniform( new THREE.Vector3( 1, 1, 1 ) );
 	// the dome's own thin haze (the key's `skyDepth`), in the medium's depth per metre before each
 	// band's sigma: green's optical depth per metre over green's sigma (`skyHaze` with `dome`)
@@ -1241,12 +1247,16 @@ export class VolumetricHaze {
 	 * direction, so it marches the light kernel's slices along `d` itself instead of reading the
 	 * camera's grid (the same light, the sun and the open sky seen whole at every slice). The light
 	 * is the mean over the slices out to the sky's distance or the grid's far end, whichever is
-	 * nearer, times the opacity taken along the whole distance; none with `sky` off. */
-	openSky( d: V3, height: number, clouds: Sky, distance?: F ): { light: V3; transmittance: V3 } {
+	 * nearer, times the opacity taken along the whole distance; none with `sky` off. Without
+	 * `fogLayer` the ground layer is the air's alone (its density without the fog layer's, in the
+	 * layer's shape) and the droplets add no light: the land's sky light (Sky.ts `fogEnvironment`),
+	 * whose key takes no loss through the fog layer either. With no fog layer the two are the same
+	 * light. */
+	openSky( d: V3, height: number, clouds: Sky, distance?: F, fogLayer = true ): { light: V3; transmittance: V3 } {
 
 		const { depth: D } = this.grid;
 		const y = float( height );
-		const ground = this.ground;
+		const ground = fogLayer ? this.ground : this.groundClear;
 		const r = y.add( ATMOSPHERE_BOTTOM ).toVar();
 		const top = r.mul( d.y ).negate().add( sqrt( r.mul( r ).mul( d.y.mul( d.y ) ).add( float( ATMOSPHERE_TOP ).sub( r ).mul( r.add( ATMOSPHERE_TOP ) ) ) ) );
 		const sky = select( d.y.lessThan( 0 ), y.div( max( d.y.negate(), 1e-6 ) ), top );
@@ -1254,11 +1264,13 @@ export class VolumetricHaze {
 		const reach = min( whole, this.far ).toVar();
 		const keep = hazeFormKeep( this.sigma.y.mul( reach.mul( meanExtinction( y, y.add( d.y.mul( reach ) ), this.layer, ground ) ) ), this.lightSettings.y );
 		const air = this.scatterToward( d, clouds.bakeDeckIrradianceNode, clouds.clouds, keep );
-		const droplet = this.dropletToward( d, clouds.bakeDeckIrradianceNode, false );
+		const droplet = fogLayer ? this.dropletToward( d, clouds.bakeDeckIrradianceNode, false ) : null;
 		// (the air's light and the fog layer's droplets', by the fog layer's share of the mean density
-		// over the heights from a to b, as the light kernel takes them without the drift)
+		// over the heights from a to b, as the light kernel takes them without the drift; the air's
+		// alone without the fog layer)
 		const scatter = ( a: F, b: F, sun: F ): V3 => {
 
+			if ( ! droplet ) return air( a.add( b ).mul( 0.5 ).toVar(), sun, float( 1 ) );
 			const share = this.dropletShare.mul( clamp( meanExtinction( a, b, GROUND_ONLY, ground ).div( max( meanExtinction( a, b, this.layer, ground ), 1e-30 ) ), 0, 1 ) );
 			const height = a.add( b ).mul( 0.5 ).toVar();
 			return mix( air( height, sun, float( 1 ) ), droplet( vec3( 0, height, 0 ), sun, float( 1 ) ), share );
@@ -1494,6 +1506,7 @@ export class VolumetricHaze {
 		const fogRho = Math.max( 3.912 / ( look.visibility * 1000 ) / green - rho * look.aerosolShare, 0 ) / atSea;
 		const ground = rho + ( fogRho - rho ) * look.fogLayer;
 		this.ground.value.set( ground, look.top, look.width );
+		this.groundClear.value.set( rho, look.top, look.width );
 		this.layer.value.set( rho * look.aerosolShare, look.aerosolHeight, Math.min( look.aerosolTop, AEROSOL_OPEN ) );
 		// the fog layer's light and its drift
 		this.dropletShare.value = look.droplet;

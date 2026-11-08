@@ -92,10 +92,14 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // views (paused, fresh loads): overcast's sky box spread .067 to .059, its gradient p99 .019 to .043
 // and its scale std under 3 degrees .0017 to .0030, the deck's rolls showing from about 8 degrees
 // up; cloudy's gradient p99 .042 to .071 and mass x 3.6 to 3.5 degrees.
-// The environment's bake lays the same haze over its source as the dome does (`fogEnvironment`,
-// VolumetricHaze.ts `openSky`, toward every direction from the sea's level, unshadowed): the
-// environment and the dome are one sky, its haze light included, so the ground's sky light takes the
-// light the haze scatters and the sea reflects it (the seen panorama, above the horizon). Under
+// The environment's bake lays the dome's haze over the seen panorama and the probe's (`fogEnvironment`,
+// VolumetricHaze.ts `openSky`, toward every direction from the sea's level, unshadowed), so the sea
+// reflects the light the haze scatters (the seen panorama, above the horizon) and the sky's meter
+// takes it. The land's source takes the same haze without the fog layer: the land's key loses
+// nothing to the fog layer, so its sky light takes none of the droplets' light either (the dome and
+// the land's sky are one sky wherever there is no fog layer: under cloud, and once the sun is a
+// degree below the horizon, without the deep sea fog). The deep sea fog (`?seaFog`) and the parked
+// fog weather's droplets are left out of the land's light too. Under
 // overcast the two part in three ways. The closed deck's glow (`deckGlow`: a narrow peak about the
 // key light and a broad tail) is drawn whole by the dome and the seen panorama; the lighting's
 // sources take the glow about the sun alone, as one smooth lobe of their own (`glowToward`, Clouds
@@ -252,7 +256,8 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 // skylight has faded while the moon's key and the night ambient are not yet in, which left the
 // meadow at about half its night brightness. The light the sky lends the island takes a gain per
 // sun elevation, and a cast about the sunset and in the night, ISLAND_SKY: the environment's
-// source panorama, which lights the terrain and plants, in its bake, and the islanders' sky fill
+// source panorama, which lights the terrain and plants, in its bake (its haze without the fog
+// layer: `fogEnvironment`), and the islanders' sky fill
 // (`islandIrradianceNode`, the irradiance probe graded the same way). The seen sky, the panorama
 // the sea reflects and the irradiance probe itself, which lights the sea's body, keep the
 // atmosphere's own, so the evening's sky and sea look as they did. Each row is an elevation
@@ -580,23 +585,24 @@ const _skyLight = { r: 0, g: 0, b: 0 };
 // against the key. Under a clear or fair day's sun the sky's light takes a gain of its own over
 // SKY_LIGHT (CLEAR_SKY), keyed by the sun's elevation, on every path SKY_LIGHT reaches (`skyGain`):
 // the sky the eye sees, the sea's reflection and its body, the clouds' and the haze's
-// sky light, the land's (the environment's source: the probes' harmonics, the specular atlas, the
-// islanders' fill) and the exposure's sky meter. So the sky the eye sees stays the sky that lights
-// and that the exposure meters (post/Exposure.ts). The sky's irradiance takes the gain whole (the
-// sky's light, the sun's in-scattered light and the haze's are all SKY_LIGHT's), so the keys are
-// the ratio with no gain over the one they hold, 12.1 - 15 from 6 degrees up on either side of the
-// day and at the morning's 3 degrees, but for the day side's low and high gains (3.51 and 2.48,
-// 0.78 and 0.73 of the ratio's 4.48 and 3.4) and SKY_LIGHT's high red: those are set on the clear
-// day's views from 6 degrees up, together with the haze (Weather.ts `haze`) and under the exposure
-// keys of the time (post/Exposure.ts), which the thin layer (Clouds.ts), faint by day, hardly
-// changes. At the ratio's gains the sky over a sun at 50 degrees, seen away from it, reads at Oklab
-// lightness 0.71 and chroma 0.099 and the far sea at 0.63 and 0.102, against 0.68 and 0.10 and 0.62
-// and 0.097 at the fit's, and the views from 6 degrees up that take the day side's gains stand
-// 0.16 - 0.33 stops darker. The rising side's own keys keep their gains (its high key is the
-// day's). At the evening's 3 degrees the sky stands brighter against the key, about 7.4 - 8.9: it
-// lights the land's shade and the far bay, as far as a view along the horizon toward the sun holds
-// the far sea and the sun's strip on the water (post/Exposure.ts, the highlight key). The
-// smoothstep between keys (DayKeys.ts) puts the ratio's day high midway, at 21 degrees in the
+// sky light, the land's (the environment's source: the probes' harmonics and the specular atlas,
+// the haze over it without the fog layer, `fogEnvironment`; the islanders' fill, from the probe's
+// panorama with the fog layer) and the exposure's sky meter. So the sky the eye sees stays the sky
+// that lights and that the exposure meters (post/Exposure.ts). The sky's irradiance takes the gain
+// whole (the sky's light, the sun's in-scattered light and the haze's are all SKY_LIGHT's), so the
+// keys are the ratio with no gain over the one they hold, 12.1 - 15 from 6 degrees up on either
+// side of the day and at the morning's 3 degrees, but for the day side's low and high gains (3.51
+// and 2.48, 0.78 and 0.73 of the ratio's 4.48 and 3.4) and SKY_LIGHT's high red: those are set on
+// the clear day's views from 6 degrees up, together with the haze (Weather.ts `haze`) and under the
+// exposure keys of the time (post/Exposure.ts), which the thin layer (Clouds.ts), faint by day,
+// hardly changes. At the ratio's gains the sky over a sun at 50 degrees, seen away from it, reads
+// at Oklab lightness 0.71 and chroma 0.099 and the far sea at 0.63 and 0.102, against 0.68 and
+// 0.10 and 0.62 and 0.097 at the fit's, and the views from 6 degrees up that take the day side's
+// gains stand 0.16 - 0.33 stops darker. The rising side's own keys keep their gains (its high key
+// is the day's). At the evening's 3 degrees the sky stands brighter against the key, about
+// 7.4 - 8.9: it lights the land's shade and the far bay, as far as a view along the horizon toward
+// the sun holds the far sea and the sun's strip on the water (post/Exposure.ts, the highlight key).
+// The smoothstep between keys (DayKeys.ts) puts the ratio's day high midway, at 21 degrees in the
 // evening. Under 3 degrees the key falls faster than the sky by itself (the ratio 12.4 at 1.6
 // degrees with no gain), so the gain eases to none at the horizon (`horizon`): the twilight and the
 // night keep SKY_LIGHT's light, the ratio falling to about 6 at 2 degrees on the way. The gains
@@ -1330,6 +1336,9 @@ export class Sky {
 	private cloudLayer: THREE.TextureNode;
 	private pmrem: THREE.PMREMGenerator;
 	private quad: THREE.QuadMesh;
+	// the bake of the environment's source, which lights the land: its haze without the fog layer
+	// (`fogEnvironment`)
+	private landQuad: THREE.QuadMesh;
 	private reflectionSource: THREE.RenderTarget;
 	private upperQuad: THREE.QuadMesh;
 	// the distant sea's body as the bake takes it (SEA_KNEE, `seaNode`): the colour times the sun's
@@ -1368,8 +1377,8 @@ export class Sky {
 	private bakeIslandTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
 	private bakeIslandGain = uniform( 1 );
 	// 1 while the bake draws the environment's source or the probe's panorama, which take the haze
-	// all round (`fogEnvironment`); the seen panorama takes it above the horizon only, as the dome
-	// fogs what it shows of it under the horizon itself
+	// all round (`fogEnvironment`; the source without the fog layer); the seen panorama takes it
+	// above the horizon only, as the dome fogs what it shows of it under the horizon itself
 	private bakeHaze = uniform( 0 );
 	// 1 while the bake draws the seen panorama, which draws the closed deck's glow whole as the dome
 	// does (`deckGlow`, about the sun and about the moon), so the sea reflects it; 0 while it draws
@@ -1551,6 +1560,9 @@ export class Sky {
 		const bake = new THREE.NodeMaterial();
 		bake.fragmentNode = this.bakeColour();
 		this.quad = new THREE.QuadMesh( bake );
+		const landBake = new THREE.NodeMaterial();
+		landBake.fragmentNode = this.bakeColour();
+		this.landQuad = new THREE.QuadMesh( landBake );
 
 		const domeMat = new THREE.MeshBasicNodeMaterial( { side: THREE.BackSide, depthWrite: false } );
 		domeMat.colorNode = this.domeColour();
@@ -1660,17 +1672,32 @@ export class Sky {
 
 	}
 
-	/** Lays the haze over the environment's source, the irradiance probe's panorama and the seen
-	 * panorama above the horizon as the dome lays it on itself (`fogDome`), toward every
-	 * direction from one height (VolumetricHaze.ts `openSky`): the environment and the dome
-	 * are one sky, its haze light included, so the ground's sky light (the irradiance probe, the
-	 * relit ambient's SH) takes the light the haze scatters as the sky the eye sees does. Called
-	 * once, with `fogDome`. */
-	fogEnvironment( haze: SkyHaze ): void {
+	/** Lays the haze over the panoramas toward every direction from one height (VolumetricHaze.ts
+	 * `openSky`): `haze` over the irradiance probe's panorama and the seen panorama above the
+	 * horizon, as the dome lays it on itself (`fogDome`), so the sky's metering, the water's sky
+	 * light and the sea's reflection take the light the haze scatters, its fog layer's droplets
+	 * included, as the sky the eye sees does; `landHaze` over the environment's source, which lights
+	 * the land (the relit ambient's harmonics, the specular atlas): the same haze without the fog
+	 * layer, the ground layer at the air's density alone and no droplets' light. The land's key
+	 * takes the atmosphere's transmittance and no loss through the fog layer, so a sky light that
+	 * took the light the droplets scatter in would add it without the direct light they take out
+	 * (by day under a clear sky they lifted the sky's irradiance on level ground about 2.7 times,
+	 * the ambient on lit open ground about 2.3 times). The ground layer's aerosols the land still
+	 * takes, and its key does not lose to them either: kept so, as the land's sky gain is set on
+	 * it (AmbientRelight.ts PROBE_SKY). The land's specular so reflects a horizon without the fog
+	 * layer, the sea one with it. With no fog layer (cloudy and overcast, and once the sun is a
+	 * degree below the horizon, without the deep sea fog) the two are the same light; the deep sea
+	 * fog (`?seaFog`) and the parked fog weather's droplets are left out of the land's light too.
+	 * Called once, with `fogDome`. */
+	fogEnvironment( haze: SkyHaze, landHaze: SkyHaze ): void {
 
-		const material = this.quad.material as THREE.NodeMaterial;
-		material.fragmentNode = this.bakeColour( haze );
-		material.needsUpdate = true;
+		for ( const [ quad, h ] of [ [ this.quad, haze ], [ this.landQuad, landHaze ] ] as const ) {
+
+			const material = quad.material as THREE.NodeMaterial;
+			material.fragmentNode = this.bakeColour( h );
+			material.needsUpdate = true;
+
+		}
 
 	}
 
@@ -1920,6 +1947,7 @@ export class Sky {
 			[ this.irradianceQuad, e.irradianceMap ], [ this.irradianceBlendQuad, this.irradianceDisplay ],
 			[ this.clearIrradianceQuad, e.clearIrradianceMap ], [ this.clearIrradianceBlendQuad, this.clearIrradianceDisplay ],
 			[ this.deckIrradianceQuad, e.deckIrradianceMap ], [ this.deckIrradianceBlendQuad, this.deckIrradianceDisplay ],
+			[ this.landQuad, this.reflectionSource ],
 		];
 		if ( this.environmentBlendQuad && this.envMap ) pairs.push( [ this.environmentBlendQuad, this.envMap ] );
 		const compiling = pairs.map( ( [ quad, target ] ) => compileInto( r, quad, quad.camera, target ) );
@@ -2607,7 +2635,7 @@ export class Sky {
 				this.bakeKeyFloor.value = lends || rt === this.small ? 0 : 1;
 				this.bakeSeenDeck.value = lends || rt === this.small ? 1 : this.seenDeck.value;
 				r.setRenderTarget( rt );
-				this.quad.render( r );
+				( lends ? this.landQuad : this.quad ).render( r );
 
 			}
 			for ( const irradiance of this.initialized ? [ state.irradianceMap ] : [ state.irradianceMap, this.endpoints[ 1 ].irradianceMap ] ) {
@@ -3063,6 +3091,7 @@ export class Sky {
 		this.dome.geometry.dispose();
 		( this.dome.material as THREE.Material ).dispose();
 		( this.quad.material as THREE.Material ).dispose();
+		( this.landQuad.material as THREE.Material ).dispose();
 		( this.upperQuad.material as THREE.Material ).dispose();
 		this.reflectionSource.dispose();
 		this.small.dispose();
