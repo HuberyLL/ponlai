@@ -13,7 +13,7 @@ import {
 import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE, SUN_ANGULAR_RADIUS, SUN_LIMB_U1, SUN_LIMB_U2 } from '../lighting/Radiometry.ts';
 import { SUN_DISC_RADIUS, SUN_DISC_SOLID_ANGLE, SUN_DISC_RADIANCE } from '../lighting/SunDisc.ts';
-import { CLOUD_FORM, Clouds, EARTH_RADIUS, SHADOW_SLOPE_FLOOR, SHELL_BOTTOM, SHELL_THICKNESS, forwardLevel, type CloudViewScale } from './Clouds.ts';
+import { CLOUD_FORM, Clouds, EARTH_RADIUS, MOON_DECK_GLOW, SHADOW_SLOPE_FLOOR, SHELL_BOTTOM, SHELL_THICKNESS, forwardLevel, type CloudViewScale } from './Clouds.ts';
 import { MOON_ANGULAR_RADIUS, NightSky } from './NightSky.ts';
 import { Lightning } from '../weather/Lightning.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -24,7 +24,7 @@ import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
 import { DAY_EXPOSURE, MOON, cloudMoonShare, displayNight, duskForce, exposureNight, nightAmbientShare, skyNight, starNight, sunRising, type DayCycleSnapshot } from './DayCycle.ts';
-import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckFloorTakeover, floorKeyGain, overcastFloorSun, daySkyAt, type WeatherFront, type WeatherState } from './Weather.ts';
+import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckFloorTakeover, floorKeyGain, overcastDeckLight, overcastFloorSun, daySkyAt, type WeatherFront, type WeatherState } from './Weather.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
@@ -95,15 +95,21 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // The environment's bake lays the same haze over its source as the dome does (`fogEnvironment`,
 // VolumetricHaze.ts `openSky`, toward every direction from the sea's level, unshadowed): the
 // environment and the dome are one sky, its haze light included, so the ground's sky light takes the
-// light the haze scatters and the sea reflects it (the seen panorama, above the horizon); one sky but
-// for the closed deck's glow (`deckGlow`: a narrow peak about the key light and a broad tail that
-// lifts the whole drawn deck, the sky away from the sun about 1.5 times its level without the glow)
-// and the air's floor of the key under the deck (VolumetricHaze.ts `keyFloor`), which only the
-// dome and the seen panorama take (`bakeGlow`), so the sea reflects them and no light source takes
-// them: under overcast the drawn sky reads about 0.6 stop brighter than the sky that lights the
-// land and meters the exposure. Under the horizon the environment is
-// the distant sea, its reflection of the sky over its body, which the light that reaches the sea
-// lights, the sky's and the sun's (SEA_KNEE).
+// light the haze scatters and the sea reflects it (the seen panorama, above the horizon). Under
+// overcast the two part in three ways. The closed deck's glow (`deckGlow`: a narrow peak about the
+// key light and a broad tail) is drawn whole by the dome and the seen panorama; the lighting's
+// sources take the glow about the sun alone, as one smooth lobe of their own (`glowToward`, Clouds
+// `bakeGlowLobe`, `bakeGlowGain`), so the land is lit from the sun's side of the deck as the deck
+// is seen brighter there, and the moon's glow lights nothing. The drawn deck itself is darkened
+// (`seenDeck`, Clouds `deckSeen`): our choice for the overcast day is a darker cloud with the light
+// on what it lights, so the deck reads dimmer than the light the land takes from it. The day's
+// level, gradation and glow form give way to the night's over the civil twilight (`deckDay`). And
+// the air's floor of the key under the deck (VolumetricHaze.ts `keyFloor`) is drawn but lights
+// nothing (`bakeKeyFloor`: it makes a few percent of the sky toward the sun and well under one
+// percent away from it). So the drawn sky stands above the sky the land's harmonics give toward the
+// sun at mid elevations, and under it at the horizon and away from the sun. Under the horizon the
+// environment is the distant sea, its reflection of the sky over its body, which the light that
+// reaches the sea lights, the sky's and the sun's (SEA_KNEE).
 // The sun's disc and the moon's take the clouds' transmittance once, per pixel, in the composite
 // (`domeColour`); the march stores none once less than 0.003 gets through (Clouds.ts `makeMarch`),
 // so a deck some 6 deep along the view hides the disc whole. The mean over each disc, read from the
@@ -881,8 +887,10 @@ const lendIsland = Fn( ( [ light, tint, gain ]: [ V3, V4, F ] ) => {
 } ).setLayout( { name: 'lendIsland', type: 'vec3', inputs: [ { name: 'light', type: 'vec3' }, { name: 'tint', type: 'vec4' }, { name: 'gain', type: 'float' } ] } );
 
 // The closed deck's glow about the key light toward `d` (Clouds.ts DECK_GLOW), drawn where the sky is
-// composed, not marched: smooth and round whatever the deck's depth and its rolls, and outside the
-// lighting, whose sources never compose through it. The deck's mean radiance `deck` times the key's
+// composed, not marched: smooth and round whatever the deck's depth and its rolls. The drawn deck
+// takes it with both lobes; the lighting's sources (the bakes) take one smooth lobe of their own
+// about the sun (Clouds `bakeGlowLobe`, `bakeGlowGain`) by the day's weight (`deckDay`,
+// `glowToward`). The deck's mean radiance `deck` times the key's
 // share of the light on its tops, two forward lobes toward the sun and the same two toward the moon
 // mixed by the sun's share (each a Henyey-Greenstein lobe of mean 1 over the sphere, a narrow one
 // for the peak and a broad one for the tail; the sun's tinted as the deck's tops take its light),
@@ -907,15 +915,17 @@ const deckGlow = Fn( ( [ d, deck, opacity, sunDir, moonDir, tint, shares, form, 
 
 // The base's local radiance toward `d` over the deck's mean as the column's diffuse law gives it
 // there, ( 3 / 7 )( 1 + 2 mu ) times the deck's mean radiance (Clouds.ts makeMarch: its mean over
-// level ground is the deck's), so it has no trend with elevation and averages about 1 over the
-// deck: what the glow follows (`deckGlow`). Held in [ 1e-6, 4 ], so its power is finite at any k
+// level ground is the deck's), moved toward a uniform deck by `flat` as the march moves it (Clouds
+// `deckFlat`), so it has no trend with elevation and averages about 1 over the deck: what the glow
+// follows (`deckGlow`). Held in [ 1e-6, 4 ], so its power is finite at any k
 // and a lone bright seam cannot flare.
-const deckPattern = Fn( ( [ d, local, deck ]: [ V3, V3, V3 ] ) => {
+const deckPattern = Fn( ( [ d, local, deck, flat ]: [ V3, V3, V3, F ] ) => {
 
-	const mean = dot( deck, vec3( 0.2126, 0.7152, 0.0722 ) ).mul( max( d.y, 0 ).mul( 6 / 7 ).add( 3 / 7 ) );
+	const law = max( d.y, 0 ).mul( 6 / 7 ).add( 3 / 7 ).toVar();
+	const mean = dot( deck, vec3( 0.2126, 0.7152, 0.0722 ) ).mul( law.add( float( 1 ).sub( law ).mul( flat ) ) );
 	return clamp( dot( local, vec3( 0.2126, 0.7152, 0.0722 ) ).div( max( mean, 1e-20 ) ), 1e-6, 4 );
 
-} ).setLayout( { name: 'deckPattern', type: 'float', inputs: [ { name: 'd', type: 'vec3' }, { name: 'local', type: 'vec3' }, { name: 'deck', type: 'vec3' } ] } );
+} ).setLayout( { name: 'deckPattern', type: 'float', inputs: [ { name: 'd', type: 'vec3' }, { name: 'local', type: 'vec3' }, { name: 'deck', type: 'vec3' }, { name: 'flat', type: 'float' } ] } );
 
 // Art direction: within a few degrees of the horizon the sun shines through twenty to forty air
 // masses and its light turns an almost pure red (red/blue above 100 at one degree), which paints
@@ -1108,12 +1118,12 @@ const _cloudMoon = new THREE.Color();
 // lighting/KeyCloud.ts). At 1 the floor is the weather's own; at
 // its 2.4 the land under the deck keeps 0.72 of the key. Set with the land's gain under the deck
 // (lighting/AmbientGrade.ts OVERCAST_LAND) on the lit open ground of seven eye-height views of the
-// overcast island. With the deck's sky as it now stands and the sun 15 and 22 degrees up, the key
-// makes 0.95 of the light on the ground's brighter half (the ground and meadow within 40 m lit over
-// the frame's median, on three eye-height views toward, beside and away from the sun; 0.95 to 0.96
-// over the views and both suns), and the key's light there is 0.72 of a clear day's in the same
-// place. Raise it if the land under the deck lacks the light from the sun's side and its cast
-// shadows; lower it if the shadows read as a clear day's.
+// overcast island. With the sun 15 and 22 degrees up, the key makes 0.50 to 0.67 of the light on
+// the ground's brighter half and 0.66 to 0.72 on the meadow's (the ground and meadow within 40 m
+// lit over the frame's median, on three eye-height views toward, beside and away from the sun), and
+// the key's light there is 0.72 of a clear day's in the same place. Raise it if the land under the
+// deck lacks the light from the sun's side and its cast shadows; lower it if the shadows read as a
+// clear day's.
 // Tunable: `lighting.overcastKey`.
 const OVERCAST_KEY_GAIN = tune( 'lighting.overcastKey', 2.4, { min: 1, max: 3, onChange: markSkyRetune } );
 // The key's gain under a cloudy deck, on its floor, by cloudy's share and its deck's light
@@ -1361,10 +1371,27 @@ export class Sky {
 	// all round (`fogEnvironment`); the seen panorama takes it above the horizon only, as the dome
 	// fogs what it shows of it under the horizon itself
 	private bakeHaze = uniform( 0 );
-	// 1 while the bake draws the seen panorama, which draws the closed deck's glow as the dome does
-	// (`deckGlow`) and the air's floor of the key under the deck (VolumetricHaze.ts `keyFloor`), so
-	// the sea reflects them; the lighting's sources take neither
+	// 1 while the bake draws the seen panorama, which draws the closed deck's glow whole as the dome
+	// does (`deckGlow`, about the sun and about the moon), so the sea reflects it; 0 while it draws
+	// the environment's source and the probe's panorama, which take the glow about the sun alone
+	// (`glowToward`), so the land is lit from the sun's side of the deck as the deck is seen brighter
+	// there, and the moon's glow lights nothing
 	readonly bakeGlow = uniform( 0 );
+	// 1 while the bake draws the seen panorama, which takes the air's floor of the key under the
+	// deck (VolumetricHaze.ts `keyFloor`) as the dome's air does, so the sea reflects it; the
+	// lighting's sources do not
+	readonly bakeKeyFloor = uniform( 0 );
+	// how far the deck takes its day's form (Weather.ts `overcastDeckLight` at the sun's height:
+	// exactly 1 from the horizon up, exactly 0 from -6 degrees down, smooth between), so the drawn
+	// deck's level, its gradation and its glow's form, and the glow the lighting's sources take
+	// (`glowToward`), turn into the night's over the civil twilight rather than in the frame the
+	// disk's light leaves
+	private deckDay = uniform( 0 );
+	// the seen deck's level (Clouds `deckSeen` by overcast's share and `deckDay`): the dome's and,
+	// while the bake draws the seen panorama, the bake's (`bakeSeenDeck`, 1 in the lighting's
+	// sources)
+	private seenDeck = uniform( 1 );
+	private bakeSeenDeck = uniform( 1 );
 	private keyFloorUnderDeck = 0;
 
 	constructor( renderer: THREE.WebGPURenderer, { sunIlluminance = SUN_ILLUMINANCE, elevation = 32, azimuth = - 8 } = {} ) {
@@ -1594,11 +1621,15 @@ export class Sky {
 			// (the environment's source takes the light lent to the island: ISLAND_SKY; the haze as the
 			// dome lays it, from the sea's level: see `fogEnvironment`)
 			const clear = this.gapSky( up ).toVar();
-			// the closed deck's glow over the clouds, in the seen panorama only (`bakeGlow`); its deck
-			// level without the weather's gain, which the source takes below
+			// the closed deck's glow over the clouds, whole in the seen panorama, about the sun alone in
+			// the lighting's sources (`bakeGlow`); its deck level without the weather's gain, which the
+			// source takes below. The seen panorama's deck at its seen level (`bakeSeenDeck`), after the
+			// glow's pattern, which follows the deck as it is.
 			const bakeDeck = this.bakeDeckIrradianceNode.div( max( this.ambientGain, 1e-6 ) ).toVar();
-			const pattern = deckPattern( up, cloud.rgb, bakeDeck ).toVar();
-			const lit = cloud.rgb.add( this.glowToward( up, bakeDeck, cloud.a, pattern ).mul( this.bakeGlow ) ).toVar();
+			const pattern = deckPattern( up, cloud.rgb, bakeDeck, this.clouds.deckFlat ).toVar();
+			const glow = this.glowToward( up, bakeDeck, cloud.a, pattern ).mul( this.bakeGlow );
+			const sunGlow = this.glowToward( up, bakeDeck, cloud.a, pattern, true ).mul( float( 1 ).sub( this.bakeGlow ) );
+			const lit = cloud.rgb.mul( this.bakeSeenDeck ).add( sunGlow.add( glow ) ).toVar();
 			const air = clear.mul( cloud.a ).add( lit ).toVar();
 			let fogged: V3 = air;
 			if ( haze ) {
@@ -1683,9 +1714,10 @@ export class Sky {
 			const through = select( above, cloud.a, float( 1 ) ).toVar();
 			// the closed deck's glow over the clouds above the horizon (`deckGlow`), before the haze,
 			// which hides it with the clouds by their distance
-			const pattern = deckPattern( d, cloud.rgb.mul( this.displayAmbientGain ), this.deckIrradianceNode ).toVar();
+			// (the deck at its seen level, `seenDeck`, after the glow's pattern)
+			const pattern = deckPattern( d, cloud.rgb.mul( this.displayAmbientGain ), this.deckIrradianceNode, this.clouds.deckFlat ).toVar();
 			const glow = this.glowToward( d, this.deckIrradianceNode, cloud.a, pattern ).toVar();
-			const clouds = select( above, cloud.rgb.mul( this.displayAmbientGain ), vec3( 0 ) ).add( glow.mul( step( 0, d.y ) ) ).toVar();
+			const clouds = select( above, cloud.rgb.mul( this.seenDeck ).mul( this.displayAmbientGain ), vec3( 0 ) ).add( glow.mul( step( 0, d.y ) ) ).toVar();
 			if ( ! haze ) return vec4( behind.mul( through ).add( clouds ), 1 );
 			const sky = haze( d );
 			// The clouds through the haze out to the shell's middle height: its light over their
@@ -1733,13 +1765,28 @@ export class Sky {
 
 	/** The closed deck's glow toward `d` (`deckGlow`) over a deck of mean radiance `deck`, through
 	 * clouds of transmittance `transmittance` there, following the base's local radiance over its
-	 * mean `pattern` (`deckPattern`), with this frame's shares (Clouds `columnTop`). */
-	private glowToward( d: V3, deck: V3, transmittance: F, pattern: F ): V3 {
+	 * mean `pattern` (`deckPattern`), with this frame's shares (Clouds `columnTop`); with `sunOnly`
+	 * the lighting's sources' glow: about the sun alone, one smooth lobe of its own (Clouds
+	 * `bakeGlowLobe`, `bakeGlowGain`), by the day's weight (`deckDay`, so exactly none by night). */
+	private glowToward( d: V3, deck: V3, transmittance: F, pattern: F, sunOnly = false ): V3 {
 
 		const top = this.clouds.columnTop();
 		const c = this.clouds;
+		if ( sunOnly ) {
+
+			// the lighting's sources: one lobe of their own (`bakeGlowLobe`, `bakeGlowGain`), smooth
+			// (the pattern's power 0)
+			return deckGlow( d, deck, float( 1 ).sub( transmittance ), this.atmosphere.sunDir, this.atmosphere.moonDir, c.lobeTint.rgb,
+				vec4( top.keyShare, 1, c.broadShare, 0 ), vec4( c.bakeGlowLobe, c.bakeGlowGain, 0, 0 ), pattern ).mul( this.deckDay );
+
+		}
+
+		// the day's form by `deckDay`, the moon's own by night (each exact at a weight of 1 or 0)
+		const night = vec4( ...MOON_DECK_GLOW );
+		const day = vec4( c.deckGlowLobe, c.deckGlow, c.deckGlowBroadLobe, c.deckGlowBroad );
+		const form = night.mul( float( 1 ).sub( this.deckDay ) ).add( day.mul( this.deckDay ) );
 		return deckGlow( d, deck, float( 1 ).sub( transmittance ), this.atmosphere.sunDir, this.atmosphere.moonDir, c.lobeTint.rgb,
-			vec4( top.keyShare, top.sunShare, c.broadShare, c.deckGlowTexture ), vec4( c.deckGlowLobe, c.deckGlow, c.deckGlowBroadLobe, c.deckGlowBroad ), pattern );
+			vec4( top.keyShare, top.sunShare, c.broadShare, c.deckGlowTexture ), form, pattern );
 
 	}
 
@@ -2189,6 +2236,8 @@ export class Sky {
 		const keyLight = this.keyColorAboveClouds.r * 0.2126 + this.keyColorAboveClouds.g * 0.7152 + this.keyColorAboveClouds.b * 0.0722;
 		const moonLight = this.moonKeyAbove.r * 0.2126 + this.moonKeyAbove.g * 0.7152 + this.moonKeyAbove.b * 0.0722;
 		const sunShare = keyLight > 0 ? Math.max( keyLight - moonLight, 0 ) / keyLight : 0;
+		this.deckDay.value = overcastDeckLight( this.elevation );
+		this.seenDeck.value = 1 - ( 1 - this.clouds.deckSeen.value ) * overcastShare * this.deckDay.value;
 		const floorSun = 1 - overcastShare * sunShare * ( 1 - overcastFloorSun( this.elevation ) );
 		const deckFloor = Math.min( ( weather?.deckFloor ?? 0 ) * floorGain, 1 ) * floorSun;
 		const takeover = skyMix ? deckFloorTakeover( this.elevation, cloudedShare( skyMix ), overcastShare ) : 0;
@@ -2321,6 +2370,8 @@ export class Sky {
 		// `overcastBroad`'s), and the two by that share, the deck's level
 		clouds.lobe.value = clouds.forwardLobe.value;
 		clouds.broadShare.value = overcastShare;
+		// (by day: `deckDay`, as `seenDeck`)
+		clouds.deckFlat.value = ( 1 - clouds.deckGradation.value ) * overcastShare * this.deckDay.value;
 		clouds.weight.value = THREE.MathUtils.lerp( clouds.forwardWeight.value, clouds.overcastWeight.value, overcastShare );
 		const keyY = clouds.lightDir.value.y;
 		clouds.narrowLevel.value = forwardLevel( keyY, clouds.lobe.value );
@@ -2553,6 +2604,8 @@ export class Sky {
 				this.bakeIslandGain.value = lends ? this.islandGain.value : 1;
 				this.bakeHaze.value = lends || rt === this.small ? 1 : 0;
 				this.bakeGlow.value = lends || rt === this.small ? 0 : 1;
+				this.bakeKeyFloor.value = lends || rt === this.small ? 0 : 1;
+				this.bakeSeenDeck.value = lends || rt === this.small ? 1 : this.seenDeck.value;
 				r.setRenderTarget( rt );
 				this.quad.render( r );
 
