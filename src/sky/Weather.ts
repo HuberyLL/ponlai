@@ -317,7 +317,7 @@ export interface WeatherState {
 	// The air's haze, per metre: the extinction, in the band whose spectral weight is 1 (blue on a
 	// clear day: the hour's key gives the bands' weights, weather/HazeKeys.ts), of the ground layer's
 	// deep part, under its soft top (the hour's key's shape: weather/HazeKeys.ts,
-	// weather/VolumetricHaze.ts). A clear or fair day's is 3e-3, fitted together with the clear
+	// weather/VolumetricHaze.ts). A clear or fair day's is 3e-3, tuned together with the clear
 	// day's sky gains (Sky.ts CLEAR_SKY), under the exposure keys of the time: at 2e-3 the far sea
 	// and the sky over a sun at 50 degrees, seen away from it, read more saturated (Oklab chroma
 	// higher by 0.004 and 0.007). Under a deck the air is dense near the sea and clear aloft (its shape per sky:

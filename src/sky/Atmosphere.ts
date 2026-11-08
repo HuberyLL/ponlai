@@ -47,7 +47,7 @@ import { markSkyRetune } from './SkyRetune.ts';
 // a quarter of the sky's lightness (Oklab L) under the sky 10 degrees up from sun -2 to 0, a dark
 // ribbon, and 0.06 - 0.08 over it at noon. At 1.75 the ribbon was gone, the low sky brightening to
 // the horizon, and the sun at the golden hour less red, but the glow over the horizon toward a low
-// sun stood too far over the band away from it; the amount is fitted with the phases below. Over
+// sun stood too far over the band away from it; the amount is tuned with the phases below. Over
 // the sea the band is mostly the haze's light (VolumetricHaze.ts), lit by these rows: its weights
 // set how it stands against the sky above.
 //
@@ -98,20 +98,20 @@ import { markSkyRetune } from './SkyRetune.ts';
 // square to the planet's radius toward it: the edge rises opposite a set sun and sinks under the
 // horizon as the sun climbs), so it lies on the low sky opposite a low sun and is gone by day.
 // The polariser, the lean, the aerosol aloft (`aerosol`) and the rising sun's haze aerosol weight
-// (HazeKeys.ts MIST) are one least-squares fit on the clear sky as the eye sees it (the haze over
+// (HazeKeys.ts MIST) are tuned together by least squares against the clear sky as the eye sees it (the haze over
 // it, no clouds) at sun 0, 2, 12 and noon, with the noon sea's level held; the haze's weights at a
-// low sun were refitted later with these rows held beside the haze's own (HazeKeys.ts). The sky
+// low sun were tuned again later with these rows held beside the haze's own (HazeKeys.ts). The sky
 // 130 degrees from the sun stands at .85-.91 of the sky 60 degrees from it 5 - 20 degrees up from
 // sun 0 to 12, the sky opposite a sun at 0 at 1.29-1.43 times the sky 90 degrees from it 5 - 15
 // degrees up (1.23 at 2; the haze before the dawn, its weight set by the band over the horizon,
 // flattens the lowest of these from about 1.34), and on the horizon view at a rising sun of 2 -
 // 2.7 degrees the band over the horizon 15 - 25 degrees from the sun 1.61-1.62 times (display,
-// linear) the band 40 degrees from it, 2.5 before the fit (polariser 0.35, lean 0.35, aerosol
+// linear) the band 40 degrees from it, 2.5 before that tuning (polariser 0.35, lean 0.35, aerosol
 // 1.75, the mist's weight 0.76). With the multiple scattering whole, the bare sky's
 // first two relations moved by under 1 % and the third fell by 7 % with the aerosol's share; a
-// refit of the lean, the polariser and the sky's shadow on the bare sky could not take it back
+// second tuning of the lean, the polariser and the sky's shadow on the bare sky could not take it back
 // (their rms over the relations 0.018 to 0.017 in log), so they stay, and the mist's weights
-// were refitted with the dawn's rows (HazeKeys.ts). With the polariser
+// were tuned again with the dawn's rows (HazeKeys.ts). With the polariser
 // near full strength (0.835, as it was) the first two stood at 1.0-1.24 and about 7: the 90 degree
 // band was a deep trench. A march per azimuth (the table's at each of 32 azimuths, the planet's
 // shadow over each point's horizon) was
@@ -547,7 +547,7 @@ export class Atmosphere {
 	/** gains on the moon's Rayleigh rows and on its aerosol's rows, as every reader takes them
 	 * (`bodyGains`: the sky's, the fog table's, the clouds'): 1, the atmosphere's own. Their ratio is
 	 * the clear night sky's structure, a dark dome under the haze's moonlit light: the Rayleigh's
-	 * 0.175 against the aerosol's 1.3, a least-squares fit on the clear night's sky rows with the
+	 * 0.175 against the aerosol's 1.3, set by least squares against the clear night's sky rows with the
 	 * multiple scattering whole. Both then take one level, MOON_SKY_LEVEL, so the whole moonlit sky
 	 * (the dome, the haze and the clouds, which read these rows alike) gives level ground the
 	 * cosine-weighted irradiance it gives at gains of 1, the atmosphere's own: the land takes the

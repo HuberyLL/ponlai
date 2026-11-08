@@ -156,7 +156,7 @@ type Pair<T> = readonly [ T, T ];
 //     brighter, drawn and lit, is our choice, set by the readings at DECK_GLOW. Under the rest of
 //     the sky the narrow lobe stays as it was, by ( 1 - the share ). OVERCAST_BROAD and
 //     OVERCAST_WEIGHT together set how much forward light the closed deck passes down, the light
-//     of the deck and of the ground under it; they were fitted when this light was drawn as a broad
+//     of the deck and of the ground under it; they were tuned when this light was drawn as a broad
 //     lobe toward the sun, and spread it keeps the same amount. The forward light takes the sun's colour above the
 //     tops (`lobeTint`, Sky.ts trackClouds), which keeps it near grey under a low sun as under a
 //     high one. The weight and the lobe are the form's own, not derived from the column's depth

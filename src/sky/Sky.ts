@@ -521,8 +521,8 @@ function clearShade( elevation: number, direct: number ): number {
 // against green, by 0.75 and 0.88 times at a sun of 3 degrees, 0.89 and 0.95 at 12 and 0.97 and
 // 0.99 at noon, and these keys take the first two back at their luminance (the golden hour's sky,
 // far bay and meadow had turned yellow by 10 - 16 degrees of hue, the morning's sea toward cyan).
-// The high key, whose sky hardly moved, keeps its own, its red at 0.264, set in the least-squares
-// fit of the clear day's sky gains (CLEAR_SKY): against the 0.235 it had, it takes the sky over a
+// The high key, whose sky hardly moved, keeps its own, its red at 0.264, set when the least-squares
+// tuning of the clear day's sky gains (CLEAR_SKY) ran: against the 0.235 it had, it takes the sky over a
 // sun at 50 degrees, seen away from it, about 7 degrees of hue toward violet (Oklab hue 241 to 248).
 // Under cloud the high key has a twin (`cloudyHigh`, taken by the weather's clouded share, Weather.ts
 // `cloudedShare`): a deck of cloud gives the sky and the air no such blue, and the air over the land
@@ -533,8 +533,8 @@ function clearShade( elevation: number, direct: number ): number {
 // over 12 degrees.
 // On a clear evening the sky takes a key below the golden one (`dusk`, at -1 degrees, not under
 // cloud), held through the twilight until the night key takes it from -7 degrees, at the
-// luminance the warm key before it had. Its colour, green 0.55 and blue 0.33 of red, is a
-// least-squares fit with the afterglow's haze weight (HazeKeys.ts) on the twilight's sky toward
+// luminance the warm key before it had. Its colour, green 0.55 and blue 0.33 of red, is
+// set by least squares with the afterglow's haze weight (HazeKeys.ts) against the twilight's sky toward
 // the glow at -3.3 and -5.3 degrees, over the atmosphere with its multiple scattering whole
 // (Atmosphere.ts): under the near-neutral key it had (0.89 and 0.86) that sky stood near grey
 // over the glow (Oklab chroma about 0.01 at -5.3), and the key takes it to orange from the glow to
@@ -550,15 +550,15 @@ function clearShade( elevation: number, direct: number ): number {
 // clear morning has keys of its own (`dawn`, `morning`, read while the sun rises: DayKeys.ts
 // `rising`). At sunrise the air is already blue and the warm colour stays in the sun's road and the
 // low streaks, so `dawn` takes a near-neutral light at the luminance the cooler key before it had,
-// green 0.79 and blue 0.86 of red: a least-squares fit, with the dawn's haze weights
-// (HazeKeys.ts), on the dawn's horizon views from -8 to 3 degrees over the atmosphere with its
+// green 0.79 and blue 0.86 of red: set by least squares, with the dawn's haze weights
+// (HazeKeys.ts), against the dawn's horizon views from -8 to 3 degrees over the atmosphere with its
 // multiple scattering whole (it was the dusk key's near-neutral colour before, 0.89 and 0.86), and the
 // display's dawn white balance (Pipeline.ts WHITE_BALANCE) cools it from there: the band over the
 // horizon, nearly all the haze's light, and the sea under it stay a quiet blue grey. By 12 degrees
 // the picture has gone cool and quiet, and `morning` is the day's light at about two thirds of the
 // low key with less green (red a little over blue, green about 0.7 of them), which turns the
 // morning's sky and sea from cyan to blue, so the sea stands lighter under the same sky, the meter
-// holding the sky's level. Both are fits on our own views, at the luminance they had. From the `high` key up
+// holding the sky's level. Both are tuned on our own views, at the luminance they had. From the `high` key up
 // the two sides are one. A clouded morning keeps the clouded keys.
 // Tunable on debug pages (debug/Tune.ts): `sky.light.<r|g|b>@<dawn|morning|dusk|golden|low|high|cloudyHigh|night>`.
 const SKY_LIGHT_LOW_SUN: readonly DayKey<{ r: number; g: number; b: number }>[] = [
@@ -597,7 +597,7 @@ const _skyLight = { r: 0, g: 0, b: 0 };
 // exposure keys of the time (post/Exposure.ts), which the thin layer (Clouds.ts), faint by day,
 // hardly changes. At the ratio's gains the sky over a sun at 50 degrees, seen away from it, reads
 // at Oklab lightness 0.71 and chroma 0.099 and the far sea at 0.63 and 0.102, against 0.68 and
-// 0.10 and 0.62 and 0.097 at the fit's, and the views from 6 degrees up that take the day side's
+// 0.10 and 0.62 and 0.097 at the tuned gains, and the views from 6 degrees up that take the day side's
 // gains stand 0.16 - 0.33 stops darker. The rising side's own keys keep their gains (its high key
 // is the day's). At the evening's 3 degrees the sky stands brighter against the key, about
 // 7.4 - 8.9: it lights the land's shade and the far bay, as far as a view along the horizon toward

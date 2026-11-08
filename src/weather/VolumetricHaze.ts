@@ -316,7 +316,7 @@ const DRIFT_REACH = 8;
 //     aerosol (g 0.76, Atmosphere.ts MIE_G) the share on a deep column is 0.81, so it moves the
 //     low sky near the line and leaves the sky higher up, where the column is short. Overcast's
 //     deck by day keeps its whole form (by overcast's share, HazeKeys.ts `overcastDeck`): its form
-//     was fitted with the even light in it. Every other deck, and every deck at night, takes it.
+//     was tuned with the even light in it. Every other deck, and every deck at night, takes it.
 //     It leaves out the light the air sends to a point from the level band round it (the layer is
 //     thin straight up, so that light is a small part), which would pull a little further.
 //     Overcast's air takes the deck's light at the deck's own scale, as the rule above has it: under

@@ -130,7 +130,7 @@ import { FOG_NOISE } from './FogNoise.ts';
 //     clear, fair or cloudy sky) and keeps the beam. The moon's share takes the same value, so it
 //     goes under the deck as well (from a sun 6 degrees under the horizon, where `overcastDeck` is
 //     0, the night keeps it whole).
-//   - rayleighWeight, mieWeight: the two shares' weights (VolumetricHaze's header), fitted by
+//   - rayleighWeight, mieWeight: the two shares' weights (VolumetricHaze's header), tuned by
 //     least squares on the clear views. From a sun of 12 degrees up they set the haze's level
 //     over the sky it covers: the hazed low sky (1 - 4 degrees up) on the sun's half at about
 //     0.75 of the bare one, the haze darker than the sky behind it there: by day 0.575 and 0.79
@@ -138,22 +138,22 @@ import { FOG_NOISE } from './FogNoise.ts';
 //     horizon against the sky above it at sun 12). Under 12 degrees they set what the haze shows
 //     on screen, free of the exposure's level: the lowest band over the horizon level with the
 //     sky 10 degrees up or a little over it, the bands' ratio and the low sky over the high air,
-//     fitted together with the seen sky's rows by azimuth (Atmosphere.ts, its phases and the
+//     tuned together with the seen sky's rows by azimuth (Atmosphere.ts, its phases and the
 //     aerosol aloft), which the low keys move as well. As the sun rises (sun 2 and 3) 0.72 and
 //     0.83; before dawn two keys, the band taking more haze toward the sunrise than in the deep
 //     twilight: 1.9 and 4.1 at -1 degrees (to sun 0, where it meets the sunrise's half and half;
 //     the band about 0.02 - 0.04 L over the sky 10 degrees up at -2), and the Rayleigh 0.965 at -6
 //     degrees (the band at -6.5 0.02 - 0.05 L over that sky; the Mie, 4.1, does not show there, the
-//     sun being under the horizon). The dawn's weights are a least-squares fit, with the dawn key's
-//     colour (Sky.ts), on the rows of the dawn's horizon views from -8 to 3 degrees (the band, the
+//     sun being under the horizon). The dawn's weights are set by least squares, with the dawn key's
+//     colour (Sky.ts), against the rows of the dawn's horizon views from -8 to 3 degrees (the band, the
 //     sky, the sea, the shade on the land) once the multiple scattering was whole (Atmosphere.ts),
 //     which lowered the aerosol's share of the bare sky over the band (0.15 to 0.12 at 3 degrees up,
 //     sun 2.4) and with it the band's forward peak (20 against 40 degrees from the sun, 1.98 to
 //     1.84 times): the sunrise's were 0.5 and 0.41 and the deep twilight's Rayleigh 1.4 before it,
-//     and the fit left 1.9 and 4.1 where they were. The golden hour's 0.58 and 3.8 (its far sea
+//     and the tuning left 1.9 and 4.1 where they were. The golden hour's 0.58 and 3.8 (its far sea
 //     over the sky held). The keys with a low sun take the sun's
-//     Rayleigh light beside the open sky's (`sunRayleigh`). The afterglow's Rayleigh, 0.32, is a
-//     least-squares fit with the dusk key's colour (Sky.ts) on the twilight's sky rows toward the
+//     Rayleigh light beside the open sky's (`sunRayleigh`). The afterglow's Rayleigh, 0.32, is
+//     set by least squares with the dusk key's colour (Sky.ts) against the twilight's sky rows toward the
 //     glow at -3.3 and -5.3 degrees. It was 0.13 before the multiple scattering was whole, which left
 //     the haze about a quarter of the sky 4 degrees up toward the glow (0.23 - 0.26 at sun -3.3, its
 //     share the sky's with the haze less the sky without it, over the sky with it), the glow's
@@ -178,7 +178,7 @@ import { FOG_NOISE } from './FogNoise.ts';
 //     there, eight times the golden hour's, lifted the air's Rayleigh light under cloud from -1 to
 //     -4 degrees and let it fall again toward the night's, a rise as the sun went down. Its Mie, 4.7, does not show
 //     with the sun under the horizon, and the night's Mie (2.0) is the gain and weight it was set
-//     with folded into one weight, not yet fitted. The night's amount and Rayleigh are the day's
+//     with folded into one weight, not yet tuned. The night's amount and Rayleigh are the day's
 //     (0.66 and 0.575, the weather's own amount on top as by day): the night's air is the day's
 //     medium, lit by the moon above the air as the day's is by the sun (VolumetricHaze's moon
 //     beam), with no brightness of its own. A night key of its own (two and a half times the haze,

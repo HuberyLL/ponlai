@@ -622,7 +622,7 @@ export function vignetteFactor( at: V2, strength: F ): F {
 // The night takes a cool white too (red 0.53, blue 1.2), on top of the moon's light and the rods'
 // (Purkinje.ts).
 // The rising sun takes a cold white where the setting sun takes the warm one (`dawn`, in place of
-// the golden key while the sun climbs: DayKeys.ts `rising`; red 0.4, blue 2, a fit on our own
+// the golden key while the sun climbs: DayKeys.ts `rising`; red 0.4, blue 2, tuned on our own
 // views): all that the sun does not reach at dawn is blue, sky, water and rock alike, and a face turned
 // to the sun takes a pale warm colour, far less orange than the same face at the same height in
 // the evening. It is what moves the rose band over the horizon, which the sky's own light
