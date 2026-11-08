@@ -34,8 +34,10 @@ packages, into `dist/licenses/`.
     `OceanFFT.ts` sums its two wave systems (`local` and `swell`) into four cascades of its sizes
     and bands, and takes the shallow-water attenuation of each cascade from `WaterSurface.js`.
   - `src/ocean/WaveMaps.ts`: the wave maps of `UnderwaterLighting.js` (the long waves and the mean
-    level baked once a frame into two maps centred on the camera, with their lookup), ported from
-    WGSL to TSL.
+    level baked once a frame into two maps centred on the camera, with their lookup) and the
+    caustics of `Caustics.js` (a refracted grid splatted onto focal planes, two layers of two
+    planes, and their lookup along the refracted sun ray), ported from WGSL to TSL and drawn as a
+    pass on the frame graph.
   - `src/lighting/Underwater.ts`: the key light and ambient under the water of
     `UnderwaterLighting.js`'s direct and ambient hooks (the depth under the long waves, the
     ambient's attenuation); `src/lighting/RefractedSun.ts` reads the air's shadow map at
@@ -478,6 +480,8 @@ comment where it is used.
 - FFT ocean: J. Tessendorf,
   [*Simulating Ocean Water*](https://jtessen.people.clemson.edu/reports/papers_files/coursenotes2002.pdf)
   (SIGGRAPH course notes, 2002 revision).
+- Rasterised caustics: Evan Wallace, [*WebGL Water*](https://madebyevan.com/webgl-water/) and
+  [*Rendering Realtime Caustics in WebGL*](https://medium.com/@evanwallace/rendering-realtime-caustics-in-webgl-2a99a29a0b2c).
 - Hex-tiling's predecessor, by-example noise that blends randomly placed tiles with a
   histogram-preserving blend: Eric Heitz and Fabrice Neyret,
   [*High-Performance By-Example Noise using a Histogram-Preserving Blending Operator*](https://eheitzresearch.wordpress.com/722-2/)

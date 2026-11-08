@@ -5,36 +5,82 @@
  */
 
 import * as THREE from 'three/webgpu';
-import { Fn, If, texture, uniform, vec2, vec4, float, int, smoothstep, screenCoordinate } from 'three/tsl';
-import { FFT_SIZE } from './OceanFFT.ts';
+import {
+	Fn, If, attribute, texture, uniform, varying, vec2, vec3, vec4, float, int, normalize, refract, max, dFdx, dFdy, abs,
+	clamp, mix, smoothstep, exp, length, screenCoordinate, cameraPosition, cameraProjectionMatrix,
+	screenSize,
+} from 'three/tsl';
+import { FFT_SIZE, type OceanFFT } from './OceanFFT.ts';
 import { waveDamping, type WaveDampingInputs } from './WaveDamping.ts';
 import { shared } from '../shared.ts';
+import { compileInto } from '../post/graph/Compile.ts';
+import type { FrameGraph } from '../post/graph/FrameGraph.ts';
 
+// What the light under the water needs from the sea's surface, baked once a frame into one array
+// target, on the frame graph ahead of the scene passes (`waveMapsPass`), after the sea's cascades
+// (computed in the tick): the wave maps and the caustics.
+//
 // The wave maps (tidewater's UnderwaterLighting bake, 4811ba4): what the light under the water needs
 // at a point depends on its xz alone (the long waves' height and slope, the mean level), so it is
-// baked once a frame into two maps centred on the camera (0.25 m texels over 128 m, 2 m over 1 km,
-// snapped to their texels so they do not crawl) instead of every fragment that can be under the
-// water reading the FFT and the shore waves. Beyond the far map: a level sea. The long waves are the
-// three coarsest cascades' height and the two coarsest's slope, damped as the sea's surface is
+// baked into two maps centred on the camera (0.25 m texels over 128 m, 2 m over 1 km, snapped to
+// their texels so they do not crawl) instead of every fragment that can be under the water reading
+// the FFT and the shore waves. Beyond the far map: a level sea. The long waves are the three
+// coarsest cascades' height and the two coarsest's slope, damped as the sea's surface is
 // (WaveDamping.ts), and the rock's reflected wave; none over dry land. The mean level is the two
-// longest cascades' height, read coarser.
-// The maps share an array target with the ground bounce's map (its last layer:
-// lighting/GroundBounce.ts), so the materials lit under the water take one texture for all three.
-// They are read at level 0 within half a texel of their edges, so the repeat wrap never reaches
-// them, and the target keeps no mips.
-// The bake runs outside the frame graph, after the sea's cascades and before the frame's passes.
+// longest cascades' height, read coarser. They are read at level 0 within half a texel of their
+// edges, so neither the repeat wrap nor the mip chain reaches them.
+//
+// The caustics, by rasterised photon splatting (Evan Wallace's "WebGL Water", as tidewater's
+// Caustics.js, 4811ba4). A fine grid over one FFT tile is drawn into the caustics' layer; each
+// vertex is a point on the wave surface, the sun ray is refracted through the surface normal there
+// and followed down to a plane D metres below, and the vertex is placed at that landing point. The
+// fragment writes the area ratio (surface patch / its image on the floor) additively, which is the
+// light's concentration: focusing folds form the bright networks. The grid covers the tile plus a
+// margin on every side (the FFT tiles, so the margin is the neighbouring tiles' surface), so light
+// refracted in from across the tile's edge lands inside it and the result tiles seamlessly. Two
+// layers, each with two focal planes (shallow, deep) blended by the real depth at lookup: fine
+// networks from the finest cascade (its slopes read one level down, so ripples under about 11 cm,
+// which defocus at once, are left out) in R and G, and broad focusing from the next cascade, whose
+// tile is of another size, so the product never repeats, in B and A, each over the whole layer in
+// its own tile's coordinates. The pattern is a function of the cascades and the key's direction
+// alone, so of the scene clock: it keeps no history, a paused frame repeats, and the layer is drawn
+// again only when the scene time, the spectrum or the key's direction changed. The splats conserve
+// the light, so the layer's mean is 1 (but for the few cells folded past a cap).
+// The lookup (`causticsAt`): the light that lands at a floor point entered the water up-sun along
+// the refracted sun ray, through the slope of the long waves above; it is blurred with depth (the
+// sun's disk and forward scattering) through the layer's mips, filtered over the pixel's footprint
+// on a level floor, found from the view ray (anisotropically: the floor is mostly seen at grazing
+// angles), takes the broad layer as
+// mix( 1, broad, 0.6 ), and fades in over the first half metre and out with depth, times
+// `strength`: the pattern moves the light on the floor without changing its level. While the key is
+// the moon or gives no light the splats are not drawn, no mips are made and every lookup returns 1
+// (`lit`), with no fetch.
+//
+// The target's layers: the two wave maps, the caustics, then the ground bounce's map (drawn by
+// lighting/GroundBounce.ts outside the graph, at level 0 only), so the materials lit under the
+// water, at WebGPU's 16 sampled textures, take one texture for all of them. It keeps a short mip
+// chain (MIPS levels), made only after the caustics are drawn (the target's `generateMipmaps` is
+// off but for that last draw): three makes it for every layer, but only the caustics read it (the
+// full chain of nine levels below the base a layer cost up to about a quarter of a millisecond of
+// GPU time a frame at 4K).
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
-// the shared target's size
+const ETA = 1 / 1.333;
+
+// the shared target's size, and its mip levels: the caustics' lookup blurs through three below the
+// base (the wave maps and the ground bounce read level 0 only)
 const RES = 512;
+const MIPS = 4;
 
 // the target's layers: a layer per wave map ( height - sea level, slope x, slope z, mean level - sea
-// level ), then the ground bounce's map (drawn by GroundBounce)
+// level ), the caustics ( fine shallow, fine deep, broad shallow, broad deep ), then the ground
+// bounce's map
 const WAVE_EXTENTS = [ 128, 1024 ];
-const BOUNCE_LAYER = WAVE_EXTENTS.length;
+const CAUSTICS_LAYER = WAVE_EXTENTS.length;
+const BOUNCE_LAYER = CAUSTICS_LAYER + 1;
 const LAYERS = BOUNCE_LAYER + 1;
 // Above this height over the sea level no water reaches (m): the lookups return a level sea there.
 const WAVE_REACH = 2.5;
@@ -42,27 +88,160 @@ const WAVE_REACH = 2.5;
 /** What the wave maps' bake reads (WaveMaps.attachWaves). */
 type WaveMapInputs = WaveDampingInputs;
 
+/** The cascades the caustics refract the sun through. */
+type CausticCascades = Pick<OceanFFT, 'cascades' | 'sizes' | 'derivatives'>;
+
+interface LayerOptions { grid: number; depths: [ number, number ]; channel: 0 | 2; slopeLevel: number; margin: number }
+
+class CausticLayer {
+
+	readonly tile: number;
+	readonly channel: 0 | 2;
+
+	constructor( fft: CausticCascades, cascade: number, private target: THREE.RenderTarget, scene: THREE.Scene,
+		{ grid, depths, channel, slopeLevel, margin }: LayerOptions ) {
+
+		this.tile = fft.sizes[ cascade ];
+		this.channel = channel;
+
+		// indexed grid over [-margin, 1 + margin]^2 (in tile units) at the tile's vertex density: each
+		// surface vertex is shaded once instead of once per triangle corner
+		const g = Math.ceil( grid * ( 1 + 2 * margin ) );
+		const pos = new Float32Array( ( g + 1 ) * ( g + 1 ) * 3 );
+		for ( let j = 0; j <= g; j ++ ) for ( let i = 0; i <= g; i ++ ) {
+
+			const k = ( j * ( g + 1 ) + i ) * 3;
+			pos[ k ] = i / g * ( 1 + 2 * margin ) - margin;
+			pos[ k + 1 ] = j / g * ( 1 + 2 * margin ) - margin;
+
+		}
+
+		const idx = new Uint32Array( g * g * 6 );
+		for ( let j = 0, n = 0; j < g; j ++ ) for ( let i = 0; i < g; i ++ ) {
+
+			const a = j * ( g + 1 ) + i;
+			idx[ n ++ ] = a; idx[ n ++ ] = a + 1; idx[ n ++ ] = a + g + 1;
+			idx[ n ++ ] = a + g + 1; idx[ n ++ ] = a + 1; idx[ n ++ ] = a + g + 2;
+
+		}
+
+		const geo = new THREE.BufferGeometry();
+		geo.setAttribute( 'position', new THREE.BufferAttribute( pos, 3 ) );
+		geo.setIndex( new THREE.BufferAttribute( idx, 1 ) );
+
+		const tile = this.tile;
+		depths.forEach( ( D, plane ) => {
+
+			const q0 = attribute<'vec3'>( 'position', 'vec3' ).xy;
+			const d = texture( fft.derivatives, q0 ).depth( int( cascade ) ).level( float( slopeLevel ) );
+			const s = vec2( d.x.div( max( d.z.add( 1 ), 0.3 ) ), d.y.div( max( d.w.add( 1 ), 0.3 ) ) );
+			const n = normalize( vec3( s.x.negate(), 1, s.y.negate() ) );
+			const T = refract( shared.sunDir.negate(), n, ETA );
+			const T0 = refract( shared.sunDir.negate(), vec3( 0, 1, 0 ), ETA );
+			// the flat surface's offset is removed so the pattern stays registered with the entry point
+			// (the lookup applies it again with the real depth)
+			const off = T.xz.div( max( T.y.negate(), 0.15 ) ).sub( T0.xz.div( max( T0.y.negate(), 0.15 ) ) ).mul( D );
+			const p = q0.mul( tile );
+			const q = p.add( off );
+			const vOld = varying( p ), vNew = varying( q );
+
+			const mat = new THREE.NodeMaterial();
+			mat.name = 'caustics splat';
+			// texture v runs down the target in WebGPU: row 0 at the top (clip y = +1)
+			const uvq = q.div( tile );
+			mat.vertexNode = vec4( uvq.x.mul( 2 ).sub( 1 ), float( 1 ).sub( uvq.y.mul( 2 ) ), 0, 1 );
+			const ox = dFdx( vOld ), oy = dFdy( vOld ), nx = dFdx( vNew ), ny = dFdy( vNew );
+			const ao = abs( ox.x.mul( oy.y ).sub( ox.y.mul( oy.x ) ) );
+			const an = abs( nx.x.mul( ny.y ).sub( nx.y.mul( ny.x ) ) );
+			// the light is conserved: each cell writes its own area's worth over its image, so the
+			// layer's mean is 1 (the margins' light that leaves the tile comes back in from the other
+			// side), with no reading of it at lookup. Only cells folded to under 1/64 of their area are
+			// capped, so the half floats' sums stay finite; their peaks are spread by the lookup's blur.
+			const I = ao.div( max( an, ao.mul( 1 / 64 ) ).max( 1e-12 ) );
+			const out = [ 0, 0, 0, 0 ].map( ( _, k ) => k === channel + plane ? I : float( 0 ) );
+			mat.fragmentNode = vec4( out[ 0 ], out[ 1 ], out[ 2 ], out[ 3 ] );
+			mat.blending = THREE.CustomBlending;
+			mat.blendEquation = THREE.AddEquation;
+			mat.blendSrc = THREE.OneFactor;
+			mat.blendDst = THREE.OneFactor;
+			mat.blendSrcAlpha = THREE.OneFactor;
+			mat.blendDstAlpha = THREE.OneFactor;
+			mat.depthTest = false;
+			mat.depthWrite = false;
+			mat.side = THREE.DoubleSide;
+			const mesh = new THREE.Mesh( geo, mat );
+			mesh.frustumCulled = false;
+			scene.add( mesh );
+
+		} );
+
+	}
+
+	// One lookup of this layer's two planes ( shallow, deep ): over the pixel's footprint stretched to
+	// at least the blur level's texel.
+	fetch( uv: V2, level: F, footprint: { dx: V2; dy: V2 } ): V2 {
+
+		const t = texture( this.target.texture, uv ).depth( int( CAUSTICS_LAYER ) );
+		const planes = ( v: THREE.Node<'vec4'> ) => this.channel === 0 ? v.xy : v.zw;
+		const minLength = level.exp2().div( RES );
+		const stretch = ( g: V2 ) => g.div( this.tile ).toVar().mul( max( minLength.div( max( length( g.div( this.tile ) ), 1e-9 ) ), 1 ) );
+		return planes( t.grad( stretch( footprint.dx ), stretch( footprint.dy ) ) );
+
+	}
+
+}
+
 export class WaveMaps {
 
 	renderer: THREE.WebGPURenderer;
 	readonly target: THREE.RenderTarget;
 	/** The target's layer that holds the ground bounce's map (lighting/GroundBounce.ts draws it). */
 	readonly bounceLayer = BOUNCE_LAYER;
+	/** The caustics' contrast (0: none). Their mean stays 1 whatever it is. */
+	readonly strength = uniform( 0.75 );
 
 	// the wave maps: each one's world origin (its texel ( 0, 0 )'s corner) and its bake, once attached
 	private readonly origins = WAVE_EXTENTS.map( () => uniform( new THREE.Vector2() ) );
 	private readonly wavesReady = uniform( 0 );
 	private bakes: { quad: THREE.QuadMesh; layer: number }[] = [];
+	// the caustics: their splats (which refract the key's direction, shared.sunDir) and whether
+	// they are drawn
+	/** The caustics' splats, drawn into their layer through `splatCamera`. */
+	readonly splats = new THREE.Scene();
+	readonly splatCamera = new THREE.OrthographicCamera( - 1, 1, 1, - 1, 0, 1 );
+	private readonly fine: CausticLayer;
+	private readonly broad: CausticLayer;
+	private readonly lit = uniform( 0 );
+	private readonly clear = new THREE.Color();
+	// what the caustics' layer was last drawn from ( scene time, the spectrum's revision, the key's
+	// direction ), and what this frame's would be: the same inputs draw the same layer
+	private readonly drawnFrom = [ NaN, NaN, NaN, NaN, NaN ];
+	private readonly drawFrom = [ 0, 0, 0, 0, 0 ];
 
-	constructor( renderer: THREE.WebGPURenderer ) {
+	constructor( renderer: THREE.WebGPURenderer, fft: CausticCascades ) {
 
 		this.renderer = renderer;
 		this.target = new THREE.RenderTarget( RES, RES, {
 			depth: LAYERS, type: THREE.HalfFloatType, generateMipmaps: false,
-			minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
-			wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, depthBuffer: false,
+			minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
+			wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, depthBuffer: false, anisotropy: 8,
 		} );
 		this.target.texture.name = 'waveMaps';
+		// three takes a render target's level count from its texture's mipmaps when there are any
+		// (r186 Textures.getMipLevels; nothing is uploaded from them): a short chain, three
+		// downsamples per layer instead of nine
+		this.target.texture.mipmaps = Array.from( { length: MIPS }, () => ( { data: new Uint8Array( 0 ), width: 0, height: 0 } ) );
+		const fine = fft.cascades - 1;
+		this.fine = new CausticLayer( fft, fine, this.target, this.splats, { grid: 256, depths: [ 1.2, 4.0 ], channel: 0, slopeLevel: 1, margin: 0.35 } );
+		this.broad = new CausticLayer( fft, fine - 1, this.target, this.splats, { grid: 128, depths: [ 3.0, 9.0 ], channel: 2, slopeLevel: 0.5, margin: 0.35 } );
+
+	}
+
+	/** Compiles the splats' draws for their layer ahead of their first frame: while the key gives no
+	 * light that frame comes only with the dawn. */
+	warm(): Promise<void> {
+
+		return compileInto( this.renderer, this.splats, this.splatCamera, this.target );
 
 	}
 
@@ -109,11 +288,11 @@ export class WaveMaps {
 
 	}
 
-	update( camera: THREE.Camera ): void {
+	/** This frame's state, set in the tick (no rendering): the maps' origins round the camera,
+	 * whether the key lights the caustics (`lit`: the sun, not the moon, and giving light) and what
+	 * they would be drawn from (the splats read the key's direction from shared.sunDir). */
+	prepare( camera: THREE.Camera, keyDir: THREE.Vector3, lit: boolean, time: number, spectrumRevision: number ): void {
 
-		if ( this.bakes.length === 0 ) return;
-		const r = this.renderer;
-		const prev = r.getRenderTarget();
 		// the maps' origins, snapped to whole texels so their texel centres stay put in the world
 		WAVE_EXTENTS.forEach( ( extent, level ) => {
 
@@ -121,14 +300,53 @@ export class WaveMaps {
 			this.origins[ level ].value.set( Math.floor( camera.position.x / texel ) * texel - extent / 2, Math.floor( camera.position.z / texel ) * texel - extent / 2 );
 
 		} );
-		for ( const { quad, layer } of this.bakes ) {
+		this.lit.value = lit ? 1 : 0;
+		const from = this.drawFrom;
+		from[ 0 ] = time; from[ 1 ] = spectrumRevision; from[ 2 ] = keyDir.x; from[ 3 ] = keyDir.y; from[ 4 ] = keyDir.z;
+
+	}
+
+	/** The bake (the graph's pass, `waveMapsPass`): the wave maps, then the caustics while lit and
+	 * when their inputs changed, with the mip chain after them (only the caustics read it). */
+	render(): void {
+
+		const r = this.renderer;
+		const tex = this.target.texture;
+		const draws: ( () => void )[] = [];
+		for ( const { quad, layer } of this.bakes ) draws.push( () => {
 
 			r.setRenderTarget( this.target, layer );
 			quad.render( r );
 
-		}
-		this.wavesReady.value = 1;
+		} );
+		const caustics = this.lit.value > 0 && this.drawFrom.some( ( v, i ) => v !== this.drawnFrom[ i ] );
+		if ( caustics ) draws.push( () => {
+
+			r.getClearColor( this.clear );
+			const alpha = r.getClearAlpha(), autoClear = r.autoClear, autoClearColor = r.autoClearColor;
+			r.setClearColor( 0x000000, 0 );
+			r.autoClear = true;
+			r.autoClearColor = true;
+			r.setRenderTarget( this.target, CAUSTICS_LAYER );
+			r.render( this.splats, this.splatCamera );
+			r.setClearColor( this.clear, alpha );
+			r.autoClear = autoClear;
+			r.autoClearColor = autoClearColor;
+			this.drawFrom.forEach( ( v, i ) => this.drawnFrom[ i ] = v );
+
+		} );
+		if ( draws.length === 0 ) return;
+		const prev = r.getRenderTarget();
+		// the mip chain only after the last draw of a frame that drew the caustics
+		draws.forEach( ( draw, i ) => {
+
+			tex.generateMipmaps = caustics && i === draws.length - 1;
+			draw();
+
+		} );
+		tex.generateMipmaps = false;
 		r.setRenderTarget( prev );
+		if ( this.bakes.length > 0 ) this.wavesReady.value = 1;
 
 	}
 
@@ -157,5 +375,57 @@ export class WaveMaps {
 		} )();
 
 	}
+
+	/** The caustics' light factor (mean 1) at a world point `depth` metres under the
+	 * long waves' surface, whose slope above is `slope`. Explicit gradients: any branch. */
+	causticsAt( P: V3, depth: F, slope: V2 ): V3 {
+
+		const F = this.fine, B = this.broad;
+		// none right at the surface, strongest in the first metres, fading with depth; no lookups
+		// where it is 1 (the moon's or no key, or no water above)
+		const k = smoothstep( 0.03, 0.5, depth ).mul( exp( depth.mul( - 0.06 ) ) ).mul( this.strength ).mul( this.lit ).toVar();
+		const caustic = float( 1 ).toVar();
+		If( k.greaterThan( 0 ), () => {
+
+			// the light reaching this point entered the water up-sun along the refracted sun ray
+			const Ls = refract( shared.sunDir.negate(), normalize( vec3( slope.x.negate(), 1, slope.y.negate() ) ), ETA );
+			const entry = P.xz.sub( Ls.xz.mul( depth.div( max( Ls.y.negate(), 0.15 ) ) ) ).toVar();
+			// deeper: softer (finite sun disk and forward scattering)
+			const blur = clamp( depth.mul( 0.4 ).sub( 0.2 ), 0, MIPS - 1 );
+			// The pixel's footprint on a level floor, from the view ray (no screen derivatives: taken
+			// before the branch, they cost a tenth of a millisecond or more of the opaque pass at 4K):
+			// a pixel spans t * 2 / ( P11 * height ) across the ray, stretched by 1 / |v.y| along
+			// it, P11 = 1 / tan( fov / 2 ) the pass's own projection's [ 1 ][ 1 ] (the jitter moves
+			// only its third column) and height the pass's own target's.
+			const ray = P.sub( cameraPosition ).toVar();
+			const t = length( ray );
+			const p11 = ( cameraProjectionMatrix as unknown as { element( i: number ): { element( i: number ): F } } ).element( 1 ).element( 1 );
+			const across = t.mul( 2 ).div( p11.mul( screenSize.y ) );
+			const h = ray.xz.div( max( length( ray.xz ), 1e-6 ) ).toVar();
+			const footprint = {
+				dx: vec2( h.y.negate(), h.x ).mul( across ),
+				dy: h.mul( across.mul( t ).div( max( abs( ray.y ), t.mul( 0.02 ) ) ) ),
+			};
+			const fine = F.fetch( entry.div( F.tile ), blur, footprint );
+			const broad = B.fetch( entry.div( B.tile ), float( 2.5 ), footprint );
+			const c = mix( fine.x, fine.y, clamp( depth.sub( 1.2 ).div( 2.8 ), 0, 1 ) ); // between the fine layer's planes
+			const br = mix( broad.x, broad.y, clamp( depth.sub( 3 ).div( 6 ), 0, 1 ) ); // between the broad layer's planes
+			caustic.assign( mix( float( 1 ), c.mul( mix( float( 1 ), br, 0.6 ) ), k ) );
+
+		} );
+		return vec3( caustic );
+
+	}
+
+}
+
+/** The wave maps' bake on the frame graph, ahead of the scene passes that read them (the
+ * terrain, the floor and the fish under the water). */
+export function waveMapsPass<Frame>( g: FrameGraph<Frame>, maps: () => WaveMaps | null ): void {
+
+	g.addPass( 'waveMaps', 'callback', () => ( {
+		label: 'wave maps', size: { of: 'fixed', width: RES, height: RES }, neverCull: true,
+		run: () => maps()?.render(),
+	} ) );
 
 }

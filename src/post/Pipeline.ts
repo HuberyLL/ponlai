@@ -52,6 +52,7 @@ import { restEpoch, restKey } from './TemporalRest.ts';
 import { tuneCheck, tuneKeys, tuneObject, tuneUniform } from '../debug/Tune.ts';
 import { displacementField } from '../world/vegetation/Displacement.ts';
 import { leavesPass, type FallingLeaves } from '../weather/FallingLeaves.ts';
+import { waveMapsPass, type WaveMaps } from '../ocean/WaveMaps.ts';
 import { localLightsPass } from '../lighting/LocalLights.ts';
 
 // Frame graph:
@@ -84,6 +85,9 @@ import { localLightsPass } from '../lighting/LocalLights.ts';
 //   falling leaves: the leaves' births and fixed steps (weather/FallingLeaves.ts: one compute pass
 //   over its fixed ring, its own buffers only; a reset's frame prewarms it instead), ahead of the
 //   opaque scene, which draws them; absent in the test mode
+//   wave maps (ocean/WaveMaps.ts): the long waves' maps round the camera and the caustics (while the
+//   sun lights them) into one array target outside the graph's resources, which the materials lit
+//   under the water read, its mip chain after the last layer drawn
 //   light shafts: the open sky near the sun, the rays marched toward it (half resolution, while the
 //   sun faces the view): the crepuscular rays through the clouds' gaps until the haze reaches them
 //   constants: what the post passes take that is the same for every pixel (the flare's visibility,
@@ -1619,6 +1623,8 @@ export class Pipeline {
 
 	/** The falling leaves, once the world exists (main.ts): their pass runs while they are set. */
 	fallingLeaves: FallingLeaves | null = null;
+	/** The wave maps and the caustics (ocean/WaveMaps.ts), baked by their pass while they are set. */
+	waveMaps: WaveMaps | null = null;
 
 	// the displacement field as its pass leaves it, and the frame before's (null without one)
 	private displacement: { field: ResourceHandle; previous: ResourceHandle | null } | null = null;
@@ -1644,8 +1650,9 @@ export class Pipeline {
 	// each into a target of the graph's or the canvas. Ahead of the scene, after the haze and the
 	// sky's constants, the displacement field (world/vegetation/Displacement.ts): its sprites at a
 	// fixed size, read by the meadow's passes; then the falling leaves' step
-	// (weather/FallingLeaves.ts), once main.ts has made them, and the local lights' clusters
-	// (lighting/LocalLights.ts), by night.
+	// (weather/FallingLeaves.ts), once main.ts has made them, the wave maps and the caustics
+	// (ocean/WaveMaps.ts), which the materials lit under the water read, and the local lights'
+	// clusters (lighting/LocalLights.ts), by night.
 	private declarePasses(): void {
 
 		const g = this.graph;
@@ -1667,6 +1674,8 @@ export class Pipeline {
 		this.displacement = displacementField ? displacementField.declare( g ) : null;
 		// the falling leaves' step, whose buffers the opaque scene draws
 		leavesPass( g, () => this.fallingLeaves );
+		// the wave maps and the caustics, which the materials lit under the water read
+		waveMapsPass( g, () => this.waveMaps );
 		// the local lights' clusters, which every lit material of the scene passes reads
 		// (lighting/LocalLights.ts)
 		localLightsPass( g );

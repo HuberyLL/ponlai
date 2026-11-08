@@ -42,11 +42,11 @@ import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 // environment's lower half already gives a face turned down (the distant sea's radiance, Sky's
 // `seaRadiance`, where tidewater's environment has the atmosphere's dark ground), then blurred
 // (a binomial 5x5 of 1 m steps, as 3x3 bilinear lookups). Alpha: the height of the bouncing
-// surface (the plateau's top over its swells, or the sea level). It is drawn at 256 texels, blurred into the
-// wave maps' array target (its last layer, WaveMaps `bounceLayer`), so the materials lit under the
-// water take no texture more for it. Like the wave maps, it is drawn before the frame graph, after
-// the sun's map. It is a function of the key's direction and colour, the sun's maps,
-// the sea's radiance and the world fields. It is drawn with the sun's map's steps (`steps`: a step
+// surface (the plateau's top over its swells, or the sea level). It is drawn at 256 texels,
+// blurred into the wave maps' array target (its last layer, WaveMaps `bounceLayer`), so the
+// materials lit under the water take no texture more for it. It is drawn before the frame graph,
+// after the sun's map. It is a function of the key's direction and colour, the sun's maps, the
+// sea's radiance and the world fields. It is drawn with the sun's map's steps (`steps`: a step
 // of the key's turn, SunShadow.ts, counted also while the swaying plants redraw that map every
 // frame), from that map alone and the key as it stands then, and
 // whenever the sea's radiance or the fields change (a growth swap and a scene jump through
@@ -258,7 +258,7 @@ export class GroundBounce {
 
 	}
 
-	/** Once a frame, after the sun's map and the wave maps: draws the map again at the sun's map's
+	/** Once a frame, after the sun's map: draws the map again at the sun's map's
 	 * steps and when the sea or the fields changed (see the header). `sea`: the environment's lower
 	 * half (Sky `seaRadiance`). */
 	update( sea: THREE.Color ): void {
@@ -276,6 +276,8 @@ export class GroundBounce {
 		const prev = r.getRenderTarget();
 		r.setRenderTarget( this.raw );
 		this.rawQuad.render( r );
+		// (read at level 0 only; the target makes no mips here: WaveMaps.ts makes its chain after
+		// the caustics alone)
 		r.setRenderTarget( target, layer );
 		this.blurQuad.render( r );
 		r.setRenderTarget( prev );

@@ -28,6 +28,7 @@
 //                src/post/Purkinje.ts)
 //                `terrain` the island's ground, the stones and the sea floor
 //                (src/materials/TerrainMaterial.ts)
+//                `wave-maps` the caustics' splats at their focal planes (src/ocean/WaveMaps.ts)
 //                `post` the post chain's own passes: the exposure's meter, the bloom's levels
 //                and the local tone's grid and slicing (src/post/Metering.ts, Exposure.ts,
 //                PhysicalBloom.ts, LocalTone.ts)

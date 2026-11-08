@@ -3,10 +3,11 @@
 // and the sea floor, each lit through the ambient volume as the page lights them.
 //
 // Stand-ins: 1x1 textures for the baked maps, the scans, the soil and the world's fields (the
-// shaders take their sizes through uniforms, the scans' smallest mip through a constant), a small
-// ambient lattice and the environment's harmonics over an empty sky (as the ambient-materials entry
-// builds them), one directional light and no environment: the counts are each material's own plus
-// the volume's, not the page's shadow maps, environment or ground bounce.
+// shaders take their sizes through uniforms, the scans' smallest mip through a constant), an ocean
+// FFT of three cascades for the caustics, a small ambient lattice and the environment's harmonics
+// over an empty sky (as the ambient-materials entry builds them), one directional light and no
+// environment: the counts are each material's own plus the volume's, not the page's shadow maps,
+// environment or ground bounce.
 
 import * as THREE from 'three/webgpu';
 import { float, texture } from 'three/tsl';
@@ -44,7 +45,7 @@ export default async function ( { renderer } ) {
 		heights: texture( detail ).depth( 0 ), normalsA: texture( detail ).depth( 1 ), normalsB: texture( detail ).depth( 2 ), gravel: texture( detail ).depth( 3 ),
 		scanAlbedo: array( 'scanAlbedo', 3, THREE.SRGBColorSpace ), scanDetail: array( 'scanDetail', 3 ),
 	};
-	const waveMaps = new WaveMaps( renderer );
+	const waveMaps = new WaveMaps( renderer, { cascades: 3, sizes: [ 250, 50, 10 ], derivatives: array( 'derivatives', 3 ) } );
 	const field = ( name ) => {
 
 		const t = new THREE.DataTexture( new Uint16Array( 4 ), 1, 1, THREE.RGBAFormat, THREE.HalfFloatType );
