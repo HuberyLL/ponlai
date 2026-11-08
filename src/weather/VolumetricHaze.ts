@@ -118,6 +118,12 @@ const GROUND_ONLY = vec3( 0, 1000, AEROSOL_OPEN );
 // how far above the fog layer's top, in its widths, the drift is taken (the layer's density there
 // is under 1/16 of its deep part's)
 const DRIFT_REACH = 8;
+// The distances (metres along the view) over which the air's in-scatter of the night sky goes from
+// the light the sky sheds to the light the dome draws it at (shared.ts `seenNight`): the near air,
+// which veils the land the camera looks at, keeps the sky's own light, and the far air, which meets
+// the sky at the horizon, takes the seen sky's (as the far sea's reflection does, Water.ts
+// SEEN_SKY). See the header.
+const SEEN_AIR = { near: 200, far: 2000 } as const;
 
 // The air's haze and the sea's fog as one participating medium in a froxel volume, after Patry,
 // "Real-Time Samurai Cinema", SIGGRAPH 2021 (its volumetric haze, built on Wronski, SIGGRAPH 2014,
@@ -421,6 +427,16 @@ const DRIFT_REACH = 8;
 //     of the atmosphere. The ground layer closes over the horizon, so the far sea and the horizon's
 //     sky end in the same haze. The light the sky lends (Sky.ts's bakes, the probes) is the
 //     atmosphere's alone: the haze is laid over the image only.
+//     By night the moon's open sky light and the deck's that the light volume's air scatters come to
+//     the night sky as the dome draws it (`moonColourSeen`, `deckShareSeen`: shared.ts `seenNight`,
+//     Weather.ts `seenNight`) by the froxel's distance: the near air keeps the sky's own light, the
+//     far air from SEEN_AIR's far end on takes the seen gain whole, as the dome and the far sea's
+//     reflection do (Water.ts SEEN_SKY), so the horizon's air meets the drawn sky, while what the
+//     sky lights (the bakes, `openSky` among them, the probes, the land) keeps its own level. The
+//     moon's direct single scatter keeps its light. Left whole, the haze's sky light stood over the
+//     far sea at the horizon as a light band under a darker sky (cloudy, 0.1 in Oklab L over the sky
+//     above it); taken at every distance, it took a further 0.1 - 0.25 stop off the land by night
+//     (the low camera's cliffs, the horizon views' land), whose veil is the near air's.
 //     The dome's own sky ray (the dome's call, `skyHaze`'s `dome`, with no distance) adds a thin
 //     haze of its own to the medium's depth: uniform in height over the air's whole height, the
 //     key's `skyDepth` (green's optical depth per kilometre of the ray; HazeKeys.ts). Over the
@@ -650,6 +666,13 @@ export class VolumetricHaze {
 	// with, scaled): the Rayleigh share's lit by the open sky and by the body, the aerosol share's;
 	// and the shares' weights
 	private readonly ambientColour = [ uniform( new THREE.Color( 0, 0, 0 ) ), uniform( new THREE.Color( 0, 0, 0 ) ) ] as const;
+	// The moon's open sky colour and the deck's share on its light at the level the dome draws the
+	// night sky (shared.ts `seenNight`, 1 by day, where these equal the ones above bit for bit), which
+	// the light kernel's far air takes (SEEN_AIR), while the environment's bake (`openSky`), which
+	// lights the land and the sea, keeps the sky's own light. The dome gains the moon's sky only
+	// (Sky.ts `domeGapGain`): the sun's twilight sky keeps its light here too.
+	private readonly moonColourSeen = uniform( new THREE.Color( 0, 0, 0 ) );
+	private readonly deckShareSeen = uniform( 0 );
 	private readonly sunRayleighColour = [ uniform( new THREE.Color( 0, 0, 0 ) ), uniform( new THREE.Color( 0, 0, 0 ) ) ] as const;
 	private readonly mieColour = [ uniform( new THREE.Color( 0, 0, 0 ) ), uniform( new THREE.Color( 0, 0, 0 ) ) ] as const;
 	private readonly weights = uniform( new THREE.Vector2( 1, 1 ) );
@@ -923,7 +946,12 @@ export class VolumetricHaze {
 	// lights the air under a deck.
 	// `keep` is the share of a deck's light (all but overcast's by day) that keeps the deck's form
 	// along this column (`hazeFormKeep`, see the header).
-	private scatterToward( direction: V3, deck: V3, clouds: Clouds, keep: F ): ( y: F, sun: F, ambient: F ) => V3 {
+	// `seen`: the sky's light as the view sees it (the light kernel's: the closure's `far`, the
+	// froxel's share of the seen gain by its distance, blends `moonColourSeen` and `deckShareSeen`
+	// in, SEEN_AIR), else as it lights (the bake's); the closure takes `far` exactly when `seen`.
+	private scatterToward( direction: V3, deck: V3, clouds: Clouds, keep: F ): ( y: F, sun: F, ambient: F ) => V3;
+	private scatterToward( direction: V3, deck: V3, clouds: Clouds, keep: F, seen: true ): ( y: F, sun: F, ambient: F, far: F ) => V3;
+	private scatterToward( direction: V3, deck: V3, clouds: Clouds, keep: F, seen = false ): ( y: F, sun: F, ambient: F, far?: F ) => V3 {
 
 		const [ albedo, g, gain ] = [ this.lightSettings.x, this.lightSettings.y, this.lightSettings.z ];
 		// (overcast's deck: its light's form through the air's phase, see the header) the forward
@@ -982,8 +1010,17 @@ export class VolumetricHaze {
 		// under it, scattered evenly (half the sphere each), overcast's deck in its form through the
 		// air's phase (see the header), the sea's even (it reaches the air from below, where neither
 		// the deck's law nor its lobe points)
-		const deckLight = deck.mul( deckForm.add( SEA_DIFFUSE ).mul( 0.5 ) ).mul( this.deckShare ).toVar();
-		return ( y, sun, ambient ) => {
+		const deckBase = deck.mul( deckForm.add( SEA_DIFFUSE ).mul( 0.5 ) );
+		const deckLight = seen ? deckBase.toVar() : deckBase.mul( this.deckShare ).toVar();
+		// (a + ( b - a ) s: exactly a where the seen value equals the physical one, by day)
+		// (the colour uniforms as vec3 nodes: three's types keep 'color' apart from 'vec3', the shader
+		// does not; a vec3() around them would add a node to the emitted code)
+		const asV3 = ( colour: THREE.UniformNode<'color', THREE.Color> ) => colour as unknown as V3;
+		const sunSky = asV3( this.ambientColour[ 0 ] ), moonSky = asV3( this.ambientColour[ 1 ] ), moonSeen = asV3( this.moonColourSeen );
+		return ( y, sun, ambient, far ) => {
+
+			const ambientColour: V3[] = seen && far ? [ sunSky, moonSky.add( moonSeen.sub( moonSky ).mul( far ) ) ] : [ sunSky, moonSky ];
+			const deckAir = seen && far ? deckLight.mul( this.deckShare.add( this.deckShareSeen.sub( this.deckShare ).mul( far ) ) ) : deckLight;
 
 			// (the froxel's altitude, km)
 			const height = max( y, 0 ).div( 1000 ).toVar();
@@ -996,9 +1033,9 @@ export class VolumetricHaze {
 				// (the sun's rows along the view, level under a deck, the moon's along the moon: see the header)
 				const rows = atmosphere.fogRows( body.b === 0 ? mix( direction.y, float( DECK_ROW ), this.deckShare ) : body.light.y, height, body.b );
 				const rayleighRows = rows.rayleigh.mul( body.rayleighPhase ).toVar();
-				if ( body.b === 0 ) skyColour = rayleighRows.mul( this.ambientColour[ 0 ] );
+				if ( body.b === 0 ) skyColour = rayleighRows.mul( ambientColour[ 0 ] );
 				const rayleigh = grey( rayleighRows )
-					.mul( this.ambientColour[ body.b ].mul( ambient ).mul( body.overcast ).mul( body.open ).add( body.direct.mul( sun ) ) ).mul( body.shadow );
+					.mul( ambientColour[ body.b ].mul( ambient ).mul( body.overcast ).mul( body.open ).add( body.direct.mul( sun ) ) ).mul( body.shadow );
 				const mie = grey( rows.mie.mul( body.miePhase ) ).mul( this.mieColour[ body.b ] ).mul( sun );
 				scattered.addAssign( rayleigh.mul( this.weights.x ).add( mie.mul( this.weights.y ) ) );
 
@@ -1006,8 +1043,8 @@ export class VolumetricHaze {
 			// overcast's share of the deck's light on the air at the deck light's luminance in the open
 			// sky's scatter colour, turned toward grey by DECK_AIR_GREY (see the header)
 			const hue = skyColour.div( max( dot( skyColour, LUMINANCE ), 1e-12 ) );
-			const tinted = mix( hue, vec3( 1 ), this.deckAirGrey ).mul( dot( deckLight, LUMINANCE ) );
-			const deckAirLight = mix( deckLight, tinted, this.overcastShare );
+			const tinted = mix( hue, vec3( 1 ), this.deckAirGrey ).mul( dot( deckAir, LUMINANCE ) );
+			const deckAirLight = mix( deckAir, tinted, this.overcastShare );
 			return scattered.mul( gain.mul( albedo ) ).add( deckAirLight.mul( ambient ).mul( albedo ) );
 
 		};
@@ -1072,7 +1109,7 @@ export class VolumetricHaze {
 				// (the column's whole depth to the grid's far end, for the share of the deck's form it keeps)
 				const tEnd = this.sliceDepth( float( D ) ).div( forward ).toVar();
 				const keep = hazeFormKeep( this.sigma.y.mul( tEnd.mul( meanExtinction( this.origin.y, this.origin.y.add( direction.y.mul( tEnd ) ), this.layer, this.ground ) ) ), this.lightSettings.y );
-				const scatter = this.scatterToward( direction, deck, clouds, keep );
+				const scatter = this.scatterToward( direction, deck, clouds, keep, true );
 				const droplet = this.dropletToward( direction, deck );
 				const reach = this.ground.y.add( this.ground.z.mul( DRIFT_REACH ) ).toVar();
 				// (alpha: the band opacity in front; shown: the display opacity, through the band-to-display
@@ -1113,7 +1150,9 @@ export class VolumetricHaze {
 					// (clamped: high over the layers both means are rounding noise, under a deck's top the
 					// aerosol layer's none)
 					const share = this.dropletShare.mul( clamp( fog.mul( factor ).div( max( density, 1e-30 ) ), 0, 1 ) );
-					const scattered = mix( scatter( height, sun, fraction.g ), droplet( middle, sun, fraction.g ), share ).toVar();
+					// (the seen gain's share by the slice's distance, SEEN_AIR)
+					const far = smoothstep( SEEN_AIR.near, SEEN_AIR.far, t0.add( t1 ).mul( 0.5 ) );
+					const scattered = mix( scatter( height, sun, fraction.g, far ), droplet( middle, sun, fraction.g ), share ).toVar();
 					alpha.addAssign( w );
 					const next = bandToDisplay( alpha, bandPush ).toVar();
 					sum.addAssign( scattered.mul( next.sub( shown ) ) );
@@ -1541,6 +1580,7 @@ export class VolumetricHaze {
 		[ this.atmosphere.sunIlluminance.value, this.atmosphere.moonIlluminance.value ].forEach( ( illuminance, b ) => {
 
 			this.ambientColour[ b ].value.copy( illuminance ).multiplyScalar( b === 0 ? weather.ambient * sunSky : weather.ambient );
+			if ( b === 1 ) this.moonColourSeen.value.copy( this.ambientColour[ 1 ].value ).multiplyScalar( shared.seenNight.value );
 			this.mieColour[ b ].value.copy( b === 0 ? this.sunBeam : this.moonBeam ).multiplyScalar( b === 0 ? weather.direct * sunLight : weather.direct );
 			this.sunRayleighColour[ b ].value.copy( this.mieColour[ b ].value ).multiplyScalar( look.sunRayleigh );
 
@@ -1551,6 +1591,7 @@ export class VolumetricHaze {
 		moonMie.setRGB( red * level, level, blue * level );
 		this.weights.value.set( look.rayleighWeight, look.mieWeight );
 		this.ambientSettings.value.set( S.ambientFloor, S.ambientSoftness );
+		this.deckShareSeen.value = this.deckShare.value * shared.seenNight.value;
 		this.switches.value.set( S.sky ? 1 : 0, S.tricubic ? 1 : 0, S.densityAA ? 1 : 0, S.debug );
 		// the slices
 		const { depth } = this.grid;

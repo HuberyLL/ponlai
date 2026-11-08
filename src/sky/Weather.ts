@@ -314,6 +314,16 @@ export interface WeatherState {
 	// whole. Equal to `daySky` and `daySkyExponent` in every weather but overcast.
 	moonSky: number;
 	moonSkyExponent: number;
+	// How far the night sky the dome draws stands below the light it gives, in stops: the moonlit
+	// sky behind the clouds and the clouds themselves as the dome draws them are scaled by
+	// 2^-( seenNight times the display's night weight ) (Sky.ts `domeGapGain`), while the sky's light
+	// on the land and the sea (the environment's bakes), the stars and the moon's disc keep theirs.
+	// Drawn at the level of the light it sheds, the moonlit sky stood well above the land it lights;
+	// the land and the sea were set on that light, so only the drawn sky moves. Fair takes less than
+	// clear and cloudy (its open sky and broken cloud already stand nearer the land), overcast none
+	// (its deck was set as drawn), the parked weathers none. Blended with the other fields, so a
+	// front moves it with the sky; nothing by day, where the night weight is 0.
+	seenNight: number;
 	// The air's haze, per metre: the extinction, in the band whose spectral weight is 1 (blue on a
 	// clear day: the hour's key gives the bands' weights, weather/HazeKeys.ts), of the ground layer's
 	// deep part, under its soft top (the hour's key's shape: weather/HazeKeys.ts,
@@ -405,16 +415,18 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // Overcast's moonlit sky has a level and an exponent of its own (`moonSky`, `moonSkyExponent`), on which
 // the night was set. The other weathers keep the day's sky as the atmosphere and the clouds
 // give it.
+// The night sky the dome draws stands `seenNight` stops below the light it sheds, so the moonlit
+// sky reads dark over the land.
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
-	clear: { coverage: 0, lowCover: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
-	fair: { coverage: 0.32, lowCover: 0, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
-	cloudy: { coverage: 0.67, lowCover: 0.481, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0021, rain: 0, fog: 0, storm: 0, streaks: 0 },
-	overcast: { coverage: 0.94, lowCover: 0.683, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0.3, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, daySky: 0.074, daySkyExponent: 1.15, moonSky: 0.173, moonSkyExponent: 1.24, haze: 0.00974, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
-	rain: { coverage: 1, lowCover: 0.683, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0095, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
+	clear: { coverage: 0, lowCover: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 2.9, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
+	fair: { coverage: 0.32, lowCover: 0, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 1.9, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
+	cloudy: { coverage: 0.67, lowCover: 0.481, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 2.9, haze: 0.0021, rain: 0, fog: 0, storm: 0, streaks: 0 },
+	overcast: { coverage: 0.94, lowCover: 0.683, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0.3, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, daySky: 0.074, daySkyExponent: 1.15, moonSky: 0.173, moonSkyExponent: 1.24, seenNight: 0, haze: 0.00974, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
+	rain: { coverage: 1, lowCover: 0.683, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 0, haze: 0.0095, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
 	// A squall: the darkest deck, heavy rain, a strong wind (PRESET_WIND) and a rough, white-capped sea.
-	storm: { coverage: 1, lowCover: 0.683, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0135, rain: 1, fog: 0.3, storm: 1, streaks: 0 },
+	storm: { coverage: 1, lowCover: 0.683, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 0, haze: 0.0135, rain: 1, fog: 0.3, storm: 1, streaks: 0 },
 	// Sea fog forms in calm, moist air under thin high cloud; the sun shows as a pale disk.
-	fog: { coverage: 0.75, lowCover: 0.683, density: 0.85, directVisibility: 0.6, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0046, rain: 0, fog: 1, storm: 0, streaks: 0.4 },
+	fog: { coverage: 0.75, lowCover: 0.683, density: 0.85, directVisibility: 0.6, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 0, haze: 0.0046, rain: 0, fog: 1, storm: 0, streaks: 0.4 },
 };
 
 // Auto weather: from each state, the next one and its weight. The chain moves among the kept

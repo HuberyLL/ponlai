@@ -483,7 +483,13 @@ art decision changes; images from elsewhere stay out of the repository.
   the sky and the sea: the land under them goes dark and quiet, far less saturated than they are,
   the meadow nearly black with a hint of cool green, the rock a cool grey that catches the moon and
   stands as the brightest thing on the island. Its exposure keeps the moonlit island readable and the moon's path on the sea crisp,
-  and that path is pale: the moon's blue stays in the water and the sky, level with each other, and never flashes off the glint.
+  and that path is pale: the moon's blue stays in the water and the sky, which meet level only far
+  out, where the sea reflects the sky as drawn, and it never flashes off the glint.
+- The night sky as drawn stands below the light it sheds, by a number of stops each weather sets
+  (`seenNight` in `src/sky/Weather.ts`): the moonlit sky and its clouds read dark over the island,
+  while the land, the near sea and the near air keep the light the sky gives them. The far sea
+  and the far air meet the drawn sky at the horizon, and the exposure is set by the light, not by
+  the darker sky.
   Every night has its moon, up from dusk to dawn: the phase shows only on the drawn moon and
   never darkens the night.
 - The island reads by moonlight and starlight; the twilight falls into the night with no step

@@ -919,9 +919,19 @@ export class Atmosphere {
 	 * behind the clouds, Sky.ts `gapSky`, which each body takes at its own height). */
 	skyRadiance( dir: V3, polarised = true, gains?: { sun: F; moon: F } ): V3 {
 
+		const shares = this.skyShares( dir, polarised, gains );
+		return shares.sun.add( shares.moon );
+
+	}
+
+	/** The sun's and the moon's shares of the sky toward `dir` apart (`skyRadiance`'s two terms,
+	 * each times its gain when `gains` is given): the exposure's meter weighs the night sky's seen
+	 * gain on the moon's share by them (post/Metering.ts). */
+	skyShares( dir: V3, polarised = true, gains?: { sun: F; moon: F } ): { sun: V3; moon: V3 } {
+
 		const sun = this.bodySky( dir, 0, this.sunDir, this.sunIlluminance, polarised );
 		const moon = this.bodySky( dir, 1, this.moonDir, this.moonIlluminance, polarised );
-		return gains ? sun.mul( gains.sun ).add( moon.mul( gains.moon ) ) : sun.add( moon );
+		return gains ? { sun: sun.mul( gains.sun ), moon: moon.mul( gains.moon ) } : { sun, moon };
 
 	}
 

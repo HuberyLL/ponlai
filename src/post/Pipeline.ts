@@ -1259,7 +1259,7 @@ export class Pipeline {
 		// the metering histograms of hdr (without the composite pass they are never taken, and the
 		// meter reads none) and the meter, from the sky's geometric-mean luminance (Exposure.ts; the
 		// log the dome's metering illuminance is made of, set by main.ts before the pipeline)
-		const metering = this.metering = new Metering( g.texture( hdr ?? sceneColor ), g.texture( meterLight ), renderSize );
+		const metering = this.metering = new Metering( g.texture( hdr ?? sceneColor ), g.texture( meterLight ), tSurfaceDepth, renderSize, { projInv: this.u.projInv, cameraWorld: this.u.cameraWorld, atmosphere: this.sky.atmosphere, gains: this.sky.gapGain } );
 		metering.buildMeter( shared.skyMeterLog2, g.texture( exposureStatePrev ) );
 		// the adaptation starts over at every cut, in every mode (SceneEvents.ts; the temporal modes'
 		// camera jumps that no event covers through Motion.ts)
@@ -1899,7 +1899,7 @@ export class Pipeline {
 		} );
 		// the metering histograms of hdr and meterLight, after the composite and before the bloom,
 		// which reads this frame's exposure (Metering.ts)
-		if ( hdr ) metering.histogramPass( g, hdr, meterLight );
+		if ( hdr ) metering.histogramPass( g, hdr, meterLight, surfaceDepth );
 		// the meter: the exposure state from the histograms, which every pass after it reads (and the
 		// next frame, from its copy)
 		const exposureState = metering.meterPass( g, this.resources.exposureState, exposureStatePrev );
