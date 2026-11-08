@@ -86,7 +86,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     view's elevation (`REFLECTION_BAND`) a low sun's lift of the sky's light (shared.ts
 //     `skyLift`), so the far sea keeps the band it mirrors, never brighter than the sky over the
 //     horizon (the lobe, the horizon's level and its darkening are means over what no pixel
-//     resolves, the slopes and the waves' occlusion, not a grade of the sky's colour); both read the sea's slopes before the waves' damping, so a lee stands level with the sea round it, never a pale tongue
+//     resolves, the slopes and the waves' occlusion, not a grade of the sky's colour); by night the
+//     far sea's reflection comes, with the distance, to the night sky as the dome draws it
+//     (SEEN_SKY: the dome's night sky stands below the light it sheds, which the bake holds); both read the sea's slopes before the waves' damping, so a lee stands level with the sea round it, never a pale tongue
 //     of a mirror's reflectance; the screen-space reflection of the cliffs and the islanders behind
 //     tidewater's gate (rays near the horizon, reflectance over 0.05)
 //   - the key's specular: the sun's Beckmann lobe of the base roughness and the slopes the pixel
@@ -345,6 +347,12 @@ const BELOW_HORIZON = 0.6;
 // comes into the reflection: the far sea mirrors the low band of the sky straight across, which the
 // lift does not raise, and stays under the sky over the horizon.
 const REFLECTION_BAND = { ramp: 0.18 } as const;
+
+// The distances (m) over which the sky's reflection comes to the night sky as the dome draws it
+// (shared.ts `seenNight`): the dome's night sky stands below the light it sheds, which the sea's
+// reflection reads from the environment's bake, so the far sea would stand as a bright band under
+// a darker sky; the near sea keeps the light the sky sheds, as the land does.
+const SEEN_SKY = { near: 200, far: 2000 } as const;
 
 // The mean surface's reflection over the slopes no pixel resolves, all from one spread: the slopes
 // along the view a Gaussian of sigmaV = sqrt( sigma^2 / 2 ) x `slopeScale`, sigma^2 the mean square
@@ -1092,8 +1100,12 @@ export class Water {
 			// (a low sun's lift of the sky's light, shared.ts `skyLift`, by the band's ramp: the far sea
 			// keeps the band it mirrors and stays under the sky over the horizon; written 1 + ( lift - 1 )
 			// ramp, exactly 1 where there is no lift)
+			// (the night sky as the dome draws it, shared.ts `seenNight`, faded in with the distance:
+			// the far sea meets the seen sky at the horizon, the near sea keeps the light the sky
+			// sheds; written 1 + ( seen - 1 ) fade, exactly 1 by day)
+			const seenSky = shared.seenNight.sub( 1 ).mul( smoothstep( SEEN_SKY.near, SEEN_SKY.far, length( toCam ) ) ).add( 1 );
 			const refl = mix( horizon.mul( BELOW_HORIZON ), skyReflection, skyShare )
-				.mul( shared.skyLift.sub( 1 ).mul( bandRamp ).add( 1 ) ).toVar();
+				.mul( shared.skyLift.sub( 1 ).mul( bandRamp ).add( 1 ) ).mul( seenSky ).toVar();
 			// The cliffs and the islanders from the screen: only rays near the horizon can meet them,
 			// and where the reflectance is small the reflection cannot be seen (tidewater's gate).
 			If( u.ssr.greaterThan( 0.5 ).and( Rraw.y.lessThan( 0.45 ) ).and( Fr.greaterThan( quality.ssrMinFresnel ) ), () => {

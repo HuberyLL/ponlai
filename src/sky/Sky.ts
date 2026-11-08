@@ -77,7 +77,12 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // gain at the moon's height, `track`), and the stars: no airglow and no night floor of its own (the
 // clouds and the distant sea take a faint one, `displayNightAmbient`). The stars are drawn where
 // the eye sees the sky and never baked into the light the sky lends: starlight is a few hundredths
-// of the moonlit sky's light on level ground. The moon stands fixed in the sky (DayCycle.ts MOON): it is drawn and
+// of the moonlit sky's light on level ground. The night sky the dome draws stands below the light
+// it sheds (Weather.ts `seenNight`, by the display's night weight: `track`, `domeGapGain`;
+// shared.ts `seenNight`): the moon's sky behind the clouds and the clouds as drawn, never the bakes, the
+// stars, the moon's disc or the haze laid over them, so the land and the sea keep the light it
+// gives and only the sky over them darkens; the far sea's reflection meets it (ocean/Water.ts
+// SEEN_SKY). The moon stands fixed in the sky (DayCycle.ts MOON): it is drawn and
 // lights the sky (and through the atmosphere's `moonDir` the clouds and the haze) from there, the
 // island takes its light from there (lighting/KeyLift.ts), and the key's direction (`keyDir`)
 // turns there over the handoff and holds there all night, so the water's glint and the clouds'
@@ -1357,6 +1362,14 @@ export class Sky {
 	// (CLEAR_SKY, `gapSky`), on the sun's share of the sky at the sun's height and on the moon's at the
 	// moon's; live, as the atmosphere's own uniforms are, and read by the bakes too
 	private gapGain = { sun: uniform( 1 ), moon: uniform( 1 ) };
+	// The night sky as the dome draws it (Weather.ts `seenNight`): 2^-( the weather's stops times
+	// the display's night weight ), on the moon's sky behind the clouds (`domeGapGain.moon`) and on
+	// the clouds as the dome draws them (`seenDeck`), never on the bakes (`seenDeckBake`). Values
+	// of uniforms only, 1 by day, so the day's shaders and bytes are unchanged (a multiply in the
+	// shader, even by 1, moved day pixels by a level through fused multiply-adds). The far sea
+	// takes it as it meets the sky (shared.ts `seenNight`, Water.ts `SEEN_SKY`).
+	private domeGapGain = { sun: this.gapGain.sun, moon: uniform( 1 ) };
+	private seenDeckBake = 1;
 	// the weather's cloud shadow floor and cast shadow on the island (Weather.ts `cloudFloor`, `castShadow`)
 	// (the sea's floor too: `seaKeyFloor`)
 	private keyCloudFloor = uniform( 0 );
@@ -1765,7 +1778,7 @@ export class Sky {
 			// What the clouds hide: the clear sky, the discs and the stars (below the horizon, the
 			// reflection with its own clouds), seen through the haze along the whole way; the discs
 			// take the clouds' transmittance once, here, and nowhere else.
-			const behind = select( above, this.gapSky( vec3( d.x, max( d.y, 0 ), d.z ) ).mul( this.displayAmbientGain ), lower.rgb )
+			const behind = select( above, this.gapSky( vec3( d.x, max( d.y, 0 ), d.z ), this.domeGapGain ).mul( this.displayAmbientGain ), lower.rgb )
 				.add( disk.add( this.night.moon( d ) ).add( stars ).mul( select( above, float( 1 ), lower.a ) ) );
 			const through = select( above, cloud.a, float( 1 ) ).toVar();
 			// the closed deck's glow over the clouds above the horizon (`deckGlow`), before the haze,
@@ -2299,7 +2312,11 @@ export class Sky {
 		const moonLight = this.moonKeyAbove.r * 0.2126 + this.moonKeyAbove.g * 0.7152 + this.moonKeyAbove.b * 0.0722;
 		const sunShare = keyLight > 0 ? Math.max( keyLight - moonLight, 0 ) / keyLight : 0;
 		this.deckDay.value = overcastDeckLight( this.elevation );
-		this.seenDeck.value = 1 - ( 1 - this.clouds.deckSeen.value ) * overcastShare * this.deckDay.value;
+		this.seenDeckBake = 1 - ( 1 - this.clouds.deckSeen.value ) * overcastShare * this.deckDay.value;
+		const seenNight = 2 ** ( - ( weather?.seenNight ?? 0 ) * this.grade.night );
+		shared.seenNight.value = seenNight;
+		this.seenDeck.value = this.seenDeckBake * seenNight;
+		this.domeGapGain.moon.value = this.gapGain.moon.value * seenNight;
 		const floorSun = 1 - overcastShare * sunShare * ( 1 - overcastFloorSun( this.elevation ) );
 		const deckFloor = Math.min( ( weather?.deckFloor ?? 0 ) * floorGain, 1 ) * floorSun;
 		const takeover = skyMix ? deckFloorTakeover( this.elevation, cloudedShare( skyMix ), overcastShare ) : 0;
@@ -2670,7 +2687,7 @@ export class Sky {
 				this.bakeHaze.value = lends || rt === this.small ? 1 : 0;
 				this.bakeGlow.value = lends || rt === this.small ? 0 : 1;
 				this.bakeKeyFloor.value = lends || rt === this.small ? 0 : 1;
-				this.bakeSeenDeck.value = lends || rt === this.small ? 1 : this.seenDeck.value;
+				this.bakeSeenDeck.value = lends || rt === this.small ? 1 : this.seenDeckBake;
 				r.setRenderTarget( rt );
 				( lends ? this.landQuad : this.quad ).render( r );
 
@@ -2961,9 +2978,9 @@ export class Sky {
 	}
 
 	// The open sky behind the clouds, where it shows through them (CLEAR_SKY): the clear day's.
-	private gapSky( direction: V3 ): V3 {
+	private gapSky( direction: V3, gains = this.gapGain ): V3 {
 
-		return this.atmosphere.skyRadiance( direction, true, this.gapGain );
+		return this.atmosphere.skyRadiance( direction, true, gains );
 
 	}
 

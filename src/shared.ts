@@ -71,6 +71,10 @@ export const shared = {
 	// Those draw only under rain and storm, which count as overcast (1), so only through a front from
 	// a clear or fair sky into them under a low sun, by the share of the clear sky left
 	skyLift: uniform( 1 ),
+	// the night sky as the dome draws it, a share of the light it sheds (sky/Sky.ts `track`,
+	// Weather.ts `seenNight`): 1 by day; the far sea's sky reflection takes it as it meets the
+	// horizon (ocean/Water.ts `SEEN_SKY`)
+	seenNight: uniform( 1 ),
 	skyIrradianceSource: vec3( 0 ) as THREE.Node<'vec3'>,
 	// The same as lent to the island after sunset (Sky.islandIrradianceNode): the islanders' fill
 	// under `flags=ambientVolume:0` only (the ambient volume lights them otherwise). It is the probe's
