@@ -45,8 +45,9 @@ import { type Aov, type AovResult, type RingsOptions, type RingsResult, forCellT
 // aov: 'depth' | 'normal' | 'ao' | 'class' returns, instead of the radiance, what each cell of the
 // grid shows (debug/RadianceAov.ts: view depth and the sky's and sea's shares, the world normal, the
 // screen-space occlusion, the kind under `flags=classes`). `rings: { sun, step, count, sky }` returns
-// the luminance around the sun in rings of angle, before and after the bloom (RadianceAov.ts
-// `readRings`). `source: 'sharp'` reads the composite with the bloom added.
+// the luminance around the sun in rings of angle, before and after the bloom, in a sector about it
+// or a range of elevation with `sector`, `elevation`, and per elevation band with `elevationStep`
+// (RadianceAov.ts `readRings`). `source: 'sharp'` reads the composite with the bloom added.
 
 type Box = [ number, number, number, number ];
 export interface RadianceOptions { boxes?: Record<string, Box>; source?: 'opaque' | 'hdr' | 'sharp' | 'meterLight'; image?: [ number, number ]; grid?: [ number, number ]; nonSky?: boolean; cell?: number; texels?: boolean; aov?: Aov; rings?: RingsOptions }

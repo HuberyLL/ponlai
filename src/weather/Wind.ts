@@ -40,12 +40,14 @@ import { PREVAILING_HEADING, type WeatherState } from '../sky/Weather.ts';
 //   below, read by SeaDetail.ts, so a gust crosses from the water onto the meadow and off again
 //   as one patch, at the meadow's pace; farther out tidewater's octaves drift with `displacement`.
 // - the clouds: `displacement`, which Clouds.setDrift turns into each layer's drift aloft;
-//   `direction` for the fronts, the cirrus and the tops' lean (sky/Sky.ts, Clouds.ts).
+//   `direction` for the fronts, the thin layer's streaks and the tops' lean (sky/Sky.ts, Clouds.ts).
 // - the air: `displacement` (the clouds' drift), `velocity` (rain, the storm's spray),
 //   `direction` (the storm sea's foam).
 // - the falling leaves (FallingLeaves.ts), which take several fixed steps between two of the
 //   wind's updates: `windBefore`, the frame's wind moved back by a node's seconds, so the gusts'
 //   scroll and time are still read here alone.
+// - the fog's banks (FogNoise.ts): `displacement` for their drift and `evolutionTime`, the gusts'
+//   time axis rescaled to the banks' own rate, for their change of shape.
 // The wind probe's W5 (`__PONLAI__.windProbe`) reports where each of them travels.
 //
 // The gust field (`gustAt`): one octave of periodic 3D gradient noise, its two horizontal axes the
@@ -337,6 +339,17 @@ export function windBefore( wind: WindUniforms, back: Node<'float'> ): WindState
 		gustTime: wind.gustTime.sub( back.mul( GUST_EVOLUTION ) ),
 		displacement: wind.displacement.sub( wind.velocity.mul( back ) ),
 	} as unknown as WindState & { displacement: Node<'vec2'> };
+
+}
+
+/** An evolution time of `rate` cells a second for a field of its own that the wind reshapes (the
+ * fog's banks, FogNoise.ts): the gusts' time axis rescaled, so it is integrated with the wind's
+ * clocks (a function of the scene clock, held with them) and wraps where they wrap, every
+ * `rate` x CLOCK_PERIOD cells. The reader's field must repeat over that period, as the gust noise
+ * repeats over GUST_TIME_PERIOD. */
+export function evolutionTime( wind: WindState, rate: number ): Node<'float'> {
+
+	return wind.gustTime.mul( rate / GUST_EVOLUTION );
 
 }
 

@@ -11,11 +11,12 @@ art decision changes; images from elsewhere stay out of the repository.
   colour, and wide fields of grass and flowers that move together in the wind. The fantasy lives
   in the world (the island, its everlasting flowers, its creatures from the old texts, later the
   sea's glow at night) and in a light touch on the image, the airy feel of an immortals' island
-  (Penglai). Deep clear water over pale shallows with a sparkling glare toward the sun, chunky
+  (Penglai). Deep clear water over a quiet floor with a sparkling glare toward the sun, chunky
   chiselled stone, a lush meadow with wildflowers, and grass hanging over the rim. Keep the lower
   cliff stone exposed.
-- The light and the image are photographic, as real as tidewater's (its water, its light under
-  the water): the scene is lit by the sun or moon, the sky and the sunlight the ground bounces up.
+- The light and the image are photographic: the scene is lit by the sun or moon, the sky and the
+  sunlight the ground bounces up, and the sea takes that light as sea water does (see the water
+  below).
   The frame is developed in stages: a local tone mapping keeps a bright
   sea, glare or sky from burning out and greying while the land keeps its level (by day only what
   lies well over the lit ground is drawn toward it; under a low sun the land is drawn up as well,
@@ -28,8 +29,9 @@ art decision changes; images from elsewhere stay out of the repository.
   darks; its contrast, shoulder, white and toe adjustable; no saturation of its own, which the
   grade's hue bands set)
   whose working space keeps a low sun's reds from turning yellow; a white balance given as the colour white becomes, by the time and the weather (a clear
-  day cool from noon to a low sun, against the sun's slight warmth, so the lit ground reads a touch
-  cool and the shade, the sky and the sea clearly cool; the golden hour a little warm, the clouded
+  day cool from noon to a low sun, against the sun's warmth, so sunlit rock reads a pale neutral, the
+  meadow keeps its green and the sky and the sea stay blue, while the shade stays the colour of what
+  stands in it, never blue; the golden hour a little warm, the clouded
   skies and the night cool); a bloom only on what is truly bright (the sun's
   glints on the sea, the sun, a moonlit path), never a veil over the whole frame, and next to none
   under a clouded sky; a vignette that darkens only the corners, and no grain; and two grade
@@ -59,10 +61,10 @@ art decision changes; images from elsewhere stay out of the repository.
   its groves and its cliffs: `src/lighting/AmbientSample.ts`). At noon on a clear or fair day the
   open meadow's lit side is about 3 to 4.5 times its shade; a low sun's lit side comes down toward
   its shade, and that is left as it is. A grove's floor in shade should read about half the open
-  shade at its edge, darker deeper in. Its culms in shade are at least as light as the floor
-  beside them, never dark silhouettes, and the faces toward the grove's open sides should read
-  lighter than those toward its inside. Where a culm or a stone meets the ground the contact
-  darkens by a tenth at most, gone within about a metre: a grounding, never a dark ring. Where
+  shade at its edge, darker deeper in. Its culms in shade stand a little darker than the crowns
+  over them, dark green stems against the light between, and the faces toward the grove's open
+  sides read lighter than those toward its inside. Where a culm or a stone meets the ground the
+  contact darkens by a tenth at most, gone within about a metre: a grounding, never a dark ring. Where
   the grass, the culms and the ground's relief close the sky, the shade loses some of its light
   broadly, over metres (the screen-space ambient occlusion, on in high: `src/post/GTAO.ts`, and
   at the turf's roots the share of the sky its blades leave): the ground among the grass in shade
@@ -70,37 +72,17 @@ art decision changes; images from elsewhere stay out of the repository.
   culm's sides a little, lit surfaces not at all. The ambient light is set for the shade with
   that loss in it, never pressed down once more for it, and a loss two terms estimate counts
   once (the turf takes the stronger of the two).
-- The air is a lit medium, a volumetric haze: haze and mist are one volume
-  of air, lit by the sun and the sky and cut by every shadow, thin and layered by height, never a
-  flat tint laid over the frame for an airy feel (that reads as smog). Its density follows what the
-  weather lets one see, and it is coloured: a clear day's air is a blue layer whose light falls to
-  half in about 2 km at the game's camera height, the blue lost first (within a kilometre less than
-  half of it gets through, three kilometres off almost none), so far sea and land turn blue-grey and
-  the low sun's light reddens; a cloudy sky's air is grey and about as thick. It lies as a ground
-  layer with a soft top tens of metres up: the hills rise out of it, the camera stands in its upper
-  half, and the distant haze thins slowly with height. From the game's
-  views the island keeps its colour (at least nine tenths of its light reaches the camera by day)
-  and the haze gathers with distance toward the horizon. The far sea and the low sky end in the same
-  haze: a milky band, brighter than the sky above it, closes over the horizon with no step or dark
-  line where sea meets sky, and fades by 10 - 15 degrees up. Across from the sun
-  the haze lifts the atmosphere's dim low sky (about twice); beside the sun it is flatter than the
-  atmosphere's own glow and dims it a little. The air follows the hour more than anything else: clear before dawn; on calm, dry
-  mornings a mist as the sun comes up, a soft low layer over the whole island that the camera
-  stands in (never a sheet on the sea), near neutral, its band over the horizon a few times as
-  bright as the lit grass in front of it, gone once the sun is 7 degrees up; coloured and even
-  through the day; thick and fully orange at the golden hour, yet paler than the lit ground;
-  thinner after sunset; a visible grey-blue layer by night. A cloudy day's air keeps less colour
-  and shows brighter than a clear day's (about twice with the sun 25 degrees up). It lies over the
-  land, the sea and the low sky alike; the light the sky lends the scene is the atmosphere's alone.
-  Shafts show only where the
-  air is thick enough and lit from the side or behind against darker ground, the haze's own
-  (strongest in the morning mist and at the golden hour, faint at a clear noon); no rays are
-  painted over the sky. The sun's disk is drawn larger than life (1.1 degrees), softly
-  limb-darkened, its edge clean; round it a soft glow sized by the frame, not the field of view, near white at its core and fading
+- The air always carries a visible haze: it is part of this world, the sea's island seen through
+  it. Its shape is physical: the density varies with height alone, a thin ground layer lying on the
+  sea, much denser than a clean sea air near the water and clean above the layer. It answers to
+  neither the camera nor the island, so the island seen from above is clear, while the far sea and
+  the horizon, whose lines of sight run long and low through the layer, are hazed. Where the haze
+  is thick, the player draws in closer to see.
+- The sun's disk is drawn larger than life (1.1 degrees), softly limb-darkened, its edge clean;
+  round it a soft glow sized by the frame, not the field of view, near white at its core and fading
   as the square of the distance past half the frame, with no streaks, ghosts or rings. It weakens
   with the share of the disk left uncovered yet stays wide through a gap in leaves, goes with the
-  disk when the sun leaves the frame, and is weaker against the bright sky round a low sun. Mist also gathers in bright banks and
-  wisps round the island and the cliff's foot (not drawn yet).
+  disk when the sun leaves the frame, and is weaker against the bright sky round a low sun.
 - Real phenomena are not exaggerated; no glow round every highlight, and no hue turned further
   than a few degrees (the grade turns no hue more than 7 degrees).
 - The exposure is metered from the light falling on what the frame shows, not the light leaving it,
@@ -109,36 +91,80 @@ art decision changes; images from elsewhere stay out of the repository.
   toward a low sun against one away from it. The frame darkens with the light: a clear noon shows a
   sunlit grey card on level ground at a screen code of about 0.70 to 0.75 (its open shade near
   0.15), and as the sun goes down the card goes down with it, the more the lower the sun, so a low
-  sun reads as a low sun (in the golden hour, with the sun at 3 degrees, a grey card on the island
-  shows about ( 0.5, 0.3, 0.05 ) on screen, the local tone's lift included); the deep night shows a
-  moonlit grey card at a green code of about 0.1 to 0.2, and holds its exposure whatever the moon. A
-  clouded sky is metered by the view's own light: in the view of the whole island the ground shows
-  about three quarters of a stop under a clear day's sunlit ground at the same hour, on a cloudy and
-  an overcast day alike, and other views lie within about half a stop of that. A sun in the frame
-  may read a little brighter than its eye-adapting exposure would show it. The night keeps the
-  moonlit island readable (see Night).
+  sun reads as a low sun (in the golden hour, with the sun at 3 degrees, a sunlit cliff is orange
+  with deep brown shade, a stop or more under its light, and the sky over it a shade redder and
+  dimmer, not a yellow-gold face under a pale sky); the deep night shows a
+  moonlit grey card on level ground at a green code of about 0.17 to 0.23 (0.12 to 0.16 on the
+  slopes the moon grazes), and holds its exposure whatever the moon. A
+  clouded sky is metered by the sky itself, with a key of its own: the land under a deck is lit by
+  that deck, so the sky keeps the same relation to the meadow at every height, and the land
+  follows the sky's own fall into the evening with no step where a gap, or a sun dropping through a
+  cloud's edge, would move a meter's reading. Under a deck the land is lit by a softened key along
+  the sun and by the deck's sky light, under overcast a sky light of its own, stronger than the
+  sea's. Under overcast the closed deck reads lighter than the meadow under it (a display lightness
+  of about 0.47 behind a meadow of 0.34 to 0.40), lighter still toward the sun, where the lit cloud
+  about the sun's place glows broad and soft, and graded more flatly from the zenith to the horizon
+  than the standard overcast sky's 3 : 1; the land takes its light from the sun's side of the deck as the deck shows it.
+  The sky's lightness changes little between a sun at 15 degrees and one at 22. With the
+  sun high the deck
+  passes on little of a clear sky's blue, so the light lent to the land is a warm grey. A cloudy sky's deck lets go as the sun falls under about 6
+  degrees: by 3 the low sun shines under the broken deck and the view's own light sets the exposure,
+  so a cloudy evening comes on by degrees: dark at sunset, neither black nor lit yellow, the meadow
+  never brighter at a lower sun but where the cloud opens for a moment. Overcast is a closed, dark
+  deck at every sun height, morning and evening alike: it does not break up at a low sun, and its
+  light leaves only with the sun's own, over the twilight: the land under it keeps the deck's soft
+  light through sunset, with no flash of the setting beam on the slopes toward it, and goes down
+  into the night as the deck's light does. Its sky is brightest about the sun's
+  place and dim looking away, light near the sun, a near-neutral pale grey there, and a dark
+  blue-green grey away from it; the meadow under it a quieter green, its most brightly lit grass
+  muted toward grey. The land under it is lit soft: the deck's sky light from every side, its glow about the sun's place included, lifted
+  well over a cloudy day's. Under the water the floor takes that light as the water column passes it
+  down, so the shallows' floor is lit by the same deck, dimmed by the water above it the deeper it
+  lies. The sun reaches it only through the deck: none under its rolls, and where a thinned
+  region of the deck lies along the sun, a share of it in large patches that move with the deck,
+  which adds a few per cent to the meadow and draws the faint shadows of everything taller than the
+  meadow; the meadow does not shade itself in it, so the sward's own shade is the one the sky light
+  finds under its canopy, while the bamboo, the stones and the bare ground keep their contact
+  shade. Through the twilight the land goes a little dark and hands
+  over to the moonlit night, the open sea darker than the land before the night lifts it. A sun in
+  the frame may read a little brighter than its eye-adapting exposure would show it. The night keeps
+  the moonlit island readable (see Night).
 - No lens effects a photograph of a real place would not have: no tilt-shift miniature blur, no
   lens flares forced into the frame.
-- The water is tidewater's physically based model with clear water a little less pure than its
-  tropical one: teal in the basin, a green turquoise (jade) over the sandy shallows, never a
-  saturated navy or a blue-cyan; greener still read as a lake beside the meadow. The shallows are
-  clear to the floor in everyday weather: the stones and the sunlight's network on the sand show
-  through the water, which wobbles them but never breaks them into crumbs, and the calm water
-  carries no film of foam.
+- The water is sea water with measured optics: clear open-ocean water with a little
+  phytoplankton (about 0.5 mg of chlorophyll a cubic metre), which takes the red out within a few
+  metres and the green and blue over tens. Its colour follows from that and the light on it, with
+  no colour of its own laid on: the open, deep water is a deep blue, the light its body scatters
+  back under the reflection of the sky; over the shallows the floor shows through, its sand,
+  seagrass and stone dimmed and turned bluer by the water over it, the more the deeper it lies, with
+  no bright rim round the island. Under cloud the sea reflects the deck's grey and its body dims
+  with the deck's light; where a gap in the cloud lets the sun through, its glint on the waves lies
+  on the sea as a silver sheen, the same reflection of the sun as on a clear day, spread by the
+  waves' slopes. At sunset the reflection takes the low sky's colour. A calm lee stands level with
+  the sea round it. It stays clear to the floor in everyday weather: the stones and the seagrass's edges show
+  through the water down to some 5 to 7 m, which wobbles them but never breaks them into crumbs,
+  and the calm water carries no film of foam.
 - The look is judged from the game's own view, the island camera zoomed out over the island, as
   well as close up. Light reads there through its direction and large-scale light and shade (lit
   and shaded slopes and cliffs, a glint or moon path on the sea, later warm lights and what stands
   on the island), not through fine detail or post effects, which vanish at that distance.
-- The island view's default direction is fixed and looks a little east of the meridian the sun and
-  moon culminate on: the full moon's path is in the frame through the evening and at midnight, and
+- The sun keeps a mid-latitude equinox's path, 52 degrees up at noon, rising due east at 6 and
+  setting due west at 18: high enough at noon to read as a bright day, low enough that slopes keep
+  a lit and a shaded side in the island view, and slow near the horizon (11.8 degrees an hour), so
+  the low sun's light lasts. A higher noon is a subtropical light, at odds with the island's
+  temperate bamboo and meadow (`src/sky/DayCycle.ts` NOON_ELEVATION).
+- The island view's default direction is fixed and looks a little east of the noon meridian, where
+  the sun culminates and the moon stands: the full moon's path is in the frame through the evening and at midnight, and
   by day the sun lights the cliffs from the side (a lit and a shaded side) without filling the
   frame with glare. It never follows the clock, so returning to the view never jumps.
 - Sunlit stone keeps its grain and its grey: a cliff face turned to the sun is the brightest
   ground in the frame but never a flat cream-white sheet. The stone is kept darker than real
   limestone so that the exposure set for the meadow leaves it below the curve's shoulder, but
   lighter than the meadow's albedo (about one and a half times it), so a face lit from the side
-  stands out from the grass as a pale cliff rather than a dark band. A wall
-  over bright shallows takes their teal light from below.
+  stands out from the grass as a pale cliff rather than a dark band. The wall's foot, in and under
+  the water, is the same stone wet: under the water it keeps nearly all of its dry albedo, and it
+  darkens only as the water over it dims and colours the floor beside it, so nothing pale runs
+  along it at a low sun or under cloud.
 
 ## Three layers in one world
 
@@ -165,8 +191,9 @@ art decision changes; images from elsewhere stay out of the repository.
   shed them; elsewhere the shelf is mostly clear sand and platform, never stones sprinkled evenly
   round the coast.
 - The floor round the coast zones as a real rocky shore's: cobbles with an olive film close against
-  the cliff's foot, then a belt of clean sand whose ripples, a hand's width apart, run along the
-  coast, and seagrass only below the swell's reach (from about 3.5 m down), in meadows tens of
+  the cliff's foot, rounded stones in a low mottle close to the sand of their depth and a little
+  greyer at every hour, with silted sand between them and thinning out within a few metres, then a
+  belt of clean sand whose ripples, a hand's width apart, run along the coast, and seagrass only below the swell's reach (from about 3.5 m down), in meadows tens of
   metres across with sharp edges and sand holes. Nothing on the floor runs one way across the
   whole sea.
 - The cliffs read as natural rock, never masonry: no level courses or evenly spaced joints, no
@@ -204,13 +231,23 @@ art decision changes; images from elsewhere stay out of the repository.
   blade and clump its own value and height, which from the game's view grains the lawn into a
   scatter of tufts over dark ground.
   The materials keep albedos within real ones: the meadow's blades a sunlit leaf's
-  (about 0.08), the cliff's stone about twice the grass, the trees' leaves about a fifth lighter
-  than the grass, so a crown parts from the sward under it; the frame's brightness is the
-  exposure's, never albedos pushed past real ones.
+  (about 0.08), the cliff's stone about twice the grass, the trees' leaves about half again as
+  light as the grass as painted, a cooler green with less red than the blades and some blue, and a
+  little darker than it as a crown draws them, its inner leaves greyed, so a crown stands a little
+  under the sward's value; the frame's brightness is the exposure's, never albedos pushed past real
+  ones. A tree's leaves are nearly as matte as the blades: no pale sheen over a crown, whose lit
+  leaves stay a plain green and whose depth stays dark. Under a sun of any height the crown's
+  shaded leaves still take a share of it through the leaves above, so a crown's dark half reads
+  green rather than as dark and as blue as the sky; at a sun on the horizon, under a closed sky and
+  by night it takes none. A leaf lit from behind glows on its own albedo, so a crown seen
+  against the sun has no black side. Under a closed sky a crown keeps its green as the lawn does, a
+  dark, rich green, the sky's light having passed through and off its leaves.
   One grass colour, a bright, fresh, natural green, matte with only a faint gloss (no pale sheen
   over the blades, which reads as plastic): the gaps between blades a deep, cooler green (never
   near black) under tips that stand out lighter and yellow-green where the sun shines through
-  them; looking toward the sun the whole lawn glows, away from it it is plainer and greener; no
+  them; under a closed sky the lawn keeps its green, the sky's light having passed among the blades,
+  and does not turn yellow when the sun goes in; looking toward the sun the whole lawn glows, away
+  from it it is plainer and greener; no
   fields of tone, dryness or bare earth (they broke the lawn into what read from the overview as
   camouflage and dark blotches), and no pattern of dots on the blades. The island top is one
   sward, about 0.5 m, with no zones across it: tiers of height and tint by the soil (a short
@@ -246,7 +283,7 @@ art decision changes; images from elsewhere stay out of the repository.
   bare earth only in its few gaps, never thin grass over brown ground, and never a ground that
   changes colour as the camera zooms. At the lip the turf ends on its soil over the stone, never a
   dark hole among the flowers. By night
-  the lawn is a dark, readable green cooled toward blue (see Night). Toward a sheltered coast the grass runs to the
+  the lawn is a dark, quiet green with a hint of cool (see Night). Toward a sheltered coast the grass runs to the
   lip and stands there, and the same grass grows out over it: its tufts at the lip spill over the
   edge, fine blades that arch over and hang down the wall, lying on the stone, never through it, and the lip alternates between
   overgrown stretches and cut-open
@@ -289,10 +326,11 @@ art decision changes; images from elsewhere stay out of the repository.
   glades of meadow between, never one round crown nor a closed forest. No placement rule: it
   stands at the cliff's edge as anywhere else. Its culms are tall and slender, bare to about half
   their height, their leaves narrow and in loose drooping layers, so the culms show from above
-  between them. Its materials keep close in value, as a painted grove does: the culms (a dusty
-  purple, the young ones green) and the leaves about as light as the meadow's grass, the grove
-  reading by its light and shade, not by dark colours. A grove is dark inside, its canopy hiding
-  most of the sky from its floor, its culms lit where the sun finds them. Its floor is the meadow's
+  between them. Its stems are a mid to dark green, one family with its leaves and the meadow and
+  most of the time darker than the crowns, and a minority of old culms turn a dim dusty purple at
+  the same lightness, so the purple of the old text shows up close and the grove still reads as
+  one green, by its light and shade. A grove is dark inside, its canopy hiding most of the sky from
+  its floor, its culms lit where the sun finds them. Its floor is the meadow's
   grass up to a couple of metres inside the culm line, then clearings of fallen leaves, about
   half of the floor where a grove is deep, with ragged edges about a metre across, a few stray
   tufts of grass left in them, and small bare discs under its clusters of young shoots. The
@@ -385,26 +423,51 @@ art decision changes; images from elsewhere stay out of the repository.
 - One dominant key light, sun by day and moon by night. By day the sun is near white and the air
   hazy: the horizon reads milky white rather than a cyan band, brightest toward the sun. The
   sun's light warms from about 20 degrees, turns orange by 10 and orange red near the horizon.
-  After sunset the island stays readable: through the minutes between the sun's last light and the moon's, the meadow keeps its light (warm under the
-  afterglow, then green), never dipping below its night brightness; the light that holds it up is
-  lent to the island alone. The
+  After sunset the island stays readable: through the minutes between the sun's last light and the moon's, the meadow goes down
+  with the light (warm under the afterglow, then green) and settles into the night without a dip
+  or a lift: it is never brighter at a lower sun, and the night's light comes in only
+  as fast as the twilight's leaves, so the night is the twilight's end. The light that holds it up
+  is the sky's own, raised for the island alone, and only the evening's is warm: at dawn the land goes from the night's
+  blue into the day with no warm stretch. The
   sun is drawn at twice its true size, the moon at about five times (some 2.6 degrees across),
   so it reads as the night's light source; it is no brighter per unit of sky for it, and the
   moonlight on the island keeps its level. The day cycle is authored, not astronomical.
 - The sunlit ground lights what stands over it from below, one bounce for every lit surface: the
-  shallows' sand the cliff's walls, the meadow the islanders' undersides; strongest around midday.
+  shallows the cliff's walls, faintly, the meadow the islanders' undersides; strongest around midday.
 - Bad weather dims and desaturates the existing light and thickens the air as its visibility
-  falls; the haze it adds is the air's own, lit and shaded like the rest of the scene, never a grey
-  screen veil, and it stays dimmer and greyer than a clear day. The haze starts at the camera, as
-  air does, yet from the game's views the island's foreground stays clear (a few percent of veil
-  from 45 to 190 m). Sea fog is a low layer at the cliff's foot that may surround the island,
-  never a uniform tint.
+  falls, and it stays dimmer and greyer than a clear day.
 - Weather changes sweep the sky as a front from upwind. The clouds drift downwind with the wind
-  aloft, faster than the surface wind (the cumulus about twice it, the cirrus about three times,
-  along their fibres), so they never move against the grass and the sea.
-- Through sunset the sky's light takes a gain of its own: the golden hour's warm one down to a sun
-  at 2 degrees, then a continuous move to the night key by -6 degrees. It sets the dusk's warm
-  light, and where it colours the sky it decides. Beyond it, no
+  aloft, faster than the surface wind (the cumulus and the thin layer about twice it),
+  so they never move against the grass and the sea.
+- The clouds stand where such clouds stand: the clear and fair skies' cumulus from about 4 km up,
+  cloudy's and overcast's deck low, its base under a kilometre and its tops near 3 km, so its
+  masses are near and wide overhead and close into a flat, packed floor toward the horizon, seen
+  through little of the air's haze; a front between the two moves the deck with the weather. The
+  deck's base is lit by what comes down through it, the light on its tops passed through the
+  cloud above, with no gain or tint of its own: thin parts show lighter than the thick masses
+  beside them, and the deck reads near grey. The air under it is lit by the deck and by the sea's
+  reflection of it rather than by a clear sky, so the haze in front of the clouds is their grey.
+- Clear and fair skies hold a thin layer of silky fibres about 8.5 km up, combed along the wind
+  aloft and gathered in patches with blue sky between them, closing up toward the horizon in
+  perspective. The fibres bend and hook, run thick and thin along their length and fray at their
+  ends, and lie at two scales turned against each other, so they are neither ruled lines nor
+  strokes of even width and no two run quite parallel. The patches stay apart: toward the horizon
+  the layer thins as its fibres blur together, so even toward a low sun the sky a few degrees over
+  the horizon stays clear, with no bright sheet round the sun. By day the layer is faint and white,
+  a little lighter than the sky round it (a few hundredths of Oklab lightness at most), never what
+  the eye goes to first; the cumulus is drawn over it, and cloudy and overcast skies have none.
+  Each part of it is lit by the sun as it stands over that part, so after sunset and before
+  sunrise the side away from the sun goes out first, with the sun about 1.5 degrees under the
+  horizon, and the side toward it last, near 3 degrees under, warmest just before it goes.
+- The sky's light takes a gain of its own by the sun's height, the rising sun's apart from the
+  setting sun's. Through sunset it runs from the golden hour's warm key into a dusk key, more
+  orange still, at a sun 1 degree under the horizon, then moves on to the night key by -6 degrees:
+  the glow stands low in the west after the sun has gone and is the brightest thing in the picture.
+  The morning is not the evening turned round: its key is near grey, its display white cold, so
+  the sky, the water and the shaded rock are blue together at sunrise, and only a face turned to
+  the sun takes a warm colour, a pale one. On a clear morning the night goes early: with the sun
+  still 7 degrees under the horizon the air is already blue over one thin pink band, and the sea a
+  clear blue under it. Where the gain colours the sky it decides. Beyond it, no
   painted pink, magenta or deep-blue twilight, which dyes the sea one flat colour and reads as a
   filter; twilight's mood comes from the light on the island.
 - Rain is light streaks and ripples on the water. Wetness darkens rock and plants within small
@@ -416,25 +479,29 @@ art decision changes; images from elsewhere stay out of the repository.
 - The night takes the day's curve and grade under the moon's own light: its key from one side,
   its shade drawn up a little (as an eye adapted to the dark sees it), so the moonlit meadow still
   shows its clumps' lit and shaded sides as the day does. The night is cool: as the rods take over
-  from the cones, dark colours come up and turn blue (the Purkinje shift), so the moonlit meadow
-  cools toward blue while its grass still reads green, the shade, the sea and the sky a little
-  more, and the reds darken. Its exposure keeps the moonlit island readable and the moon's path on the sea crisp.
+  from the cones, dark colours come up and turn blue (the Purkinje shift), but the blue belongs to
+  the sky and the sea: the land under them goes dark and quiet, far less saturated than they are,
+  the meadow nearly black with a hint of cool green, the rock a cool grey that catches the moon and
+  stands as the brightest thing on the island. Its exposure keeps the moonlit island readable and the moon's path on the sea crisp,
+  and that path is pale: the moon's blue stays in the water and the sky, level with each other, and never flashes off the glint.
   Every night has its moon, up from dusk to dawn: the phase shows only on the drawn moon and
   never darkens the night.
-- The island reads by moonlight and starlight; twilight is never darker than the night. The
-  moon takes over the key soon after the sun has gone.
-- The moon keeps a lower orbit than the sun (it culminates at 20 degrees, not 62), rising due
-  east at sunset and setting due west at sunrise, so seen from the game's overview its light
-  comes in at a slant: slopes show a lit and a shaded side and the sea carries a moon path, where
-  a moon near the zenith lit the island flat. The moon path and the moonlit meadow glow softly in
-  that view too. While it is up the moon is drawn where the island takes its light from (one fixed
-  place all night, a little above its orbit's culmination), and the glow of the air around it
-  comes from there too, so the disk, its glow and the light on the land stand together.
-- The night meadow is a dark, readable green cooled toward blue under the moon (not black); stone,
+- The island reads by moonlight and starlight; the twilight falls into the night with no step
+  back up, under every sky. The moon takes over the key soon after the sun has gone.
+- The moon stands fixed in the sky, 20 degrees up on the noon meridian, all night and every night
+  (`src/sky/DayCycle.ts` MOON). Seen from the game's overview its light comes in at a slant: slopes
+  show a lit and a shaded side, its shadows run long and the sea carries a moon path, where a moon
+  near the zenith lit the island flat. The moon path and the moonlit meadow glow softly in that
+  view too. It neither rises nor sets, so the night's composition holds while the game is played.
+  The moon is drawn where the island takes its light from, and the glow of the air around it comes
+  from there too, so the disk, its glow and the light on the land stand together.
+- The night meadow is a dark, quiet green with a hint of cool under the moon (not black); stone,
   sand and skin stay apart from it and from each other in tone.
-- The stars and Milky Way are the real sky as seen near 28 degrees south, points with a natural
-  spread of brightness, below white except the brightest few; only those near the horizon
-  scintillate.
+- The stars and Milky Way are the real sky as seen from 38 degrees south (the latitude the sun's
+  path is set at) at a sidereal time of 14h, fixed: they neither turn through the night nor drift
+  over the year, so the night's composition holds, with the Milky Way rising out of the sea in the
+  horizon view (`src/sky/DayCycle.ts` STARS). They are points with a natural spread of brightness,
+  below white except the brightest few; only those near the horizon scintillate.
 
 ## Islanders
 

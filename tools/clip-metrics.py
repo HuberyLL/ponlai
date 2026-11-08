@@ -469,7 +469,7 @@ def twigs( lum, m ):
 
 def star_points( lum, m, bg=None ):
 
-	# excess over the local sky (a 7 x 7 median, `bg` when given), so a gradient or cirrus behind
+	# excess over the local sky (a 7 x 7 median, `bg` when given), so a gradient or thin cloud behind
 	# the stars does not hide the faint ones or count as stars; visible stars only (the mask's
 	# `visible` level)
 	bg = ndi.median_filter( lum, size=7 ) if bg is None else bg
@@ -1113,7 +1113,7 @@ def calibrate( sources, overlays=None, size=None ):
 	  twig.tophat      per twig crop, Otsu's split of the black top-hat over its pixels above 2 levels,
 	                   at least 6
 	  stars.excess     per star crop, max( 8, 6 x the MAD of L over its 7 x 7 median ): above the
-	                   sky's own grain and the cirrus' texture
+	                   sky's own grain and the thin cloud layer's texture
 	  glints.level     per glint crop, the MSAA crop's 99.9th percentile of L (at least 160); where that
 	                   is 250 or more, the crop lies in the sun's burned-out glitter path (the glints
 	                   clip, AGENTS.md), whose top thousandth is the clipped plateau itself: then 250,

@@ -58,6 +58,7 @@ import path from 'node:path';
 import { acquireGpuLock } from './gpu-lock.mjs';
 import { launchCapture } from './capture-browser.mjs';
 import { installScript } from './pipeline-trace.mjs';
+import { installWaitFrames } from './page-eval.mjs';
 
 const args = process.argv.slice( 2 );
 const opt = ( name, fallback = null ) => {
@@ -184,6 +185,7 @@ async function runOne( quality, aa ) {
 	const page = await newPage();
 	try {
 
+		await installWaitFrames( page );
 		page.on( 'pageerror', ( e ) => errors.push( `pageerror: ${ e.message }` ) );
 		page.on( 'console', ( m ) => { if ( m.type() === 'error' ) errors.push( `console: ${ m.text() }` ); } );
 		await page.addInitScript( COUNTER );
@@ -342,7 +344,8 @@ async function apply( page, step, notes ) {
 			const done = await page.evaluate( async () => {
 
 				const s = window.__PONLAI__, p = s.pipeline, S = p.settings;
-				const wait = ( n ) => new Promise( ( resolve ) => { const end = s.renderer.info.frame + n; const tick = () => s.renderer.info.frame >= end ? resolve() : requestAnimationFrame( tick ); tick(); } );
+				// n of the page's rendered frames (tools/page-eval.mjs WAIT_FRAMES)
+				const wait = ( n ) => window.__waitFrames( n );
 				const offset = S.exposureOffset;
 				S.exposureOffset = offset + 1; await wait( 3 ); S.exposureOffset = offset;
 				return true;

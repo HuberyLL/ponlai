@@ -15,9 +15,9 @@ type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
 // Screen-space ambient occlusion: a soft, metre-scale loss of the ambient light where the grass,
-// the culms and the ground's relief close the sky over a point, the shade that grounds the meadow's
-// floor between its blades and a grove's floor between its culms, which the ambient volume's 2 m
-// probes and the terrain's vertex occlusion are too coarse to hold. Ground-truth ambient occlusion
+// the culms and the ground's relief close the sky over a point, the shade within the meadow's
+// blades, a grove's leaves and culms and the rock's relief, which the ambient volume's 2 m probes
+// and the terrain's vertex occlusion are too coarse to hold. Ground-truth ambient occlusion
 // (GTAO: Jimenez, Wu, Pesce and Jarabo, "Practical Realtime Strategies for Accurate Indirect
 // Occlusion", Activision, 2016): per pixel a few slices of the view-aligned hemisphere, in each the
 // highest horizon on either side found over the depth, and the cosine-weighted visible arc between
@@ -28,56 +28,58 @@ type V4 = THREE.Node<'vec4'>;
 // follows Intel's XeGTAO (MIT) as a technique; the code is
 // ours.
 //
-// The occlusion is a broad term, never a contact line: in the shade, the ground among the grass
-// about a quarter to a third darker than without it and a grove's floor about a fifth, a culm's
-// sides about a tenth, lit surfaces not at all, a culm's foot no darker than the shade around it,
-// and the darkest tenth of the shade no more than about half. A horizon's weight falls off with its
-// distance in front of the point and over a side's last steps (Thin occluders, below). The
+// The occlusion is a broad term, never a contact line: in the shade, the meadow about a sixth
+// darker than without it at eye height and a fourteenth from the management camera's distance,
+// the leaves under a tenth, a culm's sides a few per cent, lit surfaces a few per cent, the grass
+// at a culm's foot no darker than the shaded grass around it, and the darkest tenth of the shade
+// about a quarter darker. The ground on the turf takes the stronger of this and its roots' share of
+// the sky, the smaller of the two factors (materials/TerrainMaterial.ts `cliffSurface`), and the
+// roots' share is set by the turf's cover alone, whatever stands on it: the soil among the blades,
+// a grove's litter and a culm's foot take none of this wherever the sky a slice leaves is above
+// about a third, where the roots' is the stronger. The ground off the turf (cliff, rock, beach,
+// stones) takes it whole. A horizon's weight falls off with how much nearer the eye than the point
+// it stands and over a side's last steps (Thin occluders, below). The
 // kernel's size follows the view distance continuously: within `fullDistance` (22 m, the
 // management camera's nearest, scaled by the surface's cosine to the view) a slice reaches
 // `maxTexels` (128 half-resolution texels) with four evenly spaced steps a side, and beyond it the
 // reach on screen and the step count (rounded, at least one) fall as 1 / z, so near views see small
-// crevices, far ones the large forms (a cliff, a stand of bamboo), and no tier of steps shows
+// crevices, far ones the large forms, and no tier of steps shows
 // between them. The result is linear in the visibility v over a floor, `base` + ( 1 - `base` ) v,
 // with no curve on it, so the deepest crevice keeps a little sky. Its setting: `base` 0.09, the
 // land's mean albedo, as a direction that sees no sky sees an occluder, which under an even sky
 // sends back its albedo times the sky's radiance (one bounce; the albedo as
-// lighting/AmbientSample.ts CONE_OCCLUSION measures it); `cutoff` 3.3 m, set in our scenes;
-// `recede` 0.1, which the measurements below kept: from 0 to 0.5 it moved the
-// shade's medians by two or three hundredths and left no halo at any value.
-// Measured against the frame without it (at run time), in the lighting layer under a 19-degree and
-// a 50-degree sun, over five views (the management camera's oblique and low views toward and away
-// from the sun, and a near one from the side), on a grid's cells whose direct share of the light
-// is under a quarter (the shade) or over 0.6 (lit): the meadow's shade 21 % darker at the median
-// (16 % in the near view under the 19-degree sun, 28 % under the 50-degree one), bare ground in
-// the shade, a grove's floor among it, 11 % (18 % near), the leaves 12 %, the culms 6 % (5-8 %
-// near), the rock 5 %, lit cells 2 % (4 % near); the darkest tenth of any class at most 41 %.
-// Shaded ground and grass beside a culm (one cell off, on a 128 x 72 grid) are 18 % darker, no
-// more than those farther off (19-24 %): no halo. So the relations above hold, but for the
-// meadow's shade over the whole island, a little under its quarter, and a grove's floor, about
-// half its fifth seen from afar and nearly all of it near.
+// lighting/AmbientSample.ts CONE_OCCLUSION measures it); `cutoff` 0.7 m (The cutoff, below);
+// `recede` 0.1 (Thin occluders, below).
+// Measured against the frame without it (at run time), in the lighting layer under an 18-degree
+// sun, on a 256 x 144 grid's cells whose direct share of the light is under a quarter (the shade)
+// or over 0.6 (lit), over seven views at eye height 4-40 m off in the frame's lower half: the
+// meadow's shade 17 % darker at the median, its darkest tenth 26 %, the leaves 8 % (the two views
+// that show shaded leaves), the rock 3 % (four views), the culms 2 % (six), the ground beside the
+// grass 1 % (six), lit cells 3 %. From the management camera's distance (two views 45 m off,
+// 30 degrees down over a grove-filled meadow) under a 50-degree sun: the meadow's shade 7 %, the
+// ground beside it 2 %, lit cells under 1 %; under the 18-degree one 5 %, 2 % and 1 %. Shaded
+// grass one cell beside a culm is 11 % darker, less than the shaded grass three or more cells off
+// any culm (16 %), over the three views with shaded grass beside culms, and from the management
+// camera's distance under the 50-degree sun 6 % against 9 % (the two views): no halo.
 // Where it and a surface's own occlusion multiply, the product keeps AO_FLOOR (0.25): the deepest
 // crevice or contact keeps a share of the ambient light and never turns black.
 //
-// Every material that reads the ambient light takes it, and multiplies it into its own occlusion:
-// the turf into the share of the sky the blades over it leave (world/Grass.ts `GRASS_ROOTS`,
-// materials/TerrainMaterial.ts `cliffSurface`), the blades into their own from root to tip. The
-// depth it reads holds the blades themselves, so in the meadow it counts the shade those terms
-// already hold a second time: with the turf taking the stronger of its two terms and the blades
-// none, the meadow's shade was 6-12 % darker for it at eye height; as one product, an earlier
-// measurement put it 20-30 % darker (lit grass about 13 %). That is the price of one rule for every
-// receiver, the way games apply the term; at its setting the meadow's shade is about a fifth
-// darker for it (above).
+// Every material that reads the ambient light takes it into its own occlusion: the blades multiply
+// it into their own from root to tip, the other receivers multiply it in whole, and the ground on
+// the turf alone takes the smaller of it and its roots' share of the sky (world/Grass.ts
+// `GRASS_ROOTS`, materials/TerrainMaterial.ts `cliffSurface`; above). The depth it reads holds the
+// blades themselves, so on a blade it counts a second time the shade the blade's own term already
+// holds; the cutoff (below) keeps that count small.
 //
-// It applies to the ambient light only, as games do: the materials that take it multiply it into
+// It applies to the ambient light only: the materials that take it multiply it into
 // their lighting model's ambient occlusion (lighting/AmbientGrade.ts `useAmbientGrade`), so it
 // shades the sky's light, the ground's bounce and, through three's specular occlusion, the sky's
 // reflection, and the ambient grade's `aoStrength` scales it with the rest; the sun's direct light
 // is never touched, and nothing darkens the image after the fact. The receivers mark themselves
 // (`receiveScreenAO`): the sea floor, the bamboo's culms and leaves, the yunpeng and the meadow's
-// blades; the island's ground and the stones take it in their own occlusion (`aoNode`, times the
-// turf's roots), which reaches the same ambient occlusion. The islanders and the game's props do
-// not take it: they are not in the depth it reads (world/OpaquePrepass.ts).
+// blades; the island's ground and the stones take it in their own occlusion (`aoNode`, on the turf
+// the smaller of it and the roots' share), which reaches the same ambient occlusion. The islanders
+// and the game's props do not take it: they are not in the depth it reads (world/OpaquePrepass.ts).
 //
 // The frame (Pipeline.ts), at 4x outside the temporal modes (with the meadow's shade, whose
 // vegetation depth pass it reads):
@@ -117,13 +119,27 @@ type V4 = THREE.Node<'vec4'>;
 //
 // Thin occluders: a depth buffer cannot tell a 10 cm culm from a wall, so the ground behind a culm
 // would take the culm as a horizon and a dark halo would follow its outline. Two things keep a
-// sample from closing the sky alone. Its weight falls with how far it stands in front of the point
-// along the view, to none at `cutoff` (3.3 m), and over the far half of a side's steps; a sample's
+// sample from closing the sky alone. Its weight falls with how much nearer the eye than the point
+// it stands, to none at `cutoff` (0.7 m), and over the far half of a side's steps; a sample's
 // horizon is drawn back toward the lowest one by that loss of weight, so a blade or culm before the
 // distant ground leaves it open. And the horizon recedes: a sample below the horizon so far does
 // not leave it standing, but lets it sink `recede` / steps of the way toward it, so one culm that
 // raised it gives way to the open ground behind it, and only a wall that holds it up step after
 // step keeps the sky closed.
+//
+// The cutoff: 0.7 m, so of what stands nearer the eye than a point, only what is nearer by less
+// than a stride closes its sky (a sample no nearer than the point keeps its whole weight): the
+// blades round a blade, a culm beside the grass, the ground's own relief. At 3.3 m the blades
+// several metres in front of a sunlit blade counted as its occluders. Measured on the ambient light
+// at eye height under an 18-degree sun, over seven views of the meadow (cells 4-40 m off in the
+// frame's lower half whose nine texels show one kind), from 3.3 m to 0.7 m: a sunlit blade's loss
+// 0.50 stop to 0.26 (the same under a 14.5- and a 21-degree sun), the leaves' 0.19 to 0.08 (six
+// views), the culms' 0.11 to 0.03, the rock's 0.07 to 0.03 (five views), the bare ground's none at
+// either (the turf's roots, above). The meadow's shade then reads 0.99 stop over the shaded bare
+// ground among it (0.78 at 3.3 m: six views of a grove's edge, 5.5 m up and 27.5 degrees down,
+// read in the lighting layer, without the albedo); a sunlit blade's direct share of its light
+// under a closed sky falls from 0.82 to 0.79 and in clear from 0.86 to 0.84, as its ambient light
+// rises.
 //
 // On by default where it can run: high's `ao` knob (Quality.ts) builds it at load, at 4x outside the
 // temporal modes with the meadow's shade. `flags=gtao:false` builds without it (nothing here is
@@ -157,7 +173,7 @@ const START_OFFSET = 1e-3;
  * steps falling as 1 / z beyond it. `cutoff`, `recede` and `base` are tunable on debug pages
  * (debug/Tune.ts `post.gtao.<value>`). */
 export const gtaoUniforms = {
-	cutoff: tuneUniform( 'post.gtao.cutoff', 3.28, { min: 0.25, max: 4, scale: 'log' } ),
+	cutoff: tuneUniform( 'post.gtao.cutoff', 0.7, { min: 0.25, max: 4, scale: 'log' } ),
 	recede: tuneUniform( 'post.gtao.recede', 0.1, { min: 0, max: 0.5 } ),
 	base: tuneUniform( 'post.gtao.base', 0.09, { min: 0, max: 0.4 } ),
 	edge: uniform( 50 ), maxTexels: uniform( 128 ), fullDistance: uniform( 22 ),

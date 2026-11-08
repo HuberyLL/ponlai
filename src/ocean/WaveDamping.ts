@@ -12,9 +12,8 @@ import type { Shared } from '../shared.ts';
 // to beach waves of their own, while ours keep the sea's own waves, which reach the rock and break
 // on it (ShoreWaves.ts). On the shelf (about 2 m deep) the sea's long waves, 5 to 25 m, slow by a
 // quarter at most and bend little, so they keep their open-sea course.
-// The sea's surface (Water.ts), the long waves the light under it follows (Caustics.ts, the wave
-// maps) and the waves that break on the rock (ShoreWaves.ts) all take these weights, so all see
-// one sea.
+// The sea's surface (Water.ts), the long waves the light under it follows (WaveMaps.ts) and the
+// waves that break on the rock (ShoreWaves.ts) all take these weights, so all see one sea.
 
 type V2 = THREE.Node<'vec2'>;
 

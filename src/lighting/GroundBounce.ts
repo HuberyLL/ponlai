@@ -12,6 +12,9 @@ import {
 } from 'three/tsl';
 import { soilGroveSwell } from '../materials/Soil.ts';
 import { ISLAND_TOP } from '../world/WorldShapes.ts';
+import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
+import { BODY_REFLECTANCE } from '../ocean/SeaOptics.ts';
+import { LAWN_COLOUR } from '../materials/Meadow.ts';
 import type { SunShadow } from './SunShadow.ts';
 import type { Shared } from '../shared.ts';
 import { useLightLayer } from '../debug/LightLayer.ts';
@@ -24,13 +27,15 @@ import { environmentBRDF } from './EnvironmentBRDF.ts';
 import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 
 // Sunlight bounced off the ground, one diffuse bounce (tidewater's GroundBounce, 4811ba4): the
-// sunlit plateau lights the islanders' undersides and the grass from below, the bright shallows
-// light the cliff's walls over them.
+// sunlit plateau lights the islanders' undersides and the grass from below, the shallows light
+// the cliff's walls over them.
 //
 // The bake: a map over the world fields' bounds (the land's box and 32 m round it: shoreXform) of
 // the light the ground reflects per unit of the key's irradiance: its albedo (the plateau's turf,
 // stone over the rim's last metre and a half; over the sea the floor's sand, seagrass and the
-// cliff foot's rubble seen through the water column, down and back up, as tidewater's sea) times
+// cliff foot's rubble seen through the water column, down and back up, as tidewater's sea, at the
+// gain the floor is seen at, SeabedTile.ts FLOOR_ALBEDO, and the water body's own reflectance under
+// the surface, both through the surface at its diffuse transmittances) times
 // the cosine of the key on the level ground times the key's visibility there (the sun's shadow map,
 // a little above the ground so the plateau's relief stays under the lookup; tidewater takes its
 // heightfield's shadow, which the island's own shadow map already holds here), minus what the
@@ -38,9 +43,9 @@ import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 // `seaRadiance`, where tidewater's environment has the atmosphere's dark ground), then blurred
 // (a binomial 5x5 of 1 m steps, as 3x3 bilinear lookups). Alpha: the height of the bouncing
 // surface (the plateau's top over its swells, or the sea level). It is drawn at 256 texels, blurred into the
-// caustics' array target (its last layer, Caustics `bounceLayer`): the materials lit under the
-// water already bind WebGPU's 16 sampled textures, and the caustics' map is one of them. Like the
-// caustics, it is drawn before the frame graph, after the sun's map. It is a function of the key's direction and colour, the sun's maps,
+// wave maps' array target (its last layer, WaveMaps `bounceLayer`), so the materials lit under the
+// water take no texture more for it. Like the wave maps, it is drawn before the frame graph, after
+// the sun's map. It is a function of the key's direction and colour, the sun's maps,
 // the sea's radiance and the world fields. It is drawn with the sun's map's steps (`steps`: a step
 // of the key's turn, SunShadow.ts, counted also while the swaying plants redraw that map every
 // frame), from that map alone and the key as it stands then, and
@@ -50,7 +55,9 @@ import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 // moves the blurred bounce by far less than a level, and a paused frame draws it as a fresh load
 // does (a jump redraws the sun's map from scratch, and this map with it).
 //
-// The shading: irradiance = the key's colour x the cloud shadow x the map x the lower hemisphere's
+// The shading: irradiance = the key's colour x the cloud shadow (the land's key over the land's
+// floor, Sky.ts `keyDirectVisibility`, which the sea in the map takes too, as the water drawn does:
+// Sky.ts `seaKeyVisibility`) x the map x the lower hemisphere's
 // view factor of the normal ( ( 1 - N.y ) / 2 ) x a fade with the height over the bouncing surface
 // (none from a surface above the receiver: under the water the sea is above) x the self-shading of
 // a face turned away from a low key (it sees the ground its own object shades) x SURROUND (objects
@@ -68,7 +75,7 @@ import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 // The bounce takes the ambient grade's `sunBounce` where every material takes it
 // (`groundBounceLight`). Beside the ambient volume (lighting/AmbientSample.ts), whose relight
 // bounces the key off the land round each probe (AmbientRelight.ts), the bake keeps the sea's part
-// alone (the land's albedo 0): the bright shallows that light the cliff's walls, which the volume's
+// alone (the land's albedo 0): the shallows that light the cliff's walls, which the volume's
 // imaginary ground does not carry, so no material counts the land's bounce twice;
 // `flags=groundBounceLand` keeps it whole beside the volume, and `flags=ambientVolume:0` (no
 // volume) keeps it whole as before. The physical models extend `GroundBounceLightingModel`, which
@@ -98,7 +105,7 @@ import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 
-// the bake's texels per side (the blurred map takes the caustics target's)
+// the bake's texels per side (the blurred map takes the wave maps' target's)
 const RAW = 256;
 // objects round the receiver shade part of the ground it sees (their shadows are not in the map)
 const SURROUND = 0.6;
@@ -109,12 +116,21 @@ const BLUR_STEP = 1;
 const REACH = 1;
 // how far above the ground the bake takes the key's visibility (m): above the plateau's relief
 const SHADOW_LIFT = 0.2;
-// linear albedos: the plateau's turf (the islanders' former bounce, tidewater's grass), the rim's
-// stone, and the floor's (SeabedLook's means)
-const TURF = vec3( 0.075, 0.11, 0.032 ), RIM = vec3( 0.08, 0.075, 0.065 );
-const SAND = vec3( 0.46, 0.435, 0.365 ), SEAGRASS = vec3( 0.095, 0.128, 0.065 ), RUBBLE = vec3( 0.29, 0.285, 0.25 );
-// the water's own backscatter seen from above (tidewater's)
-const WATER_BODY = vec3( 0.01, 0.025, 0.03 );
+// linear albedos: the plateau's lawn, which times shared.lawnGain is the blades' mean, as the
+// probes' bake sees it (AmbientProbes.ts LAWN_TOP), the rim's stone, and the floor's (its means at
+// the gain it is seen at: SeabedTile.ts FLOOR_ALBEDO; the seagrass SeabedLook.ts's mean)
+const LAWN = vec3( ...LAWN_COLOUR ), RIM = vec3( 0.08, 0.075, 0.065 );
+const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.gain ), SEAGRASS = vec3( 0.2475, 0.304, 0.124 ).mul( FLOOR_ALBEDO.gain ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.gain );
+// the floor's light through the surface, down and back up: the sky's diffuse transmittance into the
+// water (0.934) times the upwelling light's out of it, 1 - 0.475. Both are Fresnel's reflectance of
+// water (n = 1.333) integrated over a uniform hemisphere, our own figures: 0.475 the mean internal
+// reflectance for light from under the surface, most of it totally reflected past the critical
+// angle, the mechanism Lekner & Dorf 1988 build their model on
+const FLOOR_THROUGH = 0.934 * 0.525;
+// the floor's light crosses the column twice: down as the sky's diffuse light, whose mean cosine
+// under the surface is about 0.83 (1.2 times the depth, as Underwater.ts), and back up from a
+// Lambertian floor, whose mean cosine is 0.5 (2 times the depth)
+const FLOOR_PATH = 1.2 + 2.0;
 
 export interface GroundBounceInputs {
 	renderer: THREE.WebGPURenderer;
@@ -124,10 +140,11 @@ export interface GroundBounceInputs {
 	fields: { shore: THREE.TextureNode; floor: THREE.TextureNode; beds: THREE.TextureNode };
 	// the soil map (Soil.ts): the plateau's swell, the height of the land's bouncing surface
 	soil: THREE.Texture;
-	// the array target and layer the map is blurred into (Caustics `target`, `bounceLayer`)
+	// the array target and layer the map is blurred into (WaveMaps `target`, `bounceLayer`)
 	target: THREE.RenderTarget;
 	layer: number;
-	// the cloud shadow's visibility of the key at a world point
+	// the land's cloud shadow on the key at a world point, over the weather's floor (Sky.ts
+	// `keyDirectVisibility`), the sea's too
 	cloud: ( position: V3 ) => F;
 }
 
@@ -164,11 +181,19 @@ export class GroundBounce {
 			const floorY = texture( fields.floor, at ).level( float( 0 ) ).r;
 			const beds = texture( fields.beds, at ).level( float( 0 ) ).rg;
 			const L = shared.sunDir;
-			const land = mix( TURF.mul( shared.lawnGain ), RIM, smoothstep( - 1.5, 0, sd ) );
-			// the sea: the floor seen through the water column, down and back up
+			const land = mix( LAWN.mul( shared.lawnGain ), RIM, smoothstep( - 1.5, 0, sd ) );
+			// the sea: the floor seen through the water column, down and back up (at a + bb, over
+			// FLOOR_PATH times the depth), and the water body's own irradiance reflectance under its
+			// surface, the deep water's R( 0- ) = BODY_REFLECTANCE bb / ( a + bb ) (ocean/SeaOptics.ts,
+			// as the probes take it) times the share of it a column of this depth holds, 1 less the
+			// floor's transmittance (the shallow-water form Water.ts takes from Lee et al. 1999), both
+			// through the surface (FLOOR_THROUGH)
 			const depth = max( shared.waterLevel.sub( floorY ), 0 );
+			const kappa = shared.sigA.add( shared.bb );
+			const body = shared.bb.mul( BODY_REFLECTANCE ).div( kappa );
 			const floor = mix( mix( SAND, SEAGRASS, smoothstep( 0.3, 0.7, beds.x ) ), RUBBLE, smoothstep( 6.5, 0.5, sd ).mul( 0.5 ) );
-			const sea = floor.mul( exp( shared.sigA.add( shared.sigS ).mul( depth ).mul( - 2.4 ) ) ).mul( 0.9 ).add( WATER_BODY );
+			const column = exp( kappa.mul( depth ).mul( - FLOOR_PATH ) );
+			const sea = mix( body, floor, column ).mul( FLOOR_THROUGH );
 			const wet = smoothstep( - 0.25, 0.25, sd ).toVar();
 			// (the land's bounce is the ambient volume's where materials read it: see the header)
 			const albedo = GROUND_BOUNCE_LAND ? mix( land, sea, wet ) : sea.mul( wet );
@@ -226,14 +251,14 @@ export class GroundBounce {
 			const L = shared.sunDir;
 			const Lh = L.xz.div( max( length( L.xz ), 1e-3 ) );
 			const selfShade = float( 1 ).sub( clamp( dot( N.xz, Lh ).negate(), 0, 1 ).mul( clamp( L.y.oneMinus(), 0, 1 ) ).mul( 0.6 ) );
-			E.assign( s.rgb.mul( shared.sunColor ).mul( this.inputs.cloud( P ) ).mul( view.mul( fade ).mul( selfShade ).mul( this.strength ).mul( SURROUND ) ) );
+			E.assign( s.rgb.mul( shared.landKey ).mul( this.inputs.cloud( P ) ).mul( view.mul( fade ).mul( selfShade ).mul( this.strength ).mul( SURROUND ) ) );
 
 		} );
 		return E;
 
 	}
 
-	/** Once a frame, after the sun's map and the caustics: draws the map again at the sun's map's
+	/** Once a frame, after the sun's map and the wave maps: draws the map again at the sun's map's
 	 * steps and when the sea or the fields changed (see the header). `sea`: the environment's lower
 	 * half (Sky `seaRadiance`). */
 	update( sea: THREE.Color ): void {
@@ -245,18 +270,14 @@ export class GroundBounce {
 		if ( signature === this.signature ) return;
 		this.signature = signature;
 		// a face turned down receives pi times the lower half's radiance from the environment
-		const key = shared.sunColor.value;
+		const key = shared.landKey.value;
 		const per = ( radiance: number, k: number ) => Math.min( Math.PI * radiance * fill / Math.max( k, 1e-6 ), 1 );
 		this.envGround.value.set( per( sea.r, key.x ), per( sea.g, key.y ), per( sea.b, key.z ) );
 		const prev = r.getRenderTarget();
 		r.setRenderTarget( this.raw );
 		this.rawQuad.render( r );
-		// (read at level 0 only: the caustics' mip chain is made after their own layers)
-		const mips = target.texture.generateMipmaps;
-		target.texture.generateMipmaps = false;
 		r.setRenderTarget( target, layer );
 		this.blurQuad.render( r );
-		target.texture.generateMipmaps = mips;
 		r.setRenderTarget( prev );
 		this.ready.value = 1;
 		this.bakes ++;

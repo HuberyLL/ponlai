@@ -96,8 +96,8 @@ renders 2K's pixel count, 2388x1543, and FSR 1 brings it to 3456x2234. Placement
 bounds, the meadow's flowering plants and the tufts at the cliff's edge, the islander and the sun and moon,
 so they follow any tile layout.
 
-`parity` (the default group, 12 views): the profiler's scenes (`tools/profile-frame.mjs`),
-frozen, plus 5 more. The parked weathers' 5 views (marked *parked* below) are in the table but in
+`parity` (the default group, 14 views): the profiler's scenes (`tools/profile-frame.mjs`),
+frozen, plus 7 more. The parked weathers' 5 views (marked *parked* below) are in the table but in
 no group but `special` (see below).
 
 | view | query | camera |
@@ -114,10 +114,36 @@ no group but `special` (see below).
 | island-night-clear | weather=clear&preset=midnight | island |
 | meadow-close | weather=fair&preset=noon | free camera 1.6 m up inside the rim, looking out over the lip |
 | weather-change (*parked*) | weather=fair&preset=noon | island; a front to rain frozen half way, environment re-baked |
+| island-cloudy-low-sun | weather=cloudy&hour=`morningHour( 4.8 )` | island; 4.8 degree sun |
+| island-cloudy-sun-rising | weather=cloudy&hour=`morningHour( 5.3 )` | island; 5.3 degree sun |
+| island-cloudy-disc-fade | weather=cloudy&hour=`morningHour( 9.3 )` | island; 9.3 degree sun |
 | water-skim-cliffs | weather=fair&preset=noon | free camera 1.4 m over the sea off the cliffs, along the coast |
 | island-from-sea | weather=fair&preset=noon | free camera 150 m out, 14 m up, looking back |
 | sunrise-long-shadows | weather=clear&preset=sunrise | orbit across the sun, long shadows over the meadow |
-| night-moon | weather=clear&hour=19.2&moon=0.5 | horizon view facing a full moon about 14 degrees up |
+| night-moon | weather=clear&hour=`eveningHour( -15.8 )`&moon=0.5 | horizon view facing a full moon 20 degrees up, its line of sight raised to 8 degrees up |
+
+The three `island-cloudy-*` views are the byte checks' reach into the clouds' shadow under a low sun
+(`src/sky/Sky.ts` SHADOW_DISC, SHADOW_AIR_NARROW). Their elevations are chosen by what moves there,
+which depends on where the clouds sit at `t=12` and on where the sun stands along its path. A view's
+hour is the one at which its sun stands at its elevation (`src/sky/DayCycle.ts` `morningHour`,
+`eveningHour`, on the 52 degree path), written into the query to four decimals. Share
+of the frame's pixels moved over one level when a uniform of `s.sky.clouds` is pinned and the map
+redrawn (`invalidate()`):
+
+| view | `shadowRays` 1 | `shadowAirNarrow` 0 | `shadowAirNarrow` 1 |
+|---|---|---|---|
+| island-cloudy-low-sun | 0.043 % (3290 pixels) | 0, the air's share is 0 there | 0.009 % (690 pixels) |
+| island-cloudy-sun-rising | 78 % | 0.006 % (430 pixels) | 0.004 % (340 pixels) |
+| island-cloudy-disc-fade | 0.13 % (9700 pixels) | 0.002 % (150 pixels) | 0, the air's share is 1 there |
+
+On the 52 degree path these views barely guard two of the pins. `shadowAirNarrow` moves at most 690
+pixels in any of them (150 to 690, 0.002 to 0.009 % of the frame), so it has next to no byte guard,
+and `shadowRays` is guarded by `island-cloudy-sun-rising` alone (78 %; 3290 and 9700 pixels, 0.043
+and 0.13 %, in the other two). Elevations at which each pin moves about 1 % of the frame are still
+to be chosen.
+
+A change of these elevations, or of the sun's path, pins the uniforms again: a view that stays byte
+identical under the pins reaches nothing and does not stay.
 
 `taa` (6 views): close, thin and moving detail for temporal anti-aliasing.
 
@@ -134,7 +160,7 @@ no group but `special` (see below).
 marked `special: true`) holds the parked weathers (`src/sky/Weather.ts` `PARKED_WEATHER`: rain,
 storm, fog). No other group lists them, so every default set (`parity`, `all`, verify-scene-jump's,
 baseline.mjs's plan without `--views` / `--clips`) is the normal weathers' alone; `normal` is `all`
-(19 views), kept as a name. A parked view is reached by name or by `special` (`all,special` is
+(20 views), kept as a name. A parked view is reached by name or by `special` (`all,special` is
 every view), and so is a clip (clips.mjs: a clip is in its view's group; the parked ones are
 storm, rain, lightning, fog). Every tool that takes `--views` takes names and groups mixed
 (`normal,flowers-close`).
@@ -191,7 +217,11 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
   full query> )`, a frame at the jump's camera, then the view's eval, readiness and shot as after a
   load. Its contract (`src/main.ts`): the frame equals a fresh load's, byte for byte wherever the
   fresh load repeats. Only load-time options (quality, aa, size and dpr, the debug switches) need a
-  new page, and a set shares them. Each view's JSON has `page`: its visit on the page, `load` or
+  new page, and a set shares them. The jump undoes the scene's options and camera, not GUI or
+  console changes, so it covers views without an eval or with exactly a views.mjs view's eval
+  (`verify-scene-jump.mjs` checks those); after a view with an eval of its own (an ad-hoc view's
+  js: `adhoc.mjs` `jumpClean`) the page ends and the next view loads fresh, and an `--eval` or
+  `--eval-ready` passed through after `--` takes a page per view. Each view's JSON has `page`: its visit on the page, `load` or
   `jump`, the view before, the GPU lock wait and the capture's own time (ms), the page's memory then
   (JS heap, DOM nodes, listeners, renderer.info's geometries and textures).
 - Capability: a page marks the jump with `__PONLAI__.sceneJump` (the contract's version, 1).
@@ -201,7 +231,9 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
   (`--retries`, default 1) and the views still to come go on in a fresh page, whose first view is a
   fresh load. A page silent for three times `--timeout` plus two minutes, counted from the moment
   its view holds the GPU slot (the wait for the lock is not silence), is killed and treated the
-  same way. So one crash or a stuck page does not lose the set.
+  same way. So one crash or a stuck page does not lose the set. A page that ends before it asks
+  for a view (the browser did not start) is started again; more than `--retries` such starts in a
+  row end the run with exit 1, naming the page's exit code and the last lines of its stderr.
 - `--repeat`: each view twice (`<view>.repeat.png`), then a pixel comparison per view (decoded);
   exit 1 if any differ (or any capture failed). The repeats run after all the first captures, on
   other pages than the first captures and in reverse order: a view's repeat is reached from another

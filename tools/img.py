@@ -8,7 +8,10 @@ around a point.
   uv run tools/img.py diff  A B            [region] [--thr 1,2,8,32] [--bbox-thr 0] [--heat P] [--gain 8] [--json]
   uv run tools/img.py crop  IMG|DIR...     region [--zoom N] --out DIR
   uv run tools/img.py sheet IMG|DIR...     [region] [--labels a,b] [--cols N] [--diff] [--zoom N | --scale F | --width W] --out FILE
-  uv run tools/img.py stats IMG|DIR...     [region] [--pct 1,5,50,95,99] [--oklab] [--cover] [--json]
+  uv run tools/img.py thumb IMG|DIR...     [--short 360] [--quality 88] --out DIR
+  uv run tools/img.py stats IMG|DIR...     [region] [--pct 1,5,50,95,99] [--oklab] [--split] [--cover] [--mask M] [--json]
+  uv run tools/img.py stats IMG|DIR... --deck [--deck-boxes auto|h|sun|none] [region] [--deck-rows [--horizon x0,x1,y]]
+                                         [--trend 15] [--px-per-deg 24] [--json]
   uv run tools/img.py flicker CLIP|DIR...  [region] [--frames a-b] [--spike 20,40] [--odd 2.5] [--drop-odd] [--map P] [--gain 8] [--json] [--save]
   uv run tools/img.py radial IMG|DIR...    --centre x,y | --centre-key KEY  [--rings 0,2,4,8,15,30,50] [--fov F] [--half up] [--json]
 
@@ -37,12 +40,71 @@ that names it). --diff adds a column after two inputs: their difference x --gain
 1:1 unless --zoom (nearest, integer), --scale (box filter) or --width (box filter to that width)
 is given; a full frame wider than 1280 px is scaled down to 1280 by default.
 
+thumb: each image (or directory's PNGs) scaled by a box filter to --short pixels on its short side and
+saved as <out>/<name>.jpg at --quality: a frame kept to be recognised, not measured.
+
 stats: per image and region, compare-captures.py's metrics (mean RGB, luma mean and standard
 deviation, the mean luma difference of adjacent pixels, the share of pixels with luma over 245)
 and the luma percentiles of --pct. --oklab adds the median Oklab lightness, chroma and hue (degrees)
-of the region's pixels (sRGB decoded), the screen colour a look is judged by; --cover adds the share
+of the region's pixels (sRGB decoded), the screen colour a look is judged by; --linear adds the region's
+mean linear luminance Y (sRGB decoded, Rec. 709 weights), the --pct percentiles of Y and the Oklab
+L, a and b of its mean linear colour (`linear` in --json: a light level compared in stops, log2 of a
+ratio of Y, and a colour difference as the Oklab distance of the means); --split sorts the
+region's pixels by their Oklab L and gives four parts of it, each the mean Oklab L, C and hue (the
+mean of the pixels' L, a and b, C and h taken from the mean a and b) and mean linear RGB of its
+pixels: `under` and `over` the region's own median L (a crown's dark and lit halves), `p5` the darkest
+5 % and `p90` the brightest 10 % (`medianL` and `parts` in --json); --cover adds the share
 of pixels (%) whose red exceeds twice their green: the meadow's blades in a capture taken with
-`flags=grassMask` (src/world/Grass.ts), which paints them red over the green ground.
+`flags=grassMask` (src/world/Grass.ts), which paints them red over the green ground. --mask M reads
+a mask capture of the same view (a file, or a directory holding one of each image's name) and splits
+the region's pixels by it: `marked` where the mask differs from the image by more than 16 levels in a
+channel and its red is its largest, `edge` where it differs so and its green is, the `rest` the
+others (a bright paint leaves the display chain desaturated: about the sun a marked red came out
+salmon, its red under twice its green, and a test by that ratio found a sixth of the marked sky
+there); it gives the marked share (%) and, for the marked
+pixels and the rest of the image itself, the median Oklab L, C and hue with their 10th and 90th
+percentiles (the hue's about its circular mean), the marked median's dL and dC over the rest's, and
+each marked pixel's dL and dC against the rest round it (their Gaussian mean over the rest's pixels
+only, a sigma of 1 % of the region's width: median and 10-90 percentiles), since the rest of a sky
+is lighter or darker by its elevation; --against B (a file, or a directory of the same names) gives
+them against the same pixels of the view without what the mask marks instead (which an exposure
+that meters the frame may have moved as a whole). `flags=streakMask` (src/sky/Sky.ts) marks
+the thin cloud layer's streaks, `flags=streaks:0` takes the layer away.
+
+stats --deck: the cloud deck's structure on a sky, in place of the metrics above, per region. Oklab L
+and C and linear luminance Y (Rec. 709) come from the sRGB code values. The regions are named
+presets (--deck-boxes; `auto` takes `h` for a file name ending in -h and `sun` for one ending in -sun,
+or none when --box / --anchor is given) and every --box or --anchor; each preset box is given on a
+2560 x 1440 frame and scaled with the image's width:
+  h     skyL 0,0,820,500; skyR 1780,0,780,500; sky, skyL and skyR read as one region; skyHigh
+        0,0,2560,140 (about 14-20 degrees up); skyLowBand 0,400,2560,110 (about 1-5 degrees up)
+        over the columns of skyL and skyR only, clear of the island
+  sun   sunSide 1500,0,1060,560 (round the sun, which stands above the frame); offSide 0,0,640,560
+The sky mask is the union of every box read; each blur is a Gaussian normalised over the mask (the
+blur of L times the mask over the blur of the mask), so neither the land nor the frame's edge pulls
+anything in. Degrees: --px-per-deg, by default 24 at 2560 wide (the horizon view's vfov of 55 on
+1440 rows), scaled with the width. Per region:
+  spread     the region's blocks of a degree (24 px square, each the median of its sky pixels, a
+             block kept when nine tenths of it is sky): p90 - p10 of their L; `stops` log2 of
+             their Y's p90 over p10
+  structure  L minus its broad trend (a sigma of --trend / 2 degrees, 15 by default): p10 and p90
+  scale std  the std of L - G1, G1 - G3, G3 - G10 and G10 - G30, G_d a sigma of d / 2 degrees:
+             the bands under 1, 1-3, 3-10 and 10-30 degrees
+  gradient   |grad L| a degree on a sigma of .125 degree (normalised over the whole frame): p95
+             and p99, how hard the edges are
+  mass       the half length (to .5) of the structure's autocorrelation along x and y, in degrees,
+             averaged over the region's boxes: about a third to a half of a mass's width
+  dark/light the median L and C of the blocks in the lowest and the highest quarter of the
+             p10..p90 range
+--deck-rows adds the horizon's profile: row medians of L over x0..x1 every 6 px from 15 degrees up
+to 6 down (--horizon x0,x1,horizonY, by default 0,800,528 at 2560 wide, scaled), and from it the
+sky 0-6 degrees up against 6-15 up (their medians, their difference and their blocks' spreads),
+the far sea's fall a degree over 0-5 down (a line's slope, positive when the sea darkens downward)
+and its largest step between rows within one degree, and `line`, the pixel row within a degree of
+the horizon that stands furthest from the rows 3 px above and below it (a thin dark or bright
+line). Read every view at the same scale: 8-bit quantisation floors the std under 1 degree at
+about .0014 on a flat sky, and a frame read at half size gives the same numbers within a few per
+cent above 1 degree and lower ones under it.
 
 flicker: frame-to-frame flicker of a run of consecutive frames, per region: a capture-clip clip
 directory (its whole frames, <clip>/full/<i>.png, in frame order) or a directory of PNGs named by
@@ -261,6 +323,21 @@ def cmd_crop(a):
             print(p)
 
 
+# --------------------------------------------------------------------------------------------- thumb
+
+def cmd_thumb(a):
+    out = Path(a.out)
+    out.mkdir(parents=True, exist_ok=True)
+    for f in expand(a.images, a.match):
+        im = Image.fromarray(decode(f))
+        k = a.short / min(im.size)
+        if k < 1:
+            im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.BOX)
+        p = out / f"{f.stem}.jpg"
+        im.save(p, quality=a.quality)
+        print(p)
+
+
 # --------------------------------------------------------------------------------------------- sheet
 
 def tile_size(X, a, region):
@@ -339,6 +416,19 @@ def cmd_sheet(a):
 # --------------------------------------------------------------------------------------------- stats
 
 def cmd_stats(a):
+    if a.deck:
+        res = []
+        for f in expand(a.images, a.match):
+            d = deck_stats(f, a, decode(f))
+            if d is not None:
+                res.append({"name": f.name} | d)
+        if a.json:
+            print(json.dumps(res, indent=2))
+            return
+        for r in res:
+            print(f"{r['name']}  ({r['pxPerDeg']:g} px a degree)")
+            print_deck(r["name"], r)
+        return
     pct = [float(p) for p in a.pct.split(",")] if a.pct else []
     res = []
     for f in expand(a.images, a.match):
@@ -350,9 +440,16 @@ def cmd_stats(a):
             m["lumaPercentiles"] = {f"{p:g}": round(float(v), 2) for p, v in zip(pct, np.percentile(y, pct))}
             if a.oklab:
                 m["oklab"] = oklab_median(R)
+            if a.split:
+                m["split"] = oklab_split(R)
+            if a.linear:
+                m["linear"] = linear_stats(R, pct)
             if a.cover:
                 rgb = R[..., :3].astype(np.int32)
                 m["cover"] = round(float(np.mean(rgb[..., 0] > 2 * rgb[..., 1])) * 100, 2)
+            if a.mask:
+                bare = cut(decode(mask_of(f, a.against)), box) if a.against else None
+                m["mask"] = mask_stats(R, cut(decode(mask_of(f, a.mask)), box), bare)
             res.append({"name": f.name, "region": label, "box": list(box)} | m)
     if a.json:
         print(json.dumps(res, indent=2))
@@ -366,21 +463,323 @@ def cmd_stats(a):
               + " ".join(f"{v:7.2f}" for v in r["lumaPercentiles"].values())
               + (f"  oklab L {r['oklab']['L']:.3f} C {r['oklab']['C']:.3f} h {r['oklab']['h']:.1f}" if "oklab" in r else "")
               + (f"  cover {r['cover']:.1f}%" if "cover" in r else ""))
+        if "linear" in r:
+            k = r["linear"]
+            print(f"  linear Y {k['Y']:.5f}  " + " ".join(f"p{p} {v:.5f}" for p, v in k["percentiles"].items())
+                  + f"  oklab L {k['L']:.4f} a {k['a']:+.4f} b {k['b']:+.4f}")
+        if "split" in r:
+            print(f"  median L {r['split']['medianL']:.3f}")
+            for part, p in r["split"]["parts"].items():
+                print(f"  {part:5} L {p['L']:.3f} C {p['C']:.3f} h {p['h']:5.1f}  rgb {','.join(f'{v:.4f}' for v in p['rgb'])}  ({p['px']} px)")
+        if "mask" in r:
+            k = r["mask"]
+            print(f"  marked {k['share']:.2f} %  edge {k['edgeShare']:.2f} %"
+                  + (f"  dL {k['dL']:+.4f} dC {k['dC']:+.4f}" if "dL" in k else ""))
+            for key, what in (("near", "against the rest round them"), ("against", "against the same pixels")):
+                if key in k:
+                    g = k[key]
+                    print(f"  {what}: dL {g['dL']:+.4f} [{g['dL10']:+.4f}, {g['dL90']:+.4f}]  dC {g['dC']:+.4f} [{g['dC10']:+.4f}, {g['dC90']:+.4f}]")
+            for part in ("marked", "rest"):
+                p = k.get(part)
+                if p:
+                    print(f"  {part:6} L {p['L']:.3f} [{p['L10']:.3f}, {p['L90']:.3f}]  C {p['C']:.3f} [{p['C10']:.3f}, {p['C90']:.3f}]"
+                          f"  h {p['h']:5.1f} [{p['h10']:5.1f}, {p['h90']:5.1f}]  ({p['px']} px)")
 
 
-def oklab_median(R):
-    """The median Oklab L, C and hue (degrees) of 8-bit sRGB pixels (Björn Ottosson's Oklab)."""
-    c = R[..., :3].reshape(-1, 3).astype(np.float64) / 255
-    lin = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+def mask_of(f, mask):
+    """The mask capture of image f: --mask a file, or a directory holding one of f's name."""
+    m = Path(mask)
+    return m / Path(f).name if m.is_dir() else m
+
+
+def mask_stats(R, M, bare=None):
+    """The Oklab medians and 10-90 percentiles of a region's pixels split by a mask capture of the same
+    view: `marked` where the mask differs from the image by more than 16 levels in a channel and its
+    red is its largest, `edge` where it differs so and its green is, `rest` the others (the edge left
+    out of both). With `bare`, the same view without what the mask marks: the marked pixels' own
+    differences in L and C from it."""
+    if M.shape != R.shape or (bare is not None and bare.shape != R.shape):
+        return {"error": f"mask shape {list(M.shape)} against {list(R.shape)}"}
+    c = M[..., :3].reshape(-1, 3).astype(np.int32)
+    painted = np.abs(c - R[..., :3].reshape(-1, 3).astype(np.int32)).max(axis=1) > 16
+    marked = painted & (c[:, 0] > c[:, 1]) & (c[:, 0] > c[:, 2])
+    edge = painted & (c[:, 1] > c[:, 0]) & (c[:, 1] > c[:, 2])
+    rest = ~marked & ~edge
+    _, L, A, B = oklab_pixels(R)
+    C, H = np.hypot(A, B), np.degrees(np.arctan2(B, A)) % 360
+
+    def part(keep):
+        if not keep.any():
+            return None
+        h = H[keep]
+        # the hue's percentiles about its circular mean, so a spread across 0 / 360 reads as one
+        centre = np.degrees(np.arctan2(np.sin(np.radians(h)).mean(), np.cos(np.radians(h)).mean())) % 360
+        h = centre + (h - centre + 180) % 360 - 180
+        q = lambda v: [round(float(x), 4) for x in np.percentile(v, [10, 50, 90])]
+        (l10, l50, l90), (c10, c50, c90), (h10, h50, h90) = q(L[keep]), q(C[keep]), q(h)
+        return {"L": l50, "L10": l10, "L90": l90, "C": c50, "C10": c10, "C90": c90,
+                "h": round(h50 % 360, 1), "h10": round(h10 % 360, 1), "h90": round(h90 % 360, 1), "px": int(keep.sum())}
+
+    out = {"share": round(float(marked.mean()) * 100, 2), "edgeShare": round(float(edge.mean()) * 100, 2),
+           "marked": part(marked), "rest": part(rest)}
+    if out["marked"] and out["rest"]:
+        out["dL"] = round(out["marked"]["L"] - out["rest"]["L"], 4)
+        out["dC"] = round(out["marked"]["C"] - out["rest"]["C"], 4)
+    if marked.any() and rest.any():
+        # each marked pixel against the rest round it: their Gaussian mean (a sigma of 1 % of the
+        # region's width) over the rest's pixels only, so neither the marked nor the edge pull in
+        h, w = R.shape[:2]
+        sigma = max(4.0, 0.01 * w)
+        keep = rest.reshape(h, w).astype(np.float64)
+        dL = (L.reshape(h, w) - masked_blur(L.reshape(h, w), keep, sigma)).reshape(-1)[marked]
+        dC = (C.reshape(h, w) - masked_blur(C.reshape(h, w), keep, sigma)).reshape(-1)[marked]
+        (l10, l50, l90), (c10, c50, c90) = ([round(float(x), 4) for x in np.percentile(v, [10, 50, 90])] for v in (dL, dC))
+        out["near"] = {"dL": l50, "dL10": l10, "dL90": l90, "dC": c50, "dC10": c10, "dC90": c90}
+    if bare is not None and marked.any():
+        _, L0, A0, B0 = oklab_pixels(bare)
+        dL, dC = (L - L0)[marked], (C - np.hypot(A0, B0))[marked]
+        (l10, l50, l90), (c10, c50, c90) = ([round(float(x), 4) for x in np.percentile(v, [10, 50, 90])] for v in (dL, dC))
+        out["against"] = {"dL": l50, "dL10": l10, "dL90": l90, "dC": c50, "dC10": c10, "dC90": c90}
+    return out
+
+
+def oklab_of_linear(lin):
+    """The Oklab L, a and b of linear sRGB colours (..., 3) (Björn Ottosson's Oklab)."""
     lms = lin @ np.array([[0.4122214708, 0.2119034982, 0.0883024619],
                           [0.5363325363, 0.6806995451, 0.2817188376],
                           [0.0514459929, 0.1073969566, 0.6299787005]])
-    l_, m_, s_ = np.cbrt(lms).T
+    l_, m_, s_ = np.moveaxis(np.cbrt(lms), -1, 0)
     L = 0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_
     A = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_
     B = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_
+    return L, A, B
+
+
+def oklab_pixels(R):
+    """The linear RGB (n, 3) and the Oklab L, a and b (each n) of 8-bit sRGB pixels."""
+    c = R[..., :3].reshape(-1, 3).astype(np.float64) / 255
+    lin = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+    L, A, B = oklab_of_linear(lin)
+    return lin, L, A, B
+
+
+def linear_stats(R, pct):
+    """The mean linear luminance Y (sRGB decoded, Rec. 709 weights), its percentiles, and the Oklab L, a, b of the mean linear colour."""
+    lin, _, _, _ = oklab_pixels(R)
+    y = lin @ np.array([0.2126, 0.7152, 0.0722])
+    L, A, B = oklab_of_linear(lin.mean(axis=0))
+    return {"Y": round(float(y.mean()), 6),
+            "percentiles": {f"{p:g}": round(float(v), 6) for p, v in zip(pct, np.percentile(y, pct))},
+            "L": round(float(L), 5), "a": round(float(A), 5), "b": round(float(B), 5)}
+
+
+def oklab_median(R):
+    """The median Oklab L, C and hue (degrees) of 8-bit sRGB pixels."""
+    _, L, A, B = oklab_pixels(R)
     h = np.degrees(np.arctan2(B, A)) % 360
     return {"L": round(float(np.median(L)), 4), "C": round(float(np.median(np.hypot(A, B))), 4), "h": round(float(np.median(h)), 1)}
+
+
+def oklab_split(R):
+    """The pixels' means under and over their median Oklab L, and over the darkest 5 % and the brightest 10 %."""
+    lin, L, A, B = oklab_pixels(R)
+    median, low, high = np.percentile(L, [50, 5, 90])
+
+    def mean_of(keep):
+        a, b = float(A[keep].mean()), float(B[keep].mean())
+        return {"L": round(float(L[keep].mean()), 4), "C": round(float(np.hypot(a, b)), 4), "h": round(float(np.degrees(np.arctan2(b, a)) % 360), 1),
+                "rgb": [round(float(v), 5) for v in lin[keep].mean(axis=0)], "px": int(keep.sum())}
+
+    return {"medianL": round(float(median), 4),
+            "parts": {"under": mean_of(L <= median), "over": mean_of(L >= median), "p5": mean_of(L <= low), "p90": mean_of(L >= high)}}
+
+
+# ---------------------------------------------------------------------------------------------- deck
+
+# The sky's regions on a 2560 x 1440 frame, [x, y, w, h] each, scaled with the image's width. A region
+# of several boxes is read as one. The horizon views (`h`) keep the low band to the columns of skyL
+# and skyR, clear of the island; the view toward the sun (`sun`) has the sun above the frame.
+DECK_WIDTH = 2560
+DECK_BOXES = {
+    "h": {"skyL": [(0, 0, 820, 500)], "skyR": [(1780, 0, 780, 500)], "sky": [(0, 0, 820, 500), (1780, 0, 780, 500)],
+          "skyHigh": [(0, 0, 2560, 140)], "skyLowBand": [(0, 400, 820, 110), (1780, 400, 780, 110)]},
+    "sun": {"sunSide": [(1500, 0, 1060, 560)], "offSide": [(0, 0, 640, 560)]},
+}
+DECK_PRESET_OF = (("-h", "h"), ("-sun", "sun"))  # a file name's ending -> its preset under --deck auto
+DECK_ROWS = (0, 800, 528)  # x0, x1, the horizon's row on 2560 x 1440: --deck-rows' default
+DECK_BANDS = (1, 3, 10, 30)  # the scale bands' edges, degrees
+
+
+def deck_regions(f, a, shape):
+    """[(label, [boxes])] the deck's measures read on an image: the preset's regions (--deck-boxes h|sun, or
+    auto by the file name) and every --box / --anchor, each its own region."""
+    w = shape[1]
+    preset = a.deck_boxes
+    if preset == "auto":
+        preset = "none" if a.box or a.anchor else next((p for end, p in DECK_PRESET_OF if Path(f).stem.endswith(end)), None)
+        if preset is None:
+            print(f"note: {Path(f).name} skipped (no preset for its name: give --deck-boxes h|sun or --box)", file=sys.stderr)
+            return []
+    k = w / DECK_WIDTH
+    out = [(n, [tuple(round(v * k) for v in b) for b in boxes]) for n, boxes in DECK_BOXES.get(preset, {}).items()]
+    if a.box or a.anchor:
+        out += [(label, [box]) for label, box in regions([f], a, shape)]
+    return out
+
+
+def gauss_blur(X, sigma):
+    """X blurred by a Gaussian of sigma pixels, zero outside the frame (separable, by FFT)."""
+    if sigma <= 0:
+        return X
+    r = int(max(1, round(3 * sigma)))
+    k = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2)
+    k /= k.sum()
+    for axis in (1, 0):
+        n = X.shape[axis]
+        m = 1 << int(np.ceil(np.log2(n + 2 * r + len(k))))
+        F = np.fft.rfft(X, n=m, axis=axis) * np.fft.rfft(k, n=m).reshape([-1, 1] if axis == 0 else [1, -1])
+        X = np.fft.irfft(F, n=m, axis=axis)
+        X = X[r:r + n] if axis == 0 else X[:, r:r + n]
+    return X
+
+
+def masked_blur(X, M, sigma):
+    """The Gaussian of X over the mask's pixels only, normalised by the mask's own blur, so the land
+    and the frame's edge pull nothing in."""
+    return gauss_blur(X * M, sigma) / np.maximum(gauss_blur(M, sigma), 1e-6)
+
+
+def deck_stats(f, a, X):
+    """The deck's measures on each of the image's sky regions; --deck-rows adds the horizon's rows."""
+    H, W = X.shape[:2]
+    regs = deck_regions(f, a, X.shape)
+    if not regs:
+        return None
+    ppd = a.px_per_deg or 24.0 * W / DECK_WIDTH
+    lin, L, A, B = oklab_pixels(X)
+    L, C, Y = L.reshape(H, W), np.hypot(A, B).reshape(H, W), (lin @ np.array([0.2126, 0.7152, 0.0722])).reshape(H, W)
+    mask = np.zeros((H, W))
+    for _, boxes in regs:
+        for x, y, w, h in boxes:
+            mask[y:y + h, x:x + w] = 1
+    # the structure: L minus its broad trend (a sigma of half --trend degrees, over the sky alone)
+    S = L - masked_blur(L, mask, a.trend * ppd / 2)
+    G = [L] + [masked_blur(L, mask, d * ppd / 2) for d in DECK_BANDS]
+    bands = {"<1": G[0] - G[1], "1-3": G[1] - G[2], "3-10": G[2] - G[3], "10-30": G[3] - G[4]}
+    # the edges' hardness: |grad L| a degree on a sigma of .125 degree, over the whole frame
+    gy, gx = np.gradient(masked_blur(L, np.ones_like(L), 0.125 * ppd))
+    grad = np.hypot(gx, gy) * ppd
+    bs = max(1, round(ppd))
+    out = {"pxPerDeg": round(ppd, 3), "regions": {}}
+    for label, boxes in regs:
+        bl, by, bc, hx, hy, sel = [], [], [], [], [], []
+        for x, y, w, h in boxes:
+            m = mask[y:y + h, x:x + w] > 0.5
+            sel.append((np.s_[y:y + h, x:x + w], m))
+            # blocks of a degree, each its median
+            for j in range(y, y + h - bs + 1, bs):
+                for i in range(x, x + w - bs + 1, bs):
+                    mm = mask[j:j + bs, i:i + bs] > 0.5
+                    if mm.mean() < 0.9:
+                        continue
+                    bl.append(np.median(L[j:j + bs, i:i + bs][mm]))
+                    by.append(np.median(Y[j:j + bs, i:i + bs][mm]))
+                    bc.append(np.median(C[j:j + bs, i:i + bs][mm]))
+            # the masses: the half length of the structure's autocorrelation along x and y
+            Z = S[y:y + h, x:x + w] - S[y:y + h, x:x + w].mean()
+            R = np.fft.irfft2(np.abs(np.fft.rfft2(Z, s=(2 * h, 2 * w))) ** 2, s=(2 * h, 2 * w))
+            R = R / max(R[0, 0], 1e-20)
+            rx, ry = R[0, :w], R[:h, 0]
+            hx.append((np.argmax(rx < 0.5) if (rx < 0.5).any() else w) / ppd)
+            hy.append((np.argmax(ry < 0.5) if (ry < 0.5).any() else h) / ppd)
+
+        def cat(V):
+            return np.concatenate([V[s][m] for s, m in sel])
+
+        if not bl:
+            out["regions"][label] = {"boxes": [list(b) for b in boxes], "note": "no block of a degree inside it"}
+            continue
+        bl, by, bc = np.array(bl), np.array(by), np.array(bc)
+        p10, p90 = np.percentile(bl, [10, 90])
+        y10, y90 = np.percentile(by, [10, 90])
+        dark, light = bl <= p10 + (p90 - p10) / 4, bl >= p90 - (p90 - p10) / 4
+        sv, g = cat(S), cat(grad)
+        out["regions"][label] = {
+            "boxes": [list(b) for b in boxes],
+            "median": round(float(np.median(cat(L))), 4),
+            "spread": round(float(p90 - p10), 4),
+            "stops": round(float(np.log2(max(y90, 1e-9) / max(y10, 1e-9))), 3),
+            "structure": [round(float(v), 4) for v in np.percentile(sv, [10, 90])],
+            "scaleStd": {k: round(float(np.std(cat(v))), 4) for k, v in bands.items()},
+            "gradient": [round(float(v), 4) for v in np.percentile(g, [95, 99])],
+            "mass": [round(float(np.mean(hx)), 2), round(float(np.mean(hy)), 2)],
+            "dark": [round(float(np.median(bl[dark])), 4), round(float(np.median(bc[dark])), 4)],
+            "light": [round(float(np.median(bl[light])), 4), round(float(np.median(bc[light])), 4)],
+            "blocks": int(len(bl)),
+        }
+    if a.deck_rows:
+        out["rows"] = deck_rows(L, a, ppd, W)
+    return out
+
+
+def deck_rows(L, a, ppd, W):
+    """The horizon's profile: row medians of L over x0..x1 every 6 px from 15 degrees up to 6 down,
+    and what section 4 reads from it."""
+    k = W / DECK_WIDTH
+    x0, x1, hz = ints(a.horizon) if a.horizon else (round(v * k) for v in DECK_ROWS)
+    H = L.shape[0]
+    prof = []
+    for yy in range(max(0, round(hz - 15 * ppd)), min(H - 6, round(hz + 6 * ppd)) + 1, 6):
+        prof.append(((hz - (yy + 3)) / ppd, float(np.median(L[yy:yy + 6, x0:x1]))))
+    deg = np.array([d for d, _ in prof])
+    val = np.array([v for _, v in prof])
+
+    def strip(lo, hi):
+        # the strip lo..hi degrees up: its median L and the spread of its blocks of a degree
+        y0, y1 = round(hz - hi * ppd), round(hz - lo * ppd)
+        bs = max(1, round(ppd))
+        blocks = [np.median(L[j:j + bs, i:i + bs]) for j in range(y0, y1 - bs + 1, bs) for i in range(x0, x1 - bs + 1, bs)]
+        p10, p90 = np.percentile(blocks, [10, 90]) if blocks else (np.nan, np.nan)
+        return float(np.median(L[y0:y1, x0:x1])), float(p90 - p10)
+
+    low, lowSpread = strip(0, 6)
+    above, aboveSpread = strip(6, 15)
+    sea = (deg <= 0) & (deg >= -5)
+    fall = float(np.polyfit(deg[sea], val[sea], 1)[0]) if sea.sum() > 2 else None  # L lost a degree going down
+    ds, vs = deg[sea], val[sea]
+    step = max((abs(vs[i] - vs[j]) for i in range(len(ds)) for j in range(i + 1, len(ds)) if abs(ds[i] - ds[j]) <= 1), default=None)
+    # a thin line at the horizon: the row (each pixel row's median) furthest from its neighbours 3 px off
+    r = np.array([np.median(L[y, x0:x1]) for y in range(round(hz - ppd), round(hz + ppd) + 1)])
+    dev = r[3:-3] - (r[:-6] + r[6:]) / 2
+    i = int(np.argmax(np.abs(dev)))
+    return {"x0": x0, "x1": x1, "horizon": hz,
+            "skyLow": round(low, 4), "skyAbove": round(above, 4), "skyLowOver": round(low - above, 4),
+            "skyLowSpread": round(lowSpread, 4), "skyAboveSpread": round(aboveSpread, 4),
+            "seaFall": None if fall is None else round(fall, 4), "seaStep": None if step is None else round(float(step), 4),
+            "line": round(float(dev[i]), 4), "lineY": round(hz - ppd) + 3 + i,
+            "profile": [[round(d, 2), round(v, 4)] for d, v in prof]}
+
+
+def print_deck(name, d):
+    for label, r in d["regions"].items():
+        if "note" in r:
+            print(f"  {label:10} {r['note']}")
+            continue
+        s = r["scaleStd"]
+        print(f"  {label:10} median {r['median']:.3f}  spread {r['spread']:.3f} ({r['stops']:.2f} stops)"
+              f"  structure {r['structure'][0]:+.3f}/{r['structure'][1]:+.3f}"
+              f"  std <1 {s['<1']:.4f} 1-3 {s['1-3']:.4f} 3-10 {s['3-10']:.4f} 10-30 {s['10-30']:.4f}"
+              f"  grad {r['gradient'][0]:.3f}/{r['gradient'][1]:.3f}  mass {r['mass'][0]:.1f}/{r['mass'][1]:.1f} deg"
+              f"  dark {r['dark'][0]:.3f} C {r['dark'][1]:.3f}  light {r['light'][0]:.3f} C {r['light'][1]:.3f}")
+    if "rows" in d:
+        w = d["rows"]
+        # (the sea's fall and step are None where too few rows lie 0-5 degrees down)
+        na = lambda v, form: "n/a" if v is None else format(v, form)
+        print(f"  rows x {w['x0']}-{w['x1']}, horizon y {w['horizon']}: sky 0-6 up {w['skyLow']:.3f} over 6-15 up {w['skyAbove']:.3f}"
+              f" ({w['skyLowOver']:+.3f}; spreads {w['skyLowSpread']:.3f} / {w['skyAboveSpread']:.3f})"
+              f"  sea 0-5 down falls {na(w['seaFall'], '.3f')}/deg, largest step within 1 deg {na(w['seaStep'], '.3f')}"
+              f"  line {w['line']:+.3f} at y {w['lineY']}")
+        print("  profile (deg, L): " + " ".join(f"{p[0]:g}:{p[1]:.3f}" for p in w["profile"]))
 
 
 # --------------------------------------------------------------------------------------------- radial
@@ -591,12 +990,30 @@ def main():
     p.add_argument("--out", required=True)
     p.set_defaults(fn=cmd_sheet)
 
+    p = sub.add_parser("thumb", help="small JPEGs of images")
+    p.add_argument("images", nargs="+")
+    p.add_argument("--match", default="*.png", help="the files a directory stands for")
+    p.add_argument("--short", type=int, default=360)
+    p.add_argument("--quality", type=int, default=88)
+    p.add_argument("--out", required=True)
+    p.set_defaults(fn=cmd_thumb)
+
     p = sub.add_parser("stats", help="mean, luma, percentiles per image or region")
     p.add_argument("images", nargs="+")
     common(p)
     p.add_argument("--pct", default="1,5,50,95,99")
     p.add_argument("--oklab", action="store_true", help="the median Oklab L, C and hue")
+    p.add_argument("--linear", action="store_true", help="the mean linear luminance Y, its --pct percentiles and the Oklab L, a, b of the mean linear colour")
+    p.add_argument("--split", action="store_true", help="the means under and over the median L, of the darkest 5 %% and the brightest 10 %%")
     p.add_argument("--cover", action="store_true", help="the share of red pixels (a grassMask capture's blades)")
+    p.add_argument("--mask", help="a mask capture of the same view (a file, or a directory of the same names): Oklab medians of its marked pixels and the rest")
+    p.add_argument("--against", help="with --mask, the same view without what the mask marks (a file or a directory): the marked pixels' own dL and dC")
+    p.add_argument("--deck",action="store_true", help="the cloud deck's measures on named sky regions and any --box")
+    p.add_argument("--deck-boxes", default="auto", choices=["auto", "h", "sun", "none"], help="with --deck, the named regions (auto: by the file name, -h or -sun)")
+    p.add_argument("--deck-rows", action="store_true", help="with --deck, the horizon's rows (section 4 of the deck's rows)")
+    p.add_argument("--horizon", help="with --deck-rows, x0,x1,horizonY in image pixels (default 0,800,528 at 2560 wide, scaled)")
+    p.add_argument("--trend", type=float, default=15, help="with --deck, the broad trend's width in degrees")
+    p.add_argument("--px-per-deg", type=float, help="with --deck, pixels a degree (default 24 at 2560 wide, scaled with the width)")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_stats)
 

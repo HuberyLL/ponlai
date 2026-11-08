@@ -29,8 +29,15 @@
 //   page (capture.mjs --worker), loads the first view it is given and reaches each later one by
 //   `__PONLAI__.establishScene( <the view's query> )` (src/main.ts: the frame then equals a fresh
 //   load's, byte for byte wherever the fresh load repeats), then the view's eval and the usual
-//   readiness and shot. A view's JSON says how it was reached (`page`: visit, load or jump, the view
-//   before, the page's memory). The views are handed out one at a time from one queue, so --jobs
+//   readiness and shot. The jump resets the scene's options and camera, not what an eval changed
+//   besides (GUI settings, Tune, debug flags, a uniform), so that holds only after views whose evals
+//   it covers: none, or exactly a views.mjs view's (camera placement, a weather change, which
+//   tools/verify-scene-jump.mjs checks from other scenes). After a view with an eval of its own
+//   (`--view ...::js`, a views-file `eval`, a `like=` view's js, a sweep over such a view;
+//   adhoc.mjs `jumpClean`) the page ends and the next view loads fresh; an `--eval` or
+//   `--eval-ready` after `--` (run on every view) gives a page per view, except an `--eval-ready` that
+//   `--ready-reads` (also after `--`) declares read-only: its views keep the one page. A view's JSON says how it
+//   was reached (`page`: visit, load or jump, the view before, the page's memory). The views are handed out one at a time from one queue, so --jobs
 //   balances itself. Builds whose page does not mark the exact jump (`__PONLAI__.sceneJump`; older
 //   commits) get a page per view, as before, said once; --page-per-view forces that. A stored
 //   reference records which (reference.mjs, `pages`: 'jump' or 'view'), so a set reached by jumps
@@ -75,7 +82,11 @@
 //   other pages kept the GPU busy, a page error, a crash): a failure ends its page, and the views
 //   still to come go on in a fresh one, so a crash or a stuck page (no answer within three times
 //   --timeout plus two minutes once the view holds its GPU slot: killed) does not lose the set; the view's log keeps the last
-//   attempt. --timeout (ms, default 240000) bounds capture.mjs's waits for the page.
+//   attempt. A page that ends before it asks for its first view (the browser did not start, the
+//   worker threw while opening it) is a failed start: it is tried again as a view is, and when
+//   more than --retries starts in a row fail, the run ends at once with exit 1, naming the last
+//   page's exit code and the last lines of its stderr (no view is attempted, none is logged).
+//   --timeout (ms, default 240000) bounds capture.mjs's waits for the page.
 // --runs appends a line to a CSV log of verification runs (date, task, procedure, sha, wall time in
 //   minutes, whether the GPU was busy before the run, the captures and failures, the set); the
 //   default is the PARITY_RUNS environment variable. Without either nothing is logged, so a
@@ -87,7 +98,8 @@
 //   commit (--store) on those crops; a short table per variant.
 // Options after `--` pass through to capture.mjs (e.g. `-- --wait-for "expr" --frames 4 --every 5`;
 // an `--eval` there runs after the view's own, before readiness, and an `--eval-ready` once the
-// view is ready, on the frame shot: a reading of the frame belongs there).
+// view is ready, on the frame shot: a reading of the frame belongs there; either one takes a page
+// per view, see above).
 // Production builds need `?debug` (added here) and the islanders' assets linked into the build's
 // output; see tools/parity/README.md.
 // The set and its capture.mjs workers run with the application scheduling policy on macOS
@@ -99,7 +111,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { viewEval } from './views.mjs';
-import { selectViews, viewQuery, loadSignature, viewDefs, describeViews } from './adhoc.mjs';
+import { selectViews, viewQuery, loadSignature, viewDefs, describeViews, jumpClean } from './adhoc.mjs';
 import { gpuUtilisation } from '../gpu-lock.mjs';
 import { samePixels } from '../capture-browser.mjs';
 import { ensureReference, setKey, resolveRefDir, checkServed } from './reference.mjs';
@@ -220,6 +232,8 @@ async function captureGroup( url, dir, list ) {
 		} else console.log( `${ item.key } rc=1 FAILED (${ why })` );
 
 	};
+	// pages in a row that ended before asking for a view (see the header), and why the last one did
+	let failedStarts = 0, startError = null;
 	// a page: one capture.mjs worker, serving items of one kind (first or repeat) until none is left
 	const runPage = ( repeat ) => new Promise( ( resolve ) => {
 
@@ -227,9 +241,10 @@ async function captureGroup( url, dir, list ) {
 		const child = spawn( ...appPolicy( process.execPath, [ 'tools/capture.mjs', '--worker', '--url', url, '--w', W, '--h', H, '--scale', scale,
 			'--timeout', String( timeout ), ...( options[ 'page-per-view' ] ? [ '--page-per-view' ] : [] ), ...passThrough ] ),
 		{ cwd: REPO, stdio: [ 'ignore', 'pipe', 'pipe', 'ipc' ] } );
-		let output = [], current = null, timer = null, killer = null, writing = Promise.resolve();
+		let output = [], current = null, timer = null, killer = null, writing = Promise.resolve(), asked = false;
+		const stderr = [];
 		child.stdout.on( 'data', ( d ) => output.push( d ) );
-		child.stderr.on( 'data', ( d ) => output.push( d ) );
+		child.stderr.on( 'data', ( d ) => { output.push( d ); stderr.push( d ); } );
 		child.on( 'error', ( error ) => output.push( Buffer.from( `capture.mjs: ${ error.message }\n` ) ) );
 		// (the page's close waits for the logs: the set's results are read once every page is done)
 		const flushLog = ( item, text ) => {
@@ -243,12 +258,15 @@ async function captureGroup( url, dir, list ) {
 
 			if ( m.type === 'next' ) {
 
+				// (the page started: the run of failed starts is over)
+				if ( ! asked ) { asked = true; failedStarts = 0; }
 				const i = queue.findIndex( ( item ) => !! item.suffix === repeat );
 				current = i >= 0 ? queue.splice( i, 1 )[ 0 ] : null;
 				if ( ! current ) { child.send( { type: 'done' }, () => {} ); return; }
 				const item = current;
 				// (a page that died meanwhile never got it: back in line, no attempt counted)
-				child.send( { type: 'view', view: { key: item.key, query: viewQuery( item.view, common ), evals: [ viewEval( item.view ) ], out: path.join( dir, item.key ) } },
+				// (`last`: an eval the jump does not undo, so the page ends after this view: see the header)
+				child.send( { type: 'view', view: { key: item.key, query: viewQuery( item.view, common ), evals: [ viewEval( item.view ) ], last: ! jumpClean( item.view ), out: path.join( dir, item.key ) } },
 					( error ) => { if ( error && current === item ) { current = null; queue.unshift( item ); } } );
 
 			} else if ( m.type === 'locked' ) {
@@ -301,6 +319,14 @@ async function captureGroup( url, dir, list ) {
 				flushLog( item, `the page was lost (exit ${ code ?? signal })` );
 				fail( item, `page lost (exit ${ code ?? signal })` );
 
+			} else if ( ! asked ) {
+
+				// a failed start: no view was handed out, so none is charged; the group stops after too many
+				failedStarts ++;
+				const tail = Buffer.concat( stderr ).toString().split( '\n' ).filter( ( l ) => l.trim() ).slice( - 15 ).join( '\n' );
+				startError = `capture.mjs exited ${ code ?? signal } before asking for a view${ tail ? `; its stderr ends:\n${ tail }` : ' (no stderr)' }`;
+				if ( failedStarts <= retries ) console.log( `a page failed to start (exit ${ code ?? signal }): starting another` );
+
 			}
 			await writing;
 			resolve();
@@ -312,9 +338,16 @@ async function captureGroup( url, dir, list ) {
 	const distinct = new Set( list.map( ( [ v ] ) => v ) ).size;
 	await Promise.all( Array.from( { length: Math.min( jobs, distinct ) }, async () => {
 
-		while ( queue.length ) await runPage( !! queue[ 0 ].suffix );
+		while ( queue.length && failedStarts <= retries ) await runPage( !! queue[ 0 ].suffix );
 
 	} ) );
+	if ( failedStarts > retries ) {
+
+		// (the other pages have closed; a worker also exits when this process goes)
+		console.error( `capture-set: ${ failedStarts } pages in a row failed to start, giving up. ${ startError }` );
+		process.exit( 1 );
+
+	}
 	return done;
 
 }

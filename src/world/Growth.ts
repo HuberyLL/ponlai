@@ -350,6 +350,7 @@ export class Growth<M = unknown> {
 		this.state.phase = 'failed';
 		this.state.error = String( error );
 		for ( const resolve of this.wanted.splice( 0 ) ) resolve();
+		this.rise.abandon();
 
 	}
 

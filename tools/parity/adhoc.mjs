@@ -23,6 +23,10 @@
 // page (establishScene refuses them), so capture-set captures them in groups, one group of pages
 // per set of load-time options, in the order the views were given.
 //
+// An eval of an ad-hoc view's own (`::js`, a views-file `eval`, the js of a `like=` view or of a
+// sweep over one) is not covered by the scene jump, which undoes the scene's options but not GUI
+// or console changes: the view after it gets a fresh page (`jumpClean`, capture-set.mjs's header).
+//
 // Names: letters, digits, `-` and `_` (a file name, and no dot: `<view>.repeat.png` and the
 // directory scan read a dot as a suffix), distinct from views.mjs's. The reference store keys a set's
 // views by name, so an ad-hoc view's coverage carries its definition's hash (`def`): a stored view of
@@ -57,6 +61,15 @@ const firstWins = ( list ) => {
 const hash = ( text ) => createHash( 'sha256' ).update( text ).digest( 'hex' ).slice( 0, 16 );
 // views.mjs's crop anchor names, read off the anchors' source
 const ANCHORS = new Set( [ ...viewEval( Object.keys( VIEWS )[ 0 ] ).matchAll( /^\t'([\w-]+)': \(/gm ) ].map( ( m ) => m[ 1 ] ) );
+// views.mjs's own evals, taken before any ad-hoc view is defined (see jumpClean)
+const VIEWS_EVALS = new Set( Object.values( VIEWS ).map( ( v ) => v.eval ).filter( Boolean ) );
+
+/** Whether the next scene jump undoes what the view's eval did, so its page can serve another view:
+ * no eval, or exactly a views.mjs view's (the jump's contract covers those: tools/verify-scene-jump.mjs
+ * checks the views reached from each other). Any other js (an ad-hoc `::js`, a views-file `eval`, a
+ * `like=` view's js on top, a sweep over such a view) may change what no jump resets (the GUI's
+ * settings, Tune, debug flags, a uniform): capture-set ends that view's page after it. */
+export const jumpClean = ( name ) => ! VIEWS[ name ].eval || VIEWS_EVALS.has( VIEWS[ name ].eval );
 
 /** Registers an ad-hoc view into VIEWS (so viewEval and every reader of VIEWS take it). */
 function define( { name, q = '', eval: js, crops, like } ) {

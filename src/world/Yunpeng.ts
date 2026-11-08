@@ -5,6 +5,7 @@ import { receiveScreenAO } from '../post/GTAO.ts';
 import { receiveScreenShadow } from '../post/MeadowShade.ts';
 import type { Shared } from '../shared.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { NIGHT_METER_LIFT } from '../sky/DayCycle.ts';
 import { mulberry32, type Rng } from './noise.ts';
 import { SEABED_TILE } from './SeabedTile.ts';
 import { runSteps } from './Steps.ts';
@@ -46,6 +47,10 @@ import { writeMeter } from '../lighting/MeterLight.ts';
 //   its area seen from outside (a thin round stalk shows a quarter of its surface on average from
 //   all directions, a two-sided leaf or tassel half of one face's), so the light and the glow are
 //   one quantity. Its range: YUNPENG.reach.
+// - The glow and its light are scaled by one constant, 2 to minus DayCycle.ts NIGHT_METER_LIFT, the
+//   stops the metered exposure rises by from the twilight to a clear night: a lamp does not know the
+//   hour or the weather, so a clear night shows it as the glow's value was set for, it shows later
+//   in the dusk (the exposure has not yet risen), and brighter on a darker night, as a lamp does.
 // - It bends in the one wind from each stalk's foot, its top the most, with the drag on it, each
 //   stalk by its own stiffness and drag (`stalkLoad`) and swinging at its own rate and phase
 //   (Deform.ts mainBend), the leaves and the plume's tassels fluttering from their foot as the
@@ -92,10 +97,12 @@ export const YUNPENG = {
 	far: { sides: 4, ring: 0.4, leaves: 0.5 },
 };
 
-/** The night's share of the glow and the light (0 by day: DayCycle.ts `nightAmbientAt`), each frame. */
+/** The night's share of the glow and the light (0 by day: DayCycle.ts `yunpengNightShare`), each
+ * frame. */
 export const yunpengNight = uniform( 0 );
-/** The glow's strength, the flag's at load (`yunpengGlow`), else YUNPENG.glow. */
-const glowLevel = (): number => Number( debugFlags.yunpengGlow ?? YUNPENG.glow );
+/** The glow's strength in scene units: the flag's at load (`yunpengGlow`), else YUNPENG.glow, both
+ * set for a clear night's exposure, over the night's rise in the metered exposure (the header). */
+const glowLevel = (): number => Number( debugFlags.yunpengGlow ?? YUNPENG.glow ) * 2 ** - NIGHT_METER_LIFT;
 
 // linear albedo: snow white, a little cool; greyer at the foot
 const WHITE = [ 0.72, 0.74, 0.76 ], FOOT = [ 0.42, 0.44, 0.4 ];

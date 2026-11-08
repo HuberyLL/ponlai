@@ -18,6 +18,7 @@ import { FSR } from './FSR.ts';
 import { PhysicalBloom } from './PhysicalBloom.ts';
 import { Metering } from './Metering.ts';
 import { PURKINJE, purkinjeScale, purkinjeShift } from './Purkinje.ts';
+import { cloudedShare } from '../sky/Weather.ts';
 import { AA_MODE, AFTER_RESOLVE, FSR3, RESOLVE, SCENE_SAMPLES, TEMPORAL } from './Antialiasing.ts';
 import { beginMotionFrame, METER_LIGHT, onTaaCut, overlayMRT, sceneMRT } from './Motion.ts';
 import { preExposed, preExposedRGBA, preExposure, sceneUnits } from './PreExposure.ts';
@@ -36,7 +37,7 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 import { ambientSkyVisibility } from '../lighting/AmbientSample.ts';
 import { liftedKeyHeight } from '../lighting/KeyLift.ts';
 import { shared } from '../shared.ts';
-import { DAY_EXPOSURE } from '../sky/DayCycle.ts';
+import { DAY_EXPOSURE, duskForce } from '../sky/DayCycle.ts';
 import type { Rain } from '../weather/Rain.ts';
 import { CLIP_MARGIN, RefractionView, REFRACTION_GUARD, REFRACTION_SIZE } from '../ocean/Refraction.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -45,10 +46,10 @@ import { BLUE_NOISE, blueNoiseTexture } from './BlueNoise.ts';
 import { TONE_CURVE, checkToneCurve, solveToneCurve, type ToneCurve } from './ToneCurve.ts';
 import { BASE_GRADE, fillGradeLut, gradeOf, lutNodes, mergeGrade, sampleLut, type GradeChanges, type GradeParams } from './GradeLut.ts';
 import { LocalTone } from './LocalTone.ts';
-import { keyed, type DayKeys } from './DayKeys.ts';
-import { EXPOSURE_KEYS, type ExposureKey } from './Exposure.ts';
+import { keyed, type DayKey, type DayKeys } from './DayKeys.ts';
+import { exposureKeys, type ExposureKey } from './Exposure.ts';
 import { restEpoch, restKey } from './TemporalRest.ts';
-import { tuneCheck, tuneKeys, tuneObject } from '../debug/Tune.ts';
+import { tuneCheck, tuneKeys, tuneObject, tuneUniform } from '../debug/Tune.ts';
 import { displacementField } from '../world/vegetation/Displacement.ts';
 import { leavesPass, type FallingLeaves } from '../weather/FallingLeaves.ts';
 import { localLightsPass } from '../lighting/LocalLights.ts';
@@ -70,13 +71,16 @@ import { localLightsPass } from '../lighting/LocalLights.ts';
 //     half the render's pixel density (ocean/Refraction.ts; the water's refraction source where the
 //     opaque image does not hold the floor: behind what stands above the water, and off the screen)
 //   water ── back into sceneRT, depth-tested per sample against the opaque samples
-//   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included)
+//   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included: sample
+//     0's, or the nearest sample's where sample 0 sees the sky, so a pixel is sky only where all its
+//     samples are)
 //   rain ── into sceneRT (its multisampled colour and depth are then discarded: nothing reads them;
 //     without rain the water discards the colour and the surface resolve's read keeps the depth)
 //   haze (weather/VolumetricHaze.ts): its froxel grid's shadow kernel (skipped while a rest holds it)
 //   and its light kernel, which integrates each column into the light volume
 //   sky constants: the clouds' mean transmittance over the sun's and the moon's discs, which the
-//   dome reads (Sky.ts discCloudTransmittance), evaluated once into a texel ahead of the scene
+//   flare's visibility reads (Sky.ts discCloudTransmittance, LightShafts.ts `occlusion`), evaluated
+//   once into a texel ahead of the scene
 //   falling leaves: the leaves' births and fixed steps (weather/FallingLeaves.ts: one compute pass
 //   over its fixed ring, its own buffers only; a reset's frame prewarms it instead), ahead of the
 //   opaque scene, which draws them; absent in the test mode
@@ -106,7 +110,8 @@ import { localLightsPass } from '../lighting/LocalLights.ts';
 //   blurred across (localTone.grid, gridX, gridXY: LocalTone.ts), at fixed sizes
 //   display: the exposure, the local tone mapping, tidewater's grade (the night's grade, the
 //   tone, the vignette), the white balance and the tone curve in their
-//   curve space (ToneSpace.ts), the grade's two tables (GradeLut.ts, indexed by the square root of linear light), the BT.709 OETF, dither ── displayRT
+//   curve space (ToneSpace.ts), the grade's two tables (GradeLut.ts, indexed by the square root of linear light),
+//   overcast's highlights toward grey (HIGHLIGHT_GREY), the BT.709 OETF, dither ── displayRT
 //   ── copied to the screen
 // Under the temporal modes (Antialiasing.ts: aa=taa|taau) the scene half is single-sampled and
 // jittered, and writes the motion vectors beside the colour:
@@ -221,7 +226,8 @@ import { localLightsPass } from '../lighting/LocalLights.ts';
 // - The water cannot sample the target it draws into: it reads `opaqueRT` and `depthRT` (sample 0,
 //   and the farthest sample for what lies behind the sea at an edge pixel), and the underwater
 //   pyramid (`textures.underwater`). Post passes read
-//   `surfaceRT`, the nearest surface's depth with the sea's included. Multisampled depth is read
+//   `surfaceRT`, the nearest surface's depth with the sea's included (sky only where every sample
+//   of the pixel is: the surface resolve). Multisampled depth is read
 //   with `textureLoad`, one sample at a time (the sample index in its level argument);
 //   single-sampled, that argument is a mip level, so load sample 0 only. View z below -9e4 is sky.
 // - In a full-screen pass the camera nodes are the pass's own camera: the scene camera's matrices
@@ -261,7 +267,8 @@ import { localLightsPass } from '../lighting/LocalLights.ts';
 //   (LocalTone.ts: a function of the frame, nothing kept between frames), one
 //   curve and grade (the shade's contrast, SHADE_CONTRAST; the tone, TONE, and the night's grade, NIGHT, over it are off by default), then
 //   the grade's tables (GradeLut.ts, indexed by the square root of the curve's linear output: the first generated from the grade's parameters, `grade` and
-//   `setGrade`, the second the identity). The curve maps each channel in the
+//   `setGrade`, the second the identity), then overcast's highlights toward grey (HIGHLIGHT_GREY).
+//   The curve maps each channel in the
 //   space of ToneSpace.ts, AP1 with its red primary moved out, and the white balance is folded
 //   into its input matrix (WHITE_BALANCE, keyed by the sun and the weather; rebuilt only when it changes). The exposure is metered
 //   from the frame by the meter pass (Metering.ts, Exposure.ts: the metering illuminance's and the
@@ -390,7 +397,7 @@ type PassBuilder = Parameters<Parameters<FrameGraph<PipelineFrame>[ 'addPass' ]>
 // and contrast left for the grade table's hue bands, GradeLut.ts BASE_GRADE, and the shade's
 // contrast, SHADE_CONTRAST); our tone curve (ToneCurve.ts) on the exposed colour, in the curve
 // space of ToneSpace.ts with the white balance folded into its input matrix; the grade's tables;
-// the BT.709 OETF shown as sRGB, and a blue-noise dither (BlueNoise.ts; its luminance-weighted grain is gone).
+// overcast's highlights toward grey (HIGHLIGHT_GREY); the BT.709 OETF shown as sRGB, and a blue-noise dither (BlueNoise.ts; its luminance-weighted grain is gone).
 // tidewater meters its frame's luminance and scales it by an auto exposure before the grade; here
 // the meter reads the light on the scene (Metering.ts, Exposure.ts).
 
@@ -439,6 +446,9 @@ export interface PipelineSettings {
 	tone: number;
 	// 0 by day, 1 at night (from the clock, main.ts): how far the night's grade has come in (NIGHT)
 	night: number;
+	// 0 by day, 1 at night: how far the exposure's night key has come in (sky/DayCycle.ts
+	// `exposureNight`, apart from the display's)
+	exposureNight: number;
 	// the kept skies' shares in the sky as it stands (Weather.ts `skyMix`, main.ts): the clouded
 	// day's keys (DayKeys.ts `cloudy`, the cloudy and overcast skies' share)
 	skyMix: number[];
@@ -463,14 +473,15 @@ const LOCAL_TONE_ON = debugFlags.localTone !== false;
 // the shade lost its weight; this gives it back without touching the lit ground and the sky. The
 // pivot (stops over mid grey) and slope are set per key (keyed by the sun's elevation,
 // DayKeys.ts). By day the pivot sits over the lit ground, so the whole shade deepens, from noon down
-// to a sun at 9 degrees; the golden hour's slope runs to 0, its long shadows taking their weight
-// from the light alone (its pivot then does nothing and keeps its start). The clouded sky deepens
+// to a sun at 9 degrees; the golden hour keeps most of the slope with its pivot nearly a stop under
+// mid grey, so only what lies in the long shadows drops, and the sunlit cliff stays as it is. The
+// clouded sky deepens
 // its darks too, from about 0.9 of a stop over mid grey; the night's slope runs to 0 as well, its
 // darks set by the local tone alone (its pivot acts only while the night fades in under a clouded
 // sky, beside the cloudy key's: DayKeys.ts `keyed` blends the cloud in first).
 // Tunable on debug pages (debug/Tune.ts): `post.shade.<value>@golden`, `@day`, `@cloudy`, `@night`.
 export const SHADE_CONTRAST: DayKeys<{ pivot: number; slope: number }> = tuneKeys( 'post.shade', {
-	day: [ { at: 4, name: 'golden', values: { pivot: 0.0684, slope: 0 } }, { at: 9, name: 'day', values: { pivot: 1.58, slope: 0.449 } } ],
+	day: [ { at: 4, name: 'golden', values: { pivot: - 0.86, slope: 0.37 } }, { at: 9, name: 'day', values: { pivot: 1.58, slope: 0.449 } } ],
 	cloudy: { pivot: 0.902, slope: 0.18 },
 	night: { pivot: 0.516, slope: 0 },
 }, { pivot: { min: - 3, max: 4 }, slope: { min: 0, max: 0.5 } } );
@@ -478,14 +489,64 @@ export const SHADE_CONTRAST: DayKeys<{ pivot: number; slope: number }> = tuneKey
 // The desaturation before the local tone's gain: each colour drawn toward its own luminance by
 // `amount` (0 keeps it, 1 grey), c + ( Y( c ) - c ) amount, keyed by the sun and the weather
 // (DayKeys.ts); below 0 it saturates. Keyed as the white balance is, so each key sets its own: the
-// golden hour saturates by a third, the day keeps its colours, the clouded sky fades them by a
-// fifth, the night by about a half.
-// Tunable on debug pages (debug/Tune.ts): `post.desaturate.amount@golden`, `@day`, `@cloudy`, `@night`.
-export const DESATURATION: DayKeys<{ amount: number }> = tuneKeys( 'post.desaturate', {
-	day: [ { at: 4, name: 'golden', values: { amount: - 0.331 } }, { at: 9, name: 'day', values: { amount: 0.0122 } } ],
-	cloudy: { amount: 0.184 },
-	night: { amount: 0.481 },
-}, { amount: { min: - 0.5, max: 1 } } );
+// golden hour saturates by a sixth, the day keeps its colours, the clouded sky fades them by a
+// twelfth, the night by about a half. The rising sun's `dawn` key, held from -1 degree down,
+// fades the cool colours by 0.6 and passes into the golden key's by 1.5 (the golden key's own
+// values, shared): before the sun the clear morning's land, sea and sky took the dawn's white
+// (`dawn`, WHITE_BALANCE) on top of their own blue, and the upper sky and the far sea turned violet
+// (h 271 to 278 from -4 to 0 degrees). A fade of every colour brought them back to h 250 to 262,
+// but it took the warm colours with them: the rose band over the horizon (h 327 to 353, C 0.03 to
+// 0.05 from -8 to -1 degrees) went to a grey-blue band (h 263, the white's cast), and the meadow's
+// green, under it, to h 231 to 241. So the key's `cool` share of 1 fades only the colours that lie
+// toward blue once the white is applied (`coolShare`: blue over red as a share of the colour's
+// spread, 0 none to 0.6 all), and the warm band and the meadow keep their own colour under the same
+// white: the sky's top stays at h 248 to 257, the band at h 327 to 353, the meadow at h 214 to 226
+// from -7 to -4.5 degrees.
+// Tunable on debug pages (debug/Tune.ts): `post.desaturate.<amount|cool>@golden`, `@dawn`, `@day`,
+// `@cloudy`, `@night`; the cool share's edges `post.desaturate.coolFrom`, `post.desaturate.coolTo`.
+// amount: the fade (0 keeps the colour, 1 grey, below 0 saturates); cool: the share of the fade
+// that only cool colours take (`coolShare`)
+type DesaturationKey = { amount: number; cool: number };
+const DESATURATION_DAY: DayKey<DesaturationKey>[] = [ { at: 4, name: 'golden', values: { amount: - 0.163, cool: 0 } }, { at: 9, name: 'day', values: { amount: 0.0122, cool: 0 } } ];
+export const DESATURATION: DayKeys<DesaturationKey> = tuneKeys( 'post.desaturate', {
+	day: DESATURATION_DAY,
+	rising: [ { at: - 1, name: 'dawn', values: { amount: 0.6, cool: 1 } }, { at: 1.5, values: DESATURATION_DAY[ 0 ].values }, ...DESATURATION_DAY ],
+	cloudy: { amount: 0.08, cool: 0 },
+	night: { amount: 0.481, cool: 0 },
+}, { amount: { min: - 0.5, max: 1 }, cool: { min: 0, max: 1 } } );
+/** Where a colour counts as cool for the desaturation's `cool` share (DESATURATION): its blue less
+ * its red, as a share of its spread (max less min), from `COOL_FROM` (none of it cool) to `COOL_TO`
+ * (all of it), read through the white balance (`balance`). */
+const COOL_FROM = tuneUniform( 'post.desaturate.coolFrom', 0, { min: - 1, max: 1 } );
+const COOL_TO = tuneUniform( 'post.desaturate.coolTo', 0.6, { min: - 1, max: 1 } );
+// Overcast's highlights toward grey: the grade's tables' linear output c becomes
+// c + ( Y( c ) - c ) amount smoothstep( from, to, Y( c ) ) share, `share` overcast's share in the sky
+// times one less the night's weight (as its white, WHITE_OVERCAST: none at night, and nothing at all
+// where the sky holds no overcast). Overcast's white, which turns the deck away from the sun
+// blue-green grey and the meadow green, turned the bright sky about the sun cyan too (OKLab a -0.033
+// at a lightness of 0.74, 10 to 30 degrees from it), and a warmer white turns the deck and the
+// meadow back. The deck lies under `from` (a display lightness of about 0.35, the deck about 0.32)
+// and keeps its colour; the meadow straddles it: its hue stays, its median chroma falls by about a
+// fifth (0.083 to 0.065), and the lit grass above a lightness of 0.55 keeps under half its chroma.
+// `from` and `to` are linear luminances of the tables' output (display lightness about 0.35 and
+// 0.70); amount 0.58 brings the sky 10 to 30 degrees from the sun to a -0.014 and 30 to 60 degrees
+// to about a -0.024 (-0.024 at a sun of 22 degrees, -0.025 at 15), and the glow within 10 degrees
+// of it to a chroma under 0.01.
+// Tunable on debug pages (debug/Tune.ts): `post.highlight.amount`, `from`, `to`.
+const HIGHLIGHT_GREY = {
+	amount: tuneUniform( 'post.highlight.amount', 0.58, { min: 0, max: 1 } ),
+	from: tuneUniform( 'post.highlight.from', 0.067, { min: 0, max: 1 } ),
+	to: tuneUniform( 'post.highlight.to', 0.4, { min: 0, max: 1 } ),
+};
+/** How cool the colour `c` (white balanced) is, 0 to 1 (`coolFrom`, `coolTo`: COOL_FROM, COOL_TO). The
+ * edges come in as inputs: a laid-out helper that reads uniforms in its body can be emitted with
+ * another material's uniform names (r186), which broke the rain's materials under taa. */
+const coolShare = Fn( ( [ c, coolFrom, coolTo ]: [ V3, F, F ] ) => {
+
+	const spread = max( max( c.r, c.g ), c.b ).sub( min( min( c.r, c.g ), c.b ) );
+	return smoothstep( coolFrom, coolTo, c.b.sub( c.r ).div( max( spread, 1e-6 ) ) );
+
+} ).setLayout( { name: 'coolShare', type: 'float', inputs: [ { name: 'c', type: 'vec3' }, { name: 'coolFrom', type: 'float' }, { name: 'coolTo', type: 'float' } ] } );
 
 // The night's grade (art direction: a film's night, day for night): the meadow's greens turned
 // toward blue-green, the frame a touch silver-blue, the bloom stronger so the moon, its clouds and
@@ -546,19 +607,39 @@ export function vignetteFactor( at: V2, strength: F ): F {
 
 }
 // The white balance, as the colour white becomes (linear Rec.709), by the sun's elevation, under a
-// clouded sky and at night (DayKeys.ts), fitted with the light. A clear day pushes the display well
-// past neutral toward cool from noon down to a sun at 9 degrees (red at its bound, half of green,
-// blue 1.36), one look for the whole day as the other keyed knobs keep it: the noon sun's warmth on
-// the lit ground is held back and what the blue sky lights turns clearly cool. The golden hour warms
-// a little further (red 1.05, blue 0.9); the clouded skies take a cool white too (red 0.78, blue
-// 1.16), their grey light kept from reading warm. The night takes a cool white too (red 0.76, blue
-// 1.4), on top of the moon's light and the rods' (Purkinje.ts).
-// Tunable on debug pages (debug/Tune.ts): `post.white.<r|g|b>@golden`, `@day`, `@cloudy`, `@night`.
+// clouded sky and at night (DayKeys.ts), set with the light. A clear day pushes the display past
+// neutral toward cool, the sun's warmth on the lit ground held back: furthest at a sun of 9 degrees
+// (red half of green, blue 1.36), which keeps the low sun's rock and meadow, and less by 40 degrees
+// (red 0.59, blue 1.25, the `high` key), where the stronger cast would turn sunlit rock blue. The
+// high key moves with the sky's (Sky.ts SKY_LIGHT), which takes the inverse, so the sky holds its
+// colour. The golden hour warms a little further (red 1.05, blue 0.9); the clouded skies take a cool
+// white too (red 0.78, blue 1.16), their grey light kept from reading warm. Overcast takes a cooler
+// white of its own (red 0.49, blue 1.14, WHITE_OVERCAST): under the clouded key its slightly warm
+// grey deck read as a neutral grey and the meadow under it as yellow-green (hue 120); its own key
+// brings the deck to a blue-green grey (OKLab a -0.022, b -0.008) and the meadow to green (hue
+// 132), the lightness all but unchanged. It comes in over the clouded day's white by overcast's share in
+// the sky, before the night's, so an overcast night takes the night's white as any other.
+// The night takes a cool white too (red 0.53, blue 1.2), on top of the moon's light and the rods'
+// (Purkinje.ts).
+// The rising sun takes a cold white where the setting sun takes the warm one (`dawn`, in place of
+// the golden key while the sun climbs: DayKeys.ts `rising`; red 0.4, blue 2, tuned on our own
+// views): all that the sun does not reach at dawn is blue, sky, water and rock alike, and a face turned
+// to the sun takes a pale warm colour, far less orange than the same face at the same height in
+// the evening. It is what moves the rose band over the horizon, which the sky's own light
+// (Sky.ts SKY_LIGHT, its `dawn` key) cannot reach. The sides are one from the `day` key up.
+// Tunable on debug pages (debug/Tune.ts): `post.white.<r|g|b>@golden`, `@dawn`, `@day`, `@high`,
+// `@cloudy`, `@overcast`, `@night`.
+const WHITE_RANGE = { r: { min: 0.2, max: 1.5 }, g: { min: 0.5, max: 1.5 }, b: { min: 0.5, max: 3 } };
+const WHITE_FROM_DAY: DayKey<{ r: number; g: number; b: number }>[] = [ { at: 9, name: 'day', values: { r: 0.5, g: 1, b: 1.36 } }, { at: 40, name: 'high', values: { r: 0.593, g: 1, b: 1.248 } } ];
 export const WHITE_BALANCE: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'post.white', {
-	day: [ { at: 4, name: 'golden', values: { r: 1.05, g: 1, b: 0.9 } }, { at: 9, name: 'day', values: { r: 0.5, g: 1, b: 1.36 } } ],
+	day: [ { at: 4, name: 'golden', values: { r: 1.05, g: 1, b: 0.9 } }, ...WHITE_FROM_DAY ],
+	rising: [ { at: 4, name: 'dawn', values: { r: 0.4, g: 1, b: 2.0 } }, ...WHITE_FROM_DAY ],
 	cloudy: { r: 0.775, g: 1, b: 1.16 },
-	night: { r: 0.764, g: 1, b: 1.4 },
-}, { r: { min: 0.5, max: 1.5 }, g: { min: 0.5, max: 1.5 }, b: { min: 0.5, max: 1.5 } } );
+	night: { r: 0.527, g: 1, b: 1.2 },
+}, WHITE_RANGE );
+// overcast's own white (WHITE_BALANCE's header), over the clouded day's by overcast's share
+const WHITE_OVERCAST = tuneObject( { r: 0.49, g: 1, b: 1.14 },
+	{ r: 'post.white.r@overcast', g: 'post.white.g@overcast', b: 'post.white.b@overcast' }, WHITE_RANGE );
 
 
 export class Pipeline {
@@ -573,7 +654,7 @@ export class Pipeline {
 		// (tunable on debug pages, debug/Tune.ts: `post.tone.blackSlope`, `midGrey`, `white`)
 		curve: tuneObject( { ...TONE_CURVE }, { toe: 'post.tone.blackSlope', mid: 'post.tone.midGrey', white: 'post.tone.white' },
 			{ toe: { min: 1.5, max: 3 }, mid: { min: 0.12, max: 0.22 }, white: { min: 8, max: 32, scale: 'log' } } ),
-		lut: 0, ...TIDEWATER_GRADE, tone: TONE, night: 0, skyMix: [ 0, 1, 0, 0 ],
+		lut: 0, ...TIDEWATER_GRADE, tone: TONE, night: 0, exposureNight: 0, skyMix: [ 0, 1, 0, 0 ],
 	} as PipelineSettings, { bloom: 'post.bloom.strength', vignette: 'post.vignette.strength' },
 	{ bloom: { min: 0, max: 2 }, vignette: { min: 0, max: 1.5 } } );
 
@@ -679,7 +760,7 @@ export class Pipeline {
 	readonly grade: GradeParams = gradeOf( {}, BASE_GRADE );
 	// the shade's contrast this frame (SHADE_CONTRAST)
 	private readonly shade = { pivot: 0, slope: 0 };
-	private readonly desaturation = { amount: 0 };
+	private readonly desaturation = { amount: 0, cool: 0 };
 	private readonly white = { r: 1, g: 1, b: 1 };
 	// the white the tone curve's input matrix was last built for
 	private toneWhite = [ NaN, NaN, NaN ];
@@ -692,7 +773,12 @@ export class Pipeline {
 		// the shade's contrast (SHADE_CONTRAST): its pivot as an exposed luminance, and its slope
 		shadePivot: uniform( 0.8 ), shadeSlope: uniform( 0 ),
 		// the desaturation before the local gain (DESATURATION)
-		desaturate: uniform( 0 ),
+		desaturate: uniform( 0 ), desaturateCool: uniform( 0 ),
+		// overcast's highlights toward grey (HIGHLIGHT_GREY): overcast's share by day
+		highlightShare: uniform( 0 ),
+		// the white balance alone (WHITE_BALANCE), through which the desaturation's cool share reads
+		// its colours
+		balance: uniform( new THREE.Matrix3() ),
 		// the Purkinje shift's weight: the night's times its strength, and the key's share of the
 		// light its retinal scale is taken from (Purkinje.ts `purkinjeScale`)
 		purkinje: uniform( 0 ), purkinjeKey: uniform( 0 ),
@@ -727,7 +813,10 @@ export class Pipeline {
 		this.options = { ...DEFAULT_POST_OPTIONS, ...options };
 		this.settled.settle = ( temporal ?? QUALITY.high.taa ).restSettle;
 		const O = this.options;
-		this.air = new VolumetricHaze( sunShadow, sky.atmosphere, O.hazeGrid );
+		this.air = new VolumetricHaze( sunShadow, sky.atmosphere, O.hazeGrid, sky.sunBeamIlluminance, sky.moonBeamIlluminance );
+		// the clouds' march ends where this haze closes (Clouds.ts `makeMarch`): it reads the medium
+		// from uniforms of its own, built before the haze, which the haze writes with its own
+		this.air.cloudMedium = sky.clouds.haze;
 		// the island's cover hides the haze from the open sky: the rain's collision map (its top,
 		// drawn at load and on every Grow, in every weather), times the ambient probes' sky
 		// visibility, which exists only once main.ts installs the volume with the world, so the
@@ -740,8 +829,9 @@ export class Pipeline {
 		}
 		// the sky fogs itself (the composite leaves its pixels), its own ray with the dome's thin haze,
 		sky.fogDome( ( d, distance ) => this.air.skyHaze( d, distance, undefined, true ) );
-		// and its environment, from the sea's level, as the dome does: one sky (Sky.ts `fogEnvironment`)
-		sky.fogEnvironment( ( d, distance ) => this.air.openSky( d, 0, sky, distance ) );
+		// and its panoramas from the sea's level: the seen one and the probe's as the dome takes the
+		// haze, the land's light without the fog layer (Sky.ts `fogEnvironment`)
+		sky.fogEnvironment( ( d, distance ) => this.air.openSky( d, 0, sky, distance ), ( d, distance ) => this.air.openSky( d, 0, sky, distance, false ) );
 		// The scene's target: half-float colour and float depth at the scene's sample count, then
 		// the resolves the water and the post passes read (single-sampled).
 		const g = this.graph = new FrameGraph<PipelineFrame>( renderer, { sceneSamples: SCENE_SAMPLES, legacyDiscard: O.discardScene ? [ 'rain' ] : [], dev: DEV, prime: PRIME } );
@@ -1079,9 +1169,23 @@ export class Pipeline {
 
 		} )();
 		this.refractionMaskQuad = new THREE.QuadMesh( maskMat );
-		// the nearest surface's view z
+		// The nearest surface's view z: sample 0's, but the nearest sample's where sample 0 sees the sky
+		// and another sample a surface, so a pixel is sky only where all its samples are. Such an edge
+		// pixel's colour holds the surface's samples unhazed (the haze composite fogs everything but
+		// the sky, which fogs itself): the composite fogs it at the surface's distance, and the sky's
+		// share then takes the air it already has once more, which leaves the hazy sky at the horizon
+		// nearly as it was. Read by sample 0 alone, the sea's far edge (MSAA's sample 0 lies near the
+		// pixel's top, in the sky) stayed unhazed along the horizon's row, a dark line.
 		const surfaceMat = new THREE.NodeMaterial();
-		surfaceMat.fragmentNode = Fn( () => vec4( viewZ( screenCoordinate.xy, depthSample( screenCoordinate.xy, 0 ) ) ) )();
+		surfaceMat.fragmentNode = Fn( () => {
+
+			const coord = screenCoordinate.xy;
+			const d0 = depthSample( coord, 0 ).toVar();
+			if ( SCENE_SAMPLES !== 4 ) return vec4( viewZ( coord, d0 ) );
+			const near = min( min( d0, depthSample( coord, 1 ) ), min( depthSample( coord, 2 ), depthSample( coord, 3 ) ) ).toVar();
+			return vec4( viewZ( coord, select( d0.lessThan( 0.999999 ), d0, near ) ) );
+
+		} )();
 		this.surfaceQuad = new THREE.QuadMesh( surfaceMat );
 
 		// ---- composite: the scene target holds the opaque image with the sea and the rain drawn over it
@@ -1100,10 +1204,10 @@ export class Pipeline {
 		// (in scene units: the haze, the shafts and the rods' colour are; hdr is pre-exposed again)
 		const aired = this.air.apply( sceneUnits( sceneTex.rgb ), tSurfaceDepth, sky, g, rainAir ? ( _d, _distance, background, transmittance ) => vec4( background, transmittance ) : veil );
 		const shafts = this.shafts.build( tSurfaceDepth, sky, g );
-		// The sky's own per-frame constants, ahead of the scene whose dome reads them: the mean cloud
-		// transmittance over the sun's disc and over the moon's (Sky.ts `discCloudTransmittance`).
+		// The sky's own per-frame constants, which the flare's visibility reads (the post constants
+		// below): the mean cloud transmittance over the sun's disc and over the moon's (Sky.ts
+		// `discCloudTransmittance`). The dome's discs take the clouds' transmittance per pixel instead.
 		this.skyConstants.output = g.color( 'skyConstants', { size: { of: 'fixed', width: 1, height: 1 }, format: THREE.RGBAFormat, type: THREE.FloatType } );
-		sky.discCloudTexture.value = g.texture( this.skyConstants.output );
 		const skyConstantsMat = new THREE.NodeMaterial();
 		skyConstantsMat.name = 'Sky.Constants';
 		skyConstantsMat.fragmentNode = sky.discCloudTransmittance();
@@ -1203,7 +1307,8 @@ export class Pipeline {
 
 		// ---- tidewater's grade, to display values: the scene at the exposure, the vignette (the
 		// resolve leaves it to the canvas pass, after the accumulation), the tone curve with the
-		// white balance, the grade's tables and the BT.709 OETF (its saturation and contrast are the
+		// white balance, the grade's tables, overcast's highlights toward grey (HIGHLIGHT_GREY) and the
+		// BT.709 OETF (its saturation and contrast are the
 		// table's, GradeLut.ts) (`encode` false: the output code's sRGB decode). `at`: the
 		// screen uv whose local tone mapping it takes (none for the grade's table).
 		// the vignette's factor at the pixel being drawn (VIGNETTE): round in the frame's own uv, the
@@ -1217,7 +1322,7 @@ export class Pipeline {
 
 			const c = lin.mul( exposure ).toVar();
 			// the desaturation (DESATURATION), before the local gain
-			c.addAssign( vec3( luminance( c ) ).sub( c ).mul( u.desaturate ) );
+			c.addAssign( vec3( luminance( c ) ).sub( c ).mul( u.desaturate.mul( mix( float( 1 ), coolShare( u.balance.mul( c ), COOL_FROM, COOL_TO ), u.desaturateCool ) ) ) );
 			if ( localTone && at ) c.assign( localTone.apply( c, at ) );
 			// the shade's contrast (SHADE_CONTRAST)
 			c.mulAssign( exp2( min( log2( max( luminance( c ), 1e-6 ) ).sub( log2( u.shadePivot ) ), 0 ).mul( u.shadeSlope ) ) );
@@ -1241,7 +1346,11 @@ export class Pipeline {
 			// the output transfer: the tables' linear output (the square of what they hold) encoded by
 			// the BT.709 OETF, a code the canvas shows as sRGB (`encode` false: that code's sRGB decode,
 			// so the temporal canvas pass's sRGB encode gives the code back)
-			const v = ( bt709( clamp( looked.mul( looked ), 0, 1 ) as V3 ) as V3 ).toVar();
+			const graded = looked.mul( looked ).toVar();
+			// overcast's highlights toward grey (HIGHLIGHT_GREY): a weight of 0 adds nothing
+			const y = luminance( graded );
+			graded.addAssign( vec3( y ).sub( graded ).mul( HIGHLIGHT_GREY.amount.mul( smoothstep( HIGHLIGHT_GREY.from, HIGHLIGHT_GREY.to, y ) ).mul( u.highlightShare ) ) );
+			const v = ( bt709( clamp( graded, 0, 1 ) as V3 ) as V3 ).toVar();
 			return encode ? v : sRGBTransferEOTF( v ) as V3;
 
 		};
@@ -1544,7 +1653,7 @@ export class Pipeline {
 		// `fogDome`): its shadow (skipped while a rest holds it) and its light volume; they read the
 		// sun's maps, the clouds' shadow and the camera, never the scene's depth
 		const hazeReads = this.air.passes( g );
-		// then the sky's constants, which the dome reads too (Sky.ts `discCloudTransmittance`)
+		// then the sky's constants, which the flare's visibility reads (Sky.ts `discCloudTransmittance`)
 		let skyConstants = this.skyConstants.output;
 		const skyConstantsQuad = this.skyConstants.quad;
 		g.addPass( 'skyConstants', 'quad', ( b ) => {
@@ -1553,7 +1662,6 @@ export class Pipeline {
 			return { label: 'sky constants', quad: skyConstantsQuad };
 
 		} );
-		hazeReads.push( skyConstants );
 		// the displacement field, which the passes that draw the meadow read
 		// (world/vegetation/Displacement.ts)
 		this.displacement = displacementField ? displacementField.declare( g ) : null;
@@ -1981,7 +2089,7 @@ export class Pipeline {
 		let velocity = this.resources.velocity!;
 		g.addPass( 'opaque', 'scene', ( b ) => {
 
-			// (the sky dome reads the haze's light volume and the sky's constants)
+			// (the sky dome reads the haze's light volume)
 			for ( const h of hazeReads ) b.read( h );
 			this.readDisplacement( b );
 			sceneColor = b.write( sceneColor, { clear: true } );
@@ -2325,14 +2433,18 @@ export class Pipeline {
 
 		const S = this.settings;
 		const u = this.u;
-		u.tone.value = S.tone; u.night.value = S.night; u.lut.value = S.lut;
+		// the night's weight for the display (the tone, the grade, the bloom) and the exposure's own
+		// for its keys (sky/DayCycle.ts `displayNight`, `exposureNight`), each of which a debug page
+		// may force (`duskForce`)
+		const night = duskForce( 'displayNight', S.night ), exposureNight = duskForce( 'exposureNight', S.exposureNight );
+		u.tone.value = S.tone; u.night.value = night; u.lut.value = S.lut;
 		u.vignette.value = S.vignette;
 		u.ditherOn.value = this.upscaling ? 0 : 1;
 		// the clouded day's share: the cloudy and overcast skies' (DayKeys.ts `cloudy`)
-		const cloud = S.skyMix[ 2 ] + S.skyMix[ 3 ];
-		this.localTone?.update( this.sky.elevation, S.night, cloud );
-		this.bloom.update( this.sky.elevation, S.night, cloud );
-		const ex = keyed( EXPOSURE_KEYS, this.sky.elevation, S.night, this.exposureKeys, cloud ), mu = this.metering.uniforms;
+		const cloud = cloudedShare( S.skyMix );
+		this.localTone?.update( this.sky.elevation, night, cloud );
+		this.bloom.update( this.sky.elevation, night, cloud );
+		const ex = exposureKeys( this.sky.elevation, exposureNight, S.skyMix, this.exposureKeys, this.sky.rising ), mu = this.metering.uniforms;
 		mu.key.value = ex.key; mu.highlight.value = ex.highlight; mu.skyShare.value = ex.sky; mu.offset.value = S.exposureOffset;
 		// the adaptation's step: the scene clock's, once per rendered frame; a paused clock (and the
 		// test mode, a paused page), a reset or a lost history take the target at once
@@ -2345,18 +2457,32 @@ export class Pipeline {
 		mu.snap.value = reset ? 1 : 0;
 		mu.dt.value = reset ? 0 : dt;
 		mu.up.value = ex.adaptUp; mu.down.value = ex.adaptDown;
-		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + S.night * NIGHT.bloom );
-		const shade = keyed( SHADE_CONTRAST, this.sky.elevation, S.night, this.shade, cloud );
+		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + night * NIGHT.bloom );
+		const shade = keyed( SHADE_CONTRAST, this.sky.elevation, night, this.shade, cloud );
 		u.shadePivot.value = 0.18 * 2 ** shade.pivot; u.shadeSlope.value = shade.slope;
-		u.desaturate.value = keyed( DESATURATION, this.sky.elevation, S.night, this.desaturation, cloud ).amount;
-		u.purkinje.value = S.night * PURKINJE.strength;
+		const desaturation = keyed( DESATURATION, this.sky.elevation, night, this.desaturation, cloud, this.sky.rising );
+		u.desaturate.value = desaturation.amount; u.desaturateCool.value = desaturation.cool;
+		u.purkinje.value = night * PURKINJE.strength;
 		const keyColor = this.sky.keyColor;
 		u.purkinjeKey.value = ( 0.2126 * keyColor.r + 0.7152 * keyColor.g + 0.0722 * keyColor.b ) * liftedKeyHeight( this.sky.keyDir, this.sky.keyIsMoon ) / Math.PI;
-		const { r, g, b } = keyed( WHITE_BALANCE, this.sky.elevation, S.night, this.white, cloud );
+		// the day's and the clouded white (DayKeys.ts `keyed`, without the night), overcast's
+		// (WHITE_OVERCAST) over them by overcast's share, then the night's over all by the night's
+		// weight, as `keyed` blends it: under no overcast the white is `keyed`'s to the bit
+		const white = keyed( WHITE_BALANCE, this.sky.elevation, 0, this.white, cloud, this.sky.rising );
+		const overcast = S.skyMix[ 3 ] ?? 0, atNight = WHITE_BALANCE.night!;
+		for ( const k of [ 'r', 'g', 'b' ] as const ) {
+
+			const v = white[ k ] + ( WHITE_OVERCAST[ k ] - white[ k ] ) * overcast;
+			white[ k ] = v + ( atNight[ k ] - v ) * night;
+
+		}
+		u.highlightShare.value = overcast * ( 1 - night );
+		const { r, g, b } = white;
 		if ( r !== this.toneWhite[ 0 ] || g !== this.toneWhite[ 1 ] || b !== this.toneWhite[ 2 ] ) {
 
 			this.toneWhite = [ r, g, b ];
-			u.toneIn.value.copy( TONE_SPACE.input ).multiply( whiteBalance( [ r, g, b ] ) );
+			u.balance.value.copy( whiteBalance( [ r, g, b ] ) );
+			u.toneIn.value.copy( TONE_SPACE.input ).multiply( u.balance.value );
 
 		}
 		const C = S.curve;

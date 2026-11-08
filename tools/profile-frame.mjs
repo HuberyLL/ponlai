@@ -265,12 +265,19 @@ const positional = argv.filter( ( a, i ) => ! a.startsWith( '--' ) && ! ( i > 0 
 // Scenes sharing a query run in one page load unless --fresh; `change` scenes run last. The parked
 // weathers' scenes (`parked: true`; src/sky/Weather.ts PARKED_WEATHER) are left out of the default
 // matrix and of --accept's: name them with --scenes (?profile reaches them on a production build).
+// So are the clouded skies' other views (`byName: true`), which time the low deck's march where it
+// costs: its island view and its horizon, where the sky fills half the frame; and clear's horizon,
+// the same view with no deck.
 export const SCENES = {
 	'island-fair-noon': { q: 'weather=fair&preset=noon', view: 'island' },
 	'island-clear-golden': { q: 'weather=clear&preset=golden-hour', view: 'island', faceSun: true },
 	'horizon-fair-noon': { q: 'weather=fair&preset=noon', view: 'horizon' },
 	'sky-cloudy': { q: 'weather=cloudy&preset=noon', view: 'sky' },
 	'island-overcast': { q: 'weather=overcast&preset=noon', view: 'island' },
+	'island-cloudy': { byName: true, q: 'weather=cloudy&preset=noon', view: 'island' },
+	'horizon-cloudy': { byName: true, q: 'weather=cloudy&preset=noon', view: 'horizon' },
+	'horizon-overcast': { byName: true, q: 'weather=overcast&preset=noon', view: 'horizon' },
+	'horizon-clear-noon': { byName: true, q: 'weather=clear&preset=noon', view: 'horizon' },
 	'island-rain': { parked: true, q: 'weather=rain&preset=noon', view: 'island' },
 	'island-storm': { parked: true, q: 'weather=storm&preset=noon', view: 'island' },
 	'horizon-storm': { parked: true, q: 'weather=storm&preset=noon', view: 'horizon' },
@@ -284,7 +291,7 @@ export const SCENES = {
 
 if ( flags.has( '--list' ) ) {
 
-	for ( const [ name, s ] of Object.entries( SCENES ) ) console.log( name.padEnd( 22 ), s.q, s.view, s.change ? `-> ${ s.change.weather }` : '', s.parked ? '(parked: by name only)' : '' );
+	for ( const [ name, s ] of Object.entries( SCENES ) ) console.log( name.padEnd( 22 ), s.q, s.view, s.change ? `-> ${ s.change.weather }` : '', s.parked ? '(parked: by name only)' : s.byName ? '(by name only)' : '' );
 	process.exit( 0 );
 
 }
@@ -391,7 +398,7 @@ const HANG_SECONDS = Number( opt( 'hang', 180 ) );
 const compareIndex = argv.indexOf( '--compare' );
 const COMPARE = compareIndex >= 0 ? [ argv[ compareIndex + 1 ], argv[ compareIndex + 2 ] ] : null;
 const URL_A = COMPARE ? COMPARE[ 0 ] : positional[ 0 ] ?? 'http://127.0.0.1:5191/';
-const sceneNames = ( opt( 'scenes', opt( 'scene', '' ) ) || Object.keys( SCENES ).filter( ( name ) => ! SCENES[ name ].parked ).join( ',' ) ).split( ',' ).map( ( s ) => s.trim() ).filter( Boolean );
+const sceneNames = ( opt( 'scenes', opt( 'scene', '' ) ) || Object.keys( SCENES ).filter( ( name ) => ! SCENES[ name ].parked && ! SCENES[ name ].byName ).join( ',' ) ).split( ',' ).map( ( s ) => s.trim() ).filter( Boolean );
 for ( const name of sceneNames ) if ( ! SCENES[ name ] ) throw new Error( `unknown scene ${ name } (--list)` );
 const stamp = new Date().toISOString().replace( /[:.]/g, '-' ).slice( 0, 19 );
 const LABEL = opt( 'label', COMPARE ? `compare-${ stamp }` : TOGGLE ? `toggle-${ stamp }` : `profile-${ stamp }` );

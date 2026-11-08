@@ -33,15 +33,13 @@ packages, into `dist/licenses/`.
     helpers from `OceanFFT.js`, ported to TypeScript, and the sea states of `src/ui/AppUI.js`;
     `OceanFFT.ts` sums its two wave systems (`local` and `swell`) into four cascades of its sizes
     and bands, and takes the shallow-water attenuation of each cascade from `WaterSurface.js`.
-  - `src/ocean/Caustics.ts`: the rasterised caustics of `Caustics.js`, two layers of two focal
-    planes with their lookup (dispersion, depth blur and fade, footprint filtering, the gust and
-    slick factor), ported from WGSL to TSL; and the wave maps of `UnderwaterLighting.js` (the long
-    waves, the mean level and that factor baked once a frame into two maps centred on the camera,
-    with their lookup).
+  - `src/ocean/WaveMaps.ts`: the wave maps of `UnderwaterLighting.js` (the long waves and the mean
+    level baked once a frame into two maps centred on the camera, with their lookup), ported from
+    WGSL to TSL.
   - `src/lighting/Underwater.ts`: the key light and ambient under the water of
     `UnderwaterLighting.js`'s direct and ambient hooks (the depth under the long waves, the
-    caustics through their slope, the ambient's attenuation and blue); `src/lighting/RefractedSun.ts`
-    reads the air's shadow map at the entry point of its shadow position hook.
+    ambient's attenuation); `src/lighting/RefractedSun.ts` reads the air's shadow map at
+    the entry point of its shadow position hook.
   - `src/lighting/GroundBounce.ts`: the ground bounce of `GroundBounce.js` (the map of the light
     the ground reflects, its land cover and sea seen through the water column, the environment's
     own ground taken off, the binomial blur, and its lookup: the lower hemisphere's view factor,
@@ -51,8 +49,7 @@ packages, into `dist/licenses/`.
     Jacobian folds, exponential decay), here on one world-space grid of the summed cascades.
   - `src/ocean/Water.ts`: the above-water shading of `WaterMaterial.js` (Fresnel, the sky
     reflection lifted by the unresolved slopes and darkened below the horizon, the reflection's
-    gate, the GGX glint with Cox-Munk roughness, the refracted ray traced to the floor, the
-    analytic water body, the crests' translucency and the lit foam), the normal, near-field
+    gate, the refracted ray traced to the floor and the lit foam), the normal, near-field
     ripples and whitecap compositing of `WaterSurface.js` (fresh foam on the Jacobian, a foam
     pattern thresholded by the coverage, at a distance the coverage itself), ported from WGSL to
     TSL.
@@ -96,10 +93,12 @@ packages, into `dist/licenses/`.
     the darker closed deck and the settled view of a paused scene are this project's (the rain
     curtains follow VolumetricCloudsCS1, below); the panorama map is this project's own, predating the port (`Clouds.js` has a
     similar one).
-  - `src/sky/Cirrus.ts` and the cirrus veil in `src/sky/Clouds.ts`: the cirrus fibre bake (a flow
-    field of sparse seeds and tufts drawn out by line integral convolution), its anisotropic,
-    footprint-filtered lookup and the veil's coverage, optical depth and ice-crystal lighting,
-    from the cirrus in `Clouds.js`, ported from WGSL to TSL.
+  - The thin cloud layer (`src/sky/Clouds.ts` `streaksAt`, `src/sky/Streaks.ts`): the fibre bake
+    (a flow field of sparse seeds and tufts drawn out by line integral convolution, hooked tails
+    downwind of tufts), the sheet's footprint on the curved Earth and its anisotropic,
+    footprint-filtered lookup, from the cirrus in `Clouds.js`, ported from WGSL to TSL. The fibres'
+    two turned scales, their silk, the patches' edge and thinning, and the layer's light are this
+    project's.
   - `src/materials/Wetness.ts` (`runnels`): the rain-streak stains of `terrainRockSurface` in
     `src/world/terrain/TerrainShading.js` (the variation stretched down the two vertical projection
     planes, weighted by how squarely each faces the surface, and its 40 % darkening), ported from
@@ -479,8 +478,6 @@ comment where it is used.
 - FFT ocean: J. Tessendorf,
   [*Simulating Ocean Water*](https://jtessen.people.clemson.edu/reports/papers_files/coursenotes2002.pdf)
   (SIGGRAPH course notes, 2002 revision).
-- Rasterised caustics: Evan Wallace, [*WebGL Water*](https://madebyevan.com/webgl-water/) and
-  [*Rendering Realtime Caustics in WebGL*](https://medium.com/@evanwallace/rendering-realtime-caustics-in-webgl-2a99a29a0b2c).
 - Hex-tiling's predecessor, by-example noise that blends randomly placed tiles with a
   histogram-preserving blend: Eric Heitz and Fabrice Neyret,
   [*High-Performance By-Example Noise using a Histogram-Preserving Blending Operator*](https://eheitzresearch.wordpress.com/722-2/)
@@ -490,9 +487,38 @@ comment where it is used.
   of Unreal Engine's landscape materials.
 - Whiteout triplanar normal blend: Ben Golus,
   [*Normal Mapping for a Triplanar Shader*](https://bgolus.medium.com/normal-mapping-for-a-triplanar-shader-10bf39dca05a) (2017).
+- Overcast sky's luminance by elevation, ( 1 + 2 sin h ) / 3 (`src/weather/VolumetricHaze.ts`, overcast's deck):
+  P. Moon and D. E. Spencer, *Illumination from a Non-Uniform Sky* (Illuminating Engineering 37,
+  1942): the CIE standard overcast sky, as given in ISO 15469:2004 / CIE S 011/E:2003,
+  *Spatial distribution of daylight - CIE standard general sky*. The same standard's overcast
+  general sky types 2 and 4 (slightly brightening toward the sun) and its uniform gradation stand
+  behind the overcast deck's glow toward the sun and its flatter gradation (`src/sky/Clouds.ts`
+  DECK_GLOW, DECK_GRADATION; `src/sky/Sky.ts` `deckGlow`).
 - Atmosphere LUTs and multiple scattering: Sébastien Hillaire,
   [*A Scalable and Production Ready Sky and Atmosphere Rendering Technique*](https://sebh.github.io/publications/egsr2020.pdf)
   (EGSR 2020), through the adapted tidewater source above.
+- The fog layer's droplet light (`src/weather/VolumetricHaze.ts`, The fog layer): multiple
+  scattering approximated by octaves of scaled scattering, extinction and anisotropy, Magnus
+  Wrenninge, *Oz: The Great and Volumetric* (SIGGRAPH 2013 talk), as used for participating media
+  with a two-lobe Henyey-Greenstein phase in Sébastien Hillaire, *Physically Based Sky, Atmosphere
+  and Cloud Rendering in Frostbite* (SIGGRAPH 2016 course, Physically Based Shading in Theory and
+  Practice). Its density from the visibility by Koschmieder's relation, 3.912 / V. Its banks
+  (`src/weather/FogNoise.ts`): Ken Perlin's improved gradient noise (*Improving Noise*, SIGGRAPH
+  2002), its coordinates displaced by more of it after Inigo Quilez,
+  [*Domain warping*](https://iquilezles.org/articles/warp/), and cut at a threshold that rises with
+  height; used as techniques only, the scales, the threshold and the normalisation to a mean of 1
+  are our own. The same gradient noise, summed in octaves, is also baked as the closed cloud
+  deck's middle scale (`bakeDeckNoise` in `src/materials/CloudNoise.ts`).
+- Line integral convolution, which draws the thin cloud layer's fibres out along a flow
+  (`src/sky/Streaks.ts`): Brian Cabral and Leith (Casey) Leedom, *Imaging Vector Fields Using
+  Line Integral Convolution* (SIGGRAPH 1993), through the adapted tidewater source above.
+- The ozone's absorption per display channel (`src/sky/Atmosphere.ts` OZONE), our integration over
+  each channel's band of the cross sections of A. Serdyuchenko, V. Gorshelev, M. Weber, W. Chehade
+  and J. P. Burrows,
+  [*High spectral resolution ozone absorption cross-sections – Part 2: Temperature dependence*](https://doi.org/10.5194/amt-7-625-2014)
+  (Atmospheric Measurement Techniques 7, 2014; data from IUP Bremen), through linear Rec. 709
+  responses from the CIE 1931 2° colour matching functions (CVRL, UCL). Only the three integrated
+  values are used; no data ships.
 - Solar radiance normalisation:
   [*Physically Based Rendering*, fourth edition](https://pbr-book.org/4ed/Radiometry,_Spectra,_and_Color/Working_with_Radiometric_Integrals),
   the projected-solid-angle irradiance integral.
@@ -506,9 +532,60 @@ comment where it is used.
   with the [cosine-weighted hemisphere sampler in PBRT](https://pbr-book.org/4ed/Sampling_Algorithms/Sampling_Multidimensional_Functions).
 - Filtered wave-slope moments: Marc Olano and Dan Baker,
   [*LEAN Mapping*](https://userpages.cs.umbc.edu/olano/papers/lean/) (I3D 2010).
-- Microfacet masking: Eric Heitz,
+- The sea's mean reflection over the slopes no pixel resolves, in `src/ocean/Water.ts`: the
+  visible facets weighted by their projected area and Smith's shadowing of the reflected rays, from
+  Eric Heitz,
   [*Understanding the Masking-Shadowing Function in Microfacet-Based BRDFs*](https://jcgt.org/published/0003/02/03/)
-  (JCGT 2014); the error-function approximation is Abramowitz and Stegun, equation 7.1.26.
+  (JCGT 2014); Smith's G1 for Gaussian (Beckmann) slopes in the rational form of Bruce Walter,
+  Stephen R. Marschner, Hongsong Li and Kenneth E. Torrance,
+  [*Microfacet Models for Refraction through Rough Surfaces*](https://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf)
+  (EGSR 2007), whose rational form is also the shadowing of the sun's glint (below); the
+  error-function approximation is Abramowitz and Stegun, equation 7.1.26.
+- The sea's slopes and the sun's glint, in `src/ocean/Water.ts`: the slopes' mean square by the wind
+  of C. Cox and W. Munk, *Measurement of the Roughness of the Sea Surface from Photographs of the
+  Sun's Glitter* (J. Opt. Soc. Am. 44:838, 1954), taken as the variance of a Beckmann (Gaussian)
+  slope distribution; the glint is Beckmann's lobe of those slopes with the separable Smith
+  shadowing in the rational form of Walter et al. (EGSR 2007, above).
+- The sea's inherent optical properties, in `src/ocean/SeaOptics.ts`: pure water's absorption from R. M. Pope
+  and E. S. Fry, *Absorption spectrum (380-700 nm) of pure water. II* (Appl. Opt. 36:8710, 1997)
+  and R. C. Smith and K. S. Baker, *Optical properties of the clearest natural waters (200-800 nm)*
+  (Appl. Opt. 20:177, 1981); the particles' absorption by chlorophyll from A. Bricaud et al.,
+  *Variations of light absorption by suspended particles with chlorophyll a concentration in
+  oceanic (case 1) waters* (J. Geophys. Res. 103:31033, 1998); pure sea water's backscattering
+  from A. Morel, *Optical properties of pure water and pure sea water* (in *Optical Aspects of
+  Oceanography*, 1974); the particles' backscattering by chlorophyll from H. R. Gordon and A. Morel,
+  *Remote Assessment of Ocean Color for Interpretation of Satellite Visible Imagery* (Springer,
+  1983) and O. Ulloa, S. Sathyendranath and T. Platt, *Effect of the particle-size distribution on
+  the backscattering ratio in seawater* (Appl. Opt. 33:7070, 1994). The bands are weighed into RGB
+  by the colour matching functions in the analytic fit of C. Wyman, P.-P. Sloan and P. Shirley,
+  [*Simple Analytic Approximations to the CIE XYZ Color Matching Functions*](https://jcgt.org/published/0002/02/01/)
+  (JCGT 2013). Adding coloured dissolved matter in proportion to the chlorophyll, and reading
+  0.5 mg m^-3 of it as Jerlov's type II, are our own assumptions from what Case 1 water is.
+- The water body and the floor seen through it, in `src/ocean/Water.ts` and
+  `src/lighting/Underwater.ts`: the shallow-water remote-sensing reflectance of Z. Lee, K. L. Carder,
+  C. D. Mobley, R. G. Steward and J. S. Patch, *Hyperspectral remote sensing for shallow waters:
+  2. Deriving bottom depths and water properties by optimization* (Appl. Opt. 38:3831, 1999),
+  equation 9 and its off-nadir path factors, with attenuation by a + bb.
+- The deep water's irradiance reflectance under its surface, in `src/ocean/SeaOptics.ts` (read by
+  `src/lighting/GroundBounce.ts` and `src/world/AmbientProbes.ts`): R ≈ 0.33 bb / ( a + bb ), the
+  common first-order form of the relation H. R. Gordon, O. B. Brown and M. M. Jacobs fitted to Monte
+  Carlo runs, *Computed relationships between the inherent and apparent optical properties of a
+  flat homogeneous ocean* (Appl. Opt. 14:417, 1975).
+- The sea floor's reflectances, in `src/materials/SeabedLook.ts`, `src/world/SeabedTile.ts` and
+  `src/lighting/GroundBounce.ts`: our own linear sRGB readings of the sand, silt and seagrass
+  reflectances measured by P. J. Werdell and C. S. Roesler, *Remote assessment of benthic substrate
+  composition in shallow waters using multispectral reflectance* (Limnol. Oceanogr. 48:557, 2003),
+  and of the brown algae's measured by S. Maritorena, A. Morel and B. Gentili, *Diffuse reflectance
+  of oceanic shallow waters: Influence of water depth and bottom albedo* (Limnol. Oceanogr. 39:1689,
+  1994), for the algae's film on the submerged rock (`src/materials/TerrainMaterial.ts`).
+- The light a wet stone's film of water traps, in `src/materials/TerrainMaterial.ts` (why the damp
+  band's darkening stops under the waterline), and the internal reflection of the light leaving the
+  water, in `src/lighting/GroundBounce.ts`: the mechanism of J. Lekner and M. C. Dorf, *Why some
+  things are darker when wet* (Appl. Opt. 27:1278, 1988), light totally reflected at the water's
+  surface back onto the absorbing surface beneath. Water's diffuse internal reflectance (0.475) is
+  our own figure from Fresnel's equations. The share of its dry albedo a submerged stone keeps
+  (about 0.94), for the forward scattering of grains whose relative index is smaller under water, is
+  our own figure too.
 - The shared specular BRDF, in `src/lighting/SurfaceBRDF.ts` and `src/lighting/EnvironmentBRDF.ts`:
   Smith's visibility for GGX in Schlick's form with k = alpha / 2, and the environment's specular
   as the split sum, the prefiltered environment times the environment BRDF integrated for the
@@ -527,8 +604,9 @@ comment where it is used.
   the widened alpha and the glint's clamp at grazing views are our own.
 - Volumetric clouds: Andrew Schneider,
   [*The Real-time Volumetric Cloudscapes of Horizon Zero Dawn*](https://www.guerrilla-games.com/read/the-real-time-volumetric-cloudscapes-of-horizon-zero-dawn)
-  (SIGGRAPH 2015): Perlin-Worley shape noise, Worley erosion, weather-map coverage and height
-  profiles.
+  (SIGGRAPH 2015; GPU Pro 7, "Real-Time Volumetric Cloudscapes"): Perlin-Worley shape noise,
+  Worley erosion, weather-map coverage and height profiles, and the closed cloud deck's coverage
+  threshold (its noise sum remapped by the coverage, `deckDensity` in `src/sky/Clouds.ts`).
 - Lunar shading: Yasuhiro Fujii,
   [*A tiny improvement of Oren-Nayar reflectance model*](https://mimosa-pudica.net/improved-oren-nayar.html),
   through the adapted three-geospatial source above.
@@ -558,11 +636,6 @@ comment where it is used.
   [*Water drop 2b – Dynamic rain and its effects*](https://seblagarde.wordpress.com/2013/01/03/water-drop-2b-dynamic-rain-and-its-effects/)
   (2013), its ripple texture's terms computed analytically per cell. In `src/materials/Wetness.ts`
   and `src/weather/Puddles.ts`.
-- Depth-dependent water shadows: the volume-lighting integral described in
-  [*Physically Based Rendering*, third edition](https://pbr-book.org/3ed-2018/Light_Transport_II_Volume_Rendering/Volumetric_Light_Transport),
-  independently implemented in TSL with exponential depth strata, exact per-channel attenuation
-  weights and separate air/submerged visibility along each scattering point's refracted solar path.
-  No source code is copied; the retained multiple-scattering boost is empirical.
 - Coverage-preserving alpha mips for the leaves: Ignacio Castano,
   [*Computing Alpha Mipmaps*](http://the-witness.net/news/2010/09/computing-alpha-mipmaps/) (2010):
   each mip keeps the full-size leaf's share above the alpha-test cutoff, remapped through a steep
@@ -733,6 +806,11 @@ comment where it is used.
   where the light gets through by the light's transmittance through each step
   (`src/sky/Clouds.ts`), after the same talk (Patry 2021, p. 97). Used as a technique only; the
   lobes are tidewater's droplet phase's first order (above).
+- The thin cloud layer's density lowered where its position on the layer moves fast with the
+  panorama's texture coordinate, so the far layer shows an even veil rather than sparkle
+  (`src/sky/Clouds.ts` `streaksAt`), after the same talk (Patry 2021, p. 94-96), and its two phase
+  lobes weighted by the light through the layer, after p. 97. Used as techniques only; the fade's
+  scale, the lobes' blend and the layer's gains are ours.
 - The Purkinje shift after the same talk (Patry 2021, p. 160-168: the rods' change to the cones'
   signals in an opponent colour space, with the constants and the shader's form it gives), in
   `src/post/Purkinje.ts`; the model is Dingcai Cao, Joel Pokorny, Vivianne C. Smith and Andrew J.
@@ -790,6 +868,8 @@ comment where it is used.
   by the shadow and the rest by an ambient occlusion, the in-scattered light stored divided by its
   opacity with the opacity recomputed exactly per pixel (density anti-aliasing), and a tricubic
   B-spline lookup. Used as techniques only; the densities and the light's balance are our own.
+  By the same split, the closed overcast deck takes the sun's beam out of the haze's Rayleigh
+  light and leaves its Mie light to the shadow (`src/weather/HazeKeys.ts`, `sunRayleigh`).
   The froxel volume itself: Bartlomiej Wronski, *Volumetric Fog: Unified Compute Shader-Based
   Solution to Atmospheric Scattering* (SIGGRAPH 2014 Advances in Real-Time Rendering course), and
   Michal Drobot, *Rendering of Call of Duty: Infinite Warfare* (Digital Dragons 2017).
@@ -827,10 +907,9 @@ comment where it is used.
 - The screen-space ambient occlusion, in `src/post/GTAO.ts`: Jorge Jimenez, Xian-Chun Wu, Angelo
   Pesce and Adrian Jarabo, *Practical Realtime Strategies for Accurate Indirect Occlusion*
   (Activision technical memo ATVI-TR-16-01, 2016): horizon search per slice and the cosine-weighted
-  visible arc against the slice's projected normal in closed form. Its practical shape (the
-  horizons' distance falloff, the low starting horizons, the projected normal's length as the
-  slice's weight, and the thin-occluder heuristic that stretches a sample's distance along the
-  view) follows Intel's [XeGTAO](https://github.com/GameTechDev/XeGTAO) (MIT). Used as techniques
+  visible arc against the slice's projected normal in closed form. Its practical shape (the low
+  starting horizons, the projected normal's length as the slice's weight) follows Intel's
+  [XeGTAO](https://github.com/GameTechDev/XeGTAO) (MIT). Used as techniques
   only; the code is our own.
 - The exposure's adaptation, a critically damped second-order filter on the EV: Thomas Lowe,
   *Critically Damped Ease-In/Ease-Out Smoothing* (Game Programming Gems 4, 2004), in
@@ -922,3 +1001,7 @@ bodies' curves take a few rounded key values off theirs).
   reed Arundo donax* (Philosophical Transactions of the Royal Society B 352, 1997), as Coppolino
   reports them; the wind's log law over
   EN 1991-1-4's terrain category 0, as given in Marković, Dobrić and Gluhović (above).
+- The haze's density at the sea against a clean sea air (`src/weather/HazeKeys.ts`): M. Hess,
+  P. Koepke and I. Schult, *Optical Properties of Aerosols and Clouds: The Software Package OPAC*
+  (Bulletin of the American Meteorological Society 79 (5), 831–844, 1998), Table 3: the maritime
+  clean aerosol's extinction at 550 nm and 80 % relative humidity, 0.090 /km.

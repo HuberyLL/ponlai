@@ -17,13 +17,24 @@ type Uniform2 = THREE.UniformNode<'vec2', THREE.Vector2>;
 // (`meterLight`, M = Y( E ) / pi: Pipeline.ts) and H_Y of log2 of the luminance of `hdr`, the
 // composite's output, before the bloom (the bloom reads this frame's exposure, so a histogram
 // after it would close a loop). The exposure's meter reads them.
-// - Bins: 128 over 32 stops, absolute in scene units (log2 of the half-float values times 2^-P,
-//   which undoes the pre-exposure exactly: PreExposure.ts; scene units carry
-//   SCENE_RADIANCE_SCALE), a quarter stop each, from 2^-20 to 2^12; bin i's centre is
-//   2^( LOW + ( i + 0.5 ) / 4 ). The range holds the darkest non-sky value of a clear night's
-//   island view (about 2^-18.6 in hdr, 2^-15.8 in M) with 1.4 stops to spare in hdr and 4 in M,
-//   and noon's brightest non-sky values (about 2^11.5) within; the sun's disc may fall in the top
-//   bin. Only H_Y's top percentiles reach the exposure, so hdr's darkest pixels need no margin.
+// - Bins: 128 over 32 stops, a quarter stop each, of log2 of the values as the targets store them,
+//   pre-exposed by 2^P (PreExposure.ts), from 2^-16 to 2^16: half float's own range, its largest
+//   value (65504, where the pre-exposed writers hold, the sun's disc among them) in the top bin and
+//   two stops of its subnormals at the bottom (which still keep 8 significant bits there, finer
+//   than a bin). Bin i's centre is 2^( LOW + ( i + 0.5 ) / 4 ) as stored and
+//   2^( LOW - P + ( i + 0.5 ) / 4 ) in scene units (which carry SCENE_RADIANCE_SCALE): P is a whole
+//   number of stops, so in scene units the bins lie on the same quarter-stop grid at every P, and
+//   only the range moves with it. The meter takes P back out of the trimmed means (PreExposure.ts
+//   `log2Scale`), so the exposure works in scene units (Exposure.ts). The range follows the
+//   pre-exposure, and so the exposure: what the targets hold at full precision the histograms
+//   never clip. A range fixed in scene units (it was 2^-20 to 2^12) did: the island view of a
+//   clear evening at -7 degrees, the darkest the twilight's land gets before the night's light
+//   comes in (P 14), had 89 % of hdr's samples and 2.5 % of meterLight's in its lowest bin, M's
+//   10th percentile 0.85 stop over its floor; now none, that percentile 11 stops over the floor,
+//   and every target measured stays as it was (the trimmed means' percentiles lay above that
+//   floor). At noon (P 2) the range spans 2^-18 to 2^14 in scene units, at night (P 8) 2^-24 to
+//   2^8: a clear night's darkest non-sky values (about 2^-18.6 in hdr, 2^-15.8 in M) lie 5.4 and
+//   8.2 stops over its floor.
 // - Splat: each sample adds to the two bins whose centres are nearest its value, weighted
 //   linearly (a tent), in fixed point: weight x 256, the two weights summing to exactly 256, so a
 //   histogram's total is 256 x the samples it took. A value past either end's centre goes whole
@@ -53,12 +64,13 @@ type Uniform2 = THREE.UniformNode<'vec2', THREE.Vector2>;
 //   that straddles one counted in part, times its centre.
 // - Without the composite pass (`post=inline-composite`) no histogram is taken: the buffer stays
 //   empty and the meter reads none (Exposure.ts, No reading).
-// - `read()` copies the buffer back for probes (a promise of the 256 counts).
+// - `read()` copies the buffer back for probes (a promise of the 256 counts, binned as stored: a
+//   probe takes P, the diagnostics' `preExposure.stops`, back out).
 
 /** Bins per histogram. */
 export const METER_BINS = 128;
-/** log2 of the lowest bin's lower edge, in scene units. */
-export const METER_LOW = - 20;
+/** log2 of the lowest bin's lower edge, in stored units (scene units times 2^P). */
+export const METER_LOW = - 16;
 /** Bins per stop. */
 export const METER_BINS_PER_STOP = 4;
 /** Fixed-point weight of one sample. */
@@ -102,9 +114,9 @@ export class Metering {
 			const cell = workgroupId.xy.mul( METER_TILE ).add( localId.xy );
 			const at = vec2( cell ).add( 0.5 ).div( grid );
 			const texel = ivec2( clamp( floor( at.mul( size ) ), vec2( 0 ), size.sub( 1 ) ) ).toVar();
-			// (both stored pre-exposed: back to scene units, exactly, by a power of two)
-			const y = luminance( ( textureLoad( tHdr, texel ) as unknown as THREE.Node<'vec4'> ).rgb ).mul( preExposure.inverse ).toVar();
-			const m = ( textureLoad( tMeter, texel ) as unknown as THREE.Node<'vec4'> ).r.mul( preExposure.inverse ).toVar();
+			// (both as stored, pre-exposed: the meter takes P out of the means)
+			const y = luminance( ( textureLoad( tHdr, texel ) as unknown as THREE.Node<'vec4'> ).rgb ).toVar();
+			const m = ( textureLoad( tMeter, texel ) as unknown as THREE.Node<'vec4'> ).r.toVar();
 			// the tent: v the position in bin units, bin i's centre at v = i
 			const splat = ( value: F, base: number ) => {
 
@@ -172,7 +184,9 @@ export class Metering {
 			const m = ( trimmed( uint( 0 ), float( 0.1 ), float( 0.9 ) ) as unknown as V2 ).toVar();
 			const y = ( trimmed( uint( METER_BINS ), float( 0.9 ), float( 0.97 ) ) as unknown as V2 ).toVar();
 			const one = float( METER_ONE );
-			const t = exposureTarget( m.x, select( m.y.greaterThanEqual( one ), float( 1 ), float( 0 ) ), y.x, select( y.y.greaterThanEqual( one ), float( 1 ), float( 0 ) ), sky, u.key, u.highlight, u.skyShare, u.offset ) as unknown as THREE.Node<'vec3'>;
+			// (the means as stored, back to scene units: P is the frame's, the histograms' too)
+			const mScene = m.x.sub( preExposure.log2Scale ), yScene = y.x.sub( preExposure.log2Scale );
+			const t = exposureTarget( mScene, select( m.y.greaterThanEqual( one ), float( 1 ), float( 0 ) ), yScene, select( y.y.greaterThanEqual( one ), float( 1 ), float( 0 ) ), sky, u.key, u.highlight, u.skyShare, u.offset ) as unknown as THREE.Node<'vec3'>;
 			const before = textureLoad( texture( previous ), ivec2( 0 ) ) as unknown as THREE.Node<'vec4'>;
 			return exposureAdapt( t, before, u.dt, u.up, u.down, u.snap );
 

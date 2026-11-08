@@ -1,15 +1,17 @@
 // Integrated day/night checks and fixed-camera evidence. One WebGPU page stays open throughout.
 // Run after the dynamic-sky debug API is installed:
 //   node tools/verify-dynamic-sky.mjs http://127.0.0.1:5190
+// Its steps wait for the page's rendered frames (tools/page-eval.mjs, "Rendered frames").
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
+import { DAY_PRESETS } from '../src/sky/DayCycle.ts';
+import { renderedFrames } from './page-eval.mjs';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/dynamic-sky';
-const hours = [ [ 'dawn', 5.35 ], [ 'sunrise', 6.15 ], [ 'noon', 12 ], [ 'golden-hour', 16 ],
-	[ 'sunset', 17.85 ], [ 'dusk', 18.65 ], [ 'midnight', 0 ] ];
+const hours = Object.entries( DAY_PRESETS );
 const report = { base, hours: [], phases: {}, clock: {}, resources: {}, checks: [], errors: [], failures: [] };
 await mkdir( out, { recursive: true } );
 // shared with other probes (their pixels do not depend on the GPU load), never during a timing
@@ -52,7 +54,8 @@ try {
 
 	// Two successive presentations separate each pair. The animation clock remains frozen,
 	// making unexpected changes visible without conflating them with moving water or grass.
-	const twoFrames = () => page.evaluate( () => new Promise( ( resolve ) => requestAnimationFrame( () => requestAnimationFrame( resolve ) ) ) );
+	// two of the page's rendered frames (tools/page-eval.mjs, "Rendered frames")
+	const twoFrames = () => renderedFrames( page, 2 );
 	const camera = async ( horizon ) => {
 		await page.evaluate( ( horizon ) => {
 			const s = window.__PONLAI__;
@@ -104,7 +107,9 @@ try {
 			gpuIrradiance: Array.from( gpuIrradiance.slice( 0, 3 ) ),
 			sunIntoWater: s.shared.sunIntoWater.value, muSun: s.shared.muSun.value,
 			exposure: s.pipeline.settings.exposure,
-			environmentIntensity: s.scene.environmentIntensity,
+			// (the environment's atlases store the radiance at a power of two, which its intensity
+			// divides out with the fill: Sky.ts `environmentRead`)
+			environmentFill: s.scene.environmentIntensity / sky.environmentRead,
 			environmentMatches: Boolean( sky.envMap && s.scene.environment === sky.envMap.texture ),
 			radiance: { finite, minimum, maximum, samples, mean: mean.map( ( value ) => value / Math.max( samples, 1 ) ) },
 			memory: { ...s.renderer.info.memory },
@@ -121,7 +126,7 @@ try {
 		sameVector( state.sharedDir, state.keyDir, `${ label } water key direction` );
 		sameVector( state.lightColor, state.keyColor, `${ label } scene key colour` );
 		sameVector( state.sharedColor, state.keyColor, `${ label } water key colour` );
-		sameVector( state.sharedIrradiance, state.skyIrradiance.map( ( value ) => value * state.environmentIntensity ), `${ label } shared environment irradiance` );
+		sameVector( state.sharedIrradiance, state.skyIrradiance.map( ( value ) => value * state.environmentFill ), `${ label } shared environment irradiance` );
 		sameVector( state.gpuIrradiance, state.skyIrradiance, `${ label } GPU hemisphere integral agrees with CPU reference` );
 		assert.ok( state.environmentMatches, `${ label } environment must publish the completed sky` );
 		assert.ok( state.radiance.finite && state.radiance.minimum >= 0 && state.radiance.samples > 0, `${ label } sky radiance must be finite and non-negative` );
@@ -165,7 +170,7 @@ try {
 	assert.ok( energy( report.phases.newMoon ) > energy( report.phases.fullMoon ) * 0.95, 'The phase must not darken the night' );
 	report.checks.push( 'Moon phase leaves the night lighting as it is' );
 	await page.evaluate( () => window.__PONLAI__.setPreset( 'golden-hour' ) );
-	near( await page.evaluate( () => window.__PONLAI__.dayCycle.hour ), 16, 1e-8, 'Golden-hour preset' );
+	near( await page.evaluate( () => window.__PONLAI__.dayCycle.hour ), DAY_PRESETS[ 'golden-hour' ], 1e-8, 'Golden-hour preset' );
 
 	// Warm both day and night paths before counting retained resources. A small allowance
 	// accommodates renderer-internal pooling; an allocation retained on each bake must fail.
@@ -174,7 +179,7 @@ try {
 	report.resources.baseline = await page.evaluate( () => ( { ...window.__PONLAI__.renderer.info.memory } ) );
 	report.resources.samples = [];
 	for ( let i = 0; i < 12; i ++ ) {
-		await page.evaluate( ( hour ) => window.__PONLAI__.setHour( hour ), [ 5.35, 12, 17.85, 0 ][ i % 4 ] );
+		await page.evaluate( ( hour ) => window.__PONLAI__.setHour( hour ), [ DAY_PRESETS.dawn, DAY_PRESETS.noon, DAY_PRESETS.sunset, DAY_PRESETS.midnight ][ i % 4 ] );
 		await twoFrames();
 		report.resources.samples.push( await page.evaluate( () => ( { ...window.__PONLAI__.renderer.info.memory } ) ) );
 	}

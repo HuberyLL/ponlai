@@ -25,7 +25,7 @@ type M4 = THREE.Node<'mat4'>;
 // the world's workers (`setCasters`, ChunkDerived.ts).
 // A submerged receiver reads the air's map (the island's shadow) where its light entered the water:
 // up the sun ray refracted through the long waves' slope to their surface (`waveEntryNode`, from the
-// wave maps: Caustics.ts), as tidewater's hookShadowPosition finds it (`bindTerrain`).
+// wave maps: WaveMaps.ts), as tidewater's hookShadowPosition finds it (`bindTerrain`).
 
 const WATER_IOR = 1.333;
 // Turn of the key light below which a running clock keeps the drawn map (see RefractedSun.update).
@@ -310,7 +310,8 @@ export class RefractedSun {
 		const texel = max( this.worldSpan.x.div( this.mapSize.x ), this.worldSpan.y.div( this.mapSize.y ) );
 		const receiver = normal ? point.add( normal.mul( texel.mul( NORMAL_OFFSET.near ) ) ) : point;
 		const coordinate = shadowCoordinate( receiver, this.matrix, this.contactBias.div( this.depthRange ) );
-		// the air's disk filter, two of this map's texels wide
+		// the air's disk filter (SolarShadow's POISSON_RADIUS, in this map's texels: on its coarser
+		// texels the same disk draws a wider penumbra)
 		return solarShadowVisibility( this.target.depthTexture!, coordinate, { mapSize: this.mapSize, active } );
 
 	}
@@ -338,8 +339,8 @@ export class RefractedSun {
 	}
 
 	/** The air map's lookup point for a submerged receiver, as tidewater's hookShadowPosition finds
-	 * it: back up the sun ray refracted through the long waves' slope above (`waves`, the wave maps'
-	 * A: height over the sea level, slope x and z) to their surface, where the light entered the
+	 * it: back up the sun ray refracted through the long waves' slope above (`waves`, the wave
+	 * maps: height over the sea level, slope x and z) to their surface, where the light entered the
 	 * water. The shadows of the cliffs then land where refraction puts them and sway with the swell.
 	 * (tidewater also jitters the point over a disk that grows with the depth, for the light's
 	 * forward scattering, and lets its temporal resolve average it; the sun shadow's filter here
@@ -360,7 +361,7 @@ export class RefractedSun {
 	}
 
 	/** Gives every refracted-sun receiver under `root` its submerged shadows: the air map read where
-	 * the light entered the water (the long waves' surface from `waves`, the wave maps: Caustics.ts;
+	 * the light entered the water (the long waves' surface from `waves`, the wave maps: WaveMaps.ts;
 	 * the mean level without), times this map. */
 	bindTerrain( root: THREE.Object3D, waves?: { wavesAt( point: V3 ): THREE.Node<'vec4'> } ): void {
 

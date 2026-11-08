@@ -58,8 +58,8 @@ import { IRRADIANCE_SLABS, type AmbientVolume } from './AmbientVolume.ts';
 //   diffuse: GroundBounceLightingModel and every model built on it hand theirs to the ambient grade
 //   (AmbientGrade.ts `useAmbientGrade`), which replaces three's environment irradiance with
 //   `ambientEnvironment`'s; the islanders' own model reads `ambientField` (characters/
-//   CharacterMaterial.ts). Under the water the environment's light stays (lighting/Underwater.ts
-//   `weight`: the volume's share falls to nothing over the first 30 cm below the mean level). The
+//   CharacterMaterial.ts). The cliffs and the stones keep the volume under the water, carried down
+//   the column (lighting/Underwater.ts); the sea floor takes the environment's light. The
 //   flying fish (life/FishMaterial.ts) read the volume through UnderwaterLightingModel's default,
 //   degree 1 weighted by depth: in flight above the water they take the volume's light, under it the
 //   environment's carried down the water column.
@@ -123,7 +123,11 @@ import { IRRADIANCE_SLABS, type AmbientVolume } from './AmbientVolume.ts';
 //   read the volume (`CANOPY_SHADE`), or the floor would darken twice: on a fair noon, in the
 //   shade, a grove's floor took 0.45 of an open meadow's light before the volume, 0.51 from the
 //   volume alone and 0.22 with both. The culms keep only a soft darkening at their feet
-//   (BambooMaterials.ts CULM_SHADE). The contact terms (a stone's foot, a culm's) stay.
+//   (BambooMaterials.ts CULM_SHADE). The contact terms (a stone's foot, a culm's) stay. The
+//   meadow's blades are the one receiver that keeps the canopy beside the volume, taken relative
+//   to their tips, which stand about where the probe they read sees it: a root under a full grove
+//   takes about 0.56 of what a root on the open meadow takes against its tip, 0.8 stop
+//   (world/Grass.ts `aoCanopy`, `grass.ao.canopy`).
 //
 // Load flags (debug builds, `flags=`): `ambientVolume:0` (or false) builds every material on the
 // environment's irradiance as before the volume, the ground bounce whole (the shaders those

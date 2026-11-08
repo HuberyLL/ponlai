@@ -1,15 +1,34 @@
 // GPU checks and fixed evidence for moon phases, stable stars, and the daylight fade.
 // Run after the stage-three Sky hooks are installed; keep other GPU tabs closed:
 //   node tools/verify-night-sky.mjs http://127.0.0.1:5190
+// Its steps wait for the page's rendered frames (tools/page-eval.mjs, "Rendered frames"); the paired
+// screenshots wait for the page's settled signal (capture-browser.mjs `waitForSettled`), so a pair
+// that differs is the page's nondeterminism, not a frame shot before a bake or compile had landed.
+// The full moon's offscreen render of the dome guards three things, in scene-linear values and
+// without the display's exposure: the render drew something (the sky with the moon off is finite
+// and above 0, with no GPU error), the disk is whole (its pixels above 5 % of its own peak cover
+// pi R^2 of the target, R the moon's angular radius in the target's pixels), and the disk shows
+// against the sky behind it (on/off luminance over its bright core).
+// The stars' checks read what the screen shows: their radiance and visibility over the night sky's
+// level (the snapshot's `nightSkyLevel`). The stars scale with it, inversely to the night's
+// exposure, so the screen shows them alike whatever the exposure, while their scene-linear values
+// move by stops with every change to it; a bound on those would test the exposure, not the stars.
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
+import { eveningHour } from '../src/sky/DayCycle.ts';
+import { MOON_ANGULAR_RADIUS } from '../src/sky/NightSky.ts';
+import { renderedFrames } from './page-eval.mjs';
+import { waitForSettled } from './capture-browser.mjs';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/night-sky';
+// the evening's fade of the stars, by the sun's elevation: noon, 2 degrees up, then 3.3, 8.6, 13.9 and
+// 26.2 under the horizon, and midnight
+const fadeHours = [ 12, ...[ 2, - 3.3, - 8.6, - 13.9, - 26.2 ].map( eveningHour ), 0 ];
 const phases = [
-	// (the moon keeps a full moon's hours at every phase, culminating at midnight: DayCycle.ts)
+	// (the moon is fixed in the sky, at every hour and phase: DayCycle.ts)
 	{ name: 'new', phase: 0, hour: 0 },
 	{ name: 'crescent', phase: 0.125, hour: 0 },
 	{ name: 'quarter', phase: 0.25, hour: 0 },
@@ -50,7 +69,8 @@ try {
 		// The narrow moon evidence tests actual geometry, without a defocused camera lens.
 		s.pipeline.settings.dof = 0;
 	} );
-	const frames = () => page.evaluate( () => new Promise( ( resolve ) => requestAnimationFrame( () => requestAnimationFrame( resolve ) ) ) );
+	// two of the page's rendered frames (tools/page-eval.mjs, "Rendered frames")
+	const frames = () => renderedFrames( page, 2 );
 	const setState = ( phase, hour ) => page.evaluate( async ( { phase, hour } ) => {
 		const s = window.__PONLAI__;
 		s.dayCycle.moonPhase = phase;
@@ -71,12 +91,16 @@ try {
 	};
 	const capturePair = async ( name ) => {
 		const images = [];
+		const ready = [];
 		for ( const suffix of [ 'a', 'b' ] ) {
+			// (one frame drawn after the last change, so the signal is the new state's)
 			await frames();
+			ready.push( await waitForSettled( page ) );
+			assert.ok( ready.at( - 1 ).settled, `${ name }-${ suffix } must settle before its screenshot` );
 			const path = `${ out }/${ name }-${ suffix }.png`;
 			images.push( { path, buffer: await page.screenshot( { path } ) } );
 		}
-		return { paths: images.map( ( image ) => image.path ), identical: images[ 0 ].buffer.equals( images[ 1 ].buffer ) };
+		return { paths: images.map( ( image ) => image.path ), ready, identical: images[ 0 ].buffer.equals( images[ 1 ].buffer ) };
 	};
 
 	for ( const phase of phases ) {
@@ -86,7 +110,7 @@ try {
 			const s = window.__PONLAI__, snapshot = s.dayCycle.snapshot();
 			return { illumination: snapshot.moonIllumination, moonElevation: snapshot.moonElevation,
 				moonDir: s.sky.moonDir.toArray(), sunDir: s.sky.sunDir.toArray(),
-				starVisibility: s.sky.night.starVisibility.value, exposure: s.pipeline.settings.exposure };
+				starVisibility: s.sky.night.starVisibility.value };
 		} );
 		const capture = await capturePair( `moon-${ phase.name }` );
 		report.phases.push( { ...phase, ...state, capture } );
@@ -96,11 +120,15 @@ try {
 
 	// Render the real dome material to float targets. Difference against the same render with
 	// the moon/star uniform disabled isolates those contributions from the changing atmosphere.
-	report.gpu = await page.evaluate( async ( phases ) => {
+	report.gpu = await page.evaluate( async ( { phases, fadeHours } ) => {
 		const s = window.__PONLAI__, r = s.renderer, sky = s.sky;
 		const animation = r.getAnimationLoop(), previousTarget = r.getRenderTarget();
 		const scene = new s.scene.constructor();
 		const dome = sky.dome.clone();
+		// The dome writes its metering light to the scene pass's MRT (Motion.ts `meterOutput`); this
+		// target has none, so the copy drawn here writes its colour alone.
+		dome.material = sky.dome.material.clone();
+		dome.material.mrtNode = null;
 		dome.onBeforeRender = ( _renderer, _scene, camera ) => {
 			dome.position.copy( camera.position );
 			dome.updateMatrixWorld();
@@ -144,7 +172,21 @@ try {
 			}
 			return { maximum, mean: sum / a.length };
 		};
-		const result = { moons: [], fade: [] };
+		// The disk's luminance with the moon on, less the same render with it off.
+		const luminance = ( on, off ) => {
+			const values = new Float32Array( on.length / 4 );
+			for ( let i = 0; i < values.length; i ++ ) {
+				values[ i ] = ( on[ i * 4 ] - off[ i * 4 ] ) * 0.2126 + ( on[ i * 4 + 1 ] - off[ i * 4 + 1 ] ) * 0.7152 + ( on[ i * 4 + 2 ] - off[ i * 4 + 2 ] ) * 0.0722;
+			}
+			return values;
+		};
+		const result = { moons: [], fade: [], target: { size, fov: 8 } }, disks = {};
+		// Linear luminance of a render, pixel by pixel.
+		const plain = ( image ) => {
+			const values = new Float32Array( image.length / 4 );
+			for ( let i = 0; i < values.length; i ++ ) values[ i ] = image[ i * 4 ] * 0.2126 + image[ i * 4 + 1 ] * 0.7152 + image[ i * 4 + 2 ] * 0.0722;
+			return values;
+		};
 		await r.setAnimationLoop( null );
 		try {
 			for ( const phase of phases ) {
@@ -160,15 +202,52 @@ try {
 				sky.night.moonColor.value.copy( color );
 				const repeat = await render();
 				sky.night.glow.value = 1;
-				// (a quarter of the full disk's peak: the moon culminates at 20 degrees, behind about
-				// three air masses, so the disk's darker terminator side still counts)
+				// (about a quarter of the full disk's peak at the night's exposure: the count is the
+				// resolved disk's size; the phase's share of it is `lit` below)
 				result.moons.push( { name: phase.name, ...compare( on, off, 0.0004 ), determinism: difference( on, repeat ) } );
+				disks[ phase.name ] = luminance( on, off );
+				if ( phase.name === 'full' ) {
+					// The sky behind the disk, drawn with the moon off, and the disk's core against it.
+					const sky = plain( off ), lit = plain( on ), disk = disks.full;
+					let finite = true, sum = 0;
+					for ( const value of sky ) { finite &&= Number.isFinite( value ); sum += value; }
+					const peak = disk.reduce( ( a, b ) => Math.max( a, b ), 0 ), ratios = [];
+					let fill = 0;
+					for ( let i = 0; i < disk.length; i ++ ) {
+						if ( disk[ i ] > 0.05 * peak ) fill ++;
+						if ( disk[ i ] > 0.25 * peak ) ratios.push( lit[ i ] / sky[ i ] );
+					}
+					ratios.sort( ( a, b ) => a - b );
+					result.fullDisk = { skyFinite: finite, skyMean: sum / sky.length, peak, fill,
+						core: ratios.length, contrast: ratios.length ? ratios[ ratios.length >> 1 ] : 0 };
+				}
+			}
+			// The share of the resolved disk a phase lights, pixel by pixel against the full moon: a
+			// pixel is lit when it shows more than a twentieth of what it shows at full. The ratio
+			// divides out the albedo's pattern, a veil of cloud over the disk and the moon's level,
+			// which a count above a fixed radiance does not: above a quarter of the full peak a
+			// quarter moon, shaded toward its terminator and dark in its maria, covers only 0.16 of
+			// the full disk's count.
+			const full = disks.full;
+			const peak = full.reduce( ( a, b ) => Math.max( a, b ), 0 );
+			for ( const entry of result.moons ) {
+				const values = disks[ entry.name ];
+				let disk = 0, lit = 0;
+				for ( let i = 0; i < full.length; i ++ ) {
+					if ( full[ i ] <= 0.05 * peak ) continue;
+					disk ++;
+					if ( values[ i ] > 0.05 * full[ i ] ) lit ++;
+				}
+				entry.lit = lit / disk;
 			}
 
 			s.dayCycle.moonPhase = 0.5;
-			for ( const hour of [ 12, 17.85, 18.25, 18.65, 19.05, 20, 0 ] ) {
+			for ( const hour of fadeHours ) {
 				await s.setHour( hour );
-				result.fade.push( { hour, elevation: s.dayCycle.snapshot().elevation, visibility: sky.night.starVisibility.value } );
+				const snapshot = s.dayCycle.snapshot();
+				// (the share the screen shows: the visibility over the night sky's level)
+				result.fade.push( { hour, elevation: snapshot.elevation, visibility: sky.night.starVisibility.value,
+					level: snapshot.nightSkyLevel, shown: sky.night.starVisibility.value / snapshot.nightSkyLevel } );
 			}
 			const visibility = sky.night.starVisibility.value;
 			sky.night.moonColor.value.setRGB( 0, 0, 0 );
@@ -183,7 +262,10 @@ try {
 			await render();
 			aim( direction, 70 );
 			const returned = await render();
-			result.stars = { ...compare( on, off ), determinism: difference( on, repeat ), returnToView: difference( on, returned ) };
+			// On screen: the radiance over the night sky's level, which the exposure divides back out.
+			const level = s.dayCycle.snapshot().nightSkyLevel;
+			const shown = ( image ) => image.map( ( value, i ) => ( i & 3 ) === 3 ? value : value / level );
+			result.stars = { level, ...compare( shown( on ), shown( off ), 1e-3 ), determinism: difference( shown( on ), shown( repeat ) ), returnToView: difference( shown( on ), shown( returned ) ) };
 			await s.setHour( 12 );
 			aim( direction, 70 );
 			const daylight = await render();
@@ -195,10 +277,12 @@ try {
 			r.setRenderTarget( previousTarget );
 			target.dispose();
 			scene.remove( dome );
-			// The clone shares the live material/geometry; their lifetime belongs to Sky.
+			dome.material.dispose();
+			// The clone shares the live geometry; its lifetime belongs to Sky.
 			try { await s.setHour( 0 ); } finally { await r.setAnimationLoop( animation ); }
 		}
-	}, phases );
+	}, { phases, fadeHours } );
+	const errorsAfterRender = report.errors.length;
 
 	const moon = Object.fromEntries( report.gpu.moons.map( ( entry ) => [ entry.name, entry ] ) );
 	for ( const entry of report.gpu.moons ) {
@@ -206,22 +290,29 @@ try {
 		assert.ok( entry.determinism.maximum <= 1e-7, `${ entry.name } raw disk must be deterministic` );
 	}
 	assert.ok( moon.new.maximum < 1e-7 && moon.new.count === 0, 'New moon must emit no visible disk radiance' );
-	// The disk's radiance scales back as the night's exposure rises (DayCycleSnapshot.nightSkyLevel):
-	// compare what the display shows, at the exposure the night sky was tuned with (4.4).
-	const fullExposure = report.phases.find( ( phase ) => phase.name === 'full' ).exposure;
-	assert.ok( moon.full.count > 1000 && moon.full.maximum * fullExposure > 0.009 * 4.4, 'Full moon must show a resolved illuminated disk' );
-	// (the counts take the disk above a quarter of the full disk's peak, which a disk lit from the
-	// side reaches only some way in from its terminator, and its maria not at all)
-	assert.ok( moon.quarter.count / moon.full.count > 0.2 && moon.quarter.count / moon.full.count < 0.6, 'Quarter moon must illuminate roughly half the resolved disk' );
-	assert.ok( moon.crescent.count / moon.full.count > 0.015 && moon.crescent.count / moon.quarter.count < 0.5, 'Crescent must illuminate a smaller curved fraction' );
+	// The full moon, in the offscreen target's own pixels (its size and field of view).
+	const full = report.gpu.fullDisk, { size, fov } = report.gpu.target;
+	full.radius = Math.tan( MOON_ANGULAR_RADIUS ) / Math.tan( fov * Math.PI / 360 ) * size / 2;
+	full.fillRatio = full.fill / ( Math.PI * full.radius ** 2 );
+	assert.ok( full.skyFinite && full.skyMean > 0 && errorsAfterRender === 0, 'The dome\'s offscreen copy must draw the sky (finite, above 0, no GPU error)' );
+	assert.ok( full.fillRatio >= 0.9 && full.fillRatio <= 1.05, `Full moon's disk must be whole (fill ${ full.fillRatio.toFixed( 3 ) } of pi R^2)` );
+	assert.ok( full.contrast >= 1.5, `Full moon's disk must show against its sky (on/off ${ full.contrast.toFixed( 2 ) })` );
+	// A sphere lit from the side shows its illuminated fraction, ( 1 - cos( 2 pi phase ) ) / 2, as
+	// the lit share of its disk; the measured share falls about 0.02 short of it, where the shading
+	// fades into the terminator.
+	const illumination = ( name ) => report.phases.find( ( phase ) => phase.name === name ).illumination;
+	assert.ok( Math.abs( moon.quarter.lit - illumination( 'quarter' ) ) < 0.05, 'Quarter moon must illuminate roughly half the resolved disk' );
+	assert.ok( Math.abs( moon.crescent.lit - illumination( 'crescent' ) ) < 0.05 && moon.crescent.lit < moon.quarter.lit, 'Crescent must illuminate a smaller curved fraction' );
 	report.checks.push( 'New, crescent, quarter, full disks use geometric phases and deterministic scene-linear radiance' );
-	assert.ok( report.gpu.stars.finite && report.gpu.stars.count > 12 && report.gpu.stars.maximum > 1e-4, 'Night must show resolved analytic stars' );
+	// (on screen at midnight about 1000 pixels show more than 1e-3 and the brightest 0.066: the
+	// bounds leave a few times that, and a sky without resolved stars far below them)
+	assert.ok( report.gpu.stars.finite && report.gpu.stars.count > 200 && report.gpu.stars.maximum > 0.01, 'Night must show resolved analytic stars' );
 	assert.ok( report.gpu.stars.determinism.maximum <= 1e-7 && report.gpu.stars.returnToView.maximum <= 1e-7, 'Stars must remain stable after repeated rendering and camera rotation back to the same view' );
 	assert.ok( report.gpu.daylightStars.maximum <= 1e-7, 'Stars must add no radiance in daylight' );
-	// (the moon is up all night and dims the stars a little: Sky.ts `starVisibility`)
-	assert.ok( report.gpu.fade[ 0 ].visibility === 0 && report.gpu.fade.at( - 1 ).visibility > 0.15, 'Night fade must be driven by the celestial state' );
+	// (the moon is up all night and dims the stars a little, to 0.78: Sky.ts `starVisibility`)
+	assert.ok( report.gpu.fade[ 0 ].shown === 0 && report.gpu.fade.at( - 1 ).shown > 0.5, 'Night fade must be driven by the celestial state' );
 	for ( let i = 1; i < report.gpu.fade.length; i ++ ) {
-		assert.ok( report.gpu.fade[ i ].visibility >= report.gpu.fade[ i - 1 ].visibility - 1e-8 && report.gpu.fade[ i ].visibility <= 1, 'Stars must fade in monotonically through evening' );
+		assert.ok( report.gpu.fade[ i ].shown >= report.gpu.fade[ i - 1 ].shown - 1e-8 && report.gpu.fade[ i ].shown <= 1, 'Stars must fade in monotonically through evening' );
 	}
 	report.checks.push( 'Analytic stars are visible at night, absent in daylight, and stable under camera changes' );
 	await setState( 0.5, 0 );

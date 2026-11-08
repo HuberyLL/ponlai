@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { Fn, materialColor, vec4, mix, dot, clamp, float, smoothstep, uniform } from 'three/tsl';
+import { Fn, materialColor, specularColor, specularColorBlended, vec3, vec4, mix, dot, clamp, float, smoothstep, uniform } from 'three/tsl';
 import { setWindDisplacement, type WindDisplacement, type WindUniforms } from '../../weather/Wind.ts';
 import { showSway } from '../../debug/WindView.ts';
 import { followWindMotionFlag } from '../WindMotion.ts';
@@ -10,7 +10,7 @@ import { LEAF_ALPHA_TEST, leafAlphaTexture } from './LeafTexture.ts';
 import type { Shared } from '../../shared.ts';
 import type { AmbientReceiver } from '../../lighting/AmbientSample.ts';
 import { writeMeter } from '../../lighting/MeterLight.ts';
-import { tuneApply } from '../../debug/Tune.ts';
+import { tuneApply, tuneUniform } from '../../debug/Tune.ts';
 
 // The vegetation's material factory: every plant kind's surface is built here by one sequence of
 // calls, the one each kind used to write by hand, in the same order, so the node graphs (and the
@@ -24,7 +24,8 @@ import { tuneApply } from '../../debug/Tune.ts';
 //      `flags.mv.wind` follower, the wind view)
 //   -> the normal and ambient occlusion -> the light through thin leaves (VegetationLighting: a
 //      blade's diffuse wrapped round by its translucency and `transmission`; a translucent leaf's
-//      thin layer in its Lambert's place, without `transmission`).
+//      thin layer in its Lambert's place, without `transmission`)
+//   -> a leaf's specular (`LEAF_F0`, `useSpecular`).
 // Families: 'leaf' (alpha-tested leaves: the bamboo's sprays, BambooMaterials.ts, on a map and
 // alpha map of their own; the folded leaf, vegetation/LeafTexture.ts, by default), 'blade' (the meadow's blades: tagged as vegetation, no leaf map, drawn
 // whole or not at all: alpha to coverage at 4x, else `coverageDither`'s threshold) and 'sod' (not
@@ -39,6 +40,30 @@ import { tuneApply } from '../../debug/Tune.ts';
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
+
+/** A leaf's specular reflectance, the sky's reflection and the key's glint alike: a waxy cuticle's,
+ * as the meadow's blades take (Grass.ts SURFACE.f0). Under three's default 0.04 the rough leaf's
+ * broad lobe outweighed its diffuse in blue, 2.1 times on a crown's lit half at noon and 2.9 on its
+ * dark half, where the albedo holds almost no blue: a pale mint sheen. 0.02, twice the blades',
+ * keeps a soft sheen on the lit half and lifts the dark half without the mint: it pales and cools a
+ * crown a little, with the blue in the albedo set against it (BambooColours.ts). On the family, so
+ * the crowns and the falling leaves take it alike, and any tree to come. Tunable on debug pages
+ * (debug/Tune.ts: `vegetation.leaf.f0`). */
+const LEAF_F0 = /*@__PURE__*/ tuneUniform( 'vegetation.leaf.f0', 0.02, { min: 0.008, max: 0.04 } );
+
+/** A surface's specular reflectance F0, for the sky's reflection and the key's glint alike. F0
+ * alone: F90 follows it in the lighting model (GroundBounce.ts `start`, lighting/SurfaceBRDF.ts
+ * `fresnel90`), whatever is written here. */
+export function useSpecular( material: THREE.MeshStandardNodeMaterial, f0: F ): void {
+
+	( material as unknown as { setupSpecular: () => void } ).setupSpecular = () => {
+
+		specularColor.assign( vec3( f0 ) );
+		specularColorBlended.assign( vec3( f0 ) );
+
+	};
+
+}
 
 /** Light through a thin surface, beside the usual diffuse term (view space; VegetationLighting). */
 export type Transmission = ( L: V3, V: V3, N: V3 ) => F | V3;
@@ -204,6 +229,7 @@ export function vegetationMaterial( shared: Shared, options: VegetationOptions )
 	const extra = light.extra ?? transmission( light.translucency );
 	const scale = light.scale;
 	useLighting( mat, () => new VegetationLighting( typeof scale === 'function' ? scale() : scale, light.translucency, options.family, extra, light.ambient ) );
+	if ( options.family === 'leaf' ) useSpecular( mat, LEAF_F0 );
 	writeMeter( mat );
 	if ( options.name ) mat.name = options.name;
 	return mat;

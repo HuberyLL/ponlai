@@ -1,7 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { Fn, If, abs, clamp, exp, exp2, float, log2, max, min, mix, select, vec3, vec4 } from 'three/tsl';
-import type { DayKeys } from './DayKeys.ts';
-import { tuneKeys } from '../debug/Tune.ts';
+import { keyed, type DayKey, type DayKeys } from './DayKeys.ts';
+import { tune, tuneKeys } from '../debug/Tune.ts';
+import { cloudedShare } from '../sky/Weather.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -14,7 +15,9 @@ type V4 = THREE.Node<'vec4'>;
 // a primarily illuminance-based exposure).
 // - m_M: the mean of log2 M (the metering illuminance) over its histogram between the 10th and the
 //   90th percentile of the total weight, bins at their centres, a bin that straddles a percentile
-//   counted in part: a trimmed mean that ignores crevices and glints.
+//   counted in part: a trimmed mean that ignores crevices and glints. The histograms bin the values
+//   as stored, pre-exposed, so their range follows the exposure; the meter takes P back out of both
+//   means, which reach the target in scene units (Metering.ts, PreExposure.ts).
 // - m_H: the mean of log2 Y (hdr's luminance) between its 90th and 97th percentile: the
 //   brightness of the frame's brightest few percent.
 // - m_S: log2 of the sky's geometric-mean luminance exp( mean ln Y ) over the upper hemisphere
@@ -25,26 +28,34 @@ type V4 = THREE.Node<'vec4'>;
 //   light lands at 2^κ), the highlight key κ_H (the bright band lands at 2^κ_H at most) and the
 //   sky's share β.
 // - The target, in three steps:
-//   - The meter: e_S = κ - m_S, the sky's own exposure, and e_M = κ - m_M, the scene's. The
-//     frame's metered exposure blends them in stops by the sky's share,
-//     e_m = ( 1 - β ) e_M + β e_S: a weighted metering pattern, the sky weighing into the meter as
-//     a region of the frame does in a camera's weighted metering.
-//   - The highlight guard: e_H = κ_H - m_H, and e is the soft minimum of e_m and e_H,
-//     e = -k log2( 2^( -e_m / k ) + 2^( -e_H / k ) ) with k = SOFT_MIN (a quarter of a stop): the
-//     lower of the two where they lie apart, eased where they meet, so the exposure does not turn
-//     a corner as a view's highlight guard takes over from its meter (at most k under the lower,
-//     where they are equal; under a tenth of a stop once they lie half a stop apart). The guard
-//     holds down the whole metered exposure, the sky's share included.
-//   - The bound: EV_t = clamp( e, e_m - R, e_m + R ) plus the GUI's offset (stops), both bounds
-//     offset too, R = EXPOSURE_RANGE (5 stops): the guard may pull the exposure at most R stops
-//     under the meter, however bright the frame's brightest few percent. e never lies over e_m (a
-//     soft minimum lies under both its terms), so the upper bound only closes the range the
-//     adaptation holds EV in (`exposureAdapt`).
+//   - The scene's exposure: e_M = κ - m_M, held down by the highlight guard e_H = κ_H - m_H as
+//     their soft minimum, e_G = -k log2( 2^( -e_M / k ) + 2^( -e_H / k ) ) with k = SOFT_MIN (a
+//     quarter of a stop): the lower of the two where they lie apart, eased where they meet, so the
+//     exposure does not turn a corner as a view's highlight guard takes over from its meter (at most
+//     k under the lower, where they are equal; under a tenth of a stop once they lie half a stop
+//     apart).
+//   - The blend: the sky's own exposure e_S = κ - m_S and the scene's blend in stops by the sky's
+//     share, e = ( 1 - β ) e_G + β e_S: a weighted metering pattern, the sky weighing into the meter
+//     as a region of the frame does in a camera's weighted metering. The guard holds down the
+//     scene's share alone, never the sky's: the bright band about a low sun (the glitter on the sea,
+//     the glow) darkens what the land's light asks for, while the sky's part still follows the
+//     sky's own light, so the sky weighs the same in every view under one sky.
+//   - The bound: EV_t = clamp( e, e_S - 4, e_S + 5 ) plus the GUI's offset (stops), both bounds
+//     offset too (EXPOSURE_UNDER, EXPOSURE_OVER): a window about the sky's exposure that the
+//     adaptation holds EV in (`exposureAdapt`). Across the kept weathers' views e lies from about
+//     2.6 stops under e_S to 1.6 over it (the land at the blue hour and before sunrise): the land's
+//     illuminance, the sun's included, lies over the sky's own luminance by day and by night. The
+//     lowest is a free camera low over the sea looking toward a low sun (guard-held: 2.6 stops
+//     under at 12 degrees, 1.2 to 1.7 at 1 to 3 degrees). The window keeps a frame of glare or of
+//     black from carrying the exposure past what the sky allows, and leaves every kept view free,
+//     the nearest 1.4 stops inside it.
 // - No reading: where M's histogram holds less than a sample's weight (no metered material in
-//   view, or no material writing M at all), e_M is the sky's exposure e_S, so the meter is the
-//   sky's alone whatever β, and the frame is exposed by the sky and held down by the highlight
-//   guard; where Y's holds none, the guard drops out and e is e_m alone.
+//   view, or no material writing M at all), e_M is the sky's exposure e_S, so the scene's share is
+//   the sky's too, still held down by the highlight guard; where Y's holds none, the guard drops
+//   out and the scene's share is e_M alone.
 // - The night's darkness is the night key's job: the meter reads night light as it reads the day's.
+//   The night key comes in by the exposure's own night weight (sky/DayCycle.ts `exposureNight`),
+//   not the display's: where the meter hands over to it is set by the light, apart from the grade.
 // - Adaptation (`exposureAdapt`): the exposure EV follows its target EV_t as a critically damped
 //   second-order filter on EV, EV'' = -2 ω EV' - ω^2 ( EV - EV_t ), ω = 1 / τ (Lowe, "Critically
 //   Damped Ease-In/Ease-Out Smoothing", Game Programming Gems 4, 2004): it starts with no kink;
@@ -93,31 +104,165 @@ export interface ExposureKey extends Record<string, number> {
 	adaptDown: number;
 }
 
-/** The exposure's keys (DayKeys.ts): the golden hour (a sun at 3 degrees), a low sun (12), a high
- * one (40), a clouded day and the night. They are fitted on the exposed white of a diffuser under
+/** The exposure's keys (DayKeys.ts): the evening's dusk (held from -0.4 degrees down) and sunset
+ * (0.4), the golden hour (a sun at 3 degrees), a low sun (12), a high one (40), the rising sun's
+ * dawn (held from -2 degrees down) and its golden hour (3), a clouded day's (-1, 0, 3, 6 and 12)
+ * and the night. They are set against the exposed white of a diffuser under
  * the sun's direct light alone (by night the shaded one), seen toward and away from the sun, with
- * the sky's light as Sky.ts SKY_LIGHT sets it, together with the sky's light, the haze and the
- * grading. The highlight key is what darkens a view toward a low sun against one away from it, the
- * bright band about the sun capping the exposure. The high key's β runs to about 0.9, where the sky
- * nearly alone sets the exposure. The clouded key was fitted on the whites under the cloudy sky:
- * its β went to 0, the meter alone, and its κ_H lies 2.3 stops over its κ, so the guard holds a
- * clouded view down only where its brightest few percent lie more than 2.3 stops over its metered
- * light (under a sky with no sun, rarely). The night has one white: β 0 (the meter alone), κ and κ_H
- * fitted. The adaptation's time constants are the same in every key (the header, Adaptation).
- * Tunable on debug pages (debug/Tune.ts): `post.exposure.<value>@<key>`. */
+ * the sky's light as Sky.ts SKY_LIGHT and CLEAR_SKY set it, together with the haze and the grading.
+ * The day's κ follow the sea's share of the meter (ocean/Water.ts): the sea is metered as a share
+ * of what a white card laid level at its point would meter, so a frame's sea no longer moves its
+ * meter up under a clear sky and down under a closed deck. Each key was lowered in steps on the
+ * views of its state (the clear day's from 6 degrees up for the low and high keys, the golden
+ * hour's, the rising sun's, the clouded day's), to the step at which those views' land, sky and sea
+ * read as they did before the change, within a third of a stop in lightness: the high key went down
+ * by 0.8 stops, the low by 0.9, the golden by 0.7, the rising sun's dawn by 0.8 and its golden hour
+ * by 0.6, the clouded by 0.9. The sky's share β is 0.4 under a clear day's keys, the dawn's and the
+ * night's, 0.2 under the golden hours' and the clouded ones: the land's light sets most of a view's
+ * exposure, the sky's own enough that a view follows the sky's light through the day. The highlight
+ * key holds a view toward a low sun (the sea's glitter toward a sun at 12 degrees, a view along the
+ * horizon toward one at 3 degrees, one into the glow after sunset) under one away from it on the
+ * scene's share; with the keys lower, such a view stands 0.14 to 0.36 stops darker than before, the
+ * golden hour's the least. The rising sun's keys share it (shared, so tuning `@golden` moves them
+ * all). The clouded keys' κ_H lie well over their κ, so the guard holds a clouded view down only
+ * where its brightest few percent lie far over its metered light (under a sky with no sun, rarely).
+ * A clouded day stands under the clear one by the light its deck takes, overcast's key OVERCAST_KEY
+ * on top of it by its share. `cloudy` sets the cloudy sky toward a high sun: the bright cloud's
+ * lightness and share, its tint (Oklab b, which the tone curve moves) and the gaps between the
+ * clouds. A lower key darkens the gaps faster than the bright cloud, and the clouds' own contrast
+ * widens a little as the frame darkens, which no key mends; the land under the deck goes down with
+ * the sky. The keys from the golden hour down were set again once the sea's metering and the
+ * dusk's light had settled, on the island's default view through the evening's and the morning's
+ * dusk, each to where that view's land reads as it did before the sea's metering, within a third of
+ * a stop (the night's own change apart, which the night key carries; on screen the land moves about
+ * one and a half times a key's change there, in the tone curve's toe). The clear evening's land
+ * under the horizon read 0.6 stops over that, so the dusk key lies 0.35 stops under the golden
+ * hour's, reached from `sunset` at 0.4 degrees, which shares the golden hour's. The clouded day's
+ * land had lost the fall from 12 to 6 degrees its old meter made and read 1.6 stops over it from 7
+ * degrees to the horizon, so `cloudyLow`, `cloudyGolden` and `cloudySunset` lie 1.05, 0.95 and 1.2
+ * stops under the keys they had and `cloudyDusk` holds 1.6 under from -1 degree down, where the
+ * clouded exposure's night weight takes over (DayCycle.ts `exposureNight`); the cloudy morning
+ * shares them and reads within half a stop of that, its land brighter just under the horizon and
+ * darker where gaps in the cloud let the low sun through. One night key serves every night's sky. It lies about 2.3
+ * stops under the day's high key and 2.1 under its low: the moonlit open sky is the brightest large
+ * thing in a night's frame, and the sea's smaller share in the meter raised the night's exposure
+ * by about 0.8 stops at the key it had, so the key is raised to the lowest value that holds its gap
+ * to the day's high key within a third of a stop of two stops. The meter would take back the
+ * moonlight a deck takes, so overcast's night keeps a share of that darkness on screen
+ * (OVERCAST_NIGHT). The rising sun's dawn key meters the morning's land before the
+ * sun by both the sky and its own light, so the land keeps its level while the sky brightens toward
+ * the sun (a morning's day exposure comes in long before the sun: DayCycle.ts `displayNight`), and
+ * from -2 to 3 degrees it passes into the morning's golden key, about 0.4 stops under the
+ * evening's: at 3 degrees the island view meters mostly the sea on either side of the day (about
+ * seven tenths of its metered cells), but in the morning its land lies nearly all in shade (about a
+ * tenth of it sunlit, against four tenths in the evening). Under cloud the clouded keys
+ * take over from it by the cloud's share, as from the day's. The adaptation's time constants are
+ * the same in every key (the header, Adaptation). Tunable on debug pages (debug/Tune.ts):
+ * `post.exposure.<value>@<key>`. */
+const EXPOSURE_DAY: readonly DayKey<ExposureKey>[] = [
+	{ at: - 0.4, name: 'dusk', values: { key: - 1.65, get highlight() { return EXPOSURE_KEYS.day[ 2 ].values.highlight; }, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
+	{ at: 0.4, name: 'sunset', values: { get key() { return EXPOSURE_KEYS.day[ 2 ].values.key; }, get highlight() { return EXPOSURE_KEYS.day[ 2 ].values.highlight; }, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
+	{ at: 3, name: 'golden', values: { key: - 1.3, highlight: 0.45, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
+	{ at: 12, name: 'low', values: { key: - 0.46, highlight: - 0.97, sky: 0.4, adaptUp: 0.05, adaptDown: 0.05 } },
+	{ at: 40, name: 'high', values: { key: - 0.24, highlight: 0.11, sky: 0.4, adaptUp: 0.05, adaptDown: 0.05 } },
+];
 export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
-	day: [
-		{ at: 3, name: 'golden', values: { key: 0.102, highlight: 1.15, sky: 0.107, adaptUp: 0.05, adaptDown: 0.05 } },
-		{ at: 12, name: 'low', values: { key: 0.332, highlight: 0.52, sky: 0.441, adaptUp: 0.05, adaptDown: 0.05 } },
-		{ at: 40, name: 'high', values: { key: - 1.05, highlight: 1.44, sky: 0.915, adaptUp: 0.05, adaptDown: 0.05 } },
+	day: EXPOSURE_DAY,
+	rising: [
+		{ at: - 2, name: 'dawn', values: { key: - 1.79, get highlight() { return EXPOSURE_KEYS.day[ 2 ].values.highlight; }, sky: 0.4, adaptUp: 0.05, adaptDown: 0.05 } },
+		{ at: 3, name: 'morningGolden', values: { key: - 1.71, get highlight() { return EXPOSURE_KEYS.day[ 2 ].values.highlight; }, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
+		...EXPOSURE_DAY.slice( 3 ),
 	],
-	cloudy: { key: 0.784, highlight: 3.09, sky: 0, adaptUp: 0.05, adaptDown: 0.05 },
-	night: { key: - 2.64, highlight: - 2.48, sky: 0, adaptUp: 0.05, adaptDown: 0.05 },
+	cloudy: [
+		{ at: - 1, name: 'cloudyDusk', values: { key: - 2.9, highlight: 3.05, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
+		{ at: 0, name: 'cloudySunset', values: { key: - 2.5, highlight: 3.05, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
+		{ at: 3, name: 'cloudyGolden', values: { key: - 2.25, highlight: 3.05, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
+		{ at: 6, name: 'cloudyLow', values: { key: - 2.04, highlight: 3.05, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
+		{ at: 12, name: 'cloudy', values: { key: - 1.01, highlight: 3.05, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
+	],
+	night: { key: - 2.57, highlight: - 1.32, sky: 0.4, adaptUp: 0.05, adaptDown: 0.05 },
 }, { key: { min: - 6, max: 3 }, highlight: { min: - 3, max: 4 }, sky: { min: 0, max: 1 }, adaptUp: { min: 0.02, max: 4, scale: 'log' }, adaptDown: { min: 0.02, max: 4, scale: 'log' } } );
 
-/** How far under the meter's exposure e_m the highlight guard may pull the target, in stops (the
- * bound's half width about e_m: see the header). */
-export const EXPOSURE_RANGE = 5;
+/** Overcast's key on top of the clouded one toward a high sun, stops, by overcast's share of the
+ * sky (Weather.ts `skyMix`, a parked sky counting as overcast), whole by day and handing over to the
+ * night by the exposure's own night weight, as the keys do. It enters here alone, never in the
+ * keys' own blend. It stands with overcast's own day sky (sky/Weather.ts, overcast's `daySky`): the
+ * sky dome meters at its bake's geometric-mean luminance, so a darker sky drags the meter and the
+ * exposure brightens, the more sky a frame holds the more. At -0.09, with overcast's day sky at
+ * 0.074 and the sun at 15 to 22 degrees, the meadow beside and away from the sun reads at a
+ * display lightness of 0.34 to 0.36 and the deck behind it at 0.31 to 0.33, the sky a little
+ * darker than the meadow under it. The parked rain, storm and fog
+ * count as overcast in the sky's blend and take this key but keep a day sky of 1, so they read
+ * darker than overcast; they are parked and left so.
+ * Toward a low sun it passes to OVERCAST_KEY_LOW (OVERCAST_KEY_SPAN). Tunable:
+ * `post.exposure.overcastKey`. */
+const OVERCAST_KEY = tune( 'post.exposure.overcastKey', - 0.09, { min: - 4, max: 1 } );
+/** Overcast's key toward a low sun, stops, in place of OVERCAST_KEY. Once the sea was metered as a
+ * share of the white card's light, the overcast evening's land read from 0.4 stops over what it
+ * read before at 12 degrees to 1.0 to 1.3 over from 7 degrees to the horizon, where the clouded keys
+ * it holds (OVERCAST_HELD) stay flat; this key takes that back, set on the island's default view
+ * between the evening's land and the morning's, which reads up to half a stop brighter under a deck
+ * whatever the key. Under the horizon the land no longer follows how it read before: that fell two
+ * stops within a degree, the exposure falling with it, and the exposure may not fall as the light
+ * does (its night weight comes in no faster than the meter's light goes). It stands 0.79 stops
+ * under OVERCAST_KEY, the most that keeps the exposure from falling faster than the meter's light
+ * across OVERCAST_KEY_SPAN (each 3-degree step's fall of the key, at most 0.34 of the gap, stays
+ * within the meter's own fall and 2 %); the island's default view's land with the sun at 4 degrees
+ * then reads at a display lightness of 0.27. Tunable: `post.exposure.overcastKeyLow`. */
+const OVERCAST_KEY_LOW = tune( 'post.exposure.overcastKeyLow', - 0.23, { min: - 4, max: 1 } );
+/** Where overcast's key passes from its low sun's value (OVERCAST_KEY_LOW, at and under the first)
+ * to its high sun's (OVERCAST_KEY, at and over the second), degrees: a smoothstep. */
+const OVERCAST_KEY_SPAN = [ 6, 18 ] as const;
+/** The share of a clear sky's light the overcast deck lets through onto the land by night: the
+ * open land's illuminance under overcast against a clear sky's with a key at the moon's height,
+ * measured on our island with the deck in its night form (sky/Clouds.ts MOON_DECK_GLOW, the whole
+ * deck seen) and the moon's fixed land gain (lighting/AmbientGrade.ts OVERCAST_MOON_LAND), the
+ * form the night draws. So in scene units an overcast night lies log2( 1 / 0.72 ), about 0.47
+ * stops, under a clear one. The day's deck form reads about 0.79 by the same measure; the night
+ * never takes it. */
+const DECK_LAND_THROUGH = 0.72;
+/** Overcast night's share f of that darkness the display keeps: the night key goes down by f times
+ * it, so the meter takes back only 1 - f of it and an overcast night reads darker than a clear one
+ * on screen, not only in scene units. f is a choice of the look (0: the meter takes it all back,
+ * 1: none). It comes in by overcast's share and the exposure's night weight, a function of the
+ * clock and the weather alone. Tunable: `post.exposure.overcastNight`. */
+const OVERCAST_NIGHT = tune( 'post.exposure.overcastNight', 0.5, { min: 0, max: 1 } );
+/** Where overcast holds the clouded keys from, degrees (`cloudy`): its closed deck does not break
+ * up at a low sun (sky/Weather.ts `overcastDeckLight`), so below it overcast keeps that key, its own
+ * key toward a low sun (OVERCAST_KEY_LOW) taking the low sun's light, and hands over only to the
+ * night's, while a cloudy sky's keys go on to the low sun's and the evening's under 12 degrees. */
+const OVERCAST_HELD = 12;
+const _held = { key: 0, highlight: 0, sky: 0, adaptUp: 0, adaptDown: 0 };
+
+/** The exposure's keys at the sun's `elevation` (degrees), the exposure's own night weight `night`
+ * (sky/DayCycle.ts `exposureNight`, set apart from the display's so the meter's handover to the
+ * night key can follow the light while the tone, the grade and the bloom keep theirs) and the
+ * weather's blend of the kept skies `skyMix`, into `out`, the morning's where the sun is `rising`:
+ * the day's (or the rising sun's) and the clouded keys (DayKeys.ts `keyed`), overcast's share
+ * holding the clouded keys at OVERCAST_HELD below it, overcast's key (OVERCAST_KEY_LOW to
+ * OVERCAST_KEY over OVERCAST_KEY_SPAN) by overcast's share and the day's weight, and overcast's
+ * night (OVERCAST_NIGHT) by overcast's share and the night weight. */
+export function exposureKeys( elevation: number, night: number, skyMix: readonly number[], out: ExposureKey, rising = false ): ExposureKey {
+
+	const clouded = cloudedShare( skyMix ), overcast = skyMix[ 3 ] ?? 0;
+	keyed( EXPOSURE_KEYS, elevation, night, out, overcast < 1 ? ( clouded - overcast ) / ( 1 - overcast ) : 0, rising );
+	if ( overcast > 0 ) {
+
+		keyed( EXPOSURE_KEYS, Math.max( elevation, OVERCAST_HELD ), night, _held, 1 );
+		for ( const k in out ) out[ k ] += ( _held[ k as keyof typeof _held ] - out[ k ] ) * overcast;
+		const high = THREE.MathUtils.smoothstep( elevation, OVERCAST_KEY_SPAN[ 0 ], OVERCAST_KEY_SPAN[ 1 ] );
+		out.key += ( OVERCAST_KEY_LOW() + ( OVERCAST_KEY() - OVERCAST_KEY_LOW() ) * high ) * overcast * ( 1 - night );
+		out.key -= OVERCAST_NIGHT() * Math.log2( 1 / DECK_LAND_THROUGH ) * overcast * night;
+
+	}
+	return out;
+
+}
+
+/** The window about the sky's exposure e_S the target is held in, stops under and over it (see the
+ * header). */
+export const EXPOSURE_UNDER = 4;
+export const EXPOSURE_OVER = 5;
 /** The soft minimum's width k, in stops (see the header). */
 export const SOFT_MIN = 0.25;
 
@@ -126,18 +271,17 @@ export const SOFT_MIN = 0.25;
  * 1), the sky's log2 luminance `sky` ( m_S ), the keys and the GUI's `offset` (stops). */
 export const exposureTarget = Fn( ( [ meter, hasMeter, high, hasHigh, sky, key, highlight, skyShare, offset ]: F[] ) => {
 
-	// the meter: the scene's exposure and the sky's blended in stops by the sky's share (the sky's
-	// alone where the scene has no reading)
+	// the sky's exposure and the scene's (the sky's where the scene has no reading)
 	const eS = key.sub( sky ).toVar();
 	const eM = select( hasMeter.greaterThan( 0.5 ), key.sub( meter ), eS ).toVar();
-	const metered = mix( eM, eS, skyShare ).toVar();
-	// the highlight guard over the whole of it: the soft minimum, as the lower one less its easing
-	// (no power of a large value to overflow)
+	// the highlight guard on the scene's branch alone: the soft minimum, as the lower one less its
+	// easing (no power of a large value to overflow)
 	const eH = highlight.sub( high ).toVar();
-	const soft = min( metered, eH ).sub( log2( exp2( abs( metered.sub( eH ) ).div( - SOFT_MIN ) ).add( 1 ) ).mul( SOFT_MIN ) ).toVar();
-	const e = select( hasHigh.greaterThan( 0.5 ), soft, metered );
-	// the bound about the meter: how far the guard may pull it down
-	const lo = metered.sub( EXPOSURE_RANGE ).add( offset ), hi = metered.add( EXPOSURE_RANGE ).add( offset );
+	const guarded = min( eM, eH ).sub( log2( exp2( abs( eM.sub( eH ) ).div( - SOFT_MIN ) ).add( 1 ) ).mul( SOFT_MIN ) ).toVar();
+	const scene = select( hasHigh.greaterThan( 0.5 ), guarded, eM );
+	// the two blended in stops by the sky's share, held in the window about the sky's exposure
+	const e = mix( scene, eS, skyShare );
+	const lo = eS.sub( EXPOSURE_UNDER ).add( offset ), hi = eS.add( EXPOSURE_OVER ).add( offset );
 	return vec3( clamp( e.add( offset ), lo, hi ), lo, hi );
 
 } ).setLayout( { name: 'exposureTarget', type: 'vec3', inputs: [

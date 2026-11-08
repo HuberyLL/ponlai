@@ -3,14 +3,17 @@
 //   node tools/verify-weather-effects.mjs http://127.0.0.1:5190
 // Parked with the rain (src/sky/Weather.ts PARKED_WEATHER): out of the default checks until the
 // parked weathers are revived; it still runs against a debug build (the dev server or ?debug).
+// Its steps wait for the page's rendered frames (tools/page-eval.mjs, "Rendered frames").
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
+import { DAY_PRESETS } from '../src/sky/DayCycle.ts';
+import { renderedFrames } from './page-eval.mjs';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/weather-effects';
-const report = { base, time: 12, hour: 16, weather: 'rain', captures: {}, comparisons: {}, quality: {}, checks: [], errors: [], warnings: [], failures: [] };
+const report = { base, time: 12, hour: DAY_PRESETS[ 'golden-hour' ], weather: 'rain', captures: {}, comparisons: {}, quality: {}, checks: [], errors: [], warnings: [], failures: [] };
 const regions = {
 	overview: {
 		meadow: [ 0.28708, 0.25505, 0.66388, 0.59511 ], cliff: [ 0.19139, 0.63762, 0.65789, 0.83953 ],
@@ -48,11 +51,12 @@ try {
 	} );
 	page.on( 'response', ( response ) => { if ( response.status() >= 400 ) report.failures.push( `${ response.status() } ${ response.url() }` ); } );
 	page.on( 'requestfailed', ( request ) => report.failures.push( `${ request.failure()?.errorText } ${ request.url() }` ) );
-	const frames = () => page.evaluate( () => new Promise( ( resolve ) => requestAnimationFrame( () => requestAnimationFrame( resolve ) ) ) );
+	// two of the page's rendered frames (tools/page-eval.mjs, "Rendered frames")
+	const frames = () => renderedFrames( page, 2 );
 	const load = async ( quality ) => {
 		const url = new URL( base );
 		url.search = '';
-		for ( const [ key, value ] of Object.entries( { debug: '', paused: '', hour: '16', t: '12', dpr: '1', weather: 'rain', quality, dist: '58', polar: '50', az: '318' } ) ) url.searchParams.set( key, value );
+		for ( const [ key, value ] of Object.entries( { debug: '', paused: '', preset: 'golden-hour', t: '12', dpr: '1', weather: 'rain', quality, dist: '58', polar: '50', az: '318' } ) ) url.searchParams.set( key, value );
 		await page.goto( url.href );
 		await page.waitForFunction( () => {
 			const s = window.__PONLAI__, loading = document.getElementById( 'loading' );

@@ -42,12 +42,18 @@
 // `clearShade` (a number, or `true` for 1; off unless set) scales the sky light the island takes
 // for its clear shade (sky/Sky.ts CLEAR_SHADE), read whenever the sky tracks the clock (an
 // environment bake later, `refreshEnvironment()` while paused).
-// `skyGain = false` leaves the sun's in-scattered sky light and the cirrus' sunlight as the
-// atmosphere and the clouds give them (sky/Sky.ts SKY_LIGHT), read whenever the sky tracks the clock
-// (an environment bake later, `refreshEnvironment()` while paused); `cirrusSky` (a number, 1 unless
-// set) scales the cirrus' gain alone, read the same way.
+// `skyGain = false` leaves the sun's in-scattered sky light as the atmosphere gives it (sky/Sky.ts
+// SKY_LIGHT), read whenever the sky tracks the clock (an environment bake later,
+// `refreshEnvironment()` while paused).
+// `streaks` (a number, 1 unless set) scales the weather's amount of the thin cloud layer
+// (sky/Clouds.ts `streaksAt`; 0 turns it off), read whenever the sky tracks the clock;
+// `streakMask = true` (at load) paints the dome's pixels where the layer's opacity as seen passes
+// 0.1 in a red of their own luminance and those where it lies between 0.02 and 0.1 in a green, for
+// `img.py stats --mask` (sky/Sky.ts domeColour).
 // `lowKey = false` leaves the low sun's key as its transmittance gives it (sky/Sky.ts LOW_KEY), read
 // whenever the sky tracks the clock.
+// `clearSky = false` leaves the clear day's sky light without its gain against the key (sky/Sky.ts
+// CLEAR_SKY), read whenever the sky tracks the clock (an environment bake later).
 // `lowSun` (a number, or `true` for 1; off unless set) scales the low sun's warm light and
 // blue-violet shade (sky/Sky.ts lowSun), read every frame (the shade's at the next environment bake).
 // `keyLift = false` keeps the direct light and the sun's shadows on the low key's own direction
@@ -111,6 +117,9 @@
 // volumes as they last were).
 // `fallingLeaves = false` skips the falling leaves' pass and hides them (weather/FallingLeaves.ts),
 // read every frame, so --toggle "s.flags.fallingLeaves = on" times them.
+// `cloudHazeEnd = false` marches the low deck's view through its whole shell instead of ending where
+// the haze closes (sky/Clouds.ts `makeMarch`; the haze's copy of its medium, weather/VolumetricHaze.ts
+// `prepareMedium`), read every frame, so --toggle "s.flags.cloudHazeEnd = !on" times the end.
 export interface MotionSourceFlags { camera?: boolean; object?: boolean; skin?: boolean; wind?: boolean; sea?: boolean; foam?: boolean }
 export const debugFlags: Record<string, boolean | number | string | MotionSourceFlags | undefined> & { mv: MotionSourceFlags } = { mv: {} };
 

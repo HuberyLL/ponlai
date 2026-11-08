@@ -955,7 +955,7 @@ export function labelPonlaiPasses( profiler: FrameProfiler, handles: Record<stri
 	profiler.scope( h.fft, 'update', 'ocean FFT' );
 	profiler.scope( h.stormSea, 'update', 'storm sea' );
 	profiler.scope( h.shoreWaves, 'update', 'shore waves' );
-	profiler.scope( h.caustics, 'update', 'caustics' );
+	profiler.scope( h.waveMaps, 'update', 'wave maps' );
 	profiler.scope( h.groundBounce, 'update', 'ground bounce map' );
 	profiler.scope( h.characters, 'update', 'character shadow' );
 

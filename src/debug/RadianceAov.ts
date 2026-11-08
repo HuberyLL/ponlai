@@ -26,7 +26,11 @@ import { FIT_CLASSES } from './Classes.ts';
 //           the opaque colour's codes. `texels: true` (cell n > 0) also returns `texels`, each of
 //           the cells' texels' own kind, cell by cell, n by n per cell in rows.
 // `rings: { sun, step, count, sky }` (readRings below) returns instead the luminance around the sun
-// in rings of angle, for the bloom's and the glare's profile.
+// in rings of angle, for the bloom's and the glare's profile; `sector` and `elevation` keep only
+// the texels in a sector about the light or a range of elevation, and `elevationStep` adds the
+// sky's sums per ring and elevation band, from which a script takes the excess over a background
+// that varies with elevation (a closed deck's, brighter overhead) texel by texel. Any light's
+// direction serves as `sun` (the moon's by night).
 
 export type Aov = 'depth' | 'normal' | 'ao' | 'class';
 export interface AovResult { aov: Aov; nx: number; ny: number; k: number; size: [ number, number ]; values: number[]; texels?: number[] }
@@ -246,6 +250,15 @@ export interface RingsOptions {
 	/** bands of angle from the sun, degrees, each read as the median over its sky texels of the
 	 * luminance the bloom adds (sharp minus hdr) */
 	halo?: [ number, number ][];
+	/** only the texels in this sector about the sun, degrees: 0 straight below it, 90 to its right
+	 * as seen facing it, 180 above, 270 to its left; a sector whose start exceeds its end wraps
+	 * through 0. Applies to the rings, the sky's band, `band`, `halo` and `table`. */
+	sector?: [ number, number ];
+	/** only the texels whose ray's elevation (degrees above the horizontal) lies in this range;
+	 * applies as `sector` does */
+	elevation?: [ number, number ];
+	/** the width in degrees of the elevation bands of `table` (none without it) */
+	elevationStep?: number;
 }
 export interface RingsResult {
 	step: number; count: number; size: [ number, number ]; preExposure: number;
@@ -259,6 +272,14 @@ export interface RingsResult {
 	band: { sharp: number | null; hdr: number | null } | null;
 	/** per band of `halo`, the median of sharp minus hdr over its sky texels and their count */
 	halo: { median: number | null; n: number }[] | null;
+	/** each ring's count of sky texels (every second texel on each axis) */
+	skyCounts: number[];
+	/** with `elevationStep`: the composite's (hdr) luminance summed over the sky's texels of each
+	 * ring and elevation band, as [ ring, band, sum, count ] for every pair that holds any (band b
+	 * spans b * step - 90 to ( b + 1 ) * step - 90 degrees), so a script can take each texel's
+	 * excess over a background that varies with elevation (the sum less the count times the
+	 * band's background) without the texels */
+	table: { elevationStep: number; cells: [ number, number, number, number ][] } | null;
 }
 
 /** The luminance around the sun in rings of angle (degrees between a texel's ray and the sun),
@@ -296,10 +317,35 @@ export async function readRings( renderer: THREE.WebGPURenderer, pipeline: Pipel
 	const haloLo = Math.min( Infinity, ...haloBands.map( ( b ) => b[ 0 ] ) ), haloHi = Math.max( - Infinity, ...haloBands.map( ( b ) => b[ 1 ] ) );
 	const lum = ( t: typeof sharp, x: number, y: number ) => ( 0.2126 * t.at( x, y, 0 ) + 0.7152 * t.at( x, y, 1 ) + 0.0722 * t.at( x, y, 2 ) ) * unscale;
 	const { width, height } = sharp;
+	// the sector's axes about the sun (world): straight below it, and to its right as seen facing it
+	const sunWorld = new THREE.Vector3( ...options.sun ).normalize();
+	const below = new THREE.Vector3( 0, - 1, 0 ).addScaledVector( sunWorld, sunWorld.y ).normalize();
+	const right = new THREE.Vector3().crossVectors( sunWorld, new THREE.Vector3( 0, 1, 0 ) ).normalize();
+	const [ sectorFrom, sectorTo ] = options.sector ?? [ 0, 360 ];
+	const [ elevationLo, elevationHi ] = options.elevation ?? [ - 90, 90 ];
+	const tableStep = options.elevationStep ?? 0;
+	const filtered = options.sector !== undefined || options.elevation !== undefined || tableStep > 0;
+	const table = new Map<number, [ number, number, number, number ]>();
+	const w = new THREE.Vector3();
 	for ( let y = 0; y < height; y += 2 ) for ( let x = 0; x < width; x += 2 ) {
 
 		v.set( ( x + 0.5 ) / width * 2 - 1, 1 - ( y + 0.5 ) / height * 2, 1 ).applyMatrix4( projInv ).normalize();
 		const angle = Math.acos( Math.max( - 1, Math.min( 1, v.dot( sunView ) ) ) ) * DEG;
+		let elevation = 0;
+		if ( filtered ) {
+
+			w.copy( v ).transformDirection( camera.matrixWorld );
+			elevation = Math.asin( Math.max( - 1, Math.min( 1, w.y ) ) ) * DEG;
+			if ( elevation < elevationLo || elevation >= elevationHi ) continue;
+			if ( options.sector ) {
+
+				const around = ( Math.atan2( w.dot( right ), w.dot( below ) ) * DEG + 360 ) % 360;
+				const inside = sectorFrom <= sectorTo ? around >= sectorFrom && around < sectorTo : around >= sectorFrom || around < sectorTo;
+				if ( ! inside ) continue;
+
+			}
+
+		}
 		const k = Math.floor( angle / step );
 		const inRing = k < count, inSky = angle >= skyLo && angle < skyHi, inBand = angle >= bandLo && angle < bandHi;
 		const inHalo = angle >= haloLo && angle < haloHi;
@@ -319,6 +365,15 @@ export async function readRings( renderer: THREE.WebGPURenderer, pipeline: Pipel
 				skySums.sharp[ k ] += ys;
 				skySums.hdr[ k ] += yh;
 				skyCount[ k ] ++;
+				if ( tableStep > 0 ) {
+
+					const band = Math.floor( ( elevation + 90 ) / tableStep ), key = k * 10000 + band;
+					const cell = table.get( key ) ?? [ k, band, 0, 0 ];
+					cell[ 2 ] += yh;
+					cell[ 3 ] ++;
+					table.set( key, cell );
+
+				}
 
 			}
 
@@ -363,6 +418,8 @@ export async function readRings( renderer: THREE.WebGPURenderer, pipeline: Pipel
 		sky: { sharp: skyN ? round( skySum.sharp / skyN ) : null, hdr: skyN ? round( skySum.hdr / skyN ) : null },
 		band: options.band ? { sharp: median( bandOf.sharp ), hdr: median( bandOf.hdr ) } : null,
 		halo: options.halo ? haloOf.map( ( a ) => ( { median: median( a ), n: a.length } ) ) : null,
+		skyCounts: Array.from( skyCount ),
+		table: tableStep > 0 ? { elevationStep: tableStep, cells: [ ...table.values() ].map( ( c ) => [ c[ 0 ], c[ 1 ], round( c[ 2 ] ), c[ 3 ] ] ) } : null,
 	};
 
 }

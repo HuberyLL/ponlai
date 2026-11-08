@@ -33,16 +33,16 @@ export const SWARD_HEIGHT = 0.45;
 
 interface MeadowSample { growth: number; tone: number }
 
-// Linear albedo of the lawn as a whole: a muted, slightly cool green, the colour the meadow's
-// tone and the ground under it are set against. The tone's knob (shared.ts lawnGain) lightens or
-// darkens the blades (Grass.ts) and the turf together.
-const LAWN = new THREE.Color( 0.0632, 0.0984, 0.0359 );
-/** The lawn's colour (linear albedo), before its tone: the turf under the blades is set against it. */
+// Linear albedo of the lawn as a whole, a deep olive green: the blades' mean (Grass.ts meadowMean)
+// over LAWN_GAIN. The tone's knob (shared.ts lawnGain) lightens or darkens the blades (Grass.ts)
+// and the turf together. The land's bounce reads it (GroundBounce.ts), and the ambient light's
+// bake holds a copy (AmbientProbes.ts LAWN_TOP).
+const LAWN = new THREE.Color( 0.0700, 0.0978, 0.0109 );
+/** The lawn's colour (linear albedo), before its tone. */
 export const LAWN_COLOUR = LAWN.toArray() as [ number, number, number ];
-/** The meadow's albedo against LAWN_COLOUR on load (shared.ts lawnGain, a knob): the lawn's colour
- * at the blades' value (Grass.ts BLADE_COLOUR, about 0.08), so the turf under them (TerrainMaterial.ts,
- * Grass.ts GRASS_ROOTS) is set against the blades' own. The blades' colours are divided by it, so
- * at LAWN_GAIN they are their own. */
+/** The meadow's albedo against LAWN_COLOUR on load (shared.ts lawnGain, a knob): LAWN_COLOUR times it
+ * is the blades' mean. The blades' colours and the turf set against them (TerrainMaterial.ts,
+ * Grass.ts GRASS_ROOTS) are divided by it, so at LAWN_GAIN they are their own. */
 export const LAWN_GAIN = 0.926;
 /** How far the turf's value varies about the lawn's colour (a broad noise's -1 to 1 times it). */
 export const LAWN_TONE = 0.04;

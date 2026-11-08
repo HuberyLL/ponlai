@@ -80,7 +80,7 @@ export function loadBambooLook( option: string | null ): void {
 
 }
 
-/** A culm's place and build: its foot, height (m), foot radius (m), age (0 green to 1 purple), the
+/** A culm's place and build: its foot, height (m), foot radius (m), age (0 new to 1 old), the
  * level way it leans ( outX, outZ ), its lean (rad) and bow (m), the groves' density at its foot
  * and the seed of its form. */
 export interface CulmSite {
@@ -132,7 +132,9 @@ export function groveAt( x: number, z: number ): number {
  * `shade`), the open meadow under the whole sky. The world's sky visibility takes it (the
  * island's ground and the meadow's tufts, Chunks.ts), and the culms by their height (Bamboo.ts),
  * where the materials do not read the ambient volume, whose probes see the canopy themselves
- * (lighting/AmbientSample.ts CANOPY_SHADE). */
+ * (lighting/AmbientSample.ts CANOPY_SHADE). Beside the volume only the meadow's blades keep the
+ * canopy, relative to their tips (Grass.ts `aoCanopy`, `grass.ao.canopy`, by GROVES `shade`
+ * from the soil map's density). */
 export function groveSky( x: number, z: number ): number {
 
 	return 1 - GROVES.shade * groveAt( x, z );

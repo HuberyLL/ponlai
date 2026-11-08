@@ -104,11 +104,10 @@
 //   only through the loading screen, which a fresh load lifts once the sun's map has drawn: frames
 //   drawn while a pipeline compiles repeat each other (three skips the draw), so two of them
 //   compare equal. The wait runs with the loop going, since each grab's restart of the loop starts
-//   the signal's run over. Under the temporal modes the capture's own epoch bump restarts the
-//   haze's rest too, which outlasts the resolve's: the resolve's rest then converges on frames
-//   that were not all quiet and the signal reports `stale` (a paused taa page stayed so for 600
-//   frames). The wait starts the resolve's rest over then, by an epoch bump that is not a scene
-//   bump, so the haze's rest is kept; the page settled about 50 frames after the wait began.
+//   the signal's run over. Under the temporal modes the resolve's rest waits for the haze's, which
+//   the capture's own epoch bump restarts. A refresh that lands under a held rest image still
+//   leaves the signal `stale`: the wait starts the resolve's rest over then, by an epoch bump that
+//   is not a scene bump, so the haze's rest is kept.
 //
 // The shot. The PNGs a capture writes (capture.mjs's frames, capture-clip's crops and full frames)
 // are taken by the same shooter as the grab, not by Playwright's `page.screenshot`: the same pixels
@@ -546,7 +545,7 @@ export async function waitForSettled( page, { timeout = 60000 } = {} ) {
 				else {
 
 					// a temporal rest that converged before the page was quiet starts over (Settled.ts `stale`),
-					// not as a scene bump, which would restart the haze's rest as well and so make it stale again
+					// not as a scene bump, which would restart the haze's rest as well
 					if ( diag().settle?.stale ) s.taa?.epoch.bump( 'settle', false );
 					requestAnimationFrame( tick );
 

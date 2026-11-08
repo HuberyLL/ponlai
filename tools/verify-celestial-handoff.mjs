@@ -1,10 +1,16 @@
 // Regression for the sun/moon key light handoff. The key light, grade and sky follow the clock
 // every frame, so a sweep through the handoff band must carry zero direct energy while the
-// key turns from one body to the other, and every frame must match the clock's own state.
-// Run against the dev server: node tools/verify-celestial-handoff.mjs http://127.0.0.1:5190
+// key turns from one body to the other, and every frame must show the clock's own state: by day
+// the key is the sun's direction, by night it holds where the moon stands (DayCycle.ts MOON), and
+// over the handoff it turns from the one to the other (DayCycle `keyDir`, which Sky.ts takes).
+// Each sample is read after a rendered frame of its clock (tools/page-eval.mjs, "Rendered frames").
+// Run against the dev server:
+// node tools/verify-celestial-handoff.mjs http://127.0.0.1:5190
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
+import { installWaitFrames } from './page-eval.mjs';
+import { HANDOFF_TOP, MOON_KEY_TOP } from '../src/sky/DayCycle.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
@@ -22,6 +28,7 @@ const browser = await chromium.launch( {
 try {
 
 	const page = await browser.newPage( { viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 } );
+	await installWaitFrames( page );
 	page.on( 'pageerror', ( error ) => errors.push( error.message ) );
 	page.on( 'console', ( message ) => { if ( message.type() === 'error' ) errors.push( message.text() ); } );
 	const url = new URL( base );
@@ -34,12 +41,15 @@ try {
 		s.dayCycle.paused = true;
 		s.dayCycle.moonPhase = 0.5;
 		await s.setWeather( 'clear', 0 );
-		const frame = () => new Promise( ( resolve ) => requestAnimationFrame( resolve ) );
+		// the page's next rendered frame (tools/page-eval.mjs WAIT_FRAMES)
+		const frame = () => window.__waitFrames( 1 );
+		// the key's direction at this clock, as Sky.ts takes it from the same snapshot
+		const clockKey = ( clock ) => clock.keyDir;
 		const read = () => {
 
 			const clock = s.dayCycle.snapshot();
 			return {
-				hour: clock.hour, elevation: clock.elevation, clockKey: clock.keyDir.toArray(),
+				hour: clock.hour, elevation: clock.elevation, clockKey: clockKey( clock ).toArray(),
 				clockGrade: { exposure: clock.exposure, daylight: clock.daylight },
 				dir: s.sky.keyDir.toArray(), color: s.sky.keyColor.toArray(),
 				grade: { ...s.sky.grade }, exposure: s.pipeline.settings.exposure,
@@ -87,9 +97,10 @@ try {
 
 			}
 			assert.ok( Math.abs( sample.exposure - sample.grade.exposure ) < 1e-8, 'Main exposure must use the displayed sky grade' );
-			// The band runs from just above the sun's last light (DayCycle HANDOFF_TOP, -0.7) down to
-			// where the key has turned to the moon and the moon's key starts to rise (MOON_KEY_TOP).
-			if ( sample.elevation < - 0.6 && sample.elevation > - 2.5 ) {
+			// The band runs from just above the sun's last light (a tenth of a degree over DayCycle's
+			// HANDOFF_TOP) down to where the key has turned to the moon and the moon's key starts to
+			// rise (MOON_KEY_TOP).
+			if ( sample.elevation < HANDOFF_TOP + 0.1 && sample.elevation > MOON_KEY_TOP ) {
 
 				assert.deepEqual( sample.color, [ 0, 0, 0 ], 'The handoff band must carry zero direct energy' );
 

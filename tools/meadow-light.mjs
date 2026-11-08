@@ -3,7 +3,7 @@
 // how much of the lawn the blades cover, and the colour of the lit lawn on screen.
 //
 //   node tools/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]...
-//       [--target x,z] [--views-file f.json [--views a,b]] [--side afternoon] [--weather clear] [--flags a,b] [--q extra]
+//       [--target x,z] [--views-file f.json [--views a,b]] [--side afternoon] [--weather clear] [--flags a,b] [--q extra] [--expect lo,hi]
 //       [--w 1920 --h 1080 --scale 2] [--timeout 60000] [--out dir] [--pages a,b|none] [--save dir] [--reuse dir]
 //
 // url: the server (default http://127.0.0.1:5190/, the dev server; a production preview needs the
@@ -107,6 +107,17 @@
 //                  90th percentiles and the outer two over the median (`low`, `high`: how deep the
 //                  gaps between the blades go and how far the lit blades rise)
 //   gaps           the share of the frame the open lawn takes where the blades leave it bare
+//   keyToAmbient   the key's illuminance at normal incidence (the sun light's colour times its
+//                  intensity, read on the page) over the ambient irradiance on the sunlit open lawn's
+//                  bare ground, 2 pi times the ambient page's median luminance there (its grey 0.5),
+//                  in scene units (each page's pre-exposure divided out). It guards the land's sky
+//                  light against the key: `--expect lo,hi` exits 3 when a view's value falls outside.
+//                  A view with no reading (no sunlit open ground, or pages saved before this
+//                  reading) counts as outside. The ambient page holds the ambient's specular too, and
+//                  the lawn's bare ground is not open level ground: at a clear 22 degree sun the
+//                  default view reads about 0.65 of the key-to-ambient a white card on lit open
+//                  ground reads at the same sun (another framing: the lit grass and ground in front
+//                  of an eye-height camera). Its window: docs/tools.md, Probes
 // Under a sun so low or a view so shaded that a class is empty its measures are null. A placed view
 // shot at several azimuths also gets, per elevation, the mean of its ratios, cover and screen colour
 // over them (`means`, `<view>-e<elevation>-mean`), as one framing alone carries the sun's side of
@@ -117,7 +128,8 @@
 // `<out>/<view>.sort.png` (the sort at the render's size: sunlit bright leaf yellow, sunlit dark
 // leaf green, shaded leaf blue, lawn behind an occluder purple, partly covered grey by its cover,
 // sunlit turf tan, shaded turf brown), and a table on stdout. `--out` defaults to artifacts/meadow-light/<UTC stamp>/.
-// Exit codes: 0 measured, 1 a page or view failed.
+// Exit codes: 0 measured, 1 a page or view failed, 3 a key:ambient outside `--expect` or missing (all
+// measured).
 //
 // The GPU lock is held shared (the readings do not depend on what else renders) and offered back
 // between pages (leaseGpuLock), never across the CPU work of the measures, which runs after the
@@ -130,10 +142,11 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { NOON_ELEVATION, morningHour, eveningHour } from '../src/sky/DayCycle.ts';
 
-const usage = 'usage: node tools/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]... [--target x,z] [--views-file f [--views a,b]] [--side afternoon|morning] [--weather clear] [--flags a,b] [--q extra] [--w --h --scale] [--timeout ms] [--out dir] [--pages a,b|none] [--save dir] [--reuse dir] (see the file header)';
+const usage = 'usage: node tools/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]... [--target x,z] [--views-file f [--views a,b]] [--side afternoon|morning] [--weather clear] [--expect lo,hi] [--flags a,b] [--q extra] [--w --h --scale] [--timeout ms] [--out dir] [--pages a,b|none] [--save dir] [--reuse dir] (see the file header)';
 const argv = process.argv.slice( 2 );
-const options = { elev: '50,20', azimuth: '135', target: '-13.76,0.8', side: 'afternoon', weather: 'clear', flags: '', q: '', w: '1920', h: '1080', scale: '2', timeout: '60000', out: '',
+const options = { expect: '', elev: '50,20', azimuth: '135', target: '-13.76,0.8', side: 'afternoon', weather: 'clear', flags: '', q: '', w: '1920', h: '1080', scale: '2', timeout: '60000', out: '',
 	'views-file': '', views: '', pages: '', save: '', reuse: '' };
 const viewSpecs = [];
 let url = 'http://127.0.0.1:5190/';
@@ -177,13 +190,14 @@ const frames = viewSpecs.map( ( spec ) => {
 	return { name, tilt, dist, fov };
 
 } );
-if ( ! elevations.length || ! elevations.every( ( e ) => e > 0 && e < 62 ) ) { console.error( '--elev: degrees above 0 and below 62 (the noon sun)' ); process.exit( 2 ); }
+if ( ! elevations.length || ! elevations.every( ( e ) => e > 0 && e < NOON_ELEVATION ) ) { console.error( `--elev: degrees above 0 and below ${ NOON_ELEVATION } (the noon sun)` ); process.exit( 2 ); }
 if ( target.length !== 2 || ! target.every( Number.isFinite ) ) { console.error( '--target x,z' ); process.exit( 2 ); }
 if ( options.side !== 'afternoon' && options.side !== 'morning' ) { console.error( '--side afternoon or morning' ); process.exit( 2 ); }
+const expect = options.expect ? numbers( options.expect ) : null;
+if ( expect && ! ( expect.length === 2 && expect.every( Number.isFinite ) && expect[ 0 ] < expect[ 1 ] ) ) { console.error( '--expect lo,hi' ); process.exit( 2 ); }
 
-// The afternoon's (or the morning's) hour whose sun stands `elevation` degrees up: the sun's path is
-// tilted 62 degrees, its height sin 62 cos( hour angle ) (src/sky/DayCycle.ts)
-const hourFor = ( elevation ) => 12 + ( options.side === 'morning' ? - 1 : 1 ) * Math.acos( Math.sin( elevation * Math.PI / 180 ) / Math.sin( 62 * Math.PI / 180 ) ) * 12 / Math.PI;
+// The afternoon's (or the morning's) hour whose sun stands `elevation` degrees up (src/sky/DayCycle.ts)
+const hourFor = ( elevation ) => options.side === 'morning' ? morningHour( elevation ) : eveningHour( elevation );
 
 const repo = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const stamp = new Date().toISOString().replace( /[:.]/g, '-' ).slice( 0, 19 );
@@ -295,7 +309,11 @@ async function readFrame( { depth } ) {
 		rgb[ o ] = raw[ i ]; rgb[ o + 1 ] = raw[ i + 1 ]; rgb[ o + 2 ] = raw[ i + 2 ];
 
 	}
-	const result = { w, h, half, rgb: await b64( rgb ) };
+	// the pre-exposure the frame was drawn at (stops: its colours are scene units times 2^stops) and
+	// the key's illuminance at normal incidence (the sun light's colour times its intensity, luminance)
+	const c = s.sun.color;
+	const result = { w, h, half, rgb: await b64( rgb ), stops: window.__THREE_GAME_DIAGNOSTICS__.preExposure.stops,
+		key: ( 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b ) * s.sun.intensity };
 	if ( depth ) {
 
 		const rt = s.pipeline.depthRT;
@@ -321,7 +339,7 @@ for ( let i = 0; i < 65536; i ++ ) {
 }
 // A read as it came (its buffers kept as they are, half floats at half the size), and decoded only
 // when its view is measured, so many views' pages fit in memory
-const packFrame = ( r ) => ( { w: r.w, h: r.h, half: r.half, rgb: Buffer.from( r.rgb, 'base64' ), depth: r.depth ? Buffer.from( r.depth, 'base64' ) : null } );
+const packFrame = ( r ) => ( { w: r.w, h: r.h, half: r.half, stops: r.stops, key: r.key, rgb: Buffer.from( r.rgb, 'base64' ), depth: r.depth ? Buffer.from( r.depth, 'base64' ) : null } );
 const decodeFrame = ( r ) => {
 
 	const buffer = r.rgb;
@@ -333,7 +351,7 @@ const decodeFrame = ( r ) => {
 		for ( let i = 0; i < u.length; i ++ ) rgb[ i ] = HALF[ u[ i ] ];
 
 	} else rgb = new Float32Array( buffer.buffer.slice( buffer.byteOffset, buffer.byteOffset + buffer.byteLength ) );
-	const frame = { w: r.w, h: r.h, rgb };
+	const frame = { w: r.w, h: r.h, stops: r.stops, key: r.key, rgb };
 	if ( r.depth ) {
 
 		const d = r.depth;
@@ -348,7 +366,7 @@ const decodeFrame = ( r ) => {
 const savePage = ( view, page, read, placed, png ) => {
 
 	const base = path.join( save, `${ view }.${ page }` );
-	writeFileSync( `${ base }.json`, JSON.stringify( { w: read.w, h: read.h, half: read.half, depth: !! read.depth, placed, png: !! png } ) );
+	writeFileSync( `${ base }.json`, JSON.stringify( { w: read.w, h: read.h, half: read.half, stops: read.stops, key: read.key, depth: !! read.depth, placed, png: !! png } ) );
 	writeFileSync( `${ base }.rgb`, read.rgb );
 	if ( read.depth ) writeFileSync( `${ base }.depth`, read.depth );
 	if ( png ) writeFileSync( `${ base }.png`, png );
@@ -358,7 +376,7 @@ const loadPage = ( view, page ) => {
 
 	const base = path.join( reuse, `${ view }.${ page }` );
 	const head = JSON.parse( readFileSync( `${ base }.json`, 'utf8' ) );
-	const read = { w: head.w, h: head.h, half: head.half, rgb: readFileSync( `${ base }.rgb` ), depth: head.depth ? readFileSync( `${ base }.depth` ) : null };
+	const read = { w: head.w, h: head.h, half: head.half, stops: head.stops, key: head.key, rgb: readFileSync( `${ base }.rgb` ), depth: head.depth ? readFileSync( `${ base }.depth` ) : null };
 	return { read, placed: head.placed, png: head.png ? readFileSync( `${ base }.png` ) : null };
 
 };
@@ -577,6 +595,13 @@ function measure( shot ) {
 	const top = quantile( lawnDirect, 0.95 ) ?? 0;
 	const sun = new Uint8Array( n ); // 1 sunlit, 2 shaded
 	for ( let p = 0; p < n; p ++ ) if ( open[ p ] && Number.isFinite( direct[ p ] ) && top > 0 ) sun[ p ] = direct[ p ] >= 0.7 * top ? 1 : direct[ p ] <= 0.2 * top ? 2 : 0;
+	// the key against the ambient light on the sunlit open ground: the key's illuminance at normal
+	// incidence over the ambient irradiance there, 2 pi times the ambient page's median luminance
+	// (its grey 0.5 returns E / 2 pi), in scene units (the page's pre-exposure divided out)
+	const litAmbient = [];
+	for ( let p = 0; p < n; p ++ ) if ( sun[ p ] === 1 ) litAmbient.push( lum( ambient.rgb, p * 3 ) );
+	const ambientLit = median( litAmbient );
+	const keyToAmbient = ambientLit > 0 && ambient.key > 0 && Number.isFinite( ambient.stops ) ? ambient.key / ( 2 * Math.PI * ambientLit * 2 ** - ambient.stops ) : null;
 	// the leaf pixels' light
 	const litLeaf = [], litLeafBare = [], shadeLeaf = [], shadeLeafBare = [], litTurf = [];
 	const leafRad = [ 0, 0, 0 ], leafLight = [ 0, 0, 0 ], turfRad = [ 0, 0, 0 ], turfLight = [ 0, 0, 0 ];
@@ -768,6 +793,7 @@ function measure( shot ) {
 			shadedRatio: shadedGrass !== null && shadedBare ? round( shadedGrass / shadedBare ) : null,
 			groundToLeaf: litTurf.length && leafMean ? round( mean( litTurf ) / leafMean ) : null,
 			gaps: round( open.reduce( ( a, v, p ) => a + ( v && cover[ p ] === 0 ? 1 : 0 ), 0 ) / n ),
+			keyToAmbient: round( keyToAmbient ),
 			cover: {
 				lawn: lawnPx ? round( lawnCover / lawnPx ) : null, centre: boxPx ? round( boxCover / boxPx ) : null,
 				bands: Object.fromEntries( BANDS.map( ( [ lo, hi ], b ) => [ `${ lo }-${ hi }`, bandCover[ b ][ 1 ] ? round( bandCover[ b ][ 0 ] / bandCover[ b ][ 1 ] ) : null ] ).filter( ( [ , v ] ) => v !== null ) ),
@@ -928,10 +954,21 @@ for ( const r of results ) {
 	console.log( `${ r.view.padEnd( 20 ) } ${ c( o ) } ${ c( l ) } ${ ( o && l ? `${ f( o.rg / l.rg ) } ${ f( o.bg / l.bg ) } ${ f( o.C / l.C ) } ${ f( l.h - o.h, 1 ) }` : '-' ).padEnd( 24 ) } ${ f( o?.relief, 2 ) }` );
 
 }
+// the key against the ambient light on the sunlit open ground, and its window (`--expect`)
+console.log( `\n${ 'view'.padEnd( 20 ) } ${ 'key:ambient'.padStart( 11 ) }${ expect ? `  window ${ expect[ 0 ] }-${ expect[ 1 ] }` : '' }` );
+let outside = false;
+for ( const r of results ) {
+
+	if ( r.error ) continue;
+	const k = r.keyToAmbient, fails = expect !== null && ! ( k !== null && k >= expect[ 0 ] && k <= expect[ 1 ] );
+	if ( fails ) outside = true;
+	console.log( `${ r.view.padEnd( 20 ) } ${ f( k, 2 ).padStart( 11 ) }${ fails ? '  OUTSIDE' : '' }` );
+
+}
 console.log( `\n${ path.relative( repo, out ) }/meadow-light.json` );
 if ( failed || errors.length ) {
 
 	if ( errors.length ) console.error( `page errors:\n  ${ errors.join( '\n  ' ) }` );
 	process.exitCode = 1;
 
-}
+} else if ( outside ) process.exitCode = 3;

@@ -1,17 +1,19 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, abs, acos, atan, cameraPosition, ceil, cameraViewMatrix, clamp, cos, cross, diffuseColor, dot, exp, exp2, faceDirection,
-	float, floor, instanceIndex, int, ivec2, length, localId, log2, max, min, mix, normalize,
+	float, floor, fract, instanceIndex, int, ivec2, length, localId, log2, max, min, mix, normalize,
 	select, sin, smoothstep, sqrt, step, storage, texture, textureLoad, uint, uniform, varying, vec2, vec3, vec4,
 	positionWorld, specularColor, specularColorBlended, specularF90, vertexIndex, workgroupArray, workgroupBarrier, workgroupId,
 } from 'three/tsl';
-import { LAWN_GAIN, MEADOW_EXTENT, MEADOW_SIZE, supportsMeadow } from '../materials/Meadow.ts';
+import { LAWN_GAIN, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_SIZE, supportsMeadow } from '../materials/Meadow.ts';
 import { GUST_GAIN, GUST_MEAN, gustAt, gustJitter, wave, windStrength, type WindState } from '../weather/Wind.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { RESPONSE, displacementAt } from './vegetation/Displacement.ts';
 import { noise3, smoothstep as smoothstepNumber } from './noise.ts';
 import { runSteps } from './Steps.ts';
-import { grassOnLitter } from './BambooGroves.ts';
+import { GROVES, grassOnLitter } from './BambooGroves.ts';
+import { soilGroveAt } from '../materials/Soil.ts';
+import { CANOPY_SHADE } from '../lighting/AmbientSample.ts';
 import { canopySteps, crownSteps, setCanopyTop, setSwardField, swardSteps } from './SwardField.ts';
 import { transmission, vegetationMaterial } from './vegetation/Material.ts';
 import { unjitteredPadded } from './vegetation/VegetationCull.ts';
@@ -84,7 +86,12 @@ import { liftKeyWorld } from '../lighting/KeyLift.ts';
 // turf anchors splatted bilinearly: the share of the anchors that hold turf (`supportsMeadow`, and
 // off the bamboo groves' litter: BambooGroves.ts `grassOnLitter`), their mean height and mean sky
 // visibility, and the grass-height map (HEIGHT_MAP), which shortens toward the land's edge only:
-// the grass round a clearing in the litter keeps its height up to it. Generation
+// the grass round a clearing in the litter keeps its height up to it. Its A holds that height map
+// free of the land's edge as well as what the edge takes off it (GROUND_A): the blades read the
+// shortened one (their lengths, their layer's shade, and the shade on what is not turf), and only
+// the turf's run under the layer reads the free one (`meadowGroundRuns`), so the turf along the rim,
+// under blades that shorten and thin, lies as deep in the layer as the turf inland and does not take
+// the key the layer's edge would let in. Generation
 // reads it with texel loads; a growth step bakes a new one and swaps it in through the one texture
 // node (`groundMap`), with the sward and crown fields the ground under the meadow reads
 // (SwardField.ts). The blades follow the land as it grows, the same function of it as at load.
@@ -145,8 +152,16 @@ const SINK = 0.02;
 /** The grass-height map (0..1): a mottle of patches (`patch` m) over broad swells (`swell` m),
  * `patchShare` of its variance in the patches, around `mean` by `spread` (one standard deviation,
  * clipped at 0 and 1), lower within `edge` m of the meadow's edge. NOISE_SD is noise3's standard
- * deviation over a plane. The blades' lengths follow it (LENGTH). */
+ * deviation over a plane. The blades' lengths follow it (LENGTH); the turf's run under the layer
+ * takes it without `edge` (`meadowGroundRuns`). */
 const HEIGHT_MAP = { mean: 0.8, spread: 0.15, patch: 4.5, swell: 60, patchShare: 0.55, edge: 1 };
+/** The ground map's A: the height map free of the land's edge in its fraction, and in its whole part
+ * what `edge` takes off it, k = round( ( 1 - e ) `steps` ), e the edge's factor (0..1): inland k is 0
+ * and A is the map. The map stops at `most`: a clipped 1 would read as a fraction of 0, and any
+ * nearer to 1 than a float32's step at k = 255, 2^-16, the sum rounds up to k + 1 (a float's last
+ * step under 1, 2^-24, does at every k from 1). It is read through `groundHeights`, on texels
+ * loaded and blended by hand: a filter between two texels would break A. */
+const GROUND_A = { steps: 255, most: 1 - 2 ** - 16 };
 
 // --- the blades' make
 
@@ -342,7 +357,8 @@ export interface GrassPlan {
 
 /** The plan for the turf anchors `veg` (VEGETATION_STRIDE floats each), in steps. The ground map's
  * texels: the mean height of the anchors that hold turf, their share (0 where they are too few),
- * their mean sky visibility (1 where none) and the grass-height map. */
+ * their mean sky visibility (1 where none) and the grass-height map with the land's edge's share
+ * (GROUND_A). */
 export function* grassSteps( veg: Float32Array ): Generator<void, GrassPlan> {
 
 	const size = MEADOW_SIZE, n = veg.length / STRIDE;
@@ -441,7 +457,7 @@ export function* grassSteps( veg: Float32Array ): Generator<void, GrassPlan> {
 
 		if ( edge[ t ] === 0 ) continue;
 		const x = ( ( t % size + 0.5 ) / size - 0.5 ) * MEADOW_EXTENT, z = ( ( Math.floor( t / size ) + 0.5 ) / size - 0.5 ) * MEADOW_EXTENT;
-		ground[ t * 4 + 3 ] = heightMapAt( x, z ) * smoothstepNumber( 0, HEIGHT_MAP.edge, edge[ t ] );
+		ground[ t * 4 + 3 ] = Math.min( heightMapAt( x, z ), GROUND_A.most ) + Math.round( ( 1 - smoothstepNumber( 0, HEIGHT_MAP.edge, edge[ t ] ) ) * GROUND_A.steps );
 		if ( ( ++ done & 4095 ) === 4095 ) yield;
 
 	}
@@ -471,6 +487,15 @@ function groundTexture( ground: Float32Array, size = MEADOW_SIZE ): THREE.DataTe
  * swapped as the land grows (`MeadowBlades.setGround`): a texel of no turf until the meadow is
  * planted. */
 const groundMap = texture( groundTexture( new Float32Array( 4 ), 1 ) );
+
+/** The two height maps in a texel's A (GROUND_A): `free` of the land's edge, and `short`, as the
+ * blades' lengths take it. */
+function groundHeights( a: F ): { free: F; short: F } {
+
+	const free = fract( a );
+	return { free, short: free.mul( float( 1 ).sub( floor( a ).div( GROUND_A.steps ) ) ) };
+
+}
 
 // --- hashes (PCG's output permutation on one word: Jarzynski and Olano, "Hash Functions for GPU
 // Rendering", JCGT 2020)
@@ -677,7 +702,7 @@ class MeadowBlades {
 				sum = sum.add( weights[ k ].mul( holds ).mul( p.x ) );
 				weight = weight.add( weights[ k ].mul( holds ) );
 				sky = sky.add( weights[ k ].mul( p.z ) );
-				map = map.add( weights[ k ].mul( p.w ) );
+				map = map.add( weights[ k ].mul( groundHeights( p.w ).short ) );
 
 			} );
 			const height = sum.div( max( weight, 1e-6 ) );
@@ -1157,7 +1182,15 @@ function bladeVertex( reads: ReturnType<MeadowBlades[ 'reads' ]>, wind: WindStat
 	const deep = mix( float( AO.short ), float( AO.tall ), smoothstep( AO.lengths[ 0 ], AO.lengths[ 1 ], A.w ) );
 	const rise = min( t.add( aoRise ), 1 );
 	const height = mix( deep.add( deep.oneMinus().mul( rise.mul( rise ) ) ), deep.add( deep.oneMinus().mul( 0.75 ) ), D.z );
-	const ao = height.mul( D.x.add( D.x.oneMinus().mul( t.mul( t ).mul( aoTipLift ) ) ) );
+	const tipward = t.mul( t ).mul( aoTipLift );
+	let ao: F = height.mul( D.x.add( D.x.oneMinus().mul( tipward ) ) );
+	if ( ! CANOPY_SHADE ) {
+
+		// the grove's canopy over the root, taken relative to the tip (`aoCanopy`): 1 on the open meadow
+		const g = float( 1 ).sub( aoCanopy.mul( soilGroveAt( root.xz ) ) ).toVar();
+		ao = ao.mul( g.add( g.oneMinus().mul( tipward ) ).div( g.add( g.oneMinus().mul( aoTipLift ) ) ) );
+
+	}
 	const normal = normalize( face.add( wide.mul( side.mul( SURFACE.round ) ) ) );
 	// the first leaf of a folded blade runs from its tip to the root on the strip, so its triangles
 	// wind the other way: -1 there (0 on the shared root's row, which only the sign of its
@@ -1230,12 +1263,25 @@ tuneApply( 'grass.columnB.blue', COLUMN_B.blue, { min: 0.7, max: 1.1 }, ( b ) =>
  * `lengths[ 1 ]` m, rising to none by seven tenths of the length (the top third unoccluded); s
  * the sky its anchors see, raised toward the tip, which stands above its neighbours. (Occlusion
  * and light through the blade given as values along its length, the occlusion dark at the base
- * where other blades hide the light: Wohllaib 16:13.) */
+ * where other blades hide the light: Wohllaib 16:13.) Under a grove, times the canopy's share
+ * (`aoCanopy`, `grass.ao.canopy`). */
 const AO = { short: 0.6, tall: 0.35, lengths: [ 0.2, 0.8 ] };
 /** The occlusion's rise along the blade and the tip's lift, the two 0.3 of AO's law, tunable
  * (`grass.ao.rise`, `grass.ao.tipLift`), uniforms. */
 const aoRise = /*@__PURE__*/ tuneUniform( 'grass.ao.rise', 0.3, { min: 0, max: 0.7 } );
 const aoTipLift = /*@__PURE__*/ tuneUniform( 'grass.ao.tipLift', 0.3, { min: 0, max: 1 } );
+/** Under a grove the sward is shaded from root to tip by the canopy as well. Where the
+ * materials read the ambient volume (lighting/AmbientSample.ts CANOPY_SHADE false) the anchors' sky
+ * s leaves the canopy out, since the probe a blade reads already sees it, at about the tips'
+ * height: so the canopy's share g = 1 - u d (d the groves' density at the root, the soil map's
+ * second layer: materials/Soil.ts; u `grass.ao.canopy`, the share a full grove hides, GROVES
+ * `shade` by default, as `groveSky` gives) is a factor of its own, raised toward the tip as s is,
+ * and divided by its value at the tip, [ g + ( 1 - g ) 0.3 t^2 ] / [ g + ( 1 - g ) 0.3 ]: the
+ * factor is 1 at the tip, which keeps the volume's light alone, and about 0.56 at a root under a
+ * full grove (0.8 stop below a root on the open meadow against its tip), the canopy not counted
+ * twice. On the open meadow (d 0), or at u 0, g is exactly 1 and the occlusion the same number
+ * as without it. Under CANOPY_SHADE s holds the canopy already and this is left out. */
+const aoCanopy = /*@__PURE__*/ tuneUniform( 'grass.ao.canopy', GROVES.shade, { min: 0, max: 0.95 } );
 /** The light through a blade: its translucency t (VegetationLighting's) is `mask` ( `root` +
  * ( `tip` - `root` ) h ), a straight line in the position along the blade h (0 root, 1 tip; far off
  * flattened to its value at 0.6 of the way, as the colours are), so the tip lets through 1.5 times
@@ -1435,8 +1481,9 @@ function bladeGeometry( verts = VERTS ): THREE.BufferGeometry {
 // contact-hardened so near its caster, printed the dither as a grid of dots on the soil between the
 // blades, the rock lip and the rim, at the game's views too. Worked out where it is received
 // (`meadowLayerDepth`), it gives the dither's mean shade with no pattern, for two bilinear lookups
-// of the ground map per blade fragment (the ground's eight per vertex) where the dither's filter
-// took thirty-two of the sun's map.
+// of the ground map per blade fragment (the ground's eleven per vertex: the two at itself and at its
+// ring's four points and one at its own column, forty-four texel loads for its two runs and the
+// meadow's foot) where the dither's filter took thirty-two of the sun's map.
 
 /** The meadow left out at load (`flags=bareGround`): the blades hidden, no shade of their layer,
  * and the turf lit as bare ground (TerrainMaterial.ts), for the lighting layer's reading of bare
@@ -1469,63 +1516,132 @@ const layerDepthScale = uniform( 0 ), layerRunScale = uniform( 0 );
 tuneApply( 'grass.layer.top', LAYER.top, { min: 0.4, max: 0.7 }, ( a ) => { layerDepthScale.value = a * LENGTH.full; layerRunScale.value = a * LENGTH.full * HEIGHT_MAP.mean; } );
 const layerMean = tune( 'grass.layer.mean', LAYER.mean, { min: 0.2, max: 0.6, load: true } )();
 
-/** How far (m) the ray from `at` (world) toward the key light (`key`, unit: the lifted key, KeyLift.ts
- * `liftKeyWorld`, as the layer's shade is part of the sun's shadow and falls along its map's
- * direction, under a low sun as well as the map's and the screen-space shade) runs under the meadow's
- * layer, for `meadowLayerLight`: its depth under the layer's top, held to the layer's depth, over
- * max( key.y, LAYER.least ), 0 above it and off the meadow; for the `ground`, at least the mean over four points on a level ring
- * of LAYER.spread around it. Texel loads only: for any stage and inside any branch. */
-export function meadowLayerDepth( at: V3, key: V3, ground = false ): F {
+/** The layer over ( x, z ), bilinear in the ground map: its top (the roots' height, the mean over
+ * the texels that hold turf, less the blades' sink, and LAYER.top of the blades' mean length), the
+ * share of the ground that holds turf, and the roots' height with the texels' weight that holds
+ * turf (`held`: under 1e-6 the roots' height means nothing). */
+function layerAt( xz: V2 ) {
 
-	if ( ground ) {
+	const f = xz.div( MEADOW_EXTENT ).add( 0.5 ).mul( MEADOW_SIZE ).sub( 0.5 ).toVar();
+	const i0 = floor( f ).toVar();
+	const t = f.sub( i0 ).toVar();
+	let sum: F = float( 0 ), held: F = float( 0 ), share: F = float( 0 ), map: F = float( 0 ), free: F = float( 0 );
+	for ( const [ dx, dz ] of [ [ 0, 0 ], [ 1, 0 ], [ 0, 1 ], [ 1, 1 ] ] ) {
 
-		// a ring turned off the ground map's axes, so its taps do not line up with the texels; the
-		// point's own depth where it is deeper, so the footprint widens the shade past the meadow's
-		// edge without thinning it inside
-		let sum: F = float( 0 );
-		for ( const [ x, z ] of [ [ 2, 1 ], [ - 1, 2 ], [ - 2, - 1 ], [ 1, - 2 ] ] ) {
-
-			sum = sum.add( meadowLayerDepth( at.add( vec3( x, 0, z ).mul( LAYER.spread / Math.sqrt( 5 ) ) ), key ) );
-
-		}
-		return max( meadowLayerDepth( at, key ), sum.mul( 0.25 ) );
+		const p = ( textureLoad( groundMap, ivec2( clamp( i0.add( vec2( dx, dz ) ), 0, MEADOW_SIZE - 1 ) ) ) as unknown as V4 ).toVar();
+		const w = ( dx ? t.x : t.x.oneMinus() ).mul( dz ? t.y : t.y.oneMinus() );
+		const holds = w.mul( step( 1e-9, p.y ) );
+		const heights = groundHeights( p.w );
+		sum = sum.add( holds.mul( p.x ) );
+		held = held.add( holds );
+		share = share.add( w.mul( p.y ) );
+		map = map.add( w.mul( heights.short ) );
+		free = free.add( w.mul( heights.free ) );
 
 	}
+	const depth = map.mul( layerDepthScale ).toVar();
+	const roots = sum.div( max( held, 1e-6 ) ).sub( SINK ).toVar();
+	const freeDepth = free.mul( layerDepthScale );
+	return { top: roots.add( depth ).toVar(), depth, share, freeTop: roots.add( freeDepth ), freeDepth, roots, held };
 
-	// the layer over ( x, z ), bilinear in the ground map: its top (the roots' height, the mean over
-	// the texels that hold turf, less the blades' sink, and LAYER.top of the blades' mean length)
-	// and the share of the ground that holds turf
-	const layer = ( xz: V2 ) => {
+}
 
-		const f = xz.div( MEADOW_EXTENT ).add( 0.5 ).mul( MEADOW_SIZE ).sub( 0.5 ).toVar();
-		const i0 = floor( f ).toVar();
-		const t = f.sub( i0 ).toVar();
-		let sum: F = float( 0 ), held: F = float( 0 ), share: F = float( 0 ), map: F = float( 0 );
-		for ( const [ dx, dz ] of [ [ 0, 0 ], [ 1, 0 ], [ 0, 1 ], [ 1, 1 ] ] ) {
+/** The ray from `at` (world) toward the key light (`key`, unit: the lifted key, KeyLift.ts
+ * `liftKeyWorld`, as the layer's shade is part of the sun's shadow and falls along its map's
+ * direction, under a low sun as well as the map's and the screen-space shade) under the meadow's
+ * layer: how far (m) it runs there, its depth under the layer's top, held to the layer's depth, over
+ * max( key.y, LAYER.least ), 0 above it and off the meadow, under the layer as the blades shorten
+ * it (`run`) and free of the land's edge (`turf`), both at the second lookup of the first's ray: one
+ * walk has one second look. `ground` is the roots' height where the ray meets the layer, and `path`
+ * the higher of the roots' heights at the walk's two looks, each less the ray's climb to it, a height
+ * at `at`: a point over it has its ray over the ground at both (`meadowGroundRuns`). */
+function layerRuns( at: V3, key: V3 ): { run: F; turf: F; ground: F; path: F } {
 
-			const p = ( textureLoad( groundMap, ivec2( clamp( i0.add( vec2( dx, dz ) ), 0, MEADOW_SIZE - 1 ) ) ) as unknown as V4 ).toVar();
-			const w = ( dx ? t.x : t.x.oneMinus() ).mul( dz ? t.y : t.y.oneMinus() );
-			const holds = w.mul( step( 1e-9, p.y ) );
-			sum = sum.add( holds.mul( p.x ) );
-			held = held.add( holds );
-			share = share.add( w.mul( p.y ) );
-			map = map.add( w.mul( p.w ) );
-
-		}
-		const depth = map.mul( layerDepthScale ).toVar();
-		return { top: sum.div( max( held, 1e-6 ) ).sub( SINK ).add( depth ).toVar(), depth, share };
-
-	};
 	// where the ray toward the light meets the layer's top: the top looked up first where the ray
 	// has climbed the layer's mean height, then where it reaches the top found there
 	const rise = max( key.y, LAYER.least ).toVar();
 	const run = key.xz.div( rise ).toVar();
-	const first = layer( at.xz.add( run.mul( layerRunScale ) ) );
-	const hit = layer( at.xz.add( run.mul( max( first.top.sub( at.y ), 0 ) ) ) );
-	// a point under the layer's foot (a cliff's face under the meadow's lip) is in the rock's own
-	// shadow on that ray or reaches the layer from its side: either way the ray crosses at most the
-	// layer's depth there, not its own depth under the top
-	return clamp( hit.top.sub( at.y ), 0, hit.depth ).div( rise ).mul( smoothstep( LAYER.share - LAYER.edge, LAYER.share + LAYER.edge, hit.share ) );
+	const first = layerAt( at.xz.add( run.mul( layerRunScale ) ) );
+	const climb = max( first.top.sub( at.y ), 0 );
+	const hit = layerAt( at.xz.add( run.mul( climb ) ) );
+	// a point whose ray is over the top a step on (a blade or the turf where the layer's top falls
+	// away toward the light) crosses at most its own depth under the top there; a point under the
+	// layer's foot, which the same step finds (a cliff's face under the meadow's lip, the ground map
+	// holding the lip's turf over it), is the ground's to leave out (`meadowGroundRuns`)
+	const over = ( top: F, depth: F ) => clamp( top.sub( at.y ), 0, depth ).div( rise ).mul( smoothstep( LAYER.share - LAYER.edge, LAYER.share + LAYER.edge, hit.share ) );
+	return { run: over( hit.top, hit.depth ), turf: over( hit.freeTop, hit.freeDepth ), ground: hit.roots, path: max( first.roots.sub( layerRunScale ), hit.roots.sub( climb ) ) };
+
+}
+
+/** How far (m) the ray from `at` toward the key runs under the meadow's layer as the blades stand
+ * (`layerRuns`), for `meadowLayerLight`. Texel loads only: for any stage and inside any branch. */
+export function meadowLayerDepth( at: V3, key: V3 ): F {
+
+	return layerRuns( at, key ).run;
+
+}
+
+/** How far (m) under the turf's roots (or the ground at its ray's looks) a point of the ground lies
+ * before it is under the meadow's foot (`under`), the band over which it leaves the layer's shade
+ * (`band`), and the surface's least and most height of its normal over which it may (`up`): a face
+ * under the lip lies its depth under the turf, and only a face steeper than any turf can lie under
+ * it (the turf grows where the ground's normal rises MEADOW_MIN_UP and more), so the turf keeps its
+ * runs where along the rim the bilinear mean of the roots (a texel's turf beside a higher one's)
+ * lies over its own points. */
+const FOOT = { under: 0.05, band: 0.1, up: [ MEADOW_MIN_UP - 0.25, MEADOW_MIN_UP - 0.05 ] };
+
+/** The island's ground's two runs (`layerRuns`), for one set of texel loads: x as everything but the
+ * turf takes it, y as the turf does, each at least its mean over four points on a level ring of
+ * LAYER.spread around `at`. The second is free of the land's edge: the same run inland, and along
+ * the rim the run of the turf inland, where a depth falling to nothing over HEIGHT_MAP.edge let the
+ * key through to a band of turf about 1.3 m wide under the shortened blades, at about twice the
+ * meadow's lightness at a low sun. The ground beside the meadow keeps the first: a depth held to the
+ * rim darkens lit rock on the ring.
+ * The first is taken only where the ray toward the key goes through the sward. On a face steeper
+ * than the turf (`up`, the surface's normal's height), a ring's point that lies under the ground its
+ * ray meets the layer over is inside the rock under the meadow's foot, and the point's own ray
+ * leaves the layer out where the point lies under the turf of its own column (the ground map, of a
+ * quarter metre, holds the lip's turf over the top of a cliff's face) and its walk finds the ground
+ * over the ray at either look (`layerRuns`' `path`): such a face's light goes out from the face,
+ * over the sea, and only rock lies between it and the sward (the sun's map shades it where that rock
+ * does). Without it the faces under the lip took the full layer down their height when the key went
+ * out over the sea (a ring's point under the lip and the point's own column fall back to the turf's
+ * depth over them: `layerRuns`). The own ray's test is the ray's own, not the ground's height over
+ * the point: a ray that crosses air to a higher sward in front, as from a gully's wall under its
+ * rim (Cliff.ts' gullies are 0.4 - 0.84 m wide, the meadow on both rims), runs over the ground at
+ * both looks and keeps its run where the walk's first look reaches the far rim (the ray's climb of
+ * the layer's mean height: about a metre at a 14 degree key, a quarter of one at 45). A higher
+ * sward beyond that, across a gap whose floor lies under the point, the walk does not see, and the
+ * face there takes no shade of the layer. A ring's point keeps the ground's test, and takes none
+ * from a sward across a gap, so there the shade is the point's own, not widened over the ring: it
+ * lies off the surface, often in the rock under the lip, where the walk climbs over the lip's turf
+ * and the path's test passes it (taken for the ring as well, it put the layer back on the top 0.3 m
+ * or so of the faces under the lip, a darker band along the rims at every sun height). The meadow's
+ * ground keeps its runs, and the turf's run (y) keeps its ring whole: the turf takes it, never a
+ * face. */
+export function meadowGroundRuns( at: V3, key: V3, up: F ): V2 {
+
+	// the share of a point's run kept, by the height of the ground over it (where its ray meets the
+	// layer, or along its own ray's walk) and by how steep the surface is
+	const steep = float( 1 ).sub( smoothstep( FOOT.up[ 0 ], FOOT.up[ 1 ], up ) ).toVar();
+	const kept = ( ground: F ) => float( 1 ).sub( smoothstep( FOOT.under, FOOT.under + FOOT.band, ground.sub( at.y ) ).mul( steep ) );
+	// the turf's roots at the point itself, the most a ring's point's ground counts (a level ring's
+	// points lie under a sloped turf's), or none where its column holds no turf
+	const column = layerAt( at.xz );
+	const cap = column.roots.add( float( 1 ).sub( step( 1e-6, column.held ) ).mul( 1e4 ) );
+	// a ring turned off the ground map's axes, so its taps do not line up with the texels; the
+	// point's own depth where it is deeper, so the footprint widens the shade past the meadow's
+	// edge without thinning it inside
+	let run: F = float( 0 ), turf: F = float( 0 );
+	for ( const [ x, z ] of [ [ 2, 1 ], [ - 1, 2 ], [ - 2, - 1 ], [ 1, - 2 ] ] ) {
+
+		const ring = layerRuns( at.add( vec3( x, 0, z ).mul( LAYER.spread / Math.sqrt( 5 ) ) ), key );
+		run = run.add( ring.run.mul( kept( min( ring.ground, cap ) ) ) );
+		turf = turf.add( ring.turf );
+
+	}
+	const own = layerRuns( at, key );
+	return vec2( max( own.run.mul( kept( min( own.path, column.roots ) ) ), run.mul( 0.25 ) ), max( own.turf, turf.mul( 0.25 ) ) );
 
 }
 

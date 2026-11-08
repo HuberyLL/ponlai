@@ -1,22 +1,23 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, struct, texture, attribute, uniform, float, vec2, vec3, vec4, mat2, positionWorld, normalWorldGeometry, cameraViewMatrix,
+	Fn, If, struct, texture, attribute, uniform, float, vec2, vec3, vec4, mat2, positionWorld, normalWorldGeometry, normalGeometry, cameraViewMatrix,
 	cameraPosition, specularColor, specularColorBlended, specularF90,
 	normalize, abs, pow, sqrt, max, min, dot, sign, mix, smoothstep, clamp, fract, floor, sin, cos, exp, log2, select, dFdx, dFdy, length, varying,
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
-import { SCAN_LAYER, SCAN_TOP_MIP, type DetailTextures } from './ProceduralTextures.ts';
+import { DETAIL_SIZE, SCAN_LAYER, SCAN_TOP_MIP, type DetailTextures } from './ProceduralTextures.ts';
 import { GTAO, floorOcclusion, receiveScreenAO, screenAOAt } from '../post/GTAO.ts';
 import { LAWN_GAIN, LAWN_TONE, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_MAX_DROP } from './Meadow.ts';
 import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, SOIL_PALETTE, soilGroveSwell, soilUniforms } from './Soil.ts';
 import { RIM_FRINGE_FADE, RIM_INNER_LIMIT, RIM_MAX_DROP } from '../world/RimGround.ts';
-import { BARE_GROUND, GRASS_ROOTS, GRASS_SHADOW, meadowMean, rootsSky, meadowLayerDepth, meadowLayerLight } from '../world/Grass.ts';
+import { BARE_GROUND, GRASS_ROOTS, GRASS_SHADOW, meadowMean, rootsSky, meadowGroundRuns, meadowLayerLight } from '../world/Grass.ts';
 import { CROWN_SCALE, swardField } from '../world/SwardField.ts';
-import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
-import { underwaterLight, UnderwaterLightingModel } from '../lighting/Underwater.ts';
+import type { WaveMaps } from '../ocean/WaveMaps.ts';
+import { underwaterLight, UnderwaterLightingModel, type UnderwaterLight, type UnderwaterModelOptions } from '../lighting/Underwater.ts';
 import { TURF_CANOPY_DEPTH, meadowCanopyLight, meadowGroundLight } from '../lighting/MeadowCanopy.ts';
 import { puddleField, puddleRipples } from '../weather/Puddles.ts';
 import { seabedAlbedo } from './SeabedLook.ts';
+import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
 import { DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness } from './Wetness.ts';
 import { hexReadScan, heightBlend, type HexScan } from './HexTiling.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -43,7 +44,7 @@ const GROUND_SHADE = MEADOW_SHADE && debugFlags.groundShade !== false;
 // PBR materials for the rock and the sea floor: MeshStandardNodeMaterial (lights, shadows, IBL)
 // with the surface built procedurally in world space (triplanar baked detail, moss, wet band,
 // algae, sediment) and the light below the water attenuated on its way down (sun path through
-// the water column, caustics, ambient) by a lighting model of its own, so the water shader only
+// the water column, ambient) by a lighting model of its own, so the water shader only
 // has to add the view path. Above the water its ambient diffuse is the ambient volume's
 // (lighting/AmbientSample.ts), whose probes see the groves and the cliffs, with the environment's
 // specular occluded by it.
@@ -59,7 +60,8 @@ const GROUND_SHADE = MEADOW_SHADE && debugFlags.groundShade !== false;
 // The meadow's ground is a grass-coloured ground at every distance (GRASS_GROUND), grained by a CC0
 // scan of a forest floor (hex-tiled from above as the stone is), its soil showing only where the
 // sward parts; lit as the blades' roots are (Grass.ts GRASS_ROOTS) and shaded by the blades' layer
-// (Grass.ts `meadowLayerLight`; with it off, through their canopy, MeadowCanopy.ts). How deep the
+// (Grass.ts `meadowLayerLight`; with it off, through their canopy, MeadowCanopy.ts), as deep along
+// the rim as inland, though the blades shorten there (Grass.ts `meadowGroundRuns`). How deep the
 // sward over a point is, and whether any grows there, comes from its tussocks (the sward's fields,
 // SwardField.ts): the roots' light follows it, deep under the tall sward and opening under the
 // short turf and in the gaps, where one shade everywhere drew the low flowers' patches as dark
@@ -76,6 +78,16 @@ type V3 = THREE.Node<'vec3'>;
 type V2 = THREE.Node<'vec2'>;
 type F = THREE.Node<'float'>;
 
+// The cliff's stone under the water against the same stone dry: under water its grains' index of
+// refraction relative to what surrounds them is smaller, so each grain scatters the light more
+// forward, the light goes deeper into the stone before it comes back out, and more of it is
+// absorbed on the way. Our own figure for that, for the stone's albedo near 0.25: about 0.94 of its
+// dry albedo (0.90 to 0.95). The rest of a wet stone's darkening in air, the light the film of water
+// on it traps by total reflection at the film's surface and returns to the stone to be absorbed
+// (Lekner & Dorf 1988, "Why some things are darker when wet", Appl. Opt. 27:1278), is under the
+// sea the surface's own, which the water's shading takes (the damp band fades out under the
+// waterline).
+const SUBMERGED_ROCK = 0.94;
 // The rim's turf wraps the lip's bevel where a broad field along the coast (gravel's
 // low-frequency channel at LIP_WRAP_RATE per metre, a few metres a stretch) clears LIP_WRAP; the
 // stone left between is darkened by LIP_SKIN (linear multiplier) on its upward faces.
@@ -155,8 +167,9 @@ const GROVE_SCAN_HUE = atUnitLuma( GROUND_SCANS.grove.mean );
 // water: share under a water film or standing water (water's specular reflectance)
 // puddle: share under standing water
 // flow: share under water running down a runnel now
-const Surface = struct( { albedo: 'vec3', normal: 'vec3', rough: 'float', ao: 'float', canopy: 'float', water: 'float', puddle: 'float', flow: 'float' } );
-interface SurfaceNode { get( name: 'albedo' | 'normal' ): V3; get( name: 'rough' | 'ao' | 'canopy' | 'water' | 'puddle' | 'flow' ): F }
+// sward: the turf's cover (0 on stone, the bare ground and the sea floor)
+const Surface = struct( { albedo: 'vec3', normal: 'vec3', rough: 'float', ao: 'float', canopy: 'float', water: 'float', puddle: 'float', flow: 'float', sward: 'float' } );
+interface SurfaceNode { get( name: 'albedo' | 'normal' ): V3; get( name: 'rough' | 'ao' | 'canopy' | 'water' | 'puddle' | 'flow' | 'sward' ): F }
 
 // Whiteout triplanar blend (after Ben Golus), with the projection handedness preserved.
 // A principal axis must retain the geometry normal's sign: abs() would turn every west- or
@@ -224,10 +237,16 @@ const stoneSlope = Fn( ( [ v ]: [ THREE.Node<'vec4'> ] ) => {
 // darkening of the stone and their shade on its ambient light.
 const PUDDLE_F0 = 0.2, FLOW_F0 = 0.5, RING_GAIN = 5;
 const RUNNEL_DARKENING = 0.6, RUNNEL_SHADE = 0.7;
+// The reflectance of stone and sand under the water over theirs in the air: Fresnel's at normal
+// incidence, ( ( 1.5 - 1.33 ) / ( 1.5 + 1.33 ) )^2 against 0.04.
+const STONE_UNDER_WATER = 0.09;
 
 interface Ctx {
 	tex: DetailTextures; shared: Shared; topY: F; vegetation: boolean; shore: FieldTexture;
 	rimGround?: FieldTexture; rimGroundXform?: THREE.Node<'vec4'>; hex: boolean;
+	/** The island's ground's runs under the meadow's layer, per vertex: x as everything but the turf
+	 * takes it, y as the turf does (Grass.ts `meadowGroundRuns`). */
+	meadowRun?: THREE.Node<'vec2'> | null;
 }
 // hex: hex-tiled stone and height-blended layers (the default; debugFlags.terrainHex = false
 // builds the plain tiling with smooth masks, as before)
@@ -235,7 +254,7 @@ interface Ctx {
 type FieldTexture = THREE.Texture | THREE.TextureNode;
 interface TerrainOptions { topY?: number; vegetation?: boolean; rimGround?: FieldTexture; rimGroundXform?: THREE.Vector4; hex?: boolean }
 
-function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGroundXform, hex }: Ctx ) {
+function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGroundXform, hex, meadowRun }: Ctx ) {
 
 	return Fn( () => {
 
@@ -440,7 +459,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		// hides the layers below it): the blend leaves the masks as they are there rather than
 		// reading the placeholder colour.
 		const hb = ( mask: F, height: F, width: number ): F => hex ? select( scanned!, heightBlend( mask, height, float( width ) ), mask ) : mask;
-		const rock = mix( vec3( 0.124, 0.13, 0.126 ), vec3( 0.188, 0.19, 0.176 ), vTint ).mul( mix( float( 1 ), shared.rockGain, smoothstep( - 0.5, 0.5, p.y ) ) ).toVar();
+		const rock = mix( vec3( 0.124, 0.13, 0.126 ), vec3( 0.188, 0.19, 0.176 ), vTint ).mul( mix( shared.rockGain.mul( SUBMERGED_ROCK ), shared.rockGain, smoothstep( - 0.5, 0.5, p.y ) ) ).toVar();
 		rock.mulAssign( mix( vec3( 0.97, 0.99, 1.03 ), vec3( 1.025, 1.0, 0.965 ), fract( vTint.mul( 7.31 ) ) ) );
 		// Desaturate the source to fit this limestone palette, but keep its correlated grain,
 		// mineral stains and roughness. Fine colour follows the same relief as the normal map.
@@ -535,6 +554,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		const floorSlope = vec2( 0 ).toVar(), floorRough = float( 0.94 ).toVar(), floorShare = float( 0 ).toVar();
 		// how far the root layer's light holds (the blades' roots' key and sky, GRASS_ROOTS)
 		const rootLight = float( 0 ).toVar();
+		const swardCover = float( 0 ).toVar();
 		// 1 where the ground marched the screen-space shade itself (under the sward)
 		const marched = float( 0 ).toVar();
 		if ( vegetation ) {
@@ -633,14 +653,17 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 				floorRough.assign( mix( float( 0.94 ), clamp( scanR, 0.75, 1 ), floorShare ) );
 				// (none of the blades' light on the turf with `flags=bareGround`: bare ground's)
 				if ( ! BARE_GROUND ) rootLight.assign( turfCover.mul( shade ) );
+				swardCover.assign( turfCover );
 				mossC.assign( mix( mossC, ground, turfCover ) );
 				rimGrassC.assign( ground );
 				// The blades above shade the turf: by their layer's shade, the law their own blades
-				// take (Grass.ts `GRASS_SHADOW`, the material's `sunShade`); without it, through the crowns over it and
+				// take (Grass.ts `GRASS_SHADOW`, the material's `sunShade`, and here the rest of the
+				// turf's own run, past what every pixel of the ground takes there); without it, through the crowns over it and
 				// toward the light, so the clumps cast on the ground between them (the meadow map's B,
 				// MeadowCanopy.ts `meadowGroundLight`), or without the crowns' heights
 				// (`flags=groundCast:false`), through the canopy's depth there.
-				if ( BARE_GROUND || GRASS_SHADOW ) canopy.assign( 1 ); else if ( GROUND_CAST ) canopy.assign( meadowGroundLight( ( xz ) => texture( swardField, xz.div( MEADOW_EXTENT ).add( 0.5 ) ).level( float( 0 ) ).b.mul( CROWN_SCALE ), p, shared.sunDir ) );
+				if ( meadowRun ) canopy.assign( meadowLayerLight( meadowRun.y.sub( meadowRun.x ).mul( max( turfCover, turf ) ) ) );
+				else if ( BARE_GROUND ) canopy.assign( 1 ); else if ( GROUND_CAST ) canopy.assign( meadowGroundLight( ( xz ) => texture( swardField, xz.div( MEADOW_EXTENT ).add( 0.5 ) ).level( float( 0 ) ).b.mul( CROWN_SCALE ), p, shared.sunDir ) );
 				else canopy.assign( meadowCanopyLight( turfCover.mul( shade ).mul( TURF_CANOPY_DEPTH ), shared.sunDir ).mul( mix( float( 1 ), float( GRASS_ROOTS.key ), rootLight ) ) );
 				if ( GROUND_SHADE && ! BARE_GROUND ) {
 
@@ -854,6 +877,10 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		const wl = shared.waterLevel.add( sin( shared.time.mul( 0.9 ).add( p.x.mul( 0.4 ) ).add( p.z.mul( 0.3 ) ) ).mul( 0.08 ) );
 		const wet = float( 1 ).sub( smoothstep( 0, 0.32, p.y.sub( wl ).sub( 0.06 ).sub( H.r.sub( 0.5 ).mul( 0.25 ) ) ) );
 		const algae = float( 1 ).sub( smoothstep( - 0.05, 0.35, p.y.sub( wl ).add( Hg.sub( 0.5 ).mul( 0.5 ) ) ) );
+		// 0 at the waterline, 1 from 0.3 m under it: a wet stone's darkening in air (the film of water
+		// on it traps light) is under the water the sea surface's own, which the water's shading
+		// already takes, so the damp band's darkening fades out below it (SUBMERGED_ROCK)
+		const submerged = float( 1 ).sub( smoothstep( - 0.3, 0, p.y.sub( wl ) ) );
 		const deep = vegetation ? smoothstep( 0.35, 1.65, wl.sub( p.y ) ) : smoothstep( - 0.6, - 2.5, p.y );
 		const algaeC = mix( vec3( 0.035, 0.05, 0.02 ), vec3( 0.09, 0.085, 0.045 ), deep );
 		const silt = smoothstep( 0.35, 0.8, up ).mul( smoothstep( - 0.4, - 1.2, p.y ) );
@@ -866,14 +893,18 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 			? mix( float( 0.65 ), float( 0.24 ), deep ).mul( mix( float( 0.28 ), float( 1 ), colony ) )
 			: mix( float( 0.85 ), float( 0.5 ), deep ) );
 		albedo.assign( mix( albedo, algaeC.mul( H.r.mul( 0.6 ).add( 0.7 ) ), algaeCoverage ) );
-		albedo.assign( mix( albedo, vec3( 0.30, 0.26, 0.19 ), silt.mul( 0.7 ) ) );
+		// (the silt on the ledges about 0.05, our reading of the silt and clay measured in Werdell &
+		// Roesler 2003, at the floor's gain)
+		albedo.assign( mix( albedo, vec3( 0.273, 0.258, 0.242 ).mul( FLOOR_ALBEDO.gain ), silt.mul( 0.7 ) ) );
 		// Below the tidal band the stone wears an olive-brown film of algae and diatoms on the faces
 		// that catch the light, in patches, so submerged stones and the underwater cliff separate
-		// from the pale sand by hue as well as value. Each stone also keeps more of its own shade.
+		// from the sand by hue as well as value: half the way to an absolute albedo for brown algae,
+		// our own linear sRGB reading of the brown algae's bottom reflectance measured in Maritorena,
+		// Morel & Gentili 1994 (Limnol. Oceanogr. 39:1689). Each stone also keeps more of its own shade.
 		const subtidal = smoothstep( - 0.3, - 0.8, p.y.sub( wl ) );
 		const film = subtidal.mul( smoothstep( 0.15, 0.7, up ) )
 			.mul( smoothstep( 0.3, 0.62, big2.mul( 0.55 ).add( Hg.mul( 0.3 ) ).add( vTint.mul( 0.25 ) ) ) );
-		albedo.mulAssign( mix( vec3( 1 ), vec3( 0.84, 0.74, 0.46 ), film ) );
+		albedo.assign( mix( albedo, vec3( 0.078, 0.054, 0.025 ), film.mul( 0.5 ) ) );
 		if ( ! vegetation ) albedo.mulAssign( mix( vec3( 0.8, 0.83, 0.86 ), vec3( 1.18, 1.12, 1.0 ), vTint ) );
 		if ( vegetation ) {
 
@@ -885,16 +916,18 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 			const crust = mix( float( 0.55 ), float( 1 ), smoothstep( 0.35, 0.75, H.g.mul( 0.6 ).add( big.mul( 0.4 ) ) ) );
 			albedo.mulAssign( mix( vec3( 1 ), vec3( 0.62, 0.63, 0.6 ), spray.mul( crust ).mul( float( 1 ).sub( wet ) ) ) );
 			// The notch's floor and the ledges in the spray hold water, weed and grit: darker still.
-			albedo.mulAssign( mix( float( 1 ), float( 0.68 ), max( spray, wet ).mul( smoothstep( 0.3, 0.75, up ) ) ) );
+			albedo.mulAssign( mix( float( 1 ), float( 0.68 ), max( spray, wet ).mul( smoothstep( 0.3, 0.75, up ) ).mul( float( 1 ).sub( submerged ) ) ) );
 
 		}
-		albedo.mulAssign( mix( float( 1 ), float( vegetation ? 0.66 : 0.5 ), wet.mul( float( 1 ).sub( algae.mul( 0.5 ) ) ) ) );
+		albedo.mulAssign( mix( float( 1 ), float( vegetation ? 0.66 : 0.5 ), wet.mul( float( 1 ).sub( algae.mul( 0.5 ) ) ).mul( float( 1 ).sub( submerged ) ) ) );
 		// The wave-washed band glistens on the walls. On a face that looks up at the sky (a sloping
 		// foot or ledge in a gully at the waterline) the same gloss mirrored the bright low sky as
 		// a pale sheet streaked by the stone's relief, which read from afar as water running down
-		// the gully, so it fades out on such faces; they keep the band's darker, damp albedo.
+		// the gully, so it fades out on such faces; they keep the band's darker, damp albedo. The
+		// wall's own gloss stays broad (0.5): sharper, at a grazing view it mirrored the environment's
+		// lower half as a thin blue line along the waterline.
 		const washed = wet.mul( float( 1 ).sub( deep ) ).mul( float( 1 ).sub( smoothstep( 0.2, 0.55, up ) ) );
-		rough.assign( mix( rough, float( 0.28 ), washed ) );
+		rough.assign( mix( rough, float( 0.5 ), washed ) );
 
 		// The island's jointed wall occludes much of its own sky; a share of that occlusion keeps
 		// the shadowed blocks airy while the crevices stay dark, though never black: the whole
@@ -910,7 +943,7 @@ function cliffSurface( { tex, shared, topY: level, vegetation, rimGround, rimGro
 		const roots = mix( float( 1 ), rootsSky, rootLight );
 		const ao = floorOcclusion( ( vegetation ? mix( float( 1 ), clamp( vAO, 0, 1 ), float( 0.7 ).sub( pocket.mul( 0.3 ) ) ) : clamp( vAO, 0, 1 ) )
 			.mul( mix( float( 1 ), mix( float( 0.72 ), float( 0.88 ), pocket ), concave ) ).mul( runShade ).mul( GTAO ? min( roots, screenAOAt() ) : roots ) );
-		return Surface( albedo, nW, rough, ao, canopy, water, puddle, flow );
+		return Surface( albedo, nW, rough, ao, canopy, water, puddle, flow, swardCover );
 
 	} )();
 
@@ -950,8 +983,15 @@ function seabedSurface( { tex, shore, shared }: Ctx, shoreXform: THREE.Node<'vec
 		const bed = attribute<'vec2'>( 'bed', 'vec2' );
 
 		// (the detail texture's tiled ripples left out at their mean, 0.5: the ripples are RIPPLE's)
-		const look = seabedAlbedo( bed, big, vec3( H.x, H.y, 0.5 ), sd );
-		const albedo = look.albedo.toVar(), grass = look.grass.toVar(), rubble = look.rubble.toVar();
+		const pdx = dFdx( p.xz ).toVar(), pdy = dFdy( p.xz ).toVar();
+		const [ w1, s1, w2, s2 ] = RIPPLE.warp;
+		const lowNoise = texture( tex.normalsB, p.xz.mul( w1 ).add( 0.41 ) ).a.sub( 0.5 ).toVar();
+		// the gravel's level is worked out here, where derivatives may be taken: the stones are sampled
+		// inside the apron's branch only (SeabedLook.ts), so the rest of the floor does not pay for them
+		const texelsPerPixel = log2( max( length( pdx ), length( pdy ) ).mul( DETAIL_SIZE ) ).toVar();
+		const gravelAt = ( rate: number, c: number, sn: number, at: number ) => texture( tex.gravel, mat2( c, sn, - sn, c ).mul( p.xz ).mul( rate ).add( at ) ).level( texelsPerPixel.add( Math.log2( rate ) ) );
+		const look = seabedAlbedo( bed, big, vec3( H.x, H.y, 0.5 ), sd, lowNoise, gravelAt );
+		const albedo = look.albedo.toVar(), grass = look.grass.toVar(), rubble = look.rubble.toVar(), relief = look.relief.toVar();
 
 		// --- wave ripples (RIPPLE): the contours' direction over a metre and a bit (across a crease
 		// the differences cancel), the crests' phase and its gradient in world xz from the screen's
@@ -959,11 +999,10 @@ function seabedSurface( { tex, shore, shared }: Ctx, shoreXform: THREE.Node<'vec
 		const e = 0.6;
 		const across = vec2( shoreAt( p.xz.add( vec2( e, 0 ) ) ).sub( shoreAt( p.xz.sub( vec2( e, 0 ) ) ) ),
 			shoreAt( p.xz.add( vec2( 0, e ) ) ).sub( shoreAt( p.xz.sub( vec2( 0, e ) ) ) ) ).div( 2 * e );
-		const [ w1, s1, w2, s2 ] = RIPPLE.warp;
-		const wander = texture( tex.normalsB, p.xz.mul( w1 ).add( 0.41 ) ).a.sub( 0.5 ).mul( s1 )
+		const wander = lowNoise.mul( s1 )
 			.add( texture( tex.normalsB, p.zx.mul( w2 ).add( 0.17 ) ).a.sub( 0.5 ).mul( s2 ) );
 		const phase = sd.div( RIPPLE.spacing ).add( wander ).toVar();
-		const pdx = dFdx( p.xz ).toVar(), pdy = dFdy( p.xz ).toVar(), fdx = dFdx( phase ).toVar(), fdy = dFdy( phase ).toVar();
+		const fdx = dFdx( phase ).toVar(), fdy = dFdy( phase ).toVar();
 		const det = pdx.x.mul( pdy.y ).sub( pdx.y.mul( pdy.x ) );
 		const safeDet = select( abs( det ).lessThan( 1e-12 ), float( 1e-12 ), det );
 		const grad = vec2( fdx.mul( pdy.y ).sub( fdy.mul( pdx.y ) ), fdy.mul( pdx.x ).sub( fdx.mul( pdy.x ) ) ).div( safeDet );
@@ -984,13 +1023,17 @@ function seabedSurface( { tex, shore, shared }: Ctx, shoreXform: THREE.Node<'vec
 		const grain = vec2( B.r.mul( 2 ).sub( 1 ), B.g.mul( 2 ).sub( 1 ) ).mul( 0.06 );
 		const nSand = normalize( vec3( grain.x.sub( rippleSlope.x ), 1, grain.y.sub( rippleSlope.y ) ) );
 		// cobbles and the meadows' clumps: the detail texture's rounded lumps (its moss cushions). The
-		// rock's own normal drew its long thin fractures across the sand wherever the rubble thinned
+		// rock's own normal drew its long thin fractures across the sand wherever the apron thinned
 		// out, as meandering grooves no cobble field has.
 		const nRock = normalize( vec3( A.b.mul( 2 ).sub( 1 ), 0, A.a.mul( 2 ).sub( 1 ) ).mul( 1.3 ).add( vec3( 0, 1, 0 ) ) );
 		// keep the macro slope of the mesh
 		const t = normalize( n0.cross( vec3( 0, 0, 1 ) ) );
 		const b = t.cross( n0 );
-		const dn = mix( nSand, nRock, max( rubble, grass.mul( 0.6 ) ) );
+		// the stones' rounded sides, from the screen derivatives of their height after the branch, in
+		// world xz as the ripples' are: no sample of its own, and it lights one side of each stone
+		const rdx = dFdx( relief ).toVar(), rdy = dFdy( relief ).toVar();
+		const stoneSlope = vec2( rdx.mul( pdy.y ).sub( rdy.mul( pdx.y ) ), rdy.mul( pdx.x ).sub( rdx.mul( pdy.x ) ) ).div( safeDet ).mul( 0.04 );
+		const dn = mix( nSand, nRock, max( rubble, grass.mul( 0.6 ) ) ).sub( vec3( stoneSlope.x, 0, stoneSlope.y ) );
 		const nW = normalize( t.mul( dn.x ).add( n0.mul( dn.y ) ).add( b.mul( dn.z ) ) );
 
 		const detailAO = mix( float( 1 ), float( 0.85 ), rubble ).mul( mix( float( 0.8 ), float( 1 ), H.b ) );
@@ -1003,17 +1046,43 @@ function seabedSurface( { tex, shore, shared }: Ctx, shoreXform: THREE.Node<'vec
 }
 
 // The light below the surface is the shared underwater model (lighting/Underwater.ts): the sun
-// path through the water column (with caustics) and the dimmer, bluer ambient. Above the water the
-// terrain adds its own: the meadow's canopy shade on the key and a faint caustic shimmer reflected
-// onto the rock.
+// path through the water column and the dimmer ambient. Above the water the terrain adds its
+// own: the meadow's canopy shade on the key. The light the sea sends onto the rock above it is the
+// ground bounce's (lighting/GroundBounce.ts).
+
+/** The land's model: the ambient diffuse takes the sward's tint (materials/SwardTint.ts) by the
+ * turf's cover, 1 + ( tint - 1 ) cover, exactly 1 at a white tint. The metering's ambient
+ * leaves it out. */
+class TurfLightingModel extends UnderwaterLightingModel {
+
+	tint: V3;
+	cover: F;
+
+	constructor( light: UnderwaterLight, options: UnderwaterModelOptions, tint: V3, cover: F ) {
+
+		super( light, options );
+		this.tint = tint;
+		this.cover = cover;
+
+	}
+
+	indirect( builder: THREE.NodeBuilder ): void {
+
+		super.indirect( builder );
+		const { reflectedLight } = builder.context as unknown as { reflectedLight: { indirectDiffuse: V3 } };
+		reflectedLight.indirectDiffuse.mulAssign( this.tint.sub( 1 ).mul( this.cover ).add( 1 ) );
+
+	}
+
+}
 
 type TerrainVariant = ( hex: boolean, from?: THREE.NodeMaterial ) => THREE.MeshStandardNodeMaterial;
 
-export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextures, shared: Shared, caustics: Caustics, shore: FieldTexture, { topY = 3.1, vegetation = true, rimGround, rimGroundXform, hex }: TerrainOptions = {} ): THREE.MeshStandardNodeMaterial {
+export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextures, shared: Shared, waveMaps: WaveMaps, shore: FieldTexture, { topY = 3.1, vegetation = true, rimGround, rimGroundXform, hex }: TerrainOptions = {} ): THREE.MeshStandardNodeMaterial {
 
 	const topYU = uniform( topY );
 	const ctx: Omit<Ctx, 'hex'> = { tex, shared, topY: topYU, vegetation, shore, rimGround, rimGroundXform: rimGroundXform ? uniform( rimGroundXform ) : undefined };
-	if ( kind === 'seabed' ) return buildTerrainMaterial( kind, { ...ctx, hex: false }, caustics );
+	if ( kind === 'seabed' ) return buildTerrainMaterial( kind, { ...ctx, hex: false }, waveMaps );
 	// For an A/B inside one page, each cliff material can hand over its other variant (built on
 	// first use, sharing the uniforms) with the nodes RefractedSun installed on it:
 	//   s.scene.traverse( ( o ) => { const v = o.material?.userData.terrainVariant; if ( v ) o.material = v( on, o.material ); } )
@@ -1023,7 +1092,7 @@ export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextur
 		let mat = variants.get( on );
 		if ( ! mat ) {
 
-			mat = buildTerrainMaterial( kind, { ...ctx, hex: on }, caustics );
+			mat = buildTerrainMaterial( kind, { ...ctx, hex: on }, waveMaps );
 			mat.userData.terrainVariant = variant;
 			variants.set( on, mat );
 
@@ -1044,12 +1113,17 @@ export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextur
 
 }
 
-function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, caustics: Caustics ): THREE.MeshStandardNodeMaterial {
+function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, waveMaps: WaveMaps ): THREE.MeshStandardNodeMaterial {
 
 	const { shared, vegetation } = ctx;
 	const topYU = ctx.topY;
 	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.85, metalness: 0 } );
-	const call = kind === 'seabed' ? seabedSurface( ctx, shared.shoreXform ) : cliffSurface( ctx );
+	// the island's ground's two runs under the meadow's layer (`sunShade` below, and the turf's in
+	// `cliffSurface`), by the surface's normal's height as well (the land's chunks stand untransformed,
+	// so the geometry's normal is the world's)
+	const key = liftKeyWorld( shared.sunDir );
+	const meadowRun = GRASS_SHADOW && kind !== 'seabed' && ctx.vegetation ? varying( meadowGroundRuns( positionWorld, key, normalGeometry.y ), 'vMeadowLayer' ) : null;
+	const call = kind === 'seabed' ? seabedSurface( ctx, shared.shoreXform ) : cliffSurface( { ...ctx, meadowRun } );
 	const surf = ( call as unknown as { toVar( name: string ): SurfaceNode } ).toVar( 'surf' );
 	mat.colorNode = surf.get( 'albedo' );
 	mat.roughnessNode = surf.get( 'rough' );
@@ -1061,14 +1135,13 @@ function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, caustics: Cau
 	// the island's ground lies in the meadow's layer's shade on its lifted key, the sun's map's
 	// direction (Grass.ts `meadowLayerLight`, KeyLift.ts `liftKeyWorld`):
 	// the turf under the blades and the ground beside the meadow where the light comes over it (over
-	// a shadow filter's footprint) by the one law the blades take, at the run of their own ray under
+	// a shadow filter's footprint; a face under the meadow's lip whose light goes out over the sea
+	// takes none, `meadowGroundRuns`) by the one law the blades take, at the run of their own ray under
 	// the layer's top, near the eye and far alike. Its run is worked out per vertex, as the fragment
-	// stage already samples WebGPU's sixteen textures.
-	if ( GRASS_SHADOW && kind !== 'seabed' && ctx.vegetation ) {
-
-		mat.userData.sunShade = meadowLayerLight( varying( meadowLayerDepth( positionWorld, liftKeyWorld( shared.sunDir ), true ), 'vMeadowLayer' ) );
-
-	}
+	// stage already samples WebGPU's sixteen textures. The turf's run differs only along the rim, and
+	// which pixels are turf is known in the fragment stage alone: every pixel takes the first run here
+	// and the turf the rest of its own in its canopy, so the stone beside it stays as it was.
+	if ( meadowRun ) mat.userData.sunShade = meadowLayerLight( meadowRun.x );
 	// A water film or puddle reflects with water's specular reflectance instead of the stone's.
 	const f0 = mix( float( DRY_F0 ), float( WATER_F0 ), surf.get( 'water' ) ).toVar();
 	// Seen from above, a puddle mirrors only 2 % of the sky, about as much light as the dark ground
@@ -1095,36 +1168,16 @@ function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, caustics: Cau
 
 	};
 
-	// The caustics' reflected shimmer is read only in the band above the water where it is seen,
-	// which has faded to nothing 1.2 m up; most of the island's rock lies above it.
-	const p = positionWorld;
-	const above = p.y.sub( shared.waterLevel );
-	// Reflected caustic sparkle is direct-light energy. It must not animate ambient light
-	// through the zero-energy sun/moon handoff or turn the moon into a daylight source.
-	const directGain = clamp( max( shared.sunColor.x, max( shared.sunColor.y, shared.sunColor.z ) ).mul( 3 ), 0, 1 );
-	const light = underwaterLight( shared, caustics, {
-		aboveSun: vec3( surf.get( 'canopy' ) ),
-		aboveAmbient: {
-			when: above.lessThan( 1.2 ),
-			// Light reflected up from the sea onto the rock just above it: a steady 28 % lift of
-			// the ambient with the moving caustic pattern (mean 1) on top.
-			value: () => {
-
-				const shimmer = causticsAt( caustics, p, above.mul( 0.6 ).add( 1.4 ) ).sub( 1 ).mul( 0.6 ).add( 0.28 ).mul( float( 1 ).sub( smoothstep( 0, 1.2, above ) ) );
-				return vec3( float( 1 ).add( shimmer.mul( directGain ) ) );
-
-			},
-		},
-	} );
-	// the ambient volume above the water (lighting/AmbientSample.ts): degree 2 on the plateau, the
-	// cliffs and the stones. At degree 1
+	const light = underwaterLight( shared, waveMaps, { aboveSun: vec3( surf.get( 'canopy' ) ), specular: STONE_UNDER_WATER } );
+	// the ambient volume (lighting/AmbientSample.ts): degree 2 on the plateau, the cliffs and the
+	// stones, under the water too (lighting/Underwater.ts). At degree 1
 	// the volume's directionality boost turns the light the lit meadow bounces up against level
 	// ground in its shade, darkening it (AmbientRelight.ts, known limits); degree 2's quadratic band
 	// gives it back. None on the sea floor, which lies under the water, where the environment's
 	// light is read anyway (the volume's texture would take a binding of its fragment stage for the
 	// few points above it)
 	const ambient = kind === 'seabed' ? null : { bands: 2 as const, kind: ctx.vegetation ? 'terrain' : 'stones' };
-	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new UnderwaterLightingModel( light, { ambient } );
+	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => ( ambient?.kind === 'terrain' ? new TurfLightingModel( light, { ambient }, shared.swardTint, surf.get( 'sward' ) ) : new UnderwaterLightingModel( light, { ambient } ) );
 	writeMeter( mat );
 	mat.userData.refractedSolarReceiver = true;
 	mat.userData.refractedSolarFloor = kind === 'seabed';

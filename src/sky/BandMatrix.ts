@@ -17,9 +17,9 @@ type V3 = THREE.Node<'vec3'>;
 // matching functions at the bands' wavelengths was tried and rejected: its red row is
 // ill-conditioned (the blue band's wavelength has a positive red in linear sRGB) and it turned the
 // haze's transmittance green and its veil magenta. One push `s` (`bandPush`) serves every reader.
-// Fitted with the sky's and the haze's light, the push ran to its lower bound, none, in every
-// attempt, so it was fixed there and the rest fitted without it: the haze's own keys (HazeKeys.ts
-// sigma, desaturate) carry its colour, s = 0 and the matrix is the identity, kept as a tune.
+// The haze's own keys (HazeKeys.ts sigma, desaturate) carry its colour, with the sky's and the
+// haze's light set around them, so no push is left to give: s = 0 and the matrix is the identity,
+// kept as a tune.
 
 const LUMINANCE = [ 0.2126, 0.7152, 0.0722 ] as const;
 

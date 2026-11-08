@@ -1258,7 +1258,9 @@ export class TemporalAA {
 		this.rest.settle = Math.max( 0, Math.round( this.settings.restSettle ) );
 		this.rest.sequence = Math.max( 0, Math.round( this.mode === 'gt' ? this.settings.gtJitters : this.settings.restSequence ) );
 		this.rest.observe( key, frame.stable !== false );
-		jitter.restIndex = this.rest.index === null ? null : this.rest.index + 1;
+		// (while converged the jitter stays at the sequence's last index, as under FSR 3: what the display
+		// chain reads of the live frame beside the held image then repeats too)
+		jitter.restIndex = this.rest.index !== null ? this.rest.index + 1 : this.rest.converged ? this.rest.sequence : null;
 		jitter.restLength = this.rest.sequence;
 		// the sharpening, eased to its new value over SHARPNESS_EASE seconds after a scale change; at
 		// rest it is the new value at once, so the rest's image does not depend on the frames' deltas

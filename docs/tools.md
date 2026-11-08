@@ -185,12 +185,21 @@ The island:
 
 Sky and weather:
 
-- `hour`, `preset` (dawn, sunrise, noon, golden-hour, sunset, dusk, midnight), `dayLength`
-  (seconds), `moon` (phase: 0.5, a full moon, by default; it shapes only the drawn moon),
+- `hour`, `preset` (each the hour its sun stands at its elevation, on the 52 degree path: dawn,
+  -8.6 degrees in the morning; sunrise, 2; noon, 52 at 12; golden-hour, 26.2 in the afternoon, the
+  default; sunset, 2; dusk, -8.6; midnight, -52 at 0: `src/sky/DayCycle.ts` DAY_PRESETS),
+  `dayLength` (seconds), `moon` (phase: 0.5, a full moon, by default; it shapes only the drawn
+  moon, which stands fixed in the sky),
   `clock=paused` (freezes only the day clock; `paused` freezes it with the scene).
 - `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load as established,
   already wet; without it, `wind` and `windDir` the weather and its wind evolve on their own, among
   the kept presets), `clouds` (coverage override).
+- `dayFog`: the day's fog layer under a clear or fair sky (off by default; the GUI's Weather
+  folder, `day fog`). Its fields tune as `haze.fog.<field>@<day|golden|mist>`
+  (`src/weather/HazeKeys.ts`).
+- `seaFog`: the deep sea fog, a switch beside the weather under any sky and at any hour (off by
+  default; the GUI's Weather folder, `sea fog`). Its fields tune as `haze.fog.<field>@sea`
+  (`src/weather/HazeKeys.ts` SEA_FOG).
 - `wind` (light, gentle, fresh, strong: the wind's level, a mean wind 10 m up of 1.5, 3.8, 7 and
   11 m/s) and `windDir` (its heading in degrees: where the wind comes from, in the sea spectrum's
   convention, atan2( z, x ) in the world's x-z plane; 40 is the prevailing wind, which the
@@ -306,7 +315,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   (`grey:0.18`: an 18 % grey card everywhere, whose screen code values set the exposure and the
   tone curve); `ambientOnly` takes the key light (the
   sun or the moon, with the vegetation's and the feathers' light through them) out of the lit
-  materials, leaving the sky's light and the ground's bounce. They combine: one minus the radiance under
+  materials, leaving the sky's light and the ground's bounce, and writes the sea's metering
+  illuminance without its key term (the sea's colour is left as it is). They combine: one minus the radiance under
   `lightOnly,ambientOnly` over that under `lightOnly` is a point's share of direct light.
   `opaqueVegetation` lights the vegetation as opaque surfaces (no light through a leaf or blade,
   no wrap, its ambient unweighted by its translucency), so a plant takes only the diffuse light an
@@ -323,7 +333,10 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   figure, other: `src/debug/Classes.ts`), which `radiance`'s `aov: 'class'` decodes per cell; the
   sky and the sea are told by depth. Emissive surfaces (the yunpeng's glow) spoil their codes and
   read as no kind, and so does a pixel whose samples blend two kinds: load the page with `aa=off`
-  (the cut-out leaves cover half the island's pixels in part under MSAA).
+  (the cut-out leaves cover half the island's pixels in part under MSAA). The codes are stored at
+  the pre-exposure's scale but never above 2^15, so a page pre-exposed past half float's range (a
+  deep overcast night) still decodes; past 2^15 the haze and emission over the codes keep the
+  pre-exposure's scale, 2^( P - 15 ) times larger beside them, so more hazy cells read as no kind.
 - The scene's linear radiance over boxes, as numbers (`src/debug/Radiance.ts`): `await
   __PONLAI__.radiance( { boxes: { lit: [ x, y, w, h ], ... }, image: [ 3456, 2234 ], grid: [ nx, ny ],
   source: 'opaque' } )`. Boxes are fractions of the frame from its top-left, or pixels of an image
@@ -349,18 +362,96 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   per cell, instead of the radiance, the view depth with the sky's and the sea's shares, the world
   normal, the screen-space occlusion or the kind (`src/debug/RadianceAov.ts`); `rings: { sun, step,
   count, sky }` the luminance in rings of angle around the sun before and after the bloom, and over
-  the sky's band 30 to 60 degrees from it.
+  the sky's band 30 to 60 degrees from it, with each ring's count of sky texels (`skyCounts`); any
+  light's direction serves as `sun` (the moon's by night). `sector: [ from, to ]` keeps the texels
+  in a sector about the light (degrees, 0 straight below it, 90 to its right as seen facing it, 180
+  above; from over to wraps through 0), `elevation: [ lo, hi ]` those whose ray's elevation lies in
+  the range, and `elevationStep: s` adds `table`, the composite's (hdr) luminance summed over the
+  sky's texels of each ring and band of s degrees of elevation ( [ ring, band, sum, count ], band b
+  from b s - 90 degrees), from which a script takes each ring's excess over a background that varies
+  with elevation, texel by texel, without reading the texels.
 - Tunable parameters (`src/debug/Tune.ts`, debug pages): `__PONLAI__.tune.list()` names every
   registered number (its value, default, range, scale, and whether it is read at load),
   `tune.set( { name: value } )` sets them with no reload and no new pipeline (a load-time one needs
   `tune=<base64 JSON>` in the URL, which applies before the materials build; `tune.query( values )`
   writes it) and reports a combination the code cannot use (`invalid`), `tune.reset()` restores the
-  defaults. At the defaults a paused frame is byte for byte the frame without them. Names:
-  `post.exposure.key@high` (an exposure key per sun height, `@golden`, `@low`, `@high`, `@cloudy`,
-  `@night`; the local gain's `post.localTone.hinge@high`, `high`, `low`, `width` alike), `post.tone.midGrey`,
-  `post.tone.blackSlope`, `post.tone.white`; the shade's contrast `post.shade.pivot@day`, `slope`
+  defaults. At the defaults a paused frame is byte for byte the frame without them. A value the
+  sky's bake reads (a sky or haze tunable, or a field of `pipeline.air.settings` the bake lays
+  over its source) rebakes it as the load bakes, whatever set it (the GUI, `tune`, a plain write:
+  `src/sky/SkyRetune.ts`), so the page draws what a fresh load with the value draws. Names:
+  `post.exposure.key@high` (an exposure key per sun height, `@dusk`, `@golden`, `@low`, `@high`,
+  `@cloudy`, `@cloudyGolden`, `@cloudySunset`, `@cloudyDusk`, `@cloudyLow`, `@night`, and the
+  rising sun's `@dawn`, `@morningGolden`; `@sunset` shares `@golden`'s; overcast's key over the
+  clouded one `post.exposure.overcastKey`, toward a low sun `post.exposure.overcastKeyLow`; the local gain's
+  `post.localTone.hinge@high`, `high`, `low`, `width` alike), `post.tone.midGrey`,
+  `post.tone.blackSlope`, `post.tone.white`; the desaturation's `post.desaturate.amount@golden`
+  (`cool`; `@dawn`, `@day`, `@cloudy`, `@night`) and its cool share's `post.desaturate.coolFrom`,
+  `coolTo`; the shade's contrast `post.shade.pivot@day`, `slope`
   (`@golden`, `@day`, `@cloudy`, `@night`), the bloom's `post.bloom.strength` and the sun's glare
-  `post.glare`.
+  `post.glare`; the display's white `post.white.r@high` (`g`, `b`; `@day`, `@golden`, `@dawn`, `@cloudy`,
+  `@overcast`, `@night`), overcast's highlights toward grey `post.highlight.amount` (`from`, `to`),
+  the sky's light `sky.light.r@high` (`g`, `b`; `@low`, `@golden`, `@dusk`, `@morning`, `@dawn`,
+  `@cloudyHigh`, `@night`) and the clear sky's gain over it `sky.clear.gain@high` (`@horizon`,
+  `@golden`, `@late`, `@low`, the rising sun's `@dawn`, `@early`, `@morning`), the
+  key's colour at a low sun `sky.key.hueDepth` (the rising sun's `dawnHueDepth`), `reddens`,
+  `yellows`, the ozone's absorption `sky.atmosphere.ozone` (its column; per band `ozoneR`,
+  `ozoneG`, `ozoneB`), the earth's shadow over the seen sky `sky.atmosphere.shadowDepth` (the share
+  it takes at most; `shadowSoftness`, the degrees over its edge in which it falls) and the floor
+  of the clouds' shadow ratio `sky.atmosphere.shadowFloor` (the multiple scattering's share no
+  shadow takes), the distant sea's knee `sky.sea.knee` (the light that reaches the sea, as a share
+  of the sun's illuminance, above which its body is lit fully), the stops under all of it each
+  night layer comes in from at -7 degrees after a clear sunset `sky.twilight.depth.sky` (the
+  sky's night key; `ambient`;
+  `stars`; `haze`; `cloudMoon`, the clouds' own moonlight: `src/sky/DayCycle.ts` DUSK_DEPTH) and the
+  degrees at the night's end of that window over which they ease into all of it `sky.twilight.ease`
+  (DUSK_EASE; 0 takes them in by even stops to the end), where the moon stands
+  `sky.moon.elevation` (degrees up, 15 to 40) and `sky.moon.turn` (degrees from the noon meridian:
+  0 its noon side, 180 the pole's, positive toward the west), and the stars' sky, the one seen
+  from `sky.stars.latitude` degrees south at the sidereal time `sky.stars.sidereal` (hours:
+  `src/sky/DayCycle.ts` MOON, STARS), a clouded sky's floor of the key on the land under its deck
+  `sky.deckFloor@overcast` (`@cloudy`) and its day sky, the level of the whole sky's light by day at a sun 18 degrees up and how it
+  goes with the sun's height, `sky.daySky@overcast`, `sky.daySkyExponent@overcast` (`@cloudy`:
+  `src/sky/Weather.ts` `daySkyAt`), the key's gain on that floor under overcast's deck
+  `lighting.overcastKey` (under a cloudy deck's, `lighting.cloudyKey`: `src/sky/Sky.ts`
+  OVERCAST_KEY_GAIN), and the
+  land's share of the sky's light `lighting.relight.skyGain@high` (`@low`, `@golden`, the rising
+  sun's `@dawn`, `@sunrise`, `@cloudy`, `@cloudyBlue`, `@night`; the moon's sky's own
+  `lighting.relight.moon.skyGain@low` and `@high`, its golden and cloudy keys the day's), the sun's
+  part of the weather's gain under overcast's deck on the land's ambient light, its sky light and
+  the key's bounce alike (per unit, not the land's whole light over a clear day's; the moon's part
+  is fixed: `src/lighting/AmbientGrade.ts` OVERCAST_LAND, OVERCAST_MOON_LAND)
+  `lighting.relight.overcastLand` (1 to 2), a low
+  sun's lift of the sky's light on what it lights `lighting.relight.lowSun` (stops; `lowSunFloor`,
+  `lowSunFloorFull`, `lowSunFrom`, `lowSunTo` its sun heights: `src/lighting/AmbientRelight.ts`),
+  a deck's
+  glow about the sun (the forward lobe added to the light it lets through, in the deck and the air
+  under it: its weight and mean cosine) `sky.clouds.forwardWeight`, `sky.clouds.forwardLobe`, the
+  amount of forward light the closed deck passes down, spread over it by the diffusion law (a lobe's
+  weight and mean cosine whose light on level ground it takes) `sky.clouds.overcastWeight`,
+  `sky.clouds.overcastBroad`, the closed deck's glow about the key light drawn on the sky and its
+  seen panorama (its narrow lobe's weight in the deck's mean radiance and mean cosine, its broad
+  lobe's, and the power of the base's own pattern it follows: `src/sky/Sky.ts` `deckGlow`)
+  `sky.clouds.deckGlow`, `sky.clouds.deckGlowLobe`, `sky.clouds.deckGlowBroad`,
+  `sky.clouds.deckGlowBroadLobe`, `sky.clouds.deckGlowTexture` (by day; the night keeps the moon's
+  own form, `src/sky/Clouds.ts` MOON_DECK_GLOW), the same glow as the lighting's sources take it
+  about the sun, one smooth lobe's mean cosine (0.7 to 0.85) and weight (0 to 3)
+  `sky.clouds.bakeGlowLobe`, `sky.clouds.bakeGlowGain`, the closed deck's own level as the sky
+  draws it by day under overcast, the glow aside (0.3 to 1, 1 the deck the march gives)
+  `sky.clouds.deckSeen`, and its gradation from the zenith to the horizon by day under overcast
+  (0 to 1: 1 the diffusion law's 3 : 1, 0 a uniform deck, level irradiance kept)
+  `sky.clouds.deckGradation`, and the key a tree's shaded leaves
+  take through the leaves over them `lighting.vegetation.leaf.through@high` (`@low`, `@golden`,
+  `@cloudy`, `@night`) and what a leaf sends on of the key on its far face,
+  `lighting.vegetation.leaf.back@high` alike, the sward's tint under a closed sky
+  `lighting.sward.tint.r` (`g`, `b`) and the crowns', `lighting.vegetation.leaf.tint.r` (`g`, `b`);
+  the sea's mean reflection over the slopes no pixel resolves, the spread of those slopes
+  `sea.reflection.slopeScale` and the lift of its sky lobe `sea.reflection.lobeLift`
+  (`src/ocean/Water.ts` `REFLECTION_LOBE`), and the share of a white card's light the sea writes
+  into the exposure's meter, `sea.meter.share`; and the dusk's shares, forced to take the twilight's
+  light and the night's apart, `sky.dusk.force.<name>` (-1, the default, leaves a share as the code
+  makes it, 0 to 1 forces it to that value; the twilight's are weights on the sun's light; the names
+  and what each one forces: `src/sky/DayCycle.ts` DUSK_FORCES, the values the code gave them since
+  a script cleared it, on debug pages only: `duskShares`; `tools/dusk-grid.mjs` sets and reads them).
 - The ambient grade (`src/lighting/AmbientGrade.ts`): `__PONLAI__.ambient.current` holds the five
   knobs the table gives for the sun and the weather now (also `D.ambient`), `table` the table's own
   output; `override = true` with `manual.<knob>` replaces it from the next frame (the GUI's Ambient
@@ -377,7 +468,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   any radiance, so each pixel's cover is exact in the opaque colour, or `grassMask:albedo`, unlit in
   their own diffuse colour (both for `tools/meadow-light.mjs`); the look taken off
   comes back by `clearShade:true`, `lowSun:true`, `tone:0.5`, `filmNight:true`; `localTone:false`
-  builds the display chain without its local tone mapping. The metered exposure is shifted by the
+  builds the display chain without its local tone mapping; `streaks:<n>` scales the thin cloud
+  layer's amount (0 turns it off) and `streakMask:true` paints its pixels for `img.py stats --mask`
+  (`src/sky/Sky.ts`). The metered exposure is shifted by the
   GUI's `exposure offset (stops)` (Post folder); its keys are `src/post/Exposure.ts`
   `EXPOSURE_KEYS`, and `await __PONLAI__.pipeline.readExposure()` reads its state back from the GPU
   (the same fields as `radiance`'s `exposure`). The grade's
@@ -461,7 +554,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   neighbours' correlation, the gust field's size and travel, the sea's gusts against it around the
   island (`gust.sea`), the plants' wiring, their sway
   rates, and per weather where every part travels and how fast: the plants, the sea and its
-  swell, the open sea's gusts, the air's displacement (`fog`), the cumulus and the cirrus), through the probe as
+  swell, the open sea's gusts, the air's displacement (`fog`), the cumulus and the thin layer's streaks), through the probe as
   `--eval "return JSON.stringify( await P.windProbe() )"`.
 - The haze (`src/weather/VolumetricHaze.ts`): its knobs are the GUI's Haze folder and
   `__PONLAI__.pipeline.air.settings` (read every frame; a change of the slices, the jitter or the
@@ -575,7 +668,8 @@ within a tolerance; the test mode keeps the byte-for-byte checks valid.
   of work, and every read-back (the pre-exposure's, a probe's radiance) and screenshot waited behind
   it. The bound changes how many frames a second a paused page draws, never what it draws: the
   parity views and the probe readings are the same bytes with and without it. A running page, and a
-  paused one with `testMode=0` (capture-clip's), is not bounded.
+  paused one with `testMode=0` (capture-clip's), is not bounded. A held frame is an animation frame
+  on which the page does not tick (Writing a tool, on waiting for rendered frames).
 - A new history-dependent effect:
   - `establishScene` (`src/main.ts`) clears its history; `tools/verify-scene-jump.mjs` checks it;
   - it reports itself to `settled` (main.ts `pending`, or the rest's signature) until it has
@@ -605,7 +699,8 @@ not a polling loop. Each eval's value lands in the capture's JSON as `evals: [ {
 `--eval` runs before readiness, on a fresh load before the sun's map has even drawn (receivers
 read lit until it has), so it sets the view up; a reading of the frame that is shot goes in
 `--eval-ready`, which runs once the page is ready, with the loop stopped on that frame (JSON
-`readyEvals`). capture-set passes both through after its `--`.
+`readyEvals`). capture-set passes both through after its `--`, and then takes a page per view (a
+scene jump does not undo what they change).
 
 Captures and clips run in "fast mode" (`tools/capture-browser.mjs`): the browser runs in a
 persistent profile slot, `artifacts/.capture-profiles/<browser build>/<n>` of the main checkout
@@ -637,8 +732,19 @@ needed): `diff` (two images or two directories: max, mean, pixels over levels, s
 change, bounding box, `--heat` map), `crop` (boxes or a capture's named anchors, `--zoom`),
 `sheet` (a labelled grid of images, directories or crops, `--diff` for A | B | diff) and `stats`
 (mean RGB, luma, percentiles per image or region; `--oklab` adds the Oklab lightness, chroma and
-hue medians, `--cover` the share of a mask capture's pixels painted flat red, as `grassMask:true`
-paints the blades) and `flicker` (a clip's consecutive whole
+hue medians, `--linear` the mean linear luminance Y (sRGB decoded, Rec. 709), its `--pct`
+percentiles and the Oklab L, a, b of the mean linear colour, for light compared in stops (log2 of
+a ratio of Y) and colour as an Oklab distance, `--split` the means of the pixels under and over
+the region's own median L, a crown's dark and lit halves, and of its darkest 5 % and brightest 10 %, in Oklab and linear RGB, `--cover` the
+share of a mask capture's pixels painted flat red, as `grassMask:true` paints the blades, `--mask M`
+the pixels a mask capture of the same view (a file, or a directory of them) paints in a red of
+their own luminance against the rest, as `streakMask:true` paints the thin cloud layer's: their
+share, the Oklab medians of both parts and of each marked pixel against the rest blurred round it
+(`near`), and with `--against B` against the same pixels of a capture without them; `--deck`
+reads a cloud deck's structure on named sky regions instead, the horizon views' `h` and the view
+toward the sun's `sun`: the spread of its blocks of a degree, its structure about a broad trend, the
+std per band of size, the edges' gradient, the masses' size, and with `--deck-rows` the horizon's
+rows, the low sky against the sky over it and the far sea's fall a degree) and `flicker` (a clip's consecutive whole
 frames, capture-clip's `--full`: the temporal flicker per region, mean frame difference, temporal
 high-pass, one-frame flashes and a `--map` of where they fall) and `radial` (the median colour,
 luma and linear luma ring by ring around a point, such as the sun's place an `--eval-ready` step
@@ -649,6 +755,66 @@ compare-captures.py's (shared helpers in `tools/parity/pixels.py`). `tools/compa
 captures (`uv run --with numpy --with pillow`). Where shapes differ (growth steps, seeds, a
 regenerated island), judge the look by eye and region statistics (`tools/capture-growth.mjs`), not
 by pixel difference.
+
+`node tools/colour-rows.mjs shoot <url> <dir> --views-file f.json [--pages normal,light,ambient,classes] [--warm] [--jobs N] [--scene]`
+takes a views file's frames on one page per flag set, under the shared GPU lock, and `node
+tools/colour-rows.mjs rows <dir> [--sort <dir> | --own [--sky-mask-deg N]] [--boxes f.json] [--views a,b] [--sky-bands 0,5,15,30] [--out f.json] [--json]`,
+plain node, reads them: final-pixel Oklab L, C and h per view, per kind of surface and per kind of
+light (sun and shade by the cell's direct share, and `land sun` and `land shade` over every kind),
+with the sky, the sea, the darkest 5 % of the land and any boxes, into `<dir>/rows.json` and a table.
+Each row also gives `card`, the mean luminance of the same cells on the light page in scene units, and
+each view the land's shares in sun, shade and penumbra. A view `<base>--<variant>` is read through the
+sort of `<base>`, so its rows are the same cells; variants need only `--pages normal`. `--scene` also
+reads each row's radiance in scene units (`scene`: the opaque source's mean and median, the hdr's
+mean) and adds the rows a ratio of the scene's light needs: `sky band` (4 to 15 degrees up, turned
+from the key light), `sea away` (just under the horizon on that side), `<kind> flat` and `<kind> sun
+flat` (facing up, and lit), with the sky's irradiance `E` per view (the probe's, which takes the
+fog layer's haze as the dome does: on a clear or fair day not the land's sky light, whose source
+leaves the fog layer out, `src/sky/Sky.ts` `fogEnvironment`). `--sky-bands e0,e1,...` (frames
+shot with `--scene`) adds a row `sky <a>-<b>` per pair of edges: the sky cells turned from the key
+light whose centre's ray stands in [a, b) degrees up, read over at least 64 cells (else null, `too
+few cells`; not with `--own`). It prints what
+the frames hold and judges nothing. Its header has the sort. `shoot --warm` lets the views of a page
+reach each other by the scene jump (a fraction of a page load, with the same frames and readings
+byte for byte, as checked on four views both ways): its read only reads, which `capture.mjs --ready-reads` tells the worker; an
+`--eval-ready` without it takes a page per view. `--jobs` is capture-set's page count. `rows --own`
+sorts each view by its own depth read (sky, sea, the land between them and the land's darkest 5 %),
+for views that share no camera, such as a camera turned at each frame; it needs only the normal
+page, and `--sky-mask-deg N` leaves the cells within N degrees of the sun or the moon out of the sky
+(by angle, from the page's read of the lights and the camera).
+
+`node tools/job.mjs start -- node tools/day-sweep.mjs <url> <outDir> [--scope routine|full]
+[--views name,...] [--times ...] [--weathers ...] [--compare <dir>] [--transitions]
+[--keep-frames]` sweeps the island view through the day under the kept weathers: a frame every
+hour, every half hour from 08:00 to 16:00 and every 10 minutes round sunrise and sunset, in three
+cameras (the game's default view; the same pose turned at each frame to look toward the light, the
+sun down to -12 degrees and the moon after; and that at the lowest pitch the game's camera allows,
+read from the page, which is the one with sky in it), as a contact sheet a camera and weather
+(`sheet-<camera>-<weather>.png`, labelled with the time and the sun's elevation), an overview of
+twelve key moments by the four weathers, the sky's, the sea's, the land's and the land's darkest 5 %
+log2 luminance and Oklab C and h with the sun's elevation and the exposure over the day
+(`curves-*.png`, `rows.json`) and `jumps-<camera>.txt`: every pair of neighbouring frames whose change
+holds a step beyond what its neighbours' slope predicts, of more than 1/3 stop or Oklab (a, b)
+distance .03, by size; a pair over which the camera turned more than 15 degrees is listed as "camera
+turned" instead of scanned. The land is read whole and by rank per frame (colour-rows's `land` and
+`floor` rows), not by a sun and shade sort fixed at noon, whose cells jumped three stops where
+noon's shadow stood. Run it before handing back a change to anything keyed by the sun's elevation or
+the weather; a routine run is hundreds of scene jumps, so through `job.mjs start` and `job.mjs wait`,
+into a new directory. A run is 732 PNG frames (about 6 GB); once the steps are found, the frames no
+line names are kept as 360 px thumbnails (`img.py thumb`) and the flagged ones, the sheets and the
+curves keep their size (`--keep-frames` keeps all; a thinned run's `report` redoes the numbers only).
+`--compare <earlier output>` gives a before and after sheet a camera and weather and the frames
+whose regions changed beyond those thresholds, between runs of the same sort and size and for
+frames with the same pose (the others are listed, not subtracted), refused before anything is shot
+when the runs do not match. The readings come from both runs' rows, so a thinned run compares too:
+its sheets' differences are then taken between thumbnails (the full-size side shrunk to match), as
+`compare.txt` says, and a sky masked otherwise is marked not compared rather than refused; `--transitions` freezes each
+adjacent pair of weathers half way through a front at four moments and reports how far the middle
+frame lies from its endpoints; `report <outDir>` repeats the report on frames already shot. It is
+colour-rows (shoot --warm and rows), capture-set, `img.py sheet` and `thumb` and
+`tools/day-sweep-plot.py` combined, not a renderer of its own. The default and key views look 50
+degrees down and hold no sky. Its header has the cameras, the times, the regions and the
+thresholds' source.
 
 `node tools/verify-growth-swap.mjs <base url> [--steps 6] [--views island,cliffs,meadow] [--q
 "query"] [--fresh-grow M] [--out dir]` checks the growth in place: a page loaded at `grow=0` and
@@ -698,14 +864,22 @@ shifts, and one recapture before a failure counts; thresholds in `tools/parity/t
 capture-set opens one page per set (one per `--jobs` worker) and reaches every view after the
 first by the exact scene jump (`__PONLAI__.establishScene( <the view's query> )`, then the view's eval
 and the usual readiness): only load-time options (quality, aa, size and dpr, debug switches) need a
-new page, and a set shares them. Views need not be views.mjs's: `--view "name:query[::js]"`,
+new page, and a set shares them. The jump does not undo what an eval changed outside the scene's
+options and camera (GUI settings, Tune, debug flags), so the view after one with an eval of its own
+(an ad-hoc view's js, anything but exactly a views.mjs view's eval) loads a fresh page, and an
+`--eval` or `--eval-ready` passed through after `--` takes a page per view (an `--eval-ready` that
+`--ready-reads` declares read-only keeps the one page): every view is the frame
+its own fresh load draws. Views need not be views.mjs's: `--view "name:query[::js]"`,
 `--views-file f.json` and `--sweep "key=a,b,c"` (each view per value, e.g. `--sweep
 weather=fair,rain --sweep hour=7,12,17`) capture ad-hoc views through the same pages, jump and
 readiness (and `--quick`, `--reference`, `--check`); use them instead of a script that loops
 capture.mjs over views, which loads a cold page per view (`tools/parity/adhoc.mjs`, the README's
 capture-set). Builds without the jump's marker (`__PONLAI__.sceneJump`, older
 commits) get a page per view, as `--page-per-view` forces; a failed view or a lost page is retried
-and the rest of the set goes on in a fresh page. `--repeat` takes the repeats on other pages, in
+and the rest of the set goes on in a fresh page. A page that ends before it asks for a view (the
+browser did not start) is tried again the same way; when more than `--retries` starts in a row
+fail, the run ends with exit 1, naming the page's exit code and the last lines of its stderr.
+`--repeat` takes the repeats on other pages, in
 reverse order.
 `tools/capture-clip.mjs` captures a named clip (`tools/parity/clips.mjs`: a parity view set in
 motion, its camera path a function of the frame index) frame by frame with the page's stepper, as
@@ -821,8 +995,34 @@ freshly loaded pages (a grown page against a fresh `grow=1` page) in one call.
 
 Steps, scope, the value's serialisation and the exit code are in the file's header.
 
+`node tools/dusk-grid.mjs [url] [--weathers clear,fair,cloudy,overcast] [--sides evening,morning]
+[--from 2 --to -8 --step 0.5] [--midnight] [--split [--fit]] [--night-split] [--twilight] [--haze] [--compare dir]` reads the scene's
+light in scene units at a grid of sun elevations through the dusk and the dawn (the sky's and the
+deck's irradiance, the sky's metering, the baked sky's ring 4 degrees up, the land's ambient
+(`landA`, the land's gain on the probe's irradiance, which takes the fog layer's haze: on a clear or
+fair day not the land's own sky light, whose source leaves the fog layer out), the
+far sea, the air, the key's floors, and per view the exposure with its keys and meters, the
+metering illuminance over the land and the radiance over the land, the sky, the sea and the
+yunpeng's cells), each point a scene jump with an explicit bake, its hour solved from
+`src/sky/DayCycle.ts` in node, and judges that a lower sun never makes the judged quantities
+brighter (each step, the largest rise down to midnight, the exposure's direction). `--split` forces each of the dusk's shares (`sky.dusk.force.*`, URL options,
+Tune) to 0 and to 1 and puts the night's back one at a time from the twilight alone, for each
+share's term, and `--fit` solves each night share's slope from it (`tools/dusk-fit.mjs`, which also
+fits a run already made: `node tools/dusk-fit.mjs <out>`, no GPU) so that every step holds at half
+the judge's margin, the slope no steeper than the twilight's fall, into `fit.txt`; `--night-split` reads the night's terms alone, `--twilight` the twilight alone (every
+night share forced to 0, without the split's other states). `--haze` also reads, in a fixed view of
+its own (65 m over the sea, facing the open sea, pitched 10 degrees up), the haze's whole medium
+(`hazeMedium`: the haze's key, its medium's uniforms, the clouds' copy, the moon's aerosol keys) and
+its opacity on sky rays at a few elevations and level rays over a surface at a few distances
+(`hazeOpacity`, `VolumetricHaze.probe`); `--compare` judges the medium bit for bit. It takes the GPU lock itself (shared,
+leased per point; run it unwrapped), writes a JSON per weather and side with `summary.txt`,
+`handoff.txt`, `terms.txt`, `fit.txt` and `compare.txt` (with `--night-split` in both runs, the
+lamps-off exposure's lift over the other run and, at midnight, its distance from `NIGHT_METER_LIFT`), and exits 1 on a broken rule. A point takes about a
+second, a few tens with `--split`. Its options, reads and rules are in the file's header.
+
 `node tools/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]...
-[--views-file f.json [--views a,b]]` measures the meadow's light on its leaf pixels in linear
+[--views-file f.json [--views a,b]] [--weather clear] [--expect lo,hi]` measures the meadow's
+light on its leaf pixels in linear
 radiance: the sunlit blades' bright and dark clusters against the bare ground in the same sun,
 their mean, the share that is lit, the shaded blades against shaded bare ground, the light the turf
 under the sward takes, the blades' cover (over the lawn, the frame's centre and bands of view
@@ -846,6 +1046,14 @@ reads them all, with no browser, to run changed measures on a saved run. `lean` 
 eighth load (`grassMask:lean`) and a table of the blades' lean from upright over the lawn they
 cover, as drawn (the wind's nod and the push away from a near eye included) and by their pose
 alone: its 10th, 50th and 90th percentiles and the shares under 15 and over 60 degrees.
+It also reads `key:ambient`, the key's illuminance at normal incidence over the ambient irradiance
+on the sunlit open lawn's bare ground (in scene units), which guards the land's sky light against
+the key; `--expect lo,hi` exits 3 when a view's value falls outside, and a view with no reading (no
+sunlit open ground, or pages saved before this reading) counts as outside (a failed page still
+exits 1).
+Its window on the default view, `--elev 22 --weather clear`, is 13.8 - 16.8 (the value 15.3, within
+10 %): run it so before merging a change to the sky's light, the haze or the ambient light, and a
+change that moves it on purpose restates the window here.
 
 ## WGSL builds: `tools/wgsl-build.mjs`
 
@@ -1148,8 +1356,10 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
 - It plays a matrix of named scenes (`--list`: `island-fair-noon`, `island-clear-golden`,
   `horizon-fair-noon`, `sky-cloudy`, `island-overcast`, `island-night-clear`, `meadow-close` (over
   the meadow, placed on the camera's ground, `controls.ground`); the parked weathers' `island-rain`, `island-storm`, `horizon-storm`,
-  `island-fog-dawn` and `weather-change` (a front sweeping in) run only when `--scenes` names
-  them, and `--scenes` takes these ids), each with the clock running, fixed weather
+  `island-fog-dawn` and `weather-change` (a front sweeping in), and the clouded skies' other views
+  `island-cloudy`, `horizon-cloudy` and `horizon-overcast` (where the low deck's march costs) with
+  `horizon-clear-noon` (the same horizon without a deck), run
+  only when `--scenes` names them, and `--scenes` takes these ids), each with the clock running, fixed weather
   and a slow orbit, and writes `artifacts/perf/<label>/` (profile.json, summary.md): frame interval
   median, p95 and p99, GPU time per pass, the tick's JS time, hitches with their cause, and the
   startup.
@@ -1365,9 +1575,26 @@ Animation Hitches templates show when frames reached the display and what the GP
 --time-limit 10s --output <file>.trace`, then open it in Instruments). Extend our tools only for
 what these do not give (automation, A/B statistics, pass names).
 
+What colour a surface shows on screen, by kind and by light (sunlit rock, shaded grass, the sky,
+the darkest land), the same cells before and after a change, or a box with its dark and lit halves:
+`tools/colour-rows.mjs` (Captures), not a hand-placed box over mixed light.
+
+How the island's light, colour and exposure run through the day under each kept weather, and
+whether anything jumps at one hour (a system tuned by the sun's elevation and the weather): a
+change to such a system is checked with `tools/day-sweep.mjs` (Captures), before and after with
+`--compare`, not by the few frames a tuning session looks at.
+
+How much structure a cloud deck shows on screen (its contrast, masses, the edges' hardness, the
+low band and the far sea's fall at the horizon): `uv run tools/img.py stats --deck` on the horizon
+views' captures, not a script of one's own.
+
 Whether a grown page draws what a fresh load of its land draws (views, chunk hashes, the rain
 map, the camera's ground, the ambient probes, pipelines and memory across swaps): `tools/verify-growth-swap.mjs`, not a
 probe eval of one's own.
+
+Whether the land, the sky, the sea or the air brightens anywhere as the sun goes down or comes up,
+by how much, and which of the dusk's shares does it, over a grid of sun elevations each reached by
+the scene jump: `tools/dusk-grid.mjs` (Probes), not a probe that walks the clock with `setHour`.
 
 How much light reaches a surface, its colour, and how much of it is the sun's, apart from the
 albedos and the display chain: `flags=lightOnly` (and `ambientOnly`) with `__PONLAI__.radiance`
@@ -1410,6 +1637,16 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   running) and `waitForStable`, in that order. A fixed 40-frame wait passed or failed by chance on
   a busy GPU. A reading of the frame is taken once it is ready, not right after the load: a fresh
   load's first frames are drawn before the sun's map, with every receiver lit.
+- A step that sets a state (a clock, a camera, a uniform) and reads the frame that follows waits
+  for the page's rendered frames, counted by `renderer.info.frame`: page-eval's `frames( n )` in an
+  eval, `renderedFrames( page, n )` (`tools/page-eval.mjs`, "Rendered frames") from a Playwright page
+  of one's own, `window.__waitFrames( n )` (`installWaitFrames`) inside that page's own evaluate and
+  `WAIT_FRAMES` spliced into page code written as a string: one wait, which fails at once while the
+  page's loop is stopped. Never a count of animation frames: the frame pacer skips the refreshes between its
+  frames, and a paused page in the test mode holds a due frame while two are still queued on the GPU
+  (Test mode), so the read saw the frame before whenever the page did not tick after the state was
+  set. Rendered frames wait for the state the next tick applies; a still, converged image is still
+  waited for by `settled` (the Readiness rule above), never by a count of frames of either kind.
 - Expensive results that depend only on the commit, the tool and the browser are stored and
   reused through `parity/reference.mjs`; record in the key everything that changes them.
 - CPU-heavy node tools import `qos.mjs` first. Python tools declare their dependencies inline (PEP
@@ -1435,6 +1672,11 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   (repeatable) adds ad-hoc views with capture-set's syntax (`like=<view>` included), so a jump
   into a new scene option is checked as `--views island-fair-noon --view near:dist=40`; their fresh
   loads are stored with their definitions' hashes, so a changed query captures a new reference.
+  `--retune` rebakes the sky on every scene visited, after its eval, through every path a retune
+  takes (`refreshEnvironment()`, a tunable set and set back, the haze over the sky switched off and
+  on as the GUI does), and fails when the sky's irradiance does not come back bit for bit or the
+  switch leaves it as it was; `--check ... --retune` also checks that a retuned page draws the
+  fresh load.
 - `tools/verify-zoom-anchor.mjs [url] [--runs 24] [--out file.json]` checks the island camera's
   anchors in one probe page (with `cameraInput`): wheel zooms out with the cursor over the sea (`--runs` times) and
   over land, two pinches out, and a drag (the island view zooms out only, from its pose's distance); it fails on any zoom anchor that found no ground or a drift

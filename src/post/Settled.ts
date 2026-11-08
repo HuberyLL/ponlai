@@ -11,10 +11,11 @@ import { TemporalRest, restKey } from './TemporalRest.ts';
 // is tested on (`restKey`: the camera's unjittered view and projection, the scene clock, the
 // render's and the output's sizes, the epoch) plus the page's signature, and counts the frames in a
 // row that share it while the page is stable and quiet:
-// - stable: as for the temporal rest (main.ts): no sky bake in flight, no sky transition running;
+// - stable: no sky bake in flight, no sky transition running (the temporal rest asks that too, and
+//   that the haze's rest has ended: main.ts `temporalFrame`);
 // - quiet: nothing that will change the frame without changing the key is pending (main.ts names
-//   them in `pending`: a periodic sky bake due, the refracted sun's map behind its light, a sun
-//   shadow redraw queued), and no render or compute pipeline is being compiled asynchronously
+//   them in `pending`: a periodic sky bake due, a periodic bake's irradiance still being read back
+//   after it has shown, the refracted sun's map behind its light, a sun shadow redraw queued), and no render or compute pipeline is being compiled asynchronously
 //   (`watchPipelines`, installed by main.ts before anything compiles, counts the device's
 //   `create*PipelineAsync` calls in flight: three skips a draw whose pipeline is not ready yet, so
 //   a frame drawn meanwhile lacks it);
@@ -27,7 +28,9 @@ import { TemporalRest, restKey } from './TemporalRest.ts';
 // one its resolver owns) it is settled when the temporal rest has
 // converged and the quiet run began no later than the rest's sequence did (the rest's start plus
 // its settle frames), so every frame the rest's image averaged was drawn from the same, quiet
-// scene. A refresh that lands under a held rest image, or during its sequence, leaves the signal
+// scene. The haze's rest is such a pending refresh, one every epoch brings (its 15 to 20 frames
+// would put the quiet run past the sequence's start for good), so the temporal rest itself waits
+// for it, and both runs start on the same frame. A refresh that lands under a held rest image, or during its sequence, leaves the signal
 // false until the rest starts over (the held image is no longer the scene's): the diagnostics then
 // report `stale` (the rest converged, the quiet run long enough, the run too late), and a tool bumps
 // the epoch (`__PONLAI__.taa.epoch.bump()`; the capture tools bump it before they wait anyway).

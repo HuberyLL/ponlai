@@ -4,7 +4,7 @@
 // then the dome as the page draws it, fogged by the haze (`fogDome`, VolumetricHaze.ts `skyHaze`),
 // with the clouds' view built at 2K, into the scene pass's MRT (Motion.ts `sceneMRT`, which its
 // meter output merges into). The moon's maps stand in empty textures. The renderer is never
-// initialised: the entry skips the clouds' bakes, as the clouds' entry does.
+// initialised: the entry skips the clouds' bakes and their copies, as the clouds' entry does.
 
 import * as THREE from 'three/webgpu';
 import { Sky } from '../../src/sky/Sky.ts';
@@ -16,6 +16,7 @@ export default function ( { renderer } ) {
 	renderer.compute = () => {};
 	renderer.render = () => {};
 	renderer.initTexture = () => {};
+	renderer.copyTextureToTexture = () => {};
 	// The moon's maps are assets an image loader reads, which node lacks: they stand in empty, with
 	// the page's texture settings.
 	const load = THREE.TextureLoader.prototype.load;

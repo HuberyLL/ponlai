@@ -7,13 +7,14 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, float, vec3, vec4, positionWorld, normalViewGeometry, cameraViewMatrix,
-	normalize, exp, dot, select, smoothstep, mix, max, dFdx, dFdy,
+	normalize, exp, dot, select, smoothstep, mix, max,
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
-import { causticsColorAt, type Caustics } from '../ocean/Caustics.ts';
+import type { WaveMaps } from '../ocean/WaveMaps.ts';
 import { refractedSunDirectionNode, refractedSunBeamScaleNode } from './RefractedSun.ts';
 import { GroundBounceLightingModel } from './GroundBounce.ts';
 import { meterAmbient } from './MeterLight.ts';
+import { ambient as grade } from './AmbientGrade.ts';
 import type { AmbientReceiver } from './AmbientSample.ts';
 
 type F = THREE.Node<'float'>;
@@ -23,24 +24,56 @@ type B = THREE.Node<'bool'>;
 // The light below the water's surface, one model for everything lit under it (the terrain and the
 // sea floor, TerrainMaterial.ts), as tidewater's UnderwaterLighting (4811ba4) lights it: the key light refracted at the mean surface and carried
 // down the water column to the point under the long waves' surface (Beer-Lambert over the slant
-// path, the share that enters the water, the beam's change of area, and the caustics, which follow
-// the long waves' slope above and the gusts and slicks), faded in over the first 8 cm; and the
-// ambient and specular light under the mean level, dimmer and bluer with the depth (Beer-Lambert
-// over 1.2 times the depth, 85 % of it, with a little in-scattered blue), faded in over the first
-// 10 cm. The long waves, the mean level and the gust factor come from the wave maps baked once a
-// frame (Caustics.ts `wavesAt`, `levelAt`), so the waterline on the rock rises and falls with the
-// swell. The water shader adds the view path from the point back to the eye, so a material lit
+// path, the share that enters the water and the beam's change of area), faded in over the first
+// 8 cm; and the ambient and specular light under the mean level, dimmer with the depth, faded in
+// over the first 10 cm. Both paths attenuate by kappa = a + bb (shared.ts `sigA`, `bb`): the light
+// scattered forward stays in the downwelling stream, so only absorption and backscattering take
+// it away (Lee et al. 1999, Appl. Opt. 38:3831). The ambient light goes by Beer-Lambert over
+// 1.2 times the depth, 1.2 being about 1 / mu_d, the inverse mean cosine of a uniform sky refracted
+// into the water: mu_d = ( 1 + cos theta_c ) / 2 = 0.83, theta_c the critical angle, 48.6 degrees at
+// n = 1.333. It enters the water at 0.934, the diffuse Fresnel transmittance of a uniform sky from
+// air into water at n = 1.333 (the cosine-weighted mean of 1 - F over the hemisphere), which the
+// environment's specular, the local lights and the ambient diffuse under the water all take. The long waves and the mean level come from the wave maps baked once a
+// frame (WaveMaps.ts `wavesAt`), so the waterline on the rock rises and falls with the swell. The
+// water shader adds the view path from the point back to the eye, so a material lit
 // here must not. (tidewater leaves the key at its direction in the air with no share or beam
 // factor: the same on a level floor; here the refracted direction lights steep submerged walls as
 // the sun reaches them, and the share that enters the water follows the sun's height.)
 //
-// Above the water the ambient diffuse is the ambient volume's (lighting/AmbientSample.ts), as on
-// every lit island material; the probes do not model the water, so below it the environment's
-// (`UnderwaterModelOptions.ambient`).
+// The ambient diffuse is the ambient volume's (lighting/AmbientSample.ts) above the water, as on
+// every lit island material, and below it on the cliffs and the stones: the probes hold the island's
+// shade and leave the water to the attenuation here, and a wall read by the environment's irradiance
+// at its normal took the open sky's bright horizon, unshaded, as a pale band along its foot seen
+// through the surface. A material that takes the volume by default weighs it out under the water,
+// to the environment's light (`UnderwaterModelOptions.ambient`).
 //
-// A material calls `underwaterLight` with its own above-water terms (the terrain's canopy shade and
-// its reflected caustic shimmer; nothing for a material that never reaches the surface) and installs
-// `UnderwaterLightingModel` as its lighting model; it also sets `userData.refractedSolarReceiver`,
+// Under overcast's closed deck, on its share, the ambient diffuse below the mean level takes the
+// sea's sky gain in place of the land's (AmbientGrade.ts `seaSky`, on the attenuation's share):
+// the light down there is the light going down through the sea, which the water drawn over it
+// takes (the deck's gain, sky/Weather.ts DECK_SKY_GAIN, and the low sun's lift), not the land's
+// (AmbientRelight.ts), so the floor seen through the shallows and the water over it take one
+// gain. The specular and the local lights take neither gain. Every other sky keeps the land's (a
+// gain of exactly 1: the values are those without it, but the shader's code differs, which moves a
+// few pixels of a frame by one level).
+//
+// A stone under water reflects far less than in the air, the water's index standing close to its
+// own: the material gives that share (`UnderwaterOptions.specular`), for the key and the sky alike,
+// faded in over the first 10 cm. At the air's reflectance the sky lay over the sea floor and the
+// walls as an additive pale veil.
+//
+// Under a deck the land's key keeps the weather's floor through the clouds (Sky.ts
+// `keyDirectVisibility`, three's sun, which every receiver takes), and the sea's is the same (Sky.ts
+// `seaKeyVisibility`, lighting/KeyCloud.ts): the sunlight a closed deck passes down and what a
+// cumulus' shadow keeps of the key reach the sea's surface as they reach the land. A point under
+// the long waves' surface takes three's sun with no share of its own: the floor's light enters
+// ahead of the surface, as the land takes it along the key, so the share of the key that enters
+// the water (`sunIntoWater`), its refracted direction, the beam's change of area and its path down
+// the column apply to it as to the key's own beam, and the seabed under a deck is lit by the key
+// the water drawn over it takes.
+//
+// A material calls `underwaterLight` with its own key above the water (the terrain's canopy shade;
+// nothing for a material that never reaches the surface) and installs `UnderwaterLightingModel` as
+// its lighting model; it also sets `userData.refractedSolarReceiver`,
 // so RefractedSun.bindTerrain gives it the refracted sun's shadow map.
 //
 
@@ -50,83 +83,67 @@ export interface UnderwaterLight {
 	under: B;
 	// the water column above it to the mean level (m, negative above the water)
 	depth: F;
-	// the key light's colour multiplier: under water its path down the column (with caustics),
-	// above it the material's own `aboveSun`
+	// the key light's colour multiplier: under water its path down the column, above it the
+	// material's own `aboveSun`
 	sun: V3;
 	// the refracted key's direction in view space, which replaces the light's under water
 	sunView: V3;
-	// the ambient's multiplier: under water its attenuation, above it the material's `aboveAmbient`
-	// (1 without one)
+	// the ambient specular's and the local lights' multiplier: the attenuation down the column, 1 above
+	// the water
 	ambient: V3;
-	// the specular ambient's multiplier
-	specular: V3;
-	// the ambient's attenuation down the column (1 above the water)
-	ambientAttenuation: V3;
+	// the specular's multiplier: the material's share below the mean level, 1 above the water
+	specular: F;
+	// the ambient diffuse's multiplier: `ambient` with the sea's sky gain over the land's on the
+	// light carried down the column (AmbientGrade.ts `seaSky`), 1 above the water
+	diffuse: V3;
 }
 
 export interface UnderwaterOptions {
 	// the key's multiplier above the water (the terrain's canopy shade); 1 without one
 	aboveSun?: V3;
-	// the ambient's multiplier in a band above the water (the terrain's reflected shimmer): `when`
-	// the band holds, `value` builds it inside its branch
-	aboveAmbient?: { when: B; value: () => V3 };
+	// the specular's share below the surface, the material's reflectance against water over its
+	// reflectance against air; 1 without one
+	specular?: number;
 }
 
 /** The underwater light at `positionWorld` (see the header). */
-export function underwaterLight( shared: Shared, caustics: Caustics, { aboveSun, aboveAmbient }: UnderwaterOptions = {} ): UnderwaterLight {
+export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun, specular = 1 }: UnderwaterOptions = {} ): UnderwaterLight {
 
 	// the water above this point: the long waves' surface for the key, the mean level for the
 	// ambient (the wave maps; a level sea above the water's reach)
 	const p = positionWorld;
-	const sigT = shared.sigA.add( shared.sigS );
-	const waves = caustics.wavesAt( p ).toVar();
-	const level = caustics.levelAt( p ).toVar();
+	const sigT = shared.sigA.add( shared.bb ); // kappa = a + bb
+	const waves = waveMaps.wavesAt( p ).toVar();
 	const dSun = shared.waterLevel.add( waves.x ).sub( p.y ).toVar();
-	const dW = shared.waterLevel.add( level.x ).sub( p.y ).toVar();
+	const dW = shared.waterLevel.add( waves.w ).sub( p.y ).toVar();
 	const under = dSun.greaterThan( 0 );
 	// Snell's direction and the beam-area factor must change together. For a horizontal
 	// floor, muWater * (muAir / muWater) preserves transmitted horizontal irradiance;
 	// steep submerged walls now receive the correct refracted projection as well.
 	const waterSun = refractedSunDirectionNode( shared.sunDir );
 	const waterSunView = normalize( cameraViewMatrix.mul( vec4( waterSun, 0 ) ).xyz );
-	// The caustics are read only where they are seen: below the water for the sun's path (and in
-	// a material's own band above it). Most of the island's rock lies above both, and a select()
-	// would read them everywhere. They sample with explicit gradients (the pixel's footprint,
-	// taken before the branch) or an explicit level, so the reads may sit inside these branches.
+	// (`under` first builds the wave maps' variable, outside the branch, so that every later reader
+	// finds it declared)
 	const sun = Fn( () => {
 
 		const att = ( aboveSun ?? vec3( float( 1 ) ) ).toVar();
-		const footprint = { dx: dFdx( p.xz ).toVar(), dy: dFdy( p.xz ).toVar() };
-		// (the maps' variables are first built here, outside the branch, so that every later reader
-		// finds them declared)
-		const detail = level.y.toVar();
 		If( under, () => {
 
 			const path = exp( sigT.negate().mul( dSun ).div( max( waterSun.y, 0.15 ) ) );
-			const caust = causticsColorAt( caustics, p, dSun, { slope: waves.yz, foam: waves.w, detail, footprint } );
-			att.assign( mix( att, path.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) ).mul( caust ), smoothstep( 0, 0.08, dSun ) ) );
+			const beam = path.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) );
+			att.assign( mix( att, beam, smoothstep( 0, 0.08, dSun ) ) );
 
 		} );
 		return att;
 
 	} )();
 	const depth = dW.max( 0 );
-	const ambAtt = exp( sigT.negate().mul( depth ).mul( 1.2 ) ).mul( 0.85 ).add( vec3( 0, 0.02, 0.04 ).mul( exp( depth.mul( - 0.1 ) ) ) ).toVar();
-	const water = mix( vec3( 1 ), ambAtt, smoothstep( 0, 0.1, depth ) );
-	// (the water's multiplier is 1 above the mean level; built outside any branch, see `detail`)
-	const ambient = Fn( () => {
-
-		const mul = water.toVar();
-		if ( aboveAmbient ) If( dW.lessThanEqual( 0 ).and( aboveAmbient.when ), () => {
-
-			mul.assign( aboveAmbient.value() );
-
-		} );
-		return mul;
-
-	} )();
-	const specular = select( dW.greaterThan( 0 ), water, vec3( 1 ) );
-	return { under, depth: dW, sun, sunView: waterSunView, ambient, specular, ambientAttenuation: select( dW.greaterThan( 0 ), ambAtt, vec3( 1 ) ) };
+	// (1.2 ~ 1 / mu_d, 0.934 the sky's diffuse transmittance into the water: the header)
+	const ambAtt = exp( sigT.negate().mul( depth ).mul( 1.2 ) ).mul( 0.934 ).toVar();
+	const below = smoothstep( 0, 0.1, depth ).toVar();
+	const ambient = mix( vec3( 1 ), ambAtt, below );
+	const diffuse = mix( vec3( 1 ), ambAtt.mul( grade.seaSky ), below );
+	return { under, depth: dW, sun, sunView: waterSunView, ambient, diffuse, specular: mix( float( 1 ), float( specular ), below ) };
 
 }
 
@@ -136,10 +153,10 @@ export interface UnderwaterModelOptions {
 	// shadow map cannot shade). Off for a double-sided surface, whose geometric normal faces away
 	// on its inner side.
 	terminator?: boolean;
-	// How the part above the water reads the ambient volume (lighting/AmbientSample.ts; default
-	// degree 1); null keeps the environment's irradiance everywhere. The volume's share falls to
-	// nothing over the first 30 cm below the mean level (`AMBIENT_DEPTH`), where the environment's
-	// light carried down the column takes over.
+	// How the material reads the ambient volume (lighting/AmbientSample.ts), above and below the
+	// water alike; null keeps the environment's irradiance everywhere. Left out, the volume at
+	// degree 1 above the water, its share falling to nothing over the first 30 cm below the mean
+	// level (`AMBIENT_DEPTH`), where the environment's light carried down the column takes over.
 	ambient?: Omit<AmbientReceiver, 'weight'> | null;
 }
 
@@ -159,7 +176,7 @@ export class UnderwaterLightingModel extends GroundBounceLightingModel {
 		super();
 		this.light = light;
 		this.options = options;
-		this.ambient = options.ambient === null ? null : { bands: 1, ...options.ambient, weight: smoothstep( 0, AMBIENT_DEPTH, light.depth ).oneMinus() };
+		this.ambient = options.ambient === undefined ? { bands: 1, weight: smoothstep( 0, AMBIENT_DEPTH, light.depth ).oneMinus() } : options.ambient;
 
 	}
 
@@ -178,6 +195,7 @@ export class UnderwaterLightingModel extends GroundBounceLightingModel {
 		if ( this.options.terminator !== false ) lightColor = lightColor.mul( smoothstep( 0, 0.06, dot( normalViewGeometry, this.shadeDirection( lightDirection ) ) ) );
 		const color = lightColor.toVar();
 		super.direct( { ...input, lightDirection, lightColor: color }, builder );
+		( input.reflectedLight.directSpecular as V3 ).mulAssign( this.light.specular );
 
 	}
 
@@ -190,11 +208,10 @@ export class UnderwaterLightingModel extends GroundBounceLightingModel {
 
 	}
 
-	/** The local lights reach a submerged point down the water column, as the ambient does (and
-	 * without the terrain's shimmer band above the water). */
+	/** The local lights reach a submerged point down the water column, as the ambient does. */
 	localScale(): V3 {
 
-		return this.light.specular;
+		return this.light.ambient;
 
 	}
 
@@ -203,10 +220,12 @@ export class UnderwaterLightingModel extends GroundBounceLightingModel {
 		// the light the sunlit ground bounces up (above the water only: GroundBounce.ts), then three's
 		super.indirect( builder );
 		const reflected = ( builder.context as unknown as { reflectedLight: { indirectDiffuse: V3; indirectSpecular: V3 } } ).reflectedLight;
-		reflected.indirectDiffuse.mulAssign( this.light.ambient );
+		// the ambient diffuse down the column, with the sea's sky gain in the land's (the specular
+		// takes neither gain: AmbientGrade.ts)
+		reflected.indirectDiffuse.mulAssign( this.light.diffuse );
 		// the metering illuminance's ambient down the column, as the diffuse (lighting/MeterLight.ts)
-		meterAmbient.mulAssign( this.light.ambient );
-		reflected.indirectSpecular.mulAssign( this.light.specular );
+		meterAmbient.mulAssign( this.light.diffuse );
+		reflected.indirectSpecular.mulAssign( this.light.ambient.mul( this.light.specular ) );
 
 	}
 

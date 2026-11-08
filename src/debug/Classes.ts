@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
-import { normalWorldGeometry, select, vec3 } from 'three/tsl';
+import { min, normalWorldGeometry, select, vec3 } from 'three/tsl';
 import { debugFlags } from './DebugFlags.ts';
+import { STORE_CEILING, preExposure, sceneUnits } from '../post/PreExposure.ts';
 
 // The kinds' view (debug builds, `flags=classes`, read at load): every lit surface drawn unlit in a
 // flat colour that names its kind, so a script reads what each pixel shows (a script that reads cells:
@@ -16,6 +17,13 @@ import { debugFlags } from './DebugFlags.ts';
 // samples mix two kinds decodes to none. Under MSAA that is every pixel the cut-out leaves cover in
 // part (half the island's pixels seen from above), and two kinds' blends of four samples can equal
 // two others', so a page read for its kinds loads with `aa=off` (the classes page of a script that reads cells).
+// The code is stored at the pre-exposure's scale up to STORE_CEILING (2^15), not past it: a code at
+// 2^P overflowed half float from P = 16 on (a deep overcast night's), its red clamped where its
+// green and blue were not, and every lit cell decoded to none. Capped, the ratios stay exact (a power
+// of two). Inside the cap (P up to 15) the haze and emission added after the code are as small
+// beside it as by day; outside it (P over 15) they keep the pre-exposure's scale while the code does
+// not, so beside the code they are 2^( P - 15 ) times larger than by day, and a cell where they
+// were near the code's size by day can read as no kind there.
 //
 // The kind comes from the material and the mesh it is built for (their names and userData, set
 // where they are made), never from colours: the terrain's material (`userData.topY` or
@@ -77,7 +85,8 @@ export function useClasses( model: THREE.LightingModel ): void {
 	m.indirect = ( builder ) => {
 
 		const reflected = ( builder.context as unknown as { reflectedLight: Reflected } ).reflectedLight;
-		reflected.directDiffuse.assign( kindColour( builder.object as THREE.Object3D | null, builder.material as THREE.Material | null ) );
+		const kind = kindColour( builder.object as THREE.Object3D | null, builder.material as THREE.Material | null );
+		reflected.directDiffuse.assign( sceneUnits( kind.mul( min( preExposure.scale, STORE_CEILING ) ) ) );
 		reflected.directSpecular.assign( vec3( 0 ) );
 		reflected.indirectDiffuse.assign( vec3( 0 ) );
 		reflected.indirectSpecular.assign( vec3( 0 ) );

@@ -28,6 +28,11 @@
 //   node views.mjs crops <name>            -> the view's anchor names, comma-separated
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { eveningHour, morningHour } from '../../src/sky/DayCycle.ts';
+
+// the hour, for a query, at which the morning's or the evening's sun stands `elevation` degrees up
+const morning = ( elevation ) => morningHour( elevation ).toFixed( 4 );
+const evening = ( elevation ) => eveningHour( elevation ).toFixed( 4 );
 
 const PRE = `const s = window.__PONLAI__;
 // the island's box: the camera's ground (src/camera/IslandGround.ts, merged from the chunks' ground
@@ -246,6 +251,14 @@ export const VIEWS = {
 	'weather-change': { special: true, q: 'weather=fair&preset=noon', eval: `await s.setWeather( 'rain', 6 ); s.weather.update( 3 ); await s.refreshEnvironment();`, crops: [ 'rain-streaks', 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },
 
 	// extra views
+	// the low suns whose clouds' shadow is cast over the sun's disc: 4.8 degrees, the air reading the
+	// whole disc; 5.3, halfway through the air's fade to the centre rays; 9.3, the disc fading to one
+	// ray. Their elevations are chosen by what they reach, which depends on where the clouds sit at
+	// t=12: pinning `shadowRays` to 1, or `shadowAirNarrow` to its other end, must move each of them
+	// (tools/parity/README.md), and a view that stays byte identical under that does not belong here.
+	'island-cloudy-low-sun': { q: `weather=cloudy&hour=${ morning( 4.8 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
+	'island-cloudy-sun-rising': { q: `weather=cloudy&hour=${ morning( 5.3 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
+	'island-cloudy-disc-fade': { q: `weather=cloudy&hour=${ morning( 9.3 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
 	// a low camera 1.4 m over the sea, just off the cliffs, looking along the coast (reflections of
 	// the cliff foot and the islanders, the island's edge against the sky)
 	'water-skim-cliffs': { q: 'weather=fair&preset=noon', eval: `const b = isl(); const a = 2.3, r = Math.max( b.rx, b.rz );
@@ -257,8 +270,13 @@ export const VIEWS = {
 		free( [ b.cx + Math.cos( a ) * 150, 14, b.cz + Math.sin( a ) * 150 ], [ b.cx, 3, b.cz ], 35 );`, crops: [ 'cliff-edge-sea', 'rim-lip', 'horizon-line' ] },
 	// sunrise, the orbit turned across the sun so the long shadows run sideways over the meadow
 	'sunrise-long-shadows': { q: 'weather=clear&preset=sunrise', eval: 'orbitAround( s.sky.sunDir.z, - s.sky.sunDir.x );', crops: [ 'meadow-band-70m', 'rim-lip' ] },
-	// a full moon about 14 degrees up, the low horizon orbit facing it over the island
-	'night-moon': { q: 'weather=clear&hour=19.2&moon=0.5', eval: `s.setCameraView( 'horizon' ); orbitAround( - s.sky.moonDir.x, - s.sky.moonDir.z );`, crops: [ 'moon-limb', 'stars', 'sea-glints', 'horizon-line' ] },
+	// a full moon 20 degrees up, the sun 15.8 degrees under the horizon in the evening, from the low
+	// horizon orbit's place facing the moon over the island, the line of sight raised to 8 degrees up
+	// so the frame (from about 35 degrees up to 20 down) holds the moon in its upper third and the
+	// sea's horizon low
+	'night-moon': { q: `weather=clear&hour=${ evening( - 15.8 ) }&moon=0.5`, eval: `s.setCameraView( 'horizon' ); orbitAround( - s.sky.moonDir.x, - s.sky.moonDir.z );
+		const c = s.camera.position.clone(), m = s.sky.moonDir, l = Math.hypot( m.x, m.z ) || 1, e = 8 * Math.PI / 180;
+		free( [ c.x, c.y, c.z ], [ c.x + m.x / l * Math.cos( e ) * 5000, c.y + Math.sin( e ) * 5000, c.z + m.z / l * Math.cos( e ) * 5000 ], 55 );`, crops: [ 'moon-limb', 'stars', 'sea-glints', 'horizon-line' ] },
 
 	// temporal anti-aliasing views: thin, high-contrast and moving detail up close
 	// the orbit at 24 m, 60 degrees from the zenith: the meadow's near bands and its flowers

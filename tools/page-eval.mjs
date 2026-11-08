@@ -26,6 +26,17 @@
 // generation with the loop stopped) does not keep an exclusive run waiting, and the eval's next line
 // never renders without the slot. `frames` never offers it (it waits for rendering). capture.mjs
 // passes no binding: its shots are short and leased already.
+// Rendered frames, not animation frames. `frames( n )` here and `renderedFrames( page, n )` below
+// (for tools with a Playwright page of their own) count the page's own frames
+// (`renderer.info.frame`, which three's loop bumps on the animation frames the page renders). An
+// animation frame is not one: the frame pacer skips the refreshes between its frames, and a paused
+// page in the test mode holds a due frame while two rendered frames are still queued on the GPU
+// (src/post/FramePacer.ts, "A paused page's queue"). A step that sets a state and waited a count of
+// animation frames read the frame before it whenever the page did not tick after the state was set:
+// the handoff check, beside another page, read the key and the exposure a frame late on 6 of its
+// 324 samples, each a sample with no rendered frame after its clock was set. Rendered frames wait for
+// the state the next tick applies; a still, converged image is waited for by `settled` (capture-
+// browser's `waitForSettled`), never by a count of frames of either kind.
 import { readFileSync } from 'node:fs';
 import { installScript } from './pipeline-trace.mjs';
 
@@ -34,6 +45,42 @@ const TRACE = installScript();
 
 /** An `--eval` argument's js: `@file` reads the file, anything else is the js itself. */
 export const evalSource = ( text ) => text.startsWith( '@' ) ? readFileSync( text.slice( 1 ), 'utf8' ) : text;
+
+/** The page's wait for `n` more rendered frames, as the source of a function `( n, timeout ) =>
+ * Promise` (see the header, "Rendered frames"): it resolves once `renderer.info.frame` has risen by
+ * `n`, rejects at once while the page's loop is stopped (`__PONLAI__.loop.running` false: no frame
+ * will come) and after `timeout` ms. Every tool that waits for frames in the page runs this one:
+ * `renderedFrames` from node, `installWaitFrames` as `window.__waitFrames` inside a page's own
+ * evaluate, and a tool whose page code is a string splices it in (`( ${ WAIT_FRAMES } )( n, ms )`). */
+export const WAIT_FRAMES = `( n, timeout = 60000 ) => new Promise( ( resolve, reject ) => {
+	const s = window.__PONLAI__, count = () => s.renderer.info.frame;
+	const end = count() + n, deadline = performance.now() + timeout;
+	const tick = () => {
+		if ( count() >= end ) resolve();
+		else if ( s.loop?.running === false ) reject( new Error( 'waitFrames: the loop is stopped, no frame ' + end + ' will come (at ' + count() + ')' ) );
+		else if ( performance.now() > deadline ) reject( new Error( 'waitFrames: no frame ' + end + ' within ' + timeout + ' ms (at ' + count() + ', loop.running ' + s.loop?.running + ')' ) );
+		else requestAnimationFrame( tick );
+	};
+	tick();
+} )`;
+
+/** Resolves once the page has rendered `n` more frames (WAIT_FRAMES): what a state set before the
+ * call looks like on the page's next frames. */
+export function renderedFrames( page, n = 1, { timeout = 60000 } = {} ) {
+
+	return page.evaluate( `( ${ WAIT_FRAMES } )( ${ n }, ${ timeout } )` );
+
+}
+
+/** Gives the page `window.__waitFrames( n, timeout )` (WAIT_FRAMES), now and on every load after,
+ * for waits inside a tool's own `page.evaluate` closures. */
+export async function installWaitFrames( page ) {
+
+	const js = `window.__waitFrames = ${ WAIT_FRAMES };`;
+	await page.addInitScript( js );
+	await page.evaluate( js );
+
+}
 
 /** Runs `js` in the page with the shared scope (see the header) and returns its value, serialised
  * in the page. `mode` 'until' polls it until truthy and returns `{ ms, frames }` instead. Rejects

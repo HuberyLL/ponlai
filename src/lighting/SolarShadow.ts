@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, uniform, texture, textureLoad, reference, float, int, vec2, vec3, vec4, ivec2, uv,
-	min, max, abs, clamp, cos, sin, dot, select, dFdx, dFdy, floor, fract, mix, smoothstep, positionWorld,
+	min, max, abs, clamp, cos, sin, dot, select, dFdx, dFdy, floor, fract, mix, smoothstep, step, positionWorld,
 	interleavedGradientNoise, vogelDiskSample, screenCoordinate,
 } from 'three/tsl';
 
@@ -10,7 +10,7 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type B = THREE.Node<'bool'>;
 
-// The sun's soft shadow: a Poisson disk of POISSON_POINTS points, POISSON_RADIUS map texels wide,
+// The sun's soft shadow: a Poisson disk of POISSON_POINTS points of POISSON_RADIUS map texels' radius,
 // turned per screen pixel by a fixed hash (the same every frame, so a paused frame repeats), each
 // point one hardware comparison sample (a 2x2 bilinear comparison) whose comparison depth is the
 // receiver's moved along its plane to the point (the depth slope from the coordinate's screen
@@ -31,9 +31,19 @@ type B = THREE.Node<'bool'>;
 // Filters that take `dFdx` / `dFdy` stay out of `select()` / `If` branches (`installOpenShadow`).
 
 // The disk: POISSON_POINTS points in the unit disk whose least distance apart is the largest
-// found, from a fixed seed (`poissonDisk`), scaled to POISSON_RADIUS texels: on a 2048 map of the
-// island about a grass blade's width; a wider disk shows its screen-fixed pattern.
-const POISSON_POINTS = 8, POISSON_RADIUS = 2;
+// found, from a fixed seed (`poissonDisk`), scaled to POISSON_RADIUS texels. The disk with its
+// points' bilinear footprints spans 2 ( POISSON_RADIUS + 1 ) texels, about 3.5 (some 10 cm on a
+// 2048 map of today's island, whose texels are about 3 cm across the sun at 15-22 degrees); its
+// 10-90 % edge, the bilinear comparison's one-texel ramp included, is about 1.5 texels, some
+// 4-5 cm, under a bamboo culm's width (5-17 cm), so a culm's shadow keeps a dark core metres from
+// its foot. At a radius of 2 that edge was about 3.4 texels, some 10 cm. Measured on a lone culm's
+// shadow over bare ground, 0.6-3.2 m from its foot, per pixel at 4K, averaged along the shadow:
+// with a radius of 2 the key's least visibility across it was 0.45-0.46 (lit / shadow 2.2) and
+// its 10-90 % edge 0.22 and 0.12 m at 22 and 15 degrees; with 1, 0.36 at 22 degrees; with 0.75,
+// 0.31 and 0.20 (lit / shadow 3.2 and 4.9), edges 0.13 and 0.07 m. In stepped wind clips of the
+// island's view the frames' temporal high-pass rose 2-10 % with the regions' contrast, its ratio
+// to their temporal deviation unchanged. A wider disk shows its screen-fixed pattern.
+const POISSON_POINTS = 8, POISSON_RADIUS = 0.75;
 
 function poissonDisk( count: number, seed: number ): [ number, number ][] {
 
@@ -185,11 +195,10 @@ export function solarVolumeVisibility( depth: THREE.Texture | THREE.TextureNode,
 
 }
 
-// three's PCFShadowFilter, which tidewater's water takes (the waves break up any penumbra detail a
-// wider filter would add): five bilinear comparisons on a Vogel disk of one texel's
-// radius, the disk turned per pixel by interleaved gradient noise (fixed per pixel, so a paused
-// frame repeats). Each comparison gathers its footprint's comparisons (solarVolumeVisibility), so
-// it runs in any control flow.
+// three's PCFShadowFilter: five bilinear comparisons on a Vogel disk of one texel's radius, the disk
+// turned per pixel by interleaved gradient noise (fixed per pixel, so a paused frame repeats). Each
+// comparison gathers its footprint's comparisons (solarVolumeVisibility), so it runs in any control
+// flow.
 export function solarPCFVisibility( depth: THREE.Texture | THREE.TextureNode, coordinate: V3, mapSize: V2, active?: B, layer?: number ): F {
 
 	return Fn( () => {
@@ -207,6 +216,43 @@ export function solarPCFVisibility( depth: THREE.Texture | THREE.TextureNode, co
 		return sum.div( 5 );
 
 	} )();
+
+}
+
+// A soft read over a disc of the receiver's surface, metres wide, for the vertex stage: DISC_TAPS
+// gathers on a Vogel spiral at fixed angles, so every vertex takes the same disc and a still scene
+// repeats, each gather's four comparisons meaned (at this width a bilinear weight is nothing). A
+// point outside the map or the map's depth, or before the first map (`ready` 0), is lit: the far sea
+// lies beyond the map's depth range, where the comparison would read shadow and move the meter.
+// The bounds are the disc's, not each tap's: the map's rim is empty, so a tap past it reads lit.
+// Sixteen gathers, each some 8 cm wide, about 1.3 m apart: at eight, 1.9 m apart, the taps landed on
+// the leaves' dapple as noise, and the sea's long thin grid triangles combed it into streaks (the
+// streaks' peak to peak .025 of L at eight, .011 at sixteen and at thirty-two).
+// `across` and `along` are the disc's radii in the map's coordinate. Plain nodes on purpose, with
+// step() and max() for the bounds: an Fn or an If here, in the water's vertex path, comes out of the
+// r186 builder with unresolved uniform names (the shadow material, the vertex module).
+const DISC_TAPS = 16, GOLDEN_ANGLE = 2.39996323;
+const DISC = Array.from( { length: DISC_TAPS }, ( _, i ) => {
+
+	const radius = Math.sqrt( ( i + 0.5 ) / DISC_TAPS ), angle = i * GOLDEN_ANGLE;
+	return [ radius * Math.cos( angle ), radius * Math.sin( angle ) ];
+
+} );
+
+export function solarDiscVisibility( depth: THREE.Texture | THREE.TextureNode, coordinate: V3, across: V3, along: V3, ready: F, layer?: number ): F {
+
+	const sc = coordinate.toVar();
+	const within = ( x: F ) => step( 0, x ).mul( step( x, 1 ) );
+	const inside = within( sc.x ).mul( within( sc.y ) ).mul( within( sc.z ) ).mul( step( 0.5, ready ) );
+	let sum: F = float( 0 );
+	for ( const [ u, v ] of DISC ) {
+
+		const at = sc.add( across.mul( u ) ).add( along.mul( v ) ).toVar();
+		const taps = inLayer( texture( depth, at.xy ), layer ).gather().compare( at.z ) as unknown as THREE.Node<'vec4'>;
+		sum = sum.add( dot( taps, vec4( 0.25 ) ) );
+
+	}
+	return max( sum.div( DISC_TAPS ), float( 1 ).sub( inside ) );
 
 }
 
@@ -325,9 +371,10 @@ type FrustumShadowFilter = ( builder: THREE.NodeBuilder, inputs: ShadowFilterInp
 // derivatives are undefined for a quad that straddles the test (the refracted entry points at the
 // waterline jump in and out of the map): such pixels read whatever the neighbouring lanes left and
 // changed with any edit to the shader. The filter is evaluated first, in uniform control flow (it
-// returns lit outside the map itself), and only its result is selected. `strength` fades the map's
-// shadow (a closed deck's soft light shows no cast shadow: Weather.ts `castShadow`); the clouds' is
-// the visibility's own.
+// returns lit outside the map itself), and only its result is selected. `strength` is the weather's
+// share of the map's shadow (Weather.ts `castShadow`, 1 in every sky now); how deep the cast shadows
+// read under cloud is the key's visibility's (under a deck the land's floor, Weather.ts `deckFloor`),
+// which multiplies the result.
 export function installOpenShadow( sun: THREE.DirectionalLight, visibility: ( position: V3 ) => F, strength: F ): void {
 
 	const node = new THREE.ShadowNode( sun, null ) as unknown as { setupShadowFilter: FrustumShadowFilter };
@@ -467,7 +514,20 @@ export async function verifySolarShadow( renderer: THREE.WebGPURenderer ) {
 			maximumDifference = Math.max( maximumDifference, Math.abs( pixels[ k * 4 ] - pixels[ k * 4 + 1 ] ) );
 
 		}
-		const widths = profiles.map( ( p ) => p.filter( ( v ) => v > 0.1 && v < 0.9 ).length );
+		// the 10-90 % width of each profile's edge in texels (one sample per texel), from the crossings
+		// interpolated between samples, over the interior only: a disk point beyond the map's border
+		// reads lit, which is no penumbra
+		const crossing = ( p: number[], level: number ) => {
+
+			for ( let x = width / 4 + 1; x < width * 3 / 4; x ++ ) {
+
+				if ( p[ x ] >= level ) return x - 1 + ( level - p[ x - 1 ] ) / Math.max( p[ x ] - p[ x - 1 ], 1e-9 );
+
+			}
+			return NaN;
+
+		};
+		const widths = profiles.map( ( p ) => crossing( p, 0.9 ) - crossing( p, 0.1 ) );
 		const profileChecks = profiles.map( ( p ) => ( {
 			minimum: Math.min( ...p ), maximum: Math.max( ...p ), first: p[ 0 ], last: p[ width - 1 ],
 			center: p.slice( width / 2 - 4, width / 2 + 4 ),
@@ -485,9 +545,16 @@ export async function verifySolarShadow( renderer: THREE.WebGPURenderer ) {
 			}
 
 		}
-		// the disk's penumbra: as wide for a caster at the contact as for one 10 m away, within the
-		// disk and its bilinear footprints, and wider than the bilinear comparison alone
-		if ( widths[ 0 ] < 2 || widths[ 0 ] > 2 * ( POISSON_RADIUS + 1 ) || Math.abs( widths[ 2 ] - widths[ 0 ] ) > 1 || widths[ 3 ] > 2 ) throw new Error( `Solar disk filter width failed: ${ JSON.stringify( diagnostics ) }` );
+		// the disk's penumbra: as wide for a caster at the contact as for one 10 m away (within a tenth
+		// of a texel, so a contact edge hardened to half fails), no wider than the disk and its
+		// bilinear ramp ( 1 + 2 POISSON_RADIUS texels), and at least a quarter texel wider than the
+		// bilinear comparison alone, whose ramp is at most a texel
+		if ( ! widths.every( Number.isFinite ) || widths[ 3 ] > 1 || widths[ 0 ] < widths[ 3 ] + 0.25 ||
+			widths[ 0 ] > 1 + 2 * POISSON_RADIUS || Math.abs( widths[ 2 ] - widths[ 0 ] ) > 0.1 ) {
+
+			throw new Error( `Solar disk filter width failed: ${ JSON.stringify( diagnostics ) }` );
+
+		}
 		if ( maximumDifference > 0.01 ) throw new Error( `Colour-depth and standard shadow samplers disagree by ${ maximumDifference }` );
 		for ( const profile of profiles ) {
 

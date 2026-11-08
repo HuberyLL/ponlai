@@ -75,15 +75,18 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   walking loop (`WalkLoop.ts`, `WalkPath.ts`), the bamboo over the whole island that the
   islanders' building stock will come from (where its culms stand and the litter on its groves' floor, which the grass keeps off:
   `BambooGroves.ts`; the culms, instances of a few prototypes at two levels: `Bamboo.ts`,
-  `BambooMaterials.ts`), the vegetation's depth prepass (`VegetationPrepass.ts`)
+  `BambooMaterials.ts`, their colours, which the probes see too, in `BambooColours.ts`), the vegetation's depth prepass (`VegetationPrepass.ts`)
   and the opaque scene's, for the ambient occlusion (`OpaquePrepass.ts`), and the ambient light's
   probes, baked per chunk (`AmbientProbes.ts`). `src/world/vegetation/` holds what every plant kind
   shares (material, coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the
   registry of kinds, the trees' tubes and leaf cards in `TreeMesh.ts` and their bark and leaf surfaces in
   `TreeSurfaces.ts`, the authored plants drawn as instances of a few prototypes with two levels and
-  a stipple between them in `PlantInstances.ts`) and the islanders' trail through the meadow (`Trample.ts`, drawn as sprites
+  a stipple between them in `PlantInstances.ts`, what a tree's leaves pass on of the key in `LeafLight.ts`) and the islanders' trail through the meadow (`Trample.ts`, drawn as sprites
   into the displacement field the blades read, `Displacement.ts`, a frame-graph pass).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
+  the key's visibility under cloud for the lit code without a sky (`KeyCloud.ts`: the land's floor
+  under a deck, which the islanders read; the sea takes the same floor from the sky, `Sky.ts`
+  `seaKeyFloor`),
   the refracted sun under water, the light every submerged material shares (`Underwater.ts`: a new
   underwater material lights with it, as the terrain does), the air/water interface, sky occlusion,
   the meadow's canopy light and its crowns' shade (`MeadowCanopy.ts`), the ambient light's probes
@@ -105,22 +108,24 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   illuminance every lit material writes beside its colour for the exposure (`MeterLight.ts`: a new
   lit material calls `writeMeter` and draws only in passes with an MRT).
 - `src/materials/`: procedural textures (the gravel bake and the scans' texture arrays:
-  `ProceduralTextures.ts`), the terrain (`TerrainMaterial.ts`, its ground scans hex-tiled), wet surfaces, the meadow's habitat and soil-depth fields (`Meadow.ts`).
+  `ProceduralTextures.ts`), the terrain (`TerrainMaterial.ts`, its ground scans hex-tiled), the sea floor's colour (`SeabedLook.ts`), wet surfaces, the meadow's habitat and soil-depth fields (`Meadow.ts`), what a closed sky's light turns into in the sward (`SwardTint.ts`, shared by the blades and the turf).
 - `src/ocean/`: FFT ocean, shore waves, the share of each wave cascade a point of the sea keeps
-  (`WaveDamping.ts`), caustics and the wave maps the light under the water reads (`Caustics.ts`),
-  water shading (`Water.ts`), the sea's large-scale detail (`SeaDetail.ts`: gusts, slicks,
+  (`WaveDamping.ts`), the wave maps the light under the water reads (`WaveMaps.ts`),
+  water shading (`Water.ts`), the sea's optical properties as plain numbers, which the page's
+  uniforms, the ground bounce and the ambient probes read (`SeaOptics.ts`: a change to them
+  rebuilds the world's cache), the sea's large-scale detail (`SeaDetail.ts`: gusts, slicks,
   windrows), the water's refraction source (`Refraction.ts`), the storm sea.
-- `src/sky/`: atmosphere, environment bakes (`Sky.ts`), volumetric clouds, cirrus, the day cycle
-  (`DayCycle.ts`), the night sky and its data (`NightSky.ts`, `StarCatalog.ts`), the weather: its sky presets, its wind's levels and heading and the auto chain (`Weather.ts`).
+- `src/sky/`: atmosphere, environment bakes (`Sky.ts`), volumetric clouds, the thin cloud layer's
+  fibres (`Streaks.ts`), the day cycle (`DayCycle.ts`), the night sky and its data (`NightSky.ts`, `StarCatalog.ts`), the weather: its sky presets, its wind's levels and heading and the auto chain (`Weather.ts`).
 - `src/weather/`: wind (`Wind.ts`: the weather's one wind, which every part reads from it, and the
   one wind field all vegetation moves in), lightning, rain,
   puddles, the air's haze and sea fog as one froxel volume lit by the atmosphere and shadowed by
-  the sun's maps and the clouds (`VolumetricHaze.ts`), the bamboo leaves the wind takes off the
+  the sun's maps and the clouds (`VolumetricHaze.ts`, its keys by the hour and the weather in `HazeKeys.ts`, its medium's closed form in `HazeDepth.ts`), the bamboo leaves the wind takes off the
   island (`FallingLeaves.ts`: a fixed ring of leaves born round the view and stepped on the GPU by one
   compute pass).
 - `src/post/`: the frame's passes and tidewater's display chain (`Pipeline.ts`, its bloom in
-  `PhysicalBloom.ts`), the pre-exposure every writer of the scene's colour and metering light
-  multiplies by and every scene-unit reader divides out (`PreExposure.ts`), the key's screen-space shade over the vegetation's and the opaque scene's depth (`MeadowShade.ts`),
+  `PhysicalBloom.ts`, the colour the rods lend low light in `Purkinje.ts`), the pre-exposure every writer of the scene's colour and metering light
+  multiplies by and every scene-unit reader divides out (`PreExposure.ts`; the sky's bakes and the clouds' panorama store at a power of two of their own instead, `storeStops`, and their readers multiply by their read gain, Sky.ts `environmentRead` and the like), the key's screen-space shade over the vegetation's and the opaque scene's depth (`MeadowShade.ts`),
   the screen-space ambient occlusion the ambient light takes (`GTAO.ts`, on in high),
   the sun's flare (added to the bloom, `PhysicalBloom.ts`) and the screen-space light shafts, off by default (`LightShafts.ts`), FSR 1, render scale and dynamic resolution (`RenderScale.ts`,
   `DynamicResolution.ts`), the frame pacer, the submit batching, the signal that a paused frame is
@@ -347,7 +352,7 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   sampler type per depth texture per material (`SolarShadow.ts`).
 - Shadow passes keep `alphaTest` and `alphaMap` but not `map`; vegetation draws before the terrain
   (`renderOrder = -1`). See `vegetation/LeafTexture.ts` and `vegetation/Material.ts`.
-- The water samples neither the target it draws into nor many more textures (15 of WebGPU's 16
+- The water samples neither the target it draws into nor many more textures (14 of WebGPU's 16
   in its fragment stage: `Water.ts`), so it takes no history or reactive input: what the resolve
   needs from it goes out through its velocity. It refracts the refraction pass's image of what lies
   under the sea: a new mesh that can reach under the water joins it (`Refraction.ts`
