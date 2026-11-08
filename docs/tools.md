@@ -412,10 +412,11 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `lighting.overcastKey` (under a cloudy deck's, `lighting.cloudyKey`: `src/sky/Sky.ts`
   OVERCAST_KEY_GAIN), and the
   land's share of the sky's light `lighting.relight.skyGain@high` (`@low`, `@golden`, the rising
-  sun's `@dawn`, `@sunrise`, `@cloudy`, `@cloudyBlue`, `@night`), the weather's gain under
-  overcast's deck on all of the land's ambient light, its sky light and its sun's bounce alike
-  (per unit, not the land's whole light over a clear day's: `src/lighting/AmbientGrade.ts`
-  OVERCAST_LAND) `lighting.relight.overcastLand`, a low
+  sun's `@dawn`, `@sunrise`, `@cloudy`, `@cloudyBlue`, `@night`), the sun's part of the
+  weather's gain under overcast's deck on the land's ambient light, its sky light and the key's
+  bounce alike (per unit, not the land's whole light over a clear day's; the moon's part is fixed:
+  `src/lighting/AmbientGrade.ts` OVERCAST_LAND, OVERCAST_MOON_LAND)
+  `lighting.relight.overcastLand` (1 to 2), a low
   sun's lift of the sky's light on what it lights `lighting.relight.lowSun` (stops; `lowSunFloor`,
   `lowSunFloorFull`, `lowSunFrom`, `lowSunTo` its sun heights: `src/lighting/AmbientRelight.ts`),
   a deck's
@@ -427,7 +428,14 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   seen panorama (its narrow lobe's weight in the deck's mean radiance and mean cosine, its broad
   lobe's, and the power of the base's own pattern it follows: `src/sky/Sky.ts` `deckGlow`)
   `sky.clouds.deckGlow`, `sky.clouds.deckGlowLobe`, `sky.clouds.deckGlowBroad`,
-  `sky.clouds.deckGlowBroadLobe`, `sky.clouds.deckGlowTexture`, and the key a tree's shaded leaves
+  `sky.clouds.deckGlowBroadLobe`, `sky.clouds.deckGlowTexture` (by day; the night keeps the moon's
+  own form, `src/sky/Clouds.ts` MOON_DECK_GLOW), the same glow as the lighting's sources take it
+  about the sun, one smooth lobe's mean cosine (0.7 to 0.85) and weight (0 to 3)
+  `sky.clouds.bakeGlowLobe`, `sky.clouds.bakeGlowGain`, the closed deck's own level as the sky
+  draws it by day under overcast, the glow aside (0.3 to 1, 1 the deck the march gives)
+  `sky.clouds.deckSeen`, and its gradation from the zenith to the horizon by day under overcast
+  (0 to 1: 1 the diffusion law's 3 : 1, 0 a uniform deck, level irradiance kept)
+  `sky.clouds.deckGradation`, and the key a tree's shaded leaves
   take through the leaves over them `lighting.vegetation.leaf.through@high` (`@low`, `@golden`,
   `@cloudy`, `@night`) and what a leaf sends on of the key on its far face,
   `lighting.vegetation.leaf.back@high` alike, the sward's tint under a closed sky

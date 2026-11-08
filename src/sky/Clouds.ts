@@ -106,7 +106,10 @@ type V4 = THREE.Node<'vec4'>;
 //     diffusion approximation for a thick conservative layer (van de Hulst, "Multiple Light
 //     Scattering", 1980; Kokhanovsky, Earth-Science Reviews 64, 2004), the CIE standard overcast
 //     sky's law, three times as bright overhead as at the horizon, which gives a level surface the
-//     column's irradiance; and over it, on the key's light alone, a forward Henyey-Greenstein lobe
+//     column's irradiance (under overcast's share by day moved toward a uniform deck by
+//     DECK_GRADATION, `deckFlat`, the level surface's irradiance kept: the CIE general skies grade
+//     the overcast sky's zenith over its horizon as steep, moderate or uniform, ISO 15469:2004 /
+//     CIE S 011/E:2003); and over it, on the key's light alone, a forward Henyey-Greenstein lobe
 //     about the key (FORWARD_LOBE, 0.8), its radiance FORWARD_WEIGHT (0.6) times the key's part over
 //     pi times the lobe over its mean over the sphere: the deck's round glow about the sun's place,
 //     light added to the deck's, so the side away from the sun keeps its whole diffuse light.
@@ -117,15 +120,17 @@ type V4 = THREE.Node<'vec4'>;
 //     thick cloud evenly bright: a droplet's phase is narrow (mean cosine about 0.85), so after n
 //     scatterings the light keeps a mean cosine of about 0.85^n, and under a deck several optical
 //     depths thick the forward light has lost its direction; spread this way it still lights the
-//     deck and the ground below as it did, without brightening the half of the sky toward the sun,
-//     which the environment's bake and the ambient light would take up. The closed deck's round glow
-//     about the key's place is drawn where the sky is composed instead (Sky.ts `deckGlow`,
-//     DECK_GLOW: a narrow lobe for its peak and a broad one for its tail, following the base's
-//     own pattern), on the frame's shares `Clouds.ColumnTop` works out. Under the rest of the sky
-//     the narrow lobe stays as it was, by ( 1 - the share ). OVERCAST_BROAD and OVERCAST_WEIGHT
-//     together set how much forward light the closed deck passes down, the light of the deck and of
-//     the ground under it; they were fitted when this light was drawn as a broad lobe toward the
-//     sun, and spread it keeps the same amount. The forward light takes the sun's colour above the
+//     deck and the ground below as it did. The closed deck's round glow about the key's place is
+//     drawn where the sky is composed instead (Sky.ts `deckGlow`, DECK_GLOW: a narrow lobe for its
+//     peak and a broad one for its tail, following the base's own pattern), on the frame's shares
+//     `Clouds.ColumnTop` works out, and the lighting's sources take it about the sun as one smooth
+//     lobe (BAKE_GLOW_LOBE, BAKE_GLOW_GAIN): an overcast sky somewhat brighter toward the sun is the
+//     CIE general skies' overcast types 2 and 4 (ISO 15469:2004 / CIE S 011/E:2003), and how much
+//     brighter, drawn and lit, is our choice, set by the readings at DECK_GLOW. Under the rest of
+//     the sky the narrow lobe stays as it was, by ( 1 - the share ). OVERCAST_BROAD and
+//     OVERCAST_WEIGHT together set how much forward light the closed deck passes down, the light
+//     of the deck and of the ground under it; they were fitted when this light was drawn as a broad
+//     lobe toward the sun, and spread it keeps the same amount. The forward light takes the sun's colour above the
 //     tops (`lobeTint`, Sky.ts trackClouds), which keeps it near grey under a low sun as under a
 //     high one. The weight and the lobe are the form's own, not derived from the column's depth
 //     (a delta-Eddington share dies past an optical depth of about 2, which every roll exceeds).
@@ -572,12 +577,24 @@ export const OVERCAST_BROAD = 0.5, OVERCAST_WEIGHT = 2.4;
 // divided out), so it brightens the thin parts of the base and leaves its dark masses showing
 // rather than laying a flat sheet of light over them. k is small: near the light m holds the thin
 // parts' own forward light, and at k = 1 they stood out as hot spots twice the glow round them.
-// At these values, overcast at a sun of 15 and 22 degrees, the glow over the deck away from the
-// light is about 45 - 53 within 3 degrees of the key, 17 - 18 at 10, 5 at 22, 2.5 at 35, about 1
-// opposite it; it falls to half its excess over the deck at 7 - 8 degrees and to a tenth at 19 - 21;
-// the base's pattern inside it, 3 - 15 degrees out, spans about 0.4 - 0.5 stop (p10 - p90). The
-// broad lobe lifts the deck away from the light by about 0.4 of its own level.
-export const DECK_GLOW = 0.45, DECK_GLOW_LOBE = 0.85, DECK_GLOW_BROAD = 0.48, DECK_GLOW_BROAD_LOBE = 0.3, DECK_GLOW_TEXTURE = 0.2;
+// At these values, overcast at a sun of 15 and 22 degrees, the drawn sky up to 30 degrees high over
+// the sky more than 90 degrees from the sun (5 - 30 degrees high) falls from about 31 at 3 - 7
+// degrees from the key to 1.4 at 62 - 80. These are the day's: the glow about the moon keeps the
+// form the night was set with (MOON_DECK_GLOW: mean cosine and weight of the narrow lobe, then of
+// the broad one), the two passing over the civil twilight (Sky.ts `deckDay`, `glowToward`).
+export const MOON_DECK_GLOW = [ 0.85, 0.45, 0.3, 0.48 ] as const;
+export const DECK_GLOW = 0.5, DECK_GLOW_LOBE = 0.8, DECK_GLOW_BROAD = 0.5, DECK_GLOW_BROAD_LOBE = 0.4, DECK_GLOW_TEXTURE = 0.2;
+// The closed deck as the dome and the seen panorama draw it (DECK_SEEN, `deckSeen`: its own
+// radiance, the glow aside, by overcast's share and the day's weight, Sky.ts `deckDay`, so the
+// night's deck keeps its level); its gradation under overcast's share by day (DECK_GRADATION,
+// `deckGradation`: 1 the diffusion law's 3 : 1, 0 uniform, between the CIE gradations' steep and
+// uniform); and the glow the lighting's sources take about the sun, one smooth lobe's mean cosine
+// and weight (BAKE_GLOW_LOBE, BAKE_GLOW_GAIN, Sky.ts `glowToward`). At these values the background sky away
+// from the sun (5 - 30 degrees high) stands at 0.36 - 0.39 of the drawn sky's geometric mean, the
+// sky just over the horizon there about 0.2 stop under the sky 5 - 15 degrees up, and the land's
+// harmonics read about 1.5 - 1.8 times their level-ground irradiance over pi toward the sun and
+// 0.24 - 0.3 away from it.
+export const DECK_SEEN = 0.45, DECK_GRADATION = 0.3, BAKE_GLOW_LOBE = 0.85, BAKE_GLOW_GAIN = 2;
 
 /** The forward lobe's light on level ground: the integral over the upper hemisphere of a
  * Henyey-Greenstein lobe of mean cosine g about a key of height mu0 (its direction's y), each
@@ -855,6 +872,19 @@ export class Clouds {
 	readonly deckGlowBroad = tuneUniform( 'sky.clouds.deckGlowBroad', DECK_GLOW_BROAD, { min: 0, max: 3, onChange: markSkyRetune } );
 	readonly deckGlowBroadLobe = tuneUniform( 'sky.clouds.deckGlowBroadLobe', DECK_GLOW_BROAD_LOBE, { min: 0, max: 0.9, onChange: markSkyRetune } );
 	readonly deckGlowTexture = tuneUniform( 'sky.clouds.deckGlowTexture', DECK_GLOW_TEXTURE, { min: 0, max: 1.5, onChange: markSkyRetune } );
+	// The closed deck's glow as the lighting's sources take it (Sky.ts `glowToward`): one smooth
+	// lobe about the sun, its mean cosine and weight; the dome and the seen panorama draw the two
+	// above.
+	readonly bakeGlowLobe = tuneUniform( 'sky.clouds.bakeGlowLobe', BAKE_GLOW_LOBE, { min: 0.7, max: 0.85, onChange: markSkyRetune } );
+	readonly bakeGlowGain = tuneUniform( 'sky.clouds.bakeGlowGain', BAKE_GLOW_GAIN, { min: 0, max: 3, onChange: markSkyRetune } );
+	// The closed deck's level as the dome and the seen panorama draw it, by overcast's share and the
+	// day's weight (Sky.ts `seenDeck`, `deckDay`): 1 draws the deck the march gives, the glow aside.
+	readonly deckSeen = tuneUniform( 'sky.clouds.deckSeen', DECK_SEEN, { min: 0.3, max: 1, onChange: markSkyRetune } );
+	// The closed deck's gradation from the zenith to the horizon (DECK_GRADATION): 1 the diffusion
+	// law's 3 : 1, 0 a uniform deck, by overcast's share and the day's weight (`deckFlat`, set by
+	// Sky.ts trackClouds).
+	readonly deckGradation = tuneUniform( 'sky.clouds.deckGradation', DECK_GRADATION, { min: 0, max: 1, onChange: markSkyRetune } );
+	readonly deckFlat = uniform( 0 );
 	// The share of the forward light spread by the diffusion law (overcast's share of the sky) and
 	// the weight in use, `forwardWeight` moved to `overcastWeight` by that share (Sky.ts trackClouds).
 	readonly broadShare = uniform( 0 );
@@ -1645,7 +1675,9 @@ export class Clouds {
 					// share the same amount on level ground spread by the diffusion law (OVERCAST_BROAD)
 					const top = this.columnTop();
 					const key = top.key.toVar();
-					const diffuse = max( rd.y, 0 ).mul( 6 / 7 ).add( 3 / 7 ).toVar();
+					// (moved toward a uniform deck by `deckFlat`, which keeps its light on level ground)
+					const law = max( rd.y, 0 ).mul( 6 / 7 ).add( 3 / 7 ).toVar();
+					const diffuse = law.add( float( 1 ).sub( law ).mul( this.deckFlat ) ).toVar();
 					const nu = dot( rd, this.lightDir ).toVar();
 					const lobeOf = ( k: F ) => float( 1 ).sub( k.mul( k ) ).div( max( float( 1 ).add( k.mul( k ) ).sub( nu.mul( k ).mul( 2 ) ), 1e-3 ).pow( 1.5 ) );
 					const lobe = lobeOf( this.lobe ).mul( columnLight ).mul( float( 1 ).sub( this.broadShare ) );

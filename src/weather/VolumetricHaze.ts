@@ -274,10 +274,12 @@ const DRIFT_REACH = 8;
 //     base in the column's angular form (Clouds.ts, the column light): a diffuse part
 //     ( 3 / 7 )( 1 + 2 mu ), the standard overcast sky's luminance law ( 1 + 2 sin h ) / 3 (the CIE
 //     standard overcast sky of Moon and Spencer, 1942, as given in ISO 15469:2004 /
-//     CIE S 011/E:2003), and over it, on the key's light alone, a forward Henyey-Greenstein lobe
-//     about the key (Clouds.ts `forwardWeight`, `forwardLobe`), light added to the deck's. By
-//     overcast's share the air takes it through its own phase: the diffuse part as the deck's law
-//     weighted by the aerosol's phase over an even deck's of the same irradiance, a quartic in the
+//     CIE S 011/E:2003), which the drawn deck by day under overcast flattens toward a uniform deck
+//     (Clouds.ts `deckFlat`) with the level irradiance kept, so the air, which takes the law
+//     unflattened, takes the same level light; and over it, on the key's light alone, a forward
+//     Henyey-Greenstein lobe about the key (Clouds.ts `forwardWeight`, `forwardLobe`), light added
+//     to the deck's. By overcast's share the air takes it through its own phase: the diffuse part
+//     as the deck's law weighted by the aerosol's phase over an even deck's of the same irradiance, a quartic in the
 //     view's sine of elevation fitted in the anisotropy (DECK_DIFFUSE); the forward part as the
 //     deck's own lobe about the key, on the key's share alone (the lobe's light over the deck's
 //     level, `columnTop`'s key over its key and sky; under overcast's share the deck spreads its
@@ -604,7 +606,7 @@ export class VolumetricHaze {
 	// `deckKeyFloor`, set with the medium each frame and before each bake: main.ts `prepareHaze`):
 	// the light the deck passes down in place of the key it hides, which the air takes through its
 	// own phase toward the key, so the air under the deck's glow brightens with it. The dome's air and the seen panorama's take it, the lighting's sources
-	// never (`openSky`, Sky.ts `bakeGlow`).
+	// never (`openSky`, Sky.ts `bakeKeyFloor`).
 	readonly keyFloor = uniform( 0 );
 	// the moon's aerosol lobe (MOON_AEROSOL)
 	private readonly moonAnisotropy = tuneUniform( 'haze.moon.mieG', MOON_AEROSOL.anisotropy, { min: 0.7, max: 0.82, onChange: markSkyRetune } );
@@ -1270,7 +1272,7 @@ export class VolumetricHaze {
 		// takes it (no caster of the island's: its maps reach no farther than the island)
 		// (along d from its own start, never the camera's: the bake holds no camera; the floor
 		// under a closed deck, `keyFloor`, in the seen panorama only, as the dome's air takes it)
-		const floor = this.keyFloor.mul( clouds.bakeGlow ).toVar();
+		const floor = this.keyFloor.mul( clouds.bakeKeyFloor ).toVar();
 		const shaft = ( t: F ): F => max( this.cloudShaft( vec3( 0, y, 0 ).add( d.mul( t ) ), d, clouds ), floor );
 		const first = scatter( y, y0, shaft( t0.mul( 0.5 ) ) ).toVar();
 		Loop( D, ( { i } ) => {

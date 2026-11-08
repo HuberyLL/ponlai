@@ -490,7 +490,10 @@ comment where it is used.
 - Overcast sky's luminance by elevation, ( 1 + 2 sin h ) / 3 (`src/weather/VolumetricHaze.ts`, overcast's deck):
   P. Moon and D. E. Spencer, *Illumination from a Non-Uniform Sky* (Illuminating Engineering 37,
   1942): the CIE standard overcast sky, as given in ISO 15469:2004 / CIE S 011/E:2003,
-  *Spatial distribution of daylight - CIE standard general sky*.
+  *Spatial distribution of daylight - CIE standard general sky*. The same standard's overcast
+  general sky types 2 and 4 (slightly brightening toward the sun) and its uniform gradation stand
+  behind the overcast deck's glow toward the sun and its flatter gradation (`src/sky/Clouds.ts`
+  DECK_GLOW, DECK_GRADATION; `src/sky/Sky.ts` `deckGlow`).
 - Atmosphere LUTs and multiple scattering: Sébastien Hillaire,
   [*A Scalable and Production Ready Sky and Atmosphere Rendering Technique*](https://sebh.github.io/publications/egsr2020.pdf)
   (EGSR 2020), through the adapted tidewater source above.
