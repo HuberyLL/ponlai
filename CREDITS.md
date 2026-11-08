@@ -603,8 +603,9 @@ comment where it is used.
   the widened alpha and the glint's clamp at grazing views are our own.
 - Volumetric clouds: Andrew Schneider,
   [*The Real-time Volumetric Cloudscapes of Horizon Zero Dawn*](https://www.guerrilla-games.com/read/the-real-time-volumetric-cloudscapes-of-horizon-zero-dawn)
-  (SIGGRAPH 2015): Perlin-Worley shape noise, Worley erosion, weather-map coverage and height
-  profiles.
+  (SIGGRAPH 2015; GPU Pro 7, "Real-Time Volumetric Cloudscapes"): Perlin-Worley shape noise,
+  Worley erosion, weather-map coverage and height profiles, and the closed cloud deck's coverage
+  threshold (its noise sum remapped by the coverage, `deckDensity` in `src/sky/Clouds.ts`).
 - Lunar shading: Yasuhiro Fujii,
   [*A tiny improvement of Oren-Nayar reflectance model*](https://mimosa-pudica.net/improved-oren-nayar.html),
   through the adapted three-geospatial source above.
