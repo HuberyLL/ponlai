@@ -391,11 +391,13 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // moon's OVERCAST_MOON_LAND) and the water by
 // DECK_SKY_GAIN; exposed by the sky (post/Exposure.ts). A sky's own light by day may stand at a
 // level of the weather's (`daySky`, `daySkyExponent`), on the light the sun gives the sky alone
-// (`daySkyAt`). Overcast's stands at 0.185 at 18 degrees with an exponent of 1.15, on the deck
-// drawn with its glow about the sun whose glow the lighting's sources take as one lobe: the
-// environment's small bake then gives level ground a sky irradiance of 0.0186 over pi with the sun
-// 22 degrees up and 0.013 with it 15 up, 0.80 and 0.64 of a clear day's, and the deck's light and
-// the sea's fall with every step of the sun's descent from 25 to 2 degrees.
+// (`daySkyAt`). Overcast's stands at 0.074 at 18 degrees with an exponent of 1.15, on the deck
+// drawn as a noise sum with its glow about the sun whose glow the lighting's sources take as one
+// lobe: the environment's small bake then gives level ground a sky irradiance of 0.0083 over pi
+// with the sun 22 degrees up and 0.0058 with it 15 up, the background deck away from the sun
+// reading at a display lightness of 0.31 and 0.33 over a meadow at 0.36 and 0.34 (with the land's
+// gain, the key's and the exposure's key below), and the deck's light and the sea's fall with
+// every step of the sun's descent from 25 to 2 degrees.
 // The closed deck's cover is the share of its noise sum's largest left under its threshold
 // (`lowCover`), swept by a front as the coverage is; the skies without the closed form keep theirs
 // unread. Overcast's sets the threshold low enough that the deck stays closed and hides the sun's
@@ -407,7 +409,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>>
 	clear: { coverage: 0, lowCover: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
 	fair: { coverage: 0.32, lowCover: 0, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
 	cloudy: { coverage: 0.67, lowCover: 0.481, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0021, rain: 0, fog: 0, storm: 0, streaks: 0 },
-	overcast: { coverage: 0.94, lowCover: 0.683, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0.3, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, daySky: 0.185, daySkyExponent: 1.15, moonSky: 0.173, moonSkyExponent: 1.24, haze: 0.00974, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
+	overcast: { coverage: 0.94, lowCover: 0.683, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0.3, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, daySky: 0.074, daySkyExponent: 1.15, moonSky: 0.173, moonSkyExponent: 1.24, haze: 0.00974, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
 	rain: { coverage: 1, lowCover: 0.683, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0095, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
 	// A squall: the darkest deck, heavy rain, a strong wind (PRESET_WIND) and a rough, white-capped sea.
 	storm: { coverage: 1, lowCover: 0.683, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0135, rain: 1, fog: 0.3, storm: 1, streaks: 0 },

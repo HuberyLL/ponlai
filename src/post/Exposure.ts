@@ -188,14 +188,15 @@ export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
  * night by the exposure's own night weight, as the keys do. It enters here alone, never in the
  * keys' own blend. It stands with overcast's own day sky (sky/Weather.ts, overcast's `daySky`): the
  * sky dome meters at its bake's geometric-mean luminance, so a darker sky drags the meter and the
- * exposure brightens, the more sky a frame holds the more. At 0.56, with the sun at 15 to 22
- * degrees, the meadow beside and away from the sun reads at a display lightness of 0.34 to 0.40
- * (0.37 over the four views) and the deck behind it at about 0.47. The parked rain, storm and fog
+ * exposure brightens, the more sky a frame holds the more. At -0.09, with overcast's day sky at
+ * 0.074 and the sun at 15 to 22 degrees, the meadow beside and away from the sun reads at a
+ * display lightness of 0.34 to 0.36 and the deck behind it at 0.31 to 0.33, the sky a little
+ * darker than the meadow under it. The parked rain, storm and fog
  * count as overcast in the sky's blend and take this key but keep a day sky of 1, so they read
  * darker than overcast; they are parked and left so.
  * Toward a low sun it passes to OVERCAST_KEY_LOW (OVERCAST_KEY_SPAN). Tunable:
  * `post.exposure.overcastKey`. */
-const OVERCAST_KEY = tune( 'post.exposure.overcastKey', 0.56, { min: - 4, max: 1 } );
+const OVERCAST_KEY = tune( 'post.exposure.overcastKey', - 0.09, { min: - 4, max: 1 } );
 /** Overcast's key toward a low sun, stops, in place of OVERCAST_KEY. Once the sea was metered as a
  * share of the white card's light, the overcast evening's land read from 0.4 stops over what it
  * read before at 12 degrees to 1.0 to 1.3 over from 7 degrees to the horizon, where the clouded keys

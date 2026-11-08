@@ -1143,16 +1143,15 @@ const _cloudMoon = new THREE.Color();
 // day's under the same sun. The air and the sea under the deck take the same floor and gain
 // (`deckKeyFloor`, `seaKeyVisibility`; the sea's glint only the direct beam, `cloudDirectVisibility`;
 // lighting/KeyCloud.ts). At 1 the floor is the weather's own; at
-// its 2.4 the land under the deck keeps 0.72 of the key. Set with the land's gain under the deck
-// (lighting/AmbientGrade.ts OVERCAST_LAND) on the lit open ground of seven eye-height views of the
-// overcast island. With the sun 15 and 22 degrees up, the key makes 0.50 to 0.67 of the light on
-// the ground's brighter half and 0.66 to 0.72 on the meadow's (the ground and meadow within 40 m
-// lit over the frame's median, on three eye-height views toward, beside and away from the sun), and
-// the key's light there is 0.72 of a clear day's in the same place. Raise it if the land under the
+// its 2.9 the land under the deck keeps 0.87 of the key. Set with the land's gain under the deck
+// (lighting/AmbientGrade.ts OVERCAST_LAND) and overcast's day sky on the lit open ground of two
+// eye-height views beside and away from the sun: with the sun 15 and 22 degrees up the key makes
+// 0.81 to 0.82 of a white card's light on the ground and meadow within 40 m lit over the frame's
+// median, and the card's light is 5.3 times the sky's irradiance over pi (3 put it at 5.4). Raise it if the land under the
 // deck lacks the light from the sun's side and its cast shadows; lower it if the shadows read as a
 // clear day's.
 // Tunable: `lighting.overcastKey`.
-const OVERCAST_KEY_GAIN = tune( 'lighting.overcastKey', 2.4, { min: 1, max: 3, onChange: markSkyRetune } );
+const OVERCAST_KEY_GAIN = tune( 'lighting.overcastKey', 2.9, { min: 1, max: 3, onChange: markSkyRetune } );
 // The key's gain under a cloudy deck, on its floor, by cloudy's share and its deck's light
 // (Weather.ts `deckRamp`, whole from 6 degrees), as overcast's. A cloudy deck's floor is 0 (its
 // light comes through its gaps), so the gain does nothing there until the floor is given a value.
