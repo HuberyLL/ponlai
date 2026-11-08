@@ -164,7 +164,7 @@ assert.notDeepEqual( current( frames ), held );
 // or `plantClock` (the plants' phase clock, which wraps there too) is the time of `wave` (sin of fract( time x rate ), which refuses any rate without whole cycles
 // per CLOCK_PERIOD when the shader is built, so a rate passed by name is checked too) or, in Wind.ts, of `plantWave` (the plants'
 // sway on `plantClock`, at rates rounded to whole cycles per CLOCK_PERIOD) and `flutterWave` (the leaves', on `clock`, whole cycles per CLOCK_PERIOD), and the gusts' scroll and time are read only in Wind.ts, by
-// gustAt (windField and the sea's gusts) and windBefore (the falling leaves' back-dated steps): the noise repeats over GUST_TILE and GUST_TIME_PERIOD, where they wrap.
+// gustAt (windField and the sea's gusts), windBefore (the falling leaves' back-dated steps) and evolutionTime (the fog's banks, whose field repeats where it wraps): the noise repeats over GUST_TILE and GUST_TIME_PERIOD, where they wrap.
 const root = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '../src' );
 const sources = [];
 const walk = ( dir ) => { for ( const e of readdirSync( dir, { withFileTypes: true } ) ) { const f = path.join( dir, e.name ); if ( e.isDirectory() ) walk( f ); else if ( f.endsWith( '.ts' ) ) sources.push( [ path.relative( root, f ), readFileSync( f, 'utf8' ) ] ); } };
