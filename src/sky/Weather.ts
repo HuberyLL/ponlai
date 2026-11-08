@@ -255,6 +255,12 @@ const skyShares = ( name: WeatherName ): number[] => {
 export interface WeatherState {
 
 	coverage: number;
+	// How far the closed deck's threshold sits below its noise sum's largest (sky/Clouds.ts
+	// `deckDensity`, under overcast's share of the sky), as a share of that largest (its
+	// weights' total): the deck's cloud starts at ( 1 - lowCover ) of it, so a larger share closes
+	// the deck. Cloudy's is not read while cloudy's sky keeps the broken form; clear and fair have
+	// no deck; the parked skies take overcast's.
+	lowCover: number;
 	density: number;
 	directVisibility: number;
 	// The share of the key's direct light the land keeps under the thickest cloud: the floor of the
@@ -385,24 +391,30 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // moon's OVERCAST_MOON_LAND) and the water by
 // DECK_SKY_GAIN; exposed by the sky (post/Exposure.ts). A sky's own light by day may stand at a
 // level of the weather's (`daySky`, `daySkyExponent`), on the light the sun gives the sky alone
-// (`daySkyAt`). Overcast's stands at 0.185 at 18 degrees with an exponent of 1.15, on the deck
-// drawn with its glow about the sun whose glow the lighting's sources take as one lobe: the
-// environment's small bake then gives level ground a sky irradiance of 0.0186 over pi with the sun
-// 22 degrees up and 0.013 with it 15 up, 0.80 and 0.64 of a clear day's, and the deck's light and
-// the sea's fall with every step of the sun's descent from 25 to 2 degrees.
-// Its moonlit sky has a level and an exponent of its own (`moonSky`, `moonSkyExponent`), on which
+// (`daySkyAt`). Overcast's stands at 0.074 at 18 degrees with an exponent of 1.15, on the deck
+// drawn as a noise sum with its glow about the sun whose glow the lighting's sources take as one
+// lobe: the environment's small bake then gives level ground a sky irradiance of 0.0083 over pi
+// with the sun 22 degrees up and 0.0058 with it 15 up, the background deck away from the sun
+// reading at a display lightness of 0.31 and 0.33 over a meadow at 0.36 and 0.34 (with the land's
+// gain, the key's and the exposure's key below), and the deck's light and the sea's fall with
+// every step of the sun's descent from 25 to 2 degrees.
+// The closed deck's cover is how far its threshold sits below its noise sum's largest, as a
+// share of it (`lowCover`), swept by a front as the coverage is; the skies without the closed form keep theirs
+// unread. Overcast's sets the threshold low enough that the deck stays closed and hides the sun's
+// disc; cloudy's, lower, is read only in a front toward overcast.
+// Overcast's moonlit sky has a level and an exponent of its own (`moonSky`, `moonSkyExponent`), on which
 // the night was set. The other weathers keep the day's sky as the atmosphere and the clouds
 // give it.
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
-	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
-	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
-	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0021, rain: 0, fog: 0, storm: 0, streaks: 0 },
-	overcast: { coverage: 0.94, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0.3, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, daySky: 0.185, daySkyExponent: 1.15, moonSky: 0.173, moonSkyExponent: 1.24, haze: 0.00974, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
-	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0095, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
+	clear: { coverage: 0, lowCover: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
+	fair: { coverage: 0.32, lowCover: 0, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
+	cloudy: { coverage: 0.67, lowCover: 0.481, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0021, rain: 0, fog: 0, storm: 0, streaks: 0 },
+	overcast: { coverage: 0.94, lowCover: 0.683, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0.3, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, daySky: 0.074, daySkyExponent: 1.15, moonSky: 0.173, moonSkyExponent: 1.24, haze: 0.00974, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
+	rain: { coverage: 1, lowCover: 0.683, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0095, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
 	// A squall: the darkest deck, heavy rain, a strong wind (PRESET_WIND) and a rough, white-capped sea.
-	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0135, rain: 1, fog: 0.3, storm: 1, streaks: 0 },
+	storm: { coverage: 1, lowCover: 0.683, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0135, rain: 1, fog: 0.3, storm: 1, streaks: 0 },
 	// Sea fog forms in calm, moist air under thin high cloud; the sun shows as a pale disk.
-	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0046, rain: 0, fog: 1, storm: 0, streaks: 0.4 },
+	fog: { coverage: 0.75, lowCover: 0.683, density: 0.85, directVisibility: 0.6, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, haze: 0.0046, rain: 0, fog: 1, storm: 0, streaks: 0.4 },
 };
 
 // Auto weather: from each state, the next one and its weight. The chain moves among the kept
@@ -485,11 +497,11 @@ const headingDelta = ( from: number, to: number ) => ( ( ( to - from ) % 360 ) +
 const wrapHeading = ( heading: number ) => ( ( heading % 360 ) + 360 ) % 360;
 
 // The presets the weather moves between: a working copy of WEATHER_PRESETS whose `deckFloor`,
-// `daySky` and `daySkyExponent` a debug page may tune (`Weather.setPresetValue`), so a load, a
-// jump and a front all take the tuned value, as a page loaded with it would. Every other reader
-// keeps WEATHER_PRESETS.
+// `lowCover`, `daySky` and `daySkyExponent` a debug page may tune (`Weather.setPresetValue`), so a
+// load, a jump and a front all take the tuned value, as a page loaded with it would. Every other
+// reader keeps WEATHER_PRESETS.
 /** The preset fields a debug page may tune (`Weather.setPresetValue`). */
-export type TunedField = 'deckFloor' | 'daySky' | 'daySkyExponent';
+export type TunedField = 'deckFloor' | 'lowCover' | 'daySky' | 'daySkyExponent';
 const WORKING_PRESETS = Object.fromEntries( Object.entries( WEATHER_PRESETS ).map( ( [ name, preset ] ) => [ name, { ...preset } ] ) ) as Record<WeatherName, SkyPreset>;
 
 function presetFor( name: WeatherName ): Readonly<SkyPreset> {
@@ -600,7 +612,7 @@ export class Weather {
 	snapshot(): WeatherState { return { ...this.current }; }
 
 	/** Sets a tunable field of the sky `name`'s preset (`TunedField`: the land's floor under a deck,
-	 * the day sky's level and exponent; main.ts tunes them on debug pages): every later load, jump
+	 * the deck's cover, the day sky's level and exponent; main.ts tunes them on debug pages): every later load, jump
 	 * and front takes it, and the state as it stands follows as a page loaded with it would hold it.
 	 * Resting on that sky, the state and both ends of its front take it; on a front toward it, only
 	 * the end it moves to (the start is a snapshot of the sky it left). */

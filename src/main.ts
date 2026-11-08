@@ -290,12 +290,14 @@ const weatherEffects = { rain: true, wetness: true };
 // or the GUI turns it on, whatever the sky.
 const seaFogView = { on: params.has( 'seaFog' ) };
 weather.auto = loaded.autoWeather;
-// The land's floor under a deck and the day sky's level and exponent per clouded sky (Weather.ts
-// `deckFloor`, `daySky`, `daySkyExponent`), tunable on debug pages without a reload: the presets
-// the weather moves between take them, and the state that stands on that sky follows
-// (`setPresetValue`); the sky rebakes. A `?tune=` value is the start, applied here as a load would.
+// The land's floor under a deck, the deck's cover and the day sky's level and exponent per clouded
+// sky (Weather.ts `deckFloor`, `lowCover`, `daySky`, `daySkyExponent`), tunable on debug pages
+// without a reload: the presets the weather moves between take them, and the state that stands on
+// that sky follows (`setPresetValue`); the sky rebakes. A `?tune=` value is the start, applied
+// here as a load would.
 const PRESET_TUNABLES: ReadonlyArray<readonly [ TunedField, TuneOptions ]> = [
 	[ 'deckFloor', { min: 0, max: 1 } ],
+	[ 'lowCover', { min: 0, max: 1 } ],
 	[ 'daySky', { min: 0.005, max: 2, scale: 'log' } ],
 	[ 'daySkyExponent', { min: 0, max: 3 } ],
 ];

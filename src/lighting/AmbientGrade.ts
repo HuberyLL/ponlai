@@ -214,15 +214,13 @@ export const OVERCAST_MOON_LAND = 1.75;
  * by overcast's share and the deck's light at the sun's height (the moon's at its own height takes
  * OVERCAST_MOON_LAND). It is not the land's whole ambient light under the deck over a clear day's:
  * that ratio also holds the bake's ratio of the two skies and the sun's bounce's share of the
- * light. 1 leaves the land as the sky and the table give it. At 1.1, on lit open ground (a grey
- * card's light less the direct light, the lighting layer's views, by cells, on three eye-height
- * views 4 to 40 m deep, the sun to one side, behind and ahead), the ambient light reads 1.9 to 2.2
- * times a clear day's in the same place with the sun 22 degrees up and 1.7 to 1.9 times with it 15
- * degrees up (1.01 to 1.10 and 0.87 to 0.92 while the clear day's land took the fog layer's light,
- * which it no longer does: Sky.ts `fogEnvironment`), and the direct light makes 0.60 to 0.67 of
- * the light on the ground at 22 degrees and 0.50 to 0.61 at 15. Tunable:
+ * light. 1 leaves the land as the sky and the table give it. At 1.35, with overcast's dimmer day
+ * sky (Weather.ts `daySky` 0.074), on lit open ground (a white card's light, the brighter half of
+ * the ground and meadow within 40 m on two eye-height views beside and away from the sun), the
+ * ambient light reads about 0.95 of the sky's irradiance over pi and the card's whole light 5.3
+ * times it, the direct light making 0.82 of it with the sun 22 degrees up and 0.81 at 15. Tunable:
  * `lighting.relight.overcastLand`. */
-export const OVERCAST_LAND = tune( 'lighting.relight.overcastLand', 1.1, { min: 1, max: 2 } );
+export const OVERCAST_LAND = tune( 'lighting.relight.overcastLand', 1.35, { min: 1, max: 2 } );
 
 /** The weight of the weather's land gain under overcast (OVERCAST_LAND) on the land's sky light
  * (AmbientRelight.ts) at a light's `elevation` (degrees), of which overcast's share is `overcast`
