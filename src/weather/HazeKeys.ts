@@ -99,7 +99,9 @@ import { FOG_NOISE } from './FogNoise.ts';
 //     clouded and lose their droplets with it; the parked fog weather counts as clouded too but
 //     keeps its droplets by its share (`hazeKeyAt`'s `fogWeather`: exact at rest and on a front
 //     between the fog and the cloudy or overcast sky). Tunable as
-//     `haze.fog.<top|width|visibility|neutral|scatter>@<day|golden|mist>`.
+//     `haze.fog.<top|width|visibility|neutral|scatter>@<day|golden|mist>`. The layer is a switch
+//     (`hazeKeyAt`'s `dayFog`: main.ts `?dayFog`, the GUI's `day fog`), off by default: off, every
+//     key holds no fog (NO_FOG), so a clear or fair day keeps the thin haze alone.
 //     A deep sea fog (SEA_FOG) is a switch beside the weather (main.ts `?seaFog`, the GUI's
 //     `sea fog`), by its share at every hour and under any sky: its top 35 m over the sea and its edge 25 m
 //     wide, so its density falls off through the island view's height rather than ending at a
@@ -440,7 +442,7 @@ const _key = key( 0, DAY_SIGMA, 0, 0, 0 );
  * overcast's column alone, it is exact at rest and on a front between the fog and the overcast
  * sky, not on one between the fog and a clear, fair or cloudy sky.
  * Writes into `out`. */
-export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly number[], wind: number, rain: number, seaFog: number, fogWeather: number, target: HazeKey ): HazeKey {
+export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly number[], wind: number, rain: number, dayFog: number, seaFog: number, fogWeather: number, target: HazeKey ): HazeKey {
 
 	const out = _key;
 	keyAlong( rising ? RISING : SETTING, elevation, out );
@@ -454,6 +456,8 @@ export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly 
 		for ( const f of FOG_FIELDS ) out[ f ] += ( _cloudedKey[ f ] - out[ f ] ) * clouded;
 
 	}
+	// the day's fog layer by its switch: off, every key holds no fog (see the header)
+	if ( dayFog < 1 ) for ( const f of FOG_FIELDS ) out[ f ] += ( NO_FOG[ f ] - out[ f ] ) * ( 1 - dayFog );
 	let keep = 0, gain = 0, red = 0, green = 0, blue = 0, aerosol = 0, height = 0, top = 0, width = 0, haze = 0, sunRayleigh = 0, inverseTop = 0;
 	for ( let s = 0; s < KEEP.length; s ++ ) {
 

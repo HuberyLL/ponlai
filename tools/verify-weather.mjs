@@ -4,6 +4,9 @@
 // Its rain preset and the rain parts are parked with the rain (src/sky/Weather.ts PARKED_WEATHER):
 // out of the default checks until the parked weathers are revived; it still runs on a debug build.
 // Its steps wait for the page's rendered frames (tools/page-eval.mjs, "Rendered frames").
+// Overcast's direct light is checked on the key's floor under its closed deck (src/sky/Sky.ts
+// `deckKeyFloor`), only for holding back a share of the clear day's key: the floor's level is the
+// overcast tune's (Sky.ts OVERCAST_KEY_GAIN), so the bound stays clear of it.
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
@@ -206,11 +209,12 @@ try {
 	assert.ok( luma( clear.keyColor ) > 1e-5, 'Clear afternoon must have usable direct light' );
 	// (overcast's sun reaches the land through the deck alone: its key stays whole, `directVisibility`
 	// 1, and this frame's floor under the deck sets the land's direct light, src/sky/Sky.ts
-	// `deckKeyFloor`: the weather's `deckFloor` times the key's gain under the deck, at most 1. The
-	// tuned overcast keeps about 0.72 of the key there, so 0.8 checks that the deck does hold back a
-	// share of it)
+	// `deckKeyFloor`: the weather's `deckFloor` times the key's gain under the deck, clamped at 1,
+	// where the deck would hold back nothing. The tuned overcast keeps 0.87 of the key there (its
+	// floor 0.3 times the gain 2.9, raised from 0.72 when the deck's sky was rebalanced against the
+	// land), so 0.95 checks that the deck does hold back a share of it without pinning the tune)
 	assert.ok( Number.isFinite( overcast.deckKeyFloor ), 'overcast: the key\'s floor under the deck' );
-	assert.ok( luma( overcast.keyColor ) * overcast.deckKeyFloor < luma( clear.keyColor ) * 0.8, 'Overcast must hold back part of the land\'s direct light under its deck' );
+	assert.ok( luma( overcast.keyColor ) * overcast.deckKeyFloor < luma( clear.keyColor ) * 0.95, 'Overcast must hold back part of the land\'s direct light under its deck' );
 	assert.ok( luma( rain.keyColor ) < luma( clear.keyColor ) * 0.4, 'Rain must materially suppress direct light' );
 	assert.ok( rain.haze > clear.haze, 'Rain must affect distant air, not only cloud geometry' );
 	report.checks.push( 'Five deterministic weather states drive coherent sky, scene/water lighting and air perspective' );

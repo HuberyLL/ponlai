@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { Fn, If, clamp, exp, float, max, mix, mod, smoothstep, vec2, vec3 } from 'three/tsl';
 import { perlin3 } from '../materials/CloudNoise.ts';
-import { GUST_EVOLUTION, GUST_TIME_PERIOD, type WindUniforms } from './Wind.ts';
+import { CLOCK_PERIOD, evolutionTime, type WindUniforms } from './Wind.ts';
 import { tune } from '../debug/Tune.ts';
 
 type F = THREE.Node<'float'>;
@@ -34,12 +34,11 @@ type V4 = THREE.Node<'vec4'>;
 //   deep sea fog thins and thickens as it drifts; raised past 1, it breaks into separate banks.
 // - Its motion: the field moves with the air (Wind.ts `displacement`, the weather's integrated
 //   travel, never time * a speed) and evolves along its height axis at FOG_EVOLUTION cells a
-//   second, an integrated time taken from the gusts' (Wind.ts `gustTime`, GUST_EVOLUTION cells a
-//   second modulo GUST_TIME_PERIOD), so both are functions of the scene clock and the weather, held
-//   when the wind is frozen. The field repeats every FOG_PERIOD cells on every axis, which is where
-//   the evolution's time wraps with the gusts' (GUST_TIME_PERIOD x FOG_EVOLUTION / GUST_EVOLUTION),
-//   and the travel is taken modulo FOG_PERIOD cells, so neither wrap shows and the travel keeps its
-//   digits.
+//   second, an integrated time the wind gives (Wind.ts `evolutionTime`, the gusts' time axis
+//   rescaled, which wraps every FOG_EVOLUTION x CLOCK_PERIOD cells), so both are functions of the
+//   scene clock and the weather, held when the wind is frozen. The field repeats every FOG_PERIOD
+//   cells on every axis, which is where the evolution's time wraps, and the travel is taken modulo
+//   FOG_PERIOD cells, so neither wrap shows and the travel keeps its digits.
 // - Far slices are many cells deep: one sample there is noise of its own, which flickers as the
 //   field moves. Each field's weight fades to 0 as a slice's length grows from half its cell to
 //   one and a half (the detail first, then the regions), and with the regions' the factor fades to
@@ -48,7 +47,7 @@ type V4 = THREE.Node<'vec4'>;
 /** The field's evolution, cells a second (a bank reshapes within about 1 / FOG_EVOLUTION s). */
 export const FOG_EVOLUTION = 0.02;
 /** The field's period in cells on every axis, where the evolution's time wraps. */
-export const FOG_PERIOD = GUST_TIME_PERIOD * FOG_EVOLUTION / GUST_EVOLUTION;
+export const FOG_PERIOD = FOG_EVOLUTION * CLOCK_PERIOD;
 
 /** The knobs: the cell's size (metres) and its height over its width, the amplitude, the threshold
  * at the sea and at the ramp's top, the regions' cell (metres) and share of the field's variance,
@@ -93,7 +92,7 @@ const rampMean = ( c: F ): F => exp( c.mul( c ).mul( - 0.5 ) ).mul( 0.3989 ).sub
  * share of the field's variance, `wind` the weather's wind. */
 export function fogDrift( p: V3, length: F, noise: V4, cover: V4, shape: V4, wind: WindUniforms ): F {
 
-	const time = wind.gustTime.mul( FOG_EVOLUTION / GUST_EVOLUTION );
+	const time = evolutionTime( wind, FOG_EVOLUTION );
 	// p in cells `size` metres across, carried by the wind
 	const cells = ( size: F ): V3 => {
 
