@@ -289,6 +289,9 @@ const weatherEffects = { rain: true, wetness: true };
 // The deep sea fog (weather/HazeKeys.ts SEA_FOG): a switch beside the weather, off unless `?seaFog`
 // or the GUI turns it on, whatever the sky.
 const seaFogView = { on: params.has( 'seaFog' ) };
+// The day's fog layer under a clear or fair sky (weather/HazeKeys.ts `fogLayer`): a switch, off
+// unless `?dayFog` or the GUI turns it on.
+const dayFogView = { on: params.has( 'dayFog' ) };
 weather.auto = loaded.autoWeather;
 // The land's floor under a deck, the deck's cover and the day sky's level and exponent per clouded
 // sky (Weather.ts `deckFloor`, `lowCover`, `daySky`, `daySkyExponent`), tunable on debug pages
@@ -433,7 +436,7 @@ function prepareHaze( state: Readonly<WeatherState> ): void {
 	// (weather/HazeKeys.ts `hazeKeyAt`)
 	const progress = weather.progress, blend = progress * progress * ( 3 - 2 * progress );
 	const fogWeather = ( weather.origin === 'fog' ? 1 - blend : 0 ) + ( weather.target === 'fog' ? blend : 0 );
-	hazeKeyAt( sky.elevation, rising, weather.skyMix, sky.weather.windSpeed, sky.weather.rain, seaFogView.on ? 1 : 0, fogWeather, hazeKey );
+	hazeKeyAt( sky.elevation, rising, weather.skyMix, sky.weather.windSpeed, sky.weather.rain, dayFogView.on ? 1 : 0, seaFogView.on ? 1 : 0, fogWeather, hazeKey );
 	pipeline.air.haze.value = sky.weather.haze * hazeKey.amount;
 	pipeline.air.fog.value = Math.max( sky.weather.fog, hazeKey.mist );
 	pipeline.air.setLook( hazeKey );
@@ -1411,6 +1414,7 @@ weatherF.add( windView, 'heading', 0, 360, 1 ).name( 'wind heading' ).listen().o
 weatherF.add( weather, 'auto' ).name( 'auto weather' ).listen();
 weatherF.add( weatherEffects, 'rain' ).name( 'rain & ripples' );
 weatherF.add( weatherEffects, 'wetness' ).name( 'wet surfaces' );
+weatherF.add( dayFogView, 'on' ).name( 'day fog' ).onChange( () => markSkyRetune() );
 weatherF.add( seaFogView, 'on' ).name( 'sea fog' ).onChange( () => markSkyRetune() );
 const timeF = gui.addFolder( 'Time & moon' );
 const timeView = { preset: requestedPreset ?? 'golden-hour' };

@@ -194,6 +194,9 @@ Sky and weather:
 - `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load as established,
   already wet; without it, `wind` and `windDir` the weather and its wind evolve on their own, among
   the kept presets), `clouds` (coverage override).
+- `dayFog`: the day's fog layer under a clear or fair sky (off by default; the GUI's Weather
+  folder, `day fog`). Its fields tune as `haze.fog.<field>@<day|golden|mist>`
+  (`src/weather/HazeKeys.ts`).
 - `seaFog`: the deep sea fog, a switch beside the weather under any sky and at any hour (off by
   default; the GUI's Weather folder, `sea fog`). Its fields tune as `haze.fog.<field>@sea`
   (`src/weather/HazeKeys.ts` SEA_FOG).
