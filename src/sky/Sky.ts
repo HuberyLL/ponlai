@@ -1072,12 +1072,25 @@ const streakKeys = ( prefix: string, keys: { afterglow: Rgb; golden: Rgb; low: R
 	}, { r: range, g: range, b: range } );
 
 };
+// Under a low sun (afterglow, golden, low, predawn, sunrise, morning) the two shares take the
+// light's colour apart: the direct share warm, red over green 2.2, the ambient share cool, blue
+// over red 1.5, their luminances 0.38 and 0.59 of a white key's; together they read red plus blue
+// less green, a rose. White keys left the layer the colour of the sun's light at its height alone,
+// a yellow-white 0.17 above the sky round it in Oklab L and paler than it. With these, in the
+// golden hour, it reads rose toward the sun and away from it alike (hue 35 - 43), 0.03 - 0.04 more
+// saturated than that sky and 0.08 - 0.09 above it in L. The direct share's luminance moves that
+// L little (0.38 to 0.44 of white: 0.085 to 0.10); a redder direct share turns the side toward the
+// sun past rose, a less red one leaves the side away from it as pale as the sky. From 8 degrees up
+// to 30 both shares turn back to white, the morning's as the evening's; only the high sun's keys
+// and the night's are white, so the layer is unchanged under a sun above 30 degrees and by night.
 const white = (): Rgb => ( { r: 1, g: 1, b: 1 } );
+const warm = (): Rgb => ( { r: 0.66, g: 0.3, b: 0.3 } );
+const cool = (): Rgb => ( { r: 0.6, g: 0.55, b: 0.9 } );
 const STREAK_DIRECT = streakKeys( 'sky.streaks.keyDirect', {
-	afterglow: white(), golden: white(), low: white(), predawn: white(), sunrise: white(), morning: white(), high: white(), night: white(),
+	afterglow: warm(), golden: warm(), low: warm(), predawn: warm(), sunrise: warm(), morning: warm(), high: white(), night: white(),
 } );
 const STREAK_AMBIENT = streakKeys( 'sky.streaks.keyAmbient', {
-	afterglow: white(), golden: white(), low: white(), predawn: white(), sunrise: white(), morning: white(), high: white(), night: white(),
+	afterglow: cool(), golden: cool(), low: cool(), predawn: cool(), sunrise: cool(), morning: cool(), high: white(), night: white(),
 } );
 const _streakKey = { r: 0, g: 0, b: 0 };
 // The sun's elevations (degrees) over which the light the clouds march toward sets from the moon's

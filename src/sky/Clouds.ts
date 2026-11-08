@@ -198,8 +198,11 @@ type Pair<T> = readonly [ T, T ];
 //     sun's elevation there (`streakSunColour`, `streakLitRadius`), so the side away from the sun
 //     goes out first and the side toward it reddens last, each
 //     share under an overall colour by the sun's elevation (`keyDirect`, `keyAmbient`: Sky.ts
-//     STREAK_DIRECT, STREAK_AMBIENT), the night's faint ambient (`nightAmbient`, Sky.ts
-//     trackClouds) taken with the sky's light under the same gains. The cumulus' march takes the
+//     STREAK_DIRECT, STREAK_AMBIENT: under a low sun the direct share warm and the ambient cool,
+//     so the layer reads rose on both sides of the sky rather than the yellow-white of the sun's
+//     light alone, both turning back to white between 8 and 30 degrees; white under a higher sun
+//     and by night), the night's faint ambient (`nightAmbient`, Sky.ts trackClouds) taken with the
+//     sky's light under the same gains. The cumulus' march takes the
 //     ambient as its sky light too.
 //   - march: coarse steps until cloud is found, then fine ones; whole cells of the weather map
 //     that cannot reach the ray's height are skipped, the march going on past them at the pixel's

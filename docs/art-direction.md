@@ -456,9 +456,14 @@ art decision changes; images from elsewhere stay out of the repository.
   ends, and lie at two scales turned against each other, so they are neither ruled lines nor
   strokes of even width and no two run quite parallel. The patches stay apart: toward the horizon
   the layer thins as its fibres blur together, so even toward a low sun the sky a few degrees over
-  the horizon stays clear, with no bright sheet round the sun. By day the layer is faint and white,
-  a little lighter than the sky round it (a few hundredths of Oklab lightness at most), never what
-  the eye goes to first; the cumulus is drawn over it, and cloudy and overcast skies have none.
+  the horizon stays clear, with no bright sheet round the sun. Under a high sun the layer is faint
+  and white, a little lighter than the sky round it (a few hundredths of Oklab lightness at most),
+  never what the eye goes to first; the cumulus is drawn over it, and cloudy and overcast skies
+  have none. Under a low sun, morning and evening alike, the light it takes straight from the sun
+  is warm and the light it takes from the sky round it cool, so it reads rose on both sides of
+  the sky, toward the sun and away from it, a little more saturated and a little lighter than the
+  sky beside it rather than a pale yellow-white; it turns back to white as the sun climbs past
+  about 30 degrees.
   Each part of it is lit by the sun as it stands over that part, so after sunset and before
   sunrise the side away from the sun goes out first, with the sun about 1.5 degrees under the
   horizon, and the side toward it last, near 3 degrees under, warmest just before it goes.
