@@ -412,10 +412,11 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `lighting.overcastKey` (under a cloudy deck's, `lighting.cloudyKey`: `src/sky/Sky.ts`
   OVERCAST_KEY_GAIN), and the
   land's share of the sky's light `lighting.relight.skyGain@high` (`@low`, `@golden`, the rising
-  sun's `@dawn`, `@sunrise`, `@cloudy`, `@cloudyBlue`, `@night`), the sun's part of the
-  weather's gain under overcast's deck on the land's ambient light, its sky light and the key's
-  bounce alike (per unit, not the land's whole light over a clear day's; the moon's part is fixed:
-  `src/lighting/AmbientGrade.ts` OVERCAST_LAND, OVERCAST_MOON_LAND)
+  sun's `@dawn`, `@sunrise`, `@cloudy`, `@cloudyBlue`, `@night`; the moon's sky's own
+  `lighting.relight.moon.skyGain@low` and `@high`, its golden and cloudy keys the day's), the sun's
+  part of the weather's gain under overcast's deck on the land's ambient light, its sky light and
+  the key's bounce alike (per unit, not the land's whole light over a clear day's; the moon's part
+  is fixed: `src/lighting/AmbientGrade.ts` OVERCAST_LAND, OVERCAST_MOON_LAND)
   `lighting.relight.overcastLand` (1 to 2), a low
   sun's lift of the sky's light on what it lights `lighting.relight.lowSun` (stops; `lowSunFloor`,
   `lowSunFloorFull`, `lowSunFrom`, `lowSunTo` its sun heights: `src/lighting/AmbientRelight.ts`),
@@ -764,7 +765,9 @@ sort of `<base>`, so its rows are the same cells; variants need only `--pages no
 reads each row's radiance in scene units (`scene`: the opaque source's mean and median, the hdr's
 mean) and adds the rows a ratio of the scene's light needs: `sky band` (4 to 15 degrees up, turned
 from the key light), `sea away` (just under the horizon on that side), `<kind> flat` and `<kind> sun
-flat` (facing up, and lit), with the sky's irradiance `E` per view. `--sky-bands e0,e1,...` (frames
+flat` (facing up, and lit), with the sky's irradiance `E` per view (the probe's, which takes the
+fog layer's haze as the dome does: on a clear or fair day not the land's sky light, whose source
+leaves the fog layer out, `src/sky/Sky.ts` `fogEnvironment`). `--sky-bands e0,e1,...` (frames
 shot with `--scene`) adds a row `sky <a>-<b>` per pair of edges: the sky cells turned from the key
 light whose centre's ray stands in [a, b) degrees up, read over at least 64 cells (else null, `too
 few cells`; not with `--own`). It prints what
@@ -992,7 +995,9 @@ Steps, scope, the value's serialisation and the exit code are in the file's head
 `node tools/dusk-grid.mjs [url] [--weathers clear,fair,cloudy,overcast] [--sides evening,morning]
 [--from 2 --to -8 --step 0.5] [--midnight] [--split [--fit]] [--night-split] [--twilight] [--haze] [--compare dir]` reads the scene's
 light in scene units at a grid of sun elevations through the dusk and the dawn (the sky's and the
-deck's irradiance, the sky's metering, the baked sky's ring 4 degrees up, the land's ambient, the
+deck's irradiance, the sky's metering, the baked sky's ring 4 degrees up, the land's ambient
+(`landA`, the land's gain on the probe's irradiance, which takes the fog layer's haze: on a clear or
+fair day not the land's own sky light, whose source leaves the fog layer out), the
 far sea, the air, the key's floors, and per view the exposure with its keys and meters, the
 metering illuminance over the land and the radiance over the land, the sky, the sea and the
 yunpeng's cells), each point a scene jump with an explicit bake, its hour solved from

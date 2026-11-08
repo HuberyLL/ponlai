@@ -75,8 +75,10 @@
 // flat`, `land flat` and `land sun flat`, the cells whose normal stands within about 25 degrees of
 // straight up (a flat open card's light, under a sky alone, is read against `E` below). A view
 // read through another's sort takes these rows from the base's normals and camera. The view's
-// record adds `E`, pi times the sky's irradiance (Sky.ts `skyIrradiance`, luminance), against which
-// a flat open card's light is read, and `preExposure`, the frame's P in stops (post/PreExposure.ts).
+// record adds `E`, pi times the sky's irradiance (Sky.ts `skyIrradiance`, luminance; the probe's,
+// which takes the fog layer's haze as the dome does: on a clear or fair day not the land's sky
+// light, whose source leaves the fog layer out), against which a flat open card's light is read,
+// and `preExposure`, the frame's P in stops (post/PreExposure.ts).
 //
 // The sky's bands (rows --sky-bands e0,e1,...: frames shot with --scene): a row `sky <a>-<b>` per pair
 // of neighbouring edges, the sky cells whose ray stands at least a and under b degrees up (half open,

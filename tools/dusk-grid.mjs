@@ -50,7 +50,9 @@
 //   log2) and mS2 = 2^mS, the far sea's seaBody / seaRadiance / seaNight / seaSun, the air's
 //   airAmb0 / airAmb1 / airMie0 / airDeckShare / airKeyFloor, keyIsMoon, keyColour, keyCloudFloor,
 //   deckKeyFloor, landKeyFloor = keyCloudFloor x keyColour, airKey = deckKeyFloor x keyColour,
-//   skyScale, landA = skyScale x E, landSky, sunBounce, daySky, displayAmbientGain, nightSkyLevel,
+//   skyScale, landA = skyScale x E (E the probe's irradiance, which takes the fog layer's haze: on a
+//   clear or fair day not the land's own sky light, whose source leaves the fog layer out),
+//   landSky, sunBounce, daySky, displayAmbientGain, nightSkyLevel,
 //   moonVisibility, leafThrough, leafBack, swardTint (luminance of the tint), yunpengNight; sky4,
 //   the ring of the environment's baked source (the sky with its haze) 4 degrees up, its
 //   mean luminance over every azimuth, and sky4sun / sky4away over the halves within and beyond 90

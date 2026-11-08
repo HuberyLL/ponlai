@@ -42,9 +42,10 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from '../wor
 //               `skyFill`, the environment's intensity) times the probes' own sky gain (PROBE_SKY,
 //               keyed by the sun's own elevation, not the key's, so the moon's key at night does
 //               not move it: golden, low and high, a clouded day's held value over them, the
-//               moon's sky's the same gains at the moon's height, by the moonlit sky's share, under
-//               overcast's deck the land's with the moon's key), which the seen sky never takes, so the ground's sky light can be set
-//               against the sun's and the sky's at every hour and under cloud; the grade adds no
+//               moon's sky its own keys at the moon's height (PROBE_SKY_MOON), by the moonlit
+//               sky's share, under overcast's deck the land's with the moon's key), which the seen
+//               sky never takes, so the ground's sky light can be set against the sun's and the
+//               sky's at every hour and under cloud; the grade adds no
 //               gain of its own here (AmbientGrade.ts);
 //     bounced   the probe's bounced sky visibility (the world lit by a uniform white sky, one
 //               bounce) times the sky's average radiance, its constant band Y0 c0 (p. 25), gain
@@ -214,30 +215,29 @@ const SKY_VIEW = [ 0.282095, 2 / 3 * 0.488603, - 0.315392 / 4, - 0.546274 / 4 ];
 const BOUNCE_GAIN = 9.4;
 /** The probes' own gain on the sky's light, a luminance by the sun's elevation (keyed as Sky.ts
  * `skyGain`: golden, low and high, the rising sun's keys of its own and a held value under cloud;
- * it has no night key, the moon's sky taking the same gains at the moon's height). The seen sky
- * keeps its gain; the ground's sky light takes this on top, so its ratio to the sun's light can be
- * set at every hour without changing the sky the eye sees. It sets the key's illuminance at normal
- * incidence against the ambient light's irradiance on open level ground (with the ground's bounce).
- * Set once the environment took the haze's light, which lights the shade too, with the key's bounce
- * at 1 by day (AmbientGrade.ts): 0.92 at the low key and at the high one, so the land's sky light
- * per unit of the probe's sky visibility is 0.90 of the seen sky's at 18 degrees, 0.86 at 26 and
- * 0.85 at 30 (the land takes no low sun's lift, `lowSunSkyLift`), the key stands about 23 times
- * that irradiance on open level ground from 18 to 30 degrees (21 at 50 to 62, the noon of the sun's
- * earlier, higher path; 20 at 10), the key's
- * direct light makes about 0.82 of the lit ground's light on the island view at 18 degrees (the
- * meadow 0.83) and 0.89 at 30, and the lit ground reads about 2.5 stops over its shade at 18
- * degrees (the meadow 2.6) and 2.8 at 30 (3.2). At the golden hour (`golden`, 1) the
- * key stands about 6 times that irradiance at 3 degrees on either side of the day, with Sky.ts
- * CLEAR_SKY's gain over the sky's light (the land's shade a lit part of it against a low sun, not
- * nearly black), and about 9 times at 4.2 degrees in the evening, on the way to the day's. The
- * rising sun's sky takes less of CLEAR_SKY's gain at 3 degrees (2 against the evening's 2.7: a
- * brighter sky lifts the near sea in a view across the island toward the rising sun), so the land
- * takes the rest here (`dawn`, 1.58); from the sun's rise down (`sunrise`, 0 degrees) it keeps
- * 0.77, the land's level before the sun being Sky.ts ISLAND_SKY_RISING's. The moon's sky takes
- * the same gains at the moon's height, on the evening's keys (0.92 at its default 20 degrees, with
- * the deck's gains there), mixed in by the moonlit sky's share (Sky.ts `moonSkyShare`, `update`): the
- * moonlit sky lights the land as the sun's sky does, and the moonlit ground's ratio to its shade is
- * the sun's at that height; the sea's bounce takes them so too (`seaScale`), with the water's deck gain
+ * it has no night key, the moon's sky taking keys of its own at the moon's height,
+ * PROBE_SKY_MOON). The seen sky keeps its gain; the ground's sky light takes this on top, so its
+ * ratio to the sun's light can be set at every hour without changing the sky the eye sees. It sets
+ * the key's illuminance at normal incidence against the ambient light's irradiance on open level
+ * ground (with the ground's bounce). Set on the land's sky light without the fog layer (Sky.ts
+ * `fogEnvironment`), with the key's bounce at 1 by day (AmbientGrade.ts): 1.19 at the low key and
+ * at the high one. Measured in the evening on lit open ground, the key's illuminance at normal
+ * incidence stands about 23 times the ambient light's irradiance there at 22 and at 12 degrees,
+ * 24 at 40, 20 at 6 and about 18 at 52 (noon), and the key's direct light makes about 0.84 of
+ * that ground's light at 22 degrees and 0.81 at 12. Taken with the fog layer's haze and its
+ * droplets' light, at 0.92, the ratio stood about 12. At the golden hour (`golden`, 1) the key
+ * stands about 10 times the ambient light's irradiance on lit open ground at 3 degrees in the
+ * evening, with Sky.ts CLEAR_SKY's gain over the sky's light (the land's shade a lit part of it
+ * against a low sun, not nearly black), on the way to the day's from 6 degrees. The rising sun's
+ * sky takes less of CLEAR_SKY's gain at 3 degrees (2 against the evening's 2.7: a brighter sky
+ * lifts the near sea in a view across the island toward the rising sun), so the land takes the
+ * rest here (`dawn`, 1.58); from the sun's rise down (`sunrise`, 0 degrees) it keeps 0.77, the
+ * land's level before the sun being Sky.ts ISLAND_SKY_RISING's. The moon's sky takes its own keys
+ * at the moon's height (PROBE_SKY_MOON: low and high at 0.92, golden and cloudy the day's; 0.92 at
+ * its default 20 degrees, with the deck's gains there), mixed in by the moonlit sky's share (Sky.ts
+ * `moonSkyShare`, `update`): the moonlit sky lights the land through the same probes as the sun's
+ * sky (the moonlit ground's ratio of key to ambient was not measured against the sun's at that
+ * height); the sea's bounce takes them so too (`seaScale`), with the water's deck gain
  * at each light's height. 1 under cloud, one value
  * from -1 degrees up, with the deck's gains over it (`update`): the deck's own, which the water
  * takes too (sky/Weather.ts DECK_SKY_GAIN, by `deckLight`: a cloudy deck's from a sun of 3 degrees,
@@ -260,8 +260,9 @@ const BOUNCE_GAIN = 9.4;
  * sun's light leaves (Weather.ts `overcastDeckLight`), within 15 % a half degree from -0.5 to -2:
  * the twilight's keys over the deck's gain raised the land's sky light 1.9 times from -1 to -2.5
  * degrees, so the land brightened as the sun set. The water keeps them (`seaScale`). */
-const PROBE_SKY_LOW: DayKey<{ skyGain: number }> = { at: 12, name: 'low', values: { skyGain: 0.92 } };
-const PROBE_SKY_HIGH: DayKey<{ skyGain: number }> = { at: 40, name: 'high', values: { skyGain: 0.92 } };
+const PROBE_SKY_LOW: DayKey<{ skyGain: number }> = { at: 12, name: 'low', values: { skyGain: 1.19 } };
+const PROBE_SKY_HIGH: DayKey<{ skyGain: number }> = { at: 40, name: 'high', values: { skyGain: 1.19 } };
+const PROBE_SKY_RANGE = { skyGain: { min: 0.25, max: 8, scale: 'log' as const } };
 const PROBE_SKY: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight', {
 	day: [ { at: 3, name: 'golden', values: { skyGain: 1 } }, PROBE_SKY_LOW, PROBE_SKY_HIGH ],
 	rising: [
@@ -274,7 +275,15 @@ const PROBE_SKY: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight', {
 		{ at: DUSK_WINDOWS.sky.clouded[ 0 ], name: 'cloudyBlue', values: { skyGain: 3.5 } },
 		{ at: DUSK_WINDOWS.sky.clouded[ 1 ], name: 'cloudy', values: { skyGain: 1 } },
 	],
-}, { skyGain: { min: 0.25, max: 8, scale: 'log' } } );
+}, PROBE_SKY_RANGE );
+/** The moon's sky's gains: the day's golden and cloudy keys, with low and high keys of their own
+ * (0.92). The day's two were raised when the land's sky light left the fog layer out (Sky.ts
+ * `fogEnvironment`), which takes the fog layer's light away only by day; the night has no fog
+ * layer, so the moonlit land's light did not change and keeps the gains it was set with. */
+const PROBE_SKY_MOON: DayKeys<{ skyGain: number }> = tuneKeys( 'lighting.relight.moon', {
+	day: [ PROBE_SKY.day[ 0 ], { at: 12, name: 'low', values: { skyGain: 0.92 } }, { at: 40, name: 'high', values: { skyGain: 0.92 } } ],
+	cloudy: PROBE_SKY.cloudy,
+}, PROBE_SKY_RANGE );
 const _probeSky = { skyGain: 1 }, _probeDeck = { skyGain: 1 }, _probeMoon = { skyGain: 1 };
 /** A low sun's lift of the sky's light on the water, main.ts writes it once a frame to shared.ts
  * `skyLift`. The sea's bounce in the probes (`seaScale`) takes it, as the water drawn does, so
@@ -655,11 +664,12 @@ export class AmbientRelight {
 		// the deck's gains lift the day's sky light: they stand for the light the deck takes from the
 		// sun, which leaves with it, and from the moon, at its height (below)
 		const day = keyed( PROBE_SKY, elevation, 0, _probeSky, clouded, this.rising() ).skyGain;
-		// The moon's sky lights the land as the sun's does: its part takes the day's gains at the
-		// moon's height (the evening's keys, the deck's gains there), mixed in by the moonlit sky's
-		// share (Sky.ts `moonSkyShare`; Weather.ts `withMoon`).
+		// The moon's sky lights the land through the same probes: its part takes its own keys at the
+		// moon's height (PROBE_SKY_MOON: low and high at 0.92, golden and cloudy the day's; the deck's
+		// gains there), mixed in by the moonlit sky's share (Sky.ts `moonSkyShare`; Weather.ts
+		// `withMoon`).
 		const moon = this.moon();
-		const moonDay = keyed( PROBE_SKY, moon.elevation, 0, _probeMoon, clouded, false ).skyGain;
+		const moonDay = keyed( PROBE_SKY_MOON, moon.elevation, 0, _probeMoon, clouded, false ).skyGain;
 		const moonLand = landSkyAt( moon.elevation, deckSkyGain( moon.elevation, clouded, overcast ), OVERCAST_MOON_LAND );
 		// (under overcast's closed deck, on its share, the land's goes from the deck's gain on the
 		// day's keys, held below the golden key at its value, to the moon's at its height as the moon's

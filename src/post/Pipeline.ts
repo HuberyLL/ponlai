@@ -829,8 +829,9 @@ export class Pipeline {
 		}
 		// the sky fogs itself (the composite leaves its pixels), its own ray with the dome's thin haze,
 		sky.fogDome( ( d, distance ) => this.air.skyHaze( d, distance, undefined, true ) );
-		// and its environment, from the sea's level, as the dome does: one sky (Sky.ts `fogEnvironment`)
-		sky.fogEnvironment( ( d, distance ) => this.air.openSky( d, 0, sky, distance ) );
+		// and its panoramas from the sea's level: the seen one and the probe's as the dome takes the
+		// haze, the land's light without the fog layer (Sky.ts `fogEnvironment`)
+		sky.fogEnvironment( ( d, distance ) => this.air.openSky( d, 0, sky, distance ), ( d, distance ) => this.air.openSky( d, 0, sky, distance, false ) );
 		// The scene's target: half-float colour and float depth at the scene's sample count, then
 		// the resolves the water and the post passes read (single-sampled).
 		const g = this.graph = new FrameGraph<PipelineFrame>( renderer, { sceneSamples: SCENE_SAMPLES, legacyDiscard: O.discardScene ? [ 'rain' ] : [], dev: DEV, prime: PRIME } );
