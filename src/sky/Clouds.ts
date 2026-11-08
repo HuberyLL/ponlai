@@ -115,9 +115,20 @@ type Pair<T> = readonly [ T, T ];
 //     deck's own density and thickness. That irradiance is the key's above the tops (`columnKey`:
 //     the sun's by day, by night the island's moonlight, not the clouds' own, each under the
 //     weather's day sky at its own height) and the drawn sky's over them (without the clouds' night
-//     glow), so the base and the land under it are lit by one key by day and by night. Under
-//     overcast's share the closed deck has no column to measure: that light is a ramp up from the
-//     shell's base over `ambientRamp` (m) times `deckAmbient` (Sky.ts CLOUD_SKIES), dark at the
+//     glow), so the base and the land under it are lit by one key by day and by night.
+//     The high shell's shaded steps take the same transmission too, by ( 1 - `lowShare` ) times a
+//     gain of the sky's (`shellColumn`, Sky.ts CLOUD_SKIES `column`: clear's and fair's 0.3, 0
+//     under a deck), on the key's irradiance on a level top over pi. It is added to the direct
+//     factor, so it takes the clouds' own key, not the deck's `columnKey`: the sun's light at the
+//     shell with its low-sun beam (`sunLight`). Its gain goes by the sun's share of the clouds'
+//     key (Sky.ts trackClouds), so the term's level is the sun's part alone; its colour stays the
+//     key's, the moon's mixed in by that share, which is small wherever the moon's part is not
+//     (the term is all but off there). The sky's ramp alone reaches almost nothing at the bottom
+//     of a shell kilometres deep, and a fair cumulus' shaded base read as a near-black block some
+//     six stops under its tops; with the sunlight diffused down the column it reads a grey about
+//     a stop under them. At a gain of 0 the march draws as it did.
+//     Under overcast's share the closed deck has no column to measure: that light is a ramp up from
+//     the shell's base over `ambientRamp` (m) times `deckAmbient` (Sky.ts CLOUD_SKIES), dark at the
 //     deck's underside and whole a few hundred metres into it. A function of uniforms and the
 //     atmosphere alone, the irradiance on the tops is worked out once a frame by one thread
 //     (`Clouds.ColumnTop`, a `renderer.compute` ahead of the other kernels in `update`,
@@ -875,6 +886,11 @@ export class Clouds {
 	readonly shellBottom = uniform( SHELL_BOTTOM );
 	readonly shellThickness = uniform( SHELL_THICKNESS );
 	readonly lowShare = uniform( 0 );
+	// The high shell's gain on the key's light the column above a shaded step passes down (the
+	// low deck's diffuse transmission, by 1 - `lowShare`), blended by the sky's shares (Sky.ts
+	// CLOUD_SKIES `column`): clear's and fair's, 0 under a deck; times the sun's share of the
+	// clouds' key (Sky.ts trackClouds).
+	readonly shellColumn = uniform( 0 );
 	// The cloud's form, blended by the sky's shares (`setForm`): the soft margin of its tops and
 	// bases and the erosion's strength at the top (EDGE and EROSION_PEAK for the high cumulus), and
 	// the height over which a base needs richer weather (BASE_WEATHER_END), each a fraction of the
@@ -1873,12 +1889,31 @@ export class Clouds {
 					// darker than their seams, and the deck's level follows its own optical depth.
 					const shadowed = float( 1 ).sub( scaledT );
 					ambientLight.addAssign( alpha.mul( height.mul( shadowed ).mul( float( 1 ).sub( this.lowShare ) ).add( scaledT ) ) );
-					const columnTau = max( min( c.top, 1 ).sub( c.coverage.mul( this.erosionPeak.mul( erosionMean ) ) ).sub( c.h ), 0 ).mul( this.shellThickness ).mul( front.y.mul( DENSITY ) );
-					const columnT = float( 1 ).div( columnTau.mul( 0.75 * ( 1 - LOBE.forward ) ).add( 1 ) );
+					// (built anew in each branch below that reads it, so neither reads a variable the
+					// other declared: one node shared by both was declared inside the first branch
+					// built, and one variable built ahead of them moved a few pixels of a cloudy sky
+					// by up to four levels)
+					const columnTransmission = () => {
+
+						const columnTau = max( min( c.top, 1 ).sub( c.coverage.mul( this.erosionPeak.mul( erosionMean ) ) ).sub( c.h ), 0 ).mul( this.shellThickness ).mul( front.y.mul( DENSITY ) );
+						return float( 1 ).div( columnTau.mul( 0.75 * ( 1 - LOBE.forward ) ).add( 1 ) );
+
+					};
+					// The high shell's shaded steps take the same transmitted key on its irradiance
+					// on a level top over pi, as a direct factor (its colour the key's), by
+					// `shellColumn`: without it the sky's ramp alone left a fair base near black. A
+					// branch on the gain: added unconditionally, even times 0, it moved a few pixels of
+					// a cloudy sky by two levels (the compiler arranged the column's terms otherwise).
+					If( this.shellColumn.greaterThan( 0 ), () => {
+
+						directLight.addAssign( alpha.mul( shadowed ).mul( columnTransmission() ).mul( max( L.y, 0 ) ).mul( this.shellColumn.mul( float( 1 ).sub( this.lowShare ) ).mul( 1 / Math.PI ) ) );
+
+					} );
 					// (only under a low deck's share: a sky without one multiplies it away, and every
 					// sample of a clear or fair march paid for it)
 					If( this.lowShare.greaterThan( 0 ), () => {
 
+						const columnT = columnTransmission();
 						// Under overcast's share the closed deck's column light is a ramp up from
 						// its base over `ambientRamp` (m) times `deckAmbient`, not the column's
 						// depth: its density is no column's. The column light also carries the

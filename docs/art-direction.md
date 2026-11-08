@@ -447,6 +447,9 @@ art decision changes; images from elsewhere stay out of the repository.
   cloud above, with no gain or tint of its own: thin parts show lighter than the thick masses
   beside them, and the deck reads near grey. The air under it is lit by the deck and by the sea's
   reflection of it rather than by a clear sky, so the haze in front of the clouds is their grey.
+  The clear and fair skies' cumulus are lit the same way under their tops: a shaded base takes
+  the light the cloud above passes down to it, so it reads a soft grey about a stop under the
+  sunlit tops and near the blue sky beside it, never a dark block.
 - Clear and fair skies hold a thin layer of silky fibres about 8.5 km up, combed along the wind
   aloft and gathered in patches with blue sky between them, closing up toward the horizon in
   perspective. The fibres bend and hook, run thick and thin along their length and fray at their
