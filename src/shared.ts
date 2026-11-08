@@ -72,8 +72,10 @@ export const shared = {
 	// a clear or fair sky into them under a low sun, by the share of the clear sky left
 	skyLift: uniform( 1 ),
 	// the night sky as the dome draws it, a share of the light it sheds (sky/Sky.ts `track`,
-	// Weather.ts `seenNight`): 1 by day; the far sea's sky reflection takes it as it meets the
-	// horizon (ocean/Water.ts `SEEN_SKY`)
+	// Weather.ts `seenNight`): 1 by day. Its readers: the far sea's sky reflection as it meets the
+	// horizon (ocean/Water.ts `SEEN_SKY`), the far air's moon's sky and deck light
+	// (weather/VolumetricHaze.ts `prepareMedium`, `SEEN_AIR`) and the exposure's meter on the sky's
+	// pixels (post/Metering.ts)
 	seenNight: uniform( 1 ),
 	skyIrradianceSource: vec3( 0 ) as THREE.Node<'vec3'>,
 	// The same as lent to the island after sunset (Sky.islandIrradianceNode): the islanders' fill

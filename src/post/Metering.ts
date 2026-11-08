@@ -1,10 +1,12 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, Loop, atomicAdd, atomicLoad, atomicStore, clamp, float, floor, int, ivec2, localId, log2, luminance, max, min, round, select, storage, textureLoad, texture,
-	uint, uniform, vec2, workgroupArray, workgroupBarrier, workgroupId, instanceIndex,
+	Fn, If, Loop, atomicAdd, atomicLoad, atomicStore, clamp, float, floor, int, ivec2, localId, log2, luminance, max, min, normalize, round, select, storage, textureLoad, texture,
+	uint, uniform, vec2, vec3, vec4, workgroupArray, workgroupBarrier, workgroupId, instanceIndex,
 } from 'three/tsl';
 import { exposureAdapt, exposureTarget } from './Exposure.ts';
 import { preExposure } from './PreExposure.ts';
+import { shared } from '../shared.ts';
+import type { Atmosphere } from '../sky/Atmosphere.ts';
 import type { FrameGraph, ResourceHandle } from './graph/FrameGraph.ts';
 import type { PassBuilder } from './graph/GraphCompiler.ts';
 
@@ -40,6 +42,20 @@ type Uniform2 = THREE.UniformNode<'vec2', THREE.Vector2>;
 //   histogram's total is 256 x the samples it took. A value past either end's centre goes whole
 //   into that end bin. Samples with M <= 0 or Y <= 0 add nothing (a pixel no metered material
 //   drew, or NaN): only an exact 0 is no reading, the half-float subnormals count.
+// - The sky's pixels (`surfaceDepth` past -9e4, as the composite tells them apart) enter H_Y at the
+//   sky's own light while the night sky is drawn below the light it sheds (shared.ts `seenNight`,
+//   Weather.ts `seenNight`, under 1): the dome takes that gain g on the moon's share of the sky
+//   only (Sky.ts `domeGapGain`), so a sky pixel is divided by ( S + M g ) / ( S + M ), S and M the
+//   sun's and the moon's shares of the open sky toward the pixel as the dome draws them, each
+//   times its gap gain (Atmosphere.ts `skyShares`, Sky.ts `gapGain`, at the dome's own direction,
+//   held above the horizon). The exposure is so set by the light, as the
+//   land and the sea take it, and the darker drawn sky does not loosen the highlight guard: with it
+//   in, a clear night's lowest camera rose about a stop in EV. Divided by g whole, the twilight sky,
+//   which is the sun's and keeps its light, was raised instead and the clear dusk's EV fell more
+//   than a stop. The clouds, drawn at g whole, are read at the clear sky's ratio: at night that is g,
+//   at dusk under it. The stars and the moon's disc, which keep their light, are a few samples, far
+//   under the guard's 3 %. By day (g = 1) the pixel is read as it is, so the day's histograms and
+//   bytes are as they were.
 // - Sampling, fixed in uv: 32 x 16 tiles of 16 x 16 samples, one sample at the centre of each
 //   cell of a 512 x 256 grid over the frame, at the render texel it falls in (textureLoad: the
 //   value as rendered, no filtering). 131072 samples a frame whatever the render's size, so the
@@ -91,8 +107,13 @@ export class Metering {
 	private meterQuad: THREE.QuadMesh | null = null;
 	private readonly histogramKernel: THREE.ComputeNode;
 
-	/** `hdr` and `meterLight` are the graph's textures (resolved), both at `size`'s pixel size. */
-	constructor( hdr: THREE.Texture, meterLight: THREE.Texture, size: Uniform2 ) {
+	/** `hdr` and `meterLight` are the graph's textures (resolved), and `surfaceDepth` the
+	 * composite's surface depth (single-sampled, past -9e4 on the sky's pixels), all three at
+	 * `size`'s pixel size, the render size; `view` the camera's inverse projection and world
+	 * matrix, the atmosphere and the open sky's gains the dome draws the sky with (Sky.ts
+	 * `gapGain`), for the sky's direction and shares (see the header). */
+	constructor( hdr: THREE.Texture, meterLight: THREE.Texture, surfaceDepth: THREE.Texture, size: Uniform2,
+		view: { projInv: THREE.Node<'mat4'>; cameraWorld: THREE.Node<'mat4'>; atmosphere: Atmosphere; gains: { sun: F; moon: F } } ) {
 
 		const count = 2 * METER_BINS;
 		this.buffer = new THREE.StorageBufferAttribute( new Uint32Array( count ), 1 );
@@ -106,6 +127,7 @@ export class Metering {
 
 		const tHdr = texture( hdr );
 		const tMeter = texture( meterLight );
+		const tSurface = texture( surfaceDepth );
 		const grid = vec2( METER_TILES[ 0 ] * METER_TILE, METER_TILES[ 1 ] * METER_TILE );
 		this.histogramKernel = Fn( () => {
 
@@ -115,7 +137,16 @@ export class Metering {
 			const at = vec2( cell ).add( 0.5 ).div( grid );
 			const texel = ivec2( clamp( floor( at.mul( size ) ), vec2( 0 ), size.sub( 1 ) ) ).toVar();
 			// (both as stored, pre-exposed: the meter takes P out of the means)
-			const y = luminance( ( textureLoad( tHdr, texel ) as unknown as THREE.Node<'vec4'> ).rgb ).toVar();
+			// (the sky's at its own light: see the header)
+			const sky = ( textureLoad( tSurface, texel ) as unknown as F ).lessThan( - 9e4 ).and( shared.seenNight.lessThan( 1 ) );
+			const seen = luminance( ( textureLoad( tHdr, texel ) as unknown as THREE.Node<'vec4'> ).rgb ).toVar();
+			// (the pixel's direction: NDC y up, uv's down)
+			const v = view.projInv.mul( vec4( at.x.mul( 2 ).sub( 1 ), float( 1 ).sub( at.y.mul( 2 ) ), 0.5, 1 ) ).toVar();
+			const d = normalize( view.cameraWorld.mul( vec4( v.xyz.div( v.w ), 0 ) ).xyz ).toVar();
+			const shares = view.atmosphere.skyShares( vec3( d.x, max( d.y, 0 ), d.z ), true, view.gains );
+			const sun = luminance( shares.sun ).toVar(), moon = luminance( shares.moon ).toVar();
+			const level = sun.add( moon.mul( shared.seenNight ) ).div( max( sun.add( moon ), 1e-30 ) ).toVar();
+			const y = select( sky, seen.div( max( level, 1e-6 ) ), seen ).toVar();
 			const m = ( textureLoad( tMeter, texel ) as unknown as THREE.Node<'vec4'> ).r.toVar();
 			// the tent: v the position in bin units, bin i's centre at v = i
 			const splat = ( value: F, base: number ) => {
@@ -207,14 +238,15 @@ export class Metering {
 
 	}
 
-	/** The histograms, declared after the composite and before the bloom, reading `hdr` and
-	 * `meterLight` (the versions the composite and the scene passes left). */
-	histogramPass<Frame>( g: FrameGraph<Frame>, hdr: ResourceHandle, meterLight: ResourceHandle ): void {
+	/** The histograms, declared after the composite and before the bloom, reading `hdr`,
+	 * `meterLight` and `surfaceDepth` (the versions the composite and the scene passes left). */
+	histogramPass<Frame>( g: FrameGraph<Frame>, hdr: ResourceHandle, meterLight: ResourceHandle, surfaceDepth: ResourceHandle ): void {
 
 		const kernel = this.histogramKernel;
 		g.addPass( 'meteringHistograms', 'compute', ( b: PassBuilder ) => {
 
 			b.read( hdr );
+			b.read( surfaceDepth );
 			// (optional: the rain, its last writer under msaa, may be skipped)
 			b.readOptional( meterLight );
 			return {

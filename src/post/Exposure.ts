@@ -19,7 +19,10 @@ type V4 = THREE.Node<'vec4'>;
 //   as stored, pre-exposed, so their range follows the exposure; the meter takes P back out of both
 //   means, which reach the target in scene units (Metering.ts, PreExposure.ts).
 // - m_H: the mean of log2 Y (hdr's luminance) between its 90th and 97th percentile: the
-//   brightness of the frame's brightest few percent.
+//   brightness of the frame's brightest few percent. The sky's pixels enter it at the sky's own
+//   light, before the night sky's seen gain darkens the drawn sky (Metering.ts, shared.ts
+//   `seenNight`), so the exposure follows the light the scene takes, not how dark the night sky is
+//   drawn over it.
 // - m_S: log2 of the sky's geometric-mean luminance exp( mean ln Y ) over the upper hemisphere
 //   (shared.ts `skyMeterLog2`: Sky.ts reduces it from each environment bake, and the dome writes
 //   the same luminance as its metering illuminance), so a sky-filled view is metered by the sky's

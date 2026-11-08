@@ -82,7 +82,9 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // shared.ts `seenNight`): the moon's sky behind the clouds and the clouds as drawn, never the bakes, the
 // stars, the moon's disc or the haze laid over them, so the land and the sea keep the light it
 // gives and only the sky over them darkens; the far sea's reflection meets it (ocean/Water.ts
-// SEEN_SKY). The moon stands fixed in the sky (DayCycle.ts MOON): it is drawn and
+// SEEN_SKY), the far air's in-scattered moon's sky and deck light take it (weather/VolumetricHaze.ts
+// SEEN_AIR), and the exposure's meter reads the sky's pixels at the light the sky sheds
+// (post/Metering.ts). The moon stands fixed in the sky (DayCycle.ts MOON): it is drawn and
 // lights the sky (and through the atmosphere's `moonDir` the clouds and the haze) from there, the
 // island takes its light from there (lighting/KeyLift.ts), and the key's direction (`keyDir`)
 // turns there over the handoff and holds there all night, so the water's glint and the clouds'
@@ -1360,14 +1362,17 @@ export class Sky {
 	private displayAmbientGain = uniform( 1 );
 	// the clear day's sky gain over the clouded sky's, which the open sky behind the clouds takes
 	// (CLEAR_SKY, `gapSky`), on the sun's share of the sky at the sun's height and on the moon's at the
-	// moon's; live, as the atmosphere's own uniforms are, and read by the bakes too
-	private gapGain = { sun: uniform( 1 ), moon: uniform( 1 ) };
+	// moon's; live, as the atmosphere's own uniforms are, and read by the bakes and the exposure's
+	// meter (post/Metering.ts) too
+	readonly gapGain = { sun: uniform( 1 ), moon: uniform( 1 ) };
 	// The night sky as the dome draws it (Weather.ts `seenNight`): 2^-( the weather's stops times
 	// the display's night weight ), on the moon's sky behind the clouds (`domeGapGain.moon`) and on
 	// the clouds as the dome draws them (`seenDeck`), never on the bakes (`seenDeckBake`). Values
 	// of uniforms only, 1 by day, so the day's shaders and bytes are unchanged (a multiply in the
 	// shader, even by 1, moved day pixels by a level through fused multiply-adds). The far sea
-	// takes it as it meets the sky (shared.ts `seenNight`, Water.ts `SEEN_SKY`).
+	// takes it as it meets the sky (shared.ts `seenNight`, Water.ts `SEEN_SKY`), the far air on
+	// the moon's sky and deck light it scatters (VolumetricHaze.ts `SEEN_AIR`), and the exposure's
+	// meter divides it out of the sky's pixels (post/Metering.ts).
 	private domeGapGain = { sun: this.gapGain.sun, moon: uniform( 1 ) };
 	private seenDeckBake = 1;
 	// the weather's cloud shadow floor and cast shadow on the island (Weather.ts `cloudFloor`, `castShadow`)
