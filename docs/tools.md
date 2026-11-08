@@ -1018,7 +1018,8 @@ lamps-off exposure's lift over the other run and, at midnight, its distance from
 second, a few tens with `--split`. Its options, reads and rules are in the file's header.
 
 `node tools/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]...
-[--views-file f.json [--views a,b]]` measures the meadow's light on its leaf pixels in linear
+[--views-file f.json [--views a,b]] [--weather clear] [--expect lo,hi]` measures the meadow's
+light on its leaf pixels in linear
 radiance: the sunlit blades' bright and dark clusters against the bare ground in the same sun,
 their mean, the share that is lit, the shaded blades against shaded bare ground, the light the turf
 under the sward takes, the blades' cover (over the lawn, the frame's centre and bands of view
@@ -1042,6 +1043,14 @@ reads them all, with no browser, to run changed measures on a saved run. `lean` 
 eighth load (`grassMask:lean`) and a table of the blades' lean from upright over the lawn they
 cover, as drawn (the wind's nod and the push away from a near eye included) and by their pose
 alone: its 10th, 50th and 90th percentiles and the shares under 15 and over 60 degrees.
+It also reads `key:ambient`, the key's illuminance at normal incidence over the ambient irradiance
+on the sunlit open lawn's bare ground (in scene units), which guards the land's sky light against
+the key; `--expect lo,hi` exits 3 when a view's value falls outside, and a view with no reading (no
+sunlit open ground, or pages saved before this reading) counts as outside (a failed page still
+exits 1).
+Its window on the default view, `--elev 22 --weather clear`, is 13.8 - 16.8 (the value 15.3, within
+10 %): run it so before merging a change to the sky's light, the haze or the ambient light, and a
+change that moves it on purpose restates the window here.
 
 ## WGSL builds: `tools/wgsl-build.mjs`
 
