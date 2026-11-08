@@ -705,8 +705,10 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 // and have none). Overcast's draw its closed deck (Clouds.ts `deckDensity`, `setDeckForm`), by
 // overcast's share of the sky; cloudy's are held here and not read yet. `large`, `medium` and
 // `detail` weigh the noise's scales in the deck's sum (the large field sets where masses and gaps
-// gather, the medium the masses, the detail only the margins' fine tears), `large` in the medium
-// noise's deviations, `detail` in the sum's; `rise` is the margin's width in the sum's deviations
+// gather, the medium the masses, the detail only the margins' fine tears), `large` and `detail`
+// on the sum's fixed units (Clouds.ts DECK_SPREAD, DECK_DEVIATION); `mediumScale` (m) is the period of the medium noise,
+// the deck's own gradient fBm (CloudNoise.ts `bakeDeckNoise`), snapped to a whole fraction of the
+// low weather tile; `rise` is the margin's width in the sum's deviations
 // (narrow: a crisp edge; wide: a gentle slope over the rolls); `baseBand` and `topBand` (m) round
 // the sum off over the shell's base and top (a narrow base band: a flat, steep base), each no
 // narrower than the march's finest step. The base's envelope is a power of the height over its
@@ -727,8 +729,14 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 // the cover's far ramp); `ambientRamp` (m) the height over which the sky's light into the deck
 // rises from its base; `deckAmbient` the deck's ambient gain. The share the threshold leaves
 // under the sum is the weather's (Weather.ts `lowCover`). Tunable on debug pages:
-// `sky.clouds.<field>@overcast` (`medium` fixed at 1).
-// Overcast's values were tuned looking up 23 degrees from the island, across the sun's azimuth
+// `sky.clouds.<field>@overcast`.
+// The medium noise is the deck's own fBm, not the cumulus' shape noise: that one's round Worley
+// cells hung under the base as rows of pouches. With it the weights were set on the whole frame,
+// looking up from the island, toward the sun and across its azimuth: `large` 1.5 and `medium`
+// 1.2 give connected dark banks whose lit margins whiten, where `large` 3.5 flattened the deck
+// into one sheet; `detail` 0.2, a quarter of the shape noise's, leaves the margins' tears a few
+// per cent of the sum. The rest kept the values below.
+// Overcast's values were first tuned (with the shape noise as the medium) looking up 23 degrees from the island, across the sun's azimuth
 // and away from it, with the sun 22 and 15 degrees up, on the deck between 15 and 40 degrees up
 // and more than 60 from the sun, by the spectrum, edges and cells of its display luminance:
 // `large` 1, the lowest, raises the large features' share of the power from 36 to 47 %; `stretch`
@@ -739,16 +747,16 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 // `deckAmbient` 0.7 holds the background sky's scene luminance away from the sun within 5 % of the
 // old deck's. The glow's angle fields (Clouds.ts `deckGlowFar`) were set as high as the ring of
 // sky 3 to 7 degrees from the sun stays as even as it was.
-type LowCloud = Omit<DeckForm, 'fadeEnd' | 'fadeFloor' | 'baseShape' | 'stretch'> & Partial<DeckForm>;
+type LowCloud = Omit<DeckForm, 'fadeEnd' | 'fadeFloor' | 'baseShape' | 'stretch' | 'mediumScale'> & Partial<DeckForm>;
 type CloudSky = { base: number; top: number } & { -readonly [ K in keyof typeof CLOUD_FORM ]: number } & {
 	phaseForward: number; phaseBack: number; phaseBackWeight: number; phaseBackShare: number; gapClear: number; low: LowCloud | null;
 };
 const HIGH_SHELL = { base: SHELL_BOTTOM, top: SHELL_BOTTOM + SHELL_THICKNESS };
 const PHASE = { phaseForward: 0.8, phaseBack: - 0.2, phaseBackWeight: 1, phaseBackShare: 0.2, gapClear: 1 };
-const OVERCAST_DECK: DeckForm = { large: 1, medium: 1, detail: 0.79, rise: 2.37, baseBand: 600, baseShape: 0.2, stretch: 1.6, topBand: 600, fadeFrom: 5, fadeEnd: 2, fadeFloor: 0.5, nearFull: 10, nearNone: 5, farCover: 0.12, ambientRamp: 600, deckAmbient: 0.7 };
+const OVERCAST_DECK: DeckForm = { large: 1.5, medium: 1.2, mediumScale: 2400, detail: 0.2, rise: 2.37, baseBand: 600, baseShape: 0.2, stretch: 1.6, topBand: 600, fadeFrom: 5, fadeEnd: 2, fadeFloor: 0.5, nearFull: 10, nearNone: 5, farCover: 0.12, ambientRamp: 600, deckAmbient: 0.7 };
 // overcast's deck's tunes and their ranges
 const DECK_TUNES: readonly ( readonly [ keyof DeckForm, number, number ] )[] = [
-	[ 'large', 1, 4 ], [ 'detail', 0.25, 1.7 ], [ 'rise', 1.5, 5 ], [ 'baseBand', 300, 1200 ], [ 'baseShape', 0.2, 1 ], [ 'stretch', 1, 2 ], [ 'topBand', 300, 1200 ],
+	[ 'large', 1, 4 ], [ 'medium', 0.5, 2 ], [ 'mediumScale', 1500, 4000 ], [ 'detail', 0.05, 1.7 ], [ 'rise', 1.5, 5 ], [ 'baseBand', 300, 1200 ], [ 'baseShape', 0.2, 1 ], [ 'stretch', 1, 2 ], [ 'topBand', 300, 1200 ],
 	[ 'fadeFrom', 4, 8 ], [ 'fadeEnd', 1, 3 ], [ 'fadeFloor', 0.4, 0.8 ], [ 'nearFull', 7, 13 ], [ 'nearNone', 2, 8 ],
 	[ 'farCover', 0, 0.2 ], [ 'ambientRamp', 300, 1200 ], [ 'deckAmbient', 0.05, 2 ],
 ];

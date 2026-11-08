@@ -507,7 +507,8 @@ comment where it is used.
   2002), its coordinates displaced by more of it after Inigo Quilez,
   [*Domain warping*](https://iquilezles.org/articles/warp/), and cut at a threshold that rises with
   height; used as techniques only, the scales, the threshold and the normalisation to a mean of 1
-  are our own.
+  are our own. The same gradient noise, summed in octaves, is also baked as the closed cloud
+  deck's middle scale (`bakeDeckNoise` in `src/materials/CloudNoise.ts`).
 - Line integral convolution, which draws the thin cloud layer's fibres out along a flow
   (`src/sky/Streaks.ts`): Brian Cabral and Leith (Casey) Leedom, *Imaging Vector Fields Using
   Line Integral Convolution* (SIGGRAPH 1993), through the adapted tidewater source above.

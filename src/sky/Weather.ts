@@ -255,8 +255,8 @@ const skyShares = ( name: WeatherName ): number[] => {
 export interface WeatherState {
 
 	coverage: number;
-	// The share of the closed deck's noise sum its threshold leaves under it (sky/Clouds.ts
-	// `deckDensity`, under overcast's share of the sky), as a share of the sum's largest (its
+	// How far the closed deck's threshold sits below its noise sum's largest (sky/Clouds.ts
+	// `deckDensity`, under overcast's share of the sky), as a share of that largest (its
 	// weights' total): the deck's cloud starts at ( 1 - lowCover ) of it, so a larger share closes
 	// the deck. Cloudy's is not read while cloudy's sky keeps the broken form; clear and fair have
 	// no deck; the parked skies take overcast's.
@@ -398,8 +398,8 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // reading at a display lightness of 0.31 and 0.33 over a meadow at 0.36 and 0.34 (with the land's
 // gain, the key's and the exposure's key below), and the deck's light and the sea's fall with
 // every step of the sun's descent from 25 to 2 degrees.
-// The closed deck's cover is the share of its noise sum's largest left under its threshold
-// (`lowCover`), swept by a front as the coverage is; the skies without the closed form keep theirs
+// The closed deck's cover is how far its threshold sits below its noise sum's largest, as a
+// share of it (`lowCover`), swept by a front as the coverage is; the skies without the closed form keep theirs
 // unread. Overcast's sets the threshold low enough that the deck stays closed and hides the sun's
 // disc; cloudy's, lower, is read only in a front toward overcast.
 // Overcast's moonlit sky has a level and an exponent of its own (`moonSky`, `moonSkyExponent`), on which

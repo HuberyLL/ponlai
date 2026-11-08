@@ -20,7 +20,7 @@ import {
 	vec2, vec3, vec4, ivec2, uvec3, fract, dot, mix, smoothstep, clamp, max, min, exp, log2, sqrt, select,
 	asin, acos, atan, cos, sin, normalize, floor, abs, length, not,
 } from 'three/tsl';
-import { bakeSynoptic, loadCloudShape } from '../materials/CloudNoise.ts';
+import { bakeDeckNoise, bakeSynoptic, loadCloudShape } from '../materials/CloudNoise.ts';
 import { bakeStreaks, sampleStreaks } from './Streaks.ts';
 import { RAINBOW_MAX_ANGLE, RAINBOW_SIZE, RAINBOW_TABLE } from './RainbowTable.data.ts';
 import { skyRayleighPhase, type Atmosphere } from './Atmosphere.ts';
@@ -59,10 +59,14 @@ type Pair<T> = readonly [ T, T ];
 //     noise sum over a threshold (`deckDensity`: the noise remapped by the coverage, after
 //     Schneider, "Real-Time Volumetric Cloudscapes", GPU Pro 7 / SIGGRAPH 2015), by overcast's share of the sky (`overcastShare`; the two forms' densities
 //     mixed, each run only where its share is not zero): a large field baked into the weather
-//     map's second channel (WEATHER_LARGE) gathers the masses and the seams, the shape noise at
-//     the low space's scale forms the masses and at the erosion's scale only tears their margins
-//     near the camera, both read drawn out downwind (`stretch`) so the rolls lie in long bands;
-//     the threshold leaves the weather's share of the sum under it (Weather.ts
+//     map's second channel (WEATHER_LARGE) gathers the masses and the seams, a gradient fBm of its
+//     own (CloudNoise.ts `bakeDeckNoise`, at the deck's `mediumScale`) forms the masses and the
+//     shape noise at the erosion's scale only tears their margins near the camera, both read drawn
+//     out downwind (`stretch`) so the rolls lie in long bands. The masses do not take the shape
+//     noise (`baseShape64`): Worley-led, it is made of round cells, which under a base drawn by
+//     the sum hung as rows of round pouches; the fBm's masses run into one another as connected
+//     dark banks;
+//     the threshold sits the weather's share of the sum's largest below it (Weather.ts
 //     `lowCover`, swept by a front), a little more far out, and the sum is rounded off over the
 //     shell's base by a power of the height (`baseShape`: a small one lets the base's height
 //     follow the sum, so it hangs in rolls) and over its top by a smoothstep. The density rises over a margin past the threshold and fades toward
@@ -330,17 +334,17 @@ const BASE_WEATHER = 0.54, BASE_WEATHER_END = 0.13; // bases need richer weather
 // column keeps no cloud.
 export const CLOUD_FORM = { edge: EDGE, erosion: 1, baseEnd: BASE_WEATHER_END, inside: 0 } as const;
 // The overcast deck's noise sum (`deckDensity`): S = large DECK_SPREAD L + medium M + detail
-// DECK_DEVIATION ( D - mean ) n(d), L the weather map's large field (WEATHER_LARGE), M and D the
-// shape noise's weighted channels at the shape's and the erosion's scale over their largest sums
-// (1.34, 0.173), both in the low space. Measured once on a horizontal plane at the overcast shell's
-// middle height (1.8 km), 10^6 points uniform over one low weather tile, d = 0, both textures read
-// as the march reads them (the large field bilinearly from its 8-bit texels, the shape noise
-// trilinearly at its first level): DECK_SPREAD is M's standard deviation over L's (0.087 / 0.143),
-// so `large` weighs the large field in M's deviations; DECK_DEVIATION the deviation s of
-// DECK_SPREAD L + M (large 1, medium 1, the tuned weights), the unit of the margin's `rise` and of
-// the detail; DECK_FLOOR the threshold's floor, the lesser of the sum's p0.1 (detail 0.79) and
-// s / 4, there only to keep the threshold above zero: it lies under the p0.5 and under the far
-// threshold's least. A change of `large`, `medium` or `detail` measures them again.
+// DECK_DEVIATION ( D - mean ) n(d), L the weather map's large field (WEATHER_LARGE), M the deck
+// noise (CloudNoise.ts `bakeDeckNoise`, 0..1) at the deck's middle scale, D the shape noise's
+// weighted channels at the erosion's scale over their largest sum (0.173), in the low space. The
+// three constants below are fixed units of the sum. They were measured once, with the shape noise
+// as M (its weighted channels at the shape's scale over their largest sum), on a horizontal plane
+// at the overcast shell's middle height (1.8 km), 10^6 points uniform over one low weather tile,
+// d = 0, both textures read as the march reads them: DECK_SPREAD is that M's standard deviation
+// over L's; DECK_DEVIATION the deviation s of DECK_SPREAD L + M, the unit of the margin's `rise`
+// and of the detail; DECK_FLOOR the threshold's floor, at most s / 4, there only to keep the
+// threshold above zero. They were kept when the deck noise took M's place, and the weights (Sky.ts
+// OVERCAST_DECK) were set on them by eye on the whole frame.
 const DECK_SPREAD = 0.605, DECK_DEVIATION = 0.123, DECK_FLOOR = 0.0307;
 /** The share of the rest (1 - overcast's share) the deck's density gives up as a front brings it
  * in (`deckMixed`): under DECK_ONSET / ( 1 + DECK_ONSET ) of overcast's share the deck adds nothing
@@ -353,7 +357,7 @@ const DECK_ONSET = 0.001;
  * and top, and the angles (degrees up the sky) at which its fades begin and end, each taken as the
  * distance along a ray at that elevation to the shell's middle height. */
 export interface DeckForm {
-	large: number; medium: number; detail: number; rise: number; baseBand: number; baseShape: number; stretch: number; topBand: number;
+	large: number; medium: number; mediumScale: number; detail: number; rise: number; baseBand: number; baseShape: number; stretch: number; topBand: number;
 	fadeFrom: number; fadeEnd: number; fadeFloor: number; nearFull: number; nearNone: number; farCover: number;
 	ambientRamp: number; deckAmbient: number;
 }
@@ -887,7 +891,7 @@ export class Clouds {
 	// (VolumetricHaze.ts), `broadShare` or `deckShadowShare`, which carry the same share to the
 	// haze, the forward light's spread and the shadow's fade, each set apart.
 	readonly overcastShare = uniform( 0 );
-	// The share of the noise sum's largest value the deck's threshold leaves below it (Weather.ts
+	// How far the deck's threshold sits below the noise sum's largest value, as a share of it (Weather.ts
 	// `lowCover`), from and to, swept by the front as the coverage is.
 	readonly lowCoverFrom = uniform( 0 );
 	readonly lowCoverTo = uniform( 0 );
@@ -906,6 +910,12 @@ export class Clouds {
 	// along it the masses' reads drop, 1 - 1 / `stretch`
 	private readonly deckStretchAxis = uniform( new THREE.Vector2( 1, 0 ) );
 	private readonly deckStretch = uniform( 0 );
+	// The deck's middle scale (`mediumScale`, snapped to divide the low weather tile): its noise's
+	// frequency (1/m), its mip offset from the low shape noise's (log2 of their scales' ratio) and
+	// its own rise, which wraps on its own period
+	private readonly deckMediumFrequency = uniform( 1 / 2400 );
+	private readonly deckLodShift = uniform( 0 );
+	private readonly deckEvolve = uniform( 0 );
 	private readonly deckAmbient = uniform( new THREE.Vector2( 1, 1 ) );
 	private deckForm: Readonly<DeckForm> | null = null;
 	// The angular form of the light the low deck's column passes down (makeMarch): the forward
@@ -1048,6 +1058,7 @@ export class Clouds {
 	// unit of the erosion's strength and coverage: where the column light's slab ends under a top.
 	private erosionMean = 0.173 / 2;
 	private synoptic: THREE.StorageTexture | null = null;
+	private deckNoise: THREE.Storage3DTexture | null = null;
 	private weather: THREE.StorageTexture | null = null;
 	private bounds: THREE.StorageTexture | null = null;
 	private streakCover: THREE.RenderTarget | null = null;
@@ -1139,6 +1150,7 @@ export class Clouds {
 		for ( let i = 0; i < texels.length; i += 4 ) sum += 0.113 * texels[ i ] + 0.04 * texels[ i + 1 ] + 0.02 * texels[ i + 2 ];
 		this.erosionMean = sum / ( texels.length / 4 ) / 255;
 		this.synoptic = bakeSynoptic( renderer );
+		this.deckNoise = bakeDeckNoise( renderer );
 		this.streakCover = bakeStreaks( renderer );
 		const storage = ( size: number, filter: THREE.MagnificationTextureFilter ) => {
 
@@ -1275,7 +1287,7 @@ export class Clouds {
 		for ( const kernel of [ ...this.panoramaKernels ?? [], ...this.rescaleKernels ?? [], ...this.shadowKernels ?? [] ] ) kernel.dispose();
 		this.deckMeanKernel?.dispose();
 		this.deckMeanSumKernel?.dispose();
-		const shapeNode = texture3D( shape ), weatherNode = texture( weather ), boundsNode = texture( bounds ), synopticNode = texture( synoptic );
+		const shapeNode = texture3D( shape ), deckNoiseNode = texture3D( this.deckNoise! ), weatherNode = texture( weather ), boundsNode = texture( bounds ), synopticNode = texture( synoptic );
 
 		// How far the front has come at a camera-relative position (see `frontLead`).
 		const reachedAt = ( pxz: V2 ) => clamp( this.frontProgress.add( clamp( dot( pxz.add( this.camXZ ), this.frontAxis ).div( FRONT_SPAN ), - FRONT_REACH, FRONT_REACH ).mul( this.frontLead ) ), 0, 1 );
@@ -1427,18 +1439,22 @@ export class Clouds {
 		// The closed deck (overcast's share): a noise sum over a threshold (the noise remapped by
 		// the coverage, after Schneider 2015), S = large DECK_SPREAD L + medium M + detail
 		// DECK_DEVIATION ( D - mean ) n, L the weather map's large field (`.g`, WEATHER_LARGE) read
-		// at the point without the lean, M and D the shape noise's weighted channels over their
-		// largest sums at the shape's and the erosion's scale at `low` (the low space's position),
-		// n the detail's fade with the distance `d` along the view (whole to `deckNear.x`, gone at
+		// at the point without the lean, M the deck noise (CloudNoise.ts `bakeDeckNoise`, a
+		// gradient fBm in 0..1) at `low` (the low space's position) over the deck's
+		// `deckMediumScale`, D the shape noise's weighted channels over their largest sum at the
+		// erosion's scale, n the detail's fade with the distance `d` along the view (whole to `deckNear.x`, gone at
 		// `deckNear.y`). The sum times an envelope rounding it off over the shell's base and top
 		// (`deckBands`; the base's a power, `deckBaseShape`, the top's a smoothstep) stands over a
-		// threshold that leaves `lowCover` of the sum's largest below it, and a far cover more
+		// threshold `lowCover` of the sum's largest below that largest, and a far cover more
 		// toward the horizon (on the far ramp of the cover, `horizon`), held above DECK_FLOOR; the density rises over `rise` of the sum's deviations past it and
 		// fades toward `fadeFloor` with the distance (`deckFade`). A plain function, not a shared
 		// helper: one read from several kernels can be emitted with another kernel's uniform names
 		// (r186). `detail` false drops D (the coarse steps and the cheap light taps). Every sample
-		// takes its level: the reads sit in branches.
-		const deckDensity = ( p: V3, h: F, low: V3, d: F, lods: V4, lowCover: F, detail: THREE.Node<'bool'> | boolean ) => {
+		// takes its level: the reads sit in branches. M's level: the view's march passes the exact
+		// one for its footprint over the deck noise's texels (`mediumLod`); every other read (the
+		// light taps, at their cone's levels, and the cloud shadow, at its fixed ones) takes the
+		// low space's shape level shifted to the deck noise's scale, `lods.z` + `deckLodShift`.
+		const deckDensity = ( p: V3, h: F, low: V3, d: F, lods: V4, lowCover: F, detail: THREE.Node<'bool'> | boolean, mediumLod: F | null = null ) => {
 
 			const density = float( 0 ).toVar();
 			If( h.greaterThan( 0 ).and( h.lessThan( 1 ) ), () => {
@@ -1450,7 +1466,10 @@ export class Clouds {
 				// that keeps the offset's wrap a whole number of noise periods
 				const axis = this.deckStretchAxis;
 				const drawn = low.sub( vec3( axis.x, 0, axis.y ).mul( dot( low.xz.sub( this.lowOffset ), axis ).mul( this.deckStretch ) ) ).toVar();
-				const medium = dot( shapeNode.sample( drawn.div( LOW_BASE_SCALE ) ).level( lods.z ).rgb, vec3( 0.7, 0.41, 0.23 ) ).mul( 1 / 1.34 );
+				// the masses: the deck's own fBm at its own scale, rising on its own period (the
+				// shape noise's round Worley cells hung as pouches)
+				const rise = vec3( 0, this.lowEvolve.sub( this.deckEvolve ), 0 );
+				const medium = deckNoiseNode.sample( drawn.add( rise ).mul( this.deckMediumFrequency ) ).level( mediumLod ?? max( lods.z.add( this.deckLodShift ), 0 ) ).r;
 				const sum = weights.x.mul( large ).add( weights.y.mul( medium ) ).toVar();
 				const fine = () => {
 
@@ -1722,7 +1741,7 @@ export class Clouds {
 
 							lowCover.assign( lowCoverAt( p.xz ) );
 							const sum = float( 0 ).toVar();
-							sum.assign( deckDensity( p, c.h, low, t, lods, lowCover, coarse.equal( 0 ) ) );
+							sum.assign( deckDensity( p, c.h, low, t, lods, lowCover, coarse.equal( 0 ), max( log2( max( footprint.mul( this.deckMediumFrequency ).mul( 64 ), 1 ) ), 0 ) ) );
 							density.assign( deckMixed( density, sum ) );
 
 						} );
@@ -2943,6 +2962,7 @@ export class Clouds {
 
 		this.evolve.value = 0;
 		this.lowEvolve.value = 0;
+		this.deckEvolve.value = 0;
 		this.setDrift( new THREE.Vector2() );
 		this.frontAxis.value.set( 1, 0 );
 		this.windAxis.value.set( 1, 0 );
@@ -3278,6 +3298,15 @@ export class Clouds {
 	// finest step, and each angle (degrees up the sky) as the distance along a ray at that
 	// elevation from the camera's height to the shell's middle height, on the curved Earth, so the
 	// fades follow the shell; each far end kept a metre past its near one.
+	// The deck's middle scale (m): `mediumScale` snapped to a whole fraction of the low weather
+	// tile, so the drift's wrap (`setDrift`) shifts its noise by whole periods.
+	private deckMediumScale(): number {
+
+		const scale = this.deckForm?.mediumScale ?? 2400;
+		return LOW_WEATHER_SCALE / Math.max( 1, Math.round( LOW_WEATHER_SCALE / scale ) );
+
+	}
+
 	private updateDeck(): void {
 
 		const form = this.deckForm;
@@ -3298,6 +3327,9 @@ export class Clouds {
 		this.deckAmbient.value.set( form.ambientRamp, form.deckAmbient );
 		this.deckBaseShape.value = form.baseShape;
 		this.deckStretch.value = 1 - 1 / Math.max( form.stretch, 1 );
+		const scale = this.deckMediumScale();
+		this.deckMediumFrequency.value = 1 / scale;
+		this.deckLodShift.value = Math.log2( LOW_BASE_SCALE / scale );
 
 	}
 
@@ -3307,6 +3339,7 @@ export class Clouds {
 
 		this.evolve.value = ( time * 2.5 ) % EVOLVE_PERIOD;
 		this.lowEvolve.value = ( time * 2.5 / LOW_FREQUENCY ) % LOW_BASE_SCALE;
+		this.deckEvolve.value = ( time * 2.5 / LOW_FREQUENCY ) % this.deckMediumScale();
 
 	}
 
@@ -3356,7 +3389,7 @@ export class Clouds {
 		this.dome.dispose();
 		this.domeScratch.dispose();
 		this.shadowMap.dispose();
-		for ( const t of [ this.shape, this.synoptic, this.weather, this.bounds, this.rainbowTable ] ) t?.dispose();
+		for ( const t of [ this.shape, this.synoptic, this.deckNoise, this.weather, this.bounds, this.rainbowTable ] ) t?.dispose();
 		this.streakCover?.dispose();
 		for ( const kernel of [ ...this.panoramaKernels ?? [], ...this.rescaleKernels ?? [], ...this.shadowKernels ?? [] ] ) kernel.dispose();
 		this.deckMeanKernel?.dispose();
