@@ -570,6 +570,16 @@ comment where it is used.
   C. D. Mobley, R. G. Steward and J. S. Patch, *Hyperspectral remote sensing for shallow waters:
   2. Deriving bottom depths and water properties by optimization* (Appl. Opt. 38:3831, 1999),
   equation 9 and its off-nadir path factors, with attenuation by a + bb.
+- The floor's image through the water, in `src/ocean/Water.ts`: its unscattered share by the beam
+  attenuation a + b and the rest blurred by small-angle forward scattering, the image model of
+  B. L. McGlamery, *A computer model for underwater camera systems* (Proc. SPIE 208, 1980) and
+  J. S. Jaffe, *Computer modeling and the design of optimal underwater imaging systems* (IEEE J.
+  Oceanic Eng. 15:101, 1990); the blur's spread is our own small-angle diffusion of the scattered
+  rays. The scattering coefficient, in `src/ocean/SeaOptics.ts`, from Morel 1974 and Gordon & Morel
+  1983 (above); the particles' forward share and angle from the phase function of G. R. Fournier
+  and J. L. Forand, *Analytic phase function for ocean water* (Proc. SPIE 2258, 1994), set by its
+  backscattering ratio as in C. D. Mobley, L. K. Sundman and E. Boss, *Phase function effects on
+  oceanic light fields* (Appl. Opt. 41:1035, 2002).
 - The deep water's irradiance reflectance under its surface, in `src/ocean/SeaOptics.ts` (read by
   `src/lighting/GroundBounce.ts` and `src/world/AmbientProbes.ts`): R ≈ 0.33 bb / ( a + bb ), the
   common first-order form of the relation H. R. Gordon, O. B. Brown and M. M. Jacobs fitted to Monte

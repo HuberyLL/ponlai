@@ -3,7 +3,7 @@ import { float, uniform, vec3 } from 'three/tsl';
 import { createWindUniforms } from './weather/Wind.ts';
 import { displacementUniforms } from './world/vegetation/Displacement.ts';
 import { LAWN_GAIN } from './materials/Meadow.ts';
-import { ABSORPTION, BACKSCATTER } from './ocean/SeaOptics.ts';
+import { ABSORPTION, BACKSCATTER, FORWARD_ANGLE, FORWARD_SCATTER, SCATTER } from './ocean/SeaOptics.ts';
 
 // Uniforms shared by the water, the terrain and the vegetation (one node each, read by every
 // material that uses it).
@@ -27,11 +27,6 @@ export const shared = {
 	leafGain: uniform( 1 ),
 	// the weather's share of a cloudy or overcast sky: 0 under a clear or fair one, 1 under a closed one
 	clouded: uniform( 0 ),
-	// the sky's light in the water body under a deck, over the bake's (sky/Weather.ts `deckSkyGain`)
-	deckSky: uniform( 1 ),
-	// the part of `deckSky` a cloudy deck's gaps take back, by the clouds' visibility over the water
-	// (sky/Weather.ts `deckSkyGap`): in a gap the water takes the key itself
-	deckSkyGap: uniform( 0 ),
 	// what the sward's ambient diffuse is multiplied by (materials/SwardTint.ts); white under a clear
 	// or fair sky
 	swardTint: uniform( new THREE.Vector3( 1, 1, 1 ) ),
@@ -44,6 +39,11 @@ export const shared = {
 	// the floor's bounce (GroundBounce.ts) and the ambient probes (world/AmbientProbes.ts).
 	sigA: uniform( new THREE.Vector3( ...ABSORPTION ) ),
 	bb: uniform( new THREE.Vector3( ...BACKSCATTER ) ),
+	// the total scattering coefficient `scatter`, and the particles' forward scattering that blurs the
+	// floor seen through the water, its coefficient and rms angle along one axis (ocean/Water.ts)
+	scatter: uniform( new THREE.Vector3( ...SCATTER ) ),
+	forwardScatter: uniform( FORWARD_SCATTER ),
+	forwardAngle: uniform( FORWARD_ANGLE ),
 	sunIntoWater: uniform( 1 ), // 1 - Fresnel of the sun at the surface
 	// Storm strength: whitecaps on breaking crests (0 calm).
 	storm: uniform( 0 ),
