@@ -447,15 +447,23 @@ art decision changes; images from elsewhere stay out of the repository.
   cloud above, with no gain or tint of its own: thin parts show lighter than the thick masses
   beside them, and the deck reads near grey. The air under it is lit by the deck and by the sea's
   reflection of it rather than by a clear sky, so the haze in front of the clouds is their grey.
+  The clear and fair skies' cumulus are lit the same way under their tops: a shaded base takes
+  the light the cloud above passes down to it, so it reads a soft grey about a stop under the
+  sunlit tops and near the blue sky beside it, never a dark block.
 - Clear and fair skies hold a thin layer of silky fibres about 8.5 km up, combed along the wind
   aloft and gathered in patches with blue sky between them, closing up toward the horizon in
   perspective. The fibres bend and hook, run thick and thin along their length and fray at their
   ends, and lie at two scales turned against each other, so they are neither ruled lines nor
   strokes of even width and no two run quite parallel. The patches stay apart: toward the horizon
   the layer thins as its fibres blur together, so even toward a low sun the sky a few degrees over
-  the horizon stays clear, with no bright sheet round the sun. By day the layer is faint and white,
-  a little lighter than the sky round it (a few hundredths of Oklab lightness at most), never what
-  the eye goes to first; the cumulus is drawn over it, and cloudy and overcast skies have none.
+  the horizon stays clear, with no bright sheet round the sun. Under a high sun the layer is faint
+  and white, a little lighter than the sky round it (a few hundredths of Oklab lightness at most),
+  never what the eye goes to first; the cumulus is drawn over it, and cloudy and overcast skies
+  have none. Under a low sun, morning and evening alike, the light it takes straight from the sun
+  is warm and the light it takes from the sky round it cool, so it reads rose on both sides of
+  the sky, toward the sun and away from it, a little more saturated and a little lighter than the
+  sky beside it rather than a pale yellow-white; it turns back to white as the sun climbs past
+  about 30 degrees.
   Each part of it is lit by the sun as it stands over that part, so after sunset and before
   sunrise the side away from the sun goes out first, with the sun about 1.5 degrees under the
   horizon, and the side toward it last, near 3 degrees under, warmest just before it goes.

@@ -708,6 +708,18 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 // lobe lights the flanks facing the viewer with the sun behind him (cloudy's multiple about 2.16:
 // Patry 2021, p. 97).
 //
+// The high shell's transmitted key (`column`, Clouds.ts `shellColumn`): the gain on the key's light
+// that gets down through the cloud above a shaded step of the high cumulus, the slab's diffuse
+// transmission the low deck takes in full. Without it a fair cumulus' shaded base took only the
+// sky light's ramp, nearly none at the bottom of a shell 5.2 km deep, and read as a near-black
+// navy block under tops metered bright (some 6 stops of contrast). At 0.3 the base reads a soft
+// grey about a stop under the lit tops and level with the sky's gaps beside it. Clear's few
+// cumulus stand in the same shell and take the same 0.3. Cloudy and overcast keep 0: their low
+// deck takes the whole term already (the shell's share goes as 1 - its low share), and at 0 the
+// march draws as it did. The gain goes by the sun's share of the clouds' key (trackClouds), so
+// the term's level is the sun's part of the key alone. Tunable on debug pages:
+// `sky.clouds.column@<clear|fair>`.
+//
 // The low deck's own values (`low`: cloudy's and overcast's; clear and fair keep the high cumulus
 // and have none). Overcast's draw its closed deck (Clouds.ts `deckDensity`, `setDeckForm`), by
 // overcast's share of the sky; cloudy's are held here and not read yet. `large`, `medium` and
@@ -756,10 +768,10 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 // sky 3 to 7 degrees from the sun stays as even as it was.
 type LowCloud = Omit<DeckForm, 'fadeEnd' | 'fadeFloor' | 'baseShape' | 'stretch' | 'mediumScale'> & Partial<DeckForm>;
 type CloudSky = { base: number; top: number } & { -readonly [ K in keyof typeof CLOUD_FORM ]: number } & {
-	phaseForward: number; phaseBack: number; phaseBackWeight: number; phaseBackShare: number; gapClear: number; low: LowCloud | null;
+	phaseForward: number; phaseBack: number; phaseBackWeight: number; phaseBackShare: number; gapClear: number; column: number; low: LowCloud | null;
 };
 const HIGH_SHELL = { base: SHELL_BOTTOM, top: SHELL_BOTTOM + SHELL_THICKNESS };
-const PHASE = { phaseForward: 0.8, phaseBack: - 0.2, phaseBackWeight: 1, phaseBackShare: 0.2, gapClear: 1 };
+const PHASE = { phaseForward: 0.8, phaseBack: - 0.2, phaseBackWeight: 1, phaseBackShare: 0.2, gapClear: 1, column: 0 };
 const OVERCAST_DECK: DeckForm = { large: 1.5, medium: 1.2, mediumScale: 2400, detail: 0.2, rise: 2.37, baseBand: 600, baseShape: 0.2, stretch: 1.6, topBand: 600, fadeFrom: 5, fadeEnd: 2, fadeFloor: 0.5, nearFull: 10, nearNone: 5, farCover: 0.12, ambientRamp: 600, deckAmbient: 0.7 };
 // overcast's deck's tunes and their ranges
 const DECK_TUNES: readonly ( readonly [ keyof DeckForm, number, number ] )[] = [
@@ -772,7 +784,12 @@ const CLOUD_SKIES: CloudSky[] = KEPT_SKIES.map( ( name ): CloudSky => name === '
 	low: { large: 2, medium: 1, detail: 0.125, rise: 0.5, baseBand: 50, topBand: 575, fadeFrom: 10, nearFull: 10, nearNone: 5, farCover: 0, ambientRamp: 0, deckAmbient: 1 },
 } : name === 'overcast' ? {
 	base: 600, top: 3000, ...CLOUD_FORM, ...PHASE, low: OVERCAST_DECK,
-} : { ...HIGH_SHELL, ...CLOUD_FORM, ...PHASE, low: null } );
+} : { ...HIGH_SHELL, ...CLOUD_FORM, ...PHASE, column: 0.3, low: null } );
+for ( const [ s, name ] of [ [ 0, 'clear' ], [ 1, 'fair' ] ] as const ) {
+
+	tuneObject( CLOUD_SKIES[ s ], { column: `sky.clouds.column@${ name }` }, { column: { min: 0, max: 1, onChange: markSkyRetune } } );
+
+}
 tuneObject( OVERCAST_DECK, Object.fromEntries( DECK_TUNES.map( ( [ field ] ) => [ field, `sky.clouds.${ field }@overcast` ] ) ),
 	Object.fromEntries( DECK_TUNES.map( ( [ field, min, max ] ) => [ field, { min, max, onChange: markSkyRetune } ] ) ) );
 for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
@@ -1055,12 +1072,25 @@ const streakKeys = ( prefix: string, keys: { afterglow: Rgb; golden: Rgb; low: R
 	}, { r: range, g: range, b: range } );
 
 };
+// Under a low sun (afterglow, golden, low, predawn, sunrise, morning) the two shares take the
+// light's colour apart: the direct share warm, red over green 2.2, the ambient share cool, blue
+// over red 1.5, their luminances 0.38 and 0.59 of a white key's; together they read red plus blue
+// less green, a rose. White keys left the layer the colour of the sun's light at its height alone,
+// a yellow-white 0.17 above the sky round it in Oklab L and paler than it. With these, in the
+// golden hour, it reads rose toward the sun and away from it alike (hue 35 - 43), 0.03 - 0.04 more
+// saturated than that sky and 0.08 - 0.09 above it in L. The direct share's luminance moves that
+// L little (0.38 to 0.44 of white: 0.085 to 0.10); a redder direct share turns the side toward the
+// sun past rose, a less red one leaves the side away from it as pale as the sky. From 8 degrees up
+// to 30 both shares turn back to white, the morning's as the evening's; only the high sun's keys
+// and the night's are white, so the layer is unchanged under a sun above 30 degrees and by night.
 const white = (): Rgb => ( { r: 1, g: 1, b: 1 } );
+const warm = (): Rgb => ( { r: 0.66, g: 0.3, b: 0.3 } );
+const cool = (): Rgb => ( { r: 0.6, g: 0.55, b: 0.9 } );
 const STREAK_DIRECT = streakKeys( 'sky.streaks.keyDirect', {
-	afterglow: white(), golden: white(), low: white(), predawn: white(), sunrise: white(), morning: white(), high: white(), night: white(),
+	afterglow: warm(), golden: warm(), low: warm(), predawn: warm(), sunrise: warm(), morning: warm(), high: white(), night: white(),
 } );
 const STREAK_AMBIENT = streakKeys( 'sky.streaks.keyAmbient', {
-	afterglow: white(), golden: white(), low: white(), predawn: white(), sunrise: white(), morning: white(), high: white(), night: white(),
+	afterglow: cool(), golden: cool(), low: cool(), predawn: cool(), sunrise: cool(), morning: cool(), high: white(), night: white(),
 } );
 const _streakKey = { r: 0, g: 0, b: 0 };
 // The sun's elevations (degrees) over which the light the clouds march toward sets from the moon's
@@ -2508,6 +2538,17 @@ export class Sky {
 		clouds.keyAmbient.value.setRGB( ar, ag, ab );
 		// (the moon's beam lifted as the sun's is, at the moon's height)
 		clouds.moonLight.value = moonY * ( 1 + 0.7 * lowSunOf( this.moonElevation, coverage ) );
+		// The high shell's transmitted key is the sun's alone: its gain goes by the sun's share of
+		// the clouds' key (`sunLight` over it and `moonLight`), 1 by day, 0 once only the moon lights
+		// them, so the term's level is the sun's part of the key (its colour stays the key's, the
+		// moon's in it by its share, small wherever the term is not). Lit by the moon too, the fair
+		// clouds read brighter in late twilight than the night's level was set with, and the meter
+		// took the scene down by a third of a stop at -11 to -12 degrees. (Faded by the moon's share
+		// of the thin layer's keys instead, the term still took the moon's part half way through
+		// its window, 0.09 of a stop at -10 degrees.)
+		const shellColumn = skyMix ? CLOUD_SKIES.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k.column, 0 ) : CLOUD_SKIES[ 0 ].column;
+		const sunKey = clouds.sunLight.value, moonKey = clouds.moonLight.value;
+		clouds.shellColumn.value = moonKey > 0 ? shellColumn * sunKey / ( sunKey + moonKey ) : shellColumn;
 		// The night ambient is the clouds' own (the clear sky draws none), taken as their sky light.
 		clouds.nightAmbient.value.copy( this.displayNightAmbient.value );
 		// A low deck's column passes down the key's light above its tops: by day the sun's above the
