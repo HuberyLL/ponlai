@@ -110,7 +110,8 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 - `src/materials/`: procedural textures (the gravel bake and the scans' texture arrays:
   `ProceduralTextures.ts`), the terrain (`TerrainMaterial.ts`, its ground scans hex-tiled), the sea floor's colour (`SeabedLook.ts`), wet surfaces, the meadow's habitat and soil-depth fields (`Meadow.ts`), what a closed sky's light turns into in the sward (`SwardTint.ts`, shared by the blades and the turf).
 - `src/ocean/`: FFT ocean, shore waves, the share of each wave cascade a point of the sea keeps
-  (`WaveDamping.ts`), the wave maps the light under the water reads (`WaveMaps.ts`),
+  (`WaveDamping.ts`), the wave maps and caustics the light under the water reads, baked by a pass
+  on the frame graph (`WaveMaps.ts`),
   water shading (`Water.ts`), the sea's optical properties as plain numbers, which the page's
   uniforms, the ground bounce and the ambient probes read (`SeaOptics.ts`: a change to them
   rebuilds the world's cache), the sea's large-scale detail (`SeaDetail.ts`: gusts, slicks,

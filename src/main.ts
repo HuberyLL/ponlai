@@ -632,7 +632,7 @@ const fft = new OceanFFT( renderer, {
 	...wind.spectrumWind, fetch: sea.fetch, choppiness: sea.choppiness, distantSwell: { scale: sea.swell },
 	anisotropy: quality.water.fftAnisotropy,
 } );
-const waveMaps = new WaveMaps( renderer );
+const waveMaps = new WaveMaps( renderer, fft );
 // the sea's gusts, slicks and windrows (the water's roughness)
 const seaDetail = new SeaDetail( shared );
 // the veil's shells and the sea's ripple layers are built into the rain's and the water's materials
@@ -698,10 +698,11 @@ const overlayLatents: LatentRegistry = TEMPORAL
 // warm-up compiles every pass the frame may run, those that run only at times included (fog, rain,
 // the view distance, either output), each under its own binding (its target and MRT are part of
 // its pipelines' keys), with the objects their owners register as drawn only at times; the sky
-// compiles its own renders. The storm's foam and spray need the world's shore fields and register
-// with it.
+// and the caustics' splats (drawn only while the sun lights them) compile their own renders. The
+// storm's foam and spray need the world's shore fields and register with it.
 const warming = Promise.all( [
 	sky.warm( renderer ),
+	waveMaps.warm(),
 	// the drops and splashes, and the bolts, registered with the passes they draw in before the
 	// graph's warm-up starts, which compiles them with every pass (graph/FrameGraph.ts `warm`)
 	rain.registerLatent( overlayLatents ),
@@ -771,6 +772,7 @@ scene.add( wenyao.mesh );
 // the frame graph, drawn in the opaque scene; the test mode leaves them out (debug/TestMode.ts).
 const fallingLeaves = TEST_MODE ? null : new FallingLeaves( { shared, fields, soil: textures.soil, wind, atlas: singleLeaf() } );
 pipeline.fallingLeaves = fallingLeaves;
+pipeline.waveMaps = waveMaps;
 if ( fallingLeaves ) scene.add( fallingLeaves.mesh );
 // The chunks' borders (GUI Ground folder, ?chunkBorders), built on first show.
 const chunkView = { borders: params.has( 'chunkBorders' ), lines: null as THREE.LineSegments | null };
@@ -2019,7 +2021,9 @@ function tick( time: number ): void {
 	stormSea.update( simTime, weather.state.storm, camera );
 	shoreWaves.update( fft, simTime );
 	// Whitewater is disabled in this scene; leave its history idle.
-	waveMaps.update( camera );
+	// (the wave maps and the caustics are drawn by their pass on the frame graph: WaveMaps.ts; the
+	// caustics only while the sun is the key and gives light, and when the sea's time or the key moved)
+	waveMaps.prepare( camera, sky.keyDir, ! sky.keyIsMoon && Math.max( shared.sunColor.value.x, shared.sunColor.value.y, shared.sunColor.value.z ) > 0, simTime, fft.spectrumRevision );
 	// (their schools take flight more often by night)
 	wenyao.update( paused ? 0 : dt, sky.grade.night );
 	fallingLeaves?.update( simTime, freeControls.enabled ? camera.position : controls.target, camera.position );
@@ -2205,7 +2209,7 @@ if ( DEBUG && TEMPORAL ) console.info( 'motion check', motionCheck( motionPasses
 if ( profiler ) {
 
 	const { labelPonlaiPasses } = await import( './debug/FrameProfiler.ts' );
-	labelPonlaiPasses( profiler, { scene, waterScene, rainScene, pipeline, sky, rain, sunShadow, refractedSun, fft, stormSea, shoreWaves, waveMaps, groundBounce, characters } );
+	labelPonlaiPasses( profiler, { scene, waterScene, rainScene, pipeline, sky, rain, sunShadow, refractedSun, fft, stormSea, shoreWaves, groundBounce, characters } );
 
 }
 // the nodes r186 makes inside the first lit build, made by a throwaway one, so the frame's receivers

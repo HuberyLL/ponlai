@@ -1072,7 +1072,8 @@ lit materials that read the ambient volume, `src/lighting/AmbientSample.ts`, wit
 under `--q "flags=ambientVolume:0"`, without it; `gtao`: the ambient
 occlusion's depth, slices and blur, `src/post/GTAO.ts`; `meadow`: the displacement field's
 sprites and the near and far blades that read it, `src/world/vegetation/Displacement.ts` and
-`src/world/Grass.ts`, built from an empty plan; `falling-leaves`: the falling leaves' step and
+`src/world/Grass.ts`, built from an empty plan; `wave-maps`: the caustics' splats at their four
+focal planes, `src/ocean/WaveMaps.ts`; `falling-leaves`: the falling leaves' step and
 prewarm kernels and draw, `src/weather/FallingLeaves.ts`; `local-lights`: the local lights'
 clusters kernel and the lit materials that bind the most with their lookup, the terrain's cliff
 and seabed and the islanders' figure, `src/lighting/LocalLights.ts`; `haze`: the volumetric haze's

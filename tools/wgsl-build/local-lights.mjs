@@ -58,7 +58,7 @@ export default function ( { renderer } ) {
 		normalsA: layer( DETAIL_LAYER.normalsA ), normalsB: layer( DETAIL_LAYER.normalsB ),
 		scanAlbedo: array( 'scanAlbedo', 3 ), scanDetail: array( 'scanDetail', 3 ),
 	};
-	const waveMaps = new WaveMaps( renderer );
+	const waveMaps = new WaveMaps( renderer, { cascades: 3, sizes: [ 250, 50, 10 ], derivatives: array( 'derivatives', 3 ) } );
 	const shore = plain( 'shore' ), rim = plain( 'rim' );
 	const scene = new THREE.Scene();
 	const light = new THREE.DirectionalLight( 0xffffff, 1 );

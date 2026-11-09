@@ -22,23 +22,25 @@ type V3 = THREE.Node<'vec3'>;
 type B = THREE.Node<'bool'>;
 
 // The light below the water's surface, one model for everything lit under it (the terrain and the
-// sea floor, TerrainMaterial.ts), as tidewater's UnderwaterLighting (4811ba4) lights it: the key light refracted at the mean surface and carried
-// down the water column to the point under the long waves' surface (Beer-Lambert over the slant
-// path, the share that enters the water and the beam's change of area), faded in over the first
-// 8 cm; and the ambient and specular light under the mean level, dimmer with the depth, faded in
-// over the first 10 cm. Both paths attenuate by kappa = a + bb (shared.ts `sigA`, `bb`): the light
-// scattered forward stays in the downwelling stream, so only absorption and backscattering take
-// it away (Lee et al. 1999, Appl. Opt. 38:3831). The ambient light goes by Beer-Lambert over
-// 1.2 times the depth, 1.2 being about 1 / mu_d, the inverse mean cosine of a uniform sky refracted
-// into the water: mu_d = ( 1 + cos theta_c ) / 2 = 0.83, theta_c the critical angle, 48.6 degrees at
-// n = 1.333. It enters the water at 0.934, the diffuse Fresnel transmittance of a uniform sky from
-// air into water at n = 1.333 (the cosine-weighted mean of 1 - F over the hemisphere), which the
-// environment's specular, the local lights and the ambient diffuse under the water all take. The long waves and the mean level come from the wave maps baked once a
-// frame (WaveMaps.ts `wavesAt`), so the waterline on the rock rises and falls with the swell. The
-// water shader adds the view path from the point back to the eye, so a material lit
-// here must not. (tidewater leaves the key at its direction in the air with no share or beam
-// factor: the same on a level floor; here the refracted direction lights steep submerged walls as
-// the sun reaches them, and the share that enters the water follows the sun's height.)
+// sea floor, TerrainMaterial.ts), as tidewater's UnderwaterLighting (4811ba4) lights it: the key
+// light refracted at the mean surface and carried down the water column to the point under the long
+// waves' surface (Beer-Lambert over the slant path, the share that enters the water and the beam's
+// change of area), faded in over the first 8 cm, its light gathered and spread by the waves above
+// into the caustics (WaveMaps.ts `causticsAt`, mean 1); and the ambient and specular light under
+// the mean level, dimmer with the depth, faded in over the first 10 cm. Both paths attenuate by
+// kappa = a + bb (shared.ts `sigA`, `bb`): the light scattered forward stays in the downwelling
+// stream, so only absorption and backscattering take it away (Lee et al. 1999, Appl. Opt. 38:3831).
+// The ambient light goes by Beer-Lambert over 1.2 times the depth, 1.2 being about 1 / mu_d, the
+// inverse mean cosine of a uniform sky refracted into the water: mu_d = ( 1 + cos theta_c ) / 2 =
+// 0.83, theta_c the critical angle, 48.6 degrees at n = 1.333. It enters the water at 0.934, the
+// diffuse Fresnel transmittance of a uniform sky from air into water at n = 1.333 (the
+// cosine-weighted mean of 1 - F over the hemisphere), which the environment's specular, the local
+// lights and the ambient diffuse under the water all take. The long waves and the mean level come
+// from the wave maps baked once a frame (WaveMaps.ts `wavesAt`), so the waterline on the rock rises
+// and falls with the swell. The water shader adds the view path from the point back to the eye, so
+// a material lit here must not. (tidewater leaves the key at its direction in the air with no share
+// or beam factor: the same on a level floor; here the refracted direction lights steep submerged
+// walls as the sun reaches them, and the share that enters the water follows the sun's height.)
 //
 // The ambient diffuse is the ambient volume's (lighting/AmbientSample.ts) above the water, as on
 // every lit island material, and below it on the cliffs and the stones: the probes hold the island's
@@ -123,14 +125,16 @@ export function underwaterLight( shared: Shared, waveMaps: WaveMaps, { aboveSun,
 	const waterSun = refractedSunDirectionNode( shared.sunDir );
 	const waterSunView = normalize( cameraViewMatrix.mul( vec4( waterSun, 0 ) ).xyz );
 	// (`under` first builds the wave maps' variable, outside the branch, so that every later reader
-	// finds it declared)
+	// finds it declared.) The caustics are read only below the water, with explicit gradients (the
+	// pixel's footprint from the view ray), so their reads may sit inside it.
 	const sun = Fn( () => {
 
 		const att = ( aboveSun ?? vec3( float( 1 ) ) ).toVar();
 		If( under, () => {
 
 			const path = exp( sigT.negate().mul( dSun ).div( max( waterSun.y, 0.15 ) ) );
-			const beam = path.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) );
+			const caustics = waveMaps.causticsAt( p, dSun, waves.yz );
+			const beam = path.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) ).mul( caustics );
 			att.assign( mix( att, beam, smoothstep( 0, 0.08, dSun ) ) );
 
 		} );

@@ -42,11 +42,11 @@ import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 // environment's lower half already gives a face turned down (the distant sea's radiance, Sky's
 // `seaRadiance`, where tidewater's environment has the atmosphere's dark ground), then blurred
 // (a binomial 5x5 of 1 m steps, as 3x3 bilinear lookups). Alpha: the height of the bouncing
-// surface (the plateau's top over its swells, or the sea level). It is drawn at 256 texels, blurred into the
-// wave maps' array target (its last layer, WaveMaps `bounceLayer`), so the materials lit under the
-// water take no texture more for it. Like the wave maps, it is drawn before the frame graph, after
-// the sun's map. It is a function of the key's direction and colour, the sun's maps,
-// the sea's radiance and the world fields. It is drawn with the sun's map's steps (`steps`: a step
+// surface (the plateau's top over its swells, or the sea level). It is drawn at 256 texels,
+// blurred into the wave maps' array target (its last layer, WaveMaps `bounceLayer`), so the
+// materials lit under the water take no texture more for it. It is drawn before the frame graph,
+// after the sun's map. It is a function of the key's direction and colour, the sun's maps, the
+// sea's radiance and the world fields. It is drawn with the sun's map's steps (`steps`: a step
 // of the key's turn, SunShadow.ts, counted also while the swaying plants redraw that map every
 // frame), from that map alone and the key as it stands then, and
 // whenever the sea's radiance or the fields change (a growth swap and a scene jump through
@@ -118,9 +118,10 @@ const REACH = 1;
 const SHADOW_LIFT = 0.2;
 // linear albedos: the plateau's lawn, which times shared.lawnGain is the blades' mean, as the
 // probes' bake sees it (AmbientProbes.ts LAWN_TOP), the rim's stone, and the floor's (its means at
-// the gain it is seen at: SeabedTile.ts FLOOR_ALBEDO; the seagrass SeabedLook.ts's mean)
+// the gain it is seen at: SeabedTile.ts FLOOR_ALBEDO, the sand its `sandGain` on top; the seagrass
+// SeabedLook.ts's mean)
 const LAWN = vec3( ...LAWN_COLOUR ), RIM = vec3( 0.08, 0.075, 0.065 );
-const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.gain ), SEAGRASS = vec3( 0.2475, 0.304, 0.124 ).mul( FLOOR_ALBEDO.gain ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.gain );
+const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.gain * FLOOR_ALBEDO.sandGain ), SEAGRASS = vec3( 0.2475, 0.304, 0.124 ).mul( FLOOR_ALBEDO.gain ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.gain );
 // the floor's light through the surface, down and back up: the sky's diffuse transmittance into the
 // water (0.934) times the upwelling light's out of it, 1 - 0.475. Both are Fresnel's reflectance of
 // water (n = 1.333) integrated over a uniform hemisphere, our own figures: 0.475 the mean internal
@@ -258,7 +259,7 @@ export class GroundBounce {
 
 	}
 
-	/** Once a frame, after the sun's map and the wave maps: draws the map again at the sun's map's
+	/** Once a frame, after the sun's map: draws the map again at the sun's map's
 	 * steps and when the sea or the fields changed (see the header). `sea`: the environment's lower
 	 * half (Sky `seaRadiance`). */
 	update( sea: THREE.Color ): void {
@@ -276,6 +277,8 @@ export class GroundBounce {
 		const prev = r.getRenderTarget();
 		r.setRenderTarget( this.raw );
 		this.rawQuad.render( r );
+		// (read at level 0 only; the target makes no mips here: WaveMaps.ts makes its chain after
+		// the caustics alone)
 		r.setRenderTarget( target, layer );
 		this.blurQuad.render( r );
 		r.setRenderTarget( prev );
