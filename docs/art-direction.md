@@ -143,7 +143,11 @@ art decision changes; images from elsewhere stay out of the repository.
   waves' slopes. At sunset the reflection takes the low sky's colour. A calm lee stands level with
   the sea round it. It stays clear to the floor in everyday weather: the stones and the seagrass's edges show
   through the water down to some 5 to 7 m, which wobbles them but never breaks them into crumbs,
-  and the calm water carries no film of foam.
+  and the calm water carries no film of foam. The water softens the floor as real water does: the
+  sand's ripples hold near the shore, finer detail goes soft from a few metres down the slant of the
+  view, and past some ten metres only the floor's large shapes remain (rock against sand, the
+  seagrass's patches), never glass over a sharp floor at any depth. Under a deck the water body
+  takes the sky's light as the surface reflects it.
 - The look is judged from the game's own view, the island camera zoomed out over the island, as
   well as close up. Light reads there through its direction and large-scale light and shade (lit
   and shaded slopes and cliffs, a glint or moon path on the sea, later warm lights and what stands

@@ -113,11 +113,12 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     for Case 1 water's absorption and backscattering (shared.ts `sigA`, `bb`): the floor seen
 //     through the column, and the deep water's reflectance under the sun (the same sun the floor
 //     takes: the share that enters the water and the beam's change of area, so the body dims as the
-//     sun sinks) and under the sky (through the surface at the sky's diffuse transmittance; under a
-//     deck the sky's light in the body takes the deck's gain, sky/Weather.ts DECK_SKY_GAIN by
-//     `deckLight`, as the sea's bounce onto the land does, AmbientRelight.ts `seaScale`, less what a
-//     cloudy deck's gaps take back where the key comes through, `deckSkyGap`), each filling in as
-//     the column deepens, the whole leaving the water at 1 / n^2; whitecaps where the surface is compressed
+//     sun sinks) and under the sky (through the surface at the sky's diffuse transmittance, the sky
+//     the surface sees and reflects, under a deck too: the light that enters the water agrees with
+//     the deck it mirrors), each filling in as the column deepens, the whole leaving the water at
+//     1 / n^2; the floor's image formed of its unscattered light, sharp, and the light the water
+//     scatters forward by small angles, blurred over the path (`WATER_BODY`, the floor's image), so
+//     the floor's detail softens with the water between and its large shapes stay; whitecaps where the surface is compressed
 //     (tidewater's fresh foam, not its persistent foam, which integrates in time), lit as a bright diffuse scatterer
 // Drawn after the opaque pass into the same multisampled target, depth-tested per sample against
 // the opaque surfaces, reading a copy of that pass's resolved colour, its linear depth and the
@@ -399,6 +400,25 @@ const REFLECTION_LOBE = { slopeScale: 1, lift: 2, edge: 0.05 } as const;
 // deep water (red to blue) and up to about 4 % over shallow sand, under the model's own error. The
 // radiance under the surface leaves it at 1 / n^2 (the change of the beam's solid angle); the
 // surface's own transmittance 1 - F is the blend with the reflection.
+// The floor's image. Lee's floor term is the whole of the floor's light that comes back up the path,
+// what went straight and what the water scattered a little off its line on the way, so taken as a
+// sharp image it showed the floor as through glass at any depth, only darker. The image is formed
+// of the unscattered light, the beam's exp( - c L ) with c = a + b (ocean/SeaOptics.ts SCATTER), and
+// the light scattered forward by small angles, which arrives spread over the floor (McGlamery 1980,
+// "A computer model for underwater camera systems", SPIE 208; Jaffe 1990, "Computer modeling and the
+// design of optimal underwater imaging systems", IEEE J. Oceanic Eng. 15:101): the floor term is
+// split into floor x exp( - c L ) and the floor blurred x ( exp( - kappa Du_B L ) - exp( - c L ) ),
+// the sharp share held under the whole. In green the sharp share is some .69, .39 and .16 of the
+// floor's light at 2, 5 and 10 m: the sand's ripples hold near the shore, the floor's detail goes
+// soft from a few metres, and past ten only its large shapes remain; the mean is Lee's as before.
+// The blur's spread on the floor, one axis, is the small-angle diffusion of a beam scattered at
+// rate b_f with rms angle theta per axis along a path L, each scattering at x offsetting the ray by
+// theta ( L - x ): sigma^2 = b_f theta^2 L^3 / ( 3 ( 1 - exp( - b_f L ) ) ) (the mean over the
+// scatterings that happened; SeaOptics.ts FORWARD_SCATTER, FORWARD_ANGLE). The blurred image is the
+// underwater pyramid read again at the end's footprint widened by that spread in pixels, one
+// filtered read: a single scale where the spread is heavy-tailed (its median offset well under
+// sigma), so it softens the floor's mid-scale detail and keeps its large shapes, without the halo's
+// long tail.
 const WATER_BODY = { rrs: [ 0.084, 0.170 ], column: [ 1.03, 2.4 ], floor: [ 1.04, 5.4 ] } as const;
 // the diffuse Fresnel transmittance of a uniform sky from air into water at n = 1.333, and the path
 // factor of its light down the column, about 1 / mu_d (Underwater.ts)
@@ -1207,8 +1227,23 @@ export class Water {
 
 			};
 			const endDx = widen( dFdx( uvR ) ), endDy = widen( dFdy( uvR ) );
+			// The floor's forward-scattered image (WATER_BODY, the floor's image): the same footprint widened by the
+			// spread the particles' small-angle scattering gives the floor over the path, sigma^2 =
+			// b_f theta^2 L^3 / ( 3 ( 1 - exp( - b_f L ) ) ) metres along one axis, in pixels at the end
+			const Lscatter = max( Lend, 0.05 ).toVar();
+			const bfL = Lscatter.mul( shared.forwardScatter ).toVar();
+			const spread = Lscatter.mul( shared.forwardAngle ).mul( sqrt( bfL.div( float( 1 ).sub( exp( bfL.negate() ) ).mul( 3 ) ) ) );
+			const blurScatter = spread.mul( p11 ).mul( depthSize.y.mul( 0.5 ) ).div( max( endV.z.negate(), 0.1 ) ).toVar();
+			const widenScattered = ( g: V2 ) => {
+
+				const px = max( length( g.mul( depthSize ) ), 1e-3 );
+				return g.mul( sqrt( px.mul( px ).add( blur.mul( blur ) ).add( blurScatter.mul( blurScatter ) ) ).div( px ) ).toVar();
+
+			};
+			const scatDx = widenScattered( dFdx( uvR ) ), scatDy = widenScattered( dFdy( uvR ) );
 			const behind = ( z: F ) => z.lessThan( posV.z.sub( WATER_BEHIND ) );
 			const sceneCol = vec3( 0 ).toVar();
+			const sceneBlur = vec3( 0 ).toVar(); // the floor's forward-scattered image (WATER_BODY)
 			const uvF = vec2( screenUV ).toVar();
 			const zF = z0.toVar();
 			const found = float( 0 ).toVar();
@@ -1242,14 +1277,18 @@ export class Water {
 					const z = select( opaque, textureLoad( tDepth, texel ).x, viewZOf( r.depth ) ).toVar();
 					const covered = opaque.or( r.color.a.greaterThan( 0.5 ).and( r.depth.lessThan( 1 ) ) ).toVar();
 					const color = r.color.rgb.div( max( r.color.a, 1e-4 ) ).toVar();
+					const colorBlur = color.toVar();
 					If( onImage, () => {
 
 						const f = tUnderwater.sample( q ).grad( endDx, endDy ).toVar();
 						const w = select( r.color.a.greaterThan( 0.5 ), smoothstep( 0.02, 0.15, f.a ), float( 1 ) );
 						color.assign( mix( color, f.rgb.div( max( f.a, 1e-4 ) ), w ) );
+						const fb = tUnderwater.sample( q ).grad( scatDx, scatDy ).toVar();
+						const wb = select( r.color.a.greaterThan( 0.5 ), smoothstep( 0.02, 0.15, fb.a ), float( 1 ) );
+						colorBlur.assign( mix( colorBlur, fb.rgb.div( max( fb.a, 1e-4 ) ), wb ) );
 
 					} );
-					return { color: sceneUnits( color ), z, covered };
+					return { color: sceneUnits( color ), colorBlur: sceneUnits( colorBlur ), z, covered };
 
 				};
 				// What swims in the water (Refraction.ts markSwimmer) is drawn in the opaque image alone,
@@ -1271,6 +1310,7 @@ export class Water {
 					If( swimmer.a.lessThan( 0.999 ).and( behind( zSwimmer ) ), () => {
 
 						sceneCol.assign( sceneUnits( swimmer.rgb ) );
+						sceneBlur.assign( sceneCol );
 						zF.assign( zSwimmer );
 						found.assign( 1 );
 
@@ -1283,6 +1323,7 @@ export class Water {
 					If( end.covered.and( behind( end.z ) ), () => {
 
 						sceneCol.assign( end.color );
+						sceneBlur.assign( end.colorBlur );
 						uvF.assign( uvR );
 						zF.assign( end.z );
 						found.assign( 1 );
@@ -1293,6 +1334,7 @@ export class Water {
 						If( straight.covered.and( behind( straight.z ) ), () => {
 
 							sceneCol.assign( straight.color );
+							sceneBlur.assign( straight.colorBlur );
 							zF.assign( straight.z );
 							found.assign( 1 );
 
@@ -1310,6 +1352,7 @@ export class Water {
 				uvF.assign( select( valid, uvR, screenUV ) );
 				zF.assign( select( valid, zR, z0 ) );
 				sceneCol.assign( sceneAt( uvF ) );
+				sceneBlur.assign( sceneCol );
 
 			} ).Else( () => {
 
@@ -1321,7 +1364,9 @@ export class Water {
 				If( film.greaterThan( 0 ), () => {
 
 					const uvO = select( onScreen.and( behind( sceneViewZ( uvR ) ) ), uvR, screenUV );
-					sceneCol.assign( mix( sceneCol, sceneAt( uvO ), film ) );
+					const rock = sceneAt( uvO ).toVar();
+					sceneCol.assign( mix( sceneCol, rock, film ) );
+					sceneBlur.assign( mix( sceneBlur, rock, film ) );
 
 				} );
 
@@ -1350,11 +1395,14 @@ export class Water {
 			const sunIn = bodyLight.mul( float( 1 ).sub( fresnelDielectric( max( L.y, 0.02 ), float( IOR ) ) ) ).mul( refractedSunBeamScaleNode( L ) );
 			const edSun = sunIn.mul( muS ).toVar();
 			// the sky's, pi times its radiance's mean (`skyIrradianceSource` is E / pi), through the
-			// surface at its diffuse transmittance (SKY_INTO_WATER); under a deck the sky's light in the
-			// body takes the deck's gain, sky/Weather.ts DECK_SKY_GAIN, less what a cloudy deck's gaps
-			// take back where the key comes through, `deckSkyGap`
-			const edSky = shared.skyIrradianceSource.mul( shared.deckSky.sub( shared.deckSkyGap.mul( cloudVisibility ) ) ).mul( PI * SKY_INTO_WATER ).toVar();
-			const floorSeen = sceneCol.mul( exp( kappa.mul( duFloor ).mul( pathLen ).negate() ) ).toVar();
+			// surface at its diffuse transmittance (SKY_INTO_WATER): the sky as the surface sees it and
+			// reflects it, under a deck too
+			const edSky = shared.skyIrradianceSource.mul( PI * SKY_INTO_WATER ).toVar();
+			// the floor through the column (WATER_BODY, the floor's image): Lee's floor term, its unscattered share
+			// exp( - c L ) sharp and the rest from the forward-scattered image
+			const floorLeft = exp( kappa.mul( duFloor ).mul( pathLen ).negate() ).toVar();
+			const floorDirect = min( exp( shared.sigA.add( shared.scatter ).mul( pathLen ).negate() ), floorLeft ).toVar();
+			const floorSeen = sceneCol.mul( floorDirect ).add( sceneBlur.mul( floorLeft.sub( floorDirect ) ) ).toVar();
 			const bodySun = edSun.mul( rrsDeep ).mul( float( 1 ).sub( exp( kappa.mul( depthV.div( muS ).add( duColumn.mul( pathLen ) ) ).negate() ) ) ).toVar();
 			const bodySky = edSky.mul( rrsDeep ).mul( float( 1 ).sub( exp( kappa.mul( depthV.mul( SKY_PATH ).add( duColumn.mul( pathLen ) ) ).negate() ) ) ).toVar();
 			// (the radiance under the surface leaves it at 1 / n^2; the surface's 1 - F is the blend's below)
