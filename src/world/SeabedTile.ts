@@ -15,12 +15,12 @@ import { contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclu
 export const SEABED_TILE = 16;
 // The sea floor's albedo: the means of its pale sand and its rubble at gain 1, and the gain all that
 // lies on the floor takes (SeabedLook.ts its sand, seagrass and rubble, TerrainMaterial.ts the silt on
-// the submerged stones), so that what the ambient probes (AmbientProbes.ts) and the ground bounce
-// (GroundBounce.ts) see of it is the floor the eye sees. The sand is the clean sand's mean, about
-// ( 0.093, 0.079, 0.063 ), a temperate mineral sand (SeabedLook.ts); the rubble the stones' apron as
-// drawn, about 0.1. It lives here because SeabedLook.ts imports three and the probes are built in the
-// chunk workers.
-export const FLOOR_ALBEDO = { sand: [ 0.479, 0.407, 0.325 ], rubble: [ 0.52, 0.49, 0.43 ], gain: 0.194 } as const;
+// the submerged stones), with the sand's own factor over it (`sandGain`), so that what the ambient
+// probes (AmbientProbes.ts) and the ground bounce (GroundBounce.ts) see of it is the floor the eye
+// sees. The clean sand's mean comes to about ( 0.24, 0.20, 0.16 ), a temperate mineral sand
+// (SeabedLook.ts); the rubble the stones' apron as drawn, about 0.1. It lives here because
+// SeabedLook.ts imports three and the probes are built in the chunk workers.
+export const FLOOR_ALBEDO = { sand: [ 0.479, 0.407, 0.325 ], rubble: [ 0.52, 0.49, 0.43 ], gain: 0.194, sandGain: 2.53 } as const;
 // vertices along a tile's side
 export const TILE_SIDE = SEABED_TILE / FLOOR_STEP + 1;
 // A cell gets a tile (and a chunk exists, Chunks.ts) when land lies this close to it (m):

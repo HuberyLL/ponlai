@@ -121,8 +121,9 @@ const GROVE_FLOOR = scanLook( [ 0.2918, 0.2482, 0.1198 ], 0.8, 0.355 );
 // the cliff's stone: TerrainMaterial.ts's rock at its mean tint, above the water times the
 // rock's gain (shared.ts rockGain)
 const ROCK = [ ( 0.124 + 0.188 ) / 2, ( 0.13 + 0.19 ) / 2, ( 0.126 + 0.176 ) / 2 ], ROCK_GAIN = 1.6;
-// the floor: pale sand, the cliff foot's rubble, at the floor's gain (SeabedTile.ts FLOOR_ALBEDO)
-const SAND = FLOOR_ALBEDO.sand.map( c => c * FLOOR_ALBEDO.gain ), RUBBLE = FLOOR_ALBEDO.rubble.map( c => c * FLOOR_ALBEDO.gain );
+// the floor: pale sand, the cliff foot's rubble, at the floor's gain (SeabedTile.ts FLOOR_ALBEDO),
+// the sand its `sandGain` on top
+const SAND = FLOOR_ALBEDO.sand.map( c => c * FLOOR_ALBEDO.gain * FLOOR_ALBEDO.sandGain ), RUBBLE = FLOOR_ALBEDO.rubble.map( c => c * FLOOR_ALBEDO.gain );
 // the water's body seen from under its surface: the deep water's irradiance reflectance just under
 // it, R( 0- ) = 0.33 bb / ( a + bb ), of the sea's own water (ocean/SeaOptics.ts; GroundBounce.ts takes
 // the same through the surface)

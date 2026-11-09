@@ -118,9 +118,10 @@ const REACH = 1;
 const SHADOW_LIFT = 0.2;
 // linear albedos: the plateau's lawn, which times shared.lawnGain is the blades' mean, as the
 // probes' bake sees it (AmbientProbes.ts LAWN_TOP), the rim's stone, and the floor's (its means at
-// the gain it is seen at: SeabedTile.ts FLOOR_ALBEDO; the seagrass SeabedLook.ts's mean)
+// the gain it is seen at: SeabedTile.ts FLOOR_ALBEDO, the sand its `sandGain` on top; the seagrass
+// SeabedLook.ts's mean)
 const LAWN = vec3( ...LAWN_COLOUR ), RIM = vec3( 0.08, 0.075, 0.065 );
-const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.gain ), SEAGRASS = vec3( 0.2475, 0.304, 0.124 ).mul( FLOOR_ALBEDO.gain ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.gain );
+const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.gain * FLOOR_ALBEDO.sandGain ), SEAGRASS = vec3( 0.2475, 0.304, 0.124 ).mul( FLOOR_ALBEDO.gain ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.gain );
 // the floor's light through the surface, down and back up: the sky's diffuse transmittance into the
 // water (0.934) times the upwelling light's out of it, 1 - 0.475. Both are Fresnel's reflectance of
 // water (n = 1.333) integrated over a uniform hemisphere, our own figures: 0.475 the mean internal

@@ -15,12 +15,15 @@ type V4 = THREE.Node<'vec4'>;
 type F = THREE.Node<'float'>;
 
 // The sea floor's colour, for its material (TerrainMaterial's seabed). The sand, the seagrass and
-// the rubble take FLOOR_ALBEDO's gain alike, so they keep their order at every hour; the ground
+// the rubble take FLOOR_ALBEDO's gain alike (the sand its `sandGain` over it); the ground
 // bounce and the ambient probes read it too. Each is a measured reflectance worked into linear sRGB:
 // - the sand a temperate mineral sand (quartz, feldspar and mica, from the island's rock and not a
-//   reef's carbonate), about 8 % on average, its red near twice its blue in the spectrum (about 1.5
-//   times in linear sRGB), and silt and clay at about 5 %, 0.63 of it: our own readings of the sand
-//   and the silt measured in Werdell & Roesler 2003 (Limnol. Oceanogr. 48:557);
+//   reef's carbonate), its red near twice its blue in the spectrum (about 1.5 times in linear sRGB):
+//   our own reading of the spectra measured in Werdell & Roesler 2003 (Limnol. Oceanogr. 48:557),
+//   its level set by `sandGain` within the range of such sands (about 0.15 to 0.3 in green; 0.2
+//   here). The basin's floor is silted sand, a sand with silt in it, 0.63 of the clean sand; it is
+//   not the measured silt and clay (about 5 %), which films the submerged stones
+//   (TerrainMaterial.ts);
 // - the seagrass our reading of the eelgrass measured in the same paper;
 // - the rubble the island's rock under the water (its tone by RUBBLE_TONE, its darkening under the
 //   water TerrainMaterial.ts SUBMERGED_ROCK's) mostly under a film of algae.
@@ -38,10 +41,11 @@ export function seabedAlbedo( bed: V2, broad: F, detail: V3, shore: F, wander: F
 
 	// Broad sand colour carries the shallows; low-relief ripples stay subordinate so the
 	// ocean does not look like a transparent lid over an engraved, striped floor. The clean sand
-	// washed off the island averages ( 0.093, 0.079, 0.063 ) over its spread (its high end about 1.55
-	// times its low), the basin's silted sand 0.63 of it (see the header).
+	// washed off the island averages ( 0.24, 0.20, 0.16 ) over its spread (its high end about 1.55
+	// times its low); the basin's floor is silted sand, a sand with silt in it, 0.63 of the clean
+	// sand (not the bare silt and clay on the submerged stones: see the header).
 	const sand = mix( vec3( 0.376, 0.319, 0.255 ), vec3( 0.582, 0.495, 0.395 ), smoothstep( 0.1, 0.9, detail.z.mul( 0.23 ).add( broad.mul( 0.87 ) ) ) )
-		.mul( detail.y.mul( 0.1 ).add( 0.95 ) ).mul( mix( float( 0.63 ), float( 1 ), bed.y ) ).mul( FLOOR_ALBEDO.gain );
+		.mul( detail.y.mul( 0.1 ).add( 0.95 ) ).mul( mix( float( 0.63 ), float( 1 ), bed.y ) ).mul( FLOOR_ALBEDO.gain * FLOOR_ALBEDO.sandGain );
 	// seagrass and algae beds: dark olive meadows whose edges fray over a few decimetres (a
 	// meadow's edge is a sharp step from leaves to bare sand, not a gradient), about ( 0.048, 0.059,
 	// 0.024 ) on average, eelgrass's (see the header)
