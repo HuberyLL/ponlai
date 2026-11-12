@@ -117,7 +117,7 @@
 //                  the lawn's bare ground is not open level ground: at a clear 22 degree sun the
 //                  default view reads about 0.65 of the key-to-ambient a white card on lit open
 //                  ground reads at the same sun (another framing: the lit grass and ground in front
-//                  of an eye-height camera). Its window: docs/tools.md, Probes
+//                  of an eye-height camera). Its window: docs/reference/tools.md, Probes
 // Under a sun so low or a view so shaded that a class is empty its measures are null. A placed view
 // shot at several azimuths also gets, per elevation, the mean of its ratios, cover and screen colour
 // over them (`means`, `<view>-e<elevation>-mean`), as one framing alone carries the sun's side of

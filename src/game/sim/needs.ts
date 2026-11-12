@@ -5,8 +5,7 @@ import type { Needs } from './types.ts';
 // An islander's needs, 0..NEED_MAX each: the needs registered (registry.ts; today's in content/),
 // in the order registered, each starting where its definition says and falling every tick by its
 // rate a day, raised by what answers it (an item's use: registry.ts ItemDef, `raiseNeed`). They
-// clamp at 0 with no consequence yet (docs/game-design.md, "Next"). This module names no need: it
-// is the rule every need follows.
+// clamp at 0 with no consequence yet. This module names no need: it is the rule every need follows.
 //
 // A need that falls to CRITICAL_NEED is an event (events.ts `need`), at the tick it crossed the
 // line from above, which the record notes; it is noted again only once the need has risen above the
@@ -15,7 +14,7 @@ import type { Needs } from './types.ts';
 
 export const NEED_MAX = 100;
 /** a need at or below this is critical: the interface raises its alert and the record notes it
- * (docs/ui.md, Islanders), and below LOW_NEED its bar turns toward the alert's colour */
+ * (docs/explanation/ui.md, Islanders), and below LOW_NEED its bar turns toward the alert's colour */
 export const CRITICAL_NEED = 20;
 export const LOW_NEED = 50;
 

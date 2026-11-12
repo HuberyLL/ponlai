@@ -78,10 +78,11 @@ Three layers:
   sliced by `unicode-range`, so a page loads only the slices its characters need: the islanders
   may say anything).
 - **Numerals and Latin**: our own brush fonts, drawn with the icons' brush, in
-  `public/fonts/` (assets: `docs/tools.md`): `PonlaiBrush.woff2` (text cut) and `PonlaiBrushDisplay.woff2` (from
-  24 px up). Declare them with `unicode-range: U+0020-007E, U+00B7` and put them first in every
-  stack, so every digit and Latin letter in any text switches to the brush while CJK falls through.
-  Their figures are tabular: a changing number never shifts its neighbours.
+  `public/fonts/` (assets: `docs/reference/tools.md`): `PonlaiBrush.woff2` (text cut) and
+  `PonlaiBrushDisplay.woff2` (from 24 px up). Declare them with `unicode-range: U+0020-007E, U+00B7`
+  and put them first in every stack, so every digit and Latin letter in any text switches to the
+  brush while CJK falls through. Their figures are tabular: a changing number never shifts its
+  neighbours.
 
 Stacks: body `'Ponlai Brush', 'LXGW WenKai GB', serif`; titles `'Ponlai Brush Display',
 'Ma Shan Zheng', serif`. Set `font-synthesis: none` everywhere (never fake bold or italic). Labels
@@ -209,17 +210,17 @@ interface hides; Esc or × closes; ←/→ step days.
 
 ## Motion
 
-- Words to an islander: as in Speaking (0.08 s apart, 1.3 s flight, following the head).
-- The weather icon morphs between kinds; the forecast stroke flows left with time and its turn
-  icons travel with it.
-- The build bar: the two strokes unfold leftward from the mallet; a change of group replaces the
-  top tier; more than fits slides; the chosen lifts and its detail floats up.
-- The record: days slide in and out of the river.
+Each component's motion is given with it above (Top row, Speaking, Build bar, the record). Besides:
+
+- The forecast's turn icons travel with its stroke as it flows left.
+- The build bar's two strokes unfold leftward from the mallet; a change of group replaces the top
+  tier.
 
 ## Rules for the code
 
 - The UI reads the simulation and acts only through `Game`'s methods; it never duplicates a game
-  rule (a refusal, a cost check) but asks the simulation for it.
+  rule (a refusal, a cost check) but asks the simulation for it
+  ([ARCHITECTURE.md](../../ARCHITECTURE.md), Rules across the layers, rules 3 and 6).
 - It never touches the canvas's pixels, so paused frames stay exact; DOM is written only where its
   text changed. What stands in the world (Screen and world) is DOM too, laid into the scene through
   the camera, never drawn in it. Anything drawn in the 3D scene itself (the placement ring) that
@@ -227,7 +228,8 @@ interface hides; Esc or × closes; ←/→ step days.
 - Lists render from data; adding a building, a resource, a weather kind or a record event never
   touches the components.
 - Every word the player reads is a key of the catalogue (`src/game/ui/i18n/`), never a string in
-  code; a list's row names its words by its id.
+  code; a list's row names its words by its id. Content without words or a look of its own shows
+  with the defaults ([ARCHITECTURE.md](../../ARCHITECTURE.md), Rules across the layers, rule 9).
 - Keyboard focus and `aria-label` on every control; text fits its longest likely value at
   1920×1080 CSS pixels.
 
@@ -287,14 +289,14 @@ from a board, it is said here.
   dividers. Each keeps its outline and loses ink only: its tail runs dry from halfway (飞白, streaks
   of bare paper along the stroke, the tip parting into threads), a few thin gaps of bare paper run
   through it, its edge is drunk in a little by the paper, and the ink thins slightly after the first
-  press. A stroke is ink or paper, never a lighter grey of ink in lines or patches: on the dark scene
-  that reads as a stain. How dry comes with a stroke's length in widths (an icon's strokes stay as
-  drawn, and icons and ticks are not inked) and half as much on a thin stroke; the gaps, the edge
-  and the tone show only on a stroke wide enough on screen. A need's bar is a gauge and does not dry
-  (its ends say the value and the whole). The ring at the feet is an ensō: it starts at its front
-  left and goes round the back, so its dry tail falls on its heavy near side. The style is the one
-  chosen from samples (dry from halfway, three quarters dry at the exit, the edge drunk in, the gaps
-  "more"); `tools/verify-ink.mjs` checks it.
-- **Not yet**: the placement of any building but the chest, a player's save or load control or a sign that the game was saved, a
-  thought started by hearing for the stand-in,
+  press. A stroke is ink or paper, never a lighter grey of ink in lines or patches: on the dark
+  scene that reads as a stain. How dry comes with a stroke's length in widths (an icon's strokes
+  stay as drawn, and icons and ticks are not inked) and half as much on a thin stroke; the gaps, the
+  edge and the tone show only on a stroke wide enough on screen. A need's bar is a gauge and does
+  not dry (its ends say the value and the whole). The ring at the feet is an ensō: it starts at its
+  front left and goes round the back, so its dry tail falls on its heavy near side. The style is the
+  one chosen from samples (dry from halfway, three quarters dry at the exit, the edge drunk in, the
+  gaps "more"); `tools/verify-ink.mjs` checks it.
+- **Not yet**: the placement of any building but the chest, a player's save or load control or a
+  sign that the game was saved, a thought started by hearing for the stand-in,
   and everything Scope now leaves out.

@@ -1,6 +1,6 @@
 // Regression probe for the island's growth in place (src/world/Growth.ts): a page grown by N steps
 // must draw what a page freshly loaded on that land draws, bit for bit, in the test mode (paused,
-// MSAA: docs/tools.md, Test mode; AGENTS.md, "The island grows in place"), and no swap may build a
+// MSAA: docs/reference/tools.md, Test mode; AGENTS.md, "The island grows in place"), and no swap may build a
 // pipeline.
 //
 //   node tools/verify-growth-swap.mjs <base url> [--steps 6] [--views island,cliffs,meadow]
@@ -68,7 +68,7 @@
 //   with the steps), which is not a leak, and anything missing from the drawing shows in the views.
 //   The other columns are recorded, not judged.
 // - console: no console error and no page error on either page (warnings are listed, not judged).
-// Exit codes (docs/tools.md, Writing a tool): 0 every verdict passed, 1 one failed (or the run
+// Exit codes (docs/how-to/write-a-tool.md): 0 every verdict passed, 1 one failed (or the run
 // broke), 2 a usage error. The shots are paused frames under a shared GPU slot: other load on the
 // GPU does not change their pixels, so nothing here is contended and 3 is never returned.
 //

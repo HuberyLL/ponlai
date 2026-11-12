@@ -1,6 +1,6 @@
 import type { Frame } from './Brush.ts';
 
-// The ink of the interface's long strokes (docs/ui.md, Principles: every line is a brush stroke): a
+// The ink of the interface's long strokes (docs/explanation/ui.md, Principles: every line is a brush stroke): a
 // stroke keeps its outline exactly (Brush.ts) and the ink only leaves it, as a brush's does.
 //
 // - Its tail runs dry (飞白): from halfway on, streaks of bare paper open along the stroke, the outer

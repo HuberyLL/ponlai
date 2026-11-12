@@ -5,11 +5,11 @@ import { t } from '../i18n/i18n.ts';
 import type { Catalogue } from '../i18n/i18n.ts';
 import { itemName } from './words.ts';
 
-// The island's resources as the top row shows them (docs/ui.md, Resources): one row per kind, in
+// The island's resources as the top row shows them (docs/explanation/ui.md, Resources): one row per kind, in
 // groups (materials, food, water), each with its icon and its count. A kind the simulation has as an
 // item (sim/items.ts) counts what the island's stores hold of it (sim/stock.ts); a kind it does not
 // have yet shows its placeholder count, so the row and the build bar's costs can be seen at work
-// before the materials exist (docs/game-design.md: no materials yet). The rows are placeholders
+// before the materials exist (docs/explanation/game-design.md: no materials yet). The rows are placeholders
 // too: the game's resources are not settled, and a new kind is a new row here with its name in the
 // catalogue (i18n/zh-CN.json `resource`, by id), resolved when the table loads. An item the
 // simulation has (sim/registry.ts) that no row counts shows all the same, with the default row

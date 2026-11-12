@@ -9,7 +9,7 @@ import { GLYPH } from './People.ts';
 import type { People } from './People.ts';
 import type { UiShared } from './Shared.ts';
 
-// The speak bar (docs/ui.md, Speaking; the design canvas's SpeakFlow): the player talks to the
+// The speak bar (docs/explanation/ui.md, Speaking; the design canvas's SpeakFlow): the player talks to the
 // islanders in words. At rest it is 说话 between two brush strokes fading outwards at the bottom
 // centre; it unfolds from the middle as characters are typed, holds about 27 characters (MAX_W)
 // and then scrolls left, fading out at its left edge. The caret is one brush stroke. With an
@@ -22,7 +22,7 @@ import type { UiShared } from './Shared.ts';
 //   of the line and the character) and travels about 1.3 s along an arc on the listener's left into
 //   their head, shrinking and fading; the end follows the head every frame, so the words turn when
 //   the islander walks; a character sinking into the head is heard (People.hear), with no effect;
-// - the words leave the screen for the world (docs/ui.md, Screen and world): a character lifts off
+// - the words leave the screen for the world (docs/explanation/ui.md, Screen and world): a character lifts off
 //   the glass toward the player, its top tipping out, then dives into the scene to the head
 //   (Space.ts: from a few metres before the camera to the head's depth), turning in the air as a
 //   leaf does; the arc and the sizes on screen are the flight's, its depth and its turns the world's;

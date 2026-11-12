@@ -10,7 +10,7 @@
 // checks below on the hashes and, at the S steps, on what the chunks hold. A check prints `ok` /
 // `FAIL` lines and returns whether it passed; any failure sets the exit code. The default run builds
 // 1219 chunks (seeds 1 - 2, steps 0 - 12; about half a second each on one thread, a coastal chunk up
-// to two); `--long` adds what the default leaves out (marked below). docs/tools.md has the times.
+// to two); `--long` adds what the default leaves out (marked below). docs/reference/tools.md has the times.
 //
 //   D1  incremental equals scratch: step n's chunks built incrementally (every chunk of step 0,
 //       then at each step only `dirtyChunks` from the step before, the others kept) hash as step n

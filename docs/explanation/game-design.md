@@ -183,7 +183,8 @@ action takes, the chance of a catch, walking speed). What the islander knows and
 distances, routes, how far or hard something is.
 
 Thirst is off for now: hydration holds where it starts, because nothing on the island gives water
-until the island has a water source of its own. The HUD still shows it.
+until the island has a water source of its own. The HUD still shows it. A need that falls to zero
+has no consequence yet.
 
 ### Perception
 
@@ -209,22 +210,9 @@ not hear.
 - Morale or hope meters.
 - Any system that does not serve the pressures, the layout or the island's growth.
 
-## Next
-
-- The first prototype: one islander on the small island, with food (water waits for a water
-  source of the island's own: thirst is off until then).
-  - **Places**: the shore (fish: takes a while, a fish by chance) and a chest the player places
-    by hand.
-  - **Items**: fish (eat: satiety).
-  - **Needs** fall to zero with no consequence yet; hydration holds.
-  - **A stand-in brain** of plain rules thinks for the islander until the language model is
-    connected; no weather and no talking yet.
-- After it, the prototype that tests whether talking to the islanders is fun: three islanders,
-  food and water, one storm, a few buildings to place, orders in natural language. If ten minutes
-  of it are fun, build on it; if not, change course while it is cheap.
-
 ## Open questions
 
 - How a storm is announced and how much warning the player gets.
-- The population steps at which the island grows, and whether a piece's size should grow with the population.
+- The population steps at which the island grows, and whether a piece's size should grow with the
+  population.
 - How a new islander arrives.

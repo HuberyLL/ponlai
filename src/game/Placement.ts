@@ -15,7 +15,7 @@ import { PlacementPreview } from './view/PlacementPreview.ts';
 // green where it can go, red where the simulation would refuse it), the bar says how or why not
 // (`hint`), and a click on the island places it through Game.placeBlueprint. A refused click leaves
 // it armed; a placed building disarms it and tells the bar (`onPlaced`). The placement of every
-// other building, and the scene's own look of it, wait (docs/ui.md, Scope now).
+// other building, and the scene's own look of it, wait (docs/explanation/ui.md, Scope now).
 //
 // Rules: a press that moves CLICK_SLOP or more is the camera's drag, not a click, as for the debug
 // panel's send-to-click; the preview reads the same refusal the simulation applies

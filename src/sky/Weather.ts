@@ -1,5 +1,5 @@
 // Weather presets, their blending and the auto-weather chain. Bad weather dims and desaturates the
-// existing light; it never adds a grey screen veil (docs/art-direction.md). A weather change sweeps
+// existing light; it never adds a grey screen veil (docs/explanation/art-direction.md). A weather change sweeps
 // the sky as a front from upwind, and the island's lighting follows the front's progress over the
 // island. No tier or knob alters the weather state (Quality.ts).
 //
@@ -34,7 +34,7 @@
 // ahead (tools/verify-weather-state.mjs); the forecast is read again as the weather moves on.
 //
 // Parked weathers (`PARKED_WEATHER`: rain, storm, fog) slowed every line of work down, so until the
-// game needs them as pressure (docs/game-design.md) they are out of the rotation: the auto chain
+// game needs them as pressure (docs/explanation/game-design.md) they are out of the rotation: the auto chain
 // never reaches them, the production page refuses them (main.ts falls back to fair) and the default
 // checks skip them. Their code stays and keeps compiling; debug builds (the dev server, `?debug`)
 // still reach every preset, so captures, probes and a later revival can use them. Under their deck

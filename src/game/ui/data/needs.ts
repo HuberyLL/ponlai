@@ -1,7 +1,7 @@
 import { lookup } from '../i18n/i18n.ts';
 import { PALETTE } from '../Palette.ts';
 
-// How the interface shows the body's needs (docs/ui.md, Islanders): each need's icon and colour,
+// How the interface shows the body's needs (docs/explanation/ui.md, Islanders): each need's icon and colour,
 // by the simulation's need id (sim/registry.ts NeedDef), for the tag's bars, the alerts over the
 // head and the record's mark. A need without a look of its own here shows with the default, the
 // 未绘 glyph (Icons.ts) in 缟, until art gives it one; its name is the catalogue's (i18n/zh-CN.json

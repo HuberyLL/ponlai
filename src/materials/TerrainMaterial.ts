@@ -81,9 +81,10 @@ type F = THREE.Node<'float'>;
 // The cliff's stone under the water against the same stone dry: under water its grains' index of
 // refraction relative to what surrounds them is smaller, so each grain scatters the light more
 // forward, the light goes deeper into the stone before it comes back out, and more of it is
-// absorbed on the way. Our own figure for that, for the stone's albedo near 0.25: about 0.94 of its
-// dry albedo (0.90 to 0.95). The rest of a wet stone's darkening in air, the light the film of water
-// on it traps by total reflection at the film's surface and returns to the stone to be absorbed
+// absorbed on the way. Our own figure for that, derived for a limestone albedo near 0.25 (the
+// island's stone is about 0.1): about 0.94 of its dry albedo (0.90 to 0.95). The rest of a wet
+// stone's darkening in air, the light the film of water on it traps by total reflection at the
+// film's surface and returns to the stone to be absorbed
 // (Lekner & Dorf 1988, "Why some things are darker when wet", Appl. Opt. 27:1278), is under the
 // sea the surface's own, which the water's shading takes (the damp band fades out under the
 // waterline).

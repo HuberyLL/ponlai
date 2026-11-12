@@ -3,7 +3,7 @@ import type { WeatherName } from '../../../sky/Weather.ts';
 import { t } from '../i18n/i18n.ts';
 import type { Catalogue } from '../i18n/i18n.ts';
 
-// The kinds of weather the player is shown (docs/ui.md, Weather forecast): the kept weathers only,
+// The kinds of weather the player is shown (docs/explanation/ui.md, Weather forecast): the kept weathers only,
 // 晴 (clear and fair: a third of the sky in small cloud is still a fine day), 多云 and 阴, with
 // night faces for 晴 (the moon) and 多云 (the moon behind cloud). The parked kinds (雨, 风暴, 雾)
 // join as rows when their weathers return (src/sky/Weather.ts PARKED_WEATHER); until then a

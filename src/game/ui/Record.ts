@@ -15,7 +15,7 @@ import { InkPath } from './InkPath.ts';
 import { t } from './i18n/i18n.ts';
 import type { UiShared } from './Shared.ts';
 
-// 沧海录, the record (docs/ui.md; the design canvas's RecMain and RecPerson): opened by the scroll
+// 沧海录, the record (docs/explanation/ui.md; the design canvas's RecMain and RecPerson): opened by the scroll
 // at the top right over the dimmed, stopped world (the game paused while it is open, and running
 // again on closing if it ran before); the rest of the interface hides. Esc or × closes it; ←/→ step the days.
 // - Left: 蓬莱 (the whole island) pinned on top, then every islander who has landed, scrolling past
