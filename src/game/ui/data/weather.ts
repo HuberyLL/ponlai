@@ -3,11 +3,12 @@ import type { WeatherName } from '../../../sky/Weather.ts';
 import { t } from '../i18n/i18n.ts';
 import type { Catalogue } from '../i18n/i18n.ts';
 
-// The kinds of weather the player is shown (docs/explanation/ui.md, Weather forecast): the kept weathers only,
-// 晴 (clear and fair: a third of the sky in small cloud is still a fine day), 多云 and 阴, with
-// night faces for 晴 (the moon) and 多云 (the moon behind cloud). The parked kinds (雨, 风暴, 雾)
-// join as rows when their weathers return (src/sky/Weather.ts PARKED_WEATHER); until then a
-// parked sky loaded in a debug build shows as the nearest kept kind, 阴.
+// The kinds of weather the player is shown (docs/explanation/ui.md, Weather forecast): 晴 (clear and fair: a third of
+// the sky in small cloud is still a fine day), 多云 (partly, the most cloud the kept weathers
+// reach, and the parked cloudy) and 阴 (the parked overcast), with night faces for 晴 (the moon) and
+// 多云 (the moon behind cloud). The parked kinds (雨, 风暴, 雾) join as rows when their weathers
+// return (src/sky/Weather.ts PARKED_WEATHER); until then a wet sky loaded in a debug build shows
+// as the nearest kind, 阴.
 //
 // Each kind says how the live icon draws it (Forecast.ts blends the kinds of a front by these
 // numbers, so a new kind needs no new code there): `light` whether the sun (or moon) shows, `cover`
@@ -35,11 +36,11 @@ const kind = ( k: Omit<WeatherKind, 'name'> ): WeatherKind => ( { ...k, name: t(
 
 export const WEATHER_KINDS: readonly WeatherKind[] = [
 	kind( { id: 'clear', engine: [ 'clear', 'fair' ], rank: 0, icon: 'sun', night: 'moon', live: { light: 1, cover: 0, cloud: null, back: 0 } } ),
-	kind( { id: 'cloudy', engine: [ 'cloudy' ], rank: 1, icon: 'cloud', night: 'cloudNight', live: { light: 1, cover: 1, cloud: [ 2, 7 ], back: 0 } } ),
+	kind( { id: 'cloudy', engine: [ 'partly', 'cloudy' ], rank: 1, icon: 'cloud', night: 'cloudNight', live: { light: 1, cover: 1, cloud: [ 2, 7 ], back: 0 } } ),
 	kind( { id: 'overcast', engine: [ 'overcast' ], rank: 2, icon: 'overcast', live: { light: 0, cover: 1, cloud: [ - 1, 7 ], back: 1 } } ),
 ];
 
-/** The kind a sky of the engine shows as (a parked sky: the nearest kept kind, 阴). */
+/** The kind a sky of the engine shows as (a wet sky: the nearest kind, 阴). */
 export function weatherKind( sky: WeatherName ): WeatherKind {
 
 	return WEATHER_KINDS.find( ( k ) => k.engine.includes( sky ) ) ?? WEATHER_KINDS[ WEATHER_KINDS.length - 1 ];

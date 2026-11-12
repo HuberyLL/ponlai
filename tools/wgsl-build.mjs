@@ -32,8 +32,7 @@
 //                `post` the post chain's own passes: the exposure's meter, the bloom's levels
 //                and the local tone's grid and slicing (src/post/Metering.ts, Exposure.ts,
 //                PhysicalBloom.ts, LocalTone.ts)
-//                `clouds` the clouds' panorama, shadow and view kernels and the deck noise's bake
-//                (src/sky/Clouds.ts, src/materials/CloudNoise.ts)
+//                `clouds` the clouds' panorama, shadow and view kernels (src/sky/Clouds.ts)
 //                `atmosphere` the atmosphere's bakes and slices, the earth shadow's mean and the
 //                sky's radiance (src/sky/Atmosphere.ts)
 //                `sky` the materials that read the clear sky: the environment's panorama bake,

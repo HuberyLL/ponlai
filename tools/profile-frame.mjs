@@ -265,18 +265,20 @@ const positional = argv.filter( ( a, i ) => ! a.startsWith( '--' ) && ! ( i > 0 
 // Scenes sharing a query run in one page load unless --fresh; `change` scenes run last. The parked
 // weathers' scenes (`parked: true`; src/sky/Weather.ts PARKED_WEATHER) are left out of the default
 // matrix and of --accept's: name them with --scenes (?profile reaches them on a production build).
-// So are the clouded skies' other views (`byName: true`), which time the low deck's march where it
-// costs: its island view and its horizon, where the sky fills half the frame; and clear's horizon,
-// the same view with no deck.
+// The clouded skies' scenes are among them: the sky view, and the low deck's march where it costs,
+// its island view and its horizon, where the sky fills half the frame. Clear's horizon, the same
+// view with no deck, runs by name too (`byName: true`).
 export const SCENES = {
 	'island-fair-noon': { q: 'weather=fair&preset=noon', view: 'island' },
 	'island-clear-golden': { q: 'weather=clear&preset=golden-hour', view: 'island', faceSun: true },
 	'horizon-fair-noon': { q: 'weather=fair&preset=noon', view: 'horizon' },
-	'sky-cloudy': { q: 'weather=cloudy&preset=noon', view: 'sky' },
-	'island-overcast': { q: 'weather=overcast&preset=noon', view: 'island' },
-	'island-cloudy': { byName: true, q: 'weather=cloudy&preset=noon', view: 'island' },
-	'horizon-cloudy': { byName: true, q: 'weather=cloudy&preset=noon', view: 'horizon' },
-	'horizon-overcast': { byName: true, q: 'weather=overcast&preset=noon', view: 'horizon' },
+	'sky-partly': { q: 'weather=partly&preset=noon', view: 'sky' },
+	'island-partly': { q: 'weather=partly&preset=noon', view: 'island' },
+	'sky-cloudy': { parked: true, q: 'weather=cloudy&preset=noon', view: 'sky' },
+	'island-overcast': { parked: true, q: 'weather=overcast&preset=noon', view: 'island' },
+	'island-cloudy': { parked: true, q: 'weather=cloudy&preset=noon', view: 'island' },
+	'horizon-cloudy': { parked: true, q: 'weather=cloudy&preset=noon', view: 'horizon' },
+	'horizon-overcast': { parked: true, q: 'weather=overcast&preset=noon', view: 'horizon' },
 	'horizon-clear-noon': { byName: true, q: 'weather=clear&preset=noon', view: 'horizon' },
 	'island-rain': { parked: true, q: 'weather=rain&preset=noon', view: 'island' },
 	'island-storm': { parked: true, q: 'weather=storm&preset=noon', view: 'island' },

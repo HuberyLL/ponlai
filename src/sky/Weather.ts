@@ -1,9 +1,10 @@
 // Weather presets, their blending and the auto-weather chain. Bad weather dims and desaturates the
-// existing light; it never adds a grey screen veil (docs/explanation/art-direction.md). A weather change sweeps
-// the sky as a front from upwind, and the island's lighting follows the front's progress over the
-// island. No tier or knob alters the weather state (Quality.ts).
+// existing light; it never adds a grey screen veil (docs/explanation/art-direction.md). A weather change moves
+// the whole sky from one preset's values to the next's (a front, in time alone: the clouds are one
+// model whose parameters the skies set, Clouds.ts), and the island's lighting follows its
+// progress. No tier or knob alters the weather state (Quality.ts).
 //
-// The wind is a dimension of its own beside the sky (`WIND_LEVELS`, a heading): any kept sky goes
+// The wind is a dimension of its own beside the sky (`WIND_LEVELS`, a heading): any sky goes
 // with any level, as a day's wind follows the pressure pattern rather than the cloud. A real day's
 // wind comes from any side with the weather, and swings right round as a front passes; the
 // landscape remembers only the prevailing wind (PREVAILING_HEADING: the meadow's exposure, the rim
@@ -14,17 +15,16 @@
 // - Levels (U10, the mean wind 10 m up): light 1.5 m/s, gentle 3.8 (fair's wind, at which the
 //   plants and the sea were tuned), fresh 7 and strong 11. The gust factor falls a little as the
 //   wind rises (light airs are fitful; a strong wind blows steadily hard): 1.5, 1.4, 1.35, 1.3.
-// - A kept sky loads with the gentle wind from the prevailing heading; a parked one with its own
+// - A sky loads with the gentle wind from the prevailing heading; a wet one with its own
 //   (`PRESET_WIND`: rain fresh, a storm's squall strong, fog light). `setWeather` keeps the wind's
-//   target unless the parked sky named brings its own; `setWind` changes the wind alone.
+//   target unless the sky named brings its own; `setWind` changes the wind alone.
 // - Auto weather: each change of sky also moves the wind one level at most (`NEXT_WIND`, its
-//   stronger levels' weights scaled by the coming sky's `WINDIER`: overcast and cloudy raise the
-//   wind more often, fair less, a clear sky as often as the base chain, a cold surge's clear day)
+//   stronger levels' weights scaled by the coming sky's `WINDIER`: fair raises the wind less often,
+//   a clear or a partly sky as often as the base chain, a cold surge's clear day)
 //   and turns it to a new heading: the prevailing 40 degrees plus an offset, nine times in ten a
 //   triangular one within +-40 degrees (most often near 0), one time in ten from the opposite
-//   quadrant (180 +- 45). Over hundreds of hours the wind is gentle 67 % of the time, fresh 16 %,
-//   light 13 % and strong 5 % (strong 6 % under overcast, 4 % under fair;
-//   tools/verify-weather-state.mjs measures it). The wind's draws take a random stream of their
+//   quadrant (180 +- 45). Over hundreds of hours the wind is gentle 69 % of the time, fresh 14 %,
+//   light 14 % and strong 3 % (tools/verify-weather-state.mjs measures it). The wind's draws take a random stream of their
 //   own, so the sky's sequence is the one it was before the wind had levels.
 //
 // The auto chain's sky takes its draws from one seeded stream (dwell, pick, the front's length, in
@@ -33,12 +33,18 @@
 // from the frame after a front ends, so a turn comes up to a step either side of the time read
 // ahead (tools/verify-weather-state.mjs); the forecast is read again as the weather moves on.
 //
-// Parked weathers (`PARKED_WEATHER`: rain, storm, fog) slowed every line of work down, so until the
-// game needs them as pressure (docs/explanation/game-design.md) they are out of the rotation: the auto chain
+// The weather the page runs is a fine day's: clear, fair and partly (`partly`: the sky half-way from
+// fair to cloudy, every field and its shares of the skies the mean of the two, so it is the frame a
+// front between them shows at its middle). Cloud comes and goes among these three and no further.
+//
+// Parked weathers (`PARKED_WEATHER`: cloudy, overcast, rain, storm, fog) slowed every line of work
+// down. Cloudy and overcast wait for the clouds' own milestone (a deck's form and its light under it);
+// rain, storm and fog until the game needs them as pressure (docs/explanation/game-design.md). They are
+// out of the rotation: the auto chain
 // never reaches them, the production page refuses them (main.ts falls back to fair) and the default
 // checks skip them. Their code stays and keeps compiling; debug builds (the dev server, `?debug`)
 // still reach every preset, so captures, probes and a later revival can use them. Under their deck
-// they take what overcast's share takes, counting as overcast in `skyMix`: the level air and the sky
+// rain, storm and fog take what overcast's share takes, counting as overcast in `skyMix`: the level air and the sky
 // gain (DECK_SKY_GAIN, the water's), the land's own gains under overcast
 // (lighting/AmbientRelight.ts OVERCAST_LAND_UNIT, lighting/AmbientGrade.ts OVERCAST_LAND for the
 // sun's part and OVERCAST_MOON_LAND for the moon's),
@@ -46,18 +52,19 @@
 // (post/Exposure.ts), and the land takes the key through their clouds' shadow as it does under
 // overcast.
 //
-// Beside its fields the weather keeps the kept skies' shares in the sky as it stands (`skyMix`,
-// a parked sky counting as overcast), blended by a front as the fields are, for the lighting's
+// Beside its fields the weather keeps the shares of four skies in the sky as it stands (`skyMix`,
+// MIX_SKIES: partly counting as half fair and half cloudy, rain, storm and fog as overcast), blended by a front as the fields are, for the lighting's
 // per-weather knobs (lighting/AmbientGrade.ts).
 
-export type WeatherName = 'clear' | 'fair' | 'cloudy' | 'overcast' | 'rain' | 'storm' | 'fog';
+export type WeatherName = 'clear' | 'fair' | 'partly' | 'cloudy' | 'overcast' | 'rain' | 'storm' | 'fog';
 
-export const PARKED_WEATHER: ReadonlyArray<WeatherName> = [ 'rain', 'storm', 'fog' ];
+export const PARKED_WEATHER: ReadonlyArray<WeatherName> = [ 'cloudy', 'overcast', 'rain', 'storm', 'fog' ];
 export const isParkedWeather = ( name: string ): boolean => ( PARKED_WEATHER as readonly string[] ).includes( name );
-/** The kept skies, in the order of `Weather.skyMix`. */
-export const KEPT_SKIES: ReadonlyArray<WeatherName> = [ 'clear', 'fair', 'cloudy', 'overcast' ];
+/** The skies whose shares `Weather.skyMix` holds, in its order: the lighting's per-sky knobs are
+ * keyed by these four, and every other sky is a blend of them (`skyShares`). */
+export const MIX_SKIES: ReadonlyArray<WeatherName> = [ 'clear', 'fair', 'cloudy', 'overcast' ];
 
-/** The cloud in the weather's blend of the kept skies (`skyMix`): the cloudy sky's share and the
+/** The cloud in the weather's blend of the skies (`skyMix`): the cloudy sky's share and the
  * overcast sky's, none under a clear or a fair sky. */
 export function cloudedShare( skyMix: readonly number[] ): number {
 
@@ -129,58 +136,6 @@ export function deckLight( elevation: number, clouded: number, overcast: number 
 
 }
 
-/** How far the deck's floor of the key has taken over the weather's own fields under its cloud
- * `clouded`, of which overcast's share is `overcast`, at the sun's `elevation` (degrees): a cloudy
- * deck's share as its own light holds (`deckRamp`), overcast's whole at every sun, over the clouded
- * share. Under it the land's key and the air under the deck keep the weather's `deckFloor` (Sky.ts
- * `keyCloudFloor`, `deckKeyFloor`); a clear or a fair sky has no deck fields of its own (`deckFloor`
- * its `cloudFloor`). The floor is the light the closed deck passes down in place of the key it
- * hides, so it stays while any key lights the deck, the sun by day, the moon by night, and the
- * key's own light sets its level. */
-export function deckFloorTakeover( elevation: number, clouded: number, overcast: number ): number {
-
-	return clouded > 0 ? ( ( clouded - overcast ) * deckRamp( elevation ) + overcast ) / clouded : 0;
-
-}
-
-/** The weight of overcast's deck gain on the key's floor (`floorKeyGain`), a light the moon's key
- * gives a part of (the key's bounce under the deck, lighting/AmbientGrade.ts `update`, combines the
- * same two heights with the sun's part times its own gain), at the sun's `elevation` and the
- * moon's `moonElevation` (degrees), by the moon's `moonShare` of the key (Sky.ts `moonKeyShare`):
- * the sun's part takes overcast's deck light at the sun's height, which leaves with the sun's own
- * light over the civil twilight, and the moon's part the same at the moon's, as a closed deck
- * passes the moon's light down as it passes the sun's (`withMoon`). So the weight is the sun's by
- * day, overcastDeckLight( e ) + ( 1 - overcastDeckLight( e ) ) * share with the moon at its default
- * 20 degrees, within 0 and 1, and whole all night (tools/verify-weather-state.mjs). */
-export function overcastDeckWeight( elevation: number, moonElevation: number, moonShare: number ): number {
-
-	return withMoon( overcastDeckLight( elevation ), overcastDeckLight( moonElevation ), moonShare );
-
-}
-
-/** `overcastDeckWeight` for a cloudy deck: its own light (`deckRamp`, from a sun of 3 degrees) at
- * the sun's height and at the moon's, by the moon's share of the key. Between 3 degrees and the
- * moon's key coming in (from -2.5) the weight is the sun's alone, 0 below 3. */
-export function cloudyDeckWeight( elevation: number, moonElevation: number, moonShare: number ): number {
-
-	return withMoon( deckRamp( elevation ), deckRamp( moonElevation ), moonShare );
-
-}
-
-/** The key's gain on the deck's floor (Sky.ts `keyCloudFloor`, `deckKeyFloor`): overcast's gain
- * `overcastKey` by its share `overcast` and `overcastDeckWeight`, a cloudy deck's `cloudyKey` by its
- * share `cloudy` and `cloudyDeckWeight`, at the sun's `elevation` and the moon's `moonElevation`
- * (degrees) by the moon's `moonShare` of the key: the floor stands for the light the deck passes
- * down in place of the key it hides, the sun's by day and the moon's by night, so the moon's key
- * takes the gain the sun's takes at the moon's height. By day its weight is the deck's light at the
- * sun's height, on the slope the land's sky light under the deck takes (lighting/AmbientGrade.ts
- * `overcastLandWeight`). */
-export function floorKeyGain( elevation: number, overcast: number, cloudy: number, overcastKey: number, cloudyKey: number, moonElevation: number, moonShare: number ): number {
-
-	return 1 + ( overcastKey - 1 ) * overcast * overcastDeckWeight( elevation, moonElevation, moonShare ) + ( cloudyKey - 1 ) * cloudy * cloudyDeckWeight( elevation, moonElevation, moonShare );
-
-}
-
 /** The sky's light on the land and in the water under a closed deck, over the sky's irradiance bake
  * (lighting/AmbientRelight.ts, the probes' sky; ocean/Water.ts, the body's in-scatter): one gain
  * for both. It stands in for the soft light the land keeps under cloud: the light that comes
@@ -216,7 +171,7 @@ export function deckSkyGap( elevation: number, clouded: number, overcast: number
 }
 
 /** How far a clouded day's high sun has come in at the sun's `elevation` (degrees) under the
- * weather's blend of the kept skies (`skyMix`): none under a clear or a fair sky, nor up to `low`
+ * weather's blend of the skies (`skyMix`): none under a clear or a fair sky, nor up to `low`
  * degrees, the sky's clouded share from 40 up, where the sky's light (Sky.ts SKY_LIGHT) has reached
  * its high key. The light lent to the island (Sky.ts CLOUD_LIGHT_TINT) follows it from 12, with
  * the sky's light's own climb, so a clouded noon's land stays as dark and green as its
@@ -244,40 +199,21 @@ export function daySkyAt( level: number, exponent: number, elevation: number ): 
 	return level * ( Math.max( Math.sin( elevation * Math.PI / 180 ), SIN_12 ) / SIN_18 ) ** - exponent;
 
 }
-// a sky's share of each kept sky: its own, or overcast's for a parked one
+// a sky's share of each of MIX_SKIES: its own; partly's half fair and half cloudy; overcast's for
+// rain, storm and fog
 const skyShares = ( name: WeatherName ): number[] => {
 
-	const at = KEPT_SKIES.indexOf( name );
-	return KEPT_SKIES.map( ( _, i ) => i === ( at < 0 ? KEPT_SKIES.indexOf( 'overcast' ) : at ) ? 1 : 0 );
+	if ( name === 'partly' ) return MIX_SKIES.map( ( sky ) => sky === 'fair' || sky === 'cloudy' ? 0.5 : 0 );
+	const at = MIX_SKIES.indexOf( name );
+	return MIX_SKIES.map( ( _, i ) => i === ( at < 0 ? MIX_SKIES.indexOf( 'overcast' ) : at ) ? 1 : 0 );
 
 };
 
 export interface WeatherState {
 
 	coverage: number;
-	// How far the closed deck's threshold sits below its noise sum's largest (sky/Clouds.ts
-	// `deckDensity`, under overcast's share of the sky), as a share of that largest (its
-	// weights' total): the deck's cloud starts at ( 1 - lowCover ) of it, so a larger share closes
-	// the deck. Cloudy's is not read while cloudy's sky keeps the broken form; clear and fair have
-	// no deck; the parked skies take overcast's.
-	lowCover: number;
 	density: number;
 	directVisibility: number;
-	// The share of the key's direct light the land keeps under the thickest cloud: the floor of the
-	// clouds' shadow on the island (Sky.ts `keyDirectVisibility`). 1 takes the
-	// deck's shadow away, leaving `directVisibility` alone to set the land's direct light. By day
-	// under a cloudy deck it gives way to `deckFloor` (`deckFloorTakeover`).
-	cloudFloor: number;
-	// The clouds' shadow floor that takes over from `cloudFloor` under a deck (`deckFloorTakeover`):
-	// under a deck the land's key keeps this share whatever the deck's depth (Sky.ts
-	// `keyDirectVisibility`), through the key's map, so the island's cast shadows show under it; under
-	// overcast it rides on whichever light keys the scene, the moon's by night as the sun's by day
-	// (Sky.ts `track`), and the air under the deck keeps it too. Overcast has one; clear and
-	// fair none (a floor there would show the takeover's step when a deck comes in); cloudy none so
-	// far; the parked skies none, their key reaching the land only through the deck's own
-	// transmittance. Raise it for a stronger directional light and darker cast shadows under the
-	// deck; a debug page tunes it per sky without a reload (`sky.deckFloor@cloudy|overcast`).
-	deckFloor: number;
 	// How much of the key's cast shadow (the sun's map: groves, cliffs, culms) the land shows, 1 all
 	// of it (lighting/SolarShadow.ts `installOpenShadow`).
 	castShadow: number;
@@ -379,21 +315,20 @@ export const WIND_LEVELS: Readonly<Record<WindLevel, Readonly<Pick<WeatherState,
 export const PREVAILING_HEADING = 40;
 /** A wind to set: its level, its heading, or both (what is left out stays). */
 export interface WindChoice { level?: WindLevel; heading?: number }
-// The parked skies' own winds; a kept sky has none and takes the wind it is given.
+// The wet skies' own winds; any other sky has none and takes the wind it is given.
 const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', storm: 'strong', fog: 'light' };
 
 // The atmosphere retains its colour. Cloud extinction, diffuse fill and distant air change
 // together; none of these presets adds a grey screen veil. Fog is a low layer over the sea that
 // the camera looks through, not a tint over the frame.
-// The island's direct light under cloud: a cloudy sky's cumulus pass the full sun through their
-// gaps; at a low sun their shadow keeps about 8 % of it (`cloudFloor`). Once a deck has taken over
-// (cloudy's from 6 degrees, `deckRamp`; overcast's at every sun, `deckFloorTakeover`) the key
-// keeps the weather's `deckFloor` on the land (Sky.ts `keyDirectVisibility`), through the sun's map:
-// it is the direct key, so it takes the sun's map, the meadow's screen-space shade and the canopy's
-// light, and the island's cast shadows show under the deck (`castShadow` 1), soft because the sky's
-// light is the larger share. Under overcast the floor rides on the moon's light by night as on the
-// sun's by day, and the air and the sea under the deck keep it too (Sky.ts `deckKeyFloor`,
-// `seaKeyVisibility`), the sea's glint only the direct beam. Overcast is a closed deck deep
+// The island's direct light under cloud: the clouds pass the full sun through their gaps, and
+// under them the key keeps a floor on the land, the same rule under every sky (Sky.ts
+// KEY_THROUGH_CLOUD, `keyDirectVisibility`: a share of what a layer of the sky's shell and density
+// passes down), through the sun's map: it is the direct key, so it takes the sun's map, the
+// meadow's screen-space shade and the canopy's light, and the island's cast shadows show under
+// cloud (`castShadow` 1), soft because the sky's light is the larger share. The floor rides on the
+// moon's light by night as on the sun's by day; the sea keeps it too, its glint only the direct
+// beam, and under a closed sky the air does (Sky.ts `seaKeyVisibility`, `deckKeyFloor`). Overcast is a closed deck deep
 // enough that its disc does not show (Sky.ts `domeColour`): the land under it is even, its sky the
 // deck's own glow about the sun's place, which the land takes with the rest of the sky
 // (lighting/AmbientRelight.ts OVERCAST_LAND_UNIT, CLOUDY_LAND; under overcast the key's bounce
@@ -401,45 +336,60 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // moon's OVERCAST_MOON_LAND) and the water by
 // DECK_SKY_GAIN; exposed by the sky (post/Exposure.ts). A sky's own light by day may stand at a
 // level of the weather's (`daySky`, `daySkyExponent`), on the light the sun gives the sky alone
-// (`daySkyAt`). Overcast's stands at 0.074 at 18 degrees with an exponent of 1.15, on the deck
-// drawn as a noise sum with its glow about the sun whose glow the lighting's sources take as one
-// lobe: the environment's small bake then gives level ground a sky irradiance of 0.0083 over pi
-// with the sun 22 degrees up and 0.0058 with it 15 up, the background deck away from the sun
-// reading at a display lightness of 0.31 and 0.33 over a meadow at 0.36 and 0.34 (with the land's
-// gain, the key's and the exposure's key below), and the deck's light and the sea's fall with
-// every step of the sun's descent from 25 to 2 degrees.
-// The closed deck's cover is how far its threshold sits below its noise sum's largest, as a
-// share of it (`lowCover`), swept by a front as the coverage is; the skies without the closed form keep theirs
-// unread. Overcast's sets the threshold low enough that the deck stays closed and hides the sun's
-// disc; cloudy's, lower, is read only in a front toward overcast.
+// (`daySkyAt`). Overcast's stands at 0.092 at 18 degrees with an exponent of 1.15, on the closed
+// layer the clouds' model draws with its glow about the sun, whose glow the lighting's sources
+// take as one lobe: with the sun 30 degrees up the layer away from the sun reads at a display
+// lightness of about 0.33 over a meadow at about 0.28 (with the land's gain, the key's and the
+// exposure's key below), and the deck's light and the sea's fall with every step of the sun's
+// descent from 25 to 2 degrees.
 // Overcast's moonlit sky has a level and an exponent of its own (`moonSky`, `moonSkyExponent`), on which
 // the night was set. The other weathers keep the day's sky as the atmosphere and the clouds
 // give it.
 // The night sky the dome draws stands `seenNight` stops below the light it sheds, so the moonlit
 // sky reads dark over the land.
-export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
-	clear: { coverage: 0, lowCover: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 2.9, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
-	fair: { coverage: 0.32, lowCover: 0, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 1.9, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
-	cloudy: { coverage: 0.67, lowCover: 0.481, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 2.9, haze: 0.0021, rain: 0, fog: 0, storm: 0, streaks: 0 },
-	overcast: { coverage: 0.94, lowCover: 0.683, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0.3, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, daySky: 0.074, daySkyExponent: 1.15, moonSky: 0.173, moonSkyExponent: 1.24, seenNight: 0, haze: 0.00974, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
-	rain: { coverage: 1, lowCover: 0.683, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 0, haze: 0.0095, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
+const NAMED_PRESETS: Readonly<Record<Exclude<WeatherName, 'partly'>, Readonly<SkyPreset>>> = {
+	clear: { coverage: 0, density: 0.8, directVisibility: 1, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 2.9, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
+	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 1.9, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
+	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 2.9, haze: 0.0021, rain: 0, fog: 0, storm: 0, streaks: 0 },
+	overcast: { coverage: 0.94, density: 1.6, directVisibility: 1, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, daySky: 0.092, daySkyExponent: 1.15, moonSky: 0.173, moonSkyExponent: 1.24, seenNight: 0, haze: 0.00974, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
+	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 0, haze: 0.0095, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
 	// A squall: the darkest deck, heavy rain, a strong wind (PRESET_WIND) and a rough, white-capped sea.
-	storm: { coverage: 1, lowCover: 0.683, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 0, haze: 0.0135, rain: 1, fog: 0.3, storm: 1, streaks: 0 },
+	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 0, haze: 0.0135, rain: 1, fog: 0.3, storm: 1, streaks: 0 },
 	// Sea fog forms in calm, moist air under thin high cloud; the sun shows as a pale disk.
-	fog: { coverage: 0.75, lowCover: 0.683, density: 0.85, directVisibility: 0.6, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 0, haze: 0.0046, rain: 0, fog: 1, storm: 0, streaks: 0.4 },
+	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 0, haze: 0.0046, rain: 0, fog: 1, storm: 0, streaks: 0.4 },
+};
+
+// Partly: every field the mean of fair's and cloudy's.
+const halfway = ( a: Readonly<SkyPreset>, b: Readonly<SkyPreset> ): SkyPreset => {
+
+	const mean = { ...a };
+	for ( const key of Object.keys( a ) as ( keyof SkyPreset )[] ) mean[ key ] = ( a[ key ] + b[ key ] ) / 2;
+	return mean;
+
+};
+export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
+	clear: NAMED_PRESETS.clear,
+	fair: NAMED_PRESETS.fair,
+	partly: halfway( NAMED_PRESETS.fair, NAMED_PRESETS.cloudy ),
+	cloudy: NAMED_PRESETS.cloudy,
+	overcast: NAMED_PRESETS.overcast,
+	rain: NAMED_PRESETS.rain,
+	storm: NAMED_PRESETS.storm,
+	fog: NAMED_PRESETS.fog,
 };
 
 // Auto weather: from each state, the next one and its weight. The chain moves among the kept
-// presets only (PARKED_WEATHER never appears): cloud thickens through cloudy to overcast and clears
-// back the same way; fair weather is the most common resting state. The parked states keep a way
-// back, for a page that loaded one in a debug build.
+// presets only (PARKED_WEATHER never appears): cloud gathers from clear through fair to partly and
+// clears back the same way; fair weather is the most common resting state. The parked states keep a
+// way back, for a page that loaded one in a debug build.
 const NEXT: Readonly<Record<WeatherName, ReadonlyArray<readonly [ WeatherName, number ]>>> = {
-	clear: [ [ 'fair', 0.75 ], [ 'cloudy', 0.25 ] ],
-	fair: [ [ 'clear', 0.35 ], [ 'cloudy', 0.5 ], [ 'overcast', 0.15 ] ],
-	cloudy: [ [ 'fair', 0.6 ], [ 'overcast', 0.4 ] ],
-	overcast: [ [ 'cloudy', 0.7 ], [ 'fair', 0.3 ] ],
-	rain: [ [ 'overcast', 0.6 ], [ 'cloudy', 0.4 ] ],
-	storm: [ [ 'overcast', 1 ] ],
+	clear: [ [ 'fair', 0.75 ], [ 'partly', 0.25 ] ],
+	fair: [ [ 'clear', 0.4 ], [ 'partly', 0.6 ] ],
+	partly: [ [ 'fair', 0.7 ], [ 'clear', 0.3 ] ],
+	cloudy: [ [ 'partly', 0.6 ], [ 'fair', 0.4 ] ],
+	overcast: [ [ 'partly', 0.7 ], [ 'fair', 0.3 ] ],
+	rain: [ [ 'partly', 1 ] ],
+	storm: [ [ 'partly', 1 ] ],
 	fog: [ [ 'clear', 0.4 ], [ 'fair', 0.6 ] ],
 };
 
@@ -453,11 +403,10 @@ const NEXT_WIND: Readonly<Record<WindLevel, ReadonlyArray<readonly [ WindLevel, 
 	strong: [ [ 'fresh', 0.7 ], [ 'strong', 0.3 ] ],
 };
 const WIND_ORDER: ReadonlyArray<WindLevel> = [ 'light', 'gentle', 'fresh', 'strong' ];
-const WINDIER: Readonly<Record<WeatherName, number>> = { clear: 1, fair: 0.7, cloudy: 1.3, overcast: 1.6, rain: 1.6, storm: 2, fog: 0.3 };
+const WINDIER: Readonly<Record<WeatherName, number>> = { clear: 1, fair: 0.7, partly: 1, cloudy: 1.3, overcast: 1.6, rain: 1.6, storm: 2, fog: 0.3 };
 
-/** A weather change as it sweeps the sky: values at the start and end, and the linear
- * progress reached at the island. Places upwind are further along, places downwind behind, by a
- * lead that grows from nothing as the front sets out and closes as it ends (Sky.ts `frontLead`). */
+/** A weather change under way: values at the start and end, and the linear progress reached,
+ * the same over the whole sky. */
 export interface WeatherFront {
 	from: Readonly<Preset>;
 	to: Readonly<Preset>;
@@ -508,12 +457,12 @@ const smoothIntegral = ( t: number ) => t * t * t * ( 1 - 0.5 * t );
 const headingDelta = ( from: number, to: number ) => ( ( ( to - from ) % 360 ) + 540 ) % 360 - 180;
 const wrapHeading = ( heading: number ) => ( ( heading % 360 ) + 360 ) % 360;
 
-// The presets the weather moves between: a working copy of WEATHER_PRESETS whose `deckFloor`,
-// `lowCover`, `daySky` and `daySkyExponent` a debug page may tune (`Weather.setPresetValue`), so a
+// The presets the weather moves between: a working copy of WEATHER_PRESETS whose
+// `daySky` and `daySkyExponent` a debug page may tune (`Weather.setPresetValue`), so a
 // load, a jump and a front all take the tuned value, as a page loaded with it would. Every other
 // reader keeps WEATHER_PRESETS.
 /** The preset fields a debug page may tune (`Weather.setPresetValue`). */
-export type TunedField = 'deckFloor' | 'lowCover' | 'daySky' | 'daySkyExponent';
+export type TunedField = 'daySky' | 'daySkyExponent';
 const WORKING_PRESETS = Object.fromEntries( Object.entries( WEATHER_PRESETS ).map( ( [ name, preset ] ) => [ name, { ...preset } ] ) ) as Record<WeatherName, SkyPreset>;
 
 function presetFor( name: WeatherName ): Readonly<SkyPreset> {
@@ -552,7 +501,7 @@ export class Weather {
 	private originName: WeatherName;
 	private windLevel: WindLevel;
 	private windHeading: number;
-	// the kept skies' shares in the sky as it stands (`skyMix`), blended as the state's fields are
+	// MIX_SKIES' shares in the sky as it stands (`skyMix`), blended as the state's fields are
 	private mix: number[];
 	private mixFrom: number[];
 	private mixTo: number[];
@@ -623,8 +572,8 @@ export class Weather {
 
 	snapshot(): WeatherState { return { ...this.current }; }
 
-	/** Sets a tunable field of the sky `name`'s preset (`TunedField`: the land's floor under a deck,
-	 * the deck's cover, the day sky's level and exponent; main.ts tunes them on debug pages): every later load, jump
+	/** Sets a tunable field of the sky `name`'s preset (`TunedField`: the day
+	 * sky's level and exponent; main.ts tunes them on debug pages): every later load, jump
 	 * and front takes it, and the state as it stands follows as a page loaded with it would hold it.
 	 * Resting on that sky, the state and both ends of its front take it; on a front toward it, only
 	 * the end it moves to (the start is a snapshot of the sky it left). */
@@ -640,7 +589,7 @@ export class Weather {
 
 	}
 
-	/** The kept skies' shares in the sky as it stands (KEPT_SKIES' order, summing to 1): a front
+	/** MIX_SKIES' shares in the sky as it stands (MIX_SKIES' order, summing to 1): a front
 	 * moves them from where they stood to its target's as it moves the state's fields; a parked sky
 	 * counts as overcast. The lighting's per-weather knobs weight their columns by it
 	 * (lighting/AmbientGrade.ts). */

@@ -95,7 +95,7 @@ island mesh's bounds, the meadow's flowering plants and the tufts at the cliff's
 and the sun and moon,
 so they follow any tile layout.
 
-`parity` (the default group, 14 views): the profiler's scenes (`tools/profile-frame.mjs`),
+`parity` (the default group, 11 views): the profiler's scenes (`tools/profile-frame.mjs`),
 frozen, plus 7 more. The parked weathers' 5 views (marked *parked* below) are in the table but in
 no group but `special` (see below).
 
@@ -104,8 +104,10 @@ no group but `special` (see below).
 | island-fair-noon | weather=fair&preset=noon | island orbit view (default) |
 | island-clear-golden | weather=clear&preset=golden-hour | island orbit turned to face the sun |
 | horizon-fair-noon | weather=fair&preset=noon | horizon view |
-| sky-cloudy | weather=cloudy&preset=noon | sky view |
-| island-overcast | weather=overcast&preset=noon | island |
+| sky-partly | weather=partly&preset=noon | sky view |
+| island-partly | weather=partly&preset=noon | island |
+| sky-cloudy (*parked*) | weather=cloudy&preset=noon | sky view |
+| island-overcast (*parked*) | weather=overcast&preset=noon | island |
 | island-rain (*parked*) | weather=rain&preset=noon | island |
 | island-storm (*parked*) | weather=storm&preset=noon | island |
 | horizon-storm (*parked*) | weather=storm&preset=noon | horizon |
@@ -113,15 +115,16 @@ no group but `special` (see below).
 | island-night-clear | weather=clear&preset=midnight | island |
 | meadow-close | weather=fair&preset=noon | free camera 1.6 m up inside the rim, looking out over the lip |
 | weather-change (*parked*) | weather=fair&preset=noon | island; a front to rain frozen half way, environment re-baked |
-| island-cloudy-low-sun | weather=cloudy&hour=`morningHour( 4.8 )` | island; 4.8 degree sun |
-| island-cloudy-sun-rising | weather=cloudy&hour=`morningHour( 5.3 )` | island; 5.3 degree sun |
-| island-cloudy-disc-fade | weather=cloudy&hour=`morningHour( 9.3 )` | island; 9.3 degree sun |
+| island-cloudy-low-sun (*parked*) | weather=cloudy&hour=`morningHour( 4.8 )` | island; 4.8 degree sun |
+| island-cloudy-sun-rising (*parked*) | weather=cloudy&hour=`morningHour( 5.3 )` | island; 5.3 degree sun |
+| island-cloudy-disc-fade (*parked*) | weather=cloudy&hour=`morningHour( 9.3 )` | island; 9.3 degree sun |
 | water-skim-cliffs | weather=fair&preset=noon | free camera 1.4 m over the sea off the cliffs, along the coast |
 | island-from-sea | weather=fair&preset=noon | free camera 150 m out, 14 m up, looking back |
 | sunrise-long-shadows | weather=clear&preset=sunrise | orbit across the sun, long shadows over the meadow |
 | night-moon | weather=clear&hour=`eveningHour( -15.8 )`&moon=0.5 | horizon view facing a full moon 20 degrees up, its line of sight raised to 8 degrees up |
 
-The three `island-cloudy-*` views are the byte checks' reach into the clouds' shadow under a low sun
+The three `island-cloudy-*` views, parked with their sky, are the byte checks' reach into the
+clouds' shadow under a low sun
 (`src/sky/Sky.ts` SHADOW_DISC, SHADOW_AIR_NARROW). Their elevations are chosen by what moves there,
 which depends on where the clouds sit at `t=12` and on where the sun stands along its path. A view's
 hour is the one at which its sun stands at its elevation (`src/sky/DayCycle.ts` `morningHour`,
@@ -131,9 +134,9 @@ redrawn (`invalidate()`):
 
 | view | `shadowRays` 1 | `shadowAirNarrow` 0 | `shadowAirNarrow` 1 |
 |---|---|---|---|
-| island-cloudy-low-sun | 0.043 % (3290 pixels) | 0, the air's share is 0 there | 0.009 % (690 pixels) |
-| island-cloudy-sun-rising | 78 % | 0.006 % (430 pixels) | 0.004 % (340 pixels) |
-| island-cloudy-disc-fade | 0.13 % (9700 pixels) | 0.002 % (150 pixels) | 0, the air's share is 1 there |
+| island-cloudy-low-sun (*parked*) | 0.043 % (3290 pixels) | 0, the air's share is 0 there | 0.009 % (690 pixels) |
+| island-cloudy-sun-rising (*parked*) | 78 % | 0.006 % (430 pixels) | 0.004 % (340 pixels) |
+| island-cloudy-disc-fade (*parked*) | 0.13 % (9700 pixels) | 0.002 % (150 pixels) | 0, the air's share is 1 there |
 
 On the 52 degree path these views barely guard two of the pins. `shadowAirNarrow` moves at most 690
 pixels in any of them (150 to 690, 0.002 to 0.009 % of the frame), so it has next to no byte guard,
@@ -155,11 +158,12 @@ identical under the pins reaches nothing and does not stay.
 | rim-sea | weather=fair&preset=noon | 25 m out, 4 m up, facing the densest stretch of the meadow's tufts at the cliff's edge |
 | cliff-sea-golden | weather=clear&preset=golden-hour | from the sea, 3 m up, the island against the low sun |
 
-`special` (island-rain, island-storm, horizon-storm, island-fog-dawn, weather-change: the views
-marked `special: true`) holds the parked weathers (`src/sky/Weather.ts` `PARKED_WEATHER`: rain,
-storm, fog). No other group lists them, so every default set (`parity`, `all`, verify-scene-jump's,
+`special` (sky-cloudy, island-overcast, the three island-cloudy-\* views, island-rain, island-storm,
+horizon-storm, island-fog-dawn, weather-change: the views marked `special: true`) holds the parked
+weathers (`src/sky/Weather.ts` `PARKED_WEATHER`: cloudy, overcast, rain, storm, fog). No other
+group lists them, so every default set (`parity`, `all`, verify-scene-jump's,
 baseline.mjs's plan without `--views` / `--clips`) is the normal weathers' alone; `normal` is `all`
-(20 views), kept as a name. A parked view is reached by name or by `special` (`all,special` is
+(17 views), kept as a name. A parked view is reached by name or by `special` (`all,special` is
 every view), and so is a clip (clips.mjs: a clip is in its view's group; the parked ones are
 storm, rain, lightning, fog). Every tool that takes `--views` takes names and groups mixed
 (`normal,flowers-close`).

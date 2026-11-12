@@ -60,7 +60,7 @@ The tools that load pages with these options: [Tools](tools.md).
   `dayLength` (seconds), `moon` (phase: 0.5, a full moon, by default; it shapes only the drawn
   moon, which stands fixed in the sky), `clock=paused` (freezes only the day clock; `paused` freezes
   it with the scene).
-- `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load as established,
+- `weather` (clear, fair, partly, cloudy, overcast, rain, storm, fog; rain and storm load as established,
   already wet; without it, `wind` and `windDir` the weather and its wind evolve on their own, among
   the kept presets), `clouds` (coverage override).
 - `dayFog`: the day's fog layer under a clear or fair sky (off by default; the GUI's Weather
@@ -77,7 +77,7 @@ The tools that load pages with these options: [Tools](tools.md).
   either holds the weather, as `weather` does; both are scene options. On a page, the GUI's Weather
   folder (`wind`, `wind heading`, over its transition seconds) or `__PONLAI__.setWind( { level,
   heading }, seconds )`; `weather.windTarget` and the diagnostics' `windTarget`, `windSpeed` and
-  `windHeading` show it (`src/sky/Weather.ts`). Rain, storm and fog are parked (`src/sky/Weather.ts`
+  `windHeading` show it (`src/sky/Weather.ts`). Cloudy, overcast, rain, storm and fog are parked (`src/sky/Weather.ts`
   `PARKED_WEATHER`): a production page without `?debug` refuses them with a console warning and
   shows fair; the dev server, `?debug` and `?profile` still reach them.
 
@@ -293,13 +293,13 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `sky.moon.elevation` (degrees up, 15 to 40) and `sky.moon.turn` (degrees from the noon meridian:
   0 its noon side, 180 the pole's, positive toward the west), and the stars' sky, the one seen
   from `sky.stars.latitude` degrees south at the sidereal time `sky.stars.sidereal` (hours:
-  `src/sky/DayCycle.ts` MOON, STARS), a clouded sky's floor of the key on the land under its deck
-  `sky.deckFloor@overcast` (`@cloudy`) and its day sky, the level of the whole sky's light by day at
-  a sun 18 degrees up and how it goes with the sun's height, `sky.daySky@overcast`,
-  `sky.daySkyExponent@overcast` (`@cloudy`:
-  `src/sky/Weather.ts` `daySkyAt`), the key's gain on that floor under overcast's deck
-  `lighting.overcastKey` (under a cloudy deck's, `lighting.cloudyKey`: `src/sky/Sky.ts`
-  OVERCAST_KEY_GAIN), and the land's share of the sky's light `lighting.relight.skyGain@high`
+  `src/sky/DayCycle.ts` MOON, STARS), a clouded sky's day sky, the level of the whole sky's light
+  by day at a sun 18 degrees up and how it goes with the sun's height, `sky.daySky@overcast`,
+  `sky.daySkyExponent@overcast` (`@cloudy`: `src/sky/Weather.ts` `daySkyAt`), how much of the
+  sunlight a cloud passes down the land under it keeps as a light along the sun, under every sky
+  `lighting.keyThroughCloud` (0 to 4: higher gives a stronger light from the sun's side and darker
+  cast shadows under cloud, `src/sky/Sky.ts` KEY_THROUGH_CLOUD), and the land's share of the sky's
+  light `lighting.relight.skyGain@high`
   (`@low`, `@golden`, the rising sun's `@dawn`, `@sunrise`, `@cloudy`, `@cloudyBlue`, `@night`; the
   moon's sky's own `lighting.relight.moon.skyGain@low` and `@high`, its golden and cloudy keys the
   day's), the sun's part of the weather's gain under overcast's deck on the land's ambient light,
@@ -308,21 +308,24 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `lighting.relight.overcastLand` (1 to 2), a low
   sun's lift of the sky's light on what it lights `lighting.relight.lowSun` (stops; `lowSunFloor`,
   `lowSunFloorFull`, `lowSunFrom`, `lowSunTo` its sun heights: `src/lighting/AmbientRelight.ts`),
-  a deck's glow about the sun (the forward lobe added to the light it lets through, in the deck and
-  the air under it: its weight and mean cosine) `sky.clouds.forwardWeight`,
-  `sky.clouds.forwardLobe`, the
-  amount of forward light the closed deck passes down, spread over it by the diffusion law (a lobe's
-  weight and mean cosine whose light on level ground it takes) `sky.clouds.overcastWeight`,
-  `sky.clouds.overcastBroad`, the closed deck's glow about the key light drawn on the sky and its
+  the clouds' model per sky of the weather's blend (`clear`, `fair`, `cloudy`, `overcast`: `src/sky/Sky.ts`
+  CLOUD_SKIES), the shell's base and top (m), the cloud type (0 a stratus, 1 a cumulus), how far
+  it varies from place to place and how far the clouds thin with distance
+  `sky.clouds.base@<sky>`, `sky.clouds.top@<sky>`, `sky.clouds.type@<sky>`,
+  `sky.clouds.spread@<sky>`, `sky.clouds.farFade@<sky>`, the forward lobe of the light under a low
+  layer, in the air under it (its weight and mean cosine) `sky.clouds.forwardWeight`,
+  `sky.clouds.forwardLobe`, the amount of that forward light a closed deck spreads by the
+  diffusion law (a lobe's weight and mean cosine whose light on level ground it takes)
+  `sky.clouds.overcastWeight`, `sky.clouds.overcastBroad`, the closed deck's glow about the key
+  light drawn on the sky and its
   seen panorama (its narrow lobe's weight in the deck's mean radiance and mean cosine, its broad
   lobe's, and the power of the base's own pattern it follows: `src/sky/Sky.ts` `deckGlow`)
   `sky.clouds.deckGlow`, `sky.clouds.deckGlowLobe`, `sky.clouds.deckGlowBroad`,
   `sky.clouds.deckGlowBroadLobe`, `sky.clouds.deckGlowTexture` (by day; the night keeps the moon's
   own form, `src/sky/Clouds.ts` MOON_DECK_GLOW), the same glow as the lighting's sources take it
   about the sun, one smooth lobe's mean cosine (0.7 to 0.85) and weight (0 to 3)
-  `sky.clouds.bakeGlowLobe`, `sky.clouds.bakeGlowGain`, the closed deck's own level as the sky
-  draws it by day under overcast, the glow aside (0.3 to 1, 1 the deck the march gives)
-  `sky.clouds.deckSeen`, and its gradation from the zenith to the horizon by day under overcast
+  `sky.clouds.bakeGlowLobe`, `sky.clouds.bakeGlowGain`, and the closed deck's gradation from the
+  zenith to the horizon by day under overcast
   (0 to 1: 1 the diffusion law's 3 : 1, 0 a uniform deck, level irradiance kept)
   `sky.clouds.deckGradation`, and the key a tree's shaded leaves
   take through the leaves over them `lighting.vegetation.leaf.through@high` (`@low`, `@golden`,

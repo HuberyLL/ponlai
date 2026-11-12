@@ -435,8 +435,8 @@ in the tool's header.
 
 ### Parked weathers
 
-Rain, storm and fog (`src/sky/Weather.ts` `PARKED_WEATHER`) are out of the default
-checks. Every default set is the normal weathers' (views.mjs's `parity`, `taa` and `all`,
+Cloudy, overcast, rain, storm and fog (`src/sky/Weather.ts` `PARKED_WEATHER`) are out of the
+default checks. Every default set is the normal weathers' (views.mjs's `parity`, `taa` and `all`,
 clips.mjs's `all`, baseline.mjs's plan without `--views` / `--clips`, verify-scene-jump's views,
 profile-frame's scene matrix and `--accept`, verify-first-use's steps); `special` or a name
 reaches a parked view, clip or scene, and verify-first-use runs its `weather` and `bolt` steps only
@@ -507,7 +507,7 @@ compare two freshly loaded pages (a grown page against a fresh `grow=1` page) in
 
 Steps, scope, the value's serialisation and the exit code are in the file's header.
 
-`node tools/dusk-grid.mjs [url] [--weathers clear,fair,cloudy,overcast] [--sides evening,morning]
+`node tools/dusk-grid.mjs [url] [--weathers clear,fair,partly] [--sides evening,morning]
 [--from 2 --to -8 --step 0.5] [--midnight] [--split [--fit]] [--night-split] [--twilight] [--haze]
 [--compare dir]` reads the scene's light in scene units at a grid of sun elevations through the dusk
 and the dawn (the sky's and the deck's irradiance, the sky's metering, the baked sky's ring 4
@@ -881,11 +881,12 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   60 Hz with `--vsync` (the intervals a player sees; uncapped, a GPU-bound scene's p95 is mostly
   pacing noise).
 - It plays a matrix of named scenes (`--list`: `island-fair-noon`, `island-clear-golden`,
-  `horizon-fair-noon`, `sky-cloudy`, `island-overcast`, `island-night-clear`, `meadow-close` (over
+  `horizon-fair-noon`, `sky-partly`, `island-partly`, `island-night-clear`, `meadow-close` (over
   the meadow, placed on the camera's ground, `controls.ground`); the parked weathers' `island-rain`,
-  `island-storm`, `horizon-storm`, `island-fog-dawn` and `weather-change` (a front sweeping in), and
-  the clouded skies' other views `island-cloudy`, `horizon-cloudy` and `horizon-overcast` (where the
-  low deck's march costs) with `horizon-clear-noon` (the same horizon without a deck), run
+  `island-storm`, `horizon-storm`, `island-fog-dawn` and `weather-change` (a front sweeping in) and
+  the clouded skies' `sky-cloudy`, `island-overcast`, `island-cloudy`, `horizon-cloudy` and
+  `horizon-overcast` (where the low deck's march costs), with `horizon-clear-noon` (the same
+  horizon without a deck), run
   only when `--scenes` names them, and `--scenes` takes these ids), each with the clock running,
   fixed weather and a slow orbit, and writes `artifacts/perf/<label>/` (profile.json, summary.md):
   frame interval median, p95 and p99, GPU time per pass, the tick's JS time, hitches with their

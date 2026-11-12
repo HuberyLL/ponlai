@@ -373,7 +373,7 @@ type FrustumShadowFilter = ( builder: THREE.NodeBuilder, inputs: ShadowFilterInp
 // changed with any edit to the shader. The filter is evaluated first, in uniform control flow (it
 // returns lit outside the map itself), and only its result is selected. `strength` is the weather's
 // share of the map's shadow (Weather.ts `castShadow`, 1 in every sky now); how deep the cast shadows
-// read under cloud is the key's visibility's (under a deck the land's floor, Weather.ts `deckFloor`),
+// read under cloud is the key's visibility's (under cloud the land's floor, Sky.ts KEY_THROUGH_CLOUD),
 // which multiplies the result.
 export function installOpenShadow( sun: THREE.DirectionalLight, visibility: ( position: V3 ) => F, strength: F ): void {
 

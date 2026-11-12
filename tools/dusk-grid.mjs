@@ -5,7 +5,7 @@
 // the sun goes down, by how much, and which of the night's terms does it", where a few views at
 // fixed hours miss a step in between.
 //
-//   node tools/dusk-grid.mjs [base] [--weathers clear,fair,cloudy,overcast] [--sides evening,morning]
+//   node tools/dusk-grid.mjs [base] [--weathers clear,fair,partly] [--sides evening,morning]
 //       [--from 2 --to -8 --step 0.5] [--midnight] [--at e1,e2,...] [--hours h1,h2,...]
 //       [--fine e1:e2:step]... [--views island[,<parity view>...]] [--split [name,...] [--fit]] [--night-split] [--twilight]
 //       [--compare dir [--compare-tolerance 1e-4]] [--judge 0.02] [--judge-range 2:-8] [--judge-weathers ...] [--overall-weathers ...]
@@ -185,7 +185,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const USAGE = 'usage: node tools/dusk-grid.mjs [base] [--weathers ...] [--sides ...] [--from 2 --to -8 --step 0.5] [--midnight] [--at ...] [--hours ...] [--fine e1:e2:step]... [--views ...] [--split [names] [--fit]] [--night-split] [--twilight] [--compare dir [--compare-tolerance 1e-4]] [--judge 0.02] [--judge-range 2:-8] [--judge-weathers ...] [--overall-weathers ...] [--haze [--haze-sky 3,5,10,20] [--haze-distances 300,1000]] [--frames] [--walk] [--q query] [--src dir] [--out dir] [--timeout ms] [--lock-timeout s] (see the file header)';
-const WEATHERS = [ 'clear', 'fair', 'cloudy', 'overcast', 'rain', 'storm', 'fog' ];
+const WEATHERS = [ 'clear', 'fair', 'partly', 'cloudy', 'overcast', 'rain', 'storm', 'fog' ];
 const SIDES = [ 'evening', 'morning' ];
 const TWILIGHT = [ 'sun', 'hazeSun', 'hazeSky' ];
 const FORCE = 'sky.dusk.force.';
@@ -201,7 +201,7 @@ const fail = ( message ) => { throw new ArgError( message ); };
 
 // ---- options
 const argv = process.argv.slice( 2 );
-const o = { weathers: 'clear,fair,cloudy,overcast', sides: 'evening,morning', from: '2', to: '-8', step: '0.5', views: 'island',
+const o = { weathers: 'clear,fair,partly', sides: 'evening,morning', from: '2', to: '-8', step: '0.5', views: 'island',
 	judge: '0.02', 'judge-range': '2:-8', 'compare-tolerance': '1e-4', q: 'grow=36', timeout: '120000', 'lock-timeout': '0', fine: [],
 	'haze-sky': '3,5,10,20', 'haze-distances': '300,1000' };
 let base = 'http://127.0.0.1:5190/';

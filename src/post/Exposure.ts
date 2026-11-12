@@ -129,8 +129,12 @@ export interface ExposureKey extends Record<string, number> {
  * golden hour's the least. The rising sun's keys share it (shared, so tuning `@golden` moves them
  * all). The clouded keys' κ_H lie well over their κ, so the guard holds a clouded view down only
  * where its brightest few percent lie far over its metered light (under a sky with no sun, rarely).
- * A clouded day stands under the clear one by the light its deck takes, overcast's key OVERCAST_KEY
- * on top of it by its share. `cloudy` sets the cloudy sky toward a high sun: the bright cloud's
+ * A clouded day stands under the clear one by the light its clouds take, overcast's key
+ * OVERCAST_KEY on top of it by its share. `cloudy` sets the cloudy sky toward a high sun, where the
+ * land in the clouds' shade is lit about as the clear day's metered frame is and the key alone
+ * holds the frame under it: at -0.6 the broken cloud over a meadow reads at a display lightness of
+ * 0.63 and the sunlit rock at 0.55, and the meadow in the clouds' shade at 0.26 with the sun 15
+ * degrees up and, on toward `cloudyLow`, at 0.19 with it 8 up. It sets the bright cloud's
  * lightness and share, its tint (Oklab b, which the tone curve moves) and the gaps between the
  * clouds. A lower key darkens the gaps faster than the bright cloud, and the clouds' own contrast
  * widens a little as the frame darkens, which no key mends; the land under the deck goes down with
@@ -181,7 +185,7 @@ export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
 		{ at: 0, name: 'cloudySunset', values: { key: - 2.5, highlight: 3.05, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
 		{ at: 3, name: 'cloudyGolden', values: { key: - 2.25, highlight: 3.05, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
 		{ at: 6, name: 'cloudyLow', values: { key: - 2.04, highlight: 3.05, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
-		{ at: 12, name: 'cloudy', values: { key: - 1.01, highlight: 3.05, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
+		{ at: 12, name: 'cloudy', values: { key: - 0.6, highlight: 3.05, sky: 0.2, adaptUp: 0.05, adaptDown: 0.05 } },
 	],
 	night: { key: - 2.57, highlight: - 1.32, sky: 0.4, adaptUp: 0.05, adaptDown: 0.05 },
 }, { key: { min: - 6, max: 3 }, highlight: { min: - 3, max: 4 }, sky: { min: 0, max: 1 }, adaptUp: { min: 0.02, max: 4, scale: 'log' }, adaptDown: { min: 0.02, max: 4, scale: 'log' } } );
@@ -191,15 +195,14 @@ export const EXPOSURE_KEYS: DayKeys<ExposureKey> = tuneKeys( 'post.exposure', {
  * night by the exposure's own night weight, as the keys do. It enters here alone, never in the
  * keys' own blend. It stands with overcast's own day sky (sky/Weather.ts, overcast's `daySky`): the
  * sky dome meters at its bake's geometric-mean luminance, so a darker sky drags the meter and the
- * exposure brightens, the more sky a frame holds the more. At -0.09, with overcast's day sky at
- * 0.074 and the sun at 15 to 22 degrees, the meadow beside and away from the sun reads at a
- * display lightness of 0.34 to 0.36 and the deck behind it at 0.31 to 0.33, the sky a little
- * darker than the meadow under it. The parked rain, storm and fog
+ * exposure brightens, the more sky a frame holds the more. At -0.5, with overcast's day sky at
+ * 0.092 and the sun at 30 degrees, the meadow away from the sun reads at a display lightness of
+ * 0.28 and the deck behind it at 0.33 to 0.34. The parked rain, storm and fog
  * count as overcast in the sky's blend and take this key but keep a day sky of 1, so they read
  * darker than overcast; they are parked and left so.
  * Toward a low sun it passes to OVERCAST_KEY_LOW (OVERCAST_KEY_SPAN). Tunable:
  * `post.exposure.overcastKey`. */
-const OVERCAST_KEY = tune( 'post.exposure.overcastKey', - 0.09, { min: - 4, max: 1 } );
+const OVERCAST_KEY = tune( 'post.exposure.overcastKey', - 0.5, { min: - 4, max: 1 } );
 /** Overcast's key toward a low sun, stops, in place of OVERCAST_KEY. Once the sea was metered as a
  * share of the white card's light, the overcast evening's land read from 0.4 stops over what it
  * read before at 12 degrees to 1.0 to 1.3 over from 7 degrees to the horizon, where the clouded keys
@@ -207,12 +210,10 @@ const OVERCAST_KEY = tune( 'post.exposure.overcastKey', - 0.09, { min: - 4, max:
  * between the evening's land and the morning's, which reads up to half a stop brighter under a deck
  * whatever the key. Under the horizon the land no longer follows how it read before: that fell two
  * stops within a degree, the exposure falling with it, and the exposure may not fall as the light
- * does (its night weight comes in no faster than the meter's light goes). It stands 0.79 stops
- * under OVERCAST_KEY, the most that keeps the exposure from falling faster than the meter's light
- * across OVERCAST_KEY_SPAN (each 3-degree step's fall of the key, at most 0.34 of the gap, stays
- * within the meter's own fall and 2 %); the island's default view's land with the sun at 4 degrees
- * then reads at a display lightness of 0.27. Tunable: `post.exposure.overcastKeyLow`. */
-const OVERCAST_KEY_LOW = tune( 'post.exposure.overcastKeyLow', - 0.23, { min: - 4, max: 1 } );
+ * does (its night weight comes in no faster than the meter's light goes). It stands 0.14 stops
+ * under OVERCAST_KEY: each 3-degree step's fall of the key across OVERCAST_KEY_SPAN is at most
+ * 0.34 of that gap, under 0.05 stops. Tunable: `post.exposure.overcastKeyLow`. */
+const OVERCAST_KEY_LOW = tune( 'post.exposure.overcastKeyLow', - 0.64, { min: - 4, max: 1 } );
 /** Where overcast's key passes from its low sun's value (OVERCAST_KEY_LOW, at and under the first)
  * to its high sun's (OVERCAST_KEY, at and over the second), degrees: a smoothstep. */
 const OVERCAST_KEY_SPAN = [ 6, 18 ] as const;
@@ -240,7 +241,7 @@ const _held = { key: 0, highlight: 0, sky: 0, adaptUp: 0, adaptDown: 0 };
 /** The exposure's keys at the sun's `elevation` (degrees), the exposure's own night weight `night`
  * (sky/DayCycle.ts `exposureNight`, set apart from the display's so the meter's handover to the
  * night key can follow the light while the tone, the grade and the bloom keep theirs) and the
- * weather's blend of the kept skies `skyMix`, into `out`, the morning's where the sun is `rising`:
+ * weather's blend of the four skies `skyMix`, into `out`, the morning's where the sun is `rising`:
  * the day's (or the rising sun's) and the clouded keys (DayKeys.ts `keyed`), overcast's share
  * holding the clouded keys at OVERCAST_HELD below it, overcast's key (OVERCAST_KEY_LOW to
  * OVERCAST_KEY over OVERCAST_KEY_SPAN) by overcast's share and the day's weight, and overcast's

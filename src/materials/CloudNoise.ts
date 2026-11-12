@@ -11,8 +11,8 @@
 
 import * as THREE from 'three/webgpu';
 import {
-	Fn, Loop, instanceIndex, textureStore, textureLoad, texture3D, storageTexture, uniform, uint, int,
-	float, vec2, vec3, vec4, ivec2, ivec3, floor, fract, dot, mix, clamp, mod, sin, cos,
+	Fn, instanceIndex, textureStore, uint, int,
+	vec2, vec3, vec4, ivec2, floor, fract, dot, mix, clamp, mod, sin, cos,
 } from 'three/tsl';
 
 type F = THREE.Node<'float'>;
@@ -24,8 +24,6 @@ type V3 = THREE.Node<'vec3'>;
 //            (`public/clouds/baseShape64.bin`, from tidewater's Sky Pro clouds)
 //   synoptic 512^2     R the thin cloud layer's patches, over a few to twenty kilometres (Clouds.ts
 //                      `streaksAt`)
-//   deck     64^3      R the overcast deck's middle scale (Clouds.ts `deckDensity`): gradient fBm
-//                      baked at load, with its mip chain
 // Every field repeats over [0, 1), so a wrapped wind offset never shows a seam.
 
 export const SYNOPTIC_RES = 512;
@@ -38,9 +36,8 @@ export const hash33 = Fn( ( [ p ]: [ V3 ] ) => {
 
 } ).setLayout( { name: 'cloudHash33', type: 'vec3', inputs: [ { name: 'p', type: 'vec3' } ] } );
 
-// Gradient noise with an integer period, in [-1, 1]. `seed` offsets the lattice's hash, so noises of
-// the same period read unrelated gradients (null leaves the hash's input as it is).
-const gradient3 = ( p: V3, period: F, seed: F | null ) => {
+// Gradient noise with an integer period, in [-1, 1].
+export const perlin3 = Fn( ( [ p, period ]: [ V3, F ] ) => {
 
 	const i = floor( p ).toVar();
 	const f = fract( p ).toVar();
@@ -49,7 +46,7 @@ const gradient3 = ( p: V3, period: F, seed: F | null ) => {
 
 		const o = vec3( x, y, z );
 		const cell = mod( i.add( o ), period );
-		const g = hash33( seed === null ? cell : cell.add( vec3( 71, 113, 157 ).mul( seed ) ) ).mul( 2 ).sub( 1 );
+		const g = hash33( cell ).mul( 2 ).sub( 1 );
 		return dot( g, f.sub( o ) );
 
 	};
@@ -59,13 +56,7 @@ const gradient3 = ( p: V3, period: F, seed: F | null ) => {
 	const x11 = mix( corner( 0, 1, 1 ), corner( 1, 1, 1 ), u.x );
 	return mix( mix( x00, x10, u.y ), mix( x01, x11, u.y ), u.z ).mul( 1.15 );
 
-};
-
-export const perlin3 = Fn( ( [ p, period ]: [ V3, F ] ) => gradient3( p, period, null ) )
-	.setLayout( { name: 'cloudPerlin3', type: 'float', inputs: [ { name: 'p', type: 'vec3' }, { name: 'period', type: 'float' } ] } );
-
-const perlin3Seeded = Fn( ( [ p, period, seed ]: [ V3, F, F ] ) => gradient3( p, period, seed ) )
-	.setLayout( { name: 'cloudPerlin3Seeded', type: 'float', inputs: [ { name: 'p', type: 'vec3' }, { name: 'period', type: 'float' }, { name: 'seed', type: 'float' } ] } );
+} ).setLayout( { name: 'cloudPerlin3', type: 'float', inputs: [ { name: 'p', type: 'vec3' }, { name: 'period', type: 'float' } ] } );
 
 const hash2 = ( p: V2 ) => fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ).mul( 43758.5453 ) );
 const fade = ( f: V2 ) => f.mul( f ).mul( f.mul( f.mul( 6 ).sub( 15 ) ).add( 10 ) );
@@ -114,89 +105,6 @@ export function bakeSynoptic( renderer: THREE.WebGPURenderer ): THREE.StorageTex
 	} )().compute( SYNOPTIC_RES ** 2, [ 64 ] ).setName( 'Clouds.SynopticMap' );
 	renderer.compute( kernel );
 	return synoptic;
-
-}
-
-export const DECK_NOISE_RES = 64;
-// The deck noise's octaves: the first's lattice cells across the tile, each next twice as many at
-// half the amplitude. Four cells to the tile hold a few connected masses per period; the fourth
-// octave's 32 cells still span two texels each.
-const DECK_OCTAVES = [ 4, 8, 16, 32 ];
-
-/** Bake the overcast deck's middle-scale noise: tileable gradient fBm on a 64^3 volume, its sum over
- * the octaves' amplitudes taken from [-1, 1] to [0, 1], in the red channel of RGBA8 like the shape
- * noise. Each octave hashes its lattice with its own seed: with the period alone the octaves'
- * lattices share their first cells' gradients. The top level samples the fBm at its texels'
- * centres; every next level is the mean of the 2x2x2 texels under it, written by one kernel for all
- * levels (three generates no mips for a 3D texture), which only swaps its target and its uniforms:
- * a level is stored into a scratch volume of its size and copied into the chain, since one dispatch
- * cannot sample the chain while it stores into a level of it. Once at load, before the first
- * frame. */
-export function bakeDeckNoise( renderer: THREE.WebGPURenderer ): THREE.Storage3DTexture {
-
-	const n = DECK_NOISE_RES;
-	const volume = ( size: number ) => {
-
-		const v = new THREE.Storage3DTexture( size, size, size );
-		v.type = THREE.UnsignedByteType;
-		return v;
-
-	};
-	const noise = volume( n );
-	noise.wrapS = noise.wrapT = noise.wrapR = THREE.RepeatWrapping;
-	noise.minFilter = THREE.LinearMipmapLinearFilter;
-	noise.magFilter = THREE.LinearFilter;
-	// allocates the whole chain (the levels are baked below, never generated)
-	noise.generateMipmaps = true;
-	( noise as THREE.Storage3DTexture & { mipmapsAutoUpdate: boolean } ).mipmapsAutoUpdate = false;
-	const amplitude = DECK_OCTAVES.reduce( ( sum, _, k ) => sum + 0.5 ** k, 0 );
-	const texel = ( index: THREE.Node<'uint'>, size: THREE.Node<'uint'> ) => ivec3( int( index.mod( size ) ), int( index.div( size ).mod( size ) ), int( index.div( size.mul( size ) ) ) );
-
-	const top = Fn( () => {
-
-		const c = texel( instanceIndex, uint( n ) ).toVar();
-		const q = vec3( c ).add( 0.5 ).div( n );
-		let sum: F = float( 0 );
-		DECK_OCTAVES.forEach( ( cells, k ) => {
-
-			sum = sum.add( perlin3Seeded( q.mul( cells ), float( cells ), float( k ) ).mul( 0.5 ** k ) );
-
-		} );
-		textureStore( noise, c, vec4( clamp( sum.div( amplitude ).mul( 0.5 ).add( 0.5 ), 0, 1 ), 0, 0, 1 ) );
-
-	} )().compute( n ** 3, [ 64 ] ).setName( 'Clouds.DeckNoise' );
-	renderer.compute( top );
-
-	const size = uniform( 0, 'uint' ), source = uniform( 0, 'int' );
-	const placeholder = volume( 1 ), target = storageTexture( placeholder );
-	const halve = Fn( () => {
-
-		const c = texel( instanceIndex, size ).toVar();
-		const sum = float( 0 ).toVar();
-		Loop( 8, ( { i } ) => {
-
-			const o = ivec3( int( i ).bitAnd( 1 ), int( i ).shiftRight( 1 ).bitAnd( 1 ), int( i ).shiftRight( 2 ) );
-			sum.addAssign( textureLoad( texture3D( noise ), c.mul( 2 ).add( o ), source ).r );
-
-		} );
-		textureStore( target, c, vec4( sum.mul( 0.125 ), 0, 0, 1 ) );
-
-	} )().compute( ( n / 2 ) ** 3, [ 64 ] ).setName( 'Clouds.DeckNoiseMip' );
-	for ( let level = 1; ( n >> level ) >= 1; level ++ ) {
-
-		const s = n >> level, scratch = volume( s );
-		target.value = scratch;
-		size.value = s;
-		source.value = level - 1;
-		// the kernel's count (its threads' bound) follows the level, its pipeline does not
-		halve.count = s ** 3;
-		renderer.compute( halve );
-		renderer.copyTextureToTexture( scratch, noise, new THREE.Box3( new THREE.Vector3(), new THREE.Vector3( s, s, s ) ), null, 0, level );
-		scratch.dispose();
-
-	}
-	placeholder.dispose();
-	return noise;
 
 }
 

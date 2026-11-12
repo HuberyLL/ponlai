@@ -25,8 +25,8 @@ stay in the explanation beside what they describe. What each value means for the
 | The grey card's open shade, screen code | clear noon | near 0.15 |
 | Moonlit grey card on level ground, green code | deep night | about 0.17 to 0.23 |
 | Moonlit grey card on the slopes the moon grazes, green code | deep night | 0.12 to 0.16 |
-| The closed deck's display lightness | overcast | about 0.47 |
-| The meadow's display lightness under it | overcast | 0.34 to 0.40 |
+| The closed deck's display lightness, away from the sun | overcast | about 0.33 |
+| The meadow's display lightness under it | overcast | about 0.28 |
 
 ## Water
 

@@ -122,7 +122,7 @@ export interface AmbientKnobs {
 }
 export const AMBIENT_KNOBS: ReadonlyArray<keyof AmbientKnobs> = [ 'skySpecular', 'skyBounce', 'sunBounce', 'directionality', 'aoStrength' ];
 
-/** The table's columns, the kept weathers (Weather.ts KEPT_SKIES' order). */
+/** The table's columns, the skies of the weather's blend (Weather.ts MIX_SKIES' order). */
 export const AMBIENT_COLUMNS = [ 'clear', 'fair', 'cloudy', 'overcast' ] as const;
 type Column = typeof AMBIENT_COLUMNS[ number ];
 type AmbientRow = { at: number } & Record<Column, Readonly<AmbientKnobs>>;

@@ -88,14 +88,15 @@ packages, into `dist/licenses/`.
     `SkyProClouds.js`, tidewater's port of the Three.js Sky Pro clouds ("Partly cloudy" preset),
     ported from WGSL to TSL: the procedural weather map and its bounds grid, the shell density
     (weather plus coverage, dilated and eroded by the shape noise, soft height-dependent edges),
-    darker bases and sky light occlusion, the coarse / fine march with empty-cell skipping, aerial
+    the light march and its orders of scattering on two phase lobes, the powder term, darker
+    bases and sky light occlusion, the coarse / fine march with empty-cell skipping, aerial
     perspective (the rain curtains'), the cloud shadow, and the shape noise loader. From
-    `Clouds.js`: the screen-space view
-    trace with its reprojected, neighbourhood-clamped history and bicubic upsampling, and the
-    synoptic field. The weather fronts, the mapping of this project's coverage onto the shell,
-    the darker closed deck and the settled view of a paused scene are this project's (the rain
-    curtains follow VolumetricCloudsCS1, below); the panorama map is this project's own, predating
-    the port (`Clouds.js` has a similar one).
+    `Clouds.js`: the screen-space view trace with its reprojected, neighbourhood-clamped history
+    and bicubic upsampling, and the synoptic field. The cloud type and its two forms (a stratus'
+    slab, a cumulus' heap) with the low layers' shells, the light a column passes down, the
+    mapping of this project's coverage onto the shell and the settled view of a paused scene are
+    this project's (the rain curtains follow VolumetricCloudsCS1, below); the panorama map is
+    this project's own, predating the port (`Clouds.js` has a similar one).
   - The thin cloud layer (`src/sky/Clouds.ts` `streaksAt`, `src/sky/Streaks.ts`): the fibre bake
     (a flow field of sparse seeds and tufts drawn out by line integral convolution, hooked tails
     downwind of tufts), the sheet's footprint on the curved Earth and its anisotropic,
@@ -527,8 +528,7 @@ comment where it is used.
   2002), its coordinates displaced by more of it after Inigo Quilez,
   [*Domain warping*](https://iquilezles.org/articles/warp/), and cut at a threshold that rises with
   height; used as techniques only, the scales, the threshold and the normalisation to a mean of 1
-  are our own. The same gradient noise, summed in octaves, is also baked as the closed cloud
-  deck's middle scale (`bakeDeckNoise` in `src/materials/CloudNoise.ts`).
+  are our own.
 - Line integral convolution, which draws the thin cloud layer's fibres out along a flow
   (`src/sky/Streaks.ts`): Brian Cabral and Leith (Casey) Leedom, *Imaging Vector Fields Using
   Line Integral Convolution* (SIGGRAPH 1993), through the adapted tidewater source above.
@@ -644,8 +644,19 @@ comment where it is used.
   [*The Real-time Volumetric Cloudscapes of Horizon Zero
   Dawn*](https://www.guerrilla-games.com/read/the-real-time-volumetric-cloudscapes-of-horizon-zero-dawn)
   (SIGGRAPH 2015; GPU Pro 7, "Real-Time Volumetric Cloudscapes"): Perlin-Worley shape noise,
-  Worley erosion, weather-map coverage and height profiles, and the closed cloud deck's coverage
-  threshold (its noise sum remapped by the coverage, `deckDensity` in `src/sky/Clouds.ts`).
+  Worley erosion, weather-map coverage and height profiles; and a cloud type from stratus to
+  cumulus that varies over the weather map, after his *Nubis: Authoring Real-Time Volumetric
+  Cloudscapes with the Decima Engine* (SIGGRAPH 2017, Advances in Real-Time Rendering in Games):
+  `cloudType`, `typeAt` in `src/sky/Clouds.ts`. Used as techniques only; the two forms and their
+  mix are our own. The march's light: each step's light weighed by the opacity the step adds, the
+  energy-conserving integration of Sébastien Hillaire, *Physically Based and Unified Volumetric
+  Rendering in Frostbite* (SIGGRAPH 2015, Advances in Real-Time Rendering in Games); multiple
+  scattering as orders of halved optical depth, energy and asymmetry, Magnus Wrenninge, *Oz: The
+  Great and Volumetric* (SIGGRAPH 2013 talk), through the adapted tidewater source above; and the
+  light a thick column passes down, a conservative layer's diffuse transmission and the angular
+  law it leaves the base with, H. C. van de Hulst, *Multiple Light Scattering* (Academic Press,
+  1980), and Alexander A. Kokhanovsky, *Optical properties of terrestrial clouds* (Earth-Science
+  Reviews 64, 2004).
 - Lunar shading: Yasuhiro Fujii,
   [*A tiny improvement of Oren-Nayar reflectance
   model*](https://mimosa-pudica.net/improved-oren-nayar.html),
@@ -856,10 +867,6 @@ comment where it is used.
   Techniques and Optimization of HDR Color Pipelines*, GDC 2016): contrast, shoulder, white point
   and mid grey, its two constants solved from them (`src/post/Pipeline.ts`); its bent toe and its
   defaults (at first fitted to Hill's curve, now set on our own frames) are ours.
-- The clouds' two phase lobes, all back lobe deep in the cloud and blended toward their share
-  where the light gets through by the light's transmittance through each step
-  (`src/sky/Clouds.ts`), after the same talk (Patry 2021, p. 97). Used as a technique only; the
-  lobes are tidewater's droplet phase's first order (above).
 - The thin cloud layer's density lowered where its position on the layer moves fast with the
   panorama's texture coordinate, so the far layer shows an even veil rather than sparkle
   (`src/sky/Clouds.ts` `streaksAt`), after the same talk (Patry 2021, p. 94-96), and its two phase

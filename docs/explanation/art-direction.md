@@ -386,8 +386,10 @@ for the light is baking lighting into albedo; it breaks again whenever the light
 
 ## Sea, sky and weather
 
-- Rain, storm and fog are parked (`PARKED_WEATHER` in `src/sky/Weather.ts`): out of the rotation
-  and the production page until the game needs them; the notes on them below stand for their
+- The weather is a fine day's: clear, fair and partly, the sky half-way from fair to cloudy, the
+  most cloud the island sees for now. Cloudy and overcast are parked (`PARKED_WEATHER` in
+  `src/sky/Weather.ts`) until the clouds' own milestone, rain, storm and fog until the game needs
+  them: out of the rotation and the production page; the notes on them below stand for their
   revival.
 - The sea is calm in everyday weather: no whitecaps on the open water. Only a storm's gale builds
   a rough sea with whitecaps, trailing foam and spray. The sea continues to the horizon.
@@ -438,47 +440,54 @@ for the light is baking lighting into albedo; it breaks again whenever the light
   midday.
 - Bad weather dims and desaturates the existing light and thickens the air as its visibility
   falls, and it stays dimmer and greyer than a clear day.
-- Weather changes sweep the sky as a front from upwind. The clouds drift downwind with the wind
-  aloft, faster than the surface wind (the cumulus and the thin layer about twice it),
-  so they never move against the grass and the sea.
-- The clouds stand where such clouds stand: the clear and fair skies' cumulus from about 4 km up,
-  cloudy's and overcast's deck low, its base under a kilometre and its tops near 3 km, so its
-  masses are near and wide overhead and close into a flat, packed floor toward the horizon, seen
-  through little of the air's haze; a front between the two moves the deck with the weather. The
-  deck's base is lit by what comes down through it, the light on its tops passed through the
-  cloud above, with no gain or tint of its own: thin parts show lighter than the thick masses
-  beside them, and the deck reads near grey. The air under it is lit by the deck and by the sea's
-  reflection of it rather than by a clear sky, so the haze in front of the clouds is their grey.
-  The clear and fair skies' cumulus are lit the same way under their tops: a shaded base takes
-  the light the cloud above passes down to it, so it reads a soft grey about a stop under the
-  sunlit tops and near the blue sky beside it, never a dark block.
-- Under a deck the land is lit by a softened key along the sun and by the deck's sky light, under
-  overcast a sky light of its own, stronger than the sea's. Under overcast the closed deck reads
-  lighter than the meadow under it, lighter still toward the sun, where the lit cloud about the
-  sun's place glows broad and soft, and graded more flatly from the zenith to the horizon than the
-  standard overcast sky's 3 : 1 (the lightness of deck and meadow:
-  [Look values](../reference/look-values.md)); the land takes its light from the sun's side of the
-  deck as the deck shows it. The sky's lightness changes little between a sun at 15 degrees and one
-  at 22. With the sun high the deck passes on little of a clear sky's blue, so the light lent to
-  the land is a warm grey. A cloudy sky's deck lets go as the sun falls under about 6 degrees: by 3
-  the low sun shines under the broken deck and the view's own light sets the exposure, so a cloudy
-  evening comes on by degrees: dark at sunset, neither black nor lit yellow, the meadow never
-  brighter at a lower sun but where the cloud opens for a moment. Overcast is a closed, dark deck
-  at every sun height, morning and evening alike: it does not break up at a low sun, and its light
-  leaves only with the sun's own, over the twilight: the land under it keeps the deck's soft light
-  through sunset, with no flash of the setting beam on the slopes toward it, and goes down into the
-  night as the deck's light does. Its sky is brightest about the sun's place and dim looking away,
-  light near the sun, a near-neutral pale grey there, and a dark blue-green grey away from it; the
-  meadow under it a quieter green, its most brightly lit grass muted toward grey. The land under it
-  is lit soft: the deck's sky light from every side, its glow about the sun's place included,
-  lifted well over a cloudy day's. Under the water the floor takes that light as the water column
-  passes it down, so the shallows' floor is lit by the same deck, dimmed by the water above it the
-  deeper it lies. The sun reaches it only through the deck: none under its rolls, and where a
-  thinned region of the deck lies along the sun, a share of it in large patches that move with the
-  deck, which adds a few per cent to the meadow and draws the faint shadows of everything taller
-  than the meadow; the meadow does not shade itself in it, so the sward's own shade is the one the
-  sky light finds under its canopy, while the bamboo, the stones and the bare ground keep their
-  contact shade.
+- A change of weather moves the whole sky together: the cover grows or thins everywhere at once, the
+  clouds flattening or heaping and their layer sinking or rising with it, never one sky swept over
+  another along a line. The clouds drift downwind with the wind aloft, faster than the surface wind
+  (the cumulus and the thin layer about twice it), so they never move against the grass and the sea.
+- Every sky's clouds are one kind of cloud, heaped or flat by the weather, and they stand where such
+  clouds stand: the clear and fair skies' cumulus from about 4 km up, cloudy's broken layer of
+  flatter heaps from about 1.5 km to 4.5 km, with blue between them, and overcast's closed deck low,
+  its base under a kilometre and its tops near 3 km, so its masses are near and wide overhead and
+  close into a flat, packed floor toward the horizon, seen through little of the air's haze. The
+  deck's base is lit by what comes down through it, the light on its tops passed through the cloud
+  above, with no gain or tint of its own: thin parts show lighter than the thick masses beside them,
+  and the deck reads near grey. The air under it is lit by the deck and by the sea's reflection of
+  it rather than by a clear sky, so the haze in front of the clouds is their grey. The clear and
+  fair skies' cumulus are lit the same way under their tops: a shaded base takes the light the cloud
+  above passes down to it, so it reads a soft grey about a stop under the sunlit tops and near the
+  blue sky beside it, never a dark block.
+- Under cloud the land keeps a light along the sun and the shadows it casts, by one rule under
+  every sky: a cloud passes down a part of the sunlight it takes, and the land under it keeps a
+  share of that as a soft key, so a cloud's shadow, a cloudy day and an overcast one all show the
+  bamboo's, the cliffs' and the islanders' shadows and the lit side of every form, softer and
+  shallower the thicker the cloud. A land lit by the sky alone reads flat, without depth, and only
+  real rain may lose the key.
+- Under a deck the land is lit by that softened key and by the deck's sky light, under overcast a
+  sky light of its own, stronger than the sea's. Under overcast the closed deck reads lighter than
+  the meadow under it, lighter still toward the sun, where the lit cloud about the sun's place glows
+  broad and soft, and graded more flatly from the zenith to the horizon than the standard overcast
+  sky's 3 : 1 (the lightness of deck and meadow: [Look values](../reference/look-values.md)); the
+  land takes its light from the sun's side of the deck as the deck shows it. The sky's lightness
+  changes little between a sun at 15 degrees and one at 22. With the sun high the deck passes on
+  little of a clear sky's blue, so the light lent to the land is a warm grey. A cloudy sky's deck
+  lets go as the sun falls under about 6 degrees: by 3 the low sun shines under the broken deck and
+  the view's own light sets the exposure, so a cloudy evening comes on by degrees: dark at sunset,
+  neither black nor lit yellow, the meadow never brighter at a lower sun but where the cloud opens
+  for a moment. Overcast is a closed, dark deck at every sun height, morning and evening alike: it
+  does not break up at a low sun, and its light leaves only with the sun's own, over the twilight:
+  the land under it keeps the deck's soft light through sunset, with no flash of the setting beam on
+  the slopes toward it, and goes down into the night as the deck's light does. Its sky is brightest
+  about the sun's place and dim looking away, light near the sun, a near-neutral pale grey there,
+  and a dark blue-green grey away from it; the meadow under it a quieter green, its most brightly
+  lit grass muted toward grey. The land under it is lit soft: the deck's sky light from every side,
+  its glow about the sun's place included, lifted well over a cloudy day's. Under the water the
+  floor takes that light as the water column passes it down, so the shallows' floor is lit by the
+  same deck, dimmed by the water above it the deeper it lies. The sun reaches it only through the
+  deck, as the soft key every cloud leaves the land, a little more where a thinned region of the
+  deck lies along the sun, in large patches that move with the deck; it draws the soft shadows of
+  everything taller than the meadow; the meadow does not shade itself in it, so the sward's own
+  shade is the one the sky light finds under its canopy, while the bamboo, the stones and the bare
+  ground keep their contact shade.
 - Clear and fair skies hold a thin layer of silky fibres about 8.5 km up, combed along the wind
   aloft and gathered in patches with blue sky between them, closing up toward the horizon in
   perspective. The fibres bend and hook, run thick and thin along their length and fray at their

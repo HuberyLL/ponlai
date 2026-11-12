@@ -293,14 +293,12 @@ const seaFogView = { on: params.has( 'seaFog' ) };
 // unless `?dayFog` or the GUI turns it on.
 const dayFogView = { on: params.has( 'dayFog' ) };
 weather.auto = loaded.autoWeather;
-// The land's floor under a deck, the deck's cover and the day sky's level and exponent per clouded
-// sky (Weather.ts `deckFloor`, `lowCover`, `daySky`, `daySkyExponent`), tunable on debug pages
+// The day sky's level and exponent per clouded sky (Weather.ts `daySky`, `daySkyExponent`),
+// tunable on debug pages
 // without a reload: the presets the weather moves between take them, and the state that stands on
 // that sky follows (`setPresetValue`); the sky rebakes. A `?tune=` value is the start, applied
 // here as a load would.
 const PRESET_TUNABLES: ReadonlyArray<readonly [ TunedField, TuneOptions ]> = [
-	[ 'deckFloor', { min: 0, max: 1 } ],
-	[ 'lowCover', { min: 0, max: 1 } ],
 	[ 'daySky', { min: 0.005, max: 2, scale: 'log' } ],
 	[ 'daySkyExponent', { min: 0, max: 3 } ],
 ];
@@ -459,7 +457,7 @@ function prepareSkyState(): void {
 	if ( cloudOverride !== null ) state.coverage = cloudOverride;
 	sky.setWeather( state );
 	keyGlint.spread.value = state.glintSpread ?? 0;
-	sky.track( celestial, state, cloudOverride, weather.front, weather.skyMix );
+	sky.track( celestial, state, cloudOverride, weather.skyMix );
 	prepareHaze( state );
 	lastWeatherSignature = `${ state.coverage },${ state.density },${ state.directVisibility },${ state.ambientGain },${ state.daySky },${ state.daySkyExponent },${ state.haze }`;
 
@@ -468,7 +466,7 @@ function prepareSkyState(): void {
 function publishLighting(): void {
 
 	// three's sun: the direct key, the sky's, which the clouds' shadow cuts per point over the land's
-	// floor, the deck's key gain on that floor (Sky.ts `keyDirectVisibility`, OVERCAST_KEY_GAIN); the
+	// floor, the share of the key a cloud passes on (Sky.ts `keyDirectVisibility`, KEY_THROUGH_CLOUD); the
 	// land's key (shared.landKey) and the sea's (shared.sunColor): both the sky's key, the sea's cut
 	// by the clouds' own transmittance over the land's floor (Sky.ts `seaKeyVisibility`,
 	// lighting/KeyCloud.ts)
@@ -1936,10 +1934,10 @@ function tick( time: number ): void {
 	renderer.info.reset();
 	// Sun, moon, key light and grade follow the clock every frame; only the baked reflection,
 	// environment and cloud products cross-fade between bakes.
-	sky.track( manualSun ? null : dayCycle.snapshot(), weather.state, cloudOverride, weather.front, weather.skyMix );
+	sky.track( manualSun ? null : dayCycle.snapshot(), weather.state, cloudOverride, weather.skyMix );
 	sky.advance( environmentDt );
 	publishLighting();
-	// the ambient grade by the sun and the weather's blend of the kept skies (lighting/AmbientGrade.ts)
+	// the ambient grade by the sun and the weather's blend of the four skies (lighting/AmbientGrade.ts)
 	ambientGrade.update( sky.elevation, weather.skyMix, sky.rising, sky.moonElevation, sky.moonKeyShare );
 	shared.clouded.value = cloudedShare( weather.skyMix );
 	// the yunpeng's glow and its local lights by their own share of the night (sky/DayCycle.ts
