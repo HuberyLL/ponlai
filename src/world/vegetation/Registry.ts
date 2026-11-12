@@ -1,5 +1,4 @@
 import type * as THREE from 'three/webgpu';
-import type { WorldData } from '../types.ts';
 
 // The vegetation's registry: every plant kind the page draws, once, with what it takes part in.
 // The page's lists of vegetation roots read it (main.ts: the scene, the depth prepass, the sun's
@@ -17,16 +16,18 @@ import type { WorldData } from '../types.ts';
 //   idle-time steps and swaps it in, in the swap's frame, without building a pipeline (Growth.ts).
 //   The kinds prepare and swap in registry order. A kind that writes its buffers in place at the
 //   swap stages the write ahead (`stage`, Upload.ts stagedWriteSteps): kept for the plant kinds to
-//   come; no kind uses it today (the grass takes new buffers).
+//   come; no kind uses it today (the grass takes new buffers). The next version's land data is
+//   whatever the page's world is (`L`: the island's world/types.ts WorldData); the registry only
+//   passes it on.
 
 /** A preparation step yields nothing (a slice ends) or a promise (wait for it: a worker, a compile). */
 export type GrowthSteps<T> = Generator<void | Promise<unknown>, T>;
 
-/** What a kind's growth preparation reads (Growth.ts). */
-export interface GrowthInput {
+/** What a kind's growth preparation reads (Growth.ts); `L` is the world's data. */
+export interface GrowthInput<L> {
 	renderer: THREE.WebGPURenderer;
 	/** the next version's world */
-	data: WorldData;
+	data: L;
 	/** metres from a point to the islander's walking loop on the next land */
 	walkDistance( x: number, z: number ): number;
 	/** keeps a staged in-place write (Upload.ts stagedWriteSteps) until the swap's frames are done */
@@ -34,15 +35,15 @@ export interface GrowthInput {
 }
 
 /** A kind's part in the island's growth (Growth.ts). */
-export interface KindGrowth<P> {
+export interface KindGrowth<P, L> {
 	/** the kind's next version, in steps of a few tenths of a millisecond, its buffers uploaded */
-	prepare( input: GrowthInput ): GrowthSteps<P>;
+	prepare( input: GrowthInput<L> ): GrowthSteps<P>;
 	/** swaps `prepared` in, in the swap's frame; returns what to dispose of once nothing draws the
 	 * old version (a frame or more later), or null */
 	swap( prepared: P ): ( () => void ) | null;
 }
 
-export interface VegetationKind<P = unknown> {
+export interface VegetationKind<P = unknown, L = unknown> {
 	/** 'grass', 'yunpeng', 'bamboo', ... */
 	name: string;
 	/** what the page adds to the scene */
@@ -55,14 +56,14 @@ export interface VegetationKind<P = unknown> {
 	sunCaster: boolean;
 	/** baked into the rain's collision map */
 	rainBake: boolean;
-	growth?: KindGrowth<P>;
+	growth?: KindGrowth<P, L>;
 }
 
-export class Vegetation {
+export class Vegetation<L = unknown> {
 
-	readonly kinds: VegetationKind[] = [];
+	readonly kinds: VegetationKind<unknown, L>[] = [];
 
-	add<P>( kind: VegetationKind<P> ): void {
+	add<P>( kind: VegetationKind<P, L> ): void {
 
 		const tagged = kind.shadowFilter === 'vegetation';
 		kind.root.traverse( ( object ) => {
@@ -81,7 +82,7 @@ export class Vegetation {
 	}
 
 	/** The kinds' roots in registry order, those `filter` keeps. */
-	roots( filter: ( kind: VegetationKind ) => boolean = () => true ): THREE.Object3D[] {
+	roots( filter: ( kind: VegetationKind<unknown, L> ) => boolean = () => true ): THREE.Object3D[] {
 
 		return this.kinds.filter( filter ).map( ( kind ) => kind.root );
 

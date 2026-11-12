@@ -1,6 +1,5 @@
 import { Fn, clamp, exp, float, length, max, min, mix, uniform } from 'three/tsl';
 import type * as THREE from 'three/webgpu';
-import { MEADOW_EXTENT } from '../materials/Meadow.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -74,9 +73,9 @@ const CAST_STEPS = [ 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 3.5 ];
 const CAST_SOFT = 0.05;
 
 /** The share of the key light that reaches `top` (a tuft's top, world) past the crowns of `crowns`
- * (the sward's top) toward `key` (unit, toward the light). For a compute kernel: it samples at
- * level 0, and unrolls its lookups. */
-export function meadowCastLight( crowns: THREE.TextureNode, top: V3, key: V3 ): F {
+ * (the sward's top, over a square of `extent` (m) centred on the world's origin) toward `key`
+ * (unit, toward the light). For a compute kernel: it samples at level 0, and unrolls its lookups. */
+export function meadowCastLight( crowns: THREE.TextureNode, extent: number, top: V3, key: V3 ): F {
 
 	const flat = max( length( key.xz ), 1e-3 ).toVar();
 	const along = key.xz.div( flat ).toVar(), rise = key.y.div( flat ).toVar();
@@ -84,7 +83,7 @@ export function meadowCastLight( crowns: THREE.TextureNode, top: V3, key: V3 ): 
 	for ( const t of CAST_STEPS ) {
 
 		const q = top.xz.add( along.mul( t ) );
-		const crown = crowns.sample( q.div( MEADOW_EXTENT ).add( 0.5 ) ).level( float( 0 ) ).r;
+		const crown = crowns.sample( q.div( extent ).add( 0.5 ) ).level( float( 0 ) ).r;
 		path = path.add( clamp( crown.sub( top.y.add( rise.mul( t ) ) ).div( CAST_SOFT ), 0, 1 ).mul( t - last ) );
 		last = t;
 

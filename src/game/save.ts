@@ -1,5 +1,5 @@
 import type { RecordSave } from './Chronicle.ts';
-import type { SimState } from './sim/types.ts';
+import { SAVE_VERSION, type SimState } from './sim/types.ts';
 
 // The game's save: one slot in this browser's storage (localStorage) holding the game as JSON with
 // a version number: the simulation's state (sim/Sim.ts, where every change of the world is kept)
@@ -19,7 +19,7 @@ import type { SimState } from './sim/types.ts';
 // one there; the `autosave` URL option (on, off) decides anywhere. `load` resumes the save whatever
 // that says, and `new` starts a new game, which replaces the save at its first save.
 //
-// Rules: a change to what is saved bumps SAVE_VERSION. While the game is in development a save of
+// Rules: a change to what is saved bumps SAVE_VERSION (sim/types.ts). While the game is in development a save of
 // another version is not carried over: the page starts a new game, and copies the old save to
 // UNREAD_KEY before it saves over the slot, so it is never lost unseen.
 
@@ -28,8 +28,8 @@ export const SAVE_KEY = 'ponlai.game';
 /** where a save this build cannot read is kept when the page saves over the slot */
 export const UNREAD_KEY = 'ponlai.game.unread';
 
-/** the save's shape this build writes */
-export const SAVE_VERSION = 22;
+/** the save's shape this build writes (kept with the simulation, sim/types.ts) */
+export { SAVE_VERSION };
 
 export interface SaveFile {
 	version: number;

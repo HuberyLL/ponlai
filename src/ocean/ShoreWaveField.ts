@@ -4,7 +4,7 @@
  * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
  */
 
-import type { ShoreField } from '../world/types.ts';
+import type { ShoreField } from '../RenderTypes.ts';
 
 // The rocky shore's wave fields as plain data (no three, no DOM): a function of the shore's
 // distance field alone, so the page builds them at load and a grown island's in a worker

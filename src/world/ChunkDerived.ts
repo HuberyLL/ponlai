@@ -22,29 +22,20 @@
 //   COLUMN_CELL past a cell's edge more: within one of its cells (tools/verify-chunk-derived.mjs).
 // - The refracted map's subsets are cut at SEA_LEVEL, the only level the sea takes today; at another
 //   level RefractedSun cuts its own, as it does for meshes without them.
+// - The caster columns' and the subsets' format is the renderer's (lighting/CasterFormat.ts).
 
-/** The chunks' caster column cell (m): finer than SunShadow's (a 16 m box's longer side over 64). */
+import { LEVEL_MARGIN, type CasterColumns } from '../lighting/CasterFormat.ts';
+
+/** The chunks' caster column cell (m), their CasterColumns' `cell`: finer than SunShadow's (a 16 m
+ * box's longer side over 64). */
 export const COLUMN_CELL = 0.25;
 /** The camera's ground cell (m): IslandGround's grid. */
 export const GROUND_CELL = 0.5;
 /** The level the chunks cut the refracted map's subsets at: the sea's mean surface (shared.waterLevel). */
 export const SEA_LEVEL = 0;
-// Caster triangles reaching no lower than this above the water level cannot write the refracted map
-// (its material discards everything above the level), so the proxies leave them out. The margin only
-// guards a level that moves: RefractedSun cuts again once the level has moved by half of it.
-export const LEVEL_MARGIN = 0.5;
-
-/** The lowest and highest point in each cell of the world's COLUMN_CELL lattice: cells
- * [ x0, x0 + nx cell ) x [ z0, z0 + nz cell ), row by row; +-Infinity where no point falls. */
-export interface CasterColumns { x0: number; z0: number; cell: number; nx: number; nz: number; low: Float32Array; high: Float32Array }
-
 /** The highest point in each cell of the world's GROUND_CELL lattice (-Infinity where none falls),
  * laid out as CasterColumns, and the points' box: x0, y0, z0, x1, y1, z1 (empty: +-Infinity). */
 export interface GroundGrid { x0: number; z0: number; cell: number; nx: number; nz: number; heights: Float32Array; bounds: [ number, number, number, number, number, number ] }
-
-/** The index of a mesh's triangles that reach below `level` + LEVEL_MARGIN, in their order; null
- * when every triangle does (the map then draws the whole mesh). */
-export interface SubmergedSubset { level: number; index: Uint32Array | null }
 
 // The cells of the world's `cell` lattice the points fall in: [ i0, i0 + nx ) x [ j0, j0 + nz ).
 function cellsOf( positions: Float32Array, cell: number ) {

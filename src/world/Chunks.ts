@@ -95,14 +95,16 @@ import { Field2D, roundCorners } from './Field2D.ts';
 import { GROWTH, type LandLattice, type Window } from './IslandGrowth.ts';
 import {
 	cliffSharpCells, islandColumnRange, islandSurfaceHeight, landBounds, makeIslandSDF, solidSide, ISLAND_BOTTOM, ISLAND_PEAK, LAND_REACH,
-	type Bounds, type Footprint,
+	type Footprint,
 } from './WorldShapes.ts';
+import type { Bounds } from '../RenderTypes.ts';
 import { surfaceNets } from './SurfaceNets.ts';
 import { compactMesh, simplifyIslandMesh } from './IslandSimplify.ts';
 import { makeRockSDF, placeStones } from './Stones.ts';
 import { floorAt, SHELF_CEILING } from './Bathymetry.ts';
 import { buildFloorTile, nearLandCells, tileIndices, underLand, FAR_HALF, SEABED_TILE, TILE_SIDE, type FloorShape } from './SeabedTile.ts';
-import { casterColumns, groundGrid, submergedIndex, SEA_LEVEL, type CasterColumns, type GroundGrid } from './ChunkDerived.ts';
+import { casterColumns, groundGrid, submergedIndex, SEA_LEVEL, type GroundGrid } from './ChunkDerived.ts';
+import type { CasterColumns } from '../lighting/CasterFormat.ts';
 import { scatterTop } from './Anchors.ts';
 import { groveSky } from './BambooGroves.ts';
 import { buildRimLip, ownTexels, rimGroundTile, RimLattice, RIM_PAD } from './RimGround.ts';

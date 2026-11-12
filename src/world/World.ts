@@ -5,7 +5,8 @@ import type { WaveMaps } from '../ocean/WaveMaps.ts';
 import { refractedGroup, showUnderwater } from '../ocean/Refraction.ts';
 import type { Shared } from '../shared.ts';
 import { ISLAND_TOP } from './WorldShapes.ts';
-import type { CasterColumns, GroundGrid, SubmergedSubset } from './ChunkDerived.ts';
+import type { GroundGrid } from './ChunkDerived.ts';
+import type { CasterColumns, SubmergedSubset } from '../lighting/CasterFormat.ts';
 import type { IslandChunk, MeshData, WorldData } from './types.ts';
 import type { WorldFields } from './WorldFields.ts';
 

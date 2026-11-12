@@ -12,8 +12,7 @@ import { notice } from './people.ts';
 import { obstructPlaces } from './places.ts';
 import { random } from './rng.ts';
 import { ageOf, drawLifespan, paceOf } from './life.ts';
-import { SAVE_VERSION } from '../save.ts';
-import { GROWTH_STEPS, POPULATION_START, SECONDS_PER_GAME_DAY, SECONDS_PER_YEAR, WALK_SPEED, piecesFor } from './types.ts';
+import { GROWTH_STEPS, POPULATION_START, SAVE_VERSION, SECONDS_PER_GAME_DAY, SECONDS_PER_YEAR, WALK_SPEED, piecesFor } from './types.ts';
 import type { EntityId, IslandInput, SimState, Vec2, Villager } from './types.ts';
 import type { Body, Sex } from '../../characters/Ages.ts';
 // the game's content: it registers its definitions, which the simulation reads (registry.ts)

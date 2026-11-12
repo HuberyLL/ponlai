@@ -47,6 +47,8 @@ export interface RainOptions {
 
 	count?: number;
 	seed?: number;
+	/** the highest height a drop can meet (m): the rain's collision map holds nothing above it */
+	ceiling: number;
 
 }
 
@@ -132,7 +134,7 @@ export class Rain {
 	// render's pixel for the veil, the pixel the streaks are drawn at for the drops.
 	readonly pixelAngle = uniform( 0.001 );
 	readonly dropPixelAngle = uniform( 0.001 );
-	readonly collision = new RainCollision();
+	readonly collision: RainCollision;
 	readonly drops: RainDrops;
 	/** The drops' streak draw; `group` holds it with the splashes (after the resolve, `afterGroup`
 	 * holds it alone). */
@@ -141,8 +143,9 @@ export class Rain {
 	readonly afterGroup: THREE.Group | null;
 	private light: RainLight;
 
-	constructor( { count = 32768, seed = 8371 }: RainOptions = {} ) {
+	constructor( { count = 32768, seed = 8371, ceiling }: RainOptions ) {
 
+		this.collision = new RainCollision( ceiling );
 		if ( ! Number.isFinite( count ) || count < 0 ) throw new RangeError( 'Rain count must be finite and non-negative' );
 		if ( ! Number.isFinite( seed ) ) throw new RangeError( 'Rain seed must be finite' );
 		this.drops = new RainDrops( { collision: this.collision, amount: this.uniforms.rain, wind: this.uniforms.wind, pixelAngle: this.dropPixelAngle, seed } );

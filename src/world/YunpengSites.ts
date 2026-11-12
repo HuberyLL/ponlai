@@ -3,8 +3,8 @@ import { supportsMeadow } from './MeadowSurface.ts';
 import { hash3i, mulberry32, type Rng } from './noise.ts';
 import { RIM_REACH, sampleRimGround } from './RimGround.ts';
 import { shoreDistance } from './ShoreSample.ts';
-import type { RimGroundField, ShoreField } from './types.ts';
-import type { Bounds } from './WorldShapes.ts';
+import type { RimGroundField } from './types.ts';
+import type { Bounds, ShoreField } from '../RenderTypes.ts';
 
 // Where the yunpeng stands (Yunpeng.ts builds its clumps): single clumps in the meadow, sparse, an
 // accent and never a stand (tall and glowing, a drift of them would hide the islanders by night).

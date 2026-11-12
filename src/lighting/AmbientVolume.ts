@@ -1,9 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { Fn, float, instanceIndex, int, ivec3, normalGeometry, positionGeometry, select, storage, storageTexture, texture3D, textureLoad, uint, uniform, varyingProperty, vec3 } from 'three/tsl';
-import { META_VEC4, PROBE_STRIDE, SPACING } from '../world/AmbientProbes.ts';
+import { META_VEC4, PROBE_STRIDE, type AmbientLattice } from './ProbeFormat.ts';
 import { shEvaluate, toMat3 } from './Harmonics.ts';
 import { AttributeType, freeAttribute, uploadSteps } from '../world/Upload.ts';
-import type { AmbientLattice } from '../world/types.ts';
 
 // The ambient light's probes on the GPU: the merged lattice (world/AmbientProbes.ts, merged in
 // ChunkMerge.ts, its invalid probes filled from their neighbours there) as one read-only storage
@@ -15,7 +14,7 @@ import type { AmbientLattice } from '../world/types.ts';
 //   SphericalHarmonics3 order, y up) the vec4 i holds ( sky visibility, bounced r, g, b ): the
 //   projections, not yet convolved with the cosine lobe ( pi, 2 pi / 3, pi / 4 ); the sky
 //   visibility counts only the rays that leave upward. The vec4 9 to 15 hold the groves' in-scatter
-//   among the bounced light, r g b per coefficient in turn (world/AmbientProbes.ts SCATTER_VEC4).
+//   among the bounced light, r g b per coefficient in turn (ProbeFormat.ts SCATTER_VEC4).
 //   The vec4 16 to 18 (SEA_VEC4) hold the sea's visibility, the nine coefficients of the rays that
 //   leave downward and reach the sea's surface unblocked, and three spare. The vec4 19 (META_VEC4)
 //   holds
@@ -64,8 +63,8 @@ export class AmbientVolume {
 	readonly origin = uniform( new THREE.Vector3() );
 	/** ( nx, ny, nz ): the box's probes per axis (whole numbers, as floats) */
 	readonly dims = uniform( new THREE.Vector3() );
-	/** the lattice's spacing (m) */
-	readonly spacing = uniform( SPACING );
+	/** the lattice's spacing (m), set from the lattice's own */
+	readonly spacing = uniform( 0 );
 	/** the probes: VEC4S vec4 each (see the header) */
 	readonly probes;
 	/** the relight's output, for its kernel to write (AmbientRelight.ts) */

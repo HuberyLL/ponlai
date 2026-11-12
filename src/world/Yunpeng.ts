@@ -606,12 +606,12 @@ export function buildYunpeng( data: WorldData, shared: Shared ): Yunpeng {
 }
 
 /** The yunpeng as a vegetation kind (vegetation/Registry.ts), following the growth. */
-export function yunpengKind( yunpeng: Yunpeng ): VegetationKind {
+export function yunpengKind( yunpeng: Yunpeng ): VegetationKind<unknown, WorldData> {
 
-	const growth: KindGrowth<YunpengPrepared> = {
+	const growth: KindGrowth<YunpengPrepared, WorldData> = {
 		prepare: ( input ) => yunpeng.prepare( input.data, input.renderer ),
 		swap: ( prepared ) => yunpeng.swap( prepared ),
 	};
-	return { name: 'yunpeng', root: yunpeng.root, prepass: false, shadowFilter: 'ordinary', sunCaster: true, rainBake: true, growth: growth as KindGrowth<unknown> };
+	return { name: 'yunpeng', root: yunpeng.root, prepass: false, shadowFilter: 'ordinary', sunCaster: true, rainBake: true, growth: growth as KindGrowth<unknown, WorldData> };
 
 }

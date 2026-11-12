@@ -33,6 +33,7 @@ import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
 import { buildWorldMeshes } from './world/World.ts';
+import type { WorldData } from './world/types.ts';
 import { WorldFields } from './world/WorldFields.ts';
 import { Growth } from './world/Growth.ts';
 import { topFromTiles } from './game/sim/grid.ts';
@@ -69,7 +70,7 @@ import { keyGlint } from './lighting/SurfaceBRDF.ts';
 import { AmbientVolume, type AmbientView } from './lighting/AmbientVolume.ts';
 import { installAmbientVolume, installEnvironmentHarmonics } from './lighting/AmbientSample.ts';
 import { AmbientRelight, AmbientSky, lowSunSkyLift } from './lighting/AmbientRelight.ts';
-import { islandSurfaceHeight, landBounds } from './world/WorldShapes.ts';
+import { ISLAND_TOP, islandSurfaceHeight, landBounds } from './world/WorldShapes.ts';
 import { LandLattice } from './world/IslandGrowth.ts';
 import { walkPoints } from './world/WalkPath.ts';
 import { bambooKinds, buildBamboo } from './world/Bamboo.ts';
@@ -635,7 +636,9 @@ const waveMaps = new WaveMaps( renderer, fft );
 const seaDetail = new SeaDetail( shared );
 // the veil's shells and the sea's ripple layers are built into the rain's and the water's materials
 setRainShading( quality.rainShading );
-rain = new Rain( { count: runtimeQuality.rainDrops } );
+// The figures reach two metres above the meadow; the rain's ceiling keeps a margin over them and
+// the plants, so no drop falls through their tops.
+rain = new Rain( { count: runtimeQuality.rainDrops, ceiling: ISLAND_TOP + 4 } );
 // Drops scatter the same linear environment and key light as the island, without an emissive
 // floor. Using the GPU integral keeps their light in step with the displayed sky transition.
 // A strike's fill lights the ground they show in full; the sky they show and reflect takes it
@@ -758,7 +761,7 @@ const fields = new WorldFields( data, shared.shoreXform.value );
 // installed before any of them builds; its map shares the wave maps' target
 const groundBounce = new GroundBounce( { renderer, shared, sunShadow, fields, soil: textures.soil, target: waveMaps.target, layer: waveMaps.bounceLayer, cloud: ( position ) => sky.keyDirectVisibility( position ) } );
 installGroundBounce( groundBounce );
-const shoreWaves = new ShoreWaves( renderer, data, shared, fields.shore, fft, fields.floor );
+const shoreWaves = new ShoreWaves( renderer, data.shore, shared, fields.shore, fft, fields.floor );
 const walk = walkPoints( data.walk );
 const world = buildWorldMeshes( data, textures, shared, waveMaps, fields );
 scene.add( world.group );
@@ -822,7 +825,7 @@ await refractedSun.prepare();
 const grass = buildGrass( plantGrass( data.vegetation ), shared );
 // The vegetation's kinds (vegetation/Registry.ts), in the order the scene draws them; every list
 // of vegetation below reads it.
-const vegetation = new Vegetation();
+const vegetation = new Vegetation<WorldData>();
 vegetation.add( grassKind( grass ) );
 // the yunpeng's clumps in the meadow, instances of a few prototypes at two levels (Yunpeng.ts)
 const yunpeng = buildYunpeng( data, shared );

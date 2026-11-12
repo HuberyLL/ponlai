@@ -1306,6 +1306,14 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   the world cache; the browser's shader cache in the slot does not change the counts (they are the
   page's requests to WebGPU, cached or not), and `--fresh` runs in a throwaway profile.
   Its steps' waits are part of what it measures and stay fixed.
+- `tools/verify-layers.mjs` (plain `node`, no options) checks the direction of the imports
+  between the code's layers: render, island, game and app, lowest first, a file importing only
+  its own layer and those below. `tools/layers.json` gives every file under `src/` its layer
+  (not its folder's name); a file missing from it, or an upward import not on the tool's list of
+  known ones, fails, and so does a known one that no longer imports upward (the list only
+  shrinks). It also walks the chunk worker's imports (`src/world/chunkWorker.ts`) as the build's
+  world generator plugin does (`tools/vite-world-generator.mjs`) and fails on any package import
+  the plugin would refuse. Run it after adding a file or an import across folders.
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
 - `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
   (`uv run --with pillow --with numpy`), `tools/build-ground-textures.py` the meadow ground's from

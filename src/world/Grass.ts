@@ -7,7 +7,7 @@ import {
 } from 'three/tsl';
 import { LAWN_GAIN, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_SIZE, supportsMeadow } from '../materials/Meadow.ts';
 import { GUST_GAIN, GUST_MEAN, gustAt, gustJitter, wave, windStrength, type WindState } from '../weather/Wind.ts';
-import { VEGETATION_STRIDE as STRIDE } from './types.ts';
+import { VEGETATION_STRIDE as STRIDE, type WorldData } from './types.ts';
 import { RESPONSE, displacementAt } from './vegetation/Displacement.ts';
 import { noise3, smoothstep as smoothstepNumber } from './noise.ts';
 import { runSteps } from './Steps.ts';
@@ -1708,7 +1708,7 @@ interface GrassPrepared { plan: GrassPlan; ground: THREE.DataTexture; sward: THR
 
 /** The meadow as a vegetation kind (vegetation/Registry.ts): a growth step bakes the next ground
  * map and the fields under the meadow, and swaps them in. */
-export function grassKind( group: THREE.Group ): VegetationKind<GrassPrepared> {
+export function grassKind( group: THREE.Group ): VegetationKind<GrassPrepared, WorldData> {
 
 	return { name: 'grass', root: group, prepass: true, shadowFilter: 'vegetation', sunCaster: false, rainBake: false,
 		growth: {

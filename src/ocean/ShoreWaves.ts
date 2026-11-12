@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu';
 import { Fn, If, texture, uniform, uv, float, int, vec2, vec3, vec4, dot, length, sqrt, max, min, mix, smoothstep, exp, select, atan, fract, pow, mx_noise_float } from 'three/tsl';
 import type { OceanFFT } from './OceanFFT.ts';
 import type { Shared } from '../shared.ts';
-import type { WorldData } from '../world/types.ts';
+import type { ShoreField } from '../RenderTypes.ts';
 import { shoreBoundaryPixels, shoreShelterPixels, type FieldPixels } from './ShoreWaveField.ts';
 import { waveDamping } from './WaveDamping.ts';
 import type { ShoreFieldJob, ShoreFieldReply } from './shoreFieldWorker.ts';
@@ -64,7 +64,7 @@ function shelterTexture( field: FieldPixels & { info: Record<string, unknown> } 
 }
 
 /** A grown island's wave fields (ShoreWaves.fieldsFor), for `setFields`. */
-export interface ShoreFields { data: WorldData; boundary: THREE.DataTexture; shelter: THREE.DataTexture; direction: THREE.Vector2 }
+export interface ShoreFields { shoreField: ShoreField; boundary: THREE.DataTexture; shelter: THREE.DataTexture; direction: THREE.Vector2 }
 
 // Tidewater's FFT supplies every incident wave. This rocky boundary is a Ponlai extension:
 // a weak mirrored response and whitewater use that wave's height and orbital velocity,
@@ -129,7 +129,7 @@ export class ShoreWaves {
 	/** The surface field at the clock's previous bake (see the note above). */
 	readonly previousSurfaceAt: ( p: V2 ) => THREE.Node<'vec4'>;
 	fieldRevision = 0;
-	private data: WorldData;
+	private shoreField: ShoreField;
 	private revision = - 1;
 	private renderer: THREE.WebGPURenderer;
 	// the surface field's targets: [ current, previous ] (one under MSAA)
@@ -138,16 +138,17 @@ export class ShoreWaves {
 	private lastTime: number | undefined;
 	private lastReflection = - 1;
 
-	// `floor`: the seabed's height over the shore field's bounds (WorldFields.floor), for the waves'
-	// shallow-water damping (as the water's, OceanFFT.attenuation)
-	constructor( renderer: THREE.WebGPURenderer, data: WorldData, shared: Shared, shore: THREE.Texture | THREE.TextureNode, fft: OceanFFT,
+	// `shoreField`: the island's shore distance field (the island's world data `shore`), which `shore`
+	// holds as a texture; `floor`: the seabed's height over the shore field's bounds
+	// (WorldFields.floor), for the waves' shallow-water damping (as the water's, OceanFFT.attenuation)
+	constructor( renderer: THREE.WebGPURenderer, shoreField: ShoreField, shared: Shared, shore: THREE.Texture | THREE.TextureNode, fft: OceanFFT,
 		floor: THREE.Texture | THREE.TextureNode ) {
 
 		this.renderer = renderer;
-		this.data = data;
+		this.shoreField = shoreField;
 		this.setDirection( fft );
-		this.boundary = texture( fieldTexture( shoreBoundaryPixels( data.shore ), 'shoreWaveBoundary' ) );
-		this.shelter = texture( shelterTexture( shoreShelterPixels( data.shore, this.direction.value ) ) );
+		this.boundary = texture( fieldTexture( shoreBoundaryPixels( shoreField ), 'shoreWaveBoundary' ) );
+		this.shelter = texture( shelterTexture( shoreShelterPixels( shoreField, this.direction.value ) ) );
 		this.revision = fft.spectrumRevision;
 		const toUV = ( p: V2 ) => p.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
 		// The white water at a distance sd from the wall, from the incident wave's height and rise there
@@ -291,7 +292,7 @@ export class ShoreWaves {
 			return out;
 
 		} )();
-		const [ width, height ] = surfaceSize( data );
+		const [ width, height ] = surfaceSize( shoreField );
 		const field = ( name: string ) => {
 
 			const target = new THREE.RenderTarget( width, height, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, generateMipmaps: false } );
@@ -319,7 +320,7 @@ export class ShoreWaves {
 			if ( ! previous.equals( this.direction.value ) ) {
 
 				const old = this.shelter.value;
-				this.shelter.value = shelterTexture( shoreShelterPixels( this.data.shore, this.direction.value ) );
+				this.shelter.value = shelterTexture( shoreShelterPixels( this.shoreField, this.direction.value ) );
 				old.dispose();
 
 			}
@@ -348,8 +349,8 @@ export class ShoreWaves {
 	}
 
 	/** The wave fields of a grown island's shore field, built in a worker from `shore` (a copy of
-	 * `data.shore.data`, transferred to it); their textures are not uploaded yet. */
-	fieldsFor( data: WorldData, shore: Float32Array ): Promise<ShoreFields> {
+	 * `shoreField.data`, transferred to it); their textures are not uploaded yet. */
+	fieldsFor( shoreField: ShoreField, shore: Float32Array ): Promise<ShoreFields> {
 
 		const worker = new Worker( new URL( './shoreFieldWorker.ts', import.meta.url ), { type: 'module' } );
 		const direction = this.direction.value.clone();
@@ -358,11 +359,11 @@ export class ShoreWaves {
 			worker.onmessage = ( e: MessageEvent<ShoreFieldReply> ) => {
 
 				worker.terminate();
-				resolve( { data, boundary: fieldTexture( e.data.boundary, 'shoreWaveBoundary' ), shelter: shelterTexture( e.data.shelter ), direction } );
+				resolve( { shoreField, boundary: fieldTexture( e.data.boundary, 'shoreWaveBoundary' ), shelter: shelterTexture( e.data.shelter ), direction } );
 
 			};
 			worker.onerror = ( e ) => { worker.terminate(); reject( e ); };
-			worker.postMessage( { shore: { ...data.shore, data: shore }, direction: { x: direction.x, y: direction.y } } satisfies ShoreFieldJob, { transfer: [ shore.buffer ] } );
+			worker.postMessage( { shore: { ...shoreField, data: shore }, direction: { x: direction.x, y: direction.y } } satisfies ShoreFieldJob, { transfer: [ shore.buffer ] } );
 
 		} );
 
@@ -375,16 +376,16 @@ export class ShoreWaves {
 	setFields( fields: ShoreFields ): THREE.Texture[] {
 
 		const old = [ this.boundary.value, this.shelter.value ];
-		this.data = fields.data;
+		this.shoreField = fields.shoreField;
 		this.boundary.value = fields.boundary;
 		if ( fields.direction.equals( this.direction.value ) ) this.shelter.value = fields.shelter;
 		else {
 
 			fields.shelter.dispose();
-			this.shelter.value = shelterTexture( shoreShelterPixels( fields.data.shore, this.direction.value ) );
+			this.shelter.value = shelterTexture( shoreShelterPixels( fields.shoreField, this.direction.value ) );
 
 		}
-		const [ width, height ] = surfaceSize( fields.data );
+		const [ width, height ] = surfaceSize( fields.shoreField );
 		for ( const target of this.surfaces ) if ( target.width !== width || target.height !== height ) target.setSize( width, height );
 		this.fieldRevision ++;
 		this.lastTime = undefined;
@@ -402,8 +403,8 @@ export class ShoreWaves {
 }
 
 // The reflected surface's targets for a shore field: TEXEL over its extent.
-function surfaceSize( data: WorldData ): [ number, number ] {
+function surfaceSize( shore: ShoreField ): [ number, number ] {
 
-	return [ Math.ceil( data.shore.nx * data.shore.cell / TEXEL ), Math.ceil( data.shore.nz * data.shore.cell / TEXEL ) ];
+	return [ Math.ceil( shore.nx * shore.cell / TEXEL ), Math.ceil( shore.nz * shore.cell / TEXEL ) ];
 
 }

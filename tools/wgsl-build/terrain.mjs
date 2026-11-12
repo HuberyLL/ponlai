@@ -12,7 +12,7 @@
 import * as THREE from 'three/webgpu';
 import { float, texture } from 'three/tsl';
 import { AmbientVolume } from '../../src/lighting/AmbientVolume.ts';
-import { PROBE_STRIDE } from '../../src/world/AmbientProbes.ts';
+import { PROBE_STRIDE } from '../../src/lighting/ProbeFormat.ts';
 import { installAmbientVolume, installEnvironmentHarmonics } from '../../src/lighting/AmbientSample.ts';
 import { AmbientRelight, AmbientSky } from '../../src/lighting/AmbientRelight.ts';
 import { WaveMaps } from '../../src/ocean/WaveMaps.ts';

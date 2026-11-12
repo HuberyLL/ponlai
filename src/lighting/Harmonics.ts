@@ -1,10 +1,10 @@
 import * as THREE from 'three/webgpu';
 import { Fn, abs, cross, dot, float, length, mat3, max, min, normalize, select, sqrt, vec3 } from 'three/tsl';
-import { shBasis } from '../world/AmbientProbes.ts';
+import { shBasis } from './ProbeFormat.ts';
 
 // Degree-2 spherical harmonics for the ambient light's relight (AmbientRelight.ts): the products,
 // the cosine lobe, the deringing window and the directionality boost, in three.js's
-// SphericalHarmonics3 basis and order (y up; AmbientProbes.ts `shBasis`):
+// SphericalHarmonics3 basis and order (y up; ProbeFormat.ts `shBasis`):
 //   Y0 = 0.282095, Y1 = 0.488603 y, Y2 = 0.488603 z, Y3 = 0.488603 x, Y4 = 1.092548 x y,
 //   Y5 = 1.092548 y z, Y6 = 0.315392 ( 3 z^2 - 1 ), Y7 = 1.092548 x z, Y8 = 0.546274 ( x^2 - y^2 ).
 // On the GPU a function's nine coefficients travel as a mat3, the coefficient i in the column
