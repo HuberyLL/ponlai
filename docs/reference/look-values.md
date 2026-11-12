@@ -33,3 +33,12 @@ The measured values of the island's look, by kind. What each value means for the
 | --- | --- |
 | Chlorophyll in the sea water | about 0.5 mg a cubic metre |
 | Depth to which the stones and the seagrass's edges show through, everyday weather | some 5 to 7 m |
+
+## Albedo
+
+Linear diffuse albedo of the island's main surfaces.
+
+| Surface | Value |
+| --- | --- |
+| The meadow's blades | about 0.08, a sunlit leaf's |
+| The cliff's stone | about 0.1, darker than real limestone (0.2 to 0.35) on purpose |

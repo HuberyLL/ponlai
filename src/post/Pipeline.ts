@@ -458,7 +458,7 @@ export interface PipelineSettings {
 	skyMix: number[];
 }
 
-// The light's tone over tidewater's grade (docs/explanation/art-direction.md, Light): a photographic image
+// The light's tone over tidewater's grade (docs/explanation/art-direction.md, The look): a photographic image
 // pushed a little toward a painted one. Lights turn a touch golden and the shade a touch teal (by
 // the exposed luminance, so the night takes it as the day), the contrast round mid grey softens by
 // a tenth and the bloom strengthens by a quarter. It lifts no black: a constant fill in the grade

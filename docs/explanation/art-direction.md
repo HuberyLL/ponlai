@@ -118,7 +118,8 @@ art decision changes; images from elsewhere stay out of the repository.
 - Sunlit stone keeps its grain and its grey: a cliff face turned to the sun is the brightest
   ground in the frame but never a flat cream-white sheet. The stone is kept darker than real
   limestone so that the exposure set for the meadow leaves it below the curve's shoulder, but
-  lighter than the meadow's albedo (about one and a half times it), so a face lit from the side
+  lighter than the meadow's albedo ([Look values](../reference/look-values.md)), so a face lit from
+  the side
   stands out from the grass as a pale cliff rather than a dark band. The wall's foot, in and under
   the water, is the same stone wet: under the water it keeps nearly all of its dry albedo, and it
   darkens only as the water over it dims and colours the floor beside it, so nothing pale runs
@@ -307,9 +308,8 @@ SIGGRAPH 2021).
   not shorten toward a clearing: it stops at the litter's edge at its full height.
 - Besides these, the terrain plants the meadow (grass, and the flowers when they are on) and its
   turf over the rim, and no shrub or tree: the island is a low, rolling top ringed by cliffs, with
-  no lee where they would grow. The
-  walker's loop stays open meadow. Plants that matter to play are content placed in the world, not
-  terrain.
+  no lee where they would grow. The walker's loop stays open meadow. Plants that matter to play are
+  content placed in the world, not terrain.
 - All vegetation moves in one wind: gusts visibly sweep the meadow and change as they go; still air
   is the rest pose. The wind turns with the weather and has levels (light, gentle, fresh, strong;
   gentle most of the time, fresh at times, light or strong rarely), coming mostly from within
@@ -416,8 +416,8 @@ SIGGRAPH 2021).
   the land goes from the night's blue into the day with no warm stretch. Through the twilight the
   land goes a little dark and hands over to the moonlit night, the open sea darker than the land
   before the night lifts it. The moon is drawn at about five times its true size (some 2.6 degrees
-  across), so it reads as the night's light source; it is no brighter per unit of sky for it, and the
-  moonlight on the island keeps its level. The day cycle is authored, not astronomical.
+  across), so it reads as the night's light source; it is no brighter per unit of sky for it, and
+  the moonlight on the island keeps its level. The day cycle is authored, not astronomical.
 - The sunlit ground lights what stands over it from below, one bounce for every lit surface: the
   shallows the cliff's walls, faintly, the meadow the islanders' undersides; strongest around
   midday.
@@ -502,11 +502,11 @@ SIGGRAPH 2021).
   shows its clumps' lit and shaded sides as the day does. The night is cool: as the rods take over
   from the cones, dark colours come up and turn blue (the Purkinje shift), but the blue belongs to
   the sky and the sea: the land under them goes dark and quiet, far less saturated than they are,
-  the meadow nearly black with a hint of cool green, the rock a cool grey that catches the moon and
-  stands as the brightest thing on the island. Its exposure keeps the moonlit island readable and
-  the moon's path on the sea crisp, and that path is pale: the moon's blue stays in the water and
-  the sky, which meet level only far out, where the sea reflects the sky as drawn, and it never
-  flashes off the glint.
+  the meadow a very dark, quiet green with a hint of cool, never black, the rock a cool grey that
+  catches the moon and stands as the brightest thing on the island. Its exposure keeps the moonlit
+  island readable and the moon's path on the sea crisp, and that path is pale: the moon's blue stays
+  in the water and the sky, which meet level only far out, where the sea reflects the sky as drawn,
+  and it never flashes off the glint.
 - The night sky as drawn stands below the light it sheds, by a number of stops each weather sets
   (`seenNight` in `src/sky/Weather.ts`): the moonlit sky and its clouds read dark over the island,
   while the land, the near sea and the near air keep the light the sky gives them. The far sea
@@ -518,12 +518,11 @@ SIGGRAPH 2021).
 - The moon stands fixed in the sky, 20 degrees up on the noon meridian, all night and every night
   (`src/sky/DayCycle.ts` MOON). Seen from the game's overview its light comes in at a slant: slopes
   show a lit and a shaded side, its shadows run long and the sea carries a moon path, where a moon
-  near the zenith would light the island flat. The moon path and the moonlit meadow glow softly in that
-  view too. It neither rises nor sets, so the night's composition holds while the game is played.
-  The moon is drawn where the island takes its light from, and the glow of the air around it comes
-  from there too, so the disk, its glow and the light on the land stand together.
-- The night meadow is a dark, quiet green with a hint of cool under the moon (not black); stone,
-  sand and skin stay apart from it and from each other in tone.
+  near the zenith would light the island flat. The moon path and the moonlit meadow glow softly in
+  that view too. It neither rises nor sets, so the night's composition holds while the game is
+  played. The moon is drawn where the island takes its light from, and the glow of the air around it
+  comes from there too, so the disk, its glow and the light on the land stand together.
+- Under the moon, stone, sand and skin stay apart from the meadow and from each other in tone.
 - The stars and Milky Way are the real sky as seen from 38 degrees south (the latitude the sun's
   path is set at) at a sidereal time of 14h, fixed: they neither turn through the night nor drift
   over the year, so the night's composition holds, with the Milky Way rising out of the sea in the
