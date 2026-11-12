@@ -122,7 +122,7 @@ export const SETTINGS = {
 	ambientProbes: { type: 'choice', layer: 'app', default: 'off', values: [ 'off', 'sky', 'bounce', 'irradiance' ], debug: true, about: 'shows the ambient light\'s probes' },
 	windView: { type: 'choice', layer: 'render', default: 'off', values: [ '', 'arrows', 'plants' ], debug: true, about: 'makes the vegetation\'s wind visible' },
 	// islanders
-	look: { type: 'choice', layer: 'app', default: 'Hanming', values: [ 'kit' ], about: '`kit`: the islanders\' earlier kit look' },
+	look: { type: 'choice', layer: 'app', default: 'Hanming, the island\'s look', values: [ 'kit', 'neutral' ], about: '`kit`: the islanders\' earlier kit look; `neutral` (debug pages only): the renderer\'s neutral look in place of the island\'s' },
 	islander: { type: 'choice', layer: 'app', default: 'the look\'s own', values: [ 'stock', 'subtle', 'medium', 'strong', 'real' ], about: 'the islanders\' proportions' },
 	body: { type: 'text', layer: 'app', default: 'M30', about: 'the scene\'s walker\'s sex and age' },
 	bodies: { type: 'list', layer: 'game', default: 'the simulation\'s three', about: 'a new game\'s islanders\' sexes and ages' },

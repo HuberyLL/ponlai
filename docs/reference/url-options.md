@@ -350,6 +350,12 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   and what each one forces: `src/sky/DayCycle.ts` DUSK_FORCES, the values the code gave them since
   a script cleared it, on debug pages only: `duskShares`; `tools/dusk-grid.mjs` sets and reads
   them).
+- `look=neutral` (debug pages only) loads the renderer with its neutral look in place of the
+  island's (`src/look/NeutralLook.ts`: gains of 1, no grade, no vignette, no bloom, clean air, one
+  exposure key all day, nothing done for the night), the look it draws with where nobody installed
+  one (`src/look/Look.ts`). The tunables then start from the neutral numbers. It shows what the
+  renderer does without the island's numbers; it is no picture to judge. Off a debug page the
+  island's look loads whatever the option says.
 
 ## Ambient light, occlusion and other views
 
@@ -477,7 +483,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 ## Islanders
 
 - `look=kit` dresses the islanders in the earlier kit look (pointed ears, linen shirt, cel steps)
-  instead of the feather-clad Hanming look (`src/characters/looks.ts`).
+  instead of the feather-clad Hanming look (`src/characters/looks.ts`). The option's other value,
+  `neutral`, is the renderer's (Tunable parameters).
 - `islander` picks the islanders' proportions (the look's own by default: `real` for the Hanming
   look, `medium` for the kit's; or `stock` (the kit's own), `subtle` and `strong` builds of
   `Proportions.ts`); also in the GUI's Islander folder, which
@@ -616,7 +623,7 @@ without the warning. This table is written from the declarations (`node tools/ve
 | `chunkBorders` | named (its value unread) | off | app | shows the world's chunks as lines |
 | `ambientProbes` | `off`, `sky`, `bounce`, `irradiance` | off | app | shows the ambient light's probes (debug pages only) |
 | `windView` | named bare, `arrows`, `plants` | off | render | makes the vegetation's wind visible (debug pages only) |
-| `look` | `kit` | Hanming | app | `kit`: the islanders' earlier kit look |
+| `look` | `kit`, `neutral` | Hanming, the island's look | app | `kit`: the islanders' earlier kit look; `neutral` (debug pages only): the renderer's neutral look in place of the island's |
 | `islander` | `stock`, `subtle`, `medium`, `strong`, `real` | the look's own | app | the islanders' proportions |
 | `body` | text | M30 | app | the scene's walker's sex and age |
 | `bodies` | a comma list | the simulation's three | game | a new game's islanders' sexes and ages |

@@ -1,6 +1,7 @@
 // Checks the direction of the imports between the code's layers, that the world's chunk worker
 // imports only plain code, that the renderer and the island keep off the page, which files
-// write another module's state, and that the renderer names only the userData keys it declares. CPU only, no GPU, a few seconds (the page and state checks run
+// write another module's state, that the renderer names only the userData keys it declares, and
+// that no module reads the look where none is installed. CPU only, no GPU, a few seconds (the page and state checks run
 // TypeScript's checker over src/).
 //   node tools/verify-layers.mjs
 //
@@ -48,6 +49,14 @@
 //   declared there is named by some file under src/. A key counts where it is written after the
 //   bag (`x.userData.key`, `x.userData[ 'key' ]`); one reached through an alias of the bag
 //   (`const data = material.userData`) or a computed name is not seen.
+// - The look checks: the renderer draws with the look its page installs (src/look/Look.ts), which
+//   a module reads as it loads (`readLook(`), so a reader that loads where no look is installed
+//   takes the neutral one without a word. Neither that module nor any reader is among the files
+//   the chunk worker loads (the world is generated without the look, and no worker installs one),
+//   and no reader is among the files the entry's first module (src/PageSettings.ts) loads, which
+//   installs the look and must have run before the first reader does. The files a file loads are
+//   its static imports and re-exports followed through relative specifiers, `import type` left
+//   out (it is erased) and dynamic imports too (they load later).
 //
 // Output: a summary on stdout, every upward import found (known or not) and the failures. It takes
 // no options. Exit 0 when everything passes, 1 with the failures listed.
@@ -156,6 +165,33 @@ function imports( file ) {
 
 	}
 	return out;
+
+}
+
+/** The files a file loads as it loads, itself included: its static imports and re-exports that are
+ * not `import type` / `export type` (those are erased), followed through relative specifiers.
+ * Dynamic imports load later and are left out; `import { type X }` still loads its module and
+ * counts. */
+function loadClosure( entry ) {
+
+	const seen = new Set();
+	const visit = ( file ) => {
+
+		if ( seen.has( file ) || ! existsSync( path.join( SRC, file ) ) || ! CODE.test( file ) ) return;
+		seen.add( file );
+		const source = ts.createSourceFile( file, readFileSync( path.join( SRC, file ), 'utf8' ), ts.ScriptTarget.Latest, false );
+		for ( const statement of source.statements ) {
+
+			const typeOnly = ts.isImportDeclaration( statement ) ? statement.importClause?.isTypeOnly : ts.isExportDeclaration( statement ) ? statement.isTypeOnly : true;
+			if ( typeOnly || ! statement.moduleSpecifier ) continue;
+			const to = resolve( file, statement.moduleSpecifier.text );
+			if ( to ) visit( to );
+
+		}
+
+	};
+	visit( entry );
+	return seen;
 
 }
 
@@ -335,6 +371,17 @@ try {
 
 }
 
+// the look checks: who reads the installed look (look/Look.ts `readLook`), and where they must not load
+const LOOK = 'look/Look.ts';
+const lookReaders = files.filter( ( f ) => f !== LOOK && /\breadLook\(/.test( readFileSync( path.join( SRC, f ), 'utf8' ) ) );
+if ( ! files.includes( LOOK ) || lookReaders.length === 0 ) failures.push( `look check: ${ LOOK } or its readers (\`readLook(\`) not found` );
+const workerLoads = loadClosure( 'world/chunkWorker.ts' );
+if ( workerLoads.has( LOOK ) ) failures.push( `look check: the chunk worker loads ${ LOOK } (the world is generated without the look: no worker installs one)` );
+for ( const f of lookReaders ) if ( workerLoads.has( f ) ) failures.push( `look check: the chunk worker loads ${ f }, which reads the look` );
+const entryLoads = loadClosure( 'PageSettings.ts' );
+if ( ! entryLoads.has( LOOK ) ) failures.push( `look check: PageSettings.ts does not load ${ LOOK }: the entry installs the look there` );
+for ( const f of lookReaders ) if ( entryLoads.has( f ) ) failures.push( `look check: PageSettings.ts loads ${ f }, which reads the look before the entry installs it` );
+
 // the page check
 const program = typedProgram();
 const pageHits = pageGlobals( table, program );
@@ -383,7 +430,7 @@ for ( const { file, line, key } of userKeys ) {
 }
 for ( const key of Object.keys( USER_DATA ) ) if ( ! userKeys.some( ( hit ) => hit.key === key ) ) failures.push( `src/UserData.ts declares '${ key }', which no file under src/ names: remove the entry` );
 
-console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.keys( USER_DATA ).length } userData keys declared` );
+console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.keys( USER_DATA ).length } userData keys declared, ${ lookReaders.length } readers of the look (none in the chunk worker's ${ workerLoads.size } files or the entry's first ${ entryLoads.size })` );
 for ( const [ key, layers ] of [ ...upward ].sort() ) console.log( `  ${ known.has( key ) ? 'known' : 'NEW  ' } ${ layers }: ${ key }` );
 if ( failures.length ) {
 

@@ -4,12 +4,12 @@ import { duskForce, duskForced, duskIn, moonKeyShare } from '../sky/DayCycle.ts'
 import { MIX_SKIES, WEATHER_PRESETS, cloudedShare, deckLight, overcastDeckLight } from '../sky/Weather.ts';
 import { cloudBase } from '../look/SkyLook.ts';
 import { FOG_NOISE } from './FogNoise.ts';
-import { DAY, DAY_SIGMA, DECKED, GAIN, KEEP, NIGHT, NO_FOG, RISING, SEA_FOG, SETTING, SETTING_CLOUDED, SHAPED, SKY_SCALE, SUN_RAYLEIGH, fogOf, key, type FullKey, type HazeKey } from '../look/HazeLook.ts';
+import { DAY, DECKED, GAIN, KEEP, NIGHT, NO_FOG, RISING, SEA_FOG, SETTING, SETTING_CLOUDED, SHAPED, SKY_SCALE, SUN_RAYLEIGH, blankKey, fogOf, type FullKey, type HazeKey } from '../look/HazeLook.ts';
 
 export type { HazeKey };
 
 // The haze's key at an hour and a weather: the look's keys (look/HazeLook.ts, whose header says
-// what each key holds and why) eased by the sun's elevation, the morning's and the evening's apart,
+// what each key holds) eased by the sun's elevation, the morning's and the evening's apart,
 // and blended by the weather's shares of the four skies, its wind, its rain and the fog's switches.
 // A function of those alone, never of the path to them: a paused frame and a scene jump hold one
 // value, and a change of hour or weather writes the haze's uniforms only.
@@ -43,8 +43,8 @@ function keyAlong( rows: ReadonlyArray<readonly [ number, FullKey ]>, elevation:
 	for ( const f of FOG_FIELDS ) out[ f ] += ( NIGHT[ f ] - out[ f ] ) * night;
 
 }
-const _cloudedKey = key( 0, DAY_SIGMA, 0, 0, 0 );
-const _key = key( 0, DAY_SIGMA, 0, 0, 0 );
+const _cloudedKey = blankKey();
+const _key = blankKey();
 
 /** The haze's key at the sun's `elevation` (degrees), `rising` or setting, under the weather's
  * blend of the four skies, its wind (m/s), its rain (0 - 1), the sea fog's share (0 - 1,

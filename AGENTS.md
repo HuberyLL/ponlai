@@ -172,13 +172,21 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   `HazeKeys.ts`, its medium's closed form in `HazeDepth.ts`), the bamboo leaves the wind takes off
   the island (`FallingLeaves.ts`: a fixed ring of leaves born round the view and stepped on the GPU
   by one compute pass).
-- `src/look/`: the numbers chosen for the look, each system's in one file with their tunables and
-  the CPU code that reads only them; the shaders and the methods that take them stay in their
-  modules. The sky's (`SkyLook.ts`), the day's windows and exposure keys (`DayLook.ts`), the
-  ambient grade and the low key's lift (`AmbientLook.ts`), the haze's keys (`HazeLook.ts`), the
-  exposure's keys (`ExposureLook.ts`), the display's: contrast, desaturation, white balance, tone
-  curve, base grade, bloom and the rods' colour (`DisplayLook.ts`), and the sea's detail and
-  distant swell (`SeaLook.ts`).
+- `src/look/`: the look the renderer draws with, passed in: the types of its tables, one set per
+  system, and the installed set with its reader (`Look.ts`: `installLook`, `readLook`), the
+  renderer's neutral set, drawn with where nobody installed one (`NeutralLook.ts`), and per system
+  the module that reads the installed numbers as it loads, with their tunables and the CPU code
+  that reads only them; the shaders and the methods that take them stay in their modules. The
+  sky's (`SkyLook.ts`), the day's windows and exposure keys (`DayLook.ts`), the ambient grade and
+  the low key's lift (`AmbientLook.ts`), the haze's keys (`HazeLook.ts`), the exposure's keys
+  (`ExposureLook.ts`), the display's: contrast, desaturation, white balance, tone curve, base
+  grade, bloom and the rods' colour (`DisplayLook.ts`), and the sea's detail and distant swell
+  (`SeaLook.ts`).
+- `src/islandLook/`: the island's numbers for those tables, one file per system (`Sea.ts`,
+  `Day.ts`, `Ambient.ts`, `Exposure.ts`, `Display.ts`, `Haze.ts`, `Sky.ts`), numbers and pure
+  functions of numbers only, gathered in `IslandLook.ts`. The entry installs them after the
+  settings (`PageSettings.ts`), before any module that reads the look loads; a node tool that
+  loads such modules installs them first (`tools/island-look.mjs`).
 - `src/post/`: the frame's passes and tidewater's display chain (`Pipeline.ts`; its options of the
   graph's structure in `PostOptions.ts`, the display chain's materials in `PipelineDisplay.ts`, the
   passes declared on the frame graph in `PipelinePasses.ts`; its bloom in `PhysicalBloom.ts`, the

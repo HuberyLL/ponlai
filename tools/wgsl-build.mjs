@@ -50,7 +50,7 @@
 // The entry is loaded through Vite's SSR loader with the project's config (as the dev server
 // loads the page's modules: TypeScript, `import.meta.env`, the plugins' virtual modules), with the
 // query's options installed first as the page's entry installs them (src/Settings.ts
-// `installSettings`), then the scene's uniforms (src/shared.ts `installShared`); any browser global a module touches as it loads fails the run. It
+// `installSettings`), then the island's look (tools/island-look.mjs) and the scene's uniforms (src/shared.ts `installShared`); any browser global a module touches as it loads fails the run. It
 // imports what it builds from `src/` and three as usual (Vite leaves three to node, so the tool
 // and the entry share one three) and its default export, given `{ renderer }`, returns the
 // shaders (or a promise of them) as `[ name, shader ]` pairs or an object of them, in the order
@@ -96,6 +96,7 @@ import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:
 import { basename, dirname, extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as THREE from 'three/webgpu';
+import { installIslandLook } from './island-look.mjs';
 
 const ROOT = resolve( dirname( fileURLToPath( import.meta.url ) ), '..' );
 const ENTRIES = join( ROOT, 'tools', 'wgsl-build' );
@@ -526,6 +527,8 @@ try {
 
 	const { installSettings, parseSettings } = await server.ssrLoadModule( '/src/Settings.ts' );
 	installSettings( parseSettings( opts.q ?? '' ) );
+	// the island's look, as the page's entry installs it after the settings (src/look/Look.ts)
+	await installIslandLook( ( file ) => server.ssrLoadModule( `/src/${ file }` ) );
 	// the scene's uniforms, as the page's entry creates and installs them (src/shared.ts)
 	const { createShared, installShared } = await server.ssrLoadModule( '/src/shared.ts' );
 	installShared( createShared() );

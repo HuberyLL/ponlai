@@ -38,6 +38,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import { installIslandLook } from './island-look.mjs';
 
 const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 
@@ -120,6 +121,7 @@ try {
 	const load = ( file ) => server.ssrLoadModule( `/src/${ file }` );
 	const { installSettings, parseSettings } = await load( 'Settings.ts' );
 	installSettings( parseSettings( '' ) );
+	await installIslandLook( load );
 	const { createShared, installShared } = await load( 'shared.ts' );
 	const shared = createShared();
 	installShared( shared );

@@ -178,6 +178,7 @@ import { launchCapture, pngShooter, stopLoop, waitForScene, waitForSettled } fro
 import { WAIT_FRAMES, runInPage } from './page-eval.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { fitDusk } from './dusk-fit.mjs';
+import { installIslandLook } from './island-look.mjs';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -304,6 +305,8 @@ function parseOptions( o ) {
 }
 
 // ---- the sun of --src, the points
+// the island's look in --src's own modules, which another checkout's tree does not share with this one
+await installIslandLook( ( file ) => import( pathToFileURL( path.join( options.src, 'src', file ) ).href ), ( file ) => existsSync( path.join( options.src, 'src', file ) ) );
 const DC = await import( pathToFileURL( path.join( options.src, 'src/sky/DayCycle.ts' ) ).href );
 // the day's look tables (NIGHT_METER_LIFT): look/DayLook.ts, or DayCycle.ts in a --src from before it
 const DAY_LOOK = path.join( options.src, 'src/look/DayLook.ts' );
