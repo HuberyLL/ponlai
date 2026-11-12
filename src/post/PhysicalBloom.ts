@@ -8,8 +8,8 @@ import * as THREE from 'three/webgpu';
 import { Fn, texture, uv, vec2, vec3, vec4, float, inverseSqrt, luminance, max, select, clamp, uniform } from 'three/tsl';
 import type { FrameGraph, GraphResources, ResourceHandle, SizeClass } from './graph/FrameGraph.ts';
 import type { PassBuilder } from './graph/GraphCompiler.ts';
-import { keyed, type DayKeys } from './DayKeys.ts';
-import { tuneKeys } from '../debug/Tune.ts';
+import { keyed } from './DayKeys.ts';
+import { BLOOM, BLOOM_HIGH_SUN as HIGH_SUN } from '../look/DisplayLook.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -72,69 +72,10 @@ type V4 = THREE.Node<'vec4'>;
 // - The extra term, smooth over a level's texel, comes out of every level whole: the result holds
 //   it times the weights' sum (`strength`), so its caller divides it by that and the reader's
 //   factor, and it leaves at its own radiance.
-// The clear high sun's key (from 9 degrees up) is set with the day's exposure and grade, its
-// levels' weights on the halo about the sun out to some 50 degrees. The bloom stands for the
-// lens's scatter, and the lens does not change with the sky: on the exposed image the same light
-// glows the same, so a clouded sky takes the high sun's key whole (under cloud the land and the sky
-// stay under its thresholds, and what glows glows as on a clear day: the sea's glints, a sun seen
-// through a gap), and every key's sky cap is the high sun's. By a high sun the land's threshold
-// sits over three stops above mid grey, so the lit ground stays out; in the golden hour and by night near mid grey, so a low sun's
-// whites glow, with a wider knee than the day's in the golden hour and about the day's by night. By
-// night the land's share is small by choice (0.05, falling from the low sun's 0.2 as the night
-// comes in): at a threshold under the moon's glints a large share spread them over the wide levels
-// into a pale pedestal under the whole field, and the water between the glints stood lit. The sky
-// keeps its own share, so the moon's disc and the bright clouds glow as before.
-// The weights carry the strength: about 2.3 by a high sun; 1.25 in the
-// golden hour and by night, whose thresholds let far more in, toward the wide levels (a broad
-// soft glow about the moon and bright clouds). The high sun's weights rise and fall from level to
-// level, less at 1/16 and 1/128 than at the levels either side, which sets the halo's outer rings
-// (all positive, so the summed kernel still falls off from its centre). The finest level takes
-// none: its spread, a pixel or two, is the image's own sharpness. The sky's share is a little
-// smaller by a clear high sun (0.17) than by a low sun (0.2), so the glow round the sun stays
-// close to it rather than spreading over the sky far from it.
+// The keys' values and why they are what they are: look/DisplayLook.ts BLOOM.
 
 const LEVELS = 8;
 
-type BloomKey = {
-	threshold: number; knee: number; share: number; cap: number;
-	skyThreshold: number; skyKnee: number; skyShare: number; skyCap: number;
-	w0: number; w1: number; w2: number; w3: number; w4: number; w5: number; w6: number; w7: number;
-};
-// the levels' weights from the finest to the widest, scaled so their sum is `strength`
-const weights = ( strength: number, w: number[] ) => {
-
-	const sum = w.reduce( ( a, b ) => a + b );
-	const [ w0, w1, w2, w3, w4, w5, w6, w7 ] = w.map( ( v ) => Math.round( v / sum * strength * 1e4 ) / 1e4 );
-	return { w0, w1, w2, w3, w4, w5, w6, w7 };
-
-};
-/** The bloom by the sun's elevation, under a clouded sky and at night (DayKeys.ts), on the exposed
- * image (mid grey 0.18): the land's threshold T (where its glow starts), knee K (the knee's half
- * width), share k and cap, the sky's (`sky...`), and the levels' weights from the finest (w0, half
- * the render) to the widest (w7, 1/256), whose sum is the strength. Tunable on debug pages
- * (debug/Tune.ts `post.bloom.<value>@<key>`, the keys `low`, `high`, `cloudy`, `night`); a tuned sky
- * threshold leaves its knee where the table puts it. */
-const HIGH_SUN: BloomKey = {
-	threshold: 1.76, knee: 0.66, share: 0.2, cap: 3.89,
-	skyThreshold: 18.3, skyKnee: 0.4 * 18.3, skyShare: 0.17, skyCap: 2250,
-	w0: 0, w1: 0.38, w2: 0.74, w3: 0.185, w4: 0.395, w5: 0.371, w6: 0.0944, w7: 0.13,
-};
-export const BLOOM: DayKeys<BloomKey> = tuneKeys( 'post.bloom', {
-	day: [
-		{ at: 4, name: 'low', values: {
-			threshold: 0.2, knee: 1.1, share: 0.2, cap: 2,
-			skyThreshold: 6, skyKnee: 0.4 * 6, skyShare: 0.2, skyCap: HIGH_SUN.skyCap,
-			...weights( 1.25, [ 0, 0.17, 0.44, 0.54, 0.64, 0.74, 0.88, 0.58 ] ),
-		} },
-		{ at: 9, name: 'high', values: HIGH_SUN },
-	],
-	cloudy: HIGH_SUN,
-	night: {
-		threshold: 0.18, knee: 0.6, share: 0.05, cap: 1,
-		skyThreshold: 1, skyKnee: 0.4, skyShare: 0.5, skyCap: HIGH_SUN.skyCap,
-		...weights( 1.25, [ 0, 0.13, 0.34, 0.44, 0.58, 0.78, 0.94, 0.58 ] ),
-	},
-}, { skyThreshold: { min: 3, max: 40, scale: 'log' }, skyCap: { min: 100, max: 3000, scale: 'log' } } );
 const levelSize = ( i: number ): SizeClass => ( { of: 'render', scale: 0.5 / 2 ** i, min: 1 } );
 
 // The 13-tap downsample's taps (render or source texels off the destination texel's centre) and

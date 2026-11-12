@@ -40,7 +40,7 @@
 // none), and empties its walkers when set at run time (--toggle "s.flags.trample = !on" times the
 // sprites' draw).
 // `clearShade` (a number, or `true` for 1; off unless set) scales the sky light the island takes
-// for its clear shade (sky/Sky.ts CLEAR_SHADE), read whenever the sky tracks the clock (an
+// for its clear shade (look/SkyLook.ts CLEAR_SHADE), read whenever the sky tracks the clock (an
 // environment bake later, `refreshEnvironment()` while paused).
 // `skyGain = false` leaves the sun's in-scattered sky light as the atmosphere gives it (sky/Sky.ts
 // SKY_LIGHT), read whenever the sky tracks the clock (an environment bake later,
@@ -49,18 +49,18 @@
 // (sky/Clouds.ts `streaksAt`; 0 turns it off), read whenever the sky tracks the clock;
 // `streakMask = true` (at load) paints the dome's pixels where the layer's opacity as seen passes
 // 0.1 in a red of their own luminance and those where it lies between 0.02 and 0.1 in a green, for
-// `img.py stats --mask` (sky/Sky.ts domeColour).
-// `lowKey = false` leaves the low sun's key as its transmittance gives it (sky/Sky.ts LOW_KEY), read
+// `img.py stats --mask` (sky/SkyDome.ts domeColour).
+// `lowKey = false` leaves the low sun's key as its transmittance gives it (look/SkyLook.ts LOW_KEY), read
 // whenever the sky tracks the clock.
 // `clearSky = false` leaves the clear day's sky light without its gain against the key (sky/Sky.ts
 // CLEAR_SKY), read whenever the sky tracks the clock (an environment bake later).
 // `lowSun` (a number, or `true` for 1; off unless set) scales the low sun's warm light and
-// blue-violet shade (sky/Sky.ts lowSun), read every frame (the shade's at the next environment bake).
+// blue-violet shade (sky/SkyTrack.ts lowSun), read every frame (the shade's at the next environment bake).
 // `keyLift = false` keeps the direct light and the sun's shadows on the low key's own direction
 // (lighting/KeyLift.ts), read at each publish of the lighting.
 // Read at load: `tone` (a number, 0 unless set) and `filmNight = true` bring back the grade's tone
-// and the film's night (post/Pipeline.ts TONE, NIGHT); `localTone = false` builds the display
-// chain without its local tone mapping (post/LocalTone.ts).
+// and the film's night (post/Pipeline.ts TONE, post/PipelineDisplay.ts NIGHT); `localTone = false`
+// builds the display chain without its local tone mapping (post/LocalTone.ts).
 // The meadow's light, each on unless false: `meadowShade` (its screen-space shade and the
 // vegetation's depth pass, post/MeadowShade.ts), `groundCast` (the crowns' shade on the turf,
 // materials/TerrainMaterial.ts), `groundShade` (the blades' screen-space shade on the turf, the
@@ -118,7 +118,7 @@
 // `fallingLeaves = false` skips the falling leaves' pass and hides them (weather/FallingLeaves.ts),
 // read every frame, so --toggle "s.flags.fallingLeaves = on" times them.
 // `cloudHazeEnd = false` marches the low deck's view through its whole shell instead of ending where
-// the haze closes (sky/Clouds.ts `makeMarch`; the haze's copy of its medium, weather/VolumetricHaze.ts
+// the haze closes (sky/CloudKernels.ts `makeMarch`; the haze's copy of its medium, weather/VolumetricHaze.ts
 // `prepareMedium`), read every frame, so --toggle "s.flags.cloudHazeEnd = !on" times the end.
 
 import { settings } from '../Settings.ts';

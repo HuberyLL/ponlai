@@ -1,5 +1,5 @@
 // The frame graph's passes: today's msaa4 graph with every draw a pass of its own, the graph
-// Pipeline declares (src/post/Pipeline.ts, mirrored in its order of declaration: it compiles to
+// Pipeline declares (src/post/PipelinePasses.ts, mirrored in its order of declaration: it compiles to
 // today's graph), their load-time and runtime variants, a mock temporal graph, and the compiler's
 // checks of order, culling, hazards, readOptional and determinism. Run by
 // tools/verify-framegraph.mjs.

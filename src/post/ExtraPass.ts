@@ -33,7 +33,7 @@ export function declareExtraPasses<Frame>( graph: FrameGraph<Frame>, passes: rea
 
 /** The pipeline's scene passes a draw or a kernel that runs only at times is registered for, so
  * the warm-up compiles it ahead (`latent`): the opaque scene, the sea, the rain's layer, the
- * overlay and what draws after the resolve (Pipeline.ts declares them under these names). */
+ * overlay and what draws after the resolve (PipelinePasses.ts declares them under these names). */
 export const SCENE_PASSES = [ 'opaque', 'water', 'rain', 'overlay', 'rainAfter' ] as const;
 export type ScenePass = typeof SCENE_PASSES[ number ];
 

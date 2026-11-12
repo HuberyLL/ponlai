@@ -46,7 +46,7 @@
 // still reach every preset, so captures, probes and a later revival can use them. Under their deck
 // rain, storm and fog take what overcast's share takes, counting as overcast in `skyMix`: the level air and the sky
 // gain (DECK_SKY_GAIN, the water's), the land's own gains under overcast
-// (lighting/AmbientRelight.ts OVERCAST_LAND_UNIT, lighting/AmbientGrade.ts OVERCAST_LAND for the
+// (lighting/AmbientRelight.ts OVERCAST_LAND_UNIT, look/AmbientLook.ts OVERCAST_LAND for the
 // sun's part and OVERCAST_MOON_LAND for the moon's),
 // overcast's sky shape (weather/VolumetricHaze.ts) and the exposure by the sky with overcast's key
 // (post/Exposure.ts), and the land takes the key through their clouds' shadow as it does under
@@ -110,7 +110,7 @@ export function overcastFloorSun( elevation: number ): number {
 
 /** How far a cloudy sky's deck has taken over its own light at the sun's `elevation` (degrees): 0
  * up to 3 degrees, 1 from 6, smooth between. Below it a low sun shines under the broken deck and the
- * evening's light takes over (post/Exposure.ts, the clouded keys under 6 degrees). */
+ * evening's light takes over (look/ExposureLook.ts, the clouded keys under 6 degrees). */
 export function deckRamp( elevation: number ): number {
 
 	return smooth01( ( elevation - 3 ) / 3 );
@@ -144,7 +144,7 @@ export function deckLight( elevation: number, clouded: number, overcast: number 
  * stops under the deck and the sea dark under it. It comes in with the deck's light (`deckLight`).
  * It is the water's alone: under either deck the land's sky light takes a gain of its own in its
  * place, by the deck's light (under overcast lighting/AmbientRelight.ts OVERCAST_LAND_UNIT times the
- * weather's land gain, its sun's part lighting/AmbientGrade.ts OVERCAST_LAND and its moon's
+ * weather's land gain, its sun's part look/AmbientLook.ts OVERCAST_LAND and its moon's
  * OVERCAST_MOON_LAND; under
  * a cloudy deck AmbientRelight.ts CLOUDY_LAND), and the water keeps this, whichever reads it (the
  * water drawn, the sea's bounce onto the land). */
@@ -172,8 +172,8 @@ export function deckSkyGap( elevation: number, clouded: number, overcast: number
 
 /** How far a clouded day's high sun has come in at the sun's `elevation` (degrees) under the
  * weather's blend of the skies (`skyMix`): none under a clear or a fair sky, nor up to `low`
- * degrees, the sky's clouded share from 40 up, where the sky's light (Sky.ts SKY_LIGHT) has reached
- * its high key. The light lent to the island (Sky.ts CLOUD_LIGHT_TINT) follows it from 12, with
+ * degrees, the sky's clouded share from 40 up, where the sky's light (look/SkyLook.ts SKY_LIGHT) has reached
+ * its high key. The light lent to the island (look/SkyLook.ts CLOUD_LIGHT_TINT) follows it from 12, with
  * the sky's light's own climb, so a clouded noon's land stays as dark and green as its
  * afternoon's. */
 export function cloudedHighSun( elevation: number, skyMix: readonly number[], low: number ): number {
@@ -228,7 +228,7 @@ export interface WeatherState {
 	// The weather's day sky over that: by day the light the sun gives the sky is scaled by `daySky`
 	// at a sun 18 degrees up, and by the sine of the sun's height over 18 degrees' to the power
 	// -`daySkyExponent` at other heights (held at its 12-degree value under 12 degrees: `daySkyAt`):
-	// the sky's day key (Sky.ts SKY_LIGHT, so the drawn sky, the bake and the air's sky light; the
+	// the sky's day key (look/SkyLook.ts SKY_LIGHT, so the drawn sky, the bake and the air's sky light; the
 	// sun's beam the air scatters keeps the key's light without it, as the land's key does: Sky.ts
 	// `sunBeamIlluminance`), the clouds' sunlight and the sun's light on the distant sea. The night's sources keep
 	// their light, so it leaves the sky as the sun's own light does. 1 and 0 leave the day's sky as
@@ -262,7 +262,7 @@ export interface WeatherState {
 	// clear day: the hour's key gives the bands' weights, weather/HazeKeys.ts), of the ground layer's
 	// deep part, under its soft top (the hour's key's shape: weather/HazeKeys.ts,
 	// weather/VolumetricHaze.ts). A clear or fair day's is 3e-3, tuned together with the clear
-	// day's sky gains (Sky.ts CLEAR_SKY), under the exposure keys of the time: at 2e-3 the far sea
+	// day's sky gains (look/SkyLook.ts CLEAR_SKY), under the exposure keys of the time: at 2e-3 the far sea
 	// and the sky over a sun at 50 degrees, seen away from it, read more saturated (Oklab chroma
 	// higher by 0.004 and 0.007). Under a deck the air is dense near the sea and clear aloft (its shape per sky:
 	// weather/HazeKeys.ts), a cloudy sky's about two thirds of the clear day's, an overcast sky's
@@ -327,10 +327,10 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // cloud (`castShadow` 1), soft because the sky's light is the larger share. The floor rides on the
 // moon's light by night as on the sun's by day; the sea keeps it too, its glint only the direct
 // beam, and under a closed sky the air does (Sky.ts `seaKeyVisibility`, `deckKeyFloor`). Overcast is a closed deck deep
-// enough that its disc does not show (Sky.ts `domeColour`): the land under it is even, its sky the
+// enough that its disc does not show (SkyDome.ts `domeColour`): the land under it is even, its sky the
 // deck's own glow about the sun's place, which the land takes with the rest of the sky
 // (lighting/AmbientRelight.ts OVERCAST_LAND_UNIT, CLOUDY_LAND; under overcast the key's bounce
-// takes the weather's land gain too, its sun's part lighting/AmbientGrade.ts OVERCAST_LAND, its
+// takes the weather's land gain too, its sun's part look/AmbientLook.ts OVERCAST_LAND, its
 // moon's OVERCAST_MOON_LAND) and the water by
 // DECK_SKY_GAIN; exposed by the sky (post/Exposure.ts). A sky's own light by day may stand at a
 // level of the weather's (`daySky`, `daySkyExponent`), on the light the sun gives the sky alone

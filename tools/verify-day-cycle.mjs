@@ -1,7 +1,8 @@
 // Pure CPU checks; Node 22.18+ strips the imported TypeScript without a build or browser.
 // Run: node tools/verify-day-cycle.mjs
 import assert from 'node:assert/strict';
-import { DayCycle, DAY_PRESETS, DAY_EXPOSURE, DUSK_WINDOWS, HANDOFF_TOP, MOON_KEY_TOP, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE, NOON_ELEVATION, MOON, cloudMoonShare, displayNight, exposureAt, exposureNight, moonDirection, moonKeyShare, nightAmbientAt, nightAmbientShare, skyNight, starNight, sunElevationAt, morningHour, eveningHour, yunpengNightShare } from '../src/sky/DayCycle.ts';
+import { DayCycle, DAY_PRESETS, NOON_ELEVATION, MOON, cloudMoonShare, displayNight, exposureNight, moonDirection, moonKeyShare, nightAmbientAt, nightAmbientShare, skyNight, starNight, sunElevationAt, morningHour, eveningHour, yunpengNightShare } from '../src/sky/DayCycle.ts';
+import { DAY_EXPOSURE, DUSK_WINDOWS, HANDOFF_TOP, MOON_KEY_TOP, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE, exposureAt } from '../src/look/DayLook.ts';
 
 const near = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
 const cycle = new DayCycle();
@@ -104,7 +105,7 @@ for ( let minute = 0; minute <= 1440; minute ++ ) {
 }
 // Every dusk share only grows as the sun sinks, on both sides of the day and under a clear and a
 // clouded sky, from +2 to -14 degrees in steps of 0.05, and is exactly 0 from +2.5 degrees up (the
-// shares' own shape, DayCycle.ts DUSK_WINDOWS; no GPU).
+// shares' own shape, look/DayLook.ts DUSK_WINDOWS; no GPU).
 {
 
 	const daylightAt = ( elevation, rising ) => {

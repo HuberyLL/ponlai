@@ -10,6 +10,7 @@ import * as THREE from 'three/webgpu';
 import { Sky } from '../../src/sky/Sky.ts';
 import { VolumetricHaze } from '../../src/weather/VolumetricHaze.ts';
 import { sceneMRT } from '../../src/post/Motion.ts';
+import { buildView } from '../../src/sky/CloudView.ts';
 
 export default function ( { renderer } ) {
 
@@ -35,7 +36,7 @@ export default function ( { renderer } ) {
 	shape.format = THREE.RGBAFormat;
 	shape.type = THREE.UnsignedByteType;
 	sky.clouds.build( renderer, shape );
-	sky.clouds.buildView( 2560, 1440 );
+	buildView( sky.clouds, 2560, 1440 );
 	// (the light kernel never reads the sun's maps, and neither does `skyHaze`)
 	const haze = new VolumetricHaze( {}, sky.atmosphere );
 	sky.fogDome( ( d, distance ) => haze.skyHaze( d, distance ) );

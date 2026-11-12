@@ -59,7 +59,7 @@ export const WATCH = {
 	// the temporal graph aa=gt renders through: the resolve, its rest and jitter, the mode switch,
 	// motion vectors, the frame graph, what draws after the resolve and the events that reset history
 	gt: [ 'src/post/TemporalAA.ts', 'src/post/TemporalRest.ts', 'src/post/Jitter.ts', 'src/post/Antialiasing.ts', 'src/post/Motion.ts', 'src/post/Pipeline.ts',
-		'src/post/AfterResolve.ts', 'src/post/SceneEvents.ts', 'package.json', 'package-lock.json' ],
+		'src/post/PipelinePasses.ts', 'src/post/PipelineDisplay.ts', 'src/post/AfterResolve.ts', 'src/post/SceneEvents.ts', 'package.json', 'package-lock.json' ],
 };
 // a camera move over the meadow (paused clock) and the islander walking under the running clock
 // (the walk, the wind in the meadow behind), each the first 16 frames

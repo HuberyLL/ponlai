@@ -11,7 +11,8 @@ import {
 } from 'three/tsl';
 import { mulberry32 } from '../world/noise.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { COX_MUNK, DEFAULT_SWELL, seaState, slopeVariance, waveSystemTerms, type SwellParams, type WaveSpectrumSettings } from './OceanSpectrum.ts';
+import { COX_MUNK, seaState, slopeVariance, waveSystemTerms, type SwellParams, type WaveSpectrumSettings } from './OceanSpectrum.ts';
+import { DEFAULT_SWELL } from '../look/SeaLook.ts';
 
 // Multi-cascade FFT ocean (Tessendorf) on WebGPU compute, after tidewater's OceanFFT (4811ba4): four
 // cascades of non-integer size ratios, so the sum never shows a repeat, each holding the waves of

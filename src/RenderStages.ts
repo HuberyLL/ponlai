@@ -30,7 +30,8 @@ import { SeaDetail } from './ocean/SeaDetail.ts';
 import { showUnderwater } from './ocean/Refraction.ts';
 import { keyChroma, Water } from './ocean/Water.ts';
 import { StormSea } from './ocean/StormSea.ts';
-import { Pipeline, postOptionsFromURL } from './post/Pipeline.ts';
+import { Pipeline } from './post/Pipeline.ts';
+import { postOptionsFromURL } from './post/PostOptions.ts';
 import { hazeKeyAt, type HazeKey } from './weather/HazeKeys.ts';
 import { OUTPUT_PIXEL_RATIO_CAP, outputPixelRatio } from './post/RenderScale.ts';
 import { SubmitBatch } from './post/SubmitBatch.ts';
@@ -302,8 +303,8 @@ export function createSky( render: RenderParts ) {
 	const weather = new Weather( loaded.weather, loaded.wind );
 	render.weather = weather;
 	render.weatherEffects = { rain: true, wetness: true };
-	// The deep sea fog (weather/HazeKeys.ts SEA_FOG): a switch beside the weather, off unless `?seaFog`
-	// or the GUI turns it on, whatever the sky.
+	// The deep sea fog (look/HazeLook.ts SEA_FOG): a switch beside the weather, off unless
+	// `?seaFog` or the GUI turns it on, whatever the sky.
 	render.seaFogView = { on: params.has( 'seaFog' ) };
 	// The day's fog layer under a clear or fair sky (weather/HazeKeys.ts `fogLayer`): a switch, off
 	// unless `?dayFog` or the GUI turns it on.
@@ -476,7 +477,7 @@ export function createEnvironment( render: RenderParts ) {
 		render.pipeline.air.setLook( render.hazeKey );
 		// the air's sunlit haze takes the key the land does, through the clouds' shadow (its own read),
 		// and its sky light the weather's sky as the sky takes it; the weather's day sky comes in with
-		// the sun's light the sky lends the air (Sky.ts `skyGain`)
+		// the sun's light the sky lends the air (sky/SkyTrack.ts `skyGain`)
 		render.pipeline.air.weatherLight.direct = state.directVisibility;
 		render.pipeline.air.weatherLight.ambient = state.ambientGain;
 		// the floor of the key under a closed deck (Sky.ts `deckKeyFloor`), which the seen panorama's
@@ -556,7 +557,7 @@ export function createEnvironment( render: RenderParts ) {
 	}
 
 	// An explicit bake (a jump of the hour, the weather or the whole scene, a seek, a retune of what the
-	// bake depends on) shows at once, its sky's light read back before it publishes (Sky.ts `bake`).
+	// bake depends on) shows at once, its sky's light read back before it publishes (sky/SkyBake.ts `bake`).
 	// The state it bakes changes before it is called and the readback takes a frame or two, so the loop
 	// draws no frame from that change until the bake has published (`tick`): the frame on screen holds
 	// the old state, and the first frame drawn after it shows the new weather or hour in its own light.

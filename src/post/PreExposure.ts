@@ -118,10 +118,10 @@ const STORE_LEVEL = 10;
 const STORE_STOPS_DARK = 18, STORE_STOPS_MAX = 20;
 
 /** The power of two (stops) a store of the sky's bakes or the clouds' panorama holds its radiance
- * at (Sky.ts trackClouds), for `light`, the luminance of the light the clouds take (the sun's above
+ * at (sky/SkyTrack.ts trackClouds), for `light`, the luminance of the light the clouds take (the sun's above
  * their tops while it lights them, and their moonlight with its gains), `moonShare`, the moon's
  * share of it, and `night`, where that store's range sits best under the moon (stops over the
- * light: Sky.ts `storeNight`, from the weather's clouds). By day the light itself is stored near
+ * light: look/SkyLook.ts `storeNight`, from the weather's clouds). By day the light itself is stored near
  * 2^STORE_LEVEL, which keeps the brightest a day holds (a cloudy noon's cumulus) under 2^13; under
  * the moon the store's range is centred in what a night must keep, by the moon's share between the
  * two. Over the kept weathers and every hour a store's brightest then stays under 2^13 and its
@@ -194,7 +194,7 @@ class PreExposure {
 	/** The EV of the last reading applied (diagnostics). */
 	ev = NaN;
 
-	/** Back to the fresh load's P (a scene event that cuts: Pipeline.ts listens). */
+	/** Back to the fresh load's P (a scene event that cuts: PipelineDisplay.ts listens). */
 	reset(): void {
 
 		this.next = 0;

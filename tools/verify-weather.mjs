@@ -6,7 +6,7 @@
 // Its steps wait for the page's rendered frames (tools/page-eval.mjs, "Rendered frames").
 // Overcast's direct light is checked on the key's floor under its closed deck (src/sky/Sky.ts
 // `deckKeyFloor`), only for holding back a share of the clear day's key: the floor's level is a
-// tune (Sky.ts KEY_THROUGH_CLOUD), so the bound stays clear of it.
+// tune (look/SkyLook.ts KEY_THROUGH_CLOUD), so the bound stays clear of it.
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';

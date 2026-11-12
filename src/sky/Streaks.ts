@@ -25,7 +25,7 @@ type V3 = THREE.Node<'vec3'>;
 // and 15 cells): each strand fades in and out along its length, so it ends frayed rather than cut.
 // A second convolution from the tufts runs downwind of them and sags sideways, drawing hooked
 // tails. A fractal noise of 24 cells a tile breaks the strands into pieces of uneven density. The
-// sky samples the texture at two scales turned against each other (Clouds.ts FIBRE_FINE and
+// sky samples the texture at two scales turned against each other (CloudModel.ts FIBRE_FINE and
 // FIBRE_BROAD), which hides its tiling and keeps the fibres from all running parallel.
 // Red holds the fibres' density, green the tufts' field, which sets the silk between the fibres
 // (`streaksAt`). At 44 steps and seeds of 0.18 cells the strands read overhead as short dashes;

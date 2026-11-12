@@ -6,30 +6,31 @@
 
 import * as THREE from 'three/webgpu';
 import {
-	Fn, uv, uniform, texture, positionWorld, cameraPosition, normalize, smoothstep, dot,
-	vec2, vec3, vec4, ivec2, float, sqrt, max, min, atan, asin, acos, clamp, cos, sin, mix, abs, select,
-	pmremTexture, textureLoad, Loop, cross, exp2, log2, positionView, fwidth, length, step,
+	Fn, uv, uniform, texture, dot, vec2, vec3, vec4, ivec2, float, sqrt, max, min, clamp, cos, sin,
+	mix, select, textureLoad, Loop, exp2, log2, positionView,
 } from 'three/tsl';
 import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
-import { SCENE_RADIANCE_SCALE, SUN_ANGULAR_RADIUS, SUN_LIMB_U1, SUN_LIMB_U2 } from '../lighting/Radiometry.ts';
-import { SUN_DISC_RADIUS, SUN_DISC_SOLID_ANGLE, SUN_DISC_RADIANCE } from '../lighting/SunDisc.ts';
-import { Clouds, EARTH_RADIUS, MOON_DECK_GLOW, SHADOW_SLOPE_FLOOR, SHELL_BOTTOM, SHELL_THICKNESS, forwardLevel, type CloudViewScale } from './Clouds.ts';
-import { MOON_ANGULAR_RADIUS, NightSky } from './NightSky.ts';
+import { Clouds } from './Clouds.ts';
+import type { CloudViewScale } from './CloudModel.ts';
+import { NightSky } from './NightSky.ts';
 import { Lightning } from '../weather/Lightning.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { shared } from '../shared.ts';
 import { compileInto } from '../post/graph/Compile.ts';
-import { STORE_CEILING, storePress, storeStops } from '../post/PreExposure.ts';
+import { STORE_CEILING } from '../post/PreExposure.ts';
 import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
-import { DAY_EXPOSURE, MOON, cloudMoonShare, displayNight, duskForce, exposureNight, nightAmbientShare, skyNight, starNight, sunRising, type DayCycleSnapshot } from './DayCycle.ts';
-import { MIX_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, overcastDeckLight, overcastFloorSun, daySkyAt, type WeatherState } from './Weather.ts';
-import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
-import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
-import { markSkyRetune } from './SkyRetune.ts';
+import { DAY_EXPOSURE } from '../look/DayLook.ts';
+// (DayCycle.ts is imported for its load alone, in the place it always loaded in: its exposure
+// keys moved to look/DayLook.ts, and the order the modules load in is part of the shaders)
+import './DayCycle.ts';
+import type { DayCycleSnapshot } from './DayCycle.ts';
+import type { WeatherState } from './Weather.ts';
 import { setKeyCloud } from '../lighting/KeyCloud.ts';
-import { environmentSteps } from '../three/Environment.ts';
+import { bakeColour, dirToEquirect, discCloudTransmittance, domeColour, equirectToDir, lendIsland } from './SkyDome.ts';
+import { abortSlices, bake, finishSlices, runSlices, startSlices, type Slice } from './SkyBake.ts';
+import { trackSky } from './SkyTrack.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -38,9 +39,6 @@ type V4 = THREE.Node<'vec4'>;
 // The haze toward a view direction, out to a distance (the sky's own by default): the light it adds
 // and its transmittance (VolumetricHaze.ts `skyHaze`).
 export type SkyHaze = ( d: V3, distance?: THREE.Node<'float'> ) => { light: V3; transmittance: V3 };
-// Directions the discs' cloud transmittance averages over each disc (discCloudTransmittance): the
-// disc is about a degree wide, and 32 dim it without visible steps.
-const DISC_SAMPLES = 32;
 // The sky's metering illuminance against its geometric-mean luminance (k_m), and the floor of the
 // luminance whose log the mean takes (scene units: far below a moonless night's sky).
 const METER_SKY = 1;
@@ -64,7 +62,8 @@ const METER_FLOOR = 2 ** - 40;
 
 type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed' | 'windDirection'>;
 
-// The sky: atmosphere, clouds, night sky and the baked environment. One cloud field feeds the
+// The sky: atmosphere, clouds, night sky and the baked environment (the look's tables it reads,
+// the names in capitals below and `islandSky`, `keyHue`, `moonHue`, are look/SkyLook.ts's). One cloud field feeds the
 // visible sky, water reflections, environment lighting and cloud shadows; on the island's direct
 // light the shadows keep a floor (`keyDirectVisibility`: a share of what the cloud layer passes
 // down, KEY_THROUGH_CLOUD, which the sea and the air keep too: `seaKeyVisibility`, `deckKeyFloor`), and under a
@@ -110,7 +109,7 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // fog weather's droplets are left out of the land's light too. Under
 // overcast the two part in three ways. The closed deck's glow (`deckGlow`: a narrow peak about the
 // key light and a broad tail) is drawn whole by the dome and the seen panorama; the lighting's
-// sources take the glow about the sun alone, as one smooth lobe of their own (`glowToward`, Clouds
+// sources take the glow about the sun alone, as one smooth lobe of their own (SkyDome.ts `glowToward`, Clouds
 // `bakeGlowLobe`, `bakeGlowGain`), so the land is lit from the sun's side of the deck as the deck
 // is seen brighter there, and the moon's glow lights nothing. The deck itself is drawn as it
 // lights: the dome and the lighting's sources take one radiance from the march. The day's
@@ -122,7 +121,7 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // environment is the distant sea, its reflection of the sky over its body, which the light that
 // reaches the sea lights, the sky's and the sun's (SEA_KNEE).
 // The sun's disc and the moon's take the clouds' transmittance once, per pixel, in the composite
-// (`domeColour`); the march stores none once less than 0.003 gets through (Clouds.ts `makeMarch`),
+// (SkyDome.ts `domeColour`); the march stores none once less than 0.003 gets through (CloudKernels.ts `makeMarch`),
 // so a deck some 6 deep along the view hides the disc whole. The mean over each disc, read from the
 // panorama into a texel ahead of the scene (`discCloudTransmittance`), is left only for the light
 // shafts (post/LightShafts.ts) and the sun's flare. The key light's colour does not take that mean
@@ -136,26 +135,15 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // bake, as log2 in its alpha, so the cross-fade between bakes blends it geometrically; the exposure
 // reads that log directly (`meterLog2Node`, shared.ts `skyMeterLog2`).
 //
-// Only the reflection panorama, environment and irradiance cross-fade between bakes. A periodic
-// bake on a running clock spreads over frames: its panoramas and irradiance in the frame that asks
-// for it, then the environment's PMREM conversion and GGX filters at most four render passes a
-// frame, published (with the same products as a whole bake) a few frames later. Explicit bakes
-// (presets, seeks, weather jumps, the first bake) and any bake while the scene clock is paused run
-// whole, so paused frames stay exact. A paused page keeps its last explicit bake's products, and
-// every explicit bake (the load's, a scene jump's, a seek's, a retune's) starts from the state
-// before a page's first bake, the clouds set to the scene clock (`reset`), so each makes the ones
-// a fresh load of its scene makes. A bake waits for the warm-up's
-// pipelines (`warm`) before it draws: three r186 skips a draw whose pipeline an asynchronous
-// compile is still creating, so a bake drawn meanwhile left its products empty (the irradiance
-// probe at 0: no sky light, and the exposure about five stops off at noon), and a paused page,
-// which bakes no more, kept them. The spread drives three's `PMREMGenerator` private steps
-// (three/Environment.ts, which throws on a three without them).
+// The bakes, whole or spread over frames, and what they publish: SkyBake.ts. What `track` works out
+// each frame, the clouds' light and shell (`trackClouds`) and the helpers they read (`skyGain`,
+// `lowSunOf`, `moonAboveAir`, CLOUD_TURN, SHADOW_DISC, SHADOW_AIR_NARROW): SkyTrack.ts.
 
 // Baked products. Directions, colours, the grade and the clouds themselves are evaluated every
 // frame; only these slower reflection, environment and irradiance products cross-fade. The
 // environment's two atlases are kept apart (Sky.environments), so a tier may refresh it on only
 // every few bakes.
-interface SkyEndpoint {
+export interface SkyEndpoint {
 	equirect: THREE.RenderTarget;
 	clouds: THREE.RenderTarget;
 	irradianceMap: THREE.RenderTarget;
@@ -172,31 +160,11 @@ interface SkyEndpoint {
 	stops: number;
 }
 
-// One bake: its endpoint, whether it is explicit (reads its irradiance back and shows at once),
-// and the environment atlas it refreshes (null: it keeps the one shown).
-interface Bake {
-	version: number;
-	readback: boolean;
-	transitionSeconds: number;
-	next: number;
-	state: SkyEndpoint;
-	environment: number | null;
-}
-
-// A step of a periodic bake spread over frames; `cost` counts its render passes.
-interface Slice {
-	cost: number;
-	run: () => void;
-}
-
 // Render passes of a periodic bake per frame after its first (the panoramas): the conversion to
 // the cube atlas and its GGX filters (two passes each), a fraction of a millisecond each at high.
 // A frame takes whole steps up to this many passes: the conversion and one filter, then two
 // filters a frame.
 const SLICE_PASSES = 4;
-// A periodic bake whose frames stop coming (a stopped loop, a hidden page) completes after this
-// long, so it never holds the sky busy.
-const SLICE_TIMEOUT_MS = 250;
 
 function makeEndpoint(): SkyEndpoint {
 
@@ -229,843 +197,6 @@ function makeEndpoint(): SkyEndpoint {
 
 }
 
-// The atmosphere is the single source of sky radiance and solar extinction. The visible sky
-// includes the sun disk; the water panorama and PMREM omit it because direct lighting already
-// reflects the sun. This follows tidewater's separation of view and reflection radiance.
-export const dirToEquirect = Fn( ( [ d ]: [ V3 ] ) => {
-
-	return vec2( atan( d.z, d.x ).mul( 0.5 / Math.PI ).add( 0.5 ), asin( clamp( d.y, - 1, 1 ) ).div( Math.PI ).add( 0.5 ) );
-
-} ).setLayout( { name: 'dirToEquirect', type: 'vec2', inputs: [ { name: 'd', type: 'vec3' } ] } );
-
-const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
-
-	const phi = q.x.sub( 0.5 ).mul( 2 * Math.PI ).toVar(), th = q.y.sub( 0.5 ).mul( Math.PI ).toVar();
-	return vec3( cos( th ).mul( cos( phi ) ), sin( th ), cos( th ).mul( sin( phi ) ) );
-
-} ).setLayout( { name: 'equirectToDir', type: 'vec3', inputs: [ { name: 'q', type: 'vec2' } ] } );
-
-// Art direction: the island stays readable after sunset. Through the minutes after it the sun's
-// skylight has faded while the moon's key and the night ambient are not yet in, which left the
-// meadow at about half its night brightness. The light the sky lends the island takes a gain per
-// sun elevation, and a cast about the sunset and in the night, ISLAND_SKY: the environment's
-// source panorama, which lights the terrain and plants, in its bake (its haze without the fog
-// layer: `fogEnvironment`), and the islanders' sky fill
-// (`islandIrradianceNode`, the irradiance probe graded the same way). The seen sky, the panorama
-// the sea reflects and the irradiance probe itself, which lights the sea's body, keep the
-// atmosphere's own, so the evening's sky and sea look as they did. Each row is an elevation
-// (degrees, descending): the colour the light is drawn toward (linear, at the light's own
-// luminance), how far, and the gain; rows interpolate linearly and the end rows hold beyond them.
-// From 2 degrees up the light is the atmosphere's alone, and from -13.2 down it is the moonlit
-// sky's own again, with no cast: the night's blue on the display is the eye's (post/Purkinje.ts),
-// given once, so the land lit by this sky takes the sky's colour and no deeper blue of its own
-// (drawn 0.6 of the way to a deep blue, the land was blued by the key, by this sky and by the eye,
-// all in the sky's own hue, and read as one blue with the sky over it). The gains set the
-// island's exposed brightness (the top view's land, with the moon's key; the metering illuminance
-// holds this light too) through the twilight.
-// A clear evening keeps its day exposure on the golden hour's key until the night's comes in from
-// -7 degrees (post/Exposure.ts, DayCycle.ts `displayNight`), and the land keeps the probes' golden
-// gain on the sky's light (lighting/AmbientRelight.ts PROBE_SKY), both held from the golden hour
-// down; so past a lift of about 1.2 through the sunset itself, the light lent from -1.3 degrees
-// down stands a little under the sky's own (gains of 0.85 to 0.96 down to -5.3 degrees), set on
-// the meadow on the plateau in the island view, which reads about L 0.2 at -3.3 and -5.3 degrees.
-// The rows at -1.3, -2.6 and -4 take a scale near their neighbours', the row at -8.6 keeps the
-// 0.76 it was set with, and the gains return to none as the night's exposure comes in (by -13.2).
-// The rows at 1, 0.5 and 0 degrees take the colour the rows around them gave there. Below the
-// horizon the setting side's rows hold gains only, so the land takes the colour of the sky's own
-// light: the dusk key (SKY_LIGHT) warms it (its irradiance red over green about 1.6 at -3 degrees
-// and 1.45 at -5, blue over green 0.7 and 0.8), and the afterglow's air over the land keeps the
-// glow's colour (HazeKeys.ts AFTER_SUNSET). The meadow on the plateau in the island view reads
-// Oklab hue 75 - 83 and chroma 0.029 - 0.034 from -3 to -5.3 degrees, the cliffs chroma 0.045 -
-// 0.047. Drawn most of the way to an orange as well (red over green about 2, blue over green 0.1),
-// the land took that warmth twice: the meadow at hue 67 - 74 and chroma 0.037 - 0.042, the cliffs
-// at chroma 0.06. With the dusk key's colour kept from the land as well, the lent light near
-// grey, the meadow turned an olive green (hue 105 - 112): its warmth after sunset is the sky's.
-// The afterglow is a clear sky's: under a deck there is no glow, and an orange cast laid on the
-// cliffs of a cloudy or overcast evening read a warm brown under a blue deck and sea (the rock at
-// -5 degrees red over green 0.83, against 0.5 and a blue grey under the clouded rows). A clouded
-// sky takes rows of its own (ISLAND_SKY_CLOUDED: a light warm cast, the gains of 0.65 and 0.5 at
-// -4 and -5.3 degrees) by its clouded share (`islandSky`).
-// The rising sun has rows of its own (ISLAND_SKY_RISING).
-// By day a clouded sky lends the island its own light: a deck of cloud passes on little of the blue
-// of the sky's high key (SKY_LIGHT), so from 12 to 40 degrees, as that key climbs, the light lent to
-// the island is drawn most of the way to a warm grey (CLOUD_LIGHT_TINT, Weather.ts `cloudedHighSun`). The land
-// keeps its green under a high sun; the meter's level is the same, the tint keeping the luminance.
-const CLOUD_LIGHT_TINT = ( ( r: number, g: number, b: number, amount: number ) => {
-
-	const l = r * 0.2126 + g * 0.7152 + b * 0.0722;
-	return [ r / l, g / l, b / l, amount ] as const;
-
-} )( 1.2, 1, 0.5, 0.6 );
-interface IslandRow { at: number; tint?: readonly [ number, number, number ]; amount?: number; gain?: number }
-const ISLAND_SKY: readonly IslandRow[] = [
-	{ at: 2 },
-	{ at: 1, tint: [ 1.085, 0.988, 0.872 ], amount: 0.15, gain: 1.16 },
-	{ at: 0.5, tint: [ 1.128, 0.982, 0.807 ], amount: 0.225, gain: 1.24 },
-	{ at: 0, tint: [ 1.17, 0.976, 0.743 ], amount: 0.3, gain: 1.16 },
-	{ at: - 1.3, gain: 0.89 },
-	{ at: - 2.6, gain: 0.96 },
-	{ at: - 3.3, gain: 0.85 },
-	{ at: - 4, gain: 0.87 },
-	{ at: - 5.3, gain: 0.92 },
-	{ at: - 8.6, gain: 0.76 },
-	{ at: - 13.2 },
-];
-const ISLAND_SKY_CLOUDED: readonly IslandRow[] = [
-	...ISLAND_SKY.slice( 0, 4 ),
-	{ at: - 1.3, tint: [ 1, 0.75, 0.45 ], amount: 0.5, gain: 0.89 },
-	{ at: - 2.6, tint: [ 0.95, 0.8, 0.58 ], amount: 0.5, gain: 0.96 },
-	{ at: - 3.3, tint: [ 1.11, 0.99, 0.767 ], amount: 0.5, gain: 0.85 },
-	{ at: - 4, tint: [ 0.9, 0.85, 0.7 ], amount: 0.5, gain: 0.65 },
-	{ at: - 5.3, tint: [ 1.04, 1, 0.874 ], amount: 0.36, gain: 0.5 },
-	...ISLAND_SKY.slice( 9 ),
-];
-
-// The rising sun's: none of the evening's warm cast and no cast at all, gains of its own. A clear
-// morning's day exposure is metered by the sky and the land together (post/Exposure.ts, the `dawn`
-// key), so the land's brightness is this light against the sky's: the
-// gains keep the land from about 0.55 at -8 degrees, where the sky's light is still deep, and 0.66
-// at -6.5, where the land still takes part of the night's gain on its sky light (lighting/
-// AmbientRelight.ts PROBE_SKY: about a quarter of it there), through a lift of about 2 at -2.6,
-// where the sky's has fallen behind the sun's coming, to none from 2 up.
-// A blue cast of its own turned the rock's brightest tenth to C 0.08 to 0.09 at -6.5 degrees,
-// against 0.07 to 0.08 without: the land takes the sky's own colour. A clouded
-// morning keeps these tints but takes the evening's gains back by its clouded share (`islandSky`):
-// its exposure stays on the clouded keys, which these gains were not set under.
-const ISLAND_SKY_RISING: readonly IslandRow[] = [
-	{ at: 2 },
-	{ at: 1, gain: 1.3 },
-	{ at: 0, gain: 1.6 },
-	{ at: - 1.3, gain: 2 },
-	{ at: - 2.6, gain: 2.2 },
-	{ at: - 3.3, gain: 2 },
-	{ at: - 4, gain: 1.8 },
-	{ at: - 5.3, gain: 1.3 },
-	{ at: - 6.5, gain: 0.66 },
-	{ at: - 8, gain: 0.55 },
-	{ at: - 8.6, gain: 0.6 },
-	{ at: - 10, gain: 0.8 },
-	ISLAND_SKY[ ISLAND_SKY.length - 1 ],
-];
-
-// ISLAND_SKY at `elevation`, on the rising or the setting sun's side: the tint (normalised to unit
-// luminance) and its amount into `tint`; returns the gain. A clouded share `cloud` (Weather.ts
-// `cloudedShare`) draws the setting rows to the clouded evening's (ISLAND_SKY_CLOUDED). The rising
-// rows' tints hold under any sky, but their gains were set on a clear morning's exposure
-// (post/Exposure.ts, `dawn`), so the clouded share takes the clouded evening's gain back, as the
-// display's night weight does (DayCycle.ts `displayNight`).
-function islandSky( elevation: number, rising: boolean, tint: THREE.Vector4, cloud: number ): number {
-
-	const at = ( row: IslandRow ) => {
-
-		const [ r, g, b ] = row.tint ?? [ 1, 1, 1 ], l = r * 0.2126 + g * 0.7152 + b * 0.0722;
-		return [ r / l, g / l, b / l, row.amount ?? 0, row.gain ?? 1 ];
-
-	};
-	const along = ( rows: readonly IslandRow[] ) => {
-
-		let v = at( rows[ rows.length - 1 ] );
-		if ( elevation >= rows[ 0 ].at ) v = at( rows[ 0 ] );
-		else for ( let i = 1; i < rows.length; i ++ ) if ( elevation >= rows[ i ].at ) {
-
-			const t = ( elevation - rows[ i ].at ) / ( rows[ i - 1 ].at - rows[ i ].at );
-			const a = at( rows[ i ] ), b = at( rows[ i - 1 ] );
-			v = a.map( ( x, c ) => x + ( b[ c ] - x ) * t );
-			break;
-
-		}
-		return v;
-
-	};
-	let v = along( ISLAND_SKY );
-	if ( cloud > 0 ) {
-
-		const c = along( ISLAND_SKY_CLOUDED );
-		v = v.map( ( x, i ) => x + ( c[ i ] - x ) * cloud );
-
-	}
-	if ( rising ) {
-
-		const r = along( ISLAND_SKY_RISING );
-		if ( cloud > 0 ) r[ 4 ] += ( v[ 4 ] - r[ 4 ] ) * cloud;
-		v = r;
-
-	}
-	tint.set( v[ 0 ], v[ 1 ], v[ 2 ], v[ 3 ] );
-	return v[ 4 ];
-
-}
-
-// Off by default (docs/explanation/art-direction.md, The look: the light keeps the sun's and the sky's own
-// balance): with the meadow's own soft light the lifted shade left a shaded clump within a
-// quarter of a lit one and the meadow showed no side the light came from. `flags=clearShade:<k>`
-// (or `true`) brings it back for A/Bs. What it was: the shade clear, never black. Shade is lit by
-// the sky alone, so the sky light lent to the island (as ISLAND_SKY's: the environment's source
-// and the islanders' fill) takes a gain and turns a touch cooler: the skylit faces of the cliffs
-// and the meadow's shaded side open up while what the sky cannot reach (cracks, the meadow's
-// floor, what sky occlusion darkens) stays dark. A constant lift in the grade instead greyed
-// everything below mid grey alike and veiled the frame. The gain's extra share per sun elevation
-// (degrees, descending; linear between rows, the end rows held beyond): a low sun's light already
-// holds a larger share of sky, so the same gain brightened a morning island about twice as much as
-// a noon one, and the share falls with the sun to none at 2 degrees, where ISLAND_SKY's evening
-// rows begin; past them, in the night, the night sky's fill takes a share of its own, so the
-// moonlit island's shade stays readable (a film's night, not a dark one). Cloud leaves the whole
-// island in shade, where a gain only brightens it: the share fades with the direct visibility,
-// none by overcast. A noon gain of 1.8 was chosen over 2.5 by eye (the shade turned cold).
-const CLEAR_SHADE: readonly { at: number; share: number }[] = [
-	{ at: 45, share: 0.8 },
-	{ at: 26, share: 0.55 },
-	{ at: 13, share: 0.35 },
-	{ at: 5, share: 0.15 },
-	{ at: 2, share: 0 },
-	{ at: - 13.2, share: 0 },
-	{ at: - 18, share: 0.6 },
-];
-// the sky light's tint (unit luminance) and how far it is drawn toward it at a share of 1
-const CLEAR_SHADE_TINT = ( ( r: number, g: number, b: number ) => {
-
-	const l = r * 0.2126 + g * 0.7152 + b * 0.0722;
-	return [ r / l, g / l, b / l, 0.44 ] as const;
-
-} )( 0.86, 1, 1.1 );
-
-// Off by default with the clear shade (`flags=lowSun:<k>` or `true` for A/Bs). What it was: a low
-// sun's light golden and its shade cool blue-violet. The shade's half: from about 12 degrees down to the horizon the sky light lent to the
-// island turns from CLEAR_SHADE's cool cyan toward blue-violet, drawn toward it by up to
-// LOW_SUN.amount whatever the gain (a low sun's share of the gain is small), so only the island's
-// shade takes it, never the sea or the sky. It fades out above LOW_SUN.top, and below the horizon
-// into ISLAND_SKY's warm evening cast; cloud takes it out with the direct sun. (The light's half,
-// a warmer grade of what the low sun lit, is gone.)
-const LOW_SUN = { full: 12, top: 28, amount: 0.65 };
-/** How far a deck draws the key toward white at the same luminance (`update`): overcast's sun is
- * whiter than a clear day's at the same height but keeps some of its warmth; rain's closed deck
- * draws it all the way. */
-const KEY_DECK_WHITE = 0.3;
-const LOW_SUN_TINT = ( ( r: number, g: number, b: number ) => {
-
-	const l = r * 0.2126 + g * 0.7152 + b * 0.0722;
-	return [ r / l, g / l, b / l ] as const;
-
-} )( 0.95, 0.85, 1.2 );
-
-/** How far the low sun's look has come in at `elevation` (degrees) under a sky of direct
- * visibility `direct`: 0 above LOW_SUN.top and below the horizon, 1 from LOW_SUN.full down to
- * 3 degrees (the island's blue-violet shade). */
-export function lowSun( elevation: number, direct: number ): number {
-
-	// (off unless a number is set, with the clear shade)
-	const scale = typeof debugFlags.lowSun === 'number' ? debugFlags.lowSun : debugFlags.lowSun === true ? 1 : 0;
-	return THREE.MathUtils.smoothstep( elevation, 0, 3 ) * ( 1 - THREE.MathUtils.smoothstep( elevation, LOW_SUN.full, LOW_SUN.top ) )
-		* THREE.MathUtils.smoothstep( direct, 0.3, 0.95 ) * scale;
-
-}
-
-// CLEAR_SHADE's share at `elevation` under a sky of direct visibility `direct`.
-function clearShade( elevation: number, direct: number ): number {
-
-	const rows = CLEAR_SHADE;
-	let share = rows[ rows.length - 1 ].share;
-	if ( elevation >= rows[ 0 ].at ) share = rows[ 0 ].share;
-	else for ( let i = 1; i < rows.length; i ++ ) if ( elevation >= rows[ i ].at ) {
-
-		const t = ( elevation - rows[ i ].at ) / ( rows[ i - 1 ].at - rows[ i ].at );
-		share = rows[ i ].share + ( rows[ i - 1 ].share - rows[ i ].share ) * t;
-		break;
-
-	}
-	// (off unless a number is set: the lifted shade took the light's direction out of the meadow)
-	const scale = typeof debugFlags.clearShade === 'number' ? debugFlags.clearShade : debugFlags.clearShade === true ? 1 : 0;
-	return share * THREE.MathUtils.smoothstep( direct, 0.3, 0.95 ) * scale;
-
-}
-
-// The sky's light against the sun's. As the atmosphere's march gave it, the clear day's sky lit
-// level shade too brightly beside the sun. By day it takes one constant gain (SKY_LIGHT, an
-// illuminance colour per channel, keyed by the sun's elevation: DayKeys.ts) on the light the sun
-// lends it: the atmosphere's in-scattered light (Atmosphere.ts `skyRadiance`). So everything that
-// reads the sky takes it, the seen sky, the environment's bakes and the irradiance probe that light
-// the island, the sea's reflection and the clouds' and the haze's sky light, and the sky the eye
-// sees stays the sky that lights. The clouds' sunlight takes none: it is the sun's beam at their
-// height (Clouds.ts `sunLight`; the thin layer's at each of its points, `streakSunColour`). A
-// weather's day sky (Weather.ts `daySkyAt`) scales the day keys' share and the clouds' sunlight
-// alike (`skyGain`, `trackClouds`), so the sky, the clouds and the air it lends sky light to keep
-// their balance; the sun's beam the air scatters keeps the keys' light without it
-// (`sunBeamIlluminance`), as the land's key does. How the sky's light falls with the sun is the atmosphere's
-// own (the aerosol's wide base and the multiple scattering that grows along long paths:
-// Atmosphere.ts), not rows by the sun's elevation. Under cloud the gain moves to the night key from
-// 2 degrees to -6 under the horizon (a smoothstep); a clear sky's holds the day's keys through the
-// twilight and moves from -7 to -11 after sunset (by stops), from -13 to -3 before sunrise
-// (DayCycle.ts `skyNight`), so the sky after sunset dims with the sun's light it lends
-// without the jump to the atmosphere's own light that fading the gain to none gave (several times
-// brighter than the golden key, its blue more so). The sun's own light
-// (its transmittance, the disk) and the cumulus it lights are untouched. The night key is the sun's
-// deep twilight key; the moonlit sky takes the day's keys at the moon's height on the moon's light,
-// at a hue of its own (MOON_SKY_HUE, `track`). The keys set
-// the sky's brightness and colour in bands of elevation and of angle from the sun, together with
-// the atmosphere's phase and aerosol and the haze's keys, once the environment's bake took the
-// haze's light: the golden key takes the sky warm (red over blue about 2.9), the low key near grey,
-// the high key blue (blue over red about 1.5), the atmosphere's own colour doing the rest, and the
-// night key is about 0.03, its red about twice its green, which the night's white balance takes
-// back (Pipeline.ts WHITE_BALANCE): the land's dark colours stay near neutral under it, the clear
-// night's dome is dark, its low sky the haze's moonlit light (HazeKeys.ts NIGHT) and its blue the
-// moonlit atmosphere's own and the rods' (Purkinje.ts).
-// The golden, low and morning keys keep the colour they lent the sky before the ozone's absorption
-// was integrated over each channel's band (Atmosphere.ts): with it the bare sky lost red and blue
-// against green, by 0.75 and 0.88 times at a sun of 3 degrees, 0.89 and 0.95 at 12 and 0.97 and
-// 0.99 at noon, and these keys take the first two back at their luminance (the golden hour's sky,
-// far bay and meadow had turned yellow by 10 - 16 degrees of hue, the morning's sea toward cyan).
-// The high key, whose sky hardly moved, keeps its own, its red at 0.264, set when the least-squares
-// tuning of the clear day's sky gains (CLEAR_SKY) ran: against the 0.235 it had, it takes the sky over a
-// sun at 50 degrees, seen away from it, about 7 degrees of hue toward violet (Oklab hue 241 to 248).
-// Under cloud the high key has a twin (`cloudyHigh`, taken by the weather's clouded share, Weather.ts
-// `cloudedShare`): a deck of cloud gives the sky and the air no such blue, and the air over the land
-// takes this light whole (VolumetricHaze.ts), so at the day's blue the crowns under a clouded sky
-// turned blue grey, most of all at 30 degrees. The twin stays near grey, blue over red about 1.1,
-// at about the day's luminance, so the air's hue moves and the land's level and the exposure do
-// not. Its golden and low keys are the day's own, so a clouded sky parts from a clear one only
-// over 12 degrees.
-// On a clear evening the sky takes a key below the golden one (`dusk`, at -1 degrees, not under
-// cloud), held through the twilight until the night key takes it from -7 degrees, at the
-// luminance the warm key before it had. Its colour, green 0.55 and blue 0.33 of red, is
-// set by least squares with the afterglow's haze weight (HazeKeys.ts) against the twilight's sky toward
-// the glow at -3.3 and -5.3 degrees, over the atmosphere with its multiple scattering whole
-// (Atmosphere.ts): under the near-neutral key it had (0.89 and 0.86) that sky stood near grey
-// over the glow (Oklab chroma about 0.01 at -5.3), and the key takes it to orange from the glow to
-// the top of a view toward it (red over green about 1.7, blue over green 0.4 - 0.6). When the
-// multiple scattering stood at 1 / 4 pi of its level, a warm key (blue under a third of red)
-// turned the sky 20 degrees up magenta (red over green about 2.1, blue over green 1.5, with the
-// sun 5.6 degrees under the horizon). The sea under the glow takes less of the key's warmth than
-// the sky over it: it stays lighter and greyer, by the water's reflection, not the sky's light.
-// The land takes its twilight warmth from this key as well: below the horizon the light lent to it
-// (ISLAND_SKY) keeps the sky's colour and takes only a gain.
-// The morning is not the evening turned round. These keys hold in every direction, so a warm key
-// warms the whole picture: the golden key is the evening's, where the whole sky is alight, and the
-// clear morning has keys of its own (`dawn`, `morning`, read while the sun rises: DayKeys.ts
-// `rising`). At sunrise the air is already blue and the warm colour stays in the sun's road and the
-// low streaks, so `dawn` takes a near-neutral light at the luminance the cooler key before it had,
-// green 0.79 and blue 0.86 of red: set by least squares, with the dawn's haze weights
-// (HazeKeys.ts), against the dawn's horizon views from -8 to 3 degrees over the atmosphere with its
-// multiple scattering whole (it was the dusk key's near-neutral colour before, 0.89 and 0.86), and the
-// display's dawn white balance (Pipeline.ts WHITE_BALANCE) cools it from there: the band over the
-// horizon, nearly all the haze's light, and the sea under it stay a quiet blue grey. By 12 degrees
-// the picture has gone cool and quiet, and `morning` is the day's light at about two thirds of the
-// low key with less green (red a little over blue, green about 0.7 of them), which turns the
-// morning's sky and sea from cyan to blue, so the sea stands lighter under the same sky, the meter
-// holding the sky's level. Both are tuned on our own views, at the luminance they had. From the `high` key up
-// the two sides are one. A clouded morning keeps the clouded keys.
-// Tunable on debug pages (debug/Tune.ts): `sky.light.<r|g|b>@<dawn|morning|dusk|golden|low|high|cloudyHigh|night>`.
-const SKY_LIGHT_LOW_SUN: readonly DayKey<{ r: number; g: number; b: number }>[] = [
-	{ at: 3, name: 'golden', values: { r: 0.36, g: 0.162, b: 0.1227 } },
-	{ at: 12, name: 'low', values: { r: 0.2409, g: 0.1857, b: 0.1979 } },
-];
-const SKY_LIGHT_HIGH: DayKey<{ r: number; g: number; b: number }> = { at: 40, name: 'high', values: { r: 0.264, g: 0.232, b: 0.346 } };
-const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'sky.light', {
-	day: [ { at: - 1, name: 'dusk', values: { r: 0.2263, g: 0.125, b: 0.0751 } }, ...SKY_LIGHT_LOW_SUN, SKY_LIGHT_HIGH ],
-	rising: [
-		{ at: 3, name: 'dawn', values: { r: 0.2008, g: 0.159, b: 0.1727 } },
-		{ at: 12, name: 'morning', values: { r: 0.1809, g: 0.1207, b: 0.1683 } },
-		SKY_LIGHT_HIGH,
-	],
-	cloudy: [ ...SKY_LIGHT_LOW_SUN, { at: 40, name: 'cloudyHigh', values: { r: 0.25, g: 0.232, b: 0.28 } } ],
-	night: { r: 0.045, g: 0.023, b: 0.028 },
-}, { r: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune }, g: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune }, b: { min: 0.001, max: 2, scale: 'log', onChange: markSkyRetune } } );
-const _skyLight = { r: 0, g: 0, b: 0 };
-// The clear day's sky against the key. With SKY_LIGHT alone the key's illuminance at normal
-// incidence stood 50 - 72 times the sky's irradiance on level ground (the irradiance probe's: the
-// environment's sky with its clouds and the haze over it, before any gain of the land's own) from
-// 50 down to 6 degrees in the evening, 68 - 91 from 26 down to 7 in the morning, 30 - 45 at 4 and
-// 20 - 24 at 3: the island's shade was nearly black against its lit side, and the sky stood dark
-// against the key. Under a clear or fair day's sun the sky's light takes a gain of its own over
-// SKY_LIGHT (CLEAR_SKY), keyed by the sun's elevation, on every path SKY_LIGHT reaches (`skyGain`):
-// the sky the eye sees, the sea's reflection and its body, the clouds' and the haze's
-// sky light, the land's (the environment's source: the probes' harmonics and the specular atlas,
-// the haze over it without the fog layer, `fogEnvironment`; the islanders' fill, from the probe's
-// panorama with the fog layer) and the exposure's sky meter. So the sky the eye sees stays the sky
-// that lights and that the exposure meters (post/Exposure.ts). The sky's irradiance takes the gain
-// whole (the sky's light, the sun's in-scattered light and the haze's are all SKY_LIGHT's), so the
-// keys are the ratio with no gain over the one they hold, 12.1 - 15 from 6 degrees up on either
-// side of the day and at the morning's 3 degrees, but for the day side's low and high gains (3.51
-// and 2.48, 0.78 and 0.73 of the ratio's 4.48 and 3.4) and SKY_LIGHT's high red: those are set on
-// the clear day's views from 6 degrees up, together with the haze (Weather.ts `haze`) and under the
-// exposure keys of the time (post/Exposure.ts), which the thin layer (Clouds.ts), faint by day,
-// hardly changes. At the ratio's gains the sky over a sun at 50 degrees, seen away from it, reads
-// at Oklab lightness 0.71 and chroma 0.099 and the far sea at 0.63 and 0.102, against 0.68 and
-// 0.10 and 0.62 and 0.097 at the tuned gains, and the views from 6 degrees up that take the day side's
-// gains stand 0.16 - 0.33 stops darker. The rising side's own keys keep their gains (its high key
-// is the day's). At the evening's 3 degrees the sky stands brighter against the key, about
-// 7.4 - 8.9: it lights the land's shade and the far bay, as far as a view along the horizon toward
-// the sun holds the far sea and the sun's strip on the water (post/Exposure.ts, the highlight key).
-// The smoothstep between keys (DayKeys.ts) puts the ratio's day high midway, at 21 degrees in the
-// evening. Under 3 degrees the key falls faster than the sky by itself (the ratio 12.4 at 1.6
-// degrees with no gain), so the gain eases to none at the horizon (`horizon`): the twilight and the
-// night keep SKY_LIGHT's light, the ratio falling to about 6 at 2 degrees on the way. The gains
-// hold these ratios over the sky with its multiple scattering whole (Atmosphere.ts), whose
-// irradiance stands higher than when the multiple scattering stood at 1 / 4 pi of its level:
-// 0.85 - 0.89 times the gains that held them then, the exposure over the horizon within 0.03 stops
-// of the one it had on either side of the day. The gain leaves by the weather's clouded share
-// (Weather.ts `cloudedShare`): a cloudy or overcast sky keeps the light it had. The open sky seen
-// through a deck's gaps is the clear day's sky all the same (most of the air's Rayleigh scattering
-// lies above a deck of 1 - 3 km), so where the dome, the environment and the deck's irradiance see
-// it past the clouds, by their transmittance, it takes the clear day's gain back (`gapSky`: the
-// clear day's gain over the clouded sky's, exactly 1 under a clear or fair sky; each body's share of
-// the sky takes it at that body's height, the moon's at the moon's). Without it the
-// sky behind a cloudy deck's gaps would stand at the clouded sky's lower radiance, and the gaps would
-// show the air in front of them rather than their blue.
-// Tunable on debug pages: `sky.clear.gain@<horizon|dawn|early|morning|golden|late|low|high>`.
-const CLEAR_SKY_HORIZON: DayKey<{ gain: number }> = { at: 0, name: 'horizon', values: { gain: 1 } };
-const CLEAR_SKY_HIGH: DayKey<{ gain: number }> = { at: 40, name: 'high', values: { gain: 2.48 } };
-const CLEAR_SKY: DayKeys<{ gain: number }> = tuneKeys( 'sky.clear', {
-	day: [ CLEAR_SKY_HORIZON, { at: 3, name: 'golden', values: { gain: 2.41 } }, { at: 6, name: 'late', values: { gain: 3.39 } }, { at: 12, name: 'low', values: { gain: 3.51 } }, CLEAR_SKY_HIGH ],
-	rising: [ CLEAR_SKY_HORIZON, { at: 3, name: 'dawn', values: { gain: 1.76 } }, { at: 6, name: 'early', values: { gain: 4.08 } }, { at: 12, name: 'morning', values: { gain: 5.83 } }, CLEAR_SKY_HIGH ],
-	night: { gain: 1 },
-}, { gain: { min: 0.25, max: 8, scale: 'log', onChange: markSkyRetune } } );
-const _clearSky = { gain: 1 };
-// CLEAR_SKY's gain at `elevation` under a sky of clouded share `cloud`: exactly 1 with the sun at or
-// under the horizon and under a cloudy or overcast sky (`flags=clearSky:false` leaves it 1, for A/Bs)
-function clearSky( elevation: number, rising: boolean, cloud: number ): number {
-
-	if ( debugFlags.clearSky === false ) return 1;
-	const day = keyed( CLEAR_SKY, elevation, 0, _clearSky, 0, rising ).gain;
-	return 1 + ( day - 1 ) * ( 1 - cloud );
-
-}
-// per sky of the blend, the share of the deck's optical depth its shadow is cast with (Weather.ts
-// `shadowDensity`, its preset's until tuned), blended by the weather's shares of the four skies;
-// tunable on debug pages: `sky.weather.shadowDensity@<cloudy|overcast>`
-const SHADOW_DENSITY = MIX_SKIES.map( ( name ) => ( { shadowDensity: WEATHER_PRESETS[ name ].shadowDensity } ) );
-for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
-
-	tuneObject( SHADOW_DENSITY[ s ], { shadowDensity: `sky.weather.shadowDensity@${ name }` }, { shadowDensity: { min: 0.02, max: 1, scale: 'log', onChange: markSkyRetune } } );
-
-}
-// The clouds are one model, and a kind of sky is a row of its parameters: one row per sky of the blend
-// (CLOUD_SKIES, in MIX_SKIES' order), blended each frame by the weather's shares of the four skies
-// (`trackClouds`), so a change of weather crosses them by those shares. The parked weathers count
-// as overcast in those shares (Weather.ts), so they take overcast's row. The coverage and the
-// density are the weather state's (Weather.ts WEATHER_PRESETS), interpolated with it; nothing here
-// points into the presets, whose fields the weather interpolates as numbers.
-//
-// `base`, `top` (m): the shell the clouds stand in (Clouds.ts `setShell`). Clear's and fair's
-// cumulus stand high; cloudy's and overcast's layer low and shallow, as a stratocumulus or a
-// stratus does, its masses nearer and so larger in the sky.
-// `type`, `spread`: the cloud type (0 a stratus, 1 a cumulus: Clouds.ts STRATUS, CUMULUS) and how
-// far it varies from place to place, either way. Fair's are cumulus; cloudy's run from
-// stratocumulus to cumulus side by side; overcast's layer is a stratus, low and flat.
-// `farFade`: how far the clouds thin with distance (Clouds.ts `farFade`). A fair sky's heaps melt
-// into the air before the horizon, where they would pile into bands; a layer runs to the horizon.
-// Tunable on debug pages: `sky.clouds.base|top|type|spread|farFade@<clear|fair|cloudy|overcast>`.
-type CloudSky = { base: number; top: number; type: number; spread: number; farFade: number };
-const CLOUD_SKIES: CloudSky[] = [
-	{ base: SHELL_BOTTOM, top: SHELL_BOTTOM + SHELL_THICKNESS, type: 1, spread: 0, farFade: 1 }, // clear
-	{ base: SHELL_BOTTOM, top: SHELL_BOTTOM + SHELL_THICKNESS, type: 1, spread: 0, farFade: 1 }, // fair
-	{ base: 1500, top: 4500, type: 0.9, spread: 0.3, farFade: 0 }, // cloudy
-	{ base: 600, top: 3000, type: 0.05, spread: 0.1, farFade: 0 }, // overcast
-];
-for ( const [ s, name ] of MIX_SKIES.entries() ) {
-
-	tuneObject( CLOUD_SKIES[ s ], { base: `sky.clouds.base@${ name }`, top: `sky.clouds.top@${ name }`, type: `sky.clouds.type@${ name }`, spread: `sky.clouds.spread@${ name }`, farFade: `sky.clouds.farFade@${ name }` },
-		{ base: { min: 300, max: 6000, onChange: markSkyRetune }, top: { min: 1500, max: 10000, onChange: markSkyRetune }, type: { min: 0, max: 1, onChange: markSkyRetune },
-			spread: { min: 0, max: 1, onChange: markSkyRetune }, farFade: { min: 0, max: 1, onChange: markSkyRetune } } );
-
-}
-/** The cloud shell's base (m) under the sky `s` (Weather.ts MIX_SKIES), as tuned: the haze's
- * aerosol ends at a layer's base (weather/HazeKeys.ts `aerosolTop`). */
-export const cloudBase = ( s: number ): number => CLOUD_SKIES[ s ].base;
-
-// The range each store holds under the moon, per sky of the blend (MIX_SKIES' order), in stops over the
-// luminance of the moonlight on the clouds (`storeLight`): the brightest value and the first
-// percentile (the cloud dome's and the layer's over the texels at least a tenth covered). Under
-// the moon alone every store's radiance follows the moonlight, so the range over it is the clouds'
-// own: coverage and density do not order it alone, the clouds' form does as much. A fair sky has
-// the darkest thin edges (its
-// small heaps); a cloudy sky the brightest moonlit sides (its broken layer); overcast's closed deck
-// shows its dark base, the narrowest range. The rows are estimates that centre the range, measured
-// on the skies' nights and kept through later changes of the clouds' forms, with several stops to
-// spare on either side (NIGHT_TOP, NIGHT_FLOOR). The panoramas' group
-// (the seen panoramas, the environment's source and its atlases) takes the sky's light too, its
-// darkest the open sky low down. A weather between skies takes the rows by its shares of them,
-// as its shell and form do (CLOUD_SKIES).
-const STORE_RANGE: Record<'dome' | 'layer' | 'panorama', readonly ( readonly [ number, number ] )[]> = {
-	dome: [ [ - 1.7, - 8.5 ], [ 0.2, - 11.8 ], [ 2.1, - 6.2 ], [ - 1.7, - 6.5 ] ],
-	layer: [ [ - 1.7, - 8.5 ], [ - 1.0, - 10.5 ], [ 2.1, - 6.3 ], [ - 1.8, - 6.2 ] ],
-	panorama: [ [ - 1.2, - 12.0 ], [ - 1.1, - 12.0 ], [ 2.4, - 8.0 ], [ 0.1, - 6.7 ] ],
-};
-// What a night's store must keep, stored (stops): its brightest under 2^13 (two stops under
-// STORE_CEILING), and its first percentile, were the night pressed 12 stops darker (the debug
-// press, PreExposure.ts `storePress`), over 2^-13, a stop over half float's 2^-14.
-const NIGHT_TOP = 13, NIGHT_FLOOR = - 13 + 12;
-
-/** Where the store `group`'s range sits best under the moon (stops over the light, PreExposure.ts
- * `storeStops`): its estimated brightest and first percentile (STORE_RANGE, by the weather's
- * shares of the four skies) centred between NIGHT_FLOOR and NIGHT_TOP, so both keep the same
- * margin. */
-function storeNight( group: keyof typeof STORE_RANGE, skyMix: readonly number[] | null ): number {
-
-	const rows = STORE_RANGE[ group ];
-	let top = 0, floor = 0;
-	for ( let s = 0; s < rows.length; s ++ ) {
-
-		const share = skyMix ? skyMix[ s ] ?? 0 : s === 0 ? 1 : 0;
-		top += share * rows[ s ][ 0 ];
-		floor += share * rows[ s ][ 1 ];
-
-	}
-	return ( NIGHT_TOP + NIGHT_FLOOR - top - floor ) / 2;
-
-}
-
-// The low sun's key. Through twenty air masses and more the atmosphere's transmittance (Atmosphere.ts,
-// its aerosol dimming the low sun by about half at the golden hour) still leaves the key too bright
-// under the lifted shading (lighting/KeyLift.ts): with the sun at 3 degrees the lit rock's whole face
-// goes to a pale gold and the land reads as a bright afternoon. The key (the island's and the sea's
-// sunlight) takes a gain under 6 degrees (degrees, descending; linear between rows, the last row
-// held down to the horizon), so that face stays a saturated orange under the sky. The shade, lit by
-// the sky, does not move; the disk and the sky's own sun are untouched.
-const LOW_KEY: readonly { at: number; gain: number }[] = [
-	{ at: 6, gain: 1 },
-	{ at: 4, gain: 0.78 },
-	{ at: 2.6, gain: 0.46 },
-];
-
-// a gain by the sun's elevation from rows of descending elevation: linear between rows, the end
-// rows held beyond
-function byElevation<K extends string>( rows: readonly ( { at: number } & Record<K, number> )[], elevation: number, key: K ): number {
-
-	if ( elevation >= rows[ 0 ].at ) return rows[ 0 ][ key ];
-	for ( let i = 1; i < rows.length; i ++ ) if ( elevation >= rows[ i ].at ) {
-
-		const t = ( elevation - rows[ i ].at ) / ( rows[ i - 1 ].at - rows[ i ].at );
-		return rows[ i ][ key ] + ( rows[ i - 1 ][ key ] - rows[ i ][ key ] ) * t;
-
-	}
-	return rows[ rows.length - 1 ][ key ];
-
-}
-
-// The sky's gain on the sun's light it lends: SKY_LIGHT's keys, the weather's day sky `daySky`
-// (Weather.ts `daySkyAt`) on the day keys' share alone, so it is exactly the keys' own light where
-// the night key has the sky (DayCycle.ts `skyNight` at 1) or the day sky is 1 (every weather but
-// overcast), and CLEAR_SKY's over both. (`flags=skyGain:false` leaves the sky as the atmosphere
-// gives it, but for the day sky, `lowKey:false` the key as its transmittance gives it, for A/Bs)
-const skyGain = ( elevation: number, rising: boolean, cloud: number, daySky: number, target: THREE.Color ) => {
-
-	const night = skyNight( elevation, rising, cloud ), off = debugFlags.skyGain === false;
-	if ( off ) target.setScalar( 1 );
-	else {
-
-		const { r, g, b } = keyed( SKY_LIGHT, elevation, night, _skyLight, cloud, rising );
-		target.setRGB( r, g, b );
-
-	}
-	if ( daySky !== 1 && night < 1 ) {
-
-		const share = ( daySky - 1 ) * ( 1 - night );
-		if ( off ) target.addScalar( share );
-		else {
-
-			const { r, g, b } = keyed( SKY_LIGHT, elevation, 0, _skyDay, cloud, rising );
-			target.r += r * share;
-			target.g += g * share;
-			target.b += b * share;
-
-		}
-
-	}
-	return off ? target : target.multiplyScalar( clearSky( elevation, rising, cloud ) );
-
-};
-const _skyGain = new THREE.Color(), _skyBeam = new THREE.Color(), _skyMoon = new THREE.Color(), _skyDay = { r: 0, g: 0, b: 0 };
-const lowKey = ( elevation: number ) => debugFlags.lowKey === false ? 1 : byElevation( LOW_KEY, elevation, 'gain' );
-
-// The distant sea's body (the environment's lower half under its reflection, `seaPanorama`): its
-// colour's share of the light that reaches the sea, the sky's irradiance with its clouds (the bake's
-// deck irradiance) and the sun's direct light on the level water, in luminance, up to a knee at
-// SEA_KNEE times the sun's illuminance (scene units, both at the weather's ambient gain), where it is
-// the colour times that illuminance. The knee lies under every kept weather's noon (the light there
-// is 0.258 of the illuminance under a clear sky, 0.251 under a fair one), so a high sun's body is
-// what it was; under it the body falls with the light: to 0.57 of it at 30 degrees, 0.06 at 5, and
-// under a hundredth after sunset, where the sky alone lights it. It followed a smoothstep of the
-// sun's height from -7 to 8 degrees before, which held it 10 to 55 times the sky's E / pi through
-// the twilight (0.46 at noon); the water's horizon term reads this half at its mip 5, whose row under
-// the horizon takes 0.35 to 0.49 of the far sea's read, and the far sea stood grey over the glow it
-// mirrors. Tunable: `sky.sea.knee`.
-const SEA_KNEE = 0.24;
-const seaKnee = tune( 'sky.sea.knee', SEA_KNEE, { min: 0.05, max: 1, onChange: markSkyRetune } );
-
-// The finite wave grid ends before the geometric horizon. Continue it with the reflection
-// of a flat distant sea, approaching unit Fresnel at the horizon without a dark colour step.
-const seaPanorama = Fn( ( [ d, clearSky, sea ]: [ V3, V3, V3 ] ) => {
-
-	const c = clamp( abs( d.y ), 0, 1 ).toVar();
-	const g = sqrt( c.mul( c ).add( 1.333 * 1.333 - 1 ) ).toVar();
-	const a = g.sub( c ).div( g.add( c ) );
-	const b = c.mul( g.add( c ) ).sub( 1 ).div( c.mul( g.sub( c ) ).add( 1 ) );
-	const fr = a.mul( a ).mul( b.mul( b ).add( 1 ) ).mul( 0.5 );
-	return mix( sea, clearSky, select( d.y.greaterThanEqual( 0 ), 1, fr ) );
-
-} ).setLayout( { name: 'skySeaPanorama', type: 'vec3', inputs: [
-	{ name: 'd', type: 'vec3' }, { name: 'clearSky', type: 'vec3' }, { name: 'sea', type: 'vec3' },
-] } );
-
-// A sky radiance or irradiance as lent to the island (ISLAND_SKY): drawn toward `tint.rgb` at its
-// own luminance by `tint.w`, times `gain`. Linear in the light, so the graded probe's integral is
-// the integral of the graded panorama.
-const lendIsland = Fn( ( [ light, tint, gain ]: [ V3, V4, F ] ) => {
-
-	return mix( light, tint.rgb.mul( dot( light, vec3( 0.2126, 0.7152, 0.0722 ) ) ), tint.w ).mul( gain );
-
-} ).setLayout( { name: 'lendIsland', type: 'vec3', inputs: [ { name: 'light', type: 'vec3' }, { name: 'tint', type: 'vec4' }, { name: 'gain', type: 'float' } ] } );
-
-// The closed deck's glow about the key light toward `d` (Clouds.ts DECK_GLOW), drawn where the sky is
-// composed, not marched: smooth and round whatever the deck's depth and its rolls. The drawn deck
-// takes it with both lobes; the lighting's sources (the bakes) take one smooth lobe of their own
-// about the sun (Clouds `bakeGlowLobe`, `bakeGlowGain`) by the day's weight (`deckDay`,
-// `glowToward`). The deck's mean radiance `deck` times the key's
-// share of the light on its tops, two forward lobes toward the sun and the same two toward the moon
-// mixed by the sun's share (each a Henyey-Greenstein lobe of mean 1 over the sphere, a narrow one
-// for the peak and a broad one for the tail; the sun's tinted as the deck's tops take its light),
-// the clouds' opacity toward `d`, the deck's share of the sky, and `pattern` to the power k: the
-// base's local radiance over the deck's mean as its diffuse law gives it there (`deckPattern`), so
-// the glow follows the base's own pattern, brightening its thin parts and leaving its dark masses
-// dark (at k = 0 a smooth glow). `shares` = ( the key's share, the sun's share, the deck's share,
-// k ), `form` = ( the narrow lobe's mean cosine, its weight, the broad lobe's mean cosine, its
-// weight ).
-const deckGlow = Fn( ( [ d, deck, opacity, sunDir, moonDir, tint, shares, form, pattern ]: [ V3, V3, F, V3, V3, V3, V4, V4, F ] ) => {
-
-	const hg = ( g: F, nu: F ) => float( 1 ).sub( g.mul( g ) ).div( max( float( 1 ).add( g.mul( g ) ).sub( nu.mul( g ).mul( 2 ) ), 1e-4 ).pow( 1.5 ) );
-	const lobes = ( nu: F ) => hg( form.x, nu ).mul( form.y ).add( hg( form.z, nu ).mul( form.w ) );
-	const forward = mix( vec3( lobes( dot( d, moonDir ) ) ), tint.mul( lobes( dot( d, sunDir ) ) ), shares.y );
-	return deck.mul( forward ).mul( shares.x.mul( shares.z ).mul( opacity ).mul( pattern.pow( shares.w ) ) );
-
-} ).setLayout( { name: 'deckGlow', type: 'vec3', inputs: [
-	{ name: 'd', type: 'vec3' }, { name: 'deck', type: 'vec3' }, { name: 'opacity', type: 'float' }, { name: 'sunDir', type: 'vec3' },
-	{ name: 'moonDir', type: 'vec3' }, { name: 'tint', type: 'vec3' }, { name: 'shares', type: 'vec4' }, { name: 'form', type: 'vec4' },
-	{ name: 'pattern', type: 'float' },
-] } );
-
-// The base's local radiance toward `d` over the deck's mean as the column's diffuse law gives it
-// there, ( 3 / 7 )( 1 + 2 mu ) times the deck's mean radiance (Clouds.ts makeMarch: its mean over
-// level ground is the deck's), moved toward a uniform deck by `flat` as the march moves it (Clouds
-// `deckFlat`), so it has no trend with elevation and averages about 1 over the deck: what the glow
-// follows (`deckGlow`). Held in [ 1e-6, 4 ], so its power is finite at any k
-// and a lone bright seam cannot flare.
-const deckPattern = Fn( ( [ d, local, deck, flat ]: [ V3, V3, V3, F ] ) => {
-
-	const law = max( d.y, 0 ).mul( 6 / 7 ).add( 3 / 7 ).toVar();
-	const mean = dot( deck, vec3( 0.2126, 0.7152, 0.0722 ) ).mul( law.add( float( 1 ).sub( law ).mul( flat ) ) );
-	return clamp( dot( local, vec3( 0.2126, 0.7152, 0.0722 ) ).div( max( mean, 1e-20 ) ), 1e-6, 4 );
-
-} ).setLayout( { name: 'deckPattern', type: 'float', inputs: [ { name: 'd', type: 'vec3' }, { name: 'local', type: 'vec3' }, { name: 'deck', type: 'vec3' }, { name: 'flat', type: 'float' } ] } );
-
-// Art direction: within a few degrees of the horizon the sun shines through twenty to forty air
-// masses and its light turns an almost pure red (red/blue above 100 at one degree), which paints
-// the island like lava. The optical depth that sets the key's hue is capped softly past about
-// six degrees (`sky.key.hueDepth`), while its luminance keeps the full extinction: a low sun stays
-// orange red (red/green about 1.85 at six degrees, 2.2 at the golden hour and 2.25 at the horizon,
-// red/blue at most about 13) and still dims as it sets. The cap stands where it holds the golden
-// hour's sunlit faces at a full orange without the extra chroma the clean air aloft gives the key
-// (Atmosphere.ts). The rising sun's cap is lower (`sky.key.dawnHueDepth`, binding from about ten
-// degrees down): the morning's warm colour lies in the sun's road and the low streaks, and a face
-// turned to the rising sun takes a pale warm light, far less orange than the evening's at the same
-// height (red/green at most about 1.6, red/blue about 4). Above that the key's hue is
-// chosen rather than the air's own course, which reddens evenly with the air mass: a warm
-// white while the sun is high (KEY_WHITE: red/green 1.15, blue/green 0.95 at noon, 1.17 and 0.9
-// at 30 degrees) that loses its blue first (0.8 at 20 degrees, red/green 1.2) and turns orange
-// between 15 and 10 degrees (1.45 and 0.55 at 11.5). So each of the two ratios takes the air's
-// change of it in part, by the air's depth in green (`sky.key.reddens` for red/green, `.yellows` for
-// blue/green: about none at noon, two thirds at that depth, all of it past twice it). The ozone's
-// absorption integrated over each channel's band (Atmosphere.ts) takes red off the air's
-// transmittance (red/green 1.45 to 1.29 at 12 degrees), so the red/green share's onset is 0.52
-// where it was 0.75, which brings the key back to about 1.45 at 12 degrees (0.75 left it at 1.29,
-// a lit face yellow green) and leaves the lower sun a little less red than before. The sky and
-// clouds keep their own colours, and the key's luminance is the sun tint's.
-const sunHueDepth = tune( 'sky.key.hueDepth', 1.6, { min: 1, max: 4, onChange: markSkyRetune } );
-const dawnHueDepth = tune( 'sky.key.dawnHueDepth', 0.8, { min: 0.3, max: 4, onChange: markSkyRetune } );
-// the key's white: linear red/green and blue/green while the sun is high
-const KEY_WHITE = [ 1.15, 0.96 ] as const;
-const keyReddens = tune( 'sky.key.reddens', 0.52, { min: 0.3, max: 1.5, onChange: markSkyRetune } );
-const keyYellows = tune( 'sky.key.yellows', 0.52, { min: 0.2, max: 1.2, onChange: markSkyRetune } );
-// The low sun's lift of the clouds' beam and fill (trackClouds), fading as the sky closes.
-const lowSunOf = ( elevation: number, coverage: number ) => THREE.MathUtils.smoothstep( elevation, - 4, 1 )
-	* ( 1 - THREE.MathUtils.smoothstep( elevation, 6, 20 ) ) * ( 1 - THREE.MathUtils.smoothstep( coverage, 0.35, 0.65 ) );
-const luma = ( c: THREE.Color ) => c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722;
-// The key's colour per unit of the sun's illuminance, into `transmittance`: its hue KEY_WHITE
-// with the share of the air's change in each ratio its depth gives (the depth capped), its
-// luminance the air's full extinction of `tint`.
-function keyHue( transmittance: THREE.Color, tint: THREE.Color, rising: boolean ): THREE.Color {
-
-	const { r, g, b } = transmittance;
-	if ( g <= 0 ) return transmittance.setRGB( 0, 0, 0 );
-	const depth = - Math.log( g );
-	const scale = 1 / Math.pow( 1 + Math.pow( depth / ( rising ? dawnHueDepth() : sunHueDepth() ), 6 ), 1 / 6 );
-	const share = ( onset: number ) => scale * ( 1 - Math.exp( - Math.pow( depth / onset, 2.5 ) ) );
-	const before = luma( transmittance.clone().multiply( tint ) );
-	transmittance.setRGB( KEY_WHITE[ 0 ] * Math.pow( r / g, share( keyReddens() ) ), 1, KEY_WHITE[ 1 ] * Math.pow( b / g, share( keyYellows() ) ) );
-	return transmittance.multiplyScalar( before / luma( transmittance ) );
-
-}
-
-const NEUTRAL_TINT = new THREE.Vector4( 1, 1, 1, 0 );
-const _white = new THREE.Color();
-const _zenith = new THREE.Vector3( 0, 1, 0 );
-// The clouds' own moonlight (DayCycle.ts `cloudMoonShare`, its windows DUSK_WINDOWS.cloudMoon) comes
-// in after sunset and leaves before sunrise: in the evening over the window of the night sky's
-// light (DUSK_WINDOWS.sky), by stops as they come in (DUSK_DEPTH
-// cloudMoon: faded evenly, the clouds' moonlight was the largest share of the step the sky's meter
-// made from -7 to -7.5, 0.7 of 1.6 stops). From -7 to -3 the moonlit clouds came in
-// while the sky behind them was still the sun's afterglow: at -5.3 degrees they gave about half the light
-// of the sky 8 degrees up, which greyed the glow and the far sea under it. The morning keeps -7 to
-// -3, inside its night sky's window (-13 to -3): there the moonlit clouds are part of the
-// sky the dawn's exposure meters (on a clear morning the thin layer's most), and without it the land
-// and the low band over the horizon at -6.5 degrees read lighter. Under cloud the evening keeps -7
-// to -3 too, as every night layer keeps the daylight's timing there (DayCycle.ts: the
-// clouded sky's night is whole by -6): no afterglow lights the sky behind the deck, and taken in
-// from -11 by stops, an overcast deck's moonlight was under a hundredth of this at -8 degrees.
-// The overall colour on each of the thin layer's two shares (Clouds.ts `keyDirect`, `keyAmbient`),
-// by the sun's elevation, the morning's apart (DayKeys.ts `rising`), the night's coming in with
-// the clouds' moonlight (`moonShare`). Tunable on debug pages (debug/Tune.ts):
-// `sky.streaks.<keyDirect|keyAmbient>.<r|g|b>@<afterglow|golden|low|predawn|sunrise|morning|high|night>`.
-type Rgb = { r: number; g: number; b: number };
-const streakKeys = ( prefix: string, keys: { afterglow: Rgb; golden: Rgb; low: Rgb; predawn: Rgb; sunrise: Rgb; morning: Rgb; high: Rgb; night: Rgb } ): DayKeys<Rgb> => {
-
-	const range = { min: 0.01, max: 4, scale: 'log' as const, onChange: markSkyRetune };
-	const high: DayKey<Rgb> = { at: 30, name: 'high', values: keys.high };
-	return tuneKeys( prefix, {
-		day: [ { at: - 3, name: 'afterglow', values: keys.afterglow }, { at: 2, name: 'golden', values: keys.golden }, { at: 8, name: 'low', values: keys.low }, high ],
-		rising: [ { at: - 3, name: 'predawn', values: keys.predawn }, { at: 2, name: 'sunrise', values: keys.sunrise }, { at: 8, name: 'morning', values: keys.morning }, high ],
-		night: keys.night,
-	}, { r: range, g: range, b: range } );
-
-};
-// Under a low sun (afterglow, golden, low, predawn, sunrise, morning) the two shares take the
-// light's colour apart: the direct share warm, red over green 2.2, the ambient share cool, blue
-// over red 1.5, their luminances 0.38 and 0.59 of a white key's; together they read red plus blue
-// less green, a rose. White keys left the layer the colour of the sun's light at its height alone,
-// a yellow-white 0.17 above the sky round it in Oklab L and paler than it. With these, in the
-// golden hour, it reads rose toward the sun and away from it alike (hue 35 - 43), 0.03 - 0.04 more
-// saturated than that sky and 0.08 - 0.09 above it in L. The direct share's luminance moves that
-// L little (0.38 to 0.44 of white: 0.085 to 0.10); a redder direct share turns the side toward the
-// sun past rose, a less red one leaves the side away from it as pale as the sky. From 8 degrees up
-// to 30 both shares turn back to white, the morning's as the evening's; only the high sun's keys
-// and the night's are white, so the layer is unchanged under a sun above 30 degrees and by night.
-const white = (): Rgb => ( { r: 1, g: 1, b: 1 } );
-const warm = (): Rgb => ( { r: 0.66, g: 0.3, b: 0.3 } );
-const cool = (): Rgb => ( { r: 0.6, g: 0.55, b: 0.9 } );
-const STREAK_DIRECT = streakKeys( 'sky.streaks.keyDirect', {
-	afterglow: warm(), golden: warm(), low: warm(), predawn: warm(), sunrise: warm(), morning: warm(), high: white(), night: white(),
-} );
-const STREAK_AMBIENT = streakKeys( 'sky.streaks.keyAmbient', {
-	afterglow: cool(), golden: cool(), low: cool(), predawn: cool(), sunrise: cool(), morning: cool(), high: white(), night: white(),
-} );
-const _streakKey = { r: 0, g: 0, b: 0 };
-// The sun's elevations (degrees) over which the light the clouds march toward sets from the moon's
-// key to the sun's height, then comes round to the sun's azimuth: where no moonlight reaches them
-// (DayCycle.ts DUSK_WINDOWS.cloudMoon) and before the sun's does (`sunlightAt` at 2 km, above about -2).
-const CLOUD_TURN = [ - 3, - 2.5, - 2 ] as const;
-// The sine of the sun's elevation over which the clouds' shadow comes in as it rises.
-const CLOUD_SHADOW_SET = [ - 0.02, 0.02 ] as const;
-// The height over a low deck's base (metres) the bake fogs its clouds out to, where a closed deck's
-// march gathers most of its light (the dome reads the march's own depth: `domeColour`).
-const DECK_LIGHT_HEIGHT = 150;
-// The sine of the key's elevation over which the rays of the clouds' shadow gather from the height
-// of its disc to its centre as it climbs, from 8 to 11 degrees: from there up a cloud's own edge
-// takes longer to pass than the disc does (near 0.8 degree at 10 degrees, 0.15 at 4.7). The rays
-// are as many as keep the disc from stepping: four, 0.135 degree apart, stepped the light by a
-// quarter of the sun; these are 0.045 degree apart.
-// Twelve cost about one percent of the frame's GPU time at their dearest, an overcast sky near
-// 11 degrees, and only from about 4.3 to 11 degrees: under that the rays are one ray.
-const SHADOW_DISC = [ 0.139, 0.191 ] as const;
-const SHADOW_DISC_RAYS = 12;
-// The key's elevations (degrees) over which the channel of the clouds' shadow the air reads narrows
-// from the whole disc to its two centre rays, a function of the elevation alone. At 6 degrees the
-// whole disc leaves the haze no shaft. Under the fade's foot the channel must be the whole disc:
-// the sky's dome meters the air's light, and as a gap in the deck left the sun near 4.7 degrees the
-// two rays stepped the exposure toward the sun by half a stop per 0.02 degree, the whole disc by a
-// seventh of one. Over the fade the band of haze steps less than one ray's does; in a front at 8 degrees
-// the air steps up to a third more than under the whole disc, under half a level in 255.
-const SHADOW_AIR_NARROW = [ 4.9, 5.6 ] as const;
-
-// The moon's key's colour as written (red over green 0.8, blue over green 1.4; the island's moonlight
-// takes the tuned hue over it, `moonHue`, near neutral), its level the
-// moon's light above the air through the air toward the moon (`moonAboveAir`), as the sun's key is
-// the sun's through the air toward the sun; how bright the night shows is the exposure's (post/Exposure.ts).
-// The island's moonlight takes a hue of its own (`moonHue`), and the clouds' direct moonlight the
-// same; the moonlit sky, the clouds' sky light and the haze take the moon's light above the air at
-// their own hue (MOON_SKY_HUE).
-const MOON_KEY = [ 0.0108, 0.0135, 0.0189 ] as const;
-// MOON_KEY's red and blue over green, as written (the quotients of its channels differ by an ulp),
-// so the default hue below is exactly one, and its Rec. 709 luminance, the level the hue keeps
-const MOON_KEY_RED = 0.8, MOON_KEY_BLUE = 1.4;
-const luminance709 = ( r: number, g: number, b: number ) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
-const MOON_KEY_LUMINANCE = luminance709( MOON_KEY[ 0 ], MOON_KEY[ 1 ], MOON_KEY[ 2 ] );
-// The moonlit sky's colour at unit luminance: MOON_KEY times the sky's night key (SKY_LIGHT's
-// `night`), normalised, the hue the night sky had while its level was that key's. The moonlit sky,
-// the haze's moonlight and the clouds' sky light keep it; their level is the sun's sky at the moon's
-// height (`track`). The sky's night key itself stays the sun's deep twilight key.
-const MOON_SKY_HUE = [ 1.3366, 0.8540, 1.4554 ] as const;
-// The moon's light above the air, a share of the sun's illuminance (luminance): the full moon's over
-// the sun's by the two bodies' apparent magnitudes at their mean distances (the full moon's -12.7,
-// the sun's -26.7), 10^( -0.4 ( m_moon - m_sun ) ), about 2.5e-6 or 18.6 stops under the sun, times
-// the debug gain (`moonKeyGain`, 1). The sky, the haze and the clouds take it and lose it along their
-// own paths through the air, as they do the sun's; the key takes it through the air toward the moon
-// (Atmosphere `transmittanceToMoon`), as the sun's key does the sun's.
-const MOON_MAGNITUDE = - 12.7, SUN_MAGNITUDE = - 26.7;
-const MOON_OVER_SUN = Math.pow( 10, - 0.4 * ( MOON_MAGNITUDE - SUN_MAGNITUDE ) );
-const moonAboveAir = () => MOON_OVER_SUN * moonKeyGain();
-// The night's ambient's colour at unit luminance (`displayNightAmbient`), as it was.
-const NIGHT_AMBIENT_HUE = [ 0.6248, 1.0154, 1.9526 ] as const;
-// The night's ambient in the clouds and the distant sea (`displayNightAmbient`), a radiance: a
-// uniform sky giving level ground a fiftieth of the moon's key on it (its light through the air at
-// normal incidence). Starlight and the airglow give level ground a few thousandths of a lux, the
-// full moon some hundredths at its height.
-const NIGHT_AMBIENT_SHARE = 1 / 50;
-// a gain on the moon's light above the air (`moonAboveAir`), so on both of its paths: the key
-// (keyColor: the land, the sea's glitter, the haze's scatter of the key) and the sky, the clouds
-// and the haze. A debug knob, not the look's: 1 is the physical full moon, and so it stays.
-const moonKeyGain = tune( 'lighting.moon.gain', 1, { min: 0.05, max: 4, scale: 'log' } );
-// The island's moonlight's red and blue over green. They move the moonlit ground's colour without
-// its level (the hue keeps MOON_KEY's luminance) and without the moonlit sky's, clouds' and haze's,
-// which keep theirs. At MOON_KEY's own (MOON_KEY_RED, MOON_KEY_BLUE) the hue is exactly white.
-// The moonlight itself is near neutral, a touch cool: the night's blue on the display is the eye's
-// (post/Purkinje.ts), given once, so a blue key under it blued the land twice, in the sky's own hue.
-// Under it moonlit rock reads a cool grey, the island's brightest thing, and the meadow nearly
-// black. The clouds take the same moonlight (`trackClouds`). The two were set once on the clear
-// night's views: moonlit rock's chroma rose by about .004 in Oklab between (.97, 1.05) and these,
-// its hue a few degrees toward blue, the meadow's by under a thousandth (its chroma is its albedo's).
-const moonKeyRed = tune( 'lighting.moon.red', 0.93, { min: 0.3, max: 1.2 } );
-const moonKeyBlue = tune( 'lighting.moon.blue', 1.16, { min: 0.8, max: 4 } );
-const _moonKey = new THREE.Color();
-const _moonHue = new THREE.Color();
-const _cloudMoon = new THREE.Color();
-// The key under cloud, one rule for every sky. Where cloud stands along the key the land does not
-// lose the key whole: a cloud passes on a part of the sunlight it takes, most of it scattered
-// forward, so the ground under it keeps a soft light from the sun's side that still casts the
-// island's shadows. The land's key keeps mix( floor, 1, T ), T the clouds' transmittance along the
-// key (`keyDirectVisibility`), and the floor is the diffuse transmission of a layer of the sky's
-// shell and density (Clouds.ts `layerTransmission`: about 0.21 under fair's shell, 0.28 under
-// cloudy's, 0.25 under overcast's) times this share, at most 1: how much of what the layer passes
-// down the land keeps as a light along the key, the one knob for how deep the clouds shade the
-// land, as engines give the cloud shadow on surfaces a strength of its own. A thicker or denser
-// layer leaves less, and where the clouds thin to a gap the key goes back to the sky's own, so a
-// gap's lit ground is never brighter than a clear day's under the same sun. The sea keeps the same
-// floor (`seaKeyVisibility`; its glint only the direct beam, `cloudDirectVisibility`), and under a
-// closed sky the air does (`deckKeyFloor`, by overcast's share; lighting/KeyCloud.ts). The floor
-// rides on whichever light keys the scene, the moon's by night as the sun's by day; under a closed
-// sky the sun's part of it leaves over the last 2.5 degrees before the horizon (Weather.ts
-// `overcastFloorSun`), so the land there keeps the layer's diffuse light through sunset, with no
-// flash of the setting beam. Raise it for a stronger light from the sun's side and darker cast
-// shadows under cloud; lower it for deeper cloud shadows and a flatter land under a closed sky.
-// Tunable: `lighting.keyThroughCloud`.
-const KEY_THROUGH_CLOUD = tune( 'lighting.keyThroughCloud', 3, { min: 0, max: 4, onChange: markSkyRetune } );
-
-/** The factor per channel that turns MOON_KEY into the tuned hue at MOON_KEY's luminance. */
-function moonHue( target: THREE.Color ): THREE.Color {
-
-	const r = moonKeyRed() / MOON_KEY_RED, b = moonKeyBlue() / MOON_KEY_BLUE;
-	const level = MOON_KEY_LUMINANCE / luminance709( MOON_KEY[ 0 ] * r, MOON_KEY[ 1 ], MOON_KEY[ 2 ] * b );
-	return target.setRGB( r * level, level, b * level );
-
-}
 
 export class Sky {
 
@@ -1076,14 +207,14 @@ export class Sky {
 	lightning = new Lightning();
 	sunIlluminance: number;
 	// the moon's key light (MOON_KEY) at its share
-	private readonly moonKeyColor = new THREE.Color();
+	readonly moonKeyColor = new THREE.Color();
 	elevation: number;
 	azimuth: number;
 	// whether the sun climbs, from where `sunDir` stands on its path (DayCycle.ts `sunRising`): what
 	// tells the morning's keys from the evening's at one height
 	rising = false;
 	// the weather's day sky as `track` last took it (Weather.ts `daySkyAt`), for the bake's sea
-	private daySky = 1;
+	daySky = 1;
 	// the sun's light the sky lends without the weather's day sky (`skyGain` at a day sky of 1): the
 	// beam the air under the sky scatters (weather/VolumetricHaze.ts `mieColour`), which the day sky
 	// leaves as it leaves the land's key, since it lowers the sky's own light the sun gives, not the
@@ -1110,8 +241,8 @@ export class Sky {
 	moonAbove = 0;
 	// the moon's key's luminance at normal incidence before its share: `moonAbove` through the air
 	// toward the moon
-	private moonKeyLevel = 0;
-	private daySkyMoon = 1;
+	moonKeyLevel = 0;
+	daySkyMoon = 1;
 	// A shared artistic solar tint affects both scattering and direct light.
 	sunTint = new THREE.Color( 1.0, 0.97, 0.9 );
 	sunDir = new THREE.Vector3();
@@ -1127,13 +258,13 @@ export class Sky {
 	keyColorAboveClouds = new THREE.Color();
 	// The moon's share of the key before cloud and weather attenuation (the island's moonlight, at
 	// its level and hue), which a low deck's column passes down to its base (trackClouds).
-	private readonly moonKeyAbove = new THREE.Color();
+	readonly moonKeyAbove = new THREE.Color();
 	// The viewer the cloud map is computed for; clouds are far, so only small moves matter.
 	viewer = new THREE.Vector3( 0, 15, 0 );
-	private viewCamera: THREE.PerspectiveCamera | null = null;
-	private viewWidth = 1;
-	private viewHeight = 1;
-	private cloudTime = 0;
+	viewCamera: THREE.PerspectiveCamera | null = null;
+	viewWidth = 1;
+	viewHeight = 1;
+	cloudTime = 0;
 	solarIlluminance = new THREE.Color();
 	readonly grade = { exposure: DAY_EXPOSURE, daylight: 1, night: 0, exposureNight: 0 };
 	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
@@ -1187,64 +318,64 @@ export class Sky {
 	layerStops = 18;
 	panoramaStops = 18;
 
-	private endpoints = [ makeEndpoint(), makeEndpoint() ];
+	endpoints = [ makeEndpoint(), makeEndpoint() ];
 	// The environment's PMREM atlases: the one shown (environmentFront) and the next one.
-	private environments: [ THREE.RenderTarget | null, THREE.RenderTarget | null ] = [ null, null ];
-	private environmentFront = 0;
+	environments: [ THREE.RenderTarget | null, THREE.RenderTarget | null ] = [ null, null ];
+	environmentFront = 0;
 	// The atlases the displayed environment cross-fades from and to (by `blend`), as published.
-	private environmentPair: [ number, number ] = [ 0, 0 ];
+	environmentPair: [ number, number ] = [ 0, 0 ];
 	// The environment refreshes on every environmentEvery-th periodic bake (setEnvironmentCadence).
-	private environmentEvery = 1;
-	private bakesSinceEnvironment = 0;
+	environmentEvery = 1;
+	bakesSinceEnvironment = 0;
 	// A periodic bake spread over frames: its remaining steps, and the promise to settle.
-	private slices: Slice[] = [];
-	private sliceDone: { resolve: () => void; reject: ( error: unknown ) => void } | null = null;
-	private sliceTimer: ReturnType<typeof setTimeout> | null = null;
-	private sliceMs = 0;
+	slices: Slice[] = [];
+	sliceDone: { resolve: () => void; reject: ( error: unknown ) => void } | null = null;
+	sliceTimer: ReturnType<typeof setTimeout> | null = null;
+	sliceMs = 0;
 	// The scene clock did not advance over the last cloud update: a paused scene does its bakes whole.
-	private clockStill = false;
+	clockStill = false;
 	private readonly displaySize = new THREE.Vector2();
-	private front = 0;
-	private destination = 0;
-	private initialized = false;
-	private weatherState: WeatherState | null = null;
-	private pendingUpdate: Promise<void> | null = null;
+	front = 0;
+	destination = 0;
+	initialized = false;
+	weatherState: WeatherState | null = null;
+	pendingUpdate: Promise<void> | null = null;
 	// The warm-up's compiles (`warm`), which every bake waits for; a failed warm-up resolves here
 	// too (its caller reports it), so bakes still run.
-	private warmed: Promise<void> = Promise.resolve();
-	private transitionDuration = 0;
-	private transitionElapsed = 0;
-	private blend = uniform( 0 );
-	private panoramaA: THREE.TextureNode;
-	private panoramaB: THREE.TextureNode;
-	private environmentA: THREE.TextureNode | null = null;
-	private environmentB: THREE.TextureNode | null = null;
-	private environment: V3 | null = null;
-	private environmentBlendQuad: THREE.QuadMesh | null = null;
-	private irradianceQuad: THREE.QuadMesh;
+	warmed: Promise<void> = Promise.resolve();
+	transitionDuration = 0;
+	transitionElapsed = 0;
+	blend = uniform( 0 );
+	panoramaA: THREE.TextureNode;
+	panoramaB: THREE.TextureNode;
+	environmentA: THREE.TextureNode | null = null;
+	environmentB: THREE.TextureNode | null = null;
+	environment: V3 | null = null;
+	environmentBlendQuad: THREE.QuadMesh | null = null;
+	irradianceQuad: THREE.QuadMesh;
 	private irradianceBlendQuad: THREE.QuadMesh;
 	private irradianceDisplay = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter } );
-	private irradianceA: THREE.TextureNode;
-	private irradianceB: THREE.TextureNode;
-	private clearIrradianceQuad: THREE.QuadMesh;
+	irradianceA: THREE.TextureNode;
+	irradianceB: THREE.TextureNode;
+	clearIrradianceQuad: THREE.QuadMesh;
 	private clearIrradianceBlendQuad: THREE.QuadMesh;
 	private clearIrradianceDisplay = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter } );
-	private clearIrradianceA: THREE.TextureNode;
-	private clearIrradianceB: THREE.TextureNode;
-	private deckIrradianceQuad: THREE.QuadMesh;
+	clearIrradianceA: THREE.TextureNode;
+	clearIrradianceB: THREE.TextureNode;
+	deckIrradianceQuad: THREE.QuadMesh;
 	private deckIrradianceBlendQuad: THREE.QuadMesh;
 	private deckIrradianceDisplay = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter } );
-	private deckIrradianceA: THREE.TextureNode;
-	private deckIrradianceB: THREE.TextureNode;
-	private bakeDeckIrradiance: THREE.TextureNode;
-	private bakeVersion = 0;
+	deckIrradianceA: THREE.TextureNode;
+	deckIrradianceB: THREE.TextureNode;
+	bakeDeckIrradiance: THREE.TextureNode;
+	bakeVersion = 0;
 	// periodic bakes whose irradiance readback is still in flight (`readIrradiance`; `readbacks`)
 	private irradiancePending = 0;
-	private displaySunDir = uniform( new THREE.Vector3( 0, 1, 0 ) );
-	private displaySolarIlluminance = uniform( new THREE.Color( 0, 0, 0 ) );
+	displaySunDir = uniform( new THREE.Vector3( 0, 1, 0 ) );
+	displaySolarIlluminance = uniform( new THREE.Color( 0, 0, 0 ) );
 	// Live clear-sky terms for the dome; the bake keeps its own copies below.
-	private displayNightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
-	private displayAmbientGain = uniform( 1 );
+	displayNightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
+	displayAmbientGain = uniform( 1 );
 	// the clear day's sky gain over the clouded sky's, which the open sky behind the clouds takes
 	// (CLEAR_SKY, `gapSky`), on the sun's share of the sky at the sun's height and on the moon's at the
 	// moon's; live, as the atmosphere's own uniforms are, and read by the bakes and the exposure's
@@ -1258,63 +389,63 @@ export class Sky {
 	// takes it as it meets the sky (shared.ts `seenNight`, Water.ts `SEEN_SKY`), the far air on
 	// the moon's sky and deck light it scatters (VolumetricHaze.ts `SEEN_AIR`), and the exposure's
 	// meter divides it out of the sky's pixels (post/Metering.ts).
-	private domeGapGain = { sun: this.gapGain.sun, moon: uniform( 1 ) };
+	domeGapGain = { sun: this.gapGain.sun, moon: uniform( 1 ) };
 	// the key's floor under cloud and the weather's cast shadow on the island (KEY_THROUGH_CLOUD,
 	// Weather.ts `castShadow`)
 	// (the sea's floor too: `seaKeyFloor`)
-	private keyCloudFloor = uniform( 0 );
+	keyCloudFloor = uniform( 0 );
 	readonly castShadow = uniform( 1 );
-	private cloudLayer: THREE.TextureNode;
-	private pmrem: THREE.PMREMGenerator;
-	private quad: THREE.QuadMesh;
+	cloudLayer: THREE.TextureNode;
+	pmrem: THREE.PMREMGenerator;
+	quad: THREE.QuadMesh;
 	// the bake of the environment's source, which lights the land: its haze without the fog layer
 	// (`fogEnvironment`)
-	private landQuad: THREE.QuadMesh;
-	private reflectionSource: THREE.RenderTarget;
-	private upperQuad: THREE.QuadMesh;
-	// the distant sea's body as the bake takes it (SEA_KNEE, `seaNode`): the colour times the sun's
+	landQuad: THREE.QuadMesh;
+	reflectionSource: THREE.RenderTarget;
+	upperQuad: THREE.QuadMesh;
+	// the distant sea's body as the bake takes it (SEA_KNEE, SkyDome.ts `seaNode`): the colour times the sun's
 	// illuminance, the night's share, the sun's direct light on the level water (E / pi, luminance) and
 	// the knee; and the latest bake's radiance, read back (`seaRadiance`), with that bake's version
-	private seaBody = uniform( new THREE.Color() );
-	private seaNight = uniform( new THREE.Color() );
-	private seaSun = uniform( 0 );
-	private seaKnee = uniform( 1 );
+	seaBody = uniform( new THREE.Color() );
+	seaNight = uniform( new THREE.Color() );
+	seaSun = uniform( 0 );
+	seaKnee = uniform( 1 );
 	private seaLight = new THREE.Color();
 	private seaVersion = 0;
-	private ambientGain = uniform( 1 );
-	private irradiancePass = uniform( 0 );
+	ambientGain = uniform( 1 );
+	irradiancePass = uniform( 0 );
 	// the bake's store toward its target (its power of two, under the debug press PreExposure.ts
 	// `storePress`; 1 for the irradiance probe's panorama)
-	private bakeStore = uniform( 1 );
+	bakeStore = uniform( 1 );
 	// the bake's cloud layer's store and its inverse, set together for the bake that writes and
 	// reads it (see the stores above)
-	private layerStore = uniform( 1 );
-	private layerRead = uniform( 1 );
+	layerStore = uniform( 1 );
+	layerRead = uniform( 1 );
 	// the inverse stores of the seen panoramas' two sides (`samplePanorama`), set with their
 	// textures (publishBake)
-	private panoramaReadA = uniform( 1 );
-	private panoramaReadB = uniform( 1 );
+	panoramaReadA = uniform( 1 );
+	panoramaReadB = uniform( 1 );
 	// The powers of two of the environment's two atlases, as filtered from the source, and the
 	// displayed environment's gain on its first atlas, which takes it to the second's store
 	// (publishBake: the displayed environment is stored at the second's power, `environmentRead`).
-	private environmentStops: [ number, number ] = [ 0, 0 ];
-	private environmentGainA = uniform( 1 );
-	private environmentReadValue = 1;
+	environmentStops: [ number, number ] = [ 0, 0 ];
+	environmentGainA = uniform( 1 );
+	environmentReadValue = 1;
 	// The light the sky lends the island for this frame's sun (ISLAND_SKY: the tint and its amount,
 	// the gain), and the bake's copies: the island's for the environment's source, neutral for the
 	// other panoramas.
-	private islandTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
-	private islandGain = uniform( 1 );
-	private bakeIslandTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
-	private bakeIslandGain = uniform( 1 );
+	islandTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
+	islandGain = uniform( 1 );
+	bakeIslandTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
+	bakeIslandGain = uniform( 1 );
 	// 1 while the bake draws the environment's source or the probe's panorama, which take the haze
 	// all round (`fogEnvironment`; the source without the fog layer); the seen panorama takes it
 	// above the horizon only, as the dome fogs what it shows of it under the horizon itself
-	private bakeHaze = uniform( 0 );
+	bakeHaze = uniform( 0 );
 	// 1 while the bake draws the seen panorama, which draws the closed deck's glow whole as the dome
 	// does (`deckGlow`, about the sun and about the moon), so the sea reflects it; 0 while it draws
 	// the environment's source and the probe's panorama, which take the glow about the sun alone
-	// (`glowToward`), so the land is lit from the sun's side of the deck as the deck is seen brighter
+	// (SkyDome.ts `glowToward`), so the land is lit from the sun's side of the deck as the deck is seen brighter
 	// there, and the moon's glow lights nothing
 	readonly bakeGlow = uniform( 0 );
 	// 1 while the bake draws the seen panorama, which takes the air's floor of the key under the
@@ -1324,12 +455,12 @@ export class Sky {
 	// how far the deck takes its day's form (Weather.ts `overcastDeckLight` at the sun's height:
 	// exactly 1 from the horizon up, exactly 0 from -6 degrees down, smooth between), so the drawn
 	// deck's level, its gradation and its glow's form, and the glow the lighting's sources take
-	// (`glowToward`), turn into the night's over the civil twilight rather than in the frame the
+	// (SkyDome.ts `glowToward`), turn into the night's over the civil twilight rather than in the frame the
 	// disk's light leaves
-	private deckDay = uniform( 0 );
+	deckDay = uniform( 0 );
 	// the night's gain on the clouds as the dome draws them (Weather.ts `seenNight`), 1 by day
-	private seenDeck = uniform( 1 );
-	private keyFloorUnderDeck = 0;
+	seenDeck = uniform( 1 );
+	keyFloorUnderDeck = 0;
 
 	constructor( renderer: THREE.WebGPURenderer, { sunIlluminance = SUN_ILLUMINANCE, elevation = 32, azimuth = - 8 } = {} ) {
 
@@ -1439,7 +570,7 @@ export class Sky {
 		} )();
 		this.clearIrradianceQuad = new THREE.QuadMesh( clearIrradianceMat );
 		// The sky's irradiance with its clouds and without the haze over it, over the same directions:
-		// the cloud layer composed over the clear sky as the bake composes it (`bakeColour`), at the
+		// the cloud layer composed over the clear sky as the bake composes it (SkyDome.ts `bakeColour`), at the
 		// weather's ambient gain, once per bake, before the panoramas (whose haze reads it).
 		const deckIrradianceMat = new THREE.NodeMaterial();
 		deckIrradianceMat.depthTest = false;
@@ -1486,14 +617,14 @@ export class Sky {
 		this.upperQuad = new THREE.QuadMesh( upperMat );
 
 		const bake = new THREE.NodeMaterial();
-		bake.fragmentNode = this.bakeColour();
+		bake.fragmentNode = bakeColour( this );
 		this.quad = new THREE.QuadMesh( bake );
 		const landBake = new THREE.NodeMaterial();
-		landBake.fragmentNode = this.bakeColour();
+		landBake.fragmentNode = bakeColour( this );
 		this.landQuad = new THREE.QuadMesh( landBake );
 
 		const domeMat = new THREE.MeshBasicNodeMaterial( { side: THREE.BackSide, depthWrite: false } );
-		domeMat.colorNode = this.domeColour();
+		domeMat.colorNode = domeColour( this );
 		// The exposure's metering illuminance on the sky's pixels (Motion.ts `meterOutput`): the sky's
 		// geometric-mean luminance times METER_SKY, one value for the whole dome, so the meter reads a
 		// sky-filled view by the sky's overall brightness and not by the sun's surroundings.
@@ -1536,69 +667,6 @@ export class Sky {
 
 	}
 
-	/** The distant sea's body as the bake lights it (SEA_KNEE): the light that reaches the sea, the
-	 * deck irradiance of this bake (drawn before its panoramas) and the sun's on the level water, over
-	 * the knee and at most 1, times the colour; `landSea` is its CPU twin. At the knee and above it is
-	 * `seaBody` itself, bit for bit. */
-	private seaNode(): V3 {
-
-		const light = dot( this.bakeDeckIrradianceNode, vec3( 0.2126, 0.7152, 0.0722 ) ).add( this.seaSun );
-		return this.seaBody.mul( min( light.div( this.seaKnee ), 1 ) ).add( this.seaNight );
-
-	}
-
-	/** The environment's source toward each texel of the panorama: the sky over the island, its
-	 * clouds and their reflection in the distant sea, seen through `haze` when given (see
-	 * `fogEnvironment`). */
-	private bakeColour( haze?: SkyHaze ): V4 {
-
-		return Fn( () => {
-
-			const q = uv();
-			const d = equirectToDir( q ).toVar();
-			const cloud = this.layerAt( vec2( q.x, abs( q.y.sub( 0.5 ) ).mul( 2 ) ) ).toVar();
-			const up = vec3( d.x, abs( d.y ), d.z );
-			// (the environment's source takes the light lent to the island: ISLAND_SKY; the haze as the
-			// dome lays it, from the sea's level: see `fogEnvironment`)
-			const clear = this.gapSky( up ).toVar();
-			// the closed deck's glow over the clouds, whole in the seen panorama, about the sun alone in
-			// the lighting's sources (`bakeGlow`); its deck level without the weather's gain, which the
-			// source takes below.
-			const bakeDeck = this.bakeDeckIrradianceNode.div( max( this.ambientGain, 1e-6 ) ).toVar();
-			const pattern = deckPattern( up, cloud.rgb, bakeDeck, this.clouds.deckFlat ).toVar();
-			const glow = this.glowToward( up, bakeDeck, cloud.a, pattern ).mul( this.bakeGlow );
-			const sunGlow = this.glowToward( up, bakeDeck, cloud.a, pattern, true ).mul( float( 1 ).sub( this.bakeGlow ) );
-			const lit = cloud.rgb.add( sunGlow.add( glow ) ).toVar();
-			const air = clear.mul( cloud.a ).add( lit ).toVar();
-			let fogged: V3 = air;
-			if ( haze ) {
-
-				// the clear sky through the haze along the whole way, the clouds through it out to the
-				// shell's middle height (from the sea: the distance to that sphere, as the dome takes it),
-				// under the low deck's share to a little above its base instead, where a deck's light comes
-				// from (the dome takes the march's own depth there, which the panorama does not keep)
-				const sky = haze( up );
-				const middle = mix( this.clouds.shellBottom.add( this.clouds.shellThickness.mul( 0.5 ) ), this.clouds.shellBottom.add( DECK_LIGHT_HEIGHT ), this.clouds.lowShare ).toVar();
-				const inside = middle.mul( middle.add( EARTH_RADIUS * 2 ) ), b = up.y.mul( EARTH_RADIUS );
-				const cloudHaze = haze( up, inside.div( sqrt( b.mul( b ).add( inside ) ).add( b ) ) );
-				const seen = sky.light.add( sky.transmittance.mul( clear ) ).mul( cloud.a )
-					.add( cloudHaze.light.mul( float( 1 ).sub( cloud.a ) ) ).add( cloudHaze.transmittance.mul( lit ) );
-				// (the seen panorama only above the horizon, where the water reads it: what the sea
-				// reflects is the sky the dome draws, and under cloud the haze's light is nearly all of
-				// that; below the horizon the dome fogs it itself)
-				fogged = mix( air, seen, max( this.bakeHaze, step( 0, d.y ) ) );
-
-			}
-			const sky = lendIsland( fogged.mul( this.ambientGain ), this.bakeIslandTint, this.bakeIslandGain );
-			// (no stars: starlight is a few hundredths of the moonlit sky's light on level ground, and the
-			// sky the eye sees draws them itself)
-			const radiance = seaPanorama( d, sky, this.seaNode() );
-			return vec4( min( radiance.mul( this.bakeStore ), vec3( STORE_CEILING ) ), mix( cloud.a, d.y, this.irradiancePass ) );
-
-		} )();
-
-	}
-
 	/** Lays the haze over the panoramas toward every direction from one height (VolumetricHaze.ts
 	 * `openSky`): `haze` over the irradiance probe's panorama and the seen panorama above the
 	 * horizon, as the dome lays it on itself (`fogDome`), so the sky's metering, the water's sky
@@ -1621,167 +689,28 @@ export class Sky {
 		for ( const [ quad, h ] of [ [ this.quad, haze ], [ this.landQuad, landHaze ] ] as const ) {
 
 			const material = quad.material as THREE.NodeMaterial;
-			material.fragmentNode = this.bakeColour( h );
+			material.fragmentNode = bakeColour( this, h );
 			material.needsUpdate = true;
 
 		}
 
 	}
 
-	/** The dome's colour toward each pixel, seen through `haze` when given: a function of a view
-	 * direction and a distance along it (the sky's own by default) that returns the light the haze
-	 * adds and its transmittance (VolumetricHaze.ts `skyHaze`). The clouds are fogged at the
-	 * distance to the shell's middle height, under the low deck's share at the march's depth, and
-	 * under the thin layer's share of their opacity at the distance to the layer, the sky behind
-	 * them along the whole way. */
-	private domeColour( haze?: SkyHaze ): V4 {
-
-		return Fn( () => {
-
-			const d = normalize( positionWorld.sub( cameraPosition ) ).toVar();
-			// The disc: cut where the cosine to the sun crosses the radius's, over one pixel's change
-			// of that cosine (a clean edge at any size), darkened toward the limb by the quadratic law
-			// (Radiometry.ts); the angle from the chord, which keeps its precision near the centre.
-			const nu = dot( d, this.displaySunDir ).toVar();
-			const mask = clamp( nu.sub( Math.cos( SUN_DISC_RADIUS ) ).div( max( fwidth( nu ), 1e-7 ) ), 0, 1 );
-			const r = asin( clamp( length( d.sub( this.displaySunDir ) ).mul( 0.5 ), 0, 1 ) ).mul( 2 / SUN_DISC_RADIUS ).toVar();
-			const m = float( 1 ).sub( sqrt( max( float( 1 ).sub( r.mul( r ) ), 0 ) ) ).toVar();
-			const limb = float( 1 ).sub( m.mul( SUN_LIMB_U1 ) ).sub( m.mul( m ).mul( SUN_LIMB_U2 ) );
-			// The integral of the visible disk is the key light's irradiance, times the displayed share
-			// (lighting/SunDisc.ts SUN_DISC_RADIANCE). A shared scene unit
-			// scale keeps the normalised disk finite in fp16 without dimming it independently. Its
-			// colour is the air's analytic transmittance toward it (Atmosphere.ts discTransmittance).
-			// The clouds hide it by their transmittance once, per pixel, in the composite below: an
-			// edge crossing the disc dims it as smoothly as the march's opacity changes.
-			const disk = this.atmosphere.discTransmittance( d ).mul( this.displaySolarIlluminance )
-				.mul( mask ).mul( limb ).div( SUN_DISC_SOLID_ANGLE / SUN_DISC_RADIANCE ).mul( smoothstep( 0, 0.001, d.y ) );
-			// Above the horizon the clear sky and the clouds are both live. Below, the baked distant-sea reflection continues the waves.
-			const lower = this.samplePanorama( d, float( 0 ) ).toVar();
-			const cloud = this.clouds.sampleView( d ).toVar();
-			const above = d.y.greaterThanEqual( 0 ).toVar();
-			const stars = this.night.stars( d ).mul( this.night.moonOcclusion( d ) );
-			// What the clouds hide: the clear sky, the discs and the stars (below the horizon, the
-			// reflection with its own clouds), seen through the haze along the whole way; the discs
-			// take the clouds' transmittance once, here, and nowhere else.
-			const behind = select( above, this.gapSky( vec3( d.x, max( d.y, 0 ), d.z ), this.domeGapGain ).mul( this.displayAmbientGain ), lower.rgb )
-				.add( disk.add( this.night.moon( d ) ).add( stars ).mul( select( above, float( 1 ), lower.a ) ) );
-			const through = select( above, cloud.a, float( 1 ) ).toVar();
-			// the closed deck's glow over the clouds above the horizon (`deckGlow`), before the haze,
-			// which hides it with the clouds by their distance
-			// (the deck under the night's seen gain, `seenDeck`, after the glow's pattern)
-			const pattern = deckPattern( d, cloud.rgb.mul( this.displayAmbientGain ), this.deckIrradianceNode, this.clouds.deckFlat ).toVar();
-			const glow = this.glowToward( d, this.deckIrradianceNode, cloud.a, pattern ).toVar();
-			const clouds = select( above, cloud.rgb.mul( this.seenDeck ).mul( this.displayAmbientGain ), vec3( 0 ) ).add( glow.mul( step( 0, d.y ) ) ).toVar();
-			if ( ! haze ) return vec4( behind.mul( through ).add( clouds ), 1 );
-			const sky = haze( d );
-			// The clouds through the haze out to the shell's middle height: its light over their
-			// opacity, their own (premultiplied) through its transmittance.
-			// (from the march's own camera height, held under the base (Clouds `camY`): the depths
-			// `sampleViewFog` returns are measured from there, and above the middle the root's
-			// argument would turn negative)
-			const middle = this.clouds.shellBottom.add( this.clouds.shellThickness.mul( 0.5 ) ).toVar();
-			const camY = this.clouds.camY;
-			const r0 = camY.add( EARTH_RADIUS ).toVar(), b = r0.mul( max( d.y, 0 ) ).toVar();
-			// (the distance to that sphere, written without a difference of near-equal terms)
-			const inside = middle.sub( camY ).mul( r0.add( middle.add( EARTH_RADIUS ) ) ).toVar();
-			const mid = inside.div( sqrt( b.mul( b ).add( inside ) ).add( b ) ).toVar();
-			// Under the low deck's share, out to the march's own opacity-weighted depth instead
-			// (Clouds `sampleViewFog`, its `depth`): a closed deck's light comes from its lowest
-			// hundred metres, and at a low deck the middle lies some 2.5 times farther, which fogged
-			// the deck at 5 - 12 degrees about twice as densely as its distance does.
-			const fog = this.clouds.sampleViewFog( d, mid );
-			const reach = mix( mid, fog.depth, this.clouds.lowShare ).toVar();
-			// The thin layer lies above the cumulus' middle (the clear and fair skies' 6.6 km
-			// against its 8.5), so farther along a ray: where its fibres make the opacity, out to
-			// the layer instead, so the haze between fades them toward the horizon by their own
-			// distance. One distance per pixel, mixed by the layer's share of the opacity there:
-			// exact where no cumulus stands in front, and where one does it hides the layer. With
-			// no layer (cloudy and overcast skies) the share is none and the reach the cumulus'
-			// alone.
-			const thinShare = clamp( fog.thin.div( max( float( 1 ).sub( through ), 1e-4 ) ), 0, 1 );
-			const streakHeight = this.clouds.streakHeight;
-			const thinInside = max( streakHeight.sub( camY ).mul( r0.add( streakHeight.add( EARTH_RADIUS ) ) ), 0 ).toVar();
-			const thin = thinInside.div( sqrt( b.mul( b ).add( thinInside ) ).add( b ) );
-			const cloudHaze = haze( d, mix( reach, thin, thinShare ) );
-			const fogged = cloudHaze.light.mul( float( 1 ).sub( through ) ).add( cloudHaze.transmittance.mul( clouds ) );
-			const result = sky.light.add( sky.transmittance.mul( behind ) ).mul( through ).add( fogged ).toVar();
-			if ( debugFlags.streakMask !== true ) return vec4( result, 1 );
-			// (`flags=streakMask`: the thin layer's pixels where its opacity as seen passes 0.1 in a
-			// red of the same luminance, those where it lies between 0.02 and 0.1 in such a green,
-			// for `img.py stats --mask`)
-			const luminance = dot( result, vec3( 0.2126, 0.7152, 0.0722 ) ).toVar();
-			const edge = select( fog.thin.greaterThan( 0.02 ).and( above ), vec3( 0, luminance.div( 0.7152 ), 0 ), result );
-			return vec4( select( fog.thin.greaterThan( 0.1 ).and( above ), vec3( luminance.div( 0.2126 ), 0, 0 ), edge ), 1 );
-
-		} )();
-
-	}
-
-	/** The closed deck's glow toward `d` (`deckGlow`) over a deck of mean radiance `deck`, through
-	 * clouds of transmittance `transmittance` there, following the base's local radiance over its
-	 * mean `pattern` (`deckPattern`), with this frame's shares (Clouds `columnTop`); with `sunOnly`
-	 * the lighting's sources' glow: about the sun alone, one smooth lobe of its own (Clouds
-	 * `bakeGlowLobe`, `bakeGlowGain`), by the day's weight (`deckDay`, so exactly none by night). */
-	private glowToward( d: V3, deck: V3, transmittance: F, pattern: F, sunOnly = false ): V3 {
-
-		const top = this.clouds.columnTop();
-		const c = this.clouds;
-		if ( sunOnly ) {
-
-			// the lighting's sources: one lobe of their own (`bakeGlowLobe`, `bakeGlowGain`), smooth
-			// (the pattern's power 0)
-			return deckGlow( d, deck, float( 1 ).sub( transmittance ), this.atmosphere.sunDir, this.atmosphere.moonDir, c.lobeTint.rgb,
-				vec4( top.keyShare, 1, c.broadShare, 0 ), vec4( c.bakeGlowLobe, c.bakeGlowGain, 0, 0 ), pattern ).mul( this.deckDay );
-
-		}
-
-		// the day's form by `deckDay`, the moon's own by night (each exact at a weight of 1 or 0)
-		const night = vec4( ...MOON_DECK_GLOW );
-		const day = vec4( c.deckGlowLobe, c.deckGlow, c.deckGlowBroadLobe, c.deckGlowBroad );
-		const form = night.mul( float( 1 ).sub( this.deckDay ) ).add( day.mul( this.deckDay ) );
-		// the pattern's power: away from the sun the closed deck's by day (`deckGlowFar`, from
-		// `deckGlowFrom` to `deckGlowTo` degrees), by overcast's share and the day's weight; the
-		// moon's and the broken skies' DECK_GLOW_TEXTURE (exact at a weight of 0)
-		const away = smoothstep( c.deckGlowFrom, c.deckGlowTo, acos( clamp( dot( d, this.atmosphere.sunDir ), - 1, 1 ) ).mul( 180 / Math.PI ) );
-		const k = mix( c.deckGlowTexture, mix( c.deckGlowTexture, c.deckGlowFar, away ), c.overcastShare.mul( this.deckDay ) );
-		return deckGlow( d, deck, float( 1 ).sub( transmittance ), this.atmosphere.sunDir, this.atmosphere.moonDir, c.lobeTint.rgb,
-			vec4( top.keyShare, top.sunShare, c.broadShare, k ), form, pattern );
-
-	}
-
-	/** The mean cloud transmittance over the sun's disc (r) and over the moon's (g): DISC_SAMPLES
-	 * directions spread over each disc (a Vogel spiral, uniform by area) read from the clouds'
-	 * panorama, for the sky's constants texel (Pipeline.ts `skyConstants`), which the sun's flare and
-	 * the light shafts read; the dome's discs do not. One ray would switch the flare on and off as a
-	 * cloud's edge crosses the disc. */
+	/** The mean cloud transmittance over the sun's disc (r) and over the moon's (g), for the sky's
+	 * constants texel (SkyDome.ts `discCloudTransmittance`). */
 	discCloudTransmittance(): V4 {
 
-		const mean = ( centre: V3, radius: number ) => {
-
-			const tangent = normalize( select( abs( centre.y ).greaterThan( 0.99 ), vec3( 1, 0, 0 ), vec3( centre.z, 0, centre.x.negate() ) ) ).toVar();
-			const bitangent = cross( centre, tangent ).toVar();
-			const sum = float( 0 ).toVar();
-			Loop( DISC_SAMPLES, ( { i } ) => {
-
-				const r = sqrt( float( i ).add( 0.5 ).div( DISC_SAMPLES ) ).mul( radius );
-				const a = float( i ).mul( 2.399963 );
-				sum.addAssign( this.clouds.sample( normalize( centre.add( tangent.mul( cos( a ).mul( r ) ) ).add( bitangent.mul( sin( a ).mul( r ) ) ) ) ).a );
-
-			} );
-			return sum.div( DISC_SAMPLES );
-
-		};
-		return Fn( () => vec4( mean( this.displaySunDir, SUN_DISC_RADIUS ), mean( this.night.moonDir, MOON_ANGULAR_RADIUS ), 0, 1 ) )();
+		return discCloudTransmittance( this );
 
 	}
 
-	/** Lays the haze over the dome (VolumetricHaze.ts `skyHaze`: see `domeColour`). The sky fogs
+	/** Lays the haze over the dome (VolumetricHaze.ts `skyHaze`: see SkyDome.ts `domeColour`). The sky fogs
 	 * itself, so the haze's composite leaves the sky's pixels as they are. Called once, before the
 	 * dome first draws. */
 	fogDome( haze: SkyHaze ): void {
 
 		const material = this.dome.material as THREE.MeshBasicNodeMaterial;
-		material.colorNode = this.domeColour( haze );
+		material.colorNode = domeColour( this, haze );
 		material.needsUpdate = true;
 
 	}
@@ -1944,7 +873,7 @@ export class Sky {
 			// else (an explicit bake waiting for it) has it completed now, as a whole bake would be.
 			const pending = this.pendingUpdate!;
 			if ( transitionSeconds > 0 ) return pending;
-			this.finishSlices();
+			finishSlices( this );
 			return pending;
 
 		}
@@ -1965,17 +894,17 @@ export class Sky {
 			this.pendingUpdate = pending;
 			try {
 
-				this.startSlices( transitionSeconds );
+				startSlices( this, transitionSeconds );
 
 			} catch ( error ) {
 
-				this.abortSlices( error );
+				abortSlices( this, error );
 
 			}
 			return pending;
 
 		}
-		this.pendingUpdate = this.bake( transitionSeconds ).finally( () => {
+		this.pendingUpdate = bake( this, transitionSeconds ).finally( () => {
 
 			this.busy = false;
 			this.pendingUpdate = null;
@@ -2003,383 +932,7 @@ export class Sky {
 	 * Everything that moves with the clock is continuous here; bakes only capture this state. */
 	track( celestial: DayCycleSnapshot | null, weather: Readonly<WeatherState> | null, coverageOverride: number | null = null, skyMix: readonly number[] | null = null ): void {
 
-		if ( celestial ) {
-
-			this.sunDir.copy( celestial.sunDir );
-			this.elevation = celestial.elevation;
-			this.azimuth = celestial.azimuth;
-
-		} else {
-
-			const el = THREE.MathUtils.degToRad( this.elevation ), az = THREE.MathUtils.degToRad( this.azimuth );
-			this.sunDir.set( Math.cos( el ) * Math.cos( az ), Math.sin( el ), Math.cos( el ) * Math.sin( az ) ).normalize();
-
-		}
-		const illuminance = this.sunIlluminance * SCENE_RADIANCE_SCALE;
-		this.solarIlluminance.copy( this.sunTint ).multiplyScalar( illuminance );
-		// The atmosphere's slices are cut again only when the sun or the moon has moved.
-		this.atmosphere.sunDir.value.copy( this.sunDir );
-		// The moon stands where the clock puts it (DayCycle.ts MOON): drawn there, lighting the sky
-		// and the haze from there, as it shades the island.
-		if ( celestial ) this.atmosphere.moonDir.value.copy( celestial.moonDir );
-		else this.atmosphere.moonDir.value.copy( this.sunDir ).negate();
-		// The moon lights the sky as the sun does: its light above the air (`moonAboveAir`) times the
-		// sky's gain the sun's light takes at the moon's height (`skyGain` on the evening's keys, with
-		// the weather's day sky there), at the moonlit sky's own hue (MOON_SKY_HUE) and the moonlit
-		// sky's share (the snapshot's `moonKeyGain`, as the key's: at its magnitude the moon's light
-		// lies under the twilight's, so it takes no window of its own, DayCycle.ts). The key takes the
-		// moon's share of the key and its own gain (`moonKeyGain`).
-		const cloud = skyMix ? cloudedShare( skyMix ) : 0;
-		this.rising = sunRising( this.sunDir );
-		const moonGain = celestial ? duskForce( 'moonKey', celestial.moonKeyGain ) : 0;
-		const moonSkyShare = celestial ? duskForce( 'moonSky', celestial.moonKeyGain ) : 0;
-		this.moonElevation = celestial ? celestial.moonElevation : MOON.elevation;
-		this.moonKeyShare = moonGain;
-		this.moonSkyShare = moonSkyShare;
-		this.moonAbove = celestial ? illuminance * moonAboveAir() : 0;
-		// the key: the light above the air through the air toward the moon (its luminance), at the
-		// key's hue (MOON_KEY at unit luminance)
-		const toMoon = this.atmosphere.transmittanceToMoon();
-		this.moonKeyLevel = this.moonAbove * luminance709( toMoon.r, toMoon.g, toMoon.b );
-		const moonKey = this.moonKeyLevel * moonGain / MOON_KEY_LUMINANCE;
-		this.moonKeyColor.setRGB( MOON_KEY[ 0 ] * moonKey, MOON_KEY[ 1 ] * moonKey, MOON_KEY[ 2 ] * moonKey );
-		// the weather's moonlit sky at the moon's height, on its own level (Weather.ts `moonSky`)
-		this.daySkyMoon = weather ? daySkyAt( weather.moonSky, weather.moonSkyExponent, this.moonElevation ) : 1;
-		const moonSky = moonSkyShare * this.moonAbove * luma( skyGain( this.moonElevation, false, cloud, this.daySkyMoon, _skyMoon ) );
-		this.atmosphere.moonIlluminance.value.setRGB( MOON_SKY_HUE[ 0 ] * moonSky, MOON_SKY_HUE[ 1 ] * moonSky, MOON_SKY_HUE[ 2 ] * moonSky );
-		// the moon's beam the air scatters, as the sun's (`sunBeamIlluminance`): the sky's gain at a
-		// day sky of 1; the moon's visible share is in its sky's share already
-		const moonBeam = moonSkyShare * this.moonAbove * luma( skyGain( this.moonElevation, false, cloud, 1, _skyMoon ) );
-		this.moonBeamIlluminance.setRGB( MOON_SKY_HUE[ 0 ] * moonBeam, MOON_SKY_HUE[ 1 ] * moonBeam, MOON_SKY_HUE[ 2 ] * moonBeam );
-		// the weather's day sky at this sun (Weather.ts `daySkyAt`), on the sun's light the sky takes
-		// (`skyGain`), the clouds' sunlight (`trackClouds`) and the distant sea's (`beginBake`)
-		this.daySky = weather ? daySkyAt( weather.daySky, weather.daySkyExponent, this.elevation ) : 1;
-		this.atmosphere.sunIlluminance.value.copy( this.solarIlluminance ).multiply( skyGain( this.elevation, this.rising, cloud, this.daySky, _skyGain ) );
-		// (on overcast's share it fades with the setting disk's visible share, as the land's key does:
-		// see `sunBeamIlluminance`)
-		const beamFade = 1 + ( this.atmosphere.sunVisibleShareToSun() - 1 ) * ( skyMix ? skyMix[ 3 ] ?? 0 : 0 );
-		this.sunBeamIlluminance.copy( this.solarIlluminance ).multiply( skyGain( this.elevation, this.rising, cloud, 1, _skyBeam ) ).multiplyScalar( beamFade );
-		// the open sky's gain behind the clouds, on each body's share of the sky: the sun's at the
-		// sun's height, the moon's at the moon's, as each body's sky light takes its gain (`skyGain`)
-		const off = debugFlags.skyGain === false;
-		this.gapGain.sun.value = off ? 1 : clearSky( this.elevation, this.rising, 0 ) / clearSky( this.elevation, this.rising, cloud );
-		this.gapGain.moon.value = off ? 1 : clearSky( this.moonElevation, false, 0 ) / clearSky( this.moonElevation, false, cloud );
-		this.atmosphere.updateSync();
-		// Cap the hue of the air's extinction first, then fade by the disk's visible share, so the
-		// setting disk only dims the key and does not bleach it.
-		const sunVisible = this.atmosphere.sunVisibleShareToSun();
-		if ( sunVisible > 0 ) this.sunColor.copy( keyHue( this.atmosphere.transmittanceToSun(), this.sunTint, this.rising ) ).multiplyScalar( sunVisible * illuminance );
-		else this.sunColor.setRGB( 0, 0, 0 );
-		// The key turns from the sun to the moon over the handoff (DayCycle `keyDir`) and holds there
-		// all night: everything that reads the key's direction (the water's glint, the refracted
-		// light under the water, the clouds, the haze) then sees the moon where it is drawn. By day
-		// (no handoff) the key is the sun's direction itself.
-		this.keyDir.copy( celestial?.keyDir ?? this.sunDir );
-		this.keyIsMoon = moonGain > 0;
-		this.keyColor.copy( this.sunColor ).multiplyScalar( lowKey( this.elevation ) * duskForce( 'sun', 1 ) );
-		const moonColor = this.night.moonColor.value;
-		if ( celestial ) {
-
-			// The full moon's key, some 19 stops under a high sun's, in the island's own hue: only the
-			// moon's share of the key takes it, so over the handoff
-			// it grows with that share, and by day (no moon) the sun's key is untouched.
-			this.moonKeyAbove.copy( this.moonKeyColor ).multiply( moonHue( _moonHue ) );
-			this.keyColor.add( this.moonKeyAbove );
-			this.night.moonDir.value.copy( celestial.moonDir );
-			this.night.frame.value.copy( celestial.starFrame );
-			// (the moon's light does not follow its phase: DayCycle's header)
-			this.night.moonWash.value = celestial.moonVisibility;
-			// The disk sits in the upper tones at night exposure so its maria stay visible, as to the
-			// eye; the moonlight on the island is the key light above, not this disk.
-			moonColor.setRGB( 0.04, 0.041, 0.043 ).multiplyScalar( 0.32 * celestial.moonVisibility * this.sunIlluminance / SUN_ILLUMINANCE );
-			this.grade.night = displayNight( celestial.daylight, celestial.elevation, this.rising, cloud );
-			this.grade.exposureNight = exposureNight( celestial.elevation, this.rising, cloud );
-			const stars = starNight( celestial.daylight, celestial.elevation, this.rising, cloud );
-			this.night.starVisibility.value = duskForce( 'stars', celestial.nightVisibility * stars ) * ( 1 - 0.22 * celestial.moonVisibility );
-			// the night's ambient in the clouds and the distant sea: a uniform sky's radiance that gives
-			// level ground NIGHT_AMBIENT_SHARE of the moon's key on it (the key's light at normal
-			// incidence, the moon's sine), by its share (DayCycle.ts `nightAmbientShare`)
-			const floor = this.moonKeyLevel * Math.sin( THREE.MathUtils.degToRad( this.moonElevation ) ) * NIGHT_AMBIENT_SHARE / Math.PI
-				* duskForce( 'nightAmbient', nightAmbientShare( celestial.elevation, this.rising, cloud ) );
-			this.displayNightAmbient.value.setRGB( NIGHT_AMBIENT_HUE[ 0 ] * floor, NIGHT_AMBIENT_HUE[ 1 ] * floor, NIGHT_AMBIENT_HUE[ 2 ] * floor );
-			this.grade.exposure = celestial.exposure;
-			this.grade.daylight = celestial.daylight;
-			this.islandGain.value = islandSky( celestial.elevation, this.rising, this.islandTint.value, cloud );
-			const direct = weather?.directVisibility ?? 1;
-			const shade = clearShade( celestial.elevation, direct ), low = lowSun( celestial.elevation, direct );
-			const tint = this.islandTint.value;
-			if ( shade > 0 ) {
-
-				this.islandGain.value *= 1 + shade;
-				tint.set( CLEAR_SHADE_TINT[ 0 ], CLEAR_SHADE_TINT[ 1 ], CLEAR_SHADE_TINT[ 2 ], CLEAR_SHADE_TINT[ 3 ] * shade );
-
-			}
-			if ( low > 0 ) tint.set( tint.x + ( LOW_SUN_TINT[ 0 ] - tint.x ) * low, tint.y + ( LOW_SUN_TINT[ 1 ] - tint.y ) * low,
-				tint.z + ( LOW_SUN_TINT[ 2 ] - tint.z ) * low, Math.max( tint.w, LOW_SUN.amount * low ) );
-			const clouded = skyMix ? cloudedHighSun( celestial.elevation, skyMix, 12 ) : 0;
-			if ( clouded > 0 ) tint.set( CLOUD_LIGHT_TINT[ 0 ], CLOUD_LIGHT_TINT[ 1 ], CLOUD_LIGHT_TINT[ 2 ], CLOUD_LIGHT_TINT[ 3 ] * clouded );
-
-		} else {
-
-			this.night.moonDir.value.copy( this.sunDir ).negate();
-			this.moonKeyAbove.setRGB( 0, 0, 0 );
-			moonColor.setRGB( 0, 0, 0 );
-			this.night.starVisibility.value = 0;
-			this.displayNightAmbient.value.setRGB( 0, 0, 0 );
-			this.grade.exposure = DAY_EXPOSURE;
-			this.grade.daylight = 1;
-			this.grade.night = 0;
-			this.grade.exposureNight = 0;
-			this.islandTint.value.set( 1, 1, 1, 0 );
-			this.islandGain.value = 1;
-
-		}
-		this.keyColorAboveClouds.copy( this.keyColor );
-		const coverage = coverageOverride ?? weather?.coverage ?? 0;
-		const overcast = weather ? THREE.MathUtils.smoothstep( coverage, 0.65, 0.98 ) : 0;
-		// the weather's sky light (its day sky is on the sun's light alone: `skyGain`, `trackClouds`)
-		const ambientGain = weather?.ambientGain ?? 1;
-		const directVisibility = weather?.directVisibility ?? 1;
-		// The base exposure (the frame's is metered from the light: post/Exposure.ts; this one is
-		// what the night sky's own light is tuned against) adapts to the dimmer diffuse daylight
-		// under a closed deck, as tidewater's auto exposure would: it lifts a frame darker than its
-		// metered level only partly (by the ratio's 0.8th power), 4.7 times under a closed deck; less so in
-		// rain.
-		this.grade.exposure *= 1 + 3.7 * overcast * this.grade.daylight * ( 1 - 0.7 * ( weather?.rain ?? 0 ) );
-		// Through the blue hour a closed deck's adaptation goes on rising as the light goes (DayCycle
-		// `overcastAdaptation`, none from -6 degrees down): the night under the deck takes no gain of
-		// its own, being lit by the moon through the deck as the day is by the sun.
-		this.grade.exposure *= 1 + overcast * ( celestial?.overcastAdaptation ?? 0 );
-		// The night sky's own lights, the stars and the moon's disk (nothing they light), keep the
-		// brightness they were tuned at, under the exposure the night had then, but for the night's
-		// own gain (DayCycle NIGHT_EXPOSURE_GAIN), which brightens them with the island; under a deck
-		// the clouds drawn over them hide them.
-		const nightSkyLevel = celestial ? Math.min( 1, celestial.nightSkyLevel ) : 1;
-		this.night.starVisibility.value *= nightSkyLevel;
-		moonColor.multiplyScalar( nightSkyLevel );
-		this.sunColor.multiplyScalar( directVisibility );
-		this.keyColor.multiplyScalar( directVisibility );
-		// Under a deck the sun's light is whiter than a clear day's at the same height, part of it
-		// scattered in the cloud: the key keeps its luminance and moves KEY_DECK_WHITE of the way to
-		// white under overcast, where the sun still shines through, and all the way under rain's
-		// closed deck (a rainy evening's light is not a sunset's).
-		const keyLuminance = this.keyColor.r * 0.2126 + this.keyColor.g * 0.7152 + this.keyColor.b * 0.0722;
-		const rain = weather?.rain ?? 0;
-		this.keyColor.lerp( _white.setScalar( keyLuminance ), overcast * ( KEY_DECK_WHITE + ( 1 - KEY_DECK_WHITE ) * rain ) );
-		this.solarIlluminance.multiplyScalar( directVisibility );
-		moonColor.multiplyScalar( directVisibility );
-		this.night.starVisibility.value *= ambientGain;
-		// the drawn moon's disk takes its phase's light (DayCycle `moonSunDir`)
-		this.night.sunDir.value.copy( celestial ? celestial.moonSunDir : this.sunDir );
-		this.displaySunDir.value.copy( this.sunDir );
-		this.displaySolarIlluminance.value.copy( this.solarIlluminance );
-		this.displayAmbientGain.value = ambientGain;
-		// the key's floor under cloud (KEY_THROUGH_CLOUD), after the clouds' shell and density are set
-		const overcastShare = skyMix ? skyMix[ 3 ] ?? 0 : 0;
-		const keyLight = this.keyColorAboveClouds.r * 0.2126 + this.keyColorAboveClouds.g * 0.7152 + this.keyColorAboveClouds.b * 0.0722;
-		const moonLight = this.moonKeyAbove.r * 0.2126 + this.moonKeyAbove.g * 0.7152 + this.moonKeyAbove.b * 0.0722;
-		const sunShare = keyLight > 0 ? Math.max( keyLight - moonLight, 0 ) / keyLight : 0;
-		this.deckDay.value = overcastDeckLight( this.elevation );
-		const seenNight = 2 ** ( - ( weather?.seenNight ?? 0 ) * this.grade.night );
-		shared.seenNight.value = seenNight;
-		this.seenDeck.value = seenNight;
-		this.domeGapGain.moon.value = this.gapGain.moon.value * seenNight;
-		const floorSun = 1 - overcastShare * sunShare * ( 1 - overcastFloorSun( this.elevation ) );
-		this.castShadow.value = weather?.castShadow ?? 1;
-		this.trackClouds( celestial, weather, coverage, overcast, illuminance, skyMix );
-		const keyFloor = Math.min( KEY_THROUGH_CLOUD() * this.clouds.layerTransmission(), 1 ) * floorSun;
-		this.keyCloudFloor.value = keyFloor;
-		this.keyFloorUnderDeck = keyFloor * overcastShare;
-		// (`flags=streaks:<n>` scales the thin layer's amount, 0 turns it off)
-		this.clouds.streaks.value = ( weather?.streaks ?? 0 ) * ( typeof debugFlags.streaks === 'number' ? debugFlags.streaks : 1 );
-		// A rainbow needs falling rain and direct sun at once, the sun lower than 42 degrees behind
-		// the viewer: most often as a shower clears, while it is still raining a few kilometres off.
-		// The clouds draw it in their sunlit rain curtains.
-		const showers = weather?.showers ?? 0, sunlit = weather?.directVisibility ?? 1;
-		this.clouds.showers.value = showers;
-		// Drops fall at about 9 m/s and drift with the wind, slower near the sea than aloft; a gale
-		// slants them steeply.
-		this.clouds.rainSlant.value = Math.min( ( weather?.windSpeed ?? 3.8 ) / 11, 1 );
-		// A fog's cover is mist and stratus, not rain cells: its broken sky does not shower.
-		this.clouds.heapShowers.value = 1 - THREE.MathUtils.smoothstep( weather?.fog ?? 0, 0.3, 0.8 );
-		this.clouds.rainbow.value = THREE.MathUtils.smoothstep( showers, 0.04, 0.3 ) * THREE.MathUtils.smoothstep( sunlit, 0.3, 0.7 )
-			* THREE.MathUtils.smoothstep( this.sunDir.y, 0, 0.08 ) * ( 1 - THREE.MathUtils.smoothstep( this.sunDir.y, 0.6, 0.72 ) );
-		this.weather.haze = weather?.haze ?? 0;
-		this.weather.rain = weather?.rain ?? 0;
-		// (the morning mist is the haze's: weather/HazeKeys.ts)
-		this.weather.fog = weather?.fog ?? 0;
-		this.weather.windSpeed = weather?.windSpeed ?? 3.8;
-		this.weather.windDirection = weather?.windDirection ?? 40;
-
-	}
-
-	private trackClouds( celestial: DayCycleSnapshot | null, weather: Readonly<WeatherState> | null, coverage: number, overcast: number, illuminance: number, skyMix: readonly number[] | null ): void {
-
-		const clouds = this.clouds;
-		clouds.coverage.value = coverage;
-		clouds.density.value = weather?.density ?? 1;
-		// The shadow's share of the deck by the weather's shares of the four skies, or the weather's
-		// own without them: a weather change or a retune rebakes the whole map (`bake`), a front
-		// under way refreshes it row by row.
-		clouds.shadowDensity.value = skyMix ? SHADOW_DENSITY.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k.shadowDensity, 0 ) : weather?.shadowDensity ?? 1;
-		// The shell by the same shares (the high one's without them): every reader follows its
-		// uniforms, the march, the shadow, the rain, the haze's shafts and the lightning.
-		const row = ( key: keyof CloudSky ) => skyMix ? CLOUD_SKIES.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k[ key ], 0 ) : CLOUD_SKIES[ 0 ][ key ];
-		const base = row( 'base' );
-		clouds.setShell( base, row( 'top' ) - base, skyMix ? cloudedShare( skyMix ) : 0 );
-		clouds.cloudType.value = row( 'type' );
-		clouds.typeSpread.value = row( 'spread' );
-		clouds.farFade.value = row( 'farFade' );
-		clouds.rain.value = weather?.rain ?? 0;
-		// Cloud tops a couple of kilometres up keep the sun a little after it has set below. The
-		// rising sun's reaches the shell where it stands (its middle, 6.6 km under the clear and
-		// fair skies' cumulus), so the clouds take the dawn's light from about -2.6 degrees, as the
-		// Earth's shadow sinks below them; the
-		// height goes back to the evening's from the sun's rise to 3 degrees, so the morning's
-		// higher sun lights them as the afternoon's does, and with a clouded share (Weather.ts
-		// `cloudedShare`).
-		const cloud = skyMix ? cloudedShare( skyMix ) : 0;
-		const rising = this.rising && cloud < 1;
-		const toEvening = Math.max( cloud, THREE.MathUtils.smoothstep( celestial?.elevation ?? 90, 0, 3 ) );
-		const middle = ( clouds.shellBottom.value + clouds.shellThickness.value / 2 ) / 1000;
-		const sunHeight = rising ? 2 + ( middle - 2 ) * ( 1 - toEvening ) : 2;
-		const sunAbove = this.atmosphere.sunlightAt( this.sunDir, sunHeight ).multiply( this.sunTint ).multiplyScalar( illuminance );
-		// Under a closed deck the sun reaches the deck as it reaches the island, scattered through
-		// the cloud: it keeps its luminance and loses its colour as the key does (track), so an
-		// overcast evening's deck is not a sunset's, but for the glow about the sun's place:
-		// overcast's deck's forward lobe keeps the colour of the sun above the tops (Clouds.ts
-		// `lobeTint`): per channel the colour over the grey's, c / ( c + ( 1 - c ) overcast ), by
-		// overcast's share of the sky (1 under the other skies, and without the sun: below). Its
-		// colour is the sun's from overhead, not along the sun's own path: taken along it, a low
-		// sun's reddening would come back whole and the glow about a low sun read orange, a sunset's
-		// under the deck.
-		const overcastShare = skyMix ? skyMix[ 3 ] ?? 0 : 0;
-		// the closed layer's share (Clouds.ts `overcastShare`)
-		clouds.overcastShare.value = overcastShare;
-		// the closed layer passes the weather's day sky whole: its own mean transmission is divided
-		// out, so `daySky` alone sets the light under it (Clouds.ts `columnLevel`, `layerTransmission`)
-		clouds.columnLevel.value = THREE.MathUtils.lerp( 1, 1 / clouds.layerTransmission(), overcastShare );
-		const sunY = luma( sunAbove );
-		const tint = clouds.lobeTint.value.setRGB( 1, 1, 1 );
-		const above = overcastShare > 0 ? this.atmosphere.transmittanceAt( _zenith, sunHeight ).multiply( this.sunTint ) : null;
-		const aboveY = above ? luma( above ) : 0;
-		if ( above && sunY > 0 && aboveY > 0 ) for ( const c of [ 'r', 'g', 'b' ] as const ) {
-
-			const chroma = above[ c ] / aboveY;
-			tint[ c ] = THREE.MathUtils.lerp( 1, chroma / ( chroma + ( 1 - chroma ) * overcast ), overcastShare );
-
-		}
-		sunAbove.lerp( _white.setScalar( sunY ), overcast );
-		// the weather's day sky (Weather.ts `daySkyAt`): the sun's light the clouds take, which lights
-		// a deck's base and the land's sky under it, is the sky's light from the sun (`skyGain`)
-		sunAbove.multiplyScalar( this.daySky );
-		// The clouds belong to the seen sky: their moonlight comes in with the night sky's own light
-		// (DayCycle.ts `cloudMoonShare`), not before it while the afterglow still lights the sky behind
-		// them; under cloud with the clouded night's, by the clouded share.
-		const moonShare = ! celestial ? 0 : duskForce( 'cloudMoon', cloudMoonShare( celestial.elevation, this.rising, cloud ) );
-		const moonGain = celestial ? moonShare * celestial.moonVisibility : 0;
-		const sunUp = ! celestial || celestial.elevation > - 2.5 || rising;
-		// The march's depth shades the clouds' sky light as well as their direct light, and the same
-		// direction casts their shadow, so it moves without a jump even while no direct light reaches
-		// them: a jump there stepped the deck's brightness, half a stop on the meter under overcast.
-		// It sets first, its shadow fading out on the way down, so its turn round to the sun, under
-		// the horizon, sweeps no shadow across the island. Under a closed deck, on overcast's share,
-		// it fades to the deck's mean transmittance instead (Clouds.ts `deckShadowShare`): faded to
-		// lit, the haze under the deck took the sun the deck still hid, and the sky's light rose by
-		// up to two thirds as the sun set.
-		const elevation = celestial?.elevation ?? 90;
-		const setting = THREE.MathUtils.smoothstep( elevation, CLOUD_TURN[ 0 ], CLOUD_TURN[ 1 ] ), round = THREE.MathUtils.smoothstep( elevation, CLOUD_TURN[ 1 ], CLOUD_TURN[ 2 ] );
-		clouds.shadowShare.value = elevation < CLOUD_TURN[ 1 ] ? 1 - setting : THREE.MathUtils.smoothstep( this.sunDir.y, CLOUD_SHADOW_SET[ 0 ], CLOUD_SHADOW_SET[ 1 ] );
-		clouds.deckShadowShare.value = overcastShare;
-		clouds.lightDir.value.copy( setting === 0 ? this.keyDir : this.sunDir );
-		if ( celestial && setting > 0 && round < 1 ) {
-
-			const from = celestial.moonDir;
-			const y = THREE.MathUtils.lerp( from.y, this.sunDir.y, setting ), start = Math.atan2( from.z, from.x );
-			const turn = Math.atan2( this.sunDir.z, this.sunDir.x ) - start;
-			const azimuth = start + Math.atan2( Math.sin( turn ), Math.cos( turn ) ) * round, across = Math.sqrt( 1 - y * y );
-			clouds.lightDir.value.set( across * Math.cos( azimuth ), y, across * Math.sin( azimuth ) );
-
-		}
-		// the low deck's forward light on level ground at the key's height (Clouds.ts forwardLevel): the
-		// narrow lobe's, the light overcast's share spreads by the diffusion law (a lobe of mean cosine
-		// `overcastBroad`'s), and the two by that share, the deck's level
-		clouds.lobe.value = clouds.forwardLobe.value;
-		clouds.broadShare.value = overcastShare;
-		// (by day: `deckDay`)
-		clouds.deckFlat.value = ( 1 - clouds.deckGradation.value ) * overcastShare * this.deckDay.value;
-		clouds.weight.value = THREE.MathUtils.lerp( clouds.forwardWeight.value, clouds.overcastWeight.value, overcastShare );
-		const keyY = clouds.lightDir.value.y;
-		clouds.narrowLevel.value = forwardLevel( keyY, clouds.lobe.value );
-		clouds.forwardLevel.value = overcastShare > 0
-			? THREE.MathUtils.lerp( clouds.narrowLevel.value, forwardLevel( keyY, clouds.overcastBroad.value ), overcastShare )
-			: clouds.narrowLevel.value;
-		const disc = 1 - THREE.MathUtils.smoothstep( clouds.lightDir.value.y, SHADOW_DISC[ 0 ], SHADOW_DISC[ 1 ] );
-		clouds.shadowDisc.value = disc * SUN_ANGULAR_RADIUS;
-		// With the whole disc under the floor the rays are one ray.
-		clouds.shadowRays.value = disc > 0 && clouds.lightDir.value.y + clouds.shadowDisc.value > SHADOW_SLOPE_FLOOR ? SHADOW_DISC_RAYS : 1;
-		const keyElevation = THREE.MathUtils.radToDeg( Math.asin( clouds.lightDir.value.y ) );
-		clouds.shadowAirNarrow.value = THREE.MathUtils.smoothstep( keyElevation, SHADOW_AIR_NARROW[ 0 ], SHADOW_AIR_NARROW[ 1 ] );
-		clouds.lightColor.value.copy( sunUp ? sunAbove : new THREE.Color( 0, 0, 0 ) );
-		// The moon lights the clouds as the sun does: its light above the air through the air down to
-		// the same height (`sunlightAt` toward the moon, in its colour), the weather's day sky at the
-		// moon's height and the moon's share of the clouds' light, at the island's moonlight's hue
-		// (MOON_KEY times `moonHue`, at unit luminance) and no other.
-		const moonCloud = _cloudMoon.setRGB( 0, 0, 0 );
-		if ( celestial ) moonCloud.setRGB( MOON_KEY[ 0 ], MOON_KEY[ 1 ], MOON_KEY[ 2 ] ).multiply( moonHue( _moonHue ) )
-			.multiplyScalar( this.moonAbove * moonGain * this.daySkyMoon / MOON_KEY_LUMINANCE ).multiply( this.atmosphere.sunlightAt( celestial.moonDir, sunHeight ) );
-		const moonY = luma( moonCloud );
-		// The luminance of that light, for the stores' powers of two (PreExposure.ts `storeStops`),
-		// the sun's before the day sky's gain: under a closed deck what a bake holds brightest is the
-		// deck's base, which takes the sun through the cloud, not the day sky's share of it. Under
-		// the moon each store's range follows the weather's clouds (`storeNight`).
-		clouds.storeLight = ( sunUp ? sunY : 0 ) + moonY;
-		const moonPart = clouds.storeLight > 0 ? moonY / clouds.storeLight : 0;
-		clouds.storeStops = storeStops( clouds.storeLight, moonPart, storeNight( 'dome', skyMix ) );
-		this.layerStops = storeStops( clouds.storeLight, moonPart, storeNight( 'layer', skyMix ) );
-		this.panoramaStops = storeStops( clouds.storeLight, moonPart, storeNight( 'panorama', skyMix ) );
-		const light = clouds.lightColor.value;
-		light.add( moonCloud );
-		// (the low sun's lift of the beam, as `directGain`'s)
-		const beam = 1 + 0.7 * lowSunOf( this.elevation, coverage );
-		// The thin layer's before the air, lifted alike: each of its points takes it through the air
-		// toward the sun at the sun's elevation there, and loses it as the disc sinks under the
-		// layer's own horizon there (Clouds.ts `streaksAt`), so no one moment ends the whole layer's.
-		clouds.streakSunColour.value.copy( this.sunTint ).multiplyScalar( illuminance * beam * this.daySky );
-		const { r: dr, g: dg, b: db } = keyed( STREAK_DIRECT, elevation, moonShare, _streakKey, cloud, rising );
-		clouds.keyDirect.value.setRGB( dr, dg, db );
-		const { r: ar, g: ag, b: ab } = keyed( STREAK_AMBIENT, elevation, moonShare, _streakKey, cloud, rising );
-		clouds.keyAmbient.value.setRGB( ar, ag, ab );
-		// (the moon's beam lifted as the sun's is, at the moon's height)
-		clouds.moonLight.value = moonY * ( 1 + 0.7 * lowSunOf( this.moonElevation, coverage ) );
-		// The night ambient is the clouds' own (the clear sky draws none), taken as their sky light.
-		clouds.nightAmbient.value.copy( this.displayNightAmbient.value );
-		// A low deck's column passes down the key's light above its tops: by day the sun's above the
-		// cloud, by night the island's moonlight (`moonKeyAbove`), which keeps the island's level and
-		// hue, not the clouds' (their moonlight belongs to the seen sky), and loses its colour under a
-		// closed deck as the sun's does (above), and takes the weather's day sky at the moon's height
-		// as the sun's takes it at the sun's (`daySkyMoon`; 1 but under overcast). The deck's base and
-		// the land under it then take one moon, as by day they take one sun.
-		const moonAbove = _moonKey.copy( this.moonKeyAbove );
-		const column = clouds.columnKey.value.copy( moonAbove.lerp( _white.setScalar( luma( moonAbove ) ), overcast ).multiplyScalar( this.daySkyMoon ) );
-		// A heap's part of the column's light is the sun's alone (Clouds.ts `columnSunShare`): it
-		// goes by the sun's share of this key itself, so that part is the sun's addend and leaves
-		// with it, whenever the moon's comes in. Lit by the moon too, the fair clouds read brighter
-		// in late twilight than the night's level was set with, and the meter took the scene down
-		// by a third of a stop at -11 to -12 degrees.
-		const moonColumn = luma( column ), sunColumn = sunUp ? luma( sunAbove ) : 0;
-		clouds.columnSunShare.value = sunColumn + moonColumn > 0 ? sunColumn / ( sunColumn + moonColumn ) : 1;
-		if ( sunUp ) column.add( sunAbove );
-		else tint.setRGB( 1, 1, 1 );
-		// Low sun: lift the reddened beam, and the cool violet fill on the shaded sides with it. The
-		// lift fades as the sky closes: a fair sky's scattered cumulus keep their golden light, a
-		// cloudy sky's cover shows near neutral, and a closed deck, whose sunlight has lost its
-		// colour, takes none.
-		const lowSun = lowSunOf( this.elevation, coverage );
-		clouds.directGain.value = 1 + 0.7 * lowSun;
-		clouds.ambientGain.value = 1 + 0.35 * lowSun;
-		clouds.openSkyGain.sun.value = this.gapGain.sun.value;
-		clouds.openSkyGain.moon.value = this.gapGain.moon.value;
+		trackSky( this, celestial, weather, coverageOverride, skyMix );
 
 	}
 
@@ -2403,393 +956,6 @@ export class Sky {
 
 	}
 
-	private async bake( transitionSeconds: number ): Promise<void> {
-
-		const started = performance.now();
-		const version = ++ this.bakeVersion;
-		const readback = transitionSeconds === 0 || ! this.initialized;
-		const weather = this.weatherState ? { ...this.weatherState } : null;
-		await this.renderer.init();
-		// the warm-up's pipelines first: r186 skips a draw whose pipeline is still being created
-		// (see the header)
-		await this.warmed;
-		if ( ! this.clouds.ready ) await this.clouds.init( this.renderer );
-		await this.night.load();
-		if ( ! this.night.ready ) await this.night.init();
-		// An explicit jump (preset, seek, weather change) refreshes the whole cloud map now.
-		if ( readback ) {
-
-			this.clouds.invalidate();
-			this.clouds.update( this.renderer, this.viewCamera, this.viewWidth, this.viewHeight, this.cloudTime );
-
-		}
-		const bake = this.beginBake( version, readback, transitionSeconds, weather );
-		this.renderPanoramas( bake );
-		const r = this.renderer;
-		if ( readback ) {
-
-			const W = this.small.width, H = this.small.height;
-			const px = await r.readRenderTargetPixelsAsync( this.small, 0, 0, W, H ) as Float32Array;
-			const E = [ 0, 0, 0 ];
-			const dOmegaLon = 2 * Math.PI / W, dTh = Math.PI / H;
-			for ( let k = 0; k < W * H; k ++ ) {
-
-				const sinTh = px[ k * 4 + 3 ];
-				if ( sinTh <= 0 ) continue;
-				const dOmega = dOmegaLon * dTh * Math.sqrt( Math.max( 0, 1 - sinTh * sinTh ) );
-				for ( let c = 0; c < 3; c ++ ) E[ c ] += px[ k * 4 + c ] * sinTh * dOmega;
-
-			}
-			bake.state.irradiance.setRGB( E[ 0 ] / Math.PI, E[ 1 ] / Math.PI, E[ 2 ] / Math.PI );
-			this.landSea( bake.state, version, await r.readRenderTargetPixelsAsync( bake.state.deckIrradianceMap, 0, 0, 1, 1 ) as Float32Array );
-
-		} else this.readIrradiance( bake.state, version );
-		if ( bake.environment !== null ) this.filterEnvironment( bake.environment );
-		if ( ! this.initialized ) {
-
-			// The first bake fills both atlases from the same source.
-			this.front = bake.next;
-			this.filterEnvironment( 1 );
-
-		}
-		this.publishBake( bake );
-		this.lastBakeMs = performance.now() - started;
-
-	}
-
-	// Pick the endpoint a bake writes and capture the state it bakes: the live state from
-	// track() (the atmosphere LUT, key light, clouds and stars already describe this frame's sun
-	// and moon) and the weather it was requested with.
-	private beginBake( version: number, readback: boolean, transitionSeconds: number, weather: WeatherState | null ): Bake {
-
-		const illuminance = this.sunIlluminance * SCENE_RADIANCE_SCALE;
-		const next = this.initialized ? 1 - this.front : 0;
-		const state = this.endpoints[ next ];
-		state.version = version;
-		// the weather's sky light; its day sky (`daySky`, from track) is on the sun's light alone: the
-		// deck's irradiance takes it through the sky and the clouds, the sun's direct light on the
-		// level water here (`sea.sun`), while the body's colour, its knee and the night's share keep
-		// the weather's gain alone, so below the knee the body follows the day sky and at night it is
-		// as it was
-		const ambientGain = weather?.ambientGain ?? 1;
-		this.ambientGain.value = ambientGain;
-		// the distant sea's body (SEA_KNEE): the body is written as it stood before it followed the
-		// light, the colour times the illuminance times the gain, so a body at the knee is that value
-		const sea = state.sea;
-		sea.body.copy( this.seaColor ).multiplyScalar( illuminance ).multiplyScalar( ambientGain );
-		sea.night.copy( this.displayNightAmbient.value ).multiplyScalar( ambientGain );
-		sea.sun = luma( this.sunColor ) * Math.max( this.sunDir.y, 0 ) / Math.PI * ambientGain * this.daySky;
-		sea.knee = seaKnee() * illuminance * ambientGain;
-		this.seaBody.value.copy( sea.body );
-		this.seaNight.value.copy( sea.night );
-		this.seaSun.value = sea.sun;
-		this.seaKnee.value = sea.knee;
-		// The environment refreshes on explicit bakes and on every environmentEvery-th periodic one,
-		// into the atlas not shown.
-		let environment: number | null = 0;
-		if ( this.initialized ) {
-
-			const refresh = readback || ++ this.bakesSinceEnvironment >= this.environmentEvery;
-			environment = refresh ? 1 - this.environmentFront : null;
-
-		}
-		if ( environment !== null ) this.bakesSinceEnvironment = 0;
-		return { version, readback, transitionSeconds, next, state, environment };
-
-	}
-
-	// The cloud layer, the panoramas (seen, the environment's source, irradiance probe) and the
-	// irradiance integral.
-	private renderPanoramas( bake: Bake ): void {
-
-		const { state } = bake;
-		// The bake's powers of two, the layer's and the panoramas' at this moment (trackClouds, see
-		// the stores above): the layer is written and read within the bake, the panoramas keep
-		// theirs with them.
-		const layer = this.layerStops, stops = this.panoramaStops;
-		this.layerStore.value = 2 ** layer * storePress.store.value;
-		this.layerRead.value = 2 ** - layer * storePress.read.value;
-		state.stops = stops;
-		if ( ! this.initialized ) this.endpoints[ 1 ].stops = stops;
-		this.sourceStops = stops;
-		for ( const atlas of this.initialized ? bake.environment !== null ? [ bake.environment ] : [] : [ 0, 1 ] ) this.environmentStops[ atlas ] = stops;
-		const r = this.renderer, prev = r.getRenderTarget();
-		try {
-
-			r.setRenderTarget( state.clouds );
-			this.upperQuad.render( r );
-			this.cloudLayer.value = state.clouds.texture;
-			// the sky's light without its haze, which the panoramas' haze takes under a deck
-			// (VolumetricHaze.ts `openSky`)
-			for ( const deck of this.initialized ? [ state.deckIrradianceMap ] : [ state.deckIrradianceMap, this.endpoints[ 1 ].deckIrradianceMap ] ) {
-
-				r.setRenderTarget( deck );
-				this.deckIrradianceQuad.render( r );
-
-			}
-			this.bakeDeckIrradiance.value = state.deckIrradianceMap.texture;
-			// Both samplers must have distinct textures at the first material compilation:
-			// Three deduplicates texture uniforms by UUID, even for separate TextureNodes.
-			const panoramas = this.initialized ? [ state.equirect, this.reflectionSource, this.small ] :
-				[ state.equirect, this.endpoints[ 1 ].equirect, this.reflectionSource, this.small ];
-			for ( const rt of panoramas ) {
-
-				this.irradiancePass.value = rt === this.small ? 1 : 0;
-				this.bakeStore.value = rt === this.small ? 1 : 2 ** stops * storePress.store.value;
-				// Only the environment's source takes the island's light after sunset (ISLAND_SKY).
-				const lends = rt === this.reflectionSource;
-				this.bakeIslandTint.value.copy( lends ? this.islandTint.value : NEUTRAL_TINT );
-				this.bakeIslandGain.value = lends ? this.islandGain.value : 1;
-				this.bakeHaze.value = lends || rt === this.small ? 1 : 0;
-				this.bakeGlow.value = lends || rt === this.small ? 0 : 1;
-				this.bakeKeyFloor.value = lends || rt === this.small ? 0 : 1;
-				r.setRenderTarget( rt );
-				( lends ? this.landQuad : this.quad ).render( r );
-
-			}
-			for ( const irradiance of this.initialized ? [ state.irradianceMap ] : [ state.irradianceMap, this.endpoints[ 1 ].irradianceMap ] ) {
-
-				r.setRenderTarget( irradiance );
-				this.irradianceQuad.render( r );
-
-			}
-			// (after the probe's panorama, so the bake's uniforms are the probe's)
-			for ( const irradiance of this.initialized ? [ state.clearIrradianceMap ] : [ state.clearIrradianceMap, this.endpoints[ 1 ].clearIrradianceMap ] ) {
-
-				r.setRenderTarget( irradiance );
-				this.clearIrradianceQuad.render( r );
-
-			}
-
-		} finally {
-
-			r.setRenderTarget( prev );
-
-		}
-		this.onEnvironmentSource?.( this.reflectionSource.texture, this.initialized ? bake.environment !== null ? [ bake.environment ] : [] : [ 0, 1 ], 2 ** - stops * storePress.read.value );
-
-	}
-
-	// The environment of the source in atlas `index`, whole.
-	private filterEnvironment( index: number ): void {
-
-		this.environments[ index ] = this.pmrem.fromEquirectangular( this.reflectionSource.texture, this.environments[ index ] );
-
-	}
-
-	// The same as filterEnvironment, as steps of one or two render passes: the conversion to the
-	// cube atlas, then each level's GGX filter from the one above (PMREMGenerator's own steps:
-	// three/Environment.ts). Each step restores what PMREMGenerator restores after a whole conversion.
-	private environmentSlices( index: number ): Slice[] {
-
-		const target = this.environments[ index ];
-		if ( ! target ) return [ { cost: 20, run: () => this.filterEnvironment( index ) } ];
-		const pmrem = environmentSteps( this.pmrem );
-		const r = this.renderer, source = this.reflectionSource.texture;
-		const step = ( work: () => void ) => () => {
-
-			const previous = r.getRenderTarget(), face = r.getActiveCubeFace(), level = r.getActiveMipmapLevel(), autoClear = r.autoClear;
-			try {
-
-				work();
-
-			} finally {
-
-				r.autoClear = autoClear;
-				r.setRenderTarget( previous, face, level );
-				target.scissorTest = false;
-				pmrem.resetViewport( target );
-
-			}
-
-		};
-		const slices: Slice[] = [ { cost: 1, run: step( () => {
-
-			pmrem.convert( source, target );
-
-		} ) } ];
-		// the generator keeps the levels of the source size the first bake set up, so their count is known
-		const levels = pmrem.levels();
-		for ( let i = 1; i < levels; i ++ ) slices.push( { cost: 2, run: step( () => {
-
-			r.autoClear = false;
-			pmrem.filter( target, i - 1, i );
-
-		} ) } );
-		return slices;
-
-	}
-
-	// Start a periodic bake over frames: the panoramas now, the rest from advance().
-	private startSlices( transitionSeconds: number ): void {
-
-		const started = performance.now();
-		const weather = this.weatherState ? { ...this.weatherState } : null;
-		const bake = this.beginBake( ++ this.bakeVersion, false, transitionSeconds, weather );
-		this.renderPanoramas( bake );
-		this.readIrradiance( bake.state, bake.version );
-		this.slices = bake.environment === null ? [] : this.environmentSlices( bake.environment );
-		this.slices.push( { cost: 0, run: () => this.publishBake( bake ) } );
-		this.sliceMs = performance.now() - started;
-		// A paused scene does it whole, so a paused frame never depends on how many frames ran.
-		if ( this.clockStill ) this.finishSlices();
-		else this.armSliceTimer();
-
-	}
-
-	// Run whole steps of the bake under way, up to `passes` render passes (at least one step); its
-	// publication ends it. An error ends the bake and rejects its promise, as a whole bake's would,
-	// so the sky is free for the next one.
-	private runSlices( passes: number ): void {
-
-		const started = performance.now();
-		let spent = 0;
-		try {
-
-			while ( this.slices.length > 0 && ( spent === 0 || spent + this.slices[ 0 ].cost <= passes ) ) {
-
-				const slice = this.slices.shift()!;
-				spent += slice.cost;
-				slice.run();
-
-			}
-
-		} catch ( error ) {
-
-			this.abortSlices( error );
-			return;
-
-		}
-		this.sliceMs += performance.now() - started;
-		if ( this.slices.length > 0 ) {
-
-			this.armSliceTimer();
-			return;
-
-		}
-		if ( this.sliceTimer !== null ) clearTimeout( this.sliceTimer );
-		this.sliceTimer = null;
-		this.lastBakeMs = this.sliceMs;
-		this.busy = false;
-		this.pendingUpdate = null;
-		const done = this.sliceDone;
-		this.sliceDone = null;
-		done?.resolve();
-
-	}
-
-	// End the bake under way unfinished: `error` rejects its promise, none resolves it (dispose).
-	private abortSlices( error?: unknown ): void {
-
-		if ( this.sliceTimer !== null ) clearTimeout( this.sliceTimer );
-		this.sliceTimer = null;
-		this.slices = [];
-		this.busy = false;
-		this.pendingUpdate = null;
-		const done = this.sliceDone;
-		this.sliceDone = null;
-		if ( error === undefined ) done?.resolve();
-		else done?.reject( error );
-
-	}
-
-	private finishSlices(): void {
-
-		this.runSlices( Infinity );
-
-	}
-
-	private armSliceTimer(): void {
-
-		if ( this.sliceTimer !== null ) clearTimeout( this.sliceTimer );
-		this.sliceTimer = setTimeout( () => {
-
-			this.sliceTimer = null;
-			if ( this.slices.length > 0 ) this.finishSlices();
-
-		}, SLICE_TIMEOUT_MS );
-
-	}
-
-	// Show a finished bake: an explicit one at once, a periodic one by cross-fading to it.
-	private publishBake( bake: Bake ): void {
-
-		const { state, transitionSeconds } = bake;
-		const r = this.renderer;
-		const previous = this.endpoints[ this.front ];
-		const displayedNext = this.initialized ? state : this.endpoints[ 1 ];
-		if ( ! this.initialized ) {
-
-			// Both endpoints start from this bake's cloud layer.
-			const prev = r.getRenderTarget();
-			r.setRenderTarget( this.endpoints[ 1 ].clouds );
-			this.upperQuad.render( r );
-			r.setRenderTarget( prev );
-
-		}
-		this.panoramaA.value = previous.equirect.texture;
-		this.panoramaB.value = displayedNext.equirect.texture;
-		this.panoramaReadA.value = 2 ** - previous.stops * storePress.read.value;
-		this.panoramaReadB.value = 2 ** - displayedNext.stops * storePress.read.value;
-		this.irradianceA.value = previous.irradianceMap.texture;
-		this.irradianceB.value = displayedNext.irradianceMap.texture;
-		this.clearIrradianceA.value = previous.clearIrradianceMap.texture;
-		this.clearIrradianceB.value = displayedNext.clearIrradianceMap.texture;
-		this.deckIrradianceA.value = previous.deckIrradianceMap.texture;
-		this.deckIrradianceB.value = displayedNext.deckIrradianceMap.texture;
-		// The environment cross-fades from the atlas shown to the one this bake filtered (the
-		// first bake filled both); a bake that kept it fades it to itself.
-		const shown = this.environments[ this.environmentFront ]!;
-		const nextEnvironment = ! this.initialized ? this.environments[ 1 ]! : bake.environment !== null ? this.environments[ bake.environment ]! : shown;
-		this.environmentPair = [ this.environmentFront, ! this.initialized ? 1 : bake.environment ?? this.environmentFront ];
-		// the displayed environment at the second atlas's power of two (measured at most two stops
-		// over the first, in a front between the kept skies through the twilight, and never apart
-		// over a jump of the clock from noon to midnight: so a store's brightest, under 2^13, stays
-		// in half float through the fade)
-		const [ stopsA, stopsB ] = this.environmentPair.map( ( atlas ) => this.environmentStops[ atlas ] );
-		this.environmentGainA.value = 2 ** ( stopsB - stopsA );
-		this.environmentReadValue = 2 ** - stopsB * storePress.read.value;
-		if ( this.initialized && bake.environment !== null ) this.environmentFront = bake.environment;
-		if ( ! this.environmentA || ! this.environmentB ) {
-
-			this.environmentA = texture( shown.texture );
-			this.environmentB = texture( nextEnvironment.texture );
-			this.envMap = shown.clone();
-			this.envMap.texture.mapping = THREE.CubeUVReflectionMapping;
-			( this.envMap.texture as THREE.Texture & { isPMREMTexture: boolean } ).isPMREMTexture = true;
-			this.envMap.texture.name = 'skyDisplayedPMREM';
-			this.envMap.scissorTest = false;
-			const blendMat = new THREE.NodeMaterial();
-			blendMat.depthTest = false;
-			blendMat.depthWrite = false;
-			blendMat.toneMapped = false;
-			// Convolution is linear. Blending the already filtered atlases once keeps terrain
-			// within WebGPU's portable 16-texture limit instead of doubling every IBL sample. (The
-			// first atlas taken to the second's power of two first: both stored as powers of two,
-			// the gain loses no bits.)
-			const a = this.environmentA.sample( uv() ).level( float( 0 ) ), b = this.environmentB.sample( uv() ).level( float( 0 ) );
-			blendMat.fragmentNode = vec4( mix( a.rgb.mul( this.environmentGainA ), b.rgb, this.blend ), mix( a.a, b.a, this.blend ) );
-			this.environmentBlendQuad = new THREE.QuadMesh( blendMat );
-			this.environment = pmremTexture( this.envMap.texture );
-
-		} else {
-
-			this.environmentA.value = shown.texture;
-			this.environmentB.value = nextEnvironment.texture;
-
-		}
-		this.destination = bake.next;
-		this.transitionElapsed = 0;
-		this.transitionDuration = this.initialized ? transitionSeconds : 0;
-		this.blend.value = ! this.initialized || this.transitionDuration > 0 ? 0 : 1;
-		this.equirect = state.equirect;
-		this.initialized = true;
-		this.publish( this.blend.value );
-		if ( this.transitionDuration === 0 ) this.front = this.destination;
-		this.onEnvironmentStore?.();
-
-	}
-
 	advance( dt: number ): void {
 
 		if ( ! Number.isFinite( dt ) || dt < 0 ) throw new RangeError( 'Sky dt must be finite and nonnegative' );
@@ -2797,8 +963,8 @@ export class Sky {
 
 			// A periodic bake under way takes this frame's share; once published, its cross-fade
 			// starts on the next frame. A paused scene completes it at once.
-			if ( this.clockStill ) this.finishSlices();
-			else this.runSlices( SLICE_PASSES );
+			if ( this.clockStill ) finishSlices( this );
+			else runSlices( this, SLICE_PASSES );
 			return;
 
 		}
@@ -2811,7 +977,7 @@ export class Sky {
 
 	}
 
-	private publish( amount: number ): void {
+	publish( amount: number ): void {
 
 		const a = this.endpoints[ this.front ], b = this.endpoints[ this.destination ];
 		this.skyIrradiance.copy( a.irradiance ).lerp( b.irradiance, amount );
@@ -2829,7 +995,7 @@ export class Sky {
 	}
 
 	// The open sky behind the clouds, where it shows through them (CLEAR_SKY): the clear day's.
-	private gapSky( direction: V3, gains = this.gapGain ): V3 {
+	gapSky( direction: V3, gains = this.gapGain ): V3 {
 
 		return this.atmosphere.skyRadiance( direction, true, gains );
 
@@ -2863,7 +1029,7 @@ export class Sky {
 	// environment's filter steps still run, so normally before the bake shows; one that lands later
 	// changes the cross-fade only by the little it has run. A late answer never overwrites an
 	// endpoint a newer bake has taken.
-	private readIrradiance( state: SkyEndpoint, version: number ): void {
+	readIrradiance( state: SkyEndpoint, version: number ): void {
 
 		this.irradiancePending ++;
 		void this.renderer.readRenderTargetPixelsAsync( state.irradianceMap, 0, 0, 1, 1 ).then( ( pixels ) => {
@@ -2883,11 +1049,11 @@ export class Sky {
 
 	}
 
-	// A bake's distant sea on the CPU (`seaNode`'s twin, SEA_KNEE), from its deck irradiance read back:
+	// A bake's distant sea on the CPU (SkyDome.ts `seaNode`'s twin, SEA_KNEE), from its deck irradiance read back:
 	// the ground bounce takes it as the environment's lower half (`seaRadiance`). Only a newer bake's
 	// overwrites it, and an answer for an endpoint a newer bake has taken lands nowhere. At the knee and
 	// above it is the body the bake took, bit for bit.
-	private landSea( state: SkyEndpoint, version: number, deck: Float32Array ): void {
+	landSea( state: SkyEndpoint, version: number, deck: Float32Array ): void {
 
 		if ( state.version !== version ) return;
 		const { body, night, sun, knee, radiance } = state.sea;
@@ -2901,7 +1067,7 @@ export class Sky {
 
 	// The bake's cloud layer at `q` (the upper hemisphere's equirect), its radiance in scene units
 	// (the bake's power of two and the debug press divided out).
-	private layerAt( q: V2 ): V4 {
+	layerAt( q: V2 ): V4 {
 
 		const stored = this.cloudLayer.sample( q ).level( float( 0 ) ).toVar();
 		return vec4( stored.rgb.mul( this.layerRead ), stored.a );
@@ -2910,7 +1076,7 @@ export class Sky {
 
 	// The seen panorama toward `direction`, its radiance in scene units (each side's power of two and
 	// the debug press divided out before the cross-fade: two bakes may store at two powers).
-	private samplePanorama( direction: V3, mip: F ): V4 {
+	samplePanorama( direction: V3, mip: F ): V4 {
 
 		const q = dirToEquirect( direction );
 		const a = this.panoramaA.sample( q ).level( mip ).toVar(), b = this.panoramaB.sample( q ).level( mip ).toVar();
@@ -3022,7 +1188,7 @@ export class Sky {
 
 		}
 		for ( const environment of this.environments ) environment?.dispose();
-		this.abortSlices();
+		abortSlices( this );
 		this.pmrem.dispose();
 		this.atmosphere.dispose();
 

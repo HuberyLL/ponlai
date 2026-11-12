@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
 import { installWaitFrames } from './page-eval.mjs';
-import { HANDOFF_TOP, MOON_KEY_TOP } from '../src/sky/DayCycle.ts';
+import { HANDOFF_TOP, MOON_KEY_TOP } from '../src/look/DayLook.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';

@@ -124,7 +124,7 @@ no group but `special` (see below).
 
 The three `island-cloudy-*` views, parked with their sky, are the byte checks' reach into the
 clouds' shadow under a low sun
-(`src/sky/Sky.ts` SHADOW_DISC, SHADOW_AIR_NARROW). Their elevations are chosen by what moves there,
+(`src/sky/SkyTrack.ts` SHADOW_DISC, SHADOW_AIR_NARROW). Their elevations are chosen by what moves there,
 which depends on where the clouds sit at `t=12` and on where the sun stands along its path. A view's
 hour is the one at which its sun stands at its elevation (`src/sky/DayCycle.ts` `morningHour`,
 `eveningHour`, on the 52 degree path), written into the query to four decimals. Share
