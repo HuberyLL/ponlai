@@ -147,9 +147,9 @@ export function createDiagnostics( render: RenderParts, island: IslandParts, pag
 /** The scene's handles on `window.__PONLAI__`. */
 export function exposeDebugHandles( render: RenderParts, island: IslandParts, page: PageParts ) {
 
-	const { DEBUG, quality, renderer, submitBatch, scene, camera, sky, dayCycle, weather, weatherEffects, wind, applySkyQuality, sun, sunShadow, invalidateSunShadow, retuneSky, refreshEnvironment, applySun, setHour, setPreset, setWeather, setWind, fft, waveMaps, seaDetail, pipeline, groundBounce, shoreWaves, ambient, ambientRelight, refractedSun, stormSea, hazeKey, motionPasses } = render;
+	const { DEBUG, quality, renderer, submitBatch, scene, camera, sky, dayCycle, weather, wind, applySkyQuality, sun, sunShadow, invalidateSunShadow, retuneSky, refreshEnvironment, applySun, setHour, setPreset, setWeather, setWind, fft, waveMaps, seaDetail, pipeline, groundBounce, shoreWaves, ambient, ambientRelight, refractedSun, stormSea, hazeKey, motionPasses } = render;
 	const { controls, freeControls, landInfo, fields, wenyao, grass, yunpeng, bamboo, growth } = island;
-	const { pipelineCount, cameraSettings, setCameraMode, setCameraView, dynamicResolution, pacer, setTime, establishScene, loop, step } = page;
+	const { pipelineCount, cameraSettings, setCameraMode, setCameraView, weatherEffects, dynamicResolution, pacer, setTime, establishScene, loop, step } = page;
 
 	if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, waveMaps, water: render.water, pipeline, shared, refractedSun, groundBounce,
 		// the direction the surfaces take the key's light from, the low key's lift included (lighting/KeyLift.ts)

@@ -17,7 +17,7 @@
 // resume and step the frame loop (app/Frame.ts).
 // the page's settings, which its entry (Boot.ts) installed before this module's imports load
 import { QUALITY_CHOICE } from './PageSettings.ts';
-import { type ExtraPass, createShared, installShared, type RenderParts, createRenderer, setUpRenderer, createScenes, createSky, createLight, createKey, createEnvironment, publishSkyLight, createSeaAndPipeline, createBounceAndShore, createAmbient, createWater, bakeWithHaze, awaitWarmUp, checkMotion, primeSharedBuilds } from './render.ts';
+import { type ExtraPass, DAY_PRESETS, sceneOptions, createShared, installShared, type RenderParts, createRenderer, setUpRenderer, createScenes, createSky, createLight, createKey, createEnvironment, publishSkyLight, createSeaAndPipeline, createBounceAndShore, createAmbient, createWater, bakeWithHaze, awaitWarmUp, checkMotion, primeSharedBuilds } from './render.ts';
 import { settings as params, type QualityTier, qualityProfile } from './renderSetup.ts';
 import * as THREE from 'three/webgpu';
 import { FallingLeaves, leavesPass, setSoilStrength, ISLAND_SEA, islandBounceGround, Villagers, loadVillager, PROPORTIONS, createIslandCamera, createTrample, createCharacterShadow, type IslandParts, bakeIslandGround, awaitWorld, createLand, createWorld, createWorldViews, createVegetation, createGrowth } from './island.ts';
@@ -71,9 +71,19 @@ page.pipelineCount = render.DEBUG ? ( await import( './debug/PipelineCounter.ts'
 
 // where the canvas goes and the size it starts at
 const viewport = { host: document.getElementById( 'app' )!, width: innerWidth, height: innerHeight };
-createScenes( render, { viewport } );
+// `dpr`: the page's pixel ratio, pinned (captures), over the display's and the tier's
+createScenes( render, { viewport, dpr: params.has( 'dpr' ) ? Number( params.get( 'dpr' ) ) : null } );
 createIslandCamera( render, island );
-createSky( render );
+// ?game turns the island into the game (below).
+const GAME = params.has( 'game' );
+// The scene the query names (render.ts `sceneOptions`), the load's and a scene jump's alike. Where
+// it names no hour or day length: a 48-minute day from the golden hour, as in many open-world
+// games, slow enough to watch the light change; the game's day is 24 minutes at 1x, so a day's
+// work and its evening fit one sitting, and it starts at 8 (Game.ts), so the sky is lit once for
+// that hour. A parked weather loads on a debug page only.
+const sceneDefaults = GAME ? { hour: 8, dayLength: 1440, parkedWeather: render.DEBUG } : { hour: DAY_PRESETS[ 'golden-hour' ], dayLength: 2880, parkedWeather: render.DEBUG };
+page.sceneOptions = ( query ) => sceneOptions( query, sceneDefaults );
+createSky( render, { scene: page.sceneOptions( params ), seaFog: params.has( 'seaFog' ), dayFog: params.has( 'dayFog' ) } );
 createTrample( render, island );
 createCameraViews( render, island, page );
 createLight( render );
@@ -105,7 +115,6 @@ createVegetation( render, island, { framing: page.framing } );
 // ?game turns the island into the game: its own islanders, a clock that drives the sky and the
 // player's interface (src/game/ui/GameUi.ts); the GUI's Game folder and window.__PONLAI__.game
 // drive the rest. Without it the scene stays the art-review scene with one islander walking a loop.
-const GAME = params.has( 'game' );
 page.GAME = GAME;
 island.characters = null;
 page.game = null;

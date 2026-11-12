@@ -13,7 +13,7 @@
 //   entry's to order.
 // - What the island gives a stage comes as an argument typed by the renderer's own types: this
 //   file names nothing of the island's.
-import { settings as params, type SettingName, type SettingsQuery } from './Settings.ts';
+import { settings as params, numberSetting, type SettingsQuery } from './Settings.ts';
 import * as THREE from 'three/webgpu';
 import { Sky } from './sky/Sky.ts';
 import { DAY_PRESETS, type DayPreset, DayCycle, sunRising } from './sky/DayCycle.ts';
@@ -68,8 +68,65 @@ import { MOON_GLINT_RADIUS, SCENE_RADIANCE_SCALE } from './lighting/Radiometry.t
 import { SUN_GLINT_DISC } from './lighting/SunDisc.ts';
 import { debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 
-/** A scene as the query names it: what a load and a scene jump both establish. */
-type SceneOptions = { weather: WeatherName; wind: { level: WindLevel | undefined; heading: number | undefined }; autoWeather: boolean; day: { hour: number; dayLength: number; paused: boolean; moonPhase: number }; preset: DayPreset | null; paused: boolean; time: number; clouds: number | null; camera: string };
+/** A scene as the query names it: what a load and a scene jump both establish (`sceneOptions`). */
+export interface SceneOptions {
+	weather: WeatherName;
+	wind: { level: WindLevel | undefined; heading: number | undefined };
+	/** the weather evolves on its own (the query names neither the weather nor its wind) */
+	autoWeather: boolean;
+	day: { hour: number; dayLength: number; paused: boolean; moonPhase: number };
+	preset: DayPreset | null;
+	/** the scene clock held */
+	paused: boolean;
+	/** the scene clock (s) */
+	time: number;
+	/** the clouds' coverage, over the weather's (0..1), or null */
+	clouds: number | null;
+}
+
+/** What a query leaves to the page: the day clock's hour and length (s) where it names none, and
+ * whether a parked weather may load (Weather.ts `PARKED_WEATHER`: debug pages only). */
+export interface SceneDefaults { hour: number; dayLength: number; parkedWeather: boolean }
+
+/**
+ * The scene a query's options set: the weather (held when one is asked for, else evolving on its
+ * own), the day clock and its preset, the scene clock and the cloud override. The load reads its
+ * own query with it, and a scene jump (`establishScene`) the query it is given, with the same
+ * defaults, so the two agree. The moon (a full one by default) and the stars stand fixed in the
+ * sky (DayCycle.ts MOON, STARS); the phase shapes only the drawn moon. A parked weather
+ * (Weather.ts `PARKED_WEATHER`) is refused unless the defaults allow it and falls back to fair. The
+ * wind (Weather.ts) takes `wind` (a level) and `windDir` (a heading, degrees in WeatherState's
+ * convention), each over the sky's own wind; naming the weather or either of them holds the
+ * weather, its wind included.
+ */
+export function sceneOptions( options: SettingsQuery, defaults: SceneDefaults ): SceneOptions {
+
+	let weather = options.get( 'weather' ) ?? 'fair';
+	const preset = options.get( 'preset' );
+	if ( ! defaults.parkedWeather && isParkedWeather( weather ) ) {
+
+		console.warn( `weather=${ weather } is parked (debug builds only, ?debug): showing fair` );
+		weather = 'fair';
+
+	}
+	return {
+		weather: Object.hasOwn( WEATHER_PRESETS, weather ) ? weather as WeatherName : 'fair',
+		wind: {
+			level: isWindLevel( options.get( 'wind' ) ) ? options.get( 'wind' ) as WindLevel : undefined,
+			heading: options.has( 'windDir' ) && Number.isFinite( Number( options.get( 'windDir' ) ) ) ? Number( options.get( 'windDir' ) ) : undefined,
+		},
+		autoWeather: ! options.has( 'weather' ) && ! options.has( 'wind' ) && ! options.has( 'windDir' ),
+		day: { hour: numberSetting( 'hour', defaults.hour, options ),
+			dayLength: Math.max( 30, numberSetting( 'dayLength', defaults.dayLength, options ) ),
+			paused: options.has( 'paused' ) || options.get( 'clock' ) === 'paused', moonPhase: numberSetting( 'moon', 0.5, options ) },
+		preset: preset && Object.hasOwn( DAY_PRESETS, preset ) ? preset as DayPreset : null,
+		paused: options.has( 'paused' ),
+		time: Math.max( 0, numberSetting( 't', 0, options ) ),
+		// Explicit cloud tuning is a review override; selecting a weather preset restores authored coverage.
+		clouds: options.has( 'clouds' ) ? THREE.MathUtils.clamp( numberSetting( 'clouds', 0.32, options ), 0, 1 ) : null,
+	};
+
+}
 
 /** What the page hands the renderer as it creates it (`createRenderer`), which the later stages
  * and the page read on RenderParts. */
@@ -98,15 +155,10 @@ export interface RenderParts extends RenderHost {
 	afterScene: THREE.Scene;
 	camera: THREE.PerspectiveCamera;
 	sky: Sky;
-	numberParam: ( name: SettingName, fallback: number, options?: SettingsQuery ) => number;
-	sceneOptions: ( options: SettingsQuery ) => SceneOptions;
-	loaded: SceneOptions;
 	dayCycle: DayCycle;
 	weather: Weather;
-	weatherEffects: { rain: boolean; wetness: boolean };
 	seaFogView: { on: boolean };
 	dayFogView: { on: boolean };
-	requestedPreset: string | null;
 	manualSun: boolean;
 	paused: boolean;
 	simTime: number;
@@ -173,6 +225,8 @@ export interface SubmergedWorld { group: THREE.Group; subsets?: ReadonlyMap<THRE
 /** What the renderer's stages hand one another and nothing else reads: on the same object, off the
  * RenderParts the island and the page see. */
 interface StageParts {
+	/** the scene the page loaded */
+	loaded: SceneOptions;
 	runtime: { refractedSun: RefractedSun | null };
 	hazeReady: boolean;
 	bakeEnvironment: () => Promise<void>;
@@ -239,18 +293,18 @@ export function setUpRenderer( render: RenderParts ) {
 }
 
 /** The canvas at its starting size, the scenes the frame draws and the camera. */
-export function createScenes( render: RenderParts, { viewport }: { viewport: { host: HTMLElement; width: number; height: number } } ) {
+export function createScenes( render: RenderParts, { viewport, dpr }: { viewport: { host: HTMLElement; width: number; height: number }; dpr: number | null } ) {
 
 	const { renderer } = render;
 	// the table of what a cut or a scene jump clears, which every owner of a history joins
 	render.history = new SceneHistory();
 	// The scene renders at a pixel ratio set by the quality tier (see RenderScale.ts), at most the
-	// display's and DPR_CAP (the canvas's cap: native 4K on a 2x display at high's maximum, or `?dpr`);
-	// the canvas matches the display and the frame graph upscales to it.
+	// display's and DPR_CAP (the canvas's cap: native 4K on a 2x display at high's maximum, or `dpr`,
+	// the page's explicit ratio); the canvas matches the display and the frame graph upscales to it.
 	// Explicit DPR captures and the full-resolution control lift the tier's pixel budget and pin a
 	// dynamic scale at its nominal.
-	render.DPR_CAP = params.has( 'dpr' ) ? Number( params.get( 'dpr' ) ) : OUTPUT_PIXEL_RATIO_CAP;
-	render.resolution = { full: params.has( 'dpr' ), render: '', scale: '', gpu: '–' };
+	render.DPR_CAP = dpr ?? OUTPUT_PIXEL_RATIO_CAP;
+	render.resolution = { full: dpr !== null, render: '', scale: '', gpu: '–' };
 	renderer.setPixelRatio( outputPixelRatio( 1 ) );
 	renderer.setSize( viewport.width, viewport.height );
 	renderer.shadowMap.enabled = true;
@@ -272,80 +326,30 @@ export function createScenes( render: RenderParts, { viewport }: { viewport: { h
 }
 
 /**
- * The scene the query names, the sky, the day and the weather, the wind, the rain and the sky's
- * quality knobs.
+ * The scene the page loads (`sceneOptions`), the sky, the day and the weather, the wind, the rain
+ * and the sky's quality knobs. `seaFog` and `dayFog` start the deep sea fog and the day's fog layer
+ * on.
  */
-export function createSky( render: RenderParts ) {
+export function createSky( render: RenderParts, { scene: loaded, seaFog, dayFog }: { scene: SceneOptions; seaFog: boolean; dayFog: boolean } ) {
 
-	const { DEBUG, quality, renderer } = render;
-	render.sceneOptions = sceneOptions;
+	const { quality, renderer } = render;
 
 	// ------------------------------------------------------------------ sky, light, water optics
 
 	const sky = new Sky( renderer, { elevation: 32, azimuth: - 8 } );
 	render.sky = sky;
 	sky.setEnvironmentSource( quality.environmentSource );
-	const numberParam = ( name: SettingName, fallback: number, options: SettingsQuery = params ) => {
-
-		const value = Number( options.get( name ) ?? fallback );
-		return Number.isFinite( value ) ? value : fallback;
-
-	};
-	render.numberParam = numberParam;
-	// The scene a query's options set: the weather (held when one is asked for, else evolving on its
-	// own), the day clock and its preset, the scene clock and the cloud override. The load reads its
-	// own query with it, and a scene jump (`establishScene`) the query it is given, so the two agree.
-	// A 48-minute day, as in many open-world games: slow enough to watch the light change. The game's
-	// day is 24 minutes at 1x, so a day's work and its evening fit one sitting. The moon (a full one
-	// by default) and the stars stand fixed in the sky (DayCycle.ts MOON, STARS); the phase shapes only
-	// the drawn moon. The game starts at 8 (see Game.ts), so the sky is lit
-	// once for that hour. A parked weather (Weather.ts `PARKED_WEATHER`) is refused outside a debug
-	// build and falls back to fair; the load and a scene jump read it here alike, and so does ?game,
-	// whose weather is the page's. The wind (Weather.ts) takes `wind` (a level) and `windDir` (a
-	// heading, degrees in WeatherState's convention), each over the sky's own wind; naming the
-	// weather or either of them holds the weather, its wind included.
-	function sceneOptions( options: SettingsQuery ) {
-
-		let weather = options.get( 'weather' ) ?? 'fair';
-		const preset = options.get( 'preset' );
-		if ( ! DEBUG && isParkedWeather( weather ) ) {
-
-			console.warn( `weather=${ weather } is parked (debug builds only, ?debug): showing fair` );
-			weather = 'fair';
-
-		}
-		return {
-			weather: Object.hasOwn( WEATHER_PRESETS, weather ) ? weather as WeatherName : 'fair',
-			wind: {
-				level: isWindLevel( options.get( 'wind' ) ) ? options.get( 'wind' ) as WindLevel : undefined,
-				heading: options.has( 'windDir' ) && Number.isFinite( Number( options.get( 'windDir' ) ) ) ? Number( options.get( 'windDir' ) ) : undefined,
-			},
-			autoWeather: ! options.has( 'weather' ) && ! options.has( 'wind' ) && ! options.has( 'windDir' ),
-			day: { hour: numberParam( 'hour', params.has( 'game' ) ? 8 : DAY_PRESETS[ 'golden-hour' ], options ),
-				dayLength: Math.max( 30, numberParam( 'dayLength', params.has( 'game' ) ? 1440 : 2880, options ) ),
-				paused: options.has( 'paused' ) || options.get( 'clock' ) === 'paused', moonPhase: numberParam( 'moon', 0.5, options ) },
-			preset: preset && Object.hasOwn( DAY_PRESETS, preset ) ? preset as DayPreset : null,
-			paused: options.has( 'paused' ),
-			time: Math.max( 0, numberParam( 't', 0, options ) ),
-			// Explicit cloud tuning is a review override; selecting a weather preset restores authored coverage.
-			clouds: options.has( 'clouds' ) ? THREE.MathUtils.clamp( numberParam( 'clouds', 0.32, options ), 0, 1 ) : null,
-			camera: options.get( 'camera' ) === 'free' ? 'free' : 'orbit',
-		};
-
-	}
-	const loaded = sceneOptions( params );
-	render.loaded = loaded;
+	staged( render ).loaded = loaded;
 	const dayCycle = new DayCycle( loaded.day );
 	render.dayCycle = dayCycle;
 	const weather = new Weather( loaded.weather, loaded.wind );
 	render.weather = weather;
-	render.weatherEffects = { rain: true, wetness: true };
 	// The deep sea fog (look/HazeLook.ts SEA_FOG): a switch beside the weather, off unless
-	// `?seaFog` or the GUI turns it on, whatever the sky.
-	render.seaFogView = { on: params.has( 'seaFog' ) };
+	// `seaFog` or the GUI turns it on, whatever the sky.
+	render.seaFogView = { on: seaFog };
 	// The day's fog layer under a clear or fair sky (weather/HazeKeys.ts `fogLayer`): a switch, off
-	// unless `?dayFog` or the GUI turns it on.
-	render.dayFogView = { on: params.has( 'dayFog' ) };
+	// unless `dayFog` or the GUI turns it on.
+	render.dayFogView = { on: dayFog };
 	weather.auto = loaded.autoWeather;
 	// The day sky's level and exponent per clouded sky (Weather.ts `daySky`, `daySkyExponent`),
 	// tunable on debug pages
@@ -367,7 +371,6 @@ export function createSky( render: RenderParts ) {
 		weather.setPresetValue( name, field, value() );
 
 	}
-	render.requestedPreset = params.get( 'preset' );
 	if ( loaded.preset ) dayCycle.setPreset( loaded.preset );
 	render.manualSun = false;
 	render.paused = loaded.paused;
@@ -383,7 +386,8 @@ export function createSky( render: RenderParts ) {
 /** The sky's runtime quality, the environment's fill, the sun's light and its shadow map. */
 export function createLight( render: RenderParts ) {
 
-	const { qualityTier, quality, scene, sky, loaded, dayCycle } = render;
+	const { qualityTier, quality, scene, sky, dayCycle } = render;
+	const { loaded } = staged( render );
 	render.applySkyQuality = applySkyQuality;
 	render.applyEnvironmentFill = applyEnvironmentFill;
 	// the local lights' registry, which the island's kinds of light join (LocalLights.ts)

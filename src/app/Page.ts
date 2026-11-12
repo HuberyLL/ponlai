@@ -3,8 +3,8 @@
 // renderer's (RenderStages.ts) and the island's (IslandStages.ts).
 import type * as THREE from 'three/webgpu';
 import type GUI from 'lil-gui';
-import type { WeatherName, WindLevel, DynamicResolution, GpuFrameTimer, PassScaling, FramePacer, FrameStats, PipelineSettings } from '../render.ts';
-import type { QualityTier } from '../renderSetup.ts';
+import type { SceneOptions, WeatherName, WindLevel, DynamicResolution, GpuFrameTimer, PassScaling, FramePacer, FrameStats, PipelineSettings } from '../render.ts';
+import type { QualityTier, SettingsQuery } from '../renderSetup.ts';
 import type { QualityDetector } from '../QualityDetect.ts';
 import type { Game } from '../game/index.ts';
 import type { IslandFraming } from '../island.ts';
@@ -22,6 +22,8 @@ export interface PageParts {
 	reloadWithQuality: ( tier: QualityTier | null ) => void;
 	GAME: boolean;
 	game: Game | null;
+	/** the scene a query names, with the page's defaults: the load's and a scene jump's */
+	sceneOptions: ( query: SettingsQuery ) => SceneOptions;
 	gui: GUI;
 	S: PipelineSettings;
 	cameraSettings: { mode: string };
@@ -35,6 +37,8 @@ export interface PageParts {
 	environmentLook: { exposure: boolean };
 	autoQuality: QualityLines;
 	frameStats: FrameStats;
+	/** the GUI's switches for the rain and the wet surfaces, which the frame reads */
+	weatherEffects: { rain: boolean; wetness: boolean };
 	weatherView: { preset: WeatherName; seconds: number };
 	windView: { level: WindLevel; heading: number };
 	shownWind: string;

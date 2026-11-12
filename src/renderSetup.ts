@@ -8,7 +8,7 @@
 // exit only: these are not in render.ts.
 export { ACTIVE_QUALITY, DEFAULT_QUALITY, QUALITY, QUALITY_TIERS, isQualityTier, qualityProfile } from './Quality.ts';
 export type { QualityProfile, QualityTier } from './Quality.ts';
-export { installSettings, parseSettings, settingProblems, settings } from './Settings.ts';
+export { installSettings, numberSetting, parseSettings, settingProblems, settings } from './Settings.ts';
 export type { SettingName, SettingsQuery } from './Settings.ts';
 export { installLook } from './look/Look.ts';
 export type { AmbientLook, AmbientRowLook, BloomKey, DayLook, DesaturationKey, DisplayLook, ExposureKey, ExposureLook, FullKey, HazeLook, IslandSkyRow, LocalLightsLook, Look, MeadowCanopyLook, OcclusionLook, Rgb, SeaLook, SharingKey, SkyLook, WindLook } from './look/Look.ts';

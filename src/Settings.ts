@@ -239,6 +239,15 @@ export function installSettings( query: ParsedSettings, tier: string | null = nu
 
 }
 
+/** A number option of `query` (the installed settings by default): its value, or `fallback` where
+ * it is missing or not a finite number. */
+export function numberSetting( name: SettingName, fallback: number, query: SettingsQuery = settings ): number {
+
+	const value = Number( query.get( name ) ?? fallback );
+	return Number.isFinite( value ) ? value : fallback;
+
+}
+
 /** The installed settings (every option absent where none are installed). */
 export const settings: ParsedSettings & { readonly installed: boolean; readonly tier: string | null } = Object.freeze( {
 	get entries() { return current( 'entries' ).entries; },

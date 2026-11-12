@@ -5,6 +5,7 @@ import { type DayPreset, type WeatherName, weatherWind, sceneEvent, registerScen
 import { settings as params, type SettingName } from '../renderSetup.ts';
 import { registerIslandHistories, type IslandParts } from '../island.ts';
 import type { PageParts } from './Page.ts';
+import { cameraMode } from './CameraViews.ts';
 
 // A whole scene at once, as a page loads it (the capture tools' one page per set; the profiler's
 // scene switches). `establishScene( query )` (a string or URLSearchParams) leaves the page as a
@@ -13,7 +14,7 @@ import type { PageParts } from './Page.ts';
 // frame equals the fresh load's, to the byte wherever the fresh load repeats itself
 // (tools/verify-scene-jump.mjs checks every parity view from several scenes before).
 // - The scene's options (SCENE_OPTIONS) come from the query, each one left out at its load default
-//   (`sceneOptions`): the weather established (wet in rain; auto weather without `weather`), the day
+//   (render.ts `sceneOptions`, with the page's defaults): the weather established (wet in rain; auto weather without `weather`), the day
 //   clock (hour or preset, moon phase, day length, paused), the scene clock (`t`, `paused`) and the
 //   wind integrated to it, the cloud override.
 // - The camera: the orbit's island view at the query's dist / polar / az (`placeOrbit`, as the load
@@ -44,9 +45,9 @@ export type SceneRequest = string | URLSearchParams | { weather?: WeatherName; p
 /** The scene jump. */
 export function createSceneControls( render: RenderParts, island: IslandParts, page: PageParts ) {
 
-	const { sceneOptions, dayCycle, weather, wind, bakeExplicitly, refreshEnvironment, history } = render;
+	const { dayCycle, weather, wind, bakeExplicitly, refreshEnvironment, history } = render;
 	const { controls, growth } = island;
-	const { setCameraMode, setCameraView, framing: { poseIslandView }, timeView, pacer } = page;
+	const { sceneOptions, setCameraMode, setCameraView, framing: { poseIslandView }, timeView, pacer } = page;
 	// What a jump clears of the scenes before, registered layer by layer in the order it is
 	// cleared (post/SceneHistory.ts): the renderer's, the island's, the renderer's light, the page's.
 	registerSceneHistories( render );
@@ -103,7 +104,7 @@ export function createSceneControls( render: RenderParts, island: IslandParts, p
 			controls.clearInput();
 			setCameraMode( 'orbit' );
 			setCameraView( 'island' );
-			if ( next.camera === 'free' ) setCameraMode( 'free' );
+			if ( cameraMode( query ) === 'free' ) setCameraMode( 'free' );
 			// the shoal at the query's approach (0 without one), put on it at once
 			await growth.approachNow( Number( query.get( 'approach' ) ?? 0 ) );
 

@@ -4,7 +4,7 @@
 // between them (main.ts).
 import { reloadWith } from '../PageSettings.ts';
 import { DAY_PRESETS, type DayPreset, WEATHER_PRESETS, isParkedWeather, type WeatherName, WIND_LEVELS, type WindLevel, WHITE_BALANCE, LOCAL_TONE, FrameStats, shared, AMBIENT_KNOBS, ambientGrade, type AmbientView, markSkyRetune, type AAMode, AA_MODE, sceneEvent, debugViewChoices, type RenderParts } from '../render.ts';
-import { settings as params, type QualityTier, ACTIVE_QUALITY } from '../renderSetup.ts';
+import { settings as params, numberSetting, type QualityTier, ACTIVE_QUALITY } from '../renderSetup.ts';
 import GUI from 'lil-gui';
 import { qualityLines } from '../QualityDetect.ts';
 import { soilUniforms, setSoilStrength, groundGains, PROPORTION_NAMES, type ProportionName, characterLook, type IslandParts } from '../island.ts';
@@ -14,7 +14,7 @@ import type { PageParts } from './Page.ts';
 /** The panel and its scene folders. */
 export function createGui( render: RenderParts, island: IslandParts, page: PageParts ) {
 
-	const { DEBUG, qualityTier, resolution, scene, camera, sky, numberParam, dayCycle, weather, weatherEffects, seaFogView, dayFogView, requestedPreset, skyQuality, lighting, invalidateSunShadow, refreshEnvironment, applySun, setPreset, setWeather, setWind, applySkyFill, fft, pipeline, groundBounce, ambient, ambientView } = render;
+	const { DEBUG, qualityTier, resolution, scene, camera, sky, dayCycle, weather, seaFogView, dayFogView, skyQuality, lighting, invalidateSunShadow, refreshEnvironment, applySun, setPreset, setWeather, setWind, applySkyFill, fft, pipeline, groundBounce, ambient, ambientView } = render;
 	const { controls, freeControls, chunkView, showChunkBorders, SCENE_LOOK, islanderBuild, sceneBody, buildIslander, growth } = island;
 	const { ground, qualityChoice, cameraSettings, reviewView, fovWidening, applyOrbitLimit, unwidenFov, setCameraMode, setCameraView, resize } = page;
 	page.reloadWithQuality = reloadWithQuality;
@@ -33,8 +33,8 @@ export function createGui( render: RenderParts, island: IslandParts, page: PageP
 	gui.onChange( () => sceneEvent( 'gui' ) );
 	if ( ! params.has( 'gui' ) ) gui.hide();
 	page.S = pipeline.settings;
-	controls.nearFov = numberParam( 'nearFov', controls.nearFov );
-	controls.widenFrom = numberParam( 'nearFovFrom', controls.widenFrom );
+	controls.nearFov = numberSetting( 'nearFov', controls.nearFov );
+	controls.widenFrom = numberSetting( 'nearFovFrom', controls.widenFrom );
 
 	setCameraMode( cameraSettings.mode );
 	const cameraF = gui.addFolder( 'Camera' );
@@ -176,12 +176,15 @@ export function createGui( render: RenderParts, island: IslandParts, page: PageP
 	weatherF.add( windView, 'level', Object.keys( WIND_LEVELS ) ).name( 'wind' ).listen().onChange( ( level: WindLevel ) => { void setWind( { level }, weatherView.seconds ); } );
 	weatherF.add( windView, 'heading', 0, 360, 1 ).name( 'wind heading' ).listen().onFinishChange( ( heading: number ) => { void setWind( { heading }, weatherView.seconds ); } );
 	weatherF.add( weather, 'auto' ).name( 'auto weather' ).listen();
+	// the rain's drops and ripples and the wet surfaces, each switched off here (the frame reads them)
+	const weatherEffects = { rain: true, wetness: true };
+	page.weatherEffects = weatherEffects;
 	weatherF.add( weatherEffects, 'rain' ).name( 'rain & ripples' );
 	weatherF.add( weatherEffects, 'wetness' ).name( 'wet surfaces' );
 	weatherF.add( dayFogView, 'on' ).name( 'day fog' ).onChange( () => markSkyRetune() );
 	weatherF.add( seaFogView, 'on' ).name( 'sea fog' ).onChange( () => markSkyRetune() );
 	const timeF = gui.addFolder( 'Time & moon' );
-	const timeView = { preset: requestedPreset ?? 'golden-hour' };
+	const timeView = { preset: params.get( 'preset' ) ?? 'golden-hour' };
 	page.timeView = timeView;
 	timeF.add( dayCycle, 'hour', 0, 24, 0.01 ).name( 'hour' ).listen().onFinishChange( refreshEnvironment );
 	timeF.add( dayCycle, 'dayLength', 30, 7200, 1 ).name( 'seconds per day' );

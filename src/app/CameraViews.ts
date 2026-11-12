@@ -11,10 +11,17 @@ import type { PageParts } from './Page.ts';
 
 export type CameraView = 'island' | 'horizon' | 'sky';
 
+/** The camera mode a query names: `camera=free` flies free, anything else orbits the island. */
+export function cameraMode( options: SettingsQuery ): 'free' | 'orbit' {
+
+	return options.get( 'camera' ) === 'free' ? 'free' : 'orbit';
+
+}
+
 /** The camera's views and modes, and the framing the island's stages frame the land by. */
 export function createCameraViews( render: RenderParts, island: IslandParts, page: PageParts ) {
 
-	const { renderer, camera, sky, loaded } = render;
+	const { renderer, camera, sky } = render;
 	const { target, controls, initialCameraPosition, initialCameraQuaternion, initialCameraTarget, framingGlide, initialCameraFov, orbitMaxPolar, orbitMinDistance, freeControls } = island;
 	// (the options the island view was last posed at: the page's own query at first)
 	let viewOptions: SettingsQuery = params;
@@ -24,7 +31,7 @@ export function createCameraViews( render: RenderParts, island: IslandParts, pag
 	page.unwidenFov = unwidenFov;
 	page.setCameraMode = setCameraMode;
 	page.setCameraView = setCameraView;
-	const cameraSettings = { mode: loaded.camera as string };
+	const cameraSettings = { mode: cameraMode( params ) as string };
 	page.cameraSettings = cameraSettings;
 	const reviewView = { camera: 'island' as CameraView };
 	page.reviewView = reviewView;

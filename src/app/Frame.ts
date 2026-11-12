@@ -129,10 +129,10 @@ export function createFrameSizing( render: RenderParts, page: PageParts ) {
 /** The dynamic resolution, the pacer and the tick. */
 export function createFrame( render: RenderParts, island: IslandParts, page: PageParts ) {
 
-	const { profiler, DEBUG, quality, gpuTiming, renderer, submitBatch, DPR_CAP, resolution, scene, waterScene, rainScene, afterScene, camera, sky, dayCycle, weather, weatherEffects, wind, lighting, applyEnvironmentFill, sun, sunShadow, shadowDirection, prepareHaze, prepareSkyState, publishLighting, retuneSky, fft, waveMaps, pipeline, groundBounce, shoreWaves, ambientRelight, refractedSun, stormSea } = render;
+	const { profiler, DEBUG, quality, gpuTiming, renderer, submitBatch, DPR_CAP, resolution, scene, waterScene, rainScene, afterScene, camera, sky, dayCycle, weather, wind, lighting, applyEnvironmentFill, sun, sunShadow, shadowDirection, prepareHaze, prepareSkyState, publishLighting, retuneSky, fft, waveMaps, pipeline, groundBounce, shoreWaves, ambientRelight, refractedSun, stormSea } = render;
 	const { controls, framingGlide, islandTurn, freeControls, trample, wenyao, growth } = island;
 	const { poseIslandView, holdsFraming, followFraming } = page.framing;
-	const { qualityChoice, loading, gui, S, reviewView, setCameraView, environmentLook, frameStats, weatherView, windView, resize, refreshStoreKey, applyRenderScale, describeRenderScale } = page;
+	const { qualityChoice, loading, gui, S, reviewView, setCameraView, environmentLook, frameStats, weatherEffects, weatherView, windView, resize, refreshStoreKey, applyRenderScale, describeRenderScale } = page;
 	page.tick = tick;
 
 	// ------------------------------------------------------------------ loop
