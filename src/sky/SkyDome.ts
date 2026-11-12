@@ -11,7 +11,7 @@ import {
 } from 'three/tsl';
 import { SUN_LIMB_U1, SUN_LIMB_U2 } from '../lighting/Radiometry.ts';
 import { SUN_DISC_RADIUS, SUN_DISC_SOLID_ANGLE, SUN_DISC_RADIANCE } from '../lighting/SunDisc.ts';
-import { EARTH_RADIUS, MOON_DECK_GLOW } from './Clouds.ts';
+import { EARTH_RADIUS, MOON_DECK_GLOW } from './CloudModel.ts';
 import { MOON_ANGULAR_RADIUS } from './NightSky.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { STORE_CEILING } from '../post/PreExposure.ts';
@@ -76,7 +76,7 @@ export const lendIsland = Fn( ( [ light, tint, gain ]: [ V3, V4, F ] ) => {
 
 } ).setLayout( { name: 'lendIsland', type: 'vec3', inputs: [ { name: 'light', type: 'vec3' }, { name: 'tint', type: 'vec4' }, { name: 'gain', type: 'float' } ] } );
 
-// The closed deck's glow about the key light toward `d` (Clouds.ts DECK_GLOW), drawn where the sky is
+// The closed deck's glow about the key light toward `d` (CloudModel.ts DECK_GLOW), drawn where the sky is
 // composed, not marched: smooth and round whatever the deck's depth and its rolls. The drawn deck
 // takes it with both lobes; the lighting's sources (the bakes) take one smooth lobe of their own
 // about the sun (Clouds `bakeGlowLobe`, `bakeGlowGain`) by the day's weight (`deckDay`,
@@ -104,7 +104,7 @@ const deckGlow = Fn( ( [ d, deck, opacity, sunDir, moonDir, tint, shares, form, 
 ] } );
 
 // The base's local radiance toward `d` over the deck's mean as the column's diffuse law gives it
-// there, ( 3 / 7 )( 1 + 2 mu ) times the deck's mean radiance (Clouds.ts makeMarch: its mean over
+// there, ( 3 / 7 )( 1 + 2 mu ) times the deck's mean radiance (CloudKernels.ts makeMarch: its mean over
 // level ground is the deck's), moved toward a uniform deck by `flat` as the march moves it (Clouds
 // `deckFlat`), so it has no trend with elevation and averages about 1 over the deck: what the glow
 // follows (`deckGlow`). Held in [ 1e-6, 4 ], so its power is finite at any k

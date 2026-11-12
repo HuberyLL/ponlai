@@ -348,7 +348,7 @@ export function lowSunSkyLift( elevation: number, clouded: number ): number {
  * sky) in place of the deck's (sky/Weather.ts DECK_SKY_GAIN), not over it, by overcast's share and
  * its deck's light (AmbientGrade.ts `overcastLandWeight`: at every sun by day, gone by -6
  * degrees). The land under the deck takes its light from the sky's integral, the bake (the clouds'
- * forward light included, sky/Clouds.ts FORWARD_WEIGHT, and by day under overcast the deck's glow
+ * forward light included, sky/CloudModel.ts FORWARD_WEIGHT, and by day under overcast the deck's glow
  * about the sun as one smooth lobe, sky/SkyDome.ts `glowToward`), as
  * the sky's soft fill from every side, times this; the key adds the weather's floor of it through
  * the sun's map (look/SkyLook.ts KEY_THROUGH_CLOUD, `keyDirectVisibility`). The ground takes it

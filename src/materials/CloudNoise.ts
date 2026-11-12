@@ -86,7 +86,7 @@ const gradientFbm = ( p: V2, cx: number, cy: number, seed: number ) =>
 
 
 /** Bake the synoptic field (the thin layer's patches): two fractal noises of 20 x 28 and 56 x 80
- * cells over the field (Clouds.ts SYNOPTIC_SIZE), weighted 0.7 and 0.3. At half those counts a
+ * cells over the field (sky/CloudModel.ts SYNOPTIC_SIZE), weighted 0.7 and 0.3. At half those counts a
  * low sun's view toward it held one patch across most of its sky, read as a single sheet; at these
  * its patches stand apart with sky between them. Needs an initialised renderer. */
 export function bakeSynoptic( renderer: THREE.WebGPURenderer ): THREE.StorageTexture {

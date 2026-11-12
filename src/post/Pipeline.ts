@@ -817,7 +817,7 @@ export class Pipeline {
 		this.settled.settle = ( temporal ?? QUALITY.high.taa ).restSettle;
 		const O = this.options;
 		this.air = new VolumetricHaze( sunShadow, sky.atmosphere, O.hazeGrid, sky.sunBeamIlluminance, sky.moonBeamIlluminance );
-		// the clouds' march ends where this haze closes (Clouds.ts `makeMarch`): it reads the medium
+		// the clouds' march ends where this haze closes (sky/CloudKernels.ts `makeMarch`): it reads the medium
 		// from uniforms of its own, built before the haze, which the haze writes with its own
 		this.air.cloudMedium = sky.clouds.haze;
 		// the island's cover hides the haze from the open sky: the rain's collision map (its top,

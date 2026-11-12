@@ -44,7 +44,7 @@ import { markSkyRetune } from './SkyRetune.ts';
 // and the yunpeng's light (`yunpengNightShare`, which would glow at their brightest under a day's
 // exposure) come in only from -7 to -11 degrees after sunset, and the rising sun takes them away
 // early, from about -12 degrees. The moon's key and its sky take no window: at the moon's
-// magnitude (Sky.ts MOON_OVER_SUN) the key's whole light on the land is 2.9 stops under the
+// magnitude (SkyTrack.ts MOON_OVER_SUN) the key's whole light on the land is 2.9 stops under the
 // twilight's own at -7 degrees after sunset and 2.4 under it before sunrise, and the moonlit
 // sky's light on it 4.5 stops under, so each adds to a twilight that is falling and is in whole
 // as soon as the moon holds the key (the snapshot's `moonKeyGain`). Held out from -7 to -11 by

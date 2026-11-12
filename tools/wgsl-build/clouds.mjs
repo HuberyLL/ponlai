@@ -8,6 +8,7 @@
 import * as THREE from 'three/webgpu';
 import { Atmosphere } from '../../src/sky/Atmosphere.ts';
 import { Clouds } from '../../src/sky/Clouds.ts';
+import { buildView } from '../../src/sky/CloudView.ts';
 
 export default function ( { renderer } ) {
 
@@ -21,7 +22,7 @@ export default function ( { renderer } ) {
 	shape.format = THREE.RGBAFormat;
 	shape.type = THREE.UnsignedByteType;
 	clouds.build( renderer, shape );
-	clouds.buildView( 2560, 1440 );
+	buildView( clouds, 2560, 1440 );
 	const { trace, high, box, resolve } = clouds.view.kernels;
 	return [
 		[ 'clouds-column-top', clouds.columnKernel ], [ 'clouds-panorama', clouds.panoramaKernel ], [ 'clouds-shadow', clouds.shadowKernel ],

@@ -289,7 +289,7 @@ const SEEN_AIR = { near: 200, far: 2000 } as const;
 //     view's sine of elevation fitted in the anisotropy (DECK_DIFFUSE); the forward part as the
 //     deck's own lobe about the key, on the key's share alone (the lobe's light over the deck's
 //     level, `columnTop`'s key over its key and sky; under overcast's share the deck spreads its
-//     forward light by the diffusion law, Clouds.ts OVERCAST_BROAD, so it comes in the diffuse part
+//     forward light by the diffusion law, sky/CloudModel.ts OVERCAST_BROAD, so it comes in the diffuse part
 //     and the lobe's share is the rest's alone), the diffuse part taking the rest of the deck's
 //     irradiance. The lobe is the deck's, not the product of the deck's and the air's
 //     anisotropies that one scattering of it would give: that product, a smaller mean cosine, would
@@ -304,7 +304,7 @@ const SEEN_AIR = { near: 200, far: 2000 } as const;
 //     there would stand brighter than the deck behind it under a high sun. At night HazeKeys.ts
 //     gives the whole clouded share to `deck` and none to `overcastDeck`, so a night's deck,
 //     overcast's too, lights its air by this path: in the deck's form about the moon, overcast's
-//     forward light spread by the clouds' share of it (Clouds.ts OVERCAST_BROAD), by the share of
+//     forward light spread by the clouds' share of it (sky/CloudModel.ts OVERCAST_BROAD), by the share of
 //     its form each column keeps (below).
 //     Along a long near-level ray the light the eye takes in has crossed a column of air several
 //     optical depths deep, and light that crosses such a column is scattered on the way: our
@@ -614,7 +614,7 @@ export class VolumetricHaze {
 		fogLayer: 0, droplet: 0, neutral: 0, scatter: 0, visibility: 2, coverHigh: FOG_NOISE.high() };
 	// the weather's share of the sun's direct light below the clouds and its diffuse gain
 	// (Weather.ts `directVisibility`, `ambientGain`), which scale the light's colours; its day sky
-	// comes with the open sky's light the atmosphere lends (Sky.ts `skyGain`), not with the sun's beam
+	// comes with the open sky's light the atmosphere lends (sky/SkyTrack.ts `skyGain`), not with the sun's beam
 	// (`sunBeam`)
 	readonly weatherLight = { direct: 1, ambient: 1 };
 	// The key light the air scatters: its direction and its irradiance below the clouds (a closed
@@ -651,7 +651,7 @@ export class VolumetricHaze {
 	// band's sigma: green's optical depth per metre over green's sigma (`skyHaze` with `dome`)
 	private readonly skyDepth = uniform( 0 );
 	/** A copy of the medium a reader built before the haze holds (the clouds' `haze`, which ends
-	 * the low deck's march where this medium closes: Clouds.ts `makeMarch`), written with it. */
+	 * the low deck's march where this medium closes: sky/CloudKernels.ts `makeMarch`), written with it. */
 	cloudMedium: HazeMedium | null = null;
 	// the light's settings: albedo, anisotropy, the gain
 	private readonly lightSettings = uniform( new THREE.Vector3( 1, 0.76, 1 ) );

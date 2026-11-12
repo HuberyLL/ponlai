@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { SHELL_BOTTOM, SHELL_THICKNESS } from '../sky/Clouds.ts';
+import { SHELL_BOTTOM, SHELL_THICKNESS } from '../sky/CloudModel.ts';
 import { MIX_SKIES, WEATHER_PRESETS } from '../sky/Weather.ts';
 import type { DayKey, DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
@@ -225,7 +225,7 @@ export const LOW_SUN_TINT = ( ( r: number, g: number, b: number ) => {
 // reads the sky takes it, the seen sky, the environment's bakes and the irradiance probe that light
 // the island, the sea's reflection and the clouds' and the haze's sky light, and the sky the eye
 // sees stays the sky that lights. The clouds' sunlight takes none: it is the sun's beam at their
-// height (Clouds.ts `sunLight`; the thin layer's at each of its points, `streakSunColour`). A
+// height (sky/CloudKernels.ts `sunLight`; the thin layer's at each of its points, `streakSunColour`). A
 // weather's day sky (Weather.ts `daySkyAt`) scales the day keys' share and the clouds' sunlight
 // alike (`skyGain`, `trackClouds`), so the sky, the clouds and the air it lends sky light to keep
 // their balance; the sun's beam the air scatters keeps the keys' light without it
@@ -379,7 +379,7 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 // `base`, `top` (m): the shell the clouds stand in (Clouds.ts `setShell`). Clear's and fair's
 // cumulus stand high; cloudy's and overcast's layer low and shallow, as a stratocumulus or a
 // stratus does, its masses nearer and so larger in the sky.
-// `type`, `spread`: the cloud type (0 a stratus, 1 a cumulus: Clouds.ts STRATUS, CUMULUS) and how
+// `type`, `spread`: the cloud type (0 a stratus, 1 a cumulus: sky/CloudModel.ts STRATUS, CUMULUS) and how
 // far it varies from place to place, either way. Fair's are cumulus; cloudy's run from
 // stratocumulus to cumulus side by side; overcast's layer is a stratus, low and flat.
 // `farFade`: how far the clouds thin with distance (Clouds.ts `farFade`). A fair sky's heaps melt

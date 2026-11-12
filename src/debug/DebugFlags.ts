@@ -55,7 +55,7 @@
 // `clearSky = false` leaves the clear day's sky light without its gain against the key (sky/Sky.ts
 // CLEAR_SKY), read whenever the sky tracks the clock (an environment bake later).
 // `lowSun` (a number, or `true` for 1; off unless set) scales the low sun's warm light and
-// blue-violet shade (sky/Sky.ts lowSun), read every frame (the shade's at the next environment bake).
+// blue-violet shade (sky/SkyTrack.ts lowSun), read every frame (the shade's at the next environment bake).
 // `keyLift = false` keeps the direct light and the sun's shadows on the low key's own direction
 // (lighting/KeyLift.ts), read at each publish of the lighting.
 // Read at load: `tone` (a number, 0 unless set) and `filmNight = true` bring back the grade's tone
@@ -118,7 +118,7 @@
 // `fallingLeaves = false` skips the falling leaves' pass and hides them (weather/FallingLeaves.ts),
 // read every frame, so --toggle "s.flags.fallingLeaves = on" times them.
 // `cloudHazeEnd = false` marches the low deck's view through its whole shell instead of ending where
-// the haze closes (sky/Clouds.ts `makeMarch`; the haze's copy of its medium, weather/VolumetricHaze.ts
+// the haze closes (sky/CloudKernels.ts `makeMarch`; the haze's copy of its medium, weather/VolumetricHaze.ts
 // `prepareMedium`), read every frame, so --toggle "s.flags.cloudHazeEnd = !on" times the end.
 
 import { settings } from '../Settings.ts';

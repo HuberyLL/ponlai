@@ -219,7 +219,7 @@ const OVERCAST_KEY_LOW = tune( 'post.exposure.overcastKeyLow', - 0.64, { min: - 
 const OVERCAST_KEY_SPAN = [ 6, 18 ] as const;
 /** The share of a clear sky's light the overcast deck lets through onto the land by night: the
  * open land's illuminance under overcast against a clear sky's with a key at the moon's height,
- * measured on our island with the deck in its night form (sky/Clouds.ts MOON_DECK_GLOW, the whole
+ * measured on our island with the deck in its night form (sky/CloudModel.ts MOON_DECK_GLOW, the whole
  * deck seen) and the moon's fixed land gain (lighting/AmbientGrade.ts OVERCAST_MOON_LAND), the
  * form the night draws. So in scene units an overcast night lies log2( 1 / 0.72 ), about 0.47
  * stops, under a clear one. The day's deck form reads about 0.79 by the same measure; the night

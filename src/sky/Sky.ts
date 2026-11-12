@@ -10,7 +10,8 @@ import {
 	mix, select, textureLoad, Loop, exp2, log2, positionView,
 } from 'three/tsl';
 import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
-import { Clouds, type CloudViewScale } from './Clouds.ts';
+import { Clouds } from './Clouds.ts';
+import type { CloudViewScale } from './CloudModel.ts';
 import { NightSky } from './NightSky.ts';
 import { Lightning } from '../weather/Lightning.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -116,7 +117,7 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // environment is the distant sea, its reflection of the sky over its body, which the light that
 // reaches the sea lights, the sky's and the sun's (SEA_KNEE).
 // The sun's disc and the moon's take the clouds' transmittance once, per pixel, in the composite
-// (SkyDome.ts `domeColour`); the march stores none once less than 0.003 gets through (Clouds.ts `makeMarch`),
+// (SkyDome.ts `domeColour`); the march stores none once less than 0.003 gets through (CloudKernels.ts `makeMarch`),
 // so a deck some 6 deep along the view hides the disc whole. The mean over each disc, read from the
 // panorama into a texel ahead of the scene (`discCloudTransmittance`), is left only for the light
 // shafts (post/LightShafts.ts) and the sun's flare. The key light's colour does not take that mean

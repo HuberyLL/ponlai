@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { SUN_ILLUMINANCE } from './Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE, SUN_ANGULAR_RADIUS } from '../lighting/Radiometry.ts';
-import { SHADOW_SLOPE_FLOOR, forwardLevel } from './Clouds.ts';
+import { SHADOW_SLOPE_FLOOR, forwardLevel } from './CloudModel.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { shared } from '../shared.ts';
 import { storeStops } from '../post/PreExposure.ts';

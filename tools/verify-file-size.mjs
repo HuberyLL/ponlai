@@ -27,7 +27,6 @@ const CODE = /\.(ts|mts|js|mjs)$/;
 // The files over LIMIT (paths under src/) and the most lines each may have. Lower a count, or
 // remove the entry, with the change that shortens the file; never raise one or add an entry.
 const KNOWN = {
-	'sky/Clouds.ts': 3105,
 	'post/Pipeline.ts': 2515,
 	'weather/VolumetricHaze.ts': 1809,
 	'world/Grass.ts': 1746,

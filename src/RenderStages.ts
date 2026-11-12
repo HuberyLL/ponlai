@@ -476,7 +476,7 @@ export function createEnvironment( render: RenderParts ) {
 		render.pipeline.air.setLook( render.hazeKey );
 		// the air's sunlit haze takes the key the land does, through the clouds' shadow (its own read),
 		// and its sky light the weather's sky as the sky takes it; the weather's day sky comes in with
-		// the sun's light the sky lends the air (Sky.ts `skyGain`)
+		// the sun's light the sky lends the air (sky/SkyTrack.ts `skyGain`)
 		render.pipeline.air.weatherLight.direct = state.directVisibility;
 		render.pipeline.air.weatherLight.ambient = state.ambientGain;
 		// the floor of the key under a closed deck (Sky.ts `deckKeyFloor`), which the seen panorama's
