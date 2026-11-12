@@ -1,6 +1,7 @@
 import type * as THREE from 'three/webgpu';
 import { Fn, abs, atan, clamp, dot, fract, length, output, varyingProperty, vec2, vec3, vec4 } from 'three/tsl';
 import type { WindUniforms } from '../weather/Wind.ts';
+import { settings } from '../Settings.ts';
 
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
@@ -29,7 +30,7 @@ type V3 = THREE.Node<'vec3'>;
 //   gusts cross it, the hue shifting only slowly at a gust's edge.
 // The numbers behind the view come from `__PONLAI__.windProbe` (src/debug/WindProbe.ts).
 
-const params = new URLSearchParams( location.search );
+const params = settings;
 const debugPage = import.meta.env.DEV || params.has( 'debug' ) || params.has( 'profile' );
 const option = debugPage && params.has( 'windView' ) ? params.get( 'windView' ) : null;
 export const WIND_VIEW = {

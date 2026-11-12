@@ -6,6 +6,7 @@ import {
 import { FrameGraph, type GraphDescription } from './FrameGraph.ts';
 import type { ResourceDecl, ResourceHandle } from './GraphCompiler.ts';
 import { debugFlags } from '../../debug/DebugFlags.ts';
+import { settings, type SettingsQuery } from '../../Settings.ts';
 
 // The frame graph's debug view (debug and dev builds): `fgview=<resource>[.<output>]` shows one of
 // the graph's resources on the canvas in place of the frame. Only when the URL asks for it, it
@@ -99,10 +100,10 @@ const VELOCITY_FULL = 16;
 // the displacement field's size at full brightness
 const VECTOR_FULL = 10;
 
-/** `fgview` from the URL (null: none). */
-export function debugViewFromURL( search: string = location.search ): string | null {
+/** `fgview` from the page's options or `params` (null: none). */
+export function debugViewFromURL( params: SettingsQuery = settings ): string | null {
 
-	const value = new URLSearchParams( search ).get( 'fgview' );
+	const value = params.get( 'fgview' );
 	return value && value !== 'off' ? value : null;
 
 }

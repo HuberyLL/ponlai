@@ -74,12 +74,12 @@ const argument = ( name, fallback ) => {
 
 };
 
-// The consumers import three's WebGPU build, written for a page: give it what it reads at import
-// (a canvas for the leaf textures is not needed here), and compile RefractedSun.ts, whose
-// constructor's parameter properties node's type stripping cannot erase, with TypeScript.
+// The consumers import three's WebGPU build, written for a page, which loads under node as it is
+// (they read the page's settings as a page without options: src/Settings.ts), and compile
+// RefractedSun.ts, whose constructor's parameter properties node's type stripping cannot erase,
+// with TypeScript.
 async function loadConsumers() {
 
-	globalThis.location ??= { search: '', hostname: 'localhost' };
 	const { default: ts } = await import( 'typescript' );
 	registerHooks( { load( url, context, next ) {
 

@@ -41,10 +41,7 @@ const CODE = /\.(ts|mts|js|mjs)$/;
 
 // Upward imports not yet turned round, as 'from -> to' (paths under src/). Remove an entry with
 // the change that removes its import; never add one.
-const KNOWN = [
-	// the anti-aliasing mode reads the quality tier the page's entry chose from the URL
-	'post/Antialiasing.ts -> QualityDetect.ts',
-];
+const KNOWN = [];
 
 for ( const a of process.argv.slice( 2 ) ) {
 

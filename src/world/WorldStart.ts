@@ -1,7 +1,6 @@
 // The world's generation needs nothing from the page, so its workers start as the page's modules
-// load: the page's entry calls `startWorld` (WorldBoot.ts, which main.ts imports before any module
-// that waits at the top level: the quality tier and anti-aliasing mode, post/Antialiasing.ts, ask
-// the GPU adapter first), so they run while the adapter, renderer, sky, textures and frame graph
+// load: the page's entry calls `startWorld` (WorldBoot.ts, which main.ts imports early, after the
+// page's settings), so they run while the adapter, renderer, sky, textures and frame graph
 // are set up; main.ts awaits the result. It
 // comes in chunks (WorldChunks.ts), nearest the camera's pivot first, each from the browser's
 // IndexedDB cache while the generator, its options and the land in the chunk's reach are unchanged
@@ -13,6 +12,8 @@
 // the entry gives the pieces a resumed game's land has grown (`pieces`), which the land starts
 // with unless the `grow` option says.
 //
+// Its options (`seed`, `grow`, `worldCache`) are the page's settings (src/Settings.ts).
+//
 // Debug pages (main.ts's DEBUG: the dev server, ?debug, ?profile) say when the world is in, as
 // `window.__PONLAI_WORLD__` (`ready`, and `ms`, the page's clock then), set as the world starts: the
 // capture tool loads a page with its GPU use held back and without a GPU slot, and takes the slot
@@ -21,9 +22,10 @@ import * as THREE from 'three/webgpu';
 import { loadWorld, type LoadedWorld } from './WorldChunks.ts';
 import { GROWTH, type LandLattice } from './IslandGrowth.ts';
 import { landArea, landCentroid } from './WorldShapes.ts';
+import { settings, type SettingName } from '../Settings.ts';
 
-const params = new URLSearchParams( location.search );
-const intParam = ( name: string, fallback: number ) => {
+const params = settings;
+const intParam = ( name: SettingName, fallback: number ) => {
 
 	const value = Math.trunc( Number( params.get( name ) ?? fallback ) );
 	return Number.isFinite( value ) ? value : fallback;

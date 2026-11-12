@@ -1,6 +1,7 @@
 import i18next from 'i18next';
 import en from './en.json';
 import zh from './zh-CN.json';
+import { settings } from '../../../Settings.ts';
 
 // The interface's languages, on i18next (https://www.i18next.com). Every word the player reads is a
 // key of a catalogue here, one JSON file per language: zh-CN.json is the source, written with the
@@ -39,7 +40,7 @@ export const LOCALES: readonly Locale[] = [ 'zh-CN', 'en' ];
 /** The language of this page: `?lang=`, else the source. */
 export const locale: Locale = ( () => {
 
-	const asked = typeof location === 'undefined' ? null : new URLSearchParams( location.search ).get( 'lang' );
+	const asked = settings.get( 'lang' );
 	if ( asked === null ) return SOURCE_LOCALE;
 	const found = LOCALES.find( ( l ) => l.toLowerCase() === asked.toLowerCase() || l.split( '-' )[ 0 ] === asked.toLowerCase() );
 	if ( ! found ) console.warn( `?lang=${ asked }: no such language (${ LOCALES.join( ', ' ) }); showing ${ SOURCE_LOCALE }` );

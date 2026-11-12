@@ -1,7 +1,10 @@
 {
+	"Boot.ts": "app",
+	"PageSettings.ts": "app",
 	"Quality.ts": "render",
 	"QualityDetect.ts": "app",
 	"RenderTypes.ts": "render",
+	"Settings.ts": "render",
 	"WorldBoot.ts": "app",
 	"camera/FreeCameraControls.ts": "island",
 	"camera/IslandCameraControls.ts": "island",

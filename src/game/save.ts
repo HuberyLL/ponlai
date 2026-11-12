@@ -1,5 +1,6 @@
 import type { RecordSave } from './Chronicle.ts';
 import { SAVE_VERSION, type SimState } from './sim/types.ts';
+import type { SettingsQuery } from '../Settings.ts';
 
 // The game's save: one slot in this browser's storage (localStorage) holding the game as JSON with
 // a version number: the simulation's state (sim/Sim.ts, where every change of the world is kept)
@@ -93,7 +94,7 @@ export function readSlot(): string | null {
 }
 
 /** Whether the page keeps the slot itself: resumes it at load, and saves as the game runs. */
-export function keepsSave( params: URLSearchParams ): boolean {
+export function keepsSave( params: SettingsQuery ): boolean {
 
 	const asked = params.get( 'autosave' );
 	if ( asked === 'on' || asked === 'off' ) return asked === 'on';
@@ -102,7 +103,7 @@ export function keepsSave( params: URLSearchParams ): boolean {
 }
 
 /** Whether a page with these URL options resumes the saved game (when there is one it can read). */
-export function resumesSave( params: URLSearchParams ): boolean {
+export function resumesSave( params: SettingsQuery ): boolean {
 
 	return ! params.has( 'new' ) && ( params.has( 'load' ) || keepsSave( params ) );
 

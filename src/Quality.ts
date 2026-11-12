@@ -63,6 +63,7 @@ import type { WaterQuality } from './ocean/Water.ts';
 import type { CloudMarch, CloudViewScale } from './sky/Clouds.ts';
 import type { PostOptions } from './post/Pipeline.ts';
 import type { AAMode } from './post/Antialiasing.ts';
+import { settings } from './Settings.ts';
 
 export const QUALITY_TIERS = [ 'low', 'medium', 'high' ] as const;
 export type QualityTier = typeof QUALITY_TIERS[ number ];
@@ -284,17 +285,25 @@ export function isQualityTier( value: unknown ): value is QualityTier {
 
 }
 
+/** The tier this page builds: the one its entry chose (PageSettings.ts), else the `quality` option's
+ * (a tool's installed settings), else high. */
+export function loadTier(): QualityTier {
+
+	const tier = settings.tier ?? settings.get( 'quality' );
+	return isQualityTier( tier ) ? tier : DEFAULT_QUALITY;
+
+}
+
 /** The tier's profile with `?tier.<knob path>=<value>` options over it, for A/B captures of one
- * knob (`tier.post.hazeGrid.width=128`, `tier.water.ssrRays=2`). A path
+ * knob (`tier.post.hazeGrid.width=128`, `tier.water.ssrRays=2`; `overrides` the page's). A path
  * must name an existing knob; numbers, booleans and comma lists are parsed. */
-export function qualityProfile( tier: QualityTier, search = location.search ): QualityProfile {
+export function qualityProfile( tier: QualityTier, overrides: ReadonlyArray<readonly [ string, string ]> = settings.prefixed( 'tier.' ) ): QualityProfile {
 
 	// a JSON copy, not structuredClone: that keeps the table's shared objects shared (the tiers'
 	// `taa` copies share TAA's nested arrays), so an override of one knob would change its siblings too
 	const profile = JSON.parse( JSON.stringify( QUALITY[ tier ] ) ) as QualityProfile;
-	for ( const [ key, raw ] of new URLSearchParams( search ) ) {
+	for ( const [ key, raw ] of overrides ) {
 
-		if ( ! key.startsWith( 'tier.' ) ) continue;
 		const path = key.slice( 5 ).split( '.' );
 		let node = profile as unknown as Record<string, unknown>;
 		for ( const name of path.slice( 0, - 1 ) ) node = node?.[ name ] as Record<string, unknown>;

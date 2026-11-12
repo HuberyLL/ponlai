@@ -7,6 +7,9 @@
 // `loop.stop()` / `loop.start()` hold and resume the frame loop (`dynamicClock` holds the dynamic
 // scale's clock with it, for the profiler's A/B) and `loop.step` steps the tick with fixed
 // timestamps.
+// the page's settings, which its entry (Boot.ts) installed before this module's imports load
+import { QUALITY_CHOICE, pageStore, reloadWith } from './PageSettings.ts';
+import { settings, type SettingName, type SettingsQuery } from './Settings.ts';
 import * as THREE from 'three/webgpu';
 import GUI from 'lil-gui';
 import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraControls.ts';
@@ -37,7 +40,7 @@ import type { WorldData } from './world/types.ts';
 import { WorldFields } from './world/WorldFields.ts';
 import { Growth } from './world/Growth.ts';
 import { topFromTiles } from './game/sim/grid.ts';
-// first of all that may wait as the modules load: the world's workers start here (WorldBoot.ts)
+// early, before the modules that build the scene load: the world's workers start here (WorldBoot.ts)
 import { worldJob, worldProgress, landOptions, landFraming, worldCacheOn } from './WorldBoot.ts';
 import { buildChunkBorders } from './debug/ChunkBorders.ts';
 import { WIND_VIEW } from './debug/WindView.ts';
@@ -88,7 +91,7 @@ import { debugFlags } from './debug/DebugFlags.ts';
 import { TEST_MODE } from './debug/TestMode.ts';
 import { tune, tuneApi, type TuneOptions } from './debug/Tune.ts';
 import { markSkyRetune, skyRetune } from './sky/SkyRetune.ts';
-import { AA_MODE, AA_SOURCE, AFTER_RESOLVE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './post/Antialiasing.ts';
+import { AA_MODE, AA_SOURCE, AFTER_RESOLVE, TEMPORAL, type AAMode } from './post/Antialiasing.ts';
 import type { LatentRegistry } from './post/graph/FrameGraph.ts';
 import { MOTION_CLASS, motionCheck, motionState, motionUniforms, onTaaCut, taaCut } from './post/Motion.ts';
 import { jitter } from './post/Jitter.ts';
@@ -110,7 +113,7 @@ import { installWindMotionFlag } from './world/WindMotion.ts';
 import { HANMING, HANMING_LOOKS, ISLANDER, ISLANDER_LOOKS } from './characters/looks.ts';
 import type { Game } from './game/Game.ts';
 
-const params = new URLSearchParams( location.search );
+const params = settings;
 const ground = { soil: params.get( 'soil' ) !== '0' };
 soilUniforms.strength.value = ground.soil ? 1 : 0;
 // GPU time per pass, tick time and startup marks for tools/profile-frame.mjs (?profile, or
@@ -123,9 +126,8 @@ const mark = ( name: string ) => profiler?.mark( name );
 const DEBUG = import.meta.env.DEV || params.has( 'debug' ) || profiler !== null;
 // The quality tier (Quality.ts): its load knobs are read below as the parts they shape are built,
 // its runtime ones applied by applySkyQuality. A change of tier reloads the page. Without ?quality
-// it is the one measured on this GPU (QualityDetect.ts), or high while this load measures. It is
-// chosen where the anti-aliasing mode is (post/Antialiasing.ts), since that mode is read as the
-// vegetation's modules load, before this code runs.
+// it is high (QualityDetect.ts). The entry chose it with the settings (PageSettings.ts), since the
+// anti-aliasing mode and other load knobs are read as the modules load, before this code runs.
 const qualityChoice = QUALITY_CHOICE;
 const qualityTier: QualityTier = qualityChoice.tier;
 const quality: Readonly<QualityProfile> = qualityProfile( qualityTier );
@@ -238,7 +240,7 @@ const freeControls = new FreeCameraControls( camera, renderer.domElement );
 
 const sky = new Sky( renderer, { elevation: 32, azimuth: - 8 } );
 sky.setEnvironmentSource( quality.environmentSource );
-const numberParam = ( name: string, fallback: number, options = params ) => {
+const numberParam = ( name: SettingName, fallback: number, options: SettingsQuery = params ) => {
 
 	const value = Number( options.get( name ) ?? fallback );
 	return Number.isFinite( value ) ? value : fallback;
@@ -256,7 +258,7 @@ const numberParam = ( name: string, fallback: number, options = params ) => {
 // whose weather is the page's. The wind (Weather.ts) takes `wind` (a level) and `windDir` (a
 // heading, degrees in WeatherState's convention), each over the sky's own wind; naming the
 // weather or either of them holds the weather, its wind included.
-function sceneOptions( options: URLSearchParams ) {
+function sceneOptions( options: SettingsQuery ) {
 
 	let weather = options.get( 'weather' ) ?? 'fair';
 	const preset = options.get( 'preset' );
@@ -356,13 +358,7 @@ let runtimeQuality: Readonly<QualityProfile> = quality;
 // A tier change rebuilds materials and the frame graph: reload with the tier and the page's options.
 function reloadWithQuality( tier: QualityTier | null ): void {
 
-	const url = new URL( location.href );
-	if ( tier ) url.searchParams.set( 'quality', tier );
-	else url.searchParams.delete( 'quality' );
-	if ( url.searchParams.get( 'autoQuality' ) === 'detect' ) url.searchParams.delete( 'autoQuality' );
-	if ( gui._hidden ) url.searchParams.delete( 'gui' );
-	else url.searchParams.set( 'gui', '' );
-	location.assign( url );
+	reloadWith( { quality: tier, ...( params.get( 'autoQuality' ) === 'detect' ? { autoQuality: null } : {} ), gui: gui._hidden ? null : '' } );
 
 }
 applySkyQuality();
@@ -663,7 +659,7 @@ if ( fgview ) installDebugView( fgview, {
 // The bamboo leaves the wind takes off the island (weather/FallingLeaves.ts), made once the world
 // exists (the test mode leaves them out): their step is a pass the pipeline declares from this list.
 let fallingLeaves: FallingLeaves | null = null;
-const pipeline = new Pipeline( renderer, sky, sunShadow, rain, postOptionsFromURL( location.search, quality.post ), quality.taa, [ ( g ) => leavesPass( g, () => fallingLeaves ) ] );
+const pipeline = new Pipeline( renderer, sky, sunShadow, rain, postOptionsFromURL( params, quality.post ), quality.taa, [ ( g ) => leavesPass( g, () => fallingLeaves ) ] );
 // The profiler labels each pass the graph runs by the pass's label (its groups), unless a
 // target or object it knows labels it otherwise (the passes inside the display chain).
 if ( profiler ) {
@@ -1093,7 +1089,7 @@ const viewDirection = new THREE.Vector3();
 // island flat from behind the camera and the moon path never entered the frame. From 180 the moon's
 // path is in view all night (the moon is fixed on the meridian: sky/DayCycle.ts MOON), while the sun lights the cliffs from the side in the
 // morning and the afternoon (a lit and a shaded side) and its glints at noon keep to a corner of the frame.
-function placeOrbit( on: THREE.PerspectiveCamera, orbit: IslandCameraControls, options: URLSearchParams, turn = 0, zoom = 0 ): void {
+function placeOrbit( on: THREE.PerspectiveCamera, orbit: IslandCameraControls, options: SettingsQuery, turn = 0, zoom = 0 ): void {
 
 	const polar = THREE.MathUtils.degToRad( Number( options.get( 'polar' ) ?? 40 ) ), azimuth = THREE.MathUtils.degToRad( Number( options.get( 'az' ) ?? 180 ) ) + turn;
 	if ( options.has( 'dist' ) ) {
@@ -1134,8 +1130,8 @@ function frameLand(): void {
 // controls of its own with the page's limits, the camera left where it is: a scene jump's
 // (`establishScene`), and again for the same options and turn when the island grows (Growth.ts) or
 // the window's shape changes, so the view frames the land shown, and at every step of a turn.
-let islandViewOptions = params;
-function poseIslandView( options: URLSearchParams, turn = 0, zoom = 0 ): void {
+let islandViewOptions: SettingsQuery = params;
+function poseIslandView( options: SettingsQuery, turn = 0, zoom = 0 ): void {
 
 	islandViewOptions = options;
 	islandTurned = turn;
@@ -1349,12 +1345,7 @@ if ( AA_MODE === 'gt' ) aaChoices[ 'Ground truth' ] = 'gt';
 antialiasingF.add( { mode: AA_MODE }, 'mode', aaChoices ).name( 'mode (reloads)' ).onFinishChange( ( mode: AAMode ) => {
 
 	if ( mode === AA_MODE ) return;
-	const url = new URL( location.href );
-	url.searchParams.set( 'aa', mode );
-	url.searchParams.delete( 'msaa' );
-	if ( gui._hidden ) url.searchParams.delete( 'gui' );
-	else url.searchParams.set( 'gui', '' );
-	location.assign( url );
+	reloadWith( { aa: mode, msaa: null, gui: gui._hidden ? null : '' } );
 
 } );
 // The temporal resolve's knobs (TemporalAA.ts), live: the tier's `taa` table is where they start. A
@@ -1610,15 +1601,7 @@ if ( DEBUG ) {
 	const view = { fgview: fgview ?? 'off' };
 	const choices = [ 'off', ...debugViewChoices( pipeline.graph.describe() ) ];
 	if ( ! choices.includes( view.fgview ) ) choices.push( view.fgview );
-	debugF.add( view, 'fgview', choices ).name( 'frame-graph view (reloads)' ).onFinishChange( ( value: string ) => {
-
-		const url = new URL( location.href );
-		if ( value === 'off' ) url.searchParams.delete( 'fgview' );
-		else url.searchParams.set( 'fgview', value );
-		url.searchParams.set( 'gui', '' );
-		location.assign( url );
-
-	} );
+	debugF.add( view, 'fgview', choices ).name( 'frame-graph view (reloads)' ).onFinishChange( ( value: string ) => reloadWith( { fgview: value === 'off' ? null : value, gui: '' } ) );
 	debugF.close();
 
 }
@@ -1634,7 +1617,7 @@ if ( DEBUG ) {
 const dynamicRule = 'dynamic' in quality.render && AA_MODE !== 'gt' ? quality.render : null;
 // Under TAAU and FSR 3 the floor rises so the canvas is at most TAAU_MAX_UPSCALE times the render per axis
 // (DynamicResolution.ts).
-const dynamicResolution = dynamicRule ? new DynamicResolution( { ...dynamicRange( innerWidth, innerHeight, devicePixelRatio, dynamicRule, DPR_CAP ), step: dynamicRule.dynamic.step, maxUpscale: AA_MODE === 'taau' || AA_MODE === 'fsr3' ? TAAU_MAX_UPSCALE : Infinity } ) : null;
+const dynamicResolution = dynamicRule ? new DynamicResolution( { ...dynamicRange( innerWidth, innerHeight, devicePixelRatio, dynamicRule, DPR_CAP ), step: dynamicRule.dynamic.step, maxUpscale: AA_MODE === 'taau' || AA_MODE === 'fsr3' ? TAAU_MAX_UPSCALE : Infinity, store: pageStore } ) : null;
 // The tier's frame rate is held on a faster display (FramePacer.ts), which then shows each frame for
 // the same number of refreshes, falling back to the next divisor when the dynamic scale's floor
 // cannot hold it. `frameRate=auto` is that default; `frameRate=<fps>` holds a fixed rate (0 renders on
@@ -2335,7 +2318,7 @@ const changeScene = async ( scene: SceneRequest ): Promise<void> => {
 	if ( query ) {
 
 		// (the land's `grow` against the step shown: a page grown in place draws a fresh load of that step)
-		const pageValues = ( key: string ) => key === 'grow' ? [ String( growth.state.step ) ] : params.getAll( key );
+		const pageValues = ( key: string ) => key === 'grow' ? [ String( growth.state.step ) ] : params.getAll( key as SettingName );
 		const fixed = [ ...new Set( query.keys() ) ].filter( ( key ) => ! SCENE_OPTIONS.includes( key ) && query.getAll( key ).join( '&' ) !== pageValues( key ).join( '&' ) );
 		if ( fixed.length ) throw new Error( `establishScene: ${ fixed.join( ', ' ) } differ from the page's and are read once at load: reload the page with them` );
 		const next = sceneOptions( query );

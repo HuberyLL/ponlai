@@ -22,6 +22,7 @@ import type { Chronicle, RecordSave } from './Chronicle.ts';
 import { Session } from './Session.ts';
 import { stockOf } from './sim/stock.ts';
 import type { EntityId, IslandInput, Items } from './sim/types.ts';
+import type { SettingsQuery } from '../Settings.ts';
 
 // The island as a game (?game): the game around its simulation runs headless in a session
 // (Session.ts: the simulation of src/game/sim, which runs the islanders' bodies, their needs and the
@@ -83,7 +84,7 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // island shown.
 
 export interface GameContext {
-	params: URLSearchParams;
+	params: SettingsQuery;
 	scene: THREE.Scene;
 	camera: THREE.PerspectiveCamera;
 	/** the canvas, for the debug panel's send-to-click */

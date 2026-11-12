@@ -1,4 +1,5 @@
 import type { OpsMode, OpsTable, PassOps } from './GraphCompiler.ts';
+import { settings, type SettingsQuery } from '../../Settings.ts';
 
 // The frame graph's attachment ops applied to the render passes three records: a store discarded
 // where nothing later reads the attachment, a multisample resolve dropped where nothing samples it
@@ -54,12 +55,11 @@ export type AttachmentOpsMode = OpsMode | 'off';
 
 const MODES: readonly AttachmentOpsMode[] = [ 'derived', 'legacy', 'store', 'off' ];
 
-/** `fgOps` from the URL (derived, legacy, store or off); without it `store` under
- * `post=store-scene` or `post=legacy`, else `derived`. */
-export function opsModeFromURL( search: string | null = typeof location === 'undefined' ? null : location.search ): AttachmentOpsMode {
+/** `fgOps` from the page's options or `params` (derived, legacy, store or off); without it `store`
+ * under `post=store-scene` or `post=legacy`, else `derived`. */
+export function opsModeFromURL( params: SettingsQuery | null = settings ): AttachmentOpsMode {
 
-	if ( search === null ) return 'derived';
-	const params = new URLSearchParams( search );
+	if ( params === null ) return 'derived';
 	const value = params.get( 'fgOps' ) as AttachmentOpsMode | null;
 	if ( value !== null && MODES.includes( value ) ) return value;
 	const post = ( params.get( 'post' ) ?? '' ).split( ',' );
@@ -118,7 +118,7 @@ export class AttachmentOps {
 		this.dev = options.dev === true;
 		// (dev: a misspelt fgOps falls back to the default, which would make an A/B compare the
 		// default with itself)
-		const asked = this.dev && options.mode === undefined && typeof location !== 'undefined' ? new URLSearchParams( location.search ).get( 'fgOps' ) : null;
+		const asked = this.dev && options.mode === undefined ? settings.get( 'fgOps' ) : null;
 		if ( asked !== null && asked !== this.mode ) console.warn( `fgOps=${ asked } is not one of ${ MODES.join( ', ' ) }: the ops are ${ this.mode }` );
 
 	}

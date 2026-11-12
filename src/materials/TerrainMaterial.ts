@@ -27,6 +27,7 @@ import { fsr3MipBiasScale } from '../post/fsr3/MipBias.ts';
 import { MEADOW_SHADE, SS_SHADOW, meadowGroundShade, screenShadowAt } from '../post/MeadowShade.ts';
 import { writeMeter } from '../lighting/MeterLight.ts';
 import { liftKeyWorld } from '../lighting/KeyLift.ts';
+import { settings } from '../Settings.ts';
 
 // The meadow's ground shaded by its crowns toward the light (`meadowGroundLight`); off with
 // `flags=groundCast:false` at load (the canopy's mean depth instead).
@@ -1110,7 +1111,7 @@ export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: GroundTextur
 
 	};
 	// URL option, read at load: terrainHex=0 builds the plain tiling with smooth masks.
-	if ( typeof location !== 'undefined' && new URLSearchParams( location.search ).get( 'terrainHex' ) === '0' ) debugFlags.terrainHex = false;
+	if ( settings.get( 'terrainHex' ) === '0' ) debugFlags.terrainHex = false;
 	return variant( hex ?? debugFlags.terrainHex !== false );
 
 }
