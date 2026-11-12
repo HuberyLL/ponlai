@@ -24,9 +24,9 @@ import { buildChunkBorders } from './debug/ChunkBorders.ts';
 import { WIND_VIEW } from './debug/WindView.ts';
 import { windArrowGeometry, buildWindArrows } from './debug/WindArrows.ts';
 import { buildGrass, plantGrass, grassKind } from './world/Grass.ts';
-import { buildYunpeng, yunpengKind } from './world/Yunpeng.ts';
+import { buildYunpeng, yunpengKind, yunpengLights } from './world/Yunpeng.ts';
 import { shared } from './shared.ts';
-import { testSources, localLights } from './lighting/LocalLights.ts';
+import { testSources } from './lighting/LocalLights.ts';
 import { landBounds, islandSurfaceHeight } from './world/WorldShapes.ts';
 import { GROWTH, LandLattice } from './world/IslandGrowth.ts';
 import { walkPoints } from './world/WalkPath.ts';
@@ -49,6 +49,7 @@ import { installOpaquePrepass } from './world/OpaquePrepass.ts';
 import { GTAO } from './post/GTAO.ts';
 import { SS_SHADOW } from './post/MeadowShade.ts';
 import { Vegetation } from './world/vegetation/Registry.ts';
+import { defaultPlant } from './world/vegetation/DefaultPlant.ts';
 import { installWindMotionFlag } from './world/WindMotion.ts';
 import { ISLANDER, HANMING, ISLANDER_LOOKS, HANMING_LOOKS } from './characters/looks.ts';
 import type { RenderParts } from './RenderStages.ts';
@@ -346,7 +347,7 @@ export function createWorldViews( render: RenderParts, island: IslandParts ) {
  */
 export function createVegetation( render: RenderParts, island: IslandParts ) {
 
-	const { mark, setStatus, renderer, scene, sunShadow, pipeline } = render;
+	const { mark, setStatus, renderer, scene, sunShadow } = render;
 	const { controls, data, world, frameLand } = island;
 	island.setSunCasters = setSunCasters;
 	island.compileDraws = compileDraws;
@@ -354,7 +355,7 @@ export function createVegetation( render: RenderParts, island: IslandParts ) {
 	island.grass = grass;
 	// The vegetation's kinds (vegetation/Registry.ts), in the order the scene draws them; every list
 	// of vegetation below reads it.
-	const vegetation = new Vegetation<WorldData>();
+	const vegetation = new Vegetation<WorldData>( ( sites, name ) => defaultPlant( shared, sites, name ) );
 	island.vegetation = vegetation;
 	vegetation.add( grassKind( grass ) );
 	// the yunpeng's clumps in the meadow, instances of a few prototypes at two levels (Yunpeng.ts)
@@ -365,13 +366,10 @@ export function createVegetation( render: RenderParts, island: IslandParts ) {
 	// (`onSwap`); `flags=lightTest:N`: N white test sources over the meadow, for the local lights' cost
 	// tests, loaded once, with the light of stand-in clumps (the island may hold none)
 	const testLights = typeof debugFlags.lightTest === 'number' ? testSources( debugFlags.lightTest, island.landBox, ( x, z ) => island.land.inside( x, z ), islandSurfaceHeight, yunpeng.sampleLights() ) : [];
-	const setLocalSources = () => {
-
-		localLights.sources = [ ...yunpeng.lights(), ...testLights ];
-
-	};
-	island.setLocalSources = setLocalSources;
-	setLocalSources();
+	render.localLights.add( yunpengLights( yunpeng ) );
+	// (the test sources are loaded once: a growth does not move them)
+	render.localLights.add( { name: 'light test', cost: 'none', testMode: 'stateless', land: 'independent', sources: () => testLights } );
+	island.setLocalSources = () => render.localLights.refresh();
 	// the bamboo over the whole island, instances of a few prototypes at two levels (Bamboo.ts,
 	// vegetation/PlantInstances.ts), its leaves drawn once here (BambooMaterials.ts)
 	const bamboo = buildBamboo( data, { shared, atlas: bambooAtlas() } );
@@ -459,7 +457,7 @@ export function createVegetation( render: RenderParts, island: IslandParts ) {
 	// uploads their buffers. (A grown island's chunks need none: they draw with the loaded chunks' pipelines.)
 	async function compileDraws( objects: THREE.Object3D[] ): Promise<void> {
 
-		for ( const object of objects ) await pipeline.graph.latent( 'opaque', [ object ] );
+		for ( const object of objects ) await render.latents.latent( 'opaque', [ object ] );
 		const compiled = sunShadow.compileCasters( renderer, objects );
 		if ( compiled ) await compiled;
 		else console.warn( 'The sun\'s shadow map is not built yet: these draws compile their shadow pass when first drawn' );

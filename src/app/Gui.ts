@@ -16,7 +16,6 @@ import { FrameStats } from '../debug/FrameStats.ts';
 import { shared } from '../shared.ts';
 import { groundGains } from '../materials/Meadow.ts';
 import { AMBIENT_KNOBS, ambientGrade } from '../lighting/AmbientGrade.ts';
-import { localLights } from '../lighting/LocalLights.ts';
 import type { AmbientView } from '../lighting/AmbientVolume.ts';
 import { PROPORTION_NAMES, type ProportionName } from '../characters/Proportions.ts';
 import type { Sex } from '../characters/Ages.ts';
@@ -225,6 +224,7 @@ export function createGui( render: RenderParts, island: IslandParts, page: PageP
 	for ( const key of AMBIENT_KNOBS ) ambientF.add( ambientGrade.manual, key, 0, key === 'directionality' || key === 'aoStrength' ? 1 : 3, 0.01 ).name( `${ key } (override)` ).onChange( retuneAmbient );
 	ambientF.close();
 	// the local lights (lighting/LocalLights.ts): on or off, and the art gain over the sources' light
+	const localLights = render.localLights;
 	const localLightsF = gui.addFolder( 'Local lights' );
 	localLightsF.add( localLights, 'enabled' ).name( 'on' ).onChange( retuneAmbient );
 	localLightsF.add( localLights, 'gain', 0, 16, 0.1 ).name( 'gain' ).onChange( retuneAmbient );

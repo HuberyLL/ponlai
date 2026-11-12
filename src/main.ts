@@ -185,7 +185,7 @@ const rainCeiling = ISLAND_TOP + 4;
 // The bamboo leaves the wind takes off the island (weather/FallingLeaves.ts), made once the world
 // exists (the test mode leaves them out): their step is a pass the pipeline declares from this list.
 island.fallingLeaves = null as FallingLeaves | null;
-const extraPasses: ConstructorParameters<typeof Pipeline>[ 6 ] = [ ( g ) => leavesPass( g, () => island.fallingLeaves ) ];
+const extraPasses: ConstructorParameters<typeof Pipeline>[ 6 ] = [ leavesPass( () => island.fallingLeaves ) ];
 createSeaAndPipeline( render, { rainCeiling, extraPasses } );
 island.worldCache = await awaitWorld( render, island, { worldJob } );
 createLand( render, island, { landOptions } );
@@ -233,7 +233,7 @@ if ( GAME ) {
 
 			const dress = island.GAME_LOOKS[ look % island.GAME_LOOKS.length ];
 			const figure = await loadVillager( dress.base, dress.parts, shared, PROPORTIONS[ island.islanderBuild.proportions ], dress.lit, dress.ages ? body : undefined );
-			await render.pipeline.graph.latent( 'opaque', [ figure.group ] );
+			await render.latents.latent( 'opaque', [ figure.group ] );
 			await island.characterShadow.compile( render.renderer, render.scene, figure.group );
 			return figure;
 
@@ -272,7 +272,7 @@ if ( render.profiler ) {
 primeSharedBuilds( render );
 // The falling leaves, which the warm-up ran before they existed, and their kernels compile ahead
 // as latents of the opaque pass, so the view that first finds them builds no pipeline.
-if ( island.fallingLeaves ) await render.pipeline.graph.latent( 'opaque', [ island.fallingLeaves.mesh ], [ island.fallingLeaves.kernel, island.fallingLeaves.prewarm ] );
+if ( island.fallingLeaves ) await render.latents.latent( 'opaque', [ island.fallingLeaves.mesh ], [ island.fallingLeaves.kernel, island.fallingLeaves.prewarm ] );
 startLoop( render, island, page );
 createSceneControls( render, island, page );
 createLoopControls( render, page );

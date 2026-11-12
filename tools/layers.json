@@ -1,5 +1,6 @@
 {
 	"Boot.ts": "app",
+	"Extensions.ts": "render",
 	"FetchAsset.ts": "render",
 	"IslandStages.ts": "island",
 	"PageSettings.ts": "app",
@@ -309,6 +310,7 @@
 	"world/vegetation/Material.ts": "render",
 	"world/vegetation/Physics.ts": "render",
 	"world/vegetation/PlantInstances.ts": "render",
+	"world/vegetation/DefaultPlant.ts": "render",
 	"world/vegetation/Registry.ts": "render",
 	"world/vegetation/Trample.ts": "island",
 	"world/vegetation/TreeMesh.ts": "render",

@@ -20,7 +20,6 @@ import { gpuDevice } from '../three/Backend.ts';
 import { threeAnimation, frameBookkeeping } from '../three/FrameLoop.ts';
 import { shared } from '../shared.ts';
 import { ambientGrade } from '../lighting/AmbientGrade.ts';
-import { localLights } from '../lighting/LocalLights.ts';
 import { TEST_MODE } from '../debug/TestMode.ts';
 import { AA_MODE, AFTER_RESOLVE, TEMPORAL } from '../post/Antialiasing.ts';
 import { preExposure, PRE_EXPOSURE_PENDING } from '../post/PreExposure.ts';
@@ -425,7 +424,7 @@ export function createFrame( render: RenderParts, island: IslandParts, page: Pag
 		// each reader's (DayCycle.ts `duskForce`)
 		const nightAmbient = nightAmbientShare( sky.elevation, sky.rising, shared.clouded.value );
 		const yunpengShare = setYunpengNight( duskForce( 'yunpeng', yunpengNightShare( sky.elevation, sky.rising, shared.clouded.value ) ) );
-		localLights.update( duskForce( 'localLights', yunpengShare ) );
+		render.localLights.update( duskForce( 'localLights', yunpengShare ) );
 		// what the crowns' leaves pass on of the key (world/vegetation/LeafLight.ts)
 		updateLeafLight( sky.elevation, duskForce( 'nightAmbient', nightAmbient ), shared.clouded.value );
 		// what a closed sky's light turns into in the sward (materials/SwardTint.ts)

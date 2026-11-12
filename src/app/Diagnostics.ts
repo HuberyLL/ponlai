@@ -10,7 +10,6 @@ import { DynamicResolution } from '../post/DynamicResolution.ts';
 import { shared } from '../shared.ts';
 import { setGroundGain } from '../materials/Meadow.ts';
 import { ambientGrade } from '../lighting/AmbientGrade.ts';
-import { localLights } from '../lighting/LocalLights.ts';
 import { liftedKeyDirection } from '../lighting/KeyLift.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tuneApi } from '../debug/Tune.ts';
@@ -176,7 +175,7 @@ export function exposeDebugHandles( render: RenderParts, island: IslandParts, pa
 		ambient: ambientGrade,
 		// the local lights (lighting/LocalLights.ts): `sources`, `gain`, `enabled`, `info()` (a promise: the
 		// sources in view, the fullest cluster, the clusters that overflowed)
-		localLights,
+		localLights: render.localLights,
 		// the screen-space ambient occlusion's knobs (post/GTAO.ts `gtaoUniforms`: cutoff, recede, base, maxTexels, fullDistance)
 		gtao: gtaoUniforms,
 		// the ambient light's probes (lighting/AmbientVolume.ts): `info()` and `hash()`

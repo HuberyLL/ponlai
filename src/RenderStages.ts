@@ -39,6 +39,7 @@ import { checkRenderer } from './three/Internals.ts';
 import { isWebGPU, gpuDevice } from './three/Backend.ts';
 import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
+import { createLocalLights, type LocalLights } from './lighting/LocalLights.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
 import { installGroundBounce, GroundBounce } from './lighting/GroundBounce.ts';
@@ -50,7 +51,7 @@ import { lowSunSkyLift, AmbientSky, AmbientRelight } from './lighting/AmbientRel
 import { type TuneOptions, tune } from './debug/Tune.ts';
 import { markSkyRetune, skyRetune } from './sky/SkyRetune.ts';
 import { TEMPORAL, AFTER_RESOLVE } from './post/Antialiasing.ts';
-import type { LatentRegistry } from './post/graph/FrameGraph.ts';
+import type { SceneLatents } from './post/ExtraPass.ts';
 import { onTaaCut, motionUniforms, MOTION_CLASS, motionCheck } from './post/Motion.ts';
 import { jitter } from './post/Jitter.ts';
 import { preExposure } from './post/PreExposure.ts';
@@ -109,6 +110,7 @@ export interface RenderParts {
 	applyEnvironmentFill: ( fill: number ) => void;
 	sun: THREE.DirectionalLight;
 	sunShadow: SunShadow;
+	localLights: LocalLights;
 	invalidateSunShadow: () => void;
 	shadowDirection: THREE.Vector3;
 	sunUpdates: Promise<void>;
@@ -134,7 +136,8 @@ export interface RenderParts {
 	seaDetail: SeaDetail;
 	fgview: string | null;
 	pipeline: Pipeline;
-	overlayLatents: LatentRegistry;
+	latents: SceneLatents;
+	overlayLatents: SceneLatents;
 	warming: Promise<[ void, void, void, void, void | undefined ]>;
 	groundBounce: GroundBounce;
 	shoreWaves: ShoreWaves;
@@ -341,6 +344,8 @@ export function createLight( render: RenderParts ) {
 	const { qualityTier, quality, scene, sky, loaded, dayCycle } = render;
 	render.applySkyQuality = applySkyQuality;
 	render.applyEnvironmentFill = applyEnvironmentFill;
+	// the local lights' registry, which the island's kinds of light join (LocalLights.ts)
+	render.localLights = createLocalLights();
 
 	render.skyElapsed = 0;
 	render.lastSkyTime = render.simTime;
@@ -697,6 +702,8 @@ export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraP
 	} );
 	const pipeline = new Pipeline( renderer, sky, sunShadow, render.rain, postOptionsFromURL( params, quality.post ), quality.taa, extraPasses );
 	render.pipeline = pipeline;
+	// the pipeline's scene passes by their typed names, for what registers a draw for later
+	render.latents = pipeline.graph;
 	// The profiler labels each pass the graph runs by the pass's label (its groups), unless a
 	// target or object it knows labels it otherwise (the passes inside the display chain).
 	if ( profiler ) {
@@ -723,7 +730,7 @@ export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraP
 	// Pipeline.ts), which keeps the motion vectors of the surfaces under them; under taa and taau they
 	// draw after the resolve (afterScene, the `rainAfter` pass). Their owners register their latent
 	// draws for those passes.
-	const overlayLatents: LatentRegistry = TEMPORAL
+	const overlayLatents: SceneLatents = TEMPORAL
 		? { latent: ( pass, objects, kernels ) => pipeline.graph.latent( pass === 'rainAfter' || ( pass === 'water' && AFTER_RESOLVE ) ? 'rainAfter' : 'overlay', objects, kernels ) }
 		: pipeline.graph;
 	render.overlayLatents = overlayLatents;

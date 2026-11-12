@@ -6,7 +6,7 @@ import {
 import { RainCollision } from './RainCollision.ts';
 import { DRIFT, MEAN_FALL, RainDrops, lightRain, type RainLight } from './RainDrops.ts';
 import { AFTER_RESOLVE } from '../post/Antialiasing.ts';
-import type { LatentRegistry } from '../post/graph/FrameGraph.ts';
+import type { SceneLatents } from '../post/ExtraPass.ts';
 
 export { RAIN_MAX_DROPS } from './RainDrops.ts';
 
@@ -316,7 +316,7 @@ export class Rain {
 	 * kernel, so the graph's warm-up compiles them before the first rain (after the resolve, the
 	 * streaks with the after pass, `rainAfter`). Call it after `bindOpaqueDepth` and `setLightNode`,
 	 * which change the materials, with `group` in the rain's scene. */
-	registerLatent( graph: LatentRegistry ): Promise<void> {
+	registerLatent( graph: SceneLatents ): Promise<void> {
 
 		const rain = graph.latent( 'rain', [ this.group ], [ this.drops.compute ] );
 		return this.afterGroup ? Promise.all( [ rain, graph.latent( 'rainAfter', [ this.afterGroup ] ) ] ).then( () => undefined ) : rain;

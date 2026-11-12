@@ -12,7 +12,7 @@ import { LightningStrike } from './LightningStrike.ts';
 import { FLASH_SOURCES, type Clouds } from '../sky/Clouds.ts';
 import { SUN_ILLUMINANCE } from '../sky/Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
-import type { LatentRegistry } from '../post/graph/FrameGraph.ts';
+import type { SceneLatents } from '../post/ExtraPass.ts';
 import { reactiveUniforms, velocityOutput } from '../post/Motion.ts';
 
 // Thunderstorm lightning, kilometres out over the sea. Most strikes stay inside the cloud and
@@ -485,7 +485,7 @@ export class Lightning {
 	 * transparent double-sided channel, through a copy of its material per side (Compile.ts), and
 	 * their vertex buffers, so a bolt's first frame uploads only its own tree. The channels
 	 * themselves are left alone, so a bolt may show while it runs. */
-	registerLatent( graph: LatentRegistry ): Promise<void> {
+	registerLatent( graph: SceneLatents ): Promise<void> {
 
 		return graph.latent( 'opaque', [ this.group ] );
 

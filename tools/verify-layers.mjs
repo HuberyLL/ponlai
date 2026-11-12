@@ -84,7 +84,6 @@ const STATE = {
 	'debug/DebugFlags.ts:debugFlags': [ 'debug/WindProbe.ts', 'materials/TerrainMaterial.ts', 'post/SubmitBatch.ts', 'world/VegetationPrepass.ts' ],
 	'lighting/AmbientGrade.ts:ambient': [ 'lighting/AmbientRelight.ts' ],
 	'lighting/KeyCloud.ts:keyDeckShare': [ 'RenderStages.ts' ],
-	'lighting/LocalLights.ts:localLights': [ 'IslandStages.ts' ],
 	'lighting/SurfaceBRDF.ts:keyGlint': [ 'RenderStages.ts' ],
 	'ocean/Water.ts:keyChroma': [ 'RenderStages.ts' ],
 	'post/GTAO.ts:gtaoMap': [ 'post/Pipeline.ts' ],
@@ -102,12 +101,11 @@ const STATE = {
 	'world/WorldStart.ts:worldProgress': [ 'IslandStages.ts' ],
 };
 // The pairs of STATE whose writer sits in another layer than the state's owner, as
-// 'owner file:variable <- writer': the debug flags any layer's debug code sets, the local lights'
-// sources the island gives, and the scene's uniforms the page's frame sets.
+// 'owner file:variable <- writer': the debug flags any layer's debug code sets and the scene's uniforms the
+// page's frame sets.
 const ACROSS = [
 	'debug/DebugFlags.ts:debugFlags <- debug/WindProbe.ts',
 	'debug/DebugFlags.ts:debugFlags <- materials/TerrainMaterial.ts',
-	'lighting/LocalLights.ts:localLights <- IslandStages.ts',
 	'shared.ts:shared <- app/Diagnostics.ts',
 	'shared.ts:shared <- app/Frame.ts',
 ];

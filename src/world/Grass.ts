@@ -1710,7 +1710,7 @@ interface GrassPrepared { plan: GrassPlan; ground: THREE.DataTexture; sward: THR
  * map and the fields under the meadow, and swaps them in. */
 export function grassKind( group: THREE.Group ): VegetationKind<GrassPrepared, WorldData> {
 
-	return { name: 'grass', root: group, prepass: true, shadowFilter: 'vegetation', sunCaster: false, rainBake: false,
+	return { name: 'grass', root: group, prepass: true, shadowFilter: 'vegetation', sunCaster: false, rainBake: false, cost: 'none', testMode: 'stateless', land: { follower: 'its growth' },
 		growth: {
 			*prepare( input ) {
 

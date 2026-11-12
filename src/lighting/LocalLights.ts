@@ -7,6 +7,7 @@ import type { FrameGraph } from '../post/graph/FrameGraph.ts';
 import { GRID, CLUSTERS, PER_CLUSTER, CLUSTER_WORDS, GUARD, slicesFor, sortInView } from './LocalLightClusters.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { meterKey } from './MeterLight.ts';
+import { checkDeclarations, type Declarations } from '../Extensions.ts';
 
 // Local lights: small light sources on the island (by night the yunpeng's clumps, Yunpeng.ts) that
 // light the ground and the plants round them, every source in view at once, by clustered forward
@@ -81,6 +82,16 @@ import { meterKey } from './MeterLight.ts';
 // tests only; debug builds read the state as `__PONLAI__.localLights.info()` (a promise: the
 // sources, those in view, the fullest cluster and the clusters that overflowed, read back from the
 // last pass that ran).
+//
+// The registry. The sources come from kinds of light (`LocalLightKind`: the yunpeng's clumps, the
+// test sources) registered on the renderer's `LocalLights` (`createLocalLights`, which the
+// renderer's stages call once; `add`), read in the order registered and never by name. A kind gives
+// its sources now (`sources()`), read when it is registered and again at `refresh()`, which
+// whoever moves them calls (the island's growth, after a swap). A kind declares the three things
+// every registered definition does (Extensions.ts), or `add` refuses it. A source without an
+// intensity or a range of its own is the default, a white point light (DEFAULT_SOURCE). The
+// registry is an object of the renderer's; the buffers, the uniforms and the kernel above stay
+// the module's, since every lit material's shader names them: one light table a page.
 
 /** The light table's first capacity; a larger table takes the next power of two, up to 16 bits. */
 const CAPACITY = 1024;
@@ -270,6 +281,20 @@ export interface LocalSource {
 	range: number;
 }
 
+/** A source as a kind gives it: without an intensity or a range it takes the default's. */
+export type LocalSourceSpec = Pick<LocalSource, 'position'> & Partial<LocalSource>;
+
+/** The default source, a white point light: its intensity (each of r, g, b) and its range (m). */
+export const DEFAULT_SOURCE = { intensity: 1, range: 6.5 };
+
+/** A kind of local light: a name, the three declarations and its sources now. */
+export interface LocalLightKind extends Declarations {
+	/** 'yunpeng', ... */
+	name: string;
+	/** the kind's sources as they stand; read when the kind is registered and at every `refresh` */
+	sources(): readonly LocalSourceSpec[];
+}
+
 const off = () => debugFlags.localLights === false || debugFlags.localLights === 0;
 const _p = new THREE.Vector3();
 // the sources' view-space positions and ranges, each frame
@@ -277,23 +302,46 @@ let view = new Float64Array( CAPACITY * 4 );
 // what the table holds (the sources it was written from: count, then 7 numbers each)
 let written: number[] = [ 0 ];
 
-/** The CPU side: the sources, the tables written from them and the frame's sort. */
-export const localLights = {
-	sources: [] as LocalSource[],
+/** The CPU side: the kinds of light and their sources, the tables written from them and the
+ * frame's sort. */
+export class LocalLights {
+
+	/** the kinds, in the order registered */
+	readonly kinds: LocalLightKind[] = [];
+	/** every kind's sources, in the kinds' order (`refresh`) */
+	sources: LocalSource[] = [];
 	/** the art gain (GAIN), the GUI's */
-	gain: GAIN,
+	gain = GAIN;
 	/** off: no light (the GUI's; `flags.localLights = false` too) */
-	enabled: true,
+	enabled = true;
 	/** the sources' share of their light now (0 by day) */
-	strength: 0,
+	strength = 0;
 	/** the renderer, for `info()` (the pass sets it) */
-	renderer: null as THREE.WebGPURenderer | null,
+	renderer: THREE.WebGPURenderer | null = null;
+	/** Registers a kind of light and takes its sources; refused without its three declarations. */
+	add( kind: LocalLightKind ): void {
+
+		checkDeclarations( 'LocalLights', kind.name, kind );
+		this.kinds.push( kind );
+		this.refresh();
+
+	}
+	/** Reads every kind's sources again, in the kinds' order: called by whoever moved them. */
+	refresh(): void {
+
+		this.sources = this.kinds.flatMap( ( kind ) => kind.sources().map( ( s ) => s.intensity && s.range !== undefined ? s as LocalSource : {
+			position: s.position,
+			intensity: s.intensity ?? new THREE.Vector3( DEFAULT_SOURCE.intensity, DEFAULT_SOURCE.intensity, DEFAULT_SOURCE.intensity ),
+			range: s.range ?? DEFAULT_SOURCE.range,
+		} ) );
+
+	}
 	/** The pass runs this frame: lit, on and with sources. */
 	get active(): boolean {
 
 		return this.strength > 0 && this.enabled && ! off() && this.sources.length > 0;
 
-	},
+	}
 	/** Once a frame, before it renders: the sources' share of their light (0 by day). The table is
 	 * rewritten when the sources changed; the sort waits for the pass (`cluster`). */
 	update( strength: number ): void {
@@ -303,7 +351,7 @@ export const localLights = {
 		u.count.value = 0;
 		if ( this.active ) this.writeTable();
 
-	},
+	}
 	/** The source table into its buffer, if it differs from what the buffer holds. */
 	writeTable(): void {
 
@@ -339,7 +387,7 @@ export const localLights = {
 		table.addUpdateRange( 0, Math.max( sources.length, 1 ) * 8 );
 		table.needsUpdate = true;
 
-	},
+	}
 	/** Before the scene passes, outside the jittered span: the camera's view and projection, the
 	 * sources in view sorted by depth and each slice's range in that order. Returns how many are in
 	 * view (0: nothing to dispatch). */
@@ -369,7 +417,7 @@ export const localLights = {
 		u.count.value = sorted.length;
 		return sorted.length;
 
-	},
+	}
 	/** (debug) The sources, those in view this frame, and from the clusters as the last pass left
 	 * them (read back) the fullest cluster's count and how many clusters overflowed PER_CLUSTER. */
 	async info(): Promise<{ sources: number; inView: number; fullest: number; overflowed: number; perCluster: number; clusterBytes: number; tableBytes: number }> {
@@ -392,8 +440,22 @@ export const localLights = {
 			clusterBytes: clusters.array.byteLength, tableBytes: table.array.byteLength + order.array.byteLength,
 		};
 
-	},
-};
+	}
+
+}
+
+// the page's registry, which the pass below reads (the pipeline declares the pass without it)
+let installed: LocalLights | null = null;
+
+/** The renderer's local lights, made once a page: the registry of the kinds of light, whose table
+ * the module's buffers hold and whose pass (`localLightsPass`) the pipeline declares. */
+export function createLocalLights(): LocalLights {
+
+	if ( installed ) throw new Error( 'LocalLights: a page has one light table, and it is already made' );
+	installed = new LocalLights();
+	return installed;
+
+}
 
 /** `flags=lightTest:N`: N white sources over the meadow for cost tests, at the cells of a 4 m
  * world grid with the lowest hashes among those whose point and its four neighbours 3 m off lie on
@@ -434,12 +496,13 @@ export function localLightsPass<Frame extends { camera: THREE.Camera }>( g: Fram
 
 	g.addPass( 'localLights', 'compute', () => ( {
 		label: 'local lights', size: { of: 'fixed', width: CLUSTERS, height: 1 }, neverCull: true,
-		when: () => localLights.active, whenLabel: 'local lights',
+		when: () => installed?.active === true, whenLabel: 'local lights',
 		compute: localLightsKernel,
 		run: ( f, graph ) => {
 
-			localLights.renderer = graph.renderer;
-			if ( localLights.cluster( f.camera as THREE.PerspectiveCamera ) > 0 ) graph.renderer.compute( localLightsKernel );
+			const lights = installed!;
+			lights.renderer = graph.renderer;
+			if ( lights.cluster( f.camera as THREE.PerspectiveCamera ) > 0 ) graph.renderer.compute( localLightsKernel );
 
 		},
 	} ) );

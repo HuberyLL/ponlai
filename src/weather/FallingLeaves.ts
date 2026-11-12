@@ -5,7 +5,7 @@ import {
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
 import type { WorldFields } from '../world/WorldFields.ts';
-import type { FrameGraph } from '../post/graph/FrameGraph.ts';
+import type { ExtraPass } from '../post/ExtraPass.ts';
 import { gustAt, windBefore, type Wind } from './Wind.ts';
 import { ISLAND_TOP } from '../world/WorldShapes.ts';
 import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, soilGroveSwell } from '../materials/Soil.ts';
@@ -560,27 +560,40 @@ export class FallingLeaves {
 
 }
 
-/** The leaves' compute pass, declared before the scene passes: fixed in size (the ring's slots),
- * reading and writing only its own buffers; a reset's frame dispatches the prewarm instead of the
- * live step. `leaves` gives the pool once the world exists (the warm-up runs before, and `main.ts`
- * registers both kernels as latents then), or null when the test mode leaves it out. */
-export function leavesPass<Frame>( g: FrameGraph<Frame>, leaves: () => FallingLeaves | null ): void {
+/** The leaves' compute pass as an extra pass of the pipeline (post/ExtraPass.ts), declared before
+ * the scene passes: fixed in size (the ring's slots), reading and writing only its own buffers; a
+ * reset's frame dispatches the prewarm instead of the live step. `leaves` gives the pool once the
+ * world exists (the warm-up runs before, and `main.ts` registers both kernels as latents then), or
+ * null when the test mode leaves it out. Its declarations: no tier changes its cost; it keeps the
+ * leaves' flight from frame to frame, which the test mode turns off whole (the pool is not made,
+ * so nothing waits for it); a Grow needs nothing of it (see the header). */
+export function leavesPass( leaves: () => FallingLeaves | null ): ExtraPass {
 
-	g.addPass( 'fallingLeaves', 'compute', () => ( {
-		label: 'falling leaves', size: { of: 'fixed', width: CAPACITY, height: 1 }, neverCull: true,
-		when: () => leaves()?.active === true, whenLabel: 'falling leaves',
-		compute: () => {
+	return {
+		name: 'falling leaves',
+		cost: 'none',
+		testMode: { held: 'off', by: 'the page, which does not make the pool in the test mode (debug/TestMode.ts)', settled: 'nothing: it does not run' },
+		land: 'independent',
+		declare: ( g ) => {
 
-			const pool = leaves();
-			return pool ? [ pool.kernel, pool.prewarm ] : null;
+			g.addPass( 'fallingLeaves', 'compute', () => ( {
+				label: 'falling leaves', size: { of: 'fixed', width: CAPACITY, height: 1 }, neverCull: true,
+				when: () => leaves()?.active === true, whenLabel: 'falling leaves',
+				compute: () => {
+
+					const pool = leaves();
+					return pool ? [ pool.kernel, pool.prewarm ] : null;
+
+				},
+				run: ( _f, graph ) => {
+
+					const pool = leaves();
+					if ( pool ) graph.renderer.compute( pool.resetting ? pool.prewarm : pool.kernel );
+
+				},
+			} ) );
 
 		},
-		run: ( _f, graph ) => {
-
-			const pool = leaves();
-			if ( pool ) graph.renderer.compute( pool.resetting ? pool.prewarm : pool.kernel );
-
-		},
-	} ) );
+	};
 
 }
