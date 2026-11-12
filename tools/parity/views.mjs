@@ -236,8 +236,7 @@ export const VIEWS = {
 	// orbit to the island's far side from the sun: the view looks into the low sun (profiler's faceSun)
 	'island-clear-golden': { q: 'weather=clear&preset=golden-hour', eval: 'orbitAround( - s.sky.sunDir.x, - s.sky.sunDir.z );', crops: [ 'rim-lip', 'cliff-edge-sea' ] },
 	'horizon-fair-noon': { q: 'weather=fair&preset=noon', eval: `s.setCameraView( 'horizon' );`, crops: [ 'cliff-edge-sea', 'rim-lip', 'horizon-line' ] },
-	'sky-partly': { q: 'weather=partly&preset=noon', eval: `s.setCameraView( 'sky' );`, crops: [] },
-	'island-partly': { q: 'weather=partly&preset=noon', crops: [ 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },
+	'sky-fair': { q: 'weather=fair&preset=noon', eval: `s.setCameraView( 'sky' );`, crops: [] },
 	'sky-cloudy': { special: true, q: 'weather=cloudy&preset=noon', eval: `s.setCameraView( 'sky' );`, crops: [] },
 	'island-overcast': { special: true, q: 'weather=overcast&preset=noon', crops: [ 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },
 	'island-rain': { special: true, q: 'weather=rain&preset=noon', crops: [ 'rain-streaks', 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },

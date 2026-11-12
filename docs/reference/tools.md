@@ -507,7 +507,7 @@ compare two freshly loaded pages (a grown page against a fresh `grow=1` page) in
 
 Steps, scope, the value's serialisation and the exit code are in the file's header.
 
-`node tools/dusk-grid.mjs [url] [--weathers clear,fair,partly] [--sides evening,morning]
+`node tools/dusk-grid.mjs [url] [--weathers clear,fair] [--sides evening,morning]
 [--from 2 --to -8 --step 0.5] [--midnight] [--split [--fit]] [--night-split] [--twilight] [--haze]
 [--compare dir]` reads the scene's light in scene units at a grid of sun elevations through the dusk
 and the dawn (the sky's and the deck's irradiance, the sky's metering, the baked sky's ring 4
@@ -881,7 +881,7 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   60 Hz with `--vsync` (the intervals a player sees; uncapped, a GPU-bound scene's p95 is mostly
   pacing noise).
 - It plays a matrix of named scenes (`--list`: `island-fair-noon`, `island-clear-golden`,
-  `horizon-fair-noon`, `sky-partly`, `island-partly`, `island-night-clear`, `meadow-close` (over
+  `horizon-fair-noon`, `sky-fair`, `island-night-clear`, `meadow-close` (over
   the meadow, placed on the camera's ground, `controls.ground`); the parked weathers' `island-rain`,
   `island-storm`, `horizon-storm`, `island-fog-dawn` and `weather-change` (a front sweeping in) and
   the clouded skies' `sky-cloudy`, `island-overcast`, `island-cloudy`, `horizon-cloudy` and

@@ -1,7 +1,7 @@
 // First-use pipelines (FU): once the page has loaded (its warm-up and first frames behind it), every
 // step a player or the GUI may take should create no render or compute pipeline, since a frame that
 // creates one stalls on it. The steps: the first pause and the temporal rest it settles into, scene
-// events (a time preset and a jump to partly, paused and running), the wind's levels and headings
+// events (a time preset and a jump to clear, paused and running), the wind's levels and headings
 // (`wind`: each level jumped to with a turned heading, then changes over seconds), idle frames, the GUI's
 // exposure offset moved and back, the camera's modes and views,
 // a sweep of the render scale (upscaled and not), a resized window, the time presets and a pause
@@ -421,7 +421,7 @@ async function apply( page, step, notes ) {
 
 			}
 			// jumps, then fronts sweeping in over a few seconds (the periodic bakes spread over frames)
-			for ( const w of [ 'clear', 'fair', 'partly', 'cloudy', 'overcast', 'rain', 'storm', 'fog' ] ) {
+			for ( const w of [ 'clear', 'fair', 'cloudy', 'overcast', 'rain', 'storm', 'fog' ] ) {
 
 				await page.evaluate( ( w ) => window.__PONLAI__.setWeather( w, 0 ), w );
 				await settled( page );
@@ -496,10 +496,10 @@ async function apply( page, step, notes ) {
 
 			// scene events while paused (each restarts the rest on the new scene, and the temporal
 			// modes cut their history), then the same while running: a time preset, and a jump into
-			// partly (the kept weather with the most cloud) and back to the page's weather
+			// clear (the other kept weather: the page loads fair) and back to the page's weather
 			const initial = await page.evaluate( () => window.__PONLAI__.weather.target );
 			await page.keyboard.press( 'Space' );
-			for ( const [ fn, arg ] of [ [ 'setPreset', 'golden-hour' ], [ 'setWeather', 'partly' ] ] ) {
+			for ( const [ fn, arg ] of [ [ 'setPreset', 'golden-hour' ], [ 'setWeather', 'clear' ] ] ) {
 
 				await page.evaluate( ( [ fn, arg ] ) => fn === 'setWeather' ? window.__PONLAI__.setWeather( arg, 0 ) : window.__PONLAI__.setPreset( arg ), [ fn, arg ] );
 				await settled( page );
