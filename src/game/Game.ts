@@ -50,8 +50,8 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // new (start a new game), autosave (on, off), dayLength (real seconds per game day at 1x); see
 // docs/reference/url-options.md.
 //
-// Rules: without ?game the page stays the art-review scene, unchanged. The game is the first
-// prototype of docs/explanation/game-design.md ("Next"): nothing is built ahead of that design. The brain's
+// Rules: without ?game the page stays the art-review scene, unchanged. The game follows
+// docs/explanation/game-design.md: nothing is built ahead of that design. The brain's
 // tools are the five actions (sim/actions.ts). Thinking is asynchronous to the world: `think( id )`
 // asks the brain with the islander's perception, the simulation never waits for the answer, the
 // body goes on with what it is doing meanwhile, and the answer's tool calls run on the body when it

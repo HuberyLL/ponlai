@@ -2,7 +2,7 @@ import type { Brain, Perception, ToolCall } from './agent.ts';
 import { BAG_CAPACITY } from './items.ts';
 
 // A stand-in brain of plain rules, thinking for the islander until the language model is
-// connected (docs/explanation/game-design.md, "Next"). It reads only the Perception and remembers nothing, and
+// connected. It reads only the Perception and remembers nothing, and
 // answers with the five actions, as a person would act on what they see, hear and carry: one
 // action a thought, with words said before it where it has something to say:
 //
