@@ -1,7 +1,7 @@
 // CPU-only transition contracts; Node's native TypeScript stripping needs no browser/GPU.
 // Run: node --experimental-strip-types tools/verify-weather-state.mjs
 import assert from 'node:assert/strict';
-import { Weather, WEATHER_PRESETS, WIND_LEVELS, PREVAILING_HEADING, PARKED_WEATHER, cloudyDeckWeight, daySkyAt, deckRamp, deckSkyGain, deckSkyGap, floorKeyGain, overcastDeckLight, overcastDeckWeight, withMoon } from '../src/sky/Weather.ts';
+import { Weather, WEATHER_PRESETS, WIND_LEVELS, PREVAILING_HEADING, PARKED_WEATHER, daySkyAt, deckRamp, deckSkyGain, deckSkyGap, overcastDeckLight, withMoon } from '../src/sky/Weather.ts';
 import { moonKeyShare } from '../src/sky/DayCycle.ts';
 import { QUALITY } from '../src/Quality.ts';
 
@@ -256,26 +256,6 @@ const random = () => {
 	t = ( t + Math.imul( t ^ ( t >>> 7 ), 61 | t ) ) ^ t;
 	return ( ( t ^ ( t >>> 14 ) ) >>> 0 ) / 4294967296;
 };
-// The deck's gains on the key's light (the key's floor gain, `floorKeyGain`; the key's bounce's
-// weather gain, lighting/AmbientGrade.ts) hand over to the moon: their weight is the deck's light
-// at the sun's height and at the moon's, by the moon's share of the key, w( e ) + ( 1 - w( e ) ) * s
-// with the moon at its default 20 degrees, within 0 and 1 at every height, exactly 1 all night,
-// and with no share exactly the sun's alone.
-for ( let elevation = - 90; elevation <= 90; elevation += 0.25 ) for ( const share of [ 0, 0.25, 0.5, 0.9, 1, random() ] ) {
-	for ( const [ weight, light ] of [ [ overcastDeckWeight, overcastDeckLight ], [ cloudyDeckWeight, deckRamp ] ] ) {
-		const w = weight( elevation, 20, share ), sun = light( elevation );
-		assert.ok( w >= 0 && w <= 1, `a deck weight at ${ elevation }` );
-		close( w, sun + ( 1 - sun ) * share, 1e-12 );
-		if ( share === 1 ) assert.equal( w, 1, `a deck weight at night, ${ elevation }` );
-		if ( share === 0 ) assert.equal( w, sun, `a deck weight by day, ${ elevation }` );
-		for ( const moon of [ 15, 31.5, 60 ] ) assert.ok( weight( elevation, moon, share ) >= 0 && weight( elevation, moon, share ) <= 1 );
-	}
-	for ( const [ overcast, cloudy ] of [ [ 1, 0 ], [ 0, 1 ], [ 0.4, 0.6 ] ] ) {
-		const gain = floorKeyGain( elevation, overcast, cloudy, 2.4, 1.6, 20, share );
-		if ( share === 0 ) assert.equal( gain, 1 + ( 2.4 - 1 ) * overcast * overcastDeckLight( elevation ) + ( 1.6 - 1 ) * cloudy * deckRamp( elevation ), `the key's floor gain by day at ${ elevation }` );
-		if ( share === 1 ) for ( const moon of [ 15, 20, 31.5, 60 ] ) assert.equal( floorKeyGain( elevation, overcast, cloudy, 2.4, 1.6, moon, 1 ), floorKeyGain( moon, overcast, cloudy, 2.4, 1.6, moon, 0 ), `the key's floor gain at night, at the moon's ${ moon } degrees` );
-	}
-}
 // The moon's light takes the gains the sun's light takes, at the moon's own height (Weather.ts
 // `withMoon`: the probes' sky gain and the deck's gains on the land's and the sea's sky light,
 // lighting/AmbientRelight.ts; the key's bounce, lighting/AmbientGrade.ts; the day sky on the
@@ -297,4 +277,4 @@ for ( let i = 0; i < 1000; i ++ ) {
 }
 assert.ok( QUALITY.low.cloudMarch.viewSteps < QUALITY.high.cloudMarch.viewSteps );
 assert.ok( QUALITY.low.rainDrops < QUALITY.high.rainDrops );
-console.log( 'weather state: transition, interruption, pause, presets, heading wrap, wind levels and headings with any sky, auto chain and its wind, the forecast read ahead, moisture, parked weathers out of the chain, lingering showers, the deck light gone by night, the deck gains on the key handed to the moon, the moon gains at its height, ranges and validation passed' );
+console.log( 'weather state: transition, interruption, pause, presets, heading wrap, wind levels and headings with any sky, auto chain and its wind, the forecast read ahead, moisture, parked weathers out of the chain, lingering showers, the deck light gone by night, the moon gains at its height, ranges and validation passed' );

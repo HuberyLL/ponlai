@@ -293,13 +293,12 @@ const seaFogView = { on: params.has( 'seaFog' ) };
 // unless `?dayFog` or the GUI turns it on.
 const dayFogView = { on: params.has( 'dayFog' ) };
 weather.auto = loaded.autoWeather;
-// The land's floor under a deck and the day sky's level and exponent per clouded sky (Weather.ts
-// `deckFloor`, `daySky`, `daySkyExponent`), tunable on debug pages
+// The day sky's level and exponent per clouded sky (Weather.ts `daySky`, `daySkyExponent`),
+// tunable on debug pages
 // without a reload: the presets the weather moves between take them, and the state that stands on
 // that sky follows (`setPresetValue`); the sky rebakes. A `?tune=` value is the start, applied
 // here as a load would.
 const PRESET_TUNABLES: ReadonlyArray<readonly [ TunedField, TuneOptions ]> = [
-	[ 'deckFloor', { min: 0, max: 1 } ],
 	[ 'daySky', { min: 0.005, max: 2, scale: 'log' } ],
 	[ 'daySkyExponent', { min: 0, max: 3 } ],
 ];
@@ -467,7 +466,7 @@ function prepareSkyState(): void {
 function publishLighting(): void {
 
 	// three's sun: the direct key, the sky's, which the clouds' shadow cuts per point over the land's
-	// floor, the deck's key gain on that floor (Sky.ts `keyDirectVisibility`, OVERCAST_KEY_GAIN); the
+	// floor, the share of the key a cloud passes on (Sky.ts `keyDirectVisibility`, KEY_THROUGH_CLOUD); the
 	// land's key (shared.landKey) and the sea's (shared.sunColor): both the sky's key, the sea's cut
 	// by the clouds' own transmittance over the land's floor (Sky.ts `seaKeyVisibility`,
 	// lighting/KeyCloud.ts)

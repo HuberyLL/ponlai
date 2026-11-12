@@ -130,58 +130,6 @@ export function deckLight( elevation: number, clouded: number, overcast: number 
 
 }
 
-/** How far the deck's floor of the key has taken over the weather's own fields under its cloud
- * `clouded`, of which overcast's share is `overcast`, at the sun's `elevation` (degrees): a cloudy
- * deck's share as its own light holds (`deckRamp`), overcast's whole at every sun, over the clouded
- * share. Under it the land's key and the air under the deck keep the weather's `deckFloor` (Sky.ts
- * `keyCloudFloor`, `deckKeyFloor`); a clear or a fair sky has no deck fields of its own (`deckFloor`
- * its `cloudFloor`). The floor is the light the closed deck passes down in place of the key it
- * hides, so it stays while any key lights the deck, the sun by day, the moon by night, and the
- * key's own light sets its level. */
-export function deckFloorTakeover( elevation: number, clouded: number, overcast: number ): number {
-
-	return clouded > 0 ? ( ( clouded - overcast ) * deckRamp( elevation ) + overcast ) / clouded : 0;
-
-}
-
-/** The weight of overcast's deck gain on the key's floor (`floorKeyGain`), a light the moon's key
- * gives a part of (the key's bounce under the deck, lighting/AmbientGrade.ts `update`, combines the
- * same two heights with the sun's part times its own gain), at the sun's `elevation` and the
- * moon's `moonElevation` (degrees), by the moon's `moonShare` of the key (Sky.ts `moonKeyShare`):
- * the sun's part takes overcast's deck light at the sun's height, which leaves with the sun's own
- * light over the civil twilight, and the moon's part the same at the moon's, as a closed deck
- * passes the moon's light down as it passes the sun's (`withMoon`). So the weight is the sun's by
- * day, overcastDeckLight( e ) + ( 1 - overcastDeckLight( e ) ) * share with the moon at its default
- * 20 degrees, within 0 and 1, and whole all night (tools/verify-weather-state.mjs). */
-export function overcastDeckWeight( elevation: number, moonElevation: number, moonShare: number ): number {
-
-	return withMoon( overcastDeckLight( elevation ), overcastDeckLight( moonElevation ), moonShare );
-
-}
-
-/** `overcastDeckWeight` for a cloudy deck: its own light (`deckRamp`, from a sun of 3 degrees) at
- * the sun's height and at the moon's, by the moon's share of the key. Between 3 degrees and the
- * moon's key coming in (from -2.5) the weight is the sun's alone, 0 below 3. */
-export function cloudyDeckWeight( elevation: number, moonElevation: number, moonShare: number ): number {
-
-	return withMoon( deckRamp( elevation ), deckRamp( moonElevation ), moonShare );
-
-}
-
-/** The key's gain on the deck's floor (Sky.ts `keyCloudFloor`, `deckKeyFloor`): overcast's gain
- * `overcastKey` by its share `overcast` and `overcastDeckWeight`, a cloudy deck's `cloudyKey` by its
- * share `cloudy` and `cloudyDeckWeight`, at the sun's `elevation` and the moon's `moonElevation`
- * (degrees) by the moon's `moonShare` of the key: the floor stands for the light the deck passes
- * down in place of the key it hides, the sun's by day and the moon's by night, so the moon's key
- * takes the gain the sun's takes at the moon's height. By day its weight is the deck's light at the
- * sun's height, on the slope the land's sky light under the deck takes (lighting/AmbientGrade.ts
- * `overcastLandWeight`). */
-export function floorKeyGain( elevation: number, overcast: number, cloudy: number, overcastKey: number, cloudyKey: number, moonElevation: number, moonShare: number ): number {
-
-	return 1 + ( overcastKey - 1 ) * overcast * overcastDeckWeight( elevation, moonElevation, moonShare ) + ( cloudyKey - 1 ) * cloudy * cloudyDeckWeight( elevation, moonElevation, moonShare );
-
-}
-
 /** The sky's light on the land and in the water under a closed deck, over the sky's irradiance bake
  * (lighting/AmbientRelight.ts, the probes' sky; ocean/Water.ts, the body's in-scatter): one gain
  * for both. It stands in for the soft light the land keeps under cloud: the light that comes
@@ -258,21 +206,6 @@ export interface WeatherState {
 	coverage: number;
 	density: number;
 	directVisibility: number;
-	// The share of the key's direct light the land keeps under the thickest cloud: the floor of the
-	// clouds' shadow on the island (Sky.ts `keyDirectVisibility`). 1 takes the
-	// deck's shadow away, leaving `directVisibility` alone to set the land's direct light. By day
-	// under a cloudy deck it gives way to `deckFloor` (`deckFloorTakeover`).
-	cloudFloor: number;
-	// The clouds' shadow floor that takes over from `cloudFloor` under a deck (`deckFloorTakeover`):
-	// under a deck the land's key keeps this share whatever the deck's depth (Sky.ts
-	// `keyDirectVisibility`), through the key's map, so the island's cast shadows show under it; under
-	// overcast it rides on whichever light keys the scene, the moon's by night as the sun's by day
-	// (Sky.ts `track`), and the air under the deck keeps it too. Overcast has one; clear and
-	// fair none (a floor there would show the takeover's step when a deck comes in); cloudy none so
-	// far; the parked skies none, their key reaching the land only through the deck's own
-	// transmittance. Raise it for a stronger directional light and darker cast shadows under the
-	// deck; a debug page tunes it per sky without a reload (`sky.deckFloor@cloudy|overcast`).
-	deckFloor: number;
 	// How much of the key's cast shadow (the sun's map: groves, cliffs, culms) the land shows, 1 all
 	// of it (lighting/SolarShadow.ts `installOpenShadow`).
 	castShadow: number;
@@ -380,15 +313,14 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // The atmosphere retains its colour. Cloud extinction, diffuse fill and distant air change
 // together; none of these presets adds a grey screen veil. Fog is a low layer over the sea that
 // the camera looks through, not a tint over the frame.
-// The island's direct light under cloud: a cloudy sky's cumulus pass the full sun through their
-// gaps; at a low sun their shadow keeps about 8 % of it (`cloudFloor`). Once a deck has taken over
-// (cloudy's from 6 degrees, `deckRamp`; overcast's at every sun, `deckFloorTakeover`) the key
-// keeps the weather's `deckFloor` on the land (Sky.ts `keyDirectVisibility`), through the sun's map:
-// it is the direct key, so it takes the sun's map, the meadow's screen-space shade and the canopy's
-// light, and the island's cast shadows show under the deck (`castShadow` 1), soft because the sky's
-// light is the larger share. Under overcast the floor rides on the moon's light by night as on the
-// sun's by day, and the air and the sea under the deck keep it too (Sky.ts `deckKeyFloor`,
-// `seaKeyVisibility`), the sea's glint only the direct beam. Overcast is a closed deck deep
+// The island's direct light under cloud: the clouds pass the full sun through their gaps, and
+// under them the key keeps a floor on the land, the same rule under every sky (Sky.ts
+// KEY_THROUGH_CLOUD, `keyDirectVisibility`: a share of what a layer of the sky's shell and density
+// passes down), through the sun's map: it is the direct key, so it takes the sun's map, the
+// meadow's screen-space shade and the canopy's light, and the island's cast shadows show under
+// cloud (`castShadow` 1), soft because the sky's light is the larger share. The floor rides on the
+// moon's light by night as on the sun's by day; the sea keeps it too, its glint only the direct
+// beam, and under a closed sky the air does (Sky.ts `seaKeyVisibility`, `deckKeyFloor`). Overcast is a closed deck deep
 // enough that its disc does not show (Sky.ts `domeColour`): the land under it is even, its sky the
 // deck's own glow about the sun's place, which the land takes with the rest of the sky
 // (lighting/AmbientRelight.ts OVERCAST_LAND_UNIT, CLOUDY_LAND; under overcast the key's bounce
@@ -408,15 +340,15 @@ const PRESET_WIND: Partial<Record<WeatherName, WindLevel>> = { rain: 'fresh', st
 // The night sky the dome draws stands `seenNight` stops below the light it sheds, so the moonlit
 // sky reads dark over the land.
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<SkyPreset>>> = {
-	clear: { coverage: 0, density: 0.8, directVisibility: 1, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 2.9, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
-	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 1.9, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
-	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, cloudFloor: 0.08, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 2.9, haze: 0.0021, rain: 0, fog: 0, storm: 0, streaks: 0 },
-	overcast: { coverage: 0.94, density: 1.6, directVisibility: 1, cloudFloor: 0, deckFloor: 0.3, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, daySky: 0.092, daySkyExponent: 1.15, moonSky: 0.173, moonSkyExponent: 1.24, seenNight: 0, haze: 0.00974, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
-	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 0, haze: 0.0095, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
+	clear: { coverage: 0, density: 0.8, directVisibility: 1, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 1, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 2.9, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
+	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.99, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 1.9, haze: 0.003, rain: 0, fog: 0, storm: 0, streaks: 0.3 },
+	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 1, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.91, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 2.9, haze: 0.0021, rain: 0, fog: 0, storm: 0, streaks: 0 },
+	overcast: { coverage: 0.94, density: 1.6, directVisibility: 1, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.76, daySky: 0.092, daySkyExponent: 1.15, moonSky: 0.173, moonSkyExponent: 1.24, seenNight: 0, haze: 0.00974, rain: 0, fog: 0.08, storm: 0, streaks: 0 },
+	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.62, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 0, haze: 0.0095, rain: 0.75, fog: 0.22, storm: 0, streaks: 0 },
 	// A squall: the darkest deck, heavy rain, a strong wind (PRESET_WIND) and a rough, white-capped sea.
-	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 0, haze: 0.0135, rain: 1, fog: 0.3, storm: 1, streaks: 0 },
+	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.45, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 0, haze: 0.0135, rain: 1, fog: 0.3, storm: 1, streaks: 0 },
 	// Sea fog forms in calm, moist air under thin high cloud; the sun shows as a pale disk.
-	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, cloudFloor: 0, deckFloor: 0, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 0, haze: 0.0046, rain: 0, fog: 1, storm: 0, streaks: 0.4 },
+	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, castShadow: 1, shadowDensity: 1, glintSpread: 0, ambientGain: 0.92, daySky: 1, daySkyExponent: 0, moonSky: 1, moonSkyExponent: 0, seenNight: 0, haze: 0.0046, rain: 0, fog: 1, storm: 0, streaks: 0.4 },
 };
 
 // Auto weather: from each state, the next one and its weight. The chain moves among the kept
@@ -497,12 +429,12 @@ const smoothIntegral = ( t: number ) => t * t * t * ( 1 - 0.5 * t );
 const headingDelta = ( from: number, to: number ) => ( ( ( to - from ) % 360 ) + 540 ) % 360 - 180;
 const wrapHeading = ( heading: number ) => ( ( heading % 360 ) + 360 ) % 360;
 
-// The presets the weather moves between: a working copy of WEATHER_PRESETS whose `deckFloor`,
+// The presets the weather moves between: a working copy of WEATHER_PRESETS whose
 // `daySky` and `daySkyExponent` a debug page may tune (`Weather.setPresetValue`), so a
 // load, a jump and a front all take the tuned value, as a page loaded with it would. Every other
 // reader keeps WEATHER_PRESETS.
 /** The preset fields a debug page may tune (`Weather.setPresetValue`). */
-export type TunedField = 'deckFloor' | 'daySky' | 'daySkyExponent';
+export type TunedField = 'daySky' | 'daySkyExponent';
 const WORKING_PRESETS = Object.fromEntries( Object.entries( WEATHER_PRESETS ).map( ( [ name, preset ] ) => [ name, { ...preset } ] ) ) as Record<WeatherName, SkyPreset>;
 
 function presetFor( name: WeatherName ): Readonly<SkyPreset> {
@@ -612,8 +544,8 @@ export class Weather {
 
 	snapshot(): WeatherState { return { ...this.current }; }
 
-	/** Sets a tunable field of the sky `name`'s preset (`TunedField`: the land's floor under a deck,
-	 * the deck's cover, the day sky's level and exponent; main.ts tunes them on debug pages): every later load, jump
+	/** Sets a tunable field of the sky `name`'s preset (`TunedField`: the day
+	 * sky's level and exponent; main.ts tunes them on debug pages): every later load, jump
 	 * and front takes it, and the state as it stands follows as a page loaded with it would hold it.
 	 * Resting on that sky, the state and both ends of its front take it; on a front toward it, only
 	 * the end it moves to (the start is a snapshot of the sky it left). */

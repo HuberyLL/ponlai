@@ -293,13 +293,13 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `sky.moon.elevation` (degrees up, 15 to 40) and `sky.moon.turn` (degrees from the noon meridian:
   0 its noon side, 180 the pole's, positive toward the west), and the stars' sky, the one seen
   from `sky.stars.latitude` degrees south at the sidereal time `sky.stars.sidereal` (hours:
-  `src/sky/DayCycle.ts` MOON, STARS), a clouded sky's floor of the key on the land under its deck
-  `sky.deckFloor@overcast` (`@cloudy`) and its day sky, the level of the whole sky's light by day at
-  a sun 18 degrees up and how it goes with the sun's height, `sky.daySky@overcast`,
-  `sky.daySkyExponent@overcast` (`@cloudy`:
-  `src/sky/Weather.ts` `daySkyAt`), the key's gain on that floor under overcast's deck
-  `lighting.overcastKey` (under a cloudy deck's, `lighting.cloudyKey`: `src/sky/Sky.ts`
-  OVERCAST_KEY_GAIN), and the land's share of the sky's light `lighting.relight.skyGain@high`
+  `src/sky/DayCycle.ts` MOON, STARS), a clouded sky's day sky, the level of the whole sky's light
+  by day at a sun 18 degrees up and how it goes with the sun's height, `sky.daySky@overcast`,
+  `sky.daySkyExponent@overcast` (`@cloudy`: `src/sky/Weather.ts` `daySkyAt`), how much of the
+  sunlight a cloud passes down the land under it keeps as a light along the sun, under every sky
+  `lighting.keyThroughCloud` (0 to 4: higher gives a stronger light from the sun's side and darker
+  cast shadows under cloud, `src/sky/Sky.ts` KEY_THROUGH_CLOUD), and the land's share of the sky's
+  light `lighting.relight.skyGain@high`
   (`@low`, `@golden`, the rising sun's `@dawn`, `@sunrise`, `@cloudy`, `@cloudyBlue`, `@night`; the
   moon's sky's own `lighting.relight.moon.skyGain@low` and `@high`, its golden and cloudy keys the
   day's), the sun's part of the weather's gain under overcast's deck on the land's ambient light,

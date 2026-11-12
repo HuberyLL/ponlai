@@ -24,7 +24,7 @@ import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
 import { DAY_EXPOSURE, MOON, cloudMoonShare, displayNight, duskForce, exposureNight, nightAmbientShare, skyNight, starNight, sunRising, type DayCycleSnapshot } from './DayCycle.ts';
-import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, deckFloorTakeover, floorKeyGain, overcastDeckLight, overcastFloorSun, daySkyAt, type WeatherState } from './Weather.ts';
+import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, overcastDeckLight, overcastFloorSun, daySkyAt, type WeatherState } from './Weather.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
@@ -65,8 +65,8 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 
 // The sky: atmosphere, clouds, night sky and the baked environment. One cloud field feeds the
 // visible sky, water reflections, environment lighting and cloud shadows; on the island's direct
-// light the shadows keep the weather's floor (`keyDirectVisibility`: under a deck the weather's
-// `deckFloor`, which the sea and the air keep too: `seaKeyVisibility`, `deckKeyFloor`), and under a
+// light the shadows keep a floor (`keyDirectVisibility`: a share of what the cloud layer passes
+// down, KEY_THROUGH_CLOUD, which the sea and the air keep too: `seaKeyVisibility`, `deckKeyFloor`), and under a
 // closed deck the key and the clouds' sunlight lose their colour, not their luminance (Weather.ts), as from a cloudy sky on
 // the sunlight the clouds scatter many times does (trackClouds). By day the sky's light, the
 // sun's in-scattered light, takes one gain
@@ -1050,36 +1050,26 @@ const moonKeyBlue = tune( 'lighting.moon.blue', 1.16, { min: 0.8, max: 4 } );
 const _moonKey = new THREE.Color();
 const _moonHue = new THREE.Color();
 const _cloudMoon = new THREE.Color();
-// The key's gain under overcast's deck, on the floor of the key there (Weather.ts `deckFloor`,
-// `keyCloudFloor` and `deckKeyFloor` below), by overcast's share and its deck's light (Weather.ts
-// `floorKeyGain`, `overcastDeckWeight`): whole at every sun by day, its sun's part gone by -6
-// degrees on the slope the land's sky light under the deck leaves on (lighting/AmbientGrade.ts
-// `overcastLandWeight`), its moon's part the same gain at the moon's height, by the moon's share of
-// the key, so by night the moon's floor takes the gain the sun's takes there. The sun's part of the
-// floor itself leaves over the last 2.5 degrees before the horizon (Weather.ts `overcastFloorSun`),
-// so under the closed deck the land keeps the deck's diffuse light through sunset, with no flash
-// of the setting beam. Under the closed deck the
-// land's directional light is that floor through the key's map, so the gain brightens the land's key
-// and the shadows the bamboo and the islanders cast with it; it stops where the floor times the gain
-// reaches 1, and where the clouds thin to a gap the key goes back to the sky's own
-// (`keyDirectVisibility`: mix( floor, 1, T )), so a gap's lit ground is never brighter than a clear
-// day's under the same sun. The air and the sea under the deck take the same floor and gain
-// (`deckKeyFloor`, `seaKeyVisibility`; the sea's glint only the direct beam, `cloudDirectVisibility`;
-// lighting/KeyCloud.ts). At 1 the floor is the weather's own; at
-// its 2.9 the land under the deck keeps 0.87 of the key. Set with the land's gain under the deck
-// (lighting/AmbientGrade.ts OVERCAST_LAND) and overcast's day sky on the lit open ground of two
-// eye-height views beside and away from the sun: with the sun 15 and 22 degrees up the key makes
-// 0.81 to 0.82 of a white card's light on the ground and meadow within 40 m lit over the frame's
-// median, and the card's light is 5.3 times the sky's irradiance over pi (3 put it at 5.4). Raise it if the land under the
-// deck lacks the light from the sun's side and its cast shadows; lower it if the shadows read as a
-// clear day's.
-// Tunable: `lighting.overcastKey`.
-const OVERCAST_KEY_GAIN = tune( 'lighting.overcastKey', 2.9, { min: 1, max: 3, onChange: markSkyRetune } );
-// The key's gain under a cloudy deck, on its floor, by cloudy's share and its deck's light
-// (Weather.ts `deckRamp`, whole from 6 degrees), as overcast's. A cloudy deck's floor is 0 (its
-// light comes through its gaps), so the gain does nothing there until the floor is given a value.
-// Tunable: `lighting.cloudyKey`.
-const CLOUDY_KEY_GAIN = tune( 'lighting.cloudyKey', 1, { min: 1, max: 3, onChange: markSkyRetune } );
+// The key under cloud, one rule for every sky. Where cloud stands along the key the land does not
+// lose the key whole: a cloud passes on a part of the sunlight it takes, most of it scattered
+// forward, so the ground under it keeps a soft light from the sun's side that still casts the
+// island's shadows. The land's key keeps mix( floor, 1, T ), T the clouds' transmittance along the
+// key (`keyDirectVisibility`), and the floor is the diffuse transmission of a layer of the sky's
+// shell and density (Clouds.ts `layerTransmission`: about 0.21 under fair's shell, 0.28 under
+// cloudy's, 0.25 under overcast's) times this share, at most 1: how much of what the layer passes
+// down the land keeps as a light along the key, the one knob for how deep the clouds shade the
+// land, as engines give the cloud shadow on surfaces a strength of its own. A thicker or denser
+// layer leaves less, and where the clouds thin to a gap the key goes back to the sky's own, so a
+// gap's lit ground is never brighter than a clear day's under the same sun. The sea keeps the same
+// floor (`seaKeyVisibility`; its glint only the direct beam, `cloudDirectVisibility`), and under a
+// closed sky the air does (`deckKeyFloor`, by overcast's share; lighting/KeyCloud.ts). The floor
+// rides on whichever light keys the scene, the moon's by night as the sun's by day; under a closed
+// sky the sun's part of it leaves over the last 2.5 degrees before the horizon (Weather.ts
+// `overcastFloorSun`), so the land there keeps the layer's diffuse light through sunset, with no
+// flash of the setting beam. Raise it for a stronger light from the sun's side and darker cast
+// shadows under cloud; lower it for deeper cloud shadows and a flatter land under a closed sky.
+// Tunable: `lighting.keyThroughCloud`.
+const KEY_THROUGH_CLOUD = tune( 'lighting.keyThroughCloud', 1.8, { min: 0, max: 4, onChange: markSkyRetune } );
 
 /** The factor per channel that turns MOON_KEY into the tuned hue at MOON_KEY's luminance. */
 function moonHue( target: THREE.Color ): THREE.Color {
@@ -1282,7 +1272,8 @@ export class Sky {
 	// the moon's sky and deck light it scatters (VolumetricHaze.ts `SEEN_AIR`), and the exposure's
 	// meter divides it out of the sky's pixels (post/Metering.ts).
 	private domeGapGain = { sun: this.gapGain.sun, moon: uniform( 1 ) };
-	// the weather's cloud shadow floor and cast shadow on the island (Weather.ts `cloudFloor`, `castShadow`)
+	// the key's floor under cloud and the weather's cast shadow on the island (KEY_THROUGH_CLOUD,
+	// Weather.ts `castShadow`)
 	// (the sea's floor too: `seaKeyFloor`)
 	private keyCloudFloor = uniform( 0 );
 	readonly castShadow = uniform( 1 );
@@ -1816,12 +1807,10 @@ export class Sky {
 	get transitioning(): boolean { return this.transitionDuration > 0 && this.transitionElapsed < this.transitionDuration; }
 	get moonDir(): THREE.Vector3 { return this.night.moonDir.value; }
 	/** The floor of the key's visibility the air under a closed deck keeps (VolumetricHaze.ts
-	 * `keyFloor`), this frame's: the weather's `deckFloor` times the key's gain under the deck, at
-	 * most 1, by how far the deck's floor has taken over (Weather.ts `deckFloorTakeover`,
-	 * `floorKeyGain`). It follows the key by day, at dusk and by night, so the air toward the sun or
-	 * the moon keeps the light the deck passes down in place of the key it hides; 0 under clear,
-	 * fair and cloudy skies (their `deckFloor`). The land's floor and the sea's (`keyCloudFloor`,
-	 * `seaKeyFloor`) are the same value where no cumulus' floor is left. */
+	 * `keyFloor`), this frame's: the land's floor (KEY_THROUGH_CLOUD) by overcast's share. It follows
+	 * the key by day, at dusk and by night, so the air toward the sun or the moon keeps the light
+	 * the deck passes down in place of the key it hides; 0 under clear, fair and cloudy skies, whose
+	 * air takes the clouds' own shadow. */
 	get deckKeyFloor(): number { return this.keyFloorUnderDeck; }
 	/** The sea's floor of the key's visibility (`seaKeyVisibility`), a node: the land's
 	 * (`keyCloudFloor`), the cumulus' floor and the deck's, so the sea takes the land's key. */
@@ -2198,21 +2187,8 @@ export class Sky {
 		this.displaySunDir.value.copy( this.sunDir );
 		this.displaySolarIlluminance.value.copy( this.solarIlluminance );
 		this.displayAmbientGain.value = ambientGain;
-		// the deck's floor of the key (Weather.ts `deckFloor`) times the key's gain under the deck
-		// (OVERCAST_KEY_GAIN, CLOUDY_KEY_GAIN, `floorKeyGain`: a visibility, so at most 1), as far as
-		// the deck has taken over from the clouds' own (`deckFloorTakeover`): the light the closed
-		// deck passes down in place of the key it hides, so overcast's floor rides on whichever light
-		// keys the scene, the sun by day and the moon by night, whose own light sets its level, and its
-		// gain is the one each takes at its own height, mixed by the moon's share of the key
-		// (`overcastDeckWeight`; a cloudy deck's by its own light, `cloudyDeckWeight`). The land and the sea keep it over the
-		// cumulus' shadow (`cloudFloor`, the key's whoever gives it); the air under the deck keeps the
-		// floor alone (`deckKeyFloor`), equal bit for bit to the land's where no cumulus' floor is left.
+		// the key's floor under cloud (KEY_THROUGH_CLOUD), after the clouds' shell and density are set
 		const overcastShare = skyMix ? skyMix[ 3 ] ?? 0 : 0;
-		const cloudyShare = skyMix ? cloudedShare( skyMix ) - overcastShare : 0;
-		const floorGain = floorKeyGain( this.elevation, overcastShare, cloudyShare, OVERCAST_KEY_GAIN(), CLOUDY_KEY_GAIN(), this.moonElevation, this.moonKeyShare );
-		// Under overcast the sun's part of the floor leaves before the disk sets (Weather.ts
-		// `overcastFloorSun`), the moon's part stays: the key's floor scales by the sun's share of the
-		// key's light above the clouds.
 		const keyLight = this.keyColorAboveClouds.r * 0.2126 + this.keyColorAboveClouds.g * 0.7152 + this.keyColorAboveClouds.b * 0.0722;
 		const moonLight = this.moonKeyAbove.r * 0.2126 + this.moonKeyAbove.g * 0.7152 + this.moonKeyAbove.b * 0.0722;
 		const sunShare = keyLight > 0 ? Math.max( keyLight - moonLight, 0 ) / keyLight : 0;
@@ -2222,12 +2198,11 @@ export class Sky {
 		this.seenDeck.value = seenNight;
 		this.domeGapGain.moon.value = this.gapGain.moon.value * seenNight;
 		const floorSun = 1 - overcastShare * sunShare * ( 1 - overcastFloorSun( this.elevation ) );
-		const deckFloor = Math.min( ( weather?.deckFloor ?? 0 ) * floorGain, 1 ) * floorSun;
-		const takeover = skyMix ? deckFloorTakeover( this.elevation, cloudedShare( skyMix ), overcastShare ) : 0;
-		this.keyCloudFloor.value = THREE.MathUtils.lerp( weather?.cloudFloor ?? 0, deckFloor, takeover );
-		this.keyFloorUnderDeck = deckFloor * takeover;
 		this.castShadow.value = weather?.castShadow ?? 1;
 		this.trackClouds( celestial, weather, coverage, overcast, illuminance, skyMix );
+		const keyFloor = Math.min( KEY_THROUGH_CLOUD() * this.clouds.layerTransmission(), 1 ) * floorSun;
+		this.keyCloudFloor.value = keyFloor;
+		this.keyFloorUnderDeck = keyFloor * overcastShare;
 		// (`flags=streaks:<n>` scales the thin layer's amount, 0 turns it off)
 		this.clouds.streaks.value = ( weather?.streaks ?? 0 ) * ( typeof debugFlags.streaks === 'number' ? debugFlags.streaks : 1 );
 		// A rainbow needs falling rain and direct sun at once, the sun lower than 42 degrees behind
@@ -3021,8 +2996,8 @@ export class Sky {
 
 	/** The clouds' shadow on the island's key, three's sun and the light the land bounces of it (the
 	 * ground's bounce, the ambient light's bounce lobe): the clouds' own over the land's floor
-	 * (Weather.ts `cloudFloor`; under a deck its `deckFloor` times the deck's key gain by day, at most
-	 * 1, on whichever light keys the scene, the moon's by night: `track`, OVERCAST_KEY_GAIN), so the land keeps a
+	 * (KEY_THROUGH_CLOUD: a share of what the cloud layer passes down, on whichever light keys the
+	 * scene, the moon's by night: `track`), so the land keeps a
 	 * directional light through the sun's map under the thickest deck, and in a gap, where the
 	 * clouds' own is 1, the sky's own key. The sea takes it too (`seaKeyVisibility`), the air the
 	 * deck's floor alone (`deckKeyFloor`); the lit code without a sky reads both through
