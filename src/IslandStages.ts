@@ -48,6 +48,7 @@ import { GTAO } from './post/GTAO.ts';
 import { SS_SHADOW } from './post/MeadowShade.ts';
 import { Vegetation } from './world/vegetation/Registry.ts';
 import { defaultPlant } from './world/vegetation/DefaultPlant.ts';
+import { registerIslandClasses } from './world/IslandClasses.ts';
 import { installWindMotionFlag } from './world/WindMotion.ts';
 import { ISLANDER, HANMING, ISLANDER_LOOKS, HANMING_LOOKS } from './characters/looks.ts';
 import type { RenderParts } from './RenderStages.ts';
@@ -141,6 +142,8 @@ export interface IslandParts {
 export function createIslandCamera( render: RenderParts, island: IslandParts ) {
 
 	const { renderer, camera } = render;
+	// the island's kinds for the kinds' view, registered before any of its materials builds
+	registerIslandClasses();
 	// The views are framed on the land once the world has loaded (frameLand): the island view just
 	// holds the land and its ring of shallows (IslandFraming.ts); the others take the first island's
 	// framing, moved to the land's centroid and scaled by its size. An explicit `dist` is in metres.

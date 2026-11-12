@@ -270,6 +270,7 @@
 	"world/Field2D.ts": "island",
 	"world/Grass.ts": "island",
 	"world/Growth.ts": "island",
+	"world/IslandClasses.ts": "island",
 	"world/IslandGrowth.ts": "island",
 	"world/IslandSimplify.ts": "island",
 	"world/MeadowSurface.ts": "island",
