@@ -18,10 +18,10 @@ marked *changed*).
   placement of a building in the world (it belongs to the 3D scene: `src/game/Placement.ts`);
   telling time in 时辰 (the clock reads `08:00` until decided); the English version (its catalogue
   is a snapshot, not maintained until then: As built, Languages).
-- **Weather**: only the kept weathers are shown (*changed*): 晴 (clear and fair),
-  with a night face (moon). 多云 and 阴 (the parked cloudy and overcast) keep their rows, 多云
-  with its night face (moon behind cloud); the other parked kinds (雨, 风暴, 雾) are drawn on the canvas and join when
-  their weathers return.
+- **Weather**: only the kept weathers are shown (*changed*): 晴 (clear and fair), with a night
+  face (moon). 多云 and 阴 (the parked cloudy and overcast) keep their rows, 多云 with its night
+  face (moon behind cloud); the other parked kinds (雨, 风暴, 雾) are drawn on the canvas and join
+  when their weathers return.
 - **Resources** (*changed*): the coconut (椰子) is gone with the palm; bamboo (竹) is a material.
 
 ## Principles
