@@ -32,7 +32,7 @@ import { Water, keyChroma } from './ocean/Water.ts';
 import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
-import { buildWorldMeshes } from './world/World.ts';
+import { ISLAND_SEA, buildWorldMeshes } from './world/World.ts';
 import type { WorldData } from './world/types.ts';
 import { WorldFields } from './world/WorldFields.ts';
 import { Growth } from './world/Growth.ts';
@@ -71,7 +71,7 @@ import { AmbientVolume, type AmbientView } from './lighting/AmbientVolume.ts';
 import { installAmbientVolume, installEnvironmentHarmonics } from './lighting/AmbientSample.ts';
 import { AmbientRelight, AmbientSky, lowSunSkyLift } from './lighting/AmbientRelight.ts';
 import { ISLAND_TOP, islandSurfaceHeight, landBounds } from './world/WorldShapes.ts';
-import { LandLattice } from './world/IslandGrowth.ts';
+import { GROWTH, LandLattice } from './world/IslandGrowth.ts';
 import { walkPoints } from './world/WalkPath.ts';
 import { bambooKinds, buildBamboo } from './world/Bamboo.ts';
 import { loadBambooLook } from './world/BambooGroves.ts';
@@ -986,7 +986,7 @@ const stormSea = new StormSea( renderer, fft, shared, fields.shore, shoreWaves, 
 } );
 water = new Water( {
 	fft, sky, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves,
-	land: landBox, sunShadow, storm: stormSea, detail: seaDetail,
+	land: landBox, ...ISLAND_SEA, sunShadow, storm: stormSea, detail: seaDetail,
 	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, underwater: pipeline.textures.underwater, quality: quality.water,
 	refraction: { color: pipeline.textures.refraction, depth: pipeline.textures.refractionDepth },
 } );

@@ -28,10 +28,7 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 import { liftKeyWorld } from '../lighting/KeyLift.ts';
 import { refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
 import { rainRippleGradient } from '../weather/Rain.ts';
-import { ISLAND_PEAK, LAND_REACH } from '../world/WorldShapes.ts';
 import type { Bounds } from '../RenderTypes.ts';
-import { GROWTH } from '../world/IslandGrowth.ts';
-import { FAR_HALF } from '../world/SeabedTile.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { AMBIENT_ONLY } from '../debug/LightLayer.ts';
 import { tuneUniform } from '../debug/Tune.ts';
@@ -180,13 +177,13 @@ type M4 = THREE.Node<'mat4'>;
 type B = THREE.Node<'bool'>;
 
 // The open sea beyond the island's shelf is taken to be deep. Its floor is drawn at an even depth
-// of some ten metres out to the far floor's square edge (SeabedTile.ts FAR_HALF), and the water
+// of some ten metres out to the far floor's square edge, and the water
 // shows a floor that shallow plainly, so where the floor stopped the edge ran across the sea as a
 // straight line: the floor-lit water inside it, the open water's colour outside. The water now adds
 // this much depth to its path to the floor, over a rounded square round the world's centre (a
-// 4-norm, so its contours have no straight runs): none out to the land lattice's corner and
-// LAND_REACH past it, where no grown island's shelf reaches, and the full depth from 16 m inside the
-// far floor's edge, where the added depth, crossed down and back, leaves some 7 % of the floor's
+// 4-norm, so its contours have no straight runs): none out to where no grown land's shelf reaches,
+// and the full depth from a little inside the far floor's edge (the two 4-norm radii are the
+// scene's, WaterInputs.openSea), where the added depth, crossed down and back, leaves some 7 % of the floor's
 // blue light and 2 % of its green (red none): too little beside the water body's own light for the
 // edge to show in the frame, at noon clear or cloudy, from the island view or low over the sea. The
 // shallows fade into deep water in between. The floor's mesh is not lowered: the
@@ -196,8 +193,6 @@ type B = THREE.Node<'bool'>;
 // (A mean over the geometry the drawn floor leaves out, the open sea's depth past the shelf, kept
 // for the floor's resolution.)
 const OPEN_DEEPENING = {
-	from: GROWTH.half * Math.SQRT2 ** 0.5 + LAND_REACH, // the lattice's corner: ( 2 ** 0.25 ) * half
-	to: FAR_HALF - 16,
 	depth: 30, // m
 	left: 0.05, // the share of the light down the full depth that the fade's shape follows
 };
@@ -477,7 +472,12 @@ export interface WaterInputs {
 	shared: Shared;
 	shore: THREE.Texture | THREE.TextureNode;
 	seabedHeight: THREE.Texture | THREE.TextureNode; // the rendered floor's height over the shoreline field's bounds
-	land: Bounds; // the land's box (WorldShapes.landBounds), for reflectionBounds
+	land: Bounds; // the land's box, for reflectionBounds
+	// Where the open sea deepens (OPEN_DEEPENING), as 4-norm radii round the world's centre (m): no
+	// added depth out to `from`, past any shelf the land can grow, and the full depth from `to`, a
+	// little inside the drawn floor's edge. Plain numbers, compiled into the shader.
+	openSea: { from: number; to: number };
+	reflectorTop: number; // the highest the land's ground rises (m): reflectionBounds ends REFLECTOR_HEIGHT above it
 	shoreWaves: ShoreWaves;
 	sunShadow: SunShadow;
 	storm: StormSea;
@@ -690,7 +690,7 @@ export class Water {
 	// The sea's shading for one variant (see WaterVariant).
 	private buildMaterial( variant: WaterVariant ): THREE.NodeMaterial {
 
-		const { fft, sky, shared, shore, seabedHeight, shoreWaves, sunShadow, storm, detail, sceneColor, linearDepth, underwater, refraction } = this.inputs;
+		const { fft, sky, shared, shore, seabedHeight, shoreWaves, sunShadow, storm, detail, sceneColor, linearDepth, underwater, refraction, openSea } = this.inputs;
 		const quality = this.quality;
 		const u = this.uniforms;
 		// (REFLECTION_LOBE's spread and lift, and the panorama's texel in radians)
@@ -788,7 +788,7 @@ export class Water {
 		const openDeepening = ( p: V2 ) => {
 
 			const p2 = p.mul( p );
-			const s = smoothstep( OPEN_DEEPENING.from, OPEN_DEEPENING.to, sqrt( sqrt( dot( p2, p2 ) ) ) );
+			const s = smoothstep( openSea.from, openSea.to, sqrt( sqrt( dot( p2, p2 ) ) ) );
 			return log2( float( 1 ).sub( s.mul( 1 - OPEN_DEEPENING.left ) ) ).mul( OPEN_DEEPENING.depth / Math.log2( OPEN_DEEPENING.left ) );
 
 		};
@@ -1568,7 +1568,7 @@ export class Water {
 		this.inputs.detail.setLand( b );
 		this.reflectionBounds.set(
 			new THREE.Vector3( b.x0 - REFLECTOR_REACH, this.reflectionFloor, b.z0 - REFLECTOR_REACH ),
-			new THREE.Vector3( b.x1 + REFLECTOR_REACH, ISLAND_PEAK + REFLECTOR_HEIGHT, b.z1 + REFLECTOR_REACH ) );
+			new THREE.Vector3( b.x1 + REFLECTOR_REACH, this.inputs.reflectorTop + REFLECTOR_HEIGHT, b.z1 + REFLECTOR_REACH ) );
 
 	}
 
