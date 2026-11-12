@@ -15,6 +15,10 @@ export interface Vec2 { x: number; z: number }
 /** A cell of the simulation's ground grid: column i along +x, row j along +z. */
 export interface Cell { i: number; j: number }
 
+/** The save's shape this build writes (../save.ts): a change to what is saved bumps it. Kept with the
+ * simulation, which stamps its state with it, so the headless simulation needs no part of the save. */
+export const SAVE_VERSION = 22;
+
 export type EntityId = string;
 /** one tick is one game second */
 export const SECONDS_PER_GAME_DAY = 86400;
@@ -130,7 +134,7 @@ export interface BuildingState {
 }
 
 export interface SimState {
-	/** the save's version it was written with (../save.ts SAVE_VERSION) */
+	/** the save's version it was written with (SAVE_VERSION) */
 	version: number;
 	seed: number;
 	/** game seconds since the game began */
