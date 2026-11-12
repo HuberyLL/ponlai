@@ -1,6 +1,7 @@
 // Checks the direction of the imports between the code's layers, that the world's chunk worker
-// imports only plain code, and that the renderer and the island keep off the page. CPU only, no
-// GPU, a few seconds (the page check runs TypeScript's checker over src/).
+// imports only plain code, that the renderer and the island keep off the page, and which files
+// write another module's state. CPU only, no GPU, a few seconds (the page and state checks run
+// TypeScript's checker over src/).
 //   node tools/verify-layers.mjs
 //
 // The layers, lowest first: render (light, sky, weather, sea, the frame's passes, the generic
@@ -33,6 +34,15 @@
 //   hands the renderer what it needs (the canvas, the settings, the storage). A name counts by
 //   what it resolves to, so a local of the same name passes and `globalThis.x` is not seen; type
 //   positions (`typeof window`) are not code and pass.
+// - The state check: an exported module-level variable is written only by its own file, outside the
+//   pairs in STATE (the variable, as 'file:name', and the other files that write it). STATE only
+//   shrinks: a pair in it that no longer writes fails, so the entry is removed with the change that
+//   gives the state one writer (a creation parameter, a field of an instance, or a call of an
+//   operation its owner exports). A writer in another layer than the owner's must also be in
+//   ACROSS, which only shrinks too. A write is an assignment (or `++` / `--`) whose target is a
+//   property chain rooted at the variable (`state.field = x`, `uniforms.gain.value = x`), found
+//   through the import's binding; a method that mutates (`vector.copy( x )`) and a GUI bound to a
+//   field are not seen.
 //
 // Output: a summary on stdout, every upward import found (known or not) and the failures. It takes
 // no options. Exit 0 when everything passes, 1 with the failures listed.
@@ -66,6 +76,41 @@ const PAGE_NEEDS = {
 	'world/vegetation/LeafTexture.ts': { need: 'the textures\' canvas', names: [ 'document' ] },
 	'Settings.ts': { need: 'the settings\' parser', names: [ 'URLSearchParams' ] },
 };
+
+// Module state written from another file, as 'owner file:variable' -> the files that write it
+// (paths under src/). Remove a writer, or the entry, with the change that ends its writes; never
+// add one.
+const STATE = {
+	'debug/DebugFlags.ts:debugFlags': [ 'debug/WindProbe.ts', 'materials/TerrainMaterial.ts', 'post/SubmitBatch.ts', 'world/VegetationPrepass.ts' ],
+	'lighting/AmbientGrade.ts:ambient': [ 'lighting/AmbientRelight.ts' ],
+	'lighting/KeyCloud.ts:keyDeckShare': [ 'RenderStages.ts' ],
+	'lighting/LocalLights.ts:localLights': [ 'IslandStages.ts' ],
+	'lighting/SurfaceBRDF.ts:keyGlint': [ 'RenderStages.ts' ],
+	'ocean/Water.ts:keyChroma': [ 'RenderStages.ts' ],
+	'post/GTAO.ts:gtaoMap': [ 'post/Pipeline.ts' ],
+	'post/GTAO.ts:gtaoView': [ 'post/Pipeline.ts' ],
+	'post/Jitter.ts:jitter': [ 'post/Pipeline.ts', 'post/TemporalAA.ts', 'post/fsr3/Fsr3Upscaler.ts' ],
+	'post/MeadowShade.ts:meadowDepthMap': [ 'post/Pipeline.ts' ],
+	'post/MeadowShade.ts:meadowGroundView': [ 'post/Pipeline.ts' ],
+	'post/MeadowShade.ts:meadowShade': [ 'post/Pipeline.ts' ],
+	'post/MeadowShade.ts:screenShadowView': [ 'post/Pipeline.ts' ],
+	'post/Motion.ts:reactiveUniforms': [ 'post/TemporalAA.ts', 'weather/Lightning.ts' ],
+	'post/fsr3/MipBias.ts:fsr3MipBiasScale': [ 'post/fsr3/Fsr3Upscaler.ts' ],
+	'shared.ts:shared': [ 'RenderStages.ts', 'app/Diagnostics.ts', 'app/Frame.ts', 'sky/Sky.ts', 'weather/RainCollision.ts' ],
+	'sky/SkyRetune.ts:skyRetune': [ 'RenderStages.ts' ],
+	'world/VegetationShadow.ts:shadowWindOn': [ 'lighting/SunShadow.ts' ],
+	'world/WorldStart.ts:worldProgress': [ 'IslandStages.ts' ],
+};
+// The pairs of STATE whose writer sits in another layer than the state's owner, as
+// 'owner file:variable <- writer': the debug flags any layer's debug code sets, the local lights'
+// sources the island gives, and the scene's uniforms the page's frame sets.
+const ACROSS = [
+	'debug/DebugFlags.ts:debugFlags <- debug/WindProbe.ts',
+	'debug/DebugFlags.ts:debugFlags <- materials/TerrainMaterial.ts',
+	'lighting/LocalLights.ts:localLights <- IslandStages.ts',
+	'shared.ts:shared <- app/Diagnostics.ts',
+	'shared.ts:shared <- app/Frame.ts',
+];
 
 for ( const a of process.argv.slice( 2 ) ) {
 
@@ -114,11 +159,17 @@ function imports( file ) {
 
 }
 
-/** Every identifier in the checked files that resolves to one of PAGE's globals. */
-function pageGlobals( table ) {
+/** TypeScript's program over src/ (tsconfig.json), which the page and the state checks read. */
+function typedProgram() {
 
 	const config = ts.getParsedCommandLineOfConfigFile( path.join( ROOT, 'tsconfig.json' ), {}, { ...ts.sys, onUnRecoverableConfigFileDiagnostic: ( d ) => { throw new Error( ts.flattenDiagnosticMessageText( d.messageText, '\n' ) ); } } );
-	const program = ts.createProgram( { rootNames: config.fileNames, options: config.options } );
+	return ts.createProgram( { rootNames: config.fileNames, options: config.options } );
+
+}
+
+/** Every identifier in the checked files that resolves to one of PAGE's globals. */
+function pageGlobals( table, program ) {
+
 	const checker = program.getTypeChecker();
 	const globals = new Map();
 	for ( const name of PAGE ) {
@@ -150,6 +201,58 @@ function pageGlobals( table ) {
 
 	}
 	return hits;
+
+}
+
+/**
+ * The exported module-level variables another file writes, as 'file:name' -> the writers' files.
+ * A write is an assignment (or ++ / --) whose target is a property chain rooted at the variable
+ * (`state.field = x`, `uniforms.gain.value = x`); a method that mutates (`vector.copy( x )`) is
+ * not seen.
+ */
+function stateWrites( program ) {
+
+	const checker = program.getTypeChecker();
+	const under = ( fileName ) => path.relative( SRC, fileName ).split( path.sep ).join( '/' );
+	const writes = new Map();
+	const root = ( node ) => {
+
+		while ( ts.isPropertyAccessExpression( node ) || ts.isElementAccessExpression( node ) || ts.isNonNullExpression( node ) || ts.isParenthesizedExpression( node ) || ts.isAsExpression( node ) ) node = node.expression;
+		return ts.isIdentifier( node ) ? node : null;
+
+	};
+	const note = ( target, source ) => {
+
+		if ( ! ts.isPropertyAccessExpression( target ) && ! ts.isElementAccessExpression( target ) ) return;
+		const id = root( target );
+		if ( ! id ) return;
+		let symbol = checker.getSymbolAtLocation( id );
+		if ( symbol && symbol.flags & ts.SymbolFlags.Alias ) symbol = checker.getAliasedSymbol( symbol );
+		const declaration = symbol?.valueDeclaration;
+		if ( ! declaration || ! ts.isVariableDeclaration( declaration ) ) return;
+		const statement = declaration.parent.parent;
+		if ( ! ts.isVariableStatement( statement ) || ! ts.isSourceFile( statement.parent ) ) return;
+		const owner = under( declaration.getSourceFile().fileName ), writer = under( source.fileName );
+		if ( owner.startsWith( '..' ) || owner === writer ) return;
+		const key = `${ owner }:${ symbol.name }`;
+		if ( ! writes.has( key ) ) writes.set( key, new Set() );
+		writes.get( key ).add( writer );
+
+	};
+	for ( const source of program.getSourceFiles() ) {
+
+		if ( under( source.fileName ).startsWith( '..' ) ) continue;
+		const visit = ( node ) => {
+
+			if ( ts.isBinaryExpression( node ) && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment ) note( node.left, source );
+			else if ( ( ts.isPrefixUnaryExpression( node ) || ts.isPostfixUnaryExpression( node ) ) && ( node.operator === ts.SyntaxKind.PlusPlusToken || node.operator === ts.SyntaxKind.MinusMinusToken ) ) note( node.operand, source );
+			ts.forEachChild( node, visit );
+
+		};
+		visit( source );
+
+	}
+	return writes;
 
 }
 
@@ -208,7 +311,8 @@ try {
 }
 
 // the page check
-const pageHits = pageGlobals( table );
+const program = typedProgram();
+const pageHits = pageGlobals( table, program );
 for ( const [ f ] of Object.entries( PAGE_NEEDS ) ) if ( ! files.includes( f ) ) failures.push( `PAGE_NEEDS names ${ f }, which does not exist` );
 for ( const { file, line, name } of pageHits ) {
 
@@ -217,7 +321,34 @@ for ( const { file, line, name } of pageHits ) {
 
 }
 
-console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed)` );
+// the state check
+const states = stateWrites( program );
+let statePairs = 0;
+for ( const [ key, writers ] of states ) {
+
+	const owner = key.split( ':' )[ 0 ];
+	for ( const writer of writers ) {
+
+		statePairs ++;
+		if ( ! STATE[ key ]?.includes( writer ) ) failures.push( `${ writer } writes ${ key }: a module's state is written by its own file (give it a creation parameter, an instance's field or an operation of its owner)` );
+		else if ( table[ writer ] !== table[ owner ] && ! ACROSS.includes( `${ key } <- ${ writer }` ) ) failures.push( `${ writer } (${ table[ writer ] }) writes ${ key } (${ table[ owner ] }): a write across layers` );
+
+	}
+
+}
+for ( const [ key, writers ] of Object.entries( STATE ) ) for ( const writer of writers ) {
+
+	if ( ! states.get( key )?.has( writer ) ) failures.push( `STATE lists ${ writer } writing ${ key }, which it no longer does: remove the entry` );
+
+}
+for ( const pair of ACROSS ) {
+
+	const [ key, writer ] = pair.split( ' <- ' );
+	if ( ! STATE[ key ]?.includes( writer ) || table[ writer ] === table[ key.split( ':' )[ 0 ] ] ) failures.push( `ACROSS lists '${ pair }', which is not a write across layers in STATE: remove the entry` );
+
+}
+
+console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers)` );
 for ( const [ key, layers ] of [ ...upward ].sort() ) console.log( `  ${ known.has( key ) ? 'known' : 'NEW  ' } ${ layers }: ${ key }` );
 if ( failures.length ) {
 

@@ -1321,6 +1321,11 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   allows it in (`PAGE_NEEDS`: the frame pacing, the workers' start, the world's cache, the assets'
   fetch, the textures' canvas, the settings' parser). The page hands the rest down: the canvas,
   the settings, the storage.
+  Its state check finds every exported module-level variable that another file writes (an
+  assignment to a field of it) and fails on a write that is not on the tool's list (`STATE`), and
+  on a listed one that is gone: the list only shrinks, as a state gets one writer (a creation
+  parameter, a field of an instance, or an operation its owner exports). A write from another layer
+  than the owner's must also be on a second list (`ACROSS`).
 - `tools/verify-settings.mjs [--write]` (plain `node`) checks the page's settings
   (`src/Settings.ts`, the one entrance every option is read through) against
   `docs/reference/url-options.md`: the table of every option at the page's end is the one written
