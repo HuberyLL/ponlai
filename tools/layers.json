@@ -141,6 +141,7 @@
 	"look/AmbientLook.ts": "render",
 	"look/DayLook.ts": "render",
 	"look/DisplayLook.ts": "render",
+	"look/ExposureLook.ts": "render",
 	"look/HazeLook.ts": "render",
 	"look/SkyLook.ts": "render",
 	"main.ts": "app",

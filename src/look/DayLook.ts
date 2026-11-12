@@ -95,17 +95,17 @@ export const DUSK_EASE = tuneObject( { degrees: 3 }, { degrees: 'sky.twilight.ea
 const TWILIGHT_EXPOSURE = 25;
 const nightKey = ( elevation: number, stops: number ) => [ elevation, TWILIGHT_EXPOSURE * 2 ** stops ] as const;
 /** The stops a clear night's metered exposure lies above the twilight's exposure (25): the
- * moon's light at its magnitude against the sun's, metered under the night key (post/Exposure.ts),
- * measured on the clear midnight's island view with the lamps off. The yunpeng's glow and every
- * local light are scaled by 2 to minus this, so a lamp keeps its display at night whatever the
- * hour. It and the night keys below are measured, not derived: whenever the night's light or its
- * metering changes (the moon's level or its share through the dusk, the night key, the meter),
- * measure them again with tools/dusk-grid.mjs on the clear evening's night points and midnight,
- * `--night-split`, against a run of the page at the commit before the moon was lit (`--compare`; the
- * commit titled "perf(sky): rescale the cloud dome to a new power of two instead of marching it
- * again", the parent of "feat(sky): light the night by the moon as the sun lights the day"): its
- * compare.txt lists the lift at each point, the night keys' stops, and at midnight the lift less
- * this constant, which should stay within a few hundredths of a stop. */
+ * moon's light at its magnitude against the sun's, metered under the night key
+ * (look/ExposureLook.ts), measured on the clear midnight's island view with the lamps off. The
+ * yunpeng's glow and every local light are scaled by 2 to minus this, so a lamp keeps its display
+ * at night whatever the hour. It and the night keys below are measured, not derived: whenever the
+ * night's light or its metering changes (the moon's level or its share through the dusk, the night
+ * key, the meter), measure them again with tools/dusk-grid.mjs on the clear evening's night points
+ * and midnight, `--night-split`, against a run of the page at the commit before the moon was lit
+ * (`--compare`; the commit titled "perf(sky): rescale the cloud dome to a new power of two instead
+ * of marching it again", the parent of "feat(sky): light the night by the moon as the sun lights
+ * the day"): its compare.txt lists the lift at each point, the night keys' stops, and at midnight
+ * the lift less this constant, which should stay within a few hundredths of a stop. */
 export const NIGHT_METER_LIFT = 12.44;
 const EXPOSURE_KEYS: readonly ( readonly [ number, number ] )[] = [
 	nightKey( - 12, NIGHT_METER_LIFT ), nightKey( - 11, 12.37 ), nightKey( - 10, 10.38 ), nightKey( - 9, 6.27 ), nightKey( - 8, 2.26 ),

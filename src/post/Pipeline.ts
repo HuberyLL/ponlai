@@ -50,7 +50,7 @@ import { TONE_CURVE, checkToneCurve, solveToneCurve, type ToneCurve } from './To
 import { BASE_GRADE, fillGradeLut, gradeOf, lutNodes, mergeGrade, type GradeChanges, type GradeParams } from './GradeLut.ts';
 import { LocalTone } from './LocalTone.ts';
 import { keyed } from './DayKeys.ts';
-import { exposureKeys, type ExposureKey } from './Exposure.ts';
+import { exposureKeys, type ExposureKey } from '../look/ExposureLook.ts';
 import { restEpoch, restKey } from './TemporalRest.ts';
 import { tuneCheck, tuneObject } from '../debug/Tune.ts';
 import './ExtraPass.ts';

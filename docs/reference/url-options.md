@@ -372,7 +372,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   builds the display chain without its local tone mapping; `streaks:<n>` scales the thin cloud
   layer's amount (0 turns it off) and `streakMask:true` paints its pixels for `img.py stats --mask`
   (`src/sky/Sky.ts`). The metered exposure is shifted by the
-  GUI's `exposure offset (stops)` (Post folder); its keys are `src/post/Exposure.ts`
+  GUI's `exposure offset (stops)` (Post folder); its keys are `src/look/ExposureLook.ts`
   `EXPOSURE_KEYS`, and `await __PONLAI__.pipeline.readExposure()` reads its state back from the GPU
   (the same fields as `radiance`'s `exposure`). The grade's
   first table is generated from parameters

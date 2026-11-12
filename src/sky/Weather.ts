@@ -110,7 +110,7 @@ export function overcastFloorSun( elevation: number ): number {
 
 /** How far a cloudy sky's deck has taken over its own light at the sun's `elevation` (degrees): 0
  * up to 3 degrees, 1 from 6, smooth between. Below it a low sun shines under the broken deck and the
- * evening's light takes over (post/Exposure.ts, the clouded keys under 6 degrees). */
+ * evening's light takes over (look/ExposureLook.ts, the clouded keys under 6 degrees). */
 export function deckRamp( elevation: number ): number {
 
 	return smooth01( ( elevation - 3 ) / 3 );

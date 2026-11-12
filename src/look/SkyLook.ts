@@ -326,16 +326,16 @@ export const SKY_LIGHT: DayKeys<{ r: number; g: number; b: number }> = tuneKeys(
 // side of the day and at the morning's 3 degrees, but for the day side's low and high gains (3.51
 // and 2.48, 0.78 and 0.73 of the ratio's 4.48 and 3.4) and SKY_LIGHT's high red: those are set on
 // the clear day's views from 6 degrees up, together with the haze (Weather.ts `haze`) and under the
-// exposure keys of the time (post/Exposure.ts), which the thin layer (Clouds.ts), faint by day,
+// exposure keys of the time (look/ExposureLook.ts), which the thin layer (Clouds.ts), faint by day,
 // hardly changes. At the ratio's gains the sky over a sun at 50 degrees, seen away from it, reads
 // at Oklab lightness 0.71 and chroma 0.099 and the far sea at 0.63 and 0.102, against 0.68 and
 // 0.10 and 0.62 and 0.097 at the tuned gains, and the views from 6 degrees up that take the day side's
 // gains stand 0.16 - 0.33 stops darker. The rising side's own keys keep their gains (its high key
 // is the day's). At the evening's 3 degrees the sky stands brighter against the key, about
 // 7.4 - 8.9: it lights the land's shade and the far bay, as far as a view along the horizon toward
-// the sun holds the far sea and the sun's strip on the water (post/Exposure.ts, the highlight key).
-// The smoothstep between keys (DayKeys.ts) puts the ratio's day high midway, at 21 degrees in the
-// evening. Under 3 degrees the key falls faster than the sky by itself (the ratio 12.4 at 1.6
+// the sun holds the far sea and the sun's strip on the water (look/ExposureLook.ts, the highlight
+// key). The smoothstep between keys (DayKeys.ts) puts the ratio's day high midway, at 21 degrees in
+// the evening. Under 3 degrees the key falls faster than the sky by itself (the ratio 12.4 at 1.6
 // degrees with no gain), so the gain eases to none at the horizon (`horizon`): the twilight and the
 // night keep SKY_LIGHT's light, the ratio falling to about 6 at 2 degrees on the way. The gains
 // hold these ratios over the sky with its multiple scattering whole (Atmosphere.ts), whose

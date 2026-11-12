@@ -461,7 +461,7 @@ export function createFrame( render: RenderParts, island: IslandParts, page: Pag
 			S.exposure = sky.grade.exposure;
 			// the night's grade (Pipeline NIGHT)
 			S.night = sky.grade.night;
-			// the exposure's own night weight (its keys: post/Exposure.ts)
+			// the exposure's own night weight (its keys: look/ExposureLook.ts)
 			S.exposureNight = sky.grade.exposureNight;
 
 		}

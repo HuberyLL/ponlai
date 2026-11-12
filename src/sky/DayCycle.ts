@@ -261,7 +261,7 @@ export function displayNight( daylight: number, elevation: number, rising: boole
 	return dawn + ( night - dawn ) * cloud;
 
 }
-/** The exposure's night weight (post/Exposure.ts `exposureKeys`: the night key's share, and the
+/** The exposure's night weight (look/ExposureLook.ts `exposureKeys`: the night key's share, and the
  * overcast night's offset by it) at the sun's `elevation` (degrees), `rising` or setting, under a
  * clouded share `cloud` (Weather.ts `cloudedShare`), over its own windows (DUSK_WINDOWS.exposure):
  * the meter's handover to the night key is a question of the light it reads, the display's of how
@@ -269,7 +269,7 @@ export function displayNight( daylight: number, elevation: number, rising: boole
  * one's from the horizon to -5 degrees, a smoothstep by elevation, as the deck's twilight goes
  * (its own window, DUSK_WINDOWS.exposure.clouded). Taken by the daylight, as the display's is, it
  * came in from the horizon to about -3 degrees, and the handover from the deck's dusk keys
- * (post/Exposure.ts `cloudySunset` -2.5, `cloudyDusk` -2.9) to the night key (-2.57) came too
+ * (look/ExposureLook.ts `cloudySunset` -2.5, `cloudyDusk` -2.9) to the night key (-2.57) came too
  * early for the metered light: the exposure fell while the land under the deck grew darker. */
 export function exposureNight( elevation: number, rising: boolean, cloud: number ): number {
 
