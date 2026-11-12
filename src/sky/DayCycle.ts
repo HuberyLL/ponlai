@@ -11,7 +11,7 @@ import { markSkyRetune } from './SkyRetune.ts';
 // size and the moon larger (NightSky.ts `MOON_ANGULAR_RADIUS`); shadows and glints use the true sun. A low sun's key stays
 // orange red: the optical depth that sets its hue is capped (and a high sun's key is a warm white
 // of its own, taking the air's reddening only as the sun sinks), while its brightness still follows
-// the full extinction (Sky.ts `keyHue`). The sky, sun, moon, stars, key light and grade follow
+// the full extinction (look/SkyLook.ts `keyHue`). The sky, sun, moon, stars, key light and grade follow
 // the clock every frame. `reset` sets the clock as the constructor does (a scene jump).
 //
 // The base exposure follows the sun's elevation (EXPOSURE_KEYS), set once under an earlier
@@ -357,7 +357,7 @@ export function starNight( daylight: number, elevation: number, rising: boolean,
 	return dusk + ( night - dusk ) * cloud;
 
 }
-/** The night key's share in the sky's light (Sky.ts SKY_LIGHT, its one reader), at the sun's
+/** The night key's share in the sky's light (look/SkyLook.ts SKY_LIGHT, its one reader), at the sun's
  * `elevation` (degrees), `rising` or setting, under a clouded share `cloud`: under cloud none from
  * 2 degrees up, all of it by -6; a clear sky's comes in from -7 to -11 degrees after sunset by
  * stops (DUSK_DEPTH.sky) and leaves from -13 to -3 before sunrise (the header). A debug page can

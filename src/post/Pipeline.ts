@@ -462,7 +462,7 @@ export interface PipelineSettings {
 // the exposed luminance, so the night takes it as the day), the contrast round mid grey softens by
 // a tenth and the bloom strengthens by a quarter. It lifts no black: a constant fill in the grade
 // greyed everything below mid grey alike and veiled the frame; the shade's openness comes from the
-// sky light the island takes instead (Sky.ts CLEAR_SHADE). 0.5 of the full step was chosen over 0
+// sky light the island takes instead (look/SkyLook.ts CLEAR_SHADE). 0.5 of the full step was chosen over 0
 // and 1 by eye. Off by default since (docs/explanation/art-direction.md, The look: the light keeps the sun's
 // and the sky's own balance): with the clear shade it took the light's direction out of the
 // meadow. `flags=tone:<t>` sets it at load for A/Bs.
@@ -560,7 +560,7 @@ const coolShare = Fn( ( [ c, coolFrom, coolTo ]: [ V3, F, F ] ) => {
 // meadow's yellow-green albedo kept it a dark olive under them, and a light blue enough to turn it
 // turned the stone, sand and skin blue too. 0.4 radians takes the meadow to about 143 degrees, a
 // cool green toward blue-green (0.65 read as teal). The tint is drawn toward at `tint` and keeps
-// the luminance. The shade's readability is the sky light's (Sky.ts CLEAR_SHADE), not a lift.
+// the luminance. The shade's readability is the sky light's (look/SkyLook.ts CLEAR_SHADE), not a lift.
 // Off by default with the clear shade, as the night keeps the moon's own light (`flags=filmNight:true`
 // at load for A/Bs).
 const NIGHT = debugFlags.filmNight === true ? { greenTurn: 0.4, tint: [ 0.84, 0.96, 1.16 ] as const, amount: 0.3, bloom: 1.5 } : { greenTurn: 0, tint: [ 0.84, 0.96, 1.16 ] as const, amount: 0, bloom: 0 };
@@ -614,7 +614,7 @@ export function vignetteFactor( at: V2, strength: F ): F {
 // neutral toward cool, the sun's warmth on the lit ground held back: furthest at a sun of 9 degrees
 // (red half of green, blue 1.36), which keeps the low sun's rock and meadow, and less by 40 degrees
 // (red 0.59, blue 1.25, the `high` key), where the stronger cast would turn sunlit rock blue. The
-// high key moves with the sky's (Sky.ts SKY_LIGHT), which takes the inverse, so the sky holds its
+// high key moves with the sky's (look/SkyLook.ts SKY_LIGHT), which takes the inverse, so the sky holds its
 // colour. The golden hour warms a little further (red 1.05, blue 0.9); the clouded skies take a cool
 // white too (red 0.78, blue 1.16), their grey light kept from reading warm. Overcast takes a cooler
 // white of its own (red 0.49, blue 1.14, WHITE_OVERCAST): under the clouded key its slightly warm
@@ -629,7 +629,7 @@ export function vignetteFactor( at: V2, strength: F ): F {
 // views): all that the sun does not reach at dawn is blue, sky, water and rock alike, and a face turned
 // to the sun takes a pale warm colour, far less orange than the same face at the same height in
 // the evening. It is what moves the rose band over the horizon, which the sky's own light
-// (Sky.ts SKY_LIGHT, its `dawn` key) cannot reach. The sides are one from the `day` key up.
+// (look/SkyLook.ts SKY_LIGHT, its `dawn` key) cannot reach. The sides are one from the `day` key up.
 // Tunable on debug pages (debug/Tune.ts): `post.white.<r|g|b>@golden`, `@dawn`, `@day`, `@high`,
 // `@cloudy`, `@overcast`, `@night`.
 const WHITE_RANGE = { r: { min: 0.2, max: 1.5 }, g: { min: 0.5, max: 1.5 }, b: { min: 0.5, max: 3 } };

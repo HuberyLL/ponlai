@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { DUSK_DEPTH, duskForce, duskForced, duskIn, moonKeyShare } from '../sky/DayCycle.ts';
 import { MIX_SKIES, WEATHER_PRESETS, cloudedShare, deckLight, overcastDeckLight } from '../sky/Weather.ts';
-import { cloudBase } from '../sky/Sky.ts';
+import { cloudBase } from '../look/SkyLook.ts';
 import { FOG_NOISE } from './FogNoise.ts';
 import { DAY, DAY_SIGMA, DECKED, GAIN, KEEP, NIGHT, NO_FOG, RISING, SEA_FOG, SETTING, SETTING_CLOUDED, SHAPED, SKY_SCALE, SUN_RAYLEIGH, fogOf, key, type FullKey, type HazeKey } from '../look/HazeLook.ts';
 

@@ -37,7 +37,7 @@ type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
 // Volumetric clouds, one model for every sky. A kind of sky is a row of the model's parameters
-// (Sky.ts CLOUD_SKIES: the shell, the cloud type and its spread, the far fade; Weather.ts
+// (look/SkyLook.ts CLOUD_SKIES: the shell, the cloud type and its spread, the far fade; Weather.ts
 // WEATHER_PRESETS: the coverage and the density), and a change of weather moves every parameter
 // from one row to the next, so no sky has code of its own and any two blend. The framework is
 // tidewater's port of the Three.js Sky Pro clouds ("Partly cloudy"): the density's columns, the
@@ -92,7 +92,7 @@ type V4 = THREE.Node<'vec4'>;
 //     a fifth: the light that comes round the cloud), the tops' share growing with the height in
 //     the shell and the horizon's largest at its floor. The sky over the tops is the open sky's
 //     mean radiance over the upper hemisphere, with the clear day's gain on each body's share
-//     (`columnTopOf`, Sky.ts CLEAR_SKY): a cloud under a layer is lit by the sky above it, not by
+//     (`columnTopOf`, look/SkyLook.ts CLEAR_SKY): a cloud under a layer is lit by the sky above it, not by
 //     the sky along the view it is seen against. The horizon's is the mean of the whole ring round
 //     the cloud over a band 3 to 24 degrees up (`horizonMean`), not the side toward the sun.
 //     The sea's light back up, on the bases: the light on the tops times the sea's albedo.
@@ -233,13 +233,13 @@ type V4 = THREE.Node<'vec4'>;
 
 export const EARTH_RADIUS = 6_360_000;
 // The high shell's base and thickness (m), the clear and fair skies' cumulus. The shell the march
-// reads is `shellBottom` and `shellThickness`, blended by the sky's shares (Sky.ts CLOUD_SKIES), so
+// reads is `shellBottom` and `shellThickness`, blended by the sky's shares (look/SkyLook.ts CLOUD_SKIES), so
 // cloudy's and overcast's layers stand lower (`setShell`).
 export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
 // What the panorama stores is the radiance times a power of two that follows the clouds' light
 // and the weather's skies (`storeStops`, set by Sky.ts trackClouds: 2^11 at noon, 2^16 to 2^20 on
 // a moonlit night, by how far the weather's clouds spread the night's range; PreExposure.ts
-// `storeStops`, Sky.ts STORE_RANGE): unscaled, a clear midnight's panorama has its first
+// `storeStops`, look/SkyLook.ts STORE_RANGE): unscaled, a clear midnight's panorama has its first
 // percentile near 2^-21 (2^-16 over the texels at least a tenth covered), under half float's 2^-14, where its steps are wide enough to show as dark flecks
 // once exposed, and no one fixed scale keeps a cloudy noon's brightest and a darker night's
 // thinnest both in range. A power of two, so what lay in range keeps its bits. The panorama is
@@ -251,7 +251,7 @@ export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
 // size, since a half-float texture cannot be read and written in one dispatch): marching every
 // phase again there doubled a cloudy frame's GPU time. A power of two scales a half float exactly
 // where it lies in range, and the power keeps the texels a margin clear of the subnormals and of
-// the ceiling (Sky.ts STORE_RANGE); a texel outside it carries its old rounding until its phase
+// the ceiling (look/SkyLook.ts STORE_RANGE); a texel outside it carries its old rounding until its phase
 // comes round. The progressive refresh already keeps texels written frames apart, so this adds
 // no history of its own: once every phase has come round after a change, the panorama equals the
 // whole rewrite's bit for bit (measured through a cloudy dusk), a jump writes it whole
@@ -742,7 +742,7 @@ export class Clouds {
 	// each point of the layer takes through the air toward the sun at the sun's elevation there
 	// (`streaksAt`); the radius (m) over which a point's lead toward the sun raises it, and the
 	// width (degrees) of the fade as its disc sinks under the layer's horizon; and the overall
-	// colour on each of the layer's two shares (Sky.ts STREAK_DIRECT, STREAK_AMBIENT).
+	// colour on each of the layer's two shares (look/SkyLook.ts STREAK_DIRECT, STREAK_AMBIENT).
 	readonly streakSunColour = uniform( new THREE.Color( 1, 1, 1 ) );
 	readonly streakLitRadius = tuneUniform( 'sky.streaks.litRadius', STREAK_LIT.radius, { min: 1e5, max: 2e7, scale: 'log', onChange: markSkyRetune } );
 	readonly streakLitWidth = tuneUniform( 'sky.streaks.litWidth', STREAK_LIT.width, { min: 0.1, max: 6, onChange: markSkyRetune } );
@@ -775,7 +775,7 @@ export class Clouds {
 	// by the moon too, a fair sky's heaps read brighter in late twilight than the night's level is
 	// set with and the meter takes the scene down. A layer's column takes the whole key.
 	readonly columnSunShare = uniform( 1 );
-	// The gain the open sky over the clouds' tops takes back (Sky.ts CLEAR_SKY, `gapSky`): the
+	// The gain the open sky over the clouds' tops takes back (look/SkyLook.ts CLEAR_SKY, `gapSky`): the
 	// clear day's sky gain over the clouded sky's, on each body's share of the sky at its own height
 	// (Sky.ts `gapGain`), read by the column's kernel alone (`columnTopOf`).
 	readonly openSkyGain = { sun: uniform( 1 ), moon: uniform( 1 ) };

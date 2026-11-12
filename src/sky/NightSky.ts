@@ -40,7 +40,7 @@ type V3 = THREE.Node<'vec3'>;
 // source in the island's views (about 75 pixels across at 2K under a 49 degree field of view,
 // where the colour map's near side has 512 texels and the height map's 256). Only the disk grows:
 // its radiance is per unit solid angle and stays as it was, and the moonlight's level is the key's
-// own (Sky.ts MOON_KEY), never this disk's solid angle. What follows the radius: the ray/sphere
+// own (look/SkyLook.ts MOON_KEY), never this disk's solid angle. What follows the radius: the ray/sphere
 // normal, the limb's chord (MOON_CHORD), the map footprint's cap (per radius), the stars it hides
 // (`moonOcclusion`), the clouds' mean over the disk for the flare (Sky.ts `discCloudTransmittance`)
 // and the fade below the horizon (`lunarDisk`).

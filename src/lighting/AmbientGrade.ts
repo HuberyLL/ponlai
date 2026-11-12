@@ -12,7 +12,7 @@ import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
 // knobs, among them the ambient diffuse and specular balance and the sky's brightness, adjusted
 // globally at the granularity of the weather and time-of-day states; "Real-Time Samurai Cinema",
 // SIGGRAPH 2021, p. 10, and "Samurai Shading in Ghost of Tsushima", SIGGRAPH 2020, p. 9). The
-// table multiplies on top of the sky's own grading (RenderStages.ts `skyFill`, Sky.ts ISLAND_SKY), which
+// table multiplies on top of the sky's own grading (RenderStages.ts `skyFill`, look/SkyLook.ts ISLAND_SKY), which
 // it leaves as it is.
 //
 // Every cell starts from the same values (`D`): identity but for the volume's directionality,

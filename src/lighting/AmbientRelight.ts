@@ -227,12 +227,12 @@ const BOUNCE_GAIN = 9.4;
  * that ground's light at 22 degrees and 0.81 at 12. Taken with the fog layer's haze and its
  * droplets' light, at 0.92, the ratio stood about 12. At the golden hour (`golden`, 1) the key
  * stands about 10 times the ambient light's irradiance on lit open ground at 3 degrees in the
- * evening, with Sky.ts CLEAR_SKY's gain over the sky's light (the land's shade a lit part of it
+ * evening, with look/SkyLook.ts CLEAR_SKY's gain over the sky's light (the land's shade a lit part of it
  * against a low sun, not nearly black), on the way to the day's from 6 degrees. The rising sun's
  * sky takes less of CLEAR_SKY's gain at 3 degrees (2 against the evening's 2.7: a brighter sky
  * lifts the near sea in a view across the island toward the rising sun), so the land takes the
  * rest here (`dawn`, 1.58); from the sun's rise down (`sunrise`, 0 degrees) it keeps 0.77, the
- * land's level before the sun being Sky.ts ISLAND_SKY_RISING's. The moon's sky takes its own keys
+ * land's level before the sun being look/SkyLook.ts ISLAND_SKY_RISING's. The moon's sky takes its own keys
  * at the moon's height (PROBE_SKY_MOON: low and high at 0.92, golden and cloudy the day's; 0.92 at
  * its default 20 degrees, with the deck's gains there), mixed in by the moonlit sky's share (Sky.ts
  * `moonSkyShare`, `update`): the moonlit sky lights the land through the same probes as the sun's
@@ -305,7 +305,7 @@ const _probeSky = { skyGain: 1 }, _probeDeck = { skyGain: 1 }, _probeMoon = { sk
  * the sky from 30 to 60 about 0.3 to 0.7, while the low sky across and away from the sun keeps pace
  * within about 0.3, so the far sea mirroring it needs no lift. The lift takes the excess
  * back over 12 to 17 degrees and gives way above, to none by 35 (the noon-ward sky keeps its own).
- * The morning's darker sky (sky/Sky.ts SKY_LIGHT's rising keys) is its own and takes the same lift by
+ * The morning's darker sky (look/SkyLook.ts SKY_LIGHT's rising keys) is its own and takes the same lift by
  * height. At the island view under a 12 degree sun the sky's light is about a quarter of the sea's
  * light, so a stop of lift gives it about a third of a stop before the meter (0.34 measured).
  *
@@ -351,7 +351,7 @@ export function lowSunSkyLift( elevation: number, clouded: number ): number {
  * forward light included, sky/Clouds.ts FORWARD_WEIGHT, and by day under overcast the deck's glow
  * about the sun as one smooth lobe, sky/Sky.ts `glowToward`), as
  * the sky's soft fill from every side, times this; the key adds the weather's floor of it through
- * the sun's map (sky/Sky.ts KEY_THROUGH_CLOUD, `keyDirectVisibility`). The ground takes it
+ * the sun's map (look/SkyLook.ts KEY_THROUGH_CLOUD, `keyDirectVisibility`). The ground takes it
  * whether or not water lies over it: where a material reads the environment's light in the
  * volume's place (the sea floor, the walls under the water) the environment's diffuse takes the
  * same gain (AmbientGrade.ts `landSky`), save the ambient diffuse below the water under overcast's

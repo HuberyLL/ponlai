@@ -47,7 +47,7 @@ import { MIX_SKIES, WEATHER_PRESETS } from '../sky/Weather.ts';
 //     low sky lit by the haze layer itself. The weather's scales leave it as it is.
 //   - sigma: the medium's spectral extinction, each band's weight on the density (VolumetricHaze's
 //     header), the weather's `haze` the blue's. The day's and the golden hour's were set with
-//     the sky's light (Sky.ts SKY_LIGHT): by day red : green : blue = 0.36 : 0.53 : 1.02, at the
+//     the sky's light (look/SkyLook.ts SKY_LIGHT): by day red : green : blue = 0.36 : 0.53 : 1.02, at the
 //     golden hour 0.41 : 0.53 : 0.83, the air losing its blue first, and by night 0.46 : 0.53 : 0.69.
 //     The hours between take these by the sun's elevation (`twilight`): the mist at sunrise the
 //     golden hour's (it stands within a degree of the golden key's elevations), the morning the
@@ -195,7 +195,7 @@ import { MIX_SKIES, WEATHER_PRESETS } from '../sky/Weather.ts';
 // tunable: `sky.weather.<sigmaRed|sigmaBlue|aerosolScale|aerosolHeight|topScale|widthScale>@<cloudy|
 // overcast>`): under cloud the air turns redder in its extinction (red 1.42, blue 0.56 times).
 // Under a deck the air is dense near the sea and clear aloft, and its aerosol ends at the deck's
-// base (`aerosolTop`, Sky.ts `cloudBase`, blended by the clouded skies' shares as its inverse; clear
+// base (`aerosolTop`, look/SkyLook.ts `cloudBase`, blended by the clouded skies' shares as its inverse; clear
 // and fair have none): the air between the eye and the base is what veils the deck's structure, and
 // the aerosol that went on over the base laid a second veil over the deck's gaps. Each clouded sky
 // keeps an air of its own, read as the visibility under such a deck (green, 3.912 over the
@@ -376,7 +376,7 @@ const CLEAR_SCALE = { sigmaRed: 1, sigmaGreen: 1, sigmaBlue: 1, aerosolScale: 1,
 const SCALES = [ CLEAR_SCALE, CLEAR_SCALE,
 	{ ...CLOUD_SIGMA, aerosolScale: 4.6, aerosolHeight: 3.09, topScale: 0.79, widthScale: 0.62 },
 	{ ...CLOUD_SIGMA, aerosolScale: 0.82, aerosolHeight: 3.09, topScale: 0.66, widthScale: 1.21 } ];
-// per sky of the blend, whether a deck ends the aerosol layer at its base (Sky.ts `cloudBase`)
+// per sky of the blend, whether a deck ends the aerosol layer at its base (look/SkyLook.ts `cloudBase`)
 export const DECKED = [ false, false, true, true ];
 export const SKY_SCALE = MIX_SKIES.map( ( name, s ) => {
 

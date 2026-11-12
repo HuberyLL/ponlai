@@ -40,7 +40,7 @@
 // none), and empties its walkers when set at run time (--toggle "s.flags.trample = !on" times the
 // sprites' draw).
 // `clearShade` (a number, or `true` for 1; off unless set) scales the sky light the island takes
-// for its clear shade (sky/Sky.ts CLEAR_SHADE), read whenever the sky tracks the clock (an
+// for its clear shade (look/SkyLook.ts CLEAR_SHADE), read whenever the sky tracks the clock (an
 // environment bake later, `refreshEnvironment()` while paused).
 // `skyGain = false` leaves the sun's in-scattered sky light as the atmosphere gives it (sky/Sky.ts
 // SKY_LIGHT), read whenever the sky tracks the clock (an environment bake later,
@@ -50,7 +50,7 @@
 // `streakMask = true` (at load) paints the dome's pixels where the layer's opacity as seen passes
 // 0.1 in a red of their own luminance and those where it lies between 0.02 and 0.1 in a green, for
 // `img.py stats --mask` (sky/Sky.ts domeColour).
-// `lowKey = false` leaves the low sun's key as its transmittance gives it (sky/Sky.ts LOW_KEY), read
+// `lowKey = false` leaves the low sun's key as its transmittance gives it (look/SkyLook.ts LOW_KEY), read
 // whenever the sky tracks the clock.
 // `clearSky = false` leaves the clear day's sky light without its gain against the key (sky/Sky.ts
 // CLEAR_SKY), read whenever the sky tracks the clock (an environment bake later).
