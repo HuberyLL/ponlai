@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import BloomNode from 'three/addons/tsl/display/BloomNode.js';
+import { bloomDraws, buildDrawsNow, pipelineQuad, renderWithAsyncPipelines, type NodeState } from '../../three/DrawBuilds.ts';
 
 // Ahead-of-time pipeline compiles (the frame graph's warm-up, FrameGraph.warm, the sky's and the
 // shadow maps', `compileLatentInto`, and the sun map's first redraw, `compileByRendering`):
@@ -22,41 +23,12 @@ import BloomNode from 'three/addons/tsl/display/BloomNode.js';
 // Each miss builds the material again in its first frame, and a second build of a material under
 // another key may emit a layout function with the first build's uniform names (r186): an invalid
 // shader. `compileBound` builds every draw while the binding is in place, inside the collection
-// (standing in for three's `_createObjectPipeline` for that call), at the call depth and with the
-// quad's vertex node of the real draw, and leaves only the pipelines' creation asynchronous. Its
-// result names the nodes that render passes of their own before the draw (`updateBeforeNodes`:
-// a bloom), which `compileQuad` compiles in turn; `compileNodes` compiles those a frame-graph pass
-// runs itself. Without those internals (another three
-// revision) it falls back to `compileAsync`, and the frame graph primes the chains instead.
-
-type NodeState = { updateBeforeNodes: THREE.Node[] };
-type RenderObject = { drawRange: unknown; group: unknown };
-type RenderContext = { textures: unknown; depthTexture: unknown; depth: boolean; stencil: boolean };
-type Internals = {
-	_objects?: { get( ...args: unknown[] ): RenderObject };
-	_nodes?: { getForRender( renderObject: RenderObject ): NodeState; updateForRender( renderObject: RenderObject ): void };
-	_geometries?: { updateForRender( renderObject: RenderObject ): void };
-	_bindings?: { updateForRender( renderObject: RenderObject ): void };
-	_pipelines?: { getForRender( renderObject: RenderObject, promises: Promise<unknown>[] | null ): unknown };
-	_currentRenderContext?: RenderContext;
-	_renderContexts?: { get( target: THREE.RenderTarget | null, mrt: THREE.MRTNode | null, callDepth: number ): RenderContext };
-	_isPreCompiling?: boolean;
-	_createObjectPipeline?: ( ...args: unknown[] ) => void;
-	_compilationPromises?: unknown;
-};
-type CreateObjectPipeline = ( this: Internals, object: THREE.Object3D, material: THREE.Material, scene: THREE.Scene, camera: THREE.Camera,
-	lightsNode: unknown, group: unknown, clippingContext: unknown, passId: unknown ) => void;
-
-/** Whether the renderer has the internals `compileBound` builds through (three r186). */
-export function boundCompileAvailable( renderer: THREE.WebGPURenderer ): boolean {
-
-	const r = renderer as unknown as Internals;
-	return typeof r._createObjectPipeline === 'function' && typeof r._objects?.get === 'function' && typeof r._nodes?.getForRender === 'function'
-		&& typeof r._nodes.updateForRender === 'function' && typeof r._geometries?.updateForRender === 'function'
-		&& typeof r._bindings?.updateForRender === 'function' && typeof r._pipelines?.getForRender === 'function' && '_compilationPromises' in r
-		&& typeof r._renderContexts?.get === 'function';
-
-}
+// (three's own steps for a draw standing in for its `_createObjectPipeline` for that call:
+// three/DrawBuilds.ts `buildDrawsNow`), at the call depth and with the quad's vertex node of the
+// real draw, and leaves only the pipelines' creation asynchronous. Its result names the nodes that
+// render passes of their own before the draw (`updateBeforeNodes`: a bloom), which `compileQuad`
+// compiles in turn; `compileNodes` compiles those a frame-graph pass runs itself. A three without
+// those steps throws (three/DrawBuilds.ts).
 
 // QuadMesh.render draws with a vertex node of its own (a clip-space triangle, no camera), set on
 // the material only for the draw; it is part of the material's cache key and code, so a compile
@@ -75,9 +47,9 @@ function quadVertexNode( quad: THREE.QuadMesh ): THREE.Node | null {
 
 }
 
-/** What a compile built: the node states of its draws (null on the fallback, which builds them
- * later), and a promise that resolves once their pipelines exist. */
-export interface Compiled { states: NodeState[] | null; done: Promise<void> }
+/** What a compile built: the node states of its draws, and a promise that resolves once their
+ * pipelines exist. */
+export interface Compiled { states: NodeState[]; done: Promise<void> }
 
 /** Compiles the draws of `object` (a scene, or an object to be drawn as part of `scene`) for
  * `camera` with the renderer's binding as it is now (render target, MRT, depth flags, tone mapping
@@ -93,80 +65,13 @@ export function compileBound( renderer: THREE.WebGPURenderer, object: THREE.Obje
 	if ( quad ) quad.vertexNode = quadVertexNode( object as THREE.QuadMesh );
 	try {
 
-		return compileNow( renderer, object, camera, scene, callDepth );
+		return buildDrawsNow( renderer, object, camera, scene, callDepth );
 
 	} finally {
 
 		if ( quad ) quad.vertexNode = vertexNode;
 
 	}
-
-}
-
-function compileNow( renderer: THREE.WebGPURenderer, object: THREE.Object3D, camera: THREE.Camera, scene: THREE.Scene | null, callDepth: number ): Compiled {
-
-	if ( ! boundCompileAvailable( renderer ) ) return { states: null, done: renderer.compileAsync( object, camera, scene ) as Promise<void> };
-	const r = renderer as unknown as Required<Internals>;
-	const states: NodeState[] = [];
-	const pending: Promise<unknown>[] = [];
-	const own = Object.prototype.hasOwnProperty.call( r, '_createObjectPipeline' ) ? r._createObjectPipeline : null;
-	// A pass rendered inside another (`callDepth` > 0) draws in its call depth's render context, filled
-	// as a render fills it; compileAsync collects in the top level's.
-	let nested: RenderContext | null = null;
-	// three's own steps for a draw being compiled (its compileAsync loop's and _createObjectPipeline's),
-	// in this call instead of after an await; without updateBefore, which would render the rtt() and
-	// bloom passes a material holds (compileQuad compiles those)
-	const build: CreateObjectPipeline = function ( object, material, scene, camera, lightsNode, group, clippingContext, passId ) {
-
-		// (compileAsync's own context, filled for this collection)
-		let context = r._currentRenderContext;
-		if ( callDepth > 0 ) {
-
-			if ( ! nested ) {
-
-				nested = r._renderContexts.get( renderer.getRenderTarget(), renderer.getMRT(), callDepth );
-				nested.textures = context.textures;
-				nested.depthTexture = context.depthTexture;
-				nested.depth = context.depth;
-				nested.stencil = context.stencil;
-
-			}
-			context = nested;
-
-		}
-		const ro = r._objects.get( object, material, scene, camera, lightsNode, context, clippingContext, passId );
-		ro.drawRange = ( object as THREE.Mesh ).geometry.drawRange;
-		ro.group = group;
-		r._isPreCompiling = true;
-		try {
-
-			states.push( r._nodes.getForRender( ro ) );
-			r._geometries.updateForRender( ro );
-			r._nodes.updateForRender( ro );
-			r._bindings.updateForRender( ro );
-
-		} finally {
-
-			r._isPreCompiling = false;
-
-		}
-		r._pipelines.getForRender( ro, pending );
-
-	};
-	r._createObjectPipeline = build as unknown as ( ...args: unknown[] ) => void;
-	let collected: Promise<void>;
-	try {
-
-		// collects synchronously (its own queue stays empty: `build` did the work)
-		collected = renderer.compileAsync( object, camera, scene ) as Promise<void>;
-
-	} finally {
-
-		if ( own ) r._createObjectPipeline = own;
-		else delete ( r as Internals )._createObjectPipeline;
-
-	}
-	return { states, done: Promise.all( [ collected, ...pending ] ).then( () => undefined ) };
 
 }
 
@@ -302,7 +207,7 @@ export function compileLatent( renderer: THREE.WebGPURenderer, objects: readonly
 		for ( const object of roots ) {
 
 			const c = compileBound( renderer, object, camera, scene );
-			if ( c.states ) states.push( ...c.states );
+			states.push( ...c.states );
 			pending.push( c.done );
 
 		}
@@ -317,7 +222,7 @@ export function compileLatent( renderer: THREE.WebGPURenderer, objects: readonly
 		}
 
 	}
-	return { states: boundCompileAvailable( renderer ) ? states : null, done: Promise.all( pending ).then( () => undefined ) };
+	return { states, done: Promise.all( pending ).then( () => undefined ) };
 
 }
 
@@ -339,50 +244,24 @@ export function compileLatentInto( renderer: THREE.WebGPURenderer, objects: read
  * and in its order, which a compile of the same draws ahead cannot match: three r186 emits a shader
  * from shared node state, so the order in which materials first build can change the code of
  * later builds (a temporary inlined or kept), and with it a few pixels of the image. Resolves once
- * the pipelines exist: then the render, made again, draws. Stands in for three's
- * `Pipelines.updateForRender` (r186) for the call. */
+ * the pipelines exist: then the render, made again, draws (three/DrawBuilds.ts
+ * `renderWithAsyncPipelines`). */
 export function compileByRendering( renderer: THREE.WebGPURenderer, render: () => void ): Promise<void> {
 
-	const pipelines = ( renderer as unknown as { _pipelines?: PipelineCache } )._pipelines;
-	if ( typeof pipelines?.getForRender !== 'function' || typeof pipelines.updateForRender !== 'function' ) {
-
-		render();
-		return Promise.resolve();
-
-	}
-	const promises: Promise<unknown>[] = [];
-	const own = Object.prototype.hasOwnProperty.call( pipelines, 'updateForRender' ) ? pipelines.updateForRender : null;
-	pipelines.updateForRender = ( renderObject ) => void pipelines.getForRender( renderObject, promises );
-	try {
-
-		render();
-
-	} finally {
-
-		if ( own ) pipelines.updateForRender = own;
-		else delete ( pipelines as Partial<PipelineCache> ).updateForRender;
-
-	}
-	return Promise.all( promises ).then( () => undefined );
+	return renderWithAsyncPipelines( renderer, render );
 
 }
-type PipelineCache = { getForRender( renderObject: RenderObject, promises: Promise<unknown>[] | null ): unknown; updateForRender( renderObject: RenderObject ): void };
 
 // ---- chains: the passes a full-screen material renders before itself
 
-/** What compiling a chain found: the pipelines' promise, and the passes it could not reach
- * (nodes that render in `updateBefore` which the walker does not know, or a fallback build that
- * named none): the frame graph primes the chain instead. */
+/** What compiling a chain found: the pipelines' promise, and the passes it could not reach (nodes
+ * that render in `updateBefore` which the walker does not know, or a bloom not set up): the frame
+ * graph primes the chain instead. */
 export interface ChainCompile { done: Promise<void>; unreached: string[] }
 
 // BloomNode draws its passes with a QuadMesh of its own module: the same geometry and camera as
 // any QuadMesh, so a quad of ours finds the same node builds and pipelines by key.
 const bloomQuad = new THREE.QuadMesh( new THREE.NodeMaterial() );
-
-type Bloom = BloomNode & {
-	_highPassFilterMaterial: THREE.NodeMaterial | null; _separableBlurMaterials: THREE.NodeMaterial[]; _compositeMaterial: THREE.NodeMaterial | null;
-	_renderTargetBright: THREE.RenderTarget; _renderTargetsHorizontal: THREE.RenderTarget[]; _renderTargetsVertical: THREE.RenderTarget[]; _nMips: number;
-};
 
 // The walker: compiles the passes three's display nodes render in a chain (`updateBefore`: a
 // BloomNode's high pass, blurs and composite) as they draw them, at the call depth they draw at,
@@ -409,16 +288,16 @@ class Walker {
 
 			if ( this.seen.has( node ) ) continue;
 			this.seen.add( node );
-			if ( node instanceof BloomNode ) this.bloom( node as Bloom, depth );
+			if ( node instanceof BloomNode ) this.bloom( node, depth );
 			else this.unreached.push( node.type );
 
 		}
 
 	}
 
-	states( states: NodeState[] | null, depth: number ): void {
+	states( states: NodeState[], depth: number ): void {
 
-		for ( const state of states ?? [] ) this.nodes( state.updateBeforeNodes, depth );
+		for ( const state of states ) this.nodes( state.updateBeforeNodes, depth );
 
 	}
 
@@ -430,22 +309,10 @@ class Walker {
 
 	}
 
-	// as updateBefore draws them: the high pass, each mip's two blur passes (their input set as it
-	// sets it), the composite; only the first mips' blur materials are drawn (setup appends a set per
-	// build of the material that holds the bloom)
-	private bloom( bloom: Bloom, depth: number ): void {
+	// as updateBefore draws them (three/DrawBuilds.ts `bloomDraws`), each blur's input set as it sets it
+	private bloom( bloom: BloomNode, depth: number ): void {
 
-		const draws: [ THREE.NodeMaterial | null, THREE.RenderTarget, THREE.Texture | null ][] = [ [ bloom._highPassFilterMaterial, bloom._renderTargetBright, null ] ];
-		let input = bloom._renderTargetBright;
-		for ( let i = 0; i < bloom._nMips; i ++ ) {
-
-			const material = bloom._separableBlurMaterials[ i ] ?? null;
-			draws.push( [ material, bloom._renderTargetsHorizontal[ i ], input.texture ], [ material, bloom._renderTargetsVertical[ i ], bloom._renderTargetsHorizontal[ i ].texture ] );
-			input = bloom._renderTargetsVertical[ i ];
-
-		}
-		draws.push( [ bloom._compositeMaterial, bloom._renderTargetsHorizontal[ 0 ], null ] );
-		for ( const [ material, target, colour ] of draws ) {
+		for ( const [ material, target, colour ] of bloomDraws( bloom ) ) {
 
 			if ( ! material ) {
 
@@ -477,7 +344,6 @@ class Walker {
 export function compileQuad( renderer: THREE.WebGPURenderer, quad: THREE.QuadMesh ): ChainCompile {
 
 	const first = compileBound( renderer, quad, ( quad as unknown as { camera: THREE.Camera } ).camera );
-	if ( ! first.states ) return { done: first.done, unreached: [ 'nested passes (no bound compile on this three)' ] };
 	const walker = new Walker( renderer );
 	walker.pending.push( first.done );
 	walker.states( first.states, 1 );
@@ -490,7 +356,6 @@ export function compileQuad( renderer: THREE.WebGPURenderer, quad: THREE.QuadMes
  * render in turn. */
 export function compileNodes( renderer: THREE.WebGPURenderer, nodes: readonly THREE.Node[] ): ChainCompile {
 
-	if ( ! boundCompileAvailable( renderer ) ) return { done: Promise.resolve(), unreached: nodes.map( ( node ) => `${ node.type } (no bound compile on this three)` ) };
 	const walker = new Walker( renderer );
 	walker.nodes( nodes, 0 );
 	return walker.result;
@@ -502,17 +367,15 @@ export function compileNodes( renderer: THREE.WebGPURenderer, nodes: readonly TH
  * working colour space, which key a canvas pipeline. */
 export function compileChain( renderer: THREE.WebGPURenderer, pipeline: THREE.RenderPipeline ): ChainCompile {
 
-	const p = pipeline as unknown as { _update?(): void; _quadMesh?: THREE.QuadMesh };
-	if ( typeof p._update !== 'function' || ! p._quadMesh ) return { done: Promise.resolve(), unreached: [ 'RenderPipeline (no quad on this three)' ] };
 	// (sets the quad's material from the output node as its first render would, before the state
 	// below: it compares the renderer's tone mapping and colour space with its own)
-	p._update();
+	const quad = pipelineQuad( pipeline );
 	const { toneMapping, outputColorSpace } = renderer;
 	renderer.toneMapping = THREE.NoToneMapping;
 	renderer.outputColorSpace = THREE.ColorManagement.workingColorSpace;
 	try {
 
-		return compileQuad( renderer, p._quadMesh );
+		return compileQuad( renderer, quad );
 
 	} finally {
 

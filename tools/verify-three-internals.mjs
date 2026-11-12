@@ -69,7 +69,6 @@ const SRC_KNOWN = [
 	'post/DynamicResolution.ts',
 	'post/Pipeline.ts',
 	'post/graph/AttachmentOps.ts',
-	'post/graph/Compile.ts',
 	'post/graph/FrameGraph.ts',
 	'sky/Sky.ts',
 	'world/Upload.ts',
