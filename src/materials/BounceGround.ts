@@ -22,14 +22,14 @@ export function islandBounceGround( beds: THREE.TextureNode, soil: THREE.Texture
 	const LAWN = vec3( ...LAWN_COLOUR ), RIM = vec3( 0.08, 0.075, 0.065 );
 	const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.gain * FLOOR_ALBEDO.sandGain ), SEAGRASS = vec3( 0.2475, 0.304, 0.124 ).mul( FLOOR_ALBEDO.gain ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.gain );
 	return {
-		land: ( shore ) => mix( LAWN.mul( groundGains.lawnGain ), RIM, smoothstep( - 1.5, 0, shore ) ),
-		floor: ( at, shore ) => {
+		land: ( { shore } ) => mix( LAWN.mul( groundGains.lawnGain ), RIM, smoothstep( - 1.5, 0, shore ) ),
+		floor: ( { at, shore } ) => {
 
 			const bed = texture( beds, at ).level( float( 0 ) ).rg;
 			return mix( mix( SAND, SEAGRASS, smoothstep( 0.3, 0.7, bed.x ) ), RUBBLE, smoothstep( 6.5, 0.5, shore ).mul( 0.5 ) );
 
 		},
-		height: ( xz ) => float( ISLAND_TOP ).add( soilGroveSwell( soil, xz ).swell ),
+		height: ( { xz } ) => float( ISLAND_TOP ).add( soilGroveSwell( soil, xz ).swell ),
 	};
 
 }

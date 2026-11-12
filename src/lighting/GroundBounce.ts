@@ -123,16 +123,25 @@ const FLOOR_THROUGH = 0.934 * 0.525;
 // Lambertian floor, whose mean cosine is 0.5 (2 times the depth)
 const FLOOR_PATH = 1.2 + 2.0;
 
+/** The bake's texel as the scene's ground reads it, nodes of the bake's shader. */
+export interface BounceTexel {
+	/** The map's coordinate over the fields' bounds (shared.shoreXform). */
+	at: THREE.Node<'vec2'>;
+	/** The texel's world point. */
+	xz: THREE.Node<'vec2'>;
+	/** The shore's sea-level distance there (m, negative over the land). */
+	shore: F;
+}
+
 /** The scene's ground as the bake reads it: each method is called once while the bake's shader is
- * built and returns nodes of that shader. `at` is the map's coordinate over the fields' bounds
- * (shared.shoreXform), `shore` the shore's sea-level distance there (m, negative over the land). */
+ * built, takes the texel and returns nodes of that shader. */
 export interface BounceGround {
 	/** The land's linear albedo. */
-	land( shore: F ): V3;
+	land( texel: BounceTexel ): V3;
 	/** The sea floor's linear albedo, as seen through clear water. */
-	floor( at: THREE.Node<'vec2'>, shore: F ): V3;
-	/** The height (m) of the land's surface at the world point `xz`. */
-	height( xz: THREE.Node<'vec2'> ): F;
+	floor( texel: BounceTexel ): V3;
+	/** The height (m) of the land's surface. */
+	height( texel: BounceTexel ): F;
 }
 
 export interface GroundBounceInputs {
@@ -184,7 +193,8 @@ export class GroundBounce {
 			const sd = texture( fields.shore, at ).level( float( 0 ) ).r.toVar();
 			const floorY = texture( fields.floor, at ).level( float( 0 ) ).r;
 			const L = shared.sunDir;
-			const land = described.land( sd );
+			const texel: BounceTexel = { at, xz, shore: sd };
+			const land = described.land( texel );
 			// the sea: the floor seen through the water column, down and back up (at a + bb, over
 			// FLOOR_PATH times the depth), and the water body's own irradiance reflectance under its
 			// surface, the deep water's R( 0- ) = BODY_REFLECTANCE bb / ( a + bb ) (ocean/SeaOptics.ts,
@@ -194,13 +204,13 @@ export class GroundBounce {
 			const depth = max( shared.waterLevel.sub( floorY ), 0 );
 			const kappa = shared.sigA.add( shared.bb );
 			const body = shared.bb.mul( BODY_REFLECTANCE ).div( kappa );
-			const floor = described.floor( at, sd );
+			const floor = described.floor( texel );
 			const column = exp( kappa.mul( depth ).mul( - FLOOR_PATH ) );
 			const sea = mix( body, floor, column ).mul( FLOOR_THROUGH );
 			const wet = smoothstep( - 0.25, 0.25, sd ).toVar();
 			// (the land's bounce is the ambient volume's where materials read it: see the header)
 			const albedo = GROUND_BOUNCE_LAND ? mix( land, sea, wet ) : sea.mul( wet );
-			const ground = described.height( xz ).toVar();
+			const ground = described.height( texel ).toVar();
 			const top = mix( ground, shared.waterLevel, wet );
 			const lift = select( wet.lessThan( 0.5 ), ground, shared.waterLevel ).add( SHADOW_LIFT );
 			const visibility = sunShadow.currentPCFVisibility( sunShadow.coordinate.mul( vec4( xz.x, lift, xz.y, 1 ) ).xyz );
