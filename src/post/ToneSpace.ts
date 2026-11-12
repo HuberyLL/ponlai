@@ -9,12 +9,12 @@ import { Matrix3, Vector3 } from 'three/webgpu';
 // curve (PipelineDisplay.ts toneCurve: at first Hill's, now an adjustable one fitted to it) and
 // turns the result back through the ODT's saturation. The two saturations (about 0.89 together) are
 // left at 1 now (CURVE_SATURATION): the curve no longer greys every colour alike, and the grade's
-// hue bands (GradeLut.ts BASE_GRADE) set each hue's saturation instead. Per-channel tone mapping in
-// the rendering space clips saturated colours toward cyan, magenta and yellow; AP1 rolls them off
-// toward white, but bends reds and oranges toward yellow (a low sun's glints and sky). After Patry,
-// "Real-Time Samurai Cinema" (SIGGRAPH 2021), the curve's space is AP1 with its red primary moved
-// from x 0.713 to 0.75 (TONE_RED_X). Built with AP1's own primaries and Hill's saturations, the
-// matrices are Hill's constants to their five decimals
+// hue bands (look/DisplayLook.ts BASE_GRADE) set each hue's saturation instead. Per-channel tone
+// mapping in the rendering space clips saturated colours toward cyan, magenta and yellow; AP1 rolls
+// them off toward white, but bends reds and oranges toward yellow (a low sun's glints and sky).
+// After Patry, "Real-Time Samurai Cinema" (SIGGRAPH 2021), the curve's space is AP1 with its red
+// primary moved from x 0.713 to 0.75 (TONE_RED_X). Built with AP1's own primaries and Hill's
+// saturations, the matrices are Hill's constants to their five decimals
 // (`toneMatrices( { redX: AP1.r[ 0 ], ...HILL_SATURATION } )`).
 //
 // The white balance, after Patry too: the colour that white is to become (in linear Rec.709, as an

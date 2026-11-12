@@ -20,7 +20,7 @@ import './PhysicalBloom.ts';
 import type { PhysicalBloom } from './PhysicalBloom.ts';
 import './Metering.ts';
 import type { Metering } from './Metering.ts';
-import { PURKINJE } from './Purkinje.ts';
+import './Purkinje.ts';
 import { cloudedShare } from '../sky/Weather.ts';
 import { AA_MODE, AFTER_RESOLVE, FSR3, RESOLVE, SCENE_SAMPLES, TEMPORAL } from './Antialiasing.ts';
 import { beginMotionFrame, METER_LIGHT, onTaaCut } from './Motion.ts';
@@ -46,8 +46,8 @@ import { CLIP_MARGIN, RefractionView, REFRACTION_GUARD, REFRACTION_SIZE } from '
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { whiteBalance } from './ToneSpace.ts';
 import './BlueNoise.ts';
-import { TONE_CURVE, checkToneCurve, solveToneCurve, type ToneCurve } from './ToneCurve.ts';
-import { BASE_GRADE, fillGradeLut, gradeOf, lutNodes, mergeGrade, type GradeChanges, type GradeParams } from './GradeLut.ts';
+import { checkToneCurve, solveToneCurve, type ToneCurve } from './ToneCurve.ts';
+import { fillGradeLut, gradeOf, lutNodes, mergeGrade, type GradeChanges, type GradeParams } from './GradeLut.ts';
 import { LocalTone } from './LocalTone.ts';
 import { keyed } from './DayKeys.ts';
 import { exposureKeys, type ExposureKey } from '../look/ExposureLook.ts';
@@ -58,7 +58,7 @@ import type { ExtraPass } from './ExtraPass.ts';
 import type { WaveMaps } from '../ocean/WaveMaps.ts';
 import { settings } from '../Settings.ts';
 import { DEFAULT_POST_OPTIONS, postOptionsFromURL, type PostOptions } from './PostOptions.ts';
-import { DESATURATION, SHADE_CONTRAST, TIDEWATER_GRADE, WHITE_BALANCE, WHITE_OVERCAST } from '../look/DisplayLook.ts';
+import { BASE_GRADE, DESATURATION, PURKINJE, SHADE_CONTRAST, TIDEWATER_GRADE, TONE_CURVE, WHITE_BALANCE, WHITE_OVERCAST } from '../look/DisplayLook.ts';
 import { declarePasses } from './PipelinePasses.ts';
 import { buildDisplay, GRADE_TABLE, NIGHT, TONE_SPACE } from './PipelineDisplay.ts';
 
@@ -359,7 +359,7 @@ export interface PipelineSettings {
 	// stops over the exposure's target (the GUI's)
 	exposureOffset: number;
 	// the tone curve's slope at black, the mid grey it shows and the input that shows white
-	// (ToneCurve.ts TONE_CURVE)
+	// (look/DisplayLook.ts TONE_CURVE)
 	curve: ToneCurve;
 	// the grade's two tables (GradeLut.ts, `Pipeline.luts`): 0 the first, 1 the second
 	lut: number;

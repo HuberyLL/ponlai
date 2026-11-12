@@ -16,8 +16,8 @@
 // Newton steps on the constraints as written then take out the rounding. The solution is checked:
 // the denominator stays positive and y rises over [ 0, white ], and a / d > 1 (the curve's
 // asymptote over white, so it reaches 1 before it flattens). A failure of the default set
-// (TONE_CURVE) throws in development; any other set that fails (a GUI combination) warns and the
-// pipeline keeps the last good curve (Pipeline.ts).
+// (look/DisplayLook.ts TONE_CURVE) throws in development; any other set that fails (a GUI
+// combination) warns and the pipeline keeps the last good curve (Pipeline.ts).
 // ONE was measured once on the curve before this one (Lottes's form with a bent toe, two and a half
 // stops over its mid grey) and fixed, so the lights keep the level they had. That curve's log-log
 // slope at mid grey, 1.10, leaves no solution without a pole with a slope of 2.2 at black (the
@@ -26,7 +26,6 @@
 // node runs it (strip types).
 
 export interface ToneCurve { toe: number; mid: number; white: number }
-export const TONE_CURVE: Readonly<ToneCurve> = { toe: 2.46, mid: 0.168, white: 15.1 };
 
 // the log-log slope at mid grey, and y( 1 ), the previous curve's (see above)
 const MID_SLOPE = 1;

@@ -1,12 +1,17 @@
 import type { DayKey, DayKeys } from '../post/DayKeys.ts';
 import { tuneKeys, tuneObject } from '../debug/Tune.ts';
 import type { PipelineSettings } from '../post/Pipeline.ts';
+import { gradeOf, type GradeParams } from '../post/GradeLut.ts';
+import type { ToneCurve } from '../post/ToneCurve.ts';
 
 // The look's display tables (src/look/: the numbers chosen for the look, their tunables and the
 // CPU code that reads only them): the shade's contrast, the desaturation, overcast's highlights
-// toward grey, tidewater's grade (the bloom's and the vignette's strengths), the vignette's shape
-// and the white balance. post/PipelineDisplay.ts builds the display chain's shader from them, and
-// post/Pipeline.ts `updateDisplay` keys them by the sun and the weather each frame.
+// toward grey, tidewater's grade (the bloom's and the vignette's strengths), the vignette's shape,
+// the white balance, the tone curve's three settings, the base grade, the bloom's keys and the
+// rods' colour at night. post/PipelineDisplay.ts builds the display chain's shader from them,
+// post/Pipeline.ts `updateDisplay` keys them by the sun and the weather each frame, and the
+// methods that read them are their modules' (post/ToneCurve.ts, post/GradeLut.ts,
+// post/PhysicalBloom.ts, post/Purkinje.ts).
 
 // The shade's contrast: under a pivot each stop of the exposed luminance (the local tone's gain in
 // it) darkens by `slope` of a stop more, over it nothing changes; after the local tone, before the
@@ -76,7 +81,7 @@ export const COOL_SHARE = { from: 0, to: 0.6 };
 export const HIGHLIGHT_GREY = { amount: 0.58, from: 0.067, to: 0.4 };
 
 /** The bloom's strength (times the time's and the weather's, and its share is the threshold's:
- * PhysicalBloom.ts BLOOM) and the vignette's strength (VIGNETTE). No grain: a dither of half a
+ * BLOOM) and the vignette's strength (VIGNETTE). No grain: a dither of half a
  * code value is all the noise the frame takes. */
 export const TIDEWATER_GRADE: Readonly<Pick<PipelineSettings, 'bloom' | 'vignette'>> = {
 	bloom: 1.36, vignette: 1,
@@ -122,3 +127,106 @@ export const WHITE_BALANCE: DayKeys<{ r: number; g: number; b: number }> = tuneK
 // overcast's own white (WHITE_BALANCE's header), over the clouded day's by overcast's share
 export const WHITE_OVERCAST = tuneObject( { r: 0.49, g: 1, b: 1.14 },
 	{ r: 'post.white.r@overcast', g: 'post.white.g@overcast', b: 'post.white.b@overcast' }, WHITE_RANGE );
+
+// The display's tone curve (post/ToneCurve.ts solves its coefficients from these three): the slope
+// at black, where mid grey lands and the white it reaches 1 at. The pipeline's settings take a copy
+// (post/Pipeline.ts `settings.curve`, tunable there).
+export const TONE_CURVE: Readonly<ToneCurve> = { toe: 2.46, mid: 0.168, white: 15.1 };
+
+/** The base grade (post/GradeLut.ts builds its tables): the day's, which the other grades build
+ * on. No contrast and no saturation over the whole frame (the contrast is the shade's,
+ * SHADE_CONTRAST, and the tone curve's): each hue moved on its own, lightly, the neutral axis left
+ * where it is but for a touch of cool in the highlights.
+ * - The warm hues (red to yellow) times 1.15: the earth, the bark and the low sun's light keep
+ *   their colour under the softer curve; they also turn 8 degrees toward red, so the golden hour's
+ *   light reads orange where the curve's shoulder turns it yellow (a degree or so on the day's
+ *   rock and meadow). The red flowers times 1.15 over that, which the cooler
+ *   white balance and the softer curve had cut by about a fifth; their band also turns red-orange
+ *   4 degrees toward red.
+ * - The sky's blue times 1.2: the noon sky read pale and grey over the brighter curve.
+ * - The green times 0.95 and turned 3.5 degrees toward yellow: the cool noon white balance
+ *   (WHITE_BALANCE) already takes the sunlit meadow from yellow-green to
+ *   green, and a turn toward blue-green over it took the lit blades past it (on screen, in linear
+ *   light, their mean red to green about 0.53 to 0.60 at 4 degrees toward blue-green, 0.61 to 0.66
+ *   at this turn, from 0.74 to 0.81 under a neutral white), and a touch less loud than the sky over
+ *   it.
+ * - The sea's blue-green times 1.05 and turned 7 degrees toward blue; purple turned 6 degrees
+ *   toward red.
+ * - The highlights' white turned a touch cool (an Oklab chroma of about 0.008 at a hue of 260). */
+export const BASE_GRADE: Readonly<GradeParams> = gradeOf( {
+	highlights: { tint: [ 0.97, 1, 1.05 ] },
+	bands: {
+		grass: { saturation: 0.95, shift: - 3.5 }, sky: { saturation: 1.2 }, sea: { saturation: 1.05, shift: 7 },
+		flowers: { saturation: 1.15, shift: - 4 }, warm: { saturation: 1.15, shift: - 8 }, purple: { shift: - 6 },
+	},
+} );
+
+// The bloom's keys (post/PhysicalBloom.ts, whose header gives the method they set).
+// The clear high sun's key (from 9 degrees up) is set with the day's exposure and grade, its
+// levels' weights on the halo about the sun out to some 50 degrees. The bloom stands for the
+// lens's scatter, and the lens does not change with the sky: on the exposed image the same light
+// glows the same, so a clouded sky takes the high sun's key whole (under cloud the land and the sky
+// stay under its thresholds, and what glows glows as on a clear day: the sea's glints, a sun seen
+// through a gap), and every key's sky cap is the high sun's. By a high sun the land's threshold
+// sits over three stops above mid grey, so the lit ground stays out; in the golden hour and by
+// night near mid grey, so a low sun's whites glow, with a wider knee than the day's in the golden
+// hour and about the day's by night. By night the land's share is small by choice (0.05, falling
+// from the low sun's 0.2 as the night comes in): at a threshold under the moon's glints a large
+// share spread them over the wide levels into a pale pedestal under the whole field, and the water
+// between the glints stood lit. The sky keeps its own share, so the moon's disc and the bright
+// clouds glow as before. The weights carry the strength: about 2.3 by a high sun; 1.25 in the
+// golden hour and by night, whose thresholds let far more in, toward the wide levels (a broad
+// soft glow about the moon and bright clouds). The high sun's weights rise and fall from level to
+// level, less at 1/16 and 1/128 than at the levels either side, which sets the halo's outer rings
+// (all positive, so the summed kernel still falls off from its centre). The finest level takes
+// none: its spread, a pixel or two, is the image's own sharpness. The sky's share is a little
+// smaller by a clear high sun (0.17) than by a low sun (0.2), so the glow round the sun stays
+// close to it rather than spreading over the sky far from it.
+export type BloomKey = {
+	threshold: number; knee: number; share: number; cap: number;
+	skyThreshold: number; skyKnee: number; skyShare: number; skyCap: number;
+	w0: number; w1: number; w2: number; w3: number; w4: number; w5: number; w6: number; w7: number;
+};
+// the levels' weights from the finest to the widest, scaled so their sum is `strength`
+const weights = ( strength: number, w: number[] ) => {
+
+	const sum = w.reduce( ( a, b ) => a + b );
+	const [ w0, w1, w2, w3, w4, w5, w6, w7 ] = w.map( ( v ) => Math.round( v / sum * strength * 1e4 ) / 1e4 );
+	return { w0, w1, w2, w3, w4, w5, w6, w7 };
+
+};
+/** The bloom by the sun's elevation, under a clouded sky and at night (DayKeys.ts), on the exposed
+ * image (mid grey 0.18): the land's threshold T (where its glow starts), knee K (the knee's half
+ * width), share k and cap, the sky's (`sky...`), and the levels' weights from the finest (w0, half
+ * the render) to the widest (w7, 1/256), whose sum is the strength. Tunable on debug pages
+ * (debug/Tune.ts `post.bloom.<value>@<key>`, the keys `low`, `high`, `cloudy`, `night`); a tuned
+ * sky threshold leaves its knee where the table puts it. */
+export const BLOOM_HIGH_SUN: BloomKey = {
+	threshold: 1.76, knee: 0.66, share: 0.2, cap: 3.89,
+	skyThreshold: 18.3, skyKnee: 0.4 * 18.3, skyShare: 0.17, skyCap: 2250,
+	w0: 0, w1: 0.38, w2: 0.74, w3: 0.185, w4: 0.395, w5: 0.371, w6: 0.0944, w7: 0.13,
+};
+export const BLOOM: DayKeys<BloomKey> = tuneKeys( 'post.bloom', {
+	day: [
+		{ at: 4, name: 'low', values: {
+			threshold: 0.2, knee: 1.1, share: 0.2, cap: 2,
+			skyThreshold: 6, skyKnee: 0.4 * 6, skyShare: 0.2, skyCap: BLOOM_HIGH_SUN.skyCap,
+			...weights( 1.25, [ 0, 0.17, 0.44, 0.54, 0.64, 0.74, 0.88, 0.58 ] ),
+		} },
+		{ at: 9, name: 'high', values: BLOOM_HIGH_SUN },
+	],
+	cloudy: BLOOM_HIGH_SUN,
+	night: {
+		threshold: 0.18, knee: 0.6, share: 0.05, cap: 1,
+		skyThreshold: 1, skyKnee: 0.4, skyShare: 0.5, skyCap: BLOOM_HIGH_SUN.skyCap,
+		...weights( 1.25, [ 0, 0.13, 0.34, 0.44, 0.58, 0.78, 0.94, 0.58 ] ),
+	},
+}, { skyThreshold: { min: 3, max: 40, scale: 'log' }, skyCap: { min: 100, max: 3000, scale: 'log' } } );
+
+/** The rods' colour at night (post/Purkinje.ts): the retinal illuminance (trolands) of white on
+ * open level ground under the night's light, and the strength the change is taken back by at
+ * night: 0.025, set with the night's sky and moon so the dark land keeps a hint of cool green while
+ * the sky and the sea stay blue. Tunable on debug pages (debug/Tune.ts):
+ * `post.purkinje.strength@night`. */
+export const PURKINJE = tuneObject( { retina: 3, strength: 0.025 }, { strength: 'post.purkinje.strength@night' },
+	{ strength: { min: 0, max: 0.05 } } );

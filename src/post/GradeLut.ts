@@ -22,8 +22,9 @@ import { float, texture3D } from 'three/tsl';
 //   in place (`fillGradeLut`) is uploaded again.
 //
 // A table is generated from a grade's parameters (`GradeParams`) when the page loads, never stored
-// as an image, so its knobs stay readable and later grades build on them. On a display colour, in
-// order, on the linear colour a texel stands for:
+// as an image, so its knobs stay readable and later grades build on them (the day's, which the
+// others build on: look/DisplayLook.ts BASE_GRADE). On a display colour, in order, on the linear
+// colour a texel stands for:
 // - Its zone: shadows, midtones and highlights by its lightness (Oklab L of the linear colour, the
 //   display's perceived lightness), the shadows fading out by `split[ 0 ]` and the highlights in from `split[ 1 ]` to
 //   white, the midtones between (the shadows / midtones / highlights split of an editor's colour
@@ -94,34 +95,6 @@ export const NEUTRAL_GRADE: Readonly<GradeParams> = {
 	shadows: zone(), midtones: zone(), highlights: zone(),
 	bands: { grass: band( 132, 35 ), sky: band( 252, 30, 0.08 ), sea: band( 198, 28 ), flowers: band( 25, 35 ), warm: band( 70, 75 ), purple: band( 330, 35 ) },
 };
-
-/** The base grade: the day's, which the other grades build on. No contrast and no saturation over
- * the whole frame (the contrast is the shade's, look/DisplayLook.ts SHADE_CONTRAST, and the tone
- * curve's): each hue moved on its own, lightly, the neutral axis left where it is but for a touch
- * of cool in the highlights.
- * - The warm hues (red to yellow) times 1.15: the earth, the bark and the low sun's light keep
- *   their colour under the softer curve; they also turn 8 degrees toward red, so the golden hour's
- *   light reads orange where the curve's shoulder turns it yellow (a degree or so on the day's
- *   rock and meadow). The red flowers times 1.15 over that, which the cooler
- *   white balance and the softer curve had cut by about a fifth; their band also turns red-orange
- *   4 degrees toward red.
- * - The sky's blue times 1.2: the noon sky read pale and grey over the brighter curve.
- * - The green times 0.95 and turned 3.5 degrees toward yellow: the cool noon white balance
- *   (look/DisplayLook.ts WHITE_BALANCE) already takes the sunlit meadow from yellow-green to
- *   green, and a turn toward blue-green over it took the lit blades past it (on screen, in linear
- *   light, their mean red to green about 0.53 to 0.60 at 4 degrees toward blue-green, 0.61 to 0.66
- *   at this turn, from 0.74 to 0.81 under a neutral white), and a touch less loud than the sky over
- *   it.
- * - The sea's blue-green times 1.05 and turned 7 degrees toward blue; purple turned 6 degrees
- *   toward red.
- * - The highlights' white turned a touch cool (an Oklab chroma of about 0.008 at a hue of 260). */
-export const BASE_GRADE: Readonly<GradeParams> = gradeOf( {
-	highlights: { tint: [ 0.97, 1, 1.05 ] },
-	bands: {
-		grass: { saturation: 0.95, shift: - 3.5 }, sky: { saturation: 1.2 }, sea: { saturation: 1.05, shift: 7 },
-		flowers: { saturation: 1.15, shift: - 4 }, warm: { saturation: 1.15, shift: - 8 }, purple: { shift: - 6 },
-	},
-} );
 
 /** A grade of `NEUTRAL_GRADE`'s parameters with `changes` over them (a deep copy). */
 export function gradeOf( changes: GradeChanges, base: Readonly<GradeParams> = NEUTRAL_GRADE ): GradeParams {

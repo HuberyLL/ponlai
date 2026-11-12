@@ -38,8 +38,9 @@
 //   change is several times the colour itself, a strong blue; `strength` takes it back to the
 //   look, and the night's weight fades it in (`night`, Pipeline's). The rods' light brightens the
 //   frame too.
-// - `strength` is 0.025 at night (`post.purkinje.strength@night`, 0 to 0.05); at 0 the shift
-//   adds nothing and the night's colour is the grade's and the white balance's.
+// - `strength` is 0.025 at night (`post.purkinje.strength@night`, 0 to 0.05; with the retinal
+//   illuminance, look/DisplayLook.ts PURKINJE); at 0 the shift adds nothing and the night's
+//   colour is the grade's and the white balance's.
 // - The test mode: nothing the shift reads comes from the meter or from the frame's exposure (the
 //   key and the fill are functions of the clock, the weather and the tuning; the sky's irradiance
 //   is the environment's, which on a running page cross-fades between bakes as it does for every
@@ -56,17 +57,10 @@
 //   the resolve (taa, taau) leaves it out.
 import { Fn, If, dot, float, inverseSqrt, max, vec3 } from 'three/tsl';
 import type * as THREE from 'three/webgpu';
-import { tuneObject } from '../debug/Tune.ts';
+import { PURKINJE } from '../look/DisplayLook.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
-
-/** The retinal illuminance (trolands) of white on open level ground under the night's light, and
- * the strength the change is taken back by at night: 0.025, set with the night's sky and moon so the
- * dark land keeps a hint of cool green while the sky and the sea stay blue. Tunable on debug pages
- * (debug/Tune.ts): `post.purkinje.strength@night`. */
-export const PURKINJE = tuneObject( { retina: 3, strength: 0.025 }, { strength: 'post.purkinje.strength@night' },
-	{ strength: { min: 0, max: 0.05 } } );
 
 /** The colour's scale to the retinal illuminance of a real night (`purkinjeShift`'s `scale`), from
  * `light`, the luminance of white on open level ground in scene units (see the header). */

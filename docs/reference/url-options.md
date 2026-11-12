@@ -385,7 +385,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   the trees' leaves against their atlas: `tree leaves albedo (x)` or `__PONLAI__.setLeafGain( k )`.
   The tone curve's slope at black, the mid grey it shows and the input that shows white: the GUI's
   Tone curve folder (in Post), or `s.pipeline.settings.curve` (read every frame;
-  `src/post/ToneCurve.ts` TONE_CURVE; a set the solve cannot meet keeps the last good curve and
+  `src/look/DisplayLook.ts` TONE_CURVE; a set the solve cannot meet keeps the last good curve and
   warns, and only the default set failing throws, on the dev server).
   `fgview=meadowShade` shows the shade's map.
 - The screen-space ambient occlusion (`src/post/GTAO.ts`, on in high: the tier's `ao` knob builds it

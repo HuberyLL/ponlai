@@ -50,12 +50,13 @@ type V4 = THREE.Node<'vec4'>;
 //
 // tidewater's display chain (PostFX.js, 4811ba4), as it has become: its physical bloom
 // (PhysicalBloom.ts) added to the image; its grade in linear light (the vignette; its saturation
-// and contrast left for the grade table's hue bands, GradeLut.ts BASE_GRADE, and the shade's
-// contrast, SHADE_CONTRAST); our tone curve (ToneCurve.ts) on the exposed colour, in the curve
-// space of ToneSpace.ts with the white balance folded into its input matrix; the grade's tables;
-// overcast's highlights toward grey (HIGHLIGHT_GREY); the BT.709 OETF shown as sRGB, and a blue-noise dither (BlueNoise.ts; its luminance-weighted grain is gone).
-// tidewater meters its frame's luminance and scales it by an auto exposure before the grade; here
-// the meter reads the light on the scene (Metering.ts, Exposure.ts).
+// and contrast left for the grade table's hue bands, look/DisplayLook.ts BASE_GRADE, and the
+// shade's contrast, SHADE_CONTRAST); our tone curve (ToneCurve.ts) on the exposed colour, in the
+// curve space of ToneSpace.ts with the white balance folded into its input matrix; the grade's
+// tables; overcast's highlights toward grey (HIGHLIGHT_GREY); the BT.709 OETF shown as sRGB, and a
+// blue-noise dither (BlueNoise.ts; its luminance-weighted grain is gone). tidewater meters its
+// frame's luminance and scales it by an auto exposure before the grade; here the meter reads the
+// light on the scene (Metering.ts, Exposure.ts).
 
 // The rain veil's reactive weight: its opacity at the pixel times `gain`, at most `max` (a dense veil
 // lowers the history's weight there to 40 % of its frames; a single faint streak barely moves it).
