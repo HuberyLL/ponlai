@@ -195,6 +195,10 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 
 ## Rules for every change
 
+- Materials take real, measured values; the style is set only globally, in the light per weather
+  and hour, the exposure, the tone mapping and the grade. A look problem is looked for there
+  before any material changes, and a material is never pushed past real values to make up for the
+  light (`docs/art-direction.md`, How the look is made).
 - Shaders are written in TSL only (no raw WGSL or GLSL strings). Helpers called from several
   places are `Fn( ... ).setLayout( ... )`, so they compile to one shader function each.
 - Simulation and generation are deterministic and path-independent: the world, its growth, the

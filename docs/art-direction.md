@@ -170,6 +170,34 @@ art decision changes; images from elsewhere stay out of the repository.
   darkens only as the water over it dims and colours the floor beside it, so nothing pale runs
   along it at a low sun or under cloud.
 
+## How the look is made
+
+The fantasy-realistic look is made in two layers that never mix, and that separation is what
+lets new content join the island without being tuned one thing at a time.
+
+- The materials are real. Every surface takes physically plausible values (albedo, roughness,
+  translucency) from real measurements: scans, photographs taken with a colour chart, published
+  albedo tables. Grass, stone, bamboo and sand are not coloured to look right in a frame; they
+  are their real selves, and one physically based light sets the relations between them. A
+  material is checked against the range of real ones, never against a finished frame.
+- The style lives in the light and the image, and only there, applied to the whole world at once:
+  the light's knobs per weather and hour (the ambient balance, the sky's brightness, the haze),
+  the exposure, the tone mapping and the grade. Physically based materials lit by a light that
+  may leave physical correctness globally, by weather and time of day, is the approach Jasmin
+  Patry described ("Samurai Shading in Ghost of Tsushima", SIGGRAPH 2020; "Real-Time Samurai
+  Cinema", SIGGRAPH 2021).
+- The colour comes from choosing, not from tinting: few kinds of plant per place, quiet textures
+  with little noise, and leaves that let the light through. Which real things stand on the island
+  is the art decision; their colours follow from what they are.
+- When something looks wrong, the light and the image are suspected first. A material changes
+  only when its values lie outside real ones, or when its model lacks something the real surface
+  does (light through a leaf, the fuzz of moss). A material pushed past real values to make up for
+  an error in the light breaks again the next time the light changes.
+- A deliberate departure from real values for one material is an art decision written in this file
+  with its reason, as the cliff's stone is kept darker than real limestone above. There are few.
+- A new kind of content joins the same way: real values, checked against the real range, placed in
+  the scene and judged in the whole frame, with no tuning of its own.
+
 ## Three layers in one world
 
 - Nature (cliffs, sea, plants, creatures) is realistic.
