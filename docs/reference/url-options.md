@@ -308,21 +308,24 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `lighting.relight.overcastLand` (1 to 2), a low
   sun's lift of the sky's light on what it lights `lighting.relight.lowSun` (stops; `lowSunFloor`,
   `lowSunFloorFull`, `lowSunFrom`, `lowSunTo` its sun heights: `src/lighting/AmbientRelight.ts`),
-  a deck's glow about the sun (the forward lobe added to the light it lets through, in the deck and
-  the air under it: its weight and mean cosine) `sky.clouds.forwardWeight`,
-  `sky.clouds.forwardLobe`, the
-  amount of forward light the closed deck passes down, spread over it by the diffusion law (a lobe's
-  weight and mean cosine whose light on level ground it takes) `sky.clouds.overcastWeight`,
-  `sky.clouds.overcastBroad`, the closed deck's glow about the key light drawn on the sky and its
+  the clouds' model per kept sky (`clear`, `fair`, `cloudy`, `overcast`: `src/sky/Sky.ts`
+  CLOUD_SKIES), the shell's base and top (m), the cloud type (0 a stratus, 1 a cumulus), how far
+  it varies from place to place and how far the clouds thin with distance
+  `sky.clouds.base@<sky>`, `sky.clouds.top@<sky>`, `sky.clouds.type@<sky>`,
+  `sky.clouds.spread@<sky>`, `sky.clouds.farFade@<sky>`, the forward lobe of the light under a low
+  layer, in the air under it (its weight and mean cosine) `sky.clouds.forwardWeight`,
+  `sky.clouds.forwardLobe`, the amount of that forward light a closed deck spreads by the
+  diffusion law (a lobe's weight and mean cosine whose light on level ground it takes)
+  `sky.clouds.overcastWeight`, `sky.clouds.overcastBroad`, the closed deck's glow about the key
+  light drawn on the sky and its
   seen panorama (its narrow lobe's weight in the deck's mean radiance and mean cosine, its broad
   lobe's, and the power of the base's own pattern it follows: `src/sky/Sky.ts` `deckGlow`)
   `sky.clouds.deckGlow`, `sky.clouds.deckGlowLobe`, `sky.clouds.deckGlowBroad`,
   `sky.clouds.deckGlowBroadLobe`, `sky.clouds.deckGlowTexture` (by day; the night keeps the moon's
   own form, `src/sky/Clouds.ts` MOON_DECK_GLOW), the same glow as the lighting's sources take it
   about the sun, one smooth lobe's mean cosine (0.7 to 0.85) and weight (0 to 3)
-  `sky.clouds.bakeGlowLobe`, `sky.clouds.bakeGlowGain`, the closed deck's own level as the sky
-  draws it by day under overcast, the glow aside (0.3 to 1, 1 the deck the march gives)
-  `sky.clouds.deckSeen`, and its gradation from the zenith to the horizon by day under overcast
+  `sky.clouds.bakeGlowLobe`, `sky.clouds.bakeGlowGain`, and the closed deck's gradation from the
+  zenith to the horizon by day under overcast
   (0 to 1: 1 the diffusion law's 3 : 1, 0 a uniform deck, level irradiance kept)
   `sky.clouds.deckGradation`, and the key a tree's shaded leaves
   take through the leaves over them `lighting.vegetation.leaf.through@high` (`@low`, `@golden`,

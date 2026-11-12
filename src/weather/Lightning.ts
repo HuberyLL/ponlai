@@ -200,8 +200,8 @@ export class Lightning {
 					const near = kind === 'bolt' ? 2500 : 3000, far = ( kind === 'bolt' ? 14000 : 18000 ) * ( 1.3 - 0.3 * storm );
 					const distance = Math.sqrt( THREE.MathUtils.lerp( near * near, far * far, hash( n, 5 ) ) );
 					strike = this.describe( n, start, kind, azimuth, distance, Math.floor( hash( n, 6 ) * 0x7fffffff ), clouds );
-					// Only under the storm's deck: a front sweeping in brings its lightning with it.
-					if ( clouds.coverageAt( strike.center.x, strike.center.z ) < 0.9 ) continue;
+					// Only under the storm's closed sky: a front toward it brings its lightning as it closes.
+					if ( clouds.coverage.value < 0.9 ) continue;
 					this.strikes.set( n, strike );
 
 				}
@@ -222,7 +222,7 @@ export class Lightning {
 	}
 
 	// One strike's profile, all of it from its seed, in the clouds' shell (the weather's: Clouds.ts
-	// `setDeck`) as it stands when the strike is first described.
+	// `setShell`) as it stands when the strike is first described.
 	private describe( id: number, start: number, kind: StrikeKind = 'bolt', azimuth: number, distance: number, seed: number, clouds: Clouds ): Strike {
 
 		const r = ( k: number ) => hash( seed, k + 16 );

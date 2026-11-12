@@ -74,7 +74,7 @@ export interface WindProbeContext {
 	shared: Shared;
 	wind: Wind;
 	weather: { state: { windSpeed: number; windDirection: number; gustiness: number } };
-	sky: { clouds: { frontAxis?: { value: THREE.Vector2 }; windAxis?: { value: THREE.Vector2 }; layerOffsets?: () => { cumulus: THREE.Vector2; streaks: THREE.Vector2 } } };
+	sky: { clouds: { windAxis?: { value: THREE.Vector2 }; layerOffsets?: () => { cumulus: THREE.Vector2; streaks: THREE.Vector2 } } };
 	fft: { params: { windDirection: number }; swellDirection: number };
 	establishScene: ( scene: never ) => Promise<unknown>; // main.ts's, with { weather, preset }
 	setTime: ( t: number ) => Promise<unknown>; // main.ts's seek of the scene clock
@@ -548,9 +548,9 @@ async function directions( ctx: WindProbeContext, o: Options ) {
 		const sea = deg( { x: - Math.cos( h ), y: - Math.sin( h ) } ), swell = deg( { x: - Math.cos( hs ), y: - Math.sin( hs ) } );
 		const heading = ctx.weather.state.windDirection;
 		const weatherTravel = deg( { x: - Math.cos( heading * Math.PI / 180 ), y: - Math.sin( heading * Math.PI / 180 ) } );
-		const front = clouds.frontAxis?.value, windAxis = clouds.windAxis?.value;
+		const windAxis = clouds.windAxis?.value;
 		const travel = { vegetation, weather: weatherTravel, sea, swell, seaGusts: deg( seaGusts ), fog: deg( fog ), cumulus: deg( cumulus ), streaks: deg( streaks ),
-			cloudFrontAxis: front ? deg( front ) : null, windAxis: windAxis ? deg( windAxis ) : null };
+			windAxis: windAxis ? deg( windAxis ) : null };
 		rows.push( {
 			weather, preset, weatherHeading: heading, fftHeading: ctx.fft.params.windDirection, swellHeading: ctx.fft.swellDirection,
 			windSpeed: ctx.weather.state.windSpeed, gustiness: ctx.weather.state.gustiness,

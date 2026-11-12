@@ -293,14 +293,13 @@ const seaFogView = { on: params.has( 'seaFog' ) };
 // unless `?dayFog` or the GUI turns it on.
 const dayFogView = { on: params.has( 'dayFog' ) };
 weather.auto = loaded.autoWeather;
-// The land's floor under a deck, the deck's cover and the day sky's level and exponent per clouded
-// sky (Weather.ts `deckFloor`, `lowCover`, `daySky`, `daySkyExponent`), tunable on debug pages
+// The land's floor under a deck and the day sky's level and exponent per clouded sky (Weather.ts
+// `deckFloor`, `daySky`, `daySkyExponent`), tunable on debug pages
 // without a reload: the presets the weather moves between take them, and the state that stands on
 // that sky follows (`setPresetValue`); the sky rebakes. A `?tune=` value is the start, applied
 // here as a load would.
 const PRESET_TUNABLES: ReadonlyArray<readonly [ TunedField, TuneOptions ]> = [
 	[ 'deckFloor', { min: 0, max: 1 } ],
-	[ 'lowCover', { min: 0, max: 1 } ],
 	[ 'daySky', { min: 0.005, max: 2, scale: 'log' } ],
 	[ 'daySkyExponent', { min: 0, max: 3 } ],
 ];
@@ -459,7 +458,7 @@ function prepareSkyState(): void {
 	if ( cloudOverride !== null ) state.coverage = cloudOverride;
 	sky.setWeather( state );
 	keyGlint.spread.value = state.glintSpread ?? 0;
-	sky.track( celestial, state, cloudOverride, weather.front, weather.skyMix );
+	sky.track( celestial, state, cloudOverride, weather.skyMix );
 	prepareHaze( state );
 	lastWeatherSignature = `${ state.coverage },${ state.density },${ state.directVisibility },${ state.ambientGain },${ state.daySky },${ state.daySkyExponent },${ state.haze }`;
 
@@ -1936,7 +1935,7 @@ function tick( time: number ): void {
 	renderer.info.reset();
 	// Sun, moon, key light and grade follow the clock every frame; only the baked reflection,
 	// environment and cloud products cross-fade between bakes.
-	sky.track( manualSun ? null : dayCycle.snapshot(), weather.state, cloudOverride, weather.front, weather.skyMix );
+	sky.track( manualSun ? null : dayCycle.snapshot(), weather.state, cloudOverride, weather.skyMix );
 	sky.advance( environmentDt );
 	publishLighting();
 	// the ambient grade by the sun and the weather's blend of the kept skies (lighting/AmbientGrade.ts)

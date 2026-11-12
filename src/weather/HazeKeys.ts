@@ -203,9 +203,9 @@ import { FOG_NOISE } from './FogNoise.ts';
 // at the surface, 2 km at the layer's top and 38 km at 100 m, 0.79 / 0.89 / 0.92 to the base at
 // 10 / 20 / 30 degrees (its ground layer two thirds of the day's height, 9.2 m, and 1.2 times its
 // width, its aerosol 0.82 of the day's share); cloudy is lighter, about 5 km at the surface and
-// 40 km at 100 m, 0.69 at 10 degrees (its ground layer 0.8 of the day's height and 0.6 of its
+// 40 km at 100 m (its ground layer 0.8 of the day's height and 0.6 of its
 // width, a fifth of overcast's haze, its aerosol 4.6 of the day's share). Both keep the aerosol's
-// scale height (3.1 times the day's), which under a top of 700 - 900 m hardly matters. The
+// scale height (3.1 times the day's), which under a top of 600 to 1500 m matters little. The
 // weather's amount is its own field (Weather.ts `haze`), the cloudy's and the overcast's tunable
 // here (`sky.weather.haze@<cloudy|overcast>`): the key's amount takes the tuned value over the
 // preset's, blended by the sky's shares, so a value set shows on the next frame (the weather's

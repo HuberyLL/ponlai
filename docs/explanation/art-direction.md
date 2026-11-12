@@ -438,20 +438,22 @@ for the light is baking lighting into albedo; it breaks again whenever the light
   midday.
 - Bad weather dims and desaturates the existing light and thickens the air as its visibility
   falls, and it stays dimmer and greyer than a clear day.
-- Weather changes sweep the sky as a front from upwind. The clouds drift downwind with the wind
-  aloft, faster than the surface wind (the cumulus and the thin layer about twice it),
-  so they never move against the grass and the sea.
-- The clouds stand where such clouds stand: the clear and fair skies' cumulus from about 4 km up,
-  cloudy's and overcast's deck low, its base under a kilometre and its tops near 3 km, so its
-  masses are near and wide overhead and close into a flat, packed floor toward the horizon, seen
-  through little of the air's haze; a front between the two moves the deck with the weather. The
-  deck's base is lit by what comes down through it, the light on its tops passed through the
-  cloud above, with no gain or tint of its own: thin parts show lighter than the thick masses
-  beside them, and the deck reads near grey. The air under it is lit by the deck and by the sea's
-  reflection of it rather than by a clear sky, so the haze in front of the clouds is their grey.
-  The clear and fair skies' cumulus are lit the same way under their tops: a shaded base takes
-  the light the cloud above passes down to it, so it reads a soft grey about a stop under the
-  sunlit tops and near the blue sky beside it, never a dark block.
+- A change of weather moves the whole sky together: the cover grows or thins everywhere at once, the
+  clouds flattening or heaping and their layer sinking or rising with it, never one sky swept over
+  another along a line. The clouds drift downwind with the wind aloft, faster than the surface wind
+  (the cumulus and the thin layer about twice it), so they never move against the grass and the sea.
+- Every sky's clouds are one kind of cloud, heaped or flat by the weather, and they stand where such
+  clouds stand: the clear and fair skies' cumulus from about 4 km up, cloudy's broken layer of
+  flatter heaps from about 1.5 km to 4.5 km, with blue between them, and overcast's closed deck low,
+  its base under a kilometre and its tops near 3 km, so its masses are near and wide overhead and
+  close into a flat, packed floor toward the horizon, seen through little of the air's haze. The
+  deck's base is lit by what comes down through it, the light on its tops passed through the cloud
+  above, with no gain or tint of its own: thin parts show lighter than the thick masses beside them,
+  and the deck reads near grey. The air under it is lit by the deck and by the sea's reflection of
+  it rather than by a clear sky, so the haze in front of the clouds is their grey. The clear and
+  fair skies' cumulus are lit the same way under their tops: a shaded base takes the light the cloud
+  above passes down to it, so it reads a soft grey about a stop under the sunlit tops and near the
+  blue sky beside it, never a dark block.
 - Under a deck the land is lit by a softened key along the sun and by the deck's sky light, under
   overcast a sky light of its own, stronger than the sea's. Under overcast the closed deck reads
   lighter than the meadow under it, lighter still toward the sun, where the lit cloud about the
