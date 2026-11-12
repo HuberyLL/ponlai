@@ -27,7 +27,7 @@ import { WaveMaps } from './ocean/WaveMaps.ts';
 import { SeaDetail } from './ocean/SeaDetail.ts';
 import { showUnderwater } from './ocean/Refraction.ts';
 import { Wenyao } from './life/Wenyao.ts';
-import { FallingLeaves } from './weather/FallingLeaves.ts';
+import { FallingLeaves, leavesPass } from './weather/FallingLeaves.ts';
 import { Water, keyChroma } from './ocean/Water.ts';
 import { StormSea } from './ocean/StormSea.ts';
 import { bakeGroundTextures } from './materials/GroundTextures.ts';
@@ -658,7 +658,10 @@ if ( fgview ) installDebugView( fgview, {
 		jitterNdc: jitter.uniforms.ndc, opaqueBelow: ( MOTION_CLASS.opaque + MOTION_CLASS.vegetation ) / 2,
 	},
 } );
-const pipeline = new Pipeline( renderer, sky, sunShadow, rain, postOptionsFromURL( location.search, quality.post ), quality.taa );
+// The bamboo leaves the wind takes off the island (weather/FallingLeaves.ts), made once the world
+// exists (the test mode leaves them out): their step is a pass the pipeline declares from this list.
+let fallingLeaves: FallingLeaves | null = null;
+const pipeline = new Pipeline( renderer, sky, sunShadow, rain, postOptionsFromURL( location.search, quality.post ), quality.taa, [ ( g ) => leavesPass( g, () => fallingLeaves ) ] );
 // The profiler labels each pass the graph runs by the pass's label (its groups), unless a
 // target or object it knows labels it otherwise (the passes inside the display chain).
 if ( profiler ) {
@@ -769,10 +772,7 @@ scene.add( world.group );
 // the opaque pass draws where the eye sees them through the waves (Water.ts swimmerSway).
 const wenyao = new Wenyao( data, shared, waveMaps, fft );
 scene.add( wenyao.mesh );
-// The bamboo leaves the wind takes off the island (weather/FallingLeaves.ts): stepped by their pass on
-// the frame graph, drawn in the opaque scene; the test mode leaves them out (debug/TestMode.ts).
-const fallingLeaves = TEST_MODE ? null : new FallingLeaves( { shared, fields, soil: textures.soil, wind, atlas: singleLeaf() } );
-pipeline.fallingLeaves = fallingLeaves;
+fallingLeaves = TEST_MODE ? null : new FallingLeaves( { shared, fields, soil: textures.soil, wind, atlas: singleLeaf() } );
 pipeline.waveMaps = waveMaps;
 if ( fallingLeaves ) scene.add( fallingLeaves.mesh );
 // The chunks' borders (GUI Ground folder, ?chunkBorders), built on first show.

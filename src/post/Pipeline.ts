@@ -51,7 +51,7 @@ import { exposureKeys, type ExposureKey } from './Exposure.ts';
 import { restEpoch, restKey } from './TemporalRest.ts';
 import { tuneCheck, tuneKeys, tuneObject, tuneUniform } from '../debug/Tune.ts';
 import { displacementField } from '../world/vegetation/Displacement.ts';
-import { leavesPass, type FallingLeaves } from '../weather/FallingLeaves.ts';
+import type { ExtraPass } from './ExtraPass.ts';
 import { waveMapsPass, type WaveMaps } from '../ocean/WaveMaps.ts';
 import { localLightsPass } from '../lighting/LocalLights.ts';
 
@@ -82,9 +82,11 @@ import { localLightsPass } from '../lighting/LocalLights.ts';
 //   sky constants: the clouds' mean transmittance over the sun's and the moon's discs, which the
 //   flare's visibility reads (Sky.ts discCloudTransmittance, LightShafts.ts `occlusion`), evaluated
 //   once into a texel ahead of the scene
-//   falling leaves: the leaves' births and fixed steps (weather/FallingLeaves.ts: one compute pass
-//   over its fixed ring, its own buffers only; a reset's frame prewarms it instead), ahead of the
-//   opaque scene, which draws them; absent in the test mode
+//   the scene's extra passes (`ExtraPass`, the constructor's list): passes the pipeline does not
+//   know, declared here in the list's order, ahead of the scene passes that draw what they
+//   prepare. The island gives the falling leaves' births and fixed steps (weather/FallingLeaves.ts:
+//   one compute pass over its fixed ring, its own buffers only; a reset's frame prewarms it
+//   instead; idle in the test mode)
 //   wave maps (ocean/WaveMaps.ts): the long waves' maps round the camera and the caustics (while the
 //   sun lights them) into one array target outside the graph's resources, which the materials lit
 //   under the water read, its mip chain after the last layer drawn
@@ -805,8 +807,8 @@ export class Pipeline {
 	};
 
 
-	/** `temporal`: the tier's resolve settings (Quality.ts `taa`), for the temporal modes. */
-	constructor( renderer: THREE.WebGPURenderer, private readonly sky: Sky, sunShadow: SunShadow, rain?: Rain, options: Partial<PostOptions> = postOptionsFromURL(), temporal?: TemporalSettings ) {
+	/** `temporal`: the tier's resolve settings (Quality.ts `taa`); `extraPasses`: ExtraPass.ts. */
+	constructor( renderer: THREE.WebGPURenderer, private readonly sky: Sky, sunShadow: SunShadow, rain?: Rain, options: Partial<PostOptions> = postOptionsFromURL(), temporal?: TemporalSettings, private readonly extraPasses: readonly ExtraPass[] = [] ) {
 
 		this.renderer = renderer;
 		this.rain = rain;
@@ -1621,8 +1623,6 @@ export class Pipeline {
 
 	}
 
-	/** The falling leaves, once the world exists (main.ts): their pass runs while they are set. */
-	fallingLeaves: FallingLeaves | null = null;
 	/** The wave maps and the caustics (ocean/WaveMaps.ts), baked by their pass while they are set. */
 	waveMaps: WaveMaps | null = null;
 
@@ -1649,8 +1649,8 @@ export class Pipeline {
 	// are preserved; its splashes compare the resolved depths themselves. The post passes follow,
 	// each into a target of the graph's or the canvas. Ahead of the scene, after the haze and the
 	// sky's constants, the displacement field (world/vegetation/Displacement.ts): its sprites at a
-	// fixed size, read by the meadow's passes; then the falling leaves' step
-	// (weather/FallingLeaves.ts), once main.ts has made them, the wave maps and the caustics
+	// fixed size, read by the meadow's passes; then the scene's extra passes (the island's falling
+	// leaves' step), the wave maps and the caustics
 	// (ocean/WaveMaps.ts), which the materials lit under the water read, and the local lights'
 	// clusters (lighting/LocalLights.ts), by night.
 	private declarePasses(): void {
@@ -1672,8 +1672,8 @@ export class Pipeline {
 		// the displacement field, which the passes that draw the meadow read
 		// (world/vegetation/Displacement.ts)
 		this.displacement = displacementField ? displacementField.declare( g ) : null;
-		// the falling leaves' step, whose buffers the opaque scene draws
-		leavesPass( g, () => this.fallingLeaves );
+		// the scene's extra passes (the falling leaves' step, whose buffers the opaque scene draws)
+		for ( const declare of this.extraPasses ) declare( g );
 		// the wave maps and the caustics, which the materials lit under the water read
 		waveMapsPass( g, () => this.waveMaps );
 		// the local lights' clusters, which every lit material of the scene passes reads

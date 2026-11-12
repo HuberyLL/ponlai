@@ -155,6 +155,7 @@
 	"post/DayKeys.ts": "render",
 	"post/DynamicResolution.ts": "render",
 	"post/Exposure.ts": "render",
+	"post/ExtraPass.ts": "render",
 	"post/FSR.ts": "render",
 	"post/FramePacer.ts": "render",
 	"post/GTAO.ts": "render",
