@@ -9,6 +9,11 @@ Ambient volume
   groves and its cliffs, and lights the shade: every lit island material reads it for its ambient
   diffuse (`src/lighting/AmbientSample.ts`).
 
+Baking lighting into albedo
+: Tuning a material's colour to make up for an error in the light. The material then breaks
+  whenever the light changes; the error is fixed in the light instead ([Art
+  direction](../explanation/art-direction.md), How the look is made).
+
 Chunk
 : A 16 m square of the world (`src/world/Chunks.ts`). A chunk's content is a function of its
   window of the land field, the chunk grown by 32 m (`AGENTS.md`, Rules for every change).
@@ -25,16 +30,26 @@ Island view
 : The game's own view: the island camera zoomed out over the island, from which the look is judged,
   as well as close up ([Art direction](../explanation/art-direction.md), The look).
 
+Kept weathers
+: Clear, fair, cloudy and overcast: the weathers every change must hold in.
+
 Key
 : The one dominant light: the sun by day, the moon by night
   ([Art direction](../explanation/art-direction.md), Sea, sky and weather).
 
-Kept weathers
-: Clear, fair, cloudy and overcast: the weathers every change must hold in.
+Lighting
+: The side of the look that sets the light and the image for the whole world, by weather and
+  hour: the light's knobs, the exposure, the tone mapping and the grade. Kept strictly apart from
+  lookdev ([Art direction](../explanation/art-direction.md), How the look is made).
 
 Lip
 : The top edge of the cliff, where the meadow meets the stone and its grass hangs over
   ([Art direction](../explanation/art-direction.md), The island).
+
+Lookdev
+: Look development: making each material right, with real values, under a neutral, standard
+  light. Kept strictly apart from lighting ([Add a material or a kind of
+  content](../how-to/add-material.md)).
 
 Parked
 : Kept compiling and loadable by name but out of the default checks, until revived as its own
@@ -56,6 +71,11 @@ Scene jump
 Settled
 : The page's signal that a paused frame is final (`src/post/Settled.ts`); captures are shot once
   it holds.
+
+Stylised realism
+: Stylized realism: the island's image, physically based but not photorealistic, with the style
+  laid over it in the lighting ([Art direction](../explanation/art-direction.md), How the look is
+  made).
 
 Sward
 : The meadow's grass as one even cover, about 0.5 m tall

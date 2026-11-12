@@ -1,7 +1,8 @@
 # Add a material or a kind of content
 
 This guide gives the steps for adding a surface (a new stone, a plant, a fabric) or a new kind of
-content to the island so that it joins the look with no tuning of its own. Why it works this way:
+content to the island so that it joins the look with no tuning of its own. It is the lookdev side
+of keeping lookdev and lighting strictly apart. Why it works this way:
 `docs/explanation/art-direction.md`, How the look is made.
 
 ## 1. Find the real values
@@ -76,8 +77,9 @@ Check in this order, and stop at the first cause found:
    fuzz of moss, a wet film)? Add that to the model.
 5. The material's values: change them only if they lie outside the real range.
 
-Never push a material past real values to make up for an error found in 1 to 3: it breaks again
-the next time the light changes. Fix the light instead, and recheck every material it touches.
+Never push a material past real values to make up for an error found in 1 to 3 (baking lighting
+into albedo): it breaks again the next time the light changes. Fix the light instead, and recheck
+every material it touches.
 
 ## 6. Record a deliberate departure
 

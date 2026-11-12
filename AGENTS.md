@@ -111,18 +111,17 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   the key's visibility under cloud for the lit code without a sky (`KeyCloud.ts`: the land's floor
   under a deck, which the islanders read; the sea takes the same floor from the sky, `Sky.ts`
   `seaKeyFloor`), the refracted sun under water, the light every submerged material shares
-  (`Underwater.ts`), the air/water
-  interface, sky occlusion, the meadow's canopy light and its crowns' shade (`MeadowCanopy.ts`), the
-  ambient light's probes on the GPU (`AmbientVolume.ts`: the lattice's buffer and uniforms, its
-  output texture, its debug view), relit every frame by the sky's harmonics and the key into their
-  irradiance (`AmbientRelight.ts`: the output's packing; the harmonics' operations in
-  `Harmonics.ts`), which every lit island material reads for its ambient diffuse
-  (`AmbientSample.ts`), the sunlight the ground bounces up (`GroundBounce.ts`), the ambient grade's
-  per-weather, per-elevation knobs on the island's ambient light (`AmbientGrade.ts`), the local
-  lights (`LocalLights.ts`: every source in view, such as the yunpeng's clumps by night, sorted
-  into clusters of the main view by a compute pass ahead of the scene passes, which every lit model
-  looks its fragment's list up in; the grid and the CPU sort in `LocalLightClusters.ts`), the low
-  key's lift of the diffuse's cosine (`KeyLift.ts`), the metering illuminance every lit material
+  (`Underwater.ts`), the air/water interface, sky occlusion, the meadow's canopy light and its
+  crowns' shade (`MeadowCanopy.ts`), the ambient light's probes on the GPU (`AmbientVolume.ts`: the
+  lattice's buffer and uniforms, its output texture, its debug view), relit every frame by the sky's
+  harmonics and the key into their irradiance (`AmbientRelight.ts`: the output's packing; the
+  harmonics' operations in `Harmonics.ts`), which every lit island material reads for its ambient
+  diffuse (`AmbientSample.ts`), the sunlight the ground bounces up (`GroundBounce.ts`), the ambient
+  grade's per-weather, per-elevation knobs on the island's ambient light (`AmbientGrade.ts`), the
+  local lights (`LocalLights.ts`: every source in view, such as the yunpeng's clumps by night,
+  sorted into clusters of the main view by a compute pass ahead of the scene passes, which every lit
+  model looks its fragment's list up in; the grid and the CPU sort in `LocalLightClusters.ts`), the
+  low key's lift of the diffuse's cosine (`KeyLift.ts`), the metering illuminance every lit material
   writes beside its colour for the exposure (`MeterLight.ts`). A new lit material takes all of
   these through the island's lighting model: `docs/how-to/add-material.md`, Light it as every
   other surface.
@@ -196,11 +195,11 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   `sim/registry.ts` by the modules of `sim/content/` (the core names none: ARCHITECTURE.md, rule 7;
   adding content: `docs/how-to/add-game-content.md`); only exact operations in the rules, the few
   functions they need in `sim/maths.ts`), `save.ts` is the save (one slot: the simulation's state
-  and the record, versioned: a save of another version is set aside and a new game started; the world's
-  start reads its piece count), `view/` draws the islanders and the chest, `Chronicle.ts` keeps the
-  record of what happened (the events' first listener) and `Placement.ts` places a building chosen
-  in the build bar. `ui/` is the player's interface (`GameUi.ts`, spec `docs/explanation/ui.md`):
-  its parts (`TopRow.ts`, `Forecast.ts`, `ResourceRow.ts`,
+  and the record, versioned: a save of another version is set aside and a new game started; the
+  world's start reads its piece count), `view/` draws the islanders and the chest, `Chronicle.ts`
+  keeps the record of what happened (the events' first listener) and `Placement.ts` places a
+  building chosen in the build bar. `ui/` is the player's interface (`GameUi.ts`, spec
+  `docs/explanation/ui.md`): its parts (`TopRow.ts`, `Forecast.ts`, `ResourceRow.ts`,
   `People.ts`, `SpeakBar.ts`, `BuildBar.ts`, `Record.ts`), the lists it shows as data with
   placeholder rows and the defaults for content without its own (`data/`: buildings, resources,
   the needs' looks, weather kinds, the record's kinds, the words for the simulation's states), its
@@ -226,9 +225,11 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
 
 ## Rules for every change
 
-- Materials take real values and the style is set only for the whole world, in the light and the
-  image: a look problem is looked for there before any material changes, and a new material or
-  kind of content follows `docs/how-to/add-material.md`.
+- Lookdev and lighting are kept strictly apart (`docs/explanation/art-direction.md`, How the look
+  is made): materials take real values, and the style is set only for the whole world, in the
+  light and the image. A look problem is looked for there before any material changes, never
+  baked into a material's albedo, and a new material or kind of content follows
+  `docs/how-to/add-material.md`.
 - Shaders are written in TSL only (no raw WGSL or GLSL strings). Helpers called from several
   places are `Fn( ... ).setLayout( ... )`, so they compile to one shader function each.
 - Simulation and generation are deterministic and path-independent: the world, its growth, the

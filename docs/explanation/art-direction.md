@@ -119,27 +119,33 @@ art decision changes; images from elsewhere stay out of the repository.
   ground in the frame but never a flat cream-white sheet. The stone is kept darker than real
   limestone so that the exposure set for the meadow leaves it below the curve's shoulder, but
   lighter than the meadow's albedo ([Look values](../reference/look-values.md)), so a face lit from
-  the side
-  stands out from the grass as a pale cliff rather than a dark band. The wall's foot, in and under
-  the water, is the same stone wet: under the water it keeps nearly all of its dry albedo, and it
-  darkens only as the water over it dims and colours the floor beside it, so nothing pale runs
-  along it at a low sun or under cloud.
+  the side stands out from the grass as a pale cliff rather than a dark band. The wall's foot, in
+  and under the water, is the same stone wet: under the water it keeps nearly all of its dry albedo,
+  and it darkens only as the water over it dims and colours the floor beside it, so nothing pale
+  runs along it at a low sun or under cloud.
 
 ## How the look is made
 
-The island's fantasy realism comes from two layers kept apart, a rule of our own: real materials,
-and a style set for the whole world at once. Physically based materials, lit by a light that may
-leave physical correctness globally by weather and time of day, is the approach Jasmin Patry
-described ("Samurai Shading in Ghost of Tsushima", SIGGRAPH 2020; "Real-Time Samurai Cinema",
-SIGGRAPH 2021).
+The image is stylised realism (stylized realism): physically based, but not photorealistic, with
+the style laid over it. The fantasy is in what the world holds (the island, its everlasting
+flowers, its creatures from the old texts), not in how the image is made. Physically based
+materials, lit by a light that may leave physical correctness globally by weather and time of day,
+is the approach Jasmin Patry described ("Samurai Shading in Ghost of Tsushima", SIGGRAPH 2020;
+"Real-Time Samurai Cinema", SIGGRAPH 2021).
 
-- The materials are real. Grass, stone, bamboo and sand take the values the real things have, and
-  one physically based light sets the relations between them, so they read as one place without
-  being tuned against each other. How a material's values are found and checked:
+It is made by keeping lookdev and lighting strictly apart, a rule of our own. Lookdev (look
+development) makes each material right under a neutral, standard light; lighting sets the light
+and the image for the whole world, by weather and hour. Neither does the other's work: no material
+is tuned to fix the light, and no light is tuned for one material. Tuning a material to make up
+for the light is baking lighting into albedo; it breaks again whenever the light changes.
+
+- Lookdev: the materials are real. Grass, stone, bamboo and sand take the values the real things
+  have, and one physically based light sets the relations between them, so they read as one place
+  without being tuned against each other. How a material's values are found and checked:
   [Add a material or a kind of content](../how-to/add-material.md).
-- The style lives in the light and the image: the light's knobs per weather and hour (the ambient
-  balance, the sky's brightness, the haze), the exposure, the tone mapping and the grade. A change
-  there moves every material together.
+- Lighting: the style lives in the light and the image: the light's knobs per weather and hour (the
+  ambient balance, the sky's brightness, the haze), the exposure, the tone mapping and the grade. A
+  change there moves every material together.
 - The colour comes mostly from choosing: few kinds of plant per place, quiet textures with little
   noise, leaves that let the light through. Which real things stand on the island is the art
   decision. Colour may be pushed, but for the whole world at once and within what the real things
