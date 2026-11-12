@@ -229,6 +229,7 @@
 	"three/DrawBuilds.ts": "render",
 	"three/Environment.ts": "render",
 	"three/Internals.ts": "render",
+	"three/ShadowPass.ts": "render",
 	"three/ThreePatches.ts": "render",
 	"weather/FallingLeaves.ts": "island",
 	"weather/FogNoise.ts": "render",

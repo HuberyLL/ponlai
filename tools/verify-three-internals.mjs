@@ -63,7 +63,6 @@ const SRC_KNOWN = [
 	'debug/AmbientProbe.ts',
 	'debug/FrameProfiler.ts',
 	'debug/PipelineCounter.ts',
-	'lighting/SunShadow.ts',
 	'main.ts',
 	'materials/CloudNoise.ts',
 	'post/DynamicResolution.ts',
