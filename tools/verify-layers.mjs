@@ -53,6 +53,8 @@
 //   a module reads as it loads (`readLook(`), so a reader that loads where no look is installed
 //   takes the neutral one without a word. Neither that module nor any reader is among the files
 //   the chunk worker loads (the world is generated without the look, and no worker installs one),
+//   nor among the files the headless game loads (every src/ module tools/play-game.mjs and its
+//   fixture name, with what those load: the game is played without the look),
 //   and no reader is among the files the entry's first module (src/PageSettings.ts) loads, which
 //   installs the look and must have run before the first reader does. The files a file loads are
 //   its static imports and re-exports followed through relative specifiers, `import type` left
@@ -381,6 +383,13 @@ for ( const f of lookReaders ) if ( workerLoads.has( f ) ) failures.push( `look 
 const entryLoads = loadClosure( 'PageSettings.ts' );
 if ( ! entryLoads.has( LOOK ) ) failures.push( `look check: PageSettings.ts does not load ${ LOOK }: the entry installs the look there` );
 for ( const f of lookReaders ) if ( entryLoads.has( f ) ) failures.push( `look check: PageSettings.ts loads ${ f }, which reads the look before the entry installs it` );
+// the headless game: every src/ module tools/play-game.mjs and its fixture name, static or dynamic
+const HEADLESS = [ 'tools/play-game.mjs', 'tools/game-fixture.mjs' ];
+const headlessLoads = new Set();
+for ( const tool of HEADLESS ) for ( const [ , f ] of readFileSync( path.join( ROOT, tool ), 'utf8' ).matchAll( /['"]\.\.\/src\/([^'"]+\.ts)['"]/g ) ) for ( const g of loadClosure( f ) ) headlessLoads.add( g );
+if ( ! headlessLoads.has( 'game/Session.ts' ) ) failures.push( `look check: ${ HEADLESS[ 0 ] } does not load game/Session.ts: the headless game's files were not found` );
+if ( headlessLoads.has( LOOK ) ) failures.push( `look check: the headless game loads ${ LOOK } (the game is played without the look: tools/play-game.mjs installs none)` );
+for ( const f of lookReaders ) if ( headlessLoads.has( f ) ) failures.push( `look check: the headless game loads ${ f }, which reads the look` );
 
 // the page check
 const program = typedProgram();
@@ -430,7 +439,7 @@ for ( const { file, line, key } of userKeys ) {
 }
 for ( const key of Object.keys( USER_DATA ) ) if ( ! userKeys.some( ( hit ) => hit.key === key ) ) failures.push( `src/UserData.ts declares '${ key }', which no file under src/ names: remove the entry` );
 
-console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.keys( USER_DATA ).length } userData keys declared, ${ lookReaders.length } readers of the look (none in the chunk worker's ${ workerLoads.size } files or the entry's first ${ entryLoads.size })` );
+console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.keys( USER_DATA ).length } userData keys declared, ${ lookReaders.length } readers of the look (none in the chunk worker's ${ workerLoads.size } files, the headless game's ${ headlessLoads.size } or the entry's first ${ entryLoads.size })` );
 for ( const [ key, layers ] of [ ...upward ].sort() ) console.log( `  ${ known.has( key ) ? 'known' : 'NEW  ' } ${ layers }: ${ key }` );
 if ( failures.length ) {
 
