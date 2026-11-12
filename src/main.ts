@@ -63,6 +63,7 @@ import { installOpenShadow } from './lighting/SolarShadow.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
 import { GroundBounce, installGroundBounce } from './lighting/GroundBounce.ts';
+import { islandBounceGround } from './materials/BounceGround.ts';
 import { AMBIENT_KNOBS, ambientGrade } from './lighting/AmbientGrade.ts';
 import { localLights, testSources } from './lighting/LocalLights.ts';
 import { liftedKeyDirection, liftedKeyHeight, updateKeyLift } from './lighting/KeyLift.ts';
@@ -762,8 +763,7 @@ setLand( land, landOptions.step );
 const fields = new WorldFields( data, shared.shoreXform.value );
 // the sunlight the ground bounces up (lighting/GroundBounce.ts), which every lit material adds: so
 // installed before any of them builds; its map shares the wave maps' target
-const groundBounce = new GroundBounce( { renderer, shared, sunShadow, fields, soil: textures.soil, target: waveMaps.target, layer: waveMaps.bounceLayer, cloud: ( position ) => sky.keyDirectVisibility( position ) } );
-installGroundBounce( groundBounce );
+const groundBounce = installGroundBounce( new GroundBounce( { renderer, shared, sunShadow, fields, ground: islandBounceGround( shared, fields.beds, textures.soil ), target: waveMaps.target, layer: waveMaps.bounceLayer, cloud: ( position ) => sky.keyDirectVisibility( position ) } ) );
 const shoreWaves = new ShoreWaves( renderer, data.shore, shared, fields.shore, fft, fields.floor );
 const walk = walkPoints( data.walk );
 const world = buildWorldMeshes( data, textures, shared, waveMaps, fields );

@@ -42,10 +42,6 @@ const CODE = /\.(ts|mts|js|mjs)$/;
 // Upward imports not yet turned round, as 'from -> to' (paths under src/). Remove an entry with
 // the change that removes its import; never add one.
 const KNOWN = [
-	'lighting/GroundBounce.ts -> materials/Meadow.ts',
-	'lighting/GroundBounce.ts -> materials/Soil.ts',
-	'lighting/GroundBounce.ts -> world/SeabedTile.ts',
-	'lighting/GroundBounce.ts -> world/WorldShapes.ts',
 	// the anti-aliasing mode reads the quality tier the page's entry chose from the URL
 	'post/Antialiasing.ts -> QualityDetect.ts',
 	'shared.ts -> materials/Meadow.ts',

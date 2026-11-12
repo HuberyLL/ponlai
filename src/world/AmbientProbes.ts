@@ -574,7 +574,7 @@ class Tracer {
 		if ( kind === ISLAND && y > islandSurfaceHeight( x, z ) - 0.75 ) {
 
 			// the plateau's ground: the meadow or a grove's floor, the cliff's stone over its last
-			// metre and a half (GroundBounce.ts)
+			// metre and a half (BounceGround.ts)
 			const grove = groveAt( x, z ), stone = smoothstep( - 1.5, 0, fp.dist( x, z ) );
 			rock( y, albedo );
 			for ( let c = 0; c < 3; c ++ ) {
