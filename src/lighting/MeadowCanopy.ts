@@ -1,5 +1,6 @@
 import { Fn, clamp, exp, float, length, max, min, mix, uniform } from 'three/tsl';
 import type * as THREE from 'three/webgpu';
+import { MEADOW_CANOPY, MEADOW_CAST } from '../look/MeadowCanopyLook.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -20,13 +21,10 @@ type V3 = THREE.Node<'vec3'>;
 // modes. What it leaves out is the sward's own relief: the taller tussocks stand over their
 // neighbours and shade them on the side away from the light (`meadowCastLight`, once per tuft), and
 // the crowns shade the ground under and beside them (`meadowGroundLight`, the turf's).
+// The two numbers are the look's (look/MeadowCanopyLook.ts MEADOW_CANOPY).
 export const meadowCanopy = {
-	density: uniform( 5 ), // extinction per metre of canopy along the ray
-	// The share of the key light that reaches any depth between the blades. Low, so the roots and
-	// the turf between them lie deep under lit tips; the blades' tips take the light back through
-	// their transmission (Grass.ts), so the lawn's mean brightness holds (at half, the former gap
-	// field's mean open share, the meadow read flat).
-	open: uniform( 0.15 ),
+	density: uniform( MEADOW_CANOPY.density ), // extinction per metre of canopy along the ray
+	open: uniform( MEADOW_CANOPY.open ), // the share of the key light that reaches any depth between the blades
 };
 
 // Uniforms reach a layout function only as arguments.
@@ -65,9 +63,10 @@ export const TURF_CANOPY_DEPTH = 0.2;
 // lower than those toward the light lies in their shade, a long one under a low sun. The ray is
 // looked up at CAST_STEPS (m along the ground) up to 3.5 m, where a tussock a metre over its
 // neighbour still shades it with the sun 16 degrees up; CAST_SOFT (m) softens a crown's edge.
+// The two numbers are the look's (look/MeadowCanopyLook.ts MEADOW_CAST).
 export const meadowCast = {
-	density: uniform( 3 ), // extinction per metre of crowns along the ray
-	open: uniform( 0.25 ), // the share of the key that passes between the crowns' blades
+	density: uniform( MEADOW_CAST.density ), // extinction per metre of crowns along the ray
+	open: uniform( MEADOW_CAST.open ), // the share of the key that passes between the crowns' blades
 };
 const CAST_STEPS = [ 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 3.5 ];
 const CAST_SOFT = 0.05;

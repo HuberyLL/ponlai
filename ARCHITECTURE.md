@@ -142,10 +142,15 @@ nothing below a host reads the page or the wall clock (the save's timestamp asid
 - **The frame** ([src/post/](src/post/)): a frame graph declares every pass and the targets it
   reads and writes, compiles their pipelines ahead and runs them: the scene's passes, the
   anti-aliasing, the upscaling and dynamic resolution, the bloom and the display chain.
-- **The look** ([src/look/](src/look/)): the numbers chosen for the island's look, one file per
-  system (the sky, the day, the ambient light, the haze, the exposure, the display, the sea), each
-  with its tunables and the CPU code that reads only those numbers. The environment's and the
-  frame's modules keep the shaders and the methods, and take the numbers from here.
+- **The look** ([src/look/](src/look/), [src/islandLook/](src/islandLook/)): the numbers chosen
+  for a picture, one table per system (the sky, the day, the ambient light, the haze, the exposure,
+  the display, the sea, the occlusion's floor, the local lights' gain, the meadow's canopy, the
+  plants' answer to the wind). The renderer holds the tables' types, a neutral set (gains of 1, no grade,
+  one key all day) and, per system, the module that reads the numbers with their tunables and the
+  CPU code that reads only them; the environment's and the frame's modules keep the shaders and
+  the methods, and take the numbers from those readers. The island holds its own numbers, and the
+  page's entry installs them before any reader loads. A reader takes its numbers once, as it
+  loads, so a look installed after one has loaded is an error that names it.
 
 ### Flows
 

@@ -177,6 +177,15 @@ export const ambientGrade = {
 		// moon's part of the key at the moon's height, as the bounce's rows above
 		// (the sun's part by its own gain over the moon's, OVERCAST_MOON_LAND: exactly the moon's term
 		// where the sun's deck light is gone)
+		// (A look whose moon's part is no gain, 1, leaves no ratio to take. This is the expression
+		// below in the limit of the moon's part going to 1: the moon's term goes to 0 and the sun's
+		// keeps its own gain, so the two paths meet there with no step.)
+		if ( OVERCAST_MOON_LAND === 1 ) {
+
+			ambient.sunBounce.value *= 1 + ( OVERCAST_LAND() - 1 ) * ( ( weights[ 3 ] ?? 0 ) * withMoon( overcastDeckLight( elevation ), 0, moonShare ) );
+			return;
+
+		}
 		const sunPart = ( OVERCAST_LAND() - 1 ) / ( OVERCAST_MOON_LAND - 1 );
 		ambient.sunBounce.value *= 1 + ( OVERCAST_MOON_LAND - 1 ) * ( ( weights[ 3 ] ?? 0 ) * withMoon( overcastDeckLight( elevation ) * sunPart, overcastDeckLight( moonElevation ), moonShare ) );
 

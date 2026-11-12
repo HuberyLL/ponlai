@@ -4,6 +4,7 @@ import { Fn, clamp as clampNode, dot, floor, fract, ivec3, mix, select, sin, uin
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune } from '../debug/Tune.ts';
 import { PREVAILING_HEADING, type WeatherState } from '../sky/Weather.ts';
+import { GUST_GAIN, GUST_JITTER, PLANT_RATE_SPREAD, PLANT_SPEED, PLANT_WIND, plantSpeedOf } from '../look/WindLook.ts';
 
 // The weather's one wind, integrated on the CPU, what every part of the scene takes from it, and
 // the one wind field all vegetation moves in.
@@ -141,17 +142,12 @@ export const GUST_TIME_PERIOD = GUST_EVOLUTION * CLOCK_PERIOD;
 // Brunet 1996, as given in Tse, Poindexter and Variano 2016; a forest gives 1.75, Christen et al.
 // 2008), U_p taken as that wind.
 export const GUST_TRAVEL = 1.8;
-// The gusts' share of the wind's strength (`windStrength`): w = S ( 1 + GUST_GAIN q ).
-export const GUST_GAIN = 1;
-/** The largest offset (m, each axis) a blade's gust sample takes from its root (`gustJitter`), so
- * neighbouring blades read slightly different gusts and a gust's edge is not cut clean: about half
- * a clump. */
-export const GUST_JITTER = 0.5;
-// The limbs' reference speed (m/s of the plants' speed U_p, `plantLoad`): the strong level's full
-// gust, 17 ( 1 + GUST_GAIN ), where a limb (Deform.ts `branchBend`, `sprayBend`) takes a load of 1,
-// linear in the wind's strength below it (a fair day's mean gust gives 0.42). No level blows past
-// it. The plants' main bend does not read it (`plantWind`). Tunable at load (`wind.plants.speed`).
-export const PLANT_SPEED = tune( 'wind.plants.speed', 34, { min: 10, max: 100, scale: 'log', load: true } )();
+// The gusts' share of the wind's strength (`windStrength`: w = S ( 1 + GUST_GAIN q )), a blade's
+// largest offset for its gust sample (GUST_JITTER, `gustJitter`), the limbs' reference speed
+// (PLANT_SPEED, `plantLoad`), the plants' speed by the wind's (PLANT_WIND, `plantSpeedOf`) and the
+// spread of their sway rates (PLANT_RATE_SPREAD, `plantWave`) are the look's: look/WindLook.ts,
+// handed on from here to the modules that take the wind from this file.
+export { GUST_GAIN, GUST_JITTER, PLANT_RATE_SPREAD, PLANT_SPEED, PLANT_WIND, plantSpeedOf };
 // The gust q's mean (`gustAt`): the gust noise is symmetric about 0, so q about 1/2.
 export const GUST_MEAN = 0.5;
 // The air's density (kg/m^3), the one Koizumi et al.'s drag coefficients were computed with
@@ -162,25 +158,8 @@ export const AIR_DENSITY = 1.2;
 export const ROUGHNESS = 0.003;
 /** The mean wind at `z` metres over U10's, by the log law over ROUGHNESS (0 at and below z0). */
 export const logLaw = ( z: number ): number => Math.max( 0, Math.log( z / ROUGHNESS ) / Math.log( 10 / ROUGHNESS ) );
-// The plants' speed U_p (m/s) by U10 (m/s): a line through these points, ( 0, 0 ) to the strong
-// level's 11 m/s, and past the last one on along its last piece's slope (`plantSpeedOf`). The
-// levels (light, gentle, fresh, strong: 1.5, 3.8, 7, 11) take 4, 9.5, 13 and 17.
-export const PLANT_WIND: readonly ( readonly [ number, number ] )[] = [ [ 0, 0 ], [ 1.5, 4 ], [ 3.8, 9.5 ], [ 7, 13 ], [ 11, 17 ] ];
-
-/** The plants' speed U_p (m/s) for a mean wind 10 m up `u10` (m/s): PLANT_WIND. */
-export function plantSpeedOf( u10: number ): number {
-
-	const keys = PLANT_WIND;
-	let i = 1;
-	while ( i < keys.length - 1 && u10 > keys[ i ][ 0 ] ) i ++;
-	const [ x0, y0 ] = keys[ i - 1 ], [ x1, y1 ] = keys[ i ];
-	return Math.max( 0, y0 + ( y1 - y0 ) * ( u10 - x0 ) / ( x1 - x0 ) );
-
-}
 // Each plant's sway rate is its kind's times 1 + up to PLANT_RATE_SPREAD, in PLANT_RATE_BANDS
-// even steps from 0 (`plantWave`): plants one band apart fall half a swing apart in ten swings, so
-// a band is 0.05, and of two neighbours three in four sit on different bands.
-export const PLANT_RATE_SPREAD = 0.15;
+// even steps from 0 (`plantWave`).
 export const PLANT_RATE_BANDS = 4;
 const TAU = Math.PI * 2;
 

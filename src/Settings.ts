@@ -121,6 +121,7 @@ export const SETTINGS = {
 	chunkBorders: { type: 'switch', layer: 'app', default: 'off', about: 'shows the world\'s chunks as lines' },
 	ambientProbes: { type: 'choice', layer: 'app', default: 'off', values: [ 'off', 'sky', 'bounce', 'irradiance' ], debug: true, about: 'shows the ambient light\'s probes' },
 	windView: { type: 'choice', layer: 'render', default: 'off', values: [ '', 'arrows', 'plants' ], debug: true, about: 'makes the vegetation\'s wind visible' },
+	renderLook: { type: 'choice', layer: 'app', default: 'the island\'s', values: [ 'neutral' ], debug: true, about: '`neutral`: the renderer\'s neutral look in place of the island\'s' },
 	// islanders
 	look: { type: 'choice', layer: 'app', default: 'Hanming', values: [ 'kit' ], about: '`kit`: the islanders\' earlier kit look' },
 	islander: { type: 'choice', layer: 'app', default: 'the look\'s own', values: [ 'stock', 'subtle', 'medium', 'strong', 'real' ], about: 'the islanders\' proportions' },

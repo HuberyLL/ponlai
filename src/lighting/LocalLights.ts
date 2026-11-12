@@ -7,6 +7,7 @@ import type { FrameGraph } from '../post/graph/FrameGraph.ts';
 import { GRID, CLUSTERS, PER_CLUSTER, CLUSTER_WORDS, GUARD, slicesFor, sortInView } from './LocalLightClusters.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { meterKey } from './MeterLight.ts';
+import { GAIN } from '../look/LocalLightsLook.ts';
 import { checkDeclarations, type Declarations } from '../Extensions.ts';
 
 // Local lights: small light sources on the island (by night the yunpeng's clumps, Yunpeng.ts) that
@@ -98,14 +99,7 @@ const CAPACITY = 1024;
 const MAX_SOURCES = 1 << 16;
 // the near field's softening (m^2): the size of a source
 const SOFT = 1;
-// The art gain over the sources' own intensity. The yunpeng's light is its glow's radiance times
-// its glowing area (Yunpeng.ts), the light such a clump would really give. At a glow that keeps the
-// stalks a soft white by night (a brighter one turned them into a blown-out flare, a lamp rather
-// than a luminous plant), that light adds about a fourteenth of the moonlit ground's brightness a
-// metre off, no pool at all. The gain is on the light alone: about fourteen times makes the ground a
-// metre from a clump about twice as bright as the moonlit open ground round it (the light adding
-// about as much as the moon gives), fading to nothing within about 6 m, while the glow stays soft.
-export const GAIN = 14;
+// (The art gain over the sources' own intensity, GAIN, is the look's: look/LocalLightsLook.ts.)
 
 type V3 = THREE.Node<'vec3'>;
 type F = THREE.Node<'float'>;

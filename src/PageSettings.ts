@@ -3,17 +3,26 @@
 // reports in one form each option nobody declared and each value outside its declared range (a
 // console warning per option; the option keeps whatever its reader makes of it, as before),
 // chooses the quality tier (QualityDetect.ts) and installs both for every module (Settings.ts).
+// Then it installs the look the renderer draws with (look/Look.ts): the island's
+// (islandLook/IslandLook.ts), or on a debug page with `renderLook=neutral` the renderer's own neutral
+// one. No module this one imports reads the look (tools/verify-layers.mjs, its look check): the
+// modules that do load with the page, after this one ran.
 // The rest of the page's own state outside the scene lives here too: the reload with changed
 // options (a load setting's new value) and the browser's storage for what a page remembers between
 // visits (the dynamic resolution's scale).
 import { installSettings, parseSettings, settingProblems, type SettingName } from './Settings.ts';
 import { chooseQuality, type QualityChoice } from './QualityDetect.ts';
+import { installLook } from './look/Look.ts';
+import { NEUTRAL_LOOK } from './look/NeutralLook.ts';
+import { ISLAND_LOOK } from './islandLook/IslandLook.ts';
 
 const query = parseSettings( location.search );
 for ( const problem of settingProblems( query ) ) console.warn( `[settings] ${ problem }` );
 /** The tier this load builds and how it was chosen (QualityDetect.ts). */
 export const QUALITY_CHOICE: QualityChoice = chooseQuality( query );
 installSettings( query, QUALITY_CHOICE.tier );
+const debugPage = import.meta.env.DEV || query.has( 'debug' ) || query.has( 'profile' );
+installLook( debugPage && query.get( 'renderLook' ) === 'neutral' ? NEUTRAL_LOOK : ISLAND_LOOK );
 
 /** Reloads the page with options set (a string; '' names one bare) or removed (null), in order. */
 export function reloadWith( changes: Partial<Record<SettingName, string | null>> ): void {
