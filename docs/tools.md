@@ -998,7 +998,9 @@ file, matched by gate id, entry, view, clip, crop and metric with globs, never c
 `--normal` counts the special weathers (views.mjs's `special` group) apart. The policy's format is
 in the tool's header.
 
-Parked weathers: rain, storm and fog (`src/sky/Weather.ts` `PARKED_WEATHER`) are out of the default
+### Parked weathers
+
+Rain, storm and fog (`src/sky/Weather.ts` `PARKED_WEATHER`) are out of the default
 checks. Every default set is the normal weathers' (views.mjs's `parity`, `taa` and `all`,
 clips.mjs's `all`, baseline.mjs's plan without `--views` / `--clips`, verify-scene-jump's views,
 profile-frame's scene matrix and `--accept`, verify-first-use's steps); `special` or a name
@@ -1006,7 +1008,9 @@ reaches a parked view, clip or scene, and verify-first-use runs its `weather` an
 when `--steps` names them. `verify-weather-effects.mjs` and the rain parts of `verify-weather.mjs`
 are parked with them: not part of any default check.
 
-Parked quality tiers: medium and low (`src/Quality.ts` `PARKED_QUALITY`) are out of the default
+### Parked quality tiers
+
+Medium and low (`src/Quality.ts` `PARKED_QUALITY`) are out of the default
 choice and checks; high at 4K output (1920x1080 CSS pixels at DPR 2, profile-frame's default
 viewport) is the only active tier. A page without `quality` loads high (the GPU timing that picked
 a tier, `src/QualityDetect.ts`, is parked with them) and the GUI lists high alone. Every tool's
@@ -1239,8 +1243,8 @@ never by a session itself:
 
 ```text
 node tools/gpu-lock.mjs prio                                   # the table, every holder's and ticket's level and where it comes from
-node tools/gpu-lock.mjs prio set m11-tune high --for 90m --note "timing round"
-node tools/gpu-lock.mjs prio clear m11-tune
+node tools/gpu-lock.mjs prio set art-tune high --for 90m --note "timing round"
+node tools/gpu-lock.mjs prio clear art-tune
 node tools/gpu-lock.mjs prio bump <pid|#ticket> urgent         # one request (kept for that process's later requests)
 ```
 
@@ -1902,7 +1906,8 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
 - `tools/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n]` (plain `node`) builds
   every chunk of whole islands on a pool of worker threads (`buildChunk`, contact shade off) and
   checks the statistics of the union of what they own, with the bounds the look was tuned on: the
-  meadow's anchors per m^2 against M2 (grown islands summed, 5 %); the stones'
+  meadow's anchors per m^2 against the counts from before the anchors were hashed (grown islands
+  summed, 5 %); the stones'
   overlaps, crowns and reach per island, and over seeds 1 - 6 at steps 0, 8, 16 their classes and
   large sizes per 100 m of coast against today's (20 %) and their gathering below the scars; the
   cliff's scars, on each chunk's own wall: none cuts rock beyond its reach (4.5 m, 3 m) and none

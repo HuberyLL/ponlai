@@ -21,8 +21,8 @@ MSAA sets are captured in the test mode (`docs/tools.md`, Test mode), where the 
 
 ## Serving a build for captures
 
-Capture a production build (`npm run build`, then `npx vite preview --host 127.0.0.1 --port <port>
---strictPort`), each branch from its own worktree on its own port. The URL needs `?debug`
+Capture a production build, each branch from its own worktree on its own port: `node tools/serve.mjs
+preview` builds it and serves it on a free port (`docs/tools.md`, Page). The URL needs `?debug`
 (capture-set.mjs adds it): `window.__PONLAI__` and the diagnostics exist only on the dev server or
 with it. The assets need no setup: the build pulls what `public/` lacks from the release
 `assets.lock.json` names (`tools/vite-assets.mjs`; `docs/tools.md`, Assets).
@@ -380,7 +380,7 @@ frames (Unity's Graphics Test Framework, Unreal's screenshot tolerances):
 
 `use` in the table is the largest measurement / threshold ratio (pass: at most 1). The thresholds
 sit in one table, `TEMPORAL` in `tolerance.py`, with their calibration: they pass every A/A pair
-of the M7 build's taa, taau and msaa captures, quiet and with the GPU shared (the worst used under
+of one build's taa, taau and msaa captures, quiet and with the GPU shared (the worst used under
 half the tolerance), and fail every synthetic regression cut into those frames (a 1-level change
 over a 48 px square, a recoloured flower patch, a quarter-pixel shift of a crop, a missing 6 px
 flower or the islander's head), each by 3.9 times the tolerance or more. `--flip` adds the mean
