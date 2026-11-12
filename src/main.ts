@@ -64,6 +64,7 @@ import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
 import { GroundBounce, installGroundBounce } from './lighting/GroundBounce.ts';
 import { islandBounceGround } from './materials/BounceGround.ts';
+import { groundGains } from './materials/Meadow.ts';
 import { AMBIENT_KNOBS, ambientGrade } from './lighting/AmbientGrade.ts';
 import { localLights, testSources } from './lighting/LocalLights.ts';
 import { liftedKeyDirection, liftedKeyHeight, updateKeyLift } from './lighting/KeyLift.ts';
@@ -763,7 +764,7 @@ setLand( land, landOptions.step );
 const fields = new WorldFields( data, shared.shoreXform.value );
 // the sunlight the ground bounces up (lighting/GroundBounce.ts), which every lit material adds: so
 // installed before any of them builds; its map shares the wave maps' target
-const groundBounce = installGroundBounce( new GroundBounce( { renderer, shared, sunShadow, fields, ground: islandBounceGround( shared, fields.beds, textures.soil ), target: waveMaps.target, layer: waveMaps.bounceLayer, cloud: ( position ) => sky.keyDirectVisibility( position ) } ) );
+const groundBounce = installGroundBounce( new GroundBounce( { renderer, shared, sunShadow, fields, ground: islandBounceGround( fields.beds, textures.soil ), target: waveMaps.target, layer: waveMaps.bounceLayer, cloud: ( position ) => sky.keyDirectVisibility( position ) } ) );
 const shoreWaves = new ShoreWaves( renderer, data.shore, shared, fields.shore, fft, fields.floor );
 const walk = walkPoints( data.walk );
 const world = buildWorldMeshes( data, textures, shared, waveMaps, fields );
@@ -1530,9 +1531,9 @@ if ( pipeline.localTone ) {
 
 }
 postF.add( S, 'lut', 0, 1, 0.01 ).name( 'grade table blend' );
-// the meadow's albedo against its lawn colour (shared.lawnGain), tuned with the exposure
-postF.add( shared.lawnGain, 'value', 0.5, 3, 0.01 ).name( 'meadow albedo (x)' ).onChange( () => groundBounce.invalidate() );
-postF.add( shared.rockGain, 'value', 0.5, 3, 0.01 ).name( 'cliff albedo (x)' );
+// the meadow's albedo against its lawn colour (groundGains.lawnGain), tuned with the exposure
+postF.add( groundGains.lawnGain, 'value', 0.5, 3, 0.01 ).name( 'meadow albedo (x)' ).onChange( () => groundBounce.invalidate() );
+postF.add( groundGains.rockGain, 'value', 0.5, 3, 0.01 ).name( 'cliff albedo (x)' );
 postF.add( shared.leafGain, 'value', 0.5, 3, 0.01 ).name( 'tree leaves albedo (x)' );
 {
 
@@ -2626,11 +2627,10 @@ if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { lan
 	// their relight (lighting/AmbientRelight.ts): `readback()` and `hash()` of its output
 	ambientRelight,
 	// the look's knobs from a script (the GUI's raise their own events): the first table's grade
-	// (Pipeline.setGrade, GradeLut.ts), the meadow's albedo (shared.lawnGain), the cliff's
-	// (shared.rockGain) and the trees' leaves' (shared.leafGain)
+	// (GradeLut.ts), the meadow's and the cliff's albedos (groundGains), the leaves' (shared.leafGain)
 	setGrade: ( changes?: GradeChanges ) => { pipeline.setGrade( changes ); sceneEvent( 'retune' ); },
-	setLawnGain: ( gain: number ) => { shared.lawnGain.value = gain; groundBounce.invalidate(); sceneEvent( 'retune' ); },
-	setRockGain: ( gain: number ) => { shared.rockGain.value = gain; sceneEvent( 'retune' ); },
+	setLawnGain: ( gain: number ) => { groundGains.lawnGain.value = gain; groundBounce.invalidate(); sceneEvent( 'retune' ); },
+	setRockGain: ( gain: number ) => { groundGains.rockGain.value = gain; sceneEvent( 'retune' ); },
 	setLeafGain: ( gain: number ) => { shared.leafGain.value = gain; sceneEvent( 'retune' ); }, grass, wenyao, fallingLeaves, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the tunable parameters (debug/Tune.ts): set( { name: value } ), get, list, reset, query; a value
 	// the environment's bakes depend on rebakes them at once (`retuneSky`, sky/SkyRetune.ts), as the

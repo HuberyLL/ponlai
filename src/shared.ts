@@ -2,7 +2,6 @@ import * as THREE from 'three/webgpu';
 import { float, uniform, vec3 } from 'three/tsl';
 import { createWindUniforms } from './weather/Wind.ts';
 import { displacementUniforms } from './world/vegetation/Displacement.ts';
-import { LAWN_GAIN } from './materials/Meadow.ts';
 import { ABSORPTION, BACKSCATTER, FORWARD_ANGLE, FORWARD_SCATTER, SCATTER } from './ocean/SeaOptics.ts';
 
 // Uniforms shared by the water, the terrain and the vegetation (one node each, read by every
@@ -13,14 +12,6 @@ export const shared = {
 	// the displacement field the islanders part the meadow through (world/vegetation/Trample.ts): the
 	// base nodes the blades sample it by (world/vegetation/Displacement.ts)
 	displacement: displacementUniforms,
-	// the meadow's albedo against its lawn colour (materials/Meadow.ts LAWN): the blades', the turf's
-	// under them and the ground bounce's over the plateau (GroundBounce.ts); 1 the lawn as LAWN gives
-	// it. LAWN_GAIN: the blades' albedo on load (Grass.ts)
-	lawnGain: uniform( LAWN_GAIN ),
-	// the cliff's albedo above the water against its stone (TerrainMaterial.ts `rock`); 1 the stone as
-	// it is. 1.6: the stone at about twice the meadow's albedo (about 0.18); under the water it keeps
-	// SUBMERGED_ROCK of it (TerrainMaterial.ts), darker only by the water round it
-	rockGain: uniform( 1.6 ),
 	// the trees' leaves' albedo against their atlas (world/vegetation/TreeSurfaces.ts leafMaterial:
 	// the bamboo's crowns); 1 the atlas as it is: the leaves about 1.5 times the meadow's albedo
 	// (about 0.12), so a crown parts from the sward under it under overcast and by night

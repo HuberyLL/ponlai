@@ -44,7 +44,6 @@ const CODE = /\.(ts|mts|js|mjs)$/;
 const KNOWN = [
 	// the anti-aliasing mode reads the quality tier the page's entry chose from the URL
 	'post/Antialiasing.ts -> QualityDetect.ts',
-	'shared.ts -> materials/Meadow.ts',
 ];
 
 for ( const a of process.argv.slice( 2 ) ) {
