@@ -1,6 +1,7 @@
 // three is imported for its types only: the page hands in the inspector's base class, so this
 // lazily loaded module does not split three out of the main bundle into a chunk of its own.
 import type * as THREE from 'three/webgpu';
+import { canvasContext, gpuDevice, pendingTimestamps, resolveTimestamps, takeTimestamps, timestampPools, tracksTimestamps, wrapPipelineCreation, type TimestampPool } from '../three/Backend.ts';
 
 // Frame profiler for `?profile` (loaded only then; without it the page builds the same renderer,
 // pipelines and image). Three's inspector hooks see every render and compute pass with the uid of
@@ -149,14 +150,9 @@ export interface FrameRecord {
 
 // The few WebGPU types used here (the project builds without @webgpu/types).
 type GPUBuffer = { size: number; mapAsync( mode: number, offset: number, size: number ): Promise<void>; getMappedRange( offset: number, size: number ): ArrayBuffer; unmap(): void };
-type GPUQuerySet = object;
 type GPUDevice = {
 	createBuffer( descriptor: { label: string; size: number; usage: number } ): GPUBuffer;
-	createCommandEncoder( descriptor: { label: string } ): {
-		resolveQuerySet( set: GPUQuerySet, first: number, count: number, destination: GPUBuffer, offset: number ): void;
-		copyBufferToBuffer( source: GPUBuffer, sourceOffset: number, destination: GPUBuffer, destinationOffset: number, size: number ): void;
-		finish(): object;
-	};
+	createCommandEncoder( descriptor: { label: string } ): { finish(): object };
 	queue: { submit( buffers: object[] ): void };
 };
 // the calls whose time is counted as waiting (see above), by key in `Frame.waits`
@@ -165,14 +161,7 @@ type WaitCall = 'submit' | 'write' | 'texture' | 'encode';
 const READBACK_USAGE = 0x0001 | 0x0008;
 const MAP_READ = 0x0001;
 
-type Pool = {
-	querySet: GPUQuerySet; resolveBuffer: GPUBuffer; queryOffsets: Map<string, number>;
-	currentQueryIndex: number; maxQueries: number; resolveQueriesAsync: () => Promise<number>;
-};
-type Backend = {
-	device: GPUDevice; trackTimestamp: boolean; timestampQueryPool: Record<string, Pool | null>;
-	createRenderPipeline: ( ...args: unknown[] ) => unknown; createComputePipeline: ( ...args: unknown[] ) => unknown;
-};
+const PROFILED = Symbol( 'frameProfiler' );
 type Named = { name?: string; isQuadMesh?: boolean; isScene?: boolean; isComputeNode?: boolean; texture?: THREE.Texture; width?: number; height?: number };
 
 // read-back buffers in flight: one per pool (render, compute) per frame. In an uncapped run their
@@ -372,33 +361,22 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 		override setRenderer( renderer: THREE.Renderer ): this {
 
 			super.setRenderer( renderer );
-			const backend = ( renderer as unknown as { backend?: Backend } | null )?.backend;
-			if ( backend && ! ( backend as unknown as { profiled?: boolean } ).profiled ) {
+			// pipelines created per frame: a compile shows up as a hitch
+			if ( renderer ) wrapPipelineCreation( renderer, PROFILED, ( create ) => ( ...args: unknown[] ) => {
 
-				( backend as unknown as { profiled: boolean } ).profiled = true;
-				// pipelines created per frame: a compile shows up as a hitch
-				for ( const method of [ 'createRenderPipeline', 'createComputePipeline' ] as const ) {
+				const t0 = performance.now();
+				try {
 
-					const original = backend[ method ];
-					backend[ method ] = ( ...args: unknown[] ) => {
+					return create( ...args );
 
-						const t0 = performance.now();
-						try {
+				} finally {
 
-							return original.apply( backend, args );
-
-						} finally {
-
-							this.pipelineCount ++;
-							this.pipelineMs += performance.now() - t0;
-
-						}
-
-					};
+					this.pipelineCount ++;
+					this.pipelineMs += performance.now() - t0;
 
 				}
 
-			}
+			} );
 			return this;
 
 		}
@@ -414,9 +392,9 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 		private wrapQueue(): void {
 
 			type Callable = ( ...args: unknown[] ) => unknown;
-			const backend = ( this.getRenderer() as unknown as { backend?: { device?: { queue: Record<string, Callable> }; context?: Record<string, Callable> | null } } | null )?.backend;
-			const queue = backend?.device?.queue;
-			if ( ! queue ) return;
+			const renderer = this.getRenderer();
+			const queue = renderer ? gpuDevice<{ queue: Record<string, Callable> } | null>( renderer )?.queue : undefined;
+			if ( ! renderer || ! queue ) return;
 			this.queueWrapped = true;
 			// time of the timed calls made inside the one running
 			let inner = 0;
@@ -457,7 +435,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			wrap( queue, 'writeTexture', 'write' );
 			wrap( queue, 'copyExternalImageToTexture', 'write' );
 			// the canvas context (it hands out the swap chain's image, the render's final target)
-			wrap( backend?.context, 'getCurrentTexture', 'texture' );
+			wrap( canvasContext<Record<string, Callable> | null>( renderer ), 'getCurrentTexture', 'texture' );
 			// The encoding calls, on their prototypes: Chrome's backpressure lands on whichever call finds
 			// its command buffer full, and on the chunked island that was a render pass's setPipeline,
 			// 8-10 ms a frame counted as JS. AttachmentOps' instance wrappers call through to the
@@ -620,31 +598,18 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 		private resolve(): void {
 
-			const backend = ( this.getRenderer() as unknown as { backend: Backend } | null )?.backend;
-			if ( ! backend?.trackTimestamp ) return;
-			for ( const pool of Object.values( backend.timestampQueryPool ) ) {
-
-				if ( ! pool || pool.currentQueryIndex === 0 ) continue;
-				// three resolves on its own only when the pool overflows; route that through here too
-				if ( ! ( pool as unknown as { profiled?: boolean } ).profiled ) {
-
-					( pool as unknown as { profiled: boolean } ).profiled = true;
-					pool.resolveQueriesAsync = () => { this.resolvePool( backend.device, pool ); return Promise.resolve( 0 ); };
-
-				}
-				this.resolvePool( backend.device, pool );
-
-			}
+			const renderer = this.getRenderer();
+			if ( ! renderer || ! tracksTimestamps( renderer ) ) return;
+			const device = gpuDevice<GPUDevice>( renderer );
+			// three resolves on its own only when the pool overflows; route that through here too
+			for ( const pool of timestampPools( renderer, 'profiled', ( pool ) => this.resolvePool( device, pool ) ) ) this.resolvePool( device, pool );
 
 		}
 
-		private resolvePool( device: GPUDevice, pool: Pool ): void {
+		private resolvePool( device: GPUDevice, pool: TimestampPool ): void {
 
-			const count = pool.currentQueryIndex;
-			if ( count === 0 ) return;
-			const offsets = new Map( pool.queryOffsets );
-			pool.currentQueryIndex = 0;
-			pool.queryOffsets.clear();
+			if ( pendingTimestamps( pool ) === 0 ) return;
+			const { count, offsets } = takeTimestamps( pool );
 			const bytes = count * 8;
 			let slot = this.buffers.find( ( b ) => ! b.busy && b.buffer.size >= bytes );
 			if ( ! slot && this.buffers.length < RING ) {
@@ -665,8 +630,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			const serial = ++ this.readbacks;
 			this.inFlight.add( serial );
 			const encoder = device.createCommandEncoder( { label: 'profiler.resolve' } );
-			encoder.resolveQuerySet( pool.querySet, 0, count, pool.resolveBuffer, 0 );
-			encoder.copyBufferToBuffer( pool.resolveBuffer, 0, slot.buffer, 0, bytes );
+			resolveTimestamps( encoder, pool, count, slot.buffer );
 			device.queue.submit( [ encoder.finish() ] );
 			const buffer = slot.buffer;
 			const submitted = performance.now();
@@ -866,7 +830,8 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 					frames.push( entry );
 					if ( frames.length === 1 ) this.startup.firstFrame = { at: t0, js, wait, pipelines: this.pipelineCount, pipelineMs: this.pipelineMs };
 					this.startupLast = t0;
-					const queue = ( this.getRenderer() as unknown as { backend?: { device?: { queue: { onSubmittedWorkDone(): Promise<void> } } } } | null )?.backend?.device?.queue;
+					const renderer = this.getRenderer();
+					const queue = renderer ? gpuDevice<{ queue: { onSubmittedWorkDone(): Promise<void> } } | null>( renderer )?.queue : undefined;
 					queue?.onSubmittedWorkDone().then( () => {
 
 						entry.done = performance.now();
@@ -913,7 +878,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			/** Frames still waiting for their timestamps (started before `before`, if given). */
 			pending: ( before = Infinity ) => this.open.filter( ( f ) => f.now < before ).length,
 			info: () => ( {
-				timestamps: this.timestamps && Boolean( ( this.getRenderer() as unknown as { backend: Backend } | null )?.backend.trackTimestamp ),
+				timestamps: this.timestamps && Boolean( this.getRenderer() && tracksTimestamps( this.getRenderer() ) ),
 				lostPasses: this.lost, failedPasses: this.failed, readbackMs: [ ...this.latency ].sort( ( a, b ) => a - b ).filter( ( _, i, a ) => i === 0 || i === a.length >> 1 || i === a.length - 1 ), marks: this.marks, startup: this.startup,
 			} ),
 		};

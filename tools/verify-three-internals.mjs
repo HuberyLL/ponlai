@@ -60,10 +60,7 @@ const KINDS = [ 'method', 'member', 'declaration', 'text' ];
 // The files under src/ that reach into three, outside src/three/ (paths under src/). Remove an
 // entry with the change that moves its reach; never add one.
 const SRC_KNOWN = [
-	'debug/FrameProfiler.ts',
-	'debug/PipelineCounter.ts',
 	'main.ts',
-	'post/DynamicResolution.ts',
 	'post/graph/AttachmentOps.ts',
 	'post/graph/FrameGraph.ts',
 ];

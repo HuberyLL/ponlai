@@ -35,7 +35,6 @@ const KNOWN = {
 	'world/Grass.ts': 1746,
 	'ocean/Water.ts': 1645,
 	'post/graph/FrameGraph.ts': 1525,
-	'post/DynamicResolution.ts': 1510,
 };
 
 for ( const a of process.argv.slice( 2 ) ) {
