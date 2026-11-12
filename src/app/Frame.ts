@@ -130,7 +130,8 @@ export function createFrameSizing( render: RenderParts, page: PageParts ) {
 export function createFrame( render: RenderParts, island: IslandParts, page: PageParts ) {
 
 	const { profiler, DEBUG, quality, gpuTiming, renderer, submitBatch, DPR_CAP, resolution, scene, waterScene, rainScene, afterScene, camera, sky, dayCycle, weather, weatherEffects, wind, lighting, applyEnvironmentFill, sun, sunShadow, shadowDirection, prepareHaze, prepareSkyState, publishLighting, retuneSky, fft, waveMaps, pipeline, groundBounce, shoreWaves, ambientRelight, refractedSun, stormSea } = render;
-	const { controls, framingGlide, islandTurn, freeControls, trample, wenyao, growth, poseIslandView, holdsFraming, followFraming } = island;
+	const { controls, framingGlide, islandTurn, freeControls, trample, wenyao, growth } = island;
+	const { poseIslandView, holdsFraming, followFraming } = page.framing;
 	const { qualityChoice, loading, gui, S, reviewView, setCameraView, environmentLook, frameStats, weatherView, windView, resize, refreshStoreKey, applyRenderScale, describeRenderScale } = page;
 	page.tick = tick;
 
@@ -231,7 +232,7 @@ export function createFrame( render: RenderParts, island: IslandParts, page: Pag
 		// the island view's framing follows the window's aspect, at once
 		const follow = holdsFraming();
 		resize();
-		poseIslandView( island.islandViewOptions, island.islandTurned, island.islandZoom );
+		poseIslandView( page.framing.viewOptions, island.islandTurned, island.islandZoom );
 		if ( follow ) followFraming( false );
 
 	} );
@@ -379,7 +380,7 @@ export function createFrame( render: RenderParts, island: IslandParts, page: Pag
 			if ( zoom === 0 || zoom === 1 ) islandTurn.stopZoom();
 			if ( turn !== 0 || zoom !== island.islandZoom ) {
 
-				poseIslandView( island.islandViewOptions, island.islandTurned + turn, zoom );
+				poseIslandView( page.framing.viewOptions, island.islandTurned + turn, zoom );
 				followFraming( false );
 
 			}

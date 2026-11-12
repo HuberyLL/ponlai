@@ -7,6 +7,7 @@ import type { WeatherName, WindLevel, DynamicResolution, GpuFrameTimer, PassScal
 import type { QualityTier } from '../renderSetup.ts';
 import type { QualityDetector } from '../QualityDetect.ts';
 import type { Game } from '../game/index.ts';
+import type { IslandFraming } from '../island.ts';
 import type { CameraView } from './CameraViews.ts';
 import type { SceneRequest } from './Scene.ts';
 import type { StepOptions } from './Frame.ts';
@@ -30,6 +31,7 @@ export interface PageParts {
 	unwidenFov: () => void;
 	setCameraMode: ( mode: string ) => void;
 	setCameraView: ( view: CameraView ) => void;
+	framing: IslandFraming;
 	environmentLook: { exposure: boolean };
 	autoQuality: QualityLines;
 	frameStats: FrameStats;

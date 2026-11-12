@@ -68,7 +68,7 @@ export function createGui( render: RenderParts, island: IslandParts, page: PageP
 	cameraF.add( { reset: () => setCameraView( 'island' ) }, 'reset' ).name( 'return to island (R)' );
 	const environmentLook = { exposure: true };
 	page.environmentLook = environmentLook;
-	const W = render.water.uniforms;
+	const W = render.water!.uniforms;
 	// The quality tier sets every knob of the frame's cost (Quality.ts); a change reloads the page. It
 	// lists the active tiers (high alone while medium and low are parked), and the page's own tier when
 	// `?quality` loaded a parked one.

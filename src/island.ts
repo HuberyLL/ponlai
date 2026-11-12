@@ -5,7 +5,7 @@
 // (tools/verify-exits.mjs). The wind probe (debug/WindProbe.ts), which the page loads on demand,
 // is a lazy exit (tools/layers.json).
 export { awaitWorld, bakeIslandGround, createCharacterShadow, createGrowth, createIslandCamera, createLand, createTrample, createVegetation, createWorld, createWorldViews, registerIslandHistories } from './IslandStages.ts';
-export type { IslandParts } from './IslandStages.ts';
+export type { IslandFraming, IslandParts } from './IslandStages.ts';
 export { isCameraInputTarget } from './camera/FreeCameraControls.ts';
 export { CLICK_SLOP, IslandCameraControls } from './camera/IslandCameraControls.ts';
 export { frameIsland, landFitDistance } from './camera/IslandFraming.ts';

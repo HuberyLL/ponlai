@@ -45,8 +45,8 @@ export type SceneRequest = string | URLSearchParams | { weather?: WeatherName; p
 export function createSceneControls( render: RenderParts, island: IslandParts, page: PageParts ) {
 
 	const { sceneOptions, dayCycle, weather, wind, bakeExplicitly, refreshEnvironment, history } = render;
-	const { controls, growth, poseIslandView } = island;
-	const { setCameraMode, setCameraView, timeView, pacer } = page;
+	const { controls, growth } = island;
+	const { setCameraMode, setCameraView, framing: { poseIslandView }, timeView, pacer } = page;
 	// What a jump clears of the scenes before, registered layer by layer in the order it is
 	// cleared (post/SceneHistory.ts): the renderer's, the island's, the renderer's light, the page's.
 	registerSceneHistories( render );

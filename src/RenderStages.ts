@@ -53,6 +53,7 @@ import { type TuneOptions, tune } from './debug/Tune.ts';
 import { markSkyRetune, skyRetune } from './sky/SkyRetune.ts';
 import { TEMPORAL, AFTER_RESOLVE } from './post/Antialiasing.ts';
 import type { SceneLatents } from './post/ExtraPass.ts';
+import type { FrameProfiler } from './debug/FrameProfiler.ts';
 import { motionUniforms, MOTION_CLASS, motionCheck } from './post/Motion.ts';
 import { SceneHistory } from './post/SceneHistory.ts';
 import { jitter } from './post/Jitter.ts';
@@ -67,13 +68,22 @@ import { debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 /** A scene as the query names it: what a load and a scene jump both establish. */
 type SceneOptions = { weather: WeatherName; wind: { level: WindLevel | undefined; heading: number | undefined }; autoWeather: boolean; day: { hour: number; dayLength: number; paused: boolean; moonPhase: number }; preset: DayPreset | null; paused: boolean; time: number; clouds: number | null; camera: string };
 
-export interface RenderParts {
-	profiler: ReturnType<typeof import( './debug/FrameProfiler.ts' ).createFrameProfiler> | null;
-	mark: ( name: string ) => void | undefined;
+/** What the page hands the renderer as it creates it (`createRenderer`), which the later stages
+ * and the page read on RenderParts. */
+export interface RenderHost {
+	/** the frame profiler (?profile), loaded only then */
+	profiler: FrameProfiler | null;
+	/** marks a step of the load for the profiler (nothing without one) */
+	mark: ( name: string ) => void;
+	/** a debug page: the dev server, ?debug or ?profile */
 	DEBUG: boolean;
 	qualityTier: QualityTier;
 	quality: Readonly<QualityProfile>;
+	/** shows a line on the loading screen */
 	setStatus: ( s: string ) => void;
+}
+
+export interface RenderParts extends RenderHost {
 	gpuTiming: boolean;
 	renderer: THREE.WebGPURenderer;
 	submitBatch: SubmitBatch;
@@ -98,14 +108,14 @@ export interface RenderParts {
 	paused: boolean;
 	simTime: number;
 	wind: Wind;
-	rain: Rain;
+	/** the rain, made with the frame's passes (`createSeaAndPipeline`) */
+	rain?: Rain;
 	skyElapsed: number;
 	lastSkyTime: number;
 	lastSkyHour: number;
 	lastWeatherSignature: string;
 	cloudOverride: number | null;
 	skyQuality: { value: QualityTier };
-	runtime: { refractedSun: RefractedSun | null };
 	applySkyQuality: ( q?: Readonly<QualityProfile> ) => void;
 	runtimeQuality: Readonly<QualityProfile>;
 	lighting: { skyFill: number };
@@ -117,11 +127,9 @@ export interface RenderParts {
 	invalidateSunShadow: () => void;
 	shadowDirection: THREE.Vector3;
 	sunUpdates: Promise<void>;
-	hazeReady: boolean;
 	prepareHaze: ( state: Readonly<WeatherState> ) => void;
 	prepareSkyState: () => void;
 	publishLighting: () => void;
-	bakeEnvironment: () => Promise<void>;
 	jumpsInFlight: number;
 	bakeExplicitly: () => Promise<void>;
 	retuneSky: () => boolean;
@@ -132,21 +140,18 @@ export interface RenderParts {
 	setWeather: ( name: WeatherName, seconds?: number ) => Promise<void>;
 	setWind: ( choice: WindChoice, seconds?: number ) => Promise<void>;
 	applySkyFill: () => void;
-	water: Water;
-	ambientSky: AmbientSky;
+	/** the sea's surface, made once the island's data exists (`createWater`) */
+	water?: Water;
 	fft: OceanFFT;
 	waveMaps: WaveMaps;
 	seaDetail: SeaDetail;
 	fgview: string | null;
 	pipeline: Pipeline;
 	latents: SceneLatents;
-	overlayLatents: SceneLatents;
-	warming: Promise<[ void, void, void, void, void | undefined ]>;
 	groundBounce: GroundBounce;
 	shoreWaves: ShoreWaves;
 	ambient: AmbientVolume;
 	ambientRelight: AmbientRelight;
-	hazeShadowCompiled: Promise<void>;
 	ambientView: { mode: AmbientView };
 	refractedSun: RefractedSun;
 	stormSea: StormSea;
@@ -154,10 +159,31 @@ export interface RenderParts {
 	motionPasses: () => { pass: string; scene: THREE.Scene; keeps: boolean }[];
 }
 
-/** The renderer itself. Returns its init, which the entry awaits. */
-export function createRenderer( render: RenderParts ) {
+/** What the renderer's stages hand one another and nothing else reads: on the same object, off the
+ * RenderParts the island and the page see. */
+interface StageParts {
+	runtime: { refractedSun: RefractedSun | null };
+	hazeReady: boolean;
+	bakeEnvironment: () => Promise<void>;
+	ambientSky: AmbientSky;
+	overlayLatents: SceneLatents;
+	/** the compiles ahead of the first frame, which `awaitWarmUp` waits for */
+	warming: Promise<unknown>;
+	hazeShadowCompiled: Promise<void>;
+}
 
-	const { profiler, quality } = render;
+/** The renderer's parts as its own stages see them. */
+function staged( render: RenderParts ): RenderParts & StageParts {
+
+	return render as RenderParts & StageParts;
+
+}
+
+/** The renderer itself, with what the page hands it. Returns its init, which the entry awaits. */
+export function createRenderer( render: RenderParts, host: RenderHost ) {
+
+	const { profiler, mark, DEBUG, qualityTier, quality, setStatus } = host;
+	Object.assign( render, { profiler, mark, DEBUG, qualityTier, quality, setStatus } );
 
 	// ------------------------------------------------------------------ renderer
 
@@ -360,7 +386,7 @@ export function createLight( render: RenderParts ) {
 	render.skyQuality = { value: qualityTier };
 	// The tier's runtime knobs (a debug override may replace some of them: `s.applyQuality( { ... } )`).
 	const runtime = { refractedSun: null as RefractedSun | null };
-	render.runtime = runtime;
+	staged( render ).runtime = runtime;
 	function applySkyQuality( q: Readonly<QualityProfile> = quality ): void {
 
 		sky.setCloudView( q.cloudView );
@@ -436,10 +462,11 @@ export function createKey( render: RenderParts ) {
 export function createEnvironment( render: RenderParts ) {
 
 	const { setStatus, renderer, scene, sky, dayCycle, weather, seaFogView, dayFogView, lighting, applyEnvironmentFill, sun, invalidateSunShadow, shadowDirection } = render;
+	const stage = staged( render );
 	render.prepareHaze = prepareHaze;
 	render.prepareSkyState = prepareSkyState;
 	render.publishLighting = publishLighting;
-	render.bakeEnvironment = bakeEnvironment;
+	stage.bakeEnvironment = bakeEnvironment;
 	render.bakeExplicitly = bakeExplicitly;
 	render.retuneSky = retuneSky;
 	render.refreshEnvironment = refreshEnvironment;
@@ -460,10 +487,10 @@ export function createEnvironment( render: RenderParts ) {
 	// medium the frame and the environment's bake read (the bake lays it over its source: Sky.ts
 	// `fogEnvironment`), so a bake sees the haze of the state it bakes.
 	// (the first bake runs before the pipeline holds the haze: `hazeReady` below)
-	render.hazeReady = false;
+	stage.hazeReady = false;
 	function prepareHaze( state: Readonly<WeatherState> ): void {
 
-		if ( ! render.hazeReady ) return;
+		if ( ! stage.hazeReady ) return;
 		const rising = sunRising( sky.sunDir );
 		// the parked fog weather's share of the sky, by the front's smoothstep as `skyMix` blends: exact
 		// at rest and, for the sun's Rayleigh beam, on a front between the fog and the overcast sky, for
@@ -543,7 +570,7 @@ export function createEnvironment( render: RenderParts ) {
 		// left in the sky. It takes every value as it stands (`retuneSky`).
 		sky.reset( shared.wind.direction.value, render.simTime );
 		skyRetune.dirty = false;
-		if ( render.hazeReady ) render.pipeline.air.noteBake();
+		if ( stage.hazeReady ) render.pipeline.air.noteBake();
 		prepareSkyState();
 		await sky.update();
 		scene.environment = sky.envMap!.texture;
@@ -582,7 +609,7 @@ export function createEnvironment( render: RenderParts ) {
 	// started a bake.
 	function retuneSky(): boolean {
 
-		if ( render.hazeReady && render.pipeline.air.bakeStale ) markSkyRetune();
+		if ( stage.hazeReady && render.pipeline.air.bakeStale ) markSkyRetune();
 		if ( ! skyRetune.dirty ) return false;
 		skyRetune.dirty = false;
 		sceneEvent( 'retune' );
@@ -643,7 +670,7 @@ export function createEnvironment( render: RenderParts ) {
 	// the sky's harmonics for the ambient light's relight (lighting/AmbientRelight.ts), projected from
 	// every bake's environment source from the first on
 	const ambientSky = new AmbientSky( renderer );
-	render.ambientSky = ambientSky;
+	stage.ambientSky = ambientSky;
 	sky.onEnvironmentSource = ( source, atlases, read ) => ambientSky.project( source, atlases, read );
 
 	setStatus( 'Lighting the sky…' );
@@ -738,7 +765,7 @@ export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraP
 	const overlayLatents: SceneLatents = TEMPORAL
 		? { latent: ( pass, objects, kernels ) => pipeline.graph.latent( pass === 'rainAfter' || ( pass === 'water' && AFTER_RESOLVE ) ? 'rainAfter' : 'overlay', objects, kernels ) }
 		: pipeline.graph;
-	render.overlayLatents = overlayLatents;
+	staged( render ).overlayLatents = overlayLatents;
 
 	// ------------------------------------------------------------------ first-use pipelines
 
@@ -761,7 +788,7 @@ export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraP
 		sky.lightning.registerLatent( pipeline.graph ),
 		pipeline.graph.warm( { scene, waterScene, rainScene, afterScene: AFTER_RESOLVE ? afterScene : undefined, camera, water: null, sun, time: render.simTime } ).then( () => pipeline.resolver?.warm() ),
 	] );
-	render.warming = warming;
+	staged( render ).warming = warming;
 	warming.catch( () => undefined ); // reported where it is awaited, before the loop
 
 }
@@ -783,7 +810,8 @@ export function createBounceAndShore( render: RenderParts, { fields, bounceGroun
  */
 export function createAmbient( render: RenderParts, { ambientData, world }: { ambientData: ConstructorParameters<typeof AmbientVolume>[ 1 ]; world: { group: THREE.Group; subsets: Parameters<RefractedSun[ 'setCasters' ]>[ 1 ] } } ) {
 
-	const { DEBUG, renderer, scene, sky, weather, runtime, ambientSky, waveMaps, pipeline } = render;
+	const { DEBUG, renderer, scene, sky, weather, waveMaps, pipeline } = render;
+	const { runtime, ambientSky } = staged( render );
 	// The ambient light's probes on the GPU (lighting/AmbientVolume.ts), relit every frame into their
 	// irradiance (lighting/AmbientRelight.ts), which every lit island material reads for its ambient
 	// diffuse (lighting/AmbientSample.ts: installed before any of them builds), and their debug view
@@ -797,7 +825,7 @@ export function createAmbient( render: RenderParts, { ambientData, world }: { am
 	// the environment's own harmonics, which the specular's relight divides by (AmbientSample.ts)
 	installEnvironmentHarmonics( ambientRelight );
 	// the haze's shadow kernels read the probes' sky visibility, so they compile now (Pipeline.ts)
-	render.hazeShadowCompiled = pipeline.compileHazeShadow();
+	staged( render ).hazeShadowCompiled = pipeline.compileHazeShadow();
 	const ambientView = { mode: ( DEBUG && params.get( 'ambientProbes' ) || 'off' ) as AmbientView };
 	render.ambientView = ambientView;
 	ambient.show( ambientView.mode, scene );
@@ -848,13 +876,14 @@ export function createWater( render: RenderParts, { fields, landBox, islandSea, 
  */
 export function bakeWithHaze( render: RenderParts ) {
 
-	const { bakeEnvironment } = render;
+	const stage = staged( render );
+	const { bakeEnvironment } = stage;
 	// the hour's and the weather's key, written each frame (weather/HazeKeys.ts)
 	render.hazeKey = { deck: 0, overcastDeck: 0, amount: 1, sigmaRed: 1, sigmaGreen: 1, sigmaBlue: 1, desaturate: 0, gain: 1, mist: 0, sunRayleigh: 0, rayleighWeight: 1, mieWeight: 1,
 		top: 10, width: 50, aerosolShare: 0.035, aerosolHeight: 1400, aerosolTop: Infinity, skyDepth: 0 };
 	// the haze exists now: bake the environment again, so it holds the haze every later bake lays over
 	// it (Sky.ts `fogEnvironment`) and a fresh load equals a jump
-	render.hazeReady = true;
+	stage.hazeReady = true;
 	return bakeEnvironment();
 
 }
@@ -862,7 +891,8 @@ export function bakeWithHaze( render: RenderParts ) {
 /** Returns the warm-up of every pipeline the frame draws with, which the entry awaits. */
 export function awaitWarmUp( render: RenderParts ) {
 
-	const { overlayLatents, warming, hazeShadowCompiled, stormSea } = render;
+	const { stormSea } = render;
+	const { overlayLatents, warming, hazeShadowCompiled } = staged( render );
 
 	// The storm's foam and spray need the world's shore fields, so they register (and compile) last;
 	// the loop then waits for every first-use pipeline (see "first-use pipelines"), the haze's shadow

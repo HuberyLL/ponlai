@@ -47,12 +47,10 @@ setSoilStrength( ground.soil );
 // ?profile=frames without the GPU timestamps). The profiler loads only then; without it the
 // renderer, its pipelines and the image are unchanged.
 const profiler = params.has( 'profile' ) ? ( await import( './debug/FrameProfiler.ts' ) ).createFrameProfiler( THREE.InspectorBase, { timestamps: params.get( 'profile' ) !== 'frames' } ) : null;
-render.profiler = profiler;
 if ( profiler ) ( window as unknown as Record<string, unknown> ).__PONLAI_PROFILE__ = profiler.api;
-render.mark = ( name: string ) => profiler?.mark( name );
 // scene handles and frame diagnostics on window, for the capture tool and the console: dev server,
 // ?debug or ?profile only
-render.DEBUG = import.meta.env.DEV || params.has( 'debug' ) || profiler !== null;
+const DEBUG = import.meta.env.DEV || params.has( 'debug' ) || profiler !== null;
 // The quality tier (Quality.ts): its load knobs are read below as the parts they shape are built,
 // its runtime ones applied by applySkyQuality. A change of tier reloads the page. Without ?quality
 // it is high (QualityDetect.ts). The entry chose it with the settings (PageSettings.ts), since the
@@ -60,12 +58,13 @@ render.DEBUG = import.meta.env.DEV || params.has( 'debug' ) || profiler !== null
 const qualityChoice = QUALITY_CHOICE;
 page.qualityChoice = qualityChoice;
 const qualityTier: QualityTier = qualityChoice.tier;
-render.qualityTier = qualityTier;
-render.quality = qualityProfile( qualityTier );
+const quality = qualityProfile( qualityTier );
 const loading = document.getElementById( 'loading' );
 page.loading = loading;
-render.setStatus = ( s: string ) => { const el = loading?.querySelector( 'span' ); if ( el ) el.textContent = s; };
-await createRenderer( render );
+await createRenderer( render, {
+	profiler, mark: ( name ) => profiler?.mark( name ), DEBUG, qualityTier, quality,
+	setStatus: ( s ) => { const el = loading?.querySelector( 'span' ); if ( el ) el.textContent = s; },
+} );
 setUpRenderer( render );
 // every render and compute pipeline the renderer creates, counted for the diagnostics (debug only)
 page.pipelineCount = render.DEBUG ? ( await import( './debug/PipelineCounter.ts' ) ).installPipelineCounter( render.renderer ) : null;
@@ -102,7 +101,7 @@ render.pipeline.waveMaps = render.waveMaps;
 createWorldViews( render, island );
 const ambientData = island.data.ambient;
 await createAmbient( render, { ambientData, world: island.world } );
-createVegetation( render, island );
+createVegetation( render, island, { framing: page.framing } );
 // ?game turns the island into the game: its own islanders, a clock that drives the sky and the
 // player's interface (src/game/ui/GameUi.ts); the GUI's Game folder and window.__PONLAI__.game
 // drive the rest. Without it the scene stays the art-review scene with one islander walking a loop.
@@ -155,7 +154,7 @@ if ( GAME ) {
 render.mark( 'villagers' );
 const islandSea = ISLAND_SEA;
 createWater( render, { fields: island.fields, landBox: island.landBox, islandSea, heldOpaque: island.heldOpaque } );
-createGrowth( render, island, { landOptions, game: page.game } );
+createGrowth( render, island, { landOptions, game: page.game, framing: page.framing } );
 createFrameSizing( render, page );
 createGui( render, island, page );
 // the game's developer controls (GameDebug.ts)
