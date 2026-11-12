@@ -29,7 +29,7 @@ const CODE = /\.(ts|mts|js|mjs)$/;
 const KNOWN = {
 	'sky/Clouds.ts': 3105,
 	'sky/Sky.ts': 3031,
-	'main.ts': 2714,
+	'main.ts': 2691,
 	'post/Pipeline.ts': 2515,
 	'weather/VolumetricHaze.ts': 1809,
 	'world/Grass.ts': 1746,

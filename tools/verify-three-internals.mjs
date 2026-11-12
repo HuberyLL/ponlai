@@ -28,9 +28,8 @@
 //   fingerprint updated (`--fingerprints` prints the current ones).
 // - Location. No file under src/ outside src/three/ reaches into three: no `.backend`, no cast to
 //   a structural type with a member whose name starts with an underscore, and no name of a
-//   category 1 or 2 entry that starts with one (comments are not read). The files that did when
-//   the check was written are listed in SRC_KNOWN; the list only shrinks: a listed file that no
-//   longer reaches in fails, so the entry is removed with the change that moves its reach.
+//   category 1 or 2 entry that starts with one (comments are not read): each reach is a
+//   function of src/three/, named for what it does, and SRC_KNOWN is empty.
 //   tools/ is white-box (its tools run scripts in the page) and keeps a list of its own,
 //   TOOLS_KNOWN, which only shrinks too.
 //
@@ -57,11 +56,9 @@ const USES = [ 'read', 'call', 'write', 'hook', 'replace', 'wrap', 'mirror', 're
 const FINGERPRINTED = new Set( [ 'replace', 'wrap', 'mirror', 'relies' ] );
 const KINDS = [ 'method', 'member', 'declaration', 'text' ];
 
-// The files under src/ that reach into three, outside src/three/ (paths under src/). Remove an
-// entry with the change that moves its reach; never add one.
-const SRC_KNOWN = [
-	'main.ts',
-];
+// The files under src/ that reach into three, outside src/three/ (paths under src/): none. A new
+// reach goes into a function of src/three/; never add an entry.
+const SRC_KNOWN = [];
 
 // The tools that reach into three (paths under tools/). Remove an entry with the change that
 // removes its reach; never add one.
