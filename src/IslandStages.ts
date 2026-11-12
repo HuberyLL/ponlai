@@ -96,7 +96,6 @@ export interface IslandParts {
 	grass: THREE.Group;
 	yunpeng: Yunpeng;
 	bamboo: Bamboo;
-	sunCasters: THREE.Box3;
 	heldOpaque: THREE.Box3[];
 	islandMaxDistance: number;
 	SCENE_LOOK: Look;
@@ -115,6 +114,8 @@ export interface IslandParts {
  * IslandParts the page sees. */
 interface StageParts {
 	t0: number;
+	/** the box of everything that casts into the sun's map (`setSunCasters`, `holdOpaque`) */
+	sunCasters: THREE.Box3;
 	measureLand: ( next: LandLattice ) => LandMeasure;
 	setLand: ( next: LandLattice, step: number, measured?: LandMeasure ) => void;
 	showWindArrows: () => void;
@@ -403,10 +404,10 @@ export function createVegetation( render: RenderParts, island: IslandParts, { fr
 	// and floor, and the plants without a prepass of their own
 	if ( GTAO || SS_SHADOW ) installOpaquePrepass( [ world.group, ...vegetation.roots( ( kind ) => ! kind.prepass ) ] );
 	// Everything that casts into the sun's map: the figures cast through their own map, and the sea
-	// floor's stones only into the refracted one. The game's props grow it (holdOpaque below), and so
+	// floor's stones only into the refracted one. The game's props grow it (`holdOpaque`), and so
 	// does the island (setSunCasters again at each growth step).
 	const sunCasters = new THREE.Box3();
-	island.sunCasters = sunCasters;
+	staged( island ).sunCasters = sunCasters;
 	// the boxes the game's props hold (holdOpaque), kept over the island's growth
 	const heldOpaque: THREE.Box3[] = [];
 	island.heldOpaque = heldOpaque;
@@ -483,6 +484,18 @@ export function createVegetation( render: RenderParts, island: IslandParts, { fr
 		else console.warn( 'The sun\'s shadow map is not built yet: these draws compile their shadow pass when first drawn' );
 
 	}
+
+}
+
+/** Holds a box that may rise above all the island grows (a game's prop): the sun's map grows to
+ * hold it and the sea's reflection marches it (now, or once the sea is made: `heldOpaque`), and
+ * both keep it over the island's growth. */
+export function holdOpaque( render: RenderParts, island: IslandParts, box: THREE.Box3 ): void {
+
+	const { sunCasters } = staged( island );
+	island.heldOpaque.push( box.clone() );
+	if ( ! sunCasters.containsBox( box ) ) render.sunShadow.setCasters( sunCasters.union( box ) );
+	render.water?.hold( box );
 
 }
 

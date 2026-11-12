@@ -6,7 +6,7 @@
 // modules declare and register as they load and do nothing else: no top-level await and no page
 // global read at load (tools/verify-exits.mjs). The debug modules the page loads on demand are not
 // here: they are lazy exits (tools/layers.json), imported dynamically or for their types only.
-export { awaitWarmUp, bakeWithHaze, checkMotion, createAmbient, createBounceAndShore, createEnvironment, createKey, createLight, createRenderer, createScenes, createSeaAndPipeline, createSky, createWater, primeSharedBuilds, publishSkyLight, registerLightHistories, registerSceneHistories, sceneOptions, setUpRenderer } from './RenderStages.ts';
+export { awaitWarmUp, bakeWithHaze, checkMotion, createAmbient, createBounceAndShore, createEnvironment, createKey, createLight, createRenderer, createScenes, createSeaAndPipeline, createSky, createWater, primeSharedBuilds, publishSkyLight, registerLightHistories, registerSceneHistories, sceneOptions, setUpRenderer, startWaveMaps } from './RenderStages.ts';
 export type { RenderParts, SceneOptions } from './RenderStages.ts';
 export { classifyBy } from './debug/Classes.ts';
 export type { ClassRule } from './debug/Classes.ts';

@@ -17,10 +17,10 @@
 // resume and step the frame loop (app/Frame.ts).
 // the page's settings, which its entry (Boot.ts) installed before this module's imports load
 import { QUALITY_CHOICE } from './PageSettings.ts';
-import { type ExtraPass, DAY_PRESETS, sceneOptions, createShared, installShared, type RenderParts, createRenderer, setUpRenderer, createScenes, createSky, createLight, createKey, createEnvironment, publishSkyLight, createSeaAndPipeline, createBounceAndShore, createAmbient, createWater, bakeWithHaze, awaitWarmUp, checkMotion, primeSharedBuilds } from './render.ts';
+import { type ExtraPass, DAY_PRESETS, sceneOptions, createShared, installShared, type RenderParts, createRenderer, setUpRenderer, createScenes, createSky, createLight, createKey, createEnvironment, publishSkyLight, createSeaAndPipeline, createBounceAndShore, createAmbient, startWaveMaps, createWater, bakeWithHaze, awaitWarmUp, checkMotion, primeSharedBuilds } from './render.ts';
 import { settings as params, type QualityTier, qualityProfile } from './renderSetup.ts';
 import * as THREE from 'three/webgpu';
-import { FallingLeaves, leavesPass, setSoilStrength, ISLAND_SEA, islandBounceGround, Villagers, loadVillager, PROPORTIONS, createIslandCamera, createTrample, createCharacterShadow, type IslandParts, bakeIslandGround, awaitWorld, createLand, createWorld, createWorldViews, createVegetation, createGrowth } from './island.ts';
+import { FallingLeaves, leavesPass, setSoilStrength, ISLAND_SEA, islandBounceGround, Villagers, loadVillager, PROPORTIONS, createIslandCamera, createTrample, createCharacterShadow, type IslandParts, bakeIslandGround, awaitWorld, createLand, createWorld, createWorldViews, createVegetation, createGrowth, holdOpaque } from './island.ts';
 import { topFromTiles } from './game/sim/index.ts';
 import { worldJob, landOptions } from './WorldBoot.ts';
 import { ISLAND_TOP, islandSurfaceHeight } from './islandLand.ts';
@@ -107,7 +107,7 @@ const bounceGround = islandBounceGround( island.fields.beds, island.textures.soi
 const shoreData = island.data.shore;
 createBounceAndShore( render, { fields: island.fields, bounceGround, shoreData } );
 createWorld( render, island );
-render.pipeline.waveMaps = render.waveMaps;
+startWaveMaps( render );
 createWorldViews( render, island );
 const ambientData = island.data.ambient;
 await createAmbient( render, { ambientData, world: island.world } );
@@ -129,13 +129,7 @@ if ( GAME ) {
 		pieces: landOptions.step,
 		island: { approach: ( p ) => island.growth.approach( p ), grow: () => island.growth.grow() },
 		// A prop can rise above all the island grows: the sun's map fits its casters and the sea's reflection marches its box, so both grow to hold it.
-		holdOpaque: ( box ) => {
-
-			island.heldOpaque.push( box.clone() );
-			if ( ! island.sunCasters.containsBox( box ) ) render.sunShadow.setCasters( island.sunCasters.union( box ) );
-			render.water?.hold( box );
-
-		},
+		holdOpaque: ( box ) => holdOpaque( render, island, box ),
 		// the game's props, for the scene's pass and the sun's map (see compileDraws)
 		compileDraws: island.compileDraws,
 		// every islander in the scene islander's proportions (the `islander` URL option). A figure

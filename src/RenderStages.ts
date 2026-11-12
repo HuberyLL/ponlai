@@ -819,6 +819,15 @@ export function createBounceAndShore( render: RenderParts, { fields, bounceGroun
 
 }
 
+/** Starts the wave maps' bake in the frame's passes (post/PipelinePasses.ts), once the world's
+ * meshes that read them are built. */
+export function startWaveMaps( render: RenderParts ) {
+
+	const { pipeline, waveMaps } = render;
+	pipeline.waveMaps = waveMaps;
+
+}
+
 /**
  * The ambient light's probes and their relight, the refracted sun and the storm sea. Returns the
  * refracted sun's first map, which the entry awaits.
