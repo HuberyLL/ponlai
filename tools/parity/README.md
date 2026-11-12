@@ -54,7 +54,8 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
   (`--stable-every`; the loop stopped and the GPU queue drained for each grab) and the view is shot
   once 1 comparison (`--stable-repeats`) found no pixel changed. A paused page still flickers
   on some views (single frames that leave the settled image and come back to it); since that noise
-  never repeats, two equal grabs are the settled image. After 40 frames (`--stable-patience`) a comparison with at most
+  never repeats, two equal grabs are the settled image. After 40 frames (`--stable-patience`) a
+  comparison with at most
   5000 pixels changed (`--stable-tolerance 0:5000`, `<level>:<pixels>`: pixels differing by more
   than level; `exact` turns it off) counts too; after 120 frames (`--stable-cap`) the view is shot
   anyway and marked `capped`. Each capture's JSON records it as `ready` (status `exact`,
@@ -63,7 +64,8 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
   `--repeat`, `--jobs 2`) every load was shot exact, 4-32 frames after the floor (median 4), on the
   frame most loads of the earlier tools agreed on: no A/A difference, where their fixed waits left
   15-17 % of loads off that frame (those runs used a floor of 10 and 2 comparisons; replayed over
-  per-frame traces of the 24 views, a floor of 1 frame and 1 comparison shot no load early and all 48 on
+  per-frame traces of the 24 views, a floor of 1 frame and 1 comparison shot no load early and all
+  48 on
   the settled frame, at fewer frames). The grab is a CDP screenshot (PNG optimised for speed) at
   the page's ratio, about 0.27 s at 3456x2234, its pixels those of the shot.
   `--ready-frames n` brings the fixed count back (a running capture uses 60); `--wait ms` and
@@ -92,8 +94,10 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
 ## Views (views.mjs)
 
 All paused at `t=12`, at the tier's own pixel ratio (no `dpr`): on high, 1728x1117 CSS at DPR 2
-renders 2K's pixel count, 2388x1543, and FSR 1 brings it to 3456x2234. Placements derive from the island mesh's
-bounds, the meadow's flowering plants and the tufts at the cliff's edge, the islander and the sun and moon,
+renders 2K's pixel count, 2388x1543, and FSR 1 brings it to 3456x2234. Placements derive from the
+island mesh's
+bounds, the meadow's flowering plants and the tufts at the cliff's edge, the islander and the sun
+and moon,
 so they follow any tile layout.
 
 `parity` (the default group, 14 views): the profiler's scenes (`tools/profile-frame.mjs`),
@@ -165,7 +169,8 @@ every view), and so is a clip (clips.mjs: a clip is in its view's group; the par
 storm, rain, lightning, fog). Every tool that takes `--views` takes names and groups mixed
 (`normal,flowers-close`).
 
-`node tools/parity/views.mjs list [parity|taa|all|normal|special]`, `query <view>`, `eval <view>`, `crops <view>`.
+`node tools/parity/views.mjs list [parity|taa|all|normal|special]`, `query <view>`, `eval <view>`,
+`crops <view>`.
 
 ### Crop anchors
 
@@ -221,7 +226,8 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
   console changes, so it covers views without an eval or with exactly a views.mjs view's eval
   (`verify-scene-jump.mjs` checks those); after a view with an eval of its own (an ad-hoc view's
   js: `adhoc.mjs` `jumpClean`) the page ends and the next view loads fresh, and an `--eval` or
-  `--eval-ready` passed through after `--` takes a page per view. Each view's JSON has `page`: its visit on the page, `load` or
+  `--eval-ready` passed through after `--` takes a page per view. Each view's JSON has `page`: its
+  visit on the page, `load` or
   `jump`, the view before, the GPU lock wait and the capture's own time (ms), the page's memory then
   (JS heap, DOM nodes, listeners, renderer.info's geometries and textures).
 - Capability: a page marks the jump with `__PONLAI__.sceneJump` (the contract's version, 1).
@@ -247,7 +253,8 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
     `window.__PONLAI__`; views.mjs's helpers `isl()`, `free()`, `orbitAround()` exist).
     `like=<view>` in the query starts from a views.mjs view: its query, eval and crops, the
     ad-hoc options winning.
-  - `--views-file f.json`: `[ { "name", "q", "eval"?, "crops"?, "like"? } ]` or `{ "<name>": { ... } }`.
+  - `--views-file f.json`: `[ { "name", "q", "eval"?, "crops"?, "like"? } ]` or
+    `{ "<name>": { ... } }`.
   - `--sweep "key=a,b,c"` (repeatable): each selected view once per value, every combination of
     several sweeps, named `<view>--<key>-<value>` (`<key>-<value>` with no views given).
     `--views island-fair-noon,meadow-close --sweep weather=fair,rain --sweep hour=7,12,17` makes 12.
@@ -390,7 +397,7 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
 
 ### Layout
 
-```
+```text
 <root>/<sha>/                      the full sha (a short one in a path is rewritten to it)
   S1/                              a capture set: <view>.png, <view>.repeat.png, .json, .log
     complete.json                  its manifest, written last
@@ -485,9 +492,11 @@ The claim is taken under a short mutex, so of several processes that find the sa
 missing exactly one captures it. A claim names a pid on this host: a process that is gone (or a
 zombie) leaves a stale claim, which the next request takes over; when `ps` cannot answer in time
 (a loaded machine) the process counts as alive, since taking over a live capture would put two
-writers in one directory. A process releases and records only a claim that is still its own. Before capturing, the tool checks
+writers in one directory. A process releases and records only a claim that is still its own. Before
+capturing, the tool checks
 which worktree serves the reference URL's port (`lsof`): it refuses a server whose commit differs
-from the reference's in what the build reads (`src/`, `index.html`, `assets.lock.json`, `vite.config.ts`,
+from the reference's in what the build reads (`src/`, `index.html`, `assets.lock.json`,
+`vite.config.ts`,
 `package.json`, `package-lock.json`, `tsconfig.json`; a branch that changed only tools or docs
 serves the same build) or that has uncommitted changes there, and warns when `dist/` is older than
 the last commit of those inputs. `node
@@ -528,8 +537,8 @@ the samples decide):
    that needs more views extends it with the new build.
 4. Any differ (or fails to capture): the set is captured afresh as for any other key change (the
    old one moved to `.replaced/`), the samples kept as the new set's first captures of their
-   views (`... the sample views differ: meadow-close (14806 px differ, max 9 levels), ...: capturing it
-   afresh`).
+   views (`... the sample views differ: meadow-close (14806 px differ, max 9 levels), ...:
+   capturing it afresh`).
 
 `--recapture-reference` skips the verification. Not covered: a sibling set (S1 serving FAST3) is
 not verified on another set's request (FAST3 is captured), and clip entries (baseline.mjs's
@@ -583,7 +592,8 @@ that failed (`baseline high/clip/pan-slow: not carried (spot: ...)`).
 
 What the rule cannot see: a change that alters motion only, outside the watch list, in a view or
 clip the spot check does not cover; a temporal-only change visible in the ground truth of views
-other than the one spot-checked; the lower tiers' ground truth (checked on high only); and a rest baseline entry without a whole frame
+other than the one spot-checked; the lower tiers' ground truth (checked on high only); and a rest
+baseline entry without a whole frame
 that was captured wrong at A (only whole frames are checked against A's paused set).
 
 ## One page, many views: the scene jump (verify-scene-jump.mjs)
@@ -592,7 +602,8 @@ Only the load-time options need a new page (quality, aa, size and dpr, the S3 sw
 weather, time, moon and camera are runtime state, and `__PONLAI__.establishScene( query )` jumps to
 them in place (`src/main.ts`, where its contract is written): after the jump, one rendered frame at
 the jump's camera and the view's eval, the paused frame is the one a fresh load of the view's query
-draws, byte for byte wherever the fresh load repeats. A tool that captures a set in one page calls it
+draws, byte for byte wherever the fresh load repeats. A tool that captures a set in one page calls
+it
 with the view's full query (the common part and the view's own), waits for a frame, runs the eval,
 then its readiness and the shot.
 
@@ -624,7 +635,8 @@ view (as capture.mjs's worker), so a waiter gets in at the next view boundary.
 Both sides use capture.mjs's readiness (a persistent profile; after the evals the image grabbed
 with the loop stopped until two grabs agree, a temporal page's converged rest; the loop stopped for
 the shot; `--frames n` for the old fixed count), so they differ only in how the scene was reached.
-Each shot's JSON records `ready`; a shot still changing at the cap is printed as unstable. `--from <view or query>`
+Each shot's JSON records `ready`; a shot still changing at the cap is printed as unstable.
+`--from <view or query>`
 visits scenes first without capturing them (a storm, a night, fog, another clock: `--from
 "weather=storm&preset=noon&t=5"`); `--aa taau` with `diff-set.py --temporal` checks the temporal
 modes. All 24 views take about 2-3 s each in one page, against 6-7 s per fresh load (unshared GPU).
@@ -661,13 +673,16 @@ uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/cli
 - A paused one-frame clip without a temporal rest (`rest` under msaa, off, gt-hi) is stepped again
   and shot whole until two shots agree within the readiness tolerance (at most 6 shots, else the
   clip fails and writes nothing): a single stepped frame can be the GPU's alternative image (task O;
-  most often while other browsers render), which the readiness check before it cannot see. `clip.json` records the
+  most often while other browsers render), which the readiness check before it cannot see.
+  `clip.json` records the
   shots (`recheck`); `--test-fault` draws the first one half a stop brighter to test it. Header of
   `capture-clip.mjs`.
 - Crops: the view's anchors, or the clip's own (`night-still`: the horizon's stars, no crop of the
   view's rest image), or `--crops`, are read once at the base pose, and each frame projects
-  their world points into a 192 CSS px box (384 device px at 2x). `--full` frames are captured whole.
-  Output: `<crop>/<i>.png`, `full/<i>.png`, `clip.json` (boxes, the camera and render size per frame,
+  their world points into a 192 CSS px box (384 device px at 2x). `--full` frames are captured
+  whole.
+  Output: `<crop>/<i>.png`, `full/<i>.png`, `clip.json` (boxes, the camera and render size per
+  frame,
   diagnostics, pipelines created while stepping).
 - `--aa gt`: the temporal modes' ground truth (`aa=gt`, debug builds): the temporal graph at the
   canvas's resolution, each captured frame held still after its tick (`loop.step`'s `converge`)
@@ -675,9 +690,11 @@ uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/cli
   (32 by default, 64 for a one-frame clip such as `rest`), unsharpened, cropped
   at the test's own size. The scale schedule is ignored. It renders every tier (the tier's own
   content at the canvas's resolution), so each tier has its own ground truth. Keep its sets per
-  merge-base under `<parity root>/<sha>/gt/<tier>/`. Paused temporal captures (capture.mjs, capture-set.mjs) wait for the
+  merge-base under `<parity root>/<sha>/gt/<tier>/`. Paused temporal captures (capture.mjs,
+  capture-set.mjs) wait for the
   rest to converge (`diag.taa.converged`).
-- `--aa gt-hi`: the interim ground truth, MSAA on high at twice the former nominal ratio (1.5) for the size
+- `--aa gt-hi`: the interim ground truth, MSAA on high at twice the former nominal ratio (1.5) for
+  the size
   (3x at the default @2, where the nominal is 1.5) in a canvas that holds it, box-downsampled 2x2
   (288 px crops at the default size). It renders every frame at that ratio: a clip's scale schedule
   applies to the test and MSAA sides only. Its pixel-width vegetation rules are in render pixels,
@@ -709,4 +726,3 @@ uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/cli
   crops elsewhere can differ in single frames: with the vegetation depth prepass on, a few samples
   pass its equal depth test differently from frame to frame (blobs of a few to 150 px on leaves
   and blades; none with `vegPrepass=0`).
-

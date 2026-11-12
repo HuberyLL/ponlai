@@ -78,7 +78,8 @@ Three layers:
   sliced by `unicode-range`, so a page loads only the slices its characters need: the islanders
   may say anything).
 - **Numerals and Latin**: our own brush fonts, drawn with the icons' brush, in
-  `public/fonts/` (assets: `docs/tools.md`): `PonlaiBrush.woff2` (text cut) and `PonlaiBrushDisplay.woff2` (from
+  `public/fonts/` (assets: `docs/tools.md`): `PonlaiBrush.woff2` (text cut) and
+  `PonlaiBrushDisplay.woff2` (from
   24 px up). Declare them with `unicode-range: U+0020-007E, U+00B7` and put them first in every
   stack, so every digit and Latin letter in any text switches to the brush while CJK falls through.
   Their figures are tabular: a changing number never shifts its neighbours.
@@ -287,7 +288,8 @@ from a board, it is said here.
   dividers. Each keeps its outline and loses ink only: its tail runs dry from halfway (飞白, streaks
   of bare paper along the stroke, the tip parting into threads), a few thin gaps of bare paper run
   through it, its edge is drunk in a little by the paper, and the ink thins slightly after the first
-  press. A stroke is ink or paper, never a lighter grey of ink in lines or patches: on the dark scene
+  press. A stroke is ink or paper, never a lighter grey of ink in lines or patches: on the dark
+  scene
   that reads as a stain. How dry comes with a stroke's length in widths (an icon's strokes stay as
   drawn, and icons and ticks are not inked) and half as much on a thin stroke; the gaps, the edge
   and the tone show only on a stroke wide enough on screen. A need's bar is a gauge and does not dry
@@ -295,6 +297,7 @@ from a board, it is said here.
   left and goes round the back, so its dry tail falls on its heavy near side. The style is the one
   chosen from samples (dry from halfway, three quarters dry at the exit, the edge drunk in, the gaps
   "more"); `tools/verify-ink.mjs` checks it.
-- **Not yet**: the placement of any building but the chest, a player's save or load control or a sign that the game was saved, a
+- **Not yet**: the placement of any building but the chest, a player's save or load control or a
+  sign that the game was saved, a
   thought started by hearing for the stand-in,
   and everything Scope now leaves out.

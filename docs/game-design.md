@@ -226,5 +226,6 @@ not hear.
 ## Open questions
 
 - How a storm is announced and how much warning the player gets.
-- The population steps at which the island grows, and whether a piece's size should grow with the population.
+- The population steps at which the island grows, and whether a piece's size should grow with the
+  population.
 - How a new islander arrives.

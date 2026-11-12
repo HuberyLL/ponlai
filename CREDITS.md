@@ -1,6 +1,7 @@
 # Credits
 
-Ponlai is released under the MIT License (see `LICENSE`). The third-party code and assets listed here
+Ponlai is released under the MIT License (see `LICENSE`). The third-party code and assets listed
+here
 keep their own licences. Adapted source files also carry the upstream notice in their header. A
 production build copies this file and the required licence texts, including those of the bundled npm
 packages, into `dist/licenses/`.
@@ -9,7 +10,7 @@ packages, into `dist/licenses/`.
 
 ### tidewater
 
-- Upstream: https://github.com/dgreenheck/tidewater, by Daniel Greenheck
+- Upstream: <https://github.com/dgreenheck/tidewater>, by Daniel Greenheck
 - Copyright: (c) 2026 DRG Software Solutions LLC
 - Licence: MIT, see [`src/ocean/tidewater.LICENSE.txt`](src/ocean/tidewater.LICENSE.txt),
   [`src/sky/tidewater.LICENSE.txt`](src/sky/tidewater.LICENSE.txt),
@@ -63,7 +64,8 @@ packages, into `dist/licenses/`.
   - `src/life/Wenyao.ts`: the schooling of `src/world/Fish.js` (separation, alignment and cohesion
     within a school, its goal in long straight runs, the turn back from shallow water, the heading,
     bank and bend of each fish), with a flight of its own.
-  - `src/life/FishMaterial.ts`: the swimming wave and turning bend of `src/world/fish/FishMaterial.js`
+  - `src/life/FishMaterial.ts`: the swimming wave and turning bend of
+    `src/world/fish/FishMaterial.js`
     (its three.js edition at fd6cae6, `swimVertex`).
   - `src/ocean/SeaDetail.ts`: the gusts, slicks and windrows of `SeaDetail.js` (its noise texture
     and sampling, ported from WGSL to TSL), driven by this project's wind.
@@ -72,7 +74,8 @@ packages, into `dist/licenses/`.
     screen), as a frame graph pass drawing a clipping group.
   - `src/ocean/ShoreWaves.ts`, `src/ocean/ShoreWaveField.ts`: began as an adaptation of
     `ShoreWaves.js`; now mostly rewritten for this island's rocky boundary.
-  - `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`: the atmosphere and solar disk from `Atmosphere.js` and
+  - `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`: the atmosphere and solar disk from `Atmosphere.js`
+    and
     `Sky.js`, ported from WGSL to TSL.
   - `src/post/PhysicalBloom.ts`: the physically motivated bloom of `PostFX.js` (after Jimenez,
     SIGGRAPH 2014: 13-tap downsamples, the first through the Karis average, and 3x3 tent
@@ -88,12 +91,15 @@ packages, into `dist/licenses/`.
     `SkyProClouds.js`, tidewater's port of the Three.js Sky Pro clouds ("Partly cloudy" preset),
     ported from WGSL to TSL: the procedural weather map and its bounds grid, the shell density
     (weather plus coverage, dilated and eroded by the shape noise, soft height-dependent edges),
-    darker bases and sky light occlusion, the coarse / fine march with empty-cell skipping, aerial perspective (the rain
-    curtains'), the cloud shadow, and the shape noise loader. From `Clouds.js`: the screen-space view
+    darker bases and sky light occlusion, the coarse / fine march with empty-cell skipping, aerial
+    perspective (the rain
+    curtains'), the cloud shadow, and the shape noise loader. From `Clouds.js`: the screen-space
+    view
     trace with its reprojected, neighbourhood-clamped history and bicubic upsampling, and the
     synoptic field. The weather fronts, the mapping of this project's coverage onto the shell,
     the darker closed deck and the settled view of a paused scene are this project's (the rain
-    curtains follow VolumetricCloudsCS1, below); the panorama map is this project's own, predating the port (`Clouds.js` has a
+    curtains follow VolumetricCloudsCS1, below); the panorama map is this project's own, predating
+    the port (`Clouds.js` has a
     similar one).
   - The thin cloud layer (`src/sky/Clouds.ts` `streaksAt`, `src/sky/Streaks.ts`): the fibre bake
     (a flow field of sparse seeds and tufts drawn out by line integral convolution, hooked tails
@@ -112,10 +118,12 @@ packages, into `dist/licenses/`.
     (after Patry: see Acknowledgements), as is the morning mist.
   - The celestial clock, geometric lunar phase and the star and Milky Way rendering are original
     code; the star catalogue and Milky Way map they draw are listed under Assets. (The lunar disk's
-    shading and imagery are credited under three-geospatial, a-starry-sky and the CGI Moon Kit.) Weather blending,
+    shading and imagery are credited under three-geospatial, a-starry-sky and the CGI Moon Kit.)
+    Weather blending,
     integrated wind and the rain veil and ripple gradients are original Ponlai code as well; the
     wet-material response implements the published techniques acknowledged below.
-  - Techniques without code: the gravel of thin soil (`src/materials/ProceduralTextures.ts` `gravelBake`, read in
+  - Techniques without code: the gravel of thin soil (`src/materials/ProceduralTextures.ts`
+    `gravelBake`, read in
     `src/materials/TerrainMaterial.ts` at two rotated scales) follows the small stones of
     `src/world/terrain/DetailTextures.js` (a share of a periodic Worley lattice's cells holding a
     stone) and the multi-scale, rotated detail reads of `src/world/Terrain.js`. The trees' leaf
@@ -130,7 +138,7 @@ packages, into `dist/licenses/`.
 
 ### three-geospatial
 
-- Upstream: https://github.com/takram-design-engineering/three-geospatial, by Shota Matsuda
+- Upstream: <https://github.com/takram-design-engineering/three-geospatial>, by Shota Matsuda
   (takram)
 - Copyright: (c) 2024 Shota Matsuda
 - Licence: MIT, see [`src/sky/three-geospatial.LICENSE.txt`](src/sky/three-geospatial.LICENSE.txt)
@@ -146,7 +154,7 @@ packages, into `dist/licenses/`.
 
 ### a-starry-sky
 
-- Upstream: https://github.com/Dante83/a-starry-sky, by David Evans
+- Upstream: <https://github.com/Dante83/a-starry-sky>, by David Evans
 - Copyright: (c) 2018-2026 David Evans
 - Licence: MIT, see [`src/sky/a-starry-sky.LICENSE.txt`](src/sky/a-starry-sky.LICENSE.txt)
 - From `src/glsl/moon/base-moon-partial.glsl` and `src/cpp/state-engine/astro_bodies/Moon.cpp` at
@@ -158,19 +166,21 @@ packages, into `dist/licenses/`.
 
 ### Godot_rain_shader
 
-- Upstream: https://github.com/Lexpartizan/Godot_rain_shader, by Lexpartizan, commit
+- Upstream: <https://github.com/Lexpartizan/Godot_rain_shader>, by Lexpartizan, commit
   [`0d38727`](https://github.com/Lexpartizan/Godot_rain_shader/tree/0d38727cd29eb1323c4b68fe689413859c525b10)
 - Copyright: (c) 2020 Lexpartizan
-- Licence: MIT, see [`src/materials/godot-rain-shader.LICENSE.txt`](src/materials/godot-rain-shader.LICENSE.txt)
+- Licence: MIT, see
+  [`src/materials/godot-rain-shader.LICENSE.txt`](src/materials/godot-rain-shader.LICENSE.txt)
 - Files: `runnels` in `src/materials/Wetness.ts`: the falling streak gradient of `rain.shader` (the
   streak pattern sampled again with a scrolling vertical offset and thresholded into moving slugs
   of water), ported from Godot shading language to TSL. No textures from the repository are used.
 
 ### Hash without Sine
 
-- Upstream: https://www.shadertoy.com/view/4djSRW, by David Hoskins
+- Upstream: <https://www.shadertoy.com/view/4djSRW>, by David Hoskins
 - Copyright: (c) 2014 David Hoskins
-- Licence: MIT, see [`src/materials/hoskins-hash.LICENSE.txt`](src/materials/hoskins-hash.LICENSE.txt)
+- Licence: MIT, see
+  [`src/materials/hoskins-hash.LICENSE.txt`](src/materials/hoskins-hash.LICENSE.txt)
 - Files: `hash22` in `src/materials/ProceduralTextures.ts` (also seeding the hex tiles of
   `src/materials/HexTiling.ts`) and `src/ocean/Water.ts`; `hash33` in
   `src/materials/CloudNoise.ts`
@@ -178,12 +188,13 @@ packages, into `dist/licenses/`.
 
 ### hextile-demo
 
-- Upstream: https://github.com/mmikk/hextile-demo, by Morten S. Mikkelsen, commit
+- Upstream: <https://github.com/mmikk/hextile-demo>, by Morten S. Mikkelsen, commit
   [`43c3ed7`](https://github.com/mmikk/hextile-demo/tree/43c3ed7e18e1e4539fa9323f72d5e2a65147ebb3),
   the code of [*Practical Real-Time Hex-Tiling*](https://jcgt.org/published/0011/03/05/)
   (Journal of Computer Graphics Techniques 11(3), 2022)
 - Copyright: (c) 2022 mmikk
-- Licence: MIT, see [`src/materials/hextile-demo.LICENSE.txt`](src/materials/hextile-demo.LICENSE.txt)
+- Licence: MIT, see
+  [`src/materials/hextile-demo.LICENSE.txt`](src/materials/hextile-demo.LICENSE.txt)
 - Files: `src/materials/HexTiling.ts`: the triangle grid (`TriangleGrid`), the tiles' centres
   (`MakeCenST`), the blend's weights, and the rotated, offset reads with rotated gradients and
   their weighted sum of colour, slope and roughness (`hex2colTex`, `bumphex2derivNMap`, in
@@ -197,9 +208,11 @@ packages, into `dist/licenses/`.
 ### LightningStrike (three.js / three-stdlib)
 
 - Upstream: `LightningStrike.js` by yomboprime, from the three.js examples (removed in r153), as
-  kept in [three-stdlib](https://github.com/pmndrs/three-stdlib) (`src/geometries/LightningStrike.js`)
+  kept in [three-stdlib](https://github.com/pmndrs/three-stdlib)
+  (`src/geometries/LightningStrike.js`)
 - Copyright: 2010-2023 three.js authors; (c) 2021-2023 Poimandres
-- Licence: MIT, see [`src/weather/LightningStrike.LICENSE.txt`](src/weather/LightningStrike.LICENSE.txt)
+- Licence: MIT, see
+  [`src/weather/LightningStrike.LICENSE.txt`](src/weather/LightningStrike.LICENSE.txt)
   (both notices)
 - Files: `src/weather/LightningStrike.ts`: the recursive midpoint-displaced channel, its subrays
   (branches) in a cone around their parent, the triangular prism mesh and the seekable seeded
@@ -212,11 +225,12 @@ packages, into `dist/licenses/`.
 
 ### VolumetricCloudsCS1
 
-- Upstream: https://github.com/anthonytoumaibrahim/VolumetricCloudsCS1, by Anthony Ibrahim (a
+- Upstream: <https://github.com/anthonytoumaibrahim/VolumetricCloudsCS1>, by Anthony Ibrahim (a
   volumetric clouds mod for Cities: Skylines), commit
   [`83b5e78`](https://github.com/anthonytoumaibrahim/VolumetricCloudsCS1/tree/83b5e7802aa2ce8e72c3f6525cbd9fab3d0bde62)
 - Copyright: (c) 2026 Anthony Ibrahim
-- Licence: MIT, see [`src/sky/VolumetricCloudsCS1.LICENSE.txt`](src/sky/VolumetricCloudsCS1.LICENSE.txt)
+- Licence: MIT, see
+  [`src/sky/VolumetricCloudsCS1.LICENSE.txt`](src/sky/VolumetricCloudsCS1.LICENSE.txt)
   (the upstream file; its exception covers light halo shaders that are not used here)
 - Files:
   - `src/weather/Lightning.ts`: each strike's profile (duration, return strokes, flicker
@@ -246,9 +260,10 @@ packages, into `dist/licenses/`.
 
 ### threejs-conference collision rain
 
-- Upstream: https://github.com/ektogamat/threejs-conference, by Anderson Mancini and Sunag
+- Upstream: <https://github.com/ektogamat/threejs-conference>, by Anderson Mancini and Sunag
 - Copyright: (c) 2026 Anderson Mancini and Sunag
-- Licence: MIT, see [`src/weather/threejs-conference.LICENSE.txt`](src/weather/threejs-conference.LICENSE.txt)
+- Licence: MIT, see
+  [`src/weather/threejs-conference.LICENSE.txt`](src/weather/threejs-conference.LICENSE.txt)
 - Files: `src/weather/RainCollision.ts` and `src/weather/RainDrops.ts`, after
   `src/world/weather/createCollisionHeight.js`, `createCollisionRain.js` and
   `docs/techniques/collision-rain.md`: a top-down orthographic pass that draws world height into a
@@ -280,11 +295,14 @@ packages, into `dist/licenses/`.
 
 ### FSR 2 (AMD FidelityFX, through tidewater)
 
-- Upstream: tidewater's `src/post/TemporalUpscale.js` (commit 4811ba4, above), the accumulation of AMD
-  FidelityFX Super Resolution 2 2.2 ([FidelityFX-FSR2](https://github.com/GPUOpen-Effects/FidelityFX-FSR2),
+- Upstream: tidewater's `src/post/TemporalUpscale.js` (commit 4811ba4, above), the accumulation of
+  AMD
+  FidelityFX Super Resolution 2 2.2
+  ([FidelityFX-FSR2](https://github.com/GPUOpen-Effects/FidelityFX-FSR2),
   `ffx_fsr2_accumulate.h`)
 - Copyright: (c) 2022-2023 Advanced Micro Devices, Inc.; (c) 2026 DRG Software Solutions LLC
-- Licence: MIT, see [`src/post/tidewater-fsr2.LICENSE.txt`](src/post/tidewater-fsr2.LICENSE.txt) (both
+- Licence: MIT, see [`src/post/tidewater-fsr2.LICENSE.txt`](src/post/tidewater-fsr2.LICENSE.txt)
+  (both
   notices)
 - File: `src/post/TemporalLocks.ts`: the accumulation cap of a moving pixel, the temporal reactive
   factor carried to the next frame (its sign: the pixel moved) and the weight a clipped history
@@ -384,7 +402,8 @@ names, under the paths given here in `public/` (`tools/assets.mjs`).
 ### Ultimate Modular Men Pack
 
 - Author: Quaternius
-- Source: [quaternius.com](https://quaternius.com/packs/ultimatemodularcharacters.html) (February 2022;
+- Source: [quaternius.com](https://quaternius.com/packs/ultimatemodularcharacters.html) (February
+  2022;
   the pack's own `License.txt` calls it "Ultimate Modular Males")
 - Licence: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
 - Files: parts of `Farmer.gltf` (its rig, clips and feet), `Adventurer.gltf` and `Casual_2.gltf`,
@@ -400,7 +419,8 @@ names, under the paths given here in `public/` (`tools/assets.mjs`).
 ### A single white feather closeup
 
 - Author: João Estevão Andrade de Freitas
-- Source: [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:A_single_white_feather_closeup.jpg)
+- Source: [Wikimedia
+  Commons](https://commons.wikimedia.org/wiki/File:A_single_white_feather_closeup.jpg)
   (2004, from stock.xchng)
 - Licence: public domain
 - Files: cut out of its dark ground (the ground un-mixed from the edge's colour) into four feather
@@ -419,7 +439,8 @@ names, under the paths given here in `public/` (`tools/assets.mjs`).
 ### Cloud shape noise
 
 - Author: Daniel Greenheck, from the Three.js Sky Pro clouds as bundled with tidewater
-- Source: `public/clouds/baseShape64.bin` in [tidewater](https://github.com/dgreenheck/tidewater) at commit
+- Source: `public/clouds/baseShape64.bin` in [tidewater](https://github.com/dgreenheck/tidewater) at
+  commit
   [`4811ba4`](https://github.com/dgreenheck/tidewater/tree/4811ba48d795197de5621985f404e765c0b7c0ef)
 - Licence: tidewater's repository is MIT licensed (see `src/sky/tidewater.LICENSE.txt`). The
   `LICENSING.md` beside this file in `public/clouds/` says the textures it lists "are not covered by
@@ -478,20 +499,25 @@ Published techniques this project implements without using their code; each is a
 comment where it is used.
 
 - FFT ocean: J. Tessendorf,
-  [*Simulating Ocean Water*](https://jtessen.people.clemson.edu/reports/papers_files/coursenotes2002.pdf)
+  [*Simulating Ocean
+  Water*](https://jtessen.people.clemson.edu/reports/papers_files/coursenotes2002.pdf)
   (SIGGRAPH course notes, 2002 revision).
 - Rasterised caustics: Evan Wallace, [*WebGL Water*](https://madebyevan.com/webgl-water/) and
-  [*Rendering Realtime Caustics in WebGL*](https://medium.com/@evanwallace/rendering-realtime-caustics-in-webgl-2a99a29a0b2c).
+  [*Rendering Realtime Caustics in
+  WebGL*](https://medium.com/@evanwallace/rendering-realtime-caustics-in-webgl-2a99a29a0b2c).
 - Hex-tiling's predecessor, by-example noise that blends randomly placed tiles with a
   histogram-preserving blend: Eric Heitz and Fabrice Neyret,
-  [*High-Performance By-Example Noise using a Histogram-Preserving Blending Operator*](https://eheitzresearch.wordpress.com/722-2/)
+  [*High-Performance By-Example Noise using a Histogram-Preserving Blending
+  Operator*](https://eheitzresearch.wordpress.com/722-2/)
   (HPG 2018).
 - Height-based blending of terrain layers (moss, turf, soil, lichens, runoff stains on the stone):
   Andrey Mishkinis, *Advanced Terrain Texture Splatting* (Gamasutra, 2013), and the height lerp
   of Unreal Engine's landscape materials.
 - Whiteout triplanar normal blend: Ben Golus,
-  [*Normal Mapping for a Triplanar Shader*](https://bgolus.medium.com/normal-mapping-for-a-triplanar-shader-10bf39dca05a) (2017).
-- Overcast sky's luminance by elevation, ( 1 + 2 sin h ) / 3 (`src/weather/VolumetricHaze.ts`, overcast's deck):
+  [*Normal Mapping for a Triplanar
+  Shader*](https://bgolus.medium.com/normal-mapping-for-a-triplanar-shader-10bf39dca05a) (2017).
+- Overcast sky's luminance by elevation, ( 1 + 2 sin h ) / 3 (`src/weather/VolumetricHaze.ts`,
+  overcast's deck):
   P. Moon and D. E. Spencer, *Illumination from a Non-Uniform Sky* (Illuminating Engineering 37,
   1942): the CIE standard overcast sky, as given in ISO 15469:2004 / CIE S 011/E:2003,
   *Spatial distribution of daylight - CIE standard general sky*. The same standard's overcast
@@ -499,7 +525,8 @@ comment where it is used.
   behind the overcast deck's glow toward the sun and its flatter gradation (`src/sky/Clouds.ts`
   DECK_GLOW, DECK_GRADATION; `src/sky/Sky.ts` `deckGlow`).
 - Atmosphere LUTs and multiple scattering: Sébastien Hillaire,
-  [*A Scalable and Production Ready Sky and Atmosphere Rendering Technique*](https://sebh.github.io/publications/egsr2020.pdf)
+  [*A Scalable and Production Ready Sky and Atmosphere Rendering
+  Technique*](https://sebh.github.io/publications/egsr2020.pdf)
   (EGSR 2020), through the adapted tidewater source above.
 - The fog layer's droplet light (`src/weather/VolumetricHaze.ts`, The fog layer): multiple
   scattering approximated by octaves of scaled scattering, extinction and anisotropy, Magnus
@@ -519,30 +546,37 @@ comment where it is used.
 - The ozone's absorption per display channel (`src/sky/Atmosphere.ts` OZONE), our integration over
   each channel's band of the cross sections of A. Serdyuchenko, V. Gorshelev, M. Weber, W. Chehade
   and J. P. Burrows,
-  [*High spectral resolution ozone absorption cross-sections – Part 2: Temperature dependence*](https://doi.org/10.5194/amt-7-625-2014)
+  [*High spectral resolution ozone absorption cross-sections – Part 2: Temperature
+  dependence*](https://doi.org/10.5194/amt-7-625-2014)
   (Atmospheric Measurement Techniques 7, 2014; data from IUP Bremen), through linear Rec. 709
   responses from the CIE 1931 2° colour matching functions (CVRL, UCL). Only the three integrated
   values are used; no data ships.
 - Solar radiance normalisation:
-  [*Physically Based Rendering*, fourth edition](https://pbr-book.org/4ed/Radiometry,_Spectra,_and_Color/Working_with_Radiometric_Integrals),
+  [*Physically Based Rendering*, fourth
+  edition](https://pbr-book.org/4ed/Radiometry,_Spectra,_and_Color/Working_with_Radiometric_Integrals),
   the projected-solid-angle irradiance integral.
 - Air/water interface: Snell's law and dielectric transport as described in
-  [*Physically Based Rendering*, fourth edition](https://pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF).
+  [*Physically Based Rendering*, fourth
+  edition](https://pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF).
 - The figures' shadow map read with a 5 x 5 texel tent from nine bilinear comparisons, in
   `src/characters/CharacterShadow.ts`: Ignacio Castaño, *Shadow Mapping Summary – Part 1* (The
   Witness blog, 2013), its weights for a tent filter made of fewer bilinear PCF taps. Used as a
   technique only.
-- Local sky occlusion: John C. Hart, [*Sphere Tracing*](https://doi.org/10.1007/s003710050084) (1996),
-  with the [cosine-weighted hemisphere sampler in PBRT](https://pbr-book.org/4ed/Sampling_Algorithms/Sampling_Multidimensional_Functions).
+- Local sky occlusion: John C. Hart, [*Sphere Tracing*](https://doi.org/10.1007/s003710050084)
+  (1996),
+  with the [cosine-weighted hemisphere sampler in
+  PBRT](https://pbr-book.org/4ed/Sampling_Algorithms/Sampling_Multidimensional_Functions).
 - Filtered wave-slope moments: Marc Olano and Dan Baker,
   [*LEAN Mapping*](https://userpages.cs.umbc.edu/olano/papers/lean/) (I3D 2010).
 - The sea's mean reflection over the slopes no pixel resolves, in `src/ocean/Water.ts`: the
   visible facets weighted by their projected area and Smith's shadowing of the reflected rays, from
   Eric Heitz,
-  [*Understanding the Masking-Shadowing Function in Microfacet-Based BRDFs*](https://jcgt.org/published/0003/02/03/)
+  [*Understanding the Masking-Shadowing Function in Microfacet-Based
+  BRDFs*](https://jcgt.org/published/0003/02/03/)
   (JCGT 2014); Smith's G1 for Gaussian (Beckmann) slopes in the rational form of Bruce Walter,
   Stephen R. Marschner, Hongsong Li and Kenneth E. Torrance,
-  [*Microfacet Models for Refraction through Rough Surfaces*](https://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf)
+  [*Microfacet Models for Refraction through Rough
+  Surfaces*](https://www.graphics.cornell.edu/~bjw/microfacetbsdf.pdf)
   (EGSR 2007), whose rational form is also the shadowing of the sun's glint (below); the
   error-function approximation is Abramowitz and Stegun, equation 7.1.26.
 - The sea's slopes and the sun's glint, in `src/ocean/Water.ts`: the slopes' mean square by the wind
@@ -550,7 +584,8 @@ comment where it is used.
   Sun's Glitter* (J. Opt. Soc. Am. 44:838, 1954), taken as the variance of a Beckmann (Gaussian)
   slope distribution; the glint is Beckmann's lobe of those slopes with the separable Smith
   shadowing in the rational form of Walter et al. (EGSR 2007, above).
-- The sea's inherent optical properties, in `src/ocean/SeaOptics.ts`: pure water's absorption from R. M. Pope
+- The sea's inherent optical properties, in `src/ocean/SeaOptics.ts`: pure water's absorption from
+  R. M. Pope
   and E. S. Fry, *Absorption spectrum (380-700 nm) of pure water. II* (Appl. Opt. 36:8710, 1997)
   and R. C. Smith and K. S. Baker, *Optical properties of the clearest natural waters (200-800 nm)*
   (Appl. Opt. 20:177, 1981); the particles' absorption by chlorophyll from A. Bricaud et al.,
@@ -562,11 +597,13 @@ comment where it is used.
   1983) and O. Ulloa, S. Sathyendranath and T. Platt, *Effect of the particle-size distribution on
   the backscattering ratio in seawater* (Appl. Opt. 33:7070, 1994). The bands are weighed into RGB
   by the colour matching functions in the analytic fit of C. Wyman, P.-P. Sloan and P. Shirley,
-  [*Simple Analytic Approximations to the CIE XYZ Color Matching Functions*](https://jcgt.org/published/0002/02/01/)
+  [*Simple Analytic Approximations to the CIE XYZ Color Matching
+  Functions*](https://jcgt.org/published/0002/02/01/)
   (JCGT 2013). Adding coloured dissolved matter in proportion to the chlorophyll, and reading
   0.5 mg m^-3 of it as Jerlov's type II, are our own assumptions from what Case 1 water is.
 - The water body and the floor seen through it, in `src/ocean/Water.ts` and
-  `src/lighting/Underwater.ts`: the shallow-water remote-sensing reflectance of Z. Lee, K. L. Carder,
+  `src/lighting/Underwater.ts`: the shallow-water remote-sensing reflectance of Z. Lee, K. L.
+  Carder,
   C. D. Mobley, R. G. Steward and J. S. Patch, *Hyperspectral remote sensing for shallow waters:
   2. Deriving bottom depths and water properties by optimization* (Appl. Opt. 38:3831, 1999),
   equation 9 and its off-nadir path factors, with attenuation by a + bb.
@@ -606,10 +643,12 @@ comment where it is used.
   same GGX into a scale and a bias on F0, and the key's glint from a representative point, the
   point of the key's disk closest to the reflected ray, its highlight renormalised by the widened
   lobe's ( alpha / alpha' )^2, from Brian Karis,
-  [*Real Shading in Unreal Engine 4*](https://cdn2.unrealengine.com/Resources/files/2013SiggraphPresentationsNotes-26915738.pdf)
+  [*Real Shading in Unreal Engine
+  4*](https://cdn2.unrealengine.com/Resources/files/2013SiggraphPresentationsNotes-26915738.pdf)
   (SIGGRAPH 2013 Physically Based Shading course notes); the closest point applied to a disk
   light as in Sébastien Lagarde and Charles de Rousiers,
-  [*Moving Frostbite to Physically Based Rendering 3.0*](https://seblagarde.wordpress.com/wp-content/uploads/2015/07/course_notes_moving_frostbite_to_pbr_v32.pdf)
+  [*Moving Frostbite to Physically Based Rendering
+  3.0*](https://seblagarde.wordpress.com/wp-content/uploads/2015/07/course_notes_moving_frostbite_to_pbr_v32.pdf)
   (SIGGRAPH 2014 Physically Based Shading course notes). GGX's alpha as the perceptual roughness
   squared, Disney's reparameterisation as Karis 2013 (above) adopts it from Brent Burley,
   *Physically-Based Shading at Disney* (SIGGRAPH 2012 Physically Based Shading course notes); the
@@ -617,58 +656,70 @@ comment where it is used.
   2009) as given by Lagarde and de Rousiers (above). Used as techniques only; the table's layout,
   the widened alpha and the glint's clamp at grazing views are our own.
 - Volumetric clouds: Andrew Schneider,
-  [*The Real-time Volumetric Cloudscapes of Horizon Zero Dawn*](https://www.guerrilla-games.com/read/the-real-time-volumetric-cloudscapes-of-horizon-zero-dawn)
+  [*The Real-time Volumetric Cloudscapes of Horizon Zero
+  Dawn*](https://www.guerrilla-games.com/read/the-real-time-volumetric-cloudscapes-of-horizon-zero-dawn)
   (SIGGRAPH 2015; GPU Pro 7, "Real-Time Volumetric Cloudscapes"): Perlin-Worley shape noise,
   Worley erosion, weather-map coverage and height profiles, and the closed cloud deck's coverage
   threshold (its noise sum remapped by the coverage, `deckDensity` in `src/sky/Clouds.ts`).
 - Lunar shading: Yasuhiro Fujii,
-  [*A tiny improvement of Oren-Nayar reflectance model*](https://mimosa-pudica.net/improved-oren-nayar.html),
+  [*A tiny improvement of Oren-Nayar reflectance
+  model*](https://mimosa-pudica.net/improved-oren-nayar.html),
   through the adapted three-geospatial source above.
 - Star colours: the effective temperature from B-V of F. J. Ballesteros,
   [*New insights into black bodies*](https://doi.org/10.1209/0295-5075/97/34008) (EPL 97, 2012),
   then Planck's law weighted by the CIE 1931 colour matching functions in the analytic fit of
   C. Wyman, P.-P. Sloan and P. Shirley,
-  [*Simple Analytic Approximations to the CIE XYZ Color Matching Functions*](https://jcgt.org/published/0002/02/01/)
+  [*Simple Analytic Approximations to the CIE XYZ Color Matching
+  Functions*](https://jcgt.org/published/0002/02/01/)
   (JCGT 2013), and the sRGB matrix (`tools/build-star-catalog.mjs`).
 - Crepuscular rays: Kenny Mitchell,
-  [*Volumetric Light Scattering as a Post-Process*](https://developer.nvidia.com/gpugems/gpugems3/part-ii-light-and-shadows/chapter-13-volumetric-light-scattering-post-process)
+  [*Volumetric Light Scattering as a
+  Post-Process*](https://developer.nvidia.com/gpugems/gpugems3/part-ii-light-and-shadows/chapter-13-volumetric-light-scattering-post-process)
   (GPU Gems 3, 2007): a radial blur of the open sky toward the sun.
 - Raindrop rings: Sébastien Lagarde,
-  [*Water drop 2b – Dynamic rain and its effects*](https://seblagarde.wordpress.com/2013/01/03/water-drop-2b-dynamic-rain-and-its-effects/)
+  [*Water drop 2b – Dynamic rain and its
+  effects*](https://seblagarde.wordpress.com/2013/01/03/water-drop-2b-dynamic-rain-and-its-effects/)
   (2013): the ring profile sin( clamp( 9 ( t - r ), 0, 3 ) pi ), a wave and a half behind the
   front, for the rain's ring sprites on the sea.
 - Whitecaps: the horizontal Jacobian of the displaced surface as a breaking criterion, after
   J. Tessendorf, *Simulating Ocean Water* (above).
 - Wet surfaces: Sébastien Lagarde,
-  [*Water drop 3a – Physically based wet surfaces*](https://seblagarde.wordpress.com/2013/03/19/water-drop-3a-physically-based-wet-surfaces/)
-  and [*Water drop 3b – Physically based wet surfaces*](https://seblagarde.wordpress.com/2013/04/14/water-drop-3b-physically-based-wet-surfaces/)
+  [*Water drop 3a – Physically based wet
+  surfaces*](https://seblagarde.wordpress.com/2013/03/19/water-drop-3a-physically-based-wet-surfaces/)
+  and [*Water drop 3b – Physically based wet
+  surfaces*](https://seblagarde.wordpress.com/2013/04/14/water-drop-3b-physically-based-wet-surfaces/)
   (2013): porosity from roughness, darkening and gloss as the pores fill, a water film with water's
   specular reflectance and a flattened normal, and puddles whose shallow edges keep the ground's
   relief. The darkening uses the total-internal-reflection model of J. Lekner and M. C. Dorf,
   *Why some things are darker when wet* (Applied Optics 27, 1988), as summarised there. Rain rings
   on puddles: Lagarde,
-  [*Water drop 2b – Dynamic rain and its effects*](https://seblagarde.wordpress.com/2013/01/03/water-drop-2b-dynamic-rain-and-its-effects/)
+  [*Water drop 2b – Dynamic rain and its
+  effects*](https://seblagarde.wordpress.com/2013/01/03/water-drop-2b-dynamic-rain-and-its-effects/)
   (2013), its ripple texture's terms computed analytically per cell. In `src/materials/Wetness.ts`
   and `src/weather/Puddles.ts`.
 - Coverage-preserving alpha mips for the leaves: Ignacio Castano,
   [*Computing Alpha Mipmaps*](http://the-witness.net/news/2010/09/computing-alpha-mipmaps/) (2010):
   each mip keeps the full-size leaf's share above the alpha-test cutoff, remapped through a steep
-  ramp instead of a scale so alpha-to-coverage keeps leaves solid (`src/world/vegetation/LeafTexture.ts`).
+  ramp instead of a scale so alpha-to-coverage keeps leaves solid
+  (`src/world/vegetation/LeafTexture.ts`).
 - Rainbow colours (through the adapted table bake above): G. B. Airy, *On the intensity of light
   in the neighbourhood of a caustic* (Trans. Camb. Phil. Soc., 1838); J. S. Marshall and W. M.
   Palmer, *The distribution of raindrops with size* (J. Meteorology 5, 1948); C. Wyman, P.-P. Sloan
-  and P. Shirley, [*Simple Analytic Approximations to the CIE XYZ Color Matching Functions*](https://jcgt.org/published/0002/02/01/)
+  and P. Shirley, [*Simple Analytic Approximations to the CIE XYZ Color Matching
+  Functions*](https://jcgt.org/published/0002/02/01/)
   (JCGT 2013). The baked bows peak where the classic values put them: the primary's red at about
   42 degrees from the antisolar point, the secondary's at about 51.
 - Upscaling a render below the display's resolution: AMD FidelityFX Super Resolution 1 (EASU
-  edge-adaptive upsampling and RCAS sharpening), [GPUOpen](https://gpuopen.com/fidelityfx-superresolution/);
+  edge-adaptive upsampling and RCAS sharpening),
+  [GPUOpen](https://gpuopen.com/fidelityfx-superresolution/);
   the code is adapted from three.js's `FSR1Node` (see "FSR 1" above).
 - Tone curve: Troy Sobotka's [AgX](https://github.com/sobotka/AgX), through three.js's
   `agxToneMapping` (Benjamin Wrensch's
   [minimal AgX fit](https://iolite-engine.com/blog_posts/minimal_agx_implementation)); the hue-kept
   highlights scale each colour by its brightest channel as Khronos'
   [PBR Neutral](https://github.com/KhronosGroup/ToneMapping/tree/main/PBR_Neutral) does.
-- Default tone curve: Khronos' [PBR Neutral](https://github.com/KhronosGroup/ToneMapping/tree/main/PBR_Neutral)
+- Default tone curve: Khronos' [PBR
+  Neutral](https://github.com/KhronosGroup/ToneMapping/tree/main/PBR_Neutral)
   (Emmett Lalish's curve, as in three.js's `neutralToneMapping`), reimplemented in TSL without its
   desaturation toward white so highlights keep their hue.
 - Depth of field, highlights averaged compressed by their luminance (c / (1 + L)) and expanded
@@ -676,10 +727,12 @@ comment where it is used.
   (2013).
 - Depth of field, gather taps weighted by depth order (a tap behind the pixel reaches no further
   than the pixel's own blur): Jorge Jimenez,
-  [*Next Generation Post Processing in Call of Duty: Advanced Warfare*](https://www.iryoku.com/next-generation-post-processing-in-call-of-duty-advanced-warfare)
+  [*Next Generation Post Processing in Call of Duty: Advanced
+  Warfare*](https://www.iryoku.com/next-generation-post-processing-in-call-of-duty-advanced-warfare)
   (SIGGRAPH 2014 course *Advances in Real-Time Rendering in Games*).
 - The fantasy look's glow: Michael Orton's "Orton imagery" (slide sandwiches of a sharp and an
-  overexposed, defocused exposure of the same view, 1980s), as a blurred copy of the highlights added
+  overexposed, defocused exposure of the same view, 1980s), as a blurred copy of the highlights
+  added
   back over the image (`src/post/Pipeline.ts`). Its hue-selective colour follows the secondary
   (HSL-keyed) correction of colour grading, and its warm / cool split the photographic split tone.
 - Sharp cliff edges on the island mesh (vertices placed at the least-squares point of the edge
@@ -705,7 +758,8 @@ comment where it is used.
   branch and the numbers are our own.
 - The island's growth (`src/world/IslandGrowth.ts`): coastlines as the level sets of a fractal
   surface, after Benoit B. Mandelbrot, *The Fractal Geometry of Nature* (1982); islands shaped
-  from noise, after Amit Patel, [*Making maps with noise*](https://www.redblobgames.com/maps/terrain-from-noise/)
+  from noise, after Amit Patel, [*Making maps with
+  noise*](https://www.redblobgames.com/maps/terrain-from-noise/)
   (Red Blob Games); the relief's domain warp, after Inigo Quilez,
   [*Domain warping*](https://iquilezles.org/articles/warp/); each new piece grown as invasion
   percolation, after David Wilkinson and Jorge F. Willemsen, *Invasion percolation: a new form
@@ -720,8 +774,10 @@ comment where it is used.
   [*Temporal Reprojection Anti-Aliasing in INSIDE*](https://github.com/playdeadgames/temporal)
   (Playdead, GDC 2016); variance clipping in YCoCg: Marco Salvi, *An Excursion in Temporal
   Supersampling* (GDC 2016); the history fetched by FSR 3.1's Lanczos 2 sample with its deringing
-  (its code is listed under "FSR 3 upscaler's history sample" above); the current frame's samples weighted by their
-  distance to each output pixel with the accumulated weight kept in the history, reactive masks that limit the history where nothing
+  (its code is listed under "FSR 3 upscaler's history sample" above); the current frame's samples
+  weighted by their
+  distance to each output pixel with the accumulated weight kept in the history, reactive masks that
+  limit the history where nothing
   describes the motion (rain, spray, a lightning strike), and TAAU's split into a pass at the
   render's size that takes what depends only on the nearest input pixel (the clip box, the nearest
   motion and depth) and the resolve at the canvas's size, after FSR 2's reconstruct-and-dilate
@@ -734,7 +790,8 @@ comment where it is used.
 - The frame graph (`src/post/graph/`: passes that declare what they read and write, versioned
   resources, the declared order checked, passes nothing reads culled, the attachments' load and
   store derived from the passes that run): Yuriy O'Donnell,
-  [*FrameGraph: Extensible Rendering Architecture in Frostbite*](https://www.gdcvault.com/play/1024612/FrameGraph-Extensible-Rendering-Architecture-in)
+  [*FrameGraph: Extensible Rendering Architecture in
+  Frostbite*](https://www.gdcvault.com/play/1024612/FrameGraph-Extensible-Rendering-Architecture-in)
   (GDC 2017), used as a technique only.
 - The tolerance that compares temporal AA captures (`tools/parity/tolerance.py`): a per-pixel
   level with the share of pixels over it bounded on the frame and in local blocks, and a mean
@@ -743,7 +800,8 @@ comment where it is used.
   al., *FLIP: A Difference Evaluator for Alternating Images*, HPG 2020) is reported through the
   optional `flip-evaluator` package (BSD-3-Clause). Used as techniques only.
 - Gusts as a noise field scrolled with the wind, sweeping across the grass: techniques Eric
-  Wohllaib and Bill Rockenbeck presented (Eric Wohllaib, *Procedural Grass in 'Ghost of Tsushima'*, GDC 2021:
+  Wohllaib and Bill Rockenbeck presented (Eric Wohllaib, *Procedural Grass in 'Ghost of Tsushima'*,
+  GDC 2021:
   2D Perlin noise scrolled in the wind's direction; Bill Rockenbeck,
   *Blowing from the West: Simulating Wind in Ghost of Tsushima*, GDC 2021: the wind's strength
   varied by time-varying Perlin noise), in `src/weather/Wind.ts` (`gustAt`, read by `windField`,
@@ -754,7 +812,8 @@ comment where it is used.
   *Hash Functions for GPU Rendering*, Journal of Computer Graphics Techniques 9(3), 2020).
 - The displacement field the islanders part the meadow through: a 2D displacement buffer about
   the camera, written by particles of their own kind, a technique Bill Rockenbeck presented
-  (*Blowing from the West: Simulating Wind in Ghost of Tsushima*, GDC 2021), in `src/world/vegetation/Displacement.ts`. Used as a technique only; the window's size,
+  (*Blowing from the West: Simulating Wind in Ghost of Tsushima*, GDC 2021), in
+  `src/world/vegetation/Displacement.ts`. Used as a technique only; the window's size,
   the analytic sprites and their strengths from the trail's recovery are our own. Its readers
   sample it with a cubic B-spline in four bilinear taps: Christian Sigg and Markus Hadwiger, *Fast
   Third-Order Texture Filtering* (GPU Gems 2, chapter 20, 2005).
@@ -788,13 +847,16 @@ comment where it is used.
   root is our own.
 - Short blades folded into two leaves, and each level of the grass's distance LOD halving the
   blades and doubling the width of the rest: Outerra,
-  [*Procedural grass rendering*](https://outerra.blogspot.com/2012/05/procedural-grass-rendering.html)
+  [*Procedural grass
+  rendering*](https://outerra.blogspot.com/2012/05/procedural-grass-rendering.html)
   (2012-05-27), in `src/world/Grass.ts`. Used as techniques only.
 - Screen-space shadows for the key light over the depth: a technique Graham Aldridge presented
-  for *Days Gone* (Sony Creators Conference / SIGGRAPH 2023), in `src/post/MeadowShade.ts`, as a plain
+  for *Days Gone* (Sony Creators Conference / SIGGRAPH 2023), in `src/post/MeadowShade.ts`, as a
+  plain
   per-pixel march. Used as a technique only.
 - The display chain, techniques Jasmin Patry presented
-  (*Real-Time Samurai Cinema: Lighting, Atmosphere, and Tonemapping in Ghost of Tsushima*, SIGGRAPH 2021
+  (*Real-Time Samurai Cinema: Lighting, Atmosphere, and Tonemapping in Ghost of Tsushima*, SIGGRAPH
+  2021
   Advances in Real-Time Rendering in Games course): local tone mapping as a
   detail-preserving contrast change on a 64x32x64 bilateral grid blended 40 / 60 with a wide
   Gaussian (`src/post/LocalTone.ts`), per-channel tone mapping in AP1 with its red primary moved
@@ -893,7 +955,8 @@ comment where it is used.
   Jimenez's interleaved gradient noise (*Next Generation Post Processing in Call of Duty: Advanced
   Warfare*, SIGGRAPH 2014).
 - The ambient grade after the same talk (Patry 2021, p. 10) and
-  Jasmin Patry, *Samurai Shading in Ghost of Tsushima* (SIGGRAPH 2020 Physically Based Shading course, p. 9): global knobs on the
+  Jasmin Patry, *Samurai Shading in Ghost of Tsushima* (SIGGRAPH 2020 Physically Based Shading
+  course, p. 9): global knobs on the
   lighting, among them the ambient diffuse and specular balance and the sky's brightness, set per
   weather and time of day over physically based lighting, in `src/lighting/AmbientGrade.ts`. Used
   as a technique only; the table's knobs, rows and values are our own.
@@ -913,7 +976,8 @@ comment where it is used.
   wrapped cosine and the layer's response under a uniform sky are our own.
 - The local lights' clusters, in `src/lighting/LocalLights.ts` and
   `src/lighting/LocalLightClusters.ts`: Ola Olsson, Markus Billeter and Ulf Assarsson,
-  *Clustered Deferred and Forward Shading* (HPG 2012), the view cut into screen tiles and exponential depth slices, each cluster listing
+  *Clustered Deferred and Forward Shading* (HPG 2012), the view cut into screen tiles and
+  exponential depth slices, each cluster listing
   the lights whose spheres meet its box; the per-cluster compute pass over a fixed grid with lists
   in storage buffers as three.js r186's `ClusteredLightsNode` builds them (mechanism only; our
   sort, slices, packing and lookup are our own). The range window and the inverse-square
@@ -943,29 +1007,35 @@ behind the wind and the leaves' light; no code, data tables or images from them 
 bodies' curves take a few rounded key values off theirs).
 
 - Seabed substrate: Page C. Valentine, USGS,
-  [*Sediment classification and the characterization, identification, and mapping of geologic substrates*](https://www.usgs.gov/publications/sediment-classification-and-characterization-identification-and-mapping-geologic)
+  [*Sediment classification and the characterization, identification, and mapping of geologic
+  substrates*](https://www.usgs.gov/publications/sediment-classification-and-characterization-identification-and-mapping-geologic)
   (2019, SIR 2019–5073).
 - Shelf at the cliff foot (talus aprons and wave-cut shore platforms, art-directed rather than
   modelled): Alan S. Trenhaile, *The Geomorphology of Rock Coasts* (Oxford University Press, 1987).
 - Cliffs and rim: U.S. National Park Service,
-  [*Coastal Processes—Erosion*](https://www.nps.gov/articles/coastal-processes-erosion.htm), and USGS,
-  [*Factors affecting sea cliff erosion*](https://www.usgs.gov/media/images/factors-affecting-sea-cliff-erosion).
+  [*Coastal Processes—Erosion*](https://www.nps.gov/articles/coastal-processes-erosion.htm), and
+  USGS,
+  [*Factors affecting sea cliff
+  erosion*](https://www.usgs.gov/media/images/factors-affecting-sea-cliff-erosion).
 - Rockfall scars bounded by joint sets and bed partings, nested in size, and the debris below
   them: Mélody Prémaillon, Thomas J. B. Dewez, Vincent Regard et al.,
-  [*Conceptual model of fracture-limited sea cliff erosion*](https://archimer.ifremer.fr/doc/00705/81660/)
+  [*Conceptual model of fracture-limited sea cliff
+  erosion*](https://archimer.ifremer.fr/doc/00705/81660/)
   (Earth Surface Processes and Landforms 46, 2021).
 - The wave-cut notch (a sharp roof and a sloping floor near sea level, its depth varying along
   the coast): Fabrizio Antonioli et al., *Tidal notches in Mediterranean Sea: a comprehensive
   analysis* (Quaternary Science Reviews 119, 2015).
 - The cliff's shore zones and stains: the black *Verrucaria* band above the tide and the orange and
   grey lichens of the splash zone, MarLIN,
-  [*Yellow and grey lichens on supralittoral rock*](https://www.marlin.ac.uk/habitats/detail/96/yellow_and_grey_lichens_on_supralittoral_rock);
+  [*Yellow and grey lichens on supralittoral
+  rock*](https://www.marlin.ac.uk/habitats/detail/96/yellow_and_grey_lichens_on_supralittoral_rock);
   the dark runoff streaks of rock-dwelling cyanobacteria ("Tintenstriche"),
   [*Gloeocapsa magma*](https://en.wikipedia.org/wiki/Gloeocapsa_magma) and the literature it cites.
 - The islanders' growth and ageing (`src/characters/Ages.ts`): stature by age, the CDC 2000 growth
   charts' medians ([CDC Growth Charts](https://www.cdc.gov/growthcharts/), public domain); the
   leg's share of the height, Barry Bogin and Maria Inês Varela-Silva,
-  [*Leg length, body proportion, and health: a review with a note on beauty*](https://doi.org/10.3390/ijerph7031047)
+  [*Leg length, body proportion, and health: a review with a note on
+  beauty*](https://doi.org/10.3390/ijerph7031047)
   (International Journal of Environmental Research and Public Health 7, 2010); the stature lost
   in old age, as the Baltimore Longitudinal Study of Aging reports it.
 - The islanders' lifespans (`src/game/sim/life.ts`): Gompertz's law of mortality (Benjamin
@@ -1003,10 +1073,12 @@ bodies' curves take a few rounded key values off theirs).
   `src/world/Bamboo.ts`, `src/world/Yunpeng.ts`): a leaved crown's drag coefficient and its fall
   with the wind as a power law, A. Koizumi, J. Motoyama, K. Sawata, Y. Sasaki and T. Hirai,
   *Evaluation of drag coefficients of poplar-tree crowns by a field test method* (Journal of Wood
-  Science 56 (3), 2010); the bamboo culm's wall and modulus, P. G. Dixon and L. J. Gibson, *The structure and
+  Science 56 (3), 2010); the bamboo culm's wall and modulus, P. G. Dixon and L. J. Gibson, *The
+  structure and
   mechanics of Moso bamboo material* (Journal of the Royal Society Interface 11, 2014); the
   yunpeng's stalk drawn on the giant reed: the ceiling on a smooth cylinder's force coefficient as
-  given in A. Padewska-Jurczak, P. Szczepaniak and R. Walentyński, *Experimental and numerical analyses of
+  given in A. Padewska-Jurczak, P. Szczepaniak and R. Walentyński, *Experimental and numerical
+  analyses of
   airflow around two cylinders angled to the direction of wind* (Bulletin of the Polish Academy of
   Sciences: Technical Sciences 71 (1), 2023), the reed's wall from F. S. Coppolino, *Prove di
   caratterizzazione meccanica della canna comune (Arundo Donax) in prospettiva di un uso

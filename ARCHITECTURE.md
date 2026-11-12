@@ -64,7 +64,7 @@ nothing below a host reads the page or the wall clock (the save's timestamp asid
 
 ### Flows
 
-```
+```text
  player (speak bar, build bar, pause)            brain (stand-in, language model)
         |                                          ^ perception        | tool calls, now or later
         v                                          |                   v

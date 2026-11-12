@@ -1,0 +1,13 @@
+// markdownlint-cli2: the docs' format check (`npm run lint:docs`).
+{
+	"config": {
+		"default": true,
+		// The docs wrap prose at 100 columns; tables and code are left as they are.
+		"MD013": { "line_length": 100, "tables": false, "code_blocks": false },
+		// Tables are aligned or compact as their author chose.
+		"MD024": { "siblings_only": true },
+		"MD060": false
+	},
+	"globs": [ "*.md", "docs/**/*.md", "tools/**/*.md", "!CLAUDE.md", "!CLAUDE.local.md" ],
+	"ignores": [ "node_modules/**", "public/**", "dist/**", "artifacts/**", ".claude/**" ]
+}

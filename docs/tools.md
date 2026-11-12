@@ -26,16 +26,19 @@ everyday commands; this file has the details. Each tool's own file says the rest
   The log is `artifacts/jobs/serve-<mode>-sha-<12 hex>-<port>.log` in the calling checkout.
   A commit from before the assets left git (no `assets.lock.json`) gets the files it lacks from
   the calling checkout's `public/`, in their current versions.
-  `node tools/serve.mjs clean` removes every sha-* worktree; one with a live job is skipped and named (stop its job first).
+  `node tools/serve.mjs clean` removes every sha-* worktree; one with a live job is skipped and
+  named (stop its job first).
 - The game's assets (textures, models, fonts, baked data) are not in git: the dev server and the
   build fill the git-ignored `public/` from the release `assets.lock.json` names (Assets, below),
   so a fresh clone or worktree needs no setup.
 - `window.__PONLAI__` (scene handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the
   dev server or with `?debug` (or `?profile`, which also loads the frame profiler).
-  `__PONLAI__.loop.step( { frames, dt, scale, camera, onFrame, clock, converge } )` stops the live loop and
+  `__PONLAI__.loop.step( { frames, dt, scale, camera, onFrame, clock, converge } )` stops the live
+  loop and
   steps the tick itself with fixed timestamps, the frame pacer and the dynamic scale bypassed and
   nothing taken from the wall clock (`loop.start()` resumes the live loop); the diagnostics add
-  the scene's anti-aliasing (`aa`, and `aaSource`: `url` or `tier`, where it came from), the pipelines created so far (`pipelines`, counted by
+  the scene's anti-aliasing (`aa`, and `aaSource`: `url` or `tier`, where it came from), the
+  pipelines created so far (`pipelines`, counted by
   `src/debug/PipelineCounter.ts`) and `graph` (the frame graph's dev counters: the attachment
   ops it rewrote and expected in the last frame, the frames they differed, targets found at a
   size other than their class's).
@@ -51,7 +54,8 @@ everyday commands; this file has the details. Each tool's own file says the rest
   sun maps' redraw counts and a forced strike have stayed the same for the tier's `restSettle`
   frames (8) while no sky bake or transition is in flight, nothing is pending (a periodic bake
   due, the refracted sun's map behind its light, a queued sun shadow redraw, an async pipeline
-  compile) and the loading screen has faded out; under taa / taau / gt / fsr3 the temporal rest must also
+  compile) and the loading screen has faded out; under taa / taau / gt / fsr3 the temporal rest must
+  also
   have converged on quiet frames only. Any change of the key (a camera move, a resize, a seek,
   `establishScene`, any scene event, which now bumps the epoch under MSAA too) turns it false.
   `settle` says why not: `frames` of `need`, `stable`, `shown`, `pending` (names), `since` (the
@@ -68,11 +72,13 @@ everyday commands; this file has the details. Each tool's own file says the rest
   hand moves it (`src/camera/IslandCameraControls.ts`): a left drag grabs the ground, a right or
   middle drag (or Option / Ctrl with the left) turns and tilts, the wheel zooms toward the pointer
   out from the island view's own distance to 70 m (or that distance, if farther), never in past it
-  (main.ts `islandNearest`; the review views keep 22 m); on a trackpad a two-finger swipe pans, a pinch zooms and Option with a swipe
+  (main.ts `islandNearest`; the review views keep 22 m); on a trackpad a two-finger swipe pans, a
+  pinch zooms and Option with a swipe
   turns and tilts; W A S D or the arrows pan, Q / E turn, T / G tilt (straight down to 8 degrees
   over the horizon), + / - zoom, Shift speeds them up. The pivot stays over the land and its ring of
   shallows (its convex hull grown by 14 m); pulled past that, it goes on against a growing
-  resistance (at most 10 m farther) and springs back once let go. R returns to the island view's pose. `cameraInput=off` (or the GUI's Camera ›
+  resistance (at most 10 m farther) and springs back once let go. R returns to the island view's
+  pose. `cameraInput=off` (or the GUI's Camera ›
   move by hand) holds the view at its pose: Q / E or a right or middle drag then turn it about the
   land's centre, and the wheel does not zoom.
 - The GUI's Performance folder (`src/debug/FrameStats.ts`, from the rendered frames' rAF
@@ -140,7 +146,9 @@ View and capture:
 - `paused`, `t` (scene time), `dpr` (render pixel ratio, pinned), `polar`, `az` (the island
   view's tilt and heading, 40 and 180 degrees by default), `dist` (m; without it the island view
   frames the land and its shallows, IslandFraming.ts, brought in to where it frames the land alone
-  from its heading when that framing stands farther; with it the camera stands that far from the default pivot), `cameraInput=off` (the hand does not move the island camera: on by default), `gui`, `camera` (`orbit`, the
+  from its heading when that framing stands farther; with it the camera stands that far from the
+  default pivot), `cameraInput=off` (the hand does not move the island camera: on by default),
+  `gui`, `camera` (`orbit`, the
   default: the island camera; or `free`: fly with the mouse, WASD, Q/E and Shift).
   The island view's fov widens as it closes in: `nearFov` (degrees at the closest zoom, 42 by
   default; `off` keeps 27 at every distance) and `nearFovFrom` (the distance in m it widens from,
@@ -152,7 +160,8 @@ The island:
 
 - `seed` (the world's seed, 1 by default: Ponlai's island) and `grow` (growth steps after the
   starting island, 0 by default, up to `GROWTH.maxSteps`). The page generates its world from that
-  land in 16 m chunks and frames its views on it; debug pages expose `window.__PONLAI__.land` (`seed`,
+  land in 16 m chunks and frames its views on it; debug pages expose `window.__PONLAI__.land`
+  (`seed`,
   `step`, `bounds`, `centroid`, the views' `scale` against the first island and the default pivot
   `target`) for the tools to frame by, which follows the island as it grows.
 - `bamboo=cover,height` loads another look of the bamboo (src/world/BambooGroves.ts): the share
@@ -203,12 +212,14 @@ Sky and weather:
 - `wind` (light, gentle, fresh, strong: the wind's level, a mean wind 10 m up of 1.5, 3.8, 7 and
   11 m/s) and `windDir` (its heading in degrees: where the wind comes from, in the sea spectrum's
   convention, atan2( z, x ) in the world's x-z plane; 40 is the prevailing wind, which the
-  landscape and the sea's swell keep; the wind sea turns with it), each over the sky's own wind (the gentle one from 40 for
+  landscape and the sea's swell keep; the wind sea turns with it), each over the sky's own wind (the
+  gentle one from 40 for
   every kept sky, so `weather=fair` alone is the page it always was). Naming either holds the
   weather, as `weather` does; both are scene options. On a page, the GUI's Weather folder (`wind`,
   `wind heading`, over its transition seconds) or `__PONLAI__.setWind( { level, heading },
   seconds )`; `weather.windTarget` and the diagnostics' `windTarget`, `windSpeed` and
-  `windHeading` show it (`src/sky/Weather.ts`). Rain, storm and fog are parked (`src/sky/Weather.ts` `PARKED_WEATHER`):
+  `windHeading` show it (`src/sky/Weather.ts`). Rain, storm and fog are parked (`src/sky/Weather.ts`
+  `PARKED_WEATHER`):
   a production page without `?debug` refuses them with a console warning and shows fair; the dev
   server, `?debug` and `?profile` still reach them.
 
@@ -216,7 +227,8 @@ Quality and look:
 
 - `quality` (low, medium, high: the tier of every knob in `src/Quality.ts`; without it high, the
   only active tier: medium and low are parked, see Parked quality tiers), `tier.<knob>=<value>`
-  overrides one knob for an A/B (e.g. `tier.post.hazeGrid.width=128`). The GPU timing that once chose
+  overrides one knob for an A/B (e.g. `tier.post.hazeGrid.width=128`). The GPU timing that once
+  chose
   the tier (`src/QualityDetect.ts`, `autoQuality`) is parked with them.
 
 Rendering and A/B options, read at load (runtime switches for one-page A/Bs live in
@@ -225,7 +237,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 - `aa` (the anti-aliasing mode, `src/post/Antialiasing.ts`, over the tier's `aa` knob: each tier
   has its default, high `msaa` (the parked medium `taau`, low `msaa`), and the GUI's Antialiasing
   control reloads with any of MSAA 4x, TAAU, FSR 3.1, TAA and Off. `msaa`: 4 samples, upscaled by
-  FSR 1; `off`: one sample; `taa` and `taau`, the temporal modes: one sample, jittered, with motion vectors, resolved against a history in `TemporalAA.ts`, at the
+  FSR 1; `off`: one sample; `taa` and `taau`, the temporal modes: one sample, jittered, with motion
+  vectors, resolved against a history in `TemporalAA.ts`, at the
   render's size or upsampled to the canvas; a paused page shows the rest image, the jitter
   sequence averaged, once it has converged, `TemporalRest.ts`; what changes the scene raises a
   scene event, `SceneEvents.ts`, which restarts the rest and may cut the history: the diagnostics'
@@ -253,7 +266,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   whose rest averages `tier.taa.gtJitters` jittered frames (64 by default, 32 per frame of a
   motion clip) with a box filter, without the sharpening (the dither kept).
   `loop.step`'s `converge( i )`, where it returns true, holds the scene after frame i's tick and
-  renders it until the rest has converged; `tools/capture-clip.mjs --aa gt [--gt-jitters n]` captures it that way,
+  renders it until the rest has converged; `tools/capture-clip.mjs --aa gt [--gt-jitters n]`
+  captures it that way,
   and so does a clip of one frame (`--clip rest`) under `aa=taa|taau` (their own rest sequence).
   After `loop.step`, `loop.start()` resumes the clock with a first delta of at most one frame.
 - `taaResolve=off` (debug builds): the temporal modes without their resolve, the jittered frame
@@ -267,7 +281,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 - `terrainHex=0` (the cliff's plain triplanar tiling and smooth layer masks; for an A/B inside one
   page each cliff material swaps to its other variant through `material.userData.terrainVariant`,
   as `TerrainMaterial.ts` shows: the flag itself is read only when the material is built).
-- `post=legacy` (or a comma list of `inline-composite`, `three-fsr`, `store-scene`: the frame graph without the first performance round's changes).
+- `post=legacy` (or a comma list of `inline-composite`, `three-fsr`, `store-scene`: the frame graph
+  without the first performance round's changes).
 - `gpuTimer=off` (high's dynamic resolution without its timestamp queries: it then steers by the
   frame intervals).
 - `drsStore=on|off` (whether high starts from the render scale it last held, kept in localStorage
@@ -276,7 +291,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `on` tests a returning load there, `off` neither restores nor saves anywhere).
 - `frameRate=auto|<fps>` (the frame rate the loop holds on a faster display: `auto`, the default,
   holds the tier's and falls back to the next whole divisor of the refresh, e.g. 72 -> 48 fps on
-  144 Hz, when the dynamic scale's floor cannot hold it, `src/post/FramePacer.ts`; a number is a cap,
+  144 Hz, when the dynamic scale's floor cannot hold it, `src/post/FramePacer.ts`; a number is a
+  cap,
   the fastest whole-divisor rate not above it, without the fallback; `frameRate=0` renders on every
   refresh, as the profiler's uncapped runs do). `frameFallback=0` keeps `auto` at the tier's rate
   (profile-frame adds it on `--compare` and `--accept`; `--frame-fallback` keeps the fallback on). A
@@ -316,7 +332,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   tone curve); `ambientOnly` takes the key light (the
   sun or the moon, with the vegetation's and the feathers' light through them) out of the lit
   materials, leaving the sky's light and the ground's bounce, and writes the sea's metering
-  illuminance without its key term (the sea's colour is left as it is). They combine: one minus the radiance under
+  illuminance without its key term (the sea's colour is left as it is). They combine: one minus the
+  radiance under
   `lightOnly,ambientOnly` over that under `lightOnly` is a point's share of direct light.
   `opaqueVegetation` lights the vegetation as opaque surfaces (no light through a leaf or blade,
   no wrap, its ambient unweighted by its translucency), so a plant takes only the diffuse light an
@@ -338,7 +355,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   deep overcast night) still decodes; past 2^15 the haze and emission over the codes keep the
   pre-exposure's scale, 2^( P - 15 ) times larger beside them, so more hazy cells read as no kind.
 - The scene's linear radiance over boxes, as numbers (`src/debug/Radiance.ts`): `await
-  __PONLAI__.radiance( { boxes: { lit: [ x, y, w, h ], ... }, image: [ 3456, 2234 ], grid: [ nx, ny ],
+  __PONLAI__.radiance( { boxes: { lit: [ x, y, w, h ], ... }, image: [ 3456, 2234 ], grid: [ nx, ny
+  ],
   source: 'opaque' } )`. Boxes are fractions of the frame from its top-left, or pixels of an image
   of size `image` (a capture's PNG, the boxes `img.py stats` takes); none means the whole frame.
   `source` is `opaque` (the default: the resolved opaque colour, before the sea, the haze and the
@@ -349,8 +367,10 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   The targets store radiance pre-exposed, times 2^P (`src/post/PreExposure.ts`): every value but
   `range` is in scene units, divided by 2^P, and `preExposure` is the P (stops) of the frame read.
   `exposure` is the exposure state (`ev` and its `target` in stops, the
-  factor `exposure` = 2^ev on scene units, ev's `velocity` in stops a second and `moved`, 1 where that
-  frame's ev differed from the frame's before: `src/post/Exposure.ts`); `grid` adds the mean colour of each cell of an
+  factor `exposure` = 2^ev on scene units, ev's `velocity` in stops a second and `moved`, 1 where
+  that
+  frame's ev differed from the frame's before: `src/post/Exposure.ts`); `grid` adds the mean colour
+  of each cell of an
   nx by ny grid (`grid.rgb`, three per cell, row by row). Measure under `lightOnly` for the light
   alone. From a probe (`--eval "await P.radiance( { boxes: ... } )"`, after `--until "D.settled"`
   or `--frames n`) or from a capture's `-- --eval-ready @file`, which runs once the page is ready
@@ -382,13 +402,15 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `post.exposure.key@high` (an exposure key per sun height, `@dusk`, `@golden`, `@low`, `@high`,
   `@cloudy`, `@cloudyGolden`, `@cloudySunset`, `@cloudyDusk`, `@cloudyLow`, `@night`, and the
   rising sun's `@dawn`, `@morningGolden`; `@sunset` shares `@golden`'s; overcast's key over the
-  clouded one `post.exposure.overcastKey`, toward a low sun `post.exposure.overcastKeyLow`; the local gain's
+  clouded one `post.exposure.overcastKey`, toward a low sun `post.exposure.overcastKeyLow`; the
+  local gain's
   `post.localTone.hinge@high`, `high`, `low`, `width` alike), `post.tone.midGrey`,
   `post.tone.blackSlope`, `post.tone.white`; the desaturation's `post.desaturate.amount@golden`
   (`cool`; `@dawn`, `@day`, `@cloudy`, `@night`) and its cool share's `post.desaturate.coolFrom`,
   `coolTo`; the shade's contrast `post.shade.pivot@day`, `slope`
   (`@golden`, `@day`, `@cloudy`, `@night`), the bloom's `post.bloom.strength` and the sun's glare
-  `post.glare`; the display's white `post.white.r@high` (`g`, `b`; `@day`, `@golden`, `@dawn`, `@cloudy`,
+  `post.glare`; the display's white `post.white.r@high` (`g`, `b`; `@day`, `@golden`, `@dawn`,
+  `@cloudy`,
   `@overcast`, `@night`), overcast's highlights toward grey `post.highlight.amount` (`from`, `to`),
   the sky's light `sky.light.r@high` (`g`, `b`; `@low`, `@golden`, `@dusk`, `@morning`, `@dawn`,
   `@cloudyHigh`, `@night`) and the clear sky's gain over it `sky.clear.gain@high` (`@horizon`,
@@ -409,7 +431,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   0 its noon side, 180 the pole's, positive toward the west), and the stars' sky, the one seen
   from `sky.stars.latitude` degrees south at the sidereal time `sky.stars.sidereal` (hours:
   `src/sky/DayCycle.ts` MOON, STARS), a clouded sky's floor of the key on the land under its deck
-  `sky.deckFloor@overcast` (`@cloudy`) and its day sky, the level of the whole sky's light by day at a sun 18 degrees up and how it
+  `sky.deckFloor@overcast` (`@cloudy`) and its day sky, the level of the whole sky's light by day at
+  a sun 18 degrees up and how it
   goes with the sun's height, `sky.daySky@overcast`, `sky.daySkyExponent@overcast` (`@cloudy`:
   `src/sky/Weather.ts` `daySkyAt`), the key's gain on that floor under overcast's deck
   `lighting.overcastKey` (under a cloudy deck's, `lighting.cloudyKey`: `src/sky/Sky.ts`
@@ -451,7 +474,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   light and the night's apart, `sky.dusk.force.<name>` (-1, the default, leaves a share as the code
   makes it, 0 to 1 forces it to that value; the twilight's are weights on the sun's light; the names
   and what each one forces: `src/sky/DayCycle.ts` DUSK_FORCES, the values the code gave them since
-  a script cleared it, on debug pages only: `duskShares`; `tools/dusk-grid.mjs` sets and reads them).
+  a script cleared it, on debug pages only: `duskShares`; `tools/dusk-grid.mjs` sets and reads
+  them).
 - The ambient grade (`src/lighting/AmbientGrade.ts`): `__PONLAI__.ambient.current` holds the five
   knobs the table gives for the sun and the weather now (also `D.ambient`), `table` the table's own
   output; `override = true` with `manual.<knob>` replaces it from the next frame (the GUI's Ambient
@@ -462,7 +486,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `groundCast:false`, `groundShade:false`, `grassShadow:false`, `grassClumps:false`,
   `shadowWind:false` (the plants cast their rest pose and the sun's map goes back to its stepped
   redraws; live, so `--toggle "s.flags.shadowWind = on"` times the swayed shadows); the meadow's
-  make at load: `grassDensity:<k>` (blades per m^2 over the meadow's 125), `grassWidth:<k>`, `grassLod:false`,
+  make at load: `grassDensity:<k>` (blades per m^2 over the meadow's 125), `grassWidth:<k>`,
+  `grassLod:false`,
   and `grassMask:true`, which paints the blades flat red for `img.py stats
   --cover` (`src/world/Grass.ts`), or `grassMask:exact`, which draws them unlit in a red far above
   any radiance, so each pixel's cover is exact in the opaque colour, or `grassMask:albedo`, unlit in
@@ -476,19 +501,23 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   (the same fields as `radiance`'s `exposure`). The grade's
   first table is generated from parameters
   (`src/post/GradeLut.ts`, `s.pipeline.grade`): the GUI's Grade table folder (in Post), or
-  `__PONLAI__.setGrade( { saturation: 1.1, shadows: { tint: [ 0.95, 1, 1.05 ] } } )` from a capture's
+  `__PONLAI__.setGrade( { saturation: 1.1, shadows: { tint: [ 0.95, 1, 1.05 ] } } )` from a
+  capture's
   `::js` or a quick variant (the changes nested as the grade's own, set over it). The meadow's
-  albedo against its lawn colour: the GUI's `meadow albedo (x)` or `__PONLAI__.setLawnGain( k )`; the
+  albedo against its lawn colour: the GUI's `meadow albedo (x)` or `__PONLAI__.setLawnGain( k )`;
+  the
   cliff's above the water against its stone: `cliff albedo (x)` or `__PONLAI__.setRockGain( k )`;
   the trees' leaves against their atlas: `tree leaves albedo (x)` or `__PONLAI__.setLeafGain( k )`.
   The tone curve's slope at black, the mid grey it shows and the input that shows white: the GUI's
-  Tone curve folder (in Post), or `s.pipeline.settings.curve` (read every frame; `src/post/ToneCurve.ts`
+  Tone curve folder (in Post), or `s.pipeline.settings.curve` (read every frame;
+  `src/post/ToneCurve.ts`
   TONE_CURVE; a set the solve cannot meet keeps the last good curve and warns, and only the default
   set failing throws, on the dev server).
   `fgview=meadowShade` shows the shade's map.
 - The screen-space ambient occlusion (`src/post/GTAO.ts`, on in high: the tier's `ao` knob builds it
   and the opaque scene's depth prepass at load, `src/world/OpaquePrepass.ts`): `flags=gtao:false`
-  builds without it, `flags=gtao` with it on another tier; `__PONLAI__.gtao` holds its knobs (cutoff, recede, base, maxTexels, fullDistance). At run time
+  builds without it, `flags=gtao` with it on another tier; `__PONLAI__.gtao` holds its knobs
+  (cutoff, recede, base, maxTexels, fullDistance). At run time
   `flags.gtao = false` skips its passes and the receivers read 1 (`--toggle "s.flags.gtao = on"`
   times its passes; `--compare` against `?flags=gtao:false` the depth prepass too). `fgview=gtao.r`
   shows the occlusion the materials read, `fgview=gtaoRaw.r` the slices' before the blur.
@@ -497,7 +526,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `--toggle "s.flags.localLights = on"` times their clusters' pass and the materials' lookup (on
   a night view: by day neither runs). `flags=lightTest:N` (at load) adds N white test sources
   over the meadow, with the range and light of stand-in yunpeng clumps (the same on any land), for
-  cost and overflow tests (64 and 256 are the usual loads). The GUI's Local lights folder turns them off and sets their art gain;
+  cost and overflow tests (64 and 256 are the usual loads). The GUI's Local lights folder turns them
+  off and sets their art gain;
   `await __PONLAI__.localLights.info()` reads the last pass back: `sources` (in the table),
   `inView` (sorted into the clusters this frame), `fullest` (the most sources touching one
   cluster), `overflowed` (clusters with more than `perCluster`, whose farthest are dropped),
@@ -545,7 +575,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   above the grass, point where the local wind blows, longer in a gust, and their brightness
   shows the load the plants take there (`plantLoad`); and every plant that bends from its root
   (the yunpeng, the bamboo; not the meadow's blades) is drawn unlit in the colour of its current
-  sway s (tip offset over height): the hue is s's angle from the mean wind on a cyclic map (downwind blue,
+  sway s (tip offset over height): the hue is s's angle from the mean wind on a cyclic map (downwind
+  blue,
   upwind orange, left of the wind, counter-clockwise seen from above, magenta, right of it green),
   the brightness |s| / 0.15. `windView=arrows` or `windView=plants` shows one half. The numbers
   behind it: `__PONLAI__.windProbe( options )` (`src/debug/WindProbe.ts`: the shaders' own wind
@@ -554,7 +585,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   neighbours' correlation, the gust field's size and travel, the sea's gusts against it around the
   island (`gust.sea`), the plants' wiring, their sway
   rates, and per weather where every part travels and how fast: the plants, the sea and its
-  swell, the open sea's gusts, the air's displacement (`fog`), the cumulus and the thin layer's streaks), through the probe as
+  swell, the open sea's gusts, the air's displacement (`fog`), the cumulus and the thin layer's
+  streaks), through the probe as
   `--eval "return JSON.stringify( await P.windProbe() )"`.
 - The haze (`src/weather/VolumetricHaze.ts`): its knobs are the GUI's Haze folder and
   `__PONLAI__.pipeline.air.settings` (read every frame; a change of the slices, the jitter or the
@@ -562,9 +594,14 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `debug: 1` shows the key light's visibility in the froxel at each pixel's depth (a grey card in
   that light: mid grey lit, black shadowed), the shadow the shafts are cut from. Its
   `readings( height, from?, to? )` gives the medium's numbers without a capture: green's
-  extinction at a height, each band's sigma, a horizontal view's RGB transmittance over 1 and 3 km and the
-  distance its luminance halves in, and the transmittance between two points (probe:
-  `--eval "const c = P.camera.position, t = P.land.target; return P.pipeline.air.readings( c.y, c, { x: t[ 0 ], y: t[ 1 ], z: t[ 2 ] } )"`).
+  extinction at a height, each band's sigma, a horizontal view's RGB transmittance over 1 and 3 km
+  and the
+  distance its luminance halves in, and the transmittance between two points (probe below).
+
+  ```bash
+  --eval "const c = P.camera.position, t = P.land.target; return P.pipeline.air.readings( c.y, c, { x: t[ 0 ], y: t[ 1 ], z: t[ 2 ] } )"
+  ```
+
 - `look=kit` dresses the islanders in the earlier kit look (pointed ears, linen shirt, cel steps)
   instead of the feather-clad Hanming look (`src/characters/looks.ts`).
 - `islander` picks the islanders' proportions (the look's own by default: `real` for the Hanming
@@ -595,7 +632,8 @@ Game:
   its first save), `autosave=on|off` (whether the page keeps the save itself, resuming it as it
   loads and saving every minute and when the page is hidden or left: on by default, off in an
   automated browser so a capture or a check neither resumes a game left in its profile nor leaves
-  one; `load` resumes whatever it says; `src/game/save.ts`), `lang` (the interface's language: `zh-CN`, the
+  one; `load` resumes whatever it says; `src/game/save.ts`), `lang` (the interface's language:
+  `zh-CN`, the
   default, or `en`, a snapshot whose missing words show in Chinese: `src/game/ui/i18n/`). The
   page's own `weather` option and auto weather work in the game as without it.
 - The player's interface is 蜃光 (`src/game/ui/GameUi.ts`, its spec `docs/ui.md`): the top row
@@ -609,7 +647,8 @@ Game:
   reason in the bar), a click places it (`src/game/Placement.ts`). Space pauses only the game
   clock, the GUI's hour, clock pause and time preset are off (the game's clock owns the time of
   day), and its Game folder (`src/game/GameDebug.ts`) pauses and resumes, saves, loads and
-  starts a new game (`saved`: when the game was last saved, and whether autosave is on), shows one islander's body
+  starts a new game (`saved`: when the game was last saved, and whether autosave is on), shows one
+  islander's body
   (position, the action under way, whether a thought is in flight) and sends it walking to the
   next click on the island; its Growth subfolder shows the population against the next step and
   adds an islander (one piece per 2 islanders above 3: the island grows at 5 islanders). Its
@@ -617,12 +656,15 @@ Game:
   roster three times over, more resource kinds than the row shows whole), "placeholder days" (nine
   days in the record), "hearing brain" (hears the player, thinks a few seconds with the heard
   words circling, answers a placeholder line), a line said by the inspected islander, their
-  needs low or critical, and the language (reloads the page with `lang`). The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
+  needs low or critical, and the language (reloads the page with `lang`). The stand-in brain
+  (`src/game/sim/standin.ts`) thinks for the islander
   by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `act( id, calls )` (tool
   calls for an islander, `[ { tool, args } ]`: the five actions, through the entrance a brain's
-  answer takes), `listen( fn )` (the simulation's events as they come), `setBrain( brain )` (kept across a load; `null` leaves the islander idle),
+  answer takes), `listen( fn )` (the simulation's events as they come), `setBrain( brain )` (kept
+  across a load; `null` leaves the islander idle),
   `think( id )`, `walkTo( id, x, z )`, `placeBlueprint( kind, x, z )` (a building of a kind,
-  `'chest'`, any number, each with an id like `chest1`; returns why not, or null), `focus( id )`, `setPaused`, `togglePause`,
+  `'chest'`, any number, each with an id like `chest1`; returns why not, or null), `focus( id )`,
+  `setPaused`, `togglePause`,
   `addIslander()`, `save` and `load` (a save of another piece count loads only with the page),
   `startOver()` (a new game on the island shown), `autosave()` (the page's save: skipped when
   nothing changed), `.keeps` and `.savedAt`,
@@ -687,7 +729,8 @@ within a tolerance; the test mode keeps the byte-for-byte checks valid.
 ## Captures
 
 `node tools/capture.mjs <name> [--w 1672 --h 941] [--q "paused&t=12&dpr=1"] [--eval js|@file]...
-[--eval-ready js|@file]... [--verbose]` takes a screenshot of the running dev server into `artifacts/captures/`
+[--eval-ready js|@file]...
+[--verbose]` takes a screenshot of the running dev server into `artifacts/captures/`
 (git-ignored) and prints frame diagnostics. It needs Playwright's Chromium once
 (`npx playwright install chromium`), or `CHROME_PATH` set to a WebGPU-capable Chrome.
 
@@ -713,11 +756,13 @@ capture waits for the page's `settled` signal (`src/post/Settled.ts`, with the l
 grabbed every 2 frames, shot when a comparison found no pixel changed (after 40 frames, at most 5000
 changed pixels count as unchanged; after 120 the view is shot anyway, marked `capped`). A paused
 temporal page (taa, taau, gt) is not compared: it is shot once its rest has converged
-(`TemporalRest.ts`) and `settled` holds, and the `--stable-*` options do not apply to it. Every capture waits for the
+(`TemporalRest.ts`) and `settled` holds, and the `--stable-*` options do not apply to it. Every
+capture waits for the
 loading screen's fade-out to finish (its computed opacity 0), not only for its `done` class: a
 shot during the fade has the screen blended over the whole frame.
 Replayed over per-frame traces of the 24 parity views, these defaults shot no load early and every
-one on its settled frame. The capture's JSON records it as `ready` (`--stable-*` options in `tools/capture.mjs`, the rule and its
+one on its settled frame. The capture's JSON records it as `ready` (`--stable-*` options in
+`tools/capture.mjs`, the rule and its
 evidence in `tools/capture-browser.mjs`). `--ready-frames n` waits for a fixed count instead, as a
 running capture does (60); `--wait` / `--settle` ms add fixed delays. The frame loop is stopped
 and the GPU queue drained before the shot. The shot is the compositor's image through CDP with
@@ -735,7 +780,8 @@ change, bounding box, `--heat` map), `crop` (boxes or a capture's named anchors,
 hue medians, `--linear` the mean linear luminance Y (sRGB decoded, Rec. 709), its `--pct`
 percentiles and the Oklab L, a, b of the mean linear colour, for light compared in stops (log2 of
 a ratio of Y) and colour as an Oklab distance, `--split` the means of the pixels under and over
-the region's own median L, a crown's dark and lit halves, and of its darkest 5 % and brightest 10 %, in Oklab and linear RGB, `--cover` the
+the region's own median L, a crown's dark and lit halves, and of its darkest 5 % and brightest 10 %,
+in Oklab and linear RGB, `--cover` the
 share of a mask capture's pixels painted flat red, as `grassMask:true` paints the blades, `--mask M`
 the pixels a mask capture of the same view (a file, or a directory of them) paints in a red of
 their own luminance against the rest, as `streakMask:true` paints the thin cloud layer's: their
@@ -744,27 +790,39 @@ share, the Oklab medians of both parts and of each marked pixel against the rest
 reads a cloud deck's structure on named sky regions instead, the horizon views' `h` and the view
 toward the sun's `sun`: the spread of its blocks of a degree, its structure about a broad trend, the
 std per band of size, the edges' gradient, the masses' size, and with `--deck-rows` the horizon's
-rows, the low sky against the sky over it and the far sea's fall a degree) and `flicker` (a clip's consecutive whole
+rows, the low sky against the sky over it and the far sea's fall a degree) and `flicker` (a clip's
+consecutive whole
 frames, capture-clip's `--full`: the temporal flicker per region, mean frame difference, temporal
 high-pass, one-frame flashes and a `--map` of where they fall) and `radial` (the median colour,
 luma and linear luma ring by ring around a point, such as the sun's place an `--eval-ready` step
-returned: `--centre-key`; rings in percent of the frame's height, or degrees with `--fov`; `--half up`
+returned: `--centre-key`; rings in percent of the frame's height, or degrees with `--fov`;
+`--half up`
 keeps the sky over a low sun without the sea under it); regions are `--box
 [name=]x,y,w,h` or `--anchor name|all` from the capture's JSON. Its numbers are diff-set.py's and
-compare-captures.py's (shared helpers in `tools/parity/pixels.py`). `tools/compare-captures.py` measures two overview
+compare-captures.py's (shared helpers in `tools/parity/pixels.py`). `tools/compare-captures.py`
+measures two overview
 captures (`uv run --with numpy --with pillow`). Where shapes differ (growth steps, seeds, a
 regenerated island), judge the look by eye and region statistics (`tools/capture-growth.mjs`), not
 by pixel difference.
 
-`node tools/colour-rows.mjs shoot <url> <dir> --views-file f.json [--pages normal,light,ambient,classes] [--warm] [--jobs N] [--scene]`
+```bash
+node tools/colour-rows.mjs shoot <url> <dir> --views-file f.json \
+  [--pages normal,light,ambient,classes] [--warm] [--jobs N] [--scene]
+```
+
 takes a views file's frames on one page per flag set, under the shared GPU lock, and `node
-tools/colour-rows.mjs rows <dir> [--sort <dir> | --own [--sky-mask-deg N]] [--boxes f.json] [--views a,b] [--sky-bands 0,5,15,30] [--out f.json] [--json]`,
+tools/colour-rows.mjs rows <dir> [--sort <dir> | --own [--sky-mask-deg N]] [--boxes f.json] [--views
+a,b] [--sky-bands 0,5,15,30] [--out f.json] [--json]`,
 plain node, reads them: final-pixel Oklab L, C and h per view, per kind of surface and per kind of
 light (sun and shade by the cell's direct share, and `land sun` and `land shade` over every kind),
-with the sky, the sea, the darkest 5 % of the land and any boxes, into `<dir>/rows.json` and a table.
-Each row also gives `card`, the mean luminance of the same cells on the light page in scene units, and
-each view the land's shares in sun, shade and penumbra. A view `<base>--<variant>` is read through the
-sort of `<base>`, so its rows are the same cells; variants need only `--pages normal`. `--scene` also
+with the sky, the sea, the darkest 5 % of the land and any boxes, into `<dir>/rows.json` and a
+table.
+Each row also gives `card`, the mean luminance of the same cells on the light page in scene units,
+and
+each view the land's shares in sun, shade and penumbra. A view `<base>--<variant>` is read through
+the
+sort of `<base>`, so its rows are the same cells; variants need only `--pages normal`. `--scene`
+also
 reads each row's radiance in scene units (`scene`: the opaque source's mean and median, the hdr's
 mean) and adds the rows a ratio of the scene's light needs: `sky band` (4 to 15 degrees up, turned
 from the key light), `sea away` (just under the horizon on that side), `<kind> flat` and `<kind> sun
@@ -776,7 +834,8 @@ light whose centre's ray stands in [a, b) degrees up, read over at least 64 cell
 few cells`; not with `--own`). It prints what
 the frames hold and judges nothing. Its header has the sort. `shoot --warm` lets the views of a page
 reach each other by the scene jump (a fraction of a page load, with the same frames and readings
-byte for byte, as checked on four views both ways): its read only reads, which `capture.mjs --ready-reads` tells the worker; an
+byte for byte, as checked on four views both ways): its read only reads, which
+`capture.mjs --ready-reads` tells the worker; an
 `--eval-ready` without it takes a page per view. `--jobs` is capture-set's page count. `rows --own`
 sorts each view by its own depth read (sky, sea, the land between them and the land's darkest 5 %),
 for views that share no camera, such as a camera turned at each frame; it needs only the normal
@@ -793,22 +852,26 @@ read from the page, which is the one with sky in it), as a contact sheet a camer
 (`sheet-<camera>-<weather>.png`, labelled with the time and the sun's elevation), an overview of
 twelve key moments by the four weathers, the sky's, the sea's, the land's and the land's darkest 5 %
 log2 luminance and Oklab C and h with the sun's elevation and the exposure over the day
-(`curves-*.png`, `rows.json`) and `jumps-<camera>.txt`: every pair of neighbouring frames whose change
+(`curves-*.png`, `rows.json`) and `jumps-<camera>.txt`: every pair of neighbouring frames whose
+change
 holds a step beyond what its neighbours' slope predicts, of more than 1/3 stop or Oklab (a, b)
 distance .03, by size; a pair over which the camera turned more than 15 degrees is listed as "camera
 turned" instead of scanned. The land is read whole and by rank per frame (colour-rows's `land` and
 `floor` rows), not by a sun and shade sort fixed at noon, whose cells jumped three stops where
 noon's shadow stood. Run it before handing back a change to anything keyed by the sun's elevation or
-the weather; a routine run is hundreds of scene jumps, so through `job.mjs start` and `job.mjs wait`,
+the weather; a routine run is hundreds of scene jumps, so through `job.mjs start` and
+`job.mjs wait`,
 into a new directory. A run is 732 PNG frames (about 6 GB); once the steps are found, the frames no
 line names are kept as 360 px thumbnails (`img.py thumb`) and the flagged ones, the sheets and the
-curves keep their size (`--keep-frames` keeps all; a thinned run's `report` redoes the numbers only).
+curves keep their size (`--keep-frames` keeps all; a thinned run's `report` redoes the numbers
+only).
 `--compare <earlier output>` gives a before and after sheet a camera and weather and the frames
 whose regions changed beyond those thresholds, between runs of the same sort and size and for
 frames with the same pose (the others are listed, not subtracted), refused before anything is shot
 when the runs do not match. The readings come from both runs' rows, so a thinned run compares too:
 its sheets' differences are then taken between thumbnails (the full-size side shrunk to match), as
-`compare.txt` says, and a sky masked otherwise is marked not compared rather than refused; `--transitions` freezes each
+`compare.txt` says, and a sky masked otherwise is marked not compared rather than refused;
+`--transitions` freezes each
 adjacent pair of weathers half way through a front at four moments and reports how far the middle
 frame lies from its endpoints; `report <outDir>` repeats the report on frames already shot. It is
 colour-rows (shoot --warm and rows), capture-set, `img.py sheet` and `thumb` and
@@ -823,7 +886,8 @@ headless in one warm capture browser. It compares the views (parity view names, 
 island, cliffs, meadow; each shot twice, two frames apart, after the settled signal and a stable
 image; the first shots or the second byte for byte) on decoded pixels, the chunk hashes, the rain's
 collision map read back in each page (0 differing texels), the camera's ground grid, the world
-fields' bytes, the ambient light's probe lattice and its relit irradiance (their SHA-256), the pipeline count (constant across every swap, equal on both pages), renderer.info's
+fields' bytes, the ambient light's probe lattice and its relit irradiance (their SHA-256), the
+pipeline count (constant across every swap, equal on both pages), renderer.info's
 uniform buffers and textures (the grown page at most 2 above the fresh one) and the console (no
 errors). Per step it records the swap's time and the memory. The GPU lock is shared and held only
 while a page renders: it is released while the page prepares its next piece. Writes `report.json`
@@ -844,7 +908,8 @@ query and `--q` pass through and override the tool's settings (`debug` is added,
 preview works). The shots are grouped by side and by the options a page reads at load (seed, grow,
 quality, dpr, ...), and each group is one `capture.mjs --worker` page (paused, headless, the shared
 GPU lock per view) that loads its first view and reaches the others by the exact scene jump, so a
-group's world is generated once; `--jobs` pages run at once. Each group keeps its own browser profile
+group's world is generated once; `--jobs` pages run at once. Each group keeps its own browser
+profile
 (`artifacts/.capture-profiles/growth/<side>-s<seed>-g<grow>`), so a repeat run finds its world in
 the cache. A failed view or a lost page is shot again once on a fresh page. `--base-ref <sha>` keeps
 the base side's shots per commit in `artifacts/captures/growth-ref/<sha>/` (one entry per shot,
@@ -856,13 +921,16 @@ default) is shot again on both sides and reported as identical, repeatable or no
 `tools/parity/` captures a fixed set of paused views with named 1:1 crop anchors
 (`capture-set.mjs`; views.mjs frames and anchors them on the camera's ground, `controls.ground`:
 the island's box and height grid made from the chunks in the workers, so the drawn meshes'
-vertices are never read) and diffs it against a reference set, pixel for pixel or within the reference's
+vertices are never read) and diffs it against a reference set, pixel for pixel or within the
+reference's
 own repeatability (`diff-set.py --aa-floor`; see its README). Temporal AA sets (taa, taau) do
 not repeat pixel for pixel and are judged by a tolerance instead (`diff-set.py --temporal`: shares
-of pixels over a level on the frame, in local windows and on the crops, a bound on coherent sub-level
+of pixels over a level on the frame, in local windows and on the crops, a bound on coherent
+sub-level
 shifts, and one recapture before a failure counts; thresholds in `tools/parity/tolerance.py`).
 capture-set opens one page per set (one per `--jobs` worker) and reaches every view after the
-first by the exact scene jump (`__PONLAI__.establishScene( <the view's query> )`, then the view's eval
+first by the exact scene jump (`__PONLAI__.establishScene( <the view's query> )`, then the view's
+eval
 and the usual readiness): only load-time options (quality, aa, size and dpr, debug switches) need a
 new page, and a set shares them. The jump does not undo what an eval changed outside the scene's
 options and camera (GUI settings, Tune, debug flags), so the view after one with an eval of its own
@@ -883,7 +951,8 @@ fail, the run ends with exit 1, naming the page's exit code and the last lines o
 reverse order.
 `tools/capture-clip.mjs` captures a named clip (`tools/parity/clips.mjs`: a parity view set in
 motion, its camera path a function of the frame index) frame by frame with the page's stepper, as
-crops that follow their subjects, and `tools/clip-metrics.py` measures a clip against MSAA and a ground truth (`--aa gt-hi`: MSAA at
+crops that follow their subjects, and `tools/clip-metrics.py` measures a clip against MSAA and a
+ground truth (`--aa gt-hi`: MSAA at
 twice the former nominal ratio 1.5, downsampled) with gates from a thresholds file
 (`uv run --with numpy --with pillow`, clip-metrics.py also `--with scipy`; both described in the
 README). clip-metrics.py measures the
@@ -901,7 +970,8 @@ process that is capturing it (freeing the GPU slot of a `run --shared` wrapper m
 otherwise capture it and say why (missing, tools or browser
 changed, a capture left unfinished). A capture set stored under another browser build only (an
 auto-update) is verified instead: three of its views captured with the new build and compared
-(decoded pixels, or the temporal tolerance), the set reused when they match. `capture-set.mjs <testUrl> <testDir> --check
+(decoded pixels, or the temporal tolerance), the set reused when they match.
+`capture-set.mjs <testUrl> <testDir> --check
 <root>/<sha>/<set> [--ref-url U]` captures only the test side and diffs it against the stored
 reference. Layout, manifest and rules: the README's Reference store.
 For tuning, `capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,y] [--variant
@@ -913,7 +983,8 @@ and measures the crops against the store's MSAA and ground-truth rest entries of
 `baseline.mjs ... --carry-from A` takes the baseline's and the ground truth's entries over from an
 earlier commit A instead of capturing them, when `tools/parity/carry.mjs` finds nothing between the
 two that could change them (same build inputs; otherwise the diff against two watch lists, the
-paused set S1 matching A's (and A's stored rest frames matching A's own S1), the first 16 frames of two clips and one rest ground truth captured
+paused set S1 matching A's (and A's stored rest frames matching A's own S1), the first 16 frames of
+two clips and one rest ground truth captured
 again and compared); an entry that may not carry is captured and the log says why.
 `node tools/parity/carry.mjs check --from A --to B [--url U] [--all]` prints the verdict alone.
 Rules and proof: the README's Carry-over.
@@ -960,7 +1031,9 @@ holds a shared GPU slot from the load to the end (`--exclusive` for frame times)
 the order given and prints JSON (per query: load or jump, the time until up, each step's value,
 console errors and failed requests). Each `--query` after the first is reached in the same page by
 the scene jump. Evals see `P` (`__PONLAI__`), `D` (the diagnostics), `frames( n )`, `sleep( ms )`,
-`until( fn )` and `pipelines` (`mark()`, `since( mark )`: which pipelines an action built), with the same forms and scope as capture's `--eval` (`tools/page-eval.mjs`) (`D` is rebuilt every 30 frames: live counters such as `P.pipelines.total` come
+`until( fn )` and `pipelines` (`mark()`, `since( mark )`: which pipelines an action built), with the
+same forms and scope as capture's `--eval` (`tools/page-eval.mjs`) (`D` is rebuilt every 30 frames:
+live counters such as `P.pipelines.total` come
 from `P`); `--init js` hooks the page before its scripts run. A production preview needs
 `debug` in the query. A long eval that waits on CPU work (worker generation, a grown page) stops
 the loop (`await P.loop.stop()`) and waits with `until` or `sleep`: while the loop stands the probe
@@ -971,7 +1044,8 @@ time (1.45 times its throughput), and a probe beside a capture-set page 1.1 time
 with readings identical to a probe alone. Sweeping 21 points, two probes gave about 1.35 times one
 probe's throughput and three about 1.4 times, but at three one or two of the probes in a run read a
 value that differed from a probe alone's in the last digit. (A paused page bounds its GPU queue,
-Test mode above; before that bound two six-point probes each ran 12 times as long as one alone.) Common questions:
+Test mode above; before that bound two six-point probes each ran 12 times as long as one alone.)
+Common questions:
 `--load` loads every query after the first in a page of its own instead of jumping to it: the
 scene-jump contract covers the image, not the world's generation path, so use it to compare two
 freshly loaded pages (a grown page against a fresh `grow=1` page) in one call.
@@ -996,7 +1070,8 @@ freshly loaded pages (a grown page against a fresh `grow=1` page) in one call.
 Steps, scope, the value's serialisation and the exit code are in the file's header.
 
 `node tools/dusk-grid.mjs [url] [--weathers clear,fair,cloudy,overcast] [--sides evening,morning]
-[--from 2 --to -8 --step 0.5] [--midnight] [--split [--fit]] [--night-split] [--twilight] [--haze] [--compare dir]` reads the scene's
+[--from 2 --to -8 --step 0.5] [--midnight] [--split [--fit]] [--night-split] [--twilight] [--haze]
+[--compare dir]` reads the scene's
 light in scene units at a grid of sun elevations through the dusk and the dawn (the sky's and the
 deck's irradiance, the sky's metering, the baked sky's ring 4 degrees up, the land's ambient
 (`landA`, the land's gain on the probe's irradiance, which takes the fog layer's haze: on a clear or
@@ -1005,19 +1080,23 @@ far sea, the air, the key's floors, and per view the exposure with its keys and 
 metering illuminance over the land and the radiance over the land, the sky, the sea and the
 yunpeng's cells), each point a scene jump with an explicit bake, its hour solved from
 `src/sky/DayCycle.ts` in node, and judges that a lower sun never makes the judged quantities
-brighter (each step, the largest rise down to midnight, the exposure's direction). `--split` forces each of the dusk's shares (`sky.dusk.force.*`, URL options,
+brighter (each step, the largest rise down to midnight, the exposure's direction). `--split` forces
+each of the dusk's shares (`sky.dusk.force.*`, URL options,
 Tune) to 0 and to 1 and puts the night's back one at a time from the twilight alone, for each
 share's term, and `--fit` solves each night share's slope from it (`tools/dusk-fit.mjs`, which also
 fits a run already made: `node tools/dusk-fit.mjs <out>`, no GPU) so that every step holds at half
-the judge's margin, the slope no steeper than the twilight's fall, into `fit.txt`; `--night-split` reads the night's terms alone, `--twilight` the twilight alone (every
+the judge's margin, the slope no steeper than the twilight's fall, into `fit.txt`; `--night-split`
+reads the night's terms alone, `--twilight` the twilight alone (every
 night share forced to 0, without the split's other states). `--haze` also reads, in a fixed view of
 its own (65 m over the sea, facing the open sea, pitched 10 degrees up), the haze's whole medium
 (`hazeMedium`: the haze's key, its medium's uniforms, the clouds' copy, the moon's aerosol keys) and
 its opacity on sky rays at a few elevations and level rays over a surface at a few distances
-(`hazeOpacity`, `VolumetricHaze.probe`); `--compare` judges the medium bit for bit. It takes the GPU lock itself (shared,
+(`hazeOpacity`, `VolumetricHaze.probe`); `--compare` judges the medium bit for bit. It takes the GPU
+lock itself (shared,
 leased per point; run it unwrapped), writes a JSON per weather and side with `summary.txt`,
 `handoff.txt`, `terms.txt`, `fit.txt` and `compare.txt` (with `--night-split` in both runs, the
-lamps-off exposure's lift over the other run and, at midnight, its distance from `NIGHT_METER_LIFT`), and exits 1 on a broken rule. A point takes about a
+lamps-off exposure's lift over the other run and, at midnight, its distance from
+`NIGHT_METER_LIFT`), and exits 1 on a broken rule. A point takes about a
 second, a few tens with `--split`. Its options, reads and rules are in the file's header.
 
 `node tools/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]...
@@ -1032,16 +1111,19 @@ close look reads them (their luminance, colour and texture's swing) with the sha
 gaps between the blades take, the spread of the lawn's luminance, the specular's share of the
 sunlit blades' light, and the soil between them against the sunlit blades (a table of its own: the
 colour of the brighter half of the bare pixels redder than green and of the blades' brightest
-third, their ratios, and the soil's relief, its luminance's 90th over its 10th percentile). Each view is read on seven fresh loads (the blades'
+third, their ratios, and the soil's relief, its luminance's 90th over its 10th percentile). Each
+view is read on seven fresh loads (the blades'
 exact cover mask with everything but the land and the blades hidden, every surface's albedo
 (`albedoOnly`), `lightOnly`, with `bareGround`, with `ambientOnly` too,
-the normal frame, and `lightOnly:2`, the light without its specular) once `settled` holds, its views reached by the scene jump and a camera placed
+the normal frame, and `lightOnly:2`, the light without its specular) once `settled` holds, its views
+reached by the scene jump and a camera placed
 relative to the sun (so elevations compare like for like) or by a views file's evals, as
 capture-set takes them. Lawn that something stands in front of counts for the cover only. It writes
 `meadow-light.json`, the canvas and a picture of the pixel sort per view, and prints a table. The
 sort and every measure are in the file's header. A change to the blades' shading alone moves three
 of the seven pages: `--save dir` keeps a run's pages on disk (about 30 MB a view and page) and
-`--pages light,normal,matte --reuse dir` shoots only those three, reading the others from it; `--pages none`
+`--pages light,normal,matte --reuse dir` shoots only those three, reading the others from it;
+`--pages none`
 reads them all, with no browser, to run changed measures on a saved run. `lean` in `--pages` adds an
 eighth load (`grassMask:lean`) and a table of the blades' lean from upright over the lawn they
 cover, as drawn (the wind's nod and the push away from a near eye included) and by their pose
@@ -1118,12 +1200,14 @@ rest queue: captures are GPU-bound, so two pages at once give about 1.75 times o
 throughput, a third about 2 times with the slowest views taking twice as long as at two, and a
 fourth hardly more (21 paused views, the frames identical at every count); probes that sweep many
 points gain about 1.35 times at two and 1.4 at three, where their readings lose the last digit now
-and then (Probes, above). Two slots take most of the gain with the readings exact. A capture-set page leases its slot (capture.mjs's worker, `leaseGpuLock`): it keeps
+and then (Probes, above). Two slots take most of the gain with the readings exact. A capture-set
+page leases its slot (capture.mjs's worker, `leaseGpuLock`): it keeps
 it from view to view and gives it up between views only when a request ranked before its next one
 waits for it (an exclusive request, or a shared one when every slot is taken) and it has held it
 for its lease, 20 s (capture.mjs `--lease`, after capture-set's `--`; 0 frees it after every view),
 so a set behind back-to-back timing runs advances about four views per run instead of one, and a
-timing run ranked before it waits at most 20 s plus the view in flight for it; capture-clip.mjs holds a slot per clip.
+timing run ranked before it waits at most 20 s plus the view in flight for it; capture-clip.mjs
+holds a slot per clip.
 An exclusive lease can keep its place (`leaseGpuLock` with `keepPlace`, profile-frame's hold per
 scene): it is ranked, and asked for again, under the ticket number of its first request, so it
 yields only to a request ranked before that one (a higher level: captures at normal before a
@@ -1133,7 +1217,8 @@ loads a page (capture.mjs, and the first view of a capture-set page) takes its s
 page has generated its world: until then it holds the page's GPU device back (the page waits in
 `requestDevice`), so the world's CPU work in its workers (tens of seconds when it is not cached)
 runs without a slot and without GPU work, and the slot covers the GPU set-up, warm-up and shot (a
-page that does not mark its world, `window.__PONLAI_WORLD__`, takes it at the renderer's start). Under a
+page that does not mark its world, `window.__PONLAI_WORLD__`, takes it at the renderer's start).
+Under a
 `run --shared` wrapper the first capture takes the wrapper's slot over and the wrapper holds nothing
 from then on, so a wrapped orchestrator never holds a slot its own captures wait for.
 Exclusive and shared requests wait in one queue under one rule: they rank by level, then first in,
@@ -1148,13 +1233,16 @@ request) it ranks `normal` (source `aged`), keeping its ticket, so it goes befor
 queued after it, still after `high` and `urgent`. Only the default ages: a request at a level from
 the table, `PONLAI_GPU_PRIORITY` or a bump keeps it (a session set to `low` stays low), and shared
 requests never age. `PONLAI_GPU_LOCK_AGE_S` shortens the threshold for the lock's own tests only.
-To start sooner than that, raise it. Scheduling is done by the user or a main session with the scheduling table,
+To start sooner than that, raise it. Scheduling is done by the user or a main session with the
+scheduling table,
 never by a session itself:
 
-    node tools/gpu-lock.mjs prio                                   # the table, every holder's and ticket's level and where it comes from
-    node tools/gpu-lock.mjs prio set m11-tune high --for 90m --note "timing round"
-    node tools/gpu-lock.mjs prio clear m11-tune
-    node tools/gpu-lock.mjs prio bump <pid|#ticket> urgent         # one request (kept for that process's later requests)
+```text
+node tools/gpu-lock.mjs prio                                   # the table, every holder's and ticket's level and where it comes from
+node tools/gpu-lock.mjs prio set m11-tune high --for 90m --note "timing round"
+node tools/gpu-lock.mjs prio clear m11-tune
+node tools/gpu-lock.mjs prio bump <pid|#ticket> urgent         # one request (kept for that process's later requests)
+```
 
 An entry's match is a substring of one of a request's session names or of its label. The session
 names are the names of the checkouts (a worktree, or the main checkout) that hold the script the
@@ -1179,6 +1267,7 @@ would wait for each other. Older copies rank by their classes (`normal` first in
 30 min, a copy from before that lets nothing pass it. This copy's requests tell them `low` below
 normal and `normal` otherwise, so the copies agree on the defaults. Where they still disagree the
 cost is a delay, not a deadlock:
+
 - a raised (high, urgent) request of this copy goes before an older copy's earlier request here
   but not there, so both start when they can;
 - an older copy's exclusive request ranks `low` here, so it waits while this copy's captures keep
@@ -1193,13 +1282,15 @@ One implementation runs on the machine: `tools/gpu-lock.mjs` is an entry that lo
 `tools/gpu-lock-impl.mjs`, either its own worktree's or the main checkout's, whichever declares the
 higher `LOCK_VERSION` (the main checkout's on a tie; a main checkout from before the entry counts as
 version 0). So a branch runs every later lock upgrade as soon as main has it, without merging main,
-and once every worktree has the entry, copies with different rules no longer share the lock. If the main checkout's file does not load
+and once every worktree has the entry, copies with different rules no longer share the lock. If the
+main checkout's file does not load
 (a conflict mid-merge, a syntax error), the worktree's runs and stderr says so. A change to the lock
 goes in `gpu-lock-impl.mjs`, bumps `LOCK_VERSION` and keeps its exports and CLI additive; test it
 with `PONLAI_GPU_LOCK_IMPL=local`, which forces the worktree's copy. `status` ends with the file
 that runs and why (`impl` in its JSON).
 `node tools/gpu-lock.mjs run [--shared] [--label x] -- <command ...>` wraps any other script,
-`status` names the holders (shared: their slots; each with its level and source), the queue in turn (each with its
+`status` names the holders (shared: their slots; each with its level and source), the queue in turn
+(each with its
 estimated start, below) and the exclusive requests in turn (`waiting`), and `gpu` shows the GPU's
 utilisation and the processes using it. A request that waits prints a timestamped line
 every 30 s: its place in the queue, the next in turn, who holds the GPU (the exclusive holder or
@@ -1209,24 +1300,28 @@ when it starts waiting and whenever the figure moves by more than a minute or a 
 estimated start: `estimated start in ~12 min (range 7 min-25 min, estimate)`.
 The estimate is also in `status` (`eta: { startIn, range: [ lo, hi ], basis }` on every queued
 request, in seconds from now) and in `node tools/gpu-lock.mjs eta [--shared|--exclusive] [--level
-l] [--json]` for a request made now (at this shell's level unless `--level` says otherwise) (`--pid p` for a waiting one). It is an estimate, not
+l] [--json]` for a request made now (at this shell's level unless `--level` says otherwise) (`--pid
+p` for a waiting one). It is an estimate, not
 a schedule: the queue is run forward under the lock's rules 200 times, each hold lasting a duration
 drawn from what holds of that kind took (the log's recent releases of the same tool and mode,
 `profile-frame` per mode; a built-in table until the log has five of a kind: `basis` counts which).
 `startIn` is the median start over the runs and `range` its 10th to 90th percentile. Requests made
 later are not foreseen, so a request can start after its range when work of a higher level keeps
-arriving (a default exclusive request while captures do). To choose between waiting and handing work back, compare
+arriving (a default exclusive request while captures do). To choose between waiting and handing work
+back, compare
 `startIn` with the threshold (the range's upper end is cautious: it adds the spread of every hold
 ahead).
 Every request, grant, release, timeout and abandoned request is appended to a JSON-lines log next
 to the lock (`ponlai-gpu.lock.log.jsonl`, rotated to `.log.1.jsonl` past 4 MB): time, pid, label,
 mode, class (the level), source (of the level: bump, table, env, default, aged), ticket, a
-request's parent pid and working directory (`ppid`, `cwd`: who asked), wait or hold in ms, and why a hold ended when its holder did not end it (a
+request's parent pid and working directory (`ppid`, `cwd`: who asked), wait or hold in ms, and why a
+hold ended when its holder did not end it (a
 child took the slot over, a yielded slot, a killed holder reclaimed as stale, a lease given up for
 a waiter; a leased hold's release counts the views it served).
 `node tools/gpu-lock.mjs log [--since 2h] [--by class|label] [--top 5] [--json]` summarises it:
 requests, waits and holds per group (median, p95, total; uses of leased holds, lease yields,
-take-overs, timeouts, abandoned and stale counted apart) and the longest waits with the holds that overlapped them, so a report can say how
+take-overs, timeouts, abandoned and stale counted apart) and the longest waits with the holds that
+overlapped them, so a report can say how
 long a run queued and behind whom. The profiler also checks that the GPU is idle before it
 measures and marks its results contended otherwise. Keep other pages that render the scene closed.
 
@@ -1236,10 +1331,12 @@ Every wait goes through `tools/job.mjs`: a command that may run longer than a fe
 capture set, a profile, a build of the references) runs as a job, and whoever waits for it, or for
 anything else, waits with `job.mjs` rather than a loop of their own. Its header is the full manual.
 
-    node tools/job.mjs start --wait -- npm run build                        (inline when it is short)
-    node tools/job.mjs start --log artifacts/plans/<topic>/data/set.log -- node tools/capture-set.mjs ...
-    node tools/job.mjs wait artifacts/plans/<topic>/data/set.log          (repeat until it exits 0 or with the job's code)
-    node tools/job.mjs stop artifacts/plans/<topic>/data/set.log          (before handing back with it still running)
+```text
+node tools/job.mjs start --wait -- npm run build                        (inline when it is short)
+node tools/job.mjs start --log artifacts/plans/<topic>/data/set.log -- node tools/capture-set.mjs ...
+node tools/job.mjs wait artifacts/plans/<topic>/data/set.log          (repeat until it exits 0 or with the job's code)
+node tools/job.mjs stop artifacts/plans/<topic>/data/set.log          (before handing back with it still running)
+```
 
 Forms:
 
@@ -1247,7 +1344,7 @@ Forms:
   returns at once; `run` runs it in the foreground. Without `--log` the log goes to
   `<repo top>/artifacts/jobs/<UTC stamp>-<command>.log` and its path is printed. The log holds the
   command's output between a start line and an end line, `[done] exit <code> at <time> after
-  <duration>`, with ` (stopped)` when the job was stopped. A single argument after `--` runs
+  <duration>`, with `(stopped)` appended when the job was stopped. A single argument after `--` runs
   through `sh -c` (pipes, `&&`), several run as they are. A single argument with an unquoted `&`
   inside a word (`--view near:like=a&dist=40`) is refused with exit 2: quote that word.
 - `start --wait [--lines n] -- command` starts the job the same way and waits on it within the
@@ -1273,7 +1370,8 @@ Forms:
   sends SIGTERM through the job's runner, so the tools run their own cleanup (lock release, browser
   close), and after the grace SIGKILLs whatever is left of the job's process tree, children that
   detached into their own group included. `--cwd dir` matches only jobs in dir's own checkout
-  (nearest `.git` entry), never a worktree nested under it. An agent hands back with nothing of its own running.
+  (nearest `.git` entry), never a worktree nested under it. An agent hands back with nothing of its
+  own running.
 
 Budgets (roles). A wait ends at a wall-clock deadline counted from its start, whatever the load.
 `--role agent` (the default) waits at most 240 s, because an agent's prompt cache lives five
@@ -1288,10 +1386,13 @@ Captures, clip frames and references are removed by age and held under a cap, so
 fill with frames read once (in a week they reached hundreds of GB). `job.mjs` starts
 `storage.mjs clean --auto` in the background every 6 hours; nobody runs it by hand.
 
-    node tools/storage.mjs                 what each kind holds and what a clean would remove
-    node tools/storage.mjs clean           remove it now ([--days 2] [--cap 50] [--floor 12])
+```text
+node tools/storage.mjs                 what each kind holds and what a clean would remove
+node tools/storage.mjs clean           remove it now ([--days 2] [--cap 50] [--floor 12])
+```
 
-- Images and videos of 256 KB or more under `artifacts/{plans,archive,perf,verification,crops}` go after
+- Images and videos of 256 KB or more under `artifacts/{plans,archive,perf,verification,crops}` go
+  after
   2 days, unless a report or page (.md, .html) there links to them: what the user reviews keeps
   its pictures. `artifacts/captures` (one-off screenshots) keeps them 7 days. Reports, JSON and
   small images stay; other artifacts folders are never touched.
@@ -1312,6 +1413,7 @@ whatever they ask for, and on a busy machine that work is kept on the efficiency
 performance cores idle, so it runs several times longer (3-14x measured while other agents captured
 and built; alike on a quiet machine). `tools/qos.mjs` starts the tools with the application policy
 (`taskpolicy -a`) instead, which children do not inherit, so each process gets it on its own:
+
 - every tool that imports `gpu-lock.mjs` or `capture-browser.mjs` (the captures, capture-set and its
   workers, baseline, reference, carry, profile-frame, the verify probes) re-executes itself under it
   in place as it starts, and `gpu-lock.mjs run` and `job.mjs` start their commands with it;
@@ -1342,7 +1444,7 @@ one tells the user beforehand, as information rather than a question.
 
 ## Frame profiler: `tools/profile-frame.mjs`
 
-```
+```text
 node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] [--quality high]
   [--timestamps on|off|both|auto] [--eval "js"] [--repeat n] [--shots] [--vsync] [--accept [--strict]]
   [--idle-wait s] [--contended] [--load-timeline off] [--hang s] [--scale-log]
@@ -1356,17 +1458,20 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   pacing noise).
 - It plays a matrix of named scenes (`--list`: `island-fair-noon`, `island-clear-golden`,
   `horizon-fair-noon`, `sky-cloudy`, `island-overcast`, `island-night-clear`, `meadow-close` (over
-  the meadow, placed on the camera's ground, `controls.ground`); the parked weathers' `island-rain`, `island-storm`, `horizon-storm`,
+  the meadow, placed on the camera's ground, `controls.ground`); the parked weathers' `island-rain`,
+  `island-storm`, `horizon-storm`,
   `island-fog-dawn` and `weather-change` (a front sweeping in), and the clouded skies' other views
   `island-cloudy`, `horizon-cloudy` and `horizon-overcast` (where the low deck's march costs) with
   `horizon-clear-noon` (the same horizon without a deck), run
-  only when `--scenes` names them, and `--scenes` takes these ids), each with the clock running, fixed weather
+  only when `--scenes` names them, and `--scenes` takes these ids), each with the clock running,
+  fixed weather
   and a slow orbit, and writes `artifacts/perf/<label>/` (profile.json, summary.md): frame interval
   median, p95 and p99, GPU time per pass, the tick's JS time, hitches with their cause, and the
   startup.
 - It loads each variant once and switches scenes at runtime (`--mode reload` reloads per scene,
   the original method); every page keeps the generated island's chunks in IndexedDB (in the
-  tool's own Chrome profile) while the generator's sources are unchanged (`--world-cache off` loads with
+  tool's own Chrome profile) while the generator's sources are unchanged (`--world-cache off` loads
+  with
   `worldCache=off`). A profile that another Chrome holds (another run's) is not launched on: the
   run takes a temporary one, with cold caches. (Launched on, a headed Chrome holding it opened a
   blank window of its own, in front of that run's page.)
@@ -1378,7 +1483,8 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   run's own browser opens once the exclusive lock is held and the idle check has passed (a headed
   window no longer sits on the screen, or dies, while the run queues). The idle check also stands
   for the first load's, and the pages stop before the lock is released (the GPU name, the files
-  and the browser's close come after it). `wallSeconds` in profile.json is the time under the exclusive lock;
+  and the browser's close come after it). `wallSeconds` in profile.json is the time under the
+  exclusive lock;
   `lockWaitSeconds`, `totalSeconds` and `preload` sit beside it.
 - In full-screen `--display` the idle checks run with the run's window up (the opening one on its
   blank page) and sum the GPU time of the clients other than the run's Chrome and WindowServer:
@@ -1398,7 +1504,8 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   `windowServer`, `app`: the desktop app, `otherChrome`, `kernel`: CPU only, `rest`), t in ms since
   the epoch (a page's frame time plus its `performance.timeOrigin`). Each measured slice (a
   compare's slice, a toggle's block, a profile scene's window) gets `load: { cpu, gpu }`, the mean
-  outside the run (every group but `run` and `windowServer`, which composites the screen for every run)
+  outside the run (every group but `run` and `windowServer`, which composites the screen for every
+  run)
   over its window; a slice whose outside GPU mean exceeds `--idle-threshold` (15 %) is contended,
   and a scene with more than a quarter of its slices contended is marked contended (with the
   verdict rules above). The summary's "Machine load outside the run" gives each scene its
@@ -1411,7 +1518,8 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   `keepPlace`): kept from scene to scene while no request ranked before the run's first one
   waits, otherwise given up and asked for again at once under that request's ticket number, so
   queued captures (normal, before a default low timing run) run between the scenes instead of
-  after the whole run, and a timing run of the same level queued meanwhile still goes after it. A hold taken again checks the GPU for idle; still busy after `--idle-wait`, the
+  after the whole run, and a timing run of the same level queued meanwhile still goes after it. A
+  hold taken again checks the GPU for idle; still busy after `--idle-wait`, the
   run stops with the finished scenes written and exits 3, unless `--contended` (that scene marked
   contended). The first scene's hold covers the page loads. `wallSeconds` counts only the time
   held; `meta.holds` lists each scene the lock came back for (its wait and the GPU idle with this
@@ -1485,7 +1593,8 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   presented (from a trace of Chrome's frame pipeline), the share of intervals that change cadence,
   and how much the camera's turning speed changes from frame to frame. Bringing the window to the
   front gives Chrome the keyboard focus, so every page stops all key events on the window before
-  its own listeners (the tool sends none); pointer and wheel stay open for the drags. A window covers the screen
+  its own listeners (the tool sends none); pointer and wheel stay open for the drags. A window
+  covers the screen
   while it runs: keep the runs short and other animated windows closed. It needs the display gate.
   `--display --compare urlA urlB` interleaves A and B in the same slices as the headless compare
   (the running page brought to the front; the drags run in the measured slices only, each page's
@@ -1495,9 +1604,11 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   new scene drawn; the surface Chrome kept from its last time in front is a cover, raised before
   the page left the front for the last time in the scene and dropped once the new scene is on
   screen, so a switch shows the loading screen's colour for a frame or two, and a scene other than
-  the run's last shows it once where the page that ends its slices first leaves), so the drift between separate headed runs (a millisecond or two) cancels;
+  the run's last shows it once where the page that ends its slices first leaves), so the drift
+  between separate headed runs (a millisecond or two) cancels;
   its summary adds the share of late frames (presented intervals longer than the pace each frame
-  was rendered at, the frame pacer's divisor then) per slice, as a delta with its interval, each page's frames over 25 ms, its effective rate
+  was rendered at, the frame pacer's divisor then) per slice, as a delta with its interval, each
+  page's frames over 25 ms, its effective rate
   (rendered frames per second) and its share of frames at the pacer's fallback rate. One trace
   spans a scene's slices of both pages, split by a performance mark per slice (ended early at each
   adaptive stop check); a trace per slice nearly doubled the time a slice took beyond its settle
@@ -1523,11 +1634,13 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
 - `--compare` and `--accept` load their pages with `drsStore=off`, so neither side of an A/B (two
   AA modes, two builds) starts from a dynamic scale the other or an earlier run settled at;
   `--drs-store` loads them with `drsStore=on` instead (a returning load).
-- `--compare` and `--accept` also load their pages with `frameFallback=0` (the pacer holds the tier's
+- `--compare` and `--accept` also load their pages with `frameFallback=0` (the pacer holds the
+  tier's
   rate, so both sides of an A/B run at one pace); `--frame-fallback` keeps the automatic fallback
   (72 -> 48 fps on a 144 Hz display) on.
 - `--eval` runs in the page with `s` = `window.__PONLAI__` (an ablation, e.g.
-  `--eval "s.pipeline.settings.bloom = 0"`); `--report profile.json` re-renders a summary (`--report <dir>`
+  `--eval "s.pipeline.settings.bloom = 0"`); `--report profile.json` re-renders a summary
+  (`--report <dir>`
   rebuilds an unfinished run's, see above).
 
 ### Measuring frame time
@@ -1590,7 +1703,8 @@ low band and the far sea's fall at the horizon): `uv run tools/img.py stats --de
 views' captures, not a script of one's own.
 
 Whether a grown page draws what a fresh load of its land draws (views, chunk hashes, the rain
-map, the camera's ground, the ambient probes, pipelines and memory across swaps): `tools/verify-growth-swap.mjs`, not a
+map, the camera's ground, the ambient probes, pipelines and memory across swaps):
+`tools/verify-growth-swap.mjs`, not a
 probe eval of one's own.
 
 Whether the land, the sky, the sea or the air brightens anywhere as the sun goes down or comes up,
@@ -1640,10 +1754,12 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   load's first frames are drawn before the sun's map, with every receiver lit.
 - A step that sets a state (a clock, a camera, a uniform) and reads the frame that follows waits
   for the page's rendered frames, counted by `renderer.info.frame`: page-eval's `frames( n )` in an
-  eval, `renderedFrames( page, n )` (`tools/page-eval.mjs`, "Rendered frames") from a Playwright page
+  eval, `renderedFrames( page, n )` (`tools/page-eval.mjs`, "Rendered frames") from a Playwright
+  page
   of one's own, `window.__waitFrames( n )` (`installWaitFrames`) inside that page's own evaluate and
   `WAIT_FRAMES` spliced into page code written as a string: one wait, which fails at once while the
-  page's loop is stopped. Never a count of animation frames: the frame pacer skips the refreshes between its
+  page's loop is stopped. Never a count of animation frames: the frame pacer skips the refreshes
+  between its
   frames, and a paused page in the test mode holds a due frame while two are still queued on the GPU
   (Test mode), so the read saw the frame before whenever the page did not tick after the state was
   set. Rendered frames wait for the state the next tick applies; a still, converged image is still
@@ -1656,6 +1772,14 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   sessions using it are told. Older copies in other worktrees are not kept compatible: those
   sessions update. The GPU lock runs the newest implementation on the machine, so a rule change
   bumps its `LOCK_VERSION` (`gpu-lock-impl.mjs`).
+
+## Docs checks
+
+`npm run lint:docs` checks the Markdown files' format with markdownlint-cli2 (a dev dependency;
+its rules in `.markdownlint-cli2.jsonc`: prose wrapped at 100 columns, fenced code with a language)
+and their links offline with lychee (local files and `#anchors`; config in `lychee.toml`).
+`npm run lint:links` checks the web links too; sites that refuse automated clients (403, 405, 429)
+count as present. lychee is a separate binary: `brew install lychee`, or `cargo install lychee`.
 
 ## Other tools
 
@@ -1679,15 +1803,18 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   switch leaves it as it was; `--check ... --retune` also checks that a retuned page draws the
   fresh load.
 - `tools/verify-zoom-anchor.mjs [url] [--runs 24] [--out file.json]` checks the island camera's
-  anchors in one probe page (with `cameraInput`): wheel zooms out with the cursor over the sea (`--runs` times) and
-  over land, two pinches out, and a drag (the island view zooms out only, from its pose's distance); it fails on any zoom anchor that found no ground or a drift
+  anchors in one probe page (with `cameraInput`): wheel zooms out with the cursor over the sea
+  (`--runs` times) and
+  over land, two pinches out, and a drag (the island view zooms out only, from its pose's distance);
+  it fails on any zoom anchor that found no ground or a drift
   of the point under the cursor of 0.5 px or more. Run it after a change to the island camera or
   its ground (`src/camera/`).
 - `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
   are CPU-only (plain `node`). `verify-game.mjs` checks the game's simulation: the clock, the
   ground and a path, a body walking to a point, a save round trip, a brain's late answer, and the
   first prototype's rules (needs, thirst off, the bag, fishing, the chest placed as a blueprint and
-  built, several chests with stable ids, two builders on one site, the actions, the perception, the stand-in brain over a few game days, a save mid-action), the save file
+  built, several chests with stable ids, two builders on one site, the actions, the perception, the
+  stand-in brain over a few game days, a save mid-action), the save file
   (`src/game/save.ts`: the simulation and the record read back as written and played on the same,
   saves of another version and saves no step reaches refused), the island's growth, the session
   the page and the play tool run the game in (`src/game/Session.ts`: the landings handed on as a
@@ -1701,7 +1828,8 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   written as a string in the core: ARCHITECTURE.md, Adding content); its island is in
   `tools/game-fixture.mjs`.
 - `tools/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow] [--population 0]
-  [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>] [--latency 90] [--thoughts]
+  [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>] [--latency 90]
+  [--thoughts]
   [--out dir]`
   (plain `node`) plays the game headless in the page's own session (`src/game/Session.ts`, nothing
   copied from the page: a frame of one tick at a time, a growth due asked for before it, the record
@@ -1710,7 +1838,8 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   record page's words, `src/game/ui/data/record.ts` and its catalogue, so a new kind of entry needs
   no change to the tool, and an event kind that neither its lines nor the record show prints as an
   `[event]` line; the islanders' actions with their outcomes as the session's events tell
-  them (done, failed, interrupted with the reason, refused), consecutive alike ones merged, their words, needs every
+  them (done, failed, interrupted with the reason, refused), consecutive alike ones merged, their
+  words, needs every
   six game hours and a table per day), `timeline.json` (every islander each game hour: position,
   needs, bag, action), `summary.json` (per islander the share of time by activity, each need's
   lowest, mean and highest, each item's flows by the call that moved it, so a new need, item or
@@ -1720,11 +1849,13 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   1 MB for four islanders over five days), with a short summary on stdout. `--place` puts
   blueprints down at the start (at the first ground that takes one without a point), `--population`
   adds islanders, `--grow` adds the next piece when the population reaches a step, and `--script`
-  has the leader speak at given times (`[ { "at": "d1 08:30", "to": "all" | [ "v1" ], "words": "..." } ]`),
+  has the leader speak at given times
+  (`[ { "at": "d1 08:30", "to": "all" | [ "v1" ], "words": "..." } ]`),
   as the speak bar does (`Session.speak`). `--brain` takes a module whose `createBrain` (or
   default export) receives `{ heard, takeHeard, hasHeard, islander, note, options }` and returns a
   Brain; an asynchronous one's answers land `--latency` game seconds after each thought is asked
-  (90: three real seconds at the default day clock), the run waiting for an answer that takes longer,
+  (90: three real seconds at the default day clock), the run waiting for an answer that takes
+  longer,
   so the timing never depends on the wall clock. With the stand-in the same options write the same
   files byte for byte. Five game days of the stand-in take about two seconds; a run with a
   language-model brain goes through `tools/job.mjs`. The options and guarantees are in its header.
@@ -1759,7 +1890,8 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   tiles' outer sides on the open sea's lattice (S3), the rim's lip's border crossings (S4), a
   2 x 2 block's rim ground, shore, walk texels and anchors made in one pass (S5),
   the stones' owners and their copies in the neighbours' contact sets (S6), no island vertex or
-  anchor near a chunk that carries no rim ground tile (S7), and no buried wall inland (I1). `--long` takes D1 at every step, D2 on all chunks of both seeds, the S checks at
+  anchor near a chunk that carries no rim ground tile (S7), and no buried wall inland (I1). `--long`
+  takes D1 at every step, D2 on all chunks of both seeds, the S checks at
   every fourth step and the island's inland column range against whole columns. `--bench` keeps
   only D4 and prints per growth piece the land field's time, the chunks rebuilt and changed,
   their CPU time and bytes. Every run writes a chunk sheet per seed (each step's land, new piece,
@@ -1802,7 +1934,8 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   `tools/verify-cache.mjs`.
 - `tools/verify-storage-realloc.mjs` (GPU, headless, shared lock; it serves its own page from a
   Vite server over the repository) checks what three's WebGPU backend does with storage buffers,
-  for pools that outgrow their capacity (the meadow's, `vegetation/VegetationCull.ts`): rewritten in place and
+  for pools that outgrow their capacity (the meadow's, `vegetation/VegetationCull.ts`): rewritten in
+  place and
   replaced by larger ones (a storage node's new `value`), under a compute kernel and an instanced
   draw, counting the pipelines, shader modules and bind groups the device creates and checking
   the results. Run it again after a three upgrade.
