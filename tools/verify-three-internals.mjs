@@ -16,9 +16,7 @@
 //
 // Three checks, each a failure (exit 1) when broken:
 // - Version. three and @types/three installed are the versions the list was checked against, and
-//   three's REVISION is the list's. package.json is to pin both to exact versions (no ^ or ~);
-//   while it does not, that is reported as a warning (UNPINNED_FAILS turns it into a failure once
-//   they are pinned).
+//   three's REVISION is the list's, and package.json pins both to exact versions (no ^ or ~).
 // - Shape. Every entry holds in the installed three: a `method` (a method, getter or setter) is
 //   declared in its class, and, where the class is exported (from three/webgpu, or the entry's
 //   `module`), is on its prototype at run time; a `member` is assigned in its class
@@ -51,8 +49,8 @@ const LIST = path.join( ROOT, 'tools', 'three-internals.json' );
 const SELF = path.relative( ROOT, fileURLToPath( import.meta.url ) );
 
 // Whether a three or @types/three not pinned to an exact version in package.json fails the check
-// (true once package.json pins both) or is only reported.
-const UNPINNED_FAILS = false;
+// or is only reported.
+const UNPINNED_FAILS = true;
 
 // how an entry is used; the ones whose source text is fingerprinted
 const USES = [ 'read', 'call', 'write', 'hook', 'replace', 'wrap', 'mirror', 'relies' ];

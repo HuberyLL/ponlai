@@ -1354,8 +1354,8 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   three that holds it. It fails when the installed three or
   `@types/three` is not the list's version, when an entry's member or method is missing from its
   file, and when the code of an entry that is wrapped, replaced, mirrored or relied on differs from
-  its recorded fingerprint (a hash of the code, comments ignored). A version range in
-  `package.json` instead of an exact version is a warning, not yet a failure. It also fails on a
+  its recorded fingerprint (a hash of the code, comments ignored). It fails on a version range in
+  `package.json` instead of an exact version. It also fails on a
   file under `src/` or `tools/` that reaches into three's internals (the renderer's `backend`, a
   cast to a type with private members, a private member's name) and is not on the tool's list of
   files known to do so; that list only shrinks. `--verbose` lists every entry; `--fingerprints` prints
