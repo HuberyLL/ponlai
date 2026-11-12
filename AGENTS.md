@@ -68,7 +68,8 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
 
 - `docs/`: the documentation by kind, listed in `docs/README.md`: `explanation/`
   (`art-direction.md`, `game-design.md`, `ui.md`, the game UI's spec: read it before UI work),
-  `how-to/` (`add-material.md`, `add-game-content.md`), `reference/` (`tools.md`).
+  `how-to/` (`add-material.md`, `add-game-content.md`, `check-a-change.md`), `reference/`
+  (`tools.md`).
 - `public/` (git-ignored): the game's assets, filled from the GitHub release `assets.lock.json`
   names (`tools/assets.mjs`, `tools/vite-assets.mjs`; `docs/reference/tools.md`, Assets).
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__PONLAI__` and
@@ -252,8 +253,7 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   (`TemporalRest.ts`), compared within the tolerance. A new history-dependent effect keeps
   `settled` false until it has converged, and the test mode's one shared switch, which the
   capture, parity and verify tools set by default, freezes or turns it off
-  (`docs/reference/tools.md`, Test
-  mode).
+  (`docs/how-to/check-a-change.md`, Add a history-dependent effect).
 - Everything generated for the island is generic, because the island grows one piece at a time
   (`docs/explanation/game-design.md`, "How the island grows"): it derives from the land's footprint,
   the island's SDF and noise fields with fixed seeds (hashes of position, or random streams seeded
@@ -275,13 +275,10 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
 - The island grows in place (`Growth.ts`): a Grow swaps in only the changed chunks in one frame, and
   every dependent of the land's shape follows it, the same function of the version as at load (a
   grown page draws a page loaded on that land bit for bit in the test mode:
-  `tools/verify-growth-swap.mjs`).
-  Anything new that depends on the land's shape joins the swap (`GrowthPage`, a vegetation kind's
-  `growth` in `vegetation/Registry.ts`, and main.ts's `onSwap`), and work it needs on the main
-  thread goes into the preparation's idle-time steps, never
-  into the swap's frame. A step takes a few tenths of a millisecond (a generator yielding inside its
-  loops: `Steps.ts`, uploads through `Upload.ts`), so the growth's share of any frame stays under
-  2 ms (`growth.work`).
+  `tools/verify-growth-swap.mjs`). Anything new that depends on the land's shape joins the swap,
+  and work it needs on the main thread goes into the preparation's idle-time steps, never into the
+  swap's frame, so the growth's share of any frame stays under 2 ms
+  (`docs/how-to/check-a-change.md`, Add something that depends on the land's shape).
 - A swap never builds a pipeline; one that needs one is a bug. New chunk meshes share their kind's
   material and layout, so they draw with the loaded chunks' pipelines; merged kinds take new
   geometry of the same layout, uploaded ahead; instanced kinds hold a capacity whose shader does not
@@ -301,8 +298,7 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   baseline on any display (upscaled by FSR 1 on a 4K one, native on a 2K one), climbs to the
   display's own ratio with headroom and drops to about 1080p's pixel count when busy, and a paused
   page renders at the baseline (`src/Quality.ts`, profile-frame's default pin:
-  `docs/reference/tools.md`, Measuring
-  frame time).
+  `docs/how-to/check-a-change.md`, Measure a performance change).
 - Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
   state. High at 4K output is the reference image, the only active tier and the one every
   trade-off is judged on; every default in the modules is high's. A load knob is read
@@ -332,13 +328,11 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
 - Game UI (anything the player sees in `?game`: HUD, menus, overlays, in-world labels, mockups of
   them): design and build it with the `threejs-game-ui-designer` skill when the agent has it (the
   threejs-* skill pack), so it reads as a game's interface rather than a product's.
-- Visual changes: compare captures against the previous capture (and crops, not only the whole
-  frame); report measured differences. Where shapes differ (growth steps, seeds), judge the look by
-  eye and region statistics (`tools/capture-growth.mjs`), not by pixel difference.
-- Performance changes: `tools/profile-frame.mjs` on a production build under the GPU lock, before
-  and after (`--compare`, or `--toggle` on a debug flag); judge an A/B by GPU time per pass, frame
-  rates from runs without timestamps, 60 fps with `--accept`. Report contended runs as such.
-  Details: `docs/reference/tools.md`.
+- Visual changes are compared against captures from before the change, crops included, and the
+  measured differences reported (`docs/how-to/check-a-change.md`, Check a visual change).
+- Performance changes are measured with `tools/profile-frame.mjs` on a production build under the
+  GPU lock, before and after, and contended runs reported as such
+  (`docs/how-to/check-a-change.md`, Measure a performance change).
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
   `type(scope): summary`, the summary in lower case, imperative, without a full stop, the header at
   most 100 characters, and the body explaining why. Types: `feat`, `fix`, `perf`, `refactor`,

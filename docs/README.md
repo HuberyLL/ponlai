@@ -11,6 +11,8 @@ Steps for one task.
 - [Add a material or a kind of content](how-to/add-material.md)
 - [Add game content](how-to/add-game-content.md): a need, an item, a place, an option or a
   building in the game's simulation.
+- [Check a change](how-to/check-a-change.md): a visual change, a performance change, a new
+  history-dependent effect, something that depends on the land's shape.
 
 ## Reference
 
