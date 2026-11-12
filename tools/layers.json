@@ -138,6 +138,7 @@
 	"lighting/SunShadow.ts": "render",
 	"lighting/SurfaceBRDF.ts": "render",
 	"lighting/Underwater.ts": "render",
+	"look/HazeLook.ts": "render",
 	"main.ts": "app",
 	"materials/CloudNoise.ts": "render",
 	"materials/BounceGround.ts": "island",
