@@ -37,8 +37,8 @@ import type { WorldData } from './world/types.ts';
 import { WorldFields } from './world/WorldFields.ts';
 import { Growth } from './world/Growth.ts';
 import { topFromTiles } from './game/sim/grid.ts';
-// first of all that may wait as the modules load: the world's workers start here (WorldStart.ts)
-import { worldJob, worldProgress, landOptions, landFraming, worldCacheOn } from './world/WorldStart.ts';
+// first of all that may wait as the modules load: the world's workers start here (WorldBoot.ts)
+import { worldJob, worldProgress, landOptions, landFraming, worldCacheOn } from './WorldBoot.ts';
 import { buildChunkBorders } from './debug/ChunkBorders.ts';
 import { WIND_VIEW } from './debug/WindView.ts';
 import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';

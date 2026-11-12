@@ -2,6 +2,7 @@
 	"Quality.ts": "render",
 	"QualityDetect.ts": "app",
 	"RenderTypes.ts": "render",
+	"WorldBoot.ts": "app",
 	"camera/FreeCameraControls.ts": "island",
 	"camera/IslandCameraControls.ts": "island",
 	"camera/IslandFraming.ts": "island",

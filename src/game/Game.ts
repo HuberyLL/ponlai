@@ -78,7 +78,7 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 // session's (the simulation's `addPiece`: the piece is counted there, whoever asked for the growth,
 // so the simulation's piece count is always the land step shown). The pending piece's land comes to
 // `setComing` once the page has it, and the simulation exposes its cells (Sim.comingLand). A save
-// keeps the piece count, and the page loads its world at it (world/WorldStart.ts; the `grow` URL
+// keeps the piece count, and the page loads its world at it (WorldBoot.ts; the `grow` URL
 // option wins), so a game resumes on its own island; one loaded from the panel must stand on the
 // island shown.
 

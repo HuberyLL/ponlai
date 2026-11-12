@@ -51,7 +51,6 @@ const KNOWN = [
 	'post/Antialiasing.ts -> QualityDetect.ts',
 	'post/Pipeline.ts -> weather/FallingLeaves.ts',
 	'shared.ts -> materials/Meadow.ts',
-	'world/WorldStart.ts -> game/save.ts',
 ];
 
 for ( const a of process.argv.slice( 2 ) ) {
