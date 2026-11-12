@@ -178,9 +178,16 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   TypeScript, checked by `tools/verify-framegraph.mjs`), its runtime and warm-up (`FrameGraph.ts`,
   `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`) and the debug view
   (`DebugView.ts`, `fgview`).
-- `src/three/`: every reach into three.js beyond its public interface: three r186's cache-key
-  patches and its first lit build made ahead (`ThreePatches.ts`), and the list of the internals the
-  code depends on (`three-internals.json`, checked by `tools/verify-three-internals.mjs`).
+- `src/three/`: every reach into three.js beyond its public interface, each a function named for
+  what it does, which the rest of the code calls instead of naming a private member or the
+  backend: the backend and its device, the GPU objects behind textures and attributes, the
+  timestamp pools and the methods we wrap (`Backend.ts`), the renderer's attribute records
+  (`Attributes.ts`), three's steps for building a draw ahead and a bloom's passes (`DrawBuilds.ts`),
+  the PMREM generator's bake in steps (`Environment.ts`), a light's shadow pass (`ShadowPass.ts`),
+  the animation loop and its per-frame bookkeeping (`FrameLoop.ts`), r186's cache-key patches and
+  its first lit build made ahead (`ThreePatches.ts`), the start-up check of the renderer's members
+  and the error naming what is missing (`Internals.ts`), and the list of the internals the code
+  depends on (`three-internals.json`, checked by `tools/verify-three-internals.mjs`).
 - `src/post/fsr3/`: the TSL port of AMD's FSR 3.1.5 upscaler (`aa=fsr3`): the host's maths and frame
   plan (`Host.ts`), its resources (`Resources.ts`) and bindings (`Bindings.ts`), one module per
   upstream shader header, the kernels (`Passes.ts`); the page's integration, its passes on the
@@ -463,7 +470,4 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   `copyToPersistent` (single-sampled, same size class and format), never a `copyTextureToTexture`
   of its own around the graph (`GraphCompiler.ts`).
 - Timestamp queries (`trackTimestamp`) have one owner at a time (`DynamicResolution.ts`).
-- `Sky.ts` drives three's private `PMREMGenerator` steps, `SunShadow.compileCasters` mirrors
-  three's shadow-pass material, `debug/AmbientProbe.ts` frees its storage buffers through the
-  renderer's private attribute map, and `three/ThreePatches.ts`, `graph/AttachmentOps.ts` and
-  `graph/Compile.ts` patch or stand in for r186 internals: re-check them on a three upgrade.
+- An upgrade of three follows `docs/how-to/upgrade-three.md`.

@@ -13,6 +13,8 @@ Steps for one task.
   building in the game's simulation.
 - [Check a change](how-to/check-a-change.md): a visual change, a performance change, a new
   history-dependent effect, something that depends on the land's shape.
+- [Upgrade three.js](how-to/upgrade-three.md): move to another version of three.js, with the
+  behaviour of three's that the code depends on.
 - [Write a tool](how-to/write-a-tool.md): the rules a tool in `tools/` follows.
 
 ## Reference
