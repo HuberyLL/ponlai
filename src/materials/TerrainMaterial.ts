@@ -4,7 +4,8 @@ import {
 	cameraPosition, specularColor, specularColorBlended, specularF90,
 	normalize, abs, pow, sqrt, max, min, dot, sign, mix, smoothstep, clamp, fract, floor, sin, cos, exp, log2, select, dFdx, dFdy, length, varying,
 } from 'three/tsl';
-import { type Shared, DETAIL_SIZE, SCAN_TOP_MIP, GTAO, floorOcclusion, receiveScreenAO, screenAOAt, type WaveMaps, underwaterLight, UnderwaterLightingModel, type UnderwaterLight, type UnderwaterModelOptions, TURF_CANOPY_DEPTH, meadowCanopyLight, meadowGroundLight, puddleField, puddleRipples, DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness, hexReadScan, heightBlend, type HexScan, debugFlags, setDebugFlag, FSR3, fsr3MipBiasScale, MEADOW_SHADE, SS_SHADOW, meadowGroundShade, screenShadowAt, writeMeter, liftKeyWorld, settings } from '../render.ts';
+import { type Shared, DETAIL_SIZE, SCAN_TOP_MIP, GTAO, floorOcclusion, receiveScreenAO, screenAOAt, type WaveMaps, underwaterLight, UnderwaterLightingModel, type UnderwaterLight, type UnderwaterModelOptions, TURF_CANOPY_DEPTH, meadowCanopyLight, meadowGroundLight, puddleField, puddleRipples, DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness, hexReadScan, heightBlend, type HexScan, debugFlags, setDebugFlag, FSR3, fsr3MipBiasScale, MEADOW_SHADE, SS_SHADOW, meadowGroundShade, screenShadowAt, writeMeter, liftKeyWorld } from '../render.ts';
+import { settings } from '../renderSetup.ts';
 import { SCAN_LAYER, type GroundTextures } from './GroundTextures.ts';
 import { LAWN_GAIN, LAWN_TONE, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_MAX_DROP, groundGains } from './Meadow.ts';
 import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, SOIL_PALETTE, soilGroveSwell, soilUniforms } from './Soil.ts';

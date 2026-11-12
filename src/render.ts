@@ -1,16 +1,13 @@
 // The renderer's exit for the page: the names the island, the game and the page take from the
 // renderer, and no others. Another package imports the renderer through this file (or through
-// renderData.ts, for its plain code), never one of its modules by its path
+// renderData.ts, for its plain code, or renderSetup.ts, for what the page installs before the
+// renderer loads), never one of its modules by its path
 // (tools/verify-layers.mjs). It holds re-exports only, so loading it loads the whole renderer, whose
 // modules declare and register as they load and do nothing else: no top-level await and no page
 // global read at load (tools/verify-exits.mjs). The debug modules the page loads on demand are not
 // here: they are lazy exits (tools/layers.json), imported dynamically or for their types only.
-export { ACTIVE_QUALITY, qualityProfile } from './Quality.ts';
-export type { QualityProfile, QualityTier } from './Quality.ts';
 export { awaitWarmUp, bakeWithHaze, checkMotion, createAmbient, createBounceAndShore, createEnvironment, createKey, createLight, createRenderer, createScenes, createSeaAndPipeline, createSky, createWater, primeSharedBuilds, publishSkyLight, registerLightHistories, registerSceneHistories, setUpRenderer } from './RenderStages.ts';
 export type { RenderParts } from './RenderStages.ts';
-export { settings } from './Settings.ts';
-export type { SettingName, SettingsQuery } from './Settings.ts';
 export { classifyBy } from './debug/Classes.ts';
 export type { ClassRule } from './debug/Classes.ts';
 export { debugFlags, setDebugFlag } from './debug/DebugFlags.ts';
@@ -38,7 +35,6 @@ export type { UnderwaterLight, UnderwaterModelOptions } from './lighting/Underwa
 export { AMBIENT_KNOBS } from './look/AmbientLook.ts';
 export { NIGHT_METER_LIFT } from './look/DayLook.ts';
 export { WHITE_BALANCE } from './look/DisplayLook.ts';
-export type { AmbientLook, AmbientRowLook, BloomKey, DayLook, DesaturationKey, DisplayLook, ExposureKey, ExposureLook, FullKey, HazeLook, IslandSkyRow, LocalLightsLook, Look, MeadowCanopyLook, OcclusionLook, Rgb, SeaLook, SharingKey, SkyLook, WindLook } from './look/Look.ts';
 export { heightBlend, hexReadScan } from './materials/HexTiling.ts';
 export type { HexScan } from './materials/HexTiling.ts';
 export { DETAIL_SIZE, SCAN_TOP_MIP, bakeProceduralTextures } from './materials/ProceduralTextures.ts';
@@ -66,7 +62,6 @@ export { motionCheck, motionNode, motionState, taaCut, velocityOutput } from './
 export { Pipeline } from './post/Pipeline.ts';
 export type { PipelineSettings } from './post/Pipeline.ts';
 export { PRE_EXPOSURE_PENDING, preExposure } from './post/PreExposure.ts';
-export { dynamicRange, outputPixelRatio, renderPixelRatio } from './post/RenderScale.ts';
 export { declareSceneEvents, sceneEvent } from './post/SceneEvents.ts';
 export type { SettleFrame } from './post/Settled.ts';
 export type { TemporalFrame } from './post/TemporalAA.ts';

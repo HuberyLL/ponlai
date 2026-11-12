@@ -3,7 +3,8 @@
 // renderer's (RenderStages.ts) and the island's (IslandStages.ts).
 import type * as THREE from 'three/webgpu';
 import type GUI from 'lil-gui';
-import type { WeatherName, WindLevel, QualityTier, DynamicResolution, GpuFrameTimer, PassScaling, FramePacer, FrameStats, PipelineSettings } from '../render.ts';
+import type { WeatherName, WindLevel, DynamicResolution, GpuFrameTimer, PassScaling, FramePacer, FrameStats, PipelineSettings } from '../render.ts';
+import type { QualityTier } from '../renderSetup.ts';
 import type { QualityDetector } from '../QualityDetect.ts';
 import type { Game } from '../game/index.ts';
 import type { CameraView } from './CameraViews.ts';

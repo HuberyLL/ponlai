@@ -1,4 +1,4 @@
-import type { FullKey, HazeLook } from '../render.ts';
+import type { FullKey, HazeLook } from '../renderSetup.ts';
 
 // The island's haze look (src/islandLook/: the island's numbers for the renderer's look tables,
 // look/Look.ts; look/HazeLook.ts reads these). weather/HazeKeys.ts `hazeKeyAt` eases them by the

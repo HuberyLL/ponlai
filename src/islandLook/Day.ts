@@ -1,4 +1,4 @@
-import type { DayLook } from '../render.ts';
+import type { DayLook } from '../renderSetup.ts';
 
 // The island's day look (src/islandLook/: the island's numbers for the renderer's look tables,
 // look/Look.ts; look/DayLook.ts reads these, and its comments say what each table is): where the

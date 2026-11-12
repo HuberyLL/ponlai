@@ -9,7 +9,7 @@
 // only once the world is generated (tools/capture.mjs, "The slot after the world").
 import { startWorld } from './island.ts';
 import { readSlot, resumesSave, savedPieces } from './game/sim/index.ts';
-import { settings } from './render.ts';
+import { settings } from './renderSetup.ts';
 
 const params = settings;
 

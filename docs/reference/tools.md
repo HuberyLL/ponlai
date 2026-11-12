@@ -1318,11 +1318,11 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   world generator plugin does (`tools/vite-world-generator.mjs`) and fails on any package import
   the plugin would refuse. Run it after adding a file or an import across folders.
   Its exits check reads the packages' exits from `tools/layers.json` (`exits`: each package's page
-  exit and headless exit; `lazy`: the modules the page loads on demand). An exit holds re-exports
-  of its own package only; an import from one package into another, or from the app layer into
-  one, names an exit or a lazy exit, except the few pairs the tool lists with their reasons
-  (`DIRECT`, which only shrinks); a lazy exit is imported dynamically or with `import type` only.
-  The files a headless exit loads (`import type` left out) import relative paths only. Its page check
+  exit and headless exit, and the renderer's setup exit; `lazy`: the modules the page loads on
+  demand). An exit holds re-exports of its own package only; an import from one package into
+  another, or from the app layer into one, names an exit or a lazy exit; a lazy exit is imported
+  dynamically or with `import type` only. The files a headless or setup exit loads (`import type`
+  left out) import relative paths only. Its page check
   keeps the render and island layers and the game's simulation off the page: TypeScript's checker
   resolves every name there, and one that is a page global (`location`, `localStorage`,
   `sessionStorage`, `document`, `window`, `navigator`, `URLSearchParams`, the animation frame
@@ -1340,12 +1340,13 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   a key no file names. A key reached through an alias of the bag is not seen.
 - `tools/verify-exits.mjs` (plain `node`, no options, about a second) checks the packages' exits
   (`tools/layers.json`, `exits`). It loads each headless exit (`src/renderData.ts`,
-  `src/islandLand.ts`, `src/game/sim/index.ts`) in plain node and fails when one throws or leaves
-  a name it exports undefined. It reads every file a page exit (`src/render.ts`, `src/island.ts`,
-  `src/game/index.ts`) loads and fails on an `await` or a page global (`location`, the storage,
-  `document`, `window`, `navigator`, the animation frame callbacks, `Worker`, `indexedDB`,
-  `fetch`) in the code that runs as the module loads. Run it after a change to what an exit
-  loads.
+  `src/islandLand.ts`, `src/game/sim/index.ts`) and the renderer's setup exit
+  (`src/renderSetup.ts`) in plain node and fails when one throws or leaves a name it exports
+  undefined. It reads every file a page or setup exit (`src/render.ts`, `src/island.ts`,
+  `src/game/index.ts`, `src/renderSetup.ts`) loads and fails on an `await` or a page global
+  (`location`, the storage, `document`, `window`, `navigator`, the animation frame callbacks,
+  `Worker`, `indexedDB`, `fetch`) in the code that runs as the module loads. Run it after a change
+  to what an exit loads.
 - `tools/verify-extensions.mjs` (plain `node`, no options; it loads the page's modules through
   Vite's SSR loader, a few seconds) checks the renderer's extension points. It registers a plant
   kind, a kind of local light, an extra pass, scene events and histories of its own and fails

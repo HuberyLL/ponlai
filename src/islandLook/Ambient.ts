@@ -1,4 +1,4 @@
-import type { AmbientLook, AmbientRowLook } from '../render.ts';
+import type { AmbientLook, AmbientRowLook } from '../renderSetup.ts';
 
 // The island's environment-light look (src/islandLook/: the island's numbers for the renderer's
 // look tables, look/Look.ts; look/AmbientLook.ts reads these): the ambient grade's table by the

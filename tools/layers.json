@@ -1,6 +1,6 @@
 {
 	"exits": {
-		"render": { "page": "render.ts", "headless": "renderData.ts" },
+		"render": { "page": "render.ts", "headless": "renderData.ts", "setup": "renderSetup.ts" },
 		"island": { "page": "island.ts", "headless": "islandLand.ts" },
 		"game": { "page": "game/index.ts", "headless": "game/sim/index.ts" }
 	},
@@ -273,6 +273,7 @@
 		"post/graph/GraphCompiler.ts": "render",
 		"render.ts": "render",
 		"renderData.ts": "render",
+		"renderSetup.ts": "render",
 		"shared.ts": "render",
 		"sky/Atmosphere.ts": "render",
 		"sky/BandMatrix.ts": "render",

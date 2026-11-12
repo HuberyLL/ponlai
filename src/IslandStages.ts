@@ -7,7 +7,8 @@
 // - The page's camera views (app/CameraViews.ts) need the document, so the page hangs them on the
 //   object as the hooks the land's changes call: `frameLand`, `holdsFraming`, `followFraming`,
 //   `poseIslandView`, `islandViewOptions`.
-import { settings as params, type SettingsQuery, WIND_VIEW, shared, testSources, debugFlags, TEST_MODE, declareSceneEvents, installVegetationPrepass, createDisplacementField, displacementField, installOpaquePrepass, GTAO, SS_SHADOW, Vegetation, defaultPlant, installWindMotionFlag, type RenderParts } from './render.ts';
+import { WIND_VIEW, shared, testSources, debugFlags, TEST_MODE, declareSceneEvents, installVegetationPrepass, createDisplacementField, displacementField, installOpaquePrepass, GTAO, SS_SHADOW, Vegetation, defaultPlant, installWindMotionFlag, type RenderParts } from './render.ts';
+import { settings as params, type SettingsQuery } from './renderSetup.ts';
 import * as THREE from 'three/webgpu';
 import { FreeCameraControls } from './camera/FreeCameraControls.ts';
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';

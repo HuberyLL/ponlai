@@ -1,6 +1,6 @@
-// Checks the packages' exits (tools/layers.json `exits`): that each headless exit loads in plain
-// node, and that nothing the page exits load awaits or reads the page as it loads. CPU only, no
-// GPU, about a second.
+// Checks the packages' exits (tools/layers.json `exits`): that each headless exit and the
+// renderer's setup exit load in plain node, and that nothing the page and setup exits load awaits
+// or reads the page as it loads. CPU only, no GPU, about a second.
 //   node tools/verify-exits.mjs
 //
 // An exit is a file of re-exports through which another package imports a package
@@ -10,11 +10,13 @@
 // anywhere else.
 //
 // Guarantees, each a failure (exit 1) when broken:
-// - Each headless exit (renderData.ts, islandLand.ts, game/sim/index.ts) loads in plain node, with
-//   its types stripped and nothing installed first, without throwing, and every value name it
+// - Each headless exit (renderData.ts, islandLand.ts, game/sim/index.ts) and the setup exit
+//   (renderSetup.ts, which the headless game loads for its settings) loads in plain node, with its
+//   types stripped and nothing installed first, without throwing, and every value name it
 //   re-exports is defined once it has loaded. (The page exits do not load in node, nor need to:
 //   modules of theirs read `import.meta.env`, which the bundler provides.)
-// - Every file a page exit (render.ts, island.ts, game/index.ts) loads, followed through its
+// - Every file a page exit (render.ts, island.ts, game/index.ts) or the setup exit loads, followed
+//   through its
 //   static imports and re-exports with `import type` left out, has no `await` at module scope and
 //   names none of the page's globals in PAGE at module scope. Module scope is the code that runs as
 //   the module loads: its top-level statements, the initialisers of its classes' static fields and
@@ -160,24 +162,25 @@ function atLoad( file ) {
 
 const lines = [];
 const read = new Set();
-for ( const [ pkg, { page, headless } ] of Object.entries( exits ) ) {
+for ( const [ pkg, sides ] of Object.entries( exits ) ) for ( const [ side, exit ] of Object.entries( sides ) ) {
 
-	// the headless exit, loaded in plain node
-	try {
+	// a headless or setup exit, loaded in plain node
+	if ( side !== 'page' ) try {
 
-		const module = await import( pathToFileURL( path.join( SRC, headless ) ).href );
-		const missing = valueNames( headless ).filter( ( name ) => module[ name ] === undefined );
-		for ( const name of missing ) failures.push( `${ headless }: \`${ name }\` is undefined once loaded in node` );
-		lines.push( `${ pkg }: ${ headless } loads in node (${ Object.keys( module ).length } values)` );
+		const module = await import( pathToFileURL( path.join( SRC, exit ) ).href );
+		const missing = valueNames( exit ).filter( ( name ) => module[ name ] === undefined );
+		for ( const name of missing ) failures.push( `${ exit }: \`${ name }\` is undefined once loaded in node` );
+		lines.push( `${ pkg }: ${ exit } loads in node (${ Object.keys( module ).length } values)` );
 
 	} catch ( e ) {
 
-		failures.push( `${ headless }: does not load in plain node: ${ e.message.split( '\n' )[ 0 ] }` );
+		failures.push( `${ exit }: does not load in plain node: ${ e.message.split( '\n' )[ 0 ] }` );
 
 	}
 
-	// the page exit, read
-	const files = loadClosure( page );
+	// a page or setup exit, read
+	if ( side === 'headless' ) continue;
+	const files = loadClosure( exit );
 	for ( const file of files ) {
 
 		if ( read.has( file ) ) continue;
@@ -185,7 +188,7 @@ for ( const [ pkg, { page, headless } ] of Object.entries( exits ) ) {
 		failures.push( ...atLoad( file ) );
 
 	}
-	lines.push( `${ pkg }: ${ page } loads ${ files.size } files, none awaits or reads the page at load` );
+	lines.push( `${ pkg }: ${ exit } loads ${ files.size } files, none awaits or reads the page at load` );
 
 }
 

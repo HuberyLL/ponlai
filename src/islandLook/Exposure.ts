@@ -1,4 +1,4 @@
-import type { ExposureKey, ExposureLook, SharingKey } from '../render.ts';
+import type { ExposureKey, ExposureLook, SharingKey } from '../renderSetup.ts';
 
 // The island's exposure look (src/islandLook/: the island's numbers for the renderer's look
 // tables, look/Look.ts; look/ExposureLook.ts reads these): the exposure's keys by the sun's

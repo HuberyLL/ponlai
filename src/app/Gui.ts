@@ -3,7 +3,8 @@
 // Its handlers call the renderer's and the island's operations; the game adds its own folder
 // between them (main.ts).
 import { reloadWith } from '../PageSettings.ts';
-import { settings as params, DAY_PRESETS, type DayPreset, WEATHER_PRESETS, isParkedWeather, type WeatherName, WIND_LEVELS, type WindLevel, type QualityTier, ACTIVE_QUALITY, WHITE_BALANCE, LOCAL_TONE, FrameStats, shared, AMBIENT_KNOBS, ambientGrade, type AmbientView, markSkyRetune, type AAMode, AA_MODE, sceneEvent, debugViewChoices, type RenderParts } from '../render.ts';
+import { DAY_PRESETS, type DayPreset, WEATHER_PRESETS, isParkedWeather, type WeatherName, WIND_LEVELS, type WindLevel, WHITE_BALANCE, LOCAL_TONE, FrameStats, shared, AMBIENT_KNOBS, ambientGrade, type AmbientView, markSkyRetune, type AAMode, AA_MODE, sceneEvent, debugViewChoices, type RenderParts } from '../render.ts';
+import { settings as params, type QualityTier, ACTIVE_QUALITY } from '../renderSetup.ts';
 import GUI from 'lil-gui';
 import { qualityLines } from '../QualityDetect.ts';
 import { soilUniforms, setSoilStrength, groundGains, PROPORTION_NAMES, type ProportionName, characterLook, type IslandParts } from '../island.ts';

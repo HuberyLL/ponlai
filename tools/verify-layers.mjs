@@ -15,8 +15,10 @@
 // (`files`). The three lower layers are packages, and each offers two exits (`exits`), files of
 // re-exports only: one for the page (render.ts, island.ts, game/index.ts) and a headless one for
 // the code that loads without three.js, in the chunk worker and in node (renderData.ts,
-// islandLand.ts, game/sim/index.ts). The modules the page loads on demand are lazy exits (`lazy`):
-// the page exits leave them out, so they keep chunks of their own.
+// islandLand.ts, game/sim/index.ts). The renderer has a third, its setup exit (renderSetup.ts):
+// what the page needs before the renderer's other modules load (the settings, the look, the quality
+// tiers and the render scale they set), which loads in node too. The modules the page loads on
+// demand are lazy exits (`lazy`): the page exits leave them out, so they keep chunks of their own.
 //
 // Guarantees, each a failure (exit 1) when broken:
 // - Every code file under `src/` (.ts, .mts, .js, .mjs) has a layer in `tools/layers.json`, and
@@ -29,15 +31,13 @@
 //   (JSON, CSS) are not checked.
 // - The exits: each one `tools/layers.json` names exists in its package's layer and holds only
 //   re-exports of its own package's files. An import from one package into another (or from the
-//   app layer into a package) names an exit of that package or a lazy exit, outside the pairs in
-//   DIRECT, each the reason a file must name a module by its path. A lazy exit is imported
+//   app layer into a package) names an exit of that package or a lazy exit. A lazy exit is imported
 //   dynamically or with `import type` only, from anywhere, so it stays out of the page's chunks.
-//   DIRECT only shrinks: a pair in it that no longer imports fails. The exits' own tests (the
-//   headless ones load in node, the page ones neither await nor read the page at load) are
-//   tools/verify-exits.mjs.
-// - Each headless exit and every file it loads (static imports and re-exports, `import type` left
-//   out) import relative paths only: no package, three.js least of all, so node and a worker load
-//   them as they are.
+//   The exits' own tests (the headless and setup ones load in node, the page ones neither await
+//   nor read the page at load) are tools/verify-exits.mjs.
+// - Each headless exit, the setup exit and every file they load (static imports and re-exports,
+//   `import type` left out) import relative paths only: no package, three.js least of all, so node
+//   and a worker load them as they are.
 // - The chunk worker (src/world/chunkWorker.ts) and everything it imports, followed through
 //   relative imports, imports no package except the files tools/vite-world-generator.mjs hashes:
 //   the same walk and the same exceptions as the build's world generator plugin, run here so the
@@ -68,11 +68,14 @@
 // - The look checks: the renderer draws with the look its page installs (src/look/Look.ts), which
 //   a module reads as it loads (`readLook(`), so a reader that loads where no look is installed
 //   takes the neutral one without a word. Neither that module nor any reader is among the files
-//   the chunk worker loads (the world is generated without the look, and no worker installs one),
-//   nor among the files the headless game loads (every src/ module tools/play-game.mjs and its
-//   fixture name, with what those load: the game is played without the look),
-//   and no reader is among the files the entry's first module (src/PageSettings.ts) loads, which
-//   installs the look and must have run before the first reader does. The files a file loads are
+//   the chunk worker loads (the world is generated without the look, and no worker installs one).
+//   No reader is among the files the headless game loads (every src/ module tools/play-game.mjs
+//   and its fixture name, with what those load: the game is played without the look); look/Look.ts
+//   itself may be, through the setup exit, whose settings the game's words read (it reads nothing
+//   while no reader loads),
+//   and no reader is among the files the entry's first module (src/PageSettings.ts) or the
+//   renderer's setup exit loads: the first installs the look and must have run before the first
+//   reader does, and the second is what it installs the look through. The files a file loads are
 //   its static imports and re-exports followed through relative specifiers, `import type` left
 //   out (it is erased) and dynamic imports too (they load later).
 //
@@ -93,23 +96,6 @@ const CODE = /\.(ts|mts|js|mjs)$/;
 // Upward imports not yet turned round, as 'from -> to' (paths under src/). Remove an entry with
 // the change that removes its import; never add one.
 const KNOWN = [];
-
-// Imports across packages that name a module by its path instead of an exit, as 'from -> to'
-// (paths under src/), with the reason. Remove an entry with the change that removes its import;
-// never add one.
-const DIRECT = {
-	// the entry's first module installs the settings and the look before any reader of them loads;
-	// the renderer's page exit loads every reader, and its headless exit cannot hold these (the
-	// chunk worker loads it, and the worker must not load the look)
-	'PageSettings.ts -> Settings.ts': 'installs the settings before the renderer loads',
-	'PageSettings.ts -> look/Look.ts': 'installs the look before the renderer loads',
-	'PageSettings.ts -> look/NeutralLook.ts': 'installs the look before the renderer loads',
-	'QualityDetect.ts -> Quality.ts': 'chooses the tier before the renderer loads (PageSettings.ts)',
-	'QualityDetect.ts -> post/RenderScale.ts': 'chooses the tier before the renderer loads (PageSettings.ts)',
-	// node loads the interface's words (tools/play-game.mjs), and the renderer's page exit does not
-	// load in node
-	'game/ui/i18n/i18n.ts -> Settings.ts': 'node loads it (tools/play-game.mjs)',
-};
 
 // The page's globals the lower layers must not name.
 const PAGE = [ 'location', 'localStorage', 'sessionStorage', 'document', 'window', 'navigator', 'URLSearchParams', 'requestAnimationFrame', 'cancelAnimationFrame', 'Worker', 'indexedDB', 'fetch' ];
@@ -426,7 +412,7 @@ for ( const [ key, pair ] of upward ) if ( ! known.has( key ) ) failures.push( `
 for ( const key of KNOWN ) if ( ! upward.has( key ) ) failures.push( `KNOWN lists ${ key }, which no longer imports upward: remove the entry` );
 
 // the exits
-const exits = new Map(); // file -> { layer, side: 'page' | 'headless' }
+const exits = new Map(); // file -> { layer, side: 'page' | 'headless' | 'setup' }
 for ( const [ layer, sides ] of Object.entries( layers.exits ) ) for ( const [ side, file ] of Object.entries( sides ) ) exits.set( file, { layer, side } );
 const lazy = new Set( layers.lazy );
 for ( const layer of Object.keys( RANK ).filter( ( l ) => l !== 'app' ) ) if ( ! layers.exits[ layer ]?.page || ! layers.exits[ layer ]?.headless ) failures.push( `tools/layers.json: the ${ layer } package has no page or no headless exit` );
@@ -445,7 +431,6 @@ for ( const [ file, { layer } ] of exits ) {
 }
 for ( const file of lazy ) if ( ! ( table[ file ] in RANK ) || table[ file ] === 'app' ) failures.push( `tools/layers.json: the lazy exit ${ file } is not a file of a package` );
 let across = 0;
-const direct = new Set();
 for ( const from of files ) {
 
 	for ( const { spec, kind } of importKinds( from ) ) {
@@ -457,21 +442,17 @@ for ( const from of files ) {
 		across ++;
 		const exit = exits.get( to );
 		if ( exit || lazy.has( to ) ) continue;
-		const key = `${ from } -> ${ to }`;
-		if ( key in DIRECT ) { direct.add( key ); continue; }
-		const { page, headless } = layers.exits[ table[ to ] ];
-		failures.push( `${ from }: imports ${ to } across packages: import it from ${ page } or ${ headless }, the ${ table[ to ] } package's exits` );
+		failures.push( `${ from }: imports ${ to } across packages: import it from ${ Object.values( layers.exits[ table[ to ] ] ).join( ' or ' ) }, the ${ table[ to ] } package's exits` );
 
 	}
 
 }
-for ( const key of Object.keys( DIRECT ) ) if ( ! direct.has( key ) ) failures.push( `DIRECT lists ${ key }, which no longer imports across packages by path: remove the entry` );
 
-// the headless exits' reach: relative imports only
+// the headless and setup exits' reach: relative imports only
 const headlessFiles = new Set();
 for ( const [ file, { side } ] of exits ) {
 
-	if ( side !== 'headless' ) continue;
+	if ( side === 'page' ) continue;
 	for ( const f of loadClosure( file ) ) {
 
 		headlessFiles.add( f );
@@ -503,12 +484,15 @@ for ( const f of lookReaders ) if ( workerLoads.has( f ) ) failures.push( `look 
 const entryLoads = loadClosure( 'PageSettings.ts' );
 if ( ! entryLoads.has( LOOK ) ) failures.push( `look check: PageSettings.ts does not load ${ LOOK }: the entry installs the look there` );
 for ( const f of lookReaders ) if ( entryLoads.has( f ) ) failures.push( `look check: PageSettings.ts loads ${ f }, which reads the look before the entry installs it` );
+const SETUP = [ ...exits ].find( ( [ , { side } ] ) => side === 'setup' )?.[ 0 ];
+const setupLoads = SETUP ? loadClosure( SETUP ) : new Set();
+if ( ! SETUP ) failures.push( 'look check: tools/layers.json names no setup exit, through which the entry installs the look' );
+for ( const f of lookReaders ) if ( setupLoads.has( f ) ) failures.push( `look check: the setup exit ${ SETUP } loads ${ f }, which reads the look before the entry installs it` );
 // the headless game: every src/ module tools/play-game.mjs and its fixture name, static or dynamic
 const HEADLESS = [ 'tools/play-game.mjs', 'tools/game-fixture.mjs' ];
 const headlessLoads = new Set();
 for ( const tool of HEADLESS ) for ( const [ , f ] of readFileSync( path.join( ROOT, tool ), 'utf8' ).matchAll( /['"]\.\.\/src\/([^'"]+\.ts)['"]/g ) ) for ( const g of loadClosure( f ) ) headlessLoads.add( g );
 if ( ! headlessLoads.has( 'game/Session.ts' ) ) failures.push( `look check: ${ HEADLESS[ 0 ] } does not load game/Session.ts: the headless game's files were not found` );
-if ( headlessLoads.has( LOOK ) ) failures.push( `look check: the headless game loads ${ LOOK } (the game is played without the look: tools/play-game.mjs installs none)` );
 for ( const f of lookReaders ) if ( headlessLoads.has( f ) ) failures.push( `look check: the headless game loads ${ f }, which reads the look` );
 
 // the page check
@@ -559,7 +543,7 @@ for ( const { file, line, key } of userKeys ) {
 }
 for ( const key of Object.keys( USER_DATA ) ) if ( ! userKeys.some( ( hit ) => hit.key === key ) ) failures.push( `src/UserData.ts declares '${ key }', which no file under src/ names: remove the entry` );
 
-console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), ${ across } across packages (${ direct.size } by path, in DIRECT), ${ exits.size } exits and ${ lazy.size } lazy, the headless exits' ${ headlessFiles.size } files, chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.keys( USER_DATA ).length } userData keys declared, ${ lookReaders.length } readers of the look (none in the chunk worker's ${ workerLoads.size } files, the headless game's ${ headlessLoads.size } or the entry's first ${ entryLoads.size })` );
+console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), ${ across } across packages, ${ exits.size } exits and ${ lazy.size } lazy, the headless and setup exits' ${ headlessFiles.size } files, chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.keys( USER_DATA ).length } userData keys declared, ${ lookReaders.length } readers of the look (none in the chunk worker's ${ workerLoads.size } files, the headless game's ${ headlessLoads.size }, the entry's first ${ entryLoads.size } or the setup exit's ${ setupLoads.size })` );
 for ( const [ key, pair ] of [ ...upward ].sort() ) console.log( `  ${ known.has( key ) ? 'known' : 'NEW  ' } ${ pair }: ${ key }` );
 if ( failures.length ) {
 

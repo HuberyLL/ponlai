@@ -7,8 +7,8 @@
 // - The stages run in this order and no other: the renderer's and the island's alternate, and the
 //   order materials first build in is part of the image (AGENTS.md, WebGPU / TSL pitfalls).
 // - Every wait is here: a stage that ends in one returns its promise.
-// - It takes each package through its exits (render.ts, island.ts, islandLand.ts, game/sim/index.ts,
-//   and the game's own, game/index.ts, by a dynamic import when `?game` starts it), never a
+// - It takes each package through its exits (render.ts, renderSetup.ts, island.ts, islandLand.ts,
+//   game/sim/index.ts, and the game's own, game/index.ts, by a dynamic import when `?game` starts it), never a
 //   package's module by its path. An exit loads its whole package, and no module does
 //   anything at load that depends on the order the modules load in.
 // On the dev server and with ?debug (or ?profile) the page hands the scene to the capture and
@@ -17,7 +17,8 @@
 // resume and step the frame loop (app/Frame.ts).
 // the page's settings, which its entry (Boot.ts) installed before this module's imports load
 import { QUALITY_CHOICE } from './PageSettings.ts';
-import { settings as params, type QualityTier, qualityProfile, Pipeline, createShared, installShared, type RenderParts, createRenderer, setUpRenderer, createScenes, createSky, createLight, createKey, createEnvironment, publishSkyLight, createSeaAndPipeline, createBounceAndShore, createAmbient, createWater, bakeWithHaze, awaitWarmUp, checkMotion, primeSharedBuilds } from './render.ts';
+import { Pipeline, createShared, installShared, type RenderParts, createRenderer, setUpRenderer, createScenes, createSky, createLight, createKey, createEnvironment, publishSkyLight, createSeaAndPipeline, createBounceAndShore, createAmbient, createWater, bakeWithHaze, awaitWarmUp, checkMotion, primeSharedBuilds } from './render.ts';
+import { settings as params, type QualityTier, qualityProfile } from './renderSetup.ts';
 import * as THREE from 'three/webgpu';
 import { FallingLeaves, leavesPass, setSoilStrength, ISLAND_SEA, islandBounceGround, Villagers, loadVillager, PROPORTIONS, createIslandCamera, createTrample, createCharacterShadow, type IslandParts, bakeIslandGround, awaitWorld, createLand, createWorld, createWorldViews, createVegetation, createGrowth } from './island.ts';
 import { topFromTiles } from './game/sim/index.ts';

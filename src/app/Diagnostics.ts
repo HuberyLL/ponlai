@@ -2,7 +2,8 @@
 // 30 frames, and `window.__PONLAI__`, the scene's handles for the capture and profiling tools and
 // the console. Both exist only on the dev server or with `?debug` / `?profile`.
 import * as THREE from 'three/webgpu';
-import { type QualityProfile, meadowCanopy, type GradeChanges, DynamicResolution, shared, ambientGrade, liftedKeyDirection, debugFlags, tuneApi, AA_MODE, AA_SOURCE, motionState, taaCut, motionCheck, jitter, restEpoch, preExposure, sceneEvent, gtaoUniforms, type RenderParts } from '../render.ts';
+import { meadowCanopy, type GradeChanges, DynamicResolution, shared, ambientGrade, liftedKeyDirection, debugFlags, tuneApi, AA_MODE, AA_SOURCE, motionState, taaCut, motionCheck, jitter, restEpoch, preExposure, sceneEvent, gtaoUniforms, type RenderParts } from '../render.ts';
+import type { QualityProfile } from '../renderSetup.ts';
 import { soilUniforms, setGroundGain, MEADOW_EXTENT, swardField, type IslandParts } from '../island.ts';
 import type { PageParts } from './Page.ts';
 

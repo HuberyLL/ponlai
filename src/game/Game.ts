@@ -1,6 +1,7 @@
 import type * as THREE from 'three/webgpu';
 import type GUI from 'lil-gui';
-import { type DayCycle, declareSceneEvents, type Weather, type WeatherName, type SettingsQuery } from '../render.ts';
+import { type DayCycle, declareSceneEvents, type Weather, type WeatherName } from '../render.ts';
+import type { SettingsQuery } from '../renderSetup.ts';
 import { type CharacterShadow, FIGURE_HEIGHT, type Villager as Figure, type LookColours, type TrampleWalker } from '../island.ts';
 import { parseBodies, type Body, type LandLattice } from '../islandLand.ts';
 import { GameUi } from './ui/GameUi.ts';

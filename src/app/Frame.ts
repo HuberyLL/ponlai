@@ -3,7 +3,8 @@
 // then renders, the loop that paces it, and the controls a tool holds, resumes and steps it by
 // (`loop`, `step`, `setTime`).
 import { pageStore } from '../PageSettings.ts';
-import { settings as params, nightAmbientShare, duskForce, yunpengNightShare, cloudedShare, updateLeafLight, type HazeFrame, dynamicRange, renderPixelRatio, outputPixelRatio, DynamicResolution, TAAU_MAX_UPSCALE, GpuFrameTimer, PassScaling, renderScaleKey, PeriodicWork, FramePacer, PAUSED_QUEUE, gpuDevice, threeAnimation, frameBookkeeping, shared, ambientGrade, TEST_MODE, AA_MODE, AFTER_RESOLVE, TEMPORAL, preExposure, PRE_EXPOSURE_PENDING, sceneEvent, type TemporalFrame, type SettleFrame, prepassScene, opaquePrepassScene, type RenderParts } from '../render.ts';
+import { nightAmbientShare, duskForce, yunpengNightShare, cloudedShare, updateLeafLight, type HazeFrame, DynamicResolution, TAAU_MAX_UPSCALE, GpuFrameTimer, PassScaling, renderScaleKey, PeriodicWork, FramePacer, PAUSED_QUEUE, gpuDevice, threeAnimation, frameBookkeeping, shared, ambientGrade, TEST_MODE, AA_MODE, AFTER_RESOLVE, TEMPORAL, preExposure, PRE_EXPOSURE_PENDING, sceneEvent, type TemporalFrame, type SettleFrame, prepassScene, opaquePrepassScene, type RenderParts } from '../render.ts';
+import { settings as params, dynamicRange, renderPixelRatio, outputPixelRatio } from '../renderSetup.ts';
 import * as THREE from 'three/webgpu';
 import { isCameraInputTarget, setYunpengNight, updateSwardTint, type IslandParts } from '../island.ts';
 import { QualityDetector, qualityLines, rememberQuality } from '../QualityDetect.ts';
