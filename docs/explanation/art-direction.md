@@ -296,24 +296,31 @@ for the light is baking lighting into albedo; it breaks again whenever the light
   and maybe none on the starting island, whose meadow is small. Its glow by night stays a soft
   white that lights the ground round a clump, never a lamp; a drift of such clumps would hide the
   islanders by night.
-- Penglai's own bamboo (浮筠之簳, Shiyi ji: "green leaves, purple stems, seeds as big as pearls")
-  grows over the whole island as a running bamboo left to itself takes a hillside: in groves of
-  even height whose edges run out in lobes, single culms ahead of them on the open meadow, and
-  glades of meadow between, never one round crown nor a closed forest. No placement rule: it
-  stands at the cliff's edge as anywhere else. Its culms are tall and slender, bare to about half
-  their height, their leaves narrow and in loose drooping layers, so the culms show from above
-  between them. Its stems are a mid to dark green, one family with its leaves and the meadow and
-  most of the time darker than the crowns, and a minority of old culms turn a dim dusty purple at
-  the same lightness, so the purple of the old text shows up close and the grove still reads as
-  one green, by its light and shade. A grove is dark inside, its canopy hiding most of the sky from
-  its floor, its culms lit where the sun finds them. Its floor is the meadow's
-  grass up to a couple of metres inside the culm line, then clearings of fallen leaves, about
-  half of the floor where a grove is deep, with ragged edges about a metre across, a few stray
-  tufts of grass left in them, and small bare discs under its clusters of young shoots. The
-  litter is paler than the grass ground (about a third brighter) and nearly neutral, a
-  brownish grey with the grain of leaves and twigs, never a dark brown; patches of a low
-  blue-green groundcover, a metre to a few across, lie on about a seventh of it. The grass does
-  not shorten toward a clearing: it stops at the litter's edge at its full height.
+- Penglai's own bamboo (浮筠之簳, Shiyi ji: "green leaves, purple stems, seeds as big as pearls") grows
+  over the whole island as a running bamboo left to itself takes a hillside: in groves of even
+  height whose edges run out in lobes, single culms ahead of them on the open meadow, and glades of
+  meadow between, never one round crown nor a closed forest. No placement rule: it stands at the
+  cliff's edge as anywhere else. Its culms are tall and slender, bare to about half their height,
+  their leaves narrow and in loose drooping layers, so the culms show from above between them. Its
+  stems are a mid to dark green, one family with its leaves and the meadow and most of the time
+  darker than the crowns, and a minority of old culms turn a dim dusty purple at the same lightness,
+  so the purple of the old text shows up close and the grove still reads as one green, by its light
+  and shade. Its leaves are nearly as matte as the meadow's blades: no pale sheen over a crown,
+  whose lit leaves stay a plain green and whose depth stays dark, the inner leaves of a shoot and
+  the shoots deep in a grove darker. Under a sun more than a few degrees up, a crown's shaded leaves
+  still take a share of it through the leaves above, so its dark side reads green rather than as
+  dark and as blue as the sky; at a sun on the horizon, under a closed sky and by night they take
+  none. A leaf lit from behind glows on its own colour, so a grove seen against the sun has no black
+  side. Under a closed sky the crowns keep their green as the lawn does, a dark, rich green, the
+  sky's light having passed through and off their leaves; at a low sun they take its warm colour
+  instead. A grove is dark inside, its canopy hiding most of the sky from its floor, its culms lit
+  where the sun finds them. Its floor is the meadow's grass up to a couple of metres inside the culm
+  line, then clearings of fallen leaves, about half of the floor where a grove is deep, with ragged
+  edges about a metre across, a few stray tufts of grass left in them, and small bare discs under
+  its clusters of young shoots. The litter is paler than the grass ground (about a third brighter)
+  and nearly neutral, a brownish grey with the grain of leaves and twigs, never a dark brown;
+  patches of a low blue-green groundcover, a metre to a few across, lie on about a seventh of it.
+  The grass does not shorten toward a clearing: it stops at the litter's edge at its full height.
 - Besides these, the terrain plants the meadow (grass, and the flowers when they are on) and its
   turf over the rim, and no shrub or tree: the island is a low, rolling top ringed by cliffs, with
   no lee where they would grow. The walker's loop stays open meadow. Plants that matter to play are
