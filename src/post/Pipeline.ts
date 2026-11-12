@@ -745,7 +745,7 @@ export class Pipeline {
 	private exposureReset = true;
 	private exposureTime: number | null = null;
 	/** Debug builds: the exposure has not yet reached its target (more than 0.01 stop off, as last
-	 * read back), which keeps the page's settled signal false (main.ts `pending`). */
+	 * read back), which keeps the page's settled signal false (app/Frame.ts `pending`). */
 	exposurePending = false;
 	// a readback of the exposure state is in flight (one at a time)
 	private exposureReading = false;

@@ -253,7 +253,7 @@ export class StormSea {
 
 	}
 
-	/** Forgets the storm's state, as a new page has none (a scene jump, main.ts `establishScene`):
+	/** Forgets the storm's state, as a new page has none (a scene jump, app/Scene.ts `establishScene`):
 	 * the window is placed afresh and the history replayed on the next update. The window follows the
 	 * camera with slack, so without this a storm seen from the scene before kept that scene's window. */
 	reset(): void {

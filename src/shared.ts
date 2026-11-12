@@ -6,7 +6,12 @@ import { ABSORPTION, BACKSCATTER, FORWARD_ANGLE, FORWARD_SCATTER, SCATTER } from
 
 // Uniforms shared by the water, the terrain and the vegetation (one node each, read by every
 // material that uses it).
-export const shared = {
+// - The page's entry creates the object (`createShared`) and installs it (`installShared`) before
+//   it builds anything: no module makes the uniforms as it loads, and a tool that builds materials
+//   under node installs its own (tools/wgsl-build.mjs). The modules that take it as a parameter
+//   are handed the same object; `shared` below is the installed one, for those that read it as
+//   they build or run. Nothing reads it as a module loads.
+export const createShared = () => ( {
 	time: uniform( 0 ),
 	wind: createWindUniforms(),
 	// the displacement field the islanders part the meadow through (world/vegetation/Trample.ts): the
@@ -41,11 +46,11 @@ export const shared = {
 	muSun: uniform( 1 ), // cosine of the refracted sun below the surface
 	shoreXform: uniform( new THREE.Vector4() ), // x0, z0, 1 / width, 1 / depth of the shoreline field
 	sunDir: uniform( new THREE.Vector3( 0, 1, 0 ) ),
-	// the sky's key, linear rgb (main.ts publishLighting): the sea's and the water's, which the
+	// the sky's key, linear rgb (RenderStages.ts publishLighting): the sea's and the water's, which the
 	// clouds' own transmittance over the land's floor (Sky.ts `seaKeyVisibility`) cuts per point
 	// where it is read
 	sunColor: uniform( new THREE.Vector3() ),
-	// the key on the land (main.ts publishLighting): sunColor, the clouds' shadow over the land's
+	// the key on the land (RenderStages.ts publishLighting): sunColor, the clouds' shadow over the land's
 	// floor (Sky.ts `keyDirectVisibility`, the deck's key gain on that floor) cutting it per point
 	// where it is read
 	landKey: uniform( new THREE.Vector3() ),
@@ -77,6 +82,16 @@ export const shared = {
 	// log2 of the sky's geometric-mean luminance (Sky.meterLog2Node, scene units): the exposure's
 	// sky term, the dome's metering illuminance being this luminance's
 	skyMeterLog2: float( 0 ) as THREE.Node<'float'>,
-};
+} );
 
-export type Shared = typeof shared;
+export type Shared = ReturnType<typeof createShared>;
+
+/** The installed uniforms: undefined until the entry installs them. */
+export let shared: Shared;
+
+/** Installs the scene's uniforms, once, before anything is built. */
+export function installShared( created: Shared ): void {
+
+	shared = created;
+
+}

@@ -227,7 +227,7 @@ type V4 = THREE.Node<'vec4'>;
 // reprojected history to its own scale by their ratio (a power of two: the bits of what lay in
 // range stay). A view kept at rest holds the scale it settled at: a new P settles it again, so a
 // paused frame takes the clouds at its own P, never at the 0 a jump starts P from.
-// Every explicit bake (the load's, a scene jump's, a seek's, a retune's: main.ts `bakeEnvironment`,
+// Every explicit bake (the load's, a scene jump's, a seek's, a retune's: RenderStages.ts `bakeEnvironment`,
 // through Sky.reset) restarts the clouds as they stand before a page's first frame (`restart`),
 // then sets their drift, evolution and axes to the scene clock, for the bake that follows.
 

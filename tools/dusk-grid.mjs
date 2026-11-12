@@ -28,7 +28,7 @@
 //     difference is in summary.txt), and given to the page with 9 decimals. The page's own sun is
 //     checked against it after each jump (within 1e-3 degrees), so a page of another arc than
 //     --src's fails rather than reading other elevations.
-//   - Each point is its own scene jump (main.ts `establishScene`) to `weather=<w>&hour=<h>&paused&t=12`
+//   - Each point is its own scene jump (app/Scene.ts `establishScene`) to `weather=<w>&hour=<h>&paused&t=12`
 //     plus --q (default `grow=36`, the grown island: its yunpeng clumps), never reached by walking the
 //     clock through the points before it, since the scene is a function of its query (AGENTS.md).
 //     --walk instead reaches each point of a side by `__PONLAI__.setHour` in one page, from the
@@ -80,7 +80,7 @@
 // 65 m over the sea at the land box's +x edge, its back to the island, facing the open sea, pitched
 // 10 degrees up with a vertical field of 30; one pose everywhere, so the points read alike and
 // compare), once the page has settled there:
-//   - hazeMedium: every item of the haze's key as the frame set it (main.ts `hazeKey`, `key.*`), the
+//   - hazeMedium: every item of the haze's key as the frame set it (RenderStages.ts `hazeKey`, `key.*`), the
 //     haze's copy of it (`look.*`), its medium's uniforms (`air.*`: the weather's haze and fog, the
 //     layers, sigma, the dome's own depth), the clouds' copy of the medium (`clouds.*`), the moon's aerosol keys (`moon.*`, Tune
 //     `haze.moon.*`) and the settings (`settings.*`); vectors flattened (`.0`, `.1`, ...), non-finite

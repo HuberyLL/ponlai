@@ -55,7 +55,7 @@ const REPO = path.resolve( TOOLS, '..' );
 // paths whose change can alter motion without touching a paused frame (prefixes end in '/'); the
 // dependencies because a three.js upgrade can change any shader, motion vectors included
 export const WATCH = {
-	motion: [ 'src/main.ts', 'src/weather/', 'src/characters/', 'src/ocean/', 'src/game/view/', 'src/life/', 'package.json', 'package-lock.json' ],
+	motion: [ 'src/main.ts', 'src/RenderStages.ts', 'src/IslandStages.ts', 'src/app/', 'src/weather/', 'src/characters/', 'src/ocean/', 'src/game/view/', 'src/life/', 'package.json', 'package-lock.json' ],
 	// the temporal graph aa=gt renders through: the resolve, its rest and jitter, the mode switch,
 	// motion vectors, the frame graph, what draws after the resolve and the events that reset history
 	gt: [ 'src/post/TemporalAA.ts', 'src/post/TemporalRest.ts', 'src/post/Jitter.ts', 'src/post/Antialiasing.ts', 'src/post/Motion.ts', 'src/post/Pipeline.ts',

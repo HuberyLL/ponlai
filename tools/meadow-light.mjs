@@ -411,7 +411,7 @@ if ( shoot.length ) {
 					} else if ( current !== q || ! view.frame || view.frame.island ) {
 
 						// a new query, or a view that starts from the query's own camera: the exact scene jump
-						// (src/main.ts establishScene, as capture.mjs's worker makes it), which places it as a load
+						// (src/app/Scene.ts establishScene, as capture.mjs's worker makes it), which places it as a load
 						const jumped = await page.evaluate( async ( q ) => {
 
 							const s = window.__PONLAI__;

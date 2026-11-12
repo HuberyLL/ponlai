@@ -21,7 +21,7 @@ import type { RefractedSun } from '../lighting/RefractedSun.ts';
 //   the clock is paused. The target is 0 until the pending tiles are installed, then the approach
 //   (`approach`, 0 .. 1: the progress toward the next piece, which the game or the GUI's Approach
 //   slider sets). `snap` puts R on its target at once, as soon as the tiles are installed: the URL's
-//   `approach` option at load and a scene jump (main.ts `establishScene`) take it, so a paused
+//   `approach` option at load and a scene jump (app/Scene.ts `establishScene`) take it, so a paused
 //   frame repeats whatever path led to it.
 // - Whenever the shown R has moved by STEP_M of the largest rise since the last write (or reached
 //   its target), the pending tiles are written at it: their heights, normals (mixed, normalised)
@@ -162,7 +162,7 @@ export class SeabedRise {
 	}
 
 	/** The next piece will not come (its generation failed): a snap waiting for its tiles resolves
-	 * now and leaves the floor where it is, so a scene jump that waits for it ends (main.ts
+	 * now and leaves the floor where it is, so a scene jump that waits for it ends (app/Scene.ts
 	 * `establishScene` draws no frame until it has). */
 	abandon(): void {
 

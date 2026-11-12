@@ -118,9 +118,14 @@ nothing below a host reads the page or the wall clock (the save's timestamp asid
 ### Layers
 
 - **The page** ([src/main.ts](src/main.ts), loaded by the entry [src/Boot.ts](src/Boot.ts)
-  after [src/PageSettings.ts](src/PageSettings.ts)): the renderer, the cameras, the frame loop, the
-  GUI, the diagnostics and the handles the tools drive (it mounts them on `window`), the address,
-  the reloads and the browser's storage, and the quality tier's table of cost knobs
+  after [src/PageSettings.ts](src/PageSettings.ts)): the one place that assembles the renderer, the
+  island and the game. It builds them a stage at a time, the renderer's stages
+  ([src/RenderStages.ts](src/RenderStages.ts)) and the island's
+  ([src/IslandStages.ts](src/IslandStages.ts)) alternating in a fixed order, each stage putting
+  what it builds on its layer's one object; the game starts from those two objects. The page's own
+  parts are in [src/app/](src/app/): the cameras' views, the frame loop, the GUI, the scene jump,
+  the diagnostics and the handles the tools drive (it mounts them on `window`). The page also holds
+  the address, the reloads and the browser's storage, and the quality tier's table of cost knobs
   ([src/Quality.ts](src/Quality.ts)). It is the only part that touches the browser's page: the
   layers below take the canvas, the settings and the storage from it
   ([tools/verify-layers.mjs](tools/verify-layers.mjs), its page check, keeps them off the page).

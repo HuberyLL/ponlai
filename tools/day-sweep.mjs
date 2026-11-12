@@ -300,7 +300,7 @@ function frameQuery( camera, weather, minute ) {
 	if ( camera.heading ) {
 
 		// the camera stands opposite the light's direction to look toward it (the island view's camera
-		// is at ( sin az, cos az ) from its pivot: main.ts placeOrbit), on its side to look away
+		// is at ( sin az, cos az ) from its pivot: app/CameraViews.ts placeOrbit), on its side to look away
 		const sign = camera.heading === 'toward' ? - 1 : 1;
 		const snapshot = new DayCycle( { hour: Number( hour ), paused: true } ).snapshot();
 		const light = snapshot.elevation > HANDOFF_ELEVATION ? snapshot.sunDir : snapshot.moonDir;

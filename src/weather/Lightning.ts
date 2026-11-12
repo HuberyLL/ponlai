@@ -153,7 +153,7 @@ export class Lightning {
 
 	}
 
-	/** Forgets every strike, as a new page knows none (a scene jump, main.ts `establishScene`): a
+	/** Forgets every strike, as a new page knows none (a scene jump, app/Scene.ts `establishScene`): a
 	 * strike keeps the bearing it was given when first seen, ahead of the camera of that frame, so
 	 * strikes seen from the scene before would come back where that scene's camera looked. Clears a
 	 * forced strike too; the next update finds the storm's strikes again. */

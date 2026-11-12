@@ -52,7 +52,7 @@ export interface VegetationKind<P = unknown, L = unknown> {
 	prepass: boolean;
 	/** the sun's shadow filter its materials take (SunShadow.ts) */
 	shadowFilter: 'vegetation' | 'ordinary';
-	/** inside the sun's caster box (main.ts setSunCasters) */
+	/** inside the sun's caster box (IslandStages.ts setSunCasters) */
 	sunCaster: boolean;
 	/** baked into the rain's collision map */
 	rainBake: boolean;

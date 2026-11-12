@@ -144,7 +144,7 @@ export function liftedKeyDirection( key: THREE.Vector3, moon: boolean, target: T
 
 }
 
-/** Sets the lift for the key's world direction, the moon's if `moon` (main.ts `publishLighting`). */
+/** Sets the lift for the key's world direction, the moon's if `moon` (RenderStages.ts `publishLighting`). */
 export function updateKeyLift( key: THREE.Vector3, moon = false ): void {
 
 	moonShade.value.copy( moonDirection( MOON_SHADE ) );

@@ -6,7 +6,7 @@ import { SHELF_REACH } from '../world/Bathymetry.ts';
 
 // The island view's framing: the camera pose that just holds the whole island and the ring of
 // shallows round it, centred in the frame, at the view's heading and tilt, whatever size the land
-// has grown to. It is the island camera's pose when the hand does not move it (main.ts
+// has grown to. It is the island camera's pose when the hand does not move it (app/CameraViews.ts
 // `placeOrbit`), so the view a tuning session looks at is the same on every load of the same land
 // and query.
 //
@@ -33,7 +33,7 @@ import { SHELF_REACH } from '../world/Bathymetry.ts';
 //   every side, the nearest, so the whole island always stays in view. The zoom is kept as a share
 //   of that range (on the log of the distance), so it holds through a turn, a growth step and a
 //   resize; the key R returns to the query's heading and the farthest zoom. The page sets
-//   `wheelZoom` to 0: the island view never zooms in past its framing (main.ts `islandNearest`).
+//   `wheelZoom` to 0: the island view never zooms in past its framing (IslandStages.ts `islandNearest`).
 
 /** The share of the half frame kept free round the framed island. */
 export const FRAME_MARGIN = 0.04;
@@ -183,7 +183,7 @@ export function frameIsland( outline: readonly number[], view: FramingView, posi
 }
 
 /** How far back from the land's centre the camera stands to frame the land alone (without its
- * ring of shallows) from `view`'s own heading: the island view's start (main.ts `placeOrbit`). A
+ * ring of shallows) from `view`'s own heading: the island view's start (app/CameraViews.ts `placeOrbit`). A
  * turn keeps that distance, so from another heading a long island may reach past the frame's edge. */
 export function landFitDistance( outline: readonly number[], view: FramingView ): number {
 

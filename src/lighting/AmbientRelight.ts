@@ -38,7 +38,7 @@ import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis } from './Prob
 //   invocation per probe (and per level and row of the open sea's column), in radiance
 //   coefficients until the convolution:
 //     direct    the sky's coefficients times the probe's sky visibility, their product truncated to
-//               degree 2 (p. 24), times the sky's scale (`skyScale`): the sky's fill (main.ts
+//               degree 2 (p. 24), times the sky's scale (`skyScale`): the sky's fill (RenderStages.ts
 //               `skyFill`, the environment's intensity) times the probes' own sky gain (PROBE_SKY,
 //               keyed by the sun's own elevation, not the key's, so the moon's key at night does
 //               not move it: golden, low and high, a clouded day's held value over them, the
@@ -602,7 +602,7 @@ export class AmbientRelight {
 	private readonly kernel: THREE.ComputeNode;
 	private copy: Copy | null = null;
 	/** whether the output has been written: until the sky's first projection it holds zeros, and no
-	 * shown or settled frame may light the island with it (main.ts's reveal and settled signal wait) */
+	 * shown or settled frame may light the island with it (app/Frame.ts's reveal and settled signal wait) */
 	ready = false;
 
 	constructor( { renderer, volume, shared, sky, weights, cloud, seaCloud, keyHeight, sunElevation, rising, clouded, overcast, moon }: AmbientRelightOptions ) {

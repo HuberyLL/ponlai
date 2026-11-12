@@ -1788,7 +1788,7 @@ export class Sky {
 
 	/** Periodic bakes whose irradiance is still being read back: a paused page that starts one draws
 	 * frames while it is in flight, so the settled signal waits for it, and a stepped clip waits until
-	 * none is (main.ts `settleFrame`, `loop.step`). */
+	 * none is (app/Frame.ts `settleFrame`, `loop.step`). */
 	get readbacks(): number { return this.irradiancePending; }
 
 	get transitioning(): boolean { return this.transitionDuration > 0 && this.transitionElapsed < this.transitionDuration; }
@@ -1890,7 +1890,7 @@ export class Sky {
 	 * endpoints and both environment atlases from one bake, shown without a blend (no trace of the
 	 * bakes before), and the clouds with no view yet and the viewer at its start (Clouds.restart),
 	 * set to the scene clock `time` and the wind's heading `windDirection` as the frames set them
-	 * (`followClock`). Every explicit bake starts from it (main.ts `bakeEnvironment`): a paused page
+	 * (`followClock`). Every explicit bake starts from it (RenderStages.ts `bakeEnvironment`): a paused page
 	 * keeps its last explicit bake's products, so the load, a scene jump, a seek and a retune must
 	 * make the same ones from the same state, whatever the frames or the bakes before left behind;
 	 * the clouds' drift, evolution and axes are the clock's, so the bake sees the clouds the frame
