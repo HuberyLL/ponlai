@@ -2,7 +2,7 @@
 // 30 frames, and `window.__PONLAI__`, the scene's handles for the capture and profiling tools and
 // the console. Both exist only on the dev server or with `?debug` / `?profile`.
 import * as THREE from 'three/webgpu';
-import { meadowCanopy, type GradeChanges, DynamicResolution, shared, ambientGrade, liftedKeyDirection, debugFlags, tuneApi, AA_MODE, AA_SOURCE, motionState, taaCut, motionCheck, jitter, restEpoch, preExposure, sceneEvent, gtaoUniforms, type RenderParts } from '../render.ts';
+import { meadowCanopy, type GradeChanges, DynamicResolution, shared, ambientGrade, liftedKeyDirection, debugFlags, tuneApi, AA_MODE, AA_SOURCE, motionState, taaCut, motionCheck, jitter, restEpoch, preExposure, renderEvent, gtaoUniforms, type RenderParts } from '../render.ts';
 import type { QualityProfile } from '../renderSetup.ts';
 import { soilUniforms, setGroundGain, MEADOW_EXTENT, swardField, type IslandParts } from '../island.ts';
 import type { PageParts } from './Page.ts';
@@ -167,16 +167,16 @@ export function exposeDebugHandles( render: RenderParts, island: IslandParts, pa
 		ambientRelight,
 		// the look's knobs from a script (the GUI's raise their own events): the first table's grade
 		// (GradeLut.ts), the meadow's and the cliff's albedos (groundGains), the leaves' (shared.leafGain)
-		setGrade: ( changes?: GradeChanges ) => { pipeline.setGrade( changes ); sceneEvent( 'retune' ); },
-		setLawnGain: ( gain: number ) => { setGroundGain( 'lawnGain', gain ); groundBounce.invalidate(); sceneEvent( 'retune' ); },
-		setRockGain: ( gain: number ) => { setGroundGain( 'rockGain', gain ); sceneEvent( 'retune' ); },
-		setLeafGain: ( gain: number ) => { shared.leafGain.value = gain; sceneEvent( 'retune' ); }, grass, wenyao, fallingLeaves: island.fallingLeaves, meadowCanopy, characters: island.characters, game: page.game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain: render.rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => render.simTime, nominalScale: () => page.nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+		setGrade: ( changes?: GradeChanges ) => { pipeline.setGrade( changes ); renderEvent( 'retune' ); },
+		setLawnGain: ( gain: number ) => { setGroundGain( 'lawnGain', gain ); groundBounce.invalidate(); renderEvent( 'retune' ); },
+		setRockGain: ( gain: number ) => { setGroundGain( 'rockGain', gain ); renderEvent( 'retune' ); },
+		setLeafGain: ( gain: number ) => { shared.leafGain.value = gain; renderEvent( 'retune' ); }, grass, wenyao, fallingLeaves: island.fallingLeaves, meadowCanopy, characters: island.characters, game: page.game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain: render.rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => render.simTime, nominalScale: () => page.nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 		// the tunable parameters (debug/Tune.ts): set( { name: value } ), get, list, reset, query; a value
 		// the environment's bakes depend on rebakes them at once (`retuneSky`, sky/SkyRetune.ts), as the
 		// load bakes
 		tune: tuneApi( () => {
 
-			if ( ! retuneSky() ) sceneEvent( 'retune' );
+			if ( ! retuneSky() ) renderEvent( 'retune' );
 
 		} ),
 		// the scene's linear radiance over screen boxes (debug/Radiance.ts), loaded on first call
@@ -216,7 +216,7 @@ export function exposeDebugHandles( render: RenderParts, island: IslandParts, pa
 		taa: pipeline.resolver ? {
 			resolve: pipeline.resolver, settings: pipeline.resolver.settings, knobs: pipeline.temporal?.knobs ?? null, rest: pipeline.resolver.rest, epoch: restEpoch,
 			get converged() { return pipeline.resolver!.converged; },
-			restart: () => sceneEvent( 'restart' ),
+			restart: () => renderEvent( 'restart' ),
 		} : null,
 		// FSR 3 (post/fsr3/Fsr3Upscaler.ts, aa=fsr3): its rest, live settings and diagnostics()
 		fsr3: pipeline.fsr3,

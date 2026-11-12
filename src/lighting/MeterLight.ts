@@ -14,7 +14,7 @@ type F = THREE.Node<'float'>;
 //   the cosine the model's diffuse takes (the lifted key's clamped N.L; a blade's wrap and light
 //   through it, a leaf's thin layer in its Lambert's place, a feather's light through it, as each
 //   model takes it: `meterKey`);
-// - the local lights' illuminance (lighting/LocalLights.ts `addLocalLights`), beside the key;
+// - the local lights' illuminance (lighting/LocalLights.ts `shadeLocalLights`), beside the key;
 // - the ambient: the irradiance the model's ambient diffuse reads (the ambient lights and the
 //   ground's bounce, lighting/GroundBounce.ts, the environment's or the ambient volume's diffuse,
 //   a leaf's thin layer under it), with the model's own scales, then times the occlusion the

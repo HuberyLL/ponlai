@@ -3,7 +3,7 @@
 // then renders, the loop that paces it, and the controls a tool holds, resumes and steps it by
 // (`loop`, `step`, `setTime`).
 import { pageStore } from '../PageSettings.ts';
-import { nightAmbientShare, duskForce, yunpengNightShare, cloudedShare, updateLeafLight, type HazeFrame, DynamicResolution, TAAU_MAX_UPSCALE, GpuFrameTimer, PassScaling, renderScaleKey, PeriodicWork, FramePacer, PAUSED_QUEUE, gpuDevice, threeAnimation, frameBookkeeping, shared, ambientGrade, TEST_MODE, AA_MODE, AFTER_RESOLVE, TEMPORAL, preExposure, PRE_EXPOSURE_PENDING, sceneEvent, type TemporalFrame, type SettleFrame, prepassScene, opaquePrepassScene, type RenderParts } from '../render.ts';
+import { nightAmbientShare, duskForce, yunpengNightShare, cloudedShare, updateLeafLight, type HazeFrame, DynamicResolution, TAAU_MAX_UPSCALE, GpuFrameTimer, PassScaling, renderScaleKey, PeriodicWork, FramePacer, PAUSED_QUEUE, gpuDevice, threeAnimation, frameBookkeeping, shared, ambientGrade, TEST_MODE, AA_MODE, AFTER_RESOLVE, TEMPORAL, preExposure, PRE_EXPOSURE_PENDING, renderEvent, type TemporalFrame, type SettleFrame, prepassScene, opaquePrepassScene, type RenderParts } from '../render.ts';
 import { settings as params, dynamicRange, renderPixelRatio, outputPixelRatio } from '../renderSetup.ts';
 import * as THREE from 'three/webgpu';
 import { isCameraInputTarget, setYunpengNight, updateSwardTint, type IslandParts } from '../island.ts';
@@ -228,7 +228,7 @@ export function createFrame( render: RenderParts, island: IslandParts, page: Pag
 	// a resize of the canvas cuts the history; resize() itself also serves render-scale changes, which do not
 	addEventListener( 'resize', () => {
 
-		sceneEvent( 'resize' );
+		renderEvent( 'resize' );
 		// the island view's framing follows the window's aspect, at once
 		const follow = holdsFraming();
 		resize();
@@ -260,10 +260,10 @@ export function createFrame( render: RenderParts, island: IslandParts, page: Pag
 			// the game pauses its own clock; the sea keeps moving
 			if ( page.game ) page.game.togglePause();
 			else { render.paused = ! render.paused; dayCycle.paused = render.paused; }
-			sceneEvent( 'key toggle' );
+			renderEvent( 'key toggle' );
 
 		}
-		if ( e.code === 'KeyH' ) { gui.show( gui._hidden ); sceneEvent( 'key toggle' ); }
+		if ( e.code === 'KeyH' ) { gui.show( gui._hidden ); renderEvent( 'key toggle' ); }
 		if ( e.code === 'KeyR' || e.code === 'Digit1' ) setCameraView( 'island' );
 		if ( e.code === 'Digit2' ) setCameraView( 'horizon' );
 		if ( e.code === 'Digit3' ) setCameraView( 'sky' );
@@ -578,7 +578,7 @@ export function startLoop( render: RenderParts, island: IslandParts, page: PageP
 	page.animation = animation;
 	animation.setContext( pacer.context );
 	renderer.setAnimationLoop( animationLoop );
-	sceneEvent( 'loop start' );
+	renderEvent( 'loop start' );
 	// High's first frames find its render scale behind the loading screen: from the nominal it jumps
 	// to the scale the GPU's times call for within a second, out of sight (at most REVEAL_WAIT ms).
 	// The game's islanders show before it lifts too: their figures arrive after the first frames once
@@ -646,7 +646,7 @@ export function createLoopControls( render: RenderParts, page: PageParts ) {
 			if ( loop.running ) return;
 			loop.running = true;
 			page.steeredLast = false;
-			sceneEvent( 'loop start' );
+			renderEvent( 'loop start' );
 			clock.reset();
 			animation.start();
 
@@ -668,7 +668,7 @@ export function createLoopControls( render: RenderParts, page: PageParts ) {
 
 		} else {
 
-			sceneEvent( 'visible' );
+			renderEvent( 'visible' );
 			if ( ! hiddenStop ) return;
 			loop.start();
 			// its first frames (cloud history, a whole bake) do not steer the scale

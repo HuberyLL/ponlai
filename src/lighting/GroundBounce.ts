@@ -15,7 +15,7 @@ import type { SunShadow } from './SunShadow.ts';
 import type { Shared } from '../shared.ts';
 import { useLightLayer } from '../debug/LightLayer.ts';
 import { ambient, diffuseOcclusion, useAmbientGrade } from './AmbientGrade.ts';
-import { addLocalLights } from './LocalLights.ts';
+import { shadeLocalLights } from './LocalLights.ts';
 import { GROUND_BOUNCE_LAND, type AmbientReceiver } from './AmbientSample.ts';
 import { liftKey } from './KeyLift.ts';
 import { glossAlpha, specularGGX, fresnel90, keyGlint, glintDirection, glintNormalisation } from './SurfaceBRDF.ts';
@@ -499,7 +499,7 @@ export class GroundBounceLightingModel extends THREE.PhysicalLightingModel {
 		// diffuse, under the ambient diffuse's occlusion and what dims the key
 		const local = this.localScale();
 		const occlusion = diffuseOcclusion( builder );
-		addLocalLights( builder, ( L, light ) => this.diffuseResponse( L, light ), local ? occlusion.mul( local ).toVar() : occlusion );
+		shadeLocalLights( builder, ( L, light ) => this.diffuseResponse( L, light ), local ? occlusion.mul( local ).toVar() : occlusion );
 		super.indirect( builder );
 
 	}

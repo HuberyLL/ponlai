@@ -61,7 +61,7 @@ import { motionUniforms, MOTION_CLASS, motionCheck } from './post/Motion.ts';
 import { SceneHistory } from './post/SceneHistory.ts';
 import { jitter } from './post/Jitter.ts';
 import { preExposure } from './post/PreExposure.ts';
-import { sceneEvent } from './post/SceneEvents.ts';
+import { renderEvent } from './post/SceneEvents.ts';
 import { TemporalAA } from './post/TemporalAA.ts';
 import { watchPipelines } from './post/Settled.ts';
 import { MOON_GLINT_RADIUS, SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
@@ -412,7 +412,7 @@ export function createLight( render: RenderParts ) {
 		render.rain?.setQuality( q.rainDrops );
 		if ( runtime.refractedSun ) runtime.refractedSun.angleGate = THREE.MathUtils.degToRad( q.refractedSun.angleGate );
 		render.runtimeQuality = q;
-		sceneEvent( 'apply quality' );
+		renderEvent( 'apply quality' );
 
 	}
 	render.runtimeQuality = quality;
@@ -627,7 +627,7 @@ export function createEnvironment( render: RenderParts ) {
 		if ( stage.hazeReady && render.pipeline.air.bakeStale ) markSkyRetune();
 		if ( ! skyRetune.dirty ) return false;
 		skyRetune.dirty = false;
-		sceneEvent( 'retune' );
+		renderEvent( 'retune' );
 		void bakeExplicitly();
 		return true;
 
@@ -647,14 +647,14 @@ export function createEnvironment( render: RenderParts ) {
 
 	}
 
-	render.setHour = async ( hour: number ) => { dayCycle.setHour( hour ); sceneEvent( 'set hour' ); await refreshEnvironment(); };
-	render.setPreset = async ( preset: DayPreset ) => { dayCycle.setPreset( preset ); sceneEvent( 'set preset' ); await refreshEnvironment(); };
+	render.setHour = async ( hour: number ) => { dayCycle.setHour( hour ); renderEvent( 'set hour' ); await refreshEnvironment(); };
+	render.setPreset = async ( preset: DayPreset ) => { dayCycle.setPreset( preset ); renderEvent( 'set preset' ); await refreshEnvironment(); };
 	render.setWeather = async ( name: WeatherName, seconds = 20 ) => {
 
 		render.cloudOverride = null;
 		weather.auto = false;
 		weather.setWeather( name, seconds );
-		sceneEvent( seconds === 0 ? 'weather jump' : 'weather front' );
+		renderEvent( seconds === 0 ? 'weather jump' : 'weather front' );
 		if ( seconds === 0 ) await refreshEnvironment();
 
 	};
@@ -664,7 +664,7 @@ export function createEnvironment( render: RenderParts ) {
 
 		weather.auto = false;
 		weather.setWind( choice, seconds );
-		sceneEvent( seconds === 0 ? 'weather jump' : 'weather front' );
+		renderEvent( seconds === 0 ? 'weather jump' : 'weather front' );
 		if ( seconds === 0 ) await refreshEnvironment();
 
 	};

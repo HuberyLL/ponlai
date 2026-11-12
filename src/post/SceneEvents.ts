@@ -4,7 +4,8 @@ import { restEpoch } from './TemporalRest.ts';
 
 // The page's scene events for the temporal modes (Antialiasing.ts: aa=taa|taau). A temporal frame is
 // a function of the frames before it, so whatever changes the scene in a way the frames themselves
-// do not show must say so, at the site that does it, with one call: `sceneEvent( reason, { cut } )`.
+// do not show must say so, at the site that does it, with one call: `renderEvent( reason )` for
+// the renderer's own reasons, the function of the declaration that names it for the others.
 // Every event bumps the rest's epoch (TemporalRest.ts: a paused scene converges again from scratch);
 // a cut also drops the motion across it and starts the histories over (Motion.ts `taaCut`: the
 // camera's, the objects' and the wind's previous state become the current one), for a change the
@@ -13,7 +14,7 @@ import { restEpoch } from './TemporalRest.ts';
 // the history: the running resolve follows it as it follows a moving scene.
 //
 // The sites call it with their reason. A reason is declared before it is raised, with whether it
-// cuts (`declareSceneEvents`): the renderer declares its own below (`sceneEvent`), and what is
+// cuts (`declareSceneEvents`): the renderer declares its own below (`renderEvent`), and what is
 // built on it declares its own where it raises them (the island's growth, the game), so this
 // module names none of theirs. A declaration returns the function that raises its reasons and no
 // others, so a misspelt reason, or one of another declaration, does not compile; a reason
@@ -117,4 +118,4 @@ function raise( reason: string ): void {
 }
 
 /** Raises one of the renderer's own reasons. */
-export const sceneEvent = declareSceneEvents( RENDER_EVENTS );
+export const renderEvent = declareSceneEvents( RENDER_EVENTS );

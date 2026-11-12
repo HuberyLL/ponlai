@@ -24,7 +24,7 @@ export { GroundBounceLightingModel, groundBounceLight } from './lighting/GroundB
 export type { BounceGround } from './lighting/GroundBounce.ts';
 export { keyDeckShare, keyLandVisibility } from './lighting/KeyCloud.ts';
 export { liftKey, liftKeyWorld, liftedKeyDirection } from './lighting/KeyLift.ts';
-export { addLocalLights, testSources } from './lighting/LocalLights.ts';
+export { shadeLocalLights, testSources } from './lighting/LocalLights.ts';
 export type { LocalLightKind, LocalSource } from './lighting/LocalLights.ts';
 export { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopy, meadowCanopyLight, meadowGroundLight } from './lighting/MeadowCanopy.ts';
 export { meterAmbient, meterKey, meterStart, writeMeter } from './lighting/MeterLight.ts';
@@ -62,7 +62,7 @@ export { motionCheck, motionNode, motionState, taaCut, velocityOutput } from './
 export { Pipeline } from './post/Pipeline.ts';
 export type { PipelineSettings } from './post/Pipeline.ts';
 export { PRE_EXPOSURE_PENDING, preExposure } from './post/PreExposure.ts';
-export { declareSceneEvents, sceneEvent } from './post/SceneEvents.ts';
+export { declareSceneEvents, renderEvent } from './post/SceneEvents.ts';
 export type { SettleFrame } from './post/Settled.ts';
 export type { TemporalFrame } from './post/TemporalAA.ts';
 export { restEpoch } from './post/TemporalRest.ts';

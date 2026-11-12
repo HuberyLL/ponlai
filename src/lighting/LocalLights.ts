@@ -214,7 +214,7 @@ export type LocalShade = ( L: V3, light: V3 ) => { reflected: V3; meter: V3 };
  * in later materials with the uniform names of the first one's build (the count read as another
  * material's `object.nodeUniform0`, which failed to compile); it runs in the fragment stage only.
  * `weight` is built before the loop (a `toVar`), so nothing it samples is taken inside the branch. */
-export function addLocalLights( builder: THREE.NodeBuilder, shade: LocalShade, weight?: F | V3 ): void {
+export function shadeLocalLights( builder: THREE.NodeBuilder, shade: LocalShade, weight?: F | V3 ): void {
 
 	const reflected = ( builder.context as unknown as { reflectedLight: { directDiffuse: V3 } } ).reflectedLight;
 	const sum = Fn( () => {

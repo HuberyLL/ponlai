@@ -3,7 +3,7 @@
 // widening of the field of view near the ground and the orbit's limits. The island's stages call
 // the island view's framing (`IslandFraming`, on the page's parts as `framing`), which the entry
 // hands them, since a land that grows reframes its view.
-import { sceneEvent, type RenderParts } from '../render.ts';
+import { renderEvent, type RenderParts } from '../render.ts';
 import { settings as params, type SettingsQuery } from '../renderSetup.ts';
 import * as THREE from 'three/webgpu';
 import { IslandCameraControls, frameIsland, landFitDistance, type IslandFraming, type IslandParts } from '../island.ts';
@@ -189,7 +189,7 @@ export function createCameraViews( render: RenderParts, island: IslandParts, pag
 
 		}
 		cameraSettings.mode = mode;
-		sceneEvent( 'camera mode' );
+		renderEvent( 'camera mode' );
 		controls.enabled = mode === 'orbit';
 		freeControls.enabled = mode === 'free';
 		applyOrbitLimit();
@@ -204,7 +204,7 @@ export function createCameraViews( render: RenderParts, island: IslandParts, pag
 		freeControls.clearInput();
 		settleOrbit();
 		reviewView.camera = view;
-		sceneEvent( 'view jump' );
+		renderEvent( 'view jump' );
 		if ( view === 'sky' ) {
 
 			camera.position.copy( island.onLand( 0, 15, 0 ) );

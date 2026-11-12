@@ -4,7 +4,7 @@ import {
 	normalView, normalWorld, positionViewDirection, positionLocal, positionPrevious, positionWorld,
 	diffuseColor, vertexColor,
 } from 'three/tsl';
-import { TEMPORAL, groundBounceLight, motionNode, motionState, velocityOutput, debugFlags, useLightLayer, ambient, gradeOcclusion, addLocalLights, ambientField, ambientPoint, ambientVolumeOn, liftKey, keyDeckShare, keyLandVisibility, type Shared, meterAmbient, meterKey, meterStart, writeMeter } from '../render.ts';
+import { TEMPORAL, groundBounceLight, motionNode, motionState, velocityOutput, debugFlags, useLightLayer, ambient, gradeOcclusion, shadeLocalLights, ambientField, ambientPoint, ambientVolumeOn, liftKey, keyDeckShare, keyLandVisibility, type Shared, meterAmbient, meterKey, meterStart, writeMeter } from '../render.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -168,7 +168,7 @@ class CharacterLighting extends THREE.LightingModel {
 		meterAmbient.addAssign( fill.mul( Math.PI ) );
 		// the local lights (lighting/LocalLights.ts): plain Lambert, as the figure's key has no
 		// Fresnel weight, under the figure's own occlusion
-		addLocalLights( builder, ( L, light ) => {
+		shadeLocalLights( builder, ( L, light ) => {
 
 			const lambert = light.mul( clamp( dot( normalView, L ), 0, 1 ) ).toVar();
 			return { reflected: lambert.mul( albedo ), meter: lambert };

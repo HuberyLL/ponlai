@@ -3,7 +3,7 @@
 // Its handlers call the renderer's and the island's operations; the game adds its own folder
 // between them (main.ts).
 import { reloadWith } from '../PageSettings.ts';
-import { DAY_PRESETS, type DayPreset, WEATHER_PRESETS, isParkedWeather, type WeatherName, WIND_LEVELS, type WindLevel, WHITE_BALANCE, LOCAL_TONE, FrameStats, shared, AMBIENT_KNOBS, ambientGrade, type AmbientView, markSkyRetune, type AAMode, AA_MODE, sceneEvent, debugViewChoices, type RenderParts } from '../render.ts';
+import { DAY_PRESETS, type DayPreset, WEATHER_PRESETS, isParkedWeather, type WeatherName, WIND_LEVELS, type WindLevel, WHITE_BALANCE, LOCAL_TONE, FrameStats, shared, AMBIENT_KNOBS, ambientGrade, type AmbientView, markSkyRetune, type AAMode, AA_MODE, renderEvent, debugViewChoices, type RenderParts } from '../render.ts';
 import { settings as params, numberSetting, type QualityTier, ACTIVE_QUALITY } from '../renderSetup.ts';
 import GUI from 'lil-gui';
 import { qualityLines } from '../QualityDetect.ts';
@@ -30,7 +30,7 @@ export function createGui( render: RenderParts, island: IslandParts, page: PageP
 	const gui = new GUI( { title: 'Ponlai · lighting & water' } );
 	page.gui = gui;
 	// every control, in any folder, bubbles here
-	gui.onChange( () => sceneEvent( 'gui' ) );
+	gui.onChange( () => renderEvent( 'gui' ) );
 	if ( ! params.has( 'gui' ) ) gui.hide();
 	page.S = pipeline.settings;
 	controls.nearFov = numberSetting( 'nearFov', controls.nearFov );
@@ -205,7 +205,7 @@ export function createGui( render: RenderParts, island: IslandParts, page: PageP
 	// whose sliders replace them while it is on, for live tuning
 	const ambientF = gui.addFolder( 'Ambient' );
 	for ( const key of AMBIENT_KNOBS ) ambientF.add( ambientGrade.current, key ).name( key ).listen().disable();
-	const retuneAmbient = () => sceneEvent( 'retune' );
+	const retuneAmbient = () => renderEvent( 'retune' );
 	ambientF.add( ambientGrade, 'override' ).name( 'override' ).onChange( retuneAmbient );
 	for ( const key of AMBIENT_KNOBS ) ambientF.add( ambientGrade.manual, key, 0, key === 'directionality' || key === 'aoStrength' ? 1 : 3, 0.01 ).name( `${ key } (override)` ).onChange( retuneAmbient );
 	ambientF.close();
@@ -372,8 +372,8 @@ export function addHazeFolders( render: RenderParts, page: PageParts ) {
 	hazeF.add( H, 'sky' ).name( 'haze over the sky' );
 	hazeF.add( H, 'debug', { off: 0, 'key light visibility': 1 } ).name( 'debug view' );
 	// the screen-space rays (off by default: the haze shows the shafts) and the sun's flare, for A/Bs
-	hazeF.add( pipeline.shafts.strength, 'value', 0, 2, 0.01 ).name( 'screen-space rays' ).onChange( () => sceneEvent( 'retune' ) );
-	hazeF.add( pipeline.shafts.glare, 'value', 0, 4, 0.01 ).name( 'sun flare' ).onChange( () => sceneEvent( 'retune' ) );
+	hazeF.add( pipeline.shafts.strength, 'value', 0, 2, 0.01 ).name( 'screen-space rays' ).onChange( () => renderEvent( 'retune' ) );
+	hazeF.add( pipeline.shafts.glare, 'value', 0, 4, 0.01 ).name( 'sun flare' ).onChange( () => renderEvent( 'retune' ) );
 	hazeF.close();
 	if ( DEBUG ) {
 
