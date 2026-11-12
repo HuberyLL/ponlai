@@ -160,6 +160,24 @@ nothing below a host reads the page or the wall clock (the save's timestamp asid
   one entrance, as it loads or when it builds. Where nothing installed them (node, a worker) every
   option reads as absent and each reader takes its default.
 
+### Extension points
+
+The renderer is extended by registering definitions, and the files that own a registry name none
+of them: a plant kind ([Registry.ts](src/world/vegetation/Registry.ts)), a kind of local light
+([LocalLights.ts](src/lighting/LocalLights.ts)), an extra pass of the frame
+([ExtraPass.ts](src/post/ExtraPass.ts)), a layer's scene events
+([SceneEvents.ts](src/post/SceneEvents.ts)), what a cut or a scene jump clears
+([SceneHistory.ts](src/post/SceneHistory.ts)) and the kinds of the debug view
+([Classes.ts](src/debug/Classes.ts)). A plant kind, a kind of light and a pass each state three
+things, or the registry refuses them ([Extensions.ts](src/Extensions.ts)): the quality knob that
+governs their cost, how they stand in the test mode, and how they follow the land's growth. The
+marks the layers leave for each other in three's `userData` are one declared list
+([UserData.ts](src/UserData.ts)). *Why:* a new effect that forgot one of the three showed only
+later, as a capture that did not repeat, a frame time that crept or a grown page that differed from
+a fresh load; and a renderer that names the island's plants cannot draw another scene.
+[tools/verify-extensions.mjs](tools/verify-extensions.mjs) registers definitions of its own and
+searches the owners for the scene's names.
+
 ## Rules across the layers
 
 1. **An action's condition holds every tick.** Every timed action declares what it needs to go on

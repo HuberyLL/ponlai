@@ -1326,6 +1326,17 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   on a listed one that is gone: the list only shrinks, as a state gets one writer (a creation
   parameter, a field of an instance, or an operation its owner exports). A write from another layer
   than the owner's must also be on a second list (`ACROSS`).
+  Its userData check reads the list of `userData` keys the renderer declares (`src/UserData.ts`)
+  and fails when a file of the render layer names a key that is not there, or when the list holds
+  a key no file names. A key reached through an alias of the bag is not seen.
+- `tools/verify-extensions.mjs` (plain `node`, no options; it loads the page's modules through
+  Vite's SSR loader, a few seconds) checks the renderer's extension points. It registers a plant
+  kind, a kind of local light, an extra pass, scene events and histories of its own and fails
+  when one needs a change elsewhere, when a definition without its three declarations
+  (`src/Extensions.ts`) is accepted, or when a typed scene pass name is not a pass the pipeline
+  declares. It also searches the code of the registries' owner files (comments left out) for the
+  names of the scene's definitions, listed per file in the tool. Run it after a change to a
+  registry or a new definition.
 - `tools/verify-settings.mjs [--write]` (plain `node`) checks the page's settings
   (`src/Settings.ts`, the one entrance every option is read through) against
   `docs/reference/url-options.md`: the table of every option at the page's end is the one written
@@ -1340,8 +1351,8 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
 - `tools/check.mjs` (`npm run check [-- --full]`) runs the checks every commit passes, one after
   another: the type check, `verify-layers`, `verify-settings`, `verify-file-size`,
   `verify-three-internals`, `verify-no-binaries`, `verify-game`, `verify-i18n`, `verify-ink`,
-  `verify-framegraph`, `verify-day-cycle`, `verify-weather-state`, `verify-wind` and
-  `verify-local-lights`, then
+  `verify-framegraph`, `verify-day-cycle`, `verify-weather-state`, `verify-wind`,
+  `verify-local-lights` and `verify-extensions`, then
   `npm run lint:docs` when a Markdown file is staged. `--full` adds `npm run build` and
   `verify-world-chunks.mjs` and always runs the docs' lint. Every check runs even after one failed;
   it ends with each check's result and time, and exits 1 when any failed. None of them renders or

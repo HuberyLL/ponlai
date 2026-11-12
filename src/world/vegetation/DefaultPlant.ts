@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { float, positionGeometry } from 'three/tsl';
 import { vegetationMaterial } from './Material.ts';
-import { leafTexture } from './LeafTexture.ts';
+import { leafAlphaTexture, leafTexture } from './LeafTexture.ts';
 import type { PlantSite } from './Registry.ts';
 import type { Shared } from '../../shared.ts';
 
@@ -19,8 +19,10 @@ import type { Shared } from '../../shared.ts';
 /** A card's width and height (m). */
 const SIZE = 1;
 
-/** The default plants at `sites` as one mesh, named `name`. */
-export function defaultPlant( shared: Shared, sites: readonly PlantSite[], name = 'default plant' ): THREE.Mesh {
+/** The default plants at `sites` as one mesh, named `name`; `leaf` is the cards' colour and
+ * cut-out (the folded leaf's, drawn on canvases, unless given: a tool under node, which has no
+ * canvas). */
+export function defaultPlant( shared: Shared, sites: readonly PlantSite[], name = 'default plant', leaf: { map: THREE.Texture; alphaMap: THREE.Texture } = { map: leafTexture(), alphaMap: leafAlphaTexture() } ): THREE.Mesh {
 
 	const positions: number[] = [], normals: number[] = [], uvs: number[] = [], colours: number[] = [], index: number[] = [];
 	const h = SIZE / 2;
@@ -51,7 +53,7 @@ export function defaultPlant( shared: Shared, sites: readonly PlantSite[], name 
 	geometry.setIndex( new THREE.Uint32BufferAttribute( index, 1 ) );
 	const material = vegetationMaterial( shared, {
 		family: 'leaf', name, roughness: 0.75,
-		leaf: { map: leafTexture() },
+		leaf,
 		wet: { tint: 0.75, roughness: 0.25 },
 		rest: positionGeometry,
 		displacement: () => positionGeometry,

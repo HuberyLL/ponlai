@@ -12,8 +12,8 @@ import type { QualityProfile } from './Quality.ts';
 //
 // The declarations are statements, not hooks: the registries do not act on them. They say where
 // to look (the knob to turn in a cost test, the switch the test mode holds the effect by, the
-// follower that carries it through a growth), and tools/verify-extensions.mjs checks that every
-// definition in the code has them.
+// follower that carries it through a growth); tools/verify-extensions.mjs registers definitions of
+// its own at every point and checks that one without them is refused.
 //
 // This module imports types only, so the CPU-only tools can load it under plain node.
 
