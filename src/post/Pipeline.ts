@@ -12,15 +12,8 @@ import {
 import { VolumetricHaze, type HazeFrame } from '../weather/VolumetricHaze.ts';
 import { LightShafts } from './LightShafts.ts';
 import { FSR } from './FSR.ts';
-// (PhysicalBloom.ts, Metering.ts, fsr3/Fsr3Upscaler.ts, BlueNoise.ts and ExtraPass.ts are imported
-// for their load alone, in the place they always loaded in: what uses them moved to
-// PipelineDisplay.ts and PipelinePasses.ts, and the order the modules load in, which makes their
-// nodes, is part of the shaders)
-import './PhysicalBloom.ts';
 import type { PhysicalBloom } from './PhysicalBloom.ts';
-import './Metering.ts';
 import type { Metering } from './Metering.ts';
-import './Purkinje.ts';
 import { cloudedShare } from '../sky/Weather.ts';
 import { AA_MODE, AFTER_RESOLVE, FSR3, RESOLVE, SCENE_SAMPLES, TEMPORAL } from './Antialiasing.ts';
 import { beginMotionFrame, METER_LIGHT, onTaaCut } from './Motion.ts';
@@ -31,7 +24,6 @@ import { MEADOW_SHADE, SS_SHADOW, meadowDepthMap, meadowDepthMaterial, meadowGro
 import { GTAO, gtaoBlurMaterial, gtaoDepthMaterial, gtaoMap, gtaoMaterial, gtaoProjection, gtaoView } from './GTAO.ts';
 import { TemporalAA, type TemporalFrame } from './TemporalAA.ts';
 import { Settled, type SettleFrame } from './Settled.ts';
-import './fsr3/Fsr3Upscaler.ts';
 import type { Fsr3Upscaler } from './fsr3/Fsr3Upscaler.ts';
 import { QUALITY, type TemporalSettings } from '../Quality.ts';
 import { FrameGraph, type ResourceHandle, type SizeClass } from './graph/FrameGraph.ts';
@@ -45,7 +37,6 @@ import type { Rain } from '../weather/Rain.ts';
 import { CLIP_MARGIN, RefractionView, REFRACTION_GUARD, REFRACTION_SIZE } from '../ocean/Refraction.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { whiteBalance } from './ToneSpace.ts';
-import './BlueNoise.ts';
 import { checkToneCurve, solveToneCurve, type ToneCurve } from './ToneCurve.ts';
 import { fillGradeLut, gradeOf, lutNodes, mergeGrade, type GradeChanges, type GradeParams } from './GradeLut.ts';
 import { LocalTone } from './LocalTone.ts';
@@ -53,7 +44,6 @@ import { keyed } from './DayKeys.ts';
 import { exposureKeys, type ExposureKey } from '../look/ExposureLook.ts';
 import { restEpoch, restKey } from './TemporalRest.ts';
 import { tuneCheck, tuneObject } from '../debug/Tune.ts';
-import './ExtraPass.ts';
 import type { ExtraPass } from './ExtraPass.ts';
 import type { WaveMaps } from '../ocean/WaveMaps.ts';
 import { settings } from '../Settings.ts';
