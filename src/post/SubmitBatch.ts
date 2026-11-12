@@ -93,7 +93,8 @@ type Callable = ( this: unknown, ...args: unknown[] ) => unknown;
 type Method = ( this: unknown, ...args: never[] ) => unknown;
 type Host = Record<PropertyKey, unknown>;
 type Constructor = abstract new ( ...args: never[] ) => object;
-type Device = { queue: unknown; addEventListener?: ( type: string, listener: ( event: Event ) => void ) => void };
+/** The members of the GPU device the batching wraps (three's backend's `device`). */
+export type SubmitDevice = { queue: unknown; addEventListener?: ( type: string, listener: ( event: Event ) => void ) => void };
 
 const globals = globalThis as unknown as Record<string, Constructor | undefined>;
 const BufferClass = globals.GPUBuffer;
@@ -329,7 +330,7 @@ export class SubmitBatch {
 	};
 
 	/** `debug`: watch the device's uncaptured errors and stop batching after the first (see above). */
-	constructor( device: Device, { debug = false } = {} ) {
+	constructor( device: SubmitDevice, { debug = false } = {} ) {
 
 		this.device = device as unknown as Host;
 		const queue = this.queue = device.queue as Host;

@@ -19,7 +19,7 @@ import { bakeGroundTextures } from './materials/GroundTextures.ts';
 import { buildWorldMeshes } from './world/World.ts';
 import type { WorldData } from './world/types.ts';
 import { WorldFields } from './world/WorldFields.ts';
-import { Growth } from './world/Growth.ts';
+import { Growth, type GrowthGame } from './world/Growth.ts';
 import { worldProgress, landFraming, worldCacheOn } from './world/WorldStart.ts';
 import { buildChunkBorders } from './debug/ChunkBorders.ts';
 import { windArrowGeometry, buildWindArrows } from './debug/WindArrows.ts';
@@ -487,7 +487,7 @@ export function createVegetation( render: RenderParts, island: IslandParts, { fr
 }
 
 /** The island's growth in place and everything that follows a land's swap. */
-export function createGrowth( render: RenderParts, island: IslandParts, { landOptions, game, framing }: { landOptions: { worldSeed: number; step: number }; game: ConstructorParameters<typeof Growth>[ 0 ][ 'game' ]; framing: IslandFraming } ) {
+export function createGrowth( render: RenderParts, island: IslandParts, { landOptions, game, framing }: { landOptions: { worldSeed: number; step: number }; game: GrowthGame | null; framing: IslandFraming } ) {
 
 	const { renderer, scene, groundBounce, shoreWaves, ambient, refractedSun } = render;
 	const { controls, worldCache, data, fields, world, wenyao, chunkView, showChunkBorders, heldOpaque } = island;

@@ -34,7 +34,7 @@ import { Pipeline } from './post/Pipeline.ts';
 import { postOptionsFromURL } from './post/PostOptions.ts';
 import { hazeKeyAt, type HazeKey } from './weather/HazeKeys.ts';
 import { OUTPUT_PIXEL_RATIO_CAP, outputPixelRatio } from './post/RenderScale.ts';
-import { SubmitBatch } from './post/SubmitBatch.ts';
+import { SubmitBatch, type SubmitDevice } from './post/SubmitBatch.ts';
 import { installCacheKeyPatches, installBindingPatches, primeSharedNodes } from './three/ThreePatches.ts';
 import { checkRenderer } from './three/Internals.ts';
 import { isWebGPU, gpuDevice } from './three/Backend.ts';
@@ -43,7 +43,7 @@ import { installOpenShadow } from './lighting/SolarShadow.ts';
 import { createLocalLights, type LocalLights } from './lighting/LocalLights.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
-import { installGroundBounce, GroundBounce } from './lighting/GroundBounce.ts';
+import { installGroundBounce, GroundBounce, type BounceGround } from './lighting/GroundBounce.ts';
 import { updateKeyLift, liftedKeyDirection, liftedKeyHeight } from './lighting/KeyLift.ts';
 import { keyGlint } from './lighting/SurfaceBRDF.ts';
 import { AmbientVolume, type AmbientView } from './lighting/AmbientVolume.ts';
@@ -52,7 +52,10 @@ import { lowSunSkyLift, AmbientSky, AmbientRelight } from './lighting/AmbientRel
 import { type TuneOptions, tune } from './debug/Tune.ts';
 import { markSkyRetune, skyRetune } from './sky/SkyRetune.ts';
 import { TEMPORAL, AFTER_RESOLVE } from './post/Antialiasing.ts';
-import type { SceneLatents } from './post/ExtraPass.ts';
+import type { ExtraPass, SceneLatents } from './post/ExtraPass.ts';
+import type { AmbientLattice } from './lighting/ProbeFormat.ts';
+import type { SubmergedSubset } from './lighting/CasterFormat.ts';
+import type { Bounds, ShoreField } from './RenderTypes.ts';
 import type { FrameProfiler } from './debug/FrameProfiler.ts';
 import { motionUniforms, MOTION_CLASS, motionCheck } from './post/Motion.ts';
 import { SceneHistory } from './post/SceneHistory.ts';
@@ -159,6 +162,14 @@ export interface RenderParts extends RenderHost {
 	motionPasses: () => { pass: string; scene: THREE.Scene; keeps: boolean }[];
 }
 
+/** The scene's fields the sea and the ground's bounce read, over the bounds of shared.shoreXform:
+ * the shore's sea-level distance (m, negative over the land) and the sea floor's height (m). */
+export interface SceneFields { shore: THREE.TextureNode; floor: THREE.TextureNode }
+
+/** What lies under the sea for the refracted sun: the group it draws, and the triangles of each
+ * mesh that lie under the water (the rest are left out). */
+export interface SubmergedWorld { group: THREE.Group; subsets?: ReadonlyMap<THREE.Object3D, SubmergedSubset> }
+
 /** What the renderer's stages hand one another and nothing else reads: on the same object, off the
  * RenderParts the island and the page see. */
 interface StageParts {
@@ -221,7 +232,7 @@ export function setUpRenderer( render: RenderParts ) {
 	installBindingPatches( renderer );
 	// three submits every pass on its own; the frame reaches the GPU in a few submits instead
 	// (SubmitBatch.ts: a submit per pass kept Chrome's GPU process from presenting the page on time)
-	render.submitBatch = new SubmitBatch( gpuDevice<ConstructorParameters<typeof SubmitBatch>[ 0 ]>( renderer ), { debug: DEBUG } );
+	render.submitBatch = new SubmitBatch( gpuDevice<SubmitDevice>( renderer ), { debug: DEBUG } );
 	// the settled signal counts the async pipeline compiles in flight (post/Settled.ts; debug only)
 	if ( DEBUG ) watchPipelines( gpuDevice( renderer ) );
 
@@ -692,7 +703,7 @@ export function publishSkyLight( render: RenderParts ) {
 }
 
 /** The sea's waves and detail, then the frame's passes with the passes the entry adds. */
-export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraPasses }: { rainCeiling: number; extraPasses: ConstructorParameters<typeof Pipeline>[ 6 ] } ) {
+export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraPasses }: { rainCeiling: number; extraPasses: readonly ExtraPass[] } ) {
 
 	const { profiler, DEBUG, quality, renderer, scene, waterScene, rainScene, afterScene, camera, sky, wind, sun, sunShadow } = render;
 	// tidewater's two wave systems at the prevailing heading (Wind.ts `spectrumWind`) and tidewater's
@@ -794,7 +805,7 @@ export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraP
 }
 
 /** What the island's fields build first: the ground's bounce and the shore's waves. */
-export function createBounceAndShore( render: RenderParts, { fields, bounceGround, shoreData }: { fields: ConstructorParameters<typeof GroundBounce>[ 0 ][ 'fields' ] & { shore: ConstructorParameters<typeof ShoreWaves>[ 3 ]; floor: ConstructorParameters<typeof ShoreWaves>[ 5 ] }; bounceGround: ConstructorParameters<typeof GroundBounce>[ 0 ][ 'ground' ]; shoreData: ConstructorParameters<typeof ShoreWaves>[ 1 ] } ) {
+export function createBounceAndShore( render: RenderParts, { fields, bounceGround, shoreData }: { fields: SceneFields; bounceGround: BounceGround; shoreData: ShoreField } ) {
 
 	const { renderer, sky, sunShadow, fft, waveMaps } = render;
 	// the sunlight the ground bounces up (lighting/GroundBounce.ts), which every lit material adds: so
@@ -808,7 +819,7 @@ export function createBounceAndShore( render: RenderParts, { fields, bounceGroun
  * The ambient light's probes and their relight, the refracted sun and the storm sea. Returns the
  * refracted sun's first map, which the entry awaits.
  */
-export function createAmbient( render: RenderParts, { ambientData, world }: { ambientData: ConstructorParameters<typeof AmbientVolume>[ 1 ]; world: { group: THREE.Group; subsets: Parameters<RefractedSun[ 'setCasters' ]>[ 1 ] } } ) {
+export function createAmbient( render: RenderParts, { ambientData, world }: { ambientData: AmbientLattice; world: SubmergedWorld } ) {
 
 	const { DEBUG, renderer, scene, sky, weather, waveMaps, pipeline } = render;
 	const { runtime, ambientSky } = staged( render );
@@ -841,7 +852,7 @@ export function createAmbient( render: RenderParts, { ambientData, world }: { am
 }
 
 /** The water's surface, over the land's box and what the game holds above it. */
-export function createWater( render: RenderParts, { fields, landBox, islandSea, heldOpaque }: { fields: { shore: ConstructorParameters<typeof ShoreWaves>[ 3 ]; floor: ConstructorParameters<typeof ShoreWaves>[ 5 ] }; landBox: ConstructorParameters<typeof Water>[ 0 ][ 'land' ]; islandSea: { readonly openSea: { readonly from: number; readonly to: number }; readonly reflectorTop: number }; heldOpaque: THREE.Box3[] } ) {
+export function createWater( render: RenderParts, { fields, landBox, islandSea, heldOpaque }: { fields: SceneFields; landBox: Bounds; islandSea: { readonly openSea: { readonly from: number; readonly to: number }; readonly reflectorTop: number }; heldOpaque: THREE.Box3[] } ) {
 
 	const { quality, renderer, waterScene, rainScene, afterScene, sky, sunShadow, applySkyFill, fft, waveMaps, seaDetail, pipeline, shoreWaves } = render;
 

@@ -17,7 +17,7 @@
 // resume and step the frame loop (app/Frame.ts).
 // the page's settings, which its entry (Boot.ts) installed before this module's imports load
 import { QUALITY_CHOICE } from './PageSettings.ts';
-import { Pipeline, createShared, installShared, type RenderParts, createRenderer, setUpRenderer, createScenes, createSky, createLight, createKey, createEnvironment, publishSkyLight, createSeaAndPipeline, createBounceAndShore, createAmbient, createWater, bakeWithHaze, awaitWarmUp, checkMotion, primeSharedBuilds } from './render.ts';
+import { type ExtraPass, createShared, installShared, type RenderParts, createRenderer, setUpRenderer, createScenes, createSky, createLight, createKey, createEnvironment, publishSkyLight, createSeaAndPipeline, createBounceAndShore, createAmbient, createWater, bakeWithHaze, awaitWarmUp, checkMotion, primeSharedBuilds } from './render.ts';
 import { settings as params, type QualityTier, qualityProfile } from './renderSetup.ts';
 import * as THREE from 'three/webgpu';
 import { FallingLeaves, leavesPass, setSoilStrength, ISLAND_SEA, islandBounceGround, Villagers, loadVillager, PROPORTIONS, createIslandCamera, createTrample, createCharacterShadow, type IslandParts, bakeIslandGround, awaitWorld, createLand, createWorld, createWorldViews, createVegetation, createGrowth } from './island.ts';
@@ -89,7 +89,7 @@ const rainCeiling = ISLAND_TOP + 4;
 // The bamboo leaves the wind takes off the island (weather/FallingLeaves.ts), made once the world
 // exists (the test mode leaves them out): their step is a pass the pipeline declares from this list.
 island.fallingLeaves = null as FallingLeaves | null;
-const extraPasses: ConstructorParameters<typeof Pipeline>[ 6 ] = [ leavesPass( () => island.fallingLeaves ) ];
+const extraPasses: ExtraPass[] = [ leavesPass( () => island.fallingLeaves ) ];
 createSeaAndPipeline( render, { rainCeiling, extraPasses } );
 island.worldCache = await awaitWorld( render, island, { worldJob } );
 createLand( render, island, { landOptions } );

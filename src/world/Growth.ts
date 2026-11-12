@@ -82,6 +82,13 @@ import { SeabedRise } from './SeabedRise.ts';
 //   `approach` and `approachNow` start the generation first, so a page that only moves the GUI's
 //   Approach slider gets a pending piece. Its writes count in `work` (stage 'rise').
 
+/** What the growth tells the game (?game): the pending piece once it is ready (`setComing`), the
+ * new land after a swap (`setIsland`), each with the world's chunks on that land. */
+export interface GrowthGame {
+	setComing( land: LandLattice, chunks: readonly ChunkData[] ): void;
+	setIsland( land: LandLattice, chunks: readonly ChunkData[] ): void;
+}
+
 /** What the growth changes on the page: its world objects, and the page's own hooks. */
 export interface GrowthPage<M = unknown> {
 	renderer: THREE.WebGPURenderer;
@@ -95,12 +102,8 @@ export interface GrowthPage<M = unknown> {
 	ambient: AmbientVolume;
 	rain: Rain;
 	characters: Villagers | null;
-	/** the game (?game): the pending piece once it is ready (`setComing`), the new land after a swap
-	 * (`setIsland`), each with the world's chunks on that land */
-	game: {
-		setComing( land: LandLattice, chunks: readonly ChunkData[] ): void;
-		setIsland( land: LandLattice, chunks: readonly ChunkData[] ): void;
-	} | null;
+	/** the game (?game) */
+	game: GrowthGame | null;
 	/** the page's own land-dependent state, in the swap's frame */
 	/** what the page measures of a land (its box and framing), ahead in a step of the preparation */
 	measure( land: LandLattice ): M;
