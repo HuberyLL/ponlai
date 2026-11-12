@@ -453,7 +453,7 @@ export interface PipelineSettings {
 	// 0 by day, 1 at night: how far the exposure's night key has come in (sky/DayCycle.ts
 	// `exposureNight`, apart from the display's)
 	exposureNight: number;
-	// the kept skies' shares in the sky as it stands (Weather.ts `skyMix`, main.ts): the clouded
+	// the four skies' shares in the sky as it stands (Weather.ts `skyMix`, main.ts): the clouded
 	// day's keys (DayKeys.ts `cloudy`, the cloudy and overcast skies' share)
 	skyMix: number[];
 }

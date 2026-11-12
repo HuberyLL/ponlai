@@ -24,7 +24,7 @@ import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
 import { DAY_EXPOSURE, MOON, cloudMoonShare, displayNight, duskForce, exposureNight, nightAmbientShare, skyNight, starNight, sunRising, type DayCycleSnapshot } from './DayCycle.ts';
-import { KEPT_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, overcastDeckLight, overcastFloorSun, daySkyAt, type WeatherState } from './Weather.ts';
+import { MIX_SKIES, WEATHER_PRESETS, cloudedHighSun, cloudedShare, overcastDeckLight, overcastFloorSun, daySkyAt, type WeatherState } from './Weather.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
@@ -642,17 +642,17 @@ function clearSky( elevation: number, rising: boolean, cloud: number ): number {
 	return 1 + ( day - 1 ) * ( 1 - cloud );
 
 }
-// per kept sky, the share of the deck's optical depth its shadow is cast with (Weather.ts
-// `shadowDensity`, its preset's until tuned), blended by the weather's shares of the kept skies;
+// per sky of the blend, the share of the deck's optical depth its shadow is cast with (Weather.ts
+// `shadowDensity`, its preset's until tuned), blended by the weather's shares of the four skies;
 // tunable on debug pages: `sky.weather.shadowDensity@<cloudy|overcast>`
-const SHADOW_DENSITY = KEPT_SKIES.map( ( name ) => ( { shadowDensity: WEATHER_PRESETS[ name ].shadowDensity } ) );
+const SHADOW_DENSITY = MIX_SKIES.map( ( name ) => ( { shadowDensity: WEATHER_PRESETS[ name ].shadowDensity } ) );
 for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 
 	tuneObject( SHADOW_DENSITY[ s ], { shadowDensity: `sky.weather.shadowDensity@${ name }` }, { shadowDensity: { min: 0.02, max: 1, scale: 'log', onChange: markSkyRetune } } );
 
 }
-// The clouds are one model, and a kind of sky is a row of its parameters: one row per kept sky
-// (CLOUD_SKIES, in KEPT_SKIES' order), blended each frame by the weather's shares of the kept skies
+// The clouds are one model, and a kind of sky is a row of its parameters: one row per sky of the blend
+// (CLOUD_SKIES, in MIX_SKIES' order), blended each frame by the weather's shares of the four skies
 // (`trackClouds`), so a change of weather crosses them by those shares. The parked weathers count
 // as overcast in those shares (Weather.ts), so they take overcast's row. The coverage and the
 // density are the weather state's (Weather.ts WEATHER_PRESETS), interpolated with it; nothing here
@@ -674,18 +674,18 @@ const CLOUD_SKIES: CloudSky[] = [
 	{ base: 1500, top: 4500, type: 0.9, spread: 0.3, farFade: 0 }, // cloudy
 	{ base: 600, top: 3000, type: 0.05, spread: 0.1, farFade: 0 }, // overcast
 ];
-for ( const [ s, name ] of KEPT_SKIES.entries() ) {
+for ( const [ s, name ] of MIX_SKIES.entries() ) {
 
 	tuneObject( CLOUD_SKIES[ s ], { base: `sky.clouds.base@${ name }`, top: `sky.clouds.top@${ name }`, type: `sky.clouds.type@${ name }`, spread: `sky.clouds.spread@${ name }`, farFade: `sky.clouds.farFade@${ name }` },
 		{ base: { min: 300, max: 6000, onChange: markSkyRetune }, top: { min: 1500, max: 10000, onChange: markSkyRetune }, type: { min: 0, max: 1, onChange: markSkyRetune },
 			spread: { min: 0, max: 1, onChange: markSkyRetune }, farFade: { min: 0, max: 1, onChange: markSkyRetune } } );
 
 }
-/** The cloud shell's base (m) under the kept sky `s` (Weather.ts KEPT_SKIES), as tuned: the haze's
+/** The cloud shell's base (m) under the sky `s` (Weather.ts MIX_SKIES), as tuned: the haze's
  * aerosol ends at a layer's base (weather/HazeKeys.ts `aerosolTop`). */
 export const cloudBase = ( s: number ): number => CLOUD_SKIES[ s ].base;
 
-// The range each store holds under the moon, per kept sky (KEPT_SKIES' order), in stops over the
+// The range each store holds under the moon, per sky of the blend (MIX_SKIES' order), in stops over the
 // luminance of the moonlight on the clouds (`storeLight`): the brightest value and the first
 // percentile (the cloud dome's and the layer's over the texels at least a tenth covered). Under
 // the moon alone every store's radiance follows the moonlight, so the range over it is the clouds'
@@ -710,7 +710,7 @@ const NIGHT_TOP = 13, NIGHT_FLOOR = - 13 + 12;
 
 /** Where the store `group`'s range sits best under the moon (stops over the light, PreExposure.ts
  * `storeStops`): its estimated brightest and first percentile (STORE_RANGE, by the weather's
- * shares of the kept skies) centred between NIGHT_FLOOR and NIGHT_TOP, so both keep the same
+ * shares of the four skies) centred between NIGHT_FLOOR and NIGHT_TOP, so both keep the same
  * margin. */
 function storeNight( group: keyof typeof STORE_RANGE, skyMix: readonly number[] | null ): number {
 
@@ -2231,7 +2231,7 @@ export class Sky {
 		const clouds = this.clouds;
 		clouds.coverage.value = coverage;
 		clouds.density.value = weather?.density ?? 1;
-		// The shadow's share of the deck by the weather's shares of the kept skies, or the weather's
+		// The shadow's share of the deck by the weather's shares of the four skies, or the weather's
 		// own without them: a weather change or a retune rebakes the whole map (`bake`), a front
 		// under way refreshes it row by row.
 		clouds.shadowDensity.value = skyMix ? SHADOW_DENSITY.reduce( ( sum, k, s ) => sum + ( skyMix[ s ] ?? 0 ) * k.shadowDensity, 0 ) : weather?.shadowDensity ?? 1;

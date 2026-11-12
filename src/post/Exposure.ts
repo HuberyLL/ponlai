@@ -241,7 +241,7 @@ const _held = { key: 0, highlight: 0, sky: 0, adaptUp: 0, adaptDown: 0 };
 /** The exposure's keys at the sun's `elevation` (degrees), the exposure's own night weight `night`
  * (sky/DayCycle.ts `exposureNight`, set apart from the display's so the meter's handover to the
  * night key can follow the light while the tone, the grade and the bloom keep theirs) and the
- * weather's blend of the kept skies `skyMix`, into `out`, the morning's where the sun is `rising`:
+ * weather's blend of the four skies `skyMix`, into `out`, the morning's where the sun is `rising`:
  * the day's (or the rising sun's) and the clouded keys (DayKeys.ts `keyed`), overcast's share
  * holding the clouded keys at OVERCAST_HELD below it, overcast's key (OVERCAST_KEY_LOW to
  * OVERCAST_KEY over OVERCAST_KEY_SPAN) by overcast's share and the day's weight, and overcast's

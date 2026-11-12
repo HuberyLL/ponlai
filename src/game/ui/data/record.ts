@@ -76,7 +76,7 @@ export const dayName = ( day: number ) => t( 'time.day', { day } );
  * game's own are: sim/Sim.ts), not the interface's words, so they are not in the catalogue.
  */
 export const PLACEHOLDER_NAMES = [ '阿凯', '阿木', '小禾', '阿青', '石头', '阿月', '阿海', '小满', '阿岚', '竹生' ];
-export const PLACEHOLDER_SKIES: readonly WeatherName[] = [ 'fair', 'cloudy', 'clear', 'overcast', 'fair', 'cloudy', 'overcast', 'clear', 'fair' ];
+export const PLACEHOLDER_SKIES: readonly WeatherName[] = [ 'fair', 'partly', 'clear', 'partly', 'fair', 'partly', 'fair', 'clear', 'fair' ];
 export const PLACEHOLDER_DAYS: readonly ( { day: number; minute: number; kind: string; who: number | 'player' | 'island'; to?: number[] | 'all'; text?: string } )[] = [
 	{ day: 1, minute: 390, kind: 'landed', who: 0 },
 	{ day: 1, minute: 392, kind: 'landed', who: 1 },

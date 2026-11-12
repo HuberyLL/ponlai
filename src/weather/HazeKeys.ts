@@ -2,14 +2,14 @@ import * as THREE from 'three/webgpu';
 import { tuneObject, type TuneOptions } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
 import { DUSK_DEPTH, duskForce, duskForced, duskIn, moonKeyShare } from '../sky/DayCycle.ts';
-import { KEPT_SKIES, WEATHER_PRESETS, cloudedShare, deckLight, overcastDeckLight } from '../sky/Weather.ts';
+import { MIX_SKIES, WEATHER_PRESETS, cloudedShare, deckLight, overcastDeckLight } from '../sky/Weather.ts';
 import { cloudBase } from '../sky/Sky.ts';
 import { FOG_NOISE } from './FogNoise.ts';
 
 // The haze's keys: what the air does by the hour and the weather, set as a few quantities one sees
 // (how far the light carries, the colour it loses, how bright and how coloured the air shows) at
 // a few heights of the sun, the morning's and the evening's apart, and eased between them. A key
-// is a function of the sun's elevation, whether it is rising, the weather's blend of the kept skies
+// is a function of the sun's elevation, whether it is rising, the weather's blend of the four skies
 // (Weather.ts `skyMix`), its wind and its rain, never of the path to them: a paused frame and a
 // scene jump hold one value, and a change of hour or weather writes the haze's uniforms only.
 //
@@ -365,20 +365,20 @@ tuneObject( SEA_FOG, { fogTop: 'haze.fog.top@sea', fogWidth: 'haze.fog.width@sea
 	neutral: { min: 0, max: 1, onChange: markSkyRetune }, scatter: { min: 0, max: 0.6, onChange: markSkyRetune },
 } );
 
-// per kept sky (Weather.ts KEPT_SKIES: clear, fair, cloudy, overcast): the share of the light's
+// per sky of the blend (Weather.ts MIX_SKIES: clear, fair, cloudy, overcast): the share of the light's
 // colour kept over a clear day's and the gain over a clear day's
 const KEEP = [ 1, 1, 0.53, 0.53 ];
 const GAIN = [ 1, 1, 2, 2 ];
-// per kept sky, the scale of each band's sigma, of the aerosol layer's share and of its scale
+// per sky of the blend, the scale of each band's sigma, of the aerosol layer's share and of its scale
 // height, of the ground layer's top and width, and the weather's haze (its preset's until tuned)
 const CLOUD_SIGMA = { sigmaRed: 1.42, sigmaGreen: 1, sigmaBlue: 0.555 };
 const CLEAR_SCALE = { sigmaRed: 1, sigmaGreen: 1, sigmaBlue: 1, aerosolScale: 1, aerosolHeight: 1, topScale: 1, widthScale: 1 };
 const SCALES = [ CLEAR_SCALE, CLEAR_SCALE,
 	{ ...CLOUD_SIGMA, aerosolScale: 4.6, aerosolHeight: 3.09, topScale: 0.79, widthScale: 0.62 },
 	{ ...CLOUD_SIGMA, aerosolScale: 0.82, aerosolHeight: 3.09, topScale: 0.66, widthScale: 1.21 } ];
-// per kept sky, whether a deck ends the aerosol layer at its base (Sky.ts `cloudBase`)
+// per sky of the blend, whether a deck ends the aerosol layer at its base (Sky.ts `cloudBase`)
 const DECKED = [ false, false, true, true ];
-const SKY_SCALE = KEPT_SKIES.map( ( name, s ) => {
+const SKY_SCALE = MIX_SKIES.map( ( name, s ) => {
 
 	const { haze } = WEATHER_PRESETS[ name ];
 	return { ...SCALES[ s ], haze };
@@ -394,7 +394,7 @@ for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
 		{ topScale: { min: 0.1, max: 5, scale: 'log', onChange: markSkyRetune }, widthScale: { min: 0.2, max: 5, scale: 'log', onChange: markSkyRetune } } );
 
 }
-// per kept sky, the sun's share in the haze's Rayleigh light: off under a clear or fair sky, on
+// per sky of the blend, the sun's share in the haze's Rayleigh light: off under a clear or fair sky, on
 // under cloud
 const SUN_RAYLEIGH = [ 0, 0, 1, 1 ];
 
@@ -431,7 +431,7 @@ const _cloudedKey = key( 0, DAY_SIGMA, 0, 0, 0 );
 const _key = key( 0, DAY_SIGMA, 0, 0, 0 );
 
 /** The haze's key at the sun's `elevation` (degrees), `rising` or setting, under the weather's
- * blend of the kept skies, its wind (m/s), its rain (0 - 1), the sea fog's share (0 - 1,
+ * blend of the four skies, its wind (m/s), its rain (0 - 1), the sea fog's share (0 - 1,
  * its switch) and the parked fog weather's share of the sky (0 - 1: Weather.ts `origin` and
  * `target` by the front's progress). The fog weather counts as overcast in `skyMix`, but its air
  * keeps the sun's Rayleigh light the closed deck takes from overcast's and the fog layer's droplets
@@ -471,7 +471,7 @@ export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly 
 		height += w * SKY_SCALE[ s ].aerosolHeight;
 		top += w * SKY_SCALE[ s ].topScale;
 		width += w * SKY_SCALE[ s ].widthScale;
-		haze += w * SKY_SCALE[ s ].haze / WEATHER_PRESETS[ KEPT_SKIES[ s ] ].haze;
+		haze += w * SKY_SCALE[ s ].haze / WEATHER_PRESETS[ MIX_SKIES[ s ] ].haze;
 		sunRayleigh += w * SUN_RAYLEIGH[ s ];
 		if ( DECKED[ s ] ) inverseTop += w / cloudBase( s );
 

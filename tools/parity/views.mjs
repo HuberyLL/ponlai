@@ -9,8 +9,8 @@
 //
 // Groups: `parity` (the views every parity check runs; the default) and `taa` (6 close views for
 // the temporal anti-aliasing work: thin and moving detail); `all` is both. `special` holds the
-// parked weathers' views (`special: true`: the rain, the storm, the fog and the weather front into
-// rain; src/sky/Weather.ts PARKED_WEATHER): no other group lists them, so every default set is the
+// parked weathers' views (`special: true`: the cloudy and overcast skies, the rain, the storm, the
+// fog and the weather front into rain; src/sky/Weather.ts PARKED_WEATHER): no other group lists them, so every default set is the
 // normal weathers' and a parked view is reached by name or by `special` (`all,special` is every
 // view). `normal` is `all`, kept as a name. tools/parity/gates.py --normal leaves special entries
 // unjudged. A clip belongs to the group of its view (clips.mjs).
@@ -231,13 +231,15 @@ const wrap = ( body, crops ) => `(async () => { ${ PRE }\n${ body ?? '' }\n{${ C
 const ISLANDER = 'while ( ! s.characters.centre.lengthSq() ) await new Promise( ( r ) => setTimeout( r, 50 ) ); const c = s.characters.centre;';
 
 export const VIEWS = {
-	// the profiler's 12 scenes (tools/profile-frame.mjs SCENES), paused
+	// the profiler's scenes (tools/profile-frame.mjs SCENES), paused
 	'island-fair-noon': { q: 'weather=fair&preset=noon', crops: [ 'meadow-band-70m', 'flowers', 'rim-lip', 'cliff-edge-sea', 'islander-head' ] },
 	// orbit to the island's far side from the sun: the view looks into the low sun (profiler's faceSun)
 	'island-clear-golden': { q: 'weather=clear&preset=golden-hour', eval: 'orbitAround( - s.sky.sunDir.x, - s.sky.sunDir.z );', crops: [ 'rim-lip', 'cliff-edge-sea' ] },
 	'horizon-fair-noon': { q: 'weather=fair&preset=noon', eval: `s.setCameraView( 'horizon' );`, crops: [ 'cliff-edge-sea', 'rim-lip', 'horizon-line' ] },
-	'sky-cloudy': { q: 'weather=cloudy&preset=noon', eval: `s.setCameraView( 'sky' );`, crops: [] },
-	'island-overcast': { q: 'weather=overcast&preset=noon', crops: [ 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },
+	'sky-partly': { q: 'weather=partly&preset=noon', eval: `s.setCameraView( 'sky' );`, crops: [] },
+	'island-partly': { q: 'weather=partly&preset=noon', crops: [ 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },
+	'sky-cloudy': { special: true, q: 'weather=cloudy&preset=noon', eval: `s.setCameraView( 'sky' );`, crops: [] },
+	'island-overcast': { special: true, q: 'weather=overcast&preset=noon', crops: [ 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },
 	'island-rain': { special: true, q: 'weather=rain&preset=noon', crops: [ 'rain-streaks', 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },
 	'island-storm': { special: true, q: 'weather=storm&preset=noon', crops: [ 'rain-streaks', 'rim-lip', 'cliff-edge-sea' ] },
 	'horizon-storm': { special: true, q: 'weather=storm&preset=noon', eval: `s.setCameraView( 'horizon' );`, crops: [ 'rain-streaks', 'horizon-line', 'cliff-edge-sea' ] },
@@ -256,9 +258,9 @@ export const VIEWS = {
 	// ray. Their elevations are chosen by what they reach, which depends on where the clouds sit at
 	// t=12: pinning `shadowRays` to 1, or `shadowAirNarrow` to its other end, must move each of them
 	// (tools/parity/README.md), and a view that stays byte identical under that does not belong here.
-	'island-cloudy-low-sun': { q: `weather=cloudy&hour=${ morning( 4.8 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
-	'island-cloudy-sun-rising': { q: `weather=cloudy&hour=${ morning( 5.3 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
-	'island-cloudy-disc-fade': { q: `weather=cloudy&hour=${ morning( 9.3 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
+	'island-cloudy-low-sun': { special: true, q: `weather=cloudy&hour=${ morning( 4.8 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
+	'island-cloudy-sun-rising': { special: true, q: `weather=cloudy&hour=${ morning( 5.3 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
+	'island-cloudy-disc-fade': { special: true, q: `weather=cloudy&hour=${ morning( 9.3 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
 	// a low camera 1.4 m over the sea, just off the cliffs, looking along the coast (reflections of
 	// the cliff foot and the islanders, the island's edge against the sky)
 	'water-skim-cliffs': { q: 'weather=fair&preset=noon', eval: `const b = isl(); const a = 2.3, r = Math.max( b.rx, b.rz );

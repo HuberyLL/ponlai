@@ -386,8 +386,10 @@ for the light is baking lighting into albedo; it breaks again whenever the light
 
 ## Sea, sky and weather
 
-- Rain, storm and fog are parked (`PARKED_WEATHER` in `src/sky/Weather.ts`): out of the rotation
-  and the production page until the game needs them; the notes on them below stand for their
+- The weather is a fine day's: clear, fair and partly, the sky half-way from fair to cloudy, the
+  most cloud the island sees for now. Cloudy and overcast are parked (`PARKED_WEATHER` in
+  `src/sky/Weather.ts`) until the clouds' own milestone, rain, storm and fog until the game needs
+  them: out of the rotation and the production page; the notes on them below stand for their
   revival.
 - The sea is calm in everyday weather: no whitecaps on the open water. Only a storm's gale builds
   a rough sea with whitecaps, trailing foam and spray. The sea continues to the horizon.

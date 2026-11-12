@@ -30,7 +30,8 @@ Island view
   as well as close up ([Art direction](../explanation/art-direction.md), The look).
 
 Kept weathers
-: Clear, fair, cloudy and overcast: the weathers every change must hold in.
+: Clear, fair and partly (the sky half-way from fair to cloudy): the weathers every change must
+  hold in.
 
 Key
 : The one dominant light: the sun by day, the moon by night
@@ -51,8 +52,8 @@ Lookdev
 
 Parked
 : Kept compiling and loadable by name but out of the default checks, until revived as its own
-  milestone: the weathers rain, storm and fog (`PARKED_WEATHER` in `src/sky/Weather.ts`) and the
-  quality tiers medium and low (`PARKED_QUALITY` in `src/Quality.ts`).
+  milestone: the weathers cloudy, overcast, rain, storm and fog (`PARKED_WEATHER` in
+  `src/sky/Weather.ts`) and the quality tiers medium and low (`PARKED_QUALITY` in `src/Quality.ts`).
 
 Piece
 : One piece of land: the island grows one piece at a time from a starting island at the world's

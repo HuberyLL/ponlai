@@ -1937,7 +1937,7 @@ function tick( time: number ): void {
 	sky.track( manualSun ? null : dayCycle.snapshot(), weather.state, cloudOverride, weather.skyMix );
 	sky.advance( environmentDt );
 	publishLighting();
-	// the ambient grade by the sun and the weather's blend of the kept skies (lighting/AmbientGrade.ts)
+	// the ambient grade by the sun and the weather's blend of the four skies (lighting/AmbientGrade.ts)
 	ambientGrade.update( sky.elevation, weather.skyMix, sky.rising, sky.moonElevation, sky.moonKeyShare );
 	shared.clouded.value = cloudedShare( weather.skyMix );
 	// the yunpeng's glow and its local lights by their own share of the night (sky/DayCycle.ts

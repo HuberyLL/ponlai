@@ -808,7 +808,7 @@ export class Clouds {
 	readonly shellBottom = uniform( SHELL_BOTTOM );
 	readonly shellThickness = uniform( SHELL_THICKNESS );
 	readonly lowShare = uniform( 0 );
-	// Overcast's share of the kept skies (Sky.ts trackClouds), which the dome's composite of a
+	// Overcast's share of the four skies (Sky.ts trackClouds), which the dome's composite of a
 	// closed layer reads (Sky.ts `glowToward`). Not `deckShare` (VolumetricHaze.ts),
 	// `broadShare` or `deckShadowShare`, which carry the same share to the haze, the forward
 	// light's spread and the shadow's fade, each set apart.

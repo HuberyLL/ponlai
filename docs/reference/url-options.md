@@ -60,7 +60,7 @@ The tools that load pages with these options: [Tools](tools.md).
   `dayLength` (seconds), `moon` (phase: 0.5, a full moon, by default; it shapes only the drawn
   moon, which stands fixed in the sky), `clock=paused` (freezes only the day clock; `paused` freezes
   it with the scene).
-- `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load as established,
+- `weather` (clear, fair, partly, cloudy, overcast, rain, storm, fog; rain and storm load as established,
   already wet; without it, `wind` and `windDir` the weather and its wind evolve on their own, among
   the kept presets), `clouds` (coverage override).
 - `dayFog`: the day's fog layer under a clear or fair sky (off by default; the GUI's Weather
@@ -77,7 +77,7 @@ The tools that load pages with these options: [Tools](tools.md).
   either holds the weather, as `weather` does; both are scene options. On a page, the GUI's Weather
   folder (`wind`, `wind heading`, over its transition seconds) or `__PONLAI__.setWind( { level,
   heading }, seconds )`; `weather.windTarget` and the diagnostics' `windTarget`, `windSpeed` and
-  `windHeading` show it (`src/sky/Weather.ts`). Rain, storm and fog are parked (`src/sky/Weather.ts`
+  `windHeading` show it (`src/sky/Weather.ts`). Cloudy, overcast, rain, storm and fog are parked (`src/sky/Weather.ts`
   `PARKED_WEATHER`): a production page without `?debug` refuses them with a console warning and
   shows fair; the dev server, `?debug` and `?profile` still reach them.
 
@@ -308,7 +308,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `lighting.relight.overcastLand` (1 to 2), a low
   sun's lift of the sky's light on what it lights `lighting.relight.lowSun` (stops; `lowSunFloor`,
   `lowSunFloorFull`, `lowSunFrom`, `lowSunTo` its sun heights: `src/lighting/AmbientRelight.ts`),
-  the clouds' model per kept sky (`clear`, `fair`, `cloudy`, `overcast`: `src/sky/Sky.ts`
+  the clouds' model per sky of the weather's blend (`clear`, `fair`, `cloudy`, `overcast`: `src/sky/Sky.ts`
   CLOUD_SKIES), the shell's base and top (m), the cloud type (0 a stratus, 1 a cumulus), how far
   it varies from place to place and how far the clouds thin with distance
   `sky.clouds.base@<sky>`, `sky.clouds.top@<sky>`, `sky.clouds.type@<sky>`,
