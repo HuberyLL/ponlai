@@ -357,13 +357,12 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   argument); single-sampled, that argument is a mip level. More in `Pipeline.ts`.
 - WebGPU multisamples with 1 or 4 samples only (three turns 2 into 1, with no MSAA). The
   anti-aliasing mode (`msaa`, `off`, and the temporal `taa`, `taau`, `fsr3` and `gt`, the last in
-  debug builds only) is a load knob of the tier
-  (`aa` in `Quality.ts`, whose header says which tier runs which and why: high, the only active
-  tier, runs `msaa`, as a paused page does); `aa=` or the GUI picks any mode on any tier. Code that
-  differs by mode reads `Antialiasing.ts`'s exports (`TEMPORAL`,
-  `SCENE_SAMPLES`, `ALPHA_TO_COVERAGE`), never the tier. The vegetation's cut-outs are alpha to
-  coverage under MSAA only: find vegetation by `userData.vegetation`, never by `alphaToCoverage`
-  (`vegetation/Coverage.ts`).
+  debug builds only) is a load knob of the tier (`aa` in `Quality.ts`, whose header says which tier
+  runs which and why: high, the only active tier, runs `msaa`, as a paused page does); `aa=` or the
+  GUI picks any mode on any tier. Code that differs by mode reads `Antialiasing.ts`'s exports
+  (`TEMPORAL`, `SCENE_SAMPLES`, `ALPHA_TO_COVERAGE`), never the tier. The vegetation's cut-outs are
+  alpha to coverage under MSAA only: find vegetation by `userData.vegetation`, never by
+  `alphaToCoverage` (`vegetation/Coverage.ts`).
 - Implicitly filtered texture samples and derivatives need uniform control flow: take them
   (`.toVar()`) before any `If` / `Loop`; inside branches and loops use `.level()` or `textureLoad`.
   Keep filters that take `dFdx` / `dFdy` out of `select()` / `If` branches (`SolarShadow.ts`).

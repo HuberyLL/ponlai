@@ -144,29 +144,27 @@ converge on a still scene (or are frozen or turned off in the test mode) and tha
 within a tolerance; the test mode keeps the byte-for-byte checks valid.
 
 - The test mode today: `paused` in the query, which loads `aa=msaa` whatever the tier runs (high
-  runs `msaa` too; an explicit `aa=` wins), the shot taken once
-  `__THREE_GAME_DIAGNOSTICS__.settled` holds (capture.mjs's readiness). Every capture, parity and
-  verify tool already loads its pages this way, so their exact checks hold as their headers say.
-  The page's only history-dependent rendering effects are the temporal resolve
-  (`aa=taa|taau|fsr3|gt`,
-  frozen by its rest image, `TemporalRest.ts`, and compared within the temporal tolerance), the
-  states that settle on their own on a still scene (the clouds' view, the sky's bakes, the
-  refracted sun's map, the haze's shadow, which averages a fixed sequence of jitters from nothing
-  on a still scene and holds it: `src/weather/VolumetricHaze.ts`), which `settled` waits for,
-  the exposure's adaptation (`src/post/Exposure.ts`), which takes its target at once while the
-  scene clock does not step, so the pause itself freezes it, and keeps `settled` false until it
-  has reached its target, the pre-exposure (`src/post/PreExposure.ts`), a whole-stop scale of the
-  stored radiance taken from the exposure read back, which a scene jump resets, which reaches the
-  same value on a still scene whatever came before and keeps `settled` false until the P a frame
-  used is the one its own exposure asks for, read from a frame drawn the settle frames into a
-  quiet run of the view (so under MSAA, the test mode's, P does not change under a settled page;
-  under the temporal modes an EV at a hair from a half stop can still move it, and `settled` then
-  turns false), and the wenyao's schools (`src/life/Wenyao.ts`), which step only with the scene
-  clock's step from a layout the land gives:
-  a page loaded paused never steps them, `establishScene` returns them to that layout and a Grow
-  does too while they have not stepped, so the pause itself freezes them and they need no switch.
-  The falling leaves (`src/weather/FallingLeaves.ts`) are history-dependent and off under the
-  test mode's switch (next): not made, so `settled` never waits for them.
+  runs `msaa` too; an explicit `aa=` wins), the shot taken once `__THREE_GAME_DIAGNOSTICS__.settled`
+  holds (capture.mjs's readiness). Every capture, parity and verify tool already loads its pages
+  this way, so their exact checks hold as their headers say. The page's only history-dependent
+  rendering effects are the temporal resolve (`aa=taa|taau|fsr3|gt`, frozen by its rest image,
+  `TemporalRest.ts`, and compared within the temporal tolerance), the states that settle on their
+  own on a still scene (the clouds' view, the sky's bakes, the refracted sun's map, the haze's
+  shadow, which averages a fixed sequence of jitters from nothing on a still scene and holds it:
+  `src/weather/VolumetricHaze.ts`), which `settled` waits for, the exposure's adaptation
+  (`src/post/Exposure.ts`), which takes its target at once while the scene clock does not step, so
+  the pause itself freezes it, and keeps `settled` false until it has reached its target, the
+  pre-exposure (`src/post/PreExposure.ts`), a whole-stop scale of the stored radiance taken from the
+  exposure read back, which a scene jump resets, which reaches the same value on a still scene
+  whatever came before and keeps `settled` false until the P a frame used is the one its own
+  exposure asks for, read from a frame drawn the settle frames into a quiet run of the view (so
+  under MSAA, the test mode's, P does not change under a settled page; under the temporal modes an
+  EV at a hair from a half stop can still move it, and `settled` then turns false), and the wenyao's
+  schools (`src/life/Wenyao.ts`), which step only with the scene clock's step from a layout the land
+  gives: a page loaded paused never steps them, `establishScene` returns them to that layout and a
+  Grow does too while they have not stepped, so the pause itself freezes them and they need no
+  switch. The falling leaves (`src/weather/FallingLeaves.ts`) are history-dependent and off under
+  the test mode's switch (next): not made, so `settled` never waits for them.
 - The test mode's one switch (`src/debug/TestMode.ts`), read once at load, is on with `paused`,
   which every capture, parity and verify tool loads with, unless `testMode=0` leaves it out, as
   `tools/capture-clip.mjs` does so the clips show what moves. Every history-dependent rendering

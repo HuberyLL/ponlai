@@ -85,7 +85,7 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
   8-57 % larger, median 28 %), and the shot takes about a fifth of `page.screenshot`'s time. So
   **every comparison decodes**: a capture's bytes depend on the encoder, its pixels do not
   (capture-set's `--repeat`, diff-set.py, `samePixels` in capture-browser.mjs; equal bytes still
-  short-cut to equal). References written by the earlier encoder stay comparable.
+  short-cut to equal), so references written by another encoder stay comparable.
 
 ## Views (views.mjs)
 
