@@ -4,7 +4,8 @@ import { OVERCAST_LAND, OVERCAST_MOON_LAND, ambient, overcastLandWeight } from '
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune, tuneKeys, tuneUniform } from '../debug/Tune.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
-import { DUSK_WINDOWS, duskForce, moonKeyShare } from '../sky/DayCycle.ts';
+import { DUSK_WINDOWS } from '../look/DayLook.ts';
+import { duskForce, moonKeyShare } from '../sky/DayCycle.ts';
 import { IRRADIANCE_SLABS, type AmbientVolume } from './AmbientVolume.ts';
 import { COSINE_LOBE, bounceLobe, coefficients, linearMaximum, shBasisAt, shConvolve, shDeringWindow, shProduct, shTowardDelta, shWindow, toMat3, type M3 } from './Harmonics.ts';
 import type { Shared } from '../shared.ts';

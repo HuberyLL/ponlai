@@ -138,6 +138,7 @@
 	"lighting/SunShadow.ts": "render",
 	"lighting/SurfaceBRDF.ts": "render",
 	"lighting/Underwater.ts": "render",
+	"look/DayLook.ts": "render",
 	"look/DisplayLook.ts": "render",
 	"look/HazeLook.ts": "render",
 	"look/SkyLook.ts": "render",

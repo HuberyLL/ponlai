@@ -5,7 +5,7 @@ import { receiveScreenAO } from '../post/GTAO.ts';
 import { receiveScreenShadow } from '../post/MeadowShade.ts';
 import type { Shared } from '../shared.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { NIGHT_METER_LIFT } from '../sky/DayCycle.ts';
+import { NIGHT_METER_LIFT } from '../look/DayLook.ts';
 import { mulberry32, type Rng } from './noise.ts';
 import { SEABED_TILE } from './SeabedTile.ts';
 import { runSteps } from './Steps.ts';
@@ -47,10 +47,11 @@ import { writeMeter } from '../lighting/MeterLight.ts';
 //   its area seen from outside (a thin round stalk shows a quarter of its surface on average from
 //   all directions, a two-sided leaf or tassel half of one face's), so the light and the glow are
 //   one quantity. Its range: YUNPENG.reach.
-// - The glow and its light are scaled by one constant, 2 to minus DayCycle.ts NIGHT_METER_LIFT, the
-//   stops the metered exposure rises by from the twilight to a clear night: a lamp does not know the
-//   hour or the weather, so a clear night shows it as the glow's value was set for, it shows later
-//   in the dusk (the exposure has not yet risen), and brighter on a darker night, as a lamp does.
+// - The glow and its light are scaled by one constant, 2 to minus look/DayLook.ts
+//   NIGHT_METER_LIFT, the stops the metered exposure rises by from the twilight to a clear night: a
+//   lamp does not know the hour or the weather, so a clear night shows it as the glow's value was
+//   set for, it shows later in the dusk (the exposure has not yet risen), and brighter on a darker
+//   night, as a lamp does.
 // - It bends in the one wind from each stalk's foot, its top the most, with the drag on it, each
 //   stalk by its own stiffness and drag (`stalkLoad`) and swinging at its own rate and phase
 //   (Deform.ts mainBend), the leaves and the plume's tassels fluttering from their foot as the

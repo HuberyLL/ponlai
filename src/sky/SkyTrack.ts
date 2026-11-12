@@ -5,7 +5,8 @@ import { SHADOW_SLOPE_FLOOR, forwardLevel } from './CloudModel.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { shared } from '../shared.ts';
 import { storeStops } from '../post/PreExposure.ts';
-import { DAY_EXPOSURE, MOON, cloudMoonShare, displayNight, duskForce, exposureNight, nightAmbientShare, skyNight, starNight, sunRising, type DayCycleSnapshot } from './DayCycle.ts';
+import { DAY_EXPOSURE } from '../look/DayLook.ts';
+import { MOON, cloudMoonShare, displayNight, duskForce, exposureNight, nightAmbientShare, skyNight, starNight, sunRising, type DayCycleSnapshot } from './DayCycle.ts';
 import { cloudedHighSun, cloudedShare, overcastDeckLight, overcastFloorSun, daySkyAt, type WeatherState } from './Weather.ts';
 import { keyed } from '../post/DayKeys.ts';
 import { tune } from '../debug/Tune.ts';
@@ -117,7 +118,8 @@ const _zenith = new THREE.Vector3( 0, 1, 0 );
 const _streakKey = { r: 0, g: 0, b: 0 };
 // The sun's elevations (degrees) over which the light the clouds march toward sets from the moon's
 // key to the sun's height, then comes round to the sun's azimuth: where no moonlight reaches them
-// (DayCycle.ts DUSK_WINDOWS.cloudMoon) and before the sun's does (`sunlightAt` at 2 km, above about -2).
+// (look/DayLook.ts DUSK_WINDOWS.cloudMoon) and before the sun's does (`sunlightAt` at 2 km,
+// above about -2).
 const CLOUD_TURN = [ - 3, - 2.5, - 2 ] as const;
 // The sine of the sun's elevation over which the clouds' shadow comes in as it rises.
 const CLOUD_SHADOW_SET = [ - 0.02, 0.02 ] as const;
@@ -307,8 +309,8 @@ export function trackSky( sky: Sky, celestial: DayCycleSnapshot | null, weather:
 	sky.grade.exposure *= 1 + overcast * ( celestial?.overcastAdaptation ?? 0 );
 	// The night sky's own lights, the stars and the moon's disk (nothing they light), keep the
 	// brightness they were tuned at, under the exposure the night had then, but for the night's
-	// own gain (DayCycle NIGHT_EXPOSURE_GAIN), which brightens them with the island; under a deck
-	// the clouds drawn over them hide them.
+	// own gain (look/DayLook.ts NIGHT_EXPOSURE_GAIN), which brightens them with the island; under a
+	// deck the clouds drawn over them hide them.
 	const nightSkyLevel = celestial ? Math.min( 1, celestial.nightSkyLevel ) : 1;
 	sky.night.starVisibility.value *= nightSkyLevel;
 	moonColor.multiplyScalar( nightSkyLevel );

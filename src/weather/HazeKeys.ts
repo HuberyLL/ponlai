@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
-import { DUSK_DEPTH, duskForce, duskForced, duskIn, moonKeyShare } from '../sky/DayCycle.ts';
+import { DUSK_DEPTH } from '../look/DayLook.ts';
+import { duskForce, duskForced, duskIn, moonKeyShare } from '../sky/DayCycle.ts';
 import { MIX_SKIES, WEATHER_PRESETS, cloudedShare, deckLight, overcastDeckLight } from '../sky/Weather.ts';
 import { cloudBase } from '../look/SkyLook.ts';
 import { FOG_NOISE } from './FogNoise.ts';

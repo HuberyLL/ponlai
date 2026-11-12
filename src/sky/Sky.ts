@@ -21,7 +21,11 @@ import { STORE_CEILING } from '../post/PreExposure.ts';
 import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
-import { DAY_EXPOSURE, type DayCycleSnapshot } from './DayCycle.ts';
+import { DAY_EXPOSURE } from '../look/DayLook.ts';
+// (DayCycle.ts is imported for its load alone, in the place it always loaded in: its exposure
+// keys moved to look/DayLook.ts, and the order the modules load in is part of the shaders)
+import './DayCycle.ts';
+import type { DayCycleSnapshot } from './DayCycle.ts';
 import type { WeatherState } from './Weather.ts';
 import { setKeyCloud } from '../lighting/KeyCloud.ts';
 import { bakeColour, dirToEquirect, discCloudTransmittance, domeColour, equirectToDir, lendIsland } from './SkyDome.ts';
