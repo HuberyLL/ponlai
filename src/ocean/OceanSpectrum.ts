@@ -21,7 +21,8 @@ export interface WaveSpectrumSettings {
 }
 
 // tidewater's distant swell: a second wave system of its own wind and fetch, at a heading of its
-// own (tidewater's 5 degrees against the local sea's 25), scaled by the sea state.
+// own (tidewater's 5 degrees against the local sea's 25), scaled by the sea state. Its values:
+// look/SeaLook.ts DEFAULT_SWELL.
 export interface SwellParams {
 	scale: number;
 	windSpeed: number;
@@ -32,10 +33,6 @@ export interface SwellParams {
 	peakEnhancement: number;
 	shortWavesFade: number;
 }
-
-export const DEFAULT_SWELL: Readonly<SwellParams> = {
-	scale: 0.48, windSpeed: 6, fetch: 1200e3, directionOffset: - 20, spread: 1, swell: 0.9, peakEnhancement: 3.3, shortWavesFade: 0.1,
-};
 
 // tidewater's sea states (AppUI.js `SEA`), keyed by the wind 10 m up: the local sea's fetch, the
 // choppiness, the swell's scale and the whitecaps (0..1). The wind levels of weather/Wind.ts fall on them: gentle (3.8 m/s)

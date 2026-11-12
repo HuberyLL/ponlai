@@ -10,6 +10,7 @@ import { mulberry32 } from '../world/noise.ts';
 import { REFERENCE_SPEED, gustAt } from '../weather/Wind.ts';
 import type { Bounds } from '../RenderTypes.ts';
 import type { Shared } from '../shared.ts';
+import { SEA_DETAIL } from '../look/SeaLook.ts';
 
 // Large-scale variation of the sea surface in world space, which never repeats with the FFT's tiles
 // (tidewater's SeaDetail, 4811ba4):
@@ -45,6 +46,7 @@ import type { Shared } from '../shared.ts';
 // scene clock and a paused frame repeats. The noise is a tileable smooth fbm in four channels, made
 // once on the CPU with fixed seeds (256 texels, half float, bilinear, repeating; low frequency, so
 // no mipmaps).
+// The gusts', slicks' and windrows' strengths: look/SeaLook.ts SEA_DETAIL.
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -63,9 +65,9 @@ const ISLAND_FAR = 220;
 export class SeaDetail {
 
 	readonly texture: THREE.DataTexture;
-	readonly gustAmount = uniform( 1 );
-	readonly slickAmount = uniform( 1 );
-	readonly streakAmount = uniform( 0.3 );
+	readonly gustAmount = uniform( SEA_DETAIL.gust );
+	readonly slickAmount = uniform( SEA_DETAIL.slick );
+	readonly streakAmount = uniform( SEA_DETAIL.streak );
 	/** ( rough, gust, slick, streak ) at a world xz (explicit level: callable in branches), given
 	 * the island's gust there (`islandGust`; read here when left out). Inlined where it is called:
 	 * as a layout function reading this module's uniforms and texture, r186 emitted it with the

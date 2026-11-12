@@ -143,6 +143,7 @@
 	"look/DisplayLook.ts": "render",
 	"look/ExposureLook.ts": "render",
 	"look/HazeLook.ts": "render",
+	"look/SeaLook.ts": "render",
 	"look/SkyLook.ts": "render",
 	"main.ts": "app",
 	"materials/CloudNoise.ts": "render",
