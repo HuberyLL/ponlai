@@ -210,17 +210,17 @@ interface hides; Esc or × closes; ←/→ step days.
 
 ## Motion
 
-- Words to an islander: as in Speaking (0.08 s apart, 1.3 s flight, following the head).
-- The weather icon morphs between kinds; the forecast stroke flows left with time and its turn
-  icons travel with it.
-- The build bar: the two strokes unfold leftward from the mallet; a change of group replaces the
-  top tier; more than fits slides; the chosen lifts and its detail floats up.
-- The record: days slide in and out of the river.
+Each component's motion is given with it above (Top row, Speaking, Build bar, the record). Besides:
+
+- The forecast's turn icons travel with its stroke as it flows left.
+- The build bar's two strokes unfold leftward from the mallet; a change of group replaces the top
+  tier.
 
 ## Rules for the code
 
 - The UI reads the simulation and acts only through `Game`'s methods; it never duplicates a game
-  rule (a refusal, a cost check) but asks the simulation for it.
+  rule (a refusal, a cost check) but asks the simulation for it
+  ([ARCHITECTURE.md](../../ARCHITECTURE.md), Rules across the layers, rules 3 and 6).
 - It never touches the canvas's pixels, so paused frames stay exact; DOM is written only where its
   text changed. What stands in the world (Screen and world) is DOM too, laid into the scene through
   the camera, never drawn in it. Anything drawn in the 3D scene itself (the placement ring) that
@@ -228,7 +228,8 @@ interface hides; Esc or × closes; ←/→ step days.
 - Lists render from data; adding a building, a resource, a weather kind or a record event never
   touches the components.
 - Every word the player reads is a key of the catalogue (`src/game/ui/i18n/`), never a string in
-  code; a list's row names its words by its id.
+  code; a list's row names its words by its id. Content without words or a look of its own shows
+  with the defaults ([ARCHITECTURE.md](../../ARCHITECTURE.md), Rules across the layers, rule 9).
 - Keyboard focus and `aria-label` on every control; text fits its longest likely value at
   1920×1080 CSS pixels.
 
