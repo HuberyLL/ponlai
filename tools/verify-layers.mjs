@@ -1,6 +1,6 @@
 // Checks the direction of the imports between the code's layers, that the world's chunk worker
-// imports only plain code, that the renderer and the island keep off the page, and which files
-// write another module's state. CPU only, no GPU, a few seconds (the page and state checks run
+// imports only plain code, that the renderer and the island keep off the page, which files
+// write another module's state, and that the renderer names only the userData keys it declares. CPU only, no GPU, a few seconds (the page and state checks run
 // TypeScript's checker over src/).
 //   node tools/verify-layers.mjs
 //
@@ -43,12 +43,17 @@
 //   property chain rooted at the variable (`state.field = x`, `uniforms.gain.value = x`), found
 //   through the import's binding; a method that mutates (`vector.copy( x )`) and a GUI bound to a
 //   field are not seen.
+// - The userData check: a file of the render layer names only the `userData` keys the renderer
+//   declares (src/UserData.ts: the key, who sets it, who reads it, what it means), and every key
+//   declared there is named by some file under src/. A key counts where it is written after the
+//   bag (`x.userData.key`, `x.userData[ 'key' ]`); one reached through an alias of the bag
+//   (`const data = material.userData`) or a computed name is not seen.
 //
 // Output: a summary on stdout, every upward import found (known or not) and the failures. It takes
 // no options. Exit 0 when everything passes, 1 with the failures listed.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { worldGeneratorSources } from './vite-world-generator.mjs';
 
@@ -81,7 +86,7 @@ const PAGE_NEEDS = {
 // (paths under src/). Remove a writer, or the entry, with the change that ends its writes; never
 // add one.
 const STATE = {
-	'debug/DebugFlags.ts:debugFlags': [ 'debug/WindProbe.ts', 'materials/TerrainMaterial.ts', 'post/SubmitBatch.ts', 'world/VegetationPrepass.ts' ],
+	'debug/DebugFlags.ts:debugFlags': [ 'post/SubmitBatch.ts', 'world/VegetationPrepass.ts' ],
 	'lighting/AmbientGrade.ts:ambient': [ 'lighting/AmbientRelight.ts' ],
 	'lighting/KeyCloud.ts:keyDeckShare': [ 'RenderStages.ts' ],
 	'lighting/SurfaceBRDF.ts:keyGlint': [ 'RenderStages.ts' ],
@@ -101,11 +106,8 @@ const STATE = {
 	'world/WorldStart.ts:worldProgress': [ 'IslandStages.ts' ],
 };
 // The pairs of STATE whose writer sits in another layer than the state's owner, as
-// 'owner file:variable <- writer': the debug flags any layer's debug code sets and the scene's uniforms the
-// page's frame sets.
+// 'owner file:variable <- writer': the scene's uniforms the page's frame sets.
 const ACROSS = [
-	'debug/DebugFlags.ts:debugFlags <- debug/WindProbe.ts',
-	'debug/DebugFlags.ts:debugFlags <- materials/TerrainMaterial.ts',
 	'shared.ts:shared <- app/Diagnostics.ts',
 	'shared.ts:shared <- app/Frame.ts',
 ];
@@ -254,6 +256,31 @@ function stateWrites( program ) {
 
 }
 
+/** Every `userData` key named in the files under src/, as { file, line, key }. */
+function userDataKeys( program ) {
+
+	const hits = [];
+	for ( const source of program.getSourceFiles() ) {
+
+		const file = path.relative( SRC, source.fileName ).split( path.sep ).join( '/' );
+		if ( file.startsWith( '..' ) ) continue;
+		const bag = ( node ) => ( ts.isPropertyAccessExpression( node ) && node.name.text === 'userData' ) || ( ts.isIdentifier( node ) && node.text === 'userData' );
+		const visit = ( node ) => {
+
+			let key = null;
+			if ( ts.isPropertyAccessExpression( node ) && bag( node.expression ) ) key = node.name.text;
+			else if ( ts.isElementAccessExpression( node ) && bag( node.expression ) && ts.isStringLiteralLike( node.argumentExpression ) ) key = node.argumentExpression.text;
+			if ( key !== null ) hits.push( { file, line: source.getLineAndCharacterOfPosition( node.getStart( source ) ).line + 1, key } );
+			ts.forEachChild( node, visit );
+
+		};
+		visit( source );
+
+	}
+	return hits;
+
+}
+
 const failures = [];
 const table = JSON.parse( readFileSync( TABLE, 'utf8' ) );
 const files = walk( SRC ).sort();
@@ -346,7 +373,17 @@ for ( const pair of ACROSS ) {
 
 }
 
-console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers)` );
+// the userData check
+const { USER_DATA } = await import( pathToFileURL( path.join( SRC, 'UserData.ts' ) ).href );
+const userKeys = userDataKeys( program );
+for ( const { file, line, key } of userKeys ) {
+
+	if ( table[ file ] === 'render' && ! ( key in USER_DATA ) ) failures.push( `${ file }:${ line }: names userData.${ key }, which src/UserData.ts does not declare (render layer): declare the key there` );
+
+}
+for ( const key of Object.keys( USER_DATA ) ) if ( ! userKeys.some( ( hit ) => hit.key === key ) ) failures.push( `src/UserData.ts declares '${ key }', which no file under src/ names: remove the entry` );
+
+console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.keys( USER_DATA ).length } userData keys declared` );
 for ( const [ key, layers ] of [ ...upward ].sort() ) console.log( `  ${ known.has( key ) ? 'known' : 'NEW  ' } ${ layers }: ${ key }` );
 if ( failures.length ) {
 

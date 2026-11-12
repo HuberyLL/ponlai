@@ -9,6 +9,7 @@
 	"RenderStages.ts": "render",
 	"RenderTypes.ts": "render",
 	"Settings.ts": "render",
+	"UserData.ts": "render",
 	"WorldBoot.ts": "app",
 	"app/CameraViews.ts": "app",
 	"app/Diagnostics.ts": "app",

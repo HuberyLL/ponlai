@@ -21,7 +21,7 @@ import { seabedAlbedo } from './SeabedLook.ts';
 import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
 import { DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness } from './Wetness.ts';
 import { hexReadScan, heightBlend, type HexScan } from './HexTiling.ts';
-import { debugFlags } from '../debug/DebugFlags.ts';
+import { debugFlags, setDebugFlag } from '../debug/DebugFlags.ts';
 import { FSR3 } from '../post/Antialiasing.ts';
 import { fsr3MipBiasScale } from '../post/fsr3/MipBias.ts';
 import { MEADOW_SHADE, SS_SHADOW, meadowGroundShade, screenShadowAt } from '../post/MeadowShade.ts';
@@ -1111,7 +1111,7 @@ export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: GroundTextur
 
 	};
 	// URL option, read at load: terrainHex=0 builds the plain tiling with smooth masks.
-	if ( settings.get( 'terrainHex' ) === '0' ) debugFlags.terrainHex = false;
+	if ( settings.get( 'terrainHex' ) === '0' ) setDebugFlag( 'terrainHex', false );
 	return variant( hex ?? debugFlags.terrainHex !== false );
 
 }
