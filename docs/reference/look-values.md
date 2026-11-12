@@ -1,6 +1,7 @@
 # Look values
 
-The measured values of the island's look, by kind. What each value means for the look and why:
+The island's light, exposure, water and albedo values. Sizes, shapes and the other design values
+stay in the explanation beside what they describe. What each value means for the look and why:
 [Art direction](../explanation/art-direction.md).
 
 ## Light and shade

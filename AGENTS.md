@@ -13,14 +13,15 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   header comment: read it before changing the module.
 - A change to a module's behaviour updates that module's header comment. AGENTS.md is updated when
   a cross-cutting rule or the map below changes (no size limit, but module-specific detail stays in
-  the module). Art decisions go to `docs/explanation/art-direction.md`, tool manuals to
-  `docs/reference/tools.md`.
+  the module). Art decisions go to `docs/explanation/art-direction.md`, the measured look values to
+  `docs/reference/look-values.md`, URL options to `docs/reference/url-options.md` and tool manuals
+  to `docs/reference/tools.md`.
 - The project's structure (its layers, what each owns, how data flows between them, the rules
   across them and why) is `ARCHITECTURE.md`: read it before a structural change, and update it
   when a change adds a layer, moves what one owns or changes a flow.
 - The documentation follows Diátaxis (<https://diataxis.fr>): each page is one of four kinds,
   holds only that kind and lives in that kind's folder of `docs/`. A tutorial
-  (`docs/tutorials/`) takes a newcomer through a first success, step by step. A how-to guide
+  (`docs/tutorials/`, none yet) takes a newcomer through a first success, step by step. A how-to guide
   (`docs/how-to/`) gives the steps for one task. Reference (`docs/reference/`) states facts to look
   up: options, values, tables; a module's header comment is the reference beside its code.
   Explanation (`docs/explanation/`) says what something is and why. `docs/README.md` lists every
@@ -226,10 +227,7 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
 ## Rules for every change
 
 - Lookdev and lighting are kept strictly apart (`docs/explanation/art-direction.md`, How the look
-  is made): materials take real values, and the style is set only for the whole world, in the
-  light and the image. A look problem is looked for there before any material changes, never
-  baked into a material's albedo, and a new material or kind of content follows
-  `docs/how-to/add-material.md`.
+  is made); a new material follows `docs/how-to/add-material.md`.
 - Shaders are written in TSL only (no raw WGSL or GLSL strings). Helpers called from several
   places are `Fn( ... ).setLayout( ... )`, so they compile to one shader function each.
 - Simulation and generation are deterministic and path-independent: the world, its growth, the

@@ -10,8 +10,7 @@ Ambient volume
   diffuse (`src/lighting/AmbientSample.ts`).
 
 Baking lighting into albedo
-: Tuning a material's colour to make up for an error in the light. The material then breaks
-  whenever the light changes; the error is fixed in the light instead ([Art
+: Tuning a material's colour to make up for an error in the light ([Art
   direction](../explanation/art-direction.md), How the look is made).
 
 Chunk
@@ -38,18 +37,17 @@ Key
   ([Art direction](../explanation/art-direction.md), Sea, sky and weather).
 
 Lighting
-: The side of the look that sets the light and the image for the whole world, by weather and
-  hour: the light's knobs, the exposure, the tone mapping and the grade. Kept strictly apart from
-  lookdev ([Art direction](../explanation/art-direction.md), How the look is made).
+: Setting the light and the image for the whole world, by weather and hour ([Art
+  direction](../explanation/art-direction.md), How the look is made).
 
 Lip
 : The top edge of the cliff, where the meadow meets the stone and its grass hangs over
   ([Art direction](../explanation/art-direction.md), The island).
 
 Lookdev
-: Look development: making each material right, with real values, under a neutral, standard
-  light. Kept strictly apart from lighting ([Add a material or a kind of
-  content](../how-to/add-material.md)).
+: Look development: making each material right on its own: real values checked against the real
+  range, then seen first on the clear day at noon, before the other weathers and hours ([Add a
+  material](../how-to/add-material.md)).
 
 Parked
 : Kept compiling and loadable by name but out of the default checks, until revived as its own
@@ -73,9 +71,8 @@ Settled
   it holds.
 
 Stylised realism
-: Stylized realism: the island's image, physically based but not photorealistic, with the style
-  laid over it in the lighting ([Art direction](../explanation/art-direction.md), How the look is
-  made).
+: The island's image: physically based and developed like a photograph, but not aimed at
+  photorealism ([Art direction](../explanation/art-direction.md), How the look is made).
 
 Sward
 : The meadow's grass as one even cover, about 0.5 m tall

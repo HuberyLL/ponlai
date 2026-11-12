@@ -1,6 +1,6 @@
 # Ponlai: art direction
 
-The look the user chose and what to avoid. It says what the scene must look like, not how the code
+The island's look and what to avoid. It says what the scene must look like, not how the code
 gets there: each module's header comment holds its own rules and reasons. Change this file when an
 art decision changes; images from elsewhere stay out of the repository.
 
@@ -126,23 +126,25 @@ art decision changes; images from elsewhere stay out of the repository.
 
 ## How the look is made
 
-The image is stylised realism (stylized realism): physically based, but not photorealistic, with
-the style laid over it. The fantasy is in what the world holds (the island, its everlasting
-flowers, its creatures from the old texts), not in how the image is made. Physically based
+The image is stylised realism: physically based and developed like a photograph, but not aimed at
+photorealism, with the style laid over it in the light and the image. The fantasy is mostly in
+what the world holds (the island, its everlasting flowers, its creatures from the old texts), with
+a light touch on the image (The look, above). Physically based
 materials, lit by a light that may leave physical correctness globally by weather and time of day,
 is the approach Jasmin Patry described ("Samurai Shading in Ghost of Tsushima", SIGGRAPH 2020;
 "Real-Time Samurai Cinema", SIGGRAPH 2021).
 
 It is made by keeping lookdev and lighting strictly apart, a rule of our own. Lookdev (look
-development) makes each material right under a neutral, standard light; lighting sets the light
-and the image for the whole world, by weather and hour. Neither does the other's work: no material
+development) makes each material right on its own: real values checked against the real range,
+then seen first on the clear day at noon, before the other weathers and hours; lighting sets the
+light and the image for the whole world, by weather and hour. Neither does the other's work: no material
 is tuned to fix the light, and no light is tuned for one material. Tuning a material to make up
 for the light is baking lighting into albedo; it breaks again whenever the light changes.
 
 - Lookdev: the materials are real. Grass, stone, bamboo and sand take the values the real things
   have, and one physically based light sets the relations between them, so they read as one place
   without being tuned against each other. How a material's values are found and checked:
-  [Add a material or a kind of content](../how-to/add-material.md).
+  [Add a material](../how-to/add-material.md).
 - Lighting: the style lives in the light and the image: the light's knobs per weather and hour (the
   ambient balance, the sky's brightness, the haze), the exposure, the tone mapping and the grade. A
   change there moves every material together.
@@ -150,8 +152,8 @@ for the light is baking lighting into albedo; it breaks again whenever the light
   noise, leaves that let the light through. Which real things stand on the island is the art
   decision. Colour may be pushed, but for the whole world at once and within what the real things
   could be, never one material on its own.
-- A material that departs from real values on purpose is written in this file with its reason, as
-  the cliff's stone is kept darker than real limestone (The look, above). There are few.
+- A few materials depart from real values on purpose: the cliff's stone is kept darker than real
+  limestone (The look, above).
 
 ## Three layers in one world
 
@@ -218,50 +220,50 @@ for the light is baking lighting into albedo; it breaks again whenever the light
   average stays one colour; never a single dyed green, which reads as plastic, and never every
   blade and clump its own value and height, which from the game's view grains the lawn into a
   scatter of tufts over dark ground. The materials keep albedos within real ones: the meadow's
-  blades a sunlit leaf's (about 0.08), the cliff's stone a little lighter (The look, above); the
-  frame's brightness is the exposure's, never albedos pushed past real ones. One grass colour, a
-  bright, fresh, natural green, matte with only a faint gloss (no pale sheen over the blades, which
-  reads as plastic): the gaps between blades a deep, cooler green (never near black) under tips that
-  stand out lighter and yellow-green where the sun shines through them; under a closed sky the lawn
-  keeps its green, the sky's light having passed among the blades, and does not turn yellow when the
-  sun goes in; looking toward the sun the whole lawn glows, away from it it is plainer and greener;
-  no fields of tone, dryness or bare earth (they break the lawn into what reads from the overview as
-  camouflage and dark blotches), and no pattern of dots on the blades. The island top is one sward,
-  about 0.5 m, with no zones across it: never tiers of height and tint by the soil (a short
-  yellow-green band along the windward coast, a taller, deeper grass on deep soil, gravel patches
-  inland), which read from above as a map laid over the meadow. Its layering comes from the grass
-  itself, which grows in clumps about a metre across, each a little taller or shorter than its
-  neighbours, giving its blades their lean and its stroke its colour. Its height swings gently:
-  patches a few metres across over broad swells, a short turf here and a taller sward there, running
-  into each other blade by blade: from above a soft mottling, never a zone, a line, a path or a
-  hollow (a short turf walled by tall grass, two levels, reads as a hole dug into the lawn). From
-  the ground up the sward has a meadow's layers: dead leaves and the old leaves' straw sheaths low
-  in it and the green leaves over them; no flowering stems stand over it. No low herbs grow under it
-  (clover mats, plantain rosettes): from the game's view they do not read. The sward runs to the
-  edge on every coast, windward and lee alike, never a windward lip shown short, yellow, thin over
-  gravel and bared to the cliff's stone, which reads from above as one more zone. Inside the grass
-  the shade is the grass's own, never painted: the blades and clumps toward the sun shade those
-  behind them and the ground under and beside them, softly, as light passes between blades,
-  darkening toward the ground (a deep green, never black); the shade of anything standing on it lies
-  soft and light. The only large shadows that cross the meadow are the real clouds' (from the cloud
-  layer overhead, drifting with it): no patches painted or animated onto the island to vary its
-  light. The ground between the blades is a grass-coloured ground, near and far alike: about the
-  blades' own mean albedo (a twentieth above it), a little warmer, in the lawn's tone, softly
-  mottled over 1 - 3 m and grained by a scanned ground's value (about +-15 % in all), without the
-  scan's colour. The blades thin with distance, and a ground of their own colour lets them thin with
-  no ring of another colour sliding with the camera and no flat green either; brown earth shows only
-  where the sward truly parts, a near detail on a few edges. The same grass ground runs on under the
-  bamboo culms; the groves' own floor is their litter (see the bamboo below). Never a ground mapped
-  from above on the lip's bevel (it runs down the slope in stripes). The short turf is a closed mat,
-  as a wind-cropped or shallow-soil turf is: its leaves splayed out over the ground, its base olive
-  with thatch and only flecks of earth, so from every view and at every zoom the meadow is one dense
-  sward, a little yellower where it is short; bare earth only in its few gaps, never thin grass over
-  brown ground, and never a ground that changes colour as the camera zooms. At the lip the turf ends
-  on its soil over the stone, never a dark hole among the flowers. By night: see Night. Toward a
-  sheltered coast the grass runs to the lip and stands there, and the same grass grows out over it:
-  its tufts at the lip spill over the edge, fine blades that arch over and hang down the wall, lying
-  on the stone, never through it, and the lip alternates between overgrown stretches and cut-open
-  root soil.
+  blades a sunlit leaf's ([Look values](../reference/look-values.md)), the cliff's stone a little
+  lighter (The look, above); the frame's brightness is the exposure's, never albedos pushed past
+  real ones. One grass colour, a bright, fresh, natural green, matte with only a faint gloss (no
+  pale sheen over the blades, which reads as plastic): the gaps between blades a deep, cooler green
+  (never near black) under tips that stand out lighter and yellow-green where the sun shines through
+  them; under a closed sky the lawn keeps its green, the sky's light having passed among the blades,
+  and does not turn yellow when the sun goes in; looking toward the sun the whole lawn glows, away
+  from it it is plainer and greener; no fields of tone, dryness or bare earth (they break the lawn
+  into what reads from the overview as camouflage and dark blotches), and no pattern of dots on the
+  blades. The island top is one sward, about 0.5 m, with no zones across it: never tiers of height
+  and tint by the soil (a short yellow-green band along the windward coast, a taller, deeper grass
+  on deep soil, gravel patches inland), which read from above as a map laid over the meadow. Its
+  layering comes from the grass itself, which grows in clumps about a metre across, each a little
+  taller or shorter than its neighbours, giving its blades their lean and its stroke its colour. Its
+  height swings gently: patches a few metres across over broad swells, a short turf here and a
+  taller sward there, running into each other blade by blade: from above a soft mottling, never a
+  zone, a line, a path or a hollow (a short turf walled by tall grass, two levels, reads as a hole
+  dug into the lawn). From the ground up the sward has a meadow's layers: dead leaves and the old
+  leaves' straw sheaths low in it and the green leaves over them; no flowering stems stand over it.
+  No low herbs grow under it (clover mats, plantain rosettes): from the game's view they do not
+  read. The sward runs to the edge on every coast, windward and lee alike, never a windward lip
+  shown short, yellow, thin over gravel and bared to the cliff's stone, which reads from above as
+  one more zone. Inside the grass the shade is the grass's own, never painted: the blades and clumps
+  toward the sun shade those behind them and the ground under and beside them, softly, as light
+  passes between blades, darkening toward the ground (a deep green, never black); the shade of
+  anything standing on it lies soft and light. The only large shadows that cross the meadow are the
+  real clouds' (from the cloud layer overhead, drifting with it): no patches painted or animated
+  onto the island to vary its light. The ground between the blades is a grass-coloured ground, near
+  and far alike: about the blades' own mean albedo (a twentieth above it), a little warmer, in the
+  lawn's tone, softly mottled over 1 - 3 m and grained by a scanned ground's value (about +-15 % in
+  all), without the scan's colour. The blades thin with distance, and a ground of their own colour
+  lets them thin with no ring of another colour sliding with the camera and no flat green either;
+  brown earth shows only where the sward truly parts, a near detail on a few edges. The same grass
+  ground runs on under the bamboo culms; the groves' own floor is their litter (see the bamboo
+  below). Never a ground mapped from above on the lip's bevel (it runs down the slope in stripes).
+  The short turf is a closed mat, as a wind-cropped or shallow-soil turf is: its leaves splayed out
+  over the ground, its base olive with thatch and only flecks of earth, so from every view and at
+  every zoom the meadow is one dense sward, a little yellower where it is short; bare earth only in
+  its few gaps, never thin grass over brown ground, and never a ground that changes colour as the
+  camera zooms. At the lip the turf ends on its soil over the stone, never a dark hole among the
+  flowers. By night: see Night. Toward a sheltered coast the grass runs to the lip and stands there,
+  and the same grass grows out over it: its tufts at the lip spill over the edge, fine blades that
+  arch over and hang down the wall, lying on the stone, never through it, and the lip alternates
+  between overgrown stretches and cut-open root soil.
 - The flowers are off for now (`?flowers` brings them back): Penglai's bamboo grows over the whole
   island, and whether its meadow keeps flowers among the groves is still open. As they were made:
 - Flowers are part of the meadow, and they are Penglai's, after the texts on the immortals'

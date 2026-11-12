@@ -1,9 +1,9 @@
-# Add a material or a kind of content
+# Add a material
 
-This guide gives the steps for adding a surface (a new stone, a plant, a fabric) or a new kind of
-content to the island so that it joins the look with no tuning of its own. It is the lookdev side
-of keeping lookdev and lighting strictly apart. Why it works this way:
-`docs/explanation/art-direction.md`, How the look is made.
+This guide gives the steps for adding a material, a new surface such as a stone, a plant or a
+fabric, so that it joins the look with no tuning of its own. It is the lookdev side of keeping
+lookdev and lighting strictly apart. Why it works this way: `docs/explanation/art-direction.md`,
+How the look is made.
 
 ## 1. Find the real values
 
@@ -58,12 +58,11 @@ If the mesh can reach under the sea or stands high, tell the water (`Water.ts`, 
 
 ## 4. Place it and judge the whole frame
 
-Capture the island's management view under the kept weathers (clear, fair, cloudy, overcast) at
-the usual hours, before and after the change (`tools/parity/capture-set.mjs`;
-`docs/reference/tools.md`,
-Captures). Judge the whole frame first; crops and region statistics (`uv run tools/img.py`) find
-causes, they do not judge. What colour each surface shows on screen by kind and by light:
-`tools/colour-rows.mjs`.
+Capture the island view before and after the change (`tools/parity/capture-set.mjs`;
+`docs/reference/tools.md`, Captures): first on the clear day at noon, then under the other kept
+weathers (fair, cloudy, overcast) at the usual hours. Judge the whole frame first; crops and
+region statistics (`uv run tools/img.py`) find causes, they do not judge. What colour each surface
+shows on screen by kind and by light: `tools/colour-rows.mjs`.
 
 ## 5. When it looks wrong, look upstream first
 
@@ -78,15 +77,10 @@ Check in this order, and stop at the first cause found:
 5. The material's values: change them only if they lie outside the real range.
 
 Never push a material past real values to make up for an error found in 1 to 3 (baking lighting
-into albedo): it breaks again the next time the light changes. Fix the light instead, and recheck
-every material it touches.
+into albedo). Fix the light instead, and recheck every material it touches.
 
 ## 6. Record a deliberate departure
 
 When the look needs a material outside its real range, write it in
 `docs/explanation/art-direction.md` with the
 reason, and in the module's header comment with the measured effect. Keep these few.
-
-## 7. Check the docs
-
-Run `npm run lint:docs` before committing a change to any Markdown file.
