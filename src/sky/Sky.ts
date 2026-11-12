@@ -1069,7 +1069,7 @@ const _cloudMoon = new THREE.Color();
 // flash of the setting beam. Raise it for a stronger light from the sun's side and darker cast
 // shadows under cloud; lower it for deeper cloud shadows and a flatter land under a closed sky.
 // Tunable: `lighting.keyThroughCloud`.
-const KEY_THROUGH_CLOUD = tune( 'lighting.keyThroughCloud', 1.8, { min: 0, max: 4, onChange: markSkyRetune } );
+const KEY_THROUGH_CLOUD = tune( 'lighting.keyThroughCloud', 3, { min: 0, max: 4, onChange: markSkyRetune } );
 
 /** The factor per channel that turns MOON_KEY into the tuned hue at MOON_KEY's luminance. */
 function moonHue( target: THREE.Color ): THREE.Color {
