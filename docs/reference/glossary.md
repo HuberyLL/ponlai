@@ -79,8 +79,8 @@ Sward
   ([Art direction](../explanation/art-direction.md), The island).
 
 Temporal modes
-: The anti-aliasing modes that resolve over frames, `taa` and `taau`, as against `msaa` and `off`
-  (`src/post/Antialiasing.ts`).
+: The anti-aliasing modes that resolve over frames: `taa`, `taau`, `fsr3` and `gt` (the ground
+  truth, debug builds only), as against `msaa` and `off` (`src/post/Antialiasing.ts`).
 
 Test mode
 : A paused page that runs MSAA, with every history-dependent effect frozen or off, shot once

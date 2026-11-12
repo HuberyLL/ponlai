@@ -358,7 +358,8 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
 - Multisampled depth is read with `textureLoad`, one sample at a time (the sample index in its level
   argument); single-sampled, that argument is a mip level. More in `Pipeline.ts`.
 - WebGPU multisamples with 1 or 4 samples only (three turns 2 into 1, with no MSAA). The
-  anti-aliasing mode (`msaa`, the temporal `taa` and `taau`, `off`) is a load knob of the tier
+  anti-aliasing mode (`msaa`, `off`, and the temporal `taa`, `taau`, `fsr3` and `gt`, the last in
+  debug builds only) is a load knob of the tier
   (`aa` in `Quality.ts`, whose header says which tier runs which and why: high, the only active
   tier, runs `msaa`, as a paused page does); `aa=` or the GUI picks any mode on any tier. Code that
   differs by mode reads `Antialiasing.ts`'s exports (`TEMPORAL`,

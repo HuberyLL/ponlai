@@ -61,9 +61,8 @@ keeps the test mode's byte comparisons valid this way (`docs/reference/tools.md`
 1. Clear its history in `establishScene` (`src/main.ts`); `tools/verify-scene-jump.mjs` checks it.
 2. Report it to `settled` (main.ts `pending`, or the rest's signature) until it has converged on a
    still scene, or freeze it or turn it off in the test mode.
-3. Freeze it or turn it off under the test mode's one switch (`src/debug/TestMode.ts`: on with
-   `paused`, which every capture, parity and verify tool loads with, unless `testMode=0` leaves it
-   out, as `tools/capture-clip.mjs` does so the clips show what moves).
+3. Freeze it or turn it off under the test mode's one switch (`src/debug/TestMode.ts`;
+   `docs/reference/tools.md`, Test mode).
 4. A Grow does not clear rendering history (`tools/verify-growth-swap.mjs` shoots its first view
    without a jump), so the effect is frozen or off under the switch there, or the swap resets it.
 5. Add its module to `WATCH.motion` in `tools/parity/carry.mjs` when its paths are not already

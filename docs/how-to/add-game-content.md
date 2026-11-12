@@ -28,7 +28,9 @@ module's header.
      `need`, `place`, `doing.do`, `record.need`).
    - A need's icon and colour: [ui/data/needs.ts](../../src/game/ui/data/needs.ts).
    - An item's row in the top row: [ui/data/resources.ts](../../src/game/ui/data/resources.ts).
-   - A building's model: [view/GameView.ts](../../src/game/view/GameView.ts).
+   - A building's model: [view/GameView.ts](../../src/game/view/GameView.ts). One placed off the
+     island or standing above 3 m tells the water ([Add a material](add-material.md), Light it as
+     every other surface).
    - A building the player places also needs its row in the build bar
      ([ui/data/buildings.ts](../../src/game/ui/data/buildings.ts)). Where it stands there and what it
      costs are the design's, so a kind without a row has no default and cannot be chosen.

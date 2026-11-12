@@ -183,7 +183,8 @@ action takes, the chance of a catch, walking speed). What the islander knows and
 distances, routes, how far or hard something is.
 
 Thirst is off for now: hydration holds where it starts, because nothing on the island gives water
-until the island has a water source of its own. The HUD still shows it.
+until the island has a water source of its own. The HUD still shows it. A need that falls to zero
+has no consequence yet.
 
 ### Perception
 

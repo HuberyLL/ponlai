@@ -3,7 +3,7 @@
 The page's URL options, by group, with the debug views and console handles that go with them.
 The tools that load pages with these options: [Tools](tools.md).
 
-View and capture:
+## View and capture
 
 - `paused`, `t` (scene time), `dpr` (render pixel ratio, pinned), `polar`, `az` (the island
   view's tilt and heading, 40 and 180 degrees by default), `dist` (m; without it the island view
@@ -17,7 +17,7 @@ View and capture:
   A paused page lifts its loading screen at once, without the fade, so a capture of a paused frame
   never catches the screen over it.
 
-The island:
+## The island
 
 - `seed` (the world's seed, 1 by default: Ponlai's island) and `grow` (growth steps after the
   starting island, 0 by default, up to `GROWTH.maxSteps`). The page generates its world from that
@@ -52,7 +52,7 @@ The island:
   growth.approachNow( p )`; `growth.rise.state` holds the approach, R (`r`, its `target`, the R last
   `written`), the pending `tiles`, their largest `rise` (m), the `writes` and the last one's `ms`.
 
-Sky and weather:
+## Sky and weather
 
 - `hour`, `preset` (each the hour its sun stands at its elevation, on the 52 degree path: dawn,
   -8.6 degrees in the morning; sunrise, 2; noon, 52 at 12; golden-hour, 26.2 in the afternoon, the
@@ -81,7 +81,7 @@ Sky and weather:
   `PARKED_WEATHER`): a production page without `?debug` refuses them with a console warning and
   shows fair; the dev server, `?debug` and `?profile` still reach them.
 
-Quality and look:
+## Quality, anti-aliasing and the frame
 
 - `quality` (low, medium, high: the tier of every knob in `src/Quality.ts`; without it high, the
   only active tier: medium and low are parked, see `docs/reference/tools.md`, Parked quality
@@ -178,10 +178,16 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   history lay outside the neighbourhood's clip box, white at twice its width);
   `src/post/graph/DebugView.ts`; also the GUI's Debug folder, which reloads;
   `s.pipeline.graph.describe()` and `dot()` list the graph).
+
+## Debug flags
+
 - `flags=<name>:<value>,...` (debug builds: sets `debugFlags` as the page loads, before anything
   reads them; values `true` / `false`, numbers or strings, `mv.<source>` a motion source), e.g.
   `flags=taaClampDrop:false` for a capture's or clip's `--q`. A name alone reads as `true`
   (`flags=lightOnly,ambientOnly`).
+
+## The lighting layer
+
 - The lighting layer on its own (`src/debug/LightLayer.ts`, read at load): `flags=lightOnly` makes
   every lit surface's diffuse albedo 0.5 grey, specular kept, so the image is the light a grey card
   returns there; `lightOnly:2` also turns the specular off; `grey:<albedo>` sets that grey
@@ -210,6 +216,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   the pre-exposure's scale but never above 2^15, so a page pre-exposed past half float's range (a
   deep overcast night) still decodes; past 2^15 the haze and emission over the codes keep the
   pre-exposure's scale, 2^( P - 15 ) times larger beside them, so more hazy cells read as no kind.
+
+## Radiance
+
 - The scene's linear radiance over boxes, as numbers (`src/debug/Radiance.ts`): `await
   __PONLAI__.radiance( { boxes: { lit: [ x, y, w, h ], ... }, image: [ 3456, 2234 ], grid: [ nx, ny
   ], source: 'opaque' } )`. Boxes are fractions of the frame from its top-left, or pixels of an
@@ -243,6 +252,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   sky's texels of each ring and band of s degrees of elevation ( [ ring, band, sum, count ], band b
   from b s - 90 degrees), from which a script takes each ring's excess over a background that varies
   with elevation, texel by texel, without reading the texels.
+
+## Tunable parameters
+
 - Tunable parameters (`src/debug/Tune.ts`, debug pages): `__PONLAI__.tune.list()` names every
   registered number (its value, default, range, scale, and whether it is read at load),
   `tune.set( { name: value } )` sets them with no reload and no new pipeline (a load-time one needs
@@ -326,6 +338,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   and what each one forces: `src/sky/DayCycle.ts` DUSK_FORCES, the values the code gave them since
   a script cleared it, on debug pages only: `duskShares`; `tools/dusk-grid.mjs` sets and reads
   them).
+
+## Ambient light, occlusion and other views
+
 - The ambient grade (`src/lighting/AmbientGrade.ts`): `__PONLAI__.ambient.current` holds the five
   knobs the table gives for the sun and the weather now (also `D.ambient`), `table` the table's own
   output; `override = true` with `manual.<knob>` replaces it from the next frame (the GUI's Ambient
@@ -415,6 +430,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   environment's irradiance, the rest unchanged. It is for timing each receiver's read of the
   volume only: the chunks' bakes and the ground bounce's land stay the volume path's, so a
   receiver sent back looks as neither path does; `flags=ambientVolume:0` gives the old path.
+
+## Wind and haze
+
 - `windView` makes the vegetation's wind visible (debug pages only; read at load, so without it
   no shader changes; `src/debug/WindView.ts`): flat unlit arrows every 2 m over the meadow, just
   above the grass, point where the local wind blows, longer in a gust, and their brightness
@@ -444,6 +462,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   --eval "const c = P.camera.position, t = P.land.target; return P.pipeline.air.readings( c.y, c, { x: t[ 0 ], y: t[ 1 ], z: t[ 2 ] } )"
   ```
 
+## Islanders
+
 - `look=kit` dresses the islanders in the earlier kit look (pointed ears, linen shirt, cel steps)
   instead of the feather-clad Hanming look (`src/characters/looks.ts`).
 - `islander` picks the islanders' proportions (the look's own by default: `real` for the Hanming
@@ -459,13 +479,16 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `bodies` starts a new game with islanders of these sexes and ages instead of the simulation's
   three (a man, a woman and one of either, 20 to 35 years old): `bodies=F28,M75,M6`; a resumed
   save keeps its own (add `new` to start over). They age a year a game day from there.
+
+## Profiling
+
 - `profile` (`?profile`, or `?profile=frames` without GPU timestamps) loads
   `src/debug/FrameProfiler.ts`, which labels every render and compute pass, reads their GPU
   timestamps and exposes `window.__PONLAI_PROFILE__`; without it the page builds the same
   pipelines and image. Its JS times leave out the time blocked in `queue.submit`, the queue writes
   and `getCurrentTexture` (Chrome's backpressure once the GPU falls behind), reported apart.
 
-Game:
+## Game
 
 - `game` (the island as a game), `hour` (the start hour, default 8), `dayLength` (real seconds
   per game day at 1x, default 1440: 24 minutes), `paused` (the game starts paused; the scene runs

@@ -147,7 +147,8 @@ within a tolerance; the test mode keeps the byte-for-byte checks valid.
   runs `msaa` too; an explicit `aa=` wins), the shot taken once
   `__THREE_GAME_DIAGNOSTICS__.settled` holds (capture.mjs's readiness). Every capture, parity and
   verify tool already loads its pages this way, so their exact checks hold as their headers say.
-  The page's only history-dependent rendering effects are the temporal resolve (`aa=taa|taau|gt`,
+  The page's only history-dependent rendering effects are the temporal resolve
+  (`aa=taa|taau|fsr3|gt`,
   frozen by its rest image, `TemporalRest.ts`, and compared within the temporal tolerance), the
   states that settle on their own on a still scene (the clouds' view, the sky's bakes, the
   refracted sun's map, the haze's shadow, which averages a fixed sequence of jitters from nothing
@@ -165,7 +166,11 @@ within a tolerance; the test mode keeps the byte-for-byte checks valid.
   a page loaded paused never steps them, `establishScene` returns them to that layout and a Grow
   does too while they have not stepped, so the pause itself freezes them and they need no switch.
   The falling leaves (`src/weather/FallingLeaves.ts`) are history-dependent and off under the
-  test mode's switch (below): not made, so `settled` never waits for them.
+  test mode's switch (next): not made, so `settled` never waits for them.
+- The test mode's one switch (`src/debug/TestMode.ts`), read once at load, is on with `paused`,
+  which every capture, parity and verify tool loads with, unless `testMode=0` leaves it out, as
+  `tools/capture-clip.mjs` does so the clips show what moves. Every history-dependent rendering
+  effect that does not settle on its own on a still scene reads it, and is frozen or off under it.
 - The test mode's paused pages keep at most two rendered frames queued on the GPU
   (`src/post/FramePacer.ts`, "A paused page's queue"): the tools' headless browser has no vsync and
   no frame-rate limit, so without the bound two pages sharing the GPU each queued hundreds of frames
@@ -500,7 +505,7 @@ compare two freshly loaded pages (a grown page against a fresh `grow=1` page) in
 - frame time: `--exclusive --q "debug" --frames 300 --eval "D.frameMs"` (profile-frame for A/B).
 - the light in linear radiance over boxes: `--q "debug&paused&flags=lightOnly" --frames 60
   --eval "await P.radiance( { boxes: { a: [ 0.4, 0.6, 0.1, 0.1 ] } } )"`
-  (`docs/reference/url-options.md`, the lighting layer).
+  (`docs/reference/url-options.md`, The lighting layer).
 
 Steps, scope, the value's serialisation and the exit code are in the file's header.
 
@@ -515,13 +520,13 @@ meters, the metering illuminance over the land and the radiance over the land, t
 the yunpeng's cells), each point a scene jump with an explicit bake, its hour solved from
 `src/sky/DayCycle.ts` in node, and judges that a lower sun never makes the judged quantities
 brighter (each step, the largest rise down to midnight, the exposure's direction). `--split` forces
-each of the dusk's shares (`sky.dusk.force.*`, `docs/reference/url-options.md`,
-Tune) to 0 and to 1 and puts the night's back one at a time from the twilight alone, for each
-share's term, and `--fit` solves each night share's slope from it (`tools/dusk-fit.mjs`, which also
-fits a run already made: `node tools/dusk-fit.mjs <out>`, no GPU) so that every step holds at half
-the judge's margin, the slope no steeper than the twilight's fall, into `fit.txt`; `--night-split`
-reads the night's terms alone, `--twilight` the twilight alone (every
-night share forced to 0, without the split's other states). `--haze` also reads, in a fixed view of
+each of the dusk's shares (`sky.dusk.force.*`, `docs/reference/url-options.md`, Tunable parameters)
+to 0 and to 1 and puts the night's back one at a time from the twilight alone, for each share's
+term, and `--fit` solves each night share's slope from it (`tools/dusk-fit.mjs`, which also fits a
+run already made: `node tools/dusk-fit.mjs <out>`, no GPU) so that every step holds at half the
+judge's margin, the slope no steeper than the twilight's fall, into `fit.txt`; `--night-split` reads
+the night's terms alone, `--twilight` the twilight alone (every night share forced to 0, without the
+split's other states). `--haze` also reads, in a fixed view of
 its own (65 m over the sea, facing the open sea, pitched 10 degrees up), the haze's whole medium
 (`hazeMedium`: the haze's key, its medium's uniforms, the clouds' copy, the moon's aerosol keys) and
 its opacity on sky rays at a few elevations and level rays over a surface at a few distances
@@ -1095,8 +1100,8 @@ the scene jump: `tools/dusk-grid.mjs` (Probes), not a probe that walks the clock
 
 How much light reaches a surface, its colour, and how much of it is the sun's, apart from the
 albedos and the display chain: `flags=lightOnly` (and `ambientOnly`) with `__PONLAI__.radiance`
-(`docs/reference/url-options.md`), not a PNG's pixel values, which have been through exposure,
-the tone curve, the grade and bloom.
+(`docs/reference/url-options.md`, The lighting layer and Radiance), not a PNG's pixel values,
+which have been through exposure, the tone curve, the grade and bloom.
 
 How bright the meadow's sunlit blades are against bare ground, how many of them are lit, how dark
 the shaded ones are, how much of the lawn they cover and what colour the lit lawn shows:
