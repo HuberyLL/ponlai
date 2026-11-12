@@ -1348,7 +1348,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   the limit or gone, until its entry is removed (the list only shrinks). Split a file that fails by
   what its parts are, never by halving it.
 - `tools/verify-three-internals.mjs [--verbose] [--fingerprints]` (plain `node`) checks the
-  three.js internals the code depends on, listed in `tools/three-internals.json`: the private
+  three.js internals the code depends on, listed in `src/three/three-internals.json`: the private
   members and methods it reads, calls, writes, wraps or replaces, and the internal code it mirrors
   or relies on, and the extension hooks `@types/three` does not declare, each with the file in
   three that holds it. It fails when the installed three or

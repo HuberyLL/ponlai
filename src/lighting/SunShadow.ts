@@ -77,7 +77,7 @@ type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: 
 // its vertex stage over a disc metres wide (`discVisibility`, Water.ts), with a fixed offset of its own.
 //
 // The map's first redraw builds every caster's pass into it, and three builds the map itself only
-// with the first receiver, the throwaway one built just before the loop (graph/ThreePatches.ts
+// with the first receiver, the throwaway one built just before the loop (three/ThreePatches.ts
 // `primeSharedNodes`), so no warm-up before the loop could compile those passes into it. Drawn as
 // usual, that redraw (the loop's first frame, before the receivers build) created their pipelines
 // synchronously and stalled. It is made first with its pipelines compiled asynchronously

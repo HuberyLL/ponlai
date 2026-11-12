@@ -7,7 +7,7 @@
 // renderer and of its helpers, the WebGPU backend and its device, methods it replaces or wraps,
 // and code of three's it mirrors. Those reaches cannot be removed without changing the image, so
 // they are listed and checked, and an upgrade of three finds every one of them at once.
-// `tools/three-internals.json` is that list: for each entry, the file of three it lives in (under
+// `src/three/three-internals.json` is that list: for each entry, the file of three it lives in (under
 // node_modules/three), its class (`owner`), its name, what it is there (`kind`), how we use it
 // (`use`) and which of our files use it (`users`). Its categories: 1, three's private members and
 // the code we replace or mirror; 2, the backend and the device; 3, the extension hooks three
@@ -45,7 +45,7 @@ import ts from 'typescript';
 
 const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const THREE = path.join( ROOT, 'node_modules', 'three' );
-const LIST = path.join( ROOT, 'tools', 'three-internals.json' );
+const LIST = path.join( ROOT, 'src', 'three', 'three-internals.json' );
 const SELF = path.relative( ROOT, fileURLToPath( import.meta.url ) );
 
 // Whether a three or @types/three not pinned to an exact version in package.json fails the check
@@ -71,7 +71,6 @@ const SRC_KNOWN = [
 	'post/graph/AttachmentOps.ts',
 	'post/graph/Compile.ts',
 	'post/graph/FrameGraph.ts',
-	'post/graph/ThreePatches.ts',
 	'sky/Sky.ts',
 	'world/Upload.ts',
 	'world/WorldFields.ts',

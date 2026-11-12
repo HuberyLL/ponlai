@@ -59,7 +59,7 @@ import { renderPixelRatio, dynamicRange, outputPixelRatio, OUTPUT_PIXEL_RATIO_CA
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
 import { FramePacer, PAUSED_QUEUE } from './post/FramePacer.ts';
 import { SubmitBatch } from './post/SubmitBatch.ts';
-import { installBindingPatches, installCacheKeyPatches, primeSharedNodes } from './post/graph/ThreePatches.ts';
+import { installBindingPatches, installCacheKeyPatches, primeSharedNodes } from './three/ThreePatches.ts';
 import { FrameStats } from './debug/FrameStats.ts';
 import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
@@ -152,7 +152,7 @@ if ( ( renderer.backend as unknown as { isWebGPUBackend?: boolean } ).isWebGPUBa
 }
 // three r186 keys its node builds and pipelines by the first attachment, not the whole layout (an
 // MRT picks its outputs by the textures' names): patched before any material builds, so a material
-// drawn into two layouts gets a build each (graph/ThreePatches.ts)
+// drawn into two layouts gets a build each (three/ThreePatches.ts)
 // (the temporal modes' scene materials build one shader per MRT: Antialiasing.ts refuses them on a
 // revision the patches are not written for, before the renderer exists; failing here for another
 // reason, the page stops rather than draw them with another layout's shader outputs)
@@ -163,7 +163,7 @@ if ( ! installCacheKeyPatches( renderer ) && TEMPORAL ) {
 
 }
 // a new render object's texture bindings start at their node's current texture, so a texture the
-// growth replaced and disposed is not uploaded again (graph/ThreePatches.ts)
+// growth replaced and disposed is not uploaded again (three/ThreePatches.ts)
 installBindingPatches( renderer );
 // three submits every pass on its own; the frame reaches the GPU in a few submits instead
 // (SubmitBatch.ts: a submit per pass kept Chrome's GPU process from presenting the page on time)
@@ -2197,7 +2197,7 @@ if ( profiler ) {
 
 }
 // the nodes r186 makes inside the first lit build, made by a throwaway one, so the frame's receivers
-// build the same code whichever comes first (graph/ThreePatches.ts)
+// build the same code whichever comes first (three/ThreePatches.ts)
 primeSharedNodes( renderer, scene, camera );
 // The falling leaves, which the warm-up ran before they existed, and their kernels compile ahead
 // as latents of the opaque pass, so the view that first finds them builds no pipeline.

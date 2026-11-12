@@ -12,7 +12,7 @@
 //   canvas: one sample, jittered, with motion vectors (Jitter.ts, Motion.ts), resolved against a
 //   history (TemporalAA.ts). A tier's knob may ask for them (the parked medium tier runs taau,
 //   Quality.ts), and `aa=` or the GUI choose them on any tier; they are
-//   refused, with a warning, where three's cache keys cannot be patched (graph/ThreePatches.ts:
+//   refused, with a warning, where three's cache keys cannot be patched (three/ThreePatches.ts:
 //   three r186 only), since their scene materials build one shader per MRT (if the patches still
 //   fail to install, main.ts stops the page);
 // - `fsr3`: AMD's FSR 3.1 upscaler (post/fsr3/, Fsr3Upscaler.ts): one sample, jittered with FSR's
@@ -112,7 +112,7 @@ export function aaPlan( requested: AAMode, revision: string = REVISION ): AAPlan
 	let mode: AAMode = requested;
 	if ( ( mode === 'taa' || mode === 'taau' || mode === 'fsr3' || mode === 'gt' ) && ! temporalSupported( revision ) ) {
 
-		console.warn( `aa=${ mode } needs three's cache keys patched for its MRTs (graph/ThreePatches.ts, r186), not r${ revision }: running msaa` );
+		console.warn( `aa=${ mode } needs three's cache keys patched for its MRTs (three/ThreePatches.ts, r186), not r${ revision }: running msaa` );
 		mode = 'msaa';
 
 	}

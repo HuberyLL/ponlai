@@ -176,8 +176,11 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   (`AfterResolve.ts`).
 - `src/post/graph/`: the frame graph: its declarations and compiler (`GraphCompiler.ts`, pure
   TypeScript, checked by `tools/verify-framegraph.mjs`), its runtime and warm-up (`FrameGraph.ts`,
-  `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`), three r186's cache-key patches and
-  its first lit build made ahead (`ThreePatches.ts`) and the debug view (`DebugView.ts`, `fgview`).
+  `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`) and the debug view
+  (`DebugView.ts`, `fgview`).
+- `src/three/`: every reach into three.js beyond its public interface: three r186's cache-key
+  patches and its first lit build made ahead (`ThreePatches.ts`), and the list of the internals the
+  code depends on (`three-internals.json`, checked by `tools/verify-three-internals.mjs`).
 - `src/post/fsr3/`: the TSL port of AMD's FSR 3.1.5 upscaler (`aa=fsr3`): the host's maths and frame
   plan (`Host.ts`), its resources (`Resources.ts`) and bindings (`Bindings.ts`), one module per
   upstream shader header, the kernels (`Passes.ts`); the page's integration, its passes on the
@@ -443,7 +446,7 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   how: `docs/how-to/add-material.md`, Light it as every other surface). The blend of each
   attachment comes only from the pass's own MRT (`Motion.ts` `sceneMRT`, `overlayMRT`), whatever a
   material's MRT node says; a material drawn into two attachment layouts builds once per layout
-  through `graph/ThreePatches.ts`'s cache keys. A new site that changes the scene in a way its
+  through `three/ThreePatches.ts`'s cache keys. A new site that changes the scene in a way its
   frames do not show (a seek, a jump, a new scene, a control that retunes a paused frame) raises a
   scene event (`SceneEvents.ts`).
 - `SubmitBatch.ts` wraps the device, queue and encoders and holds command buffers: raw WebGPU work
@@ -462,5 +465,5 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
 - Timestamp queries (`trackTimestamp`) have one owner at a time (`DynamicResolution.ts`).
 - `Sky.ts` drives three's private `PMREMGenerator` steps, `SunShadow.compileCasters` mirrors
   three's shadow-pass material, `debug/AmbientProbe.ts` frees its storage buffers through the
-  renderer's private attribute map, and `graph/ThreePatches.ts`, `graph/AttachmentOps.ts` and
+  renderer's private attribute map, and `three/ThreePatches.ts`, `graph/AttachmentOps.ts` and
   `graph/Compile.ts` patch or stand in for r186 internals: re-check them on a three upgrade.
