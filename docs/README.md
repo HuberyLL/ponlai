@@ -9,6 +9,8 @@ contributors and agents are in [AGENTS.md](../AGENTS.md); the project's structur
 Steps for one task.
 
 - [Add a material or a kind of content](how-to/add-material.md)
+- [Add game content](how-to/add-game-content.md): a need, an item, a place, an option or a
+  building in the game's simulation.
 
 ## Reference
 

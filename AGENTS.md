@@ -68,7 +68,7 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
 
 - `docs/`: the documentation by kind, listed in `docs/README.md`: `explanation/`
   (`art-direction.md`, `game-design.md`, `ui.md`, the game UI's spec: read it before UI work),
-  `how-to/` (`add-material.md`), `reference/` (`tools.md`).
+  `how-to/` (`add-material.md`, `add-game-content.md`), `reference/` (`tools.md`).
 - `public/` (git-ignored): the game's assets, filled from the GitHub release `assets.lock.json`
   names (`tools/assets.mjs`, `tools/vite-assets.mjs`; `docs/reference/tools.md`, Assets).
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__PONLAI__` and
@@ -191,10 +191,10 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   `sim/events.ts`; a tick's time of day only in `sim/clock.ts`; the other islanders as places and
   what they heard and were given in `sim/people.ts`; the game's content (needs, items and their
   uses, kinds of place and of building, the options at them) as definitions registered in
-  `sim/registry.ts` by the modules of `sim/content/` (the core names none: ARCHITECTURE.md, Adding
-  content); only exact operations in the rules, the few functions they need in `sim/maths.ts`),
-  `save.ts` is the save (one slot: the simulation's state and the
-  record, versioned: a save of another version is set aside and a new game started; the world's
+  `sim/registry.ts` by the modules of `sim/content/` (the core names none: ARCHITECTURE.md, rule 7;
+  adding content: `docs/how-to/add-game-content.md`); only exact operations in the rules, the few
+  functions they need in `sim/maths.ts`), `save.ts` is the save (one slot: the simulation's state
+  and the record, versioned: a save of another version is set aside and a new game started; the world's
   start reads its piece count), `view/` draws the islanders and the chest, `Chronicle.ts` keeps the
   record of what happened (the events' first listener) and `Placement.ts` places a building chosen
   in the build bar. `ui/` is the player's interface (`GameUi.ts`, spec `docs/explanation/ui.md`):

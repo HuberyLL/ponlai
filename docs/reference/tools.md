@@ -1759,7 +1759,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   once at its tick, content added with no change to the core: a need, an item with a use, a kind
   of place and of building with their options, registered by the check alone, played, perceived,
   recorded, saved and shown with the presentation's defaults, then taken away, and no content id
-  written as a string in the core: ARCHITECTURE.md, Adding content); its island is in
+  written as a string in the core: ARCHITECTURE.md, rule 7); its island is in
   `tools/game-fixture.mjs`.
 - `tools/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow] [--population 0]
   [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>] [--latency 90]
