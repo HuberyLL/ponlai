@@ -100,6 +100,13 @@ export const YUNPENG = {
 /** The night's share of the glow and the light (0 by day: DayCycle.ts `yunpengNightShare`), each
  * frame. */
 export const yunpengNight = uniform( 0 );
+/** Sets the night's share for the frame and returns it: the page's tick does, from the sky. */
+export function setYunpengNight( share: number ): number {
+
+	yunpengNight.value = share;
+	return share;
+
+}
 /** The glow's strength in scene units: the flag's at load (`yunpengGlow`), else YUNPENG.glow, both
  * set for a clear night's exposure, over the night's rise in the metered exposure (the header). */
 const glowLevel = (): number => Number( debugFlags.yunpengGlow ?? YUNPENG.glow ) * 2 ** - NIGHT_METER_LIFT;

@@ -8,7 +8,7 @@ import { meadowCanopy } from '../lighting/MeadowCanopy.ts';
 import type { GradeChanges } from '../post/GradeLut.ts';
 import { DynamicResolution } from '../post/DynamicResolution.ts';
 import { shared } from '../shared.ts';
-import { groundGains } from '../materials/Meadow.ts';
+import { setGroundGain } from '../materials/Meadow.ts';
 import { ambientGrade } from '../lighting/AmbientGrade.ts';
 import { localLights } from '../lighting/LocalLights.ts';
 import { liftedKeyDirection } from '../lighting/KeyLift.ts';
@@ -186,8 +186,8 @@ export function exposeDebugHandles( render: RenderParts, island: IslandParts, pa
 		// the look's knobs from a script (the GUI's raise their own events): the first table's grade
 		// (GradeLut.ts), the meadow's and the cliff's albedos (groundGains), the leaves' (shared.leafGain)
 		setGrade: ( changes?: GradeChanges ) => { pipeline.setGrade( changes ); sceneEvent( 'retune' ); },
-		setLawnGain: ( gain: number ) => { groundGains.lawnGain.value = gain; groundBounce.invalidate(); sceneEvent( 'retune' ); },
-		setRockGain: ( gain: number ) => { groundGains.rockGain.value = gain; sceneEvent( 'retune' ); },
+		setLawnGain: ( gain: number ) => { setGroundGain( 'lawnGain', gain ); groundBounce.invalidate(); sceneEvent( 'retune' ); },
+		setRockGain: ( gain: number ) => { setGroundGain( 'rockGain', gain ); sceneEvent( 'retune' ); },
 		setLeafGain: ( gain: number ) => { shared.leafGain.value = gain; sceneEvent( 'retune' ); }, grass, wenyao, fallingLeaves: island.fallingLeaves, meadowCanopy, characters: island.characters, game: page.game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain: render.rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => render.simTime, nominalScale: () => page.nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 		// the tunable parameters (debug/Tune.ts): set( { name: value } ), get, list, reset, query; a value
 		// the environment's bakes depend on rebakes them at once (`retuneSky`, sky/SkyRetune.ts), as the

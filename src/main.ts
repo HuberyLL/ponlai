@@ -41,7 +41,7 @@ import { FallingLeaves, leavesPass } from './weather/FallingLeaves.ts';
 import './ocean/Water.ts';
 import './ocean/StormSea.ts';
 import './materials/GroundTextures.ts';
-import { soilUniforms } from './materials/Soil.ts';
+import { setSoilStrength } from './materials/Soil.ts';
 import { ISLAND_SEA } from './world/World.ts';
 import './world/WorldFields.ts';
 import './world/Growth.ts';
@@ -133,7 +133,7 @@ const page = {} as PageParts;
 
 const ground = { soil: params.get( 'soil' ) !== '0' };
 page.ground = ground;
-soilUniforms.strength.value = ground.soil ? 1 : 0;
+setSoilStrength( ground.soil );
 // GPU time per pass, tick time and startup marks for tools/profile-frame.mjs (?profile, or
 // ?profile=frames without the GPU timestamps). The profiler loads only then; without it the
 // renderer, its pipelines and the image are unchanged.

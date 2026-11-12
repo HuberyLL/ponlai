@@ -9,7 +9,7 @@ import { isCameraInputTarget } from '../camera/FreeCameraControls.ts';
 import { nightAmbientShare, duskForce, yunpengNightShare } from '../sky/DayCycle.ts';
 import { cloudedShare } from '../sky/Weather.ts';
 import { QualityDetector, qualityLines, rememberQuality } from '../QualityDetect.ts';
-import { yunpengNight } from '../world/Yunpeng.ts';
+import { setYunpengNight } from '../world/Yunpeng.ts';
 import { updateLeafLight } from '../world/vegetation/LeafLight.ts';
 import { updateSwardTint } from '../materials/SwardTint.ts';
 import type { HazeFrame } from '../weather/VolumetricHaze.ts';
@@ -424,8 +424,8 @@ export function createFrame( render: RenderParts, island: IslandParts, page: Pag
 		// night key and the sward's by the night ambient's (`nightAmbientShare`); a debug page may force
 		// each reader's (DayCycle.ts `duskForce`)
 		const nightAmbient = nightAmbientShare( sky.elevation, sky.rising, shared.clouded.value );
-		yunpengNight.value = duskForce( 'yunpeng', yunpengNightShare( sky.elevation, sky.rising, shared.clouded.value ) );
-		localLights.update( duskForce( 'localLights', yunpengNight.value ) );
+		const yunpengShare = setYunpengNight( duskForce( 'yunpeng', yunpengNightShare( sky.elevation, sky.rising, shared.clouded.value ) ) );
+		localLights.update( duskForce( 'localLights', yunpengShare ) );
 		// what the crowns' leaves pass on of the key (world/vegetation/LeafLight.ts)
 		updateLeafLight( sky.elevation, duskForce( 'nightAmbient', nightAmbient ), shared.clouded.value );
 		// what a closed sky's light turns into in the sward (materials/SwardTint.ts)

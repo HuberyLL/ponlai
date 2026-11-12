@@ -57,6 +57,12 @@ export const groundGains = {
 	// SUBMERGED_ROCK of it (TerrainMaterial.ts), darker only by the water round it
 	rockGain: uniform( 1.6 ),
 };
+/** Sets a ground albedo's gain: the page's debug handles do (`setLawnGain`, `setRockGain`). */
+export function setGroundGain( name: keyof typeof groundGains, gain: number ): void {
+
+	groundGains[ name ].value = gain;
+
+}
 /** How far the turf's value varies about the lawn's colour (a broad noise's -1 to 1 times it). */
 export const LAWN_TONE = 0.04;
 

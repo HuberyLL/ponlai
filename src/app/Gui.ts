@@ -9,7 +9,7 @@ import { DAY_PRESETS, type DayPreset } from '../sky/DayCycle.ts';
 import { WEATHER_PRESETS, isParkedWeather, type WeatherName, WIND_LEVELS, type WindLevel } from '../sky/Weather.ts';
 import { type QualityTier, ACTIVE_QUALITY } from '../Quality.ts';
 import { qualityLines } from '../QualityDetect.ts';
-import { soilUniforms } from '../materials/Soil.ts';
+import { soilUniforms, setSoilStrength } from '../materials/Soil.ts';
 import { WHITE_BALANCE } from '../post/Pipeline.ts';
 import { LOCAL_TONE } from '../post/LocalTone.ts';
 import { FrameStats } from '../debug/FrameStats.ts';
@@ -158,7 +158,7 @@ export function createGui( render: RenderParts, island: IslandParts, page: PageP
 	const groundF = gui.addFolder( 'Ground' );
 	groundF.add( ground, 'soil' ).name( 'soil layer' ).onChange( ( enabled: boolean ) => {
 
-		soilUniforms.strength.value = enabled ? 1 : 0;
+		setSoilStrength( enabled );
 		invalidateSunShadow();
 
 	} );
