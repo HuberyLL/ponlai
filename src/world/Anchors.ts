@@ -7,7 +7,7 @@
 // plants there (tools/verify-world-chunks.mjs, S5).
 import { hash3i, mulberry32, type Rng } from './noise.ts';
 import { VEGETATION_SPACING as CELL } from './types.ts';
-import type { Bounds } from './WorldShapes.ts';
+import type { Bounds } from '../RenderTypes.ts';
 import type { SDF } from './types.ts';
 
 // The jitter keeps a point within 0.475 of a cell from its cell's centre.

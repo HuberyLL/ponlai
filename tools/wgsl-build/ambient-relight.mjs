@@ -12,7 +12,7 @@ import * as THREE from 'three/webgpu';
 import { float } from 'three/tsl';
 import { AmbientRelight, AmbientSky } from '../../src/lighting/AmbientRelight.ts';
 import { AmbientVolume } from '../../src/lighting/AmbientVolume.ts';
-import { PROBE_STRIDE } from '../../src/world/AmbientProbes.ts';
+import { PROBE_STRIDE } from '../../src/lighting/ProbeFormat.ts';
 import { shared } from '../../src/shared.ts';
 
 export default function ( { renderer } ) {

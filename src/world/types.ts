@@ -1,6 +1,9 @@
 // Data shared between the world's workers (chunkWorker.ts) and the main thread.
 
-import type { CasterColumns, GroundGrid, SubmergedSubset } from './ChunkDerived.ts';
+import type { GroundGrid } from './ChunkDerived.ts';
+import type { CasterColumns, SubmergedSubset } from '../lighting/CasterFormat.ts';
+import type { AmbientLattice } from '../lighting/ProbeFormat.ts';
+import type { ShoreField } from '../RenderTypes.ts';
 
 // a signed distance function (m), optionally with per-point values baked onto the mesh: one
 // float (`tint`), four more (`detail`, written to out[ o .. o + 3 ]) and three more (`detail2`)
@@ -26,8 +29,6 @@ export interface MeshData {
 }
 
 export interface Rock { x: number; z: number; s: number; sy: number; y: number; floor: number; rot: number; seed: number }
-
-export interface ShoreField { data: Float32Array; nx: number; nz: number; x0: number; z0: number; cell: number }
 
 export const VEGETATION_STRIDE = 9;
 // The turf anchors' jittered grid (m): one anchor per this square of meadow.
@@ -56,13 +57,6 @@ export interface IslandChunk {
 	ground: GroundGrid;
 	refracted: SubmergedSubset;
 }
-
-// The ambient light's probes merged into one lattice (AmbientProbes.ts `mergeProbes`): the box of
-// the chunks that baked probes, nx x ny x nz probes of PROBE_STRIDE floats in rows ( z, then y,
-// then x ), the probe ( i, j, k ) at ( x0, y0, z0 ) + ( i, j, k ) spacing; then ny more, the open
-// sea's probe at each level, for every point outside the box (and the gaps inside it, which hold
-// copies of it). Invalid probes (deep in a solid) hold their neighbours' mean, filled by the merge.
-export interface AmbientLattice { x0: number; y0: number; z0: number; spacing: number; nx: number; ny: number; nz: number; probes: Float32Array }
 
 // One land version's world, merged from its chunks (ChunkMerge.ts).
 export interface WorldData {

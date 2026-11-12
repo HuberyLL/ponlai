@@ -21,7 +21,8 @@
 //   A chunk owns the 8 x 8 columns its square holds. Only the chunks with land within PROBE_NEAR of
 //   their square bake theirs (Chunks.ts); everywhere else the probe is the open sea's
 //   (`openSeaProbe`), which depends on the level alone.
-// - A probe's data (PROBE_STRIDE floats, twenty vec4): for each of the nine coefficients i, ( sky
+// - A probe's data (PROBE_STRIDE floats, twenty vec4, in the renderer's format:
+//   lighting/ProbeFormat.ts): for each of the nine coefficients i, ( sky
 //   visibility c_i, bounced r c_i, g c_i, b c_i ); then the groves' in-scatter alone, the part of
 //   the bounced light the medium scatters (below), as r c_i, g c_i, b c_i for each i in turn (27
 //   floats and a spare 0 in seven vec4, from SCATTER_VEC4), which the relight's key bounce takes
@@ -83,12 +84,14 @@
 
 import { CULM, LEAF_COLOURS, LEAF_SHARE, PURPLE_CULMS } from './BambooColours.ts';
 import { GROVES, culmAt, groveAt } from './BambooGroves.ts';
-import { islandSurfaceHeight, solidSide, ISLAND_BOTTOM, ISLAND_PEAK, ISLAND_TOP, type Bounds, type Footprint, type HeightFn } from './WorldShapes.ts';
+import { islandSurfaceHeight, solidSide, ISLAND_BOTTOM, ISLAND_PEAK, ISLAND_TOP, type Footprint, type HeightFn } from './WorldShapes.ts';
+import type { Bounds } from '../RenderTypes.ts';
 import { FLOOR_ALBEDO, SEABED_TILE } from './SeabedTile.ts';
 import { smoothstep } from './noise.ts';
 import { bodyReflectance } from '../ocean/SeaOptics.ts';
 import type { SolidBounds } from '../lighting/SkyOcclusion.ts';
-import type { AmbientLattice, SDF } from './types.ts';
+import type { SDF } from './types.ts';
+import { META_VEC4, PROBE_STRIDE, SCATTER_VEC4, SEA_VEC4, shBasis, type AmbientLattice } from '../lighting/ProbeFormat.ts';
 
 // ------------------------------------------------------------------ the lattice
 
@@ -101,12 +104,6 @@ export const Y0 = - 2;
 export const LEVELS = Math.ceil( ( ISLAND_TOP + GROVES.height + 2 * SPACING - Y0 ) / SPACING ) + 1;
 /** The columns along a chunk's side. */
 export const COLUMNS = SEABED_TILE / SPACING;
-/** Floats per probe: nine vec4 of ( sky, bounced rgb ) coefficients, seven of the groves'
- * in-scatter (rgb per coefficient in turn, then a spare 0), three of the sea's visibility (nine
- * coefficients, then three spare 0), then ( offset xyz, valid ). */
-export const PROBE_STRIDE = 80;
-/** The vec4 a probe's in-scatter starts at, its sea visibility's, and its ( offset xyz, valid ). */
-export const SCATTER_VEC4 = 9, SEA_VEC4 = 16, META_VEC4 = 19;
 /** A chunk bakes probes when land lies within this of its square (m). */
 export const PROBE_NEAR = 8;
 
@@ -209,22 +206,6 @@ const OFFSETS: number[][] = [];
 
 	}
 	OFFSETS.sort( ( a, b ) => a[ 3 ] - b[ 3 ] );
-
-}
-
-/** The nine real spherical harmonics up to degree 2 at a unit direction, in three.js's
- * SphericalHarmonics3 order and normalisation (y up), into out[ o .. o + 8 ]. */
-export function shBasis( x: number, y: number, z: number, out: Float64Array | Float32Array, o: number ): void {
-
-	out[ o ] = 0.282095;
-	out[ o + 1 ] = 0.488603 * y;
-	out[ o + 2 ] = 0.488603 * z;
-	out[ o + 3 ] = 0.488603 * x;
-	out[ o + 4 ] = 1.092548 * x * y;
-	out[ o + 5 ] = 1.092548 * y * z;
-	out[ o + 6 ] = 0.315392 * ( 3 * z * z - 1 );
-	out[ o + 7 ] = 1.092548 * x * z;
-	out[ o + 8 ] = 0.546274 * ( x * x - y * y );
 
 }
 

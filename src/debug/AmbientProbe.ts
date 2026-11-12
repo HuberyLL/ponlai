@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { Fn, If, instanceIndex, instancedArray, uint, vec3, vec4 } from 'three/tsl';
 import { ambientField, ambientSkyVisibility } from '../lighting/AmbientSample.ts';
-import type { Bounds } from '../world/WorldShapes.ts';
+import type { Bounds } from '../RenderTypes.ts';
 
 // `__PONLAI__.ambientProbe( options )`: the ambient light's irradiance on open level ground, read
 // from the probes' volume itself rather than from screen cells (E_up for a script that reads cells: the island's level

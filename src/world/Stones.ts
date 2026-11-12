@@ -49,7 +49,8 @@
 // near the coast, within a fifth of those counts.
 
 import { noise3, hash3i, mulberry32, smoothstep, type Rng } from './noise.ts';
-import { LAND_REACH, type Bounds, type Footprint, type HeightFn } from './WorldShapes.ts';
+import { LAND_REACH, type Footprint, type HeightFn } from './WorldShapes.ts';
+import type { Bounds } from '../RenderTypes.ts';
 import type { SDF, Rock } from './types.ts';
 import { cliffEvents } from './Cliff.ts';
 

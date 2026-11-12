@@ -1,7 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { islandSurfaceHeight, ISLAND_TOP } from '../world/WorldShapes.ts';
 import { S } from '../world/Chunks.ts';
-import type { ShoreField, WorldData } from '../world/types.ts';
+import type { WorldData } from '../world/types.ts';
+import type { ShoreField } from '../RenderTypes.ts';
 
 // A debug view of the world's chunks (src/world/Chunks.ts): every chunk's square drawn on the ground
 // (the meadow's top, and the sea floor seen through the water) with a post at each corner, so a

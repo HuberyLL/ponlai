@@ -3,7 +3,7 @@
 // (transferred). ShoreWaves.ts `fieldsFor` runs one worker per growth step.
 
 import { shoreBoundaryPixels, shoreShelterPixels, type FieldPixels } from './ShoreWaveField.ts';
-import type { ShoreField } from '../world/types.ts';
+import type { ShoreField } from '../RenderTypes.ts';
 
 export interface ShoreFieldJob { shore: ShoreField; direction: { x: number; y: number } }
 export interface ShoreFieldReply { boundary: FieldPixels; shelter: FieldPixels & { info: Record<string, unknown> } }

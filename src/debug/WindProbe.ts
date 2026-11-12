@@ -13,7 +13,7 @@ import { debugFlags } from './DebugFlags.ts';
 import type { WorldData } from '../world/types.ts';
 import type { Shared } from '../shared.ts';
 import { OPEN_DRIFT, type SeaDetail } from '../ocean/SeaDetail.ts';
-import type { Bounds } from '../world/WorldShapes.ts';
+import type { Bounds } from '../RenderTypes.ts';
 
 // `__PONLAI__.windProbe( options )`: the numbers behind the wind view (WindView.ts), as JSON for
 // tools/probe.mjs. Every sway comes from the shaders' own TSL functions (Wind.ts `windField`,

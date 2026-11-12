@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu';
 import { Fn, texture, uniform, float, vec2, vec4, dot, mix, smoothstep, clamp, max, abs, length } from 'three/tsl';
 import { mulberry32 } from '../world/noise.ts';
 import { REFERENCE_SPEED, gustAt } from '../weather/Wind.ts';
-import type { Bounds } from '../world/WorldShapes.ts';
+import type { Bounds } from '../RenderTypes.ts';
 import type { Shared } from '../shared.ts';
 
 // Large-scale variation of the sea surface in world space, which never repeats with the FFT's tiles

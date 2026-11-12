@@ -2,7 +2,8 @@ import * as THREE from 'three/webgpu';
 import { generateVersion, type LoadedWorld, type VersionChunks } from './WorldChunks.ts';
 import { mergeSteps } from './ChunkMerge.ts';
 import { GROWTH, LandLattice } from './IslandGrowth.ts';
-import { landBounds, type Bounds } from './WorldShapes.ts';
+import { landBounds } from './WorldShapes.ts';
+import type { Bounds } from '../RenderTypes.ts';
 import { derive, islandMesh, seabedGeometry, stonesGeometry, type WorldMeshes } from './World.ts';
 import type { WorldFields, FieldsPrepared } from './WorldFields.ts';
 import { geometrySteps, textureSteps } from './Upload.ts';
@@ -95,7 +96,7 @@ export interface GrowthPage<M = unknown> {
 	fields: WorldFields;
 	/** the vegetation's kinds (vegetation/Registry.ts): each prepares and swaps its own part, and
 	 * the rain's collision map is baked from the island and the kinds that take part in it */
-	vegetation: Vegetation;
+	vegetation: Vegetation<WorldData>;
 	shoreWaves: ShoreWaves;
 	refractedSun: RefractedSun;
 	ambient: AmbientVolume;
@@ -131,7 +132,7 @@ interface Prepared<M> {
 	seabed: THREE.BufferGeometry;
 	walk: ReturnType<typeof Villagers.loop>;
 	// each growing vegetation kind's prepared part, in registry order
-	vegetation: { kind: VegetationKind; prepared: unknown }[];
+	vegetation: { kind: VegetationKind<unknown, WorldData>; prepared: unknown }[];
 	fields: FieldsPrepared;
 	shore: ShoreFields;
 	ambient: AmbientPrepared;
@@ -504,7 +505,7 @@ export class Growth<M = unknown> {
 		// each vegetation kind's part, in registry order (vegetation/Registry.ts); what a kind writes
 		// in place at the swap is staged here, so that it is copied on the GPU
 		const staged: ( () => void )[] = [];
-		const input: GrowthInput = {
+		const input: GrowthInput<WorldData> = {
 			renderer, data, walkDistance,
 			stage: ( free ) => { if ( free ) staged.push( free ); },
 		};
@@ -529,7 +530,7 @@ export class Growth<M = unknown> {
 
 		}
 		let shore: ShoreFields | null = null;
-		yield page.shoreWaves.fieldsFor( data, copy ).then( ( fieldsOf ) => { shore = fieldsOf; } );
+		yield page.shoreWaves.fieldsFor( data.shore, copy ).then( ( fieldsOf ) => { shore = fieldsOf; } );
 		yield* textureSteps( renderer, shore!.boundary );
 		yield* textureSteps( renderer, shore!.shelter );
 		this.stage = 'ambient';

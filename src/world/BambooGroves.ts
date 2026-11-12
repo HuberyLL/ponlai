@@ -1,7 +1,7 @@
 import { fbm2, hash3i, mulberry32, noise3, smoothstep } from './noise.ts';
 import { sampleRimGround } from './RimGround.ts';
 import type { RimGroundField } from './types.ts';
-import type { Bounds } from './WorldShapes.ts';
+import type { Bounds } from '../RenderTypes.ts';
 
 // Where the bamboo stands (Bamboo.ts builds the culms): over the whole island, as a running bamboo
 // left to itself takes a hillside. Its rhizomes carry it out in groves, dense inside and of an even

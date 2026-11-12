@@ -7,7 +7,7 @@ import type { Shared } from '../shared.ts';
 import { solarShadowVisibility, solarVolumeVisibility } from './SolarShadow.ts';
 import { NORMAL_OFFSET } from './SunShadow.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { LEVEL_MARGIN, type SubmergedSubset } from '../world/ChunkDerived.ts';
+import { LEVEL_MARGIN, type SubmergedSubset } from './CasterFormat.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;

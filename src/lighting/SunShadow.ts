@@ -3,7 +3,7 @@ import { Fn, uniform, uniformArray, texture, vec4, int, float, clamp, floor, dot
 import { compileByRendering, compileLatentInto } from '../post/graph/Compile.ts';
 import { solarSteppedShadowVisibility, solarVolumeVisibility, solarPCFVisibility, solarDiscVisibility } from './SolarShadow.ts';
 import { screenShadowAt } from '../post/MeadowShade.ts';
-import type { CasterColumns } from '../world/ChunkDerived.ts';
+import type { CasterColumns } from './CasterFormat.ts';
 import { shadowWindOn } from '../world/VegetationShadow.ts';
 import { leafThrough } from '../world/vegetation/LeafLight.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';

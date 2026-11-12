@@ -1,7 +1,8 @@
 import { Field2D } from './Field2D.ts';
-import { ISLAND_TOP, islandSurfaceHeight, solidSide, type Bounds, type Footprint } from './WorldShapes.ts';
+import { ISLAND_TOP, islandSurfaceHeight, solidSide, type Footprint } from './WorldShapes.ts';
+import type { Bounds, ShoreField } from '../RenderTypes.ts';
 import { noise3, smoothstep } from './noise.ts';
-import type { RimGroundField, RimLipData, SDF, ShoreField } from './types.ts';
+import type { RimGroundField, RimLipData, SDF } from './types.ts';
 
 export const RIM_FRINGE_FADE = 0.12;
 export const RIM_INNER_LIMIT = 0.70;

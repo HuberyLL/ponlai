@@ -17,7 +17,7 @@ import { localLightsKernel } from '../../src/lighting/LocalLights.ts';
 import { AmbientVolume } from '../../src/lighting/AmbientVolume.ts';
 import { installAmbientVolume, installEnvironmentHarmonics } from '../../src/lighting/AmbientSample.ts';
 import { AmbientRelight, AmbientSky } from '../../src/lighting/AmbientRelight.ts';
-import { PROBE_STRIDE } from '../../src/world/AmbientProbes.ts';
+import { PROBE_STRIDE } from '../../src/lighting/ProbeFormat.ts';
 import { DETAIL_LAYER } from '../../src/materials/ProceduralTextures.ts';
 import { createSoilTexture } from '../../src/materials/Soil.ts';
 import { makeTerrainMaterial } from '../../src/materials/TerrainMaterial.ts';

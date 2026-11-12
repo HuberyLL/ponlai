@@ -16,7 +16,7 @@
 import * as THREE from 'three/webgpu';
 import { float, uniform, vec3 } from 'three/tsl';
 import { AmbientVolume } from '../../src/lighting/AmbientVolume.ts';
-import { PROBE_STRIDE } from '../../src/world/AmbientProbes.ts';
+import { PROBE_STRIDE } from '../../src/lighting/ProbeFormat.ts';
 import { GroundBounceLightingModel } from '../../src/lighting/GroundBounce.ts';
 import { propMaterial } from '../../src/game/view/Props.ts';
 import { makeLitFigureMaterial } from '../../src/characters/FigureSurfaces.ts';

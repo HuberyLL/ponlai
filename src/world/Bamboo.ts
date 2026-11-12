@@ -545,14 +545,14 @@ export function buildBamboo( data: WorldData, surfaces: { shared: Shared; atlas:
 
 /** The bamboo's two vegetation kinds: the culms (an ordinary shadow) and the leaves. The culms'
  * growth prepares and swaps the one instance pool both kinds draw from; the leaves follow it. */
-export function bambooKinds( bamboo: Bamboo ): VegetationKind[] {
+export function bambooKinds( bamboo: Bamboo ): VegetationKind<unknown, WorldData>[] {
 
-	const growth: KindGrowth<BambooPrepared> = {
+	const growth: KindGrowth<BambooPrepared, WorldData> = {
 		prepare: ( input ) => bamboo.prepare( input.data, input.renderer ),
 		swap: ( prepared ) => bamboo.swap( prepared ),
 	};
 	return [
-		{ name: 'bamboo', root: bamboo.culms, prepass: false, shadowFilter: 'ordinary', sunCaster: true, rainBake: true, growth: growth as KindGrowth<unknown> },
+		{ name: 'bamboo', root: bamboo.culms, prepass: false, shadowFilter: 'ordinary', sunCaster: true, rainBake: true, growth: growth as KindGrowth<unknown, WorldData> },
 		{ name: 'bamboo leaves', root: bamboo.leaves, prepass: true, shadowFilter: 'vegetation', sunCaster: true, rainBake: true },
 	];
 

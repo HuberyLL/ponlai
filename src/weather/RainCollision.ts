@@ -12,7 +12,7 @@
 
 import * as THREE from 'three/webgpu';
 import { Fn, ivec2, max, positionWorld, select, texture, textureLoad, uniform, vec4 } from 'three/tsl';
-import { ISLAND_TOP, type Bounds } from '../world/WorldShapes.ts';
+import type { Bounds } from '../RenderTypes.ts';
 import { compileLatentInto } from '../post/graph/Compile.ts';
 import { followPlantDraw } from '../world/vegetation/PlantInstances.ts';
 import { shared } from '../shared.ts';
@@ -61,7 +61,8 @@ export class RainCollision {
 	/** counts the bakes finished, each one's map whole (the haze's rest starts over on a new one) */
 	version = 0;
 
-	constructor() {
+	// `ceiling`: the highest height in the map (m), over everything a bake draws
+	constructor( ceiling: number ) {
 
 		// sized to the land by setArea; until then an empty map (the sea everywhere)
 		const map = () => {
@@ -81,9 +82,7 @@ export class RainCollision {
 		this.camera = new THREE.OrthographicCamera( - 1, 1, 1, - 1, 0, 80 );
 		// Looking straight down with -z up the image: x runs right, z down the rows from z0.
 		this.camera.up.set( 0, 0, - 1 );
-		// The figures reach two metres above the meadow; the ceiling
-		// keeps a margin over them and the plants, so no drop falls through their tops.
-		this.ceiling = ISLAND_TOP + 4;
+		this.ceiling = ceiling;
 		const heights = this.map, xform = this.xform, size = this.size, waterLevel = this.waterLevel;
 		const top = ( xz: V2 ): F => {
 
