@@ -211,59 +211,50 @@ SIGGRAPH 2021).
   average stays one colour; never a single dyed green, which reads as plastic, and never every
   blade and clump its own value and height, which from the game's view grains the lawn into a
   scatter of tufts over dark ground. The materials keep albedos within real ones: the meadow's
-  blades a sunlit leaf's (about 0.08), the
-  cliff's stone a little lighter (The look, above), the trees' leaves about half again as light as
-  the grass as painted, a cooler green with less red than the blades and some blue, and a little
-  darker than it as a crown draws them, its inner leaves greyed, so a crown stands a little under
-  the sward's value; the frame's brightness is the exposure's, never albedos pushed past real ones.
-  A tree's leaves are nearly as matte as the blades: no pale sheen over a crown, whose lit leaves
-  stay a plain green and whose depth stays dark. Under a sun of any height the crown's shaded leaves
-  still take a share of it through the leaves above, so a crown's dark half reads green rather than
-  as dark and as blue as the sky; at a sun on the horizon, under a closed sky and by night it takes
-  none. A leaf lit from behind glows on its own albedo, so a crown seen against the sun has no black
-  side. Under a closed sky a crown keeps its green as the lawn does, a dark, rich green, the sky's
-  light having passed through and off its leaves. One grass colour, a bright, fresh, natural green,
-  matte with only a faint gloss (no pale sheen over the blades, which reads as plastic): the gaps
-  between blades a deep, cooler green (never near black) under tips that stand out lighter and
-  yellow-green where the sun shines through them; under a closed sky the lawn keeps its green, the
-  sky's light having passed among the blades, and does not turn yellow when the sun goes in; looking
-  toward the sun the whole lawn glows, away from it it is plainer and greener; no fields of tone,
-  dryness or bare earth (they break the lawn into what reads from the overview as camouflage and
-  dark blotches), and no pattern of dots on the blades. The island top is one sward, about 0.5 m,
-  with no zones across it: never tiers of height and tint by the soil (a short yellow-green band
-  along the windward coast, a taller, deeper grass on deep soil, gravel patches inland), which read
-  from above as a map laid over the meadow. Its layering comes from the grass itself, which grows in
-  clumps about a metre across, each a little taller or shorter than its neighbours, giving its
-  blades their lean and its stroke its colour. Its height swings gently: patches a few metres across
-  over broad swells, a short turf here and a taller sward there, running into each other blade by
-  blade: from above a soft mottling, never a zone, a line, a path or a hollow (a short turf walled
-  by tall grass, two levels, reads as a hole dug into the lawn). From the ground up the sward has a
-  meadow's layers: dead leaves and the old leaves' straw sheaths low in it and the green leaves over
-  them; no flowering stems stand over it. No low herbs grow under it (clover mats, plantain
-  rosettes): from the game's view they do not read. The sward runs to the edge on every coast,
-  windward and lee alike, never a windward lip shown short, yellow, thin over gravel and bared to
-  the cliff's stone, which reads from above as one more zone. Inside the grass the shade is the
-  grass's own, never painted: the blades and clumps toward the sun shade those behind them and the
-  ground under and beside them, softly, as light passes between blades, darkening toward the ground
-  (a deep green, never black); the shade of anything standing on it lies soft and light. The only
-  large shadows that cross the meadow are the real clouds' (from the cloud layer overhead, drifting
-  with it): no patches painted or animated onto the island to vary its light. The ground between the
-  blades is a grass-coloured ground, near and far alike: about the blades' own mean albedo (a
-  twentieth above it), a little warmer, in the lawn's tone, softly mottled over 1 - 3 m and grained
-  by a scanned ground's value (about +-15 % in all), without the scan's colour. The blades thin with
-  distance, and a ground of their own colour lets them thin with no ring of another colour sliding
-  with the camera and no flat green either; brown earth shows only where the sward truly parts, a
-  near detail on a few edges. The same grass ground runs on under the bamboo culms; the groves' own
-  floor is their litter (see the bamboo below). Never a ground mapped from above on the lip's bevel
-  (it runs down the slope in stripes). The short turf is a closed mat, as a wind-cropped or
-  shallow-soil turf is: its leaves splayed out over the ground, its base olive with thatch and only
-  flecks of earth, so from every view and at every zoom the meadow is one dense sward, a little
-  yellower where it is short; bare earth only in its few gaps, never thin grass over brown ground,
-  and never a ground that changes colour as the camera zooms. At the lip the turf ends on its soil
-  over the stone, never a dark hole among the flowers. By night: see Night. Toward a sheltered coast
-  the grass runs to the lip and stands there, and the same grass grows out over it: its tufts at the
-  lip spill over the edge, fine blades that arch over and hang down the wall, lying on the stone,
-  never through it, and the lip alternates between overgrown stretches and cut-open root soil.
+  blades a sunlit leaf's (about 0.08), the cliff's stone a little lighter (The look, above); the
+  frame's brightness is the exposure's, never albedos pushed past real ones. One grass colour, a
+  bright, fresh, natural green, matte with only a faint gloss (no pale sheen over the blades, which
+  reads as plastic): the gaps between blades a deep, cooler green (never near black) under tips that
+  stand out lighter and yellow-green where the sun shines through them; under a closed sky the lawn
+  keeps its green, the sky's light having passed among the blades, and does not turn yellow when the
+  sun goes in; looking toward the sun the whole lawn glows, away from it it is plainer and greener;
+  no fields of tone, dryness or bare earth (they break the lawn into what reads from the overview as
+  camouflage and dark blotches), and no pattern of dots on the blades. The island top is one sward,
+  about 0.5 m, with no zones across it: never tiers of height and tint by the soil (a short
+  yellow-green band along the windward coast, a taller, deeper grass on deep soil, gravel patches
+  inland), which read from above as a map laid over the meadow. Its layering comes from the grass
+  itself, which grows in clumps about a metre across, each a little taller or shorter than its
+  neighbours, giving its blades their lean and its stroke its colour. Its height swings gently:
+  patches a few metres across over broad swells, a short turf here and a taller sward there, running
+  into each other blade by blade: from above a soft mottling, never a zone, a line, a path or a
+  hollow (a short turf walled by tall grass, two levels, reads as a hole dug into the lawn). From
+  the ground up the sward has a meadow's layers: dead leaves and the old leaves' straw sheaths low
+  in it and the green leaves over them; no flowering stems stand over it. No low herbs grow under it
+  (clover mats, plantain rosettes): from the game's view they do not read. The sward runs to the
+  edge on every coast, windward and lee alike, never a windward lip shown short, yellow, thin over
+  gravel and bared to the cliff's stone, which reads from above as one more zone. Inside the grass
+  the shade is the grass's own, never painted: the blades and clumps toward the sun shade those
+  behind them and the ground under and beside them, softly, as light passes between blades,
+  darkening toward the ground (a deep green, never black); the shade of anything standing on it lies
+  soft and light. The only large shadows that cross the meadow are the real clouds' (from the cloud
+  layer overhead, drifting with it): no patches painted or animated onto the island to vary its
+  light. The ground between the blades is a grass-coloured ground, near and far alike: about the
+  blades' own mean albedo (a twentieth above it), a little warmer, in the lawn's tone, softly
+  mottled over 1 - 3 m and grained by a scanned ground's value (about +-15 % in all), without the
+  scan's colour. The blades thin with distance, and a ground of their own colour lets them thin with
+  no ring of another colour sliding with the camera and no flat green either; brown earth shows only
+  where the sward truly parts, a near detail on a few edges. The same grass ground runs on under the
+  bamboo culms; the groves' own floor is their litter (see the bamboo below). Never a ground mapped
+  from above on the lip's bevel (it runs down the slope in stripes). The short turf is a closed mat,
+  as a wind-cropped or shallow-soil turf is: its leaves splayed out over the ground, its base olive
+  with thatch and only flecks of earth, so from every view and at every zoom the meadow is one dense
+  sward, a little yellower where it is short; bare earth only in its few gaps, never thin grass over
+  brown ground, and never a ground that changes colour as the camera zooms. At the lip the turf ends
+  on its soil over the stone, never a dark hole among the flowers. By night: see Night. Toward a
+  sheltered coast the grass runs to the lip and stands there, and the same grass grows out over it:
+  its tufts at the lip spill over the edge, fine blades that arch over and hang down the wall, lying
+  on the stone, never through it, and the lip alternates between overgrown stretches and cut-open
+  root soil.
 - The flowers are off for now (`?flowers` brings them back): Penglai's bamboo grows over the whole
   island, and whether its meadow keeps flowers among the groves is still open. As they were made:
 - Flowers are part of the meadow, and they are Penglai's, after the texts on the immortals'
