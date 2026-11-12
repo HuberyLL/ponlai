@@ -299,6 +299,18 @@ export interface LocalLightsLook {
 	gain: number;
 }
 
+// ---- the meadow's canopy (look/MeadowCanopyLook.ts)
+
+/** A canopy's medium: its extinction per metre along the key's ray, and the share of the key that
+ * passes between its blades whatever the path. */
+export type CanopyMedium = { density: number; open: number };
+export interface MeadowCanopyLook {
+	/** The level canopy over every point of the meadow. */
+	canopy: CanopyMedium;
+	/** The crowns that stand over their neighbours and over the ground. */
+	cast: CanopyMedium;
+}
+
 // ---- the current look
 
 export interface Look {
@@ -311,6 +323,7 @@ export interface Look {
 	sky: SkyLook;
 	occlusion: OcclusionLook;
 	localLights: LocalLightsLook;
+	meadowCanopy: MeadowCanopyLook;
 }
 
 let installed: Look | null = null;

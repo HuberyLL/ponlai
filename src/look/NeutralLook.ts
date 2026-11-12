@@ -199,4 +199,11 @@ export const NEUTRAL_LOOK: Look = {
 		gain: 1,
 	},
 
+	meadowCanopy: {
+		// No medium: the key crosses the canopy and the crowns whole (an extinction of 0), so the
+		// meadow's own shade drops out and the share that passes between the blades has nothing to add.
+		canopy: { density: 0, open: 0 },
+		cast: { density: 0, open: 0 },
+	},
+
 };
