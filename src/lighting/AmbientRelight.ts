@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { Fn, Loop, clamp, cos, exp2, float, instanceIndex, int, ivec2, ivec3, log2, luminance as luma, max, mix, round, select, sin, smoothstep, storage, texture, textureLoad, textureStore, uint, uniform, uvec3, vec3, vec4 } from 'three/tsl';
-import { OVERCAST_LAND, OVERCAST_MOON_LAND, ambient, overcastLandWeight } from './AmbientGrade.ts';
+import { OVERCAST_LAND, OVERCAST_MOON_LAND } from '../look/AmbientLook.ts';
+import { ambient, overcastLandWeight } from './AmbientGrade.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tune, tuneKeys, tuneUniform } from '../debug/Tune.ts';
 import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
@@ -340,17 +341,17 @@ export function lowSunSkyLift( elevation: number, clouded: number ): number {
 
 }
 /** The land's sky gain under overcast's deck per unit of the weather's (the sun's part of the
- * weather's land gain, AmbientGrade.ts OVERCAST_LAND; the moon's, OVERCAST_MOON_LAND): what makes the land under the deck
- * take, per unit of the bake's sky light, what a clear day's land takes in the same place, the
- * structure of the two skies' light being otherwise unlike (the sky's harmonics' window, which
- * takes another share of a deck's light off level ground than of a clear sky's; the sky's
- * visibility from the ground). It is not a choice of the weather's and is not tuned. The land's sky
- * light under overcast takes it times the weather's gain on the sky's light (the bake: the probes'
- * sky) in place of the deck's (sky/Weather.ts DECK_SKY_GAIN), not over it, by overcast's share and
- * its deck's light (AmbientGrade.ts `overcastLandWeight`: at every sun by day, gone by -6
- * degrees). The land under the deck takes its light from the sky's integral, the bake (the clouds'
- * forward light included, sky/CloudModel.ts FORWARD_WEIGHT, and by day under overcast the deck's glow
- * about the sun as one smooth lobe, sky/SkyDome.ts `glowToward`), as
+ * weather's land gain, look/AmbientLook.ts OVERCAST_LAND; the moon's, OVERCAST_MOON_LAND): what
+ * makes the land under the deck take, per unit of the bake's sky light, what a clear day's land
+ * takes in the same place, the structure of the two skies' light being otherwise unlike (the sky's
+ * harmonics' window, which takes another share of a deck's light off level ground than of a clear
+ * sky's; the sky's visibility from the ground). It is not a choice of the weather's and is not
+ * tuned. The land's sky light under overcast takes it times the weather's gain on the sky's light
+ * (the bake: the probes' sky) in place of the deck's (sky/Weather.ts DECK_SKY_GAIN), not over it,
+ * by overcast's share and its deck's light (AmbientGrade.ts `overcastLandWeight`: at every sun by
+ * day, gone by -6 degrees). The land under the deck takes its light from the sky's integral, the
+ * bake (the clouds' forward light included, sky/CloudModel.ts FORWARD_WEIGHT, and by day under
+ * overcast the deck's glow about the sun as one smooth lobe, sky/SkyDome.ts `glowToward`), as
  * the sky's soft fill from every side, times this; the key adds the weather's floor of it through
  * the sun's map (look/SkyLook.ts KEY_THROUGH_CLOUD, `keyDirectVisibility`). The ground takes it
  * whether or not water lies over it: where a material reads the environment's light in the
@@ -370,11 +371,11 @@ const OVERCAST_LAND_UNIT = 1.55;
 /** The land's sky gain under a cloudy deck, in place of the deck's (sky/Weather.ts DECK_SKY_GAIN,
  * which the water keeps), by cloudy's share and its deck's light (sky/Weather.ts `deckRamp`, whole
  * from 6 degrees): on the sky's light only, the sun's bounce under a cloudy deck taking no weather
- * gain, unlike overcast's (AmbientGrade.ts OVERCAST_LAND), as a cloudy deck's land takes its key
- * through the gaps. It sets the land's light against the sky's: a higher gain lifts the meadow and,
- * through the exposure that meters both, darkens the sky over it in the frame; and it sets a gap's
- * lit meadow against a clear day's under the same sun. It is set together with the cloudy exposure
- * key (post/Exposure.ts `cloudy`).
+ * gain, unlike overcast's (look/AmbientLook.ts OVERCAST_LAND), as a cloudy deck's land takes its
+ * key through the gaps. It sets the land's light against the sky's: a higher gain lifts the meadow
+ * and, through the exposure that meters both, darkens the sky over it in the frame; and it sets a
+ * gap's lit meadow against a clear day's under the same sun. It is set together with the cloudy
+ * exposure key (post/Exposure.ts `cloudy`).
  * Tunable: `lighting.relight.cloudyLand`. */
 const CLOUDY_LAND = tune( 'lighting.relight.cloudyLand', 1.45, { min: 1, max: 24 } );
 /** The sea's diffuse albedo as a bounce surface: the order of water's volume-scattering albedo

@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { cameraViewMatrix, uniform, vec3, vec4 } from 'three/tsl';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { MOON, moonDirection } from '../sky/DayCycle.ts';
+import { keyLiftShading as shading } from '../look/AmbientLook.ts';
 
 type V3 = THREE.Node<'vec3'>;
 
@@ -60,47 +61,8 @@ type V3 = THREE.Node<'vec3'>;
 // `liftedKeyDirection`, the same direction in world space.
 // Off with `flags=keyLift:false` (at run time from the next publish of the lighting): the sun's
 // lift only, the moon stays where it stands. Ours.
-
-/** The elevations (degrees): the shading direction's at the sun key's (`at`, ascending), held below
- * the first row; from the last row's on, the shading holds at the last row's `shading` until the
- * key's own elevation passes it, the corner rounded over `join` degrees either side. A moon key
- * shades from the moon's own direction (sky/DayCycle.ts MOON). */
-export const KEY_LIFT = {
-	rows: [ { at: 0, shading: 18 }, { at: 5, shading: 18 }, { at: 6, shading: 14 } ],
-	join: 1,
-};
-
-// The rows' slopes (shading per degree of the key): Fritsch and Carlson's monotone cubic
-// ("Monotone Piecewise Cubic Interpolation", SIAM J. Numer. Anal. 1980), flat at both ends, so the
-// lift meets the hold below and the floor above smoothly.
-const SLOPE = KEY_LIFT.rows.map( ( r, i, rows ) => {
-
-	if ( i === 0 || i === rows.length - 1 ) return 0;
-	const h0 = r.at - rows[ i - 1 ].at, h1 = rows[ i + 1 ].at - r.at;
-	const d0 = ( r.shading - rows[ i - 1 ].shading ) / h0, d1 = ( rows[ i + 1 ].shading - r.shading ) / h1;
-	return d0 * d1 <= 0 ? 0 : 3 * ( h0 + h1 ) / ( ( 2 * h1 + h0 ) / d0 + ( h1 + 2 * h0 ) / d1 );
-
-} );
-
-// the shading elevation under a sun key at `elevation` (degrees)
-function shading( elevation: number ): number {
-
-	const rows = KEY_LIFT.rows, last = rows[ rows.length - 1 ];
-	if ( elevation <= rows[ 0 ].at ) return rows[ 0 ].shading;
-	if ( elevation >= last.at ) {
-
-		// max( elevation, floor ), its corner a parabola meeting both lines with their slopes
-		const floor = last.shading, w = KEY_LIFT.join, x = elevation - floor;
-		return x <= - w ? floor : x >= w ? elevation : floor + ( x + w ) * ( x + w ) / ( 4 * w );
-
-	}
-	let i = 1;
-	while ( elevation >= rows[ i ].at ) i ++;
-	const a = rows[ i - 1 ], b = rows[ i ], h = b.at - a.at, t = ( elevation - a.at ) / h, t2 = t * t, t3 = t2 * t;
-	return ( 2 * t3 - 3 * t2 + 1 ) * a.shading + ( t3 - 2 * t2 + t ) * h * SLOPE[ i - 1 ]
-		+ ( 3 * t2 - 2 * t3 ) * b.shading + ( t3 - t2 ) * h * SLOPE[ i ];
-
-}
+// The rows and the shading elevation they give (KEY_LIFT, `keyLiftShading`) are
+// look/AmbientLook.ts's; this file keeps the lifted direction and its uniforms.
 
 const scale = uniform( 1 ), up = uniform( 0 ), side = uniform( 0 );
 // the moon's direction (world, unit; DayCycle `moonDirection`), on the CPU and for the shaders,
