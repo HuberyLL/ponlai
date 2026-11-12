@@ -35,9 +35,9 @@ import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
 // reflection there is of a warm or a deep sky: on the island view the rock's mean C is 0.022 to
 // 0.028 from -7 to -10 degrees, under a clear morning's 0.035 to 0.042 at -8 and -9 with the
 // reflection held at 0.1. A clear morning takes the day's exposure long before the sun
-// (DayCycle.ts `displayNight`, post/Exposure.ts `dawn`), and under it the night's full reflection
-// of a bright, saturated sky lit the rock's ledges and the leaves cyan (at -8 degrees the cliff's
-// brightest tenth L 0.33, C 0.11 with it, 0.19, 0.03 without), so the rising sun's rows
+// (DayCycle.ts `displayNight`, look/ExposureLook.ts `dawn`), and under it the night's full
+// reflection of a bright, saturated sky lit the rock's ledges and the leaves cyan (at -8 degrees
+// the cliff's brightest tenth L 0.33, C 0.11 with it, 0.19, 0.03 without), so the rising sun's rows
 // (AMBIENT_GRADE_RISING) hold the clear and the fair sky's reflection at 0.1 from -2.6 down to
 // -12, where the display's night is whole again (DayCycle.ts `displayNight`), and give it back to
 // the night's by -13. A return from -7 still lit the rock's edges from -9 to -7 degrees (on the

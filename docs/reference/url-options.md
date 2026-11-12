@@ -72,7 +72,7 @@ The tools that load pages with these options: [Tools](tools.md).
   (`src/weather/HazeKeys.ts`).
 - `seaFog`: the deep sea fog, a switch beside the weather under any sky and at any hour (off by
   default; the GUI's Weather folder, `sea fog`). Its fields tune as `haze.fog.<field>@sea`
-  (`src/weather/HazeKeys.ts` SEA_FOG).
+  (`src/look/HazeLook.ts` SEA_FOG).
 - `wind` (light, gentle, fresh, strong: the wind's level, a mean wind 10 m up of 1.5, 3.8, 7 and
   11 m/s) and `windDir` (its heading in degrees: where the wind comes from, in the sea spectrum's
   convention, atan2( z, x ) in the world's x-z plane; 40 is the prevailing wind, which the
@@ -307,7 +307,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `sky.daySkyExponent@overcast` (`@cloudy`: `src/sky/Weather.ts` `daySkyAt`), how much of the
   sunlight a cloud passes down the land under it keeps as a light along the sun, under every sky
   `lighting.keyThroughCloud` (0 to 4: higher gives a stronger light from the sun's side and darker
-  cast shadows under cloud, `src/sky/Sky.ts` KEY_THROUGH_CLOUD), and the land's share of the sky's
+  cast shadows under cloud, `src/look/SkyLook.ts` KEY_THROUGH_CLOUD), and the land's share of the sky's
   light `lighting.relight.skyGain@high`
   (`@low`, `@golden`, the rising sun's `@dawn`, `@sunrise`, `@cloudy`, `@cloudyBlue`, `@night`; the
   moon's sky's own `lighting.relight.moon.skyGain@low` and `@high`, its golden and cloudy keys the
@@ -317,7 +317,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `lighting.relight.overcastLand` (1 to 2), a low
   sun's lift of the sky's light on what it lights `lighting.relight.lowSun` (stops; `lowSunFloor`,
   `lowSunFloorFull`, `lowSunFrom`, `lowSunTo` its sun heights: `src/lighting/AmbientRelight.ts`),
-  the clouds' model per sky of the weather's blend (`clear`, `fair`, `cloudy`, `overcast`: `src/sky/Sky.ts`
+  the clouds' model per sky of the weather's blend (`clear`, `fair`, `cloudy`, `overcast`: `src/look/SkyLook.ts`
   CLOUD_SKIES), the shell's base and top (m), the cloud type (0 a stratus, 1 a cumulus), how far
   it varies from place to place and how far the clouds thin with distance
   `sky.clouds.base@<sky>`, `sky.clouds.top@<sky>`, `sky.clouds.type@<sky>`,
@@ -328,10 +328,10 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `sky.clouds.overcastWeight`, `sky.clouds.overcastBroad`, the closed deck's glow about the key
   light drawn on the sky and its
   seen panorama (its narrow lobe's weight in the deck's mean radiance and mean cosine, its broad
-  lobe's, and the power of the base's own pattern it follows: `src/sky/Sky.ts` `deckGlow`)
+  lobe's, and the power of the base's own pattern it follows: `src/sky/SkyDome.ts` `deckGlow`)
   `sky.clouds.deckGlow`, `sky.clouds.deckGlowLobe`, `sky.clouds.deckGlowBroad`,
   `sky.clouds.deckGlowBroadLobe`, `sky.clouds.deckGlowTexture` (by day; the night keeps the moon's
-  own form, `src/sky/Clouds.ts` MOON_DECK_GLOW), the same glow as the lighting's sources take it
+  own form, `src/sky/CloudModel.ts` MOON_DECK_GLOW), the same glow as the lighting's sources take it
   about the sun, one smooth lobe's mean cosine (0.7 to 0.85) and weight (0 to 3)
   `sky.clouds.bakeGlowLobe`, `sky.clouds.bakeGlowGain`, and the closed deck's gradation from the
   zenith to the horizon by day under overcast
@@ -371,7 +371,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   comes back by `clearShade:true`, `lowSun:true`, `tone:0.5`, `filmNight:true`; `localTone:false`
   builds the display chain without its local tone mapping; `streaks:<n>` scales the thin cloud
   layer's amount (0 turns it off) and `streakMask:true` paints its pixels for `img.py stats --mask`
-  (`src/sky/Sky.ts`). The metered exposure is shifted by the
+  (`src/sky/SkyTrack.ts`, `SkyDome.ts`). The metered exposure is shifted by the
   GUI's `exposure offset (stops)` (Post folder); its keys are `src/look/ExposureLook.ts`
   `EXPOSURE_KEYS`, and `await __PONLAI__.pipeline.readExposure()` reads its state back from the GPU
   (the same fields as `radiance`'s `exposure`). The grade's

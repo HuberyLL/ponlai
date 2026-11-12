@@ -142,6 +142,10 @@ nothing below a host reads the page or the wall clock (the save's timestamp asid
 - **The frame** ([src/post/](src/post/)): a frame graph declares every pass and the targets it
   reads and writes, compiles their pipelines ahead and runs them: the scene's passes, the
   anti-aliasing, the upscaling and dynamic resolution, the bloom and the display chain.
+- **The look** ([src/look/](src/look/)): the numbers chosen for the island's look, one file per
+  system (the sky, the day, the ambient light, the haze, the exposure, the display, the sea), each
+  with its tunables and the CPU code that reads only those numbers. The environment's and the
+  frame's modules keep the shaders and the methods, and take the numbers from here.
 
 ### Flows
 

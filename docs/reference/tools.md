@@ -598,13 +598,14 @@ the moon on the dome (`src/sky/NightSky.ts`), the flare and its visibility
 the island's ground, the stones and the sea floor, `src/materials/TerrainMaterial.ts`; `post`: the
 post chain's own passes, the exposure's meter, the bloom's levels and the local tone's grid and
 slicing, `src/post/Metering.ts`, `Exposure.ts`, `PhysicalBloom.ts`, `LocalTone.ts`; `clouds`: the
-clouds' panorama march, shadow and view kernels on the page's atmosphere, `src/sky/Clouds.ts`, with
+clouds' panorama march, shadow and view kernels on the page's atmosphere, `src/sky/Clouds.ts`
+(`CloudKernels.ts`, `CloudView.ts`), with
 a stand-in shape noise and the GPU bakes skipped; `atmosphere`: the atmosphere's bakes, the
 slices cut from its table, the earth shadow's mean over the azimuth and the sky's radiance,
 `src/sky/Atmosphere.ts`; `sky`: the materials that read the clear sky, and so the earth's shadow:
 the environment's panorama bake, the cloudless sky's irradiance and the dome as the page draws it
-(fogged by the haze, into the scene pass's MRT), `src/sky/Sky.ts`, with the moon's maps stood in
-empty); the entry's contract is in the tool's
+(fogged by the haze, into the scene pass's MRT), `src/sky/Sky.ts` (`SkyDome.ts`, `SkyBake.ts`), with
+the moon's maps stood in empty); the entry's contract is in the tool's
 header. `--features` gives the device features three sees: default none (WebGPU core), while the
 page's device has every feature its adapter offers, and `float32-filterable` and
 `texture-formats-tier1` change the WGSL.

@@ -158,10 +158,13 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   (`SeaOptics.ts`: a change to them rebuilds the world's cache), the sea's large-scale detail
   (`SeaDetail.ts`: gusts, slicks, windrows), the water's refraction source (`Refraction.ts`), the
   storm sea.
-- `src/sky/`: atmosphere, environment bakes (`Sky.ts`), volumetric clouds, the thin cloud layer's
-  fibres (`Streaks.ts`), the day cycle (`DayCycle.ts`), the night sky and its data (`NightSky.ts`,
-  `StarCatalog.ts`), the weather: its sky presets, its wind's levels and heading and the auto chain
-  (`Weather.ts`).
+- `src/sky/`: atmosphere, environment bakes (`Sky.ts`; its colour nodes for the dome and the bakes
+  in `SkyDome.ts`, the bakes in `SkyBake.ts`, its state for a frame in `SkyTrack.ts`), volumetric
+  clouds (`Clouds.ts`; their model's constants and shared helpers in `CloudModel.ts`, their kernels
+  in `CloudKernels.ts`, the traced and resolved view in `CloudView.ts`, the shadow as surfaces and
+  the air read it in `CloudShadow.ts`), the thin cloud layer's fibres (`Streaks.ts`), the day cycle
+  (`DayCycle.ts`), the night sky and its data (`NightSky.ts`, `StarCatalog.ts`), the weather: its
+  sky presets, its wind's levels and heading and the auto chain (`Weather.ts`).
 - `src/weather/`: wind (`Wind.ts`: the weather's one wind, which every part reads from it, and the
   one wind field all vegetation moves in), lightning, rain,
   puddles, the air's haze and sea fog as one froxel volume lit by the atmosphere and shadowed by
@@ -169,10 +172,19 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   `HazeKeys.ts`, its medium's closed form in `HazeDepth.ts`), the bamboo leaves the wind takes off
   the island (`FallingLeaves.ts`: a fixed ring of leaves born round the view and stepped on the GPU
   by one compute pass).
-- `src/post/`: the frame's passes and tidewater's display chain (`Pipeline.ts`, its bloom in
-  `PhysicalBloom.ts`, the colour the rods lend low light in `Purkinje.ts`), the pre-exposure every
-  writer of the scene's colour and metering light
-  multiplies by and every scene-unit reader divides out (`PreExposure.ts`; the sky's bakes and the
+- `src/look/`: the numbers chosen for the look, each system's in one file with their tunables and
+  the CPU code that reads only them; the shaders and the methods that take them stay in their
+  modules. The sky's (`SkyLook.ts`), the day's windows and exposure keys (`DayLook.ts`), the
+  ambient grade and the low key's lift (`AmbientLook.ts`), the haze's keys (`HazeLook.ts`), the
+  exposure's keys (`ExposureLook.ts`), the display's: contrast, desaturation, white balance, tone
+  curve, base grade, bloom and the rods' colour (`DisplayLook.ts`), and the sea's detail and
+  distant swell (`SeaLook.ts`).
+- `src/post/`: the frame's passes and tidewater's display chain (`Pipeline.ts`; its options of the
+  graph's structure in `PostOptions.ts`, the display chain's materials in `PipelineDisplay.ts`, the
+  passes declared on the frame graph in `PipelinePasses.ts`; its bloom in `PhysicalBloom.ts`, the
+  colour the rods lend low light in `Purkinje.ts`), the pre-exposure every writer of the scene's
+  colour and metering light multiplies by and every scene-unit reader divides out
+  (`PreExposure.ts`; the sky's bakes and the
   clouds' panorama store at a power of two of their own instead, `storeStops`, and their readers
   multiply by their read gain, Sky.ts `environmentRead` and the like), the key's screen-space shade
   over the vegetation's and the opaque scene's depth (`MeadowShade.ts`),

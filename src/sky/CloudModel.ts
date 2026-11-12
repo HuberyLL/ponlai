@@ -337,22 +337,22 @@ export const FORWARD_WEIGHT = 0.6, FORWARD_LOBE = 0.8;
 // lost its direction. The two set the lobe's share of the air's light under a closed layer and the
 // diffuse part's, not the layer's own level, which is the weather's (`columnLevel`).
 export const OVERCAST_BROAD = 0.5, OVERCAST_WEIGHT = 2.4;
-// The closed deck's glow about the key light, drawn where the sky is composed (Sky.ts `deckGlow`):
-// two Henyey-Greenstein lobes, each of mean 1 over the sphere, times the deck's mean radiance: a
-// narrow one (mean cosine DECK_GLOW_LOBE, weight DECK_GLOW) that makes the glow's peak and sets its
-// half-power radius, and a broad one (DECK_GLOW_BROAD_LOBE, weight DECK_GLOW_BROAD) that makes its
-// long tail, 35 - 90 degrees out. A single lobe could not do both: one narrow enough for the
-// half-power radius left no tail past 35 degrees, and one weighted for the tail stood too high at
-// the light's place. Raise the narrow
+// The closed deck's glow about the key light, drawn where the sky is composed (SkyDome.ts
+// `deckGlow`): two Henyey-Greenstein lobes, each of mean 1 over the sphere, times the deck's mean
+// radiance: a narrow one (mean cosine DECK_GLOW_LOBE, weight DECK_GLOW) that makes the glow's peak
+// and sets its half-power radius, and a broad one (DECK_GLOW_BROAD_LOBE, weight DECK_GLOW_BROAD)
+// that makes its long tail, 35 - 90 degrees out. A single lobe could not do both: one narrow enough
+// for the half-power radius left no tail past 35 degrees, and one weighted for the tail stood too
+// high at the light's place. Raise the narrow
 // weight for a brighter peak, its mean cosine for a tighter one; the broad weight for a brighter
 // tail, which also lifts the deck far from the light (a weight of 1 is about 1.2 times the deck's
-// own level there). The glow follows the deck's own pattern (DECK_GLOW_TEXTURE, Sky.ts `deckGlow`):
-// it is multiplied by m^k, m the base's local radiance over the deck's mean (its diffuse law
-// divided out), so it brightens the thin parts of the base and leaves its dark masses showing
-// rather than laying a flat sheet of light over them. k is small: near the light m holds the thin
-// parts' own forward light, and at k = 1 they stood out as hot spots twice the glow round them.
-// Away from the key, where no thin part holds its forward light, the closed deck's glow by day
-// follows the pattern more (`deckGlowFar`): k rises from DECK_GLOW_TEXTURE at DECK_GLOW_FROM
+// own level there). The glow follows the deck's own pattern (DECK_GLOW_TEXTURE, SkyDome.ts
+// `deckGlow`): it is multiplied by m^k, m the base's local radiance over the deck's mean (its
+// diffuse law divided out), so it brightens the thin parts of the base and leaves its dark masses
+// showing rather than laying a flat sheet of light over them. k is small: near the light m holds
+// the thin parts' own forward light, and at k = 1 they stood out as hot spots twice the glow round
+// them. Away from the key, where no thin part holds its forward light, the closed deck's glow by
+// day follows the pattern more (`deckGlowFar`): k rises from DECK_GLOW_TEXTURE at DECK_GLOW_FROM
 // degrees from the key to DECK_GLOW_FAR at DECK_GLOW_TO, so the glow, at half or more of the
 // drawn deck's radiance there, no longer lays a flat sheet over the base's rolls; the moon's
 // glow and the broken skies keep DECK_GLOW_TEXTURE everywhere (SkyDome.ts `glowToward`).

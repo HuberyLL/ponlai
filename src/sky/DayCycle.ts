@@ -278,7 +278,7 @@ export function exposureNight( elevation: number, rising: boolean, cloud: number
 	return dawn + ( night - dawn ) * cloud;
 
 }
-/** The stars' share (Sky.ts `starVisibility`): the display's night (`displayNight`), but the
+/** The stars' share (SkyTrack.ts `starVisibility`): the display's night (`displayNight`), but the
  * evening's clear share by stops (DUSK_DEPTH.stars), as the stars are light the meter reads. */
 export function starNight( daylight: number, elevation: number, rising: boolean, cloud: number ): number {
 
@@ -378,7 +378,7 @@ export function cloudMoonShare( elevation: number, rising: boolean, cloud: numbe
 
 /** The dusk's shares a script can force on a debug page, to take the light of the twilight and of
  * the night apart (tools/dusk-grid.mjs `--split`, `--night-split`), in the order that tool puts them
- * back one at a time. The night's: `moonKey`, the moon's share of the key (Sky.ts `moonGain`);
+ * back one at a time. The night's: `moonKey`, the moon's share of the key (SkyTrack.ts `moonGain`);
  * `moonSky`, of the moonlit sky (Sky.ts `moonSkyShare`, which the probes' sky gain mixes its moon's
  * part by: lighting/AmbientRelight.ts); `skyNight`, the sky's twilight night key (`skyNight`);
  * `nightAmbient`, the night's ambient in the sky, the clouds and the sea, the leaves'
@@ -389,8 +389,8 @@ export function cloudMoonShare( elevation: number, rising: boolean, cloud: numbe
  * night weight the exposure's keys take (`exposureNight`), and `displayNight`, the one the tone,
  * the grade and the bloom take (`displayNight`; both read in post/Pipeline.ts `updateDisplay`); `yunpeng`, the yunpeng's glow and its lights'
  * share, and `localLights`, the local lights' strength (main.ts); `stars`, the stars' share in the
- * drawn sky (Sky.ts `starVisibility`: `nightVisibility` times `starNight`; no bake holds them, so
- * the land takes none of their light). The twilight's, each a weight on
+ * drawn sky (SkyTrack.ts `starVisibility`: `nightVisibility` times `starNight`; no bake holds them,
+ * so the land takes none of their light). The twilight's, each a weight on
  * the sun's light (1 when not forced): `sun`, the sun's part of the key (Sky.ts `keyColor`);
  * `hazeSun`, the haze's sunlight; `hazeSky`, the haze's skylight from the sun's sky
  * (weather/VolumetricHaze.ts). */

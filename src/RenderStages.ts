@@ -303,8 +303,8 @@ export function createSky( render: RenderParts ) {
 	const weather = new Weather( loaded.weather, loaded.wind );
 	render.weather = weather;
 	render.weatherEffects = { rain: true, wetness: true };
-	// The deep sea fog (weather/HazeKeys.ts SEA_FOG): a switch beside the weather, off unless `?seaFog`
-	// or the GUI turns it on, whatever the sky.
+	// The deep sea fog (look/HazeLook.ts SEA_FOG): a switch beside the weather, off unless
+	// `?seaFog` or the GUI turns it on, whatever the sky.
 	render.seaFogView = { on: params.has( 'seaFog' ) };
 	// The day's fog layer under a clear or fair sky (weather/HazeKeys.ts `fogLayer`): a switch, off
 	// unless `?dayFog` or the GUI turns it on.

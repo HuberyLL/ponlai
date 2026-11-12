@@ -146,9 +146,9 @@ type V4 = THREE.Node<'vec4'>;
 //     the march, the panorama, the dome and the haze read, dispatched under every sky.
 //     The march draws no forward lobe of its own under a layer: what a thin part passes toward the
 //     key is its beam's light. A closed layer's round glow about the key's place is drawn where the
-//     sky is composed (Sky.ts `deckGlow`, DECK_GLOW: a narrow lobe for its peak and a broad one for
-//     its tail, following the base's own pattern), on the shares `Clouds.ColumnTop` works out, and
-//     the lighting's sources take it about the sun as one smooth lobe (BAKE_GLOW_LOBE,
+//     sky is composed (SkyDome.ts `deckGlow`, DECK_GLOW: a narrow lobe for its peak and a broad one
+//     for its tail, following the base's own pattern), on the shares `Clouds.ColumnTop` works out,
+//     and the lighting's sources take it about the sun as one smooth lobe (BAKE_GLOW_LOBE,
 //     BAKE_GLOW_GAIN): an overcast sky somewhat brighter toward the sun is the CIE general skies'
 //     overcast types 2 and 4, and how much brighter, drawn and lit, is our choice. The forward
 //     lobe's weight and mean cosine (FORWARD_WEIGHT, FORWARD_LOBE, and under overcast's share the
@@ -399,9 +399,9 @@ export class Clouds {
 	readonly forwardLobe = tuneUniform( 'sky.clouds.forwardLobe', FORWARD_LOBE, { min: 0, max: 0.95, onChange: markSkyRetune } );
 	readonly overcastBroad = tuneUniform( 'sky.clouds.overcastBroad', OVERCAST_BROAD, { min: 0, max: 0.95, onChange: markSkyRetune } );
 	readonly overcastWeight = tuneUniform( 'sky.clouds.overcastWeight', OVERCAST_WEIGHT, { min: 0, max: 3, onChange: markSkyRetune } );
-	// The closed deck's glow about the key light (DECK_GLOW, Sky.ts `deckGlow`): the narrow lobe's
-	// weight and mean cosine, the broad lobe's, and the power of the base's own pattern it follows.
-	// The seen panorama draws it too, so a change rebakes.
+	// The closed deck's glow about the key light (DECK_GLOW, SkyDome.ts `deckGlow`): the narrow
+	// lobe's weight and mean cosine, the broad lobe's, and the power of the base's own pattern it
+	// follows. The seen panorama draws it too, so a change rebakes.
 	readonly deckGlow = tuneUniform( 'sky.clouds.deckGlow', DECK_GLOW, { min: 0, max: 3, onChange: markSkyRetune } );
 	readonly deckGlowLobe = tuneUniform( 'sky.clouds.deckGlowLobe', DECK_GLOW_LOBE, { min: 0.5, max: 0.95, onChange: markSkyRetune } );
 	readonly deckGlowBroad = tuneUniform( 'sky.clouds.deckGlowBroad', DECK_GLOW_BROAD, { min: 0, max: 3, onChange: markSkyRetune } );
@@ -535,7 +535,7 @@ export class Clouds {
 	// texels the march, the panorama, the haze's light and the environment's haze read, instead of
 	// each pixel and froxel working out its sky samples. ( key, lobe share ), ( sky, diffuse share ),
 	// ( the key's share of the tops' light, the sun's share of the glow's lobe, 0, 0 ) for the
-	// closed layer's glow (Sky.ts `deckGlow`), ( the horizon's ring, 0 ).
+	// closed layer's glow (SkyDome.ts `deckGlow`), ( the horizon's ring, 0 ).
 	private readonly columnStore = instancedArray( 4, 'vec4' ).setName( 'cloudColumnTop' );
 	private readonly columnRead = storage( this.columnStore.value, 'vec4', 4 ).toReadOnly().setName( 'cloudColumnTopRead' );
 	private columnKernel: THREE.ComputeNode | null = null;
@@ -665,8 +665,8 @@ export class Clouds {
 			const level = keyTop.mul( this.weight.mul( this.forwardLevel ).add( 1 ) ).add( luminance( top.sky ) );
 			const lobeShare = keyTop.mul( this.weight ).mul( 2 ).div( max( level, 1e-20 ) ).mul( float( 1 ).sub( this.broadShare ) ).toVar();
 			const diffuseShare = float( 1 ).sub( lobeShare.mul( this.narrowLevel ).mul( 0.5 ) );
-			// the deck's glow (Sky.ts `deckGlow`): the key's share of the light on the tops, its
-			// illuminance along its own direction (not its level ground's, which goes at the
+			// the deck's glow (SkyDome.ts `deckGlow`): the key's share of the light on the tops,
+			// its illuminance along its own direction (not its level ground's, which goes at the
 			// horizon while the light still reaches the deck) against the sky's over them; and the
 			// sun's share of the lobe, as the march mixes its lobes, toward the zenith
 			const keyAlong = luminance( this.columnKey.rgb ).mul( 1 / Math.PI ).toVar();
@@ -697,7 +697,7 @@ export class Clouds {
 	/** The light on the layer's tops over pi (the key's on a level top and the sky's mean over the
 	 * upper hemisphere) and the horizon's ring, which the march colours its factors by (makeMarch),
 	 * the shares of the air's light under a low layer they set (VolumetricHaze.ts `scatterToward`)
-	 * and the closed layer's glow's (Sky.ts `deckGlow`: the key's share of the tops' light, the
+	 * and the closed layer's glow's (SkyDome.ts `deckGlow`: the key's share of the tops' light, the
 	 * sun's share of the lobe), as this frame's `Clouds.ColumnTop` worked them out (`columnTopOf`). */
 	columnTop(): { key: V3; sky: V3; horizon: V3; lobeShare: F; diffuseShare: F; keyShare: F; sunShare: F } {
 
