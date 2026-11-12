@@ -3,7 +3,7 @@ import { missing } from './Internals.ts';
 
 // PMREMGenerator's own steps (three r186), which a whole `fromEquirectangular` takes in one call
 // (its `_fromTexture`), driven one at a time so a periodic bake's GGX filter chain spreads over
-// frames (sky/Sky.ts `environmentSlices`). Taken in its order and with its arguments, the atlas
+// frames (sky/SkyBake.ts `environmentSlices`). Taken in its order and with its arguments, the atlas
 // comes out the same.
 
 type Steps = {

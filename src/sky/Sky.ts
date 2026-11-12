@@ -6,20 +6,18 @@
 
 import * as THREE from 'three/webgpu';
 import {
-	Fn, uv, uniform, texture, positionWorld, cameraPosition, normalize, smoothstep, dot,
-	vec2, vec3, vec4, ivec2, float, sqrt, max, min, atan, asin, acos, clamp, cos, sin, mix, abs, select,
-	pmremTexture, textureLoad, Loop, cross, exp2, log2, positionView, fwidth, length, step,
+	Fn, uv, uniform, texture, dot, vec2, vec3, vec4, ivec2, float, sqrt, max, min, clamp, cos, sin,
+	mix, select, textureLoad, Loop, exp2, log2, positionView,
 } from 'three/tsl';
 import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
-import { SCENE_RADIANCE_SCALE, SUN_ANGULAR_RADIUS, SUN_LIMB_U1, SUN_LIMB_U2 } from '../lighting/Radiometry.ts';
-import { SUN_DISC_RADIUS, SUN_DISC_SOLID_ANGLE, SUN_DISC_RADIANCE } from '../lighting/SunDisc.ts';
-import { Clouds, EARTH_RADIUS, MOON_DECK_GLOW, SHADOW_SLOPE_FLOOR, forwardLevel, type CloudViewScale } from './Clouds.ts';
-import { MOON_ANGULAR_RADIUS, NightSky } from './NightSky.ts';
+import { SCENE_RADIANCE_SCALE, SUN_ANGULAR_RADIUS } from '../lighting/Radiometry.ts';
+import { Clouds, SHADOW_SLOPE_FLOOR, forwardLevel, type CloudViewScale } from './Clouds.ts';
+import { NightSky } from './NightSky.ts';
 import { Lightning } from '../weather/Lightning.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { shared } from '../shared.ts';
 import { compileInto } from '../post/graph/Compile.ts';
-import { STORE_CEILING, storePress, storeStops } from '../post/PreExposure.ts';
+import { STORE_CEILING, storeStops } from '../post/PreExposure.ts';
 import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
@@ -28,8 +26,9 @@ import { cloudedHighSun, cloudedShare, overcastDeckLight, overcastFloorSun, dayS
 import { keyed } from '../post/DayKeys.ts';
 import { tune } from '../debug/Tune.ts';
 import { setKeyCloud } from '../lighting/KeyCloud.ts';
-import { environmentSteps } from '../three/Environment.ts';
-import { CLEAR_SHADE, CLEAR_SHADE_TINT, CLEAR_SKY, CLOUD_LIGHT_TINT, CLOUD_SKIES, type CloudSky, KEY_DECK_WHITE, KEY_THROUGH_CLOUD, LOW_KEY, LOW_SUN, LOW_SUN_TINT, MOON_KEY, MOON_KEY_LUMINANCE, MOON_SKY_HUE, NIGHT_AMBIENT_HUE, NIGHT_AMBIENT_SHARE, SHADOW_DENSITY, SKY_LIGHT, STREAK_AMBIENT, STREAK_DIRECT, byElevation, islandSky, keyHue, luma, luminance709, moonHue, seaKnee, storeNight } from '../look/SkyLook.ts';
+import { CLEAR_SHADE, CLEAR_SHADE_TINT, CLEAR_SKY, CLOUD_LIGHT_TINT, CLOUD_SKIES, type CloudSky, KEY_DECK_WHITE, KEY_THROUGH_CLOUD, LOW_KEY, LOW_SUN, LOW_SUN_TINT, MOON_KEY, MOON_KEY_LUMINANCE, MOON_SKY_HUE, NIGHT_AMBIENT_HUE, NIGHT_AMBIENT_SHARE, SHADOW_DENSITY, SKY_LIGHT, STREAK_AMBIENT, STREAK_DIRECT, byElevation, islandSky, keyHue, luma, luminance709, moonHue, storeNight } from '../look/SkyLook.ts';
+import { bakeColour, dirToEquirect, discCloudTransmittance, domeColour, equirectToDir, lendIsland } from './SkyDome.ts';
+import { abortSlices, bake, finishSlices, runSlices, startSlices, type Slice } from './SkyBake.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -38,9 +37,6 @@ type V4 = THREE.Node<'vec4'>;
 // The haze toward a view direction, out to a distance (the sky's own by default): the light it adds
 // and its transmittance (VolumetricHaze.ts `skyHaze`).
 export type SkyHaze = ( d: V3, distance?: THREE.Node<'float'> ) => { light: V3; transmittance: V3 };
-// Directions the discs' cloud transmittance averages over each disc (discCloudTransmittance): the
-// disc is about a degree wide, and 32 dim it without visible steps.
-const DISC_SAMPLES = 32;
 // The sky's metering illuminance against its geometric-mean luminance (k_m), and the floor of the
 // luminance whose log the mean takes (scene units: far below a moonless night's sky).
 const METER_SKY = 1;
@@ -111,7 +107,7 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // fog weather's droplets are left out of the land's light too. Under
 // overcast the two part in three ways. The closed deck's glow (`deckGlow`: a narrow peak about the
 // key light and a broad tail) is drawn whole by the dome and the seen panorama; the lighting's
-// sources take the glow about the sun alone, as one smooth lobe of their own (`glowToward`, Clouds
+// sources take the glow about the sun alone, as one smooth lobe of their own (SkyDome.ts `glowToward`, Clouds
 // `bakeGlowLobe`, `bakeGlowGain`), so the land is lit from the sun's side of the deck as the deck
 // is seen brighter there, and the moon's glow lights nothing. The deck itself is drawn as it
 // lights: the dome and the lighting's sources take one radiance from the march. The day's
@@ -123,7 +119,7 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // environment is the distant sea, its reflection of the sky over its body, which the light that
 // reaches the sea lights, the sky's and the sun's (SEA_KNEE).
 // The sun's disc and the moon's take the clouds' transmittance once, per pixel, in the composite
-// (`domeColour`); the march stores none once less than 0.003 gets through (Clouds.ts `makeMarch`),
+// (SkyDome.ts `domeColour`); the march stores none once less than 0.003 gets through (Clouds.ts `makeMarch`),
 // so a deck some 6 deep along the view hides the disc whole. The mean over each disc, read from the
 // panorama into a texel ahead of the scene (`discCloudTransmittance`), is left only for the light
 // shafts (post/LightShafts.ts) and the sun's flare. The key light's colour does not take that mean
@@ -137,26 +133,13 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // bake, as log2 in its alpha, so the cross-fade between bakes blends it geometrically; the exposure
 // reads that log directly (`meterLog2Node`, shared.ts `skyMeterLog2`).
 //
-// Only the reflection panorama, environment and irradiance cross-fade between bakes. A periodic
-// bake on a running clock spreads over frames: its panoramas and irradiance in the frame that asks
-// for it, then the environment's PMREM conversion and GGX filters at most four render passes a
-// frame, published (with the same products as a whole bake) a few frames later. Explicit bakes
-// (presets, seeks, weather jumps, the first bake) and any bake while the scene clock is paused run
-// whole, so paused frames stay exact. A paused page keeps its last explicit bake's products, and
-// every explicit bake (the load's, a scene jump's, a seek's, a retune's) starts from the state
-// before a page's first bake, the clouds set to the scene clock (`reset`), so each makes the ones
-// a fresh load of its scene makes. A bake waits for the warm-up's
-// pipelines (`warm`) before it draws: three r186 skips a draw whose pipeline an asynchronous
-// compile is still creating, so a bake drawn meanwhile left its products empty (the irradiance
-// probe at 0: no sky light, and the exposure about five stops off at noon), and a paused page,
-// which bakes no more, kept them. The spread drives three's `PMREMGenerator` private steps
-// (three/Environment.ts, which throws on a three without them).
+// The bakes, whole or spread over frames, and what they publish: SkyBake.ts.
 
 // Baked products. Directions, colours, the grade and the clouds themselves are evaluated every
 // frame; only these slower reflection, environment and irradiance products cross-fade. The
 // environment's two atlases are kept apart (Sky.environments), so a tier may refresh it on only
 // every few bakes.
-interface SkyEndpoint {
+export interface SkyEndpoint {
 	equirect: THREE.RenderTarget;
 	clouds: THREE.RenderTarget;
 	irradianceMap: THREE.RenderTarget;
@@ -173,31 +156,11 @@ interface SkyEndpoint {
 	stops: number;
 }
 
-// One bake: its endpoint, whether it is explicit (reads its irradiance back and shows at once),
-// and the environment atlas it refreshes (null: it keeps the one shown).
-interface Bake {
-	version: number;
-	readback: boolean;
-	transitionSeconds: number;
-	next: number;
-	state: SkyEndpoint;
-	environment: number | null;
-}
-
-// A step of a periodic bake spread over frames; `cost` counts its render passes.
-interface Slice {
-	cost: number;
-	run: () => void;
-}
-
 // Render passes of a periodic bake per frame after its first (the panoramas): the conversion to
 // the cube atlas and its GGX filters (two passes each), a fraction of a millisecond each at high.
 // A frame takes whole steps up to this many passes: the conversion and one filter, then two
 // filters a frame.
 const SLICE_PASSES = 4;
-// A periodic bake whose frames stop coming (a stopped loop, a hidden page) completes after this
-// long, so it never holds the sky busy.
-const SLICE_TIMEOUT_MS = 250;
 
 function makeEndpoint(): SkyEndpoint {
 
@@ -229,22 +192,6 @@ function makeEndpoint(): SkyEndpoint {
 	};
 
 }
-
-// The atmosphere is the single source of sky radiance and solar extinction. The visible sky
-// includes the sun disk; the water panorama and PMREM omit it because direct lighting already
-// reflects the sun. This follows tidewater's separation of view and reflection radiance.
-export const dirToEquirect = Fn( ( [ d ]: [ V3 ] ) => {
-
-	return vec2( atan( d.z, d.x ).mul( 0.5 / Math.PI ).add( 0.5 ), asin( clamp( d.y, - 1, 1 ) ).div( Math.PI ).add( 0.5 ) );
-
-} ).setLayout( { name: 'dirToEquirect', type: 'vec2', inputs: [ { name: 'd', type: 'vec3' } ] } );
-
-const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
-
-	const phi = q.x.sub( 0.5 ).mul( 2 * Math.PI ).toVar(), th = q.y.sub( 0.5 ).mul( Math.PI ).toVar();
-	return vec3( cos( th ).mul( cos( phi ) ), sin( th ), cos( th ).mul( sin( phi ) ) );
-
-} ).setLayout( { name: 'equirectToDir', type: 'vec3', inputs: [ { name: 'q', type: 'vec2' } ] } );
 
 /** How far the low sun's look has come in at `elevation` (degrees) under a sky of direct
  * visibility `direct`: 0 above LOW_SUN.top and below the horizon, 1 from LOW_SUN.full down to
@@ -323,76 +270,10 @@ const skyGain = ( elevation: number, rising: boolean, cloud: number, daySky: num
 const _skyGain = new THREE.Color(), _skyBeam = new THREE.Color(), _skyMoon = new THREE.Color(), _skyDay = { r: 0, g: 0, b: 0 };
 const lowKey = ( elevation: number ) => debugFlags.lowKey === false ? 1 : byElevation( LOW_KEY, elevation, 'gain' );
 
-// The finite wave grid ends before the geometric horizon. Continue it with the reflection
-// of a flat distant sea, approaching unit Fresnel at the horizon without a dark colour step.
-const seaPanorama = Fn( ( [ d, clearSky, sea ]: [ V3, V3, V3 ] ) => {
-
-	const c = clamp( abs( d.y ), 0, 1 ).toVar();
-	const g = sqrt( c.mul( c ).add( 1.333 * 1.333 - 1 ) ).toVar();
-	const a = g.sub( c ).div( g.add( c ) );
-	const b = c.mul( g.add( c ) ).sub( 1 ).div( c.mul( g.sub( c ) ).add( 1 ) );
-	const fr = a.mul( a ).mul( b.mul( b ).add( 1 ) ).mul( 0.5 );
-	return mix( sea, clearSky, select( d.y.greaterThanEqual( 0 ), 1, fr ) );
-
-} ).setLayout( { name: 'skySeaPanorama', type: 'vec3', inputs: [
-	{ name: 'd', type: 'vec3' }, { name: 'clearSky', type: 'vec3' }, { name: 'sea', type: 'vec3' },
-] } );
-
-// A sky radiance or irradiance as lent to the island (ISLAND_SKY): drawn toward `tint.rgb` at its
-// own luminance by `tint.w`, times `gain`. Linear in the light, so the graded probe's integral is
-// the integral of the graded panorama.
-const lendIsland = Fn( ( [ light, tint, gain ]: [ V3, V4, F ] ) => {
-
-	return mix( light, tint.rgb.mul( dot( light, vec3( 0.2126, 0.7152, 0.0722 ) ) ), tint.w ).mul( gain );
-
-} ).setLayout( { name: 'lendIsland', type: 'vec3', inputs: [ { name: 'light', type: 'vec3' }, { name: 'tint', type: 'vec4' }, { name: 'gain', type: 'float' } ] } );
-
-// The closed deck's glow about the key light toward `d` (Clouds.ts DECK_GLOW), drawn where the sky is
-// composed, not marched: smooth and round whatever the deck's depth and its rolls. The drawn deck
-// takes it with both lobes; the lighting's sources (the bakes) take one smooth lobe of their own
-// about the sun (Clouds `bakeGlowLobe`, `bakeGlowGain`) by the day's weight (`deckDay`,
-// `glowToward`). The deck's mean radiance `deck` times the key's
-// share of the light on its tops, two forward lobes toward the sun and the same two toward the moon
-// mixed by the sun's share (each a Henyey-Greenstein lobe of mean 1 over the sphere, a narrow one
-// for the peak and a broad one for the tail; the sun's tinted as the deck's tops take its light),
-// the clouds' opacity toward `d`, the deck's share of the sky, and `pattern` to the power k: the
-// base's local radiance over the deck's mean as its diffuse law gives it there (`deckPattern`), so
-// the glow follows the base's own pattern, brightening its thin parts and leaving its dark masses
-// dark (at k = 0 a smooth glow). `shares` = ( the key's share, the sun's share, the deck's share,
-// k ), `form` = ( the narrow lobe's mean cosine, its weight, the broad lobe's mean cosine, its
-// weight ).
-const deckGlow = Fn( ( [ d, deck, opacity, sunDir, moonDir, tint, shares, form, pattern ]: [ V3, V3, F, V3, V3, V3, V4, V4, F ] ) => {
-
-	const hg = ( g: F, nu: F ) => float( 1 ).sub( g.mul( g ) ).div( max( float( 1 ).add( g.mul( g ) ).sub( nu.mul( g ).mul( 2 ) ), 1e-4 ).pow( 1.5 ) );
-	const lobes = ( nu: F ) => hg( form.x, nu ).mul( form.y ).add( hg( form.z, nu ).mul( form.w ) );
-	const forward = mix( vec3( lobes( dot( d, moonDir ) ) ), tint.mul( lobes( dot( d, sunDir ) ) ), shares.y );
-	return deck.mul( forward ).mul( shares.x.mul( shares.z ).mul( opacity ).mul( pattern.pow( shares.w ) ) );
-
-} ).setLayout( { name: 'deckGlow', type: 'vec3', inputs: [
-	{ name: 'd', type: 'vec3' }, { name: 'deck', type: 'vec3' }, { name: 'opacity', type: 'float' }, { name: 'sunDir', type: 'vec3' },
-	{ name: 'moonDir', type: 'vec3' }, { name: 'tint', type: 'vec3' }, { name: 'shares', type: 'vec4' }, { name: 'form', type: 'vec4' },
-	{ name: 'pattern', type: 'float' },
-] } );
-
-// The base's local radiance toward `d` over the deck's mean as the column's diffuse law gives it
-// there, ( 3 / 7 )( 1 + 2 mu ) times the deck's mean radiance (Clouds.ts makeMarch: its mean over
-// level ground is the deck's), moved toward a uniform deck by `flat` as the march moves it (Clouds
-// `deckFlat`), so it has no trend with elevation and averages about 1 over the deck: what the glow
-// follows (`deckGlow`). Held in [ 1e-6, 4 ], so its power is finite at any k
-// and a lone bright seam cannot flare.
-const deckPattern = Fn( ( [ d, local, deck, flat ]: [ V3, V3, V3, F ] ) => {
-
-	const law = max( d.y, 0 ).mul( 6 / 7 ).add( 3 / 7 ).toVar();
-	const mean = dot( deck, vec3( 0.2126, 0.7152, 0.0722 ) ).mul( law.add( float( 1 ).sub( law ).mul( flat ) ) );
-	return clamp( dot( local, vec3( 0.2126, 0.7152, 0.0722 ) ).div( max( mean, 1e-20 ) ), 1e-6, 4 );
-
-} ).setLayout( { name: 'deckPattern', type: 'float', inputs: [ { name: 'd', type: 'vec3' }, { name: 'local', type: 'vec3' }, { name: 'deck', type: 'vec3' }, { name: 'flat', type: 'float' } ] } );
-
 // The low sun's lift of the clouds' beam and fill (trackClouds), fading as the sky closes.
 const lowSunOf = ( elevation: number, coverage: number ) => THREE.MathUtils.smoothstep( elevation, - 4, 1 )
 	* ( 1 - THREE.MathUtils.smoothstep( elevation, 6, 20 ) ) * ( 1 - THREE.MathUtils.smoothstep( coverage, 0.35, 0.65 ) );
 
-const NEUTRAL_TINT = new THREE.Vector4( 1, 1, 1, 0 );
 const _white = new THREE.Color();
 const _zenith = new THREE.Vector3( 0, 1, 0 );
 // The clouds' own moonlight (DayCycle.ts `cloudMoonShare`, its windows DUSK_WINDOWS.cloudMoon) comes
@@ -415,9 +296,6 @@ const _streakKey = { r: 0, g: 0, b: 0 };
 const CLOUD_TURN = [ - 3, - 2.5, - 2 ] as const;
 // The sine of the sun's elevation over which the clouds' shadow comes in as it rises.
 const CLOUD_SHADOW_SET = [ - 0.02, 0.02 ] as const;
-// The height over a low deck's base (metres) the bake fogs its clouds out to, where a closed deck's
-// march gathers most of its light (the dome reads the march's own depth: `domeColour`).
-const DECK_LIGHT_HEIGHT = 150;
 // The sine of the key's elevation over which the rays of the clouds' shadow gather from the height
 // of its disc to its centre as it climbs, from 8 to 11 degrees: from there up a cloud's own edge
 // takes longer to pass than the disc does (near 0.8 degree at 10 degrees, 0.15 at 4.7). The rays
@@ -469,7 +347,7 @@ export class Sky {
 	// tells the morning's keys from the evening's at one height
 	rising = false;
 	// the weather's day sky as `track` last took it (Weather.ts `daySkyAt`), for the bake's sea
-	private daySky = 1;
+	daySky = 1;
 	// the sun's light the sky lends without the weather's day sky (`skyGain` at a day sky of 1): the
 	// beam the air under the sky scatters (weather/VolumetricHaze.ts `mieColour`), which the day sky
 	// leaves as it leaves the land's key, since it lowers the sky's own light the sun gives, not the
@@ -516,10 +394,10 @@ export class Sky {
 	private readonly moonKeyAbove = new THREE.Color();
 	// The viewer the cloud map is computed for; clouds are far, so only small moves matter.
 	viewer = new THREE.Vector3( 0, 15, 0 );
-	private viewCamera: THREE.PerspectiveCamera | null = null;
-	private viewWidth = 1;
-	private viewHeight = 1;
-	private cloudTime = 0;
+	viewCamera: THREE.PerspectiveCamera | null = null;
+	viewWidth = 1;
+	viewHeight = 1;
+	cloudTime = 0;
 	solarIlluminance = new THREE.Color();
 	readonly grade = { exposure: DAY_EXPOSURE, daylight: 1, night: 0, exposureNight: 0 };
 	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
@@ -573,64 +451,64 @@ export class Sky {
 	layerStops = 18;
 	panoramaStops = 18;
 
-	private endpoints = [ makeEndpoint(), makeEndpoint() ];
+	endpoints = [ makeEndpoint(), makeEndpoint() ];
 	// The environment's PMREM atlases: the one shown (environmentFront) and the next one.
-	private environments: [ THREE.RenderTarget | null, THREE.RenderTarget | null ] = [ null, null ];
-	private environmentFront = 0;
+	environments: [ THREE.RenderTarget | null, THREE.RenderTarget | null ] = [ null, null ];
+	environmentFront = 0;
 	// The atlases the displayed environment cross-fades from and to (by `blend`), as published.
-	private environmentPair: [ number, number ] = [ 0, 0 ];
+	environmentPair: [ number, number ] = [ 0, 0 ];
 	// The environment refreshes on every environmentEvery-th periodic bake (setEnvironmentCadence).
-	private environmentEvery = 1;
-	private bakesSinceEnvironment = 0;
+	environmentEvery = 1;
+	bakesSinceEnvironment = 0;
 	// A periodic bake spread over frames: its remaining steps, and the promise to settle.
-	private slices: Slice[] = [];
-	private sliceDone: { resolve: () => void; reject: ( error: unknown ) => void } | null = null;
-	private sliceTimer: ReturnType<typeof setTimeout> | null = null;
-	private sliceMs = 0;
+	slices: Slice[] = [];
+	sliceDone: { resolve: () => void; reject: ( error: unknown ) => void } | null = null;
+	sliceTimer: ReturnType<typeof setTimeout> | null = null;
+	sliceMs = 0;
 	// The scene clock did not advance over the last cloud update: a paused scene does its bakes whole.
-	private clockStill = false;
+	clockStill = false;
 	private readonly displaySize = new THREE.Vector2();
-	private front = 0;
-	private destination = 0;
-	private initialized = false;
-	private weatherState: WeatherState | null = null;
-	private pendingUpdate: Promise<void> | null = null;
+	front = 0;
+	destination = 0;
+	initialized = false;
+	weatherState: WeatherState | null = null;
+	pendingUpdate: Promise<void> | null = null;
 	// The warm-up's compiles (`warm`), which every bake waits for; a failed warm-up resolves here
 	// too (its caller reports it), so bakes still run.
-	private warmed: Promise<void> = Promise.resolve();
-	private transitionDuration = 0;
-	private transitionElapsed = 0;
-	private blend = uniform( 0 );
-	private panoramaA: THREE.TextureNode;
-	private panoramaB: THREE.TextureNode;
-	private environmentA: THREE.TextureNode | null = null;
-	private environmentB: THREE.TextureNode | null = null;
-	private environment: V3 | null = null;
-	private environmentBlendQuad: THREE.QuadMesh | null = null;
-	private irradianceQuad: THREE.QuadMesh;
+	warmed: Promise<void> = Promise.resolve();
+	transitionDuration = 0;
+	transitionElapsed = 0;
+	blend = uniform( 0 );
+	panoramaA: THREE.TextureNode;
+	panoramaB: THREE.TextureNode;
+	environmentA: THREE.TextureNode | null = null;
+	environmentB: THREE.TextureNode | null = null;
+	environment: V3 | null = null;
+	environmentBlendQuad: THREE.QuadMesh | null = null;
+	irradianceQuad: THREE.QuadMesh;
 	private irradianceBlendQuad: THREE.QuadMesh;
 	private irradianceDisplay = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter } );
-	private irradianceA: THREE.TextureNode;
-	private irradianceB: THREE.TextureNode;
-	private clearIrradianceQuad: THREE.QuadMesh;
+	irradianceA: THREE.TextureNode;
+	irradianceB: THREE.TextureNode;
+	clearIrradianceQuad: THREE.QuadMesh;
 	private clearIrradianceBlendQuad: THREE.QuadMesh;
 	private clearIrradianceDisplay = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter } );
-	private clearIrradianceA: THREE.TextureNode;
-	private clearIrradianceB: THREE.TextureNode;
-	private deckIrradianceQuad: THREE.QuadMesh;
+	clearIrradianceA: THREE.TextureNode;
+	clearIrradianceB: THREE.TextureNode;
+	deckIrradianceQuad: THREE.QuadMesh;
 	private deckIrradianceBlendQuad: THREE.QuadMesh;
 	private deckIrradianceDisplay = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter } );
-	private deckIrradianceA: THREE.TextureNode;
-	private deckIrradianceB: THREE.TextureNode;
-	private bakeDeckIrradiance: THREE.TextureNode;
-	private bakeVersion = 0;
+	deckIrradianceA: THREE.TextureNode;
+	deckIrradianceB: THREE.TextureNode;
+	bakeDeckIrradiance: THREE.TextureNode;
+	bakeVersion = 0;
 	// periodic bakes whose irradiance readback is still in flight (`readIrradiance`; `readbacks`)
 	private irradiancePending = 0;
-	private displaySunDir = uniform( new THREE.Vector3( 0, 1, 0 ) );
-	private displaySolarIlluminance = uniform( new THREE.Color( 0, 0, 0 ) );
+	displaySunDir = uniform( new THREE.Vector3( 0, 1, 0 ) );
+	displaySolarIlluminance = uniform( new THREE.Color( 0, 0, 0 ) );
 	// Live clear-sky terms for the dome; the bake keeps its own copies below.
-	private displayNightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
-	private displayAmbientGain = uniform( 1 );
+	displayNightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
+	displayAmbientGain = uniform( 1 );
 	// the clear day's sky gain over the clouded sky's, which the open sky behind the clouds takes
 	// (CLEAR_SKY, `gapSky`), on the sun's share of the sky at the sun's height and on the moon's at the
 	// moon's; live, as the atmosphere's own uniforms are, and read by the bakes and the exposure's
@@ -644,63 +522,63 @@ export class Sky {
 	// takes it as it meets the sky (shared.ts `seenNight`, Water.ts `SEEN_SKY`), the far air on
 	// the moon's sky and deck light it scatters (VolumetricHaze.ts `SEEN_AIR`), and the exposure's
 	// meter divides it out of the sky's pixels (post/Metering.ts).
-	private domeGapGain = { sun: this.gapGain.sun, moon: uniform( 1 ) };
+	domeGapGain = { sun: this.gapGain.sun, moon: uniform( 1 ) };
 	// the key's floor under cloud and the weather's cast shadow on the island (KEY_THROUGH_CLOUD,
 	// Weather.ts `castShadow`)
 	// (the sea's floor too: `seaKeyFloor`)
 	private keyCloudFloor = uniform( 0 );
 	readonly castShadow = uniform( 1 );
-	private cloudLayer: THREE.TextureNode;
-	private pmrem: THREE.PMREMGenerator;
-	private quad: THREE.QuadMesh;
+	cloudLayer: THREE.TextureNode;
+	pmrem: THREE.PMREMGenerator;
+	quad: THREE.QuadMesh;
 	// the bake of the environment's source, which lights the land: its haze without the fog layer
 	// (`fogEnvironment`)
-	private landQuad: THREE.QuadMesh;
-	private reflectionSource: THREE.RenderTarget;
-	private upperQuad: THREE.QuadMesh;
-	// the distant sea's body as the bake takes it (SEA_KNEE, `seaNode`): the colour times the sun's
+	landQuad: THREE.QuadMesh;
+	reflectionSource: THREE.RenderTarget;
+	upperQuad: THREE.QuadMesh;
+	// the distant sea's body as the bake takes it (SEA_KNEE, SkyDome.ts `seaNode`): the colour times the sun's
 	// illuminance, the night's share, the sun's direct light on the level water (E / pi, luminance) and
 	// the knee; and the latest bake's radiance, read back (`seaRadiance`), with that bake's version
-	private seaBody = uniform( new THREE.Color() );
-	private seaNight = uniform( new THREE.Color() );
-	private seaSun = uniform( 0 );
-	private seaKnee = uniform( 1 );
+	seaBody = uniform( new THREE.Color() );
+	seaNight = uniform( new THREE.Color() );
+	seaSun = uniform( 0 );
+	seaKnee = uniform( 1 );
 	private seaLight = new THREE.Color();
 	private seaVersion = 0;
-	private ambientGain = uniform( 1 );
-	private irradiancePass = uniform( 0 );
+	ambientGain = uniform( 1 );
+	irradiancePass = uniform( 0 );
 	// the bake's store toward its target (its power of two, under the debug press PreExposure.ts
 	// `storePress`; 1 for the irradiance probe's panorama)
-	private bakeStore = uniform( 1 );
+	bakeStore = uniform( 1 );
 	// the bake's cloud layer's store and its inverse, set together for the bake that writes and
 	// reads it (see the stores above)
-	private layerStore = uniform( 1 );
-	private layerRead = uniform( 1 );
+	layerStore = uniform( 1 );
+	layerRead = uniform( 1 );
 	// the inverse stores of the seen panoramas' two sides (`samplePanorama`), set with their
 	// textures (publishBake)
-	private panoramaReadA = uniform( 1 );
-	private panoramaReadB = uniform( 1 );
+	panoramaReadA = uniform( 1 );
+	panoramaReadB = uniform( 1 );
 	// The powers of two of the environment's two atlases, as filtered from the source, and the
 	// displayed environment's gain on its first atlas, which takes it to the second's store
 	// (publishBake: the displayed environment is stored at the second's power, `environmentRead`).
-	private environmentStops: [ number, number ] = [ 0, 0 ];
-	private environmentGainA = uniform( 1 );
-	private environmentReadValue = 1;
+	environmentStops: [ number, number ] = [ 0, 0 ];
+	environmentGainA = uniform( 1 );
+	environmentReadValue = 1;
 	// The light the sky lends the island for this frame's sun (ISLAND_SKY: the tint and its amount,
 	// the gain), and the bake's copies: the island's for the environment's source, neutral for the
 	// other panoramas.
-	private islandTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
-	private islandGain = uniform( 1 );
-	private bakeIslandTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
-	private bakeIslandGain = uniform( 1 );
+	islandTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
+	islandGain = uniform( 1 );
+	bakeIslandTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
+	bakeIslandGain = uniform( 1 );
 	// 1 while the bake draws the environment's source or the probe's panorama, which take the haze
 	// all round (`fogEnvironment`; the source without the fog layer); the seen panorama takes it
 	// above the horizon only, as the dome fogs what it shows of it under the horizon itself
-	private bakeHaze = uniform( 0 );
+	bakeHaze = uniform( 0 );
 	// 1 while the bake draws the seen panorama, which draws the closed deck's glow whole as the dome
 	// does (`deckGlow`, about the sun and about the moon), so the sea reflects it; 0 while it draws
 	// the environment's source and the probe's panorama, which take the glow about the sun alone
-	// (`glowToward`), so the land is lit from the sun's side of the deck as the deck is seen brighter
+	// (SkyDome.ts `glowToward`), so the land is lit from the sun's side of the deck as the deck is seen brighter
 	// there, and the moon's glow lights nothing
 	readonly bakeGlow = uniform( 0 );
 	// 1 while the bake draws the seen panorama, which takes the air's floor of the key under the
@@ -710,11 +588,11 @@ export class Sky {
 	// how far the deck takes its day's form (Weather.ts `overcastDeckLight` at the sun's height:
 	// exactly 1 from the horizon up, exactly 0 from -6 degrees down, smooth between), so the drawn
 	// deck's level, its gradation and its glow's form, and the glow the lighting's sources take
-	// (`glowToward`), turn into the night's over the civil twilight rather than in the frame the
+	// (SkyDome.ts `glowToward`), turn into the night's over the civil twilight rather than in the frame the
 	// disk's light leaves
-	private deckDay = uniform( 0 );
+	deckDay = uniform( 0 );
 	// the night's gain on the clouds as the dome draws them (Weather.ts `seenNight`), 1 by day
-	private seenDeck = uniform( 1 );
+	seenDeck = uniform( 1 );
 	private keyFloorUnderDeck = 0;
 
 	constructor( renderer: THREE.WebGPURenderer, { sunIlluminance = SUN_ILLUMINANCE, elevation = 32, azimuth = - 8 } = {} ) {
@@ -825,7 +703,7 @@ export class Sky {
 		} )();
 		this.clearIrradianceQuad = new THREE.QuadMesh( clearIrradianceMat );
 		// The sky's irradiance with its clouds and without the haze over it, over the same directions:
-		// the cloud layer composed over the clear sky as the bake composes it (`bakeColour`), at the
+		// the cloud layer composed over the clear sky as the bake composes it (SkyDome.ts `bakeColour`), at the
 		// weather's ambient gain, once per bake, before the panoramas (whose haze reads it).
 		const deckIrradianceMat = new THREE.NodeMaterial();
 		deckIrradianceMat.depthTest = false;
@@ -872,14 +750,14 @@ export class Sky {
 		this.upperQuad = new THREE.QuadMesh( upperMat );
 
 		const bake = new THREE.NodeMaterial();
-		bake.fragmentNode = this.bakeColour();
+		bake.fragmentNode = bakeColour( this );
 		this.quad = new THREE.QuadMesh( bake );
 		const landBake = new THREE.NodeMaterial();
-		landBake.fragmentNode = this.bakeColour();
+		landBake.fragmentNode = bakeColour( this );
 		this.landQuad = new THREE.QuadMesh( landBake );
 
 		const domeMat = new THREE.MeshBasicNodeMaterial( { side: THREE.BackSide, depthWrite: false } );
-		domeMat.colorNode = this.domeColour();
+		domeMat.colorNode = domeColour( this );
 		// The exposure's metering illuminance on the sky's pixels (Motion.ts `meterOutput`): the sky's
 		// geometric-mean luminance times METER_SKY, one value for the whole dome, so the meter reads a
 		// sky-filled view by the sky's overall brightness and not by the sun's surroundings.
@@ -922,69 +800,6 @@ export class Sky {
 
 	}
 
-	/** The distant sea's body as the bake lights it (SEA_KNEE): the light that reaches the sea, the
-	 * deck irradiance of this bake (drawn before its panoramas) and the sun's on the level water, over
-	 * the knee and at most 1, times the colour; `landSea` is its CPU twin. At the knee and above it is
-	 * `seaBody` itself, bit for bit. */
-	private seaNode(): V3 {
-
-		const light = dot( this.bakeDeckIrradianceNode, vec3( 0.2126, 0.7152, 0.0722 ) ).add( this.seaSun );
-		return this.seaBody.mul( min( light.div( this.seaKnee ), 1 ) ).add( this.seaNight );
-
-	}
-
-	/** The environment's source toward each texel of the panorama: the sky over the island, its
-	 * clouds and their reflection in the distant sea, seen through `haze` when given (see
-	 * `fogEnvironment`). */
-	private bakeColour( haze?: SkyHaze ): V4 {
-
-		return Fn( () => {
-
-			const q = uv();
-			const d = equirectToDir( q ).toVar();
-			const cloud = this.layerAt( vec2( q.x, abs( q.y.sub( 0.5 ) ).mul( 2 ) ) ).toVar();
-			const up = vec3( d.x, abs( d.y ), d.z );
-			// (the environment's source takes the light lent to the island: ISLAND_SKY; the haze as the
-			// dome lays it, from the sea's level: see `fogEnvironment`)
-			const clear = this.gapSky( up ).toVar();
-			// the closed deck's glow over the clouds, whole in the seen panorama, about the sun alone in
-			// the lighting's sources (`bakeGlow`); its deck level without the weather's gain, which the
-			// source takes below.
-			const bakeDeck = this.bakeDeckIrradianceNode.div( max( this.ambientGain, 1e-6 ) ).toVar();
-			const pattern = deckPattern( up, cloud.rgb, bakeDeck, this.clouds.deckFlat ).toVar();
-			const glow = this.glowToward( up, bakeDeck, cloud.a, pattern ).mul( this.bakeGlow );
-			const sunGlow = this.glowToward( up, bakeDeck, cloud.a, pattern, true ).mul( float( 1 ).sub( this.bakeGlow ) );
-			const lit = cloud.rgb.add( sunGlow.add( glow ) ).toVar();
-			const air = clear.mul( cloud.a ).add( lit ).toVar();
-			let fogged: V3 = air;
-			if ( haze ) {
-
-				// the clear sky through the haze along the whole way, the clouds through it out to the
-				// shell's middle height (from the sea: the distance to that sphere, as the dome takes it),
-				// under the low deck's share to a little above its base instead, where a deck's light comes
-				// from (the dome takes the march's own depth there, which the panorama does not keep)
-				const sky = haze( up );
-				const middle = mix( this.clouds.shellBottom.add( this.clouds.shellThickness.mul( 0.5 ) ), this.clouds.shellBottom.add( DECK_LIGHT_HEIGHT ), this.clouds.lowShare ).toVar();
-				const inside = middle.mul( middle.add( EARTH_RADIUS * 2 ) ), b = up.y.mul( EARTH_RADIUS );
-				const cloudHaze = haze( up, inside.div( sqrt( b.mul( b ).add( inside ) ).add( b ) ) );
-				const seen = sky.light.add( sky.transmittance.mul( clear ) ).mul( cloud.a )
-					.add( cloudHaze.light.mul( float( 1 ).sub( cloud.a ) ) ).add( cloudHaze.transmittance.mul( lit ) );
-				// (the seen panorama only above the horizon, where the water reads it: what the sea
-				// reflects is the sky the dome draws, and under cloud the haze's light is nearly all of
-				// that; below the horizon the dome fogs it itself)
-				fogged = mix( air, seen, max( this.bakeHaze, step( 0, d.y ) ) );
-
-			}
-			const sky = lendIsland( fogged.mul( this.ambientGain ), this.bakeIslandTint, this.bakeIslandGain );
-			// (no stars: starlight is a few hundredths of the moonlit sky's light on level ground, and the
-			// sky the eye sees draws them itself)
-			const radiance = seaPanorama( d, sky, this.seaNode() );
-			return vec4( min( radiance.mul( this.bakeStore ), vec3( STORE_CEILING ) ), mix( cloud.a, d.y, this.irradiancePass ) );
-
-		} )();
-
-	}
-
 	/** Lays the haze over the panoramas toward every direction from one height (VolumetricHaze.ts
 	 * `openSky`): `haze` over the irradiance probe's panorama and the seen panorama above the
 	 * horizon, as the dome lays it on itself (`fogDome`), so the sky's metering, the water's sky
@@ -1007,167 +822,28 @@ export class Sky {
 		for ( const [ quad, h ] of [ [ this.quad, haze ], [ this.landQuad, landHaze ] ] as const ) {
 
 			const material = quad.material as THREE.NodeMaterial;
-			material.fragmentNode = this.bakeColour( h );
+			material.fragmentNode = bakeColour( this, h );
 			material.needsUpdate = true;
 
 		}
 
 	}
 
-	/** The dome's colour toward each pixel, seen through `haze` when given: a function of a view
-	 * direction and a distance along it (the sky's own by default) that returns the light the haze
-	 * adds and its transmittance (VolumetricHaze.ts `skyHaze`). The clouds are fogged at the
-	 * distance to the shell's middle height, under the low deck's share at the march's depth, and
-	 * under the thin layer's share of their opacity at the distance to the layer, the sky behind
-	 * them along the whole way. */
-	private domeColour( haze?: SkyHaze ): V4 {
-
-		return Fn( () => {
-
-			const d = normalize( positionWorld.sub( cameraPosition ) ).toVar();
-			// The disc: cut where the cosine to the sun crosses the radius's, over one pixel's change
-			// of that cosine (a clean edge at any size), darkened toward the limb by the quadratic law
-			// (Radiometry.ts); the angle from the chord, which keeps its precision near the centre.
-			const nu = dot( d, this.displaySunDir ).toVar();
-			const mask = clamp( nu.sub( Math.cos( SUN_DISC_RADIUS ) ).div( max( fwidth( nu ), 1e-7 ) ), 0, 1 );
-			const r = asin( clamp( length( d.sub( this.displaySunDir ) ).mul( 0.5 ), 0, 1 ) ).mul( 2 / SUN_DISC_RADIUS ).toVar();
-			const m = float( 1 ).sub( sqrt( max( float( 1 ).sub( r.mul( r ) ), 0 ) ) ).toVar();
-			const limb = float( 1 ).sub( m.mul( SUN_LIMB_U1 ) ).sub( m.mul( m ).mul( SUN_LIMB_U2 ) );
-			// The integral of the visible disk is the key light's irradiance, times the displayed share
-			// (lighting/SunDisc.ts SUN_DISC_RADIANCE). A shared scene unit
-			// scale keeps the normalised disk finite in fp16 without dimming it independently. Its
-			// colour is the air's analytic transmittance toward it (Atmosphere.ts discTransmittance).
-			// The clouds hide it by their transmittance once, per pixel, in the composite below: an
-			// edge crossing the disc dims it as smoothly as the march's opacity changes.
-			const disk = this.atmosphere.discTransmittance( d ).mul( this.displaySolarIlluminance )
-				.mul( mask ).mul( limb ).div( SUN_DISC_SOLID_ANGLE / SUN_DISC_RADIANCE ).mul( smoothstep( 0, 0.001, d.y ) );
-			// Above the horizon the clear sky and the clouds are both live. Below, the baked distant-sea reflection continues the waves.
-			const lower = this.samplePanorama( d, float( 0 ) ).toVar();
-			const cloud = this.clouds.sampleView( d ).toVar();
-			const above = d.y.greaterThanEqual( 0 ).toVar();
-			const stars = this.night.stars( d ).mul( this.night.moonOcclusion( d ) );
-			// What the clouds hide: the clear sky, the discs and the stars (below the horizon, the
-			// reflection with its own clouds), seen through the haze along the whole way; the discs
-			// take the clouds' transmittance once, here, and nowhere else.
-			const behind = select( above, this.gapSky( vec3( d.x, max( d.y, 0 ), d.z ), this.domeGapGain ).mul( this.displayAmbientGain ), lower.rgb )
-				.add( disk.add( this.night.moon( d ) ).add( stars ).mul( select( above, float( 1 ), lower.a ) ) );
-			const through = select( above, cloud.a, float( 1 ) ).toVar();
-			// the closed deck's glow over the clouds above the horizon (`deckGlow`), before the haze,
-			// which hides it with the clouds by their distance
-			// (the deck under the night's seen gain, `seenDeck`, after the glow's pattern)
-			const pattern = deckPattern( d, cloud.rgb.mul( this.displayAmbientGain ), this.deckIrradianceNode, this.clouds.deckFlat ).toVar();
-			const glow = this.glowToward( d, this.deckIrradianceNode, cloud.a, pattern ).toVar();
-			const clouds = select( above, cloud.rgb.mul( this.seenDeck ).mul( this.displayAmbientGain ), vec3( 0 ) ).add( glow.mul( step( 0, d.y ) ) ).toVar();
-			if ( ! haze ) return vec4( behind.mul( through ).add( clouds ), 1 );
-			const sky = haze( d );
-			// The clouds through the haze out to the shell's middle height: its light over their
-			// opacity, their own (premultiplied) through its transmittance.
-			// (from the march's own camera height, held under the base (Clouds `camY`): the depths
-			// `sampleViewFog` returns are measured from there, and above the middle the root's
-			// argument would turn negative)
-			const middle = this.clouds.shellBottom.add( this.clouds.shellThickness.mul( 0.5 ) ).toVar();
-			const camY = this.clouds.camY;
-			const r0 = camY.add( EARTH_RADIUS ).toVar(), b = r0.mul( max( d.y, 0 ) ).toVar();
-			// (the distance to that sphere, written without a difference of near-equal terms)
-			const inside = middle.sub( camY ).mul( r0.add( middle.add( EARTH_RADIUS ) ) ).toVar();
-			const mid = inside.div( sqrt( b.mul( b ).add( inside ) ).add( b ) ).toVar();
-			// Under the low deck's share, out to the march's own opacity-weighted depth instead
-			// (Clouds `sampleViewFog`, its `depth`): a closed deck's light comes from its lowest
-			// hundred metres, and at a low deck the middle lies some 2.5 times farther, which fogged
-			// the deck at 5 - 12 degrees about twice as densely as its distance does.
-			const fog = this.clouds.sampleViewFog( d, mid );
-			const reach = mix( mid, fog.depth, this.clouds.lowShare ).toVar();
-			// The thin layer lies above the cumulus' middle (the clear and fair skies' 6.6 km
-			// against its 8.5), so farther along a ray: where its fibres make the opacity, out to
-			// the layer instead, so the haze between fades them toward the horizon by their own
-			// distance. One distance per pixel, mixed by the layer's share of the opacity there:
-			// exact where no cumulus stands in front, and where one does it hides the layer. With
-			// no layer (cloudy and overcast skies) the share is none and the reach the cumulus'
-			// alone.
-			const thinShare = clamp( fog.thin.div( max( float( 1 ).sub( through ), 1e-4 ) ), 0, 1 );
-			const streakHeight = this.clouds.streakHeight;
-			const thinInside = max( streakHeight.sub( camY ).mul( r0.add( streakHeight.add( EARTH_RADIUS ) ) ), 0 ).toVar();
-			const thin = thinInside.div( sqrt( b.mul( b ).add( thinInside ) ).add( b ) );
-			const cloudHaze = haze( d, mix( reach, thin, thinShare ) );
-			const fogged = cloudHaze.light.mul( float( 1 ).sub( through ) ).add( cloudHaze.transmittance.mul( clouds ) );
-			const result = sky.light.add( sky.transmittance.mul( behind ) ).mul( through ).add( fogged ).toVar();
-			if ( debugFlags.streakMask !== true ) return vec4( result, 1 );
-			// (`flags=streakMask`: the thin layer's pixels where its opacity as seen passes 0.1 in a
-			// red of the same luminance, those where it lies between 0.02 and 0.1 in such a green,
-			// for `img.py stats --mask`)
-			const luminance = dot( result, vec3( 0.2126, 0.7152, 0.0722 ) ).toVar();
-			const edge = select( fog.thin.greaterThan( 0.02 ).and( above ), vec3( 0, luminance.div( 0.7152 ), 0 ), result );
-			return vec4( select( fog.thin.greaterThan( 0.1 ).and( above ), vec3( luminance.div( 0.2126 ), 0, 0 ), edge ), 1 );
-
-		} )();
-
-	}
-
-	/** The closed deck's glow toward `d` (`deckGlow`) over a deck of mean radiance `deck`, through
-	 * clouds of transmittance `transmittance` there, following the base's local radiance over its
-	 * mean `pattern` (`deckPattern`), with this frame's shares (Clouds `columnTop`); with `sunOnly`
-	 * the lighting's sources' glow: about the sun alone, one smooth lobe of its own (Clouds
-	 * `bakeGlowLobe`, `bakeGlowGain`), by the day's weight (`deckDay`, so exactly none by night). */
-	private glowToward( d: V3, deck: V3, transmittance: F, pattern: F, sunOnly = false ): V3 {
-
-		const top = this.clouds.columnTop();
-		const c = this.clouds;
-		if ( sunOnly ) {
-
-			// the lighting's sources: one lobe of their own (`bakeGlowLobe`, `bakeGlowGain`), smooth
-			// (the pattern's power 0)
-			return deckGlow( d, deck, float( 1 ).sub( transmittance ), this.atmosphere.sunDir, this.atmosphere.moonDir, c.lobeTint.rgb,
-				vec4( top.keyShare, 1, c.broadShare, 0 ), vec4( c.bakeGlowLobe, c.bakeGlowGain, 0, 0 ), pattern ).mul( this.deckDay );
-
-		}
-
-		// the day's form by `deckDay`, the moon's own by night (each exact at a weight of 1 or 0)
-		const night = vec4( ...MOON_DECK_GLOW );
-		const day = vec4( c.deckGlowLobe, c.deckGlow, c.deckGlowBroadLobe, c.deckGlowBroad );
-		const form = night.mul( float( 1 ).sub( this.deckDay ) ).add( day.mul( this.deckDay ) );
-		// the pattern's power: away from the sun the closed deck's by day (`deckGlowFar`, from
-		// `deckGlowFrom` to `deckGlowTo` degrees), by overcast's share and the day's weight; the
-		// moon's and the broken skies' DECK_GLOW_TEXTURE (exact at a weight of 0)
-		const away = smoothstep( c.deckGlowFrom, c.deckGlowTo, acos( clamp( dot( d, this.atmosphere.sunDir ), - 1, 1 ) ).mul( 180 / Math.PI ) );
-		const k = mix( c.deckGlowTexture, mix( c.deckGlowTexture, c.deckGlowFar, away ), c.overcastShare.mul( this.deckDay ) );
-		return deckGlow( d, deck, float( 1 ).sub( transmittance ), this.atmosphere.sunDir, this.atmosphere.moonDir, c.lobeTint.rgb,
-			vec4( top.keyShare, top.sunShare, c.broadShare, k ), form, pattern );
-
-	}
-
-	/** The mean cloud transmittance over the sun's disc (r) and over the moon's (g): DISC_SAMPLES
-	 * directions spread over each disc (a Vogel spiral, uniform by area) read from the clouds'
-	 * panorama, for the sky's constants texel (Pipeline.ts `skyConstants`), which the sun's flare and
-	 * the light shafts read; the dome's discs do not. One ray would switch the flare on and off as a
-	 * cloud's edge crosses the disc. */
+	/** The mean cloud transmittance over the sun's disc (r) and over the moon's (g), for the sky's
+	 * constants texel (SkyDome.ts `discCloudTransmittance`). */
 	discCloudTransmittance(): V4 {
 
-		const mean = ( centre: V3, radius: number ) => {
-
-			const tangent = normalize( select( abs( centre.y ).greaterThan( 0.99 ), vec3( 1, 0, 0 ), vec3( centre.z, 0, centre.x.negate() ) ) ).toVar();
-			const bitangent = cross( centre, tangent ).toVar();
-			const sum = float( 0 ).toVar();
-			Loop( DISC_SAMPLES, ( { i } ) => {
-
-				const r = sqrt( float( i ).add( 0.5 ).div( DISC_SAMPLES ) ).mul( radius );
-				const a = float( i ).mul( 2.399963 );
-				sum.addAssign( this.clouds.sample( normalize( centre.add( tangent.mul( cos( a ).mul( r ) ) ).add( bitangent.mul( sin( a ).mul( r ) ) ) ) ).a );
-
-			} );
-			return sum.div( DISC_SAMPLES );
-
-		};
-		return Fn( () => vec4( mean( this.displaySunDir, SUN_DISC_RADIUS ), mean( this.night.moonDir, MOON_ANGULAR_RADIUS ), 0, 1 ) )();
+		return discCloudTransmittance( this );
 
 	}
 
-	/** Lays the haze over the dome (VolumetricHaze.ts `skyHaze`: see `domeColour`). The sky fogs
+	/** Lays the haze over the dome (VolumetricHaze.ts `skyHaze`: see SkyDome.ts `domeColour`). The sky fogs
 	 * itself, so the haze's composite leaves the sky's pixels as they are. Called once, before the
 	 * dome first draws. */
 	fogDome( haze: SkyHaze ): void {
 
 		const material = this.dome.material as THREE.MeshBasicNodeMaterial;
-		material.colorNode = this.domeColour( haze );
+		material.colorNode = domeColour( this, haze );
 		material.needsUpdate = true;
 
 	}
@@ -1330,7 +1006,7 @@ export class Sky {
 			// else (an explicit bake waiting for it) has it completed now, as a whole bake would be.
 			const pending = this.pendingUpdate!;
 			if ( transitionSeconds > 0 ) return pending;
-			this.finishSlices();
+			finishSlices( this );
 			return pending;
 
 		}
@@ -1351,17 +1027,17 @@ export class Sky {
 			this.pendingUpdate = pending;
 			try {
 
-				this.startSlices( transitionSeconds );
+				startSlices( this, transitionSeconds );
 
 			} catch ( error ) {
 
-				this.abortSlices( error );
+				abortSlices( this, error );
 
 			}
 			return pending;
 
 		}
-		this.pendingUpdate = this.bake( transitionSeconds ).finally( () => {
+		this.pendingUpdate = bake( this, transitionSeconds ).finally( () => {
 
 			this.busy = false;
 			this.pendingUpdate = null;
@@ -1438,7 +1114,7 @@ export class Sky {
 		const moonBeam = moonSkyShare * this.moonAbove * luma( skyGain( this.moonElevation, false, cloud, 1, _skyMoon ) );
 		this.moonBeamIlluminance.setRGB( MOON_SKY_HUE[ 0 ] * moonBeam, MOON_SKY_HUE[ 1 ] * moonBeam, MOON_SKY_HUE[ 2 ] * moonBeam );
 		// the weather's day sky at this sun (Weather.ts `daySkyAt`), on the sun's light the sky takes
-		// (`skyGain`), the clouds' sunlight (`trackClouds`) and the distant sea's (`beginBake`)
+		// (`skyGain`), the clouds' sunlight (`trackClouds`) and the distant sea's (SkyBake.ts `beginBake`)
 		this.daySky = weather ? daySkyAt( weather.daySky, weather.daySkyExponent, this.elevation ) : 1;
 		this.atmosphere.sunIlluminance.value.copy( this.solarIlluminance ).multiply( skyGain( this.elevation, this.rising, cloud, this.daySky, _skyGain ) );
 		// (on overcast's share it fades with the setting disk's visible share, as the land's key does:
@@ -1789,393 +1465,6 @@ export class Sky {
 
 	}
 
-	private async bake( transitionSeconds: number ): Promise<void> {
-
-		const started = performance.now();
-		const version = ++ this.bakeVersion;
-		const readback = transitionSeconds === 0 || ! this.initialized;
-		const weather = this.weatherState ? { ...this.weatherState } : null;
-		await this.renderer.init();
-		// the warm-up's pipelines first: r186 skips a draw whose pipeline is still being created
-		// (see the header)
-		await this.warmed;
-		if ( ! this.clouds.ready ) await this.clouds.init( this.renderer );
-		await this.night.load();
-		if ( ! this.night.ready ) await this.night.init();
-		// An explicit jump (preset, seek, weather change) refreshes the whole cloud map now.
-		if ( readback ) {
-
-			this.clouds.invalidate();
-			this.clouds.update( this.renderer, this.viewCamera, this.viewWidth, this.viewHeight, this.cloudTime );
-
-		}
-		const bake = this.beginBake( version, readback, transitionSeconds, weather );
-		this.renderPanoramas( bake );
-		const r = this.renderer;
-		if ( readback ) {
-
-			const W = this.small.width, H = this.small.height;
-			const px = await r.readRenderTargetPixelsAsync( this.small, 0, 0, W, H ) as Float32Array;
-			const E = [ 0, 0, 0 ];
-			const dOmegaLon = 2 * Math.PI / W, dTh = Math.PI / H;
-			for ( let k = 0; k < W * H; k ++ ) {
-
-				const sinTh = px[ k * 4 + 3 ];
-				if ( sinTh <= 0 ) continue;
-				const dOmega = dOmegaLon * dTh * Math.sqrt( Math.max( 0, 1 - sinTh * sinTh ) );
-				for ( let c = 0; c < 3; c ++ ) E[ c ] += px[ k * 4 + c ] * sinTh * dOmega;
-
-			}
-			bake.state.irradiance.setRGB( E[ 0 ] / Math.PI, E[ 1 ] / Math.PI, E[ 2 ] / Math.PI );
-			this.landSea( bake.state, version, await r.readRenderTargetPixelsAsync( bake.state.deckIrradianceMap, 0, 0, 1, 1 ) as Float32Array );
-
-		} else this.readIrradiance( bake.state, version );
-		if ( bake.environment !== null ) this.filterEnvironment( bake.environment );
-		if ( ! this.initialized ) {
-
-			// The first bake fills both atlases from the same source.
-			this.front = bake.next;
-			this.filterEnvironment( 1 );
-
-		}
-		this.publishBake( bake );
-		this.lastBakeMs = performance.now() - started;
-
-	}
-
-	// Pick the endpoint a bake writes and capture the state it bakes: the live state from
-	// track() (the atmosphere LUT, key light, clouds and stars already describe this frame's sun
-	// and moon) and the weather it was requested with.
-	private beginBake( version: number, readback: boolean, transitionSeconds: number, weather: WeatherState | null ): Bake {
-
-		const illuminance = this.sunIlluminance * SCENE_RADIANCE_SCALE;
-		const next = this.initialized ? 1 - this.front : 0;
-		const state = this.endpoints[ next ];
-		state.version = version;
-		// the weather's sky light; its day sky (`daySky`, from track) is on the sun's light alone: the
-		// deck's irradiance takes it through the sky and the clouds, the sun's direct light on the
-		// level water here (`sea.sun`), while the body's colour, its knee and the night's share keep
-		// the weather's gain alone, so below the knee the body follows the day sky and at night it is
-		// as it was
-		const ambientGain = weather?.ambientGain ?? 1;
-		this.ambientGain.value = ambientGain;
-		// the distant sea's body (SEA_KNEE): the body is written as it stood before it followed the
-		// light, the colour times the illuminance times the gain, so a body at the knee is that value
-		const sea = state.sea;
-		sea.body.copy( this.seaColor ).multiplyScalar( illuminance ).multiplyScalar( ambientGain );
-		sea.night.copy( this.displayNightAmbient.value ).multiplyScalar( ambientGain );
-		sea.sun = luma( this.sunColor ) * Math.max( this.sunDir.y, 0 ) / Math.PI * ambientGain * this.daySky;
-		sea.knee = seaKnee() * illuminance * ambientGain;
-		this.seaBody.value.copy( sea.body );
-		this.seaNight.value.copy( sea.night );
-		this.seaSun.value = sea.sun;
-		this.seaKnee.value = sea.knee;
-		// The environment refreshes on explicit bakes and on every environmentEvery-th periodic one,
-		// into the atlas not shown.
-		let environment: number | null = 0;
-		if ( this.initialized ) {
-
-			const refresh = readback || ++ this.bakesSinceEnvironment >= this.environmentEvery;
-			environment = refresh ? 1 - this.environmentFront : null;
-
-		}
-		if ( environment !== null ) this.bakesSinceEnvironment = 0;
-		return { version, readback, transitionSeconds, next, state, environment };
-
-	}
-
-	// The cloud layer, the panoramas (seen, the environment's source, irradiance probe) and the
-	// irradiance integral.
-	private renderPanoramas( bake: Bake ): void {
-
-		const { state } = bake;
-		// The bake's powers of two, the layer's and the panoramas' at this moment (trackClouds, see
-		// the stores above): the layer is written and read within the bake, the panoramas keep
-		// theirs with them.
-		const layer = this.layerStops, stops = this.panoramaStops;
-		this.layerStore.value = 2 ** layer * storePress.store.value;
-		this.layerRead.value = 2 ** - layer * storePress.read.value;
-		state.stops = stops;
-		if ( ! this.initialized ) this.endpoints[ 1 ].stops = stops;
-		this.sourceStops = stops;
-		for ( const atlas of this.initialized ? bake.environment !== null ? [ bake.environment ] : [] : [ 0, 1 ] ) this.environmentStops[ atlas ] = stops;
-		const r = this.renderer, prev = r.getRenderTarget();
-		try {
-
-			r.setRenderTarget( state.clouds );
-			this.upperQuad.render( r );
-			this.cloudLayer.value = state.clouds.texture;
-			// the sky's light without its haze, which the panoramas' haze takes under a deck
-			// (VolumetricHaze.ts `openSky`)
-			for ( const deck of this.initialized ? [ state.deckIrradianceMap ] : [ state.deckIrradianceMap, this.endpoints[ 1 ].deckIrradianceMap ] ) {
-
-				r.setRenderTarget( deck );
-				this.deckIrradianceQuad.render( r );
-
-			}
-			this.bakeDeckIrradiance.value = state.deckIrradianceMap.texture;
-			// Both samplers must have distinct textures at the first material compilation:
-			// Three deduplicates texture uniforms by UUID, even for separate TextureNodes.
-			const panoramas = this.initialized ? [ state.equirect, this.reflectionSource, this.small ] :
-				[ state.equirect, this.endpoints[ 1 ].equirect, this.reflectionSource, this.small ];
-			for ( const rt of panoramas ) {
-
-				this.irradiancePass.value = rt === this.small ? 1 : 0;
-				this.bakeStore.value = rt === this.small ? 1 : 2 ** stops * storePress.store.value;
-				// Only the environment's source takes the island's light after sunset (ISLAND_SKY).
-				const lends = rt === this.reflectionSource;
-				this.bakeIslandTint.value.copy( lends ? this.islandTint.value : NEUTRAL_TINT );
-				this.bakeIslandGain.value = lends ? this.islandGain.value : 1;
-				this.bakeHaze.value = lends || rt === this.small ? 1 : 0;
-				this.bakeGlow.value = lends || rt === this.small ? 0 : 1;
-				this.bakeKeyFloor.value = lends || rt === this.small ? 0 : 1;
-				r.setRenderTarget( rt );
-				( lends ? this.landQuad : this.quad ).render( r );
-
-			}
-			for ( const irradiance of this.initialized ? [ state.irradianceMap ] : [ state.irradianceMap, this.endpoints[ 1 ].irradianceMap ] ) {
-
-				r.setRenderTarget( irradiance );
-				this.irradianceQuad.render( r );
-
-			}
-			// (after the probe's panorama, so the bake's uniforms are the probe's)
-			for ( const irradiance of this.initialized ? [ state.clearIrradianceMap ] : [ state.clearIrradianceMap, this.endpoints[ 1 ].clearIrradianceMap ] ) {
-
-				r.setRenderTarget( irradiance );
-				this.clearIrradianceQuad.render( r );
-
-			}
-
-		} finally {
-
-			r.setRenderTarget( prev );
-
-		}
-		this.onEnvironmentSource?.( this.reflectionSource.texture, this.initialized ? bake.environment !== null ? [ bake.environment ] : [] : [ 0, 1 ], 2 ** - stops * storePress.read.value );
-
-	}
-
-	// The environment of the source in atlas `index`, whole.
-	private filterEnvironment( index: number ): void {
-
-		this.environments[ index ] = this.pmrem.fromEquirectangular( this.reflectionSource.texture, this.environments[ index ] );
-
-	}
-
-	// The same as filterEnvironment, as steps of one or two render passes: the conversion to the
-	// cube atlas, then each level's GGX filter from the one above (PMREMGenerator's own steps:
-	// three/Environment.ts). Each step restores what PMREMGenerator restores after a whole conversion.
-	private environmentSlices( index: number ): Slice[] {
-
-		const target = this.environments[ index ];
-		if ( ! target ) return [ { cost: 20, run: () => this.filterEnvironment( index ) } ];
-		const pmrem = environmentSteps( this.pmrem );
-		const r = this.renderer, source = this.reflectionSource.texture;
-		const step = ( work: () => void ) => () => {
-
-			const previous = r.getRenderTarget(), face = r.getActiveCubeFace(), level = r.getActiveMipmapLevel(), autoClear = r.autoClear;
-			try {
-
-				work();
-
-			} finally {
-
-				r.autoClear = autoClear;
-				r.setRenderTarget( previous, face, level );
-				target.scissorTest = false;
-				pmrem.resetViewport( target );
-
-			}
-
-		};
-		const slices: Slice[] = [ { cost: 1, run: step( () => {
-
-			pmrem.convert( source, target );
-
-		} ) } ];
-		// the generator keeps the levels of the source size the first bake set up, so their count is known
-		const levels = pmrem.levels();
-		for ( let i = 1; i < levels; i ++ ) slices.push( { cost: 2, run: step( () => {
-
-			r.autoClear = false;
-			pmrem.filter( target, i - 1, i );
-
-		} ) } );
-		return slices;
-
-	}
-
-	// Start a periodic bake over frames: the panoramas now, the rest from advance().
-	private startSlices( transitionSeconds: number ): void {
-
-		const started = performance.now();
-		const weather = this.weatherState ? { ...this.weatherState } : null;
-		const bake = this.beginBake( ++ this.bakeVersion, false, transitionSeconds, weather );
-		this.renderPanoramas( bake );
-		this.readIrradiance( bake.state, bake.version );
-		this.slices = bake.environment === null ? [] : this.environmentSlices( bake.environment );
-		this.slices.push( { cost: 0, run: () => this.publishBake( bake ) } );
-		this.sliceMs = performance.now() - started;
-		// A paused scene does it whole, so a paused frame never depends on how many frames ran.
-		if ( this.clockStill ) this.finishSlices();
-		else this.armSliceTimer();
-
-	}
-
-	// Run whole steps of the bake under way, up to `passes` render passes (at least one step); its
-	// publication ends it. An error ends the bake and rejects its promise, as a whole bake's would,
-	// so the sky is free for the next one.
-	private runSlices( passes: number ): void {
-
-		const started = performance.now();
-		let spent = 0;
-		try {
-
-			while ( this.slices.length > 0 && ( spent === 0 || spent + this.slices[ 0 ].cost <= passes ) ) {
-
-				const slice = this.slices.shift()!;
-				spent += slice.cost;
-				slice.run();
-
-			}
-
-		} catch ( error ) {
-
-			this.abortSlices( error );
-			return;
-
-		}
-		this.sliceMs += performance.now() - started;
-		if ( this.slices.length > 0 ) {
-
-			this.armSliceTimer();
-			return;
-
-		}
-		if ( this.sliceTimer !== null ) clearTimeout( this.sliceTimer );
-		this.sliceTimer = null;
-		this.lastBakeMs = this.sliceMs;
-		this.busy = false;
-		this.pendingUpdate = null;
-		const done = this.sliceDone;
-		this.sliceDone = null;
-		done?.resolve();
-
-	}
-
-	// End the bake under way unfinished: `error` rejects its promise, none resolves it (dispose).
-	private abortSlices( error?: unknown ): void {
-
-		if ( this.sliceTimer !== null ) clearTimeout( this.sliceTimer );
-		this.sliceTimer = null;
-		this.slices = [];
-		this.busy = false;
-		this.pendingUpdate = null;
-		const done = this.sliceDone;
-		this.sliceDone = null;
-		if ( error === undefined ) done?.resolve();
-		else done?.reject( error );
-
-	}
-
-	private finishSlices(): void {
-
-		this.runSlices( Infinity );
-
-	}
-
-	private armSliceTimer(): void {
-
-		if ( this.sliceTimer !== null ) clearTimeout( this.sliceTimer );
-		this.sliceTimer = setTimeout( () => {
-
-			this.sliceTimer = null;
-			if ( this.slices.length > 0 ) this.finishSlices();
-
-		}, SLICE_TIMEOUT_MS );
-
-	}
-
-	// Show a finished bake: an explicit one at once, a periodic one by cross-fading to it.
-	private publishBake( bake: Bake ): void {
-
-		const { state, transitionSeconds } = bake;
-		const r = this.renderer;
-		const previous = this.endpoints[ this.front ];
-		const displayedNext = this.initialized ? state : this.endpoints[ 1 ];
-		if ( ! this.initialized ) {
-
-			// Both endpoints start from this bake's cloud layer.
-			const prev = r.getRenderTarget();
-			r.setRenderTarget( this.endpoints[ 1 ].clouds );
-			this.upperQuad.render( r );
-			r.setRenderTarget( prev );
-
-		}
-		this.panoramaA.value = previous.equirect.texture;
-		this.panoramaB.value = displayedNext.equirect.texture;
-		this.panoramaReadA.value = 2 ** - previous.stops * storePress.read.value;
-		this.panoramaReadB.value = 2 ** - displayedNext.stops * storePress.read.value;
-		this.irradianceA.value = previous.irradianceMap.texture;
-		this.irradianceB.value = displayedNext.irradianceMap.texture;
-		this.clearIrradianceA.value = previous.clearIrradianceMap.texture;
-		this.clearIrradianceB.value = displayedNext.clearIrradianceMap.texture;
-		this.deckIrradianceA.value = previous.deckIrradianceMap.texture;
-		this.deckIrradianceB.value = displayedNext.deckIrradianceMap.texture;
-		// The environment cross-fades from the atlas shown to the one this bake filtered (the
-		// first bake filled both); a bake that kept it fades it to itself.
-		const shown = this.environments[ this.environmentFront ]!;
-		const nextEnvironment = ! this.initialized ? this.environments[ 1 ]! : bake.environment !== null ? this.environments[ bake.environment ]! : shown;
-		this.environmentPair = [ this.environmentFront, ! this.initialized ? 1 : bake.environment ?? this.environmentFront ];
-		// the displayed environment at the second atlas's power of two (measured at most two stops
-		// over the first, in a front between the kept skies through the twilight, and never apart
-		// over a jump of the clock from noon to midnight: so a store's brightest, under 2^13, stays
-		// in half float through the fade)
-		const [ stopsA, stopsB ] = this.environmentPair.map( ( atlas ) => this.environmentStops[ atlas ] );
-		this.environmentGainA.value = 2 ** ( stopsB - stopsA );
-		this.environmentReadValue = 2 ** - stopsB * storePress.read.value;
-		if ( this.initialized && bake.environment !== null ) this.environmentFront = bake.environment;
-		if ( ! this.environmentA || ! this.environmentB ) {
-
-			this.environmentA = texture( shown.texture );
-			this.environmentB = texture( nextEnvironment.texture );
-			this.envMap = shown.clone();
-			this.envMap.texture.mapping = THREE.CubeUVReflectionMapping;
-			( this.envMap.texture as THREE.Texture & { isPMREMTexture: boolean } ).isPMREMTexture = true;
-			this.envMap.texture.name = 'skyDisplayedPMREM';
-			this.envMap.scissorTest = false;
-			const blendMat = new THREE.NodeMaterial();
-			blendMat.depthTest = false;
-			blendMat.depthWrite = false;
-			blendMat.toneMapped = false;
-			// Convolution is linear. Blending the already filtered atlases once keeps terrain
-			// within WebGPU's portable 16-texture limit instead of doubling every IBL sample. (The
-			// first atlas taken to the second's power of two first: both stored as powers of two,
-			// the gain loses no bits.)
-			const a = this.environmentA.sample( uv() ).level( float( 0 ) ), b = this.environmentB.sample( uv() ).level( float( 0 ) );
-			blendMat.fragmentNode = vec4( mix( a.rgb.mul( this.environmentGainA ), b.rgb, this.blend ), mix( a.a, b.a, this.blend ) );
-			this.environmentBlendQuad = new THREE.QuadMesh( blendMat );
-			this.environment = pmremTexture( this.envMap.texture );
-
-		} else {
-
-			this.environmentA.value = shown.texture;
-			this.environmentB.value = nextEnvironment.texture;
-
-		}
-		this.destination = bake.next;
-		this.transitionElapsed = 0;
-		this.transitionDuration = this.initialized ? transitionSeconds : 0;
-		this.blend.value = ! this.initialized || this.transitionDuration > 0 ? 0 : 1;
-		this.equirect = state.equirect;
-		this.initialized = true;
-		this.publish( this.blend.value );
-		if ( this.transitionDuration === 0 ) this.front = this.destination;
-		this.onEnvironmentStore?.();
-
-	}
-
 	advance( dt: number ): void {
 
 		if ( ! Number.isFinite( dt ) || dt < 0 ) throw new RangeError( 'Sky dt must be finite and nonnegative' );
@@ -2183,8 +1472,8 @@ export class Sky {
 
 			// A periodic bake under way takes this frame's share; once published, its cross-fade
 			// starts on the next frame. A paused scene completes it at once.
-			if ( this.clockStill ) this.finishSlices();
-			else this.runSlices( SLICE_PASSES );
+			if ( this.clockStill ) finishSlices( this );
+			else runSlices( this, SLICE_PASSES );
 			return;
 
 		}
@@ -2197,7 +1486,7 @@ export class Sky {
 
 	}
 
-	private publish( amount: number ): void {
+	publish( amount: number ): void {
 
 		const a = this.endpoints[ this.front ], b = this.endpoints[ this.destination ];
 		this.skyIrradiance.copy( a.irradiance ).lerp( b.irradiance, amount );
@@ -2215,7 +1504,7 @@ export class Sky {
 	}
 
 	// The open sky behind the clouds, where it shows through them (CLEAR_SKY): the clear day's.
-	private gapSky( direction: V3, gains = this.gapGain ): V3 {
+	gapSky( direction: V3, gains = this.gapGain ): V3 {
 
 		return this.atmosphere.skyRadiance( direction, true, gains );
 
@@ -2249,7 +1538,7 @@ export class Sky {
 	// environment's filter steps still run, so normally before the bake shows; one that lands later
 	// changes the cross-fade only by the little it has run. A late answer never overwrites an
 	// endpoint a newer bake has taken.
-	private readIrradiance( state: SkyEndpoint, version: number ): void {
+	readIrradiance( state: SkyEndpoint, version: number ): void {
 
 		this.irradiancePending ++;
 		void this.renderer.readRenderTargetPixelsAsync( state.irradianceMap, 0, 0, 1, 1 ).then( ( pixels ) => {
@@ -2269,11 +1558,11 @@ export class Sky {
 
 	}
 
-	// A bake's distant sea on the CPU (`seaNode`'s twin, SEA_KNEE), from its deck irradiance read back:
+	// A bake's distant sea on the CPU (SkyDome.ts `seaNode`'s twin, SEA_KNEE), from its deck irradiance read back:
 	// the ground bounce takes it as the environment's lower half (`seaRadiance`). Only a newer bake's
 	// overwrites it, and an answer for an endpoint a newer bake has taken lands nowhere. At the knee and
 	// above it is the body the bake took, bit for bit.
-	private landSea( state: SkyEndpoint, version: number, deck: Float32Array ): void {
+	landSea( state: SkyEndpoint, version: number, deck: Float32Array ): void {
 
 		if ( state.version !== version ) return;
 		const { body, night, sun, knee, radiance } = state.sea;
@@ -2287,7 +1576,7 @@ export class Sky {
 
 	// The bake's cloud layer at `q` (the upper hemisphere's equirect), its radiance in scene units
 	// (the bake's power of two and the debug press divided out).
-	private layerAt( q: V2 ): V4 {
+	layerAt( q: V2 ): V4 {
 
 		const stored = this.cloudLayer.sample( q ).level( float( 0 ) ).toVar();
 		return vec4( stored.rgb.mul( this.layerRead ), stored.a );
@@ -2296,7 +1585,7 @@ export class Sky {
 
 	// The seen panorama toward `direction`, its radiance in scene units (each side's power of two and
 	// the debug press divided out before the cross-fade: two bakes may store at two powers).
-	private samplePanorama( direction: V3, mip: F ): V4 {
+	samplePanorama( direction: V3, mip: F ): V4 {
 
 		const q = dirToEquirect( direction );
 		const a = this.panoramaA.sample( q ).level( mip ).toVar(), b = this.panoramaB.sample( q ).level( mip ).toVar();
@@ -2408,7 +1697,7 @@ export class Sky {
 
 		}
 		for ( const environment of this.environments ) environment?.dispose();
-		this.abortSlices();
+		abortSlices( this );
 		this.pmrem.dispose();
 		this.atmosphere.dispose();
 

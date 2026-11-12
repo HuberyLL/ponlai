@@ -556,7 +556,7 @@ export function createEnvironment( render: RenderParts ) {
 	}
 
 	// An explicit bake (a jump of the hour, the weather or the whole scene, a seek, a retune of what the
-	// bake depends on) shows at once, its sky's light read back before it publishes (Sky.ts `bake`).
+	// bake depends on) shows at once, its sky's light read back before it publishes (sky/SkyBake.ts `bake`).
 	// The state it bakes changes before it is called and the readback takes a frame or two, so the loop
 	// draws no frame from that change until the bake has published (`tick`): the frame on screen holds
 	// the old state, and the first frame drawn after it shows the new weather or hour in its own light.

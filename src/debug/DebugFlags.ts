@@ -49,7 +49,7 @@
 // (sky/Clouds.ts `streaksAt`; 0 turns it off), read whenever the sky tracks the clock;
 // `streakMask = true` (at load) paints the dome's pixels where the layer's opacity as seen passes
 // 0.1 in a red of their own luminance and those where it lies between 0.02 and 0.1 in a green, for
-// `img.py stats --mask` (sky/Sky.ts domeColour).
+// `img.py stats --mask` (sky/SkyDome.ts domeColour).
 // `lowKey = false` leaves the low sun's key as its transmittance gives it (look/SkyLook.ts LOW_KEY), read
 // whenever the sky tracks the clock.
 // `clearSky = false` leaves the clear day's sky light without its gain against the key (sky/Sky.ts

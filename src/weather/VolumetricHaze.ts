@@ -252,7 +252,7 @@ const SEEN_AIR = { near: 200, far: 2000 } as const;
 //     30 degrees (DECK_ROW), instead of along the view, by the deck's share: the air under a deck
 //     is lit by the deck over it alike in every direction, not by a clear sky, so it no longer
 //     brightens toward the horizon as a clear sky's long low rows do. Under cloud the sky the dome
-//     shows is nearly all this air laid over the clouds (Sky.ts `domeColour`: the clouds' own
+//     shows is nearly all this air laid over the clouds (sky/SkyDome.ts `domeColour`: the clouds' own
 //     undersides stand 4 - 8 stops under it), so along the view the deck's low band stood .7 - 1.6
 //     stops over the sky's irradiance over pi, and read level .3 - .7. The bake, the reflection and
 //     the froxels read the same rows, so the sky, its light on the land and the far haze move

@@ -235,6 +235,8 @@
 	"sky/NightSky.ts": "render",
 	"sky/RainbowTable.data.ts": "render",
 	"sky/Sky.ts": "render",
+	"sky/SkyBake.ts": "render",
+	"sky/SkyDome.ts": "render",
 	"sky/SkyRetune.ts": "render",
 	"sky/StarCatalog.ts": "render",
 	"sky/Streaks.ts": "render",

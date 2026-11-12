@@ -28,7 +28,7 @@ const CODE = /\.(ts|mts|js|mjs)$/;
 // remove the entry, with the change that shortens the file; never raise one or add an entry.
 const KNOWN = {
 	'sky/Clouds.ts': 3105,
-	'sky/Sky.ts': 3031,
+	'sky/Sky.ts': 1706,
 	'post/Pipeline.ts': 2515,
 	'weather/VolumetricHaze.ts': 1809,
 	'world/Grass.ts': 1746,

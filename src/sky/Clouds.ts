@@ -138,7 +138,7 @@ type V4 = THREE.Node<'vec4'>;
 //     kernel stores, and the glow's colour (`lobeTint`).
 //     The night's faint ambient (`nightAmbient`) joins the sky's two parts. The march adds no air
 //     of its own, nor does the thin layer: the dome lays the haze over both, the clouds at their
-//     distance and the layer at its own (Sky.ts domeColour).
+//     distance and the layer at its own (SkyDome.ts domeColour).
 //   - the thin layer (`streaksAt`): patches of fibres combed along the drift (Streaks.ts) on a
 //     sheet `streakHeight` up (8.5 km), near the top of the clear and fair skies' cumulus shell
 //     (4 to 9.2 km), where few cumulus reach, so drawn behind them in the composite (sky, thin
@@ -555,7 +555,7 @@ export const OVERCAST_BROAD = 0.5, OVERCAST_WEIGHT = 2.4;
 // follows the pattern more (`deckGlowFar`): k rises from DECK_GLOW_TEXTURE at DECK_GLOW_FROM
 // degrees from the key to DECK_GLOW_FAR at DECK_GLOW_TO, so the glow, at half or more of the
 // drawn deck's radiance there, no longer lays a flat sheet over the base's rolls; the moon's
-// glow and the broken skies keep DECK_GLOW_TEXTURE everywhere (Sky.ts `glowToward`).
+// glow and the broken skies keep DECK_GLOW_TEXTURE everywhere (SkyDome.ts `glowToward`).
 // At these values, overcast under a sun of 30 degrees, the drawn sky about the sun's place stands
 // about two and a half stops over the sky on the far side. These are the day's: the glow about the moon keeps the
 // form the night was set with (MOON_DECK_GLOW: mean cosine and weight of the narrow lobe, then of
@@ -566,7 +566,7 @@ export const DECK_GLOW_FAR = 1.2, DECK_GLOW_FROM = 30, DECK_GLOW_TO = 45;
 // The closed deck's gradation under overcast's share by day (DECK_GRADATION, `deckGradation`: 1
 // the diffusion law's 3 : 1, 0 uniform, between the CIE gradations' steep and uniform), and the
 // glow the lighting's sources take about the sun, one smooth lobe's mean cosine and weight
-// (BAKE_GLOW_LOBE, BAKE_GLOW_GAIN, Sky.ts `glowToward`). The dome draws the deck at the radiance
+// (BAKE_GLOW_LOBE, BAKE_GLOW_GAIN, SkyDome.ts `glowToward`). The dome draws the deck at the radiance
 // the march gives, the one that lights the land and the sea: a deck drawn under it stood a stop
 // and more under the meadow it lit, away from the sun.
 export const DECK_GRADATION = 0.3, BAKE_GLOW_LOBE = 0.85, BAKE_GLOW_GAIN = 2;
@@ -809,7 +809,7 @@ export class Clouds {
 	readonly shellThickness = uniform( SHELL_THICKNESS );
 	readonly lowShare = uniform( 0 );
 	// Overcast's share of the four skies (Sky.ts trackClouds), which the dome's composite of a
-	// closed layer reads (Sky.ts `glowToward`). Not `deckShare` (VolumetricHaze.ts),
+	// closed layer reads (SkyDome.ts `glowToward`). Not `deckShare` (VolumetricHaze.ts),
 	// `broadShare` or `deckShadowShare`, which carry the same share to the haze, the forward
 	// light's spread and the shadow's fade, each set apart.
 	readonly overcastShare = uniform( 0 );
@@ -834,7 +834,7 @@ export class Clouds {
 	readonly deckGlowFar = tuneUniform( 'sky.clouds.deckGlowFar', DECK_GLOW_FAR, { min: 0.2, max: 1.2, onChange: markSkyRetune } );
 	readonly deckGlowFrom = tuneUniform( 'sky.clouds.deckGlowFrom', DECK_GLOW_FROM, { min: 10, max: 30, onChange: markSkyRetune } );
 	readonly deckGlowTo = tuneUniform( 'sky.clouds.deckGlowTo', DECK_GLOW_TO, { min: 31, max: 60, onChange: markSkyRetune } );
-	// The closed deck's glow as the lighting's sources take it (Sky.ts `glowToward`): one smooth
+	// The closed deck's glow as the lighting's sources take it (SkyDome.ts `glowToward`): one smooth
 	// lobe about the sun, its mean cosine and weight; the dome and the seen panorama draw the two
 	// above.
 	readonly bakeGlowLobe = tuneUniform( 'sky.clouds.bakeGlowLobe', BAKE_GLOW_LOBE, { min: 0.7, max: 0.85, onChange: markSkyRetune } );
@@ -877,7 +877,7 @@ export class Clouds {
 
 	// Camera-relative frame: the camera sits on the planet axis at `camY`, its height held between a
 	// metre and 50 m under the base (`update`), as every closed form under the shell assumes. The
-	// march and the dome that fogs it at the march's depth (Sky.ts `domeColour`) take this one
+	// march and the dome that fogs it at the march's depth (SkyDome.ts `domeColour`) take this one
 	// height, so from a free camera inside or above the deck its depth and its fog agree.
 	readonly camY = uniform( 15 );
 	private readonly camXZ = uniform( new THREE.Vector2() );
@@ -1333,7 +1333,7 @@ export class Clouds {
 			// nothing the march would find shows: it ends there. Through a broken layer's gaps near
 			// the horizon that spares most of the march. A high layer is fogged at the shell's middle
 			// instead, which can lie nearer than its clouds, and the panorama at its own distance from
-			// the sea (Sky.ts `bakeColour`): those march the whole shell.
+			// the sea (SkyDome.ts `bakeColour`): those march the whole shell.
 			if ( hazeEnd ) If( this.lowShare.greaterThan( 0.999 ), () => {
 
 				end.assign( min( end, this.haze.reach( rd.y, this.camY, max( start, 100 ), end ) ) );
@@ -1753,7 +1753,7 @@ export class Clouds {
 		// phase, desaturated, times the earth's shadow at the layer and each body's illuminance, at
 		// `streakAmbient` per unit of opacity, the night's ambient with it. Each
 		// share takes an overall colour (`keyDirect`, `keyAmbient`). No air of its own here: the
-		// dome fogs it at its own distance (Sky.ts domeColour, `sampleViewFog`).
+		// dome fogs it at its own distance (SkyDome.ts domeColour, `sampleViewFog`).
 		const streaksAt = ( rd: V3, pxAngle: F ) => {
 
 			const result = vec4( 0, 0, 0, 1 ).toVar();
