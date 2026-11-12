@@ -4,7 +4,7 @@
 // mention with it.
 //
 // A path counts when it starts with `docs/` and ends in `.md`. CREDITS.md and the licence files
-// name docs of other projects (an SDK's `docs/license.md`) and are skipped.
+// name docs of other projects (an SDK's licence page) and are skipped.
 //   node tools/verify-doc-paths.mjs     exit 0 when every path exists, 1 with the list
 // Runs as part of `npm run lint:docs`. Pure git, no GPU.
 import { execFileSync } from 'node:child_process';
