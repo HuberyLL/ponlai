@@ -292,6 +292,13 @@ export interface OcclusionLook {
 	floor: number;
 }
 
+// ---- the local lights (look/LocalLightsLook.ts)
+
+export interface LocalLightsLook {
+	/** The gain on every source's own intensity. */
+	gain: number;
+}
+
 // ---- the current look
 
 export interface Look {
@@ -303,6 +310,7 @@ export interface Look {
 	haze: HazeLook;
 	sky: SkyLook;
 	occlusion: OcclusionLook;
+	localLights: LocalLightsLook;
 }
 
 let installed: Look | null = null;

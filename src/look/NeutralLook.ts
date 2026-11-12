@@ -194,4 +194,9 @@ export const NEUTRAL_LOOK: Look = {
 		floor: 0,
 	},
 
+	localLights: {
+		// every source at its own intensity
+		gain: 1,
+	},
+
 };
