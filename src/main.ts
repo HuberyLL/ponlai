@@ -103,7 +103,6 @@ import './post/Motion.ts';
 import './post/Jitter.ts';
 import './post/TemporalRest.ts';
 import './post/PreExposure.ts';
-import { sceneEvent } from './post/SceneEvents.ts';
 import './post/TemporalAA.ts';
 import './post/Settled.ts';
 import './lighting/Radiometry.ts';
@@ -170,7 +169,7 @@ const viewport = { host: document.getElementById( 'app' )!, width: innerWidth, h
 createScenes( render, { viewport } );
 createIslandCamera( render, island );
 createSky( render );
-createTrample( island );
+createTrample( render, island );
 createCameraViews( render, island, page );
 createLight( render );
 createCharacterShadow( render, island );
@@ -211,7 +210,7 @@ if ( GAME ) {
 	const { Game } = await import( './game/Game.ts' );
 	page.game = await Game.start( {
 		params, scene: render.scene, camera: render.camera, canvas: render.renderer.domElement, land: island.land, top: topFromTiles( island.worldCache.version.chunks ),
-		dayCycle: render.dayCycle, weather: render.weather, characterShadow: island.characterShadow, invalidateSunShadow: render.invalidateSunShadow, refreshEnvironment: render.refreshEnvironment, sceneEvent,
+		dayCycle: render.dayCycle, weather: render.weather, characterShadow: island.characterShadow, invalidateSunShadow: render.invalidateSunShadow, refreshEnvironment: render.refreshEnvironment,
 		// the island grows with the population (Growth.ts, made below: called from the frame loop on)
 		pieces: landOptions.step,
 		island: { approach: ( p ) => island.growth.approach( p ), grow: () => island.growth.grow() },

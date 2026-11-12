@@ -59,7 +59,7 @@ export interface UiContext {
 	canvas: HTMLCanvasElement;
 	camera: THREE.PerspectiveCamera;
 	scene: THREE.Scene;
-	/** a change of the scene for the temporal anti-aliasing (GameContext.sceneEvent) */
+	/** a change of the scene for the temporal anti-aliasing (the game's scene events, Game.ts) */
 	sceneEvent( reason: 'game input' ): void;
 }
 

@@ -40,9 +40,7 @@ import { type Body, parseBodies } from './characters/Ages.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
 import { TEST_MODE } from './debug/TestMode.ts';
-import { TEMPORAL } from './post/Antialiasing.ts';
-import { onTaaCut } from './post/Motion.ts';
-import { sceneEvent } from './post/SceneEvents.ts';
+import { declareSceneEvents } from './post/SceneEvents.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
 import { createDisplacementField, displacementField } from './world/vegetation/Displacement.ts';
 import { installOpaquePrepass } from './world/OpaquePrepass.ts';
@@ -61,6 +59,15 @@ import type { Yunpeng } from './world/Yunpeng.ts';
 import type { Bamboo } from './world/Bamboo.ts';
 import type { Look } from './characters/looks.ts';
 import type { Villager } from './characters/Villagers.ts';
+
+// The island's scene events (post/SceneEvents.ts), and whether each cuts the temporal history:
+// the island grew (Growth.ts: new land where the sea was, the rest unchanged; the resolve's clip
+// takes the new surfaces as it takes a placed prop), and the shoal under the next piece was
+// written anew (SeabedRise.ts: the floor moves in place).
+const islandEvent = declareSceneEvents( {
+	'world swap': false,
+	'approach': false,
+} );
 
 /** What the page measures of a land: its box, how the views frame it and its outline. */
 type LandMeasure = { box: Bounds; framing: { centroid: { x: number; z: number }; scale: number; onLand: ( x: number, y: number, z: number ) => THREE.Vector3; pivot: THREE.Vector3 }; outline: number[] };
@@ -180,14 +187,14 @@ export function createIslandCamera( render: RenderParts, island: IslandParts ) {
 }
 
 /** The islanders' trail through the meadow. */
-export function createTrample( island: IslandParts ) {
+export function createTrample( render: RenderParts, island: IslandParts ) {
 
 
 	// The islanders' trail through the meadow (world/vegetation/Trample.ts), drawn after they move each
 	// frame into the displacement field (world/vegetation/Displacement.ts), made here over the land's
 	// whole lattice and drawn again each frame; across a cut its frame before is not read.
 	island.trample = new Trample( createDisplacementField( 2 * GROWTH.half ) );
-	if ( TEMPORAL ) onTaaCut( () => displacementField?.cut() );
+	render.history.onCut( 'displacement field', () => displacementField?.cut() );
 
 }
 
@@ -504,7 +511,7 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 			if ( follow ) followFraming();
 			island.shownData = version;
 			wenyao.setWorld( version );
-			sceneEvent( 'world swap' );
+			islandEvent( 'world swap' );
 
 		},
 		onSwapped: () => {
@@ -522,7 +529,7 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 			worldInfo.worldTriangles = world.triangles;
 
 		},
-		onRise: () => sceneEvent( 'approach' ),
+		onRise: () => islandEvent( 'approach' ),
 	}, worldCache, { seed: landOptions.worldSeed, cache: worldCacheOn } );
 	island.growth = growth;
 	// `approach=<0..1>`: the shoal under the next piece put on that progress at once (Growth.ts
@@ -534,5 +541,17 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 		void growth.approachNow( Number( params.get( 'approach' ) ) ).then( () => { island.approachWritten = true; } );
 
 	}
+
+}
+
+/** Registers what a scene jump clears of the island's (post/SceneHistory.ts): the islander's
+ * clips, the wenyao's schools and the falling leaves, each read when the jump comes (the islander
+ * and the leaves are made late, or not at all). */
+export function registerIslandHistories( render: RenderParts, island: IslandParts ) {
+
+	const { wenyao } = island;
+	render.history.onJump( 'islanders', () => island.characters?.reset() );
+	render.history.onJump( 'wenyao', () => wenyao.reset() );
+	render.history.onJump( 'falling leaves', () => island.fallingLeaves?.reset() );
 
 }

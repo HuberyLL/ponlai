@@ -6,8 +6,8 @@ import type { DayPreset } from '../sky/DayCycle.ts';
 import type { WeatherName } from '../sky/Weather.ts';
 import { weatherWind } from '../weather/Wind.ts';
 import { sceneEvent } from '../post/SceneEvents.ts';
-import type { RenderParts } from '../RenderStages.ts';
-import type { IslandParts } from '../IslandStages.ts';
+import { registerSceneHistories, registerLightHistories, type RenderParts } from '../RenderStages.ts';
+import { registerIslandHistories, type IslandParts } from '../IslandStages.ts';
 import type { PageParts } from './Page.ts';
 
 // A whole scene at once, as a page loads it (the capture tools' one page per set; the profiler's
@@ -48,9 +48,17 @@ export type SceneRequest = string | URLSearchParams | { weather?: WeatherName; p
 /** The scene jump. */
 export function createSceneControls( render: RenderParts, island: IslandParts, page: PageParts ) {
 
-	const { sky, sceneOptions, dayCycle, weather, wind, bakeExplicitly, refreshEnvironment, pipeline, groundBounce, refractedSun, stormSea } = render;
-	const { controls, wenyao, growth, poseIslandView } = island;
+	const { sceneOptions, dayCycle, weather, wind, bakeExplicitly, refreshEnvironment, history } = render;
+	const { controls, growth, poseIslandView } = island;
 	const { setCameraMode, setCameraView, timeView, pacer } = page;
+	// What a jump clears of the scenes before, registered layer by layer in the order it is
+	// cleared (post/SceneHistory.ts): the renderer's, the island's, the renderer's light, the page's.
+	registerSceneHistories( render );
+	registerIslandHistories( render, island );
+	registerLightHistories( render );
+	history.onJump( 'shadow cadence', () => { page.shadowElapsed = 0; } );
+	// a fresh load starts at the held frame rate, not at a fallback the last scene fell to
+	history.onJump( 'frame pacer', () => pacer.reset() );
 	// setTime moves the (paused) clock, so captures can step through an animation in one page load
 	page.setTime = ( t: number ) => {
 
@@ -118,26 +126,11 @@ export function createSceneControls( render: RenderParts, island: IslandParts, p
 			if ( options.time !== undefined ) render.simTime = options.time;
 
 		}
-		wind.reset( { ...weatherWind( weather.state ), time: render.simTime } );
-		sky.lightning.reset();
-		stormSea.reset();
-		island.characters?.reset();
-		wenyao.reset();
-		island.fallingLeaves?.reset();
-		pipeline.air.invalidate();
-		groundBounce.invalidate();
-		page.shadowElapsed = 0;
-		// a fresh load starts at the held frame rate, not at a fallback the last scene fell to
-		pacer.reset();
+		history.jump( 'before bake' );
 		sceneEvent( 'establish scene' );
 		render.manualSun = false;
 		await bakeExplicitly();
-		// The underwater map at its constructed size, drawn now for the jump's light (published by the
-		// bake), as the load's `prepare` draws it before the first frame. Left to the loop's cadence
-		// (wall time) a capture ready within a few frames shot the cleared map: the sea without its
-		// refracted sun.
-		refractedSun.reset();
-		refractedSun.update();
+		history.jump( 'after bake' );
 
 	};
 

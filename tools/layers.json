@@ -186,6 +186,7 @@
 	"post/Purkinje.ts": "render",
 	"post/RenderScale.ts": "render",
 	"post/SceneEvents.ts": "render",
+	"post/SceneHistory.ts": "render",
 	"post/Settled.ts": "render",
 	"post/SubmitBatch.ts": "render",
 	"post/TemporalAA.ts": "render",

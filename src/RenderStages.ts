@@ -52,7 +52,8 @@ import { type TuneOptions, tune } from './debug/Tune.ts';
 import { markSkyRetune, skyRetune } from './sky/SkyRetune.ts';
 import { TEMPORAL, AFTER_RESOLVE } from './post/Antialiasing.ts';
 import type { SceneLatents } from './post/ExtraPass.ts';
-import { onTaaCut, motionUniforms, MOTION_CLASS, motionCheck } from './post/Motion.ts';
+import { motionUniforms, MOTION_CLASS, motionCheck } from './post/Motion.ts';
+import { SceneHistory } from './post/SceneHistory.ts';
 import { jitter } from './post/Jitter.ts';
 import { preExposure } from './post/PreExposure.ts';
 import { sceneEvent } from './post/SceneEvents.ts';
@@ -111,6 +112,7 @@ export interface RenderParts {
 	sun: THREE.DirectionalLight;
 	sunShadow: SunShadow;
 	localLights: LocalLights;
+	history: SceneHistory;
 	invalidateSunShadow: () => void;
 	shadowDirection: THREE.Vector3;
 	sunUpdates: Promise<void>;
@@ -202,6 +204,8 @@ export function setUpRenderer( render: RenderParts ) {
 export function createScenes( render: RenderParts, { viewport }: { viewport: { host: HTMLElement; width: number; height: number } } ) {
 
 	const { renderer } = render;
+	// the table of what a cut or a scene jump clears, which every owner of a history joins
+	render.history = new SceneHistory();
 	// The scene renders at a pixel ratio set by the quality tier (see RenderScale.ts), at most the
 	// display's and DPR_CAP (the canvas's cap: native 4K on a 2x display at high's maximum, or `?dpr`);
 	// the canvas matches the display and the frame graph upscales to it.
@@ -334,7 +338,7 @@ export function createSky( render: RenderParts ) {
 	render.wind = wind;
 	// Across a cut of the temporal modes' history (Motion.ts) the vegetation's wind has no motion either:
 	// its previous state becomes the current one.
-	if ( TEMPORAL ) onTaaCut( () => wind.cut() );
+	render.history.onCut( 'wind', () => wind.cut() );
 
 }
 
@@ -886,5 +890,36 @@ export function primeSharedBuilds( render: RenderParts ) {
 	// the nodes r186 makes inside the first lit build, made by a throwaway one, so the frame's receivers
 	// build the same code whichever comes first (three/ThreePatches.ts)
 	primeSharedNodes( renderer, scene, camera );
+
+}
+
+/** Registers what a scene jump clears of the renderer's, ahead of the island's: the wind's
+ * integrated state, the storm's strikes and its sea's foam window (post/SceneHistory.ts; the
+ * order registered is the order cleared). */
+export function registerSceneHistories( render: RenderParts ) {
+
+	const { history, wind, weather, sky, stormSea } = render;
+	history.onJump( 'wind', () => wind.reset( { ...weatherWind( weather.state ), time: render.simTime } ) );
+	history.onJump( 'lightning', () => sky.lightning.reset() );
+	history.onJump( 'storm sea', () => stormSea.reset() );
+
+}
+
+/** Registers what a scene jump clears of the renderer's, after the island's: the fog's bank, the
+ * ground's bounce, and after the jump's bake the underwater map, at its constructed size and
+ * drawn at once for the jump's light (published by the bake), as the load's `prepare` draws it
+ * before the first frame: left to the loop's cadence (wall time), a capture ready within a few
+ * frames shot the cleared map, the sea without its refracted sun. */
+export function registerLightHistories( render: RenderParts ) {
+
+	const { history, pipeline, groundBounce, refractedSun } = render;
+	history.onJump( 'haze', () => pipeline.air.invalidate() );
+	history.onJump( 'ground bounce', () => groundBounce.invalidate() );
+	history.onJump( 'refracted sun', () => {
+
+		refractedSun.reset();
+		refractedSun.update();
+
+	}, 'after bake' );
 
 }
