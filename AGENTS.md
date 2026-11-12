@@ -84,7 +84,8 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   definition registered with the renderer states (a plant kind, a kind of local light, an extra
   pass: its cost knob, its stand in the test mode, how it follows the land's growth;
   `tools/verify-extensions.mjs`), and `src/UserData.ts` lists the `userData` keys the renderer
-  sets or reads (`tools/verify-layers.mjs` refuses one that is not declared there).
+  sets or reads, `src/world/IslandUserData.ts` those the island keeps to itself
+  (`tools/verify-layers.mjs` refuses one that is on neither list of its layer).
 - The packages' exits (`ARCHITECTURE.md`, rule 10): another package or the page imports the
   renderer, the island and the game only through `src/render.ts`, `src/island.ts` and
   `src/game/index.ts` (the page's; the game's loaded on demand) or `src/renderData.ts`,

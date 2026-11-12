@@ -1338,8 +1338,10 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   parameter, a field of an instance, or an operation its owner exports). A write from another layer
   than the owner's must also be on a second list (`ACROSS`).
   Its userData check reads the list of `userData` keys the renderer declares (`src/UserData.ts`)
-  and fails when a file of the render layer names a key that is not there, or when the list holds
-  a key no file names. A key reached through an alias of the bag is not seen.
+  and each upper layer's list of the keys it keeps to itself (`tools/layers.json`, `userData`: the
+  island's in `src/world/IslandUserData.ts`). It fails when a file names a key that is on neither
+  the renderer's list nor its own layer's, or when a list holds a key no file of its layer names
+  (the renderer's: no file at all). A key reached through an alias of the bag is not seen.
 - `tools/verify-exits.mjs` (plain `node`, no options, about a second) checks the packages' exits
   (`tools/layers.json`, `exits`). It loads each headless exit (`src/renderData.ts`,
   `src/islandLand.ts`, `src/game/sim/index.ts`) and the renderer's setup exit

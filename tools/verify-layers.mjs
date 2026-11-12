@@ -1,6 +1,6 @@
 // Checks the direction of the imports between the code's layers, that a package is imported only
 // through its exits, that the world's chunk worker and the headless exits import only plain code, that the renderer and the island keep off the page, which files
-// write another module's state, that the renderer names only the userData keys it declares, and
+// write another module's state, that each layer names only the userData keys declared for it, and
 // that no module reads the look where none is installed. CPU only, no GPU, a few seconds (the page and state checks run
 // TypeScript's checker over src/).
 //   node tools/verify-layers.mjs
@@ -65,9 +65,12 @@
 //   property chain rooted at the variable (`state.field = x`, `uniforms.gain.value = x`), found
 //   through the import's binding; a method that mutates (`vector.copy( x )`) and a GUI bound to a
 //   field are not seen.
-// - The userData check: a file of the render layer names only the `userData` keys the renderer
-//   declares (src/UserData.ts: the key, who sets it, who reads it, what it means), and every key
-//   declared there is named by some file under src/. A key counts where it is written after the
+// - The userData check: a file names only the `userData` keys the renderer declares
+//   (src/UserData.ts: the key, who sets it, who reads it, what it means) and, above the renderer,
+//   those its own layer declares it keeps to itself (`userData` in tools/layers.json: each layer's
+//   file and list, the island's world/IslandUserData.ts). Every key on the renderer's list is named
+//   by some file under src/, every key on a layer's list by a file of that layer, and no layer's
+//   list repeats a key of the renderer's. A key counts where it is written after the
 //   bag (`x.userData.key`, `x.userData[ 'key' ]`); one reached through an alias of the bag
 //   (`const data = material.userData`) or a computed name is not seen.
 // - The look checks: the renderer draws with the look its page installs (src/look/Look.ts), which
@@ -637,17 +640,39 @@ for ( const file of new Set( [ ...exits.keys(), ...lazy ] ) ) {
 }
 for ( const [ name, from ] of exitNames ) if ( from.length > 1 ) failures.push( `${ name }: exported by ${ from.join( ' and ' ) }: a name leaves its package through one exit` );
 
-// the userData check
-const { USER_DATA } = await import( pathToFileURL( path.join( SRC, 'UserData.ts' ) ).href );
+// the userData check: the renderer's keys, and each upper layer's own
+const userLists = {};
+for ( const [ layer, { file, list } ] of Object.entries( layers.userData ?? {} ) ) {
+
+	if ( table[ file ] !== layer ) failures.push( `tools/layers.json: the userData list ${ file } is not in the ${ layer } layer` );
+	userLists[ layer ] = { file, keys: ( await import( pathToFileURL( path.join( SRC, file ) ).href ) )[ list ] ?? {} };
+
+}
+const USER_DATA = userLists.render?.keys ?? {};
+if ( ! userLists.render ) failures.push( 'tools/layers.json: names no userData list for the render layer' );
 const userKeys = userDataKeys( program );
 for ( const { file, line, key } of userKeys ) {
 
-	if ( table[ file ] === 'render' && ! ( key in USER_DATA ) ) failures.push( `${ file }:${ line }: names userData.${ key }, which src/UserData.ts does not declare (render layer): declare the key there` );
+	const layer = table[ file ];
+	if ( key in USER_DATA ) continue;
+	if ( layer !== 'render' && userLists[ layer ] && key in userLists[ layer ].keys ) continue;
+	const own = layer === 'render' ? '' : userLists[ layer ] ? `, or src/${ userLists[ layer ].file } if the ${ layer } layer keeps it to itself` : `, or a list of the ${ layer } layer's own (tools/layers.json, userData) if it keeps it to itself`;
+	failures.push( `${ file }:${ line }: names userData.${ key }, which src/${ userLists.render?.file } does not declare (${ layer } layer): declare the key there${ own }` );
 
 }
-for ( const key of Object.keys( USER_DATA ) ) if ( ! userKeys.some( ( hit ) => hit.key === key ) ) failures.push( `src/UserData.ts declares '${ key }', which no file under src/ names: remove the entry` );
+for ( const [ layer, { file, keys } ] of Object.entries( userLists ) ) {
 
-console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), ${ across } across packages, ${ exits.size } exits and ${ lazy.size } lazy, the headless and setup exits' ${ headlessFiles.size } files, chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.keys( USER_DATA ).length } userData keys declared, ${ exitNameCount } names in the exits, ${ lookReaders.length } readers of the look (none in the chunk worker's ${ workerLoads.size } files, the headless game's ${ headlessLoads.size }, the entry's first ${ entryLoads.size } or the setup exit's ${ setupLoads.size })` );
+	for ( const key of Object.keys( keys ) ) {
+
+		if ( layer !== 'render' && key in USER_DATA ) failures.push( `src/${ file } declares '${ key }', which the renderer's list declares too: remove the entry` );
+		const named = userKeys.some( ( hit ) => hit.key === key && ( layer === 'render' || table[ hit.file ] === layer ) );
+		if ( ! named ) failures.push( `src/${ file } declares '${ key }', which no file ${ layer === 'render' ? 'under src/' : `of the ${ layer } layer` } names: remove the entry` );
+
+	}
+
+}
+
+console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), ${ across } across packages, ${ exits.size } exits and ${ lazy.size } lazy, the headless and setup exits' ${ headlessFiles.size } files, chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.entries( userLists ).map( ( [ l, { keys } ] ) => `${ Object.keys( keys ).length } ${ l }` ).join( ' and ' ) } userData keys declared, ${ exitNameCount } names in the exits, ${ lookReaders.length } readers of the look (none in the chunk worker's ${ workerLoads.size } files, the headless game's ${ headlessLoads.size }, the entry's first ${ entryLoads.size } or the setup exit's ${ setupLoads.size })` );
 for ( const [ key, pair ] of [ ...upward ].sort() ) console.log( `  ${ known.has( key ) ? 'known' : 'NEW  ' } ${ pair }: ${ key }` );
 if ( failures.length ) {
 

@@ -4,6 +4,10 @@
 		"island": { "page": "island.ts", "headless": "islandLand.ts" },
 		"game": { "page": "game/index.ts", "headless": "game/sim/index.ts" }
 	},
+	"userData": {
+		"render": { "file": "UserData.ts", "list": "USER_DATA" },
+		"island": { "file": "world/IslandUserData.ts", "list": "ISLAND_USER_DATA" }
+	},
 	"lazy": [
 		"debug/AmbientProbe.ts",
 		"debug/FrameProfiler.ts",
@@ -330,6 +334,7 @@
 		"world/IslandClasses.ts": "island",
 		"world/IslandGrowth.ts": "island",
 		"world/IslandSimplify.ts": "island",
+		"world/IslandUserData.ts": "island",
 		"world/MeadowSurface.ts": "island",
 		"world/OpaquePrepass.ts": "render",
 		"world/RimGround.ts": "island",

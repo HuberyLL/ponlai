@@ -22,6 +22,7 @@ export type { AmbientReceiver } from './lighting/AmbientSample.ts';
 export type { AmbientPrepared, AmbientView, AmbientVolume } from './lighting/AmbientVolume.ts';
 export { GroundBounceLightingModel, groundBounceLight } from './lighting/GroundBounce.ts';
 export type { BounceGround } from './lighting/GroundBounce.ts';
+export type { UserDataKey, UserDataName } from './UserData.ts';
 export { keyDeckShare, keyLandVisibility } from './lighting/KeyCloud.ts';
 export { liftKey, liftKeyWorld, liftedKeyDirection } from './lighting/KeyLift.ts';
 export { shadeLocalLights, testSources } from './lighting/LocalLights.ts';
