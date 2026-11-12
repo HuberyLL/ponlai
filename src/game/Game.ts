@@ -48,7 +48,7 @@ import type { EntityId, IslandInput, Items } from './sim/types.ts';
 //
 // URL options: hour (start hour, default 8), paused (start paused), load (resume the saved game),
 // new (start a new game), autosave (on, off), dayLength (real seconds per game day at 1x); see
-// docs/reference/tools.md.
+// docs/reference/url-options.md.
 //
 // Rules: without ?game the page stays the art-review scene, unchanged. The game is the first
 // prototype of docs/explanation/game-design.md ("Next"): nothing is built ahead of that design. The brain's
