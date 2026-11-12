@@ -85,6 +85,13 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   pass: its cost knob, its stand in the test mode, how it follows the land's growth;
   `tools/verify-extensions.mjs`), and `src/UserData.ts` lists the `userData` keys the renderer
   sets or reads (`tools/verify-layers.mjs` refuses one that is not declared there).
+- The packages' exits (`ARCHITECTURE.md`, rule 10): another package or the page imports the
+  renderer, the island and the game only through `src/render.ts`, `src/island.ts` and
+  `src/game/index.ts` (the page's; the game's loaded on demand) or `src/renderData.ts`,
+  `src/islandLand.ts` and `src/game/sim/index.ts` (the headless ones, free of three.js, for the
+  chunk worker and node). A name another package newly needs is added to its package's exit; the
+  modules loaded on demand are lazy exits (`tools/layers.json`; `tools/verify-layers.mjs`,
+  `tools/verify-exits.mjs`).
 - `src/main.ts`: the one place that assembles the page. It calls, in an order that is part of the
   image, the renderer's stages (`src/RenderStages.ts`: the renderer, the sky, the sun, the sea, the
   frame's passes, then what the island's data builds), the island's (`src/IslandStages.ts`: the

@@ -271,3 +271,20 @@ searches the owners for the scene's names.
    *Why:* a presentation written per piece of content needs a change in every part for every new
    resource. One written per category shows anything the rules can make on the day it is added,
    and art then replaces the defaults one at a time.
+10. **A package is imported through its exits.** The renderer, the island and the game are
+    packages, and each offers two exits, files of re-exports only: one for the page
+    ([src/render.ts](src/render.ts), [src/island.ts](src/island.ts),
+    [src/game/index.ts](src/game/index.ts)) and a headless one, free of three.js, for the chunk
+    worker and node ([src/renderData.ts](src/renderData.ts),
+    [src/islandLand.ts](src/islandLand.ts), [src/game/sim/index.ts](src/game/sim/index.ts)). Each
+    exports only the names another package takes, each name from one exit. Another package, or
+    the page, imports a package only through them; the modules the page loads on demand (the debug
+    probes and the game itself) are lazy exits, imported dynamically, so they stay in chunks of
+    their own. A few files that run before the renderer loads (the page's first module, and the
+    game's words, which node loads) name a module by its path, each with its reason
+    ([tools/verify-layers.mjs](tools/verify-layers.mjs), which checks the rest). An exit loads its
+    whole package, so a module does nothing as it loads but declare and register: no `await` and
+    no read of the page ([tools/verify-exits.mjs](tools/verify-exits.mjs), which also loads the
+    headless exits in node). *Why:* what a package offers is a list that can be read and reviewed,
+    and a change inside a package cannot break another; a module that worked as it loaded once
+    made the order of the imports part of the program.
