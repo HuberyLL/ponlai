@@ -1316,7 +1316,13 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   known ones, fails, and so does a known one that no longer imports upward (the list only
   shrinks). It also walks the chunk worker's imports (`src/world/chunkWorker.ts`) as the build's
   world generator plugin does (`tools/vite-world-generator.mjs`) and fails on any package import
-  the plugin would refuse. Run it after adding a file or an import across folders. Its page check
+  the plugin would refuse. Run it after adding a file or an import across folders.
+  Its exits check reads the packages' exits from `tools/layers.json` (`exits`: each package's page
+  exit and headless exit; `lazy`: the modules the page loads on demand). An exit holds re-exports
+  of its own package only; an import from one package into another, or from the app layer into
+  one, names an exit or a lazy exit, except the few pairs the tool lists with their reasons
+  (`DIRECT`, which only shrinks); a lazy exit is imported dynamically or with `import type` only.
+  The files a headless exit loads (`import type` left out) import relative paths only. Its page check
   keeps the render and island layers and the game's simulation off the page: TypeScript's checker
   resolves every name there, and one that is a page global (`location`, `localStorage`,
   `sessionStorage`, `document`, `window`, `navigator`, `URLSearchParams`, the animation frame
@@ -1332,6 +1338,14 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   Its userData check reads the list of `userData` keys the renderer declares (`src/UserData.ts`)
   and fails when a file of the render layer names a key that is not there, or when the list holds
   a key no file names. A key reached through an alias of the bag is not seen.
+- `tools/verify-exits.mjs` (plain `node`, no options, about a second) checks the packages' exits
+  (`tools/layers.json`, `exits`). It loads each headless exit (`src/renderData.ts`,
+  `src/islandLand.ts`, `src/game/sim/index.ts`) in plain node and fails when one throws or leaves
+  a name it exports undefined. It reads every file a page exit (`src/render.ts`, `src/island.ts`,
+  `src/game/index.ts`) loads and fails on an `await` or a page global (`location`, the storage,
+  `document`, `window`, `navigator`, the animation frame callbacks, `Worker`, `indexedDB`,
+  `fetch`) in the code that runs as the module loads. Run it after a change to what an exit
+  loads.
 - `tools/verify-extensions.mjs` (plain `node`, no options; it loads the page's modules through
   Vite's SSR loader, a few seconds) checks the renderer's extension points. It registers a plant
   kind, a kind of local light, an extra pass, scene events and histories of its own and fails
@@ -1352,7 +1366,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   `tools/**/*.mjs` (its header says which literals count). A usage a tool needs is declared in
   `src/Settings.ts`, not changed in the tool. Run it after adding or changing an option.
 - `tools/check.mjs` (`npm run check [-- --full]`) runs the checks every commit passes, one after
-  another: the type check, `verify-layers`, `verify-settings`, `verify-file-size`,
+  another: the type check, `verify-layers`, `verify-exits`, `verify-settings`, `verify-file-size`,
   `verify-three-internals`, `verify-no-binaries`, `verify-game`, `verify-i18n`, `verify-ink`,
   `verify-framegraph`, `verify-day-cycle`, `verify-weather-state`, `verify-wind`,
   `verify-local-lights` and `verify-extensions`, then

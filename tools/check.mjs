@@ -5,7 +5,8 @@
 //   npm run check -- --full       also the production build and the world's chunk checks (minutes)
 //
 // The commit-time list, in order (cheap and wide first, so a broken type fails before the rest):
-// the type check, the direction of imports between the layers and the page check (verify-layers),
+// the type check, the direction of imports between the layers, the packages' exits and the page
+// check (verify-layers), the exits' loading (verify-exits),
 // the page's settings against their docs (verify-settings), the files' size (verify-file-size), the three.js internals the code reaches into (verify-three-internals), no
 // binary in git (verify-no-binaries, every file in the index), then the CPU regression tools (the
 // game's simulation, its words, the ink, the frame graph's compiler, the day cycle, the weather's
@@ -53,6 +54,7 @@ function markdownStaged() {
 const checks = [
 	[ 'typecheck', npm( 'typecheck' ) ],
 	[ 'verify-layers', node( 'verify-layers.mjs' ) ],
+	[ 'verify-exits', node( 'verify-exits.mjs' ) ],
 	[ 'verify-settings', node( 'verify-settings.mjs' ) ],
 	[ 'verify-file-size', node( 'verify-file-size.mjs' ) ],
 	[ 'verify-three-internals', node( 'verify-three-internals.mjs' ) ],
