@@ -180,10 +180,13 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   sky's (`SkyLook.ts`), the day's windows and exposure keys (`DayLook.ts`), the ambient grade and
   the low key's lift (`AmbientLook.ts`), the haze's keys (`HazeLook.ts`), the exposure's keys
   (`ExposureLook.ts`), the display's: contrast, desaturation, white balance, tone curve, base
-  grade, bloom and the rods' colour (`DisplayLook.ts`), and the sea's detail and distant swell
-  (`SeaLook.ts`).
+  grade, bloom and the rods' colour (`DisplayLook.ts`), the sea's detail and distant swell
+  (`SeaLook.ts`), the ambient occlusion's floor (`OcclusionLook.ts`), the local lights' gain
+  (`LocalLightsLook.ts`), the meadow canopy's media (`MeadowCanopyLook.ts`) and the plants' answer
+  to the wind (`WindLook.ts`).
 - `src/islandLook/`: the island's numbers for those tables, one file per system (`Sea.ts`,
-  `Day.ts`, `Ambient.ts`, `Exposure.ts`, `Display.ts`, `Haze.ts`, `Sky.ts`), numbers and pure
+  `Day.ts`, `Ambient.ts`, `Exposure.ts`, `Display.ts`, `Haze.ts`, `Sky.ts`, `Occlusion.ts`,
+  `LocalLights.ts`, `MeadowCanopy.ts`, `Wind.ts`), numbers and pure
   functions of numbers only, gathered in `IslandLook.ts`. The entry installs them after the
   settings (`PageSettings.ts`), before any module that reads the look loads; a node tool that
   loads such modules installs them first (`tools/island-look.mjs`).

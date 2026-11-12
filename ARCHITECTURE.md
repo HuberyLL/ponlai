@@ -144,7 +144,8 @@ nothing below a host reads the page or the wall clock (the save's timestamp asid
   anti-aliasing, the upscaling and dynamic resolution, the bloom and the display chain.
 - **The look** ([src/look/](src/look/), [src/islandLook/](src/islandLook/)): the numbers chosen
   for a picture, one table per system (the sky, the day, the ambient light, the haze, the exposure,
-  the display, the sea). The renderer holds the tables' types, a neutral set (gains of 1, no grade,
+  the display, the sea, the occlusion's floor, the local lights' gain, the meadow's canopy, the
+  plants' answer to the wind). The renderer holds the tables' types, a neutral set (gains of 1, no grade,
   one key all day) and, per system, the module that reads the numbers with their tunables and the
   CPU code that reads only them; the environment's and the frame's modules keep the shaders and
   the methods, and take the numbers from those readers. The island holds its own numbers, and the
