@@ -275,9 +275,7 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
 - The island grows in place (`Growth.ts`): a Grow swaps in only the changed chunks in one frame, and
   every dependent of the land's shape follows it, the same function of the version as at load (a
   grown page draws a page loaded on that land bit for bit in the test mode:
-  `tools/verify-growth-swap.mjs`). Anything new that depends on the land's shape joins the swap,
-  and work it needs on the main thread goes into the preparation's idle-time steps, never into the
-  swap's frame, so the growth's share of any frame stays under 2 ms
+  `tools/verify-growth-swap.mjs`). Anything new that depends on the land's shape joins the swap
   (`docs/how-to/check-a-change.md`, Add something that depends on the land's shape).
 - A swap never builds a pipeline; one that needs one is a bug. New chunk meshes share their kind's
   material and layout, so they draw with the loaded chunks' pipelines; merged kinds take new
@@ -298,7 +296,7 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   baseline on any display (upscaled by FSR 1 on a 4K one, native on a 2K one), climbs to the
   display's own ratio with headroom and drops to about 1080p's pixel count when busy, and a paused
   page renders at the baseline (`src/Quality.ts`, profile-frame's default pin:
-  `docs/how-to/check-a-change.md`, Measure a performance change).
+  `docs/reference/tools.md`, Frame profiler).
 - Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
   state. High at 4K output is the reference image, the only active tier and the one every
   trade-off is judged on; every default in the modules is high's. A load knob is read

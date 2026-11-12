@@ -3,9 +3,8 @@
 This guide gives the rules for writing a tool in `tools/`. The tools that exist are described in
 `docs/reference/tools.md`.
 
-Before writing a script, look for the tool that answers the question (`docs/reference/tools.md`,
-Which tool for which question); if one almost fits, add an option to it. A script needed a second
-time, or by another task, becomes a tool, written to these rules:
+When to write a tool rather than add an option or keep a one-off script is in `AGENTS.md`, Tools.
+A tool is written to these rules:
 
 - Build on the shared modules instead of copying them: `capture-browser.mjs` (browser, warm
   profiles, readiness), `parity/reference.mjs` (stored references), `parity/views.mjs`,

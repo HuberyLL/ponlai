@@ -892,6 +892,24 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   fixed weather and a slow orbit, and writes `artifacts/perf/<label>/` (profile.json, summary.md):
   frame interval median, p95 and p99, GPU time per pass, the tick's JS time, hitches with their
   cause, and the startup.
+- Timestamps: Chrome ran frames up to a quarter faster with GPU timestamps on, so their per-pass
+  split shows where the time goes, not the frame rate a player sees; frame rates come from a run
+  without them. (A tier with a dynamic resolution keeps its own timestamp queries in every run, as
+  a player's page does; `--q gpuTimer=off` leaves them out.) Uncapped, the page runs about 120
+  frames ahead of the GPU, so a frame's timestamps come back seconds later (a scene's
+  `profiler.readbackMs`); the profiler waits for each frame's own read-back, with no time limit,
+  and `missingPasses` counts only passes whose query was never written or whose read-back failed.
+  A run with `timedFrames` 0 is a bug, not a busy GPU.
+- High is timed at its standard by default: 4K output (1920x1080 CSS at DPR 2) at 1440p's pixel
+  count, upscaled by FSR 1, with MSAA 4x. A profile, `--compare` or `--toggle` of high pins the
+  baseline of its dynamic rule for the viewport (`dpr=1.3333333333333333` at the default; `dpr=1`
+  at `--w 2560 --h 1440 --scale 1`, a 2K display: `src/post/RenderScale.ts` `dynamicRange`);
+  `--unpinned` leaves the tier's own rule (a dynamic one steering, with
+  `--scale-settle 5 --scale-log` to see where it settles). `--accept`, `--display`, `--scales` and
+  a `dpr` of the url's or `--q`'s own are never pinned.
+- A player's window is not full screen: other apps stay visible and may keep drawing (a page in
+  another app's hidden browser pane took half the GPU and held the player's scale at its floor).
+  Headless at 60 Hz matched the display's GPU times within about 5 %.
 - It loads each variant once and switches scenes at runtime (`--mode reload` reloads per scene,
   the original method); every page keeps the generated island's chunks in IndexedDB (in the
   tool's own Chrome profile) while the generator's sources are unchanged (`--world-cache off` loads

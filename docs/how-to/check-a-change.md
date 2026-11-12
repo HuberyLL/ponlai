@@ -19,38 +19,20 @@ statistics (`tools/capture-growth.mjs`), not by pixel difference.
 
 ## Measure a performance change
 
-Use `tools/profile-frame.mjs` (`docs/reference/tools.md`, Frame profiler).
+Use `tools/profile-frame.mjs`; what its readings mean is in `docs/reference/tools.md`, Frame
+profiler. A change is judged at high's standard (`AGENTS.md`, Rules for every change).
 
-- Measure on a production build, under the GPU lock: the scene matrix at the default generic
-  display (1920x1080 CSS at DPR 2, quality high), before and after a change (`--compare` for an
-  A/B, or `--toggle` on a debug flag while the change is in development).
-- Judge an A/B by its GPU time per pass (timestamps on); take frame rates from a run without GPU
-  timestamps (`--timestamps off` or `both`): Chrome ran frames up to a quarter faster with them
-  on, so their per-pass split shows where the time goes, not the frame rate a player sees. (A tier
-  with a dynamic resolution keeps its own timestamp queries in every run, as a player's page does;
-  `--q gpuTimer=off` leaves them out.) Uncapped, the page runs about 120 frames ahead of the GPU,
-  so a frame's timestamps come back seconds later (a scene's `profiler.readbackMs`: 2.5-6.5 s on
-  `island-fair-noon` and `meadow-close`); the profiler waits for each frame's own read-back, with
-  no time limit, and `missingPasses` counts only passes whose query was never written or whose
-  read-back failed. A run with `timedFrames` 0 is a bug, not a busy GPU.
-- High is timed at its standard by default: 4K output (1920x1080 CSS at DPR 2) at 1440p's pixel
-  count, upscaled by FSR 1, with MSAA 4x, the level every trade-off is judged at, with about 14 ms
-  of GPU time a frame in the normal scenes (island views, `meadow-close`) as the budget. A profile,
-  `--compare` or `--toggle` of high pins the baseline of its dynamic rule for the viewport
-  (`dpr=1.3333333333333333` at the default; `dpr=1` at `--w 2560 --h 1440 --scale 1`, a 2K display:
-  `src/post/RenderScale.ts` `dynamicRange`); `--unpinned` leaves the
-  tier's own rule (a dynamic one steering, with `--scale-settle 5 --scale-log` to see where it
-  settles). `--accept`, `--display`, `--scales` and a `dpr` of the url's or `--q`'s own are never
-  pinned.
-- Judge whether a tier holds 60 fps with `--accept` (under vsync), not from uncapped intervals, at
-  the tier's own settings (high with its dynamic scale, measured at its settle point with
-  `--scale-settle 5`; the report gives each scene's scale), and check how a change plays on a fast
-  display with `--display` (pacing, cadence, the scale's changes under drags).
-- Report contended runs as such: check `node tools/gpu-lock.mjs gpu` before each run (and during
-  it when other windows stay on screen). A player's window is not full screen: other apps stay
-  visible and may keep drawing (a Ponlai page in an app's hidden browser pane took half the GPU and
-  held the player's scale at its floor), so check a change in a normal window too, not only
-  `--kiosk`. Headless at 60 Hz matched the display's GPU times within about 5 %.
+1. Measure on a production build, under the GPU lock: the scene matrix at the default generic
+   display, before and after the change (`--compare` for an A/B, or `--toggle` on a debug flag
+   while the change is in development).
+2. Judge the A/B by its GPU time per pass (timestamps on), and take frame rates from a run without
+   GPU timestamps (`--timestamps off` or `both`).
+3. Judge whether high holds 60 fps with `--accept` (under vsync), not from uncapped intervals, at
+   the tier's own settings (its dynamic scale measured at its settle point with
+   `--scale-settle 5`), and check how the change plays on a fast display with `--display`.
+4. Check `node tools/gpu-lock.mjs gpu` before each run (and during it when other windows stay on
+   screen), report contended runs as such, and check the change in a normal window too, not only
+   `--kiosk`.
 
 ## Add a history-dependent effect
 
