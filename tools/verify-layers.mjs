@@ -100,7 +100,7 @@ const STATE = {
 	'post/MeadowShade.ts:screenShadowView': [ 'post/Pipeline.ts' ],
 	'post/Motion.ts:reactiveUniforms': [ 'post/TemporalAA.ts', 'weather/Lightning.ts' ],
 	'post/fsr3/MipBias.ts:fsr3MipBiasScale': [ 'post/fsr3/Fsr3Upscaler.ts' ],
-	'shared.ts:shared': [ 'RenderStages.ts', 'app/Diagnostics.ts', 'app/Frame.ts', 'sky/Sky.ts', 'weather/RainCollision.ts' ],
+	'shared.ts:shared': [ 'RenderStages.ts', 'app/Diagnostics.ts', 'app/Frame.ts', 'sky/SkyTrack.ts', 'weather/RainCollision.ts' ],
 	'sky/SkyRetune.ts:skyRetune': [ 'RenderStages.ts' ],
 	'world/VegetationShadow.ts:shadowWindOn': [ 'lighting/SunShadow.ts' ],
 	'world/WorldStart.ts:worldProgress': [ 'IslandStages.ts' ],

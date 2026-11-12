@@ -238,6 +238,7 @@
 	"sky/SkyBake.ts": "render",
 	"sky/SkyDome.ts": "render",
 	"sky/SkyRetune.ts": "render",
+	"sky/SkyTrack.ts": "render",
 	"sky/StarCatalog.ts": "render",
 	"sky/Streaks.ts": "render",
 	"sky/Weather.ts": "render",

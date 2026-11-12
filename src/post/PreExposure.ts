@@ -118,7 +118,7 @@ const STORE_LEVEL = 10;
 const STORE_STOPS_DARK = 18, STORE_STOPS_MAX = 20;
 
 /** The power of two (stops) a store of the sky's bakes or the clouds' panorama holds its radiance
- * at (Sky.ts trackClouds), for `light`, the luminance of the light the clouds take (the sun's above
+ * at (sky/SkyTrack.ts trackClouds), for `light`, the luminance of the light the clouds take (the sun's above
  * their tops while it lights them, and their moonlight with its gains), `moonShare`, the moon's
  * share of it, and `night`, where that store's range sits best under the moon (stops over the
  * light: look/SkyLook.ts `storeNight`, from the weather's clouds). By day the light itself is stored near

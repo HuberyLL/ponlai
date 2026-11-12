@@ -78,7 +78,7 @@ type V4 = THREE.Node<'vec4'>;
 //     coloured in the march, not where they are shown):
 //     the key's beam. A light march toward the key light in segments that grow geometrically and
 //     span the shell's depth, run however faint the light, so the cloud's own shadow moves without
-//     a jump while no direct light reaches it (Sky.ts trackClouds); the sample's own depth is taken
+//     a jump while no direct light reaches it (SkyTrack.ts trackClouds); the sample's own depth is taken
 //     over the finest step's length whatever the march's cone, so the view and the coarser
 //     panorama light a cloud alike. Multiple scattering is three orders, each with half the
 //     optical depth, half the energy and half the asymmetry of the one before (Wrenninge, "Oz: The
@@ -86,7 +86,7 @@ type V4 = THREE.Node<'vec4'>;
 //     -0.2, 80 / 20: tidewater's droplet phase's first order). A powder term dims the thin margins
 //     seen away from the key and the bases shade toward the shell's floor (tidewater's terms). Its
 //     colour is the key's irradiance at the shell (`lightColor`: the sun's with its low-sun beam,
-//     Sky.ts trackClouds).
+//     SkyTrack.ts trackClouds).
 //     The sky's light, in two parts: the sky over the tops and the sky round the horizon, each by
 //     what the cloud straight above a sample leaves of it (two reads up the column, never less than
 //     a fifth: the light that comes round the cloud), the tops' share growing with the height in
@@ -152,7 +152,7 @@ type V4 = THREE.Node<'vec4'>;
 //     STREAK_DIRECT, STREAK_AMBIENT: under a low sun the direct share warm and the ambient cool,
 //     so the layer reads rose on both sides of the sky rather than the yellow-white of the sun's
 //     light alone, both turning back to white between 8 and 30 degrees; white under a higher sun
-//     and by night), the night's faint ambient (`nightAmbient`, Sky.ts trackClouds) taken with the
+//     and by night), the night's faint ambient (`nightAmbient`, SkyTrack.ts trackClouds) taken with the
 //     sky's light under the same gains. The clouds' march takes the
 //     ambient as its sky light too.
 //   - march: coarse steps until cloud is found, then fine ones; whole cells of the weather map
@@ -237,7 +237,7 @@ export const EARTH_RADIUS = 6_360_000;
 // cloudy's and overcast's layers stand lower (`setShell`).
 export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
 // What the panorama stores is the radiance times a power of two that follows the clouds' light
-// and the weather's skies (`storeStops`, set by Sky.ts trackClouds: 2^11 at noon, 2^16 to 2^20 on
+// and the weather's skies (`storeStops`, set by SkyTrack.ts trackClouds: 2^11 at noon, 2^16 to 2^20 on
 // a moonlit night, by how far the weather's clouds spread the night's range; PreExposure.ts
 // `storeStops`, look/SkyLook.ts STORE_RANGE): unscaled, a clear midnight's panorama has its first
 // percentile near 2^-21 (2^-16 over the texels at least a tenth covered), under half float's 2^-14, where its steps are wide enough to show as dark flecks
@@ -738,7 +738,7 @@ export class Clouds {
 	// The cap on the forward lobe, as the cosine to the sun where the lobe's value is taken, so a
 	// streak against the sun's disc is no brighter than the glare round it.
 	readonly streakForwardCap = tuneUniform( 'sky.streaks.forwardCap', 0.99, { min: 0.9, max: 0.9999, onChange: markSkyRetune } );
-	// The sun's light before the air, lifted with the low sun's beam (Sky.ts trackClouds), which
+	// The sun's light before the air, lifted with the low sun's beam (SkyTrack.ts trackClouds), which
 	// each point of the layer takes through the air toward the sun at the sun's elevation there
 	// (`streaksAt`); the radius (m) over which a point's lead toward the sun raises it, and the
 	// width (degrees) of the fade as its disc sinks under the layer's horizon; and the overall
@@ -766,11 +766,11 @@ export class Clouds {
 	// Irradiance arriving at the cloud layer from the key light (scene units).
 	readonly lightColor = uniform( new THREE.Color( 0.5, 0.45, 0.38 ) );
 	// The key's irradiance on the clouds' tops, which a column passes down to its base (scene
-	// units, Sky.ts trackClouds): by day the sun's above the cloud, as `lightColor`; by night the
+	// units, SkyTrack.ts trackClouds): by day the sun's above the cloud, as `lightColor`; by night the
 	// island's own moon key, not the clouds' moonlight, so the base and the land under it take one moon;
 	// each times the weather's day sky at its own height (Sky.ts `daySkyMoon`).
 	readonly columnKey = uniform( new THREE.Color( 0, 0, 0 ) );
-	// The sun's share of the column's key (Sky.ts trackClouds: 1 by day, 0 once the sun's light has
+	// The sun's share of the column's key (SkyTrack.ts trackClouds: 1 by day, 0 once the sun's light has
 	// left it). A heap's part of the column's light goes by it, so that part is the sun's alone: lit
 	// by the moon too, a fair sky's heaps read brighter in late twilight than the night's level is
 	// set with and the meter takes the scene down. A layer's column takes the whole key.
@@ -790,7 +790,7 @@ export class Clouds {
 	// haze's clear-day value when it was set (weather/HazeKeys.ts), not linked to it; the haze's has
 	// since been set higher, and the layer's keeps its own until it is set.
 	readonly lightDesaturation = uniform( 0.26 );
-	// The thin layer's colours (`streaksAt`): the moon's direct light gain (Sky.ts trackClouds) and
+	// The thin layer's colours (`streaksAt`): the moon's direct light gain (SkyTrack.ts trackClouds) and
 	// the shaded side's desaturation.
 	readonly moonLight = uniform( 0 );
 	readonly ambientDesaturation = uniform( 0.26 );
@@ -808,7 +808,7 @@ export class Clouds {
 	readonly shellBottom = uniform( SHELL_BOTTOM );
 	readonly shellThickness = uniform( SHELL_THICKNESS );
 	readonly lowShare = uniform( 0 );
-	// Overcast's share of the four skies (Sky.ts trackClouds), which the dome's composite of a
+	// Overcast's share of the four skies (SkyTrack.ts trackClouds), which the dome's composite of a
 	// closed layer reads (SkyDome.ts `glowToward`). Not `deckShare` (VolumetricHaze.ts),
 	// `broadShare` or `deckShadowShare`, which carry the same share to the haze, the forward
 	// light's spread and the shadow's fade, each set apart.
@@ -841,17 +841,17 @@ export class Clouds {
 	readonly bakeGlowGain = tuneUniform( 'sky.clouds.bakeGlowGain', BAKE_GLOW_GAIN, { min: 0, max: 3, onChange: markSkyRetune } );
 	// The closed deck's gradation from the zenith to the horizon (DECK_GRADATION): 1 the diffusion
 	// law's 3 : 1, 0 a uniform deck, by overcast's share and the day's weight (`deckFlat`, set by
-	// Sky.ts trackClouds).
+	// SkyTrack.ts trackClouds).
 	readonly deckGradation = tuneUniform( 'sky.clouds.deckGradation', DECK_GRADATION, { min: 0, max: 1, onChange: markSkyRetune } );
 	readonly deckFlat = uniform( 0 );
 	// The share of the forward light spread by the diffusion law (overcast's share of the sky) and
-	// the weight in use, `forwardWeight` moved to `overcastWeight` by that share (Sky.ts trackClouds).
+	// the weight in use, `forwardWeight` moved to `overcastWeight` by that share (SkyTrack.ts trackClouds).
 	readonly broadShare = uniform( 0 );
 	readonly weight = uniform( FORWARD_WEIGHT );
 	// The narrow lobe's mean cosine (`forwardLobe`), what the air under the deck reads.
 	readonly lobe = uniform( FORWARD_LOBE );
 	// The lobe's colour over the column key's: the sun's colour above the tops over the colour the
-	// closed deck leaves the key (Sky.ts trackClouds), white without overcast's share or a sun.
+	// closed deck leaves the key (SkyTrack.ts trackClouds), white without overcast's share or a sun.
 	readonly lobeTint = uniform( new THREE.Color( 1, 1, 1 ) );
 	// The forward light on level ground at the key's height (Clouds.ts forwardLevel), set by Sky.ts
 	// trackClouds: the narrow lobe's (`narrowLevel`) and it and the spread light's (the lobe of mean
@@ -922,7 +922,7 @@ export class Clouds {
 	// dispatch's scale over the scale of the history it reads (see the rules in the header).
 	private readonly historyScale = [ 1, 1 ];
 	/** The luminance of the light the clouds take, for the stores' powers of two, and the
-	 * panorama's power of two for that light and the weather's skies (Sky.ts trackClouds;
+	 * panorama's power of two for that light and the weather's skies (SkyTrack.ts trackClouds;
 	 * PreExposure.ts `storeStops`). */
 	storeLight = 0;
 	storeStops = 18;
