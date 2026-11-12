@@ -68,7 +68,7 @@ import './three/Internals.ts';
 import './three/Backend.ts';
 import './three/FrameLoop.ts';
 import './debug/FrameStats.ts';
-import { shared } from './shared.ts';
+import { createShared, installShared } from './shared.ts';
 import './lighting/SolarShadow.ts';
 import './lighting/SunShadow.ts';
 import './lighting/RefractedSun.ts';
@@ -125,6 +125,10 @@ import { createFrameSizing, createFrame, startLoop, createLoopControls } from '.
 import { createGui, addLookFolders, addHazeFolders } from './app/Gui.ts';
 import { createDiagnostics, exposeDebugHandles } from './app/Diagnostics.ts';
 import { createSceneControls } from './app/Scene.ts';
+
+// the scene's uniforms, which every material reads: made here and installed before anything builds
+const shared = createShared();
+installShared( shared );
 
 const render = {} as RenderParts;
 const island = {} as IslandParts;

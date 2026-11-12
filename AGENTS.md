@@ -92,7 +92,8 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   exist only on the dev server or with `?debug` / `?profile`.
 - `src/Quality.ts`: the quality tiers, every cost knob in one table (high the only active one);
   `src/QualityDetect.ts` takes `?quality` or high (its GPU timing is parked with the lower tiers).
-- `src/shared.ts`: uniforms shared by the water, terrain and vegetation.
+- `src/shared.ts`: uniforms shared by the water, terrain and vegetation, which the entry creates
+  and installs before anything builds.
 - `src/camera/`: the island camera, which starts framing the land alone from its heading
   (`IslandFraming.ts`, app/CameraViews.ts `placeOrbit`) and which the hand pans within the land's
   soft bounds, turns, tilts and zooms (`IslandCameraControls.ts`, the ground it grabs in

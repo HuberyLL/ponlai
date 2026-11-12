@@ -6,7 +6,12 @@ import { ABSORPTION, BACKSCATTER, FORWARD_ANGLE, FORWARD_SCATTER, SCATTER } from
 
 // Uniforms shared by the water, the terrain and the vegetation (one node each, read by every
 // material that uses it).
-export const shared = {
+// - The page's entry creates the object (`createShared`) and installs it (`installShared`) before
+//   it builds anything: no module makes the uniforms as it loads, and a tool that builds materials
+//   under node installs its own (tools/wgsl-build.mjs). The modules that take it as a parameter
+//   are handed the same object; `shared` below is the installed one, for those that read it as
+//   they build or run. Nothing reads it as a module loads.
+export const createShared = () => ( {
 	time: uniform( 0 ),
 	wind: createWindUniforms(),
 	// the displacement field the islanders part the meadow through (world/vegetation/Trample.ts): the
@@ -77,6 +82,16 @@ export const shared = {
 	// log2 of the sky's geometric-mean luminance (Sky.meterLog2Node, scene units): the exposure's
 	// sky term, the dome's metering illuminance being this luminance's
 	skyMeterLog2: float( 0 ) as THREE.Node<'float'>,
-};
+} );
 
-export type Shared = typeof shared;
+export type Shared = ReturnType<typeof createShared>;
+
+/** The installed uniforms: undefined until the entry installs them. */
+export let shared: Shared;
+
+/** Installs the scene's uniforms, once, before anything is built. */
+export function installShared( created: Shared ): void {
+
+	shared = created;
+
+}
