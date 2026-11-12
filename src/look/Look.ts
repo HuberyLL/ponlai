@@ -15,7 +15,11 @@ import { NEUTRAL_LOOK } from './NeutralLook.ts';
 // A reader takes its system's numbers once, as its module loads (`readLook`), into the constants
 // it has always exported, so every consumer reads at the moment it always did. That is why the
 // look is installed first: `installLook` after a reader has loaded would leave that reader on the
-// neutral set and the rest on the installed one, so it throws and names the first reader. A
+// neutral set and the rest on the installed one, so it throws and names the first reader. It is
+// installed once, as the settings are (Settings.ts): a second install of another set throws. The
+// same set installed again changes nothing and passes: tools/dusk-grid.mjs installs the island's
+// look in node's own modules (tools/island-look.mjs) and again in those of its `--src` tree, which
+// by default is the same tree, so the same modules and the same set. A
 // reader registers its tunables (debug/Tune.ts) on tables of its own, copies of the ones it was
 // handed, so an installed set stays as it was written.
 //
@@ -346,11 +350,14 @@ export interface Look {
 let installed: Look | null = null;
 let firstReader: string | null = null;
 
-/** Installs the look every reader takes its numbers from. Call it before any reader loads: it
- * throws once one has read, naming the first. */
+/** Installs the look every reader takes its numbers from, once. Call it before any reader loads: it
+ * throws once one has read, naming the first, and when another set was installed before (the same
+ * set again passes: see the header). */
 export function installLook( look: Look ): void {
 
+	if ( installed === look ) return;
 	if ( firstReader !== null ) throw new Error( `installLook: the look was read before it was installed, first by ${ firstReader }: install it before any module that reads it loads` );
+	if ( installed !== null ) throw new Error( 'installLook: the look is installed once, before any module that reads it loads' );
 	installed = look;
 
 }

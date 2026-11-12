@@ -11,6 +11,9 @@ import { ABSORPTION, BACKSCATTER, FORWARD_ANGLE, FORWARD_SCATTER, SCATTER } from
 //   under node installs its own (tools/wgsl-build.mjs). The modules that take it as a parameter
 //   are handed the same object; `shared` below is the installed one, for those that read it as
 //   they build or run. Nothing reads it as a module loads.
+// - It is installed once, as the settings are (Settings.ts): a second install throws. A read before
+//   the install throws too, at the read, naming the field (its stack names the reader): unlike the
+//   settings and the look, the uniforms have no defaults a reader could take instead.
 export const createShared = () => ( {
 	time: uniform( 0 ),
 	wind: createWindUniforms(),
@@ -86,12 +89,18 @@ export const createShared = () => ( {
 
 export type Shared = ReturnType<typeof createShared>;
 
-/** The installed uniforms: undefined until the entry installs them. */
-export let shared: Shared;
+// what `shared` holds until the install: any field read throws
+const NOT_INSTALLED = new Proxy( {} as Shared, {
+	get: ( _, field ) => { throw new Error( `shared.${ String( field ) } was read before installShared: the entry installs the scene's uniforms before anything builds` ); },
+} );
 
-/** Installs the scene's uniforms, once, before anything is built. */
+/** The installed uniforms (a read of any field throws until the entry installs them). */
+export let shared: Shared = NOT_INSTALLED;
+
+/** Installs the scene's uniforms, once, before anything is built: a second install throws. */
 export function installShared( created: Shared ): void {
 
+	if ( shared !== NOT_INSTALLED ) throw new Error( 'installShared: the scene\'s uniforms are installed once, before anything builds' );
 	shared = created;
 
 }

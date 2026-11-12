@@ -20,6 +20,10 @@ import type { WeatherName, WindLevel } from './sky/Weather.ts';
 //   option reads as absent: each reader takes its own default, as on a page without the option, and
 //   nothing throws. A tool that builds what a page with options builds installs them first
 //   (`installSettings( parseSettings( query ) )`: tools/wgsl-build.mjs `--q`).
+// - They are installed once, and before any read: a second install throws, and so does an install
+//   after a module read an option (it took the default, whatever the address says), naming the
+//   first option read and where. The look (look/Look.ts) and the scene's uniforms (shared.ts) keep
+//   the same rule.
 // - The reader keeps the address's own values (the first of a name for `get`, all for `getAll`):
 //   each module still reads its options as it did, so the values, the defaults the modules apply
 //   and their console warnings are unchanged. `get` takes only a declared name, so a misspelt read
@@ -219,22 +223,29 @@ export function settingProblems( query: ParsedSettings ): string[] {
 
 const NONE = parseSettings( '' );
 let installed: { query: ParsedSettings; tier: string | null } | null = null;
-// the first option read before the install (a module that loaded before the entry installed them)
+// the first option read before the install (a module that loaded before the entry installed them),
+// with the line of the stack that read it where the engine gives one
 let readEarly: string | null = null;
 const current = ( name: string ) => {
 
-	if ( ! installed ) readEarly ??= name;
+	if ( ! installed && readEarly === null ) {
+
+		const at = new Error().stack?.split( '\n' ).slice( 1 ).find( ( line ) => ! line.includes( 'Settings.ts' ) )?.trim();
+		readEarly = `?${ name }${ at ? ` (${ at })` : '' }`;
+
+	}
 	return installed?.query ?? NONE;
 
 };
 
 /** Installs the page's settings and the quality tier its entry chose (null: the `quality` option's,
- * else the default: Quality.ts `loadTier`), before the modules that read them load. Once only; it
- * warns when a module read an option before (it took the default, whatever the address says). */
+ * else the default: Quality.ts `loadTier`), before the modules that read them load. Once only, and
+ * before any read: it throws on a second install, and when a module read an option before (it took
+ * the default, whatever the address says), naming the first. */
 export function installSettings( query: ParsedSettings, tier: string | null = null ): void {
 
 	if ( installed ) throw new Error( 'installSettings: the settings are installed once, before the modules that read them' );
-	if ( readEarly !== null ) console.warn( `[settings] ?${ readEarly } was read before the settings were installed` );
+	if ( readEarly !== null ) throw new Error( `installSettings: the settings were read before they were installed, first ${ readEarly }: install them before any module that reads them loads` );
 	installed = { query, tier };
 
 }
