@@ -5,7 +5,8 @@ import {
 	normalize, abs, pow, sqrt, max, min, dot, sign, mix, smoothstep, clamp, fract, floor, sin, cos, exp, log2, select, dFdx, dFdy, length, varying,
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
-import { DETAIL_SIZE, SCAN_LAYER, SCAN_TOP_MIP, type DetailTextures } from './ProceduralTextures.ts';
+import { DETAIL_SIZE, SCAN_TOP_MIP } from './ProceduralTextures.ts';
+import { SCAN_LAYER, type GroundTextures } from './GroundTextures.ts';
 import { GTAO, floorOcclusion, receiveScreenAO, screenAOAt } from '../post/GTAO.ts';
 import { LAWN_GAIN, LAWN_TONE, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_MAX_DROP } from './Meadow.ts';
 import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, SOIL_PALETTE, soilGroveSwell, soilUniforms } from './Soil.ts';
@@ -243,7 +244,7 @@ const RUNNEL_DARKENING = 0.6, RUNNEL_SHADE = 0.7;
 const STONE_UNDER_WATER = 0.09;
 
 interface Ctx {
-	tex: DetailTextures; shared: Shared; topY: F; vegetation: boolean; shore: FieldTexture;
+	tex: GroundTextures; shared: Shared; topY: F; vegetation: boolean; shore: FieldTexture;
 	rimGround?: FieldTexture; rimGroundXform?: THREE.Node<'vec4'>; hex: boolean;
 	/** The island's ground's runs under the meadow's layer, per vertex: x as everything but the turf
 	 * takes it, y as the turf does (Grass.ts `meadowGroundRuns`). */
@@ -1079,7 +1080,7 @@ class TurfLightingModel extends UnderwaterLightingModel {
 
 type TerrainVariant = ( hex: boolean, from?: THREE.NodeMaterial ) => THREE.MeshStandardNodeMaterial;
 
-export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextures, shared: Shared, waveMaps: WaveMaps, shore: FieldTexture, { topY = 3.1, vegetation = true, rimGround, rimGroundXform, hex }: TerrainOptions = {} ): THREE.MeshStandardNodeMaterial {
+export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: GroundTextures, shared: Shared, waveMaps: WaveMaps, shore: FieldTexture, { topY = 3.1, vegetation = true, rimGround, rimGroundXform, hex }: TerrainOptions = {} ): THREE.MeshStandardNodeMaterial {
 
 	const topYU = uniform( topY );
 	const ctx: Omit<Ctx, 'hex'> = { tex, shared, topY: topYU, vegetation, shore, rimGround, rimGroundXform: rimGroundXform ? uniform( rimGroundXform ) : undefined };

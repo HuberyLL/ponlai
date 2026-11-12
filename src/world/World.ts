@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { makeTerrainMaterial } from '../materials/TerrainMaterial.ts';
-import type { DetailTextures } from '../materials/ProceduralTextures.ts';
+import type { GroundTextures } from '../materials/GroundTextures.ts';
 import type { WaveMaps } from '../ocean/WaveMaps.ts';
 import { refractedGroup, showUnderwater } from '../ocean/Refraction.ts';
 import type { Shared } from '../shared.ts';
@@ -64,7 +64,7 @@ export interface WorldMeshes {
 	grounds: GroundGrid[];
 }
 
-export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: Shared, waveMaps: WaveMaps, fields: WorldFields ): WorldMeshes {
+export function buildWorldMeshes( data: WorldData, tex: GroundTextures, shared: Shared, waveMaps: WaveMaps, fields: WorldFields ): WorldMeshes {
 
 	const group = refractedGroup( shared.waterLevel.value );
 	group.name = 'world';

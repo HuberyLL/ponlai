@@ -126,6 +126,7 @@
 	"lighting/Underwater.ts": "render",
 	"main.ts": "app",
 	"materials/CloudNoise.ts": "render",
+	"materials/GroundTextures.ts": "island",
 	"materials/HexTiling.ts": "render",
 	"materials/Meadow.ts": "island",
 	"materials/ProceduralTextures.ts": "render",

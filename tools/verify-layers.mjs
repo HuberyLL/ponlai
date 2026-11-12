@@ -46,7 +46,6 @@ const KNOWN = [
 	'lighting/GroundBounce.ts -> materials/Soil.ts',
 	'lighting/GroundBounce.ts -> world/SeabedTile.ts',
 	'lighting/GroundBounce.ts -> world/WorldShapes.ts',
-	'materials/ProceduralTextures.ts -> materials/Soil.ts',
 	// the anti-aliasing mode reads the quality tier the page's entry chose from the URL
 	'post/Antialiasing.ts -> QualityDetect.ts',
 	'post/Pipeline.ts -> weather/FallingLeaves.ts',
