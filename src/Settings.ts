@@ -24,13 +24,13 @@ import type { WeatherName, WindLevel } from './sky/Weather.ts';
 //   each module still reads its options as it did, so the values, the defaults the modules apply
 //   and their console warnings are unchanged. `get` takes only a declared name, so a misspelt read
 //   fails the type check; `prefixed` reads the declared prefixes (`tier.<knob>`, Quality.ts).
-// - SETTINGS lists the options in the order of docs/reference/url-options.md's table, which
-//   tools/verify-settings.mjs writes from it and checks against it: a new option is declared here,
-//   documented there in its group, and the table rewritten (`node tools/verify-settings.mjs --write`).
-//   `default` is the reader's default as words for that table, never read by the code; a `choice`
-//   lists the values its reader tells apart (others are reported), a `number` its range and any
-//   words it takes besides numbers (`words`). `debug` options are read on debug pages only (the
-//   dev server, `?debug`, `?profile`).
+// - SETTINGS lists the options by the groups of docs/reference/url-options.md, whose table of every
+//   option tools/verify-settings.mjs writes from it and checks against it: a new option is declared
+//   here, explained there in its group, and the table rewritten (`node tools/verify-settings.mjs
+//   --write`). `default` is the reader's default as words for that table, never read by the code;
+//   a `choice` lists the values its reader tells apart (others are reported), a `number` its range
+//   and any words it takes besides numbers (`words`). `debug` options are read on debug pages only
+//   (the dev server, `?debug`, `?profile`).
 // - The installed settings never change on a page. A setting read when materials and the frame
 //   graph are built is a load setting: a new value reloads the page (PageSettings.ts `reloadWith`).
 //   What may change on a running page is a named number of the tune table (debug/Tune.ts) or a
@@ -68,7 +68,7 @@ export const SETTINGS = {
 	polar: { type: 'number', layer: 'app', default: '40', about: 'the island view\'s tilt (degrees)' },
 	az: { type: 'number', layer: 'app', default: '180', about: 'the island view\'s heading (degrees)' },
 	dist: { type: 'number', layer: 'app', default: 'frames the land', range: [ 0, Infinity ], about: 'the island view\'s distance from the default pivot (m)' },
-	cameraInput: { type: 'choice', layer: 'app', default: 'on', values: [ 'on', 'off', '' ], about: '`off`: the hand does not move the island camera' },
+	cameraInput: { type: 'choice', layer: 'app', default: 'on', values: [ 'on', 'off' ], about: '`off`: the hand does not move the island camera' },
 	gui: { type: 'switch', layer: 'app', default: 'hidden', about: 'shows the GUI' },
 	camera: { type: 'choice', layer: 'app', default: 'orbit', values: [ 'orbit', 'free' ], about: 'the island camera or the free flight' },
 	nearFov: { type: 'number', layer: 'app', default: '42', range: [ 1, 179 ], words: [ 'off' ], about: 'the island view\'s fov at its closest zoom (degrees; `off`: 27 at every distance)' },
@@ -79,7 +79,7 @@ export const SETTINGS = {
 	worldCache: { type: 'choice', layer: 'island', default: 'on', values: [ 'on', 'off', '0', '' ], about: '`off` or `0`: generates every chunk instead of reading the browser\'s cache' },
 	bamboo: { type: 'list', layer: 'app', default: 'the default groves', about: 'another look of the bamboo: `cover,height`' },
 	approach: { type: 'number', layer: 'app', default: '0', range: [ 0, 1 ], about: 'the progress toward the next piece, its shoal put on at once' },
-	soil: { type: 'choice', layer: 'app', default: 'on', values: [ '0', '1' ], about: '`0`: the ground without its soil map' },
+	soil: { type: 'choice', layer: 'app', default: 'on', values: [ '0', '1' ], about: '`0`: the ground without its soil layer' },
 	// sky and weather
 	hour: { type: 'number', layer: 'app', default: 'golden-hour (8 under `game`)', about: 'the hour of the day' },
 	preset: { type: 'choice', layer: 'app', default: 'golden-hour', values: PRESETS, about: 'the hour by its sun' },
@@ -98,7 +98,7 @@ export const SETTINGS = {
 	autoQualitySlow: { type: 'number', layer: 'app', default: '1', range: [ 0.01, Infinity ], about: 'scales the GPU timing\'s measured time (parked)' },
 	aa: { type: 'choice', layer: 'render', default: 'the tier\'s (high: msaa)', values: AA, about: 'the anti-aliasing mode (`gt` on debug pages only)' },
 	msaa: { type: 'choice', layer: 'render', default: 'none', values: [ '1', '2', '4' ], about: 'the older alias of `aa`: `4` msaa, `1` and `2` off' },
-	fsrDebug: { type: 'switch', layer: 'render', default: 'off', debug: true, about: 'FSR 3\'s debug view over its output (under `aa=fsr3`)' },
+	fsrDebug: { type: 'switch', layer: 'render', default: 'off', debug: true, about: 'FSR 3\'s debug view over its output, under `aa=fsr3`' },
 	taaResolve: { type: 'choice', layer: 'render', default: 'on', values: [ 'off' ], debug: true, about: '`off`: the temporal modes without their resolve' },
 	terrainHex: { type: 'choice', layer: 'island', default: 'on', values: [ '0' ], about: '`0`: the cliff\'s plain triplanar tiling' },
 	post: { type: 'list', layer: 'render', default: 'none', values: [ 'legacy', 'inline-composite', 'three-fsr', 'store-scene' ], about: 'the frame graph without the first performance round\'s changes' },

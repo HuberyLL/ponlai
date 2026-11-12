@@ -264,8 +264,9 @@ for the light is baking lighting into albedo; it breaks again whenever the light
   and the same grass grows out over it: its tufts at the lip spill over the edge, fine blades that
   arch over and hang down the wall, lying on the stone, never through it, and the lip alternates
   between overgrown stretches and cut-open root soil.
-- The flowers are off for now (`?flowers` brings them back): Penglai's bamboo grows over the whole
-  island, and whether its meadow keeps flowers among the groves is still open. As they were made:
+- The flowers are off for now (the meadow draws none, and no option brings them back): Penglai's
+  bamboo grows over the whole island, and whether its meadow keeps flowers among the groves is
+  still open. As they were made:
 - Flowers are part of the meadow, and they are Penglai's, after the texts on the immortals'
   islands, not a generic island's: whole plants among the grass, never heads floating over it. The
   yaoxiang (遙香草, Shiyi ji: "flowers like cinnabar, leaves narrow and white, like the day lily") is

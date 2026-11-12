@@ -1313,11 +1313,27 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   known ones, fails, and so does a known one that no longer imports upward (the list only
   shrinks). It also walks the chunk worker's imports (`src/world/chunkWorker.ts`) as the build's
   world generator plugin does (`tools/vite-world-generator.mjs`) and fails on any package import
-  the plugin would refuse. Run it after adding a file or an import across folders.
+  the plugin would refuse. Run it after adding a file or an import across folders. Its page check
+  keeps the render and island layers and the game's simulation off the page: TypeScript's checker
+  resolves every name there, and one that is a page global (`location`, `localStorage`,
+  `sessionStorage`, `document`, `window`, `navigator`, `URLSearchParams`, the animation frame
+  callbacks, `Worker`, `indexedDB`, `fetch`) fails outside the one file of each need the tool
+  allows it in (`PAGE_NEEDS`: the frame pacing, the workers' start, the world's cache, the assets'
+  fetch, the textures' canvas, the settings' parser). The page hands the rest down: the canvas,
+  the settings, the storage.
+- `tools/verify-settings.mjs [--write]` (plain `node`) checks the page's settings
+  (`src/Settings.ts`, the one entrance every option is read through) against
+  `docs/reference/url-options.md`: the table of every option at the page's end is the one written
+  from the declarations (`--write` rewrites it), every declared option is named in the page's
+  prose, and every option the prose writes with a value is declared. It also checks that the page
+  installs the settings before any module that reads them loads (`index.html` loads
+  `src/Boot.ts`, which imports `src/PageSettings.ts` before it imports `src/main.ts`
+  dynamically). Run it after adding or changing an option.
 - `tools/check.mjs` (`npm run check [-- --full]`) runs the checks every commit passes, one after
-  another: the type check, `verify-layers`, `verify-file-size`, `verify-three-internals`,
-  `verify-no-binaries`, `verify-game`, `verify-i18n`, `verify-ink`, `verify-framegraph`,
-  `verify-day-cycle`, `verify-weather-state`, `verify-wind` and `verify-local-lights`, then
+  another: the type check, `verify-layers`, `verify-settings`, `verify-file-size`,
+  `verify-three-internals`, `verify-no-binaries`, `verify-game`, `verify-i18n`, `verify-ink`,
+  `verify-framegraph`, `verify-day-cycle`, `verify-weather-state`, `verify-wind` and
+  `verify-local-lights`, then
   `npm run lint:docs` when a Markdown file is staged. `--full` adds `npm run build` and
   `verify-world-chunks.mjs` and always runs the docs' lint. Every check runs even after one failed;
   it ends with each check's result and time, and exits 1 when any failed. None of them renders or

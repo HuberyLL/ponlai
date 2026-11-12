@@ -117,9 +117,13 @@ nothing below a host reads the page or the wall clock (the save's timestamp asid
 
 ### Layers
 
-- **The page** ([src/main.ts](src/main.ts)): the renderer, the cameras, the frame loop, the GUI,
-  the diagnostics and the handles the tools drive, and the quality tier's table of cost knobs
-  ([src/Quality.ts](src/Quality.ts)).
+- **The page** ([src/main.ts](src/main.ts), loaded by the entry [src/Boot.ts](src/Boot.ts)
+  after [src/PageSettings.ts](src/PageSettings.ts)): the renderer, the cameras, the frame loop, the
+  GUI, the diagnostics and the handles the tools drive (it mounts them on `window`), the address,
+  the reloads and the browser's storage, and the quality tier's table of cost knobs
+  ([src/Quality.ts](src/Quality.ts)). It is the only part that touches the browser's page: the
+  layers below take the canvas, the settings and the storage from it
+  ([tools/verify-layers.mjs](tools/verify-layers.mjs), its page check, keeps them off the page).
 - **The world** ([src/world/](src/world/)): the island generated from its land. The land grows a
   piece at a time; the generator runs in 16 m chunks on a pool of workers, its chunks are cached,
   merged and drawn, and a growth swaps the changed chunks in place. Its kinds (the ground, cliffs,
@@ -144,6 +148,12 @@ nothing below a host reads the page or the wall clock (the save's timestamp asid
   cycle sets the sun.
 - **The frame.** The frame graph renders the scene's passes from what the world and the
   environment hold, then resolves, upscales and grades the image for the display.
+- **Settings to every module.** Every option of the address is declared once, with what it takes,
+  its default and the layer that owns it ([src/Settings.ts](src/Settings.ts)). The entry parses the
+  address, reports what nobody declared or no reader tells apart, chooses the quality tier and
+  installs both before any other module loads; every module then reads its options through that
+  one entrance, as it loads or when it builds. Where nothing installed them (node, a worker) every
+  option reads as absent and each reader takes its default.
 
 ## Rules across the layers
 
