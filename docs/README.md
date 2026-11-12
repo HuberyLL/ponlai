@@ -25,6 +25,7 @@ Facts to look up.
   probes, the GPU lock, frame profiling and the docs checks.
 - [Look values](reference/look-values.md): the measured values of the island's look (light and
   shade, exposure, water).
+- [Glossary](reference/glossary.md): the project's own words.
 - [Parity captures](../tools/parity/README.md): capture sets, comparisons and their tolerances.
 
 ## Explanation
