@@ -26,6 +26,11 @@
 //   (`<` or `|`) is usage text, a lone `name=` is a prefix to match, and a literal passed to
 //   parseSettings tests the parser). A usage a tool needs is declared, not changed in the tool.
 //   Queries assembled from separate pieces (profile-frame.mjs's list) are outside this scan.
+// - No option is declared in a layer above the lowest layer whose code reads it (the layers of
+//   tools/layers.json, render lowest, then island, game, app): the owner the table prints is a
+//   layer that reads it. A read is a call `<any>.get( 'name' )`, `.has`, `.getAll` or `.prefixed`
+//   (a prefix), or `numberSetting( 'name', ... )`, in a file under `src/`, comments left out; a
+//   read through a helper of its own (WorldStart.ts `intParam`) is not seen.
 //
 // Output: a summary line, then the failures. Exit 0 when everything passes, 1 otherwise or on an
 // unknown option.
@@ -129,6 +134,30 @@ for ( const name of Object.keys( SETTINGS ) ) if ( ! named.has( name ) ) failure
 for ( const prefix of prefixes ) if ( ! [ ...named ].some( ( n ) => n.startsWith( prefix ) ) ) failures.push( `prefix ${ prefix }: declared in src/Settings.ts, but the prose of url-options.md never uses it` );
 for ( const [ name, token ] of valued ) if ( ! declared( name ) ) failures.push( `url-options.md writes \`${ token }\`, but no option ${ name } is declared in src/Settings.ts` );
 
+// each option's layer against its readers'
+const RANK = { render: 0, island: 1, game: 2, app: 3 };
+const LAYERS = JSON.parse( readFileSync( path.join( ROOT, 'tools', 'layers.json' ), 'utf8' ) ).files;
+const lowest = new Map();
+for ( const [ file, layer ] of Object.entries( LAYERS ) ) {
+
+	const text = readFileSync( path.join( ROOT, 'src', file ), 'utf8' ).replace( /^\s*\/\/.*$/gm, '' );
+	for ( const m of text.matchAll( /\.(?:get|has|getAll|prefixed)\(\s*'([^']+)'|\bnumberSetting\(\s*'([^']+)'/g ) ) {
+
+		const name = m[ 1 ] ?? m[ 2 ];
+		if ( ! Object.hasOwn( SETTINGS, name ) && ! Object.hasOwn( SETTING_PREFIXES, name ) ) continue;
+		const known = lowest.get( name );
+		if ( ! known || RANK[ layer ] < RANK[ known.layer ] ) lowest.set( name, { layer, file } );
+
+	}
+
+}
+for ( const [ name, spec ] of [ ...Object.entries( SETTINGS ), ...Object.entries( SETTING_PREFIXES ) ] ) {
+
+	const low = lowest.get( name );
+	if ( low && RANK[ spec.layer ] > RANK[ low.layer ] ) failures.push( `option ${ name }: declared in the ${ spec.layer } layer, but src/${ low.file } in the ${ low.layer } layer reads it` );
+
+}
+
 // the entry's order
 const html = readFileSync( path.join( ROOT, 'index.html' ), 'utf8' );
 if ( ! /<script[^>]*\bsrc="\/src\/Boot\.ts"/.test( html ) ) failures.push( 'index.html: does not load /src/Boot.ts as its script' );
@@ -170,7 +199,7 @@ for ( const file of readdirSync( path.join( ROOT, 'tools' ), { recursive: true }
 
 }
 
-console.log( `verify-settings: ${ Object.keys( SETTINGS ).length } options and ${ prefixes.length } prefix declared, ${ named.size } names in the docs' prose, ${ valued.size } written with a value, ${ queries } tool queries checked` );
+console.log( `verify-settings: ${ Object.keys( SETTINGS ).length } options and ${ prefixes.length } prefix declared, ${ lowest.size } read in src/, ${ named.size } names in the docs' prose, ${ valued.size } written with a value, ${ queries } tool queries checked` );
 if ( failures.length ) {
 
 	console.log( `FAIL (${ failures.length })` );

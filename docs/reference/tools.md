@@ -1359,7 +1359,9 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   (`src/Settings.ts`, the one entrance every option is read through) against
   `docs/reference/url-options.md`: the table of every option at the page's end is the one written
   from the declarations (`--write` rewrites it), every declared option is named in the page's
-  prose, and every option the prose writes with a value is declared. It also checks that the page
+  prose, and every option the prose writes with a value is declared. No option is declared in a
+  layer above the lowest layer whose code reads it (`tools/layers.json`; its header says which
+  reads it sees), so the table's owner is a layer that reads it. It also checks that the page
   installs the settings before any module that reads them loads (`index.html` loads
   `src/Boot.ts`, which imports `src/PageSettings.ts` before it imports `src/main.ts`
   dynamically), and that no address the tools put on a page draws a `[settings]` warning: the
