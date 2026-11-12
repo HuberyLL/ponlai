@@ -1,5 +1,6 @@
 // Checks the page's settings (src/Settings.ts) against their documentation and the entry that
-// installs them. CPU only (plain `node`, which strips the module's types), well under a second.
+// installs them, and the addresses the tools build against them. CPU only (plain `node`, which
+// strips the module's types), well under a second.
 //   node tools/verify-settings.mjs            check
 //   node tools/verify-settings.mjs --write    rewrite the docs' table of every option, then check
 //
@@ -18,10 +19,17 @@
 //   main.ts dynamically. (A static import of main.ts there, or the install moved into main.ts,
 //   would let a bundle evaluate the shared chunks main.ts imports first, and every module in them
 //   that reads a setting as it loads would take the default.)
+// - No address the tools put on a page draws a `[settings]` warning (settingProblems): the query of
+//   every view in tools/parity/views.mjs, and every query written as a literal in tools/**/*.mjs (a
+//   string with `&`, `=` or a leading `?` whose parts are all `name` or `name=value` and one of
+//   them a declared option; a part built from `${ ... }` is left out, a literal with a placeholder
+//   (`<` or `|`) is usage text, a lone `name=` is a prefix to match, and a literal passed to
+//   parseSettings tests the parser). A usage a tool needs is declared, not changed in the tool.
+//   Queries assembled from separate pieces (profile-frame.mjs's list) are outside this scan.
 //
 // Output: a summary line, then the failures. Exit 0 when everything passes, 1 otherwise or on an
 // unknown option.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -43,7 +51,7 @@ for ( const a of process.argv.slice( 2 ) ) {
 
 }
 
-const { SETTINGS, SETTING_PREFIXES } = await import( path.join( ROOT, 'src', 'Settings.ts' ) );
+const { SETTINGS, SETTING_PREFIXES, parseSettings, settingProblems } = await import( path.join( ROOT, 'src', 'Settings.ts' ) );
 
 const code = ( v ) => `\`${ v }\``;
 const number = ( n ) => n === Infinity ? 'any' : n === - Infinity ? 'any' : String( n );
@@ -129,7 +137,40 @@ const install = boot.search( /^import '\.\/PageSettings\.ts';$/m ), page = boot.
 if ( install < 0 || page < 0 || install > page ) failures.push( 'src/Boot.ts: must import \'./PageSettings.ts\' first, then `await import( \'./main.ts\' )`' );
 if ( /^import[^;]*'\.\/main\.ts'/m.test( boot ) ) failures.push( 'src/Boot.ts: imports main.ts statically (its shared chunks would load before the settings are installed)' );
 
-console.log( `verify-settings: ${ Object.keys( SETTINGS ).length } options and ${ prefixes.length } prefix declared, ${ named.size } names in the docs' prose, ${ valued.size } written with a value` );
+// the tools' addresses
+let queries = 0;
+const { VIEWS } = await import( path.join( ROOT, 'tools', 'parity', 'views.mjs' ) );
+for ( const [ name, view ] of Object.entries( VIEWS ) ) {
+
+	queries ++;
+	for ( const p of settingProblems( parseSettings( view.q ?? '' ) ) ) failures.push( `tools/parity/views.mjs ${ name }: ${ p }` );
+
+}
+const PART = /^([A-Za-z][\w.]*)(?:=([^&\s'"`]*))?$/;
+const BUILT = '\u0001';
+for ( const file of readdirSync( path.join( ROOT, 'tools' ), { recursive: true } ).filter( ( f ) => f.endsWith( '.mjs' ) ) ) {
+
+	const text = readFileSync( path.join( ROOT, 'tools', file ), 'utf8' ).replace( /^\s*(\/\/|\*).*$/gm, '' );
+	for ( const m of text.matchAll( /(parseSettings\(\s*)?(?:'([^'\n]*)'|"([^"\n]*)"|`([^`]*)`)/g ) ) {
+
+		if ( m[ 1 ] ) continue;
+		const literal = ( m[ 2 ] ?? m[ 3 ] ?? m[ 4 ] ).replace( /\$\{[^}]*\}/g, BUILT );
+		const query = literal.replace( /^\?/, '' );
+		if ( ! ( literal.startsWith( '?' ) || query.includes( '&' ) || query.includes( '=' ) ) ) continue;
+		if ( /[<|]/.test( query ) || /^[\w.]+=$/.test( query ) ) continue;
+		const parts = query.split( '&' ).filter( Boolean );
+		const fixed = parts.filter( ( p ) => ! p.includes( BUILT ) );
+		if ( ! parts.length || ! fixed.every( ( p ) => PART.test( p ) ) ) continue;
+		if ( ! fixed.some( ( p ) => declared( PART.exec( p )[ 1 ] ) ) ) continue;
+		queries ++;
+		const shown = literal.replaceAll( BUILT, '${...}' );
+		for ( const p of settingProblems( parseSettings( fixed.join( '&' ) ) ) ) failures.push( `tools/${ file }: '${ shown }' draws the warning ${ p }` );
+
+	}
+
+}
+
+console.log( `verify-settings: ${ Object.keys( SETTINGS ).length } options and ${ prefixes.length } prefix declared, ${ named.size } names in the docs' prose, ${ valued.size } written with a value, ${ queries } tool queries checked` );
 if ( failures.length ) {
 
 	console.log( `FAIL (${ failures.length })` );

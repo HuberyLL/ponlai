@@ -68,7 +68,7 @@ export const SETTINGS = {
 	polar: { type: 'number', layer: 'app', default: '40', about: 'the island view\'s tilt (degrees)' },
 	az: { type: 'number', layer: 'app', default: '180', about: 'the island view\'s heading (degrees)' },
 	dist: { type: 'number', layer: 'app', default: 'frames the land', range: [ 0, Infinity ], about: 'the island view\'s distance from the default pivot (m)' },
-	cameraInput: { type: 'choice', layer: 'app', default: 'on', values: [ 'on', 'off' ], about: '`off`: the hand does not move the island camera' },
+	cameraInput: { type: 'choice', layer: 'app', default: 'on', values: [ 'on', 'off', '' ], about: '`off`: the hand does not move the island camera; named bare, as `on`' },
 	gui: { type: 'switch', layer: 'app', default: 'hidden', about: 'shows the GUI' },
 	camera: { type: 'choice', layer: 'app', default: 'orbit', values: [ 'orbit', 'free' ], about: 'the island camera or the free flight' },
 	nearFov: { type: 'number', layer: 'app', default: '42', range: [ 1, 179 ], words: [ 'off' ], about: 'the island view\'s fov at its closest zoom (degrees; `off`: 27 at every distance)' },

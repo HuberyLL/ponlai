@@ -567,7 +567,7 @@ without the warning. This table is written from the declarations (`node tools/ve
 | `polar` | a number | 40 | app | the island view's tilt (degrees) |
 | `az` | a number | 180 | app | the island view's heading (degrees) |
 | `dist` | a number from 0 | frames the land | app | the island view's distance from the default pivot (m) |
-| `cameraInput` | `on`, `off` | on | app | `off`: the hand does not move the island camera |
+| `cameraInput` | `on`, `off`, named bare | on | app | `off`: the hand does not move the island camera; named bare, as `on` |
 | `gui` | named (its value unread) | hidden | app | shows the GUI |
 | `camera` | `orbit`, `free` | orbit | app | the island camera or the free flight |
 | `nearFov` | a number, 1 to 179, or `off` | 42 | app | the island view's fov at its closest zoom (degrees; `off`: 27 at every distance) |

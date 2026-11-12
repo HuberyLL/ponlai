@@ -1328,7 +1328,10 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   prose, and every option the prose writes with a value is declared. It also checks that the page
   installs the settings before any module that reads them loads (`index.html` loads
   `src/Boot.ts`, which imports `src/PageSettings.ts` before it imports `src/main.ts`
-  dynamically). Run it after adding or changing an option.
+  dynamically), and that no address the tools put on a page draws a `[settings]` warning: the
+  query of every view in `tools/parity/views.mjs` and every query written as a literal in
+  `tools/**/*.mjs` (its header says which literals count). A usage a tool needs is declared in
+  `src/Settings.ts`, not changed in the tool. Run it after adding or changing an option.
 - `tools/check.mjs` (`npm run check [-- --full]`) runs the checks every commit passes, one after
   another: the type check, `verify-layers`, `verify-settings`, `verify-file-size`,
   `verify-three-internals`, `verify-no-binaries`, `verify-game`, `verify-i18n`, `verify-ink`,
