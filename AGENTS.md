@@ -68,8 +68,8 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
 
 - `docs/`: the documentation by kind, listed in `docs/README.md`: `explanation/`
   (`art-direction.md`, `game-design.md`, `ui.md`, the game UI's spec: read it before UI work),
-  `how-to/` (`add-material.md`, `add-game-content.md`, `check-a-change.md`), `reference/`
-  (`tools.md`).
+  `how-to/` (`add-material.md`, `add-game-content.md`, `check-a-change.md`,
+  `write-a-tool.md`), `reference/` (`tools.md`).
 - `public/` (git-ignored): the game's assets, filled from the GitHub release `assets.lock.json`
   names (`tools/assets.mjs`, `tools/vite-assets.mjs`; `docs/reference/tools.md`, Assets).
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__PONLAI__` and
@@ -344,8 +344,8 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
 
 - Before writing a script, look for the tool that answers the question (`docs/reference/tools.md`,
   Which tool for which question); if one almost fits, add an option to it.
-- A script needed a second time, or by another task, becomes a tool (`docs/reference/tools.md`,
-  Writing a tool). A truly one-off script stays in the task's artifacts folder.
+- A script needed a second time, or by another task, becomes a tool (`docs/how-to/write-a-tool.md`).
+  A truly one-off script stays in the task's artifacts folder.
 - Never start a GPU tool to see its options: it queues for the lock and renders. Read its header.
 
 ## WebGPU / TSL pitfalls
