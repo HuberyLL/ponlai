@@ -1321,7 +1321,9 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   exit and headless exit, and the renderer's setup exit; `lazy`: the modules the page loads on
   demand). An exit holds re-exports of its own package only; an import from one package into
   another, or from the app layer into one, names an exit or a lazy exit; a lazy exit is imported
-  dynamically or with `import type` only. The files a headless or setup exit loads (`import type`
+  dynamically or with `import type` only. Every name an exit exports is taken by a file of another
+  package or the page (a lazy exit that is a module of its package, by any other file), and no name
+  leaves through two exits. The files a headless or setup exit loads (`import type`
   left out) import relative paths only. Its page check
   keeps the render and island layers and the game's simulation off the page: TypeScript's checker
   resolves every name there, and one that is a page global (`location`, `localStorage`,

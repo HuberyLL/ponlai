@@ -20,7 +20,7 @@ import { releaseAttribute } from '../three/Attributes.ts';
 
 const DEFAULTS = { step: 2, lift: 0.5, slope: 15, open: 0.9 };
 
-export interface AmbientProbeResult {
+interface AmbientProbeResult {
 	/** the open points' mean irradiance facing up, its luminance and channels */
 	eUp: number;
 	rgb: [ number, number, number ];

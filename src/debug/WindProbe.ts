@@ -61,7 +61,7 @@ import type { Bounds } from '../renderData.ts';
 type V2 = THREE.Node<'vec2'>;
 type V4 = THREE.Node<'vec4'>;
 
-export interface WindProbeContext {
+interface WindProbeContext {
 
 	renderer: THREE.WebGPURenderer;
 	scene: THREE.Scene;

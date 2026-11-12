@@ -33,6 +33,11 @@
 //   re-exports of its own package's files. An import from one package into another (or from the
 //   app layer into a package) names an exit of that package or a lazy exit. A lazy exit is imported
 //   dynamically or with `import type` only, from anywhere, so it stays out of the page's chunks.
+//   Every name an exit exports (by TypeScript's checker) is taken from it by a file of another
+//   package or of the app layer, through an import, a re-export or a dynamic import that names it
+//   (a namespace import takes them all); a lazy exit that is not one of its package's exits is a
+//   module of the package as well, and its names need only some other file that takes them. No
+//   name is exported by two exits.
 //   The exits' own tests (the headless and setup ones load in node, the page ones neither await
 //   nor read the page at load) are tools/verify-exits.mjs.
 // - Each headless exit, the setup exit and every file they load (static imports and re-exports,
@@ -368,6 +373,80 @@ function userDataKeys( program ) {
 
 }
 
+/** Each name a file under src/ takes from another file, as a map from the file it names (under
+ * src/) to { name: [ the files that take it ] }: the names of its `import` and `import type`
+ * declarations and re-exports (the exported name, not a local alias), and of its dynamic imports
+ * where the name is written at the import (`( await import( ... ) ).name`, `const { name } = await
+ * import( ... )`, `import( ... ).Type` in a type). A namespace import (`import * as`) takes every
+ * name and is recorded as '*'. */
+function takenNames( program ) {
+
+	const taken = new Map();
+	const take = ( from, spec, name ) => {
+
+		const to = resolve( from, spec );
+		if ( ! to ) return;
+		if ( ! taken.has( to ) ) taken.set( to, new Map() );
+		const names = taken.get( to );
+		if ( ! names.has( name ) ) names.set( name, new Set() );
+		names.get( name ).add( from );
+
+	};
+	for ( const source of program.getSourceFiles() ) {
+
+		const file = path.relative( SRC, source.fileName ).split( path.sep ).join( '/' );
+		if ( file.startsWith( '..' ) ) continue;
+		const visit = ( node ) => {
+
+			if ( ts.isImportDeclaration( node ) && ts.isStringLiteralLike( node.moduleSpecifier ) ) {
+
+				const spec = node.moduleSpecifier.text, clause = node.importClause;
+				if ( clause?.name ) take( file, spec, 'default' );
+				const bindings = clause?.namedBindings;
+				if ( bindings && ts.isNamespaceImport( bindings ) ) take( file, spec, '*' );
+				else if ( bindings ) for ( const el of bindings.elements ) take( file, spec, ( el.propertyName ?? el.name ).text );
+
+			} else if ( ts.isExportDeclaration( node ) && node.moduleSpecifier && ts.isStringLiteralLike( node.moduleSpecifier ) ) {
+
+				const spec = node.moduleSpecifier.text;
+				if ( ! node.exportClause || ts.isNamespaceExport( node.exportClause ) ) take( file, spec, '*' );
+				else for ( const el of node.exportClause.elements ) take( file, spec, ( el.propertyName ?? el.name ).text );
+
+			} else if ( ts.isCallExpression( node ) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments[ 0 ] && ts.isStringLiteralLike( node.arguments[ 0 ] ) ) {
+
+				const spec = node.arguments[ 0 ].text;
+				let up = node.parent;
+				while ( up && ( ts.isAwaitExpression( up ) || ts.isParenthesizedExpression( up ) ) ) up = up.parent;
+				if ( up && ts.isPropertyAccessExpression( up ) ) take( file, spec, up.name.text );
+				else if ( up && ts.isVariableDeclaration( up ) && ts.isObjectBindingPattern( up.name ) ) for ( const el of up.name.elements ) take( file, spec, ( el.propertyName ?? el.name ).text );
+				else take( file, spec, '*' );
+
+			} else if ( ts.isImportTypeNode( node ) && ts.isLiteralTypeNode( node.argument ) && ts.isStringLiteralLike( node.argument.literal ) ) {
+
+				const q = node.qualifier;
+				take( file, node.argument.literal.text, q ? ( ts.isIdentifier( q ) ? q.text : q.left.getText( source ) ) : '*' );
+
+			}
+			ts.forEachChild( node, visit );
+
+		};
+		visit( source );
+
+	}
+	return taken;
+
+}
+
+/** The names a module exports, by TypeScript's checker. */
+function exportedNames( program, file ) {
+
+	const checker = program.getTypeChecker();
+	const source = program.getSourceFile( path.join( SRC, file ) );
+	const symbol = source && checker.getSymbolAtLocation( source );
+	return symbol ? checker.getExportsOfModule( symbol ).map( ( s ) => s.name ) : [];
+
+}
+
 const failures = [];
 const layers = JSON.parse( readFileSync( TABLE, 'utf8' ) );
 const table = layers.files;
@@ -533,6 +612,31 @@ for ( const pair of ACROSS ) {
 
 }
 
+// the exits' names: each taken by another package, each from one exit
+const taken = takenNames( program );
+const exitNames = new Map(); // name -> the exits that export it
+let exitNameCount = 0;
+for ( const file of new Set( [ ...exits.keys(), ...lazy ] ) ) {
+
+	// a lazy exit that is not one of its package's exits is a module of the package as well, whose
+	// names the package's own files may take too
+	const layer = table[ file ], module = ! exits.has( file );
+	const takers = taken.get( file ) ?? new Map();
+	const takenBy = ( name ) => [ ...( takers.get( name ) ?? [] ), ...( takers.get( '*' ) ?? [] ) ].some( ( f ) => module ? f !== file : table[ f ] !== layer );
+	for ( const name of exportedNames( program, file ) ) {
+
+		exitNameCount ++;
+		if ( ! exitNames.has( name ) ) exitNames.set( name, [] );
+		exitNames.get( name ).push( file );
+		if ( takenBy( name ) ) continue;
+		if ( module ) failures.push( `${ file }: exports ${ name }, which no other file takes from it: do not export it` );
+		else failures.push( `${ file }: exports ${ name }, which no file outside the ${ layer } package takes from it: leave it out of the exit` );
+
+	}
+
+}
+for ( const [ name, from ] of exitNames ) if ( from.length > 1 ) failures.push( `${ name }: exported by ${ from.join( ' and ' ) }: a name leaves its package through one exit` );
+
 // the userData check
 const { USER_DATA } = await import( pathToFileURL( path.join( SRC, 'UserData.ts' ) ).href );
 const userKeys = userDataKeys( program );
@@ -543,7 +647,7 @@ for ( const { file, line, key } of userKeys ) {
 }
 for ( const key of Object.keys( USER_DATA ) ) if ( ! userKeys.some( ( hit ) => hit.key === key ) ) failures.push( `src/UserData.ts declares '${ key }', which no file under src/ names: remove the entry` );
 
-console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), ${ across } across packages, ${ exits.size } exits and ${ lazy.size } lazy, the headless and setup exits' ${ headlessFiles.size } files, chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.keys( USER_DATA ).length } userData keys declared, ${ lookReaders.length } readers of the look (none in the chunk worker's ${ workerLoads.size } files, the headless game's ${ headlessLoads.size }, the entry's first ${ entryLoads.size } or the setup exit's ${ setupLoads.size })` );
+console.log( `verify-layers: ${ files.length } files, ${ edges } imports, ${ upward.size } upward (${ KNOWN.length } known), ${ across } across packages, ${ exits.size } exits and ${ lazy.size } lazy, the headless and setup exits' ${ headlessFiles.size } files, chunk worker ${ workerFiles } files, ${ pageHits.length } page globals named (${ Object.keys( PAGE_NEEDS ).length } files allowed), ${ statePairs } writes of another file's state (${ ACROSS.length } across layers), ${ Object.keys( USER_DATA ).length } userData keys declared, ${ exitNameCount } names in the exits, ${ lookReaders.length } readers of the look (none in the chunk worker's ${ workerLoads.size } files, the headless game's ${ headlessLoads.size }, the entry's first ${ entryLoads.size } or the setup exit's ${ setupLoads.size })` );
 for ( const [ key, pair ] of [ ...upward ].sort() ) console.log( `  ${ known.has( key ) ? 'known' : 'NEW  ' } ${ pair }: ${ key }` );
 if ( failures.length ) {
 

@@ -59,7 +59,6 @@ export { jitter } from './post/Jitter.ts';
 export { LOCAL_TONE } from './post/LocalTone.ts';
 export { MEADOW_SHADE, SS_SHADOW, meadowGroundShade, meadowShadeAt, meadowShadeFloor, receiveScreenShadow, screenShadowAt, screenThickness } from './post/MeadowShade.ts';
 export { motionCheck, motionNode, motionState, taaCut, velocityOutput } from './post/Motion.ts';
-export { Pipeline } from './post/Pipeline.ts';
 export type { PipelineSettings } from './post/Pipeline.ts';
 export { PRE_EXPOSURE_PENDING, preExposure } from './post/PreExposure.ts';
 export { declareSceneEvents, renderEvent } from './post/SceneEvents.ts';
