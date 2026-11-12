@@ -1,5 +1,4 @@
-import { paceAt } from '../../characters/Ages.ts';
-import type { Sex } from '../../characters/Ages.ts';
+import { paceAt, type Sex } from '../../islandLand.ts';
 import { exp, log } from './maths.ts';
 import { random } from './rng.ts';
 import type { RngState } from './rng.ts';

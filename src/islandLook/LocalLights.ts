@@ -1,4 +1,4 @@
-import type { LocalLightsLook } from '../look/Look.ts';
+import type { LocalLightsLook } from '../render.ts';
 
 // The island's local lights look (src/islandLook/: the island's numbers for the renderer's look
 // tables, look/Look.ts; look/LocalLightsLook.ts reads this).

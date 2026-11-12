@@ -1,5 +1,5 @@
 import type * as THREE from 'three/webgpu';
-import { CLICK_SLOP } from '../camera/IslandCameraControls.ts';
+import { CLICK_SLOP } from '../island.ts';
 import type { Game } from './Game.ts';
 import { groundPoint, pointerRay } from './pick.ts';
 import { blueprintRefusal } from './sim/buildings.ts';

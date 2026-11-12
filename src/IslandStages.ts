@@ -7,7 +7,7 @@
 // - The page's camera views (app/CameraViews.ts) need the document, so the page hangs them on the
 //   object as the hooks the land's changes call: `frameLand`, `holdsFraming`, `followFraming`,
 //   `poseIslandView`, `islandViewOptions`.
-import { settings as params, type SettingsQuery } from './Settings.ts';
+import { settings as params, type SettingsQuery, WIND_VIEW, shared, testSources, debugFlags, TEST_MODE, declareSceneEvents, installVegetationPrepass, createDisplacementField, displacementField, installOpaquePrepass, GTAO, SS_SHADOW, Vegetation, defaultPlant, installWindMotionFlag, type RenderParts } from './render.ts';
 import * as THREE from 'three/webgpu';
 import { FreeCameraControls } from './camera/FreeCameraControls.ts';
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';
@@ -21,12 +21,9 @@ import { WorldFields } from './world/WorldFields.ts';
 import { Growth } from './world/Growth.ts';
 import { worldProgress, landFraming, worldCacheOn } from './world/WorldStart.ts';
 import { buildChunkBorders } from './debug/ChunkBorders.ts';
-import { WIND_VIEW } from './debug/WindView.ts';
 import { windArrowGeometry, buildWindArrows } from './debug/WindArrows.ts';
 import { buildGrass, plantGrass, grassKind } from './world/Grass.ts';
 import { buildYunpeng, yunpengKind, yunpengLights } from './world/Yunpeng.ts';
-import { shared } from './shared.ts';
-import { testSources } from './lighting/LocalLights.ts';
 import { landBounds, islandSurfaceHeight } from './world/WorldShapes.ts';
 import { GROWTH, LandLattice } from './world/IslandGrowth.ts';
 import { walkPoints } from './world/WalkPath.ts';
@@ -38,23 +35,11 @@ import { Trample } from './world/vegetation/Trample.ts';
 import { PROPORTION_NAMES, type ProportionName, PROPORTIONS } from './characters/Proportions.ts';
 import { type Body, parseBodies } from './characters/Ages.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
-import { debugFlags } from './debug/DebugFlags.ts';
-import { TEST_MODE } from './debug/TestMode.ts';
-import { declareSceneEvents } from './post/SceneEvents.ts';
-import { installVegetationPrepass } from './world/VegetationPrepass.ts';
-import { createDisplacementField, displacementField } from './world/vegetation/Displacement.ts';
-import { installOpaquePrepass } from './world/OpaquePrepass.ts';
-import { GTAO } from './post/GTAO.ts';
-import { SS_SHADOW } from './post/MeadowShade.ts';
-import { Vegetation } from './world/vegetation/Registry.ts';
-import { defaultPlant } from './world/vegetation/DefaultPlant.ts';
 import { registerIslandClasses } from './world/IslandClasses.ts';
-import { installWindMotionFlag } from './world/WindMotion.ts';
 import { ISLANDER, HANMING, ISLANDER_LOOKS, HANMING_LOOKS } from './characters/looks.ts';
-import type { RenderParts } from './RenderStages.ts';
 import type { GroundTextures } from './materials/GroundTextures.ts';
 import type { LoadedWorld } from './world/WorldChunks.ts';
-import type { Bounds } from './RenderTypes.ts';
+import type { Bounds } from './renderData.ts';
 import type { WorldMeshes } from './world/World.ts';
 import type { Yunpeng } from './world/Yunpeng.ts';
 import type { Bamboo } from './world/Bamboo.ts';

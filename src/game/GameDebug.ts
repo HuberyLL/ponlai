@@ -1,7 +1,7 @@
 import type * as THREE from 'three/webgpu';
 import type GUI from 'lil-gui';
 import type { Controller } from 'lil-gui';
-import { CLICK_SLOP } from '../camera/IslandCameraControls.ts';
+import { CLICK_SLOP } from '../island.ts';
 import type { Game } from './Game.ts';
 import { groundPoint, pointerRay } from './pick.ts';
 import { describeCall } from './sim/actions.ts';

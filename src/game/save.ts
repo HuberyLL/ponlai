@@ -1,6 +1,6 @@
 import type { RecordSave } from './Chronicle.ts';
 import { SAVE_VERSION, type SimState } from './sim/types.ts';
-import type { SettingsQuery } from '../Settings.ts';
+import type { SettingsQuery } from '../render.ts';
 
 // The game's save: one slot in this browser's storage (localStorage) holding the game as JSON with
 // a version number: the simulation's state (sim/Sim.ts, where every change of the world is kept)

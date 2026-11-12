@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { uniform } from 'three/tsl';
-import { noise3, smoothstep } from '../world/noise.ts';
+import { noise3, smoothstep } from '../renderData.ts';
 import { GROWTH } from '../world/IslandGrowth.ts';
 import { cellStream } from '../world/Anchors.ts';
 export { MEADOW_MIN_UP, MEADOW_MAX_DROP, supportsMeadow } from '../world/MeadowSurface.ts';

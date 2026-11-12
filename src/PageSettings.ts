@@ -14,7 +14,7 @@ import { installSettings, parseSettings, settingProblems, type SettingName } fro
 import { chooseQuality, type QualityChoice } from './QualityDetect.ts';
 import { installLook } from './look/Look.ts';
 import { NEUTRAL_LOOK } from './look/NeutralLook.ts';
-import { ISLAND_LOOK } from './islandLook/IslandLook.ts';
+import { ISLAND_LOOK } from './islandLand.ts';
 
 const query = parseSettings( location.search );
 for ( const problem of settingProblems( query ) ) console.warn( `[settings] ${ problem }` );

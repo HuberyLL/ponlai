@@ -1,5 +1,4 @@
-import { buildFootprint, islandSurfaceHeight } from '../../world/WorldShapes.ts';
-import { GROWTH, type LandLattice } from '../../world/IslandGrowth.ts';
+import { buildFootprint, islandSurfaceHeight, GROWTH, type LandLattice } from '../../islandLand.ts';
 import { planar } from './maths.ts';
 import type { Cell, GridApi, IslandInput, Vec2 } from './types.ts';
 

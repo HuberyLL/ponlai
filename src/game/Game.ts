@@ -1,12 +1,8 @@
 import type * as THREE from 'three/webgpu';
 import type GUI from 'lil-gui';
-import type { DayCycle } from '../sky/DayCycle.ts';
-import { declareSceneEvents } from '../post/SceneEvents.ts';
-import type { CharacterShadow } from '../characters/CharacterShadow.ts';
-import { FIGURE_HEIGHT, type Villager as Figure } from '../characters/Villagers.ts';
-import type { LookColours } from '../characters/looks.ts';
-import { parseBodies, type Body } from '../characters/Ages.ts';
-import type { LandLattice } from '../world/IslandGrowth.ts';
+import { type DayCycle, declareSceneEvents, type Weather, type WeatherName, type SettingsQuery } from '../render.ts';
+import { type CharacterShadow, FIGURE_HEIGHT, type Villager as Figure, type LookColours, type TrampleWalker } from '../island.ts';
+import { parseBodies, type Body, type LandLattice } from '../islandLand.ts';
 import { GameUi } from './ui/GameUi.ts';
 import { newGame } from './sim/Sim.ts';
 import { topFromTiles } from './sim/grid.ts';
@@ -16,13 +12,10 @@ import type { Brain, ToolResult } from './sim/agent.ts';
 import type { SimEvent } from './sim/events.ts';
 import { GameView, propSamples } from './view/GameView.ts';
 import { SECONDS_PER_GAME_DAY } from './sim/types.ts';
-import type { TrampleWalker } from '../world/vegetation/Trample.ts';
-import type { Weather, WeatherName } from '../sky/Weather.ts';
 import type { Chronicle, RecordSave } from './Chronicle.ts';
 import { Session } from './Session.ts';
 import { stockOf } from './sim/stock.ts';
 import type { EntityId, IslandInput, Items } from './sim/types.ts';
-import type { SettingsQuery } from '../Settings.ts';
 
 // The island as a game (?game): the game around its simulation runs headless in a session
 // (Session.ts: the simulation of src/game/sim, which runs the islanders' bodies, their needs and the

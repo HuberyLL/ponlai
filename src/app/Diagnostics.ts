@@ -2,26 +2,8 @@
 // 30 frames, and `window.__PONLAI__`, the scene's handles for the capture and profiling tools and
 // the console. Both exist only on the dev server or with `?debug` / `?profile`.
 import * as THREE from 'three/webgpu';
-import type { QualityProfile } from '../Quality.ts';
-import { soilUniforms } from '../materials/Soil.ts';
-import { meadowCanopy } from '../lighting/MeadowCanopy.ts';
-import type { GradeChanges } from '../post/GradeLut.ts';
-import { DynamicResolution } from '../post/DynamicResolution.ts';
-import { shared } from '../shared.ts';
-import { setGroundGain } from '../materials/Meadow.ts';
-import { ambientGrade } from '../lighting/AmbientGrade.ts';
-import { liftedKeyDirection } from '../lighting/KeyLift.ts';
-import { debugFlags } from '../debug/DebugFlags.ts';
-import { tuneApi } from '../debug/Tune.ts';
-import { AA_MODE, AA_SOURCE } from '../post/Antialiasing.ts';
-import { motionState, taaCut, motionCheck } from '../post/Motion.ts';
-import { jitter } from '../post/Jitter.ts';
-import { restEpoch } from '../post/TemporalRest.ts';
-import { preExposure } from '../post/PreExposure.ts';
-import { sceneEvent } from '../post/SceneEvents.ts';
-import { gtaoUniforms } from '../post/GTAO.ts';
-import type { RenderParts } from '../RenderStages.ts';
-import type { IslandParts } from '../IslandStages.ts';
+import { type QualityProfile, meadowCanopy, type GradeChanges, DynamicResolution, shared, ambientGrade, liftedKeyDirection, debugFlags, tuneApi, AA_MODE, AA_SOURCE, motionState, taaCut, motionCheck, jitter, restEpoch, preExposure, sceneEvent, gtaoUniforms, type RenderParts } from '../render.ts';
+import { soilUniforms, setGroundGain, MEADOW_EXTENT, swardField, type IslandParts } from '../island.ts';
 import type { PageParts } from './Page.ts';
 
 // The dynamic scale's clock as a debug hook (`__PONLAI__.dynamicClock`): `suspend()` holds the
@@ -202,7 +184,6 @@ export function exposeDebugHandles( render: RenderParts, island: IslandParts, pa
 		// round the origin, for tools that pick a view over the meadow
 		meadowMap: async () => {
 
-			const [ { swardField }, { MEADOW_EXTENT } ] = await Promise.all( [ import( '../world/SwardField.ts' ), import( '../materials/Meadow.ts' ) ] );
 			const image = swardField.value.image as { data: Uint8Array; width: number };
 			return { data: image.data, size: image.width, extent: MEADOW_EXTENT };
 

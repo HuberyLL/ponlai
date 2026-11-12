@@ -1,10 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { vertexColor } from 'three/tsl';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { CharacterShadow } from '../../characters/CharacterShadow.ts';
-import type { LookColours } from '../../characters/looks.ts';
-import { GroundBounceLightingModel } from '../../lighting/GroundBounce.ts';
-import { writeMeter } from '../../lighting/MeterLight.ts';
+import { CharacterShadow, type LookColours } from '../../island.ts';
+import { GroundBounceLightingModel, writeMeter } from '../../render.ts';
 
 // A plain islander built in code, shown when a figure's model cannot load (the models are
 // git-ignored local assets), so an islander stays seen: faceted low-poly pieces in its look's

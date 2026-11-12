@@ -6,9 +6,7 @@
 // import types with `import type` and use only erasable syntax (no enums, namespaces or
 // constructor parameter properties).
 
-import { GROWTH } from '../../world/IslandGrowth.ts';
-import type { LandLattice } from '../../world/IslandGrowth.ts';
-import type { Sex } from '../../characters/Ages.ts';
+import { GROWTH, type LandLattice, type Sex } from '../../islandLand.ts';
 
 export interface Vec2 { x: number; z: number }
 

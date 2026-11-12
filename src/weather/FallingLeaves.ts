@@ -3,18 +3,11 @@ import {
 	Fn, If, Loop, instancedArray, instanceIndex, uniform, varying, positionGeometry, normalLocal, materialColor, texture,
 	vec2, vec3, vec4, float, int, uint, floor, fract, select, max, mix, clamp, smoothstep, sin, cos, mx_noise_vec3,
 } from 'three/tsl';
-import type { Shared } from '../shared.ts';
+import { type Shared, type ExtraPass, gustAt, windBefore, type Wind, vegetationMaterial, type LeafAtlas, receiveScreenAO, receiveScreenShadow, debugFlags } from '../render.ts';
 import type { WorldFields } from '../world/WorldFields.ts';
-import type { ExtraPass } from '../post/ExtraPass.ts';
-import { gustAt, windBefore, type Wind } from './Wind.ts';
 import { ISLAND_TOP } from '../world/WorldShapes.ts';
 import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, soilGroveSwell } from '../materials/Soil.ts';
-import { vegetationMaterial } from '../world/vegetation/Material.ts';
 import { LEAF_TINTS, LEAF_TRANSLUCENCY } from '../world/BambooMaterials.ts';
-import type { LeafAtlas } from '../world/vegetation/TreeSurfaces.ts';
-import { receiveScreenAO } from '../post/GTAO.ts';
-import { receiveScreenShadow } from '../post/MeadowShade.ts';
-import { debugFlags } from '../debug/DebugFlags.ts';
 
 // Bamboo leaves the wind takes off the island: a pool of leaves simulated on the GPU, one compute
 // pass on the frame graph (`leavesPass`), drawn as one instanced mesh in the opaque scene.

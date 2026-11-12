@@ -3,13 +3,9 @@
 // widening of the field of view near the ground and the orbit's limits. The island's stages call
 // them through the hooks this module hangs on the island's object, since a land that grows
 // reframes its view.
-import { settings as params, type SettingsQuery } from '../Settings.ts';
+import { settings as params, type SettingsQuery, sceneEvent, type RenderParts } from '../render.ts';
 import * as THREE from 'three/webgpu';
-import { IslandCameraControls } from '../camera/IslandCameraControls.ts';
-import { frameIsland, landFitDistance } from '../camera/IslandFraming.ts';
-import { sceneEvent } from '../post/SceneEvents.ts';
-import type { RenderParts } from '../RenderStages.ts';
-import type { IslandParts } from '../IslandStages.ts';
+import { IslandCameraControls, frameIsland, landFitDistance, type IslandParts } from '../island.ts';
 import type { PageParts } from './Page.ts';
 
 export type CameraView = 'island' | 'horizon' | 'sky';

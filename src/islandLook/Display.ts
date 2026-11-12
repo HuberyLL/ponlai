@@ -1,5 +1,4 @@
-import type { DayKey } from '../post/DayKeys.ts';
-import type { BloomKey, DesaturationKey, DisplayLook, Rgb } from '../look/Look.ts';
+import type { DayKey, BloomKey, DesaturationKey, DisplayLook, Rgb } from '../render.ts';
 
 // The island's display look (src/islandLook/: the island's numbers for the renderer's look
 // tables, look/Look.ts; look/DisplayLook.ts reads these): the shade's contrast, the desaturation,

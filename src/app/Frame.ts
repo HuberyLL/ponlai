@@ -3,34 +3,11 @@
 // then renders, the loop that paces it, and the controls a tool holds, resumes and steps it by
 // (`loop`, `step`, `setTime`).
 import { pageStore } from '../PageSettings.ts';
-import { settings as params } from '../Settings.ts';
+import { settings as params, nightAmbientShare, duskForce, yunpengNightShare, cloudedShare, updateLeafLight, type HazeFrame, dynamicRange, renderPixelRatio, outputPixelRatio, DynamicResolution, TAAU_MAX_UPSCALE, GpuFrameTimer, PassScaling, renderScaleKey, PeriodicWork, FramePacer, PAUSED_QUEUE, gpuDevice, threeAnimation, frameBookkeeping, shared, ambientGrade, TEST_MODE, AA_MODE, AFTER_RESOLVE, TEMPORAL, preExposure, PRE_EXPOSURE_PENDING, sceneEvent, type TemporalFrame, type SettleFrame, prepassScene, opaquePrepassScene, type RenderParts } from '../render.ts';
 import * as THREE from 'three/webgpu';
-import { isCameraInputTarget } from '../camera/FreeCameraControls.ts';
-import { nightAmbientShare, duskForce, yunpengNightShare } from '../sky/DayCycle.ts';
-import { cloudedShare } from '../sky/Weather.ts';
+import { isCameraInputTarget, setYunpengNight, updateSwardTint, type IslandParts } from '../island.ts';
 import { QualityDetector, qualityLines, rememberQuality } from '../QualityDetect.ts';
-import { setYunpengNight } from '../world/Yunpeng.ts';
-import { updateLeafLight } from '../world/vegetation/LeafLight.ts';
-import { updateSwardTint } from '../materials/SwardTint.ts';
-import type { HazeFrame } from '../weather/VolumetricHaze.ts';
-import { dynamicRange, renderPixelRatio, outputPixelRatio } from '../post/RenderScale.ts';
-import { DynamicResolution, TAAU_MAX_UPSCALE, GpuFrameTimer, PassScaling, renderScaleKey, PeriodicWork } from '../post/DynamicResolution.ts';
-import { FramePacer, PAUSED_QUEUE } from '../post/FramePacer.ts';
-import { gpuDevice } from '../three/Backend.ts';
-import { threeAnimation, frameBookkeeping } from '../three/FrameLoop.ts';
-import { shared } from '../shared.ts';
-import { ambientGrade } from '../lighting/AmbientGrade.ts';
-import { TEST_MODE } from '../debug/TestMode.ts';
-import { AA_MODE, AFTER_RESOLVE, TEMPORAL } from '../post/Antialiasing.ts';
-import { preExposure, PRE_EXPOSURE_PENDING } from '../post/PreExposure.ts';
-import { sceneEvent } from '../post/SceneEvents.ts';
-import type { TemporalFrame } from '../post/TemporalAA.ts';
-import type { SettleFrame } from '../post/Settled.ts';
-import { prepassScene } from '../world/VegetationPrepass.ts';
-import { opaquePrepassScene } from '../world/OpaquePrepass.ts';
-import type { RenderParts } from '../RenderStages.ts';
 import type { PageParts } from './Page.ts';
-import type { IslandParts } from '../IslandStages.ts';
 
 // Deterministic stepping for the clip tools (tools/capture-clip.mjs; debug builds only): stops the
 // live loop and drives the tick itself, `frames` times, `dt` seconds apart, with nothing taken from

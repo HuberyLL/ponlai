@@ -5,14 +5,9 @@
  */
 
 import * as THREE from 'three/webgpu';
-import type { Shared } from '../shared.ts';
-import type { WaveMaps } from '../ocean/WaveMaps.ts';
-import { markSwimmer } from '../ocean/Refraction.ts';
-import { swimmerSway } from '../ocean/Water.ts';
-import type { OceanFFT } from '../ocean/OceanFFT.ts';
+import { type Shared, type WaveMaps, markSwimmer, swimmerSway, type OceanFFT } from '../render.ts';
 import type { WorldData } from '../world/types.ts';
-import type { ShoreField } from '../RenderTypes.ts';
-import { hash3i, mulberry32, type Rng } from '../world/noise.ts';
+import { type ShoreField, hash3i, mulberry32, type Rng } from '../renderData.ts';
 import { fishGeometry, wingRoot, type Anatomy } from './FishGeometry.ts';
 import { makeFishMaterial, type Skin } from './FishMaterial.ts';
 

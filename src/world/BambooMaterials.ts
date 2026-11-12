@@ -1,20 +1,9 @@
 import * as THREE from 'three/webgpu';
 import { attribute, float, mix, mx_noise_float, positionGeometry, smoothstep, step, varying, vec3 } from 'three/tsl';
-import { GroundBounceLightingModel } from '../lighting/GroundBounce.ts';
-import { CANOPY_SHADE } from '../lighting/AmbientSample.ts';
-import { receiveScreenAO } from '../post/GTAO.ts';
-import { receiveScreenShadow, screenThickness } from '../post/MeadowShade.ts';
-import type { Shared } from '../shared.ts';
-import { mulberry32 } from './noise.ts';
+import { GroundBounceLightingModel, CANOPY_SHADE, receiveScreenAO, receiveScreenShadow, screenThickness, type Shared, CROWN_DRAG, branchBend, mainBend, useSpecular, useVegetationMotion, placeVertex, type PlantDraw, type PlantInstances, IDENTITY_COLOUR, LeafPainter, leafMaterial as treeLeaves, plantTint, type LeafAtlas, type PlantTint, rootHash, writeMeter, tuneUniform } from '../render.ts';
+import { mulberry32 } from '../renderData.ts';
 import { CULM, LEAF_COLOURS, LEAF_SHARE, LEAF_UNDER, PURPLE_CULMS } from './BambooColours.ts';
 import { GROVES } from './BambooGroves.ts';
-import { CROWN_DRAG, branchBend, mainBend } from './vegetation/Deform.ts';
-import { useSpecular, useVegetationMotion } from './vegetation/Material.ts';
-import { placeVertex, type PlantDraw, type PlantInstances } from './vegetation/PlantInstances.ts';
-import { IDENTITY_COLOUR, LeafPainter, leafMaterial as treeLeaves, plantTint, type LeafAtlas, type PlantTint } from './vegetation/TreeSurfaces.ts';
-import { rootHash } from '../weather/Wind.ts';
-import { writeMeter } from '../lighting/MeterLight.ts';
-import { tuneUniform } from '../debug/Tune.ts';
 
 // The bamboo's surfaces (Bamboo.ts): its culms and its leaves.
 //

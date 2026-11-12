@@ -1,4 +1,4 @@
-import type { SeaLook } from '../look/Look.ts';
+import type { SeaLook } from '../render.ts';
 
 // The island's sea look (src/islandLook/: the island's numbers for the renderer's look tables,
 // look/Look.ts; look/SeaLook.ts reads these): the strengths of the sea's large-scale detail and

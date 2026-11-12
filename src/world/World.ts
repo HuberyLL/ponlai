@@ -1,14 +1,12 @@
 import * as THREE from 'three/webgpu';
 import { makeTerrainMaterial } from '../materials/TerrainMaterial.ts';
 import type { GroundTextures } from '../materials/GroundTextures.ts';
-import type { WaveMaps } from '../ocean/WaveMaps.ts';
-import { refractedGroup, showUnderwater } from '../ocean/Refraction.ts';
-import type { Shared } from '../shared.ts';
+import { type WaveMaps, refractedGroup, showUnderwater, type Shared } from '../render.ts';
 import { ISLAND_PEAK, ISLAND_TOP, LAND_REACH } from './WorldShapes.ts';
 import { GROWTH } from './IslandGrowth.ts';
 import { FAR_HALF } from './SeabedTile.ts';
 import type { GroundGrid } from './ChunkDerived.ts';
-import type { CasterColumns, SubmergedSubset } from '../lighting/CasterFormat.ts';
+import type { CasterColumns, SubmergedSubset } from '../renderData.ts';
 import type { IslandChunk, MeshData, WorldData } from './types.ts';
 import type { WorldFields } from './WorldFields.ts';
 

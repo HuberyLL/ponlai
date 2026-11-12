@@ -48,9 +48,8 @@
 // tools/verify-world-stats.mjs keeps each class's stones per metre of coast, and the large stones
 // near the coast, within a fifth of those counts.
 
-import { noise3, hash3i, mulberry32, smoothstep, type Rng } from './noise.ts';
+import { noise3, hash3i, mulberry32, smoothstep, type Rng, type Bounds } from '../renderData.ts';
 import { LAND_REACH, type Footprint, type HeightFn } from './WorldShapes.ts';
-import type { Bounds } from '../RenderTypes.ts';
 import type { SDF, Rock } from './types.ts';
 import { cliffEvents } from './Cliff.ts';
 

@@ -4,7 +4,7 @@ import { OPEN_LATTICE } from './Bathymetry.ts';
 import { pendingFloors, riseTile, mix, FAR_HALF, SEABED_TILE, TILE_SIDE, type PendingFloor } from './SeabedTile.ts';
 import type { ChunkData } from './Chunks.ts';
 import type { Square, WorldFields } from './WorldFields.ts';
-import type { RefractedSun } from '../lighting/RefractedSun.ts';
+import type { RefractedSun } from '../render.ts';
 
 // The shoal (plan M9): the sea floor under the next piece rises toward its grown form as the piece
 // nears, so the coming land shows as a shallow before it is swapped in. Only the floor's near tiles

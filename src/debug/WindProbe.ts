@@ -1,20 +1,13 @@
 import * as THREE from 'three/webgpu';
 import { Fn, If, float, instanceIndex, instancedArray, tan, uint, vec2, vec3, vec4 } from 'three/tsl';
-import { GUST_TRAVEL, PLANT_RATE_BANDS, PLANT_RATE_SPREAD, WIND_STATE_VEC4S, Wind, createWindUniforms, gustAt, packWindState, plantSpeedOf, plantWind, windField, windStateOf, type WindState } from '../weather/Wind.ts';
+import { GUST_TRAVEL, PLANT_RATE_BANDS, PLANT_RATE_SPREAD, WIND_STATE_VEC4S, Wind, createWindUniforms, gustAt, packWindState, plantSpeedOf, plantWind, windField, windStateOf, type WindState, type PlantWind, mainBend, plantLean, windDisplacement, debugFlags, setDebugFlag, type Shared, OPEN_DRIFT, type SeaDetail, nextFrame } from '../render.ts';
 import { bladeWindOffset, plantGrass } from '../world/Grass.ts';
 import { BAMBOO_WIND } from '../world/BambooMaterials.ts';
 import { culmLoad } from '../world/Bamboo.ts';
 import { GROVES } from '../world/BambooGroves.ts';
 import { YUNPENG, YUNPENG_WIND, stalkLoad } from '../world/Yunpeng.ts';
-import type { PlantWind } from '../world/vegetation/Deform.ts';
-import { mainBend, plantLean } from '../world/vegetation/Deform.ts';
-import { windDisplacement } from '../weather/Wind.ts';
-import { debugFlags, setDebugFlag } from './DebugFlags.ts';
 import type { WorldData } from '../world/types.ts';
-import type { Shared } from '../shared.ts';
-import { OPEN_DRIFT, type SeaDetail } from '../ocean/SeaDetail.ts';
-import type { Bounds } from '../RenderTypes.ts';
-import { nextFrame } from '../post/FramePacer.ts';
+import type { Bounds } from '../renderData.ts';
 
 // `__PONLAI__.windProbe( options )`: the numbers behind the wind view (WindView.ts), as JSON for
 // tools/probe.mjs. Every sway comes from the shaders' own TSL functions (Wind.ts `windField`,

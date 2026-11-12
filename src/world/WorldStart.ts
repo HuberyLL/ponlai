@@ -20,7 +20,7 @@ import * as THREE from 'three/webgpu';
 import { loadWorld, type LoadedWorld } from './WorldChunks.ts';
 import { GROWTH, type LandLattice } from './IslandGrowth.ts';
 import { landArea, landCentroid } from './WorldShapes.ts';
-import { settings, type SettingName } from '../Settings.ts';
+import { settings, type SettingName } from '../render.ts';
 
 const params = settings;
 const intParam = ( name: SettingName, fallback: number ) => {

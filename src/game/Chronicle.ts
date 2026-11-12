@@ -1,4 +1,4 @@
-import type { WeatherName } from '../sky/Weather.ts';
+import type { WeatherName } from '../render.ts';
 import { timeOf } from './sim/clock.ts';
 import type { GameTime } from './sim/clock.ts';
 import type { SimEvent } from './sim/events.ts';

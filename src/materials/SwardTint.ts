@@ -1,5 +1,5 @@
 import type * as THREE from 'three/webgpu';
-import { tuneObject } from '../debug/Tune.ts';
+import { tuneObject } from '../render.ts';
 
 // What a closed sky's light turns into in the sward. Under a sun the sward's colour is the key's on
 // the blades. Under a closed sky only the ambient lights it, and what reaches the eye of it has

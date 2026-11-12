@@ -1,10 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { attribute, clamp, diffuseColor, dot, float, mix, normalView, positionViewDirection, pow, texture, uniform, vec4, vertexColor } from 'three/tsl';
-import { ALPHA_TO_COVERAGE, TEMPORAL } from '../post/Antialiasing.ts';
-import { GroundBounceLightingModel } from '../lighting/GroundBounce.ts';
-import { meterKey, writeMeter } from '../lighting/MeterLight.ts';
-import type { AmbientReceiver } from '../lighting/AmbientSample.ts';
-import { useLeafCoverage } from '../world/vegetation/Coverage.ts';
+import { ALPHA_TO_COVERAGE, TEMPORAL, GroundBounceLightingModel, meterKey, writeMeter, type AmbientReceiver, useLeafCoverage } from '../render.ts';
 import { addSkinnedMotion, KIND } from './CharacterMaterial.ts';
 
 type V3 = THREE.Node<'vec3'>;

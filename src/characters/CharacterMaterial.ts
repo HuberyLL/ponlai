@@ -4,18 +4,7 @@ import {
 	normalView, normalWorld, positionViewDirection, positionLocal, positionPrevious, positionWorld,
 	diffuseColor, vertexColor,
 } from 'three/tsl';
-import { TEMPORAL } from '../post/Antialiasing.ts';
-import { groundBounceLight } from '../lighting/GroundBounce.ts';
-import { motionNode, motionState, velocityOutput } from '../post/Motion.ts';
-import { debugFlags } from '../debug/DebugFlags.ts';
-import { useLightLayer } from '../debug/LightLayer.ts';
-import { ambient, gradeOcclusion } from '../lighting/AmbientGrade.ts';
-import { addLocalLights } from '../lighting/LocalLights.ts';
-import { ambientField, ambientPoint, ambientVolumeOn } from '../lighting/AmbientSample.ts';
-import { liftKey } from '../lighting/KeyLift.ts';
-import { keyDeckShare, keyLandVisibility } from '../lighting/KeyCloud.ts';
-import type { Shared } from '../shared.ts';
-import { meterAmbient, meterKey, meterStart, writeMeter } from '../lighting/MeterLight.ts';
+import { TEMPORAL, groundBounceLight, motionNode, motionState, velocityOutput, debugFlags, useLightLayer, ambient, gradeOcclusion, addLocalLights, ambientField, ambientPoint, ambientVolumeOn, liftKey, keyDeckShare, keyLandVisibility, type Shared, meterAmbient, meterKey, meterStart, writeMeter } from '../render.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;

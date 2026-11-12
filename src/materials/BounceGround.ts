@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { float, mix, smoothstep, texture, vec3 } from 'three/tsl';
-import type { BounceGround } from '../lighting/GroundBounce.ts';
+import type { BounceGround } from '../render.ts';
 import { ISLAND_TOP } from '../world/WorldShapes.ts';
 import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
 import { LAWN_COLOUR, groundGains } from './Meadow.ts';

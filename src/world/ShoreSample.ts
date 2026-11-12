@@ -1,4 +1,4 @@
-import type { ShoreField } from '../RenderTypes.ts';
+import type { ShoreField } from '../renderData.ts';
 
 /** The shore field's signed distance (m, negative on land) at ( x, z ), bilinear over its cell
  * centres with the edge continued: the ground samples its texture so (WorldFields.ts, linear

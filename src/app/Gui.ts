@@ -3,30 +3,11 @@
 // Its handlers call the renderer's and the island's operations; the game adds its own folder
 // between them (main.ts).
 import { reloadWith } from '../PageSettings.ts';
-import { settings as params } from '../Settings.ts';
+import { settings as params, DAY_PRESETS, type DayPreset, WEATHER_PRESETS, isParkedWeather, type WeatherName, WIND_LEVELS, type WindLevel, type QualityTier, ACTIVE_QUALITY, WHITE_BALANCE, LOCAL_TONE, FrameStats, shared, AMBIENT_KNOBS, ambientGrade, type AmbientView, markSkyRetune, type AAMode, AA_MODE, sceneEvent, debugViewChoices, type RenderParts } from '../render.ts';
 import GUI from 'lil-gui';
-import { DAY_PRESETS, type DayPreset } from '../sky/DayCycle.ts';
-import { WEATHER_PRESETS, isParkedWeather, type WeatherName, WIND_LEVELS, type WindLevel } from '../sky/Weather.ts';
-import { type QualityTier, ACTIVE_QUALITY } from '../Quality.ts';
 import { qualityLines } from '../QualityDetect.ts';
-import { soilUniforms, setSoilStrength } from '../materials/Soil.ts';
-import { WHITE_BALANCE } from '../look/DisplayLook.ts';
-import { LOCAL_TONE } from '../post/LocalTone.ts';
-import { FrameStats } from '../debug/FrameStats.ts';
-import { shared } from '../shared.ts';
-import { groundGains } from '../materials/Meadow.ts';
-import { AMBIENT_KNOBS } from '../look/AmbientLook.ts';
-import { ambientGrade } from '../lighting/AmbientGrade.ts';
-import type { AmbientView } from '../lighting/AmbientVolume.ts';
-import { PROPORTION_NAMES, type ProportionName } from '../characters/Proportions.ts';
-import type { Sex } from '../characters/Ages.ts';
-import { characterLook } from '../characters/CharacterMaterial.ts';
-import { markSkyRetune } from '../sky/SkyRetune.ts';
-import { type AAMode, AA_MODE } from '../post/Antialiasing.ts';
-import { sceneEvent } from '../post/SceneEvents.ts';
-import { debugViewChoices } from '../post/graph/DebugView.ts';
-import type { RenderParts } from '../RenderStages.ts';
-import type { IslandParts } from '../IslandStages.ts';
+import { soilUniforms, setSoilStrength, groundGains, PROPORTION_NAMES, type ProportionName, characterLook, type IslandParts } from '../island.ts';
+import type { Sex } from '../islandLand.ts';
 import type { PageParts } from './Page.ts';
 
 /** The panel and its scene folders. */

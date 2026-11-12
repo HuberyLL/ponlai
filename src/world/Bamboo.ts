@@ -1,18 +1,11 @@
 import * as THREE from 'three/webgpu';
-import type { Shared } from '../shared.ts';
+import { type Shared, AIR_DENSITY, REFERENCE_SPEED, logLaw, CROWN_DRAG, runSteps, PLANT_PART, PlantInstances, levelDraws, type PlantDraw, type PlantInstance, type PlantPool, type KindGrowth, type VegetationKind, BRANCH_ATTRIBUTES, MeshBuilder, UP, branchValues, leafLayout, smooth, sprayValues, streamAt, type LeafAtlas } from '../render.ts';
 import { BAMBOO_PARTS, bambooMaterials } from './BambooMaterials.ts';
-import { AIR_DENSITY, REFERENCE_SPEED, logLaw } from '../weather/Wind.ts';
-import { CROWN_DRAG } from './vegetation/Deform.ts';
 import { GROVES, plantCulms, plantShoots, type CulmSite, type ShootSite } from './BambooGroves.ts';
-import { mulberry32, type Rng } from './noise.ts';
+import { mulberry32, type Rng } from '../renderData.ts';
 import { SEABED_TILE } from './SeabedTile.ts';
-import { runSteps } from './Steps.ts';
 import { islandSurfaceHeight } from './WorldShapes.ts';
 import type { WorldData } from './types.ts';
-import { PLANT_PART, PlantInstances, levelDraws, type PlantDraw, type PlantInstance, type PlantPool } from './vegetation/PlantInstances.ts';
-import type { KindGrowth, VegetationKind } from './vegetation/Registry.ts';
-import { BRANCH_ATTRIBUTES, MeshBuilder, UP, branchValues, leafLayout, smooth, sprayValues, streamAt } from './vegetation/TreeMesh.ts';
-import type { LeafAtlas } from './vegetation/TreeSurfaces.ts';
 
 // Penglai's bamboo (浮筠之簳): "green leaves, purple stems, seeds as big as pearls" (Wang Jia, Shiyi
 // ji, book 10, on Penglai), the one plant that text gives the island itself, the wind in its leaves

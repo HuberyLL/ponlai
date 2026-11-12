@@ -1,9 +1,6 @@
 import * as THREE from 'three/webgpu';
-import type { CharacterShadow } from '../../characters/CharacterShadow.ts';
-import { FIGURE_HEIGHT, type Villager as Figure } from '../../characters/Villagers.ts';
-import type { Body, Sex } from '../../characters/Ages.ts';
-import type { LookColours } from '../../characters/looks.ts';
-import { ISLAND_TOP } from '../../world/WorldShapes.ts';
+import { type CharacterShadow, FIGURE_HEIGHT, type Villager as Figure, type LookColours } from '../../island.ts';
+import { type Body, type Sex, ISLAND_TOP } from '../../islandLand.ts';
 import type { EntityId } from '../sim/types.ts';
 import type { Sim } from '../sim/Sim.ts';
 import { stageOf } from '../sim/buildings.ts';

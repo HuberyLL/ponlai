@@ -7,9 +7,8 @@ import { makeFeatherMaterial, makeLitFigureMaterial, makeWeaveMaterial } from '.
 import { pointedEars } from './Ears.ts';
 import { reproportion, PROPORTIONS, type Proportions } from './Proportions.ts';
 import { FigureAge, derivedShapeKeys, mergeShapeKeys, strideSteps, takeShapeKeys, type ShapeKeys } from './FigureAge.ts';
-import { runSteps } from '../world/Steps.ts';
+import { runSteps, type Shared } from '../render.ts';
 import type { Body, Sex } from './Ages.ts';
-import type { Shared } from '../shared.ts';
 import type { TrampleWalker } from '../world/vegetation/Trample.ts';
 
 // Islanders assembled from modular low-poly parts (Ultimate Modular Characters by Quaternius,

@@ -38,7 +38,7 @@ import { LandLattice } from './IslandGrowth.ts';
 import { tileIndices, SEABED_TILE, TILE_SIDE, type FarFloor } from './SeabedTile.ts';
 import { gridBoxes, mergeRimLips, RIM_BOX, RIM_CELL, RIM_PAD, RIM_REACH } from './RimGround.ts';
 import { landBounds, ISLAND_TOP, LAND_REACH } from './WorldShapes.ts';
-import type { Bounds } from '../RenderTypes.ts';
+import type { Bounds } from '../renderData.ts';
 import { submergedIndex, SEA_LEVEL } from './ChunkDerived.ts';
 import { mergeProbes } from './AmbientProbes.ts';
 import type { IslandChunk, MeshData, Rock, WorldData } from './types.ts';

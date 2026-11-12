@@ -1,7 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { abs, clamp, cos, exp, float, max, smoothstep } from 'three/tsl';
-import { debugFlags } from '../../debug/DebugFlags.ts';
-import type { DisplacementField } from './Displacement.ts';
+import { debugFlags, type DisplacementField } from '../../render.ts';
 
 // The islanders' trail through the meadow: a walker lays the blades in its way over forward and
 // out, the middle of its way the deepest and nearly straight ahead, those to either side the more

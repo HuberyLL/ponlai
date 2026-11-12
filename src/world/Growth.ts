@@ -3,19 +3,13 @@ import { generateVersion, type LoadedWorld, type VersionChunks } from './WorldCh
 import { mergeSteps } from './ChunkMerge.ts';
 import { GROWTH, LandLattice } from './IslandGrowth.ts';
 import { landBounds } from './WorldShapes.ts';
-import type { Bounds } from '../RenderTypes.ts';
+import type { Bounds } from '../renderData.ts';
 import { derive, islandMesh, seabedGeometry, stonesGeometry, type WorldMeshes } from './World.ts';
 import type { WorldFields, FieldsPrepared } from './WorldFields.ts';
-import { geometrySteps, textureSteps } from './Upload.ts';
-import { boundsSteps } from './Steps.ts';
+import { geometrySteps, textureSteps, boundsSteps, type GrowthInput, type GrowthSteps, type Vegetation, type VegetationKind, type ShoreWaves, type ShoreFields, type RefractedSun, type AmbientPrepared, type AmbientVolume, type Rain } from '../render.ts';
 import { walkLoopDistance, walkPoints } from './WalkPath.ts';
-import type { GrowthInput, GrowthSteps, Vegetation, VegetationKind } from './vegetation/Registry.ts';
 import type { ChunkData } from './Chunks.ts';
 import type { IslandChunk, WorldData } from './types.ts';
-import type { ShoreWaves, ShoreFields } from '../ocean/ShoreWaves.ts';
-import type { RefractedSun } from '../lighting/RefractedSun.ts';
-import type { AmbientPrepared, AmbientVolume } from '../lighting/AmbientVolume.ts';
-import type { Rain } from '../weather/Rain.ts';
 import { Villagers } from '../characters/Villagers.ts';
 import { SeabedRise } from './SeabedRise.ts';
 

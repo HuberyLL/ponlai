@@ -1,9 +1,7 @@
 // Data shared between the world's workers (chunkWorker.ts) and the main thread.
 
 import type { GroundGrid } from './ChunkDerived.ts';
-import type { CasterColumns, SubmergedSubset } from '../lighting/CasterFormat.ts';
-import type { AmbientLattice } from '../lighting/ProbeFormat.ts';
-import type { ShoreField } from '../RenderTypes.ts';
+import type { CasterColumns, SubmergedSubset, AmbientLattice, ShoreField } from '../renderData.ts';
 
 // a signed distance function (m), optionally with per-point values baked onto the mesh: one
 // float (`tint`), four more (`detail`, written to out[ o .. o + 3 ]) and three more (`detail2`)

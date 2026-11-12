@@ -10,11 +10,10 @@
 // weathering belongs to the outer rim and the cliffs (Cliff.ts).
 
 import { Field2D, roundCorners } from './Field2D.ts';
-import { noise3, smoothstep } from './noise.ts';
+import { noise3, smoothstep, type Bounds } from '../renderData.ts';
 import { CliffWall } from './Cliff.ts';
 import { GROWTH, type LandLattice } from './IslandGrowth.ts';
 import type { SDF } from './types.ts';
-import type { Bounds } from '../RenderTypes.ts';
 
 const grow = ( b: Bounds, m: number ): Bounds => ( { x0: b.x0 - m, z0: b.z0 - m, x1: b.x1 + m, z1: b.z1 + m } );
 

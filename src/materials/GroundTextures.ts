@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { bakeProceduralTextures, type DetailTextures } from './ProceduralTextures.ts';
+import { bakeProceduralTextures, type DetailTextures } from '../render.ts';
 import { createSoilTexture } from './Soil.ts';
 
 // The island's ground textures: the detail maps every ground shares (ProceduralTextures.ts), the

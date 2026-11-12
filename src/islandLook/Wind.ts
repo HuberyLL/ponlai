@@ -1,4 +1,4 @@
-import type { WindLook } from '../look/Look.ts';
+import type { WindLook } from '../render.ts';
 
 // The island's wind look (src/islandLook/: the island's numbers for the renderer's look tables,
 // look/Look.ts; look/WindLook.ts reads these): how the island's plants answer the weather's wind.

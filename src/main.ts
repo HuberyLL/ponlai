@@ -7,118 +7,23 @@
 // - The stages run in this order and no other: the renderer's and the island's alternate, and the
 //   order materials first build in is part of the image (AGENTS.md, WebGPU / TSL pitfalls).
 // - Every wait is here: a stage that ends in one returns its promise.
-// - The imports below keep the order the page's modules have always loaded in, which the stage
-//   files' own imports would otherwise change: a module that this file no longer names is imported
-//   for its load alone. A new module is imported by the stage file that uses it, not here.
+// - It takes each package through its exits (render.ts, island.ts, islandLand.ts, game/sim/index.ts,
+//   and the game's own, game/index.ts, by a dynamic import when `?game` starts it), never a
+//   package's module by its path. An exit loads its whole package, and no module does
+//   anything at load that depends on the order the modules load in.
 // On the dev server and with ?debug (or ?profile) the page hands the scene to the capture and
 // profiling tools as `window.__PONLAI__` (app/Diagnostics.ts): `establishScene( query )` jumps to a
 // whole scene as a fresh load of `?<query>` draws it (app/Scene.ts), and `loop` and `step` hold,
 // resume and step the frame loop (app/Frame.ts).
 // the page's settings, which its entry (Boot.ts) installed before this module's imports load
 import { QUALITY_CHOICE } from './PageSettings.ts';
-import { settings as params } from './Settings.ts';
+import { settings as params, type QualityTier, qualityProfile, Pipeline, createShared, installShared, type RenderParts, createRenderer, setUpRenderer, createScenes, createSky, createLight, createKey, createEnvironment, publishSkyLight, createSeaAndPipeline, createBounceAndShore, createAmbient, createWater, bakeWithHaze, awaitWarmUp, checkMotion, primeSharedBuilds } from './render.ts';
 import * as THREE from 'three/webgpu';
-import 'lil-gui';
-import './camera/FreeCameraControls.ts';
-import './camera/IslandCameraControls.ts';
-import './camera/IslandFraming.ts';
-import './sky/Sky.ts';
-import './sky/DayCycle.ts';
-import './sky/Weather.ts';
-import { type QualityTier, qualityProfile } from './Quality.ts';
-import './QualityDetect.ts';
-import './lighting/KeyCloud.ts';
-import './weather/Wind.ts';
-import './weather/Rain.ts';
-import './ocean/OceanFFT.ts';
-import './ocean/OceanSpectrum.ts';
-import './ocean/ShoreWaves.ts';
-import './ocean/WaveMaps.ts';
-import './ocean/SeaDetail.ts';
-import './ocean/Refraction.ts';
-import './life/Wenyao.ts';
-import { FallingLeaves, leavesPass } from './weather/FallingLeaves.ts';
-import './ocean/Water.ts';
-import './ocean/StormSea.ts';
-import './materials/GroundTextures.ts';
-import { setSoilStrength } from './materials/Soil.ts';
-import { ISLAND_SEA } from './world/World.ts';
-import './world/WorldFields.ts';
-import './world/Growth.ts';
-import { topFromTiles } from './game/sim/grid.ts';
+import { FallingLeaves, leavesPass, setSoilStrength, ISLAND_SEA, islandBounceGround, Villagers, loadVillager, PROPORTIONS, createIslandCamera, createTrample, createCharacterShadow, type IslandParts, bakeIslandGround, awaitWorld, createLand, createWorld, createWorldViews, createVegetation, createGrowth } from './island.ts';
+import { topFromTiles } from './game/sim/index.ts';
 import { worldJob, landOptions } from './WorldBoot.ts';
-import './world/WorldStart.ts';
-import './debug/ChunkBorders.ts';
-import './debug/WindView.ts';
-import './debug/WindArrows.ts';
-import './world/Grass.ts';
-import './world/Yunpeng.ts';
-import './world/vegetation/LeafLight.ts';
-import './materials/SwardTint.ts';
-import './lighting/MeadowCanopy.ts';
-import { Pipeline } from './post/Pipeline.ts';
-import './post/LocalTone.ts';
-import './weather/HazeKeys.ts';
-import './post/RenderScale.ts';
-import './post/DynamicResolution.ts';
-import './post/FramePacer.ts';
-import './post/SubmitBatch.ts';
-import './three/ThreePatches.ts';
-import './three/Internals.ts';
-import './three/Backend.ts';
-import './three/FrameLoop.ts';
-import './debug/FrameStats.ts';
-import { createShared, installShared } from './shared.ts';
-import './lighting/SolarShadow.ts';
-import './lighting/SunShadow.ts';
-import './lighting/RefractedSun.ts';
-import './lighting/GroundBounce.ts';
-import { islandBounceGround } from './materials/BounceGround.ts';
-import './materials/Meadow.ts';
-import './lighting/AmbientGrade.ts';
-import './lighting/LocalLights.ts';
-import './lighting/KeyLift.ts';
-import './lighting/SurfaceBRDF.ts';
-import './lighting/AmbientVolume.ts';
-import './lighting/AmbientSample.ts';
-import './lighting/AmbientRelight.ts';
-import { ISLAND_TOP, islandSurfaceHeight } from './world/WorldShapes.ts';
-import './world/IslandGrowth.ts';
-import './world/WalkPath.ts';
-import './world/Bamboo.ts';
-import './world/BambooGroves.ts';
-import './world/BambooMaterials.ts';
-import { Villagers, loadVillager } from './characters/Villagers.ts';
-import './world/vegetation/Trample.ts';
-import { PROPORTIONS } from './characters/Proportions.ts';
-import './characters/Ages.ts';
-import './characters/CharacterShadow.ts';
-import './characters/CharacterMaterial.ts';
-import './debug/DebugFlags.ts';
-import './debug/TestMode.ts';
-import './debug/Tune.ts';
-import './sky/SkyRetune.ts';
-import './post/Antialiasing.ts';
-import './post/Motion.ts';
-import './post/Jitter.ts';
-import './post/TemporalRest.ts';
-import './post/PreExposure.ts';
-import './post/TemporalAA.ts';
-import './post/Settled.ts';
-import './lighting/Radiometry.ts';
-import './lighting/SunDisc.ts';
-import './post/graph/DebugView.ts';
-import './world/VegetationPrepass.ts';
-import './world/vegetation/Displacement.ts';
-import './world/OpaquePrepass.ts';
-import './post/GTAO.ts';
-import './post/MeadowShade.ts';
-import './world/vegetation/Registry.ts';
-import './world/WindMotion.ts';
-import './characters/looks.ts';
+import { ISLAND_TOP, islandSurfaceHeight } from './islandLand.ts';
 import type { PageParts } from './app/Page.ts';
-import { type RenderParts, createRenderer, setUpRenderer, createScenes, createSky, createLight, createKey, createEnvironment, publishSkyLight, createSeaAndPipeline, createBounceAndShore, createAmbient, createWater, bakeWithHaze, awaitWarmUp, checkMotion, primeSharedBuilds } from './RenderStages.ts';
-import { createIslandCamera, createTrample, createCharacterShadow, type IslandParts, bakeIslandGround, awaitWorld, createLand, createWorld, createWorldViews, createVegetation, createGrowth } from './IslandStages.ts';
 import { createCameraViews } from './app/CameraViews.ts';
 import { createFrameSizing, createFrame, startLoop, createLoopControls } from './app/Frame.ts';
 import { createGui, addLookFolders, addHazeFolders } from './app/Gui.ts';
@@ -207,7 +112,7 @@ page.game = null;
 if ( GAME ) {
 
 	// loaded only here, so the art-review page does not carry the game's code
-	const { Game } = await import( './game/Game.ts' );
+	const { Game } = await import( './game/index.ts' );
 	page.game = await Game.start( {
 		params, scene: render.scene, camera: render.camera, canvas: render.renderer.domElement, land: island.land, top: topFromTiles( island.worldCache.version.chunks ),
 		dayCycle: render.dayCycle, weather: render.weather, characterShadow: island.characterShadow, invalidateSunShadow: render.invalidateSunShadow, refreshEnvironment: render.refreshEnvironment,

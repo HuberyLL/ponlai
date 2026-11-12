@@ -1,13 +1,8 @@
 // The scene jump: `establishScene` moves the page to another scene as a fresh load of its query
 // holds it, and SCENE_OPTIONS names the query options that make a scene (the tools read the list
 // from this file: tools/parity/adhoc.mjs).
-import { settings as params, type SettingName } from '../Settings.ts';
-import type { DayPreset } from '../sky/DayCycle.ts';
-import type { WeatherName } from '../sky/Weather.ts';
-import { weatherWind } from '../weather/Wind.ts';
-import { sceneEvent } from '../post/SceneEvents.ts';
-import { registerSceneHistories, registerLightHistories, type RenderParts } from '../RenderStages.ts';
-import { registerIslandHistories, type IslandParts } from '../IslandStages.ts';
+import { settings as params, type SettingName, type DayPreset, type WeatherName, weatherWind, sceneEvent, registerSceneHistories, registerLightHistories, type RenderParts } from '../render.ts';
+import { registerIslandHistories, type IslandParts } from '../island.ts';
 import type { PageParts } from './Page.ts';
 
 // A whole scene at once, as a page loads it (the capture tools' one page per set; the profiler's
