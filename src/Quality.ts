@@ -163,42 +163,65 @@ export interface TemporalSettings {
 	fsr3: { sharpness: number; restSequence: number; autoReactive: boolean };
 }
 
+// Each knob names who reads it. The table is closed: it is the renderer's, a new knob is a new field
+// here, and a registered definition (a plant kind, a light source, a pass of the frame) names the
+// field that governs its cost, or that it has none (Extensions.ts `cost`).
 export interface QualityProfile {
 
 	// ---- load
 	// the scene's anti-aliasing (post/Antialiasing.ts; `?aa` overrides it) and the temporal modes'
 	// resolve
+	// read by: post/Antialiasing.ts as it loads (`AA_MODE`, and from it `TEMPORAL`, `SCENE_SAMPLES`)
 	aa: AAMode;
+	// read by: RenderStages.ts createSeaAndPipeline, which hands it to the Pipeline (TemporalAA.ts,
+	// TemporalRest.ts, fsr3/Fsr3Upscaler.ts)
 	taa: TemporalSettings;
+	// read by: RenderStages.ts setUpRenderer (whether the GPU is timed), the page's frame sizing
+	// (post/RenderScale.ts `renderPixelRatio`, post/DynamicResolution.ts) and the tier's detection
 	render: RenderScaleRule;
+	// read by: RenderStages.ts createSeaAndPipeline (`fftAnisotropy`, the ocean FFT's targets) and
+	// createWater (ocean/Water.ts: the reflection's rays, the storm foam)
 	water: WaterQuality;
 	// the frame graph's structural options (the haze's froxel grid); the rest keep their defaults
+	// read by: RenderStages.ts createSeaAndPipeline (`postOptionsFromURL`, post/Pipeline.ts)
 	post: Pick<PostOptions, 'hazeGrid'>;
 	// the screen-space ambient occlusion and the opaque depth prepass it reads (post/GTAO.ts; built
 	// only where the meadow's shade runs, at 4x outside the temporal modes; `flags=gtao` overrides it;
 	// the screen-space shade over the whole scene builds that prepass too, post/MeadowShade.ts)
+	// read by: post/GTAO.ts as it loads (`GTAO`)
 	ao: boolean;
 	// the rain veil's shells and the sea's ripple layers
+	// read by: RenderStages.ts createSeaAndPipeline (`setRainShading`: weather/Rain.ts, ocean/Water.ts)
 	rainShading: { veilShells: number; rippleLayers: number };
 	// the environment's PMREM source width (fixes the atlases' size before the first bake)
+	// read by: RenderStages.ts createEnvironment (`Sky.setEnvironmentSource`)
 	environmentSource: number;
 	// the frame rate the loop holds on a display faster than that (post/FramePacer.ts: 60 renders on
 	// every second refresh at 120 Hz), or 0 to render on every refresh
+	// read by: the page's frame loop (post/FramePacer.ts)
 	frameRate: number;
 
-	// ---- runtime
+	// ---- runtime: all read by RenderStages.ts `applySkyQuality`, which applies them to the parts
+	// named below, and kept as the page's runtime quality (`runtimeQuality`), which the frame reads
+	// applied to: `Sky.setCloudView`
 	cloudView: CloudViewScale;
 	// the cloud panorama's size and its refresh pattern (one texel of every strideX x strideY per frame)
+	// applied to: sky/Clouds.ts `setDome`
 	cloudDome: { width: number; height: number; strideX: number; strideY: number };
+	// applied to: sky/Clouds.ts `setMarch`
 	cloudMarch: CloudMarch;
 	// the share of the cloud shadow map's rows refreshed per frame
+	// applied to: sky/Clouds.ts `setShadowRefresh`
 	cloudShadowRows: number;
 	// seconds of wall time between periodic sky bakes, and the environment's PMREM on every nth one
+	// read by: the page's frame (the bakes' cadence); applied to: `Sky.setEnvironmentCadence`
 	skyUpdateInterval: number;
 	environmentEvery: number;
 	// the refracted sun's map: the least interval between redraws (s) and the key light's turn (deg)
 	// that redraws it
+	// read by: the page's frame (the interval); applied to: lighting/RefractedSun.ts `angleGate`
 	refractedSun: { interval: number; angleGate: number };
+	// applied to: weather/Rain.ts `setQuality` (the drops drawn)
 	rainDrops: number;
 
 }
