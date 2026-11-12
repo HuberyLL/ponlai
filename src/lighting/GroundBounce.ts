@@ -10,11 +10,7 @@ import {
 	screenCoordinate, positionWorld, normalWorld, positionViewDirection, normalView, normalViewGeometry, diffuseContribution,
 	specularColor, specularColorBlended, specularF90, F_Schlick, roughness, luminance, diffuseColor, metalness,
 } from 'three/tsl';
-import { soilGroveSwell } from '../materials/Soil.ts';
-import { ISLAND_TOP } from '../world/WorldShapes.ts';
-import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
 import { BODY_REFLECTANCE } from '../ocean/SeaOptics.ts';
-import { LAWN_COLOUR } from '../materials/Meadow.ts';
 import type { SunShadow } from './SunShadow.ts';
 import type { Shared } from '../shared.ts';
 import { useLightLayer } from '../debug/LightLayer.ts';
@@ -31,18 +27,18 @@ import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 // the cliff's walls over them.
 //
 // The bake: a map over the world fields' bounds (the land's box and 32 m round it: shoreXform) of
-// the light the ground reflects per unit of the key's irradiance: its albedo (the plateau's turf,
-// stone over the rim's last metre and a half; over the sea the floor's sand, seagrass and the
-// cliff foot's rubble seen through the water column, down and back up, as tidewater's sea, at the
-// gain the floor is seen at, SeabedTile.ts FLOOR_ALBEDO, and the water body's own reflectance under
-// the surface, both through the surface at its diffuse transmittances) times
+// the light the ground reflects per unit of the key's irradiance: its albedo (the land's; over the
+// sea the floor's seen through the water column, down and back up, as tidewater's sea, and the
+// water body's own reflectance under the surface, both through the surface at its diffuse
+// transmittances; the land's and the floor's albedos and the land's height are the scene's, which
+// describes its ground as a `BounceGround`: the island's in materials/BounceGround.ts) times
 // the cosine of the key on the level ground times the key's visibility there (the sun's shadow map,
 // a little above the ground so the plateau's relief stays under the lookup; tidewater takes its
 // heightfield's shadow, which the island's own shadow map already holds here), minus what the
 // environment's lower half already gives a face turned down (the distant sea's radiance, Sky's
 // `seaRadiance`, where tidewater's environment has the atmosphere's dark ground), then blurred
 // (a binomial 5x5 of 1 m steps, as 3x3 bilinear lookups). Alpha: the height of the bouncing
-// surface (the plateau's top over its swells, or the sea level). It is drawn at 256 texels,
+// surface (the land's, as the scene's ground gives it, or the sea level). It is drawn at 256 texels,
 // blurred into the wave maps' array target (its last layer, WaveMaps `bounceLayer`), so the
 // materials lit under the water take no texture more for it. It is drawn before the frame graph,
 // after the sun's map. It is a function of the key's direction and colour, the sun's maps, the
@@ -116,12 +112,6 @@ const BLUR_STEP = 1;
 const REACH = 1;
 // how far above the ground the bake takes the key's visibility (m): above the plateau's relief
 const SHADOW_LIFT = 0.2;
-// linear albedos: the plateau's lawn, which times shared.lawnGain is the blades' mean, as the
-// probes' bake sees it (AmbientProbes.ts LAWN_TOP), the rim's stone, and the floor's (its means at
-// the gain it is seen at: SeabedTile.ts FLOOR_ALBEDO, the sand its `sandGain` on top; the seagrass
-// SeabedLook.ts's mean)
-const LAWN = vec3( ...LAWN_COLOUR ), RIM = vec3( 0.08, 0.075, 0.065 );
-const SAND = vec3( ...FLOOR_ALBEDO.sand ).mul( FLOOR_ALBEDO.gain * FLOOR_ALBEDO.sandGain ), SEAGRASS = vec3( 0.2475, 0.304, 0.124 ).mul( FLOOR_ALBEDO.gain ), RUBBLE = vec3( ...FLOOR_ALBEDO.rubble ).mul( FLOOR_ALBEDO.gain );
 // the floor's light through the surface, down and back up: the sky's diffuse transmittance into the
 // water (0.934) times the upwelling light's out of it, 1 - 0.475. Both are Fresnel's reflectance of
 // water (n = 1.333) integrated over a uniform hemisphere, our own figures: 0.475 the mean internal
@@ -133,14 +123,27 @@ const FLOOR_THROUGH = 0.934 * 0.525;
 // Lambertian floor, whose mean cosine is 0.5 (2 times the depth)
 const FLOOR_PATH = 1.2 + 2.0;
 
+/** The scene's ground as the bake reads it: each method is called once while the bake's shader is
+ * built and returns nodes of that shader. `at` is the map's coordinate over the fields' bounds
+ * (shared.shoreXform), `shore` the shore's sea-level distance there (m, negative over the land). */
+export interface BounceGround {
+	/** The land's linear albedo. */
+	land( shore: F ): V3;
+	/** The sea floor's linear albedo, as seen through clear water. */
+	floor( at: THREE.Node<'vec2'>, shore: F ): V3;
+	/** The height (m) of the land's surface at the world point `xz`. */
+	height( xz: THREE.Node<'vec2'> ): F;
+}
+
 export interface GroundBounceInputs {
 	renderer: THREE.WebGPURenderer;
 	shared: Shared;
 	sunShadow: SunShadow;
-	// the world fields (WorldFields.ts): the shore's sea-level distance, the floor's height and beds
-	fields: { shore: THREE.TextureNode; floor: THREE.TextureNode; beds: THREE.TextureNode };
-	// the soil map (Soil.ts): the plateau's swell, the height of the land's bouncing surface
-	soil: THREE.Texture;
+	// the fields over the bounds of shared.shoreXform: the shore's sea-level distance and the
+	// floor's height
+	fields: { shore: THREE.TextureNode; floor: THREE.TextureNode };
+	// the land's and the floor's albedos and the land's height
+	ground: BounceGround;
 	// the array target and layer the map is blurred into (WaveMaps `target`, `bounceLayer`)
 	target: THREE.RenderTarget;
 	layer: number;
@@ -164,7 +167,7 @@ export class GroundBounce {
 
 	constructor( private readonly inputs: GroundBounceInputs ) {
 
-		const { shared, sunShadow, fields, target } = inputs;
+		const { shared, sunShadow, fields, ground: described, target } = inputs;
 		this.raw = new THREE.RenderTarget( RAW, RAW, {
 			type: THREE.HalfFloatType, depthBuffer: false, generateMipmaps: false,
 			minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
@@ -180,9 +183,8 @@ export class GroundBounce {
 			const xz = shared.shoreXform.xy.add( at.div( shared.shoreXform.zw ) ).toVar();
 			const sd = texture( fields.shore, at ).level( float( 0 ) ).r.toVar();
 			const floorY = texture( fields.floor, at ).level( float( 0 ) ).r;
-			const beds = texture( fields.beds, at ).level( float( 0 ) ).rg;
 			const L = shared.sunDir;
-			const land = mix( LAWN.mul( shared.lawnGain ), RIM, smoothstep( - 1.5, 0, sd ) );
+			const land = described.land( sd );
 			// the sea: the floor seen through the water column, down and back up (at a + bb, over
 			// FLOOR_PATH times the depth), and the water body's own irradiance reflectance under its
 			// surface, the deep water's R( 0- ) = BODY_REFLECTANCE bb / ( a + bb ) (ocean/SeaOptics.ts,
@@ -192,13 +194,13 @@ export class GroundBounce {
 			const depth = max( shared.waterLevel.sub( floorY ), 0 );
 			const kappa = shared.sigA.add( shared.bb );
 			const body = shared.bb.mul( BODY_REFLECTANCE ).div( kappa );
-			const floor = mix( mix( SAND, SEAGRASS, smoothstep( 0.3, 0.7, beds.x ) ), RUBBLE, smoothstep( 6.5, 0.5, sd ).mul( 0.5 ) );
+			const floor = described.floor( at, sd );
 			const column = exp( kappa.mul( depth ).mul( - FLOOR_PATH ) );
 			const sea = mix( body, floor, column ).mul( FLOOR_THROUGH );
 			const wet = smoothstep( - 0.25, 0.25, sd ).toVar();
 			// (the land's bounce is the ambient volume's where materials read it: see the header)
 			const albedo = GROUND_BOUNCE_LAND ? mix( land, sea, wet ) : sea.mul( wet );
-			const ground = float( ISLAND_TOP ).add( soilGroveSwell( inputs.soil, xz ).swell ).toVar();
+			const ground = described.height( xz ).toVar();
 			const top = mix( ground, shared.waterLevel, wet );
 			const lift = select( wet.lessThan( 0.5 ), ground, shared.waterLevel ).add( SHADOW_LIFT );
 			const visibility = sunShadow.currentPCFVisibility( sunShadow.coordinate.mul( vec4( xz.x, lift, xz.y, 1 ) ).xyz );
@@ -299,10 +301,11 @@ export class GroundBounce {
 
 let installed: GroundBounce | null = null;
 
-/** Makes `bounce` the ground bounce every lit material adds: before any of them builds. */
-export function installGroundBounce( bounce: GroundBounce ): void {
+/** Makes `bounce` the ground bounce every lit material adds, and returns it: before any of them
+ * builds. */
+export function installGroundBounce( bounce: GroundBounce ): GroundBounce {
 
-	installed = bounce;
+	return installed = bounce;
 
 }
 

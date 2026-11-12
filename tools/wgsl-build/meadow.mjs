@@ -4,13 +4,21 @@
 // from an empty plan (no anchors: the blades' shaders do not depend on the land). Under a
 // temporal mode (`--q aa=taa`) the blades also read the field of the frame before.
 
-import { displacementField } from '../../src/world/vegetation/Displacement.ts';
-import { buildGrass, plantGrass } from '../../src/world/Grass.ts';
-import { shared } from '../../src/shared.ts';
+import { createDisplacementField } from '../../src/world/vegetation/Displacement.ts';
+import { trailCurve } from '../../src/world/vegetation/Trample.ts';
+import { GROWTH } from '../../src/world/IslandGrowth.ts';
 
-export default function () {
+export default async function () {
 
 	const shaders = [];
+	// As the page makes it: over the land's whole lattice, its sprites aged by the trail's curve.
+	// The blades' modules load after the sprites' material is made: three names a storage buffer by
+	// its node's id, a count of the nodes made so far, so the shaders' text follows the order the
+	// modules make their nodes in.
+	const displacementField = createDisplacementField( 2 * GROWTH.half );
+	displacementField?.source( trailCurve );
+	const { buildGrass, plantGrass } = await import( '../../src/world/Grass.ts' );
+	const { shared } = await import( '../../src/shared.ts' );
 	if ( displacementField ) shaders.push( [ 'displacement-sprite', { material: displacementField.mesh.material, object: displacementField.mesh } ] );
 	const grass = buildGrass( plantGrass( new Float32Array( 0 ) ), shared );
 	for ( const mesh of grass.children ) shaders.push( [ mesh.name, { material: mesh.material, object: mesh } ] );

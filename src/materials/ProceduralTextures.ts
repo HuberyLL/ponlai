@@ -5,7 +5,6 @@
  */
 
 import * as THREE from 'three/webgpu';
-import { createSoilTexture } from './Soil.ts';
 import {
 	Fn, If, Loop, uv, texture, uniform, float, int, vec2, vec3, vec4, normalize, fract, floor, dot, mod, mix,
 	length, smoothstep, sin, cos, abs, pow, max, clamp, step,
@@ -23,6 +22,8 @@ import {
 // texture (`DETAIL_LAYER`), which the materials read: one binding where there were four, the same
 // texels and the same filtering, so the terrain's fragment stage keeps slots free under WebGPU's 16
 // sampled textures.
+// The scans' texture arrays are loaded here too (`scanArray`): the scene names the files, a layer
+// each, and what each layer is (the island's: GroundTextures.ts).
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -179,14 +180,13 @@ const gravelBake = ( q: V2 ) => Fn( () => {
 } )();
 
 export interface DetailTextures {
-	soil: THREE.DataArrayTexture; // layers: the root bed (Soil.ts), the bamboo groves' density
 	// the baked maps: each a layer of one array texture (`DETAIL_LAYER`), sampled as
 	// `texture( tex.heights, uv )`
 	heights: THREE.TextureNode;
 	gravel: THREE.TextureNode;
 	normalsA: THREE.TextureNode;
 	normalsB: THREE.TextureNode;
-	// the CC0 scans (SCAN_LAYER): colour (sRGB) and detail (normal x, y and roughness)
+	// the scans, a layer per file given: colour (sRGB) and detail (normal x, y and roughness)
 	scanAlbedo: THREE.DataArrayTexture;
 	scanDetail: THREE.DataArrayTexture;
 }
@@ -194,11 +194,8 @@ export interface DetailTextures {
 /** The baked maps' layers in their array texture. */
 export const DETAIL_LAYER = { heights: 0, normalsA: 1, normalsB: 2, gravel: 3 } as const;
 
-/** The scans' layers in the texture arrays: the cliff's stone, the open meadow's ground and the
- * bamboo groves' floor. One array per map keeps the terrain's fragment stage within WebGPU's 16
- * sampled textures. */
-export const SCAN_LAYER = { rock: 0, meadow: 1, grove: 2 } as const;
-const SCAN_FILES = [ 'rock/rock', 'ground/meadow', 'ground/grove' ];
+// The scans' texels on a side. One array per map (colour, detail), a layer per scan, keeps a
+// material that reads several within WebGPU's 16 sampled textures.
 const SCAN_SIZE = 1024;
 /** The scans' smallest mip, 1x1: each layer's own mean colour. */
 export const SCAN_TOP_MIP = Math.log2( SCAN_SIZE );
@@ -218,9 +215,9 @@ async function scanPixels( path: string ): Promise<Uint8ClampedArray> {
 
 }
 
-async function scanArray( suffix: string, colorSpace: string ): Promise<THREE.DataArrayTexture> {
+async function scanArray( files: readonly string[], suffix: string, colorSpace: string ): Promise<THREE.DataArrayTexture> {
 
-	const layers = await Promise.all( SCAN_FILES.map( ( file ) => scanPixels( file + suffix ) ) );
+	const layers = await Promise.all( files.map( ( file ) => scanPixels( file + suffix ) ) );
 	const data = new Uint8Array( SCAN_SIZE * SCAN_SIZE * 4 * layers.length );
 	layers.forEach( ( pixels, i ) => data.set( pixels, i * SCAN_SIZE * SCAN_SIZE * 4 ) );
 	const map = new THREE.DataArrayTexture( data, SCAN_SIZE, SCAN_SIZE, layers.length );
@@ -238,7 +235,9 @@ async function scanArray( suffix: string, colorSpace: string ): Promise<THREE.Da
 // texels on a side of the baked detail layers
 export const DETAIL_SIZE = 1024;
 
-export async function bakeProceduralTextures( renderer: THREE.WebGPURenderer, size = DETAIL_SIZE ): Promise<DetailTextures> {
+/** Bakes the detail maps and loads the scans `scans` names, a layer each in that order: files
+ * under the assets' textures/, without the map's suffix (`_albedo.jpg`, `_detail.png`). */
+export async function bakeProceduralTextures( renderer: THREE.WebGPURenderer, scans: readonly string[], size = DETAIL_SIZE ): Promise<DetailTextures> {
 
 	const make = ( name: string ) => {
 
@@ -288,11 +287,11 @@ export async function bakeProceduralTextures( renderer: THREE.WebGPURenderer, si
 	const detail = detailArray( renderer, [ heights, normalsA, normalsB, gravel ], size );
 	const layer = ( i: number ) => texture( detail ).depth( int( i ) );
 
-	// CC0 scans supply the stone's irregular mineral relief and the meadow ground's soil and fallen
-	// leaves; generated textures still serve moss and sand. Keep the detail maps linear.
-	const [ scanAlbedo, scanDetail ] = await Promise.all( [ scanArray( '_albedo.jpg', THREE.SRGBColorSpace ), scanArray( '_detail.png', THREE.NoColorSpace ) ] );
+	// Scans supply what the generated textures do not (the island's: the stone's irregular mineral
+	// relief, the ground's soil and fallen leaves). Keep the detail maps linear.
+	const [ scanAlbedo, scanDetail ] = await Promise.all( [ scanArray( scans, '_albedo.jpg', THREE.SRGBColorSpace ), scanArray( scans, '_detail.png', THREE.NoColorSpace ) ] );
 	return {
-		soil: createSoilTexture(), heights: layer( DETAIL_LAYER.heights ), gravel: layer( DETAIL_LAYER.gravel ),
+		heights: layer( DETAIL_LAYER.heights ), gravel: layer( DETAIL_LAYER.gravel ),
 		normalsA: layer( DETAIL_LAYER.normalsA ), normalsB: layer( DETAIL_LAYER.normalsB ), scanAlbedo, scanDetail,
 	};
 

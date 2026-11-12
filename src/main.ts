@@ -27,18 +27,18 @@ import { WaveMaps } from './ocean/WaveMaps.ts';
 import { SeaDetail } from './ocean/SeaDetail.ts';
 import { showUnderwater } from './ocean/Refraction.ts';
 import { Wenyao } from './life/Wenyao.ts';
-import { FallingLeaves } from './weather/FallingLeaves.ts';
+import { FallingLeaves, leavesPass } from './weather/FallingLeaves.ts';
 import { Water, keyChroma } from './ocean/Water.ts';
 import { StormSea } from './ocean/StormSea.ts';
-import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
+import { bakeGroundTextures } from './materials/GroundTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
-import { buildWorldMeshes } from './world/World.ts';
+import { ISLAND_SEA, buildWorldMeshes } from './world/World.ts';
 import type { WorldData } from './world/types.ts';
 import { WorldFields } from './world/WorldFields.ts';
 import { Growth } from './world/Growth.ts';
 import { topFromTiles } from './game/sim/grid.ts';
-// first of all that may wait as the modules load: the world's workers start here (WorldStart.ts)
-import { worldJob, worldProgress, landOptions, landFraming, worldCacheOn } from './world/WorldStart.ts';
+// first of all that may wait as the modules load: the world's workers start here (WorldBoot.ts)
+import { worldJob, worldProgress, landOptions, landFraming, worldCacheOn } from './WorldBoot.ts';
 import { buildChunkBorders } from './debug/ChunkBorders.ts';
 import { WIND_VIEW } from './debug/WindView.ts';
 import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';
@@ -63,6 +63,8 @@ import { installOpenShadow } from './lighting/SolarShadow.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
 import { GroundBounce, installGroundBounce } from './lighting/GroundBounce.ts';
+import { islandBounceGround } from './materials/BounceGround.ts';
+import { groundGains } from './materials/Meadow.ts';
 import { AMBIENT_KNOBS, ambientGrade } from './lighting/AmbientGrade.ts';
 import { localLights, testSources } from './lighting/LocalLights.ts';
 import { liftedKeyDirection, liftedKeyHeight, updateKeyLift } from './lighting/KeyLift.ts';
@@ -71,7 +73,7 @@ import { AmbientVolume, type AmbientView } from './lighting/AmbientVolume.ts';
 import { installAmbientVolume, installEnvironmentHarmonics } from './lighting/AmbientSample.ts';
 import { AmbientRelight, AmbientSky, lowSunSkyLift } from './lighting/AmbientRelight.ts';
 import { ISLAND_TOP, islandSurfaceHeight, landBounds } from './world/WorldShapes.ts';
-import { LandLattice } from './world/IslandGrowth.ts';
+import { GROWTH, LandLattice } from './world/IslandGrowth.ts';
 import { walkPoints } from './world/WalkPath.ts';
 import { bambooKinds, buildBamboo } from './world/Bamboo.ts';
 import { loadBambooLook } from './world/BambooGroves.ts';
@@ -99,7 +101,7 @@ import { SCENE_RADIANCE_SCALE, MOON_GLINT_RADIUS } from './lighting/Radiometry.t
 import { SUN_GLINT_DISC } from './lighting/SunDisc.ts';
 import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 import { installVegetationPrepass, prepassScene } from './world/VegetationPrepass.ts';
-import { displacementField } from './world/vegetation/Displacement.ts';
+import { createDisplacementField, displacementField } from './world/vegetation/Displacement.ts';
 import { installOpaquePrepass, opaquePrepassScene } from './world/OpaquePrepass.ts';
 import { GTAO, gtaoUniforms } from './post/GTAO.ts';
 import { SS_SHADOW } from './post/MeadowShade.ts';
@@ -324,9 +326,9 @@ const wind = new Wind( shared.wind, { ...weatherWind( weather.state ), time: sim
 // its previous state becomes the current one.
 if ( TEMPORAL ) onTaaCut( () => wind.cut() );
 // The islanders' trail through the meadow (world/vegetation/Trample.ts), drawn after they move each
-// frame into the displacement field (world/vegetation/Displacement.ts): fixed over the whole
-// island, drawn again each frame; across a cut its frame before is not read.
-const trample = new Trample( displacementField );
+// frame into the displacement field (world/vegetation/Displacement.ts), made here over the land's
+// whole lattice and drawn again each frame; across a cut its frame before is not read.
+const trample = new Trample( createDisplacementField( 2 * GROWTH.half ) );
 if ( TEMPORAL ) onTaaCut( () => displacementField?.cut() );
 let rain: Rain | undefined;
 let skyElapsed = 0;
@@ -621,7 +623,7 @@ shared.skyMeterLog2 = sky.meterLog2Node;
 // the bamboo's groves (`bamboo=cover,height` loads another look of them), which the ground's
 // floor follows (the textures' grove field) and the meadow thins under and the bamboo stands in
 loadBambooLook( params.get( 'bamboo' ) );
-const textures = await bakeProceduralTextures( renderer );
+const textures = await bakeGroundTextures( renderer );
 // tidewater's two wave systems at the prevailing heading (Wind.ts `spectrumWind`) and tidewater's
 // sea state for the wind (OceanSpectrum.ts `seaState`: its fetch, choppiness and swell), rebuilt
 // whenever the weather's wind speed or heading changes (`setWind`, below in the frame loop: the
@@ -658,7 +660,10 @@ if ( fgview ) installDebugView( fgview, {
 		jitterNdc: jitter.uniforms.ndc, opaqueBelow: ( MOTION_CLASS.opaque + MOTION_CLASS.vegetation ) / 2,
 	},
 } );
-const pipeline = new Pipeline( renderer, sky, sunShadow, rain, postOptionsFromURL( location.search, quality.post ), quality.taa );
+// The bamboo leaves the wind takes off the island (weather/FallingLeaves.ts), made once the world
+// exists (the test mode leaves them out): their step is a pass the pipeline declares from this list.
+let fallingLeaves: FallingLeaves | null = null;
+const pipeline = new Pipeline( renderer, sky, sunShadow, rain, postOptionsFromURL( location.search, quality.post ), quality.taa, [ ( g ) => leavesPass( g, () => fallingLeaves ) ] );
 // The profiler labels each pass the graph runs by the pass's label (its groups), unless a
 // target or object it knows labels it otherwise (the passes inside the display chain).
 if ( profiler ) {
@@ -759,8 +764,7 @@ setLand( land, landOptions.step );
 const fields = new WorldFields( data, shared.shoreXform.value );
 // the sunlight the ground bounces up (lighting/GroundBounce.ts), which every lit material adds: so
 // installed before any of them builds; its map shares the wave maps' target
-const groundBounce = new GroundBounce( { renderer, shared, sunShadow, fields, soil: textures.soil, target: waveMaps.target, layer: waveMaps.bounceLayer, cloud: ( position ) => sky.keyDirectVisibility( position ) } );
-installGroundBounce( groundBounce );
+const groundBounce = installGroundBounce( new GroundBounce( { renderer, shared, sunShadow, fields, ground: islandBounceGround( fields.beds, textures.soil ), target: waveMaps.target, layer: waveMaps.bounceLayer, cloud: ( position ) => sky.keyDirectVisibility( position ) } ) );
 const shoreWaves = new ShoreWaves( renderer, data.shore, shared, fields.shore, fft, fields.floor );
 const walk = walkPoints( data.walk );
 const world = buildWorldMeshes( data, textures, shared, waveMaps, fields );
@@ -769,10 +773,7 @@ scene.add( world.group );
 // the opaque pass draws where the eye sees them through the waves (Water.ts swimmerSway).
 const wenyao = new Wenyao( data, shared, waveMaps, fft );
 scene.add( wenyao.mesh );
-// The bamboo leaves the wind takes off the island (weather/FallingLeaves.ts): stepped by their pass on
-// the frame graph, drawn in the opaque scene; the test mode leaves them out (debug/TestMode.ts).
-const fallingLeaves = TEST_MODE ? null : new FallingLeaves( { shared, fields, soil: textures.soil, wind, atlas: singleLeaf() } );
-pipeline.fallingLeaves = fallingLeaves;
+fallingLeaves = TEST_MODE ? null : new FallingLeaves( { shared, fields, soil: textures.soil, wind, atlas: singleLeaf() } );
 pipeline.waveMaps = waveMaps;
 if ( fallingLeaves ) scene.add( fallingLeaves.mesh );
 // The chunks' borders (GUI Ground folder, ?chunkBorders), built on first show.
@@ -986,7 +987,7 @@ const stormSea = new StormSea( renderer, fft, shared, fields.shore, shoreWaves, 
 } );
 water = new Water( {
 	fft, sky, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves,
-	land: landBox, sunShadow, storm: stormSea, detail: seaDetail,
+	land: landBox, ...ISLAND_SEA, sunShadow, storm: stormSea, detail: seaDetail,
 	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, underwater: pipeline.textures.underwater, quality: quality.water,
 	refraction: { color: pipeline.textures.refraction, depth: pipeline.textures.refractionDepth },
 } );
@@ -1530,9 +1531,9 @@ if ( pipeline.localTone ) {
 
 }
 postF.add( S, 'lut', 0, 1, 0.01 ).name( 'grade table blend' );
-// the meadow's albedo against its lawn colour (shared.lawnGain), tuned with the exposure
-postF.add( shared.lawnGain, 'value', 0.5, 3, 0.01 ).name( 'meadow albedo (x)' ).onChange( () => groundBounce.invalidate() );
-postF.add( shared.rockGain, 'value', 0.5, 3, 0.01 ).name( 'cliff albedo (x)' );
+// the meadow's albedo against its lawn colour (groundGains.lawnGain), tuned with the exposure
+postF.add( groundGains.lawnGain, 'value', 0.5, 3, 0.01 ).name( 'meadow albedo (x)' ).onChange( () => groundBounce.invalidate() );
+postF.add( groundGains.rockGain, 'value', 0.5, 3, 0.01 ).name( 'cliff albedo (x)' );
 postF.add( shared.leafGain, 'value', 0.5, 3, 0.01 ).name( 'tree leaves albedo (x)' );
 {
 
@@ -2626,11 +2627,10 @@ if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { lan
 	// their relight (lighting/AmbientRelight.ts): `readback()` and `hash()` of its output
 	ambientRelight,
 	// the look's knobs from a script (the GUI's raise their own events): the first table's grade
-	// (Pipeline.setGrade, GradeLut.ts), the meadow's albedo (shared.lawnGain), the cliff's
-	// (shared.rockGain) and the trees' leaves' (shared.leafGain)
+	// (GradeLut.ts), the meadow's and the cliff's albedos (groundGains), the leaves' (shared.leafGain)
 	setGrade: ( changes?: GradeChanges ) => { pipeline.setGrade( changes ); sceneEvent( 'retune' ); },
-	setLawnGain: ( gain: number ) => { shared.lawnGain.value = gain; groundBounce.invalidate(); sceneEvent( 'retune' ); },
-	setRockGain: ( gain: number ) => { shared.rockGain.value = gain; sceneEvent( 'retune' ); },
+	setLawnGain: ( gain: number ) => { groundGains.lawnGain.value = gain; groundBounce.invalidate(); sceneEvent( 'retune' ); },
+	setRockGain: ( gain: number ) => { groundGains.rockGain.value = gain; sceneEvent( 'retune' ); },
 	setLeafGain: ( gain: number ) => { shared.leafGain.value = gain; sceneEvent( 'retune' ); }, grass, wenyao, fallingLeaves, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the tunable parameters (debug/Tune.ts): set( { name: value } ), get, list, reset, query; a value
 	// the environment's bakes depend on rebakes them at once (`retuneSky`, sky/SkyRetune.ts), as the

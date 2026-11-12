@@ -116,7 +116,7 @@ const LAWN_TOP = [ 0.0700 * 0.926, 0.0978 * 0.926, 0.0109 * 0.926 ];
 // saturation 0.8, gain 0.355)
 const GROVE_FLOOR = scanLook( [ 0.2918, 0.2482, 0.1198 ], 0.8, 0.355 );
 // the cliff's stone: TerrainMaterial.ts's rock at its mean tint, above the water times the
-// rock's gain (shared.ts rockGain)
+// rock's gain (materials/Meadow.ts `groundGains`)
 const ROCK = [ ( 0.124 + 0.188 ) / 2, ( 0.13 + 0.19 ) / 2, ( 0.126 + 0.176 ) / 2 ], ROCK_GAIN = 1.6;
 // the floor: pale sand, the cliff foot's rubble, at the floor's gain (SeabedTile.ts FLOOR_ALBEDO),
 // the sand its `sandGain` on top
@@ -574,7 +574,7 @@ class Tracer {
 		if ( kind === ISLAND && y > islandSurfaceHeight( x, z ) - 0.75 ) {
 
 			// the plateau's ground: the meadow or a grove's floor, the cliff's stone over its last
-			// metre and a half (GroundBounce.ts)
+			// metre and a half (BounceGround.ts)
 			const grove = groveAt( x, z ), stone = smoothstep( - 1.5, 0, fp.dist( x, z ) );
 			rock( y, albedo );
 			for ( let c = 0; c < 3; c ++ ) {

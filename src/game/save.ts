@@ -3,7 +3,7 @@ import { SAVE_VERSION, type SimState } from './sim/types.ts';
 
 // The game's save: one slot in this browser's storage (localStorage) holding the game as JSON with
 // a version number: the simulation's state (sim/Sim.ts, where every change of the world is kept)
-// and the record (沧海录, Chronicle.ts: its entries, each at its tick, and the skies of each day). Kept apart from Game.ts so the world's start (world/WorldStart.ts) can read the
+// and the record (沧海录, Chronicle.ts: its entries, each at its tick, and the skies of each day). Kept apart from Game.ts so the page's entry (WorldBoot.ts) can read the
 // saved piece count as the page loads, before the world is asked for, without the game's code; and
 // plain TypeScript, so node's checks read saves (tools/verify-game.mjs).
 //

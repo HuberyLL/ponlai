@@ -5,7 +5,7 @@ import {
 	select, sin, smoothstep, sqrt, step, storage, texture, textureLoad, uint, uniform, varying, vec2, vec3, vec4,
 	positionWorld, specularColor, specularColorBlended, specularF90, vertexIndex, workgroupArray, workgroupBarrier, workgroupId,
 } from 'three/tsl';
-import { LAWN_GAIN, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_SIZE, supportsMeadow } from '../materials/Meadow.ts';
+import { LAWN_GAIN, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_SIZE, groundGains, supportsMeadow } from '../materials/Meadow.ts';
 import { GUST_GAIN, GUST_MEAN, gustAt, gustJitter, wave, windStrength, type WindState } from '../weather/Wind.ts';
 import { VEGETATION_STRIDE as STRIDE, type WorldData } from './types.ts';
 import { RESPONSE, displacementAt } from './vegetation/Displacement.ts';
@@ -1217,7 +1217,7 @@ function bladeVertex( reads: ReturnType<MeadowBlades[ 'reads' ]>, wind: WindStat
 /** The blades' albedo (linear) in two columns, `a` and `b`, a clump taking one (CLUMP.column):
  * each a set of key colours along the blade's length at the root, the middle and the tip, nearly
  * flat (the middle a shade darker; the root's darkness is the occlusion's, AO, not the colour's,
- * so its hue holds in every light), at shared.lawnGain over LAWN_GAIN. Column `a` a deep olive
+ * so its hue holds in every light), at the lawn's gain over LAWN_GAIN. Column `a` a deep olive
  * green of value about 0.08, its red 0.65 of its green at the root to 0.8 at the tip and its blue
  * about an eighth, so the sunlit meadow stays green and never goes grey or blue in the distance;
  * column `b` the same a little warmer (red 6 % up, blue 10 % down), so the clumps differ only
@@ -1358,7 +1358,7 @@ function grassMaterial( shared: Shared, blades: MeadowBlades, low = false ): THR
 	const lower = mix( root, middle, smoothstep( 0, 0.5, along ) );
 	const upper = mix( middle, tip, smoothstep( 0.5, 1, along ) );
 	const mean = root.mul( 0.3 ).add( middle.mul( 0.4 ) ).add( tip.mul( 0.3 ) );
-	const albedo = mix( mix( lower, upper, step( 0.5, along ) ), mean, far ).mul( shared.lawnGain.div( LAWN_GAIN ) );
+	const albedo = mix( mix( lower, upper, step( 0.5, along ) ), mean, far ).mul( groundGains.lawnGain.div( LAWN_GAIN ) );
 	const translucency = mix( float( TRANSLUCENCY.root ), float( TRANSLUCENCY.tip ), mix( along, float( 0.6 ), far ) ).mul( translucencyMask );
 	const mat = vegetationMaterial( shared, {
 		family: 'blade', name: 'grass', roughness: SURFACE.roughness,

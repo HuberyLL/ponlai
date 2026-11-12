@@ -16,7 +16,7 @@ export const SEABED_TILE = 16;
 // The sea floor's albedo: the means of its pale sand and its rubble at gain 1, and the gain all that
 // lies on the floor takes (SeabedLook.ts its sand, seagrass and rubble, TerrainMaterial.ts the silt on
 // the submerged stones), with the sand's own factor over it (`sandGain`), so that what the ambient
-// probes (AmbientProbes.ts) and the ground bounce (GroundBounce.ts) see of it is the floor the eye
+// probes (AmbientProbes.ts) and the ground bounce (BounceGround.ts) see of it is the floor the eye
 // sees. The clean sand's mean comes to about ( 0.24, 0.20, 0.16 ), a temperate mineral sand
 // (SeabedLook.ts); the rubble the stones' apron as drawn, about 0.1. It lives here because
 // SeabedLook.ts imports three and the probes are built in the chunk workers.

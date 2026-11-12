@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { uniform } from 'three/tsl';
 import { noise3, smoothstep } from '../world/noise.ts';
 import { GROWTH } from '../world/IslandGrowth.ts';
 import { cellStream } from '../world/Anchors.ts';
@@ -34,16 +35,28 @@ export const SWARD_HEIGHT = 0.45;
 interface MeadowSample { growth: number; tone: number }
 
 // Linear albedo of the lawn as a whole, a deep olive green: the blades' mean (Grass.ts meadowMean)
-// over LAWN_GAIN. The tone's knob (shared.ts lawnGain) lightens or darkens the blades (Grass.ts)
-// and the turf together. The land's bounce reads it (GroundBounce.ts), and the ambient light's
+// over LAWN_GAIN. The tone's knob (`groundGains.lawnGain`) lightens or darkens the blades (Grass.ts)
+// and the turf together. The land's bounce reads it (BounceGround.ts), and the ambient light's
 // bake holds a copy (AmbientProbes.ts LAWN_TOP).
 const LAWN = new THREE.Color( 0.0700, 0.0978, 0.0109 );
 /** The lawn's colour (linear albedo), before its tone. */
 export const LAWN_COLOUR = LAWN.toArray() as [ number, number, number ];
-/** The meadow's albedo against LAWN_COLOUR on load (shared.ts lawnGain, a knob): LAWN_COLOUR times it
+/** The meadow's albedo against LAWN_COLOUR on load (`groundGains.lawnGain`, a knob): LAWN_COLOUR times it
  * is the blades' mean. The blades' colours and the turf set against them (TerrainMaterial.ts,
  * Grass.ts GRASS_ROOTS) are divided by it, so at LAWN_GAIN they are their own. */
 export const LAWN_GAIN = 0.926;
+/** The knobs on the island's ground albedos, one uniform each, read by every material that uses
+ * it. */
+export const groundGains = {
+	// the meadow's albedo against its lawn colour (LAWN): the blades', the turf's under them and the
+	// ground bounce's over the plateau (BounceGround.ts); 1 the lawn as LAWN gives it. LAWN_GAIN: the
+	// blades' albedo on load (Grass.ts)
+	lawnGain: uniform( LAWN_GAIN ),
+	// the cliff's albedo above the water against its stone (TerrainMaterial.ts `rock`); 1 the stone as
+	// it is. 1.6: the stone at about twice the meadow's albedo (about 0.18); under the water it keeps
+	// SUBMERGED_ROCK of it (TerrainMaterial.ts), darker only by the water round it
+	rockGain: uniform( 1.6 ),
+};
 /** How far the turf's value varies about the lawn's colour (a broad noise's -1 to 1 times it). */
 export const LAWN_TONE = 0.04;
 

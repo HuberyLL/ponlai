@@ -1,10 +1,12 @@
 import * as THREE from 'three/webgpu';
 import { makeTerrainMaterial } from '../materials/TerrainMaterial.ts';
-import type { DetailTextures } from '../materials/ProceduralTextures.ts';
+import type { GroundTextures } from '../materials/GroundTextures.ts';
 import type { WaveMaps } from '../ocean/WaveMaps.ts';
 import { refractedGroup, showUnderwater } from '../ocean/Refraction.ts';
 import type { Shared } from '../shared.ts';
-import { ISLAND_TOP } from './WorldShapes.ts';
+import { ISLAND_PEAK, ISLAND_TOP, LAND_REACH } from './WorldShapes.ts';
+import { GROWTH } from './IslandGrowth.ts';
+import { FAR_HALF } from './SeabedTile.ts';
 import type { GroundGrid } from './ChunkDerived.ts';
 import type { CasterColumns, SubmergedSubset } from '../lighting/CasterFormat.ts';
 import type { IslandChunk, MeshData, WorldData } from './types.ts';
@@ -38,6 +40,15 @@ import type { WorldFields } from './WorldFields.ts';
 //   that split the island alike; a paused frame repeats, since the split follows the chunks.
 
 /** The world's meshes, and what its chunks derived from them for their consumers. */
+/** What the sea takes from the island's shapes (ocean/Water.ts WaterInputs): the open sea deepens
+ * from the land lattice's corner ( 2 ** 0.25 times its half, as a 4-norm radius) and the shelf's
+ * reach past it, where no grown island's shelf comes, to 16 m inside the far floor's edge; the
+ * reflection's box ends above the highest the land's ground rises. */
+export const ISLAND_SEA = {
+	openSea: { from: GROWTH.half * Math.SQRT2 ** 0.5 + LAND_REACH, to: FAR_HALF - 16 },
+	reflectorTop: ISLAND_PEAK,
+} as const;
+
 export interface WorldMeshes {
 	// 'world': the island, the stones and the sea floor
 	group: THREE.Group;
@@ -53,7 +64,7 @@ export interface WorldMeshes {
 	grounds: GroundGrid[];
 }
 
-export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: Shared, waveMaps: WaveMaps, fields: WorldFields ): WorldMeshes {
+export function buildWorldMeshes( data: WorldData, tex: GroundTextures, shared: Shared, waveMaps: WaveMaps, fields: WorldFields ): WorldMeshes {
 
 	const group = refractedGroup( shared.waterLevel.value );
 	group.name = 'world';

@@ -42,21 +42,8 @@ const CODE = /\.(ts|mts|js|mjs)$/;
 // Upward imports not yet turned round, as 'from -> to' (paths under src/). Remove an entry with
 // the change that removes its import; never add one.
 const KNOWN = [
-	'lighting/GroundBounce.ts -> materials/Meadow.ts',
-	'lighting/GroundBounce.ts -> materials/Soil.ts',
-	'lighting/GroundBounce.ts -> world/SeabedTile.ts',
-	'lighting/GroundBounce.ts -> world/WorldShapes.ts',
-	'materials/ProceduralTextures.ts -> materials/Soil.ts',
-	'ocean/Water.ts -> world/IslandGrowth.ts',
-	'ocean/Water.ts -> world/SeabedTile.ts',
-	'ocean/Water.ts -> world/WorldShapes.ts',
 	// the anti-aliasing mode reads the quality tier the page's entry chose from the URL
 	'post/Antialiasing.ts -> QualityDetect.ts',
-	'post/Pipeline.ts -> weather/FallingLeaves.ts',
-	'shared.ts -> materials/Meadow.ts',
-	'world/WorldStart.ts -> game/save.ts',
-	'world/vegetation/Displacement.ts -> world/IslandGrowth.ts',
-	'world/vegetation/Displacement.ts -> world/vegetation/Trample.ts',
 ];
 
 for ( const a of process.argv.slice( 2 ) ) {
