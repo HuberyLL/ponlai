@@ -70,7 +70,6 @@ const SRC_KNOWN = [
 	'post/Pipeline.ts',
 	'post/graph/AttachmentOps.ts',
 	'post/graph/FrameGraph.ts',
-	'sky/Sky.ts',
 	'world/Upload.ts',
 	'world/WorldFields.ts',
 	'world/vegetation/VegetationCull.ts',

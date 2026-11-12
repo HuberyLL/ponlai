@@ -227,6 +227,7 @@
 	"sky/Streaks.ts": "render",
 	"sky/Weather.ts": "render",
 	"three/DrawBuilds.ts": "render",
+	"three/Environment.ts": "render",
 	"three/Internals.ts": "render",
 	"three/ThreePatches.ts": "render",
 	"weather/FallingLeaves.ts": "island",
