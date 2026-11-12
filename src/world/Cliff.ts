@@ -40,7 +40,7 @@
 // to the bit, when the land grows elsewhere, and a part of the coast can be built from its own
 // surroundings alone.
 //
-// Rules (the look is in docs/art-direction.md):
+// Rules (the look is in docs/explanation/art-direction.md):
 // - Every property of a scar (rockfall scars, joint faces, pockets, steps in the lip, gullies, the
 //   notch) comes from its own position hash, never from a running count.
 // - Every choice reads only seeds near it (a gully at the seed that ranks first within 3.7 m, a

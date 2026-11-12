@@ -4,8 +4,8 @@ A small island in an open sea, rendered in the browser: a visual sample for a ga
 growing behind `?game`. The look is a calm, painterly island,
 inspired by the eastern aesthetic of Ghost of Tsushima, on a physically based scene lit as the
 sun and the sky give it (deep clear water, chunky stone, a lush meadow that moves in the wind,
-with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game's design:
-`docs/game-design.md` (read it before gameplay work).
+with wildflowers). The look and what to avoid: `docs/explanation/art-direction.md`. The game's
+design: `docs/explanation/game-design.md` (read it before gameplay work).
 
 ## Where things are written
 
@@ -13,31 +13,35 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   header comment: read it before changing the module.
 - A change to a module's behaviour updates that module's header comment. AGENTS.md is updated when
   a cross-cutting rule or the map below changes (no size limit, but module-specific detail stays in
-  the module). Art decisions go to `docs/art-direction.md`, tool manuals to `docs/tools.md`.
+  the module). Art decisions go to `docs/explanation/art-direction.md`, tool manuals to
+  `docs/reference/tools.md`.
 - The project's structure (its layers, what each owns, how data flows between them, the rules
   across them and why) is `ARCHITECTURE.md`: read it before a structural change, and update it
   when a change adds a layer, moves what one owns or changes a flow.
-- The documentation follows Diátaxis (<https://diataxis.fr>): each page is one of four kinds and
-  holds only that kind. A tutorial takes a newcomer through a first success, step by step. A how-to
-  guide gives the steps for one task (adding a material, checking a visual change). Reference
-  states facts to look up (options, values, tables; a module's header comment is the reference
-  beside its code). Explanation says what something is and why (`ARCHITECTURE.md`,
-  `docs/art-direction.md`, `docs/game-design.md`, `docs/ui.md`). A page of one kind links to the
-  others rather than repeating them; a fact or a rule is written in one place. Docs state the
-  current state: what was tried and dropped goes in the commit message, not the page.
+- The documentation follows Diátaxis (<https://diataxis.fr>): each page is one of four kinds,
+  holds only that kind and lives in that kind's folder of `docs/`. A tutorial
+  (`docs/tutorials/`) takes a newcomer through a first success, step by step. A how-to guide
+  (`docs/how-to/`) gives the steps for one task. Reference (`docs/reference/`) states facts to look
+  up: options, values, tables; a module's header comment is the reference beside its code.
+  Explanation (`docs/explanation/`) says what something is and why. `docs/README.md` lists every
+  page. By convention a few files stay at the repository's top (`AGENTS.md`, `ARCHITECTURE.md`,
+  `CREDITS.md`), and a README beside a tool documents that tool's folder. A page of one kind links
+  to the others rather than repeating them; a fact or a rule is written in one place. Docs state
+  the current state: what was tried and dropped goes in the commit message, not the page.
 - Prose follows the Google developer documentation style guide
   (<https://developers.google.com/style>): plain words, short sentences, one term per thing.
-  `npm run lint:docs` (markdownlint and an offline link check, `docs/tools.md`, Docs checks) passes
-  before a commit that changes a Markdown file; `npm run lint:links` also checks the web links.
+  `npm run lint:docs` (markdownlint, an offline link check and the docs paths in code,
+  `docs/reference/tools.md`, Docs checks) passes before a commit that changes a Markdown file; `npm
+  run lint:links` also checks the web links.
 
 ## Stack and commands
 
 - TypeScript (strict), Vite, three.js `WebGPURenderer` (`three/webgpu`, `three/tsl`). WebGPU is
   required (the ocean FFT runs on compute shaders); without it the page shows a message.
 - `npm run dev` (port 5190), `npm run build` (type-checks, then bundles), `npm run typecheck`,
-  `npm run preview` (port 5191). URL options and in-page keys: `docs/tools.md`.
-- The tools are in `tools/`, their manual in `docs/tools.md` (Which tool for which question). The
-  ones most changes meet:
+  `npm run preview` (port 5191). URL options and in-page keys: `docs/reference/tools.md`.
+- The tools are in `tools/`, their manual in `docs/reference/tools.md` (Which tool for which
+  question). The ones most changes meet:
   - `node tools/serve.mjs dev|preview`: a server for a worktree on a free port.
   - `tools/capture.mjs` (one screenshot), `tools/parity/capture-set.mjs` (a list of views on one
     warm page, instead of a loop of capture.mjs),
@@ -62,10 +66,11 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 
 ## Map
 
-- `docs/`: `art-direction.md`, `game-design.md`, `materials.md` (how to add a material or a kind
-  of content), `tools.md`, `ui.md` (the game UI's spec: read it before UI work).
+- `docs/`: the documentation by kind, listed in `docs/README.md`: `explanation/`
+  (`art-direction.md`, `game-design.md`, `ui.md`, the game UI's spec: read it before UI work),
+  `how-to/` (`add-material.md`), `reference/` (`tools.md`).
 - `public/` (git-ignored): the game's assets, filled from the GitHub release `assets.lock.json`
-  names (`tools/assets.mjs`, `tools/vite-assets.mjs`; `docs/tools.md`, Assets).
+  names (`tools/assets.mjs`, `tools/vite-assets.mjs`; `docs/reference/tools.md`, Assets).
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__PONLAI__` and
   `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug` / `?profile`.
 - `src/Quality.ts`: the quality tiers, every cost knob in one table (high the only active one);
@@ -79,44 +84,39 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   (`Chunks.ts`, `IslandSimplify.ts`, `ChunkDerived.ts`), built on a pool of workers
   (`WorldStart.ts`, `WorldChunks.ts`, `chunkWorker.ts`), cached per chunk (`WorldCache.ts`), merged
   (`ChunkMerge.ts`) and drawn (`World.ts`, the world fields' textures in `WorldFields.ts`), and
-  grown
-  in place (`Growth.ts`, the shoal of a coming piece in `SeabedRise.ts`). Its kinds: the shapes and
-  the
-  top's low swells (`WorldShapes.ts`), cliffs (`Cliff.ts`), submerged stones (`Stones.ts`), sea
-  floor
-  (`Bathymetry.ts`, `SeabedTile.ts`), rim (`RimGround.ts`), the meadow (`Grass.ts`,
-  its blades generated on the GPU as they draw; its crowns' heights in `SwardField.ts`; anchors
-  `Anchors.ts`, soil from `ShoreSample.ts`; the
+  grown in place (`Growth.ts`, the shoal of a coming piece in `SeabedRise.ts`). Its kinds: the
+  shapes and the top's low swells (`WorldShapes.ts`), cliffs (`Cliff.ts`), submerged stones
+  (`Stones.ts`), sea floor (`Bathymetry.ts`, `SeabedTile.ts`), rim (`RimGround.ts`), the meadow
+  (`Grass.ts`, its blades generated on the GPU as they draw; its crowns' heights in `SwardField.ts`;
+  anchors `Anchors.ts`, soil from `ShoreSample.ts`; the
   sward's depth over its ground in the meadow map, `SwardField.ts`), the yunpeng that stands
   among it, single clumps far apart (where: `YunpengSites.ts`; its stalks instances of a few
   prototypes at two levels and its lights: `Yunpeng.ts`), the islander's
   walking loop (`WalkLoop.ts`, `WalkPath.ts`), the bamboo over the whole island that the
   islanders' building stock will come from (where its culms stand and the litter on its groves'
-  floor, which the grass keeps off:
-  `BambooGroves.ts`; the culms, instances of a few prototypes at two levels: `Bamboo.ts`,
-  `BambooMaterials.ts`, their colours, which the probes see too, in `BambooColours.ts`), the
-  vegetation's depth prepass (`VegetationPrepass.ts`)
+  floor, which the grass keeps off: `BambooGroves.ts`; the culms, instances of a few prototypes at
+  two levels: `Bamboo.ts`, `BambooMaterials.ts`, their colours, which the probes see too, in
+  `BambooColours.ts`), the vegetation's depth prepass (`VegetationPrepass.ts`)
   and the opaque scene's, for the ambient occlusion (`OpaquePrepass.ts`), and the ambient light's
   probes, baked per chunk (`AmbientProbes.ts`). `src/world/vegetation/` holds what every plant kind
   shares (material, coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the
   registry of kinds, the trees' tubes and leaf cards in `TreeMesh.ts` and their bark and leaf
-  surfaces in
-  `TreeSurfaces.ts`, the authored plants drawn as instances of a few prototypes with two levels and
-  a stipple between them in `PlantInstances.ts`, what a tree's leaves pass on of the key in
-  `LeafLight.ts`) and the islanders' trail through the meadow (`Trample.ts`, drawn as sprites
+  surfaces in `TreeSurfaces.ts`, the authored plants drawn as instances of a few prototypes with two
+  levels and a stipple between them in `PlantInstances.ts`, what a tree's leaves pass on of the key
+  in `LeafLight.ts`) and the islanders' trail through the meadow (`Trample.ts`, drawn as sprites
   into the displacement field the blades read, `Displacement.ts`, a frame-graph pass).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the key's visibility under cloud for the lit code without a sky (`KeyCloud.ts`: the land's floor
   under a deck, which the islanders read; the sea takes the same floor from the sky, `Sky.ts`
-  `seaKeyFloor`),
-  the refracted sun under water, the light every submerged material shares (`Underwater.ts`: a new
-  underwater material lights with it, as the terrain does), the air/water interface, sky occlusion,
-  the meadow's canopy light and its crowns' shade (`MeadowCanopy.ts`), the ambient light's probes
-  on the GPU (`AmbientVolume.ts`: the lattice's buffer and uniforms, its output texture, its debug
-  view), relit every frame by the sky's harmonics and the key into their irradiance
-  (`AmbientRelight.ts`: the output's packing; the harmonics' operations in `Harmonics.ts`), which
-  every lit island material reads for its ambient diffuse (`AmbientSample.ts`: a new lit material
-  takes it through its lighting model, `GroundBounceLightingModel`'s `ambient`, never the
+  `seaKeyFloor`), the refracted sun under water, the light every submerged material shares
+  (`Underwater.ts`: a new underwater material lights with it, as the terrain does), the air/water
+  interface, sky occlusion, the meadow's canopy light and its crowns' shade (`MeadowCanopy.ts`), the
+  ambient light's probes on the GPU (`AmbientVolume.ts`: the lattice's buffer and uniforms, its
+  output texture, its debug view), relit every frame by the sky's harmonics and the key into their
+  irradiance (`AmbientRelight.ts`: the output's packing; the harmonics' operations in
+  `Harmonics.ts`), which every lit island material reads for its ambient diffuse
+  (`AmbientSample.ts`: a new lit material takes it through its lighting model,
+  `GroundBounceLightingModel`'s `ambient`, never the
   environment's irradiance alone; `flags=ambientVolume:0` builds them without it), the sunlight the
   ground bounces up (`GroundBounce.ts`: a new lit
   material adds it in its lighting model, `addGroundBounce` or `groundBounceLight`, never a bounce
@@ -127,10 +127,10 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   passes, which every lit model looks its fragment's list up in; the grid and the CPU sort in
   `LocalLightClusters.ts`; a new source joins `localLights.sources`, never a three light, and a
   lit model of its own adds `addLocalLights`), the low key's lift of the diffuse's cosine
-  (`KeyLift.ts`: a lit model of its
-  own takes its key's cosine from `GroundBounceLightingModel`'s `shadeDirection`), the metering
-  illuminance every lit material writes beside its colour for the exposure (`MeterLight.ts`: a new
-  lit material calls `writeMeter` and draws only in passes with an MRT).
+  (`KeyLift.ts`: a lit model of its own takes its key's cosine from `GroundBounceLightingModel`'s
+  `shadeDirection`), the metering illuminance every lit material writes beside its colour for the
+  exposure (`MeterLight.ts`: a new lit material calls `writeMeter` and draws only in passes with an
+  MRT).
 - `src/materials/`: procedural textures (the gravel bake and the scans' texture arrays:
   `ProceduralTextures.ts`), the terrain (`TerrainMaterial.ts`, its ground scans hex-tiled), the sea
   floor's colour (`SeabedLook.ts`), wet surfaces, the meadow's habitat and soil-depth fields
@@ -138,11 +138,11 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   blades and the turf).
 - `src/ocean/`: FFT ocean, shore waves, the share of each wave cascade a point of the sea keeps
   (`WaveDamping.ts`), the wave maps and caustics the light under the water reads, baked by a pass
-  on the frame graph (`WaveMaps.ts`),
-  water shading (`Water.ts`), the sea's optical properties as plain numbers, which the page's
-  uniforms, the ground bounce and the ambient probes read (`SeaOptics.ts`: a change to them
-  rebuilds the world's cache), the sea's large-scale detail (`SeaDetail.ts`: gusts, slicks,
-  windrows), the water's refraction source (`Refraction.ts`), the storm sea.
+  on the frame graph (`WaveMaps.ts`), water shading (`Water.ts`), the sea's optical properties as
+  plain numbers, which the page's uniforms, the ground bounce and the ambient probes read
+  (`SeaOptics.ts`: a change to them rebuilds the world's cache), the sea's large-scale detail
+  (`SeaDetail.ts`: gusts, slicks, windrows), the water's refraction source (`Refraction.ts`), the
+  storm sea.
 - `src/sky/`: atmosphere, environment bakes (`Sky.ts`), volumetric clouds, the thin cloud layer's
   fibres (`Streaks.ts`), the day cycle (`DayCycle.ts`), the night sky and its data (`NightSky.ts`,
   `StarCatalog.ts`), the weather: its sky presets, its wind's levels and heading and the auto chain
@@ -152,10 +152,8 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   puddles, the air's haze and sea fog as one froxel volume lit by the atmosphere and shadowed by
   the sun's maps and the clouds (`VolumetricHaze.ts`, its keys by the hour and the weather in
   `HazeKeys.ts`, its medium's closed form in `HazeDepth.ts`), the bamboo leaves the wind takes off
-  the
-  island (`FallingLeaves.ts`: a fixed ring of leaves born round the view and stepped on the GPU by
-  one
-  compute pass).
+  the island (`FallingLeaves.ts`: a fixed ring of leaves born round the view and stepped on the GPU
+  by one compute pass).
 - `src/post/`: the frame's passes and tidewater's display chain (`Pipeline.ts`, its bloom in
   `PhysicalBloom.ts`, the colour the rods lend low light in `Purkinje.ts`), the pre-exposure every
   writer of the scene's colour and metering light
@@ -168,18 +166,16 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   default (`LightShafts.ts`), FSR 1, render scale and dynamic resolution (`RenderScale.ts`,
   `DynamicResolution.ts`), the frame pacer, the submit batching, the signal that a paused frame is
   final (`Settled.ts`), the anti-aliasing mode and the scene's sample count (`Antialiasing.ts`);
-  under the
-  temporal modes the jitter (`Jitter.ts`), the motion vectors (`Motion.ts`), the temporal resolve
-  (`TemporalAA.ts`), its history fetch (FSR 3.1's Lanczos 2 and deringing: `TemporalHistory.ts`) and
-  the FSR 2 measures it takes for moving pixels (`TemporalLocks.ts`), the
+  under the temporal modes the jitter (`Jitter.ts`), the motion vectors (`Motion.ts`), the temporal
+  resolve (`TemporalAA.ts`), its history fetch (FSR 3.1's Lanczos 2 and deringing:
+  `TemporalHistory.ts`) and the FSR 2 measures it takes for moving pixels (`TemporalLocks.ts`), the
   image of a resting scene (`TemporalRest.ts`), the scene events that restart it or cut the
   history (`SceneEvents.ts`) and the rain's streaks and the storm's spray drawn after the resolve
   (`AfterResolve.ts`).
 - `src/post/graph/`: the frame graph: its declarations and compiler (`GraphCompiler.ts`, pure
   TypeScript, checked by `tools/verify-framegraph.mjs`), its runtime and warm-up (`FrameGraph.ts`,
   `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`), three r186's cache-key patches and
-  its first lit build made
-  ahead (`ThreePatches.ts`) and the debug view (`DebugView.ts`, `fgview`).
+  its first lit build made ahead (`ThreePatches.ts`) and the debug view (`DebugView.ts`, `fgview`).
 - `src/post/fsr3/`: the TSL port of AMD's FSR 3.1.5 upscaler (`aa=fsr3`): the host's maths and frame
   plan (`Host.ts`), its resources (`Resources.ts`) and bindings (`Bindings.ts`), one module per
   upstream shader header, the kernels (`Passes.ts`); the page's integration, its passes on the
@@ -188,18 +184,17 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   the kit look's cel light and ears, the Hanming look's feather and woven surfaces in
   `FigureSurfaces.ts`; their bodies by sex and age as growth curves in `Ages.ts`, which a figure
   takes on its rig and shape keys in `FigureAge.ts`).
-- `src/life/`: the island's creatures (`docs/art-direction.md`, Life), simulated per frame on the
-  rendering side: the wenyao's schools of flying fish (`Wenyao.ts`), the fish's mesh and material
-  (`FishGeometry.ts`, `FishMaterial.ts`).
+- `src/life/`: the island's creatures (`docs/explanation/art-direction.md`, Life), simulated per
+  frame on the rendering side: the wenyao's schools of flying fish (`Wenyao.ts`), the fish's mesh
+  and material (`FishGeometry.ts`, `FishMaterial.ts`).
 - `src/game/`: the game behind `?game` (`Game.ts`, the page's host of the game's session:
   `Session.ts`, headless, runs the simulation with its record, hands the simulation's events to
   its listeners, checks the player's commands, keeps the leader's words as heard, the save, and the
   island's growth by the population, which it asks of the page's `world/Growth.ts`;
   `tools/play-game.mjs` runs the same session in node): `sim/` is the headless simulation (no
-  three.js or DOM;
-  node runs it by stripping types; the five actions, each with its arguments and the condition it
-  holds by every tick, in `sim/actions.ts`; the entrance that checks a brain's calls in
-  `sim/agent.ts` `act`, against the schemas of `sim/schema.ts`; what happened as events in
+  three.js or DOM; node runs it by stripping types; the five actions, each with its arguments and
+  the condition it holds by every tick, in `sim/actions.ts`; the entrance that checks a brain's
+  calls in `sim/agent.ts` `act`, against the schemas of `sim/schema.ts`; what happened as events in
   `sim/events.ts`; a tick's time of day only in `sim/clock.ts`; the other islanders as places and
   what they heard and were given in `sim/people.ts`; the game's content (needs, items and their
   uses, kinds of place and of building, the options at them) as definitions registered in
@@ -207,12 +202,10 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   content); only exact operations in the rules, the few functions they need in `sim/maths.ts`),
   `save.ts` is the save (one slot: the simulation's state and the
   record, versioned: a save of another version is set aside and a new game started; the world's
-  start reads its piece count),
-  `view/`
-  draws the islanders and the chest, `Chronicle.ts` keeps the record of what happened (the events'
-  first listener) and
-  `Placement.ts` places a building chosen in the build bar. `ui/` is the player's interface
-  (`GameUi.ts`, spec `docs/ui.md`): its parts (`TopRow.ts`, `Forecast.ts`, `ResourceRow.ts`,
+  start reads its piece count), `view/` draws the islanders and the chest, `Chronicle.ts` keeps the
+  record of what happened (the events' first listener) and `Placement.ts` places a building chosen
+  in the build bar. `ui/` is the player's interface (`GameUi.ts`, spec `docs/explanation/ui.md`):
+  its parts (`TopRow.ts`, `Forecast.ts`, `ResourceRow.ts`,
   `People.ts`, `SpeakBar.ts`, `BuildBar.ts`, `Record.ts`), the lists it shows as data with
   placeholder rows and the defaults for content without its own (`data/`: buildings, resources,
   the needs' looks, weather kinds, the record's kinds, the words for the simulation's states), its
@@ -224,14 +217,14 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   palette (`Palette.ts`), styles (`ui.css`) and the licences of its fonts (`fonts/`; our own brush
   fonts are assets, `public/fonts/`).
 - `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the test mode's switch (`TestMode.ts`), the
-  frame profiler, the frame-rate readout,
-  the pipeline counter (`PipelineCounter.ts`), the wind view and its probe (`WindView.ts`,
-  `WindArrows.ts`, `WindProbe.ts`), the lighting layer's light-only and ambient-only views
-  (`LightLayer.ts`), the scene's linear radiance over screen boxes (`Radiance.ts`) and what each
-  cell of a grid shows (`RadianceAov.ts`, the kinds' codes in `Classes.ts`), and the named numbers
-  a script or the console can set on a running page (`Tune.ts`).
-- `tools/`: captures, profiling, the GPU lock and the probes (`docs/tools.md`); the WGSL build
-  (`wgsl-build.mjs`, its entries in `wgsl-build/`); the world's chunk checks
+  frame profiler, the frame-rate readout, the pipeline counter (`PipelineCounter.ts`), the wind view
+  and its probe (`WindView.ts`, `WindArrows.ts`, `WindProbe.ts`), the lighting layer's light-only
+  and ambient-only views (`LightLayer.ts`), the scene's linear radiance over screen boxes
+  (`Radiance.ts`) and what each cell of a grid shows (`RadianceAov.ts`, the kinds' codes in
+  `Classes.ts`), and the named numbers a script or the console can set on a running page
+  (`Tune.ts`).
+- `tools/`: captures, profiling, the GPU lock and the probes (`docs/reference/tools.md`); the WGSL
+  build (`wgsl-build.mjs`, its entries in `wgsl-build/`); the world's chunk checks
   (`verify-world-chunks.mjs`) and statistics (`verify-world-stats.mjs`), on the node helpers in
   `world-node.mjs`; the game played headless for days, with a transcript, a timeline and a summary
   of what the islanders did, for a designer or a brain judged offline (`play-game.mjs`).
@@ -240,7 +233,7 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 
 - Materials take real values and the style is set only for the whole world, in the light and the
   image: a look problem is looked for there before any material changes, and a new material or
-  kind of content follows `docs/materials.md`.
+  kind of content follows `docs/how-to/add-material.md`.
 - Shaders are written in TSL only (no raw WGSL or GLSL strings). Helpers called from several
   places are `Fn( ... ).setLayout( ... )`, so they compile to one shader function each.
 - Simulation and generation are deterministic and path-independent: the world, its growth, the
@@ -265,14 +258,15 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   modes a paused page shows its rest image, its own jitter sequence averaged once converged
   (`TemporalRest.ts`), compared within the tolerance. A new history-dependent effect keeps
   `settled` false until it has converged, and the test mode's one shared switch, which the
-  capture, parity and verify tools set by default, freezes or turns it off (`docs/tools.md`, Test
+  capture, parity and verify tools set by default, freezes or turns it off
+  (`docs/reference/tools.md`, Test
   mode).
 - Everything generated for the island is generic, because the island grows one piece at a time
-  (`docs/game-design.md`, "How the island grows"): it derives from the land's footprint, the
-  island's SDF and noise fields with fixed seeds (hashes of position, or random streams seeded per
-  world-anchored cell, never one running stream across many items), never from coordinates placed
-  by hand, and counts follow the measured coast length or area. So does everything fitted to the
-  land on the page (the views, the camera's limits, the shore and rain fields, the reflection's
+  (`docs/explanation/game-design.md`, "How the island grows"): it derives from the land's footprint,
+  the island's SDF and noise fields with fixed seeds (hashes of position, or random streams seeded
+  per world-anchored cell, never one running stream across many items), never from coordinates
+  placed by hand, and counts follow the measured coast length or area. So does everything fitted to
+  the land on the page (the views, the camera's limits, the shore and rain fields, the reflection's
   box, the walking loop, the game's grid). Generation stays deterministic
   whatever the thread count.
 - The world is built in chunks (`Chunks.ts`): a chunk's content is a function of its window of the
@@ -301,20 +295,21 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   change (three puts up to 1024 instance matrices in a uniform array of exactly the capacity:
   `vegetation/Instances.ts`); the meadow's pool takes new buffers on its storage nodes, its kernels
   reading their bounds from uniforms (`vegetation/VegetationCull.ts`); the world fields swap
-  textures through the
-  one base node each material samples them by (`WorldFields.ts`), and other passes keep their
-  materials across rebakes (`RainCollision.ts`).
+  textures through the one base node each material samples them by (`WorldFields.ts`), and other
+  passes keep their materials across rebakes (`RainCollision.ts`).
 - Changes need to hold in the kept weathers only (clear, fair, cloudy, overcast), and on high only
   (4K output: 1920x1080 CSS pixels at DPR 2). The parked weathers (rain, storm, fog:
   `PARKED_WEATHER` in `src/sky/Weather.ts`) and quality tiers (medium, low: `PARKED_QUALITY` in
   `src/Quality.ts`) are revived later as their own milestones: new work need not support them, but
   must keep them compiling and loadable by name (`?weather=`, `?quality=`). The default checks
-  leave them out (`docs/tools.md`, Parked weathers, Parked quality tiers). Changes are judged at
-  high's standard: 4K output at 60 fps with MSAA 4x, about 14 ms of GPU time a frame in the normal
-  scenes at the baseline; the dynamic resolution keeps 1440p's pixel count as its baseline on any
-  display (upscaled by FSR 1 on a 4K one, native on a 2K one), climbs to the display's own ratio
-  with headroom and drops to about 1080p's pixel count when busy, and a paused page renders at the
-  baseline (`src/Quality.ts`, profile-frame's default pin: `docs/tools.md`, Measuring frame time).
+  leave them out (`docs/reference/tools.md`, Parked weathers, Parked quality tiers). Changes are
+  judged at high's standard: 4K output at 60 fps with MSAA 4x, about 14 ms of GPU time a frame in
+  the normal scenes at the baseline; the dynamic resolution keeps 1440p's pixel count as its
+  baseline on any display (upscaled by FSR 1 on a 4K one, native on a 2K one), climbs to the
+  display's own ratio with headroom and drops to about 1080p's pixel count when busy, and a paused
+  page renders at the baseline (`src/Quality.ts`, profile-frame's default pin:
+  `docs/reference/tools.md`, Measuring
+  frame time).
 - Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
   state. High at 4K output is the reference image, the only active tier and the one every
   trade-off is judged on; every default in the modules is high's. A load knob is read
@@ -333,7 +328,7 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   in a GitHub release (`assets-v<N>`) that `assets.lock.json` pins. A change to the assets cuts the
   next release (a published one never changes), and the new lock goes in the commit whose code
   needs it. Nothing binary or over 1 MiB is committed anywhere (`tools/verify-no-binaries.mjs`;
-  `docs/tools.md`, Assets).
+  `docs/reference/tools.md`, Assets).
 - Keep machine details out of the repository (hardware, user names, local paths); describe
   measurements in relative terms.
 - Comments and docs state what was measured and found, not where the notes are: never cite the
@@ -350,7 +345,7 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 - Performance changes: `tools/profile-frame.mjs` on a production build under the GPU lock, before
   and after (`--compare`, or `--toggle` on a debug flag); judge an A/B by GPU time per pass, frame
   rates from runs without timestamps, 60 fps with `--accept`. Report contended runs as such.
-  Details: `docs/tools.md`.
+  Details: `docs/reference/tools.md`.
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
   `type(scope): summary`, the summary in lower case, imperative, without a full stop, the header at
   most 100 characters, and the body explaining why. Types: `feat`, `fix`, `perf`, `refactor`,
@@ -360,10 +355,10 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 
 ## Tools
 
-- Before writing a script, look for the tool that answers the question (`docs/tools.md`, Which
-  tool for which question); if one almost fits, add an option to it.
-- A script needed a second time, or by another task, becomes a tool (`docs/tools.md`, Writing a
-  tool). A truly one-off script stays in the task's artifacts folder.
+- Before writing a script, look for the tool that answers the question (`docs/reference/tools.md`,
+  Which tool for which question); if one almost fits, add an option to it.
+- A script needed a second time, or by another task, becomes a tool (`docs/reference/tools.md`,
+  Writing a tool). A truly one-off script stays in the task's artifacts folder.
 - Never start a GPU tool to see its options: it queues for the lock and renders. Read its header.
 
 ## WebGPU / TSL pitfalls
@@ -445,10 +440,9 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   The first lit build also makes nodes every receiver shares (the shadow's graph, the camera's world
   matrix) and emits other code than the later ones: a throwaway receiver builds them before the
   loop (`ThreePatches.ts` `primeSharedNodes`), so a receiver's code (and a kind's pipeline count)
-  does not depend on which draws first. A
-  render three makes of its own that cannot be compiled before its first frame (the sun's map,
-  built with the first receiver) compiles by rendering it once with asynchronous pipelines
-  (`compileByRendering`, `SunShadow.ts`).
+  does not depend on which draws first. A render three makes of its own that cannot be compiled
+  before its first frame (the sun's map, built with the first receiver) compiles by rendering it
+  once with asynchronous pipelines (`compileByRendering`, `SunShadow.ts`).
 - A draw whose pipeline an asynchronous compile is still creating is skipped without a word (r186,
   `Pipelines.isReady`), so a one-time render such as a bake waits for the warm-up that compiles it
   (`Sky.ts` `warm`).
@@ -462,8 +456,8 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
   the pass's own MRT (`Motion.ts` `sceneMRT`, `overlayMRT`), whatever a material's MRT node says;
   a material drawn into two attachment layouts builds once per layout through
   `graph/ThreePatches.ts`'s cache keys. A new site that changes the scene in a way its frames do not
-  show (a seek, a jump,
-  a new scene, a control that retunes a paused frame) raises a scene event (`SceneEvents.ts`).
+  show (a seek, a jump, a new scene, a control that retunes a paused frame) raises a scene event
+  (`SceneEvents.ts`).
 - `SubmitBatch.ts` wraps the device, queue and encoders and holds command buffers: raw WebGPU work
   and new queue operations must go through its rules, and one invalid command buffer loses its
   whole batch. `graph/AttachmentOps.ts` wraps the encoders too: a wrapper that hands out encoders

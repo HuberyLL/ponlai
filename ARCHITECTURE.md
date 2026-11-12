@@ -3,9 +3,11 @@
 How Ponlai is put together: its layers, what each one owns, how data flows between them, and the
 rules that cut across them. It stays at that level. What each module does and why is in the
 module's header comment; the file-by-file guide is the Map in [AGENTS.md](AGENTS.md); the game's
-design (what it is, not how the code runs it) is [docs/game-design.md](docs/game-design.md); the
-look is [docs/art-direction.md](docs/art-direction.md). A change that adds a layer, moves what a
-layer owns or changes a flow updates this file; a change inside a module updates its header.
+design (what it is, not how the code runs it) is
+[docs/explanation/game-design.md](docs/explanation/game-design.md); the
+look is [docs/explanation/art-direction.md](docs/explanation/art-direction.md). A change that adds a
+layer, moves what a layer owns or changes a flow updates this file; a change inside a module updates
+its header.
 
 ## Two halves
 
@@ -50,7 +52,8 @@ From the bottom up:
    - the page's game ([src/game/Game.ts](src/game/Game.ts)), behind `?game`: its view draws the
      islanders and buildings into the scene ([src/game/view/](src/game/view/)), the player's
      interface shows the game and takes the player's commands ([src/game/ui/](src/game/ui/), spec
-     in [docs/ui.md](docs/ui.md)), and it keeps the autosave and the debug panel;
+     in [docs/explanation/ui.md](docs/explanation/ui.md)), and it keeps the autosave and the debug
+     panel;
    - the play tool ([tools/play-game.mjs](tools/play-game.mjs)), which plays the same session
      headless for days with any brain and writes a transcript, a timeline and a summary, for a
      designer or for judging a brain offline;
@@ -186,9 +189,10 @@ nothing below a host reads the page or the wall clock (the save's timestamp asid
    people system, the events, the schemas and the session. The stand-in brain is a player of the
    content and may name it. Adding water is adding an item, an option at a place and a need, with no
    change to the core. *Why:* the design adds content as places and items, never as new actions
-   ([docs/game-design.md](docs/game-design.md), Actions). With content written into the core, each
-   new resource touched the tick, the perception, the bag rules and the interface, and every later
-   system would have multiplied that work. [tools/verify-game.mjs](tools/verify-game.mjs) keeps the
+   ([docs/explanation/game-design.md](docs/explanation/game-design.md), Actions). With content
+   written into the core, each new resource touched the tick, the perception, the bag rules and the
+   interface, and every later system would have multiplied that work.
+   [tools/verify-game.mjs](tools/verify-game.mjs) keeps the
    rule: it registers content of its own, plays it with no change elsewhere, and fails on a content
    id written in the core as a string, a word of a template, a property's name or a key.
 8. **Systems talk through events and the state they own.** Each system changes only its own part of

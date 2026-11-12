@@ -6,7 +6,7 @@ import zh from './zh-CN.json';
 // key of a catalogue here, one JSON file per language: zh-CN.json is the source, written with the
 // game and complete, and the language shown by default; en.json is a snapshot of it, kept but not
 // maintained while the game is in development, so a key it lacks shows the Chinese (i18next's
-// fallback, key by key). An English version made for release fills it (docs/ui.md: never mixed).
+// fallback, key by key). An English version made for release fills it (docs/explanation/ui.md: never mixed).
 //
 // The language is a load knob, read once from `?lang=` (zh-CN or en; none or another: zh-CN): the
 // data tables resolve their rows' words when they load (data/*.ts) and the parts build their fixed

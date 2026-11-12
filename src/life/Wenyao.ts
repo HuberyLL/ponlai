@@ -17,7 +17,7 @@ import { makeFishMaterial, type Skin } from './FishMaterial.ts';
 
 // The wenyao: the Shanhaijing's flying fish ("shaped like a carp, a fish's body with a bird's
 // wings, blue-grey markings, a white head and a red beak ... it flies by night"), in schools off
-// the island (docs/art-direction.md, Life). The body and the ways are a real flying fish's
+// the island (docs/explanation/art-direction.md, Life). The body and the ways are a real flying fish's
 // (Exocoetidae, a four-winged one): a slender, round fish of the surface waters, its long pectoral
 // fins and its pelvic fins spread as wings in flight and folded along its flank in the water, the
 // tail fin's lower lobe the longer. The fantasy is the text's: the white head, the red snout and

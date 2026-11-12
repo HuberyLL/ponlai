@@ -7,7 +7,7 @@
 //       [--w 1600 --h 900 --scale 1] [--timeout 60000] [--exclusive] [--fresh] [--load] [--console [prefix]]
 //
 // url: the server (default http://127.0.0.1:5190/, the dev server); a production preview needs
-// `debug` in the query for `window.__PONLAI__` and the diagnostics (docs/tools.md, Page).
+// `debug` in the query for `window.__PONLAI__` and the diagnostics (docs/reference/tools.md, Page).
 //
 // Steps. `--eval`, `--until`, `--frames` and `--sleep` run in the order given, for every query:
 // - `--eval js`: runs in the page and records its value. `js` is an expression (`D.timings`), a

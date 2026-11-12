@@ -27,7 +27,7 @@ type Reflected = { directDiffuse: V3; directSpecular: V3; indirectDiffuse: V3; i
 // thin rim catches the sun along the silhouette. The light's colour, the sky's irradiance and
 // the shadow maps are the scene's own, so a figure sits in the island's light while its forms
 // stay simple and graphic. Flat colours and simple faces in the island's palette, soft cel steps,
-// no outlines; plants keep their realistic shading (docs/art-direction.md). The cel light, its
+// no outlines; plants keep their realistic shading (docs/explanation/art-direction.md). The cel light, its
 // highlight included, takes the key's shading direction (lighting/KeyLift.ts: lifted under a low
 // key, the moon's fixed direction by night), as the island's materials and the shadow maps do.
 //

@@ -98,7 +98,7 @@ import { PREVAILING_HEADING, type WeatherState } from '../sky/Weather.ts';
 // of `plantClock` at rates rounded to whole cycles per CLOCK_PERIOD, the gust noise's period over GUST_TILE and GUST_TIME_PERIOD), so the difference of the two poses is the frame's motion alone
 // (tools/verify-wind.mjs checks the sources).
 // The URL option `windView` shows this field and every plant's answer to it, and
-// `__PONLAI__.windProbe` measures them (src/debug/WindView.ts, WindProbe.ts; docs/tools.md).
+// `__PONLAI__.windProbe` measures them (src/debug/WindView.ts, WindProbe.ts; docs/reference/tools.md).
 // `debugFlags.windFreeze = true` holds the vegetation's wind (its clocks and gust scroll, previous
 // equal to current) while the scene clock runs, for clips that want only the shadows or the jitter
 // to move; the clouds and the sea keep their wind.

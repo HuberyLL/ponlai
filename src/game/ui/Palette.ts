@@ -1,4 +1,4 @@
-// The interface's colours, Chinese traditional colours (docs/ui.md, Palette), the one place they are
+// The interface's colours, Chinese traditional colours (docs/explanation/ui.md, Palette), the one place they are
 // written: GameUi sets each as a CSS variable on the interface's root (`--gao`, ...), and code that
 // blends them (a need's bar running low) reads them here.
 

@@ -2,7 +2,7 @@
 
 This guide gives the steps for adding a surface (a new stone, a plant, a fabric) or a new kind of
 content to the island so that it joins the look with no tuning of its own. Why it works this way:
-`docs/art-direction.md`, How the look is made.
+`docs/explanation/art-direction.md`, How the look is made.
 
 ## 1. Find the real values
 
@@ -29,7 +29,8 @@ other surface: `AGENTS.md`, Map, `src/lighting/`.
 ## 3. Place it and judge the whole frame
 
 Capture the island's management view under the kept weathers (clear, fair, cloudy, overcast) at
-the usual hours, before and after the change (`tools/parity/capture-set.mjs`; `docs/tools.md`,
+the usual hours, before and after the change (`tools/parity/capture-set.mjs`;
+`docs/reference/tools.md`,
 Captures). Judge the whole frame first; crops and region statistics (`uv run tools/img.py`) find
 causes, they do not judge. What colour each surface shows on screen by kind and by light:
 `tools/colour-rows.mjs`.
@@ -51,7 +52,8 @@ the next time the light changes. Fix the light instead, and recheck every materi
 
 ## 5. Record a deliberate departure
 
-When the look needs a material outside its real range, write it in `docs/art-direction.md` with the
+When the look needs a material outside its real range, write it in
+`docs/explanation/art-direction.md` with the
 reason, and in the module's header comment with the measured effect. Keep these few.
 
 ## 6. Check the docs

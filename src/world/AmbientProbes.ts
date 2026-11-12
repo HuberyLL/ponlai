@@ -97,7 +97,7 @@ export const SPACING = 2;
 /** The lowest level (m): 2 m under the sea's mean level. */
 export const Y0 = - 2;
 /** The levels, up to the bamboo's crowns over the plateau and two cells more. Fixed when the
- * module loads, from the default groves (the workers plant those: docs/tools.md, `bamboo=`). */
+ * module loads, from the default groves (the workers plant those: docs/reference/tools.md, `bamboo=`). */
 export const LEVELS = Math.ceil( ( ISLAND_TOP + GROVES.height + 2 * SPACING - Y0 ) / SPACING ) + 1;
 /** The columns along a chunk's side. */
 export const COLUMNS = SEABED_TILE / SPACING;

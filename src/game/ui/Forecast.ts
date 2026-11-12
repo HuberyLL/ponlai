@@ -9,7 +9,7 @@ import { attr, css, el, svgEl } from './dom.ts';
 import { InkPath } from './InkPath.ts';
 import { t } from './i18n/i18n.ts';
 
-// The weather in the top row (docs/ui.md, Weather forecast; the design canvas's WeatherAnim): the
+// The weather in the top row (docs/explanation/ui.md, Weather forecast; the design canvas's WeatherAnim): the
 // weather now as one live icon in parts, and the next 24 game hours as one brush stroke beside it.
 //
 // - The live icon is the sun (or moon), a cloud and a cloud behind, each part's weight and place

@@ -9,7 +9,7 @@
     "build": "node tools/qos.mjs tsc && node tools/qos.mjs vite build",
     "preview": "vite preview --host 127.0.0.1 --port 5191",
     "typecheck": "node tools/qos.mjs tsc",
-    "lint:docs": "markdownlint-cli2 && lychee --offline --no-progress AGENTS.md ARCHITECTURE.md CREDITS.md \"docs/**/*.md\" \"tools/**/*.md\"",
+    "lint:docs": "markdownlint-cli2 && node tools/verify-doc-paths.mjs && lychee --offline --no-progress AGENTS.md ARCHITECTURE.md CREDITS.md \"docs/**/*.md\" \"tools/**/*.md\"",
     "lint:links": "lychee --no-progress AGENTS.md ARCHITECTURE.md CREDITS.md \"docs/**/*.md\" \"tools/**/*.md\""
   },
   "dependencies": {

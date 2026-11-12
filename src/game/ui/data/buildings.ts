@@ -1,7 +1,7 @@
 import { t } from '../i18n/i18n.ts';
 import type { Catalogue } from '../i18n/i18n.ts';
 
-// The build bar's roster (docs/ui.md, Build bar: "The roster is data"): one row per building, in
+// The build bar's roster (docs/explanation/ui.md, Build bar: "The roster is data"): one row per building, in
 // groups and small groups. Every row is a placeholder: the game's buildings are not settled, and
 // the names, costs and hours follow the design canvas's example of scale, without the coconut
 // grove (the coconut went with the palm). They cover every state the bar draws: buildable,

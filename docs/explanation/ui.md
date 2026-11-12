@@ -78,11 +78,11 @@ Three layers:
   sliced by `unicode-range`, so a page loads only the slices its characters need: the islanders
   may say anything).
 - **Numerals and Latin**: our own brush fonts, drawn with the icons' brush, in
-  `public/fonts/` (assets: `docs/tools.md`): `PonlaiBrush.woff2` (text cut) and
-  `PonlaiBrushDisplay.woff2` (from
-  24 px up). Declare them with `unicode-range: U+0020-007E, U+00B7` and put them first in every
-  stack, so every digit and Latin letter in any text switches to the brush while CJK falls through.
-  Their figures are tabular: a changing number never shifts its neighbours.
+  `public/fonts/` (assets: `docs/reference/tools.md`): `PonlaiBrush.woff2` (text cut) and
+  `PonlaiBrushDisplay.woff2` (from 24 px up). Declare them with `unicode-range: U+0020-007E, U+00B7`
+  and put them first in every stack, so every digit and Latin letter in any text switches to the
+  brush while CJK falls through. Their figures are tabular: a changing number never shifts its
+  neighbours.
 
 Stacks: body `'Ponlai Brush', 'LXGW WenKai GB', serif`; titles `'Ponlai Brush Display',
 'Ma Shan Zheng', serif`. Set `font-synthesis: none` everywhere (never fake bold or italic). Labels
@@ -289,15 +289,13 @@ from a board, it is said here.
   of bare paper along the stroke, the tip parting into threads), a few thin gaps of bare paper run
   through it, its edge is drunk in a little by the paper, and the ink thins slightly after the first
   press. A stroke is ink or paper, never a lighter grey of ink in lines or patches: on the dark
-  scene
-  that reads as a stain. How dry comes with a stroke's length in widths (an icon's strokes stay as
-  drawn, and icons and ticks are not inked) and half as much on a thin stroke; the gaps, the edge
-  and the tone show only on a stroke wide enough on screen. A need's bar is a gauge and does not dry
-  (its ends say the value and the whole). The ring at the feet is an ensō: it starts at its front
-  left and goes round the back, so its dry tail falls on its heavy near side. The style is the one
-  chosen from samples (dry from halfway, three quarters dry at the exit, the edge drunk in, the gaps
-  "more"); `tools/verify-ink.mjs` checks it.
+  scene that reads as a stain. How dry comes with a stroke's length in widths (an icon's strokes
+  stay as drawn, and icons and ticks are not inked) and half as much on a thin stroke; the gaps, the
+  edge and the tone show only on a stroke wide enough on screen. A need's bar is a gauge and does
+  not dry (its ends say the value and the whole). The ring at the feet is an ensō: it starts at its
+  front left and goes round the back, so its dry tail falls on its heavy near side. The style is the
+  one chosen from samples (dry from halfway, three quarters dry at the exit, the edge drunk in, the
+  gaps "more"); `tools/verify-ink.mjs` checks it.
 - **Not yet**: the placement of any building but the chest, a player's save or load control or a
-  sign that the game was saved, a
-  thought started by hearing for the stand-in,
+  sign that the game was saved, a thought started by hearing for the stand-in,
   and everything Scope now leaves out.
