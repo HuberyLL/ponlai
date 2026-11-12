@@ -109,28 +109,21 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   the key's visibility under cloud for the lit code without a sky (`KeyCloud.ts`: the land's floor
   under a deck, which the islanders read; the sea takes the same floor from the sky, `Sky.ts`
   `seaKeyFloor`), the refracted sun under water, the light every submerged material shares
-  (`Underwater.ts`: a new underwater material lights with it, as the terrain does), the air/water
+  (`Underwater.ts`), the air/water
   interface, sky occlusion, the meadow's canopy light and its crowns' shade (`MeadowCanopy.ts`), the
   ambient light's probes on the GPU (`AmbientVolume.ts`: the lattice's buffer and uniforms, its
   output texture, its debug view), relit every frame by the sky's harmonics and the key into their
   irradiance (`AmbientRelight.ts`: the output's packing; the harmonics' operations in
   `Harmonics.ts`), which every lit island material reads for its ambient diffuse
-  (`AmbientSample.ts`: a new lit material takes it through its lighting model,
-  `GroundBounceLightingModel`'s `ambient`, never the
-  environment's irradiance alone; `flags=ambientVolume:0` builds them without it), the sunlight the
-  ground bounces up (`GroundBounce.ts`: a new lit
-  material adds it in its lighting model, `addGroundBounce` or `groundBounceLight`, never a bounce
-  of its own), the ambient grade's per-weather, per-elevation knobs on the island's ambient light
-  (`AmbientGrade.ts`: a new lit material builds on `GroundBounceLightingModel` or reads its
-  uniforms), the local lights (`LocalLights.ts`: every source in view, such as the yunpeng's
-  clumps by night, sorted into clusters of the main view by a compute pass ahead of the scene
-  passes, which every lit model looks its fragment's list up in; the grid and the CPU sort in
-  `LocalLightClusters.ts`; a new source joins `localLights.sources`, never a three light, and a
-  lit model of its own adds `addLocalLights`), the low key's lift of the diffuse's cosine
-  (`KeyLift.ts`: a lit model of its own takes its key's cosine from `GroundBounceLightingModel`'s
-  `shadeDirection`), the metering illuminance every lit material writes beside its colour for the
-  exposure (`MeterLight.ts`: a new lit material calls `writeMeter` and draws only in passes with an
-  MRT).
+  (`AmbientSample.ts`), the sunlight the ground bounces up (`GroundBounce.ts`), the ambient grade's
+  per-weather, per-elevation knobs on the island's ambient light (`AmbientGrade.ts`), the local
+  lights (`LocalLights.ts`: every source in view, such as the yunpeng's clumps by night, sorted
+  into clusters of the main view by a compute pass ahead of the scene passes, which every lit model
+  looks its fragment's list up in; the grid and the CPU sort in `LocalLightClusters.ts`), the low
+  key's lift of the diffuse's cosine (`KeyLift.ts`), the metering illuminance every lit material
+  writes beside its colour for the exposure (`MeterLight.ts`). A new lit material takes all of
+  these through the island's lighting model: `docs/how-to/add-material.md`, Light it as every
+  other surface.
 - `src/materials/`: procedural textures (the gravel bake and the scans' texture arrays:
   `ProceduralTextures.ts`), the terrain (`TerrainMaterial.ts`, its ground scans hex-tiled), the sea
   floor's colour (`SeabedLook.ts`), wet surfaces, the meadow's habitat and soil-depth fields
@@ -401,12 +394,9 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
 - The water samples neither the target it draws into nor many more textures (14 of WebGPU's 16
   in its fragment stage: `Water.ts`), so it takes no history or reactive input: what the resolve
   needs from it goes out through its velocity. It refracts the refraction pass's image of what lies
-  under the sea: a new mesh that can reach under the water joins it (`Refraction.ts`
-  `showUnderwater`), or the water shows what lies straight behind it in the opaque copy there; what
-  swims in the upper water (a fish) is marked instead (`markSwimmer`), and its material adds
-  `Water.ts` `swimmerSway` to its position. It reflects only what lies inside
-  `Water.reflectionBounds`: anything opaque placed off the island or
-  above 3 m must grow that box through `Water.hold` (the game's props do: main.ts `holdOpaque`).
+  under the sea and reflects only what lies inside `Water.reflectionBounds`: a new mesh under the
+  water, a swimmer or a tall or offshore opaque object tells the water
+  (`docs/how-to/add-material.md`, Light it as every other surface).
 - New frame work is a pass on the frame graph, its targets declared with a size class and every
   texture it binds declared as a read (the attachment ops discard what nothing declares), never an
   rtt() inside another pass's material or a call around the graph (`Pipeline.ts`).
@@ -450,14 +440,13 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   returned from inside an `Fn` is emitted with a single output (`struct member m0 not found`).
   Build the members in one `Fn` and return them as a matrix's columns (`TemporalAA.ts`
   `neighbourhood`).
-- Under the temporal modes every scene material writes the velocity beside the colour: one with
-  a fragmentNode writes both outputs, one whose positionNode animates supplies `positionPrevious`
-  and sets `userData.previousPosition` (`Motion.ts`). The blend of each attachment comes only from
-  the pass's own MRT (`Motion.ts` `sceneMRT`, `overlayMRT`), whatever a material's MRT node says;
-  a material drawn into two attachment layouts builds once per layout through
-  `graph/ThreePatches.ts`'s cache keys. A new site that changes the scene in a way its frames do not
-  show (a seek, a jump, a new scene, a control that retunes a paused frame) raises a scene event
-  (`SceneEvents.ts`).
+- Under the temporal modes every scene material writes the velocity beside the colour (`Motion.ts`;
+  how: `docs/how-to/add-material.md`, Light it as every other surface). The blend of each
+  attachment comes only from the pass's own MRT (`Motion.ts` `sceneMRT`, `overlayMRT`), whatever a
+  material's MRT node says; a material drawn into two attachment layouts builds once per layout
+  through `graph/ThreePatches.ts`'s cache keys. A new site that changes the scene in a way its
+  frames do not show (a seek, a jump, a new scene, a control that retunes a paused frame) raises a
+  scene event (`SceneEvents.ts`).
 - `SubmitBatch.ts` wraps the device, queue and encoders and holds command buffers: raw WebGPU work
   and new queue operations must go through its rules, and one invalid command buffer loses its
   whole batch. `graph/AttachmentOps.ts` wraps the encoders too: a wrapper that hands out encoders

@@ -20,13 +20,42 @@ Write the values and their source in the module's header comment.
 
 Compare the values with the range real examples of that kind cover, and with the island's
 neighbouring materials (each module's header comment states its values). A value outside the real
-range is either a mistake in the source or a deliberate departure (step 5); it is never left in
+range is either a mistake in the source or a deliberate departure (step 6); it is never left in
 silently.
 
-A lit material is built on the island's lighting model, so the same light reaches it as every
-other surface: `AGENTS.md`, Map, `src/lighting/`.
+## 3. Light it as every other surface
 
-## 3. Place it and judge the whole frame
+A lit material is built on the island's lighting model, so the same light reaches it as every
+other surface. The modules named below are in `src/lighting/`, `src/ocean/` and `src/post/`; each
+header comment says more.
+
+1. Build the material on `GroundBounceLightingModel`, or read its uniforms (`AmbientGrade.ts`).
+2. Take the ambient diffuse through the lighting model's `ambient` (`AmbientSample.ts`), never the
+   environment's irradiance alone. `flags=ambientVolume:0` builds the lit materials without it.
+3. Add the sunlight the ground bounces up in the lighting model, with `addGroundBounce` or
+   `groundBounceLight` (`GroundBounce.ts`), never a bounce of its own.
+4. A lit model of its own adds `addLocalLights` (`LocalLights.ts`) and takes its key's cosine from
+   `GroundBounceLightingModel`'s `shadeDirection` (`KeyLift.ts`). A new light source joins
+   `localLights.sources`, never a three light.
+5. Write the metering illuminance beside the colour with `writeMeter` (`MeterLight.ts`), and draw
+   only in passes with an MRT.
+6. A material under water lights with `Underwater.ts`, as the terrain does.
+7. Under the temporal modes, write the velocity beside the colour (`Motion.ts`): a material with a
+   fragmentNode writes both outputs; one whose positionNode animates supplies `positionPrevious`
+   and sets `userData.previousPosition`.
+
+If the mesh can reach under the sea or stands high, tell the water (`Water.ts`, `Refraction.ts`):
+
+- A mesh that can reach under the water joins the refraction pass (`Refraction.ts`
+  `showUnderwater`); otherwise the water shows what lies straight behind it in the opaque copy
+  there.
+- What swims in the upper water (a fish) is marked instead (`markSwimmer`), and its material adds
+  `Water.ts` `swimmerSway` to its position.
+- The water reflects only what lies inside `Water.reflectionBounds`: anything opaque placed off the
+  island or above 3 m grows that box through `Water.hold` (the game's props do: main.ts
+  `holdOpaque`).
+
+## 4. Place it and judge the whole frame
 
 Capture the island's management view under the kept weathers (clear, fair, cloudy, overcast) at
 the usual hours, before and after the change (`tools/parity/capture-set.mjs`;
@@ -35,7 +64,7 @@ Captures). Judge the whole frame first; crops and region statistics (`uv run too
 causes, they do not judge. What colour each surface shows on screen by kind and by light:
 `tools/colour-rows.mjs`.
 
-## 4. When it looks wrong, look upstream first
+## 5. When it looks wrong, look upstream first
 
 Check in this order, and stop at the first cause found:
 
@@ -50,12 +79,12 @@ Check in this order, and stop at the first cause found:
 Never push a material past real values to make up for an error found in 1 to 3: it breaks again
 the next time the light changes. Fix the light instead, and recheck every material it touches.
 
-## 5. Record a deliberate departure
+## 6. Record a deliberate departure
 
 When the look needs a material outside its real range, write it in
 `docs/explanation/art-direction.md` with the
 reason, and in the module's header comment with the measured effect. Keep these few.
 
-## 6. Check the docs
+## 7. Check the docs
 
 Run `npm run lint:docs` before committing a change to any Markdown file.
