@@ -59,8 +59,8 @@
 // `keyLift = false` keeps the direct light and the sun's shadows on the low key's own direction
 // (lighting/KeyLift.ts), read at each publish of the lighting.
 // Read at load: `tone` (a number, 0 unless set) and `filmNight = true` bring back the grade's tone
-// and the film's night (post/Pipeline.ts TONE, NIGHT); `localTone = false` builds the display
-// chain without its local tone mapping (post/LocalTone.ts).
+// and the film's night (post/Pipeline.ts TONE, post/PipelineDisplay.ts NIGHT); `localTone = false`
+// builds the display chain without its local tone mapping (post/LocalTone.ts).
 // The meadow's light, each on unless false: `meadowShade` (its screen-space shade and the
 // vegetation's depth pass, post/MeadowShade.ts), `groundCast` (the crowns' shade on the turf,
 // materials/TerrainMaterial.ts), `groundShade` (the blades' screen-space shade on the turf, the

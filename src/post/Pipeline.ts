@@ -6,56 +6,60 @@
 
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, texture, textureLoad, uniform, uv, screenCoordinate, ivec2, int, vec2, vec3, vec4, float, mix,
-	smoothstep, clamp, max, min, length, sin, log2, exp2, floor, luminance,
-	sRGBTransferEOTF, sqrt, pow, mrt, outputStruct, mat4, output, atan, cos, abs, select, mod, step, Discard,
-	Loop, normalize, refract,
+	Fn, If, texture, textureLoad, uniform, screenCoordinate, ivec2, int, vec2, vec3, vec4, float,
+	clamp, max, min, exp2, floor, select, step, Discard, Loop, normalize, refract,
 } from 'three/tsl';
-import { fsr1 } from 'three/addons/tsl/display/FSR1Node.js';
-import { VolumetricHaze, DEFAULT_HAZE_GRID, type HazeFrame, type HazeGrid } from '../weather/VolumetricHaze.ts';
+import { VolumetricHaze, type HazeFrame } from '../weather/VolumetricHaze.ts';
 import { LightShafts } from './LightShafts.ts';
 import { FSR } from './FSR.ts';
-import { PhysicalBloom } from './PhysicalBloom.ts';
-import { Metering } from './Metering.ts';
-import { PURKINJE, purkinjeScale, purkinjeShift } from './Purkinje.ts';
+// (PhysicalBloom.ts, Metering.ts, fsr3/Fsr3Upscaler.ts, BlueNoise.ts and ExtraPass.ts are imported
+// for their load alone, in the place they always loaded in: what uses them moved to
+// PipelineDisplay.ts and PipelinePasses.ts, and the order the modules load in, which makes their
+// nodes, is part of the shaders)
+import './PhysicalBloom.ts';
+import type { PhysicalBloom } from './PhysicalBloom.ts';
+import './Metering.ts';
+import type { Metering } from './Metering.ts';
+import { PURKINJE } from './Purkinje.ts';
 import { cloudedShare } from '../sky/Weather.ts';
 import { AA_MODE, AFTER_RESOLVE, FSR3, RESOLVE, SCENE_SAMPLES, TEMPORAL } from './Antialiasing.ts';
-import { beginMotionFrame, METER_LIGHT, onTaaCut, overlayMRT, sceneMRT } from './Motion.ts';
-import { preExposed, preExposedRGBA, preExposure, sceneUnits } from './PreExposure.ts';
-import { onSceneCut } from './SceneEvents.ts';
-import { RAIN_OVERLAY, afterMRT } from './AfterResolve.ts';
+import { beginMotionFrame, METER_LIGHT, onTaaCut } from './Motion.ts';
+import { preExposure } from './PreExposure.ts';
+import { RAIN_OVERLAY } from './AfterResolve.ts';
 import { jitter } from './Jitter.ts';
 import { MEADOW_SHADE, SS_SHADOW, meadowDepthMap, meadowDepthMaterial, meadowGroundView, meadowShade, meadowShadeMaterial, screenShadowView } from './MeadowShade.ts';
 import { GTAO, gtaoBlurMaterial, gtaoDepthMaterial, gtaoMap, gtaoMaterial, gtaoProjection, gtaoView } from './GTAO.ts';
-import { TemporalAA, type TemporalFrame, type TemporalMode } from './TemporalAA.ts';
+import { TemporalAA, type TemporalFrame } from './TemporalAA.ts';
 import { Settled, type SettleFrame } from './Settled.ts';
-import { Fsr3Upscaler } from './fsr3/Fsr3Upscaler.ts';
+import './fsr3/Fsr3Upscaler.ts';
+import type { Fsr3Upscaler } from './fsr3/Fsr3Upscaler.ts';
 import { QUALITY, type TemporalSettings } from '../Quality.ts';
 import { FrameGraph, type ResourceHandle, type SizeClass } from './graph/FrameGraph.ts';
 import type { Sky } from '../sky/Sky.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
 import { ambientSkyVisibility } from '../lighting/AmbientSample.ts';
 import { liftedKeyHeight } from '../lighting/KeyLift.ts';
-import { shared } from '../shared.ts';
 import { DAY_EXPOSURE, duskForce } from '../sky/DayCycle.ts';
 import type { Rain } from '../weather/Rain.ts';
 import { CLIP_MARGIN, RefractionView, REFRACTION_GUARD, REFRACTION_SIZE } from '../ocean/Refraction.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { toneMatrices, whiteBalance } from './ToneSpace.ts';
-import { BLUE_NOISE, blueNoiseTexture } from './BlueNoise.ts';
+import { whiteBalance } from './ToneSpace.ts';
+import './BlueNoise.ts';
 import { TONE_CURVE, checkToneCurve, solveToneCurve, type ToneCurve } from './ToneCurve.ts';
-import { BASE_GRADE, fillGradeLut, gradeOf, lutNodes, mergeGrade, sampleLut, type GradeChanges, type GradeParams } from './GradeLut.ts';
+import { BASE_GRADE, fillGradeLut, gradeOf, lutNodes, mergeGrade, type GradeChanges, type GradeParams } from './GradeLut.ts';
 import { LocalTone } from './LocalTone.ts';
-import { keyed, type DayKey, type DayKeys } from './DayKeys.ts';
+import { keyed } from './DayKeys.ts';
 import { exposureKeys, type ExposureKey } from './Exposure.ts';
 import { restEpoch, restKey } from './TemporalRest.ts';
-import { tuneCheck, tuneKeys, tuneObject, tuneUniform } from '../debug/Tune.ts';
-import { displacementField } from '../world/vegetation/Displacement.ts';
-import { declareExtraPasses, type ExtraPass } from './ExtraPass.ts';
-import { waveMapsPass, type WaveMaps } from '../ocean/WaveMaps.ts';
-import { localLightsPass } from '../lighting/LocalLights.ts';
-import { settings, type SettingsQuery } from '../Settings.ts';
-import { hasGpuFeature } from '../three/Backend.ts';
+import { tuneCheck, tuneObject } from '../debug/Tune.ts';
+import './ExtraPass.ts';
+import type { ExtraPass } from './ExtraPass.ts';
+import type { WaveMaps } from '../ocean/WaveMaps.ts';
+import { settings } from '../Settings.ts';
+import { DEFAULT_POST_OPTIONS, postOptionsFromURL, type PostOptions } from './PostOptions.ts';
+import { DESATURATION, SHADE_CONTRAST, TIDEWATER_GRADE, WHITE_BALANCE, WHITE_OVERCAST } from '../look/DisplayLook.ts';
+import { declarePasses } from './PipelinePasses.ts';
+import { buildDisplay, GRADE_TABLE, NIGHT, TONE_SPACE } from './PipelineDisplay.ts';
 
 // Frame graph:
 //   opaque scene ── sceneRT (MSAA, SCENE_SAMPLES, half float, multisampled depth): the colour and
@@ -207,6 +211,11 @@ import { hasGpuFeature } from '../three/Backend.ts';
 // `post=` legacy switches are variants of the graph, chosen as it is built.
 // At startup the graph's warm-up (`graph.warm`, from main.ts) compiles every pass, so one that
 // first runs later (the rain, the upscale) builds nothing then.
+// Where the parts are: the graph's structural choices (`PostOptions`, `?post=`) in PostOptions.ts;
+// the display chain's materials, built in the constructor's place for them, in PipelineDisplay.ts
+// (`buildDisplay`), and their numbers chosen for the look in look/DisplayLook.ts; the passes above,
+// declared in order once the materials are built, in PipelinePasses.ts (`declarePasses`). This file
+// keeps the targets, the constructor's steps, the sizes and the per-frame updates.
 
 //
 // Rules (the look itself is in docs/explanation/art-direction.md):
@@ -293,16 +302,6 @@ const DEV = import.meta.env.DEV || settings.has( 'debug' );
 // The graph's warm-up renders the passes it cannot compile once at startup (`fgPrime=0`: not, for
 // the check that priming changes no frame).
 const PRIME = settings.get( 'fgPrime' ) !== '0';
-// The rain veil's reactive weight: its opacity at the pixel times `gain`, at most `max` (a dense veil
-// lowers the history's weight there to 40 % of its frames; a single faint streak barely moves it).
-const VEIL_REACTIVE = { gain: 1.5, max: 0.6 };
-// After the resolve (AfterResolve.ts), the share of a pixel the rain covers in one sample, where its
-// change to the graded colour is taken before it is spread over the pixel: a supersampled image
-// grades each sample, which a streak covers fully or not at all, and averages the graded samples,
-// so over the dark meadow and sea, in the curve's toe, its thin rain shows brighter than the same
-// coverage spread before the grade. Thin streaks drawn at their least width cover about two thirds
-// of the pixels their prefiltered quads touch (RainDrops.ts).
-const AFTER_COVERAGE = 0.65;
 // The refraction's reach past the screen's edges (refractionReach): texels per edge, the pixels each
 // follows toward it, and the margin the mask grows it by (screen uv: the reach times scale, plus add)
 // for the floor's slopes, which the floor seen straight behind leaves out, and the waves' beyond.
@@ -311,19 +310,10 @@ const REACH = 64, REACH_SAMPLES = 16;
 // spread across one axis in a strong wind
 const REACH_SLOPE = 0.3;
 const REACH_MARGIN = { scale: 1.3, add: 0.02 };
-// The rain layer's grade table (`gradeTable`): colours per channel, and the range they span (stops of
-// the scene colour times the exposure, display white at 0).
-const GRADE_TABLE = { size: 64, low: - 14, high: 7 };
 const RENDER: SizeClass = { of: 'render' };
 // the exposure state's one texel (Metering.ts)
 const EXPOSURE_TEXEL: SizeClass = { of: 'fixed', width: 1, height: 1 };
 const CANVAS: SizeClass = { of: 'canvas' };
-// what the water pass draws in a frame without water: nothing
-const NO_WATER = new THREE.Scene();
-
-// The refraction pass's only attachment, cleared to zero coverage (alpha 0: nothing drawn there),
-// its colour pre-exposed as the scene target's (PreExposure.ts).
-const REFRACTION_MRT: THREE.MRTNode = mrt( { refraction: preExposedRGBA( output ) } ).setClearColor( 'refraction', new THREE.Color( 0, 0, 0 ), 0 );
 
 /** What a frame draws (`Pipeline.render`'s argument). `rainScene`: the rain, while it shows (under the
  * temporal modes with the storm's spray in it, but for what draws after the resolve: see `overlay`).
@@ -351,85 +341,15 @@ export interface PipelineFrame {
 	haze?: HazeFrame;
 }
 
-/** The frame graph's structural choices, fixed when the page loads (the quality tier sets them;
- * the defaults are today's high). `?post=legacy` restores the graph before they were introduced,
- * for A/B timing; `?post=` also takes a comma list of single switches (see `postOptionsFromURL`). */
-export interface PostOptions {
-	// the haze's froxel grid (VolumetricHaze.ts)
-	hazeGrid: HazeGrid;
-	// the composite evaluated once into a texture the bloom and the sharp image read (else each
-	// re-evaluates it)
-	compositeOnce: boolean;
-	// FSR 1 from FSR.ts (EASU pass, sharpening folded into the canvas pass), or three's FSR1Node
-	fsrPort: boolean;
-	// the legacy attachment ops (`fgOps=legacy`) discard the scene target's samples in the rain;
-	// false (`post=store-scene`) keeps them (the derived ops follow `fgOps` alone, see
-	// AttachmentOps.ts: `post=store-scene` maps to its `store` mode)
-	discardScene: boolean;
-}
-
-export const DEFAULT_POST_OPTIONS: Readonly<PostOptions> = {
-	hazeGrid: DEFAULT_HAZE_GRID, compositeOnce: true, fsrPort: true, discardScene: true,
-};
-
-const LEGACY_SWITCHES: Record<string, Partial<PostOptions>> = {
-	'inline-composite': { compositeOnce: false },
-	'three-fsr': { fsrPort: false },
-	'store-scene': { discardScene: false },
-};
-
-/** The defaults (with a tier's options over them), with `?post=legacy` (every switch below) or
- * `?post=a,b` applied (the page's options, or `params`). */
-export function postOptionsFromURL( params: SettingsQuery = settings, base: Partial<PostOptions> = {} ): PostOptions {
-
-	const options = { ...DEFAULT_POST_OPTIONS, ...base };
-	for ( const name of ( params.get( 'post' ) ?? '' ).split( ',' ) ) Object.assign( options, ...( name === 'legacy' ? Object.values( LEGACY_SWITCHES ) : [ LEGACY_SWITCHES[ name ] ?? {} ] ) );
-	return options;
-
-}
-
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
-type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 // what a pass's setup declares its reads and writes on
-type PassBuilder = Parameters<Parameters<FrameGraph<PipelineFrame>[ 'addPass' ]>[ 2 ]>[ 0 ];
+export type PassBuilder = Parameters<Parameters<FrameGraph<PipelineFrame>[ 'addPass' ]>[ 2 ]>[ 0 ];
 
-// tidewater's display chain (PostFX.js, 4811ba4), as it has become: its physical bloom
-// (PhysicalBloom.ts) added to the image; its grade in linear light (the vignette; its saturation
-// and contrast left for the grade table's hue bands, GradeLut.ts BASE_GRADE, and the shade's
-// contrast, SHADE_CONTRAST); our tone curve (ToneCurve.ts) on the exposed colour, in the curve
-// space of ToneSpace.ts with the white balance folded into its input matrix; the grade's tables;
-// overcast's highlights toward grey (HIGHLIGHT_GREY); the BT.709 OETF shown as sRGB, and a blue-noise dither (BlueNoise.ts; its luminance-weighted grain is gone).
-// tidewater meters its frame's luminance and scales it by an auto exposure before the grade; here
-// the meter reads the light on the scene (Metering.ts, Exposure.ts).
-
-// The tone curve, each channel through one curve in the curve's space: `input` takes the exposed
-// linear Rec.709 there (with the white balance), `output` brings it back (ToneSpace.ts
-// toneMatrices, without saturation of their own). The curve is a rational function of the third
-// degree over the third (ToneCurve.ts), its coefficients solved on the CPU from the slope at black,
-// what the exposed mid grey shows and the input that shows white (`settings.curve`).
-const TONE_SPACE = toneMatrices();
-const toneCurve = Fn( ( [ c, input, output, num, den ]: [ V3, THREE.Node<'mat3'>, THREE.Node<'mat3'>, V3, V3 ] ) => {
-
-	const x = max( input.mul( c ) as unknown as V3, vec3( 0 ) ).toVar();
-	// ( a x^3 + b x^2 + c x ) / ( d x^3 + e x^2 + f x + 1 ), by Horner
-	const n = x.mul( num.x ).add( num.y ).mul( x ).add( num.z ).mul( x );
-	const d = x.mul( den.x ).add( den.y ).mul( x ).add( den.z ).mul( x ).add( 1 );
-	return clamp( output.mul( clamp( n.div( d ), 0, 1 ) ) as unknown as V3, 0, 1 );
-
-} ).setLayout( { name: 'toneCurve', type: 'vec3', inputs: [ { name: 'c', type: 'vec3' }, { name: 'input', type: 'mat3' }, { name: 'output', type: 'mat3' }, { name: 'num', type: 'vec3' }, { name: 'den', type: 'vec3' } ] } );
 // The exposed mid grey as the default curve shows it, in linear display values: the grade's
 // contrast pivots there (GradeLut.ts).
 const SHOWN_GREY = TONE_CURVE.mid;
-// The BT.709 OETF (ITU-R BT.709): 4.5 l under 0.018, 1.099 l^0.45 - 0.099 over it. Its code shown
-// as sRGB is darker in the shade than the linear value it encodes: the output's contrast.
-const bt709 = Fn( ( [ l ]: [ V3 ] ) => {
-
-	// (per channel: a 0/1 weight rather than a select of vectors)
-	return mix( l.mul( 4.5 ), pow( max( l, vec3( 0.018 ) ), vec3( 0.45 ) ).mul( 1.099 ).sub( 0.099 ), step( vec3( 0.018 ), l ) );
-
-} ).setLayout( { name: 'bt709', type: 'vec3', inputs: [ { name: 'l', type: 'vec3' } ] } );
 
 export interface PipelineSettings {
 	// the clock's and the weather's exposure (DayCycle, Sky): the level the night sky's own light
@@ -467,182 +387,6 @@ export interface PipelineSettings {
 // and the sky's own balance): with the clear shade it took the light's direction out of the
 // meadow. `flags=tone:<t>` sets it at load for A/Bs.
 const TONE = Number( debugFlags.tone ?? 0 );
-// The local tone mapping (LocalTone.ts), on unless `flags=localTone:false` at load.
-const LOCAL_TONE_ON = debugFlags.localTone !== false;
-
-// The shade's contrast: under a pivot each stop of the exposed luminance (the local tone's gain in
-// it) darkens by `slope` of a stop more, over it nothing changes; after the local tone, before the
-// tone curve. The earlier, softer curve lifted the shade with everything else, and on our frames
-// the shade lost its weight; this gives it back without touching the lit ground and the sky. The
-// pivot (stops over mid grey) and slope are set per key (keyed by the sun's elevation,
-// DayKeys.ts). By day the pivot sits over the lit ground, so the whole shade deepens, from noon down
-// to a sun at 9 degrees; the golden hour keeps most of the slope with its pivot nearly a stop under
-// mid grey, so only what lies in the long shadows drops, and the sunlit cliff stays as it is. The
-// clouded sky deepens
-// its darks too, from about 0.9 of a stop over mid grey; the night's slope runs to 0 as well, its
-// darks set by the local tone alone (its pivot acts only while the night fades in under a clouded
-// sky, beside the cloudy key's: DayKeys.ts `keyed` blends the cloud in first).
-// Tunable on debug pages (debug/Tune.ts): `post.shade.<value>@golden`, `@day`, `@cloudy`, `@night`.
-export const SHADE_CONTRAST: DayKeys<{ pivot: number; slope: number }> = tuneKeys( 'post.shade', {
-	day: [ { at: 4, name: 'golden', values: { pivot: - 0.86, slope: 0.37 } }, { at: 9, name: 'day', values: { pivot: 1.58, slope: 0.449 } } ],
-	cloudy: { pivot: 0.902, slope: 0.18 },
-	night: { pivot: 0.516, slope: 0 },
-}, { pivot: { min: - 3, max: 4 }, slope: { min: 0, max: 0.5 } } );
-
-// The desaturation before the local tone's gain: each colour drawn toward its own luminance by
-// `amount` (0 keeps it, 1 grey), c + ( Y( c ) - c ) amount, keyed by the sun and the weather
-// (DayKeys.ts); below 0 it saturates. Keyed as the white balance is, so each key sets its own: the
-// golden hour saturates by a sixth, the day keeps its colours, the clouded sky fades them by a
-// twelfth, the night by about a half. The rising sun's `dawn` key, held from -1 degree down,
-// fades the cool colours by 0.6 and passes into the golden key's by 1.5 (the golden key's own
-// values, shared): before the sun the clear morning's land, sea and sky took the dawn's white
-// (`dawn`, WHITE_BALANCE) on top of their own blue, and the upper sky and the far sea turned violet
-// (h 271 to 278 from -4 to 0 degrees). A fade of every colour brought them back to h 250 to 262,
-// but it took the warm colours with them: the rose band over the horizon (h 327 to 353, C 0.03 to
-// 0.05 from -8 to -1 degrees) went to a grey-blue band (h 263, the white's cast), and the meadow's
-// green, under it, to h 231 to 241. So the key's `cool` share of 1 fades only the colours that lie
-// toward blue once the white is applied (`coolShare`: blue over red as a share of the colour's
-// spread, 0 none to 0.6 all), and the warm band and the meadow keep their own colour under the same
-// white: the sky's top stays at h 248 to 257, the band at h 327 to 353, the meadow at h 214 to 226
-// from -7 to -4.5 degrees.
-// Tunable on debug pages (debug/Tune.ts): `post.desaturate.<amount|cool>@golden`, `@dawn`, `@day`,
-// `@cloudy`, `@night`; the cool share's edges `post.desaturate.coolFrom`, `post.desaturate.coolTo`.
-// amount: the fade (0 keeps the colour, 1 grey, below 0 saturates); cool: the share of the fade
-// that only cool colours take (`coolShare`)
-type DesaturationKey = { amount: number; cool: number };
-const DESATURATION_DAY: DayKey<DesaturationKey>[] = [ { at: 4, name: 'golden', values: { amount: - 0.163, cool: 0 } }, { at: 9, name: 'day', values: { amount: 0.0122, cool: 0 } } ];
-export const DESATURATION: DayKeys<DesaturationKey> = tuneKeys( 'post.desaturate', {
-	day: DESATURATION_DAY,
-	rising: [ { at: - 1, name: 'dawn', values: { amount: 0.6, cool: 1 } }, { at: 1.5, values: DESATURATION_DAY[ 0 ].values }, ...DESATURATION_DAY ],
-	cloudy: { amount: 0.08, cool: 0 },
-	night: { amount: 0.481, cool: 0 },
-}, { amount: { min: - 0.5, max: 1 }, cool: { min: 0, max: 1 } } );
-/** Where a colour counts as cool for the desaturation's `cool` share (DESATURATION): its blue less
- * its red, as a share of its spread (max less min), from `COOL_FROM` (none of it cool) to `COOL_TO`
- * (all of it), read through the white balance (`balance`). */
-const COOL_FROM = tuneUniform( 'post.desaturate.coolFrom', 0, { min: - 1, max: 1 } );
-const COOL_TO = tuneUniform( 'post.desaturate.coolTo', 0.6, { min: - 1, max: 1 } );
-// Overcast's highlights toward grey: the grade's tables' linear output c becomes
-// c + ( Y( c ) - c ) amount smoothstep( from, to, Y( c ) ) share, `share` overcast's share in the sky
-// times one less the night's weight (as its white, WHITE_OVERCAST: none at night, and nothing at all
-// where the sky holds no overcast). Overcast's white, which turns the deck away from the sun
-// blue-green grey and the meadow green, turned the bright sky about the sun cyan too (OKLab a -0.033
-// at a lightness of 0.74, 10 to 30 degrees from it), and a warmer white turns the deck and the
-// meadow back. The deck lies under `from` (a display lightness of about 0.35, the deck about 0.32)
-// and keeps its colour; the meadow straddles it: its hue stays, its median chroma falls by about a
-// fifth (0.083 to 0.065), and the lit grass above a lightness of 0.55 keeps under half its chroma.
-// `from` and `to` are linear luminances of the tables' output (display lightness about 0.35 and
-// 0.70); amount 0.58 brings the sky 10 to 30 degrees from the sun to a -0.014 and 30 to 60 degrees
-// to about a -0.024 (-0.024 at a sun of 22 degrees, -0.025 at 15), and the glow within 10 degrees
-// of it to a chroma under 0.01.
-// Tunable on debug pages (debug/Tune.ts): `post.highlight.amount`, `from`, `to`.
-const HIGHLIGHT_GREY = {
-	amount: tuneUniform( 'post.highlight.amount', 0.58, { min: 0, max: 1 } ),
-	from: tuneUniform( 'post.highlight.from', 0.067, { min: 0, max: 1 } ),
-	to: tuneUniform( 'post.highlight.to', 0.4, { min: 0, max: 1 } ),
-};
-/** How cool the colour `c` (white balanced) is, 0 to 1 (`coolFrom`, `coolTo`: COOL_FROM, COOL_TO). The
- * edges come in as inputs: a laid-out helper that reads uniforms in its body can be emitted with
- * another material's uniform names (r186), which broke the rain's materials under taa. */
-const coolShare = Fn( ( [ c, coolFrom, coolTo ]: [ V3, F, F ] ) => {
-
-	const spread = max( max( c.r, c.g ), c.b ).sub( min( min( c.r, c.g ), c.b ) );
-	return smoothstep( coolFrom, coolTo, c.b.sub( c.r ).div( max( spread, 1e-6 ) ) );
-
-} ).setLayout( { name: 'coolShare', type: 'float', inputs: [ { name: 'c', type: 'vec3' }, { name: 'coolFrom', type: 'float' }, { name: 'coolTo', type: 'float' } ] } );
-
-// The night's grade (art direction: a film's night, day for night): the meadow's greens turned
-// toward blue-green, the frame a touch silver-blue, the bloom stronger so the moon, its clouds and
-// its path on the sea carry a small cool halo. The turn is a rotation in the opponent plane at the
-// centre of the green band (105 degrees, shading off over 55 degrees either side), weighted by
-// saturation, so grey stone, sand, skin and the navy sea and sky keep their colours; it keeps the
-// channels' mean, so the meadow keeps its brightness. Moonlight and the night sky are blue, but the
-// meadow's yellow-green albedo kept it a dark olive under them, and a light blue enough to turn it
-// turned the stone, sand and skin blue too. 0.4 radians takes the meadow to about 143 degrees, a
-// cool green toward blue-green (0.65 read as teal). The tint is drawn toward at `tint` and keeps
-// the luminance. The shade's readability is the sky light's (look/SkyLook.ts CLEAR_SHADE), not a lift.
-// Off by default with the clear shade, as the night keeps the moon's own light (`flags=filmNight:true`
-// at load for A/Bs).
-const NIGHT = debugFlags.filmNight === true ? { greenTurn: 0.4, tint: [ 0.84, 0.96, 1.16 ] as const, amount: 0.3, bloom: 1.5 } : { greenTurn: 0, tint: [ 0.84, 0.96, 1.16 ] as const, amount: 0, bloom: 0 };
-const nightGreenTurn = Fn( ( [ c0, turn ]: [ V3, F ] ) => {
-
-	const c = c0.toVar();
-	const ca = c.r.sub( c.g.add( c.b ).mul( 0.5 ) ).toVar();
-	const cb = c.g.sub( c.b ).mul( Math.sqrt( 3 ) / 2 ).toVar();
-	// (atan2 ( 0, 0 ) is undefined on some backends; a grey's hue is keyed out below anyway)
-	const hue = atan( cb, select( abs( ca ).add( abs( cb ) ).greaterThan( 1e-7 ), ca, float( 1 ) ) );
-	const peak = max( c.r, max( c.g, c.b ) );
-	const sat = peak.sub( min( c.r, min( c.g, c.b ) ) ).div( max( peak, 1e-5 ) );
-	const band = float( 1 ).sub( smoothstep( 0, 55 * Math.PI / 180, abs( mod( hue.sub( 105 * Math.PI / 180 ).add( Math.PI ), 2 * Math.PI ).sub( Math.PI ) ) ) );
-	const t = band.mul( smoothstep( 0.04, 0.3, sat ) ).mul( turn ).toVar();
-	const ra = ca.mul( cos( t ) ).sub( cb.mul( sin( t ) ) ).toVar();
-	const rb = ca.mul( sin( t ) ).add( cb.mul( cos( t ) ) ).toVar();
-	const m = c.r.add( c.g ).add( c.b ).div( 3 ).toVar();
-	const k = 1 / Math.sqrt( 3 );
-	return max( vec3( m.add( ra.mul( 2 / 3 ) ), m.sub( ra.div( 3 ) ).add( rb.mul( k ) ), m.sub( ra.div( 3 ) ).sub( rb.mul( k ) ) ), vec3( 0 ) );
-
-} ).setLayout( { name: 'nightGreenTurn', type: 'vec3', inputs: [ { name: 'c', type: 'vec3' }, { name: 'turn', type: 'float' } ] } );
-const NIGHT_TINT = ( () => {
-
-	const [ r, g, b ] = NIGHT.tint, l = r * 0.2126 + g * 0.7152 + b * 0.0722;
-	return new THREE.Vector3( r / l, g / l, b / l );
-
-} )();
-
-/** The bloom's strength (times the time's and the weather's, and its share is the threshold's:
- * PhysicalBloom.ts BLOOM) and the vignette's strength (VIGNETTE). No grain: a dither of half a
- * code value is all the noise the frame takes. */
-export const TIDEWATER_GRADE: Readonly<Pick<PipelineSettings, 'bloom' | 'vignette'>> = {
-	bloom: 1.36, vignette: 1,
-};
-// The vignette's shape: with r the distance from the frame's centre in its own uv (round in uv,
-// not in pixels), the factor mix( 1, 1 - depth smoothstep( inner, outer, r ), strength ), a radial
-// smoothstep. Nothing changes out to the middle of each edge (r = 0.5); the smoothstep leaves 1
-// with no slope there, so the darkening starts with no visible edge, and at strength 1 the corners
-// (r = 0.71) end at about 0.73, about 0.45 stops (the falloff spans to r = 1, past the corners, so
-// they sit on its steepening first half: 0.98 at r = 0.55, 0.92 at 0.6, 0.84 at 0.65).
-const VIGNETTE = { inner: 0.5, outer: 1, depth: 0.73 };
-/** The vignette's factor at screen uv `at` for its `strength` (VIGNETTE). */
-export function vignetteFactor( at: V2, strength: F ): F {
-
-	const fall = smoothstep( VIGNETTE.inner, VIGNETTE.outer, length( at.sub( 0.5 ) ) ).mul( VIGNETTE.depth );
-	return mix( float( 1 ), fall.oneMinus(), strength );
-
-}
-// The white balance, as the colour white becomes (linear Rec.709), by the sun's elevation, under a
-// clouded sky and at night (DayKeys.ts), set with the light. A clear day pushes the display past
-// neutral toward cool, the sun's warmth on the lit ground held back: furthest at a sun of 9 degrees
-// (red half of green, blue 1.36), which keeps the low sun's rock and meadow, and less by 40 degrees
-// (red 0.59, blue 1.25, the `high` key), where the stronger cast would turn sunlit rock blue. The
-// high key moves with the sky's (look/SkyLook.ts SKY_LIGHT), which takes the inverse, so the sky holds its
-// colour. The golden hour warms a little further (red 1.05, blue 0.9); the clouded skies take a cool
-// white too (red 0.78, blue 1.16), their grey light kept from reading warm. Overcast takes a cooler
-// white of its own (red 0.49, blue 1.14, WHITE_OVERCAST): under the clouded key its slightly warm
-// grey deck read as a neutral grey and the meadow under it as yellow-green (hue 120); its own key
-// brings the deck to a blue-green grey (OKLab a -0.022, b -0.008) and the meadow to green (hue
-// 132), the lightness all but unchanged. It comes in over the clouded day's white by overcast's share in
-// the sky, before the night's, so an overcast night takes the night's white as any other.
-// The night takes a cool white too (red 0.53, blue 1.2), on top of the moon's light and the rods'
-// (Purkinje.ts).
-// The rising sun takes a cold white where the setting sun takes the warm one (`dawn`, in place of
-// the golden key while the sun climbs: DayKeys.ts `rising`; red 0.4, blue 2, tuned on our own
-// views): all that the sun does not reach at dawn is blue, sky, water and rock alike, and a face turned
-// to the sun takes a pale warm colour, far less orange than the same face at the same height in
-// the evening. It is what moves the rose band over the horizon, which the sky's own light
-// (look/SkyLook.ts SKY_LIGHT, its `dawn` key) cannot reach. The sides are one from the `day` key up.
-// Tunable on debug pages (debug/Tune.ts): `post.white.<r|g|b>@golden`, `@dawn`, `@day`, `@high`,
-// `@cloudy`, `@overcast`, `@night`.
-const WHITE_RANGE = { r: { min: 0.2, max: 1.5 }, g: { min: 0.5, max: 1.5 }, b: { min: 0.5, max: 3 } };
-const WHITE_FROM_DAY: DayKey<{ r: number; g: number; b: number }>[] = [ { at: 9, name: 'day', values: { r: 0.5, g: 1, b: 1.36 } }, { at: 40, name: 'high', values: { r: 0.593, g: 1, b: 1.248 } } ];
-export const WHITE_BALANCE: DayKeys<{ r: number; g: number; b: number }> = tuneKeys( 'post.white', {
-	day: [ { at: 4, name: 'golden', values: { r: 1.05, g: 1, b: 0.9 } }, ...WHITE_FROM_DAY ],
-	rising: [ { at: 4, name: 'dawn', values: { r: 0.4, g: 1, b: 2.0 } }, ...WHITE_FROM_DAY ],
-	cloudy: { r: 0.775, g: 1, b: 1.16 },
-	night: { r: 0.527, g: 1, b: 1.2 },
-}, WHITE_RANGE );
-// overcast's own white (WHITE_BALANCE's header), over the clouded day's by overcast's share
-const WHITE_OVERCAST = tuneObject( { r: 0.49, g: 1, b: 1.14 },
-	{ r: 'post.white.r@overcast', g: 'post.white.g@overcast', b: 'post.white.b@overcast' }, WHITE_RANGE );
 
 
 export class Pipeline {
@@ -683,7 +427,7 @@ export class Pipeline {
 	readonly seaLevel = uniform( 0 );
 	/** The refraction pass's camera (ocean/Refraction.ts). */
 	readonly refraction = new RefractionView();
-	private readonly resources: {
+	readonly resources: {
 		sceneColor: ResourceHandle; sceneDepth: ResourceHandle; linearDepth: ResourceHandle; opaqueColor: ResourceHandle;
 		meadowCoverage: ResourceHandle | null; meadowDepth: ResourceHandle | null; meadowShade: ResourceHandle | null;
 		gtaoOpaque: ResourceHandle | null; gtaoOpaqueDepth: ResourceHandle | null; gtaoDepth: ResourceHandle | null; gtaoRaw: ResourceHandle | null; gtaoBlur: ResourceHandle | null; gtao: ResourceHandle | null;
@@ -703,46 +447,46 @@ export class Pipeline {
 	/** Whether the paused page will draw the same frame from now on (Settled.ts). */
 	readonly settled = new Settled();
 
-	private depthQuad: THREE.QuadMesh;
+	depthQuad: THREE.QuadMesh;
 	// (msaa and off: under the temporal modes the opaque copy is a texture copy)
-	private copyQuad: THREE.QuadMesh | null = null;
-	private underwaterQuad: THREE.QuadMesh;
-	private refractionReachQuad: THREE.QuadMesh;
-	private refractionMaskQuad: THREE.QuadMesh;
-	private surfaceQuad: THREE.QuadMesh;
+	copyQuad: THREE.QuadMesh | null = null;
+	underwaterQuad: THREE.QuadMesh;
+	refractionReachQuad: THREE.QuadMesh;
+	refractionMaskQuad: THREE.QuadMesh;
+	surfaceQuad: THREE.QuadMesh;
 	// the meadow's shade: the depth's nearest view z and the march (MeadowShade.ts)
-	private meadowDepthQuad: THREE.QuadMesh | null = null;
-	private meadowShadeQuad: THREE.QuadMesh | null = null;
+	meadowDepthQuad: THREE.QuadMesh | null = null;
+	meadowShadeQuad: THREE.QuadMesh | null = null;
 	// the ambient occlusion: the half-resolution view z, the slices and the blur (GTAO.ts)
-	private gtaoQuads: { depth: THREE.QuadMesh; slices: THREE.QuadMesh; blurX: THREE.QuadMesh; blurY: THREE.QuadMesh } | null = null;
+	gtaoQuads: { depth: THREE.QuadMesh; slices: THREE.QuadMesh; blurX: THREE.QuadMesh; blurY: THREE.QuadMesh } | null = null;
 	// (msaa, off and the temporal modes with `taaResolve=off`: the resolve has a canvas pass of its own)
-	private output: THREE.RenderPipeline | null = null;
+	output: THREE.RenderPipeline | null = null;
 	// FSR.ts's sharpening canvas pass after EASU (the fsrPort option), or three's FSR1Node (post=three-fsr)
-	private upscaledOutput: THREE.RenderPipeline | null = null;
-	private upscaledOutputThree: THREE.RenderPipeline | null = null;
-	private fsr: FSR | null = null;
+	upscaledOutput: THREE.RenderPipeline | null = null;
+	upscaledOutputThree: THREE.RenderPipeline | null = null;
+	fsr: FSR | null = null;
 	// the composite of the haze, the rain veil and the shafts over the scene, into hdr (the
 	// compositeOnce option)
-	private compositeQuad: THREE.QuadMesh | null = null;
+	compositeQuad: THREE.QuadMesh | null = null;
 	// the post passes' per-frame constants, into a texel (`postConstants`)
-	private constants = {} as { quad: THREE.QuadMesh; output: ResourceHandle };
+	constants = {} as { quad: THREE.QuadMesh; output: ResourceHandle };
 	// the sky's per-frame constants (the discs' cloud transmittance), into a texel before the scene
 	// (`skyConstants`)
-	private skyConstants = {} as { quad: THREE.QuadMesh; output: ResourceHandle };
+	skyConstants = {} as { quad: THREE.QuadMesh; output: ResourceHandle };
 	// after the resolve, the rain's layer over the graded image (AfterResolve.ts), and the rain
-	private layerQuad: THREE.QuadMesh | null = null;
-	private rainInputQuad: THREE.QuadMesh | null = null;
-	private rainGradeQuad: THREE.QuadMesh | null = null;
-	private readonly rain: Rain | undefined;
+	layerQuad: THREE.QuadMesh | null = null;
+	rainInputQuad: THREE.QuadMesh | null = null;
+	rainGradeQuad: THREE.QuadMesh | null = null;
+	readonly rain: Rain | undefined;
 	// the composite and the bloom (the sharp image)
-	private sharpQuad: THREE.QuadMesh;
+	sharpQuad!: THREE.QuadMesh;
 	// the graded image at the render's size, before the copy or upscale to the canvas
-	private displayQuad: THREE.QuadMesh;
+	displayQuad!: THREE.QuadMesh;
 	// tidewater's physical bloom (PhysicalBloom.ts)
-	private bloom!: PhysicalBloom;
+	bloom!: PhysicalBloom;
 	private readonly exposureKeys: ExposureKey = { key: 0, highlight: 0, sky: 0, adaptUp: 0.05, adaptDown: 0.05 };
 	// the adaptation: reset at the next frame (a cut), the scene clock at the last frame
-	private exposureReset = true;
+	exposureReset = true;
 	private exposureTime: number | null = null;
 	/** Debug builds: the exposure has not yet reached its target (more than 0.01 stop off, as last
 	 * read back), which keeps the page's settled signal false (app/Frame.ts `pending`). */
@@ -769,7 +513,7 @@ export class Pipeline {
 	private toneWhite = [ NaN, NaN, NaN ];
 	// the tone curve whose coefficients were last solved (ToneCurve.ts)
 	private toneCurveKey = '';
-	private u = {
+	u = {
 		// tidewater's grade
 		bloom: uniform( TIDEWATER_GRADE.bloom ), tone: uniform( 0 ), night: uniform( 0 ),
 		vignette: uniform( 1 ),
@@ -805,7 +549,7 @@ export class Pipeline {
 
 
 	/** `temporal`: the tier's resolve settings (Quality.ts `taa`); `extraPasses`: ExtraPass.ts. */
-	constructor( renderer: THREE.WebGPURenderer, private readonly sky: Sky, sunShadow: SunShadow, rain?: Rain, options: Partial<PostOptions> = postOptionsFromURL(), temporal?: TemporalSettings, private readonly extraPasses: readonly ExtraPass[] = [] ) {
+	constructor( renderer: THREE.WebGPURenderer, readonly sky: Sky, sunShadow: SunShadow, rain?: Rain, options: Partial<PostOptions> = postOptionsFromURL(), temporal?: TemporalSettings, readonly extraPasses: readonly ExtraPass[] = [] ) {
 
 		this.renderer = renderer;
 		this.rain = rain;
@@ -1191,398 +935,8 @@ export class Pipeline {
 		} )();
 		this.surfaceQuad = new THREE.QuadMesh( surfaceMat );
 
-		// ---- composite: the scene target holds the opaque image with the sea and the rain drawn over it
-		const sceneTex = texture( g.texture( sceneColor ) );
-		const tSurfaceDepth = this.textures.surfaceDepth;
-		// (the air's alpha: the rain veil's opacity, for the resolve's veilReactive; after the resolve,
-		// where the veil is drawn, the air's transmittance)
-		const veil = rain && ! AFTER_RESOLVE ? ( d: V3, distance: F, background: V3 ) => rain.veil( d, distance, background ) : undefined;
-		// What the post passes take that is the same for every pixel of a frame, evaluated once into
-		// a texel by a pass of its own and loaded there: the flare's visibility (a: LightShafts.ts
-		// `occlusion`, the depth taps over its body's disk times the sky constants' cloud
-		// transmittance over it, the sun's disk's or the moon's) and the rods' colour's retinal scale
-		// (r: Purkinje.ts `purkinjeScale`). In full float, so the readers get exactly the value it computed itself.
-		const constants = this.constants.output = g.color( 'postConstants', { size: { of: 'fixed', width: 1, height: 1 }, format: THREE.RGBAFormat, type: THREE.FloatType } );
-		const constant = textureLoad( texture( g.texture( constants ) ), ivec2( 0 ) ) as unknown as THREE.Node<'vec4'>;
-		// (in scene units: the haze, the shafts and the rods' colour are; hdr is pre-exposed again)
-		const aired = this.air.apply( sceneUnits( sceneTex.rgb ), tSurfaceDepth, sky, g, rainAir ? ( _d, _distance, background, transmittance ) => vec4( background, transmittance ) : veil );
-		const shafts = this.shafts.build( tSurfaceDepth, sky, g );
-		// The sky's own per-frame constants, which the flare's visibility reads (the post constants
-		// below): the mean cloud transmittance over the sun's disc and over the moon's (Sky.ts
-		// `discCloudTransmittance`). The dome's discs take the clouds' transmittance per pixel instead.
-		this.skyConstants.output = g.color( 'skyConstants', { size: { of: 'fixed', width: 1, height: 1 }, format: THREE.RGBAFormat, type: THREE.FloatType } );
-		const skyConstantsMat = new THREE.NodeMaterial();
-		skyConstantsMat.name = 'Sky.Constants';
-		skyConstantsMat.fragmentNode = sky.discCloudTransmittance();
-		this.skyConstants.quad = new THREE.QuadMesh( skyConstantsMat );
-		this.skyConstants.quad.name = 'Sky.Constants';
-		const constantsMat = new THREE.NodeMaterial();
-		constantsMat.name = 'Post.Constants';
-		const discCloud = textureLoad( texture( g.texture( this.skyConstants.output ) ), ivec2( 0 ) ) as unknown as THREE.Node<'vec4'>;
-		// (r: the rods' colour's retinal scale, from the light that falls on open level ground: the
-		// key's share at its lifted cosine and the sky's irradiance lent to the island, at its fill;
-		// Purkinje.ts `purkinjeScale`)
-		const openLight = u.purkinjeKey.add( luminance( sky.islandIrradianceNode ).mul( shared.skyFill ) );
-		constantsMat.fragmentNode = vec4( purkinjeScale( openLight ), 0, 0, this.shafts.occlusion( tSurfaceDepth, g.extent( { of: 'render' } ), discCloud.r, discCloud.g ) );
-		this.constants.quad = new THREE.QuadMesh( constantsMat );
-		this.constants.quad.name = 'Post.Constants';
-		// with the rods' colour by night (Purkinje.ts, off: its strength 0; its retinal scale the
-		// constants' r), so the bloom, the local tone's grid and the grade all read it
-		const composited = preExposed( purkinjeShift( aired.rgb.add( shafts ), constant.r, u.purkinje ) );
-		// Rendered once (the composite pass, into hdr), the composite feeds the sharp image and both
-		// blooms' high passes; as an expression each of them evaluated it again, the haze's
-		// tricubic lookups included. The high passes run at half resolution and sample it bilinearly, as they sampled
-		// the scene colour before.
-		let tHdr: THREE.TextureNode | null = null;
-		if ( hdr ) {
-
-			const compositeMat = new THREE.NodeMaterial();
-			compositeMat.name = 'Post.Composite';
-			// (under the resolve also the veil's reactive weight, the second target: VEIL_REACTIVE)
-			compositeMat.fragmentNode = veilReactive
-				? outputStruct( vec4( composited, 1 ), vec4( min( aired.a.mul( VEIL_REACTIVE.gain ), VEIL_REACTIVE.max ) ) )
-				: vec4( composited, 1 );
-			// After the resolve the air's transmittance instead, the second target: the composite is
-			// affine in the scene colour at a pixel, hdr = A scene + B (A the transmittance, B the light
-			// the haze and the shafts add), so a streak drawn after the resolve takes the air of what
-			// lies behind it as it would have here (AfterResolve.ts).
-			if ( rainAir ) compositeMat.fragmentNode = outputStruct( vec4( composited, 1 ), vec4( aired.a ) );
-			this.compositeQuad = new THREE.QuadMesh( compositeMat );
-			this.compositeQuad.name = 'Post.Composite';
-			// (with the uv rtt() gave its texture: a texture() without one transforms it)
-			// Under fsr3 what follows the composite reads FSR's output instead (Fsr3Upscaler.ts: its
-			// passes take hdr, declared after the composite pass).
-			if ( FSR3 ) ( this as { fsr3: Fsr3Upscaler | null } ).fsr3 = new Fsr3Upscaler( renderer, g as unknown as FrameGraph<unknown>, {
-				hdr, surfaceDepth, velocity: velocity!, veilReactive, sceneColor, opaqueColor,
-			}, { settings: temporal ?? QUALITY.high.taa, exposure: exposureRead, debugView: DEV && settings.has( 'fsrDebug' ) } );
-			tHdr = this.fsr3 ? this.fsr3.source( uv() ) : texture( g.texture( hdr ), uv() );
-
-		}
-		const hdrColor: V3 = tHdr ? tHdr.rgb : composited;
-		// the metering histograms of hdr (without the composite pass they are never taken, and the
-		// meter reads none) and the meter, from the sky's geometric-mean luminance (Exposure.ts; the
-		// log the dome's metering illuminance is made of, set by main.ts before the pipeline)
-		const metering = this.metering = new Metering( g.texture( hdr ?? sceneColor ), g.texture( meterLight ), tSurfaceDepth, renderSize, { projInv: this.u.projInv, cameraWorld: this.u.cameraWorld, atmosphere: this.sky.atmosphere, gains: this.sky.gapGain } );
-		metering.buildMeter( shared.skyMeterLog2, g.texture( exposureStatePrev ) );
-		// the adaptation starts over at every cut, in every mode (SceneEvents.ts; the temporal modes'
-		// camera jumps that no event covers through Motion.ts)
-		onSceneCut( ( reason ) => {
-
-			this.exposureReset = true;
-			// a scene jump takes a fresh load's pre-exposure; a loop restart or the page shown again
-			// keep the scene (SceneEvents.ts `SAME_SCENE`)
-			if ( reason !== 'loop start' && reason !== 'visible' ) preExposure.reset();
-
-		} );
-		if ( TEMPORAL ) onTaaCut( () => { this.exposureReset = true; } );
-
-		// ---- tidewater's physical bloom (PhysicalBloom.ts): from hdr (under fsr3 FSR's output), or the
-		// scene's colour where the composite is evaluated inline (`post=inline-composite`), added to
-		// the image at its strength
-		// (the sky: its surface past the far plane, view z below -9e4, at the render texel)
-		const isSky = ( at: V2 ): F => select( ( textureLoad( tSurfaceDepth, ivec2( clamp( at.mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) ) ) as unknown as F ).lessThan( - 9e4 ), float( 1 ), float( 0 ) );
-		// The flare (the sun's, or the moon's while it is the key) joins the first level
-		// (LightShafts.ts `flare`), divided by the strength the result comes out with (the levels'
-		// weights' sum, times the factor it is added with), so it shows only through the bloom.
-		const frame = g.extent( { of: 'render' } );
-		// (in hdr's units: pre-exposed)
-		const flare = ( q: V2, strength: F ) => this.shafts.flare( q, frame.x.div( frame.y ), constant.a, strength.mul( u.bloom ) ).mul( preExposure.scale );
-		const bloom = this.bloom = new PhysicalBloom( g, tHdr ?? sceneTex, exposure, isSky, flare );
-		const withBloom = hdrColor.add( bloom.read( uv() ).mul( u.bloom ) );
-
-		// ---- the sharp image: the composite and the blooms (the composite evaluated here, inline,
-		// without the composite pass)
-		const sharpMat = new THREE.NodeMaterial();
-		sharpMat.name = 'Post.Sharp';
-		sharpMat.fragmentNode = vec4( withBloom, 1 );
-		this.sharpQuad = new THREE.QuadMesh( sharpMat );
-		this.sharpQuad.name = 'Post.Sharp';
-		// (the sharp image as its rtt() node was: with its uv, no uv transform)
-		const tSharp = texture( g.texture( sharp ), uv() );
-
-		// (at the pixel drawn, or at render uv `q`: the rain's layer, AfterResolve.ts)
-		const sharpAt = ( q?: V2 ): V3 => ( q ? tSharp.sample( q ) : tSharp ).rgb;
-		// the local tone mapping's grid of the sharp image (LocalTone.ts)
-		const localTone = this.localTone = LOCAL_TONE_ON ? new LocalTone( g, tSharp, exposure, renderSize ) : null;
-		// scene radiance at screen uv `q` with the local tone mapping's change there (for the grade's
-		// table, which holds the rest of the grade)
-		const localAt = ( lin: V3, q: V2 ): V3 => localTone ? localTone.apply( lin.mul( exposure ), q ).div( exposure ) : lin;
-
-		// ---- tidewater's grade, to display values: the scene at the exposure, the vignette (the
-		// resolve leaves it to the canvas pass, after the accumulation), the tone curve with the
-		// white balance, the grade's tables, overcast's highlights toward grey (HIGHLIGHT_GREY) and the
-		// BT.709 OETF (its saturation and contrast are the
-		// table's, GradeLut.ts) (`encode` false: the output code's sRGB decode). `at`: the
-		// screen uv whose local tone mapping it takes (none for the grade's table).
-		// the vignette's factor at the pixel being drawn (VIGNETTE): round in the frame's own uv, the
-		// same into an image of any size
-		const vignetteAt = ( _size: THREE.UniformNode<'vec2', THREE.Vector2> ) => {
-
-			return vignetteFactor( uv(), u.vignette );
-
-		};
-		const grade = ( lin: V3, vignette: boolean, encode: boolean, at?: V2 ): V3 => {
-
-			const c = lin.mul( exposure ).toVar();
-			// the desaturation (DESATURATION), before the local gain
-			c.addAssign( vec3( luminance( c ) ).sub( c ).mul( u.desaturate.mul( mix( float( 1 ), coolShare( u.balance.mul( c ), COOL_FROM, COOL_TO ), u.desaturateCool ) ) ) );
-			if ( localTone && at ) c.assign( localTone.apply( c, at ) );
-			// the shade's contrast (SHADE_CONTRAST)
-			c.mulAssign( exp2( min( log2( max( luminance( c ), 1e-6 ) ).sub( log2( u.shadePivot ) ), 0 ).mul( u.shadeSlope ) ) );
-			// the night's grade (NIGHT): the greens turned toward blue-green, a silver-blue tint
-			If( u.night.greaterThan( 0.001 ), () => {
-
-				c.assign( nightGreenTurn( c, u.night.mul( NIGHT.greenTurn ) ) );
-				c.mulAssign( mix( vec3( 1 ), vec3( NIGHT_TINT ), u.night.mul( NIGHT.amount ) ) );
-
-			} );
-			// the tone (TONE): lights a touch golden and the shade a touch teal, the contrast round mid
-			// grey softer
-			const lights = smoothstep( 0.04, 0.9, luminance( c ) );
-			c.mulAssign( mix( vec3( 0.95, 1.0, 1.04 ), vec3( 1.06, 1.0, 0.9 ), lights ).sub( 1 ).mul( u.tone ).add( 1 ) );
-			c.assign( pow( max( c, vec3( 0 ) ).div( 0.18 ), vec3( float( 1 ).sub( u.tone.mul( 0.2 ) ) ) ).mul( 0.18 ) );
-			if ( vignette ) c.mulAssign( vignetteAt( FSR3 ? canvasSize : renderSize ) );
-			const t = ( toneCurve( c, u.toneIn, u.toneOut, u.toneNum, u.toneDen ) as V3 ).toVar();
-			// the grade's tables, indexed by the square root of the curve's linear output (GradeLut.ts)
-			const q = sqrt( max( t, vec3( 0 ) ) ).toVar();
-			const looked = mix( sampleLut( this.luts[ 0 ], q ), sampleLut( this.luts[ 1 ], q ), u.lut ).toVar();
-			// the output transfer: the tables' linear output (the square of what they hold) encoded by
-			// the BT.709 OETF, a code the canvas shows as sRGB (`encode` false: that code's sRGB decode,
-			// so the temporal canvas pass's sRGB encode gives the code back)
-			const graded = looked.mul( looked ).toVar();
-			// overcast's highlights toward grey (HIGHLIGHT_GREY): a weight of 0 adds nothing
-			const y = luminance( graded );
-			graded.addAssign( vec3( y ).sub( graded ).mul( HIGHLIGHT_GREY.amount.mul( smoothstep( HIGHLIGHT_GREY.from, HIGHLIGHT_GREY.to, y ) ).mul( u.highlightShare ) ) );
-			const v = ( bt709( clamp( graded, 0, 1 ) as V3 ) as V3 ).toVar();
-			return encode ? v : sRGBTransferEOTF( v ) as V3;
-
-		};
-		// the blue-noise dither (BlueNoise.ts), after the output transfer: ( n - 0.5 ) / 255 on each
-		// channel, n the tile's threshold at the pixel drawn (modulo its size), static; once per
-		// canvas pixel, in whichever pass draws the canvas (`on` 0 leaves it out: a display pass
-		// whose image is upscaled after)
-		const noise = blueNoiseTexture();
-		const finish = ( s: V3, _size: THREE.UniformNode<'vec2', THREE.Vector2>, on: F ) => {
-
-			If( on.greaterThan( 0.5 ), () => {
-
-				const p = ivec2( floor( screenCoordinate.xy ) ).toVar();
-				const n = ( textureLoad( noise, ivec2( p.x.bitAnd( BLUE_NOISE - 1 ), p.y.bitAnd( BLUE_NOISE - 1 ) ) ) as unknown as V4 ).r;
-				s.addAssign( n.sub( 0.5 ).div( 255 ) );
-
-			} );
-			return vec4( s, 1 );
-
-		};
-
-		// The graded image, at the render's size, always into one float target (the display pass),
-		// which the canvas pass copies or upscales: one build of the grade, whatever the output.
-		// Float, so the copy below hands the canvas exactly the values a direct draw would. The
-		// temporal resolve accumulates it before the vignette and dither, which its canvas
-		// pass adds.
-		const displayMat = new THREE.NodeMaterial();
-		displayMat.name = 'Post.Display';
-		displayMat.fragmentNode = Fn( () => finish( grade( sharpAt(), ! RESOLVE, ! LINEAR_DISPLAY, uv() ), FSR3 ? canvasSize : renderSize, RESOLVE ? float( 0 ) : u.ditherOn ) )();
-		this.displayQuad = new THREE.QuadMesh( displayMat );
-		this.displayQuad.name = 'Post.Display';
-
-		// At the display's resolution it is copied to the canvas, dither and all.
-		const tDisplay = g.texture( display );
-		if ( ! RESOLVE ) {
-
-			this.output = new THREE.RenderPipeline( renderer, textureLoad( tDisplay, ivec2( screenCoordinate.xy ) ) );
-			this.output.outputColorTransform = false;
-
-		}
-
-		// Below it, FSR 1 (AMD FidelityFX Super Resolution 1, FSR.ts) upscales the image (it expects
-		// display values) before the dither, so the dither stays one display pixel fine and is not
-		// sharpened. The browser's stretch of a small canvas was a plain bilinear filter. The canvas
-		// pass sharpens EASU's result itself; three's FSR1Node, kept for A/B (post=three-fsr), took
-		// a canvas-sized pass and target more.
-		if ( easu ) {
-
-			const fsr = this.fsr = new FSR( tDisplay, g.texture( easu ), hasGpuFeature( renderer, 'float32-filterable' ), g );
-			this.upscaledOutput = new THREE.RenderPipeline( renderer, Fn( () => finish( fsr.rcas( this.sharpness ).toVar(), canvasSize, float( 1 ) ) )() );
-			this.upscaledOutput.outputColorTransform = false;
-
-		} else if ( ! RESOLVE && ! FSR3 ) {
-
-			const upscaled = fsr1( texture( tDisplay ), this.sharpness );
-			this.upscaledOutputThree = new THREE.RenderPipeline( renderer, Fn( () => finish( upscaled.rgb.toVar(), canvasSize, float( 1 ) ) )() );
-			this.upscaledOutputThree.outputColorTransform = false;
-
-		}
-		// What the rain's layer pass draws at the canvas's size, for the canvas pass to add to the
-		// resolved image after the resolve (AfterResolve.ts): the change the rain makes to the graded
-		// colour at the pixel (without the vignette, the canvas pass's; in linear light under
-		// `linear`), and in alpha 1 where it makes one. The rain is laid over the grade's input at the
-		// render texel nearest the point the pixel shows (the display pass's own: the sharp image), in
-		// scene radiance as it was before the grade, and that is graded: the change is the difference from what the display
-		// pass graded at the texel. (Without `linear` the display holds encoded values: both are
-		// graded here.) Blended after the grade instead, faint rain over the dark sea and meadow, in
-		// the curve's toe, came out brighter than over the same pixels before it.
-		// - The veil at the canvas pixel's unjittered ray, in front of what lies at that texel, as the
-		//   composite laid it over the air (Rain.veil; the shafts the composite added over it now lie
-		//   under it).
-		// - Then the overlay of streaks, splashes and spray through the composite at that texel, which
-		//   is A scene + B: A the air's transmittance (rainAir), B the grade's input less A scene.
-		// Nothing while it is dry and the after pass did not draw (the overlay then holds an earlier
-		// frame's: `afterOn`).
-		const tAfterDepth = texture( tSurfaceDepth );
-		const tAfterDisplay = texture( tDisplay );
-		// What the layer reads at a render texel, drawn by a pass of its own at the render's size while
-		// it runs (`rainInput`): the grade's input there (as the display pass has it: `diffused`) and
-		// the air's transmittance (A), in `rainInput`; and the light the haze and the shafts add (B,
-		// the grade's input less A times the scene), in `rainBehind`. Evaluated per canvas pixel instead
-		// (six or more of them read each texel), they took a fifth of the layer's time.
-		const tRainInput = rainInput ? texture( g.texture( rainInput ) ) : null;
-		const tRainBehind = rainBehind ? texture( g.texture( rainBehind ) ) : null;
-		// (one body for both attachments: an output struct is the material's own node, so the two are
-		// a matrix's columns)
-		const inputs = rainInput ? Fn( () => {
-
-			const texel = ivec2( screenCoordinate.xy ).toVar();
-			const before = sharpAt( vec2( texel ).add( 0.5 ).div( renderSize ) ).toVar();
-			if ( ! rainAir ) return mat4( vec4( before, 1 ), vec4( 0 ), vec4( 0 ), vec4( 0 ) );
-			const keep = ( textureLoad( texture( g.texture( rainAir ) ), texel ) as unknown as F ).toVar();
-			const scene = ( textureLoad( sceneTex, texel ) as unknown as THREE.Node<'vec4'> ).rgb;
-			return mat4( vec4( before, keep ), vec4( before.sub( scene.mul( keep ) ), 1 ), vec4( 0 ), vec4( 0 ) );
-
-		} )() as unknown as { element( i: number ): THREE.Node<'vec4'> } : null;
-		const inputNode = inputs ? ( rainAir ? outputStruct( inputs.element( 0 ), inputs.element( 1 ) ) : inputs.element( 0 ) ) as unknown as THREE.Node<'vec4'> : null;
-		if ( inputNode ) {
-
-			const inputMat = new THREE.NodeMaterial();
-			inputMat.name = 'Post.RainInput';
-			inputMat.fragmentNode = inputNode;
-			this.rainInputQuad = new THREE.QuadMesh( inputMat );
-			this.rainInputQuad.name = 'Post.RainInput';
-
-		}
-		// The grade as a table, for the canvas pass of a running frame (`layerAt( true )`): the grade of
-		// GRADE_TABLE.size^3 colours, logarithmically spaced per channel (the scene colour times the
-		// exposure from 2^low to 2^high: below, within two levels of black in the curve's toe; above,
-		// burnt to white), baked by a pass of its own while the layer runs (`rainGrade`) and read trilinearly
-		// (two bilinear taps). The change is the difference of two
-		// readings (with the rain and without), so the table's error cancels to first order; graded in
-		// full at every canvas pixel, the grade took a third of the layer's time. The frame that
-		// completes the rest grades in full (its layer stands for every paused frame).
-		const T = GRADE_TABLE;
-		const gradeTableNode = rainGrade ? Fn( () => {
-
-			const p = floor( screenCoordinate.xy ).toVar();
-			const b = floor( p.x.div( T.size ) );
-			const index = vec3( p.x.sub( b.mul( T.size ) ), p.y, b );
-			const lin = exp2( index.div( T.size - 1 ).mul( T.high - T.low ).add( T.low ) ).div( exposure );
-			return vec4( grade( lin, false, ! LINEAR_DISPLAY ), 1 );
-
-		} )() as unknown as THREE.Node<'vec4'> : null;
-		if ( gradeTableNode ) {
-
-			const gradeMat = new THREE.NodeMaterial();
-			gradeMat.name = 'Post.RainGrade';
-			gradeMat.fragmentNode = gradeTableNode;
-			this.rainGradeQuad = new THREE.QuadMesh( gradeMat );
-			this.rainGradeQuad.name = 'Post.RainGrade';
-
-		}
-		const gradeTable = ( lin: V3 ): V3 => {
-
-			const table = g.texture( rainGrade! );
-			const c = clamp( log2( max( lin.mul( exposure ), vec3( 2 ** T.low ) ) ).sub( T.low ).div( T.high - T.low ), 0, 1 ).mul( T.size - 1 ).toVar();
-			const b0 = floor( c.z ).toVar();
-			const v = c.y.add( 0.5 ).div( T.size ).toVar();
-			const slice = ( b: F ) => ( texture( table, vec2( c.x.add( 0.5 ).add( b.mul( T.size ) ).div( T.size * T.size ), v ) ).level( float( 0 ) ) as unknown as THREE.Node<'vec4'> ).rgb;
-			return mix( slice( b0 ), slice( min( b0.add( 1 ), T.size - 1 ) ), c.z.sub( b0 ) );
-
-		};
-		// (`table`: graded by the table)
-		const layerAt = ( table = false ) => Fn( () => {
-
-			const out = vec4( 0 ).toVar();
-			// the render texel nearest the point the pixel shows (its centre scaled to the render, less
-			// this frame's jitter)
-			const texel = ivec2( clamp( screenCoordinate.xy.mul( renderSize.div( canvasSize ) ).sub( jitter.uniforms.px ).sub( 0.5 ).round(), vec2( 0 ), renderSize.sub( 1 ) ) ).toVar();
-			// what covers the pixel: the veil (at the pixel's unjittered ray, in front of what lies at the
-			// texel) and the overlay, while either shows
-			const veil = vec4( 0 ).toVar();
-			if ( rain ) If( rain.uniforms.rain.greaterThan( 0.001 ), () => {
-
-				// (the sky's -1e5 and anything past the farthest shell alike: they all lie beyond it)
-				const { ray, direction } = this.air.viewRay( uv(), jitter.uniforms.unjitteredProjectionInverse );
-				const distance = min( ( textureLoad( tAfterDepth, texel ) as unknown as F ).negate().mul( length( ray ) ), 1000 );
-				veil.a.assign( rain.veilCoverage( direction, distance ) );
-
-			} );
-			const o = vec4( 0 ).toVar();
-			If( u.afterOn.greaterThan( 0 ), () => {
-
-				o.assign( textureLoad( texture( g.texture( rainOverlay! ) ), ivec2( screenCoordinate.xy ) ) );
-
-			} );
-			// (below a 256th the change shows in no level)
-			If( max( veil.a, o.a ).greaterThan( 1 / 256 ), () => {
-
-				if ( rain ) veil.rgb.assign( rain.veilLight( this.air.viewRay( uv(), jitter.uniforms.unjitteredProjectionInverse ).direction ).mul( veil.a ).mul( preExposure.scale ) );
-				const input = ( textureLoad( tRainInput!, texel ) as unknown as THREE.Node<'vec4'> ).toVar();
-				const before = input.rgb;
-				// the veil over the grade's input
-				const after = before.mul( float( 1 ).sub( veil.a ) ).add( veil.rgb ).toVar();
-				If( o.a.greaterThan( 1 / 1024 ), () => {
-
-					// then the overlay's radiance (premultiplied) through the composite, A scene + B (the
-					// legacy inline composite writes no transmittance: the streaks then take no air)
-					const a = min( o.a, 1 ).toVar();
-					if ( tRainBehind ) after.assign( after.mul( float( 1 ).sub( a ) ).add( o.rgb.mul( input.a ) ).add( ( textureLoad( tRainBehind, texel ) as unknown as THREE.Node<'vec4'> ).rgb.mul( a ) ) );
-					else after.assign( after.mul( float( 1 ).sub( a ) ).add( o.rgb ) );
-
-				} );
-				// (the change at the rain's own coverage of a sample, AFTER_COVERAGE, spread over the pixel)
-				const full = max( before.add( after.sub( before ).div( AFTER_COVERAGE ) ), vec3( 0 ) );
-				const at = vec2( texel ).add( 0.5 ).div( renderSize ).toVar();
-				if ( table ) out.assign( vec4( gradeTable( localAt( full, at ) ).sub( gradeTable( localAt( before, at ) ) ).mul( AFTER_COVERAGE ), 1 ) );
-				else {
-
-					const graded = LINEAR_DISPLAY ? ( textureLoad( tAfterDisplay, texel ) as unknown as THREE.Node<'vec4'> ).rgb : grade( before, false, ! LINEAR_DISPLAY, at );
-					out.assign( vec4( grade( full, false, ! LINEAR_DISPLAY, at ).sub( graded ).mul( AFTER_COVERAGE ), 1 ) );
-
-				}
-
-			} );
-			return out;
-
-		} )() as unknown as THREE.Node<'vec4'>;
-		if ( rainOverlay ) {
-
-			const layerMat = new THREE.NodeMaterial();
-			layerMat.name = 'Post.RainLayer';
-			layerMat.fragmentNode = layerAt();
-			this.layerQuad = new THREE.QuadMesh( layerMat );
-			this.layerQuad.name = 'Post.RainLayer';
-
-		}
-		// the temporal resolve, its passes declared after the display pass
-		if ( RESOLVE ) ( this as { temporal: TemporalAA | null } ).temporal = new TemporalAA( g as unknown as FrameGraph<unknown>, renderer, {
-			mode: AA_MODE as TemporalMode, settings: temporal ?? QUALITY.high.taa,
-			vignette: vignetteAt, finish,
-			// (the rain's layer, drawn by a pass of its own: in the canvas pass it held too many registers)
-			// (read only while the pass runs: in fair weather the canvas pass reads nothing more)
-			layer: rainLayer ? () => Fn( () => {
-
-				const l = vec4( 0 ).toVar();
-				If( u.layerOn.greaterThan( 0 ), () => {
-
-					l.assign( textureLoad( texture( g.texture( rainLayer ) ), ivec2( screenCoordinate.xy ) ) );
-
-				} );
-				return l;
-
-			} )() as unknown as THREE.Node<'vec4'> : undefined,
-			// (and the layer itself, for the canvas pass of a running frame while it shows)
-			layerInline: rainLayer ? { node: () => layerAt( true ), on: () => this.u.layerOn.value > 0 } : undefined,
-		} );
-		this.declarePasses();
+		buildDisplay( this, { temporal, renderSize, canvasSize, exposureRead, exposure, linearDisplay: LINEAR_DISPLAY, dev: DEV } );
+		declarePasses( this );
 		if ( TEMPORAL ) {
 
 			// The jitter shifts the camera's projection through the scene half (the graph's jittered
@@ -1623,604 +977,7 @@ export class Pipeline {
 	waveMaps: WaveMaps | null = null;
 
 	// the displacement field as its pass leaves it, and the frame before's (null without one)
-	private displacement: { field: ResourceHandle; previous: ResourceHandle | null } | null = null;
-
-	// The blades read the displacement field in every pass that draws the meadow, and the frame
-	// before's for their previous position under the temporal modes.
-	private readDisplacement( b: PassBuilder ): void {
-
-		if ( ! this.displacement ) return;
-		b.read( this.displacement.field );
-		if ( this.displacement.previous ) b.read( this.displacement.previous );
-
-	}
-
-	// The frame's passes, in order. The scene half draws into the scene's multisampled target and
-	// resolves what the water, the rain and the post passes read. Each sample keeps the opaque
-	// surface or the sea, whichever is nearer, so silhouettes against the sea are antialiased like
-	// the rest of the image. (Drawn into a target of their own, single-sampled, the water had to
-	// decide per pixel between the sea and the opaque colour: edges stepped, and the opaque colour
-	// at an edge pixel held the sky the sea was not there to cover, a pale outline round everything
-	// over the sea.) Rain does not write depth, so surface focus and overlapping translucent streaks
-	// are preserved; its splashes compare the resolved depths themselves. The post passes follow,
-	// each into a target of the graph's or the canvas. Ahead of the scene, after the haze and the
-	// sky's constants, the displacement field (world/vegetation/Displacement.ts): its sprites at a
-	// fixed size, read by the meadow's passes; then the scene's extra passes (the island's falling
-	// leaves' step), the wave maps and the caustics
-	// (ocean/WaveMaps.ts), which the materials lit under the water read, and the local lights'
-	// clusters (lighting/LocalLights.ts), by night.
-	private declarePasses(): void {
-
-		const g = this.graph;
-		// the haze first, ahead of the scene, whose sky dome reads its light volume (Sky.ts
-		// `fogDome`): its shadow (skipped while a rest holds it) and its light volume; they read the
-		// sun's maps, the clouds' shadow and the camera, never the scene's depth
-		const hazeReads = this.air.passes( g );
-		// then the sky's constants, which the flare's visibility reads (Sky.ts `discCloudTransmittance`)
-		let skyConstants = this.skyConstants.output;
-		const skyConstantsQuad = this.skyConstants.quad;
-		g.addPass( 'skyConstants', 'quad', ( b ) => {
-
-			skyConstants = b.write( skyConstants );
-			return { label: 'sky constants', quad: skyConstantsQuad };
-
-		} );
-		// the displacement field, which the passes that draw the meadow read
-		// (world/vegetation/Displacement.ts)
-		this.displacement = displacementField ? displacementField.declare( g ) : null;
-		// the scene's extra passes (the falling leaves' step, whose buffers the opaque scene draws)
-		declareExtraPasses( g, this.extraPasses );
-		// the wave maps and the caustics, which the materials lit under the water read
-		waveMapsPass( g, () => this.waveMaps );
-		// the local lights' clusters, which every lit material of the scene passes reads
-		// (lighting/LocalLights.ts)
-		localLightsPass( g );
-		let { sceneColor, sceneDepth, linearDepth, opaqueColor, underwater, surfaceDepth, velocity, meterLight } = this.resources;
-		if ( TEMPORAL ) [ sceneColor, surfaceDepth, velocity, opaqueColor, meterLight ] = this.declareTemporalScene( hazeReads );
-		else {
-
-			// the vegetation's depth first, the opaque scene's copies (world/OpaquePrepass.ts), the
-			// shade over both (MeadowShade.ts), then the opaque scene over the vegetation's depth
-			let { meadowCoverage, meadowDepth, meadowShade: shade } = this.resources;
-			let { gtaoOpaque, gtaoOpaqueDepth, gtaoDepth, gtaoRaw, gtaoBlur, gtao } = this.resources;
-			const depthQuad = this.meadowDepthQuad, shadeQuad = this.meadowShadeQuad;
-			const gtaoOn = () => GTAO && debugFlags.gtao !== false;
-			const ssOn = () => SS_SHADOW && debugFlags.ssShadow !== false;
-			if ( meadowCoverage && meadowDepth && shade && depthQuad && shadeQuad ) {
-
-				g.addPass( 'meadowDepth', 'scene', ( b ) => {
-
-					this.readDisplacement( b );
-					meadowCoverage = b.write( meadowCoverage!, { clear: true } );
-					sceneDepth = b.depth( sceneDepth, { write: true, clear: true } );
-					return { label: 'vegetation depth', scene: ( f ) => f.prepassScene!, camera: ( f ) => f.camera };
-
-				} );
-				// the opaque scene's distance at half resolution, for the ambient occlusion and the
-				// shade over the whole scene
-				if ( gtaoOpaque && gtaoOpaqueDepth ) g.addPass( 'opaqueDepth', 'scene', ( b ) => {
-
-					gtaoOpaque = b.write( gtaoOpaque!, { clear: true } );
-					gtaoOpaqueDepth = b.depth( gtaoOpaqueDepth!, { write: true, clear: true } );
-					return { label: 'opaque depth', when: () => gtaoOn() || ssOn(), whenLabel: 'gtao|ssShadow', scene: ( f ) => f.opaquePrepassScene!, camera: ( f ) => f.camera };
-
-				} );
-				g.addPass( 'meadowDepthResolve', 'quad', ( b ) => {
-
-					b.read( sceneDepth, 'samples' );
-					if ( SS_SHADOW && gtaoOpaque ) b.readOptional( gtaoOpaque );
-					meadowDepth = b.write( meadowDepth! );
-					return { label: 'meadow shade', quad: depthQuad };
-
-				} );
-				g.addPass( 'meadowShade', 'quad', ( b ) => {
-
-					b.read( meadowDepth! );
-					shade = b.write( shade! );
-					return { label: 'meadow shade', quad: shadeQuad };
-
-				} );
-
-			}
-			// the ambient occlusion (GTAO.ts): the nearer of the opaque scene's distance and the
-			// vegetation's depth as view z, the slices and their blur, which the opaque scene's
-			// receivers load
-			const quads = this.gtaoQuads;
-			if ( meadowCoverage && gtaoOpaque && gtaoDepth && gtaoRaw && gtaoBlur && gtao && quads ) {
-
-				g.addPass( 'gtaoDepth', 'quad', ( b ) => {
-
-					b.readOptional( sceneDepth, 'samples' );
-					b.readOptional( gtaoOpaque! );
-					gtaoDepth = b.write( gtaoDepth! );
-					return { label: 'gtao', when: gtaoOn, whenLabel: 'gtao', quad: quads.depth };
-
-				} );
-				g.addPass( 'gtao', 'quad', ( b ) => {
-
-					b.readOptional( gtaoDepth! );
-					gtaoRaw = b.write( gtaoRaw! );
-					return { label: 'gtao', when: gtaoOn, whenLabel: 'gtao', quad: quads.slices };
-
-				} );
-				// the blur, separable: along x, then along y (the view z for its edges' planes)
-				g.addPass( 'gtaoBlurX', 'quad', ( b ) => {
-
-					b.readOptional( gtaoRaw! );
-					b.readOptional( gtaoDepth! );
-					gtaoBlur = b.write( gtaoBlur! );
-					return { label: 'gtao', when: gtaoOn, whenLabel: 'gtao', quad: quads.blurX };
-
-				} );
-				g.addPass( 'gtaoBlurY', 'quad', ( b ) => {
-
-					b.readOptional( gtaoBlur! );
-					b.readOptional( gtaoDepth! );
-					gtao = b.write( gtao! );
-					return { label: 'gtao', when: gtaoOn, whenLabel: 'gtao', quad: quads.blurY };
-
-				} );
-			}
-			// the receivers read the occlusion and the whole scene's shade in the opaque pass alone
-			// (the refraction's draws of the same materials read 1)
-			if ( gtao || SS_SHADOW ) {
-
-				const end = g.hooks.onPassEnd;
-				g.hooks.onPassEnd = ( pass, f ) => {
-
-					if ( pass.name === 'opaque' ) gtaoView.on.value = screenShadowView.on.value = 0;
-					end?.( pass, f );
-
-				};
-
-			}
-			const occlusion = gtao;
-			g.addPass( 'opaque', 'scene', ( b ) => {
-
-				// the blades read their shade, the ground marches over the resolved depth, the
-				// receivers load the ambient occlusion and the whole scene's shade
-				if ( shade ) b.read( shade );
-				if ( meadowDepth && ! SS_SHADOW ) b.read( meadowDepth );
-				if ( occlusion ) b.readOptional( occlusion );
-				for ( const h of hazeReads ) b.read( h );
-				this.readDisplacement( b );
-				sceneColor = b.write( sceneColor, { clear: true } );
-				meterLight = b.write( meterLight, { clear: true } );
-				sceneDepth = b.depth( sceneDepth, { write: true, clear: ! shade } );
-				return {
-					label: 'opaque scene', mrt: sceneMRT, scene: ( f ) => f.scene, camera: ( f ) => f.camera,
-					before: occlusion || SS_SHADOW ? () => {
-
-						gtaoView.on.value = gtaoOn() ? 1 : 0;
-						screenShadowView.on.value = ssOn() ? 1 : 0;
-
-					} : undefined,
-				};
-
-			} );
-			let refraction: ResourceHandle, refractionDepth: ResourceHandle;
-			[ underwater, refraction, refractionDepth ] = this.declareRefraction( sceneColor, sceneDepth );
-			// linear depth, and a copy of the opaque colour for the water to refract and reflect (a pass
-			// cannot sample the target it draws into)
-			g.addPass( 'depthResolve', 'quad', ( b ) => {
-
-				b.read( sceneDepth, 'samples' );
-				linearDepth = b.write( linearDepth );
-				return { label: 'depth & copy resolves', quad: this.depthQuad };
-
-			} );
-			const copyQuad = this.copyQuad!;
-			g.addPass( 'opaqueCopy', 'quad', ( b ) => {
-
-				b.read( sceneColor );
-				opaqueColor = b.write( opaqueColor );
-				return { label: 'depth & copy resolves', quad: copyQuad };
-
-			} );
-			g.addPass( 'water', 'scene', ( b ) => {
-
-				b.read( opaqueColor );
-				b.read( linearDepth );
-				b.read( underwater );
-				b.readOptional( refraction );
-				b.readOptional( refractionDepth );
-				sceneColor = b.write( sceneColor );
-				meterLight = b.write( meterLight );
-				sceneDepth = b.depth( sceneDepth, { write: true } );
-				return {
-					label: 'water', mrt: sceneMRT, before: ( f ) => f.water?.prepare( f.sun ),
-					scene: ( f ) => f.water ? f.waterScene : NO_WATER, camera: ( f ) => f.camera,
-				};
-
-			} );
-			g.addPass( 'surfaceResolve', 'quad', ( b ) => {
-
-				b.read( sceneDepth, 'samples' );
-				surfaceDepth = b.write( surfaceDepth );
-				return { label: 'depth & copy resolves', quad: this.surfaceQuad };
-
-			} );
-			// (the last pass into the scene target: its samples are resolved, then never read)
-			g.addPass( 'rain', 'scene', ( b ) => {
-
-				b.read( linearDepth );
-				b.read( surfaceDepth );
-				sceneColor = b.write( sceneColor );
-				meterLight = b.write( meterLight, { blend: 'keep' } );
-				b.depth( sceneDepth, { write: false } );
-				return {
-					label: 'rain draw', mrt: overlayMRT, when: ( f ) => f.rainScene !== undefined, whenLabel: 'rainVisible',
-					scene: ( f ) => f.rainScene!, camera: ( f ) => f.camera,
-				};
-
-			} );
-
-		}
-		let { hdr, sharp, display, easu, canvas, veilReactive, rainAir } = this.resources;
-		// the light shafts: the open sky near the sun, and the rays marched over it (while the sun is
-		// toward the view: the composite weighs them by `facing`, 0 otherwise)
-		const shaftReads = this.shafts.passes( g, surfaceDepth );
-		// the post passes' per-frame constants, into a texel: the flare's visibility (the
-		// nearest surface's depth over the disk, the sky constants' cloud transmittance over it)
-		// and the rods' colour's retinal scale
-		let constants = this.constants.output;
-		const constantsQuad = this.constants.quad;
-		g.addPass( 'postConstants', 'quad', ( b ) => {
-
-			b.read( surfaceDepth );
-			b.read( skyConstants );
-			constants = b.write( constants );
-			return { label: 'post constants (flare visibility, rods\' scale)', quad: constantsQuad };
-
-		} );
-		// what the composite reads: the scene (after the rain, which may be skipped), the nearest
-		// surface's depth, the haze's light, the light shafts and the constants (the flare's
-		// visibility, the rods' colour's scale)
-		const compositeReads = ( b: PassBuilder ) => {
-
-			b.readOptional( sceneColor );
-			b.read( surfaceDepth );
-			for ( const h of hazeReads ) b.read( h );
-			for ( const h of shaftReads ) b.readOptional( h );
-			b.read( constants );
-
-		};
-		// the metering histograms' clear, before the composite (Metering.ts)
-		const metering = this.metering;
-		const { exposureStatePrev } = this.resources;
-		if ( hdr ) metering.clearPass( g );
-		// the composite of the haze, the veil and the shafts, rendered once
-		const compositeQuad = this.compositeQuad;
-		if ( hdr && compositeQuad ) g.addPass( 'composite', 'quad', ( b ) => {
-
-			compositeReads( b );
-			hdr = b.write( hdr! );
-			// (the attachments in this order: the struct's; the MRT only declares both to the graph,
-			// unblended, as the resolve's does)
-			if ( veilReactive ) veilReactive = b.write( veilReactive );
-			if ( rainAir ) rainAir = b.write( rainAir );
-			return { label: 'composite (air, fog, veil)', quad: compositeQuad, mrt: veilReactive || rainAir ? mrt( {} ) : null };
-
-		} );
-		// the metering histograms of hdr and meterLight, after the composite and before the bloom,
-		// which reads this frame's exposure (Metering.ts)
-		if ( hdr ) metering.histogramPass( g, hdr, meterLight, surfaceDepth );
-		// the meter: the exposure state from the histograms, which every pass after it reads (and the
-		// next frame, from its copy)
-		const exposureState = metering.meterPass( g, this.resources.exposureState, exposureStatePrev );
-		g.copyToPersistent( exposureState, exposureStatePrev );
-		const readExposure = ( b: PassBuilder ) => b.read( exposureState );
-		// FSR 3 on hdr (Fsr3Upscaler.ts), whose output (or, while the rest's sequence runs, the held copy
-		// of the last running frame's) the passes below read in place of hdr
-		const fsr3 = this.fsr3 ? this.fsr3.declare( g as unknown as FrameGraph<unknown>, { hdr: hdr!, surfaceDepth, velocity: velocity!, veilReactive, sceneColor, opaqueColor, exposure: exposureState } ) : null;
-		const readHdr = ( b: PassBuilder ) => {
-
-			if ( fsr3 ) {
-
-				b.readOptional( fsr3.output );
-				b.readOptional( fsr3.held );
-
-			} else b.read( hdr! );
-
-		};
-		// the bloom (PhysicalBloom.ts, sixteen passes): the sky's mask from the surface's depth, then
-		// the pyramid from hdr, or the scene's colour without the composite
-		const bloomResult = this.bloom.passes( g, 'bloom', ( b ) => {
-
-			if ( hdr ) readHdr( b );
-			else b.readOptional( sceneColor );
-			readExposure( b );
-
-		}, ( b ) => b.read( surfaceDepth ), ( b ) => b.read( constants ) );
-		// the sharp image: the composite (inline, without the composite pass: the profiler's
-		// composite then) and the blooms
-		const sharpQuad = this.sharpQuad;
-		g.addPass( 'sharp', 'quad', ( b ) => {
-
-			if ( hdr ) readHdr( b );
-			else compositeReads( b );
-			b.read( bloomResult );
-			sharp = b.write( sharp );
-			return { label: hdr ? 'sharp (composite + blooms)' : 'composite (air, fog, veil)', quad: sharpQuad };
-
-		} );
-		// the local tone mapping's grid (LocalTone.ts), then the grade
-		const toneGrid = this.localTone ? this.localTone.passes( g, ( b ) => {
-
-			b.read( sharp );
-			readExposure( b );
-
-		} ) : null;
-		const displayQuad = this.displayQuad;
-		g.addPass( 'display', 'quad', ( b ) => {
-
-			b.read( sharp );
-			if ( toneGrid ) b.read( toneGrid );
-			readExposure( b );
-			display = b.write( display );
-			return { label: 'grade', quad: displayQuad };
-
-		} );
-		// the temporal resolve and its canvas pass (TemporalAA.ts)
-		if ( this.temporal ) {
-
-			const { surfaceDepthPrev } = this.resources;
-			let rainOverlay = this.resources.rainOverlay;
-			// After the resolve (AfterResolve.ts): the rain's streaks and the storm's spray, unjittered,
-			// into the overlay at the canvas's size, which the canvas pass lays over the resolved image
-			// (with the composite at the pixel, and the nearest surface for the grade's sky test).
-			const after = rainOverlay ? () => {
-
-				g.addPass( 'rainAfter', 'scene', ( b ) => {
-
-					b.read( surfaceDepth );
-					rainOverlay = b.write( rainOverlay!, { clear: true } );
-					return {
-						label: 'rain after resolve', mrt: afterMRT, when: ( f ) => f.afterScene !== undefined && ! this.afterHeld(), whenLabel: 'streaks || spray, not held',
-						scene: ( f ) => f.afterScene!, camera: ( f ) => f.camera,
-					};
-
-				} );
-				// what the layer reads at a render texel (`rainInput`, `rainBehind`), while it runs
-				let rainInput = this.resources.rainInput!, rainBehind = this.resources.rainBehind;
-				const inputQuad = this.rainInputQuad!;
-				g.addPass( 'rainInput', 'quad', ( b ) => {
-
-					// (the grade's input: the sharp image)
-					b.read( sharp );
-					b.read( surfaceDepth );
-					if ( rainAir ) {
-
-						b.read( rainAir );
-						// (after the overlay pass, which does not run after the resolve)
-						b.readOptional( sceneColor );
-
-					}
-					// (the attachments in the struct's order; the MRT only declares them)
-					rainInput = b.write( rainInput );
-					if ( rainBehind ) rainBehind = b.write( rainBehind );
-					return { label: 'rain layer', when: ( f ) => this.layerRuns( f ) && ! this.afterHeld(), whenLabel: 'rain || spray, not held', quad: inputQuad, mrt: rainBehind ? mrt( {} ) : null };
-
-				} );
-				// the grade's table, for the canvas pass that draws the layer
-				let rainGrade = this.resources.rainGrade!;
-				const gradeQuad = this.rainGradeQuad!;
-				const temporal = this.temporal!;
-				g.addPass( 'rainGrade', 'quad', ( b ) => {
-
-					readExposure( b );
-					rainGrade = b.write( rainGrade );
-					return { label: 'rain layer', when: () => temporal.drawsLayer, whenLabel: 'layer in the canvas pass', quad: gradeQuad };
-
-				} );
-				// The change the rain makes to the graded image (`layerAt`), while it rains or the
-				// overlay holds something: drawn here into `rainLayer` for the frame that completes the
-				// rest (held after it) and for TAA's upscaled canvas pass, and by the canvas pass itself
-				// in every other frame (TemporalAA.ts `layerInline`; one canvas-size target less to
-				// write and read).
-				let rainLayer = this.resources.rainLayer!;
-				const layerQuad = this.layerQuad!;
-				g.addPass( 'rainLayer', 'quad', ( b ) => {
-
-					b.read( surfaceDepth );
-					b.read( display );
-					if ( toneGrid ) b.read( toneGrid );
-					readExposure( b );
-					b.readOptional( rainInput );
-					if ( rainBehind ) b.readOptional( rainBehind );
-					b.readOptional( rainOverlay! );
-					rainLayer = b.write( rainLayer );
-					return { label: 'rain layer', when: ( f ) => this.layerRuns( f ) && ! this.afterHeld() && ! temporal.drawsLayer, whenLabel: 'rain || spray, not held, not inline', quad: layerQuad };
-
-				} );
-				return { optional: [ rainLayer, rainOverlay!, rainInput, ...( rainBehind ? [ rainBehind ] : [] ), rainGrade ], required: [ surfaceDepth, display, exposureState, ...( toneGrid ? [ toneGrid ] : [] ) ] };
-
-			} : undefined;
-			this.temporal.declare( { display, velocity: velocity!, surfaceDepth, surfaceDepthPrev: surfaceDepthPrev!, veilReactive, canvas, after } );
-			return;
-
-		}
-		// to the canvas: copied at the display's resolution, upscaled below it
-		g.addPass( 'output', 'chain', ( b ) => {
-
-			b.read( display );
-			canvas = b.write( canvas );
-			return { label: 'output', when: () => ! this.upscaling, whenLabel: '!upscaling', pipeline: this.output! };
-
-		} );
-		const fsr = this.fsr, upscaledOutput = this.upscaledOutput, upscaledOutputThree = this.upscaledOutputThree;
-		if ( easu && fsr && upscaledOutput ) {
-
-			g.addPass( 'easu', 'quad', ( b ) => {
-
-				b.read( display );
-				easu = b.write( easu! );
-				return { label: 'output & FSR', when: () => this.upscaling, whenLabel: 'upscaling', quad: fsr.quad };
-
-			} );
-			g.addPass( 'upscaledOutput', 'chain', ( b ) => {
-
-				b.readOptional( easu! );
-				canvas = b.write( canvas );
-				return { label: 'output & FSR', when: () => this.upscaling, whenLabel: 'upscaling', pipeline: upscaledOutput };
-
-			} );
-
-		} else if ( upscaledOutputThree ) {
-
-			// three's FSR1Node: its passes run inside the chain, at the canvas's size
-			g.addPass( 'upscaledOutputThree', 'chain', ( b ) => {
-
-				b.read( display );
-				canvas = b.write( canvas );
-				return { label: 'output & FSR', when: () => this.upscaling, whenLabel: 'upscaling', pipeline: upscaledOutputThree };
-
-			} );
-
-		}
-
-	}
-
-	// The scene half under the temporal modes: one sample, jittered (the passes from the opaque scene
-	// to the overlay are the graph's jittered span), the motion vectors written beside the colour.
-	// The opaque and water passes draw with the scene MRT (sceneMRT), the rain and the storm's spray
-	// in the overlay pass with the overlay MRT, which keeps the motion of the surfaces under them
-	// (Motion.ts). Returns the scene colour's, the nearest surface's, the velocity's, the opaque
-	// copy's and the metering illuminance's last versions.
-	private declareTemporalScene( hazeReads: ResourceHandle[] ): [ ResourceHandle, ResourceHandle, ResourceHandle, ResourceHandle, ResourceHandle ] {
-
-		const g = this.graph;
-		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, meterLight } = this.resources;
-		let velocity = this.resources.velocity!;
-		g.addPass( 'opaque', 'scene', ( b ) => {
-
-			// (the sky dome reads the haze's light volume)
-			for ( const h of hazeReads ) b.read( h );
-			this.readDisplacement( b );
-			sceneColor = b.write( sceneColor, { clear: true } );
-			velocity = b.write( velocity, { clear: true } );
-			meterLight = b.write( meterLight, { clear: true } );
-			sceneDepth = b.depth( sceneDepth, { write: true, clear: true } );
-			return { label: 'opaque scene', mrt: sceneMRT, jittered: true, scene: ( f ) => f.scene, camera: ( f ) => f.camera };
-
-		} );
-		const [ underwater, refraction, refractionDepth ] = this.declareRefraction( sceneColor, sceneDepth );
-		// (one sample: the farthest of the samples is sample 0)
-		g.addPass( 'depthResolve', 'quad', ( b ) => {
-
-			b.read( sceneDepth, 'samples' );
-			linearDepth = b.write( linearDepth );
-			return { label: 'depth & copy resolves', jittered: true, quad: this.depthQuad };
-
-		} );
-		// single-sampled, the opaque colour is copied as a texture (no draw: it replaces every texel)
-		const from = g.texture( sceneColor ), to = g.texture( opaqueColor );
-		g.addPass( 'opaqueCopy', 'callback', ( b ) => {
-
-			b.read( sceneColor );
-			opaqueColor = b.write( opaqueColor, { clear: true } );
-			return { label: 'depth & copy resolves', jittered: true, copy: true, run: () => this.renderer.copyTextureToTexture( from, to ) };
-
-		} );
-		g.addPass( 'water', 'scene', ( b ) => {
-
-			b.read( opaqueColor );
-			b.read( linearDepth );
-			b.read( underwater );
-			b.readOptional( refraction );
-			b.readOptional( refractionDepth );
-			sceneColor = b.write( sceneColor );
-			velocity = b.write( velocity );
-			meterLight = b.write( meterLight );
-			sceneDepth = b.depth( sceneDepth, { write: true } );
-			return {
-				label: 'water', mrt: sceneMRT, jittered: true, before: ( f ) => f.water?.prepare( f.sun ),
-				scene: ( f ) => f.water ? f.waterScene : NO_WATER, camera: ( f ) => f.camera,
-			};
-
-		} );
-		g.addPass( 'surfaceResolve', 'quad', ( b ) => {
-
-			b.read( sceneDepth, 'samples' );
-			surfaceDepth = b.write( surfaceDepth );
-			return { label: 'depth & copy resolves', jittered: true, quad: this.surfaceQuad };
-
-		} );
-		// The rain and the spray over the finished scene: their colour blends as each material says,
-		// the velocity under them is kept and its reactive weight takes the larger value. One scene
-		// draws both, sorted by renderOrder: the spray (20) over the rain, where msaa draws the spray
-		// in the water's pass and the rain over it, so where both show the image differs a little.
-		g.addPass( 'overlay', 'scene', ( b ) => {
-
-			b.read( linearDepth );
-			b.read( surfaceDepth );
-			sceneColor = b.write( sceneColor, { blend: 'material' } );
-			velocity = b.write( velocity, { blend: 'keep-max' } );
-			meterLight = b.write( meterLight, { blend: 'keep' } );
-			b.depth( sceneDepth, { write: false } );
-			return {
-				label: 'overlay', mrt: overlayMRT, jittered: true, when: ( f ) => f.overlay === true && f.rainScene !== undefined, whenLabel: 'rain || spray',
-				scene: ( f ) => f.rainScene!, camera: ( f ) => f.camera,
-			};
-
-		} );
-		// the nearest surface's depth, kept for the next frame (the resolve's; FSR keeps its own)
-		if ( this.resources.surfaceDepthPrev ) g.copyToPersistent( surfaceDepth, this.resources.surfaceDepthPrev );
-		return [ sceneColor, surfaceDepth, velocity, opaqueColor, meterLight ];
-
-	}
-
-	// What the water refracts, right after the opaque pass, with the scene's jitter under the temporal
-	// modes: the underwater pyramid from the opaque pass's colour and samples, then the refraction
-	// source (ocean/Refraction.ts), the world under the sea through the wider view, shaded only
-	// outside the mask drawn first into its depth (see refractionMaskQuad). The refraction and its
-	// mask are off with `flags.refraction = false` (the water then refracts the opaque image alone:
-	// Water.ts). Returns the pyramid's, the refraction colour's and its depth's versions.
-	private declareRefraction( sceneColor: ResourceHandle, sceneDepth: ResourceHandle ): [ ResourceHandle, ResourceHandle, ResourceHandle ] {
-
-		const g = this.graph;
-		let { underwater, refractionReach, refraction, refractionDepth } = this.resources;
-		g.addPass( 'underwaterPyramid', 'quad', ( b ) => {
-
-			b.read( sceneColor );
-			b.read( sceneDepth, 'samples' );
-			underwater = b.write( underwater );
-			return { label: 'underwater pyramid', jittered: TEMPORAL, quad: this.underwaterQuad };
-
-		} );
-		const on = () => debugFlags.refraction !== false;
-		g.addPass( 'refractionReach', 'quad', ( b ) => {
-
-			b.read( sceneDepth, 'samples' );
-			b.read( underwater );
-			refractionReach = b.write( refractionReach );
-			return { label: 'refraction', jittered: TEMPORAL, when: on, whenLabel: 'refraction', quad: this.refractionReachQuad };
-
-		} );
-		g.addPass( 'refractionMask', 'quad', ( b ) => {
-
-			b.read( underwater );
-			// (the reach runs whenever the mask does)
-			b.readOptional( refractionReach );
-			refraction = b.write( refraction, { clear: true } );
-			refractionDepth = b.depth( refractionDepth, { write: true, clear: true } );
-			return { label: 'refraction', mrt: REFRACTION_MRT, jittered: TEMPORAL, when: on, whenLabel: 'refraction', quad: this.refractionMaskQuad };
-
-		} );
-		g.addPass( 'refraction', 'scene', ( b ) => {
-
-			refraction = b.write( refraction );
-			refractionDepth = b.depth( refractionDepth, { write: true } );
-			return {
-				label: 'refraction', mrt: REFRACTION_MRT, jittered: TEMPORAL, when: on, whenLabel: 'refraction',
-				before: ( f ) => this.refraction.update( f.camera ), scene: ( f ) => f.scene, camera: () => this.refraction.camera,
-			};
-
-		} );
-		return [ underwater, refraction, refractionDepth ];
-
-	}
-
+	displacement: { field: ResourceHandle; previous: ResourceHandle | null } | null = null;
 
 	/** The scene's render size, and the canvas's when it is larger (the frame is then upscaled). */
 	setSize( w: number, h: number, outputWidth = w, outputHeight = h ): void {
@@ -2275,7 +1032,7 @@ export class Pipeline {
 
 	// whether the rain's layer shows this frame (AfterResolve.ts): while it rains (the veil) or the
 	// after pass draws (its pass then runs, unless the rest holds it)
-	private layerRuns( f: PipelineFrame ): boolean {
+	layerRuns( f: PipelineFrame ): boolean {
 
 		return f.afterScene !== undefined || ( this.rain?.uniforms.rain.value ?? 0 ) > 0.001;
 
@@ -2289,7 +1046,7 @@ export class Pipeline {
 	// image is the rest's). The frame that completes the rest draws at the rest sequence's last
 	// jitter, and nothing it draws from changes while the rest holds (the rest's key), so its
 	// overlay and layer stand for every frame after it; the canvas pass reads them as they are.
-	private afterHeld(): boolean {
+	afterHeld(): boolean {
 
 		return this.temporal?.holding === true;
 

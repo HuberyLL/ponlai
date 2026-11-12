@@ -194,7 +194,7 @@ class PreExposure {
 	/** The EV of the last reading applied (diagnostics). */
 	ev = NaN;
 
-	/** Back to the fresh load's P (a scene event that cuts: Pipeline.ts listens). */
+	/** Back to the fresh load's P (a scene event that cuts: PipelineDisplay.ts listens). */
 	reset(): void {
 
 		this.next = 0;

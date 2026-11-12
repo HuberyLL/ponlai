@@ -96,9 +96,9 @@ export const NEUTRAL_GRADE: Readonly<GradeParams> = {
 };
 
 /** The base grade: the day's, which the other grades build on. No contrast and no saturation over
- * the whole frame (the contrast is the shade's, Pipeline.ts SHADE_CONTRAST, and the tone curve's):
- * each hue moved on its own, lightly, the neutral axis left where it is but for a touch of cool in
- * the highlights.
+ * the whole frame (the contrast is the shade's, look/DisplayLook.ts SHADE_CONTRAST, and the tone
+ * curve's): each hue moved on its own, lightly, the neutral axis left where it is but for a touch
+ * of cool in the highlights.
  * - The warm hues (red to yellow) times 1.15: the earth, the bark and the low sun's light keep
  *   their colour under the softer curve; they also turn 8 degrees toward red, so the golden hour's
  *   light reads orange where the curve's shoulder turns it yellow (a degree or so on the day's
@@ -107,10 +107,11 @@ export const NEUTRAL_GRADE: Readonly<GradeParams> = {
  *   4 degrees toward red.
  * - The sky's blue times 1.2: the noon sky read pale and grey over the brighter curve.
  * - The green times 0.95 and turned 3.5 degrees toward yellow: the cool noon white balance
- *   (Pipeline.ts WHITE_BALANCE) already takes the sunlit meadow from yellow-green to green, and a
- *   turn toward blue-green over it took the lit blades past it (on screen, in linear light, their mean red
- *   to green about 0.53 to 0.60 at 4 degrees toward blue-green, 0.61 to 0.66 at this turn, from
- *   0.74 to 0.81 under a neutral white), and a touch less loud than the sky over it.
+ *   (look/DisplayLook.ts WHITE_BALANCE) already takes the sunlit meadow from yellow-green to
+ *   green, and a turn toward blue-green over it took the lit blades past it (on screen, in linear
+ *   light, their mean red to green about 0.53 to 0.60 at 4 degrees toward blue-green, 0.61 to 0.66
+ *   at this turn, from 0.74 to 0.81 under a neutral white), and a touch less loud than the sky over
+ *   it.
  * - The sea's blue-green times 1.05 and turned 7 degrees toward blue; purple turned 6 degrees
  *   toward red.
  * - The highlights' white turned a touch cool (an Oklab chroma of about 0.008 at a hue of 260). */

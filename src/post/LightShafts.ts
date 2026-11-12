@@ -190,12 +190,12 @@ export class LightShafts {
 
 	}
 
-	/** The flare's visibility, the same for every pixel of a frame (Pipeline.ts evaluates it once,
-	 * in its constants pass): the share of FLARE_TAPS taps of `surfaceDepth` (the nearest surface's
-	 * view z, the sky's below -9e4) in a disc of the drawn disk's radius round the flare's body's
-	 * place on screen that read the sky, times the clouds' mean transmittance over its disk
-	 * (`sunCloud`, or `moonCloud` for the moon's). The taps lie on a Vogel spiral, held inside the
-	 * frame. */
+	/** The flare's visibility, the same for every pixel of a frame (PipelineDisplay.ts evaluates it
+	 * once, in its constants pass): the share of FLARE_TAPS taps of `surfaceDepth` (the nearest
+	 * surface's view z, the sky's below -9e4) in a disc of the drawn disk's radius round the
+	 * flare's body's place on screen that read the sky, times the clouds' mean transmittance over
+	 * its disk (`sunCloud`, or `moonCloud` for the moon's). The taps lie on a Vogel spiral, held
+	 * inside the frame. */
 	occlusion( surfaceDepth: THREE.Texture, size: V2, sunCloud: F, moonCloud: F ): F {
 
 		const depth = texture( surfaceDepth );

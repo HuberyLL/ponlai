@@ -52,19 +52,19 @@ import { preExposedRGBA } from './PreExposure.ts';
 //   linear light); the change is its difference from what the display pass graded at the texel. The
 //   change is added to the resolved image decoded to linear light (the sRGB transfer undone, on
 //   changed pixels only), which is encoded again; the vignette applies to it as to the image. It is taken at the
-//   rain's coverage of a single sample (Pipeline.ts AFTER_COVERAGE) and spread over the pixel, as a
-//   supersampled image grades each sample before it averages them. Laid over the graded image
-//   instead, faint rain over the dark sea and meadow, in the curve's toe, came out brighter and
-//   harder (the rings on the sea most); laid over it before the grade at its full coverage, thin
-//   streaks came out fainter than the ground truth's. The rain's bloom is left out.
+//   rain's coverage of a single sample (PipelineDisplay.ts AFTER_COVERAGE) and spread over the
+//   pixel, as a supersampled image grades each sample before it averages them. Laid over the graded
+//   image instead, faint rain over the dark sea and meadow, in the curve's toe, came out brighter
+//   and harder (the rings on the sea most); laid over it before the grade at its full coverage,
+//   thin streaks came out fainter than the ground truth's. The rain's bloom is left out.
 // - Where: a running frame's canvas pass draws the change itself, in a build of its own used only
 //   while the layer shows (built into the one canvas pass for every frame, the rain's registers
 //   slowed it in fair weather too; drawn by a pass of its own, it cost a canvas-size target written
-//   and read), and grades by a table (Pipeline.ts `gradeTable`, baked each frame from the grade
-//   itself: the change is the difference of two readings, so the table's error cancels to first
-//   order; in a stepped rain clip a few hundredths of a level from the full grade's on average, at
-//   most one in 99.9 % of the pixels). The full grade at every canvas pixel was a third of the
-//   layer's time.
+//   and read), and grades by a table (PipelineDisplay.ts `gradeTable`, baked each frame from the
+//   grade itself: the change is the difference of two readings, so the table's error cancels to
+//   first order; in a stepped rain clip a few hundredths of a level from the full grade's on
+//   average, at most one in 99.9 % of the pixels). The full grade at every canvas pixel was a third
+//   of the layer's time.
 //   The frame that completes the rest draws the change with the full grade into `rainLayer`, which
 //   the canvas pass reads as it is while the rest holds (below), as TAA's upscaled canvas pass does.
 // - At rest (TemporalRest.ts): the passes draw over the frame's own jitter and jittered depth, and

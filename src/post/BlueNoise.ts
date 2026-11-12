@@ -1,10 +1,10 @@
 import * as THREE from 'three/webgpu';
 
-// A tile of blue noise for the output's dither (Pipeline.ts `finish`): BLUE_NOISE x BLUE_NOISE
-// thresholds n in [ 0, 1 ), each a pixel's rank among the tile's, made at load by Ulichney's
-// void-and-cluster ("The void-and-cluster method for dither array generation", SPIE 1993) from a
-// fixed seed, so it is the same tile on every load and no asset. Blue noise breaks the 8-bit
-// output's bands with the least visible grain; static, it does not shimmer and a paused frame
+// A tile of blue noise for the output's dither (PipelineDisplay.ts `finish`): BLUE_NOISE x
+// BLUE_NOISE thresholds n in [ 0, 1 ), each a pixel's rank among the tile's, made at load by
+// Ulichney's void-and-cluster ("The void-and-cluster method for dither array generation", SPIE
+// 1993) from a fixed seed, so it is the same tile on every load and no asset. Blue noise breaks the
+// 8-bit output's bands with the least visible grain; static, it does not shimmer and a paused frame
 // repeats. 64 is the smallest tile whose repetition does not show at 4K.
 // The method: an initial pattern of a tenth of the pixels (seeded), relaxed by moving the pixel in
 // its tightest cluster to its largest void until that move would put it back; ranks below the

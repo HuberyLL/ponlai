@@ -10,7 +10,7 @@ import { WEATHER_PRESETS, isParkedWeather, type WeatherName, WIND_LEVELS, type W
 import { type QualityTier, ACTIVE_QUALITY } from '../Quality.ts';
 import { qualityLines } from '../QualityDetect.ts';
 import { soilUniforms, setSoilStrength } from '../materials/Soil.ts';
-import { WHITE_BALANCE } from '../post/Pipeline.ts';
+import { WHITE_BALANCE } from '../look/DisplayLook.ts';
 import { LOCAL_TONE } from '../post/LocalTone.ts';
 import { FrameStats } from '../debug/FrameStats.ts';
 import { shared } from '../shared.ts';
@@ -287,7 +287,7 @@ export function addLookFolders( render: RenderParts, page: PageParts ) {
 	postF.add( S, 'bloom', 0, 3, 0.05 ).name( 'bloom strength' );
 	{
 
-		// the high sun's white balance (Pipeline.ts WHITE_BALANCE)
+		// the high sun's white balance (look/DisplayLook.ts WHITE_BALANCE)
 		const day = WHITE_BALANCE.day[ WHITE_BALANCE.day.length - 1 ].values;
 		postF.add( day, 'r', 0.4, 1.5, 0.005 ).name( 'white balance red (high sun)' );
 		postF.add( day, 'b', 0.5, 1.5, 0.005 ).name( 'white balance blue (high sun)' );

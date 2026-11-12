@@ -5,14 +5,14 @@
 // graph is a stand-in that hands each resource a texture in Pipeline.ts's format and each size
 // class a uniform; the exposure is the page's builder (Pipeline.ts `exposureRead`). The display
 // pass itself (the grade, the curve) is built by the page's Pipeline only; its vignette is built
-// here alone (Pipeline.ts `vignetteFactor`).
+// here alone (PipelineDisplay.ts `vignetteFactor`).
 
 import * as THREE from 'three/webgpu';
 import { exp2, float, ivec2, select, texture, textureLoad, uniform, uv, vec3, vec4 } from 'three/tsl';
 import { Metering } from '../../src/post/Metering.ts';
 import { PhysicalBloom } from '../../src/post/PhysicalBloom.ts';
 import { LocalTone } from '../../src/post/LocalTone.ts';
-import { vignetteFactor } from '../../src/post/Pipeline.ts';
+import { vignetteFactor } from '../../src/post/PipelineDisplay.ts';
 import { preExposure } from '../../src/post/PreExposure.ts';
 
 // a graph resource as Pipeline.ts declares it

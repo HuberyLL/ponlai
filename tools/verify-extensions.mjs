@@ -16,7 +16,7 @@
 //   source given by its position alone takes the default's intensity and range, and `refresh`
 //   reads the kind's sources again. A second light table on one page is refused.
 // - An extra pass (src/post/ExtraPass.ts): a pass of this tool's is declared on a graph in the
-//   list's order. Every name in SCENE_PASSES is a scene pass src/post/Pipeline.ts declares
+//   list's order. Every name in SCENE_PASSES is a scene pass src/post/PipelinePasses.ts declares
 //   (`addPass( '<name>', 'scene'`), so the typed names are real ones.
 // - Scene events (src/post/SceneEvents.ts): reasons of this tool's are declared and raised (the
 //   rest's epoch takes the reason; a cutting one reaches the cut's listeners, the other does not),
@@ -177,7 +177,7 @@ try {
 	const e3 = thrown( () => declareExtraPasses( graph, [ pass( 'verifyFirst' ), pass( 'verifySecond' ) ] ) );
 	check( 'extra passes are declared in the list\'s order', e3 === null && declaredPasses.join() === 'verifyFirst:compute,verifySecond:compute', e3?.stack ?? declaredPasses.join() );
 	check( 'an extra pass without its declarations is refused', thrown( () => declareExtraPasses( graph, [ { name: 'undeclared pass', declare: () => {} } ] ) ) !== null );
-	const pipeline = readFileSync( path.join( ROOT, 'src', 'post', 'Pipeline.ts' ), 'utf8' );
+	const pipeline = readFileSync( path.join( ROOT, 'src', 'post', 'PipelinePasses.ts' ), 'utf8' );
 	const missing = SCENE_PASSES.filter( ( name ) => ! pipeline.includes( `addPass( '${ name }', 'scene'` ) );
 	check( `the ${ SCENE_PASSES.length } typed scene pass names are passes the pipeline declares`, missing.length === 0, `not declared: ${ missing.join( ', ' ) }` );
 

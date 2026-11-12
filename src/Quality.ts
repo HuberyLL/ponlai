@@ -61,7 +61,7 @@
 // This module imports types only, so the CPU-only tools can read the table under plain node.
 import type { WaterQuality } from './ocean/Water.ts';
 import type { CloudMarch, CloudViewScale } from './sky/CloudModel.ts';
-import type { PostOptions } from './post/Pipeline.ts';
+import type { PostOptions } from './post/PostOptions.ts';
 import type { AAMode } from './post/Antialiasing.ts';
 import { settings } from './Settings.ts';
 
