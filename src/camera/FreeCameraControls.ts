@@ -20,14 +20,19 @@ export class FreeCameraControls {
 	private pointerId: number | null = null;
 	private pointerX = 0;
 	private pointerY = 0;
+	// the page the element is in, for its keys, focus and visibility
+	private readonly page: Document;
+	private readonly view: Window;
 
 	constructor( private readonly camera: THREE.Camera, private readonly element: HTMLCanvasElement ) {
 
-		window.addEventListener( 'keydown', this.onKeyDown );
-		window.addEventListener( 'keyup', this.onKeyUp );
-		window.addEventListener( 'blur', this.clearInput );
-		document.addEventListener( 'visibilitychange', this.onVisibilityChange );
-		document.addEventListener( 'focusin', this.onFocusIn );
+		this.page = element.ownerDocument;
+		this.view = this.page.defaultView as Window;
+		this.view.addEventListener( 'keydown', this.onKeyDown );
+		this.view.addEventListener( 'keyup', this.onKeyUp );
+		this.view.addEventListener( 'blur', this.clearInput );
+		this.page.addEventListener( 'visibilitychange', this.onVisibilityChange );
+		this.page.addEventListener( 'focusin', this.onFocusIn );
 		element.addEventListener( 'pointerdown', this.onPointerDown );
 		element.addEventListener( 'pointermove', this.onPointerMove );
 		element.addEventListener( 'pointerup', this.onPointerEnd );
@@ -56,7 +61,7 @@ export class FreeCameraControls {
 
 	update( dt: number ): void {
 
-		if ( ! this.active || ! Number.isFinite( dt ) || isCameraInputTarget( document.activeElement ) ) return;
+		if ( ! this.active || ! Number.isFinite( dt ) || isCameraInputTarget( this.page.activeElement ) ) return;
 		const x = Number( this.keys.has( 'KeyD' ) ) - Number( this.keys.has( 'KeyA' ) );
 		const z = Number( this.keys.has( 'KeyS' ) ) - Number( this.keys.has( 'KeyW' ) );
 		const y = Number( this.keys.has( 'KeyE' ) ) - Number( this.keys.has( 'KeyQ' ) );
@@ -71,11 +76,11 @@ export class FreeCameraControls {
 	dispose(): void {
 
 		this.clearInput();
-		window.removeEventListener( 'keydown', this.onKeyDown );
-		window.removeEventListener( 'keyup', this.onKeyUp );
-		window.removeEventListener( 'blur', this.clearInput );
-		document.removeEventListener( 'visibilitychange', this.onVisibilityChange );
-		document.removeEventListener( 'focusin', this.onFocusIn );
+		this.view.removeEventListener( 'keydown', this.onKeyDown );
+		this.view.removeEventListener( 'keyup', this.onKeyUp );
+		this.view.removeEventListener( 'blur', this.clearInput );
+		this.page.removeEventListener( 'visibilitychange', this.onVisibilityChange );
+		this.page.removeEventListener( 'focusin', this.onFocusIn );
 		this.element.removeEventListener( 'pointerdown', this.onPointerDown );
 		this.element.removeEventListener( 'pointermove', this.onPointerMove );
 		this.element.removeEventListener( 'pointerup', this.onPointerEnd );
@@ -89,7 +94,7 @@ export class FreeCameraControls {
 	private onKeyDown = ( event: KeyboardEvent ): void => {
 
 		if ( ! this.active ) return;
-		if ( event.ctrlKey || event.metaKey || event.altKey || isCameraInputTarget( event.target ) || isCameraInputTarget( document.activeElement ) ) {
+		if ( event.ctrlKey || event.metaKey || event.altKey || isCameraInputTarget( event.target ) || isCameraInputTarget( this.page.activeElement ) ) {
 
 			this.clearInput();
 			return;
@@ -109,7 +114,7 @@ export class FreeCameraControls {
 
 	private onVisibilityChange = (): void => {
 
-		if ( document.hidden ) this.clearInput();
+		if ( this.page.hidden ) this.clearInput();
 
 	};
 
@@ -124,7 +129,7 @@ export class FreeCameraControls {
 		if ( ! this.active || this.pointerId !== null || ( event.button !== 0 && event.button !== 2 ) || event.ctrlKey || event.metaKey || event.altKey ) return;
 		event.preventDefault();
 		// Returning to the canvas should release form focus so navigation can resume.
-		if ( document.activeElement instanceof HTMLElement && isCameraInputTarget( document.activeElement ) ) document.activeElement.blur();
+		if ( this.page.activeElement instanceof HTMLElement && isCameraInputTarget( this.page.activeElement ) ) this.page.activeElement.blur();
 		this.rotation.setFromQuaternion( this.camera.quaternion, 'YXZ' );
 		this.rotation.z = 0;
 		this.pointerId = event.pointerId;
@@ -181,7 +186,7 @@ export class FreeCameraControls {
 
 	private onWheel = ( event: WheelEvent ): void => {
 
-		if ( ! this.active || event.ctrlKey || event.metaKey || event.altKey || isCameraInputTarget( document.activeElement ) ) return;
+		if ( ! this.active || event.ctrlKey || event.metaKey || event.altKey || isCameraInputTarget( this.page.activeElement ) ) return;
 		event.preventDefault();
 		// Browsers report wheels in pixels, lines, or pages; normalise before changing speed.
 		const delta = event.deltaY * ( event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.element.clientHeight : 1 );

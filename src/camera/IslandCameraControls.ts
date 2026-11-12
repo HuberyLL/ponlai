@@ -220,9 +220,14 @@ export class IslandCameraControls {
 	private gestureRotation = 0;
 	// the land's convex hull (x, z pairs: IslandFraming.landOutline); empty, the pivot goes anywhere
 	private hull: readonly number[] = [];
+	// the page the element is in, for its keys, focus and visibility
+	private readonly page: Document;
+	private readonly view: Window;
 
 	constructor( private readonly camera: THREE.PerspectiveCamera, private readonly element: HTMLElement ) {
 
+		this.page = element.ownerDocument;
+		this.view = this.page.defaultView as Window;
 		this.farFov = camera.fov;
 		element.style.touchAction = 'none';
 		element.addEventListener( 'pointerdown', this.onPointerDown );
@@ -236,11 +241,11 @@ export class IslandCameraControls {
 		// Safari's trackpad pinch and rotation (Chrome sends a pinch as a ctrl wheel instead)
 		element.addEventListener( 'gesturestart', this.onGestureStart as EventListener );
 		element.addEventListener( 'gesturechange', this.onGestureChange as EventListener );
-		window.addEventListener( 'keydown', this.onKeyDown );
-		window.addEventListener( 'keyup', this.onKeyUp );
-		window.addEventListener( 'blur', this.clearInput );
-		document.addEventListener( 'visibilitychange', this.onVisibilityChange );
-		document.addEventListener( 'focusin', this.onFocusIn );
+		this.view.addEventListener( 'keydown', this.onKeyDown );
+		this.view.addEventListener( 'keyup', this.onKeyUp );
+		this.view.addEventListener( 'blur', this.clearInput );
+		this.page.addEventListener( 'visibilitychange', this.onVisibilityChange );
+		this.page.addEventListener( 'focusin', this.onFocusIn );
 		// as OrbitControls' constructor did (about the origin, with its default limits), so a camera
 		// placed before it ends on the very same bits
 		this.update();
@@ -390,11 +395,11 @@ export class IslandCameraControls {
 		e.removeEventListener( 'wheel', this.onWheel );
 		e.removeEventListener( 'gesturestart', this.onGestureStart as EventListener );
 		e.removeEventListener( 'gesturechange', this.onGestureChange as EventListener );
-		window.removeEventListener( 'keydown', this.onKeyDown );
-		window.removeEventListener( 'keyup', this.onKeyUp );
-		window.removeEventListener( 'blur', this.clearInput );
-		document.removeEventListener( 'visibilitychange', this.onVisibilityChange );
-		document.removeEventListener( 'focusin', this.onFocusIn );
+		this.view.removeEventListener( 'keydown', this.onKeyDown );
+		this.view.removeEventListener( 'keyup', this.onKeyUp );
+		this.view.removeEventListener( 'blur', this.clearInput );
+		this.page.removeEventListener( 'visibilitychange', this.onVisibilityChange );
+		this.page.removeEventListener( 'focusin', this.onFocusIn );
 
 	}
 
@@ -776,7 +781,7 @@ export class IslandCameraControls {
 		if ( ! left && ! right ) return;
 		event.preventDefault();
 		// returning to the canvas releases a form field's focus, so the keys work again
-		if ( document.activeElement instanceof HTMLElement && isCameraInputTarget( document.activeElement ) ) document.activeElement.blur();
+		if ( this.page.activeElement instanceof HTMLElement && isCameraInputTarget( this.page.activeElement ) ) this.page.activeElement.blur();
 		// a press holds the view: the glides stop as a hand stops a sliding map
 		this.glide.set( 0, 0 );
 		this.glideTurn = 0;
@@ -1026,7 +1031,7 @@ export class IslandCameraControls {
 	private onKeyDown = ( event: KeyboardEvent ): void => {
 
 		if ( ! this.listening ) return;
-		if ( event.ctrlKey || event.metaKey || event.altKey || isCameraInputTarget( event.target ) || isCameraInputTarget( document.activeElement ) ) {
+		if ( event.ctrlKey || event.metaKey || event.altKey || isCameraInputTarget( event.target ) || isCameraInputTarget( this.page.activeElement ) ) {
 
 			this.keys.clear();
 			return;
@@ -1046,7 +1051,7 @@ export class IslandCameraControls {
 
 	private onVisibilityChange = (): void => {
 
-		if ( document.hidden ) this.clearInput();
+		if ( this.page.hidden ) this.clearInput();
 
 	};
 

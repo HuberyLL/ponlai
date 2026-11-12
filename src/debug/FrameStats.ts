@@ -50,11 +50,16 @@ export class FrameStats {
 	private lastReadout = - Infinity;
 	private overlay: HTMLElement | null = null;
 
-	constructor() {
+	private readonly host: HTMLElement;
 
+	/** `host`: the element the overlay is drawn in (the page's body), whose document and window
+	 * the readout listens to. */
+	constructor( host: HTMLElement ) {
+
+		this.host = host;
 		// a hidden page stops its loop: the interval across the gap is no frame of the display's
-		document.addEventListener( 'visibilitychange', () => { this.previous = NaN; } );
-		addEventListener( 'keydown', ( e ) => {
+		host.ownerDocument.addEventListener( 'visibilitychange', () => { this.previous = NaN; } );
+		host.ownerDocument.defaultView?.addEventListener( 'keydown', ( e ) => {
 
 			if ( e.code !== OVERLAY_KEY || e.repeat || e.ctrlKey || e.metaKey || e.altKey ) return;
 			const target = e.target as HTMLElement | null;
@@ -111,11 +116,11 @@ export class FrameStats {
 			return;
 
 		}
-		const el = document.createElement( 'div' );
+		const el = this.host.ownerDocument.createElement( 'div' );
 		// plain DOM over the canvas, no backdrop filter (one over the WebGPU canvas cost frames)
 		el.style.cssText = 'position:fixed;left:8px;top:8px;z-index:20;pointer-events:none;padding:5px 8px;border-radius:4px;' +
 			'background:rgba(8,20,24,0.72);color:#d8eaec;font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre';
-		document.body.appendChild( el );
+		this.host.appendChild( el );
 		this.overlay = el;
 		this.lastReadout = - Infinity;
 

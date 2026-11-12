@@ -105,10 +105,15 @@ export interface ChunkStore {
 	close(): void;
 }
 
+/** The browser the cache's records were made in, which their keys and the store's identity name
+ * (its Math functions could differ between engines). */
+export const cacheBrowser = (): string => navigator.userAgent;
+
 /** The chunk cache of the generator `generator` (its records of any other generator cleared), or
  * null when IndexedDB is unavailable. */
 export async function openChunkStore( generator: string ): Promise<ChunkStore | null> {
 
+	if ( typeof indexedDB === 'undefined' ) return null;
 	let db: IDBDatabase;
 	// the keys the store held on opening: a read of any other key misses without a request
 	let present: Set<IDBValidKey>;
@@ -118,7 +123,7 @@ export async function openChunkStore( generator: string ): Promise<ChunkStore | 
 		// another page that opens a newer version must not wait for this one
 		db.onversionchange = () => db.close();
 		const tx = db.transaction( [ META, CHUNKS ], 'readwrite' );
-		const meta = tx.objectStore( META ), chunks = tx.objectStore( CHUNKS ), identity = generator + '\n' + navigator.userAgent;
+		const meta = tx.objectStore( META ), chunks = tx.objectStore( CHUNKS ), identity = generator + '\n' + cacheBrowser();
 		if ( await request( meta.get( GENERATOR ) ) !== identity ) {
 
 			chunks.clear();

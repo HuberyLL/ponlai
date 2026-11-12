@@ -120,6 +120,7 @@ soilUniforms.strength.value = ground.soil ? 1 : 0;
 // ?profile=frames without the GPU timestamps). The profiler loads only then; without it the
 // renderer, its pipelines and the image are unchanged.
 const profiler = params.has( 'profile' ) ? ( await import( './debug/FrameProfiler.ts' ) ).createFrameProfiler( THREE.InspectorBase, { timestamps: params.get( 'profile' ) !== 'frames' } ) : null;
+if ( profiler ) ( window as unknown as Record<string, unknown> ).__PONLAI_PROFILE__ = profiler.api;
 const mark = ( name: string ) => profiler?.mark( name );
 // scene handles and frame diagnostics on window, for the capture tool and the console: dev server,
 // ?debug or ?profile only
@@ -1319,7 +1320,7 @@ performanceF.add( pipeline.sharpness, 'value', 0, 2, 0.05 ).name( 'upscale softn
 // The live readout (FrameStats.ts): the rendered frames' cadence by their rAF timestamps, the render
 // scale and the GPU's frame time, refreshed a few times a second while the folder shows (F toggles a
 // corner overlay with the same numbers).
-const frameStats = new FrameStats();
+const frameStats = new FrameStats( document.body );
 const statsF = [
 	performanceF.add( frameStats.readout, 'fps' ).name( 'fps (1 s)' ),
 	performanceF.add( frameStats.readout, 'p95' ).name( 'interval p95' ),

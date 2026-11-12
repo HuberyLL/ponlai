@@ -1,5 +1,6 @@
 {
 	"Boot.ts": "app",
+	"FetchAsset.ts": "render",
 	"PageSettings.ts": "app",
 	"Quality.ts": "render",
 	"QualityDetect.ts": "app",

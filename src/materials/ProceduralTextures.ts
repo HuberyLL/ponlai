@@ -9,6 +9,7 @@ import {
 	Fn, If, Loop, uv, texture, uniform, float, int, vec2, vec3, vec4, normalize, fract, floor, dot, mod, mix,
 	length, smoothstep, sin, cos, abs, pow, max, clamp, step,
 } from 'three/tsl';
+import { fetchAsset } from '../FetchAsset.ts';
 
 // Tileable detail textures baked on the GPU once at startup (no image files):
 //   heights   R rock (beds, fractures)   G moss cushions   B sand ripples   A lichen spots
@@ -205,7 +206,7 @@ export const SCAN_TOP_MIP = Math.log2( SCAN_SIZE );
 // flipped upload has them.
 async function scanPixels( path: string ): Promise<Uint8ClampedArray> {
 
-	const blob = await ( await fetch( `${ import.meta.env.BASE_URL }textures/${ path }` ) ).blob();
+	const blob = await ( await fetchAsset( `textures/${ path }` ) ).blob();
 	const bitmap = await createImageBitmap( blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none', imageOrientation: 'flipY' } );
 	const canvas = new OffscreenCanvas( SCAN_SIZE, SCAN_SIZE );
 	const context = canvas.getContext( '2d' )!;

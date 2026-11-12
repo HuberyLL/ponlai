@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { storage } from 'three/tsl';
+import { fetchAsset } from '../FetchAsset.ts';
 
 // The real night sky's data, loaded once before the first sky bake:
 //   stars.bin     the Yale Bright Star Catalogue (9096 stars to about magnitude 6.5), packed by
@@ -124,7 +125,7 @@ export const starRecords = storage( records, 'vec4', records.count ).toReadOnly(
 
 async function loadStars(): Promise<void> {
 
-	const response = await fetch( import.meta.env.BASE_URL + 'sky/stars.bin' );
+	const response = await fetchAsset( 'sky/stars.bin' );
 	if ( ! response.ok ) throw new Error( `Star catalogue: HTTP ${ response.status }` );
 	const grid = buildStarGrid( await response.arrayBuffer() );
 	( words.array as Uint32Array ).set( grid.cells );
@@ -135,7 +136,7 @@ async function loadStars(): Promise<void> {
 
 async function loadMilkyWay(): Promise<void> {
 
-	const response = await fetch( import.meta.env.BASE_URL + 'sky/milkyway.png' );
+	const response = await fetchAsset( 'sky/milkyway.png' );
 	if ( ! response.ok ) throw new Error( `Milky Way mask: HTTP ${ response.status }` );
 	// Raw greyscale values: no colour management or premultiplication on the way.
 	const bitmap = await createImageBitmap( await response.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' } );
