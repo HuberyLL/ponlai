@@ -126,6 +126,14 @@ import { settings } from '../Settings.ts';
 export interface MotionSourceFlags { camera?: boolean; object?: boolean; skin?: boolean; wind?: boolean; sea?: boolean; foam?: boolean }
 export const debugFlags: Record<string, boolean | number | string | MotionSourceFlags | undefined> & { mv: MotionSourceFlags } = { mv: {} };
 
+/** Sets a flag from code of another layer (the island's wind probe, a URL option that stands for a
+ * flag): the flags' one operation for a writer that is not the renderer's own. */
+export function setDebugFlag( name: string, value: boolean | number | string | MotionSourceFlags | undefined ): void {
+
+	debugFlags[ name ] = value;
+
+}
+
 // `flags=<name>:<value>,...` in the URL (debug builds: the dev server, ?debug, ?profile) sets flags
 // as this module loads, before any module reads them, so a capture or a clip A/Bs a flag by its
 // query. A value reads as true / false, a number, or else the string itself (a bare name, without

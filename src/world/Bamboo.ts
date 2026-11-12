@@ -551,9 +551,11 @@ export function bambooKinds( bamboo: Bamboo ): VegetationKind<unknown, WorldData
 		prepare: ( input ) => bamboo.prepare( input.data, input.renderer ),
 		swap: ( prepared ) => bamboo.swap( prepared ),
 	};
+	// no tier changes their cost and they keep no history; the culms' growth prepares and swaps the
+	// leaves with them
 	return [
-		{ name: 'bamboo', root: bamboo.culms, prepass: false, shadowFilter: 'ordinary', sunCaster: true, rainBake: true, growth: growth as KindGrowth<unknown, WorldData> },
-		{ name: 'bamboo leaves', root: bamboo.leaves, prepass: true, shadowFilter: 'vegetation', sunCaster: true, rainBake: true },
+		{ name: 'bamboo', root: bamboo.culms, prepass: false, shadowFilter: 'ordinary', sunCaster: true, rainBake: true, cost: 'none', testMode: 'stateless', land: { follower: 'its growth' }, growth: growth as KindGrowth<unknown, WorldData> },
+		{ name: 'bamboo leaves', root: bamboo.leaves, prepass: true, shadowFilter: 'vegetation', sunCaster: true, rainBake: true, cost: 'none', testMode: 'stateless', land: { follower: 'the growth of the kind \'bamboo\'' } },
 	];
 
 }

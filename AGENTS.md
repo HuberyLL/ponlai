@@ -80,7 +80,11 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   reads them through (`settings.get( 'name' )`; a new option is declared there,
   `tools/verify-settings.mjs`). Below the page no module touches the browser's page (`location`,
   `window`, `document`, storage and the like): `tools/verify-layers.mjs`, its page check;
-  `src/FetchAsset.ts` fetches the assets.
+  `src/FetchAsset.ts` fetches the assets. `src/Extensions.ts` holds the three declarations every
+  definition registered with the renderer states (a plant kind, a kind of local light, an extra
+  pass: its cost knob, its stand in the test mode, how it follows the land's growth;
+  `tools/verify-extensions.mjs`), and `src/UserData.ts` lists the `userData` keys the renderer
+  sets or reads (`tools/verify-layers.mjs` refuses one that is not declared there).
 - `src/main.ts`: the one place that assembles the page. It calls, in an order that is part of the
   image, the renderer's stages (`src/RenderStages.ts`: the renderer, the sky, the sun, the sea, the
   frame's passes, then what the island's data builds), the island's (`src/IslandStages.ts`: the
@@ -118,7 +122,8 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   and the opaque scene's, for the ambient occlusion (`OpaquePrepass.ts`), and the ambient light's
   probes, baked per chunk (`AmbientProbes.ts`). `src/world/vegetation/` holds what every plant kind
   shares (material, coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the
-  registry of kinds, the trees' tubes and leaf cards in `TreeMesh.ts` and their bark and leaf
+  registry of kinds in `Registry.ts` and the default plant a kind without art is drawn with in
+  `DefaultPlant.ts`, the trees' tubes and leaf cards in `TreeMesh.ts` and their bark and leaf
   surfaces in `TreeSurfaces.ts`, the authored plants drawn as instances of a few prototypes with two
   levels and a stipple between them in `PlantInstances.ts`, what a tree's leaves pass on of the key
   in `LeafLight.ts`) and the islanders' trail through the meadow (`Trample.ts`, drawn as sprites
@@ -180,8 +185,10 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   resolve (`TemporalAA.ts`), its history fetch (FSR 3.1's Lanczos 2 and deringing:
   `TemporalHistory.ts`) and the FSR 2 measures it takes for moving pixels (`TemporalLocks.ts`), the
   image of a resting scene (`TemporalRest.ts`), the scene events that restart it or cut the
-  history (`SceneEvents.ts`) and the rain's streaks and the storm's spray drawn after the resolve
-  (`AfterResolve.ts`).
+  history (`SceneEvents.ts`: each layer declares its own reasons), the table of what a cut or a
+  scene jump clears (`SceneHistory.ts`), the scene's extra passes and the typed names of the scene
+  passes that take latent draws (`ExtraPass.ts`) and the rain's streaks and the storm's spray
+  drawn after the resolve (`AfterResolve.ts`).
 - `src/post/graph/`: the frame graph: its declarations and compiler (`GraphCompiler.ts`, pure
   TypeScript, checked by `tools/verify-framegraph.mjs`), its runtime and warm-up (`FrameGraph.ts`,
   `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`) and the debug view
@@ -241,8 +248,8 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   and its probe (`WindView.ts`, `WindArrows.ts`, `WindProbe.ts`), the lighting layer's light-only
   and ambient-only views (`LightLayer.ts`), the scene's linear radiance over screen boxes
   (`Radiance.ts`) and what each cell of a grid shows (`RadianceAov.ts`, the kinds' codes in
-  `Classes.ts`), and the named numbers a script or the console can set on a running page
-  (`Tune.ts`).
+  `Classes.ts`, the island's kinds registered from `world/IslandClasses.ts`), and the named
+  numbers a script or the console can set on a running page (`Tune.ts`).
 - `tools/`: captures, profiling, the GPU lock and the probes (`docs/reference/tools.md`); the WGSL
   build (`wgsl-build.mjs`, its entries in `wgsl-build/`); the world's chunk checks
   (`verify-world-chunks.mjs`) and statistics (`verify-world-stats.mjs`), on the node helpers in

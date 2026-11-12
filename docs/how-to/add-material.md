@@ -36,8 +36,8 @@ header comment says more.
 3. Add the sunlight the ground bounces up in the lighting model, with `addGroundBounce` or
    `groundBounceLight` (`GroundBounce.ts`), never a bounce of its own.
 4. A lit model of its own adds `addLocalLights` (`LocalLights.ts`) and takes its key's cosine from
-   `GroundBounceLightingModel`'s `shadeDirection` (`KeyLift.ts`). A new light source joins
-   `localLights.sources`, never a three light.
+   `GroundBounceLightingModel`'s `shadeDirection` (`KeyLift.ts`). A new light source is a
+   kind of local light registered on the renderer's `localLights` (`add`), never a three light.
 5. Write the metering illuminance beside the colour with `writeMeter` (`MeterLight.ts`), and draw
    only in passes with an MRT.
 6. A material under water lights with `Underwater.ts`, as the terrain does.

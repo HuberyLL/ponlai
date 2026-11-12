@@ -1,7 +1,7 @@
 import type * as THREE from 'three/webgpu';
 import type GUI from 'lil-gui';
 import type { DayCycle } from '../sky/DayCycle.ts';
-import type { SceneEventReason } from '../post/SceneEvents.ts';
+import { declareSceneEvents } from '../post/SceneEvents.ts';
 import type { CharacterShadow } from '../characters/CharacterShadow.ts';
 import { FIGURE_HEIGHT, type Villager as Figure } from '../characters/Villagers.ts';
 import type { LookColours } from '../characters/looks.ts';
@@ -69,8 +69,9 @@ import type { SettingsQuery } from '../Settings.ts';
 // comes from the world generator's own exports: the land (its walkable grid, sim/grid.ts, spans the
 // land lattice's extent anchored to the world, so growth only opens cells). What changes the drawn scene at once (a simulation
 // installed at start or load, the pause, a placed blueprint, the placement ring the
-// pointer moves) tells the page through the context's `sceneEvent` (post/SceneEvents.ts), so the
-// temporal anti-aliasing cuts its history or converges a paused frame again.
+// pointer moves) raises one of the game's scene events (`gameEvent`, declared below with
+// post/SceneEvents.ts), so the temporal anti-aliasing cuts its history or converges a paused frame
+// again.
 //
 // The island grows with the population (docs/explanation/game-design.md, "How the island grows"; Session.ts):
 // the session asks the page's island to grow once a step is due (`island.grow`, world/Growth.ts's
@@ -107,8 +108,6 @@ export interface GameContext {
 	refreshEnvironment(): Promise<void>;
 	/** compile the pipelines these objects will draw with (the scene's pass, the sun's shadow map) off the frame */
 	compileDraws( objects: THREE.Object3D[] ): Promise<void>;
-	/** a change of the scene for the temporal anti-aliasing (post/SceneEvents.ts: its table says which cut) */
-	sceneEvent( reason: SceneEventReason ): void;
 	/** the island's pieces the world was loaded with (its land step: the save's, or the `grow` URL option) */
 	pieces: number;
 	/** the page's growing island (world/Growth.ts): how near the next step is (0..1), and a grow that
@@ -117,6 +116,17 @@ export interface GameContext {
 }
 
 // a stalled frame (a background tab, a debugger stop) resumes without running hours at once
+// The game's scene events (post/SceneEvents.ts), and whether each cuts the temporal history: a
+// simulation installed (start, load), its speed or pause, an order that changes what stands on the
+// island (a placed blueprint), and an overlay the player's input moves (the placement ring
+// following the pointer, Placement.ts).
+const gameEvent = declareSceneEvents( {
+	'game begin': true,
+	'game pause': false,
+	'game order': false,
+	'game input': false,
+} );
+
 const MAX_FRAME = 0.25;
 // real seconds between the saves the page makes as the game runs: at most this much play is lost
 // to a crash (a hidden or closed page saves at once)
@@ -233,7 +243,7 @@ export class Game {
 	addIslander(): EntityId {
 
 		const id = this.sim.addIslander();
-		this.context.sceneEvent( 'game order' );
+		gameEvent( 'game order' );
 		return id;
 
 	}
@@ -281,10 +291,10 @@ export class Game {
 			ticksPerSecond: () => SECONDS_PER_GAME_DAY / c.dayCycle.dayLength } );
 		this.lastSaved = '';
 		this.nextSave = performance.now() + AUTOSAVE_SECONDS * 1000;
-		c.sceneEvent( 'game begin' );
+		gameEvent( 'game begin' );
 		this.debug?.reset();
 		if ( this.ui ) this.ui.reset();
-		else this.ui = new GameUi( this, c );
+		else this.ui = new GameUi( this, { canvas: c.canvas, camera: c.camera, scene: c.scene, sceneEvent: gameEvent } );
 		// the simulation owns the time of day; the day clock only follows it
 		c.dayCycle.paused = false;
 		const before = c.dayCycle.hour;
@@ -350,7 +360,7 @@ export class Game {
 	setPaused( paused: boolean ): void {
 
 		this.sim.paused = paused;
-		this.context.sceneEvent( 'game pause' );
+		gameEvent( 'game pause' );
 
 	}
 
@@ -452,7 +462,7 @@ export class Game {
 	placeBlueprint( kind: string, x: number, z: number ): string | null {
 
 		const refusal = this.session.place( kind, x, z );
-		if ( refusal === null ) this.context.sceneEvent( 'game order' );
+		if ( refusal === null ) gameEvent( 'game order' );
 		return refusal;
 
 	}

@@ -18,7 +18,7 @@ import { PLANT_PART, PlantInstances, levelDraws, placeVertex, plantPoint, type P
 import { IDENTITY_COLOUR, plantTint, type PlantTint } from './vegetation/TreeSurfaces.ts';
 import { rootHash } from '../weather/Wind.ts';
 import type { KindGrowth, VegetationKind } from './vegetation/Registry.ts';
-import type { LocalSource } from '../lighting/LocalLights.ts';
+import type { LocalLightKind, LocalSource } from '../lighting/LocalLights.ts';
 import { writeMeter } from '../lighting/MeterLight.ts';
 
 // The yunpeng (芸蓬) of Yuanjiao: "a grass named yunpeng, white as snow, a stem two zhang long; seen
@@ -619,6 +619,20 @@ export function yunpengKind( yunpeng: Yunpeng ): VegetationKind<unknown, WorldDa
 		prepare: ( input ) => yunpeng.prepare( input.data, input.renderer ),
 		swap: ( prepared ) => yunpeng.swap( prepared ),
 	};
-	return { name: 'yunpeng', root: yunpeng.root, prepass: false, shadowFilter: 'ordinary', sunCaster: true, rainBake: true, growth: growth as KindGrowth<unknown, WorldData> };
+	return {
+		name: 'yunpeng', root: yunpeng.root, prepass: false, shadowFilter: 'ordinary', sunCaster: true, rainBake: true,
+		// no tier changes its cost; its glow is a function of the day's clock; its clumps follow the land
+		cost: 'none', testMode: 'stateless', land: { follower: 'its growth' },
+		growth: growth as KindGrowth<unknown, WorldData>,
+	};
+
+}
+
+/** The yunpeng's light by night as a kind of local light (lighting/LocalLights.ts): a source per
+ * clump. No tier changes its cost and it keeps no history; the clumps move with the land, so
+ * whoever swaps a growth in reads the sources again (`LocalLights.refresh`). */
+export function yunpengLights( yunpeng: Yunpeng ): LocalLightKind {
+
+	return { name: 'yunpeng', cost: 'none', testMode: 'stateless', land: { follower: 'the yunpeng\'s growth, then the lights\' refresh after the swap' }, sources: () => yunpeng.lights() };
 
 }

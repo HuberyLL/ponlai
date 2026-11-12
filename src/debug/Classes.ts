@@ -26,12 +26,13 @@ import { STORE_CEILING, preExposure, sceneUnits } from '../post/PreExposure.ts';
 // were near the code's size by day can read as no kind there.
 //
 // The kind comes from the material and the mesh it is built for (their names and userData, set
-// where they are made), never from colours: the terrain's material (`userData.topY` or
-// `terrainVariant`) is rock on the 'rocks' mesh, ground on the 'seabed', and on the island's chunks
-// ground where the geometry's normal is within 40 degrees of up, rock elsewhere; a material marked
-// `userData.vegetation` is grass on the meadow's blade meshes ('grass-blades…'), leaves otherwise;
-// the culms' mesh (`userData.culms`) and the yunpeng are wood and leaves; the islanders' materials
-// ('figure', 'feathers', 'weave') are figure.
+// where they are made), never from colours. This module holds the mechanism and knows no name of
+// the scene's: whoever makes the scene registers rules (`classifyBy`), each of which names a
+// build's kind or passes (null), asked in the order registered; the first answer stands. A rule
+// may answer 'slope' for a surface that is ground where the geometry's normal is within 40
+// degrees of up and rock elsewhere. What no rule names is leaves when its material carries the
+// vegetation's tag (`userData.vegetation`, vegetation/Coverage.ts) and other otherwise. The
+// island's rules: world/IslandClasses.ts.
 //
 // Run from debug/LightLayer.ts's hook (the lighting model roots' constructors), it overrides the
 // model's light like `albedoOnly` and leaves what a material adds after its lighting: a material's
@@ -56,24 +57,30 @@ const code = ( kind: FitClass ) => {
 
 type Reflected = { directDiffuse: THREE.Node<'vec3'>; directSpecular: THREE.Node<'vec3'>; indirectDiffuse: THREE.Node<'vec3'>; indirectSpecular: THREE.Node<'vec3'> };
 
+/** A rule's answer for the mesh and material a build is for: its kind, 'slope' (ground on the
+ * flat, rock on the steep) or null when the rule does not know it. */
+export type ClassRule = ( object: THREE.Object3D | null, material: THREE.Material | null ) => FitClass | 'slope' | null;
+
+const rules: ClassRule[] = [];
+
+/** Registers a rule that names builds' kinds; rules are asked in the order registered. */
+export function classifyBy( rule: ClassRule ): void {
+
+	rules.push( rule );
+
+}
+
 // the kind's colour for the mesh and material a build is for
 function kindColour( object: THREE.Object3D | null, material: THREE.Material | null ): THREE.Node<'vec3'> {
 
-	const mud = ( material?.userData ?? {} ) as Record<string, unknown>;
-	const name = object?.name ?? '', parent = object?.parent?.name ?? '';
-	if ( mud.topY !== undefined || mud.terrainVariant !== undefined ) {
+	for ( const rule of rules ) {
 
-		if ( name === 'rocks' ) return code( 'rock' );
-		if ( name === 'seabed' ) return code( 'ground' );
-		return select( normalWorldGeometry.y.greaterThan( GROUND_COS ), code( 'ground' ), code( 'rock' ) );
+		const kind = rule( object, material );
+		if ( kind === 'slope' ) return select( normalWorldGeometry.y.greaterThan( GROUND_COS ), code( 'ground' ), code( 'rock' ) );
+		if ( kind !== null ) return code( kind );
 
 	}
-	if ( mud.vegetation ) return name.startsWith( 'grass' ) ? code( 'grass' ) : code( 'leaves' );
-	if ( object?.userData.culms ) return code( 'wood' );
-	const mname = material?.name ?? '';
-	if ( mname === 'yunpeng' ) return code( 'leaves' );
-	if ( mname === 'figure' || mname === 'feathers' || mname === 'weave' || parent.startsWith( 'Hanming' ) ) return code( 'figure' );
-	return code( 'other' );
+	return code( material?.userData.vegetation ? 'leaves' : 'other' );
 
 }
 

@@ -15,7 +15,7 @@ import { LEE } from './WaveDamping.ts';
 import type { Shared } from '../shared.ts';
 import { createFoamPattern } from './FoamPattern.ts';
 import { Spray, type SprayLighting } from './Spray.ts';
-import type { LatentRegistry } from '../post/graph/FrameGraph.ts';
+import type { SceneLatents } from '../post/ExtraPass.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -355,7 +355,7 @@ export class StormSea {
 	 * spray in the water scene): the spray's mesh, the foam's step and clear and the spray's
 	 * kernels, so the graph's warm-up compiles them before a storm's onset, without running them
 	 * (the calm sea's state stays as it is). Call it with the spray's mesh in the water scene. */
-	registerLatent( graph: LatentRegistry ): Promise<void> {
+	registerLatent( graph: SceneLatents ): Promise<void> {
 
 		return graph.latent( 'water', [ this.spray.mesh ], [ this.stepKernel, this.clearKernel, ...this.spray.kernels ] );
 

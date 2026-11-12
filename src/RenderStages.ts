@@ -39,6 +39,7 @@ import { checkRenderer } from './three/Internals.ts';
 import { isWebGPU, gpuDevice } from './three/Backend.ts';
 import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
+import { createLocalLights, type LocalLights } from './lighting/LocalLights.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
 import { installGroundBounce, GroundBounce } from './lighting/GroundBounce.ts';
@@ -50,8 +51,9 @@ import { lowSunSkyLift, AmbientSky, AmbientRelight } from './lighting/AmbientRel
 import { type TuneOptions, tune } from './debug/Tune.ts';
 import { markSkyRetune, skyRetune } from './sky/SkyRetune.ts';
 import { TEMPORAL, AFTER_RESOLVE } from './post/Antialiasing.ts';
-import type { LatentRegistry } from './post/graph/FrameGraph.ts';
-import { onTaaCut, motionUniforms, MOTION_CLASS, motionCheck } from './post/Motion.ts';
+import type { SceneLatents } from './post/ExtraPass.ts';
+import { motionUniforms, MOTION_CLASS, motionCheck } from './post/Motion.ts';
+import { SceneHistory } from './post/SceneHistory.ts';
 import { jitter } from './post/Jitter.ts';
 import { preExposure } from './post/PreExposure.ts';
 import { sceneEvent } from './post/SceneEvents.ts';
@@ -109,6 +111,8 @@ export interface RenderParts {
 	applyEnvironmentFill: ( fill: number ) => void;
 	sun: THREE.DirectionalLight;
 	sunShadow: SunShadow;
+	localLights: LocalLights;
+	history: SceneHistory;
 	invalidateSunShadow: () => void;
 	shadowDirection: THREE.Vector3;
 	sunUpdates: Promise<void>;
@@ -134,7 +138,8 @@ export interface RenderParts {
 	seaDetail: SeaDetail;
 	fgview: string | null;
 	pipeline: Pipeline;
-	overlayLatents: LatentRegistry;
+	latents: SceneLatents;
+	overlayLatents: SceneLatents;
 	warming: Promise<[ void, void, void, void, void | undefined ]>;
 	groundBounce: GroundBounce;
 	shoreWaves: ShoreWaves;
@@ -199,6 +204,8 @@ export function setUpRenderer( render: RenderParts ) {
 export function createScenes( render: RenderParts, { viewport }: { viewport: { host: HTMLElement; width: number; height: number } } ) {
 
 	const { renderer } = render;
+	// the table of what a cut or a scene jump clears, which every owner of a history joins
+	render.history = new SceneHistory();
 	// The scene renders at a pixel ratio set by the quality tier (see RenderScale.ts), at most the
 	// display's and DPR_CAP (the canvas's cap: native 4K on a 2x display at high's maximum, or `?dpr`);
 	// the canvas matches the display and the frame graph upscales to it.
@@ -331,7 +338,7 @@ export function createSky( render: RenderParts ) {
 	render.wind = wind;
 	// Across a cut of the temporal modes' history (Motion.ts) the vegetation's wind has no motion either:
 	// its previous state becomes the current one.
-	if ( TEMPORAL ) onTaaCut( () => wind.cut() );
+	render.history.onCut( 'wind', () => wind.cut() );
 
 }
 
@@ -341,6 +348,8 @@ export function createLight( render: RenderParts ) {
 	const { qualityTier, quality, scene, sky, loaded, dayCycle } = render;
 	render.applySkyQuality = applySkyQuality;
 	render.applyEnvironmentFill = applyEnvironmentFill;
+	// the local lights' registry, which the island's kinds of light join (LocalLights.ts)
+	render.localLights = createLocalLights();
 
 	render.skyElapsed = 0;
 	render.lastSkyTime = render.simTime;
@@ -697,6 +706,8 @@ export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraP
 	} );
 	const pipeline = new Pipeline( renderer, sky, sunShadow, render.rain, postOptionsFromURL( params, quality.post ), quality.taa, extraPasses );
 	render.pipeline = pipeline;
+	// the pipeline's scene passes by their typed names, for what registers a draw for later
+	render.latents = pipeline.graph;
 	// The profiler labels each pass the graph runs by the pass's label (its groups), unless a
 	// target or object it knows labels it otherwise (the passes inside the display chain).
 	if ( profiler ) {
@@ -723,7 +734,7 @@ export function createSeaAndPipeline( render: RenderParts, { rainCeiling, extraP
 	// Pipeline.ts), which keeps the motion vectors of the surfaces under them; under taa and taau they
 	// draw after the resolve (afterScene, the `rainAfter` pass). Their owners register their latent
 	// draws for those passes.
-	const overlayLatents: LatentRegistry = TEMPORAL
+	const overlayLatents: SceneLatents = TEMPORAL
 		? { latent: ( pass, objects, kernels ) => pipeline.graph.latent( pass === 'rainAfter' || ( pass === 'water' && AFTER_RESOLVE ) ? 'rainAfter' : 'overlay', objects, kernels ) }
 		: pipeline.graph;
 	render.overlayLatents = overlayLatents;
@@ -879,5 +890,36 @@ export function primeSharedBuilds( render: RenderParts ) {
 	// the nodes r186 makes inside the first lit build, made by a throwaway one, so the frame's receivers
 	// build the same code whichever comes first (three/ThreePatches.ts)
 	primeSharedNodes( renderer, scene, camera );
+
+}
+
+/** Registers what a scene jump clears of the renderer's, ahead of the island's: the wind's
+ * integrated state, the storm's strikes and its sea's foam window (post/SceneHistory.ts; the
+ * order registered is the order cleared). */
+export function registerSceneHistories( render: RenderParts ) {
+
+	const { history, wind, weather, sky, stormSea } = render;
+	history.onJump( 'wind', () => wind.reset( { ...weatherWind( weather.state ), time: render.simTime } ) );
+	history.onJump( 'lightning', () => sky.lightning.reset() );
+	history.onJump( 'storm sea', () => stormSea.reset() );
+
+}
+
+/** Registers what a scene jump clears of the renderer's, after the island's: the fog's bank, the
+ * ground's bounce, and after the jump's bake the underwater map, at its constructed size and
+ * drawn at once for the jump's light (published by the bake), as the load's `prepare` draws it
+ * before the first frame: left to the loop's cadence (wall time), a capture ready within a few
+ * frames shot the cleared map, the sea without its refracted sun. */
+export function registerLightHistories( render: RenderParts ) {
+
+	const { history, pipeline, groundBounce, refractedSun } = render;
+	history.onJump( 'haze', () => pipeline.air.invalidate() );
+	history.onJump( 'ground bounce', () => groundBounce.invalidate() );
+	history.onJump( 'refracted sun', () => {
+
+		refractedSun.reset();
+		refractedSun.update();
+
+	}, 'after bake' );
 
 }

@@ -1,4 +1,5 @@
 import type * as THREE from 'three/webgpu';
+import { checkDeclarations, type Declarations } from '../../Extensions.ts';
 
 // The vegetation's registry: every plant kind the page draws, once, with what it takes part in.
 // The page's lists of vegetation roots read it (main.ts: the scene, the depth prepass, the sun's
@@ -19,6 +20,17 @@ import type * as THREE from 'three/webgpu';
 //   come; no kind uses it today (the grass takes new buffers). The next version's land data is
 //   whatever the page's world is (`L`: the island's world/types.ts WorldData); the registry only
 //   passes it on.
+// - The three declarations (Extensions.ts): a kind states the quality knob that governs its cost,
+//   how it stands in the test mode and how it follows the land's growth, or `add` refuses it. A
+//   kind with a `growth` of its own names it as its follower; one that another kind's growth
+//   carries (the bamboo's leaves, swapped with its culms) names that kind.
+// - The default: a kind without art of its own gives no `root` and says where it stands (`sites`);
+//   it is drawn with the registry's default plant (vegetation/DefaultPlant.ts: crossed leaf cards
+//   on the default vegetation material, which the registry's maker hands in), so it can be placed,
+//   lit, shadowed and measured before its art exists.
+// The registry reads its kinds in the order registered and never by name
+// (tools/verify-extensions.mjs registers a kind of its own in node and searches this file and the
+// registry's readers for the kinds' names).
 
 /** A preparation step yields nothing (a slice ends) or a promise (wait for it: a worker, a compile). */
 export type GrowthSteps<T> = Generator<void | Promise<unknown>, T>;
@@ -43,11 +55,16 @@ export interface KindGrowth<P, L> {
 	swap( prepared: P ): ( () => void ) | null;
 }
 
-export interface VegetationKind<P = unknown, L = unknown> {
+/** Where a plant stands (world space, m). */
+export interface PlantSite { x: number; y: number; z: number }
+
+export interface VegetationKind<P = unknown, L = unknown> extends Declarations {
 	/** 'grass', 'yunpeng', 'bamboo', ... */
 	name: string;
-	/** what the page adds to the scene */
-	root: THREE.Object3D;
+	/** what the page adds to the scene; without it the kind is drawn with the default plant at its `sites` */
+	root?: THREE.Object3D;
+	/** where the default plant stands, for a kind without a `root` */
+	sites?: readonly PlantSite[];
 	/** drawn after a depth-only copy (VegetationPrepass.ts) */
 	prepass: boolean;
 	/** the sun's shadow filter its materials take (SunShadow.ts) */
@@ -59,12 +76,29 @@ export interface VegetationKind<P = unknown, L = unknown> {
 	growth?: KindGrowth<P, L>;
 }
 
+/** A kind as the registry holds it: its root made, its own or the default. */
+export type RegisteredKind<P = unknown, L = unknown> = VegetationKind<P, L> & { root: THREE.Object3D };
+
 export class Vegetation<L = unknown> {
 
-	readonly kinds: VegetationKind<unknown, L>[] = [];
+	readonly kinds: RegisteredKind<unknown, L>[] = [];
 
-	add<P>( kind: VegetationKind<P, L> ): void {
+	/** `defaultRoot` draws a kind without art of its own (DefaultPlant.ts `defaultPlant`, with the
+	 * scene's uniforms, which the registry's maker has). */
+	constructor( private readonly defaultRoot?: ( sites: readonly PlantSite[], name: string ) => THREE.Object3D ) {}
 
+	add<P>( definition: VegetationKind<P, L> ): void {
+
+		checkDeclarations( 'Vegetation', definition.name, definition );
+		if ( definition.growth && definition.land === 'independent' ) throw new Error( `Vegetation: '${ definition.name }' has a growth and declares that it does not depend on the land` );
+		let root = definition.root;
+		if ( ! root ) {
+
+			if ( ! this.defaultRoot ) throw new Error( `Vegetation: '${ definition.name }' has no root, and this registry was given no default plant` );
+			root = this.defaultRoot( definition.sites ?? [], definition.name );
+
+		}
+		const kind = { ...definition, root } as RegisteredKind<P, L>;
 		const tagged = kind.shadowFilter === 'vegetation';
 		kind.root.traverse( ( object ) => {
 
@@ -77,12 +111,12 @@ export class Vegetation<L = unknown> {
 			}
 
 		} );
-		this.kinds.push( kind );
+		this.kinds.push( kind as RegisteredKind<unknown, L> );
 
 	}
 
 	/** The kinds' roots in registry order, those `filter` keeps. */
-	roots( filter: ( kind: VegetationKind<unknown, L> ) => boolean = () => true ): THREE.Object3D[] {
+	roots( filter: ( kind: RegisteredKind<unknown, L> ) => boolean = () => true ): THREE.Object3D[] {
 
 		return this.kinds.filter( filter ).map( ( kind ) => kind.root );
 

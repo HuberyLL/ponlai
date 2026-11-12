@@ -12,8 +12,13 @@ import { restEpoch } from './TemporalRest.ts';
 // An event that only retunes what is drawn (a GUI control, a front sweeping in over seconds) keeps
 // the history: the running resolve follows it as it follows a moving scene.
 //
-// The sites call it with their reason; the table below is the one place that says which reasons cut.
-// Generic sites only (main.ts's setters and handlers, the game's context hook), never the camera
+// The sites call it with their reason. A reason is declared before it is raised, with whether it
+// cuts (`declareSceneEvents`): the renderer declares its own below (`sceneEvent`), and what is
+// built on it declares its own where it raises them (the island's growth, the game), so this
+// module names none of theirs. A declaration returns the function that raises its reasons and no
+// others, so a misspelt reason, or one of another declaration, does not compile; a reason
+// declared twice is refused.
+// Generic sites only (the page's setters and handlers), never the camera
 // controls' internals: a teleport of the camera that no event covers (a direct assignment from the
 // console, a control's own jump) is caught by Motion.ts's camera-delta detector (more than 8 m,
 // 30 degrees or 2 % of field of view in one rendered frame). Under MSAA the epoch bumps, which the
@@ -25,8 +30,25 @@ import { restEpoch } from './TemporalRest.ts';
 // and the rendered frame it followed (`frame`: the motion's frame count when it was raised; it
 // applies to the next frame rendered).
 
-/** Every reason a site raises, and whether it cuts. */
-export const SCENE_EVENTS = {
+// every declared reason, and whether it cuts
+const declared = new Map<string, boolean>();
+
+/** Declares reasons of scene events, each with whether it cuts the history, and returns the
+ * function that raises them (and only them). A reason already declared throws. */
+export function declareSceneEvents<const T extends Record<string, boolean>>( reasons: T ): ( reason: keyof T & string ) => void {
+
+	for ( const [ reason, cut ] of Object.entries( reasons ) ) {
+
+		if ( declared.has( reason ) ) throw new Error( `SceneEvents: the reason '${ reason }' is declared twice` );
+		declared.set( reason, cut );
+
+	}
+	return raise;
+
+}
+
+/** The renderer's own reasons, and whether each cuts. */
+const RENDER_EVENTS = {
 	// the frame loop starts (the page's first frame) or restarts (`loop.start()` after a stop)
 	'loop start': true,
 	// the page shows again (visibilitychange to visible): its last frame may be minutes old
@@ -57,49 +79,35 @@ export const SCENE_EVENTS = {
 	'retune': false,
 	// the page's keyboard toggles (Space: pause, H: the GUI)
 	'key toggle': false,
-	// the game (?game, Game.ts): a simulation installed (start, load), its speed or pause, an order
-	// that changes what stands on the island (a placed blueprint), and an overlay the player's input
-	// moves (the placement ring following the pointer, Placement.ts)
-	'game begin': true,
-	'game pause': false,
-	'game order': false,
-	'game input': false,
-	// the island grew (World growth, Growth.ts): new land where the sea was, the rest unchanged; the
-	// resolve's clip takes the new surfaces as it takes a placed prop
-	'world swap': false,
-	// the shoal under the next piece written anew (SeabedRise.ts): the floor moves in place
-	'approach': false,
 	// `__PONLAI__.taa.restart()`
 	'restart': true,
-} as const satisfies Record<string, boolean>;
-
-export type SceneEventReason = keyof typeof SCENE_EVENTS;
+} as const;
 
 // the events after which a still frame draws what it drew before (the loop restarted, the page
 // shown again, a key toggled the pause or the GUI): they leave the epoch's `scene` count
-const SAME_SCENE: ReadonlySet<SceneEventReason> = new Set( [ 'loop start', 'visible', 'key toggle' ] );
+const SAME_SCENE: ReadonlySet<string> = new Set<keyof typeof RENDER_EVENTS>( [ 'loop start', 'visible', 'key toggle' ] );
 
 /** The last event raised (the diagnostics' `taa.lastEvent`), and how many. */
 export const sceneEvents = {
-	last: null as { reason: SceneEventReason; cut: boolean; frame: number } | null,
+	last: null as { reason: string; cut: boolean; frame: number } | null,
 	count: 0,
 };
 
-const cutListeners: ( ( reason: SceneEventReason ) => void )[] = [];
+const cutListeners: ( ( reason: string ) => void )[] = [];
 
 /** Called with the reason whenever an event that cuts is raised, in every anti-aliasing mode. */
-export function onSceneCut( listener: ( reason: SceneEventReason ) => void ): void {
+export function onSceneCut( listener: ( reason: string ) => void ): void {
 
 	cutListeners.push( listener );
 
 }
 
-/** A change of the scene the temporal modes must know of: bumps the rest's epoch, and cuts the
- * history where the table says so. */
-export function sceneEvent( reason: SceneEventReason ): void {
+// A change of the scene the temporal modes must know of: bumps the rest's epoch, and cuts the
+// history where the reason's declaration says so.
+function raise( reason: string ): void {
 
 	restEpoch.bump( reason, ! SAME_SCENE.has( reason ) );
-	const cut = SCENE_EVENTS[ reason ];
+	const cut = declared.get( reason ) === true;
 	if ( cut ) for ( const listener of cutListeners ) listener( reason );
 	if ( ! TEMPORAL ) return;
 	if ( cut ) taaCut( reason );
@@ -107,3 +115,6 @@ export function sceneEvent( reason: SceneEventReason ): void {
 	sceneEvents.count ++;
 
 }
+
+/** Raises one of the renderer's own reasons. */
+export const sceneEvent = declareSceneEvents( RENDER_EVENTS );

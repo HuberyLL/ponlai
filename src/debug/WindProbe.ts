@@ -9,7 +9,7 @@ import { YUNPENG, YUNPENG_WIND, stalkLoad } from '../world/Yunpeng.ts';
 import type { PlantWind } from '../world/vegetation/Deform.ts';
 import { mainBend, plantLean } from '../world/vegetation/Deform.ts';
 import { windDisplacement } from '../weather/Wind.ts';
-import { debugFlags } from './DebugFlags.ts';
+import { debugFlags, setDebugFlag } from './DebugFlags.ts';
 import type { WorldData } from '../world/types.ts';
 import type { Shared } from '../shared.ts';
 import { OPEN_DRIFT, type SeaDetail } from '../ocean/SeaDetail.ts';
@@ -122,7 +122,7 @@ function windStates( ctx: WindProbeContext, { steps, dt }: Series ): { states: F
 
 	const { speed, heading, gustiness } = ctx.wind;
 	const freeze = debugFlags.windFreeze;
-	debugFlags.windFreeze = false;
+	setDebugFlag( 'windFreeze', false );
 	const copy = new Wind( createWindUniforms(), { speed, heading, gustiness, time: ctx.wind.time } );
 	const u = copy.uniforms, states = new Float32Array( steps * STATE * 4 );
 	for ( let k = 0; k < steps; k ++ ) {
@@ -131,7 +131,7 @@ function windStates( ctx: WindProbeContext, { steps, dt }: Series ): { states: F
 		states.set( [ ...packWindState( u ), u.displacement.value.x, u.displacement.value.y, copy.time, 0 ], k * STATE * 4 );
 
 	}
-	debugFlags.windFreeze = freeze;
+	setDebugFlag( 'windFreeze', freeze );
 	return { states, speed, heading, direction: u.direction.value.clone() };
 
 }

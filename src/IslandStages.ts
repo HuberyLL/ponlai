@@ -24,9 +24,9 @@ import { buildChunkBorders } from './debug/ChunkBorders.ts';
 import { WIND_VIEW } from './debug/WindView.ts';
 import { windArrowGeometry, buildWindArrows } from './debug/WindArrows.ts';
 import { buildGrass, plantGrass, grassKind } from './world/Grass.ts';
-import { buildYunpeng, yunpengKind } from './world/Yunpeng.ts';
+import { buildYunpeng, yunpengKind, yunpengLights } from './world/Yunpeng.ts';
 import { shared } from './shared.ts';
-import { testSources, localLights } from './lighting/LocalLights.ts';
+import { testSources } from './lighting/LocalLights.ts';
 import { landBounds, islandSurfaceHeight } from './world/WorldShapes.ts';
 import { GROWTH, LandLattice } from './world/IslandGrowth.ts';
 import { walkPoints } from './world/WalkPath.ts';
@@ -40,15 +40,15 @@ import { type Body, parseBodies } from './characters/Ages.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
 import { TEST_MODE } from './debug/TestMode.ts';
-import { TEMPORAL } from './post/Antialiasing.ts';
-import { onTaaCut } from './post/Motion.ts';
-import { sceneEvent } from './post/SceneEvents.ts';
+import { declareSceneEvents } from './post/SceneEvents.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
 import { createDisplacementField, displacementField } from './world/vegetation/Displacement.ts';
 import { installOpaquePrepass } from './world/OpaquePrepass.ts';
 import { GTAO } from './post/GTAO.ts';
 import { SS_SHADOW } from './post/MeadowShade.ts';
 import { Vegetation } from './world/vegetation/Registry.ts';
+import { defaultPlant } from './world/vegetation/DefaultPlant.ts';
+import { registerIslandClasses } from './world/IslandClasses.ts';
 import { installWindMotionFlag } from './world/WindMotion.ts';
 import { ISLANDER, HANMING, ISLANDER_LOOKS, HANMING_LOOKS } from './characters/looks.ts';
 import type { RenderParts } from './RenderStages.ts';
@@ -60,6 +60,15 @@ import type { Yunpeng } from './world/Yunpeng.ts';
 import type { Bamboo } from './world/Bamboo.ts';
 import type { Look } from './characters/looks.ts';
 import type { Villager } from './characters/Villagers.ts';
+
+// The island's scene events (post/SceneEvents.ts), and whether each cuts the temporal history:
+// the island grew (Growth.ts: new land where the sea was, the rest unchanged; the resolve's clip
+// takes the new surfaces as it takes a placed prop), and the shoal under the next piece was
+// written anew (SeabedRise.ts: the floor moves in place).
+const islandEvent = declareSceneEvents( {
+	'world swap': false,
+	'approach': false,
+} );
 
 /** What the page measures of a land: its box, how the views frame it and its outline. */
 type LandMeasure = { box: Bounds; framing: { centroid: { x: number; z: number }; scale: number; onLand: ( x: number, y: number, z: number ) => THREE.Vector3; pivot: THREE.Vector3 }; outline: number[] };
@@ -133,6 +142,8 @@ export interface IslandParts {
 export function createIslandCamera( render: RenderParts, island: IslandParts ) {
 
 	const { renderer, camera } = render;
+	// the island's kinds for the kinds' view, registered before any of its materials builds
+	registerIslandClasses();
 	// The views are framed on the land once the world has loaded (frameLand): the island view just
 	// holds the land and its ring of shallows (IslandFraming.ts); the others take the first island's
 	// framing, moved to the land's centroid and scaled by its size. An explicit `dist` is in metres.
@@ -179,14 +190,14 @@ export function createIslandCamera( render: RenderParts, island: IslandParts ) {
 }
 
 /** The islanders' trail through the meadow. */
-export function createTrample( island: IslandParts ) {
+export function createTrample( render: RenderParts, island: IslandParts ) {
 
 
 	// The islanders' trail through the meadow (world/vegetation/Trample.ts), drawn after they move each
 	// frame into the displacement field (world/vegetation/Displacement.ts), made here over the land's
 	// whole lattice and drawn again each frame; across a cut its frame before is not read.
 	island.trample = new Trample( createDisplacementField( 2 * GROWTH.half ) );
-	if ( TEMPORAL ) onTaaCut( () => displacementField?.cut() );
+	render.history.onCut( 'displacement field', () => displacementField?.cut() );
 
 }
 
@@ -346,7 +357,7 @@ export function createWorldViews( render: RenderParts, island: IslandParts ) {
  */
 export function createVegetation( render: RenderParts, island: IslandParts ) {
 
-	const { mark, setStatus, renderer, scene, sunShadow, pipeline } = render;
+	const { mark, setStatus, renderer, scene, sunShadow } = render;
 	const { controls, data, world, frameLand } = island;
 	island.setSunCasters = setSunCasters;
 	island.compileDraws = compileDraws;
@@ -354,7 +365,7 @@ export function createVegetation( render: RenderParts, island: IslandParts ) {
 	island.grass = grass;
 	// The vegetation's kinds (vegetation/Registry.ts), in the order the scene draws them; every list
 	// of vegetation below reads it.
-	const vegetation = new Vegetation<WorldData>();
+	const vegetation = new Vegetation<WorldData>( ( sites, name ) => defaultPlant( shared, sites, name ) );
 	island.vegetation = vegetation;
 	vegetation.add( grassKind( grass ) );
 	// the yunpeng's clumps in the meadow, instances of a few prototypes at two levels (Yunpeng.ts)
@@ -365,13 +376,10 @@ export function createVegetation( render: RenderParts, island: IslandParts ) {
 	// (`onSwap`); `flags=lightTest:N`: N white test sources over the meadow, for the local lights' cost
 	// tests, loaded once, with the light of stand-in clumps (the island may hold none)
 	const testLights = typeof debugFlags.lightTest === 'number' ? testSources( debugFlags.lightTest, island.landBox, ( x, z ) => island.land.inside( x, z ), islandSurfaceHeight, yunpeng.sampleLights() ) : [];
-	const setLocalSources = () => {
-
-		localLights.sources = [ ...yunpeng.lights(), ...testLights ];
-
-	};
-	island.setLocalSources = setLocalSources;
-	setLocalSources();
+	render.localLights.add( yunpengLights( yunpeng ) );
+	// (the test sources are loaded once: a growth does not move them)
+	render.localLights.add( { name: 'light test', cost: 'none', testMode: 'stateless', land: 'independent', sources: () => testLights } );
+	island.setLocalSources = () => render.localLights.refresh();
 	// the bamboo over the whole island, instances of a few prototypes at two levels (Bamboo.ts,
 	// vegetation/PlantInstances.ts), its leaves drawn once here (BambooMaterials.ts)
 	const bamboo = buildBamboo( data, { shared, atlas: bambooAtlas() } );
@@ -459,7 +467,7 @@ export function createVegetation( render: RenderParts, island: IslandParts ) {
 	// uploads their buffers. (A grown island's chunks need none: they draw with the loaded chunks' pipelines.)
 	async function compileDraws( objects: THREE.Object3D[] ): Promise<void> {
 
-		for ( const object of objects ) await pipeline.graph.latent( 'opaque', [ object ] );
+		for ( const object of objects ) await render.latents.latent( 'opaque', [ object ] );
 		const compiled = sunShadow.compileCasters( renderer, objects );
 		if ( compiled ) await compiled;
 		else console.warn( 'The sun\'s shadow map is not built yet: these draws compile their shadow pass when first drawn' );
@@ -506,7 +514,7 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 			if ( follow ) followFraming();
 			island.shownData = version;
 			wenyao.setWorld( version );
-			sceneEvent( 'world swap' );
+			islandEvent( 'world swap' );
 
 		},
 		onSwapped: () => {
@@ -524,7 +532,7 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 			worldInfo.worldTriangles = world.triangles;
 
 		},
-		onRise: () => sceneEvent( 'approach' ),
+		onRise: () => islandEvent( 'approach' ),
 	}, worldCache, { seed: landOptions.worldSeed, cache: worldCacheOn } );
 	island.growth = growth;
 	// `approach=<0..1>`: the shoal under the next piece put on that progress at once (Growth.ts
@@ -536,5 +544,17 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 		void growth.approachNow( Number( params.get( 'approach' ) ) ).then( () => { island.approachWritten = true; } );
 
 	}
+
+}
+
+/** Registers what a scene jump clears of the island's (post/SceneHistory.ts): the islander's
+ * clips, the wenyao's schools and the falling leaves, each read when the jump comes (the islander
+ * and the leaves are made late, or not at all). */
+export function registerIslandHistories( render: RenderParts, island: IslandParts ) {
+
+	const { wenyao } = island;
+	render.history.onJump( 'islanders', () => island.characters?.reset() );
+	render.history.onJump( 'wenyao', () => wenyao.reset() );
+	render.history.onJump( 'falling leaves', () => island.fallingLeaves?.reset() );
 
 }

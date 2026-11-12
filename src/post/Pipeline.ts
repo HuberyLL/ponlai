@@ -51,7 +51,7 @@ import { exposureKeys, type ExposureKey } from './Exposure.ts';
 import { restEpoch, restKey } from './TemporalRest.ts';
 import { tuneCheck, tuneKeys, tuneObject, tuneUniform } from '../debug/Tune.ts';
 import { displacementField } from '../world/vegetation/Displacement.ts';
-import type { ExtraPass } from './ExtraPass.ts';
+import { declareExtraPasses, type ExtraPass } from './ExtraPass.ts';
 import { waveMapsPass, type WaveMaps } from '../ocean/WaveMaps.ts';
 import { localLightsPass } from '../lighting/LocalLights.ts';
 import { settings, type SettingsQuery } from '../Settings.ts';
@@ -1669,7 +1669,7 @@ export class Pipeline {
 		// (world/vegetation/Displacement.ts)
 		this.displacement = displacementField ? displacementField.declare( g ) : null;
 		// the scene's extra passes (the falling leaves' step, whose buffers the opaque scene draws)
-		for ( const declare of this.extraPasses ) declare( g );
+		declareExtraPasses( g, this.extraPasses );
 		// the wave maps and the caustics, which the materials lit under the water read
 		waveMapsPass( g, () => this.waveMaps );
 		// the local lights' clusters, which every lit material of the scene passes reads
