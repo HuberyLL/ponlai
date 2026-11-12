@@ -220,9 +220,9 @@ one on its settled frame. The capture's JSON records it as `ready` (`--stable-*`
 `tools/capture.mjs`, the rule and its evidence in `tools/capture-browser.mjs`). `--ready-frames n`
 waits for a fixed count instead, as a running capture does (60); `--wait` / `--settle` ms add fixed
 delays. The frame loop is stopped and the GPU queue drained before the shot. The shot is the
-compositor's image through CDP with Chrome's fast PNG encoder (0.26 s instead of 1.3 s at
-3456x2234): the pixels of Playwright's screenshot, not its bytes, so the tools compare captures by
-decoded pixels. A paused capture takes about 5-7 s alone.
+compositor's image through CDP with Chrome's fast PNG encoder (about a fifth of Playwright's time):
+the pixels of Playwright's screenshot, not its bytes, so the tools compare captures by decoded
+pixels. A paused capture takes about 5-7 s alone.
 
 How to check a visual change: `docs/how-to/check-a-change.md`, Check a visual change.
 `tools/img.py` does the image work around
@@ -760,9 +760,9 @@ anything else, waits with `job.mjs` rather than a loop of their own. Its header 
 
 ```text
 node tools/job.mjs start --wait -- npm run build                        (inline when it is short)
-node tools/job.mjs start --log artifacts/plans/<topic>/data/set.log -- node tools/capture-set.mjs ...
-node tools/job.mjs wait artifacts/plans/<topic>/data/set.log          (repeat until it exits 0 or with the job's code)
-node tools/job.mjs stop artifacts/plans/<topic>/data/set.log          (before handing back with it still running)
+node tools/job.mjs start --log <log> -- node tools/capture-set.mjs ...
+node tools/job.mjs wait <log>          (repeat until it exits 0 or with the job's code)
+node tools/job.mjs stop <log>          (before handing back with it still running)
 ```
 
 Forms:
@@ -910,19 +910,18 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
 - A player's window is not full screen: other apps stay visible and may keep drawing (a page in
   another app's hidden browser pane took half the GPU and held the player's scale at its floor).
   Headless at 60 Hz matched the display's GPU times within about 5 %.
-- It loads each variant once and switches scenes at runtime (`--mode reload` reloads per scene,
-  the original method); every page keeps the generated island's chunks in IndexedDB (in the
-  tool's own Chrome profile) while the generator's sources are unchanged (`--world-cache off` loads
-  with `worldCache=off`). A profile that another Chrome holds (another run's) is not launched on:
-  the run takes a temporary one, with cold caches. (Launched on, a headed Chrome holding it opened a
-  blank window of its own, in front of that run's page.)
+- It loads each variant once and switches scenes at runtime (`--mode reload` reloads per scene);
+  every page keeps the generated island's chunks in IndexedDB (in the tool's own Chrome profile)
+  while the generator's sources are unchanged (`--world-cache off` loads with `worldCache=off`). A
+  profile that another Chrome holds (another run's) is not launched on: the run takes a temporary
+  one, with cold caches.
 - It holds the GPU lock exclusively only for what it measures, and no browser while it queues: a
   build the profile has not loaded yet (a new bundle, port or browser version) is first loaded once
   in a browser opened inside a shared slot and closed before the slot is released (the preload;
   skipped when no slot frees within `--preload-wait`, 60 s), so the loads under the exclusive lock
   hit the world cache and the shader cache, as every run but a build's first already did. The
-  run's own browser opens once the exclusive lock is held and the idle check has passed (a headed
-  window no longer sits on the screen, or dies, while the run queues). The idle check also stands
+  run's own browser opens once the exclusive lock is held and the idle check has passed (so no headed
+  window sits on the screen, or dies, while the run queues). The idle check also stands
   for the first load's, and the pages stop before the lock is released (the GPU name, the files
   and the browser's close come after it). `wallSeconds` in profile.json is the time under the
   exclusive lock; `lockWaitSeconds`, `totalSeconds` and `preload` sit beside it.
@@ -934,7 +933,7 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
 - When its opening idle check still finds another client keeping the GPU busy after
   `--idle-wait` seconds (20; 60 with `--mode reload`), it names the client, measures nothing and
   exits with 3, releasing the lock: a contended run's numbers prove nothing. Stop the client and
-  run again, or pass `--contended` to measure anyway (results marked contended, as before). A
+  run again, or pass `--contended` to measure anyway (results marked contended). A
   later page load that finds the GPU busy still marks its results contended. Every summary.md
   marks such a scene `(contended)` in its table, a compare's as a single profile's.
 - The idle checks see a few seconds before a load or a scene; the load timeline sees the whole
@@ -1019,7 +1018,7 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   with 1 on a FAIL. Its timestamps default to `auto`: every scene without them, then only the
   scenes that did not pass again with them, for the GPU busy time and the passes that explain the
   failure (no verdict on an idle GPU depends on them). A scene that passed then reports no GPU
-  times; `--timestamps both` measures every scene twice, as before, for its headroom.
+  times; `--timestamps both` measures every scene twice, for its headroom.
 - Headless 60 Hz shows whether the GPU holds 60 fps, not how a faster display paces the frames
   (every scene once passed it while a 120 Hz display showed uneven cadence and a restless dynamic
   scale under a player's drags). `--display` measures that: headed system Chrome full screen
@@ -1255,18 +1254,17 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   their CPU time and bytes. Every run writes a chunk sheet per seed (each step's land, new piece,
   16 m grid, dirty chunks outlined, changed chunks tinted) to `--sheets` (default
   `artifacts/captures/world-chunks/`). The checks' definitions are in the script's header. The
-  pool's 1219 chunk builds dominate the time: the default run took 6 minutes and `--long` 14 on
-  8 threads of a machine busy with other work, `--bench` 4.
+  pool's 1219 chunk builds dominate the time: the default run takes several minutes, `--long` a
+  little over twice as long and `--bench` about two thirds of it.
 - `tools/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n]` (plain `node`) builds
   every chunk of whole islands on a pool of worker threads (`buildChunk`, contact shade off) and
   checks the statistics of the union of what they own, with the bounds the look was tuned on: the
-  meadow's anchors per m^2 against the counts from before the anchors were hashed (grown islands
-  summed, 5 %); the stones' overlaps, crowns and reach per island, and over seeds 1 - 6 at steps 0,
-  8, 16 their classes and large sizes per 100 m of coast against today's (20 %) and their gathering
-  below the scars; the cliff's scars, on each chunk's own wall: none cuts rock beyond its reach (4.5
-  m, 3 m) and none breaks off more than 0.6 m of rock above y -1 where its reach ends it. The
-  chunk checks prove seams and locality; this probe proves the chunked world keeps its numbers.
-  The default run takes about a minute on 8 threads.
+  meadow's anchors per m^2 against the counts the look was tuned on (grown islands summed, 5 %); the
+  stones' overlaps, crowns and reach per island, and over seeds 1 - 6 at steps 0, 8, 16 their
+  classes and large sizes per 100 m of coast against today's (20 %) and their gathering below the
+  scars; the cliff's scars, on each chunk's own wall: none cuts rock beyond its reach (4.5 m, 3 m)
+  and none breaks off more than 0.6 m of rock above y -1 where its reach ends it. The chunk checks
+  prove seams and locality; this probe proves the chunked world keeps its numbers.
 - `tools/verify-chunk-derived.mjs [--seed 1] [--steps 0,8] [--threads n]` (plain `node`; run it
   after a change to `src/world/ChunkDerived.ts` or to the builders it stands in for) builds every
   chunk of the grown land on a pool of worker threads and checks the chunks' derived products,
@@ -1277,7 +1275,6 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   and floor, triangle for triangle, and `setCasters( root, subsets )` draws them;
   `IslandGround.fromGrids` of the chunks' `ground` has the walked grid's bounds and top and every
   height within one cell. It prints each builder's time on the merged meshes against the merge's.
-  About 15 s on 8 threads.
 - The three world verifiers above (`verify-world-chunks`, `verify-world-stats`,
   `verify-chunk-derived`) skip a run whose inputs passed before: each pass is recorded under a key
   hashed from the node version, the run's arguments and every source file the verifier loads (its
@@ -1308,7 +1305,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   may create a pipeline synchronously, nor may the first frame's redraw of the sun's shadow map.
   It loads in a capture profile slot (as the captures' fast mode does), so the island comes from
   the world cache; the browser's shader cache in the slot does not change the counts (they are the
-  page's requests to WebGPU, cached or not), and `--fresh` runs in a throwaway profile as before.
+  page's requests to WebGPU, cached or not), and `--fresh` runs in a throwaway profile.
   Its steps' waits are part of what it measures and stay fixed.
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
 - `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit

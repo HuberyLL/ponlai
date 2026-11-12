@@ -41,7 +41,7 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
   build>/<n>` of the main checkout, taking the lowest free slot (a `<n>.lock` directory naming its
   pid; stale once that process is gone), so `--jobs 4` uses slots 0-3. A capture that names its
   page takes the slots that page (its origin and build) ran in last first, from `affinity.json`
-  beside the slots, so another job holding a warm slot no longer moves it to a cold one for good
+  beside the slots, so another job holding a warm slot does not move it to a cold one for good
   (`tools/capture-browser.mjs`). The world cache
   (IndexedDB, keyed on the generator's sources and the browser; one entry per preview port) and
   the GPU shader cache then hit from the second load: the island is not generated again (3 s
@@ -62,12 +62,9 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
   `ready` (status `exact`, `tolerance` or `capped`, frames waited, comparisons, the largest
   difference seen, per comparison its pixel counts; `--stable-trace` adds each grab's hash). On the
   24 views (two sets with `--repeat`, `--jobs 2`) every load was shot exact, 4-32 frames after the
-  floor (median 4), on the frame most loads of the earlier tools agreed on: no A/A difference, where
-  their fixed waits left 15-17 % of loads off that frame (those runs used a floor of 10 and 2
-  comparisons; replayed over per-frame traces of the 24 views, a floor of 1 frame and 1 comparison
-  shot no load early and all 48 on
-  the settled frame, at fewer frames). The grab is a CDP screenshot (PNG optimised for speed) at
-  the page's ratio, about 0.27 s at 3456x2234, its pixels those of the shot.
+  floor (median 4), with no A/A difference; replayed over per-frame traces of the 24 views, a floor
+  of 1 frame and 1 comparison shot no load early and all 48 on the settled frame. The grab is a CDP
+  screenshot (PNG optimised for speed) at the page's ratio, its pixels those of the shot.
   `--ready-frames n` brings the fixed count back (a running capture uses 60); `--wait ms` and
   `--settle ms` add fixed delays before and after the floor.
 - Temporal pages (taa, taau, gt) are not compared: the rest is restarted after the eval, the tool
@@ -85,11 +82,10 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
 - The shot (capture.mjs's frames, capture-clip's crops and full frames) is taken like the grab:
   the compositor's image through CDP at the page's ratio, PNG optimised for speed, instead of
   Playwright's `page.screenshot`. Same pixels, other bytes (Chrome's fast encoder; the files are
-  8-57 % larger, median 28 %), and about 1 s less per capture at 3456x2234 (the shot 0.26 s
-  instead of 1.3 s, plus 35 ms to give the page its device metrics back). So **every comparison
-  decodes**: a capture's bytes depend on the encoder, its pixels do not (capture-set's `--repeat`,
-  diff-set.py, `samePixels` in capture-browser.mjs; equal bytes still short-cut to equal).
-  References written by the earlier encoder stay comparable.
+  8-57 % larger, median 28 %), and the shot takes about a fifth of `page.screenshot`'s time. So
+  **every comparison decodes**: a capture's bytes depend on the encoder, its pixels do not
+  (capture-set's `--repeat`, diff-set.py, `samePixels` in capture-browser.mjs; equal bytes still
+  short-cut to equal). References written by the earlier encoder stay comparable.
 
 ## Views (views.mjs)
 
@@ -231,7 +227,7 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
   textures).
 - Capability: a page marks the jump with `__PONLAI__.sceneJump` (the contract's version, 1).
   Builds without it (older commits, whose `establishScene` takes only an options form) get a page
-  per view, as before; the set says so once. `--page-per-view` forces that on any build.
+  per view; the set says so once. `--page-per-view` forces that on any build.
 - A failed view (a timeout, a page or console error, a crash) ends its page; it is retried
   (`--retries`, default 1) and the views still to come go on in a fresh page, whose first view is a
   fresh load. A page silent for three times `--timeout` plus two minutes, counted from the moment
