@@ -99,7 +99,7 @@ import { SCENE_RADIANCE_SCALE, MOON_GLINT_RADIUS } from './lighting/Radiometry.t
 import { SUN_GLINT_DISC } from './lighting/SunDisc.ts';
 import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 import { installVegetationPrepass, prepassScene } from './world/VegetationPrepass.ts';
-import { displacementField } from './world/vegetation/Displacement.ts';
+import { createDisplacementField, displacementField } from './world/vegetation/Displacement.ts';
 import { installOpaquePrepass, opaquePrepassScene } from './world/OpaquePrepass.ts';
 import { GTAO, gtaoUniforms } from './post/GTAO.ts';
 import { SS_SHADOW } from './post/MeadowShade.ts';
@@ -324,9 +324,9 @@ const wind = new Wind( shared.wind, { ...weatherWind( weather.state ), time: sim
 // its previous state becomes the current one.
 if ( TEMPORAL ) onTaaCut( () => wind.cut() );
 // The islanders' trail through the meadow (world/vegetation/Trample.ts), drawn after they move each
-// frame into the displacement field (world/vegetation/Displacement.ts): fixed over the whole
-// island, drawn again each frame; across a cut its frame before is not read.
-const trample = new Trample( displacementField );
+// frame into the displacement field (world/vegetation/Displacement.ts), made here over the land's
+// whole lattice and drawn again each frame; across a cut its frame before is not read.
+const trample = new Trample( createDisplacementField( 2 * GROWTH.half ) );
 if ( TEMPORAL ) onTaaCut( () => displacementField?.cut() );
 let rain: Rain | undefined;
 let skyElapsed = 0;

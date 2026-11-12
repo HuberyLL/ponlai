@@ -52,8 +52,6 @@ const KNOWN = [
 	'post/Pipeline.ts -> weather/FallingLeaves.ts',
 	'shared.ts -> materials/Meadow.ts',
 	'world/WorldStart.ts -> game/save.ts',
-	'world/vegetation/Displacement.ts -> world/IslandGrowth.ts',
-	'world/vegetation/Displacement.ts -> world/vegetation/Trample.ts',
 ];
 
 for ( const a of process.argv.slice( 2 ) ) {

@@ -3,8 +3,6 @@ import { Fn, abs, atan, attribute, cos, exp, float, floor, length, max, min, mix
 import { TEMPORAL } from '../../post/Antialiasing.ts';
 import { debugFlags } from '../../debug/DebugFlags.ts';
 import type { FrameGraph, ResourceHandle } from '../../post/graph/FrameGraph.ts';
-import { GROWTH } from '../IslandGrowth.ts';
-import { trailCurve } from './Trample.ts';
 
 // The displacement field: a two-channel map of how far the things that part the meadow push it
 // over, on the ground over the whole island, cleared every frame and drawn again from the sprites
@@ -14,8 +12,9 @@ import { trailCurve } from './Trample.ts';
 // The blades read it (Grass.ts): the direction turns their facing, its size adds to their lean.
 //
 // Rules:
-// - It covers the land's whole lattice (IslandGrowth.ts GROWTH.half either side of the world's
-//   origin: DISPLACEMENT.coverage m on a side) at DISPLACEMENT.size texels, fixed on the world:
+// - It covers a square of the ground centred on the world's origin, as wide as the scene asks when
+//   it makes the field (`createDisplacementField`: the island gives its land's whole lattice, 192 m
+//   on a side), at DISPLACEMENT_SIZE texels, fixed on the world:
 //   the island camera sees the whole island from up to 190 m, where a trail (metres long, its core
 //   some ten pixels wide there) still shows: a window that followed the camera's point of interest
 //   would leave the islanders beyond it without trails, and show them appear and vanish at its edge
@@ -49,10 +48,12 @@ import { trailCurve } from './Trample.ts';
 // - A sprite's strength is a share of a parted blade's lean: I = A( a ) share tan( angle ) / ( k
 //   h_ref ), where the reference blade (RESPONSE.height m) leans over by `angle` at full push under
 //   the blades' response (tan lean += k h |v|, k = RESPONSE.lean per m), `share` is the sprite's
-//   (the way's 1, a standing walker's disc less) and A( a ) is the trail's curve at the sprite's age
-//   a (Trample.ts `trailCurve`), the age interpolated along a strip from one end's to the other's;
-//   the disc does not age (A 1). The curve multiplies the lean, not the angle: a long blade lies
-//   flat through the curve's first lobe, then springs up and is pressed down again.
+//   (the way's 1, a standing walker's disc less) and A( a ) is the sprites' source's curve at the
+//   sprite's age a, the age interpolated along a strip from one end's to the other's; the disc does
+//   not age (A 1). The curve multiplies the lean, not the angle: a long blade lies flat through
+//   the curve's first lobe, then springs up and is pressed down again. The field only draws the
+//   sprites: what writes them gives the curve when it registers (`DisplacementField.source`: the
+//   islanders' trail, Trample.ts), and the sprites' material is built then.
 // - On the frame graph it is a pass of its own (`declare`), first in the frame, its size fixed (the
 //   dynamic resolution's steps never resize it, so its pipelines are never rebuilt); its readers
 //   declare it as a read. The sprites draw only while there are any (the mesh hidden otherwise),
@@ -74,8 +75,8 @@ import { trailCurve } from './Trample.ts';
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 
-/** The field: its texels on a side and the ground it covers (m), centred on the world's origin. */
-export const DISPLACEMENT = { size: 512, coverage: 2 * GROWTH.half } as const;
+/** The field's texels on a side. The ground it covers is the field's own (`coverage`). */
+export const DISPLACEMENT_SIZE = 512;
 
 /** The blades' response the sprites' strengths are given for: a blade of `height` m leans by
  * tan += `lean` height |v| under the field's value v (`lean` per m: neutral 1). */
@@ -139,8 +140,8 @@ const bsplineTaps = Fn( ( [ x ]: [ V2 ] ) => {
 	const w3 = f3.div( 6 );
 	const g0 = w0.add( w1 ).toVar();
 	const g1 = float( 1 ).sub( g0 );
-	const t0 = i.sub( 1 ).add( w1.div( g0 ) ).add( 0.5 ).div( DISPLACEMENT.size );
-	const t1 = i.add( 1 ).add( w3.div( max( g1, 1e-6 ) ) ).add( 0.5 ).div( DISPLACEMENT.size );
+	const t0 = i.sub( 1 ).add( w1.div( g0 ) ).add( 0.5 ).div( DISPLACEMENT_SIZE );
+	const t1 = i.add( 1 ).add( w3.div( max( g1, 1e-6 ) ) ).add( 0.5 ).div( DISPLACEMENT_SIZE );
 	return vec4( t0, t1 );
 
 } ).setLayout( { name: 'displacementTaps', type: 'vec4', inputs: [ { name: 'x', type: 'vec2' } ] } );
@@ -156,10 +157,10 @@ const bsplineWeights = Fn( ( [ x ]: [ V2 ] ) => {
 
 /** `field` (the field or the frame before's) at the point `p` (world x, z): the cubic B-spline of its
  * texels there, four bilinear taps at level 0, 0 outside it. */
-function readField( field: DisplacementUniforms[ 'field' ], p: V2 ): V2 {
+function readField( field: DisplacementUniforms[ 'field' ], coverage: number, p: V2 ): V2 {
 
-	const uv = p.div( DISPLACEMENT.coverage ).add( 0.5 ).toVar();
-	const x = uv.mul( DISPLACEMENT.size ).sub( 0.5 ).toVar();
+	const uv = p.div( coverage ).add( 0.5 ).toVar();
+	const x = uv.mul( DISPLACEMENT_SIZE ).sub( 0.5 ).toVar();
 	const t = bsplineTaps( x ).toVar(), g = bsplineWeights( x ).toVar();
 	const tap = ( s: F, r: F ) => field.sample( vec2( s, r ) ).level( float( 0 ) ).xy;
 	const sum = tap( t.x, t.y ).mul( g.x ).add( tap( t.z, t.y ).mul( g.z ) ).mul( g.y )
@@ -176,8 +177,10 @@ export function displacementAt( p: V2, previous = false ): V2 {
 
 	const u = displacementUniforms;
 	if ( ! DISPLACEMENT_ON ) return vec2( 0 );
-	if ( ! previous || ! TEMPORAL ) return readField( u.field, p );
-	return mix( readField( u.field, p ), readField( u.previous, p ), step( 0.5, u.previousValid ) );
+	if ( ! displacementField ) throw new Error( 'Displacement: the field is read before createDisplacementField made it' );
+	const coverage = displacementField.coverage;
+	if ( ! previous || ! TEMPORAL ) return readField( u.field, coverage, p );
+	return mix( readField( u.field, coverage, p ), readField( u.previous, coverage, p ), step( 0.5, u.previousValid ) );
 
 }
 
@@ -185,6 +188,9 @@ export function displacementAt( p: V2, previous = false ): V2 {
 export class DisplacementField {
 
 	readonly uniforms: DisplacementUniforms;
+	/** The side of the square of ground the field covers (m), centred on the world's origin: a plain
+	 * number, compiled into the sprites' and the readers' shaders. */
+	readonly coverage: number;
 	/** The sprites' scene, drawn by the field's pass with `camera` (whose matrices the sprites
 	 * ignore: they place themselves in the field). */
 	readonly scene = new THREE.Scene();
@@ -197,13 +203,15 @@ export class DisplacementField {
 	private readonly c: THREE.InstancedBufferAttribute;
 	private readonly geometry: THREE.InstancedBufferGeometry;
 	private count = 0;
+	private sourced = false;
 	private handle: ResourceHandle | null = null;
 	private previousHandle: ResourceHandle | null = null;
 	private graph: FrameGraph<unknown> | null = null;
 
-	constructor( uniforms: DisplacementUniforms ) {
+	constructor( uniforms: DisplacementUniforms, coverage: number ) {
 
 		this.uniforms = uniforms;
+		this.coverage = coverage;
 		this.scene.name = 'displacement sprites';
 		const geometry = this.geometry = new THREE.InstancedBufferGeometry();
 		geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( [ - 1, - 1, 0, 1, - 1, 0, 1, 1, 0, - 1, 1, 0 ], 3 ) );
@@ -216,10 +224,21 @@ export class DisplacementField {
 		geometry.setAttribute( 'spriteB', this.b );
 		geometry.setAttribute( 'spriteC', this.c );
 		geometry.instanceCount = 0;
-		this.mesh = new THREE.Mesh( geometry, spriteMaterial() );
+		this.mesh = new THREE.Mesh( geometry );
 		this.mesh.frustumCulled = false;
 		this.mesh.visible = false;
 		this.scene.add( this.mesh );
+
+	}
+
+	/** Registers what writes the sprites, once, before the first frame: `curve` is the share of its
+	 * strength a strip or a half disc keeps at `age` seconds (the disc does not age). Builds the
+	 * sprites' material. */
+	source( curve: ( age: F ) => F ): void {
+
+		if ( this.sourced ) throw new Error( 'Displacement: the sprites have a source already' );
+		this.sourced = true;
+		this.mesh.material = spriteMaterial( this.coverage, curve );
 
 	}
 
@@ -267,7 +286,7 @@ export class DisplacementField {
 
 		const g = graph;
 		this.graph = g as unknown as FrameGraph<unknown>;
-		const size = { of: 'fixed' as const, width: DISPLACEMENT.size, height: DISPLACEMENT.size };
+		const size = { of: 'fixed' as const, width: DISPLACEMENT_SIZE, height: DISPLACEMENT_SIZE };
 		const desc = { size, format: THREE.RGFormat, type: THREE.HalfFloatType, filter: 'linear' as const };
 		let field = g.color( 'displacement', desc );
 		// the frame before's, copied at the frame's end: every material and kernel that draws the
@@ -292,7 +311,7 @@ export class DisplacementField {
 				label: 'displacement',
 				scene: this.scene,
 				camera: this.camera,
-				latent: () => [ this.mesh ],
+				latent: () => this.sourced ? [ this.mesh ] : [],
 				run: () => {
 
 					const r = g.renderer;
@@ -345,7 +364,7 @@ const standPush = Fn( ( [ local ]: [ V2 ] ) => {
 
 } ).setLayout( { name: 'displacementStand', type: 'vec2', inputs: [ { name: 'local', type: 'vec2' } ] } );
 
-function spriteMaterial(): THREE.NodeMaterial {
+function spriteMaterial( coverage: number, curve: ( age: F ) => F ): THREE.NodeMaterial {
 
 	const a = attribute<'vec4'>( 'spriteA', 'vec4' ), b = attribute<'vec4'>( 'spriteB', 'vec4' ), c = attribute<'float'>( 'spriteC', 'float' );
 	const st = positionGeometry.xy;
@@ -353,7 +372,7 @@ function spriteMaterial(): THREE.NodeMaterial {
 	const dir = a.zw.div( max( half, 1e-6 ) ).toVar();
 	const across = vec2( dir.y.negate(), dir.x );
 	const world = a.xy.add( dir.mul( st.x.mul( half ) ) ).add( across.mul( st.y.mul( b.x ) ) );
-	const uv = world.div( DISPLACEMENT.coverage ).add( 0.5 );
+	const uv = world.div( coverage ).add( 0.5 );
 	const material = new THREE.NodeMaterial();
 	material.name = 'displacement sprite';
 	// (v runs down the target: row 0 at clip y = +1)
@@ -374,7 +393,7 @@ function spriteMaterial(): THREE.NodeMaterial {
 	const front = trailPush( local.y, r, min( bearing, r.mul( TRAIL.spread ).add( TRAIL.angle ) ) ).mul( step( 0, local.x ) );
 	const V = mix( mix( strip, front, ahead ), standPush( local ), disc );
 	const age = mix( vb.z, vb.w, along );
-	const strength = gain.mul( mix( trailCurve( age ), float( 1 ), disc ) );
+	const strength = gain.mul( mix( curve( age ), float( 1 ), disc ) );
 	material.fragmentNode = vec4( vDir.mul( V.x ).add( vec2( vDir.y.negate(), vDir.x ).mul( V.y ) ).mul( strength ), 0, 0 );
 	material.blending = THREE.CustomBlending;
 	material.blendEquation = THREE.AddEquation;
@@ -389,5 +408,17 @@ function spriteMaterial(): THREE.NodeMaterial {
 
 }
 
-/** The field, or null with `debugFlags.trample = false` at load. */
-export const displacementField = DISPLACEMENT_ON ? new DisplacementField( displacementUniforms ) : null;
+/** The field once `createDisplacementField` has made it; null before, and with
+ * `debugFlags.trample = false` at load. */
+export let displacementField: DisplacementField | null = null;
+
+/** Makes the page's one field over `coverage` m of ground on a side (centred on the world's origin),
+ * before anything reads it (`displacementAt`) or declares it on the frame graph; null with
+ * `debugFlags.trample = false` at load. */
+export function createDisplacementField( coverage: number ): DisplacementField | null {
+
+	if ( displacementField ) throw new Error( 'Displacement: the field is made once' );
+	if ( DISPLACEMENT_ON ) displacementField = new DisplacementField( displacementUniforms, coverage );
+	return displacementField;
+
+}

@@ -110,7 +110,8 @@ export function trailCurve( age: F ): F {
 
 const _p = new THREE.Vector2();
 
-/** Draws the walkers' trails into the displacement field once per rendered frame. */
+/** Draws the walkers' trails into the displacement field once per rendered frame, as the field's
+ * source of sprites: it gives the field the trail's curve (`trailCurve`) when it is made. */
 export class Trample {
 
 	private readonly field: DisplacementField | null;
@@ -121,6 +122,7 @@ export class Trample {
 	constructor( field: DisplacementField | null ) {
 
 		this.field = field;
+		field?.source( trailCurve );
 
 	}
 
