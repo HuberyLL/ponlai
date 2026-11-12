@@ -8,11 +8,11 @@ import { shadowWindOn } from '../world/VegetationShadow.ts';
 import { leafThrough } from '../world/vegetation/LeafLight.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tuneUniform } from '../debug/Tune.ts';
+import { builtShadowMap, redrawShadow, shadowPassMaterial, shadowRenderer, type ShadowRenderer } from '../three/ShadowPass.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 type FilterInput = { shadowCoord: V3 };
-type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: THREE.Scene; camera: THREE.Camera } ): void; shadowMap: THREE.RenderTarget | null };
 
 // The key light's shadow map, redrawn in steps of the light's direction and cross-faded.
 //
@@ -77,7 +77,7 @@ type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: 
 // its vertex stage over a disc metres wide (`discVisibility`, Water.ts), with a fixed offset of its own.
 //
 // The map's first redraw builds every caster's pass into it, and three builds the map itself only
-// with the first receiver, the throwaway one built just before the loop (graph/ThreePatches.ts
+// with the first receiver, the throwaway one built just before the loop (three/ThreePatches.ts
 // `primeSharedNodes`), so no warm-up before the loop could compile those passes into it. Drawn as
 // usual, that redraw (the loop's first frame, before the receivers build) created their pipelines
 // synchronously and stalled. It is made first with its pipelines compiled asynchronously
@@ -130,8 +130,6 @@ const PREVIOUS = 0, CURRENT = 1;
 // foliage moves under 0.05 % (the specks it loses), the front-lit crowns' under 0.01 %.
 export const NORMAL_OFFSET = { near: 1.4, far: 1.4, depth: 100 };
 const VEGETATION_FLIP = /*@__PURE__*/ tuneUniform( 'lighting.sunShadow.vegetationFlip', 48, { min: 1, max: 128, scale: 'log' } );
-// the side three draws a caster's faces into a (non-VSM) map with: Renderer's _shadowSide (r186)
-const SHADOW_SIDE = { [ THREE.FrontSide ]: THREE.BackSide, [ THREE.BackSide ]: THREE.FrontSide, [ THREE.DoubleSide ]: THREE.DoubleSide };
 // The caster-depth grid (nearestCasterDepth): light-space cells per side of each map, world cells
 // along the casters' longer side, and the padding for what the rest pose leaves out (wind sway,
 // the rim's lean): metres up, and world cells sideways.
@@ -383,16 +381,14 @@ export class SunShadow {
 	 * (scene.overrideMaterial), taking the caster's colour, depth and position nodes and side into
 	 * it per draw and restoring them after (Renderer.renderObject, r186). Each caster here compiles
 	 * with a pass material of its own that already holds what the draw takes into it, so the build
-	 * is the draw's whether it runs before that restore (the bound compile) or after it (three's
-	 * compileAsync, the fallback). This mirrors three's shadow material and its non-VSM side rule:
-	 * re-check it on a three upgrade.
+	 * is the draw's whether it runs before that restore (the bound compile) or after it. This
+	 * mirrors three's shadow material and its non-VSM side rule (three/ShadowPass.ts).
 	 */
 	compileCasters( renderer: THREE.WebGPURenderer, casters: THREE.Object3D[] ): Promise<void> | null {
 
-		const node = this.sun.shadow.shadowNode as unknown as ShadowRenderer | undefined;
-		const map = node?.shadowMap;
+		const node = shadowRenderer( this.sun.shadow );
+		const map = node ? builtShadowMap( node ) : null;
 		if ( ! node || ! map ) return null;
-		const { _getShadowNodes: shadowNodes } = renderer as unknown as { _getShadowNodes( material: THREE.Material ): { colorNode: THREE.Node<'vec4'> | null; depthNode: THREE.Node<'float'> | null; positionNode: THREE.Node<'vec3'> | null } };
 		const meshes: THREE.Mesh[] = [];
 		for ( const root of casters ) root.traverse( ( object ) => {
 
@@ -402,23 +398,8 @@ export class SunShadow {
 		// one caster at a time, as a frame draws them (see main.ts on the game's props)
 		const compile = ( mesh: THREE.Mesh ): Promise<void> => {
 
-			const material = mesh.material as THREE.NodeMaterial;
 			// three's shadow material (ShadowBaseNode), as the draw leaves it for this caster
-			const pass = new THREE.NodeMaterial();
-			( pass as unknown as { isShadowPassMaterial: boolean } ).isShadowPassMaterial = true;
-			pass.name = 'ShadowMaterial';
-			pass.blending = THREE.NoBlending;
-			pass.fog = false;
-			pass.colorNode = vec4( 0, 0, 0, 1 );
-			const nodes = shadowNodes.call( renderer, material );
-			if ( material.positionNode ) pass.positionNode = material.positionNode;
-			if ( nodes.colorNode ) pass.colorNode = nodes.colorNode;
-			if ( nodes.depthNode ) pass.depthNode = nodes.depthNode;
-			if ( nodes.positionNode ) pass.positionNode = nodes.positionNode;
-			pass.side = material.shadowSide ?? SHADOW_SIDE[ material.side ];
-			pass.alphaTest = material.alphaTest;
-			( pass as unknown as { alphaMap: unknown } ).alphaMap = ( material as unknown as { alphaMap: unknown } ).alphaMap;
-			pass.transparent = material.transparent;
+			const pass = shadowPassMaterial( renderer, mesh.material as THREE.NodeMaterial );
 			const scene = new THREE.Scene();
 			scene.overrideMaterial = pass;
 			return compileLatentInto( renderer, [ mesh ], scene, this.sun.shadow.camera, map );
@@ -476,8 +457,8 @@ export class SunShadow {
 		const shadow = this.sun.shadow;
 		this.direction.value.copy( keyDir ).normalize();
 		// three builds its map and the node drawing it with the first receiver's build (primeSharedNodes)
-		const node = shadow.shadowNode as unknown as ShadowRenderer | undefined;
-		const map = node?.shadowMap;
+		const node = shadowRenderer( shadow );
+		const map = node ? builtShadowMap( node ) : null;
 		if ( ! node || ! map ) {
 
 			shadow.needsUpdate = false;
@@ -600,7 +581,7 @@ export class SunShadow {
 		const sides = new Map( [ ...this.frontCasters ].map( ( material ) => [ material, material.shadowSide ] ) );
 		for ( const material of this.frontCasters ) material.shadowSide = THREE.FrontSide;
 		this.frontPush.value.copy( keyDir ).normalize().multiplyScalar( - FRONT_PUSH );
-		node.updateShadow( { renderer, scene, camera } );
+		redrawShadow( node, renderer, scene, camera );
 		for ( const [ material, side ] of sides ) material.shadowSide = side;
 		sun.shadow.needsUpdate = false;
 		if ( moved ) {

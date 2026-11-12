@@ -1348,19 +1348,19 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   the limit or gone, until its entry is removed (the list only shrinks). Split a file that fails by
   what its parts are, never by halving it.
 - `tools/verify-three-internals.mjs [--verbose] [--fingerprints]` (plain `node`) checks the
-  three.js internals the code depends on, listed in `tools/three-internals.json`: the private
+  three.js internals the code depends on, listed in `src/three/three-internals.json`: the private
   members and methods it reads, calls, writes, wraps or replaces, and the internal code it mirrors
   or relies on, and the extension hooks `@types/three` does not declare, each with the file in
-  three that holds it. It fails when the installed three or
-  `@types/three` is not the list's version, when an entry's member or method is missing from its
-  file, and when the code of an entry that is wrapped, replaced, mirrored or relied on differs from
-  its recorded fingerprint (a hash of the code, comments ignored). A version range in
-  `package.json` instead of an exact version is a warning, not yet a failure. It also fails on a
-  file under `src/` or `tools/` that reaches into three's internals (the renderer's `backend`, a
-  cast to a type with private members, a private member's name) and is not on the tool's list of
-  files known to do so; that list only shrinks. `--verbose` lists every entry; `--fingerprints` prints
-  each entry's current fingerprint, to record after re-checking the code that depends on it on a
-  three upgrade.
+  three that holds it. It fails when the installed three or `@types/three` is not the list's
+  version, when an entry's member or method is missing from its file, and when the code of an
+  entry that is wrapped, replaced, mirrored or relied on differs from its recorded fingerprint (a
+  hash of the code, comments ignored). It fails on a version range in `package.json` instead of an
+  exact version. It also fails on a file under `src/`, outside `src/three/`, that reaches into
+  three's internals (the renderer's `backend`, a cast to a type with private members, a private
+  member's name), and on a tool that does and is not on the tool's list of tools known to do so;
+  that list only shrinks. `--verbose` lists every entry; `--fingerprints` prints each entry's
+  current fingerprint, to record after re-checking the code that depends on it on a three upgrade
+  (`docs/how-to/upgrade-three.md`).
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
 - `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
   (`uv run --with pillow --with numpy`), `tools/build-ground-textures.py` the meadow ground's from

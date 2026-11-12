@@ -75,7 +75,7 @@ import { SeabedRise } from './SeabedRise.ts';
 //   objects, not only their geometry: three keeps a render object (and its uniform buffers) per
 //   object and pass until the object's dispose. Their shared materials stay. They go after the swap's
 //   frame has drawn their successors, so no pipeline loses its last user. A replaced texture is not
-//   uploaded again by a later chunk's first draw (graph/ThreePatches.ts `installBindingPatches`).
+//   uploaded again by a later chunk's first draw (three/ThreePatches.ts `installBindingPatches`).
 // - The growth's own main-thread time is counted per frame (`work`; the workers' replies
 //   included), and kept with the swap's record (`state.last.work`): no frame's share should pass
 //   2 ms (plan M8's frame-time acceptance).

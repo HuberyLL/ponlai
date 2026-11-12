@@ -59,7 +59,10 @@ import { renderPixelRatio, dynamicRange, outputPixelRatio, OUTPUT_PIXEL_RATIO_CA
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
 import { FramePacer, PAUSED_QUEUE } from './post/FramePacer.ts';
 import { SubmitBatch } from './post/SubmitBatch.ts';
-import { installBindingPatches, installCacheKeyPatches, primeSharedNodes } from './post/graph/ThreePatches.ts';
+import { installBindingPatches, installCacheKeyPatches, primeSharedNodes } from './three/ThreePatches.ts';
+import { checkRenderer } from './three/Internals.ts';
+import { gpuDevice, isWebGPU } from './three/Backend.ts';
+import { frameBookkeeping, threeAnimation } from './three/FrameLoop.ts';
 import { FrameStats } from './debug/FrameStats.ts';
 import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
@@ -144,32 +147,27 @@ const renderer = new THREE.WebGPURenderer( { antialias: false, powerPreference: 
 if ( profiler ) renderer.inspector = profiler;
 await renderer.init();
 mark( 'renderer' );
-if ( ( renderer.backend as unknown as { isWebGPUBackend?: boolean } ).isWebGPUBackend !== true ) {
+if ( ! isWebGPU( renderer ) ) {
 
 	setStatus( 'This scene needs WebGPU (Chrome / Edge 113+, Safari 26+).' );
 	throw new Error( 'WebGPU is not available' );
 
 }
+// the members of three's renderer the page reaches beyond its interface: a three without one stops
+// the page here, naming it (three/Internals.ts)
+checkRenderer( renderer );
 // three r186 keys its node builds and pipelines by the first attachment, not the whole layout (an
 // MRT picks its outputs by the textures' names): patched before any material builds, so a material
-// drawn into two layouts gets a build each (graph/ThreePatches.ts)
-// (the temporal modes' scene materials build one shader per MRT: Antialiasing.ts refuses them on a
-// revision the patches are not written for, before the renderer exists; failing here for another
-// reason, the page stops rather than draw them with another layout's shader outputs)
-if ( ! installCacheKeyPatches( renderer ) && TEMPORAL ) {
-
-	setStatus( `aa=${ AA_MODE } needs three's cache keys patched for its MRTs, which failed: load the page without aa=${ AA_MODE }.` );
-	throw new Error( `three's cache keys could not be patched for aa=${ AA_MODE }` );
-
-}
+// drawn into two layouts gets a build each (three/ThreePatches.ts)
+installCacheKeyPatches( renderer );
 // a new render object's texture bindings start at their node's current texture, so a texture the
-// growth replaced and disposed is not uploaded again (graph/ThreePatches.ts)
+// growth replaced and disposed is not uploaded again (three/ThreePatches.ts)
 installBindingPatches( renderer );
 // three submits every pass on its own; the frame reaches the GPU in a few submits instead
 // (SubmitBatch.ts: a submit per pass kept Chrome's GPU process from presenting the page on time)
-const submitBatch = new SubmitBatch( ( renderer.backend as unknown as { device: ConstructorParameters<typeof SubmitBatch>[ 0 ] } ).device, { debug: DEBUG } );
+const submitBatch = new SubmitBatch( gpuDevice<ConstructorParameters<typeof SubmitBatch>[ 0 ]>( renderer ), { debug: DEBUG } );
 // the settled signal counts the async pipeline compiles in flight (post/Settled.ts; debug only)
-if ( DEBUG ) watchPipelines( ( renderer.backend as unknown as { device: unknown } ).device );
+if ( DEBUG ) watchPipelines( gpuDevice( renderer ) );
 // every render and compute pipeline the renderer creates, counted for the diagnostics (debug only)
 const pipelineCount = DEBUG ? ( await import( './debug/PipelineCounter.ts' ) ).installPipelineCounter( renderer ) : null;
 
@@ -1628,7 +1626,7 @@ const dynamicResolution = dynamicRule ? new DynamicResolution( { ...dynamicRange
 // debug builds; a production `?game` menu needs the game to be handed the pacer (not wired yet).
 const frameRateParam = params.get( 'frameRate' );
 // (the queue whose completed work bounds a paused page's frames in flight)
-const gpuQueue = ( renderer.backend as unknown as { device: { queue: { onSubmittedWorkDone(): Promise<void> } } } ).device.queue;
+const gpuQueue = gpuDevice<{ queue: { onSubmittedWorkDone(): Promise<void> } }>( renderer ).queue;
 const pacer = new FramePacer( quality.frameRate, {
 	rate: frameRateParam === null || frameRateParam === 'auto' ? 'auto' : Number( frameRateParam ),
 	allowFallback: params.get( 'frameFallback' ) !== '0',
@@ -2197,7 +2195,7 @@ if ( profiler ) {
 
 }
 // the nodes r186 makes inside the first lit build, made by a throwaway one, so the frame's receivers
-// build the same code whichever comes first (graph/ThreePatches.ts)
+// build the same code whichever comes first (three/ThreePatches.ts)
 primeSharedNodes( renderer, scene, camera );
 // The falling leaves, which the warm-up ran before they existed, and their kernels compile ahead
 // as latents of the opaque pass, so the view that first finds them builds no pipeline.
@@ -2217,7 +2215,7 @@ if ( detector ) detector.onDone = ( record ) => {
 };
 dynamicResolution?.begin();
 // three's loop asks the pacer for its animation frames, so the frames it skips never reach it
-const animation = ( renderer as unknown as { _animation: { start(): void; stop(): void; setContext( context: unknown ): void } } )._animation;
+const animation = threeAnimation( renderer );
 animation.setContext( pacer.context );
 renderer.setAnimationLoop( animationLoop );
 sceneEvent( 'loop start' );
@@ -2485,8 +2483,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 		dayCycle.paused = paused;
 
 	}
-	const r = renderer as unknown as { _nodes: { nodeFrame: { update(): void; frameId: number } }; _inspector: { isRunning?: boolean; begin(): void; finish(): void } };
-	const nodeFrame = r._nodes.nodeFrame, inspector = r._inspector;
+	const bookkeeping = frameBookkeeping( renderer );
 	const timer = clock as unknown as { update( time?: number ): unknown; getDelta(): number };
 	timer.update = () => timer;
 	timer.getDelta = () => dt;
@@ -2521,15 +2518,11 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 			await sunUpdates.catch( () => {} );
 			if ( jumpsInFlight > 0 ) throw new Error( 'loop.step: a scene jump is in flight; await establishScene before stepping' );
 			// three's Animation does this before each frame of its loop
-			if ( inspector.isRunning ) inspector.finish();
-			if ( renderer.info.autoReset ) renderer.info.reset();
-			nodeFrame.update();
-			( renderer.info as { frame: number } ).frame = nodeFrame.frameId;
-			inspector.begin();
+			bookkeeping.begin();
 			// (the frame's size follows `steppedScale` from this tick's start: applyRenderScale)
 			applyRenderScale();
 			loopBody( time );
-			inspector.finish();
+			bookkeeping.end();
 			if ( skyBake.sliceTimer !== null ) {
 
 				clearTimeout( skyBake.sliceTimer );

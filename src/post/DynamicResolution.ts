@@ -1,6 +1,7 @@
 import type * as THREE from 'three/webgpu';
 import type { FrameGraph } from './graph/FrameGraph.ts';
 import type { DynamicRange } from './RenderScale.ts';
+import { gpuAdapterInfo, gpuDevice, pendingTimestamps, resolveTimestamps, takeTimestamps, timestampCapacity, timestampPools, tracksTimestamps, type TimestampPool } from '../three/Backend.ts';
 
 // Dynamic resolution (high tier): the scene's render scale moves between the tier's maximum and a
 // floor so that the GPU's frame time stays inside the paced frame (a 60 Hz frame, `FramePacer.ts`),
@@ -1217,7 +1218,7 @@ export function renderScaleKey( renderer: THREE.WebGPURenderer, tier: string, aa
 	let gpu = '';
 	try {
 
-		const info = ( renderer.backend as unknown as { device?: { adapterInfo?: { vendor?: string; architecture?: string; device?: string; description?: string } } } ).device?.adapterInfo;
+		const info = gpuAdapterInfo( renderer );
 		if ( info ) gpu = [ info.vendor, info.architecture, info.device, info.description ].filter( Boolean ).join( '/' );
 
 	} catch {
@@ -1338,21 +1339,11 @@ export class PassScaling {
 
 // The few WebGPU types used here (the project builds without @webgpu/types).
 type GPUBuffer = { size: number; mapAsync( mode: number, offset: number, size: number ): Promise<void>; getMappedRange( offset: number, size: number ): ArrayBuffer; unmap(): void };
-type GPUQuerySet = object;
 type GPUDevice = {
 	createBuffer( descriptor: { label: string; size: number; usage: number } ): GPUBuffer;
-	createCommandEncoder( descriptor: { label: string } ): {
-		resolveQuerySet( set: GPUQuerySet, first: number, count: number, destination: GPUBuffer, offset: number ): void;
-		copyBufferToBuffer( source: GPUBuffer, sourceOffset: number, destination: GPUBuffer, destinationOffset: number, size: number ): void;
-		finish(): object;
-	};
+	createCommandEncoder( descriptor: { label: string } ): { finish(): object };
 	queue: { submit( buffers: object[] ): void };
 };
-type Pool = {
-	querySet: GPUQuerySet; resolveBuffer: GPUBuffer; queryOffsets: Map<string, number>;
-	currentQueryIndex: number; maxQueries: number; resolveQueriesAsync: () => Promise<number>;
-};
-type Backend = { device: GPUDevice; trackTimestamp: boolean; timestampQueryPool: Record<string, Pool | null> };
 
 // The frame (three's `info.frame`) a timestamp uid belongs to (`<prefix>:<id>:f<frame>`).
 function frameOf( uid: string ): number {
@@ -1374,7 +1365,7 @@ export class GpuFrameTimer {
 	/** Called with each frame's id (three's `info.frame`), its GPU busy time in ms and the part of it
 	 * in passes that follow the pixel count. */
 	onFrame: ( ( frame: number, ms: number, pixel: number ) => void ) | null = null;
-	private readonly backend: Backend;
+	private readonly renderer: THREE.WebGPURenderer;
 	private readonly passes: PassScaling;
 	private readonly buffers: { buffer: GPUBuffer; busy: boolean }[] = [];
 	private readonly frames = new Map<number, [ number, number, boolean ][]>();
@@ -1385,9 +1376,9 @@ export class GpuFrameTimer {
 	private reported = - 1;
 	private readonly lost = new Set<number>();
 
-	private constructor( backend: Backend, passes: PassScaling ) {
+	private constructor( renderer: THREE.WebGPURenderer, passes: PassScaling ) {
 
-		this.backend = backend;
+		this.renderer = renderer;
 		this.passes = passes;
 
 	}
@@ -1395,28 +1386,14 @@ export class GpuFrameTimer {
 	/** A timer, or null where the device has no timestamp queries (or the renderer does not track them). */
 	static create( renderer: THREE.WebGPURenderer, passes: PassScaling ): GpuFrameTimer | null {
 
-		const backend = renderer.backend as unknown as Backend;
-		return backend.trackTimestamp ? new GpuFrameTimer( backend, passes ) : null;
+		return tracksTimestamps( renderer ) ? new GpuFrameTimer( renderer, passes ) : null;
 
 	}
 
 	resolve(): void {
 
-		const pools: Pool[] = [];
-		for ( const pool of Object.values( this.backend.timestampQueryPool ) ) {
-
-			if ( ! pool ) continue;
-			// three resolves a pool on its own only when it overflows: route that through here too
-			const hooked = pool as Pool & { frameTimer?: boolean };
-			if ( ! hooked.frameTimer ) {
-
-				hooked.frameTimer = true;
-				pool.resolveQueriesAsync = () => { this.resolvePool( pool ); return Promise.resolve( 0 ); };
-
-			}
-			if ( pool.currentQueryIndex > 0 ) pools.push( pool );
-
-		}
+		// three resolves a pool on its own only when it overflows: route that through here too
+		const pools = timestampPools( this.renderer, 'frameTimer', ( pool ) => this.resolvePool( pool ) ).filter( ( pool ) => pendingTimestamps( pool ) > 0 );
 		// The render and compute pools are read together or not at all: a frame read from one of them
 		// alone (its compute passes, the cloud view among them, left out) would pass for a light one.
 		const free = this.buffers.filter( ( b ) => ! b.busy ).length + RING - this.buffers.length;
@@ -1424,18 +1401,16 @@ export class GpuFrameTimer {
 
 	}
 
-	private resolvePool( pool: Pool, drop = false ): void {
+	private resolvePool( pool: TimestampPool, drop = false ): void {
 
-		const count = pool.currentQueryIndex;
-		if ( count === 0 ) return;
-		const offsets = [ ...pool.queryOffsets ].map( ( [ uid, base ] ) => [ uid, base, this.passes.take( uid ) ] as const );
-		pool.currentQueryIndex = 0;
-		pool.queryOffsets.clear();
-		const device = this.backend.device;
-		let slot = drop ? undefined : this.buffers.find( ( b ) => ! b.busy && b.buffer.size >= pool.maxQueries * 8 );
+		if ( pendingTimestamps( pool ) === 0 ) return;
+		const taken = takeTimestamps( pool ), count = taken.count, capacity = timestampCapacity( pool );
+		const offsets = [ ...taken.offsets ].map( ( [ uid, base ] ) => [ uid, base, this.passes.take( uid ) ] as const );
+		const device = gpuDevice<GPUDevice>( this.renderer );
+		let slot = drop ? undefined : this.buffers.find( ( b ) => ! b.busy && b.buffer.size >= capacity * 8 );
 		if ( ! slot && ! drop && this.buffers.length < RING ) {
 
-			slot = { buffer: device.createBuffer( { label: 'frameTimer.timestamps', size: pool.maxQueries * 8, usage: READBACK_USAGE } ), busy: false };
+			slot = { buffer: device.createBuffer( { label: 'frameTimer.timestamps', size: capacity * 8, usage: READBACK_USAGE } ), busy: false };
 			this.buffers.push( slot );
 
 		}
@@ -1451,8 +1426,7 @@ export class GpuFrameTimer {
 		target.busy = true;
 		const bytes = count * 8;
 		const encoder = device.createCommandEncoder( { label: 'frameTimer.resolve' } );
-		encoder.resolveQuerySet( pool.querySet, 0, count, pool.resolveBuffer, 0 );
-		encoder.copyBufferToBuffer( pool.resolveBuffer, 0, target.buffer, 0, bytes );
+		resolveTimestamps( encoder, pool, count, target.buffer );
 		device.queue.submit( [ encoder.finish() ] );
 		target.buffer.mapAsync( MAP_READ, 0, bytes ).then( () => {
 

@@ -7,7 +7,7 @@
 // renderer and of its helpers, the WebGPU backend and its device, methods it replaces or wraps,
 // and code of three's it mirrors. Those reaches cannot be removed without changing the image, so
 // they are listed and checked, and an upgrade of three finds every one of them at once.
-// `tools/three-internals.json` is that list: for each entry, the file of three it lives in (under
+// `src/three/three-internals.json` is that list: for each entry, the file of three it lives in (under
 // node_modules/three), its class (`owner`), its name, what it is there (`kind`), how we use it
 // (`use`) and which of our files use it (`users`). Its categories: 1, three's private members and
 // the code we replace or mirror; 2, the backend and the device; 3, the extension hooks three
@@ -16,9 +16,7 @@
 //
 // Three checks, each a failure (exit 1) when broken:
 // - Version. three and @types/three installed are the versions the list was checked against, and
-//   three's REVISION is the list's. package.json is to pin both to exact versions (no ^ or ~);
-//   while it does not, that is reported as a warning (UNPINNED_FAILS turns it into a failure once
-//   they are pinned).
+//   three's REVISION is the list's, and package.json pins both to exact versions (no ^ or ~).
 // - Shape. Every entry holds in the installed three: a `method` (a method, getter or setter) is
 //   declared in its class, and, where the class is exported (from three/webgpu, or the entry's
 //   `module`), is on its prototype at run time; a `member` is assigned in its class
@@ -30,9 +28,8 @@
 //   fingerprint updated (`--fingerprints` prints the current ones).
 // - Location. No file under src/ outside src/three/ reaches into three: no `.backend`, no cast to
 //   a structural type with a member whose name starts with an underscore, and no name of a
-//   category 1 or 2 entry that starts with one (comments are not read). The files that did when
-//   the check was written are listed in SRC_KNOWN; the list only shrinks: a listed file that no
-//   longer reaches in fails, so the entry is removed with the change that moves its reach.
+//   category 1 or 2 entry that starts with one (comments are not read): each reach is a
+//   function of src/three/, named for what it does, and SRC_KNOWN is empty.
 //   tools/ is white-box (its tools run scripts in the page) and keeps a list of its own,
 //   TOOLS_KNOWN, which only shrinks too.
 //
@@ -47,38 +44,21 @@ import ts from 'typescript';
 
 const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const THREE = path.join( ROOT, 'node_modules', 'three' );
-const LIST = path.join( ROOT, 'tools', 'three-internals.json' );
+const LIST = path.join( ROOT, 'src', 'three', 'three-internals.json' );
 const SELF = path.relative( ROOT, fileURLToPath( import.meta.url ) );
 
 // Whether a three or @types/three not pinned to an exact version in package.json fails the check
-// (true once package.json pins both) or is only reported.
-const UNPINNED_FAILS = false;
+// or is only reported.
+const UNPINNED_FAILS = true;
 
 // how an entry is used; the ones whose source text is fingerprinted
 const USES = [ 'read', 'call', 'write', 'hook', 'replace', 'wrap', 'mirror', 'relies' ];
 const FINGERPRINTED = new Set( [ 'replace', 'wrap', 'mirror', 'relies' ] );
 const KINDS = [ 'method', 'member', 'declaration', 'text' ];
 
-// The files under src/ that reach into three, outside src/three/ (paths under src/). Remove an
-// entry with the change that moves its reach; never add one.
-const SRC_KNOWN = [
-	'debug/AmbientProbe.ts',
-	'debug/FrameProfiler.ts',
-	'debug/PipelineCounter.ts',
-	'lighting/SunShadow.ts',
-	'main.ts',
-	'materials/CloudNoise.ts',
-	'post/DynamicResolution.ts',
-	'post/Pipeline.ts',
-	'post/graph/AttachmentOps.ts',
-	'post/graph/Compile.ts',
-	'post/graph/FrameGraph.ts',
-	'post/graph/ThreePatches.ts',
-	'sky/Sky.ts',
-	'world/Upload.ts',
-	'world/WorldFields.ts',
-	'world/vegetation/VegetationCull.ts',
-];
+// The files under src/ that reach into three, outside src/three/ (paths under src/): none. A new
+// reach goes into a function of src/three/; never add an entry.
+const SRC_KNOWN = [];
 
 // The tools that reach into three (paths under tools/). Remove an entry with the change that
 // removes its reach; never add one.

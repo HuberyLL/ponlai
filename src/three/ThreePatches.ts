@@ -1,5 +1,6 @@
 import { REVISION, Mesh, MeshStandardNodeMaterial, PlaneGeometry } from 'three/webgpu';
 import type { Camera, Light, Node, RenderTarget, Scene, WebGPURenderer } from 'three/webgpu';
+import { missing } from './Internals.ts';
 
 // Cache-key patches for three r186's node and pipeline caches, so a material drawn into targets
 // of different layouts (another MRT, other attachment formats or names) gets a shader and a
@@ -23,8 +24,9 @@ import type { Camera, Light, Node, RenderTarget, Scene, WebGPURenderer } from 't
 // layout's. (A render object never changes its build: three makes a new one when its key changes.)
 //
 // `tools/verify-frame-graph-gpu.mjs` checks the patches (both orders of an MRT and a plain draw, a
-// swapped layout). They refuse another three revision with a warning, and `Antialiasing.ts` then
-// refuses the temporal modes, which need them: re-check them on a three upgrade.
+// swapped layout). On another three revision, or a renderer without the members they patch, they
+// throw, naming the entry of `three-internals.json` (Internals.ts `missing`): re-check them on a
+// three upgrade (docs/how-to/upgrade-three.md).
 //
 // One more patch, of the bindings (`installBindingPatches`): a render object's bind groups are cloned
 // from its build's (NodeBuilderState.createBindings), and a cloned texture binding starts with the
@@ -82,25 +84,26 @@ function layoutKey( context: RenderContext ): string {
 
 const patched = new WeakSet<object>();
 
+// three's revision, which the patches were written against (r186): another throws
+function checkRevision( user: string, revision: string ): void {
+
+	if ( ! /^186(\.|$)/.test( revision ) ) throw missing( 'revision', `${ user } (written for r186, this is r${ revision })` );
+
+}
+
 /** Patches the renderer's node manager and backend (instances) so their cache keys include the
- * context MRT and the whole attachment layout (the node key fixed per render object). Call after `renderer.init()`. Returns false (and warns)
- * on a three revision other than 186, whose internals it was written against, or before init. */
-export function installCacheKeyPatches( renderer: unknown, revision: string = REVISION ): boolean {
+ * context MRT and the whole attachment layout (the node key fixed per render object). Call after
+ * `renderer.init()`. Throws on a three revision other than 186, whose internals it was written
+ * against, or on a renderer without the members it patches (not initialised, or not WebGPU). Returns
+ * true (a patched renderer is left as it is). */
+export function installCacheKeyPatches( renderer: unknown, revision: string = REVISION ): true {
 
-	if ( ! /^186(\.|$)/.test( revision ) ) {
-
-		console.warn( `installCacheKeyPatches: written for three r186, this is r${ revision }; not installed` );
-		return false;
-
-	}
+	checkRevision( 'installCacheKeyPatches', revision );
 	const r = renderer as { _nodes?: Host | null; backend?: Host & { utils?: { getCurrentColorFormats?( context: RenderContext ): string[] } } };
 	const nodes = r._nodes, backend = r.backend;
-	if ( ! nodes || ! backend || typeof nodes.getForRenderCacheKey !== 'function' || typeof backend.getRenderCacheKey !== 'function' ) {
-
-		console.warn( 'installCacheKeyPatches: the renderer is not initialised (or not WebGPU); not installed' );
-		return false;
-
-	}
+	if ( typeof nodes?.getForRenderCacheKey !== 'function' ) throw missing( 'NodeManager.getForRenderCacheKey', 'installCacheKeyPatches' );
+	if ( typeof backend?.getRenderCacheKey !== 'function' ) throw missing( 'WebGPUBackend.getRenderCacheKey', 'installCacheKeyPatches' );
+	if ( typeof backend.utils?.getCurrentColorFormats !== 'function' ) throw missing( 'WebGPUUtils.getCurrentColorFormats', 'installCacheKeyPatches' );
 	if ( patched.has( nodes ) ) return true;
 	patched.add( nodes );
 
@@ -123,7 +126,7 @@ export function installCacheKeyPatches( renderer: unknown, revision: string = RE
 	backend.getRenderCacheKey = function ( this: unknown, renderObject: RenderObject ) {
 
 		const context = renderObject.context;
-		const formats = backend.utils?.getCurrentColorFormats?.( context ) ?? [ layoutKey( context ) ];
+		const formats = backend.utils!.getCurrentColorFormats!( context );
 		return `${ pipelineKey.call( this, renderObject ) },${ formats.join( '/' ) },${ context.mrt?.id ?? '-' }`;
 
 	};
@@ -133,23 +136,14 @@ export function installCacheKeyPatches( renderer: unknown, revision: string = RE
 
 /** Patches the renderer's bindings (an instance) so that a new bind group's texture bindings start at
  * their node's current texture, not the one the material was built with (see the header). Call after
- * `renderer.init()`. Returns false (and warns) on a three revision other than 186, or before init. */
-export function installBindingPatches( renderer: unknown, revision: string = REVISION ): boolean {
+ * `renderer.init()`. Throws on a three revision other than 186, or on a renderer without the member
+ * it patches. */
+export function installBindingPatches( renderer: unknown, revision: string = REVISION ): void {
 
-	if ( ! /^186(\.|$)/.test( revision ) ) {
-
-		console.warn( `installBindingPatches: written for three r186, this is r${ revision }; not installed` );
-		return false;
-
-	}
+	checkRevision( 'installBindingPatches', revision );
 	const bindings = ( renderer as { _bindings?: Host | null } )._bindings;
-	if ( ! bindings || typeof bindings._createBindings !== 'function' ) {
-
-		console.warn( 'installBindingPatches: the renderer is not initialised (or not WebGPU); not installed' );
-		return false;
-
-	}
-	if ( patched.has( bindings ) ) return true;
+	if ( typeof bindings?._createBindings !== 'function' ) throw missing( 'Bindings._createBindings', 'installBindingPatches' );
+	if ( patched.has( bindings ) ) return;
 	patched.add( bindings );
 
 	const create = bindings._createBindings as Callable;
@@ -164,25 +158,21 @@ export function installBindingPatches( renderer: unknown, revision: string = REV
 		return create.call( this, groups );
 
 	};
-	return true;
 
 }
 
 /** Builds one throwaway receiver of `scene`'s lights and environment through the backend's node
  * builder (no pipeline), so the nodes r186 makes inside the first lit build exist before any material
  * the frame draws is built (see the header). Call once, after the lights, their shadows' filters
- * and the scene's environment are in place and before the first frame. Returns false (and warns) on
- * a three revision other than 186. */
-export function primeSharedNodes( renderer: WebGPURenderer, scene: Scene, camera: Camera, revision: string = REVISION ): boolean {
+ * and the scene's environment are in place and before the first frame. Throws on a three revision
+ * other than 186, or on a renderer without the members it builds through. */
+export function primeSharedNodes( renderer: WebGPURenderer, scene: Scene, camera: Camera, revision: string = REVISION ): void {
 
-	if ( ! /^186(\.|$)/.test( revision ) ) {
-
-		console.warn( `primeSharedNodes: written for three r186, this is r${ revision }; not run` );
-		return false;
-
-	}
+	checkRevision( 'primeSharedNodes', revision );
 	type Builder = { scene: Scene; material: unknown; camera: Camera; context: Record<string, unknown>; lightsNode: unknown; environmentNode: unknown; build(): void };
-	const r = renderer as unknown as { lighting: { createNode( lights: Light[] ): unknown }; backend: { createNodeBuilder( object: Mesh, renderer: unknown ): Builder } };
+	const r = renderer as unknown as { lighting?: { createNode?( lights: Light[] ): unknown }; backend: { createNodeBuilder?( object: Mesh, renderer: unknown ): Builder } };
+	if ( typeof r.lighting?.createNode !== 'function' ) throw missing( 'Lighting.createNode', 'primeSharedNodes' );
+	if ( typeof r.backend.createNodeBuilder !== 'function' ) throw missing( 'WebGPUBackend.createNodeBuilder', 'primeSharedNodes' );
 	const lights: Light[] = [];
 	scene.traverseVisible( ( object ) => {
 
@@ -202,13 +192,14 @@ export function primeSharedNodes( renderer: WebGPURenderer, scene: Scene, camera
 	builder.build();
 	mesh.geometry.dispose();
 	material.dispose();
-	return true;
 
 }
 
 /** Marks `target`'s depth as initialised for three, so r186 never clears it on its own: the frame
  * graph decides every clear and load of the depth it owns (see the header). Call as the graph binds
- * a target with depth, before it renders into it. */
+ * a target with depth, before it renders into it. A renderer without three's texture records (the
+ * frame graph's tables run it on stand-in renderers) is left alone: on the page `checkRenderer`
+ * (Internals.ts) has checked them at start. */
 export function ownDepthClears( renderer: unknown, target: RenderTarget ): void {
 
 	// (`get` makes the record when the target has none yet; three's first render then fills it in)

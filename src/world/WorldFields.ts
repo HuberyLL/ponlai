@@ -5,6 +5,7 @@ import { RIM_CELL } from './RimGround.ts';
 import { textureSteps } from './Upload.ts';
 import type { WorldData } from './types.ts';
 import type { ShoreField } from '../RenderTypes.ts';
+import { gpuDevice, gpuTexture } from '../three/Backend.ts';
 
 // The world fields on the GPU (ChunkMerge.ts assembles them on the CPU): the shore's sea-level
 // distance and the floor's height (32-bit floats), the floor's beds and the rim ground (half
@@ -48,7 +49,6 @@ type GpuDevice = {
 	};
 	queue: { submit( buffers: unknown[] ): void };
 };
-type Backend = { get( object: unknown ): { texture?: GpuTexture }; device: GpuDevice };
 // (WebGPU's GPUBufferUsage.COPY_SRC; a copy's rows start on 256-byte boundaries)
 const COPY_SRC = 0x0004, ROW_ALIGN = 256;
 /** A square of a field to copy from the staging buffer: x, y, side, and its offset there. */
@@ -193,7 +193,7 @@ export class WorldFields {
 	 * uploaded (Upload.ts textureSteps). */
 	* steps( data: WorldData, changed: readonly { ci: number; cj: number }[], renderer: THREE.WebGPURenderer ): Generator<void, FieldsPrepared> {
 
-		const device = ( renderer.backend as unknown as Backend ).device;
+		const device = gpuDevice<GpuDevice>( renderer );
 
 		const old = this.data, staged: FieldsPrepared[ 'staged' ] = {}, textures: FieldsPrepared[ 'textures' ] = {};
 		const same = sameBounds( old.shore, data.shore ), sameRim = sameBounds( old.rimGround, data.rimGround );
@@ -289,7 +289,7 @@ export class WorldFields {
 	apply( prepared: FieldsPrepared, renderer: THREE.WebGPURenderer ): ( () => void )[] {
 
 		const nodes: Record<FieldKey, THREE.TextureNode> = { shore: this.shore, floor: this.floor, beds: this.beds, rim: this.rim };
-		const backend = renderer.backend as unknown as Backend;
+		const device = gpuDevice<GpuDevice>( renderer );
 		const replaced: ( () => void )[] = [];
 		let encoder: ReturnType<GpuDevice[ 'createCommandEncoder' ]> | null = null;
 		for ( const key of [ 'shore', 'floor', 'beds', 'rim' ] as const ) {
@@ -303,10 +303,10 @@ export class WorldFields {
 				continue;
 
 			}
-			const gpu = backend.get( current ).texture, staging = prepared.staged[ key ];
+			const gpu = gpuTexture<GpuTexture>( renderer, current ), staging = prepared.staged[ key ];
 			if ( gpu && staging ) {
 
-				encoder ??= backend.device.createCommandEncoder();
+				encoder ??= device.createCommandEncoder();
 				for ( const [ x, y, side, offset ] of staging.rects ) encoder.copyBufferToTexture( { buffer: staging.buffer, offset, bytesPerRow: staging.pitch, rowsPerImage: side }, { texture: gpu, origin: { x, y } }, { width: side, height: side } );
 
 			}
@@ -316,7 +316,7 @@ export class WorldFields {
 			if ( ! gpu ) current.needsUpdate = true;
 
 		}
-		if ( encoder ) backend.device.queue.submit( [ encoder.finish() ] );
+		if ( encoder ) device.queue.submit( [ encoder.finish() ] );
 		this.data = prepared.data;
 		this.texels = prepared.texels;
 		this.setTransforms( prepared.data );
@@ -350,16 +350,16 @@ export class WorldFields {
 	 * the GPU, which then uploads the shown texels at its first use). */
 	writeSquares( key: 'floor' | 'beds', squares: Square[], side: number, renderer: THREE.WebGPURenderer ): ( () => void ) | null {
 
-		const backend = renderer.backend as unknown as Backend;
-		const node = key === 'floor' ? this.floor : this.beds, gpu = backend.get( node.value ).texture;
+		const device = gpuDevice<GpuDevice>( renderer );
+		const node = key === 'floor' ? this.floor : this.beds, gpu = gpuTexture<GpuTexture>( renderer, node.value );
 		if ( ! gpu || squares.length === 0 ) return null;
-		const steps = stage( key, squares, side, backend.device );
+		const steps = stage( key, squares, side, device );
 		let next = steps.next();
 		while ( ! next.done ) next = steps.next();
 		const staging = next.value!;
-		const encoder = backend.device.createCommandEncoder();
+		const encoder = device.createCommandEncoder();
 		for ( const [ x, y, size, offset ] of staging.rects ) encoder.copyBufferToTexture( { buffer: staging.buffer, offset, bytesPerRow: staging.pitch, rowsPerImage: size }, { texture: gpu, origin: { x, y } }, { width: size, height: size } );
-		backend.device.queue.submit( [ encoder.finish() ] );
+		device.queue.submit( [ encoder.finish() ] );
 		return () => staging.buffer.destroy();
 
 	}

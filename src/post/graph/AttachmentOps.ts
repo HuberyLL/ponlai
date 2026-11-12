@@ -1,5 +1,6 @@
 import type { OpsMode, OpsTable, PassOps } from './GraphCompiler.ts';
 import { settings, type SettingsQuery } from '../../Settings.ts';
+import { gpuDevice, wrapBeginRender } from '../../three/Backend.ts';
 
 // The frame graph's attachment ops applied to the render passes three records: a store discarded
 // where nothing later reads the attachment, a multisample resolve dropped where nothing samples it
@@ -17,8 +18,9 @@ import { settings, type SettingsQuery } from '../../Settings.ts';
 //
 // three r186 offers a discard only together with a clear (`storeMultisampled*Buffer = false`) and
 // always resolves a multisampled target, so the descriptor is rewritten as it reaches WebGPU:
-// `backend.beginRender` notes the render target of the context it begins, and the command encoder
-// it then creates gets a `beginRenderPass` of its own that hands the rewritten descriptor on.
+// the backend's `beginRender` (wrapped through three/Backend.ts `wrapBeginRender`) notes the render
+// target of the context it begins, and the command encoder it then creates gets a
+// `beginRenderPass` of its own that hands the rewritten descriptor on.
 // This relies on r186's WebGPUBackend beginning every render pass on a command encoder of its own,
 // created inside `beginRender` right before the pass (WebGPUBackend.beginRender); re-check on a
 // three upgrade. r186 does begin a second pass on the same encoder in two cases: a viewport
@@ -72,7 +74,6 @@ type Descriptor = { colorAttachments: Iterable<Attachment> & ArrayLike<Attachmen
 type Encoder = { beginRenderPass( descriptor: Descriptor ): unknown };
 type Device = { createCommandEncoder( descriptor?: unknown ): Encoder };
 type RenderContext = { renderTarget?: unknown; textures?: ArrayLike<unknown> | null };
-type Backend = { device: Device; beginRender( renderContext: RenderContext ): unknown };
 type Callable = ( this: unknown, ...args: unknown[] ) => unknown;
 
 // the method to call through: an instance's own wrapper installed before ours, else the
@@ -95,8 +96,10 @@ export class AttachmentOps {
 	/** The device's createCommandEncoder was replaced after install (by a wrapper that may not
 	 * call through: see the note at the top). */
 	overwrapped = false;
-	private readonly backend: Backend;
+	private readonly renderer: unknown;
 	private readonly dev: boolean;
+	// the device whose createCommandEncoder `install` wrapped
+	private device: Device | null = null;
 	private active = false;
 	private table: OpsTable | null = null;
 	// the executing pass's own target and its ops
@@ -111,9 +114,9 @@ export class AttachmentOps {
 	private generation = 0;
 	private createWrapper: unknown = null;
 
-	constructor( backend: unknown, options: { mode?: AttachmentOpsMode; dev?: boolean } = {} ) {
+	constructor( renderer: unknown, options: { mode?: AttachmentOpsMode; dev?: boolean } = {} ) {
 
-		this.backend = backend as Backend;
+		this.renderer = renderer;
 		this.mode = options.mode ?? opsModeFromURL();
 		this.dev = options.dev === true;
 		// (dev: a misspelt fgOps falls back to the default, which would make an A/B compare the
@@ -129,7 +132,7 @@ export class AttachmentOps {
 
 	}
 
-	/** Wraps the backend's `beginRender` and the device's `createCommandEncoder` (instance
+	/** Wraps the renderer's backend's `beginRender` and the device's `createCommandEncoder` (instance
 	 * properties; `uninstall` restores what was there). Install after any wrapper of
 	 * createCommandEncoder that does not call through (a command recorder). */
 	install(): void {
@@ -137,19 +140,18 @@ export class AttachmentOps {
 		if ( this.restore ) return;
 		this.overwrapped = false;
 		const generation = ++ this.generation;
-		const backend = this.backend, device = backend.device;
-		const ownBegin = Object.prototype.hasOwnProperty.call( backend, 'beginRender' ) ? backend.beginRender as unknown as Callable : null;
+		const device = this.device = gpuDevice<Device>( this.renderer );
 		const ownCreate = Object.prototype.hasOwnProperty.call( device, 'createCommandEncoder' ) ? device.createCommandEncoder as unknown as Callable : null;
 		const self = this;
-		backend.beginRender = function ( this: unknown, renderContext: RenderContext ) {
+		const restoreBegin = wrapBeginRender<RenderContext>( this.renderer, ( renderContext, begin ) => {
 
-			if ( self.generation !== generation || ! self.restore ) return through( backend, ownBegin, 'beginRender' ).call( backend, renderContext );
+			if ( self.generation !== generation || ! self.restore ) return begin();
 			const outer = self.noted, outerCount = self.notedCount;
 			self.noted = renderContext?.renderTarget ?? null;
 			self.notedCount = renderContext?.textures ? renderContext.textures.length : 1;
 			try {
 
-				return through( backend, ownBegin, 'beginRender' ).call( backend, renderContext );
+				return begin();
 
 			} finally {
 
@@ -158,8 +160,7 @@ export class AttachmentOps {
 
 			}
 
-		};
-		const beginWrapper = backend.beginRender;
+		} );
 		const createWrapper = function ( this: unknown, descriptor?: unknown ) {
 
 			const encoder = through( device, ownCreate, 'createCommandEncoder' ).call( device, descriptor ) as Encoder;
@@ -176,12 +177,7 @@ export class AttachmentOps {
 			// put back what was there only where ours is still the property: a wrapper installed
 			// later holds a reference to ours, so ours stays there, passing every call on (its
 			// generation is over once `restore` is cleared)
-			if ( backend.beginRender === beginWrapper ) {
-
-				if ( ownBegin ) backend.beginRender = ownBegin as unknown as Backend[ 'beginRender' ];
-				else delete ( backend as Partial<Backend> ).beginRender;
-
-			}
+			restoreBegin();
 			if ( device.createCommandEncoder === createWrapper ) {
 
 				if ( ownCreate ) device.createCommandEncoder = ownCreate as unknown as Device[ 'createCommandEncoder' ];
@@ -207,7 +203,7 @@ export class AttachmentOps {
 		this.active = this.mode !== 'off' && table !== null;
 		this.table = table;
 		this.applied = 0;
-		if ( this.restore && ! this.overwrapped && this.backend.device.createCommandEncoder !== this.createWrapper ) {
+		if ( this.restore && ! this.overwrapped && this.device!.createCommandEncoder !== this.createWrapper ) {
 
 			this.overwrapped = true;
 			if ( this.dev ) console.warn( 'AttachmentOps: the device\'s createCommandEncoder was wrapped after AttachmentOps; a wrapper that does not call through bypasses it (install AttachmentOps last)' );

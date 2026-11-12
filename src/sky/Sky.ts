@@ -29,6 +29,7 @@ import { keyed, type DayKey, type DayKeys } from '../post/DayKeys.ts';
 import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
 import { setKeyCloud } from '../lighting/KeyCloud.ts';
+import { environmentSteps } from '../three/Environment.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -147,10 +148,8 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // pipelines (`warm`) before it draws: three r186 skips a draw whose pipeline an asynchronous
 // compile is still creating, so a bake drawn meanwhile left its products empty (the irradiance
 // probe at 0: no sky light, and the exposure about five stops off at noon), and a paused page,
-// which bakes no more, kept them. The spread drives three's
-// `PMREMGenerator` private steps
-// (`_setSizeFromTexture`, `_init`, `_textureToCubeUV`, `_applyGGXFilter`, `_setViewport`): re-check
-// them on a three upgrade; without them it falls back to `fromEquirectangular`.
+// which bakes no more, kept them. The spread drives three's `PMREMGenerator` private steps
+// (three/Environment.ts, which throws on a three without them).
 
 // Baked products. Directions, colours, the grade and the clouds themselves are evaluated every
 // frame; only these slower reflection, environment and irradiance products cross-fade. The
@@ -188,18 +187,6 @@ interface Bake {
 interface Slice {
 	cost: number;
 	run: () => void;
-}
-
-// PMREMGenerator's own steps (three r186), driven one at a time so a periodic bake's GGX filter
-// chain spreads over frames. Their order and arguments are those of its _fromTexture, so the
-// atlas comes out the same; Sky.environmentSlices falls back to the whole call without them.
-interface PMREMSteps {
-	_lodMeshes: unknown[] | undefined;
-	_setSizeFromTexture( texture: THREE.Texture ): void;
-	_init( target: THREE.RenderTarget ): void;
-	_textureToCubeUV( texture: THREE.Texture, target: THREE.RenderTarget ): void;
-	_applyGGXFilter( target: THREE.RenderTarget, lodIn: number, lodOut: number ): void;
-	_setViewport( target: THREE.RenderTarget, x: number, y: number, width: number, height: number ): void;
 }
 
 // Render passes of a periodic bake per frame after its first (the panoramas): the conversion to
@@ -2591,15 +2578,13 @@ export class Sky {
 	}
 
 	// The same as filterEnvironment, as steps of one or two render passes: the conversion to the
-	// cube atlas, then each level's GGX filter from the one above. Each step restores what
-	// PMREMGenerator restores after a whole conversion.
+	// cube atlas, then each level's GGX filter from the one above (PMREMGenerator's own steps:
+	// three/Environment.ts). Each step restores what PMREMGenerator restores after a whole conversion.
 	private environmentSlices( index: number ): Slice[] {
 
-		const pmrem = this.pmrem as unknown as PMREMSteps;
 		const target = this.environments[ index ];
-		const stepwise = target && pmrem._lodMeshes && [ pmrem._setSizeFromTexture, pmrem._init, pmrem._textureToCubeUV, pmrem._applyGGXFilter, pmrem._setViewport ]
-			.every( ( f ) => typeof f === 'function' );
-		if ( ! stepwise || ! target ) return [ { cost: 20, run: () => this.filterEnvironment( index ) } ];
+		if ( ! target ) return [ { cost: 20, run: () => this.filterEnvironment( index ) } ];
+		const pmrem = environmentSteps( this.pmrem );
 		const r = this.renderer, source = this.reflectionSource.texture;
 		const step = ( work: () => void ) => () => {
 
@@ -2613,24 +2598,22 @@ export class Sky {
 				r.autoClear = autoClear;
 				r.setRenderTarget( previous, face, level );
 				target.scissorTest = false;
-				pmrem._setViewport( target, 0, 0, target.width, target.height );
+				pmrem.resetViewport( target );
 
 			}
 
 		};
 		const slices: Slice[] = [ { cost: 1, run: step( () => {
 
-			pmrem._setSizeFromTexture( source );
-			pmrem._init( target );
-			pmrem._textureToCubeUV( source, target );
+			pmrem.convert( source, target );
 
 		} ) } ];
-		// _init keeps the levels of the source size the first bake set up, so their count is known.
-		const levels = pmrem._lodMeshes!.length;
+		// the generator keeps the levels of the source size the first bake set up, so their count is known
+		const levels = pmrem.levels();
 		for ( let i = 1; i < levels; i ++ ) slices.push( { cost: 2, run: step( () => {
 
 			r.autoClear = false;
-			pmrem._applyGGXFilter( target, i - 1, i );
+			pmrem.filter( target, i - 1, i );
 
 		} ) } );
 		return slices;

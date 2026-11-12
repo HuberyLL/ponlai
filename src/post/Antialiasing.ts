@@ -11,16 +11,15 @@
 // - `taa`, `taau`: temporal anti-aliasing at the render's size, and temporal upsampling to the
 //   canvas: one sample, jittered, with motion vectors (Jitter.ts, Motion.ts), resolved against a
 //   history (TemporalAA.ts). A tier's knob may ask for them (the parked medium tier runs taau,
-//   Quality.ts), and `aa=` or the GUI choose them on any tier; they are
-//   refused, with a warning, where three's cache keys cannot be patched (graph/ThreePatches.ts:
-//   three r186 only), since their scene materials build one shader per MRT (if the patches still
-//   fail to install, main.ts stops the page);
+//   Quality.ts), and `aa=` or the GUI choose them on any tier. Their scene materials build one
+//   shader per MRT, through three's cache keys patched for it (three/ThreePatches.ts, which
+//   throws on a three it is not written for);
 // - `fsr3`: AMD's FSR 3.1 upscaler (post/fsr3/, Fsr3Upscaler.ts): one sample, jittered with FSR's
 //   own sequence, with motion vectors, like the temporal modes, but resolved by FSR at AMD's
 //   placement: on the composite's HDR image, before the bloom and the grade, which run on FSR's
 //   output at the canvas's size (Pipeline.ts). It has no TemporalAA (`RESOLVE` false), draws the
 //   rain before the composite as the ground truth does (`AFTER_RESOLVE` false) and needs the
-//   composite pass (`post=inline-composite` is refused with a warning: msaa). Refused, as the temporal modes, where three's cache keys cannot be patched;
+//   composite pass (`post=inline-composite` is refused with a warning: msaa);
 // - `gt` (debug builds only): the ground truth the temporal modes are measured against, the
 //   temporal graph rendered at the canvas's resolution whose image at rest averages many jittered
 //   frames with a box filter (TemporalAA.ts, TemporalRest.ts): 64 by default, `tier.taa.gtJitters`.
@@ -35,7 +34,6 @@
 // URL in a debug build only, never from a tier. The tier is the one the page's entry chose
 // (PageSettings.ts, Quality.ts `loadTier`), installed before any module loads, so modules that read
 // the mode when they load (world/vegetation/Coverage.ts, Grass.ts) take the page's.
-import { REVISION } from 'three/webgpu';
 import { loadTier, qualityProfile, type QualityProfile, type TemporalSettings } from '../Quality.ts';
 import { settings, type SettingsQuery } from '../Settings.ts';
 
@@ -98,24 +96,10 @@ export function requestedAAMode( params: SettingsQuery, profile: Pick<QualityPro
 
 }
 
-/** Whether three's cache keys can be patched for MRTs (installCacheKeyPatches, which main.ts installs,
- * is written for r186 and refuses another revision): the temporal modes need it. */
-export function temporalSupported( revision: string = REVISION ): boolean {
-
-	return /^186(\.|$)/.test( revision );
-
-}
-
-/** What a mode builds. A temporal mode where three's cache keys cannot be patched runs as `msaa`. */
-export function aaPlan( requested: AAMode, revision: string = REVISION ): AAPlan {
+/** What a mode builds. */
+export function aaPlan( requested: AAMode ): AAPlan {
 
 	let mode: AAMode = requested;
-	if ( ( mode === 'taa' || mode === 'taau' || mode === 'fsr3' || mode === 'gt' ) && ! temporalSupported( revision ) ) {
-
-		console.warn( `aa=${ mode } needs three's cache keys patched for its MRTs (graph/ThreePatches.ts, r186), not r${ revision }: running msaa` );
-		mode = 'msaa';
-
-	}
 	if ( mode === 'fsr3' && settings.get( 'post' )?.split( ',' ).some( ( s ) => s === 'legacy' || s === 'inline-composite' ) ) {
 
 		console.warn( 'aa=fsr3 takes the composite pass\'s HDR image, which post=inline-composite (and post=legacy) leave out: running msaa' );

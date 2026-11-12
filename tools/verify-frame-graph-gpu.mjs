@@ -1,4 +1,4 @@
-// GPU probe of the frame graph's compile path (src/post/graph/Compile.ts, ThreePatches.ts) and its
+// GPU probe of the frame graph's compile path (src/post/graph/Compile.ts, src/three/ThreePatches.ts) and its
 // warm-up. Needs the dev server (it imports src modules into the page):
 //   node tools/verify-frame-graph-gpu.mjs http://127.0.0.1:5190
 //
@@ -71,7 +71,7 @@ try {
 	const pageErrors = [];
 	page.on( 'pageerror', ( e ) => pageErrors.push( e.message ) );
 	// a bare page of the dev server's origin (a module's source), so src modules import
-	await page.goto( `${ base }/src/post/graph/ThreePatches.ts` );
+	await page.goto( `${ base }/src/three/ThreePatches.ts` );
 	report.mrt = await page.evaluate( probeMrt );
 	for ( const c of report.mrt.cases ) check( c.pass === c.expected, `${ c.name }: ${ c.detail }${ c.expected ? '' : ' (a control: expected to fail)' }` );
 
@@ -153,7 +153,7 @@ async function probeMrt() {
 	const url = ( name ) => source.match( new RegExp( `from\\s*["'](/[^"']*${ name }[^"']*)["']` ) )?.[ 1 ];
 	const THREE = await import( url( 'three_webgpu' ) );
 	const TSL = await import( url( 'three_tsl' ) );
-	const { installCacheKeyPatches } = await import( '/src/post/graph/ThreePatches.ts' );
+	const { installCacheKeyPatches } = await import( '/src/three/ThreePatches.ts' );
 	const { compileInto } = await import( '/src/post/graph/Compile.ts' );
 
 	const SIZE = 4;
@@ -351,7 +351,7 @@ async function probeTemporal() {
 	const url = ( name ) => source.match( new RegExp( `from\\s*["'](/[^"']*${ name }[^"']*)["']` ) )?.[ 1 ];
 	const THREE = await import( url( 'three_webgpu' ) );
 	const TSL = await import( url( 'three_tsl' ) );
-	const { installCacheKeyPatches } = await import( '/src/post/graph/ThreePatches.ts' );
+	const { installCacheKeyPatches } = await import( '/src/three/ThreePatches.ts' );
 
 	const SIZE = 4;
 	const CLEAR = [ 0.125, 0.25, 0.375, 1 ];
@@ -511,7 +511,7 @@ async function probeReal() {
 	const source = await ( await fetch( '/src/post/graph/FrameGraph.ts' ) ).text();
 	const url = ( name ) => source.match( new RegExp( `from\\s*["'](/[^"']*${ name }[^"']*)["']` ) )?.[ 1 ];
 	const THREE = await import( url( 'three_webgpu' ) );
-	const { installCacheKeyPatches } = await import( '/src/post/graph/ThreePatches.ts' );
+	const { installCacheKeyPatches } = await import( '/src/three/ThreePatches.ts' );
 	const { compileInto } = await import( '/src/post/graph/Compile.ts' );
 	const { sceneMRT, MOTION_CLASS } = await import( '/src/post/Motion.ts' );
 	const { afterMRT, RAIN_OVERLAY } = await import( '/src/post/AfterResolve.ts' );

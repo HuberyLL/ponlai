@@ -28,14 +28,13 @@ const CODE = /\.(ts|mts|js|mjs)$/;
 // remove the entry, with the change that shortens the file; never raise one or add an entry.
 const KNOWN = {
 	'sky/Clouds.ts': 3105,
-	'sky/Sky.ts': 3048,
-	'main.ts': 2714,
-	'post/Pipeline.ts': 2519,
+	'sky/Sky.ts': 3031,
+	'main.ts': 2691,
+	'post/Pipeline.ts': 2515,
 	'weather/VolumetricHaze.ts': 1809,
 	'world/Grass.ts': 1746,
 	'ocean/Water.ts': 1645,
 	'post/graph/FrameGraph.ts': 1525,
-	'post/DynamicResolution.ts': 1510,
 };
 
 for ( const a of process.argv.slice( 2 ) ) {
