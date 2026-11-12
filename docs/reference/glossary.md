@@ -30,8 +30,7 @@ Island view
   as well as close up ([Art direction](../explanation/art-direction.md), The look).
 
 Kept weathers
-: Clear, fair and partly (the sky half-way from fair to cloudy): the weathers every change must
-  hold in.
+: Clear and fair: the weathers every change must hold in.
 
 Key
 : The one dominant light: the sun by day, the moon by night

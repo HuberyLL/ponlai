@@ -285,7 +285,7 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   reading their bounds from uniforms (`vegetation/VegetationCull.ts`); the world fields swap
   textures through the one base node each material samples them by (`WorldFields.ts`), and other
   passes keep their materials across rebakes (`RainCollision.ts`).
-- Changes need to hold in the kept weathers only (clear, fair, partly), and on high only
+- Changes need to hold in the kept weathers only (clear, fair), and on high only
   (4K output: 1920x1080 CSS pixels at DPR 2). The parked weathers (cloudy, overcast, rain, storm, fog:
   `PARKED_WEATHER` in `src/sky/Weather.ts`) and quality tiers (medium, low: `PARKED_QUALITY` in
   `src/Quality.ts`) are revived later as their own milestones: new work need not support them, but

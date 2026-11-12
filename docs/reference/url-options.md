@@ -60,7 +60,7 @@ The tools that load pages with these options: [Tools](tools.md).
   `dayLength` (seconds), `moon` (phase: 0.5, a full moon, by default; it shapes only the drawn
   moon, which stands fixed in the sky), `clock=paused` (freezes only the day clock; `paused` freezes
   it with the scene).
-- `weather` (clear, fair, partly, cloudy, overcast, rain, storm, fog; rain and storm load as established,
+- `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load as established,
   already wet; without it, `wind` and `windDir` the weather and its wind evolve on their own, among
   the kept presets), `clouds` (coverage override).
 - `dayFog`: the day's fog layer under a clear or fair sky (off by default; the GUI's Weather

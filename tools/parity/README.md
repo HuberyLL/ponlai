@@ -95,7 +95,7 @@ island mesh's bounds, the meadow's flowering plants and the tufts at the cliff's
 and the sun and moon,
 so they follow any tile layout.
 
-`parity` (the default group, 11 views): the profiler's scenes (`tools/profile-frame.mjs`),
+`parity` (the default group, 10 views): the profiler's scenes (`tools/profile-frame.mjs`),
 frozen, plus 7 more. The parked weathers' 5 views (marked *parked* below) are in the table but in
 no group but `special` (see below).
 
@@ -104,8 +104,7 @@ no group but `special` (see below).
 | island-fair-noon | weather=fair&preset=noon | island orbit view (default) |
 | island-clear-golden | weather=clear&preset=golden-hour | island orbit turned to face the sun |
 | horizon-fair-noon | weather=fair&preset=noon | horizon view |
-| sky-partly | weather=partly&preset=noon | sky view |
-| island-partly | weather=partly&preset=noon | island |
+| sky-fair | weather=fair&preset=noon | sky view |
 | sky-cloudy (*parked*) | weather=cloudy&preset=noon | sky view |
 | island-overcast (*parked*) | weather=overcast&preset=noon | island |
 | island-rain (*parked*) | weather=rain&preset=noon | island |
@@ -163,7 +162,7 @@ horizon-storm, island-fog-dawn, weather-change: the views marked `special: true`
 weathers (`src/sky/Weather.ts` `PARKED_WEATHER`: cloudy, overcast, rain, storm, fog). No other
 group lists them, so every default set (`parity`, `all`, verify-scene-jump's,
 baseline.mjs's plan without `--views` / `--clips`) is the normal weathers' alone; `normal` is `all`
-(17 views), kept as a name. A parked view is reached by name or by `special` (`all,special` is
+(16 views), kept as a name. A parked view is reached by name or by `special` (`all,special` is
 every view), and so is a clip (clips.mjs: a clip is in its view's group; the parked ones are
 storm, rain, lightning, fog). Every tool that takes `--views` takes names and groups mixed
 (`normal,flowers-close`).

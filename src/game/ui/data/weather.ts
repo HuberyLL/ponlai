@@ -4,8 +4,7 @@ import { t } from '../i18n/i18n.ts';
 import type { Catalogue } from '../i18n/i18n.ts';
 
 // The kinds of weather the player is shown (docs/explanation/ui.md, Weather forecast): 晴 (clear and fair: a third of
-// the sky in small cloud is still a fine day), 多云 (partly, the most cloud the kept weathers
-// reach, and the parked cloudy) and 阴 (the parked overcast), with night faces for 晴 (the moon) and
+// the sky in small cloud is still a fine day), 多云 (the parked cloudy) and 阴 (the parked overcast), with night faces for 晴 (the moon) and
 // 多云 (the moon behind cloud). The parked kinds (雨, 风暴, 雾) join as rows when their weathers
 // return (src/sky/Weather.ts PARKED_WEATHER); until then a wet sky loaded in a debug build shows
 // as the nearest kind, 阴.
@@ -36,7 +35,7 @@ const kind = ( k: Omit<WeatherKind, 'name'> ): WeatherKind => ( { ...k, name: t(
 
 export const WEATHER_KINDS: readonly WeatherKind[] = [
 	kind( { id: 'clear', engine: [ 'clear', 'fair' ], rank: 0, icon: 'sun', night: 'moon', live: { light: 1, cover: 0, cloud: null, back: 0 } } ),
-	kind( { id: 'cloudy', engine: [ 'partly', 'cloudy' ], rank: 1, icon: 'cloud', night: 'cloudNight', live: { light: 1, cover: 1, cloud: [ 2, 7 ], back: 0 } } ),
+	kind( { id: 'cloudy', engine: [ 'cloudy' ], rank: 1, icon: 'cloud', night: 'cloudNight', live: { light: 1, cover: 1, cloud: [ 2, 7 ], back: 0 } } ),
 	kind( { id: 'overcast', engine: [ 'overcast' ], rank: 2, icon: 'overcast', live: { light: 0, cover: 1, cloud: [ - 1, 7 ], back: 1 } } ),
 ];
 

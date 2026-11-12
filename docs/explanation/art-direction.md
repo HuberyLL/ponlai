@@ -386,8 +386,7 @@ for the light is baking lighting into albedo; it breaks again whenever the light
 
 ## Sea, sky and weather
 
-- The weather is a fine day's: clear, fair and partly, the sky half-way from fair to cloudy, the
-  most cloud the island sees for now. Cloudy and overcast are parked (`PARKED_WEATHER` in
+- The weather is a fine day's: clear and fair. Cloudy and overcast are parked (`PARKED_WEATHER` in
   `src/sky/Weather.ts`) until the clouds' own milestone, rain, storm and fog until the game needs
   them: out of the rotation and the production page; the notes on them below stand for their
   revival.

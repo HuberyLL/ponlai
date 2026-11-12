@@ -134,7 +134,7 @@ for ( const invalid of [ 'hail', '__proto__', '', null ] ) {
 	assert.deepEqual( winds, second.winds, 'auto weather\'s wind must be deterministic' );
 	// The sky's sequence is the one it was before the wind had levels (the wind draws from a stream
 	// of its own).
-	assert.deepEqual( first.slice( 0, 6 ), [ 'fair', 'clear', 'fair', 'clear', 'partly', 'fair' ] );
+	assert.deepEqual( first.slice( 0, 6 ), [ 'fair', 'clear', 'fair', 'clear', 'fair', 'clear' ] );
 	// A weather jump to the load leaves the chain as a fresh load's: the same sky and wind after the
 	// same steps.
 	{
@@ -178,7 +178,7 @@ for ( const invalid of [ 'hail', '__proto__', '', null ] ) {
 	}
 	assert.ok( first.length >= 8 && first.length <= 40, `an hour should hold several changes, saw ${ first.length }` );
 	// Fog sits beside clear and fair weather; the cloud states run from fair to rain.
-	const order = [ 'clear', 'fair', 'partly', 'cloudy', 'overcast', 'rain', 'storm' ];
+	const order = [ 'clear', 'fair', 'cloudy', 'overcast', 'rain', 'storm' ];
 	for ( let i = 1; i < first.length; i ++ ) {
 		const pair = [ first[ i - 1 ], first[ i ] ];
 		if ( pair.includes( 'fog' ) ) assert.ok( pair.every( ( name ) => [ 'fog', 'clear', 'fair' ].includes( name ) ), `${ pair } leaves fog's neighbours` );
@@ -194,18 +194,7 @@ for ( const invalid of [ 'hail', '__proto__', '', null ] ) {
 		const parked = [ ...visited ].filter( ( name ) => PARKED_WEATHER.includes( name ) && name !== start );
 		assert.deepEqual( parked, [], `auto weather from ${ start } reaches parked ${ parked }` );
 		if ( PARKED_WEATHER.includes( start ) ) assert.ok( visited.size > 1, `auto weather stays in parked ${ start }` );
-		else assert.deepEqual( [ ...visited ].sort(), [ 'clear', 'fair', 'partly' ], `auto weather from ${ start } visits every kept state` );
-	}
-	// Partly is the sky half-way from fair to cloudy: the frame a front between them shows at its
-	// middle, in every field and in the skies' shares.
-	{
-		const front = new Weather( 'fair' );
-		front.setWeather( 'cloudy', 40 );
-		front.update( 20 );
-		const partly = new Weather( 'partly' );
-		for ( const key of Object.keys( WEATHER_PRESETS.partly ) ) close( front.state[ key ], partly.state[ key ], 1e-12 );
-		front.skyMix.forEach( ( share, i ) => close( share, partly.skyMix[ i ], 1e-12 ) );
-		assert.deepEqual( [ ...partly.skyMix ], [ 0, 0.5, 0.5, 0 ] );
+		else assert.deepEqual( [ ...visited ].sort(), [ 'clear', 'fair' ], `auto weather from ${ start } visits every kept state` );
 	}
 	const held = new Weather( 'rain' );
 	for ( let t = 0; t < 600; t ++ ) held.update( 1 );
