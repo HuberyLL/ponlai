@@ -41,11 +41,11 @@ export const shared = {
 	muSun: uniform( 1 ), // cosine of the refracted sun below the surface
 	shoreXform: uniform( new THREE.Vector4() ), // x0, z0, 1 / width, 1 / depth of the shoreline field
 	sunDir: uniform( new THREE.Vector3( 0, 1, 0 ) ),
-	// the sky's key, linear rgb (main.ts publishLighting): the sea's and the water's, which the
+	// the sky's key, linear rgb (RenderStages.ts publishLighting): the sea's and the water's, which the
 	// clouds' own transmittance over the land's floor (Sky.ts `seaKeyVisibility`) cuts per point
 	// where it is read
 	sunColor: uniform( new THREE.Vector3() ),
-	// the key on the land (main.ts publishLighting): sunColor, the clouds' shadow over the land's
+	// the key on the land (RenderStages.ts publishLighting): sunColor, the clouds' shadow over the land's
 	// floor (Sky.ts `keyDirectVisibility`, the deck's key gain on that floor) cutting it per point
 	// where it is read
 	landKey: uniform( new THREE.Vector3() ),

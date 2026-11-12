@@ -36,7 +36,7 @@
 // Two kinds of knob:
 // - load: compiled into materials or the frame graph (shader loops, pass structure, map sizes), read
 //   once while they are built, so they change only with a reload;
-// - runtime: setters the page applies through `applySkyQuality` (main.ts) at load; a debug page can
+// - runtime: setters the page applies through `applySkyQuality` (RenderStages.ts) at load; a debug page can
 //   override them there (`s.applyQuality( { ... } )`) to time one at a time.
 // Load knobs reach their modules as `water` (Water.ts; its `fftAnisotropy` goes to OceanFFT's
 // output targets), `rainShading` (`setRainShading`), `post` (`PostOptions` for

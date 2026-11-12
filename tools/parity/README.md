@@ -218,7 +218,7 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
 - One page per set: each worker (`capture.mjs --worker`) loads the first view it is given and
   reaches every later one in place by the exact scene jump, `__PONLAI__.establishScene( <the view's
   full query> )`, a frame at the jump's camera, then the view's eval, readiness and shot as after a
-  load. Its contract (`src/main.ts`): the frame equals a fresh load's, byte for byte wherever the
+  load. Its contract (`src/app/Scene.ts`): the frame equals a fresh load's, byte for byte wherever the
   fresh load repeats. Only load-time options (quality, aa, size and dpr, the debug switches) need a
   new page, and a set shares them. The jump undoes the scene's options and camera, not GUI or
   console changes, so it covers views without an eval or with exactly a views.mjs view's eval
@@ -259,8 +259,8 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
   - With `--views` too, both sets; with only ad-hoc views or sweeps, not the parity group.
   - An ad-hoc view's own options win over the set's (`t=12`, the tier, aa, `--q`); views.mjs views
     keep the set's first, unchanged. Views whose load-time options differ (anything outside
-    `SCENE_OPTIONS` in `src/main.ts`: tier, aa, `game`, `seed`, debug switches) cannot share a page:
-    they are captured in groups, a group's pages after the last group's.
+    `SCENE_OPTIONS` in `src/app/Scene.ts`: tier, aa, `game`, `seed`, debug switches) cannot share a
+    page: they are captured in groups, a group's pages after the last group's.
   - Names: letters, digits, `-`, `_`, none of views.mjs's. `<outDir>/views.json` records the ad-hoc
     views (their query, eval, crops and full query). In the reference store each ad-hoc view's
     coverage holds its definition's hash (`def`): a stored view of that name with another
@@ -560,7 +560,7 @@ evaluates every one and carries nothing):
 |---|---|---|
 | `sameBuild` | `git diff A B` touches nothing the build reads (`BUILD_INPUTS`): the same build, so everything carries with no further check | all |
 | key | A's entry manifest has exactly the key B asks for: tool hash, browser build, tier, aa, size, query, clip, view, sampling, anchors | each entry |
-| `motionWatch` | the diff touches none of `src/main.ts`, `src/weather/`, `src/characters/`, `src/ocean/`, `src/game/view/`, `package.json`, `package-lock.json` (motion a paused frame cannot show; the stepper) | all |
+| `motionWatch` | the diff touches none of `src/main.ts`, `src/RenderStages.ts`, `src/IslandStages.ts`, `src/app/`, `src/weather/`, `src/characters/`, `src/ocean/`, `src/game/view/`, `package.json`, `package-lock.json` (motion a paused frame cannot show; the stepper) | all |
 | `paused-<tier>` | B's paused set matches A's: `S1` on high (the 12 parity views plus every view an entry is on), `S2/<tier>` below (those views); diff-set `--aa-floor` where both hold repeats, else pixel identity. Captured or extended through the store; A's from `--carry-url` when its store lacks it | all |
 | `stored` | A's rest baseline entry's whole frame matches A's own paused-set frame of that view within 2 levels (files only): the paused check vouches for A's set, not its entries, and a capture that went wrong at A would otherwise carry on. Entries without a whole frame (the TAA rest views, the lower tiers) are not checked | rest entries with a whole frame |
 | `spot` | the first 16 frames of `pan-slow` and `islander-walk` under MSAA captured on B with A's anchors, pixel-equal to A's stored baseline entries (a differing clip is captured once more: a whole-frame outlier under a shared GPU does not repeat) | clips |
@@ -595,11 +595,11 @@ against A's paused set).
 
 Only the load-time options need a new page (quality, aa, size and dpr, the S3 switches): the views'
 weather, time, moon and camera are runtime state, and `__PONLAI__.establishScene( query )` jumps to
-them in place (`src/main.ts`, where its contract is written): after the jump, one rendered frame at
-the jump's camera and the view's eval, the paused frame is the one a fresh load of the view's query
-draws, byte for byte wherever the fresh load repeats. A tool that captures a set in one page calls
-it with the view's full query (the common part and the view's own), waits for a frame, runs the
-eval, then its readiness and the shot.
+them in place (`src/app/Scene.ts`, where its contract is written): after the jump, one rendered
+frame at the jump's camera and the view's eval, the paused frame is the one a fresh load of the
+view's query draws, byte for byte wherever the fresh load repeats. A tool that captures a set in one
+page calls it with the view's full query (the common part and the view's own), waits for a frame,
+runs the eval, then its readiness and the shot.
 
 `tools/verify-scene-jump.mjs` is that check, and the regression probe for anything that adds state a
 jump must clear (AGENTS.md, Rules for every change: a scene jump clears every rendering history):
@@ -655,7 +655,7 @@ uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/cli
     [--baseline metrics.json] [--workers N]
 ```
 
-- The page is stepped by `__PONLAI__.loop.step` (src/main.ts, debug builds only): the live loop
+- The page is stepped by `__PONLAI__.loop.step` (src/app/Frame.ts, debug builds only): the live loop
   stops and the tick runs `frames` times with a fixed dt, nothing from the wall clock, the frame
   pacer and the dynamic scale bypassed and the render scale given per frame. The clouds' trace phase
   and the sky's and refracted sun's wall-clock cadences restart with each call, so a clip does not

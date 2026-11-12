@@ -81,14 +81,21 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   `tools/verify-settings.mjs`). Below the page no module touches the browser's page (`location`,
   `window`, `document`, storage and the like): `tools/verify-layers.mjs`, its page check;
   `src/FetchAsset.ts` fetches the assets.
-- `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__PONLAI__` and
-  `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug` / `?profile`.
+- `src/main.ts`: the one place that assembles the page. It calls, in an order that is part of the
+  image, the renderer's stages (`src/RenderStages.ts`: the renderer, the sky, the sun, the sea, the
+  frame's passes, then what the island's data builds), the island's (`src/IslandStages.ts`: the
+  camera, the land, the world, the vegetation, the growth) and the page's own, and starts the game
+  from the parts they build. Each stage puts what it builds on its layer's one object.
+- `src/app/`: the page's own parts (`Page.ts`): the camera's views (`CameraViews.ts`), the GUI
+  (`Gui.ts`), the frame loop and the render scale (`Frame.ts`), the scene jump (`Scene.ts`) and the
+  diagnostics (`Diagnostics.ts`). `window.__PONLAI__` and `window.__THREE_GAME_DIAGNOSTICS__`
+  exist only on the dev server or with `?debug` / `?profile`.
 - `src/Quality.ts`: the quality tiers, every cost knob in one table (high the only active one);
   `src/QualityDetect.ts` takes `?quality` or high (its GPU timing is parked with the lower tiers).
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation.
 - `src/camera/`: the island camera, which starts framing the land alone from its heading
-  (`IslandFraming.ts`, main.ts `placeOrbit`) and which the hand pans within the land's soft
-  bounds, turns, tilts and zooms (`IslandCameraControls.ts`, the ground it grabs in
+  (`IslandFraming.ts`, app/CameraViews.ts `placeOrbit`) and which the hand pans within the land's
+  soft bounds, turns, tilts and zooms (`IslandCameraControls.ts`, the ground it grabs in
   `IslandGround.ts`), and the free flight.
 - `src/world/`: the world generated from the grown land (`IslandGrowth.ts`) in 16 m chunks
   (`Chunks.ts`, `IslandSimplify.ts`, `ChunkDerived.ts`), built on a pool of workers
@@ -251,7 +258,7 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   weather, the wind and every integrated state (wind travel, fog time) are functions of the land,
   the seeds, the scene clock and the weather, never of the path taken to get there or of the
   thread count. A grown page holds the world a fresh load of its land holds, and a scene jump
-  (`establishScene` in `main.ts`) the scene a fresh load of the same query holds.
+  (`establishScene` in `app/Scene.ts`) the scene a fresh load of the same query holds.
 - Rendering may keep history-dependent effects (a temporal resolve, exposure adaptation, lighting
   or fog accumulated over frames, vegetation that responds to what passes through it, a per-frame
   physics simulation) when each one meets three conditions: a scene jump clears its history, as it

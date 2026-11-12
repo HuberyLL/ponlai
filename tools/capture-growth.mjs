@@ -15,7 +15,7 @@
 // Pages. Generating a grown world cold takes seconds to a minute, and a page per shot generated it
 // for every shot (two thirds of a 42-shot run's wall time). So the shots are grouped by side and by
 // what a page reads once at load (every query option outside the scene's own, SCENE_OPTIONS below
-// as src/main.ts lists them: seed and grow choose the world; quality, aa, dpr, the debug switches),
+// as src/app/Scene.ts lists them: seed and grow choose the world; quality, aa, dpr, the debug switches),
 // and each group is one `tools/capture.mjs --worker` page driven over its IPC channel, as
 // tools/parity/capture-set.mjs drives it: the group's first view is a fresh load, every later one
 // is reached by the exact scene jump (`__PONLAI__.establishScene`), so a group's world is built
@@ -109,7 +109,7 @@ const VIEWS = {
 };
 for ( const v of views ) if ( ! VIEWS[ v ] ) throw new Error( `unknown view ${ v } (v1-v6)` );
 
-// the query options a scene jump sets (src/main.ts SCENE_OPTIONS); every other one is read at load,
+// the query options a scene jump sets (src/app/Scene.ts SCENE_OPTIONS); every other one is read at load,
 // so views that differ in one need pages of their own (a list out of date costs a failed jump and a
 // retry on a fresh page, not a wrong image: establishScene refuses such a query)
 const SCENE_OPTIONS = [ 'weather', 'preset', 'hour', 'moon', 't', 'dist', 'polar', 'az', 'camera', 'clouds', 'dayLength', 'paused', 'clock' ];
@@ -596,7 +596,7 @@ for ( const key of [ ...new Set( shots.map( ( s ) => s.key ) ) ] ) {
 
 }
 
-// the world each page loaded: from the cache or generated (the loads' `worldCache`, src/main.ts)
+// the world each page loaded: from the cache or generated (the loads' `worldCache`, src/IslandStages.ts)
 const loads = shots.filter( ( s ) => s.ok && s.mode === 'load' && ( ! s.ref || s.ref.status === 'captured' ) );
 const cacheHits = loads.filter( ( s ) => s.worldCache?.cache === 'hit' ).length;
 const refCounts = {};

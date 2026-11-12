@@ -16,7 +16,7 @@ type V3 = THREE.Node<'vec3'>;
 // - The islanders (characters/CharacterMaterial.ts) read their cast shadow as the ratio of the key
 //   their shadow maps let through to the key in the open. Under a deck the open key is the land's
 //   K, so a figure under the floor's light reads lit and its cast shadow as a shadow: the open key
-//   moves from the sky's key to it by the deck's light (`keyDeckShare`, main.ts publishLighting:
+//   moves from the sky's key to it by the deck's light (`keyDeckShare`, RenderStages.ts publishLighting:
 //   Weather.ts `deckLight`, 0 under a clear or a fair sky, whole under a deck by day).
 
 let keyCloud: ( ( position: V3 ) => F ) | null = null;
@@ -40,7 +40,7 @@ export function keyCloudReaders(): { cloud: ( position: V3 ) => F; floor: F } | 
 }
 
 /** How far the open key on the land is its floor's under a deck: the deck's light (Weather.ts
- * `deckLight`), set per frame by main.ts publishLighting. */
+ * `deckLight`), set per frame by RenderStages.ts publishLighting. */
 export const keyDeckShare = uniform( 0 );
 
 /** The land's key visibility at world position `P` (Sky.ts `keyDirectVisibility`): the clouds'

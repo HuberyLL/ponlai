@@ -37,7 +37,7 @@ import { settings } from '../Settings.ts';
 // - `?tune=<base64 JSON>` ({ name: value }, standard or URL-safe base64) sets values before
 //   anything registers: each applies as its name registers, before the materials build, so
 //   load-time values take effect too.
-// - At run time (main.ts `__PONLAI__.tune`, `tuneApi`): `set( { name: value } )` (returns the names
+// - At run time (app/Diagnostics.ts `__PONLAI__.tune`, `tuneApi`): `set( { name: value } )` (returns the names
 //   applied, those not registered (kept for when they do), the load-time ones that need a reload and
 //   `invalid`, the failing checks over the values now held ({ names, why }); raises the page's
 //   `retune` scene event, so `settled` waits for the new frame), `get( name )`,

@@ -10,7 +10,7 @@
 // canvas between rendered frames:
 //   wheel-sea    a macOS wheel notch out (deltaY +4.000244140625) every 3 frames from 40 m to the
 //                farthest zoom, the cursor at 72 % / 62 % over the water (the island view zooms
-//                out only, from its pose's distance: main.ts `islandNearest`); `--runs` times, as a
+//                out only, from its pose's distance: IslandStages.ts `islandNearest`); `--runs` times, as a
 //                per-anchor failure of a few in a hundred needs that many notches to show (the sea's
 //                hit once rounded to a miss for 2 % of anchors: IslandGround.ts)
 //   wheel-land   the same from 22 m with the cursor at 45 % / 50 % over the island, a quarter as

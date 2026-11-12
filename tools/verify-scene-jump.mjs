@@ -1,4 +1,4 @@
-// Regression probe for the exact scene jump (src/main.ts `establishScene`): a parity view reached by
+// Regression probe for the exact scene jump (src/app/Scene.ts `establishScene`): a parity view reached by
 // a jump within one page must be the frame a fresh load of its query draws. It captures the views
 // both ways, in the layout of tools/parity/capture-set.mjs, so tools/parity/diff-set.py judges them:
 //
@@ -46,7 +46,7 @@
 // retune takes, before readiness: `refreshEnvironment()` (a new hour's or a seek's bake), a tunable
 // the bake reads set and set back through `tune.set` (`sky.atmosphere.mieG`, the aerosol lobe the
 // sky and the haze share), and the haze over the sky switched off and on as the GUI switches it (a
-// plain write of `pipeline.air.settings.sky`, which the frame loop finds: main.ts `retuneSky`), each
+// plain write of `pipeline.air.settings.sky`, which the frame loop finds: RenderStages.ts `retuneSky`), each
 // bake awaited. The page must still draw the fresh
 // load's frame: every explicit bake starts from the state before a page's first (Sky.ts `reset`).
 // After each round trip the sky's irradiance must be the page's own bit for bit, and the switch must
@@ -316,7 +316,7 @@ try {
 
 				}, { q: s.q, legacy: options.legacy === true } );
 				// a frame at the jump's camera before the eval moves it, as a fresh load renders its
-				// first frames before a capture's eval runs (main.ts `establishScene`)
+				// first frames before a capture's eval runs (app/Scene.ts `establishScene`)
 				await page.waitForFunction( ( f ) => window.__PONLAI__.renderer.info.frame > f, jumped, { timeout, polling: 'raf' } );
 
 			}

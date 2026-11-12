@@ -118,7 +118,7 @@ import { launchCapture, waitForScene, waitForSettled, waitForStable, stableOptio
 import { evalSource, runInPage } from './page-eval.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 
-/** The scene jump contract's version this tool drives (`__PONLAI__.sceneJump`, src/main.ts). */
+/** The scene jump contract's version this tool drives (`__PONLAI__.sceneJump`, src/app/Scene.ts). */
 const SCENE_JUMP = 1;
 /** The worker's GPU slot lease in seconds (--lease; see the header). */
 const LEASE = 20;
@@ -232,7 +232,7 @@ async function captureView( session, { url, query, evals, steps, readySteps = []
 
 	} else {
 
-		// the scene jump (src/main.ts `establishScene`), then a frame at the jump's camera before the
+		// the scene jump (src/app/Scene.ts `establishScene`), then a frame at the jump's camera before the
 		// evals move it, as a fresh load's first frames are
 		const jumped = await within( page.evaluate( async ( q ) => {
 

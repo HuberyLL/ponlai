@@ -439,7 +439,7 @@ export class GroundBounceLightingModel extends THREE.PhysicalLightingModel {
 	}
 
 	/** The physical direct light along `shadeDirection` (the key lifted under a low key: the key is
-	 * the scene's one direct light, main.ts `sun`): Lambert under 1 - lum( F ) for the diffuse, and
+	 * the scene's one direct light, RenderStages.ts `sun`): Lambert under 1 - lum( F ) for the diffuse, and
 	 * the shared GGX (lighting/SurfaceBRDF.ts) for the specular, from the disk's representative
 	 * point round that direction. */
 	direct( input: THREE.LightingModelDirectInput, builder: THREE.NodeBuilder ): void {

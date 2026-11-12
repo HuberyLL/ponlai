@@ -56,9 +56,10 @@ A history-dependent effect (a temporal resolve, exposure adaptation, lighting or
 over frames, vegetation that responds to what passes through it, a per-frame physics simulation)
 keeps the test mode's byte comparisons valid this way (`docs/reference/tools.md`, Test mode):
 
-1. Clear its history in `establishScene` (`src/main.ts`); `tools/verify-scene-jump.mjs` checks it.
-2. Report it to `settled` (main.ts `pending`, or the rest's signature) until it has converged on a
-   still scene, or freeze it or turn it off in the test mode.
+1. Clear its history in `establishScene` (`src/app/Scene.ts`); `tools/verify-scene-jump.mjs` checks
+   it.
+2. Report it to `settled` (app/Frame.ts `pending`, or the rest's signature) until it has converged
+   on a still scene, or freeze it or turn it off in the test mode.
 3. Freeze it or turn it off under the test mode's one switch (`src/debug/TestMode.ts`;
    `docs/reference/tools.md`, Test mode).
 4. A Grow does not clear rendering history (`tools/verify-growth-swap.mjs` shoots its first view
@@ -74,7 +75,7 @@ The island grows in place (`AGENTS.md`, Rules for every change): a Grow swaps in
 chunks in one frame, and every dependent of the land's shape follows it.
 
 1. Join the swap: `GrowthPage`, a vegetation kind's `growth` in `vegetation/Registry.ts`, and
-   main.ts's `onSwap`.
+   IslandStages.ts's `onSwap`.
 2. Put the work it needs on the main thread into the preparation's idle-time steps, never into the
    swap's frame. A step takes a few tenths of a millisecond (a generator yielding inside its loops:
    `Steps.ts`, uploads through `Upload.ts`), so the growth's share of any frame stays under 2 ms

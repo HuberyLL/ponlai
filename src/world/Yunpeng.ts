@@ -72,7 +72,7 @@ import { writeMeter } from '../lighting/MeterLight.ts';
 // of the land's fields (YunpengSites.ts), planted per land chunk in the chunks' order ( cj, ci ), so
 // the yunpeng follows the land's version: a growth step plants every land chunk again and, where
 // the clumps changed, fills a new instance pool in idle-time steps, and the swap points the cull at
-// it (PlantInstances.ts `prepare`, `swap`) and moves the lights (main.ts `onSwap`).
+// it (PlantInstances.ts `prepare`, `swap`) and moves the lights (IslandStages.ts `onSwap`).
 
 export const YUNPENG = {
 	stalks: [ 14, 9 ] as const, // stalks in a tall clump and in a lower one

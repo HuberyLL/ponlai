@@ -44,7 +44,7 @@ details. Each tool's own file says the rest.
   size other than their class's). `__PONLAI__.establishScene( query )` jumps to a whole scene in
   place, as a fresh load of `?<query>` would draw it (weather, day clock, moon, scene clock, camera;
   the leftovers of the scenes before cleared; load-time options must match the page's): one page can
-  capture a whole set (contract in `src/main.ts`, check in `tools/verify-scene-jump.mjs`;
+  capture a whole set (contract in `src/app/Scene.ts`, check in `tools/verify-scene-jump.mjs`;
   `__PONLAI__.sceneJump` = 1 marks the exact jump for the capture tools).
 - `__THREE_GAME_DIAGNOSTICS__.settled` (updated every frame, every anti-aliasing mode): true once
   the paused page will draw the same frame from now on, so a capture can wait for it instead of a
@@ -70,14 +70,14 @@ details. Each tool's own file says the rest.
   hand moves it (`src/camera/IslandCameraControls.ts`): a left drag grabs the ground, a right or
   middle drag (or Option / Ctrl with the left) turns and tilts, the wheel zooms toward the pointer
   out from the island view's own distance to 70 m (or that distance, if farther), never in past it
-  (main.ts `islandNearest`; the review views keep 22 m); on a trackpad a two-finger swipe pans, a
-  pinch zooms and Option with a swipe turns and tilts; W A S D or the arrows pan, Q / E turn, T / G
-  tilt (straight down to 8 degrees over the horizon), + / - zoom, Shift speeds them up. The pivot
-  stays over the land and its ring of shallows (its convex hull grown by 14 m); pulled past that, it
-  goes on against a growing resistance (at most 10 m farther) and springs back once let go. R
-  returns to the island view's pose. `cameraInput=off` (or the GUI's Camera ›
-  move by hand) holds the view at its pose: Q / E or a right or middle drag then turn it about the
-  land's centre, and the wheel does not zoom.
+  (IslandStages.ts `islandNearest`; the review views keep 22 m); on a trackpad a two-finger swipe
+  pans, a pinch zooms and Option with a swipe turns and tilts; W A S D or the arrows pan, Q / E
+  turn, T / G tilt (straight down to 8 degrees over the horizon), + / - zoom, Shift speeds them up.
+  The pivot stays over the land and its ring of shallows (its convex hull grown by 14 m); pulled
+  past that, it goes on against a growing resistance (at most 10 m farther) and springs back once
+  let go. R returns to the island view's pose. `cameraInput=off` (or the GUI's Camera › move by
+  hand) holds the view at its pose: Q / E or a right or middle drag then turn it about the land's
+  centre, and the wheel does not zoom.
 - The GUI's Performance folder (`src/debug/FrameStats.ts`, from the rendered frames' rAF
   timestamps) shows the frame rate over the last second, the interval's p95 and maximum over the
   last 5 s, the frames late by a refresh against the paced interval and the intervals over 25 ms

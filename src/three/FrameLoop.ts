@@ -2,7 +2,7 @@ import type { WebGPURenderer } from 'three/webgpu';
 
 // three r186's animation loop (`Renderer._animation`), which the page's frame pacer drives, and the
 // bookkeeping it does around each frame, which a frame stepped by hand repeats
-// (main.ts `loop.step`): the inspector's frame closed and opened, the renderer's info reset, the
+// (app/Frame.ts `loop.step`): the inspector's frame closed and opened, the renderer's info reset, the
 // node frame advanced (its id is three's `info.frame`).
 
 type Inspector = { isRunning?: boolean; begin(): void; finish(): void };

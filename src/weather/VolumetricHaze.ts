@@ -510,7 +510,7 @@ export const DEFAULT_HAZE_GRID: Readonly<HazeGrid> = { width: 160, height: 90, d
  * camera (see the header; the medium's shape is the hour's key's, HazeKeys.ts), the phases from how
  * the air brightens toward the sun, the shares' weight and the gain by eye on a few points of the sky
  * and the island. Those the environment's bake lays over its source (`openSky`: BAKE_SETTINGS)
- * rebake it when they change, however they are set (`bakeStale`, main.ts `retuneSky`). */
+ * rebake it when they change, however they are set (`bakeStale`, RenderStages.ts `retuneSky`). */
 export const HAZE_DEFAULTS = {
 	// the slices: the grid's near and far view depth (metres) and each slice's depth over the last's
 	near: 10, far: 30000, growth: 1.15,
@@ -622,7 +622,7 @@ export class VolumetricHaze {
 	readonly keyDir = uniform( new THREE.Vector3( 0, 1, 0 ) );
 	readonly keyColor = uniform( new THREE.Color( 0, 0, 0 ) );
 	// The floor of the key's visibility through the clouds under a closed deck (Sky.ts
-	// `deckKeyFloor`, set with the medium each frame and before each bake: main.ts `prepareHaze`):
+	// `deckKeyFloor`, set with the medium each frame and before each bake: RenderStages.ts `prepareHaze`):
 	// the light the deck passes down in place of the key it hides, which the air takes through its
 	// own phase toward the key, so the air under the deck's glow brightens with it. The dome's air and the seen panorama's take it, the lighting's sources
 	// never (`openSky`, Sky.ts `bakeKeyFloor`).
@@ -1501,7 +1501,7 @@ export class VolumetricHaze {
 
 	}
 
-	/** Records the settings the environment's bake reads (BAKE_SETTINGS), as it bakes (main.ts
+	/** Records the settings the environment's bake reads (BAKE_SETTINGS), as it bakes (RenderStages.ts
 	 * `bakeEnvironment`). */
 	noteBake(): void {
 
@@ -1511,7 +1511,7 @@ export class VolumetricHaze {
 	}
 
 	/** Whether a setting the environment's bake reads has changed since it last baked (false before
-	 * the first `noteBake`): main.ts `retuneSky` rebakes it then, as a fresh load with the settings
+	 * the first `noteBake`): RenderStages.ts `retuneSky` rebakes it then, as a fresh load with the settings
 	 * would bake. */
 	get bakeStale(): boolean {
 
@@ -1524,7 +1524,7 @@ export class VolumetricHaze {
 
 	/** Sets the medium and its light from the look, the amounts and the weather's light (none of
 	 * it from the camera): what `openSky` reads, so
-	 * the environment's bake calls it before it bakes (main.ts `prepareHaze`), and `update` every
+	 * the environment's bake calls it before it bakes (RenderStages.ts `prepareHaze`), and `update` every
 	 * frame. */
 	prepareMedium(): void {
 

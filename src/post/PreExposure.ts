@@ -40,7 +40,7 @@ type V3 = THREE.Node<'vec3'>;
 //   for, read from a frame of the settled view: one drawn at least the tier's settle frames
 //   (`restSettle`, Settled.ts) into a run of frames that share the view (`viewFrame`: the rest's
 //   key without the pre-exposure's own epoch bumps) while the page waited for nothing but the
-//   pre-exposure (`quiet`: stable, nothing else in main.ts's `pending`, no pipeline compiling). Any
+//   pre-exposure (`quiet`: stable, nothing else in app/Frame.ts's `pending`, no pipeline compiling). Any
 //   other reading still sets P but never ends `pending`, and a new key or a frame that is not quiet
 //   makes it pending again at once, cut or not (a retune, a camera moved on a paused page): the
 //   readings still in flight are of the earlier frames. A readback can lag many frames (more on a

@@ -2128,7 +2128,7 @@ const stopText = ( stop ) => ! stop ? '' : stop.reason === 'max' ? `${ stop.slic
 // compare in page mode: A and B in two pages of one browser, measured in alternating slices with
 // the other page stopped. Fills `outs` (A's and B's runs: each scene's slices and its frames pooled)
 // as each scene finishes. While a page stands stopped its dynamic scale's clock stands still too
-// (main.ts `dynamicClock`, where the build has it), so its holds and bars do not run out during the
+// (app/Diagnostics.ts `dynamicClock`, where the build has it), so its holds and bars do not run out during the
 // other page's slices.
 async function runPair( context, bases, evals, log, names = sceneNames, timestamps = TIMESTAMP_MODE !== 'off', outs = [ newRun(), newRun() ] ) {
 

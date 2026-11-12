@@ -1,0 +1,78 @@
+// The page's own parts: what the page's modules (the GUI, the camera views, the frame, the scene
+// jump, the diagnostics) build and share, on one object the entry (main.ts) creates beside the
+// renderer's (RenderStages.ts) and the island's (IslandStages.ts).
+import type * as THREE from 'three/webgpu';
+import type GUI from 'lil-gui';
+import type { WeatherName, WindLevel } from '../sky/Weather.ts';
+import type { QualityTier } from '../Quality.ts';
+import type { QualityDetector } from '../QualityDetect.ts';
+import type { DynamicResolution, GpuFrameTimer, PassScaling } from '../post/DynamicResolution.ts';
+import type { FramePacer } from '../post/FramePacer.ts';
+import type { FrameStats } from '../debug/FrameStats.ts';
+import type { Game } from '../game/Game.ts';
+import type { CameraView } from './CameraViews.ts';
+import type { SceneRequest } from './Scene.ts';
+import type { StepOptions } from './Frame.ts';
+import type { QualityChoice, QualityLines } from '../QualityDetect.ts';
+import type { PipelineCount } from '../debug/PipelineCounter.ts';
+import type { PipelineSettings } from '../post/Pipeline.ts';
+
+export interface PageParts {
+	ground: { soil: boolean };
+	qualityChoice: QualityChoice;
+	loading: HTMLElement | null;
+	pipelineCount: PipelineCount | null;
+	reloadWithQuality: ( tier: QualityTier | null ) => void;
+	GAME: boolean;
+	game: Game | null;
+	gui: GUI;
+	S: PipelineSettings;
+	cameraSettings: { mode: string };
+	reviewView: { camera: CameraView };
+	fovWidening: { on: boolean };
+	applyOrbitLimit: () => void;
+	unwidenFov: () => void;
+	setCameraMode: ( mode: string ) => void;
+	setCameraView: ( view: CameraView ) => void;
+	environmentLook: { exposure: boolean };
+	autoQuality: QualityLines;
+	frameStats: FrameStats;
+	weatherView: { preset: WeatherName; seconds: number };
+	windView: { level: WindLevel; heading: number };
+	shownWind: string;
+	timeView: { preset: string };
+	islanderF: GUI;
+	hazeF: GUI;
+	H: { near: number; far: number; growth: number; fogExtinction: number; albedo: number; anisotropy: number; gain: number; ambientFloor: number; ambientSoftness: number; blend: number; restFrames: number; jitter: boolean; tricubic: boolean; densityAA: boolean; sky: boolean; debug: number };
+	dynamicRule: { dynamic: { max: number; baseline: number; floor: number; floorShare: number; step: number } } | null;
+	dynamicResolution: DynamicResolution | null;
+	gpuQueue: { onSubmittedWorkDone(): Promise<void> };
+	pacer: FramePacer;
+	gpuTimer: GpuFrameTimer | null;
+	detector: QualityDetector | null;
+	passScaling: PassScaling | null;
+	canvasSize: THREE.Vector2;
+	scaleMemory: boolean;
+	nominalScale: number;
+	renderScale: number;
+	steppedScale: number | null;
+	resize: () => void;
+	storeKeyGeneration: number;
+	refreshStoreKey: () => void;
+	applyRenderScale: ( force?: boolean ) => void;
+	describeRenderScale: () => void;
+	clock: THREE.Timer;
+	frame: number;
+	frameTimes: number[];
+	shadowElapsed: number;
+	holding: boolean;
+	tick: ( time: number ) => void;
+	steeredLast: boolean;
+	diagnostics: ( now?: boolean ) => void;
+	loopBody: ( time: number ) => void;
+	animation: { start(): void; stop(): void; setContext( context: unknown ): void };
+	setTime: ( t: number ) => Promise<void>;
+	establishScene: ( scene: SceneRequest ) => Promise<void>;
+	loop: { running: boolean; stop(): Promise<void>; start(): void };
+	step: ( options: StepOptions ) => Promise<{ frames: number; t0: number; simTime: number; frameId: number }>;
+}

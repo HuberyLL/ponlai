@@ -290,7 +290,7 @@ const FOAM_SCALE = 0.09;
 // or two.
 const SHORE_FOAM_SCALE = 1;
 
-// The share of the key's chroma in the glint: 1 by day, 0 under the moon (main.ts publishLighting).
+// The share of the key's chroma in the glint: 1 by day, 0 under the moon (RenderStages.ts publishLighting).
 // At the handover between them the key has no energy, so the step is not seen.
 export const keyChroma = uniform( 1 );
 

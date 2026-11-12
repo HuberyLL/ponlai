@@ -63,7 +63,7 @@ Pre-exposure
   scene-unit reader divides out (`src/post/PreExposure.ts`).
 
 Scene jump
-: `establishScene` in `src/main.ts`: it moves a page to another scene, which then holds what a
+: `establishScene` in `src/app/Scene.ts`: it moves a page to another scene, which then holds what a
   fresh load of the same query holds, and clears all state the scene leaves behind.
 
 Settled
