@@ -60,18 +60,12 @@ const KINDS = [ 'method', 'member', 'declaration', 'text' ];
 // The files under src/ that reach into three, outside src/three/ (paths under src/). Remove an
 // entry with the change that moves its reach; never add one.
 const SRC_KNOWN = [
-	'debug/AmbientProbe.ts',
 	'debug/FrameProfiler.ts',
 	'debug/PipelineCounter.ts',
 	'main.ts',
-	'materials/CloudNoise.ts',
 	'post/DynamicResolution.ts',
-	'post/Pipeline.ts',
 	'post/graph/AttachmentOps.ts',
 	'post/graph/FrameGraph.ts',
-	'world/Upload.ts',
-	'world/WorldFields.ts',
-	'world/vegetation/VegetationCull.ts',
 ];
 
 // The tools that reach into three (paths under tools/). Remove an entry with the change that

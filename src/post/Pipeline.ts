@@ -55,6 +55,7 @@ import type { ExtraPass } from './ExtraPass.ts';
 import { waveMapsPass, type WaveMaps } from '../ocean/WaveMaps.ts';
 import { localLightsPass } from '../lighting/LocalLights.ts';
 import { settings, type SettingsQuery } from '../Settings.ts';
+import { hasGpuFeature } from '../three/Backend.ts';
 
 // Frame graph:
 //   opaque scene ── sceneRT (MSAA, SCENE_SAMPLES, half float, multisampled depth): the colour and
@@ -1401,8 +1402,7 @@ export class Pipeline {
 		// a canvas-sized pass and target more.
 		if ( easu ) {
 
-			const backend = renderer.backend as unknown as { hasFeature?( name: string ): boolean };
-			const fsr = this.fsr = new FSR( tDisplay, g.texture( easu ), backend.hasFeature?.( 'float32-filterable' ) === true, g );
+			const fsr = this.fsr = new FSR( tDisplay, g.texture( easu ), hasGpuFeature( renderer, 'float32-filterable' ), g );
 			this.upscaledOutput = new THREE.RenderPipeline( renderer, Fn( () => finish( fsr.rcas( this.sharpness ).toVar(), canvasSize, float( 1 ) ) )() );
 			this.upscaledOutput.outputColorTransform = false;
 

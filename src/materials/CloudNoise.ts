@@ -15,6 +15,7 @@ import {
 	vec2, vec3, vec4, ivec2, floor, fract, dot, mix, clamp, mod, sin, cos,
 } from 'three/tsl';
 import { fetchAsset } from '../FetchAsset.ts';
+import { gpuDevice, gpuTexture } from '../three/Backend.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -143,11 +144,11 @@ export async function loadCloudShape( renderer: THREE.WebGPURenderer ): Promise<
 	shape.needsUpdate = true;
 	renderer.initTexture( shape );
 	type Queue = { writeTexture( destination: { texture: unknown; mipLevel: number }, data: Uint8Array, layout: { bytesPerRow: number; rowsPerImage: number }, size: number[] ): void };
-	const backend = renderer.backend as unknown as { device: { queue: Queue }; get( object: object ): { texture: unknown } };
+	const queue = gpuDevice<{ queue: Queue }>( renderer ).queue, gpu = gpuTexture( renderer, shape );
 	for ( let m = 1; m < levels; m ++ ) {
 
 		const { data: bytes, width, height, depth } = mips[ m ];
-		backend.device.queue.writeTexture( { texture: backend.get( shape ).texture, mipLevel: m }, bytes,
+		queue.writeTexture( { texture: gpu, mipLevel: m }, bytes,
 			{ bytesPerRow: width * 4, rowsPerImage: height }, [ width, height, depth ] );
 
 	}

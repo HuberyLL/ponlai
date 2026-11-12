@@ -5,6 +5,7 @@ import {
 import { TEMPORAL } from '../../post/Antialiasing.ts';
 import { jitter } from '../../post/Jitter.ts';
 import { runSteps } from '../Steps.ts';
+import { hasGpuFeature } from '../../three/Backend.ts';
 
 // GPU-driven culling for an instanced vegetation kind (today the plants drawn as instances of a few
 // prototypes, PlantInstances.ts: the bamboo; the meadow generates its blades per view instead and
@@ -606,8 +607,7 @@ export class VegetationCull<R> {
 
 			// A band's draw starts at its first record's place through `firstInstance`, which an
 			// indirect draw honours only with this feature: without it each batch keeps its first band.
-			const backend = renderer.backend as unknown as { hasFeature?( name: string ): boolean };
-			if ( backend.hasFeature?.( 'indirect-first-instance' ) !== true ) for ( const r of this.ranges ) r.indirectOffsets.length = 1;
+			if ( ! hasGpuFeature( renderer, 'indirect-first-instance' ) ) for ( const r of this.ranges ) r.indirectOffsets.length = 1;
 			this.kernels = this.buildKernels();
 
 		}

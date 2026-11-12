@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { Fn, If, instanceIndex, instancedArray, uint, vec3, vec4 } from 'three/tsl';
 import { ambientField, ambientSkyVisibility } from '../lighting/AmbientSample.ts';
 import type { Bounds } from '../RenderTypes.ts';
+import { releaseAttribute } from '../three/Attributes.ts';
 
 // `__PONLAI__.ambientProbe( options )`: the ambient light's irradiance on open level ground, read
 // from the probes' volume itself rather than from screen cells (E_up for a script that reads cells: the island's level
@@ -61,10 +62,9 @@ export async function ambientProbe( context: { renderer: THREE.WebGPURenderer; h
 	const read = new Float32Array( ( await renderer.getArrayBufferAsync( out.value as THREE.StorageBufferAttribute ) ).slice( 0 ) );
 	kernel.dispose();
 	// the two storage buffers' GPU memory: r186's BufferAttribute.dispose() reaches no listener for
-	// a storage attribute, so they are deleted from the renderer's attribute cache (an r186
-	// internal), which destroys the buffers
-	const attributes = ( renderer as unknown as { _attributes?: { delete( a: THREE.BufferAttribute ): unknown } } )._attributes;
-	for ( const a of [ input.value, out.value ] as THREE.BufferAttribute[] ) attributes?.delete( a );
+	// a storage attribute, so they are deleted from the renderer's attribute records, which destroys
+	// the buffers (three/Attributes.ts)
+	for ( const a of [ input.value, out.value ] as THREE.BufferAttribute[] ) releaseAttribute( renderer, a );
 	const vis = Array.from( { length: count }, ( _, i ) => read[ i * 4 + 3 ] ).sort( ( a, b ) => a - b );
 	const threshold = vis[ Math.min( count - 1, Math.floor( open * ( count - 1 ) ) ) ];
 	const sum = [ 0, 0, 0 ];
