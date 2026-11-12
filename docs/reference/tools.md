@@ -1314,6 +1314,34 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   shrinks). It also walks the chunk worker's imports (`src/world/chunkWorker.ts`) as the build's
   world generator plugin does (`tools/vite-world-generator.mjs`) and fails on any package import
   the plugin would refuse. Run it after adding a file or an import across folders.
+- `tools/check.mjs` (`npm run check [-- --full]`) runs the checks every commit passes, one after
+  another: the type check, `verify-layers`, `verify-file-size`, `verify-three-internals`,
+  `verify-no-binaries`, `verify-game`, `verify-i18n`, `verify-ink`, `verify-framegraph`,
+  `verify-day-cycle`, `verify-weather-state`, `verify-wind` and `verify-local-lights`, then
+  `npm run lint:docs` when a Markdown file is staged. `--full` adds `npm run build` and
+  `verify-world-chunks.mjs` and always runs the docs' lint. Every check runs even after one failed;
+  it ends with each check's result and time, and exits 1 when any failed. None of them renders or
+  takes the GPU lock. How to use it: `docs/how-to/check-a-change.md`, Run the checks every commit
+  passes.
+- `tools/verify-file-size.mjs` (plain `node`, no options) fails on a code file under `src/` of more
+  than 1500 lines. The files over the limit when the check was written are listed in the tool with
+  their line counts: a listed file fails when it grows past its count, and when it is back within
+  the limit or gone, until its entry is removed (the list only shrinks). Split a file that fails by
+  what its parts are, never by halving it.
+- `tools/verify-three-internals.mjs [--verbose] [--fingerprints]` (plain `node`) checks the
+  three.js internals the code depends on, listed in `tools/three-internals.json`: the private
+  members and methods it reads, calls, writes, wraps or replaces, and the internal code it mirrors
+  or relies on, and the extension hooks `@types/three` does not declare, each with the file in
+  three that holds it. It fails when the installed three or
+  `@types/three` is not the list's version, when an entry's member or method is missing from its
+  file, and when the code of an entry that is wrapped, replaced, mirrored or relied on differs from
+  its recorded fingerprint (a hash of the code, comments ignored). A version range in
+  `package.json` instead of an exact version is a warning, not yet a failure. It also fails on a
+  file under `src/` or `tools/` that reaches into three's internals (the renderer's `backend`, a
+  cast to a type with private members, a private member's name) and is not on the tool's list of
+  files known to do so; that list only shrinks. `--verbose` lists every entry; `--fingerprints` prints
+  each entry's current fingerprint, to record after re-checking the code that depends on it on a
+  three upgrade.
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
 - `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
   (`uv run --with pillow --with numpy`), `tools/build-ground-textures.py` the meadow ground's from

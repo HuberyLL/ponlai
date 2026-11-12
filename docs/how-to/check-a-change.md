@@ -1,9 +1,25 @@
 # Check a change
 
-This guide gives the steps for checking a change before it is committed: a visual change, a
-performance change, a new history-dependent effect and a change that depends on the land's shape.
-The tools named here are described in `docs/reference/tools.md`; the rules they check are in
-`AGENTS.md`, Rules for every change.
+This guide gives the steps for checking a change before it is committed: the checks every commit
+passes, a visual change, a performance change, a new history-dependent effect and a change that
+depends on the land's shape. The tools named here are described in `docs/reference/tools.md`; the
+rules they check are in `AGENTS.md`, Rules for every change.
+
+## Run the checks every commit passes
+
+1. Run `npm run check` before every commit. It runs the type check and the checks that need no
+   GPU (the layers' imports, the files' size, the three.js internals, no binary in git, the CPU
+   regression tools, and the docs' lint when a Markdown file is staged), in about a quarter of a
+   minute, and ends with a list of what passed and failed and how long each took.
+2. Fix every check it lists as failed, then run it again. A check that fails on a list of known
+   cases (the layers' upward imports, the files over the size limit, the code that reaches into
+   three's internals) is fixed in the code, never by adding to its list.
+3. Before a merge, and after a change to the world's generator, run `npm run check -- --full`. It
+   adds the production build and the world's chunk checks (`tools/verify-world-chunks.mjs`) and
+   takes minutes.
+
+`npm run check` renders nothing, so it runs while another session holds the GPU lock. The checks
+that render (captures, parity, the GPU verify tools) are run by hand, as the sections below say.
 
 ## Check a visual change
 
