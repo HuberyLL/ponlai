@@ -101,7 +101,7 @@ art decision changes; images from elsewhere stay out of the repository.
   show it. The night keeps the moonlit island readable (see Night).
 - No lens effects a photograph of a real place would not have: no tilt-shift miniature blur, no
   lens flares forced into the frame.
-- The look is judged from the game's own view, the island camera zoomed out over the island, as
+- The look is judged from the island view, the island camera zoomed out over the island, as
   well as close up. Light reads there through its direction and large-scale light and shade (lit
   and shaded slopes and cliffs, a glint or moon path on the sea, later warm lights and what stands
   on the island), not through fine detail or post effects, which vanish at that distance.
@@ -204,7 +204,7 @@ for the light is baking lighting into albedo; it breaks again whenever the light
   thin places, fewer where bare stone meets the meadow. Not fans of long blades like small palm
   leaves. What hangs over the rim is the meadow's own grass, not leafy branches; the lowest quarter
   of the cliff above the sea stays bare.
-- The meadow is one even sward: from the game's view a uniform
+- The meadow is one even sward: from the island view a uniform
   carpet of grass with only soft, broad changes over it, never a field of tussocks or lumps. Close
   up it is dense, long, sword-shaped blades, wide to high up and tapering to a point, arcing over
   under their weight, each a little taller or shorter, turned and leaning its own way, so they
@@ -218,7 +218,7 @@ for the light is baking lighting into albedo; it breaks again whenever the light
   green, yellow green, olive, a few dry leaves) changes from stroke to stroke, a few clumps sharing
   one, a little either way, so the lawn reads as a painter's strokes of one green and its
   average stays one colour; never a single dyed green, which reads as plastic, and never every
-  blade and clump its own value and height, which from the game's view grains the lawn into a
+  blade and clump its own value and height, which from the island view grains the lawn into a
   scatter of tufts over dark ground. The materials keep albedos within real ones: the meadow's
   blades a sunlit leaf's ([Look values](../reference/look-values.md)), the cliff's stone a little
   lighter (The look, above); the frame's brightness is the exposure's, never albedos pushed past
@@ -228,7 +228,7 @@ for the light is baking lighting into albedo; it breaks again whenever the light
   them; under a closed sky the lawn keeps its green, the sky's light having passed among the blades,
   and does not turn yellow when the sun goes in; looking toward the sun the whole lawn glows, away
   from it it is plainer and greener; no fields of tone, dryness or bare earth (they break the lawn
-  into what reads from the overview as camouflage and dark blotches), and no pattern of dots on the
+  into what reads from the island view as camouflage and dark blotches), and no pattern of dots on the
   blades. The island top is one sward, about 0.5 m, with no zones across it: never tiers of height
   and tint by the soil (a short yellow-green band along the windward coast, a taller, deeper grass
   on deep soil, gravel patches inland), which read from above as a map laid over the meadow. Its
@@ -239,7 +239,7 @@ for the light is baking lighting into albedo; it breaks again whenever the light
   zone, a line, a path or a hollow (a short turf walled by tall grass, two levels, reads as a hole
   dug into the lawn). From the ground up the sward has a meadow's layers: dead leaves and the old
   leaves' straw sheaths low in it and the green leaves over them; no flowering stems stand over it.
-  No low herbs grow under it (clover mats, plantain rosettes): from the game's view they do not
+  No low herbs grow under it (clover mats, plantain rosettes): from the island view they do not
   read. The sward runs to the edge on every coast, windward and lee alike, never a windward lip
   shown short, yellow, thin over gravel and bared to the cliff's stone, which reads from above as
   one more zone. Inside the grass the shade is the grass's own, never painted: the blades and clumps
@@ -278,14 +278,14 @@ for the light is baking lighting into albedo; it breaks again whenever the light
   among the blades and shaded with them), larger and smaller flowers, a little apart in colour.
   They are all in flower at once, the year round: the island's sign of an immortals' land.
 - They grow in swaths of one kind as if painted by a broad
-  brush; ours are some 6 m across, spread evenly over the island top, and from the game's view each
+  brush; ours are some 6 m across, spread evenly over the island top, and from the island view each
   swath is one stroke of colour on the lawn, cinnabar or sky blue, its flowers covering about a
   third of its middle (the green showing between them) and thinning at its rim; a few single plants
   between the swaths. Each swath's kind is its ground's: the zhuyu in the exposed coast's
   wind-cropped turf, the shallow pockets and on dry ground (among shorter grass), the yaoxiang over
   the rest of the meadow, most in the sheltered sward. None on the lip itself and none in the
   bamboo's groves or their shade (flowers there draw dull). Flowers scattered as small drifts or
-  single heads read from the game's view as specks or confetti, never as the island's colour. They
+  single heads read from the island view as specks or confetti, never as the island's colour. They
   are lit as the meadow is, darker low among the blades and lighter at the top, and never brighter
   than the sunlit grass tips: a flower that outshines the lawn reads as lit from within. They sway
   with the grass.
@@ -343,7 +343,7 @@ for the light is baking lighting into albedo; it breaks again whenever the light
   Shiji). Visitors from elsewhere (the jingwei from the western mountains, the wenyao from the
   western sea) and the creatures of the sea keep their own colours.
 - Creatures belong to nature, so they are shaded as realistically as the plants, never stylised
-  like the islanders. From the game's view they read by silhouette and motion: a flock wheeling
+  like the islanders. From the island view they read by silhouette and motion: a flock wheeling
   overhead, a tall bird standing at the water's edge, a large shadow gliding through the clear
   shallows, a school breaking the surface. A small creature of the texts is made larger than life
   where that view would lose it.
@@ -524,7 +524,7 @@ for the light is baking lighting into albedo; it breaks again whenever the light
 - The island reads by moonlight and starlight; the twilight falls into the night with no step
   back up, under every sky. The moon takes over the key soon after the sun has gone.
 - The moon stands fixed in the sky, 20 degrees up on the noon meridian, all night and every night
-  (`src/sky/DayCycle.ts` MOON). Seen from the game's overview its light comes in at a slant: slopes
+  (`src/sky/DayCycle.ts` MOON). Seen from the island view its light comes in at a slant: slopes
   show a lit and a shaded side, its shadows run long and the sea carries a moon path, where a moon
   near the zenith would light the island flat. The moon path and the moonlit meadow glow softly in
   that view too. It neither rises nor sets, so the night's composition holds while the game is
