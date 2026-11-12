@@ -24,8 +24,9 @@
 //   and turns it to a new heading: the prevailing 40 degrees plus an offset, nine times in ten a
 //   triangular one within +-40 degrees (most often near 0), one time in ten from the opposite
 //   quadrant (180 +- 45). Over hundreds of hours the wind is gentle 70 % of the time, fresh 13 %,
-//   light 14 % and strong 3 % (tools/verify-weather-state.mjs measures it). The wind's draws take a random stream of their
-//   own, so the sky's sequence is the one it was before the wind had levels.
+//   light 14 % and strong 3 % (tools/verify-weather-state.mjs measures it). The wind's draws take
+//   a random stream of their own, so the sky's sequence is the one it was before the wind had
+//   levels.
 //
 // The auto chain's sky takes its draws from one seeded stream (dwell, pick, the front's length, in
 // that order each turn), so its future is known: `forecast` reads it ahead without moving it (the
