@@ -21,6 +21,8 @@ Facts to look up.
 
 - [Tools](reference/tools.md): the tools in `tools/`, the page's URL options and keys, the test
   mode, captures, probes, the GPU lock, frame profiling and the docs checks.
+- [Look values](reference/look-values.md): the measured values of the island's look (light and
+  shade, exposure, water).
 - [Parity captures](../tools/parity/README.md): capture sets, comparisons and their tolerances.
 
 ## Explanation
