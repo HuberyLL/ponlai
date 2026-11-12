@@ -311,6 +311,22 @@ export interface MeadowCanopyLook {
 	cast: CanopyMedium;
 }
 
+// ---- the wind on the plants (look/WindLook.ts)
+
+export interface WindLook {
+	/** The gusts' share of the wind's strength on the plants: S ( 1 + gustGain q ). */
+	gustGain: number;
+	/** The largest offset (m, each axis) a blade's gust sample takes from its root. */
+	gustJitter: number;
+	/** The plants' speed (m/s) by the mean wind 10 m up (m/s): the points of a line, ascending, two
+	 * at least. */
+	plantWind: readonly ( readonly [ number, number ] )[];
+	/** The plants' speed (m/s) at which a limb takes a load of 1. */
+	plantSpeed: number;
+	/** How much quicker than its kind's rate a plant may sway (a share of the rate). */
+	plantRateSpread: number;
+}
+
 // ---- the current look
 
 export interface Look {
@@ -324,6 +340,7 @@ export interface Look {
 	occlusion: OcclusionLook;
 	localLights: LocalLightsLook;
 	meadowCanopy: MeadowCanopyLook;
+	wind: WindLook;
 }
 
 let installed: Look | null = null;

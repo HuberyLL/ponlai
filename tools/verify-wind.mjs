@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import './island-look.mjs';
 import { Wind, createWindUniforms, flutterWave, plantRate, plantWave, wave, weatherWind, CLOCK_PERIOD, GUST_TILE, GUST_TRAVEL, GUST_TIME_PERIOD, GUST_EVOLUTION, PLANT_RATE_BANDS, PLANT_RATE_SPREAD, REFERENCE_SPEED, REFERENCE_GUSTINESS, plantSpeedOf } from '../src/weather/Wind.ts';
 import { Weather, WIND_LEVELS, PREVAILING_HEADING } from '../src/sky/Weather.ts';
 import { debugFlags } from '../src/debug/DebugFlags.ts';

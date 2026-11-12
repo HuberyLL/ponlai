@@ -206,4 +206,19 @@ export const NEUTRAL_LOOK: Look = {
 		cast: { density: 0, open: 0 },
 	},
 
+	wind: {
+		// no gusts on the plants: the wind's strength is the plants' speed itself
+		gustGain: 0,
+		// every blade reads the gust at its own root
+		gustJitter: 0,
+		// the plants take the wind 10 m up as it is
+		plantWind: [ [ 0, 0 ], [ 1, 1 ] ],
+		// A limb's full load has no identity. It takes the relation the speed stands in to the rest
+		// of this table: the strongest level's wind (sky/Weather.ts, 11 m/s) as the plants take it,
+		// at its full gust, which with the two rows above is 11.
+		plantSpeed: 11,
+		// every plant sways at its kind's rate
+		plantRateSpread: 0,
+	},
+
 };
