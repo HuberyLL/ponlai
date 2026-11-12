@@ -62,8 +62,8 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 
 ## Map
 
-- `docs/`: `art-direction.md`, `game-design.md`, `tools.md`, `ui.md` (the game UI's spec: read it
-  before UI work).
+- `docs/`: `art-direction.md`, `game-design.md`, `materials.md` (how to add a material or a kind
+  of content), `tools.md`, `ui.md` (the game UI's spec: read it before UI work).
 - `public/` (git-ignored): the game's assets, filled from the GitHub release `assets.lock.json`
   names (`tools/assets.mjs`, `tools/vite-assets.mjs`; `docs/tools.md`, Assets).
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__PONLAI__` and
@@ -238,10 +238,9 @@ with wildflowers). The look and what to avoid: `docs/art-direction.md`. The game
 
 ## Rules for every change
 
-- Materials take real, measured values; the style is set only globally, in the light per weather
-  and hour, the exposure, the tone mapping and the grade. A look problem is looked for there
-  before any material changes, and a material is never pushed past real values to make up for the
-  light (`docs/art-direction.md`, How the look is made).
+- Materials take real values and the style is set only for the whole world, in the light and the
+  image: a look problem is looked for there before any material changes, and a new material or
+  kind of content follows `docs/materials.md`.
 - Shaders are written in TSL only (no raw WGSL or GLSL strings). Helpers called from several
   places are `Fn( ... ).setLayout( ... )`, so they compile to one shader function each.
 - Simulation and generation are deterministic and path-independent: the world, its growth, the
