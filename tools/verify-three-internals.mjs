@@ -61,8 +61,6 @@ const KINDS = [ 'method', 'member', 'declaration', 'text' ];
 // entry with the change that moves its reach; never add one.
 const SRC_KNOWN = [
 	'main.ts',
-	'post/graph/AttachmentOps.ts',
-	'post/graph/FrameGraph.ts',
 ];
 
 // The tools that reach into three (paths under tools/). Remove an entry with the change that

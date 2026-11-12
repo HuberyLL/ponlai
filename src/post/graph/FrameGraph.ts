@@ -250,7 +250,7 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 
 		this.renderer = renderer;
 		this.options = { legacyDiscard: [ 'rain' ], dev: false, prime: true, ...options };
-		this.attachmentOps = new AttachmentOps( renderer.backend, { dev: this.options.dev } );
+		this.attachmentOps = new AttachmentOps( renderer, { dev: this.options.dev } );
 		this.nodeFrame = { renderer } as unknown as THREE.NodeFrame;
 
 	}
