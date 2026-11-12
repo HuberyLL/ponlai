@@ -363,7 +363,6 @@ const M2 = {
 // strip), so they load through Vite's SSR loader, on the main thread only.
 async function loadPlanting() {
 
-	globalThis.location ??= { search: '', href: 'http://localhost/' };
 	const { createServer } = await import( 'vite' );
 	const server = await createServer( {
 		root: new URL( '../', import.meta.url ).pathname, configFile: false, logLevel: 'error', appType: 'custom',

@@ -1,5 +1,6 @@
 import { uniform } from 'three/tsl';
 import { hasKeys, type DayKey, type DayKeys, type KeyValues } from '../post/DayKeys.ts';
+import { settings } from '../Settings.ts';
 
 // Tunable parameters: named numbers a script or the console can set on a running page. Debug pages
 // only (the dev server, ?debug, ?profile); elsewhere every function here returns the default as given and registers nothing, so
@@ -65,7 +66,7 @@ interface Entry {
 	listeners: ( ( value: number ) => void )[];
 }
 
-const query = new URLSearchParams( globalThis.location?.search ?? '' );
+const query = settings;
 /** Whether this page registers tunables (debug pages only). */
 export const TUNE_ON = !! ( import.meta.env?.DEV || query.has( 'debug' ) || query.has( 'profile' ) );
 

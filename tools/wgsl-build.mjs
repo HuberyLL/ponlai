@@ -44,12 +44,13 @@
 //                takes every feature its adapter has, and three's WGSL depends on some of them:
 //                `float32-filterable` (whether a 32-bit float texture gets a sampler),
 //                `texture-formats-tier1` (narrow storage formats, FSR 3's resources), `subgroups`
-//   --q          the page's query (`location.search`, which load knobs read as their modules
-//                load: `aa=`, `quality=`, debug flags); default none
+//   --q          the page's query (its options, src/Settings.ts, which load knobs read as their
+//                modules load: `aa=`, `quality=`, debug flags); default none
 //
 // The entry is loaded through Vite's SSR loader with the project's config (as the dev server
-// loads the page's modules: TypeScript, `import.meta.env`, the plugins' virtual modules) and a
-// stand-in `location`; any other browser global a module touches as it loads fails the run. It
+// loads the page's modules: TypeScript, `import.meta.env`, the plugins' virtual modules), with the
+// query's options installed first as the page's entry installs them (src/Settings.ts
+// `installSettings`); any browser global a module touches as it loads fails the run. It
 // imports what it builds from `src/` and three as usual (Vite leaves three to node, so the tool
 // and the entry share one three) and its default export, given `{ renderer }`, returns the
 // shaders (or a promise of them) as `[ name, shader ]` pairs or an object of them, in the order
@@ -512,7 +513,6 @@ const outDir = resolve( opts.out ?? join( ROOT, 'artifacts', 'wgsl', entry.name 
 mkdirSync( outDir, { recursive: true } );
 for ( const f of readdirSync( outDir ) ) if ( f.endsWith( '.wgsl' ) || f === 'bindings.txt' || f === 'report.json' ) rmSync( join( outDir, f ) );
 
-globalThis.location = new URL( `http://localhost/${ opts.q ? '?' + opts.q : '' }` );
 const renderer = stubRenderer( opts.features );
 
 const { createServer } = await import( 'vite' );
@@ -524,6 +524,8 @@ const server = await createServer( {
 let list;
 try {
 
+	const { installSettings, parseSettings } = await server.ssrLoadModule( '/src/Settings.ts' );
+	installSettings( parseSettings( opts.q ?? '' ) );
 	const mod = await server.ssrLoadModule( entry.url );
 	if ( typeof mod.default !== 'function' ) throw new Error( `${ entry.url } has no default export function` );
 	list = await mod.default( { renderer } );

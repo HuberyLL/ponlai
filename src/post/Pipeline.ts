@@ -54,6 +54,7 @@ import { displacementField } from '../world/vegetation/Displacement.ts';
 import type { ExtraPass } from './ExtraPass.ts';
 import { waveMapsPass, type WaveMaps } from '../ocean/WaveMaps.ts';
 import { localLightsPass } from '../lighting/LocalLights.ts';
+import { settings, type SettingsQuery } from '../Settings.ts';
 
 // Frame graph:
 //   opaque scene ── sceneRT (MSAA, SCENE_SAMPLES, half float, multisampled depth): the colour and
@@ -287,10 +288,10 @@ import { localLightsPass } from '../lighting/LocalLights.ts';
 
 // The graph's dev checks (every target at its class's size, the attachment ops that reached
 // WebGPU): on the dev server and with `?debug`.
-const DEV = import.meta.env.DEV || new URLSearchParams( globalThis.location?.search ?? '' ).has( 'debug' );
+const DEV = import.meta.env.DEV || settings.has( 'debug' );
 // The graph's warm-up renders the passes it cannot compile once at startup (`fgPrime=0`: not, for
 // the check that priming changes no frame).
-const PRIME = new URLSearchParams( globalThis.location?.search ?? '' ).get( 'fgPrime' ) !== '0';
+const PRIME = settings.get( 'fgPrime' ) !== '0';
 // The rain veil's reactive weight: its opacity at the pixel times `gain`, at most `max` (a dense veil
 // lowers the history's weight there to 40 % of its frames; a single faint streak barely moves it).
 const VEIL_REACTIVE = { gain: 1.5, max: 0.6 };
@@ -377,16 +378,11 @@ const LEGACY_SWITCHES: Record<string, Partial<PostOptions>> = {
 };
 
 /** The defaults (with a tier's options over them), with `?post=legacy` (every switch below) or
- * `?post=a,b` applied. */
-export function postOptionsFromURL( search = location.search, base: Partial<PostOptions> = {} ): PostOptions {
+ * `?post=a,b` applied (the page's options, or `params`). */
+export function postOptionsFromURL( params: SettingsQuery = settings, base: Partial<PostOptions> = {} ): PostOptions {
 
 	const options = { ...DEFAULT_POST_OPTIONS, ...base };
-	for ( const name of ( new URLSearchParams( search ).get( 'post' ) ?? '' ).split( ',' ) ) {
-
-		if ( name === 'legacy' ) for ( const change of Object.values( LEGACY_SWITCHES ) ) Object.assign( options, change );
-		else if ( LEGACY_SWITCHES[ name ] ) Object.assign( options, LEGACY_SWITCHES[ name ] );
-
-	}
+	for ( const name of ( params.get( 'post' ) ?? '' ).split( ',' ) ) Object.assign( options, ...( name === 'legacy' ? Object.values( LEGACY_SWITCHES ) : [ LEGACY_SWITCHES[ name ] ?? {} ] ) );
 	return options;
 
 }
@@ -1257,7 +1253,7 @@ export class Pipeline {
 			// passes take hdr, declared after the composite pass).
 			if ( FSR3 ) ( this as { fsr3: Fsr3Upscaler | null } ).fsr3 = new Fsr3Upscaler( renderer, g as unknown as FrameGraph<unknown>, {
 				hdr, surfaceDepth, velocity: velocity!, veilReactive, sceneColor, opaqueColor,
-			}, { settings: temporal ?? QUALITY.high.taa, exposure: exposureRead, debugView: DEV && new URLSearchParams( globalThis.location?.search ?? '' ).has( 'fsrDebug' ) } );
+			}, { settings: temporal ?? QUALITY.high.taa, exposure: exposureRead, debugView: DEV && settings.has( 'fsrDebug' ) } );
 			tHdr = this.fsr3 ? this.fsr3.source( uv() ) : texture( g.texture( hdr ), uv() );
 
 		}

@@ -5,6 +5,7 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 import { VELOCITY_CLEAR, velocityOutput } from '../post/Motion.ts';
 import { MEADOW_SHADE } from '../post/MeadowShade.ts';
 import { followPlantDraw } from './vegetation/PlantInstances.ts';
+import { settings } from '../Settings.ts';
 
 // A depth prepass for the alpha-to-coverage vegetation (today the meadow's blades).
 //
@@ -140,8 +141,7 @@ export interface VegetationPrepassInfo { pairs: number; materials: number; depth
  * one sample outside the temporal modes there is no coverage material, and nothing changes. */
 export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Object3D[] ): VegetationPrepassInfo {
 
-	const params = new URLSearchParams( location.search );
-	const option = params.get( 'vegPrepass' );
+	const option = settings.get( 'vegPrepass' );
 	if ( option === '0' ) debugFlags.vegPrepass = false;
 	if ( option === 'coverage' ) debugFlags.vegPrepassOpaque = false;
 

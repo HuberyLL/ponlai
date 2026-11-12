@@ -12,12 +12,22 @@ import * as THREE from 'three/webgpu';
 // default). Its coverage-preserving mips (`coverageAlphaTexture`) serve any silhouette: the old
 // trees' leaf sprays take them (vegetation/TreeSurfaces.ts LeafPainter).
 
+/** A square canvas of `size` texels to draw a texture on: the vegetation's one use of the
+ * page's document (tools/verify-layers.mjs, the page check), which every texture drawn on a canvas
+ * takes from here. */
+export function textureCanvas( size: number ): HTMLCanvasElement {
+
+	const c = document.createElement( 'canvas' );
+	c.width = c.height = size;
+	return c;
+
+}
+
 // The leaf as a transparent silhouette; the colour map and the coverage map are both made
 // from it, so they always agree.
 function drawLeaf( size: number ): HTMLCanvasElement {
 
-	const c = document.createElement( 'canvas' );
-	c.width = c.height = size;
+	const c = textureCanvas( size );
 	const g = c.getContext( '2d' )!;
 	g.clearRect( 0, 0, size, size );
 	g.save();
@@ -67,8 +77,7 @@ function drawLeaf( size: number ): HTMLCanvasElement {
 // were, so the colour mips match the previous ones.
 export function leafTexture( size = 128 ): THREE.CanvasTexture {
 
-	const c = document.createElement( 'canvas' );
-	c.width = c.height = size;
+	const c = textureCanvas( size );
 	const g = c.getContext( '2d' )!;
 	g.fillStyle = '#000';
 	g.fillRect( 0, 0, size, size );
@@ -153,8 +162,7 @@ export function coverageAlphaTexture( alpha: Float32Array, size: number, cutoff 
 			remapped = remap( ( lo + hi ) * 0.5 );
 
 		}
-		const c = document.createElement( 'canvas' );
-		c.width = c.height = w;
+		const c = textureCanvas( w );
 		const g = c.getContext( '2d' )!;
 		const image = g.createImageData( w, w );
 		for ( let i = 0; i < remapped.length; i ++ ) {

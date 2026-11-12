@@ -93,6 +93,10 @@ export const PAUSED_QUEUE = 2;
 /** 'auto': the tier's rate with the automatic fallback; 'fixed': a rate held as it is. */
 export type FrameRateMode = 'auto' | 'fixed';
 
+/** The display's next frame (its time): the code's other wait on the page's frames, beside the
+ * pacer's own, so `requestAnimationFrame` is called here alone (tools/verify-layers.mjs). */
+export const nextFrame = (): Promise<number> => new Promise( ( resolve ) => requestAnimationFrame( resolve ) );
+
 export class FramePacer {
 
 	/** The tier's frame rate (frames per second, or `?frameRate`'s); 0 renders on every refresh. */

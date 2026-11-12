@@ -14,6 +14,7 @@ import {
 	Fn, instanceIndex, textureStore, uint, int,
 	vec2, vec3, vec4, ivec2, floor, fract, dot, mix, clamp, mod, sin, cos,
 } from 'three/tsl';
+import { fetchAsset } from '../FetchAsset.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -112,7 +113,7 @@ export function bakeSynoptic( renderer: THREE.WebGPURenderer ): THREE.StorageTex
  * ('NZZ1', version, channel count, three u16 dimensions, a u8 mip count) and RGBA8 mips. */
 export async function loadCloudShape( renderer: THREE.WebGPURenderer ): Promise<THREE.Data3DTexture> {
 
-	const response = await fetch( import.meta.env.BASE_URL + 'clouds/baseShape64.bin' );
+	const response = await fetchAsset( 'clouds/baseShape64.bin' );
 	if ( ! response.ok || ! response.body ) throw new Error( `Cloud shape noise: HTTP ${ response.status }` );
 	const data = new Uint8Array( await new Response( response.body.pipeThrough( new DecompressionStream( 'gzip' ) ) ).arrayBuffer() );
 	const view = new DataView( data.buffer, data.byteOffset, data.byteLength );

@@ -258,15 +258,16 @@ export class IslandTurn {
 
 	constructor( private readonly element: HTMLElement ) {
 
+		const view = element.ownerDocument.defaultView as Window; // the page the element is in
 		element.addEventListener( 'wheel', this.onWheel, { passive: false } );
 		element.addEventListener( 'pointerdown', this.onPointerDown );
 		element.addEventListener( 'pointermove', this.onPointerMove );
 		element.addEventListener( 'pointerup', this.onPointerUp );
 		element.addEventListener( 'pointercancel', this.onPointerUp );
 		element.addEventListener( 'contextmenu', this.onContextMenu );
-		window.addEventListener( 'keydown', this.onKeyDown );
-		window.addEventListener( 'keyup', this.onKeyUp );
-		window.addEventListener( 'blur', this.clear );
+		view.addEventListener( 'keydown', this.onKeyDown );
+		view.addEventListener( 'keyup', this.onKeyUp );
+		view.addEventListener( 'blur', this.clear );
 
 	}
 

@@ -144,7 +144,7 @@ async function run( job: ChunkJob ): Promise<void> {
 	switch ( job.kind ) {
 
 		case 'init':
-			store = job.generator !== null && typeof indexedDB !== 'undefined' ? openChunkStore( job.generator ) : null;
+			store = job.generator !== null ? openChunkStore( job.generator ) : null;
 			break;
 
 		case 'land': {

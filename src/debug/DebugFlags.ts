@@ -120,15 +120,18 @@
 // `cloudHazeEnd = false` marches the low deck's view through its whole shell instead of ending where
 // the haze closes (sky/Clouds.ts `makeMarch`; the haze's copy of its medium, weather/VolumetricHaze.ts
 // `prepareMedium`), read every frame, so --toggle "s.flags.cloudHazeEnd = !on" times the end.
+
+import { settings } from '../Settings.ts';
+
 export interface MotionSourceFlags { camera?: boolean; object?: boolean; skin?: boolean; wind?: boolean; sea?: boolean; foam?: boolean }
 export const debugFlags: Record<string, boolean | number | string | MotionSourceFlags | undefined> & { mv: MotionSourceFlags } = { mv: {} };
 
 // `flags=<name>:<value>,...` in the URL (debug builds: the dev server, ?debug, ?profile) sets flags
 // as this module loads, before any module reads them, so a capture or a clip A/Bs a flag by its
 // query. A value reads as true / false, a number, or else the string itself (a bare name, without
-// `:value`, as true); `mv.<source>` sets a motion source. (Under node, as the plain verify tools run modules, there is no location.)
-const search = globalThis.location?.search ?? '';
-const query = new URLSearchParams( search );
+// `:value`, as true); `mv.<source>` sets a motion source. (Under node, as the plain verify tools run
+// modules, no settings are installed: no flags.)
+const query = settings;
 if ( query.has( 'flags' ) && ( import.meta.env?.DEV || query.has( 'debug' ) || query.has( 'profile' ) ) ) {
 
 	for ( const entry of ( query.get( 'flags' ) ?? '' ).split( ',' ) ) {

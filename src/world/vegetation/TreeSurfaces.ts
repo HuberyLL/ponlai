@@ -8,7 +8,7 @@ import { pnoise, hash22 } from '../../materials/ProceduralTextures.ts';
 import type { Shared } from '../../shared.ts';
 import { branchBend, leafFlutter, mainBend, sprayBend } from './Deform.ts';
 import { rootHash } from '../../weather/Wind.ts';
-import { coverageAlphaTexture } from './LeafTexture.ts';
+import { coverageAlphaTexture, textureCanvas } from './LeafTexture.ts';
 import { vegetationMaterial } from './Material.ts';
 import type { PlacedVertex } from './PlantInstances.ts';
 import { writeMeter } from '../../lighting/MeterLight.ts';
@@ -186,8 +186,7 @@ export class LeafPainter {
 
 		const canvas = () => {
 
-			const c = document.createElement( 'canvas' );
-			c.width = c.height = size;
+			const c = textureCanvas( size );
 			return c.getContext( '2d' )!;
 
 		};
@@ -303,8 +302,7 @@ function pointMips( image: ImageData, size: number ): THREE.Texture {
 	let data = image.data, w = size;
 	for ( ; ; ) {
 
-		const c = document.createElement( 'canvas' );
-		c.width = c.height = w;
+		const c = textureCanvas( w );
 		const level = new ImageData( new Uint8ClampedArray( data ), w, w );
 		c.getContext( '2d' )!.putImageData( level, 0, 0 );
 		levels.push( c );

@@ -14,6 +14,7 @@ import type { WorldData } from '../world/types.ts';
 import type { Shared } from '../shared.ts';
 import { OPEN_DRIFT, type SeaDetail } from '../ocean/SeaDetail.ts';
 import type { Bounds } from '../RenderTypes.ts';
+import { nextFrame } from '../post/FramePacer.ts';
 
 // `__PONLAI__.windProbe( options )`: the numbers behind the wind view (WindView.ts), as JSON for
 // tools/probe.mjs. Every sway comes from the shaders' own TSL functions (Wind.ts `windField`,
@@ -516,7 +517,7 @@ async function directions( ctx: WindProbeContext, o: Options ) {
 
 	const deg = ( v: { x: number; y: number } ) => r3( Math.atan2( v.y, v.x ) * 180 / Math.PI );
 	const gap = ( a: number, b: number ) => r3( Math.abs( ( ( a - b ) % 360 + 540 ) % 360 - 180 ) );
-	const frames = async () => { for ( let i = 0; i < 3; i ++ ) await new Promise( ( resolve ) => requestAnimationFrame( resolve ) ); };
+	const frames = async () => { for ( let i = 0; i < 3; i ++ ) await nextFrame(); };
 	const clouds = ctx.sky.clouds;
 	// what moves the clouds and the fog, as the page drew its last frame
 	const read = () => {

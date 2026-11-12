@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { BLOOM_PASSES, bloomTable, compilePipeline, compileToday, declareTemporal } from './tables-passes.mjs';
 import { GraphDecl, compileGraph } from '../../src/post/graph/GraphCompiler.ts';
 import { AttachmentOps, opsModeFromURL } from '../../src/post/graph/AttachmentOps.ts';
+import { parseSettings } from '../../src/Settings.ts';
 
 const col = ( resource, load, store, resolve = null ) => ( { resource, load, store, resolve } );
 const dep = ( resource, write, load, store ) => ( { resource, write, load, store } );
@@ -455,19 +456,19 @@ export const checks = [
 
 	[ 'fgOps: the URL picks the table, derived by default, all-store under post=store-scene', () => {
 
-		assert.equal( opsModeFromURL( '?fgOps=derived' ), 'derived' );
-		assert.equal( opsModeFromURL( '?fgOps=legacy' ), 'legacy' );
-		assert.equal( opsModeFromURL( '?fgOps=store' ), 'store' );
-		assert.equal( opsModeFromURL( '?fgOps=off' ), 'off' );
-		assert.equal( opsModeFromURL( '?fgOps=bogus' ), 'derived' );
-		assert.equal( opsModeFromURL( '' ), 'derived' );
+		assert.equal( opsModeFromURL( parseSettings( '?fgOps=derived' ) ), 'derived' );
+		assert.equal( opsModeFromURL( parseSettings( '?fgOps=legacy' ) ), 'legacy' );
+		assert.equal( opsModeFromURL( parseSettings( '?fgOps=store' ) ), 'store' );
+		assert.equal( opsModeFromURL( parseSettings( '?fgOps=off' ) ), 'off' );
+		assert.equal( opsModeFromURL( parseSettings( '?fgOps=bogus' ) ), 'derived' );
+		assert.equal( opsModeFromURL( parseSettings( '' ) ), 'derived' );
 		assert.equal( opsModeFromURL( null ), 'derived' );
-		assert.equal( opsModeFromURL( '?post=store-scene' ), 'store' );
-		assert.equal( opsModeFromURL( '?post=three-fsr,store-scene' ), 'store' );
-		assert.equal( opsModeFromURL( '?post=legacy' ), 'store', 'post=legacy includes store-scene' );
-		assert.equal( opsModeFromURL( '?post=three-fsr' ), 'derived' );
-		assert.equal( opsModeFromURL( '?post=store-scene&fgOps=derived' ), 'derived', 'an explicit fgOps wins' );
-		assert.equal( opsModeFromURL( '?post=store-scene&fgOps=legacy' ), 'legacy' );
+		assert.equal( opsModeFromURL( parseSettings( '?post=store-scene' ) ), 'store' );
+		assert.equal( opsModeFromURL( parseSettings( '?post=three-fsr,store-scene' ) ), 'store' );
+		assert.equal( opsModeFromURL( parseSettings( '?post=legacy' ) ), 'store', 'post=legacy includes store-scene' );
+		assert.equal( opsModeFromURL( parseSettings( '?post=three-fsr' ) ), 'derived' );
+		assert.equal( opsModeFromURL( parseSettings( '?post=store-scene&fgOps=derived' ) ), 'derived', 'an explicit fgOps wins' );
+		assert.equal( opsModeFromURL( parseSettings( '?post=store-scene&fgOps=legacy' ) ), 'legacy' );
 		assert.equal( new AttachmentOps( mockWebGPU().Backend.prototype ).mode, 'derived', 'the default in a page without the option (node: no location)' );
 
 	} ],

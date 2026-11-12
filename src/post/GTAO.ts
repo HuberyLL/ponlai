@@ -6,8 +6,7 @@ import {
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { tuneUniform } from '../debug/Tune.ts';
 import { MEADOW_SHADE } from './MeadowShade.ts';
-import { QUALITY_CHOICE } from './Antialiasing.ts';
-import { qualityProfile } from '../Quality.ts';
+import { loadTier, qualityProfile } from '../Quality.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -151,7 +150,7 @@ type V4 = THREE.Node<'vec4'>;
 
 /** Built at load: at 4x outside the temporal modes with the meadow's shade, where the tier's `ao`
  * knob or `flags=gtao` asks for it. */
-export const GTAO = MEADOW_SHADE && ( debugFlags.gtao === undefined ? qualityProfile( QUALITY_CHOICE.tier ).ao : debugFlags.gtao !== false );
+export const GTAO = MEADOW_SHADE && ( debugFlags.gtao === undefined ? qualityProfile( loadTier() ).ao : debugFlags.gtao !== false );
 
 /** The slices per pixel and the depth steps on each side of each. */
 const SLICES = 2, STEPS = 4;

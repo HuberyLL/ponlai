@@ -36,6 +36,7 @@ import { REFERENCE_SPEED } from '../weather/Wind.ts';
 import { motionNode, motionState, motionUniforms, outputStruct, reactiveUniforms } from '../post/Motion.ts';
 import { sceneUnits } from '../post/PreExposure.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
+import { settings } from '../Settings.ts';
 
 // The sea surface: an FFT-displaced grid whose shading takes tidewater's WaterMaterial (4811ba4, its
 // above-water branch: the normal, the Fresnel and the sky's reflection, its gate, the refracted ray to
@@ -537,8 +538,7 @@ export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSt
 // The screen-space reflection can only find what the opaque pass drew above the sea: the island,
 // its plants and its people. A box around them, from the land's box (so it grows with the island):
 // out past the land's edge by the rim's overhang (the grass hanging from the lip, and room for
-// more) plus a metre's margin, and up past the meadow by the islanders'
-// 2 m plus a metre.
+// more) plus a metre's margin, and up past the meadow by the islanders' 2 m plus a metre.
 // Hits below REFLECTION_FLOOR under the sea level already weigh nothing (see traceSSR), so the box
 // ends there, whatever is held (`hold` clips a held box at that floor: a plant's box reaches far
 // below the ground, and would otherwise deepen the march's box for nothing). A placed object off
@@ -576,7 +576,7 @@ const rayBoxSpan = Fn( ( [ origin, direction, lo, hi ]: [ V3, V3, V3, V3 ] ) => 
 	inputs: [ { name: 'origin', type: 'vec3' }, { name: 'direction', type: 'vec3' }, { name: 'lo', type: 'vec3' }, { name: 'hi', type: 'vec3' } ],
 } );
 
-const DEBUG = import.meta.env.DEV || new URLSearchParams( globalThis.location?.search ?? '' ).has( 'debug' );
+const DEBUG = import.meta.env.DEV || settings.has( 'debug' );
 
 export class Water {
 

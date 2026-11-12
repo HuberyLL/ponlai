@@ -74,6 +74,13 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   `reference/` (`tools.md`, `url-options.md`, `look-values.md`, `glossary.md`).
 - `public/` (git-ignored): the game's assets, filled from the GitHub release `assets.lock.json`
   names (`tools/assets.mjs`, `tools/vite-assets.mjs`; `docs/reference/tools.md`, Assets).
+- `src/Boot.ts`, the entry: it loads `src/PageSettings.ts` (the address parsed, its problems
+  warned, the tier chosen, the settings installed; the reloads and the browser's storage), then
+  `src/main.ts`. `src/Settings.ts` declares every URL option and is the one entrance every module
+  reads them through (`settings.get( 'name' )`; a new option is declared there,
+  `tools/verify-settings.mjs`). Below the page no module touches the browser's page (`location`,
+  `window`, `document`, storage and the like): `tools/verify-layers.mjs`, its page check;
+  `src/FetchAsset.ts` fetches the assets.
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__PONLAI__` and
   `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug` / `?profile`.
 - `src/Quality.ts`: the quality tiers, every cost knob in one table (high the only active one);

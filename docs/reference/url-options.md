@@ -16,6 +16,8 @@ The tools that load pages with these options: [Tools](tools.md).
   from, 50 by default); the GUI's Camera folder has the same three controls.
   A paused page lifts its loading screen at once, without the fade, so a capture of a paused frame
   never catches the screen over it.
+- `paused` also puts the page in the test mode (`src/debug/TestMode.ts`; `docs/reference/tools.md`,
+  Test mode); `testMode=0` keeps a paused page out of it, as the clips do.
 
 ## The island
 
@@ -44,6 +46,8 @@ The tools that load pages with these options: [Tools](tools.md).
   `setCameraView( 'island' )`) frames the land shown; a camera that holds it glides to the new
   framing (at once while paused), one moved elsewhere (by a tool or by hand)
   stays where it is.
+- `soil=0` loads the ground with its soil layer off (`src/materials/Soil.ts`: the root bed cut open
+  at the meadow's shoulder); the GUI's Ground folder, `soil layer`, switches it on a running page.
 - `approach` (0 .. 1, 0 by default): the progress toward the next piece, the shoal under it
   (src/world/SeabedRise.ts) put on it at once; above 0 the page generates the next piece and keeps
   its loading screen up until the shoal is written, so a paused load repeats. A scene option: a
@@ -87,7 +91,9 @@ The tools that load pages with these options: [Tools](tools.md).
   only active tier: medium and low are parked, see `docs/reference/tools.md`, Parked quality
   tiers), `tier.<knob>=<value>`
   overrides one knob for an A/B (e.g. `tier.post.hazeGrid.width=128`). The GPU timing that once
-  chose the tier (`src/QualityDetect.ts`, `autoQuality`) is parked with them.
+  chose the tier (`src/QualityDetect.ts`, `autoQuality`, and `autoQualitySlow`, a factor on the
+  time it measures) is parked with them: the load reads neither for the tier, and the GUI's quality
+  control drops `autoQuality=detect` from the address as it reloads.
 
 Rendering and A/B options, read at load (runtime switches for one-page A/Bs live in
 `src/debug/DebugFlags.ts`):
@@ -181,6 +187,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 
 ## Debug flags
 
+- `debug` makes a production page a debug page, as the dev server and `profile` are: the handles
+  on `window` (`__PONLAI__`, `__THREE_GAME_DIAGNOSTICS__`, `__PONLAI_WORLD__`), the parked weathers
+  and the options read on debug pages only (the table below marks them).
 - `flags=<name>:<value>,...` (debug builds: sets `debugFlags` as the page loads, before anything
   reads them; values `true` / `false`, numbers or strings, `mv.<source>` a motion source), e.g.
   `flags=taaClampDrop:false` for a capture's or clip's `--q`. A name alone reads as `true`
@@ -538,3 +547,84 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   returns why not, or null), `say( id, words )`, `setNeed( id, need, value )`, `forecast( hours )`
   (the weather's turns, in game hours), `.record` (the record's entries) and `.ui` (`setMany( true
   )`); `.sim.comingLand` holds the next piece's cells once the page has it.
+
+## Every option
+
+The page reads its options through one entrance, `src/Settings.ts`, which declares each one with
+what it takes, its default and the layer of the code that owns it. The entry parses the address
+once and warns in the console, as `[settings] ?name=value: why`, about each option nobody
+declared and each value outside what its reader tells apart; the page then goes on as it would
+without the warning. This table is written from the declarations (`node tools/verify-settings.mjs
+--write`, which `npm run check` runs without `--write` to keep the two equal).
+
+<!-- every-option:start (written by tools/verify-settings.mjs --write) -->
+
+| Option | Takes | Without it | Owner | What it sets |
+| --- | --- | --- | --- | --- |
+| `paused` | named (its value unread) | running | render | pauses the scene and both clocks; with it the page is in the test mode |
+| `t` | a number from 0 | 0 | app | the scene time (s) |
+| `dpr` | a number from 0 | the display's ratio, capped | app | pins the canvas's pixel ratio |
+| `polar` | a number | 40 | app | the island view's tilt (degrees) |
+| `az` | a number | 180 | app | the island view's heading (degrees) |
+| `dist` | a number from 0 | frames the land | app | the island view's distance from the default pivot (m) |
+| `cameraInput` | `on`, `off`, named bare | on | app | `off`: the hand does not move the island camera; named bare, as `on` |
+| `gui` | named (its value unread) | hidden | app | shows the GUI |
+| `camera` | `orbit`, `free` | orbit | app | the island camera or the free flight |
+| `nearFov` | a number, 1 to 179, or `off` | 42 | app | the island view's fov at its closest zoom (degrees; `off`: 27 at every distance) |
+| `nearFovFrom` | a number from 0 | 50 | app | the distance the fov widens from (m) |
+| `seed` | a whole number | 1 | island | the world's seed |
+| `grow` | a whole number from 0 | the save's pieces under `game`, else 0 | island | growth steps after the starting island (up to `GROWTH.maxSteps`) |
+| `worldCache` | `on`, `off`, `0`, named bare | on | island | `off` or `0`: generates every chunk instead of reading the browser's cache |
+| `bamboo` | a comma list | the default groves | app | another look of the bamboo: `cover,height` |
+| `approach` | a number, 0 to 1 | 0 | app | the progress toward the next piece, its shoal put on at once |
+| `soil` | `0`, `1` | on | app | `0`: the ground without its soil layer |
+| `hour` | a number | golden-hour (8 under `game`) | app | the hour of the day |
+| `preset` | `dawn`, `sunrise`, `noon`, `golden-hour`, `sunset`, `dusk`, `midnight` | golden-hour | app | the hour by its sun |
+| `dayLength` | a number from 30 | 2880 (1440 under `game`) | app | seconds per day |
+| `moon` | a number | 0.5 | app | the moon's phase (0.5 full) |
+| `clock` | `paused` | running | app | `paused`: freezes the day clock only |
+| `weather` | `clear`, `fair`, `cloudy`, `overcast`, `rain`, `storm`, `fog` | auto, from fair | app | holds this weather (the parked ones on debug pages only) |
+| `wind` | `light`, `gentle`, `fresh`, `strong` | the sky's | app | the wind's level; holds the weather |
+| `windDir` | a number | the sky's (40) | app | the wind's heading (degrees); holds the weather |
+| `clouds` | a number, 0 to 1 | the weather's | app | overrides the cloud coverage |
+| `dayFog` | named (its value unread) | off | app | the day's fog layer under a clear or fair sky |
+| `seaFog` | named (its value unread) | off | app | the deep sea fog |
+| `quality` | `low`, `medium`, `high` | high | app | the quality tier (medium and low parked) |
+| `autoQuality` | `detect`, `off` | parked | app | the GPU timing that chose the tier (parked: read by the tier's reload only) |
+| `autoQualitySlow` | a number from 0.01 | 1 | app | scales the GPU timing's measured time (parked) |
+| `aa` | `msaa`, `taa`, `taau`, `fsr3`, `off`, `gt` | the tier's (high: msaa) | render | the anti-aliasing mode (`gt` on debug pages only) |
+| `msaa` | `1`, `2`, `4` | none | render | the older alias of `aa`: `4` msaa, `1` and `2` off |
+| `fsrDebug` | named (its value unread) | off | render | FSR 3's debug view over its output, under `aa=fsr3` (debug pages only) |
+| `taaResolve` | `off` | on | render | `off`: the temporal modes without their resolve (debug pages only) |
+| `terrainHex` | `0` | on | island | `0`: the cliff's plain triplanar tiling |
+| `post` | a comma list of `legacy`, `inline-composite`, `three-fsr`, `store-scene` | none | render | the frame graph without the first performance round's changes |
+| `gpuTimer` | `off` | on | app | `off`: the dynamic resolution without its timestamp queries |
+| `drsStore` | `on`, `off` | on, off in an automated browser | app | whether the dynamic resolution starts from the scale it last held |
+| `frameRate` | a number from 0, or `auto` | auto | app | the frame rate the loop holds (0: every refresh) |
+| `frameFallback` | `0` | on | app | `0`: `auto` keeps the tier's rate |
+| `submits` | `each` | batched | render | `each`: three's own submit per pass |
+| `submitBatch` | a comma list | SubmitBatch.ts's | render | the submit batching's policy: `hold,wait,idle` |
+| `fgOps` | `derived`, `legacy`, `store`, `off` | derived | render | the frame graph's attachment ops |
+| `fgPrime` | `0` | on | render | `0`: the warm-up renders nothing ahead |
+| `fgview` | text | off | render | the frame graph's debug view of one resource (debug pages only) |
+| `debug` | named (its value unread) | off | render | a debug page: the handles on `window`, the debug options |
+| `flags` | a comma list | none | render | sets debug flags as the page loads (`name:value,...`) (debug pages only) |
+| `tune` | text | none | render | tunable parameters' values before anything builds (base64 JSON) (debug pages only) |
+| `testMode` | `0` | on with `paused` | render | `0`: a paused page outside the test mode |
+| `profile` | named bare, `frames` | off | app | loads the frame profiler (`frames`: without GPU timestamps) |
+| `vegPrepass` | `0`, `coverage` | on | render | the vegetation's depth prepass: off, or with coverage kept |
+| `chunkBorders` | named (its value unread) | off | app | shows the world's chunks as lines |
+| `ambientProbes` | `off`, `sky`, `bounce`, `irradiance` | off | app | shows the ambient light's probes (debug pages only) |
+| `windView` | named bare, `arrows`, `plants` | off | render | makes the vegetation's wind visible (debug pages only) |
+| `look` | `kit` | Hanming | app | `kit`: the islanders' earlier kit look |
+| `islander` | `stock`, `subtle`, `medium`, `strong`, `real` | the look's own | app | the islanders' proportions |
+| `body` | text | M30 | app | the scene's walker's sex and age |
+| `bodies` | a comma list | the simulation's three | game | a new game's islanders' sexes and ages |
+| `game` | named (its value unread) | off | app | the island as a game |
+| `load` | named (its value unread) | off | game | resumes the saved game |
+| `new` | named (its value unread) | off | game | starts a new game |
+| `autosave` | `on`, `off` | on, off in an automated browser | game | whether the page keeps the save itself |
+| `lang` | text | zh-CN | game | the interface's language (`zh-CN`, `en`) |
+| `tier.<knob>` | text | the tier's | render | overrides one knob of the tier (`tier.post.hazeGrid.width=128`) |
+
+<!-- every-option:end -->

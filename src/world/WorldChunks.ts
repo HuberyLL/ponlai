@@ -41,6 +41,7 @@ import { mergeChunks, type LandData } from './ChunkMerge.ts';
 import { landCentroid } from './WorldShapes.ts';
 import { LandLattice } from './IslandGrowth.ts';
 import type { ChunkData } from './Chunks.ts';
+import { cacheBrowser } from './WorldCache.ts';
 import type { ChunkJob, ChunkReply, CacheResult } from './chunkWorker.ts';
 import type { WorldData, WorldOptions } from './types.ts';
 import { CANOPY_SHADE } from '../lighting/AmbientSample.ts';
@@ -117,7 +118,7 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 	const { worldSeed = 1, step = 0, contactOcclusion = true, canopyShade = CANOPY_SHADE } = options;
 	const generator = cache ? WORLD_GENERATOR_HASH : null;
 	const key = ( ...parts: unknown[] ) => generator === null ? null
-		: JSON.stringify( [ CACHE_FORMAT, generator, { worldSeed, contactOcclusion, canopyShade }, navigator.userAgent, ...parts ] );
+		: JSON.stringify( [ CACHE_FORMAT, generator, { worldSeed, contactOcclusion, canopyShade }, cacheBrowser(), ...parts ] );
 	const threads = wanted ?? Math.min( 6, Math.max( 1, ( navigator.hardwareConcurrency || 4 ) - 2 ) );
 
 	return new Promise( ( resolve, reject ) => {

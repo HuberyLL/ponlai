@@ -77,7 +77,7 @@ import type * as THREE from 'three/webgpu';
 // So the graph labels its own passes and what three's nodes render as part of them (the bloom
 // chains' passes); what runs outside the graph (the sky, the shadow maps, the ocean) is labelled
 // by hand.
-// The page exposes `window.__PONLAI_PROFILE__` (see `api`), read by tools/profile-frame.mjs.
+// The page (main.ts) exposes `api` as `window.__PONLAI_PROFILE__`, read by tools/profile-frame.mjs.
 // `?profile=frames` keeps the frame and tick timing but skips the GPU timestamps. Measure frame
 // rates that way: with timestamp queries on, Chrome ran the same frames up to a quarter faster
 // (light scenes most; a scene that keeps the GPU saturated hardly at all), so the per-pass split
@@ -243,7 +243,6 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 			super();
 			this.timestamps = timestamps;
-			( window as unknown as Record<string, unknown> ).__PONLAI_PROFILE__ = this.api;
 
 		}
 

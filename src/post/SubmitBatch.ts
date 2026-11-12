@@ -1,4 +1,5 @@
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { settings } from '../Settings.ts';
 
 // Submit batching: the command buffers three hands to `queue.submit` are held for a moment and
 // submitted a few at a time, in the order given, so a frame reaches the GPU in a handful of
@@ -73,7 +74,7 @@ const CHUNK = 1 << 16;
 
 {
 
-	const params = new URLSearchParams( location.search );
+	const params = settings;
 	if ( params.get( 'submits' ) === 'each' ) debugFlags.batchSubmits = false;
 	const policy = params.get( 'submitBatch' );
 	if ( policy !== null ) {

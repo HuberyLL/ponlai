@@ -32,12 +32,12 @@
 // mode), else the quality tier's `aa` knob (`QualityProfile.aa`, with `tier.aa=` over it), else
 // `msaa`: the URL wins over the test mode and the tier, and
 // `AA_SOURCE` says which of them chose (main.ts reports it as `aaSource`). `gt` is taken from the
-// URL in a debug build only, never from a tier. The tier is chosen here, once, for
-// the whole page (main.ts reads `QUALITY_CHOICE`): modules that read the mode when they load
-// (world/vegetation/Coverage.ts, Grass.ts) are evaluated before the page's own code runs.
+// URL in a debug build only, never from a tier. The tier is the one the page's entry chose
+// (PageSettings.ts, Quality.ts `loadTier`), installed before any module loads, so modules that read
+// the mode when they load (world/vegetation/Coverage.ts, Grass.ts) take the page's.
 import { REVISION } from 'three/webgpu';
-import { qualityProfile, type QualityProfile, type TemporalSettings } from '../Quality.ts';
-import { chooseQuality, type QualityChoice } from '../QualityDetect.ts';
+import { loadTier, qualityProfile, type QualityProfile, type TemporalSettings } from '../Quality.ts';
+import { settings, type SettingsQuery } from '../Settings.ts';
 
 export const AA_MODES = [ 'msaa', 'taa', 'taau', 'fsr3', 'off', 'gt' ] as const;
 export type AAMode = typeof AA_MODES[ number ];
@@ -65,7 +65,7 @@ export function isAAMode( value: unknown ): value is AAMode {
  * else the tier's `aa` knob, else `msaa`. An unknown value warns and falls through to the next
  * source; so does `gt` outside a debug build (`debug`: the dev server or `?debug`), and `gt` from a
  * tier (the ground truth is a measuring tool, never a tier's default). */
-export function requestedAAMode( params: URLSearchParams, profile: Pick<QualityProfile, 'aa'> | null, debug = false ): { mode: AAMode; source: AASource } {
+export function requestedAAMode( params: SettingsQuery, profile: Pick<QualityProfile, 'aa'> | null, debug = false ): { mode: AAMode; source: AASource } {
 
 	const aa = params.get( 'aa' );
 	if ( aa !== null ) {
@@ -116,7 +116,7 @@ export function aaPlan( requested: AAMode, revision: string = REVISION ): AAPlan
 		mode = 'msaa';
 
 	}
-	if ( mode === 'fsr3' && new URLSearchParams( globalThis.location?.search ?? '' ).get( 'post' )?.split( ',' ).some( ( s ) => s === 'legacy' || s === 'inline-composite' ) ) {
+	if ( mode === 'fsr3' && settings.get( 'post' )?.split( ',' ).some( ( s ) => s === 'legacy' || s === 'inline-composite' ) ) {
 
 		console.warn( 'aa=fsr3 takes the composite pass\'s HDR image, which post=inline-composite (and post=legacy) leave out: running msaa' );
 		mode = 'msaa';
@@ -133,10 +133,9 @@ export function aaPlan( requested: AAMode, revision: string = REVISION ): AAPlan
 
 }
 
-// The page's tier, chosen once (QualityDetect.ts: `?quality`, else high), and the mode it asks for.
-const params = new URLSearchParams( location.search );
-export const QUALITY_CHOICE: QualityChoice = await chooseQuality( params );
-const REQUEST = requestedAAMode( params, qualityProfile( QUALITY_CHOICE.tier ), import.meta.env.DEV || params.has( 'debug' ) || params.has( 'profile' ) );
+// The mode the page's tier (Quality.ts `loadTier`) and options ask for.
+const params = settings;
+const REQUEST = requestedAAMode( params, qualityProfile( loadTier() ), import.meta.env.DEV || params.has( 'debug' ) || params.has( 'profile' ) );
 /** The mode the page asked for (before a refused one falls back). */
 export const AA_REQUESTED: AAMode = REQUEST.mode;
 /** Where the requested mode came from (the URL wins over the tier). */

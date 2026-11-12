@@ -130,7 +130,7 @@ import type { DynamicRange } from './RenderScale.ts';
 // - Until its first decision (`settling`) it waits for SETTLE_FRAMES clean frames and then takes
 //   the largest scale their median predicts fits, up or down, with room for the first frames
 //   running lighter than the scene will (SETTLE_LIGHT). It starts from the scale it last held
-//   on this display (`restore`: localStorage, keyed by tier, AA mode, frame rate, canvas size, GPU
+//   on this display (`restore`: the store, keyed by tier, AA mode, frame rate, canvas size, GPU
 //   and whether GPU times or frame intervals steer it), so a returning player's first frames are near
 //   it and the page keeps its loading screen up over the first jump only. A scale is remembered
 //   once it has held STORE_AFTER seconds at the current key (main.ts leaves the memory off in an
@@ -237,7 +237,7 @@ const MISS_SHARE = 0.02, MISS_LATE = 0.06, MISS_CUT = 0.6, UP_AFTER = 6, INTERVA
 // frame-interval fallback: seconds a scale it stepped down from is barred from a step back up,
 // doubled each time it is left again within FRAME_BAR_MAX seconds of the last bar's end
 const FRAME_BAR = 8, FRAME_BAR_MAX = 64;
-// the stored scales (localStorage) and how many displays it remembers
+// the stored scales (in the page's storage, `store`) and how many displays it remembers
 const STORE_KEY = 'soomi.renderScale', STORE_ENTRIES = 8;
 // the frame rate's fallback: the share of late frames at the floor over FALL_SPAN seconds that falls
 // back; a return's fit (share of the faster interval), how long it must hold (s), and the wait after
@@ -253,6 +253,8 @@ export interface DynamicResolutionOptions extends DynamicRange {
 	// the most the canvas may be upscaled from the render, per axis (Infinity: no bound; TAAU's
 	// TAAU_MAX_UPSCALE): raises the floor to the canvas's ratio over it
 	maxUpscale?: number;
+	// where the scales are remembered between visits (the page's storage: main.ts); none, nowhere
+	store?: ScaleStore | null;
 }
 
 /** TAAU's bound on the upscale (canvas over render, per axis): the floor rises to the canvas's ratio
@@ -389,6 +391,7 @@ export class DynamicResolution {
 	// the quality floor, until the step is judged
 	private missedBefore: number | null = null;
 	private storeKey: string | null = null;
+	private readonly store: ScaleStore | null;
 	// the scale last remembered under the store key, and since when the key holds (s)
 	private stored = NaN;
 	private keySince = - Infinity;
@@ -414,7 +417,7 @@ export class DynamicResolution {
 	private fit = 0;
 	private fitSeen = - Infinity;
 
-	constructor( { max, baseline, floor: least, step, maxUpscale = Infinity }: DynamicResolutionOptions ) {
+	constructor( { max, baseline, floor: least, step, maxUpscale = Infinity, store = null }: DynamicResolutionOptions ) {
 
 		if ( ! ( step > 0 && maxUpscale >= 1 ) ) throw new RangeError( 'Dynamic resolution needs a positive step and an upscale bound of at least 1' );
 		DynamicResolution.check( { max, baseline, floor: least } );
@@ -422,6 +425,7 @@ export class DynamicResolution {
 		this.limitBaseline = baseline;
 		const floor = this.floor = this.limitFloor = this.round( least );
 		this.maxUpscale = maxUpscale;
+		this.store = store;
 		this.qualityFloor = floor;
 		this.step = step;
 		this.scale = this.baseline;
@@ -535,7 +539,7 @@ export class DynamicResolution {
 	/** Starts from the scale last held under the store key, if any (before the first frame). */
 	restore(): void {
 
-		const entry = this.storeKey === null ? undefined : readStore()[ this.storeKey ];
+		const entry = this.storeKey === null ? undefined : readStore( this.store )[ this.storeKey ];
 		if ( ! entry || ! Number.isFinite( entry.scale ) ) return;
 		// before the first frame, behind the loading screen: not a change anyone sees
 		this.scale = this.stored = this.snap( Math.min( Math.max( entry.scale, this.floor ), this.max ) );
@@ -1148,7 +1152,7 @@ export class DynamicResolution {
 		// at the frame rate's fallback the scale is the slower rate's: the store is the held rate's
 		if ( this.storeKey === null || this.settling || this.pacer?.fallen || this.scale === this.stored || now - Math.max( this.lastChange, this.keySince ) < STORE_AFTER ) return;
 		this.stored = this.scale;
-		writeStore( this.storeKey, this.scale );
+		writeStore( this.store, this.storeKey, this.scale );
 
 	}
 
@@ -1171,14 +1175,15 @@ function quantile( values: readonly number[], q: number ): number {
 // ------------------------------------------------------------------ the remembered scale
 
 type Store = Record<string, { scale: number; at: number }>;
+export type ScaleStore = Pick<Storage, 'getItem' | 'setItem'>;
 
 // Storage can be missing or refuse (a private window, blocked site data): the page then starts from
 // the nominal scale, as on a first visit.
-function readStore(): Store {
+function readStore( storage: ScaleStore | null ): Store {
 
 	try {
 
-		const text = globalThis.localStorage?.getItem( STORE_KEY );
+		const text = storage?.getItem( STORE_KEY );
 		const store = text ? JSON.parse( text ) as unknown : null;
 		return store && typeof store === 'object' ? store as Store : {};
 
@@ -1190,21 +1195,16 @@ function readStore(): Store {
 
 }
 
-function writeStore( key: string, scale: number ): void {
+function writeStore( storage: ScaleStore | null, key: string, scale: number ): void {
 
 	try {
 
-		const store = readStore();
+		const store = readStore( storage );
 		store[ key ] = { scale, at: Date.now() };
-		// the displays used most recently
-		const keep = Object.entries( store ).sort( ( a, b ) => b[ 1 ].at - a[ 1 ].at ).slice( 0, STORE_ENTRIES );
-		globalThis.localStorage?.setItem( STORE_KEY, JSON.stringify( Object.fromEntries( keep ) ) );
+		// the displays used most recently (where it fails, the next visit starts at the nominal scale)
+		storage?.setItem( STORE_KEY, JSON.stringify( Object.fromEntries( Object.entries( store ).sort( ( a, b ) => b[ 1 ].at - a[ 1 ].at ).slice( 0, STORE_ENTRIES ) ) ) );
 
-	} catch {
-
-		// not remembered: the next visit settles from the nominal scale
-
-	}
+	} catch { /* not remembered */ }
 
 }
 
