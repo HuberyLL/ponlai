@@ -189,4 +189,9 @@ export const NEUTRAL_LOOK: Look = {
 		keyThroughCloud: 1,
 	},
 
+	occlusion: {
+		// no floor: the occlusion is the surface's own times the screen's, down to 0
+		floor: 0,
+	},
+
 };

@@ -285,6 +285,13 @@ export interface SkyLook {
 	keyThroughCloud: number;
 }
 
+// ---- the ambient occlusion (look/OcclusionLook.ts)
+
+export interface OcclusionLook {
+	/** The least ambient occlusion a surface keeps where its own and the screen's multiply. */
+	floor: number;
+}
+
 // ---- the current look
 
 export interface Look {
@@ -295,6 +302,7 @@ export interface Look {
 	display: DisplayLook;
 	haze: HazeLook;
 	sky: SkyLook;
+	occlusion: OcclusionLook;
 }
 
 let installed: Look | null = null;
