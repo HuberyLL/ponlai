@@ -9,7 +9,6 @@ import type { WorldFields, FieldsPrepared } from './WorldFields.ts';
 import { geometrySteps, textureSteps } from './Upload.ts';
 import { boundsSteps } from './Steps.ts';
 import { walkLoopDistance, walkPoints } from './WalkPath.ts';
-import { topFromTiles } from '../game/sim/grid.ts';
 import type { GrowthInput, GrowthSteps, Vegetation, VegetationKind } from './vegetation/Registry.ts';
 import type { ChunkData } from './Chunks.ts';
 import type { IslandChunk, WorldData } from './types.ts';
@@ -70,8 +69,8 @@ import { SeabedRise } from './SeabedRise.ts';
 //   box and framing as measured ahead, the fog's clearing, the sun's caster box and columns, the
 //   sea's reflection box, the camera's ground).
 // - The frames after it, one step each: the rain's collision map (resized, then baked again eight
-//   meshes a frame from the island and the kinds registered with `rainBake`: RainCollision.bakeSteps), the game's ground (the chunks' walk tiles,
-//   sim/grid.ts), the old resources disposed (a kind a frame), the page's own (`onSwapped`).
+//   meshes a frame from the island and the kinds registered with `rainBake`: RainCollision.bakeSteps), the game's ground (the game
+//   reads the chunks' walk tiles: game/Game.ts `setIsland`), the old resources disposed (a kind a frame), the page's own (`onSwapped`).
 //   A replaced mesh, and the refracted sun's and the rain map's proxies of it, are disposed as
 //   objects, not only their geometry: three keeps a render object (and its uniform buffers) per
 //   object and pass until the object's dispose. Their shared materials stay. They go after the swap's
@@ -102,10 +101,11 @@ export interface GrowthPage<M = unknown> {
 	ambient: AmbientVolume;
 	rain: Rain;
 	characters: Villagers | null;
-	/** the game (?game): the pending piece once it is ready (`setComing`), the new land after a swap (`setIsland`) */
+	/** the game (?game): the pending piece once it is ready (`setComing`), the new land after a swap
+	 * (`setIsland`), each with the world's chunks on that land */
 	game: {
-		setComing( land: LandLattice, top?: Uint8Array ): void;
-		setIsland( land: LandLattice, top?: Uint8Array ): void;
+		setComing( land: LandLattice, chunks: readonly ChunkData[] ): void;
+		setIsland( land: LandLattice, chunks: readonly ChunkData[] ): void;
 	} | null;
 	/** the page's own land-dependent state, in the swap's frame */
 	/** what the page measures of a land (its box and framing), ahead in a step of the preparation */
@@ -136,7 +136,6 @@ interface Prepared<M> {
 	fields: FieldsPrepared;
 	shore: ShoreFields;
 	ambient: AmbientPrepared;
-	top: Uint8Array;
 	// the kinds' staged in-place writes, freed after the swap
 	staged: ( () => void )[];
 }
@@ -381,7 +380,7 @@ export class Growth<M = unknown> {
 						this.steps = null;
 						this.prepared = next.value;
 						this.state.phase = 'ready';
-						this.page.game?.setComing( next.value.land, next.value.top );
+						this.page.game?.setComing( next.value.land, next.value.version.chunks );
 						if ( this.wanted.length === 0 ) console.info( `growth: step ${ this.state.pending } ready`, this.times );
 						return;
 
@@ -535,10 +534,9 @@ export class Growth<M = unknown> {
 		yield* textureSteps( renderer, shore!.shelter );
 		this.stage = 'ambient';
 		const ambient = yield* page.ambient.prepare( data.ambient );
-		const top = topFromTiles( chunks );
 		return {
 			version, measured, bounds, data, land, changed, islands: { add, remove }, rocks, seabed, walk,
-			vegetation, fields, shore: shore!, ambient, top, staged,
+			vegetation, fields, shore: shore!, ambient, staged,
 		};
 
 	}
@@ -622,7 +620,7 @@ export class Growth<M = unknown> {
 				return ! bake.next().done;
 
 			},
-			() => page.game?.setIsland( p.land, p.top ),
+			() => page.game?.setIsland( p.land, p.version.chunks ),
 			// (the old resources a frame each)
 			...disposals.map( ( dispose ) => () => dispose() ),
 			() => page.onSwapped?.( p.data ),

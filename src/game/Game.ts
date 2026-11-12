@@ -9,6 +9,7 @@ import { parseBodies, type Body } from '../characters/Ages.ts';
 import type { LandLattice } from '../world/IslandGrowth.ts';
 import { GameUi } from './ui/GameUi.ts';
 import { newGame } from './sim/Sim.ts';
+import { topFromTiles } from './sim/grid.ts';
 import { SAVE_KEY, UNREAD_KEY, keepsSave, readSlot, resumesSave, savedPieces } from './save.ts';
 import type { Sim } from './sim/Sim.ts';
 import type { Brain, ToolResult } from './sim/agent.ts';
@@ -121,6 +122,9 @@ const MAX_FRAME = 0.25;
 const AUTOSAVE_SECONDS = 60;
 
 // The simulation's island from the world generator's own exports: its land and top.
+// the world's chunks as the game reads them: their walk tiles (sim/grid.ts topFromTiles)
+type WalkTiles = Parameters<typeof topFromTiles>[ 0 ];
+
 function islandInput( land: LandLattice, top?: Uint8Array ): IslandInput {
 
 	return { land, top };
@@ -208,17 +212,19 @@ export class Game {
 	}
 
 	/** The island grew by a piece (Growth.ts's swap): the simulation's ground follows the new land,
-	 * its top, and counts the piece (Session.setIsland); a saved game loads onto it. */
-	setIsland( land: LandLattice, top?: Uint8Array ): void {
+	 * its top from the world's chunks on it (their walk tiles, sim/grid.ts topFromTiles), and counts
+	 * the piece (Session.setIsland); a saved game loads onto it. */
+	setIsland( land: LandLattice, chunks: WalkTiles ): void {
 
-		this.session.setIsland( islandInput( land, top ) );
+		this.session.setIsland( islandInput( land, topFromTiles( chunks ) ) );
 
 	}
 
-	/** The next piece is ready on the page (Growth.ts): the simulation sees its cells (Session.setComing). */
-	setComing( land: LandLattice, top?: Uint8Array ): void {
+	/** The next piece is ready on the page (Growth.ts), with the world's chunks on it: the simulation
+	 * sees its cells (Session.setComing). */
+	setComing( land: LandLattice, chunks: WalkTiles ): void {
 
-		this.session.setComing( islandInput( land, top ) );
+		this.session.setComing( islandInput( land, topFromTiles( chunks ) ) );
 
 	}
 
