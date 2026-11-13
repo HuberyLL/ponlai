@@ -5,6 +5,8 @@ import { shared } from '../shared.ts';
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 
+// The meadow's canopy shade: the key light that survives the blades above a point.
+//
 // Grass blades are narrower than a sun-shadow texel, so the meadow does not cast into the sun's
 // shadow map: as the sun turns, re-rasterising sub-texel blades reshuffles their whole shadow
 // pattern at every map update. Larger casters (rock, flowers, figures) keep the map.

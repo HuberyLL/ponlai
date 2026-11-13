@@ -2,6 +2,8 @@ import type * as THREE from 'three/webgpu';
 import { If, float, vec3, mix, smoothstep } from 'three/tsl';
 import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
 
+// The sea floor's colour: sand, seagrass and rubble from measured reflectances, for its material.
+
 // The rubble's tones against the gravel's: RUBBLE_TONE only carries the dry rock's tone onto the
 // floor. The island's rock, about 0.25 dry, 0.94 of it under the water (TerrainMaterial.ts
 // SUBMERGED_ROCK, which is where the submerged stone darkens), under a film of algae near 0.06 over

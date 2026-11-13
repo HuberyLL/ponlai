@@ -10,6 +10,8 @@ import { ffxSaturate, type N } from './Core.ts';
 import { iShadingChangeMipStart, ShadingChangeRenderSize, ClampUv, IsOnScreen } from './Common.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
+// FSR 3's shading change at half the render size, from the shading-change pyramid.
+//
 // The shading change at half the render size: the largest | difference x sign sum | over the
 // shading-change pyramid's levels 0..2 at the jittered position.
 //

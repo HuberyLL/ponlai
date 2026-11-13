@@ -15,6 +15,8 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// Rain: GPU streaks and splashes, a distant veil and ripples on the water.
+//
 // Rain: light streaks (GPU drops in nested camera volumes, RainDrops.ts; a distant veil of streaks
 // in the post pass) plus analytic ripples on the water normal. Drops are a stateless function of
 // the clock, the wind's integrated travel and the camera, so a paused frame repeats exactly; they

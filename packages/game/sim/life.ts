@@ -5,6 +5,8 @@ import type { RngState } from './rng.ts';
 import { SECONDS_PER_YEAR } from './types.ts';
 import type { Villager } from './types.ts';
 
+// An islander's life: a game day is a year, and a lifespan drawn once by Gompertz's law.
+//
 // An islander's life: a game day is a year of it (types.ts SECONDS_PER_YEAR), and each one dies of
 // old age at a lifespan drawn once, as it comes, as a person's is in a present-day population with
 // accidents and disease left out: the life the body was born with. The ages at death follow

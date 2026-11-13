@@ -1,3 +1,5 @@
+// The quality tiers: every knob the frame's cost depends on, per tier, in one table.
+//
 // The quality tiers: every knob the frame's cost depends on, per tier, in one table. `?quality`
 // picks the tier at load; without it the page loads high (QualityDetect.ts). The GUI's quality
 // control reloads the page with it.

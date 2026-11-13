@@ -2,6 +2,8 @@ import type { Stroke } from './Brush.ts';
 import { inkShares } from './Ink.ts';
 import { svgEl } from './dom.ts';
 
+// A long brush stroke drawn with its ink: a canvas inside the SVG in place of a filled path.
+//
 // A long brush stroke of the interface drawn with its ink (Ink.ts): in place of a filled SVG path,
 // a canvas inside the same SVG (a foreignObject over the stroke's bounds), so the stroke keeps its
 // place, its SVG's filter (the mist shadow) and any stretch or mirror of that SVG. The outline is

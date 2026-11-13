@@ -1,3 +1,5 @@
+// The island's headless exit: the land, its growth, the islanders' ages and the look's numbers.
+//
 // The island's headless exit: the land's shapes and growth, the islanders' ages and the island's
 // numbers for the renderer's look (island/look/), which load without three.js: the headless game
 // plays on them in node, and the page's settings (PageSettings.ts) take the look from here before

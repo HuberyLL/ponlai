@@ -13,6 +13,8 @@ import { vegetationMaterial } from './Material.ts';
 import type { PlacedVertex } from './PlantInstances.ts';
 import { writeMeter } from '../lighting/MeterLight.ts';
 
+// What every tree's surfaces are made from, with no image files: baked bark and its material.
+//
 // What every tree's surfaces are made from (BambooMaterials.ts; the bark for the trees to
 // come), with no image files:
 // - Bark: a tree's bake (a TSL function of the tile's uv: R bark height, G deadwood height, B

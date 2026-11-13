@@ -1,6 +1,8 @@
 import type { DayKey } from '../../render/index.ts';
 import type { IslandSkyRow, Rgb, SkyLook } from '../../render/setup.ts';
 
+// The island's sky look: its numbers for the sky's tables.
+//
 // The island's sky look (packages/island/look/: the island's numbers for the renderer's look tables,
 // look/Look.ts; look/SkyLook.ts makes the sky's tables from these, and its header says what each
 // table is). Upper-case names are this file's; a name in backticks with no file is sky/Sky.ts's or

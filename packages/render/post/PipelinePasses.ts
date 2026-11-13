@@ -22,6 +22,8 @@ import { waveMapsPass } from '../ocean/WaveMaps.ts';
 import { localLightsPass } from '../lighting/LocalLights.ts';
 import type { PassBuilder, Pipeline } from './Pipeline.ts';
 
+// The frame's passes on the frame graph, declared in order.
+//
 // The frame's passes on the frame graph, in order (`declarePasses`): the order and the rules are
 // Pipeline.ts's header (Frame graph). With them the temporal modes' scene half
 // (`declareTemporalScene`) and what the water refracts (`declareRefraction`). The pipeline's

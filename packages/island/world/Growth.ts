@@ -13,6 +13,8 @@ import type { IslandChunk, WorldData } from './types.ts';
 import { Villagers } from '../characters/Villagers.ts';
 import { SeabedRise } from './SeabedRise.ts';
 
+// The island grows in place: changed chunks and their dependents swapped in one frame.
+//
 // The island grows in place: the next piece is
 // generated in the background, and a Grow (`grow()`, the GUI's Island folder) swaps in only the
 // chunks that changed, in one frame, with every dependent following. No pipeline is built: a swap

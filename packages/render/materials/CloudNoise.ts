@@ -21,6 +21,8 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
+// Tileable noise fields for the clouds: the shape noise and the thin layer's patches.
+//
 // Tileable fields for the clouds:
 //   shape    64^3 RGB  Perlin-Worley shape noise at three frequencies, with its mip chain
 //            (`public/clouds/baseShape64.bin`, from tidewater's Sky Pro clouds)

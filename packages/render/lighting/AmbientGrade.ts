@@ -6,6 +6,8 @@ import { meterAmbient } from './MeterLight.ts';
 import { AMBIENT_KNOBS, DEFAULT_KNOBS as D, type AmbientKnobs, type AmbientTables } from '../look/AmbientLook.ts';
 import { overcastDeckLight, withMoon } from '../sky/Weather.ts';
 
+// The ambient grade: one table of knobs on the ambient light, per sun elevation and weather.
+//
 // The ambient grade: one table of knobs on the island's ambient light, per sun elevation and per
 // weather, so the art direction can depart from the physically lit result by the hour and the sky
 // (a style grade on a physically based base, the approach Patry describes: lighting

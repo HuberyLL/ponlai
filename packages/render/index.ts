@@ -1,3 +1,5 @@
+// The renderer's exit for the page: the only names other packages take from the renderer.
+//
 // The renderer's exit for the page: the names the island, the game and the page take from the
 // renderer, and no others. Another package imports the renderer through this file (or through
 // render/data.ts, for its plain code, or render/setup.ts, for what the page installs before the

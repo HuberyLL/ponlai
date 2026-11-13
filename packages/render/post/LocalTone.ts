@@ -10,6 +10,8 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// Local tone mapping: a gain on the frame's large-scale brightness that leaves detail alone.
+//
 // Local tone mapping: a gain on the frame's large-scale brightness that leaves its detail alone,
 // after Patry, "Real-Time Samurai Cinema" (SIGGRAPH 2021), on the bilateral grid of Chen, Paris and
 // Durand, "Real-time Edge-Aware Image Processing with the Bilateral Grid" (SIGGRAPH 2007). Large

@@ -1,3 +1,5 @@
+// Sky retuning: a tunable that changes the sky or the air marks the environment for a rebake.
+//
 // Tunables that change the sky or the air (debug/Tune.ts) mark it here through their `onChange`:
 // the frame reads most of them at once, but the environment's bakes (the reflection, the ambient
 // light and the irradiance the island takes from the sky) hold what the sky looked like when they

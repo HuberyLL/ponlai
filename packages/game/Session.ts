@@ -11,6 +11,8 @@ import { checkArgs } from './sim/schema.ts';
 import { StandInBrain } from './sim/standin.ts';
 import type { EntityId, IslandInput } from './sim/types.ts';
 
+// The game around its simulation, without the page: the record, brain, commands and save.
+//
 // The game around its simulation, without the page: the simulation installed (sim/Sim.ts) and its
 // record (Chronicle.ts), the brain in the islanders' slot, the stream of what happened handed to
 // its listeners, the player's commands checked at the entrance, the leader's words as each

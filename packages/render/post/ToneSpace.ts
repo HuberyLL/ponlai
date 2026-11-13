@@ -1,5 +1,7 @@
 import { Matrix3, Vector3 } from 'three/webgpu';
 
+// The display chain's colour spaces: the tone curve's working space and the white balance.
+//
 // The display chain's colour spaces (Pipeline.ts): the tone curve's working space and the white
 // balance, as 3x3 matrices built here from chromaticities, so the white balance costs nothing per
 // pixel beyond the two matrix products the curve takes anyway.

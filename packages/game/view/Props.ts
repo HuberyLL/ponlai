@@ -2,6 +2,8 @@ import * as THREE from 'three/webgpu';
 import { float, mix, mx_noise_float, positionGeometry, vertexColor } from 'three/tsl';
 import { GroundBounceLightingModel, writeMeter } from '../../render/index.ts';
 
+// What the game's stand-in props are built from: faceted pieces merged into one geometry.
+//
 // What the game's stand-in props (the chest and its construction site) are built from: faceted
 // pieces in linear albedo, baked into vertex colours and merged into one geometry per prop, under
 // one rough material in the island's own light. Pieces are copied out of templates, so the

@@ -1,3 +1,5 @@
+// The island's sea cliff, derived from the footprint alone as a face shed scar by scar.
+//
 // The island's sea cliff, derived from the footprint alone, so the land gets the same kind of coast
 // whatever shape it grows to, with no hand-placed features.
 //

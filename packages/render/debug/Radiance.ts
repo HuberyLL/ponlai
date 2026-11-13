@@ -3,6 +3,8 @@ import type { Pipeline } from '../post/Pipeline.ts';
 import { preExposure } from '../post/PreExposure.ts';
 import { type Aov, type AovResult, type RingsOptions, type RingsResult, forCellTexels, readAov, readRings } from './RadianceAov.ts';
 
+// The scene's linear radiance over screen boxes, as numbers, measured before the exposure.
+//
 // The scene's linear radiance over screen boxes, as numbers (debug builds:
 // `__PONLAI__.radiance( { boxes, source, image } )`, e.g. from tools/kit/probe.mjs or a capture's
 // `--eval`): the lighting layer measured before the exposure, the tone curve, the grade and the

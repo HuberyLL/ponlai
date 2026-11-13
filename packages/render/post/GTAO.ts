@@ -14,6 +14,8 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// Screen-space ambient occlusion by GTAO: the metre-scale shade the probes are too coarse for.
+//
 // Screen-space ambient occlusion: a soft, metre-scale loss of the ambient light where the grass,
 // the culms and the ground's relief close the sky over a point, the shade within the meadow's
 // blades, a grove's leaves and culms and the rock's relief, which the ambient volume's 2 m probes

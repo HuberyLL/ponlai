@@ -1,3 +1,5 @@
+// Plain data types the renderer reads and the island fills: a ground box and a ground field.
+//
 // Plain data types the renderer reads and the island fills: a box on the ground and a field over a
 // grid of the ground. Types only, importing nothing, so the world's workers and node can use them:
 // a file the chunk worker imports must not reach three.js (tools/repo/verify-layers.mjs).

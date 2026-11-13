@@ -4,6 +4,8 @@ import { markSkyRetune } from './SkyRetune.ts';
 import type { DayWindows, Span } from '../look/DayLook.ts';
 import type { Exposure } from '../look/ExposureLook.ts';
 
+// The day cycle: the sun, the moon and the stars over an equinox day, and the key light.
+//
 // The day cycle: an equinox day at a fixed latitude, its stars a fixed real sky; the moon is
 // placed, not orbited. One dominant key light (the sun by day, the moon by
 // night) drives terrain, characters, water and every shadow map; a sun/moon handoff

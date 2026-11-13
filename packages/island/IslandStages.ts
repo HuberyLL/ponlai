@@ -1,3 +1,5 @@
+// The island's stages: the island built a stage at a time on the renderer's stages.
+//
 // The island's stages: the island built a stage at a time on the renderer's stages
 // (RenderStages.ts), in the order the entry (main.ts) calls them. Each stage puts what it builds on
 // the one IslandParts object: the island's camera, the islanders' trail and shadow, the ground's

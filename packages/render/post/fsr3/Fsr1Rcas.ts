@@ -11,6 +11,8 @@ import {
 	ffxAsUInt32Cpu, ffxPackHalf2x16, type N,
 } from './Core.ts';
 
+// FSR 1's robust contrast-adaptive sharpening (RCAS) as the FSR 3 upscaler includes it.
+//
 // FSR 1's robust contrast-adaptive sharpening (RCAS) as the FSR 3 upscaler includes it: the host's
 // `FsrRcasCon` and the 32-bit `FsrRcasF` (FSR_RCAS_F), with FSR_RCAS_DENOISE on as
 // ffx_fsr3upscaler_rcas.h defines it, and FSR_RCAS_PASSTHROUGH_ALPHA off (the upscaler does not

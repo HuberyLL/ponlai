@@ -3,6 +3,8 @@ import type { FrameGraph } from './graph/FrameGraph.ts';
 import type { DynamicRange } from './RenderScale.ts';
 import { gpuAdapterInfo, gpuDevice, pendingTimestamps, resolveTimestamps, takeTimestamps, timestampCapacity, timestampPools, tracksTimestamps, type TimestampPool } from '../three/Backend.ts';
 
+// Dynamic resolution: the render scale that keeps the GPU's frame time inside the paced frame.
+//
 // Dynamic resolution (high tier): the scene's render scale moves between the tier's maximum and a
 // floor so that the GPU's frame time stays inside the paced frame (a 60 Hz frame, `FramePacer.ts`),
 // changing as seldom as it can: every change softens or sharpens the whole image at once.

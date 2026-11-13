@@ -6,6 +6,8 @@ import { tune } from '../debug/Tune.ts';
 import { PREVAILING_HEADING, type WeatherState } from '../sky/Weather.ts';
 import type { WindLook } from '../look/Look.ts';
 
+// The weather's one wind, integrated on the CPU, and the wind field all vegetation moves in.
+//
 // The weather's one wind, integrated on the CPU, what every part of the scene takes from it, and
 // the one wind field all vegetation moves in.
 //

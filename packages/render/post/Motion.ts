@@ -8,6 +8,8 @@ import { jitter } from './Jitter.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { preExposedRGBA, preExposedScalar } from './PreExposure.ts';
 
+// Motion vectors for the temporal modes, written with the scene's colour through an MRT.
+//
 // Motion vectors for the temporal modes (Antialiasing.ts: aa=taa|taau): where each surface point
 // drawn this frame was in the previous rendered frame, as NDC of the unjittered views. They are
 // written with the scene's colour into the frame graph's `sceneColor` and `velocity` (Pipeline.ts)

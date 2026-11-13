@@ -21,6 +21,8 @@ type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 type B = THREE.Node<'bool'>;
 
+// The light below the water's surface: one model for everything lit under it.
+//
 // The light below the water's surface, one model for everything lit under it (the terrain and the
 // sea floor, TerrainMaterial.ts), as tidewater's UnderwaterLighting (4811ba4) lights it: the key
 // light refracted at the mean surface and carried down the water column to the point under the long

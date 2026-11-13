@@ -7,6 +7,8 @@ import { SEABED_TILE } from './SeabedTile.ts';
 import { islandSurfaceHeight } from './WorldShapes.ts';
 import type { WorldData } from './types.ts';
 
+// Penglai's bamboo: the culms built where the groves place them, over the whole island.
+//
 // Penglai's bamboo (浮筠之簳): "green leaves, purple stems, seeds as big as pearls" (Wang Jia, Shiyi
 // ji, book 10, on Penglai), the one plant that text gives the island itself, the wind in its leaves
 // ringing like bells and chimes. Its real kin is the purple (black) bamboo, Phyllostachys nigra: a

@@ -1,3 +1,5 @@
+// The entry's first step: starts the world's generation as the page's modules load.
+//
 // The entry's first step: starts the world's generation as the page's modules load (the island's
 // world/WorldStart.ts `startWorld`), on the land a resumed game's save grew. main.ts imports this
 // module before the page's own (app/), so the world's workers run while the page sets up the

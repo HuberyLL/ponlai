@@ -11,6 +11,8 @@ import { type ShoreField, hash3i, mulberry32, type Rng } from '../../render/data
 import { fishGeometry, wingRoot, type Anatomy } from './FishGeometry.ts';
 import { makeFishMaterial, type Skin } from './FishMaterial.ts';
 
+// The wenyao: schools of flying fish off the island that swim, take flight and glide.
+//
 // The wenyao: the Shanhaijing's flying fish ("shaped like a carp, a fish's body with a bird's
 // wings, blue-grey markings, a white head and a red beak ... it flies by night"), in schools off
 // the island (docs/explanation/art-direction.md, Life). The body and the ways are a real flying fish's

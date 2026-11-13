@@ -1,6 +1,8 @@
 import type * as THREE from 'three/webgpu';
 import { tuneObject } from '../../render/index.ts';
 
+// The sward's tint under a closed sky: the colour its ambient light takes among the blades.
+//
 // What a closed sky's light turns into in the sward. Under a sun the sward's colour is the key's on
 // the blades. Under a closed sky only the ambient lights it, and what reaches the eye of it has
 // passed among the blades, through and off several of them, each keeping green and taking red and

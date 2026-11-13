@@ -1,6 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { KIND } from './CharacterMaterial.ts';
 
+// The islanders' long pointed ears, grown on each head at its own ear and bound to the head bone.
+//
 // The islanders are a Hylian-like people: human but for long pointed ears that sweep back and a
 // little up. Rather than editing each head of the kit, a small faceted ear is grown at the place
 // the head's own ear sits, found from the head's skin in the head bone's frame. Any head with

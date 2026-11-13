@@ -14,6 +14,8 @@ import type { EntityId } from './sim/types.ts';
 import { PLACEHOLDER_DAYS, PLACEHOLDER_NAMES, PLACEHOLDER_SKIES } from './ui/data/record.ts';
 import { LOCALES, locale } from './ui/i18n/i18n.ts';
 
+// The game's developer controls: a Game folder in the scene's lil-gui panel.
+//
 // The game's developer controls: a Game folder in the scene's lil-gui panel (H), not a player
 // interface. It pauses and resumes, saves, loads and starts a new game (the save's slot:
 // save.ts; `saved` says when the game was last saved and whether the page saves it itself), shows

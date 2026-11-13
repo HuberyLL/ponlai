@@ -1,3 +1,5 @@
+// The Purkinje shift: the colour the rods lend low light, turning dark colours blue.
+//
 // The Purkinje shift: the colour the rods lend low light. As the light falls the rods take over
 // from the cones and, sharing their pathways, add to the cones' signals, so a moonlit scene is not a
 // darker day: its dark colours come up and turn blue. Patry presented the model and its shader in

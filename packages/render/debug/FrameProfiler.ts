@@ -1,3 +1,5 @@
+// The frame profiler for `?profile`: each pass's GPU time and the frame's CPU time.
+
 // three is imported for its types only: the page hands in the inspector's base class, so this
 // lazily loaded module does not split three out of the main bundle into a chunk of its own.
 import type * as THREE from 'three/webgpu';

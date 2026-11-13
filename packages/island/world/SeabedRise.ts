@@ -6,6 +6,8 @@ import type { ChunkData } from './Chunks.ts';
 import type { Square, WorldFields } from './WorldFields.ts';
 import type { RefractedSun } from '../../render/index.ts';
 
+// The shoal: the sea floor under the next piece rises toward its grown form as the piece nears.
+//
 // The shoal: the sea floor under the next piece rises toward its grown form as the piece
 // nears, so the coming land shows as a shallow before it is swapped in. Only the floor's near tiles
 // move; the stones, the contact shade and every other kind change at the swap (Growth.ts), as

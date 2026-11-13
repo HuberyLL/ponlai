@@ -7,6 +7,8 @@ import type { Sim } from './Sim.ts';
 import { planar } from './maths.ts';
 import type { BuildingState, SimState, Vec2 } from './types.ts';
 
+// The buildings system: placing, building and storing for every registered kind of building.
+//
 // The buildings system: what the player places, of the kinds registered (registry.ts BuildingDef:
 // a footprint, the work it takes, the room of its store; today's in content/). This module names
 // no kind. Placing is generic (`placeBuilding`, refused by `blueprintRefusal`): a building needs

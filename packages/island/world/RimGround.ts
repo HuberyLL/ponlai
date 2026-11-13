@@ -3,6 +3,8 @@ import { ISLAND_TOP, islandSurfaceHeight, solidSide, type Footprint } from './Wo
 import { type Bounds, type ShoreField, noise3, smoothstep } from '../../render/data.ts';
 import type { RimGroundField, RimLipData, SDF } from './types.ts';
 
+// The rim ground: the coast's lip, the turf's retreat and the root depth, on a world lattice.
+
 export const RIM_FRINGE_FADE = 0.12;
 export const RIM_INNER_LIMIT = 0.70;
 export const RIM_MAX_DROP = 0.30;

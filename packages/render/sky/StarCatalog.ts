@@ -2,6 +2,8 @@ import * as THREE from 'three/webgpu';
 import { storage } from 'three/tsl';
 import { fetchAsset } from '../FetchAsset.ts';
 
+// The real night sky's data: the star catalogue and the Milky Way map, loaded once.
+//
 // The real night sky's data, loaded once before the first sky bake:
 //   stars.bin     the Yale Bright Star Catalogue (9096 stars to about magnitude 6.5), packed by
 //                 tools/island/build-star-catalog.mjs

@@ -1,6 +1,8 @@
 import { lookup } from '../i18n/i18n.ts';
 import { PALETTE } from '../Palette.ts';
 
+// How the interface shows the body's needs: each need's icon and colour by its id.
+//
 // How the interface shows the body's needs (docs/explanation/ui.md, Islanders): each need's icon and colour,
 // by the simulation's need id (sim/registry.ts NeedDef), for the tag's bars, the alerts over the
 // head and the record's mark. A need without a look of its own here shows with the default, the

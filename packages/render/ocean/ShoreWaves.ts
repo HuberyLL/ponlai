@@ -17,6 +17,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 
+// The white water at the rock: the shore's wave fields as textures and the foam they drive.
+
 // The white water at the rock (see the note at the class): `omega` the one frequency (rad/s) its
 // phase takes the incident wave at (a 3.1 s wave's: the waves that reach the rock run about 3.3 s
 // in the kept weathers), `crest` the share of a wave's cycle from the

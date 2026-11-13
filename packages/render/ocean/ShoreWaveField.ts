@@ -6,6 +6,8 @@
 
 import type { ShoreField } from '../RenderTypes.ts';
 
+// The rocky shore's wave fields as plain data, a function of the shore's distance field.
+//
 // The rocky shore's wave fields as plain data (no three, no DOM): a function of the shore's
 // distance field alone, so the page builds them at load and a grown island's in a worker
 // (shoreFieldWorker.ts, World growth in Growth.ts); ShoreWaves.ts makes their textures.

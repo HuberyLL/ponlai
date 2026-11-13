@@ -4,6 +4,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CharacterShadow, type LookColours } from '../../island/index.ts';
 import { GroundBounceLightingModel, writeMeter } from '../../render/index.ts';
 
+// A plain islander built in code, shown when a figure's model cannot load.
+//
 // A plain islander built in code, shown when a figure's model cannot load (the models are
 // git-ignored local assets), so an islander stays seen: faceted low-poly pieces in its look's
 // colours, baked into vertex colours, under one rough material in the island's own light.

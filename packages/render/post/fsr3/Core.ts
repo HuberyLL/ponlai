@@ -9,6 +9,8 @@ import {
 	Fn, float, uint, min, max, mix, floor, pow, saturate, select, floatBitsToUint, uintBitsToFloat, uvec2,
 } from './Tsl.ts';
 
+// The ffx_core helpers the FSR 3 upscaler calls, in upstream's names and maths.
+//
 // The ffx_core helpers the FSR 3 upscaler's files call, in upstream's names, in the order the
 // upscaler's headers first need them. Only what the port calls is here (ffx_core holds several
 // hundred helpers); each keeps upstream's maths, and the approximations by bitcast are bit-exact

@@ -2,6 +2,8 @@ import type { Sim } from '../../sim/Sim.ts';
 import type { Villager } from '../../sim/types.ts';
 import { lookup, t } from '../i18n/i18n.ts';
 
+// What the interface says in words for the simulation's states, places, items and refusals.
+//
 // What the interface says in words for the simulation's states: what an islander is doing (the name
 // tag's second line), the names of places (an islander, as a place, by their name) and items, and
 // the reasons a placement is refused. The simulation speaks English to the brain (its tools,

@@ -3,6 +3,8 @@ import { min, normalWorldGeometry, select, vec3 } from 'three/tsl';
 import { debugFlags } from './DebugFlags.ts';
 import { STORE_CEILING, preExposure, sceneUnits } from '../post/PreExposure.ts';
 
+// The kinds' view: every lit surface drawn unlit in a flat colour that names its kind.
+//
 // The kinds' view (debug builds, `flags=classes`, read at load): every lit surface drawn unlit in a
 // flat colour that names its kind, so a script reads what each pixel shows (a script that reads cells:
 // `__PONLAI__.radiance( { aov: 'class' } )`, debug/RadianceAov.ts).
@@ -32,7 +34,9 @@ import { STORE_CEILING, preExposure, sceneUnits } from '../post/PreExposure.ts';
 // may answer 'slope' for a surface that is ground where the geometry's normal is within 40
 // degrees of up and rock elsewhere. What no rule names is leaves when its material carries the
 // vegetation's tag (`userData.vegetation`, vegetation/Coverage.ts) and other otherwise. The
-// island's rules: world/IslandClasses.ts.
+// island's rules: world/IslandClasses.ts. The rules are asked as each material builds, so a scene
+// registers them before its materials build: a material built earlier never sees a rule
+// registered after it, and nothing reports that.
 //
 // Run from debug/LightLayer.ts's hook (the lighting model roots' constructors), it overrides the
 // model's light like `albedoOnly` and leaves what a material adds after its lighting: a material's

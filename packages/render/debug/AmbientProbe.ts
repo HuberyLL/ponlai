@@ -4,6 +4,8 @@ import { ambientField, ambientSkyVisibility } from '../lighting/AmbientSample.ts
 import type { Bounds } from '../RenderTypes.ts';
 import { releaseAttribute } from '../three/Attributes.ts';
 
+// `__PONLAI__.ambientProbe`: the ambient light's irradiance on open level ground, from the probes.
+//
 // `__PONLAI__.ambientProbe( options )`: the ambient light's irradiance on open level ground, read
 // from the probes' volume itself rather than from screen cells (E_up for a script that reads cells: the island's level
 // ground is mostly meadow, so a frame holds few bare open cells and their mean was noise). Points on

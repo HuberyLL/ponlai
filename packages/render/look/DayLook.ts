@@ -2,6 +2,8 @@ import { tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
 import type { DayLook, Span } from './Look.ts';
 
+// The day's windows built from a look's table: the key's handoff, dusk and the night's layers.
+//
 // The day's windows built from a look's table (look/Look.ts `DayLook`): where the key turns from
 // the sun to the moon, the dusk's windows, how deep under all of it each night layer comes in and
 // the ease at the window's night end. Like the exposure (look/ExposureLook.ts), they are taken as

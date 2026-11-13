@@ -1,6 +1,8 @@
 import type { DayKey } from '../../render/index.ts';
 import type { BloomKey, DesaturationKey, DisplayLook, Rgb } from '../../render/setup.ts';
 
+// The island's display look: contrast, grade, bloom, vignette, white balance and tone curve.
+//
 // The island's display look (packages/island/look/: the island's numbers for the renderer's look
 // tables, look/Look.ts; look/DisplayLook.ts makes the display's tables from these): the shade's contrast, the desaturation,
 // overcast's highlights toward grey, the bloom's and the vignette's strengths, the vignette's

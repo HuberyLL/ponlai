@@ -3,6 +3,8 @@ import { texture, vec2 } from 'three/tsl';
 import { MEADOW_EXTENT, MEADOW_SIZE, meadowTexels } from '../materials/Meadow.ts';
 import { ISLAND_TOP, SWELL } from './WorldShapes.ts';
 
+// The sward's cover and depth over the ground, baked from the meadow's anchors.
+//
 // The sward's cover and depth over the ground: whether and how deep in the meadow each point of its
 // turf lies, for the ground under the blades (TerrainMaterial.ts's meadow ground). Every anchor that
 // holds turf gives its tussock's depth (Grass.ts `plantGrass`: the share of a tussock's roots its

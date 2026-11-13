@@ -18,6 +18,8 @@ import type { Body, Sex } from '../../island/land.ts';
 // the game's content: it registers its definitions, which the simulation reads (registry.ts)
 import './content/index.ts';
 
+// The island simulation: a fixed step of one game second, with every change kept in SimState.
+//
 // The island simulation: a fixed step of one game second, with every change kept in SimState, so
 // a save is the state itself. One seeded generator (SimState.rng) is its only source of chance.
 // The islanders are bodies on the ground grid with needs that fall (needs.ts), a bag (items.ts) and

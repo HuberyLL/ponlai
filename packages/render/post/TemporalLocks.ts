@@ -8,6 +8,8 @@
 import * as THREE from 'three/webgpu';
 import { float, max, min, mix, abs, select, saturate } from 'three/tsl';
 
+// FSR 2's accumulation measures for moving pixels, as the running resolve uses them.
+//
 // FSR 2's accumulation measures for moving pixels, as TemporalAA.ts's running resolve uses them
 // (TemporalAA.ts's header: "Movers"). Ours keeps its history's weight in frames' worth of a frame's
 // weight (FSR 2: in Lanczos sample weights), so FSR 2's `upsampledWeight` is one frame here and its

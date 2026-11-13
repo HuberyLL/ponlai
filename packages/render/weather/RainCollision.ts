@@ -20,6 +20,8 @@ import { shared } from '../shared.ts';
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 
+// The rain's collision map: the island's highest surface seen from straight above.
+
 // Texels per metre: a drop finds the meadow, a plant's crown or a hanging strand to within
 // a few centimetres, finer than a splash.
 const TEXELS_PER_METRE = 14;

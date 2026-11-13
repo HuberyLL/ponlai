@@ -12,6 +12,8 @@ import type { AmbientReceiver } from '../lighting/AmbientSample.ts';
 import { writeMeter } from '../lighting/MeterLight.ts';
 import { tuneApply, tuneUniform } from '../debug/Tune.ts';
 
+// The vegetation's material factory: every plant kind's surface built by one sequence.
+//
 // The vegetation's material factory: every plant kind's surface is built here by one sequence of
 // calls, the one each kind used to write by hand, in the same order, so the node graphs (and the
 // shaders, the pipelines and the image) are the ones the kinds built before:

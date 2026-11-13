@@ -1,3 +1,5 @@
+// The world's worker: each job builds one chunk from the land's window round it, or the land.
+//
 // The world's worker: WorldChunks.ts runs a pool of these, and each job
 // is one chunk, built from the land field's window round it (Chunks.ts `buildChunk`), or the land
 // itself. Any worker can run any job; a job's result depends only on what it names (the chunk, the

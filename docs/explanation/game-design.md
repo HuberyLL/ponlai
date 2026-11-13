@@ -1,8 +1,8 @@
 # Ponlai: game design
 
 The living design document for the game. It records what the game is and the decisions behind it,
-not how the code does it (that is in the modules' header comments; `docs/reference/code-map.md` has
-the map). Keep it short; change it when a decision changes.
+not how the code does it (that is in the modules' header comments; `ARCHITECTURE.md` has the
+map). Keep it short; change it when a decision changes.
 
 ## The game in one sentence
 

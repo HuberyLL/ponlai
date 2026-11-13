@@ -1,5 +1,7 @@
 import type { LocalLightsLook } from '../../render/setup.ts';
 
+// The island's local lights look: its numbers for the local lights' table.
+//
 // The island's local lights look (packages/island/look/: the island's numbers for the renderer's look
 // tables, look/Look.ts; the local lights take it where they are made, render/lighting/LocalLights.ts
 // `createLocalLights`).

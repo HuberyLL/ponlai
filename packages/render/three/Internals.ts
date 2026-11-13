@@ -1,5 +1,7 @@
 import { REVISION } from 'three/webgpu';
 
+// The checks of what the page reaches in three beyond its public interface.
+//
 // What the page reaches in three beyond its public interface is listed in `three-internals.json`
 // (an entry per member, method or mirrored code: where it lives in three, how it is used, which of
 // our functions needs it), and `tools/repo/verify-three-internals.mjs` checks the list against the three

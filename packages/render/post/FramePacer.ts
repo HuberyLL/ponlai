@@ -1,3 +1,5 @@
+// Frame pacing: renders on a steady divisor of the display's refresh.
+//
 // Frame pacing: renders on a steady divisor of the display's refresh, so a display faster than the
 // frame rate the scene holds shows every frame for the same number of refreshes.
 //

@@ -1,5 +1,7 @@
 import * as THREE from 'three/webgpu';
 
+// The walking loop's curve and the distance to it, which keeps the flowers clear of it.
+//
 // The walking loop's curve (WalkLoop.ts gives its waypoints) and the distance to it, which the
 // meadow's planting keeps its flowers clear by (Grass.ts).
 

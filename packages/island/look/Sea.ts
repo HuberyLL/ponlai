@@ -1,5 +1,7 @@
 import type { SeaLook } from '../../render/setup.ts';
 
+// The island's sea look: the strengths of the sea's large-scale detail and the distant swell.
+//
 // The island's sea look (packages/island/look/: the island's numbers for the renderer's look tables,
 // look/Look.ts; the renderer's stage hands them to the sea as it makes it, render/RenderStages.ts
 // `createSeaAndPipeline`): the strengths of the sea's large-scale detail and

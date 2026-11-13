@@ -11,6 +11,8 @@ import { runSteps, type Shared } from '../../render/index.ts';
 import type { Body, Sex } from './Ages.ts';
 import type { TrampleWalker } from '../world/Trample.ts';
 
+// The islanders assembled from modular parts on one rig, one of them walking a loop in the meadow.
+//
 // Islanders assembled from modular low-poly parts (Ultimate Modular Characters by Quaternius,
 // CC0): every outfit shares one rig, so a head, body, legs and feet from different outfits fit
 // one skeleton and its animation clips. The parts are repainted in the island's palette as

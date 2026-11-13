@@ -1,5 +1,7 @@
 import { uniform } from 'three/tsl';
 
+// FSR 3's texture mip bias, as a scale on explicit sampling gradients.
+//
 // FSR 3's texture mip bias, log2( render width / display width ): the level the display's own
 // resolution would sample, as the scale it takes on explicit sampling gradients: 2^bias. AMD's guide
 // adds a further -1 for crispness; against the ground truth's rest (native resolution, no bias)

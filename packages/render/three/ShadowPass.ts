@@ -3,6 +3,8 @@ import type { Camera, LightShadow, Material, Node, Renderer, RenderTarget, Scene
 import { vec4 } from 'three/tsl';
 import { missing } from './Internals.ts';
 
+// A light's shadow as three draws it: the shadow node, its map and the caster's material.
+//
 // A light's shadow as three r186 draws it (lighting/SunShadow.ts): the shadow node that draws its
 // map, the map it made, and the material a caster is drawn with into it. three draws a caster with
 // the shadow node's material in its own's place (scene.overrideMaterial), taking the caster's

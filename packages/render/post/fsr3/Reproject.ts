@@ -12,6 +12,8 @@ import { CustomTextureSample, FetchBicubicSamples, getLanczosSampler1D } from '.
 import type { Fsr3Bindings } from './Bindings.ts';
 import type { Fsr3ShaderOptions } from './Host.ts';
 
+// FSR 3's history reprojection: last frame's colour and lock, sampled with Lanczos.
+//
 // The history's reprojection: the previous frame's upscaled colour and lock, sampled with Lanczos
 // at the reprojected position, and the motion vector the accumulation uses.
 //

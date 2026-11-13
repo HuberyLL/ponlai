@@ -15,16 +15,16 @@
 // tool paths are ours and are checked. ABSENT lists the paths written on purpose for a folder that
 // has no file yet, each with its reason and the files allowed to name it.
 //
-// One more check keeps the index and the map honest: in AGENTS.md and docs/reference/code-map.md
-// (each while it is tracked), every file named in backticks (a name ending in a code or data
-// extension, written whole or as the end of its path, as the map writes a file under its section's
-// folder) names a tracked file, so a file that moves or goes takes its line along.
+// One more check keeps the index and the architecture page honest: in AGENTS.md and
+// ARCHITECTURE.md (each while it is tracked), every file named in backticks (a name ending in a code
+// or data extension, written whole or as the end of its path) names a tracked file, so a file that
+// moves or goes takes its line along.
 //   node tools/repo/verify-doc-paths.mjs     exit 0 when every path exists, 1 with the list
 // Runs as part of `npm run lint:docs`. Pure git, no GPU.
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 
-const NAMED = [ 'AGENTS.md', 'docs/reference/code-map.md' ];
+const NAMED = [ 'AGENTS.md', 'ARCHITECTURE.md' ];
 const FILE = /`([\w./-]+\.(?:ts|mjs|js|json|html|py|css|txt))`/g;
 
 const SKIP = /(LICENSE|LICENCE|package-lock\.json$)/;
@@ -99,4 +99,4 @@ if ( missing.length ) {
 
 }
 
-console.log( `every path into docs, skills and tools (${ paths } in ${ files.size } files) and every file in the index and the map (${ named }) names a file` );
+console.log( `every path into docs, skills and tools (${ paths } in ${ files.size } files) and every file named in AGENTS.md and ARCHITECTURE.md (${ named }) names a file` );

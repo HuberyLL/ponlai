@@ -1,3 +1,5 @@
+// A running count of the render and compute pipelines the renderer has created (debug builds).
+//
 // A running count of the render and compute pipelines the renderer has created (debug builds only;
 // `diagnostics.pipelines`). three's WebGPU backend creates every pipeline through one of two
 // methods, whether the device call beneath is synchronous or `create*PipelineAsync` (a

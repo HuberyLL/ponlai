@@ -5,6 +5,8 @@ import { PERSON_REACH, personPlace } from '../people.ts';
 import { register } from '../registry.ts';
 import type { Vec2, Villager } from '../types.ts';
 
+// What one islander can do with another at a person: give and follow.
+//
 // What one islander can do with another, at a person (people.ts: a place that moves, beside whom
 // one stands within PERSON_REACH):
 //

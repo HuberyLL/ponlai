@@ -1,3 +1,5 @@
+// The renderer's neutral inputs: plain worlds for a scene that has no world of its own.
+//
 // The renderer's neutral inputs: what a scene hands the renderer's stages where it has no world of
 // its own to derive them from, in the formats a world gives them in (the ambient light's probes:
 // lighting/ProbeFormat.ts; the ground the bounce reads: lighting/GroundBounce.ts `BounceGround`;

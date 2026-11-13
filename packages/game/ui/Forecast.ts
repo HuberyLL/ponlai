@@ -9,6 +9,8 @@ import { attr, css, el, svgEl } from './dom.ts';
 import { InkPath } from './InkPath.ts';
 import { t } from './i18n/i18n.ts';
 
+// The weather in the top row: a live icon for now and a brush stroke for the next 24 hours.
+//
 // The weather in the top row (docs/explanation/ui.md, Weather forecast; the design canvas's WeatherAnim): the
 // weather now as one live icon in parts, and the next 24 game hours as one brush stroke beside it.
 //

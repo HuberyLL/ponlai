@@ -5,6 +5,8 @@ import { SUN_GLINT_DISC } from './SunDisc.ts';
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 
+// The specular BRDF every physical model shares: GGX, Smith visibility and Schlick's Fresnel.
+//
 // The specular BRDF every physical model shares (lighting/GroundBounce.ts and the models built on
 // it): a GGX distribution, a Smith visibility and Schlick's Fresnel, the terms Patry's shading talk
 // lists ("Samurai Shading in Ghost of Tsushima", Jasmin Patry, SIGGRAPH 2020); the Smith term

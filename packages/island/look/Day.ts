@@ -1,5 +1,7 @@
 import type { DayLook } from '../../render/setup.ts';
 
+// The island's day look: the key's turn to the moon, dusk windows, night layers and exposure.
+//
 // The island's day look (packages/island/look/: the island's numbers for the renderer's look tables,
 // look/Look.ts; look/DayLook.ts `createDayWindows` makes the day's windows from these, and its
 // comments say what each table is): where the

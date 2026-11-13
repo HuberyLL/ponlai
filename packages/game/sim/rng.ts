@@ -1,3 +1,5 @@
+// The simulation's one random generator: mulberry32 with its state kept in SimState.
+//
 // The simulation's one random generator: mulberry32 (as packages/render/util/noise.ts) with its whole state
 // kept in SimState.rng, so a save carries it and a loaded game draws the same numbers next.
 

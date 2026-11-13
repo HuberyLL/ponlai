@@ -16,6 +16,8 @@ import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import type { SceneLatents } from '../post/ExtraPass.ts';
 import { reactiveUniforms, velocityOutput } from '../post/Motion.ts';
 
+// Thunderstorm lightning over the sea: each strike's profile, light and flash.
+//
 // Thunderstorm lightning, kilometres out over the sea. Most strikes stay inside the cloud and
 // light it from within (sheet lightning); the rest come down to the sea as a branching channel
 // (LightningStrike.ts). Following VolumetricCloudsCS1, every strike has its own profile: how

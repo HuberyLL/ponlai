@@ -26,6 +26,8 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// The clouds' model: the shell's, density's, light's and march's constants and shared helpers.
+//
 // The clouds' model (Clouds.ts, whose header says what it is and why): the constants of the shell, the
 // density, the light and the march, the dome's and the shadow map's layouts, and the helpers every
 // kernel shares (the density's weather noise, the phase, the dome's mapping, the deck's forward

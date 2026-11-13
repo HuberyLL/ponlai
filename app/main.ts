@@ -1,3 +1,5 @@
+// The page: the one place that assembles it, stage by stage, from three sets of parts.
+//
 // The page: the one place that assembles it. It creates the three objects the page is built on
 // (the renderer's parts, the island's, the page's own) and calls the stages that fill them in order:
 // the renderer's (RenderStages.ts), the island's (IslandStages.ts) and the page's (app/: the camera

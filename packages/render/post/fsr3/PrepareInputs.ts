@@ -14,6 +14,8 @@ import {
 import type { Fsr3Bindings } from './Bindings.ts';
 import type { Fsr3ShaderOptions } from './Host.ts';
 
+// FSR 3's first pass: dilated depth and motion, reconstructed previous depth and luma.
+//
 // The first pass at render size: the nearest depth of each 3 x 3 neighbourhood (the dilated depth)
 // and the motion vector there (the dilated motion), the nearest depth scattered to where it was
 // last frame (the reconstructed previous depth, an atomic min), the farthest depth in metres and

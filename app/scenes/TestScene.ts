@@ -1,3 +1,5 @@
+// A test scene's declaration: what it tests, its views, hours, weathers and readings.
+//
 // A test scene's declaration and the parts every scene is built from. A test scene is a small
 // scene of the renderer alone, which the scene page (ScenePage.ts) builds with the renderer's
 // stages on the renderer's neutral inputs (NeutralInputs.ts): level ground of one albedo under an

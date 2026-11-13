@@ -2,6 +2,8 @@ import type { OpsMode, OpsTable, PassOps } from './GraphCompiler.ts';
 import { settings, type SettingsQuery } from '../../Settings.ts';
 import { gpuDevice, wrapBeginRender } from '../../three/Backend.ts';
 
+// The frame graph's attachment ops: stores discarded and resolves dropped where unread.
+//
 // The frame graph's attachment ops applied to the render passes three records: a store discarded
 // where nothing later reads the attachment, a multisample resolve dropped where nothing samples it
 // before the next draw into the same samples. The table is derived from the passes that run in the

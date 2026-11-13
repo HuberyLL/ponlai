@@ -1,3 +1,5 @@
+// The haze's medium in closed form, shared by the haze and the clouds' march.
+//
 // The haze's medium in closed form, shared by the haze (VolumetricHaze.ts, whose header describes
 // the medium) and the clouds' march (sky/Clouds.ts, which ends where the haze closes):
 //   - `meanExtinction`: the medium's mean density over a span of heights, so an optical depth is a

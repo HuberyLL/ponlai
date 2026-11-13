@@ -9,6 +9,8 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type M4 = THREE.UniformNode<'mat4', THREE.Matrix4>;
 
+// The meadow's screen-space shadows: the shade the blades and tussocks cast on each other.
+//
 // The meadow's screen-space shadows: the key light's shade the blades and tussocks cast on each
 // other, at the scale the sun's map cannot hold (the blades do not cast into it, MeadowCanopy.ts).
 // Screen-space shadows over the depth (Graham Aldridge, Bend Studio, Days Gone, SIGGRAPH 2023) as a

@@ -18,6 +18,8 @@ import { Session } from './Session.ts';
 import { stockOf } from './sim/stock.ts';
 import type { EntityId, IslandInput, Items } from './sim/types.ts';
 
+// The island as a game (?game): the headless session hosted on the page, with its view and UI.
+//
 // The island as a game (?game): the game around its simulation runs headless in a session
 // (Session.ts: the simulation of packages/game/sim, which runs the islanders' bodies, their needs and the
 // places they act at; its record, Chronicle.ts; the brain in its slot, the stand-in of plain rules by

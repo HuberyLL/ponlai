@@ -11,6 +11,8 @@ type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 type Reflected = { directDiffuse: V3; directSpecular: V3; indirectDiffuse: V3; indirectSpecular: V3 };
 
+// The characters' cel material: stepped sunlight, the island's ambient fill and a thin rim.
+//
 // Characters are drawn rather than rendered: sunlight steps from light to shade over a narrow
 // band, the shade is filled by the same sky and sunlit ground that light the island, and a
 // thin rim catches the sun along the silhouette. The light's colour, the sky's irradiance and

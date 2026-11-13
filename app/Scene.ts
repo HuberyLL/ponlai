@@ -1,3 +1,5 @@
+// The scene jump: moves the page to another scene as a fresh load of its query holds it.
+//
 // The scene jump: `establishScene` moves the page to another scene as a fresh load of its query
 // holds it, and SCENE_OPTIONS names the query options that make a scene (the tools read the list
 // from this file: tools/kit/parity/adhoc.mjs).

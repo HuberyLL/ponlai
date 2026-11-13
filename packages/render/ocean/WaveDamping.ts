@@ -4,6 +4,8 @@ import type { OceanFFT } from './OceanFFT.ts';
 import type { ShoreWaves } from './ShoreWaves.ts';
 import type { Shared } from '../shared.ts';
 
+// How much of each FFT cascade a point of the sea keeps: depth, the lee and the rock.
+//
 // How much of each FFT cascade a point of the sea keeps: tidewater's shallow-water attenuation by
 // the floor's depth under it (OceanFFT.attenuation), the island's lee (the shelter field: every
 // band, see LEE) and, for the two short cascades, the last 7 m before the rock.

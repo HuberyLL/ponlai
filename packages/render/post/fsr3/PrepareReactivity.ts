@@ -15,6 +15,8 @@ import {
 } from './Common.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
+// FSR 3's reactivity pass: disocclusions, shading change, reactiveness and new locks.
+//
 // Prepares what the accumulation weighs by, at render size: disocclusions (this depth against the
 // reconstructed previous depth), the shading change (the dilated reactive mask or the
 // shading-change pass), the reactiveness (motion divergence or the transparency mask), the

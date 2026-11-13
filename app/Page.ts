@@ -1,3 +1,5 @@
+// The page's own parts: what the GUI, camera views, frame, scene jump and diagnostics share.
+//
 // The page's own parts: what the page's modules (the GUI, the camera views, the frame, the scene
 // jump, the diagnostics) build and share, on one object the entry (main.ts) creates beside the
 // renderer's (RenderStages.ts) and the island's (IslandStages.ts).

@@ -28,6 +28,8 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// The rain's GPU drops: streaks and splashes in camera volumes, collided against a height map.
+
 // Under taa and taau (post/Antialiasing.ts AFTER_RESOLVE) the streaks, splashes and rings draw after
 // the temporal resolve, at the canvas's resolution and unjittered (`afterGroup`,
 // post/AfterResolve.ts): no depth buffer there, so they test the render texels around their pixel

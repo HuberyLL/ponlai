@@ -4,6 +4,8 @@ import { IslandGround } from './IslandGround.ts';
 import type { GroundGrid } from '../world/ChunkDerived.ts';
 import { SHELF_REACH } from '../world/Bathymetry.ts';
 
+// The island's camera controls: grab, orbit and zoom by hand, or held at the island's framing.
+//
 // The island's camera, in the manner of a management or island-building game (Islanders,
 // Dorfromantik; Anno, Frostpunk and Planet Zoo differ mostly in which button does what). The hand
 // moves it while `handInput` is on (main.ts: on unless the query says `cameraInput=off`, the GUI's

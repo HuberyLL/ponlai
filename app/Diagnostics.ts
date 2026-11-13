@@ -1,3 +1,5 @@
+// The page's diagnostics and debug handles for the tools and the console, on debug pages only.
+//
 // The page's diagnostics and debug handles: `window.__THREE_GAME_DIAGNOSTICS__`, refreshed every
 // 30 frames, and `window.__PONLAI__`, the scene's handles for the capture and profiling tools and
 // the console. Both exist only on the dev server or with `?debug` / `?profile`.

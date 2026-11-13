@@ -15,6 +15,8 @@ import { CROWN_SCALE, swardField } from '../world/SwardField.ts';
 import { seabedAlbedo } from './SeabedLook.ts';
 import { FLOOR_ALBEDO } from '../world/SeabedTile.ts';
 
+// The rock and sea floor's PBR materials, built procedurally and lit through the water.
+
 // The meadow's ground shaded by its crowns toward the light (`meadowGroundLight`); off with
 // `flags=groundCast:false` at load (the canopy's mean depth instead).
 const GROUND_CAST = debugFlags.groundCast !== false;

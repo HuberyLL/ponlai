@@ -2,6 +2,8 @@ import type * as THREE from 'three/webgpu';
 import type { FrameGraph } from './graph/FrameGraph.ts';
 import { checkDeclarations, type Declarations } from '../Extensions.ts';
 
+// The pipeline's two openings to what it does not know: extra passes and deferred draws.
+//
 // The pipeline's two openings to what it does not know: the scene's extra passes, and the names
 // of its scene passes that take draws registered for later.
 

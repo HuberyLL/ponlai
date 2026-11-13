@@ -8,7 +8,8 @@
 // the type check, the code lint (`npm run lint`: the project's rules as ESLint rules,
 // eslint.config.mjs), the direction of imports between the layers, the packages' exits and the page
 // check (verify-layers), the exits' loading (verify-exits), the page's settings against their docs
-// (verify-settings), the files' size (verify-file-size), the three.js internals the code reaches into
+// (verify-settings), the files' size (verify-file-size), the modules' header first lines
+// (verify-headers), the three.js internals the code reaches into
 // (verify-three-internals), the generic tools apart from the project (verify-kit), no binary in git
 // (verify-no-binaries, every file in the index), nothing tracked under .claude/ but the public
 // skills' links (verify-skill-links), then the CPU regression tools (the
@@ -63,6 +64,7 @@ const checks = [
 	[ 'verify-exits', node( 'repo/verify-exits.mjs' ) ],
 	[ 'verify-settings', node( 'repo/verify-settings.mjs' ) ],
 	[ 'verify-file-size', node( 'repo/verify-file-size.mjs' ) ],
+	[ 'verify-headers', node( 'repo/verify-headers.mjs' ) ],
 	[ 'verify-three-internals', node( 'repo/verify-three-internals.mjs' ) ],
 	[ 'verify-kit', node( 'repo/verify-kit.mjs' ) ],
 	[ 'verify-no-binaries', node( 'verify-no-binaries.mjs' ) ],

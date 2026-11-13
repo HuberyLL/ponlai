@@ -2,6 +2,8 @@ import type { Camera, Material, MRTNode, Mesh, Node, NodeMaterial, Object3D, Qua
 import type BloomNode from 'three/addons/tsl/display/BloomNode.js';
 import { missing } from './Internals.ts';
 
+// The three.js steps for building a draw, which the frame graph's ahead-of-time compiles take.
+//
 // three r186's steps for building a draw, which the frame graph's ahead-of-time compiles
 // (post/graph/Compile.ts) take in place of `renderer.compileAsync`'s own: what a draw's node state
 // and pipeline are made from, and the passes a bloom draws. Each is three's own code or state,

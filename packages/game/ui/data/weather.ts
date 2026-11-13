@@ -2,6 +2,8 @@ import { DAY_PRESETS, type WeatherName } from '../../../render/index.ts';
 import { t } from '../i18n/i18n.ts';
 import type { Catalogue } from '../i18n/i18n.ts';
 
+// The kinds of weather the player is shown, and how the live icon draws each.
+//
 // The kinds of weather the player is shown (docs/explanation/ui.md, Weather forecast): 晴 (clear and fair: a third of
 // the sky in small cloud is still a fine day), 多云 (the parked cloudy) and 阴 (the parked overcast), with night faces for 晴 (the moon) and
 // 多云 (the moon behind cloud). The parked kinds (雨, 风暴, 雾) join as rows when their weathers

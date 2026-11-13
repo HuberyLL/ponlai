@@ -3,6 +3,8 @@ import type * as THREE from 'three/webgpu';
 
 type F = THREE.Node<'float'>;
 
+// The vegetation's level of detail by distance: one rule every plant kind thins by.
+//
 // The vegetation's level of detail by distance: one rule every plant kind thins by (today the
 // meadow, Grass.ts; the plant kinds to come follow it).
 //

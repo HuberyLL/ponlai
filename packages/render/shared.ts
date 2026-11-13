@@ -5,6 +5,8 @@ import { displacementUniforms } from './vegetation/Displacement.ts';
 import { ABSORPTION, BACKSCATTER, FORWARD_ANGLE, FORWARD_SCATTER, SCATTER } from './ocean/SeaOptics.ts';
 import type { Look } from './look/Look.ts';
 
+// Uniforms shared by the water, the terrain and the vegetation, created and installed once.
+//
 // Uniforms shared by the water, the terrain and the vegetation (one node each, read by every
 // material that uses it).
 // - The page's entry creates the object (`createShared`) and installs it (`installShared`) before

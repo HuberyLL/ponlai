@@ -15,6 +15,8 @@ import { InkPath } from './InkPath.ts';
 import { t } from './i18n/i18n.ts';
 import type { UiShared } from './Shared.ts';
 
+// 沧海录, the record: the island's and each islander's log, day by day, over a paused world.
+//
 // 沧海录, the record (docs/explanation/ui.md; the design canvas's RecMain and RecPerson): opened by the scroll
 // at the top right over the dimmed, stopped world (the game paused while it is open, and running
 // again on closing if it ran before); the rest of the interface hides. Esc or × closes it; ←/→ step the days.

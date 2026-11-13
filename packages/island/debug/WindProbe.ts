@@ -9,6 +9,8 @@ import { YUNPENG, YUNPENG_WIND, stalkLoad } from '../world/Yunpeng.ts';
 import type { WorldData } from '../world/types.ts';
 import type { Bounds } from '../../render/data.ts';
 
+// `__PONLAI__.windProbe`: the numbers behind the wind view, from the shaders' own wind functions.
+//
 // `__PONLAI__.windProbe( options )`: the numbers behind the wind view (WindView.ts), as JSON for
 // tools/kit/probe.mjs. Every sway comes from the shaders' own TSL functions (Wind.ts `windField`,
 // Grass.ts `bladeWindOffset` for the meadow's blades, each kind's constants for the plants),

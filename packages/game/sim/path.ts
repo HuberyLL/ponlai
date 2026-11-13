@@ -2,6 +2,8 @@ import type { Grid } from './grid.ts';
 import { planar } from './maths.ts';
 import type { Vec2 } from './types.ts';
 
+// Paths over the ground grid: A* across 8 neighbours, then pulled straight.
+//
 // Paths over the ground grid: A* across 8 neighbours without cutting corners, then pulled
 // straight wherever a body-wide line stays on walkable cells. A path to a point ends on it, or on
 // the nearest walkable cell when the point itself is blocked.

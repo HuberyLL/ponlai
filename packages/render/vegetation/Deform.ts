@@ -2,6 +2,8 @@ import type * as THREE from 'three/webgpu';
 import { vec3, max, abs, dot, cos, sin, normalize, length, pow, sqrt, tan } from 'three/tsl';
 import { flutterWave, plantWave, plantWind, rootHash, windField, type WindState } from '../weather/Wind.ts';
 
+// How the vegetation moves: the main bend, branch and spray bends, and the leaves' flutter.
+//
 // How the vegetation moves: the plants' main bend (`mainBend`: the yunpeng's stalks, the bamboo's
 // culms and leaves), a branch's own bend after it (`branchBend`: the bamboo's branches and the
 // cards on them), a sub-branch's after that (`sprayBend`: the bamboo's sprays) and their leaves'

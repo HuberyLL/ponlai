@@ -13,6 +13,8 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
+// Crepuscular rays and the flare of the sun or the moon, as passes on the frame graph.
+
 const STEPS = 48;
 const _grey = new THREE.Color();
 // the passes' size: half the render, at least a texel

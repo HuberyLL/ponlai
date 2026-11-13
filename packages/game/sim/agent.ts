@@ -7,6 +7,8 @@ import { checkArgs } from './schema.ts';
 import type { Sim } from './Sim.ts';
 import type { ActionCall, ActionOutcome, ActionResult, EntityId, Items, Villager } from './types.ts';
 
+// The agent loop's frame: a brain's tool calls checked at one entrance and run on the body.
+//
 // The agent loop's frame: a brain thinks from what an islander perceives and answers with tool
 // calls, which run on the islander's body. The tools are the five actions (actions.ts).
 //

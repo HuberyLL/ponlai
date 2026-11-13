@@ -17,6 +17,8 @@ import type { FrameGraph, ResourceHandle, SizeClass } from './graph/FrameGraph.t
 import { resolveSize, type Extents } from './graph/GraphCompiler.ts';
 import { compileChain, compileQuad } from './graph/Compile.ts';
 
+// The temporal modes' resolve: jittered frames accumulated into a reprojected history.
+//
 // The temporal modes' resolve (Antialiasing.ts: aa=taa|taau, and the ground truth aa=gt). The scene
 // renders single-sampled with its projection shifted by a sub-pixel jitter each frame (Jitter.ts),
 // writing motion vectors beside its colour (Motion.ts); the post chain grades that frame as it does

@@ -6,6 +6,8 @@ import { settings } from '../Settings.ts';
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
+// A debug view of the vegetation's wind: arrows over the meadow and the plants' colours.
+//
 // A debug view of the vegetation's wind (packages/render/weather/Wind.ts `windField`), the URL option
 // `windView` on debug pages (the dev server, `?debug`, `?profile`), read once as the modules load,
 // since it changes how the vegetation's materials are built: without it no shader or pipeline

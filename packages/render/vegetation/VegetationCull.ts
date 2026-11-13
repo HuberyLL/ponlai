@@ -7,6 +7,8 @@ import { jitter } from '../post/Jitter.ts';
 import { runSteps } from '../util/Steps.ts';
 import { hasGpuFeature } from '../three/Backend.ts';
 
+// GPU-driven culling for an instanced vegetation kind, in a compute pass before it draws.
+//
 // GPU-driven culling for an instanced vegetation kind (today the plants drawn as instances of a few
 // prototypes, PlantInstances.ts: the bamboo; the meadow generates its blades per view instead and
 // takes only `unjitteredPadded` from here). Every record of every batch lives in one set of storage

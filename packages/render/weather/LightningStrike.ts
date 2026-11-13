@@ -10,6 +10,8 @@
 import * as THREE from 'three/webgpu';
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
 
+// The branching channel of one lightning strike as triangular prisms.
+//
 // The branching channel of one lightning strike as triangular prisms, after three.js's former
 // LightningStrike: a subray from the source to the destination is split recursively, each
 // midpoint displaced by simplex noise in proportion to the segment's length (`roughness`

@@ -1,3 +1,5 @@
+// The ambient light's probes: a world-anchored lattice of sky visibility and bounce, per chunk.
+//
 // The ambient light's probes: a world-anchored lattice of points, each holding how much of the sky
 // it sees and how much sky light the world round it bounces to it, by direction, baked per chunk
 // in the world's workers (Chunks.ts `buildChunk`) from the chunk's window alone. Plain numbers and

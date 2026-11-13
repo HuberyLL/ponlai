@@ -1,3 +1,5 @@
+// Runtime switches for timing a change inside one page, exposed in debug builds.
+//
 // Runtime switches for timing a change inside one page (debug builds expose them as
 // window.__PONLAI__.flags). An optimisation under development keeps its old path and reads a flag
 // where it chooses between the two, every frame:

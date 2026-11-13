@@ -1,5 +1,7 @@
 import type { EntityId } from './types.ts';
 
+// The schemas outside input is checked against once, at the entrance, before any rule runs.
+//
 // Outside input is checked once, at the entrance: a tool call from a brain (agent.ts `act`), or a
 // command of the player's (../Session.ts `speak`, `place`), is matched against its schema here
 // before any rule runs, and the rules then take the clean arguments as given. A schema names each

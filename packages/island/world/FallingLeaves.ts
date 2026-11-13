@@ -9,6 +9,8 @@ import { ISLAND_TOP } from './WorldShapes.ts';
 import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, soilGroveSwell } from '../materials/Soil.ts';
 import { LEAF_TINTS, LEAF_TRANSLUCENCY } from './BambooMaterials.ts';
 
+// Bamboo leaves the wind takes off the island, simulated in a fixed pool on the GPU.
+//
 // Bamboo leaves the wind takes off the island: a pool of leaves simulated on the GPU, one compute
 // pass on the frame graph (`leavesPass`), drawn as one instanced mesh in the opaque scene.
 //

@@ -1,5 +1,7 @@
 import * as THREE from 'three/webgpu';
 
+// Work in steps of a few tenths of a millisecond: typed arrays and bounds, sliced.
+//
 // Work in steps of a few tenths of a millisecond, for builders that run as generators (the growth's
 // idle-time steps, Growth.ts): typed arrays from long plain arrays a slice at a time, and a
 // geometry's bounds. Each gives the same values as the one-shot call three makes

@@ -42,6 +42,8 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
+// The clouds' kernels: density, march, panorama, shadow map, rain, thin layer and deck mean.
+//
 // The clouds' kernels (Clouds.ts, whose header says what they draw): the density, the march, the
 // panorama, the shadow map, the rain, the thin layer and the deck's mean, built for the current tier
 // knobs as one function of the clouds. A name in backticks with no file is this file's, Clouds.ts's

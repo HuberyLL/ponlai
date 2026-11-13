@@ -1,3 +1,5 @@
+// The page's world: the land and its chunks generated on a worker pool, cached and merged.
+//
 // The page's world: the land and its chunks generated on a pool of
 // chunk workers (chunkWorker.ts), read from the per-chunk cache where it holds them
 // (WorldCache.ts), and merged into one WorldData (ChunkMerge.ts) that the page draws (World.ts:

@@ -1,3 +1,5 @@
+// The scene's anti-aliasing mode, chosen once at load, that materials and the graph are built for.
+//
 // The scene's anti-aliasing, chosen once at load like a game's AA setting: what the frame graph,
 // the vegetation and the post chain are built for. The choice is compiled into materials (alpha to
 // coverage or a dither / alpha test) and into the frame graph (the scene's sample count, its

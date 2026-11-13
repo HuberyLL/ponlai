@@ -7,6 +7,8 @@ import type { ArgsOf, Schema } from './schema.ts';
 import type { Sim } from './Sim.ts';
 import type { ActionCall, ActionResult, ActionState, EntityId, Items, Outcome, Vec2, Villager } from './types.ts';
 
+// The five actions an islander acts through, registered as the brain's tools.
+//
 // The five actions an islander acts through, registered as the brain's tools (ACTIONS), each with
 // the arguments it takes (schema.ts: the entrance, agent.ts `act`, checks them before any rule
 // here runs, so the rules take them as given):

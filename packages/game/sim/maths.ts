@@ -1,5 +1,7 @@
 import type { Vec2 } from './types.ts';
 
+// The rules' maths in exact operations only, so every engine computes the simulation alike.
+//
 // The rules' maths, in exact operations only. + − × ÷ and Math.sqrt are correctly rounded by
 // IEEE 754, and floor / ceil / round / trunc / abs / min / max / sign / fround / imul are exact,
 // so every engine computes them alike; Math's transcendental functions (sin, cos, atan2, log, exp,

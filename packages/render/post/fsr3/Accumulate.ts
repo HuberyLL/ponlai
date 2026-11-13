@@ -17,6 +17,8 @@ import { ComputeUpsampledColorAndWeight } from './Upsample.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 import type { Fsr3ShaderOptions } from './Host.ts';
 
+// FSR 3's accumulation: the history reprojected, clipped and blended with this frame's colour.
+//
 // The accumulation: reprojects the history, updates the locks (thin-feature protection), weighs
 // the history against this frame's upsampled colour, clips the history to the rectification box
 // and blends, storing colour and lock for the next frame (and the output when RCAS is off).

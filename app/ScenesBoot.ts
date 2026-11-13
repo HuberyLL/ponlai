@@ -1,3 +1,5 @@
+// The scene page's entry: installs the settings and the look, then loads the scene page.
+//
 // The scene page's entry, the module scenes.html loads: what Boot.ts and PageSettings.ts are to
 // the island's page. It parses the address, warns of its problems, chooses the quality tier and
 // installs the settings, and only then loads the scene page (app/scenes/ScenePage.ts), by a dynamic

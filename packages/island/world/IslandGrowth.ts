@@ -1,3 +1,5 @@
+// The island's growth: the land on a bit lattice, grown a piece at a time from the centre out.
+//
 // The island's growth: the land on a bit lattice, grown one piece at a time from the world's
 // centre outward (docs/explanation/game-design.md, "How the island grows"). Worker-safe (no three).
 //

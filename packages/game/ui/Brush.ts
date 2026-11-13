@@ -1,3 +1,5 @@
+// Brush strokes drawn in code, each returned as an SVG outline to fill.
+//
 // Brush strokes drawn in code (docs/explanation/ui.md, Principles: every line is a brush stroke): each has a
 // sharp entry, a full middle and a tapering exit, along a slightly curved path, its width varying
 // along it; within one figure a solid axis keeps its weight against a faint paper edge (the

@@ -7,6 +7,8 @@ import { windDisplacement, type WindUniforms } from '../weather/Wind.ts';
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 
+// The vegetation's shadows: cast and received in the plants' swayed pose.
+//
 // The plants cast their shadows in their swayed pose, so the shadows move with them, and receive
 // them in the same pose: a leaf cast in one pose and looked up in another would put its own shadow
 // beside itself (acne and flicker as it sways). `flags.shadowWind = false` casts and receives in the

@@ -10,6 +10,8 @@ import { ffxSaturate, component, type N } from './Core.ts';
 import { ClampUv, GetViewSpaceDepthInMeters, fLockThreshold, DISOCCLUSION, REACTIVE, SHADING_CHANGE } from './Common.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
+// FSR 3's debug view: a 3 x 3 grid of the upscaler's inputs and masks over the output.
+//
 // The debug view: a 3 x 3 grid over the output, its top row the dilated motion vectors, the
 // protected (locked) areas and the dilated depth in metres, its bottom row the disocclusion, the
 // shading change ("reactiveness") and the detail-protection takedown (the reactive mask).

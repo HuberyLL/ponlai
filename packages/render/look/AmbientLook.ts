@@ -1,6 +1,8 @@
 import { tune } from '../debug/Tune.ts';
 import type { AmbientColumn, AmbientKnobs, AmbientLook, AmbientRowLook } from './Look.ts';
 
+// The environment light's look built from a look's table: the ambient grade and the key's lift.
+//
 // The environment light's look built from a look's table (look/Look.ts `AmbientLook`): the ambient
 // grade's table by the sun's elevation and the weather's skies, with the gains under overcast's
 // deck, which lighting/AmbientGrade.ts writes into the lighting models' uniforms once a frame

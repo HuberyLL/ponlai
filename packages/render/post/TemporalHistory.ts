@@ -8,6 +8,8 @@
 import * as THREE from 'three/webgpu';
 import { Fn, float, vec2, vec4, ivec2, texture, textureLoad, floor, min, max, clamp, sin, cos, select } from 'three/tsl';
 
+// The running resolve's history fetch: FSR 3.1's clamped Lanczos 2 sample.
+//
 // The running resolve's history fetch (TemporalAA.ts: taa, taau): FSR 3.1's history sample, a
 // Lanczos 2 over the 4 x 4 texels around the reprojected position, clamped to the 2 x 2 nearest
 // texels (upstream's deringing). All four channels go through it, the accumulated weight in alpha

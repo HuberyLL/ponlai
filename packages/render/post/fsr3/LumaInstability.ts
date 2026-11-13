@@ -12,6 +12,8 @@ import {
 } from './Common.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
+// FSR 3's luma instability: pixels whose luma flips back toward a recent frame's.
+//
 // Luma instability at render size: a luma that flips back towards one of the last three frames'
 // (an oscillation the accumulation should not chase) marks the pixel unstable, unless it moves,
 // was disoccluded, is reactive or changed its shading. Also shifts the four-frame luma history.

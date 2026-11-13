@@ -1,3 +1,5 @@
+// The material balls: rows of balls, grey cards and a post that show the light on plain surfaces.
+//
 // The material balls: the light on plain surfaces. On level grey ground stand a row of balls whose
 // roughness runs from 0 to 1, a row whose albedo runs from 0.03 to 0.8, an 18 % grey card and a
 // white card lying flat, and an upright post that casts a shadow. It shows the key against the

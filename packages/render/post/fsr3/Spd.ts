@@ -8,6 +8,8 @@
 import { If, ivec2, uint, uvec2, workgroupBarrier } from './Tsl.ts';
 import { ffxRemapForWaveReduction, type N } from './Core.ts';
 
+// The Single Pass Downsampler (SPD): a texture's mips 0..11 in one dispatch.
+//
 // Single Pass Downsampler (SPD): one 256-thread workgroup reduces a 64 x 64 tile to mips 0..5
 // (mip 0 is half the source), and the last workgroup to finish reduces the 64 x 64 texels of mip 5
 // to mips 6..11. The user (the luminance and shading-change pyramids) supplies the callbacks, as
