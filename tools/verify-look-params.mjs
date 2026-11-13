@@ -85,10 +85,24 @@
 //   sides, skies, winds, rains and fog switches is the same numbers bit for bit before and after.
 // - The changed copy differs from the island's somewhere in every field of the key the look gives
 //   (all but the deck's two shares, which are the weather's), and the neutral set somewhere.
+//
+// The display's look (packages/render/look/DisplayLook.ts `createDisplayTables`), in plain node,
+// made from the island's display table, the neutral one and a copy of the island's with every
+// number moved (every key a degree later, every other number by an eighth). Guarantees, each a
+// failure:
+// - Each set holds its own table's numbers: every field as the table wrote it (the base grade the
+//   table's changes over no grade, each change read back), and each table keyed by the sun and the
+//   weather (the shade's contrast, the desaturation, the white balance, the bloom: DayKeys.ts
+//   `keyed`) read at every key's elevation on both sides, under a full cloud at every clouded key
+//   and at full night is that key's, the clouded day's and the night's values.
+// - Making the others leaves the island's as it was: its table, and every keyed table over a grid of
+//   elevations, nights, clouds and both sides and every other field, the same numbers bit for bit.
+// - The changed copy differs from the island's in every field, and the neutral set somewhere.
 // Under node the tune table is off (packages/render/debug/Tune.ts `TUNE_ON`), so each system's
 // tunables are its own; on a debug page they share one table by name (ExposureLook.ts's,
-// DayLook.ts's, Wind.ts's, AmbientLook.ts's and HazeLook.ts's headers). The haze's modules load in
-// plain node, so all of its numbers, tunables included, are checked here per table.
+// DayLook.ts's, Wind.ts's, AmbientLook.ts's, HazeLook.ts's and DisplayLook.ts's headers). The
+// haze's and the display's tables load in plain node, so all of their numbers, tunables included,
+// are checked here per table.
 //
 // The other systems that take their tables at creation, through Vite's SSR loader with the
 // island's look installed (so a number that came from the installed look instead of the table
@@ -110,6 +124,16 @@
 // - Each reads its own table's numbers, equal to the table's and none from another.
 // - Making the others leaves the island's as it was.
 // - The three differ wherever their tables do (the changed copy everywhere).
+// The bloom (packages/render/post/PhysicalBloom.ts, which plain node cannot load), made on the
+// display's tables of the same three looks over a stand-in graph: its uniforms start at its own
+// table's `bloomStart`, not a tunable, so read against the look's table itself; `update` writes its
+// own tables' keys over a few frames (tunables, shared by name here: read against the tables it
+// holds, and for the island's, made first, against the look's table at its last key); the island's
+// readings are unmoved by the others, and the others' starts differ from the island's. The frame's
+// passes (packages/render/post/Pipeline.ts), which read the rest of the display's tables each frame
+// and build the display chain from them (post/PipelineDisplay.ts), are not made: they need a
+// renderer and build their graph as they are made; the stage hands them the tables
+// (RenderStages.ts `createSeaAndPipeline`), whose numbers the plain node part checks.
 import assert from 'node:assert/strict';
 import { installIslandLook } from './island-look.mjs';
 import { createExposure } from '../packages/render/look/ExposureLook.ts';
@@ -120,11 +144,15 @@ import { AMBIENT_COLUMNS, AMBIENT_KNOBS, DEFAULT_KNOBS, createAmbientTables, cre
 import { liftedKeyDirection, liftedKeyHeight } from '../packages/render/lighting/KeyLift.ts';
 import { createHazeTables } from '../packages/render/look/HazeLook.ts';
 import { hazeKeyAt } from '../packages/render/weather/HazeKeys.ts';
+import { createDisplayTables } from '../packages/render/look/DisplayLook.ts';
+import { hasKeys, keyed } from '../packages/render/post/DayKeys.ts';
+import { gradeOf } from '../packages/render/post/GradeLut.ts';
 import { HAZE_KEY_NAMES } from '../packages/render/look/Look.ts';
 import { cloudBase } from '../packages/render/look/SkyLook.ts';
 import { MIX_SKIES, WEATHER_PRESETS } from '../packages/render/sky/Weather.ts';
 import { FOG_NOISE } from '../packages/render/weather/FogNoise.ts';
 import * as THREE from 'three/webgpu';
+import { float, texture, uniform } from 'three/tsl';
 import { ISLAND_LOOK } from '../packages/island/look/IslandLook.ts';
 import { NEUTRAL_LOOK } from '../packages/render/look/NeutralLook.ts';
 
@@ -702,6 +730,137 @@ for ( const f of HAZE_FIELDS ) islandHazeAfter[ f ].forEach( ( v, i ) => {
 
 console.log( `Haze: three sets from three tables, each its own, the haze's key on its own tables (${ hazeRows } rows), the island's unmoved by the others (${ hazeNumbers } readings), the changed copy off the island's in every field the look gives: passed.` );
 
+// ---- the display's look
+
+// the display's tables keyed by the sun and the weather (DayKeys.ts), and the plain ones
+const DISPLAY_KEYED = [ 'shadeContrast', 'desaturation', 'whiteBalance', 'bloom' ];
+const DISPLAY_PLAIN = [ 'coolShare', 'highlightGrey', 'strengths', 'vignette', 'whiteOvercast', 'toneCurve', 'bloomStart', 'purkinje' ];
+const DISPLAY_FIELDS = [ ...DISPLAY_KEYED, ...DISPLAY_PLAIN, 'baseGrade' ];
+// a copy of `look`'s display table with every number moved: a key a degree later, any other number
+// by an eighth (a set two keys or two fields share moved once)
+function changedDisplay( look ) {
+
+	const out = structuredClone( look.display ), seen = new Set();
+	const move = ( o ) => {
+
+		if ( seen.has( o ) ) return;
+		seen.add( o );
+		for ( const [ k, v ] of Object.entries( o ) ) {
+
+			if ( typeof v === 'number' ) o[ k ] = v + ( k === 'at' ? 1 : 0.125 );
+			else if ( v && typeof v === 'object' ) move( v );
+
+		}
+
+	};
+	move( out );
+	return out;
+
+}
+
+// every number of a nested object, in order, with its path
+function leaves( o, path = '' ) {
+
+	return Object.entries( o ).flatMap( ( [ k, v ] ) => ( typeof v === 'number' ? [ [ `${ path }${ k }`, v ] ] : leaves( v, `${ path }${ k }.` ) ) );
+
+}
+const at = ( o, path ) => path.split( '.' ).reduce( ( x, k ) => x[ k ], o );
+
+const DISPLAY_ELEVATIONS = [];
+for ( let e = - 20; e <= 70; e += 0.25 ) DISPLAY_ELEVATIONS.push( e );
+const DISPLAY_CLOUDS = [ 0, 0.4, 1 ];
+// every number a set of tables gives, by field: the keyed ones over a grid of elevations, nights,
+// clouds and both sides, the others as they are held
+function displayReadings( t ) {
+
+	const out = Object.fromEntries( DISPLAY_FIELDS.map( ( f ) => [ f, [] ] ) );
+	for ( const f of DISPLAY_KEYED ) for ( const e of DISPLAY_ELEVATIONS ) for ( const night of NIGHTS ) for ( const cloud of DISPLAY_CLOUDS ) for ( const rising of [ false, true ] )
+		out[ f ].push( ...Object.values( keyed( t[ f ], e, night, {}, cloud, rising ) ) );
+	for ( const f of [ ...DISPLAY_PLAIN, 'baseGrade' ] ) out[ f ] = leaves( t[ f ] ).map( ( [ , v ] ) => v );
+	return out;
+
+}
+
+const nearKey = ( actual, expected, what ) => {
+
+	assert.deepEqual( Object.keys( actual ), Object.keys( expected ), `${ what }: its values` );
+	for ( const k of Object.keys( expected ) ) near( actual[ k ], expected[ k ], `${ what } ${ k }`, 1e-12 * Math.max( 1, Math.abs( expected[ k ] ) ) );
+
+};
+// `t`, made from `table`, holds the table's numbers: each field as written (the base grade the
+// table's changes over no grade), and each keyed one read at every key's elevation, under a full
+// cloud and at full night is that key's, the clouded day's and the night's values
+function ownDisplay( t, table, name ) {
+
+	let reads = 0;
+	assert.deepEqual( Object.keys( t ).sort(), [ ...DISPLAY_FIELDS ].sort(), `${ name } display: its fields` );
+	for ( const f of DISPLAY_PLAIN ) {
+
+		assert.deepEqual( t[ f ], table[ f ], `${ name } display: ${ f }` );
+		reads ++;
+
+	}
+	assert.deepEqual( t.baseGrade, gradeOf( table.baseGrade ), `${ name } display: the base grade` );
+	for ( const [ path, v ] of leaves( table.baseGrade ) ) {
+
+		assert.equal( at( t.baseGrade, path ), v, `${ name } display: the base grade's ${ path }` );
+		reads ++;
+
+	}
+	for ( const f of DISPLAY_KEYED ) {
+
+		const keys = table[ f ];
+		assert.deepEqual( t[ f ], keys, `${ name } display: ${ f }` );
+		for ( const [ side, rising ] of [ [ 'day', false ], [ 'rising', true ] ] ) for ( const key of keys[ side ] ?? [] ) {
+
+			nearKey( keyed( t[ f ], key.at, 0, {}, 0, rising ), key.values, `${ name } display: ${ f } ${ side } at ${ key.at }` );
+			reads ++;
+
+		}
+		if ( keys.cloudy ) for ( const key of hasKeys( keys.cloudy ) ? keys.cloudy : [ { at: 30, values: keys.cloudy } ] ) {
+
+			nearKey( keyed( t[ f ], key.at, 0, {}, 1 ), key.values, `${ name } display: ${ f } cloudy at ${ key.at }` );
+			reads ++;
+
+		}
+		if ( keys.night ) for ( const e of [ - 12, 30 ] ) {
+
+			nearKey( keyed( t[ f ], e, 1, {}, 0.4 ), keys.night, `${ name } display: ${ f } at night` );
+			reads ++;
+
+		}
+
+	}
+	return reads;
+
+}
+
+const displayLooks = { island: ISLAND_LOOK.display, neutral: NEUTRAL_LOOK.display, changed: changedDisplay( ISLAND_LOOK ) };
+const islandDisplayWritten = structuredClone( ISLAND_LOOK.display );
+const islandDisplay = createDisplayTables( displayLooks.island );
+const islandDisplayBefore = displayReadings( islandDisplay );
+const displays = { island: islandDisplay, neutral: createDisplayTables( displayLooks.neutral ), changed: createDisplayTables( displayLooks.changed ) };
+let displayReads = 0;
+for ( const [ name, t ] of Object.entries( displays ) ) displayReads += ownDisplay( t, displayLooks[ name ], name );
+assert.deepEqual( ISLAND_LOOK.display, islandDisplayWritten, 'the island\'s display table moved' );
+const islandDisplayAfter = displayReadings( islandDisplay );
+let displayNumbers = 0;
+for ( const f of DISPLAY_FIELDS ) islandDisplayAfter[ f ].forEach( ( v, i ) => {
+
+	assert.ok( Object.is( v, islandDisplayBefore[ f ][ i ] ), `the island's display ${ f } reading ${ i } moved: ${ islandDisplayBefore[ f ][ i ] } -> ${ v }` );
+	displayNumbers ++;
+
+} );
+{
+
+	const changed = displayReadings( displays.changed ), neutral = displayReadings( displays.neutral );
+	for ( const f of DISPLAY_FIELDS ) assert.ok( changed[ f ].some( ( v, i ) => ! Object.is( v, islandDisplayBefore[ f ][ i ] ) ), `changed display: ${ f } reads as the island's` );
+	assert.ok( DISPLAY_FIELDS.some( ( f ) => neutral[ f ].length !== islandDisplayBefore[ f ].length || neutral[ f ].some( ( v, i ) => ! Object.is( v, islandDisplayBefore[ f ][ i ] ) ) ), 'neutral display: reads as the island\'s' );
+
+}
+
+console.log( `Display: three sets from three tables, each its own (${ displayReads } readings of a table), the island's unmoved by the others (${ displayNumbers } readings), the changed copy off the island's in every field: passed.` );
+
 // ---- the systems that load through Vite's SSR loader
 
 // every number a system made from `look` holds, by name, in order
@@ -779,7 +938,7 @@ const server = await createServer( {
 	server: { middlewareMode: true, hmr: false, ws: false, watch: null },
 	optimizeDeps: { noDiscovery: true, include: [] },
 } );
-let systems = 0, grades = 0;
+let systems = 0, grades = 0, bloomCount = 0;
 try {
 
 	const load = ( file ) => server.ssrLoadModule( `/${ file }` );
@@ -869,6 +1028,57 @@ try {
 	assert.notDeepEqual( gradeRead.neutral.map( ( r ) => r.table ), islandGradeBefore.map( ( r ) => r.table ), 'neutral grade: reads as the island\'s' );
 	grades = GRADE_INPUTS.length;
 
+	// The bloom (post/PhysicalBloom.ts), made on each look's display tables over a stand-in graph:
+	// its uniforms start at its own tables' `bloomStart` (not a tunable: checked against the look's
+	// table itself) and `update` writes its own tables' keys (tunables, shared by name here: checked
+	// against the tables it holds, and against the look's table for the island's, made first).
+	const { createDisplayTables: ssrDisplayTables } = await load( 'packages/render/look/DisplayLook.ts' );
+	const { PhysicalBloom } = await load( 'packages/render/post/PhysicalBloom.ts' );
+	const texel = uniform( new THREE.Vector2( 1, 1 ) );
+	const graph = { color: ( name ) => ( { name, texture: new THREE.Texture() } ), texture: ( h ) => h.texture, texel: () => texel };
+	const BLOOM_NAMES = [ 'threshold', 'knee', 'share', 'cap', 'skyThreshold', 'skyKnee', 'skyShare', 'skyCap' ];
+	const BLOOM_INPUTS = [ [ 45, 0, 0 ], [ 4, 0, 0.5 ], [ - 2, 0.3, 1 ], [ - 12, 1, 0 ], [ 12, 0, 1 ] ];
+	const bloomNumbers = ( bloom ) => [ ...BLOOM_NAMES.map( ( k ) => bloom.uniforms[ k ].value ), ...bloom.uniforms.weights.map( ( w ) => w.value ) ];
+	const bloomWanted = ( key ) => [ ...BLOOM_NAMES.map( ( k ) => key[ k ] ), ...[ 0, 1, 2, 3, 4, 5, 6, 7 ].map( ( i ) => key[ `w${ i }` ] ) ];
+	const bloomReadings = ( bloom ) => BLOOM_INPUTS.map( ( input ) => {
+
+		bloom.update( ...input );
+		return bloomNumbers( bloom );
+
+	} );
+	const bloomLooks = { island: ISLAND_LOOK.display, neutral: NEUTRAL_LOOK.display, changed: changedDisplay( ISLAND_LOOK ) };
+	const makeBloom = ( tables ) => new PhysicalBloom( tables, graph, texture( new THREE.Texture() ), float( 1 ), () => float( 0 ) );
+	const bloomTables = {}, blooms = {};
+	for ( const [ name, table ] of Object.entries( bloomLooks ) ) {
+
+		bloomTables[ name ] = ssrDisplayTables( table );
+		blooms[ name ] = makeBloom( bloomTables[ name ] );
+		assert.deepEqual( BLOOM_NAMES.map( ( k ) => blooms[ name ].uniforms[ k ].value ), BLOOM_NAMES.map( ( k ) => table.bloomStart[ k ] ), `${ name } bloom: its start` );
+
+	}
+	const islandBloomBefore = bloomReadings( blooms.island );
+	for ( const [ name, bloom ] of Object.entries( blooms ) ) {
+
+		const tables = bloomTables[ name ];
+		assert.deepEqual( bloomReadings( bloom ), BLOOM_INPUTS.map( ( [ e, night, cloud ] ) => bloomWanted( keyed( tables.bloom, e, night, {}, cloud ) ) ), `${ name } bloom: the keys it writes` );
+		bloom.update( 70, 0, 0 );
+		assert.deepEqual( bloomNumbers( bloom ), bloomWanted( keyed( tables.bloom, 70, 0, {} ) ), `${ name } bloom: the high sun` );
+
+	}
+	const high = bloomLooks.island.bloom.day.at( - 1 );
+	blooms.island.update( high.at, 0, 0 );
+	bloomNumbers( blooms.island ).forEach( ( v, i ) => near( v, bloomWanted( high.values )[ i ], `island bloom: its last key's ${ i }` ) );
+	assert.deepEqual( bloomReadings( makeBloom( bloomTables.island ) ), islandBloomBefore, 'the island\'s bloom moved' );
+	assert.deepEqual( bloomReadings( blooms.island ), islandBloomBefore, 'the island\'s bloom moved' );
+	const started = ( name ) => BLOOM_NAMES.map( ( k ) => makeBloom( bloomTables[ name ] ).uniforms[ k ].value );
+	started( 'island' ).forEach( ( v, i ) => {
+
+		assert.notEqual( started( 'changed' )[ i ], v, `changed bloom: its start's ${ BLOOM_NAMES[ i ] } reads as the island's` );
+
+	} );
+	assert.notDeepEqual( started( 'neutral' ), started( 'island' ), 'neutral bloom: its start reads as the island\'s' );
+	bloomCount = BLOOM_INPUTS.length;
+
 } finally {
 
 	await server.close();
@@ -876,3 +1086,4 @@ try {
 }
 console.log( `Shared uniforms (the wind's look among them), local lights, sea detail and swell: three of each from three tables, each its own (${ systems } numbers), the island's unmoved by the others: passed.` );
 console.log( `Ambient grade: three controllers on three tables, each holding and writing its own (${ grades } frames), the island's unmoved by the others: passed.` );
+console.log( `Bloom: three on three display tables, each starting at its own and writing its own keys (${ bloomCount } frames), the island's unmoved by the others: passed.` );
