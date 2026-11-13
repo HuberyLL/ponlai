@@ -53,7 +53,7 @@ import type { EntityId, IslandInput } from './sim/types.ts';
 // (Brain.hears) each listener keeps them until a thought takes them (`takeHeard`, `hasHeard`), and
 // is asked for one at once (Sim.think: not while one is in flight; the words then wait for the next).
 //
-// The island grows with the population (docs/explanation/game-design.md, "How the island grows"; Sim.ts): once
+// The island grows with the population (docs/design/game-design.md, "How the island grows"; Sim.ts): once
 // a step is due and none is under way, `advance` asks the host's `grow`, before the frame's ticks,
 // so on the state the last frame showed. The host hands the piece back through `setIsland`, which
 // is the simulation's `addPiece` (the piece is counted there, whoever asked for it): at once

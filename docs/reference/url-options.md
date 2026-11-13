@@ -573,7 +573,7 @@ and none of the island's or the game's.
   `zh-CN`, the default, or `en`, a snapshot whose missing words show in Chinese:
   `packages/game/ui/i18n/`). The page's own `weather` option and auto weather work in the game as
   without it.
-- The player's interface, its parts and its keys: [Game UI](../explanation/ui.md)
+- The player's interface, its parts and its keys: [Game UI](../design/ui.md)
   (`packages/game/ui/GameUi.ts`). Choosing the chest in the build bar
   arms its placement in the scene: a ring on the turf previews the spot (green, or red with the
   reason in the bar), a click places it (`packages/game/Placement.ts`). Space pauses only the game

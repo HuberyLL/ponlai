@@ -20,7 +20,7 @@ import { TopRow } from './TopRow.ts';
 
 // 蜃光, the player's interface in ?game: a mirage over the sea, assembled from its parts.
 //
-// 蜃光, the player's interface in ?game (docs/explanation/ui.md, the spec it follows). The interface
+// 蜃光, the player's interface in ?game (docs/design/ui.md, the spec it follows). The interface
 // is a mirage over the sea: no frames, a mist shadow under white brush line art, in one language:
 // Chinese, the language the game is written in, or another by `?lang=` (i18n/i18n.ts: every word is
 // a catalogue's). Its parts:
@@ -30,7 +30,7 @@ import { TopRow } from './TopRow.ts';
 //   SpeakBar.ts    talking to the islanders, and the words flying to them
 // What the player reads stays on the screen; what belongs to the islanders' world (the ring, the
 // words over a head, the words in flight) stands in it, laid into the scene through the camera
-// (Space.ts; docs/explanation/ui.md, Screen and world).
+// (Space.ts; docs/design/ui.md, Screen and world).
 //   BuildBar.ts    the build bar, which hands a building the simulation knows to the placement in
 //                  the scene (../Placement.ts)
 //   Record.ts      沧海录, the record, over the dimmed and stopped world

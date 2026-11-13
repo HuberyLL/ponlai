@@ -211,7 +211,7 @@ import { buildDisplay, GRADE_TABLE, NIGHT, TONE_SPACE } from './PipelineDisplay.
 // keeps the targets, the constructor's steps, the sizes and the per-frame updates.
 
 //
-// Rules (the look itself is in docs/explanation/art-direction.md):
+// Rules (the look itself is in docs/design/art-direction.md):
 // - Sizes are owned by the graph (graph/FrameGraph.ts): it sizes every target by its size class
 //   from `setSize` (the render; a share of it: the shafts' halves, the bloom's levels; the canvas: FSR's EASU target; fixed: the haze's volumes), and every pass reads
 //   its sizes from the graph's shared extent uniforms (`graph.extent( cls )`, `graph.texel( cls )`
@@ -366,13 +366,13 @@ export interface PipelineSettings {
 	skyMix: number[];
 }
 
-// The light's tone over tidewater's grade (docs/explanation/art-direction.md, The look): a photographic image
+// The light's tone over tidewater's grade (docs/design/art-direction.md, The light): a photographic image
 // pushed a little toward a painted one. Lights turn a touch golden and the shade a touch teal (by
 // the exposed luminance, so the night takes it as the day), the contrast round mid grey softens by
 // a tenth and the bloom strengthens by a quarter. It lifts no black: a constant fill in the grade
 // greyed everything below mid grey alike and veiled the frame; the shade's openness comes from the
 // sky light the island takes instead (look/SkyLook.ts `clearShade`). 0.5 of the full step was chosen over 0
-// and 1 by eye. Off by default since (docs/explanation/art-direction.md, The look: the light keeps the sun's
+// and 1 by eye. Off by default since (docs/design/art-direction.md, The light: the light keeps the sun's
 // and the sky's own balance): with the clear shade it took the light's direction out of the
 // meadow. `flags=tone:<t>` sets it at load for A/Bs.
 const TONE = Number( debugFlags.tone ?? 0 );

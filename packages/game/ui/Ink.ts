@@ -2,7 +2,7 @@ import type { Frame } from './Brush.ts';
 
 // The ink of the interface's long strokes: the tail runs dry as a brush's does.
 //
-// The ink of the interface's long strokes (docs/explanation/ui.md, Ink): a stroke keeps its outline
+// The ink of the interface's long strokes (docs/design/ui.md, Ink): a stroke keeps its outline
 // exactly (Brush.ts) and the ink only leaves it, as a brush's does.
 //
 // - Its tail runs dry (飞白): from halfway on, streaks of bare paper open along the stroke, the outer

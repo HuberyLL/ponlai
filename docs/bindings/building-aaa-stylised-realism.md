@@ -10,7 +10,7 @@ Every command that renders in a browser runs under the GPU lock and every wait g
 
 ## Look
 
-- The look this project means, and what to avoid: `docs/explanation/art-direction.md` (The look;
+- The look this project means, and what to avoid: `docs/design/art-direction.md` (The look;
   How the look is made; the light, the shade, the exposure and the image), and a page per subject
   beside it: `island.md`, `sea-and-sky.md`, `night.md`, `life-and-islanders.md`.
 - Kept weathers: clear and fair. The others are parked (`packages/render/sky/Weather.ts`
@@ -65,8 +65,8 @@ Every command that renders in a browser runs under the GPU lock and every wait g
 
 ## Record
 
-- Art decisions and departures from real values: `docs/explanation/art-direction.md`, with the
+- Art decisions and departures from real values: `docs/design/art-direction.md`, with the
   measured effect in the module's header comment. The departure on record: the cliff's stone is
-  kept darker than real limestone (`docs/explanation/island.md`, The cliffs).
+  kept darker than real limestone (`docs/design/island.md`, The cliffs).
 - Measured look values (light and shade ratios, the grey card's levels, albedos):
   `docs/reference/look-values.md`.

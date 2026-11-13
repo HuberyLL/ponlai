@@ -3,7 +3,7 @@
 The measured readings of the island's look: light and shade, exposure, water and albedo. Design
 quantities (a size, a height, an angle chosen for the look) stay on the design page beside the
 decision they belong to. What each reading means for the look and why: [Art
-direction](../explanation/art-direction.md) and the subject pages it lists.
+direction](../design/art-direction.md) and the subject pages it lists.
 
 ## Light and shade
 

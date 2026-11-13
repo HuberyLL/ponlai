@@ -7,7 +7,7 @@ export { MEADOW_MIN_UP, MEADOW_MAX_DROP, supportsMeadow } from '../world/MeadowS
 
 // The meadow's ground: the lawn's one colour, its gains and the soil and habitat fields.
 //
-// The lawn is one grass colour (docs/explanation/art-direction.md): every tuft takes it and the turf under
+// The lawn is one grass colour (docs/design/island.md, The meadow): every tuft takes it and the turf under
 // the blades shows it too, so the far meadow, where the blades are under a pixel and the turf shows
 // between them, reads as one carpet with the near blades. Only a gentle, low-frequency swing of its
 // value (+-4 %, drifts some 10 m across) keeps a large lawn from looking printed; the blades' own
@@ -90,7 +90,7 @@ export function meadowMoisture( x: number, z: number ): number {
 
 }
 
-// The soil (docs/explanation/art-direction.md, the meadow): on a real island top the salt spray and the wind
+// The soil (docs/design/island.md, The meadow): on a real island top the salt spray and the wind
 // come from the prevailing wind's side, and they set the turf. On the windward coast a band of
 // short, salt-pruned turf reaches far in from the edge, the farther the more exposed the coast; on
 // the lee coast the tall turf runs to the edge. A headland, the sea round it on several sides, is

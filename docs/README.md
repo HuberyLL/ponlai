@@ -50,13 +50,13 @@ Facts to look up.
 
 What something is and why.
 
-- [Art direction](explanation/art-direction.md): the island's look as a whole (the light, the
+- [Art direction](design/art-direction.md): the island's look as a whole (the light, the
   shade, the exposure, the image) and how it is judged.
-  - [The island](explanation/island.md): the land, the cliffs, the sea floor, the meadow, the
+  - [The island](design/island.md): the land, the cliffs, the sea floor, the meadow, the
     bamboo, the yunpeng, the wind.
-  - [Sea and sky](explanation/sea-and-sky.md): the sea, its foam and its water, the sun, the air,
+  - [Sea and sky](design/sea-and-sky.md): the sea, its foam and its water, the sun, the air,
     the clouds, the sky's colour, the parked weathers.
-  - [Night](explanation/night.md): the moon, its light, the stars.
-  - [Life and islanders](explanation/life-and-islanders.md): the creatures and the people.
-- [Game design](explanation/game-design.md): the game behind `?game`.
-- [Game UI](explanation/ui.md): the player's interface.
+  - [Night](design/night.md): the moon, its light, the stars.
+  - [Life and islanders](design/life-and-islanders.md): the creatures and the people.
+- [Game design](design/game-design.md): the game behind `?game`.
+- [Game UI](design/ui.md): the player's interface.

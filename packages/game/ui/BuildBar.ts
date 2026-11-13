@@ -11,7 +11,7 @@ import type { UiShared } from './Shared.ts';
 
 // The build bar: the mallet's two tiers of brush strokes, the groups and their buildings.
 //
-// The build bar (docs/explanation/ui.md, Build bar): opened by the mallet at the bottom right,
+// The build bar (docs/design/ui.md, Build bar): opened by the mallet at the bottom right,
 // which toggles it; the speak bar steps aside while it is open. Two
 // tiers of brush strokes run leftward from the mallet:
 // - the groups (tier 1), a fixed handful in data/buildings.ts BUILD_GROUPS' order, the recently

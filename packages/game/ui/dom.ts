@@ -3,7 +3,7 @@ import { iconSvg } from './Icons.ts';
 
 // The interface's DOM helpers, which write a field only when its value changed.
 //
-// The interface's DOM helpers. Each frame writes only what changed (docs/explanation/ui.md, Rules for the code),
+// The interface's DOM helpers. Each frame writes only what changed (docs/design/ui.md, Rules for the code),
 // so the setters below compare first: a steady interface costs a comparison per field and frame.
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -78,7 +78,7 @@ export function under( parent: Element ): SVGSVGElement {
 }
 
 /**
- * An icon button: the icon is the button, its name only for screen readers (docs/explanation/ui.md, Button
+ * An icon button: the icon is the button, its name only for screen readers (docs/design/ui.md, Button
  * states). A click from the pointer gives the focus back to the page, so Space stays the game's
  * pause; from the keyboard the focus stays.
  */

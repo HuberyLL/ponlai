@@ -3,7 +3,7 @@
 This guide gives the steps for adding a piece of game content to the simulation behind `?game`.
 Why content is registered definitions that the core never names:
 [Rules across the layers](../reference/architecture-rules.md#rule-7-content-is-registered-definitions-the-core-names-none),
-rule 7. What the game is: [Game design](../explanation/game-design.md).
+rule 7. What the game is: [Game design](../design/game-design.md).
 
 A piece of content (a resource and what answers it, a kind of place, a building) is a module in
 [packages/game/sim/content/](../../packages/game/sim/content/). It registers its definitions with

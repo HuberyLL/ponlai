@@ -41,7 +41,7 @@ import type { Exposure } from '../look/ExposureLook.ts';
 // stops at -8 degrees.
 // So the night is the twilight's end, not a lift after a dip; the night sky's own light (stars, the moon's disk and its in-scatter in the
 // sky, clouds) scales back to keep its tuned look in deep night (Sky.track). The night is
-// art-directed, not a simulation of the eye's night vision (docs/explanation/art-direction.md).
+// art-directed, not a simulation of the eye's night vision (docs/design/night.md).
 // A clear twilight is not yet the night, on either side of it. After a clear sunset the glow
 // holds low in the west under a blue sky for a long while, falling slowly to about -9 degrees,
 // and long before a clear sunrise the air is blue and the sea a clear blue under it, lit by the

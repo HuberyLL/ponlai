@@ -6,7 +6,7 @@ import { itemName } from './words.ts';
 
 // The kinds of entry the record (沧海录) shows: each one's row in the log and its mark.
 //
-// The kinds of entry the record (沧海录) shows (docs/explanation/ui.md, 沧海录): how each reads as a row of the
+// The kinds of entry the record (沧海录) shows (docs/design/ui.md, 沧海录): how each reads as a row of the
 // day's log, and the mark it puts over its day on the river. The game keeps the entries
 // (packages/game/Chronicle.ts); a new kind of entry is a row here, and the record's components never
 // change for it; a kind without a row reads as the default one (`recordKind`: who, and what), and

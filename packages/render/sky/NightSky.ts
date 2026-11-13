@@ -34,7 +34,7 @@ type V3 = THREE.Node<'vec3'>;
 // turn through the night nor drift over the year; procedural grain and faint stars only add detail
 // below the catalogue and the map. Stars are points with a natural spread of brightness, kept below
 // white except the brightest few; only those near the horizon scintillate. The night is
-// art-directed (docs/explanation/art-direction.md): the sky's colours are drawn as authored, and any
+// art-directed (docs/design/night.md, The night sky): the sky's colours are drawn as authored, and any
 // night-vision shift is the post chain's (Purkinje.ts, off by default), over the whole frame.
 
 // The drawn disk's angular radius: five times the true moon's (Radiometry.ts MOON_GLINT_RADIUS,

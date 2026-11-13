@@ -11,7 +11,7 @@ import { t } from './i18n/i18n.ts';
 
 // The weather in the top row: a live icon for now and a brush stroke for the next 24 hours.
 //
-// The weather in the top row (docs/explanation/ui.md, Weather forecast): the weather now as one live
+// The weather in the top row (docs/design/ui.md, Weather forecast): the weather now as one live
 // icon in parts, and the next 24 game hours as one brush stroke beside it.
 //
 // - The live icon is the sun (or moon), a cloud and a cloud behind, each part's weight and place

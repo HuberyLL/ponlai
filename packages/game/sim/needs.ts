@@ -16,7 +16,7 @@ import type { Needs } from './types.ts';
 
 export const NEED_MAX = 100;
 /** a need at or below this is critical: the interface raises its alert and the record notes it
- * (docs/explanation/ui.md, Islanders), and below LOW_NEED its bar turns toward the alert's colour */
+ * (docs/design/ui.md, Islanders), and below LOW_NEED its bar turns toward the alert's colour */
 export const CRITICAL_NEED = 20;
 export const LOW_NEED = 50;
 

@@ -95,7 +95,7 @@ code lint's `ponlai/scene-clock`, which refuses the wall clock in code that chan
 ## Rule 5: Generic generation
 
 The island grows one piece at a time
-([game-design.md](../explanation/game-design.md), How the island grows). So everything placed on it
+([game-design.md](../design/game-design.md), How the island grows). So everything placed on it
 derives from the land's footprint, the island's SDF and noise fields with fixed seeds: hashes of
 position, or random streams seeded per world-anchored cell, never one running stream across many
 items. Nothing comes from coordinates placed by hand, and counts follow the measured coast length or
@@ -138,7 +138,7 @@ and may name it. The steps for adding content:
 [add-game-content.md](../how-to/add-game-content.md).
 
 **Why:** the design adds content as places and items, never as new actions
-([game-design.md](../explanation/game-design.md), Actions).
+([game-design.md](../design/game-design.md), Actions).
 
 **Enforced by:** [verify-game.mjs](../../tools/game/verify-game.mjs): it registers content of its
 own, plays it with no change elsewhere, and fails on a content id written in the core as a string,
@@ -421,7 +421,7 @@ table is created, and the numbers that do not pass through the look yet:
 [Look.ts](../../packages/render/look/Look.ts), its header.
 
 **Why:** a material tuned to make up for the light breaks when the light changes
-([art-direction.md](../explanation/art-direction.md), How the look is made). A look spread over
+([art-direction.md](../design/art-direction.md), How the look is made). A look spread over
 the sky, the haze, the exposure and the grade cannot be read, compared or replaced as one thing,
 and a second scene needs its own without editing the renderer.
 

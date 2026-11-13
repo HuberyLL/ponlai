@@ -1,6 +1,6 @@
 // The interface's icons: white line art drawn with the brush, as SVG bodies in `currentColor`.
 //
-// The interface's icons: white line art drawn with the brush (docs/explanation/ui.md, Principles: icons are
+// The interface's icons: white line art drawn with the brush (docs/design/ui.md, Principles: icons are
 // the buttons, white line art with no label). Each is an SVG body in its own view box, filled with
 // `currentColor`, so its colour comes from the element that holds it (缟, 精白 on hover, 苍, 朱).
 // Their coordinates are kept to a tenth of a unit (an eighth of a pixel at 40 px). An icon is

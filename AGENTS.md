@@ -4,8 +4,8 @@ A small island in an open sea, rendered in the browser: a visual sample for a ga
 growing behind `?game`. The look is a calm, painterly island,
 inspired by the eastern aesthetic of Ghost of Tsushima, on a physically based scene lit as the
 sun and the sky give it (deep clear water, chunky stone, a lush meadow that moves in the wind,
-with wildflowers). The look and what to avoid: `docs/explanation/art-direction.md`. The game's
-design: `docs/explanation/game-design.md` (read it before gameplay work).
+with wildflowers). The look and what to avoid: `docs/design/art-direction.md`. The game's
+design: `docs/design/game-design.md` (read it before gameplay work).
 
 This file is an index: the rules every change follows, what to read before a task, and the folders.
 Detail lives where it is owned.
@@ -17,14 +17,14 @@ Detail lives where it is owned.
 - `ARCHITECTURE.md` is the structure (layers, what each owns, flows, the rules across them, why):
   read it before a structural change; update it when a change adds a layer, moves what one owns or
   changes a flow. The rules' full text: `docs/reference/architecture-rules.md`. Files:
-  `node tools/repo/code-map.mjs`. Art decisions go to `docs/explanation/art-direction.md`, measured
+  `node tools/repo/code-map.mjs`. Art decisions go to `docs/design/art-direction.md`, measured
   look values to `docs/reference/look-values.md`, URL options to `docs/reference/url-options.md`,
   tool manuals to each tool's header (indexed in `docs/reference/tools.md`); this file changes with
   a rule every change follows, the reading index or the folders.
 - The docs follow Diátaxis (<https://diataxis.fr>), a page one kind, in its folder of `docs/`:
   tutorials (`docs/tutorials/`, none yet) for a first success, how-to guides (`docs/how-to/`) for
   one task's steps, reference (`docs/reference/`, and a module's header beside its code) for facts,
-  explanation (`docs/explanation/`) for what and why. `docs/README.md` lists every page. `AGENTS.md`,
+  explanation (`docs/design/`) for what and why. `docs/README.md` lists every page. `AGENTS.md`,
   `ARCHITECTURE.md` and `CREDITS.md` stay at the top; a README beside a tool documents its folder.
   A page links to the others rather than repeating them; a fact or a rule is written in one place.
   Docs state the current state: what was tried and dropped goes in the commit message.
@@ -80,7 +80,7 @@ record and the rule guards a stated convention.
 
 | Rule | Enforced by | Came from |
 | --- | --- | --- |
-| Lookdev and lighting are kept strictly apart (`docs/explanation/art-direction.md`, How the look is made); a new material follows `docs/how-to/add-material.md`. | judgement | - |
+| Lookdev and lighting are kept strictly apart (`docs/design/art-direction.md`, How the look is made); a new material follows `docs/how-to/add-material.md`. | judgement | - |
 | Shaders are TSL only, never WGSL or GLSL strings; a helper called from several places is `Fn( ... ).setLayout( ... )`, one shader function. | `ponlai/tsl-only`; the helpers: judgement | - |
 | Simulation and generation are deterministic and path-independent: the world, its growth, the weather, the wind and every integrated state are functions of the land, seeds, scene clock and weather, never of the path or thread count; a grown page or a scene jump holds what a fresh load holds (`ARCHITECTURE.md`, rule 4). | `verify-world-chunks`, `verify-growth-swap`, `verify-scene-jump`, parity captures | a cliff wall's exposure kept state across calls (`Chunks.ts`) |
 | What changes the scene reads the scene clock or its step, never the wall clock (`ARCHITECTURE.md`, rule 17). | `ponlai/scene-clock` | the sky's irradiance read-back waited on a wall-clock gate |
@@ -168,8 +168,8 @@ meets it.
 - The world's generator: `packages/island/world/Chunks.ts`'s header. Something that depends on the
   land's shape: `packages/island/world/Growth.ts`'s header. It and a history-dependent effect:
   `docs/how-to/check-a-change.md`.
-- Gameplay: `docs/explanation/game-design.md`; game content: `docs/how-to/add-game-content.md`;
-  game UI: `docs/explanation/ui.md`. The look: `docs/explanation/art-direction.md`,
+- Gameplay: `docs/design/game-design.md`; game content: `docs/how-to/add-game-content.md`;
+  game UI: `docs/design/ui.md`. The look: `docs/design/art-direction.md`,
   `docs/reference/look-values.md`.
 - A tool: `docs/how-to/write-a-tool.md`. three.js: `docs/how-to/upgrade-three.md`. A commit:
   `docs/how-to/check-a-change.md`. A file: `node tools/repo/code-map.mjs`.

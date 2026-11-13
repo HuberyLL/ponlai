@@ -42,7 +42,7 @@ import './content/index.ts';
 // seed; a slow one acts when it answers, through the same entrance (agent.ts `act`), which refuses
 // the answer of an islander who died meanwhile.
 //
-// The island grows with the population (docs/explanation/game-design.md, "How the island grows"): the
+// The island grows with the population (docs/design/game-design.md, "How the island grows"): the
 // population is the islanders' count, and each step of GROWTH_STEPS (types.ts) is one piece. The
 // simulation only says when growth is due (`growthDue`) and how near the next step is
 // (`approach`); the session's host grows the island (../Session.ts; on the page world/Growth.ts)
@@ -57,7 +57,7 @@ import './content/index.ts';
 
 export { SAVE_VERSION };
 // the islanders' names by sex, the first that no living islander holds: Chinese, the language the
-// interface is written in (docs/explanation/ui.md); a name is content kept in the save, not a word of the
+// interface is written in (docs/design/ui.md); a name is content kept in the save, not a word of the
 // interface's catalogue (ui/i18n/)
 const NAMES: Readonly<Record<Sex, readonly string[]>> = {
 	male: [ '阿凯', '阿木', '石头', '阿海', '竹生', '阿林' ],
