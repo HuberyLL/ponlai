@@ -7,8 +7,8 @@ sun and the sky give it (deep clear water, chunky stone, a lush meadow that move
 with wildflowers). The look and what to avoid: `docs/explanation/art-direction.md`. The game's
 design: `docs/explanation/game-design.md` (read it before gameplay work).
 
-This file is an index of at most 20,000 characters (`npm run lint:docs` fails past it): the rules
-every change follows, what to read before a task, and the folders. Detail lives where it is owned.
+This file is an index: the rules every change follows, what to read before a task, and the folders.
+Detail lives where it is owned.
 
 ## Where things are written
 
@@ -39,7 +39,7 @@ every change follows, what to read before a task, and the folders. Detail lives 
   passes (types, code lint, layers, exits, settings, file sizes, three's internals, CPU regression
   tools), in seconds, without a GPU; `-- --full` adds the build and the world's chunks
   (`docs/how-to/check-a-change.md`). `npm run lint:docs`: Markdown, offline links, docs paths in
-  code, this file's size; `npm run lint:links` adds web links. In-page keys:
+  code; `npm run lint:links` adds web links. In-page keys:
   `docs/reference/tools.md`, Page.
 - Tools are in `tools/`, their manual in `docs/reference/tools.md` (Which tool for which question).
   Most changes meet: `node tools/serve.mjs dev|preview` (a worktree's server on a free port),

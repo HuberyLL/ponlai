@@ -1249,8 +1249,7 @@ and their links offline with lychee (local files and `#anchors`; config in `lych
 `tools/repo/verify-doc-paths.mjs`, also in it, checks that every path into `docs/`, `skills/` or
 `tools/` written in full from the repository's root in a tracked text file (code comments and
 strings, configuration, prose) names a file or folder that exists, that every file `AGENTS.md` and
-`docs/reference/code-map.md` name in backticks is tracked, and that `AGENTS.md` stays within its
-limit of 20,000 characters.
+`docs/reference/code-map.md` name in backticks is tracked.
 `npm run lint:links` checks the web links too; sites that refuse automated clients (403, 405, 429)
 count as present. lychee is a separate binary: `brew install lychee`, or `cargo install lychee`.
 

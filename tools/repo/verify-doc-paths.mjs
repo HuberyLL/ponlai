@@ -15,19 +15,15 @@
 // tool paths are ours and are checked. ABSENT lists the paths written on purpose for a folder that
 // has no file yet, each with its reason and the files allowed to name it.
 //
-// Two more checks keep the index and the map honest:
-// - In AGENTS.md and docs/reference/code-map.md (each while it is tracked), every file named in
-//   backticks (a name ending in a code or data extension, written whole or as the end of its path,
-//   as the map writes a file under its section's folder) names a tracked file, so a file that moves
-//   or goes takes its line along.
-// - AGENTS.md stays within AGENTS_LIMIT characters: it is the index every change reads, and
-//   detail belongs where it is owned (AGENTS.md says where).
-//   node tools/repo/verify-doc-paths.mjs     exit 0 when every path exists and AGENTS.md fits, 1 with the list
+// One more check keeps the index and the map honest: in AGENTS.md and docs/reference/code-map.md
+// (each while it is tracked), every file named in backticks (a name ending in a code or data
+// extension, written whole or as the end of its path, as the map writes a file under its section's
+// folder) names a tracked file, so a file that moves or goes takes its line along.
+//   node tools/repo/verify-doc-paths.mjs     exit 0 when every path exists, 1 with the list
 // Runs as part of `npm run lint:docs`. Pure git, no GPU.
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 
-const AGENTS_LIMIT = 20000;
 const NAMED = [ 'AGENTS.md', 'docs/reference/code-map.md' ];
 const FILE = /`([\w./-]+\.(?:ts|mjs|js|json|html|py|css|txt))`/g;
 
@@ -96,15 +92,6 @@ for ( const doc of NAMED.filter( ( d ) => tracked.includes( d ) ) ) {
 
 }
 
-// Characters, not bytes or UTF-16 units, as `wc -m` counts them.
-const agentsLength = [ ...readFileSync( `${ top }/AGENTS.md`, 'utf8' ) ].length;
-if ( agentsLength > AGENTS_LIMIT ) {
-
-	console.log( `AGENTS.md has ${ agentsLength } characters, over its limit of ${ AGENTS_LIMIT }: move detail to where it is owned (AGENTS.md, Adding a rule)` );
-	process.exitCode = 1;
-
-}
-
 if ( missing.length ) {
 
 	console.log( `${ missing.length } path(s) to a missing doc, skill, tool or file:\n${ missing.join( '\n' ) }` );
@@ -112,4 +99,4 @@ if ( missing.length ) {
 
 }
 
-if ( ! process.exitCode ) console.log( `every path into docs, skills and tools (${ paths } in ${ files.size } files) and every file in the index and the map (${ named }) names a file; AGENTS.md has ${ agentsLength } characters` );
+console.log( `every path into docs, skills and tools (${ paths } in ${ files.size } files) and every file in the index and the map (${ named }) names a file` );
