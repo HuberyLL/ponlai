@@ -64,9 +64,31 @@
 // - The lifted key (packages/render/lighting/KeyLift.ts) follows the lift it is given: its height
 //   and its direction's elevation for a sun key are the lift's shading elevation, the key's own
 //   under the neutral set.
+//
+// The haze's look (packages/render/look/HazeLook.ts `createHazeTables`), in plain node, made from
+// the island's haze table, the neutral one and a copy of the island's with every field of every key
+// moved, every row a degree later, the fog layer's fields where a key holds none, the sea fog, and
+// per sky the kept colour, the gain, the scales, the deck's end of the aerosol layer and the sun's
+// Rayleigh share changed. Guarantees, each a failure:
+// - Each set holds its own table's numbers: every key's fields (its own copy, the table left as it
+//   was written), the rows' elevations and keys, the keys with a shape of their own and the fog
+//   layer each key takes, the fog layer where a key holds none, the sea fog, and per sky the kept
+//   colour, the gain, the scales with the weather's preset haze, the deck's end of the aerosol layer
+//   and the sun's Rayleigh share.
+// - The haze's key (packages/render/weather/HazeKeys.ts `hazeKeyAt`) reads the tables it is given:
+//   under a clear sky alone, at each rising row's elevation and each setting row's that does not
+//   start the night's segment, it is that row's key with its shape, its fog layer and the clear
+//   sky's scales; under a cloudy sky alone, at each clouded setting row's, that row's key with the
+//   cloudy sky's scales; with the day's fog off it holds the table's fog layer where a key holds none; with
+//   the sea fog on, the table's sea fog.
+// - Making the others leaves the island's as it was: the haze's key over a grid of elevations,
+//   sides, skies, winds, rains and fog switches is the same numbers bit for bit before and after.
+// - The changed copy differs from the island's somewhere in every field of the key the look gives
+//   (all but the deck's two shares, which are the weather's), and the neutral set somewhere.
 // Under node the tune table is off (packages/render/debug/Tune.ts `TUNE_ON`), so each system's
 // tunables are its own; on a debug page they share one table by name (ExposureLook.ts's,
-// DayLook.ts's, Wind.ts's and AmbientLook.ts's headers).
+// DayLook.ts's, Wind.ts's, AmbientLook.ts's and HazeLook.ts's headers). The haze's modules load in
+// plain node, so all of its numbers, tunables included, are checked here per table.
 //
 // The other systems that take their tables at creation, through Vite's SSR loader with the
 // island's look installed (so a number that came from the installed look instead of the table
@@ -96,6 +118,12 @@ import { createDayWindows } from '../packages/render/look/DayLook.ts';
 import { Wind, createWindUniforms, plantSpeedOf, windResponse } from '../packages/render/weather/Wind.ts';
 import { AMBIENT_COLUMNS, AMBIENT_KNOBS, DEFAULT_KNOBS, createAmbientTables, createKeyLift } from '../packages/render/look/AmbientLook.ts';
 import { liftedKeyDirection, liftedKeyHeight } from '../packages/render/lighting/KeyLift.ts';
+import { createHazeTables } from '../packages/render/look/HazeLook.ts';
+import { hazeKeyAt } from '../packages/render/weather/HazeKeys.ts';
+import { HAZE_KEY_NAMES } from '../packages/render/look/Look.ts';
+import { cloudBase } from '../packages/render/look/SkyLook.ts';
+import { MIX_SKIES, WEATHER_PRESETS } from '../packages/render/sky/Weather.ts';
+import { FOG_NOISE } from '../packages/render/weather/FogNoise.ts';
 import * as THREE from 'three/webgpu';
 import { ISLAND_LOOK } from '../packages/island/look/IslandLook.ts';
 import { NEUTRAL_LOOK } from '../packages/render/look/NeutralLook.ts';
@@ -502,6 +530,177 @@ for ( const [ name, { lift } ] of Object.entries( ambients ) ) for ( const e of 
 assert.ok( [ 0.5, 3, 5.5 ].every( ( e ) => islandAmbient.lift( e ) !== e ), 'the island\'s lift lifts a low sun' );
 
 console.log( `Ambient light: three sets from three tables, each its own (${ islandAmbientBefore.length } readings), the island's unmoved by the others, the changed copy off the island's in every knob, gain and the lift, the neutral set lifting nothing, the lifted key on its own lift (${ liftedKeys } keys): passed.` );
+
+// ---- the haze's look
+
+// the island's haze table changed: every field of every key moved, every row a degree later, the
+// fog layer where a key holds none, the sea fog and every per-sky number changed
+function changedHaze( look ) {
+
+	const h = structuredClone( look.haze );
+	for ( const name of HAZE_KEY_NAMES ) for ( const f of Object.keys( h.keys[ name ] ) ) h.keys[ name ][ f ] += 0.125;
+	for ( const rows of [ h.rising, h.setting, h.settingClouded ] ) for ( const row of rows ) row[ 0 ] += 1;
+	for ( const f of Object.keys( h.noFog ) ) h.noFog[ f ] += 0.25;
+	for ( const f of Object.keys( h.seaFog ) ) h.seaFog[ f ] += 0.25;
+	h.keep = h.keep.map( ( v ) => v * 0.75 );
+	h.gain = h.gain.map( ( v ) => v + 0.5 );
+	h.scales = h.scales.map( ( scale ) => Object.fromEntries( Object.entries( scale ).map( ( [ k, v ] ) => [ k, v * 1.5 ] ) ) );
+	h.decked = h.decked.map( ( v ) => ! v );
+	h.sunRayleigh = h.sunRayleigh.map( ( v ) => 0.5 - v / 4 );
+	return h;
+
+}
+
+// each set holds its own table's numbers
+function ownHaze( tables, table, name ) {
+
+	for ( const k of HAZE_KEY_NAMES ) {
+
+		assert.notEqual( tables.keys[ k ], table.keys[ k ], `${ name } haze: the ${ k } key is the table's own object` );
+		assert.deepEqual( { ...tables.keys[ k ] }, table.keys[ k ], `${ name } haze: the ${ k } key` );
+
+	}
+	for ( const side of [ 'rising', 'setting', 'settingClouded' ] ) {
+
+		assert.equal( tables[ side ].length, table[ side ].length, `${ name } haze: ${ side } rows` );
+		tables[ side ].forEach( ( [ at, key ], i ) => {
+
+			assert.equal( at, table[ side ][ i ][ 0 ], `${ name } haze: ${ side } row ${ i }'s elevation` );
+			assert.equal( key, tables.keys[ table[ side ][ i ][ 1 ] ], `${ name } haze: ${ side } row ${ i }'s key` );
+
+		} );
+
+	}
+	const { day, golden, night, mist, morning } = tables.keys;
+	assert.deepEqual( [ ...tables.shaped ], [ day, golden, night, mist ], `${ name } haze: the keys with a shape` );
+	for ( const k of HAZE_KEY_NAMES ) {
+
+		const key = tables.keys[ k ];
+		assert.equal( tables.fogOf( key ), [ 'day', 'golden', 'mist' ].includes( k ) ? key : key === morning ? mist : night, `${ name } haze: the ${ k } key's fog layer` );
+
+	}
+	assert.deepEqual( { ...tables.noFog }, table.noFog, `${ name } haze: the fog layer where a key holds none` );
+	assert.deepEqual( { ...tables.seaFog }, table.seaFog, `${ name } haze: the sea fog` );
+	for ( const f of [ 'keep', 'gain', 'decked', 'sunRayleigh' ] ) assert.deepEqual( [ ...tables[ f ] ], table[ f ], `${ name } haze: ${ f }` );
+	tables.skyScale.forEach( ( scale, s ) => assert.deepEqual( { ...scale }, { ...table.scales[ s ], haze: WEATHER_PRESETS[ MIX_SKIES[ s ] ].haze }, `${ name } haze: the scales of ${ MIX_SKIES[ s ] }` ) );
+
+}
+
+const HAZE_WINDOWS = createDayWindows( ISLAND_LOOK.day );
+const CLEAR = [ 1, 0, 0, 0 ];
+const keyAt = ( tables, elevation, rising, sky = CLEAR, wind = 0, rain = 0, dayFog = 1, seaFog = 0, fogWeather = 0 ) =>
+	hazeKeyAt( tables, HAZE_WINDOWS, elevation, rising, sky, wind, rain, dayFog, seaFog, fogWeather, {} );
+const nearHaze = ( actual, expected, what ) => near( actual, expected, what, 1e-12 * Math.max( 1, Math.abs( expected ) ) );
+
+// the haze's key reads the tables it is given: a row's key under a clear sky alone, the fog layer
+// where a key holds none with the day's fog off, the sea fog with its switch on
+function hazeKeyReadsOwn( tables, name ) {
+
+	const [ scale ] = tables.skyScale;
+	const { night } = tables.keys;
+	let rows = 0;
+	for ( const [ side, rising ] of [ [ 'rising', true ], [ 'setting', false ] ] ) tables[ side ].forEach( ( [ at, k ], i ) => {
+
+		// (the setting night's segment comes in by stops, DayCycle.ts `duskIn`, and the last row closes
+		// a segment eased to it: neither is the row's key alone)
+		if ( i === tables[ side ].length - 1 || ( ! rising && k === night ) ) return;
+		const shape = tables.shaped.has( k ) ? k : tables.keys.day, fog = tables.fogOf( k );
+		const key = keyAt( tables, at, rising );
+		const what = `${ name } haze key: ${ side } row ${ i }`;
+		const want = {
+			amount: k.amount * scale.haze / WEATHER_PRESETS.clear.haze,
+			sigmaRed: k.sigmaRed * scale.sigmaRed, sigmaGreen: k.sigmaGreen * scale.sigmaGreen, sigmaBlue: k.sigmaBlue * scale.sigmaBlue,
+			desaturate: 1 - ( 1 - k.desaturate ) * tables.keep[ 0 ], gain: tables.gain[ 0 ], mist: k.mist,
+			sunRayleigh: 1 - ( 1 - k.sunRayleigh ) * ( 1 - tables.sunRayleigh[ 0 ] ), rayleighWeight: k.rayleighWeight, mieWeight: k.mieWeight, skyDepth: k.skyDepth,
+			aerosolShare: shape.aerosolShare * scale.aerosolScale, aerosolHeight: shape.aerosolHeight * scale.aerosolHeight,
+			aerosolTop: tables.decked[ 0 ] ? cloudBase( 0 ) : Infinity,
+			top: shape.top * scale.topScale * ( 1 - fog.fogLayer ) + fog.fogTop * fog.fogLayer,
+			width: shape.width * scale.widthScale * ( 1 - fog.fogLayer ) + fog.fogWidth * fog.fogLayer,
+			fogLayer: fog.fogLayer, droplet: fog.fogLayer, neutral: fog.neutral, scatter: fog.scatter, fogTop: fog.fogTop, fogWidth: fog.fogWidth, visibility: fog.visibility,
+			fogCoverHigh: FOG_NOISE.high(),
+		};
+		for ( const [ f, v ] of Object.entries( want ) ) if ( v === Infinity ) assert.equal( key[ f ], v, `${ what }: ${ f }` );
+		else nearHaze( key[ f ], v, `${ what }: ${ f }` );
+		// the day's fog off: the table's fog layer where a key holds none
+		const off = keyAt( tables, at, rising, CLEAR, 0, 0, 0 );
+		for ( const f of [ 'neutral', 'scatter', 'fogTop', 'fogWidth', 'visibility' ] ) nearHaze( off[ f ], tables.noFog[ f ], `${ what }, the day's fog off: ${ f }` );
+		nearHaze( off.fogLayer, tables.noFog.fogLayer, `${ what }, the day's fog off: fogLayer` );
+		// the sea fog on: the table's sea fog
+		const sea = keyAt( tables, at, rising, CLEAR, 0, 0, 1, 1 );
+		for ( const f of [ 'neutral', 'scatter', 'fogTop', 'fogWidth', 'visibility' ] ) nearHaze( sea[ f ], tables.seaFog[ f ], `${ what }, the sea fog on: ${ f }` );
+		nearHaze( sea.fogCoverHigh, tables.seaFog.coverHigh, `${ what }, the sea fog on: fogCoverHigh` );
+		rows ++;
+
+	} );
+	// a clouded evening: under a cloudy sky alone, at each of the clouded setting rows' elevations,
+	// the clouded row's key with the cloudy sky's scales
+	const [ , , cloudy ] = tables.skyScale;
+	tables.settingClouded.forEach( ( [ at, k ], i ) => {
+
+		if ( i === tables.settingClouded.length - 1 ) return;
+		const key = keyAt( tables, at, false, [ 0, 0, 1, 0 ] );
+		const what = `${ name } haze key: settingClouded row ${ i }`;
+		nearHaze( key.amount, k.amount * cloudy.haze / WEATHER_PRESETS.cloudy.haze, `${ what }: amount` );
+		nearHaze( key.sigmaRed, k.sigmaRed * cloudy.sigmaRed, `${ what }: sigmaRed` );
+		nearHaze( key.desaturate, 1 - ( 1 - k.desaturate ) * tables.keep[ 2 ], `${ what }: desaturate` );
+		for ( const f of [ 'rayleighWeight', 'mieWeight', 'skyDepth' ] ) nearHaze( key[ f ], k[ f ], `${ what }: ${ f }` );
+		rows ++;
+
+	} );
+	return rows;
+
+}
+
+const HAZE_ELEVATIONS = [];
+for ( let e = - 20; e <= 70; e += 0.5 ) HAZE_ELEVATIONS.push( e );
+const HAZE_SKIES = [ ...ONE_SKY, [ 0.4, 0.1, 0.3, 0.2 ], [ 0.5, 0.5, 0, 0 ] ];
+// the key's fields the look gives (the deck's two shares are the weather's)
+const HAZE_FIELDS = Object.keys( ISLAND_LOOK.haze.keys.day ).filter( ( f ) => f !== 'deck' && f !== 'overcastDeck' );
+// every field of the haze's key over the grid, by field
+function hazeReadings( tables ) {
+
+	const out = Object.fromEntries( HAZE_FIELDS.map( ( f ) => [ f, [] ] ) );
+	for ( const e of HAZE_ELEVATIONS ) for ( const rising of [ false, true ] ) for ( const sky of HAZE_SKIES )
+		for ( const wind of [ 0, 4.2 ] ) for ( const rain of [ 0, 0.6 ] ) for ( const dayFog of [ 0, 1 ] ) for ( const seaFog of [ 0, 0.5 ] ) for ( const fogWeather of [ 0, 0.5 ] ) {
+
+			const key = keyAt( tables, e, rising, sky, wind, rain, dayFog, seaFog, fogWeather );
+			for ( const f of HAZE_FIELDS ) out[ f ].push( key[ f ] );
+
+		}
+	return out;
+
+}
+
+const hazeLooks = { island: ISLAND_LOOK.haze, neutral: NEUTRAL_LOOK.haze, changed: changedHaze( ISLAND_LOOK ) };
+const islandHazeWritten = structuredClone( ISLAND_LOOK.haze );
+const islandHaze = createHazeTables( hazeLooks.island );
+const islandHazeBefore = hazeReadings( islandHaze );
+const hazes = { island: islandHaze, neutral: createHazeTables( hazeLooks.neutral ), changed: createHazeTables( hazeLooks.changed ) };
+let hazeRows = 0;
+for ( const [ name, tables ] of Object.entries( hazes ) ) {
+
+	ownHaze( tables, hazeLooks[ name ], name );
+	hazeRows += hazeKeyReadsOwn( tables, name );
+
+}
+assert.deepEqual( ISLAND_LOOK.haze, islandHazeWritten, 'the island\'s haze table moved' );
+const islandHazeAfter = hazeReadings( islandHaze );
+let hazeNumbers = 0;
+for ( const f of HAZE_FIELDS ) islandHazeAfter[ f ].forEach( ( v, i ) => {
+
+	assert.ok( Object.is( v, islandHazeBefore[ f ][ i ] ), `the island's haze ${ f } reading ${ i } moved: ${ islandHazeBefore[ f ][ i ] } -> ${ v }` );
+	hazeNumbers ++;
+
+} );
+{
+
+	const changed = hazeReadings( hazes.changed ), neutral = hazeReadings( hazes.neutral );
+	for ( const f of HAZE_FIELDS ) assert.ok( changed[ f ].some( ( v, i ) => ! Object.is( v, islandHazeBefore[ f ][ i ] ) ), `changed haze: ${ f } reads as the island's` );
+	assert.ok( HAZE_FIELDS.some( ( f ) => neutral[ f ].some( ( v, i ) => ! Object.is( v, islandHazeBefore[ f ][ i ] ) ) ), 'neutral haze: reads as the island\'s' );
+
+}
+
+console.log( `Haze: three sets from three tables, each its own, the haze's key on its own tables (${ hazeRows } rows), the island's unmoved by the others (${ hazeNumbers } readings), the changed copy off the island's in every field the look gives: passed.` );
 
 // ---- the systems that load through Vite's SSR loader
 
