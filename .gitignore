@@ -9,6 +9,7 @@ artifacts/
 .claude/skills/*
 !.claude/skills/diagnosing-nonrepeating-frames
 !.claude/skills/building-aaa-stylised-realism
+!.claude/skills/fitting-a-look-to-reference-images
 CLAUDE.local.md
 # The game's assets: public/ is filled from a GitHub release (tools/repo/assets.mjs, assets.lock.json),
 # and no binary file goes into git anywhere else either (tools/verify-no-binaries.mjs)
