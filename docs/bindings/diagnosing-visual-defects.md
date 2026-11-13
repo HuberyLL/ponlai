@@ -11,7 +11,7 @@ Every command that renders in a browser runs under the GPU lock and every wait g
 ## Reproduce
 
 - The still view is the test mode: a paused page under MSAA (`debug&paused&t=12&quality=high`),
-  final once `settled` holds (`docs/how-to/check-a-change.md`).
+  final once `settled` holds (`docs/reference/test-mode.md`).
 - Serve the checkout with `node tools/kit/serve.mjs dev`; `--sha <rev>` serves another commit, for
   a before-and-after or a bisection.
 - The cheapest views are the renderer's test scenes (`scenes.html`: `ball`, `empty`, `plants`,
@@ -73,8 +73,8 @@ Check a fingerprint against these first (the commits give the measurements):
   the many-sample ground truth) and `uv run tools/kit/clip-metrics.py` (flicker, temporal
   instability, sharpness and ghosting against the ground truth); a clip's flicker map with
   `uv run tools/kit/img.py flicker`. Tolerances for temporal comparisons: `tools/kit/tolerance.py`.
-- Then the checks of `docs/how-to/check-a-change.md`. New stored references need the project
-  owner's word (`tools/kit/parity/README.md`).
+- Then the checks of [verifying-rendering-changes](verifying-rendering-changes.md), Kinds. New
+  stored references need the project owner's word (`tools/kit/parity/README.md`).
 
 ## Record
 

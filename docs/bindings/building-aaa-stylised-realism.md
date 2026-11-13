@@ -55,8 +55,9 @@ Every command that renders in a browser runs under the GPU lock and every wait g
 
 ## Check
 
-- Steps: `docs/how-to/check-a-change.md`, Run the small scenes first (after a change to the
-  renderer's light, sky, exposure or display chain) and Check a visual change.
+- Steps: the skill `verifying-rendering-changes` and its binding
+  ([verifying-rendering-changes](verifying-rendering-changes.md): Kinds for the small scenes after
+  a change to the renderer's light, sky, exposure or display chain).
 - One view: `tools/kit/capture.mjs`. Views on one warm page: `tools/kit/parity/capture-set.mjs`.
   Diffs, crops, sheets and region statistics: `uv run tools/kit/img.py`.
 - What colour each kind of surface shows by kind of light, before and after:

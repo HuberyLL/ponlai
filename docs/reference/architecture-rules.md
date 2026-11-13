@@ -78,7 +78,7 @@ under MSAA, with every history-dependent effect frozen or off, shot once the pag
 holds ([Test mode](test-mode.md)). There a paused frame repeats exactly and equals a fresh
 load's, and refactors are checked byte for byte. Under the temporal modes a paused page shows its
 rest image, compared within the tolerance. A new history-dependent effect follows
-[check-a-change.md](../how-to/check-a-change.md), Add a history-dependent effect.
+the [verifying-rendering-changes binding](../bindings/verifying-rendering-changes.md), History.
 
 **Why:** a save must play on as the original; a grown page must hold the world a fresh load
 holds; a headless run must repeat byte for byte, so that a change to the rules shows as a

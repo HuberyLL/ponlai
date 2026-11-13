@@ -32,9 +32,8 @@ it (`packages/render/Extensions.ts`):
 
 The declarations are statements the registry checks for, not hooks: a follower named in `land` is
 still wired by hand. A history-dependent effect follows
-[Check a change](../how-to/check-a-change.md#add-a-history-dependent-effect); something that
-depends on the land's shape follows
-[Check a change](../how-to/check-a-change.md#add-something-that-depends-on-the-lands-shape).
+[verifying-rendering-changes](../bindings/verifying-rendering-changes.md#history); something that
+depends on the land's shape follows `packages/island/world/Growth.ts`'s header.
 
 ## Plant kinds
 
@@ -74,7 +73,7 @@ The registry:
   mesh of leaf cards: it does not move in the wind, read the displacement field or thin with
   distance. A kind with those has a `root` of its own.
 - The plant patch scene shows a kind on its own: `node tools/render/scenes.mjs <baseUrl> <outDir>
-  --scenes plants` ([Check a change](../how-to/check-a-change.md#run-the-small-scenes-first)).
+  --scenes plants` ([verifying-rendering-changes](../bindings/verifying-rendering-changes.md#kinds)).
 
 ## Kinds of local light
 
@@ -152,4 +151,4 @@ The renderer's table of how each history is cleared is `render.history`
   every point, checks that one without its declarations is refused, and searches the registries'
   owners for the names of the island's definitions: a registry that names a kind fails it.
 - The small scenes and the captures that show a definition:
-  [Check a change](../how-to/check-a-change.md).
+  [verifying-rendering-changes](../bindings/verifying-rendering-changes.md).

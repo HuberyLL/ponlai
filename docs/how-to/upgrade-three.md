@@ -48,8 +48,8 @@ r186, each with the check that sees it.
    `packages/render/debug/PipelineCounter.ts`), that no player step creates one
    (`tools/render/verify-first-use.mjs`), and that a growth swap creates none
    (`tools/island/verify-growth-swap.mjs`).
-10. Measure the frame time before and after the upgrade (`docs/how-to/check-a-change.md`, Measure a
-    performance change).
+10. Measure the frame time before and after the upgrade
+    (`skills/measuring-performance-changes/SKILL.md`).
 11. Go through the entries marked r186 in `docs/reference/three-behaviour.md`, each with its
     check. Where three no longer behaves as an entry says, remove the code that works around it and
     the entry, and the line of `AGENTS.md`'s rule table or the lint rule that states it.

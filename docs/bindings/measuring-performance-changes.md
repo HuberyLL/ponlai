@@ -18,7 +18,8 @@ reading means. Read them there, never by starting the tool to see. Every wait go
   are clear and fair; the parked weathers' scenes run only when named.
 - The profiler's scene matrix: `node tools/render/profile-frame.mjs --list` (prints, renders
   nothing). The default matrix is the standard set; `--scenes` names others.
-- 60 fps held is judged with `--accept` (under vsync), never from uncapped intervals.
+- 60 fps held is judged with `--accept` (under vsync), never from uncapped intervals, at the tier's
+  own settings: its dynamic scale measured where it settles (`--scale-settle 5`).
 
 ## Build and lock
 
@@ -32,7 +33,8 @@ reading means. Read them there, never by starting the tool to see. Every wait go
 - It pins high's render scale at the dynamic rule's baseline for the viewport by default;
   `--unpinned`, `--accept`, `--display` and `--scales` do not pin.
 - Headless by default. `--display` (a real, headed window) only for pacing on a real display, and
-  only while `node tools/kit/display-gate.mjs status` allows it.
+  only while `node tools/kit/display-gate.mjs status` allows it. A change measured on the display
+  is checked in a normal window too (`--window WxH`), not only full screen (`--kiosk`).
 - Timestamps: `--timestamps on` (the split by pass), `off` (frame rates), `both`.
 
 ## Profiler
@@ -63,7 +65,8 @@ node tools/kit/job.mjs start --wait -- \
 
 - The image stays the same: the island's still frames with `tools/kit/parity/capture-set.mjs`
   (`--check` against the starting commit's references) and, for the renderer's own passes, the test
-  scenes with `tools/render/scenes.mjs --verify --check` (`docs/how-to/check-a-change.md`).
+  scenes with `tools/render/scenes.mjs --verify --check`
+  ([verifying-rendering-changes](verifying-rendering-changes.md), Compare).
 - The test scenes are small: the `sea` scene's reflectors stand within a few tens of metres, so a
   change to the water's reflection range shows only in the island's views over the sea
   (`tools/island/parity/views.mjs` names them). The same knob's override (`--q "tier.<knob>=..."`

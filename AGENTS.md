@@ -39,7 +39,7 @@ Detail lives where it is owned.
   `npm run preview` (port 5191), `npm run lint` (the code lint). `npm run check`: what every commit
   passes (types, code lint, layers, exits, settings, file sizes, three's internals, CPU regression
   tools), in seconds, without a GPU; `-- --full` adds the build and the world's chunks
-  (`docs/how-to/check-a-change.md`). `npm run lint:docs`: Markdown, offline links, docs paths in
+  (`tools/check.mjs`). `npm run lint:docs`: Markdown, offline links, docs paths in
   code; `npm run lint:links` adds web links. In-page keys:
   `docs/reference/page.md`.
 - Tools are in `tools/`, each one's manual in its header (`node <tool> --help`), indexed by question
@@ -86,7 +86,7 @@ record and the rule guards a stated convention.
 | Simulation and generation are deterministic and path-independent: the world, its growth, the weather, the wind and every integrated state are functions of the land, seeds, scene clock and weather, never of the path or thread count; a grown page or a scene jump holds what a fresh load holds (`ARCHITECTURE.md`, rule 4). | `verify-world-chunks`, `verify-growth-swap`, `verify-scene-jump`, parity captures | a cliff wall's exposure kept state across calls (`Chunks.ts`) |
 | What changes the scene reads the scene clock or its step, never the wall clock (`ARCHITECTURE.md`, rule 17). | `ponlai/scene-clock` | the sky's irradiance read-back waited on a wall-clock gate |
 | A history-dependent effect is cleared by a scene jump, converges on a still scene or is frozen or off in the test mode, and is compared within a tolerance (`ARCHITECTURE.md`, rule 4). | `verify-scene-jump`; parity tolerance | a history that outlived a jump (`ARCHITECTURE.md`, rule 15) |
-| The test mode is a paused page under MSAA, shot once `settled` holds; a paused frame repeats exactly and equals a fresh load's. A new history-dependent effect keeps `settled` false until converged and obeys the test mode's switch (`docs/how-to/check-a-change.md`). | parity MSAA sets, `verify-scene-jump`, `verify-growth-swap` | - |
+| The test mode is a paused page under MSAA, shot once `settled` holds; a paused frame repeats exactly and equals a fresh load's. A new history-dependent effect keeps `settled` false until converged and obeys the test mode's switch (`docs/bindings/verifying-rendering-changes.md`, History). | parity MSAA sets, `verify-scene-jump`, `verify-growth-swap` | - |
 | What is generated for the island or fitted to the land derives from the land's footprint, the island's SDF and fixed-seed fields, never hand-placed coordinates; counts follow the coast or the area (`ARCHITECTURE.md`, rule 5). | judgement | the shore's stones came from one running stream along the coast (`Stones.ts`) |
 | The world is built in chunks: a chunk's content is a function of its window, border data is bit-identical in both chunks, the chunks merge in their own order (`Chunks.ts`, `ChunkMerge.ts`). | `verify-world-chunks`, `ponlai/chunk-normals` | the rim's skirt and the world took normals from a chunk's own triangles |
 | The island grows in place: a Grow swaps the changed chunks in one frame, and what depends on the land's shape joins the swap (`Growth.ts`). | `verify-growth-swap` | a stale shore on a grown page (`ARCHITECTURE.md`, rule 15) |
@@ -108,7 +108,7 @@ record and the rule guards a stated convention.
 | Code style follows three.js (mrdoob): tabs, spaces inside parentheses and brackets, English comments that explain why. | judgement | - |
 | No player-facing string is written in code; the words are in `packages/game/ui/i18n/`. | `verify-i18n` | the interface's Chinese was written inline across a dozen modules |
 | Game UI (what the player sees in `?game`, mockups too) is built with the `threejs-game-ui-designer` skill when the agent has it, to read as a game's, not a product's. | judgement | - |
-| A visual change is compared against captures from before it, crops included, and the measured differences reported (`docs/how-to/check-a-change.md`). | judgement | - |
+| A visual change is compared against captures from before it, crops included, and the measured differences reported (`skills/verifying-rendering-changes/SKILL.md`). | judgement | - |
 | A performance change is measured with `profile-frame` on a production build under the GPU lock, before and after, contended runs reported as such. | judgement | - |
 | `npm run lint:docs` passes before a commit that changes Markdown. | `npm run check` (on staged Markdown) | - |
 | Commits follow [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): summary` (lower case, imperative, no full stop, header at most 100 characters), a body saying why. Types: `feat`, `fix`, `perf`, `refactor`, `style`, `test`, `docs`, `build`, `ci`, `chore`, `revert`; the optional scope names the section changed (`ocean`, `world`, `ai`); a breaking change takes `!` or a `BREAKING CHANGE:` footer. | judgement | - |
@@ -167,14 +167,14 @@ meets it.
 - A pass, a plant kind or a local
   light: `docs/reference/extension-points.md`. A material: `docs/how-to/add-material.md`.
 - The world's generator: `packages/island/world/Chunks.ts`'s header. Something that depends on the
-  land's shape: `packages/island/world/Growth.ts`'s header. It and a history-dependent effect:
-  `docs/how-to/check-a-change.md`.
+  land's shape: `packages/island/world/Growth.ts`'s header. A history-dependent effect:
+  `docs/bindings/verifying-rendering-changes.md`, History.
 - Gameplay: `docs/design/game-design.md`; game content: `docs/how-to/add-game-content.md`;
   game UI: `docs/design/ui.md`. The look: `docs/design/art-direction.md`,
   `docs/reference/look-values.md`.
 - A tool or a check: `skills/writing-tools-and-checks/SKILL.md`. three.js:
-  `docs/how-to/upgrade-three.md`. A commit: `docs/how-to/check-a-change.md`. A file:
-  `node tools/repo/code-map.mjs`.
+  `docs/how-to/upgrade-three.md`. A commit: `tools/check.mjs`'s header; a change to what renders:
+  `skills/verifying-rendering-changes/SKILL.md`. A file: `node tools/repo/code-map.mjs`.
 
 ## Map
 

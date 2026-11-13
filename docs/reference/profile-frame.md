@@ -5,7 +5,8 @@ Chrome and reports the frame interval, the GPU time per pass, the tick's JavaScr
 with their cause and the startup. Its usage, options, output, lock and exit codes are in its header
 (`node tools/render/profile-frame.mjs --help --full`). This page holds the rest: the scenes, the
 modes, how the runs hold the GPU lock, and how to read the results. The steps for measuring a
-change: [Check a change](../how-to/check-a-change.md), Measure a performance change.
+change: the skill [measuring-performance-changes](../../skills/measuring-performance-changes/SKILL.md)
+and its [binding](../bindings/measuring-performance-changes.md).
 
 ## Scenes
 

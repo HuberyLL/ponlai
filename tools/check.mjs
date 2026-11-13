@@ -2,8 +2,8 @@
 //
 // It is the one command to run before a commit: the type check, the code lint and every check
 // that needs no GPU, in about a quarter of a minute. It checks the files in the working tree, not
-// what is staged, so a change left unstaged is checked too. How to use it with the other checks of
-// a change: docs/how-to/check-a-change.md, Run the checks every commit passes.
+// what is staged, so a change left unstaged is checked too. The other checks of a change, by its
+// kind: docs/bindings/verifying-rendering-changes.md, Kinds.
 //
 // Usage:
 //   node tools/check.mjs [--full]
@@ -38,7 +38,7 @@
 //
 // A check belongs in the commit-time list when it needs no GPU and the whole list stays near a
 // minute; a slower one goes under `--full`. The checks that render (captures, parity, the GPU
-// verify tools) are run by hand (docs/how-to/check-a-change.md).
+// verify tools) are run by hand (docs/bindings/verifying-rendering-changes.md, Kinds).
 import './kit/help.mjs';
 import { spawnSync, execFileSync } from 'node:child_process';
 import path from 'node:path';
