@@ -10,7 +10,7 @@
 // the page's settings against their docs (verify-settings), the files' size (verify-file-size), the three.js internals the code reaches into (verify-three-internals), no
 // binary in git (verify-no-binaries, every file in the index), then the CPU regression tools (the
 // game's simulation, its words, the ink, the frame graph's compiler, the day cycle, the weather's
-// state, the wind, the local lights, the renderer's extension points), and the docs' lint (`npm run lint:docs`) when a Markdown file
+// state, the wind, the local lights, the renderer's extension points, the exposure's look tables), and the docs' lint (`npm run lint:docs`) when a Markdown file
 // is staged. `--full` adds `npm run build` and `tools/verify-world-chunks.mjs`, which take minutes,
 // and runs the docs' lint whatever is staged. Each check runs to its end even after another failed,
 // so one run lists every failure; its output goes to the terminal as it comes.
@@ -68,6 +68,7 @@ const checks = [
 	[ 'verify-wind', node( 'verify-wind.mjs' ) ],
 	[ 'verify-local-lights', node( 'verify-local-lights.mjs' ) ],
 	[ 'verify-extensions', node( 'verify-extensions.mjs' ) ],
+	[ 'verify-exposure-look', node( 'verify-exposure-look.mjs' ) ],
 ];
 if ( full || markdownStaged() ) checks.push( [ 'lint:docs', npm( 'lint:docs' ) ] );
 if ( full ) checks.push( [ 'build', npm( 'build' ) ], [ 'verify-world-chunks', node( 'verify-world-chunks.mjs' ) ] );

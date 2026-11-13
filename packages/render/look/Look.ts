@@ -23,7 +23,13 @@ import { NEUTRAL_LOOK } from './NeutralLook.ts';
 // reader registers its tunables (debug/Tune.ts) on tables of its own, copies of the ones it was
 // handed, so an installed set stays as it was written.
 //
-// Headless: types and two functions, no three.js and nothing of the page. The world's chunk
+// The exposure is the exception: it takes its tables as an argument where the renderer's sky
+// stage creates it (ExposureLook.ts `createExposure`), not as its module loads, so two exposures
+// made from two sets in one process hold their own numbers (tools/verify-exposure-look.mjs). The
+// entry hands it the set it installs; a module that cannot name that set reads it back with
+// `installedLook` (the test scenes' page).
+//
+// Headless: types and three functions, no three.js and nothing of the page. The world's chunk
 // worker and the headless game never load it (tools/verify-layers.mjs).
 
 /** A span of the sun's elevation (degrees): [ whole, none ] or [ from, to ], as its reader says. */
@@ -359,6 +365,16 @@ export function installLook( look: Look ): void {
 	if ( firstReader !== null ) throw new Error( `installLook: the look was read before it was installed, first by ${ firstReader }: install it before any module that reads it loads` );
 	if ( installed !== null ) throw new Error( 'installLook: the look is installed once, before any module that reads it loads' );
 	installed = look;
+
+}
+
+/** The installed look, or the neutral set where none was installed: for an entry that installed
+ * a set and hands the same set to a stage that takes its tables at creation (the exposure's,
+ * look/ExposureLook.ts) from a module that cannot name it (the test scenes' page). It does not
+ * count as a read: a set installed after it is called is not what it returned. */
+export function installedLook(): Look {
+
+	return installed ?? NEUTRAL_LOOK;
 
 }
 

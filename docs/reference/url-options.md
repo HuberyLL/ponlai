@@ -411,8 +411,8 @@ and none of the island's or the game's.
   `localTone:false` builds the display chain without its local tone mapping; `streaks:<n>` scales
   the thin cloud layer's amount (0 turns it off) and `streakMask:true` paints its pixels for `img.py
   stats --mask` (`packages/render/sky/SkyTrack.ts`, `SkyDome.ts`). The metered exposure is shifted
-  by the GUI's `exposure offset (stops)` (Post folder); its keys are
-  `packages/render/look/ExposureLook.ts` `EXPOSURE_KEYS`, and `await
+  by the GUI's `exposure offset (stops)` (Post folder); its keys are the exposure's `keys`
+  (`packages/render/look/ExposureLook.ts` `createExposure`), and `await
   __PONLAI__.pipeline.readExposure()` reads its state back from the GPU (the same fields as
   `radiance`'s `exposure`). The grade's first table is generated from parameters
   (`packages/render/post/GradeLut.ts`, `s.pipeline.grade`): the GUI's Grade table folder (in Post),

@@ -36,6 +36,7 @@
 import { settings as params, numberSetting, type SettingsQuery } from './Settings.ts';
 import * as THREE from 'three/webgpu';
 import { Sky } from './sky/Sky.ts';
+import { createExposure, type ExposureTables } from './look/ExposureLook.ts';
 import { DAY_PRESETS, type DayPreset, DayCycle, sunRising, duskForce, nightAmbientShare } from './sky/DayCycle.ts';
 import { isParkedWeather, WEATHER_PRESETS, type WeatherName, isWindLevel, type WindLevel, Weather, type TunedField, type WeatherState, deckLight, cloudedShare, type WindChoice } from './sky/Weather.ts';
 import type { QualityProfile, QualityTier } from './Quality.ts';
@@ -362,19 +363,22 @@ export function createScenes( render: RenderParts, { viewport, dpr }: { viewport
 /**
  * The scene the page loads (`sceneOptions`), the sky, the day and the weather, the wind, the rain
  * and the sky's quality knobs. `seaFog` and `dayFog` start the deep sea fog and the day's fog layer
- * on.
+ * on. `look`: the look's tables the exposure is made from (look/ExposureLook.ts `createExposure`:
+ * the exposure takes its tables here, the other systems from the installed look), which the sky
+ * carries to the day, the grade and the frame's passes (`sky.exposure`).
  */
-export function createSky( render: RenderParts, { scene: loaded, seaFog, dayFog }: { scene: SceneOptions; seaFog: boolean; dayFog: boolean } ) {
+export function createSky( render: RenderParts, { scene: loaded, seaFog, dayFog, look }: { scene: SceneOptions; seaFog: boolean; dayFog: boolean; look: ExposureTables } ) {
 
 	const { quality, renderer } = render;
 
 	// ------------------------------------------------------------------ sky, light, water optics
 
-	const sky = new Sky( renderer, { elevation: 32, azimuth: - 8 } );
+	const exposure = createExposure( look );
+	const sky = new Sky( renderer, { exposure, elevation: 32, azimuth: - 8 } );
 	render.sky = sky;
 	sky.setEnvironmentSource( quality.environmentSource );
 	staged( render ).loaded = loaded;
-	const dayCycle = new DayCycle( loaded.day );
+	const dayCycle = new DayCycle( exposure, loaded.day );
 	render.dayCycle = dayCycle;
 	const weather = new Weather( loaded.weather, loaded.wind );
 	render.weather = weather;

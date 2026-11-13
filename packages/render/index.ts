@@ -35,7 +35,6 @@ export { solarVolumeVisibility } from './lighting/SolarShadow.ts';
 export { UnderwaterLightingModel, underwaterLight } from './lighting/Underwater.ts';
 export type { UnderwaterLight, UnderwaterModelOptions } from './lighting/Underwater.ts';
 export { AMBIENT_KNOBS } from './look/AmbientLook.ts';
-export { NIGHT_METER_LIFT } from './look/DayLook.ts';
 export { WHITE_BALANCE } from './look/DisplayLook.ts';
 export { heightBlend, hexReadScan } from './materials/HexTiling.ts';
 export type { HexScan } from './materials/HexTiling.ts';

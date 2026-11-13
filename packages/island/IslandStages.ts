@@ -387,8 +387,9 @@ export function createVegetation( render: RenderParts, island: IslandParts, { fr
 	const vegetation = new Vegetation<WorldData>( ( sites, name ) => defaultPlant( shared, sites, name ) );
 	staged( island ).vegetation = vegetation;
 	vegetation.add( grassKind( grass ) );
-	// the yunpeng's clumps in the meadow, instances of a few prototypes at two levels (Yunpeng.ts)
-	const yunpeng = buildYunpeng( data, shared );
+	// the yunpeng's clumps in the meadow, instances of a few prototypes at two levels (Yunpeng.ts),
+	// their glow scaled by the exposure's night lift (look/ExposureLook.ts), which the sky carries
+	const yunpeng = buildYunpeng( data, shared, render.sky.exposure.nightMeterLift );
 	island.yunpeng = yunpeng;
 	vegetation.add( yunpengKind( yunpeng ) );
 	// its light by night, a local light per clump (lighting/LocalLights.ts), moved as the island grows

@@ -31,7 +31,6 @@ import type { Sky } from '../sky/Sky.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
 import { ambientSkyVisibility } from '../lighting/AmbientSample.ts';
 import { liftedKeyHeight } from '../lighting/KeyLift.ts';
-import { DAY_EXPOSURE } from '../look/DayLook.ts';
 import { duskForce } from '../sky/DayCycle.ts';
 import type { Rain } from '../weather/Rain.ts';
 import { CLIP_MARGIN, RefractionView, REFRACTION_GUARD, REFRACTION_SIZE } from '../ocean/Refraction.ts';
@@ -41,7 +40,7 @@ import { checkToneCurve, solveToneCurve, type ToneCurve } from './ToneCurve.ts';
 import { fillGradeLut, gradeOf, lutNodes, mergeGrade, type GradeChanges, type GradeParams } from './GradeLut.ts';
 import { LocalTone } from './LocalTone.ts';
 import { keyed } from './DayKeys.ts';
-import { exposureKeys, type ExposureKey } from '../look/ExposureLook.ts';
+import type { ExposureKey } from '../look/ExposureLook.ts';
 import { restEpoch, restKey } from './TemporalRest.ts';
 import { tuneCheck, tuneObject } from '../debug/Tune.ts';
 import type { ExtraPass } from './ExtraPass.ts';
@@ -388,7 +387,8 @@ export class Pipeline {
 	// (the bloom's and the vignette's strengths tunable on debug pages, debug/Tune.ts:
 	// `post.bloom.strength`, `post.vignette.strength`)
 	settings: PipelineSettings = tuneObject( {
-		exposure: DAY_EXPOSURE, exposureOffset: 0,
+		// (the exposure starts at the sky's exposure by day: the constructor sets it)
+		exposure: 0, exposureOffset: 0,
 		// (tunable on debug pages, debug/Tune.ts: `post.tone.blackSlope`, `midGrey`, `white`)
 		curve: tuneObject( { ...TONE_CURVE }, { toe: 'post.tone.blackSlope', mid: 'post.tone.midGrey', white: 'post.tone.white' },
 			{ toe: { min: 1.5, max: 3 }, mid: { min: 0.12, max: 0.22 }, white: { min: 8, max: 32, scale: 'log' } } ),
@@ -542,6 +542,7 @@ export class Pipeline {
 	/** `temporal`: the tier's resolve settings (Quality.ts `taa`); `extraPasses`: ExtraPass.ts. */
 	constructor( renderer: THREE.WebGPURenderer, readonly sky: Sky, sunShadow: SunShadow, rain?: Rain, options: Partial<PostOptions> = postOptionsFromURL(), temporal?: TemporalSettings, readonly extraPasses: readonly ExtraPass[] = [] ) {
 
+		this.settings.exposure = sky.exposure.day;
 		this.renderer = renderer;
 		this.rain = rain;
 		// (a tone curve the solve cannot meet keeps the last good one and reports it, debug/Tune.ts)
@@ -1197,7 +1198,7 @@ export class Pipeline {
 		const cloud = cloudedShare( S.skyMix );
 		this.localTone?.update( this.sky.elevation, night, cloud );
 		this.bloom.update( this.sky.elevation, night, cloud );
-		const ex = exposureKeys( this.sky.elevation, exposureNight, S.skyMix, this.exposureKeys, this.sky.rising ), mu = this.metering.uniforms;
+		const ex = this.sky.exposure.keysAt( this.sky.elevation, exposureNight, S.skyMix, this.exposureKeys, this.sky.rising ), mu = this.metering.uniforms;
 		mu.key.value = ex.key; mu.highlight.value = ex.highlight; mu.skyShare.value = ex.sky; mu.offset.value = S.exposureOffset;
 		// the adaptation's step: the scene clock's, once per rendered frame; a paused clock (and the
 		// test mode, a paused page), a reset or a lost history take the target at once

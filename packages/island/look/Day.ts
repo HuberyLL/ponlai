@@ -16,7 +16,7 @@ import type { DayLook } from '../../render/setup.ts';
 // degrees). Below -7 degrees the keys follow the metered exposure down to the night: each is 25
 // times 2 to the stops the clear evening's island view meters at that height above its meter under
 // the night these keys were first set for (log interpolated between them: within about half a stop of the
-// metered curve), the full NIGHT_METER_LIFT by -12 degrees (NIGHT_EXPOSURE).
+// metered curve), the full NIGHT_METER_LIFT by -12 degrees (the lowest row, the exposure's night).
 const TWILIGHT_EXPOSURE = 25;
 const nightKey = ( elevation: number, stops: number ) => [ elevation, TWILIGHT_EXPOSURE * 2 ** stops ] as const;
 /** The stops a clear night's metered exposure lies above the twilight's exposure (25): the
@@ -93,8 +93,8 @@ export const DAY: DayLook = {
 		[ 19.75, 2.4 ], [ 26.2, 1.82 ], [ 32.5, 1.48 ], [ 50, 1.19 ],
 	],
 	nightMeterLift: NIGHT_METER_LIFT,
-	// The night sky's own light (stars, the moon and its in-scatter, clouds) was tuned at NIGHT_SKY_EXPOSURE, with the
-	// night's own gain over it (NIGHT_EXPOSURE_GAIN) and the blue hour's adaptation, and keeps that
+	// The night sky's own light (stars, the moon and its in-scatter, clouds) was tuned at nightSkyExposure, with the
+	// night's own gain over it (nightExposureGain) and the blue hour's adaptation, and keeps that
 	// displayed brightness whatever the frame's exposure (see Sky.track).
 	nightExposureGain: 1.25,
 	nightSkyExposure: 4.4,

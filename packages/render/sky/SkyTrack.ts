@@ -5,7 +5,6 @@ import { SHADOW_SLOPE_FLOOR, forwardLevel } from './CloudModel.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { shared } from '../shared.ts';
 import { storeStops } from '../post/PreExposure.ts';
-import { DAY_EXPOSURE } from '../look/DayLook.ts';
 import { MOON, cloudMoonShare, displayNight, duskForce, exposureNight, nightAmbientShare, skyNight, starNight, sunRising, type DayCycleSnapshot } from './DayCycle.ts';
 import { cloudedHighSun, cloudedShare, overcastDeckLight, overcastFloorSun, daySkyAt, type WeatherState } from './Weather.ts';
 import { keyed } from '../post/DayKeys.ts';
@@ -283,7 +282,7 @@ export function trackSky( sky: Sky, celestial: DayCycleSnapshot | null, weather:
 		moonColor.setRGB( 0, 0, 0 );
 		sky.night.starVisibility.value = 0;
 		sky.displayNightAmbient.value.setRGB( 0, 0, 0 );
-		sky.grade.exposure = DAY_EXPOSURE;
+		sky.grade.exposure = sky.exposure.day;
 		sky.grade.daylight = 1;
 		sky.grade.night = 0;
 		sky.grade.exposureNight = 0;
@@ -309,7 +308,7 @@ export function trackSky( sky: Sky, celestial: DayCycleSnapshot | null, weather:
 	sky.grade.exposure *= 1 + overcast * ( celestial?.overcastAdaptation ?? 0 );
 	// The night sky's own lights, the stars and the moon's disk (nothing they light), keep the
 	// brightness they were tuned at, under the exposure the night had then, but for the night's
-	// own gain (look/DayLook.ts NIGHT_EXPOSURE_GAIN), which brightens them with the island; under a
+	// own gain (the exposure's `nightGain`, look/ExposureLook.ts), which brightens them with the island; under a
 	// deck the clouds drawn over them hide them.
 	const nightSkyLevel = celestial ? Math.min( 1, celestial.nightSkyLevel ) : 1;
 	sky.night.starVisibility.value *= nightSkyLevel;

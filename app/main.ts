@@ -16,7 +16,7 @@
 // whole scene as a fresh load of `?<query>` draws it (app/Scene.ts), and `loop` and `step` hold,
 // resume and step the frame loop (app/Frame.ts).
 // the page's settings, which its entry (Boot.ts) installed before this module's imports load
-import { QUALITY_CHOICE } from './PageSettings.ts';
+import { QUALITY_CHOICE, PAGE_LOOK } from './PageSettings.ts';
 import { type ExtraPass, DAY_PRESETS, sceneOptions, createShared, installShared, type RenderParts, createRenderer, setUpRenderer, createScenes, createSky, createLight, createKey, createEnvironment, publishSkyLight, createSeaAndPipeline, createBounceAndShore, createAmbient, startWaveMaps, createWater, bakeWithHaze, awaitWarmUp, checkMotion, primeSharedBuilds } from '../packages/render/index.ts';
 import { settings as params, type QualityTier, qualityProfile } from '../packages/render/setup.ts';
 import * as THREE from 'three/webgpu';
@@ -83,7 +83,8 @@ const GAME = params.has( 'game' );
 // that hour. A parked weather loads on a debug page only.
 const sceneDefaults = GAME ? { hour: 8, dayLength: 1440, parkedWeather: render.DEBUG } : { hour: DAY_PRESETS[ 'golden-hour' ], dayLength: 2880, parkedWeather: render.DEBUG };
 page.sceneOptions = ( query ) => sceneOptions( query, sceneDefaults );
-createSky( render, { scene: page.sceneOptions( params ), seaFog: params.has( 'seaFog' ), dayFog: params.has( 'dayFog' ) } );
+// the look's tables the exposure is made from: the set the entry installed (PageSettings.ts)
+createSky( render, { scene: page.sceneOptions( params ), seaFog: params.has( 'seaFog' ), dayFog: params.has( 'dayFog' ), look: PAGE_LOOK } );
 createTrample( render, island );
 createCameraViews( render, island, page );
 createLight( render );

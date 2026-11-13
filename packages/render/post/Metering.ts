@@ -99,8 +99,8 @@ export class Metering {
 
 	/** H_M then H_Y, METER_BINS counts each. */
 	readonly buffer: THREE.StorageBufferAttribute;
-	/** The exposure's keys (EXPOSURE_KEYS, set once a frame), the GUI's offset (stops), the
-	 * adaptation's step (the scene clock's, seconds) and its time constants rising and falling
+	/** The exposure's keys (look/ExposureLook.ts `keysAt`, set once a frame), the GUI's offset
+	 * (stops), the adaptation's step (the scene clock's, seconds) and its time constants rising and falling
 	 * (seconds), and the reset (1: the state takes the target). */
 	readonly uniforms = { key: uniform( 0 ), highlight: uniform( 0 ), skyShare: uniform( 0 ), offset: uniform( 0 ), dt: uniform( 0 ), up: uniform( 0.05 ), down: uniform( 0.05 ), snap: uniform( 1 ) };
 	private readonly clearKernel: THREE.ComputeNode;

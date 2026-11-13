@@ -3,10 +3,17 @@
 import assert from 'node:assert/strict';
 import './island-look.mjs';
 import { DayCycle, DAY_PRESETS, NOON_ELEVATION, MOON, cloudMoonShare, displayNight, exposureNight, moonDirection, moonKeyShare, nightAmbientAt, nightAmbientShare, skyNight, starNight, sunElevationAt, morningHour, eveningHour, yunpengNightShare } from '../packages/render/sky/DayCycle.ts';
-import { DAY_EXPOSURE, DUSK_WINDOWS, HANDOFF_TOP, MOON_KEY_TOP, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE, exposureAt } from '../packages/render/look/DayLook.ts';
+import { DUSK_WINDOWS, HANDOFF_TOP, MOON_KEY_TOP } from '../packages/render/look/DayLook.ts';
+import { createExposure } from '../packages/render/look/ExposureLook.ts';
+import { ISLAND_LOOK } from '../packages/island/look/IslandLook.ts';
+
+// the island's exposure, which the day cycle takes as the page's sky stage hands it over
+const exposure = createExposure( ISLAND_LOOK );
+const { day: DAY_EXPOSURE, night: NIGHT_EXPOSURE, nightGain: NIGHT_EXPOSURE_GAIN, nightSky: NIGHT_SKY_EXPOSURE } = exposure;
+const exposureAt = ( elevation ) => exposure.at( elevation );
 
 const near = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
-const cycle = new DayCycle();
+const cycle = new DayCycle( exposure );
 // The clock starts at the golden hour, its sun 26.2 degrees up in the afternoon.
 near( cycle.hour, DAY_PRESETS[ 'golden-hour' ] );
 near( cycle.snapshot().elevation, 26.2, 1e-9 );
@@ -264,7 +271,7 @@ for ( const phase of [ 0, 0.125, 0.25, 0.499999, 0.5, 0.500001, 0.75, 0.875, 0.9
 
 }
 // A new clock's moon is full; it shows only once the sun is five degrees down.
-assert.equal( new DayCycle().moonPhase, 0.5 );
+assert.equal( new DayCycle( exposure ).moonPhase, 0.5 );
 for ( let minute = 0; minute < 1440; minute ++ ) {
 
 	cycle.setHour( minute / 60 );
@@ -275,7 +282,7 @@ for ( let minute = 0; minute < 1440; minute ++ ) {
 }
 // The stars' sky is fixed (STARS): one frame at every hour of the night, on the first day and a
 // hundred days on.
-const starClock = new DayCycle( { hour: 0 } );
+const starClock = new DayCycle( exposure, { hour: 0 } );
 const starFrame = starClock.snapshot().starFrame.elements.slice();
 for ( const days of [ 0, 100 ] ) {
 
@@ -321,7 +328,7 @@ for ( const invalid of [ NaN, Infinity, - Infinity ] ) {
 	assert.throws( () => { cycle.dayLength = invalid; }, RangeError );
 	assert.throws( () => { cycle.lunarPeriodDays = invalid; }, RangeError );
 	assert.throws( () => cycle.advance( invalid ), RangeError );
-	assert.throws( () => new DayCycle( { hour: invalid } ), RangeError );
+	assert.throws( () => new DayCycle( exposure, { hour: invalid } ), RangeError );
 
 }
 for ( const invalid of [ 0, - 1 ] ) {

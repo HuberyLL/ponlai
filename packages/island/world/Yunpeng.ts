@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { attribute, float, mix, smoothstep, uniform, vec3 } from 'three/tsl';
-import { GroundBounceLightingModel, receiveScreenAO, receiveScreenShadow, type Shared, debugFlags, NIGHT_METER_LIFT, runSteps, leafFlutter, mainBend, useVegetationMotion, PLANT_PART, PlantInstances, levelDraws, placeVertex, plantPoint, type PlantDraw, type PlantInstance, type PlantPool, IDENTITY_COLOUR, plantTint, type PlantTint, rootHash, type KindGrowth, type VegetationKind, type LocalLightKind, type LocalSource, writeMeter } from '../../render/index.ts';
+import { GroundBounceLightingModel, receiveScreenAO, receiveScreenShadow, type Shared, debugFlags, runSteps, leafFlutter, mainBend, useVegetationMotion, PLANT_PART, PlantInstances, levelDraws, placeVertex, plantPoint, type PlantDraw, type PlantInstance, type PlantPool, IDENTITY_COLOUR, plantTint, type PlantTint, rootHash, type KindGrowth, type VegetationKind, type LocalLightKind, type LocalSource, writeMeter } from '../../render/index.ts';
 import { mulberry32, type Rng } from '../../render/data.ts';
 import { SEABED_TILE } from './SeabedTile.ts';
 import type { WorldData } from './types.ts';
@@ -33,8 +33,9 @@ import { plantClumps, type ClumpLand, type ClumpSite } from './YunpengSites.ts';
 //   its area seen from outside (a thin round stalk shows a quarter of its surface on average from
 //   all directions, a two-sided leaf or tassel half of one face's), so the light and the glow are
 //   one quantity. Its range: YUNPENG.reach.
-// - The glow and its light are scaled by one constant, 2 to minus look/DayLook.ts
-//   NIGHT_METER_LIFT, the stops the metered exposure rises by from the twilight to a clear night: a
+// - The glow and its light are scaled by one constant, 2 to minus the exposure's nightMeterLift
+//   (look/ExposureLook.ts; the page hands it in, IslandStages.ts `createVegetation`), the stops
+//   the metered exposure rises by from the twilight to a clear night: a
 //   lamp does not know the hour or the weather, so a clear night shows it as the glow's value was
 //   set for, it shows later in the dusk (the exposure has not yet risen), and brighter on a darker
 //   night, as a lamp does.
@@ -95,8 +96,9 @@ export function setYunpengNight( share: number ): number {
 
 }
 /** The glow's strength in scene units: the flag's at load (`yunpengGlow`), else YUNPENG.glow, both
- * set for a clear night's exposure, over the night's rise in the metered exposure (the header). */
-const glowLevel = (): number => Number( debugFlags.yunpengGlow ?? YUNPENG.glow ) * 2 ** - NIGHT_METER_LIFT;
+ * set for a clear night's exposure, over the night's rise in the metered exposure, `lift` stops
+ * (the header). */
+const glowLevel = ( lift: number ): number => Number( debugFlags.yunpengGlow ?? YUNPENG.glow ) * 2 ** - lift;
 
 // linear albedo: snow white, a little cool; greyer at the foot
 const WHITE = [ 0.72, 0.74, 0.76 ], FOOT = [ 0.42, 0.44, 0.4 ];
@@ -331,9 +333,9 @@ function prototypeGlow( g: THREE.BufferGeometry ): { tube: Glow; limbs: Glow } {
 
 /** A clump's light from its stalks' instances: at the centroid of their glowing surface, the
  * intensity (rgb, the illuminance at 1 m) its glow gives at full night. */
-function clumpLight( stalks: PlantInstance[], glows: { tube: Glow; limbs: Glow }[] ): LocalSource {
+function clumpLight( stalks: PlantInstance[], glows: { tube: Glow; limbs: Glow }[], lift: number ): LocalSource {
 
-	const glow = glowLevel();
+	const glow = glowLevel( lift );
 	const centre = new THREE.Vector3(), intensity = new THREE.Vector3(), at = new THREE.Vector3();
 	let area = 0;
 	for ( const plant of stalks ) {
@@ -440,7 +442,8 @@ export function* plantSteps( data: WorldData ): Generator<void, ClumpSite[]> {
 }
 
 /** The yunpeng over the land's top: its prototypes' draws under `root`, the plants its clumps'
- * stalks (PlantInstances.ts). */
+ * stalks (PlantInstances.ts); its glow scaled by the night's metered lift `nightMeterLift` (the
+ * header). */
 export class Yunpeng {
 
 	readonly plants: PlantInstances;
@@ -448,9 +451,11 @@ export class Yunpeng {
 	private shown: ClumpSite[];
 	private shownLights: LocalSource[];
 	private readonly glows: { tube: Glow; limbs: Glow }[] = [];
+	private readonly lift: number;
 
-	constructor( sites: ClumpSite[], shared: Shared ) {
+	constructor( sites: ClumpSite[], shared: Shared, nightMeterLift: number ) {
 
+		this.lift = nightMeterLift;
 		const draws: PlantDraw[] = [];
 		for ( let k = 0; k < YUNPENG.prototypes.count; k ++ ) {
 
@@ -462,7 +467,7 @@ export class Yunpeng {
 		const { plants, lights } = this.instances( sites );
 		this.shown = sites;
 		this.shownLights = lights;
-		this.plants = new PlantInstances( { name: 'Yunpeng', parts: [ 'yunpeng' ], draws, plants, material: yunpengMaterials( shared ) } );
+		this.plants = new PlantInstances( { name: 'Yunpeng', parts: [ 'yunpeng' ], draws, plants, material: yunpengMaterials( shared, nightMeterLift ) } );
 		this.root = this.plants.roots[ 0 ];
 
 	}
@@ -486,7 +491,7 @@ export class Yunpeng {
 	 * the test sources take their light from (LocalLights.ts `testSources`). */
 	sampleLights(): LocalSource[] {
 
-		return ( [ 0, 1, 1 ] as const ).map( ( size, k ) => clumpLight( clumpStalks( { x: 0, z: 0, size, seed: k + 1 }, () => 0 ), this.glows ) );
+		return ( [ 0, 1, 1 ] as const ).map( ( size, k ) => clumpLight( clumpStalks( { x: 0, z: 0, size, seed: k + 1 }, () => 0 ), this.glows, this.lift ) );
 
 	}
 
@@ -520,7 +525,7 @@ export class Yunpeng {
 
 			const stalks = clumpStalks( site, islandSurfaceHeight );
 			plants.push( ...stalks );
-			lights.push( clumpLight( stalks, this.glows ) );
+			lights.push( clumpLight( stalks, this.glows, this.lift ) );
 
 		}
 		return { plants, lights };
@@ -535,7 +540,7 @@ export class Yunpeng {
  * faint node every YUNPENG.internode, a waxy sheen and a faint white light of its own; swaying from
  * each stalk's foot by `leafSway` x, the prototype's eta^2, under the stalk's wind load
  * (`stalkLoad`). */
-function material( shared: Shared, plants: PlantInstances ): THREE.MeshStandardNodeMaterial {
+function material( shared: Shared, plants: PlantInstances, lift: number ): THREE.MeshStandardNodeMaterial {
 
 	const m = new THREE.MeshStandardNodeMaterial( { roughness: 0.45, metalness: 0, side: THREE.DoubleSide } );
 	const v = plants.vertex(), place = placeVertex( v );
@@ -559,7 +564,7 @@ function material( shared: Shared, plants: PlantInstances ): THREE.MeshStandardN
 	const node = smoothstep( 0.965, 1, height.div( YUNPENG.internode ).fract() ).mul( float( 1 ).sub( part.min( 1 ) ) );
 	const white = mix( vec3( ...FOOT ), vec3( ...WHITE ), smoothstep( 0, 0.25, eta ) ).mul( float( 1 ).sub( node.mul( 0.45 ) ) );
 	m.colorNode = plantTint( white, rootHash( v.footVarying.xz ), part.equal( 1 ).select( float( 1 ), float( 0 ) ), TINT );
-	const glow = glowLevel();
+	const glow = glowLevel( lift );
 	if ( glow > 0 ) m.emissiveNode = white.mul( yunpengNight.mul( glow ) );
 	m.name = 'yunpeng';
 	( m as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new GroundBounceLightingModel();
@@ -573,15 +578,15 @@ function material( shared: Shared, plants: PlantInstances ): THREE.MeshStandardN
 
 /** Each plant draw's material (PlantInstances.ts `material`): the whole draws one, the fading
  * draws one with the level stipple. */
-function yunpengMaterials( shared: Shared ): ( draw: PlantDraw, plants: PlantInstances ) => THREE.Material {
+function yunpengMaterials( shared: Shared, lift: number ): ( draw: PlantDraw, plants: PlantInstances ) => THREE.Material {
 
 	let whole: THREE.Material | null = null, fading: THREE.Material | null = null;
 	return ( draw, plants ) => {
 
-		if ( draw.fade === 0 ) return whole ??= material( shared, plants );
+		if ( draw.fade === 0 ) return whole ??= material( shared, plants, lift );
 		if ( ! fading ) {
 
-			const m = material( shared, plants );
+			const m = material( shared, plants, lift );
 			plants.useStipple( m );
 			fading = m;
 
@@ -592,10 +597,10 @@ function yunpengMaterials( shared: Shared ): ( draw: PlantDraw, plants: PlantIns
 
 }
 
-/** The yunpeng over `data`'s land (`Yunpeng`). */
-export function buildYunpeng( data: WorldData, shared: Shared ): Yunpeng {
+/** The yunpeng over `data`'s land (`Yunpeng`), its glow scaled by the night's metered lift. */
+export function buildYunpeng( data: WorldData, shared: Shared, nightMeterLift: number ): Yunpeng {
 
-	return new Yunpeng( runSteps( plantSteps( data ) ), shared );
+	return new Yunpeng( runSteps( plantSteps( data ) ), shared, nightMeterLift );
 
 }
 
