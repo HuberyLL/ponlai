@@ -46,7 +46,8 @@ import './content/index.ts';
 // population is the islanders' count, and each step of GROWTH_STEPS (types.ts) is one piece. The
 // simulation only says when growth is due (`growthDue`) and how near the next step is
 // (`approach`); the session's host grows the island (../Session.ts; on the page world/Growth.ts)
-// and hands the new land back as `addPiece`, which opens its cells and counts the piece
+// and hands the new land back as `addPiece`, which opens its cells (every index stays valid:
+// grid.ts), finds each walk under way again on the new ground and counts the piece
 // (SimState.pieces: the land step the game stands on, so a save loads its world at it). The piece
 // to come is known ahead: its cells are `comingLand` from the moment the page has it, for planning.
 //
