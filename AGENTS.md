@@ -18,7 +18,10 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   to `docs/reference/tools.md`.
 - The project's structure (its layers, what each owns, how data flows between them, the rules
   across them and why) is `ARCHITECTURE.md`: read it before a structural change, and update it
-  when a change adds a layer, moves what one owns or changes a flow.
+  when a change adds a layer, moves what one owns or changes a flow. The code is four layers, the
+  renderer, the island, the game and the page, a folder each (`packages/render/`,
+  `packages/island/`, `packages/game/`, `app/`); a layer imports only from the layers below it,
+  and a package only through its exits (`ARCHITECTURE.md`, rules 10 and 11).
 - The documentation follows Diátaxis (<https://diataxis.fr>): each page is one of four kinds,
   holds only that kind and lives in that kind's folder of `docs/`. A tutorial
   (`docs/tutorials/`, none yet) takes a newcomer through a first success, step by step. A how-to
@@ -40,8 +43,11 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
 - TypeScript (strict), Vite, three.js `WebGPURenderer` (`three/webgpu`, `three/tsl`). WebGPU is
   required (the ocean FFT runs on compute shaders); without it the page shows a message.
 - `npm run dev` (port 5190), `npm run build` (type-checks, then bundles), `npm run typecheck`,
-  `npm run preview` (port 5191). URL options: `docs/reference/url-options.md`; in-page keys:
-  `docs/reference/tools.md`, Page.
+  `npm run preview` (port 5191). `npm run check` runs the checks every commit passes (the type
+  check, the layers, the exits, the settings, the file sizes, three's internals and the CPU
+  regression tools; `-- --full` adds the build and the world's chunks), in a few seconds and
+  without a GPU (`docs/how-to/check-a-change.md`). URL options: `docs/reference/url-options.md`;
+  in-page keys: `docs/reference/tools.md`, Page.
 - The tools are in `tools/`, their manual in `docs/reference/tools.md` (Which tool for which
   question). The ones most changes meet:
   - `node tools/serve.mjs dev|preview`: a server for a worktree on a free port.
@@ -72,7 +78,8 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
 
 - `docs/`: the documentation by kind, listed in `docs/README.md`: `explanation/`
   (`art-direction.md`, `game-design.md`, `ui.md`, the game UI's spec: read it before UI work),
-  `how-to/` (`add-material.md`, `add-game-content.md`, `check-a-change.md`, `write-a-tool.md`),
+  `how-to/` (`add-material.md`, `add-game-content.md`, `add-to-the-renderer.md`,
+  `check-a-change.md`, `upgrade-three.md`, `write-a-tool.md`),
   `reference/` (`tools.md`, `url-options.md`, `look-values.md`, `glossary.md`).
 - `public/` (git-ignored): the game's assets, filled from the GitHub release `assets.lock.json`
   names (`tools/assets.mjs`, `tools/vite-assets.mjs`; `docs/reference/tools.md`, Assets).
@@ -81,17 +88,20 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   that assembles them (`app/`).
 - `app/Boot.ts`, the entry: it loads `app/PageSettings.ts` (the address parsed, its problems
   warned, the tier chosen, the settings installed; the reloads and the browser's storage), then
-  `app/main.ts`. `packages/render/Settings.ts` declares every URL option and is the one entrance
-  every module reads them through (`settings.get( 'name' )`; a new option is declared there,
-  `tools/verify-settings.mjs`). Below the page no module touches the browser's page (`location`,
-  `window`, `document`, storage and the like): `tools/verify-layers.mjs`, its page check;
+  `app/main.ts`, which imports `app/WorldBoot.ts` before its own parts (the world's generation
+  started on the land a resumed save grew). `packages/render/Settings.ts` declares every URL option
+  and is the one entrance every module reads them through (`settings.get( 'name' )`; a new option is
+  declared there, `tools/verify-settings.mjs`). The renderer, the island and the game's rules do not
+  reach the browser's page through its globals (`location`, `window`, `document`, storage and the
+  like); what they need they are given, an element included, and the game's interface is the page's
+  (`ARCHITECTURE.md`, rule 13; `tools/verify-layers.mjs`, its page check);
   `packages/render/FetchAsset.ts` fetches the assets. `packages/render/Extensions.ts` holds the
   three declarations every definition registered with the renderer states (a plant kind, a kind of
   local light, an extra pass: its cost knob, its stand in the test mode, how it follows the land's
   growth; `tools/verify-extensions.mjs`), and `packages/render/UserData.ts` lists the `userData`
   keys the renderer sets or reads, `packages/island/world/IslandUserData.ts` those the island keeps
   to itself (`tools/verify-layers.mjs` refuses one that is on neither list of its layer).
-- The packages' exits (`ARCHITECTURE.md`, rule 10): another package or the page imports the
+- The packages' exits (`ARCHITECTURE.md`, rule 11): another package or the page imports the
   renderer, the island and the game only through `packages/render/index.ts`,
   `packages/island/index.ts` and `packages/game/index.ts` (the page's; the game's loaded on demand)
   or `packages/render/data.ts`, `packages/island/land.ts` and `packages/game/sim/index.ts` (the
@@ -111,8 +121,9 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   registry.
 - `app/`: the page's own parts (`Page.ts`): the camera's views (`CameraViews.ts`), the GUI
   (`Gui.ts`), the frame loop and the render scale (`Frame.ts`), the scene jump (`Scene.ts`) and the
-  diagnostics (`Diagnostics.ts`). `window.__PONLAI__` and `window.__THREE_GAME_DIAGNOSTICS__`
-  exist only on the dev server or with `?debug` / `?profile`.
+  diagnostics (`Diagnostics.ts`). `window.__PONLAI__`, `window.__THREE_GAME_DIAGNOSTICS__` and
+  `window.__PONLAI_WORLD__` (whether the world is generated, set by `WorldBoot.ts`) exist only on
+  the dev server or with `?debug` / `?profile`.
 - `scenes.html`, `app/ScenesBoot.ts`, `app/scenes/`: the renderer's test scenes, a second page
   (`?scene=ball|empty|sea|plants`) built from the renderer's stages alone, with no island or game
   (`ScenePage.ts`; a scene is a module beside it, its type in `TestScene.ts`, the list in
@@ -333,7 +344,9 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   image whatever came before, or it can be frozen or turned off in the test mode; and outside the
   test mode its frames are compared within a tolerance (`tools/parity/README.md`, Temporal
   tolerance). Its per-frame update reads the scene clock's step, never the wall clock, so a stepped
-  clip repeats.
+  clip repeats; the three cadences that follow the wall clock's step (the sky's cross-fade, the
+  periodic sky bake, the refracted sun's map) decide only when a bake lands, and a stepped clip
+  pins them (`ARCHITECTURE.md`, rule 17).
 - The test mode is a paused page, which runs MSAA whatever the tier runs (`Antialiasing.ts`),
   with every history-dependent effect frozen or off, shot once the page's `settled` signal holds
   (`packages/render/post/Settled.ts`). There a paused frame is
@@ -468,7 +481,7 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   varying's value reaches runs its statements in the fragment stage too, and what it reads there
   becomes more varyings (the meadow went past WebGPU's sixteen under the temporal modes). A branch
   whose result reaches a varying is a `Fn( ... ).setLayout( ... )` taking its uniforms as arguments
-  (`Grass.ts` `flowerHead`).
+  (`Grass.ts` builds its blade's vertex from plain nodes for this reason).
 - A `DepthTexture` without a `RenderTarget` takes the renderer's sample count, so it is declared
   multisampled and cannot be sampled with a comparison; give it a render target. three picks one
   sampler type per depth texture per material (`SolarShadow.ts`).
