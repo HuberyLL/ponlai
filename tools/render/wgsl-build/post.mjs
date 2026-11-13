@@ -1,6 +1,7 @@
 // tools/render/wgsl-build.mjs's entry for the post chain's own passes, in the order a frame draws them:
 // the exposure's meter (packages/render/post/Metering.ts, the target and the adaptation of
-// packages/render/post/Exposure.ts), the bloom's levels (packages/render/post/PhysicalBloom.ts) and the local tone's grid
+// packages/render/post/Exposure.ts; its sky test reads the surface depth and the clear sky's
+// shares through a stand-in view and the atmosphere), the bloom's levels (packages/render/post/PhysicalBloom.ts) and the local tone's grid
 // with its slicing (packages/render/post/LocalTone.ts `apply`, drawn as a full-screen pass that reads it). The
 // graph is a stand-in that hands each resource a texture in Pipeline.ts's format and each size
 // class a uniform; the exposure is the page's builder (Pipeline.ts `exposureRead`). The display
@@ -10,6 +11,7 @@
 import * as THREE from 'three/webgpu';
 import { exp2, float, ivec2, select, texture, textureLoad, uniform, uv, vec3, vec4 } from 'three/tsl';
 import { Metering } from '../../../packages/render/post/Metering.ts';
+import { Atmosphere } from '../../../packages/render/sky/Atmosphere.ts';
 import { PhysicalBloom } from '../../../packages/render/post/PhysicalBloom.ts';
 import { LocalTone } from '../../../packages/render/post/LocalTone.ts';
 import { vignetteFactor } from '../../../packages/render/post/PipelineDisplay.ts';
@@ -52,7 +54,7 @@ function standInGraph() {
 
 }
 
-export default function () {
+export default function ( { renderer } ) {
 
 	const graph = standInGraph();
 	const hdr = resource( 'hdr', THREE.RGBAFormat, THREE.HalfFloatType );
@@ -63,8 +65,15 @@ export default function () {
 	const sharp = resource( 'sharp', THREE.RGBAFormat, THREE.HalfFloatType );
 	const renderSize = graph.extent( { of: 'render' } );
 
-	// the meter
-	const metering = new Metering( hdr, meterLight, renderSize );
+	// the meter, with the view, the atmosphere and the open sky's gains as PipelineDisplay.ts
+	// hands them (Sky.ts `gapGain`)
+	const view = {
+		projInv: uniform( new THREE.Matrix4() ),
+		cameraWorld: uniform( new THREE.Matrix4() ),
+		atmosphere: new Atmosphere( renderer ),
+		gains: { sun: uniform( 1 ), moon: uniform( 1 ) },
+	};
+	const metering = new Metering( hdr, meterLight, surfaceDepth, renderSize, view );
 	metering.buildMeter( uniform( 0 ), exposureStatePrev );
 
 	// the exposure as the passes after the meter read it (Pipeline.ts `exposureRead`)
