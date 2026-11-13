@@ -83,14 +83,14 @@ A history-dependent effect (a temporal resolve, exposure adaptation, lighting or
 over frames, vegetation that responds to what passes through it, a per-frame physics simulation)
 keeps the test mode's byte comparisons valid this way (`docs/reference/tools.md`, Test mode):
 
-1. Register how to clear its history with the renderer's table (`src/post/SceneHistory.ts`:
-   `onJump` for a scene jump, `onCut` for a cut of the temporal modes' history), beside its
-   creation; `establishScene` (`src/app/Scene.ts`) walks the table, and
-   `tools/verify-scene-jump.mjs` checks it.
-2. Report it to `settled` (`src/RenderStages.ts` `settleFrame`'s `pending`, the page's own through
-   `FrameHost.pending`, or the rest's signature) until it has converged
+1. Register how to clear its history with the renderer's table
+   (`packages/render/post/SceneHistory.ts`: `onJump` for a scene jump, `onCut` for a cut of the
+   temporal modes' history), beside its creation; `establishScene` (`app/Scene.ts`) walks the table,
+   and `tools/verify-scene-jump.mjs` checks it.
+2. Report it to `settled` (`packages/render/RenderStages.ts` `settleFrame`'s `pending`, the page's
+   own through `FrameHost.pending`, or the rest's signature) until it has converged
    on a still scene, or freeze it or turn it off in the test mode.
-3. Freeze it or turn it off under the test mode's one switch (`src/debug/TestMode.ts`;
+3. Freeze it or turn it off under the test mode's one switch (`packages/render/debug/TestMode.ts`;
    `docs/reference/tools.md`, Test mode).
 4. A Grow does not clear rendering history (`tools/verify-growth-swap.mjs` shoots its first view
    without a jump), so the effect is frozen or off under the switch there, or the swap resets it.

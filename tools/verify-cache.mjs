@@ -6,7 +6,7 @@
 // arguments (`--force` left out) and the contents of every source file it loads, found by walking
 // its import graph from the script itself. The walk reads the specifiers in the source text (static
 // and dynamic imports and re-exports, `new URL( '...', import.meta.url )` for workers, Vite's
-// `ssrLoadModule( '/src/...' )`), resolves the relative and root ones to files in the repository and
+// `ssrLoadModule( '/packages/...' )`), resolves the relative and root ones to files in the repository and
 // follows them, so a comment changed anywhere in the generator invalidates the record. Packages
 // (three, vite, typescript) are covered by package-lock.json, hashed whenever the graph imports one.
 // The walk is textual on purpose: it needs no loader hooks, and it sees the modules a run loads on

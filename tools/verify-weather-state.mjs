@@ -2,9 +2,9 @@
 // Run: node --experimental-strip-types tools/verify-weather-state.mjs
 import assert from 'node:assert/strict';
 import './island-look.mjs';
-import { Weather, WEATHER_PRESETS, WIND_LEVELS, PREVAILING_HEADING, PARKED_WEATHER, daySkyAt, deckRamp, deckSkyGain, deckSkyGap, overcastDeckLight, withMoon } from '../src/sky/Weather.ts';
-import { moonKeyShare } from '../src/sky/DayCycle.ts';
-import { QUALITY } from '../src/Quality.ts';
+import { Weather, WEATHER_PRESETS, WIND_LEVELS, PREVAILING_HEADING, PARKED_WEATHER, daySkyAt, deckRamp, deckSkyGain, deckSkyGap, overcastDeckLight, withMoon } from '../packages/render/sky/Weather.ts';
+import { moonKeyShare } from '../packages/render/sky/DayCycle.ts';
+import { QUALITY } from '../packages/render/Quality.ts';
 
 const close = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
 const keys = Object.keys( WEATHER_PRESETS.clear );

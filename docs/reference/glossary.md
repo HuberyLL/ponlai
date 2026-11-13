@@ -4,18 +4,18 @@ The project's own words, as the docs and the code use them. Each entry names whe
 explained in full.
 
 Ambient volume
-: The ambient light's probes, baked per chunk (`src/world/AmbientProbes.ts`) and relit every frame
-  by the sky's harmonics and the key (`src/lighting/AmbientRelight.ts`). It sees the land, its
-  groves and its cliffs, and lights the shade: every lit island material reads it for its ambient
-  diffuse (`src/lighting/AmbientSample.ts`).
+: The ambient light's probes, baked per chunk (`packages/island/world/AmbientProbes.ts`) and relit
+  every frame by the sky's harmonics and the key (`packages/render/lighting/AmbientRelight.ts`). It
+  sees the land, its groves and its cliffs, and lights the shade: every lit island material reads it
+  for its ambient diffuse (`packages/render/lighting/AmbientSample.ts`).
 
 Baking lighting into albedo
 : Tuning a material's colour to make up for an error in the light ([Art
   direction](../explanation/art-direction.md), How the look is made).
 
 Chunk
-: A 16 m square of the world (`src/world/Chunks.ts`). A chunk's content is a function of its
-  window of the land field, the chunk grown by 32 m (`AGENTS.md`, Rules for every change).
+: A 16 m square of the world (`packages/island/world/Chunks.ts`). A chunk's content is a function of
+  its window of the land field, the chunk grown by 32 m (`AGENTS.md`, Rules for every change).
 
 GPU lock
 : The lock every tool that renders the scene in a browser takes (`tools/gpu-lock.mjs`): timing
@@ -23,7 +23,7 @@ GPU lock
 
 Grow
 : The step that adds the next piece to the island in place: it swaps in only the changed chunks in
-  one frame (`src/world/Growth.ts`).
+  one frame (`packages/island/world/Growth.ts`).
 
 Island view
 : The game's own view: the island camera zoomed out over the island, from which the look is judged,
@@ -52,7 +52,8 @@ Lookdev
 Parked
 : Kept compiling and loadable by name but out of the default checks, until revived as its own
   milestone: the weathers cloudy, overcast, rain, storm and fog (`PARKED_WEATHER` in
-  `src/sky/Weather.ts`) and the quality tiers medium and low (`PARKED_QUALITY` in `src/Quality.ts`).
+  `packages/render/sky/Weather.ts`) and the quality tiers medium and low (`PARKED_QUALITY` in
+  `packages/render/Quality.ts`).
 
 Piece
 : One piece of land: the island grows one piece at a time from a starting island at the world's
@@ -60,15 +61,15 @@ Piece
 
 Pre-exposure
 : The scale every writer of the scene's colour and metering light multiplies by and every
-  scene-unit reader divides out (`src/post/PreExposure.ts`).
+  scene-unit reader divides out (`packages/render/post/PreExposure.ts`).
 
 Scene jump
-: `establishScene` in `src/app/Scene.ts`: it moves a page to another scene, which then holds what a
+: `establishScene` in `app/Scene.ts`: it moves a page to another scene, which then holds what a
   fresh load of the same query holds, and clears all state the scene leaves behind.
 
 Settled
-: The page's signal that a paused frame is final (`src/post/Settled.ts`); captures are shot once
-  it holds.
+: The page's signal that a paused frame is final (`packages/render/post/Settled.ts`); captures are
+  shot once it holds.
 
 Stylised realism
 : The island's image: physically based and developed like a photograph, but not aimed at
@@ -80,20 +81,21 @@ Sward
 
 Temporal modes
 : The anti-aliasing modes that resolve over frames: `taa`, `taau`, `fsr3` and `gt` (the ground
-  truth, debug builds only), as against `msaa` and `off` (`src/post/Antialiasing.ts`).
+  truth, debug builds only), as against `msaa` and `off` (`packages/render/post/Antialiasing.ts`).
 
 Test mode
 : A paused page that runs MSAA, with every history-dependent effect frozen or off, shot once
   `settled` holds; there a paused frame is exactly repeatable ([Tools](tools.md), Test mode).
 
 Tier
-: A quality tier, every cost knob in one table (`src/Quality.ts`): high is the only active one.
+: A quality tier, every cost knob in one table (`packages/render/Quality.ts`): high is the only
+active one.
 
 Wenyao
 : The flying fish of the old texts, in schools that break from the swell offshore and glide
-  (`src/life/Wenyao.ts`; [Art direction](../explanation/art-direction.md), Life).
+  (`packages/island/life/Wenyao.ts`; [Art direction](../explanation/art-direction.md), Life).
 
 Yunpeng
 : A herb of the old texts: single clumps of straight white stalks far apart on the open meadow,
-  which glow softly by night (`src/world/Yunpeng.ts`;
+  which glow softly by night (`packages/island/world/Yunpeng.ts`;
   [Art direction](../explanation/art-direction.md), The island).

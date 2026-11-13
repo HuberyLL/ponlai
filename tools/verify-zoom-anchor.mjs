@@ -1,4 +1,4 @@
-// Regression probe for the island camera's anchors (src/camera/IslandCameraControls.ts): a wheel
+// Regression probe for the island camera's anchors (packages/island/camera/IslandCameraControls.ts): a wheel
 // zoom and a pinch move out from the ground under the cursor, and a drag keeps the grabbed ground
 // under it, so that point stays at the cursor's pixel on every frame.
 //

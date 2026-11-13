@@ -1,4 +1,4 @@
-// tools/wgsl-build.mjs's entry for FSR 3 (src/post/fsr3/): every kernel the page's upscaler builds,
+// tools/wgsl-build.mjs's entry for FSR 3 (packages/render/post/fsr3/): every kernel the page's upscaler builds,
 // from the page's own Fsr3Upscaler (its resources, inputs, flags and clear jobs), in the order a
 // frame dispatches them: the reactive-mask generator, the clears, the passes with the SPD tails
 // after their pyramids. Beside what a frame dispatches it builds the generator (on as if
@@ -13,11 +13,11 @@
 
 import * as THREE from 'three/webgpu';
 import { exp2, ivec2, texture, textureLoad } from 'three/tsl';
-import { Fsr3Upscaler } from '../../src/post/fsr3/Fsr3Upscaler.ts';
-import * as H from '../../src/post/fsr3/Host.ts';
-import * as R from '../../src/post/fsr3/Resources.ts';
-import { preExposure } from '../../src/post/PreExposure.ts';
-import { QUALITY } from '../../src/Quality.ts';
+import { Fsr3Upscaler } from '../../packages/render/post/fsr3/Fsr3Upscaler.ts';
+import * as H from '../../packages/render/post/fsr3/Host.ts';
+import * as R from '../../packages/render/post/fsr3/Resources.ts';
+import { preExposure } from '../../packages/render/post/PreExposure.ts';
+import { QUALITY } from '../../packages/render/Quality.ts';
 
 // a graph resource as Pipeline.ts declares it
 function input( name, format, type ) {

@@ -1,4 +1,4 @@
-// tools/wgsl-build.mjs's entry for the volumetric haze (src/weather/VolumetricHaze.ts): its light
+// tools/wgsl-build.mjs's entry for the volumetric haze (packages/render/weather/VolumetricHaze.ts): its light
 // kernel (each column of froxels integrated front to back) and the haze the sky dome lays on itself
 // (`skyHaze`, drawn as a full-screen pass toward a fixed direction), on the page's atmosphere. The
 // light kernel reads the deck's irradiance from the sky's bake (Sky.ts `deckIrradianceNode`, which
@@ -11,9 +11,9 @@
 
 import * as THREE from 'three/webgpu';
 import { vec3, vec4, normalize, uniform } from 'three/tsl';
-import { Atmosphere } from '../../src/sky/Atmosphere.ts';
-import { Clouds } from '../../src/sky/Clouds.ts';
-import { VolumetricHaze } from '../../src/weather/VolumetricHaze.ts';
+import { Atmosphere } from '../../packages/render/sky/Atmosphere.ts';
+import { Clouds } from '../../packages/render/sky/Clouds.ts';
+import { VolumetricHaze } from '../../packages/render/weather/VolumetricHaze.ts';
 
 export default function ( { renderer } ) {
 

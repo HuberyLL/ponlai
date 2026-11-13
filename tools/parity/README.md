@@ -23,9 +23,9 @@ rules hold.
 ## Serving a build for captures
 
 Capture a production build, each branch from its own worktree on its own port: `node tools/serve.mjs
-preview` builds it and serves it on a free port (`docs/reference/tools.md`, Page). The URL needs `?debug`
-(capture-set.mjs adds it): `window.__PONLAI__` and the diagnostics exist only on the dev server or
-with it. The assets need no setup: the build pulls what `public/` lacks from the release
+preview` builds it and serves it on a free port (`docs/reference/tools.md`, Page). The URL needs
+`?debug` (capture-set.mjs adds it): `window.__PONLAI__` and the diagnostics exist only on the dev
+server or with it. The assets need no setup: the build pulls what `public/` lacks from the release
 `assets.lock.json` names (`tools/vite-assets.mjs`; `docs/reference/tools.md`, Assets).
 
 Paused captures take the GPU lock shared (`tools/gpu-lock.mjs`): their pixels do not depend on what
@@ -124,12 +124,12 @@ no group but `special` (see below).
 
 The three `island-cloudy-*` views, parked with their sky, are the byte checks' reach into the
 clouds' shadow under a low sun
-(`src/sky/SkyTrack.ts` SHADOW_DISC, SHADOW_AIR_NARROW). Their elevations are chosen by what moves there,
-which depends on where the clouds sit at `t=12` and on where the sun stands along its path. A view's
-hour is the one at which its sun stands at its elevation (`src/sky/DayCycle.ts` `morningHour`,
-`eveningHour`, on the 52 degree path), written into the query to four decimals. Share
-of the frame's pixels moved over one level when a uniform of `s.sky.clouds` is pinned and the map
-redrawn (`invalidate()`):
+(`packages/render/sky/SkyTrack.ts` SHADOW_DISC, SHADOW_AIR_NARROW). Their elevations are chosen by
+what moves there, which depends on where the clouds sit at `t=12` and on where the sun stands along
+its path. A view's hour is the one at which its sun stands at its elevation
+(`packages/render/sky/DayCycle.ts` `morningHour`, `eveningHour`, on the 52 degree path), written
+into the query to four decimals. Share of the frame's pixels moved over one level when a uniform of
+`s.sky.clouds` is pinned and the map redrawn (`invalidate()`):
 
 | view | `shadowRays` 1 | `shadowAirNarrow` 0 | `shadowAirNarrow` 1 |
 |---|---|---|---|
@@ -159,8 +159,8 @@ identical under the pins reaches nothing and does not stay.
 
 `special` (sky-cloudy, island-overcast, the three island-cloudy-\* views, island-rain, island-storm,
 horizon-storm, island-fog-dawn, weather-change: the views marked `special: true`) holds the parked
-weathers (`src/sky/Weather.ts` `PARKED_WEATHER`: cloudy, overcast, rain, storm, fog). No other
-group lists them, so every default set (`parity`, `all`, verify-scene-jump's,
+weathers (`packages/render/sky/Weather.ts` `PARKED_WEATHER`: cloudy, overcast, rain, storm, fog). No
+other group lists them, so every default set (`parity`, `all`, verify-scene-jump's,
 baseline.mjs's plan without `--views` / `--clips`) is the normal weathers' alone; `normal` is `all`
 (16 views), kept as a name. A parked view is reached by name or by `special` (`all,special` is
 every view), and so is a clip (clips.mjs: a clip is in its view's group; the parked ones are
@@ -218,7 +218,7 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
 - One page per set: each worker (`capture.mjs --worker`) loads the first view it is given and
   reaches every later one in place by the exact scene jump, `__PONLAI__.establishScene( <the view's
   full query> )`, a frame at the jump's camera, then the view's eval, readiness and shot as after a
-  load. Its contract (`src/app/Scene.ts`): the frame equals a fresh load's, byte for byte wherever the
+  load. Its contract (`app/Scene.ts`): the frame equals a fresh load's, byte for byte wherever the
   fresh load repeats. Only load-time options (quality, aa, size and dpr, the debug switches) need a
   new page, and a set shares them. The jump undoes the scene's options and camera, not GUI or
   console changes, so it covers views without an eval or with exactly a views.mjs view's eval
@@ -259,7 +259,7 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
   - With `--views` too, both sets; with only ad-hoc views or sweeps, not the parity group.
   - An ad-hoc view's own options win over the set's (`t=12`, the tier, aa, `--q`); views.mjs views
     keep the set's first, unchanged. Views whose load-time options differ (anything outside
-    `SCENE_OPTIONS` in `src/app/Scene.ts`: tier, aa, `game`, `seed`, debug switches) cannot share a
+    `SCENE_OPTIONS` in `app/Scene.ts`: tier, aa, `game`, `seed`, debug switches) cannot share a
     page: they are captured in groups, a group's pages after the last group's.
   - Names: letters, digits, `-`, `_`, none of views.mjs's. `<outDir>/views.json` records the ad-hoc
     views (their query, eval, crops and full query). In the reference store each ad-hoc view's
@@ -491,8 +491,8 @@ zombie) leaves a stale claim, which the next request takes over; when `ps` canno
 (a loaded machine) the process counts as alive, since taking over a live capture would put two
 writers in one directory. A process releases and records only a claim that is still its own. Before
 capturing, the tool checks which worktree serves the reference URL's port (`lsof`): it refuses a
-server whose commit differs from the reference's in what the build reads (`src/`, `index.html`,
-`assets.lock.json`, `vite.config.ts`,
+server whose commit differs from the reference's in what the build reads (`packages/`, `app/`,
+`index.html`, `assets.lock.json`, `vite.config.ts`,
 `package.json`, `package-lock.json`, `tsconfig.json`; a branch that changed only tools or docs
 serves the same build) or that has uncommitted changes there, and warns when `dist/` is older than
 the last commit of those inputs. `node tools/parity/reference.mjs status <root>/<sha>` lists every
@@ -560,11 +560,11 @@ evaluates every one and carries nothing):
 |---|---|---|
 | `sameBuild` | `git diff A B` touches nothing the build reads (`BUILD_INPUTS`): the same build, so everything carries with no further check | all |
 | key | A's entry manifest has exactly the key B asks for: tool hash, browser build, tier, aa, size, query, clip, view, sampling, anchors | each entry |
-| `motionWatch` | the diff touches none of `src/main.ts`, `src/RenderStages.ts`, `src/IslandStages.ts`, `src/app/`, `src/weather/`, `src/characters/`, `src/ocean/`, `src/game/view/`, `package.json`, `package-lock.json` (motion a paused frame cannot show; the stepper) | all |
+| `motionWatch` | the diff touches none of `app/main.ts`, `packages/render/RenderStages.ts`, `packages/island/IslandStages.ts`, `app/`, `packages/render/weather/`, `packages/island/world/FallingLeaves.ts`, `packages/island/characters/`, `packages/render/ocean/`, `packages/game/view/`, `package.json`, `package-lock.json` (motion a paused frame cannot show; the stepper) | all |
 | `paused-<tier>` | B's paused set matches A's: `S1` on high (the 12 parity views plus every view an entry is on), `S2/<tier>` below (those views); diff-set `--aa-floor` where both hold repeats, else pixel identity. Captured or extended through the store; A's from `--carry-url` when its store lacks it | all |
 | `stored` | A's rest baseline entry's whole frame matches A's own paused-set frame of that view within 2 levels (files only): the paused check vouches for A's set, not its entries, and a capture that went wrong at A would otherwise carry on. Entries without a whole frame (the TAA rest views, the lower tiers) are not checked | rest entries with a whole frame |
 | `spot` | the first 16 frames of `pan-slow` and `islander-walk` under MSAA captured on B with A's anchors, pixel-equal to A's stored baseline entries (a differing clip is captured once more: a whole-frame outlier under a shared GPU does not repeat) | clips |
-| `gtWatch` | the diff touches none of `src/post/` `TemporalAA`, `TemporalRest`, `Jitter`, `Antialiasing`, `Motion`, `Pipeline`, `AfterResolve`, `SceneEvents` (`.ts`), nor the dependencies | aa=gt |
+| `gtWatch` | the diff touches none of `packages/render/post/` `TemporalAA`, `TemporalRest`, `Jitter`, `Antialiasing`, `Motion`, `Pipeline`, `AfterResolve`, `SceneEvents` (`.ts`), nor the dependencies | aa=gt |
 | `gtSpot` | one rest ground truth (the first of island-fair-noon, meadow-close, meadow-24, flowers-close, rim-sea that A holds) captured on B within the ground truth's noise of A's: per image max 8 levels and at most 0.05 % of pixels over 2 | aa=gt |
 
 GT-HI, the lower tiers' clips and the test labels never carry. The metrics are recomputed by every
@@ -595,7 +595,7 @@ against A's paused set).
 
 Only the load-time options need a new page (quality, aa, size and dpr, the S3 switches): the views'
 weather, time, moon and camera are runtime state, and `__PONLAI__.establishScene( query )` jumps to
-them in place (`src/app/Scene.ts`, where its contract is written): after the jump, one rendered
+them in place (`app/Scene.ts`, where its contract is written): after the jump, one rendered
 frame at the jump's camera and the view's eval, the paused frame is the one a fresh load of the
 view's query draws, byte for byte wherever the fresh load repeats. A tool that captures a set in one
 page calls it with the view's full query (the common part and the view's own), waits for a frame,
@@ -655,7 +655,7 @@ uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/cli
     [--baseline metrics.json] [--workers N]
 ```
 
-- The page is stepped by `__PONLAI__.loop.step` (src/app/Frame.ts, debug builds only): the live loop
+- The page is stepped by `__PONLAI__.loop.step` (app/Frame.ts, debug builds only): the live loop
   stops and the tick runs `frames` times with a fixed dt, nothing from the wall clock, the frame
   pacer and the dynamic scale bypassed and the render scale given per frame. The clouds' trace phase
   and the sky's and refracted sun's wall-clock cadences restart with each call, so a clip does not

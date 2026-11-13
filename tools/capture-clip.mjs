@@ -11,7 +11,7 @@
 //
 // The page loads `U?debug&paused&testMode=0&t=12&quality=<q>&aa=<mode>[&<extra>]&<view's query>[&<clip's
 // query>]` (`aa=off` adds `msaa=1`; `aa` reaches builds that read it, others ignore it; `testMode=0`
-// leaves the test mode's switch out, so what it turns off moves in the clips: src/debug/TestMode.ts) in a
+// leaves the test mode's switch out, so what it turns off moves in the clips: packages/render/debug/TestMode.ts) in a
 // persistent profile slot, runs the view's eval (the crop anchors' setup included), waits for the
 // scene as capture.mjs does (tools/capture-browser.mjs: the image stopped changing, with the same
 // --stable-* options, or under taa / taau / gt the rest converged, or --ready-frames' fixed count;
@@ -34,7 +34,7 @@
 // before and after, the pipelines created while stepping, the scene time, the browser build, wall
 // time, console errors, the rest's second shot).
 //
-// --aa gt is the ground truth of the temporal modes (src/post/Antialiasing.ts, debug builds): the
+// --aa gt is the ground truth of the temporal modes (packages/render/post/Antialiasing.ts, debug builds): the
 // temporal graph at the canvas's resolution, each captured frame held still after its tick until
 // the temporal rest has averaged `--gt-jitters` jittered renders of it with a box filter
 // (`loop.step`'s `converge`; 32 by default, 64 for a clip of one frame, the rest GT), without

@@ -5,25 +5,25 @@
 //   node tools/verify-extensions.mjs
 //
 // Guarantees, each a failure (exit 1) when broken:
-// - The three declarations (src/Extensions.ts): a definition without its cost knob, its stand in
+// - The three declarations (packages/render/Extensions.ts): a definition without its cost knob, its stand in
 //   the test mode or how it follows the land's growth is refused by `checkDeclarations`, which
 //   names what is missing, and so by every registry below.
-// - A plant kind (src/world/vegetation/Registry.ts): a kind of this tool's, with sites and no art,
+// - A plant kind (packages/render/vegetation/Registry.ts): a kind of this tool's, with sites and no art,
 //   registers and is drawn with the default plant (DefaultPlant.ts: two cards a site, on a
 //   material tagged as vegetation), and the registry's lists hold its root. A kind with a growth
 //   that declares it does not depend on the land is refused. Once the registry is closed (the
-//   stage that places the kinds closes it: src/RenderStages.ts `placeVegetation`), a kind
+//   stage that places the kinds closes it: packages/render/RenderStages.ts `placeVegetation`), a kind
 //   registered afterwards is refused with the kind's name and the reason given at the close.
-// - A kind of local light (src/lighting/LocalLights.ts): a kind of this tool's registers, a
+// - A kind of local light (packages/render/lighting/LocalLights.ts): a kind of this tool's registers, a
 //   source given by its position alone takes the default's intensity and range, and `refresh`
 //   reads the kind's sources again. A second light table on one page is refused.
-// - An extra pass (src/post/ExtraPass.ts): a pass of this tool's is declared on a graph in the
-//   list's order. Every name in SCENE_PASSES is a scene pass src/post/PipelinePasses.ts declares
+// - An extra pass (packages/render/post/ExtraPass.ts): a pass of this tool's is declared on a graph in the
+//   list's order. Every name in SCENE_PASSES is a scene pass packages/render/post/PipelinePasses.ts declares
 //   (`addPass( '<name>', 'scene'`), so the typed names are real ones.
-// - Scene events (src/post/SceneEvents.ts): reasons of this tool's are declared and raised (the
+// - Scene events (packages/render/post/SceneEvents.ts): reasons of this tool's are declared and raised (the
 //   rest's epoch takes the reason; a cutting one reaches the cut's listeners, the other does not),
 //   and a reason declared twice is refused.
-// - The scene's histories (src/post/SceneHistory.ts): entries of this tool's are cleared by a jump
+// - The scene's histories (packages/render/post/SceneHistory.ts): entries of this tool's are cleared by a jump
 //   in the order registered, the ones after the bake apart.
 // - No name of the scene's in the owners: the code of each registry's owner file (comments left
 //   out) holds none of the words in OWNERS for it: the island's plants, lights, passes, events and
@@ -44,12 +44,12 @@ import { installIslandLook } from './island-look.mjs';
 
 const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 
-// The registries' owner files (under src/) and the scene's words none of their code may hold.
+// The registries' owner files (under packages/render/) and the scene's words none of their code may hold.
 const PLANTS = [ 'grass', 'yunpeng', 'bamboo', 'meadow', 'culms' ];
 const OWNERS = {
 	'Extensions.ts': [ ...PLANTS, 'leaves', 'wenyao', 'islander', 'game' ],
-	'world/vegetation/Registry.ts': [ ...PLANTS, 'leaves' ],
-	'world/vegetation/DefaultPlant.ts': [ 'grass', 'yunpeng', 'bamboo', 'meadow', 'culms' ],
+	'vegetation/Registry.ts': [ ...PLANTS, 'leaves' ],
+	'vegetation/DefaultPlant.ts': [ 'grass', 'yunpeng', 'bamboo', 'meadow', 'culms' ],
 	'lighting/LocalLights.ts': [ ...PLANTS, 'leaves', 'lantern' ],
 	'post/ExtraPass.ts': [ ...PLANTS, 'leaves', 'fallingLeaves', 'leavesPass' ],
 	'post/SceneEvents.ts': [ 'game', 'swap', 'approach', 'world', 'island' ],
@@ -94,7 +94,7 @@ const thrown = ( fn ) => {
 
 function codeOf( file ) {
 
-	const text = readFileSync( path.join( ROOT, 'src', file ), 'utf8' );
+	const text = readFileSync( path.join( ROOT, 'packages/render', file ), 'utf8' );
 	const scanner = ts.createScanner( ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, text );
 	const parts = [];
 	for ( let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan() ) parts.push( scanner.getTokenText() );
@@ -105,7 +105,7 @@ for ( const [ file, words ] of Object.entries( OWNERS ) ) {
 
 	const code = codeOf( file );
 	const found = words.filter( ( word ) => new RegExp( `(^|[^A-Za-z])${ word }([^A-Za-z]|$)`, 'i' ).test( code ) );
-	check( `src/${ file } names none of the scene's definitions`, found.length === 0, `its code holds ${ found.map( ( w ) => `'${ w }'` ).join( ', ' ) }` );
+	check( `packages/render/${ file } names none of the scene's definitions`, found.length === 0, `its code holds ${ found.map( ( w ) => `'${ w }'` ).join( ', ' ) }` );
 
 }
 
@@ -120,10 +120,10 @@ const server = await createServer( {
 const DECLARED = { cost: 'none', testMode: 'stateless', land: 'independent' };
 try {
 
-	const load = ( file ) => server.ssrLoadModule( `/src/${ file }` );
+	const load = ( file ) => server.ssrLoadModule( `/packages/render/${ file }` );
 	const { installSettings, parseSettings } = await load( 'Settings.ts' );
 	installSettings( parseSettings( '' ) );
-	await installIslandLook( load );
+	await installIslandLook( ( file ) => server.ssrLoadModule( `/${ file }` ) );
 	const { createShared, installShared } = await load( 'shared.ts' );
 	const shared = createShared();
 	installShared( shared );
@@ -141,8 +141,8 @@ try {
 	}
 
 	// a plant kind
-	const { Vegetation } = await load( 'world/vegetation/Registry.ts' );
-	const { defaultPlant } = await load( 'world/vegetation/DefaultPlant.ts' );
+	const { Vegetation } = await load( 'vegetation/Registry.ts' );
+	const { defaultPlant } = await load( 'vegetation/DefaultPlant.ts' );
 	const standIn = new THREE.DataTexture( new Uint8Array( 4 ), 1, 1 );
 	standIn.needsUpdate = true;
 	const vegetation = new Vegetation( ( sites, name ) => defaultPlant( shared, sites, name, { map: standIn, alphaMap: standIn } ) );
@@ -161,7 +161,7 @@ try {
 	vegetation.close( 'this tool has placed the kinds' );
 	const late = thrown( () => vegetation.add( { ...plant, name: 'late plant' } ) );
 	check( 'a kind registered after the registry is closed is refused, by name and with the reason', late !== null && String( late.message ).includes( 'late plant' ) && String( late.message ).includes( 'this tool has placed the kinds' ) && vegetation.kinds.length === 1, late ? late.message : 'accepted' );
-	const placing = /export function placeVegetation\b[\s\S]*?\n}\n/.exec( readFileSync( path.join( ROOT, 'src', 'RenderStages.ts' ), 'utf8' ) );
+	const placing = /export function placeVegetation\b[\s\S]*?\n}\n/.exec( readFileSync( path.join( ROOT, 'packages/render/RenderStages.ts' ), 'utf8' ) );
 	check( 'the stage that places the kinds closes the registry', placing !== null && placing[ 0 ].includes( 'vegetation.close(' ) );
 
 	// a kind of local light
@@ -186,7 +186,7 @@ try {
 	const e3 = thrown( () => declareExtraPasses( graph, [ pass( 'verifyFirst' ), pass( 'verifySecond' ) ] ) );
 	check( 'extra passes are declared in the list\'s order', e3 === null && declaredPasses.join() === 'verifyFirst:compute,verifySecond:compute', e3?.stack ?? declaredPasses.join() );
 	check( 'an extra pass without its declarations is refused', thrown( () => declareExtraPasses( graph, [ { name: 'undeclared pass', declare: () => {} } ] ) ) !== null );
-	const pipeline = readFileSync( path.join( ROOT, 'src', 'post', 'PipelinePasses.ts' ), 'utf8' );
+	const pipeline = readFileSync( path.join( ROOT, 'packages/render/post/PipelinePasses.ts' ), 'utf8' );
 	const missing = SCENE_PASSES.filter( ( name ) => ! pipeline.includes( `addPass( '${ name }', 'scene'` ) );
 	check( `the ${ SCENE_PASSES.length } typed scene pass names are passes the pipeline declares`, missing.length === 0, `not declared: ${ missing.join( ', ' ) }` );
 

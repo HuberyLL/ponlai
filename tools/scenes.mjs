@@ -1,4 +1,4 @@
-// The test scenes shot, read and checked (scenes.html, src/app/scenes/): the renderer's small
+// The test scenes shot, read and checked (scenes.html, app/scenes/): the renderer's small
 // scenes, each at its own views, hours and weathers, as paused pages in the test mode.
 //
 //   node tools/scenes.mjs <baseUrl> <outDir> [--scenes ball,sea] [--times a,b] [--views a,b]
@@ -92,7 +92,7 @@ const refDir = path.resolve( options.ref ?? path.join( 'artifacts/scenes/referen
 const list = ( text ) => text === undefined ? null : text.split( ',' ).map( ( s ) => s.trim() ).filter( Boolean );
 const wanted = { scenes: list( options.scenes ), times: list( options.times ), views: list( options.views ) };
 // the scenes shot where none is named: the page's scenes (the `scene` option's values:
-// src/Settings.ts) whose shots repeat to the pixel, so all but `sea`
+// packages/render/Settings.ts) whose shots repeat to the pixel, so all but `sea`
 const DEFAULT_SCENES = [ 'ball', 'empty', 'plants' ];
 const sceneNames = wanted.scenes ?? DEFAULT_SCENES;
 

@@ -68,7 +68,7 @@ export const TOOL_FILES = {
 
 // what a build reads: a server whose worktree differs from the reference's commit only elsewhere
 // serves the reference's build
-export const BUILD_INPUTS = [ 'src', 'index.html', 'assets.lock.json', 'vite.config.ts', 'package.json', 'package-lock.json', 'tsconfig.json' ];
+export const BUILD_INPUTS = [ 'packages', 'app', 'index.html', 'assets.lock.json', 'vite.config.ts', 'package.json', 'package-lock.json', 'tsconfig.json' ];
 const POLL_MS = 5000, ANNOUNCE_MS = 60000, MUTEX_STALE_MS = 30000;
 const FORMAT = 1;
 

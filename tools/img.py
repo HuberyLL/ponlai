@@ -55,7 +55,7 @@ mean of the pixels' L, a and b, C and h taken from the mean a and b) and mean li
 pixels: `under` and `over` the region's own median L (a crown's dark and lit halves), `p5` the darkest
 5 % and `p90` the brightest 10 % (`medianL` and `parts` in --json); --cover adds the share
 of pixels (%) whose red exceeds twice their green: the meadow's blades in a capture taken with
-`flags=grassMask` (src/world/Grass.ts), which paints them red over the green ground. --mask M reads
+`flags=grassMask` (packages/island/world/Grass.ts), which paints them red over the green ground. --mask M reads
 a mask capture of the same view (a file, or a directory holding one of each image's name) and splits
 the region's pixels by it: `marked` where the mask differs from the image by more than 16 levels in a
 channel and its red is its largest, `edge` where it differs so and its green is, the `rest` the
@@ -68,7 +68,7 @@ each marked pixel's dL and dC against the rest round it (their Gaussian mean ove
 only, a sigma of 1 % of the region's width: median and 10-90 percentiles), since the rest of a sky
 is lighter or darker by its elevation; --against B (a file, or a directory of the same names) gives
 them against the same pixels of the view without what the mask marks instead (which an exposure
-that meters the frame may have moved as a whole). `flags=streakMask` (src/sky/Sky.ts) marks
+that meters the frame may have moved as a whole). `flags=streakMask` (packages/render/sky/Sky.ts) marks
 the thin cloud layer's streaks, `flags=streaks:0` takes the layer away.
 
 stats --deck: the cloud deck's structure on a sky, in place of the metrics above, per region. Oklab L

@@ -43,9 +43,9 @@ This is not an "AI town" to watch: the player acts all the time, and the islande
   composed from those. What using a thing does is defined by the thing, so new content adds
   things to the world, not new actions.
 - They live a life: a game day is a year of it. A body is a man's or a woman's at its age, from a
-  child of two to the stooped old (`src/characters/Ages.ts`), and changes smoothly as it ages.
-  Each islander dies of old age at a lifespan drawn as it comes, as a present-day population's
-  are with accidents left out (`src/game/sim/life.ts`), and the record notes the death. A game
+  child of two to the stooped old (`packages/island/characters/Ages.ts`), and changes smoothly as it
+  ages. Each islander dies of old age at a lifespan drawn as it comes, as a present-day population's
+  are with accidents left out (`packages/game/sim/life.ts`), and the record notes the death. A game
   starts with three grown islanders: a man, a woman and one of either, 20 to 35 years old. Births
   and how newcomers arrive are not designed yet.
 - They live among each other: they hear what is said near them, hand each other things and
@@ -97,7 +97,7 @@ The player should want to rebuild after watching their islanders walk the long w
   so a new piece rebuilds only itself and its neighbours; everything else stays exactly as it
   was. The sea floor near the island follows the coast locally in the same way.
 - **As built** (the trigger, against the instant swap; the rise is not built): the population is
-  the islanders' count, and the steps are a table (`GROWTH_STEPS` in `src/game/sim/types.ts`),
+  the islanders' count, and the steps are a table (`GROWTH_STEPS` in `packages/game/sim/types.ts`),
   for now one piece per 2 islanders above the starting 3 (a piece at 5, 7, 9, ... up to the 36th
   step). Once a step is due the game asks the page to grow, and the next piece swaps in at once;
   the simulation's ground opens the new cells (every index and path stays valid) and counts the

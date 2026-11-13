@@ -1,5 +1,5 @@
-// CPU checks of the local lights' clusters (src/lighting/LocalLightClusters.ts, the kernel and the
-// lookup in src/lighting/LocalLights.ts): the frame's sort of the sources in view (the view widened
+// CPU checks of the local lights' clusters (packages/render/lighting/LocalLightClusters.ts, the kernel and the
+// lookup in packages/render/lighting/LocalLights.ts): the frame's sort of the sources in view (the view widened
 // by the refraction's guard band, depth then index, repeatable), every slice's range in it, and a
 // replica of the kernel's boxes and the fragments' lookup in doubles: every fragment, on screen or
 // in the guard band, finds in its cluster every source whose range holds it, a full cluster keeps
@@ -8,7 +8,7 @@
 // The replica mirrors the TSL by hand: a change to the kernel or the lookup changes it too.
 
 import './qos.mjs';
-import { GRID, PER_CLUSTER, GUARD, slicesFor, sliceStart, sliceAt, sortInView } from '../src/lighting/LocalLightClusters.ts';
+import { GRID, PER_CLUSTER, GUARD, slicesFor, sliceStart, sliceAt, sortInView } from '../packages/render/lighting/LocalLightClusters.ts';
 
 const seed = Number( process.argv[ 2 ] ?? 1 );
 

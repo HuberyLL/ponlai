@@ -1,4 +1,4 @@
-// Regression probe for the exact scene jump (src/app/Scene.ts `establishScene`): a parity view reached by
+// Regression probe for the exact scene jump (app/Scene.ts `establishScene`): a parity view reached by
 // a jump within one page must be the frame a fresh load of its query draws. It captures the views
 // both ways, in the layout of tools/parity/capture-set.mjs, so tools/parity/diff-set.py judges them:
 //

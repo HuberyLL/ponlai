@@ -29,30 +29,32 @@ scene).
 
 From the bottom up:
 
-1. **The rules** ([src/game/sim/](src/game/sim/)). The simulation, in plain TypeScript with no
-   three.js or DOM; node runs it by stripping types. One tick is one game second, the state is the
-   save, and one seeded generator draws every chance. It owns the islanders (bodies, needs, bags,
-   ages, the action under way), the places they act at (the buildings, each other, the kinds of
-   place registered), the ground and its paths, the five actions as tools (each with the arguments
-   it takes and the condition it holds by), the perception a brain is handed, and the events it
-   emits. Its core is generic: the game's content (the needs, the items and their uses, the kinds of
-   place and of building, the options they offer) is definitions in
-   [sim/content/](src/game/sim/content/), registered in [registry.ts](src/game/sim/registry.ts),
-   which the core reads by id and in order. Today that is satiety and hydration (thirst off), the
-   fish and fishing at the shore, the chest with putting in and taking out, the work on every
-   building, and giving to and following someone. The stand-in brain, plain rules that play that
-   content, lives here; a language-model brain fills the same slot.
-2. **The session** ([src/game/Session.ts](src/game/Session.ts)). Runs the rules as a game without a
-   page: it installs a simulation (new or loaded) with its record
-   ([Chronicle.ts](src/game/Chronicle.ts)) and its brain, advances it frame by frame, hands the
+1. **The rules** ([packages/game/sim/](packages/game/sim/)). The simulation, in plain TypeScript
+   with no three.js or DOM; node runs it by stripping types. One tick is one game second, the state
+   is the save, and one seeded generator draws every chance. It owns the islanders (bodies, needs,
+   bags, ages, the action under way), the places they act at (the buildings, each other, the kinds
+   of place registered), the ground and its paths, the five actions as tools (each with the
+   arguments it takes and the condition it holds by), the perception a brain is handed, and the
+   events it emits. Its core is generic: the game's content (the needs, the items and their uses,
+   the kinds of place and of building, the options they offer) is definitions in
+   [sim/content/](packages/game/sim/content/), registered in
+   [registry.ts](packages/game/sim/registry.ts), which the core reads by id and in order. Today that
+   is satiety and hydration (thirst off), the fish and fishing at the shore, the chest with putting
+   in and taking out, the work on every building, and giving to and following someone. The stand-in
+   brain, plain rules that play that content, lives here; a language-model brain fills the same
+   slot.
+2. **The session** ([packages/game/Session.ts](packages/game/Session.ts)). Runs the rules as a game
+   without a page: it installs a simulation (new or loaded) with its record
+   ([Chronicle.ts](packages/game/Chronicle.ts)) and its brain, advances it frame by frame, hands the
    rules' events to its listeners, checks the player's commands at the entrance, keeps the leader's
    words for a brain that hears, asks its host for the island's growth, and writes and reads the
-   save ([save.ts](src/game/save.ts)). Everything it does is a function of its host's calls.
+   save ([save.ts](packages/game/save.ts)). Everything it does is a function of its host's calls.
 3. **The hosts**, the presentations on top:
-   - the page's game ([src/game/Game.ts](src/game/Game.ts)), behind `?game`: its view draws the
-     islanders and buildings into the scene ([src/game/view/](src/game/view/)), the player's
-     interface shows the game and takes the player's commands ([src/game/ui/](src/game/ui/), spec
-     in [docs/explanation/ui.md](docs/explanation/ui.md)), and it keeps the autosave and the debug
+   - the page's game ([packages/game/Game.ts](packages/game/Game.ts)), behind `?game`: its view
+     draws the islanders and buildings into the scene ([packages/game/view/](packages/game/view/)),
+     the player's interface shows the game and takes the player's commands
+     ([packages/game/ui/](packages/game/ui/), spec in
+     [docs/explanation/ui.md](docs/explanation/ui.md)), and it keeps the autosave and the debug
      panel;
    - the play tool ([tools/play-game.mjs](tools/play-game.mjs)), which plays the same session
      headless for days with any brain and writes a transcript, a timeline and a summary, for a
@@ -117,56 +119,63 @@ nothing below a host reads the page or the wall clock (the save's timestamp asid
 
 ### Layers
 
-- **The page** ([src/main.ts](src/main.ts), loaded by the entry [src/Boot.ts](src/Boot.ts)
-  after [src/PageSettings.ts](src/PageSettings.ts)): the one place that assembles the renderer, the
+- **The page** ([app/main.ts](app/main.ts), loaded by the entry [app/Boot.ts](app/Boot.ts)
+  after [app/PageSettings.ts](app/PageSettings.ts)): the one place that assembles the renderer, the
   island and the game. It builds them a stage at a time, the renderer's stages
-  ([src/RenderStages.ts](src/RenderStages.ts)) and the island's
-  ([src/IslandStages.ts](src/IslandStages.ts)) alternating in a fixed order, each stage putting
-  what it builds on its layer's one object; the game starts from those two objects. A frame is
-  assembled the same way: the page's tick ([src/app/Frame.ts](src/app/Frame.ts)) calls the
-  renderer's frame stages and the island's in turn, in an order that is part of the image, and
+  ([packages/render/RenderStages.ts](packages/render/RenderStages.ts)) and the island's
+  ([packages/island/IslandStages.ts](packages/island/IslandStages.ts)) alternating in a fixed order,
+  each stage putting what it builds on its layer's one object; the game starts from those two
+  objects. A frame is assembled the same way: the page's tick ([app/Frame.ts](app/Frame.ts)) calls
+  the renderer's frame stages and the island's in turn, in an order that is part of the image, and
   does only its own work between them (the timer, the game's update and draw, the render scale,
   the pacer). The page's own
-  parts are in [src/app/](src/app/): the cameras' views, the frame loop, the GUI, the scene jump,
+  parts are in [app/](app/): the cameras' views, the frame loop, the GUI, the scene jump,
   the diagnostics and the handles the tools drive (it mounts them on `window`). The page also holds
   the address, the reloads and the browser's storage, and it chooses the quality tier
-  ([src/QualityDetect.ts](src/QualityDetect.ts)); the tiers' table of cost knobs
-  ([src/Quality.ts](src/Quality.ts)) is the renderer's. It is the only part that touches the
-  browser's page: the layers below take the canvas, the settings and the storage from it
-  ([tools/verify-layers.mjs](tools/verify-layers.mjs), its page check, keeps them off the page).
-- **The scene page** ([src/app/scenes/](src/app/scenes/), loaded by its own entry
-  [src/ScenesBoot.ts](src/ScenesBoot.ts) from `scenes.html`): a second page, which assembles the
+  ([app/QualityDetect.ts](app/QualityDetect.ts)); the tiers' table of cost knobs
+  ([packages/render/Quality.ts](packages/render/Quality.ts)) is the renderer's. It is the only part
+  that touches the browser's page: the layers below take the canvas, the settings and the storage
+  from it ([tools/verify-layers.mjs](tools/verify-layers.mjs), its page check, keeps them off the
+  page).
+- **The scene page** ([app/scenes/](app/scenes/), loaded by its own entry
+  [app/ScenesBoot.ts](app/ScenesBoot.ts) from `scenes.html`): a second page, which assembles the
   renderer alone into small test scenes (a few objects on level ground under the sky or in the
   open sea, and plant kinds drawn with the default plant). It builds and runs a frame with the
   same renderer stages as the island's page, and gives the renderer the inputs the island would:
   the ambient light's probes, the bounce's ground and the shore's fields of level open ground or
   of the open sea far from any shore, which the renderer makes itself
-  ([src/NeutralInputs.ts](src/NeutralInputs.ts)). Its files import only the renderer's exits
-  ([tools/verify-layers.mjs](tools/verify-layers.mjs)); it draws with the renderer's neutral look
-  unless its entry is asked for the island's. It mounts the same handles for the tools as the
-  island's page.
-- **The world** ([src/world/](src/world/)): the island generated from its land. The land grows a
-  piece at a time; the generator runs in 16 m chunks on a pool of workers, its chunks are cached,
-  merged and drawn, and a growth swaps the changed chunks in place. Its kinds (the ground, cliffs,
-  stones, the sea floor, the meadow, bamboo and the other plants) and the fields their materials
-  sample all derive from the land.
-- **The environment**: the sky, the day cycle and the weather ([src/sky/](src/sky/)), the wind,
-  haze, rain and falling leaves ([src/weather/](src/weather/)), the sea ([src/ocean/](src/ocean/)),
-  the light every material shares ([src/lighting/](src/lighting/)), the materials
-  ([src/materials/](src/materials/)), and the creatures and characters ([src/life/](src/life/),
-  [src/characters/](src/characters/)).
-- **The frame** ([src/post/](src/post/)): a frame graph declares every pass and the targets it
-  reads and writes, compiles their pipelines ahead and runs them: the scene's passes, the
-  anti-aliasing, the upscaling and dynamic resolution, the bloom and the display chain.
-- **The look** ([src/look/](src/look/), [src/islandLook/](src/islandLook/)): the numbers chosen
-  for a picture, one table per system (the sky, the day, the ambient light, the haze, the exposure,
-  the display, the sea, the occlusion's floor, the local lights' gain, the meadow's canopy, the
-  plants' answer to the wind). The renderer holds the tables' types, a neutral set (gains of 1, no grade,
-  one key all day) and, per system, the module that reads the numbers with their tunables and the
-  CPU code that reads only them; the environment's and the frame's modules keep the shaders and
-  the methods, and take the numbers from those readers. The island holds its own numbers, and the
-  page's entry installs them before any reader loads. A reader takes its numbers once, as it
-  loads, so a look installed after one has loaded is an error that names it.
+  ([packages/render/NeutralInputs.ts](packages/render/NeutralInputs.ts)). Its files import only the
+  renderer's exits ([tools/verify-layers.mjs](tools/verify-layers.mjs)); it draws with the
+  renderer's neutral look unless its entry is asked for the island's. It mounts the same handles for
+  the tools as the island's page.
+- **The world** ([packages/island/world/](packages/island/world/), its plants drawn by the
+  renderer's vegetation, [packages/render/vegetation/](packages/render/vegetation/)): the island
+  generated from its land. The land grows a piece at a time; the generator runs in 16 m chunks on a
+  pool of workers, its chunks are cached, merged and drawn, and a growth swaps the changed chunks in
+  place. Its kinds (the ground, cliffs, stones, the sea floor, the meadow, bamboo and the other
+  plants) and the fields their materials sample all derive from the land.
+- **The environment**: the sky, the day cycle and the weather
+  ([packages/render/sky/](packages/render/sky/)), the wind, haze and rain
+  ([packages/render/weather/](packages/render/weather/)), the sea
+  ([packages/render/ocean/](packages/render/ocean/)), the light every material shares
+  ([packages/render/lighting/](packages/render/lighting/)), the materials
+  ([packages/render/materials/](packages/render/materials/),
+  [packages/island/materials/](packages/island/materials/)), and the creatures and characters
+  ([packages/island/life/](packages/island/life/),
+  [packages/island/characters/](packages/island/characters/)).
+- **The frame** ([packages/render/post/](packages/render/post/)): a frame graph declares every pass
+  and the targets it reads and writes, compiles their pipelines ahead and runs them: the scene's
+  passes, the anti-aliasing, the upscaling and dynamic resolution, the bloom and the display chain.
+- **The look** ([packages/render/look/](packages/render/look/),
+  [packages/island/look/](packages/island/look/)): the numbers chosen for a picture, one table per
+  system (the sky, the day, the ambient light, the haze, the exposure, the display, the sea, the
+  occlusion's floor, the local lights' gain, the meadow's canopy, the plants' answer to the wind).
+  The renderer holds the tables' types, a neutral set (gains of 1, no grade, one key all day) and,
+  per system, the module that reads the numbers with their tunables and the CPU code that reads only
+  them; the environment's and the frame's modules keep the shaders and the methods, and take the
+  numbers from those readers. The island holds its own numbers, and the page's entry installs them
+  before any reader loads. A reader takes its numbers once, as it loads, so a look installed after
+  one has loaded is an error that names it.
 
 ### Flows
 
@@ -179,33 +188,34 @@ nothing below a host reads the page or the wall clock (the save's timestamp asid
 - **The frame.** The frame graph renders the scene's passes from what the world and the
   environment hold, then resolves, upscales and grades the image for the display.
 - **Settings to every module.** Every option of the address is declared once, with what it takes,
-  its default and the layer that owns it ([src/Settings.ts](src/Settings.ts)). The entry parses the
-  address, reports what nobody declared or no reader tells apart, chooses the quality tier and
-  installs both before any other module loads; every module then reads its options through that
-  one entrance, as it loads or when it builds. Where nothing installed them (node, a worker) every
-  option reads as absent and each reader takes its default.
+  its default and the layer that owns it
+  ([packages/render/Settings.ts](packages/render/Settings.ts)). The entry parses the address,
+  reports what nobody declared or no reader tells apart, chooses the quality tier and installs both
+  before any other module loads; every module then reads its options through that one entrance, as
+  it loads or when it builds. Where nothing installed them (node, a worker) every option reads as
+  absent and each reader takes its default.
 
 ### Extension points
 
 The renderer is extended by registering definitions, and the files that own a registry name none
-of them: a plant kind ([Registry.ts](src/world/vegetation/Registry.ts)), a kind of local light
-([LocalLights.ts](src/lighting/LocalLights.ts)), an extra pass of the frame
-([ExtraPass.ts](src/post/ExtraPass.ts)), a layer's scene events
-([SceneEvents.ts](src/post/SceneEvents.ts)), what a cut or a scene jump clears
-([SceneHistory.ts](src/post/SceneHistory.ts)) and the kinds of the debug view
-([Classes.ts](src/debug/Classes.ts)). A plant kind, a kind of light and a pass each state three
-things, or the registry refuses them ([Extensions.ts](src/Extensions.ts)): the quality knob that
-governs their cost, how they stand in the test mode, and how they follow the land's growth. The
-marks the layers leave for each other in three's `userData` are one declared list
-([UserData.ts](src/UserData.ts)). The plant kinds' registry is closed once the renderer has placed
-them (the stage `placeVegetation` in [RenderStages.ts](src/RenderStages.ts): the scene, the depth
-prepasses; the sun's caster box and the rain's bake read the same list): a kind registered after
-it is refused with what had already read the kinds. Work a scene does every frame is not
-registered: its page calls it between the renderer's frame stages (`createFrameStages`), where its
-order belongs, as the island's frame stages are called. *Why:* a new effect that forgot one of the
-three showed only later, as a capture that did not repeat, a frame time that crept or a grown page
-that differed from a fresh load; and a renderer that names the island's plants cannot draw another
-scene.
+of them: a plant kind ([Registry.ts](packages/render/vegetation/Registry.ts)), a kind of local light
+([LocalLights.ts](packages/render/lighting/LocalLights.ts)), an extra pass of the frame
+([ExtraPass.ts](packages/render/post/ExtraPass.ts)), a layer's scene events
+([SceneEvents.ts](packages/render/post/SceneEvents.ts)), what a cut or a scene jump clears
+([SceneHistory.ts](packages/render/post/SceneHistory.ts)) and the kinds of the debug view
+([Classes.ts](packages/render/debug/Classes.ts)). A plant kind, a kind of light and a pass each
+state three things, or the registry refuses them ([Extensions.ts](packages/render/Extensions.ts)):
+the quality knob that governs their cost, how they stand in the test mode, and how they follow the
+land's growth. The marks the layers leave for each other in three's `userData` are one declared list
+([UserData.ts](packages/render/UserData.ts)). The plant kinds' registry is closed once the renderer
+has placed them (the stage `placeVegetation` in [RenderStages.ts](packages/render/RenderStages.ts):
+the scene, the depth prepasses; the sun's caster box and the rain's bake read the same list): a kind
+registered after it is refused with what had already read the kinds. Work a scene does every frame
+is not registered: its page calls it between the renderer's frame stages (`createFrameStages`),
+where its order belongs, as the island's frame stages are called. *Why:* a new effect that forgot
+one of the three showed only later, as a capture that did not repeat, a frame time that crept or a
+grown page that differed from a fresh load; and a renderer that names the island's plants cannot
+draw another scene.
 [tools/verify-extensions.mjs](tools/verify-extensions.mjs) registers definitions of its own and
 searches the owners for the scene's names.
 
@@ -245,12 +255,12 @@ searches the owners for the scene's names.
    would have played.
 7. **Content is registered definitions; the core names none.** A need, an item and its uses, a
    kind of place, an option at a place and a kind of building are each one definition, registered
-   once in [registry.ts](src/game/sim/registry.ts) by its module in
-   [sim/content/](src/game/sim/content/). A definition declares what it offers, its condition (the
-   `holds` of rule 1, where standing at the place is not enough), its effects and its numbers. The
-   core reads the definitions by id or in the order registered, and never names one of them: Sim's
-   tick, the five actions, the perception, the needs', items', places' and buildings' systems, the
-   people system, the events, the schemas and the session. The stand-in brain is a player of the
+   once in [registry.ts](packages/game/sim/registry.ts) by its module in
+   [sim/content/](packages/game/sim/content/). A definition declares what it offers, its condition
+   (the `holds` of rule 1, where standing at the place is not enough), its effects and its numbers.
+   The core reads the definitions by id or in the order registered, and never names one of them:
+   Sim's tick, the five actions, the perception, the needs', items', places' and buildings' systems,
+   the people system, the events, the schemas and the session. The stand-in brain is a player of the
    content and may name it. Adding water is adding an item, an option at a place and a need, with no
    change to the core. *Why:* the design adds content as places and items, never as new actions
    ([docs/explanation/game-design.md](docs/explanation/game-design.md), Actions). With content
@@ -280,8 +290,9 @@ searches the owners for the scene's names.
    and the others). Each category has a default form. A definition may give its own words, as
    catalogue keys by its id (`item.<id>`, `need.<id>`, `doing.do.<option>`, `record.need.<id>`).
    It may also give its own look: a need's icon and colour in
-   [ui/data/needs.ts](src/game/ui/data/needs.ts), an item's row in the top row, a building's model.
-   A new piece of content shows with the defaults until art gives it its own. The defaults are:
+   [ui/data/needs.ts](packages/game/ui/data/needs.ts), an item's row in the top row, a building's
+   model. A new piece of content shows with the defaults until art gives it its own. The defaults
+   are:
    - its id as its name;
    - the 未绘 glyph for its icon and 缟 for its bar;
    - a building's finished site in place of a model;
@@ -295,19 +306,21 @@ searches the owners for the scene's names.
    and art then replaces the defaults one at a time.
 10. **A package is imported through its exits.** The renderer, the island and the game are
     packages, and each offers two exits, files of re-exports only: one for the page
-    ([src/render.ts](src/render.ts), [src/island.ts](src/island.ts),
-    [src/game/index.ts](src/game/index.ts)) and a headless one, free of three.js, for the chunk
-    worker and node ([src/renderData.ts](src/renderData.ts),
-    [src/islandLand.ts](src/islandLand.ts), [src/game/sim/index.ts](src/game/sim/index.ts)). The
-    renderer has a third, its setup exit ([src/renderSetup.ts](src/renderSetup.ts)): the
-    settings, the look and the quality tiers, which the page's first module installs before the
-    renderer's other modules load and read them, and which node loads too. Each exit exports only
-    the names another package takes, each name from one exit. Another package, or the page,
-    imports a package only through them; the modules the page loads on demand (the debug probes
-    and the game itself) are lazy exits, imported dynamically, so they stay in chunks of their own
+    ([packages/render/index.ts](packages/render/index.ts),
+    [packages/island/index.ts](packages/island/index.ts),
+    [packages/game/index.ts](packages/game/index.ts)) and a headless one, free of three.js, for the
+    chunk worker and node ([packages/render/data.ts](packages/render/data.ts),
+    [packages/island/land.ts](packages/island/land.ts),
+    [packages/game/sim/index.ts](packages/game/sim/index.ts)). The renderer has a third, its setup
+    exit ([packages/render/setup.ts](packages/render/setup.ts)): the settings, the look and the
+    quality tiers, which the page's first module installs before the renderer's other modules load
+    and read them, and which node loads too. Each exit exports only the names another package takes,
+    each name from one exit. Another package, or the page, imports a package only through them; the
+    modules the page loads on demand (the debug probes and the game itself) are lazy exits, imported
+    dynamically, so they stay in chunks of their own
     ([tools/verify-layers.mjs](tools/verify-layers.mjs)). An exit loads its whole package, so a
     module does nothing as it loads but declare and register: no `await` and no read of the page
-    ([tools/verify-exits.mjs](tools/verify-exits.mjs), which also loads the headless and setup
-    exits in node). *Why:* what a package offers is a list that can be read and reviewed,
-    and a change inside a package cannot break another; a module that worked as it loaded once
-    made the order of the imports part of the program.
+    ([tools/verify-exits.mjs](tools/verify-exits.mjs), which also loads the headless and setup exits
+    in node). *Why:* what a package offers is a list that can be read and reviewed, and a change
+    inside a package cannot break another; a module that worked as it loaded once made the order of
+    the imports part of the program.

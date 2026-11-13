@@ -48,7 +48,7 @@
 // A paused capture takes the GPU lock shared (its pixels do not depend on what else renders);
 // a running one, or --exclusive, takes it to itself, since its frame times are reported too.
 // A paused page of the temporal modes (aa=taa|taau|fsr3|gt) shows its rest image once that has
-// converged (src/post/TemporalRest.ts): once up the rest is started over (its epoch: what the
+// converged (packages/render/post/TemporalRest.ts): once up the rest is started over (its epoch: what the
 // evals changed need not be in its key) and the capture waits for `diag.taa.converged` and the
 // settled signal (a rest that converged before the page was quiet is started over), stops the
 // loop on the held rest and shoots it, with no image comparison (the --stable-* options do not
@@ -60,7 +60,7 @@
 // reports and asks again, until told it is done; the first view is a fresh load of
 // `<url>?<query>`, each later one is reached in place by the exact scene jump:
 // `await __PONLAI__.establishScene( <the view's query> )`, the loop started, one frame rendered at
-// the jump's camera, then the view's evals and everything above, as after a load (src/main.ts:
+// the jump's camera, then the view's evals and everything above, as after a load (app/main.ts:
 // the frame then equals a fresh load's, byte for byte wherever the fresh load repeats). Only
 // load-time options (quality, aa, size and dpr, the debug switches) need a new page, and every view
 // of a set shares them.
@@ -69,7 +69,7 @@
 //   so on them (and with --page-per-view) the worker stops after its first view, and capture-set
 //   starts a fresh worker per view: a page per view, as before.
 // - Evals the jump does not undo: the jump resets the scene's options and camera, not GUI or console
-//   changes (src/main.ts), so a view whose message says `last` (capture-set: an eval of its own
+//   changes (app/main.ts), so a view whose message says `last` (capture-set: an eval of its own
 //   that is not a views.mjs view's) ends its page after its shot, and the next view loads fresh.
 //   --eval and --eval-ready run on every view and may leave such changes too: with either, a page
 //   per view, unless `--ready-reads` says the --eval-ready steps only read the frame (a render
@@ -93,7 +93,7 @@
 //   page's GPU use is held back: an init script gates `GPUAdapter.requestDevice`, so the page
 //   starts its world, then waits in
 //   the renderer's start with no device, no render, no compile; the tool waits, without a slot,
-//   for `window.__PONLAI_WORLD__.ready` (src/world/WorldStart.ts, debug pages), then takes the slot
+//   for `window.__PONLAI_WORLD__.ready` (packages/island/world/WorldStart.ts, debug pages), then takes the slot
 //   and opens the gate, and the page sets up the sky, textures and pipelines, renders and is shot
 //   under it as before. It used to take the slot before the load, so on a grown island a load held a
 //   shared slot through its CPU world generation (7-35 s cold on a grown island) with the GPU nearly idle. The production
@@ -118,7 +118,7 @@ import { launchCapture, waitForScene, waitForSettled, waitForStable, stableOptio
 import { evalSource, runInPage } from './page-eval.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 
-/** The scene jump contract's version this tool drives (`__PONLAI__.sceneJump`, src/app/Scene.ts). */
+/** The scene jump contract's version this tool drives (`__PONLAI__.sceneJump`, app/Scene.ts). */
 const SCENE_JUMP = 1;
 /** The worker's GPU slot lease in seconds (--lease; see the header). */
 const LEASE = 20;
@@ -232,7 +232,7 @@ async function captureView( session, { url, query, evals, steps, readySteps = []
 
 	} else {
 
-		// the scene jump (src/app/Scene.ts `establishScene`), then a frame at the jump's camera before the
+		// the scene jump (app/Scene.ts `establishScene`), then a frame at the jump's camera before the
 		// evals move it, as a fresh load's first frames are
 		const jumped = await within( page.evaluate( async ( q ) => {
 

@@ -1,15 +1,15 @@
 // tools/wgsl-build.mjs's entry for the plants that bend from their root in the one wind
-// (src/world/vegetation/Deform.ts): the bamboo's culms and leaves (src/world/BambooMaterials.ts) and
-// the yunpeng (src/world/Yunpeng.ts). The bamboo is built as the page builds it, its prototypes
-// drawn as instances (src/world/vegetation/PlantInstances.ts), over one culm and one shoot (the
+// (packages/render/vegetation/Deform.ts): the bamboo's culms and leaves (packages/island/world/BambooMaterials.ts) and
+// the yunpeng (packages/island/world/Yunpeng.ts). The bamboo is built as the page builds it, its prototypes
+// drawn as instances (packages/render/vegetation/PlantInstances.ts), over one culm and one shoot (the
 // shaders do not depend on the sites), its leaves on a stand-in atlas (the painter draws on
 // canvases, which node lacks): one draw per material, the culms' whole draws, their fading draws
 // and the leaves; the yunpeng is built the same way over one clump, its whole and fading draws.
 
 import * as THREE from 'three/webgpu';
-import { Bamboo } from '../../src/world/Bamboo.ts';
-import { Yunpeng } from '../../src/world/Yunpeng.ts';
-import { shared } from '../../src/shared.ts';
+import { Bamboo } from '../../packages/island/world/Bamboo.ts';
+import { Yunpeng } from '../../packages/island/world/Yunpeng.ts';
+import { shared } from '../../packages/render/shared.ts';
 
 const texture = () => {
 

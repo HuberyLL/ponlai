@@ -7,8 +7,8 @@
 // and the frame-end copy). Run by tools/verify-framegraph.mjs.
 
 import assert from 'node:assert/strict';
-import { GraphDecl, compileGraph } from '../../src/post/graph/GraphCompiler.ts';
-import { FrameGraph } from '../../src/post/graph/FrameGraph.ts';
+import { GraphDecl, compileGraph } from '../../packages/render/post/graph/GraphCompiler.ts';
+import { FrameGraph } from '../../packages/render/post/graph/FrameGraph.ts';
 import { BLOOM_PASSES, HALF, HAZE, REFRACTION, declareBloomPasses, declareBloomTargets, declareHazePasses, declareShaftPasses } from './tables-passes.mjs';
 
 const RENDER = { of: 'render' };

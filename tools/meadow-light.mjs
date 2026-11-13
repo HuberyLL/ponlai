@@ -10,7 +10,7 @@
 // debug build's `debug` in the query, which every page here carries).
 //
 // Views. Each sun elevation (`--elev`, degrees, the afternoon's hour that gives it, or the morning's
-// with `--side morning`: src/sky/DayCycle.ts)
+// with `--side morning`: packages/render/sky/DayCycle.ts)
 // is shot from each view: `name=tilt,dist,fov` is a camera `dist` m from the lawn point `--target`
 // (x, z; its height the camera's ground), looking down `tilt` degrees, with a vertical field of view
 // of `fov` degrees, its heading turned from the direction toward the sun by each `--azimuth`
@@ -28,14 +28,14 @@
 // `settled` signal holds, from the resolved opaque colour at the render's size (the frame graph's
 // `opaque` radiance source: linear, before the sea, the haze and the post chain):
 //   mask    `grassMask:exact`: the blades unlit in a red far over any radiance, so each pixel's
-//           cover is exact in the scene's four samples (src/world/Grass.ts); full cover is all four,
+//           cover is exact in the scene's four samples (packages/island/world/Grass.ts); full cover is all four,
 //           with neither green nor blue. Everything but the land and the blades is hidden (the
 //           bamboo, the yunpeng, the islanders, the sea), so this page's cover and depth are the
 //           meadow's own behind whatever stands in front of it
 //   albedo  `grassMask:albedo,albedoOnly`: every lit surface unlit in its own diffuse colour, the
 //           albedo the lighting takes (the blades' darkening toward the roots included), the turf's
-//           between them too (src/debug/LightLayer.ts)
-//   light   `lightOnly`: every lit albedo 0.5 grey (src/debug/LightLayer.ts), the light alone
+//           between them too (packages/render/debug/LightLayer.ts)
+//   light   `lightOnly`: every lit albedo 0.5 grey (packages/render/debug/LightLayer.ts), the light alone
 //   bare    `lightOnly,bareGround`: the blades hidden, the turf lit as bare ground, same pixels
 //   ambient `lightOnly,bareGround,ambientOnly`: the bare ground without the sun, so each pixel's
 //           share of direct light sorts sun from shade
@@ -44,7 +44,7 @@
 //           each pixel's specular radiance (it does not depend on the albedo); optional: a run
 //           reused without it leaves the specular's measures out
 //   lean    `grassMask:lean`, hidden as the mask: each leaf's lean from upright, as drawn and by its
-//           pose alone (src/world/Grass.ts); shot only when `--pages` names it, for the `lean`
+//           pose alone (packages/island/world/Grass.ts); shot only when `--pages` names it, for the `lean`
 //           measure (the leaves' lean over the lawn they cover whole, LEAN: weighted by the pixels
 //           each leaf covers, as the view shows them)
 // All the pages draw the same blades (the test mode's paused frame is a function of the query and the
@@ -143,7 +143,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import './island-look.mjs';
-import { NOON_ELEVATION, morningHour, eveningHour } from '../src/sky/DayCycle.ts';
+import { NOON_ELEVATION, morningHour, eveningHour } from '../packages/render/sky/DayCycle.ts';
 
 const usage = 'usage: node tools/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]... [--target x,z] [--views-file f [--views a,b]] [--side afternoon|morning] [--weather clear] [--expect lo,hi] [--flags a,b] [--q extra] [--w --h --scale] [--timeout ms] [--out dir] [--pages a,b|none] [--save dir] [--reuse dir] (see the file header)';
 const argv = process.argv.slice( 2 );
@@ -197,7 +197,7 @@ if ( options.side !== 'afternoon' && options.side !== 'morning' ) { console.erro
 const expect = options.expect ? numbers( options.expect ) : null;
 if ( expect && ! ( expect.length === 2 && expect.every( Number.isFinite ) && expect[ 0 ] < expect[ 1 ] ) ) { console.error( '--expect lo,hi' ); process.exit( 2 ); }
 
-// The afternoon's (or the morning's) hour whose sun stands `elevation` degrees up (src/sky/DayCycle.ts)
+// The afternoon's (or the morning's) hour whose sun stands `elevation` degrees up (packages/render/sky/DayCycle.ts)
 const hourFor = ( elevation ) => options.side === 'morning' ? morningHour( elevation ) : eveningHour( elevation );
 
 const repo = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
@@ -412,7 +412,7 @@ if ( shoot.length ) {
 					} else if ( current !== q || ! view.frame || view.frame.island ) {
 
 						// a new query, or a view that starts from the query's own camera: the exact scene jump
-						// (src/app/Scene.ts establishScene, as capture.mjs's worker makes it), which places it as a load
+						// (app/Scene.ts establishScene, as capture.mjs's worker makes it), which places it as a load
 						const jumped = await page.evaluate( async ( q ) => {
 
 							const s = window.__PONLAI__;
@@ -516,7 +516,7 @@ function otsu( values ) {
 	return Math.exp( lo + ( at + 1 ) / bins * ( hi - lo ) );
 
 }
-// Oklab of a linear Rec. 709 colour (Ottosson's matrices, as src/debug/Radiance.ts)
+// Oklab of a linear Rec. 709 colour (Ottosson's matrices, as packages/render/debug/Radiance.ts)
 function oklab( r, g, b ) {
 
 	const l = Math.cbrt( 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b );
@@ -531,7 +531,7 @@ function oklab( r, g, b ) {
 const SRGB = new Float64Array( 256 ).map( ( _, i ) => { const c = i / 255; return c <= 0.04045 ? c / 12.92 : ( ( c + 0.055 ) / 1.055 ) ** 2.4; } );
 const BANDS = [ [ 0, 10 ], [ 10, 20 ], [ 20, 40 ], [ 40, 80 ], [ 80, 190 ] ];
 
-const MASK = 256; // src/world/Grass.ts MASK_EXACT
+const MASK = 256; // packages/island/world/Grass.ts MASK_EXACT
 // the depth (cm) the mask and light pages may differ by at an open pixel: both draw the same blades,
 // so 93 to 97 % of the leaf pixels agree exactly; a looser match (2 % and 5 cm) let through what
 // stands among the blades (the meadow's flowers, hidden on the mask page), 2.5 to 7 % of them

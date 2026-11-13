@@ -1,4 +1,4 @@
-// tools/wgsl-build.mjs's entry for the ambient light's relight (src/lighting/AmbientRelight.ts):
+// tools/wgsl-build.mjs's entry for the ambient light's relight (packages/render/lighting/AmbientRelight.ts):
 // the kernels the page builds, in the order it builds them: the sky's projection (at the first
 // bake: its rows, its groups and its finish), the relight (at the first frame), then on demand the
 // readback's copy and the probes' debug view (AmbientVolume.ts, every mode in one material).
@@ -10,10 +10,10 @@
 
 import * as THREE from 'three/webgpu';
 import { float } from 'three/tsl';
-import { AmbientRelight, AmbientSky } from '../../src/lighting/AmbientRelight.ts';
-import { AmbientVolume } from '../../src/lighting/AmbientVolume.ts';
-import { PROBE_STRIDE } from '../../src/lighting/ProbeFormat.ts';
-import { shared } from '../../src/shared.ts';
+import { AmbientRelight, AmbientSky } from '../../packages/render/lighting/AmbientRelight.ts';
+import { AmbientVolume } from '../../packages/render/lighting/AmbientVolume.ts';
+import { PROBE_STRIDE } from '../../packages/render/lighting/ProbeFormat.ts';
+import { shared } from '../../packages/render/shared.ts';
 
 export default function ( { renderer } ) {
 

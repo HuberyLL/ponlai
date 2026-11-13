@@ -1,4 +1,4 @@
-// tools/wgsl-build.mjs's entry for the island's terrain material (src/materials/TerrainMaterial.ts):
+// tools/wgsl-build.mjs's entry for the island's terrain material (packages/island/materials/TerrainMaterial.ts):
 // the cliff with the meadow's ground (as World.ts builds the island's), the stones' cliff without it
 // and the sea floor, each lit through the ambient volume as the page lights them.
 //
@@ -11,13 +11,13 @@
 
 import * as THREE from 'three/webgpu';
 import { float, texture } from 'three/tsl';
-import { AmbientVolume } from '../../src/lighting/AmbientVolume.ts';
-import { PROBE_STRIDE } from '../../src/lighting/ProbeFormat.ts';
-import { installAmbientVolume, installEnvironmentHarmonics } from '../../src/lighting/AmbientSample.ts';
-import { AmbientRelight, AmbientSky } from '../../src/lighting/AmbientRelight.ts';
-import { WaveMaps } from '../../src/ocean/WaveMaps.ts';
-import { makeTerrainMaterial } from '../../src/materials/TerrainMaterial.ts';
-import { shared } from '../../src/shared.ts';
+import { AmbientVolume } from '../../packages/render/lighting/AmbientVolume.ts';
+import { PROBE_STRIDE } from '../../packages/render/lighting/ProbeFormat.ts';
+import { installAmbientVolume, installEnvironmentHarmonics } from '../../packages/render/lighting/AmbientSample.ts';
+import { AmbientRelight, AmbientSky } from '../../packages/render/lighting/AmbientRelight.ts';
+import { WaveMaps } from '../../packages/render/ocean/WaveMaps.ts';
+import { makeTerrainMaterial } from '../../packages/island/materials/TerrainMaterial.ts';
+import { shared } from '../../packages/render/shared.ts';
 
 const array = ( name, layers, colorSpace = THREE.NoColorSpace ) => {
 

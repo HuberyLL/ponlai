@@ -1,7 +1,7 @@
 // tools/wgsl-build.mjs's entry for the post chain's own passes, in the order a frame draws them:
-// the exposure's meter (src/post/Metering.ts, the target and the adaptation of
-// src/post/Exposure.ts), the bloom's levels (src/post/PhysicalBloom.ts) and the local tone's grid
-// with its slicing (src/post/LocalTone.ts `apply`, drawn as a full-screen pass that reads it). The
+// the exposure's meter (packages/render/post/Metering.ts, the target and the adaptation of
+// packages/render/post/Exposure.ts), the bloom's levels (packages/render/post/PhysicalBloom.ts) and the local tone's grid
+// with its slicing (packages/render/post/LocalTone.ts `apply`, drawn as a full-screen pass that reads it). The
 // graph is a stand-in that hands each resource a texture in Pipeline.ts's format and each size
 // class a uniform; the exposure is the page's builder (Pipeline.ts `exposureRead`). The display
 // pass itself (the grade, the curve) is built by the page's Pipeline only; its vignette is built
@@ -9,11 +9,11 @@
 
 import * as THREE from 'three/webgpu';
 import { exp2, float, ivec2, select, texture, textureLoad, uniform, uv, vec3, vec4 } from 'three/tsl';
-import { Metering } from '../../src/post/Metering.ts';
-import { PhysicalBloom } from '../../src/post/PhysicalBloom.ts';
-import { LocalTone } from '../../src/post/LocalTone.ts';
-import { vignetteFactor } from '../../src/post/PipelineDisplay.ts';
-import { preExposure } from '../../src/post/PreExposure.ts';
+import { Metering } from '../../packages/render/post/Metering.ts';
+import { PhysicalBloom } from '../../packages/render/post/PhysicalBloom.ts';
+import { LocalTone } from '../../packages/render/post/LocalTone.ts';
+import { vignetteFactor } from '../../packages/render/post/PipelineDisplay.ts';
+import { preExposure } from '../../packages/render/post/PreExposure.ts';
 
 // a graph resource as Pipeline.ts declares it
 function resource( name, format, type ) {

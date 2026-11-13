@@ -1,4 +1,4 @@
-// The frame graph's warm-up (FrameGraph.warm, src/post/graph/Compile.ts) on a CPU mock of three's
+// The frame graph's warm-up (FrameGraph.warm, packages/render/post/graph/Compile.ts) on a CPU mock of three's
 // renderer and the internals the bound compile builds through: every compiled pass compiled once
 // under its own binding (a conditional one too), the renderer's binding restored, latent objects
 // compiled shown whatever their visibility (registered before the warm-up, or after it at once), a
@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three/webgpu';
 import { texture } from 'three/tsl';
 import BloomNode from 'three/addons/tsl/display/BloomNode.js';
-import { FrameGraph } from '../../src/post/graph/FrameGraph.ts';
+import { FrameGraph } from '../../packages/render/post/graph/FrameGraph.ts';
 
 const RENDER = { of: 'render' };
 const CANVAS = { of: 'canvas' };

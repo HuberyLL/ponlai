@@ -1,11 +1,11 @@
-// tools/wgsl-build.mjs's entry for the ambient occlusion's passes (src/post/GTAO.ts), in the order
+// tools/wgsl-build.mjs's entry for the ambient occlusion's passes (packages/render/post/GTAO.ts), in the order
 // a frame draws them: the half-resolution view z over the multisampled depth, the slices and the
 // blur's two axes. The graph's resources are stand-ins in Pipeline.ts's formats (the sizes reach the shaders
 // through uniforms only).
 
 import * as THREE from 'three/webgpu';
 import { uniform } from 'three/tsl';
-import { gtaoBlurMaterial, gtaoDepthMaterial, gtaoMaterial } from '../../src/post/GTAO.ts';
+import { gtaoBlurMaterial, gtaoDepthMaterial, gtaoMaterial } from '../../packages/render/post/GTAO.ts';
 
 // a graph resource as Pipeline.ts declares it
 function resource( name, format, type ) {

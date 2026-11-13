@@ -1,25 +1,25 @@
 // The frame graph's passes: today's msaa4 graph with every draw a pass of its own, the graph
-// Pipeline declares (src/post/PipelinePasses.ts, mirrored in its order of declaration: it compiles to
+// Pipeline declares (packages/render/post/PipelinePasses.ts, mirrored in its order of declaration: it compiles to
 // today's graph), their load-time and runtime variants, a mock temporal graph, and the compiler's
 // checks of order, culling, hazards, readOptional and determinism. Run by
 // tools/verify-framegraph.mjs.
 
 import assert from 'node:assert/strict';
-import { GraphDecl, GraphError, compileGraph, resolveSize } from '../../src/post/graph/GraphCompiler.ts';
+import { GraphDecl, GraphError, compileGraph, resolveSize } from '../../packages/render/post/graph/GraphCompiler.ts';
 
 const RENDER = { of: 'render' };
 const CANVAS = { of: 'canvas' };
-// the haze's froxel grid (src/weather/VolumetricHaze.ts DEFAULT_HAZE_GRID: 160x90 cells, its
+// the haze's froxel grid (packages/render/weather/VolumetricHaze.ts DEFAULT_HAZE_GRID: 160x90 cells, its
 // volumes imported as fixed-size storage textures, the kernels sized by them)
 export const HAZE = { of: 'fixed', width: 160, height: 90 };
 // half the render, at least a texel: the light shafts
 export const HALF = { of: 'render', scale: 0.5, min: 1 };
-// the water's refraction source (src/ocean/Refraction.ts REFRACTION_SIZE: half the render, times
+// the water's refraction source (packages/render/ocean/Refraction.ts REFRACTION_SIZE: half the render, times
 // the guard band's 1.3; that module imports three, so the scale is restated here)
 export const REFRACTION = { of: 'render', scale: 0.5 * 1.3, min: 1 };
 
 
-// ---- tidewater's physical bloom (src/post/PhysicalBloom.ts): the sky's mask at half the render
+// ---- tidewater's physical bloom (packages/render/post/PhysicalBloom.ts): the sky's mask at half the render
 // from the surface's depth, eight downsamples from the bloom's input to 1/2 ... 1/256 of the
 // render (the first reading the mask), then seven upsamples, each adding the level below it, back
 // to 1/2; the reader takes the last upsample

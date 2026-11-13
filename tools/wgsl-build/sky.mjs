@@ -1,4 +1,4 @@
-// tools/wgsl-build.mjs's entry for the sky (src/sky/Sky.ts): the materials that read the clear
+// tools/wgsl-build.mjs's entry for the sky (packages/render/sky/Sky.ts): the materials that read the clear
 // sky (`Atmosphere.skyRadiance`, and so the earth's shadow and its mean over the azimuth). The
 // environment's panorama bake and the cloudless sky's irradiance, as the first bake draws them,
 // then the dome as the page draws it, fogged by the haze (`fogDome`, VolumetricHaze.ts `skyHaze`),
@@ -7,10 +7,10 @@
 // initialised: the entry skips the clouds' bakes and their copies, as the clouds' entry does.
 
 import * as THREE from 'three/webgpu';
-import { Sky } from '../../src/sky/Sky.ts';
-import { VolumetricHaze } from '../../src/weather/VolumetricHaze.ts';
-import { sceneMRT } from '../../src/post/Motion.ts';
-import { buildView } from '../../src/sky/CloudView.ts';
+import { Sky } from '../../packages/render/sky/Sky.ts';
+import { VolumetricHaze } from '../../packages/render/weather/VolumetricHaze.ts';
+import { sceneMRT } from '../../packages/render/post/Motion.ts';
+import { buildView } from '../../packages/render/sky/CloudView.ts';
 
 export default function ( { renderer } ) {
 

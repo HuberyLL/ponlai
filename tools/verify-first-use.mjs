@@ -12,9 +12,9 @@
 // stack: `SunShadow.update`). The map's first redraw comes in the second frame (three builds the map
 // with the first frame's receivers) and created every caster's pipeline there, which the steps
 // after the 60 frames never saw; it now compiles them asynchronously and draws once they exist
-// (src/lighting/SunShadow.ts), and an asynchronous creation does not stall the frame. The steps
+// (packages/render/lighting/SunShadow.ts), and an asynchronous creation does not stall the frame. The steps
 // count every creation, asynchronous ones included. Two steps run only when `--steps` names them, since they reach the parked weathers
-// (src/sky/Weather.ts PARKED_WEATHER): `weather`, every weather jumped to and changing over seconds,
+// (packages/render/sky/Weather.ts PARKED_WEATHER): `weather`, every weather jumped to and changing over seconds,
 // and `bolt`, a forced bolt in a storm. Pipelines are counted
 // from WebGPU's device (an init script wraps GPUDevice's create*Pipeline and create*PipelineAsync),
 // so any build can be measured the same way, the reference included; each is listed with its label.
@@ -27,7 +27,7 @@
 //
 // `--quality` and `--aa` take one value or a list: every tier with every mode, each in a fresh page
 // (the output JSON is then `{ runs: [ ... ] }`, with a summary table at the end). The default is
-// high alone: medium and low are parked (src/Quality.ts PARKED_QUALITY), reached by naming them.
+// high alone: medium and low are parked (packages/render/Quality.ts PARKED_QUALITY), reached by naming them.
 // `--steps` also takes `preset:<name>` and `weather:<name>` (a jump to one preset or weather), so a
 // load with `--q preset=midnight` and `--steps preset:sunrise` checks the switch from night to day.
 // `--compare` reads another run's JSON (the reference build, same options; a run of the same tier

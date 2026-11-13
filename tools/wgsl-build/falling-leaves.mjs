@@ -1,4 +1,4 @@
-// tools/wgsl-build.mjs's entry for the falling leaves (src/weather/FallingLeaves.ts): their live
+// tools/wgsl-build.mjs's entry for the falling leaves (packages/island/world/FallingLeaves.ts): their live
 // step and prewarm kernels and their draw, as the page builds them.
 //
 // Stand-ins: the world's shore field and the soil map as small textures of zeros, the leaf's atlas
@@ -6,9 +6,9 @@
 
 import * as THREE from 'three/webgpu';
 import { texture, vec2 } from 'three/tsl';
-import { FallingLeaves } from '../../src/weather/FallingLeaves.ts';
-import { Wind } from '../../src/weather/Wind.ts';
-import { shared } from '../../src/shared.ts';
+import { FallingLeaves } from '../../packages/island/world/FallingLeaves.ts';
+import { Wind } from '../../packages/render/weather/Wind.ts';
+import { shared } from '../../packages/render/shared.ts';
 
 export default function () {
 

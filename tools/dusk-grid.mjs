@@ -1,6 +1,6 @@
 // Dusk grid: the scene's light at a grid of sun elevations through the dusk and the dawn, read off
 // the running page in scene units, each point reached by the exact scene jump and baked explicitly,
-// and judged for the rule that a lower sun never makes a quantity brighter (src/sky/DayCycle.ts:
+// and judged for the rule that a lower sun never makes a quantity brighter (packages/render/sky/DayCycle.ts:
 // the dusk's shares). It answers "does the land, the sky, the sea or the air brighten anywhere as
 // the sun goes down, by how much, and which of the night's terms does it", where a few views at
 // fixed hours miss a step in between.
@@ -22,7 +22,7 @@
 //     "midnight"`), measured once per weather and shared by both sides. --fine e1:e2:step adds a
 //     denser series over a span (repeatable). --at e1,e2,... and --hours h1,h2,... replace the grid
 //     with those elevations or clock hours (an hour before noon is the morning's).
-//   - The hour of an elevation is solved in node from the sun of --src's src/sky/DayCycle.ts
+//   - The hour of an elevation is solved in node from the sun of --src's packages/render/sky/DayCycle.ts
 //     (default: this checkout): a bisection of `sunElevationAt` on the side's half of the day to
 //     1e-12 h, checked against `eveningHour` / `morningHour` where the module has them (the largest
 //     difference is in summary.txt), and given to the page with 9 decimals. The page's own sun is
@@ -290,7 +290,7 @@ function parseOptions( o ) {
 	if ( hazeDistances.some( ( d ) => d <= 0 ) ) fail( '--haze-distances: positive distances in metres' );
 	if ( hazeSky.length + hazeDistances.length > 64 ) fail( '--haze-sky, --haze-distances: at most 64 rays in all (VolumetricHaze.probe)' );
 	const src = path.resolve( o.src ?? ROOT );
-	if ( ! existsSync( path.join( src, 'src/sky/DayCycle.ts' ) ) ) fail( `--src ${ src }: no src/sky/DayCycle.ts there` );
+	if ( ! existsSync( path.join( src, 'packages/render/sky/DayCycle.ts' ) ) ) fail( `--src ${ src }: no packages/render/sky/DayCycle.ts there` );
 	return {
 		weathers, sides, from, to, step, midnight, fine, at, hours, views, judge,
 		judgeRange: [ Math.max( jHi, jLo ), Math.min( jHi, jLo ) ],
@@ -306,10 +306,10 @@ function parseOptions( o ) {
 
 // ---- the sun of --src, the points
 // the island's look in --src's own modules, which another checkout's tree does not share with this one
-await installIslandLook( ( file ) => import( pathToFileURL( path.join( options.src, 'src', file ) ).href ), ( file ) => existsSync( path.join( options.src, 'src', file ) ) );
-const DC = await import( pathToFileURL( path.join( options.src, 'src/sky/DayCycle.ts' ) ).href );
+await installIslandLook( ( file ) => import( pathToFileURL( path.join( options.src, file ) ).href ), ( file ) => existsSync( path.join( options.src, file ) ) );
+const DC = await import( pathToFileURL( path.join( options.src, 'packages/render/sky/DayCycle.ts' ) ).href );
 // the day's look tables (NIGHT_METER_LIFT): look/DayLook.ts, or DayCycle.ts in a --src from before it
-const DAY_LOOK = path.join( options.src, 'src/look/DayLook.ts' );
+const DAY_LOOK = path.join( options.src, 'packages/render/look/DayLook.ts' );
 const DL = existsSync( DAY_LOOK ) ? await import( pathToFileURL( DAY_LOOK ).href ) : DC;
 const FORCES = DC.DUSK_FORCES ?? [];
 let splitNames = [];
@@ -436,7 +436,7 @@ const prepareJs = () => `async () => { ${ PAGE }
 }`;
 
 const applyJs = ( forces ) => `async () => { ${ PAGE }
-	const DC = await load( '/src/sky/DayCycle.ts' ), RT = await load( '/src/sky/SkyRetune.ts' );
+	const DC = await load( '/packages/render/sky/DayCycle.ts' ), RT = await load( '/packages/render/sky/SkyRetune.ts' );
 	const forced = ${ JSON.stringify( forces ) }, values = {};
 	for ( const n of forceNames() ) values[ FORCE + n ] = forced[ n ] ?? - 1;
 	s.loop.start();
@@ -560,8 +560,8 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 	if ( ${ cpu } ) {
 
 		const R = s.ambientRelight, air = s.pipeline.air, snap = s.dayCycle.snapshot();
-		const AG = await load( '/src/lighting/AmbientGrade.ts' ), LL = await load( '/src/world/vegetation/LeafLight.ts' ), YP = await load( '/src/world/Yunpeng.ts' );
-		const DC = await load( '/src/sky/DayCycle.ts' ), W = await load( '/src/sky/Weather.ts' );
+		const AG = await load( '/packages/render/lighting/AmbientGrade.ts' ), LL = await load( '/packages/render/vegetation/LeafLight.ts' ), YP = await load( '/packages/island/world/Yunpeng.ts' );
+		const DC = await load( '/packages/render/sky/DayCycle.ts' ), W = await load( '/packages/render/sky/Weather.ts' );
 		const px = async ( rt ) => Array.from( await s.renderer.readRenderTargetPixelsAsync( rt, 0, 0, 1, 1 ) );
 		// a ring of the environment's source (the baked sky with its haze, in half floats)
 		// at deg degrees: its mean luminance over every azimuth and over the halves toward and away
@@ -572,7 +572,7 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 			if ( ! b?.texture || b.textureDescriptorGPU.format !== 'rgba16float' ) return null;
 			// (the source stores the radiance times its bake's power of two, an older page's times
 			// PANORAMA_STORE)
-			const store = sky.sourceStops !== undefined ? 2 ** sky.sourceStops : ( await load( '/src/sky/Sky.ts' ) ).PANORAMA_STORE ?? 1;
+			const store = sky.sourceStops !== undefined ? 2 ** sky.sourceStops : ( await load( '/packages/render/sky/Sky.ts' ) ).PANORAMA_STORE ?? 1;
 			const W = t.image.width, H = t.image.height, y = ( deg / 180 + 0.5 ) * H - 0.5, y0 = Math.floor( y ), f = y - y0;
 			const half = await s.renderer.backend.textureUtils.copyTextureToBuffer( t, 0, y0, W, 2, 0 ), row = Math.ceil( W * 8 / 256 ) * 128;
 			const h = ( i ) => { const e = ( i >> 10 ) & 31, m = i & 1023; return ( i >> 15 ? - 1 : 1 ) * ( e === 0 ? m * 2 ** - 24 : ( 1 + m / 1024 ) * 2 ** ( e - 15 ) ); };
@@ -623,7 +623,7 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 	const y = lums( r.grid.rgb ), hy = lums( h.grid.rgb ), mm = new Float64Array( NX * NY );
 	for ( let c = 0; c < mm.length; c ++ ) mm[ c ] = m.grid.rgb[ 3 * c ];
 	// the meter's trimmed means as Metering.ts takes them, P taken out
-	const MT = await load( '/src/post/Metering.ts' ), meter = s.pipeline.metering;
+	const MT = await load( '/packages/render/post/Metering.ts' ), meter = s.pipeline.metering;
 	const BINS = MT.METER_BINS ?? 128, PER = MT.METER_BINS_PER_STOP ?? 4, LOW = MT.METER_LOW ?? - 16, ONE = MT.METER_ONE ?? 256;
 	const hist = meter ? await meter.read( s.renderer ) : null;
 	const trimmed = ( from, low, high ) => {
@@ -647,7 +647,7 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 	// irradiance texel's alpha, shared.ts \`skyMeterLog2\` ), e_M, e_H, e_S, the guarded scene's
 	// exposure and the target recomputed from them (EVt2, to check against EVt)
 	const mM = trimmed( 0, 0.1, 0.9 ), mH = trimmed( BINS, 0.9, 0.97 );
-	const EX = await load( '/src/post/Exposure.ts' ), K0 = EX.SOFT_MIN ?? 0.25;
+	const EX = await load( '/packages/render/post/Exposure.ts' ), K0 = EX.SOFT_MIN ?? 0.25;
 	const mS = sky.irradianceDisplay ? ( await s.renderer.readRenderTargetPixelsAsync( sky.irradianceDisplay, 0, 0, 1, 1 ) )[ 3 ] : null;
 	let terms = {};
 	if ( u && mS !== null ) {

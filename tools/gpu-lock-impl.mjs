@@ -10,7 +10,7 @@
 //     as long as at two, a fourth hardly more (measured on 21 paused views, the frames identical
 //     at every count); probes that sweep many points gain about 1.35 times at two and 1.4 at
 //     three, where a probe's readings now and then differed from one alone's in the last digit (a
-//     paused page bounds its GPU queue: src/post/FramePacer.ts). Two slots take most of that gain
+//     paused page bounds its GPU queue: packages/render/post/FramePacer.ts). Two slots take most of that gain
 //     with the readings exact, so the rest queue (below). A slot is held per capture (capture-clip.mjs around its clip),
 //     not per set or page, so a long set and a one-view probe interleave; capture.mjs's worker leases
 //     its slot over the views of a set (leaseGpuLock): it keeps it from view to view and gives it up

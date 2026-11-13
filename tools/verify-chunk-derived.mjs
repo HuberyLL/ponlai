@@ -32,13 +32,13 @@ import { fileURLToPath } from 'node:url';
 import { registerHooks } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
-import { buildChunk, chunkIsland, chunkKeys, landField, landWindow, parseChunkKey } from '../src/world/Chunks.ts';
-import { growLand, LandLattice } from '../src/world/IslandGrowth.ts';
-import { tileIndices, TILE_SIDE } from '../src/world/SeabedTile.ts';
-import { FLOOR_STEP } from '../src/world/Bathymetry.ts';
-import { SEA_LEVEL } from '../src/world/ChunkDerived.ts';
+import { buildChunk, chunkIsland, chunkKeys, landField, landWindow, parseChunkKey } from '../packages/island/world/Chunks.ts';
+import { growLand, LandLattice } from '../packages/island/world/IslandGrowth.ts';
+import { tileIndices, TILE_SIDE } from '../packages/island/world/SeabedTile.ts';
+import { FLOOR_STEP } from '../packages/island/world/Bathymetry.ts';
+import { SEA_LEVEL } from '../packages/island/world/ChunkDerived.ts';
 import { verifyCache } from './verify-cache.mjs';
-import { simplifierReady } from '../src/world/IslandSimplify.ts';
+import { simplifierReady } from '../packages/island/world/IslandSimplify.ts';
 
 // the island's simplifier (wasm) is ready before any chunk is built, in every thread
 await simplifierReady;
@@ -75,7 +75,7 @@ const argument = ( name, fallback ) => {
 };
 
 // The consumers import three's WebGPU build, written for a page, which loads under node as it is
-// (they read the page's settings as a page without options: src/Settings.ts), and compile
+// (they read the page's settings as a page without options: packages/render/Settings.ts), and compile
 // RefractedSun.ts, whose constructor's parameter properties node's type stripping cannot erase,
 // with TypeScript.
 async function loadConsumers() {
@@ -83,7 +83,7 @@ async function loadConsumers() {
 	const { default: ts } = await import( 'typescript' );
 	registerHooks( { load( url, context, next ) {
 
-		if ( ! url.endsWith( '/src/lighting/RefractedSun.ts' ) ) return next( url, context );
+		if ( ! url.endsWith( '/packages/render/lighting/RefractedSun.ts' ) ) return next( url, context );
 		const source = readFileSync( new URL( url ), 'utf8' );
 		const { outputText } = ts.transpileModule( source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ESNext } } );
 		return { format: 'module', shortCircuit: true, source: outputText };
@@ -92,9 +92,9 @@ async function loadConsumers() {
 	const THREE = await import( 'three/webgpu' );
 	// (the consumers reach modules that read the look: the island's, as its page has it)
 	await import( './island-look.mjs' );
-	const { SunShadow } = await import( '../src/lighting/SunShadow.ts' );
-	const { RefractedSun } = await import( '../src/lighting/RefractedSun.ts' );
-	const { IslandGround } = await import( '../src/camera/IslandGround.ts' );
+	const { SunShadow } = await import( '../packages/render/lighting/SunShadow.ts' );
+	const { RefractedSun } = await import( '../packages/render/lighting/RefractedSun.ts' );
+	const { IslandGround } = await import( '../packages/island/camera/IslandGround.ts' );
 	return { THREE, SunShadow, RefractedSun, IslandGround };
 
 }
