@@ -10,10 +10,11 @@ uv run tools/kit/img.py --help             # a Python tool, the same way
 ```
 
 `--help` answers at once: it takes no GPU lock, opens no browser and starts no server, so it is safe
-on every tool, the GPU tools included. A manual says what question the tool answers, how to call
-it, what it prints and writes, whether it takes the GPU lock or opens a browser, its rough cost and
-what each exit code means. `tools/repo/verify-tool-manuals.mjs` checks every entry tool against
-these rules, and that this page names it. How to add one: the skill
+on every tool, the GPU tools included. It needs the dependencies installed (`npm ci`): a tool's
+imports resolve before its help prints, and a missing package stops it. A manual says what question
+the tool answers, how to call it, what it prints and writes, whether it takes the GPU lock or opens
+a browser, its rough cost and what each exit code means. `tools/repo/verify-tool-manuals.mjs`
+checks every entry tool against these rules, and that this page names it. How to add one: the skill
 [writing-tools-and-checks](../../skills/writing-tools-and-checks/SKILL.md) and its
 [binding](../bindings/writing-tools-and-checks.md).
 

@@ -24,7 +24,7 @@ import * as THREE from 'three/webgpu';
 // skinning stays plain (bone matrices only).
 //
 // The kit-dressed islanders use the medium build (about 4.7 heads tall, against the kit's 5.5),
-// chosen by the user from four builds; the feather-robed Hanming islanders the realistic `real`
+// the build chosen of four; the feather-robed Hanming islanders the realistic `real`
 // build (about 6.5 heads); `stock` (the kit's own) stays selectable for comparison (`?islander`).
 // A figure drawn as several meshes on one skeleton (a painted body, its textured parts) is
 // re-proportioned as one: the bones and clips once, every mesh's geometry alike.
