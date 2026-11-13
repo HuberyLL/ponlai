@@ -1505,7 +1505,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   `packages/render/Settings.ts`, not changed in the tool. Run it after adding or changing an option.
 - `tools/check.mjs` (`npm run check [-- --full]`) runs the checks every commit passes, one after
   another: the type check, the code lint (`npm run lint`, Code lint), `verify-layers`,
-  `verify-exits`, `verify-settings`, `verify-file-size`, `verify-three-internals`,
+  `verify-exits`, `verify-settings`, `verify-file-size`, `verify-three-internals`, `verify-kit`,
   `verify-no-binaries`, `verify-skill-links`, `verify-game`, `verify-i18n`, `verify-ink`,
   `verify-framegraph`, `verify-day-cycle`, `verify-weather-state`, `verify-wind`,
   `verify-local-lights`, `verify-extensions`, `verify-look-params` and `verify-lint`, then
@@ -1536,6 +1536,14 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   tool's list of tools known to do so; that list only shrinks. `--verbose` lists every entry;
   `--fingerprints` prints each entry's current fingerprint, to record after re-checking the code
   that depends on it on a three upgrade (`docs/how-to/upgrade-three.md`).
+- `tools/repo/verify-kit.mjs` (plain `node`, no options) keeps the generic tools in `tools/kit/`
+  apart from the project: a file there imports only from `tools/kit/` and the project's
+  configuration, `tools/project.mjs`; its code (comments left out) names no path under
+  `packages/`, `app/` or another group of tools, and no page global (a name such as `__NAME__`).
+  The configuration holds what a kit tool needs to know of this project: the page's globals and
+  loading screen, the dev server's address and the default query, what a stored reference depends
+  on, where the views' and clips' tables are, and the module that adds the pipeline tracer to an
+  eval. Its summary says how many files and imports it checked.
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
 - `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
   (`uv run --with pillow --with numpy`), `tools/build-ground-textures.py` the meadow ground's from
