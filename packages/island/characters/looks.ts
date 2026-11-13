@@ -4,7 +4,7 @@ import type { PartSpec } from './Villagers.ts';
 
 // The islanders' dress: modular parts (Ultimate Modular Characters by Quaternius, CC0) repainted
 // in the island's palette (sRGB, as they should read in sunlight). The models are assets in public/
-// (tools/assets.mjs).
+// (tools/repo/assets.mjs).
 
 export const umc = ( name: string ) => `${ import.meta.env.BASE_URL }characters/quaternius/ultimate-modular-characters/${ name }.gltf`;
 

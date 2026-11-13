@@ -5,18 +5,18 @@
 // as one archive on a GitHub release, `assets-v<N>`. assets.lock.json, committed, pins the release,
 // its archive and every file's size and SHA-256, so each commit names the assets it runs with and
 // a checkout of it gets exactly those back (the byte-for-byte checks compare commits).
-//   node tools/assets.mjs [status]        public/ against the lock: missing, changed and unlisted
+//   node tools/repo/assets.mjs [status]        public/ against the lock: missing, changed and unlisted
 //                                         files (exit 0 when it matches, 1 when not)
-//   node tools/assets.mjs pull [--force]  fills public/ from the lock's release; a file that differs
+//   node tools/repo/assets.mjs pull [--force]  fills public/ from the lock's release; a file that differs
 //                                         from the lock is work in progress and is kept, unless
 //                                         --force
-//   node tools/assets.mjs release [--notes <text>] [--attach <file>]... [--local]
+//   node tools/repo/assets.mjs release [--notes <text>] [--attach <file>]... [--local]
 //                                         packs public/ as the next release, publishes it with gh
 //                                         and rewrites the lock; --attach uploads more files beside
 //                                         the archive (masters of our own, such as a Blender file);
 //                                         --local packs it into the cache and rewrites the lock but
 //                                         uploads nothing (gh not needed)
-//   node tools/assets.mjs publish [--attach <file>]...
+//   node tools/repo/assets.mjs publish [--attach <file>]...
 //                                         uploads the lock's release packed with --local, from this
 //                                         machine's cache, as it was packed (the lock stays valid)
 // Rules:
@@ -31,7 +31,7 @@
 //   worktree and never tracked; each worktree gets its own copy of the files (a clone where the
 //   file system can).
 // - gh downloads from the repository while it is private; without gh, the release's public URL.
-// The dev server and the build call `ensureAssets` (tools/vite-assets.mjs): missing files are
+// The dev server and the build call `ensureAssets` (tools/repo/vite-assets.mjs): missing files are
 // pulled, changed and unlisted ones only reported.
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -218,7 +218,7 @@ export async function ensureAssets( root, logger ) {
 
 	if ( result.copied.length > 0 ) logger.info( `ponlai-assets: pulled ${ result.copied.length } file(s) of ${ lock.release } into public/` );
 	const differ = [ ...result.kept.map( ( n ) => `changed ${ n }` ), ...result.unlisted.map( ( n ) => `unlisted ${ n }` ) ];
-	if ( differ.length > 0 ) logger.warn( `ponlai-assets: public/ differs from ${ LOCK } (${ lock.release }): ${ differ.join( ', ' ) }. Cut a release when they are done (node tools/assets.mjs release).` );
+	if ( differ.length > 0 ) logger.warn( `ponlai-assets: public/ differs from ${ LOCK } (${ lock.release }): ${ differ.join( ', ' ) }. Cut a release when they are done (node tools/repo/assets.mjs release).` );
 	return 0;
 
 }
@@ -289,7 +289,7 @@ export function releaseAssets( root, { notes = '', attach = [], local = false } 
 	const lines = ( title, list ) => list.length ? [ `${ title }:`, ...list.map( ( n ) => `- ${ n }` ), '' ] : [];
 	const body = [
 		...( notes ? [ notes, '' ] : [] ),
-		`The game's assets, version ${ version }: unpack into public/, or let the dev server and the build pull them (tools/assets.mjs). Third-party files and their licences are listed in CREDITS.md.`,
+		`The game's assets, version ${ version }: unpack into public/, or let the dev server and the build pull them (tools/repo/assets.mjs). Third-party files and their licences are listed in CREDITS.md.`,
 		'',
 		...lines( 'Added', added ), ...lines( 'Changed', changed ), ...lines( 'Removed', removed ),
 	].join( '\n' );
@@ -311,7 +311,7 @@ export function publishAssets( root, { attach = [] } = {} ) {
 	const dir = join( cacheRoot( root ), lock.release );
 	const archive = join( dir, lock.archive.name );
 	if ( ! existsSync( archive ) || statSync( archive ).size !== lock.archive.size || sha256( archive ) !== lock.archive.sha256 ) throw new Error( `${ lock.archive.name } in the cache does not match assets.lock.json: ${ lock.release } was not packed on this machine` );
-	if ( ! existsSync( join( dir, 'notes.md' ) ) ) writeFileSync( join( dir, 'notes.md' ), `The game's assets, version ${ lock.release.match( TAG )[ 1 ] } (tools/assets.mjs).` );
+	if ( ! existsSync( join( dir, 'notes.md' ) ) ) writeFileSync( join( dir, 'notes.md' ), `The game's assets, version ${ lock.release.match( TAG )[ 1 ] } (tools/repo/assets.mjs).` );
 	upload( root, lock, attach );
 	return lock.release;
 

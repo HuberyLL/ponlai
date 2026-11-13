@@ -1,5 +1,5 @@
 // Checks that git holds no game asset and no binary file. Assets (textures, models, fonts, audio,
-// baked data) live in the git-ignored public/ and ship as GitHub releases (tools/assets.mjs): a
+// baked data) live in the git-ignored public/ and ship as GitHub releases (tools/repo/assets.mjs): a
 // repository that kept every version of every binary would only grow, and cutting it back means
 // rewriting its history. .gitignore already refuses the asset types to `git add`; this check also
 // catches a forced add, a type the list lacks and a large file of any kind.

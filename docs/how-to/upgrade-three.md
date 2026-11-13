@@ -10,8 +10,8 @@ pinned to exact versions, so the list holds until someone changes the pin.
 An upgrade is the only time the list can stop holding, and then the code says so instead of taking
 another path:
 
-- `tools/verify-three-internals.mjs` fails on each entry missing from the installed three, and on
-  each replaced, wrapped, mirrored or relied-on function whose code changed (its fingerprint).
+- `tools/repo/verify-three-internals.mjs` fails on each entry missing from the installed three, and
+  on each replaced, wrapped, mirrored or relied-on function whose code changed (its fingerprint).
 - On the page, `checkRenderer` (`packages/render/three/Internals.ts`) checks the renderer's members
   once it is initialised, and each function of `packages/render/three/` throws when a member it
   needs is missing. The error names the list's entry and the function that needs it.
@@ -28,7 +28,7 @@ r186, each with the check that sees it.
 2. Change `three` and `@types/three` together, to exact versions (no `^` or `~`), and install:
    `npm install --save-exact three@<version> @types/three@<version>`. Set the list's `three`,
    `types` and `revision` to the new versions.
-3. Run `node tools/verify-three-internals.mjs`. For each failure, read three's new code, change
+3. Run `node tools/repo/verify-three-internals.mjs`. For each failure, read three's new code, change
    the function of `packages/render/three/` that depends on the entry (or its patch, wrapper or
    mirrored copy), and update the entry. Print the new fingerprints with `--fingerprints` and record
    each only after reading the code it covers. Repeat until the check passes.

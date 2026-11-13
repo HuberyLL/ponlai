@@ -9,7 +9,7 @@
 // Rules:
 // - A scene imports the renderer through its exits only (render/index.ts, render/setup.ts, render/data.ts),
 //   never the island or the game, and never another layer's module by its path
-//   (tools/verify-layers.mjs).
+//   (tools/repo/verify-layers.mjs).
 // - Its surfaces are lit as every other surface is (`surface`: the shared lighting model and the
 //   metering light, docs/how-to/add-material.md).
 // - Everything it places is a function of constants: no random stream, no clock, so a load repeats.

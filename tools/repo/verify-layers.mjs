@@ -3,7 +3,7 @@
 // that the renderer and the island keep off the page, which files write another module's state and
 // that each layer names only the userData keys declared for it. CPU only, no GPU, a few seconds
 // (the page and state checks run TypeScript's checker over packages/ and app/).
-//   node tools/verify-layers.mjs
+//   node tools/repo/verify-layers.mjs
 //
 // The layers, lowest first: render (light, sky, weather, sea, the frame's passes, the generic
 // materials and vegetation machinery, the quality tiers), island (this island's generation and
@@ -12,7 +12,7 @@
 // layers below it, never one above: a lower layer defines an interface and the higher one fills
 // it. A file's folder is its layer: the three lower layers are packages, each a folder of
 // `packages/` (`packages/render/`, `packages/island/`, `packages/game/`), and the app layer is
-// `app/`. Each package offers two exits (`tools/layers.json`, `exits`), files of re-exports only:
+// `app/`. Each package offers two exits (`tools/repo/layers.json`, `exits`), files of re-exports only:
 // one for the page (render/index.ts, island/index.ts, game/index.ts) and a headless one for the code that loads without three.js, in the chunk worker and in node (render/data.ts,
 // island/land.ts, game/sim/index.ts). The renderer has a third, its setup exit (render/setup.ts):
 // what the page needs before the renderer's other modules load (the settings, the look, the quality
@@ -28,7 +28,7 @@
 //   (static imports, `import type`, re-exports, side-effect and dynamic imports) plus workers'
 //   `new URL( '<path>', import.meta.url )`. Package imports are not layered; imports of data files
 //   (JSON, CSS) are not checked.
-// - The exits: each one `tools/layers.json` names exists in its package's layer and holds only
+// - The exits: each one `tools/repo/layers.json` names exists in its package's layer and holds only
 //   re-exports of its own package's files. An import from one package into another (or from the
 //   app layer into a package) names an exit of that package or a lazy exit. A lazy exit is imported
 //   dynamically or with `import type` only, from anywhere, so it stays out of the page's chunks.
@@ -38,7 +38,7 @@
 //   module of the package as well, and its names need only some other file that takes them. No
 //   name is exported by two exits.
 //   The exits' own tests (the headless and setup ones load in node, the page ones neither await
-//   nor read the page at load) are tools/verify-exits.mjs.
+//   nor read the page at load) are tools/repo/verify-exits.mjs.
 // - The test scenes: a file under `app/scenes/` (the scene page and the scenes it shows) imports
 //   only the renderer's exits, the renderer's lazy exits and the files beside it, by any kind of
 //   import: a scene is built from the renderer alone, and the island's numbers reach its page only
@@ -47,7 +47,7 @@
 //   `import type` left out) import relative paths only: no package, three.js least of all, so node
 //   and a worker load them as they are.
 // - The chunk worker (packages/island/world/chunkWorker.ts) and everything it imports, followed through
-//   relative imports, imports no package except the files tools/vite-world-generator.mjs hashes:
+//   relative imports, imports no package except the files tools/repo/vite-world-generator.mjs hashes:
 //   the same walk and the same exceptions as the build's world generator plugin, run here so the
 //   check fails before a build does. (Its files are hashed into the world's cache key, and a
 //   package such as three.js would not run in the worker's plain code.)
@@ -70,7 +70,7 @@
 //   field are not seen.
 // - The userData check: a file names only the `userData` keys the renderer declares
 //   (packages/render/UserData.ts: the key, who sets it, who reads it, what it means) and, above the renderer,
-//   those its own layer declares it keeps to itself (`userData` in tools/layers.json: each layer's
+//   those its own layer declares it keeps to itself (`userData` in tools/repo/layers.json: each layer's
 //   file and list, the island's packages/island/world/IslandUserData.ts). Every key on the renderer's list is named
 //   by some file of the code, every key on a layer's list by a file of that layer, and no layer's
 //   list repeats a key of the renderer's. A key counts where it is written after the
@@ -81,16 +81,16 @@
 // no options. Exit 0 when everything passes, 1 with the failures listed.
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { worldGeneratorSources } from './vite-world-generator.mjs';
+import { ROOT } from '../kit/root.mjs';
 
-const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const SRC = ROOT;
 // the folders the layered code lives in, from the repository's root
 const CODE_ROOTS = [ 'packages', 'app' ];
 const outside = ( file ) => ! CODE_ROOTS.some( ( root ) => file.startsWith( `${ root }/` ) );
-const TABLE = path.join( ROOT, 'tools', 'layers.json' );
+const TABLE = path.join( ROOT, 'tools', 'repo', 'layers.json' );
 const RANK = { render: 0, island: 1, game: 2, app: 3 };
 const CODE = /\.(ts|mts|js|mjs)$/;
 
@@ -482,10 +482,10 @@ for ( const key of KNOWN ) if ( ! upward.has( key ) ) failures.push( `KNOWN list
 const exits = new Map(); // file -> { layer, side: 'page' | 'headless' | 'setup' }
 for ( const [ layer, sides ] of Object.entries( layers.exits ) ) for ( const [ side, file ] of Object.entries( sides ) ) exits.set( file, { layer, side } );
 const lazy = new Set( layers.lazy );
-for ( const layer of Object.keys( RANK ).filter( ( l ) => l !== 'app' ) ) if ( ! layers.exits[ layer ]?.page || ! layers.exits[ layer ]?.headless ) failures.push( `tools/layers.json: the ${ layer } package has no page or no headless exit` );
+for ( const layer of Object.keys( RANK ).filter( ( l ) => l !== 'app' ) ) if ( ! layers.exits[ layer ]?.page || ! layers.exits[ layer ]?.headless ) failures.push( `tools/repo/layers.json: the ${ layer } package has no page or no headless exit` );
 for ( const [ file, { layer } ] of exits ) {
 
-	if ( table[ file ] !== layer ) { failures.push( `tools/layers.json: the exit ${ file } is not in the ${ layer } layer` ); continue; }
+	if ( table[ file ] !== layer ) { failures.push( `tools/repo/layers.json: the exit ${ file } is not in the ${ layer } layer` ); continue; }
 	const source = ts.createSourceFile( file, readFileSync( path.join( SRC, file ), 'utf8' ), ts.ScriptTarget.Latest, false );
 	for ( const statement of source.statements ) {
 
@@ -496,7 +496,7 @@ for ( const [ file, { layer } ] of exits ) {
 	}
 
 }
-for ( const file of lazy ) if ( ! ( table[ file ] in RANK ) || table[ file ] === 'app' ) failures.push( `tools/layers.json: the lazy exit ${ file } is not a file of a package` );
+for ( const file of lazy ) if ( ! ( table[ file ] in RANK ) || table[ file ] === 'app' ) failures.push( `tools/repo/layers.json: the lazy exit ${ file } is not a file of a package` );
 let across = 0;
 for ( const from of files ) {
 
@@ -626,19 +626,19 @@ for ( const [ name, from ] of exitNames ) if ( from.length > 1 ) failures.push( 
 const userLists = {};
 for ( const [ layer, { file, list } ] of Object.entries( layers.userData ?? {} ) ) {
 
-	if ( table[ file ] !== layer ) failures.push( `tools/layers.json: the userData list ${ file } is not in the ${ layer } layer` );
+	if ( table[ file ] !== layer ) failures.push( `tools/repo/layers.json: the userData list ${ file } is not in the ${ layer } layer` );
 	userLists[ layer ] = { file, keys: ( await import( pathToFileURL( path.join( SRC, file ) ).href ) )[ list ] ?? {} };
 
 }
 const USER_DATA = userLists.render?.keys ?? {};
-if ( ! userLists.render ) failures.push( 'tools/layers.json: names no userData list for the render layer' );
+if ( ! userLists.render ) failures.push( 'tools/repo/layers.json: names no userData list for the render layer' );
 const userKeys = userDataKeys( program );
 for ( const { file, line, key } of userKeys ) {
 
 	const layer = table[ file ];
 	if ( key in USER_DATA ) continue;
 	if ( layer !== 'render' && userLists[ layer ] && key in userLists[ layer ].keys ) continue;
-	const own = layer === 'render' ? '' : userLists[ layer ] ? `, or ${ userLists[ layer ].file } if the ${ layer } layer keeps it to itself` : `, or a list of the ${ layer } layer's own (tools/layers.json, userData) if it keeps it to itself`;
+	const own = layer === 'render' ? '' : userLists[ layer ] ? `, or ${ userLists[ layer ].file } if the ${ layer } layer keeps it to itself` : `, or a list of the ${ layer } layer's own (tools/repo/layers.json, userData) if it keeps it to itself`;
 	failures.push( `${ file }:${ line }: names userData.${ key }, which ${ userLists.render?.file } does not declare (${ layer } layer): declare the key there${ own }` );
 
 }

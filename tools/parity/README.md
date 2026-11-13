@@ -26,7 +26,7 @@ Capture a production build, each branch from its own worktree on its own port: `
 preview` builds it and serves it on a free port (`docs/reference/tools.md`, Page). The URL needs
 `?debug` (capture-set.mjs adds it): `window.__PONLAI__` and the diagnostics exist only on the dev
 server or with it. The assets need no setup: the build pulls what `public/` lacks from the release
-`assets.lock.json` names (`tools/vite-assets.mjs`; `docs/reference/tools.md`, Assets).
+`assets.lock.json` names (`tools/repo/vite-assets.mjs`; `docs/reference/tools.md`, Assets).
 
 Paused captures take the GPU lock shared (`tools/gpu-lock.mjs`): their pixels do not depend on what
 else renders, so they run beside other paused captures and probes, and wait for timing runs. Each

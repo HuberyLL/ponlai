@@ -1,4 +1,4 @@
-// Fixture for ponlai/scene-clock (tools/verify-lint.mjs): each line marked `reported` must be
+// Fixture for ponlai/scene-clock (tools/repo/verify-lint.mjs): each line marked `reported` must be
 // reported by that rule, and no other line.
 let phase = 0, last = 0;
 

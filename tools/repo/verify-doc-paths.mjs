@@ -22,7 +22,7 @@
 //   or goes takes its line along.
 // - AGENTS.md stays within AGENTS_LIMIT characters: it is the index every change reads, and
 //   detail belongs where it is owned (AGENTS.md says where).
-//   node tools/verify-doc-paths.mjs     exit 0 when every path exists and AGENTS.md fits, 1 with the list
+//   node tools/repo/verify-doc-paths.mjs     exit 0 when every path exists and AGENTS.md fits, 1 with the list
 // Runs as part of `npm run lint:docs`. Pure git, no GPU.
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -35,7 +35,7 @@ const SKIP = /(LICENSE|LICENCE|package-lock\.json$)/;
 const OTHERS = /^CREDITS\.md$/;
 const ABSENT = new Map( [
 	// Diátaxis's tutorials folder, named in AGENTS.md's list of the docs' kinds before its first page
-	[ 'docs/tutorials/', [ 'AGENTS.md', 'tools/verify-doc-paths.mjs' ] ],
+	[ 'docs/tutorials/', [ 'AGENTS.md', 'tools/repo/verify-doc-paths.mjs' ] ],
 ] );
 const PATH = /(?<![\w./@-])(?:docs|skills|tools)\/[\w./*$<{-]*/g;
 

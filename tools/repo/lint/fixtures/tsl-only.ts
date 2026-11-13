@@ -1,4 +1,4 @@
-// Fixture for ponlai/tsl-only (tools/verify-lint.mjs): each line marked `reported` must be reported
+// Fixture for ponlai/tsl-only (tools/repo/verify-lint.mjs): each line marked `reported` must be reported
 // by that rule, and no other line.
 import * as THREE from 'three/webgpu';
 import { wgslFn, code } from 'three/tsl'; // reported

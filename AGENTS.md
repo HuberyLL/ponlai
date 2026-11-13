@@ -47,7 +47,7 @@ every change follows, what to read before a task, and the folders. Detail lives 
   not a loop), `tools/scenes.mjs` (the renderer's test scenes checked in seconds: run
   it first after a renderer change), `uv run tools/img.py diff|crop|sheet|stats|flicker` (image work
   on captures), `tools/probe.mjs` (page values as JSON), `tools/wgsl-build.mjs` (TSL to WGSL in
-  node, no GPU), `tools/profile-frame.mjs` (frame time on a production build), `tools/assets.mjs`
+  node, no GPU), `tools/profile-frame.mjs` (frame time on a production build), `tools/repo/assets.mjs`
   (the assets in `public/` against `assets.lock.json`, pulled by dev and build) and
   `tools/verify-*.mjs` (regression probes; after a change to the world's generator, run
   `node tools/verify-world-chunks.mjs` before captures). Use them instead of a Pillow, NumPy or
@@ -182,7 +182,7 @@ meets it.
   numbers, its camera, the islanders and creatures.
 - `packages/game/`: the game behind `?game`: the headless simulation (`sim/`), session, save, view
   and interface (`ui/`).
-- `tools/`: checks, captures, probes, profiling, the GPU lock, the code lint (`tools/lint/`).
+- `tools/`: checks, captures, probes, profiling, the GPU lock, the code lint (`tools/repo/lint/`).
 - `skills/`: methods as skills (linked from `.claude/skills/`); a skill's facts for this project:
   `docs/bindings/<skill-name>.md`.
 - `docs/`: the documentation by kind (`docs/README.md`). `public/` (git-ignored): the assets. File

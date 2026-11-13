@@ -1,5 +1,5 @@
 // Vite plugin: fills public/ with the game's assets before the dev server or the build reads it
-// (tools/assets.mjs: they are pinned by assets.lock.json and published as GitHub releases, never
+// (tools/repo/assets.mjs: they are pinned by assets.lock.json and published as GitHub releases, never
 // committed). A fresh clone or worktree needs no setup: the missing files are pulled from the
 // lock's release, from the download cache that every worktree shares. Files that differ from the
 // lock (work in progress) are kept and named. The dev server starts without what it could not

@@ -1,4 +1,4 @@
-// Fixture for ponlai/tsl-method-order (tools/verify-lint.mjs): each line marked `reported` must be
+// Fixture for ponlai/tsl-method-order (tools/repo/verify-lint.mjs): each line marked `reported` must be
 // reported by that rule, and no other line. The method forms on TSL nodes are reported; the plain
 // maths and our classes' simulation steps of the same names are not.
 import * as THREE from 'three/webgpu';

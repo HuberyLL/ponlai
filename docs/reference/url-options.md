@@ -596,10 +596,10 @@ The page reads its options through one entrance, `packages/render/Settings.ts`, 
 one with what it takes, its default and the layer of the code that owns it. The entry parses the
 address once and warns in the console, as `[settings] ?name=value: why`, about each option nobody
 declared and each value outside what its reader tells apart; the page then goes on as it would
-without the warning. This table is written from the declarations (`node tools/verify-settings.mjs
+without the warning. This table is written from the declarations (`node tools/repo/verify-settings.mjs
 --write`, which `npm run check` runs without `--write` to keep the two equal).
 
-<!-- every-option:start (written by tools/verify-settings.mjs --write) -->
+<!-- every-option:start (written by tools/repo/verify-settings.mjs --write) -->
 
 | Option | Takes | Without it | Owner | What it sets |
 | --- | --- | --- | --- | --- |

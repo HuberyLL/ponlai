@@ -1,10 +1,10 @@
-// Checks the packages' exits (tools/layers.json `exits`): that each headless exit and the
+// Checks the packages' exits (tools/repo/layers.json `exits`): that each headless exit and the
 // renderer's setup exit load in plain node, and that nothing the page and setup exits load awaits
 // or reads the page as it loads. CPU only, no GPU, about a second.
-//   node tools/verify-exits.mjs
+//   node tools/repo/verify-exits.mjs
 //
 // An exit is a file of re-exports through which another package imports a package
-// (tools/verify-layers.mjs checks that every import across packages goes through one). Loading an
+// (tools/repo/verify-layers.mjs checks that every import across packages goes through one). Loading an
 // exit loads its whole package, so a module that did work as it loaded would make the order of
 // the imports part of the program, and a package that read the page at load could not be loaded
 // anywhere else.
@@ -29,12 +29,12 @@
 // with the failures listed.
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
+import { ROOT } from '../kit/root.mjs';
 
-const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const SRC = ROOT;
-const { exits } = JSON.parse( readFileSync( path.join( ROOT, 'tools', 'layers.json' ), 'utf8' ) );
+const { exits } = JSON.parse( readFileSync( path.join( ROOT, 'tools', 'repo', 'layers.json' ), 'utf8' ) );
 
 // The page's globals a module must not read as it loads: the address, the storage, the document,
 // window, the browser's description, the frame callbacks, workers, IndexedDB and fetch.

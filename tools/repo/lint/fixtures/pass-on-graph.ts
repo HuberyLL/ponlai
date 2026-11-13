@@ -1,4 +1,4 @@
-// Fixture for ponlai/pass-on-graph (tools/verify-lint.mjs): each line marked `reported` must be
+// Fixture for ponlai/pass-on-graph (tools/repo/verify-lint.mjs): each line marked `reported` must be
 // reported by that rule, and no other line.
 import * as THREE from 'three/webgpu';
 import { convertToTexture, rtt, vec4 } from 'three/tsl';

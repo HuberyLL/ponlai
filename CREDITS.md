@@ -369,7 +369,7 @@ packages, into `dist/licenses/`.
 ## Assets
 
 These files are not in the repository: they ship in the assets release that `assets.lock.json`
-names, under the paths given here in `public/` (`tools/assets.mjs`).
+names, under the paths given here in `public/` (`tools/repo/assets.mjs`).
 
 ### Rock Face 03
 

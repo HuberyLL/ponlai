@@ -59,14 +59,14 @@ function markdownStaged() {
 const checks = [
 	[ 'typecheck', npm( 'typecheck' ) ],
 	[ 'lint', npm( 'lint' ) ],
-	[ 'verify-layers', node( 'verify-layers.mjs' ) ],
-	[ 'verify-exits', node( 'verify-exits.mjs' ) ],
-	[ 'verify-settings', node( 'verify-settings.mjs' ) ],
-	[ 'verify-file-size', node( 'verify-file-size.mjs' ) ],
-	[ 'verify-three-internals', node( 'verify-three-internals.mjs' ) ],
+	[ 'verify-layers', node( 'repo/verify-layers.mjs' ) ],
+	[ 'verify-exits', node( 'repo/verify-exits.mjs' ) ],
+	[ 'verify-settings', node( 'repo/verify-settings.mjs' ) ],
+	[ 'verify-file-size', node( 'repo/verify-file-size.mjs' ) ],
+	[ 'verify-three-internals', node( 'repo/verify-three-internals.mjs' ) ],
 	[ 'verify-kit', node( 'repo/verify-kit.mjs' ) ],
 	[ 'verify-no-binaries', node( 'verify-no-binaries.mjs' ) ],
-	[ 'verify-skill-links', node( 'verify-skill-links.mjs' ) ],
+	[ 'verify-skill-links', node( 'repo/verify-skill-links.mjs' ) ],
 	[ 'verify-game', node( 'verify-game.mjs' ) ],
 	[ 'verify-i18n', node( 'verify-i18n.mjs' ) ],
 	[ 'verify-ink', node( 'verify-ink.mjs' ) ],
@@ -77,7 +77,7 @@ const checks = [
 	[ 'verify-local-lights', node( 'verify-local-lights.mjs' ) ],
 	[ 'verify-extensions', node( 'verify-extensions.mjs' ) ],
 	[ 'verify-look-params', node( 'verify-look-params.mjs' ) ],
-	[ 'verify-lint', node( 'verify-lint.mjs' ) ],
+	[ 'verify-lint', node( 'repo/verify-lint.mjs' ) ],
 ];
 if ( full || markdownStaged() ) checks.push( [ 'lint:docs', npm( 'lint:docs' ) ] );
 if ( full ) checks.push( [ 'build', npm( 'build' ) ], [ 'verify-world-chunks', node( 'verify-world-chunks.mjs' ) ], [ 'verify-chunk-derived', node( 'verify-chunk-derived.mjs' ) ] );

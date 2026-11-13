@@ -1,8 +1,8 @@
 // Checks the page's settings (packages/render/Settings.ts) against their documentation and the entry that
 // installs them, and the addresses the tools build against them. CPU only (plain `node`, which
 // strips the module's types), well under a second.
-//   node tools/verify-settings.mjs            check
-//   node tools/verify-settings.mjs --write    rewrite the docs' table of every option, then check
+//   node tools/repo/verify-settings.mjs            check
+//   node tools/repo/verify-settings.mjs --write    rewrite the docs' table of every option, then check
 //
 // Guarantees, each a failure (exit 1) when broken:
 // - docs/reference/url-options.md ends with a table of every declared option and prefix (between
@@ -36,11 +36,10 @@
 // unknown option.
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { ROOT } from '../kit/root.mjs';
 
-const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const DOC = path.join( ROOT, 'docs', 'reference', 'url-options.md' );
-const TABLE_START = '<!-- every-option:start (written by tools/verify-settings.mjs --write) -->';
+const TABLE_START = '<!-- every-option:start (written by tools/repo/verify-settings.mjs --write) -->';
 const TABLE_END = '<!-- every-option:end -->';
 
 let write = false;
@@ -111,7 +110,7 @@ else {
 			writeFileSync( DOC, doc );
 			console.log( `verify-settings: rewrote the table in ${ path.relative( ROOT, DOC ) }` );
 
-		} else failures.push( `${ path.relative( ROOT, DOC ) }: the table of every option differs from packages/render/Settings.ts: run node tools/verify-settings.mjs --write` );
+		} else failures.push( `${ path.relative( ROOT, DOC ) }: the table of every option differs from packages/render/Settings.ts: run node tools/repo/verify-settings.mjs --write` );
 
 	}
 

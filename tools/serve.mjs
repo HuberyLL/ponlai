@@ -29,7 +29,7 @@
 // each of the main checkout's entries except vite's caches (.vite, .vite-temp, .cache): a link to
 // the whole folder would put the worktree's prebundled dependencies into the main checkout's
 // cache, which its own dev server uses. With another lockfile it runs `npm ci` there instead. The
-// assets fill its public/ themselves (tools/vite-assets.mjs, in commits that have
+// assets fill its public/ themselves (tools/repo/vite-assets.mjs, in commits that have
 // assets.lock.json). A commit without the lock, from before the assets left git, holds none of
 // them (the history was rewritten without them): the files its public/ lacks are copied from the
 // calling checkout's public/ (the brush fonts, which then sat in src/game/ui/fonts/, there), so an

@@ -3,7 +3,7 @@
 // under the water (RefractedSun.ts draws only those). The renderer reads this format; whoever
 // derives it from its meshes writes it (the island's world/ChunkDerived.ts, in the world's
 // workers). Plain numbers that import nothing, so the workers and node can run it: a file the chunk
-// worker imports must not reach three.js (tools/verify-layers.mjs).
+// worker imports must not reach three.js (tools/repo/verify-layers.mjs).
 
 // Caster triangles reaching no lower than this above the water level cannot write the refracted map
 // (its material discards everything above the level), so the proxies leave them out. The margin only

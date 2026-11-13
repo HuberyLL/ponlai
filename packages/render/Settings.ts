@@ -29,8 +29,8 @@ import type { WeatherName, WindLevel } from './sky/Weather.ts';
 //   and their console warnings are unchanged. `get` takes only a declared name, so a misspelt read
 //   fails the type check; `prefixed` reads the declared prefixes (`tier.<knob>`, Quality.ts).
 // - SETTINGS lists the options by the groups of docs/reference/url-options.md, whose table of every
-//   option tools/verify-settings.mjs writes from it and checks against it: a new option is declared
-//   here, explained there in its group, and the table rewritten (`node tools/verify-settings.mjs
+//   option tools/repo/verify-settings.mjs writes from it and checks against it: a new option is declared
+//   here, explained there in its group, and the table rewritten (`node tools/repo/verify-settings.mjs
 //   --write`). `default` is the reader's default as words for that table, never read by the code;
 //   a `choice` lists the values its reader tells apart (others are reported), a `number` its range
 //   and any words it takes besides numbers (`words`). `debug` options are read on debug pages only

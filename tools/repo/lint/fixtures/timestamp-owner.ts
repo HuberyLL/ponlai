@@ -1,4 +1,4 @@
-// Fixture for ponlai/timestamp-owner (tools/verify-lint.mjs): each line marked `reported` must be
+// Fixture for ponlai/timestamp-owner (tools/repo/verify-lint.mjs): each line marked `reported` must be
 // reported by that rule, and no other line.
 import * as THREE from 'three/webgpu';
 import { resolveTimestamps, takeTimestamps, timestampPools, type TimestampPool } from '../three/Backend.ts';

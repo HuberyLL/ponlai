@@ -6,7 +6,7 @@
 // Every path `git ls-files .claude` prints must be such a link: mode 120000 in the index, at
 // `.claude/skills/<name>`, its target exactly `../../skills/<name>`, and `skills/<name>/SKILL.md`
 // tracked. A file, a link elsewhere or a link to another name fails.
-//   node tools/verify-skill-links.mjs     exit 0 when every entry is such a link, 1 with the list
+//   node tools/repo/verify-skill-links.mjs     exit 0 when every entry is such a link, 1 with the list
 // Runs as part of `npm run check`. Pure git, no GPU.
 import { execFileSync } from 'node:child_process';
 

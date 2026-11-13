@@ -1,5 +1,5 @@
 // Checks that no source file grows past LIMIT lines. CPU only, no GPU, well under a second.
-//   node tools/verify-file-size.mjs
+//   node tools/repo/verify-file-size.mjs
 //
 // A file past the limit holds several things that change for different reasons, and no reader,
 // human or model, can hold one whole. A file that passes it is split by what its parts are (a
@@ -17,9 +17,8 @@
 // options. Exit 0 when everything passes, 1 with the failures listed.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { ROOT } from '../kit/root.mjs';
 
-const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const SRC = ROOT;
 const LIMIT = 1500;
 const CODE = /\.(ts|mts|js|mjs)$/;

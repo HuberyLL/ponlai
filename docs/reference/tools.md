@@ -94,17 +94,17 @@ as one archive (`ponlai-assets-v<N>.tar.gz`) on a GitHub release tagged `assets-
 `assets.lock.json`, committed, pins the release, the archive's size and SHA-256 and every file's,
 so a commit names the assets it runs with and a checkout of it gets exactly those back.
 
-- The dev server and the build pull the files `public/` lacks (`tools/vite-assets.mjs`). They are
+- The dev server and the build pull the files `public/` lacks (`tools/repo/vite-assets.mjs`). They are
   downloaded once into git's common directory (`ponlai-assets/<release>/`, shared by every
   worktree) and copied into each checkout's `public/`. A file that differs from the lock is work
   in progress: it is kept and named. A build fails when a listed file is missing; the dev server
   starts without it (the page waits at its loading screen).
-- `node tools/assets.mjs [status]` compares `public/` with the lock (missing, changed and unlisted
+- `node tools/repo/assets.mjs [status]` compares `public/` with the lock (missing, changed and unlisted
   files; exit 1 when it differs). `pull [--force]` fills `public/` from the lock's release
   (`--force` also replaces changed files). Downloads go through `gh` while the repository is
   private, else the release's public URL.
-- `node tools/assets.mjs release [--notes <text>] [--attach <file>]...` publishes `public/` as the
-  next release: it packs the whole set, creates the release with `gh` (its notes list what was
+- `node tools/repo/assets.mjs release [--notes <text>] [--attach <file>]...` publishes `public/` as
+  the next release: it packs the whole set, creates the release with `gh` (its notes list what was
   added, changed and removed) and rewrites `assets.lock.json`. `--attach` uploads more files
   beside the archive: the masters of our own assets that the page does not load (a Blender file, a
   layered source image).
@@ -1168,7 +1168,7 @@ the shaded ones are, how much of the lawn they cover and what colour the lit law
 `tools/meadow-light.mjs` (Probes), not a radiance box of one's own over a mixed patch.
 
 Which assets a commit runs with, whether `public/` matches them, and how to publish a change to
-them: `tools/assets.mjs` (Assets), never a file committed to git.
+them: `tools/repo/assets.mjs` (Assets), never a file committed to git.
 
 What the islanders do over days of play, how the needs and the stock run, and how a brain plays
 from what it perceives: `tools/play-game.mjs` (Other tools), not a loop over the simulation of
@@ -1192,8 +1192,8 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
 else: no recommended sets and no style rules (the code style is three.js's and is not linted). It
 takes a few seconds, reads the code with type information (typescript-eslint's project service over
 `tsconfig.json`) and is one of the checks every commit passes (`tools/check.mjs`). The config is
-`eslint.config.mjs`, the rules are in `tools/lint/plugin.mjs`, and each rule's message says what is
-wrong, what to write instead and which file explains why.
+`eslint.config.mjs`, the rules are in `tools/repo/lint/plugin.mjs`, and each rule's message says
+what is wrong, what to write instead and which file explains why.
 
 | Rule | Reports | Where |
 | --- | --- | --- |
@@ -1226,17 +1226,17 @@ shows is a violation.
 
 To add a rule:
 
-1. Write it in `tools/lint/plugin.mjs`: a few AST selectors through `selectorRule`, or a rule of its
-   own when it needs the receiver's type, an ancestor or whether a member is read or written. Its
-   message says what to write instead and names the file that explains why.
+1. Write it in `tools/repo/lint/plugin.mjs`: a few AST selectors through `selectorRule`, or a rule
+   of its own when it needs the receiver's type, an ancestor or whether a member is read or written.
+   Its message says what to write instead and names the file that explains why.
 2. Turn it on in `eslint.config.mjs` in a block of its own whose `files` and `ignores` are the
    folders it concerns, each exclusion with its reason in a comment.
-3. Add its fixture, `tools/lint/fixtures/<rule>.ts`: the wrong forms, each line marked
+3. Add its fixture, `tools/repo/lint/fixtures/<rule>.ts`: the wrong forms, each line marked
    `// reported`, beside the right forms the rule must leave alone. A rule scoped to one folder
-   names the path its fixture is linted from in `FIXTURE_PATHS` in `tools/verify-lint.mjs`.
+   names the path its fixture is linted from in `FIXTURE_PATHS` in `tools/repo/verify-lint.mjs`.
 4. Run `npm run lint` and go through every hit: fix it, narrow the scope or write the exception.
 
-`node tools/verify-lint.mjs` (no options, a few seconds, also in `tools/check.mjs`) lints each
+`node tools/repo/verify-lint.mjs` (no options, a few seconds, also in `tools/check.mjs`) lints each
 fixture as if it were a file inside its rule's scope and fails unless the rule reports exactly the
 marked lines, with no other rule and no parse error, and unless every rule has a fixture. The
 fixtures are left out of `npm run lint`.
@@ -1246,7 +1246,7 @@ fixtures are left out of `npm run lint`.
 `npm run lint:docs` checks the Markdown files' format with markdownlint-cli2 (a dev dependency;
 its rules in `.markdownlint-cli2.jsonc`: prose wrapped at 100 columns, fenced code with a language)
 and their links offline with lychee (local files and `#anchors`; config in `lychee.toml`).
-`tools/verify-doc-paths.mjs`, also in it, checks that every path into `docs/`, `skills/` or
+`tools/repo/verify-doc-paths.mjs`, also in it, checks that every path into `docs/`, `skills/` or
 `tools/` written in full from the repository's root in a tracked text file (code comments and
 strings, configuration, prose) names a file or folder that exists, that every file `AGENTS.md` and
 `docs/reference/code-map.md` name in backticks is tracked, and that `AGENTS.md` stays within its
@@ -1417,17 +1417,17 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   the world cache; the browser's shader cache in the slot does not change the counts (they are the
   page's requests to WebGPU, cached or not), and `--fresh` runs in a throwaway profile.
   Its steps' waits are part of what it measures and stay fixed.
-- `tools/verify-layers.mjs` (plain `node`, no options) checks the direction of the imports
+- `tools/repo/verify-layers.mjs` (plain `node`, no options) checks the direction of the imports
   between the code's layers: render, island, game and app, lowest first, a file importing only
   its own layer and those below. A file's folder is its layer (`packages/render/`,
   `packages/island/`, `packages/game/` and `app/`); a file under `packages/` outside the three
   packages' folders, or an upward import not on the tool's list of known ones, fails, and so does a
   known one that no longer imports upward (the list only shrinks). It also walks the chunk worker's
   imports (`packages/island/world/chunkWorker.ts`) as the build's world generator plugin does
-  (`tools/vite-world-generator.mjs`) and fails on any package import the plugin would refuse. Run it
-  after adding a file or an import across folders. Its test scenes check keeps the files under
+  (`tools/repo/vite-world-generator.mjs`) and fails on any package import the plugin would refuse.
+  Run it after adding a file or an import across folders. Its test scenes check keeps the files under
   `app/scenes/` to the renderer's exits, its lazy exits and each other.
-  Its exits check reads the packages' exits from `tools/layers.json` (`exits`: each package's page
+  Its exits check reads the packages' exits from `tools/repo/layers.json` (`exits`: each package's page
   exit and headless exit, and the renderer's setup exit; `lazy`: the modules the page loads on
   demand). An exit holds re-exports of its own package only; an import from one package into
   another, or from the app layer into one, names an exit or a lazy exit; a lazy exit is imported
@@ -1449,12 +1449,12 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   than the owner's must also be on a second list (`ACROSS`).
   Its userData check reads the list of `userData` keys the renderer declares
   (`packages/render/UserData.ts`) and each upper layer's list of the keys it keeps to itself
-  (`tools/layers.json`, `userData`: the island's in `packages/island/world/IslandUserData.ts`). It
-  fails when a file names a key that is on neither the renderer's list nor its own layer's, or when
+  (`tools/repo/layers.json`, `userData`: the island's in `packages/island/world/IslandUserData.ts`).
+  It fails when a file names a key that is on neither the renderer's list nor its own layer's, or when
   a list holds a key no file of its layer names (the renderer's: no file at all). A key reached
   through an alias of the bag is not seen.
-- `tools/verify-exits.mjs` (plain `node`, no options, about a second) checks the packages' exits
-  (`tools/layers.json`, `exits`). It loads each headless exit (`packages/render/data.ts`,
+- `tools/repo/verify-exits.mjs` (plain `node`, no options, about a second) checks the packages' exits
+  (`tools/repo/layers.json`, `exits`). It loads each headless exit (`packages/render/data.ts`,
   `packages/island/land.ts`, `packages/game/sim/index.ts`) and the renderer's setup exit
   (`packages/render/setup.ts`) in plain node and fails when one throws or leaves a name it exports
   undefined. It reads every file a page or setup exit (`packages/render/index.ts`,
@@ -1490,7 +1490,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   its changes or when the day cycle does not read the exposure it is given. Run it after a change
   to how one of these systems is created, and extend it when another system takes its look at
   creation.
-- `tools/verify-settings.mjs [--write]` (plain `node`) checks the page's settings
+- `tools/repo/verify-settings.mjs [--write]` (plain `node`) checks the page's settings
   (`packages/render/Settings.ts`, the one entrance every option is read through) against
   `docs/reference/url-options.md`: the table of every option at the page's end is the one written
   from the declarations (`--write` rewrites it), every declared option is named in the page's
@@ -1514,15 +1514,15 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   check runs even after one failed; it ends with each check's result and time, and exits 1 when
   any failed. None of them renders or takes the GPU lock. How to use it:
   `docs/how-to/check-a-change.md`, Run the checks every commit passes.
-- `tools/verify-skill-links.mjs` (plain `node`, no options) fails on a path git tracks under
+- `tools/repo/verify-skill-links.mjs` (plain `node`, no options) fails on a path git tracks under
   `.claude/` that is not a symbolic link `.claude/skills/<name>` to `../../skills/<name>` with
   `skills/<name>/SKILL.md` tracked: the public skills' links are the only tracked files there.
-- `tools/verify-file-size.mjs` (plain `node`, no options) fails on a code file under `packages/` or
-  `app/` of more than 1500 lines. The files over the limit when the check was written are listed in
-  the tool with their line counts: a listed file fails when it grows past its count, and when it is
-  back within the limit or gone, until its entry is removed (the list only shrinks). Split a file
-  that fails by what its parts are, never by halving it.
-- `tools/verify-three-internals.mjs [--verbose] [--fingerprints]` (plain `node`) checks the
+- `tools/repo/verify-file-size.mjs` (plain `node`, no options) fails on a code file under
+  `packages/` or `app/` of more than 1500 lines. The files over the limit when the check was written
+  are listed in the tool with their line counts: a listed file fails when it grows past its count,
+  and when it is back within the limit or gone, until its entry is removed (the list only shrinks).
+  Split a file that fails by what its parts are, never by halving it.
+- `tools/repo/verify-three-internals.mjs [--verbose] [--fingerprints]` (plain `node`) checks the
   three.js internals the code depends on, listed in `packages/render/three/three-internals.json`:
   the private members and methods it reads, calls, writes, wraps or replaces, and the internal code
   it mirrors or relies on, and the extension hooks `@types/three` does not declare, each with the

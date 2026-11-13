@@ -1,7 +1,7 @@
 // Checks what the code depends on of three.js beyond its public interface, against the three that
 // is installed. CPU only, no GPU and no browser: it reads three's sources and imports three in
 // node, a few seconds.
-//   node tools/verify-three-internals.mjs [--verbose] [--fingerprints]
+//   node tools/repo/verify-three-internals.mjs [--verbose] [--fingerprints]
 //
 // The renderer reaches into three where no public path gives what it needs: private members of the
 // renderer and of its helpers, the WebGPU backend and its device, methods it replaces or wraps,
@@ -41,8 +41,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import { ROOT } from '../kit/root.mjs';
 
-const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const THREE = path.join( ROOT, 'node_modules', 'three' );
 const LIST = path.join( ROOT, 'packages', 'render', 'three', 'three-internals.json' );
 const SELF = path.relative( ROOT, fileURLToPath( import.meta.url ) );

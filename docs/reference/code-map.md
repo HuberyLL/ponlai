@@ -27,7 +27,7 @@ layers, a folder each: the page (`app/`), the game (`packages/game/`), the islan
   page (`?scene=ball|empty|sea|plants`) built from the renderer's stages alone, with no island or
   game. `scenes/ScenePage.ts` builds the page, `scenes/TestScene.ts` is a scene's type,
   `scenes/index.ts` the list, and each scene is a module beside them. Their files import only the
-  renderer's exits (`tools/verify-layers.mjs`). The page draws with the renderer's neutral look
+  renderer's exits (`tools/repo/verify-layers.mjs`). The page draws with the renderer's neutral look
   (`renderLook=ponlai` picks the island's, in the entry, which hands the look to the page) and
   takes the island's inputs from `packages/render/NeutralInputs.ts`. `tools/scenes.mjs` shoots,
   reads and checks them.
@@ -35,8 +35,8 @@ layers, a folder each: the page (`app/`), the game (`packages/game/`), the islan
 ## The packages' exits
 
 Another package, or the page, imports the renderer, the island and the game only through their
-exits (`ARCHITECTURE.md`, rule 11; `tools/layers.json`, `tools/verify-layers.mjs`,
-`tools/verify-exits.mjs`):
+exits (`ARCHITECTURE.md`, rule 11; `tools/repo/layers.json`, `tools/repo/verify-layers.mjs`,
+`tools/repo/verify-exits.mjs`):
 
 - the page's: `packages/render/index.ts`, `packages/island/index.ts` and `packages/game/index.ts`
   (the game is loaded on demand);
@@ -54,7 +54,7 @@ The modules loaded on demand are lazy exits.
   passes, then what the island's data builds) and its frame stages (`createFrameStages`).
   `placeVegetation` places the registered plant kinds and closes their registry.
 - `Settings.ts`: declares every URL option and is the one entrance every module reads them through
-  (`settings.get( 'name' )`; `tools/verify-settings.mjs`).
+  (`settings.get( 'name' )`; `tools/repo/verify-settings.mjs`).
 - `Quality.ts`: the quality tiers, every cost knob in one table (high the only active one).
 - `shared.ts`: the uniforms shared by the water, the terrain and the vegetation, which the entry
   creates (with the look's numbers every material's shader reads) and installs before anything
@@ -63,7 +63,7 @@ The modules loaded on demand are lazy exits.
 - `Extensions.ts`: the three declarations every definition registered with the renderer states (a
   plant kind, a kind of local light, an extra pass: its cost knob, its stand in the test mode, how
   it follows the land's growth; `tools/verify-extensions.mjs`).
-- `UserData.ts`: the `userData` keys the renderer sets or reads (`tools/verify-layers.mjs`).
+- `UserData.ts`: the `userData` keys the renderer sets or reads (`tools/repo/verify-layers.mjs`).
 - `NeutralInputs.ts`: the island's inputs for the test scenes: the probes, the bounce's ground and
   the shore's fields of level open ground or of the open sea far from any shore.
 
@@ -246,7 +246,7 @@ which the rest of the code calls instead of naming a private member or the backe
 - `ThreePatches.ts`: r186's cache-key patches and its first lit build made ahead.
 - `Internals.ts`: the start-up check of the renderer's members and the error naming what is
   missing.
-- `three-internals.json`: the internals the code depends on (`tools/verify-three-internals.mjs`).
+- `three-internals.json`: the internals the code depends on (`tools/repo/verify-three-internals.mjs`).
 
 ### `debug/`
 
@@ -278,7 +278,7 @@ The world generated from the grown land (`IslandGrowth.ts`) in 16 m chunks:
 - `WorldCache.ts`: the cache per chunk. `ChunkMerge.ts`: the chunks merged.
 - `World.ts`: the world drawn; `WorldFields.ts`: the world fields' textures.
 - `Growth.ts`: the world grown in place; `SeabedRise.ts`: the shoal of a coming piece.
-- `IslandUserData.ts`: the `userData` keys the island keeps to itself (`tools/verify-layers.mjs`).
+- `IslandUserData.ts`: the `userData` keys the island keeps to itself (`tools/repo/verify-layers.mjs`).
 - `IslandClasses.ts`: the island's kinds for the debug view's grid.
 
 Its kinds:
@@ -399,4 +399,4 @@ Captures, profiling, the GPU lock and the probes ([Tools](tools.md)), and:
 ## Assets: `public/`
 
 Git-ignored: the game's assets, filled from the GitHub release that `assets.lock.json` names
-(`tools/assets.mjs`, `tools/vite-assets.mjs`; [Tools](tools.md#assets)).
+(`tools/repo/assets.mjs`, `tools/repo/vite-assets.mjs`; [Tools](tools.md#assets)).

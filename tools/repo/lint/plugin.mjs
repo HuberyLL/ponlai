@@ -9,7 +9,7 @@
 // (`tsl-method-order`), an ancestor (`history-on-graph`) or whether a member is read or written
 // (`vegetation-tag`).
 //
-// Each rule has a fixture under tools/lint/fixtures/ that tools/verify-lint.mjs lints: a new rule
+// Each rule has a fixture under tools/repo/lint/fixtures/ that tools/repo/verify-lint.mjs lints: a new rule
 // adds one there (docs/reference/tools.md, Code lint).
 
 const docs = ( description ) => ( { type: 'problem', docs: { description }, schema: [] } );

@@ -94,7 +94,7 @@ export const PAUSED_QUEUE = 2;
 export type FrameRateMode = 'auto' | 'fixed';
 
 /** The display's next frame (its time): the code's other wait on the page's frames, beside the
- * pacer's own, so `requestAnimationFrame` is called here alone (tools/verify-layers.mjs). */
+ * pacer's own, so `requestAnimationFrame` is called here alone (tools/repo/verify-layers.mjs). */
 export const nextFrame = (): Promise<number> => new Promise( ( resolve ) => requestAnimationFrame( resolve ) );
 
 export class FramePacer {

@@ -1,11 +1,11 @@
-// Checks that each of the code lint's own rules (tools/lint/plugin.mjs, scoped in eslint.config.mjs)
+// Checks that each of the code lint's own rules (tools/repo/lint/plugin.mjs, scoped in eslint.config.mjs)
 // reports what it is written for and nothing else, so a selector that silently matches nothing,
 // or a scope that leaves its folder out, fails here rather than letting the error through. CPU
 // only, no GPU, a few seconds.
-//   node tools/verify-lint.mjs
+//   node tools/repo/verify-lint.mjs
 //
 // Guarantees, each a failure (exit 1) when broken:
-// - Every rule of the plugin has a fixture, tools/lint/fixtures/<rule>.ts, and every fixture names
+// - Every rule of the plugin has a fixture, tools/repo/lint/fixtures/<rule>.ts, and every fixture names
 //   a rule of the plugin.
 // - A fixture is linted as if it were a file at its rule's place in the code (FIXTURE_PATHS: a
 //   path inside the rule's `files`), with the repository's config, type information included.
@@ -19,15 +19,14 @@
 //
 // Output: a line per rule, then the failures. It takes no options. Exit 0 when every fixture
 // passes, 1 otherwise.
-import './qos.mjs';
+import '../qos.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
 import plugin from './lint/plugin.mjs';
+import { ROOT } from '../kit/root.mjs';
 
-const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
-const FIXTURES = path.join( ROOT, 'tools/lint/fixtures' );
+const FIXTURES = path.join( ROOT, 'tools/repo/lint/fixtures' );
 
 if ( process.argv.length > 2 ) {
 
@@ -45,7 +44,7 @@ const DEFAULT_PATH = 'packages/render/post/lint-fixture.ts';
 const rules = Object.keys( plugin.rules );
 const fixtures = readdirSync( FIXTURES ).filter( ( f ) => f.endsWith( '.ts' ) ).map( ( f ) => f.slice( 0, - 3 ) );
 const failures = [];
-for ( const f of fixtures ) if ( ! rules.includes( f ) ) failures.push( `fixture ${ f }.ts names no rule of tools/lint/plugin.mjs` );
+for ( const f of fixtures ) if ( ! rules.includes( f ) ) failures.push( `fixture ${ f }.ts names no rule of tools/repo/lint/plugin.mjs` );
 
 // The fixtures' paths are not on disk, so tsconfig.json's project does not hold them: the project
 // service hosts them in its default project, built from tsconfig.json's options.
@@ -58,7 +57,7 @@ for ( const rule of rules ) {
 
 	if ( ! fixtures.includes( rule ) ) {
 
-		failures.push( `ponlai/${ rule }: no fixture tools/lint/fixtures/${ rule }.ts` );
+		failures.push( `ponlai/${ rule }: no fixture tools/repo/lint/fixtures/${ rule }.ts` );
 		continue;
 
 	}
