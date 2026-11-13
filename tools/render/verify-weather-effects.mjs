@@ -3,13 +3,16 @@
 //   node tools/render/verify-weather-effects.mjs http://127.0.0.1:5190
 // Parked with the rain (packages/render/sky/Weather.ts PARKED_WEATHER): out of the default checks until the
 // parked weathers are revived; it still runs against a debug build (the dev server or ?debug).
-// Its steps wait for the page's rendered frames (tools/kit/page-eval.mjs, "Rendered frames").
+// Its steps wait for the page's rendered frames (tools/kit/page-eval.mjs, "Rendered frames"); each
+// capture waits first for the paused page's settled signal (tools/kit/capture-browser.mjs
+// `waitForSettled`) and fails when it does not hold, so its two frames are the frame the page keeps.
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from '../kit/gpu-lock.mjs';
 import { DAY_PRESETS } from '../../packages/render/sky/DayCycle.ts';
 import { renderedFrames } from '../kit/page-eval.mjs';
+import { waitForSettled } from '../kit/capture-browser.mjs';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/weather-effects';
@@ -119,7 +122,8 @@ try {
 	};
 	const capture = async ( name ) => {
 		const paths = [ `${ out }/${ name }-a.png`, `${ out }/${ name }-b.png` ];
-		await frames();
+		const ready = await waitForSettled( page );
+		assert.ok( ready.signal !== false && ready.settled, `${ name }: the paused page must settle before its capture (${ JSON.stringify( ready ) })` );
 		const a = await page.screenshot( { path: paths[ 0 ] } );
 		await frames();
 		const b = await page.screenshot( { path: paths[ 1 ] } );
@@ -149,7 +153,7 @@ try {
 			}
 			return { max, count, pixels: data[ 0 ].length / 4 };
 		}, [ a, b ].map( ( png ) => png.toString( 'base64' ) ) );
-		const result = { paths, byteStable, noise, ...await snapshot() };
+		const result = { paths, ready, byteStable, noise, ...await snapshot() };
 		report.captures[ name ] = result;
 		assert.ok( byteStable || ( noise.max <= 8 && noise.count <= noise.pixels * 1e-4 ),
 			`${ name }: two paused frames must match (max ${ noise.max }, ${ noise.count } px)` );
