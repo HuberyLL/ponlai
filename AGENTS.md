@@ -136,7 +136,8 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   active one); `app/QualityDetect.ts` takes `?quality` or high (its GPU timing is parked with the
   lower tiers).
 - `packages/render/shared.ts`: uniforms shared by the water, terrain and vegetation, which the entry
-  creates and installs before anything builds.
+  creates (with the look's numbers every material's shader reads) and installs before anything
+  builds.
 - `packages/island/camera/`: the island camera, which starts framing the land alone from its heading
   (`IslandFraming.ts`, app/CameraViews.ts `placeOrbit`) and which the hand pans within the land's
   soft bounds, turns, tilts and zooms (`IslandCameraControls.ts`, the ground it grabs in
@@ -224,12 +225,12 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   sky's (`SkyLook.ts`), the day's windows (`DayLook.ts`), the ambient grade and the low key's lift
   (`AmbientLook.ts`), the haze's keys (`HazeLook.ts`), the exposure (`ExposureLook.ts`: its keys
   and base exposure, made from the tables the sky stage hands `createExposure` rather than read as
-  it loads; `tools/verify-exposure-look.mjs`), the display's: contrast, desaturation, white
-  balance, tone curve, base grade, bloom and the rods' colour (`DisplayLook.ts`), the sea's detail
-  and distant swell
-  (`SeaLook.ts`), the ambient occlusion's floor (`OcclusionLook.ts`), the local lights' gain
-  (`LocalLightsLook.ts`), the meadow canopy's media (`MeadowCanopyLook.ts`) and the plants' answer
-  to the wind (`WindLook.ts`).
+  it loads), the display's: contrast, desaturation, white balance, tone curve, base grade, bloom
+  and the rods' colour (`DisplayLook.ts`) and the plants' answer to the wind (`WindLook.ts`). The
+  systems whose tables are passed where they are created have no reader here: the sea's detail and
+  distant swell (`ocean/SeaDetail.ts`, `ocean/OceanFFT.ts`), the ambient occlusion's floor and the
+  meadow canopy's media (the shared uniforms, `shared.ts`) and the local lights' gain
+  (`lighting/LocalLights.ts`); `tools/verify-look-params.mjs` checks them and the exposure.
 - `packages/island/look/`: the island's numbers for those tables, one file per system (`Sea.ts`,
   `Day.ts`, `Ambient.ts`, `Exposure.ts`, `Display.ts`, `Haze.ts`, `Sky.ts`, `Occlusion.ts`,
   `LocalLights.ts`, `MeadowCanopy.ts`, `Wind.ts`), numbers and pure
