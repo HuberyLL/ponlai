@@ -7,7 +7,7 @@ When to write a tool rather than add an option or keep a one-off script is in `A
 A tool is written to these rules:
 
 - Build on the shared modules instead of copying them: `capture-browser.mjs` (browser, warm
-  profiles, readiness), `kit/reference.mjs` (stored references), `parity/views.mjs`,
+  profiles, readiness), `kit/reference.mjs` (stored references), `island/parity/views.mjs`,
   `kit/pixels.py` (image metrics), `gpu-lock.mjs`, `job.mjs`, `qos.mjs`.
 - The header comment comes first: the usage line, what the tool guarantees (what it compares or
   measures, and under which conditions), its rules with their reasons, and its outputs. Options

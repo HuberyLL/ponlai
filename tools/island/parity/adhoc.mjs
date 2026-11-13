@@ -34,10 +34,10 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { VIEWS, viewNames, viewEval, expandViews } from './views.mjs';
+import { ROOT } from '../../kit/root.mjs';
 
-const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '../..' );
+const REPO = ROOT;
 const NAME = /^[A-Za-z0-9_-]+$/;
 
 // the page's scene options: what a scene jump may change (app/Scene.ts)
@@ -65,7 +65,7 @@ const ANCHORS = new Set( [ ...viewEval( Object.keys( VIEWS )[ 0 ] ).matchAll( /^
 const VIEWS_EVALS = new Set( Object.values( VIEWS ).map( ( v ) => v.eval ).filter( Boolean ) );
 
 /** Whether the next scene jump undoes what the view's eval did, so its page can serve another view:
- * no eval, or exactly a views.mjs view's (the jump's contract covers those: tools/verify-scene-jump.mjs
+ * no eval, or exactly a views.mjs view's (the jump's contract covers those: tools/island/verify-scene-jump.mjs
  * checks the views reached from each other). Any other js (an ad-hoc `::js`, a views-file `eval`, a
  * `like=` view's js on top, a sweep over such a view) may change what no jump resets (the GUI's
  * settings, Tune, debug flags, a uniform): capture-set ends that view's page after it. */

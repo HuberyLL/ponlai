@@ -1,5 +1,5 @@
 // Dusk fit: the endpoints of each night share's slope through the dusk and the dawn, solved from a
-// dusk-grid run with --split (tools/dusk-grid.mjs), so that a lower sun never makes a judged
+// dusk-grid run with --split (tools/island/dusk-grid.mjs), so that a lower sun never makes a judged
 // quantity brighter. dusk-grid --fit runs it on its own points; on its own it reads a run's output:
 //
 //   node tools/island/dusk-fit.mjs <dusk-grid out dir> [--judge 0.02] [--views island]

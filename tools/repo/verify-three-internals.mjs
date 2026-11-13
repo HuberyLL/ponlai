@@ -64,7 +64,7 @@ const SRC_KNOWN = [];
 // The tools that reach into three (paths under tools/). Remove an entry with the change that
 // removes its reach; never add one.
 const TOOLS_KNOWN = [
-	'dusk-grid.mjs',
+	'island/dusk-grid.mjs',
 	// a mock renderer with the members graph/Compile.ts builds through
 	'render/framegraph/tables-warm.mjs',
 	'pipeline-trace.mjs',

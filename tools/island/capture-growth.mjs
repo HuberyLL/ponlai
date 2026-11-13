@@ -2,7 +2,7 @@
 // candidate page at given seeds and growth steps, and writes a page that sets them next to each
 // other with region statistics and pixel differences per pair.
 //
-//   node tools/capture-growth.mjs --base url [--cand url] [--seeds 1] [--grow 0,12] [--views v1,v3]
+//   node tools/island/capture-growth.mjs --base url [--cand url] [--seeds 1] [--grow 0,12] [--views v1,v3]
 //     [--label name] [--q "extra&query"] [--jobs 2] [--base-ref sha] [--recheck 1]
 //     [--recheck-px 64] [--recheck-level 2] [--retries 1] [--timeout 240000] [--page-per-view]
 //
@@ -17,7 +17,7 @@
 // what a page reads once at load (every query option outside the scene's own, SCENE_OPTIONS below
 // as app/Scene.ts lists them: seed and grow choose the world; quality, aa, dpr, the debug switches),
 // and each group is one `tools/kit/capture.mjs --worker` page driven over its IPC channel, as
-// tools/parity/capture-set.mjs drives it: the group's first view is a fresh load, every later one
+// tools/island/parity/capture-set.mjs drives it: the group's first view is a fresh load, every later one
 // is reached by the exact scene jump (`__PONLAI__.establishScene`), so a group's world is built
 // once. --jobs pages run at once (default 2), one group each. The worker takes the GPU lock itself,
 // shared: a load only once its world is generated (capture.mjs, "The slot after the world"), then
@@ -70,11 +70,10 @@ import { copyFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { compareFrames, decodePng } from './kit/capture-browser.mjs';
-import { browserBuild, checkServed, ensureReference, stable } from './kit/reference.mjs';
+import { compareFrames, decodePng } from '../kit/capture-browser.mjs';
+import { browserBuild, checkServed, ensureReference, stable } from '../kit/reference.mjs';
+import { ROOT } from '../kit/root.mjs';
 
-const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const args = process.argv.slice( 2 );
 const opt = ( k, d ) => { const i = args.indexOf( '--' + k ); return i >= 0 ? args[ i + 1 ] : d; };
 const list = ( k, d ) => opt( k, d ).split( ',' ).map( ( v ) => v.trim() ).filter( Boolean );

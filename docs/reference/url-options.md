@@ -134,7 +134,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   whose rest averages `tier.taa.gtJitters` jittered frames (64 by default, 32 per frame of a
   motion clip) with a box filter, without the sharpening (the dither kept).
   `loop.step`'s `converge( i )`, where it returns true, holds the scene after frame i's tick and
-  renders it until the rest has converged; `tools/capture-clip.mjs --aa gt [--gt-jitters n]`
+  renders it until the rest has converged; `tools/island/capture-clip.mjs --aa gt [--gt-jitters n]`
   captures it that way, and so does a clip of one frame (`--clip rest`) under `aa=taa|taau` (their
   own rest sequence). After `loop.step`, `loop.start()` resumes the clock with a first delta of at
   most one frame.
@@ -355,7 +355,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   as the code makes it, 0 to 1 forces it to that value; the twilight's are weights on the sun's
   light; the names and what each one forces: `packages/render/sky/DayCycle.ts` DUSK_FORCES, the
   values the code gave them since a script cleared it, on debug pages only: `duskShares`;
-  `tools/dusk-grid.mjs` sets and reads them).
+  `tools/island/dusk-grid.mjs` sets and reads them).
 - `renderLook=neutral` (debug pages only) loads the renderer with its neutral look in place of the
   island's (`packages/render/look/NeutralLook.ts`: gains of 1, no grade, no vignette, no bloom,
   clean air, one exposure key all day, nothing done for the night). The tunables then start from the
@@ -407,8 +407,8 @@ and none of the island's or the game's.
   `grassLod:false`, and `grassMask:true`, which paints the blades flat red for `img.py stats
   --cover` (`packages/island/world/Grass.ts`), or `grassMask:exact`, which draws them unlit in a red
   far above any radiance, so each pixel's cover is exact in the opaque colour, or
-  `grassMask:albedo`, unlit in their own diffuse colour (both for `tools/meadow-light.mjs`); the
-  look taken off comes back by `clearShade:true`, `lowSun:true`, `tone:0.5`, `filmNight:true`;
+  `grassMask:albedo`, unlit in their own diffuse colour (both for `tools/island/meadow-light.mjs`);
+  the look taken off comes back by `clearShade:true`, `lowSun:true`, `tone:0.5`, `filmNight:true`;
   `localTone:false` builds the display chain without its local tone mapping; `streaks:<n>` scales
   the thin cloud layer's amount (0 turns it off) and `streakMask:true` paints its pixels for `img.py
   stats --mask` (`packages/render/sky/SkyTrack.ts`, `SkyDome.ts`). The metered exposure is shifted

@@ -1,7 +1,7 @@
 // The named clips: short stepped sequences for the temporal anti-aliasing work, each a parity view
 // (views.mjs) set in motion. A clip names its base view, whether the scene clock runs or stays
 // paused, its frame count, a camera path and, where it needs them, extra URL options, a render
-// scale schedule and a per-frame hook. tools/capture-clip.mjs loads the view as capture-set.mjs
+// scale schedule and a per-frame hook. tools/island/capture-clip.mjs loads the view as capture-set.mjs
 // does (paused at t=12), runs the view's eval, then steps the clip's frames with
 // `__PONLAI__.loop.step` (main.ts: fixed dt, no wall clock, the frame pacer and the dynamic scale
 // bypassed) and captures crops and full frames as it goes.
@@ -37,9 +37,9 @@
 // reached by name or by `special`. The view decides, so a clip and its view never fall into
 // different groups.
 //
-//   node tools/parity/clips.mjs list [all|normal|special]  -> clip names, one per line
-//   node tools/parity/clips.mjs show <clip>     -> the clip's definition as JSON
-//   node tools/parity/clips.mjs eval <clip>     -> the page js that installs window.__PONLAI_CLIP__
+//   node tools/island/parity/clips.mjs list [all|normal|special]  -> clip names, one per line
+//   node tools/island/parity/clips.mjs show <clip>     -> the clip's definition as JSON
+//   node tools/island/parity/clips.mjs eval <clip>     -> the page js that installs window.__PONLAI_CLIP__
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { VIEWS } from './views.mjs';
@@ -60,7 +60,7 @@ const STRIKE_AT_30 = `if ( i === 30 ) { const f = new s.camera.position.construc
 const WIND_FREEZE = 's.flags.windFreeze = true;';
 
 export const CLIPS = {
-	// a still frame of any view (capture-clip.mjs --view): the rest sets of tools/parity/baseline.mjs
+	// a still frame of any view (capture-clip.mjs --view): the rest sets of tools/island/parity/baseline.mjs
 	'rest': { view: 'island-fair-noon', clock: 'paused', frames: 1, path: [ 'still' ],
 		about: 'one paused frame of the view at its own pose: the image at rest, captured through the clip machinery so its crops and its ground truth are cut alike' },
 	// camera motion over a frozen scene

@@ -9,7 +9,7 @@
         [--no-flip] [--no-gt-gates] [--workers N]
     uv run ... tools/kit/clip-metrics.py --calibrate masks.json [--size 288] DIR [DIR ...] [--overlays DIR]
 
-Each DIR is a tools/capture-clip.mjs output folder (clip.json and <crop>/<i>.png) of the same clip:
+Each DIR is a tools/island/capture-clip.mjs output folder (clip.json and <crop>/<i>.png) of the same clip:
 the mode under test, MSAA (today's image) and the ground truth (`--aa gt`, at the canvas's
 resolution: its crops are the test's size; the interim `--aa gt-hi` is kept for cross-checks).
 A test or MSAA crop larger than the GT's (384 px against gt-hi's 288 px) is area-resampled to
@@ -18,7 +18,7 @@ is Rec. 709 luma of the 8-bit sRGB-encoded values (0-255 levels): differences in
 the eye and the PNGs see.
 
 Frames: metrics against the GT use the frames present on all three sides (the GT may be sampled:
-every 4th frame of a long clip plus dense runs, tools/parity/clips.mjs gtSampling). Metrics of a
+every 4th frame of a long clip plus dense runs, tools/island/parity/clips.mjs gtSampling). Metrics of a
 side's own frames (F, Fhp, Vown, Rec, the glints' sparkle, the stars' twinkle, dMSAA) use every
 frame that side captured (the test and MSAA capture every frame alike). The temporal metrics
 against the GT (TI, V, G, L) pair consecutive frames only, so they read the GT's dense runs: a

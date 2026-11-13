@@ -2,7 +2,7 @@
 // zoom and a pinch move out from the ground under the cursor, and a drag keeps the grabbed ground
 // under it, so that point stays at the cursor's pixel on every frame.
 //
-//   node tools/verify-zoom-anchor.mjs [url] [--runs 24] [--q "extra&query"] [--out file.json] [--timeout 600000]
+//   node tools/island/verify-zoom-anchor.mjs [url] [--runs 24] [--q "extra&query"] [--out file.json] [--timeout 600000]
 //
 // url: the server (default http://127.0.0.1:5190/, the dev server); a production preview needs
 // `debug` in --q for `window.__PONLAI__`. One page (tools/kit/probe.mjs, the GPU lock shared, 1600x900)
@@ -147,7 +147,7 @@ async function pageCheck( cases ) {
 
 }
 
-const probe = fileURLToPath( new URL( './kit/probe.mjs', import.meta.url ) );
+const probe = fileURLToPath( new URL( '../kit/probe.mjs', import.meta.url ) );
 const evalJs = `async () => ( ${ pageCheck.toString() } )( ${ JSON.stringify( cases ) } )`;
 const child = spawn( process.execPath, [ probe, url, '--q', query, '--w', '1600', '--h', '900', '--timeout', options.timeout ?? '600000', '--eval', evalJs ], { stdio: [ 'ignore', 'pipe', 'inherit' ] } );
 let stdout = '';

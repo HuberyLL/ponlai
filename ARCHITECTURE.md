@@ -264,10 +264,10 @@ folder is its layer.
    all state a scene leaves behind (a cache, a history, a size that only grows, a window that
    follows the camera); on a still scene it converges to the same image whatever came before, or it
    can be frozen or turned off in the test mode; and outside the test mode its frames are compared
-   within a tolerance ([tools/parity/README.md](tools/parity/README.md), Temporal tolerance). Its
-   per-frame update reads the scene clock's step, never the wall clock, so a stepped clip repeats
-   (rule 17 names the three cadences that follow the wall clock's step). The test mode is a paused
-   page under MSAA, with every history-dependent effect frozen or off, shot once the page's
+   within a tolerance ([tools/island/parity/README.md](tools/island/parity/README.md), Temporal
+   tolerance). Its per-frame update reads the scene clock's step, never the wall clock, so a stepped
+   clip repeats (rule 17 names the three cadences that follow the wall clock's step). The test mode
+   is a paused page under MSAA, with every history-dependent effect frozen or off, shot once the page's
    `settled` signal holds ([docs/reference/tools.md](docs/reference/tools.md), Test mode). There a
    paused frame is exactly repeatable and equals a fresh load's, and refactors are checked byte for
    byte; under the temporal modes a paused page shows its rest image, compared within the
@@ -278,10 +278,10 @@ folder is its layer.
    a headless run must repeat byte for byte, so a change to the rules shows as a difference in its
    output; and captures of the paused page are compared byte for byte.
    [tools/island/verify-world-chunks.mjs](tools/island/verify-world-chunks.mjs),
-   [tools/verify-growth-swap.mjs](tools/verify-growth-swap.mjs),
-   [tools/verify-scene-jump.mjs](tools/verify-scene-jump.mjs) and the parity captures keep the
-   rule, and the code lint's `ponlai/scene-clock` refuses the wall clock in code that changes the
-   scene.
+   [tools/island/verify-growth-swap.mjs](tools/island/verify-growth-swap.mjs),
+   [tools/island/verify-scene-jump.mjs](tools/island/verify-scene-jump.mjs) and the parity captures
+   keep the rule, and the code lint's `ponlai/scene-clock` refuses the wall clock in code that
+   changes the scene.
 5. **Generic generation.** The island grows one piece at a time
    ([docs/explanation/game-design.md](docs/explanation/game-design.md), How the island grows), so
    everything placed on it derives from the land's footprint, the island's SDF and noise fields
@@ -475,8 +475,8 @@ folder is its layer.
     use: the island asks for idle time through `globalThis.requestIdleCallback` (the growth, the
     islanders' ages) and the render scale reads `devicePixelRatio`. The frame's passes also read a
     global that a tool sets on the page (`__PONLAI_CLIP__`, set by
-    [tools/capture-clip.mjs](tools/capture-clip.mjs)) and snap the exposure's adaptation while it is
-    there: the renderer takes a state of the page by its name.
+    [tools/island/capture-clip.mjs](tools/island/capture-clip.mjs)) and snap the exposure's
+    adaptation while it is there: the renderer takes a state of the page by its name.
 14. **Outside settings are checked once, at one entrance** (rule 3, on the rendering side). The
     address's options are declared once, in one schema
     ([packages/render/Settings.ts](packages/render/Settings.ts)): a name, a type, a range, a
@@ -516,9 +516,9 @@ folder is its layer.
     as a stale shore on a grown page or a history that outlived a jump. An ordinary event bus would
     not do: a swap lands in one frame, never builds a pipeline, and the order of its followers is
     part of the image (rule 4), which a table walked in order keeps.
-    [tools/verify-scene-jump.mjs](tools/verify-scene-jump.mjs) and
-    [tools/verify-growth-swap.mjs](tools/verify-growth-swap.mjs) keep the result (a jumped or grown
-    page draws a fresh load's frame); no check refuses a follower named in the growth.
+    [tools/island/verify-scene-jump.mjs](tools/island/verify-scene-jump.mjs) and
+    [tools/island/verify-growth-swap.mjs](tools/island/verify-growth-swap.mjs) keep the result (a
+    jumped or grown page draws a fresh load's frame); no check refuses a follower named in the growth.
 16. **A material gives a surface's properties; the light is computed in one place; the look is
     passed in.** A material states what the surface is (its albedo, roughness, normal, what light
     passes through it, where it is wet) and names the lighting model that shades it; the model

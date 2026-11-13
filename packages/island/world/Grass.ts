@@ -95,7 +95,7 @@ type Lanes = { element: ( i: U ) => U };
 /** The cells per m^2 over the base of 100: 1.25, times the load-time flag `grassDensity`. With the
  * blades 2 cm wide, edge-on ones widened (THICKEN) and those under 0.6 m folded
  * (LENGTH), the blades covered 0.44 of the lawn in the island camera's view at 1, 0.5 at 1.2 and
- * 0.53 at 1.35, where the lawn's cover is 0.5 to 0.7 (tools/meadow-light.mjs); at 1.25, 0.51 there,
+ * 0.53 at 1.35, where the lawn's cover is 0.5 to 0.7 (tools/island/meadow-light.mjs); at 1.25, 0.51 there,
  * 0.61 from 24 m at 50 degrees (the mean of three headings) and 0.64 from 45 m. The centimetre
  * blades (WIDTH) keep their widths' mean of 1.2 cm by fewer cells: 1.04, as many blades' area as
  * 1.25 of 1 cm. (Measured before the LOD widened its kept blades only twice per level, not four
@@ -285,7 +285,7 @@ const PARTING = {
  * it. A camera above the sward sees them stand as they grow: with the distance along the ground
  * (and a reach of 3 m), every blade under a close look down from 1.3 m lay over away from the
  * camera's foot, its lean on screen a median of 43 degrees where the blades' own is 22
- * (tools/meadow-light.mjs `lean`). (The camera's position among what shapes a blade: Wohllaib
+ * (tools/island/meadow-light.mjs `lean`). (The camera's position among what shapes a blade: Wohllaib
  * 05:09.) */
 const NEAR = { reach: 1, push: 0.6 };
 /** The LOD: from `near` / 2 m along the ground on, each doubling of the distance keeps a quarter of
@@ -1293,7 +1293,7 @@ const translucencyMask = /*@__PURE__*/ tuneUniform( 'grass.translucency.mask', T
  * takes 1.28 times the other's light at 45 degrees of incidence and 1.41 at 60, a soft ramp, 1.3
  * to 1.45 on screen, where 0.45 (24 degrees) took 1.43 and 1.65. It shows close
  * up: from the game's views a blade is narrower than a pixel, and the change moved the sunlit
- * sward's light and lit share there by under 1 % (tools/meadow-light.mjs). Its specular reflectance
+ * sward's light and lit share there by under 1 % (tools/island/meadow-light.mjs). Its specular reflectance
  * (`f0`, the sky's reflection and the key's glint alike) is a leaf's waxy cuticle's, well under the
  * 0.04 of three's default: at 0.04 the sky's reflection gave the sunlit blades close up a linear
  * B/G of 0.27, a blue sheen, where a B/G of 0.16 to 0.26 reads as a leaf; 0.016 took it to 0.2, and 0.01 to
@@ -1310,12 +1310,12 @@ const SURFACE = { round: 0.3, roughness: 0.4, farGloss: 0.75, flatten: 0.6, f0: 
  * ground, so a capture's red pixels are the blades' cover (tools/kit/img.py `stats --cover`).
  * `flags=grassMask:exact` draws them unlit in pure red of MASK_EXACT instead, far above any lit
  * radiance: in the resolved opaque colour a pixel's red over MASK_EXACT is the share of it the blades
- * cover, and a pixel with neither green nor blue is covered whole (tools/meadow-light.mjs).
+ * cover, and a pixel with neither green nor blue is covered whole (tools/island/meadow-light.mjs).
  * `flags=grassMask:albedo` draws them unlit in their own diffuse colour (what the lighting takes as
  * their albedo, the darkening toward the roots and a wet tint included), so the opaque colour holds
  * the albedo of each fully covered pixel. `flags=grassMask:lean` draws them as `exact` does, with each
  * leaf's lean from upright in green (degrees: its chord as drawn, the sway and the push away from a
- * near eye included) and its pose's tilt alone in blue (tools/meadow-light.mjs's `lean` page). */
+ * near eye included) and its pose's tilt alone in blue (tools/island/meadow-light.mjs's `lean` page). */
 const GRASS_MASK = debugFlags.grassMask === true;
 const GRASS_MASK_EXACT = debugFlags.grassMask === 'exact';
 const GRASS_MASK_ALBEDO = debugFlags.grassMask === 'albedo';

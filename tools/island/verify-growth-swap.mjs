@@ -3,7 +3,7 @@
 // MSAA: docs/reference/tools.md, Test mode; the rules in Growth.ts's header), and no swap may build a
 // pipeline.
 //
-//   node tools/verify-growth-swap.mjs <base url> [--steps 6] [--views island,cliffs,meadow]
+//   node tools/island/verify-growth-swap.mjs <base url> [--steps 6] [--views island,cliffs,meadow]
 //     [--q "extra&query"] [--fresh-grow M] [--out dir] [--timeout 240000]
 //
 // Two pages, one after the other, in one capture browser (tools/kit/capture-browser.mjs, a warm profile
@@ -44,7 +44,7 @@
 // difference shows in both pairs, the frame noise in one at most (the 12-step check saw 1 and 2
 // pixels change between the shots of two views of G, and G's first shots equal F's).
 //
-// Views: parity view names (tools/parity/views.mjs; their query joins the common one), with the
+// Views: parity view names (tools/island/parity/views.mjs; their query joins the common one), with the
 // aliases island = island-fair-noon, cliffs = water-skim-cliffs, meadow = meadow-close. Views
 // whose load-time options differ cannot share a page (establishScene refuses them).
 //
@@ -85,15 +85,14 @@
 // (`G-<view>.png`, `G-<view>-b.png`, `F-...`), and a summary on stdout; progress lines with the
 // time of day as the run goes, for `node tools/kit/job.mjs wait`. The rain maps and ground grids are
 // not kept (megabytes per page); their comparison is in the report.
-import './kit/qos.mjs'; // first: the PNG decodes and the map comparisons run here
+import '../kit/qos.mjs'; // first: the PNG decodes and the map comparisons run here
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { launchCapture, waitForStable, pngShooter, stopLoop, startLoop, decodePng, compareFrames, samePixels } from './kit/capture-browser.mjs';
-import { leaseGpuLock, releaseGpuLock } from './kit/gpu-lock.mjs';
+import { launchCapture, waitForStable, pngShooter, stopLoop, startLoop, decodePng, compareFrames, samePixels } from '../kit/capture-browser.mjs';
+import { leaseGpuLock, releaseGpuLock } from '../kit/gpu-lock.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
+import { ROOT } from '../kit/root.mjs';
 
-const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const LABEL = 'verify-growth-swap';
 const MEMORY_TOLERANCE = 2;
 const ALIASES = { island: 'island-fair-noon', cliffs: 'water-skim-cliffs', meadow: 'meadow-close' };
@@ -106,7 +105,7 @@ const GROUND_CELL = 0.5;
 
 const usage = () => {
 
-	console.error( 'usage: node tools/verify-growth-swap.mjs <base url> [--steps 6] [--views island,cliffs,meadow] [--q "extra&query"] [--fresh-grow M] [--out dir] [--timeout 240000]' );
+	console.error( 'usage: node tools/island/verify-growth-swap.mjs <base url> [--steps 6] [--views island,cliffs,meadow] [--q "extra&query"] [--fresh-grow M] [--out dir] [--timeout 240000]' );
 	process.exit( 2 );
 
 };
@@ -133,7 +132,7 @@ const freshGrow = Number( options[ 'fresh-grow' ] ?? steps );
 const timeout = Number( options.timeout ?? 240000 );
 if ( ! Number.isInteger( steps ) || steps < 1 || ! Number.isInteger( freshGrow ) || freshGrow < 0 || ! ( timeout > 0 ) ) usage();
 const views = ( options.views ?? 'island,cliffs,meadow' ).split( ',' ).filter( Boolean ).map( ( v ) => ALIASES[ v ] ?? v );
-for ( const v of views ) if ( ! VIEWS[ v ] ) { console.error( `unknown view ${ v } (tools/parity/views.mjs names, or island, cliffs, meadow)` ); usage(); }
+for ( const v of views ) if ( ! VIEWS[ v ] ) { console.error( `unknown view ${ v } (tools/island/parity/views.mjs names, or island, cliffs, meadow)` ); usage(); }
 if ( views.length === 0 ) usage();
 const out = path.resolve( options.out ?? path.join( ROOT, 'artifacts/captures/growth-swap', `${ new Date().toISOString().slice( 0, 19 ).replace( /[:T]/g, '-' ) }-${ process.pid }` ) );
 mkdirSync( out, { recursive: true } );

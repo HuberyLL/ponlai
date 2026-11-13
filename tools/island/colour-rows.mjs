@@ -2,12 +2,12 @@
 // of light, over a set of views. It answers "what colour is the sunlit rock, the shaded grass, the
 // sky in this view, before and after a change", where a hand-placed box mixes sun and shade.
 //
-//   node tools/colour-rows.mjs shoot <url> <dir> --views-file f.json [--pages normal,light,ambient,classes]
+//   node tools/island/colour-rows.mjs shoot <url> <dir> --views-file f.json [--pages normal,light,ambient,classes]
 //       [--size 2560x1440@1] [--q "extra&query"] [--warm] [--jobs 1] [--scene]
-//   node tools/colour-rows.mjs rows <dir> [--sort <dir> | --own [--sky-mask-deg N]] [--boxes f.json] [--views a,b]
+//   node tools/island/colour-rows.mjs rows <dir> [--sort <dir> | --own [--sky-mask-deg N]] [--boxes f.json] [--views a,b]
 //       [--sky-bands 0,5,15,30] [--out f.json] [--json]
 //
-// shoot takes the frames: one tools/parity/capture-set.mjs run per page below, on one warm page
+// shoot takes the frames: one tools/island/parity/capture-set.mjs run per page below, on one warm page
 // each, under the shared GPU lock, into `<dir>/<page>/`. The views file is capture-set's (a view's
 // `eval` sets its variant up). Each view ends with this tool's read of the page (pageRead).
 // A page of a set takes one page per view, since an --eval-ready runs on every view and capture-set
@@ -94,14 +94,14 @@
 // whatever the view's eval left in `__PONLAI__.colourNote` (a script reads tune.set's report that way).
 //
 // Output: `<dir>/rows.json` (or --out) and a table on stdout, or the JSON with --json.
-import './kit/qos.mjs'; // first: the PNG decodes run with the application policy
+import '../kit/qos.mjs'; // first: the PNG decodes run with the application policy
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { decodePng } from './kit/capture-browser.mjs';
+import { decodePng } from '../kit/capture-browser.mjs';
+import { ROOT } from '../kit/root.mjs';
 
-const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
+const REPO = ROOT;
 const NX = 256, NY = 144, CELL = 3;
 const MIN_CELLS = 8;
 // the least cells a --sky-bands row is read over
@@ -210,7 +210,7 @@ async function shoot( list ) {
 		const q = [ PAGES[ page ], options.q ].filter( Boolean ).join( '&' );
 		console.log( `colour-rows: page ${ page }` );
 		const status = await runChild( 'tools/kit/gpu-lock.mjs', [ 'run', '--shared', '--',
-			process.execPath, 'tools/parity/capture-set.mjs', url, path.join( dir, page ), '--size', options.size ?? '2560x1440@1', '--jobs', options.jobs ?? '1',
+			process.execPath, 'tools/island/parity/capture-set.mjs', url, path.join( dir, page ), '--size', options.size ?? '2560x1440@1', '--jobs', options.jobs ?? '1',
 			'--views-file', viewsFile, ...( q ? [ '--q', q ] : [] ), '--', ...( options.warm ? [ '--ready-reads' ] : [] ), '--eval-ready', pageRead( options.scene === true ) ] );
 		if ( status !== 0 ) {
 

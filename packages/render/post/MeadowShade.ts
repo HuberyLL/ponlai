@@ -197,7 +197,7 @@ const GROUND_FADE = [ 10, 20 ] as const;
  * casts the leaf's own shape. Measured with an exponential falloff of the length run behind the
  * blades in place of the band: in the close views the darkest tenth of the sunlit lawn went from
  * half its median to a third, the soil's p90 over p10 from 3.5 to 7, and the sunlit soil came to
- * the sunlit blades' value (tools/meadow-light.mjs `spread`, `soil`). The fine lookups cost on the
+ * the sunlit blades' value (tools/island/meadow-light.mjs `spread`, `soil`). The fine lookups cost on the
  * turf within GROUND_FADE only: little of a game view's. */
 const GROUND: MarchTerms = { steps: 64, reach: 0.6, thick: 0.06 };
 

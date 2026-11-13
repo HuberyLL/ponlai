@@ -35,11 +35,11 @@ export const ISLAND_USER_DATA = {
 		means: 'the meadow group\'s current plan of roots',
 	},
 	edgeRoots: {
-		on: 'object', sets: 'world/Grass.ts', reads: 'tools/parity/views.mjs',
+		on: 'object', sets: 'world/Grass.ts', reads: 'tools/island/parity/views.mjs',
 		means: 'the meadow\'s roots at its edges, for the views that look at them',
 	},
 	flowerHeads: {
-		on: 'object', sets: 'world/Grass.ts', reads: 'tools/parity/views.mjs',
+		on: 'object', sets: 'world/Grass.ts', reads: 'tools/island/parity/views.mjs',
 		means: 'the meadow\'s flower heads (none), for the views that look for them',
 	},
 	update: {

@@ -20,7 +20,8 @@
 //   would let a bundle evaluate the shared chunks main.ts imports first, and every module in them
 //   that reads a setting as it loads would take the default.)
 // - No address the tools put on a page draws a `[settings]` warning (settingProblems): the query of
-//   every view in tools/parity/views.mjs, and every query written as a literal in tools/**/*.mjs (a
+//   every view in the views' table (tools/project.mjs `tables.views`,
+//   tools/island/parity/views.mjs), and every query written as a literal in tools/**/*.mjs (a
 //   string with `&`, `=` or a leading `?` whose parts are all `name` or `name=value` and one of
 //   them a declared option; a part built from `${ ... }` is left out, a literal with a placeholder
 //   (`<` or `|`) is usage text, a lone `name=` is a prefix to match, and a literal passed to
@@ -37,6 +38,7 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { ROOT } from '../kit/root.mjs';
+import PROJECT from '../project.mjs';
 
 const DOC = path.join( ROOT, 'docs', 'reference', 'url-options.md' );
 const TABLE_START = '<!-- every-option:start (written by tools/repo/verify-settings.mjs --write) -->';
@@ -174,11 +176,11 @@ if ( /^import[^;]*'\.\/main\.ts'/m.test( boot ) ) failures.push( 'app/Boot.ts: i
 
 // the tools' addresses
 let queries = 0;
-const { VIEWS } = await import( path.join( ROOT, 'tools', 'parity', 'views.mjs' ) );
+const { VIEWS } = await import( path.join( ROOT, PROJECT.tables.views ) );
 for ( const [ name, view ] of Object.entries( VIEWS ) ) {
 
 	queries ++;
-	for ( const p of settingProblems( parseSettings( view.q ?? '' ) ) ) failures.push( `tools/parity/views.mjs ${ name }: ${ p }` );
+	for ( const p of settingProblems( parseSettings( view.q ?? '' ) ) ) failures.push( `${ PROJECT.tables.views } ${ name }: ${ p }` );
 
 }
 const PART = /^([A-Za-z][\w.]*)(?:=([^&\s'"`]*))?$/;

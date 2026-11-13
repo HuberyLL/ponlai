@@ -249,8 +249,8 @@ than the later ones: a throwaway receiver builds them before the loop (`three/Th
 `primeSharedNodes`), so a receiver's code, and a kind's pipeline count, does not depend on which
 draws first.
 
-Check: the byte comparison of the parity captures (`tools/parity/capture-set.mjs`) and the scene
-jump (`tools/verify-scene-jump.mjs`).
+Check: the byte comparison of the parity captures (`tools/island/parity/capture-set.mjs`) and the scene
+jump (`tools/island/verify-scene-jump.mjs`).
 
 ### Draws skipped while compiling
 
@@ -286,7 +286,7 @@ Check: `tools/verify-storage-realloc.mjs`.
 capacity, which the shader names, so a fixed capacity keeps one shader
 (`vegetation/Instances.ts`).
 
-Check: `tools/verify-growth-swap.mjs` (a swap builds no pipeline).
+Check: `tools/island/verify-growth-swap.mjs` (a swap builds no pipeline).
 
 ### Index buffers
 
@@ -294,7 +294,7 @@ Check: `tools/verify-growth-swap.mjs` (a swap builds no pipeline).
 copy is uploaded from then on: an index rewritten in place must be a `Uint32Array`
 (`util/Upload.ts`, the merged kinds' indices).
 
-Check: `tools/verify-growth-swap.mjs`.
+Check: `tools/island/verify-growth-swap.mjs`.
 
 ### Attribute usage
 

@@ -40,7 +40,7 @@ Check a fingerprint against these first.
 
 - `--verify` tells a page that does not repeat itself from fresh loads that differ: it shoots each
   view on one page, on a second page in reverse order and on a fresh page.
-- The island page: `tools/parity/capture-set.mjs` with `--repeat` (two pages, A/A) or `--check`
+- The island page: `tools/island/parity/capture-set.mjs` with `--repeat` (two pages, A/A) or `--check`
   against a stored reference (its header).
 - Readings beside each shot: the scenes' `readings.tsv` and each shot's `.json` (exposure, light);
   a capture set's `.json` holds `preExposure.ev`.
@@ -76,12 +76,12 @@ node tools/kit/job.mjs start --wait -- node tools/kit/gpu-lock.mjs run --shared 
   history-dependent effect).
 - A new fact about three.js or WebGPU goes into `docs/reference/three-behaviour.md`, and the
   module's rule into its header.
-- A fix that changes the converged image needs new stored references (`tools/parity/README.md`):
+- A fix that changes the converged image needs new stored references (`tools/island/parity/README.md`):
   the project owner decides before they are written.
 
 ## Prove
 
 - The loop of Reproduce, with N chosen as the skill says.
 - Then the checks the change touches (`docs/how-to/check-a-change.md`): the test scenes with
-  `--verify --check`, the parity set with `--check`, `tools/verify-scene-jump.mjs`,
-  `tools/verify-growth-swap.mjs`, and `npm run check`.
+  `--verify --check`, the parity set with `--check`, `tools/island/verify-scene-jump.mjs`,
+  `tools/island/verify-growth-swap.mjs`, and `npm run check`.

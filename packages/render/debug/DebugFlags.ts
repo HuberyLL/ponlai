@@ -75,7 +75,7 @@
 // `grassMask = true` (at load) paints the blades flat red, for the cover of `img.py stats --cover`;
 // `grassMask = 'exact'` draws them unlit in a red far above the scene's radiance, each pixel's
 // cover exact in the opaque colour, `grassMask = 'albedo'` unlit in their diffuse colour and
-// `grassMask = 'lean'` as 'exact' with each leaf's lean in green and blue (tools/meadow-light.mjs).
+// `grassMask = 'lean'` as 'exact' with each leaf's lean in green and blue (tools/island/meadow-light.mjs).
 // `bareGround = true` (at load) hides the blades, keeps their cast out of the sun's map and lights
 // the turf as bare ground (world/Grass.ts BARE_GROUND): with `lightOnly`, the light bare ground
 // takes beside the sward, at the same pixels as a frame with the blades.

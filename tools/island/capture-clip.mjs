@@ -1,9 +1,9 @@
-// Stepped clips for the temporal anti-aliasing work: a parity view (tools/parity/views.mjs) set in
-// motion by a named clip (tools/parity/clips.mjs), rendered frame by frame with the page's
+// Stepped clips for the temporal anti-aliasing work: a parity view (tools/island/parity/views.mjs) set in
+// motion by a named clip (tools/island/parity/clips.mjs), rendered frame by frame with the page's
 // deterministic stepper (`__PONLAI__.loop.step`: fixed dt, no wall clock, the frame pacer and the
 // dynamic scale bypassed), with crops of named subjects captured as they move.
 //
-//   node tools/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|fsr3|gt|gt-hi]
+//   node tools/island/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|fsr3|gt|gt-hi]
 //       [--view v] [--frames n] [--every k] [--dense a-b,c-d] [--crops a,b] [--full 0,30] [--q "extra&query"] [--setup js]
 //       [--quality high] [--size 1728x1117@2] [--dt s] [--gt-jitters n] [--out dir] [--timeout ms] [--runs file.csv]
 //       [--task name] [--anchors-from clip.json] [--stable-* (capture.mjs)] [--ready-frames n] [--wait ms] [--settle ms] [--verbose]
@@ -105,18 +105,18 @@
 //
 // Stepped clips are deterministic (no wall clock), so the tool takes the GPU lock shared.
 // Production builds need `?debug` (added here) and the islanders' assets linked into the build
-// (tools/parity/README.md).
+// (tools/island/parity/README.md).
 import { mkdir, readFile, writeFile, appendFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { fileURLToPath } from 'node:url';
-import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from './kit/gpu-lock.mjs';
+import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from '../kit/gpu-lock.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { CLIPS, clipEval } from './parity/clips.mjs';
-import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng, compareFrames, pngShooter } from './kit/capture-browser.mjs';
+import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng, compareFrames, pngShooter } from '../kit/capture-browser.mjs';
+import { ROOT } from '../kit/root.mjs';
 
-const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
+const REPO = ROOT;
 const args = process.argv.slice( 2 );
 const FLAGS = new Set( [ 'verbose', 'stable-trace', 'test-fault' ] );
 const options = {}, positional = [];

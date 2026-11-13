@@ -1,4 +1,4 @@
-// The browser and the readiness that tools/kit/capture.mjs and tools/capture-clip.mjs share.
+// The browser and the readiness that tools/kit/capture.mjs and tools/island/capture-clip.mjs share.
 //
 // Profile slots. Each capture runs in a persistent browser profile instead of a fresh one, so the
 // page's world cache (IndexedDB, packages/island/world/WorldCache.ts) and the browser's GPU shader cache hit

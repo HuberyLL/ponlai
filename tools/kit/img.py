@@ -143,7 +143,7 @@ that side of the point (up: the sky over a sun near the horizon, without the sea
 
 Regions: --box takes pixels of the image as stored (a capture at dpr 2 has twice the CSS size).
 --anchor reads the named crop anchors of the capture's JSON (<name>.json next to <name>.png,
-`crops`: tools/parity/views.mjs; for diff, B's JSON, else A's), `all` every anchor in it;
+`crops`: tools/island/parity/views.mjs; for diff, B's JSON, else A's), `all` every anchor in it;
 --anchors FILE reads them from a capture JSON or a { name: {x, y, w, h} } file instead. An anchor
 the capture reports missing (off screen) is skipped with a note.
 """

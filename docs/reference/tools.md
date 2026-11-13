@@ -44,7 +44,7 @@ details. Each tool's own file says the rest.
   at a size other than their class's). `__PONLAI__.establishScene( query )` jumps to a whole scene
   in place, as a fresh load of `?<query>` would draw it (weather, day clock, moon, scene clock,
   camera; the leftovers of the scenes before cleared; load-time options must match the page's): one
-  page can capture a whole set (contract in `app/Scene.ts`, check in `tools/verify-scene-jump.mjs`;
+  page can capture a whole set (contract in `app/Scene.ts`, check in `tools/island/verify-scene-jump.mjs`;
   `__PONLAI__.sceneJump` = 1 marks the exact jump for the capture tools).
 - `__THREE_GAME_DIAGNOSTICS__.settled` (updated every frame, every anti-aliasing mode): true once
   the paused page will draw the same frame from now on, so a capture can wait for it instead of a
@@ -168,7 +168,7 @@ within a tolerance; the test mode keeps the byte-for-byte checks valid.
   switch (next): not made, so `settled` never waits for them.
 - The test mode's one switch (`packages/render/debug/TestMode.ts`), read once at load, is on with
   `paused`, which every capture, parity and verify tool loads with, unless `testMode=0` leaves it
-  out, as `tools/capture-clip.mjs` does so the clips show what moves. Every history-dependent
+  out, as `tools/island/capture-clip.mjs` does so the clips show what moves. Every history-dependent
   rendering effect that does not settle on its own on a still scene reads it, and is frozen or off
   under it.
 - The test mode's paused pages keep at most two rendered frames queued on the GPU
@@ -255,12 +255,12 @@ compare-captures.py's (shared helpers in `tools/kit/pixels.py`). `tools/kit/comp
 measures two overview captures (`uv run --with numpy --with pillow`).
 
 ```bash
-node tools/colour-rows.mjs shoot <url> <dir> --views-file f.json \
+node tools/island/colour-rows.mjs shoot <url> <dir> --views-file f.json \
   [--pages normal,light,ambient,classes] [--warm] [--jobs N] [--scene]
 ```
 
 takes a views file's frames on one page per flag set, under the shared GPU lock, and `node
-tools/colour-rows.mjs rows <dir> [--sort <dir> | --own [--sky-mask-deg N]] [--boxes f.json] [--views
+tools/island/colour-rows.mjs rows <dir> [--sort <dir> | --own [--sky-mask-deg N]] [--boxes f.json] [--views
 a,b] [--sky-bands 0,5,15,30] [--out f.json] [--json]`,
 plain node, reads them: final-pixel Oklab L, C and h per view, per kind of surface and per kind of
 light (sun and shade by the cell's direct share, and `land sun` and `land shade` over every kind),
@@ -287,7 +287,7 @@ for views that share no camera, such as a camera turned at each frame; it needs 
 page, and `--sky-mask-deg N` leaves the cells within N degrees of the sun or the moon out of the sky
 (by angle, from the page's read of the lights and the camera).
 
-`node tools/kit/job.mjs start -- node tools/day-sweep.mjs <url> <outDir> [--scope routine|full]
+`node tools/kit/job.mjs start -- node tools/island/day-sweep.mjs <url> <outDir> [--scope routine|full]
 [--views name,...] [--times ...] [--weathers ...] [--compare <dir>] [--transitions]
 [--keep-frames]` sweeps the island view through the day under the kept weathers: a frame every
 hour, every half hour from 08:00 to 16:00 and every 10 minutes round sunrise and sunset, in three
@@ -320,7 +320,7 @@ sheet` and `thumb` and `tools/island/day-sweep-plot.py` combined, not a renderer
 and key views look 50 degrees down and hold no sky. Its header has the cameras, the times, the
 regions and the thresholds' source.
 
-`node tools/verify-growth-swap.mjs <base url> [--steps 6] [--views island,cliffs,meadow] [--q
+`node tools/island/verify-growth-swap.mjs <base url> [--steps 6] [--views island,cliffs,meadow] [--q
 "query"] [--fresh-grow M] [--out dir]` checks the growth in place: a page loaded at `grow=0` and
 grown N times by `__PONLAI__.growth.grow()` against a fresh load of `grow=N`, both paused and
 headless in one warm capture browser. It compares the views (parity view names, or the aliases
@@ -336,7 +336,7 @@ and the shots to `artifacts/captures/growth-swap/<time>-<pid>/` (or `--out`); ex
 `--fresh-grow M` loads the fresh page at another step, only to see the check fail. Its header has
 the rules.
 
-`node tools/capture-growth.mjs --base url [--cand url] [--seeds 1,2] [--grow 0,4,12]
+`node tools/island/capture-growth.mjs --base url [--cand url] [--seeds 1,2] [--grow 0,4,12]
 [--views v1,v3] [--label x] [--q "query"] [--jobs 2] [--base-ref sha] [--recheck 1]` sets a base
 and a candidate page side by side in six views (v1 overview, also in golden hour; v2 top-down; v3
 cliff, v4 meadow and v5 rim close; v6 sea floor), framed on the land in the page
@@ -358,7 +358,7 @@ runs; the base URL must serve that commit. A pair with a tiny difference (at mos
 by default) is shot again on both sides and reported as identical, repeatable or not repeatable
 (`--recheck 0` turns it off). The header of the tool has the details.
 
-`tools/parity/` captures a fixed set of paused views with named 1:1 crop anchors
+`tools/island/parity/` captures a fixed set of paused views with named 1:1 crop anchors
 (`capture-set.mjs`; views.mjs frames and anchors them on the camera's ground, `controls.ground`:
 the island's box and height grid made from the chunks in the workers, so the drawn meshes'
 vertices are never read) and diffs it against a reference set, pixel for pixel or within the
@@ -379,7 +379,7 @@ its own fresh load draws. Views need not be views.mjs's: `--view "name:query[::j
 `--views-file f.json` and `--sweep "key=a,b,c"` (each view per value, e.g. `--sweep
 weather=fair,rain --sweep hour=7,12,17`) capture ad-hoc views through the same pages, jump and
 readiness (and `--quick`, `--reference`, `--check`); use them instead of a script that loops
-capture.mjs over views, which loads a cold page per view (`tools/parity/adhoc.mjs`, the README's
+capture.mjs over views, which loads a cold page per view (`tools/island/parity/adhoc.mjs`, the README's
 capture-set). Builds without the jump's marker (`__PONLAI__.sceneJump`, older
 commits) get a page per view, as `--page-per-view` forces; a failed view or a lost page is retried
 and the rest of the set goes on in a fresh page. A page that ends before it asks for a view (the
@@ -387,12 +387,12 @@ browser did not start) is tried again the same way; when more than `--retries` s
 fail, the run ends with exit 1, naming the page's exit code and the last lines of its stderr.
 `--repeat` takes the repeats on other pages, in
 reverse order.
-`tools/capture-clip.mjs` captures a named clip (`tools/parity/clips.mjs`: a parity view set in
-motion, its camera path a function of the frame index) frame by frame with the page's stepper, as
-crops that follow their subjects, and `tools/kit/clip-metrics.py` measures a clip against MSAA and a
-ground truth (`--aa gt-hi`: MSAA at twice the former nominal ratio 1.5, downsampled) with gates from
-a thresholds file (`uv run --with numpy --with pillow`, clip-metrics.py also `--with scipy`; both
-described in the README). clip-metrics.py measures the
+`tools/island/capture-clip.mjs` captures a named clip (`tools/island/parity/clips.mjs`: a parity
+view set in motion, its camera path a function of the frame index) frame by frame with the page's
+stepper, as crops that follow their subjects, and `tools/kit/clip-metrics.py` measures a clip
+against MSAA and a ground truth (`--aa gt-hi`: MSAA at twice the former nominal ratio 1.5,
+downsampled) with gates from a thresholds file (`uv run --with numpy --with pillow`, clip-metrics.py
+also `--with scipy`; both described in the README). clip-metrics.py measures the
 frames in worker processes: `--workers N` or `CLIP_METRICS_WORKERS`, by default a quarter of the
 CPUs within 1 to 4; the output does not depend on the count.
 Without `--gt` it takes each side's own metrics only; `--crops boxes.json` cuts crops from whole
@@ -401,7 +401,7 @@ Fhp near the shadow map redraws the clip's notes mark and between them (the shad
 use it instead of a script of one's own).
 References are stored per commit and shared (`tools/kit/reference.mjs`): `capture-set.mjs
 --reference <root>/<sha>/<set>` and the baseline's and ground truth's entries of
-`tools/parity/baseline.mjs` reuse a stored reference whose manifest (`complete.json`, written
+`tools/island/parity/baseline.mjs` reuse a stored reference whose manifest (`complete.json`, written
 last) matches the capture tools' version, the browser build and the options, wait for another live
 process that is capturing it (freeing the GPU slot of a `run --shared` wrapper meanwhile), and
 otherwise capture it and say why (missing, tools or browser
@@ -418,12 +418,12 @@ and measures the crops against the store's MSAA and ground-truth rest entries of
 (clip-metrics.py), a short table per variant. It is not a gate; details in the README's Quick mode.
 
 `baseline.mjs ... --carry-from A` takes the baseline's and the ground truth's entries over from an
-earlier commit A instead of capturing them, when `tools/parity/carry.mjs` finds nothing between the
-two that could change them (same build inputs; otherwise the diff against two watch lists, the
-paused set S1 matching A's (and A's stored rest frames matching A's own S1), the first 16 frames of
-two clips and one rest ground truth captured
+earlier commit A instead of capturing them, when `tools/island/parity/carry.mjs` finds nothing
+between the two that could change them (same build inputs; otherwise the diff against two watch
+lists, the paused set S1 matching A's (and A's stored rest frames matching A's own S1), the first 16
+frames of two clips and one rest ground truth captured
 again and compared); an entry that may not carry is captured and the log says why.
-`node tools/parity/carry.mjs check --from A --to B [--url U] [--all]` prints the verdict alone.
+`node tools/island/parity/carry.mjs check --from A --to B [--url U] [--all]` prints the verdict alone.
 Rules and proof: the README's Carry-over.
 
 `uv run tools/kit/gates.py <root>/<sha>/<label>/metrics.json --thresholds T [--policy P]
@@ -546,7 +546,7 @@ compare two freshly loaded pages (a grown page against a fresh `grow=1` page) in
 
 Steps, scope, the value's serialisation and the exit code are in the file's header.
 
-`node tools/dusk-grid.mjs [url] [--weathers clear,fair] [--sides evening,morning]
+`node tools/island/dusk-grid.mjs [url] [--weathers clear,fair] [--sides evening,morning]
 [--from 2 --to -8 --step 0.5] [--midnight] [--split [--fit]] [--night-split] [--twilight] [--haze]
 [--compare dir]` reads the scene's light in scene units at a grid of sun elevations through the dusk
 and the dawn (the sky's and the deck's irradiance, the sky's metering, the baked sky's ring 4
@@ -574,7 +574,7 @@ runs, the lamps-off exposure's lift over the other run and, at midnight, its dis
 `NIGHT_METER_LIFT`), and exits 1 on a broken rule. A point takes about a
 second, a few tens with `--split`. Its options, reads and rules are in the file's header.
 
-`node tools/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]...
+`node tools/island/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]...
 [--views-file f.json [--views a,b]] [--weather clear] [--expect lo,hi]` measures the meadow's
 light on its leaf pixels in linear radiance: the sunlit blades' bright and dark clusters against the
 bare ground in the same sun, their mean, the share that is lit, the shaded blades against shaded
@@ -806,7 +806,7 @@ anything else, waits with `job.mjs` rather than a loop of their own. Its header 
 
 ```text
 node tools/kit/job.mjs start --wait -- npm run build                        (inline when it is short)
-node tools/kit/job.mjs start --log <log> -- node tools/parity/capture-set.mjs ...
+node tools/kit/job.mjs start --log <log> -- node tools/island/parity/capture-set.mjs ...
 node tools/kit/job.mjs wait <log>          (repeat until it exits 0 or with the job's code)
 node tools/kit/job.mjs stop <log>          (before handing back with it still running)
 ```
@@ -1143,11 +1143,11 @@ what these do not give (automation, A/B statistics, pass names).
 
 What colour a surface shows on screen, by kind and by light (sunlit rock, shaded grass, the sky,
 the darkest land), the same cells before and after a change, or a box with its dark and lit halves:
-`tools/colour-rows.mjs` (Captures), not a hand-placed box over mixed light.
+`tools/island/colour-rows.mjs` (Captures), not a hand-placed box over mixed light.
 
 How the island's light, colour and exposure run through the day under each kept weather, and
 whether anything jumps at one hour (a system tuned by the sun's elevation and the weather): a
-change to such a system is checked with `tools/day-sweep.mjs` (Captures), before and after with
+change to such a system is checked with `tools/island/day-sweep.mjs` (Captures), before and after with
 `--compare`, not by the few frames a tuning session looks at.
 
 How much structure a cloud deck shows on screen (its contrast, masses, the edges' hardness, the
@@ -1156,11 +1156,11 @@ views' captures, not a script of one's own.
 
 Whether a grown page draws what a fresh load of its land draws (views, chunk hashes, the rain
 map, the camera's ground, the ambient probes, pipelines and memory across swaps):
-`tools/verify-growth-swap.mjs`, not a probe eval of one's own.
+`tools/island/verify-growth-swap.mjs`, not a probe eval of one's own.
 
 Whether the land, the sky, the sea or the air brightens anywhere as the sun goes down or comes up,
 by how much, and which of the dusk's shares does it, over a grid of sun elevations each reached by
-the scene jump: `tools/dusk-grid.mjs` (Probes), not a probe that walks the clock with `setHour`.
+the scene jump: `tools/island/dusk-grid.mjs` (Probes), not a probe that walks the clock with `setHour`.
 
 How much light reaches a surface, its colour, and how much of it is the sun's, apart from the
 albedos and the display chain: `flags=lightOnly` (and `ambientOnly`) with `__PONLAI__.radiance`
@@ -1169,7 +1169,7 @@ which have been through exposure, the tone curve, the grade and bloom.
 
 How bright the meadow's sunlit blades are against bare ground, how many of them are lit, how dark
 the shaded ones are, how much of the lawn they cover and what colour the lit lawn shows:
-`tools/meadow-light.mjs` (Probes), not a radiance box of one's own over a mixed patch.
+`tools/island/meadow-light.mjs` (Probes), not a radiance box of one's own over a mixed patch.
 
 Which assets a commit runs with, whether `public/` matches them, and how to publish a change to
 them: `tools/repo/assets.mjs` (Assets), never a file committed to git.
@@ -1264,10 +1264,10 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   `verify-optical-interface`, `verify-frame-graph-gpu`, `verify-refracted-sun` and
   `verify-solar-shadows` import the source modules and need the dev server: on any other server they
   exit 1 at once (`tools/kit/dev-server.mjs`).
-  `tools/verify-scene.mjs` checks a production preview. `tools/verify-scene-jump.mjs` captures the
-  parity views reached by scene jumps in one page and as fresh loads, for `diff-set.py`, each shot
-  ready as capture.mjs's paused shots are (the page's settled signal, then the stability rule:
-  `tools/parity/README.md`, One page, many views);
+  `tools/island/verify-scene.mjs` checks a production preview. `tools/island/verify-scene-jump.mjs`
+  captures the parity views reached by scene jumps in one page and as fresh loads, for
+  `diff-set.py`, each shot ready as capture.mjs's paused shots are (the page's settled signal, then
+  the stability rule: `tools/island/parity/README.md`, One page, many views);
   `--check <root>/<sha>/<set>` runs the whole check (the stored set of fresh loads, a page per
   view, both jump orders at once, the diff) in one command. `--view "name:query[::js]"`
   (repeatable) adds ad-hoc views with capture-set's syntax (`like=<view>` included), so a jump
@@ -1278,7 +1278,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   on as the GUI does), and fails when the sky's irradiance does not come back bit for bit or the
   switch leaves it as it was; `--check ... --retune` also checks that a retuned page draws the
   fresh load.
-- `tools/verify-zoom-anchor.mjs [url] [--runs 24] [--out file.json]` checks the island camera's
+- `tools/island/verify-zoom-anchor.mjs [url] [--runs 24] [--out file.json]` checks the island camera's
   anchors in one probe page (with `cameraInput`): wheel zooms out with the cursor over the sea
   (`--runs` times) and over land, two pinches out, and a drag (the island view zooms out only, from
   its pose's distance); it fails on any zoom anchor that found no ground or a drift
@@ -1503,7 +1503,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   installs the settings before any module that reads them loads (`index.html` loads
   `app/Boot.ts`, which imports `app/PageSettings.ts` before it imports `app/main.ts`
   dynamically), and that no address the tools put on a page draws a `[settings]` warning: the
-  query of every view in `tools/parity/views.mjs` and every query written as a literal in
+  query of every view in `tools/island/parity/views.mjs` and every query written as a literal in
   `tools/**/*.mjs` (its header says which literals count). A usage a tool needs is declared in
   `packages/render/Settings.ts`, not changed in the tool. Run it after adding or changing an option.
 - `tools/check.mjs` (`npm run check [-- --full]`) runs the checks every commit passes, one after

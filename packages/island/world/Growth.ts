@@ -17,7 +17,7 @@ import { SeabedRise } from './SeabedRise.ts';
 // generated in the background, and a Grow (`grow()`, the GUI's Island folder) swaps in only the
 // chunks that changed, in one frame, with every dependent following. No pipeline is built: a swap
 // needing one would be a bug (tools/verify-first-use.mjs and the page's pipeline count). A grown
-// page against a fresh load of its land, pipelines across swaps included: tools/verify-growth-swap.mjs.
+// page against a fresh load of its land, pipelines across swaps included: tools/island/verify-growth-swap.mjs.
 // Anything new that depends on the land's shape joins the swap, the same function of the version as
 // at load (docs/how-to/check-a-change.md, Add something that depends on the land's shape).
 //

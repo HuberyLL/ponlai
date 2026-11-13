@@ -16,7 +16,7 @@ export default Object.freeze( {
 		loading: 'loading',
 		// the world's start (`ready`, `ms`), app/WorldBoot.ts
 		world: '__PONLAI_WORLD__',
-		// the named crop anchors a view's eval defines (tools/parity/views.mjs)
+		// the named crop anchors a view's eval defines (tools/island/parity/views.mjs)
 		crops: '__PONLAI_CROPS__',
 		// the capture's hold on the page's GPU device until the world is generated (tools/kit/capture.mjs)
 		gpuGate: '__PONLAI_GPU_GATE__',
@@ -30,15 +30,15 @@ export default Object.freeze( {
 		// the sources whose change can change a stored reference's pixels, per kind of reference
 		// (tools/kit/reference.mjs, TOOL_FILES)
 		toolFiles: Object.freeze( {
-			set: Object.freeze( [ 'tools/kit/capture.mjs', 'tools/kit/capture-browser.mjs', 'tools/parity/capture-set.mjs', 'tools/parity/views.mjs', 'tools/parity/adhoc.mjs' ] ),
-			clip: Object.freeze( [ 'tools/capture-clip.mjs', 'tools/kit/capture-browser.mjs', 'tools/parity/views.mjs', 'tools/parity/clips.mjs' ] ),
+			set: Object.freeze( [ 'tools/kit/capture.mjs', 'tools/kit/capture-browser.mjs', 'tools/island/parity/capture-set.mjs', 'tools/island/parity/views.mjs', 'tools/island/parity/adhoc.mjs' ] ),
+			clip: Object.freeze( [ 'tools/island/capture-clip.mjs', 'tools/kit/capture-browser.mjs', 'tools/island/parity/views.mjs', 'tools/island/parity/clips.mjs' ] ),
 		} ),
 		// what a production build reads (tools/kit/reference.mjs, BUILD_INPUTS)
 		buildInputs: Object.freeze( [ 'packages', 'app', 'index.html', 'assets.lock.json', 'vite.config.ts', 'package.json', 'package-lock.json', 'tsconfig.json' ] ),
 	} ),
 
 	// the views' and clips' tables, which `node <table> list <group>` lists
-	tables: Object.freeze( { views: 'tools/parity/views.mjs', clips: 'tools/parity/clips.mjs' } ),
+	tables: Object.freeze( { views: 'tools/island/parity/views.mjs', clips: 'tools/island/parity/clips.mjs' } ),
 
 	// the module whose installScript() gives an eval's `pipelines` (tools/kit/page-eval.mjs)
 	pipelines: 'tools/pipeline-trace.mjs',

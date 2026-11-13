@@ -1,14 +1,14 @@
 // Paused parity captures of a fixed set of views (views.mjs), through tools/kit/capture.mjs's worker:
 // one page per set (one per worker with --jobs), the views reached in place by the exact scene jump.
 //
-//   node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|normal|special|a,b,c] [--view "name:query[::js]"]...
+//   node tools/island/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|normal|special|a,b,c] [--view "name:query[::js]"]...
 //       [--views-file f.json] [--sweep "key=a,b,c"]... [--repeat]
 //       [--quality high] [--aa mode] [--q "extra&query"] [--jobs n] [--retries 1] [--size 1728x1117@2]
 //       [--page-per-view] [--runs file.csv] [--task name] [--procedure name] [--sha sha] [-- capture.mjs options]
-//   node tools/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [same options]
-//   node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set> [--ref-url U]
+//   node tools/island/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [same options]
+//   node tools/island/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set> [--ref-url U]
 //       [--diff "diff-set.py options"] [--recapture-reference] [same options]
-//   node tools/parity/capture-set.mjs <url> <outDir> --quick --views a,b|--view ...|--sweep ... [--crops x,y] [--full]
+//   node tools/island/parity/capture-set.mjs <url> <outDir> --quick --views a,b|--view ...|--sweep ... [--crops x,y] [--full]
 //       [--variant "[label::]js"]... [--store <root>/<sha>] [--ref-url R] [--quality, --aa, --q, --size]
 //
 // Every view is the frame of `<baseUrl>?debug&paused&t=12&quality=<q>[&aa=<mode>][&<extra>]&<view's
@@ -32,7 +32,7 @@
 //   readiness and shot. The jump resets the scene's options and camera, not what an eval changed
 //   besides (GUI settings, Tune, debug flags, a uniform), so that holds only after views whose evals
 //   it covers: none, or exactly a views.mjs view's (camera placement, a weather change, which
-//   tools/verify-scene-jump.mjs checks from other scenes). After a view with an eval of its own
+//   tools/island/verify-scene-jump.mjs checks from other scenes). After a view with an eval of its own
 //   (`--view ...::js`, a views-file `eval`, a `like=` view's js, a sweep over such a view;
 //   adhoc.mjs `jumpClean`) the page ends and the next view loads fresh; an `--eval` or
 //   `--eval-ready` after `--` (run on every view) gives a page per view, except an `--eval-ready` that
@@ -51,7 +51,7 @@
 //   --jobs 1 and 4 decoded to the same pixels); a view that differs only by sparse single-frame
 //   speckle on the vegetation while other browsers render is GPU noise: shoot it again.
 // --reference makes the set a stored reference of a commit (reference.mjs; layout and manifest in
-//   tools/parity/README.md): if the directory's `complete.json` matches (tool version, browser
+//   tools/island/parity/README.md): if the directory's `complete.json` matches (tool version, browser
 //   build, tier, aa, size, extra query, capture.mjs options) and covers the views (and repeats) the
 //   set is reused; if another live process is capturing it this one waits and reuses it (freeing
 //   the GPU slot of a `gpu-lock.mjs run --shared` wrapper meanwhile); else it
@@ -101,22 +101,22 @@
 // view is ready, on the frame shot: a reading of the frame belongs there; either one takes a page
 // per view, see above).
 // Production builds need `?debug` (added here) and the islanders' assets linked into the build's
-// output; see tools/parity/README.md.
+// output; see tools/island/parity/README.md.
 // The set and its capture.mjs workers run with the application scheduling policy on macOS
 // (tools/kit/qos.mjs); a worker is started with it, since re-executing would close its IPC channel.
-import { appPolicy } from '../kit/qos.mjs'; // first: the set and its workers run with the application policy
+import { appPolicy } from '../../kit/qos.mjs'; // first: the set and its workers run with the application policy
 import { spawn } from 'node:child_process';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { viewEval } from './views.mjs';
 import { selectViews, viewQuery, loadSignature, viewDefs, describeViews, jumpClean } from './adhoc.mjs';
-import { gpuUtilisation } from '../kit/gpu-lock.mjs';
-import { samePixels } from '../kit/capture-browser.mjs';
-import { ensureReference, setKey, resolveRefDir, checkServed } from '../kit/reference.mjs';
+import { gpuUtilisation } from '../../kit/gpu-lock.mjs';
+import { samePixels } from '../../kit/capture-browser.mjs';
+import { ensureReference, setKey, resolveRefDir, checkServed } from '../../kit/reference.mjs';
+import { ROOT } from '../../kit/root.mjs';
 
-const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '../..' );
+const REPO = ROOT;
 // --quick: knob variants on a few views, against the stored references (quick.mjs)
 if ( process.argv.includes( '--quick' ) ) {
 

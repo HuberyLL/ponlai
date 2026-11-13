@@ -5,7 +5,7 @@
 // the sun goes down, by how much, and which of the night's terms does it", where a few views at
 // fixed hours miss a step in between.
 //
-//   node tools/dusk-grid.mjs [base] [--weathers clear,fair] [--sides evening,morning]
+//   node tools/island/dusk-grid.mjs [base] [--weathers clear,fair] [--sides evening,morning]
 //       [--from 2 --to -8 --step 0.5] [--midnight] [--at e1,e2,...] [--hours h1,h2,...]
 //       [--fine e1:e2:step]... [--views island[,<parity view>...]] [--split [name,...] [--fit]] [--night-split] [--twilight]
 //       [--compare dir [--compare-tolerance 1e-4]] [--judge 0.02] [--judge-range 2:-8] [--judge-weathers ...] [--overall-weathers ...]
@@ -35,7 +35,7 @@
 //     side's first point loaded: the path check, against a jump run through --compare.
 //   - At each point the figures are hidden, every `sky.dusk.force.*` tunable is set back to -1 (a
 //     scene jump keeps tunables), and the views' camera is placed: `island` is the orbit's island
-//     view, any other name a parity view's placement (tools/parity/views.mjs `eval`; its query's
+//     view, any other name a parity view's placement (tools/island/parity/views.mjs `eval`; its query's
 //     weather and hour are not taken, and a view whose query places the camera is refused).
 //
 // A state (the point as it is, or with some shares forced) is taken as: the forces set through the
@@ -173,19 +173,19 @@
 // The tool takes the GPU lock itself (run it unwrapped): shared, since the reads do not depend on
 // what else renders, and leased per point (leaseGpuLock), the loop stopped while it may be given up. A run of the four weathers, both sides,
 // +2 to -14 and midnight with --split takes hours: run it through tools/kit/job.mjs.
-import './kit/qos.mjs'; // first: the summary's CPU work runs with the application policy
-import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from './kit/gpu-lock.mjs';
-import { launchCapture, pngShooter, stopLoop, waitForScene, waitForSettled } from './kit/capture-browser.mjs';
-import { WAIT_FRAMES, runInPage } from './kit/page-eval.mjs';
+import '../kit/qos.mjs'; // first: the summary's CPU work runs with the application policy
+import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from '../kit/gpu-lock.mjs';
+import { launchCapture, pngShooter, stopLoop, waitForScene, waitForSettled } from '../kit/capture-browser.mjs';
+import { WAIT_FRAMES, runInPage } from '../kit/page-eval.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
-import { fitDusk } from './island/dusk-fit.mjs';
+import { fitDusk } from './dusk-fit.mjs';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
+import { ROOT } from '../kit/root.mjs';
 
-const ROOT = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
-const USAGE = 'usage: node tools/dusk-grid.mjs [base] [--weathers ...] [--sides ...] [--from 2 --to -8 --step 0.5] [--midnight] [--at ...] [--hours ...] [--fine e1:e2:step]... [--views ...] [--split [names] [--fit]] [--night-split] [--twilight] [--compare dir [--compare-tolerance 1e-4]] [--judge 0.02] [--judge-range 2:-8] [--judge-weathers ...] [--overall-weathers ...] [--haze [--haze-sky 3,5,10,20] [--haze-distances 300,1000]] [--frames] [--walk] [--q query] [--src dir] [--out dir] [--timeout ms] [--lock-timeout s] (see the file header)';
+const USAGE = 'usage: node tools/island/dusk-grid.mjs [base] [--weathers ...] [--sides ...] [--from 2 --to -8 --step 0.5] [--midnight] [--at ...] [--hours ...] [--fine e1:e2:step]... [--views ...] [--split [names] [--fit]] [--night-split] [--twilight] [--compare dir [--compare-tolerance 1e-4]] [--judge 0.02] [--judge-range 2:-8] [--judge-weathers ...] [--overall-weathers ...] [--haze [--haze-sky 3,5,10,20] [--haze-distances 300,1000]] [--frames] [--walk] [--q query] [--src dir] [--out dir] [--timeout ms] [--lock-timeout s] (see the file header)';
 const WEATHERS = [ 'clear', 'fair', 'cloudy', 'overcast', 'rain', 'storm', 'fog' ];
 const SIDES = [ 'evening', 'morning' ];
 const TWILIGHT = [ 'sun', 'hazeSun', 'hazeSky' ];

@@ -28,7 +28,7 @@
 //   node views.mjs crops <name>            -> the view's anchor names, comma-separated
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { eveningHour, morningHour } from '../../packages/render/sky/DayCycle.ts';
+import { eveningHour, morningHour } from '../../../packages/render/sky/DayCycle.ts';
 
 // the hour, for a query, at which the morning's or the evening's sun stands `elevation` degrees up
 const morning = ( elevation ) => morningHour( elevation ).toFixed( 4 );
@@ -256,7 +256,7 @@ export const VIEWS = {
 	// whole disc; 5.3, halfway through the air's fade to the centre rays; 9.3, the disc fading to one
 	// ray. Their elevations are chosen by what they reach, which depends on where the clouds sit at
 	// t=12: pinning `shadowRays` to 1, or `shadowAirNarrow` to its other end, must move each of them
-	// (tools/parity/README.md), and a view that stays byte identical under that does not belong here.
+	// (tools/island/parity/README.md), and a view that stays byte identical under that does not belong here.
 	'island-cloudy-low-sun': { special: true, q: `weather=cloudy&hour=${ morning( 4.8 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
 	'island-cloudy-sun-rising': { special: true, q: `weather=cloudy&hour=${ morning( 5.3 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
 	'island-cloudy-disc-fade': { special: true, q: `weather=cloudy&hour=${ morning( 9.3 ) }`, crops: [ 'meadow-band-70m', 'rim-lip' ] },
@@ -336,7 +336,7 @@ export function expandViews( spec ) {
 
 }
 
-// (`crops` names other anchors than the view's own: tools/capture-clip.mjs --crops)
+// (`crops` names other anchors than the view's own: tools/island/capture-clip.mjs --crops)
 export const viewEval = ( name, crops = VIEWS[ name ].crops ?? [] ) => wrap( VIEWS[ name ].eval, crops );
 
 if ( process.argv[ 1 ] && path.resolve( process.argv[ 1 ] ) === fileURLToPath( import.meta.url ) ) {

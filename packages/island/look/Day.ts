@@ -26,7 +26,7 @@ const nightKey = ( elevation: number, stops: number ) => [ elevation, TWILIGHT_E
  * yunpeng's glow and every local light are scaled by 2 to minus this, so a lamp keeps its display
  * at night whatever the hour. It and the night keys below are measured, not derived: whenever the
  * night's light or its metering changes (the moon's level or its share through the dusk, the night
- * key, the meter), measure them again with tools/dusk-grid.mjs on the clear evening's night points
+ * key, the meter), measure them again with tools/island/dusk-grid.mjs on the clear evening's night points
  * and midnight, `--night-split`, against a run of the page at the commit before the moon was lit
  * (`--compare`; the commit titled "perf(sky): rescale the cloud dome to a new power of two instead
  * of marching it again", the parent of "feat(sky): light the night by the moon as the sun lights

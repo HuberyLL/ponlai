@@ -1,7 +1,7 @@
 // Real browser regression checks for the visual sample; no synthetic gameplay hooks required.
-// Run against a production preview: node tools/verify-scene.mjs http://127.0.0.1:5191
+// Run against a production preview: node tools/island/verify-scene.mjs http://127.0.0.1:5191
 import { chromium } from 'playwright';
-import { acquireGpuLock } from './kit/gpu-lock.mjs';
+import { acquireGpuLock } from '../kit/gpu-lock.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 

@@ -55,14 +55,14 @@ The tool and its options: `docs/reference/tools.md`, Test scenes.
 ## Check a visual change
 
 1. Capture the views the change touches before and after it (`tools/kit/capture.mjs` for one view,
-   `tools/parity/capture-set.mjs` for a list of views on one warm page;
+   `tools/island/parity/capture-set.mjs` for a list of views on one warm page;
    `docs/reference/tools.md`, Captures).
 2. Compare each capture against the previous one, and compare crops, not only the whole frame
    (`uv run tools/kit/img.py diff|crop|sheet|stats`).
 3. Report the measured differences.
 
 Where shapes differ (growth steps, seeds, a regenerated island), judge the look by eye and region
-statistics (`tools/capture-growth.mjs`), not by pixel difference.
+statistics (`tools/island/capture-growth.mjs`), not by pixel difference.
 
 ## Measure a performance change
 
@@ -90,15 +90,15 @@ keeps the test mode's byte comparisons valid this way (`docs/reference/tools.md`
 1. Register how to clear its history with the renderer's table
    (`packages/render/post/SceneHistory.ts`: `onJump` for a scene jump, `onCut` for a cut of the
    temporal modes' history), beside its creation; `establishScene` (`app/Scene.ts`) walks the table,
-   and `tools/verify-scene-jump.mjs` checks it.
+   and `tools/island/verify-scene-jump.mjs` checks it.
 2. Report it to `settled` (`packages/render/RenderStages.ts` `settleFrame`'s `pending`, the page's
    own through `FrameHost.pending`, or the rest's signature) until it has converged
    on a still scene, or freeze it or turn it off in the test mode.
 3. Freeze it or turn it off under the test mode's one switch (`packages/render/debug/TestMode.ts`;
    `docs/reference/tools.md`, Test mode).
-4. A Grow does not clear rendering history (`tools/verify-growth-swap.mjs` shoots its first view
+4. A Grow does not clear rendering history (`tools/island/verify-growth-swap.mjs` shoots its first view
    without a jump), so the effect is frozen or off under the switch there, or the swap resets it.
-5. Add its module to `WATCH.motion` in `tools/parity/carry.mjs` when its paths are not already
+5. Add its module to `WATCH.motion` in `tools/island/parity/carry.mjs` when its paths are not already
    there: with it frozen or off, the paused set no longer shows it, only the clips do.
 6. Compare its frames outside the test mode (live, clips) within a tolerance, as the temporal
    modes' are (`tools/kit/tolerance.py`), unless they repeat pixel for pixel.
@@ -115,4 +115,4 @@ changed chunks in one frame, and every dependent of the land's shape follows it.
    `Steps.ts`, uploads through `Upload.ts`), so the growth's share of any frame stays under 2 ms
    (`growth.work`).
 3. Check that a grown page draws a page loaded on that land bit for bit in the test mode:
-   `node tools/verify-growth-swap.mjs`.
+   `node tools/island/verify-growth-swap.mjs`.

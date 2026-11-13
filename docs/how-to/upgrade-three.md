@@ -37,17 +37,17 @@ r186, each with the check that sees it.
    the new one (`docs/reference/tools.md`, WGSL builds), and note which shaders changed and why.
 6. Run the checks that need no GPU: `npm run check -- --full`.
 7. Run the GPU checks that compare two paths of the same code, which must still pass byte for byte:
-   the scene jump (`tools/verify-scene-jump.mjs`) and the growth swap
-   (`tools/verify-growth-swap.mjs`). The page must also start without an error from
+   the scene jump (`tools/island/verify-scene-jump.mjs`) and the growth swap
+   (`tools/island/verify-growth-swap.mjs`). The page must also start without an error from
    `packages/render/three/`.
-8. Compare the image with captures from before the upgrade (`tools/parity/capture-set.mjs`). An
-   upgrade need not match byte for byte: judge it within the temporal tolerance
-   (`tools/parity/README.md`, Temporal tolerance), explain each difference, then capture new
+8. Compare the image with captures from before the upgrade (`tools/island/parity/capture-set.mjs`).
+   An upgrade need not match byte for byte: judge it within the temporal tolerance
+   (`tools/island/parity/README.md`, Temporal tolerance), explain each difference, then capture new
    reference sets.
 9. Check the pipelines: the count the page creates (`diagnostics.pipelines`,
    `packages/render/debug/PipelineCounter.ts`), that no player step creates one
    (`tools/verify-first-use.mjs`), and that a growth swap creates none
-   (`tools/verify-growth-swap.mjs`).
+   (`tools/island/verify-growth-swap.mjs`).
 10. Measure the frame time before and after the upgrade (`docs/how-to/check-a-change.md`, Measure a
     performance change).
 11. Go through the entries marked r186 in `docs/reference/three-behaviour.md`, each with its

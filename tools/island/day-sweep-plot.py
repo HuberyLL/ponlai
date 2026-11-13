@@ -2,7 +2,7 @@
 # requires-python = ">=3.10"
 # dependencies = ["matplotlib", "numpy"]
 # ///
-"""The curves of tools/day-sweep.mjs: one PNG per camera and weather, over the day in five panels:
+"""The curves of tools/island/day-sweep.mjs: one PNG per camera and weather, over the day in five panels:
 the sun's elevation, the frame's exposure (EV), and the sky, the sea, the land and the land's
 darkest 5 % by log2 luminance of the rows' mean colour, Oklab chroma and Oklab hue. The steps it
 flagged are circled on the curves in their region's colour, and the pairs of frames the camera

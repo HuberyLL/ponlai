@@ -119,8 +119,8 @@ distance. A kind with those has a `root` of its own.
    jump entries are registered in `registerIslandHistories` (`packages/island/IslandStages.ts`),
    which the page calls in order with the renderer's (`app/Scene.ts`). Each list runs in the order
    registered.
-3. Run `node tools/verify-scene-jump.mjs` (`docs/reference/tools.md`) to check that a jumped page
-   draws what a fresh load draws.
+3. Run `node tools/island/verify-scene-jump.mjs` (`docs/reference/tools.md`) to check that a jumped
+   page draws what a fresh load draws.
 
 ## Check the registration
 

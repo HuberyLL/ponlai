@@ -1,17 +1,17 @@
 // Regression probe for the exact scene jump (app/Scene.ts `establishScene`): a parity view reached by
 // a jump within one page must be the frame a fresh load of its query draws. It captures the views
-// both ways, in the layout of tools/parity/capture-set.mjs, so tools/kit/diff-set.py judges them:
+// both ways, in the layout of tools/island/parity/capture-set.mjs, so tools/kit/diff-set.py judges them:
 //
-//   node tools/verify-scene-jump.mjs <baseUrl> <outDir> [--fresh | --legacy] [--retune] [--views parity|taa|all|normal|special|a,b,c]
+//   node tools/island/verify-scene-jump.mjs <baseUrl> <outDir> [--fresh | --legacy] [--retune] [--views parity|taa|all|normal|special|a,b,c]
 //       [--view "name:query[::js]"]...
 //       [--order list|reverse] [--from <view or query>]... [--between <view or query>]...
 //       [--suffix .repeat] [--quality high]
 //       [--aa mode] [--q "extra&query"] [--size 1728x1117@2] [--frames n] [--stable-* (as capture.mjs)]
 //       [--profile dir] [--timeout 240000]
-//   node tools/verify-scene-jump.mjs <baseUrl> <outDir> --check <root>/<sha>/<set> [same options]
+//   node tools/island/verify-scene-jump.mjs <baseUrl> <outDir> --check <root>/<sha>/<set> [same options]
 //
 // --view adds an ad-hoc view (repeatable), with capture-set.mjs's syntax and parser
-// (tools/parity/adhoc.mjs, whose header has the rules: `like=<view>` starts from a views.mjs view, the
+// (tools/island/parity/adhoc.mjs, whose header has the rules: `like=<view>` starts from a views.mjs view, the
 // view's own options win over the set's). The ad-hoc views follow --views's in the run's list; with
 // --view and no --views the list is just the ad-hoc views (no --views and no --view: all). So a new
 // scene option is checked as `--views island-fair-noon --view approach-half:approach=0.5` rather than
@@ -76,10 +76,11 @@ import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { leaseGpuLock, releaseGpuLock } from './kit/gpu-lock.mjs';
-import { waitForScene, waitForSettled, waitForStable, stableOptions, stopLoop } from './kit/capture-browser.mjs';
+import { leaseGpuLock, releaseGpuLock } from '../kit/gpu-lock.mjs';
+import { waitForScene, waitForSettled, waitForStable, stableOptions, stopLoop } from '../kit/capture-browser.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { selectViews, viewQuery } from './parity/adhoc.mjs';
+import { ROOT } from '../kit/root.mjs';
 
 const argv = process.argv.slice( 2 );
 const flags = new Set( [ 'fresh', 'legacy', 'retune' ] );
@@ -347,7 +348,7 @@ if ( failed ) process.exitCode = 1;
 async function check() {
 
 	const here = fileURLToPath( import.meta.url );
-	const repo = path.resolve( path.dirname( here ), '..' );
+	const repo = ROOT;
 	const t0 = Date.now();
 	const minutes = () => ( ( Date.now() - t0 ) / 60000 ).toFixed( 1 );
 	const stableArgs = Object.keys( options ).filter( ( k ) => k.startsWith( 'stable-' ) ).flatMap( ( k ) => [ `--${ k }`, options[ k ] ] );
@@ -382,7 +383,7 @@ async function check() {
 	} );
 
 	// the fresh side: the stored set of this commit, a fresh page per view, captured when there is none
-	const ref = await run( 'ref', [ path.join( repo, 'tools/parity/capture-set.mjs' ), base, '--reference', path.resolve( options.check ), '--repeat',
+	const ref = await run( 'ref', [ path.join( repo, 'tools/island/parity/capture-set.mjs' ), base, '--reference', path.resolve( options.check ), '--repeat',
 		'--page-per-view', '--procedure', 'verify-scene-jump ref', ...common, ...( stableArgs.length ? [ '--', ...stableArgs ] : [] ) ] );
 	if ( ref.code !== 0 ) { console.error( `reference ${ options.check } failed (exit ${ ref.code })` ); return 2; }
 	// the set that served it (another set of the commit with the same key may): capture-set's last

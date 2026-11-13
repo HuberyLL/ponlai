@@ -2,7 +2,7 @@
 // are against bare ground in the same sun, how many of them are lit, how dark the shaded ones are,
 // how much of the lawn the blades cover, and the colour of the lit lawn on screen.
 //
-//   node tools/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]...
+//   node tools/island/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]...
 //       [--target x,z] [--views-file f.json [--views a,b]] [--side afternoon] [--weather clear] [--flags a,b] [--q extra] [--expect lo,hi]
 //       [--w 1920 --h 1080 --scale 2] [--timeout 60000] [--out dir] [--pages a,b|none] [--save dir] [--reuse dir]
 //
@@ -20,7 +20,7 @@
 // the sun where it stands relative to the camera, so elevations compare like for like.
 // `--views-file` adds the views of a file in capture-set's form (name -> { q, eval }; names starting
 // with `_` skipped), all of them or those `--views` lists, each at every elevation: its `q` joins the
-// query and its eval runs as capture-set runs it (tools/parity/views.mjs's helpers). Without `--view`
+// query and its eval runs as capture-set runs it (tools/island/parity/views.mjs's helpers). Without `--view`
 // the file's views are the only ones.
 //
 // Pages. Every view is shot on seven pages, each a fresh load of its flags (they are read at load),
@@ -134,17 +134,17 @@
 // The GPU lock is held shared (the readings do not depend on what else renders) and offered back
 // between pages (leaseGpuLock), never across the CPU work of the measures, which runs after the
 // browser is closed.
-import './kit/qos.mjs'; // first: the measures run here, over every pixel of seven frames per view
-import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from './kit/gpu-lock.mjs';
-import { launchCapture, waitForScene, pngShooter, stopLoop, startLoop, decodePng } from './kit/capture-browser.mjs';
+import '../kit/qos.mjs'; // first: the measures run here, over every pixel of seven frames per view
+import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from '../kit/gpu-lock.mjs';
+import { launchCapture, waitForScene, pngShooter, stopLoop, startLoop, decodePng } from '../kit/capture-browser.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { fileURLToPath } from 'node:url';
-import { NOON_ELEVATION, morningHour, eveningHour } from '../packages/render/sky/DayCycle.ts';
+import { NOON_ELEVATION, morningHour, eveningHour } from '../../packages/render/sky/DayCycle.ts';
+import { ROOT } from '../kit/root.mjs';
 
-const usage = 'usage: node tools/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]... [--target x,z] [--views-file f [--views a,b]] [--side afternoon|morning] [--weather clear] [--expect lo,hi] [--flags a,b] [--q extra] [--w --h --scale] [--timeout ms] [--out dir] [--pages a,b|none] [--save dir] [--reuse dir] (see the file header)';
+const usage = 'usage: node tools/island/meadow-light.mjs [url] [--elev 50,20] [--azimuth 135] [--view name=tilt,dist,fov]... [--target x,z] [--views-file f [--views a,b]] [--side afternoon|morning] [--weather clear] [--expect lo,hi] [--flags a,b] [--q extra] [--w --h --scale] [--timeout ms] [--out dir] [--pages a,b|none] [--save dir] [--reuse dir] (see the file header)';
 const argv = process.argv.slice( 2 );
 const options = { expect: '', elev: '50,20', azimuth: '135', target: '-13.76,0.8', side: 'afternoon', weather: 'clear', flags: '', q: '', w: '1920', h: '1080', scale: '2', timeout: '60000', out: '',
 	'views-file': '', views: '', pages: '', save: '', reuse: '' };
@@ -199,7 +199,7 @@ if ( expect && ! ( expect.length === 2 && expect.every( Number.isFinite ) && exp
 // The afternoon's (or the morning's) hour whose sun stands `elevation` degrees up (packages/render/sky/DayCycle.ts)
 const hourFor = ( elevation ) => options.side === 'morning' ? morningHour( elevation ) : eveningHour( elevation );
 
-const repo = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
+const repo = ROOT;
 const stamp = new Date().toISOString().replace( /[:.]/g, '-' ).slice( 0, 19 );
 const out = path.resolve( options.out || path.join( repo, 'artifacts', 'meadow-light', stamp ) );
 mkdirSync( out, { recursive: true } );
@@ -424,7 +424,7 @@ if ( shoot.length ) {
 
 					}
 					current = q;
-					// a views file's view runs its eval as capture-set does (tools/parity/views.mjs's helpers)
+					// a views file's view runs its eval as capture-set does (tools/island/parity/views.mjs's helpers)
 					if ( view.file ) await page.evaluate( view.file.js );
 					const placed = await page.evaluate( placeCamera, { frame: view.frame, azimuth: view.azimuth, target } );
 					if ( p.hide ) await page.evaluate( hideOccluders );

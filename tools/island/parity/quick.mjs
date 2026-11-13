@@ -2,7 +2,7 @@
 // tuning, each measured against the stored references of a commit. Not a gate: the gates still run
 // full sets (capture-set --check, baseline.mjs).
 //
-//   node tools/parity/capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,y] [--full]
+//   node tools/island/parity/capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,y] [--full]
 //       [--view "name:query[::js]"]... [--views-file f.json] [--sweep "key=a,b,c"]...
 //       [--variant "[label::]js"]... [--quality high] [--aa mode] [--q "extra&query"]
 //       [--size 1728x1117@2] [--store <root>/<sha>] [--ref-url R] [--timeout ms] [--runs file.csv] [--task name]
@@ -41,7 +41,7 @@
 //   <view>/metrics/                         clip-metrics.py's output against the references
 // and <outDir>/quick.json (timings, readiness, references, metrics) and quick.md (the table).
 //
-// References (--store <root>/<sha>, the reference store's commit directory; tools/parity/README.md):
+// References (--store <root>/<sha>, the reference store's commit directory; tools/island/parity/README.md):
 // the MSAA rest entries `baseline/<tier>/rest/<view>` and the ground truth's `gt/<tier>/rest/<view>`,
 // as baseline.mjs keeps them. Before the shots this runs `baseline.mjs --capture-only --only rest
 // --gt` for the views: entries that are stored are reused (or waited for while another process
@@ -61,15 +61,16 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rm, writeFile, appendFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from '../kit/gpu-lock.mjs';
-import { launchCapture, waitForScene, waitForStable, stableOptions, startLoop } from '../kit/capture-browser.mjs';
+import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from '../../kit/gpu-lock.mjs';
+import { launchCapture, waitForScene, waitForStable, stableOptions, startLoop } from '../../kit/capture-browser.mjs';
 import { VIEWS, viewEval } from './views.mjs';
 import { selectViews, viewQuery } from './adhoc.mjs';
 import { CLIPS } from './clips.mjs';
-import { resolveRefDir } from '../kit/reference.mjs';
+import { resolveRefDir } from '../../kit/reference.mjs';
+import { ROOT } from '../../kit/root.mjs';
 
 const HERE = path.dirname( fileURLToPath( import.meta.url ) );
-const TOOLS = path.resolve( HERE, '..' );
+const TOOLS = path.join( ROOT, 'tools' );
 // the crop box in CSS px (capture-clip.mjs's BOX)
 const BOX = 192;
 const FLAGS = new Set( [ 'quick', 'full' ] );
@@ -83,13 +84,13 @@ function parse( argv ) {
 		const a = argv[ i ];
 		if ( ! a.startsWith( '--' ) ) { positional.push( a ); continue; }
 		const k = a.slice( 2 );
-		if ( ! KNOWN.includes( k ) ) throw new Error( `--quick: unknown option --${ k } (see tools/parity/quick.mjs)` );
+		if ( ! KNOWN.includes( k ) ) throw new Error( `--quick: unknown option --${ k } (see tools/island/parity/quick.mjs)` );
 		if ( FLAGS.has( k ) ) o[ k ] = true;
 		else if ( Array.isArray( o[ k ] ) ) o[ k ].push( argv[ ++ i ] );
 		else o[ k ] = argv[ ++ i ];
 
 	}
-	if ( positional.length !== 2 ) throw new Error( 'usage: capture-set.mjs <url> <outDir> --quick --views a,b [options] (see tools/parity/quick.mjs)' );
+	if ( positional.length !== 2 ) throw new Error( 'usage: capture-set.mjs <url> <outDir> --quick --views a,b [options] (see tools/island/parity/quick.mjs)' );
 	return { o, positional };
 
 }

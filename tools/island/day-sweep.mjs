@@ -3,19 +3,19 @@
 // sun's elevation and the weather (exposure, skylight, haze, white balance, the grade) go wrong
 // at one hour under one sky, which the few frames a tuning session looks at miss.
 //
-//   node tools/kit/job.mjs start -- node tools/day-sweep.mjs <url> <outDir> [--scope routine|full]
+//   node tools/kit/job.mjs start -- node tools/island/day-sweep.mjs <url> <outDir> [--scope routine|full]
 //       [--views name,...] [--view name:query]... [--times all|hourly|midday|dense|key|HH:MM,...]
 //       [--weathers name,...] [--compare <earlier outDir>] [--transitions] [--keep-frames]
 //       [--thr-stops 0.3333] [--thr-de 0.03] [--turn-deg 15] [--sky-mask-deg 5]
 //       [--size 2560x1440@1] [--jobs 1] [--q "extra&query"]
-//   node tools/day-sweep.mjs report <outDir> [--compare <dir>] [--thin] [--thr-stops s] [--thr-de d]
+//   node tools/island/day-sweep.mjs report <outDir> [--compare <dir>] [--thin] [--thr-stops s] [--thr-de d]
 //       [--turn-deg d] [--sky-mask-deg d]
 //
 // A routine run is hundreds of scene jumps and takes as long as several parity sets: start it
 // through tools/kit/job.mjs and wait on it there, never in a shell of its own. <outDir> must be new
 // (or empty): a run into an old one would read the old run's numbers.
 //
-// It only combines the tools that exist: tools/colour-rows.mjs shoots the frames (tools/parity/
+// It only combines the tools that exist: tools/island/colour-rows.mjs shoots the frames (tools/island/parity/
 // capture-set.mjs on one warm page, the scene jump from frame to frame, under the shared GPU lock)
 // and reads the sky, the sea and the land of each; tools/kit/img.py sheet and thumb lay them out and
 // shrink them; tools/island/day-sweep-plot.py draws the curves. `report` runs the second half again on
@@ -153,19 +153,19 @@
 // or a packages/render/sky/Weather.ts without the exports the weathers' names are read from (WEATHER_PRESETS,
 // PARKED_WEATHER). A frame whose region has too few cells
 // is a gap in its curve and a line in gaps.txt, not a failure.
-import './kit/qos.mjs'; // first: the PNG work and the helpers run with the application policy
+import '../kit/qos.mjs'; // first: the PNG work and the helpers run with the application policy
 import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { DAY_PRESETS, DayCycle, eveningHour, morningHour } from '../packages/render/sky/DayCycle.ts';
-import { createExposure } from '../packages/render/look/ExposureLook.ts';
-import { createDayWindows } from '../packages/render/look/DayLook.ts';
-import { ISLAND_LOOK } from '../packages/island/look/IslandLook.ts';
+import { DAY_PRESETS, DayCycle, eveningHour, morningHour } from '../../packages/render/sky/DayCycle.ts';
+import { createExposure } from '../../packages/render/look/ExposureLook.ts';
+import { createDayWindows } from '../../packages/render/look/DayLook.ts';
+import { ISLAND_LOOK } from '../../packages/island/look/IslandLook.ts';
 
-import * as WeatherModule from '../packages/render/sky/Weather.ts';
+import * as WeatherModule from '../../packages/render/sky/Weather.ts';
+import { ROOT } from '../kit/root.mjs';
 
-const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
+const REPO = ROOT;
 // the island's exposure and day windows, which the day cycle takes (its sun and moon do not read
 // them)
 const exposure = createExposure( ISLAND_LOOK ), dayWindows = createDayWindows( ISLAND_LOOK.day );
@@ -346,7 +346,7 @@ function runColour( args ) {
 
 	return new Promise( ( resolve ) => {
 
-		const child = spawn( process.execPath, [ 'tools/colour-rows.mjs', ...args ], { cwd: REPO, stdio: [ 'ignore', 'inherit', 'pipe' ] } );
+		const child = spawn( process.execPath, [ 'tools/island/colour-rows.mjs', ...args ], { cwd: REPO, stdio: [ 'ignore', 'inherit', 'pipe' ] } );
 		children.add( child );
 		let waited = 0, tail = '';
 		child.stderr.on( 'data', ( d ) => {
@@ -671,7 +671,7 @@ function readRows( out, plan, skyMaskDeg ) {
 	const colour = path.join( out, 'colour' );
 	const file = path.join( colour, 'rows.json' ), temporary = path.join( colour, 'rows.tmp.json' );
 	const views = [ ...plan.frames, ...plan.transitions ].map( ( f ) => f.view );
-	const r = spawnSync( process.execPath, [ 'tools/colour-rows.mjs', 'rows', colour, '--own', '--sky-mask-deg', String( skyMaskDeg ), '--views', views.join( ',' ), '--out', temporary ],
+	const r = spawnSync( process.execPath, [ 'tools/island/colour-rows.mjs', 'rows', colour, '--own', '--sky-mask-deg', String( skyMaskDeg ), '--views', views.join( ',' ), '--out', temporary ],
 		{ cwd: REPO, stdio: [ 'ignore', 'ignore', 'inherit' ], maxBuffer: 1 << 30 } );
 	if ( r.status !== 0 ) {
 

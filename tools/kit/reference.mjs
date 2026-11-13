@@ -42,7 +42,7 @@
 //   node tools/kit/reference.mjs status <dir>     (every manifest and claim under a directory)
 //
 // capture-set.mjs (`--reference`, `--check`) and baseline.mjs (the `baseline` and ground-truth
-// entries) use it; the layout and the manifest are documented in tools/parity/README.md.
+// entries) use it; the layout and the manifest are documented in tools/island/parity/README.md.
 // baseline.mjs's carry-over (carry.mjs) fills an entry through the same claim: its `capture` clones
 // an earlier commit's entry and adds `carriedFrom` to the manifest (status `carried`).
 import { createHash } from 'node:crypto';
