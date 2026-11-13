@@ -183,5 +183,7 @@ meets it.
 - `packages/game/`: the game behind `?game`: the headless simulation (`sim/`), session, save, view
   and interface (`ui/`).
 - `tools/`: checks, captures, probes, profiling, the GPU lock, the code lint (`tools/lint/`).
+- `skills/`: methods as skills (linked from `.claude/skills/`); a skill's facts for this project:
+  `docs/bindings/<skill-name>.md`.
 - `docs/`: the documentation by kind (`docs/README.md`). `public/` (git-ignored): the assets. File
   by file: `docs/reference/code-map.md`.

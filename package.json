@@ -11,8 +11,8 @@
     "typecheck": "node tools/qos.mjs tsc",
     "check": "node tools/check.mjs",
     "lint": "node tools/qos.mjs eslint packages app",
-    "lint:docs": "markdownlint-cli2 && node tools/verify-doc-paths.mjs && lychee --offline --no-progress AGENTS.md ARCHITECTURE.md CREDITS.md \"docs/**/*.md\" \"tools/**/*.md\"",
-    "lint:links": "lychee --no-progress AGENTS.md ARCHITECTURE.md CREDITS.md \"docs/**/*.md\" \"tools/**/*.md\""
+    "lint:docs": "markdownlint-cli2 && node tools/verify-doc-paths.mjs && lychee --offline --no-progress AGENTS.md ARCHITECTURE.md CREDITS.md \"docs/**/*.md\" \"tools/**/*.md\" \"skills/**/*.md\"",
+    "lint:links": "lychee --no-progress AGENTS.md ARCHITECTURE.md CREDITS.md \"docs/**/*.md\" \"tools/**/*.md\" \"skills/**/*.md\""
   },
   "dependencies": {
     "@fontsource/ma-shan-zheng": "^5.3.1",

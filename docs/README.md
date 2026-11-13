@@ -33,6 +33,8 @@ Facts to look up.
   do that the code is written around; read it before writing TSL or a pass of the frame graph.
 - [Glossary](reference/glossary.md): the project's own words.
 - [Parity captures](../tools/parity/README.md): capture sets, comparisons and their tolerances.
+- Skill bindings (`docs/bindings/`): this project's facts for each skill in `skills/`, a page per
+  skill under its name.
 
 ## Explanation
 
