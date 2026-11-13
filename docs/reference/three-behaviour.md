@@ -61,8 +61,15 @@ Check: none; judgement.
 A helper called from several places is `Fn( ... ).setLayout( ... )`, so it compiles to one shader
 function.
 
-**r186.** A laid-out helper that reads uniforms can be emitted with another kernel's uniform
-names when two compute kernels that use it are built.
+**r186.** A laid-out helper that reads uniforms in its body can be emitted with another build's
+uniform names when two shaders that use it are built, compute kernels or materials: three emits
+the function once and reuses its code with the first build's names, and the second shader fails
+to compile. Pass the uniforms in as the helper's arguments, or keep it a
+plain function expanded where it is called. Met between compute kernels (`post/fsr3/Common.ts`,
+`sky/CloudKernels.ts`) and between materials (`post/PipelineDisplay.ts` `coolShare`, which broke
+the rain's materials under taa; `vegetation/VegetationLighting.ts`; `lighting/LocalLights.ts`
+`shadeLocalLights`). A material built twice, in two target layouts, meets it too
+(`post/Motion.ts`).
 
 Check: `tools/wgsl-build.mjs`; the byte comparison of the parity captures.
 
@@ -308,5 +315,15 @@ Check: the frame graph's dev check on the dev server (`opsMismatchFrames` in the
 ### Timestamps
 
 Timestamp queries (`trackTimestamp`) have one owner at a time (`post/DynamicResolution.ts`).
+three resolves them into one buffer and drops what it resolves while that buffer is mapped, and
+the owner takes over the pools' `resolveQueriesAsync`, so a second reader takes readings from the
+first.
+
+The owner is chosen once, when the page sets up its frame loop (`app/Frame.ts`). It is the dynamic
+resolution's timer (`GpuFrameTimer` in `post/DynamicResolution.ts`; none under `?gpuTimer=off`).
+Under `?profile` with the GPU timestamps on (not `?profile=frames`) the frame profiler
+(`debug/FrameProfiler.ts`) owns them instead, for the whole load: no `GpuFrameTimer` is made, and
+the profiler hands each frame's GPU time to the dynamic resolution from its own readings. Only these
+two modules and the wrappers in `three/` reach the queries.
 
 Check: the lint rule `ponlai/timestamp-owner`.

@@ -125,7 +125,7 @@ Shader, pass and GPU rules; the name in brackets is their section of
 | `select()` chooses between values built before it (select() of large operands). | judgement | the water's position, built in a branch, drew nothing |
 | Implicit samples and derivatives in uniform control flow (Uniform control flow). | judgement | a shadow filter's derivatives inside a select |
 | Nested loops are one `Loop()` (Nested loops). | judgement | - |
-| A laid-out helper that reads uniforms can take another kernel's uniform names when two compute kernels using it are built (Shader functions). | judgement | met porting FSR 3's kernels (`fsr3/Common.ts`) |
+| A laid-out helper that reads uniforms can take another build's uniform names when two shaders using it (compute kernels or materials) are built (Shader functions). | judgement | FSR 3's kernels (`fsr3/Common.ts`); the display chain's `coolShare` broke the rain (`PipelineDisplay.ts`) |
 | A branch reaching a varying is a laid-out `Fn` (Inline functions and varyings). | judgement | the meadow passed sixteen varyings |
 | Several attachments: the `outputStruct` itself (Several attachments). | judgement | an `outputStruct` from inside an `Fn`: `struct member m0 not found` |
 | Bit-identical depth takes `@invariant` (Bit-identical depth). | judgement | the vegetation prepass's depth test failed a few samples |

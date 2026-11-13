@@ -1373,11 +1373,12 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   scars; the cliff's scars, on each chunk's own wall: none cuts rock beyond its reach (4.5 m, 3 m)
   and none breaks off more than 0.6 m of rock above y -1 where its reach ends it. The chunk checks
   prove seams and locality; this probe proves the chunked world keeps its numbers.
-- `tools/verify-chunk-derived.mjs [--seed 1] [--steps 0,8] [--threads n]` (plain `node`; run it
-  after a change to `packages/island/world/ChunkDerived.ts` or to the builders it stands in for)
+- `tools/verify-chunk-derived.mjs [--seed 1] [--steps 0,8] [--threads n]` (plain `node`, part of
+  `npm run check -- --full`; run it after a change to `packages/island/world/ChunkDerived.ts` or to
+  the builders it stands in for)
   builds every chunk of the grown land on a pool of worker threads and checks the chunks' derived
-  products, which the page uses, against the builders it ran before on the merged meshes (three's
-  WebGPU build imported in node, RefractedSun.ts compiled with TypeScript): SunShadow's caster
+  products, which the page uses, against the builders it ran before on the merged meshes (the
+  builders loaded through Vite's SSR loader, three's WebGPU build imported in node): SunShadow's caster
   columns folded from the chunks' `casterColumns` hold every walked column and stay within one cell
   of it; RefractedSun's subsets from the chunks' `refracted` are today's cut of the merged island,
   stones and floor, triangle for triangle, and `setCasters( root, subsets )` draws them;
@@ -1506,12 +1507,12 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   `verify-exits`, `verify-settings`, `verify-file-size`, `verify-three-internals`,
   `verify-no-binaries`, `verify-game`, `verify-i18n`, `verify-ink`, `verify-framegraph`,
   `verify-day-cycle`, `verify-weather-state`, `verify-wind`, `verify-local-lights`,
-  `verify-extensions`, `verify-look-params` and `verify-lint`, then
-  `npm run lint:docs` when a Markdown file is staged. `--full` adds `npm run build` and
-  `verify-world-chunks.mjs` and always runs the docs' lint. Every check runs even after one failed;
-  it ends with each check's result and time, and exits 1 when any failed. None of them renders or
-  takes the GPU lock. How to use it: `docs/how-to/check-a-change.md`, Run the checks every commit
-  passes.
+  `verify-extensions`, `verify-look-params` and `verify-lint`, then `npm run lint:docs` when a
+  Markdown file is staged. `--full` adds `npm run build`, `verify-world-chunks.mjs` and
+  `verify-chunk-derived.mjs` and always runs the docs' lint. Every check runs even after one
+  failed; it ends with each check's result and time, and exits 1 when any failed. None of them
+  renders or takes the GPU lock. How to use it: `docs/how-to/check-a-change.md`, Run the checks
+  every commit passes.
 - `tools/verify-file-size.mjs` (plain `node`, no options) fails on a code file under `packages/` or
   `app/` of more than 1500 lines. The files over the limit when the check was written are listed in
   the tool with their line counts: a listed file fails when it grows past its count, and when it is

@@ -1,11 +1,10 @@
 // The vegetation's shapes under load: a blade or a stem is a thin elastic strand clamped at its
 // root, bent by its own weight (and, to come, by the wind's pressure) against its stiffness, and
-// held off whatever it lies on. Every kind that takes a physical shape reads its numbers and
-// curves here: the meadow's blades (Grass.ts: a fit of the free shapes over the
-// upright blades' range, `bladeCurve`; at the cliff's edge Grass.ts drapes the fitted blade over
-// the edge and holds it off the wall in the vertex stage, no physical shape). The family of free
-// shapes (`drapeTable`) and a shape solved against a wall (`strandShape`, `drape` with a wall) are
-// kept for the hanging kinds to come; no kind samples them today.
+// held off whatever it lies on. A kind that takes a physical shape would read its numbers and
+// curves here. No module imports this today: the meadow's blades (Grass.ts) are a quadratic
+// Bezier with a random arch (its `BEND`), not a physical shape. The family of free shapes
+// (`drapeTable`) and a shape solved against a wall (`strandShape`, `drape` with a wall) are kept
+// for the hanging kinds to come.
 //
 // Model (planar elastica of a cantilever, the large-deflection beam; Jahrmann & Wimmer, "Responsive
 // Real-Time Grass Rendering for General 3D Scenes", 2017, take the same forces for grass):

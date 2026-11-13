@@ -70,8 +70,9 @@ The modules loaded on demand are lazy exits.
 ### `vegetation/`
 
 What every plant kind shares: the material, the coverage (`Coverage.ts`), the leaf textures, the
-instances (`Instances.ts`), the GPU cull (`VegetationCull.ts`), the wind's deforms, the LOD
-(`Lod.ts`) and the physics.
+instances (`Instances.ts`, kept for kinds to come: no kind uses it today), the GPU cull
+(`VegetationCull.ts`), the wind's deforms, the LOD (`Lod.ts`) and the physics (`Physics.ts`, kept
+for the hanging kinds to come: no kind uses it today).
 
 - `Registry.ts`: the registry of plant kinds. `DefaultPlant.ts`: the plant a kind without art is
   drawn with.
@@ -389,7 +390,8 @@ Captures, profiling, the GPU lock and the probes ([Tools](tools.md)), and:
 
 - `wgsl-build.mjs`: the WGSL build; its entries in `wgsl-build/`.
 - `verify-world-chunks.mjs`, `verify-world-stats.mjs`: the world's chunk checks and statistics, on
-  the node helpers in `world-node.mjs`.
+  the node helpers in `world-node.mjs`; `verify-chunk-derived.mjs`: the chunks' derived products
+  against the builders they stand in for.
 - `play-game.mjs`: the game played headless for days, with a transcript, a timeline and a summary
   of what the islanders did, for a designer or a brain judged offline.
 - `lint/`: the code lint's rules and fixtures ([Tools](tools.md#code-lint)).

@@ -14,8 +14,9 @@
 // state, the wind, the local lights, the renderer's extension points, the look tables passed at creation, the
 // code lint's own rules against their fixtures), and the docs' lint (`npm run lint:docs`) when a Markdown file
 // is staged. `--full` adds `npm run build` and `tools/verify-world-chunks.mjs`, which take minutes,
-// and runs the docs' lint whatever is staged. Each check runs to its end even after another failed,
-// so one run lists every failure; its output goes to the terminal as it comes.
+// and `tools/verify-chunk-derived.mjs` (the chunks' derived products, about a quarter of a minute on
+// many threads), and runs the docs' lint whatever is staged. Each check runs to its end even after
+// another failed, so one run lists every failure; its output goes to the terminal as it comes.
 //
 // A check belongs in the commit-time list when it needs no GPU and the whole list stays near a
 // minute; a slower one goes under `--full`. The checks that render (captures, parity, the GPU
@@ -75,7 +76,7 @@ const checks = [
 	[ 'verify-lint', node( 'verify-lint.mjs' ) ],
 ];
 if ( full || markdownStaged() ) checks.push( [ 'lint:docs', npm( 'lint:docs' ) ] );
-if ( full ) checks.push( [ 'build', npm( 'build' ) ], [ 'verify-world-chunks', node( 'verify-world-chunks.mjs' ) ] );
+if ( full ) checks.push( [ 'build', npm( 'build' ) ], [ 'verify-world-chunks', node( 'verify-world-chunks.mjs' ) ], [ 'verify-chunk-derived', node( 'verify-chunk-derived.mjs' ) ] );
 
 const results = [];
 const start = performance.now();
