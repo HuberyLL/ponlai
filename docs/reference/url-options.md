@@ -3,6 +3,24 @@
 The page's URL options, by group, with the debug views and console handles that go with them.
 The tools that load pages with these options: [Tools](tools.md).
 
+Contents:
+
+- [View and capture](#view-and-capture)
+- [The island](#the-island)
+- [Sky and weather](#sky-and-weather)
+- [Quality, anti-aliasing and the frame](#quality-anti-aliasing-and-the-frame)
+- [Debug flags](#debug-flags)
+- [The lighting layer](#the-lighting-layer)
+- [Radiance](#radiance)
+- [Tunable parameters](#tunable-parameters)
+- [The test scenes](#the-test-scenes)
+- [Ambient light, occlusion and other views](#ambient-light-occlusion-and-other-views)
+- [Wind and haze](#wind-and-haze)
+- [Islanders](#islanders)
+- [Profiling](#profiling)
+- [Game](#game)
+- [Every option](#every-option): the generated table of every option
+
 ## View and capture
 
 - `paused`, `t` (scene time), `dpr` (render pixel ratio, pinned), `polar`, `az` (the island
@@ -58,6 +76,17 @@ The tools that load pages with these options: [Tools](tools.md).
   `await growth.approachNow( p )`; `growth.rise.state` holds the approach, R (`r`, its `target`, the
   R last `written`), the pending `tiles`, their largest `rise` (m), the `writes` and the last one's
   `ms`.
+- `worldCache=off` (generate every chunk of the island instead of loading it from the browser's
+  IndexedDB cache, as on a first visit; `packages/island/world/WorldChunks.ts`). The cache keeps one
+  record per chunk, so a land grown by a piece reloads the chunks the piece did not reach; the
+  diagnostics' `worldCache` counts the records read (`hits`, of the chunks and the land). It keeps
+  the records of the two land versions loaded last (a seed and `grow` step each) and deletes the
+  rest after a load, so going back to an older step rebuilds the chunks it does not share with them.
+- `terrainHex=0` (the cliff's plain triplanar tiling and smooth layer masks; for an A/B inside one
+  page each cliff material swaps to its other variant through `material.userData.terrainVariant`,
+  as `TerrainMaterial.ts` shows: the flag itself is read only when the material is built).
+- `chunkBorders` shows the world's 16 m chunks as lines above the sea and the meadow (also the
+  GUI's Ground folder, `chunk borders`), to tell a seam from a chunk border.
 
 ## Sky and weather
 
@@ -140,15 +169,6 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `loop.step`, `loop.start()` resumes the clock with a first delta of at most one frame.
 - `taaResolve=off` (debug builds): the temporal modes without their resolve, the jittered frame
   shown as it renders, through the output passes with the grade's vignette and dither.
-- `worldCache=off` (generate every chunk of the island instead of loading it from the browser's
-  IndexedDB cache, as on a first visit; `packages/island/world/WorldChunks.ts`). The cache keeps one
-  record per chunk, so a land grown by a piece reloads the chunks the piece did not reach; the
-  diagnostics' `worldCache` counts the records read (`hits`, of the chunks and the land). It keeps
-  the records of the two land versions loaded last (a seed and `grow` step each) and deletes the
-  rest after a load, so going back to an older step rebuilds the chunks it does not share with them.
-- `terrainHex=0` (the cliff's plain triplanar tiling and smooth layer masks; for an A/B inside one
-  page each cliff material swaps to its other variant through `material.userData.terrainVariant`,
-  as `TerrainMaterial.ts` shows: the flag itself is read only when the material is built).
 - `post=legacy` (or a comma list of `inline-composite`, `three-fsr`, `store-scene`: the frame graph
   without the first performance round's changes).
 - `gpuTimer=off` (high's dynamic resolution without its timestamp queries: it then steers by the
@@ -454,8 +474,6 @@ and none of the island's or the game's.
   `s.motionCheck()` lists the materials whose motion vectors are missing or partial.
 - `vegPrepass=0` (the single coverage pass), `vegPrepass=coverage` (the prepass with coverage kept
   in the shaded draw).
-- `chunkBorders` shows the world's 16 m chunks as lines above the sea and the meadow (also the
-  GUI's Ground folder, `chunk borders`), to tell a seam from a chunk border.
 - `ambientProbes=sky|bounce|irradiance` shows the ambient light's probes (debug pages; also the
   GUI's Ground folder, `ambient probes`; `packages/render/lighting/AmbientVolume.ts`): a small unlit
   sphere at each probe, where it was baked, coloured by its harmonics at the sphere's normal (`sky`
@@ -555,13 +573,8 @@ and none of the island's or the game's.
   `zh-CN`, the default, or `en`, a snapshot whose missing words show in Chinese:
   `packages/game/ui/i18n/`). The page's own `weather` option and auto weather work in the game as
   without it.
-- The player's interface is 蜃光 (`packages/game/ui/GameUi.ts`, its spec `docs/explanation/ui.md`):
-  the top row (day and time, pause and play, the weather now and the next 24 game hours read ahead
-  from the auto chain, the island's resources, the record's scroll), a click on an islander for
-  their tag and ring (again, or on open ground, lets go; Esc too), the speak bar (Enter opens it and
-  sends; the words fly to the islander selected, or to everyone in view), the build bar (the mallet
-  at the bottom right; groups, buildings, `/` to search, 1-9 to choose, the arrows to scroll, Esc
-  and Enter) and the record (沧海录: the scroll; Esc, the arrows). Choosing the chest in the build bar
+- The player's interface, its parts and its keys: [Game UI](../explanation/ui.md)
+  (`packages/game/ui/GameUi.ts`). Choosing the chest in the build bar
   arms its placement in the scene: a ring on the turf previews the spot (green, or red with the
   reason in the bar), a click places it (`packages/game/Placement.ts`). Space pauses only the game
   clock, the GUI's hour, clock pause and time preset are off (the game's clock owns the time of
