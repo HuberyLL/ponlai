@@ -143,9 +143,10 @@ import { settings } from '../Settings.ts';
 //
 // Limits to keep in mind:
 // - WebGPU guarantees 16 sampled textures per stage (a texture past them fails pipeline creation),
-//   and the fragment stage samples 14: the FFT's fields are array textures, a layer per cascade, and
-//   the storm foam is a storage buffer. The sun's two shadow steps, one array texture, bind in the
-//   vertex stage.
+//   and the fragment stage samples 14: the FFT's fields are array textures, a layer per cascade,
+//   and the storm foam is a storage buffer. The sun's two shadow steps, one array texture, bind in
+//   the vertex stage. So the water samples neither the target it draws into nor a history or a
+//   reactive input: what the resolve needs from it goes out through its velocity.
 // - The reflection only finds what lies inside `reflectionBounds` (see below): anything opaque
 //   placed off the island or above 3 m (REFLECTOR_HEIGHT; a tree, a boat, a hut, a mast) must grow
 //   that box through `hold`, or the sea will not reflect it (the game's props and the plants'
@@ -178,21 +179,20 @@ type M4 = THREE.Node<'mat4'>;
 type B = THREE.Node<'bool'>;
 
 // The open sea beyond the island's shelf is taken to be deep. Its floor is drawn at an even depth
-// of some ten metres out to the far floor's square edge, and the water
-// shows a floor that shallow plainly, so where the floor stopped the edge ran across the sea as a
-// straight line: the floor-lit water inside it, the open water's colour outside. The water now adds
-// this much depth to its path to the floor, over a rounded square round the world's centre (a
-// 4-norm, so its contours have no straight runs): none out to where no grown land's shelf reaches,
-// and the full depth from a little inside the far floor's edge (the two 4-norm radii are the
-// scene's, WaterInputs.openSea), where the added depth, crossed down and back, leaves some 7 % of the floor's
-// blue light and 2 % of its green (red none): too little beside the water body's own light for the
-// edge to show in the frame, at noon clear or cloudy, from the island view or low over the sea. The
-// shallows fade into deep water in between. The floor's mesh is not lowered: the
-// opaque image holds the floor as the eye sees it straight, without refraction, and a floor that
-// fell away faster than the view's slant left no image of itself behind the shelf's lip, so the
-// refracted lookups found nothing there and drew the lip as a hard line instead.
-// (A mean over the geometry the drawn floor leaves out, the open sea's depth past the shelf, kept
-// for the floor's resolution.)
+// of some ten metres out to the far floor's square edge, and the water shows a floor that shallow
+// plainly, so where the floor stopped the edge ran across the sea as a straight line: the floor-lit
+// water inside it, the open water's colour outside. The water now adds this much depth to its path
+// to the floor, over a rounded square round the world's centre (a 4-norm, so its contours have no
+// straight runs): none out to where no grown land's shelf reaches, and the full depth from a little
+// inside the far floor's edge (the two 4-norm radii are the scene's, WaterInputs.openSea), where
+// the added depth, crossed down and back, leaves some 7 % of the floor's blue light and 2 % of its
+// green (red none): too little beside the water body's own light for the edge to show in the frame,
+// at noon clear or cloudy, from the island view or low over the sea. The shallows fade into deep
+// water in between. The floor's mesh is not lowered: the opaque image holds the floor as the eye
+// sees it straight, without refraction, and a floor that fell away faster than the view's slant
+// left no image of itself behind the shelf's lip, so the refracted lookups found nothing there and
+// drew the lip as a hard line instead. (A mean over the geometry the drawn floor leaves out, the
+// open sea's depth past the shelf, kept for the floor's resolution.)
 const OPEN_DEEPENING = {
 	depth: 30, // m
 	left: 0.05, // the share of the light down the full depth that the fade's shape follows

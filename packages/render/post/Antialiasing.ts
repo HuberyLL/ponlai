@@ -33,7 +33,9 @@
 // `AA_SOURCE` says which of them chose (main.ts reports it as `aaSource`). `gt` is taken from the
 // URL in a debug build only, never from a tier. The tier is the one the page's entry chose
 // (PageSettings.ts, Quality.ts `loadTier`), installed before any module loads, so modules that read
-// the mode when they load (vegetation/Coverage.ts, Grass.ts) take the page's.
+// the mode when they load (vegetation/Coverage.ts, Grass.ts) take the page's. Code that differs by
+// mode reads this module's exports (`TEMPORAL`, `SCENE_SAMPLES`, `ALPHA_TO_COVERAGE`), never the
+// tier: `aa=` picks any mode on any tier.
 import { loadTier, qualityProfile, type QualityProfile, type TemporalSettings } from '../Quality.ts';
 import { settings, type SettingsQuery } from '../Settings.ts';
 
