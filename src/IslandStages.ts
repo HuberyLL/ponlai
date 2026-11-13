@@ -7,7 +7,7 @@
 // - The page's camera views (app/CameraViews.ts) need the document, so the page builds the island
 //   view's framing (`IslandFraming`), which the land's changes call, and hands it to the stages that
 //   frame the land (`createVegetation`, `createGrowth`).
-import { WIND_VIEW, shared, testSources, debugFlags, TEST_MODE, declareSceneEvents, installVegetationPrepass, createDisplacementField, displacementField, installOpaquePrepass, GTAO, SS_SHADOW, Vegetation, defaultPlant, installWindMotionFlag, type RenderParts } from './render.ts';
+import { WIND_VIEW, shared, testSources, debugFlags, TEST_MODE, declareSceneEvents, installVegetationPrepass, createDisplacementField, displacementField, installOpaquePrepass, GTAO, SS_SHADOW, Vegetation, defaultPlant, installWindMotionFlag, duskForce, yunpengNightShare, type RenderParts } from './render.ts';
 import { settings as params, type SettingsQuery } from './renderSetup.ts';
 import * as THREE from 'three/webgpu';
 import { FreeCameraControls } from './camera/FreeCameraControls.ts';
@@ -24,7 +24,7 @@ import { worldProgress, landFraming, worldCacheOn } from './world/WorldStart.ts'
 import { buildChunkBorders } from './debug/ChunkBorders.ts';
 import { windArrowGeometry, buildWindArrows } from './debug/WindArrows.ts';
 import { buildGrass, plantGrass, grassKind } from './world/Grass.ts';
-import { buildYunpeng, yunpengKind, yunpengLights } from './world/Yunpeng.ts';
+import { buildYunpeng, yunpengKind, yunpengLights, setYunpengNight } from './world/Yunpeng.ts';
 import { landBounds, islandSurfaceHeight } from './world/WorldShapes.ts';
 import { GROWTH, LandLattice } from './world/IslandGrowth.ts';
 import { walkPoints } from './world/WalkPath.ts';
@@ -46,6 +46,8 @@ import type { Yunpeng } from './world/Yunpeng.ts';
 import type { Bamboo } from './world/Bamboo.ts';
 import type { Look } from './characters/looks.ts';
 import type { Villager } from './characters/Villagers.ts';
+import { updateSwardTint } from './materials/SwardTint.ts';
+import type { TrampleWalker } from './world/vegetation/Trample.ts';
 
 // The island's scene events (post/SceneEvents.ts), and whether each cuts the temporal history:
 // the island grew (Growth.ts: new land where the sea was, the rest unchanged; the resolve's clip
@@ -569,6 +571,104 @@ export function createGrowth( render: RenderParts, island: IslandParts, { landOp
 		void growth.approachNow( Number( params.get( 'approach' ) ) ).then( () => { island.approachWritten = true; } );
 
 	}
+
+}
+
+/**
+ * The island's part of a frame, a stage at a time, in the order a page calls them between the
+ * renderer's (RenderStages.ts `FrameStages`): `grow` after the scene clock and before the day's,
+ * `moveCamera` after the weather and before the sky, `night` after the sky and before the local
+ * lights, `tintSward` after them, `advanceLife` after the sea and before the relight,
+ * `advanceIslanders` and `trample` after it and before the draw.
+ */
+export interface IslandFrame {
+	/** The island's growth: a swap, or one of the frames after it (before the camera and the shadows). */
+	grow(): void;
+	/** The camera: the free flight, or the island view's glide, turn, zoom and hand. `time` is the
+	 * frame's timestamp (ms), `dt` the scene clock's step (s) before the pause, `rawDt` the wall clock's. */
+	moveCamera( time: number, dt: number, rawDt: number ): void;
+	/** The night's share of the island's own glow, set on what glows; returns the share its lights
+	 * take (the renderer's `lightNight`). */
+	night(): number;
+	/** What a closed sky's light turns into in the sward (materials/SwardTint.ts). */
+	tintSward( nightAmbient: number ): void;
+	/** The island's creatures and what the wind takes off it. */
+	advanceLife( dt: number ): void;
+	/** The scene's own islander, where there is one. */
+	advanceIslanders( dt: number ): void;
+	/** The trail through the meadow of `walkers`, or of the scene's own islander when null. */
+	trample( walkers: readonly TrampleWalker[] | null ): void;
+}
+
+/** The island's frame stages on the built island. `view` is the page's camera view, read as each
+ * frame comes: the island view alone turns and zooms. */
+export function createIslandFrame( render: RenderParts, island: IslandParts, { framing, view }: { framing: IslandFraming; view: { readonly camera: string } } ): IslandFrame {
+
+	const { renderer, scene, camera, sky, sun } = render;
+	const { controls, framingGlide, islandTurn, freeControls, trample, wenyao, growth } = island;
+	const { poseIslandView, followFraming } = framing;
+	return {
+
+		grow() {
+
+			growth.update( render.simTime );
+
+		},
+
+		moveCamera( time, dt, rawDt ) {
+
+			if ( freeControls.enabled ) freeControls.update( rawDt );
+			else {
+
+				// the glide to a grown land's framing (finished at once if the page was paused meanwhile)
+				if ( framingGlide.advance( render.paused ? Infinity : dt, camera.position, controls.target ) ) camera.lookAt( controls.target );
+				// a turn or zoom of the island view: the framing at the new heading and zoom, taken at once
+				islandTurn.enabled = controls.enabled && ! controls.handInput && view.camera === 'island';
+				const turn = islandTurn.advance( dt ), zoom = THREE.MathUtils.clamp( island.islandZoom + islandTurn.zoom( dt ), 0, 1 );
+				if ( zoom === 0 || zoom === 1 ) islandTurn.stopZoom();
+				if ( turn !== 0 || zoom !== island.islandZoom ) {
+
+					poseIslandView( framing.viewOptions, island.islandTurned + turn, zoom );
+					followFraming( false );
+
+				}
+				controls.advance( dt, time );
+
+			}
+
+		},
+
+		// the yunpeng's glow and its local lights by their own share of the night (sky/DayCycle.ts
+		// `yunpengNightShare`); a debug page may force it (DayCycle.ts `duskForce`)
+		night: () => setYunpengNight( duskForce( 'yunpeng', yunpengNightShare( sky.elevation, sky.rising, shared.clouded.value ) ) ),
+
+		tintSward( nightAmbient ) {
+
+			updateSwardTint( shared.swardTint.value, shared.clouded.value, duskForce( 'nightAmbient', nightAmbient ) );
+
+		},
+
+		advanceLife( dt ) {
+
+			// (their schools take flight more often by night)
+			wenyao.update( render.paused ? 0 : dt, sky.grade.night );
+			island.fallingLeaves?.update( render.simTime, freeControls.enabled ? camera.position : controls.target, camera.position );
+
+		},
+
+		advanceIslanders( dt ) {
+
+			island.characters?.update( renderer, scene, sun, render.simTime, render.paused ? 0 : dt );
+
+		},
+
+		trample( walkers ) {
+
+			trample.update( walkers ?? ( island.characters ? [ island.characters ] : [] ), controls.target );
+
+		},
+
+	};
 
 }
 

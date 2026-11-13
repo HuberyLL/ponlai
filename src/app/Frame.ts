@@ -3,10 +3,10 @@
 // then renders, the loop that paces it, and the controls a tool holds, resumes and steps it by
 // (`loop`, `step`, `setTime`).
 import { pageStore } from '../PageSettings.ts';
-import { nightAmbientShare, duskForce, yunpengNightShare, cloudedShare, updateLeafLight, type HazeFrame, DynamicResolution, TAAU_MAX_UPSCALE, GpuFrameTimer, PassScaling, renderScaleKey, PeriodicWork, FramePacer, PAUSED_QUEUE, gpuDevice, threeAnimation, frameBookkeeping, shared, ambientGrade, TEST_MODE, AA_MODE, AFTER_RESOLVE, TEMPORAL, preExposure, PRE_EXPOSURE_PENDING, renderEvent, type TemporalFrame, type SettleFrame, prepassScene, opaquePrepassScene, type RenderParts } from '../render.ts';
+import { DynamicResolution, TAAU_MAX_UPSCALE, GpuFrameTimer, PassScaling, renderScaleKey, FramePacer, PAUSED_QUEUE, gpuDevice, threeAnimation, frameBookkeeping, TEST_MODE, AA_MODE, renderEvent, createFrameStages, type RenderParts } from '../render.ts';
 import { settings as params, dynamicRange, renderPixelRatio, outputPixelRatio } from '../renderSetup.ts';
 import * as THREE from 'three/webgpu';
-import { isCameraInputTarget, setYunpengNight, updateSwardTint, type IslandParts } from '../island.ts';
+import { isCameraInputTarget, createIslandFrame, type IslandParts } from '../island.ts';
 import { QualityDetector, qualityLines, rememberQuality } from '../QualityDetect.ts';
 import type { PageParts } from './Page.ts';
 
@@ -129,10 +129,10 @@ export function createFrameSizing( render: RenderParts, page: PageParts ) {
 /** The dynamic resolution, the pacer and the tick. */
 export function createFrame( render: RenderParts, island: IslandParts, page: PageParts ) {
 
-	const { profiler, DEBUG, quality, gpuTiming, renderer, submitBatch, DPR_CAP, resolution, scene, waterScene, rainScene, afterScene, camera, sky, dayCycle, weather, wind, lighting, applyEnvironmentFill, sun, sunShadow, shadowDirection, prepareHaze, prepareSkyState, publishLighting, retuneSky, fft, waveMaps, pipeline, groundBounce, shoreWaves, ambientRelight, refractedSun, stormSea } = render;
-	const { controls, framingGlide, islandTurn, freeControls, trample, wenyao, growth } = island;
+	const { profiler, DEBUG, quality, gpuTiming, renderer, DPR_CAP, resolution, dayCycle, weather, sun, pipeline } = render;
+	const { framingGlide } = island;
 	const { poseIslandView, holdsFraming, followFraming } = page.framing;
-	const { qualityChoice, loading, gui, S, reviewView, setCameraView, environmentLook, frameStats, weatherEffects, weatherView, windView, resize, refreshStoreKey, applyRenderScale, describeRenderScale } = page;
+	const { qualityChoice, loading, gui, reviewView, setCameraView, environmentLook, frameStats, weatherEffects, weatherView, windView, resize, refreshStoreKey, applyRenderScale, describeRenderScale } = page;
 	page.tick = tick;
 
 	// ------------------------------------------------------------------ loop
@@ -272,71 +272,39 @@ export function createFrame( render: RenderParts, island: IslandParts, page: Pag
 
 	const frameTimes: number[] = [];
 	page.frameTimes = frameTimes;
-	page.shadowElapsed = 0;
-	// The temporal resolve's per-frame inputs (TemporalAA.ts): what besides the camera, the clock and the
-	// sizes keys a paused scene's rest (a forced strike: a review sets one while paused, and the rest
-	// starts over for it), whether the frame may rest (not while a sky bake is in flight or a sky
-	// transition runs, unless `loop.step` holds the frame still: see `holding`), and its delta.
-	let strikeKey = 'null', strikeVersion = 0;
-	// set while `loop.step` holds a frame for the rest to converge (nothing advances, a transition included)
-	page.holding = false;
-	function strikeSignature(): number {
-
-		const forced = JSON.stringify( ( sky.lightning as unknown as { forced: unknown } ).forced ?? null );
-		if ( forced !== strikeKey ) {
-
-			strikeKey = forced;
-			strikeVersion ++;
-
-		}
-		return strikeVersion;
-
-	}
-	const restStable = () => ! sky.busy && ( ! sky.transitioning || page.holding );
-	function temporalFrame( dt: number, step: number ): TemporalFrame | undefined {
-
-		if ( ! pipeline.resolver ) return undefined;
-		// (FSR 3's frame time: the scene clock's step, the pacer's nominal interval while paused)
-		// The temporal rest starts once the haze's has ended, so it averages frames of the finished haze.
-		return { signature: [ strikeSignature() ], stable: restStable() && ! pipeline.air.pending, dt, step, interval: pacer.target > 0 ? 1000 / pacer.target : 1000 / 60 };
-
-	}
-	// The haze's rest (weather/VolumetricHaze.ts): the temporal rest's signature and the sun maps' redraw
-	// counts (a redraw changes its shadow without changing the key), and whether the frame may rest.
-	function hazeFrame(): HazeFrame {
-
-		return { time: render.simTime, signature: [ strikeSignature(), sunShadow.draws, refractedSun.draws ], stable: restStable() };
-
-	}
-	// The settled signal's inputs (post/Settled.ts; debug builds): the rest's, the sun maps' redraw
-	// counts, and what will still change the frame without changing the key.
+	// The frame's stages: the renderer's (RenderStages.ts `createFrameStages`) and the island's
+	// (IslandStages.ts `createIslandFrame`), which the tick calls in turn. The page gives the
+	// renderer's what only it knows: its switches, the pacer's interval, the camera's glide and
+	// whether the loading screen still covers the canvas.
 	let revealed = false;
-	function settleFrame( bakeDue: boolean ): SettleFrame | undefined {
+	const frames = createFrameStages( render, {
+		weatherEffects,
+		environmentLook,
+		interval: () => pacer.target > 0 ? 1000 / pacer.target : 1000 / 60,
+		pending( reasons ) {
 
-		if ( ! DEBUG ) return undefined;
-		const pending: string[] = [];
-		if ( bakeDue ) pending.push( 'sky bake due' );
-		if ( sky.readbacks > 0 ) pending.push( 'sky irradiance' );
-		if ( refractedSun.pending ) pending.push( 'refracted sun' );
-		if ( framingGlide.running ) pending.push( 'camera glide' );
-		if ( sunShadow.pending ) pending.push( 'sun shadow' );
-		if ( pipeline.air.pending ) pending.push( 'haze rest' );
-		if ( pipeline.exposurePending ) pending.push( 'exposure' );
-		if ( preExposure.pending ) pending.push( PRE_EXPOSURE_PENDING );
-		if ( ! ambientRelight.ready ) pending.push( 'ambient relight' );
-		// the loading screen covers the canvas until its fade (index.html) has ended
-		if ( ! revealed ) revealed = loading === null || ( loading.classList.contains( 'done' ) && getComputedStyle( loading ).opacity === '0' );
-		return { signature: [ strikeSignature(), sunShadow.draws, refractedSun.draws ], stable: restStable(), pending, shown: revealed };
+			if ( framingGlide.running ) reasons.push( 'camera glide' );
 
-	}
+		},
+		shown() {
+
+			// the loading screen covers the canvas until its fade (index.html) has ended
+			if ( ! revealed ) revealed = loading === null || ( loading.classList.contains( 'done' ) && getComputedStyle( loading ).opacity === '0' );
+			return revealed;
+
+		},
+	} );
+	page.frames = frames;
+	const islandFrame = createIslandFrame( render, island, { framing: page.framing, view: reviewView } );
+	// the sky shows the simulation's hour, whatever else moved the day clock
+	const gameHour = () => page.game!.hour();
 	function tick( time: number ): void {
 
 		// the frame's own vblank time, not the moment the tick starts: the main thread reaches the tick a
 		// few milliseconds into the frame, by a varying amount, which made the scene's steps uneven
 		clock.update( time );
-		// a jump's explicit bake in flight: no frame, and the clock holds (`bakeExplicitly`); a retune
-		// starts one (`retuneSky`)
-		if ( render.jumpsInFlight > 0 || retuneSky() ) return;
+		// a jump's explicit bake in flight: no frame, and the clock holds
+		if ( frames.held() ) return;
 		frameStats.record( time, pacer.interval, pacer.period );
 		// The clock never runs backwards. Timer.reset() restarts it at performance.now(): `loop.start()`
 		// does so, and so does the timer itself when the page shows again (`connect( document )`). The
@@ -352,15 +320,11 @@ export function createFrame( render: RenderParts, island: IslandParts, page: Pag
 		const environmentDt = Math.min( rawDt, 1 );
 		// ?game&paused starts the game paused; once the game runs, so does the scene
 		if ( render.paused && page.game && ! page.game.sim.paused ) render.paused = false;
-		if ( ! render.paused ) render.simTime += dt;
+		frames.advanceClock( dt );
 		// In the game the simulation's clock sets the pace of the day (and so of the page's weather).
 		const clockDt = page.game ? page.game.update( rawDt ) : rawDt;
-		// the island's growth: a swap, or one of the frames after it (before the camera and the shadows)
-		growth.update( render.simTime );
-		dayCycle.advance( clockDt );
-		// the sky shows the simulation's hour, whatever else moved the day clock
-		if ( page.game ) dayCycle.setHour( page.game.hour() );
-		weather.update( render.paused ? 0 : clockDt );
+		islandFrame.grow();
+		frames.advanceDay( clockDt, page.game ? gameHour : null );
 		weatherView.preset = weather.target;
 		const windTarget = weather.windTarget;
 		if ( `${ windTarget.level },${ windTarget.heading }` !== page.shownWind ) {
@@ -369,130 +333,21 @@ export function createFrame( render: RenderParts, island: IslandParts, page: Pag
 			page.shownWind = `${ windTarget.level },${ windTarget.heading }`;
 
 		}
-		if ( freeControls.enabled ) freeControls.update( rawDt );
-		else {
+		islandFrame.moveCamera( time, dt, rawDt );
 
-			// the glide to a grown land's framing (finished at once if the page was paused meanwhile)
-			if ( framingGlide.advance( render.paused ? Infinity : dt, camera.position, controls.target ) ) camera.lookAt( controls.target );
-			// a turn or zoom of the island view: the framing at the new heading and zoom, taken at once
-			islandTurn.enabled = controls.enabled && ! controls.handInput && reviewView.camera === 'island';
-			const turn = islandTurn.advance( dt ), zoom = THREE.MathUtils.clamp( island.islandZoom + islandTurn.zoom( dt ), 0, 1 );
-			if ( zoom === 0 || zoom === 1 ) islandTurn.stopZoom();
-			if ( turn !== 0 || zoom !== island.islandZoom ) {
-
-				poseIslandView( page.framing.viewOptions, island.islandTurned + turn, zoom );
-				followFraming( false );
-
-			}
-			controls.advance( dt, time );
-
-		}
-
-		renderer.info.reset();
-		// Sun, moon, key light and grade follow the clock every frame; only the baked reflection,
-		// environment and cloud products cross-fade between bakes.
-		sky.track( render.manualSun ? null : dayCycle.snapshot(), weather.state, render.cloudOverride, weather.skyMix );
-		sky.advance( environmentDt );
-		publishLighting();
-		// the ambient grade by the sun and the weather's blend of the four skies (lighting/AmbientGrade.ts)
-		ambientGrade.update( sky.elevation, weather.skyMix, sky.rising, sky.moonElevation, sky.moonKeyShare );
-		shared.clouded.value = cloudedShare( weather.skyMix );
-		// the yunpeng's glow and its local lights by their own share of the night (sky/DayCycle.ts
-		// `yunpengNightShare`; lighting/LocalLights.ts: its pass sorts the sources in view), the leaves'
-		// night key and the sward's by the night ambient's (`nightAmbientShare`); a debug page may force
-		// each reader's (DayCycle.ts `duskForce`)
-		const nightAmbient = nightAmbientShare( sky.elevation, sky.rising, shared.clouded.value );
-		const yunpengShare = setYunpengNight( duskForce( 'yunpeng', yunpengNightShare( sky.elevation, sky.rising, shared.clouded.value ) ) );
-		render.localLights.update( duskForce( 'localLights', yunpengShare ) );
-		// what the crowns' leaves pass on of the key (world/vegetation/LeafLight.ts)
-		updateLeafLight( sky.elevation, duskForce( 'nightAmbient', nightAmbient ), shared.clouded.value );
-		// what a closed sky's light turns into in the sward (materials/SwardTint.ts)
-		updateSwardTint( shared.swardTint.value, shared.clouded.value, duskForce( 'nightAmbient', nightAmbient ) );
-		prepareHaze( weather.state );
-		pipeline.air.keyDir.value.copy( sky.keyDir );
-		pipeline.air.keyColor.value.copy( sky.keyColor ).multiplyScalar( 1 - THREE.MathUtils.smoothstep( sky.clouds.coverage.value, 0.7, 0.97 ) );
-		pipeline.shafts.setSun( sky.sunDir, sky.sunColor );
-		pipeline.shafts.setMoon( sky.moonDir, sky.keyColor, sky.keyIsMoon );
-		wind.update( render.paused ? 0 : dt, weather.state.windSpeed, weather.state.windDirection, weather.state.gustiness );
-		// Lightning follows the scene clock, so a paused frame holds its strike; it lights the clouds'
-		// march below, so it goes first.
-		// (the scene's render size: the canvas is larger while the frame is upscaled)
-		sky.lightning.update( render.simTime, weather.state.storm, camera, pipeline.height, sky.clouds );
-		sky.updateClouds( camera, pipeline.width, pipeline.height, shared.wind.direction.value, render.simTime );
-		shared.rain.value = weatherEffects.rain ? sky.weather.rain : 0;
-		shared.storm.value = weather.state.storm;
-		// A strike lights the island for an instant through the sky's fill: the lit cloud deck adds its
-		// radiance to the sky's, so a flash that barely shows by day floods a dark night.
-		const skyLuma = sky.skyIrradiance.r * 0.2126 + sky.skyIrradiance.g * 0.7152 + sky.skyIrradiance.b * 0.0722;
-		const strikeFill = lighting.skyFill * Math.min( 1 + sky.lightning.fill / Math.max( skyLuma, 1e-5 ), 60 );
-		applyEnvironmentFill( strikeFill );
-		shared.skyFill.value = strikeFill;
-		shared.skyIrradiance.value.set( sky.skyIrradiance.r, sky.skyIrradiance.g, sky.skyIrradiance.b ).multiplyScalar( strikeFill );
-		// the page's own wetness, in the game too (soaking and drying on the day clock)
-		shared.wetness.value = weatherEffects.wetness ? weather.state.wetness : 0;
-		fft.setWind( wind.speed, wind.heading );
-		render.rain!.uniforms.rain.value = shared.rain.value;
-		render.rain!.uniforms.wind.value.copy( shared.wind.velocity.value );
-		render.rain!.uniforms.waterLevel.value = shared.waterLevel.value;
-		render.rain!.update( renderer, camera, render.simTime, shared.wind.displacement.value, pipeline.height, AFTER_RESOLVE ? pipeline.outputHeight : pipeline.height );
-		if ( ! render.manualSun && environmentLook.exposure ) {
-
-			S.exposure = sky.grade.exposure;
-			// the night's grade (Pipeline NIGHT)
-			S.night = sky.grade.night;
-			// the exposure's own night weight (its keys: look/ExposureLook.ts)
-			S.exposureNight = sky.grade.exposureNight;
-
-		}
-		// the weather's stops of the exposure and the clouded day's keys (Pipeline `skyMix`)
-		const skyMix = weather.skyMix;
-		for ( let i = 0; i < skyMix.length; i ++ ) S.skyMix[ i ] = skyMix[ i ];
-		render.skyElapsed += environmentDt;
-		const skyInterval = render.runtimeQuality.skyUpdateInterval;
-		const ws = weather.state;
-		const weatherSignature = `${ render.cloudOverride ?? ws.coverage },${ ws.density },${ ws.directVisibility },${ ws.ambientGain },${ ws.daySky },${ ws.daySkyExponent },${ ws.haze }`;
-		if ( ! sky.busy && ! sky.transitioning && render.skyElapsed >= skyInterval &&
-			( render.simTime !== render.lastSkyTime || weatherSignature !== render.lastWeatherSignature || ( ! render.manualSun && dayCycle.hour !== render.lastSkyHour ) ) ) {
-
-			render.skyElapsed = 0;
-			render.lastSkyTime = render.simTime;
-			render.lastSkyHour = dayCycle.hour;
-			prepareSkyState();
-			void sky.update( skyInterval ).catch( ( error: unknown ) => console.error( error ) );
-
-		}
-		// a periodic bake waits for its interval (the settled signal waits for it too)
-		const bakeDue = ! sky.busy && ( render.simTime !== render.lastSkyTime || weatherSignature !== render.lastWeatherSignature || ( ! render.manualSun && dayCycle.hour !== render.lastSkyHour ) );
-		// The sun's map steps with the key light and cross-fades between steps, so its shadows move
-		// smoothly without re-rasterising sub-texel casters every frame; it is drawn along the lifted
-		// key. The underwater map keeps the quality cadence.
-		sunShadow.update( renderer, scene, camera, shadowDirection );
-		page.shadowElapsed += environmentDt;
-		if ( page.shadowElapsed >= render.runtimeQuality.refractedSun.interval && refractedSun.update() ) page.shadowElapsed = 0;
-		shared.time.value = render.simTime;
-		fft.update( render.paused ? 0 : dt, render.simTime );
-		stormSea.update( render.simTime, weather.state.storm, camera );
-		shoreWaves.update( fft, render.simTime );
-		// Whitewater is disabled in this scene; leave its history idle.
-		// (the wave maps and the caustics are drawn by their pass on the frame graph: WaveMaps.ts; the
-		// caustics only while the sun is the key and gives light, and when the sea's time or the key moved)
-		waveMaps.prepare( camera, sky.keyDir, ! sky.keyIsMoon && Math.max( shared.sunColor.value.x, shared.sunColor.value.y, shared.sunColor.value.z ) > 0, render.simTime, fft.spectrumRevision );
-		// (their schools take flight more often by night)
-		wenyao.update( render.paused ? 0 : dt, sky.grade.night );
-		island.fallingLeaves?.update( render.simTime, freeControls.enabled ? camera.position : controls.target, camera.position );
-		groundBounce.update( sky.seaRadiance );
-		ambientRelight.update();
-		island.characters?.update( renderer, scene, sun, render.simTime, render.paused ? 0 : dt );
+		const nightAmbient = frames.trackSky( environmentDt );
+		frames.lightNight( islandFrame.night(), nightAmbient );
+		islandFrame.tintSward( nightAmbient );
+		frames.advanceWeatherAndSea( dt, environmentDt );
+		islandFrame.advanceLife( dt );
+		frames.relight();
+		islandFrame.advanceIslanders( dt );
 		page.game?.render( renderer, sun, render.paused ? 0 : rawDt );
-		trample.update( page.game ? page.game.walkers() : island.characters ? [ island.characters ] : [], controls.target );
+		islandFrame.trample( page.game ? page.game.walkers() : null );
 
-		// (the ground truth draws the storm's spray with the rain, in the overlay pass; taa and taau draw
-		// it with the streaks after the resolve)
-		const overlay = ! AFTER_RESOLVE && ( render.rain!.mesh.visible || ( TEMPORAL && stormSea.spray.mesh.visible ) );
-		const after = AFTER_RESOLVE && ( render.rain!.mesh.visible || stormSea.spray.mesh.visible );
-		pipeline.render( { scene, prepassScene, opaquePrepassScene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, afterScene: after ? afterScene : undefined, camera, water: render.water!, sun, keyDirection: shadowDirection, time: render.simTime, temporal: temporalFrame( rawDt, render.paused ? 0 : dt ), settle: settleFrame( bakeDue ), haze: hazeFrame() } );
+		frames.draw( rawDt, dt );
 		steerRenderScale( rawDt );
-		submitBatch.flush();
+		frames.submit();
 		// a paused page in the test mode keeps at most PAUSED_QUEUE frames queued on the GPU
 		// (FramePacer.ts, "A paused page's queue")
 		const bounded = render.paused && TEST_MODE;
@@ -500,24 +355,6 @@ export function createFrame( render: RenderParts, island: IslandParts, page: Pag
 		if ( bounded ) pacer.submitted( gpuQueue.onSubmittedWorkDone() );
 		page.frame ++;
 		page.diagnostics();
-
-	}
-
-	// The periodic work in this frame (PeriodicWork bits): its frames stay out of the dynamic scale's
-	// quantiles. A periodic sky bake runs its slices in the ticks while the sky is busy, from the one
-	// that starts it to the one that publishes it.
-	let skyWasBusy = false;
-	const periodicCounts = { sunShadow: 0, refractedSun: 0 };
-	function periodicWork(): number {
-
-		let heavy = 0;
-		if ( sky.busy || skyWasBusy ) heavy |= PeriodicWork.skyBake;
-		skyWasBusy = sky.busy;
-		if ( sunShadow.draws !== periodicCounts.sunShadow ) heavy |= PeriodicWork.sunShadow;
-		if ( refractedSun.draws !== periodicCounts.refractedSun ) heavy |= PeriodicWork.refractedSun;
-		periodicCounts.sunShadow = sunShadow.draws;
-		periodicCounts.refractedSun = refractedSun.draws;
-		return heavy;
 
 	}
 
@@ -532,7 +369,7 @@ export function createFrame( render: RenderParts, island: IslandParts, page: Pag
 		// the GPU's budget follows the paced frame interval (a 60 Hz frame unpaced)
 		dynamicResolution.setFrameInterval( pacer.rate > 0 ? pacer.interval : 1000 / 60 );
 		const steering = page.steppedScale === null && ! render.paused && ! resolution.full && page.renderScale === dynamicResolution.scale;
-		frameScales.set( renderer.info.frame, { scale: steering ? page.renderScale : NaN, heavy: periodicWork() } );
+		frameScales.set( renderer.info.frame, { scale: steering ? page.renderScale : NaN, heavy: frames.periodicWork() } );
 		if ( frameScales.size > 240 ) frameScales.delete( frameScales.keys().next().value! );
 		page.gpuTimer?.resolve();
 		if ( steering ) {
@@ -619,7 +456,7 @@ export function startLoop( render: RenderParts, island: IslandParts, page: PageP
 export function createLoopControls( render: RenderParts, page: PageParts ) {
 
 	const { renderer, sky, dayCycle, retuneSky, pipeline } = render;
-	const { dynamicResolution, gpuQueue, applyRenderScale, clock, diagnostics, loopBody, animation } = page;
+	const { dynamicResolution, gpuQueue, applyRenderScale, clock, diagnostics, loopBody, animation, frames: stages } = page;
 	// set while the loop stands still because the page is hidden (see below)
 	let hiddenStop = false;
 	// Stops and restarts the frame loop, so the profiler can keep two pages in one browser and time one
@@ -710,9 +547,7 @@ export function createLoopControls( render: RenderParts, page: PageParts ) {
 
 		};
 		await settleSkyReadback();
-		( sky.clouds as unknown as { frame: number } ).frame = 0;
-		render.skyElapsed = 0;
-		page.shadowElapsed = 0;
+		stages.restartCadences();
 		const t0 = Math.round( performance.now() );
 		try {
 
@@ -753,10 +588,7 @@ export function createLoopControls( render: RenderParts, page: PageParts ) {
 				if ( temporal && converge?.( i ) ) {
 
 					// hold the frame's scene still until the rest has converged on it
-					const was = { paused: render.paused, day: dayCycle.paused, skyElapsed: render.skyElapsed, shadowElapsed: page.shadowElapsed };
-					render.paused = true;
-					dayCycle.paused = true;
-					page.holding = true;
+					const release = stages.holdStill();
 					timer.getDelta = () => 0;
 					try {
 
@@ -770,11 +602,7 @@ export function createLoopControls( render: RenderParts, page: PageParts ) {
 					} finally {
 
 						timer.getDelta = () => dt;
-						page.holding = false;
-						render.paused = was.paused;
-						dayCycle.paused = was.day;
-						render.skyElapsed = was.skyElapsed;
-						page.shadowElapsed = was.shadowElapsed;
+						release();
 
 					}
 					if ( ! temporal.converged ) console.warn( `loop.step: frame ${ i } did not converge (the rest's ${ temporal.rest.frames } of ${ temporal.rest.target } frames)` );

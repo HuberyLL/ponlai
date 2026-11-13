@@ -138,16 +138,15 @@ const STATE = {
 	'post/MeadowShade.ts:screenShadowView': [ 'post/Pipeline.ts', 'post/PipelinePasses.ts' ],
 	'post/Motion.ts:reactiveUniforms': [ 'post/TemporalAA.ts', 'weather/Lightning.ts' ],
 	'post/fsr3/MipBias.ts:fsr3MipBiasScale': [ 'post/fsr3/Fsr3Upscaler.ts' ],
-	'shared.ts:shared': [ 'RenderStages.ts', 'app/Diagnostics.ts', 'app/Frame.ts', 'sky/SkyTrack.ts', 'weather/RainCollision.ts' ],
+	'shared.ts:shared': [ 'RenderStages.ts', 'app/Diagnostics.ts', 'sky/SkyTrack.ts', 'weather/RainCollision.ts' ],
 	'sky/SkyRetune.ts:skyRetune': [ 'RenderStages.ts' ],
 	'world/VegetationShadow.ts:shadowWindOn': [ 'lighting/SunShadow.ts' ],
 	'world/WorldStart.ts:worldProgress': [ 'IslandStages.ts' ],
 };
 // The pairs of STATE whose writer sits in another layer than the state's owner, as
-// 'owner file:variable <- writer': the scene's uniforms the page's frame sets.
+// 'owner file:variable <- writer': the scene's uniforms the page's diagnostics set.
 const ACROSS = [
 	'shared.ts:shared <- app/Diagnostics.ts',
-	'shared.ts:shared <- app/Frame.ts',
 ];
 
 for ( const a of process.argv.slice( 2 ) ) {

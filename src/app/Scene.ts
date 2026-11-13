@@ -53,7 +53,6 @@ export function createSceneControls( render: RenderParts, island: IslandParts, p
 	registerSceneHistories( render );
 	registerIslandHistories( render, island );
 	registerLightHistories( render );
-	history.onJump( 'shadow cadence', () => { page.shadowElapsed = 0; } );
 	// a fresh load starts at the held frame rate, not at a fallback the last scene fell to
 	history.onJump( 'frame pacer', () => pacer.reset() );
 	// setTime moves the (paused) clock, so captures can step through an animation in one page load
