@@ -1,9 +1,12 @@
-// Checks that the exposure takes its look tables at creation (packages/render/look/ExposureLook.ts
-// `createExposure`): exposures made from different tables in one process each hold their own
-// numbers, and making one leaves another as it was. CPU only, no GPU, under a second.
-//   node tools/verify-exposure-look.mjs
+// Checks that the systems which take their look tables at creation hold the tables they were
+// given: two made from different tables in one process each read their own numbers, and making
+// one leaves another as it was. CPU only, no GPU, a few seconds (the second part loads the page's
+// modules through Vite's SSR loader, as tools/verify-extensions.mjs does: TypeScript and
+// `import.meta.env`).
+//   node tools/verify-look-params.mjs
 //
-// It makes three exposures: from the island's look (packages/island/look/IslandLook.ts), from the
+// The exposure (packages/render/look/ExposureLook.ts `createExposure`), in plain node. It makes
+// three exposures: from the island's look (packages/island/look/IslandLook.ts), from the
 // renderer's neutral one (packages/render/look/NeutralLook.ts) and from a copy of the island's whose
 // base exposure is doubled at every elevation, every key's `key` raised by a stop and the night's
 // numbers changed. Guarantees, each a failure (exit 1) when broken:
@@ -19,8 +22,20 @@
 // - The day cycle (packages/render/sky/DayCycle.ts) reads the exposure it is given.
 // Under node the tune table is off (packages/render/debug/Tune.ts `TUNE_ON`), so each exposure's
 // tunables are its own; on a debug page they share one table by name (ExposureLook.ts's header).
+//
+// The other systems that take their tables at creation, through Vite's SSR loader with the
+// island's look installed (so a number that came from the installed look instead of the table
+// given would show): the shared uniforms (packages/render/shared.ts `createShared`: the ambient
+// occlusion's floor and the meadow canopy's two media), the local lights (packages/render/lighting/
+// LocalLights.ts `LocalLights`: the gain), the sea's detail (packages/render/ocean/SeaDetail.ts:
+// its three strengths) and the FFT ocean's distant swell (packages/render/ocean/OceanFFT.ts: every
+// field of it). Each is made from the island's look, the neutral one and a copy of the island's
+// with every one of these numbers changed, in that order. Guarantees, each a failure:
+// - Each reads its own table's numbers, equal to the table's and none from another.
+// - Making the others leaves the island's as it was.
+// - The three differ wherever their tables do (the changed copy everywhere).
 import assert from 'node:assert/strict';
-import './island-look.mjs';
+import { installIslandLook } from './island-look.mjs';
 import { createExposure } from '../packages/render/look/ExposureLook.ts';
 import { DayCycle } from '../packages/render/sky/DayCycle.ts';
 import { ISLAND_LOOK } from '../packages/island/look/IslandLook.ts';
@@ -158,4 +173,120 @@ for ( const hour of [ 3, 7, 12, 18.5 ] ) {
 
 }
 
-console.log( `Exposure look: three exposures from three tables, each its own (${ before.length } readings), the island's unmoved by the others, the changed copy off by its changes alone, the day cycle reading its own: passed.` );
+console.log( `Exposure: three exposures from three tables, each its own (${ before.length } readings), the island's unmoved by the others, the changed copy off by its changes alone, the day cycle reading its own: passed.` );
+
+// ---- the systems that load through Vite's SSR loader
+
+// every number a system made from `look` holds, by name, in order
+function systemReadings( made ) {
+
+	const { shared, lights, detail, fft } = made;
+	return {
+		'shared.aoFloor': shared.aoFloor,
+		'shared.meadowCanopy.density': shared.meadowCanopy.density.value,
+		'shared.meadowCanopy.open': shared.meadowCanopy.open.value,
+		'shared.meadowCast.density': shared.meadowCast.density.value,
+		'shared.meadowCast.open': shared.meadowCast.open.value,
+		'localLights.gain': lights.gain,
+		'seaDetail.gust': detail.gustAmount.value,
+		'seaDetail.slick': detail.slickAmount.value,
+		'seaDetail.streak': detail.streakAmount.value,
+		...Object.fromEntries( Object.entries( fft.swell ).map( ( [ k, v ] ) => [ `swell.${ k }`, v ] ) ),
+	};
+
+}
+
+// the same names, read from a look's tables
+function tableReadings( look ) {
+
+	return {
+		'shared.aoFloor': look.occlusion.floor,
+		'shared.meadowCanopy.density': look.meadowCanopy.canopy.density,
+		'shared.meadowCanopy.open': look.meadowCanopy.canopy.open,
+		'shared.meadowCast.density': look.meadowCanopy.cast.density,
+		'shared.meadowCast.open': look.meadowCanopy.cast.open,
+		'localLights.gain': look.localLights.gain,
+		'seaDetail.gust': look.sea.detail.gust,
+		'seaDetail.slick': look.sea.detail.slick,
+		'seaDetail.streak': look.sea.detail.streak,
+		...Object.fromEntries( Object.entries( look.sea.swell ).map( ( [ k, v ] ) => [ `swell.${ k }`, v ] ) ),
+	};
+
+}
+
+// the island's look with every number these systems take changed
+function changedSystems( look ) {
+
+	const out = structuredClone( { occlusion: look.occlusion, meadowCanopy: look.meadowCanopy, localLights: look.localLights, sea: look.sea } );
+	out.occlusion.floor += 0.125;
+	for ( const medium of [ out.meadowCanopy.canopy, out.meadowCanopy.cast ] ) {
+
+		medium.density += 1;
+		medium.open += 0.125;
+
+	}
+	out.localLights.gain += 2;
+	for ( const k of Object.keys( out.sea.detail ) ) out.sea.detail[ k ] += 0.5;
+	for ( const k of Object.keys( out.sea.swell ) ) out.sea.swell[ k ] += 1;
+	return out;
+
+}
+
+const { createServer } = await import( 'vite' );
+const ROOT = new URL( '..', import.meta.url ).pathname;
+const server = await createServer( {
+	root: ROOT, logLevel: 'error', appType: 'custom', clearScreen: false,
+	server: { middlewareMode: true, hmr: false, ws: false, watch: null },
+	optimizeDeps: { noDiscovery: true, include: [] },
+} );
+let systems = 0;
+try {
+
+	const load = ( file ) => server.ssrLoadModule( `/${ file }` );
+	const { installSettings, parseSettings } = await load( 'packages/render/Settings.ts' );
+	installSettings( parseSettings( '' ) );
+	await installIslandLook( load );
+	const { createShared } = await load( 'packages/render/shared.ts' );
+	const { LocalLights } = await load( 'packages/render/lighting/LocalLights.ts' );
+	const { SeaDetail } = await load( 'packages/render/ocean/SeaDetail.ts' );
+	const { OceanFFT } = await load( 'packages/render/ocean/OceanFFT.ts' );
+	const make = ( look ) => {
+
+		const shared = createShared( look );
+		return {
+			shared,
+			lights: new LocalLights( look ),
+			detail: new SeaDetail( shared, look.sea.detail ),
+			// (the stage passes the swell with the sea state's scale over the look's: RenderStages.ts)
+			fft: new OceanFFT( null, { windSpeed: 5, windDirection: 0, distantSwell: look.sea.swell } ),
+		};
+
+	};
+	const looks = { island: ISLAND_LOOK, neutral: NEUTRAL_LOOK, changed: changedSystems( ISLAND_LOOK ) };
+	const islandMade = make( looks.island );
+	const islandBefore = systemReadings( islandMade );
+	const made = { island: islandMade, neutral: make( looks.neutral ), changed: make( looks.changed ) };
+	const read = Object.fromEntries( Object.entries( made ).map( ( [ name, m ] ) => [ name, systemReadings( m ) ] ) );
+	for ( const name of Object.keys( looks ) ) {
+
+		const want = tableReadings( looks[ name ] );
+		assert.deepEqual( Object.keys( read[ name ] ), Object.keys( want ), `${ name }: the numbers read` );
+		for ( const [ k, v ] of Object.entries( want ) ) assert.equal( read[ name ][ k ], v, `${ name }: ${ k }` );
+
+	}
+	for ( const [ k, v ] of Object.entries( islandBefore ) ) assert.ok( Object.is( read.island[ k ], v ), `island ${ k } moved: ${ v } -> ${ read.island[ k ] }` );
+	for ( const k of Object.keys( islandBefore ) ) {
+
+		assert.notEqual( read.changed[ k ], read.island[ k ], `changed: ${ k } reads as the island's` );
+		const differs = tableReadings( looks.neutral )[ k ] !== tableReadings( looks.island )[ k ];
+		if ( differs ) assert.notEqual( read.neutral[ k ], read.island[ k ], `neutral: ${ k } reads as the island's` );
+
+	}
+	systems = Object.keys( islandBefore ).length;
+
+} finally {
+
+	await server.close();
+
+}
+console.log( `Shared uniforms, local lights, sea detail and swell: three of each from three tables, each its own (${ systems } numbers), the island's unmoved by the others: passed.` );

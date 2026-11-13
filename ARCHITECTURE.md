@@ -363,7 +363,7 @@ folder is its layer.
     module does nothing as it loads but declare and register: no `await` and no read of the page
     ([tools/verify-exits.mjs](tools/verify-exits.mjs), which also loads the headless and setup exits
     in node). A module may still hold state at module level (uniforms, buffers, tables) and compute
-    constants from the settings and the look as it loads (the exposure takes its look at creation
+    constants from the settings and the look as it loads (some systems take their look at creation
     instead: rule 16), so that state is one per process: a page
     holds one renderer, and the parts that would clash say so (a second light table and a second
     install of the shared uniforms throw). *Why:* what a package offers is a list that can be read
@@ -500,16 +500,25 @@ folder is its layer.
     ([packages/render/look/NeutralLook.ts](packages/render/look/NeutralLook.ts): every gain one,
     every offset zero, no grade, one exposure key for the whole day) and its own modules hold only
     physical constants and the constants of their methods; the island's numbers are the island's
-    data ([packages/island/look/](packages/island/look/)). The look is installed, not passed to a
-    constructor, for every system but the exposure: the page's entry installs it after the settings
-    and before any module that reads it loads, and each reader takes its numbers once as it loads.
-    Installing it after a reader has loaded throws and names that reader, and so does installing a
-    second, different set. The exposure takes its tables as an argument where the renderer's sky
-    stage creates it
-    ([packages/render/look/ExposureLook.ts](packages/render/look/ExposureLook.ts) `createExposure`;
-    the entry hands it the set it installs), so two exposures made from two sets hold their own
-    numbers ([tools/verify-exposure-look.mjs](tools/verify-exposure-look.mjs)), though on a debug
-    page their tunables share one table by name. The other systems read the installed set, so a
+    data ([packages/island/look/](packages/island/look/)). Five systems take their tables as an
+    argument where they are created, and the entry hands them the set it installs: the exposure,
+    where the renderer's sky stage creates it
+    ([packages/render/look/ExposureLook.ts](packages/render/look/ExposureLook.ts)
+    `createExposure`); the ambient occlusion's floor and the meadow canopy's media, which every
+    material's shader reads, in the shared uniforms
+    ([packages/render/shared.ts](packages/render/shared.ts) `createShared`); the local lights' gain
+    ([packages/render/lighting/LocalLights.ts](packages/render/lighting/LocalLights.ts)); and the
+    sea's detail and distant swell
+    ([packages/render/ocean/SeaDetail.ts](packages/render/ocean/SeaDetail.ts),
+    [packages/render/ocean/OceanFFT.ts](packages/render/ocean/OceanFFT.ts)). Two of any of them
+    made from two sets hold their own numbers
+    ([tools/verify-look-params.mjs](tools/verify-look-params.mjs)), though on a debug page two
+    exposures share their tunables by name, and the shared uniforms and the light table are still
+    one a page (rule 11). The other systems (the day's windows, the ambient grade, the haze, the
+    display, the sky and the wind on the plants) take the installed look, not a constructor's
+    argument: the page's entry installs it after the settings and before any module that reads it
+    loads, and each reader takes its numbers once as it loads. Installing it after a reader has
+    loaded throws and names that reader, and so does installing a second, different set. So a
     process has one look, and a page cannot hold two renderers that draw with different looks.
     Three sets of numbers do not pass through the look yet and stay the renderer's: the weathers'
     presets with the wind's four levels

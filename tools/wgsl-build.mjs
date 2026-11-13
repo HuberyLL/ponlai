@@ -531,7 +531,8 @@ try {
 	await installIslandLook( ( file ) => server.ssrLoadModule( `/${ file }` ) );
 	// the scene's uniforms, as the page's entry creates and installs them (packages/render/shared.ts)
 	const { createShared, installShared } = await server.ssrLoadModule( '/packages/render/shared.ts' );
-	installShared( createShared() );
+	const { ISLAND_LOOK } = await server.ssrLoadModule( '/packages/island/look/IslandLook.ts' );
+	installShared( createShared( ISLAND_LOOK ) );
 	const mod = await server.ssrLoadModule( entry.url );
 	if ( typeof mod.default !== 'function' ) throw new Error( `${ entry.url } has no default export function` );
 	list = await mod.default( { renderer } );

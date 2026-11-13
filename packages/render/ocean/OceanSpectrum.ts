@@ -21,8 +21,9 @@ export interface WaveSpectrumSettings {
 }
 
 // tidewater's distant swell: a second wave system of its own wind and fetch, at a heading of its
-// own (tidewater's 5 degrees against the local sea's 25), scaled by the sea state. Its values:
-// look/SeaLook.ts DEFAULT_SWELL.
+// own (tidewater's 5 degrees against the local sea's 25), scaled by the sea state. Its values are
+// the look's (look/Look.ts `SeaLook`), which the renderer's stage hands the FFT ocean as it makes
+// it (RenderStages.ts `createSeaAndPipeline`).
 export interface SwellParams {
 	scale: number;
 	windSpeed: number;

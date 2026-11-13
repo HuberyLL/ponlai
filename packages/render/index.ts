@@ -28,7 +28,7 @@ export { keyDeckShare, keyLandVisibility } from './lighting/KeyCloud.ts';
 export { liftKey, liftKeyWorld, liftedKeyDirection } from './lighting/KeyLift.ts';
 export { shadeLocalLights, testSources } from './lighting/LocalLights.ts';
 export type { LocalLightKind, LocalSource } from './lighting/LocalLights.ts';
-export { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopy, meadowCanopyLight, meadowGroundLight } from './lighting/MeadowCanopy.ts';
+export { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight, meadowGroundLight } from './lighting/MeadowCanopy.ts';
 export { meterAmbient, meterKey, meterStart, writeMeter } from './lighting/MeterLight.ts';
 export type { RefractedSun } from './lighting/RefractedSun.ts';
 export { solarVolumeVisibility } from './lighting/SolarShadow.ts';

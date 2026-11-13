@@ -7,7 +7,7 @@ import type { FrameGraph } from '../post/graph/FrameGraph.ts';
 import { GRID, CLUSTERS, PER_CLUSTER, CLUSTER_WORDS, GUARD, slicesFor, sortInView } from './LocalLightClusters.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { meterKey } from './MeterLight.ts';
-import { GAIN } from '../look/LocalLightsLook.ts';
+import type { Look } from '../look/Look.ts';
 import { checkDeclarations, type Declarations } from '../Extensions.ts';
 
 // Local lights: small light sources on the island (by night the yunpeng's clumps, Yunpeng.ts) that
@@ -77,8 +77,8 @@ import { checkDeclarations, type Declarations } from '../Extensions.ts';
 // the clouds and the haze take none (the haze could later, in its froxels' light).
 //
 // The result is a function of the view and the source table alone, with no history: a scene jump
-// clears nothing. `gain` is the art gain on top of every source's own intensity (GAIN; the GUI's
-// Local lights folder); `flags.localLights = false` (or 0, at load or at run time) turns them off;
+// clears nothing. `gain` is the art gain on top of every source's own intensity (the look's, which
+// the registry takes where it is made, `createLocalLights`; the GUI's Local lights folder); `flags.localLights = false` (or 0, at load or at run time) turns them off;
 // `flags=lightTest:N` (at load) adds N white test sources over the meadow (`testSources`), for cost
 // tests only; debug builds read the state as `__PONLAI__.localLights.info()` (a promise: the
 // sources, those in view, the fullest cluster and the clusters that overflowed, read back from the
@@ -99,7 +99,10 @@ const CAPACITY = 1024;
 const MAX_SOURCES = 1 << 16;
 // the near field's softening (m^2): the size of a source
 const SOFT = 1;
-// (The art gain over the sources' own intensity, GAIN, is the look's: look/LocalLightsLook.ts.)
+// (The art gain over the sources' own intensity is the look's (look/Look.ts `LocalLightsLook`): the
+// registry takes its table as an argument where the renderer's stage makes it (RenderStages.ts
+// `createLight`), so two registries made from two tables hold their own gain
+// (tools/verify-look-params.mjs), and this module holds none.)
 
 type V3 = THREE.Node<'vec3'>;
 type F = THREE.Node<'float'>;
@@ -304,14 +307,20 @@ export class LocalLights {
 	readonly kinds: LocalLightKind[] = [];
 	/** every kind's sources, in the kinds' order (`refresh`) */
 	sources: LocalSource[] = [];
-	/** the art gain (GAIN), the GUI's */
-	gain = GAIN;
+	/** the art gain (the look's at first), the GUI's */
+	gain: number;
 	/** off: no light (the GUI's; `flags.localLights = false` too) */
 	enabled = true;
 	/** the sources' share of their light now (0 by day) */
 	strength = 0;
 	/** the renderer, for `info()` (the pass sets it) */
 	renderer: THREE.WebGPURenderer | null = null;
+	/** `look`: the look's tables the registry takes its gain from. */
+	constructor( look: LocalLightsTables ) {
+
+		this.gain = look.localLights.gain;
+
+	}
 	/** Registers a kind of light and takes its sources; refused without its three declarations. */
 	add( kind: LocalLightKind ): void {
 
@@ -441,12 +450,16 @@ export class LocalLights {
 // the page's registry, which the pass below reads (the pipeline declares the pass without it)
 let installed: LocalLights | null = null;
 
-/** The renderer's local lights, made once a page: the registry of the kinds of light, whose table
- * the module's buffers hold and whose pass (`localLightsPass`) the pipeline declares. */
-export function createLocalLights(): LocalLights {
+/** The look's tables the local lights take (`LocalLights`, `createLocalLights`). */
+export type LocalLightsTables = Pick<Look, 'localLights'>;
+
+/** The renderer's local lights, made once a page from `look`'s tables: the registry of the kinds
+ * of light, whose table the module's buffers hold and whose pass (`localLightsPass`) the pipeline
+ * declares. */
+export function createLocalLights( look: LocalLightsTables ): LocalLights {
 
 	if ( installed ) throw new Error( 'LocalLights: a page has one light table, and it is already made' );
-	installed = new LocalLights();
+	installed = new LocalLights( look );
 	return installed;
 
 }

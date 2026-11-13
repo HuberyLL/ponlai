@@ -12,7 +12,6 @@ import {
 import { mulberry32 } from '../util/noise.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { COX_MUNK, seaState, slopeVariance, waveSystemTerms, type SwellParams, type WaveSpectrumSettings } from './OceanSpectrum.ts';
-import { DEFAULT_SWELL } from '../look/SeaLook.ts';
 
 // Multi-cascade FFT ocean (Tessendorf) on WebGPU compute, after tidewater's OceanFFT (4811ba4): four
 // cascades of non-integer size ratios, so the sum never shows a repeat, each holding the waves of
@@ -214,15 +213,15 @@ export class OceanFFT {
 		peakEnhancement = 3.3,
 		shortWavesFade = 0.01,
 		seed = 1234,
-		distantSwell = {},
+		distantSwell,
 		anisotropy = 4,
-	}: Pick<OceanParams, 'windSpeed' | 'windDirection'> & Partial<OceanParams> & { swellHeading?: number; sizes?: number[]; distantSwell?: Partial<SwellParams>; anisotropy?: number } ) {
+	}: Pick<OceanParams, 'windSpeed' | 'windDirection'> & Partial<OceanParams> & { swellHeading?: number; sizes?: number[]; distantSwell: Readonly<SwellParams>; anisotropy?: number } ) {
 
 		this.renderer = renderer;
 		this.sizes = sizes;
 		this.cascades = sizes.length;
 		this.params = { windSpeed, windDirection, fetch, amplitude, choppiness, depth, spread, swell, peakEnhancement, shortWavesFade, seed };
-		this.swell = { ...DEFAULT_SWELL, ...distantSwell };
+		this.swell = { ...distantSwell };
 		this.swellHeading = swellHeading;
 
 		const N = FFT_N, NN = N * N, C = sizes.length, count = NN * C;

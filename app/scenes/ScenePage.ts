@@ -39,8 +39,9 @@ if ( ! testScene ) {
 
 }
 
-// the scene's uniforms, which every material reads: made and installed before anything builds
-const shared = createShared();
+// the scene's uniforms, which every material reads: made from the look the entry installed (the
+// neutral set, or the island's under `renderLook=ponlai`) and installed before anything builds
+const shared = createShared( installedLook() );
 installShared( shared );
 const render = {} as RenderParts;
 
@@ -84,14 +85,14 @@ function poseView( viewName: string ): void {
 }
 poseView( shownView );
 
-createLight( render );
+createLight( render, { look: installedLook() } );
 createKey( render );
 await createEnvironment( render );
 publishSkyLight( render );
 const { ground } = testScene;
 const seaLevel = shared.waterLevel.value;
 // the rain's ceiling: over the tallest thing a scene stands on its ground, or on the sea
-createSeaAndPipeline( render, { rainCeiling: ( ground.kind === 'land' ? ground.height : seaLevel ) + 8, extraPasses: [] } );
+createSeaAndPipeline( render, { rainCeiling: ( ground.kind === 'land' ? ground.height : seaLevel ) + 8, extraPasses: [], look: installedLook() } );
 
 // ------------------------------------------------------------------ the neutral world
 

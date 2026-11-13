@@ -31,8 +31,9 @@ import { createGui, addLookFolders, addHazeFolders } from './Gui.ts';
 import { createDiagnostics, exposeDebugHandles } from './Diagnostics.ts';
 import { createSceneControls } from './Scene.ts';
 
-// the scene's uniforms, which every material reads: made here and installed before anything builds
-const shared = createShared();
+// the scene's uniforms, which every material reads: made here, from the look the entry installed
+// (PageSettings.ts), and installed before anything builds
+const shared = createShared( PAGE_LOOK );
 installShared( shared );
 
 const render = {} as RenderParts;
@@ -87,7 +88,7 @@ page.sceneOptions = ( query ) => sceneOptions( query, sceneDefaults );
 createSky( render, { scene: page.sceneOptions( params ), seaFog: params.has( 'seaFog' ), dayFog: params.has( 'dayFog' ), look: PAGE_LOOK } );
 createTrample( render, island );
 createCameraViews( render, island, page );
-createLight( render );
+createLight( render, { look: PAGE_LOOK } );
 createCharacterShadow( render, island );
 createKey( render );
 island.characterShadow.along = render.shadowDirection;
@@ -101,7 +102,7 @@ const rainCeiling = ISLAND_TOP + 4;
 // exists (the test mode leaves them out): their step is a pass the pipeline declares from this list.
 island.fallingLeaves = null as FallingLeaves | null;
 const extraPasses: ExtraPass[] = [ leavesPass( () => island.fallingLeaves ) ];
-createSeaAndPipeline( render, { rainCeiling, extraPasses } );
+createSeaAndPipeline( render, { rainCeiling, extraPasses, look: PAGE_LOOK } );
 island.worldCache = await awaitWorld( render, island, { worldJob } );
 createLand( render, island, { landOptions } );
 const bounceGround = islandBounceGround( island.fields.beds, island.textures.soil );
