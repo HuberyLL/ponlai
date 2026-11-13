@@ -81,7 +81,7 @@ record and the rule guards a stated convention.
 
 | Rule | Enforced by | Came from |
 | --- | --- | --- |
-| Lookdev and lighting are kept strictly apart (`docs/design/art-direction.md`, How the look is made); a new material follows `docs/how-to/add-material.md`. | judgement | - |
+| Lookdev and lighting are kept strictly apart (`docs/design/art-direction.md`, How the look is made); a new material follows `skills/building-aaa-stylised-realism/SKILL.md` and its binding's Materials. | judgement | - |
 | Shaders are TSL only, never WGSL or GLSL strings; a helper called from several places is `Fn( ... ).setLayout( ... )`, one shader function. | `ponlai/tsl-only`; the helpers: judgement | - |
 | Simulation and generation are deterministic and path-independent: the world, its growth, the weather, the wind and every integrated state are functions of the land, seeds, scene clock and weather, never of the path or thread count; a grown page or a scene jump holds what a fresh load holds (`ARCHITECTURE.md`, rule 4). | `verify-world-chunks`, `verify-growth-swap`, `verify-scene-jump`, parity captures | a cliff wall's exposure kept state across calls (`Chunks.ts`) |
 | What changes the scene reads the scene clock or its step, never the wall clock (`ARCHITECTURE.md`, rule 17). | `ponlai/scene-clock` | the sky's irradiance read-back waited on a wall-clock gate |
@@ -165,7 +165,8 @@ meets it.
   buffer, instancing or raw WebGPU work, you must read `docs/reference/three-behaviour.md`: most of
   what it lists fails without an error.
 - A pass, a plant kind or a local
-  light: `docs/reference/extension-points.md`. A material: `docs/how-to/add-material.md`.
+  light: `docs/reference/extension-points.md`. A material:
+  `skills/building-aaa-stylised-realism/SKILL.md` and its binding, Materials.
 - The world's generator: `packages/island/world/Chunks.ts`'s header. Something that depends on the
   land's shape: `packages/island/world/Growth.ts`'s header. A history-dependent effect:
   `docs/bindings/verifying-rendering-changes.md`, History.

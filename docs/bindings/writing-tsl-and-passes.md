@@ -31,9 +31,9 @@ GPU rules names its sections in brackets. Read these sections for what the chang
 
 For new work: a pass, a plant kind or a kind of local light,
 `docs/reference/extension-points.md` (the three declarations each must make); a material,
-`docs/how-to/add-material.md`. Shaders are TSL only, never WGSL or GLSL strings (lint rule
-`ponlai/tsl-only`); code that differs by anti-aliasing mode reads `post/Antialiasing.ts`'s
-exports, never the tier.
+[building-aaa-stylised-realism](building-aaa-stylised-realism.md#materials). Shaders are TSL
+only, never WGSL or GLSL strings (lint rule `ponlai/tsl-only`); code that differs by
+anti-aliasing mode reads `post/Antialiasing.ts`'s exports, never the tier.
 
 ## Version
 

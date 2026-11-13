@@ -8,7 +8,6 @@ contributors and agents are in [AGENTS.md](../AGENTS.md); the project's structur
 
 Steps for one task.
 
-- [Add a material](how-to/add-material.md)
 - [Add game content](how-to/add-game-content.md): a need, an item, a place, an option or a
   building in the game's simulation.
 - [Upgrade three.js](how-to/upgrade-three.md): move to another version of three.js.

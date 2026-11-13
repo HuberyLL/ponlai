@@ -24,9 +24,43 @@ Every command that renders in a browser runs under the GPU lock and every wait g
 
 ## Materials
 
-- This project's steps for a material (its layer, the lighting model it is built on, what the
-  water must be told): `docs/how-to/add-material.md`. Each material's header comment states its
-  values and their source.
+- Each material's header comment states its values and their source. Before writing its shader,
+  read `docs/reference/three-behaviour.md`.
+- Its layer (`ARCHITECTURE.md`, rules 10 and 11). A material any scene could use (a generic
+  ground, the rain's wet film) is the renderer's, in `packages/render/materials/`, and imports the
+  lighting modules directly. A material of this island (its terrain, a plant kind, an islander's
+  fabric) is the island's, in `packages/island/materials/` or beside the kind it draws, and takes
+  the lighting model only through the renderer's exit, `packages/render/index.ts`; a name it needs
+  that the exit lacks is added to the exit. Either way the numbers chosen for the look come from
+  the look's readers (`packages/render/look/`), never written into the material
+  (`ARCHITECTURE.md`, rule 16).
+- Lit as every other surface. The modules named here are in `packages/render/lighting/`,
+  `packages/render/ocean/` and `packages/render/post/`; each header comment says more.
+  1. Build the material on `GroundBounceLightingModel`, or read its uniforms (`AmbientGrade.ts`).
+  2. Take the ambient diffuse through the lighting model's `ambient` (`AmbientSample.ts`), never
+     the environment's irradiance alone. `flags=ambientVolume:0` builds the lit materials without
+     it.
+  3. Add the sunlight the ground bounces up in the lighting model, with `addGroundBounce` or
+     `groundBounceLight` (`GroundBounce.ts`), never a bounce of its own.
+  4. A lit model of its own adds `shadeLocalLights` (`LocalLights.ts`) and takes its key's cosine
+     from `GroundBounceLightingModel`'s `shadeDirection` (`KeyLift.ts`). A new light source is a
+     kind of local light registered on the renderer's `localLights` (`add`), never a three light.
+  5. Write the metering illuminance beside the colour with `writeMeter` (`MeterLight.ts`), and draw
+     only in passes with an MRT.
+  6. A material under water lights with `Underwater.ts`, as the terrain does.
+  7. Under the temporal modes, write the velocity beside the colour (`Motion.ts`): a material with
+     a fragmentNode writes both outputs; one whose positionNode animates supplies
+     `positionPrevious` and sets `userData.previousPosition`.
+- Tell the water (`Water.ts`, `Refraction.ts`) when the mesh can reach under the sea or stands
+  high:
+  - A mesh that can reach under the water joins the refraction pass (`Refraction.ts`
+    `showUnderwater`); otherwise the water shows what lies straight behind it in the opaque copy
+    there.
+  - What swims in the upper water (a fish) is marked instead (`markSwimmer`), and its material
+    adds `Water.ts` `swimmerSway` to its position.
+  - The water reflects only what lies inside `Water.reflectionBounds`: anything opaque placed off
+    the island or above 3 m grows that box through `Water.hold` (the game's props do, through the
+    island's `holdOpaque` in `packages/island/IslandStages.ts`).
 - The neutral, known light: the test scenes' page draws with the renderer's neutral look. The
   scene `ball` holds an 18 % grey card, a white card, a row of albedos from 0.03 to 0.8 and a row
   of roughness; `empty` is level grey ground under the sky (`docs/reference/url-options.md`, The
