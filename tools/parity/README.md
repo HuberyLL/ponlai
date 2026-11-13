@@ -602,7 +602,7 @@ page calls it with the view's full query (the common part and the view's own), w
 runs the eval, then its readiness and the shot.
 
 `tools/verify-scene-jump.mjs` is that check, and the regression probe for anything that adds state a
-jump must clear (AGENTS.md, Rules for every change: a scene jump clears every rendering history):
+jump must clear (`ARCHITECTURE.md`, rule 4: a scene jump clears every rendering history):
 
 ```sh
 node tools/verify-scene-jump.mjs <baseUrl> <ref> --fresh                     # fresh loads

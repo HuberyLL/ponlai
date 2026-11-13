@@ -1,6 +1,6 @@
 // Regression probe for the island's growth in place (packages/island/world/Growth.ts): a page grown by N steps
 // must draw what a page freshly loaded on that land draws, bit for bit, in the test mode (paused,
-// MSAA: docs/reference/tools.md, Test mode; AGENTS.md, "The island grows in place"), and no swap may build a
+// MSAA: docs/reference/tools.md, Test mode; the rules in Growth.ts's header), and no swap may build a
 // pipeline.
 //
 //   node tools/verify-growth-swap.mjs <base url> [--steps 6] [--views island,cliffs,meadow]
@@ -61,8 +61,8 @@
 // - pipelines: the count the same before and after every grow on G, the same at every step, and
 //   equal on G and F both when measured and after the views;
 // - memory: renderer.info.memory's uniformBuffers and textures on G at most MEMORY_TOLERANCE (2)
-//   above F's. A leak shows as G above F (M13's leak added 23-37 uniform buffers per swap); counts
-//   that a growth path leaves one or two apart are not one (M13's final check saw 254 / 255 uniform
+//   above F's. A leak shows as G above F (one leak added 23-37 uniform buffers per swap); counts
+//   that a growth path leaves one or two apart are not one (a clean growth saw 254 / 255 uniform
 //   buffers and 130 / 130 textures after four steps). G below F is reported, not judged: the grown
 //   page holds fewer uniform buffers than a fresh load (293 / 297 after 12 steps, the gap growing
 //   with the steps), which is not a leak, and anything missing from the drawing shows in the views.

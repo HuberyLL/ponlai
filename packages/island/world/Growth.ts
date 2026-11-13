@@ -13,11 +13,13 @@ import type { IslandChunk, WorldData } from './types.ts';
 import { Villagers } from '../characters/Villagers.ts';
 import { SeabedRise } from './SeabedRise.ts';
 
-// The island grows in place (chunk design, sections 3.4, 10 and 11; plan M8): the next piece is
+// The island grows in place: the next piece is
 // generated in the background, and a Grow (`grow()`, the GUI's Island folder) swaps in only the
 // chunks that changed, in one frame, with every dependent following. No pipeline is built: a swap
 // needing one would be a bug (tools/verify-first-use.mjs and the page's pipeline count). A grown
 // page against a fresh load of its land, pipelines across swaps included: tools/verify-growth-swap.mjs.
+// Anything new that depends on the land's shape joins the swap, the same function of the version as
+// at load (docs/how-to/check-a-change.md, Add something that depends on the land's shape).
 //
 // - When: the game (`start()` once the page shows) generates the next piece at once, as it will
 //   need it; any other page only from its first `grow()`, so a page that never grows spends no
@@ -34,8 +36,8 @@ import { SeabedRise } from './SeabedRise.ts';
 // - Preparation, in idle time (requestIdleCallback; a timer where there is none), slices of at
 //   most SLICE ms of steps of a few tenths of a millisecond each: the merge (ChunkMerge.ts
 //   mergeSteps), the land's box and the page's framing of it (`measure`), the new island meshes
-//   of the changed land chunks, the merged kinds' new geometry (the stones, the sea floor, their
-//   bounds found in steps: Steps.ts), the walking loop, each vegetation kind its
+//   of the changed land chunks, the merged kinds' new geometry, of the same layout as the old (the
+//   stones, the sea floor, their bounds found in steps: Steps.ts), the walking loop, each vegetation kind its
 //   own part in registry order (vegetation/Registry.ts: the meadow planted a slice of anchors at a
 //   step and its edge tufts' records a few hundred tufts at a step, its cull pool filled; the
 //   bamboo planted again per land chunk and, where its sites changed, its instance pool filled
@@ -72,7 +74,7 @@ import { SeabedRise } from './SeabedRise.ts';
 //   uploaded again by a later chunk's first draw (three/ThreePatches.ts `installBindingPatches`).
 // - The growth's own main-thread time is counted per frame (`work`; the workers' replies
 //   included), and kept with the swap's record (`state.last.work`): no frame's share should pass
-//   2 ms (plan M8's frame-time acceptance).
+//   2 ms (the growth's frame-time budget).
 // - The page then draws what a page loaded on the grown land draws, bit for bit (paused): every
 //   dependent is the same function of the same version, and the island's meshes are split and
 //   ordered alike (World.ts on split draws).

@@ -89,7 +89,7 @@ export type RenderScaleRule =
 /** The temporal resolve's settings (taa and taau; read once as the resolve is built). */
 export interface TemporalSettings {
 	// the history's effective frame count (its blend weight 1 / n) for a still pixel and for one
-	// moving `speedFull` render pixels a frame or more (eased between). 24 still (12 before M14):
+	// moving `speedFull` render pixels a frame or more (eased between). 24 still:
 	// with the movers' motion cap (TemporalAA.ts) a moving pixel keeps at most 10 whatever this is,
 	// so the longer still history no longer lengthens the islanders' trail (the islander walk's
 	// ghosting at 24 with the movers no higher than at 12 without), and the second stage
@@ -139,7 +139,7 @@ export interface TemporalSettings {
 	// accumulate in linear light (the display curve undone) rather than display values
 	linear: boolean;
 	// a resting scene (paused clock, still camera): frames rendered before the jitter sequence
-	// starts, and the jitter sequence's length, after which the image holds (D10)
+	// starts, and the jitter sequence's length, after which the image holds
 	restSettle: number;
 	restSequence: number;
 	// the cheaper resolve (fewer taps, no reactive mask) for the lowest tier

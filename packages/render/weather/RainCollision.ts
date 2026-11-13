@@ -56,7 +56,7 @@ export class RainCollision {
 	 * wherever it was drawn, else the sea. */
 	readonly groundAt: ( xz: V2 ) => F;
 	/** `groundAt` built inline, for a kernel of its own (a layout helper reading uniforms can be
-	 * emitted with another compute kernel's uniform names: AGENTS.md) */
+	 * emitted with another compute kernel's uniform names: docs/reference/three-behaviour.md, Shader functions) */
 	readonly topAt: ( xz: V2 ) => F;
 	/** counts the bakes finished, each one's map whole (the haze's rest starts over on a new one) */
 	version = 0;

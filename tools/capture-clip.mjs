@@ -73,7 +73,7 @@
 // exposure offset raised by half a stop (the whole frame brighter) and the offset goes back for the
 // next, so the first shot must be rejected and the crops taken from a later, agreeing one.
 //
-// --aa gt-hi is the interim ground truth (plan section 3.3): MSAA on high at twice a nominal ratio
+// --aa gt-hi is the interim ground truth: MSAA on high at twice a nominal ratio
 // for the --size given (nominal = min( ratio, 1.5 ), so 3 at the default @2 and 2 at @1: high's
 // paused scale until it became the 4/3 baseline, kept so the stored ground truths stay comparable),
 // box-downsampled 2x2. The page runs at that device pixel ratio with the same `dpr` (the canvas

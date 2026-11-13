@@ -53,7 +53,7 @@ import { VegetationCull, poolBuffers, poolSteps, type CullBatchInput, type CullB
 // - Growth: a new land plants anew and the pool is rebuilt in steps (`prepare`: the records a few
 //   dozen at a step, the buffers made and uploaded ahead), then swapped in by pointing the cull's
 //   storage nodes at the new buffers (`swap`): the prototypes, materials and pipelines stay, so no
-//   swap builds a pipeline (AGENTS.md). The draws' boxes (the sun's caster box and the sea's
+//   swap builds a pipeline (island/world/Growth.ts). The draws' boxes (the sun's caster box and the sea's
 //   reflection box read them through `Box3.setFromObject`) follow the plants.
 
 type F = THREE.Node<'float'>;

@@ -12,7 +12,7 @@ import type { WorldFields } from './WorldFields.ts';
 
 // Turns the merged world (WorldChunks.ts) into meshes (its fields' textures: WorldFields.ts).
 //
-// - The island is a mesh per land chunk (chunk design, section 8), all under the group 'island',
+// - The island is a mesh per land chunk, all under the group 'island',
 //   sharing the cliff material and one attribute set, so a chunk added later builds no pipeline.
 //   Each is placed in world coordinates (identity matrices: the derived products below are world
 //   space) and frustum-culled by its box, which the chunk's ground grid carries (the exact box of

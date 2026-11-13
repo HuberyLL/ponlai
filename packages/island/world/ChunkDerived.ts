@@ -1,5 +1,5 @@
 // What the page derives from a chunk's meshes, made in the chunk's job (Chunks.ts `buildChunk`) so
-// the main thread never walks their vertices (chunk design, sections 7 and 11): the sun's caster
+// the main thread never walks their vertices: the sun's caster
 // columns (SunShadow.ts), the triangles the refracted sun's map draws (RefractedSun.ts) and the
 // camera's ground grid (IslandGround.ts). Plain functions of the positions, without three, for the
 // workers and node.

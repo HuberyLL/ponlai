@@ -117,7 +117,7 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   The history's weight is counted in render samples, so after a step up (more samples a pixel)
 //   the same history would count as fewer frames' worth and the new, sharper frame would take a
 //   larger share at once: the first frame showed most of the step (on the sea, whose class keeps
-//   fewest frames, a sharpness step 0.3x MSAA+FSR's, over the plan's 0.25x). For the frame after a
+//   fewest frames, a sharpness step 0.3x MSAA+FSR's, over the 0.25x allowed). For the frame after a
 //   step up the history's weight is scaled by the new density over the old (`historyGain`), so it
 //   keeps its frames' worth and the step spreads over the frames as a step down's does (whose
 //   history the cap already holds at its frames' worth).

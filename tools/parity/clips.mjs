@@ -117,7 +117,7 @@ export function clipNames( group = 'all' ) {
 
 }
 
-// The ground truth's frames (plan section 3.3): every frame of a clip of up to 60 frames, else
+// The ground truth's frames: every frame of a clip of up to 60 frames, else
 // every 4th, plus the clip's `gtDense` runs [ first, last ] where a gate reads single frames or
 // consecutive pairs (the flick's stop and recovery, the strike, the scale steps, the window of the
 // crawl, wind, rain and fog instability and of the trails and lag). F, Vown and the other metrics

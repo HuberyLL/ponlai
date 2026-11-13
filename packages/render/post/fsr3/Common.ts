@@ -20,7 +20,7 @@ import type { Fsr3ShaderOptions } from './Host.ts';
 //   `GetViewSpaceDepth`, `ComputeHrPosFromLrPos`, `ShadingChangeRenderSize`, ... do) take the
 //   bindings as their first argument and are expanded where they are called: three r186 can emit
 //   a `Fn( ... ).setLayout( ... )` function with another kernel's uniform names when two compute
-//   kernels share it (AGENTS.md, WebGPU / TSL pitfalls), so only the pure helpers are
+//   kernels share it (docs/reference/three-behaviour.md, Shader functions), so only the pure helpers are
 //   `setLayout` functions (one WGSL function each).
 // - HLSL's structs with `inout` (RectificationBox, AccumulationPassData, ...) are JavaScript
 //   objects of TSL variables, the functions that take them `inout` expand in their one caller.

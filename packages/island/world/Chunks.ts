@@ -1,4 +1,4 @@
-// The world generated one chunk at a time (chunk design, sections 3, 5 and 7): pure functions of the
+// The world generated one chunk at a time: pure functions of the
 // land, callable from a worker or from plain node (no `self`, no three, no DOM).
 //
 // - The grid: chunk ( ci, cj ) is the square [ S ci, S ci + S ) x [ S cj, S cj + S ) on the world's
@@ -18,7 +18,7 @@
 //   Field2D lookup computes from its own origin and differs in the last bits). Beyond the window it
 //   continues the window's edge: only the stones' search for the groups that might outrank a stone
 //   reads that far, and nothing it finds there reaches a stone (rules below).
-// - `buildChunk( window, land, ci, cj )` makes everything the chunk owns (section 3.3) from the
+// - `buildChunk( window, land, ci, cj )` makes everything the chunk owns from the
 //   window alone: the island SDF over the window (`makeIslandSDF( ... )`, every
 //   value a function of the point), its stones, the contact solids, and from those each kind of
 //   content below. Ownership: island quads by their edge's base lattice column (SurfaceNets.ts),
@@ -44,7 +44,8 @@
 // - A chunk without island (no land within ISLAND_NEAR) has no island, anchors or lip, and carries no rim ground tile (ChunkMerge.ts fills its square): three quarters of a
 //   sea chunk's bytes went to a tile nothing reads.
 // - Arrays are ordered by world position (lattice order, or the owned items' own order), so a
-//   chunk's data and its hash repeat whatever order the chunks are built in.
+//   chunk's data and its hash repeat whatever order the chunks are built in: a chunk built alone,
+//   in a block or on any thread equals itself.
 // - The island's mesh is simplified per chunk, its border locked (IslandSimplify.ts): its vertices
 //   keep their cell order and every bit, its triangles are the simplifier's (deterministic). The
 //   curvature and every attribute come from the full mesh before; the border's vertices and edges
@@ -88,6 +89,10 @@
 //   farthest changed chunk lay 26 m from the changed land), and D5 places land just beyond the
 //   bound on purpose (none changed). In the review's probes coastal land stopped mattering beyond
 //   about 18 m.
+// - Data on a chunk border is bit-identical in both chunks: lattices are world-anchored, the cliff's
+//   scars are cut in a canonical order (Cliff.ts), the curvature comes from the apron
+//   (SurfaceNets.ts), and a chunk's own triangles never go through `computeVertexNormals` (the lint
+//   rule `ponlai/chunk-normals`): normals from one chunk's triangles alone differ on its border.
 // - ChunkData carries the same fields in every chunk (an empty mesh keeps all its attributes), and
 //   `hash` covers every buffer, so an unchanged chunk is recognised by its hash.
 

@@ -6,7 +6,7 @@
 // island's data builds (the ground's bounce and the shore's waves, the ambient light's probes, the
 // water) and those that close the build (the haze's bake, the warm-up, the shared builds).
 // - The order of the statements inside a stage and of the stages is part of the image: the order
-//   materials first build in decides their shader code (AGENTS.md, WebGPU / TSL pitfalls). A new
+//   materials first build in decides their shader code (docs/reference/three-behaviour.md, Build order). A new
 //   statement goes where its build belongs, never at the end by habit.
 // - A stage that ends in a wait returns its promise, which the entry awaits before the next stage:
 //   a stage holds no await of its own, so the frames and microtasks between two stages stay the

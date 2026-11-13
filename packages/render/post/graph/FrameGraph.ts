@@ -129,7 +129,7 @@ export interface LatentRegistry {
 export interface FrameGraphHooks<F> {
 	onPassBegin?( pass: CurrentPass, f: F ): void;
 	onPassEnd?( pass: CurrentPass, f: F ): void;
-	// around the contiguous span of jittered passes that run (the TAA jitter, M6)
+	// around the contiguous span of jittered passes that run (the TAA jitter)
 	jitterBegin?( f: F ): void;
 	jitterEnd?( f: F ): void;
 }

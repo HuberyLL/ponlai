@@ -15,7 +15,7 @@ Baking lighting into albedo
 
 Chunk
 : A 16 m square of the world (`packages/island/world/Chunks.ts`). A chunk's content is a function of
-  its window of the land field, the chunk grown by 32 m (`AGENTS.md`, Rules for every change).
+  its window of the land field, the chunk grown by 32 m (`packages/island/world/Chunks.ts`, its header).
 
 GPU lock
 : The lock every tool that renders the scene in a browser takes (`tools/gpu-lock.mjs`): timing

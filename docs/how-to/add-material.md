@@ -3,7 +3,8 @@
 This guide gives the steps for adding a material, a new surface such as a stone, a plant or a
 fabric, so that it joins the look with no tuning of its own. It is the lookdev side of keeping
 lookdev and lighting strictly apart. Why it works this way: `docs/explanation/art-direction.md`,
-How the look is made.
+How the look is made. Before you write its shader, read
+[three.js and WebGPU behaviour](../reference/three-behaviour.md).
 
 ## 1. Find the real values
 

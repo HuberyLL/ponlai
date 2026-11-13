@@ -263,7 +263,7 @@ export interface DynamicResolutionOptions extends DynamicRange {
  * reconstructs the canvas from jittered renders, about eight samples per output pixel over its
  * sequence (Jitter.ts: L = 8 r^2, up to 64), so far below the canvas a moving image has too few
  * samples per pixel to hold its detail (FSR 2 and DLSS stop at 3x, their Ultra Performance mode,
- * and recommend 2x at most for quality); 2.5 is the plan's choice (decision D8). MSAA's FSR 1 path keeps the tier's floor and the quality
+ * and recommend 2x at most for quality); 2.5 is our choice. MSAA's FSR 1 path keeps the tier's floor and the quality
  * floor below. */
 export const TAAU_MAX_UPSCALE = 2.5;
 

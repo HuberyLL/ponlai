@@ -1,4 +1,4 @@
-// The page's world (chunk design, section 10): the land and its chunks generated on a pool of
+// The page's world: the land and its chunks generated on a pool of
 // chunk workers (chunkWorker.ts), read from the per-chunk cache where it holds them
 // (WorldCache.ts), and merged into one WorldData (ChunkMerge.ts) that the page draws (World.ts:
 // the island a mesh per land chunk, every other kind merged).

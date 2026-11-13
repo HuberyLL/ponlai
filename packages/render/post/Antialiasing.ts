@@ -33,7 +33,9 @@
 // `AA_SOURCE` says which of them chose (main.ts reports it as `aaSource`). `gt` is taken from the
 // URL in a debug build only, never from a tier. The tier is the one the page's entry chose
 // (PageSettings.ts, Quality.ts `loadTier`), installed before any module loads, so modules that read
-// the mode when they load (vegetation/Coverage.ts, Grass.ts) take the page's.
+// the mode when they load (vegetation/Coverage.ts, Grass.ts) take the page's. Code that differs by
+// mode reads this module's exports (`TEMPORAL`, `SCENE_SAMPLES`, `ALPHA_TO_COVERAGE`), never the
+// tier: `aa=` picks any mode on any tier.
 import { loadTier, qualityProfile, type QualityProfile, type TemporalSettings } from '../Quality.ts';
 import { settings, type SettingsQuery } from '../Settings.ts';
 
@@ -81,8 +83,8 @@ export function requestedAAMode( params: SettingsQuery, profile: Pick<QualityPro
 		console.warn( `Unknown msaa=${ msaa }: expected 1 or 4` );
 
 	}
-	// The test mode (AGENTS.md) is a paused page under MSAA, whatever the tier runs: every capture,
-	// parity and verify tool loads its pages paused, and their byte-for-byte checks hold under MSAA.
+	// The test mode (ARCHITECTURE.md, rule 4) is a paused page under MSAA, whatever the tier runs:
+	// every capture, parity and verify tool loads its pages paused, and their byte-for-byte checks hold under MSAA.
 	if ( params.has( 'paused' ) || params.get( 'clock' ) === 'paused' ) return { mode: 'msaa', source: 'test' };
 	const tier = profile?.aa;
 	if ( tier !== undefined ) {

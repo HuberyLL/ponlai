@@ -56,7 +56,7 @@
 // settled signal: the page is compared for stability like an MSAA one.
 //
 // Worker (--worker): one page for many views, driven by tools/parity/capture-set.mjs over the IPC
-// channel it opens (plan item #9, "one page per set"). The worker asks for a view, captures it,
+// channel it opens (one page per set). The worker asks for a view, captures it,
 // reports and asks again, until told it is done; the first view is a fresh load of
 // `<url>?<query>`, each later one is reached in place by the exact scene jump:
 // `await __PONLAI__.establishScene( <the view's query> )`, the loop started, one frame rendered at
