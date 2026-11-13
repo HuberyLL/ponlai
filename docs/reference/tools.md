@@ -1411,6 +1411,12 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   pipeline declares. It also searches the code of the registries' owner files (comments left out)
   for the names of the scene's definitions, listed per file in the tool. Run it after a change to a
   registry or a new definition.
+- `tools/verify-exposure-look.mjs` (plain `node`, no options, under a second) checks that the
+  exposure takes its look tables at creation (`packages/render/look/ExposureLook.ts`
+  `createExposure`). It makes exposures from the island's look, the neutral look and a changed copy
+  of the island's in one process, and fails when one does not read its own table, when making one
+  moves another's numbers, when the copy differs by more than its changes, or when the day cycle
+  does not read the exposure it is given. Run it after a change to how the exposure is created.
 - `tools/verify-settings.mjs [--write]` (plain `node`) checks the page's settings
   (`packages/render/Settings.ts`, the one entrance every option is read through) against
   `docs/reference/url-options.md`: the table of every option at the page's end is the one written
@@ -1428,7 +1434,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   another: the type check, `verify-layers`, `verify-exits`, `verify-settings`, `verify-file-size`,
   `verify-three-internals`, `verify-no-binaries`, `verify-game`, `verify-i18n`, `verify-ink`,
   `verify-framegraph`, `verify-day-cycle`, `verify-weather-state`, `verify-wind`,
-  `verify-local-lights` and `verify-extensions`, then
+  `verify-local-lights`, `verify-extensions` and `verify-exposure-look`, then
   `npm run lint:docs` when a Markdown file is staged. `--full` adds `npm run build` and
   `verify-world-chunks.mjs` and always runs the docs' lint. Every check runs even after one failed;
   it ends with each check's result and time, and exits 1 when any failed. None of them renders or

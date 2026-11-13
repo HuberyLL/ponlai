@@ -5,9 +5,9 @@ import { readLook, type Span } from './Look.ts';
 // The day's look tables, as the renderer reads them (look/Look.ts: the numbers are the installed
 // look's, the neutral set's where none is): where the key turns from the sun to the moon, the
 // dusk's windows, how deep under all of it each night layer comes in and the ease at the window's
-// night end, and the exposure by the sun's elevation with the night sky's own exposure.
-// sky/DayCycle.ts reads them for the night's shares and the snapshot's exposure; its header says
-// how the day runs.
+// night end. sky/DayCycle.ts reads them for the night's shares; its header says how the day runs.
+// The day's table also holds the exposure by the sun's elevation with the night sky's own
+// exposure: those the exposure takes where it is created (look/ExposureLook.ts), not this module.
 
 export type { Span };
 
@@ -54,32 +54,3 @@ export const DUSK_DEPTH = tuneObject( { ...LOOK.duskDepth }, {
 /** Over how many degrees at the night's end of the evening's window (DUSK_WINDOWS' evening windows)
  * its night layers ease into all of their light (`duskIn`). Tunable: `sky.twilight.ease`. */
 export const DUSK_EASE = tuneObject( { degrees: LOOK.duskEase }, { degrees: 'sky.twilight.ease' }, { degrees: { min: 0, max: 4, onChange: markSkyRetune } } );
-/** The stops a clear night's metered exposure lies above the twilight's exposure. The yunpeng's
- * glow and every local light are scaled by 2 to minus this, so a lamp keeps its display at night
- * whatever the hour. */
-export const NIGHT_METER_LIFT = LOOK.nightMeterLift;
-// The exposure by the sun's elevation (degrees): [ elevation, exposure ], interpolated in log
-// exposure and held beyond the ends.
-const EXPOSURE_KEYS = LOOK.exposure;
-export const NIGHT_EXPOSURE = EXPOSURE_KEYS[ 0 ][ 1 ];
-export const DAY_EXPOSURE = EXPOSURE_KEYS[ EXPOSURE_KEYS.length - 1 ][ 1 ];
-export function exposureAt( elevation: number ): number {
-
-	const keys = EXPOSURE_KEYS;
-	if ( elevation <= keys[ 0 ][ 0 ] ) return keys[ 0 ][ 1 ];
-	for ( let i = 1; i < keys.length; i ++ ) {
-
-		const [ e1, x1 ] = keys[ i ];
-		if ( elevation > e1 ) continue;
-		const [ e0, x0 ] = keys[ i - 1 ];
-		return x0 * Math.pow( x1 / x0, ( elevation - e0 ) / ( e1 - e0 ) );
-
-	}
-	return DAY_EXPOSURE;
-
-}
-// The night sky's own light (stars, the moon and its in-scatter, clouds) keeps the displayed
-// brightness it has at NIGHT_SKY_EXPOSURE, with the night's own gain over it
-// (NIGHT_EXPOSURE_GAIN), whatever the frame's exposure (see Sky.track).
-export const NIGHT_EXPOSURE_GAIN = LOOK.nightExposureGain;
-export const NIGHT_SKY_EXPOSURE = LOOK.nightSkyExposure;

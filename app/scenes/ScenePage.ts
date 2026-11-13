@@ -24,7 +24,7 @@
 //   casters.
 import * as THREE from 'three/webgpu';
 import { awaitWarmUp, bakeRainCollision, bakeWithHaze, checkMotion, createAmbient, createBounceAndShore, createEnvironment, createFrameStages, createKey, createLight, createRenderer, createScenes, createSeaAndPipeline, createShared, createSky, createWater, defaultPlant, installShared, placeVegetation, vegetationCasters, primeSharedBuilds, publishSkyLight, registerLightHistories, registerSceneHistories, sceneOptions, setUpRenderer, startWaveMaps, neutralBounceGround, neutralFields, neutralLattice, neutralSeaLattice, OPEN_SEA_SHORE, Vegetation, FramePacer, PAUSED_QUEUE, gpuDevice, threeAnimation, TEST_MODE, AA_MODE, preExposure, renderEvent, restEpoch, tuneApi, debugFlags, type RenderParts } from '../../packages/render/index.ts';
-import { settings as params, type SettingName, type QualityTier, qualityProfile, renderPixelRatio, outputPixelRatio } from '../../packages/render/setup.ts';
+import { settings as params, type SettingName, type QualityTier, qualityProfile, renderPixelRatio, outputPixelRatio, installedLook } from '../../packages/render/setup.ts';
 import { SCENES } from './index.ts';
 import type { ReadingContext, SceneReading, Triple } from './TestScene.ts';
 
@@ -58,7 +58,9 @@ const { renderer, scene, camera } = render;
 // The scene a query names, the load's and a jump's alike: noon where it names no hour, the island
 // page's length of day.
 const sceneDefaults = { hour: 12, dayLength: 2880, parkedWeather: DEBUG };
-createSky( render, { scene: sceneOptions( params, sceneDefaults ), seaFog: params.has( 'seaFog' ), dayFog: params.has( 'dayFog' ) } );
+// the exposure takes the look the entry installed (ScenesBoot.ts: the neutral set, or the island's
+// under `renderLook=ponlai`), which this page cannot name
+createSky( render, { scene: sceneOptions( params, sceneDefaults ), seaFog: params.has( 'seaFog' ), dayFog: params.has( 'dayFog' ), look: installedLook() } );
 
 // ------------------------------------------------------------------ the views
 

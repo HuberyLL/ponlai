@@ -160,9 +160,10 @@
 //     haze's medium is judged bit for bit at every point (above); each point it differs at is a
 //     violation, and the opacity's largest difference is reported. With --night-split in both runs
 //     it lists the lift, the island view's metered EV with the lamps off less the other run's at
-//     each point both hold, and at midnight that lift less NIGHT_METER_LIFT (look/DayLook.ts): run
-//     against a page of the night those keys were set over, it says how far the night keys and the
-//     constant lie from what the meter now gives (look/DayLook.ts EXPOSURE_KEYS).
+//     each point both hold, and at midnight that lift less NIGHT_METER_LIFT (the day look's
+//     `nightMeterLift`, island/look/Day.ts): run against a page of the night those keys were set
+//     over, it says how far the night keys and the constant lie from what the meter now gives (the
+//     exposure's keys, island/look/Exposure.ts).
 //
 // Exit codes: 0 every judged rule held; 1 a rule was broken, a point is void, or --compare found a
 // difference in [+2.5, +4]; 2 an option or the page went wrong (an unknown option, a page error,
@@ -308,9 +309,14 @@ function parseOptions( o ) {
 // the island's look in --src's own modules, which another checkout's tree does not share with this one
 await installIslandLook( ( file ) => import( pathToFileURL( path.join( options.src, file ) ).href ), ( file ) => existsSync( path.join( options.src, file ) ) );
 const DC = await import( pathToFileURL( path.join( options.src, 'packages/render/sky/DayCycle.ts' ) ).href );
-// the day's look tables (NIGHT_METER_LIFT): look/DayLook.ts, or DayCycle.ts in a --src from before it
+// the night's metered lift: the island look's (island/look/IslandLook.ts `day.nightMeterLift`), or in
+// a --src from before the exposure took its tables at creation, look/DayLook.ts's NIGHT_METER_LIFT,
+// or DayCycle.ts's in one from before that
+const ISLAND_LOOK_FILE = path.join( options.src, 'packages/island/look/IslandLook.ts' );
 const DAY_LOOK = path.join( options.src, 'packages/render/look/DayLook.ts' );
+const IL = existsSync( ISLAND_LOOK_FILE ) ? await import( pathToFileURL( ISLAND_LOOK_FILE ).href ) : null;
 const DL = existsSync( DAY_LOOK ) ? await import( pathToFileURL( DAY_LOOK ).href ) : DC;
+const NIGHT_METER_LIFT = IL?.ISLAND_LOOK?.day?.nightMeterLift ?? DL.NIGHT_METER_LIFT;
 const FORCES = DC.DUSK_FORCES ?? [];
 let splitNames = [];
 try {
@@ -1299,7 +1305,7 @@ if ( options.compare ) {
 
 			const q = them.get( p.key ), a = p.noLights[ `${ v }.EV` ], b = q?.noLights[ `${ v }.EV` ];
 			if ( typeof a !== 'number' || typeof b !== 'number' ) continue;
-			const tail = p.at === 'midnight' && typeof DL.NIGHT_METER_LIFT === 'number' ? `   less NIGHT_METER_LIFT ${ DL.NIGHT_METER_LIFT }: ${ ( a - b - DL.NIGHT_METER_LIFT ).toFixed( 3 ) }` : '';
+			const tail = p.at === 'midnight' && typeof NIGHT_METER_LIFT === 'number' ? `   less NIGHT_METER_LIFT ${ NIGHT_METER_LIFT }: ${ ( a - b - NIGHT_METER_LIFT ).toFixed( 3 ) }` : '';
 			lift.push( `  ${ f.weather } ${ f.side } ${ v } ${ pad( label_( p ), 9 ) } EV ${ a.toFixed( 3 ) } - ${ b.toFixed( 3 ) } = ${ ( a - b ).toFixed( 3 ) } stops${ tail }` );
 
 		}

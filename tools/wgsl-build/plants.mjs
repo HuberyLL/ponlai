@@ -10,6 +10,7 @@ import * as THREE from 'three/webgpu';
 import { Bamboo } from '../../packages/island/world/Bamboo.ts';
 import { Yunpeng } from '../../packages/island/world/Yunpeng.ts';
 import { shared } from '../../packages/render/shared.ts';
+import { installedLook } from '../../packages/render/look/Look.ts';
 
 const texture = () => {
 
@@ -28,10 +29,11 @@ export function standInBamboo( atlas = { map: texture(), alpha: texture(), ids: 
 
 }
 
-/** The yunpeng over one clump (Yunpeng.ts). */
+/** The yunpeng over one clump (Yunpeng.ts), its glow under the night lift of the look the build
+ * installed, as the page's exposure hands it over (look/ExposureLook.ts `nightMeterLift`). */
 export function standInYunpeng() {
 
-	return new Yunpeng( [ { x: 0, z: 0, size: 0, seed: 1 } ], shared );
+	return new Yunpeng( [ { x: 0, z: 0, size: 0, seed: 1 } ], shared, installedLook().day.nightMeterLift );
 
 }
 

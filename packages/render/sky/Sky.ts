@@ -21,7 +21,7 @@ import { STORE_CEILING } from '../post/PreExposure.ts';
 import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
-import { DAY_EXPOSURE } from '../look/DayLook.ts';
+import type { Exposure } from '../look/ExposureLook.ts';
 import type { DayCycleSnapshot } from './DayCycle.ts';
 import type { WeatherState } from './Weather.ts';
 import { setKeyCloud } from '../lighting/KeyCloud.ts';
@@ -263,7 +263,10 @@ export class Sky {
 	viewHeight = 1;
 	cloudTime = 0;
 	solarIlluminance = new THREE.Color();
-	readonly grade = { exposure: DAY_EXPOSURE, daylight: 1, night: 0, exposureNight: 0 };
+	// the exposure the sky's grade and the display read (look/ExposureLook.ts), given to the constructor
+	readonly exposure: Exposure;
+	// (the grade's exposure starts at the exposure's by day: the constructor sets it)
+	readonly grade = { exposure: 0, daylight: 1, night: 0, exposureNight: 0 };
 	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
 	// E / PI over the upper hemisphere, cross-faded between the bakes as the irradiance probe is:
 	// each bake's own, read back (an explicit bake's before it shows, a periodic one's a frame or
@@ -459,8 +462,11 @@ export class Sky {
 	seenDeck = uniform( 1 );
 	keyFloorUnderDeck = 0;
 
-	constructor( renderer: THREE.WebGPURenderer, { sunIlluminance = SUN_ILLUMINANCE, elevation = 32, azimuth = - 8 } = {} ) {
+	/** `exposure`: the exposure made from the look's tables (look/ExposureLook.ts `createExposure`). */
+	constructor( renderer: THREE.WebGPURenderer, { exposure, sunIlluminance = SUN_ILLUMINANCE, elevation = 32, azimuth = - 8 }: { exposure: Exposure; sunIlluminance?: number; elevation?: number; azimuth?: number } ) {
 
+		this.exposure = exposure;
+		this.grade.exposure = exposure.day;
 		this.renderer = renderer;
 		this.sunIlluminance = sunIlluminance;
 		this.elevation = elevation;

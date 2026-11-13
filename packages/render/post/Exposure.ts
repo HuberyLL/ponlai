@@ -24,7 +24,7 @@ type V4 = THREE.Node<'vec4'>;
 //   (shared.ts `skyMeterLog2`: Sky.ts reduces it from each environment bake, and the dome writes
 //   the same luminance as its metering illuminance), so a sky-filled view is metered by the sky's
 //   overall brightness, not by the bright sky about the sun.
-// - The keys (look/ExposureLook.ts EXPOSURE_KEYS, DayKeys.ts): the key κ (a white diffuser under
+// - The keys (look/ExposureLook.ts `keys`, DayKeys.ts): the key κ (a white diffuser under
 //   the frame's typical light lands at 2^κ), the highlight key κ_H (the bright band lands at 2^κ_H
 //   at most) and the sky's share β.
 // - The target, in three steps:

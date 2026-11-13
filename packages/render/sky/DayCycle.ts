@@ -1,7 +1,8 @@
 import { MathUtils, Matrix3, Quaternion, Vector3 } from 'three/webgpu';
 import { TUNE_ON, tune, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from './SkyRetune.ts';
-import { CLOUDED_DAYLIGHT, DUSK_DEPTH, DUSK_EASE, DUSK_WINDOWS, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE, exposureAt, type Span } from '../look/DayLook.ts';
+import { CLOUDED_DAYLIGHT, DUSK_DEPTH, DUSK_EASE, DUSK_WINDOWS, type Span } from '../look/DayLook.ts';
+import type { Exposure } from '../look/ExposureLook.ts';
 
 // The day cycle: an equinox day at a fixed latitude, its stars a fixed real sky; the moon is
 // placed, not orbited. One dominant key light (the sun by day, the moon by
@@ -15,13 +16,15 @@ import { CLOUDED_DAYLIGHT, DUSK_DEPTH, DUSK_EASE, DUSK_WINDOWS, NIGHT_EXPOSURE_G
 // the full extinction (look/SkyLook.ts `keyHue`). The sky, sun, moon, stars, key light and grade follow
 // the clock every frame. `reset` sets the clock as the constructor does (a scene jump).
 //
-// The base exposure follows the sun's elevation (EXPOSURE_KEYS), set once under an earlier
+// The base exposure follows the sun's elevation (the exposure's `at`, look/ExposureLook.ts: the
+// cycle is given the exposure it reads), set once under an earlier
 // display chain: it only rises from afternoon into night. It does not set the frame's exposure,
 // which the display chain meters from the light (post/Exposure.ts): it is the exposure the night
 // sky's own lights, the stars and the moon's disk, are tuned against (`nightSkyLevel`),
 // and nothing they light reads it. So it follows the metered exposure: under the twilight it holds
 // from -6 to -7 degrees, and below it climbs with the meter as the night falls to the moon's light,
-// NIGHT_METER_LIFT stops by about -12 degrees, so the stars and the disk keep their display.
+// the exposure's `nightMeterLift` stops by about -12 degrees, so the stars and the disk keep their
+// display.
 // The night ambient rises as the sun's skylight fades after sunset, and the moon's key comes in
 // once the handoff has turned it (MOON_KEY_TOP). Each night share comes in over a window placed
 // so that what it adds in half a degree is no more than what the twilight loses in it. The aim:
@@ -86,7 +89,8 @@ import { CLOUDED_DAYLIGHT, DUSK_DEPTH, DUSK_EASE, DUSK_WINDOWS, NIGHT_EXPOSURE_G
 // it (the key, the night sky's moonlit wash, the clouds' moonlight), so advancing it never darkens a
 // night.
 // The numbers chosen for the look (where the key turns to the moon, the dusk's windows and depths,
-// the ease, the exposure keys and the night sky's exposure) are look/DayLook.ts's; this file keeps
+// the ease) are look/DayLook.ts's, the exposure keys and the night sky's exposure the exposure's it
+// is given (look/ExposureLook.ts); this file keeps
 // the sun's path, the moon's and the stars' places, the shares' forms that read those tables, and
 // the clock.
 
@@ -132,8 +136,8 @@ export interface DayCycleSnapshot {
 	// degrees down (see Sky.track).
 	overcastAdaptation: number;
 	// Scale on the night sky's own light (stars, the moon's disk and its in-scatter in the sky,
-	// clouds): it was tuned at a night exposure of NIGHT_SKY_EXPOSURE and keeps that look, brighter
-	// by NIGHT_EXPOSURE_GAIN, whatever the frame's exposure.
+	// clouds): it was tuned at a night exposure of the exposure's `nightSky` and keeps that look,
+	// brighter by its `nightGain`, whatever the frame's exposure.
 	nightSkyLevel: number;
 }
 
@@ -261,7 +265,7 @@ export function displayNight( daylight: number, elevation: number, rising: boole
 	return dawn + ( night - dawn ) * cloud;
 
 }
-/** The exposure's night weight (look/ExposureLook.ts `exposureKeys`: the night key's share, and the
+/** The exposure's night weight (look/ExposureLook.ts `keysAt`: the night key's share, and the
  * overcast night's offset by it) at the sun's `elevation` (degrees), `rising` or setting, under a
  * clouded share `cloud` (Weather.ts `cloudedShare`), over its own windows (DUSK_WINDOWS.exposure):
  * the meter's handover to the night key is a question of the light it reads, the display's of how
@@ -517,9 +521,13 @@ export class DayCycle {
 	private phase = 0.5;
 	private lunarDays = 29.53;
 	private completedDays = 0;
+	/** The exposure the cycle reads its base exposure and the night sky's from. */
+	readonly exposure: Exposure;
 
-	constructor( options: DayCycleOptions = {} ) {
+	/** `exposure`: the base exposure by the sun's elevation and the night sky's (look/ExposureLook.ts). */
+	constructor( exposure: Exposure, options: DayCycleOptions = {} ) {
 
+		this.exposure = exposure;
 		this.paused = false;
 		this.advanceMoonPhase = false;
 		this.reset( options );
@@ -586,7 +594,7 @@ export class DayCycle {
 		const daylight = smoothstep( - 7, 8, elevation );
 		// The night sky was tuned under a low-sun adaptation that faded out over -5 to -14 degrees.
 		const skyAdaptation = 1 + 0.6 * smoothstep( - 14, - 5, elevation ) * ( 1 - smoothstep( 4, 18, elevation ) );
-		const exposure = exposureAt( elevation );
+		const exposure = this.exposure.at( elevation );
 		// A closed deck's further adaptation (Sky.track): from the end of the civil twilight up it
 		// rises to five, as the deck's own light leaves with the sun's; the night takes none, the
 		// moon lighting the deck as the sun does.
@@ -623,10 +631,10 @@ export class DayCycle {
 			starFrame: starFrame.clone(),
 			daylight,
 			nightVisibility: 1 - smoothstep( - 15, - 3, elevation ),
-			// (the night sky stays dark through its own scaled light: see NIGHT_SKY_EXPOSURE)
+			// (the night sky stays dark through its own scaled light: see the exposure's `nightSky`)
 			exposure,
 			overcastAdaptation: 5 * dusk * ( 1 - daylight ),
-			nightSkyLevel: Math.min( 1, NIGHT_SKY_EXPOSURE * NIGHT_EXPOSURE_GAIN * skyAdaptation / exposure ),
+			nightSkyLevel: Math.min( 1, this.exposure.nightSky * this.exposure.nightGain * skyAdaptation / exposure ),
 		};
 
 	}

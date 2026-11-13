@@ -8,6 +8,8 @@
 
 import * as THREE from 'three/webgpu';
 import { Sky } from '../../packages/render/sky/Sky.ts';
+import { createExposure } from '../../packages/render/look/ExposureLook.ts';
+import { installedLook } from '../../packages/render/look/Look.ts';
 import { VolumetricHaze } from '../../packages/render/weather/VolumetricHaze.ts';
 import { sceneMRT } from '../../packages/render/post/Motion.ts';
 import { buildView } from '../../packages/render/sky/CloudView.ts';
@@ -25,7 +27,8 @@ export default function ( { renderer } ) {
 	let sky;
 	try {
 
-		sky = new Sky( renderer );
+		// the exposure from the look the build installed, as the page's sky stage makes it
+		sky = new Sky( renderer, { exposure: createExposure( installedLook() ) } );
 
 	} finally {
 

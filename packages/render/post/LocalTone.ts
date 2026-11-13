@@ -106,7 +106,7 @@ const NONE = 1e-3;
  * highlights down. */
 export interface LocalToneKey { [ key: string ]: number; hinge: number; high: number; low: number; width: number }
 export const LOCAL_TONE: { keys: DayKeys<LocalToneKey> } = {
-	// the exposure's keys (look/ExposureLook.ts EXPOSURE_KEYS); tunable on debug pages
+	// the exposure's keys (look/ExposureLook.ts `keys`); tunable on debug pages
 	// (debug/Tune.ts): `post.localTone.<value>@<key>`
 	keys: tuneKeys( 'post.localTone', {
 		day: [
