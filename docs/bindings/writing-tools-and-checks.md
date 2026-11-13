@@ -42,8 +42,9 @@ Contents:
   (`tools/render/profile-frame.mjs` and `docs/reference/profile-frame.md`).
 - An entry tool's first import is `import '../kit/help.mjs';` (the path from its folder). It prints
   the first line, the Usage and the Options and exits before any other import runs; `--help --full`
-  prints the whole header. A Python tool's manual is its module docstring, and right after it,
-  before any other import or a re-exec, it calls the same helper:
+  prints the whole header. The other imports still resolve first, so `--help` needs the
+  dependencies installed (`npm ci`). A Python tool's manual is its module docstring, and right after
+  it, before any other import or a re-exec, it calls the same helper:
 
   ```python
   sys.path.insert(0, str(Path(__file__).resolve().parent))  # the path to tools/kit/

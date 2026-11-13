@@ -20,8 +20,8 @@
 // ends (`GATE_FILE`). Scripts read it through this module: `requireDisplayAllowed( label )` throws
 // unless headed runs are allowed now, and `profile-frame --display` refuses without it.
 // `announceHeadedRun( { label, scenes, minutes } )` posts a desktop notification (osascript) and
-// then waits 10 s before the window opens: the user asked to be told, not asked. A notification
-// that fails is logged on stderr and never stops the run.
+// then waits 10 s before the window opens, without asking for a reply. A notification that fails
+// is logged on stderr and never stops the run.
 //
 // Output: one line on stdout, `headed runs allowed until <local time>` or `headed runs not
 // allowed`. `allow` writes the file; `deny` removes it.
@@ -60,8 +60,8 @@ export function requireDisplayAllowed( label = 'a headed run' ) {
 
 	if ( displayAllowedUntil() ) return;
 	throw new Error( `${ label } would open a window on the user's screen, and headed runs are not allowed now (${ GATE_FILE }). ` +
-		'Use a headless run instead, or record this run as pending in your report: the main session runs pending ' +
-		'display runs together while the user allows them (node tools/kit/display-gate.mjs allow <hours>).' );
+		'Use a headless run instead, or record this run as pending: it can be run once headed runs are ' +
+		'allowed (node tools/kit/display-gate.mjs allow <hours>).' );
 
 }
 

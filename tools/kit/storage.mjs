@@ -26,9 +26,8 @@
 //   artifacts/ the configuration lists (tools/project.mjs `storage.folders`), once older than
 //   --days. Reports, JSON and small images stay, and so does every image a report or page links to
 //   (a path in a .md or .html file under those folders, read relative to that file, the checkout
-//   or artifacts/): what the user reviews keeps its pictures. Other artifacts folders are never
-//   read. artifacts/captures, where one-off screenshots land, keeps its images 7 days and stays
-//   outside the cap.
+//   or artifacts/). Other artifacts folders are never read. artifacts/captures, where one-off
+//   screenshots land, keeps its images 7 days and stays outside the cap.
 // - references: a commit's folder in a reference store (a folder named by a full sha under those
 //   folders, such as artifacts/parity; tools/kit/reference.mjs). Kept while its commit is live: the
 //   HEAD of a worktree, the tip of a local branch committed to in the last 7 days, or the commit

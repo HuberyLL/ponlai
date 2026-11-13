@@ -2,10 +2,8 @@
 
 The test mode is how a page is loaded so that a frame repeats exactly: the same query gives the
 same bytes on every load, in every scene jump and after every growth swap. The byte-for-byte checks
-of the capture, parity and verify tools rely on it. The rule behind it is `ARCHITECTURE.md`, rule 4:
-simulation and generation are deterministic and path-independent, and a history-dependent rendering
-effect is cleared by a scene jump, converges on a still scene or is frozen or off in the test mode,
-and is compared within a tolerance.
+of the capture, parity and verify tools rely on it. The rule behind it is `ARCHITECTURE.md`, rule 4
+([its full text](architecture-rules.md#rule-4-determinism-and-path-independence)).
 
 ## What the test mode is
 

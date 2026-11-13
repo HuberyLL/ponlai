@@ -91,9 +91,7 @@ SIGGRAPH 2020; "Real-Time Samurai Cinema", SIGGRAPH 2021).
   in the sheen a gust sweeps over it.
 - Nothing lifts the shade toward the light: no extra share of sky light on the island (a "clear
   shade"), no grade tone that softens the contrast and recolours the lights and the shade, no low
-  sun's recolouring, and no film's day for night. Together with the meadow's own soft light, they
-  leave a shaded clump within a quarter of a lit one's brightness, and the meadow reads as lit by an
-  overcast sky.
+  sun's recolouring, and no film's day for night.
 - On a clear day the higher the sun, the harder the contrast between the lit ground and the shade.
 - The sunlit ground lights what stands over it from below, one bounce for every lit surface: the
   shallows light the cliff's walls faintly, the meadow the islanders' undersides. It is strongest

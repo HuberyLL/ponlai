@@ -77,22 +77,6 @@ Contents:
 - At the lip the turf ends on its soil over the stone, never a dark hole.
 - Never a ground mapped from above on the lip's bevel: it runs down the slope in stripes.
 
-The grass over the rim is designed but not built: the meadow draws no grass hanging over the lip
-yet. As designed:
-
-- The meadow passes into the cliff through grass that grows from the lip and hangs over it as one
-  fringe, as on a sea cliff's top. The fringe is dense, short, nearly parallel bundles of the
-  meadow's blades (mostly 0.15 to 0.5 m, a few to 0.8 m). Each is bent by its own weight into one
-  smooth arc, stiff at the root and soft at the tip: long blades arc over and hang, short ones only
-  bend. They lie on the stone where they meet it, combed to one side, drier and yellower than the
-  meadow, in stretches with clumps and thin places, and fewer where bare stone meets the meadow.
-- Avoid fans of long blades like small palm leaves. What hangs over the rim is the meadow's own
-  grass, not leafy branches. The lowest quarter of the cliff above the sea stays bare.
-- Toward a sheltered coast the grass runs to the lip and stands there, and the same grass grows out
-  over it: its tufts spill over the edge, fine blades that arch over and hang down the wall, lying
-  on the stone, never through it. The lip alternates between overgrown stretches and cut-open root
-  soil.
-
 ## The meadow
 
 ### From the island view
@@ -137,7 +121,7 @@ yet. As designed:
   blade and clump its own value and height, which from the island view grains the lawn into a
   scatter of tufts over dark ground.
 - The blades keep a sunlit leaf's albedo, within real ones
-  ([Art direction](art-direction.md#how-the-look-is-made)).
+  ([Look values](../reference/look-values.md#albedo)).
 - The gaps between blades are a deep, cooler green, never near black, under tips that stand out
   lighter, and yellow-green where the sun shines through them.
 - Under a closed sky the lawn keeps its green, the sky's light having passed among the blades. It
