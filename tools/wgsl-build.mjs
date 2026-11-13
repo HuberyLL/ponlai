@@ -55,8 +55,8 @@
 // imports what it builds from `packages/` and three as usual (Vite leaves three to node, so the tool
 // and the entry share one three) and its default export, given `{ renderer }`, returns the
 // shaders (or a promise of them) as `[ name, shader ]` pairs or an object of them, in the order
-// the page first builds them (r186 emits code from node state its builds share: AGENTS.md, the
-// warm-up's order). A shader is:
+// the page first builds them (r186 emits code from node state its builds share: docs/reference/three-behaviour.md,
+// Build order). A shader is:
 //   - a ComputeNode (`Fn( ... )().compute( ... )`): written as <name>.wgsl;
 //   - a NodeMaterial: drawn as a full-screen pass (a QuadMesh, as the frame graph's passes draw);
 //   - `{ material, object, scene, camera, mrt }` (all but material optional): a draw of

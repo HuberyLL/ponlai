@@ -1116,7 +1116,7 @@ def calibrate( sources, overlays=None, size=None ):
 	                   sky's own grain and the thin cloud layer's texture
 	  glints.level     per glint crop, the MSAA crop's 99.9th percentile of L (at least 160); where that
 	                   is 250 or more, the crop lies in the sun's burned-out glitter path (the glints
-	                   clip, AGENTS.md), whose top thousandth is the clipped plateau itself: then 250,
+	                   clip into white, post/ToneCurve.ts), whose top thousandth is the clipped plateau itself: then 250,
 	                   the near-white glitter (`clipped`)
 	"""
 	out = {}

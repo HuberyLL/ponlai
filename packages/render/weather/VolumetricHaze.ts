@@ -450,7 +450,7 @@ const SEEN_AIR = { near: 200, far: 2000 } as const;
 //     sky rays, the CPU `transmittance` (the sun's glare, the flares' visibility) and `openSky`
 //     (the light the sky lends) read the medium alone.
 //
-// Rules: the shadow's filter is a history-dependent effect (AGENTS.md). While the scene runs, each
+// Rules: the shadow's filter is a history-dependent effect (ARCHITECTURE.md, rule 4). While the scene runs, each
 // froxel blends its new sample into its history, reprojected through the previous frame's camera,
 // and takes the new sample alone where the history falls outside the grid, after a cut (the key
 // light turns more than CUT in a frame, the camera jumps) and after `invalidate`. A scene at rest

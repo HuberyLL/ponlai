@@ -138,7 +138,7 @@ Rules:
 
 ## Test mode
 
-The rule (AGENTS.md, Rules for every change): simulation and generation are deterministic and
+The rule (`ARCHITECTURE.md`, rule 4): simulation and generation are deterministic and
 path-independent; rendering may keep history-dependent effects that a scene jump clears, that
 converge on a still scene (or are frozen or turned off in the test mode) and that are compared
 within a tolerance; the test mode keeps the byte-for-byte checks valid.

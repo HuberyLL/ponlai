@@ -5,7 +5,7 @@
 // joins two layers: it hands one layer's parts to another's stage, and it starts the game, whose
 // start takes what it needs from the renderer's and the island's parts.
 // - The stages run in this order and no other: the renderer's and the island's alternate, and the
-//   order materials first build in is part of the image (AGENTS.md, WebGPU / TSL pitfalls).
+//   order materials first build in is part of the image (docs/reference/three-behaviour.md, Build order).
 // - Every wait is here: a stage that ends in one returns its promise.
 // - It takes each package through its exits (render/index.ts, render/setup.ts, island/index.ts, island/land.ts,
 //   game/sim/index.ts, and the game's own, game/index.ts, by a dynamic import when `?game` starts it), never a

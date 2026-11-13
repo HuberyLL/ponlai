@@ -1,6 +1,6 @@
 // Regression probe for the island's growth in place (packages/island/world/Growth.ts): a page grown by N steps
 // must draw what a page freshly loaded on that land draws, bit for bit, in the test mode (paused,
-// MSAA: docs/reference/tools.md, Test mode; AGENTS.md, "The island grows in place"), and no swap may build a
+// MSAA: docs/reference/tools.md, Test mode; the rules in Growth.ts's header), and no swap may build a
 // pipeline.
 //
 //   node tools/verify-growth-swap.mjs <base url> [--steps 6] [--views island,cliffs,meadow]

@@ -46,7 +46,7 @@ import { hasGpuFeature } from '../three/Backend.ts';
 // past them are never visible. A grown island's pool (World growth, Growth.ts) is a new pool: its
 // arrays are filled in steps (`poolSteps`) and its buffers made and uploaded ahead
 // (`poolBuffers`), and `setPool` points every storage node at them (one node per buffer, type and
-// access: `node`): new bind groups, no pipeline (AGENTS.md, tools/verify-storage-realloc.mjs). The
+// access: `node`): new bind groups, no pipeline (docs/reference/three-behaviour.md, Storage buffers). The
 // kernels read the batches' bounds, the last workgroup and the scatter's passes from uniforms, and
 // every batch keeps its place even while empty (an empty batch starts where the next one does and
 // writes no arguments), so no pool changes their code.
@@ -68,7 +68,7 @@ import { hasGpuFeature } from '../three/Backend.ts';
 //   least cap at or above its count (less 0.001, a hair against the vertex stage's rounding), and
 //   the first band, which also takes any record over its cap (`flags.grassLod = false`), draws the
 //   batch's index count of the view (`CullRange.indexCount`, its nearest record's parts). The image
-//   is the one-draw image but for the split (AGENTS.md: about 1 % of pixels a level or two apart).
+//   is the one-draw image but for the split (docs/reference/three-behaviour.md, Split draws).
 //   `flags.grassCull = false` draws every tuft through the same storage path, and
 //   `flags.grassBands = false` puts every visible tuft in its batch's first band (the one draw of
 //   before), for A/Bs.
@@ -273,7 +273,7 @@ export class VegetationCull<R> {
 	readonly indirect: THREE.IndirectStorageBufferAttribute;
 	private buffers: CullBuffers;
 	// every storage node over the pool's buffers, by buffer, type and access: `setPool` points them
-	// at new buffers (a new bind group, no pipeline: AGENTS.md)
+	// at new buffers (a new bind group, no pipeline: docs/reference/three-behaviour.md, Storage buffers)
 	private readonly nodes = new Map<string, { buffer: string; node: AnyStorage }>();
 	// the batches' bounds, as the kernels read them (uniforms, so a new pool builds no pipeline)
 	private readonly bounds: { start: THREE.UniformNode<'uint', number>; groupStart: THREE.UniformNode<'uint', number>; groupEnd: THREE.UniformNode<'uint', number> }[];

@@ -22,7 +22,7 @@
 //   with the cube of the length, so a long blade droops to hang and a short one barely bends:
 //   at the defaults G is about 8 at half a metre, 0.5 at 0.2 m and 60 at a metre.
 // - Shapes are equilibria, not simulations: a function of G, the root angle and what it lies on,
-//   so they are the same whatever came before (AGENTS.md, determinism). A free strand's shape is
+//   so they are the same whatever came before (ARCHITECTURE.md, rule 4). A free strand's shape is
 //   read from a family of curves solved once (`drapeTable`, over G and the root angle) and
 //   interpolated; one that meets the wall is solved again with the wall pushing it out
 //   (`drape`), from that shape, so it lies on the stone along a smooth arc, bridging small ledges

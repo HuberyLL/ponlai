@@ -30,7 +30,7 @@
 //     --src's fails rather than reading other elevations.
 //   - Each point is its own scene jump (app/Scene.ts `establishScene`) to `weather=<w>&hour=<h>&paused&t=12`
 //     plus --q (default `grow=36`, the grown island: its yunpeng clumps), never reached by walking the
-//     clock through the points before it, since the scene is a function of its query (AGENTS.md).
+//     clock through the points before it, since the scene is a function of its query (ARCHITECTURE.md, rule 4).
 //     --walk instead reaches each point of a side by `__PONLAI__.setHour` in one page, from the
 //     side's first point loaded: the path check, against a jump run through --compare.
 //   - At each point the figures are hidden, every `sky.dusk.force.*` tunable is set back to -1 (a

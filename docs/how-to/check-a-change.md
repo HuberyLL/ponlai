@@ -105,8 +105,8 @@ keeps the test mode's byte comparisons valid this way (`docs/reference/tools.md`
 
 ## Add something that depends on the land's shape
 
-The island grows in place (`AGENTS.md`, Rules for every change): a Grow swaps in only the changed
-chunks in one frame, and every dependent of the land's shape follows it.
+The island grows in place (`packages/island/world/Growth.ts`, its header): a Grow swaps in only the
+changed chunks in one frame, and every dependent of the land's shape follows it.
 
 1. Join the swap: `GrowthPage`, a vegetation kind's `growth` in `vegetation/Registry.ts`, and
    IslandStages.ts's `onSwap`.

@@ -83,8 +83,8 @@ export function requestedAAMode( params: SettingsQuery, profile: Pick<QualityPro
 		console.warn( `Unknown msaa=${ msaa }: expected 1 or 4` );
 
 	}
-	// The test mode (AGENTS.md) is a paused page under MSAA, whatever the tier runs: every capture,
-	// parity and verify tool loads its pages paused, and their byte-for-byte checks hold under MSAA.
+	// The test mode (ARCHITECTURE.md, rule 4) is a paused page under MSAA, whatever the tier runs:
+	// every capture, parity and verify tool loads its pages paused, and their byte-for-byte checks hold under MSAA.
 	if ( params.has( 'paused' ) || params.get( 'clock' ) === 'paused' ) return { mode: 'msaa', source: 'test' };
 	const tier = profile?.aa;
 	if ( tier !== undefined ) {

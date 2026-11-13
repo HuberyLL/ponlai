@@ -26,7 +26,7 @@ import { LEAF_TINTS, LEAF_TRANSLUCENCY } from './BambooMaterials.ts';
 // A leaf that stands starts 5 to 12 m over the ground there. Its point, life, fall speed, size,
 // spin, tilt and tint are hashes of the scene clock's whole-step count and its place in the
 // frame's births, so a stepped clip replays; the sky's leaves depend on the camera's path, which
-// rendering history may (AGENTS.md).
+// rendering history may (ARCHITECTURE.md, rule 4).
 //
 // Motion, at fixed steps of STEP seconds on a grid of the scene clock: a frame takes the steps it
 // crosses and draws between the last two by the fraction past the last; each step reads the frame's
