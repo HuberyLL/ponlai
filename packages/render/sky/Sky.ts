@@ -23,6 +23,7 @@ import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
 import type { Exposure } from '../look/ExposureLook.ts';
 import type { DayWindows } from '../look/DayLook.ts';
+import type { KeyLiftShading } from '../look/AmbientLook.ts';
 import type { DayCycleSnapshot } from './DayCycle.ts';
 import type { WeatherState } from './Weather.ts';
 import { setKeyCloud } from '../lighting/KeyCloud.ts';
@@ -268,6 +269,10 @@ export class Sky {
 	readonly exposure: Exposure;
 	// the day's windows the sky's night shares read (look/DayLook.ts), given to the constructor
 	readonly dayWindows: DayWindows;
+	// the low key's lift (look/AmbientLook.ts `createKeyLift`), given to the constructor: the
+	// shading elevation under a sun key, which lighting/KeyLift.ts turns into the direction the
+	// surfaces take the key's light from (`keyDir` lifted)
+	readonly keyLift: KeyLiftShading;
 	// (the grade's exposure starts at the exposure's by day: the constructor sets it)
 	readonly grade = { exposure: 0, daylight: 1, night: 0, exposureNight: 0 };
 	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
@@ -466,11 +471,13 @@ export class Sky {
 	keyFloorUnderDeck = 0;
 
 	/** `exposure`: the exposure made from the look's tables (look/ExposureLook.ts `createExposure`);
-	 * `dayWindows`: the day's windows made from them (look/DayLook.ts `createDayWindows`). */
-	constructor( renderer: THREE.WebGPURenderer, { exposure, dayWindows, sunIlluminance = SUN_ILLUMINANCE, elevation = 32, azimuth = - 8 }: { exposure: Exposure; dayWindows: DayWindows; sunIlluminance?: number; elevation?: number; azimuth?: number } ) {
+	 * `dayWindows`: the day's windows made from them (look/DayLook.ts `createDayWindows`); `keyLift`:
+	 * the low key's lift made from them (look/AmbientLook.ts `createKeyLift`). */
+	constructor( renderer: THREE.WebGPURenderer, { exposure, dayWindows, keyLift, sunIlluminance = SUN_ILLUMINANCE, elevation = 32, azimuth = - 8 }: { exposure: Exposure; dayWindows: DayWindows; keyLift: KeyLiftShading; sunIlluminance?: number; elevation?: number; azimuth?: number } ) {
 
 		this.exposure = exposure;
 		this.dayWindows = dayWindows;
+		this.keyLift = keyLift;
 		this.grade.exposure = exposure.day;
 		this.renderer = renderer;
 		this.sunIlluminance = sunIlluminance;

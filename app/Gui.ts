@@ -3,7 +3,7 @@
 // Its handlers call the renderer's and the island's operations; the game adds its own folder
 // between them (main.ts).
 import { reloadWith } from './PageSettings.ts';
-import { DAY_PRESETS, type DayPreset, WEATHER_PRESETS, isParkedWeather, type WeatherName, WIND_LEVELS, type WindLevel, WHITE_BALANCE, LOCAL_TONE, FrameStats, shared, AMBIENT_KNOBS, ambientGrade, type AmbientView, markSkyRetune, type AAMode, AA_MODE, renderEvent, debugViewChoices, type RenderParts } from '../packages/render/index.ts';
+import { DAY_PRESETS, type DayPreset, WEATHER_PRESETS, isParkedWeather, type WeatherName, WIND_LEVELS, type WindLevel, WHITE_BALANCE, LOCAL_TONE, FrameStats, shared, AMBIENT_KNOBS, type AmbientView, markSkyRetune, type AAMode, AA_MODE, renderEvent, debugViewChoices, type RenderParts } from '../packages/render/index.ts';
 import { settings as params, numberSetting, type QualityTier, ACTIVE_QUALITY } from '../packages/render/setup.ts';
 import GUI from 'lil-gui';
 import { qualityLines } from './QualityDetect.ts';
@@ -204,6 +204,7 @@ export function createGui( render: RenderParts, island: IslandParts, page: PageP
 	// the ambient grade (lighting/AmbientGrade.ts): the values the table gives now, and an override
 	// whose sliders replace them while it is on, for live tuning
 	const ambientF = gui.addFolder( 'Ambient' );
+	const ambientGrade = render.ambientGrade;
 	for ( const key of AMBIENT_KNOBS ) ambientF.add( ambientGrade.current, key ).name( key ).listen().disable();
 	const retuneAmbient = () => renderEvent( 'retune' );
 	ambientF.add( ambientGrade, 'override' ).name( 'override' ).onChange( retuneAmbient );

@@ -17,7 +17,7 @@ export { useLightLayer } from './debug/LightLayer.ts';
 export { TEST_MODE } from './debug/TestMode.ts';
 export { tune, tuneApi, tuneApply, tuneObject, tuneUniform } from './debug/Tune.ts';
 export { GAIN, WIND_VIEW } from './debug/WindView.ts';
-export { ambient, ambientGrade, gradeOcclusion } from './lighting/AmbientGrade.ts';
+export { ambient, gradeOcclusion } from './lighting/AmbientGrade.ts';
 export { CANOPY_SHADE, ambientField, ambientPoint, ambientVolumeOn } from './lighting/AmbientSample.ts';
 export type { AmbientReceiver } from './lighting/AmbientSample.ts';
 export type { AmbientPrepared, AmbientView, AmbientVolume } from './lighting/AmbientVolume.ts';

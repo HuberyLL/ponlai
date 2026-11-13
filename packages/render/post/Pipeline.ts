@@ -1218,7 +1218,7 @@ export class Pipeline {
 		u.desaturate.value = desaturation.amount; u.desaturateCool.value = desaturation.cool;
 		u.purkinje.value = night * PURKINJE.strength;
 		const keyColor = this.sky.keyColor;
-		u.purkinjeKey.value = ( 0.2126 * keyColor.r + 0.7152 * keyColor.g + 0.0722 * keyColor.b ) * liftedKeyHeight( this.sky.keyDir, this.sky.keyIsMoon ) / Math.PI;
+		u.purkinjeKey.value = ( 0.2126 * keyColor.r + 0.7152 * keyColor.g + 0.0722 * keyColor.b ) * liftedKeyHeight( this.sky.keyLift, this.sky.keyDir, this.sky.keyIsMoon ) / Math.PI;
 		// the day's and the clouded white (DayKeys.ts `keyed`, without the night), overcast's
 		// (WHITE_OVERCAST) over them by overcast's share, then the night's over all by the night's
 		// weight, as `keyed` blends it: under no overcast the white is `keyed`'s to the bit
