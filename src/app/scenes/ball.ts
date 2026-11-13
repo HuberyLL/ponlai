@@ -53,7 +53,7 @@ const readings: SceneReading[] = [
 export const ball: TestScene = {
 	name: 'ball',
 	about: 'the light on plain surfaces: balls by roughness and by albedo, a grey and a white card, a post\'s shade',
-	ground: { height: GROUND, albedo: [ GREY, GREY, GREY ] },
+	ground: { kind: 'land', height: GROUND, albedo: [ GREY, GREY, GREY ] },
 	build() {
 
 		const ground = groundDisc( GROUND, surface( 'ground', [ GREY, GREY, GREY ] ) );

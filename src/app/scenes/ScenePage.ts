@@ -14,10 +14,16 @@
 //   as a fresh load of that query draws it, the camera back at the scene's first view;
 //   `__PONLAI__.scenePage` holds the scene's own handles: its `views`, `times` and `readings`,
 //   `setView( name )` and `read()`, which measures the readings the view's frame holds.
-// - The ground of a test scene has no end, so its sea is never seen: the water's surface is built,
-//   as the frame's passes need it, and hidden.
+// - A scene stands on level ground or in the open sea (TestScene.ts `SceneGround`). Ground has no
+//   end, so its sea is never seen: the water's surface is built, as the frame's passes need it,
+//   and hidden. The open sea is far from any shore and equally deep everywhere (the fields, the
+//   probes and the bounce's ground of NeutralInputs.ts); the water is drawn, its floor and what
+//   reaches under its surface are the scene's own.
+// - The scene's plant kinds join the registry before `placeVegetation` closes it, drawn with the
+//   default plant (vegetation/DefaultPlant.ts), and cast into the sun's map with the scene's
+//   casters.
 import * as THREE from 'three/webgpu';
-import { awaitWarmUp, bakeRainCollision, bakeWithHaze, checkMotion, createAmbient, createBounceAndShore, createEnvironment, createFrameStages, createKey, createLight, createRenderer, createScenes, createSeaAndPipeline, createShared, createSky, createWater, installShared, placeVegetation, primeSharedBuilds, publishSkyLight, registerLightHistories, registerSceneHistories, sceneOptions, setUpRenderer, startWaveMaps, neutralBounceGround, neutralFields, neutralLattice, Vegetation, FramePacer, PAUSED_QUEUE, gpuDevice, threeAnimation, TEST_MODE, AA_MODE, preExposure, renderEvent, restEpoch, tuneApi, debugFlags, type RenderParts } from '../../render.ts';
+import { awaitWarmUp, bakeRainCollision, bakeWithHaze, checkMotion, createAmbient, createBounceAndShore, createEnvironment, createFrameStages, createKey, createLight, createRenderer, createScenes, createSeaAndPipeline, createShared, createSky, createWater, defaultPlant, installShared, placeVegetation, vegetationCasters, primeSharedBuilds, publishSkyLight, registerLightHistories, registerSceneHistories, sceneOptions, setUpRenderer, startWaveMaps, neutralBounceGround, neutralFields, neutralLattice, neutralSeaLattice, OPEN_SEA_SHORE, Vegetation, FramePacer, PAUSED_QUEUE, gpuDevice, threeAnimation, TEST_MODE, AA_MODE, preExposure, renderEvent, restEpoch, tuneApi, debugFlags, type RenderParts } from '../../render.ts';
 import { settings as params, type SettingName, type QualityTier, qualityProfile, renderPixelRatio, outputPixelRatio } from '../../renderSetup.ts';
 import { SCENES } from './index.ts';
 import type { ReadingContext, SceneReading, Triple } from './TestScene.ts';
@@ -57,16 +63,19 @@ createSky( render, { scene: sceneOptions( params, sceneDefaults ), seaFog: param
 // ------------------------------------------------------------------ the views
 
 const views = testScene.views;
+// (a jump poses the first view before the key is the new hour's: TestScene.ts `SceneView`)
+if ( typeof views[ 0 ].eye === 'function' || typeof views[ 0 ].target === 'function' ) throw new Error( `scenes: '${ testScene.name }''s first view follows the key; the first view is fixed` );
 let shownView = views[ 0 ].name;
 function poseView( viewName: string ): void {
 
 	const view = views.find( ( v ) => v.name === viewName );
 	if ( ! view ) throw new RangeError( `scenes: '${ testScene!.name }' has no view '${ viewName }' (${ views.map( ( v ) => v.name ).join( ', ' ) })` );
+	const place = ( p: Triple | ( ( key: THREE.Vector3 ) => Triple ) ) => typeof p === 'function' ? p( render.sky.keyDir ) : p;
 	shownView = view.name;
 	camera.fov = view.fov ?? 27;
-	camera.position.set( ...view.eye );
+	camera.position.set( ...place( view.eye ) );
 	camera.up.set( 0, 1, 0 );
-	camera.lookAt( ...view.target );
+	camera.lookAt( ...place( view.target ) );
 	camera.updateProjectionMatrix();
 	camera.updateMatrixWorld();
 
@@ -77,16 +86,26 @@ createLight( render );
 createKey( render );
 await createEnvironment( render );
 publishSkyLight( render );
-// the rain's ceiling: over the tallest thing a scene stands on its ground
-createSeaAndPipeline( render, { rainCeiling: testScene.ground.height + 8, extraPasses: [] } );
+const { ground } = testScene;
+const seaLevel = shared.waterLevel.value;
+// the rain's ceiling: over the tallest thing a scene stands on its ground, or on the sea
+createSeaAndPipeline( render, { rainCeiling: ( ground.kind === 'land' ? ground.height : seaLevel ) + 8, extraPasses: [] } );
 
 // ------------------------------------------------------------------ the neutral world
 
-// Far inland everywhere: the shore is nowhere near and the floor is the ground.
+// On land, far inland everywhere: the shore is nowhere near and the floor is the ground. At sea,
+// far from any shore everywhere, over the floor at the scene's depth.
 const FIELD_HALF = 64;
-const { ground } = testScene;
-const neutral = neutralFields( { half: FIELD_HALF, shore: - 1000, floor: ground.height, xform: shared.shoreXform.value } );
-createBounceAndShore( render, { fields: neutral.fields, bounceGround: neutralBounceGround( { ground: ground.height, albedo: ground.albedo } ), shoreData: neutral.shoreData } );
+// where the water would take the open sea to deepen (m): past the sea's farthest edge, so that the
+// floor's depth holds everywhere
+const OPEN_SEA_DEEPENING = { from: 1e5, to: 2e5 };
+const neutral = ground.kind === 'land'
+	? neutralFields( { half: FIELD_HALF, shore: - 1000, floor: ground.height, xform: shared.shoreXform.value } )
+	: neutralFields( { half: FIELD_HALF, shore: OPEN_SEA_SHORE, floor: seaLevel - ground.depth, xform: shared.shoreXform.value } );
+const bounceGround = ground.kind === 'land'
+	? neutralBounceGround( { ground: ground.height, albedo: ground.albedo } )
+	: neutralBounceGround( { ground: seaLevel - ground.depth, albedo: ground.floor } );
+createBounceAndShore( render, { fields: neutral.fields, bounceGround, shoreData: neutral.shoreData } );
 const content = testScene.build( render );
 const world = new THREE.Group();
 world.name = 'scene';
@@ -94,23 +113,30 @@ world.add( ...content.objects );
 scene.add( world );
 world.updateMatrixWorld( true );
 startWaveMaps( render );
-await createAmbient( render, { ambientData: neutralLattice( { ground: ground.height, albedo: ground.albedo } ), world: { group: world } } );
-// no plant kinds: the registry places none and closes
-const vegetation = new Vegetation();
+await createAmbient( render, { ambientData: ground.kind === 'land' ? neutralLattice( { ground: ground.height, albedo: ground.albedo } ) : neutralSeaLattice( { sea: seaLevel } ), world: { group: world } } );
+// the scene's plant kinds, drawn with the default plant; the registry places them and closes
+const vegetation = new Vegetation( ( sites, kindName ) => defaultPlant( shared, sites, kindName ) );
+for ( const kind of content.plants ?? [] ) vegetation.add( kind );
 placeVegetation( render, vegetation, { ground: content.objects } );
-// what casts into the sun's map; a scene with nothing on its ground gives the map a box to fit
-const casters = content.casters ?? new THREE.Box3( new THREE.Vector3( - 1, ground.height, - 1 ), new THREE.Vector3( 1, ground.height + 1, 1 ) );
+// What casts into the sun's map: the scene's casters and its plants; a scene with nothing on its
+// ground gives the map a box to fit.
+const surfaceHeight = ground.kind === 'land' ? ground.height : seaLevel;
+const casting = content.casters !== null || vegetation.kinds.length > 0;
+const casters = vegetation.kinds.length
+	? vegetationCasters( vegetation, { ground: content.objects, box: new THREE.Box3() } ).union( content.casters ?? new THREE.Box3() )
+	: content.casters ?? new THREE.Box3( new THREE.Vector3( - 1, surfaceHeight, - 1 ), new THREE.Vector3( 1, surfaceHeight + 1, 1 ) );
 render.sunShadow.setCasters( casters );
 bakeRainCollision( render, vegetation, { ground: content.objects, area: neutral.bounds } );
-// the sea reflects what stands inside the box of everything on the ground
-const reach = content.casters ?? casters;
+// the sea reflects what stands inside the box of everything on the ground or on the sea
+const reach = casters;
 createWater( render, {
 	fields: neutral.fields,
 	landBox: { x0: Math.min( reach.min.x, - 1 ), z0: Math.min( reach.min.z, - 1 ), x1: Math.max( reach.max.x, 1 ), z1: Math.max( reach.max.z, 1 ) },
-	islandSea: { openSea: { from: 400, to: 800 }, reflectorTop: reach.max.y + 1 },
+	// at sea no shelf: the floor's depth everywhere, the open sea's deepening past the farthest view
+	islandSea: { openSea: ground.kind === 'land' ? { from: 400, to: 800 } : OPEN_SEA_DEEPENING, reflectorTop: reach.max.y + 1 },
 	heldOpaque: [],
 } );
-render.water!.mesh.visible = false;
+render.water!.mesh.visible = ground.kind === 'sea';
 
 // ------------------------------------------------------------------ the frame
 
@@ -234,7 +260,7 @@ const REVEAL_WAIT = 3000;
 const revealAt = performance.now() + REVEAL_WAIT;
 const reveal = () => {
 
-	const waiting = ( ( content.casters !== null && render.sunShadow.draws === 0 ) || ! render.ambientRelight.ready ) && performance.now() < revealAt;
+	const waiting = ( ( casting && render.sunShadow.draws === 0 ) || ! render.ambientRelight.ready ) && performance.now() < revealAt;
 	if ( waiting ) { setTimeout( reveal, 50 ); return; }
 	if ( render.paused && loading ) loading.style.transition = 'none';
 	loading?.classList.add( 'done' );

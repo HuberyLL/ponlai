@@ -361,14 +361,18 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 ## The test scenes
 
 `scenes.html` is a second page: the renderer's small test scenes, built from the renderer alone
-(`src/app/scenes/`), with no island, no sea and no game. It takes the renderer's options of this
+(`src/app/scenes/`), with no island and no game. It takes the renderer's options of this
 page (the sky and weather, `paused`, `t`, `quality`, `aa`, `flags`, `tune.*`, `debug`, `profile`)
 and none of the island's or the game's.
 
 - `scene` names the scene: `ball` (rows of balls by roughness and by albedo, a grey and a white
   card and a post on level grey ground: how a surface takes the key, the sky and the ground's
-  bounce) or `empty` (level grey ground under the sky: what the sky and the key give through a
-  day). A page without it, or with a name no scene has, shows a message that lists the scenes.
+  bounce), `empty` (level grey ground under the sky: what the sky and the key give through a
+  day), `sea` (the open sea far from any shore over a floor 40 m down, with a floating ball and a
+  half-sunk one: the water's colour, the far sea against the sky, the sun's glitter, the wind's
+  four levels) or `plants` (a patch of a plant kind registered without art of its own, so drawn
+  with the default plant, round a post whose shade falls across it). A page without it, or with a
+  name no scene has, shows a message that lists the scenes.
 - `renderLook=ponlai` (debug pages only) loads the scenes with the island's look in place of the
   renderer's neutral one, for a scene read beside the island's own numbers
   (`docs/reference/look-values.md`).
@@ -646,7 +650,7 @@ without the warning. This table is written from the declarations (`node tools/ve
 | `ambientProbes` | `off`, `sky`, `bounce`, `irradiance` | off | render | shows the ambient light's probes (debug pages only) |
 | `windView` | named bare, `arrows`, `plants` | off | render | makes the vegetation's wind visible (debug pages only) |
 | `renderLook` | `neutral`, `ponlai` | the page's own | app | the look the renderer draws with, over the page's own: `neutral` (the renderer's) on the island's page, `ponlai` (the island's) on the test scenes' (debug pages only) |
-| `scene` | `ball`, `empty` | none | app | the test scene `scenes.html` shows |
+| `scene` | `ball`, `empty`, `sea`, `plants` | none | app | the test scene `scenes.html` shows |
 | `look` | `kit` | Hanming | island | `kit`: the islanders' earlier kit look |
 | `islander` | `stock`, `subtle`, `medium`, `strong`, `real` | the look's own | island | the islanders' proportions |
 | `body` | text | M30 | island | the scene's walker's sex and age |

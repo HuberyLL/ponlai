@@ -1,7 +1,7 @@
 // The test scenes shot, read and checked (scenes.html, src/app/scenes/): the renderer's small
 // scenes, each at its own views, hours and weathers, as paused pages in the test mode.
 //
-//   node tools/scenes.mjs <baseUrl> <outDir> [--scenes ball,empty] [--times a,b] [--views a,b]
+//   node tools/scenes.mjs <baseUrl> <outDir> [--scenes ball,sea] [--times a,b] [--views a,b]
 //       [--look neutral|ponlai] [--verify] [--write-ref | --check] [--ref <dir>]
 //       [--q "extra&query"] [--size 1920x1080@2] [--timeout 240000]
 //
@@ -11,6 +11,11 @@
 // The scenes, their views, times and readings are the page's own (`__PONLAI__.scenePage`): this
 // tool names none. `--scenes`, `--times` and `--views` take the named ones only (a name no scene
 // has is an error).
+//
+// The scenes it shoots without `--scenes` are those whose shots repeat to the pixel: `ball`,
+// `empty` and `plants`. `sea` is shot only when `--scenes` names it, and is read by its readings:
+// its shots differ between two loads by a level or so in scattered pixels over the water, so they
+// are not compared with a reference. Named, it takes every option as the others do.
 //
 // Guarantees:
 // - A shot is a paused page in the test mode (`debug&paused&t=12&quality=high`), taken once the
@@ -24,7 +29,8 @@
 // - `--check`: every shot must equal the reference image of its name (`--ref`, by default
 //   artifacts/scenes/reference/<look>/); a shot without a reference fails. `--write-ref` writes
 //   this run's shots as the reference instead (with `--verify`, only when the checks passed),
-//   with `reference.json` beside them: the commit served, the browser and the size.
+//   with a `reference.json` in each scene's folder: the commit served, the browser and the size,
+//   so a run that writes some scenes leaves the others' records as they were.
 // - `--look ponlai` loads the scenes under the island's look (`renderLook=ponlai`) instead of
 //   the renderer's neutral one; each look has its own output folder and reference.
 //
@@ -85,9 +91,10 @@ const outDir = path.join( path.resolve( positional[ 1 ] ), look );
 const refDir = path.resolve( options.ref ?? path.join( 'artifacts/scenes/reference', look ) );
 const list = ( text ) => text === undefined ? null : text.split( ',' ).map( ( s ) => s.trim() ).filter( Boolean );
 const wanted = { scenes: list( options.scenes ), times: list( options.times ), views: list( options.views ) };
-// the scenes the page has, where none is named (the `scene` option's values: src/Settings.ts)
-const ALL_SCENES = [ 'ball', 'empty' ];
-const sceneNames = wanted.scenes ?? ALL_SCENES;
+// the scenes shot where none is named: the page's scenes (the `scene` option's values:
+// src/Settings.ts) whose shots repeat to the pixel, so all but `sea`
+const DEFAULT_SCENES = [ 'ball', 'empty', 'plants' ];
+const sceneNames = wanted.scenes ?? DEFAULT_SCENES;
 
 let common = 'debug&paused&t=12&quality=high';
 if ( look === 'ponlai' ) common += '&renderLook=ponlai';
@@ -335,7 +342,12 @@ if ( options[ 'write-ref' ] ) {
 		try { sha = execFileSync( 'git', [ 'rev-parse', 'HEAD' ], { encoding: 'utf8' } ).trim(); } catch { /* not a checkout */ }
 		let dirty = null;
 		try { dirty = execFileSync( 'git', [ 'status', '--porcelain' ], { encoding: 'utf8' } ).trim() !== ''; } catch { /* not a checkout */ }
-		await writeFile( path.join( refDir, 'reference.json' ), JSON.stringify( { sha, dirty, browser: capture.version, viewport: { width: W, height: H, scale }, look, query: common, shots: [ ...shots.keys() ] }, null, 1 ) );
+		for ( const scene of sceneNames ) {
+
+			const keys = [ ...shots.keys() ].filter( ( key ) => key.startsWith( `${ scene }/` ) );
+			await writeFile( path.join( refDir, scene, 'reference.json' ), JSON.stringify( { sha, dirty, browser: capture.version, viewport: { width: W, height: H, scale }, look, query: common, shots: keys }, null, 1 ) );
+
+		}
 		console.log( `reference: ${ shots.size } shots written to ${ refDir }` );
 
 	}

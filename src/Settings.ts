@@ -126,7 +126,7 @@ export const SETTINGS = {
 	ambientProbes: { type: 'choice', layer: 'render', default: 'off', values: [ 'off', 'sky', 'bounce', 'irradiance' ], debug: true, about: 'shows the ambient light\'s probes' },
 	windView: { type: 'choice', layer: 'render', default: 'off', values: [ '', 'arrows', 'plants' ], debug: true, about: 'makes the vegetation\'s wind visible' },
 	renderLook: { type: 'choice', layer: 'app', default: 'the page\'s own', values: [ 'neutral', 'ponlai' ], debug: true, about: 'the look the renderer draws with, over the page\'s own: `neutral` (the renderer\'s) on the island\'s page, `ponlai` (the island\'s) on the test scenes\'' },
-	scene: { type: 'choice', layer: 'app', default: 'none', values: [ 'ball', 'empty' ], about: 'the test scene `scenes.html` shows' },
+	scene: { type: 'choice', layer: 'app', default: 'none', values: [ 'ball', 'empty', 'sea', 'plants' ], about: 'the test scene `scenes.html` shows' },
 	// islanders
 	look: { type: 'choice', layer: 'island', default: 'Hanming', values: [ 'kit' ], about: '`kit`: the islanders\' earlier kit look' },
 	islander: { type: 'choice', layer: 'island', default: 'the look\'s own', values: [ 'stock', 'subtle', 'medium', 'strong', 'real' ], about: 'the islanders\' proportions' },

@@ -2,8 +2,9 @@
 // its own to derive them from, in the formats a world gives them in (the ambient light's probes:
 // lighting/ProbeFormat.ts; the ground the bounce reads: lighting/GroundBounce.ts `BounceGround`;
 // the scene's fields and the shore's field: RenderStages.ts `SceneFields`, RenderTypes.ts
-// `ShoreField`). They describe the plainest world there is: level ground of one albedo under an
-// open sky, and fields that hold one value everywhere. The test scenes are built on them
+// `ShoreField`). They describe the plainest worlds there are: level ground of one albedo under an
+// open sky, or the open sea far from any shore over a level floor, and fields that hold one value
+// everywhere. The test scenes are built on them
 // (app/scenes/); a world of its own (the island) gives its own and loads none of this.
 //
 // - The probes (`neutralLattice`): every probe sees the whole sky over the horizon and the level
@@ -15,15 +16,23 @@
 //   depend on where it stands, so the lattice is as small as the format allows and the probes of
 //   the points outside it are the same: the ground has no end.
 // - The ground (`neutralBounceGround`): its albedo, on the land and under the sea alike, and its
-//   height.
+//   height (the open sea's: its floor's).
 // - The fields (`neutralFields`): the shore's sea-level distance and the floor's height, one value
 //   each over a square round the origin (far inland: a large negative distance; open water: a
 //   large positive one), as textures of the formats a world's are, with the transform that maps
-//   the ground to them and the shore's field as plain data.
+//   the ground to them and the shore's field as plain data. The open sea is the same call: a shore
+//   farther than any wave's reach (OPEN_SEA_SHORE), so no shore wave, lee or coastal damping is
+//   anywhere, and the floor at one depth, so the water is equally deep everywhere.
+// - The open sea's probes (`neutralSeaLattice`): what the island's probes hold far from its land,
+//   level by level: above the mean level the sky over the horizon and the sea under it (the sea's
+//   visibility, which the relight lights as a level bounce surface); under it the sky through the
+//   surface and the deep water's body below (its irradiance reflectance, ocean/SeaOptics.ts
+//   `bodyReflectance`, as bounced light).
 import * as THREE from 'three/webgpu';
 import { float, texture, vec3 } from 'three/tsl';
-import { META_VEC4, PROBE_STRIDE, type AmbientLattice } from './lighting/ProbeFormat.ts';
+import { META_VEC4, PROBE_STRIDE, SEA_VEC4, type AmbientLattice } from './lighting/ProbeFormat.ts';
 import type { BounceGround } from './lighting/GroundBounce.ts';
+import { bodyReflectance } from './ocean/SeaOptics.ts';
 import type { Bounds, ShoreField } from './RenderTypes.ts';
 
 /** A linear albedo. */
@@ -50,6 +59,51 @@ export function neutralLattice( { ground, albedo, spacing = 2, levels = 4 }: { g
 	const probes = new Float32Array( count * PROBE_STRIDE );
 	for ( let k = 0; k < count; k ++ ) probes.set( probe, k * PROBE_STRIDE );
 	return { x0: - spacing / 2, y0: ground + spacing / 2, z0: - spacing / 2, spacing, nx, ny, nz, probes };
+
+}
+
+/** The shore's sea-level distance (m) that puts every point of the open sea far from any shore:
+ * past the reach of the shore's waves, its lee and its damping of the short waves. */
+export const OPEN_SEA_SHORE = 1000;
+
+/** The probes of the open sea, its mean level at `sea` (m): a lattice of 2 x 2 columns of `levels`
+ * levels, `spacing` (m) apart, its lowest level a cell under the sea, round the origin. */
+export function neutralSeaLattice( { sea = 0, spacing = 2, levels = 4 }: { sea?: number; spacing?: number; levels?: number } = {} ): AmbientLattice {
+
+	const body = bodyReflectance();
+	const level = ( y: number ) => {
+
+		const probe = new Float32Array( PROBE_STRIDE );
+		// the sky over the horizon, above the water and through its surface under it alike
+		probe[ 0 ] = HEMISPHERE_0;
+		probe[ 4 ] = HEMISPHERE_Y;
+		if ( y >= sea ) {
+
+			// the sea under the horizon: its visibility
+			probe[ SEA_VEC4 * 4 ] = HEMISPHERE_0;
+			probe[ SEA_VEC4 * 4 + 1 ] = - HEMISPHERE_Y;
+
+		} else {
+
+			// the water's body under the horizon: bounced, at its reflectance
+			for ( let c = 0; c < 3; c ++ ) {
+
+				probe[ 1 + c ] = HEMISPHERE_0 * body[ c ];
+				probe[ 5 + c ] = - HEMISPHERE_Y * body[ c ];
+
+			}
+
+		}
+		probe[ META_VEC4 * 4 + 3 ] = 1;
+		return probe;
+
+	};
+	const nx = 2, ny = levels, nz = 2, y0 = sea - spacing;
+	const probes = new Float32Array( ( nx * ny * nz + ny ) * PROBE_STRIDE );
+	// the box's probes in rows ( z, then y, then x ), then one per level for the points outside it
+	for ( let k = 0; k < nz; k ++ ) for ( let j = 0; j < ny; j ++ ) for ( let i = 0; i < nx; i ++ ) probes.set( level( y0 + j * spacing ), ( ( k * ny + j ) * nx + i ) * PROBE_STRIDE );
+	for ( let j = 0; j < ny; j ++ ) probes.set( level( y0 + j * spacing ), ( nx * ny * nz + j ) * PROBE_STRIDE );
+	return { x0: - spacing / 2, y0, z0: - spacing / 2, spacing, nx, ny, nz, probes };
 
 }
 

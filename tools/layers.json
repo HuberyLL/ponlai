@@ -42,6 +42,8 @@
 		"app/scenes/ball.ts": "app",
 		"app/scenes/empty.ts": "app",
 		"app/scenes/index.ts": "app",
+		"app/scenes/plants.ts": "app",
+		"app/scenes/sea.ts": "app",
 		"camera/FreeCameraControls.ts": "island",
 		"camera/IslandCameraControls.ts": "island",
 		"camera/IslandFraming.ts": "island",

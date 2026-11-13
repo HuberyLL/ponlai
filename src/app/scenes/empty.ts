@@ -46,7 +46,7 @@ const HOURS: [ string, string ][] = [
 export const empty: TestScene = {
 	name: 'empty',
 	about: 'the sky\'s and the key\'s light on empty level ground through a clear and a fair day',
-	ground: { height: GROUND, albedo: [ GREY, GREY, GREY ] },
+	ground: { kind: 'land', height: GROUND, albedo: [ GREY, GREY, GREY ] },
 	build() {
 
 		return { objects: [ groundDisc( GROUND, surface( 'ground', [ GREY, GREY, GREY ] ) ) ], casters: null };

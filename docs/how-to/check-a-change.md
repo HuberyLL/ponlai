@@ -24,22 +24,27 @@ that render (captures, parity, the GPU verify tools) are run by hand, as the sec
 
 ## Run the small scenes first
 
-The renderer's test scenes (`scenes.html`) hold a few objects on level ground under the sky. They
-load in seconds, so they answer first whether a change to the renderer moved anything, before the
-island's captures, which take minutes.
+The renderer's test scenes (`scenes.html`) hold a few objects on level ground under the sky, a
+patch of plants of the default kind, or two balls in the open sea. They load in seconds, so they
+answer first whether a change to the renderer moved anything, before the island's captures, which
+take minutes.
 
 1. Run them first after a change to the renderer's own code: the light, the sky, the day cycle,
-   the exposure and the display chain, the frame's passes, the shadows, the ambient light. Skip
-   them for a change to the island's generator, materials or plants, the sea or the game, which
-   they do not show.
+   the exposure and the display chain, the frame's passes, the shadows, the ambient light and the
+   vegetation's registry, material and shadows. Skip them for a change to the island's generator,
+   materials or plant kinds, or the game, which they do not show. The open sea's scene gives
+   readings, not a check to the pixel: for a change to the sea's water and waves, run
+   `node tools/scenes.mjs <baseUrl> <outDir> --scenes sea` before and after it and read the two
+   `readings.tsv` side by side.
 2. Before the change, write the references on a server of the commit the change starts from:
-   `node tools/scenes.mjs <baseUrl> <outDir> --verify --write-ref`.
+   `node tools/scenes.mjs <baseUrl> <outDir> --verify --write-ref`. Without `--scenes` it takes
+   the scenes whose shots repeat to the pixel, so not the sea's.
 3. After the change, run `node tools/scenes.mjs <baseUrl> <outDir> --verify --check`. A refactor
    passes with every shot equal to its reference. A change that is meant to move the picture
    fails the check: read `readings.tsv` of the two runs side by side, look at the shots that
    differ, and write the references again once the differences are the intended ones.
-4. Go on to the island's checks below whatever the scenes say: they show no sea, terrain, plants or
-   game, and the island's look is not the one they are shot with.
+4. Go on to the island's checks below whatever the scenes say: they show no shore, terrain,
+   island plants or game, and the island's look is not the one they are shot with.
 
 The tool and its options: `docs/reference/tools.md`, Test scenes.
 
