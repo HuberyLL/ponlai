@@ -14,10 +14,10 @@ import { ISLAND_TOP, SWELL } from './WorldShapes.ts';
 // spread over the four texels round it, then all blurred by a binomial of one texel's sigma, and
 // divided. A short tussock covers its ground as a tall one does (a short turf is a closed mat);
 // only a gap leaves it bare. Under the tall sward the ground lies deep in its shade; in the
-// short turf (the low patches, the low flowers' patches) and the gaps between tall tussocks the
+// short turf (the low patches) and the gaps between tall tussocks the
 // light reaches it, as in a real meadow, where the ground under short turf is lit and the deep
 // shade lies only under the tall sward. One root layer for the whole meadow drew the short
-// patches' ground as dark as the tall sward's, and they read as dark holes between the flowers.
+// patches' ground as dark as the tall sward's, and they read as dark holes in the meadow.
 // The fields are the meadow map's G (cover) and A (depth) channels (Meadow.ts: its R the turf's
 // tone, over the land lattice's extent at 0.25 m, about the planting anchors' spacing): the
 // terrain's fragment stage samples all the textures WebGPU allows it, and a map of its own was one

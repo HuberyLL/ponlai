@@ -38,7 +38,7 @@ export interface RimGroundField extends ShoreField {}
 // RG: the sea floor's seagrass cover and pale-sand share (Bathymetry's seabedBeds).
 export interface SeabedBedField extends ShoreField {}
 
-// The rim's lip, which the meadow's tufts at the edge drape over (Grass.ts `edgeTuftSteps`): LIP_POINTS root points ( x, y, z ) per coast
+// The rim's lip, built for tufts draped over the edge (the page reads none of it today): LIP_POINTS root points ( x, y, z ) per coast
 // sample, per sample its place on the coast ( x, z ), the outward direction ( x, z ), presence,
 // the roof's height and the wall below it (LIP_INFO), and ( first sample, count ) per piece: a
 // stretch of the coast inside one box, between the points where it crosses the box's border (or a

@@ -54,9 +54,9 @@ const GROUND_SHADE = MEADOW_SHADE && debugFlags.groundShade !== false;
 // the rim as inland, though the blades shorten there (Grass.ts `meadowGroundRuns`). How deep the
 // sward over a point is, and whether any grows there, comes from its tussocks (the sward's fields,
 // SwardField.ts): the roots' light follows it, deep under the tall sward and opening under the
-// short turf and in the gaps, where one shade everywhere drew the low flowers' patches as dark
-// holes. The island top is one sward to the edge on every coast: the ground takes no zones of the
-// soil (Meadow.ts).
+// short turf and in the gaps, where one shade everywhere drew the short patches as dark holes. The
+// island top is one sward to the edge on every coast: the ground takes no zones of the soil
+// (Meadow.ts).
 // `?terrainHex=0` builds the plain triplanar variant; `userData.terrainVariant` swaps them.
 // Under fsr3 the triplanar sampling gradients are scaled by FSR's mip bias (post/fsr3/MipBias.ts),
 // built into the shader under that mode only.
