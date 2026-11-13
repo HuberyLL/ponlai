@@ -23,6 +23,8 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
+// The clouds' shadow as the lit surfaces and the air read it.
+//
 // The clouds' shadow as the lit surfaces and the air read it (Clouds.ts, whose header says how the
 // map is cast and refreshed): the map's cubic lookups, the beam's sample and the fades toward lit,
 // each a function of the clouds. A name in backticks with no file is this file's, Clouds.ts's or

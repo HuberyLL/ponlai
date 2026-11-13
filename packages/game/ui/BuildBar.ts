@@ -9,6 +9,8 @@ import { PALETTE } from './Palette.ts';
 import { t } from './i18n/i18n.ts';
 import type { UiShared } from './Shared.ts';
 
+// The build bar: the mallet's two tiers of brush strokes, the groups and their buildings.
+//
 // The build bar (docs/explanation/ui.md, Build bar; the design canvas's BuildNotes and SpeakFlow): opened by the
 // mallet at the bottom right, which toggles it; the speak bar steps aside while it is open. Two
 // tiers of brush strokes run leftward from the mallet:

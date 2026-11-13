@@ -11,6 +11,8 @@ import { ChestView } from './ChestView.ts';
 import { SiteView } from './SiteView.ts';
 import { VillagerView, disposeFigure } from './VillagerView.ts';
 
+// The game drawn into the island scene: its islanders, construction sites and buildings.
+//
 // The game drawn into the island scene: its islanders and its buildings, each a construction site
 // (SiteView, the same stages for every kind) until it is built and then its kind's own model
 // (MODELS: ChestView), or, for a kind art has not drawn yet, its site finished (`modelOf`). Each

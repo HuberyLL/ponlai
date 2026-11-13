@@ -1,3 +1,5 @@
+// Weather presets, their blending and the auto-weather chain.
+//
 // Weather presets, their blending and the auto-weather chain. Bad weather dims and desaturates the
 // existing light; it never adds a grey screen veil (docs/explanation/art-direction.md). A weather change moves
 // the whole sky from one preset's values to the next's (a front, in time alone: the clouds are one

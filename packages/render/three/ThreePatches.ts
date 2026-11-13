@@ -2,6 +2,8 @@ import { REVISION, Mesh, MeshStandardNodeMaterial, PlaneGeometry } from 'three/w
 import type { Camera, Light, Node, RenderTarget, Scene, WebGPURenderer } from 'three/webgpu';
 import { missing } from './Internals.ts';
 
+// Cache-key patches for three's node and pipeline caches: one shader per target layout.
+//
 // Cache-key patches for three r186's node and pipeline caches, so a material drawn into targets
 // of different layouts (another MRT, other attachment formats or names) gets a shader and a
 // pipeline per layout. Installed by main.ts right after `renderer.init()`, before any material

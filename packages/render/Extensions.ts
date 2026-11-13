@@ -1,5 +1,7 @@
 import type { QualityProfile } from './Quality.ts';
 
+// What every registered definition declares: its cost knob, its test-mode stand and its growth.
+//
 // What every registered definition declares. The renderer is extended at named points, each a
 // registry its owner reads in the order registered and never by name: a kind of plant
 // (vegetation/Registry.ts), a kind of local light (lighting/LocalLights.ts), a pass of the

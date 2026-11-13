@@ -2,6 +2,8 @@ import type { Place, PlaceOption } from './places.ts';
 import type { Sim } from './Sim.ts';
 import type { ActionResult, Villager } from './types.ts';
 
+// The game's content as registered definitions: needs, items, places, options and buildings.
+//
 // The game's content as registered definitions (ARCHITECTURE.md, "Content is registered
 // definitions"): a need, an item and its uses, a kind of place, an option at a place, a kind of
 // building. Each is one definition, registered once (`register`: the game's own in content/), and

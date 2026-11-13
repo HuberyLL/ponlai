@@ -1,5 +1,7 @@
 import type { UserDataKey, UserDataName } from '../../render/index.ts';
 
+// The `userData` keys the island keeps to itself, set and read above the renderer.
+//
 // The `userData` keys the island keeps to itself: set and read above the renderer, which never
 // names them. A file of the island names a key of the renderer's list (packages/render/UserData.ts, whose
 // types the renderer's exit offers) or of this one, and nothing else (tools/repo/verify-layers.mjs, its

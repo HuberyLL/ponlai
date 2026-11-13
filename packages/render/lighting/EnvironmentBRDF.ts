@@ -3,6 +3,8 @@ import { texture, vec2, clamp, float } from 'three/tsl';
 
 type F = THREE.Node<'float'>;
 
+// The environment's specular BRDF for the shared GGX, by Karis's split sum, as a table.
+//
 // The environment's specular BRDF for the shared GGX (lighting/SurfaceBRDF.ts), by Karis's split
 // sum (Karis, "Real Shading in Unreal Engine 4", SIGGRAPH 2013): environment specular = the
 // prefiltered environment x ( F0 A + F90 B ), A and B integrated over the same D and visibility the

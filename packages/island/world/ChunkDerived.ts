@@ -1,3 +1,5 @@
+// What the page derives from a chunk's meshes, made in the chunk's job off the main thread.
+//
 // What the page derives from a chunk's meshes, made in the chunk's job (Chunks.ts `buildChunk`) so
 // the main thread never walks their vertices: the sun's caster
 // columns (SunShadow.ts), the triangles the refracted sun's map draws (RefractedSun.ts) and the

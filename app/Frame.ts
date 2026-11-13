@@ -1,3 +1,5 @@
+// The page's frame: the canvas's size, the render scale, the tick and the loop that paces it.
+//
 // The page's frame: the canvas's size and the render scale (fixed, dynamic or stepped), the tick,
 // the loop that paces it, and the controls a tool holds, resumes and steps it by (`loop`, `step`,
 // `setTime`).

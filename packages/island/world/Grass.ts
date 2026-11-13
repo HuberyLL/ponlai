@@ -13,9 +13,9 @@ import { GROVES, grassOnLitter } from './BambooGroves.ts';
 import { soilGroveAt } from '../materials/Soil.ts';
 import { canopySteps, crownSteps, setCanopyTop, setSwardField, swardSteps } from './SwardField.ts';
 
-// The meadow: one grass blade per cell of a world grid, generated on the GPU every time the view
-// changes. Each blade is drawn on its own, not as a card of many, so the wind moves every blade and
-// the meadow draws no overdraw of transparent cards: a technique Eric Wohllaib presented
+// The meadow: one grass blade per cell of a world grid, generated on the GPU as the view changes.
+// Each blade is drawn on its own, not as a card of many, so the wind moves every blade and the
+// meadow draws no overdraw of transparent cards: a technique Eric Wohllaib presented
 // ("Procedural Grass in 'Ghost of Tsushima'", GDC 2021; cited below by minute), which took its
 // start from Outerra ("Procedural grass rendering", 2012-05-27).
 //

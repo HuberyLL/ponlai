@@ -10,6 +10,8 @@ import * as THREE from 'three/webgpu';
 import { Fn, If, texture, float, vec2, vec3, vec4, floor, fract, step, sin, cos, pow, max, mix, smoothstep, clamp, sqrt, select } from 'three/tsl';
 import { hash22 } from './ProceduralTextures.ts';
 
+// Hex-tiling: a texture read without a regular repeat, its grain sharp inside each tile.
+//
 // Hex-tiling (Mikkelsen 2022, after Heitz and Neyret's histogram-preserving tiling, HPG 2018):
 // the plane is cut into a triangle grid whose vertices are the centres of hexagonal tiles. Each
 // tile reads the texture with its own random offset and a small random rotation, and a point

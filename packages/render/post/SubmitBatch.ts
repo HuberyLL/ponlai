@@ -1,6 +1,8 @@
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { settings } from '../Settings.ts';
 
+// Submit batching: three's command buffers submitted a few at a time, in order.
+//
 // Submit batching: the command buffers three hands to `queue.submit` are held for a moment and
 // submitted a few at a time, in the order given, so a frame reaches the GPU in a handful of
 // submits instead of one for each.

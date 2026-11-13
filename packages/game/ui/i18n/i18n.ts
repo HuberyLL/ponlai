@@ -3,6 +3,8 @@ import en from './en.json';
 import zh from './zh-CN.json';
 import { settings } from '../../../render/setup.ts';
 
+// The interface's languages, on i18next: every word the player reads is a catalogue's key.
+//
 // The interface's languages, on i18next (https://www.i18next.com). Every word the player reads is a
 // key of a catalogue here, one JSON file per language: zh-CN.json is the source, written with the
 // game and complete, and the language shown by default; en.json is a snapshot of it, kept but not

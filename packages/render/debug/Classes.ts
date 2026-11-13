@@ -3,6 +3,8 @@ import { min, normalWorldGeometry, select, vec3 } from 'three/tsl';
 import { debugFlags } from './DebugFlags.ts';
 import { STORE_CEILING, preExposure, sceneUnits } from '../post/PreExposure.ts';
 
+// The kinds' view: every lit surface drawn unlit in a flat colour that names its kind.
+//
 // The kinds' view (debug builds, `flags=classes`, read at load): every lit surface drawn unlit in a
 // flat colour that names its kind, so a script reads what each pixel shows (a script that reads cells:
 // `__PONLAI__.radiance( { aov: 'class' } )`, debug/RadianceAov.ts).

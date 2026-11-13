@@ -51,6 +51,8 @@ import type { DisplayTables } from '../look/DisplayLook.ts';
 import { declarePasses } from './PipelinePasses.ts';
 import { buildDisplay, GRADE_TABLE, NIGHT, TONE_SPACE } from './PipelineDisplay.ts';
 
+// The frame's pipeline: the frame graph of its targets and passes, from scene to canvas.
+//
 // Frame graph:
 //   opaque scene ── sceneRT (MSAA, SCENE_SAMPLES, half float, multisampled depth): the colour and
 //     the metering illuminance (meterLight, an MRT: Motion.ts's sceneMRT)

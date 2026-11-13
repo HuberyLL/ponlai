@@ -10,6 +10,8 @@ import { ffxRemapForQuad, type N } from './Core.ts';
 import { FsrRcasF } from './Fsr1Rcas.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
+// FSR 3's sharpening pass: RCAS on the accumulated colour, after the accumulation.
+//
 // The sharpening pass after the accumulation: RCAS (FSR_RCAS_F with FSR_RCAS_DENOISE) on the
 // accumulated colour, each thread filtering four pixels of a 16 x 16 tile in a quad swizzle.
 // RCAS works on exposed colour: the input is multiplied by Exposure() when loaded and the result

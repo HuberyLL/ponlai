@@ -2,6 +2,8 @@ import { uniform } from 'three/tsl';
 import { hasKeys, type DayKey, type DayKeys, type KeyValues } from '../post/DayKeys.ts';
 import { settings } from '../Settings.ts';
 
+// Tunable parameters: named numbers a script or the console can set on a running debug page.
+//
 // Tunable parameters: named numbers a script or the console can set on a running page. Debug pages
 // only (the dev server, ?debug, ?profile); elsewhere every function here returns the default as given and registers nothing, so
 // a production page pays nothing.

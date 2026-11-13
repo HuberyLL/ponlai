@@ -1,3 +1,5 @@
+// A live frame-rate readout: fps, p95 and max of the frame interval, in the GUI and an overlay.
+//
 // A live frame-rate readout: the GUI's Performance folder and a small corner overlay (F) show how
 // evenly the loop renders, from the animation-frame timestamps of the frames it renders (the
 // vblank times the browser hands to rAF, which the frame pacer steps by), so they read the cadence

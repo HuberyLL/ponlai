@@ -1,3 +1,5 @@
+// The scene page: one test scene on the renderer alone, assembled as main.ts does the island.
+//
 // The scene page: one test scene (TestScene.ts) on the renderer alone, which scenes.html loads
 // behind its entry (ScenesBoot.ts). It is to a test scene what main.ts is to the island: the one
 // place that assembles it, with the renderer's stages (RenderStages.ts) in the order the island's

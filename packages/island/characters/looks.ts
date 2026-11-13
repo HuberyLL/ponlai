@@ -2,6 +2,8 @@ import { KIND } from './CharacterMaterial.ts';
 import type { ProportionName } from './Proportions.ts';
 import type { PartSpec } from './Villagers.ts';
 
+// The islanders' dress: modular parts repainted in the island's palette.
+//
 // The islanders' dress: modular parts (Ultimate Modular Characters by Quaternius, CC0) repainted
 // in the island's palette (sRGB, as they should read in sunlight). The models are assets in public/
 // (tools/repo/assets.mjs).

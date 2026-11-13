@@ -7,6 +7,8 @@ import type { WorldData } from './types.ts';
 import { islandSurfaceHeight } from './WorldShapes.ts';
 import { plantClumps, type ClumpLand, type ClumpSite } from './YunpengSites.ts';
 
+// The yunpeng: single glowing white grass clumps far apart in the meadow.
+//
 // The yunpeng (芸蓬) of Yuanjiao: "a grass named yunpeng, white as snow, a stem two zhang long; seen
 // at night it gives a white light; it makes a staff" (Wang Jia, Shiyi ji, book 10). Yuanjiao and
 // Daiyu drifted to the north pole and sank (Liezi, Tangwen); here its grass lives on. It grows in

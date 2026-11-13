@@ -11,6 +11,8 @@ import { shared } from '../shared.ts';
 type V3 = THREE.Node<'vec3'>;
 type F = THREE.Node<'float'>;
 
+// The vegetation's lighting: physical lighting plus light through thin leaves and blades.
+//
 // Physical lighting plus light through thin leaves and blades: `extra( L, V, N )` (view space)
 // scales an unshadowed-by-orientation diffuse term added on top of the usual one (a vec3 tints it,
 // as light through a blade turns yellower than the light off it), and `scale` is the occlusion

@@ -1,3 +1,5 @@
+// The submerged stones round the island: where they lie and their shapes.
+//
 // The submerged stones round the island: where they lie (placeStones) and their shapes
 // (makeRockSDF). Runs in the mesh worker.
 //

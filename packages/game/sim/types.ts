@@ -1,3 +1,5 @@
+// Plain data shared by the island simulation, its view, the debug panel and the tests.
+//
 // Plain data shared by the island simulation, its view, the debug panel and the tests. Nothing here
 // imports three.js or touches the DOM: the simulation runs headless in node as well as in the
 // page. Everything in SimState is JSON, so a save is the state itself.

@@ -5,6 +5,8 @@ import { gradeOf, type GradeParams } from '../post/GradeLut.ts';
 import type { ToneCurve } from '../post/ToneCurve.ts';
 import type { BloomKey, DesaturationKey, DisplayLook, Rgb } from './Look.ts';
 
+// The display's tables built from a look's table: tone curve, grade, bloom and vignette.
+//
 // The display's tables built from a look's table (look/Look.ts `DisplayLook`): the shade's
 // contrast, the desaturation, overcast's highlights toward grey, the bloom's and the vignette's
 // strengths, the vignette's shape, the white balance, the tone curve's three settings, the base

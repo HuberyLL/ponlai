@@ -17,6 +17,8 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// FSR 1 for the frame graph's upscale: EASU as its own pass and RCAS in the canvas pass.
+//
 // FSR 1 for the frame graph's upscale, split differently from three's FSR1Node: EASU (edge-adaptive
 // upsampling) runs as its own pass (the graph's `easu`) into a canvas-sized texture the graph owns,
 // and RCAS (contrast-adaptive sharpening) is a function the canvas pass calls before it adds the

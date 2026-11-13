@@ -2,6 +2,8 @@ import { TEMPORAL } from './Antialiasing.ts';
 import { motionState, taaCut } from './Motion.ts';
 import { restEpoch } from './TemporalRest.ts';
 
+// The page's scene events for the temporal modes: what changes the scene says so in one call.
+//
 // The page's scene events for the temporal modes (Antialiasing.ts: aa=taa|taau). A temporal frame is
 // a function of the frames before it, so whatever changes the scene in a way the frames themselves
 // do not show must say so, at the site that does it, with one call: `renderEvent( reason )` for

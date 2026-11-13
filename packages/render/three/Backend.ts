@@ -1,3 +1,5 @@
+// The three.js WebGPU backend and its device, each reach a function named for what it does.
+//
 // three's WebGPU backend and the device it holds (three r186): `renderer.backend` is public, but
 // what it carries (the device, the GPU objects behind three's textures and attributes, the
 // timestamp queries' pools, the features, the methods we wrap) is not typed and changes between

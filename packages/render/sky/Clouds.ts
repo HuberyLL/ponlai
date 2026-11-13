@@ -55,6 +55,8 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// Volumetric clouds, one model for every sky, its parameters set by the weather.
+//
 // Volumetric clouds, one model for every sky. A kind of sky is a row of the model's parameters
 // (look/SkyLook.ts `cloudSkies`: the shell, the cloud type and its spread, the far fade; Weather.ts
 // WEATHER_PRESETS: the coverage and the density), and a change of weather moves every parameter

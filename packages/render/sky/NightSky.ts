@@ -27,6 +27,8 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
+// The night sky: a real sky's stars and Milky Way, fixed, and the moon.
+//
 // The night sky: stars, Milky Way and moon. The stars and Milky Way are a real sky, the one seen
 // from 38 degrees south at a local sidereal time of 14h (DayCycle.ts STARS), fixed: they neither
 // turn through the night nor drift over the year; procedural grain and faint stars only add detail

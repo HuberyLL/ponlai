@@ -8,6 +8,8 @@ type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// The fog layer's banks: a noise factor that gathers the fog into banks the wind carries.
+//
 // The fog layer's banks (VolumetricHaze.ts, the light kernel): the fog layer's density times a
 // factor of mean 1 that gathers the fog into banks with clear air between them, which the wind
 // carries over the island and which slowly change their shape. The layer's height profile is the

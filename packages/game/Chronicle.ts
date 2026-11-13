@@ -4,6 +4,8 @@ import type { GameTime } from './sim/clock.ts';
 import type { SimEvent } from './sim/events.ts';
 import type { EntityId } from './sim/types.ts';
 
+// The island's record (沧海录): what happened, day by day, kept from the simulation's events.
+//
 // The island's record (沧海录, docs/explanation/ui.md): what happened, day by day. Islanders landing and dying,
 // the player's words and the islanders', what one islander handed another, buildings set out and
 // finished, a need turning critical, and how long each sky held on each day. The interface reads it

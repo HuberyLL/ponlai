@@ -3,6 +3,8 @@ import type { QualityTier } from './Quality.ts';
 import type { DayPreset } from './sky/DayCycle.ts';
 import type { WeatherName, WindLevel } from './sky/Weather.ts';
 
+// The page's settings: every option of its address declared once, and the one reader of them.
+//
 // The page's settings: every option of its address declared once, here, with its type, its range,
 // its default and the layer that owns it, and the one reader every module takes them from.
 //

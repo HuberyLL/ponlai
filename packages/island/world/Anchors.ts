@@ -1,3 +1,5 @@
+// The meadow's planting anchors: one jittered sample per cell of a world-anchored grid.
+//
 // The meadow's planting anchors: one jittered sample per cell of a world-anchored grid, marched
 // down to the island's top. Every choice belongs to the anchor's cell ( i, j ): its jitter is a
 // hash of the cell, and the plants grown on it draw from a random stream seeded by the cell

@@ -8,6 +8,8 @@ import type { ResourceDecl, ResourceHandle } from './GraphCompiler.ts';
 import { debugFlags } from '../../debug/DebugFlags.ts';
 import { settings, type SettingsQuery } from '../../Settings.ts';
 
+// The frame graph's debug view: one of the graph's resources shown in place of the frame.
+//
 // The frame graph's debug view (debug and dev builds): `fgview=<resource>[.<output>]` shows one of
 // the graph's resources on the canvas in place of the frame. Only when the URL asks for it, it
 // appends a pass to the graph before the graph compiles (`FrameGraph.beforeCompile`): the pass

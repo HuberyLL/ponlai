@@ -4,6 +4,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import type { FrameGraph, ResourceHandle } from '../post/graph/FrameGraph.ts';
 
+// The displacement field: how far the things that part the meadow push its grass over.
+//
 // The displacement field: a two-channel map of how far the things that part the meadow push it
 // over, on the ground over the whole island, cleared every frame and drawn again from the sprites
 // the frame holds: after the 2D displacement buffer about the camera, written

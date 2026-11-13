@@ -1,3 +1,5 @@
+// The ambient light's probes as data: a probe's layout, the lattice and the harmonics' basis.
+//
 // The ambient light's probes as data: the layout of a probe in the lattice's buffer, the lattice
 // itself and the harmonics' basis the probes are projected in. The renderer reads this format
 // (AmbientVolume.ts uploads the lattice, AmbientRelight.ts relights it, Harmonics.ts projects onto

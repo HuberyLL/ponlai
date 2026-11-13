@@ -1,5 +1,7 @@
 import * as THREE from 'three/webgpu';
 
+// The free-flight camera controls: keys to move, a pointer drag to look, the wheel for speed.
+
 const MOVE_KEYS = new Set( [ 'KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ShiftLeft', 'ShiftRight' ] );
 const PITCH_LIMIT = Math.PI / 2 - 0.01;
 

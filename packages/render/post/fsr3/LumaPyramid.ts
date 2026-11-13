@@ -14,6 +14,8 @@ import {
 import { SpdDownsample, SpdDownsampleTail, type SpdCallbacks } from './Spd.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
+// FSR 3's luminance pyramid: SPD over the luma and farthest depth, with the auto exposure.
+//
 // The luminance pyramid: SPD over the current luma, its log and the farthest depth, which stores
 // the farthest depth's mip 1 (SPD's mip 0, half the render size), mip 5 of (log luma, luma) for its
 // tail, and at the last mip (1 x 1) the frame info: the log luma averaged over time (the auto

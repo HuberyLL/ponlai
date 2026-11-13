@@ -6,6 +6,8 @@ import { textureSteps, gpuDevice, gpuTexture } from '../../render/index.ts';
 import type { WorldData } from './types.ts';
 import type { ShoreField } from '../../render/data.ts';
 
+// The world fields on the GPU: shore distance, floor height, the floor's beds and the rim ground.
+//
 // The world fields on the GPU (ChunkMerge.ts assembles them on the CPU): the shore's sea-level
 // distance and the floor's height (32-bit floats), the floor's beds and the rim ground (half
 // floats: filterable everywhere, and half the memory of floats as the land grows; the rim's

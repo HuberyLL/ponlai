@@ -1,3 +1,5 @@
+// The bamboo's colours, shared by its material and the ambient probes.
+//
 // The bamboo's colours, which the material draws (BambooMaterials.ts) and the ambient probes see
 // (AmbientProbes.ts), so that what the groves scatter stays the bamboo the eye sees. They live here
 // because BambooMaterials.ts imports three and the probes are built in the chunk workers.

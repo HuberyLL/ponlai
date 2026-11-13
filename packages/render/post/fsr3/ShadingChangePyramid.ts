@@ -15,6 +15,8 @@ import { SpdDownsample, SpdDownsampleTail, type SpdCallbacks } from './Spd.ts';
 import { s_MipLevelsToUse } from './ShadingChange.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
+// FSR 3's shading-change pyramid: the luma's signed change since last frame, reduced by SPD.
+//
 // The shading-change pyramid: for each render pixel, the smallest signed relative difference
 // between this frame's luma and last frame's around the reprojected position (five-tap crosses,
 // sorted, walked together), then SPD over ( difference, its sign, 1 ) into SPD_MIPS levels 0..5,

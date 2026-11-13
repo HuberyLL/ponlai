@@ -1,3 +1,5 @@
+// The sea floor's meshes: near tiles on world-anchored 16 m cells and one far mesh round them.
+//
 // The sea floor's meshes: a near tile for every world-anchored 16 m cell of floor the land shapes
 // (but those under the land), and one far mesh on the open sea's 4 m lattice round them. A tile is
 // a function of its cell and the land within LAND_REACH (plus the contact shade's 1.5 m) of it

@@ -1,3 +1,5 @@
+// The frame graph's declarations and their compiler: order checks, culling and attachment ops.
+//
 // The frame graph's declarations and their compiler, after the FrameGraph of O'Donnell (Frostbite,
 // GDC 2017); Unreal's RDG and Unity's RenderGraph are implementations of the same idea. Passes
 // declare what they read and write, each write makes a new version of its resource, and the

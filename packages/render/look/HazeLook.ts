@@ -3,6 +3,8 @@ import { markSkyRetune } from '../sky/SkyRetune.ts';
 import { MIX_SKIES, WEATHER_PRESETS } from '../sky/Weather.ts';
 import { HAZE_KEY_NAMES, type FogFields, type FullKey, type HazeKey, type HazeKeyName, type HazeLook, type HazeRows, type HazeScale } from './Look.ts';
 
+// The haze's tables built from a look's table: its keys by the hour and by the weather.
+//
 // The haze's tables built from a look's table (look/Look.ts `HazeLook`): its keys by the hour, its
 // rows of them by the sun's elevation and what the weather adds per sky of its blend
 // (`createHazeTables`). weather/HazeKeys.ts `hazeKeyAt` eases them by the hour and the weather,

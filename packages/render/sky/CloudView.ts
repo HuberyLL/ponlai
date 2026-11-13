@@ -31,6 +31,8 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// The clouds' view: its buffers for a view size and the kernels that trace and resolve it.
+//
 // The clouds' view (Clouds.ts, whose header says how it is traced, reprojected and resolved): its
 // buffers for a view size and the kernels that trace and resolve it, built once and kept across
 // sizes, each a function of the clouds. A name in backticks with no file is this file's,

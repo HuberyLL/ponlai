@@ -1,6 +1,8 @@
 import type { BufferAttribute, InterleavedBufferAttribute, WebGPURenderer } from 'three/webgpu';
 import { missing } from './Internals.ts';
 
+// The renderer's attribute records in three: whether uploaded, the upload, the buffer's release.
+//
 // The renderer's attribute records (three r186's `Renderer._attributes`): whether three has
 // uploaded an attribute, its own upload, and the release of an attribute's GPU buffer. The stepped
 // uploads (util/Upload.ts) make a buffer as three would and hand it to three through these.

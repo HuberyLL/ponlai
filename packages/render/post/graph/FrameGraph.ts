@@ -9,14 +9,14 @@ import { AttachmentOps } from './AttachmentOps.ts';
 import { compileBound, compileChain, compileLatent, compileNodes, compileQuad, sceneOf } from './Compile.ts';
 import { ownDepthClears } from '../../three/ThreePatches.ts';
 
-// The frame graph's runtime: it owns the graph's textures and render targets, their sizes and
-// lifetimes, and executes the compiled passes in order with three's own executors (a scene render,
-// a QuadMesh, a RenderPipeline and the rtt / bloom passes it updates on the way, three's nodes that
-// render passes of their own (a bloom chain), a compute dispatch, or a callback). The graph
-// decides which passes run (`when`), binds each pass's target and MRT, clears or loads its
-// attachments, and rewrites the stores and resolves three records (AttachmentOps); at the frame's
-// end it swaps ping-pong histories and makes the persistent copies. See GraphCompiler.ts for the
-// model.
+// The frame graph's runtime: its textures and targets, and the compiled passes run in order.
+// It owns the graph's textures and render targets, their sizes and lifetimes, and executes the
+// compiled passes in order with three's own executors (a scene render, a QuadMesh, a RenderPipeline
+// and the rtt / bloom passes it updates on the way, three's nodes that render passes of their own
+// (a bloom chain), a compute dispatch, or a callback). The graph decides which passes run (`when`),
+// binds each pass's target and MRT, clears or loads its attachments, and rewrites the stores and
+// resolves three records (AttachmentOps); at the frame's end it swaps ping-pong histories and
+// makes the persistent copies. See GraphCompiler.ts for the model.
 //
 // Textures exist from their declaration (TSL nodes bind them while the passes are built), at 1x1
 // until `setExtents` sizes them. Each distinct tuple of attachments a pass writes is one

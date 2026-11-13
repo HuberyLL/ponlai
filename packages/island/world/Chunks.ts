@@ -1,3 +1,5 @@
+// The world generated one chunk at a time, as pure functions of the land.
+//
 // The world generated one chunk at a time: pure functions of the
 // land, callable from a worker or from plain node (no `self`, no three, no DOM).
 //

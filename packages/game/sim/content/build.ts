@@ -2,6 +2,8 @@ import { isBuilt, work, workLeft } from '../buildings.ts';
 import { register } from '../registry.ts';
 import type { BuildingState } from '../types.ts';
 
+// Building: the `build` option at every building, which works on a site until it is built.
+//
 // Building: the option `build` at every building, at every stage (buildings.ts). `do( 'build' )`
 // works on a site for the work still left, a game second of work a tick (the buildings system's
 // `work`); a new action interrupts it and the work done stays. Several islanders may build one

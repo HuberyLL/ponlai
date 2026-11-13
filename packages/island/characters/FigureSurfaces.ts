@@ -6,6 +6,8 @@ import { addSkinnedMotion, KIND } from './CharacterMaterial.ts';
 type V3 = THREE.Node<'vec3'>;
 type Reflected = { directDiffuse: V3 };
 
+// The surfaces of the feather-robed islanders: painted parts and lit feather cards.
+//
 // The surfaces of the feather-robed islanders (looks.ts HANMING), lit as the rest of the island
 // is (three's physical model with the ground's bounce), not in the kit figures' painted cel steps:
 // - the body's painted parts (head, body, legs, sandals, the shell under the feathers):

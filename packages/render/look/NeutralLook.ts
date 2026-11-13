@@ -1,5 +1,7 @@
 import type { BloomKey, DuskWindow, FullKey, Look, Rgb, Span, StreakKeys } from './Look.ts';
 
+// The neutral look: every gain 1 and every grade off, for the test scenes' page.
+//
 // The neutral look: what the test scenes' page draws with (app/ScenesBoot.ts), and what
 // `renderLook=neutral` loads on a debug page of the island's. It is no picture of its own: every gain is 1,
 // every offset, strength and cast 0, no grade, no vignette, no bloom, nothing done for the night,

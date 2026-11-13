@@ -6,6 +6,8 @@ import type { KeyLiftShading } from '../look/AmbientLook.ts';
 
 type V3 = THREE.Node<'vec3'>;
 
+// The low key's lift: the direction a low key's light is taken from climbs above the key's own.
+//
 // The low key's lift: under a key low over the horizon, the direction the surfaces take its light
 // from (every term of how a surface receives it) and the sun's shadows fall along climbs above the
 // key's own. Under a true sun a few degrees high, level ground takes a twentieth of the light a

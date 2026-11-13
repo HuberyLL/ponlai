@@ -5,6 +5,8 @@ import { t } from '../i18n/i18n.ts';
 import type { Catalogue } from '../i18n/i18n.ts';
 import { itemName } from './words.ts';
 
+// The island's resources as the top row shows them: one row per kind, with icon and count.
+//
 // The island's resources as the top row shows them (docs/explanation/ui.md, Resources): one row per kind, in
 // groups (materials, food, water), each with its icon and its count. A kind the simulation has as an
 // item (sim/items.ts) counts what the island's stores hold of it (sim/stock.ts); a kind it does not

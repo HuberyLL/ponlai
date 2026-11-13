@@ -41,6 +41,8 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// The display chain's materials: composite, bloom, tone mapping, grade, output and resolve.
+//
 // The display chain's materials (`buildDisplay`), which the pipeline's constructor builds in its
 // place among its steps: the composite of the haze, the shafts and the rods' colour over the scene,
 // the metering, the bloom, the sharp image, the local tone mapping, the grade and the display pass,

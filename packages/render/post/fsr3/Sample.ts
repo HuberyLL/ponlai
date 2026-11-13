@@ -10,6 +10,8 @@ import { ffxFract, type N } from './Core.ts';
 import { FSR3UPSCALER_EPSILON } from './Common.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
+// FSR 3's resampling kernels: bilinear and Lanczos 2 over a 4 x 4 fetch with deringing.
+//
 // The upscaler's resampling kernels: bilinear, Lanczos 2 (reference, LUT and FSR 1's
 // approximation) over a 4 x 4 fetch with deringing, and the macros that declare a fetch and a
 // sample function for a texture.

@@ -1,5 +1,7 @@
 import * as THREE from 'three/webgpu';
 
+// The instance store of an instanced vegetation kind: its per-instance buffers and capacity.
+//
 // The instance store of an instanced vegetation kind: one `InstancePool` per kind, which names the kind's per-instance buffers beside the matrices and
 // keeps its capacity, and every write into those buffers goes through it. The kind keeps its
 // geometry, material and placement; the pool keeps the buffers.

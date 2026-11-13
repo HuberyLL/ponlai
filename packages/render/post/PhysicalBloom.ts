@@ -16,6 +16,8 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// The bloom: a pyramid of downsamples and tent upsamples over the frame's radiance.
+//
 // The bloom, begun as tidewater's PostFX (4811ba4): a pyramid of downsamples from the frame's
 // radiance and the tent upsamples that add it back (Jimenez, "Next Generation Post Processing in
 // Call of Duty: Advanced Warfare", SIGGRAPH 2014), with a threshold on the exposed image at its

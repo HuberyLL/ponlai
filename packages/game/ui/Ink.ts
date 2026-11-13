@@ -1,5 +1,7 @@
 import type { Frame } from './Brush.ts';
 
+// The ink of the interface's long strokes: the tail runs dry as a brush's does.
+//
 // The ink of the interface's long strokes (docs/explanation/ui.md, Principles: every line is a brush stroke): a
 // stroke keeps its outline exactly (Brush.ts) and the ink only leaves it, as a brush's does.
 //

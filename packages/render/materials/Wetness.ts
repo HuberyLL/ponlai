@@ -18,6 +18,8 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
+// Wet materials: pores darken, a water film glosses, standing water fills the hollows.
+//
 // Wet materials after Sébastien Lagarde, "Water drop 3a / 3b - Physically based wet surfaces"
 // (2013): water first fills the pores of a rough, porous surface (it darkens and loses a little
 // roughness), then a film of water covers it (water's own smooth specular and a flatter normal),

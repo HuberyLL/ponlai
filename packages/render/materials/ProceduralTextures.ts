@@ -11,6 +11,8 @@ import {
 } from 'three/tsl';
 import { fetchAsset } from '../FetchAsset.ts';
 
+// Tileable detail textures baked on the GPU once at startup: rock, moss, sand and gravel.
+//
 // Tileable detail textures baked on the GPU once at startup (no image files):
 //   heights   R rock (beds, fractures)   G moss cushions   B sand ripples   A lichen spots
 //   normalsA  RG rock normal             BA moss normal

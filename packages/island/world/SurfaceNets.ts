@@ -1,3 +1,5 @@
+// Naive surface nets: a mesh from an SDF, with SDF normals, baked occlusion and curvature.
+//
 // Naive surface nets: one vertex per sign-changing voxel (mean of its edge crossings), one quad
 // per sign-changing grid edge. Normals come from the SDF gradient (not the faceted mesh), a cheap
 // SDF ambient occlusion is baked per vertex, plus an optional per-vertex value from `sdf.tint`,

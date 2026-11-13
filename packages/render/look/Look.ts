@@ -3,6 +3,8 @@ import type { GradeChanges } from '../post/GradeLut.ts';
 import type { ToneCurve } from '../post/ToneCurve.ts';
 import type { SwellParams } from '../ocean/OceanSpectrum.ts';
 
+// The look the renderer draws with: the types of the numbers chosen for a picture.
+//
 // The look the renderer draws with: the numbers chosen for a picture, one set per system, handed
 // in by whoever owns the picture. The renderer holds the types (here), the code that reads the
 // numbers and registers their tunables (the modules beside this one: AmbientLook.ts,

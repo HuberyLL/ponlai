@@ -3,6 +3,8 @@ import type { Pipeline } from '../post/Pipeline.ts';
 import { preExposure } from '../post/PreExposure.ts';
 import { FIT_CLASSES } from './Classes.ts';
 
+// What each cell of a radiance grid shows besides its radiance: depth and the other channels.
+//
 // What each cell of a grid shows besides its radiance (debug builds, through debug/Radiance.ts:
 // `__PONLAI__.radiance( { grid: [ nx, ny ], cell: n, aov } )`), for a script that reads cells,
 // which reads every page it compares on one grid of cells. A cell is the n by n texels at its centre (the

@@ -4,6 +4,8 @@ import { debugFlags } from './DebugFlags.ts';
 import { CLASSES, useClasses } from './Classes.ts';
 import { diffuseOcclusion } from '../lighting/AmbientGrade.ts';
 
+// The lighting layer's debug views, for measuring and tuning the light on its own.
+//
 // The lighting layer's debug views, for measuring and tuning the light on its own (debug builds,
 // read at load from `flags=`):
 //   lightOnly:1    every lit surface's diffuse albedo is 0.5 grey (the terrain above and under the

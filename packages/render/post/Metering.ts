@@ -15,6 +15,8 @@ type V2 = THREE.Node<'vec2'>;
 type U = THREE.Node<'uint'>;
 type Uniform2 = THREE.UniformNode<'vec2', THREE.Vector2>;
 
+// The metering histograms: the illuminance's and the luminance's, read by the exposure.
+//
 // The metering histograms: two histograms a frame, H_M of log2 of the metering illuminance
 // (`meterLight`, M = Y( E ) / pi: Pipeline.ts) and H_Y of log2 of the luminance of `hdr`, the
 // composite's output, before the bloom (the bloom reads this frame's exposure, so a histogram

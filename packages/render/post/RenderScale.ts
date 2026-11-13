@@ -1,5 +1,7 @@
 import type { RenderScaleRule } from '../Quality.ts';
 
+// Render scale per quality tier: the scene's pixel ratio, upscaled to the canvas.
+//
 // Render scale per quality tier (`QualityProfile.render` in Quality.ts). The scene renders at a
 // pixel ratio of its own and the frame graph upscales the graded image to the canvas, which always
 // matches the display: a smaller canvas stretched by the browser (bilinear) lost a third of the

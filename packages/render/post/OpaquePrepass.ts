@@ -2,6 +2,8 @@ import * as THREE from 'three/webgpu';
 import { positionView, vec4 } from 'three/tsl';
 import { followPlantDraw } from '../vegetation/PlantInstances.ts';
 
+// The opaque scene's depth prepass, for the screen-space occlusion and the screen-space shade.
+//
 // The opaque scene's depth prepass, for the screen-space ambient occlusion (post/GTAO.ts) and the
 // screen-space shade over the whole scene (post/MeadowShade.ts `SS_SHADOW`): the island's chunks,
 // the submerged stones, the sea floor, the bamboo's culms and the yunpeng drawn before the opaque

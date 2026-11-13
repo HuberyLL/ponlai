@@ -10,6 +10,8 @@ import { meterKey } from './MeterLight.ts';
 import type { Look } from '../look/Look.ts';
 import { checkDeclarations, type Declarations } from '../Extensions.ts';
 
+// Local lights: small light sources on the island, every one in view, by clustered shading.
+//
 // Local lights: small light sources on the island (by night the yunpeng's clumps, Yunpeng.ts) that
 // light the ground and the plants round them, every source in view at once, by clustered forward
 // shading (Olsson, Billeter and Assarsson, "Clustered Deferred and Forward Shading", HPG 2012; the

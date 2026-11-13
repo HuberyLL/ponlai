@@ -20,6 +20,8 @@ import {
 	FFX_FSR3UPSCALER_RESOURCE_IDENTIFIER_FRAME_INFO, FFX_FSR3UPSCALER_RESOURCE_IDENTIFIER_RECONSTRUCTED_PREVIOUS_NEAREST_DEPTH,
 } from './Resources.ts';
 
+// FSR 3's host side in plain TypeScript: flags, quality modes, jitter and per-frame constants.
+//
 // The FSR 3 upscaler's host side, in plain TypeScript (no three: `node` runs it by stripping types
 // for the host check against upstream): the context flags, the quality modes, the jitter, the
 // per-frame constants `fsr3upscalerDispatch` computes before its dispatches, the device-depth

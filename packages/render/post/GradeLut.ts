@@ -1,6 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { float, texture3D } from 'three/tsl';
 
+// The grade's look-up tables: two colour cubes after the tone curve, blended by a weight.
+//
 // The grade's look-up tables: colour cubes of LUT_SIZE^3 applied after the tone curve, two of them
 // blended by a weight (Pipeline.ts `settings.lut`) so a look can move between two grades, by the
 // time of day or by place. After Patry, "Real-Time Samurai Cinema" (SIGGRAPH 2021): 32^3 tables,

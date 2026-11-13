@@ -20,6 +20,8 @@ type U = THREE.Node<'uint'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
+// GPU spray torn off breaking storm crests: drops, ligaments, dense spray and mist.
+//
 // GPU spray torn off breaking storm crests: drops, ligaments, dense spray and mist, after
 // tidewater's Spray (its boat, terrain and surf-foam couplings are left out).
 //

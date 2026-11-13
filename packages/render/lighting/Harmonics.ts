@@ -2,6 +2,8 @@ import * as THREE from 'three/webgpu';
 import { Fn, abs, cross, dot, float, length, mat3, max, min, normalize, select, sqrt, vec3 } from 'three/tsl';
 import { shBasis } from './ProbeFormat.ts';
 
+// Degree-2 spherical harmonics for the ambient light's relight, in three.js's basis.
+//
 // Degree-2 spherical harmonics for the ambient light's relight (AmbientRelight.ts): the products,
 // the cosine lobe, the deringing window and the directionality boost, in three.js's
 // SphericalHarmonics3 basis and order (y up; ProbeFormat.ts `shBasis`):

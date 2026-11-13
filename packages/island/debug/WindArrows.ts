@@ -5,6 +5,8 @@ import { islandSurfaceHeight } from '../world/WorldShapes.ts';
 import { sampleShore } from './ChunkBorders.ts';
 import type { WorldData } from '../world/types.ts';
 
+// The wind view's arrows, built on first show and again after the island grows.
+//
 // The wind view's arrows (`windView`, see WindView.ts): main.ts builds them on first show and again
 // after the island grows (as the chunk borders), for the land shown, so their pipeline exists only
 // on a page that shows them (a growth gives the mesh a new geometry under the same material).

@@ -14,6 +14,8 @@ import {
 } from './Resources.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
+// FSR 3's reactive-mask generator: how much transparent content changed each pixel.
+//
 // The reactive-mask generator (ffxFsr3UpscalerContextGenerateReactiveMask): the reactive value of a
 // pixel is how much the transparent and composited content changed it, the difference between
 // the colour before (opaque only) and after, optionally tonemapped, scaled and thresholded.

@@ -6,6 +6,8 @@ import { tuneApply } from '../debug/Tune.ts';
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 
+// Pre-exposure: one scale on the half-float targets that keeps their values in range.
+//
 // Pre-exposure: every writer of the scene's half-float colour (`sceneColor`, and so `hdr`) and of
 // the metering illuminance (`meterLight`) multiplies its value by 2^P, one uniform for the whole
 // frame, so what the targets hold sits in half float's range whatever the light. Scene units (what

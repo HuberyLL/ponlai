@@ -33,6 +33,7 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
+// The air's haze and the sea's fog: a froxel volume lit by the atmosphere, over the scene.
 // The sine of the elevation the sun's rows are read at under a deck (see the header)
 const DECK_ROW = 0.5;
 // The elevation (17 degrees) under which the haze reads the earth's shadow as at it (see the header)
@@ -519,8 +520,7 @@ export const HAZE_DEFAULTS = {
 	fogExtinction: 3.912 / 1000,
 	// the light: the medium's single-scattering albedo, the aerosol share's phase (a Cornette-Shanks
 	// lobe of the sky's aerosol anisotropy, Atmosphere.ts MIE_G, half its peak about 12 degrees off
-	// the sun and a 1/340 of it behind), and a gain over both shares (1: the keys' weights carry the
-	// level)
+	// the sun, 1/340 of it behind) and a gain over both shares (1: the keys' weights carry the level)
 	albedo: 1, anisotropy: MIE_G, gain: 1,
 	// the ambient visibility: its floor under cover, and the half-width (metres) of its rise
 	// through the cover's top

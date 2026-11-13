@@ -1,3 +1,5 @@
+// What the sun shadow and the refracted sun take from a mesh, as plain data.
+//
 // What the renderer's sun shadow and refracted sun take from a mesh, as data: the caster columns
 // (SunShadow.ts fits its casters' box and grid from them) and the subset of triangles that reach
 // under the water (RefractedSun.ts draws only those). The renderer reads this format; whoever

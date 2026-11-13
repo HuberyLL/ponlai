@@ -1,6 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { GROUND_CELL as CELL, type GroundGrid } from '../world/ChunkDerived.ts';
 
+// The island's ground for the camera on the CPU: a coarse height grid to find the cursor's point.
+//
 // The island's ground for the camera on the CPU: a coarse top-down height grid of the island's own
 // meshes (the highest vertex in each cell) over a flat sea, enough to find the point under the
 // cursor that a drag grabs or a zoom closes in on. It derives from the meshes alone, so any tile

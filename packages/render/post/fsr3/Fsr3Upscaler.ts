@@ -17,6 +17,8 @@ import { fsr3MipBiasScale } from './MipBias.ts';
 import { preExposure } from '../PreExposure.ts';
 import type { N } from './Core.ts';
 
+// The page's FSR 3.1 upscaler, on the TSL port of AMD's FidelityFX FSR 3.1.5 in this folder.
+//
 // The page's FSR 3.1 upscaler (Antialiasing.ts: aa=fsr3), on the TSL port of AMD's FidelityFX FSR
 // 3.1.5 in this folder (Host.ts: the host's maths and frame plan; Bindings.ts: the resources and
 // constants; Passes.ts: the kernels). It stands where AMD's integration guide puts it: after the

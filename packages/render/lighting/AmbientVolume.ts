@@ -4,6 +4,8 @@ import { META_VEC4, PROBE_STRIDE, type AmbientLattice } from './ProbeFormat.ts';
 import { shEvaluate, toMat3 } from './Harmonics.ts';
 import { AttributeType, freeAttribute, uploadSteps } from '../util/Upload.ts';
 
+// The ambient light's probes on the GPU: the lattice's buffer and the irradiance 3D texture.
+//
 // The ambient light's probes on the GPU: the merged lattice (world/AmbientProbes.ts, merged in
 // ChunkMerge.ts, its invalid probes filled from their neighbours there) as one read-only storage
 // buffer of vec4, described by uniforms, for the relight (AmbientRelight.ts) to read; and the

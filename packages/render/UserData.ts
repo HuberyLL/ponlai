@@ -1,3 +1,5 @@
+// The `userData` keys the renderer knows: where each sits, who sets it and who reads it.
+//
 // The `userData` keys the renderer knows. three's `userData` is an open bag on every object,
 // material, geometry and texture; the renderer and what is built on it leave marks there for each
 // other (a material says what it takes part in, a pass finds its copies again). The bag has no

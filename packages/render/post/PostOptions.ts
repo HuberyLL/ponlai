@@ -1,6 +1,8 @@
 import { DEFAULT_HAZE_GRID, type HazeGrid } from '../weather/VolumetricHaze.ts';
 import { settings, type SettingsQuery } from '../Settings.ts';
 
+// The frame graph's structural choices, read once when the pipeline builds its graph.
+//
 // The frame graph's structural choices (`PostOptions`), the quality tier's and the address's
 // (`?post=`, declared in Settings.ts): the pipeline (Pipeline.ts) reads them once, when it builds
 // its graph.

@@ -1,5 +1,7 @@
 import type { WindLook } from '../../render/setup.ts';
 
+// The island's wind look: how the island's plants answer the weather's wind.
+//
 // The island's wind look (packages/island/look/: the island's numbers for the renderer's look tables,
 // look/Look.ts; weather/Wind.ts `windResponse` reads these): how the island's plants answer the weather's wind.
 

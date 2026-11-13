@@ -5,6 +5,8 @@ import { GROWTH } from '../world/IslandGrowth.ts';
 import { cellStream } from '../world/Anchors.ts';
 export { MEADOW_MIN_UP, MEADOW_MAX_DROP, supportsMeadow } from '../world/MeadowSurface.ts';
 
+// The meadow's ground: the lawn's one colour, its gains and the soil and habitat fields.
+//
 // The lawn is one grass colour (docs/explanation/art-direction.md): every tuft takes it and the turf under
 // the blades shows it too, so the far meadow, where the blades are under a pixel and the turf shows
 // between them, reads as one carpet with the near blades. Only a gentle, low-frequency swing of its

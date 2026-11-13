@@ -1,3 +1,5 @@
+// The sea's inherent optical properties per channel, as plain numbers shared by all readers.
+//
 // The sea's inherent optical properties, per channel (1 / m), as plain numbers: shared.ts makes the
 // page's uniforms of them, and the ambient probes (world/AmbientProbes.ts), baked in the chunk
 // workers and in node, read them here, so both take the water from one place.

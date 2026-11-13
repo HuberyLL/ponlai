@@ -6,6 +6,8 @@
  * Licensed under the MIT License; see ./FidelityFX.LICENSE.txt.
  */
 
+// FSR 3's resource identifiers and the description of every internal resource.
+//
 // The upscaler's resource identifiers (upstream's numbers, so a binding table maps one to one) and
 // the description of every internal resource: its size class, upstream's format, the WebGPU format
 // the port uses, its mips, its ping-pong partner, and the aliasing and clear rules. The kernels

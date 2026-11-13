@@ -1,3 +1,5 @@
+// The island's exit for the page: the names the game and the page take from the island.
+//
 // The island's exit for the page: the names the game and the page take from the island, and no
 // others. Another package imports the island through this file (or through island/land.ts, for the
 // land and the look's numbers), never one of its modules by its path (tools/repo/verify-layers.mjs). It

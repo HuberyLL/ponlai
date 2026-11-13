@@ -9,6 +9,8 @@ import { GLYPH } from './People.ts';
 import type { People } from './People.ts';
 import type { UiShared } from './Shared.ts';
 
+// The speak bar: the player talks to the islanders in words.
+//
 // The speak bar (docs/explanation/ui.md, Speaking; the design canvas's SpeakFlow): the player talks to the
 // islanders in words. At rest it is 说话 between two brush strokes fading outwards at the bottom
 // centre; it unfolds from the middle as characters are typed, holds about 27 characters (MAX_W)

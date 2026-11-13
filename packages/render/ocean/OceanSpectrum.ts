@@ -6,6 +6,8 @@
  * 4811ba48d795197de5621985f404e765c0b7c0ef.
  */
 
+// The ocean's wave spectrum on the CPU: the sea states, the wave systems and slope variance.
+
 const GRAVITY = 9.81;
 
 export interface WaveSpectrumSettings {

@@ -16,6 +16,8 @@ import { shared } from '../shared.ts';
 import { compileInto } from '../post/graph/Compile.ts';
 import type { FrameGraph } from '../post/graph/FrameGraph.ts';
 
+// What the light under the water needs from the sea's surface: the wave maps and the caustics.
+//
 // What the light under the water needs from the sea's surface, baked once a frame into one array
 // target, on the frame graph ahead of the scene passes (`waveMapsPass`), after the sea's cascades
 // (computed in the tick): the wave maps and the caustics.

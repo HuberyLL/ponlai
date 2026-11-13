@@ -1,5 +1,7 @@
 import type { ShoreField } from '../../render/data.ts';
 
+// The shore field's signed distance at a point, sampled as the GPU samples its texture.
+
 /** The shore field's signed distance (m, negative on land) at ( x, z ), bilinear over its cell
  * centres with the edge continued: the ground samples its texture so (WorldFields.ts, linear
  * filtering), so what the CPU plants and the GPU draws read the same field. */

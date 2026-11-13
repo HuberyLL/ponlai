@@ -4,6 +4,8 @@ import type { Place } from '../places.ts';
 import { optionsAt, register } from '../registry.ts';
 import type { Sim } from '../Sim.ts';
 
+// The shore: the island's edge band of walkable ground, one place by the id `shore`.
+//
 // The shore: the island's edge band of walkable ground (ground.ts SHORE_BAND), one place all round
 // by the id `shore`, which shows nothing. What it offers is the options registered at `shore`
 // (fishing: food.ts).

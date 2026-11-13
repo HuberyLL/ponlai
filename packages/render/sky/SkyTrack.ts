@@ -13,6 +13,8 @@ import { type CloudSky, type SkyTables, byElevation, islandSky, keyHue, luma, lu
 import type { Sky } from './Sky.ts';
 import type { DayWindows } from '../look/DayLook.ts';
 
+// The sky's state for a frame: the sun, the moon, the key, the stars, the grade and the clouds.
+//
 // The sky's state for a frame (Sky.ts `track`, whose header says what it holds and why): the sun,
 // the moon, the key, the stars, the grade and the displayed weather, and the clouds' light and shell
 // (`trackClouds`), each a function of the sky. Everything that moves with the clock is continuous

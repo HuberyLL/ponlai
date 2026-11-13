@@ -22,6 +22,8 @@ import { glossAlpha, specularGGX, fresnel90, keyGlint, glintDirection, glintNorm
 import { environmentBRDF } from './EnvironmentBRDF.ts';
 import { meterAmbient, meterKey, meterStart } from './MeterLight.ts';
 
+// Sunlight bounced off the ground, one diffuse bounce, baked into a map over the island.
+//
 // Sunlight bounced off the ground, one diffuse bounce (tidewater's GroundBounce, 4811ba4): the
 // sunlit plateau lights the islanders' undersides and the grass from below, the shallows light
 // the cliff's walls over them.

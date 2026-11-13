@@ -3,6 +3,8 @@ import type { BuildingState } from '../sim/types.ts';
 import { BOX, PropBuilder, at, buildingMaterial, hashAt } from './Props.ts';
 import type { RGB } from './Props.ts';
 
+// The chest once set down: a stand-in wooden chest built in code in the props' faceted style.
+//
 // The chest (sim/content/chest.ts) once the player has set it down: a stand-in wooden chest built in code, in
 // the props' faceted style (Props.ts), as the art direction's things people make are, handmade and
 // a little chunky: a body of horizontal planks on two skids, darker corner posts, a lid of planks

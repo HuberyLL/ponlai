@@ -1,5 +1,7 @@
 import * as THREE from 'three/webgpu';
 
+// The islanders' stylised proportions, applied once to the assembled figure's bind pose.
+//
 // The islanders are the stylised layer of the art: friendlier, chunkier proportions than the
 // kit's slender stock figure (a larger head, shorter legs and neck, a broader torso, thicker
 // limbs, larger hands and feet), in the spirit of Alba, Sky and Tchia. Rather than editing

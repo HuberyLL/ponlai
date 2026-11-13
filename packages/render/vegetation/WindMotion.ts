@@ -1,6 +1,8 @@
 import type * as THREE from 'three/webgpu';
 import { debugFlags } from '../debug/DebugFlags.ts';
 
+// The wind's motion in the vegetation's velocity under the temporal modes, and its switch.
+//
 // Under the temporal modes the vegetation's materials also write the wind's motion (their previous
 // sway, VegetationShadow.ts); `debugFlags.mv.wind = false` rebuilds them without it
 // (`userData.windMotion = false`): no wind motion in the velocity and no second sway in the vertex

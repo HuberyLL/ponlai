@@ -7,6 +7,8 @@ type V3 = THREE.Node<'vec3'>;
 type FilterInput = { depthTexture: THREE.DepthTexture; shadowCoord: V3 };
 type Filter = ( input: FilterInput ) => F;
 
+// The figures' own shadow map along the sun, drawn every frame and read with a tent filter.
+//
 // The island's sun shadow map is drawn once and redrawn only when the light changes. Moving
 // figures get a small map of their own along the same sun direction, drawn every frame, and
 // every shadow receiver multiplies both visibilities through the sun's shadow filter: the

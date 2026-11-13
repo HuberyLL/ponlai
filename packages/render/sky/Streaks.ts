@@ -17,6 +17,8 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
+// The thin cloud layer's fibres, baked once into a tileable texture by line integral convolution.
+//
 // The thin cloud layer's fibres (Clouds.ts `streaksAt`), baked once into a mipmapped, tileable
 // texture, x along the drift. Sparse seeds, gathered in tufts by a fractal noise of 5 cells a tile,
 // are drawn out by line integral convolution (Cabral and Leedom 1993, "Imaging Vector Fields Using

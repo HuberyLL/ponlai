@@ -17,6 +17,8 @@ import {
 } from './Host.ts';
 import * as R from './Resources.ts';
 
+// FSR 3's bindings: the constant buffers and resource callbacks by their upstream names.
+//
 // ffx_fsr3upscaler_callbacks_hlsl.h as one object: the three constant buffers (cbFSR3Upscaler,
 // cbSPD, cbRCAS, and cbGenerateReactive) as uniforms with upstream's getters, and every resource
 // callback (`Load*`, `Store*`, `Sample*`, `Get*ResourceDimensions`) by its upstream name. The

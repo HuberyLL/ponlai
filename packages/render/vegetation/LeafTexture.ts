@@ -1,5 +1,7 @@
 import * as THREE from 'three/webgpu';
 
+// The folded leaf: a colour map and an alpha map drawn from one silhouette.
+//
 // The folded leaf every leafy plant shares: a colour map and an alpha map drawn from one silhouette, the alpha map's
 // mips built on the CPU to keep the leaf's coverage at the cutoff (`LEAF_ALPHA_TEST`). Shadow passes
 // keep `alphaTest` and `alphaMap` but not `map`, so alpha-tested foliage sets both: the leaf `map` is

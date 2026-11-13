@@ -1,3 +1,5 @@
+// A cache of the world's chunks in IndexedDB, read and written by the chunk workers.
+//
 // A cache of the world's chunks in IndexedDB, so a repeat visit, or a land that grew by a piece,
 // skips generating every chunk the change left as it was. The chunk workers read and write it
 // (chunkWorker.ts), never the main thread. One record per chunk in the object store `chunks`,

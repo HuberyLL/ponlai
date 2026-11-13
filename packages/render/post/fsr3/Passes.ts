@@ -30,6 +30,8 @@ import { RCAS } from './Rcas.ts';
 import { DebugView } from './DebugView.ts';
 import { GenerateReactive } from './AutogenReactive.ts';
 
+// FSR 3's pass entry points: one compute kernel per upstream pass, with its permutation.
+//
 // The pass entry points: one compute kernel per `*_pass.hlsl` with upstream's workgroup size
 // (8 x 8, SPD's 256 x 1, RCAS's 64 x 1) and the permutation upstream builds it with
 // (`getPipelinePermutationFlags`: HDR colour, low-resolution and jittered motion vectors, inverted

@@ -1,5 +1,7 @@
 import type { FullKey, HazeLook } from '../../render/setup.ts';
 
+// The island's haze look: the haze's keys by the hour and the weather.
+//
 // The island's haze look (packages/island/look/: the island's numbers for the renderer's look tables,
 // look/Look.ts; look/HazeLook.ts `createHazeTables` makes the haze's tables from these).
 // weather/HazeKeys.ts `hazeKeyAt` eases them by the hour and the weather; the haze

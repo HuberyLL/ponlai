@@ -32,6 +32,8 @@ import { bakeColour, dirToEquirect, discCloudTransmittance, domeColour, equirect
 import { abortSlices, bake, finishSlices, runSlices, startSlices, type Slice } from './SkyBake.ts';
 import { trackSky } from './SkyTrack.ts';
 
+// The sky: atmosphere, clouds, night sky and the baked environment, from one cloud field.
+
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;

@@ -1,6 +1,8 @@
 import { level } from './Brush.ts';
 import { iconSvg } from './Icons.ts';
 
+// The interface's DOM helpers, which write a field only when its value changed.
+//
 // The interface's DOM helpers. Each frame writes only what changed (docs/explanation/ui.md, Rules for the code),
 // so the setters below compare first: a steady interface costs a comparison per field and frame.
 

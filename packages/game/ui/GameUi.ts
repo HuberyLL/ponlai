@@ -18,6 +18,8 @@ import { UiShared } from './Shared.ts';
 import { SpeakBar } from './SpeakBar.ts';
 import { TopRow } from './TopRow.ts';
 
+// 蜃光, the player's interface in ?game: a mirage over the sea, assembled from its parts.
+//
 // 蜃光, the player's interface in ?game (docs/explanation/ui.md, the spec it follows; the design canvas's boards
 // predate the decisions it marks as changed). The interface is a mirage over the sea: no frames, a
 // mist shadow under white brush line art, in one language: Chinese, the language the game is written

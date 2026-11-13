@@ -6,6 +6,8 @@ import { tune, tuneKeys, tuneObject } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
 import type { IslandSkyRow, Rgb, SkyLook, Span, StreakKeys } from './Look.ts';
 
+// The sky's tables built from a look's table, with the CPU code that reads only them.
+//
 // The sky's tables built from a look's table (look/Look.ts `SkyLook`), with the CPU code that reads
 // only them (`createSkyTables`): the light the sky lends the island after sunset and under cloud
 // (`islandSky`, `cloudLightTint`), the sky's gains on the sun's light (`skyLight`, `clearSky`), the

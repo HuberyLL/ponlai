@@ -2,6 +2,8 @@ import * as THREE from 'three/webgpu';
 import { uniform } from 'three/tsl';
 import type { GridApi, Vec2 } from '../sim/types.ts';
 
+// The placement ring: where a building would stand under the pointer, green or red.
+//
 // Where a building would stand under the pointer while the player places it: a ring the size
 // of the ground its kind blocks (its footprint radius, sim/registry.ts BuildingDef), laid on the
 // turf, light green where it can go and red where it cannot. It is drawn over the meadow (no depth
