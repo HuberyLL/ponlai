@@ -177,6 +177,7 @@ async function run( job: ChunkJob ): Promise<void> {
 
 		case 'chunk': {
 
+			// eslint-disable-next-line ponlai/scene-clock -- a chunk's build time, a readout
 			const t = performance.now();
 			const cache = job.key !== null ? await store : null;
 			const hit = cache ? await cache.read<ChunkData>( job.key! ) : undefined;
@@ -184,6 +185,7 @@ async function run( job: ChunkJob ): Promise<void> {
 
 				// the land version is not part of the content (Chunks.ts hashChunk)
 				hit.land = job.version;
+				// eslint-disable-next-line ponlai/scene-clock -- a chunk's build time, a readout
 				post( { kind: 'chunk', data: hit, cache: 'hit', ms: performance.now() - t } );
 				break;
 
@@ -192,6 +194,7 @@ async function run( job: ChunkJob ): Promise<void> {
 			await simplifierReady;
 			const data = buildChunk( landWindow( field, job.ci, job.cj ), land, job.ci, job.cj, { version: job.version, contactOcclusion: job.contactOcclusion, canopyShade: job.canopyShade } );
 			if ( cache ) track( cache.write( job.key!, data ) );
+			// eslint-disable-next-line ponlai/scene-clock -- a chunk's build time, a readout
 			post( { kind: 'chunk', data, cache: cache ? 'miss' : job.key !== null ? 'error' : 'off', ms: performance.now() - t } );
 			break;
 

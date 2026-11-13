@@ -188,6 +188,7 @@ function schedule(): void {
 	const run = ( deadline?: { timeRemaining(): number } ) => {
 
 		queued = false;
+		// eslint-disable-next-line ponlai/scene-clock -- the time budget of an idle slice: how much work it does, not its result
 		const until = performance.now() + ( deadline ? Math.min( deadline.timeRemaining(), SLICE ) : SLICE );
 		try {
 
@@ -195,6 +196,7 @@ function schedule(): void {
 
 				if ( queue[ 0 ]() ) queue.shift();
 
+			// eslint-disable-next-line ponlai/scene-clock -- the time budget of an idle slice: how much work it does, not its result
 			} while ( queue.length > 0 && performance.now() < until );
 
 		} catch ( error ) {

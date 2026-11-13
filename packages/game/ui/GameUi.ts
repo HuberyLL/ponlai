@@ -146,6 +146,7 @@ export class GameUi {
 	update(): void {
 
 		this.rescale();
+		// eslint-disable-next-line ponlai/scene-clock -- known violation: the interface's animations (the words melting, the speak bar) run on the wall clock, so they go on while the page is paused; left for a decision
 		this.shared.refresh( performance.now() );
 		this.placement.update();
 		this.people.update();

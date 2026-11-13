@@ -156,6 +156,7 @@ export function shoreBoundaryPixels( shore: ShoreField ): FieldPixels {
  */
 export function shoreShelterPixels( shoreGrid: ShoreField, direction: { x: number; y: number }, spreadDegrees = 18 ): FieldPixels & { info: Record<string, unknown> } {
 
+	// eslint-disable-next-line ponlai/scene-clock -- the field's build time, a readout
 	const started = performance.now();
 	const scale = Math.min( 1, MAX_RES / Math.max( shoreGrid.nx, shoreGrid.nz ) );
 	const nx = Math.max( 2, Math.round( shoreGrid.nx * scale ) ), nz = Math.max( 2, Math.round( shoreGrid.nz * scale ) );
@@ -292,6 +293,7 @@ export function shoreShelterPixels( shoreGrid: ShoreField, direction: { x: numbe
 		}
 
 	}
+	// eslint-disable-next-line ponlai/scene-clock -- the field's build time, a readout
 	return { pixels, nx, nz, info: { direction: [ dx, dz ], fanDegrees: angles, residualAmplitude: 0.06, buildMs: performance.now() - started } };
 
 }

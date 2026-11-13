@@ -24,6 +24,7 @@ if ( import.meta.env.DEV || params.has( 'debug' ) || params.has( 'profile' ) ) {
 	const state: { ready: boolean; ms?: number } = { ready: false };
 	( window as unknown as { __PONLAI_WORLD__: typeof state } ).__PONLAI_WORLD__ = state;
 	// (a failed world is in too: the page goes on and reports it)
+	// eslint-disable-next-line ponlai/scene-clock -- when the world was ready, a readout for the tools
 	const done = () => { state.ready = true; state.ms = performance.now(); };
 	worldJob.then( done, done );
 

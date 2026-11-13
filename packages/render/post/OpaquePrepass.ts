@@ -47,6 +47,7 @@ function eligible( object: THREE.Object3D ): object is THREE.Mesh {
 	if ( ! mesh.isMesh || ( mesh as THREE.SkinnedMesh ).isSkinnedMesh || ( mesh as THREE.InstancedMesh ).isInstancedMesh || mesh.userData.prepassCopy || Array.isArray( mesh.material ) ) return false;
 	if ( ! mesh.layers.isEnabled( 0 ) ) return false;
 	const m = mesh.material as THREE.Material;
+	// eslint-disable-next-line ponlai/vegetation-tag -- not finding vegetation: no cut-out under alpha to coverage, a plant's or an islander's, can draw an opaque depth copy; vegetation is left out by its tag beside it
 	return ( m as THREE.NodeMaterial ).isNodeMaterial === true && m.depthWrite && ! m.transparent && ! m.alphaToCoverage && m.userData.vegetation !== true && m.colorWrite;
 
 }

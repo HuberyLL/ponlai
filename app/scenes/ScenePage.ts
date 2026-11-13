@@ -260,9 +260,11 @@ renderEvent( 'loop start' );
 // ambient light's first relight is in, at most REVEAL_WAIT ms on; a paused page lifts it without
 // its fade, so a capture never shoots through it.
 const REVEAL_WAIT = 3000;
+// eslint-disable-next-line ponlai/scene-clock -- the loading screen's longest wait: when it lifts, not what is drawn
 const revealAt = performance.now() + REVEAL_WAIT;
 const reveal = () => {
 
+	// eslint-disable-next-line ponlai/scene-clock -- the loading screen's longest wait: when it lifts, not what is drawn
 	const waiting = ( ( casting && render.sunShadow.draws === 0 ) || ! render.ambientRelight.ready ) && performance.now() < revealAt;
 	if ( waiting ) { setTimeout( reveal, 50 ); return; }
 	if ( render.paused && loading ) loading.style.transition = 'none';
@@ -329,7 +331,9 @@ const loop = {
 		if ( ! loop.running ) return;
 		loop.running = false;
 		animation.stop();
+		// eslint-disable-next-line ponlai/scene-clock -- the timeout of the wait for the sky's bakes, not a scene state
 		const until = performance.now() + 2000;
+		// eslint-disable-next-line ponlai/scene-clock -- the timeout of the wait for the sky's bakes, not a scene state
 		while ( render.sky.busy && performance.now() < until ) await new Promise( ( resolve ) => setTimeout( resolve, 10 ) );
 		await gpuQueue.onSubmittedWorkDone();
 

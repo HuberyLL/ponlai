@@ -57,6 +57,7 @@ const SLICE_TIMEOUT_MS = 250;
 
 export async function bake( sky: Sky, transitionSeconds: number ): Promise<void> {
 
+	// eslint-disable-next-line ponlai/scene-clock -- the bake's time, a readout
 	const started = performance.now();
 	const version = ++ sky.bakeVersion;
 	const readback = transitionSeconds === 0 || ! sky.initialized;
@@ -105,6 +106,7 @@ export async function bake( sky: Sky, transitionSeconds: number ): Promise<void>
 
 	}
 	publishBake( sky, bake );
+	// eslint-disable-next-line ponlai/scene-clock -- the bake's time, a readout
 	sky.lastBakeMs = performance.now() - started;
 
 }
@@ -275,6 +277,7 @@ export function environmentSlices( sky: Sky, index: number ): Slice[] {
 // Start a periodic bake over frames: the panoramas now, the rest from advance().
 export function startSlices( sky: Sky, transitionSeconds: number ): void {
 
+	// eslint-disable-next-line ponlai/scene-clock -- the bake's time, a readout
 	const started = performance.now();
 	const weather = sky.weatherState ? { ...sky.weatherState } : null;
 	const bake = beginBake( sky, ++ sky.bakeVersion, false, transitionSeconds, weather );
@@ -282,6 +285,7 @@ export function startSlices( sky: Sky, transitionSeconds: number ): void {
 	sky.readIrradiance( bake.state, bake.version );
 	sky.slices = bake.environment === null ? [] : environmentSlices( sky, bake.environment );
 	sky.slices.push( { cost: 0, run: () => publishBake( sky, bake ) } );
+	// eslint-disable-next-line ponlai/scene-clock -- the bake's time, a readout
 	sky.sliceMs = performance.now() - started;
 	// A paused scene does it whole, so a paused frame never depends on how many frames ran.
 	if ( sky.clockStill ) finishSlices( sky );
@@ -294,6 +298,7 @@ export function startSlices( sky: Sky, transitionSeconds: number ): void {
 // so the sky is free for the next one.
 export function runSlices( sky: Sky, passes: number ): void {
 
+	// eslint-disable-next-line ponlai/scene-clock -- the bake's time, a readout
 	const started = performance.now();
 	let spent = 0;
 	try {
@@ -312,6 +317,7 @@ export function runSlices( sky: Sky, passes: number ): void {
 		return;
 
 	}
+	// eslint-disable-next-line ponlai/scene-clock -- the bake's time, a readout
 	sky.sliceMs += performance.now() - started;
 	if ( sky.slices.length > 0 ) {
 

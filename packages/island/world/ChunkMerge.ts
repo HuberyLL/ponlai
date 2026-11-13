@@ -111,12 +111,15 @@ export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): 
  * stepped. */
 export function* mergeSteps( land: LandData, unordered: readonly ChunkData[] ): Generator<void, WorldData> {
 
+	// eslint-disable-next-line ponlai/scene-clock -- the merge's busy time, a readout; the result is the same however it is stepped
 	const t0 = performance.now();
 	let busy = 0, mark = t0;
 	const pause = function* () {
 
+		// eslint-disable-next-line ponlai/scene-clock -- the merge's busy time, a readout; the result is the same however it is stepped
 		busy += performance.now() - mark;
 		yield;
+		// eslint-disable-next-line ponlai/scene-clock -- the merge's busy time, a readout; the result is the same however it is stepped
 		mark = performance.now();
 
 	};
@@ -221,6 +224,7 @@ export function* mergeSteps( land: LandData, unordered: readonly ChunkData[] ): 
 		ambient,
 		timings: {},
 	};
+	// eslint-disable-next-line ponlai/scene-clock -- the merge's busy time, a readout; the result is the same however it is stepped
 	busy += performance.now() - mark;
 	// (the time spent merging, not the time the steps were spread over)
 	data.timings = { merge: Math.round( busy ) };

@@ -531,8 +531,10 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 
 	const { version = 0, contactOcclusion = true, canopyShade = false } = options;
 	const timings: Record<string, number> = {};
+	// eslint-disable-next-line ponlai/scene-clock -- the build's timings, a readout
 	const t0 = performance.now();
 	let t = t0;
+	// eslint-disable-next-line ponlai/scene-clock -- the build's timings, a readout
 	const mark = ( k: string ) => { const now = performance.now(); timings[ k ] = Math.round( now - t ); t = now; };
 
 	// the scars, the stones round the chunk and the contact solids
@@ -633,6 +635,7 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 	mark( 'derived' );
 	data.hash = hashChunk( data );
 	mark( 'hash' );
+	// eslint-disable-next-line ponlai/scene-clock -- the build's timings, a readout
 	timings.total = Math.round( performance.now() - t0 );
 	return data;
 

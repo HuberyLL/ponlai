@@ -366,6 +366,7 @@ export class DynamicResolution {
 	 * replaces it (app/Diagnostics.ts's debug hook `dynamicClock`): a page it keeps stopped during another
 	 * page's slices (profile-frame --compare) holds its clock still, so its timers do not run out
 	 * while it draws nothing. */
+	// eslint-disable-next-line ponlai/scene-clock -- the controller's clock: it steers the render scale by real frame times (see the header)
 	clock: () => number = () => performance.now() / 1000;
 	private samples: Sample[] = [];
 	private intervals: number[] = [];
@@ -1201,6 +1202,7 @@ function writeStore( storage: ScaleStore | null, key: string, scale: number ): v
 	try {
 
 		const store = readStore( storage );
+		// eslint-disable-next-line ponlai/scene-clock -- when a display's scale was stored, to keep the most recent ones
 		store[ key ] = { scale, at: Date.now() };
 		// the displays used most recently (where it fails, the next visit starts at the nominal scale)
 		storage?.setItem( STORE_KEY, JSON.stringify( Object.fromEntries( Object.entries( store ).sort( ( a, b ) => b[ 1 ].at - a[ 1 ].at ).slice( 0, STORE_ENTRIES ) ) ) );

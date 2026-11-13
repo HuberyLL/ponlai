@@ -265,6 +265,7 @@ export class Growth<M = unknown> {
 	update( time: number ): void {
 
 		// the frame before ends here
+		// eslint-disable-next-line ponlai/scene-clock -- the growth's frame times, logged
 		const now = performance.now();
 		if ( this.frameMs > 0 ) {
 
@@ -277,12 +278,14 @@ export class Growth<M = unknown> {
 		const dt = this.sceneTime < 0 ? 0 : Math.min( 0.25, Math.max( 0, time - this.sceneTime ) );
 		this.sceneTime = time;
 		this.rise.update( dt );
+		// eslint-disable-next-line ponlai/scene-clock -- the time this work took, charged to the growth's log
 		const risen = performance.now() - now;
 		if ( risen > 0.05 ) this.charge( risen, 'rise' );
 		if ( this.after.length > 0 ) {
 
 			const k = this.afterStep ++;
 			if ( ! this.after[ 0 ]() ) this.after.shift();
+			// eslint-disable-next-line ponlai/scene-clock -- the time this work took, charged to the growth's log
 			const ms = performance.now() - now;
 			this.times[ `after ${ k }` ] = ms;
 			this.charge( ms, `after ${ k }` );
@@ -292,6 +295,7 @@ export class Growth<M = unknown> {
 		if ( this.wanted.length > 0 && this.state.phase === 'ready' ) {
 
 			this.swap();
+			// eslint-disable-next-line ponlai/scene-clock -- the time this work took, charged to the growth's log
 			this.charge( performance.now() - now, 'swap' );
 
 		}
@@ -328,10 +332,12 @@ export class Growth<M = unknown> {
 		this.state.phase = 'generating';
 		for ( const key of Object.keys( this.times ) ) delete this.times[ key ];
 		Object.assign( this.work, { max: 0, stage: '', frames: [], slow: [], prepared: 0, swapped: 0, ended: 0 } );
+		// eslint-disable-next-line ponlai/scene-clock -- the generation's time, logged
 		const t = performance.now();
 		const clock = ( ms: number ) => this.charge( ms, 'generate' );
 		generateVersion( { worldSeed: this.seed, step }, { cache: this.cache, threads: 2, from: this.shown.version, clock } ).then( ( g ) => {
 
+			// eslint-disable-next-line ponlai/scene-clock -- the generation's time, logged
 			this.times.generate = Math.round( performance.now() - t );
 			this.state.phase = 'preparing';
 			this.steps = this.prepare( g.version );
@@ -359,14 +365,17 @@ export class Growth<M = unknown> {
 		const run = ( deadline?: { timeRemaining(): number } ) => {
 
 			this.idleQueued = false;
+			// eslint-disable-next-line ponlai/scene-clock -- the time budget of an idle slice: how much work it does, not its result
 			const t = performance.now(), until = t + ( deadline ? Math.min( deadline.timeRemaining(), SLICE ) : SLICE );
 			if ( ! this.work.prepared ) this.work.prepared = t;
 			try {
 
 				do {
 
+					// eslint-disable-next-line ponlai/scene-clock -- a step's time, logged
 					const before = performance.now(), stage = this.stage;
 					const next = this.steps!.next();
+					// eslint-disable-next-line ponlai/scene-clock -- a step's time, logged
 					const took = performance.now() - before;
 					this.times[ `longest step ${ stage }` ] = Math.max( this.times[ `longest step ${ stage }` ] ?? 0, took );
 					if ( this.stage !== stage ) this.stepIndex = 0;
@@ -395,6 +404,7 @@ export class Growth<M = unknown> {
 
 					}
 
+				// eslint-disable-next-line ponlai/scene-clock -- the time budget of an idle slice: how much work it does, not its result
 				} while ( performance.now() < until );
 
 			} catch ( error ) {
@@ -405,6 +415,7 @@ export class Growth<M = unknown> {
 			} finally {
 
 				this.time( 'prepare', t );
+				// eslint-disable-next-line ponlai/scene-clock -- the time this work took, charged to the growth's log
 				this.charge( performance.now() - t, this.stage );
 
 			}
@@ -426,6 +437,7 @@ export class Growth<M = unknown> {
 
 	private time( name: string, since: number ): void {
 
+		// eslint-disable-next-line ponlai/scene-clock -- a stage's time, logged
 		const ms = performance.now() - since;
 		this.times[ name ] = ( this.times[ name ] ?? 0 ) + ms;
 		this.times[ `${ name } max` ] = Math.max( this.times[ `${ name } max` ] ?? 0, ms );
@@ -542,9 +554,11 @@ export class Growth<M = unknown> {
 
 	private swap(): void {
 
+		// eslint-disable-next-line ponlai/scene-clock -- the swap's times, logged
 		const t0 = performance.now();
 		const parts: Record<string, number> = {};
 		let mark = t0;
+		// eslint-disable-next-line ponlai/scene-clock -- the swap's times, logged
 		const part = ( name: string ) => { const now = performance.now(); parts[ name ] = + ( now - mark ).toFixed( 2 ); mark = now; };
 		const p = this.prepared!, page = this.page, world = page.world;
 		this.prepared = null;
@@ -601,6 +615,7 @@ export class Growth<M = unknown> {
 		this.afterStep = 0;
 		page.onSwap( p.land, p.data, p.measured );
 		part( 'page' );
+		// eslint-disable-next-line ponlai/scene-clock -- the swap's times, logged
 		const swapMs = performance.now() - t0;
 		const box: Bounds = p.bounds;
 		// (the rain's map a few meshes a frame)
@@ -624,6 +639,7 @@ export class Growth<M = unknown> {
 			() => {
 
 				const rebuilt = p.version.chunks.length - p.version.reused;
+				// eslint-disable-next-line ponlai/scene-clock -- when the swap's work ended, logged
 				this.work.ended = performance.now();
 				this.state.last = {
 					step: p.version.step, chunks: p.version.chunks.length, rebuilt, changed: p.changed.length, at: + t0.toFixed( 1 ),

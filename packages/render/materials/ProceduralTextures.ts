@@ -323,6 +323,7 @@ function detailArray( renderer: THREE.WebGPURenderer, targets: THREE.RenderTarge
 			const s = Math.max( size >> level, 1 );
 			region.min.set( 0, 0 );
 			region.max.set( s, s );
+			// eslint-disable-next-line ponlai/history-on-graph -- a bake at load: the baked targets' levels go into an array's layers, which no frame reads as a history
 			renderer.copyTextureToTexture( rt.texture, array.texture, region, at.set( 0, 0, i ), level, level );
 
 		}

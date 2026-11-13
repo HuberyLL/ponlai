@@ -284,6 +284,7 @@ export class Game {
 			body: ( v ) => ( { sex: v.sex, age: sim.age( v ) } ),
 			ticksPerSecond: () => SECONDS_PER_GAME_DAY / c.dayCycle.dayLength } );
 		this.lastSaved = '';
+		// eslint-disable-next-line ponlai/scene-clock -- the autosave's interval: when a save is written, not what it holds
 		this.nextSave = performance.now() + AUTOSAVE_SECONDS * 1000;
 		gameEvent( 'game begin' );
 		this.debug?.reset();
@@ -341,6 +342,7 @@ export class Game {
 		this.session.look( this.weatherNow().shown );
 		this.ui?.update();
 		this.debug?.update();
+		// eslint-disable-next-line ponlai/scene-clock -- the autosave's interval: when a save is written, not what it holds
 		if ( this.keeps && performance.now() >= this.nextSave ) this.autosave();
 
 	}
@@ -367,6 +369,7 @@ export class Game {
 		try {
 
 			localStorage.setItem( SAVE_KEY, json );
+			// eslint-disable-next-line ponlai/scene-clock -- the save's time stamp, shown to the player; play does not read it
 			this.savedAt = Date.now();
 			this.lastSaved = this.contents();
 			this.saveFailed = false;
@@ -386,6 +389,7 @@ export class Game {
 	 * nothing changed since the last. */
 	autosave(): void {
 
+		// eslint-disable-next-line ponlai/scene-clock -- the autosave's interval: when a save is written, not what it holds
 		this.nextSave = performance.now() + AUTOSAVE_SECONDS * 1000;
 		this.session.look( this.weatherNow().shown );
 		if ( this.contents() !== this.lastSaved ) this.save();

@@ -1051,7 +1051,7 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 
 	private async warmAll( f: F | undefined ): Promise<void> {
 
-		const started = performance.now();
+		const started = performance.now(); // eslint-disable-line ponlai/scene-clock -- the graph's build and warm-up times, a readout
 		const compiled = this.compiled ?? this.compile();
 		if ( this.executing ) throw new GraphError( 'warm() inside execute()' );
 		this.warmFrame = f;
@@ -1082,12 +1082,12 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 		// the latents registered so far, each under its pass's binding
 		for ( const latent of this.latents.splice( 0 ) ) pending.push( this.compileLatents( latent ).then( latent.resolve ) );
 		await Promise.all( pending );
-		stats.ms = performance.now() - started;
+		stats.ms = performance.now() - started; // eslint-disable-line ponlai/scene-clock -- the graph's build and warm-up times, a readout
 		if ( unreached.length > 0 ) {
 
-			const priming = performance.now();
+			const priming = performance.now(); // eslint-disable-line ponlai/scene-clock -- the graph's build and warm-up times, a readout
 			await this.primePasses( unreached, f, stats );
-			stats.primeMs = performance.now() - priming;
+			stats.primeMs = performance.now() - priming; // eslint-disable-line ponlai/scene-clock -- the graph's build and warm-up times, a readout
 
 		}
 

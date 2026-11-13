@@ -1235,6 +1235,7 @@ export class TemporalAA {
 		// (outside a frame, the previous version is the newest history)
 		this.carry.setSize( now.x, now.y );
 		this.renderer.initRenderTarget( this.carry );
+		// eslint-disable-next-line ponlai/history-on-graph -- a resize, between frames: the history of the old size goes into the carry, which the graph cannot declare (its targets follow their size class), and the next resolve reads it once
 		this.renderer.copyTextureToTexture( g.texture( this.historyPrev ), this.carry.texture );
 		this.carrySize.copy( now );
 		this.carryValid = true;

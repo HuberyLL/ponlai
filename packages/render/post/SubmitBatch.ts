@@ -364,6 +364,7 @@ export class SubmitBatch {
 			}
 			self.closeCopies();
 			const pending = self.pending;
+			// eslint-disable-next-line ponlai/scene-clock -- submission pacing: when command buffers go to the GPU, not what they draw
 			const now = performance.now();
 			const idle = pending.length === 0 && now - self.lastSubmit >= Number( debugFlags.submitIdle ?? IDLE_MS );
 			if ( pending.length === 0 ) self.pendingSince = now;
@@ -385,6 +386,7 @@ export class SubmitBatch {
 			}
 			if ( idle ) self.flush( 'idle' );
 			else if ( pending.length >= Number( debugFlags.submitHold ?? HOLD ) ) self.flush( 'full' );
+			// eslint-disable-next-line ponlai/scene-clock -- submission pacing: when command buffers go to the GPU, not what they draw
 			else if ( performance.now() - self.pendingSince >= Number( debugFlags.submitWait ?? WAIT_MS ) ) self.flush( 'time' );
 			else self.schedule();
 
@@ -392,6 +394,7 @@ export class SubmitBatch {
 		patch( queue, 'writeBuffer', () => function ( this: unknown, buffer: Host, bufferOffset: number, data: unknown, dataOffset?: number, size?: number ) {
 
 			// three writes uniforms all through a pass's recording: the time limit holds here too
+			// eslint-disable-next-line ponlai/scene-clock -- submission pacing: when command buffers go to the GPU, not what they draw
 			if ( self.pending.length > 0 && performance.now() - self.pendingSince >= Number( debugFlags.submitWait ?? WAIT_MS ) ) self.flush( 'time' );
 			if ( buffer[ USED ] === self.serial ) {
 
@@ -439,6 +442,7 @@ export class SubmitBatch {
 			this.flushing = false;
 			list.length = 0;
 			this.spare = list;
+			// eslint-disable-next-line ponlai/scene-clock -- submission pacing: when command buffers go to the GPU, not what they draw
 			this.lastSubmit = performance.now();
 			this.serial ++;
 			this.chunk = 0;
