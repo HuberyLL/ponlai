@@ -14,6 +14,8 @@ import { AmbientRelight, AmbientSky } from '../../packages/render/lighting/Ambie
 import { AmbientVolume } from '../../packages/render/lighting/AmbientVolume.ts';
 import { PROBE_STRIDE } from '../../packages/render/lighting/ProbeFormat.ts';
 import { shared } from '../../packages/render/shared.ts';
+import { createDayWindows } from '../../packages/render/look/DayLook.ts';
+import { installedLook } from '../../packages/render/look/Look.ts';
 
 export default function ( { renderer } ) {
 
@@ -29,7 +31,7 @@ export default function ( { renderer } ) {
 	source.minFilter = source.magFilter = THREE.LinearFilter;
 	const sky = new AmbientSky( renderer );
 	const { rows, groups, finish } = sky.build( source );
-	const relight = new AmbientRelight( { renderer, volume, shared, sky, weights: () => ( { a: 0, b: 1, blend: 0 } ), cloud: () => float( 1 ), seaCloud: () => float( 1 ) } );
+	const relight = new AmbientRelight( { renderer, volume, shared, sky, weights: () => ( { a: 0, b: 1, blend: 0 } ), cloud: () => float( 1 ), seaCloud: () => float( 1 ), dayWindows: createDayWindows( installedLook().day ) } );
 	const view = volume.buildView();
 	return [
 		[ 'AmbientSky.Rows', rows ],

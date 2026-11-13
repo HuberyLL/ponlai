@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { DUSK_DEPTH } from '../look/DayLook.ts';
+import type { DayWindows } from '../look/DayLook.ts';
 import { duskForce, duskForced, duskIn, moonKeyShare } from '../sky/DayCycle.ts';
 import { MIX_SKIES, WEATHER_PRESETS, cloudedShare, deckLight, overcastDeckLight } from '../sky/Weather.ts';
 import { cloudBase } from '../look/SkyLook.ts';
@@ -20,18 +20,19 @@ const FIELDS = [ 'amount', 'sigmaRed', 'sigmaGreen', 'sigmaBlue', 'desaturate', 
 const SHAPE_FIELDS = [ 'top', 'width', 'aerosolShare', 'aerosolHeight' ] as const;
 const FOG_FIELDS = [ 'fogLayer', 'neutral', 'scatter', 'fogTop', 'fogWidth', 'visibility' ] as const;
 
-// the key of `rows` at `elevation`, its fields, its shape and its fog layer, into `out`
-function keyAlong( rows: ReadonlyArray<readonly [ number, FullKey ]>, elevation: number, out: FullKey ): void {
+// the key of `rows` at `elevation`, its fields, its shape and its fog layer, into `out`, the night's
+// windows `windows`'s
+function keyAlong( windows: DayWindows, rows: ReadonlyArray<readonly [ number, FullKey ]>, elevation: number, out: FullKey ): void {
 
 	let i = 0;
 	while ( i < rows.length - 2 && elevation > rows[ i + 1 ][ 0 ] ) i ++;
 	const [ e0, a ] = rows[ i ], [ e1, b ] = rows[ i + 1 ];
 	// (a clear evening's night key comes in by stops, as the night's light does: DayCycle.ts
-	// DUSK_DEPTH)
+	// `duskIn`, the day windows' `depth.haze`)
 	// (a debug page may force the night key's weight, DayCycle.ts `duskForce`: its segment's ease,
 	// and above it a blend toward it)
 	const night = duskForced( 'hazeNight' );
-	const t = night !== null && a === NIGHT ? 1 - night : rows === SETTING && a === NIGHT ? 1 - duskIn( elevation, [ e0, e1 ], DUSK_DEPTH.haze ) : THREE.MathUtils.smoothstep( elevation, e0, e1 );
+	const t = night !== null && a === NIGHT ? 1 - night : rows === SETTING && a === NIGHT ? 1 - duskIn( windows, elevation, [ e0, e1 ], windows.depth.haze ) : THREE.MathUtils.smoothstep( elevation, e0, e1 );
 	for ( const f of FIELDS ) out[ f ] = a[ f ] + ( b[ f ] - a[ f ] ) * t;
 	const sa = SHAPED.has( a ) ? a : DAY, sb = SHAPED.has( b ) ? b : DAY;
 	for ( const f of SHAPE_FIELDS ) out[ f ] = sa[ f ] + ( sb[ f ] - sa[ f ] ) * t;
@@ -46,7 +47,9 @@ function keyAlong( rows: ReadonlyArray<readonly [ number, FullKey ]>, elevation:
 const _cloudedKey = blankKey();
 const _key = blankKey();
 
-/** The haze's key at the sun's `elevation` (degrees), `rising` or setting, under the weather's
+/** The haze's key under the day's `windows` (look/DayLook.ts `createDayWindows`: the night key's
+ * depth through a clear evening and the moon's key under cloud) at the sun's `elevation` (degrees),
+ * `rising` or setting, under the weather's
  * blend of the four skies, its wind (m/s), its rain (0 - 1), the sea fog's share (0 - 1,
  * its switch) and the parked fog weather's share of the sky (0 - 1: Weather.ts `origin` and
  * `target` by the front's progress). The fog weather counts as overcast in `skyMix`, but its air
@@ -58,15 +61,15 @@ const _key = blankKey();
  * overcast's column alone, it is exact at rest and on a front between the fog and the overcast
  * sky, not on one between the fog and a clear, fair or cloudy sky.
  * Writes into `out`. */
-export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly number[], wind: number, rain: number, dayFog: number, seaFog: number, fogWeather: number, target: HazeKey ): HazeKey {
+export function hazeKeyAt( windows: DayWindows, elevation: number, rising: boolean, skyMix: readonly number[], wind: number, rain: number, dayFog: number, seaFog: number, fogWeather: number, target: HazeKey ): HazeKey {
 
 	const out = _key;
-	keyAlong( rising ? RISING : SETTING, elevation, out );
+	keyAlong( windows, rising ? RISING : SETTING, elevation, out );
 	// a clouded evening's afterglow (see the header)
 	const clouded = cloudedShare( skyMix );
 	if ( ! rising && clouded > 0 ) {
 
-		keyAlong( SETTING_CLOUDED, elevation, _cloudedKey );
+		keyAlong( windows, SETTING_CLOUDED, elevation, _cloudedKey );
 		for ( const f of FIELDS ) out[ f ] += ( _cloudedKey[ f ] - out[ f ] ) * clouded;
 		for ( const f of SHAPE_FIELDS ) out[ f ] += ( _cloudedKey[ f ] - out[ f ] ) * clouded;
 		for ( const f of FOG_FIELDS ) out[ f ] += ( _cloudedKey[ f ] - out[ f ] ) * clouded;
@@ -127,7 +130,7 @@ export function hazeKeyAt( elevation: number, rising: boolean, skyMix: readonly 
 	out.sunRayleigh = 1 - ( 1 - out.sunRayleigh ) * ( 1 - sunRayleigh );
 	out.mist *= ( 1 - THREE.MathUtils.smoothstep( wind, 3.5, 5 ) ) * ( 1 - rain );
 	// (by night the whole clouded share, once the moon's key has come in: see the header)
-	out.deck = duskForce( 'deck', Math.max( deckLight( elevation, clouded, skyMix[ 3 ] ?? 0 ), clouded * moonKeyShare( elevation ) ) );
+	out.deck = duskForce( 'deck', Math.max( deckLight( elevation, clouded, skyMix[ 3 ] ?? 0 ), clouded * moonKeyShare( windows, elevation ) ) );
 	out.overcastDeck = ( skyMix[ 3 ] ?? 0 ) * overcastDeckLight( elevation );
 	// no beam under overcast's closed deck: its share of the sun's Rayleigh light goes, the parked
 	// fog's kept (exact at rest and on a front between the fog and the overcast sky: see the header)

@@ -22,6 +22,7 @@ import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
 import { MOTION_CLASS, meterOutput, motionNode } from '../post/Motion.ts';
 import type { Exposure } from '../look/ExposureLook.ts';
+import type { DayWindows } from '../look/DayLook.ts';
 import type { DayCycleSnapshot } from './DayCycle.ts';
 import type { WeatherState } from './Weather.ts';
 import { setKeyCloud } from '../lighting/KeyCloud.ts';
@@ -265,6 +266,8 @@ export class Sky {
 	solarIlluminance = new THREE.Color();
 	// the exposure the sky's grade and the display read (look/ExposureLook.ts), given to the constructor
 	readonly exposure: Exposure;
+	// the day's windows the sky's night shares read (look/DayLook.ts), given to the constructor
+	readonly dayWindows: DayWindows;
 	// (the grade's exposure starts at the exposure's by day: the constructor sets it)
 	readonly grade = { exposure: 0, daylight: 1, night: 0, exposureNight: 0 };
 	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
@@ -462,10 +465,12 @@ export class Sky {
 	seenDeck = uniform( 1 );
 	keyFloorUnderDeck = 0;
 
-	/** `exposure`: the exposure made from the look's tables (look/ExposureLook.ts `createExposure`). */
-	constructor( renderer: THREE.WebGPURenderer, { exposure, sunIlluminance = SUN_ILLUMINANCE, elevation = 32, azimuth = - 8 }: { exposure: Exposure; sunIlluminance?: number; elevation?: number; azimuth?: number } ) {
+	/** `exposure`: the exposure made from the look's tables (look/ExposureLook.ts `createExposure`);
+	 * `dayWindows`: the day's windows made from them (look/DayLook.ts `createDayWindows`). */
+	constructor( renderer: THREE.WebGPURenderer, { exposure, dayWindows, sunIlluminance = SUN_ILLUMINANCE, elevation = 32, azimuth = - 8 }: { exposure: Exposure; dayWindows: DayWindows; sunIlluminance?: number; elevation?: number; azimuth?: number } ) {
 
 		this.exposure = exposure;
+		this.dayWindows = dayWindows;
 		this.grade.exposure = exposure.day;
 		this.renderer = renderer;
 		this.sunIlluminance = sunIlluminance;

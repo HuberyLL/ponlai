@@ -5,8 +5,8 @@ import { cloudedShare } from '../sky/Weather.ts';
 import type { DayLook, ExposureKey, ExposureLook, SharingKey } from './Look.ts';
 
 // The exposure built from a look's tables (look/Look.ts `ExposureLook`, and the exposure by the
-// sun's elevation in `DayLook`): unlike the other systems, whose readers take the installed look
-// as they load, the exposure takes its tables as an argument where the renderer's sky stage
+// sun's elevation in `DayLook`): unlike the systems whose readers take the installed look as they
+// load, the exposure takes its tables as an argument where the renderer's sky stage
 // creates it (RenderStages.ts `createSky`), so two exposures made from two tables hold their own
 // numbers (tools/verify-look-params.mjs) and this module holds none at module level. What it
 // makes (`Exposure`): the exposure's keys by the sun's elevation, the rising sun, the clouded day
@@ -49,7 +49,7 @@ export interface Exposure {
 }
 
 /** The look's tables the exposure is made from: the exposure's, and the day's exposure by the
- * sun's elevation with the night's (the day's windows are read where the day is: look/DayLook.ts). */
+ * sun's elevation with the night's (the day's windows are made apart: look/DayLook.ts `createDayWindows`). */
 export interface ExposureTables {
 	exposure: ExposureLook;
 	day: Pick<DayLook, 'exposure' | 'nightMeterLift' | 'nightExposureGain' | 'nightSkyExposure'>;

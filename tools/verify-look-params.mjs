@@ -38,6 +38,7 @@ import assert from 'node:assert/strict';
 import { installIslandLook } from './island-look.mjs';
 import { createExposure } from '../packages/render/look/ExposureLook.ts';
 import { DayCycle } from '../packages/render/sky/DayCycle.ts';
+import { createDayWindows } from '../packages/render/look/DayLook.ts';
 import { ISLAND_LOOK } from '../packages/island/look/IslandLook.ts';
 import { NEUTRAL_LOOK } from '../packages/render/look/NeutralLook.ts';
 
@@ -164,9 +165,10 @@ for ( let i = 0; i < before.length; i ++ ) {
 }
 
 // the day cycle reads the exposure it is given
+const islandWindows = createDayWindows( ISLAND_LOOK.day );
 for ( const hour of [ 3, 7, 12, 18.5 ] ) {
 
-	const a = new DayCycle( island, { hour, paused: true } ).snapshot(), b = new DayCycle( shifted, { hour, paused: true } ).snapshot();
+	const a = new DayCycle( island, islandWindows, { hour, paused: true } ).snapshot(), b = new DayCycle( shifted, islandWindows, { hour, paused: true } ).snapshot();
 	assert.equal( a.exposure, island.at( a.elevation ), `day cycle at ${ hour }: island` );
 	assert.equal( b.exposure, shifted.at( b.elevation ), `day cycle at ${ hour }: changed` );
 	assert.equal( b.exposure, 2 * a.exposure, `day cycle at ${ hour }: changed over island` );

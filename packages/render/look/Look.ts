@@ -6,8 +6,8 @@ import { NEUTRAL_LOOK } from './NeutralLook.ts';
 
 // The look the renderer draws with: the numbers chosen for a picture, one set per system, handed
 // in by whoever owns the picture. The renderer holds the types (here), the code that reads the
-// numbers and registers their tunables (the reader modules beside this one: DayLook.ts,
-// AmbientLook.ts, ExposureLook.ts, DisplayLook.ts, HazeLook.ts, SkyLook.ts) and a
+// numbers and registers their tunables (the reader modules beside this one: AmbientLook.ts,
+// ExposureLook.ts, DisplayLook.ts, HazeLook.ts, SkyLook.ts) and a
 // neutral set (NeutralLook.ts), which it draws with when nobody installed one. The island's
 // numbers are the island's (packages/island/look/), installed by the page's entry (PageSettings.ts)
 // after the settings and before any reader loads.
@@ -25,8 +25,8 @@ import { NEUTRAL_LOOK } from './NeutralLook.ts';
 //
 // Some systems take their tables as an argument where they are created instead, not as a module
 // loads, so two made from two sets in one process hold their own numbers
-// (tools/verify-look-params.mjs): the exposure, where the renderer's sky stage creates it
-// (ExposureLook.ts `createExposure`); the ambient occlusion's floor and the meadow canopy's media,
+// (tools/verify-look-params.mjs): the exposure and the day's windows, where the renderer's sky
+// stage creates them (ExposureLook.ts `createExposure`, DayLook.ts `createDayWindows`); the ambient occlusion's floor and the meadow canopy's media,
 // which every material's shader reads, in the shared uniforms (shared.ts `createShared`); the
 // local lights' gain (lighting/LocalLights.ts `createLocalLights`, from the stage `createLight`);
 // the sea's detail and distant swell (ocean/SeaDetail.ts, ocean/OceanFFT.ts, from the stage
@@ -52,7 +52,8 @@ export interface SeaLook {
 	swell: Readonly<SwellParams>;
 }
 
-// ---- the day (DayLook.ts)
+// ---- the day (DayLook.ts `createDayWindows` and ExposureLook.ts `createExposure`, from the stage
+// `createSky`)
 
 /** A dusk share's windows: the clear evening's, the clear morning's and the clouded sky's. */
 export interface DuskWindow { evening: Span; morning: Span; clouded: Span }
@@ -61,7 +62,7 @@ export interface DayLook {
 	handoffTop: number;
 	/** The elevation at which the moon's key starts to rise, in full two degrees lower. */
 	moonKeyTop: number;
-	/** Where each of the dusk's shares comes in (the reader's DUSK_WINDOWS says which is which). */
+	/** Where each of the dusk's shares comes in (DayLook.ts `DayWindows.dusk` says which is which). */
 	duskWindows: {
 		display: Pick<DuskWindow, 'evening' | 'morning'>;
 		exposure: DuskWindow;
