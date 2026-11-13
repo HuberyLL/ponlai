@@ -2,10 +2,10 @@
  * Adapted from VolumetricCloudsCS1 by Anthony Ibrahim
  * (https://github.com/anthonytoumaibrahim/VolumetricCloudsCS1): VolumetricClouds/Sky/RainbowTable.cs.
  * Copyright (c) 2026 Anthony Ibrahim
- * Licensed under the MIT License; see ../src/sky/VolumetricCloudsCS1.LICENSE.txt.
+ * Licensed under the MIT License; see ../packages/render/sky/VolumetricCloudsCS1.LICENSE.txt.
  */
 
-// Bakes the rainbow's colours into src/sky/RainbowTable.data.ts: how much of the sun falling rain
+// Bakes the rainbow's colours into packages/render/sky/RainbowTable.data.ts: how much of the sun falling rain
 // sends back at each angle from the antisolar point, per linear sRGB channel, as a phase function
 // relative to isotropic scattering (so 1 means "as bright as an isotropic scatterer").
 //
@@ -294,6 +294,6 @@ export const RAINBOW_TABLE: readonly number[] = [
 ${ rows.join( '\n' ) }
 ];
 `;
-const out = fileURLToPath( new URL( '../src/sky/RainbowTable.data.ts', import.meta.url ) );
+const out = fileURLToPath( new URL( '../packages/render/sky/RainbowTable.data.ts', import.meta.url ) );
 writeFileSync( out, source );
-console.log( `wrote ${ out.replace( /.*\/src\//, 'src/' ) } (${ source.length } bytes)` );
+console.log( `wrote ${ out.replace( /.*\/packages\//, 'packages/' ) } (${ source.length } bytes)` );

@@ -1,4 +1,4 @@
-// GPU probe of the frame graph's compile path (src/post/graph/Compile.ts, ThreePatches.ts) and its
+// GPU probe of the frame graph's compile path (packages/render/post/graph/Compile.ts, packages/render/three/ThreePatches.ts) and its
 // warm-up. Needs the dev server (it imports src modules into the page):
 //   node tools/verify-frame-graph-gpu.mjs http://127.0.0.1:5190
 //
@@ -71,7 +71,7 @@ try {
 	const pageErrors = [];
 	page.on( 'pageerror', ( e ) => pageErrors.push( e.message ) );
 	// a bare page of the dev server's origin (a module's source), so src modules import
-	await page.goto( `${ base }/src/post/graph/ThreePatches.ts` );
+	await page.goto( `${ base }/packages/render/three/ThreePatches.ts` );
 	report.mrt = await page.evaluate( probeMrt );
 	for ( const c of report.mrt.cases ) check( c.pass === c.expected, `${ c.name }: ${ c.detail }${ c.expected ? '' : ' (a control: expected to fail)' }` );
 
@@ -149,12 +149,12 @@ assert.equal( failed, false, 'frame graph GPU probe failed' );
 async function probeMrt() {
 
 	// three as the dev server serves it to src modules (the same module instances)
-	const source = await ( await fetch( '/src/post/graph/FrameGraph.ts' ) ).text();
+	const source = await ( await fetch( '/packages/render/post/graph/FrameGraph.ts' ) ).text();
 	const url = ( name ) => source.match( new RegExp( `from\\s*["'](/[^"']*${ name }[^"']*)["']` ) )?.[ 1 ];
 	const THREE = await import( url( 'three_webgpu' ) );
 	const TSL = await import( url( 'three_tsl' ) );
-	const { installCacheKeyPatches } = await import( '/src/post/graph/ThreePatches.ts' );
-	const { compileInto } = await import( '/src/post/graph/Compile.ts' );
+	const { installCacheKeyPatches } = await import( '/packages/render/three/ThreePatches.ts' );
+	const { compileInto } = await import( '/packages/render/post/graph/Compile.ts' );
 
 	const SIZE = 4;
 	const COLOR = [ 0.25, 0.5, 0.75, 1 ], VELOCITY = [ 0.125, 0.25, 0.375, 0.5 ], CLEAR = [ 4, 4, 4, 4 ];
@@ -347,11 +347,11 @@ async function probeMrt() {
 
 async function probeTemporal() {
 
-	const source = await ( await fetch( '/src/post/graph/FrameGraph.ts' ) ).text();
+	const source = await ( await fetch( '/packages/render/post/graph/FrameGraph.ts' ) ).text();
 	const url = ( name ) => source.match( new RegExp( `from\\s*["'](/[^"']*${ name }[^"']*)["']` ) )?.[ 1 ];
 	const THREE = await import( url( 'three_webgpu' ) );
 	const TSL = await import( url( 'three_tsl' ) );
-	const { installCacheKeyPatches } = await import( '/src/post/graph/ThreePatches.ts' );
+	const { installCacheKeyPatches } = await import( '/packages/render/three/ThreePatches.ts' );
 
 	const SIZE = 4;
 	const CLEAR = [ 0.125, 0.25, 0.375, 1 ];
@@ -384,7 +384,7 @@ async function probeTemporal() {
 	// velocity (no blend mode) and clears it to ( 0, 0, 1, 0 ); the overlay MRT draws the colour with
 	// the material's blending and keeps the velocity's rgb (Zero / One), its alpha the larger (One /
 	// One, Max). Each material below gives its velocity through its own MRT node or outputStruct.
-	const { sceneMRT, overlayMRT } = await import( '/src/post/Motion.ts' );
+	const { sceneMRT, overlayMRT } = await import( '/packages/render/post/Motion.ts' );
 
 	// a material writing a colour and (through its mrtNode) a velocity; `blending` makes it transparent
 	const meshMaterial = ( colour, velocity, blending = null ) => {
@@ -508,13 +508,13 @@ async function probeTemporal() {
 // shader as many outputs as its target has attachments, and the vegetation's velocity its class.
 async function probeReal() {
 
-	const source = await ( await fetch( '/src/post/graph/FrameGraph.ts' ) ).text();
+	const source = await ( await fetch( '/packages/render/post/graph/FrameGraph.ts' ) ).text();
 	const url = ( name ) => source.match( new RegExp( `from\\s*["'](/[^"']*${ name }[^"']*)["']` ) )?.[ 1 ];
 	const THREE = await import( url( 'three_webgpu' ) );
-	const { installCacheKeyPatches } = await import( '/src/post/graph/ThreePatches.ts' );
-	const { compileInto } = await import( '/src/post/graph/Compile.ts' );
-	const { sceneMRT, MOTION_CLASS } = await import( '/src/post/Motion.ts' );
-	const { afterMRT, RAIN_OVERLAY } = await import( '/src/post/AfterResolve.ts' );
+	const { installCacheKeyPatches } = await import( '/packages/render/three/ThreePatches.ts' );
+	const { compileInto } = await import( '/packages/render/post/graph/Compile.ts' );
+	const { sceneMRT, MOTION_CLASS } = await import( '/packages/render/post/Motion.ts' );
+	const { afterMRT, RAIN_OVERLAY } = await import( '/packages/render/post/AfterResolve.ts' );
 	const s = window.__PONLAI__;
 	const SIZE = 64;
 	const cases = [];

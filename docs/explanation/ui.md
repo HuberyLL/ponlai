@@ -1,6 +1,6 @@
 # Ponlai: game UI (蜃光, "mirage light")
 
-The interface of `?game`: what the player sees over the scene, built in `src/game/ui/`
+The interface of `?game`: what the player sees over the scene, built in `packages/game/ui/`
 (`GameUi.ts` and its parts; As built, at the end, says where it departs from or adds to this
 file). The designs live on the project's design canvas as boards (named below:
 **Style**, **Type**, **SpeakFlow**, **BuildNotes**, **WeatherAnim**); this file is the spec the
@@ -15,7 +15,7 @@ marked *changed*).
   Ship each list with a few placeholder rows that exercise every state (buildable, not buildable,
   short of a material, no icon yet).
 - **Out of scope for now**: a settings menu (frame rate, anti-aliasing and the rest wait); the
-  placement of a building in the world (it belongs to the 3D scene: `src/game/Placement.ts`);
+  placement of a building in the world (it belongs to the 3D scene: `packages/game/Placement.ts`);
   telling time in 时辰 (the clock reads `08:00` until decided); the English version (its catalogue
   is a snapshot, not maintained until then: As built, Languages).
 - **Weather**: only the kept weathers are shown (*changed*): 晴 (clear and fair), with a night
@@ -112,7 +112,7 @@ the sun sinks and the moon rises). Beside it, one brush stroke for the next 24 g
 hour, thick by day and thin by night, a tick at midnight, flowing left as time passes; a small icon
 stands at each turn of the weather (at the middle of the front), and of two turns closer than
 20 px the worse one stays. The forecast is the engine's own auto chain read ahead
-(`src/sky/Weather.ts`: seeded, so the future is known); it counts in game hours.
+(`packages/render/sky/Weather.ts`: seeded, so the future is known); it counts in game hours.
 
 **Resources**: always in view, one icon and one tabular number per kind, grouped (materials, food,
 water) with space between groups. They count what the chests and stores hold, not the bags. When
@@ -225,10 +225,10 @@ Each component's motion is given with it above (Top row, Speaking, Build bar, th
 - It never touches the canvas's pixels, so paused frames stay exact; DOM is written only where its
   text changed. What stands in the world (Screen and world) is DOM too, laid into the scene through
   the camera, never drawn in it. Anything drawn in the 3D scene itself (the placement ring) that
-  changes on a paused page raises a scene event (`src/post/SceneEvents.ts`).
+  changes on a paused page raises a scene event (`packages/render/post/SceneEvents.ts`).
 - Lists render from data; adding a building, a resource, a weather kind or a record event never
   touches the components.
-- Every word the player reads is a key of the catalogue (`src/game/ui/i18n/`), never a string in
+- Every word the player reads is a key of the catalogue (`packages/game/ui/i18n/`), never a string in
   code; a list's row names its words by its id. Content without words or a look of its own shows
   with the defaults ([ARCHITECTURE.md](../../ARCHITECTURE.md), Rules across the layers, rule 9).
 - Keyboard focus and `aria-label` on every control; text fits its longest likely value at
@@ -236,7 +236,7 @@ Each component's motion is given with it above (Top row, Speaking, Build bar, th
 
 ## As built
 
-`src/game/ui/` follows this file; where it had to decide something this file leaves open, or departs
+`packages/game/ui/` follows this file; where it had to decide something this file leaves open, or departs
 from a board, it is said here.
 
 - **Scale**: the parts are laid out on the boards' 1600 x 900 and scaled to the window by the
@@ -250,7 +250,7 @@ from a board, it is said here.
 - **Islanders**: their names are Chinese (`sim/Sim.ts`). What stands in the world is DOM over the
   canvas, placed through the camera each frame (the placement's ring stays in the scene): the
   ring at the feet is drawn on screen from its points on the land, and the characters (thinking,
-  speaking, in flight) are elements laid into the scene in perspective (`src/game/ui/Space.ts`),
+  speaking, in flight) are elements laid into the scene in perspective (`packages/game/ui/Space.ts`),
   drawn at the screen's resolution in the palette's colours. Nothing in the scene hides them: the
   ring passes over the figure's legs, as the placement ring passes over the meadow, and words pass
   in front of trees. The ring stays a drawing on screen because, laid into the scene as an image
@@ -266,14 +266,14 @@ from a board, it is said here.
   the placement in the scene; the detail then says how (点岛上放下) or why the spot is refused. A
   row not yet buildable still shows its detail on hover (还不能建). The recent group lists what
   the island has had placed, the latest first.
-- **Record**: the game keeps it (`src/game/Chronicle.ts`) and it is part of the save
-  (`src/game/save.ts`): a resumed game's record goes on from where it was saved. Its
+- **Record**: the game keeps it (`packages/game/Chronicle.ts`) and it is part of the save
+  (`packages/game/save.ts`): a resumed game's record goes on from where it was saved. Its
   river runs to today, or to the last day it names (the debug panel's placeholder days, which are
   entries like any other and so are saved too).
 - **Saving**: there is no save or load control for the player yet (no menu: Scope now). The page
   saves the game itself, every minute while it runs and when it is hidden or left, and resumes it
-  when it loads (`src/game/save.ts`).
-- **Languages**: the words are i18next catalogues in `src/game/ui/i18n/` (its header has the
+  when it loads (`packages/game/save.ts`).
+- **Languages**: the words are i18next catalogues in `packages/game/ui/i18n/` (its header has the
   rules): `zh-CN.json` is the source and the default, `en.json` a snapshot of it that is not kept up
   while the game is in development, so a key it lacks shows the Chinese. `?lang=en` (or the debug
   panel's Interface › language) loads the page in English; the language is read once at load. The
@@ -284,7 +284,7 @@ from a board, it is said here.
 - **Focus**: the keyboard's focus is shown as the pointer's hover is (精白, the stroke beneath),
   never a frame. The record takes the focus itself on opening (not its ×, which Space would press)
   and gives it back on closing; while it is open no key but its own reaches the page.
-- **Ink**: the long strokes are inked (`src/game/ui/Ink.ts`, drawn by `InkPath.ts`): the record's
+- **Ink**: the long strokes are inked (`packages/game/ui/Ink.ts`, drawn by `InkPath.ts`): the record's
   river, rule, day line and list wash, the build bar's two strokes, the speak bar's, the need bars,
   the forecast's stroke, the ring at the feet, its 金 stroke and the leader, the top row's
   dividers. Each keeps its outline and loses ink only: its tail runs dry from halfway (飞白, streaks

@@ -19,7 +19,7 @@
 // may set its own time or tier; the page reads the first of a repeated option, so the view's query
 // goes after the set's with the keys it sets taken out. views.mjs views keep the set's query first,
 // unchanged. Views whose load-time options differ (anything outside the page's scene options, read
-// from src/main.ts SCENE_OPTIONS: the tier, aa, debug switches, `game`, `seed` ...) cannot share a
+// from app/Scene.ts SCENE_OPTIONS: the tier, aa, debug switches, `game`, `seed` ...) cannot share a
 // page (establishScene refuses them), so capture-set captures them in groups, one group of pages
 // per set of load-time options, in the order the views were given.
 //
@@ -40,11 +40,11 @@ import { VIEWS, viewNames, viewEval, expandViews } from './views.mjs';
 const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '../..' );
 const NAME = /^[A-Za-z0-9_-]+$/;
 
-// the page's scene options: what a scene jump may change (src/main.ts)
+// the page's scene options: what a scene jump may change (app/Scene.ts)
 const SCENE_OPTIONS = ( () => {
 
-	const m = readFileSync( path.join( REPO, 'src/main.ts' ), 'utf8' ).match( /const SCENE_OPTIONS = \[([^\]]*)\]/ );
-	if ( ! m ) throw new Error( 'adhoc.mjs: SCENE_OPTIONS not found in src/main.ts' );
+	const m = readFileSync( path.join( REPO, 'app/Scene.ts' ), 'utf8' ).match( /const SCENE_OPTIONS = \[([^\]]*)\]/ );
+	if ( ! m ) throw new Error( 'adhoc.mjs: SCENE_OPTIONS not found in app/Scene.ts' );
 	return new Set( [ ...m[ 1 ].matchAll( /'([^']+)'/g ) ].map( ( x ) => x[ 1 ] ) );
 
 } )();

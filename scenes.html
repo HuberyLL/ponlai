@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+	<title>Ponlai test scenes</title>
+	<link rel="icon" href="data:," />
+	<style>
+		:root { color-scheme: dark; }
+		html, body { margin: 0; height: 100%; background: #0b1a1f; overflow: hidden; }
+		#app, #app canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+		#loading {
+			position: fixed; inset: 0; display: grid; place-items: center;
+			background: radial-gradient( ellipse at center, #17343b 0%, #0b1a1f 70% );
+			color: #cfe3e6; font: 500 14px/1.4 ui-sans-serif, system-ui, -apple-system, "PingFang SC", sans-serif;
+			letter-spacing: 0.04em; transition: opacity 0.8s ease 0.2s; z-index: 10;
+		}
+		#loading.done { opacity: 0; pointer-events: none; }
+	</style>
+</head>
+<body>
+	<div id="app"></div>
+	<div id="loading"><span>Loading…</span></div>
+	<script type="module" src="/app/ScenesBoot.ts"></script>
+</body>
+</html>

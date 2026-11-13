@@ -1,9 +1,11 @@
 // CPU-only transition contracts; Node's native TypeScript stripping needs no browser/GPU.
 // Run: node --experimental-strip-types tools/verify-weather-state.mjs
 import assert from 'node:assert/strict';
-import { Weather, WEATHER_PRESETS, WIND_LEVELS, PREVAILING_HEADING, PARKED_WEATHER, daySkyAt, deckRamp, deckSkyGain, deckSkyGap, overcastDeckLight, withMoon } from '../src/sky/Weather.ts';
-import { moonKeyShare } from '../src/sky/DayCycle.ts';
-import { QUALITY } from '../src/Quality.ts';
+import { Weather, WEATHER_PRESETS, WIND_LEVELS, PREVAILING_HEADING, PARKED_WEATHER, daySkyAt, deckRamp, deckSkyGain, deckSkyGap, overcastDeckLight, withMoon } from '../packages/render/sky/Weather.ts';
+import { moonKeyShare } from '../packages/render/sky/DayCycle.ts';
+import { createDayWindows } from '../packages/render/look/DayLook.ts';
+import { ISLAND_LOOK } from '../packages/island/look/IslandLook.ts';
+import { QUALITY } from '../packages/render/Quality.ts';
 
 const close = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
 const keys = Object.keys( WEATHER_PRESETS.clear );
@@ -262,7 +264,8 @@ const random = () => {
 // moonlit sky and the clouds' moonlight, sky/Sky.ts): with the moon's share whole, as it is all
 // night, a gain is exactly its day value at the moon's height, and with none, as by day, exactly
 // the sun's alone.
-for ( let elevation = - 4.5; elevation >= - 90; elevation -= 0.5 ) assert.equal( moonKeyShare( elevation ), 1, `the moon's key share at ${ elevation }` );
+const dayWindows = createDayWindows( ISLAND_LOOK.day );
+for ( let elevation = - 4.5; elevation >= - 90; elevation -= 0.5 ) assert.equal( moonKeyShare( dayWindows, elevation ), 1, `the moon's key share at ${ elevation }` );
 for ( const [ clouded, overcast ] of [ [ 0, 0 ], [ 1, 0 ], [ 1, 1 ], [ 0.7, 0.3 ] ] ) {
 	const gains = [ ( e ) => deckSkyGain( e, clouded, overcast ), ( e ) => deckSkyGap( e, clouded, overcast ), deckRamp, overcastDeckLight, ( e ) => daySkyAt( 0.173 + 0.827 * ( 1 - overcast ), 0.6 * overcast, e ) ];
 	for ( const gain of gains ) for ( const moon of [ 15, 20, 31.5, 60 ] ) {

@@ -1,5 +1,5 @@
 // tools/wgsl-build.mjs's entry for the lit materials that read the ambient volume
-// (src/lighting/AmbientSample.ts): a game prop (degree 2) twice, as two materials of one model, to
+// (packages/render/lighting/AmbientSample.ts): a game prop (degree 2) twice, as two materials of one model, to
 // check that the second's code names its own bindings; the islanders' lit figure and their
 // vertex-colour figure (characters/); the bamboo's culms and leaves (degree 1, as the page draws
 // them: wgsl-build/plants.mjs); a surface with the
@@ -15,15 +15,18 @@
 
 import * as THREE from 'three/webgpu';
 import { float, uniform, vec3 } from 'three/tsl';
-import { AmbientVolume } from '../../src/lighting/AmbientVolume.ts';
-import { PROBE_STRIDE } from '../../src/world/AmbientProbes.ts';
-import { GroundBounceLightingModel } from '../../src/lighting/GroundBounce.ts';
-import { propMaterial } from '../../src/game/view/Props.ts';
-import { makeLitFigureMaterial } from '../../src/characters/FigureSurfaces.ts';
-import { makeVertexColourCharacterMaterial } from '../../src/characters/CharacterMaterial.ts';
+import { AmbientVolume } from '../../packages/render/lighting/AmbientVolume.ts';
+import { PROBE_STRIDE } from '../../packages/render/lighting/ProbeFormat.ts';
+import { GroundBounceLightingModel } from '../../packages/render/lighting/GroundBounce.ts';
+import { propMaterial } from '../../packages/game/view/Props.ts';
+import { makeLitFigureMaterial } from '../../packages/island/characters/FigureSurfaces.ts';
+import { makeVertexColourCharacterMaterial } from '../../packages/island/characters/CharacterMaterial.ts';
 import { plantDraws, standInBamboo } from './plants.mjs';
-import { vegetationMaterial } from '../../src/world/vegetation/Material.ts';
-import { shared } from '../../src/shared.ts';
+import { vegetationMaterial } from '../../packages/render/vegetation/Material.ts';
+import { shared } from '../../packages/render/shared.ts';
+import { createDayWindows } from '../../packages/render/look/DayLook.ts';
+import { createAmbientTables } from '../../packages/render/look/AmbientLook.ts';
+import { ISLAND_LOOK } from '../../packages/island/look/IslandLook.ts';
 
 export default async function ( { renderer } ) {
 
@@ -31,14 +34,14 @@ export default async function ( { renderer } ) {
 	const lattice = { x0: 0, y0: - 2, z0: 0, spacing: 2, nx, ny, nz, probes: new Float32Array( ( nx * ny * nz + ny ) * PROBE_STRIDE ) };
 	const volume = new AmbientVolume( renderer, lattice );
 	// (absent before the volume's materials: the entry then builds the same materials without it)
-	const sample = await import( '../../src/lighting/AmbientSample.ts' ).catch( () => null );
+	const sample = await import( '../../packages/render/lighting/AmbientSample.ts' ).catch( () => null );
 	sample?.installAmbientVolume( volume );
 	if ( sample?.installEnvironmentHarmonics ) {
 
-		const { AmbientRelight, AmbientSky } = await import( '../../src/lighting/AmbientRelight.ts' );
+		const { AmbientRelight, AmbientSky } = await import( '../../packages/render/lighting/AmbientRelight.ts' );
 		const sky = new AmbientSky( renderer );
 		sample.installEnvironmentHarmonics( new AmbientRelight( {
-			renderer, volume, shared, sky, weights: () => ( { a: 0, b: 1, blend: 0 } ), cloud: () => float( 1 ), seaCloud: () => float( 1 ), keyHeight: () => 1,
+			renderer, volume, shared, sky, weights: () => ( { a: 0, b: 1, blend: 0 } ), cloud: () => float( 1 ), seaCloud: () => float( 1 ), keyHeight: () => 1, dayWindows: createDayWindows( ISLAND_LOOK.day ), grade: createAmbientTables( ISLAND_LOOK.ambient ),
 		} ) );
 
 	}

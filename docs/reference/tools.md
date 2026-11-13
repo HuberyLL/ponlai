@@ -39,18 +39,18 @@ details. Each tool's own file says the rest.
   bypassed and nothing taken from the wall clock (`loop.start()` resumes the live loop); the
   diagnostics add the scene's anti-aliasing (`aa`, and `aaSource`: `url` or `tier`, where it came
   from), the pipelines created so far (`pipelines`, counted by
-  `src/debug/PipelineCounter.ts`) and `graph` (the frame graph's dev counters: the attachment
-  ops it rewrote and expected in the last frame, the frames they differed, targets found at a
-  size other than their class's). `__PONLAI__.establishScene( query )` jumps to a whole scene in
-  place, as a fresh load of `?<query>` would draw it (weather, day clock, moon, scene clock, camera;
-  the leftovers of the scenes before cleared; load-time options must match the page's): one page can
-  capture a whole set (contract in `src/main.ts`, check in `tools/verify-scene-jump.mjs`;
+  `packages/render/debug/PipelineCounter.ts`) and `graph` (the frame graph's dev counters: the
+  attachment ops it rewrote and expected in the last frame, the frames they differed, targets found
+  at a size other than their class's). `__PONLAI__.establishScene( query )` jumps to a whole scene
+  in place, as a fresh load of `?<query>` would draw it (weather, day clock, moon, scene clock,
+  camera; the leftovers of the scenes before cleared; load-time options must match the page's): one
+  page can capture a whole set (contract in `app/Scene.ts`, check in `tools/verify-scene-jump.mjs`;
   `__PONLAI__.sceneJump` = 1 marks the exact jump for the capture tools).
 - `__THREE_GAME_DIAGNOSTICS__.settled` (updated every frame, every anti-aliasing mode): true once
   the paused page will draw the same frame from now on, so a capture can wait for it instead of a
-  fixed time or frame count (`src/post/Settled.ts`). It reuses the temporal rest's key (camera,
-  scene clock, render and output sizes, epoch: `TemporalRest.ts`) and holds once that key, the
-  sun maps' redraw counts and a forced strike have stayed the same for the tier's `restSettle`
+  fixed time or frame count (`packages/render/post/Settled.ts`). It reuses the temporal rest's key
+  (camera, scene clock, render and output sizes, epoch: `TemporalRest.ts`) and holds once that key,
+  the sun maps' redraw counts and a forced strike have stayed the same for the tier's `restSettle`
   frames (8) while no sky bake or transition is in flight, nothing is pending (a periodic bake
   due, the refracted sun's map behind its light, a queued sun shadow redraw, an async pipeline
   compile) and the loading screen has faded out; under taa / taau / gt / fsr3 the temporal rest must
@@ -64,21 +64,21 @@ details. Each tool's own file says the rest.
 - The island camera starts at the island view's pose: the land's centre in the middle of the
   frame, as far out as frames the land alone from that heading with a margin of sea (about 96 m on
   the starting island), looking 50 degrees down (`polar` 40) from the `az` heading (a land framed
-  nearer with its ring of shallows keeps that framing: `src/camera/IslandFraming.ts`).
+  nearer with its ring of shallows keeps that framing: `packages/island/camera/IslandFraming.ts`).
   While the camera still holds that pose it follows it when the window's shape changes, and glides
   to it (about 1.6 s, on the scene clock) when the land grows; a paused page takes it at once. The
-  hand moves it (`src/camera/IslandCameraControls.ts`): a left drag grabs the ground, a right or
-  middle drag (or Option / Ctrl with the left) turns and tilts, the wheel zooms toward the pointer
-  out from the island view's own distance to 70 m (or that distance, if farther), never in past it
-  (main.ts `islandNearest`; the review views keep 22 m); on a trackpad a two-finger swipe pans, a
-  pinch zooms and Option with a swipe turns and tilts; W A S D or the arrows pan, Q / E turn, T / G
-  tilt (straight down to 8 degrees over the horizon), + / - zoom, Shift speeds them up. The pivot
-  stays over the land and its ring of shallows (its convex hull grown by 14 m); pulled past that, it
-  goes on against a growing resistance (at most 10 m farther) and springs back once let go. R
-  returns to the island view's pose. `cameraInput=off` (or the GUI's Camera ›
-  move by hand) holds the view at its pose: Q / E or a right or middle drag then turn it about the
-  land's centre, and the wheel does not zoom.
-- The GUI's Performance folder (`src/debug/FrameStats.ts`, from the rendered frames' rAF
+  hand moves it (`packages/island/camera/IslandCameraControls.ts`): a left drag grabs the ground, a
+  right or middle drag (or Option / Ctrl with the left) turns and tilts, the wheel zooms toward the
+  pointer out from the island view's own distance to 70 m (or that distance, if farther), never in
+  past it (IslandStages.ts `islandNearest`; the review views keep 22 m); on a trackpad a two-finger
+  swipe pans, a pinch zooms and Option with a swipe turns and tilts; W A S D or the arrows pan, Q /
+  E turn, T / G tilt (straight down to 8 degrees over the horizon), + / - zoom, Shift speeds them
+  up. The pivot stays over the land and its ring of shallows (its convex hull grown by 14 m); pulled
+  past that, it goes on against a growing resistance (at most 10 m farther) and springs back once
+  let go. R returns to the island view's pose. `cameraInput=off` (or the GUI's Camera › move by
+  hand) holds the view at its pose: Q / E or a right or middle drag then turn it about the land's
+  centre, and the wheel does not zoom.
+- The GUI's Performance folder (`packages/render/debug/FrameStats.ts`, from the rendered frames' rAF
   timestamps) shows the frame rate over the last second, the interval's p95 and maximum over the
   last 5 s, the frames late by a refresh against the paced interval and the intervals over 25 ms
   since the scene showed (or the reset button), the render scale and the GPU's median frame time
@@ -138,7 +138,7 @@ Rules:
 
 ## Test mode
 
-The rule (AGENTS.md, Rules for every change): simulation and generation are deterministic and
+The rule (`ARCHITECTURE.md`, rule 4): simulation and generation are deterministic and
 path-independent; rendering may keep history-dependent effects that a scene jump clears, that
 converge on a still scene (or are frozen or turned off in the test mode) and that are compared
 within a tolerance; the test mode keeps the byte-for-byte checks valid.
@@ -151,32 +151,34 @@ within a tolerance; the test mode keeps the byte-for-byte checks valid.
   `TemporalRest.ts`, and compared within the temporal tolerance), the states that settle on their
   own on a still scene (the clouds' view, the sky's bakes, the refracted sun's map, the haze's
   shadow, which averages a fixed sequence of jitters from nothing on a still scene and holds it:
-  `src/weather/VolumetricHaze.ts`), which `settled` waits for, the exposure's adaptation
-  (`src/post/Exposure.ts`), which takes its target at once while the scene clock does not step, so
-  the pause itself freezes it, and keeps `settled` false until it has reached its target, the
-  pre-exposure (`src/post/PreExposure.ts`), a whole-stop scale of the stored radiance taken from the
-  exposure read back, which a scene jump resets, which reaches the same value on a still scene
-  whatever came before and keeps `settled` false until the P a frame used is the one its own
-  exposure asks for, read from a frame drawn the settle frames into a quiet run of the view (so
-  under MSAA, the test mode's, P does not change under a settled page; under the temporal modes an
-  EV at a hair from a half stop can still move it, and `settled` then turns false), and the wenyao's
-  schools (`src/life/Wenyao.ts`), which step only with the scene clock's step from a layout the land
-  gives: a page loaded paused never steps them, `establishScene` returns them to that layout and a
-  Grow does too while they have not stepped, so the pause itself freezes them and they need no
-  switch. The falling leaves (`src/weather/FallingLeaves.ts`) are history-dependent and off under
-  the test mode's switch (next): not made, so `settled` never waits for them.
-- The test mode's one switch (`src/debug/TestMode.ts`), read once at load, is on with `paused`,
-  which every capture, parity and verify tool loads with, unless `testMode=0` leaves it out, as
-  `tools/capture-clip.mjs` does so the clips show what moves. Every history-dependent rendering
-  effect that does not settle on its own on a still scene reads it, and is frozen or off under it.
+  `packages/render/weather/VolumetricHaze.ts`), which `settled` waits for, the exposure's adaptation
+  (`packages/render/post/Exposure.ts`), which takes its target at once while the scene clock does
+  not step, so the pause itself freezes it, and keeps `settled` false until it has reached its
+  target, the pre-exposure (`packages/render/post/PreExposure.ts`), a whole-stop scale of the stored
+  radiance taken from the exposure read back, which a scene jump resets, which reaches the same
+  value on a still scene whatever came before and keeps `settled` false until the P a frame used is
+  the one its own exposure asks for, read from a frame drawn the settle frames into a quiet run of
+  the view (so under MSAA, the test mode's, P does not change under a settled page; under the
+  temporal modes an EV at a hair from a half stop can still move it, and `settled` then turns
+  false), and the wenyao's schools (`packages/island/life/Wenyao.ts`), which step only with the
+  scene clock's step from a layout the land gives: a page loaded paused never steps them,
+  `establishScene` returns them to that layout and a Grow does too while they have not stepped, so
+  the pause itself freezes them and they need no switch. The falling leaves
+  (`packages/island/world/FallingLeaves.ts`) are history-dependent and off under the test mode's
+  switch (next): not made, so `settled` never waits for them.
+- The test mode's one switch (`packages/render/debug/TestMode.ts`), read once at load, is on with
+  `paused`, which every capture, parity and verify tool loads with, unless `testMode=0` leaves it
+  out, as `tools/capture-clip.mjs` does so the clips show what moves. Every history-dependent
+  rendering effect that does not settle on its own on a still scene reads it, and is frozen or off
+  under it.
 - The test mode's paused pages keep at most two rendered frames queued on the GPU
-  (`src/post/FramePacer.ts`, "A paused page's queue"): the tools' headless browser has no vsync and
-  no frame-rate limit, so without the bound two pages sharing the GPU each queued hundreds of frames
-  of work, and every read-back (the pre-exposure's, a probe's radiance) and screenshot waited behind
-  it. The bound changes how many frames a second a paused page draws, never what it draws: the
-  parity views and the probe readings are the same bytes with and without it. A running page, and a
-  paused one with `testMode=0` (capture-clip's), is not bounded. A held frame is an animation frame
-  on which the page does not tick (`docs/how-to/write-a-tool.md`, on waiting for
+  (`packages/render/post/FramePacer.ts`, "A paused page's queue"): the tools' headless browser has
+  no vsync and no frame-rate limit, so without the bound two pages sharing the GPU each queued
+  hundreds of frames of work, and every read-back (the pre-exposure's, a probe's radiance) and
+  screenshot waited behind it. The bound changes how many frames a second a paused page draws, never
+  what it draws: the parity views and the probe readings are the same bytes with and without it. A
+  running page, and a paused one with `testMode=0` (capture-clip's), is not bounded. A held frame is
+  an animation frame on which the page does not tick (`docs/how-to/write-a-tool.md`, on waiting for
   rendered frames).
 - A new history-dependent effect follows `docs/how-to/check-a-change.md`, Add a
   history-dependent effect.
@@ -205,11 +207,11 @@ persistent profile slot, `artifacts/.capture-profiles/<browser build>/<n>` of th
 delete), so the world cache and the GPU shader cache hit from the second capture on. A capture
 takes the free slots its page (origin and build) used last first (`affinity.json` beside the
 slots), else the lowest free one. A paused
-capture waits for the page's `settled` signal (`src/post/Settled.ts`, with the loop running; past
-`--timeout` it goes on and prints `unsettled`) and is then shot once its image stops changing:
-grabbed every 2 frames, shot when a comparison found no pixel changed (after 40 frames, at most 5000
-changed pixels count as unchanged; after 120 the view is shot anyway, marked `capped`). A paused
-temporal page (taa, taau, gt) is not compared: it is shot once its rest has converged
+capture waits for the page's `settled` signal (`packages/render/post/Settled.ts`, with the loop
+running; past `--timeout` it goes on and prints `unsettled`) and is then shot once its image stops
+changing: grabbed every 2 frames, shot when a comparison found no pixel changed (after 40 frames, at
+most 5000 changed pixels count as unchanged; after 120 the view is shot anyway, marked `capped`). A
+paused temporal page (taa, taau, gt) is not compared: it is shot once its rest has converged
 (`TemporalRest.ts`) and `settled` holds, and the `--stable-*` options do not apply to it. Every
 capture waits for the loading screen's fade-out to finish (its computed opacity 0), not only for its
 `done` class: a shot during the fade has the screen blended over the whole frame.
@@ -271,10 +273,10 @@ and median, the hdr's mean) and adds the rows a ratio of the scene's light needs
 15 degrees up, turned from the key light), `sea away` (just under the horizon on that side), `<kind>
 flat` and `<kind> sun flat` (facing up, and lit), with the sky's irradiance `E` per view (the
 probe's, which takes the fog layer's haze as the dome does: on a clear or fair day not the land's
-sky light, whose source leaves the fog layer out, `src/sky/Sky.ts` `fogEnvironment`). `--sky-bands
-e0,e1,...` (frames shot with `--scene`) adds a row `sky <a>-<b>` per pair of edges: the sky cells
-turned from the key light whose centre's ray stands in [a, b) degrees up, read over at least 64
-cells (else null, `too few cells`; not with `--own`). It prints what
+sky light, whose source leaves the fog layer out, `packages/render/sky/Sky.ts` `fogEnvironment`).
+`--sky-bands e0,e1,...` (frames shot with `--scene`) adds a row `sky <a>-<b>` per pair of edges: the
+sky cells turned from the key light whose centre's ray stands in [a, b) degrees up, read over at
+least 64 cells (else null, `too few cells`; not with `--own`). It prints what
 the frames hold and judges nothing. Its header has the sort. `shoot --warm` lets the views of a page
 reach each other by the scene jump (a fraction of a page load, with the same frames and readings
 byte for byte, as checked on four views both ways): its read only reads, which
@@ -433,22 +435,58 @@ file, matched by gate id, entry, view, clip, crop and metric with globs, never c
 `--normal` counts the special weathers (views.mjs's `special` group) apart. The policy's format is
 in the tool's header.
 
+### Test scenes: `tools/scenes.mjs`
+
+`node tools/scenes.mjs <baseUrl> <outDir> [--scenes ball,sea] [--times a,b] [--views a,b]
+[--look neutral|ponlai] [--verify] [--write-ref | --check] [--ref <dir>] [--q "extra&query"]
+[--size 1920x1080@2] [--timeout 240000]` shoots, reads and checks the renderer's test scenes
+(`scenes.html`; `docs/reference/url-options.md`, The test scenes). A scene is a few objects on
+level ground under the sky or in the open sea, built from the renderer alone, so it loads in a
+second or two and a whole scene is shot in a minute or two.
+
+- For each scene it opens one page and reaches each of the scene's times by the scene jump and each
+  view by `scenePage.setView`. The scenes, their views, times and readings are the page's own; the
+  tool names none.
+- Without `--scenes` it shoots `ball`, `empty` and `plants`, the scenes whose shots repeat to the
+  pixel. `sea` is shot only when `--scenes` names it, and is read by its readings: its shots differ
+  between two loads by a level or so in scattered pixels over the water, so it has no reference
+  and `--verify` does not hold for it. Named, it takes every option as the others do.
+- A shot is a paused page in the test mode, taken once the page's `settled` signal holds and its
+  image has stopped changing. Images are compared by their decoded pixels, with no tolerance.
+- `--verify` takes every shot three ways, which must agree to the pixel: on one page in the listed
+  order, on a second page in the reverse order, and on a fresh page loaded at that time. A shot
+  repeats, and a jump to a time draws what a load of that time draws.
+- `--check` compares every shot with the reference image of its name; `--write-ref` writes the
+  run's shots as the reference (with `--verify`, only when it passed). The references are in
+  `artifacts/scenes/reference/<look>/` (git-ignored; `--ref` names another folder), with a
+  `reference.json` in each scene's folder: the commit served, the browser and the size. A run
+  writes the records of its own scenes only. A reference holds for the browser and the size it was
+  shot with.
+- `--look ponlai` loads the scenes under the island's look; each look has its own output folder
+  and reference.
+- Each shot's JSON holds its readings: per reading the box, the scene's linear radiance there
+  (`opaque` before the air, `hdr` after the composite) and `code`, the shot's mean pixel over the
+  box as a fraction of 255; with them the exposure, the key's direction, colour and elevation and
+  the sky's irradiance. `readings.json` and `readings.tsv` in the output folder gather the run's.
+- It takes the GPU lock shared, leased from shot to shot. Exit 0 passed, 1 a check failed (a
+  difference, a missing reference, a shot still changing, a page error), 2 bad usage.
+
 ### Parked weathers
 
-Cloudy, overcast, rain, storm and fog (`src/sky/Weather.ts` `PARKED_WEATHER`) are out of the
-default checks. Every default set is the normal weathers' (views.mjs's `parity`, `taa` and `all`,
-clips.mjs's `all`, baseline.mjs's plan without `--views` / `--clips`, verify-scene-jump's views,
-profile-frame's scene matrix and `--accept`, verify-first-use's steps); `special` or a name
+Cloudy, overcast, rain, storm and fog (`packages/render/sky/Weather.ts` `PARKED_WEATHER`) are out of
+the default checks. Every default set is the normal weathers' (views.mjs's `parity`, `taa` and
+`all`, clips.mjs's `all`, baseline.mjs's plan without `--views` / `--clips`, verify-scene-jump's
+views, profile-frame's scene matrix and `--accept`, verify-first-use's steps); `special` or a name
 reaches a parked view, clip or scene, and verify-first-use runs its `weather` and `bolt` steps only
 when `--steps` names them. `verify-weather-effects.mjs` and the rain parts of `verify-weather.mjs`
 are parked with them: not part of any default check.
 
 ### Parked quality tiers
 
-Medium and low (`src/Quality.ts` `PARKED_QUALITY`) are out of the default
+Medium and low (`packages/render/Quality.ts` `PARKED_QUALITY`) are out of the default
 choice and checks; high at 4K output (1920x1080 CSS pixels at DPR 2, profile-frame's default
 viewport) is the only active tier. A page without `quality` loads high (the GPU timing that picked
-a tier, `src/QualityDetect.ts`, is parked with them) and the GUI lists high alone. Every tool's
+a tier, `app/QualityDetect.ts`, is parked with them) and the GUI lists high alone. Every tool's
 default is high: profile-frame's `--quality` (and so its scene matrix and `--accept`),
 verify-first-use's `--quality`, baseline.mjs's `--tiers` (its plan keeps the lower tiers' views),
 carry.mjs's `--tiers`, capture-set, quick, capture-clip and verify-scene-jump's `--quality`, and
@@ -473,7 +511,8 @@ the scene jump. Evals see `P` (`__PONLAI__`), `D` (the diagnostics), `frames( n 
 `until( fn )` and `pipelines` (`mark()`, `since( mark )`: which pipelines an action built), with the
 same forms and scope as capture's `--eval` (`tools/page-eval.mjs`) (`D` is rebuilt every 30 frames:
 live counters such as `P.pipelines.total` come
-from `P`); `--init js` hooks the page before its scripts run. A production preview needs
+from `P`); `--init js` hooks the page before its scripts run. The url is the server's root or a
+page of it by its file (`<server>/scenes.html`, the test scenes). A production preview needs
 `debug` in the query. A long eval that waits on CPU work (worker generation, a grown page) stops
 the loop (`await P.loop.stop()`) and waits with `until` or `sleep`: while the loop stands the probe
 gives its shared slot up to a request ranked before it and takes it back before the helper resolves
@@ -516,15 +555,15 @@ fog layer's haze: on a clear or fair day not the land's own sky light, whose sou
 layer out), the far sea, the air, the key's floors, and per view the exposure with its keys and
 meters, the metering illuminance over the land and the radiance over the land, the sky, the sea and
 the yunpeng's cells), each point a scene jump with an explicit bake, its hour solved from
-`src/sky/DayCycle.ts` in node, and judges that a lower sun never makes the judged quantities
-brighter (each step, the largest rise down to midnight, the exposure's direction). `--split` forces
-each of the dusk's shares (`sky.dusk.force.*`, `docs/reference/url-options.md`, Tunable parameters)
-to 0 and to 1 and puts the night's back one at a time from the twilight alone, for each share's
-term, and `--fit` solves each night share's slope from it (`tools/dusk-fit.mjs`, which also fits a
-run already made: `node tools/dusk-fit.mjs <out>`, no GPU) so that every step holds at half the
-judge's margin, the slope no steeper than the twilight's fall, into `fit.txt`; `--night-split` reads
-the night's terms alone, `--twilight` the twilight alone (every night share forced to 0, without the
-split's other states). `--haze` also reads, in a fixed view of
+`packages/render/sky/DayCycle.ts` in node, and judges that a lower sun never makes the judged
+quantities brighter (each step, the largest rise down to midnight, the exposure's direction).
+`--split` forces each of the dusk's shares (`sky.dusk.force.*`, `docs/reference/url-options.md`,
+Tunable parameters) to 0 and to 1 and puts the night's back one at a time from the twilight alone,
+for each share's term, and `--fit` solves each night share's slope from it (`tools/dusk-fit.mjs`,
+which also fits a run already made: `node tools/dusk-fit.mjs <out>`, no GPU) so that every step
+holds at half the judge's margin, the slope no steeper than the twilight's fall, into `fit.txt`;
+`--night-split` reads the night's terms alone, `--twilight` the twilight alone (every night share
+forced to 0, without the split's other states). `--haze` also reads, in a fixed view of
 its own (65 m over the sea, facing the open sea, pitched 10 degrees up), the haze's whole medium
 (`hazeMedium`: the haze's key, its medium's uniforms, the clouds' copy, the moon's aerosol keys) and
 its opacity on sky rays at a few elevations and level rays over a surface at a few distances
@@ -579,35 +618,40 @@ full-screen passes as a NodeMaterial, draws as `{ material, object, scene, camer
 the pass's MRT a scene material draws into), in the order
 the page first builds them; the tool loads it through Vite's SSR loader with the project's config,
 so it imports the page's modules as the dev server serves them, and `--q` sets the `location.search`
-their load knobs read. Entries live in `tools/wgsl-build/` (`fsr3`: every kernel of
-`src/post/fsr3/`, built by the page's own `Fsr3Upscaler` in a frame's order, the reactive-mask
-generator and the debug view included; `ambient-relight`: the sky's projection, the relight, its
-readback and the probes' debug view, `src/lighting/AmbientRelight.ts`; `ambient-materials`: the
-lit materials that read the ambient volume, `src/lighting/AmbientSample.ts`, with the volume or,
-under `--q "flags=ambientVolume:0"`, without it; `gtao`: the ambient
-occlusion's depth, slices and blur, `src/post/GTAO.ts`; `meadow`: the displacement field's
-sprites and the near and far blades that read it, `src/world/vegetation/Displacement.ts` and
-`src/world/Grass.ts`, built from an empty plan; `wave-maps`: the caustics' splats at their four
-focal planes, `src/ocean/WaveMaps.ts`; `falling-leaves`: the falling leaves' step and
-prewarm kernels and draw, `src/weather/FallingLeaves.ts`; `local-lights`: the local lights'
-clusters kernel and the lit materials that bind the most with their lookup, the terrain's cliff
-and seabed and the islanders' figure, `src/lighting/LocalLights.ts`; `haze`: the volumetric haze's
-light kernel and the haze the sky dome lays on itself, `src/weather/VolumetricHaze.ts`; `night`:
-the moon on the dome (`src/sky/NightSky.ts`), the flare and its visibility
-(`src/post/LightShafts.ts`) and the composite's rods' colour (`src/post/Purkinje.ts`); `terrain`:
-the island's ground, the stones and the sea floor, `src/materials/TerrainMaterial.ts`; `post`: the
-post chain's own passes, the exposure's meter, the bloom's levels and the local tone's grid and
-slicing, `src/post/Metering.ts`, `Exposure.ts`, `PhysicalBloom.ts`, `LocalTone.ts`; `clouds`: the
-clouds' panorama march, shadow and view kernels on the page's atmosphere, `src/sky/Clouds.ts`, with
-a stand-in shape noise and the GPU bakes skipped; `atmosphere`: the atmosphere's bakes, the
-slices cut from its table, the earth shadow's mean over the azimuth and the sky's radiance,
-`src/sky/Atmosphere.ts`; `sky`: the materials that read the clear sky, and so the earth's shadow:
-the environment's panorama bake, the cloudless sky's irradiance and the dome as the page draws it
-(fogged by the haze, into the scene pass's MRT), `src/sky/Sky.ts`, with the moon's maps stood in
-empty); the entry's contract is in the tool's
-header. `--features` gives the device features three sees: default none (WebGPU core), while the
-page's device has every feature its adapter offers, and `float32-filterable` and
-`texture-formats-tier1` change the WGSL.
+their load knobs read. The entries hand the island's look to what they make, as the page's stages
+do, so the shaders hold the numbers the island's page builds with. Entries
+live in `tools/wgsl-build/` (`fsr3`: every kernel of
+`packages/render/post/fsr3/`, built by the page's own `Fsr3Upscaler` in a frame's order, the
+reactive-mask generator and the debug view included; `ambient-relight`: the sky's projection, the
+relight, its readback and the probes' debug view, `packages/render/lighting/AmbientRelight.ts`;
+`ambient-materials`: the lit materials that read the ambient volume,
+`packages/render/lighting/AmbientSample.ts`, with the volume or, under `--q
+"flags=ambientVolume:0"`, without it; `gtao`: the ambient occlusion's depth, slices and blur,
+`packages/render/post/GTAO.ts`; `meadow`: the displacement field's sprites and the near and far
+blades that read it, `packages/render/vegetation/Displacement.ts` and
+`packages/island/world/Grass.ts`, built from an empty plan; `wave-maps`: the caustics' splats at
+their four focal planes, `packages/render/ocean/WaveMaps.ts`; `falling-leaves`: the falling leaves'
+step and prewarm kernels and draw, `packages/island/world/FallingLeaves.ts`; `local-lights`: the
+local lights' clusters kernel and the lit materials that bind the most with their lookup, the
+terrain's cliff and seabed and the islanders' figure, `packages/render/lighting/LocalLights.ts`;
+`haze`: the volumetric haze's light kernel and the haze the sky dome lays on itself,
+`packages/render/weather/VolumetricHaze.ts`; `night`: the moon on the dome
+(`packages/render/sky/NightSky.ts`), the flare and its visibility
+(`packages/render/post/LightShafts.ts`) and the composite's rods' colour
+(`packages/render/post/Purkinje.ts`); `terrain`: the island's ground, the stones and the sea floor,
+`packages/island/materials/TerrainMaterial.ts`; `post`: the post chain's own passes, the exposure's
+meter, the bloom's levels and the local tone's grid and slicing, `packages/render/post/Metering.ts`,
+`Exposure.ts`, `PhysicalBloom.ts`, `LocalTone.ts`; `clouds`: the clouds' panorama march, shadow and
+view kernels on the page's atmosphere, `packages/render/sky/Clouds.ts` (`CloudKernels.ts`,
+`CloudView.ts`), with a stand-in shape noise and the GPU bakes skipped; `atmosphere`: the
+atmosphere's bakes, the slices cut from its table, the earth shadow's mean over the azimuth and the
+sky's radiance, `packages/render/sky/Atmosphere.ts`; `sky`: the materials that read the clear sky,
+and so the earth's shadow: the environment's panorama bake, the cloudless sky's irradiance and the
+dome as the page draws it (fogged by the haze, into the scene pass's MRT),
+`packages/render/sky/Sky.ts` (`SkyDome.ts`, `SkyBake.ts`), with the moon's maps stood in empty); the
+entry's contract is in the tool's header. `--features` gives the device features three sees: default
+none (WebGPU core), while the page's device has every feature its adapter offers, and
+`float32-filterable` and `texture-formats-tier1` change the WGSL.
 
 Each shader goes to `artifacts/wgsl/<entry>/<name>.wgsl` (a draw's to `.vert.wgsl` and
 `.frag.wgsl`), and `bindings.txt` (`report.json` for a script) lists per stage every binding with
@@ -902,8 +946,8 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
 - High is timed at its standard by default: 4K output (1920x1080 CSS at DPR 2) at 1440p's pixel
   count, upscaled by FSR 1, with MSAA 4x. A profile, `--compare` or `--toggle` of high pins the
   baseline of its dynamic rule for the viewport (`dpr=1.3333333333333333` at the default; `dpr=1`
-  at `--w 2560 --h 1440 --scale 1`, a 2K display: `src/post/RenderScale.ts` `dynamicRange`);
-  `--unpinned` leaves the tier's own rule (a dynamic one steering, with
+  at `--w 2560 --h 1440 --scale 1`, a 2K display: `packages/render/post/RenderScale.ts`
+  `dynamicRange`); `--unpinned` leaves the tier's own rule (a dynamic one steering, with
   `--scale-settle 5 --scale-log` to see where it settles). `--accept`, `--display`, `--scales` and
   a `dpr` of the url's or `--q`'s own are never pinned.
 - A player's window is not full screen: other apps stay visible and may keep drawing (a page in
@@ -919,8 +963,8 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   in a browser opened inside a shared slot and closed before the slot is released (the preload;
   skipped when no slot frees within `--preload-wait`, 60 s), so the loads under the exclusive lock
   hit the world cache and the shader cache, as every run but a build's first already did. The
-  run's own browser opens once the exclusive lock is held and the idle check has passed (so no headed
-  window sits on the screen, or dies, while the run queues). The idle check also stands
+  run's own browser opens once the exclusive lock is held and the idle check has passed (so no
+  headed window sits on the screen, or dies, while the run queues). The idle check also stands
   for the first load's, and the pages stop before the lock is released (the GPU name, the files
   and the browser's close come after it). `wallSeconds` in profile.json is the time under the
   exclusive lock; `lockWaitSeconds`, `totalSeconds` and `preload` sit beside it.
@@ -995,8 +1039,8 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   and errors named by their page (`pageerror (page B): ...`). `--toggle "js"` A/Bs inside one
   page by applying the expression (with `s` = `window.__PONLAI__` and `on` false for A, true for
   B) every few frames, for example `--toggle "s.flags.myChange = on"` with a flag an optimisation
-  reads from `src/debug/DebugFlags.ts`. Both give B/A as a ratio beside the delta. While a page
-  of `--compare` stands stopped, its dynamic scale's clock stands still too (the debug hook
+  reads from `packages/render/debug/DebugFlags.ts`. Both give B/A as a ratio beside the delta. While
+  a page of `--compare` stands stopped, its dynamic scale's clock stands still too (the debug hook
   `dynamicClock`; older builds without it let their holds and bars run out during the other
   page's slices). The page that runs is brought to the front first, headless too: the two pages
   are tabs of one window, and a tab behind still runs its frames (Playwright keeps it visible to
@@ -1130,9 +1174,72 @@ What the islanders do over days of play, how the needs and the stock run, and ho
 from what it perceives: `tools/play-game.mjs` (Other tools), not a loop over the simulation of
 one's own.
 
+Whether a change to the renderer moved what a plain surface shows under the key, the sky and the
+ground's bounce, what the sky gives through a day or a plant kind drawn with the default plant,
+before the island is loaded at all: `tools/scenes.mjs --check` (Captures, Test scenes), which
+shoots the renderer's small scenes in seconds. What the open sea's water gives (its colour, the far
+sea against the sky, the glitter, the wind's levels): `tools/scenes.mjs --scenes sea`, read by its
+readings, not checked to the pixel. It does not replace the island's captures: it shows no shore,
+terrain, island plants or game.
+
 What WGSL a TSL kernel, pass or material compiles to, which bindings and uniforms each stage
 declares, and whether one exceeds WebGPU's default limits, without a GPU: `tools/wgsl-build.mjs`
 with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script of one's own.
+
+## Code lint
+
+`npm run lint` runs ESLint over `packages/` and `app/` with the project's own rules and nothing
+else: no recommended sets and no style rules (the code style is three.js's and is not linted). It
+takes a few seconds, reads the code with type information (typescript-eslint's project service over
+`tsconfig.json`) and is one of the checks every commit passes (`tools/check.mjs`). The config is
+`eslint.config.mjs`, the rules are in `tools/lint/plugin.mjs`, and each rule's message says what is
+wrong, what to write instead and which file explains why.
+
+| Rule | Reports | Where |
+| --- | --- | --- |
+| `ponlai/tsl-method-order` | TSL's `.mix`, `.step` and `.smoothstep` method forms, which take their receiver out of order (a call whose receiver is typed as a TSL node or is untyped) | all code |
+| `ponlai/tsl-only` | shader code in strings: `wgslFn`, `glslFn`, `nativeFn`, `wgsl`, `glsl`, `js`, `code`, `CodeNode`, `FunctionNode` | all code |
+| `ponlai/history-on-graph` | `copyTextureToTexture` outside a pass added with `addPass` | all code but `packages/render/post/graph/` and `packages/render/three/` |
+| `ponlai/pass-on-graph` | `rtt()` and `convertToTexture()` | all code |
+| `ponlai/chunk-normals` | `computeVertexNormals` | `packages/island/world/` |
+| `ponlai/no-dynamic-draw` | `DynamicDrawUsage` | all code |
+| `ponlai/timestamp-owner` | `trackTimestamp` and three's timestamp pools (`timestampPools`, `takeTimestamps`, `resolveTimestamps`, `resolveTimestampsAsync`) | all code but `DynamicResolution.ts`, `debug/FrameProfiler.ts` and `packages/render/three/` |
+| `ponlai/scene-clock` | the wall clock: `performance.now()`, `Date.now()`, `new Date()`, `Date()` | all code but the debug folders, `app/Diagnostics.ts`, `packages/game/GameDebug.ts` and `app/QualityDetect.ts` |
+| `ponlai/vegetation-tag` | reading `alphaToCoverage` (setting it is fine) | all code |
+
+An exception is a comment on the line above the one it excepts, naming the rule and a reason a
+reader can check:
+
+```ts
+// eslint-disable-next-line ponlai/scene-clock -- the time budget of one slice of the growth's work
+const start = performance.now();
+```
+
+A file at its line limit (`verify-file-size`) takes the same comment at the end of the line, as
+`// eslint-disable-line ponlai/<rule> -- <reason>`, so the exception adds no line. A real violation
+that cannot be fixed yet is excepted the same way, its reason starting with `known violation:`. A
+disable comment that no longer suppresses anything is an error, so the exceptions stay true. For
+`ponlai/scene-clock`, a reading that only measures how long something took, budgets a slice of work,
+times out a wait or paces the game's interface in the player's time (its animations, the wheel's
+repeat limit: they go on while the scene is paused) is an exception; one that decides what the scene
+shows is a violation.
+
+To add a rule:
+
+1. Write it in `tools/lint/plugin.mjs`: a few AST selectors through `selectorRule`, or a rule of its
+   own when it needs the receiver's type, an ancestor or whether a member is read or written. Its
+   message says what to write instead and names the file that explains why.
+2. Turn it on in `eslint.config.mjs` in a block of its own whose `files` and `ignores` are the
+   folders it concerns, each exclusion with its reason in a comment.
+3. Add its fixture, `tools/lint/fixtures/<rule>.ts`: the wrong forms, each line marked
+   `// reported`, beside the right forms the rule must leave alone. A rule scoped to one folder
+   names the path its fixture is linted from in `FIXTURE_PATHS` in `tools/verify-lint.mjs`.
+4. Run `npm run lint` and go through every hit: fix it, narrow the scope or write the exception.
+
+`node tools/verify-lint.mjs` (no options, a few seconds, also in `tools/check.mjs`) lints each
+fixture as if it were a file inside its rule's scope and fails unless the rule reports exactly the
+marked lines, with no other rule and no parse error, and unless every rule has a fixture. The
+fixtures are left out of `npm run lint`.
 
 ## Docs checks
 
@@ -1140,7 +1247,9 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
 its rules in `.markdownlint-cli2.jsonc`: prose wrapped at 100 columns, fenced code with a language)
 and their links offline with lychee (local files and `#anchors`; config in `lychee.toml`).
 `tools/verify-doc-paths.mjs`, also in it, checks that every `docs/…/*.md` path written anywhere else
-(code comments, prose) names a file that exists.
+(code comments, prose) names a file that exists, that every file `AGENTS.md` and
+`docs/reference/code-map.md` name in backticks is tracked, and that `AGENTS.md` stays within its
+limit of 20,000 characters.
 `npm run lint:links` checks the web links too; sites that refuse automated clients (403, 405, 429)
 count as present. lychee is a separate binary: `brew install lychee`, or `cargo install lychee`.
 
@@ -1149,7 +1258,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
 - `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows and water (each
   file names the server it expects); they take the GPU lock (shared).
   `verify-optical-interface`, `verify-frame-graph-gpu`, `verify-refracted-sun` and
-  `verify-solar-shadows` import `/src/` modules and need the dev server: on any other server they
+  `verify-solar-shadows` import the source modules and need the dev server: on any other server they
   exit 1 at once (`tools/dev-server.mjs`).
   `tools/verify-scene.mjs` checks a production preview. `tools/verify-scene-jump.mjs` captures the
   parity views reached by scene jumps in one page and as fresh loads, for `diff-set.py`, each shot
@@ -1170,19 +1279,19 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   (`--runs` times) and over land, two pinches out, and a drag (the island view zooms out only, from
   its pose's distance); it fails on any zoom anchor that found no ground or a drift
   of the point under the cursor of 0.5 px or more. Run it after a change to the island camera or
-  its ground (`src/camera/`).
+  its ground (`packages/island/camera/`).
 - `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
   are CPU-only (plain `node`). `verify-game.mjs` checks the game's simulation: the clock, the
   ground and a path, a body walking to a point, a save round trip, a brain's late answer, and the
   first prototype's rules (needs, thirst off, the bag, fishing, the chest placed as a blueprint and
   built, several chests with stable ids, two builders on one site, the actions, the perception, the
   stand-in brain over a few game days, a save mid-action), the save file
-  (`src/game/save.ts`: the simulation and the record read back as written and played on the same,
-  saves of another version and saves no step reaches refused), the island's growth, the session
-  the page and the play tool run the game in (`src/game/Session.ts`: the landings handed on as a
-  game is installed, the player's commands checked at the entrance, the skies of its frames, the
-  leader's words heard, a save read into another session, the growth asked of its host), the
-  islanders among themselves, and the rules' structure (an action's condition held every tick, a
+  (`packages/game/save.ts`: the simulation and the record read back as written and played on the
+  same, saves of another version and saves no step reaches refused), the island's growth, the
+  session the page and the play tool run the game in (`packages/game/Session.ts`: the landings
+  handed on as a game is installed, the player's commands checked at the entrance, the skies of its
+  frames, the leader's words heard, a save read into another session, the growth asked of its host),
+  the islanders among themselves, and the rules' structure (an action's condition held every tick, a
   late answer for an islander who died refused, the entrance's refusals, what happened recorded
   once at its tick, content added with no change to the core: a need, an item with a use, a kind
   of place and of building with their options, registered by the check alone, played, perceived,
@@ -1192,20 +1301,20 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
 - `tools/play-game.mjs [--days 5] [--seed 1] [--hour 8] [--pieces 0] [--grow] [--population 0]
   [--place kind[@x,z]]... [--script file.json] [--brain standin|<module>] [--latency 90]
   [--thoughts] [--out dir]` (plain `node`) plays the game headless in the page's own session
-  (`src/game/Session.ts`, nothing copied from the page: a frame of one tick at a time, a growth due
-  asked for before it, the record looking after each, the leader's lines between them), and writes
-  what happened to `artifacts/play/<stamp>/` (`--out`): `transcript.md` (day by day, the record's
-  entries in the record page's words, `src/game/ui/data/record.ts` and its catalogue, so a new kind
-  of entry needs no change to the tool, and an event kind that neither its lines nor the record show
-  prints as an `[event]` line; the islanders' actions with their outcomes as the session's events
-  tell them (done, failed, interrupted with the reason, refused), consecutive alike ones merged,
-  their words, needs every six game hours and a table per day), `timeline.json` (every islander each
-  game hour: position, needs, bag, action), `summary.json` (per islander the share of time by
-  activity, each need's lowest, mean and highest, each item's flows by the call that moved it, so a
-  new need, item or option shows without a change to the tool; the dead, the buildings and when
-  they were built, the stock), `record.json` and, with `--thoughts`, `thoughts.jsonl` (a line per
-  thought: what the islander perceived and the brain's answer, for judging a brain offline; about
-  1 MB for four islanders over five days), with a short summary on stdout. `--place` puts
+  (`packages/game/Session.ts`, nothing copied from the page: a frame of one tick at a time, a growth
+  due asked for before it, the record looking after each, the leader's lines between them), and
+  writes what happened to `artifacts/play/<stamp>/` (`--out`): `transcript.md` (day by day, the
+  record's entries in the record page's words, `packages/game/ui/data/record.ts` and its catalogue,
+  so a new kind of entry needs no change to the tool, and an event kind that neither its lines nor
+  the record show prints as an `[event]` line; the islanders' actions with their outcomes as the
+  session's events tell them (done, failed, interrupted with the reason, refused), consecutive alike
+  ones merged, their words, needs every six game hours and a table per day), `timeline.json` (every
+  islander each game hour: position, needs, bag, action), `summary.json` (per islander the share of
+  time by activity, each need's lowest, mean and highest, each item's flows by the call that moved
+  it, so a new need, item or option shows without a change to the tool; the dead, the buildings and
+  when they were built, the stock), `record.json` and, with `--thoughts`, `thoughts.jsonl` (a line
+  per thought: what the islander perceived and the brain's answer, for judging a brain offline;
+  about 1 MB for four islanders over five days), with a short summary on stdout. `--place` puts
   blueprints down at the start (at the first ground that takes one without a point), `--population`
   adds islanders, `--grow` adds the next piece when the population reaches a step, and `--script`
   has the leader speak at given times (`[ { "at": "d1 08:30", "to": "all" | [ "v1" ], "words": "..."
@@ -1217,13 +1326,13 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   the same files byte for byte. Five game days of the stand-in take about two seconds; a run with a
   language-model brain goes through `tools/job.mjs`. The options and guarantees are in its header.
 - `tools/verify-i18n.mjs [--strict] [--list]` (plain `node`) checks the game interface's words:
-  it fails on Chinese written in `src/` outside the catalogues (`src/game/ui/i18n/`; the content
-  it allows, the islanders' names and the debug panel's placeholder lines, is listed in the tool)
-  and on an empty source string, and reports how far each other catalogue has drifted from
-  `zh-CN.json`: keys missing (shown in Chinese), keys the source no longer has, values naming
-  `{{values}}` the source does not give. `--strict` fails on the drift too; `--list` names every
-  drifted key. Run it after a change to the interface's text.
-- `tools/verify-ink.mjs` (plain `node`) checks the interface's ink (`src/game/ui/Ink.ts`) on
+  it fails on Chinese written in `packages/` or `app/` outside the catalogues
+  (`packages/game/ui/i18n/`; the content it allows, the islanders' names and the debug panel's
+  placeholder lines, is listed in the tool) and on an empty source string, and reports how far each
+  other catalogue has drifted from `zh-CN.json`: keys missing (shown in Chinese), keys the source no
+  longer has, values naming `{{values}}` the source does not give. `--strict` fails on the drift
+  too; `--list` names every drifted key. Run it after a change to the interface's text.
+- `tools/verify-ink.mjs` (plain `node`) checks the interface's ink (`packages/game/ui/Ink.ts`) on
   strokes drawn as the page draws them, at high's scale: the same stroke and seed ink the same; it
   never adds ink or reaches past the outline; a short stroke keeps its ink; a long one keeps its
   first press and dries toward its exit, a thin one less than a broad one; a gauge told not to dry
@@ -1234,20 +1343,20 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   writes a sheet of eight seeds to `artifacts/growth/shape-sheet-<label>.png`.
 - `tools/verify-world-chunks.mjs [--seeds 1,2] [--steps 12] [--threads n] [--long] [--bench]
   [--sheets dir]` (plain `node`; run it before captures after any change to the world's generator)
-  grows each seed's land step by step and builds every chunk of every step (`src/world/Chunks.ts`)
-  on a pool of worker threads (default min( 8, cores - 4 )). It checks that the chunks built
-  incrementally equal a scratch build in a fresh process in reverse order (D1), on pools of 1 and
-  4 workers (D2, the 15 costliest chunks), that the land does not depend on the order of its
-  pieces (D3), that only chunks in `dirtyChunks` change between steps (D4, warning when a changed
-  chunk lies more than 30 m from the changed land), and that land placed just beyond the dirty
-  bound (34.6 - 44 m from a coastal chunk, on the coast and offshore) changes nothing (D5); at
-  steps 0 and the last, the seams: the island and stone meshes close up (S1), the island's shared
-  vertices and a 2 x 2 block meshed whole (S2), the floor tiles' shared points, the floor at or
-  below -1.6 m off the land and the tiles' outer sides on the open sea's lattice (S3), the rim's
-  lip's border crossings (S4), a 2 x 2 block's rim ground, shore, walk texels and anchors made in
-  one pass (S5), the stones' owners and their copies in the neighbours' contact sets (S6), no island
-  vertex or anchor near a chunk that carries no rim ground tile (S7), and no buried wall inland
-  (I1). `--long` takes D1 at every step, D2 on all chunks of both seeds, the S checks at
+  grows each seed's land step by step and builds every chunk of every step
+  (`packages/island/world/Chunks.ts`) on a pool of worker threads (default min( 8, cores - 4 )). It
+  checks that the chunks built incrementally equal a scratch build in a fresh process in reverse
+  order (D1), on pools of 1 and 4 workers (D2, the 15 costliest chunks), that the land does not
+  depend on the order of its pieces (D3), that only chunks in `dirtyChunks` change between steps
+  (D4, warning when a changed chunk lies more than 30 m from the changed land), and that land placed
+  just beyond the dirty bound (34.6 - 44 m from a coastal chunk, on the coast and offshore) changes
+  nothing (D5); at steps 0 and the last, the seams: the island and stone meshes close up (S1), the
+  island's shared vertices and a 2 x 2 block meshed whole (S2), the floor tiles' shared points, the
+  floor at or below -1.6 m off the land and the tiles' outer sides on the open sea's lattice (S3),
+  the rim's lip's border crossings (S4), a 2 x 2 block's rim ground, shore, walk texels and anchors
+  made in one pass (S5), the stones' owners and their copies in the neighbours' contact sets (S6),
+  no island vertex or anchor near a chunk that carries no rim ground tile (S7), and no buried wall
+  inland (I1). `--long` takes D1 at every step, D2 on all chunks of both seeds, the S checks at
   every fourth step and the island's inland column range against whole columns. `--bench` keeps
   only D4 and prints per growth piece the land field's time, the chunks rebuilt and changed,
   their CPU time and bytes. Every run writes a chunk sheet per seed (each step's land, new piece,
@@ -1264,14 +1373,15 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   scars; the cliff's scars, on each chunk's own wall: none cuts rock beyond its reach (4.5 m, 3 m)
   and none breaks off more than 0.6 m of rock above y -1 where its reach ends it. The chunk checks
   prove seams and locality; this probe proves the chunked world keeps its numbers.
-- `tools/verify-chunk-derived.mjs [--seed 1] [--steps 0,8] [--threads n]` (plain `node`; run it
-  after a change to `src/world/ChunkDerived.ts` or to the builders it stands in for) builds every
-  chunk of the grown land on a pool of worker threads and checks the chunks' derived products,
-  which the page uses, against the builders it ran before on the merged meshes (three's WebGPU
-  build imported in node, RefractedSun.ts compiled with TypeScript): SunShadow's caster columns
-  folded from the chunks' `casterColumns` hold every walked column and stay within one cell of it;
-  RefractedSun's subsets from the chunks' `refracted` are today's cut of the merged island, stones
-  and floor, triangle for triangle, and `setCasters( root, subsets )` draws them;
+- `tools/verify-chunk-derived.mjs [--seed 1] [--steps 0,8] [--threads n]` (plain `node`, part of
+  `npm run check -- --full`; run it after a change to `packages/island/world/ChunkDerived.ts` or to
+  the builders it stands in for)
+  builds every chunk of the grown land on a pool of worker threads and checks the chunks' derived
+  products, which the page uses, against the builders it ran before on the merged meshes (the
+  builders loaded through Vite's SSR loader, three's WebGPU build imported in node): SunShadow's caster
+  columns folded from the chunks' `casterColumns` hold every walked column and stay within one cell
+  of it; RefractedSun's subsets from the chunks' `refracted` are today's cut of the merged island,
+  stones and floor, triangle for triangle, and `setCasters( root, subsets )` draws them;
   `IslandGround.fromGrids` of the chunks' `ground` has the walked grid's bounds and top and every
   height within one cell. It prints each builder's time on the merged meshes against the merge's.
 - The three world verifiers above (`verify-world-chunks`, `verify-world-stats`,
@@ -1306,10 +1416,126 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   the world cache; the browser's shader cache in the slot does not change the counts (they are the
   page's requests to WebGPU, cached or not), and `--fresh` runs in a throwaway profile.
   Its steps' waits are part of what it measures and stay fixed.
+- `tools/verify-layers.mjs` (plain `node`, no options) checks the direction of the imports
+  between the code's layers: render, island, game and app, lowest first, a file importing only
+  its own layer and those below. A file's folder is its layer (`packages/render/`,
+  `packages/island/`, `packages/game/` and `app/`); a file under `packages/` outside the three
+  packages' folders, or an upward import not on the tool's list of known ones, fails, and so does a
+  known one that no longer imports upward (the list only shrinks). It also walks the chunk worker's
+  imports (`packages/island/world/chunkWorker.ts`) as the build's world generator plugin does
+  (`tools/vite-world-generator.mjs`) and fails on any package import the plugin would refuse. Run it
+  after adding a file or an import across folders. Its test scenes check keeps the files under
+  `app/scenes/` to the renderer's exits, its lazy exits and each other.
+  Its exits check reads the packages' exits from `tools/layers.json` (`exits`: each package's page
+  exit and headless exit, and the renderer's setup exit; `lazy`: the modules the page loads on
+  demand). An exit holds re-exports of its own package only; an import from one package into
+  another, or from the app layer into one, names an exit or a lazy exit; a lazy exit is imported
+  dynamically or with `import type` only. Every name an exit exports is taken by a file of another
+  package or the page (a lazy exit that is a module of its package, by any other file), and no name
+  leaves through two exits. The files a headless or setup exit loads (`import type`
+  left out) import relative paths only. Its page check
+  keeps the render and island layers and the game's simulation off the page: TypeScript's checker
+  resolves every name there, and one that is a page global (`location`, `localStorage`,
+  `sessionStorage`, `document`, `window`, `navigator`, `URLSearchParams`, the animation frame
+  callbacks, `Worker`, `indexedDB`, `fetch`) fails outside the one file of each need the tool
+  allows it in (`PAGE_NEEDS`: the frame pacing, the workers' start, the world's cache, the assets'
+  fetch, the textures' canvas, the settings' parser). The page hands the rest down: the canvas,
+  the settings, the storage.
+  Its state check finds every exported module-level variable that another file writes (an
+  assignment to a field of it) and fails on a write that is not on the tool's list (`STATE`), and
+  on a listed one that is gone: the list only shrinks, as a state gets one writer (a creation
+  parameter, a field of an instance, or an operation its owner exports). A write from another layer
+  than the owner's must also be on a second list (`ACROSS`).
+  Its userData check reads the list of `userData` keys the renderer declares
+  (`packages/render/UserData.ts`) and each upper layer's list of the keys it keeps to itself
+  (`tools/layers.json`, `userData`: the island's in `packages/island/world/IslandUserData.ts`). It
+  fails when a file names a key that is on neither the renderer's list nor its own layer's, or when
+  a list holds a key no file of its layer names (the renderer's: no file at all). A key reached
+  through an alias of the bag is not seen.
+- `tools/verify-exits.mjs` (plain `node`, no options, about a second) checks the packages' exits
+  (`tools/layers.json`, `exits`). It loads each headless exit (`packages/render/data.ts`,
+  `packages/island/land.ts`, `packages/game/sim/index.ts`) and the renderer's setup exit
+  (`packages/render/setup.ts`) in plain node and fails when one throws or leaves a name it exports
+  undefined. It reads every file a page or setup exit (`packages/render/index.ts`,
+  `packages/island/index.ts`, `packages/game/index.ts`, `packages/render/setup.ts`) loads and fails
+  on an `await` or a page global (`location`, the storage, `document`, `window`, `navigator`, the
+  animation frame callbacks, `Worker`, `indexedDB`, `fetch`) in the code that runs as the module
+  loads. Run it after a change to what an exit loads.
+- `tools/verify-extensions.mjs` (plain `node`, no options; it loads the page's modules through
+  Vite's SSR loader, a few seconds) checks the renderer's extension points. It registers a plant
+  kind, a kind of local light, an extra pass, scene events and histories of its own and fails
+  when one needs a change elsewhere, when a definition without its three declarations
+  (`packages/render/Extensions.ts`) is accepted, or when a typed scene pass name is not a pass the
+  pipeline declares. It also searches the code of the registries' owner files (comments left out)
+  for the names of the scene's definitions, listed per file in the tool. Run it after a change to a
+  registry or a new definition.
+- `tools/verify-look-params.mjs` (plain `node`, no options; it loads part of the page's modules
+  through Vite's SSR loader, about a second) checks the systems that take their look tables at
+  creation: the exposure (`packages/render/look/ExposureLook.ts` `createExposure`), the day's
+  windows (`packages/render/look/DayLook.ts` `createDayWindows`), the wind on the plants
+  (`packages/render/weather/Wind.ts` `windResponse`), the ambient grade's tables and the low key's
+  lift (`packages/render/look/AmbientLook.ts` `createAmbientTables`, `createKeyLift`, and the
+  grade's controller, `packages/render/lighting/AmbientGrade.ts` `createAmbientGrade`), the haze's
+  tables (`packages/render/look/HazeLook.ts` `createHazeTables`, which the haze's key,
+  `packages/render/weather/HazeKeys.ts` `hazeKeyAt`, reads), the display's tables
+  (`packages/render/look/DisplayLook.ts` `createDisplayTables`, and the bloom made on them,
+  `packages/render/post/PhysicalBloom.ts`), the shared
+  uniforms (`packages/render/shared.ts` `createShared`: the ambient occlusion's floor and the meadow
+  canopy's media), the local lights (`packages/render/lighting/LocalLights.ts`), the sea's detail
+  (`packages/render/ocean/SeaDetail.ts`) and the FFT ocean's distant swell
+  (`packages/render/ocean/OceanFFT.ts`). It makes each from the island's look, the neutral look and
+  a changed copy of the island's in one process, and fails when one does not read its own table or
+  when making one moves another's numbers; for the exposure also when the copy differs by more than
+  its changes or when the day cycle does not read the exposure it is given. Run it after a change
+  to how one of these systems is created, and extend it when another system takes its look at
+  creation.
+- `tools/verify-settings.mjs [--write]` (plain `node`) checks the page's settings
+  (`packages/render/Settings.ts`, the one entrance every option is read through) against
+  `docs/reference/url-options.md`: the table of every option at the page's end is the one written
+  from the declarations (`--write` rewrites it), every declared option is named in the page's
+  prose, and every option the prose writes with a value is declared. No option is declared in a
+  layer above the lowest layer whose code reads it (the code's folders; its header says which
+  reads it sees), so the table's owner is a layer that reads it. It also checks that the page
+  installs the settings before any module that reads them loads (`index.html` loads
+  `app/Boot.ts`, which imports `app/PageSettings.ts` before it imports `app/main.ts`
+  dynamically), and that no address the tools put on a page draws a `[settings]` warning: the
+  query of every view in `tools/parity/views.mjs` and every query written as a literal in
+  `tools/**/*.mjs` (its header says which literals count). A usage a tool needs is declared in
+  `packages/render/Settings.ts`, not changed in the tool. Run it after adding or changing an option.
+- `tools/check.mjs` (`npm run check [-- --full]`) runs the checks every commit passes, one after
+  another: the type check, the code lint (`npm run lint`, Code lint), `verify-layers`,
+  `verify-exits`, `verify-settings`, `verify-file-size`, `verify-three-internals`,
+  `verify-no-binaries`, `verify-game`, `verify-i18n`, `verify-ink`, `verify-framegraph`,
+  `verify-day-cycle`, `verify-weather-state`, `verify-wind`, `verify-local-lights`,
+  `verify-extensions`, `verify-look-params` and `verify-lint`, then `npm run lint:docs` when a
+  Markdown file is staged. `--full` adds `npm run build`, `verify-world-chunks.mjs` and
+  `verify-chunk-derived.mjs` and always runs the docs' lint. Every check runs even after one
+  failed; it ends with each check's result and time, and exits 1 when any failed. None of them
+  renders or takes the GPU lock. How to use it: `docs/how-to/check-a-change.md`, Run the checks
+  every commit passes.
+- `tools/verify-file-size.mjs` (plain `node`, no options) fails on a code file under `packages/` or
+  `app/` of more than 1500 lines. The files over the limit when the check was written are listed in
+  the tool with their line counts: a listed file fails when it grows past its count, and when it is
+  back within the limit or gone, until its entry is removed (the list only shrinks). Split a file
+  that fails by what its parts are, never by halving it.
+- `tools/verify-three-internals.mjs [--verbose] [--fingerprints]` (plain `node`) checks the
+  three.js internals the code depends on, listed in `packages/render/three/three-internals.json`:
+  the private members and methods it reads, calls, writes, wraps or replaces, and the internal code
+  it mirrors or relies on, and the extension hooks `@types/three` does not declare, each with the
+  file in three that holds it. It fails when the installed three or `@types/three` is not the list's
+  version, when an entry's member or method is missing from its file, and when the code of an
+  entry that is wrapped, replaced, mirrored or relied on differs from its recorded fingerprint (a
+  hash of the code, comments ignored). It fails on a version range in `package.json` instead of an
+  exact version. It also fails on a file under `packages/` or `app/`, outside
+  `packages/render/three/`, that reaches into three's internals (the renderer's `backend`, a cast to
+  a type with private members, a private member's name), and on a tool that does and is not on the
+  tool's list of tools known to do so; that list only shrinks. `--verbose` lists every entry;
+  `--fingerprints` prints each entry's current fingerprint, to record after re-checking the code
+  that depends on it on a three upgrade (`docs/how-to/upgrade-three.md`).
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
 - `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
   (`uv run --with pillow --with numpy`), `tools/build-ground-textures.py` the meadow ground's from
   two Poly Haven scans (the same way). `tools/build-star-catalog.mjs` and
   `tools/build-milky-way.py` rebuild the night sky's data in `public/sky/` from the raw catalogue
   and map (each file says where to get them and how to run it).
-  `tools/bake-rainbow-table.mjs` generates `src/sky/RainbowTable.data.ts`.
+  `tools/bake-rainbow-table.mjs` generates `packages/render/sky/RainbowTable.data.ts`.

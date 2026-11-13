@@ -1,4 +1,4 @@
-// tools/wgsl-build.mjs's entry for the volumetric clouds (src/sky/Clouds.ts): the light on the
+// tools/wgsl-build.mjs's entry for the volumetric clouds (packages/render/sky/Clouds.ts): the light on the
 // layer's tops, the panorama's march, the cloud shadow, the closed layer's mean transmittance and
 // the view's trace, high, box and resolve kernels at a 2K view, on the page's atmosphere (whose
 // earth shadow the march reads). The shape noise is an asset and the bakes run on the GPU: the
@@ -6,8 +6,9 @@
 // initialised), so the kernels build with the page's bindings and code.
 
 import * as THREE from 'three/webgpu';
-import { Atmosphere } from '../../src/sky/Atmosphere.ts';
-import { Clouds } from '../../src/sky/Clouds.ts';
+import { Atmosphere } from '../../packages/render/sky/Atmosphere.ts';
+import { Clouds } from '../../packages/render/sky/Clouds.ts';
+import { buildView } from '../../packages/render/sky/CloudView.ts';
 
 export default function ( { renderer } ) {
 
@@ -21,7 +22,7 @@ export default function ( { renderer } ) {
 	shape.format = THREE.RGBAFormat;
 	shape.type = THREE.UnsignedByteType;
 	clouds.build( renderer, shape );
-	clouds.buildView( 2560, 1440 );
+	buildView( clouds, 2560, 1440 );
 	const { trace, high, box, resolve } = clouds.view.kernels;
 	return [
 		[ 'clouds-column-top', clouds.columnKernel ], [ 'clouds-panorama', clouds.panoramaKernel ], [ 'clouds-shadow', clouds.shadowKernel ],

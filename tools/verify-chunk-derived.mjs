@@ -29,16 +29,14 @@
 import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { registerHooks } from 'node:module';
-import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
-import { buildChunk, chunkIsland, chunkKeys, landField, landWindow, parseChunkKey } from '../src/world/Chunks.ts';
-import { growLand, LandLattice } from '../src/world/IslandGrowth.ts';
-import { tileIndices, TILE_SIDE } from '../src/world/SeabedTile.ts';
-import { FLOOR_STEP } from '../src/world/Bathymetry.ts';
-import { SEA_LEVEL } from '../src/world/ChunkDerived.ts';
+import { buildChunk, chunkIsland, chunkKeys, landField, landWindow, parseChunkKey } from '../packages/island/world/Chunks.ts';
+import { growLand, LandLattice } from '../packages/island/world/IslandGrowth.ts';
+import { tileIndices, TILE_SIDE } from '../packages/island/world/SeabedTile.ts';
+import { FLOOR_STEP } from '../packages/island/world/Bathymetry.ts';
+import { SEA_LEVEL } from '../packages/island/world/ChunkDerived.ts';
 import { verifyCache } from './verify-cache.mjs';
-import { simplifierReady } from '../src/world/IslandSimplify.ts';
+import { simplifierReady } from '../packages/island/world/IslandSimplify.ts';
 
 // the island's simplifier (wasm) is ready before any chunk is built, in every thread
 await simplifierReady;
@@ -74,25 +72,23 @@ const argument = ( name, fallback ) => {
 
 };
 
-// The consumers import three's WebGPU build, written for a page: give it what it reads at import
-// (a canvas for the leaf textures is not needed here), and compile RefractedSun.ts, whose
-// constructor's parameter properties node's type stripping cannot erase, with TypeScript.
+// The consumers import modules plain node cannot load (they read `import.meta.env`, and
+// RefractedSun.ts has constructor parameter properties node's type stripping cannot erase), so they
+// load through Vite's SSR loader on the main thread only, as tools/verify-world-stats.mjs loads its
+// planting (they read the page's settings as a page without options: packages/render/Settings.ts).
+// three's WebGPU build, written for a page, loads under node as it is.
 async function loadConsumers() {
 
-	globalThis.location ??= { search: '', hostname: 'localhost' };
-	const { default: ts } = await import( 'typescript' );
-	registerHooks( { load( url, context, next ) {
-
-		if ( ! url.endsWith( '/src/lighting/RefractedSun.ts' ) ) return next( url, context );
-		const source = readFileSync( new URL( url ), 'utf8' );
-		const { outputText } = ts.transpileModule( source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ESNext } } );
-		return { format: 'module', shortCircuit: true, source: outputText };
-
-	} } );
-	const THREE = await import( 'three/webgpu' );
-	const { SunShadow } = await import( '../src/lighting/SunShadow.ts' );
-	const { RefractedSun } = await import( '../src/lighting/RefractedSun.ts' );
-	const { IslandGround } = await import( '../src/camera/IslandGround.ts' );
+	const { createServer } = await import( 'vite' );
+	const server = await createServer( {
+		root: fileURLToPath( new URL( '../', import.meta.url ) ), configFile: false, logLevel: 'error', appType: 'custom',
+		server: { middlewareMode: true, hmr: false, ws: false, watch: null }, optimizeDeps: { noDiscovery: true, include: [] },
+	} );
+	const THREE = await server.ssrLoadModule( 'three/webgpu' );
+	const { SunShadow } = await server.ssrLoadModule( '/packages/render/lighting/SunShadow.ts' );
+	const { RefractedSun } = await server.ssrLoadModule( '/packages/render/lighting/RefractedSun.ts' );
+	const { IslandGround } = await server.ssrLoadModule( '/packages/island/camera/IslandGround.ts' );
+	await server.close();
 	return { THREE, SunShadow, RefractedSun, IslandGround };
 
 }

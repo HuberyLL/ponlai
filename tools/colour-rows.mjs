@@ -23,11 +23,11 @@
 //   normal    the frame itself: the PNG, the exposure, the depth's sky and sea shares
 //   light     flags=lightOnly:2,grey:1: every lit surface a white card, specular off
 //   ambient   the same with ambientOnly: the key light taken out
-//   classes   flags=classes&aa=off: each cell's kind (src/debug/Classes.ts; its codes stored at
+//   classes   flags=classes&aa=off: each cell's kind (packages/render/debug/Classes.ts; its codes stored at
 //             most 2^15, so a page pre-exposed past half float, a deep overcast night, decodes)
 //
 // The sort. The frame is cut into a grid of NX by NY cells, each read over the CELL by CELL pixels
-// at its centre, the same pixels on every page (src/debug/RadianceAov.ts `forCellTexels`):
+// at its centre, the same pixels on every page (packages/render/debug/RadianceAov.ts `forCellTexels`):
 //   land      cells with no sky, no sea and a kind
 //   d         a cell's direct share, 1 - ambient / light (luminance)
 //   sun       land cells with d at or over 0.7 of the land's 95th percentile of d
@@ -63,7 +63,7 @@
 // and `lit`, the row of the pixels under and over the box's median L (the two halves of a crown).
 //
 // The scene (shoot --scene): the normal page also reads the frame's own radiance in scene units on
-// the same cells, before the display chain (src/debug/Radiance.ts: `opaque`, the lit surfaces and the
+// the same cells, before the display chain (packages/render/debug/Radiance.ts: `opaque`, the lit surfaces and the
 // sky before the sea and the air, and `hdr`, the composite with them), each cell's world normal
 // (RadianceAov.ts `normal`), the camera's matrices and the sky's irradiance, so a ratio of the scene's
 // light (lit grass over the sky, shade over sun, one weather over another) is read where the rows'
@@ -88,7 +88,7 @@
 // MSAA has no jitter). A band of fewer than SKY_BAND_CELLS cells keeps its n and has null values,
 // with `note: 'too few cells'`. These are not `sky band` (4 to 15 degrees), which stays as it is.
 //
-// Each view's record also holds `ev` and `exposure` (the frame's, src/post/Exposure.ts), the key
+// Each view's record also holds `ev` and `exposure` (the frame's, packages/render/post/Exposure.ts), the key
 // light's `key` { colour, dir }, the sun's `elevation` (degrees), the land's `p95` of d, `shares`
 // { sun, shade, penumbra }, the land cells' shares in the sort's sun, shade and neither, and `note`,
 // whatever the view's eval left in `__PONLAI__.colourNote` (a script reads tune.set's report that way).
@@ -106,7 +106,7 @@ const NX = 256, NY = 144, CELL = 3;
 const MIN_CELLS = 8;
 // the least cells a --sky-bands row is read over
 const SKY_BAND_CELLS = 64;
-const KINDS = [ 'sky', 'sea', 'ground', 'rock', 'grass', 'leaves', 'wood', 'figure', 'other' ]; // src/debug/Classes.ts
+const KINDS = [ 'sky', 'sea', 'ground', 'rock', 'grass', 'leaves', 'wood', 'figure', 'other' ]; // packages/render/debug/Classes.ts
 const FIRST_LAND = KINDS.indexOf( 'ground' );
 const PAGES = {
 	normal: '',

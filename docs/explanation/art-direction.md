@@ -56,20 +56,20 @@ art decision changes; images from elsewhere stay out of the repository.
   [Look values](../reference/look-values.md)). The frame's brightness comes from the exposure,
   which keeps the ratio between light and shade.
 - The shade is lit by the sky the island lets through (the ambient volume, which sees the land,
-  its groves and its cliffs: `src/lighting/AmbientSample.ts`). At noon on a clear or fair day the
-  open meadow's lit side stands well over its shade; a low sun's lit side comes down toward its
-  shade, and that is left as it is. A grove's floor in shade reads darker than the open shade at
-  its edge, darker still deeper in. Its culms in shade stand a little darker than the crowns
-  over them, dark green stems against the light between, and the faces toward the grove's open
-  sides read lighter than those toward its inside. Where a culm or a stone meets the ground the
+  its groves and its cliffs: `packages/render/lighting/AmbientSample.ts`). At noon on a clear or
+  fair day the open meadow's lit side stands well over its shade; a low sun's lit side comes down
+  toward its shade, and that is left as it is. A grove's floor in shade reads darker than the open
+  shade at its edge, darker still deeper in. Its culms in shade stand a little darker than the
+  crowns over them, dark green stems against the light between, and the faces toward the grove's
+  open sides read lighter than those toward its inside. Where a culm or a stone meets the ground the
   contact darkens a little, gone within about a metre: a grounding, never a dark ring.
   Where the grass, the culms and the ground's relief close the sky, the shade loses some of its
-  light broadly, over metres (the screen-space ambient occlusion, on in high: `src/post/GTAO.ts`,
-  and at the turf's roots the share of the sky its blades leave): the ground among the grass in
-  shade and a grove's floor darken most, a culm's sides a little, lit surfaces not at all (the
-  amounts: [Look values](../reference/look-values.md)). The ambient light is set for the shade with
-  that loss in it, never pressed down once more for it, and a loss two terms estimate counts
-  once (the turf takes the stronger of the two).
+  light broadly, over metres (the screen-space ambient occlusion, on in high:
+  `packages/render/post/GTAO.ts`, and at the turf's roots the share of the sky its blades leave):
+  the ground among the grass in shade and a grove's floor darken most, a culm's sides a little, lit
+  surfaces not at all (the amounts: [Look values](../reference/look-values.md)). The ambient light
+  is set for the shade with that loss in it, never pressed down once more for it, and a loss two
+  terms estimate counts once (the turf takes the stronger of the two).
 - The air always carries a visible haze: it is part of this world, the sea's island seen through
   it. Its shape is physical: the density varies with height alone, a thin ground layer lying on the
   sea, much denser than a clean sea air near the water and clean above the layer. It answers to
@@ -109,7 +109,7 @@ art decision changes; images from elsewhere stay out of the repository.
   setting due west at 18: high enough at noon to read as a bright day, low enough that slopes keep
   a lit and a shaded side in the island view, and slow near the horizon (11.8 degrees an hour), so
   the low sun's light lasts. A higher noon is a subtropical light, at odds with the island's
-  temperate bamboo and meadow (`src/sky/DayCycle.ts` NOON_ELEVATION).
+  temperate bamboo and meadow (`packages/render/sky/DayCycle.ts` NOON_ELEVATION).
 - The island view's default direction is fixed and looks a little east of the noon meridian, where
   the sun culminates and the moon stands: the full moon's path is in the frame through the evening
   and at midnight, and by day the sun lights the cliffs from the side (a lit and a shaded side)
@@ -137,9 +137,9 @@ is the approach Jasmin Patry described ("Samurai Shading in Ghost of Tsushima", 
 It is made by keeping lookdev and lighting strictly apart, a rule of our own. Lookdev (look
 development) makes each material right on its own: real values checked against the real range,
 then seen first on the clear day at noon, before the other weathers and hours; lighting sets the
-light and the image for the whole world, by weather and hour. Neither does the other's work: no material
-is tuned to fix the light, and no light is tuned for one material. Tuning a material to make up
-for the light is baking lighting into albedo; it breaks again whenever the light changes.
+light and the image for the whole world, by weather and hour. Neither does the other's work: no
+material is tuned to fix the light, and no light is tuned for one material. Tuning a material to
+make up for the light is baking lighting into albedo; it breaks again whenever the light changes.
 
 - Lookdev: the materials are real. Grass, stone, bamboo and sand take the values the real things
   have, and one physically based light sets the relations between them, so they read as one place
@@ -228,18 +228,18 @@ for the light is baking lighting into albedo; it breaks again whenever the light
   them; under a closed sky the lawn keeps its green, the sky's light having passed among the blades,
   and does not turn yellow when the sun goes in; looking toward the sun the whole lawn glows, away
   from it it is plainer and greener; no fields of tone, dryness or bare earth (they break the lawn
-  into what reads from the island view as camouflage and dark blotches), and no pattern of dots on the
-  blades. The island top is one sward, about 0.5 m, with no zones across it: never tiers of height
-  and tint by the soil (a short yellow-green band along the windward coast, a taller, deeper grass
-  on deep soil, gravel patches inland), which read from above as a map laid over the meadow. Its
-  layering comes from the grass itself, which grows in clumps about a metre across, each a little
-  taller or shorter than its neighbours, giving its blades their lean and its stroke its colour. Its
-  height swings gently: patches a few metres across over broad swells, a short turf here and a
-  taller sward there, running into each other blade by blade: from above a soft mottling, never a
-  zone, a line, a path or a hollow (a short turf walled by tall grass, two levels, reads as a hole
-  dug into the lawn). From the ground up the sward has a meadow's layers: dead leaves and the old
-  leaves' straw sheaths low in it and the green leaves over them; no flowering stems stand over it.
-  No low herbs grow under it (clover mats, plantain rosettes): from the island view they do not
+  into what reads from the island view as camouflage and dark blotches), and no pattern of dots on
+  the blades. The island top is one sward, about 0.5 m, with no zones across it: never tiers of
+  height and tint by the soil (a short yellow-green band along the windward coast, a taller, deeper
+  grass on deep soil, gravel patches inland), which read from above as a map laid over the meadow.
+  Its layering comes from the grass itself, which grows in clumps about a metre across, each a
+  little taller or shorter than its neighbours, giving its blades their lean and its stroke its
+  colour. Its height swings gently: patches a few metres across over broad swells, a short turf here
+  and a taller sward there, running into each other blade by blade: from above a soft mottling,
+  never a zone, a line, a path or a hollow (a short turf walled by tall grass, two levels, reads as
+  a hole dug into the lawn). From the ground up the sward has a meadow's layers: dead leaves and the
+  old leaves' straw sheaths low in it and the green leaves over them; no flowering stems stand over
+  it. No low herbs grow under it (clover mats, plantain rosettes): from the island view they do not
   read. The sward runs to the edge on every coast, windward and lee alike, never a windward lip
   shown short, yellow, thin over gravel and bared to the cliff's stone, which reads from above as
   one more zone. Inside the grass the shade is the grass's own, never painted: the blades and clumps
@@ -264,8 +264,9 @@ for the light is baking lighting into albedo; it breaks again whenever the light
   and the same grass grows out over it: its tufts at the lip spill over the edge, fine blades that
   arch over and hang down the wall, lying on the stone, never through it, and the lip alternates
   between overgrown stretches and cut-open root soil.
-- The flowers are off for now (`?flowers` brings them back): Penglai's bamboo grows over the whole
-  island, and whether its meadow keeps flowers among the groves is still open. As they were made:
+- The flowers are off for now (the meadow draws none, and no option brings them back): Penglai's
+  bamboo grows over the whole island, and whether its meadow keeps flowers among the groves is
+  still open. As they were made:
 - Flowers are part of the meadow, and they are Penglai's, after the texts on the immortals'
   islands, not a generic island's: whole plants among the grass, never heads floating over it. The
   yaoxiang (遙香草, Shiyi ji: "flowers like cinnabar, leaves narrow and white, like the day lily") is
@@ -387,9 +388,9 @@ for the light is baking lighting into albedo; it breaks again whenever the light
 ## Sea, sky and weather
 
 - The weather is a fine day's: clear and fair. Cloudy and overcast are parked (`PARKED_WEATHER` in
-  `src/sky/Weather.ts`) until the clouds' own milestone, rain, storm and fog until the game needs
-  them: out of the rotation and the production page; the notes on them below stand for their
-  revival.
+  `packages/render/sky/Weather.ts`) until the clouds' own milestone, rain, storm and fog until the
+  game needs them: out of the rotation and the production page; the notes on them below stand for
+  their revival.
 - The sea is calm in everyday weather: no whitecaps on the open water. Only a storm's gale builds
   a rough sea with whitecaps, trailing foam and spray. The sea continues to the horizon.
 - The island stands in the sea's way. Its foam follows the waves the eye sees arrive: where a
@@ -531,26 +532,26 @@ for the light is baking lighting into albedo; it breaks again whenever the light
   in the water and the sky, which meet level only far out, where the sea reflects the sky as drawn,
   and it never flashes off the glint.
 - The night sky as drawn stands below the light it sheds, by a number of stops each weather sets
-  (`seenNight` in `src/sky/Weather.ts`): the moonlit sky and its clouds read dark over the island,
-  while the land, the near sea and the near air keep the light the sky gives them. The far sea
-  and the far air meet the drawn sky at the horizon, and the exposure is set by the light, not by
-  the darker sky. Every night has its moon, up from dusk to dawn: the phase shows only on the drawn
-  moon and never darkens the night.
+  (`seenNight` in `packages/render/sky/Weather.ts`): the moonlit sky and its clouds read dark over
+  the island, while the land, the near sea and the near air keep the light the sky gives them. The
+  far sea and the far air meet the drawn sky at the horizon, and the exposure is set by the light,
+  not by the darker sky. Every night has its moon, up from dusk to dawn: the phase shows only on the
+  drawn moon and never darkens the night.
 - The island reads by moonlight and starlight; the twilight falls into the night with no step
   back up, under every sky. The moon takes over the key soon after the sun has gone.
 - The moon stands fixed in the sky, 20 degrees up on the noon meridian, all night and every night
-  (`src/sky/DayCycle.ts` MOON). Seen from the island view its light comes in at a slant: slopes
-  show a lit and a shaded side, its shadows run long and the sea carries a moon path, where a moon
-  near the zenith would light the island flat. The moon path and the moonlit meadow glow softly in
-  that view too. It neither rises nor sets, so the night's composition holds while the game is
+  (`packages/render/sky/DayCycle.ts` MOON). Seen from the island view its light comes in at a slant:
+  slopes show a lit and a shaded side, its shadows run long and the sea carries a moon path, where a
+  moon near the zenith would light the island flat. The moon path and the moonlit meadow glow softly
+  in that view too. It neither rises nor sets, so the night's composition holds while the game is
   played. The moon is drawn where the island takes its light from, and the glow of the air around it
   comes from there too, so the disk, its glow and the light on the land stand together.
 - Under the moon, stone, sand and skin stay apart from the meadow and from each other in tone.
 - The stars and Milky Way are the real sky as seen from 38 degrees south (the latitude the sun's
   path is set at) at a sidereal time of 14h, fixed: they neither turn through the night nor drift
   over the year, so the night's composition holds, with the Milky Way rising out of the sea in the
-  horizon view (`src/sky/DayCycle.ts` STARS). They are points with a natural spread of brightness,
-  below white except the brightest few; only those near the horizon scintillate.
+  horizon view (`packages/render/sky/DayCycle.ts` STARS). They are points with a natural spread of
+  brightness, below white except the brightest few; only those near the horizon scintillate.
 
 ## Islanders
 
@@ -566,6 +567,6 @@ for the light is baking lighting into albedo; it breaks again whenever the light
   game's default distance the figure reads by colour and silhouette (straw disc, white top and
   shorts, skin), the feathers' and weave's texture from the closest zoom.
 - Realistic, lit by the island's own light (no cel steps, no outlines), about 6.5 heads tall
-  (`real` in `src/characters/Proportions.ts`).
+  (`real` in `packages/island/characters/Proportions.ts`).
 - Built in Blender on the kit's rig and clips, never modelled in code. The kit-dressed
   islander (pointed ears, linen shirt, cel steps, the medium build) stays selectable (`look=kit`).

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
-import { DAY_PRESETS } from '../src/sky/DayCycle.ts';
+import { DAY_PRESETS } from '../packages/render/sky/DayCycle.ts';
 import { renderedFrames } from './page-eval.mjs';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';

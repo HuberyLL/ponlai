@@ -1,0 +1,19 @@
+{
+	"exits": {
+		"render": { "page": "packages/render/index.ts", "headless": "packages/render/data.ts", "setup": "packages/render/setup.ts" },
+		"island": { "page": "packages/island/index.ts", "headless": "packages/island/land.ts" },
+		"game": { "page": "packages/game/index.ts", "headless": "packages/game/sim/index.ts" }
+	},
+	"userData": {
+		"render": { "file": "packages/render/UserData.ts", "list": "USER_DATA" },
+		"island": { "file": "packages/island/world/IslandUserData.ts", "list": "ISLAND_USER_DATA" }
+	},
+	"lazy": [
+		"packages/render/debug/AmbientProbe.ts",
+		"packages/render/debug/FrameProfiler.ts",
+		"packages/render/debug/PipelineCounter.ts",
+		"packages/render/debug/Radiance.ts",
+		"packages/island/debug/WindProbe.ts",
+		"packages/game/index.ts"
+	]
+}

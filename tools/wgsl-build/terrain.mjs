@@ -1,4 +1,4 @@
-// tools/wgsl-build.mjs's entry for the island's terrain material (src/materials/TerrainMaterial.ts):
+// tools/wgsl-build.mjs's entry for the island's terrain material (packages/island/materials/TerrainMaterial.ts):
 // the cliff with the meadow's ground (as World.ts builds the island's), the stones' cliff without it
 // and the sea floor, each lit through the ambient volume as the page lights them.
 //
@@ -11,13 +11,16 @@
 
 import * as THREE from 'three/webgpu';
 import { float, texture } from 'three/tsl';
-import { AmbientVolume } from '../../src/lighting/AmbientVolume.ts';
-import { PROBE_STRIDE } from '../../src/world/AmbientProbes.ts';
-import { installAmbientVolume, installEnvironmentHarmonics } from '../../src/lighting/AmbientSample.ts';
-import { AmbientRelight, AmbientSky } from '../../src/lighting/AmbientRelight.ts';
-import { WaveMaps } from '../../src/ocean/WaveMaps.ts';
-import { makeTerrainMaterial } from '../../src/materials/TerrainMaterial.ts';
-import { shared } from '../../src/shared.ts';
+import { AmbientVolume } from '../../packages/render/lighting/AmbientVolume.ts';
+import { PROBE_STRIDE } from '../../packages/render/lighting/ProbeFormat.ts';
+import { installAmbientVolume, installEnvironmentHarmonics } from '../../packages/render/lighting/AmbientSample.ts';
+import { AmbientRelight, AmbientSky } from '../../packages/render/lighting/AmbientRelight.ts';
+import { WaveMaps } from '../../packages/render/ocean/WaveMaps.ts';
+import { makeTerrainMaterial } from '../../packages/island/materials/TerrainMaterial.ts';
+import { shared } from '../../packages/render/shared.ts';
+import { createDayWindows } from '../../packages/render/look/DayLook.ts';
+import { createAmbientTables } from '../../packages/render/look/AmbientLook.ts';
+import { ISLAND_LOOK } from '../../packages/island/look/IslandLook.ts';
 
 const array = ( name, layers, colorSpace = THREE.NoColorSpace ) => {
 
@@ -36,7 +39,7 @@ export default async function ( { renderer } ) {
 	installAmbientVolume( volume );
 	// the specular's relight over a sky that has projected nothing (as ambient-materials builds it)
 	installEnvironmentHarmonics( new AmbientRelight( {
-		renderer, volume, shared, sky: new AmbientSky( renderer ), weights: () => ( { a: 0, b: 1, blend: 0 } ), cloud: () => float( 1 ), seaCloud: () => float( 1 ), keyHeight: () => 1,
+		renderer, volume, shared, sky: new AmbientSky( renderer ), weights: () => ( { a: 0, b: 1, blend: 0 } ), cloud: () => float( 1 ), seaCloud: () => float( 1 ), keyHeight: () => 1, dayWindows: createDayWindows( ISLAND_LOOK.day ), grade: createAmbientTables( ISLAND_LOOK.ambient ),
 	} ) );
 
 	const detail = array( 'detail', 4 );

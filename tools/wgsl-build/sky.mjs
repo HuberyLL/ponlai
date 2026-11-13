@@ -1,4 +1,4 @@
-// tools/wgsl-build.mjs's entry for the sky (src/sky/Sky.ts): the materials that read the clear
+// tools/wgsl-build.mjs's entry for the sky (packages/render/sky/Sky.ts): the materials that read the clear
 // sky (`Atmosphere.skyRadiance`, and so the earth's shadow and its mean over the azimuth). The
 // environment's panorama bake and the cloudless sky's irradiance, as the first bake draws them,
 // then the dome as the page draws it, fogged by the haze (`fogDome`, VolumetricHaze.ts `skyHaze`),
@@ -7,9 +7,15 @@
 // initialised: the entry skips the clouds' bakes and their copies, as the clouds' entry does.
 
 import * as THREE from 'three/webgpu';
-import { Sky } from '../../src/sky/Sky.ts';
-import { VolumetricHaze } from '../../src/weather/VolumetricHaze.ts';
-import { sceneMRT } from '../../src/post/Motion.ts';
+import { Sky } from '../../packages/render/sky/Sky.ts';
+import { createExposure } from '../../packages/render/look/ExposureLook.ts';
+import { createDayWindows } from '../../packages/render/look/DayLook.ts';
+import { createKeyLift } from '../../packages/render/look/AmbientLook.ts';
+import { createSkyTables } from '../../packages/render/look/SkyLook.ts';
+import { ISLAND_LOOK } from '../../packages/island/look/IslandLook.ts';
+import { VolumetricHaze } from '../../packages/render/weather/VolumetricHaze.ts';
+import { sceneMRT } from '../../packages/render/post/Motion.ts';
+import { buildView } from '../../packages/render/sky/CloudView.ts';
 
 export default function ( { renderer } ) {
 
@@ -24,7 +30,8 @@ export default function ( { renderer } ) {
 	let sky;
 	try {
 
-		sky = new Sky( renderer );
+		// the exposure and the sky's tables from the island's look, as the page's sky stage makes them
+		sky = new Sky( renderer, { exposure: createExposure( ISLAND_LOOK ), dayWindows: createDayWindows( ISLAND_LOOK.day ), keyLift: createKeyLift( ISLAND_LOOK.ambient.keyLift ), look: createSkyTables( ISLAND_LOOK.sky ) } );
 
 	} finally {
 
@@ -35,7 +42,7 @@ export default function ( { renderer } ) {
 	shape.format = THREE.RGBAFormat;
 	shape.type = THREE.UnsignedByteType;
 	sky.clouds.build( renderer, shape );
-	sky.clouds.buildView( 2560, 1440 );
+	buildView( sky.clouds, 2560, 1440 );
 	// (the light kernel never reads the sun's maps, and neither does `skyHaze`)
 	const haze = new VolumetricHaze( {}, sky.atmosphere );
 	sky.fogDome( ( d, distance ) => haze.skyHaze( d, distance ) );

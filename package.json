@@ -9,6 +9,8 @@
     "build": "node tools/qos.mjs tsc && node tools/qos.mjs vite build",
     "preview": "vite preview --host 127.0.0.1 --port 5191",
     "typecheck": "node tools/qos.mjs tsc",
+    "check": "node tools/check.mjs",
+    "lint": "node tools/qos.mjs eslint packages app",
     "lint:docs": "markdownlint-cli2 && node tools/verify-doc-paths.mjs && lychee --offline --no-progress AGENTS.md ARCHITECTURE.md CREDITS.md \"docs/**/*.md\" \"tools/**/*.md\"",
     "lint:links": "lychee --no-progress AGENTS.md ARCHITECTURE.md CREDITS.md \"docs/**/*.md\" \"tools/**/*.md\""
   },
@@ -17,13 +19,15 @@
     "i18next": "^26.4.2",
     "lil-gui": "^0.21.0",
     "lxgw-wenkai-gb-web": "^1.530.0",
-    "three": "^0.186.1"
+    "three": "0.186.1"
   },
   "devDependencies": {
-    "@types/three": "^0.186.0",
+    "@types/three": "0.186.0",
+    "eslint": "^10.13.0",
     "markdownlint-cli2": "^0.24.1",
     "playwright": "^1.63.0",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.1",
     "vite": "^8.3.2"
   }
 }

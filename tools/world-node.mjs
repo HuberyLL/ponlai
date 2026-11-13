@@ -3,16 +3,16 @@
 // meshes close up (tools/verify-world-chunks.mjs).
 import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
-import { buildLand } from '../src/world/chunkWorker.ts';
-import { mergeChunks } from '../src/world/ChunkMerge.ts';
-import { buildChunk, landField, landWindow } from '../src/world/Chunks.ts';
-import { LandLattice } from '../src/world/IslandGrowth.ts';
-import { simplifierReady } from '../src/world/IslandSimplify.ts';
+import { buildLand } from '../packages/island/world/chunkWorker.ts';
+import { mergeChunks } from '../packages/island/world/ChunkMerge.ts';
+import { buildChunk, landField, landWindow } from '../packages/island/world/Chunks.ts';
+import { LandLattice } from '../packages/island/world/IslandGrowth.ts';
+import { simplifierReady } from '../packages/island/world/IslandSimplify.ts';
 
 // the island's simplifier (wasm) is ready before any chunk is built, in every thread
 await simplifierReady;
 
-// The page's world (src/world/WorldChunks.ts) without its workers and cache: the land, its field
+// The page's world (packages/island/world/WorldChunks.ts) without its workers and cache: the land, its field
 // and every chunk built here one after another, then merged as the page merges them. The result
 // is the page's WorldData bit for bit (each chunk is a function of its window, the merge of the
 // chunks' order), with the stages' times summed over the chunks.

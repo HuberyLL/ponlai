@@ -150,7 +150,7 @@
 // were busy (from the views' own records), so a run beside other pages is told from an idle one.
 // A SIGTERM (job.mjs stop) goes on to the tools below it. Exit 0; 1 when a shoot, a picture or a
 // thumbnail failed, or a frame has no row; 2 on bad usage, an earlier run that cannot be compared,
-// or a src/sky/Weather.ts without the exports the weathers' names are read from (WEATHER_PRESETS,
+// or a packages/render/sky/Weather.ts without the exports the weathers' names are read from (WEATHER_PRESETS,
 // PARKED_WEATHER). A frame whose region has too few cells
 // is a gap in its curve and a line in gaps.txt, not a failure.
 import './qos.mjs'; // first: the PNG work and the helpers run with the application policy
@@ -158,17 +158,23 @@ import { spawn, spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DAY_PRESETS, DayCycle, eveningHour, morningHour } from '../src/sky/DayCycle.ts';
+import { DAY_PRESETS, DayCycle, eveningHour, morningHour } from '../packages/render/sky/DayCycle.ts';
+import { createExposure } from '../packages/render/look/ExposureLook.ts';
+import { createDayWindows } from '../packages/render/look/DayLook.ts';
+import { ISLAND_LOOK } from '../packages/island/look/IslandLook.ts';
 
-import * as WeatherModule from '../src/sky/Weather.ts';
+import * as WeatherModule from '../packages/render/sky/Weather.ts';
 
 const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
+// the island's exposure and day windows, which the day cycle takes (its sun and moon do not read
+// them)
+const exposure = createExposure( ISLAND_LOOK ), dayWindows = createDayWindows( ISLAND_LOOK.day );
 // the weathers' names, from the module's own exports (node strips its types): every name loads
 // (WEATHER_PRESETS holds one preset per WeatherName), the weathers that are not parked are the default
 const WEATHER_NAMES = Object.keys( WeatherModule.WEATHER_PRESETS ?? {} );
 const WEATHERS = WEATHER_NAMES.filter( ( w ) => ! ( WeatherModule.PARKED_WEATHER ?? WEATHER_NAMES ).includes( w ) );
-if ( ! WEATHER_NAMES.length ) { console.error( 'day-sweep: src/sky/Weather.ts exports no WEATHER_PRESETS (a record by weather name), where the weathers\' names are read' ); process.exit( 2 ); }
-if ( ! WEATHERS.length ) { console.error( 'day-sweep: src/sky/Weather.ts parks every weather (PARKED_WEATHER): none is left for the default' ); process.exit( 2 ); }
+if ( ! WEATHER_NAMES.length ) { console.error( 'day-sweep: packages/render/sky/Weather.ts exports no WEATHER_PRESETS (a record by weather name), where the weathers\' names are read' ); process.exit( 2 ); }
+if ( ! WEATHERS.length ) { console.error( 'day-sweep: packages/render/sky/Weather.ts parks every weather (PARKED_WEATHER): none is left for the default' ); process.exit( 2 ); }
 const REGIONS = [ 'sky', 'sea', 'land', 'floor' ];
 const THR_STOPS = 1 / 3, THR_DE = 0.03, TURN_DEG = 15, SKY_MASK_DEG = 5;
 // the sun leads a camera down to here, the moon after (the light changes slowly there)
@@ -300,9 +306,9 @@ function frameQuery( camera, weather, minute ) {
 	if ( camera.heading ) {
 
 		// the camera stands opposite the light's direction to look toward it (the island view's camera
-		// is at ( sin az, cos az ) from its pivot: main.ts placeOrbit), on its side to look away
+		// is at ( sin az, cos az ) from its pivot: app/CameraViews.ts placeOrbit), on its side to look away
 		const sign = camera.heading === 'toward' ? - 1 : 1;
-		const snapshot = new DayCycle( { hour: Number( hour ), paused: true } ).snapshot();
+		const snapshot = new DayCycle( exposure, dayWindows, { hour: Number( hour ), paused: true } ).snapshot();
 		const light = snapshot.elevation > HANDOFF_ELEVATION ? snapshot.sunDir : snapshot.moonDir;
 		az = Number( ( ( Math.atan2( sign * light.x, sign * light.z ) * 180 / Math.PI + 360 ) % 360 ).toFixed( 2 ) );
 		parts.push( `az=${ az.toFixed( 2 ) }` );

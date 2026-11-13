@@ -7,55 +7,51 @@ sun and the sky give it (deep clear water, chunky stone, a lush meadow that move
 with wildflowers). The look and what to avoid: `docs/explanation/art-direction.md`. The game's
 design: `docs/explanation/game-design.md` (read it before gameplay work).
 
+This file is an index of at most 20,000 characters (`npm run lint:docs` fails past it): the rules
+every change follows, what to read before a task, and the folders. Detail lives where it is owned.
+
 ## Where things are written
 
-- This file holds only what every change needs. Each module's rules and their reasons live in its
-  header comment: read it before changing the module.
-- A change to a module's behaviour updates that module's header comment. AGENTS.md is updated when
-  a cross-cutting rule or the map below changes (no size limit, but module-specific detail stays in
-  the module). Art decisions go to `docs/explanation/art-direction.md`, the measured look values to
-  `docs/reference/look-values.md`, URL options to `docs/reference/url-options.md` and tool manuals
-  to `docs/reference/tools.md`.
-- The project's structure (its layers, what each owns, how data flows between them, the rules
-  across them and why) is `ARCHITECTURE.md`: read it before a structural change, and update it
-  when a change adds a layer, moves what one owns or changes a flow.
-- The documentation follows Diátaxis (<https://diataxis.fr>): each page is one of four kinds,
-  holds only that kind and lives in that kind's folder of `docs/`. A tutorial
-  (`docs/tutorials/`, none yet) takes a newcomer through a first success, step by step. A how-to guide
-  (`docs/how-to/`) gives the steps for one task. Reference (`docs/reference/`) states facts to look
-  up: options, values, tables; a module's header comment is the reference beside its code.
-  Explanation (`docs/explanation/`) says what something is and why. `docs/README.md` lists every
-  page. By convention a few files stay at the repository's top (`AGENTS.md`, `ARCHITECTURE.md`,
-  `CREDITS.md`), and a README beside a tool documents that tool's folder. A page of one kind links
-  to the others rather than repeating them; a fact or a rule is written in one place. Docs state
-  the current state: what was tried and dropped goes in the commit message, not the page.
+- A module's rules and their reasons live in its header comment: read it before changing the
+  module, and update it with a change to the module's behaviour.
+- `ARCHITECTURE.md` is the structure (layers, what each owns, flows, the rules across them, why):
+  read it before a structural change; update it when a change adds a layer, moves what one owns or
+  changes a flow. Files: `docs/reference/code-map.md`. Art decisions go to
+  `docs/explanation/art-direction.md`, measured look values to `docs/reference/look-values.md`, URL
+  options to `docs/reference/url-options.md`, tool manuals to `docs/reference/tools.md`; this file
+  changes with a rule every change follows, the reading index or the folders.
+- The docs follow Diátaxis (<https://diataxis.fr>), a page one kind, in its folder of `docs/`:
+  tutorials (`docs/tutorials/`, none yet) for a first success, how-to guides (`docs/how-to/`) for
+  one task's steps, reference (`docs/reference/`, and a module's header beside its code) for facts,
+  explanation (`docs/explanation/`) for what and why. `docs/README.md` lists every page. `AGENTS.md`,
+  `ARCHITECTURE.md` and `CREDITS.md` stay at the top; a README beside a tool documents its folder.
+  A page links to the others rather than repeating them; a fact or a rule is written in one place.
+  Docs state the current state: what was tried and dropped goes in the commit message.
 - Prose follows the Google developer documentation style guide
   (<https://developers.google.com/style>): plain words, short sentences, one term per thing.
-  `npm run lint:docs` (markdownlint, an offline link check and the docs paths in code,
-  `docs/reference/tools.md`, Docs checks) passes before a commit that changes a Markdown file; `npm
-  run lint:links` also checks the web links.
 
 ## Stack and commands
 
 - TypeScript (strict), Vite, three.js `WebGPURenderer` (`three/webgpu`, `three/tsl`). WebGPU is
   required (the ocean FFT runs on compute shaders); without it the page shows a message.
 - `npm run dev` (port 5190), `npm run build` (type-checks, then bundles), `npm run typecheck`,
-  `npm run preview` (port 5191). URL options: `docs/reference/url-options.md`; in-page keys:
+  `npm run preview` (port 5191), `npm run lint` (the code lint). `npm run check`: what every commit
+  passes (types, code lint, layers, exits, settings, file sizes, three's internals, CPU regression
+  tools), in seconds, without a GPU; `-- --full` adds the build and the world's chunks
+  (`docs/how-to/check-a-change.md`). `npm run lint:docs`: Markdown, offline links, docs paths in
+  code, this file's size; `npm run lint:links` adds web links. In-page keys:
   `docs/reference/tools.md`, Page.
-- The tools are in `tools/`, their manual in `docs/reference/tools.md` (Which tool for which
-  question). The ones most changes meet:
-  - `node tools/serve.mjs dev|preview`: a server for a worktree on a free port.
-  - `tools/capture.mjs` (one screenshot), `tools/parity/capture-set.mjs` (a list of views on one
-    warm page, instead of a loop of capture.mjs),
-    `uv run tools/img.py diff|crop|sheet|stats|flicker`
-    (image work on captures, instead of a Pillow/NumPy script of one's own).
-  - `tools/probe.mjs`: reads values from the page as JSON, instead of a Playwright script of one's
-    own. `tools/wgsl-build.mjs`: builds TSL to WGSL in node, without a GPU.
-  - `tools/profile-frame.mjs`: frame time on a production build.
-  - `tools/assets.mjs`: the game's assets in `public/` against `assets.lock.json` (status, pull,
-    release, publish); the dev server and the build pull what is missing on their own.
-  - `tools/verify-*.mjs`: regression probes. After any change to the world's generator, run
-    `node tools/verify-world-chunks.mjs` before captures.
+- Tools are in `tools/`, their manual in `docs/reference/tools.md` (Which tool for which question).
+  Most changes meet: `node tools/serve.mjs dev|preview` (a worktree's server on a free port),
+  `tools/capture.mjs` (one screenshot), `tools/parity/capture-set.mjs` (views on one warm page,
+  not a loop), `tools/scenes.mjs` (the renderer's test scenes checked in seconds: run
+  it first after a renderer change), `uv run tools/img.py diff|crop|sheet|stats|flicker` (image work
+  on captures), `tools/probe.mjs` (page values as JSON), `tools/wgsl-build.mjs` (TSL to WGSL in
+  node, no GPU), `tools/profile-frame.mjs` (frame time on a production build), `tools/assets.mjs`
+  (the assets in `public/` against `assets.lock.json`, pulled by dev and build) and
+  `tools/verify-*.mjs` (regression probes; after a change to the world's generator, run
+  `node tools/verify-world-chunks.mjs` before captures). Use them instead of a Pillow, NumPy or
+  Playwright script of one's own.
 - Everything that renders the scene in a browser takes the GPU lock
   (`node tools/gpu-lock.mjs run [--shared] -- <command>`): timing runs hold it alone, paused
   captures and probes share it. Sessions leave `PONLAI_GPU_PRIORITY` unset.
@@ -63,280 +59,8 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   `job.mjs stop <log>` before an agent hands back.
 - Headed browser runs take over the user's screen: run one only for what a screen alone shows, and
   only while `node tools/display-gate.mjs status` allows it.
-- A new CPU-heavy tool imports `tools/qos.mjs` first, and a one-off script runs through
+- A new CPU-heavy tool imports `tools/qos.mjs` first; a one-off script runs through
   `node tools/qos.mjs <command>`.
-
-## Map
-
-- `docs/`: the documentation by kind, listed in `docs/README.md`: `explanation/`
-  (`art-direction.md`, `game-design.md`, `ui.md`, the game UI's spec: read it before UI work),
-  `how-to/` (`add-material.md`, `add-game-content.md`, `check-a-change.md`, `write-a-tool.md`),
-  `reference/` (`tools.md`, `url-options.md`, `look-values.md`, `glossary.md`).
-- `public/` (git-ignored): the game's assets, filled from the GitHub release `assets.lock.json`
-  names (`tools/assets.mjs`, `tools/vite-assets.mjs`; `docs/reference/tools.md`, Assets).
-- `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__PONLAI__` and
-  `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug` / `?profile`.
-- `src/Quality.ts`: the quality tiers, every cost knob in one table (high the only active one);
-  `src/QualityDetect.ts` takes `?quality` or high (its GPU timing is parked with the lower tiers).
-- `src/shared.ts`: uniforms shared by the water, terrain and vegetation.
-- `src/camera/`: the island camera, which starts framing the land alone from its heading
-  (`IslandFraming.ts`, main.ts `placeOrbit`) and which the hand pans within the land's soft
-  bounds, turns, tilts and zooms (`IslandCameraControls.ts`, the ground it grabs in
-  `IslandGround.ts`), and the free flight.
-- `src/world/`: the world generated from the grown land (`IslandGrowth.ts`) in 16 m chunks
-  (`Chunks.ts`, `IslandSimplify.ts`, `ChunkDerived.ts`), built on a pool of workers
-  (`WorldStart.ts`, `WorldChunks.ts`, `chunkWorker.ts`), cached per chunk (`WorldCache.ts`), merged
-  (`ChunkMerge.ts`) and drawn (`World.ts`, the world fields' textures in `WorldFields.ts`), and
-  grown in place (`Growth.ts`, the shoal of a coming piece in `SeabedRise.ts`). Its kinds: the
-  shapes and the top's low swells (`WorldShapes.ts`), cliffs (`Cliff.ts`), submerged stones
-  (`Stones.ts`), sea floor (`Bathymetry.ts`, `SeabedTile.ts`), rim (`RimGround.ts`), the meadow
-  (`Grass.ts`, its blades generated on the GPU as they draw; its crowns' heights in `SwardField.ts`;
-  anchors `Anchors.ts`, soil from `ShoreSample.ts`; the
-  sward's depth over its ground in the meadow map, `SwardField.ts`), the yunpeng that stands
-  among it, single clumps far apart (where: `YunpengSites.ts`; its stalks instances of a few
-  prototypes at two levels and its lights: `Yunpeng.ts`), the islander's
-  walking loop (`WalkLoop.ts`, `WalkPath.ts`), the bamboo over the whole island that the
-  islanders' building stock will come from (where its culms stand and the litter on its groves'
-  floor, which the grass keeps off: `BambooGroves.ts`; the culms, instances of a few prototypes at
-  two levels: `Bamboo.ts`, `BambooMaterials.ts`, their colours, which the probes see too, in
-  `BambooColours.ts`), the vegetation's depth prepass (`VegetationPrepass.ts`)
-  and the opaque scene's, for the ambient occlusion (`OpaquePrepass.ts`), and the ambient light's
-  probes, baked per chunk (`AmbientProbes.ts`). `src/world/vegetation/` holds what every plant kind
-  shares (material, coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the
-  registry of kinds, the trees' tubes and leaf cards in `TreeMesh.ts` and their bark and leaf
-  surfaces in `TreeSurfaces.ts`, the authored plants drawn as instances of a few prototypes with two
-  levels and a stipple between them in `PlantInstances.ts`, what a tree's leaves pass on of the key
-  in `LeafLight.ts`) and the islanders' trail through the meadow (`Trample.ts`, drawn as sprites
-  into the displacement field the blades read, `Displacement.ts`, a frame-graph pass).
-- `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
-  the key's visibility under cloud for the lit code without a sky (`KeyCloud.ts`: the land's floor
-  under a deck, which the islanders read; the sea takes the same floor from the sky, `Sky.ts`
-  `seaKeyFloor`), the refracted sun under water, the light every submerged material shares
-  (`Underwater.ts`), the air/water interface, sky occlusion, the meadow's canopy light and its
-  crowns' shade (`MeadowCanopy.ts`), the ambient light's probes on the GPU (`AmbientVolume.ts`: the
-  lattice's buffer and uniforms, its output texture, its debug view), relit every frame by the sky's
-  harmonics and the key into their irradiance (`AmbientRelight.ts`: the output's packing; the
-  harmonics' operations in `Harmonics.ts`), which every lit island material reads for its ambient
-  diffuse (`AmbientSample.ts`), the sunlight the ground bounces up (`GroundBounce.ts`), the ambient
-  grade's per-weather, per-elevation knobs on the island's ambient light (`AmbientGrade.ts`), the
-  local lights (`LocalLights.ts`: every source in view, such as the yunpeng's clumps by night,
-  sorted into clusters of the main view by a compute pass ahead of the scene passes, which every lit
-  model looks its fragment's list up in; the grid and the CPU sort in `LocalLightClusters.ts`), the
-  low key's lift of the diffuse's cosine (`KeyLift.ts`), the metering illuminance every lit material
-  writes beside its colour for the exposure (`MeterLight.ts`). A new lit material takes all of
-  these through the island's lighting model: `docs/how-to/add-material.md`, Light it as every
-  other surface.
-- `src/materials/`: procedural textures (the gravel bake and the scans' texture arrays:
-  `ProceduralTextures.ts`), the terrain (`TerrainMaterial.ts`, its ground scans hex-tiled), the sea
-  floor's colour (`SeabedLook.ts`), wet surfaces, the meadow's habitat and soil-depth fields
-  (`Meadow.ts`), what a closed sky's light turns into in the sward (`SwardTint.ts`, shared by the
-  blades and the turf).
-- `src/ocean/`: FFT ocean, shore waves, the share of each wave cascade a point of the sea keeps
-  (`WaveDamping.ts`), the wave maps and caustics the light under the water reads, baked by a pass
-  on the frame graph (`WaveMaps.ts`), water shading (`Water.ts`), the sea's optical properties as
-  plain numbers, which the page's uniforms, the ground bounce and the ambient probes read
-  (`SeaOptics.ts`: a change to them rebuilds the world's cache), the sea's large-scale detail
-  (`SeaDetail.ts`: gusts, slicks, windrows), the water's refraction source (`Refraction.ts`), the
-  storm sea.
-- `src/sky/`: atmosphere, environment bakes (`Sky.ts`), volumetric clouds, the thin cloud layer's
-  fibres (`Streaks.ts`), the day cycle (`DayCycle.ts`), the night sky and its data (`NightSky.ts`,
-  `StarCatalog.ts`), the weather: its sky presets, its wind's levels and heading and the auto chain
-  (`Weather.ts`).
-- `src/weather/`: wind (`Wind.ts`: the weather's one wind, which every part reads from it, and the
-  one wind field all vegetation moves in), lightning, rain,
-  puddles, the air's haze and sea fog as one froxel volume lit by the atmosphere and shadowed by
-  the sun's maps and the clouds (`VolumetricHaze.ts`, its keys by the hour and the weather in
-  `HazeKeys.ts`, its medium's closed form in `HazeDepth.ts`), the bamboo leaves the wind takes off
-  the island (`FallingLeaves.ts`: a fixed ring of leaves born round the view and stepped on the GPU
-  by one compute pass).
-- `src/post/`: the frame's passes and tidewater's display chain (`Pipeline.ts`, its bloom in
-  `PhysicalBloom.ts`, the colour the rods lend low light in `Purkinje.ts`), the pre-exposure every
-  writer of the scene's colour and metering light
-  multiplies by and every scene-unit reader divides out (`PreExposure.ts`; the sky's bakes and the
-  clouds' panorama store at a power of two of their own instead, `storeStops`, and their readers
-  multiply by their read gain, Sky.ts `environmentRead` and the like), the key's screen-space shade
-  over the vegetation's and the opaque scene's depth (`MeadowShade.ts`),
-  the screen-space ambient occlusion the ambient light takes (`GTAO.ts`, on in high),
-  the sun's flare (added to the bloom, `PhysicalBloom.ts`) and the screen-space light shafts, off by
-  default (`LightShafts.ts`), FSR 1, render scale and dynamic resolution (`RenderScale.ts`,
-  `DynamicResolution.ts`), the frame pacer, the submit batching, the signal that a paused frame is
-  final (`Settled.ts`), the anti-aliasing mode and the scene's sample count (`Antialiasing.ts`);
-  under the temporal modes the jitter (`Jitter.ts`), the motion vectors (`Motion.ts`), the temporal
-  resolve (`TemporalAA.ts`), its history fetch (FSR 3.1's Lanczos 2 and deringing:
-  `TemporalHistory.ts`) and the FSR 2 measures it takes for moving pixels (`TemporalLocks.ts`), the
-  image of a resting scene (`TemporalRest.ts`), the scene events that restart it or cut the
-  history (`SceneEvents.ts`) and the rain's streaks and the storm's spray drawn after the resolve
-  (`AfterResolve.ts`).
-- `src/post/graph/`: the frame graph: its declarations and compiler (`GraphCompiler.ts`, pure
-  TypeScript, checked by `tools/verify-framegraph.mjs`), its runtime and warm-up (`FrameGraph.ts`,
-  `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`), three r186's cache-key patches and
-  its first lit build made ahead (`ThreePatches.ts`) and the debug view (`DebugView.ts`, `fgview`).
-- `src/post/fsr3/`: the TSL port of AMD's FSR 3.1.5 upscaler (`aa=fsr3`): the host's maths and frame
-  plan (`Host.ts`), its resources (`Resources.ts`) and bindings (`Bindings.ts`), one module per
-  upstream shader header, the kernels (`Passes.ts`); the page's integration, its passes on the
-  frame graph, rest and diagnostics (`Fsr3Upscaler.ts`) and its mip bias (`MipBias.ts`).
-- `src/characters/`: the islanders (figures assembled on the kit's rig, their looks and proportions;
-  the kit look's cel light and ears, the Hanming look's feather and woven surfaces in
-  `FigureSurfaces.ts`; their bodies by sex and age as growth curves in `Ages.ts`, which a figure
-  takes on its rig and shape keys in `FigureAge.ts`).
-- `src/life/`: the island's creatures (`docs/explanation/art-direction.md`, Life), simulated per
-  frame on the rendering side: the wenyao's schools of flying fish (`Wenyao.ts`), the fish's mesh
-  and material (`FishGeometry.ts`, `FishMaterial.ts`).
-- `src/game/`: the game behind `?game` (`Game.ts`, the page's host of the game's session:
-  `Session.ts`, headless, runs the simulation with its record, hands the simulation's events to
-  its listeners, checks the player's commands, keeps the leader's words as heard, the save, and the
-  island's growth by the population, which it asks of the page's `world/Growth.ts`;
-  `tools/play-game.mjs` runs the same session in node): `sim/` is the headless simulation (no
-  three.js or DOM; node runs it by stripping types; the five actions, each with its arguments and
-  the condition it holds by every tick, in `sim/actions.ts`; the entrance that checks a brain's
-  calls in `sim/agent.ts` `act`, against the schemas of `sim/schema.ts`; what happened as events in
-  `sim/events.ts`; a tick's time of day only in `sim/clock.ts`; the other islanders as places and
-  what they heard and were given in `sim/people.ts`; the game's content (needs, items and their
-  uses, kinds of place and of building, the options at them) as definitions registered in
-  `sim/registry.ts` by the modules of `sim/content/` (the core names none: ARCHITECTURE.md, rule 7;
-  adding content: `docs/how-to/add-game-content.md`); only exact operations in the rules, the few
-  functions they need in `sim/maths.ts`), `save.ts` is the save (one slot: the simulation's state
-  and the record, versioned: a save of another version is set aside and a new game started; the
-  world's start reads its piece count), `view/` draws the islanders and the chest, `Chronicle.ts`
-  keeps the record of what happened (the events' first listener) and `Placement.ts` places a
-  building chosen in the build bar. `ui/` is the player's interface (`GameUi.ts`, spec
-  `docs/explanation/ui.md`): its parts (`TopRow.ts`, `Forecast.ts`, `ResourceRow.ts`,
-  `People.ts`, `SpeakBar.ts`, `BuildBar.ts`, `Record.ts`), the lists it shows as data with
-  placeholder rows and the defaults for content without its own (`data/`: buildings, resources,
-  the needs' looks, weather kinds, the record's kinds, the words for the simulation's states), its
-  words in i18next catalogues (`i18n/`: `zh-CN.json` the source, `en.json` an unmaintained snapshot;
-  no player-facing string is written in code,
-  `tools/verify-i18n.mjs`), the brush icons (`Icons.ts`), strokes (`Brush.ts`) and the ink of the
-  long ones (`Ink.ts`, drawn by `InkPath.ts`, `tools/verify-ink.mjs`), what it lays into the
-  scene in the camera's perspective (`Space.ts`: the words over the islanders and in flight),
-  palette (`Palette.ts`), styles (`ui.css`) and the licences of its fonts (`fonts/`; our own brush
-  fonts are assets, `public/fonts/`).
-- `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the test mode's switch (`TestMode.ts`), the
-  frame profiler, the frame-rate readout, the pipeline counter (`PipelineCounter.ts`), the wind view
-  and its probe (`WindView.ts`, `WindArrows.ts`, `WindProbe.ts`), the lighting layer's light-only
-  and ambient-only views (`LightLayer.ts`), the scene's linear radiance over screen boxes
-  (`Radiance.ts`) and what each cell of a grid shows (`RadianceAov.ts`, the kinds' codes in
-  `Classes.ts`), and the named numbers a script or the console can set on a running page
-  (`Tune.ts`).
-- `tools/`: captures, profiling, the GPU lock and the probes (`docs/reference/tools.md`); the WGSL
-  build (`wgsl-build.mjs`, its entries in `wgsl-build/`); the world's chunk checks
-  (`verify-world-chunks.mjs`) and statistics (`verify-world-stats.mjs`), on the node helpers in
-  `world-node.mjs`; the game played headless for days, with a transcript, a timeline and a summary
-  of what the islanders did, for a designer or a brain judged offline (`play-game.mjs`).
-
-## Rules for every change
-
-- Lookdev and lighting are kept strictly apart (`docs/explanation/art-direction.md`, How the look
-  is made); a new material follows `docs/how-to/add-material.md`.
-- Shaders are written in TSL only (no raw WGSL or GLSL strings). Helpers called from several
-  places are `Fn( ... ).setLayout( ... )`, so they compile to one shader function each.
-- Simulation and generation are deterministic and path-independent: the world, its growth, the
-  weather, the wind and every integrated state (wind travel, fog time) are functions of the land,
-  the seeds, the scene clock and the weather, never of the path taken to get there or of the
-  thread count. A grown page holds the world a fresh load of its land holds, and a scene jump
-  (`establishScene` in `main.ts`) the scene a fresh load of the same query holds.
-- Rendering may keep history-dependent effects (a temporal resolve, exposure adaptation, lighting
-  or fog accumulated over frames, vegetation that responds to what passes through it, a per-frame
-  physics simulation) when each one meets three conditions: a scene jump clears its history, as it
-  clears all state a scene leaves behind (a cache, a history, a size that only grows, a window that
-  follows the camera: `tools/verify-scene-jump.mjs`); on a still scene it converges to the same
-  image whatever came before, or it can be frozen or turned off in the test mode; and outside the
-  test mode its frames are compared within a tolerance (`tools/parity/README.md`, Temporal
-  tolerance). Its per-frame update reads the scene clock's step, never the wall clock, so a stepped
-  clip repeats.
-- The test mode is a paused page, which runs MSAA whatever the tier runs (`Antialiasing.ts`),
-  with every history-dependent effect frozen or off, shot once the page's `settled` signal holds
-  (`src/post/Settled.ts`). There a paused frame is
-  exactly repeatable and equals a fresh load's, and refactors are checked byte for byte (the parity
-  MSAA sets, `tools/verify-scene-jump.mjs`, `tools/verify-growth-swap.mjs`). Under the temporal
-  modes a paused page shows its rest image, its own jitter sequence averaged once converged
-  (`TemporalRest.ts`), compared within the tolerance. A new history-dependent effect keeps
-  `settled` false until it has converged, and the test mode's one shared switch, which the
-  capture, parity and verify tools set by default, freezes or turns it off
-  (`docs/how-to/check-a-change.md`, Add a history-dependent effect).
-- Everything generated for the island is generic, because the island grows one piece at a time
-  (`docs/explanation/game-design.md`, "How the island grows"): it derives from the land's footprint,
-  the island's SDF and noise fields with fixed seeds (hashes of position, or random streams seeded
-  per world-anchored cell, never one running stream across many items), never from coordinates
-  placed by hand, and counts follow the measured coast length or area. So does everything fitted to
-  the land on the page (the views, the camera's limits, the shore and rain fields, the reflection's
-  box, the walking loop, the game's grid). Generation stays deterministic
-  whatever the thread count.
-- The world is built in chunks (`Chunks.ts`): a chunk's content is a function of its window of the
-  land field (the chunk grown by 32 m); a new piece rebuilds the chunks whose window meets it
-  grown by 2 m (`dirtyChunks`). For most kinds the reach stays below 34 m; the stones, trails and
-  shore read farther in principle, and D4 / D5 (`tools/verify-world-chunks.mjs`) measure that
-  nothing outside the dirty set changes. A chunk built alone, in a block or on any thread equals
-  itself. Data on a chunk border must be bit-identical in both chunks: lattices are world-anchored,
-  scars are cut in canonical order, curvature comes from the apron, and a chunk's own triangles
-  never go through `computeVertexNormals`. The page draws the island a mesh per land chunk and
-  every other kind as one mesh or pool (the bamboo an instance pool), concatenated in the chunks'
-  order ( cj, ci ) whatever order the workers finished in (`ChunkMerge.ts`, `World.ts`).
-- The island grows in place (`Growth.ts`): a Grow swaps in only the changed chunks in one frame, and
-  every dependent of the land's shape follows it, the same function of the version as at load (a
-  grown page draws a page loaded on that land bit for bit in the test mode:
-  `tools/verify-growth-swap.mjs`). Anything new that depends on the land's shape joins the swap
-  (`docs/how-to/check-a-change.md`, Add something that depends on the land's shape).
-- A swap never builds a pipeline; one that needs one is a bug. New chunk meshes share their kind's
-  material and layout, so they draw with the loaded chunks' pipelines; merged kinds take new
-  geometry of the same layout, uploaded ahead; instanced kinds hold a capacity whose shader does not
-  change (three puts up to 1024 instance matrices in a uniform array of exactly the capacity:
-  `vegetation/Instances.ts`); the meadow's pool takes new buffers on its storage nodes, its kernels
-  reading their bounds from uniforms (`vegetation/VegetationCull.ts`); the world fields swap
-  textures through the one base node each material samples them by (`WorldFields.ts`), and other
-  passes keep their materials across rebakes (`RainCollision.ts`).
-- Changes need to hold in the kept weathers only (clear, fair), and on high only
-  (4K output: 1920x1080 CSS pixels at DPR 2). The parked weathers (cloudy, overcast, rain, storm, fog:
-  `PARKED_WEATHER` in `src/sky/Weather.ts`) and quality tiers (medium, low: `PARKED_QUALITY` in
-  `src/Quality.ts`) are revived later as their own milestones: new work need not support them, but
-  must keep them compiling and loadable by name (`?weather=`, `?quality=`). The default checks
-  leave them out (`docs/reference/tools.md`, Parked weathers, Parked quality tiers). Changes are
-  judged at high's standard: 4K output at 60 fps with MSAA 4x, about 14 ms of GPU time a frame in
-  the normal scenes at the baseline; the dynamic resolution keeps 1440p's pixel count as its
-  baseline on any display (upscaled by FSR 1 on a 4K one, native on a 2K one), climbs to the
-  display's own ratio with headroom and drops to about 1080p's pixel count when busy, and a paused
-  page renders at the baseline (`src/Quality.ts`, profile-frame's default pin:
-  `docs/reference/tools.md`, Frame profiler).
-- Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
-  state. High at 4K output is the reference image, the only active tier and the one every
-  trade-off is judged on; every default in the modules is high's. A load knob is read
-  once when materials and the frame graph are built, so a change of tier reloads the page.
-- Third-party code: files adapted from another project open with a `/*! ... */` notice (project,
-  copyright line, licence) and the licence text sits next to them (see
-  `src/ocean/tidewater.LICENSE.txt`). Public-domain code (CC0, Unlicense) needs no notice; credit
-  it in a comment. Techniques borrowed without code are credited in a comment where they are used.
-- `CREDITS.md` lists every third-party source (adapted code, assets with source, author, licence
-  and processing, techniques); update it with any of these. npm dependencies are not listed (the
-  build collects their licences into `dist/licenses/`); any other licence text that must ship goes
-  in `LICENCE_FILES` in `vite.config.ts`. Do not commit reference images, and do not ship
-  third-party art without a licence.
-- No asset goes into git: every binary file the page loads (textures, models, fonts, audio, baked
-  data) lives in the git-ignored `public/`, is loaded through `import.meta.env.BASE_URL`, and ships
-  in a GitHub release (`assets-v<N>`) that `assets.lock.json` pins. A change to the assets cuts the
-  next release (a published one never changes), and the new lock goes in the commit whose code
-  needs it. Nothing binary or over 1 MiB is committed anywhere (`tools/verify-no-binaries.mjs`;
-  `docs/reference/tools.md`, Assets).
-- Keep machine details out of the repository (hardware, user names, local paths); describe
-  measurements in relative terms.
-- Comments and docs state what was measured and found, not where the notes are: never cite the
-  git-ignored `artifacts/` notes, plans or reports, or internal task and milestone names. Naming a
-  folder a tool writes its output to is fine.
-- Code style follows three.js (mrdoob): tabs, spaces inside parentheses and brackets, comments in
-  English that explain why.
-- Game UI (anything the player sees in `?game`: HUD, menus, overlays, in-world labels, mockups of
-  them): design and build it with the `threejs-game-ui-designer` skill when the agent has it (the
-  threejs-* skill pack), so it reads as a game's interface rather than a product's.
-- Visual changes are compared against captures from before the change, crops included, and the
-  measured differences reported (`docs/how-to/check-a-change.md`, Check a visual change).
-- Performance changes are measured with `tools/profile-frame.mjs` on a production build under the
-  GPU lock, before and after, and contended runs reported as such
-  (`docs/how-to/check-a-change.md`, Measure a performance change).
-- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
-  `type(scope): summary`, the summary in lower case, imperative, without a full stop, the header at
-  most 100 characters, and the body explaining why. Types: `feat`, `fix`, `perf`, `refactor`,
-  `style`, `test`, `docs`, `build`, `ci`, `chore`, `revert`. The optional scope names the section
-  of the codebase changed (for example `ocean`, `world`, `ai`). Mark breaking changes with `!`
-  after the scope or a `BREAKING CHANGE:` footer.
 
 ## Tools
 
@@ -346,114 +70,118 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   A truly one-off script stays in the task's artifacts folder.
 - Never start a GPU tool to see its options: it queues for the lock and renders. Read its header.
 
-## WebGPU / TSL pitfalls
+## Rules for every change
 
-- Once `material.positionNode` is set, `positionLocal` reads the displaced position; use
-  `positionGeometry` for the undisplaced one.
-- In a full-screen pass (`QuadMesh`, `RenderPipeline`) the camera nodes are the pass's own camera:
-  pass the scene camera's matrices as uniforms.
-- Screen uv ( 0, 0 ) is the top-left corner, NDC y points up, depth runs 0..1.
-- Multisampled depth is read with `textureLoad`, one sample at a time (the sample index in its level
-  argument); single-sampled, that argument is a mip level. More in `Pipeline.ts`.
-- WebGPU multisamples with 1 or 4 samples only (three turns 2 into 1, with no MSAA). The
-  anti-aliasing mode (`msaa`, `off`, and the temporal `taa`, `taau`, `fsr3` and `gt`, the last in
-  debug builds only) is a load knob of the tier (`aa` in `Quality.ts`, whose header says which tier
-  runs which and why: high, the only active tier, runs `msaa`, as a paused page does); `aa=` or the
-  GUI picks any mode on any tier. Code that differs by mode reads `Antialiasing.ts`'s exports
-  (`TEMPORAL`, `SCENE_SAMPLES`, `ALPHA_TO_COVERAGE`), never the tier. The vegetation's cut-outs are
-  alpha to coverage under MSAA only: find vegetation by `userData.vegetation`, never by
-  `alphaToCoverage` (`vegetation/Coverage.ts`).
-- Implicitly filtered texture samples and derivatives need uniform control flow: take them
-  (`.toVar()`) before any `If` / `Loop`; inside branches and loops use `.level()` or `textureLoad`.
-  Keep filters that take `dFdx` / `dFdy` out of `select()` / `If` branches (`SolarShadow.ts`).
-- Nested loops: pass both ranges to one `Loop()` call so the counters get distinct names.
-- Three TSL methods take their receiver out of order (r186): `t.mix( a, b )` is mix( a, b, t ),
-  `x.step( edge )` is step( edge, x ), `x.smoothstep( low, high )` is smoothstep( low, high, x ).
-  Write the function form (`src/post/fsr3/Upsample.ts`).
-- TSL may compile a `select()` of large operands into branches: a node first built inside one is
-  declared in that branch only, and the shader silently draws nothing. Select between values
-  built before it (`.toVar()`), or blend with 0/1 weights (`Water.ts`).
-- An inline `Fn( ... )()` (no layout) is set up again in every stage that asks its type: one a
-  varying's value reaches runs its statements in the fragment stage too, and what it reads there
-  becomes more varyings (the meadow went past WebGPU's sixteen under the temporal modes). A branch
-  whose result reaches a varying is a `Fn( ... ).setLayout( ... )` taking its uniforms as arguments
-  (`Grass.ts` `flowerHead`).
-- A `DepthTexture` without a `RenderTarget` takes the renderer's sample count, so it is declared
-  multisampled and cannot be sampled with a comparison; give it a render target. three picks one
-  sampler type per depth texture per material (`SolarShadow.ts`).
-- Shadow passes keep `alphaTest` and `alphaMap` but not `map`; vegetation draws before the terrain
-  (`renderOrder = -1`). See `vegetation/LeafTexture.ts` and `vegetation/Material.ts`.
-- The water samples neither the target it draws into nor many more textures (14 of WebGPU's 16
-  in its fragment stage: `Water.ts`), so it takes no history or reactive input: what the resolve
-  needs from it goes out through its velocity. It refracts the refraction pass's image of what lies
-  under the sea and reflects only what lies inside `Water.reflectionBounds`: a new mesh under the
-  water, a swimmer or a tall or offshore opaque object tells the water
-  (`docs/how-to/add-material.md`, Light it as every other surface).
-- New frame work is a pass on the frame graph, its targets declared with a size class and every
-  texture it binds declared as a read (the attachment ops discard what nothing declares), never an
-  rtt() inside another pass's material or a call around the graph (`Pipeline.ts`).
-- A compute kernel dispatched by a target's size is rebuilt with new pipelines whenever the size
-  changes (at every step of high's dynamic scale): size it from something fixed or keep it a render
-  pass. A kernel with `workgroupBarrier()` is dispatched by size, not by a thread count
-  (`OceanFFT.ts`). A `Fn( ... ).setLayout( ... )` helper that reads uniforms can be emitted with
-  another kernel's uniform names when two compute kernels that use it are built (r186).
-- The same triangles drawn in one draw or split over several (a mesh per chunk, or draw ranges)
-  shade about 1 % of their pixels a level or two apart: multisampled fragments and derivative
-  quads form within a draw. Byte comparisons hold between equal splits only (`World.ts`).
-- A storage buffer cannot grow in place (a larger array fails its `writeBuffer`). A new
-  `StorageBufferAttribute` as each reading storage node's `value` takes new bind groups and no
-  pipeline, compute or render: the shaders declare runtime-sized arrays (r186,
-  `tools/verify-storage-realloc.mjs`).
-- A 16-bit index is copied into a new 32-bit array when its GPU buffer is created, and the copy is
-  uploaded from then on (r186): an index rewritten in place must be a `Uint32Array`. Leave
-  attributes that change once per event at static usage with update ranges: `DynamicDrawUsage`
-  re-uploads the whole buffer on every draw.
-- Programs that must produce bit-identical depth need `@invariant` on the clip position, which
-  three r186 does not emit (`VegetationPrepass.ts`). A material that instances from storage
-  buffers holds the placed position in a `toVar` (`vegetation/VegetationCull.ts`).
-- `renderer.compileAsync` alone does not compile what a render draws (target, MRT, side, call
-  depth, a render context shared by targets of the same attachments): compile ahead through the
-  frame graph's warm-up, a draw that shows only at times registered as a latent of its pass
-  (`FrameGraph.ts`, `graph/Compile.ts`; a shadow map's draws with `compileLatentInto`). The
-  warm-up's priming renders only what keeps no state and never leaves a persistent resource
-  written (`fgPrime=0` turns it off). The order materials first build in is part of the image:
-  r186 emits a shader from node state the builds share, so compiling draws ahead in another order
-  than the frame builds them changed other materials' code and moved a few pixels by one level.
-  The first lit build also makes nodes every receiver shares (the shadow's graph, the camera's world
-  matrix) and emits other code than the later ones: a throwaway receiver builds them before the
-  loop (`ThreePatches.ts` `primeSharedNodes`), so a receiver's code (and a kind's pipeline count)
-  does not depend on which draws first. A render three makes of its own that cannot be compiled
-  before its first frame (the sun's map, built with the first receiver) compiles by rendering it
-  once with asynchronous pipelines (`compileByRendering`, `SunShadow.ts`).
-- A draw whose pipeline an asynchronous compile is still creating is skipped without a word (r186,
-  `Pipelines.isReady`), so a one-time render such as a bake waits for the warm-up that compiles it
-  (`Sky.ts` `warm`).
-- A fragmentNode that writes several attachments must be the `outputStruct( ... )` itself: one
-  returned from inside an `Fn` is emitted with a single output (`struct member m0 not found`).
-  Build the members in one `Fn` and return them as a matrix's columns (`TemporalAA.ts`
-  `neighbourhood`).
-- Under the temporal modes every scene material writes the velocity beside the colour (`Motion.ts`;
-  how: `docs/how-to/add-material.md`, Light it as every other surface). The blend of each
-  attachment comes only from the pass's own MRT (`Motion.ts` `sceneMRT`, `overlayMRT`), whatever a
-  material's MRT node says; a material drawn into two attachment layouts builds once per layout
-  through `graph/ThreePatches.ts`'s cache keys. A new site that changes the scene in a way its
-  frames do not show (a seek, a jump, a new scene, a control that retunes a paused frame) raises a
-  scene event (`SceneEvents.ts`).
-- `SubmitBatch.ts` wraps the device, queue and encoders and holds command buffers: raw WebGPU work
-  and new queue operations must go through its rules, and one invalid command buffer loses its
-  whole batch. `graph/AttachmentOps.ts` wraps the encoders too: a wrapper that hands out encoders
-  of its own must be installed before it.
-- Under the temporal modes the scene passes (the graph's jittered span) see the camera's projection
-  jittered by a fraction of a render pixel. Work keyed, culled or placed by the camera takes the
-  unjittered projection (`jitter.uniforms.unjitteredProjection`): the sky dome, the grass cull, the
-  haze's froxel grid and the light shafts' sun do (`Jitter.ts`).
-- What a frame reads from the frame before (a history, the previous depth, an object's previous
-  matrix, a clock's step) advances once per rendered frame, not per draw or per tick. A texture's
-  history is declared on the graph: a ping-pong resource read through `previous()`, or a frame-end
-  `copyToPersistent` (single-sampled, same size class and format), never a `copyTextureToTexture`
-  of its own around the graph (`GraphCompiler.ts`).
-- Timestamp queries (`trackTimestamp`) have one owner at a time (`DynamicResolution.ts`).
-- `Sky.ts` drives three's private `PMREMGenerator` steps, `SunShadow.compileCasters` mirrors
-  three's shadow-pass material, `debug/AmbientProbe.ts` frees its storage buffers through the
-  renderer's private attribute map, and `graph/ThreePatches.ts`, `graph/AttachmentOps.ts` and
-  `graph/Compile.ts` patch or stand in for r186 internals: re-check them on a three upgrade.
+"Enforced by" names a code lint rule (`ponlai/…`), a `tools/verify-*.mjs` check (its bare name), a
+command, or judgement. "Came from" is the mistake that led to the rule; a dash means none is on
+record and the rule guards a stated convention.
+
+| Rule | Enforced by | Came from |
+| --- | --- | --- |
+| Lookdev and lighting are kept strictly apart (`docs/explanation/art-direction.md`, How the look is made); a new material follows `docs/how-to/add-material.md`. | judgement | - |
+| Shaders are TSL only, never WGSL or GLSL strings; a helper called from several places is `Fn( ... ).setLayout( ... )`, one shader function. | `ponlai/tsl-only`; the helpers: judgement | - |
+| Simulation and generation are deterministic and path-independent: the world, its growth, the weather, the wind and every integrated state are functions of the land, seeds, scene clock and weather, never of the path or thread count; a grown page or a scene jump holds what a fresh load holds (`ARCHITECTURE.md`, rule 4). | `verify-world-chunks`, `verify-growth-swap`, `verify-scene-jump`, parity captures | a cliff wall's exposure kept state across calls (`Chunks.ts`) |
+| What changes the scene reads the scene clock or its step, never the wall clock (`ARCHITECTURE.md`, rule 17). | `ponlai/scene-clock` | the sky's irradiance read-back waited on a wall-clock gate |
+| A history-dependent effect is cleared by a scene jump, converges on a still scene or is frozen or off in the test mode, and is compared within a tolerance (`ARCHITECTURE.md`, rule 4). | `verify-scene-jump`; parity tolerance | a history that outlived a jump (`ARCHITECTURE.md`, rule 15) |
+| The test mode is a paused page under MSAA, shot once `settled` holds; a paused frame repeats exactly and equals a fresh load's. A new history-dependent effect keeps `settled` false until converged and obeys the test mode's switch (`docs/how-to/check-a-change.md`). | parity MSAA sets, `verify-scene-jump`, `verify-growth-swap` | - |
+| What is generated for the island or fitted to the land derives from the land's footprint, the island's SDF and fixed-seed fields, never hand-placed coordinates; counts follow the coast or the area (`ARCHITECTURE.md`, rule 5). | judgement | the shore's stones came from one running stream along the coast (`Stones.ts`) |
+| The world is built in chunks: a chunk's content is a function of its window, border data is bit-identical in both chunks, the chunks merge in their own order (`Chunks.ts`, `ChunkMerge.ts`). | `verify-world-chunks`, `ponlai/chunk-normals` | the rim's skirt and the world took normals from a chunk's own triangles |
+| The island grows in place: a Grow swaps the changed chunks in one frame, and what depends on the land's shape joins the swap (`Growth.ts`). | `verify-growth-swap` | a stale shore on a grown page (`ARCHITECTURE.md`, rule 15) |
+| A swap never builds a pipeline; one that needs one is a bug (`Growth.ts`). | `verify-growth-swap`, `verify-first-use` | - |
+| Changes hold in the kept weathers (clear, fair) and on high (4K output: 1920x1080 CSS pixels at DPR 2) only; parked weathers (`sky/Weather.ts` `PARKED_WEATHER`) and tiers (`Quality.ts` `PARKED_QUALITY`) need no support but keep compiling and loading by name (`?weather=`, `?quality=`); default checks skip them. | `npm run typecheck`; judgement | the parked tiers slowed every line of work down (`Quality.ts`) |
+| Changes are judged at high's standard: 4K output at 60 fps with MSAA 4x, about 14 ms of GPU time a frame at the baseline (`Quality.ts`; `docs/reference/tools.md`, Frame profiler). | `profile-frame`, a measurement run by hand | - |
+| Quality tiers change the cost, never the mood (weather, clock, lighting). High at 4K output is the reference image, the only active tier and every module's default; a load knob is read once, so a change of tier reloads (`Quality.ts`). | judgement | - |
+| Code that differs by anti-aliasing mode reads `post/Antialiasing.ts`'s exports, never the tier. | judgement | the depth resolve read four samples from a target of two |
+| A layer imports only from layers below, a package only through its exits (a newly needed name is added there); a `userData` key is on its layer's list (`ARCHITECTURE.md`, rules 10, 11). | `verify-layers`, `verify-exits` | a module that worked as it loaded made import order part of the program |
+| A URL option is declared in `Settings.ts` and read through it only (`ARCHITECTURE.md`, rule 14). | `verify-settings`, `verify-layers` | fifteen modules read the address their own way |
+| The renderer, the island and the game's rules never touch the browser's globals; they are given what they need (`ARCHITECTURE.md`, rule 13). | `verify-layers` (named globals only); other routes: judgement | - |
+| A plant kind, a kind of local light or an extra pass declares its cost knob, its test-mode stand and how it follows the growth (`Extensions.ts`). | `verify-extensions` | an effect that forgot one (`ARCHITECTURE.md`, rule 18) |
+| three's internals are reached only in `packages/render/three/`; an upgrade of three follows `docs/how-to/upgrade-three.md`. | `verify-three-internals` | - |
+| A file adapted from another project opens with a `/*! ... */` notice (project, copyright line, licence), its licence text beside it (`ocean/tidewater.LICENSE.txt`). Public-domain code (CC0, Unlicense) needs no notice; it and a technique borrowed without code are credited in a comment where used. | judgement | - |
+| `CREDITS.md` lists every third-party source (adapted code, assets with source, author, licence and processing, techniques) but npm dependencies (the build collects theirs in `dist/licenses/`); other shipped licence text goes in `vite.config.ts` `LICENCE_FILES`. No reference images in git, no unlicensed third-party art. | judgement | - |
+| No asset in git: what the page loads lives in the git-ignored `public/`, loads through `import.meta.env.BASE_URL`, ships in a GitHub release (`assets-v<N>`, never changed once published) pinned by `assets.lock.json`, the new lock in the commit whose code needs it; nothing binary or over 1 MiB is committed (`docs/reference/tools.md`, Assets). | `verify-no-binaries`; the rest: judgement | binary assets were kept in git |
+| Machine details (hardware, user names, local paths) stay out of the repository; measurements are relative. | judgement | - |
+| Comments and docs state what was measured and found, never cite the git-ignored `artifacts/` notes, plans or reports, or internal task and milestone names (a tool's output folder may be named). | judgement | - |
+| Code style follows three.js (mrdoob): tabs, spaces inside parentheses and brackets, English comments that explain why. | judgement | - |
+| No player-facing string is written in code; the words are in `packages/game/ui/i18n/`. | `verify-i18n` | the interface's Chinese was written inline across a dozen modules |
+| Game UI (what the player sees in `?game`, mockups too) is built with the `threejs-game-ui-designer` skill when the agent has it, to read as a game's, not a product's. | judgement | - |
+| A visual change is compared against captures from before it, crops included, and the measured differences reported (`docs/how-to/check-a-change.md`). | judgement | - |
+| A performance change is measured with `profile-frame` on a production build under the GPU lock, before and after, contended runs reported as such. | judgement | - |
+| `npm run lint:docs` passes before a commit that changes Markdown. | `npm run check` (on staged Markdown) | - |
+| Commits follow [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): summary` (lower case, imperative, no full stop, header at most 100 characters), a body saying why. Types: `feat`, `fix`, `perf`, `refactor`, `style`, `test`, `docs`, `build`, `ci`, `chore`, `revert`; the optional scope names the section changed (`ocean`, `world`, `ai`); a breaking change takes `!` or a `BREAKING CHANGE:` footer. | judgement | - |
+
+Shader, pass and GPU rules; the name in brackets is their section of
+`docs/reference/three-behaviour.md`.
+
+| Rule | Enforced by | Came from |
+| --- | --- | --- |
+| Write TSL's `mix`, `step`, `smoothstep` in the function form (Method forms of mix, step and smoothstep). | `ponlai/tsl-method-order` | fsr3's kernel bias took `.mix` out of order |
+| New frame work is a pass on the frame graph, targets and reads declared, never an `rtt()` in a material or a call around the graph (Frame work on the graph). | `ponlai/pass-on-graph`, `verify-framegraph`; the reads: judgement | the display chain's composite, sharpen and blur used `rtt()` or `convertToTexture()` |
+| A texture's history is declared on the graph; what a frame reads from the one before advances once per frame (The frame before). | `ponlai/history-on-graph`, `verify-framegraph`; the rest: judgement | - |
+| Attributes changed once per event keep static usage with update ranges (Attribute usage). | `ponlai/no-dynamic-draw` | the lightning re-uploaded whole buffers every draw |
+| Timestamp queries have one owner at a time (Timestamps). | `ponlai/timestamp-owner` | - |
+| Vegetation is found by `userData.vegetation`, never `alphaToCoverage` (Vegetation's cut-outs). | `ponlai/vegetation-tag` | the sun's shadow keyed its filter on `alphaToCoverage` |
+| `positionGeometry` for the undisplaced position (The displaced position). | judgement | - |
+| `select()` chooses between values built before it (select() of large operands). | judgement | the water's position, built in a branch, drew nothing |
+| Implicit samples and derivatives in uniform control flow (Uniform control flow). | judgement | a shadow filter's derivatives inside a select |
+| Nested loops are one `Loop()` (Nested loops). | judgement | - |
+| A laid-out helper that reads uniforms can take another build's uniform names when two shaders using it (compute kernels or materials) are built (Shader functions). | judgement | FSR 3's kernels (`fsr3/Common.ts`); the display chain's `coolShare` broke the rain (`PipelineDisplay.ts`) |
+| A branch reaching a varying is a laid-out `Fn` (Inline functions and varyings). | judgement | the meadow passed sixteen varyings |
+| Several attachments: the `outputStruct` itself (Several attachments). | judgement | an `outputStruct` from inside an `Fn`: `struct member m0 not found` |
+| Bit-identical depth takes `@invariant` (Bit-identical depth). | judgement | the vegetation prepass's depth test failed a few samples |
+| Screen uv, NDC and depth conventions (Screen conventions). | judgement | - |
+| A full-screen pass takes the scene camera as uniforms (A full-screen pass's camera). | judgement | - |
+| Multisampled depth by `textureLoad` (Multisampled depth). | judgement | - |
+| 1 or 4 samples (Sample counts). | judgement | the depth resolve read samples a target of two lacked |
+| A sampled `DepthTexture` has a render target (Depth textures). | judgement | met when the sun's shadow map was stepped |
+| Shadow passes keep `alphaTest`, `alphaMap`, not `map` (Shadow passes). | judgement | - |
+| Temporal modes: velocity, MRT blends, unjittered projection, scene events (Temporal modes). | judgement | - |
+| Byte comparisons hold between equal draw splits only (Split draws). | judgement | a mesh per chunk moved 1 % of pixels (`World.ts`) |
+| Draws compile ahead through the graph's warm-up (Compiling ahead). | `verify-first-use`, `verify-frame-graph-gpu` | the sun map's first redraw stalled on its pipelines |
+| The order materials first build in is part of the image (Build order). | parity captures, `verify-scene-jump` | the first lit receiver emitted other code |
+| A one-time render waits for its warm-up (Draws skipped while compiling). | `verify-first-use` | - |
+| Compute kernels are sized from something fixed (Compute kernels). | judgement | - |
+| Storage buffers grow by a new attribute (Storage buffers). | `verify-storage-realloc` | - |
+| Instanced kinds keep a fixed capacity (Instance matrices). | `verify-growth-swap` | - |
+| An index rewritten in place is a `Uint32Array` (Index buffers). | `verify-growth-swap` | - |
+| Raw WebGPU work follows `post/SubmitBatch.ts` (Submits and encoders). | judgement | - |
+| The water takes no more textures, no history; a mesh under the sea or tall or offshore tells the water (The water's textures). | judgement | - |
+
+## Adding a rule
+
+After a bug, a review's finding or a failed check, prefer in this order: make the mistake
+impossible in the architecture, then in the types, then catch it with a lint rule, then a test, and
+only then write text. A rule that can be a check gets it in the same change, and a row above; one
+that needs judgement is written where it is owned, with a row here. A new rule names the mistake
+that led to it. A rule without a check that is broken a second time gets one in the change that
+meets it.
+
+## Before a task, read
+
+- Before you write or change TSL, a shader, a compute kernel, a pass of the frame graph, a GPU
+  buffer, instancing or raw WebGPU work, you must read `docs/reference/three-behaviour.md`: most of
+  what it lists fails without an error.
+- A pass, a plant kind or a local
+  light: `docs/how-to/add-to-the-renderer.md`. A material: `docs/how-to/add-material.md`.
+- The world's generator: `packages/island/world/Chunks.ts`'s header. Something that depends on the
+  land's shape: `packages/island/world/Growth.ts`'s header. It and a history-dependent effect:
+  `docs/how-to/check-a-change.md`.
+- Gameplay: `docs/explanation/game-design.md`; game content: `docs/how-to/add-game-content.md`;
+  game UI: `docs/explanation/ui.md`. The look: `docs/explanation/art-direction.md`,
+  `docs/reference/look-values.md`.
+- A tool: `docs/how-to/write-a-tool.md`. three.js: `docs/how-to/upgrade-three.md`. A commit:
+  `docs/how-to/check-a-change.md`. A file: `docs/reference/code-map.md`.
+
+## Map
+
+- `app/`: the page (entry, assembly, frame loop, GUI, scene jump); `app/scenes/`, `scenes.html`:
+  the renderer's test scenes.
+- `packages/render/`: the renderer, built without the island: light, sky, sea, weather, the
+  vegetation's shared parts, the frame's passes and graph, the look's readers, three's internals.
+- `packages/island/`: the island: its world in chunks, grown in place, its materials, its look's
+  numbers, its camera, the islanders and creatures.
+- `packages/game/`: the game behind `?game`: the headless simulation (`sim/`), session, save, view
+  and interface (`ui/`).
+- `tools/`: checks, captures, probes, profiling, the GPU lock, the code lint (`tools/lint/`).
+- `docs/`: the documentation by kind (`docs/README.md`). `public/` (git-ignored): the assets. File
+  by file: `docs/reference/code-map.md`.

@@ -1,8 +1,8 @@
-// tools/wgsl-build.mjs's entry for the local lights (src/lighting/LocalLights.ts): the clusters'
+// tools/wgsl-build.mjs's entry for the local lights (packages/render/lighting/LocalLights.ts): the clusters'
 // kernel, then the lit materials whose fragment stage binds the most, which the light table and the
 // clusters add two storage buffers to: the terrain's cliff (with the meadow over it) and its seabed
-// (src/materials/TerrainMaterial.ts), and the islanders' lit figure (src/characters/), each over the
-// ambient volume as the page builds them (src/lighting/AmbientSample.ts).
+// (packages/island/materials/TerrainMaterial.ts), and the islanders' lit figure (packages/island/characters/), each over the
+// ambient volume as the page builds them (packages/render/lighting/AmbientSample.ts).
 //
 // Stand-ins: the detail maps and scans are empty textures of the page's kinds (one array texture
 // for the baked maps' layers, two for the scans), the shore and rim fields empty textures, the
@@ -13,17 +13,20 @@
 
 import * as THREE from 'three/webgpu';
 import { texture, int, float } from 'three/tsl';
-import { localLightsKernel } from '../../src/lighting/LocalLights.ts';
-import { AmbientVolume } from '../../src/lighting/AmbientVolume.ts';
-import { installAmbientVolume, installEnvironmentHarmonics } from '../../src/lighting/AmbientSample.ts';
-import { AmbientRelight, AmbientSky } from '../../src/lighting/AmbientRelight.ts';
-import { PROBE_STRIDE } from '../../src/world/AmbientProbes.ts';
-import { DETAIL_LAYER } from '../../src/materials/ProceduralTextures.ts';
-import { createSoilTexture } from '../../src/materials/Soil.ts';
-import { makeTerrainMaterial } from '../../src/materials/TerrainMaterial.ts';
-import { WaveMaps } from '../../src/ocean/WaveMaps.ts';
-import { makeLitFigureMaterial } from '../../src/characters/FigureSurfaces.ts';
-import { shared } from '../../src/shared.ts';
+import { localLightsKernel } from '../../packages/render/lighting/LocalLights.ts';
+import { AmbientVolume } from '../../packages/render/lighting/AmbientVolume.ts';
+import { installAmbientVolume, installEnvironmentHarmonics } from '../../packages/render/lighting/AmbientSample.ts';
+import { AmbientRelight, AmbientSky } from '../../packages/render/lighting/AmbientRelight.ts';
+import { PROBE_STRIDE } from '../../packages/render/lighting/ProbeFormat.ts';
+import { DETAIL_LAYER } from '../../packages/render/materials/ProceduralTextures.ts';
+import { createSoilTexture } from '../../packages/island/materials/Soil.ts';
+import { makeTerrainMaterial } from '../../packages/island/materials/TerrainMaterial.ts';
+import { WaveMaps } from '../../packages/render/ocean/WaveMaps.ts';
+import { makeLitFigureMaterial } from '../../packages/island/characters/FigureSurfaces.ts';
+import { shared } from '../../packages/render/shared.ts';
+import { createDayWindows } from '../../packages/render/look/DayLook.ts';
+import { createAmbientTables } from '../../packages/render/look/AmbientLook.ts';
+import { ISLAND_LOOK } from '../../packages/island/look/IslandLook.ts';
 
 const array = ( name, depth ) => {
 
@@ -49,7 +52,7 @@ export default function ( { renderer } ) {
 	installAmbientVolume( volume );
 	// the specular's relight over a sky that has projected nothing (as ambient-materials builds it)
 	installEnvironmentHarmonics( new AmbientRelight( {
-		renderer, volume, shared, sky: new AmbientSky( renderer ), weights: () => ( { a: 0, b: 1, blend: 0 } ), cloud: () => float( 1 ), seaCloud: () => float( 1 ), keyHeight: () => 1,
+		renderer, volume, shared, sky: new AmbientSky( renderer ), weights: () => ( { a: 0, b: 1, blend: 0 } ), cloud: () => float( 1 ), seaCloud: () => float( 1 ), keyHeight: () => 1, dayWindows: createDayWindows( ISLAND_LOOK.day ), grade: createAmbientTables( ISLAND_LOOK.ambient ),
 	} ) );
 	const detail = array( 'detail', 4 );
 	const layer = ( i ) => texture( detail ).depth( int( i ) );

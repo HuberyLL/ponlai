@@ -7,8 +7,9 @@
 
 import assert from 'node:assert/strict';
 import { BLOOM_PASSES, bloomTable, compilePipeline, compileToday, declareTemporal } from './tables-passes.mjs';
-import { GraphDecl, compileGraph } from '../../src/post/graph/GraphCompiler.ts';
-import { AttachmentOps, opsModeFromURL } from '../../src/post/graph/AttachmentOps.ts';
+import { GraphDecl, compileGraph } from '../../packages/render/post/graph/GraphCompiler.ts';
+import { AttachmentOps, opsModeFromURL } from '../../packages/render/post/graph/AttachmentOps.ts';
+import { parseSettings } from '../../packages/render/Settings.ts';
 
 const col = ( resource, load, store, resolve = null ) => ( { resource, load, store, resolve } );
 const dep = ( resource, write, load, store ) => ( { resource, write, load, store } );
@@ -455,20 +456,20 @@ export const checks = [
 
 	[ 'fgOps: the URL picks the table, derived by default, all-store under post=store-scene', () => {
 
-		assert.equal( opsModeFromURL( '?fgOps=derived' ), 'derived' );
-		assert.equal( opsModeFromURL( '?fgOps=legacy' ), 'legacy' );
-		assert.equal( opsModeFromURL( '?fgOps=store' ), 'store' );
-		assert.equal( opsModeFromURL( '?fgOps=off' ), 'off' );
-		assert.equal( opsModeFromURL( '?fgOps=bogus' ), 'derived' );
-		assert.equal( opsModeFromURL( '' ), 'derived' );
+		assert.equal( opsModeFromURL( parseSettings( '?fgOps=derived' ) ), 'derived' );
+		assert.equal( opsModeFromURL( parseSettings( '?fgOps=legacy' ) ), 'legacy' );
+		assert.equal( opsModeFromURL( parseSettings( '?fgOps=store' ) ), 'store' );
+		assert.equal( opsModeFromURL( parseSettings( '?fgOps=off' ) ), 'off' );
+		assert.equal( opsModeFromURL( parseSettings( '?fgOps=bogus' ) ), 'derived' );
+		assert.equal( opsModeFromURL( parseSettings( '' ) ), 'derived' );
 		assert.equal( opsModeFromURL( null ), 'derived' );
-		assert.equal( opsModeFromURL( '?post=store-scene' ), 'store' );
-		assert.equal( opsModeFromURL( '?post=three-fsr,store-scene' ), 'store' );
-		assert.equal( opsModeFromURL( '?post=legacy' ), 'store', 'post=legacy includes store-scene' );
-		assert.equal( opsModeFromURL( '?post=three-fsr' ), 'derived' );
-		assert.equal( opsModeFromURL( '?post=store-scene&fgOps=derived' ), 'derived', 'an explicit fgOps wins' );
-		assert.equal( opsModeFromURL( '?post=store-scene&fgOps=legacy' ), 'legacy' );
-		assert.equal( new AttachmentOps( mockWebGPU().Backend.prototype ).mode, 'derived', 'the default in a page without the option (node: no location)' );
+		assert.equal( opsModeFromURL( parseSettings( '?post=store-scene' ) ), 'store' );
+		assert.equal( opsModeFromURL( parseSettings( '?post=three-fsr,store-scene' ) ), 'store' );
+		assert.equal( opsModeFromURL( parseSettings( '?post=legacy' ) ), 'store', 'post=legacy includes store-scene' );
+		assert.equal( opsModeFromURL( parseSettings( '?post=three-fsr' ) ), 'derived' );
+		assert.equal( opsModeFromURL( parseSettings( '?post=store-scene&fgOps=derived' ) ), 'derived', 'an explicit fgOps wins' );
+		assert.equal( opsModeFromURL( parseSettings( '?post=store-scene&fgOps=legacy' ) ), 'legacy' );
+		assert.equal( new AttachmentOps( { backend: mockWebGPU().Backend.prototype } ).mode, 'derived', 'the default in a page without the option (node: no location)' );
 
 	} ],
 
@@ -480,7 +481,7 @@ export const checks = [
 
 			const m = mockWebGPU();
 			const backend = new m.Backend();
-			const ops = new AttachmentOps( backend, { mode: 'derived', dev: false } );
+			const ops = new AttachmentOps( { backend }, { mode: 'derived', dev: false } );
 			if ( order === 'patch first' ) m.patchPrototype();
 			ops.install();
 			if ( order === 'ops first' ) m.patchPrototype();
@@ -548,7 +549,7 @@ export const checks = [
 			return encoder;
 
 		};
-		const ops = new AttachmentOps( backend, { mode: 'legacy' } );
+		const ops = new AttachmentOps( { backend }, { mode: 'legacy' } );
 		ops.install();
 		const sceneRT = {};
 		ops.begin( table );
@@ -569,7 +570,7 @@ export const checks = [
 		// uninstall with a wrapper installed after it: the later wrapper stays (it calls ours,
 		// which now only passes calls on)
 		const late = new m.Backend();
-		const lateOps = new AttachmentOps( late, { mode: 'legacy' } );
+		const lateOps = new AttachmentOps( { backend: late }, { mode: 'legacy' } );
 		lateOps.install();
 		const ours = late.device.createCommandEncoder;
 		const after = function ( d ) {
@@ -590,7 +591,7 @@ export const checks = [
 
 		// fgOps=off: installed, inside a frame, still nothing is rewritten
 		const offBackend = new m.Backend();
-		const off = new AttachmentOps( offBackend, { mode: 'off' } );
+		const off = new AttachmentOps( { backend: offBackend }, { mode: 'off' } );
 		off.install();
 		off.begin( table );
 		off.enterPass( sceneRT, find( table, 'rain' ) );
@@ -628,7 +629,7 @@ export const checks = [
 			const m = mockWebGPU();
 			const backend = new m.Backend();
 			const batch = m.installBatch( backend.device );
-			const ops = new AttachmentOps( backend, { mode: 'derived' } );
+			const ops = new AttachmentOps( { backend }, { mode: 'derived' } );
 			ops.install();
 			// (the frame enters the water and the rain only, both rewritten)
 			assert.equal( frame( backend, ops ), 2 );
@@ -647,7 +648,7 @@ export const checks = [
 
 			const m = mockWebGPU();
 			const backend = new m.Backend();
-			const ops = new AttachmentOps( backend, { mode: 'derived' } );
+			const ops = new AttachmentOps( { backend }, { mode: 'derived' } );
 			ops.install();
 			const batch = m.installBatch( backend.device );
 			assert.equal( frame( backend, ops ), 0 );
@@ -674,7 +675,7 @@ export const checks = [
 			encoder.beginRenderPass( { ...renderContext.descriptor, again: true } );
 
 		};
-		const ops = new AttachmentOps( backend, { mode: 'derived' } );
+		const ops = new AttachmentOps( { backend }, { mode: 'derived' } );
 		ops.install();
 		const sceneRT = {};
 		ops.begin( table );

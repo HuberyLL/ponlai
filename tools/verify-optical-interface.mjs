@@ -1,6 +1,6 @@
 // GPU regression: full-angle Snell refraction, tilted normals, index matching and
 // the radiance Jacobian at the water-to-air interface.
-// Needs the Vite dev server: it imports /src/ modules into the page (tools/dev-server.mjs).
+// Needs the Vite dev server: it imports the source modules into the page (tools/dev-server.mjs).
 // Usage: node tools/verify-optical-interface.mjs http://127.0.0.1:5190
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
@@ -28,7 +28,7 @@ try {
 
 		try {
 
-			const module = await import( '/src/lighting/OpticalInterface.ts' );
+			const module = await import( '/packages/render/lighting/OpticalInterface.ts' );
 			return { probe: await module.probeOpticalInterface( window.__PONLAI__.renderer ) };
 
 		} catch ( error ) { return { failure: error.message }; }

@@ -17,8 +17,8 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
-import { eveningHour } from '../src/sky/DayCycle.ts';
-import { MOON_ANGULAR_RADIUS } from '../src/sky/NightSky.ts';
+import { eveningHour } from '../packages/render/sky/DayCycle.ts';
+import { MOON_ANGULAR_RADIUS } from '../packages/render/sky/NightSky.ts';
 import { renderedFrames } from './page-eval.mjs';
 import { waitForSettled } from './capture-browser.mjs';
 
@@ -309,7 +309,7 @@ try {
 	assert.ok( report.gpu.stars.finite && report.gpu.stars.count > 200 && report.gpu.stars.maximum > 0.01, 'Night must show resolved analytic stars' );
 	assert.ok( report.gpu.stars.determinism.maximum <= 1e-7 && report.gpu.stars.returnToView.maximum <= 1e-7, 'Stars must remain stable after repeated rendering and camera rotation back to the same view' );
 	assert.ok( report.gpu.daylightStars.maximum <= 1e-7, 'Stars must add no radiance in daylight' );
-	// (the moon is up all night and dims the stars a little, to 0.78: Sky.ts `starVisibility`)
+	// (the moon is up all night and dims the stars a little, to 0.78: SkyTrack.ts `starVisibility`)
 	assert.ok( report.gpu.fade[ 0 ].shown === 0 && report.gpu.fade.at( - 1 ).shown > 0.5, 'Night fade must be driven by the celestial state' );
 	for ( let i = 1; i < report.gpu.fade.length; i ++ ) {
 		assert.ok( report.gpu.fade[ i ].shown >= report.gpu.fade[ i - 1 ].shown - 1e-8 && report.gpu.fade[ i ].shown <= 1, 'Stars must fade in monotonically through evening' );

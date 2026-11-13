@@ -24,10 +24,10 @@
 //   views whose load-time options differ get their own pages, group after group. Their definitions
 //   go to `<outDir>/views.json`; in the reference store each carries its hash, so two ad-hoc views
 //   of one name never share a capture.
-// One page per set (plan item #9): only load-time options (quality, aa, size and dpr, the debug
+// One page per set: only load-time options (quality, aa, size and dpr, the debug
 //   switches in --q) need a new page, and every view of a set shares them, so each worker opens one
 //   page (capture.mjs --worker), loads the first view it is given and reaches each later one by
-//   `__PONLAI__.establishScene( <the view's query> )` (src/main.ts: the frame then equals a fresh
+//   `__PONLAI__.establishScene( <the view's query> )` (app/Scene.ts: the frame then equals a fresh
 //   load's, byte for byte wherever the fresh load repeats), then the view's eval and the usual
 //   readiness and shot. The jump resets the scene's options and camera, not what an eval changed
 //   besides (GUI settings, Tune, debug flags, a uniform), so that holds only after views whose evals

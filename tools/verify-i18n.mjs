@@ -1,4 +1,4 @@
-// Checks of the interface's words (src/game/ui/i18n/, its header has the rules): that no Chinese
+// Checks of the interface's words (packages/game/ui/i18n/, its header has the rules): that no Chinese
 // is written in the code outside the catalogues, so every word the player reads goes through one,
 // and how far each other language's catalogue has drifted from the source, zh-CN.json: the keys it
 // lacks (the page shows the Chinese for them), the keys the source no longer has, and the values
@@ -16,7 +16,7 @@ import { join, relative } from 'node:path';
 import ts from 'typescript';
 
 const ROOT = new URL( '..', import.meta.url ).pathname;
-const CATALOGUES = join( ROOT, 'src/game/ui/i18n' );
+const CATALOGUES = join( ROOT, 'packages/game/ui/i18n' );
 const SOURCE = 'zh-CN';
 const strict = process.argv.includes( '--strict' ), list = process.argv.includes( '--list' );
 
@@ -26,10 +26,10 @@ const CJK = /[　-〿㐀-䶿一-鿿豈-﫿＀-￯]/;
 // save's), the stand-in brain's lines, and the debug panel's placeholder lines and days (what
 // people say, as a brain's lines will be); by file and the variable they are declared in
 const ALLOWED = {
-	'src/game/sim/Sim.ts': [ 'NAMES' ],
-	'src/game/sim/standin.ts': [ 'HUNGRY_WORDS', 'THANKS_WORDS' ],
-	'src/game/GameDebug.ts': [ 'REPLIES' ],
-	'src/game/ui/data/record.ts': [ 'PLACEHOLDER_NAMES', 'PLACEHOLDER_DAYS' ],
+	'packages/game/sim/Sim.ts': [ 'NAMES' ],
+	'packages/game/sim/standin.ts': [ 'HUNGRY_WORDS', 'THANKS_WORDS' ],
+	'packages/game/GameDebug.ts': [ 'REPLIES' ],
+	'packages/game/ui/data/record.ts': [ 'PLACEHOLDER_NAMES', 'PLACEHOLDER_DAYS' ],
 };
 const PLURAL = /_(zero|one|two|few|many|other)$/;
 
@@ -66,7 +66,7 @@ function declaredIn( node ) {
 }
 
 let files = 0, literals = 0;
-for ( const path of walk( join( ROOT, 'src' ), [] ) ) {
+for ( const path of [ 'packages', 'app' ].flatMap( ( root ) => walk( join( ROOT, root ), [] ) ) ) {
 
 	const file = relative( ROOT, path ), allowed = ALLOWED[ file ] ?? [];
 	const source = ts.createSourceFile( path, readFileSync( path, 'utf8' ), ts.ScriptTarget.Latest, true );
@@ -79,7 +79,7 @@ for ( const path of walk( join( ROOT, 'src' ), [] ) ) {
 
 				literals ++;
 				const { line } = source.getLineAndCharacterOfPosition( node.getStart() );
-				fail( `${ file }:${ line + 1 } Chinese in code: ${ JSON.stringify( node.text ) } (a key of the catalogue: src/game/ui/i18n/i18n.ts)` );
+				fail( `${ file }:${ line + 1 } Chinese in code: ${ JSON.stringify( node.text ) } (a key of the catalogue: packages/game/ui/i18n/i18n.ts)` );
 
 			}
 

@@ -36,15 +36,15 @@ import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
-import { growLand, LandLattice } from '../src/world/IslandGrowth.ts';
-import { buildChunk, chunkKeys, landField, landWindow, parseChunkKey, windowFootprint, R, S } from '../src/world/Chunks.ts';
-import { coastWobble, islandSurfaceHeight, landArea, makeIslandSDF, ISLAND_BOTTOM } from '../src/world/WorldShapes.ts';
-import { CliffWall, REACH_A, REACH_B } from '../src/world/Cliff.ts';
-import { floorAt } from '../src/world/Bathymetry.ts';
-import { placeStones, rockExtent, CELL, REACH } from '../src/world/Stones.ts';
-import { VEGETATION_STRIDE } from '../src/world/types.ts';
+import { growLand, LandLattice } from '../packages/island/world/IslandGrowth.ts';
+import { buildChunk, chunkKeys, landField, landWindow, parseChunkKey, windowFootprint, R, S } from '../packages/island/world/Chunks.ts';
+import { coastWobble, islandSurfaceHeight, landArea, makeIslandSDF, ISLAND_BOTTOM } from '../packages/island/world/WorldShapes.ts';
+import { CliffWall, REACH_A, REACH_B } from '../packages/island/world/Cliff.ts';
+import { floorAt } from '../packages/island/world/Bathymetry.ts';
+import { placeStones, rockExtent, CELL, REACH } from '../packages/island/world/Stones.ts';
+import { VEGETATION_STRIDE } from '../packages/island/world/types.ts';
 import { verifyCache } from './verify-cache.mjs';
-import { simplifierReady } from '../src/world/IslandSimplify.ts';
+import { simplifierReady } from '../packages/island/world/IslandSimplify.ts';
 
 // the island's simplifier (wasm) is ready before any chunk is built, in every thread
 await simplifierReady;
@@ -363,13 +363,12 @@ const M2 = {
 // strip), so they load through Vite's SSR loader, on the main thread only.
 async function loadPlanting() {
 
-	globalThis.location ??= { search: '', href: 'http://localhost/' };
 	const { createServer } = await import( 'vite' );
 	const server = await createServer( {
 		root: new URL( '../', import.meta.url ).pathname, configFile: false, logLevel: 'error', appType: 'custom',
 		server: { middlewareMode: true, hmr: false, ws: false, watch: null }, optimizeDeps: { noDiscovery: true, include: [] },
 	} );
-	const { groveAt } = await server.ssrLoadModule( '/src/world/BambooGroves.ts' );
+	const { groveAt } = await server.ssrLoadModule( '/packages/island/world/BambooGroves.ts' );
 	await server.close();
 	return { groveAt };
 

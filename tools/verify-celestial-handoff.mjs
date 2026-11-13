@@ -10,9 +10,12 @@ import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
 import { installWaitFrames } from './page-eval.mjs';
-import { HANDOFF_TOP, MOON_KEY_TOP } from '../src/sky/DayCycle.ts';
+import { createDayWindows } from '../packages/render/look/DayLook.ts';
+import { ISLAND_LOOK } from '../packages/island/look/IslandLook.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
 
+// the island's day windows, which the page's day cycle takes (RenderStages.ts `createSky`)
+const { handoffTop: HANDOFF_TOP, moonKeyTop: MOON_KEY_TOP } = createDayWindows( ISLAND_LOOK.day );
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const errors = [];
 const report = { base, errors, runs: [] };

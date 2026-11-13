@@ -1,9 +1,56 @@
 # Check a change
 
-This guide gives the steps for checking a change before it is committed: a visual change, a
-performance change, a new history-dependent effect and a change that depends on the land's shape.
-The tools named here are described in `docs/reference/tools.md`; the rules they check are in
-`AGENTS.md`, Rules for every change.
+This guide gives the steps for checking a change before it is committed: the checks every commit
+passes, a change to the renderer on its small scenes, a visual change, a performance change, a new
+history-dependent effect and a change that depends on the land's shape. The tools named here are
+described in `docs/reference/tools.md`; the rules they check are in `AGENTS.md`, Rules for every
+change.
+
+## Run the checks every commit passes
+
+1. Run `npm run check` before every commit. It runs the type check, the code lint
+   (`npm run lint`: the project's mechanical rules as ESLint rules, `docs/reference/tools.md`, Code
+   lint) and the checks that need no GPU (the layers' imports and the packages' exits, the
+   settings against their docs, the files' size, the three.js internals, no binary in git, the CPU
+   regression tools with the renderer's extension points and the lint's own fixtures, and the
+   docs' lint when a Markdown file is staged), in about a quarter of a minute, and ends with a
+   list of what passed and failed and how long each took. It checks the files in the working
+   tree, not what is staged: a change left unstaged is checked too.
+2. Fix every check it lists as failed, then run it again. A check that fails on a list of known
+   cases (the layers' upward imports, the files over the size limit, the code that reaches into
+   three's internals) is fixed in the code, never by adding to its list.
+3. Before a merge, and after a change to the world's generator, run `npm run check -- --full`. It
+   adds the production build and the world's chunk checks (`tools/verify-world-chunks.mjs`,
+   `tools/verify-chunk-derived.mjs`) and takes minutes.
+
+`npm run check` renders nothing, so it runs while another session holds the GPU lock. The checks
+that render (captures, parity, the GPU verify tools) are run by hand, as the sections below say.
+
+## Run the small scenes first
+
+The renderer's test scenes (`scenes.html`) hold a few objects on level ground under the sky, a
+patch of plants of the default kind, or two balls in the open sea. They load in seconds, so they
+answer first whether a change to the renderer moved anything, before the island's captures, which
+take minutes.
+
+1. Run them first after a change to the renderer's own code: the light, the sky, the day cycle,
+   the exposure and the display chain, the frame's passes, the shadows, the ambient light and the
+   vegetation's registry, material and shadows. Skip them for a change to the island's generator,
+   materials or plant kinds, or the game, which they do not show. The open sea's scene gives
+   readings, not a check to the pixel: for a change to the sea's water and waves, run
+   `node tools/scenes.mjs <baseUrl> <outDir> --scenes sea` before and after it and read the two
+   `readings.tsv` side by side.
+2. Before the change, write the references on a server of the commit the change starts from:
+   `node tools/scenes.mjs <baseUrl> <outDir> --verify --write-ref`. Without `--scenes` it takes
+   the scenes whose shots repeat to the pixel, so not the sea's.
+3. After the change, run `node tools/scenes.mjs <baseUrl> <outDir> --verify --check`. A refactor
+   passes with every shot equal to its reference. A change that is meant to move the picture
+   fails the check: read `readings.tsv` of the two runs side by side, look at the shots that
+   differ, and write the references again once the differences are the intended ones.
+4. Go on to the island's checks below whatever the scenes say: they show no shore, terrain,
+   island plants or game, and the island's look is not the one they are shot with.
+
+The tool and its options: `docs/reference/tools.md`, Test scenes.
 
 ## Check a visual change
 
@@ -40,10 +87,14 @@ A history-dependent effect (a temporal resolve, exposure adaptation, lighting or
 over frames, vegetation that responds to what passes through it, a per-frame physics simulation)
 keeps the test mode's byte comparisons valid this way (`docs/reference/tools.md`, Test mode):
 
-1. Clear its history in `establishScene` (`src/main.ts`); `tools/verify-scene-jump.mjs` checks it.
-2. Report it to `settled` (main.ts `pending`, or the rest's signature) until it has converged on a
-   still scene, or freeze it or turn it off in the test mode.
-3. Freeze it or turn it off under the test mode's one switch (`src/debug/TestMode.ts`;
+1. Register how to clear its history with the renderer's table
+   (`packages/render/post/SceneHistory.ts`: `onJump` for a scene jump, `onCut` for a cut of the
+   temporal modes' history), beside its creation; `establishScene` (`app/Scene.ts`) walks the table,
+   and `tools/verify-scene-jump.mjs` checks it.
+2. Report it to `settled` (`packages/render/RenderStages.ts` `settleFrame`'s `pending`, the page's
+   own through `FrameHost.pending`, or the rest's signature) until it has converged
+   on a still scene, or freeze it or turn it off in the test mode.
+3. Freeze it or turn it off under the test mode's one switch (`packages/render/debug/TestMode.ts`;
    `docs/reference/tools.md`, Test mode).
 4. A Grow does not clear rendering history (`tools/verify-growth-swap.mjs` shoots its first view
    without a jump), so the effect is frozen or off under the switch there, or the swap resets it.
@@ -54,11 +105,11 @@ keeps the test mode's byte comparisons valid this way (`docs/reference/tools.md`
 
 ## Add something that depends on the land's shape
 
-The island grows in place (`AGENTS.md`, Rules for every change): a Grow swaps in only the changed
-chunks in one frame, and every dependent of the land's shape follows it.
+The island grows in place (`packages/island/world/Growth.ts`, its header): a Grow swaps in only the
+changed chunks in one frame, and every dependent of the land's shape follows it.
 
 1. Join the swap: `GrowthPage`, a vegetation kind's `growth` in `vegetation/Registry.ts`, and
-   main.ts's `onSwap`.
+   IslandStages.ts's `onSwap`.
 2. Put the work it needs on the main thread into the preparation's idle-time steps, never into the
    swap's frame. A step takes a few tenths of a millisecond (a generator yielding inside its loops:
    `Steps.ts`, uploads through `Upload.ts`), so the growth's share of any frame stays under 2 ms

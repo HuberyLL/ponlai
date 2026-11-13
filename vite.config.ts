@@ -7,28 +7,28 @@ import { worldGeneratorHash } from './tools/vite-world-generator.mjs';
 const LICENCE_FILES: Record<string, string> = {
 	'licenses/LICENSE.txt': 'LICENSE',
 	'licenses/CREDITS.md': 'CREDITS.md',
-	'licenses/tidewater.LICENSE.txt': 'src/ocean/tidewater.LICENSE.txt',
-	'licenses/FidelityFX.LICENSE.txt': 'src/post/fsr3/FidelityFX.LICENSE.txt',
-	'licenses/tidewater-sky.LICENSE.txt': 'src/sky/tidewater.LICENSE.txt',
-	'licenses/tidewater-weather.LICENSE.txt': 'src/weather/tidewater.LICENSE.txt',
-	'licenses/hoskins-hash.LICENSE.txt': 'src/materials/hoskins-hash.LICENSE.txt',
-	'licenses/three-geospatial.LICENSE.txt': 'src/sky/three-geospatial.LICENSE.txt',
-	'licenses/a-starry-sky.LICENSE.txt': 'src/sky/a-starry-sky.LICENSE.txt',
-	'licenses/LightningStrike.LICENSE.txt': 'src/weather/LightningStrike.LICENSE.txt',
-	'licenses/VolumetricCloudsCS1.LICENSE.txt': 'src/sky/VolumetricCloudsCS1.LICENSE.txt',
-	'licenses/threejs-conference.LICENSE.txt': 'src/weather/threejs-conference.LICENSE.txt',
-	'licenses/tidewater-materials.LICENSE.txt': 'src/materials/tidewater.LICENSE.txt',
-	'licenses/tidewater-lighting.LICENSE.txt': 'src/lighting/tidewater.LICENSE.txt',
-	'licenses/tidewater-post.LICENSE.txt': 'src/post/tidewater.LICENSE.txt',
-	'licenses/tidewater-fsr2.LICENSE.txt': 'src/post/tidewater-fsr2.LICENSE.txt',
-	'licenses/godot-rain-shader.LICENSE.txt': 'src/materials/godot-rain-shader.LICENSE.txt',
-	'licenses/hextile-demo.LICENSE.txt': 'src/materials/hextile-demo.LICENSE.txt',
-	'licenses/fsr.LICENSE.txt': 'src/post/fsr.LICENSE.txt',
-	'licenses/fidelityfx-fsr3.LICENSE.txt': 'src/post/fidelityfx-fsr3.LICENSE.txt',
-	'licenses/meshoptimizer.LICENSE.txt': 'src/world/meshoptimizer.LICENSE.txt',
+	'licenses/tidewater.LICENSE.txt': 'packages/render/ocean/tidewater.LICENSE.txt',
+	'licenses/FidelityFX.LICENSE.txt': 'packages/render/post/fsr3/FidelityFX.LICENSE.txt',
+	'licenses/tidewater-sky.LICENSE.txt': 'packages/render/sky/tidewater.LICENSE.txt',
+	'licenses/tidewater-weather.LICENSE.txt': 'packages/render/weather/tidewater.LICENSE.txt',
+	'licenses/hoskins-hash.LICENSE.txt': 'packages/render/materials/hoskins-hash.LICENSE.txt',
+	'licenses/three-geospatial.LICENSE.txt': 'packages/render/sky/three-geospatial.LICENSE.txt',
+	'licenses/a-starry-sky.LICENSE.txt': 'packages/render/sky/a-starry-sky.LICENSE.txt',
+	'licenses/LightningStrike.LICENSE.txt': 'packages/render/weather/LightningStrike.LICENSE.txt',
+	'licenses/VolumetricCloudsCS1.LICENSE.txt': 'packages/render/sky/VolumetricCloudsCS1.LICENSE.txt',
+	'licenses/threejs-conference.LICENSE.txt': 'packages/render/weather/threejs-conference.LICENSE.txt',
+	'licenses/tidewater-materials.LICENSE.txt': 'packages/render/materials/tidewater.LICENSE.txt',
+	'licenses/tidewater-lighting.LICENSE.txt': 'packages/render/lighting/tidewater.LICENSE.txt',
+	'licenses/tidewater-post.LICENSE.txt': 'packages/render/post/tidewater.LICENSE.txt',
+	'licenses/tidewater-fsr2.LICENSE.txt': 'packages/render/post/tidewater-fsr2.LICENSE.txt',
+	'licenses/godot-rain-shader.LICENSE.txt': 'packages/render/materials/godot-rain-shader.LICENSE.txt',
+	'licenses/hextile-demo.LICENSE.txt': 'packages/render/materials/hextile-demo.LICENSE.txt',
+	'licenses/fsr.LICENSE.txt': 'packages/render/post/fsr.LICENSE.txt',
+	'licenses/fidelityfx-fsr3.LICENSE.txt': 'packages/render/post/fidelityfx-fsr3.LICENSE.txt',
+	'licenses/meshoptimizer.LICENSE.txt': 'packages/island/world/meshoptimizer.LICENSE.txt',
 	// the game interface's fonts (OFL: the licence travels with the font files the build copies)
-	'licenses/LXGWWenKaiGB.OFL.txt': 'src/game/ui/fonts/LXGWWenKaiGB.OFL.txt',
-	'licenses/MaShanZheng.OFL.txt': 'src/game/ui/fonts/MaShanZheng.OFL.txt',
+	'licenses/LXGWWenKaiGB.OFL.txt': 'packages/game/ui/fonts/LXGWWenKaiGB.OFL.txt',
+	'licenses/MaShanZheng.OFL.txt': 'packages/game/ui/fonts/MaShanZheng.OFL.txt',
 };
 
 function licences(): Plugin {
@@ -66,7 +66,7 @@ function licences(): Plugin {
 export default defineConfig( {
 	base: './',
 	// assets(): fills the git-ignored public/ from the assets release (tools/vite-assets.mjs);
-	// the world generator's source hash, for the world cache (src/world/WorldCache.ts)
+	// the world generator's source hash, for the world cache (packages/island/world/WorldCache.ts)
 	plugins: [ licences(), assets(), worldGeneratorHash() ],
 	server: {
 		// Worktrees for parallel branches live under .claude/. A build or checkout there writes an
@@ -80,6 +80,8 @@ export default defineConfig( {
 		chunkSizeWarningLimit: 1500,
 		// keep third-party licence notices ( /*! ... */ ) in the bundle
 		rolldownOptions: {
+			// the island's page and the test scenes' (app/scenes/)
+			input: [ 'index.html', 'scenes.html' ],
 			output: {
 				comments: { legal: true },
 				// A chunk that is no entry of its own holds the code the page and its lazy parts

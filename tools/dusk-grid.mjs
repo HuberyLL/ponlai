@@ -1,6 +1,6 @@
 // Dusk grid: the scene's light at a grid of sun elevations through the dusk and the dawn, read off
 // the running page in scene units, each point reached by the exact scene jump and baked explicitly,
-// and judged for the rule that a lower sun never makes a quantity brighter (src/sky/DayCycle.ts:
+// and judged for the rule that a lower sun never makes a quantity brighter (packages/render/sky/DayCycle.ts:
 // the dusk's shares). It answers "does the land, the sky, the sea or the air brighten anywhere as
 // the sun goes down, by how much, and which of the night's terms does it", where a few views at
 // fixed hours miss a step in between.
@@ -22,15 +22,15 @@
 //     "midnight"`), measured once per weather and shared by both sides. --fine e1:e2:step adds a
 //     denser series over a span (repeatable). --at e1,e2,... and --hours h1,h2,... replace the grid
 //     with those elevations or clock hours (an hour before noon is the morning's).
-//   - The hour of an elevation is solved in node from the sun of --src's src/sky/DayCycle.ts
+//   - The hour of an elevation is solved in node from the sun of --src's packages/render/sky/DayCycle.ts
 //     (default: this checkout): a bisection of `sunElevationAt` on the side's half of the day to
 //     1e-12 h, checked against `eveningHour` / `morningHour` where the module has them (the largest
 //     difference is in summary.txt), and given to the page with 9 decimals. The page's own sun is
 //     checked against it after each jump (within 1e-3 degrees), so a page of another arc than
 //     --src's fails rather than reading other elevations.
-//   - Each point is its own scene jump (main.ts `establishScene`) to `weather=<w>&hour=<h>&paused&t=12`
+//   - Each point is its own scene jump (app/Scene.ts `establishScene`) to `weather=<w>&hour=<h>&paused&t=12`
 //     plus --q (default `grow=36`, the grown island: its yunpeng clumps), never reached by walking the
-//     clock through the points before it, since the scene is a function of its query (AGENTS.md).
+//     clock through the points before it, since the scene is a function of its query (ARCHITECTURE.md, rule 4).
 //     --walk instead reaches each point of a side by `__PONLAI__.setHour` in one page, from the
 //     side's first point loaded: the path check, against a jump run through --compare.
 //   - At each point the figures are hidden, every `sky.dusk.force.*` tunable is set back to -1 (a
@@ -80,7 +80,7 @@
 // 65 m over the sea at the land box's +x edge, its back to the island, facing the open sea, pitched
 // 10 degrees up with a vertical field of 30; one pose everywhere, so the points read alike and
 // compare), once the page has settled there:
-//   - hazeMedium: every item of the haze's key as the frame set it (main.ts `hazeKey`, `key.*`), the
+//   - hazeMedium: every item of the haze's key as the frame set it (RenderStages.ts `hazeKey`, `key.*`), the
 //     haze's copy of it (`look.*`), its medium's uniforms (`air.*`: the weather's haze and fog, the
 //     layers, sigma, the dome's own depth), the clouds' copy of the medium (`clouds.*`), the moon's aerosol keys (`moon.*`, Tune
 //     `haze.moon.*`) and the settings (`settings.*`); vectors flattened (`.0`, `.1`, ...), non-finite
@@ -160,9 +160,10 @@
 //     haze's medium is judged bit for bit at every point (above); each point it differs at is a
 //     violation, and the opacity's largest difference is reported. With --night-split in both runs
 //     it lists the lift, the island view's metered EV with the lamps off less the other run's at
-//     each point both hold, and at midnight that lift less NIGHT_METER_LIFT (DayCycle.ts): run
-//     against a page of the night those keys were set over, it says how far the night keys and the
-//     constant lie from what the meter now gives (DayCycle.ts EXPOSURE_KEYS).
+//     each point both hold, and at midnight that lift less NIGHT_METER_LIFT (the day look's
+//     `nightMeterLift`, island/look/Day.ts): run against a page of the night those keys were set
+//     over, it says how far the night keys and the constant lie from what the meter now gives (the
+//     exposure's keys, island/look/Exposure.ts).
 //
 // Exit codes: 0 every judged rule held; 1 a rule was broken, a point is void, or --compare found a
 // difference in [+2.5, +4]; 2 an option or the page went wrong (an unknown option, a page error,
@@ -289,7 +290,7 @@ function parseOptions( o ) {
 	if ( hazeDistances.some( ( d ) => d <= 0 ) ) fail( '--haze-distances: positive distances in metres' );
 	if ( hazeSky.length + hazeDistances.length > 64 ) fail( '--haze-sky, --haze-distances: at most 64 rays in all (VolumetricHaze.probe)' );
 	const src = path.resolve( o.src ?? ROOT );
-	if ( ! existsSync( path.join( src, 'src/sky/DayCycle.ts' ) ) ) fail( `--src ${ src }: no src/sky/DayCycle.ts there` );
+	if ( ! existsSync( path.join( src, 'packages/render/sky/DayCycle.ts' ) ) ) fail( `--src ${ src }: no packages/render/sky/DayCycle.ts there` );
 	return {
 		weathers, sides, from, to, step, midnight, fine, at, hours, views, judge,
 		judgeRange: [ Math.max( jHi, jLo ), Math.min( jHi, jLo ) ],
@@ -304,7 +305,15 @@ function parseOptions( o ) {
 }
 
 // ---- the sun of --src, the points
-const DC = await import( pathToFileURL( path.join( options.src, 'src/sky/DayCycle.ts' ) ).href );
+const DC = await import( pathToFileURL( path.join( options.src, 'packages/render/sky/DayCycle.ts' ) ).href );
+// the night's metered lift: the island look's (island/look/IslandLook.ts `day.nightMeterLift`), or in
+// a --src from before the exposure took its tables at creation, look/DayLook.ts's NIGHT_METER_LIFT,
+// or DayCycle.ts's in one from before that
+const ISLAND_LOOK_FILE = path.join( options.src, 'packages/island/look/IslandLook.ts' );
+const DAY_LOOK = path.join( options.src, 'packages/render/look/DayLook.ts' );
+const IL = existsSync( ISLAND_LOOK_FILE ) ? await import( pathToFileURL( ISLAND_LOOK_FILE ).href ) : null;
+const DL = existsSync( DAY_LOOK ) ? await import( pathToFileURL( DAY_LOOK ).href ) : DC;
+const NIGHT_METER_LIFT = IL?.ISLAND_LOOK?.day?.nightMeterLift ?? DL.NIGHT_METER_LIFT;
 const FORCES = DC.DUSK_FORCES ?? [];
 let splitNames = [];
 try {
@@ -430,7 +439,7 @@ const prepareJs = () => `async () => { ${ PAGE }
 }`;
 
 const applyJs = ( forces ) => `async () => { ${ PAGE }
-	const DC = await load( '/src/sky/DayCycle.ts' ), RT = await load( '/src/sky/SkyRetune.ts' );
+	const DC = await load( '/packages/render/sky/DayCycle.ts' ), RT = await load( '/packages/render/sky/SkyRetune.ts' );
 	const forced = ${ JSON.stringify( forces ) }, values = {};
 	for ( const n of forceNames() ) values[ FORCE + n ] = forced[ n ] ?? - 1;
 	s.loop.start();
@@ -554,8 +563,8 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 	if ( ${ cpu } ) {
 
 		const R = s.ambientRelight, air = s.pipeline.air, snap = s.dayCycle.snapshot();
-		const AG = await load( '/src/lighting/AmbientGrade.ts' ), LL = await load( '/src/world/vegetation/LeafLight.ts' ), YP = await load( '/src/world/Yunpeng.ts' );
-		const DC = await load( '/src/sky/DayCycle.ts' ), W = await load( '/src/sky/Weather.ts' );
+		const AG = await load( '/packages/render/lighting/AmbientGrade.ts' ), LL = await load( '/packages/render/vegetation/LeafLight.ts' ), YP = await load( '/packages/island/world/Yunpeng.ts' );
+		const DC = await load( '/packages/render/sky/DayCycle.ts' ), W = await load( '/packages/render/sky/Weather.ts' );
 		const px = async ( rt ) => Array.from( await s.renderer.readRenderTargetPixelsAsync( rt, 0, 0, 1, 1 ) );
 		// a ring of the environment's source (the baked sky with its haze, in half floats)
 		// at deg degrees: its mean luminance over every azimuth and over the halves toward and away
@@ -566,7 +575,7 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 			if ( ! b?.texture || b.textureDescriptorGPU.format !== 'rgba16float' ) return null;
 			// (the source stores the radiance times its bake's power of two, an older page's times
 			// PANORAMA_STORE)
-			const store = sky.sourceStops !== undefined ? 2 ** sky.sourceStops : ( await load( '/src/sky/Sky.ts' ) ).PANORAMA_STORE ?? 1;
+			const store = sky.sourceStops !== undefined ? 2 ** sky.sourceStops : ( await load( '/packages/render/sky/Sky.ts' ) ).PANORAMA_STORE ?? 1;
 			const W = t.image.width, H = t.image.height, y = ( deg / 180 + 0.5 ) * H - 0.5, y0 = Math.floor( y ), f = y - y0;
 			const half = await s.renderer.backend.textureUtils.copyTextureToBuffer( t, 0, y0, W, 2, 0 ), row = Math.ceil( W * 8 / 256 ) * 128;
 			const h = ( i ) => { const e = ( i >> 10 ) & 31, m = i & 1023; return ( i >> 15 ? - 1 : 1 ) * ( e === 0 ? m * 2 ** - 24 : ( 1 + m / 1024 ) * 2 ** ( e - 15 ) ); };
@@ -604,11 +613,14 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 		const w = { moonKeyGain: v( snap.moonKeyGain ), handoff: v( snap.handoff ), daylight: v( snap.daylight ), nightVisibility: v( snap.nightVisibility ),
 			nightSkyLevel: v( snap.nightSkyLevel ), moonVisibility: v( snap.moonVisibility ), overcastAdaptation: v( snap.overcastAdaptation ),
 			gradeNight: v( s.pipeline.settings.night ), gradeExposureNight: v( s.pipeline.settings.exposureNight ), cloud, rising: v( rising ) };
-		if ( DC.moonKeyShare ) w.moonKeyShare = DC.moonKeyShare( e );
-		if ( DC.nightAmbientShare ) w.nightAmbientShare = DC.nightAmbientShare( e, rising, cloud );
-		if ( DC.displayNight ) w.displayNight = DC.displayNight( snap.daylight, e, rising, cloud );
-		if ( DC.exposureNight ) w.exposureNight = DC.exposureNight.length === 3 ? DC.exposureNight( e, rising, cloud ) : DC.exposureNight( snap.daylight, e, rising, cloud );
-		if ( DC.starNight ) w.starNight = DC.starNight( snap.daylight, e, rising, cloud );
+		// (the shares take the day cycle's windows first; a --src from before the cycle held them
+		// calls them without)
+		const dw = s.dayCycle.windows, share = ( f, ...args ) => dw ? f( dw, ...args ) : f( ...args );
+		if ( DC.moonKeyShare ) w.moonKeyShare = share( DC.moonKeyShare, e );
+		if ( DC.nightAmbientShare ) w.nightAmbientShare = share( DC.nightAmbientShare, e, rising, cloud );
+		if ( DC.displayNight ) w.displayNight = share( DC.displayNight, snap.daylight, e, rising, cloud );
+		if ( DC.exposureNight ) w.exposureNight = dw || DC.exposureNight.length === 3 ? share( DC.exposureNight, e, rising, cloud ) : DC.exposureNight( snap.daylight, e, rising, cloud );
+		if ( DC.starNight ) w.starNight = share( DC.starNight, snap.daylight, e, rising, cloud );
 		for ( const [ n, [ lo, hi ] ] of DC.duskShares ?? [] ) w[ 'share.' + n ] = lo === hi ? lo : [ lo, hi ];
 		out.__weights = w;
 
@@ -617,7 +629,7 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 	const y = lums( r.grid.rgb ), hy = lums( h.grid.rgb ), mm = new Float64Array( NX * NY );
 	for ( let c = 0; c < mm.length; c ++ ) mm[ c ] = m.grid.rgb[ 3 * c ];
 	// the meter's trimmed means as Metering.ts takes them, P taken out
-	const MT = await load( '/src/post/Metering.ts' ), meter = s.pipeline.metering;
+	const MT = await load( '/packages/render/post/Metering.ts' ), meter = s.pipeline.metering;
 	const BINS = MT.METER_BINS ?? 128, PER = MT.METER_BINS_PER_STOP ?? 4, LOW = MT.METER_LOW ?? - 16, ONE = MT.METER_ONE ?? 256;
 	const hist = meter ? await meter.read( s.renderer ) : null;
 	const trimmed = ( from, low, high ) => {
@@ -641,7 +653,7 @@ const readJs = ( view, cpu ) => `async () => { ${ PAGE }
 	// irradiance texel's alpha, shared.ts \`skyMeterLog2\` ), e_M, e_H, e_S, the guarded scene's
 	// exposure and the target recomputed from them (EVt2, to check against EVt)
 	const mM = trimmed( 0, 0.1, 0.9 ), mH = trimmed( BINS, 0.9, 0.97 );
-	const EX = await load( '/src/post/Exposure.ts' ), K0 = EX.SOFT_MIN ?? 0.25;
+	const EX = await load( '/packages/render/post/Exposure.ts' ), K0 = EX.SOFT_MIN ?? 0.25;
 	const mS = sky.irradianceDisplay ? ( await s.renderer.readRenderTargetPixelsAsync( sky.irradianceDisplay, 0, 0, 1, 1 ) )[ 3 ] : null;
 	let terms = {};
 	if ( u && mS !== null ) {
@@ -1293,7 +1305,7 @@ if ( options.compare ) {
 
 			const q = them.get( p.key ), a = p.noLights[ `${ v }.EV` ], b = q?.noLights[ `${ v }.EV` ];
 			if ( typeof a !== 'number' || typeof b !== 'number' ) continue;
-			const tail = p.at === 'midnight' && typeof DC.NIGHT_METER_LIFT === 'number' ? `   less NIGHT_METER_LIFT ${ DC.NIGHT_METER_LIFT }: ${ ( a - b - DC.NIGHT_METER_LIFT ).toFixed( 3 ) }` : '';
+			const tail = p.at === 'midnight' && typeof NIGHT_METER_LIFT === 'number' ? `   less NIGHT_METER_LIFT ${ NIGHT_METER_LIFT }: ${ ( a - b - NIGHT_METER_LIFT ).toFixed( 3 ) }` : '';
 			lift.push( `  ${ f.weather } ${ f.side } ${ v } ${ pad( label_( p ), 9 ) } EV ${ a.toFixed( 3 ) } - ${ b.toFixed( 3 ) } = ${ ( a - b ).toFixed( 3 ) } stops${ tail }` );
 
 		}

@@ -1,4 +1,4 @@
-// The MSAA baseline of a merge-base (plan section 3.3): the rest images and stepped clips that the
+// The MSAA baseline of a merge-base: the rest images and stepped clips that the
 // anti-aliasing gates read, captured from a preview of that commit, with the interim ground truth
 // and the metrics of MSAA against it. Every gate in thresholds.json is a ratio or a band times
 // this baseline, measured at the same merge-base in the same session, never an absolute number, so
@@ -13,7 +13,7 @@
 //
 // The plan (PLAN below): on high the 24 parity and TAA views at rest (the 17 parity views also as
 // whole frames, for the overall fidelity gate) and the gates' clips; on medium and low six views at
-// rest. Medium and low are parked (src/Quality.ts PARKED_QUALITY): without --tiers a run takes high
+// rest. Medium and low are parked (packages/render/Quality.ts PARKED_QUALITY): without --tiers a run takes high
 // only; `--tiers high,medium,low` reaches their entries. Rest images go through tools/capture-clip.mjs as the one-frame clip `rest`, so their crops
 // are cut exactly as a clip's are.
 //
@@ -45,7 +45,7 @@
 // --recapture-reference captures the reference entries afresh. --clips may also name a clip that
 // is not a gate's (`--clips drs-steps`): its baseline and ground truth are kept the same way.
 // --views and --clips take groups beside names (views.mjs, clips.mjs: `special` for the parked
-// weathers, src/sky/Weather.ts PARKED_WEATHER); a clip group only selects among the plan's clips.
+// weathers, packages/render/sky/Weather.ts PARKED_WEATHER); a clip group only selects among the plan's clips.
 // Without --views / --clips the run takes the normal weathers' entries only: the parked weathers'
 // views and clips stay in the plan but are run only when named or asked for by `special`.
 //
