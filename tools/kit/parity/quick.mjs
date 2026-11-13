@@ -1,11 +1,19 @@
-// Quick mode of capture-set.mjs (`--quick`): trying knob variants on a few views and crops while
-// tuning, each measured against the stored references of a commit. Not a gate: the gates still run
-// full sets (capture-set --check, baseline.mjs).
+// Tries knob variants on a few views in one page each, measured against a commit's stored references.
+//
+// This is capture-set.mjs's quick mode (`--quick`), a module run only through it, for tuning: it
+// answers how a runtime knob moves a few crops against MSAA and the ground truth, in seconds per
+// variant instead of a fresh load each. It is not a gate: the gates still run full sets
+// (tools/kit/parity/capture-set.mjs --check, tools/kit/parity/baseline.mjs).
 //
 //   node tools/kit/parity/capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,y] [--full]
 //       [--view "name:query[::js]"]... [--views-file f.json] [--sweep "key=a,b,c"]...
 //       [--variant "[label::]js"]... [--quality high] [--aa mode] [--q "extra&query"]
-//       [--size 1728x1117@2] [--store <root>/<sha>] [--ref-url R] [--timeout ms] [--runs file.csv] [--task name]
+//       [--size 1728x1117@2] [--store <root>/<sha>] [--ref-url R] [--timeout 240000] [--runs file.csv]
+//       [--task name]
+//
+// The views (--views, or ad-hoc views as capture-set takes them) are required. --crops names the
+// crops (default the view's); --variant is repeatable, and a label before `::` names it in the
+// table (default v1, v2, ...); --runs (default the PARITY_RUNS variable) appends a line to a run log.
 //
 // One page per view, loaded as capture-set loads it (`?debug&paused&t=12&quality=..[&aa=..][&q]&<view>`,
 // in a profile slot, the view's eval with the crop anchors, so the crops compare with the store's
@@ -16,46 +24,54 @@
 //      rest's key), ready, shot.
 // Variants apply on top of each other to the one page: give each the absolute value of every knob
 // it tunes (three variants of one knob: `s.taa.settings.sigmaRest = 0.3`, `= 0.4`, `= 0.5`; a
-// variant of another knob sets the first one back). A label before `::` names it in the table
-// (default v1, v2, ...). Only runtime knobs can vary in one page: load-time ones (the tier, aa, the
-// size, the S3 switches, anything read once as materials and the frame graph are built) need a
-// load, i.e. another quick run with `--q`.
+// variant of another knob sets the first one back). Only runtime knobs (`s.taa.settings.*`,
+// uniforms, `s.applyQuality( { ... } )`) can vary in one page: load-time ones (the tier, aa, the
+// size, the debug switches, anything read once as materials and the frame graph are built) need a
+// load, that is another quick run with `--q`.
 //
 // Ready (the same sequence as capture.mjs, see tools/kit/capture-browser.mjs): the floor's frames and
 // the loading screen gone (waitForScene), then on a temporal page (taa, taau, fsr3, gt) the rest started
 // over and converged under the new epoch, then waitForStable: an MSAA page by stability (the image
 // stopped changing), a temporal one on its held rest; the loop is left stopped. A variant's image
-// therefore equals a fresh load with the knob in its URL within the rules sets are judged by
-// (`diff-set --aa-floor` for MSAA, `--temporal` for the temporal modes; measured when the mode
-// was built). Keep this sequence in step with capture.mjs.
+// therefore equals a fresh load with the knob in its URL within the rules sets are judged by: MSAA
+// byte-identical (`diff-set.py --aa-floor`), taau within `--temporal` (at most 3 levels on a few
+// pixels, as its own A/A). Keep this sequence in step with capture.mjs.
 //
 // Shots: each crop through the screenshot's `clip` (only its pixels are encoded), a box of 192 CSS
 // px (384 device px at 2x) about the anchor's projected world point, rounded to whole CSS px, as
 // capture-clip.mjs cuts them; the anchors are the store's MSAA rest entry's (its clip.json) when
-// there is one, so the boxes match the references', else the page's own (`--crops` names them,
-// default the view's). `--full` also shoots the whole frame. No repeat.
+// there is one, so the boxes match the references', else the page's own. `--full` also shoots the
+// whole frame. No repeat.
 //
-// Output, under <outDir>/<variant>/ (`base` first):
-//   <view>/<crop>/0.png, <view>/clip.json   a capture-clip folder of the one-frame clip `rest`
-//   <view>.png, <view>.json                 with --full: a capture set's files (diff-set.py reads them)
-//   <view>/metrics/                         clip-metrics.py's output against the references
-// and <outDir>/quick.json (timings, readiness, references, metrics) and quick.md (the table).
-//
-// References (--store <root>/<sha>, the reference store's commit directory; tools/kit/parity/README.md):
+// References (--store <root>/<sha>, a commit's directory of the store, tools/kit/reference.mjs):
 // the MSAA rest entries `baseline/<tier>/rest/<view>` and the ground truth's `gt/<tier>/rest/<view>`,
 // as baseline.mjs keeps them. Before the shots this runs `baseline.mjs --capture-only --only rest
 // --gt` for the views: entries that are stored are reused (or waited for while another process
 // captures them); missing ones are captured from --ref-url (a preview of that commit) or, without
-// it, reported, and those views are shot without metrics. Per variant, view and crop the table
-// gives the mean NVIDIA FLIP against the GT (MAE in levels without flip-evaluator), its change
-// from the base, MSAA's, the sharpness S and the brightness B against the GT, and dMSAA (mean
-// luma difference to MSAA's crop, levels: about 0 for the base of an MSAA run).
+// it, reported, and those views are shot without metrics. Without --store there are no metrics.
+// Ad-hoc views have no stored rest entries, so they are shot without metrics.
 //
-// Ad-hoc views (--view, --views-file, --sweep; adhoc.mjs) are loaded with the query capture-set
-// gives them; the store keeps rest entries of views.mjs's views only, so they are shot without
-// metrics.
+// Output: <outDir> is emptied first. Under <outDir>/<variant>/ (`base` first):
+//   <view>/<crop>/0.png, <view>/clip.json   a capture-clip folder of the one-frame clip `rest`
+//   <view>.png, <view>.json                 with --full: a capture set's files (diff-set.py reads them)
+//   <view>/metrics/                         clip-metrics.py's output against the references
+// and <outDir>/quick.json (timings, readiness, references, metrics) and quick.md (the table, also
+// on stdout). Per variant, view and crop the table gives the mean NVIDIA FLIP against the GT (MAE
+// in levels without flip-evaluator), its change from the base, MSAA's, the sharpness S and the
+// brightness B against the GT, and dMSAA (mean luma difference to MSAA's crop, levels: about 0 for
+// the base of an MSAA run).
 //
-// Views run one after another in one process, each page holding one shared GPU slot.
+// GPU lock and browser: views run one after another, each in a headless page holding one shared
+// slot of the GPU lock (docs/reference/gpu-lock.md); the metrics then run in up to 4 clip-metrics.py
+// processes at once.
+//
+// Cost: a variant costs its readiness and its crops, a few seconds, against several times that for
+// a fresh load: 3 views with a base and 2 variants take about 0.4 of the fresh loads' time under
+// MSAA and about 0.6 under taau, references reused and metrics included.
+//
+// Exit codes (main's return, which capture-set exits with): 0 every view shot; 1 a view failed. An
+// unknown option, a missing view, a bad --size or variant labels that repeat throw, which
+// capture-set turns into exit 2.
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, rm, writeFile, appendFile } from 'node:fs/promises';

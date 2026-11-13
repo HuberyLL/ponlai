@@ -1,191 +1,109 @@
 # /// script
 # dependencies = [ "numpy", "pillow", "scipy" ]
 # ///
-"""Image and temporal metrics of a stepped clip against MSAA and a ground truth.
+"""Measures a stepped clip's image and temporal metrics against MSAA and a ground truth, with gates.
 
-    uv run [--with flip-evaluator] tools/kit/clip-metrics.py \
-        --test DIR --msaa DIR [--gt DIR] [--crops a,b | --crops boxes.json] [--split-redraws] \
-        [--thresholds thresholds.json] [--baseline metrics.json [--key tier/kind/name]] [--out DIR] \
-        [--no-flip] [--no-gt-gates] [--workers N]
-    uv run ... tools/kit/clip-metrics.py --calibrate masks.json [--size 288] DIR [DIR ...] [--overlays DIR]
+It answers how a mode under test compares with MSAA and with the ground truth on the crops of a
+clip captured by tools/kit/parity/capture-clip.mjs: brightness, flicker, sharpness, ghosting, lag,
+vegetation coverage, flowers, stars, glints, edges and more, each as a ratio to MSAA and judged
+against a thresholds file when one is given. tools/kit/parity/baseline.mjs runs it for every entry
+of a plan; tools/kit/table.py and tools/kit/gates.py read its output. For paused sets, use
+tools/kit/diff-set.py.
 
-Each DIR is a tools/kit/parity/capture-clip.mjs output folder (clip.json and <crop>/<i>.png) of the same clip:
-the mode under test, MSAA (today's image) and the ground truth (`--aa gt`, at the canvas's
-resolution: its crops are the test's size; the interim `--aa gt-hi` is kept for cross-checks).
-A test or MSAA crop larger than the GT's (384 px against gt-hi's 288 px) is area-resampled to
-the GT's size first (PIL's box filter), so every metric is taken at the GT's resolution. Luma L
+Usage:
+    uv run [--with flip-evaluator] tools/kit/clip-metrics.py --test DIR --msaa DIR [--gt DIR] [options]
+    uv run tools/kit/clip-metrics.py --calibrate masks.json [--size 288] DIR [DIR ...] [--overlays DIR]
+
+Options:
+    --test, --msaa, --gt DIR  capture-clip folders of one clip: the mode under test, MSAA, the ground truth
+    --crops a,b | boxes.json  the crops measured (default every crop folder of the GT, else the test's)
+    --split-redraws           Fhp also near and between the shadow map redraws the clip's notes mark
+    --thresholds t.json       the masks and the gates
+    --baseline metrics.json   the MSAA baseline from an earlier run instead of --msaa's values
+    --key tier/kind/name      the entry of a baseline.mjs metrics.json given as --baseline
+    --out DIR                 default <test>/metrics
+    --no-flip                 MAE instead of NVIDIA FLIP even when flip-evaluator is installed
+    --no-gt-gates             leave out the thresholds' `gt` rules (a GT that is not the side's own)
+    --workers N               worker processes; default CLIP_METRICS_WORKERS, else a quarter of the CPUs, 1 to 4
+    --calibrate masks.json    derive the mask parameters from MSAA folders (the positional DIRs)
+    --size WxH|N              with --calibrate: the GT crop size the metrics run at (288 for gt-hi)
+    --overlays DIR            with --calibrate: write the masks over the images
+
+The ground truth is capture-clip's `--aa gt`, whose crops are the test's size; the older `--aa
+gt-hi` crops are smaller (288 px against 384), so a larger test or MSAA crop is area-resampled
+(PIL's box filter) to the GT's size first and every metric is taken at the GT's resolution. Luma L
 is Rec. 709 luma of the 8-bit sRGB-encoded values (0-255 levels): differences in levels are what
 the eye and the PNGs see.
 
 Frames: metrics against the GT use the frames present on all three sides (the GT may be sampled:
-every 4th frame of a long clip plus dense runs, tools/island/parity/clips.mjs gtSampling). Metrics of a
-side's own frames (F, Fhp, Vown, Rec, the glints' sparkle, the stars' twinkle, dMSAA) use every
-frame that side captured (the test and MSAA capture every frame alike). The temporal metrics
-against the GT (TI, V, G, L) pair consecutive frames only, so they read the GT's dense runs: a
-change over four frames would hide a shimmer of a shorter period and see a jitter sequence whose
-length divides four at one phase.
+every 4th frame of a long clip plus dense runs, tools/island/parity/clips.mjs gtSampling). A side's
+own metrics use every frame it captured. The temporal metrics against the GT pair consecutive frames
+only, so they read the GT's dense runs.
 
-Metrics (per crop, for the test and for MSAA; "ratio" is test / MSAA):
-
-  B       brightness: mean L of the clip / the GT's (1 = as bright).
-  F       flicker: mean over consecutive frame pairs of the mean |L_t - L_t-1| (levels), own frames.
-          Raw frame-to-frame change, true motion included: compare like with like.
-  Fhp     temporal high-pass flicker: mean |L_t - (L_t-2 + L_t+2) / 2| (levels), own frames: steps
-          and shimmer without the steady change of a slow motion (the shadow-shimmer check).
-          With --split-redraws, where the side's clip.json notes mark shadow map redraws
-          (`sun <i> <draws> <weight>` lines, redraws_of()), also FhpNear over the frames t within 2
-          of a redraw (the first frame drawn on the new map) and FhpBetween over the others: a
-          redraw's step shows as FhpNear well above FhpBetween, the shadow filter's own noise as
-          FhpBetween high against a lit control crop. The series' Fhp holds the per-frame values.
-  TI      temporal instability: mean over consecutive GT frame pairs of the mean |dL_t - dL_gt,t| with
-          dL_t = L_t - L_t-1: the change that the GT does not have (shimmer, crawl, jitter left in
-          the output), 0 = as steady as the GT.
-  S       sharpness: mean Sobel gradient magnitude of L / the GT's (below 1 softer, above 1
-          sharper or noisier).
-  V       sharpness step against the GT: the largest change of the per-frame S between
-          consecutive GT frames.
-  Vown    sharpness step, own frames: the largest change of the mean Sobel magnitude from one frame
-          to the next / its mean (a visible softening or sharpening step: dynamic resolution).
-  FLIP    mean NVIDIA FLIP (LDR) per frame against the GT, averaged (needs flip-evaluator);
-  MAE     else the mean |RGB - GT| in levels.
-  dMSAA   mean |L - L_msaa| over the frames both captured (levels; 0 for MSAA itself).
-  G       ghosting: among pixels where the GT changed by more than 16 levels over two frames (GT
-          frames t and t - 2 both captured)
-          (moving content), the share where the clip at t is off the GT at t by more than 8 levels
-          and closer to the GT at t-2 by more than 4: a trail of where things were. Fine detail
-          that a render resolves differently from the GT scores a little too: judge it against
-          MSAA's.
-  L       lag: the shift in frames (0 to 4) that best lines up the frame-to-frame changes of the
-          clip's mean L with the GT's (a flash or a cut that the clip shows late), over the longest
-          run of consecutive GT frames (at least 7); 0 = none.
-  R       ringing: over the GT's edges (Sobel above 32), the mean overshoot of L beyond the GT's
-          own 3 x 3 range (levels): sharpening halos.
-  Rec     recovery: in a paused clip whose camera stops moving (a flick's end from its path, else
-          the last change of the per-frame view hash in clip.json), the frames after it stops until every later frame is within 1 level (mean
-          |L - L_last|) of the last frame: the history rebuilding after a flick.
-  W       vegetation coverage: the share of green pixels (hue 60-170 degrees, saturation above
-          0.2, value above 0.08) / the GT's: blades and leaves thinner (below 1) or fatter.
-  fringe  mean L in a 2 px band along the border of green and blue (sea or sky: hue 180-250,
-          saturation above 0.15) pixels, minus the GT's (levels; above 0 a pale fringe).
-  holes   pixels with no channel above the holes level (the clear colour showing through the
-          vegetation's depth test), mean count per frame, in vegetation crops.
-  N_f     flower heads (crops named flower or meadow): connected heads of the calibrated flower
-          mask (outside the view's green hue band or unsaturated, at least `chroma` away from the
-          crop's median green chroma, bright or saturated), off the GT frame's sea and sky, 2 to
-          400 px scaled to the crop's area; a component of up to 8 times that is touching heads
-          and counts one per peak of its distance transform / the GT's count, mean over frames.
-          flowers.count is the side's own count (the gates' validity condition).
-  C_f     flower head contrast: mean L of the heads minus that of a 3 px ring around them / the
-          GT's.
-  meadow  for meadow and flower crops, over the meadow region of each GT frame (its blades dilated
-          4 px over the soil between them, less its sea and sky dilated 2 px; the same pixels on
-          every side, so the crop's sea, sky and stone do not move them): mean L, mean saturation,
-          green share, local standard deviation of L (5 x 5, texture) and blade coverage (the
-          calibrated classifier: green's lead over red and blue as a share of green,
-          (G - max(R, B)) / G, above the view's `rel`, and L above `floor`), each / the GT's, and
-          the mean linear luminance (lumaLin) and linear chroma (chroma: the length of YCoCg's
-          Co, Cg) with the sRGB transfer and the default look's display S-curve undone (D4's
-          measures); none with fewer than 400 region pixels in a frame. meadowShare is the
-          region's share of the crop. The classifier reads chromaticity, not brightness, so a darker meadow of the same
-          blades keeps its coverage: luma and coverage are separate gates.
-  twigs   for twig crops: the twig mask (a dark-detail black top-hat of L over `window` px above
-          `tophat` levels): its mean depth (contrast) and its count of connected pieces of at least
-          `minArea` px (components), each / the GT's.
-  stars   for star crops: visible stars (local maxima at least the mask's `visible` level, 12,
-          over a 7 x 7 median: below it MSAA's sharpened cloud texture counts) / the GT's count,
-          their mean excess / the GT's, the mean excess of the ten brightest (peak) / the GT's,
-          and twinkle (stars at the calibrated `excess`): on a still camera (the clip's path), the
-          standard deviation over the clip of each star's excess (its 3 x 3 maximum), the stars found in the
-          mean frame, mean over the stars (levels; own frames): the horizon's scintillation. None
-          under a moving camera, where a sub-pixel star's brightness follows its pixel phase.
-  glints  for sea-glint crops: the share of pixels at or above the calibrated level (the MSAA
-          crop's 99.9th percentile) / the GT's, their energy above it / the GT's, and sparkle: the
-          mean change of the count from frame to frame / its mean (own frames).
-  streaks for rain crops: the energy of the bright detail (mean of L above its 5 x 5 mean) / the
-          GT's.
-  peak    the largest rise of the crop's mean L over its median across the GT frames / the GT's
-          (a lightning flash's brightness); only where the GT's rise exceeds 2 levels.
-  edgeW   edge width (crops named cliff-edge, horizon, islander or moon): the median 10-90 % rise
-          distance in GT pixels of the clip's L across the GT's strongest edges, sampled along the
-          GT's gradient normals (non-maximum suppressed, Sobel above 24, rises of at least 12
-          levels), mean over frames. edgeWgt: edgeW minus the GT's own width across the same
-          edges (0 = as soft as the GT). Gated as differences to MSAA (px).
-  shift   the global image shift against the GT (phase correlation refined on a 100x upsampled
-          correlation surface, gain 0.99 on known shifts), its length in GT pixels, mean over
-          frames: a jitter or reprojection offset left in the output; shiftX and shiftY its signed
-          components (x right, y down).
-
-Crops: every crop folder of the GT (without a GT, the test's), or those named by --crops. The
-"full" folder (whole frames, capture-clip.mjs --full) is measured only when --crops names it.
---crops boxes.json cuts crops from the whole frames instead, for clips captured whole (every frame
-in full/): { view: { crop: [ x0, y0, x1, y1 ] } } in the whole frame's pixels, the entry of
-clip.json's view; every side's full/ frames must be the same size.
-
+Metrics, per crop, for the test and for MSAA ("ratio" is test / MSAA); the definitions are beside
+own_metrics() and measure() below:
+    B brightness, F flicker, Fhp high-pass flicker (FhpNear, FhpBetween with --split-redraws),
+    TI temporal instability, S sharpness, V and Vown sharpness steps, FLIP (MAE without
+    flip-evaluator), dMSAA difference to MSAA, G ghosting, L lag, R ringing, Rec recovery after a
+    flick, W vegetation coverage, fringe, holes; by crop name: flowers (N_f, C_f), meadow (luma,
+    saturation, green share, texture, coverage, lumaLin, chroma), twigs, stars (count, excess,
+    peak, twinkle), glints (share, energy, sparkle), streaks (rain), peak (a flash), edgeW and
+    edgeWgt (edge width), shift, shiftX and shiftY (an offset left in the output).
 Without --gt only the sides' own metrics are taken (F, Fhp, Vown, Rec, holes, twinkle, sparkle,
 dMSAA): a clip that has no ground truth, such as a shadow-shimmer study of MSAA and a temporal mode.
 
-Masks: thresholds.json's `masks` holds the calibrated mask parameters: `masks.default`, then per
+Crops: the "full" folder (whole frames, capture-clip.mjs --full) is measured only when --crops
+names it. --crops boxes.json cuts crops from the whole frames instead, for clips captured whole
+(every frame in full/): { view: { crop: [ x0, y0, x1, y1 ] } } in the whole frame's pixels, the
+entry of clip.json's view; every side's full/ frames must be the same size.
+
+Masks: the thresholds file's `masks` holds the calibrated mask parameters: `masks.default`, then per
 view `masks[view]['*']` and per crop `masks[view][crop]`, each a partial copy of DEFAULT_MASKS
-(merged in that order). The view is clip.json's. `--calibrate` derives them from MSAA folders (see
-calibrate()).
+(merged in that order). The view is clip.json's.
 
-Gates: thresholds.json's `metrics` holds rules against the MSAA baseline, `gt` rules against the
+Gates: the thresholds file's `metrics` holds rules against the MSAA baseline, `gt` rules against the
 GT. A rule is looked up as "<clip>@<view>/<crop>/<metric>", "<clip>@<view>/*/<metric>",
-"<clip>/<crop>/<metric>", "<clip>/*/<metric>", "*/<crop>/<metric>", "*/*/<metric>", "<crop>/<metric>",
-then "<metric>" (nested metrics
-named as in the table, e.g. "meadow.luma"; the clip of a rest image is "rest"). Keys "kind",
-"gate" and "note" carry the gate's description. The baseline b is the MSAA side measured here, or,
-with --baseline, the "msaa" values of an earlier metrics.json: a clip's own (its "crops"), or the
-entry --key of a baseline.mjs metrics.json (its "entries"). Forms against MSAA:
+"<clip>/<crop>/<metric>", "<clip>/*/<metric>", "*/<crop>/<metric>", "*/*/<metric>",
+"<crop>/<metric>", then "<metric>" (nested metrics named as in the table, such as "meadow.luma";
+the clip of a rest image is "rest"). The baseline is the MSAA side measured here, or with
+--baseline the "msaa" values of an earlier metrics.json: a clip's own, or the entry --key of a
+baseline.mjs metrics.json. Magnitudes and ratios to the GT take ratio forms ("max", "min", "band",
+with an absolute "floor"); the signed, integer and absolute-difference metrics (fringe, dMSAA,
+edgeW, edgeWgt, shiftX, shiftY, holes, L, Rec) take "diff"; conditions ("tiers", "requires",
+"except") limit where a rule is judged. `gt` rules bound the value against the GT directly, named
+"gt:<metric>". The forms are written out beside DIFF_METRICS below. Without thresholds the table
+is informational.
 
-  ratio       for magnitudes and the ratios to the GT:
-                "max": r      PASS if test <= max( r x b, floor ), or with "gtPlus": d, if
-                              test <= the GT's own value + d (F only: the GT's frame-to-frame change
-                              over its consecutive frames; a gate the truth itself cannot meet, such
-                              as rain that moves every frame, then passes within d of it)
-                "min": r      PASS if test >= r x b
-                "band": [lo, hi]  PASS if lo <= test / b <= hi; with |b| <= floor (b about 0, where
-                              a ratio means nothing) PASS if |test| <= floor
-              "floor" (default 0) is an absolute allowance in the metric's own units, not an MSAA
-              value: under MSAA a paused clip's frames repeat, so its F and TI are exactly 0.
-  conditions  "tiers": [..] judges the rule only for those tiers (the first part of --key);
-              "requires": { metric: least } only where the baseline's metric reaches it (a count
-              large enough to measure); "except": [ key, .. ] not for those --key entries (a view
-              whose image does not repeat between two loads, so the gate's precision is out of
-              reach). Elsewhere the rule gives no verdict.
-  difference  for the signed, integer and absolute-difference metrics: fringe and dMSAA (levels),
-              edgeW, edgeWgt, shiftX and shiftY (px), holes (pixels), L and Rec (frames):
-                "diff": [lo, hi]  PASS if lo <= test - b <= hi; with "floor": f the baseline is
-                              max( b, f ) (edgeWgt with floor 0: as wide as the wider of MSAA's
-                              and the GT's edge)
+Output: <out>/metrics.json (per crop: test, msaa, ratio, per-frame series and verdicts, a box
+crop's box, with --split-redraws each side's redraw frames; `gates`: the failed count by kind) and
+<out>/metrics.md, the table, also on stdout. --calibrate writes the masks file and prints it.
 
-Rules in `gt` (left out with --no-gt-gates: a GT that is not the side's own, such as high's GT
-for medium and low) read the test's value against the GT directly (its metrics are already ratios to the
-GT or errors against it): "min", "max" or "band" (absolute bounds on the value). Their verdicts are
-named "gt:<metric>".
+GPU lock and browser: neither; it reads PNG files. The frames are measured in worker processes;
+on macOS the main process and the workers run with the application scheduling policy
+(tools/kit/qos.mjs).
 
-Without thresholds the table is informational.
+Cost: seconds to a minute per clip, with the frame count and the crops. The output does not depend
+on the worker count (byte-identical metrics.json).
 
-Speed: the frames are measured in worker processes, one frame index of a crop per job (its test,
-MSAA and GT frames: the GT's masks, filters and spectrum are taken once for both sides), and the
-per-frame values are combined in frame order in the main process, which also takes the metrics
-that pair frames from the frames' luma. Every number is the same expression on the same pixels as
-in one loop, so the output does not depend on the worker count (byte-identical metrics.json).
-Workers: --workers N, else the environment's CLIP_METRICS_WORKERS, else a quarter of the CPUs
-within 1 to 4 (the CPU is shared with captures, and baseline.mjs runs several metric runs at once);
-1 measures in the main process. On macOS the main process and the workers run with the application
-scheduling policy (tools/kit/qos.mjs says why; see QOS below).
-
-Outputs: <out>/metrics.json (per crop: test, msaa, ratio, per-frame series and verdicts, a box
-crop's box, with --split-redraws each side's redraw frames; `gates`: the failed count by kind) and <out>/metrics.md (a table), out defaulting to <test>/metrics.
+Exit codes: 0 done, no gate failed; 1 a gate failed, or a bad thresholds file, a missing crop box
+or baseline entry; 2 a usage error (--test or --msaa missing).
 """
-import argparse
-import copy
-import json
-import multiprocessing
-import os
+
 import sys
-from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from help import answer_help  # noqa: E402
+
+answer_help(__file__)
+
+import argparse  # noqa: E402
+import copy  # noqa: E402
+import json  # noqa: E402
+import multiprocessing  # noqa: E402
+import os  # noqa: E402
+import sys  # noqa: E402
+from concurrent.futures import ProcessPoolExecutor  # noqa: E402
 
 # The application scheduling policy on macOS (tools/kit/qos.mjs says why): the main process
 # re-executes itself in place under taskpolicy -a; the workers are new processes, which do not
@@ -777,6 +695,104 @@ def redraws_of( clip ):
 	return [ i - 1 for ( i, d ), ( _, pd ) in zip( rows[ 1: ], rows ) if d != pd ]
 
 
+# Metric definitions (own_metrics() and measure()).
+#
+# The temporal metrics against the GT (TI, V, G, L) pair consecutive frames only, so they read the
+# GT's dense runs: a change over four frames would hide a shimmer of a shorter period and see a
+# jitter sequence whose length divides four at one phase. A side's own metrics (F, Fhp, Vown, Rec,
+# the glints' sparkle, the stars' twinkle, dMSAA) use every frame that side captured (the test and
+# MSAA capture every frame alike).
+#
+# Per crop, for the test and for MSAA; "ratio" is test / MSAA:
+#
+#   B       brightness: mean L of the clip / the GT's (1 = as bright).
+#   F       flicker: mean over consecutive frame pairs of the mean |L_t - L_t-1| (levels), own frames.
+#           Raw frame-to-frame change, true motion included: compare like with like.
+#   Fhp     temporal high-pass flicker: mean |L_t - (L_t-2 + L_t+2) / 2| (levels), own frames: steps
+#           and shimmer without the steady change of a slow motion (the shadow-shimmer check).
+#           With --split-redraws, where the side's clip.json notes mark shadow map redraws
+#           (`sun <i> <draws> <weight>` lines, redraws_of()), also FhpNear over the frames t within 2
+#           of a redraw (the first frame drawn on the new map) and FhpBetween over the others: a
+#           redraw's step shows as FhpNear well above FhpBetween, the shadow filter's own noise as
+#           FhpBetween high against a lit control crop. The series' Fhp holds the per-frame values.
+#   TI      temporal instability: mean over consecutive GT frame pairs of the mean |dL_t - dL_gt,t| with
+#           dL_t = L_t - L_t-1: the change that the GT does not have (shimmer, crawl, jitter left in
+#           the output), 0 = as steady as the GT.
+#   S       sharpness: mean Sobel gradient magnitude of L / the GT's (below 1 softer, above 1
+#           sharper or noisier).
+#   V       sharpness step against the GT: the largest change of the per-frame S between
+#           consecutive GT frames.
+#   Vown    sharpness step, own frames: the largest change of the mean Sobel magnitude from one frame
+#           to the next / its mean (a visible softening or sharpening step: dynamic resolution).
+#   FLIP    mean NVIDIA FLIP (LDR) per frame against the GT, averaged (needs flip-evaluator);
+#   MAE     else the mean |RGB - GT| in levels.
+#   dMSAA   mean |L - L_msaa| over the frames both captured (levels; 0 for MSAA itself).
+#   G       ghosting: among pixels where the GT changed by more than 16 levels over two frames (GT
+#           frames t and t - 2 both captured)
+#           (moving content), the share where the clip at t is off the GT at t by more than 8 levels
+#           and closer to the GT at t-2 by more than 4: a trail of where things were. Fine detail
+#           that a render resolves differently from the GT scores a little too: judge it against
+#           MSAA's.
+#   L       lag: the shift in frames (0 to 4) that best lines up the frame-to-frame changes of the
+#           clip's mean L with the GT's (a flash or a cut that the clip shows late), over the longest
+#           run of consecutive GT frames (at least 7); 0 = none.
+#   R       ringing: over the GT's edges (Sobel above 32), the mean overshoot of L beyond the GT's
+#           own 3 x 3 range (levels): sharpening halos.
+#   Rec     recovery: in a paused clip whose camera stops moving (a flick's end from its path, else
+#           the last change of the per-frame view hash in clip.json), the frames after it stops until every later frame is within 1 level (mean
+#           |L - L_last|) of the last frame: the history rebuilding after a flick.
+#   W       vegetation coverage: the share of green pixels (hue 60-170 degrees, saturation above
+#           0.2, value above 0.08) / the GT's: blades and leaves thinner (below 1) or fatter.
+#   fringe  mean L in a 2 px band along the border of green and blue (sea or sky: hue 180-250,
+#           saturation above 0.15) pixels, minus the GT's (levels; above 0 a pale fringe).
+#   holes   pixels with no channel above the holes level (the clear colour showing through the
+#           vegetation's depth test), mean count per frame, in vegetation crops.
+#   N_f     flower heads (crops named flower or meadow): connected heads of the calibrated flower
+#           mask (outside the view's green hue band or unsaturated, at least `chroma` away from the
+#           crop's median green chroma, bright or saturated), off the GT frame's sea and sky, 2 to
+#           400 px scaled to the crop's area; a component of up to 8 times that is touching heads
+#           and counts one per peak of its distance transform / the GT's count, mean over frames.
+#           flowers.count is the side's own count (the gates' validity condition).
+#   C_f     flower head contrast: mean L of the heads minus that of a 3 px ring around them / the
+#           GT's.
+#   meadow  for meadow and flower crops, over the meadow region of each GT frame (its blades dilated
+#           4 px over the soil between them, less its sea and sky dilated 2 px; the same pixels on
+#           every side, so the crop's sea, sky and stone do not move them): mean L, mean saturation,
+#           green share, local standard deviation of L (5 x 5, texture) and blade coverage (the
+#           calibrated classifier: green's lead over red and blue as a share of green,
+#           (G - max(R, B)) / G, above the view's `rel`, and L above `floor`), each / the GT's, and
+#           the mean linear luminance (lumaLin) and linear chroma (chroma: the length of YCoCg's
+#           Co, Cg) with the sRGB transfer and the default look's display S-curve undone (the
+#           measures in linear light); none with fewer than 400 region pixels in a frame. meadowShare is the
+#           region's share of the crop. The classifier reads chromaticity, not brightness, so a darker meadow of the same
+#           blades keeps its coverage: luma and coverage are separate gates.
+#   twigs   for twig crops: the twig mask (a dark-detail black top-hat of L over `window` px above
+#           `tophat` levels): its mean depth (contrast) and its count of connected pieces of at least
+#           `minArea` px (components), each / the GT's.
+#   stars   for star crops: visible stars (local maxima at least the mask's `visible` level, 12,
+#           over a 7 x 7 median: below it MSAA's sharpened cloud texture counts) / the GT's count,
+#           their mean excess / the GT's, the mean excess of the ten brightest (peak) / the GT's,
+#           and twinkle (stars at the calibrated `excess`): on a still camera (the clip's path), the
+#           standard deviation over the clip of each star's excess (its 3 x 3 maximum), the stars found in the
+#           mean frame, mean over the stars (levels; own frames): the horizon's scintillation. None
+#           under a moving camera, where a sub-pixel star's brightness follows its pixel phase.
+#   glints  for sea-glint crops: the share of pixels at or above the calibrated level (the MSAA
+#           crop's 99.9th percentile) / the GT's, their energy above it / the GT's, and sparkle: the
+#           mean change of the count from frame to frame / its mean (own frames).
+#   streaks for rain crops: the energy of the bright detail (mean of L above its 5 x 5 mean) / the
+#           GT's.
+#   peak    the largest rise of the crop's mean L over its median across the GT frames / the GT's
+#           (a lightning flash's brightness); only where the GT's rise exceeds 2 levels.
+#   edgeW   edge width (crops named cliff-edge, horizon, islander or moon): the median 10-90 % rise
+#           distance in GT pixels of the clip's L across the GT's strongest edges, sampled along the
+#           GT's gradient normals (non-maximum suppressed, Sobel above 24, rises of at least 12
+#           levels), mean over frames. edgeWgt: edgeW minus the GT's own width across the same
+#           edges (0 = as soft as the GT). Gated as differences to MSAA (px).
+#   shift   the global image shift against the GT (phase correlation refined on a 100x upsampled
+#           correlation surface, gain 0.99 on known shifts), its length in GT pixels, mean over
+#           frames: a jitter or reprojection offset left in the output; shiftX and shiftY its signed
+#           components (x right, y down).
+
 def own_metrics( L, own, crop, m, hashes, clock, path=None, redraws=None ):
 
 	"""Metrics of a side's own frames (every frame it captured), no GT: L its luma and own its
@@ -979,6 +995,35 @@ def unflatten( d ):
 
 # ------------------------------------------------------------------ gates
 
+# The gates' forms (a thresholds file's `metrics` and `gt` rules; the lookup order is in the
+# docstring). Keys "kind", "gate" and "note" carry the gate's description. Forms against MSAA:
+#
+#   ratio       for magnitudes and the ratios to the GT:
+#                 "max": r      PASS if test <= max( r x b, floor ), or with "gtPlus": d, if
+#                               test <= the GT's own value + d (F only: the GT's frame-to-frame change
+#                               over its consecutive frames; a gate the truth itself cannot meet, such
+#                               as rain that moves every frame, then passes within d of it)
+#                 "min": r      PASS if test >= r x b
+#                 "band": [lo, hi]  PASS if lo <= test / b <= hi; with |b| <= floor (b about 0, where
+#                               a ratio means nothing) PASS if |test| <= floor
+#               "floor" (default 0) is an absolute allowance in the metric's own units, not an MSAA
+#               value: under MSAA a paused clip's frames repeat, so its F and TI are exactly 0.
+#   conditions  "tiers": [..] judges the rule only for those tiers (the first part of --key);
+#               "requires": { metric: least } only where the baseline's metric reaches it (a count
+#               large enough to measure); "except": [ key, .. ] not for those --key entries (a view
+#               whose image does not repeat between two loads, so the gate's precision is out of
+#               reach). Elsewhere the rule gives no verdict.
+#   difference  for the signed, integer and absolute-difference metrics: fringe and dMSAA (levels),
+#               edgeW, edgeWgt, shiftX and shiftY (px), holes (pixels), L and Rec (frames):
+#                 "diff": [lo, hi]  PASS if lo <= test - b <= hi; with "floor": f the baseline is
+#                               max( b, f ) (edgeWgt with floor 0: as wide as the wider of MSAA's
+#                               and the GT's edge)
+#
+# Rules in `gt` (left out with --no-gt-gates: a GT that is not the side's own, such as high's GT
+# for medium and low) read the test's value against the GT directly (its metrics are already ratios to the
+# GT or errors against it): "min", "max" or "band" (absolute bounds on the value). Their verdicts are
+# named "gt:<metric>".
+#
 # metrics gated by their difference to the baseline, never by a ratio (see the docstring)
 DIFF_METRICS = { 'fringe', 'L', 'Rec', 'edgeW', 'edgeWgt', 'holes', 'dMSAA', 'shiftX', 'shiftY' }
 RATIO_KEYS = { 'max', 'min', 'band' }
@@ -1208,6 +1253,17 @@ def calibrate( sources, overlays=None, size=None ):
 
 
 # ------------------------------------------------------------------ main
+
+# Speed: the frames are measured in worker processes, one frame index of a crop per job (its test,
+# MSAA and GT frames: the GT's masks, filters and spectrum are taken once for both sides), and the
+# per-frame values are combined in frame order in the main process, which also takes the metrics
+# that pair frames from the frames' luma. Every number is the same expression on the same pixels as
+# in one loop, so the output does not depend on the worker count (byte-identical metrics.json).
+# Workers: --workers N, else the environment's CLIP_METRICS_WORKERS, else a quarter of the CPUs
+# within 1 to 4 (the CPU is shared with captures, and baseline.mjs runs several metric runs at once);
+# 1 measures in the main process. On macOS the main process and the workers run with the application
+# scheduling policy (tools/kit/qos.mjs says why; see QOS above).
+
 
 def default_workers():
 

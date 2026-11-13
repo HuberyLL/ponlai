@@ -1,46 +1,82 @@
-// Carry-over: a commit B takes the MSAA baseline and the aa=gt ground truth of an
-// earlier commit A instead of capturing them again, when nothing between them can have changed
-// those captures. A baseline costs the gates' clips (64 stepped frames each) and the ground truth
-// 64 jittered renders per rest view and 32 per clip frame: most of a milestone's reference time,
-// spent again on every merge-base whose diff only touched tools, docs or code that draws nothing.
+// Decides whether a commit can take over an earlier commit's MSAA baseline and ground truth uncaptured.
 //
-//   baseline.mjs ... --carry-from A [--carry-url <preview of A>] [--carry-recheck]
-//   node tools/kit/parity/carry.mjs check --from A --to B [--url <preview of B>] [--carry-url <preview of A>]
-//       [--root DIR] [--tiers high] [--views a,b] [--clips a,b] [--only rest|clips] [--all] [--recheck]
+// A commit B takes the MSAA baseline and the aa=gt ground truth of an earlier commit A instead of
+// capturing them again, when nothing between them can have changed those captures. A baseline costs
+// the gates' clips (64 stepped frames each) and the ground truth 64 jittered renders per rest view
+// and 32 per clip frame: most of a reference round, spent again on every commit whose diff only
+// touched tools, docs or code that draws nothing. tools/kit/parity/baseline.mjs `--carry-from A`
+// applies it; `check` prints the verdict alone.
+//
+// Usage:
+//   node tools/kit/parity/carry.mjs check --from <A> --to <B> [options]
+//   node tools/kit/parity/baseline.mjs --url <preview of B> --sha <B> --carry-from <A> [--carry-url <preview of A>]
+//
+// Options:
+//   check
+//     --from <A>, --to <B>   the two commits (any form git resolves)
+//     --url <url>            a preview of B, where the paused sets and spot checks are captured
+//     --carry-url <url>      a preview of A, for what A's store lacks for the checks
+//     --root <dir>           the store's root; default artifacts/parity
+//     --tiers <a,b>          default high
+//     --views, --clips, --only  baseline.mjs's selection of entries
+//     --all                  evaluate every condition and carry nothing
+//     --recheck              run the spot checks again instead of reusing an earlier verdict
+//     --jobs <n>             pages at once for the paused sets
 //
 // What could change a stored capture, and how each is ruled out (cheapest first; baseline.mjs
 // stops at the first that fails, `check --all` evaluates every one):
-//   1. same build inputs (`git diff A B` touches nothing the build reads, BUILD_INPUTS in
-//      reference.mjs): the two builds are the same, so everything carries with no further check;
-//   2. the capture tools and the browser: an entry carries only when A's manifest key equals the key
-//      B asks for (tool hash, browser build, tier, aa, size, query, clip, view, sampling, anchors);
+//   1. `sameBuild`: `git diff A B` touches nothing the build reads (the configuration's
+//      `reference.buildInputs`): the two builds are the same, so everything carries with no
+//      further check;
+//   2. key: an entry carries only when A's manifest key equals the key B asks for (tool hash,
+//      browser build, tier, aa, size, query, clip, view, sampling, anchors); the checks use the
+//      gates' size (1728x1117@2) with no extra query only;
 //   3. motion (wind, the islanders' walk, the sea, lightning, anything under a running clock, the
-//      stepper): invisible to a paused frame, so a watch list (the configuration's
-//      `reference.watch.motion`) on the diff, plus a spot check for the clips: the first SPOT.frames
-//      frames of SPOT.clips (the clips table's CARRY_SPOT) under MSAA captured on B with
-//      A's anchors and compared pixel for pixel with A's stored baseline entries (a differing clip
-//      is captured once more, since a whole-frame outlier under a shared GPU never repeats);
-//   4. the paused scene: B's paused set (S1 on high: the views table's default group plus every
-//      view an entry to carry is on; S2/<tier> on medium and low: those views) matches A's with diff-set.py
-//      (`--aa-floor` where both sides hold repeats, else pixel identity); and since that vouches for
-//      A's set, not A's entries, a rest baseline entry with a whole frame carries only when that
-//      frame matches A's own paused frame of its view (`stored`, files only: a capture that went
-//      wrong at A would otherwise carry on into every later sha);
-//   5. the ground truth's own path (aa=gt only): a watch list (`reference.watch.gt`) on the diff, plus one rest
-//      ground truth (the first of SPOT.gtViews A holds) captured on B and compared with A's within
-//      the ground truth's noise (GT_TOLERANCE): a temporal-only change outside the watch list (a
-//      vegetation material's temporal branch) leaves MSAA alone and shows only there.
+//      stepper) is invisible to a paused frame, so `motionWatch`, a watch list (the configuration's
+//      `reference.watch.motion`) on the diff, plus `spot` for the clips: the first SPOT.frames
+//      frames of SPOT.clips (the clips table's CARRY_SPOT) under MSAA captured on B with A's
+//      anchors and compared pixel for pixel with A's stored baseline entries (a differing clip is
+//      captured once more, since a whole-frame outlier under a shared GPU never repeats);
+//   4. the paused scene, `paused-<tier>`: B's paused set (S1 on high: the views table's default group
+//      plus every view an entry to carry is on; S2/<tier> on lower tiers: those views) matches A's
+//      with tools/kit/diff-set.py (`--aa-floor` where both sides hold repeats, else pixel identity),
+//      captured or extended through the store (A's from --carry-url when its store lacks it). Since
+//      that vouches for A's set, not A's entries, a rest baseline entry with a whole frame carries
+//      only when that frame matches A's own paused frame of its view within STORED_TOLERANCE
+//      (`stored`, files only: a capture that went wrong at A would otherwise carry on);
+//   5. the ground truth's own path (aa=gt only): `gtWatch`, a watch list (`reference.watch.gt`) on
+//      the diff, plus `gtSpot`, one rest ground truth (the first of SPOT.gtViews A holds) captured on
+//      B and compared with A's within the ground truth's noise (GT_TOLERANCE): a temporal-only
+//      change outside the watch list leaves MSAA alone and shows only there.
 // The baseline carries on 1-4 (rest entries need no spot check: one paused frame), the ground
 // truth on 1-5. GT-HI, the lower tiers' clips and the test labels never carry. The metrics are
-// not captures: baseline.mjs recomputes them on every run, so a change to clip-metrics.py or the
-// thresholds invalidates nothing here.
+// not captures: baseline.mjs recomputes them on every run, so a change to tools/kit/clip-metrics.py
+// or the thresholds invalidates nothing here. A browser build verified for a paused set
+// (tools/kit/reference.mjs, `verifiedBrowsers`) counts as the set's own.
+//
+// What the rule cannot see: a change that alters motion only, outside the watch list, in a view or
+// clip the spot check does not cover; a temporal-only change visible in the ground truth of views
+// other than the one spot-checked; the lower tiers' ground truth (checked on high only); and a rest
+// baseline entry without a whole frame that was captured wrong at A.
 //
 // A carried entry is a real directory at B's path holding clones of A's files (copy-on-write on
 // APFS, a plain copy elsewhere; never hard links, which a later write would change on both sides)
-// and its own manifest: A's key (so later requests reuse it) and `carriedFrom` (A's sha, its entry,
-// the origin when A's own entry was carried, the verdict file). The checks' captures, diffs and
-// the verdict stay under `<root>/<B>/carry/<A>/` (verdict.json); the spot checks' results are
-// reused by later runs with the same inputs (--recheck runs them again).
+// and its own manifest: A's key (so later requests reuse it) and `carriedFrom` (A's sha, its entry
+// path, the origin when A's own entry was carried, the time, the verdict file).
+//
+// Output: `check` prints a line per entry and side, `carry ...` or `keep  ...: <the condition that
+// failed>`, after the checks' own log lines. The checks' captures, diffs and the verdict stay under
+// `<root>/<B>/carry/<A>/` (verdict.json); the spot checks' results are reused by later runs with
+// the same inputs (the clip tools, the browser, A's entries' last capture).
+//
+// GPU lock and browser: the paused sets go through tools/kit/parity/capture-set.mjs and the spot
+// checks through tools/kit/parity/capture-clip.mjs, each taking a shared slot of the GPU lock and
+// headless pages (docs/reference/gpu-lock.md). With `sameBuild`, or a verdict reused, none.
+//
+// Cost: from a git diff (under a second) to a paused set and a few short clips captured.
+//
+// Exit codes: 0 the verdict printed; 2 usage (no `check`, --from or --to) or an error.
+import '../help.mjs';
 import { execFileSync, spawn } from 'node:child_process';
 import { constants, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';

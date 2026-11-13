@@ -1,109 +1,115 @@
-// Paused parity captures of a fixed set of views (views.mjs), through tools/kit/capture.mjs's worker:
-// one page per set (one per worker with --jobs), the views reached in place by the exact scene jump.
+// Captures a set of paused views in a few warm pages, and checks it against a stored reference.
 //
-//   node tools/kit/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|normal|special|a,b,c] [--view "name:query[::js]"]...
-//       [--views-file f.json] [--sweep "key=a,b,c"]... [--repeat]
-//       [--quality high] [--aa mode] [--q "extra&query"] [--jobs n] [--retries 1] [--size 1728x1117@2]
-//       [--page-per-view] [--runs file.csv] [--task name] [--procedure name] [--sha sha] [-- capture.mjs options]
-//   node tools/kit/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [same options]
-//   node tools/kit/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set> [--ref-url U]
-//       [--diff "diff-set.py options"] [--recapture-reference] [same options]
-//   node tools/kit/parity/capture-set.mjs <url> <outDir> --quick --views a,b|--view ...|--sweep ... [--crops x,y] [--full]
-//       [--variant "[label::]js"]... [--store <root>/<sha>] [--ref-url R] [--quality, --aa, --q, --size]
+// It answers whether a change moved the paused frame of a fixed set of views: the parity views of
+// tools/island/parity/views.mjs, or ad-hoc views given on the command line. Each view's frame is
+// the one its own fresh load draws, but most views are reached in place by the exact scene jump,
+// so a set costs a fraction of a page load per view. Use it instead of a script that loops
+// tools/kit/capture.mjs over views, which loads a cold page per view. For one view, use
+// tools/kit/capture.mjs; for frames in motion, tools/kit/parity/capture-clip.mjs. How to judge a
+// set (byte-exact or within a tolerance) and when to recapture a reference is method:
+// tools/kit/parity/README.md.
 //
-// Every view is the frame of `<baseUrl>?debug&paused&t=12&quality=<q>[&aa=<mode>][&<extra>]&<view's
-// query>` (the order matters: the page reads the first of a repeated option) at the given CSS size and
-// device pixel ratio (1728x1117 at 2 by default: high renders 2K's pixel count, 2388x1543, and
-// FSR 1 brings it to 3456x2234), after the view's eval; it is written as `<outDir>/<view>.png`, its diagnostics and crop
-// anchors `<view>.json` and capture.mjs's output `<view>.log`.
-// Ad-hoc views (adhoc.mjs, whose header has the rules) instead of or beside views.mjs's, through the
-//   same path (pages, jump, readiness, --jobs, --repeat, --reference, --check, --quick):
-//   --view "name:query[::js]" (repeatable; `like=<view>` in the query starts from a views.mjs view),
-//   --views-file f.json, --sweep "key=a,b,c" (repeatable: every selected view per value, every
-//   combination of several). An ad-hoc view's own options win over the set's (t, tier, aa, --q);
-//   views whose load-time options differ get their own pages, group after group. Their definitions
-//   go to `<outDir>/views.json`; in the reference store each carries its hash, so two ad-hoc views
-//   of one name never share a capture.
-// One page per set: only load-time options (quality, aa, size and dpr, the debug
-//   switches in --q) need a new page, and every view of a set shares them, so each worker opens one
-//   page (capture.mjs --worker), loads the first view it is given and reaches each later one by
-//   `__PONLAI__.establishScene( <the view's query> )` (app/Scene.ts: the frame then equals a fresh
-//   load's, byte for byte wherever the fresh load repeats), then the view's eval and the usual
-//   readiness and shot. The jump resets the scene's options and camera, not what an eval changed
-//   besides (GUI settings, Tune, debug flags, a uniform), so that holds only after views whose evals
-//   it covers: none, or exactly a views.mjs view's (camera placement, a weather change, which
-//   tools/island/verify-scene-jump.mjs checks from other scenes). After a view with an eval of its own
-//   (`--view ...::js`, a views-file `eval`, a `like=` view's js, a sweep over such a view;
-//   adhoc.mjs `jumpClean`) the page ends and the next view loads fresh; an `--eval` or
-//   `--eval-ready` after `--` (run on every view) gives a page per view, except an `--eval-ready` that
-//   `--ready-reads` (also after `--`) declares read-only: its views keep the one page. A view's JSON says how it
-//   was reached (`page`: visit, load or jump, the view before, the page's memory). The views are handed out one at a time from one queue, so --jobs
-//   balances itself. Builds whose page does not mark the exact jump (`__PONLAI__.sceneJump`; older
-//   commits) get a page per view, as before, said once; --page-per-view forces that. A stored
-//   reference records which (reference.mjs, `pages`: 'jump' or 'view'), so a set reached by jumps
-//   never stands in for one of fresh loads, nor the other way round.
-// --repeat captures each view twice (`<view>.png`, `<view>.repeat.png`) and reports whether the two
-//   hold identical pixels (decoded: the PNG bytes depend on the encoder; exit 1 if any differ). The
-//   repeats run after all the first captures, on other pages (a page serves first captures or
-//   repeats, never both) and in reverse order, so a view's repeat is reached from another scene than
-//   its first capture (the view loaded fresh in one pass is jumped to in the other): an A/A that also
-//   shows anything a jump left behind. The frames do not depend on the job count (24 views at
-//   --jobs 1 and 4 decoded to the same pixels); a view that differs only by sparse single-frame
-//   speckle on the vegetation while other browsers render is GPU noise: shoot it again.
-// --reference makes the set a stored reference of a commit (reference.mjs; layout and manifest in
-//   tools/kit/parity/README.md): if the directory's `complete.json` matches (tool version, browser
-//   build, tier, aa, size, extra query, capture.mjs options) and covers the views (and repeats) the
-//   set is reused; if another live process is capturing it this one waits and reuses it (freeing
-//   the GPU slot of a `gpu-lock.mjs run --shared` wrapper meanwhile); else it
-//   captures what is missing (extending a set of the same key, or afresh, saying why) and writes
-//   the manifest last. The URL must serve that commit: the tool checks which worktree serves the
-//   port and refuses another commit or uncommitted changes. Repeats that differ are recorded in
-//   the manifest, not an error. Another set of the commit with the same key that covers the
-//   request serves it too (S1 serves FAST3's three views).
-// --check is a check against the stored reference of the base commit: the reference as with
-//   --reference (captured from --ref-url only when it is missing or stale; without --ref-url the
-//   tool says why it would need one and stops), the test side captured into <testDir> with the
-//   same options, then `diff-set.py <ref> <testDir> --views <the views>` with --diff's options
-//   (default `--temporal` for aa=taa|taau|fsr3|gt, `--aa-floor` with --repeat, else `--max-px1 0`);
-//   its table goes to stdout and <testDir>/diff.txt, its exit code is the check's.
-//   --recapture-reference captures the reference afresh (one suspected bad), the old one moved aside.
-// --aa adds `aa=<mode>` only when given, so a build without the option loads unchanged. A temporal
-//   mode's view (aa=taa|taau|fsr3, and the ground truth aa=gt: 64 jitters at the canvas's resolution) is
-//   captured once its paused rest has converged (capture.mjs waits for `diag.taa.converged`). Keep a
-//   ground-truth set per merge-base, shared by every task on it: `<parity root>/<sha>/gt/`.
-// --jobs runs that many pages at once, each in its own profile slot (tools/kit/capture-browser.mjs).
-//   Captures are GPU-bound: 2 at once give about 1.75 times one page's throughput, 3 about 2 times
-//   with the slowest views taking twice as long as at 2, 4 hardly more; and every extra page costs
-//   a load (5-8 s, a jump 2-4 s), which a small set does not earn back. So the default is one page
-//   per 5 captures, at most 2, the GPU lock's shared slots (a third page waits for a slot unless
-//   the set runs under an exclusive hold; repeats counted: 6 views or more take 2, up to 5 one). Each page leases a GPU lock slot (capture.mjs): it keeps it from view to view and
-//   gives it up between views for a waiter after 20 s of holding (capture.mjs --lease, after `--`).
-//   --retries (default 1) captures a failed view again on a fresh page (a load that timed out while
-//   other pages kept the GPU busy, a page error, a crash): a failure ends its page, and the views
-//   still to come go on in a fresh one, so a crash or a stuck page (no answer within three times
-//   --timeout plus two minutes once the view holds its GPU slot: killed) does not lose the set; the view's log keeps the last
-//   attempt. A page that ends before it asks for its first view (the browser did not start, the
-//   worker threw while opening it) is a failed start: it is tried again as a view is, and when
-//   more than --retries starts in a row fail, the run ends at once with exit 1, naming the last
-//   page's exit code and the last lines of its stderr (no view is attempted, none is logged).
-//   --timeout (ms, default 240000) bounds capture.mjs's waits for the page.
-// --runs appends a line to a CSV log of verification runs (date, task, procedure, sha, wall time in
-//   minutes, whether the GPU was busy before the run, the captures and failures, the set); the
-//   default is the PARITY_RUNS environment variable. Without either nothing is logged, so a
-//   procedure that keeps a run log must pass one of them. A reference gets its own line
-//   (`<procedure> ref reused|waited|captured|extended`, its sha, the captures this run made).
-// --quick is the tuning mode, not a gate (quick.mjs, whose header has the rest): one page per view,
-//   the base and then each --variant's js on that page, each shot once ready (crops through the
-//   screenshot's clip), measured against the store's MSAA and ground-truth rest entries of the
-//   commit (--store) on those crops; a short table per variant.
-// Options after `--` pass through to capture.mjs (e.g. `-- --wait-for "expr" --frames 4 --every 5`;
-// an `--eval` there runs after the view's own, before readiness, and an `--eval-ready` once the
-// view is ready, on the frame shot: a reading of the frame belongs there; either one takes a page
-// per view, see above).
-// Production builds need `?debug` (added here) and the islanders' assets linked into the build's
-// output; see tools/kit/parity/README.md.
-// The set and its capture.mjs workers run with the application scheduling policy on macOS
-// (tools/kit/qos.mjs); a worker is started with it, since re-executing would close its IPC channel.
+// Usage:
+//   node tools/kit/parity/capture-set.mjs <baseUrl> <outDir> [options] [-- capture.mjs options]
+//   node tools/kit/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [options]
+//   node tools/kit/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set> [--ref-url <u>] [options]
+//   node tools/kit/parity/capture-set.mjs <url> <outDir> --quick --views a,b [quick options]
+//   node tools/kit/parity/capture-set.mjs <url> out --views island-fair-noon --sweep weather=fair,rain --sweep hour=7,17
+//
+// Options:
+//   --views <group|a,b>      views.mjs's groups (parity, taa, all, normal, special) or names; default parity
+//   --view "name:query[::js]"  an ad-hoc view, repeatable (tools/kit/parity/adhoc.mjs)
+//   --views-file <f.json>    ad-hoc views from a file
+//   --sweep "key=a,b,c"      each selected view once per value, repeatable (every combination)
+//   --quality <tier>         default high
+//   --aa <mode>              adds `aa=<mode>`; none by default (a build without the option loads unchanged)
+//   --q "<extra&query>"      added to every view's query (such as msaa=1)
+//   --size <W>x<H>[@<dpr>]   CSS size and device pixel ratio; default 1728x1117@2
+//   --repeat                 capture each view twice and compare the two
+//   --jobs <n>               pages at once; default one per 5 captures (repeats counted), at most 2
+//   --retries <n>            fresh-page retries of a failed view or a failed page start; default 1
+//   --timeout <ms>           capture.mjs's waits for the page; default 240000
+//   --page-per-view          a fresh page for every view
+//   --reference <dir>        make the set a stored reference of a commit (tools/kit/reference.mjs)
+//   --check <dir>            capture the test side and diff it against that stored reference
+//   --ref-url <url>          with --check: where to capture the reference when it is missing or stale
+//   --diff "<options>"       with --check: diff-set.py's options instead of the default
+//   --recapture-reference    capture the reference afresh (one suspected bad)
+//   --runs <file.csv>        append a line to a run log; default the PARITY_RUNS variable, else none
+//   --task, --procedure, --sha  the run log's fields
+//   --quick                  the tuning mode (tools/kit/parity/quick.mjs, whose header lists its options)
+//   -- <options>             passed to every capture.mjs page (tools/kit/capture.mjs)
+//
+// Every view is the frame of `<baseUrl>?debug&paused&t=12&quality=<tier>[&aa=<mode>][&<extra>]&<the
+// view's query>` (the page reads the first of a repeated option), shot after the view's eval once
+// capture.mjs finds it ready. The default size renders 2K's pixel count on high (2388x1543), which
+// FSR 1 brings to 3456x2234. A temporal mode (taa, taau, fsr3, and the ground truth gt: 64 jitters
+// at the canvas's resolution) is shot once its paused rest has converged.
+//
+// One page per set: only load-time options (tier, aa, size and ratio, the debug switches in --q)
+// need a new page. Each page loads the first view it is given and reaches each later one by
+// `__PONLAI__.establishScene( <the view's full query> )`, whose contract (app/Scene.ts) is that the
+// frame equals a fresh load's, byte for byte wherever the fresh load repeats. The jump resets the
+// scene's options and camera, not what an eval changed besides (GUI settings, Tune, debug flags, a
+// uniform). So after a view with an eval of its own (an ad-hoc view's js; adhoc.mjs `jumpClean`) the
+// page ends and the next view loads fresh, and an `--eval` or `--eval-ready` after `--` takes a page
+// per view, unless `--ready-reads` declares the `--eval-ready` read-only. A build without the jump's
+// marker (`__PONLAI__.sceneJump`) gets a page per view, said once. Views are handed out one at a
+// time from one queue. Ad-hoc views whose load-time options differ are captured in groups of pages.
+//
+// Ad-hoc views follow adhoc.mjs's rules: `like=<view>` in a query starts from a views.mjs view; an
+// ad-hoc view's own options win over the set's (t, tier, aa, --q); names are letters, digits, `-`
+// and `_`, none of views.mjs's; a sweep names its views `<view>--<key>-<value>` (`<key>-<value>`, a
+// bare scene, with no views given). With `--views` too, both sets are captured; with ad-hoc views
+// only, the parity group is not.
+//
+// --repeat runs the repeats after all the first captures, on other pages and in reverse order, so a
+// view's repeat is reached from another scene than its first capture: the A/A also shows anything a
+// jump left behind. The two are compared by decoded pixels (PNG bytes depend on the encoder). The
+// frames do not depend on --jobs. A view that differs only by sparse single-frame speckle on the
+// vegetation while other pages render is GPU noise: shoot it again.
+//
+// --reference reuses the stored set when its manifest matches and covers the views, waits for a
+// live process capturing it, or captures what is missing; the store's rules and layout are in
+// tools/kit/reference.mjs. Repeats that differ are recorded in the manifest, not an error. --check
+// does the same for the reference (captured only from --ref-url), captures the test side with the
+// same options and runs `uv run tools/kit/diff-set.py <ref> <testDir> --views <the views>` with
+// --diff's options, by default `--temporal` for taa, taau, fsr3 and gt, else `--aa-floor` with
+// --repeat, else `--max-px1 0`.
+//
+// A failed view (a timeout, a page or console error, a crash) ends its page; it is retried on a
+// fresh page and the views still to come go on there. A page silent for three times --timeout plus
+// two minutes after its view holds the GPU slot is killed and treated the same way. A page that
+// ends before it asks for a view is started again; more than --retries such starts in a row end
+// the run.
+//
+// Output: `<outDir>/<view>.png`, `<view>.json` (diagnostics, crop anchors, `ready`, and `page`: the
+// visit, load or jump, the view before, the GPU lock wait, the page's memory) and `<view>.log`
+// (capture.mjs's output, its last attempt); `<view>.repeat.*` with --repeat; `views.json` with the
+// ad-hoc views' definitions. Stdout: a line per capture, a `-- repeatability` list (identical or
+// DIFFERS), a summary line; with --check the diff table, also in `<testDir>/diff.txt`, the diff's
+// crops in `<testDir>/diff/` and a PASS or FAIL line. The run log gets a line per run and one per
+// reference (date, task, procedure, sha, wall minutes, whether the GPU was busy, captures, failures,
+// the set).
+//
+// GPU lock and browser: each page is a headless capture.mjs worker in its own profile slot
+// (tools/kit/capture-browser.mjs) and leases a shared slot of the GPU lock from view to view
+// (capture.mjs `--lease`, after `--`), so --jobs above the free slots only queues
+// (docs/reference/gpu-lock.md). The set runs with the application scheduling policy
+// (tools/kit/qos.mjs).
+//
+// Cost: a page load, then a jump per view, a fraction of a load. A second page earns its load on
+// sets of more than about 5 captures.
+//
+// Exit codes: 0 every capture done (and, with --repeat, every pair identical; with --check, the
+// diff passed); 1 a capture failed, a repeat differs, more than --retries page starts failed in a
+// row, or --reference could not make the reference; with --check, diff-set.py's code, or 1 when a
+// test capture failed; 2 usage, an unknown option, a bad --size or view, or with --check a
+// reference that could not be made or needs --ref-url, or a server of another commit.
+// --quick returns quick.mjs's code, 2 on its usage errors.
+import '../help.mjs';
+// The set and its capture.mjs workers run with the application scheduling policy on macOS; a worker
+// is started with it, since re-executing would close its IPC channel.
 import { appPolicy } from '../qos.mjs'; // first: the set and its workers run with the application policy
 import { spawn } from 'node:child_process';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -171,6 +177,11 @@ let common = `debug&paused&t=12&quality=${ quality }`;
 if ( options.aa ) common += `&aa=${ options.aa }`;
 if ( options.q ) common += `&${ options.q }`;
 const captures = views.length * ( options.repeat ? 2 : 1 );
+// Captures are GPU-bound: 2 pages at once give about 1.75 times one page's throughput, 3 about 2
+// times with the slowest views taking twice as long as at 2, 4 hardly more; and every extra page
+// costs a load (a jump costs about half of one), which a small set does not earn back. So the
+// default is one page per 5 captures, at most 2, the GPU lock's shared slots: a third page waits for
+// a slot unless the set runs under an exclusive hold (6 captures or more take 2, up to 5 one).
 const jobs = Math.max( 1, Number( options.jobs ?? Math.min( 2, Math.ceil( captures / 5 ) ) ) );
 const retries = Math.max( 0, Number( options.retries ?? 1 ) );
 // capture.mjs's waits for the page: generous, since other agents' pages may share the GPU
