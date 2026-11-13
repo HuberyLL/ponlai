@@ -7,8 +7,9 @@ When to write a tool rather than add an option or keep a one-off script is in `A
 A tool is written to these rules:
 
 - Build on the shared modules instead of copying them: `capture-browser.mjs` (browser, warm
-  profiles, readiness), `kit/reference.mjs` (stored references), `island/parity/views.mjs`,
-  `kit/pixels.py` (image metrics), `gpu-lock.mjs`, `job.mjs`, `qos.mjs`.
+  profiles, readiness), `kit/reference.mjs` (stored references), `kit/parity/tables.mjs` (the
+  views' and clips' tables; its header gives their contract), `kit/pixels.py` (image metrics),
+  `gpu-lock.mjs`, `job.mjs`, `qos.mjs`.
 - The header comment comes first: the usage line, what the tool guarantees (what it compares or
   measures, and under which conditions), its rules with their reasons, and its outputs. Options
   it does not know are an error, not ignored. A change that makes a check faster keeps that
@@ -53,6 +54,15 @@ A tool is written to these rules:
 
   The scene page mounts the same handles (`app/scenes/ScenePage.ts`). A tool that needs more of
   the page adds it to one of the three, never a global of its own.
+
+  A kit tool (`tools/kit/`) takes the globals' names from `tools/project.mjs` (`page`) and never
+  writes them in its code (`tools/repo/verify-kit.mjs`). The members it uses are names in its
+  code, which the page implements: on the handle `renderer.info.frame`, `renderer.info.memory`,
+  `renderer.domElement`, `loop.start()`, `loop.stop()`, `loop.running`, `loop.step( ... )`,
+  `establishScene( query )`, `sceneJump`, `camera`, `clockTime()`, `pipeline.width`,
+  `pipeline.height`, `pipeline.settings.exposureOffset`, `pipelines.total`, `taa.epoch.bump()`,
+  `taa.epoch.value`, `taa.converged` and `taa.rest`; on the diagnostics `settled`, `frame`, `aa`
+  and `taa`.
 - Expensive results that depend only on the commit, the tool and the browser are stored and
   reused through `kit/reference.mjs`; record in the key everything that changes them.
 - A node tool that makes a system of the renderer that takes the look's tables hands it the set
