@@ -85,7 +85,7 @@ function poseView( viewName: string ): void {
 }
 poseView( shownView );
 
-createLight( render );
+createLight( render, { look: installedLook() } );
 createKey( render );
 await createEnvironment( render );
 publishSkyLight( render );

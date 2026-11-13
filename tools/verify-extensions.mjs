@@ -167,7 +167,7 @@ try {
 
 	// a kind of local light
 	const { createLocalLights, DEFAULT_SOURCE } = await load( 'lighting/LocalLights.ts' );
-	const lights = createLocalLights();
+	const lights = createLocalLights( ISLAND_LOOK );
 	let lamps = [ { position: new THREE.Vector3( 1, 6, 2 ) } ];
 	const e2 = thrown( () => lights.add( { name: 'verify light', ...DECLARED, sources: () => lamps } ) );
 	check( 'a kind of local light registers', e2 === null && lights.sources.length === 1, e2?.stack ?? `${ lights.sources.length } sources` );
@@ -177,7 +177,7 @@ try {
 	lights.refresh();
 	check( 'refresh reads the kind\'s sources again', lights.sources.length === 2 && lights.sources[ 1 ].range === 3 && lights.sources[ 1 ].intensity.x === 2 );
 	check( 'a kind of light without its declarations is refused', thrown( () => lights.add( { name: 'undeclared light', sources: () => [] } ) ) !== null && lights.kinds.length === 1 );
-	check( 'a second light table on the page is refused', thrown( () => createLocalLights() ) !== null );
+	check( 'a second light table on the page is refused', thrown( () => createLocalLights( ISLAND_LOOK ) ) !== null );
 
 	// an extra pass
 	const { declareExtraPasses, SCENE_PASSES } = await load( 'post/ExtraPass.ts' );

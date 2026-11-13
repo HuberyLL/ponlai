@@ -88,7 +88,7 @@ page.sceneOptions = ( query ) => sceneOptions( query, sceneDefaults );
 createSky( render, { scene: page.sceneOptions( params ), seaFog: params.has( 'seaFog' ), dayFog: params.has( 'dayFog' ), look: PAGE_LOOK } );
 createTrample( render, island );
 createCameraViews( render, island, page );
-createLight( render );
+createLight( render, { look: PAGE_LOOK } );
 createCharacterShadow( render, island );
 createKey( render );
 island.characterShadow.along = render.shadowDirection;

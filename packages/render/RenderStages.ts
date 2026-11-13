@@ -61,7 +61,7 @@ import { checkRenderer } from './three/Internals.ts';
 import { isWebGPU, gpuDevice } from './three/Backend.ts';
 import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
-import { createLocalLights, type LocalLights } from './lighting/LocalLights.ts';
+import { createLocalLights, type LocalLights, type LocalLightsTables } from './lighting/LocalLights.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
 import { installGroundBounce, GroundBounce, type BounceGround } from './lighting/GroundBounce.ts';
@@ -421,15 +421,16 @@ export function createSky( render: RenderParts, { scene: loaded, seaFog, dayFog,
 
 }
 
-/** The sky's runtime quality, the environment's fill, the sun's light and its shadow map. */
-export function createLight( render: RenderParts ) {
+/** The sky's runtime quality, the environment's fill, the sun's light and its shadow map. `look`:
+ * the look's tables the local lights take (lighting/LocalLights.ts `createLocalLights`). */
+export function createLight( render: RenderParts, { look }: { look: LocalLightsTables } ) {
 
 	const { qualityTier, quality, scene, sky, dayCycle } = render;
 	const { loaded } = staged( render );
 	render.applySkyQuality = applySkyQuality;
 	render.applyEnvironmentFill = applyEnvironmentFill;
 	// the local lights' registry, which the island's kinds of light join (LocalLights.ts)
-	render.localLights = createLocalLights();
+	render.localLights = createLocalLights( look );
 
 	render.skyElapsed = 0;
 	render.lastSkyTime = render.simTime;

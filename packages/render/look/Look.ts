@@ -302,7 +302,7 @@ export interface OcclusionLook {
 	floor: number;
 }
 
-// ---- the local lights (look/LocalLightsLook.ts)
+// ---- the local lights (lighting/LocalLights.ts `createLocalLights`)
 
 export interface LocalLightsLook {
 	/** The gain on every source's own intensity. */
