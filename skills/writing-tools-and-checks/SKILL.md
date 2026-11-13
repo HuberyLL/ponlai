@@ -66,6 +66,9 @@ running it. Search the tools folder for the key words of the question too: an in
 
 ### 2. Decide: an option, a tool or a one-off (binding: Index)
 
+- A tool that already answers it, but was not found (the script was written again because the
+  index and the manual did not name the question): change nothing in the code; add the question to
+  its manual and to the index.
 - A tool that answers a neighbouring question with the same inputs: add an option to it.
 - No tool, and the question has been asked before or will be by another task (a script written a
   second time, a local copy of one passed between tasks): write a tool.
@@ -123,6 +126,8 @@ links, so the header stays short.
    planted fault runnable (a test option or a fixture) so it can be seen to fail again.
 3. A change that makes a tool or check faster: confirm it compares against the same thing as
    before and catches the same planted fault.
+4. When the proof cannot be run now (no GPU free, no page to load), hand over the exact commands
+   and the result each should give, and call the tool unproven until they have run.
 
 ### 6. Turn a mistake into a check (binding: Checks)
 

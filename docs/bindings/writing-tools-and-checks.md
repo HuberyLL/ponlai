@@ -14,6 +14,10 @@ facts a tool is built on.
   is its header: `node <tool> --help`, `--help --full` for the whole header, and
   `uv run <tool>.py --help` for a Python tool. Never start a GPU tool to see its options.
 - `node tools/repo/code-map.mjs` lists every file with its header's first line, the tools included.
+- Views by name: `tools/island/parity/views.mjs` holds the named views and their crops; it is the
+  table `tools/kit/parity/capture-set.mjs` (`--views`) and `tools/kit/parity/capture-clip.mjs` read.
+  `tools/kit/probe.mjs` takes queries only: `node tools/island/parity/views.mjs query <view>` prints
+  a view's query, and views whose camera is set by an eval need capture-set.
 - A one-off script stays in the task's folder under the git-ignored `artifacts/`; a tool goes in
   `tools/`, in its group: `kit/` (generic, no part of this project named), `render/`, `island/`,
   `game/`, `repo/` (the repository's own checks).
@@ -120,7 +124,10 @@ for the numbers the island's page draws with, such as `createExposure( ISLAND_LO
 
 Stored results: expensive results that depend only on the commit, the tool and the browser are
 stored and reused through `tools/kit/reference.mjs`; the key records everything that changes them
-(the capture tools' sources are listed in `tools/project.mjs` `reference.toolFiles`).
+(the capture tools' sources are listed in `tools/project.mjs` `reference.toolFiles`). A change to
+one of those files, a comment included, changes every stored set's key, so the next comparison
+captures its references again: make such a change only when the capture needs it, and say so in
+the commit.
 
 ## Prove
 
