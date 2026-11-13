@@ -6,8 +6,8 @@ import { NEUTRAL_LOOK } from './NeutralLook.ts';
 
 // The look the renderer draws with: the numbers chosen for a picture, one set per system, handed
 // in by whoever owns the picture. The renderer holds the types (here), the code that reads the
-// numbers and registers their tunables (the reader modules beside this one: SeaLook.ts,
-// DayLook.ts, AmbientLook.ts, ExposureLook.ts, DisplayLook.ts, HazeLook.ts, SkyLook.ts) and a
+// numbers and registers their tunables (the reader modules beside this one: DayLook.ts,
+// AmbientLook.ts, ExposureLook.ts, DisplayLook.ts, HazeLook.ts, SkyLook.ts, WindLook.ts) and a
 // neutral set (NeutralLook.ts), which it draws with when nobody installed one. The island's
 // numbers are the island's (packages/island/look/), installed by the page's entry (PageSettings.ts)
 // after the settings and before any reader loads.
@@ -23,11 +23,16 @@ import { NEUTRAL_LOOK } from './NeutralLook.ts';
 // reader registers its tunables (debug/Tune.ts) on tables of its own, copies of the ones it was
 // handed, so an installed set stays as it was written.
 //
-// The exposure is the exception: it takes its tables as an argument where the renderer's sky
-// stage creates it (ExposureLook.ts `createExposure`), not as its module loads, so two exposures
-// made from two sets in one process hold their own numbers (tools/verify-exposure-look.mjs). The
-// entry hands it the set it installs; a module that cannot name that set reads it back with
-// `installedLook` (the test scenes' page).
+// Some systems take their tables as an argument where they are created instead, not as a module
+// loads, so two made from two sets in one process hold their own numbers
+// (tools/verify-look-params.mjs): the exposure, where the renderer's sky stage creates it
+// (ExposureLook.ts `createExposure`); the ambient occlusion's floor and the meadow canopy's media,
+// which every material's shader reads, in the shared uniforms (shared.ts `createShared`); the
+// local lights' gain (lighting/LocalLights.ts `createLocalLights`, from the stage `createLight`);
+// and the sea's detail and distant swell (ocean/SeaDetail.ts, ocean/OceanFFT.ts, from the stage
+// `createSeaAndPipeline`). No module holds a value of theirs. The entry hands them the set it
+// installs; a module that cannot name that set reads it back with `installedLook` (the test
+// scenes' page).
 //
 // Headless: types and three functions, no three.js and nothing of the page. The world's chunk
 // worker and the headless game never load it (tools/verify-layers.mjs).
@@ -369,8 +374,8 @@ export function installLook( look: Look ): void {
 }
 
 /** The installed look, or the neutral set where none was installed: for an entry that installed
- * a set and hands the same set to a stage that takes its tables at creation (the exposure's,
- * look/ExposureLook.ts) from a module that cannot name it (the test scenes' page). It does not
+ * a set and hands the same set to the systems that take their tables at creation (the header)
+ * from a module that cannot name it (the test scenes' page). It does not
  * count as a read: a set installed after it is called is not what it returned. */
 export function installedLook(): Look {
 

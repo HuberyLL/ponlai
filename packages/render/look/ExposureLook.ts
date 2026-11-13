@@ -8,7 +8,7 @@ import type { DayLook, ExposureKey, ExposureLook, SharingKey } from './Look.ts';
 // sun's elevation in `DayLook`): unlike the other systems, whose readers take the installed look
 // as they load, the exposure takes its tables as an argument where the renderer's sky stage
 // creates it (RenderStages.ts `createSky`), so two exposures made from two tables hold their own
-// numbers (tools/verify-exposure-look.mjs) and this module holds none at module level. What it
+// numbers (tools/verify-look-params.mjs) and this module holds none at module level. What it
 // makes (`Exposure`): the exposure's keys by the sun's elevation, the rising sun, the clouded day
 // and the night, overcast's keys on top of them, and `keysAt`, which reads them for a frame;
 // post/Exposure.ts turns the keys into the target and the adaptation (its header says what each
