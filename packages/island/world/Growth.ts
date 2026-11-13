@@ -13,7 +13,7 @@ import type { IslandChunk, WorldData } from './types.ts';
 import { Villagers } from '../characters/Villagers.ts';
 import { SeabedRise } from './SeabedRise.ts';
 
-// The island grows in place (chunk design, sections 3.4, 10 and 11; plan M8): the next piece is
+// The island grows in place: the next piece is
 // generated in the background, and a Grow (`grow()`, the GUI's Island folder) swaps in only the
 // chunks that changed, in one frame, with every dependent following. No pipeline is built: a swap
 // needing one would be a bug (tools/verify-first-use.mjs and the page's pipeline count). A grown
@@ -74,7 +74,7 @@ import { SeabedRise } from './SeabedRise.ts';
 //   uploaded again by a later chunk's first draw (three/ThreePatches.ts `installBindingPatches`).
 // - The growth's own main-thread time is counted per frame (`work`; the workers' replies
 //   included), and kept with the swap's record (`state.last.work`): no frame's share should pass
-//   2 ms (plan M8's frame-time acceptance).
+//   2 ms (the growth's frame-time budget).
 // - The page then draws what a page loaded on the grown land draws, bit for bit (paused): every
 //   dependent is the same function of the same version, and the island's meshes are split and
 //   ordered alike (World.ts on split draws).

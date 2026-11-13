@@ -1,4 +1,4 @@
-// The world generated one chunk at a time (chunk design, sections 3, 5 and 7): pure functions of the
+// The world generated one chunk at a time: pure functions of the
 // land, callable from a worker or from plain node (no `self`, no three, no DOM).
 //
 // - The grid: chunk ( ci, cj ) is the square [ S ci, S ci + S ) x [ S cj, S cj + S ) on the world's
@@ -18,7 +18,7 @@
 //   Field2D lookup computes from its own origin and differs in the last bits). Beyond the window it
 //   continues the window's edge: only the stones' search for the groups that might outrank a stone
 //   reads that far, and nothing it finds there reaches a stone (rules below).
-// - `buildChunk( window, land, ci, cj )` makes everything the chunk owns (section 3.3) from the
+// - `buildChunk( window, land, ci, cj )` makes everything the chunk owns from the
 //   window alone: the island SDF over the window (`makeIslandSDF( ... )`, every
 //   value a function of the point), its stones, the contact solids, and from those each kind of
 //   content below. Ownership: island quads by their edge's base lattice column (SurfaceNets.ts),

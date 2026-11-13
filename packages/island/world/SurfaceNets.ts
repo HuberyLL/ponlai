@@ -8,7 +8,7 @@
 //   -> { positions, normals, ao, tint, curv, detail?, detail2?: Float32Array, indices: Uint32Array }
 //
 // Chunk mode (`own`): the island is meshed per 16 m chunk, and two neighbouring chunks must meet
-// with no crack and no shading seam (chunk design, sections 3.3 and 5.3).
+// with no crack and no shading seam.
 // - The lattice is world-anchored: point ( i, j, k ) lies at ( i voxel, min.y + j voxel, k voxel ),
 //   with a voxel exact in binary (0.125 m), so every chunk evaluates the same floats at a shared
 //   point. Only min.y and max.y are read then; the island passes ISLAND_BOTTOM + 0.5 (-5.1), which

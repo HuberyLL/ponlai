@@ -30,10 +30,10 @@
 // (19.5 m) of it, by construction (the derivation is at STONES_READ), and a chunk builds its own
 // stones alone, inside its window (Chunks.ts).
 //
-// Judging the outranking on what each try or stone makes alone (the chunk design's proposals)
-// rather than on the other groups' lists dropped 32 % of the fallen blocks and 23 % of the near
-// patches' stones: a cell's tries that its own list turns down still outranked. Bounding the
-// fallen-block cells' reach (3.5 m, which trims almost no block) bounds their lists instead.
+// Judging the outranking on what each try or stone makes alone rather than on the other groups'
+// lists dropped 32 % of the fallen blocks and 23 % of the near patches' stones: a cell's tries
+// that its own list turns down still outranked. Bounding the fallen-block cells' reach (3.5 m,
+// which trims almost no block) bounds their lists instead.
 //
 // This replaced 2 m fallen-block cells of one block each and priority by class: neighbouring blocks
 // then dropped each other as a thinning does, packing about two thirds as densely as the running

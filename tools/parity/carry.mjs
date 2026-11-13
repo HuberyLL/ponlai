@@ -1,4 +1,4 @@
-// Carry-over (plan item #6): a commit B takes the MSAA baseline and the aa=gt ground truth of an
+// Carry-over: a commit B takes the MSAA baseline and the aa=gt ground truth of an
 // earlier commit A instead of capturing them again, when nothing between them can have changed
 // those captures. A baseline costs the gates' clips (64 stepped frames each) and the ground truth
 // 64 jittered renders per rest view and 32 per clip frame: most of a milestone's reference time,

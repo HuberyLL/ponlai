@@ -31,9 +31,9 @@
 // keys, newest first; `keep` puts this load's keys first, keeps the most recent other version (a
 // version is named by its first key, the land's) and deletes every record in neither, in one
 // transaction. Only keys are listed (a few hundred at most), never the records. The two versions are
-// the one shown and the one before it, so stepping back a step, or a reload, still hits (milestone
-// 8 makes them the current and the pending version). Another tab that loads at the same time can
-// have its records deleted: that costs it a miss on its next load, never a wrong world.
+// the one shown and the one before it, so stepping back a step, or a reload, still hits (the
+// growth makes them the current and the pending version). Another tab that loads at the same time
+// can have its records deleted: that costs it a miss on its next load, never a wrong world.
 
 const DB = 'ponlai-world-cache';
 // version 2: the chunk stores replace version 1's one-world store `worlds`

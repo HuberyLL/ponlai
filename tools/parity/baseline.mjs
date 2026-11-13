@@ -1,4 +1,4 @@
-// The MSAA baseline of a merge-base (plan section 3.3): the rest images and stepped clips that the
+// The MSAA baseline of a merge-base: the rest images and stepped clips that the
 // anti-aliasing gates read, captured from a preview of that commit, with the interim ground truth
 // and the metrics of MSAA against it. Every gate in thresholds.json is a ratio or a band times
 // this baseline, measured at the same merge-base in the same session, never an absolute number, so
