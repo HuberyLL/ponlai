@@ -61,8 +61,15 @@ Check: none; judgement.
 A helper called from several places is `Fn( ... ).setLayout( ... )`, so it compiles to one shader
 function.
 
-**r186.** A laid-out helper that reads uniforms can be emitted with another kernel's uniform
-names when two compute kernels that use it are built.
+**r186.** A laid-out helper that reads uniforms in its body can be emitted with another build's
+uniform names when two shaders that use it are built, compute kernels or materials: three emits
+the function once and reuses its code with the first build's names, and the second shader fails
+to compile. Pass the uniforms in as the helper's arguments, or keep it a
+plain function expanded where it is called. Met between compute kernels (`post/fsr3/Common.ts`,
+`sky/CloudKernels.ts`) and between materials (`post/PipelineDisplay.ts` `coolShare`, which broke
+the rain's materials under taa; `vegetation/VegetationLighting.ts`; `lighting/LocalLights.ts`
+`shadeLocalLights`). A material built twice, in two target layouts, meets it too
+(`post/Motion.ts`).
 
 Check: `tools/wgsl-build.mjs`; the byte comparison of the parity captures.
 
