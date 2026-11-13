@@ -5,7 +5,7 @@
 // spent again on every merge-base whose diff only touched tools, docs or code that draws nothing.
 //
 //   baseline.mjs ... --carry-from A [--carry-url <preview of A>] [--carry-recheck]
-//   node tools/island/parity/carry.mjs check --from A --to B [--url <preview of B>] [--carry-url <preview of A>]
+//   node tools/kit/parity/carry.mjs check --from A --to B [--url <preview of B>] [--carry-url <preview of A>]
 //       [--root DIR] [--tiers high] [--views a,b] [--clips a,b] [--only rest|clips] [--all] [--recheck]
 //
 // What could change a stored capture, and how each is ruled out (cheapest first; baseline.mjs
@@ -45,11 +45,11 @@ import { execFileSync, spawn } from 'node:child_process';
 import { constants, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BUILD_INPUTS, describeKeyChange, keyMatches, setKey, stable, toolVersion, browserBuild, checkServed } from '../../kit/reference.mjs';
-import { decodePng, compareFrames } from '../../kit/capture-browser.mjs';
-import { viewTable, clipTable } from '../../kit/parity/tables.mjs';
+import { BUILD_INPUTS, describeKeyChange, keyMatches, setKey, stable, toolVersion, browserBuild, checkServed } from '../reference.mjs';
+import { decodePng, compareFrames } from '../capture-browser.mjs';
+import { viewTable, clipTable } from './tables.mjs';
 import PROJECT from '../../project.mjs';
-import { ROOT } from '../../kit/root.mjs';
+import { ROOT } from '../root.mjs';
 
 const HERE = path.dirname( fileURLToPath( import.meta.url ) );
 const REPO = ROOT, TOOLS = path.join( ROOT, 'tools' );
@@ -349,7 +349,7 @@ export async function planCarry( options ) {
 
 	async function spotCapture( url, clip, out, anchors, which ) {
 
-		const args = [ path.join( TOOLS, 'island', 'capture-clip.mjs' ), `carry-${ clip }`, '--url', url, '--clip', clip, '--aa', 'msaa', '--quality', 'high',
+		const args = [ path.join( HERE, 'capture-clip.mjs' ), `carry-${ clip }`, '--url', url, '--clip', clip, '--aa', 'msaa', '--quality', 'high',
 			'--frames', String( SPOT.frames ), '--out', out, ...( anchors ? [ '--anchors-from', anchors ] : [] ) ];
 		const r = await run( process.execPath, args, path.join( path.dirname( out ), `${ path.basename( out ) }-${ which }.log` ) );
 		return r.code === 0 && existsSync( path.join( out, 'clip.json' ) );
@@ -396,7 +396,7 @@ export async function planCarry( options ) {
 		if ( bad ) return fail( 'gtSpot', bad, { inputs } );
 		const out = path.join( work, 'gt-spot', view );
 		rmSync( out, { recursive: true, force: true } );
-		const args = [ path.join( TOOLS, 'island', 'capture-clip.mjs' ), `carry-gt-${ view }`, '--url', options.url, '--clip', 'rest', '--view', view, '--aa', 'gt', '--quality', 'high',
+		const args = [ path.join( HERE, 'capture-clip.mjs' ), `carry-gt-${ view }`, '--url', options.url, '--clip', 'rest', '--view', view, '--aa', 'gt', '--quality', 'high',
 			'--anchors-from', path.join( dirA, 'baseline/high/rest', view, 'clip.json' ), '--out', out, ...( m.key.full ? [ '--full', '0' ] : [] ) ];
 		const r = await run( process.execPath, args, `${ out }.log` );
 		if ( r.code !== 0 || ! existsSync( path.join( out, 'clip.json' ) ) ) return fail( 'gtSpot', `the capture failed (${ out }.log)`, { inputs } );

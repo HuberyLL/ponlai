@@ -5,7 +5,7 @@
 // each later task on that sha reuses `<root>/<sha>/baseline/metrics.json` and measures only its own
 // mode.
 //
-//   node tools/island/parity/baseline.mjs --url U --sha SHA [--root DIR] [--label baseline] [--aa msaa]
+//   node tools/kit/parity/baseline.mjs --url U --sha SHA [--root DIR] [--label baseline] [--aa msaa]
 //       [--tiers high] [--only rest|clips] [--views a,b] [--clips a,b] [--gt | --no-gt] [--gt-aa gt|gt-hi]
 //       [--jobs 2] [--capture-only | --metrics-only] [--thresholds thresholds.json] [--runs runs.csv] [--task name]
 //       [--ref-url R] [--recapture-reference] [--skip-existing] [--size 1728x1117@2] [--q "extra&query"] [--verbose]
@@ -13,7 +13,7 @@
 //
 // The plan: the clips table's BASELINE_PLAN (tables.mjs), the rest images, whole frames and clips
 // per quality tier. Without --tiers a run takes high only; `--tiers high,medium,low` reaches the
-// others' entries. Rest images go through tools/island/capture-clip.mjs as the one-frame clip `rest`, so their crops
+// others' entries. Rest images go through tools/kit/parity/capture-clip.mjs as the one-frame clip `rest`, so their crops
 // are cut exactly as a clip's are.
 //
 // Layout under <root>/<sha>/:
@@ -29,7 +29,7 @@
 //                                         is the baseline the gates multiply
 //
 // The baseline's and the ground truth's entries are references of the merge-base, kept by the
-// reference store (reference.mjs, layout in tools/island/parity/README.md): each entry has its own
+// reference store (reference.mjs, layout in tools/kit/parity/README.md): each entry has its own
 // manifest (`complete.json`: the clip tools' version, the browser build, tier, aa, size, extra
 // query, clip, view, frame sampling and the anchors it took), so an entry is reused when it
 // matches, waited for when another live process is capturing it, and otherwise captured (saying
@@ -76,12 +76,13 @@ import { mkdir, readFile, writeFile, appendFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { viewTable, clipTable } from '../../kit/parity/tables.mjs';
-import { sampleGpuUtilisation } from '../../kit/gpu-lock.mjs';
-import { ensureReference, clipKey, anchorsHash, checkServed } from '../../kit/reference.mjs';
+import { viewTable, clipTable } from './tables.mjs';
+import { sampleGpuUtilisation } from '../gpu-lock.mjs';
+import { ensureReference, clipKey, anchorsHash, checkServed } from '../reference.mjs';
 import { planCarry } from './carry.mjs';
-import { ROOT } from '../../kit/root.mjs';
+import { ROOT } from '../root.mjs';
 
+const HERE = path.dirname( fileURLToPath( import.meta.url ) );
 const TOOLS = path.join( ROOT, 'tools' );
 const { VIEWS, viewNames, expandViews } = viewTable;
 const { CLIPS, CLIP_GROUPS, clipNames, gtSampling } = clipTable;
@@ -209,7 +210,7 @@ async function capture( o, list, root ) {
 	const refUrl = o[ 'ref-url' ] ?? ( label === 'baseline' ? o.url : null );
 	let served = null;
 	const checkRefServed = () => { served ??= checkServed( refUrl, o.sha ); };
-	const clipArgs = ( url, side, e, mode, dir, extra ) => [ path.join( TOOLS, 'island', 'capture-clip.mjs' ), `${ side }-${ e.tier }-${ e.name }`, '--url', url, ...common,
+	const clipArgs = ( url, side, e, mode, dir, extra ) => [ path.join( HERE, 'capture-clip.mjs' ), `${ side }-${ e.tier }-${ e.name }`, '--url', url, ...common,
 		'--clip', e.clip, '--view', e.view, '--quality', e.tier, '--aa', mode, '--out', dir, ...( e.full ? [ '--full', '0' ] : [] ), ...extra ];
 	// every entry's baseline (the side itself for the baseline's run, else the anchors and the
 	// metrics' MSAA), the side under test for other labels, and (with --gt) the ground truth with

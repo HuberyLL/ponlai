@@ -1,7 +1,7 @@
 // The named clips: short stepped sequences for the temporal anti-aliasing work, each a parity view
 // (views.mjs) set in motion. A clip names its base view, whether the scene clock runs or stays
 // paused, its frame count, a camera path and, where it needs them, extra URL options, a render
-// scale schedule and a per-frame hook. tools/island/capture-clip.mjs loads the view as capture-set.mjs
+// scale schedule and a per-frame hook. tools/kit/parity/capture-clip.mjs loads the view as capture-set.mjs
 // does (paused at t=12), runs the view's eval, then steps the clip's frames with
 // `__PONLAI__.loop.step` (main.ts: fixed dt, no wall clock, the frame pacer and the dynamic scale
 // bypassed) and captures crops and full frames as it goes.
@@ -63,7 +63,7 @@ const STRIKE_AT_30 = `if ( i === 30 ) { const f = new s.camera.position.construc
 const WIND_FREEZE = 's.flags.windFreeze = true;';
 
 export const CLIPS = {
-	// a still frame of any view (capture-clip.mjs --view): the rest sets of tools/island/parity/baseline.mjs
+	// a still frame of any view (capture-clip.mjs --view): the rest sets of tools/kit/parity/baseline.mjs
 	'rest': { view: 'island-fair-noon', clock: 'paused', frames: 1, path: [ 'still' ],
 		about: 'one paused frame of the view at its own pose: the image at rest, captured through the clip machinery so its crops and its ground truth are cut alike' },
 	// camera motion over a frozen scene
@@ -120,7 +120,7 @@ export function clipNames( group = 'all' ) {
 
 }
 
-// The anti-aliasing baseline's entries per quality tier (tools/island/parity/baseline.mjs): on high
+// The anti-aliasing baseline's entries per quality tier (tools/kit/parity/baseline.mjs): on high
 // every view at rest (the parked weathers' too, run only when named), the views of the default
 // group also as whole frames (for the overall fidelity gate), and the gates' clips; on medium and
 // low six views at rest. Medium and low are parked (packages/render/Quality.ts PARKED_QUALITY).
@@ -144,7 +144,7 @@ export const BASELINE_PLAN = {
 	low: { rest: TIER_VIEWS, full: [], clips: [] },
 };
 
-// The carry-over's spot checks (tools/island/parity/carry.mjs): a camera move over the meadow (paused
+// The carry-over's spot checks (tools/kit/parity/carry.mjs): a camera move over the meadow (paused
 // clock) and the islander walking under the running clock (the walk, the wind in the meadow
 // behind); the rest views whose ground truth is checked, the first one stored taken.
 export const CARRY_SPOT = { clips: [ 'pan-slow', 'islander-walk' ], gtViews: [ 'island-fair-noon', 'meadow-close', 'meadow-24', 'flowers-close', 'rim-sea' ] };

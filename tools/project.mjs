@@ -35,13 +35,13 @@ export default Object.freeze( {
 		// the sources whose change can change a stored reference's pixels, per kind of reference
 		// (tools/kit/reference.mjs, TOOL_FILES)
 		toolFiles: Object.freeze( {
-			set: Object.freeze( [ 'tools/kit/capture.mjs', 'tools/kit/capture-browser.mjs', 'tools/island/parity/capture-set.mjs', 'tools/island/parity/views.mjs', 'tools/island/parity/adhoc.mjs' ] ),
-			clip: Object.freeze( [ 'tools/island/capture-clip.mjs', 'tools/kit/capture-browser.mjs', 'tools/island/parity/views.mjs', 'tools/island/parity/clips.mjs' ] ),
+			set: Object.freeze( [ 'tools/kit/capture.mjs', 'tools/kit/capture-browser.mjs', 'tools/kit/parity/capture-set.mjs', 'tools/island/parity/views.mjs', 'tools/kit/parity/adhoc.mjs' ] ),
+			clip: Object.freeze( [ 'tools/kit/parity/capture-clip.mjs', 'tools/kit/capture-browser.mjs', 'tools/island/parity/views.mjs', 'tools/island/parity/clips.mjs' ] ),
 		} ),
 		// what a production build reads (tools/kit/reference.mjs, BUILD_INPUTS)
 		buildInputs: Object.freeze( [ 'packages', 'app', 'index.html', 'assets.lock.json', 'vite.config.ts', 'package.json', 'package-lock.json', 'tsconfig.json' ] ),
 		// the build inputs whose change can alter what a stored capture shows without touching a
-		// paused frame (tools/island/parity/carry.mjs; an entry ending in '/' is a folder)
+		// paused frame (tools/kit/parity/carry.mjs; an entry ending in '/' is a folder)
 		watch: Object.freeze( {
 			// what moves: the frame loop, weather, the islanders, the sea, the creatures; the
 			// dependencies because a three.js upgrade can change any shader, motion vectors included
@@ -58,7 +58,7 @@ export default Object.freeze( {
 	tables: Object.freeze( { views: 'tools/island/parity/views.mjs', clips: 'tools/island/parity/clips.mjs' } ),
 
 	// the module whose `SCENE_OPTIONS = [ ... ]` lists the query options a scene jump may change, read
-	// as text (tools/island/parity/adhoc.mjs: views whose other options differ cannot share a page)
+	// as text (tools/kit/parity/adhoc.mjs: views whose other options differ cannot share a page)
 	sceneOptions: 'app/Scene.ts',
 
 	// the module whose installScript() gives an eval's `pipelines` (tools/kit/page-eval.mjs)

@@ -168,7 +168,7 @@ within a tolerance; the test mode keeps the byte-for-byte checks valid.
   switch (next): not made, so `settled` never waits for them.
 - The test mode's one switch (`packages/render/debug/TestMode.ts`), read once at load, is on with
   `paused`, which every capture, parity and verify tool loads with, unless `testMode=0` leaves it
-  out, as `tools/island/capture-clip.mjs` does so the clips show what moves. Every history-dependent
+  out, as `tools/kit/parity/capture-clip.mjs` does so the clips show what moves. Every history-dependent
   rendering effect that does not settle on its own on a still scene reads it, and is frozen or off
   under it.
 - The test mode's paused pages keep at most two rendered frames queued on the GPU
@@ -358,7 +358,7 @@ runs; the base URL must serve that commit. A pair with a tiny difference (at mos
 by default) is shot again on both sides and reported as identical, repeatable or not repeatable
 (`--recheck 0` turns it off). The header of the tool has the details.
 
-`tools/island/parity/` captures a fixed set of paused views with named 1:1 crop anchors
+`tools/kit/parity/` captures a fixed set of paused views with named 1:1 crop anchors
 (`capture-set.mjs`; views.mjs frames and anchors them on the camera's ground, `controls.ground`:
 the island's box and height grid made from the chunks in the workers, so the drawn meshes'
 vertices are never read) and diffs it against a reference set, pixel for pixel or within the
@@ -379,7 +379,7 @@ its own fresh load draws. Views need not be views.mjs's: `--view "name:query[::j
 `--views-file f.json` and `--sweep "key=a,b,c"` (each view per value, e.g. `--sweep
 weather=fair,rain --sweep hour=7,12,17`) capture ad-hoc views through the same pages, jump and
 readiness (and `--quick`, `--reference`, `--check`); use them instead of a script that loops
-capture.mjs over views, which loads a cold page per view (`tools/island/parity/adhoc.mjs`, the README's
+capture.mjs over views, which loads a cold page per view (`tools/kit/parity/adhoc.mjs`, the README's
 capture-set). Builds without the jump's marker (`__PONLAI__.sceneJump`, older
 commits) get a page per view, as `--page-per-view` forces; a failed view or a lost page is retried
 and the rest of the set goes on in a fresh page. A page that ends before it asks for a view (the
@@ -387,7 +387,7 @@ browser did not start) is tried again the same way; when more than `--retries` s
 fail, the run ends with exit 1, naming the page's exit code and the last lines of its stderr.
 `--repeat` takes the repeats on other pages, in
 reverse order.
-`tools/island/capture-clip.mjs` captures a named clip (`tools/island/parity/clips.mjs`: a parity
+`tools/kit/parity/capture-clip.mjs` captures a named clip (`tools/island/parity/clips.mjs`: a parity
 view set in motion, its camera path a function of the frame index) frame by frame with the page's
 stepper, as crops that follow their subjects, and `tools/kit/clip-metrics.py` measures a clip
 against MSAA and a ground truth (`--aa gt-hi`: MSAA at twice the former nominal ratio 1.5,
@@ -401,7 +401,7 @@ Fhp near the shadow map redraws the clip's notes mark and between them (the shad
 use it instead of a script of one's own).
 References are stored per commit and shared (`tools/kit/reference.mjs`): `capture-set.mjs
 --reference <root>/<sha>/<set>` and the baseline's and ground truth's entries of
-`tools/island/parity/baseline.mjs` reuse a stored reference whose manifest (`complete.json`, written
+`tools/kit/parity/baseline.mjs` reuse a stored reference whose manifest (`complete.json`, written
 last) matches the capture tools' version, the browser build and the options, wait for another live
 process that is capturing it (freeing the GPU slot of a `run --shared` wrapper meanwhile), and
 otherwise capture it and say why (missing, tools or browser
@@ -418,12 +418,12 @@ and measures the crops against the store's MSAA and ground-truth rest entries of
 (clip-metrics.py), a short table per variant. It is not a gate; details in the README's Quick mode.
 
 `baseline.mjs ... --carry-from A` takes the baseline's and the ground truth's entries over from an
-earlier commit A instead of capturing them, when `tools/island/parity/carry.mjs` finds nothing
+earlier commit A instead of capturing them, when `tools/kit/parity/carry.mjs` finds nothing
 between the two that could change them (same build inputs; otherwise the diff against two watch
 lists, the paused set S1 matching A's (and A's stored rest frames matching A's own S1), the first 16
 frames of two clips and one rest ground truth captured
 again and compared); an entry that may not carry is captured and the log says why.
-`node tools/island/parity/carry.mjs check --from A --to B [--url U] [--all]` prints the verdict alone.
+`node tools/kit/parity/carry.mjs check --from A --to B [--url U] [--all]` prints the verdict alone.
 Rules and proof: the README's Carry-over.
 
 `uv run tools/kit/gates.py <root>/<sha>/<label>/metrics.json --thresholds T [--policy P]
@@ -806,7 +806,7 @@ anything else, waits with `job.mjs` rather than a loop of their own. Its header 
 
 ```text
 node tools/kit/job.mjs start --wait -- npm run build                        (inline when it is short)
-node tools/kit/job.mjs start --log <log> -- node tools/island/parity/capture-set.mjs ...
+node tools/kit/job.mjs start --log <log> -- node tools/kit/parity/capture-set.mjs ...
 node tools/kit/job.mjs wait <log>          (repeat until it exits 0 or with the job's code)
 node tools/kit/job.mjs stop <log>          (before handing back with it still running)
 ```
@@ -1267,7 +1267,7 @@ count as present. lychee is a separate binary: `brew install lychee`, or `cargo 
   `tools/island/verify-scene.mjs` checks a production preview. `tools/island/verify-scene-jump.mjs`
   captures the parity views reached by scene jumps in one page and as fresh loads, for
   `diff-set.py`, each shot ready as capture.mjs's paused shots are (the page's settled signal, then
-  the stability rule: `tools/island/parity/README.md`, One page, many views);
+  the stability rule: `tools/kit/parity/README.md`, One page, many views);
   `--check <root>/<sha>/<set>` runs the whole check (the stored set of fresh loads, a page per
   view, both jump orders at once, the diff) in one command. `--view "name:query[::js]"`
   (repeatable) adds ad-hoc views with capture-set's syntax (`like=<view>` included), so a jump

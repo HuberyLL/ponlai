@@ -43,7 +43,7 @@ Detail lives where it is owned.
   `docs/reference/tools.md`, Page.
 - Tools are in `tools/`, their manual in `docs/reference/tools.md` (Which tool for which question).
   Most changes meet: `node tools/kit/serve.mjs dev|preview` (a worktree's server on a free port),
-  `tools/kit/capture.mjs` (one screenshot), `tools/island/parity/capture-set.mjs` (views on one warm
+  `tools/kit/capture.mjs` (one screenshot), `tools/kit/parity/capture-set.mjs` (views on one warm
   page, not a loop), `tools/render/scenes.mjs` (the renderer's test scenes checked in seconds: run
   it first after a renderer change), `uv run tools/kit/img.py diff|crop|sheet|stats|flicker` (image
   work on captures), `tools/kit/probe.mjs` (page values as JSON), `tools/render/wgsl-build.mjs` (TSL

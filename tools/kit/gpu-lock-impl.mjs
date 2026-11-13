@@ -1350,7 +1350,7 @@ const PIECE = [ 3e3, 6e3, 20e3 ]; // one piece of leased work (a capture view), 
 /** A label's kind: the label without its run-specific tail, so that holds of the same work group
  * together. The first word names the tool (`capture island-fair-noon` -> `capture`, `capture-clip
  * baseline-...` -> `capture-clip`, `verify-scene-jump fresh` -> `verify-scene-jump`); a script run
- * through node or a shell is named by its file (`node tools/island/parity/capture-set.mjs ...` -> `node
+ * through node or a shell is named by its file (`node tools/kit/parity/capture-set.mjs ...` -> `node
  * capture-set`); profile-frame keeps its mode (`profile-frame compare-2026-...` -> `profile-frame
  * compare`, a custom --label -> `profile-frame`). Timestamps, hashes and numbers are dropped. */
 export function labelKind( label = '' ) {

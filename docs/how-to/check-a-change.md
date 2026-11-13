@@ -55,7 +55,7 @@ The tool and its options: `docs/reference/tools.md`, Test scenes.
 ## Check a visual change
 
 1. Capture the views the change touches before and after it (`tools/kit/capture.mjs` for one view,
-   `tools/island/parity/capture-set.mjs` for a list of views on one warm page;
+   `tools/kit/parity/capture-set.mjs` for a list of views on one warm page;
    `docs/reference/tools.md`, Captures).
 2. Compare each capture against the previous one, and compare crops, not only the whole frame
    (`uv run tools/kit/img.py diff|crop|sheet|stats`).

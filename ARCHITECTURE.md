@@ -264,7 +264,7 @@ folder is its layer.
    all state a scene leaves behind (a cache, a history, a size that only grows, a window that
    follows the camera); on a still scene it converges to the same image whatever came before, or it
    can be frozen or turned off in the test mode; and outside the test mode its frames are compared
-   within a tolerance ([tools/island/parity/README.md](tools/island/parity/README.md), Temporal
+   within a tolerance ([tools/kit/parity/README.md](tools/kit/parity/README.md), Temporal
    tolerance). Its per-frame update reads the scene clock's step, never the wall clock, so a stepped
    clip repeats (rule 17 names the three cadences that follow the wall clock's step). The test mode
    is a paused page under MSAA, with every history-dependent effect frozen or off, shot once the page's
@@ -475,7 +475,7 @@ folder is its layer.
     use: the island asks for idle time through `globalThis.requestIdleCallback` (the growth, the
     islanders' ages) and the render scale reads `devicePixelRatio`. The frame's passes also read a
     global that a tool sets on the page (`__PONLAI_CLIP__`, set by
-    [tools/island/capture-clip.mjs](tools/island/capture-clip.mjs)) and snap the exposure's
+    [tools/kit/parity/capture-clip.mjs](tools/kit/parity/capture-clip.mjs)) and snap the exposure's
     adaptation while it is there: the renderer takes a state of the page by its name.
 14. **Outside settings are checked once, at one entrance** (rule 3, on the rendering side). The
     address's options are declared once, in one schema

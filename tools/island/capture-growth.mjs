@@ -17,7 +17,7 @@
 // what a page reads once at load (every query option outside the scene's own, SCENE_OPTIONS below
 // as app/Scene.ts lists them: seed and grow choose the world; quality, aa, dpr, the debug switches),
 // and each group is one `tools/kit/capture.mjs --worker` page driven over its IPC channel, as
-// tools/island/parity/capture-set.mjs drives it: the group's first view is a fresh load, every later one
+// tools/kit/parity/capture-set.mjs drives it: the group's first view is a fresh load, every later one
 // is reached by the exact scene jump (`__PONLAI__.establishScene`), so a group's world is built
 // once. --jobs pages run at once (default 2), one group each. The worker takes the GPU lock itself,
 // shared: a load only once its world is generated (capture.mjs, "The slot after the world"), then

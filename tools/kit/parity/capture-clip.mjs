@@ -3,7 +3,7 @@
 // with the page's deterministic stepper (the handle's `loop.step`: fixed dt, no wall clock, the frame
 // pacer and the dynamic scale bypassed), with crops of named subjects captured as they move.
 //
-//   node tools/island/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|fsr3|gt|gt-hi]
+//   node tools/kit/parity/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|fsr3|gt|gt-hi]
 //       [--view v] [--frames n] [--every k] [--dense a-b,c-d] [--crops a,b] [--full 0,30] [--q "extra&query"] [--setup js]
 //       [--quality high] [--size 1728x1117@2] [--dt s] [--gt-jitters n] [--out dir] [--timeout ms] [--runs file.csv]
 //       [--task name] [--anchors-from clip.json] [--stable-* (capture.mjs)] [--ready-frames n] [--wait ms] [--settle ms] [--verbose]
@@ -105,16 +105,16 @@
 //
 // Stepped clips are deterministic (no wall clock), so the tool takes the GPU lock shared.
 // Production builds need `?debug` (added here) and the islanders' assets linked into the build
-// (tools/island/parity/README.md).
+// (tools/kit/parity/README.md).
 import { mkdir, readFile, writeFile, appendFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from '../kit/gpu-lock.mjs';
-import { viewTable, clipTable } from '../kit/parity/tables.mjs';
-import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng, compareFrames, pngShooter } from '../kit/capture-browser.mjs';
-import PROJECT from '../project.mjs';
-import { ROOT } from '../kit/root.mjs';
+import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from '../gpu-lock.mjs';
+import { viewTable, clipTable } from './tables.mjs';
+import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng, compareFrames, pngShooter } from '../capture-browser.mjs';
+import PROJECT from '../../project.mjs';
+import { ROOT } from '../root.mjs';
 
 const REPO = ROOT;
 const { VIEWS, viewEval } = viewTable;

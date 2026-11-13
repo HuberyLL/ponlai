@@ -40,9 +40,9 @@ r186, each with the check that sees it.
    the scene jump (`tools/island/verify-scene-jump.mjs`) and the growth swap
    (`tools/island/verify-growth-swap.mjs`). The page must also start without an error from
    `packages/render/three/`.
-8. Compare the image with captures from before the upgrade (`tools/island/parity/capture-set.mjs`).
+8. Compare the image with captures from before the upgrade (`tools/kit/parity/capture-set.mjs`).
    An upgrade need not match byte for byte: judge it within the temporal tolerance
-   (`tools/island/parity/README.md`, Temporal tolerance), explain each difference, then capture new
+   (`tools/kit/parity/README.md`, Temporal tolerance), explain each difference, then capture new
    reference sets.
 9. Check the pipelines: the count the page creates (`diagnostics.pipelines`,
    `packages/render/debug/PipelineCounter.ts`), that no player step creates one

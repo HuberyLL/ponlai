@@ -249,7 +249,7 @@ than the later ones: a throwaway receiver builds them before the loop (`three/Th
 `primeSharedNodes`), so a receiver's code, and a kind's pipeline count, does not depend on which
 draws first.
 
-Check: the byte comparison of the parity captures (`tools/island/parity/capture-set.mjs`) and the scene
+Check: the byte comparison of the parity captures (`tools/kit/parity/capture-set.mjs`) and the scene
 jump (`tools/island/verify-scene-jump.mjs`).
 
 ### Draws skipped while compiling

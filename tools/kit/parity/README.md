@@ -202,12 +202,12 @@ the boxes placed before it.
 ## capture-set.mjs
 
 ```sh
-node tools/island/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|normal|special|a,b,c] [--repeat]
+node tools/kit/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|normal|special|a,b,c] [--repeat]
     [--view "name:query[::js]"]... [--views-file f.json] [--sweep "key=a,b,c"]...
     [--quality high] [--aa mode] [--q "extra&query"] [--jobs n] [--retries 1] [--size 1728x1117@2]
     [--runs runs.csv] [--task name] [--procedure name] [--sha sha] [-- capture.mjs options]
-node tools/island/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [same options]
-node tools/island/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set> [--ref-url <refUrl>]
+node tools/kit/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [same options]
+node tools/kit/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set> [--ref-url <refUrl>]
     [--diff "diff-set.py options"] [--recapture-reference] [same options]
 ```
 
@@ -291,7 +291,7 @@ For tuning, not a gate (the gates still run full sets): knob variants on a few v
 each measured against the stored references of a commit.
 
 ```sh
-node tools/island/parity/capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,y] [--full]
+node tools/kit/parity/capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,y] [--full]
     [--view "name:query[::js]"]... [--views-file f.json] [--sweep "key=a,b,c"]...
     [--variant "[label::]js"]... [--quality high] [--aa mode] [--q "extra"] [--size 1728x1117@2]
     [--store <root>/<sha>] [--ref-url <refUrl>] [--runs runs.csv] [--task name]
@@ -424,8 +424,8 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
   "format": 1, "kind": "set" | "clip", "sha": "<40 hex>", "path": "S1",
   "key": { "kind": "set", "tool": "<16 hex>", "browser": { "executable": "playwright chromium", "version": "153.0.8010.12" },
            "quality": "high", "aa": null, "q": null, "size": "1728x1117@2", "capture": [], "pages": "jump" },
-  "toolFiles": { "tools/kit/capture.mjs": "<12 hex>", "tools/kit/capture-browser.mjs": "...", "tools/island/parity/capture-set.mjs": "...",
-                 "tools/island/parity/views.mjs": "...", "tools/island/parity/adhoc.mjs": "..." },
+  "toolFiles": { "tools/kit/capture.mjs": "<12 hex>", "tools/kit/capture-browser.mjs": "...", "tools/kit/parity/capture-set.mjs": "...",
+                 "tools/island/parity/views.mjs": "...", "tools/kit/parity/adhoc.mjs": "..." },
   "coverage": { "views": { "meadow-close": { "captured": true, "repeat": true, "identical": true },
                            "my-adhoc": { "captured": true, "def": "<16 hex>" } } },
   "url": "<the preview it was captured from>",
@@ -437,8 +437,8 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
 ```
 
 - `key`: what the pixels depend on. `tool` hashes the capture tools' sources: for sets
-  `tools/kit/capture.mjs`, `tools/kit/capture-browser.mjs`, `tools/island/parity/capture-set.mjs`,
-  `tools/island/parity/views.mjs`, `tools/island/parity/adhoc.mjs`; for clip entries `tools/island/capture-clip.mjs`,
+  `tools/kit/capture.mjs`, `tools/kit/capture-browser.mjs`, `tools/kit/parity/capture-set.mjs`,
+  `tools/island/parity/views.mjs`, `tools/kit/parity/adhoc.mjs`; for clip entries `tools/kit/parity/capture-clip.mjs`,
   `tools/kit/capture-browser.mjs`, `tools/island/parity/views.mjs`, `tools/island/parity/clips.mjs`
   (the configuration's `reference.toolFiles` in `tools/project.mjs`: every file of that kind's capture
   path, the shared browser, readiness and grab included; a change to the clip tools leaves sets
@@ -552,8 +552,8 @@ truth takes them over instead of capturing them again (most of a reference round
 and 64 jittered renders per rest view):
 
 ```sh
-node tools/island/parity/baseline.mjs --url <preview of B> --sha B ... --carry-from A [--carry-url <preview of A>] [--carry-recheck]
-node tools/island/parity/carry.mjs check --from A --to B [--url <preview of B>] [--carry-url U] [--root DIR]
+node tools/kit/parity/baseline.mjs --url <preview of B> --sha B ... --carry-from A [--carry-url <preview of A>] [--carry-recheck]
+node tools/kit/parity/carry.mjs check --from A --to B [--url <preview of B>] [--carry-url U] [--root DIR]
     [--tiers high] [--views a,b] [--clips a,b] [--only rest|clips] [--all] [--recheck]
 ```
 
@@ -651,7 +651,7 @@ scale, so a temporal mode's history, cut when the stepper starts, has converged 
 steps it measures). `node tools/island/parity/clips.mjs list [all|normal|special] | show <clip>`.
 
 ```sh
-node tools/island/capture-clip.mjs <name> --url <preview> --clip <clip> [--aa msaa|off|taa|taau|gt|gt-hi]
+node tools/kit/parity/capture-clip.mjs <name> --url <preview> --clip <clip> [--aa msaa|off|taa|taau|gt|gt-hi]
     [--view v] [--frames n] [--every k] [--crops a,b] [--full 0,30] [--q "extra"] [--gt-jitters n]
     [--anchors-from clip.json] [--out dir] [--runs runs.csv]
 uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/kit/clip-metrics.py \

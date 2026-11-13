@@ -36,9 +36,9 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { viewTable } from '../../kit/parity/tables.mjs';
+import { viewTable } from './tables.mjs';
 import PROJECT from '../../project.mjs';
-import { ROOT } from '../../kit/root.mjs';
+import { ROOT } from '../root.mjs';
 
 const { VIEWS, viewNames, expandViews, ANCHOR_NAMES } = viewTable;
 const NAME = /^[A-Za-z0-9_-]+$/;

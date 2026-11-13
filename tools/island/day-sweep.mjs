@@ -15,7 +15,7 @@
 // through tools/kit/job.mjs and wait on it there, never in a shell of its own. <outDir> must be new
 // (or empty): a run into an old one would read the old run's numbers.
 //
-// It only combines the tools that exist: tools/island/colour-rows.mjs shoots the frames (tools/island/parity/
+// It only combines the tools that exist: tools/island/colour-rows.mjs shoots the frames (tools/kit/parity/
 // capture-set.mjs on one warm page, the scene jump from frame to frame, under the shared GPU lock)
 // and reads the sky, the sea and the land of each; tools/kit/img.py sheet and thumb lay them out and
 // shrink them; tools/island/day-sweep-plot.py draws the curves. `report` runs the second half again on
