@@ -1,8 +1,9 @@
 import type { FullKey, HazeLook } from '../../render/setup.ts';
 
 // The island's haze look (packages/island/look/: the island's numbers for the renderer's look tables,
-// look/Look.ts; look/HazeLook.ts reads these). weather/HazeKeys.ts `hazeKeyAt` eases them by the
-// hour and the weather; the haze (weather/VolumetricHaze.ts) takes the result.
+// look/Look.ts; look/HazeLook.ts `createHazeTables` makes the haze's tables from these).
+// weather/HazeKeys.ts `hazeKeyAt` eases them by the hour and the weather; the haze
+// (weather/VolumetricHaze.ts) takes the result.
 //
 // The haze's keys: what the air does by the hour and the weather, set as a few quantities one sees
 // (how far the light carries, the colour it loses, how bright and how coloured the air shows) at
@@ -100,7 +101,7 @@ import type { FullKey, HazeLook } from '../../render/setup.ts';
 //     `haze.fog.<top|width|visibility|neutral|scatter>@<day|golden|mist>`. The layer is a switch
 //     (`hazeKeyAt`'s `dayFog`: main.ts `?dayFog`, the GUI's `day fog`), off by default: off, every
 //     key holds no fog (NO_FOG), so a clear or fair day keeps the thin haze alone.
-//     A deep sea fog (SEA_FOG) is a switch beside the weather (main.ts `?seaFog`, the GUI's
+//     A deep sea fog (`seaFog`) is a switch beside the weather (main.ts `?seaFog`, the GUI's
 //     `sea fog`), by its share at every hour and under any sky: its top 35 m over the sea and its edge 25 m
 //     wide, so its density falls off through the island view's height rather than ending at a
 //     line; 0.5 km at the sea, grey (`neutral` 1), with a = 0.5; and its banks break up higher
@@ -170,7 +171,7 @@ import type { FullKey, HazeLook } from '../../render/setup.ts';
 //     sky falls into the night without a turn. Under cloud there is no glow to show through, and at 0.13
 //     the low air over a clouded evening's horizon went dark under the deck (overcast, sun -3: the
 //     sky in the horizon view L 0.28, a deep blue, against 0.38 and a lilac grey at 4.7), so a
-//     clouded sky takes rows of its own (`SETTING_CLOUDED`, from -1 to -4 degrees, giving way to the
+//     clouded sky takes rows of its own (`settingClouded`, from -1 to -4 degrees, giving way to the
 //     night's by -12) by its clouded share. Their Rayleigh is the golden hour's, which the night's
 //     equals within a hundredth, so it holds from the golden hour into the night: a Rayleigh of 4.7
 //     there, eight times the golden hour's, lifted the air's Rayleigh light under cloud from -1 to
@@ -270,7 +271,7 @@ const SCALES = [ CLEAR_SCALE, CLEAR_SCALE,
 
 export const HAZE: HazeLook = {
 	// the keys with a shape of their own are the day's, the golden hour's, the night's and the mist's;
-	// the others take the day's (look/HazeLook.ts SHAPED)
+	// the others take the day's (look/HazeLook.ts `shaped`)
 	keys: {
 		day: DAY, golden: GOLDEN, night: NIGHT, mist: MIST, morning: MORNING, earlyDawn: EARLY_DAWN, beforeDawn: BEFORE_DAWN,
 		afterSunset: AFTER_SUNSET, afterSunsetDeep: AFTER_SUNSET_DEEP, afterSunsetClouded: AFTER_SUNSET_CLOUDED,

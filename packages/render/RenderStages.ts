@@ -39,6 +39,7 @@ import { Sky } from './sky/Sky.ts';
 import { createExposure, type ExposureTables } from './look/ExposureLook.ts';
 import { createDayWindows, type DayWindowTable } from './look/DayLook.ts';
 import { createAmbientTables, createKeyLift } from './look/AmbientLook.ts';
+import { createHazeTables, type HazeTables } from './look/HazeLook.ts';
 import type { Look } from './look/Look.ts';
 import { DAY_PRESETS, type DayPreset, DayCycle, sunRising, duskForce, nightAmbientShare } from './sky/DayCycle.ts';
 import { isParkedWeather, WEATHER_PRESETS, type WeatherName, isWindLevel, type WindLevel, Weather, type TunedField, type WeatherState, deckLight, cloudedShare, type WindChoice } from './sky/Weather.ts';
@@ -268,6 +269,8 @@ interface StageParts {
 	/** the scene the page loaded */
 	loaded: SceneOptions;
 	runtime: { refractedSun: RefractedSun | null };
+	/** the haze's tables, made from the look (`createSky`), which `prepareHaze` reads */
+	hazeTables: HazeTables;
 	hazeReady: boolean;
 	bakeEnvironment: () => Promise<void>;
 	ambientSky: AmbientSky;
@@ -373,9 +376,10 @@ export function createScenes( render: RenderParts, { viewport, dpr }: { viewport
  * from (look/ExposureLook.ts `createExposure`, look/DayLook.ts `createDayWindows`,
  * look/AmbientLook.ts `createKeyLift`), which the sky carries to the day, the grade, the frame's
  * passes, the night's readers and the key's lifted direction (`sky.exposure`, `sky.dayWindows`,
- * `sky.keyLift`).
+ * `sky.keyLift`), and the haze's (look/HazeLook.ts `createHazeTables`), which the haze's key reads
+ * by the hour and the weather (`createEnvironment`'s `prepareHaze`).
  */
-export function createSky( render: RenderParts, { scene: loaded, seaFog, dayFog, look }: { scene: SceneOptions; seaFog: boolean; dayFog: boolean; look: ExposureTables & { day: DayWindowTable } & Pick<Look, 'ambient'> } ) {
+export function createSky( render: RenderParts, { scene: loaded, seaFog, dayFog, look }: { scene: SceneOptions; seaFog: boolean; dayFog: boolean; look: ExposureTables & { day: DayWindowTable } & Pick<Look, 'ambient' | 'haze'> } ) {
 
 	const { quality, renderer } = render;
 
@@ -392,7 +396,9 @@ export function createSky( render: RenderParts, { scene: loaded, seaFog, dayFog,
 	render.dayCycle = dayCycle;
 	const weather = new Weather( loaded.weather, loaded.wind );
 	render.weather = weather;
-	// The deep sea fog (look/HazeLook.ts SEA_FOG): a switch beside the weather, off unless
+	// the haze's tables, which the haze's key eases by the hour and the weather (`prepareHaze`)
+	staged( render ).hazeTables = createHazeTables( look.haze );
+	// The deep sea fog (look/HazeLook.ts `seaFog`): a switch beside the weather, off unless
 	// `seaFog` or the GUI turns it on, whatever the sky.
 	render.seaFogView = { on: seaFog };
 	// The day's fog layer under a clear or fair sky (weather/HazeKeys.ts `fogLayer`): a switch, off
@@ -567,7 +573,7 @@ export function createEnvironment( render: RenderParts ) {
 		// (weather/HazeKeys.ts `hazeKeyAt`)
 		const progress = weather.progress, blend = progress * progress * ( 3 - 2 * progress );
 		const fogWeather = ( weather.origin === 'fog' ? 1 - blend : 0 ) + ( weather.target === 'fog' ? blend : 0 );
-		hazeKeyAt( sky.dayWindows, sky.elevation, rising, weather.skyMix, sky.weather.windSpeed, sky.weather.rain, dayFogView.on ? 1 : 0, seaFogView.on ? 1 : 0, fogWeather, render.hazeKey );
+		hazeKeyAt( stage.hazeTables, sky.dayWindows, sky.elevation, rising, weather.skyMix, sky.weather.windSpeed, sky.weather.rain, dayFogView.on ? 1 : 0, seaFogView.on ? 1 : 0, fogWeather, render.hazeKey );
 		render.pipeline.air.haze.value = sky.weather.haze * render.hazeKey.amount;
 		render.pipeline.air.fog.value = Math.max( sky.weather.fog, render.hazeKey.mist );
 		render.pipeline.air.setLook( render.hazeKey );

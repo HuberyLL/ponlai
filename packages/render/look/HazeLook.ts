@@ -1,11 +1,21 @@
 import { tuneObject, type TuneOptions } from '../debug/Tune.ts';
 import { markSkyRetune } from '../sky/SkyRetune.ts';
 import { MIX_SKIES, WEATHER_PRESETS } from '../sky/Weather.ts';
-import { HAZE_KEY_NAMES, readLook, type FullKey, type HazeKey, type HazeKeyName, type HazeRows } from './Look.ts';
+import { HAZE_KEY_NAMES, type FogFields, type FullKey, type HazeKey, type HazeKeyName, type HazeLook, type HazeRows, type HazeScale } from './Look.ts';
 
-// The haze's look keys, as the renderer reads them (look/Look.ts: the numbers are the installed
-// look's, the neutral set's where none is). weather/HazeKeys.ts `hazeKeyAt` eases them by the hour
-// and the weather; the haze (weather/VolumetricHaze.ts) takes the result.
+// The haze's tables built from a look's table (look/Look.ts `HazeLook`): its keys by the hour, its
+// rows of them by the sun's elevation and what the weather adds per sky of its blend
+// (`createHazeTables`). weather/HazeKeys.ts `hazeKeyAt` eases them by the hour and the weather,
+// taking them as its first argument; the haze (weather/VolumetricHaze.ts) takes the result. Like
+// the exposure (look/ExposureLook.ts), they are taken as an argument where the renderer's sky stage
+// creates them (RenderStages.ts `createSky`, for its `prepareHaze`), not from the installed look as
+// a module loads, so two made from two tables hold their own numbers (tools/verify-look-params.mjs)
+// and this module holds none at module level: only the blank key, which no look changes. The
+// aerosol layer's top under a deck is the sky's (look/SkyLook.ts `cloudBase`).
+// - The tables register their tunables (debug/Tune.ts) as they are created, under the names they
+//   always had (`haze.key.*`, `haze.fog.*`, `sky.weather.*@<cloudy|overcast>`). The tune table is
+//   one per process: on a debug page a second set made from another table reads the first one's
+//   tunables.
 //
 // The haze's keys: what the air does by the hour and the weather, set as a few quantities one sees
 // (how far the light carries, the colour it loses, how bright and how coloured the air shows) at
@@ -32,14 +42,12 @@ import { HAZE_KEY_NAMES, readLook, type FullKey, type HazeKey, type HazeKeyName,
 //   - rayleighWeight, mieWeight: the two shares' weights.
 // A look gives a key for each of ten hours (look/Look.ts HAZE_KEY_NAMES) and rows of them by the
 // sun's elevation. Four keys hold a medium's shape of their own (the day's, the golden hour's, the
-// night's and the mist's: SHAPED); the others take the day's. Three hold a fog layer of their own
-// (the day's, the golden hour's and the mist's: FOGGED); the morning takes the mist's, the others
-// none (`fogOf`). The weather adds its own per sky of its blend (KEEP, GAIN, SKY_SCALE, DECKED,
-// SUN_RAYLEIGH).
+// night's and the mist's: `shaped`); the others take the day's. Three hold a fog layer of their own
+// (the day's, the golden hour's and the mist's); the morning takes the mist's, the others none
+// (`fogOf`). The weather adds its own per sky of its blend (`keep`, `gain`, `skyScale`, `decked`,
+// `sunRayleigh`).
 
 export type { FullKey, HazeKey };
-
-const LOOK = readLook( 'haze', 'look/HazeLook.ts' );
 
 /** A key with every field 0, for a reader that fills all of them (weather/HazeKeys.ts). */
 export const blankKey = (): FullKey => ( {
@@ -48,13 +56,44 @@ export const blankKey = (): FullKey => ( {
 	fogLayer: 0, neutral: 0, scatter: 0, fogTop: 0, fogWidth: 0, visibility: 0, droplet: 0, fogCoverHigh: 0,
 } );
 
-// the fog layer's fields where a key holds none: the hours without a fog of their own (the night
-// and the twilights) hold this
-export const NO_FOG = LOOK.noFog;
+/** Rows by the sun's elevation (degrees, ascending), each holding its key, eased between
+ * neighbours, the end rows held. */
+export type HazeKeyRows = ReadonlyArray<readonly [ number, FullKey ]>;
 
-// The look's keys, each a copy this module owns (its tunables are registered on it).
-const KEYS = Object.fromEntries( HAZE_KEY_NAMES.map( ( name ) => [ name, { ...LOOK.keys[ name ] } ] ) ) as Record<HazeKeyName, FullKey>;
-export const DAY = KEYS.day, NIGHT = KEYS.night, MIST = KEYS.mist, MORNING = KEYS.morning;
+/** The haze's tables a look's table makes (`createHazeTables`). */
+export interface HazeTables {
+	/** The look's keys, each a copy these tables own (its tunables are registered on it). */
+	readonly keys: Readonly<Record<HazeKeyName, FullKey>>;
+	/** The rising sun's rows, the setting sun's, and the setting sun's under cloud, which a clouded
+	 * share draws the key to. */
+	readonly rising: HazeKeyRows;
+	readonly setting: HazeKeyRows;
+	readonly settingClouded: HazeKeyRows;
+	/** The keys with a shape of their own; the others take the day's. */
+	readonly shaped: ReadonlySet<FullKey>;
+	/** The key whose fog layer `k` takes: its own for the keys with one (the day's, the golden
+	 * hour's, the mist's), the mist's for the morning's, none (the night's) for the others. */
+	readonly fogOf: ( k: FullKey ) => FullKey;
+	/** The fog layer's fields where a key holds none: the hours without a fog of their own (the
+	 * night and the twilights) hold this. */
+	readonly noFog: FogFields;
+	/** The sea fog: a deep layer with a soft top, held at every hour while its switch is on. */
+	readonly seaFog: HazeLook[ 'seaFog' ];
+	/** Per sky of the blend (Weather.ts MIX_SKIES: clear, fair, cloudy, overcast): the share of the
+	 * light's colour kept over a clear day's and the gain over a clear day's. */
+	readonly keep: readonly number[];
+	readonly gain: readonly number[];
+	/** Per sky of the blend, whether a deck ends the aerosol layer at its base (look/SkyLook.ts
+	 * `cloudBase`). */
+	readonly decked: readonly boolean[];
+	/** Per sky of the blend, the scale of each band's sigma, of the aerosol layer's share and of its
+	 * scale height, of the ground layer's top and width, and the weather's haze (its preset's until
+	 * tuned). */
+	readonly skyScale: readonly ( HazeScale & { haze: number } )[];
+	/** Per sky of the blend, the sun's share in the haze's Rayleigh light. */
+	readonly sunRayleigh: readonly number[];
+}
+
 // the keys with a shape are tunable on debug pages (debug/Tune.ts):
 // `haze.key.<amount|sigmaRed|sigmaBlue|desaturate|rayleighWeight|mieWeight|top|width|
 // aerosolShare|aerosolHeight|skyDepth>@<day|golden|night|mist>` (green is sigma's unit), the
@@ -71,74 +110,76 @@ const TUNE_RANGE: Record<typeof TUNED[ number ], TuneOptions> = {
 	aerosolShare: { min: 0.003, max: 3, scale: 'log', onChange: markSkyRetune }, aerosolHeight: { min: 300, max: 8000, scale: 'log', onChange: markSkyRetune },
 	skyDepth: { min: 0, max: 0.5, onChange: markSkyRetune },
 };
-for ( const name of HAZE_KEY_NAMES ) {
 
-	const fields = SHAPED_NAMES.includes( name ) ? TUNED : TUNED.slice( 0, 6 );
-	tuneObject( KEYS[ name ], Object.fromEntries( fields.map( ( f ) => [ f, `haze.key.${ f }@${ name }` ] ) ), TUNE_RANGE );
+/** The haze's tables made from a look's table: registers their tunables (see the header). */
+export function createHazeTables( look: HazeLook ): HazeTables {
 
-}
-tuneObject( MIST, { mist: 'haze.key.mist@mist' }, { mist: { min: 0, max: 2, onChange: markSkyRetune } } );
-// the fog layer's knobs on the keys that hold one:
-// `haze.fog.<top|width|visibility|neutral|scatter>@<day|golden|mist>`, the visibility's range the key's
-for ( const [ name, low, high ] of [ [ 'day', 0.2, 1.5 ], [ 'golden', 0.3, 2.5 ], [ 'mist', 0.2, 2 ] ] as const ) {
+	// the look's keys, each a copy these tables own (its tunables are registered on it)
+	const keys = Object.fromEntries( HAZE_KEY_NAMES.map( ( name ) => [ name, { ...look.keys[ name ] } ] ) ) as Record<HazeKeyName, FullKey>;
+	const { day, night, mist, morning } = keys;
+	for ( const name of HAZE_KEY_NAMES ) {
 
-	const range: Record<'fogTop' | 'fogWidth' | 'visibility' | 'neutral' | 'scatter', TuneOptions> = {
-		fogTop: { min: 12, max: 40, onChange: markSkyRetune }, fogWidth: { min: 2, max: 15, onChange: markSkyRetune },
-		visibility: { min: low, max: high, scale: 'log', onChange: markSkyRetune },
-		neutral: { min: 0, max: 1, onChange: markSkyRetune }, scatter: { min: 0, max: 0.4, onChange: markSkyRetune },
+		const fields = SHAPED_NAMES.includes( name ) ? TUNED : TUNED.slice( 0, 6 );
+		tuneObject( keys[ name ], Object.fromEntries( fields.map( ( f ) => [ f, `haze.key.${ f }@${ name }` ] ) ), TUNE_RANGE );
+
+	}
+	tuneObject( mist, { mist: 'haze.key.mist@mist' }, { mist: { min: 0, max: 2, onChange: markSkyRetune } } );
+	// the fog layer's knobs on the keys that hold one:
+	// `haze.fog.<top|width|visibility|neutral|scatter>@<day|golden|mist>`, the visibility's range the key's
+	for ( const [ name, low, high ] of [ [ 'day', 0.2, 1.5 ], [ 'golden', 0.3, 2.5 ], [ 'mist', 0.2, 2 ] ] as const ) {
+
+		const range: Record<'fogTop' | 'fogWidth' | 'visibility' | 'neutral' | 'scatter', TuneOptions> = {
+			fogTop: { min: 12, max: 40, onChange: markSkyRetune }, fogWidth: { min: 2, max: 15, onChange: markSkyRetune },
+			visibility: { min: low, max: high, scale: 'log', onChange: markSkyRetune },
+			neutral: { min: 0, max: 1, onChange: markSkyRetune }, scatter: { min: 0, max: 0.4, onChange: markSkyRetune },
+		};
+		tuneObject( keys[ name ], { fogTop: `haze.fog.top@${ name }`, fogWidth: `haze.fog.width@${ name }`, visibility: `haze.fog.visibility@${ name }`,
+			neutral: `haze.fog.neutral@${ name }`, scatter: `haze.fog.scatter@${ name }` }, range );
+
+	}
+
+	const rows = ( r: HazeRows ): HazeKeyRows => r.map( ( [ at, name ] ) => [ at, keys[ name ] ] as const );
+	const fogged: ReadonlySet<FullKey> = new Set( [ day, keys.golden, mist ] );
+	// the sea fog, tunable as `haze.fog.<field>@sea`
+	const seaFog = { ...look.seaFog };
+	tuneObject( seaFog, { fogTop: 'haze.fog.top@sea', fogWidth: 'haze.fog.width@sea', visibility: 'haze.fog.visibility@sea',
+		neutral: 'haze.fog.neutral@sea', scatter: 'haze.fog.scatter@sea', coverHigh: 'haze.fog.coverHigh@sea' }, {
+		fogTop: { min: 0, max: 150, onChange: markSkyRetune }, fogWidth: { min: 2, max: 100, onChange: markSkyRetune },
+		coverHigh: { min: - 1, max: 2.5, onChange: markSkyRetune },
+		visibility: { min: 0.08, max: 2, scale: 'log', onChange: markSkyRetune },
+		neutral: { min: 0, max: 1, onChange: markSkyRetune }, scatter: { min: 0, max: 0.6, onChange: markSkyRetune },
+	} );
+	// the weather's haze per sky of the blend is its preset's until tuned
+	const skyScale = MIX_SKIES.map( ( name, s ) => {
+
+		const { haze } = WEATHER_PRESETS[ name ];
+		return { ...look.scales[ s ], haze };
+
+	} );
+	for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
+
+		tuneObject( skyScale[ s ], { haze: `sky.weather.haze@${ name }` }, { haze: { min: 2e-4, max: 0.02, scale: 'log', onChange: markSkyRetune } } );
+		tuneObject( skyScale[ s ], { sigmaRed: `sky.weather.sigmaRed@${ name }`, sigmaBlue: `sky.weather.sigmaBlue@${ name }`, aerosolScale: `sky.weather.aerosolScale@${ name }`, aerosolHeight: `sky.weather.aerosolHeight@${ name }` },
+			{ sigmaRed: { min: 0.2, max: 5, scale: 'log', onChange: markSkyRetune }, sigmaBlue: { min: 0.2, max: 5, scale: 'log', onChange: markSkyRetune },
+				aerosolScale: { min: 0.1, max: 30, scale: 'log', onChange: markSkyRetune }, aerosolHeight: { min: 0.2, max: 10, scale: 'log', onChange: markSkyRetune } } );
+		tuneObject( skyScale[ s ], { topScale: `sky.weather.topScale@${ name }`, widthScale: `sky.weather.widthScale@${ name }` },
+			{ topScale: { min: 0.1, max: 5, scale: 'log', onChange: markSkyRetune }, widthScale: { min: 0.2, max: 5, scale: 'log', onChange: markSkyRetune } } );
+
+	}
+	return {
+		keys,
+		rising: rows( look.rising ),
+		setting: rows( look.setting ),
+		settingClouded: rows( look.settingClouded ),
+		shaped: new Set( SHAPED_NAMES.map( ( name ) => keys[ name ] ) ),
+		fogOf: ( k ) => fogged.has( k ) ? k : k === morning ? mist : night,
+		noFog: look.noFog,
+		seaFog,
+		keep: look.keep,
+		gain: look.gain,
+		decked: look.decked,
+		skyScale,
+		sunRayleigh: look.sunRayleigh,
 	};
-	tuneObject( KEYS[ name ], { fogTop: `haze.fog.top@${ name }`, fogWidth: `haze.fog.width@${ name }`, visibility: `haze.fog.visibility@${ name }`,
-		neutral: `haze.fog.neutral@${ name }`, scatter: `haze.fog.scatter@${ name }` }, range );
 
 }
-
-// rows by the sun's elevation (degrees, ascending), eased between neighbours, the end rows held
-const rows = ( look: HazeRows ): ReadonlyArray<readonly [ number, FullKey ]> => look.map( ( [ at, name ] ) => [ at, KEYS[ name ] ] as const );
-export const RISING = rows( LOOK.rising );
-export const SETTING = rows( LOOK.setting );
-// the setting sun's under cloud, which a clouded share draws the key to
-export const SETTING_CLOUDED = rows( LOOK.settingClouded );
-
-// the keys with a shape of their own; the others take the day's
-export const SHAPED: ReadonlySet<FullKey> = new Set( SHAPED_NAMES.map( ( name ) => KEYS[ name ] ) );
-// the keys with a fog layer of their own; the morning takes the mist's, the others (the night and
-// the twilights) none
-export const FOGGED: ReadonlySet<FullKey> = new Set( [ DAY, KEYS.golden, MIST ] );
-export const fogOf = ( k: FullKey ): FullKey => FOGGED.has( k ) ? k : k === MORNING ? MIST : NIGHT;
-// the sea fog: a deep layer with a soft top, held at every hour while its switch is on; tunable as
-// `haze.fog.<field>@sea`
-export const SEA_FOG = { ...LOOK.seaFog };
-tuneObject( SEA_FOG, { fogTop: 'haze.fog.top@sea', fogWidth: 'haze.fog.width@sea', visibility: 'haze.fog.visibility@sea',
-	neutral: 'haze.fog.neutral@sea', scatter: 'haze.fog.scatter@sea', coverHigh: 'haze.fog.coverHigh@sea' }, {
-	fogTop: { min: 0, max: 150, onChange: markSkyRetune }, fogWidth: { min: 2, max: 100, onChange: markSkyRetune },
-	coverHigh: { min: - 1, max: 2.5, onChange: markSkyRetune },
-	visibility: { min: 0.08, max: 2, scale: 'log', onChange: markSkyRetune },
-	neutral: { min: 0, max: 1, onChange: markSkyRetune }, scatter: { min: 0, max: 0.6, onChange: markSkyRetune },
-} );
-
-// per sky of the blend (Weather.ts MIX_SKIES: clear, fair, cloudy, overcast): the share of the light's
-// colour kept over a clear day's and the gain over a clear day's
-export const KEEP = LOOK.keep;
-export const GAIN = LOOK.gain;
-// per sky of the blend, whether a deck ends the aerosol layer at its base (look/SkyLook.ts `cloudBase`)
-export const DECKED = LOOK.decked;
-// per sky of the blend, the scale of each band's sigma, of the aerosol layer's share and of its scale
-// height, of the ground layer's top and width, and the weather's haze (its preset's until tuned)
-export const SKY_SCALE = MIX_SKIES.map( ( name, s ) => {
-
-	const { haze } = WEATHER_PRESETS[ name ];
-	return { ...LOOK.scales[ s ], haze };
-
-} );
-for ( const [ s, name ] of [ [ 2, 'cloudy' ], [ 3, 'overcast' ] ] as const ) {
-
-	tuneObject( SKY_SCALE[ s ], { haze: `sky.weather.haze@${ name }` }, { haze: { min: 2e-4, max: 0.02, scale: 'log', onChange: markSkyRetune } } );
-	tuneObject( SKY_SCALE[ s ], { sigmaRed: `sky.weather.sigmaRed@${ name }`, sigmaBlue: `sky.weather.sigmaBlue@${ name }`, aerosolScale: `sky.weather.aerosolScale@${ name }`, aerosolHeight: `sky.weather.aerosolHeight@${ name }` },
-		{ sigmaRed: { min: 0.2, max: 5, scale: 'log', onChange: markSkyRetune }, sigmaBlue: { min: 0.2, max: 5, scale: 'log', onChange: markSkyRetune },
-			aerosolScale: { min: 0.1, max: 30, scale: 'log', onChange: markSkyRetune }, aerosolHeight: { min: 0.2, max: 10, scale: 'log', onChange: markSkyRetune } } );
-	tuneObject( SKY_SCALE[ s ], { topScale: `sky.weather.topScale@${ name }`, widthScale: `sky.weather.widthScale@${ name }` },
-		{ topScale: { min: 0.1, max: 5, scale: 'log', onChange: markSkyRetune }, widthScale: { min: 0.2, max: 5, scale: 'log', onChange: markSkyRetune } } );
-
-}
-// per sky of the blend, the sun's share in the haze's Rayleigh light
-export const SUN_RAYLEIGH = LOOK.sunRayleigh;

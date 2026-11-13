@@ -35,7 +35,7 @@ import type { IslandSkyRow, Rgb, SkyLook } from '../../render/setup.ts';
 // horizon the setting side's rows hold gains only, so the land takes the colour of the sky's own
 // light: the dusk key (SKY_LIGHT) warms it (its irradiance red over green about 1.6 at -3 degrees
 // and 1.45 at -5, blue over green 0.7 and 0.8), and the afterglow's air over the land keeps the
-// glow's colour (HazeLook.ts AFTER_SUNSET). The meadow on the plateau in the island view reads
+// glow's colour (Haze.ts AFTER_SUNSET). The meadow on the plateau in the island view reads
 // Oklab hue 75 - 83 and chroma 0.029 - 0.034 from -3 to -5.3 degrees, the cliffs chroma 0.045 -
 // 0.047. Drawn most of the way to an orange as well (red over green about 2, blue over green 0.1),
 // the land took that warmth twice: the meadow at hue 67 - 74 and chroma 0.037 - 0.042, the cliffs
@@ -172,7 +172,7 @@ const KEY_DECK_WHITE = 0.3;
 // the high key blue (blue over red about 1.5), the atmosphere's own colour doing the rest, and the
 // night key is about 0.03, its red about twice its green, which the night's white balance takes
 // back (look/DisplayLook.ts WHITE_BALANCE): the land's dark colours stay near neutral under it,
-// the clear night's dome is dark, its low sky the haze's moonlit light (look/HazeLook.ts NIGHT) and
+// the clear night's dome is dark, its low sky the haze's moonlit light (Haze.ts NIGHT) and
 // its blue the moonlit atmosphere's own and the rods' (Purkinje.ts).
 // The golden, low and morning keys keep the colour they lent the sky before the ozone's absorption
 // was integrated over each channel's band (Atmosphere.ts): with it the bare sky lost red and blue
