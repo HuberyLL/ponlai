@@ -1,7 +1,8 @@
 // A test scene's declaration and the parts every scene is built from. A test scene is a small
 // scene of the renderer alone, which the scene page (ScenePage.ts) builds with the renderer's
 // stages on the renderer's neutral inputs (NeutralInputs.ts): level ground of one albedo under an
-// open sky, and whatever the scene places on it. It declares what it tests, its fixed views, the
+// open sky, or the open sea over a level floor, and whatever the scene places there (plant kinds
+// among it, drawn with the registry's default plant). It declares what it tests, its views, the
 // hours and weathers it is shot at and the readings taken of it, so a tool shoots and reads it
 // without knowing the scene (tools/scenes.mjs).
 //
@@ -13,14 +14,21 @@
 //   metering light, docs/how-to/add-material.md).
 // - Everything it places is a function of constants: no random stream, no clock, so a load repeats.
 import * as THREE from 'three/webgpu';
-import { GroundBounceLightingModel, writeMeter, type RenderParts } from '../../render.ts';
+import { GroundBounceLightingModel, writeMeter, type RenderParts, type VegetationKind } from '../../render.ts';
 
 /** A point or a linear colour. */
 export type Triple = readonly [ number, number, number ];
 
-/** A fixed view: where the camera stands, what it looks at, and its vertical field of view
- * (degrees; the renderer's 27 without one). */
-export interface SceneView { name: string; eye: Triple; target: Triple; fov?: number }
+/** A view: where the camera stands, what it looks at, and its vertical field of view (degrees;
+ * the renderer's 27 without one). A view may follow the key (`eye` and `target` functions of its
+ * direction, unit, toward the sun or the moon), posed when it is shown; the first view, which a
+ * scene jump poses before the key is the new hour's, is fixed. */
+export interface SceneView {
+	name: string;
+	eye: Triple | ( ( key: THREE.Vector3 ) => Triple );
+	target: Triple | ( ( key: THREE.Vector3 ) => Triple );
+	fov?: number;
+}
 
 /** An hour and a weather the scene is shot at: the scene options of its query (`weather`, `hour`,
  * `preset`, `moon`, ...), as a load's address or a scene jump takes them. */
@@ -48,19 +56,29 @@ export interface SceneReading {
 export interface SceneContent {
 	/** what it draws in the opaque scene: the ground and everything on it */
 	objects: THREE.Object3D[];
-	/** the box of everything that casts into the sun's map (m), or null where nothing does */
+	/** the box of everything that casts into the sun's map (m), or null where nothing does; the
+	 * plant kinds' casters are added to it */
 	casters: THREE.Box3 | null;
+	/** the plant kinds it registers (vegetation/Registry.ts), each without a root, drawn with the
+	 * registry's default plant at its sites */
+	plants?: VegetationKind[];
 }
+
+/** The scene's ground: level land of a linear albedo at a height over the sea's mean level (m), or
+ * the open sea, far from any shore, over a level floor of a linear albedo at a depth (m). */
+export type SceneGround =
+	| { kind: 'land'; height: number; albedo: Triple }
+	| { kind: 'sea'; depth: number; floor: Triple };
 
 export interface TestScene {
 	name: string;
 	/** what the scene tests, in a sentence */
 	about: string;
-	/** the level ground: its height over the sea's mean level (m) and its linear albedo */
-	ground: { height: number; albedo: Triple };
+	/** the level ground, or the open sea */
+	ground: SceneGround;
 	/** Builds the scene's content, once, after the renderer's light exists. */
 	build( render: RenderParts ): SceneContent;
-	/** the fixed views, the first the one a load shows */
+	/** the views, the first the one a load shows */
 	views: SceneView[];
 	/** the hours and weathers it is shot at */
 	times: SceneTime[];

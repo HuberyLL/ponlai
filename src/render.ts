@@ -8,7 +8,7 @@
 // here: they are lazy exits (tools/layers.json), imported dynamically or for their types only.
 export { awaitWarmUp, bakeWithHaze, checkMotion, createAmbient, createBounceAndShore, createEnvironment, createFrameStages, createKey, createLight, createRenderer, createScenes, createSeaAndPipeline, createSky, createWater, placeVegetation, vegetationCasters, bakeRainCollision, primeSharedBuilds, publishSkyLight, registerLightHistories, registerSceneHistories, sceneOptions, setUpRenderer, startWaveMaps } from './RenderStages.ts';
 export type { FrameStages, RenderParts, SceneOptions } from './RenderStages.ts';
-export { neutralBounceGround, neutralFields, neutralLattice } from './NeutralInputs.ts';
+export { OPEN_SEA_SHORE, neutralBounceGround, neutralFields, neutralLattice, neutralSeaLattice } from './NeutralInputs.ts';
 export { classifyBy } from './debug/Classes.ts';
 export type { ClassRule } from './debug/Classes.ts';
 export { debugFlags, setDebugFlag } from './debug/DebugFlags.ts';
@@ -95,7 +95,7 @@ export { transmission, useSpecular, useVegetationMotion, vegetationMaterial } fr
 export { PLANT_PART, PlantInstances, levelDraws, placeVertex, plantPoint } from './world/vegetation/PlantInstances.ts';
 export type { PlantDraw, PlantInstance, PlantPool } from './world/vegetation/PlantInstances.ts';
 export { Vegetation } from './world/vegetation/Registry.ts';
-export type { GrowthInput, GrowthSteps, KindGrowth, VegetationKind } from './world/vegetation/Registry.ts';
+export type { GrowthInput, GrowthSteps, KindGrowth, PlantSite, VegetationKind } from './world/vegetation/Registry.ts';
 export { BRANCH_ATTRIBUTES, MeshBuilder, UP, branchValues, leafLayout, smooth, sprayValues, streamAt } from './world/vegetation/TreeMesh.ts';
 export { IDENTITY_COLOUR, LeafPainter, leafMaterial, plantTint } from './world/vegetation/TreeSurfaces.ts';
 export type { LeafAtlas, PlantTint } from './world/vegetation/TreeSurfaces.ts';

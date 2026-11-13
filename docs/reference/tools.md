@@ -435,16 +435,20 @@ in the tool's header.
 
 ### Test scenes: `tools/scenes.mjs`
 
-`node tools/scenes.mjs <baseUrl> <outDir> [--scenes ball,empty] [--times a,b] [--views a,b]
+`node tools/scenes.mjs <baseUrl> <outDir> [--scenes ball,sea] [--times a,b] [--views a,b]
 [--look neutral|ponlai] [--verify] [--write-ref | --check] [--ref <dir>] [--q "extra&query"]
 [--size 1920x1080@2] [--timeout 240000]` shoots, reads and checks the renderer's test scenes
 (`scenes.html`; `docs/reference/url-options.md`, The test scenes). A scene is a few objects on
-level ground under the sky, built from the renderer alone, so it loads in a second or two and a
-whole scene is shot in well under a minute.
+level ground under the sky or in the open sea, built from the renderer alone, so it loads in a
+second or two and a whole scene is shot in a minute or two.
 
 - For each scene it opens one page and reaches each of the scene's times by the scene jump and each
   view by `scenePage.setView`. The scenes, their views, times and readings are the page's own; the
   tool names none.
+- Without `--scenes` it shoots `ball`, `empty` and `plants`, the scenes whose shots repeat to the
+  pixel. `sea` is shot only when `--scenes` names it, and is read by its readings: its shots differ
+  between two loads by a level or so in scattered pixels over the water, so it has no reference
+  and `--verify` does not hold for it. Named, it takes every option as the others do.
 - A shot is a paused page in the test mode, taken once the page's `settled` signal holds and its
   image has stopped changing. Images are compared by their decoded pixels, with no tolerance.
 - `--verify` takes every shot three ways, which must agree to the pixel: on one page in the listed
@@ -452,9 +456,10 @@ whole scene is shot in well under a minute.
   repeats, and a jump to a time draws what a load of that time draws.
 - `--check` compares every shot with the reference image of its name; `--write-ref` writes the
   run's shots as the reference (with `--verify`, only when it passed). The references are in
-  `artifacts/scenes/reference/<look>/` (git-ignored; `--ref` names another folder), with
-  `reference.json`: the commit served, the browser and the size. A reference holds for the browser
-  and the size it was shot with.
+  `artifacts/scenes/reference/<look>/` (git-ignored; `--ref` names another folder), with a
+  `reference.json` in each scene's folder: the commit served, the browser and the size. A run
+  writes the records of its own scenes only. A reference holds for the browser and the size it was
+  shot with.
 - `--look ponlai` loads the scenes under the island's look; each look has its own output folder
   and reference.
 - Each shot's JSON holds its readings: per reading the box, the scene's linear radiance there
@@ -504,7 +509,8 @@ the scene jump. Evals see `P` (`__PONLAI__`), `D` (the diagnostics), `frames( n 
 `until( fn )` and `pipelines` (`mark()`, `since( mark )`: which pipelines an action built), with the
 same forms and scope as capture's `--eval` (`tools/page-eval.mjs`) (`D` is rebuilt every 30 frames:
 live counters such as `P.pipelines.total` come
-from `P`); `--init js` hooks the page before its scripts run. A production preview needs
+from `P`); `--init js` hooks the page before its scripts run. The url is the server's root or a
+page of it by its file (`<server>/scenes.html`, the test scenes). A production preview needs
 `debug` in the query. A long eval that waits on CPU work (worker generation, a grown page) stops
 the loop (`await P.loop.stop()`) and waits with `until` or `sleep`: while the loop stands the probe
 gives its shared slot up to a request ranked before it and takes it back before the helper resolves
@@ -1165,9 +1171,12 @@ from what it perceives: `tools/play-game.mjs` (Other tools), not a loop over the
 one's own.
 
 Whether a change to the renderer moved what a plain surface shows under the key, the sky and the
-ground's bounce, or what the sky gives through a day, before the island is loaded at all:
-`tools/scenes.mjs --check` (Captures, Test scenes), which shoots the renderer's small scenes in
-seconds. It does not replace the island's captures: it shows no sea, terrain, plants or game.
+ground's bounce, what the sky gives through a day or a plant kind drawn with the default plant,
+before the island is loaded at all: `tools/scenes.mjs --check` (Captures, Test scenes), which
+shoots the renderer's small scenes in seconds. What the open sea's water gives (its colour, the far
+sea against the sky, the glitter, the wind's levels): `tools/scenes.mjs --scenes sea`, read by its
+readings, not checked to the pixel. It does not replace the island's captures: it shows no shore,
+terrain, island plants or game.
 
 What WGSL a TSL kernel, pass or material compiles to, which bindings and uniforms each stage
 declares, and whether one exceeds WebGPU's default limits, without a GPU: `tools/wgsl-build.mjs`

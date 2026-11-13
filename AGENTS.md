@@ -109,12 +109,13 @@ design: `docs/explanation/game-design.md` (read it before gameplay work).
   diagnostics (`Diagnostics.ts`). `window.__PONLAI__` and `window.__THREE_GAME_DIAGNOSTICS__`
   exist only on the dev server or with `?debug` / `?profile`.
 - `scenes.html`, `src/ScenesBoot.ts`, `src/app/scenes/`: the renderer's test scenes, a second page
-  (`?scene=ball|empty`) built from the renderer's stages alone, with no island, sea or game
+  (`?scene=ball|empty|sea|plants`) built from the renderer's stages alone, with no island or game
   (`ScenePage.ts`; a scene is a module beside it, its type in `TestScene.ts`, the list in
   `index.ts`). Their files import only the renderer's exits (`tools/verify-layers.mjs`). The page
   draws with the renderer's neutral look (`renderLook=ponlai` installs the island's, in the entry)
   and takes the island's inputs from `src/NeutralInputs.ts`: the probes, the bounce's ground and
-  the shore's fields of level open ground. `tools/scenes.mjs` shoots, reads and checks them.
+  the shore's fields of level open ground or of the open sea far from any shore. `tools/scenes.mjs`
+  shoots, reads and checks them.
 - `src/Quality.ts`: the quality tiers, every cost knob in one table (high the only active one);
   `src/QualityDetect.ts` takes `?quality` or high (its GPU timing is parked with the lower tiers).
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation, which the entry creates

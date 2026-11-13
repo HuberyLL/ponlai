@@ -6,7 +6,8 @@
 //       [--eval js|@file] [--until js|@file] [--frames n] [--sleep ms] ...  (steps, in order)
 //       [--w 1600 --h 900 --scale 1] [--timeout 60000] [--exclusive] [--fresh] [--load] [--console [prefix]]
 //
-// url: the server (default http://127.0.0.1:5190/, the dev server); a production preview needs
+// url: the server (default http://127.0.0.1:5190/, the dev server), or a page of it by its file
+// (`http://127.0.0.1:5190/scenes.html`, the test scenes); a production preview needs
 // `debug` in the query for `window.__PONLAI__` and the diagnostics (docs/reference/tools.md, Page).
 //
 // Steps. `--eval`, `--until`, `--frames` and `--sleep` run in the order given, for every query:
@@ -93,7 +94,8 @@ for ( let i = 0; i < argv.length; i ++ ) {
 
 }
 if ( queries.length === 0 ) queries.push( 'paused&t=12&dpr=1' );
-if ( ! url.endsWith( '/' ) && ! url.includes( '?' ) ) url += '/';
+// a server's root gets its slash; a page of it (scenes.html) is loaded as named
+if ( ! url.endsWith( '/' ) && ! url.includes( '?' ) && ! /\.html$/.test( url ) ) url += '/';
 const timeout = Number( options.timeout );
 
 // the page's own frame counter (rendered frames)

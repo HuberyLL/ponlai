@@ -3,5 +3,7 @@
 import type { TestScene } from './TestScene.ts';
 import { ball } from './ball.ts';
 import { empty } from './empty.ts';
+import { plants } from './plants.ts';
+import { sea } from './sea.ts';
 
-export const SCENES: Readonly<Record<string, TestScene>> = { ball, empty };
+export const SCENES: Readonly<Record<string, TestScene>> = { ball, empty, sea, plants };

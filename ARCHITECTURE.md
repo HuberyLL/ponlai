@@ -136,10 +136,11 @@ nothing below a host reads the page or the wall clock (the save's timestamp asid
   ([tools/verify-layers.mjs](tools/verify-layers.mjs), its page check, keeps them off the page).
 - **The scene page** ([src/app/scenes/](src/app/scenes/), loaded by its own entry
   [src/ScenesBoot.ts](src/ScenesBoot.ts) from `scenes.html`): a second page, which assembles the
-  renderer alone into small test scenes (a few objects on level ground under the sky). It builds
-  and runs a frame with the same renderer stages as the island's page, and gives the renderer the
-  inputs the island would: the ambient light's probes, the bounce's ground and the shore's fields
-  of level open ground, which the renderer makes itself
+  renderer alone into small test scenes (a few objects on level ground under the sky or in the
+  open sea, and plant kinds drawn with the default plant). It builds and runs a frame with the
+  same renderer stages as the island's page, and gives the renderer the inputs the island would:
+  the ambient light's probes, the bounce's ground and the shore's fields of level open ground or
+  of the open sea far from any shore, which the renderer makes itself
   ([src/NeutralInputs.ts](src/NeutralInputs.ts)). Its files import only the renderer's exits
   ([tools/verify-layers.mjs](tools/verify-layers.mjs)); it draws with the renderer's neutral look
   unless its entry is asked for the island's. It mounts the same handles for the tools as the
