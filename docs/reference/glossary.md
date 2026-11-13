@@ -34,15 +34,15 @@ Kept weathers
 
 Key
 : The one dominant light: the sun by day, the moon by night
-  ([Art direction](../explanation/art-direction.md), Sea, sky and weather).
+  ([Sea and sky](../explanation/sea-and-sky.md#the-sun)).
 
 Lighting
 : Setting the light and the image for the whole world, by weather and hour ([Art
   direction](../explanation/art-direction.md), How the look is made).
 
 Lip
-: The top edge of the cliff, where the meadow meets the stone and its grass hangs over
-  ([Art direction](../explanation/art-direction.md), The island).
+: The top edge of the cliff, where the meadow meets the stone
+  ([The island](../explanation/island.md#the-rim)).
 
 Lookdev
 : Look development: making each material right on its own: real values checked against the real
@@ -77,7 +77,7 @@ Stylised realism
 
 Sward
 : The meadow's grass as one even cover, about 0.5 m tall
-  ([Art direction](../explanation/art-direction.md), The island).
+  ([The island](../explanation/island.md#the-meadow)).
 
 Temporal modes
 : The anti-aliasing modes that resolve over frames: `taa`, `taau`, `fsr3` and `gt` (the ground
@@ -93,9 +93,10 @@ active one.
 
 Wenyao
 : The flying fish of the old texts, in schools that break from the swell offshore and glide
-  (`packages/island/life/Wenyao.ts`; [Art direction](../explanation/art-direction.md), Life).
+  (`packages/island/life/Wenyao.ts`;
+  [Life and islanders](../explanation/life-and-islanders.md#the-cast)).
 
 Yunpeng
 : A herb of the old texts: single clumps of straight white stalks far apart on the open meadow,
   which glow softly by night (`packages/island/world/Yunpeng.ts`;
-  [Art direction](../explanation/art-direction.md), The island).
+  [The island](../explanation/island.md#the-yunpeng)).
