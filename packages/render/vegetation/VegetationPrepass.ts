@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { materialColor, vec4 } from 'three/tsl';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { TEMPORAL } from '../post/Antialiasing.ts';
+import { ALPHA_TO_COVERAGE, TEMPORAL } from '../post/Antialiasing.ts';
 import { VELOCITY_CLEAR, velocityOutput } from '../post/Motion.ts';
 import { MEADOW_SHADE } from '../post/MeadowShade.ts';
 import { followPlantDraw } from './PlantInstances.ts';
@@ -136,8 +136,8 @@ type Pair = { mesh: THREE.Mesh; material: THREE.MeshStandardNodeMaterial; depth:
  * depth copies' materials. */
 export interface VegetationPrepassInfo { pairs: number; materials: number; depthMaterials: number }
 
-/** Give every alpha-to-coverage mesh under `roots` its depth prepass, and under the temporal modes
- * every vegetation mesh (`markVegetation`: their coverage materials are alpha-tested there). With
+/** Give every vegetation mesh under `roots` (`markVegetation`) its depth prepass: at 4x, where its
+ * cut-outs take alpha to coverage, and under the temporal modes, where they are alpha-tested. With
  * one sample outside the temporal modes there is no coverage material, and nothing changes. */
 export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Object3D[] ): VegetationPrepassInfo {
 
@@ -150,17 +150,16 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 	// one depth copy per shaded material, whatever number of meshes draw with it (the grass's
 	// batches share theirs): the same shader, so the same pipelines
 	const depthCopies = new Map<THREE.Material, THREE.MeshBasicNodeMaterial>();
-	// whether a mesh takes a pair: (`alphaToCoverage` is off under the temporal modes, and on a
-	// patched material once the prepass applies: the vegetation's tag and the patched set find the
-	// same meshes there)
+	// whether a mesh takes a pair: a vegetation mesh (`markVegetation`) when its cut-outs take
+	// coverage (4x) or an alpha test that the prepass can take over (the temporal modes). Found by
+	// the tag, as `alphaToCoverage` is off under the temporal modes and once the prepass applies.
 	const eligible = ( object: THREE.Object3D ): object is THREE.Mesh => {
 
 		const mesh = object as THREE.Mesh;
 		// (a mesh off the view's layer, a caster of the sun's map alone, draws no depth there)
 		if ( ! mesh.isMesh || mesh.userData.prepassCopy || Array.isArray( mesh.material ) || ! mesh.layers.isEnabled( 0 ) ) return false;
 		const material = mesh.material as THREE.Material;
-		// eslint-disable-next-line ponlai/vegetation-tag -- known violation: under MSAA the vegetation's meshes are found by alpha to coverage; the tag should find the same ones (the comment above), not proven on the CPU, left for a decision
-		return TEMPORAL ? material.userData.vegetation === true : material.alphaToCoverage === true || patched.has( material );
+		return ( TEMPORAL || ALPHA_TO_COVERAGE ) && material.userData.vegetation === true;
 
 	};
 	const pair = ( mesh: THREE.Mesh ) => {
