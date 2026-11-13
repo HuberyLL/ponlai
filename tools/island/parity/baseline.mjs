@@ -11,10 +11,9 @@
 //       [--ref-url R] [--recapture-reference] [--skip-existing] [--size 1728x1117@2] [--q "extra&query"] [--verbose]
 //       [--carry-from A [--carry-url <preview of A>] [--carry-recheck]]
 //
-// The plan (PLAN below): on high the 24 parity and TAA views at rest (the 17 parity views also as
-// whole frames, for the overall fidelity gate) and the gates' clips; on medium and low six views at
-// rest. Medium and low are parked (packages/render/Quality.ts PARKED_QUALITY): without --tiers a run takes high
-// only; `--tiers high,medium,low` reaches their entries. Rest images go through tools/island/capture-clip.mjs as the one-frame clip `rest`, so their crops
+// The plan: the clips table's BASELINE_PLAN (tables.mjs), the rest images, whole frames and clips
+// per quality tier. Without --tiers a run takes high only; `--tiers high,medium,low` reaches the
+// others' entries. Rest images go through tools/island/capture-clip.mjs as the one-frame clip `rest`, so their crops
 // are cut exactly as a clip's are.
 //
 // Layout under <root>/<sha>/:
@@ -22,7 +21,7 @@
 //   <label>/<tier>/clip/<clip>[@<view>]/  the same for a clip (on another view than its own: @view)
 //   gt/<tier>/...                         the ground truth (`--aa gt`: 64 jittered renders at rest, 32
 //                                         per clip frame), shared by every label; clips of more than 60
-//                                         frames every 4th frame plus their dense runs (clips.mjs
+//                                         frames every 4th frame plus their dense runs (the clips table's
 //                                         gtSampling)
 //   gt-hi/high/...                        the interim ground truth (`--gt-aa gt-hi`, high only): kept
 //                                         for cross-checks against aa=gt
@@ -44,10 +43,10 @@
 // captured before the store) and skips the side under test where its clip.json exists;
 // --recapture-reference captures the reference entries afresh. --clips may also name a clip that
 // is not a gate's (`--clips drs-steps`): its baseline and ground truth are kept the same way.
-// --views and --clips take groups beside names (views.mjs, clips.mjs: `special` for the parked
-// weathers, packages/render/sky/Weather.ts PARKED_WEATHER); a clip group only selects among the plan's clips.
-// Without --views / --clips the run takes the normal weathers' entries only: the parked weathers'
-// views and clips stay in the plan but are run only when named or asked for by `special`.
+// --views and --clips take the tables' groups beside names; a clip group only selects among the
+// plan's clips. Without --views / --clips the run leaves out the entries on the views table's
+// `special` views (Ponlai's parked weathers): they stay in the plan but are run only when named or
+// asked for by `special`.
 //
 // `--label x --aa taau` captures the same entries for another mode and measures them against the
 // baseline's MSAA captures and the shared ground truth (with --thresholds: gate verdicts). The
@@ -77,37 +76,18 @@ import { mkdir, readFile, writeFile, appendFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { VIEWS, viewNames, expandViews } from './views.mjs';
-import { CLIPS, CLIP_GROUPS, clipNames, gtSampling } from './clips.mjs';
+import { viewTable, clipTable } from '../../kit/parity/tables.mjs';
 import { sampleGpuUtilisation } from '../../kit/gpu-lock.mjs';
 import { ensureReference, clipKey, anchorsHash, checkServed } from '../../kit/reference.mjs';
 import { planCarry } from './carry.mjs';
 import { ROOT } from '../../kit/root.mjs';
 
 const TOOLS = path.join( ROOT, 'tools' );
+const { VIEWS, viewNames, expandViews } = viewTable;
+const { CLIPS, CLIP_GROUPS, clipNames, gtSampling } = clipTable;
 
-// the views every lower tier keeps at rest: the meadow near and far, the flowers, the island, the
-// sea's glints and horizon, the night sky
-export const TIER_VIEWS = [ 'meadow-close', 'meadow-24', 'flowers-close', 'island-fair-noon', 'horizon-fair-noon', 'night-moon' ];
-
-// the gates' clips (verification design 5.2): [ clip, view or null for the clip's own ]
-export const GATE_CLIPS = [
-	[ 'pan-slow', null ], [ 'pan-slow', 'island-fair-noon' ], [ 'pan-fast', null ], [ 'flick', null ], [ 'zoom', null ],
-	[ 'islander-walk', null ], [ 'islander-orbit', null ], [ 'wind-still', null ], [ 'sea-still', null ], [ 'sea-pan', null ],
-	// the still sea also facing a low sun: the glints' sparkle (the only view with a sea-glints crop by day)
-	[ 'sea-still', 'cliff-sea-golden' ],
-	// the night clip on the moon view: its stars, moon limb and moonlit glints under the pan
-	[ 'storm', null ], [ 'rain', null ], [ 'lightning', null ], [ 'night', 'night-moon' ], [ 'fog', null ],
-	// the low stars' scintillation under a still camera (the pan's twinkle is pixel phase)
-	[ 'night-still', null ],
-];
-
-export const PLAN = {
-	// every view, the parked weathers' too (left out by default in `entries`)
-	high: { rest: Object.keys( VIEWS ), full: Object.keys( VIEWS ).filter( ( v ) => ( VIEWS[ v ].group ?? 'parity' ) === 'parity' ), clips: GATE_CLIPS },
-	medium: { rest: TIER_VIEWS, full: [], clips: [] },
-	low: { rest: TIER_VIEWS, full: [], clips: [] },
-};
+// the entries per tier: { tier: { rest: [ view ], full: [ view ], clips: [ [ clip, view | null ] ] } }
+const PLAN = clipTable.BASELINE_PLAN;
 
 // ------------------------------------------------------------------ options
 
@@ -142,7 +122,7 @@ export function entries( o ) {
 	const clipItems = o.clips ? o.clips.split( ',' ).filter( Boolean ) : null;
 	const named = clipItems ? clipItems.filter( ( c ) => ! CLIP_GROUPS.includes( c ) ) : null;
 	const clips = clipItems ? new Set( [ ...named, ...clipItems.filter( ( c ) => CLIP_GROUPS.includes( c ) ).flatMap( ( g ) => clipNames( g ) ) ] ) : null;
-	// the parked weathers' views (views.mjs `special`), run only when asked for
+	// the views table's `special` views, run only when asked for
 	const parked = new Set( viewNames( 'special' ) );
 	const out = [];
 	for ( const tier of tiers ) {

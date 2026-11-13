@@ -11,7 +11,7 @@
 // in a profile slot, the view's eval with the crop anchors, so the crops compare with the store's
 // rest entries). On that page:
 //   1. the base: ready as capture.mjs is (below), then shot;
-//   2. each --variant in order: its js runs in the page (awaited; `s` is window.__PONLAI__), the
+//   2. each --variant in order: its js runs in the page (awaited; `s` is the page's handle), the
 //      loop starts again, the temporal rest restarts (an epoch bump: the variant need not be in the
 //      rest's key), ready, shot.
 // Variants apply on top of each other to the one page: give each the absolute value of every knob
@@ -63,11 +63,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from '../../kit/gpu-lock.mjs';
 import { launchCapture, waitForScene, waitForStable, stableOptions, startLoop } from '../../kit/capture-browser.mjs';
-import { VIEWS, viewEval } from './views.mjs';
+import { viewTable, clipTable } from '../../kit/parity/tables.mjs';
 import { selectViews, viewQuery } from './adhoc.mjs';
-import { CLIPS } from './clips.mjs';
 import { resolveRefDir } from '../../kit/reference.mjs';
+import PROJECT from '../../project.mjs';
 import { ROOT } from '../../kit/root.mjs';
+
+const { VIEWS, viewEval } = viewTable;
+const { CLIPS } = clipTable;
+const PAGE = PROJECT.page;
 
 const HERE = path.dirname( fileURLToPath( import.meta.url ) );
 const TOOLS = path.join( ROOT, 'tools' );
@@ -140,13 +144,13 @@ async function references( o, views, quality, outDir ) {
 async function ready( page, stable, timeout ) {
 
 	await waitForScene( page, { frames: stable.min, timeout } );
-	await page.evaluate( () => window.__PONLAI__?.taa?.epoch.bump( 'capture' ) );
-	await page.waitForFunction( () => {
+	await page.evaluate( ( n ) => window[ n ]?.taa?.epoch.bump( 'capture' ), PAGE.handle );
+	await page.waitForFunction( ( p ) => {
 
-		const t = window.__THREE_GAME_DIAGNOSTICS__?.taa;
-		return ! t || t.restTarget === 0 || ( t.converged && t.restEpoch === window.__PONLAI__.taa.epoch.value );
+		const t = window[ p.diagnostics ]?.taa;
+		return ! t || t.restTarget === 0 || ( t.converged && t.restEpoch === window[ p.handle ].taa.epoch.value );
 
-	}, null, { timeout, polling: 100 } );
+	}, PAGE, { timeout, polling: 100 } );
 	return waitForStable( page, { ...stable, timeout } );
 
 }
@@ -210,24 +214,24 @@ export async function main( argv ) {
 			page.on( 'console', ( m ) => { if ( m.type() === 'error' || m.type() === 'warning' ) errors.push( m.type() + ': ' + m.text() ); } );
 			page.on( 'pageerror', ( e ) => errors.push( 'pageerror: ' + e.message ) );
 			await page.goto( url );
-			await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } );
+			await page.waitForFunction( ( p ) => window[ p.handle ] && window[ p.diagnostics ], PAGE, { timeout } );
 			await page.evaluate( viewEval( view, crops ) );
 			viewRecord.loadMs = Date.now() - t0 - viewRecord.lockMs;
 			// the anchors' world points: the reference's, else the page's own
 			const anchors = anchorsFile && existsSync( anchorsFile )
 				? Object.fromEntries( Object.entries( JSON.parse( readFileSync( anchorsFile, 'utf8' ) ).anchors ).filter( ( [ n ] ) => crops.includes( n ) ) )
-				: await page.evaluate( ( names ) => {
+				: await page.evaluate( ( { names, global } ) => {
 
-					const all = window.__PONLAI_CROPS__ ?? {};
+					const all = window[ global ] ?? {};
 					return Object.fromEntries( names.map( ( n ) => [ n, all[ n ] ?? { missing: 'no such anchor in this view' } ] ) );
 
-				}, crops );
+				}, { names: crops, global: PAGE.crops } );
 			for ( const variant of variants ) {
 
 				const v0 = Date.now();
 				if ( variant.js !== null ) {
 
-					await page.evaluate( `(async () => { const s = window.__PONLAI__; ${ variant.js }
+					await page.evaluate( `(async () => { const s = window.${ PAGE.handle }; ${ variant.js }
 })()` );
 					await startLoop( page );
 
@@ -237,9 +241,9 @@ export async function main( argv ) {
 				const dir = path.join( outDir, variant.label, view );
 				await mkdir( dir, { recursive: true } );
 				// the boxes, as capture-clip.mjs projects them (whole CSS px, clamped into the frame)
-				const state = await page.evaluate( ( { anchors, box } ) => {
+				const state = await page.evaluate( ( { anchors, box, page } ) => {
 
-					const s = window.__PONLAI__;
+					const s = window[ page.handle ];
 					s.camera.updateMatrixWorld();
 					const V = s.camera.position.constructor, r = s.renderer.domElement.getBoundingClientRect(), boxes = {};
 					for ( const [ n, a ] of Object.entries( anchors ) ) {
@@ -252,9 +256,9 @@ export async function main( argv ) {
 						boxes[ n ] = { x, y, w: box, h: box, anchor: [ + p[ 0 ].toFixed( 2 ), + p[ 1 ].toFixed( 2 ) ] };
 
 					}
-					return { boxes, frame: s.renderer.info.frame, render: [ s.pipeline.width, s.pipeline.height ], time: s.clockTime(), taa: s.taa ? { converged: s.taa.converged, restEpoch: window.__THREE_GAME_DIAGNOSTICS__.taa?.restEpoch } : null };
+					return { boxes, frame: s.renderer.info.frame, render: [ s.pipeline.width, s.pipeline.height ], time: s.clockTime(), taa: s.taa ? { converged: s.taa.converged, restEpoch: window[ page.diagnostics ].taa?.restEpoch } : null };
 
-				}, { anchors, box: BOX } );
+				}, { anchors, box: BOX, page: PAGE } );
 				const s0 = Date.now();
 				for ( const [ n, b ] of Object.entries( state.boxes ) ) {
 
@@ -266,7 +270,7 @@ export async function main( argv ) {
 				if ( o.full ) {
 
 					await page.screenshot( { path: path.join( outDir, variant.label, `${ view }.png` ), timeout } );
-					const cropsDevice = await page.evaluate( () => window.__PONLAI_CROPS__ ?? null );
+					const cropsDevice = await page.evaluate( ( n ) => window[ n ] ?? null, PAGE.crops );
 					await writeFile( path.join( outDir, variant.label, `${ view }.json` ), JSON.stringify( { url, variant, viewport: { width: W, height: H }, browser: session.version, slot: session.slot, ready: readiness, ...( cropsDevice ? { crops: cropsDevice } : {} ) }, null, 2 ) );
 
 				}

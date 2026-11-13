@@ -109,14 +109,16 @@ import { spawn } from 'node:child_process';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { viewEval } from './views.mjs';
+import { viewTable } from '../../kit/parity/tables.mjs';
 import { selectViews, viewQuery, loadSignature, viewDefs, describeViews, jumpClean } from './adhoc.mjs';
 import { gpuUtilisation } from '../../kit/gpu-lock.mjs';
 import { samePixels } from '../../kit/capture-browser.mjs';
 import { ensureReference, setKey, resolveRefDir, checkServed } from '../../kit/reference.mjs';
+import PROJECT from '../../project.mjs';
 import { ROOT } from '../../kit/root.mjs';
 
 const REPO = ROOT;
+const { viewEval } = viewTable;
 // --quick: knob variants on a few views, against the stored references (quick.mjs)
 if ( process.argv.includes( '--quick' ) ) {
 
@@ -287,7 +289,7 @@ async function captureGroup( url, dir, list ) {
 				if ( ! m.jump && ! jumpless ) {
 
 					jumpless = true;
-					console.log( `this build has no exact scene jump (__PONLAI__.sceneJump ${ m.marker ?? 'missing' }): a page per view` );
+					console.log( `this build has no exact scene jump (${ PROJECT.page.handle }.sceneJump ${ m.marker ?? 'missing' }): a page per view` );
 
 				}
 

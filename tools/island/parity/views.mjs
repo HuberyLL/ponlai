@@ -29,12 +29,15 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { eveningHour, morningHour } from '../../../packages/render/sky/DayCycle.ts';
+import PROJECT from '../../project.mjs';
+
+const PAGE = PROJECT.page;
 
 // the hour, for a query, at which the morning's or the evening's sun stands `elevation` degrees up
 const morning = ( elevation ) => morningHour( elevation ).toFixed( 4 );
 const evening = ( elevation ) => eveningHour( elevation ).toFixed( 4 );
 
-const PRE = `const s = window.__PONLAI__;
+const PRE = `const s = window.${ PAGE.handle };
 // the island's box: the camera's ground (packages/island/camera/IslandGround.ts, merged from the chunks' ground
 // grids), which equals the box of the island's chunk meshes but never reads their vertices
 const isl = () => { const b = s.controls.ground.bounds;
@@ -210,7 +213,7 @@ const ANCHORS = {
 	'fog-cliff': () => { const g = heightGrid(); return pick( coast( g.top * 0.45 ).map( ( c ) => ( { p: c.p, score: dist( c.p ) } ) ) ); },
 };
 const anchors = NAMES;
-Object.defineProperty( window, '__PONLAI_CROPS__', { configurable: true, get: () => {
+Object.defineProperty( window, '${ PAGE.crops }', { configurable: true, get: () => {
 	s.camera.updateMatrixWorld();
 	const sc = screen(), out = {};
 	placed = [];
@@ -224,6 +227,9 @@ Object.defineProperty( window, '__PONLAI_CROPS__', { configurable: true, get: ()
 	}
 	return out;
 } } );`;
+
+// every crop anchor's name, read off the anchors' source
+export const ANCHOR_NAMES = [ ...CROPS.matchAll( /^\t'([\w-]+)': \(/gm ) ].map( ( m ) => m[ 1 ] );
 
 const wrap = ( body, crops ) => `(async () => { ${ PRE }\n${ body ?? '' }\n{${ CROPS.replace( 'NAMES', JSON.stringify( crops ) ) }\n}\n})()`;
 

@@ -43,6 +43,9 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { VIEWS } from './views.mjs';
+import PROJECT from '../../project.mjs';
+
+const PAGE = PROJECT.page;
 
 // The measurement window of the clips whose gates pair consecutive frames against the ground truth
 // (TI, G, the lag): captured densely there (gtDense), frames 16 to 47 after the clip has settled
@@ -117,6 +120,35 @@ export function clipNames( group = 'all' ) {
 
 }
 
+// The anti-aliasing baseline's entries per quality tier (tools/island/parity/baseline.mjs): on high
+// every view at rest (the parked weathers' too, run only when named), the views of the default
+// group also as whole frames (for the overall fidelity gate), and the gates' clips; on medium and
+// low six views at rest. Medium and low are parked (packages/render/Quality.ts PARKED_QUALITY).
+// The views every lower tier keeps at rest: the meadow near and far, the flowers, the island, the
+// sea's glints and horizon, the night sky.
+const TIER_VIEWS = [ 'meadow-close', 'meadow-24', 'flowers-close', 'island-fair-noon', 'horizon-fair-noon', 'night-moon' ];
+// the gates' clips: [ clip, view or null for the clip's own ]
+const GATE_CLIPS = [
+	[ 'pan-slow', null ], [ 'pan-slow', 'island-fair-noon' ], [ 'pan-fast', null ], [ 'flick', null ], [ 'zoom', null ],
+	[ 'islander-walk', null ], [ 'islander-orbit', null ], [ 'wind-still', null ], [ 'sea-still', null ], [ 'sea-pan', null ],
+	// the still sea also facing a low sun: the glints' sparkle (the only view with a sea-glints crop by day)
+	[ 'sea-still', 'cliff-sea-golden' ],
+	// the night clip on the moon view: its stars, moon limb and moonlit glints under the pan
+	[ 'storm', null ], [ 'rain', null ], [ 'lightning', null ], [ 'night', 'night-moon' ], [ 'fog', null ],
+	// the low stars' scintillation under a still camera (the pan's twinkle is pixel phase)
+	[ 'night-still', null ],
+];
+export const BASELINE_PLAN = {
+	high: { rest: Object.keys( VIEWS ), full: Object.keys( VIEWS ).filter( ( v ) => ( VIEWS[ v ].group ?? 'parity' ) === 'parity' ), clips: GATE_CLIPS },
+	medium: { rest: TIER_VIEWS, full: [], clips: [] },
+	low: { rest: TIER_VIEWS, full: [], clips: [] },
+};
+
+// The carry-over's spot checks (tools/island/parity/carry.mjs): a camera move over the meadow (paused
+// clock) and the islander walking under the running clock (the walk, the wind in the meadow
+// behind); the rest views whose ground truth is checked, the first one stored taken.
+export const CARRY_SPOT = { clips: [ 'pan-slow', 'islander-walk' ], gtViews: [ 'island-fair-noon', 'meadow-close', 'meadow-24', 'flowers-close', 'rim-sea' ] };
+
 // The ground truth's frames: every frame of a clip of up to 60 frames, else
 // every 4th, plus the clip's `gtDense` runs [ first, last ] where a gate reads single frames or
 // consecutive pairs (the flick's stop and recovery, the strike, the scale steps, the window of the
@@ -175,16 +207,16 @@ export function clipEval( name, { frames, dt = 1 / 60, setup = '' } = {} ) {
 	const clip = CLIPS[ name ];
 	if ( ! clip ) throw new Error( `unknown clip ${ name }` );
 	const [ kind, ...args ] = clip.path;
-	return `(async () => { const s = window.__PONLAI__; const dt = ${ dt };
-window.__PONLAI_CLIP_NOTES__ = [];
+	return `(async () => { const s = window.${ PAGE.handle }; const dt = ${ dt };
+window.${ PAGE.clipNotes } = [];
 ${ clip.setup ?? '' }
 ${ setup }
 ${ PATHS }
 const path = PATH[ ${ JSON.stringify( kind ) } ]( ...${ JSON.stringify( args ) } );
-window.__PONLAI_CLIP__ = { name: ${ JSON.stringify( name ) }, frames: ${ frames ?? clip.frames }, lead: ${ clip.lead ?? 0 }, clock: ${ JSON.stringify( clip.clock ) }, dt,
+window.${ PAGE.clip } = { name: ${ JSON.stringify( name ) }, frames: ${ frames ?? clip.frames }, lead: ${ clip.lead ?? 0 }, clock: ${ JSON.stringify( clip.clock ) }, dt,
 	scale: ( ( shares ) => {
 		if ( ! shares ) return null;
-		if ( typeof s.nominalScale !== 'function' ) throw new Error( 'this build has no __PONLAI__.nominalScale for the scale schedule of the clip' );
+		if ( typeof s.nominalScale !== 'function' ) throw new Error( 'this build has no ${ PAGE.handle }.nominalScale for the scale schedule of the clip' );
 		const nominal = s.nominalScale();
 		return shares.map( ( k ) => k * nominal );
 	} )( ${ JSON.stringify( clipScales( clip ) ) } ),

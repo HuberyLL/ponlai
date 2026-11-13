@@ -98,7 +98,7 @@ keeps the test mode's byte comparisons valid this way (`docs/reference/tools.md`
    `docs/reference/tools.md`, Test mode).
 4. A Grow does not clear rendering history (`tools/island/verify-growth-swap.mjs` shoots its first view
    without a jump), so the effect is frozen or off under the switch there, or the swap resets it.
-5. Add its module to `WATCH.motion` in `tools/island/parity/carry.mjs` when its paths are not already
+5. Add its module to `reference.watch.motion` in `tools/project.mjs` when its paths are not already
    there: with it frozen or off, the paused set no longer shows it, only the clips do.
 6. Compare its frames outside the test mode (live, clips) within a tolerance, as the temporal
    modes' are (`tools/kit/tolerance.py`), unless they repeat pixel for pixel.

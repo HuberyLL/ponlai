@@ -15,17 +15,18 @@
 //   2. the capture tools and the browser: an entry carries only when A's manifest key equals the key
 //      B asks for (tool hash, browser build, tier, aa, size, query, clip, view, sampling, anchors);
 //   3. motion (wind, the islanders' walk, the sea, lightning, anything under a running clock, the
-//      stepper): invisible to a paused frame, so a watch list (WATCH.motion) on the diff, plus a spot
-//      check for the clips: the first SPOT.frames frames of SPOT.clips under MSAA captured on B with
+//      stepper): invisible to a paused frame, so a watch list (the configuration's
+//      `reference.watch.motion`) on the diff, plus a spot check for the clips: the first SPOT.frames
+//      frames of SPOT.clips (the clips table's CARRY_SPOT) under MSAA captured on B with
 //      A's anchors and compared pixel for pixel with A's stored baseline entries (a differing clip
 //      is captured once more, since a whole-frame outlier under a shared GPU never repeats);
-//   4. the paused scene: B's paused set (S1 on high: the 17 parity views plus every view an entry
-//      to carry is on; S2/<tier> on medium and low: those views) matches A's with diff-set.py
+//   4. the paused scene: B's paused set (S1 on high: the views table's default group plus every
+//      view an entry to carry is on; S2/<tier> on medium and low: those views) matches A's with diff-set.py
 //      (`--aa-floor` where both sides hold repeats, else pixel identity); and since that vouches for
 //      A's set, not A's entries, a rest baseline entry with a whole frame carries only when that
 //      frame matches A's own paused frame of its view (`stored`, files only: a capture that went
 //      wrong at A would otherwise carry on into every later sha);
-//   5. the ground truth's own path (aa=gt only): a watch list (WATCH.gt) on the diff, plus one rest
+//   5. the ground truth's own path (aa=gt only): a watch list (`reference.watch.gt`) on the diff, plus one rest
 //      ground truth (the first of SPOT.gtViews A holds) captured on B and compared with A's within
 //      the ground truth's noise (GT_TOLERANCE): a temporal-only change outside the watch list (a
 //      vegetation material's temporal branch) leaves MSAA alone and shows only there.
@@ -46,24 +47,19 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BUILD_INPUTS, describeKeyChange, keyMatches, setKey, stable, toolVersion, browserBuild, checkServed } from '../../kit/reference.mjs';
 import { decodePng, compareFrames } from '../../kit/capture-browser.mjs';
-import { viewNames } from './views.mjs';
+import { viewTable, clipTable } from '../../kit/parity/tables.mjs';
+import PROJECT from '../../project.mjs';
 import { ROOT } from '../../kit/root.mjs';
 
 const HERE = path.dirname( fileURLToPath( import.meta.url ) );
 const REPO = ROOT, TOOLS = path.join( ROOT, 'tools' );
+const { viewNames } = viewTable;
 
-// paths whose change can alter motion without touching a paused frame (prefixes end in '/'); the
-// dependencies because a three.js upgrade can change any shader, motion vectors included
-export const WATCH = {
-	motion: [ 'app/main.ts', 'packages/render/RenderStages.ts', 'packages/island/IslandStages.ts', 'app/', 'packages/render/weather/', 'packages/island/world/FallingLeaves.ts', 'packages/island/characters/', 'packages/render/ocean/', 'packages/game/view/', 'packages/island/life/', 'package.json', 'package-lock.json' ],
-	// the temporal graph aa=gt renders through: the resolve, its rest and jitter, the mode switch,
-	// motion vectors, the frame graph, what draws after the resolve and the events that reset history
-	gt: [ 'packages/render/post/TemporalAA.ts', 'packages/render/post/TemporalRest.ts', 'packages/render/post/Jitter.ts', 'packages/render/post/Antialiasing.ts', 'packages/render/post/Motion.ts', 'packages/render/post/Pipeline.ts',
-		'packages/render/post/PipelinePasses.ts', 'packages/render/post/PipelineDisplay.ts', 'packages/render/post/AfterResolve.ts', 'packages/render/post/SceneEvents.ts', 'package.json', 'package-lock.json' ],
-};
-// a camera move over the meadow (paused clock) and the islander walking under the running clock
-// (the walk, the wind in the meadow behind), each the first 16 frames
-export const SPOT = { clips: [ 'pan-slow', 'islander-walk' ], frames: 16, gtViews: [ 'island-fair-noon', 'meadow-close', 'meadow-24', 'flowers-close', 'rim-sea' ] };
+// the build inputs whose change can alter motion (`motion`) or the ground truth (`gt`) without
+// touching a paused frame (an entry ending in '/' is a folder)
+const WATCH = PROJECT.reference.watch;
+// the spot checks' clips and ground-truth views (the clips table's), each clip's first 16 frames
+export const SPOT = { ...clipTable.CARRY_SPOT, frames: 16 };
 // the ground truth's noise between two captures (m9-veg: crops 1-2 levels, max 4; whole frames max
 // 7 on a few pixels): per image, the largest channel difference and the share of pixels over 2 levels
 export const GT_TOLERANCE = { max: 8, over2Share: 0.0005 };
@@ -220,7 +216,7 @@ export async function planCarry( options ) {
 	const tiers = [ ...new Set( candidates.map( ( t ) => t.e.tier ) ) ];
 	if ( ! blocked && ! sameBuild && go( 'motionWatch' ) ) for ( const tier of tiers ) {
 
-		const views = [ ...new Set( [ ...( tier === 'high' ? viewNames( 'parity' ) : [] ), ...candidates.filter( ( t ) => t.e.tier === tier ).map( ( t ) => t.e.view ) ] ) ].sort();
+		const views = [ ...new Set( [ ...( tier === 'high' ? viewNames() : [] ), ...candidates.filter( ( t ) => t.e.tier === tier ).map( ( t ) => t.e.view ) ] ) ].sort();
 		await pausedCheck( tier, views );
 
 	}

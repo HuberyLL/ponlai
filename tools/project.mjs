@@ -1,10 +1,11 @@
 // The project's values that the generic tools in tools/kit/ read, so that a kit tool names no part
 // of this project: the globals the page mounts and its loading screen (`docs/how-to/write-a-tool.md`
 // gives the page's agreements), the dev server's address and the capture's default query, what a
-// stored reference depends on, where the views' and clips' tables are, and the module that adds the
-// pipeline tracer to a page's eval. A kit tool imports this file and nothing else outside
-// tools/kit/ (tools/repo/verify-kit.mjs checks that, and that no page global is named in the kit).
-// Paths are written from the repository's root.
+// stored reference depends on and what may carry it over, where the views' and clips' tables are,
+// where the scene's options are listed, and the module that adds the pipeline tracer to a page's
+// eval. A kit tool imports this file and nothing else outside tools/kit/ (tools/repo/verify-kit.mjs
+// checks that, and that no page global is named in the kit). Paths are written from the
+// repository's root.
 export default Object.freeze( {
 
 	page: Object.freeze( {
@@ -20,6 +21,10 @@ export default Object.freeze( {
 		crops: '__PONLAI_CROPS__',
 		// the capture's hold on the page's GPU device until the world is generated (tools/kit/capture.mjs)
 		gpuGate: '__PONLAI_GPU_GATE__',
+		// the stepped clip a clips table's clipEval installs, and the notes it leaves (the page reads
+		// the first too: packages/render/post/Pipeline.ts freezes the exposure while it is set)
+		clip: '__PONLAI_CLIP__',
+		clipNotes: '__PONLAI_CLIP_NOTES__',
 	} ),
 
 	// the dev server a page tool opens without a URL, and the query of a capture or probe without one
@@ -35,10 +40,26 @@ export default Object.freeze( {
 		} ),
 		// what a production build reads (tools/kit/reference.mjs, BUILD_INPUTS)
 		buildInputs: Object.freeze( [ 'packages', 'app', 'index.html', 'assets.lock.json', 'vite.config.ts', 'package.json', 'package-lock.json', 'tsconfig.json' ] ),
+		// the build inputs whose change can alter what a stored capture shows without touching a
+		// paused frame (tools/island/parity/carry.mjs; an entry ending in '/' is a folder)
+		watch: Object.freeze( {
+			// what moves: the frame loop, weather, the islanders, the sea, the creatures; the
+			// dependencies because a three.js upgrade can change any shader, motion vectors included
+			motion: Object.freeze( [ 'app/main.ts', 'packages/render/RenderStages.ts', 'packages/island/IslandStages.ts', 'app/', 'packages/render/weather/', 'packages/island/world/FallingLeaves.ts', 'packages/island/characters/', 'packages/render/ocean/', 'packages/game/view/', 'packages/island/life/', 'package.json', 'package-lock.json' ] ),
+			// the temporal graph aa=gt renders through: the resolve, its rest and jitter, the mode
+			// switch, motion vectors, the frame graph, what draws after the resolve and the events that
+			// reset history
+			gt: Object.freeze( [ 'packages/render/post/TemporalAA.ts', 'packages/render/post/TemporalRest.ts', 'packages/render/post/Jitter.ts', 'packages/render/post/Antialiasing.ts', 'packages/render/post/Motion.ts', 'packages/render/post/Pipeline.ts',
+				'packages/render/post/PipelinePasses.ts', 'packages/render/post/PipelineDisplay.ts', 'packages/render/post/AfterResolve.ts', 'packages/render/post/SceneEvents.ts', 'package.json', 'package-lock.json' ] ),
+		} ),
 	} ),
 
-	// the views' and clips' tables, which `node <table> list <group>` lists
+	// the views' and clips' tables (what they export: tools/kit/parity/tables.mjs)
 	tables: Object.freeze( { views: 'tools/island/parity/views.mjs', clips: 'tools/island/parity/clips.mjs' } ),
+
+	// the module whose `SCENE_OPTIONS = [ ... ]` lists the query options a scene jump may change, read
+	// as text (tools/island/parity/adhoc.mjs: views whose other options differ cannot share a page)
+	sceneOptions: 'app/Scene.ts',
 
 	// the module whose installScript() gives an eval's `pipelines` (tools/kit/page-eval.mjs)
 	pipelines: 'tools/render/pipeline-trace.mjs',
