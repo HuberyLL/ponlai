@@ -789,7 +789,7 @@ const count = ( value, fallback, flag ) => {
 };
 
 // A single-string command runs through sh -c, where an unquoted & inside a word (a query such as
-// near:like=a&dist=40) backgrounds the first half and drops the rest without a word (T44). Returns
+// near:like=a&dist=40) backgrounds the first half and drops the rest without a word. Returns
 // the word holding such an &, or null; 2>&1, &&, `cmd &` and `a & b` pass.
 function splitAmpersand( line ) {
 

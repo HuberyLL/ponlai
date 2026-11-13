@@ -36,8 +36,8 @@
 // image, and then repeatedly runs `every` frames (2), stops and grabs again (waitForStable). It
 // shoots once `repeats` comparisons (1) in a row found the image unchanged, on the frame grabbed
 // last ("exact"). A paused page still differs from frame to frame on a few views (single frames
-// that leave the settled image and come back to it, from a few pixels to 0.9 M; task D3 looks for
-// the source), so after `patience` frames (40) a comparison within the tolerance also counts
+// that leave the settled image and come back to it, from a few pixels to 0.9 M; its source is not
+// yet found), so after `patience` frames (40) a comparison within the tolerance also counts
 // ("tolerance": at most 5000 pixels differ at all); a page still changing after `cap` frames (120)
 // is shot anyway and marked "capped". The capture's JSON keeps the record (`ready`: status, frames
 // waited, comparisons, the largest difference seen, per comparison its pixel counts).

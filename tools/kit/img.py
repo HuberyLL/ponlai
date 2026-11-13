@@ -140,7 +140,6 @@ def raise_thread():
 import numpy as np
 from PIL import Image, ImageDraw
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pixels import LEVELS, LUMA, Files, bbox, bias, decode, metrics, stats  # noqa: E402
 
 FULL_MAX = 1280
